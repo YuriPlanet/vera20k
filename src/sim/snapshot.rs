@@ -1139,7 +1139,9 @@ use crate::sim::world::Simulation;
 // 419 -> 420: retain Infantry+6D8 Psycho independently of Techno Berserk.
 // 420 -> 421: process Rules state retains General.TalkBubbleTime.
 // 421 -> 422: the drain link retains the drainer's DrainAnim (Techno+0x1D4).
-const SNAPSHOT_VERSION: u32 = 422;
+// 422 -> 423: processed TechnoTypes retain their per-pass weapon block and
+// ParticleSystemTypes their HoldsWhat binding in saved Rules resources.
+const SNAPSHOT_VERSION: u32 = 423;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -4861,7 +4863,8 @@ mod tests {
         // 419 -> 420: Infantry Psycho latch independent of Techno Berserk.
         // 420 -> 421: process Rules retain TalkBubbleTime.
         // 421 -> 422: the drain link retains the drainer's DrainAnim.
-        assert_eq!(super::SNAPSHOT_VERSION, 422);
+        // 422 -> 423: retained weapon blocks and HoldsWhat bindings.
+        assert_eq!(super::SNAPSHOT_VERSION, 423);
     }
 
     #[test]
@@ -8956,13 +8959,16 @@ mod tests {
         use crate::rules::ruleset::RuleSet;
         use crate::sim::game_entity::GameEntity;
 
-        let rules = RuleSet::from_ini(&IniFile::from_str(
-            "[InfantryTypes]\n\
-             [VehicleTypes]\n0=TEST\n\
-             [AircraftTypes]\n\
-             [BuildingTypes]\n\
-             [TEST]\nMoveSound=VMove\n",
-        ))
+        let rules = RuleSet::from_ini_with_sounds_for_test(
+            &IniFile::from_str(
+                "[InfantryTypes]\n\
+                 [VehicleTypes]\n0=TEST\n\
+                 [AircraftTypes]\n\
+                 [BuildingTypes]\n\
+                 [TEST]\nMoveSound=VMove\n",
+            ),
+            &["VMove"],
+        )
         .expect("move-sound rules");
         let mut sim = Simulation::new();
         sim.session.map_name = "MOVESOUND.MAP".to_string();

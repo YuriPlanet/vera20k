@@ -265,9 +265,12 @@ fn simulation(
 
 #[test]
 fn select_wrapper_gates_precede_voice_draw_and_passive_queue_rejection_follows_it() {
-    let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
-        "[VehicleTypes]\n0=TANK\n[TANK]\nVoiceSelect=Sound101,Sound202,Sound303\n",
-    ))
+    let rules = RuleSet::from_ini_with_sounds_for_test(
+        &crate::rules::ini_parser::IniFile::from_str(
+            "[VehicleTypes]\n0=TANK\n[TANK]\nVoiceSelect=Sound101,Sound202,Sound303\n",
+        ),
+        &["Sound101", "Sound202", "Sound303"],
+    )
     .unwrap();
     for (owner, passive, enabled, drew, queued) in [
         ("Local", false, true, true, true),
@@ -373,9 +376,12 @@ fn prefixed_selection_fixture() -> (Simulation, RuleSet, serde_json::Value) {
         .find(|history| history["id"] == "unit_multiple_seed1_after248_main_raw")
         .unwrap()
         .clone();
-    let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
-        "[VehicleTypes]\n0=TANK\n[TANK]\nVoiceSelect=Sound101,Sound202,Sound303\n",
-    ))
+    let rules = RuleSet::from_ini_with_sounds_for_test(
+        &crate::rules::ini_parser::IniFile::from_str(
+            "[VehicleTypes]\n0=TANK\n[TANK]\nVoiceSelect=Sound101,Sound202,Sound303\n",
+        ),
+        &["Sound101", "Sound202", "Sound303"],
+    )
     .unwrap();
     let mut sim = simulation("TANK", EntityCategory::Unit, "Local", false);
     sim.initialize_random_number_system(history["seed"].as_u64().unwrap() as u32);

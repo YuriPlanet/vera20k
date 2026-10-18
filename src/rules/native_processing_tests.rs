@@ -2321,13 +2321,15 @@ fn warhead_particle_system_and_voxel_children_obey_passed_family_timing() {
             (NativeTypeConstructorFamily::ParticleSystemType, "YPS"),
         ]
     );
+    // [PS] omits HoldsWhat: the empty default reaches ParticleType's factory
+    // (0x00645430), which constructs an empty-named type.
     assert_eq!(
         processed
             .ini()
             .section("Particles")
             .expect("Particle registry")
             .registry_ids(),
-        vec!["PART", "undefined", "WHOLD"]
+        vec!["PART", "", "WHOLD"]
     );
     assert!(actual.iter().all(|(_, id)| {
         !matches!(

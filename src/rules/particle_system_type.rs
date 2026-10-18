@@ -72,8 +72,9 @@ pub struct ParticleSystemType {
     pub behaves_like: ParticleSystemBehavesLike,
 
     // ── Core spawn / lifetime ────────────────────────────────────────
-    /// Resolved `HoldsWhat` reference (the particle this system spawns).
-    /// Always `None` after A3; the 2-pass resolver in Task A4 fills it in.
+    /// Resolved `HoldsWhat` reference (the particle this system spawns),
+    /// ParticleSystemType+294. The ordered Rules processor binds it on every
+    /// reached pass and `RuleSet` resolves the binding.
     pub holds_what: Option<ParticleTypeId>,
     /// Whether this system spawns new particles over time (vs. a one-shot).
     pub spawns: bool,
@@ -131,31 +132,12 @@ pub struct ParticleSystemType {
     pub laser_color: [u8; 3],
 }
 
-/// Parse-state wrapper around a `ParticleSystemType` whose `holds_what`
-/// reference has not yet been resolved.
-///
-/// `RuleSet::from_ini` collects these in pass 1, then resolves
-/// `holds_what_name` against the name → ID map in pass 2.
-pub struct PendingParticleSystemType {
-    /// The parsed type with `holds_what = None`.
-    pub partial: ParticleSystemType,
-    /// Captured `HoldsWhat=` value to resolve in pass 2.
-    pub holds_what_name: Option<String>,
-}
-
 impl ParticleSystemType {
     /// Parse a ParticleSystemType from an INI section.
     ///
-    /// `holds_what` is always `None` — the resolver in `RuleSet::from_ini`
-    /// fills it in after all particle types have been collected.
-    /// Use `from_ini_section_pending` if you need the unresolved reference name.
-    #[cfg(test)]
+    /// `holds_what` keeps the constructor's unbound value (-1, `0x006440B3`):
+    /// `RuleSet` resolves the ordered Rules processor's binding.
     pub fn from_ini_section(name: &str, section: &IniSection) -> Self {
-        Self::from_ini_section_pending(name, section).partial
-    }
-
-    /// Parse a ParticleSystemType plus its unresolved `HoldsWhat=` name string.
-    pub fn from_ini_section_pending(name: &str, section: &IniSection) -> PendingParticleSystemType {
         let behaves_like = section
             .read_name("BehavesLike", 0x40)
             .and_then(ParticleSystemBehavesLike::parse)
@@ -163,12 +145,7 @@ impl ParticleSystemType {
             // the INI string doesn't match any entry.
             .unwrap_or(ParticleSystemBehavesLike::Smoke);
 
-        let holds_what_name = section
-            .read_name("HoldsWhat", 0x40)
-            .filter(|s| !s.eq_ignore_ascii_case("none"))
-            .map(str::to_owned);
-
-        let partial = Self {
+        Self {
             name: name.to_string(),
             behaves_like,
             holds_what: None,
@@ -220,11 +197,6 @@ impl ParticleSystemType {
             one_frame_light: section.read_bool("OneFrameLight", false),
             laser: section.read_bool("Laser", false),
             laser_color: section.read_color_rgb("LaserColor", [0, 0, 0], None),
-        };
-
-        PendingParticleSystemType {
-            partial,
-            holds_what_name,
         }
     }
 }
@@ -343,7 +315,7 @@ mod tests {
 
         assert_eq!(pst.name, "BigGreySSys");
         assert_eq!(pst.behaves_like, ParticleSystemBehavesLike::Smoke);
-        // HoldsWhat is unresolved at A3 — the string is captured and resolved in A4.
+        // The ordered Rules processor binds HoldsWhat; RuleSet resolves it.
         assert_eq!(pst.holds_what, None);
         assert!(pst.spawns);
         assert_eq!(pst.spawn_frames, 18);

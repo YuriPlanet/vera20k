@@ -34,17 +34,22 @@
 //!    differing height therefore jumps from `0x00429EAF` straight to
 //!    `0x00429F04` and is expanded regardless of the corridor stamp, the
 //!    `+0x122` byte and `allowHS`.
-//! 6. Retry budget is `param_6 != -1 ? 1 : 5`. Each retry calls
-//!    `PathfinderClass::UpdateHierarchicalEdges` @ `0x0042CCD0`, re-reads
-//!    `allowHS` from `PathfinderClass+0x38`, and re-runs `Zone_precheck`;
-//!    a failed precheck ends the loop.
+//! 6. Retry budget is `maxSteps != -1 ? 1 : 5` (`0x0042CB8B..0x0042CBA1`),
+//!    and both callers pass -1. A cell A* that fails with `allowHS` set
+//!    (`0x0042CC13..0x0042CC19`) calls
+//!    `PathfinderClass::UpdateHierarchicalEdges` @ `0x0042CCD0` and the reset
+//!    `0x0042A5B0` (open lists emptied, search serial `+0x28` bumped), then
+//!    re-reads `allowHS` from `PathfinderClass+0x38`. With tries left it
+//!    re-runs `Zone_precheck`, whose failure ends the loop, or with `allowHS`
+//!    clear the plain A*, which runs once.
 //!
 //! ## What VERA does, and the remaining recorded gaps
 //!
 //! The live route is faithful in shape: `zone_precheck_flat` on the level-0
-//! hierarchy, then a hierarchy-marked cell A*; a precheck failure with matching
-//! zones falls back to the plain A*, and one with differing zones returns
-//! `None`. What is missing:
+//! hierarchy, then a hierarchy-marked cell A*, retried as point 6 says
+//! ([`find_layered_path_after_entry`], [`precheck_retry`]); a precheck failure
+//! with matching zones falls back to the plain A*, and one with differing
+//! zones returns `None`. What is missing:
 //!
 //! - **Two uncommon `allowHS` terms remain unmodelled.** VERA now threads the
 //!   canonical `TechnoClass+0x3D5` byte and applies exact bridge-resolved mode-1
@@ -69,21 +74,18 @@
 //!   without counts gets the plain cell A* once the zone test passes, where
 //!   gamemd would run the hierarchy-marked search. No live trigger is
 //!   established here.
-//! - **gamemd's precheck retries are not modelled.** Its budget is
-//!   `param_6 != -1 ? 1 : 5`, and `Run_AStar` passes -1 (`0x004CBC1C`), so a
-//!   Find_Path gets five tries. When the corridor-limited A* (`0x0042CC02`)
-//!   returns nothing with hierarchy admission on (`0x0042CC13..0x0042CC19`),
-//!   native runs `UpdateHierarchicalEdges` (`0x0042CCD0`), which adds
-//!   zone-pair exclusions, and `Zone_precheck` again (point 6). `0x0042CF80`
-//!   can clear `Pathfinder+0x38` (`0x0042CF9A`, `0x0042CFD3`, `0x0042CFE6`);
-//!   a try after that runs the plain A* (`0x0042CC9B` -> `0x0042CBA5`). VERA
-//!   runs one precheck with no exclusions, and a failed corridor search takes
-//!   the Foot's failure tail (PathDelay, the class stop, team detach, then
-//!   Guard or AreaGuard). Trigger: a corridor whose cells hold no passable
-//!   route while cells outside it do, for example units or buildings filling
-//!   a narrow pass or channel. Effect: VERA refuses a move that native
-//!   completes on a later try. Frequency: unmeasured. Every Foot class reaches
-//!   it, ships too since the Water rows lost their exemption.
+//! - **The retry keeps whole routes.** `Zone_precheck` writes each level's
+//!   route into 500 words with no bound (`0x0042C8A0..0x0042C8CE`), level 0
+//!   last, so a level-0 route over 500 zones overwrites level 1's, which a
+//!   split at level 1 hands `InvalidateZoneEdge`. VERA keeps each route
+//!   whole. Trigger: a failed corridor search after a precheck route of more
+//!   than 500 level-0 zones, each within one 2x2 block, so a route winding
+//!   for hundreds of cells. Effect: native may exclude other level-1 edges
+//!   or clear `+0x38`. Frequency: unmeasured, rare at retail map sizes.
+//!   [`super::core::HierarchyGate`] records the route-progress residuals.
+//! - **Without resolved terrain there is no retry.** The flood reads map
+//!   cells, so a failed corridor search without them ends with
+//!   `CellEntryUnavailable`. Every loaded map has them; fixtures may not.
 //! - **The JumpJet infantry precheck row is not ported.** For an Infantry
 //!   (`WhatAmI` 0xF) whose type sets `JumpJet=` (`+0xD94` through `+0x6C0`),
 //!   `0x0042CA43..0x0042CA69` hands `Zone_precheck` row 7 (Infantry) instead
@@ -100,20 +102,24 @@
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.
 
 pub(crate) mod native_path_entry;
+mod precheck_retry;
 
-use super::{BlockerNeighborCounts, MoverSearchFacts, SearchMarkerOverlay};
+use std::cell::Cell;
+
+use super::{BlockerNeighborCounts, MoverSearchFacts, RouteProgress, SearchMarkerOverlay};
 
 use super::zone_hierarchy::{
-    MarkedZones, ZoneLevelGraph, ZonePrecheckExclusions, ZonePrecheckOutcome, ZonePrecheckThreat,
-    zone_precheck_flat,
+    MarkedZones, ZONE_PRECHECK_LEVELS, ZoneHierarchy, ZoneLevelGraph, ZonePrecheckExclusions,
+    ZonePrecheckOutcome, ZonePrecheckResult, ZonePrecheckThreat, zone_precheck_flat,
 };
-use super::zone_map::ZoneGrid;
+use super::zone_map::{ZoneGrid, ZoneId};
 use super::{HierarchyGate, LayeredPathStep, PathGrid, find_layered_path_marker};
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::map::tube_facts::TubeSource;
 use crate::rules::locomotor_type::MovementZone;
 use crate::sim::cell_rect::PlayfieldBounds;
 use crate::sim::movement::locomotor::MovementLayer;
+use crate::util::native_x87::NativeF64Bits;
 use native_path_entry::{NativePathEntry, prepare_native_path_entry};
 
 /// Provenance of a returned path failure. The Foot wrapper must not turn
@@ -196,11 +202,16 @@ fn can_reach_through_explicit_tube(
 }
 
 /// The level-0 corridor a passed `Zone_precheck` hands the cell A*
-/// (`AStar_main_loop @ 0x00429A90`'s last argument, `allowHS`).
+/// (`AStar_main_loop @ 0x00429A90`'s last argument, `allowHS`), the routes
+/// it chose and the search's progress along them.
 struct HierarchyCorridor<'a> {
     level0_zones: &'a ZoneLevelGraph,
     marked_level0: MarkedZones,
     blocker_neighbor_counts: &'a BlockerNeighborCounts,
+    /// Each level's route, start zone first (`PathfinderClass+0xBC`, 500
+    /// words a level; lengths at `+0xC74`).
+    routes: [Vec<ZoneId>; ZONE_PRECHECK_LEVELS],
+    progress: Cell<RouteProgress>,
 }
 
 impl HierarchyCorridor<'_> {
@@ -209,9 +220,74 @@ impl HierarchyCorridor<'_> {
             level0_zones: self.level0_zones,
             marked_level0: &self.marked_level0,
             blocker_neighbor_counts: self.blocker_neighbor_counts,
+            level0_route: &self.routes[0],
+            progress: &self.progress,
         }
     }
 }
+
+/// One search's `Zone_precheck` (`0x0042C290`, called at `0x0042CB58` and by
+/// each retry at `0x0042CCB3`): the hierarchy, the projected endpoints'
+/// level-0 zones, the row and the Foot's threat coefficient, all fixed for
+/// the search.
+struct CorridorPrecheck<'a> {
+    zone_grid: &'a ZoneGrid,
+    hierarchy: &'a ZoneHierarchy,
+    level0_zones: &'a ZoneLevelGraph,
+    blocker_neighbor_counts: &'a BlockerNeighborCounts,
+    start_zone: ZoneId,
+    goal_zone: ZoneId,
+    movement_zone: MovementZone,
+    threat_coefficient: NativeF64Bits,
+}
+
+impl<'a> CorridorPrecheck<'a> {
+    /// The corridor the precheck marks for a cell search from `start` while
+    /// `exclusions` hold, or `None` when it fails.
+    fn run(
+        &self,
+        exclusions: &ZonePrecheckExclusions,
+        foot_entry: &dyn super::SearchFootEntry,
+        start: (u16, u16),
+    ) -> Result<Option<HierarchyCorridor<'a>>, PathSearchFailure> {
+        let padded_lookup = |index| foot_entry.hierarchy_house_threat(index);
+        let threat = ZonePrecheckThreat::new(self.threat_coefficient, &padded_lookup);
+        let outcome = zone_precheck_flat(
+            self.hierarchy,
+            self.start_zone,
+            self.goal_zone,
+            self.movement_zone,
+            exclusions,
+            Some(threat),
+        )
+        .map_err(PathSearchFailure::CellEntryUnavailable)?;
+        let ZonePrecheckOutcome::Passed(ZonePrecheckResult {
+            paths,
+            marked: [marked_level0, ..],
+            ..
+        }) = outcome
+        else {
+            return Ok(None);
+        };
+        Ok(Some(HierarchyCorridor {
+            level0_zones: self.level0_zones,
+            marked_level0,
+            blocker_neighbor_counts: self.blocker_neighbor_counts,
+            routes: paths,
+            progress: Cell::new(RouteProgress {
+                index: 0,
+                cell: start,
+            }),
+        }))
+    }
+}
+
+/// The cell searches one path search may run. `AStar_pathfind_search`
+/// allows `maxSteps != -1 ? 1 : 5` (`0x0042CB8B..0x0042CBA1`), and both its
+/// callers pass -1 (`0x004CBC1E`, `0x00504D9B`), the limit the cell search
+/// reads as [`super::MAX_SEARCH_NODES`]. `0x005048A0`, the second caller,
+/// has no caller of its own and no port.
+const CELL_SEARCH_TRIES: usize = 5;
 
 /// The endpoints one search asks the zone ladder about: the mover's OnBridge
 /// layer (`Foot+0x8C`, `0x0042C973`) and the goal's live `Flags & 0x100`
@@ -225,8 +301,8 @@ struct ZoneLadderQuery<'e> {
 }
 
 /// Zone admission for one path search, after `prepare_native_path_entry`:
-/// `Ok(None)` runs the plain cell A*, `Ok(Some(corridor))` the hierarchy-marked
-/// one, and `Err` no cell A* at all.
+/// `Ok(None)` runs the plain cell A*, `Ok(Some(..))` the hierarchy-marked one
+/// with the precheck its retries run again, and `Err` no cell A* at all.
 fn admit_zone_search<'a>(
     zone_grid: Option<&'a ZoneGrid>,
     mz: MovementZone,
@@ -235,7 +311,7 @@ fn admit_zone_search<'a>(
     blocker_neighbor_counts: Option<&'a BlockerNeighborCounts>,
     query: &ZoneLadderQuery<'_>,
     foot_entry: &dyn super::SearchFootEntry,
-) -> Result<Option<HierarchyCorridor<'a>>, PathSearchFailure> {
+) -> Result<Option<(CorridorPrecheck<'a>, HierarchyCorridor<'a>)>, PathSearchFailure> {
     let entry = query.entry;
     if !can_use_reduced_zone_precheck(movement_zone) {
         return Ok(None);
@@ -270,37 +346,23 @@ fn admit_zone_search<'a>(
         let goal_zone = zg
             .hierarchy_zone_at_native(0, entry.hierarchy_goal)
             .ok_or(PathSearchFailure::MissingHierarchyCell)?;
-        let padded_lookup = |index| foot_entry.hierarchy_house_threat(index);
-        let threat = Some(
-            foot_entry
+        let precheck = CorridorPrecheck {
+            zone_grid: zg,
+            hierarchy,
+            level0_zones,
+            blocker_neighbor_counts,
+            start_zone,
+            goal_zone,
+            movement_zone: movement_zone.unwrap_or(mz),
+            threat_coefficient: foot_entry
                 .finishing_threat_coefficient()
-                .map(|coefficient| ZonePrecheckThreat::new(coefficient, &padded_lookup))
                 .map_err(PathSearchFailure::CellEntryUnavailable)?,
-        );
-        return Ok(
-            match zone_precheck_flat(
-                hierarchy,
-                start_zone,
-                goal_zone,
-                movement_zone.unwrap_or(mz),
-                &ZonePrecheckExclusions::default(),
-                threat,
-            )
-            .map_err(PathSearchFailure::CellEntryUnavailable)?
-            {
-                ZonePrecheckOutcome::Passed(result) => {
-                    let [marked_level0, ..] = result.marked;
-                    Some(HierarchyCorridor {
-                        level0_zones,
-                        marked_level0,
-                        blocker_neighbor_counts,
-                    })
-                }
-                // The zones match, so a failed precheck clears allowHS and
-                // still runs the cell A*.
-                ZonePrecheckOutcome::Failed => None,
-            },
-        );
+        };
+        // The zones match, so a failed precheck clears allowHS and still
+        // runs the cell A*. The exclusions start empty (0x42C912..0x42C925).
+        return Ok(precheck
+            .run(&ZonePrecheckExclusions::default(), foot_entry, query.start)?
+            .map(|corridor| (precheck, corridor)));
     }
 
     // Same-zone precheck failures still run cell A*; a cross-zone one aborts
@@ -439,11 +501,25 @@ pub(crate) fn find_layered_path_zoned_marker_detailed(
         marker_overlay,
         facts,
         blocker_neighbor_counts,
+        playfield_bounds,
     )
 }
 
 /// The search after `prepare_native_path_entry`: the zone ladder over `entry`,
-/// then the cell A* from `start_layer`.
+/// then the cell A* from `start_layer`, tried again while it fails
+/// (`0x0042CB8B..0x0042CCCB`).
+///
+/// A failed corridor search runs `UpdateHierarchicalEdges` from its
+/// progress cell, which excludes zone pairs or clears `+0x38`
+/// ([`precheck_retry`]). With tries left, a cleared `+0x38` runs the plain
+/// cell A* once more, whatever it returns (`0x0042CC9B` -> `0x0042CBA5`), and
+/// otherwise `Zone_precheck` runs again under the exclusions; a failed one
+/// ends the search. The exclusions, `+0x38` and the routes live for this one
+/// search: native resets them as it starts (`0x0042C909`, `0x0042C912`) and
+/// each passed precheck rewrites the routes. The reset `0x0042A5B0` after
+/// each update (`0x0042CC80`) gives the next precheck and cell search fresh
+/// marks, as each run here builds its own. The debug logs at `0x0042CBDE`
+/// and `0x0042CC65` are not ported.
 fn find_layered_path_after_entry(
     grid: &PathGrid,
     start: (u16, u16),
@@ -457,6 +533,7 @@ fn find_layered_path_after_entry(
     marker_overlay: Option<&SearchMarkerOverlay>,
     facts: MoverSearchFacts<'_>,
     blocker_neighbor_counts: Option<&BlockerNeighborCounts>,
+    playfield_bounds: Option<PlayfieldBounds>,
 ) -> Result<Vec<LayeredPathStep>, PathSearchFailure> {
     let layer = |bridge: bool| {
         if bridge {
@@ -465,7 +542,7 @@ fn find_layered_path_after_entry(
             MovementLayer::Ground
         }
     };
-    let corridor = admit_zone_search(
+    let admitted = admit_zone_search(
         zone_grid,
         mz,
         movement_zone,
@@ -481,16 +558,61 @@ fn find_layered_path_after_entry(
         facts.foot_entry,
     )?;
     let (facts, prepared) = prepared_markers(facts)?;
-    find_layered_path_marker(
-        grid,
-        start,
-        start_layer,
-        goal,
-        corridor.as_ref().map(HierarchyCorridor::gate),
-        resolved_terrain,
-        prepared.as_deref().or(marker_overlay),
-        facts,
-    )
+    // Native builds and drops the marker transaction around each
+    // AStar_main_loop (0x429C1A, then 0x42A42D or 0x42A44C). Nothing between
+    // two tries changes what it reads, so the one transaction serves them all.
+    let overlay = prepared.as_deref().or(marker_overlay);
+    let search = |gate: Option<HierarchyGate<'_>>| {
+        find_layered_path_marker(
+            grid,
+            start,
+            start_layer,
+            goal,
+            gate,
+            resolved_terrain,
+            overlay,
+            facts,
+        )
+    };
+    let Some((precheck, mut corridor)) = admitted else {
+        return search(None);
+    };
+    let mut exclusions = ZonePrecheckExclusions::default();
+    let mut tries = 0;
+    loop {
+        match search(Some(corridor.gate())) {
+            Err(PathSearchFailure::CellSearchExhausted) => {}
+            found => return found,
+        }
+        tries += 1;
+        let retry = precheck_retry::RetryInputs {
+            zone_grid: precheck.zone_grid,
+            hierarchy: precheck.hierarchy,
+            terrain: resolved_terrain.ok_or_else(|| {
+                PathSearchFailure::CellEntryUnavailable(
+                    "the hierarchy retry floods map cells".into(),
+                )
+            })?,
+            bounds: playfield_bounds,
+            movement_zone: precheck.movement_zone,
+            foot_entry: facts.foot_entry,
+        };
+        let hierarchy_usable = precheck_retry::update_hierarchical_edges(
+            &retry,
+            &corridor.routes,
+            corridor.progress.get().cell,
+            &mut exclusions,
+        )?;
+        if tries >= CELL_SEARCH_TRIES {
+            return Err(PathSearchFailure::CellSearchExhausted);
+        }
+        if !hierarchy_usable {
+            return search(None);
+        }
+        corridor = precheck
+            .run(&exclusions, facts.foot_entry, start)?
+            .ok_or(PathSearchFailure::CellSearchExhausted)?;
+    }
 }
 
 #[cfg(test)]

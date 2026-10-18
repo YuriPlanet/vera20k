@@ -13,7 +13,9 @@ use crate::rules::ini_parser::{IniFile, IniSection, is_native_none_type_name};
 use crate::rules::locomotor_type::SpeedType;
 
 use crate::rules::missile_spawn::MissileSpawnRules;
-use crate::rules::object_type::{InfantryInfiltration, InfantryPips, ObjectCategory};
+use crate::rules::object_type::{
+    InfantryInfiltration, InfantryPips, ObjectCategory, WEAPON_SLOT_COUNT,
+};
 use crate::rules::powerups::{PowerupTable, PowerupsAccumulator};
 use crate::rules::prerequisite::{Prerequisite, PrerequisiteGroup, parse_prerequisites};
 use crate::rules::projectile_type::ProjectileArtState;
@@ -458,6 +460,7 @@ impl ProcessedRulesLayers {
             .get(&RulesTypeFamily::Projectile)
             .map_or(0, Vec::len);
         let warhead_count = families.get(&RulesTypeFamily::Warhead).map_or(0, Vec::len);
+        let particle_count = families.get(&RulesTypeFamily::Particle).map_or(0, Vec::len);
         if families.values().flatten().any(|member| {
             usize::from(member.building_foundation)
                 >= crate::rules::foundation::FOUNDATION_TABLE.len()
@@ -469,6 +472,9 @@ impl ProcessedRulesLayers {
                     .weapon
                     .warhead
                     .is_some_and(|index| index >= warhead_count)
+                || member
+                    .holds_what
+                    .is_some_and(|index| index >= particle_count)
         }) {
             return Err(RulesError::InvalidSavedState(
                 "type reference is outside its registry",
@@ -730,6 +736,52 @@ impl ProcessedRulesLayers {
                         member.lepton_mind_control_offset,
                     )
                 })
+            })
+    }
+
+    /// TechnoType's TurretCount, WeaponCount and base/elite weapon arrays
+    /// after every reached ReadINI pass.
+    pub(crate) fn weapon_slot_states(
+        &self,
+    ) -> impl Iterator<Item = (ObjectCategory, &str, &WeaponSlots)> {
+        self.native_type_construction_trace
+            .registry_state()
+            .families
+            .iter()
+            .filter_map(|(family, members)| {
+                family.object_category().map(|category| (category, members))
+            })
+            .flat_map(|(category, members)| {
+                members.iter().map(move |member| {
+                    (
+                        category,
+                        member.native_stored_id.as_str(),
+                        &member.weapon_slots,
+                    )
+                })
+            })
+    }
+
+    /// ParticleSystemType+294 after every reached ReadINI: the bound
+    /// ParticleType's stored ID, or `None` for `<none>` and unread types.
+    pub(crate) fn particle_system_holds_what_states(
+        &self,
+    ) -> impl Iterator<Item = (&str, Option<&str>)> {
+        let families = &self
+            .native_type_construction_trace
+            .registry_state()
+            .families;
+        families
+            .get(&RulesTypeFamily::ParticleSystem)
+            .into_iter()
+            .flatten()
+            .map(move |member| {
+                let particle = member.holds_what.map(|index| {
+                    families[&RulesTypeFamily::Particle][index]
+                        .native_stored_id
+                        .as_str()
+                });
+                (member.native_stored_id.as_str(), particle)
             })
     }
 
@@ -1271,9 +1323,8 @@ impl Default for NativeRulesRegistryState {
             rules_color_add: ColorAddTable::default(),
             rules_color_add_selectors: ColorAddSelectors::default(),
             rules_detail: DetailRules::default(),
-            // Rules665650: literal doubles, before AudioVisual authored reads.
-            rules_ambient_change_rate: NativeF64Bits::from_bits(0x3fc9_9999_9999_999a),
-            rules_ambient_change_step: NativeF64Bits::from_bits(0x3fb9_9999_9999_999a),
+            rules_ambient_change_rate: crate::rules::ruleset::DEFAULT_AMBIENT_CHANGE_RATE,
+            rules_ambient_change_step: crate::rules::ruleset::DEFAULT_AMBIENT_CHANGE_STEP,
             rules_difficulty_rows: general.difficulty_rows,
             rules_gravity: general.gravity,
             rules_wind_direction: general.wind_direction(),
@@ -1283,7 +1334,8 @@ impl Default for NativeRulesRegistryState {
             rules_no_parachute_max_fall_rate: general.no_parachute_max_fall_rate,
             rules_survivor_divisors: crate::rules::ruleset::DEFAULT_SURVIVOR_DIVISORS,
             rules_maximum_cheer_rate: crate::rules::ruleset::DEFAULT_MAXIMUM_CHEER_RATE,
-            rules_talk_bubble_time: 300,
+            rules_talk_bubble_time: general.talk_bubble_time,
+            // MindControlAttackLineFrames, Rules+310: constructor 0x00665ABE.
             rules_mind_control_attack_line_frames: 15,
             rules_line_trail_override: general.line_trail_color_override,
             rules_chrono_beam_color: general.chrono_beam_color,
@@ -1656,8 +1708,64 @@ struct ProcessedType {
     /// (`+0x654`), each read with its current list as the default.
     prerequisite: Vec<Prerequisite>,
     prerequisite_override: Vec<Prerequisite>,
+    weapon_slots: WeaponSlots,
     weapon: WeaponReadState,
     warhead_anim: WarheadAnimReadState,
+    /// ParticleSystemType+294, the bound ParticleType's index: constructor -1
+    /// (`0x006440B3`), rebound by every reached ReadINI (`0x0064430F..0x00644323`).
+    holds_what: Option<usize>,
+}
+
+/// The weapon block of `TechnoTypeClass::ReadINI @ 0x00712170`
+/// (`0x0071284A..0x00712AAD`), retained on the live Type. Each reached pass
+/// reads TurretCount (+808, `0x0071285E`), WeaponCount (+80C, `0x00712878`)
+/// and ClearAllWeapons (+A90, `0x007128AC`) with the live values as defaults,
+/// then picks the slot keys from those live values:
+///
+/// - TurretCount > 0 (`0x007128B2`): `Weapon%d` (key `0x00844310`) and
+///   `EliteWeapon%d` (`0x00844300`) for 1..=WeaponCount, stored at `+898` and
+///   `+A94` plus `(n-1)*0x1C` (`0x0071294A`, `0x00712981`). `Weapon1` and
+///   `Primary` are the same storage.
+/// - Otherwise, unless ClearAllWeapons (`0x007129A3`): `Primary`, `Secondary`,
+///   `ElitePrimary` and `EliteSecondary` into slots 0 and 1 of each array
+///   (`0x007129F2`, `0x00712A17`, `0x00712A64`, `0x00712A89`).
+/// - Then ClearAllWeapons nulls both arrays' slots 0 and 1
+///   (`0x00712A8F..0x00712AAD`), after either branch.
+///
+/// Each slot read is a ReadString into 0x80 bytes; an empty read keeps the
+/// slot, so a pass that omits a key keeps what an earlier pass wrote. A value
+/// goes through `WeaponTypeClass::FindOrAllocate @ 0x00772FA0`, which answers
+/// null for `none` and `<none>` (stock `[CMIN]` `Primary=none` is unarmed).
+/// The TechnoType constructor zeroes TurretCount (`0x0071136F`),
+/// ClearAllWeapons (`0x0071137B`) and both 18-entry arrays
+/// (`0x007116E6..0x0071173A`); see `ObjectType::weapon_count` for
+/// WeaponCount's.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub(crate) struct WeaponSlots {
+    turret_count: i32,
+    weapon_count: i32,
+    clear_all_weapons: bool,
+    /// Base (+898) and elite (+A94) arrays, as stored WeaponType IDs.
+    base: [Option<String>; WEAPON_SLOT_COUNT],
+    elite: [Option<String>; WEAPON_SLOT_COUNT],
+}
+
+impl WeaponSlots {
+    pub(crate) fn turret_count(&self) -> i32 {
+        self.turret_count
+    }
+
+    pub(crate) fn weapon_count(&self) -> i32 {
+        self.weapon_count
+    }
+
+    pub(crate) fn base(&self) -> &[Option<String>] {
+        &self.base
+    }
+
+    pub(crate) fn elite(&self) -> &[Option<String>] {
+        &self.elite
+    }
 }
 
 /// Fields needed by Weapon7729F0, retained on the same live Weapon object.
@@ -1680,7 +1788,7 @@ impl ProcessedType {
     fn new(native_stored_id: String) -> Self {
         Self {
             body: IniSection::new(native_stored_id.clone()),
-            tech_level: 255,
+            tech_level: crate::rules::object_type::DEFAULT_TECH_LEVEL,
             projectile_art: ProjectileArtState::new(&native_stored_id),
             native_stored_id,
             country_color_scheme: 0,
@@ -1698,11 +1806,14 @@ impl ProcessedType {
             recoil: crate::rules::recoil::RecoilConfig::default(),
             airstrike: crate::rules::airstrike::AirstrikeSettings::default(),
             radial_fire_segments: 0,
-            lepton_mind_control_offset: 70,
+            lepton_mind_control_offset:
+                crate::rules::object_type::DEFAULT_LEPTON_MIND_CONTROL_OFFSET,
             prerequisite: Vec::new(),
             prerequisite_override: Vec::new(),
+            weapon_slots: WeaponSlots::default(),
             weapon: WeaponReadState::default(),
             warhead_anim: WarheadAnimReadState::default(),
+            holds_what: None,
         }
     }
 }
@@ -1749,52 +1860,10 @@ struct RulesPassProcessor {
 }
 
 impl Default for RulesPassProcessor {
+    /// A fresh RulesClass and empty Type registries; the constructor values
+    /// have one owner, [`NativeRulesRegistryState::default`].
     fn default() -> Self {
-        Self {
-            ordinary: None,
-            crate_rules: CrateRulesAccumulator::default(),
-            powerups: PowerupsAccumulator::default(),
-            general_type_lists: GeneralTypeLists::default(),
-            missile_spawn: MissileSpawnRules::default(),
-            families: HashMap::new(),
-            techno_type_order: Vec::new(),
-            native_type_construction_events: Vec::new(),
-            tiberiums: Vec::new(),
-            colors: Vec::new(),
-            rules_color_add: ColorAddTable::default(),
-            rules_color_add_selectors: ColorAddSelectors::default(),
-            rules_detail: DetailRules::default(),
-            rules_ambient_change_rate: NativeRulesRegistryState::default()
-                .rules_ambient_change_rate,
-            rules_ambient_change_step: NativeRulesRegistryState::default()
-                .rules_ambient_change_step,
-            rules_difficulty_rows: crate::rules::ruleset::GeneralRules::default().difficulty_rows,
-            rules_gravity: NativeRulesRegistryState::default().rules_gravity,
-            rules_wind_direction: NativeRulesRegistryState::default().rules_wind_direction,
-            rules_missile_rot_var: NativeRulesRegistryState::default().rules_missile_rot_var,
-            rules_safety_altitude: NativeRulesRegistryState::default().rules_safety_altitude,
-            rules_parachute_max_fall_rate: NativeRulesRegistryState::default()
-                .rules_parachute_max_fall_rate,
-            rules_no_parachute_max_fall_rate: NativeRulesRegistryState::default()
-                .rules_no_parachute_max_fall_rate,
-            rules_survivor_divisors: crate::rules::ruleset::DEFAULT_SURVIVOR_DIVISORS,
-            rules_maximum_cheer_rate: crate::rules::ruleset::DEFAULT_MAXIMUM_CHEER_RATE,
-            rules_talk_bubble_time: 300,
-            rules_mind_control_attack_line_frames: 15,
-            rules_line_trail_override: NativeRulesRegistryState::default()
-                .rules_line_trail_override,
-            rules_chrono_beam_color: NativeRulesRegistryState::default().rules_chrono_beam_color,
-            rules_prism_support: PrismSupportRules::default(),
-            rules_patrol_scan_minutes: crate::rules::ruleset::GeneralRules::default()
-                .patrol_scan_minutes,
-            rules_prism_type: None,
-            rules_drop_zone_anim: None,
-            rules_drop_zone_radius: NativeRulesRegistryState::default().rules_drop_zone_radius,
-            rules_prerequisite_proc_alternate: None,
-            rules_prerequisite_lists: Default::default(),
-            rules_building_types: GeneralBuildingTypes::default(),
-            select_anim: SelectAnimRulesState::default(),
-        }
+        Self::with_registry_state(NativeRulesRegistryState::default())
     }
 }
 
@@ -1833,7 +1902,12 @@ impl RulesPassProcessor {
             rules_prerequisite_lists: registry_state.rules_prerequisite_lists,
             rules_building_types: registry_state.rules_building_types,
             select_anim: registry_state.select_anim,
-            ..Self::default()
+            ordinary: None,
+            crate_rules: CrateRulesAccumulator::default(),
+            powerups: PowerupsAccumulator::default(),
+            general_type_lists: GeneralTypeLists::default(),
+            missile_spawn: MissileSpawnRules::default(),
+            native_type_construction_events: Vec::new(),
         }
     }
 
@@ -2027,8 +2101,22 @@ impl RulesPassProcessor {
         {
             return None;
         }
+        Some(self.find_or_construct(family, incoming))
+    }
+
+    /// ParticleTypeClass::FindOrAllocate @ 0x00645430 answers -1 only for
+    /// `<none>` (`_strcmpi` against 0x00817474); an empty name or `none`
+    /// finds or constructs a ParticleType like any other spelling.
+    fn find_or_allocate_particle(&mut self, incoming: &str) -> Option<usize> {
+        (!incoming.eq_ignore_ascii_case("<none>"))
+            .then(|| self.find_or_construct(RulesTypeFamily::Particle, incoming))
+    }
+
+    /// The lookup and construction every Type factory shares once its own
+    /// null answers are excluded.
+    fn find_or_construct(&mut self, family: RulesTypeFamily, incoming: &str) -> usize {
         if let Some(index) = self.find_existing(family, incoming) {
-            return Some(index);
+            return index;
         }
         let members = self.family_mut(family);
         // AbstractTypeClass::Constructor @ 0x00410800 stores only 0x18 bytes.
@@ -2049,7 +2137,7 @@ impl RulesPassProcessor {
                     native_stored_id,
                 });
         }
-        Some(index)
+        index
     }
 
     fn allocate_colors(&mut self, pass: &IniFile) {
@@ -2596,12 +2684,13 @@ impl RulesPassProcessor {
                 }
                 let _ =
                     self.resolve_scalar_from(section, "Warhead", RulesTypeFamily::Warhead, 0x80);
-                let _ = self.resolve_scalar_from(
-                    section,
-                    "SpawnsParticle",
-                    RulesTypeFamily::Particle,
-                    0x20,
-                );
+                // ReadString with no default (0x00428716) skips an empty
+                // read; any other name goes to ParticleType's factory
+                // (0x00428730), which answers nothing only for `<none>`.
+                let spawns_particle = section.read_string("SpawnsParticle", "", 0x20);
+                if !spawns_particle.is_empty() {
+                    let _ = self.find_or_allocate_particle(&spawns_particle);
+                }
             }
             index += 1;
         }
@@ -2618,7 +2707,7 @@ impl RulesPassProcessor {
             if let Some((native_stored_id, raw, effective)) =
                 self.begin_rules_member_read(family, index, pass)
             {
-                self.process_techno_base(family, index, &raw, &effective);
+                self.process_techno_base(family, index, &raw);
                 // TechnoTypeClass::ReadINI parses `Prerequisite=` (`0x007141C5`)
                 // and `PrerequisiteOverride=` (`0x0071424B`) after `Dock=` and
                 // `DeploysInto=` (`0x00713180`, `0x00713279`), the reads above
@@ -2653,15 +2742,16 @@ impl RulesPassProcessor {
                     member.infantry_pips.apply_pass(&raw);
                     member.infantry_infiltration.apply_pass(&raw);
                 }
+                // Native ObjectType5F933B copies Rules Image into its 25-byte
+                // field (+1F8) using the retained field as default. The
+                // reached-body projection holds the last input, so applying
+                // that native cut here preserves the same image across missing
+                // keys and registry handoffs. It names each fixed ART section
+                // below; the later ART Image redirect is local to visual asset
+                // loading.
+                let image = effective.read_string("Image", &native_stored_id, 0x19);
                 match family {
                     RulesTypeFamily::Building => {
-                        // Native ObjectType5F933B copies Rules Image into its
-                        // 25-byte field using the retained field as default.
-                        // The reached-body projection holds the last input, so
-                        // applying that native cut here preserves the same image
-                        // across missing keys and registry handoffs. The later
-                        // ART Image redirect is local to visual asset loading.
-                        let image = effective.read_string("Image", &native_stored_id, 0x19);
                         let member = &mut self.families.get_mut(&family).unwrap()[index];
                         // ReadINI460F50..460F9C: exact Rules key, ReadCoord529CA0,
                         // current value as default, no clamp or conversion.
@@ -2704,19 +2794,19 @@ impl RulesPassProcessor {
                         self.families.get_mut(&family).unwrap()[index]
                             .secret_lab
                             .read_flag(&raw);
-                        self.allocate_fixed_art_techno_reference(
+                        // ToOverlay's ART section is +1F8 (0x004610DE).
+                        self.allocate_fixed_art_reference(
                             fixed_art,
-                            &native_stored_id,
-                            &effective,
+                            &image,
                             "ToOverlay",
                             RulesTypeFamily::Overlay,
                         );
                     }
                     RulesTypeFamily::Aircraft => {
-                        self.allocate_fixed_art_techno_reference(
+                        // Trailer's ART section is +1F8 (0x0041CCB5).
+                        self.allocate_fixed_art_reference(
                             fixed_art,
-                            &native_stored_id,
-                            &effective,
+                            &image,
                             "Trailer",
                             RulesTypeFamily::Animation,
                         );
@@ -2726,11 +2816,10 @@ impl RulesPassProcessor {
                         member.unit_speed_type = member
                             .unit_speed_type
                             .read_vehicle_pass(&raw, effective.read_bool("Crusher", false));
-                        // Object5F933B retains the Image buffer+1F8; Unit7477C1
-                        // uses that section without a type-name fallback. The
-                        // existing reached-body projection retains Image/Turret
-                        // defaults across only the admitted Rules passes.
-                        let image = effective.read_string("Image", &native_stored_id, 0x19);
+                        // Unit7477C1 uses the +1F8 section without a type-name
+                        // fallback. The existing reached-body projection
+                        // retains the Turret default across only the admitted
+                        // Rules passes.
                         let has_turret = effective.read_bool("Turret", false);
                         self.families.get_mut(&family).unwrap()[index]
                             .unit_shp
@@ -2769,40 +2858,79 @@ impl RulesPassProcessor {
         }
     }
 
-    fn process_techno_base(
-        &mut self,
-        family: RulesTypeFamily,
-        index: usize,
-        raw: &IniSection,
-        effective: &IniSection,
-    ) {
+    fn process_techno_base(&mut self, family: RulesTypeFamily, index: usize, raw: &IniSection) {
         let _ = self.resolve_scalar_from(raw, "DeathWeapon", RulesTypeFamily::Weapon, 0x80);
         self.allocate_list_from(raw, "DebrisTypes", RulesTypeFamily::VoxelAnimation, 0x80);
         self.allocate_list_from(raw, "DebrisAnims", RulesTypeFamily::Animation, 0x80);
 
-        let turret_count = effective.read_int("TurretCount", 0);
-        let weapon_count = effective.read_int("WeaponCount", 0);
-        let clear_all_weapons = effective.read_bool("ClearAllWeapons", false);
-        if turret_count >= 1 && weapon_count > 0 {
-            for slot in 1..=weapon_count {
-                let _ = self.resolve_scalar_from(
+        // TechnoType ReadINI 0x0071284A..0x00712AAD. IsChargeTurret, read at
+        // 0x0071287E between WeaponCount and ClearAllWeapons, is GunnerTurrets'.
+        let mut slots = std::mem::take(&mut self.family_mut(family)[index].weapon_slots);
+        slots.turret_count = raw.read_int("TurretCount", slots.turret_count);
+        slots.weapon_count = raw.read_int("WeaponCount", slots.weapon_count);
+        slots.clear_all_weapons = raw.read_bool("ClearAllWeapons", slots.clear_all_weapons);
+        if slots.turret_count > 0 {
+            // 0x007128C0..0x0071299E: Weapon%d then EliteWeapon%d for
+            // 1..=WeaponCount, each ReadString128 empty read keeping the slot.
+            for slot in 1..=slots.weapon_count {
+                let base = self.resolve_scalar_from(
                     raw,
                     &format!("Weapon{slot}"),
                     RulesTypeFamily::Weapon,
                     0x80,
                 );
-                let _ = self.resolve_scalar_from(
+                let elite = self.resolve_scalar_from(
                     raw,
                     &format!("EliteWeapon{slot}"),
                     RulesTypeFamily::Weapon,
                     0x80,
                 );
+                // RESIDUAL: native has no bound, so WeaponCount > 18 stores
+                // past both arrays (slot 19's base write lands on
+                // ClearAllWeapons at +A90). VERA allocates every authored slot
+                // but keeps the first 18. Retail's largest WeaponCount is 17.
+                let Some(slot) = usize::try_from(slot - 1)
+                    .ok()
+                    .filter(|&slot| slot < WEAPON_SLOT_COUNT)
+                else {
+                    continue;
+                };
+                if let Some(weapon) = base {
+                    slots.base[slot] = weapon;
+                }
+                if let Some(weapon) = elite {
+                    slots.elite[slot] = weapon;
+                }
             }
-        } else if turret_count < 1 && !clear_all_weapons {
-            for key in ["Primary", "Secondary", "ElitePrimary", "EliteSecondary"] {
-                let _ = self.resolve_scalar_from(raw, key, RulesTypeFamily::Weapon, 0x80);
+        } else if !slots.clear_all_weapons {
+            // 0x007129AB..0x00712A89: Primary/Secondary are base slots 0/1,
+            // ElitePrimary/EliteSecondary elite slots 0/1.
+            for (key, elite, slot) in [
+                ("Primary", false, 0),
+                ("Secondary", false, 1),
+                ("ElitePrimary", true, 0),
+                ("EliteSecondary", true, 1),
+            ] {
+                if let Some(weapon) =
+                    self.resolve_scalar_from(raw, key, RulesTypeFamily::Weapon, 0x80)
+                {
+                    let array = if elite {
+                        &mut slots.elite
+                    } else {
+                        &mut slots.base
+                    };
+                    array[slot] = weapon;
+                }
             }
         }
+        if slots.clear_all_weapons {
+            // 0x00712A8F..0x00712AAD clears slots 0 and 1 after either branch.
+            for array in [&mut slots.base, &mut slots.elite] {
+                array[0] = None;
+                array[1] = None;
+            }
+        }
+        self.family_mut(family)[index].weapon_slots = slots;
 
         self.allocate_list_from(raw, "Dock", RulesTypeFamily::Building, 0x80);
         let _ = self.resolve_scalar_from(raw, "DeploysInto", RulesTypeFamily::Building, 0x80);
@@ -2868,19 +2996,17 @@ impl RulesPassProcessor {
             raw.read_int("RadialFireSegments", member.radial_fire_segments);
     }
 
-    fn allocate_fixed_art_techno_reference(
+    fn allocate_fixed_art_reference(
         &mut self,
         fixed_art: &IniFile,
-        native_stored_id: &str,
-        effective: &IniSection,
+        image: &str,
         key: &str,
         family: RulesTypeFamily,
     ) {
-        let image = effective.read_string("Image", native_stored_id, 0x80);
         if image.is_empty() {
             return;
         }
-        if let Some(section) = fixed_art.section(&image) {
+        if let Some(section) = fixed_art.section(image) {
             let _ = self.resolve_scalar_from(section, key, family, 0x80);
         }
     }
@@ -3038,8 +3164,14 @@ impl RulesPassProcessor {
             if let Some((_id, raw, _effective)) =
                 self.begin_rules_member_read(RulesTypeFamily::ParticleSystem, index, pass)
             {
-                let holds_what = raw.read_string("HoldsWhat", "undefined", 0x40);
-                self.find_or_allocate(RulesTypeFamily::Particle, &holds_what);
+                // ParticleSystemType ReadINI 0x0064430F..0x00644323: ReadString
+                // into 0x40 bytes over the shared empty default 0x00889F64,
+                // then an unconditional ParticleType FindOrAllocate whose index
+                // replaces +294. A reached pass without HoldsWhat therefore
+                // binds the empty-named ParticleType.
+                let holds_what = raw.read_string("HoldsWhat", "", 0x40);
+                let particle = self.find_or_allocate_particle(&holds_what);
+                self.family_mut(RulesTypeFamily::ParticleSystem)[index].holds_what = particle;
             }
             index += 1;
         }
@@ -3308,32 +3440,8 @@ impl RulesPassProcessor {
             }
         }
         for family in [RulesTypeFamily::Weapon, RulesTypeFamily::Projectile] {
-            if let Some(members) = self.families.get(&family) {
-                for member in members {
-                    let mut body = member.body.clone();
-                    if family == RulesTypeFamily::Weapon {
-                        // Compatibility graph discovery follows retained
-                        // pointers even after an empty key read. A native none
-                        // reference is distinct from the empty-string retention.
-                        if let Some(index) = member.weapon.projectile {
-                            body.set(
-                                "Projectile",
-                                &self.families[&RulesTypeFamily::Projectile][index]
-                                    .native_stored_id,
-                            );
-                        }
-                        body.set("Damage", &member.weapon.damage.to_string());
-                        body.set(
-                            "Warhead",
-                            member.weapon.warhead.map_or("none", |index| {
-                                self.families[&RulesTypeFamily::Warhead][index]
-                                    .native_stored_id
-                                    .as_str()
-                            }),
-                        );
-                    }
-                    ini.replace_first_section(body);
-                }
+            for member in self.families.get(&family).into_iter().flatten() {
+                ini.replace_first_section(member.body.clone());
             }
         }
         for member in &self.tiberiums {
@@ -3431,3 +3539,7 @@ mod chrono_beam_rules_tests;
 #[cfg(test)]
 #[path = "control_line_rules_tests.rs"]
 mod control_line_rules_tests;
+
+#[cfg(test)]
+#[path = "native_type_reader_tests.rs"]
+mod native_type_reader_tests;

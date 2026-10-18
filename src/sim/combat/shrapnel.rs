@@ -270,6 +270,7 @@ pub(super) fn emit_projectile_shrapnel(
                 target,
                 child_weapon,
                 location,
+                None,
             );
         }
     };

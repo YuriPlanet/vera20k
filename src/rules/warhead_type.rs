@@ -296,11 +296,6 @@ impl WarheadType {
         let percent_at_max_f64 = f64::from(percent_at_max_native);
         let delay_kill_at_max_f64 = f64::from(section.read_float("DelayKillAtMax", 1.0));
 
-        let anim_list: Vec<String> = section
-            .read_list("AnimList", 0x80)
-            .map(|tokens| tokens.into_iter().map(str::to_owned).collect())
-            .unwrap_or_default();
-
         let debris_types: Vec<String> = section
             .read_list("DebrisTypes", 0x80)
             .map(|tokens| tokens.into_iter().map(str::to_owned).collect())
@@ -340,11 +335,14 @@ impl WarheadType {
             penetrates_bunker: section.read_bool("PenetratesBunker", false),
             affects_allies: section.read_bool("AffectsAllies", true),
             psychic_damage: section.read_bool("PsychicDamage", false),
-            anim_list,
+            // Conventional, AnimList and EMEffect keep the constructor's false
+            // and empty values (`0x0075CF89`, `0x0075CFB3`): the ordered Rules
+            // processor owns those reads and RuleSet publishes its result.
+            anim_list: Vec::new(),
             inf_death: section.read_int("InfDeath", 1).clamp(0, 10) as u8,
 
             // Bool fields — all default false
-            conventional: section.read_bool("Conventional", false),
+            conventional: false,
             rocker: section.read_bool("Rocker", false),
             direct_rocker: section.read_bool("DirectRocker", false),
             tiberium: section.read_bool("Tiberium", false),
@@ -374,7 +372,7 @@ impl WarheadType {
             electric_assault: section.read_bool("ElectricAssault", false),
             bomb_disarm: section.read_bool("BombDisarm", false),
             nuke_maker: section.read_bool("NukeMaker", false),
-            em_effect: section.read_bool("EMEffect", false),
+            em_effect: false,
 
             // List fields
             debris_types,

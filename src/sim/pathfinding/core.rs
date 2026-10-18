@@ -16,6 +16,7 @@
 use super::native_heap::NativeHeap;
 use super::search_table::SearchTable;
 use super::zone_hierarchy::{MarkedZones, ZoneLevelGraph};
+use super::zone_map::ZoneId;
 use super::zone_search::PathSearchFailure;
 use crate::map::bridge_facts::BRIDGE_FLAG_ANCHOR_SELF;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
@@ -380,18 +381,58 @@ impl BlockerNeighborCounts {
     }
 }
 
-/// A* expansion gate produced by `Zone_precheck`.
+/// A* expansion gate produced by `Zone_precheck`, and the search's progress
+/// along the precheck's level-0 route.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct HierarchyGate<'a> {
     pub level0_zones: &'a ZoneLevelGraph,
     pub marked_level0: &'a MarkedZones,
     pub blocker_neighbor_counts: &'a BlockerNeighborCounts,
+    /// The precheck's level-0 route, start zone first (`PathfinderClass+0xBC`).
+    pub level0_route: &'a [ZoneId],
+    /// Written by the search, read by the retry after it fails.
+    pub progress: &'a Cell<RouteProgress>,
+}
+
+/// How far a corridor search got along its level-0 route:
+/// `PathfinderClass+0x6C`, the index of the furthest route zone reached in
+/// route order, and `+0x70`, the first cell given a node there.
+/// `AStar_main_loop` starts them at 0 and the start cell
+/// (`0x00429BCD..0x00429BDA`); `UpdateHierarchicalEdges` (`0x0042CCD0`)
+/// floods from the cell after a failed search.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct RouteProgress {
+    pub index: usize,
+    pub cell: (u16, u16),
 }
 
 impl HierarchyGate<'_> {
     fn allows(&self, x: u16, y: u16) -> bool {
         let zone = self.level0_zones.zone_at(x, y);
         self.marked_level0.contains(&zone) || self.blocker_neighbor_counts.count_at(x, y) != 0
+    }
+
+    /// A node created at `cell` in the route's next zone moves the progress
+    /// there (`0x0042A159..0x0042A178`, every created node, the Tube exit's
+    /// included). One zone at a time: the furthest zone is the one reached
+    /// in route order. Residual: native reads the route word past its end
+    /// (`+0xBE + index * 2`), a stale word an earlier, longer precheck left
+    /// on the shared Pathfinder; here the route ends there. Trigger: a
+    /// corridor search that reaches the goal's zone, fails, and gives a node
+    /// in the zone that stale word names. Effect: the retry floods from an
+    /// earlier cell. Frequency: rare; the search must fail after reaching the
+    /// goal's zone. Also native sign-extends the cell's zone word, so a zone
+    /// id from `0x8000` never matches; the corridor test above reads it
+    /// unsigned too, and retail maps stay far below that many zones.
+    fn advance(&self, cell: (u16, u16)) {
+        let progress = self.progress.get();
+        let next = self.level0_route.get(progress.index + 1);
+        if next == Some(&self.level0_zones.zone_at(cell.0, cell.1)) {
+            self.progress.set(RouteProgress {
+                index: progress.index + 1,
+                cell,
+            });
+        }
     }
 }
 
@@ -800,6 +841,12 @@ pub fn astar_search(
     let start_cell = grid.cell(start.0, start.1).unwrap_or(&DEFAULT_BLOCKED_CELL);
     let goal_cell = grid.cell(goal.0, goal.1).unwrap_or(&DEFAULT_BLOCKED_CELL);
     let (start_height, goal_height) = initial_search_heights(start_cell, start_layer, goal_cell);
+    if let Some(gate) = options.hierarchy_gate {
+        gate.progress.set(RouteProgress {
+            index: 0,
+            cell: start,
+        });
+    }
 
     // 0x00429BF3..0x00429C0A: a start cell and height that are the goal's
     // skip the search, and AStar returns no route (0x0042A451).
@@ -1102,6 +1149,9 @@ pub fn astar_search(
                         on_bridge: neighbor_use_bridge,
                     },
                 );
+                if let Some(gate) = options.hierarchy_gate {
+                    gate.advance((nx, ny));
+                }
             }
 
             // Direction 8 is a TubeClass jump. It is not an adjacent neighbor and
@@ -1157,6 +1207,9 @@ pub fn astar_search(
                             on_bridge: false,
                         },
                     );
+                    if let Some(gate) = options.hierarchy_gate {
+                        gate.advance((nx, ny));
+                    }
                 }
             }
 

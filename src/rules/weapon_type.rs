@@ -34,7 +34,7 @@ pub struct WeaponType {
     // ── Core fields ──────────────────────────────────────────────────
     /// Section name in rules.ini (e.g., "105mm", "Vulcan", "RedEye2").
     pub id: String,
-    /// Base damage per hit.
+    /// Base damage per hit (`+0xA4`).
     pub damage: i32,
     /// Maximum range in cells (fixed-point for deterministic range checks).
     pub range: SimFixed,
@@ -62,9 +62,9 @@ pub struct WeaponType {
     /// per-pass ballistic postpass. Authored Speed=40 reads as 102. Zero alone
     /// does not designate hitscan; projectile type and launch determine motion.
     pub speed: i32,
-    /// Projectile type ID (references a [ProjectileName] section).
+    /// Projectile type ID (`+0xA0`, references a [ProjectileName] section).
     pub projectile: Option<String>,
-    /// Warhead type ID (references a [WarheadName] section).
+    /// Warhead type ID (`+0xAC`, references a [WarheadName] section).
     pub warhead: Option<String>,
     /// `Report=` firing sounds (references [SoundName] sections in
     /// soundmd.ini). Played each time this weapon fires.
@@ -204,24 +204,24 @@ impl WeaponType {
     }
 
     /// Parse a WeaponType from a rules.ini section.
+    ///
+    /// Damage, Speed, Projectile and Warhead keep the constructor's zero and
+    /// null (`0x00771C70`): the ordered Rules processor owns those reads
+    /// (Damage `0x007722E3`, Speed `0x007722FD`, Warhead `0x0077295F`,
+    /// Projectile `0x00772998`) and the speed postpass (`0x007729F0`), and
+    /// `RuleSet` builds each weapon with its retained values.
     pub fn from_ini_section(id: &str, section: &IniSection) -> Self {
         Self {
             id: id.to_string(),
-            damage: section.read_int("Damage", 0),
+            damage: 0,
             range: sim_from_f32(section.read_double("Range", 0.0) as f32),
             // `WeaponTypeClass::Constructor` 0x00771C70 zeroes +0xB4 at
             // 0x00771CB6, so an absent (or literal `-1`) key leaves 0.
             range_leptons: section.read_range("Range", 0),
             rof: section.read_int("ROF", 0),
-            // Weapon771C70 initializes +A8 to zero; ReadINI7722FD calls
-            // ReadSpeed474810. Ordered Rules processing applies the later
-            // Weapon7729F0 postpass to the live retained value.
-            speed: section.read_speed("Speed", 0),
-            // ReadString 0x80 ahead of each type lookup (`0x00772998`,
-            // `0x0077295F`).
-            projectile: section.read_name("Projectile", 0x80).map(str::to_string),
-            // 75E3B0 answers null for `none`, which the retained projection writes.
-            warhead: section.read_type_name("Warhead", 0x80).map(str::to_string),
+            speed: 0,
+            projectile: None,
+            warhead: None,
             report: sound_list(section, "Report"),
             burst: section.read_int("Burst", 1),
             // Constructor 1 (`0x00771DBB`); ReadINI passes it as the default
@@ -523,12 +523,17 @@ mod tests {
 
     #[test]
     fn test_parse_weapon() {
-        let ini: IniFile = IniFile::from_str(
-            "[105mm]\nDamage=65\nROF=50\nRange=5.75\nSpeed=40\n\
-             Projectile=InvisibleLow\nWarhead=AP\n",
-        );
-        let section: &IniSection = ini.section("105mm").unwrap();
-        let weapon: WeaponType = WeaponType::from_ini_section("105mm", section);
+        // Damage, Speed, Projectile and Warhead come from the ordered Rules
+        // owner. A nonzero ROT keeps the ballistic postpass off ReadSpeed's
+        // value.
+        let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
+            "[VehicleTypes]\n0=MTNK\n[MTNK]\nPrimary=105mm\n\
+             [105mm]\nDamage=65\nROF=50\nRange=5.75\nSpeed=40\n\
+             Projectile=InvisibleLow\nWarhead=AP\n\
+             [InvisibleLow]\nROT=1\n",
+        ))
+        .unwrap();
+        let weapon = rules.weapon("105mm").unwrap();
 
         assert_eq!(weapon.id, "105mm");
         assert_eq!(weapon.damage, 65);

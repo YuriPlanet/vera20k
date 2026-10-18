@@ -29,9 +29,7 @@ use crate::rules::native_processing::{
     ProcessedRulesLayers, RulesLayerStack, house_type_index_of_name,
 };
 use crate::rules::object_type::{BuildCategory, FactoryType, ObjectCategory, ObjectType};
-use crate::rules::particle_system_type::{
-    ParticleSystemType, ParticleSystemTypeId, PendingParticleSystemType,
-};
+use crate::rules::particle_system_type::{ParticleSystemType, ParticleSystemTypeId};
 use crate::rules::particle_type::{ParticleType, ParticleTypeId, PendingParticleType};
 use crate::rules::prerequisite::{Prerequisite, PrerequisiteGroup};
 use crate::rules::projectile_type::ProjectileType;
@@ -2160,9 +2158,20 @@ impl PrismSupportRules {
 pub(crate) const DEFAULT_SURVIVOR_DIVISORS: [i32; 3] = [200, 100, 300];
 /// RulesClass665D92 initializes retained General.MaximumCheerRate (+580).
 pub(crate) const DEFAULT_MAXIMUM_CHEER_RATE: i32 = 1;
+/// RulesClass665650's literal AmbientChangeRate (0.2) and AmbientChangeStep
+/// (0.1) doubles, before the AudioVisual authored reads.
+pub(crate) const DEFAULT_AMBIENT_CHANGE_RATE: NativeF64Bits =
+    NativeF64Bits::from_bits(0x3fc9_9999_9999_999a);
+pub(crate) const DEFAULT_AMBIENT_CHANGE_STEP: NativeF64Bits =
+    NativeF64Bits::from_bits(0x3fb9_9999_9999_999a);
 
 impl Default for GeneralRules {
     fn default() -> Self {
+        let (ambient_change_rate_nonzero, ambient_change_interval_frames, ambient_change_step) =
+            ambient_change_terms(
+                f64::from_bits(DEFAULT_AMBIENT_CHANGE_RATE.bits()),
+                f64::from_bits(DEFAULT_AMBIENT_CHANGE_STEP.bits()),
+            );
         Self {
             max_waypoint_path_length: 15,
             talk_bubble_time: 300,
@@ -2523,9 +2532,9 @@ impl Default for GeneralRules {
             lightning_warhead: String::new(),
             weather_con_bolt_explosion: String::new(),
             weapon_nullify_anim: String::new(),
-            ambient_change_rate_nonzero: true,
-            ambient_change_interval_frames: 180,
-            ambient_change_step: 10,
+            ambient_change_rate_nonzero,
+            ambient_change_interval_frames,
+            ambient_change_step,
             iron_curtain_duration: 0,
             iron_curtain_invoke_anim: String::new(),
             chrono_placement_anim: String::new(),
@@ -3097,7 +3106,6 @@ impl GeneralRules {
         // `WARPOUT` — matching gamemd's behaviour.
         let parse_anim_name =
             |key: &str, default: &str| -> String { general.read_string(key, default, 0x80) };
-        let talk_bubble_time = general.read_talk_bubble_time(defaults.talk_bubble_time);
         let mut infantry_death_anims = defaults.infantry_death_anims.clone();
         for (index, key, fallback) in [
             (3, "InfantryExplode", "S_BANG34"),
@@ -3392,7 +3400,7 @@ impl GeneralRules {
             crate_promote_sound: audio_visual
                 .read_name("CratePromoteSound", 0x80)
                 .map(str::to_owned),
-            talk_bubble_time,
+            talk_bubble_time: defaults.talk_bubble_time,
             elite_flash_timer: audio_visual.read_int("EliteFlashTimer", defaults.elite_flash_timer),
             idle_action_frequency: audio_visual
                 .read_double("IdleActionFrequency", defaults.idle_action_frequency),
@@ -4117,20 +4125,35 @@ impl RuleSet {
         }
         for (category, id, tech_level) in processed.techno_type_states() {
             let key = (category, id.to_ascii_uppercase());
-            let handle = (native_identity_counts[&key] == 1)
-                .then(|| rules.object_category_index.get(&key).copied())
-                .flatten()
+            let object = rules
+                .object_category_index
+                .get(&key)
+                .copied()
                 .filter(|handle| rules.object_by_handle(*handle).id == id);
-            if let Some(handle) = handle {
+            if let Some(object) = object {
                 // TechnoType+634 is retained typed state, not a merged INI
                 // default: reached ReadINI714570 and outgoing106 handoff.
-                rules.object_list[handle.0 as usize].tech_level = tech_level;
+                // Equal truncated stored IDs share one projected object, which
+                // the last such member's body built; its value is written last.
+                rules.object_list[object.0 as usize].tech_level = tech_level;
             }
+            let handle = object.filter(|_| native_identity_counts[&key] == 1);
             rules
                 .native_techno_type_order
                 .push((category, id.to_owned(), handle));
         }
-        rules.mind_control.attack_line_frames = processed.mind_control_attack_line_frames();
+        for (category, name, slots) in processed.weapon_slot_states() {
+            if let Some(object) = rules
+                .object_list
+                .iter_mut()
+                .find(|object| object.category == category && object.id == name)
+            {
+                object.turret_count = slots.turret_count();
+                object.weapon_count = slots.weapon_count();
+                object.weapon_list = slots.base().to_vec();
+                object.elite_weapon_list = slots.elite().to_vec();
+            }
+        }
         rules.crate_rules = processed.crate_rules().clone();
         rules.powerups = processed.powerups().clone();
         rules.general.metallic_debris = processed.metallic_debris().to_vec();
@@ -4214,7 +4237,7 @@ impl RuleSet {
                 .entry(name.to_ascii_uppercase())
                 .or_default() += 1;
         }
-        for (name, speed, projectile, damage, warhead) in processed.weapon_states() {
+        for (name, _, _, _, warhead) in processed.weapon_states() {
             // Abstract410800 truncates stored IDs to24 bytes, but native
             // FindOrAllocate compares the full incoming name. Do not alias two
             // such Types through Action42's ordinal lookup. The wider existing
@@ -4225,18 +4248,6 @@ impl RuleSet {
                     warhead_name_counts.get(&name.to_ascii_uppercase()) == Some(&1)
                 });
             rules.weapon_array.push((name.to_owned(), unambiguous));
-            // Every consumer keeps the retained fields, as speed/projectile
-            // did before; only the ordinal admission above is gated.
-            if let Some(weapon) = rules
-                .weapons
-                .values_mut()
-                .find(|weapon| weapon.id.eq_ignore_ascii_case(name))
-            {
-                weapon.speed = speed;
-                weapon.projectile = projectile.map(str::to_owned);
-                weapon.damage = damage;
-                weapon.warhead = warhead.map(str::to_owned);
-            }
         }
         for (name, speed_type) in processed.unit_speed_type_states() {
             if let Some(object) = rules
@@ -4581,6 +4592,26 @@ impl RuleSet {
         Self::from_processed_rules(&RulesLayerStack::new(ini.clone()).process_with_fixed_art(art)?)
     }
 
+    /// [`Self::from_ini`] with the type sounds bound, as production binds
+    /// them, against a SOUNDMD `[SoundList]` of `sound_names`.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn from_ini_with_sounds_for_test(
+        ini: &IniFile,
+        sound_names: &[&str],
+    ) -> Result<Self, RulesError> {
+        let mut catalog = String::from("[SoundList]\n");
+        for (index, name) in sound_names.iter().enumerate() {
+            catalog.push_str(&format!("{index}={name}\n"));
+        }
+        let processed = RulesLayerStack::new(ini.clone()).process()?;
+        let mut rules = Self::from_processed_rules(&processed)?;
+        rules.bind_type_sound_references(
+            processed.ini(),
+            &crate::rules::sound_ini::SoundRegistry::from_ini(&IniFile::from_str(&catalog)),
+        );
+        Ok(rules)
+    }
+
     fn from_projected_ini(
         processed: &ProcessedRulesLayers,
         country_side_registry: ProjectedCountrySideRegistry,
@@ -4798,70 +4829,42 @@ impl RuleSet {
             object_list[handle.0 as usize].build_const_eligible = true;
         }
 
-        // Step 2: Collect all weapon IDs referenced by objects.
-        let mut weapon_ids = collect_weapon_refs(&object_list);
-        // Existing process-resident weapons remain allocated even when no
-        // current object references them. Action42 indexes this native family
-        // directly (6E2390), so materialize the same retained bodies.
-        weapon_ids.extend(processed.weapon_states().map(|(id, ..)| id.to_owned()));
-        if let Some(default_death_weapon) = ini
-            .section_or_empty("CombatDamage")
-            .read_name("DeathWeapon", 0x80)
-        {
-            weapon_ids.insert(default_death_weapon.to_string());
-        }
-        // `SuperWeaponTypeClass::ReadINI` allocates its `WeaponType=` too
-        // (`WeaponTypeClass::FindOrAllocate @ 0x00772FA0` at `0x006CEA7D`):
-        // the nuclear missile's `NukeCarrier`.
-        for sw_id in parse_registry(ini, "SuperWeaponTypes") {
-            if let Some(name) = ini
-                .section(&sw_id)
-                .and_then(|section| section.read_name("WeaponType", 0x80))
-            {
-                weapon_ids.insert(name.to_string());
-            }
-        }
-
-        // Step 3: Parse weapon sections.
+        // Step 2: WeaponTypes. The ordered Rules processor allocated every
+        // weapon a reached reader names (TechnoType slots, DeathWeapon,
+        // OccupyWeapon, SuperWeapon WeaponType, [CombatDamage] DeathWeapon,
+        // Projectile AirburstWeapon/ShrapnelWeapon, ...) and keeps each one
+        // even when nothing current references it: Action42 indexes this
+        // family directly (6E2390). Its retained Damage, Speed, Projectile and
+        // Warhead are the only reads of those keys.
         let mut weapons: LookupMap<String, WeaponType> = LookupMap::default();
-        // RulesClass allocates every value in [Warheads] before the per-type
-        // ReadINI pass. Keep reference-driven allocations too: later rules
-        // layers and runtime-specific globals can create warheads outside the
-        // explicit registry.
-        let mut warhead_ids: HashSet<String> =
-            parse_registry(ini, "Warheads").into_iter().collect();
-
-        for weapon_id in &weapon_ids {
-            if let Some(section) = ini.section(weapon_id) {
-                // Find-or-allocate by the section's canonical header name, so two
-                // references differing only in case resolve to a single type (the
-                // original engine allocates one type per section, matched
-                // case-insensitively). The header name is unique, so the key is
-                // deterministic regardless of reference iteration order.
-                let canonical = section.name.clone();
-                if weapons.contains_key(&canonical) {
-                    continue;
-                }
-                let weapon: WeaponType = WeaponType::from_ini_section(&canonical, section);
-                // Also collect warhead references from weapons themselves.
-                if let Some(wh) = &weapon.warhead {
-                    warhead_ids.insert(wh.clone());
-                }
-                weapons.insert(canonical, weapon);
-            } else {
-                log::trace!("Weapon '{}' referenced but has no section", weapon_id);
-            }
+        for (weapon_id, speed, projectile, damage, warhead) in processed.weapon_states() {
+            let Some(section) = ini.section(weapon_id) else {
+                log::trace!("Weapon '{}' allocated but has no section", weapon_id);
+                continue;
+            };
+            let mut weapon = WeaponType::from_ini_section(&section.name, section);
+            weapon.speed = speed;
+            weapon.projectile = projectile.map(str::to_owned);
+            weapon.damage = damage;
+            weapon.warhead = warhead.map(str::to_owned);
+            weapons.insert(section.name.clone(), weapon);
         }
 
-        // Step 4: Parse warhead sections.
-        // The radiation-field warhead is referenced by [Radiation], not by any
+        // Step 3: Parse warhead sections. The projected [Warheads] registry is
+        // the processor's whole Warhead family: the [Warheads] values and
+        // every reference-driven allocation, weapons' warheads included. The
+        // radiation-field warhead is referenced by [Radiation], not by any
         // weapon — pull it into the referenced set explicitly so the periodic
         // radiation damage can resolve it.
+        let mut warhead_ids: HashSet<String> =
+            parse_registry(ini, "Warheads").into_iter().collect();
         warhead_ids.insert(radiation.site_warhead.clone());
         let mut warheads: LookupMap<String, WarheadType> = LookupMap::default();
         for warhead_id in &warhead_ids {
             if let Some(section) = ini.section(warhead_id) {
-                // Find-or-allocate by canonical section name (see weapons above).
+                // Find-or-allocate by the section's canonical header name, so
+                // two references differing only in case resolve to one type
+                // (the original engine matches case-insensitively).
                 let canonical = section.name.clone();
                 warheads
                     .entry(canonical.clone())
@@ -4871,7 +4874,7 @@ impl RuleSet {
             }
         }
 
-        // Step 5: Collect projectile IDs referenced by weapons and parse them.
+        // Step 4: Collect projectile IDs referenced by weapons and parse them.
         let mut projectiles: LookupMap<String, ProjectileType> = LookupMap::default();
         let mut projectile_ids: HashSet<String> = HashSet::new();
         for weapon in weapons.values() {
@@ -4881,7 +4884,7 @@ impl RuleSet {
         }
         for proj_id in &projectile_ids {
             if let Some(section) = ini.section(proj_id) {
-                // Find-or-allocate by canonical section name (see weapons above).
+                // Find-or-allocate by canonical section name (see warheads above).
                 // Stock rulesmd references [InvisibleLow] as both "InvisibleLow"
                 // and "Invisiblelow"; this collapses them to one entry, as the
                 // original engine does.
@@ -4894,87 +4897,7 @@ impl RuleSet {
             }
         }
 
-        // ShrapnelWeapon is a ProjectileType-owned weapon reference, so it is
-        // discovered only after the first projectile pass. Follow that graph
-        // to closure before runtime detonation; otherwise an otherwise valid
-        // child weapon/projectile pair silently disappears from live Shrapnel.
-        loop {
-            let mut nested_weapon_ids: Vec<String> = projectiles
-                .values()
-                .filter_map(|projectile| projectile.shrapnel_weapon.clone())
-                .filter(|weapon_id| {
-                    !weapons
-                        .keys()
-                        .any(|existing| existing.eq_ignore_ascii_case(weapon_id))
-                })
-                .collect();
-            nested_weapon_ids.sort_by_key(|id| id.to_ascii_uppercase());
-            nested_weapon_ids.dedup_by(|left, right| left.eq_ignore_ascii_case(right));
-            if nested_weapon_ids.is_empty() {
-                break;
-            }
-
-            let mut nested_projectile_ids = Vec::new();
-            let mut inserted_weapon = false;
-            for weapon_id in nested_weapon_ids {
-                let Some(section) = ini.section(&weapon_id) else {
-                    log::trace!("Shrapnel weapon '{}' has no section", weapon_id);
-                    continue;
-                };
-                let canonical = section.name.clone();
-                let weapon = WeaponType::from_ini_section(&canonical, section);
-                if let Some(warhead) = &weapon.warhead {
-                    warhead_ids.insert(warhead.clone());
-                }
-                if let Some(projectile) = &weapon.projectile {
-                    nested_projectile_ids.push(projectile.clone());
-                }
-                weapons.insert(canonical, weapon);
-                inserted_weapon = true;
-            }
-
-            if !inserted_weapon {
-                break;
-            }
-
-            for projectile_id in nested_projectile_ids {
-                if projectiles
-                    .keys()
-                    .any(|existing| existing.eq_ignore_ascii_case(&projectile_id))
-                {
-                    continue;
-                }
-                let Some(section) = ini.section(&projectile_id) else {
-                    log::trace!("Shrapnel projectile '{}' has no section", projectile_id);
-                    continue;
-                };
-                let canonical = section.name.clone();
-                projectiles.insert(
-                    canonical.clone(),
-                    ProjectileType::from_ini_section(&canonical, section, None),
-                );
-            }
-        }
-
-        // The initial warhead pass precedes ProjectileType-owned weapon
-        // discovery. Allocate any newly referenced child warheads now.
-        for warhead_id in &warhead_ids {
-            if warheads
-                .keys()
-                .any(|existing| existing.eq_ignore_ascii_case(warhead_id))
-            {
-                continue;
-            }
-            if let Some(section) = ini.section(warhead_id) {
-                let canonical = section.name.clone();
-                warheads.insert(
-                    canonical.clone(),
-                    WarheadType::from_ini_section(&canonical, section),
-                );
-            }
-        }
-
-        // Step 6: Build factory lookup map from Factory= keys on all objects.
+        // Step 5: Build factory lookup map from Factory= keys on all objects.
         let factory_map: HashMap<String, FactoryType> = object_list
             .iter()
             .filter_map(|obj| {
@@ -4984,7 +4907,7 @@ impl RuleSet {
             .collect();
         log::info!("Factory map: {} entries", factory_map.len());
 
-        // Step 7: Parse superweapon type registry.
+        // Step 6: Parse superweapon type registry.
         let mut super_weapons: HashMap<String, SuperWeaponType> = HashMap::new();
         let sw_ids: Vec<String> = parse_registry(ini, "SuperWeaponTypes");
         let super_weapon_order: Vec<String> = sw_ids.clone();
@@ -5016,7 +4939,10 @@ impl RuleSet {
             .map(crate::rules::bridge_warheads::BridgeWarheads::from_ini_section)
             .unwrap_or_default();
 
-        let mind_control = crate::rules::mind_control_rules::MindControlRules::from_ini(ini);
+        let mind_control = crate::rules::mind_control_rules::MindControlRules::from_ini(
+            ini,
+            processed.mind_control_attack_line_frames(),
+        );
 
         // [General] rocket blocks + [CombatDamage] missile warheads, retained
         // pass by pass by the ordered Process owner.
@@ -5053,12 +4979,12 @@ impl RuleSet {
                 .count(),
         );
 
-        // Step 8: Two-pass parse for [Particles] and [ParticleSystems].
-        // Cross-references (NextParticle, HoldsWhat) are resolved in pass 2 so
-        // that INI ordering does not matter.
+        // Step 7: Two-pass parse for [Particles] and [ParticleSystems].
+        // NextParticle is resolved in pass 2 so that INI ordering does not
+        // matter; HoldsWhat is the ordered Rules processor's retained binding.
         let (particle_types, particle_types_by_name) = parse_particle_types(ini);
         let (particle_system_types, particle_system_types_by_name) =
-            parse_particle_system_types(ini, &particle_types_by_name);
+            parse_particle_system_types(processed, &particle_types_by_name);
         let (voxel_anim_types, voxel_anim_types_by_name) = parse_voxel_anim_types(ini);
 
         log::info!(
@@ -6940,27 +6866,6 @@ fn project_country_side_registry(processed: &ProcessedRulesLayers) -> ProjectedC
     }
 }
 
-/// Collect all weapon IDs referenced by objects (deduplicated).
-fn collect_weapon_refs(objects: &[ObjectType]) -> HashSet<String> {
-    let mut weapon_ids: HashSet<String> = HashSet::new();
-
-    for obj in objects.iter() {
-        if let Some(ref w) = obj.occupy_weapon {
-            weapon_ids.insert(w.clone());
-        }
-        if let Some(ref w) = obj.elite_occupy_weapon {
-            weapon_ids.insert(w.clone());
-        }
-        if let Some(ref w) = obj.death_weapon {
-            weapon_ids.insert(w.clone());
-        }
-        weapon_ids.extend(obj.weapon_list.iter().flatten().cloned());
-        weapon_ids.extend(obj.elite_weapon_list.iter().flatten().cloned());
-    }
-
-    weapon_ids
-}
-
 /// Two-pass parse of `[Particles]`: collect `Pending` entries from each
 /// referenced section, then resolve each `NextParticle=` name to a
 /// `ParticleTypeId`. Missing references log a warning and stay `None`.
@@ -7019,9 +6924,6 @@ fn parse_particle_types(ini: &IniFile) -> (Vec<ParticleType>, HashMap<String, Pa
     (particle_types, by_name)
 }
 
-/// Two-pass parse of `[ParticleSystems]`: collect `Pending` entries and
-/// resolve each `HoldsWhat=` name against the already-built particle-type
-/// name map. Missing references log a warning and stay `None`.
 /// `[VoxelAnims]` registry: the flying-debris types a death throws.
 ///
 /// Registry order is the id order, exactly as for particles and particle
@@ -7051,58 +6953,61 @@ fn parse_voxel_anim_types(ini: &IniFile) -> (Vec<VoxelAnimType>, HashMap<String,
     (types, by_name)
 }
 
+/// `[ParticleSystems]` in registry order, each bound to the ParticleType its
+/// retained `HoldsWhat` names (ParticleSystemType+294).
+///
+/// RESIDUAL: a reached pass that omits `HoldsWhat` binds the native
+/// empty-named ParticleType, a section-less type with constructor values that
+/// the `[Particles]` projection cannot list. VERA holds `None`, so the system
+/// spawns none of that type's particles. Only a layer that states a system
+/// without its `HoldsWhat` reaches it; every retail ParticleSystem section is
+/// in RULESMD and names a particle.
 fn parse_particle_system_types(
-    ini: &IniFile,
+    processed: &ProcessedRulesLayers,
     p_by_name: &HashMap<String, ParticleTypeId>,
 ) -> (
     Vec<ParticleSystemType>,
     HashMap<String, ParticleSystemTypeId>,
 ) {
+    let ini = processed.ini();
     let ids: Vec<String> = parse_registry(ini, "ParticleSystems");
     if ids.is_empty() {
         return (Vec::new(), HashMap::new());
     }
+    // Equal truncated stored IDs share one projected body, the last such
+    // member's; its binding is inserted last.
+    let holds_what: HashMap<String, Option<&str>> = processed
+        .particle_system_holds_what_states()
+        .map(|(id, particle)| (id.to_ascii_uppercase(), particle))
+        .collect();
 
-    let mut pending: Vec<PendingParticleSystemType> = Vec::with_capacity(ids.len());
+    let mut particle_system_types = Vec::with_capacity(ids.len());
+    let mut by_name: HashMap<String, ParticleSystemTypeId> = HashMap::with_capacity(ids.len());
     for id in &ids {
-        if let Some(section) = ini.section(id) {
-            pending.push(ParticleSystemType::from_ini_section_pending(id, section));
-        } else {
+        let Some(section) = ini.section(id) else {
             log::trace!(
                 "ParticleSystemType '{}' listed in [ParticleSystems] but has no section",
                 id
             );
-        }
-    }
-
-    let mut by_name: HashMap<String, ParticleSystemTypeId> = HashMap::with_capacity(pending.len());
-    for (idx, pst) in pending.iter().enumerate() {
-        by_name.insert(
-            pst.partial.name.to_ascii_uppercase(),
-            ParticleSystemTypeId(idx as u32),
-        );
-    }
-
-    let particle_system_types: Vec<ParticleSystemType> = pending
-        .into_iter()
-        .map(|pst| {
-            let mut partial = pst.partial;
-            if let Some(ref holds_name) = pst.holds_what_name {
-                let key = holds_name.to_ascii_uppercase();
-                match p_by_name.get(&key) {
-                    Some(&id) => partial.holds_what = Some(id),
-                    None => {
-                        log::warn!(
-                            "ParticleSystemType '{}': HoldsWhat='{}' references unknown particle, leaving unresolved",
-                            partial.name,
-                            holds_name
-                        );
-                    }
-                }
+            continue;
+        };
+        let mut system = ParticleSystemType::from_ini_section(id, section);
+        if let Some(&Some(particle)) = holds_what.get(&id.to_ascii_uppercase()) {
+            system.holds_what = p_by_name.get(&particle.to_ascii_uppercase()).copied();
+            if system.holds_what.is_none() && !particle.is_empty() {
+                log::warn!(
+                    "ParticleSystemType '{}': HoldsWhat='{}' references unknown particle, leaving unresolved",
+                    id,
+                    particle
+                );
             }
-            partial
-        })
-        .collect();
+        }
+        by_name.insert(
+            id.to_ascii_uppercase(),
+            ParticleSystemTypeId(particle_system_types.len() as u32),
+        );
+        particle_system_types.push(system);
+    }
 
     log::info!("ParticleSystems: {} loaded", particle_system_types.len());
     (particle_system_types, by_name)
