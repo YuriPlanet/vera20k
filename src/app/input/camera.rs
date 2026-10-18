@@ -1645,6 +1645,17 @@ pub(crate) fn center_camera_on_lepton_point(
     clamp_camera_to_playable_area(state, sw, sh);
 }
 
+/// Home7315A0: use the shared SetView6D6070 owner, then clear the Follow
+/// pair through the input owner (4AEB30 at731826), even without a target.
+/// Refresh an armed building's foundation (4A91B0 at73181A) after SetView.
+pub(crate) fn apply_home_camera(state: &mut AppState, coord: Option<[i32; 3]>) {
+    if let Some([x, y, z]) = coord {
+        center_camera_on_lepton_point(state, x, y, z);
+    }
+    crate::app::match_runtime::sim_tick::update_building_placement_preview(state);
+    state.match_state.input.follow_target = None;
+}
+
 /// `CenterView` (Numpad 5 in the stock archive): snap the tactical view onto the
 /// current selection. Nothing selected means nothing happens.
 pub(crate) fn center_view_on_selection(state: &mut AppState) {

@@ -114,6 +114,10 @@ pub enum TriggerEffect {
     MusicTheme {
         request: ThemeRequest,
     },
+    /// Home7315A0 also clears Follow, including when no coordinate is found.
+    HomeCamera {
+        coord: Option<[i32; 3]>,
+    },
 }
 
 /// Original definition pointers translated to retained registry ordinals.
@@ -4022,6 +4026,19 @@ impl Simulation {
                     let _ = self.change_visible_map_area(raw_local_size, rules);
                 }
             }
+            145 => {
+                // Execute6DFDD6 calls Home7315A0 for PlayerPtr, independent
+                // of the incoming House/value. Resolve coordinates before
+                // the frame hash, including House50DF30's Dummy effects.
+                let coord = rules.and_then(|rules| {
+                    let cells = self
+                        .resolved_terrain
+                        .as_ref()
+                        .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+                    self.home_camera_coordinate(rules, cells.as_ref())
+                });
+                effects.push(TriggerEffect::HomeCamera { coord });
+            }
             ACTION_CENTER_CAMERA | ACTION_JUMP_CAMERA => {
                 // Execute6DD8B0 resolves GetWaypoint68BCC0 and native Cell
                 // ground/bridge state before FocusOn/CenterMap. Presentation
@@ -4401,6 +4418,10 @@ mod lightning_tests;
 #[cfg(test)]
 #[path = "trigger_runtime_house_directive_tests.rs"]
 mod house_directive_tests;
+
+#[cfg(test)]
+#[path = "trigger_runtime_home_camera_tests.rs"]
+mod home_camera_tests;
 
 #[cfg(test)]
 #[path = "trigger_runtime_explosion_tests.rs"]

@@ -1387,21 +1387,6 @@ impl Simulation {
         Some(leader)
     }
 
-    /// `HouseClass::Base_Center @ 0x0050DF30`: the centre of the house's base
-    /// cell (`HouseState::base_origin`), or `(0, 0)` without one.
-    fn house_base_center_xy(&self, owner: InternedId) -> [i32; 2] {
-        let origin = crate::sim::house_state::house_state_for_owner_id(&self.houses, owner)
-            .map_or((0, 0), |house| house.base_origin());
-        if origin == (0, 0) {
-            [0, 0]
-        } else {
-            [
-                i32::from(origin.0) * 256 + 128,
-                i32::from(origin.1) * 256 + 128,
-            ]
-        }
-    }
-
     /// Script action 54 (`0x006EFA10`), regroup at base: on its first frame
     /// the team's mission target becomes the cell `AISafeDistance=` cells
     /// from the leader's base centre towards its enemy's (a facing drawn
@@ -1427,8 +1412,17 @@ impl Simulation {
                 .map(|object| object.speed_type);
             let enemy = crate::sim::house_state::house_state_for_owner_id(&self.houses, owner)
                 .and_then(|house| house.enemy_house);
-            let own = self.house_base_center_xy(owner);
-            let enemy = enemy.map(|enemy| self.house_base_center_xy(enemy));
+            let cells = self
+                .resolved_terrain
+                .as_ref()
+                .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+            // 6EFAAE/6EFAF7: preserve the shared Map/Dummy query order.
+            let [own_x, own_y, _] = self.house_base_coordinate(owner, cells.as_ref());
+            let own = [own_x, own_y];
+            let enemy = enemy.map(|enemy| {
+                let [x, y, _] = self.house_base_coordinate(enemy, cells.as_ref());
+                [x, y]
+            });
             let seed = regroup_seed_cell(own, enemy, rules.general.ai_safe_distance, || {
                 self.scenario_rng.next_range_i32_inclusive(0, 255)
             });
@@ -1462,9 +1456,20 @@ impl Simulation {
             let owner = entity.owner();
             let enemy = crate::sim::house_state::house_state_for_owner_id(&self.houses, owner)?
                 .enemy_house?;
+            let cells = self
+                .resolved_terrain
+                .as_ref()
+                .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+            // 6EF7C0 precedes 6EF812; an empty enemy base returns before
+            // querying the own base, including its Map/Dummy side effects.
+            let enemy = self.house_base_coordinate(enemy, cells.as_ref());
+            if enemy == [0, 0, 0] {
+                return None;
+            }
+            let own = self.house_base_coordinate(owner, cells.as_ref());
             let seed = gather_seed_cell(
-                self.house_base_center_xy(owner),
-                self.house_base_center_xy(enemy),
+                [own[0], own[1]],
+                [enemy[0], enemy[1]],
                 crate::sim::movement::ground_pose::position_world_xy(&entity.position),
                 rules.general.ai_safe_distance,
             )?;

@@ -3221,88 +3221,22 @@ fn emit_selection_voice(state: &mut AppState, entity_id: u64) {
     }
 }
 
-/// Jump camera to the local player's base.
-///
-/// Priority: ConYard (structure with `UndeploysInto=`) → MCV (unit with `DeploysInto=`)
-/// → multiplayer start waypoint 0 as fallback.
+/// Home7315A0 is shared with TAction145. The client's map query forks
+/// Dummy writes so a local H press cannot change authoritative simulation.
 fn jump_camera_to_base(state: &mut AppState) {
-    let owner = preferred_local_owner_name(state);
-    let owner_name = owner.as_deref();
-
-    // Collect the target cell from simulation entities before mutating state.
-    let target: Option<(u16, u16)> = state
-        .match_state
-        .sim_runtime
-        .as_ref()
-        .map(|rt| &rt.simulation)
-        .and_then(|sim| {
-            let rules = state.rules();
-            // First pass: look for a ConYard (structure with UndeploysInto=).
-            let conyard = sim.entities().values().find(|e| {
-                e.category() == EntityCategory::Structure
-                    && owner_name
-                        .is_none_or(|o| sim.interner.resolve(e.owner()).eq_ignore_ascii_case(o))
-                    && rules
-                        .and_then(|r| sim.interner.object_type(e.type_ref(), r))
-                        .is_some_and(|o| o.undeploys_into.is_some())
-            });
-            if let Some(entity) = conyard {
-                log::info!(
-                    "H: jumping to ConYard {} at ({}, {})",
-                    sim.interner.resolve(entity.type_ref()),
-                    entity.position.rx(),
-                    entity.position.ry()
-                );
-                return Some((entity.position.rx(), entity.position.ry()));
-            }
-            // Second pass: look for an MCV (unit with DeploysInto=).
-            let mcv = sim.entities().values().find(|e| {
-                e.category() != EntityCategory::Structure
-                    && owner_name
-                        .is_none_or(|o| sim.interner.resolve(e.owner()).eq_ignore_ascii_case(o))
-                    && rules
-                        .and_then(|r| sim.interner.object_type(e.type_ref(), r))
-                        .is_some_and(|o| o.deploys_into.is_some())
-            });
-            if let Some(entity) = mcv {
-                log::info!(
-                    "H: jumping to MCV {} at ({}, {})",
-                    sim.interner.resolve(entity.type_ref()),
-                    entity.position.rx(),
-                    entity.position.ry()
-                );
-                return Some((entity.position.rx(), entity.position.ry()));
-            }
-            log::info!(
-                "H: no ConYard/MCV found (owner={:?}, entities={}, rules={})",
-                owner_name,
-                sim.entities().len(),
-                rules.is_some()
-            );
-            None
-        });
-
-    if let Some((rx, ry)) = target {
-        crate::app::input::camera::center_camera_on_cell(state, rx, ry);
-        return;
-    }
-
-    // Fallback: jump to the first multiplayer start waypoint.
-    if let Some(wp) = state
-        .match_state
-        .sim_runtime
-        .as_ref()
-        .and_then(|rt| rt.simulation.session.first_multiplayer_start())
-    {
-        log::info!(
-            "H: falling back to start waypoint at ({}, {})",
-            wp.rx,
-            wp.ry
-        );
-        crate::app::input::camera::center_camera_on_cell(state, wp.rx, wp.ry);
-    } else {
-        log::info!("H: no base or start waypoint found");
-    }
+    let coord = state.match_state.sim_runtime.as_ref().and_then(|runtime| {
+        let cells = runtime
+            .simulation
+            .resolved_terrain
+            .as_ref()
+            .map(crate::map::resolved_terrain::NativeCellQuery::isolated);
+        state.rules().and_then(|rules| {
+            runtime
+                .simulation
+                .home_camera_coordinate(rules, cells.as_ref())
+        })
+    });
+    crate::app::input::camera::apply_home_camera(state, coord);
 }
 
 #[cfg(test)]

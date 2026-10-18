@@ -1343,6 +1343,9 @@ fn apply_trigger_effects(state: &mut AppState, effects: &[TriggerEffect]) {
             }
             // Consumed by the frame's existing bridge/terrain refresh.
             TriggerEffect::BridgeStateChanged => {}
+            TriggerEffect::HomeCamera { coord } => {
+                crate::app::input::camera::apply_home_camera(state, *coord);
+            }
             TriggerEffect::CameraAtCoord { coord, velocity } => {
                 crate::app::input::camera::apply_trigger_camera(state, *coord, *velocity);
             }

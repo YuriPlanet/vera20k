@@ -23,6 +23,7 @@ mod building_after_destruction;
 mod building_after_destruction_tests;
 pub(crate) mod building_anim;
 mod building_scatter;
+mod camera_home;
 mod cell_content;
 mod crash;
 mod disk_laser;

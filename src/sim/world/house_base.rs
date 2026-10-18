@@ -535,6 +535,30 @@ impl Simulation {
         }
     }
 
+    /// House50DF30: the existing alternate/primary base-cell owner, followed
+    /// by Map5657A0 and CellGetCoords486840. An empty base is CoordEmpty.
+    /// WhichZone4FFB20 inlines the same query; Home731773 calls it directly.
+    pub(crate) fn house_base_coordinate(
+        &self,
+        owner: InternedId,
+        cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
+    ) -> [i32; 3] {
+        let origin = self
+            .houses
+            .get(&owner)
+            .map_or((0, 0), HouseState::base_origin);
+        if origin == (0, 0) {
+            return [0, 0, 0];
+        }
+        let coord = crate::sim::movement::ground_pose::target_get_coords(
+            crate::sim::combat::TargetKind::Cell(origin.0, origin.1),
+            self,
+            cells,
+        )
+        .expect("Cell GetCoords always returns a coordinate");
+        [coord.x, coord.y, coord.z]
+    }
+
     /// `HouseClass::Which_Zone @ 0x004FFB20` answering -1 for `owner`: `coord`
     /// is the empty coordinate (`0x00A8EFF8`, all zero) or lies more than four
     /// base radii (`+0x5498`) from the base cell's GetCoords (`0x00486840` on
@@ -551,17 +575,11 @@ impl Simulation {
         let Some(house) = self.houses.get(&owner) else {
             return true;
         };
-        let origin = house.base_origin();
-        let base = if origin == (0, 0) {
-            [0, 0, 0]
-        } else {
-            let cell = crate::sim::projectile::cell_ground_coord(
-                self.resolved_terrain.as_ref(),
-                origin.0,
-                origin.1,
-            );
-            [cell.x, cell.y, cell.z]
-        };
+        let cells = self
+            .resolved_terrain
+            .as_ref()
+            .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+        let base = self.house_base_coordinate(owner, cells.as_ref());
         let distance = crate::util::native_x87::distance_3d_leptons(base, coord);
         let radius = house.base_radius();
         distance > radius && radius.wrapping_shl(2) < distance
