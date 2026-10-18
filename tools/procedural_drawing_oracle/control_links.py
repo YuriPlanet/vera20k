@@ -81,5 +81,5 @@ def vectors():
 
 
 if __name__=='__main__':
-    finish_vectors(vectors(), Path(__file__).with_suffix('.json'),
-        provenance=metadata())
+    finish_vectors(vectors, Path(__file__).with_suffix('.json'),
+        provenance=metadata)
