@@ -244,10 +244,9 @@ impl Simulation {
             radius,
         };
         // A normal scenario constructs its viewer Houses before Technos.
-        self.fog
-            .by_owner
-            .entry(viewer)
-            .or_insert_with(|| vision::OwnerVisibility::new(self.fog.width, self.fog.height));
+        self.fog.by_owner.get_or_insert_with(viewer, || {
+            vision::OwnerVisibility::new(self.fog.width, self.fog.height)
+        });
         let spy_sat_active = self
             .houses
             .iter()

@@ -250,6 +250,7 @@ impl ResolvedTerrainGrid {
                 height: 0,
                 cells: Vec::new(),
                 land_speed_costs: land_speed_cost_profiles(None),
+                overlay_passability: Vec::new(),
                 native_tmp_draw_heights: HashMap::new(),
                 shared_cell_dummy,
                 mutation_epoch: 0,
@@ -275,6 +276,7 @@ impl ResolvedTerrainGrid {
                 theater_data,
                 asset_manager,
                 terrain_rules,
+                overlay_registry,
                 lat_enabled,
                 cliff_back_impassability,
                 variant_selector
@@ -983,6 +985,7 @@ impl ResolvedTerrainGrid {
             height,
             cells,
             land_speed_costs: land_speed_cost_profiles(None),
+            overlay_passability: Vec::new(),
             native_tmp_draw_heights: HashMap::new(),
             shared_cell_dummy,
             mutation_epoch: 0,
@@ -1008,6 +1011,7 @@ impl ResolvedTerrainGrid {
             theater_data,
             asset_manager,
             terrain_rules,
+            overlay_registry,
             lat_enabled,
             cliff_back_impassability,
             variant_selector

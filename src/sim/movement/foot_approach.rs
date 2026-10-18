@@ -16,7 +16,7 @@ use crate::rules::locomotor_type::LocomotorKind;
 use crate::rules::object_type::Ability;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::cell_rect::{self, CellRect, CellRectPassabilityContext};
+use crate::sim::cell_rect;
 use crate::sim::combat::veterancy::has_weapon_ability;
 use crate::sim::combat::{self, TargetKind, in_range};
 use crate::sim::components::{DriveCoord, NavTargetRef};
@@ -1124,31 +1124,35 @@ impl Simulation {
                 Some(cells),
             )
             .ok_or("Approach source zone absent")?;
-        Ok(cell_rect::check_cell_passability(
-            &CellRectPassabilityContext {
-                native_cells: Some(cells),
-                rect: CellRect {
-                    x: i32::from(candidate.0),
-                    y: i32::from(candidate.1),
-                    width: 1,
-                    height: 1,
-                },
-                speed_type: object.speed_type,
-                required_zone_id: (zone != u32::MAX).then_some(zone),
-                movement_zone: object.movement_zone,
-                required_height_or_level: None,
-                bridge_aware_zone: true,
-                reject_any_overlay: false,
-                path_grid: self.path_grid.as_deref(),
-                resolved_terrain: Some(cells.terrain()),
-                overlay_grid: self.overlay_grid.as_ref(),
-                occupancy: Some(&self.substrate.occupancy),
-                zone_grid: Some(zones),
-            },
-            Some(&self.substrate.raw_cell_occupation),
+        // 0x004D62ED..0x004D636E (and its three siblings): GetCellClass of
+        // the candidate, then (SpeedType, 0, 0, zone, MovementZone, -1, 1).
+        let cell = cell_rect::get_cellclass_in_query(
+            Some(cells.terrain()),
             i32::from(candidate.0),
             i32::from(candidate.1),
-        ))
+            Some(cells),
+        );
+        Ok(cell_rect::check_cell_passability(
+            &cell,
+            cell_rect::CellPassabilityArgs {
+                speed_type: object.speed_type,
+                ignore_infantry: false,
+                ignore_vehicles: false,
+                zone: Some(zone),
+                movement_zone: object.movement_zone,
+                level: None,
+                is_bridge: true,
+            },
+            &cell_rect::CellPassabilityMap {
+                terrain: Some(cells.terrain()),
+                overlays: self.overlay_grid.as_ref(),
+                zones: Some(zones),
+                native_cells: Some(cells),
+                raw_occupation: Some(&self.substrate.raw_cell_occupation),
+                listed_occupancy: None,
+            },
+        )
+        .admits())
     }
 
     fn approach_fallback(

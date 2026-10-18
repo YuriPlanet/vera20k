@@ -40,8 +40,7 @@ pub(crate) use runtime::tick_crate_regeneration;
 pub use state::{CrateAuthority, CrateSlot};
 
 use crate::map::bridge_facts::{
-    BRIDGE_FLAG_STRUCTURAL, BridgeFlagStamp, BridgeStampFamily, BridgeStampSlot,
-    high_bridge_stamp_for_overlay,
+    BridgeFlagStamp, BridgeStampFamily, BridgeStampSlot, high_bridge_stamp_for_overlay,
 };
 use crate::map::lighting::LightingProfileUnits;
 #[cfg(any(test, feature = "test-support"))]
@@ -51,10 +50,10 @@ use crate::rules::locomotor_type::{MovementZone, SpeedType};
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::terrain_rules::LandType;
-use crate::sim::cell_rect::cell_is_in_playfield_height_aware;
+use crate::sim::cell_rect::{
+    CellPassabilityArgs, CellRef, cell_is_in_playfield_height_aware, check_cell_passability,
+};
 use crate::sim::find_nearby_cell::{NearbyArgs, NearbyFootprint, PassabilityArgs};
-#[cfg(test)]
-use crate::sim::occupancy::OBJECT_OCCUPATION_BIT;
 use crate::sim::world::Simulation;
 use crate::util::fixed_math::SimFixed;
 
@@ -691,42 +690,20 @@ pub(crate) fn construct_runtime_overlay(
                 .as_ref()
                 .and_then(|terrain| terrain.cell(cell.0, cell.1))
                 .expect("Mark slope admission retained a real Cell");
-            let old_flags = sim
-                .overlay_grid
-                .as_ref()
-                .and_then(|grid| grid.cell(cell.0, cell.1).overlay_id)
-                .and_then(|id| overlay_registry.flags(id));
-            let result = crate::sim::cell_rect::evaluate_is_clear_to_move(
-                crate::sim::cell_rect::IsClearToMoveRequest {
+            check_cell_passability(
+                &CellRef::Real(terrain),
+                CellPassabilityArgs {
                     speed_type: mark_speed,
-                    movement_zone: MovementZone::Normal,
-                    requested_zone: None,
-                    actual_zone: 0,
-                    base_level: i16::from(terrain.level as i8),
-                    has_bridge: terrain.bridge_facts.raw_flags & BRIDGE_FLAG_STRUCTURAL != 0,
-                    requested_level: None,
-                    is_bridge: true,
-                    ground_occupation_bits: sim
-                        .substrate
-                        .raw_cell_occupation
-                        .ground_bits(cell.0, cell.1),
-                    deck_occupation_bits: sim
-                        .substrate
-                        .raw_cell_occupation
-                        .deck_bits(cell.0, cell.1),
                     ignore_infantry: !is_crate,
                     ignore_vehicles: !is_crate,
-                    land_passable: terrain.speed_costs.cost_for_speed_type(mark_speed) != Some(0),
-                    is_wall_overlay: old_flags.is_some_and(|flags| flags.wall),
-                    // Normal never takes4835BB's crusher-specific key read.
-                    wall_allows_crusher: false,
+                    zone: None,
+                    movement_zone: MovementZone::Normal,
+                    level: None,
+                    is_bridge: true,
                 },
-            );
-            matches!(
-                result,
-                crate::sim::cell_rect::IsClearToMoveResult::Clear { .. }
-                    | crate::sim::cell_rect::IsClearToMoveResult::ClearWinged
+                &sim.cell_passability_map(),
             )
+            .admits()
         };
         //5FD079..5FD09B: existing Overrides blocks ordinary runtime writes;
         // ScenarioInit bypasses both this gate and the passability call above.
@@ -1263,17 +1240,24 @@ pub(crate) mod tests {
     use crate::rules::ini_parser::IniFile;
     use crate::rules::overlay_types::OverlayTypeRegistry;
     use crate::sim::cell_rect::PlayfieldBounds;
+    use crate::sim::occupancy::OBJECT_OCCUPATION_BIT;
     use crate::sim::overlay_grid::OverlayGrid;
     use crate::sim::pathfinding::PathGrid;
 
     const MAP: u16 = 40;
 
+    /// The land row of every [`uniform_terrain`] cell: each SpeedType at
+    /// 100%. A crate overlay's `Land=` (Clear) reads it from the registry's
+    /// rules, and the grid's land rows from the same keys.
+    const OPEN_LAND_KEYS: &str = "Foot=100%\nTrack=100%\nWheel=100%\nFloat=100%\n\
+        Hover=100%\nAmphibious=100%\nFloatBeach=100%\n";
+
     pub(crate) fn crate_registry() -> OverlayTypeRegistry {
-        let ini = IniFile::from_str(
+        let ini = IniFile::from_str(&format!(
             "[OverlayTypes]\n0=TIB01\n1=SILVER\n2=WOOD\n3=WATER\n\
              [TIB01]\nTiberium=yes\n[SILVER]\nCrate=yes\n\
-             [WOOD]\nCrate=yes\n[WATER]\nCrate=yes\n",
-        );
+             [WOOD]\nCrate=yes\n[WATER]\nCrate=yes\n[Clear]\n{OPEN_LAND_KEYS}",
+        ));
         OverlayTypeRegistry::from_ini(&ini, None)
     }
 
@@ -2235,6 +2219,9 @@ pub(crate) mod tests {
             .substrate
             .raw_cell_occupation
             .mark_deck(cell.0, cell.1, 0x01);
+        // The crate Mark ignores neither occupant class (`0x005FD065..
+        // 0x005FD070` push EDI = 0 for both), so an infantry bit in the
+        // selected deck byte refuses too.
         assert_eq!(
             validate_and_stamp_candidate(
                 &mut non_object_deck,
@@ -3553,7 +3540,9 @@ pub(crate) mod tests {
     }
 
     /// Every cell the same land type, every speed type passable, so the only
-    /// thing the water flag can change is which crate image is chosen.
+    /// thing the water flag can change is which crate image is chosen. Its
+    /// Clear and Water land rows are [`OPEN_LAND_KEYS`], bound as a loaded map
+    /// binds its rules.
     fn uniform_terrain(water: bool) -> crate::map::resolved_terrain::ResolvedTerrainGrid {
         use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid, zone_class};
         use crate::rules::terrain_rules::{LandType, SpeedCostProfile, TerrainClass};
@@ -3594,7 +3583,13 @@ pub(crate) mod tests {
                 cells.push(cell);
             }
         }
-        ResolvedTerrainGrid::from_cells(MAP, MAP, cells)
+        let mut grid = ResolvedTerrainGrid::from_cells(MAP, MAP, cells);
+        grid.set_land_speed_rules_for_test(&crate::rules::terrain_rules::TerrainRules::from_ini(
+            &IniFile::from_str(&format!(
+                "[Clear]\n{OPEN_LAND_KEYS}[Water]\n{OPEN_LAND_KEYS}"
+            )),
+        ));
+        grid
     }
 
     /// The count the loader feeds the clamp: human seats only. A 1v3 skirmish

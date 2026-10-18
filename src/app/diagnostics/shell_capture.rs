@@ -60,6 +60,7 @@ const CHECKPOINT_CAMPAIGN_SOV1_OPENING_UNLOCKED: &str = "campaign-sov1-opening-u
 const CHECKPOINT_CAMPAIGN_SOV1_OPENING_RESTORE_UNLOCKED: &str =
     "campaign-sov1-opening-restore-unlocked";
 const CHECKPOINT_CAMPAIGN_ALL1_OPENING_LOAD_UNLOCKED: &str = "campaign-all1-opening-load-unlocked";
+const CHECKPOINT_CAMPAIGN_ALL1_OPENING_TICK_PREFIX: &str = "campaign-all1-opening-tick-";
 const CHECKPOINT_CAMPAIGN_BACK_RETURN: &str = "campaign-back-return";
 const CHECKPOINT_LOAD_SAVED_GAME_0XB7_STEADY: &str = "load-saved-game-0xb7-steady";
 const CHECKPOINT_LOAD_SAVED_GAME_0XB7_ENTRY_PREFIX: &str = "load-saved-game-0xb7-entry-tick-";
@@ -308,6 +309,18 @@ pub enum ShellCaptureCheckpoint {
 
 impl ShellCaptureCheckpoint {
     fn parse(value: &str) -> Result<Self> {
+        if let Some(tick) = value.strip_prefix(CHECKPOINT_CAMPAIGN_ALL1_OPENING_TICK_PREFIX) {
+            let tick: u64 = tick
+                .parse()
+                .context("campaign opening tick is not an integer")?;
+            ensure!(
+                (1..=2500).contains(&tick),
+                "campaign opening tick must be 1..=2500"
+            );
+            return Ok(Self::CampaignOpening(movies::OpeningTarget::AlliedTick(
+                tick,
+            )));
+        }
         if let Some(frame) = value.strip_prefix(CHECKPOINT_CREDITS_ROLL_FRAME_PREFIX) {
             let frame: u64 = frame
                 .parse()
@@ -571,6 +584,9 @@ impl ShellCaptureCheckpoint {
             }
             Self::CampaignOpening(movies::OpeningTarget::LoadUnlockedWhileLocked) => {
                 CHECKPOINT_CAMPAIGN_ALL1_OPENING_LOAD_UNLOCKED
+            }
+            Self::CampaignOpening(movies::OpeningTarget::AlliedTick(_)) => {
+                "campaign-all1-opening-tick"
             }
             Self::CampaignBackReturn => CHECKPOINT_CAMPAIGN_BACK_RETURN,
             Self::LoadSavedGame0xB7Steady => CHECKPOINT_LOAD_SAVED_GAME_0XB7_STEADY,
@@ -2096,6 +2112,28 @@ mod tests {
             "campaign-all1-loading-later-frame",
         ] {
             assert!(ShellCaptureCheckpoint::parse(name).is_err());
+        }
+    }
+
+    #[test]
+    fn allied_opening_tick_capture_keeps_its_production_frame_and_side() {
+        use crate::ui::campaign_shell::CampaignSide;
+        let checkpoint = ShellCaptureCheckpoint::parse("campaign-all1-opening-tick-180")
+            .expect("fixed opening frame");
+        assert_eq!(
+            checkpoint.movies_target(),
+            Some(movies::MoviesTarget::CampaignStart {
+                side: CampaignSide::Allied,
+                target: movies::CampaignStartTarget::Opening(movies::OpeningTarget::AlliedTick(
+                    180
+                )),
+            })
+        );
+        for value in ["0", "2501", "-1", "not-a-tick"] {
+            assert!(
+                ShellCaptureCheckpoint::parse(&format!("campaign-all1-opening-tick-{value}"))
+                    .is_err()
+            );
         }
     }
 

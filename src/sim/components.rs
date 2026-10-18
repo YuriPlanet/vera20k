@@ -84,12 +84,38 @@ impl Default for FootPathRuntime {
 }
 
 impl FootPathRuntime {
+    /// `Foot+0x64C`'s reload value, the literal 10 every writer stores: the
+    /// constructor (`0x004D332C`), Drive and Ship after a found route
+    /// (`0x004B3285`, `0x006A28D5`), Hover (`0x00516BCD`) and Walk
+    /// (`0x0075B2E2`, `0x0075BA27`).
+    ///
+    /// `Process_Movement` reads `[ECX+0x64C]` at `0x004B2DC8`, and on `> 0`
+    /// decrements and stores it back (`0x004B2DD2`/`0x004B2DD3`) before
+    /// continuing; on `<= 0` it clears the drive coord, calls
+    /// `FootClass::Stop_Moving` plus vtable `+0x480`/`+0x484`, and plays the
+    /// blocked voice at `Foot+0x68A`. So it *is* decremented and it *does* end
+    /// the move at zero.
+    ///
+    /// Recorded difference: **what decrements it.** Native decrements it on every
+    /// pass through the generic blocked label `LAB_004B3282` — reached from
+    /// `Is_Cell_In_Playfield == 0`, from code 3, from `code != 6` and from two
+    /// code-6 sub-failures — and the same label is where the literal 10 is stored.
+    /// VERA decrements per failed repath instead. The escalation clock is a
+    /// separate record: `Foot+0x668` = frame, `Foot+0x66C`, and `Foot+0x670` =
+    /// `Rules+0x1768`, stored only on the `Foot+0x6B7 == 0` transition of the code-2
+    /// arm — which contains no `Scatter_Objects` call at all. Trigger: a unit
+    /// blocked long enough to exhaust the counter. Player effect: the give-up point
+    /// arrives after a different number of ticks than retail's. Frequency: every
+    /// traffic jam, many times a minute once a base has armour queuing. Downstream
+    /// risk: the two clocks are separate fields and must stay separate.
+    pub(crate) const RETRY_RELOAD: u32 = 10;
+
     pub const fn at_frame(frame: u32) -> Self {
         Self {
             movement_timer: crate::sim::timer::CdTimer::started(frame as i32, 0),
             blocked_timer: crate::sim::timer::CdTimer::started(frame as i32, 0),
             path_blocked: false,
-            retries_left: 10,
+            retries_left: Self::RETRY_RELOAD,
             scold_latch: 0,
         }
     }

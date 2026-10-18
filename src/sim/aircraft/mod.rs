@@ -233,8 +233,8 @@ fn nav_com_absent(sim: &Simulation, id: u64) -> bool {
         .is_some_and(|plane| plane.navigation.nav_com().is_none())
 }
 
-/// `Queue_Mission(mission, 0)` (vt+0x1E8 = `0x0041BA90`).
-fn queue_mission(sim: &mut Simulation, id: u64, mission: MissionType) {
+/// `Queue_Mission(mission, 0)` (vt+0x1E8 = `0x0041BA90`) of the aircraft `id`.
+pub(crate) fn queue_mission(sim: &mut Simulation, id: u64, mission: MissionType) {
     if let Some(plane) = sim.substrate.entities.get_mut(id) {
         crate::sim::mission::authority::queue_entity_mission_deferred(
             plane,

@@ -210,7 +210,9 @@ pub struct AnimTranslucencyInput {
     pub game_detail_level: i32,
     pub translucent_ramp: bool,
     pub current_frame: i32,
-    pub frame_count: i32,
+    /// AnimType `End` (`+0x2C0`), which the `Translucent=` ladder divides
+    /// (`0x004230AC`); see `AnimTypeRuntimeConfig::loaded_end`.
+    pub end_frame: i32,
     pub explicit_translucency: i32,
     pub instance_ramp: i32,
 }
@@ -245,12 +247,12 @@ pub fn anim_translucency_selection(input: AnimTranslucencyInput) -> AnimTransluc
             return AnimTranslucencyResult { draw: false, flags };
         }
         let frame = i64::from(input.current_frame);
-        let frame_count = i64::from(input.frame_count);
-        flags |= if frame * 5 > frame_count * 3 {
+        let end = i64::from(input.end_frame);
+        flags |= if frame * 5 > end * 3 {
             6
-        } else if frame * 5 > frame_count * 2 {
+        } else if frame * 5 > end * 2 {
             4
-        } else if frame * 5 > frame_count {
+        } else if frame * 5 > end {
             2
         } else {
             0
@@ -3376,7 +3378,7 @@ mod long_tail_contract_tests {
                 game_detail_level: 2,
                 translucent_ramp: true,
                 current_frame: 7,
-                frame_count: 10,
+                end_frame: 10,
                 explicit_translucency: 0,
                 instance_ramp: 0,
             }),
@@ -3385,6 +3387,39 @@ mod long_tail_contract_tests {
                 flags: 6
             }
         );
+    }
+
+    /// `0x0042319A..0x004231BC`: only an exact `Translucency=` 25, 50 or 75
+    /// selects a stage; any other value draws without one.
+    #[test]
+    fn only_exact_fixed_translucency_values_select_a_stage() {
+        for (explicit_translucency, flags) in [
+            (25, 2),
+            (50, 4),
+            (75, 6),
+            (1, 0),
+            (26, 0),
+            (100, 0),
+            (0, 0),
+            (-25, 0),
+        ] {
+            assert_eq!(
+                anim_translucency_selection(AnimTranslucencyInput {
+                    base_flags: 0,
+                    forced_translucent: false,
+                    forced_uses_75: false,
+                    translucency_detail_level: 0,
+                    game_detail_level: 2,
+                    translucent_ramp: false,
+                    current_frame: 0,
+                    end_frame: 10,
+                    explicit_translucency,
+                    instance_ramp: 0,
+                }),
+                AnimTranslucencyResult { draw: true, flags },
+                "Translucency={explicit_translucency}"
+            );
+        }
     }
 }
 

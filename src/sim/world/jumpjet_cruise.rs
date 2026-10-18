@@ -575,32 +575,25 @@ impl JumpjetFlightHost for CruiseHost<'_> {
     fn wheel_clear(&self, cell: (i16, i16)) -> bool {
         use crate::rules::locomotor_type::{MovementZone, SpeedType};
         use crate::sim::cell_rect::{
-            IsClearToMoveResult, LiveCellPassabilityQuery, evaluate_live_cell_passability,
+            CellPassabilityArgs, canonical_cell_ref, check_cell_passability,
         };
-        let target = (cell.0 as u16, cell.1 as u16);
-        let land_passable = self
-            .terrain()
-            .and_then(|terrain| terrain.cell(target.0, target.1))
-            .and_then(|cell| cell.speed_costs.cost_for_speed_type(SpeedType::Wheel))
-            .is_some_and(|cost| cost > 0);
-        let grid = self.sim.path_grid_snapshot();
-        matches!(
-            evaluate_live_cell_passability(LiveCellPassabilityQuery {
-                target,
-                speed_type: SpeedType::Wheel,
-                movement_zone: MovementZone::Normal,
-                requested_zone: None,
-                actual_zone: 0,
-                requested_layer: None,
-                ignore_infantry: true,
-                ignore_vehicles: true,
-                land_passable,
-                path_grid: grid.as_deref(),
-                resolved_terrain: self.terrain(),
-                raw_occupation: Some(&self.sim.substrate.raw_cell_occupation),
-            }),
-            IsClearToMoveResult::Clear { .. } | IsClearToMoveResult::ClearWinged
-        )
+        // The Cell `MapClass::operator[] @ 0x00565730` returned (`0x0054CDEF`).
+        self.terrain().is_some_and(|terrain| {
+            check_cell_passability(
+                &canonical_cell_ref(terrain, terrain.native_cell_identity(cell)),
+                CellPassabilityArgs {
+                    speed_type: SpeedType::Wheel,
+                    ignore_infantry: true,
+                    ignore_vehicles: true,
+                    zone: None,
+                    movement_zone: MovementZone::Normal,
+                    level: None,
+                    is_bridge: true,
+                },
+                &self.sim.cell_passability_map(),
+            )
+            .admits()
+        })
     }
     fn sink(&mut self, runtime: &mut JumpjetRuntime) {
         let Some(rules) = self.rules else {

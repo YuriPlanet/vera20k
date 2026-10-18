@@ -100,7 +100,8 @@ pub(super) fn spawn_cell_anim(
 /// Launch never calls it; here the flag is read through the superweapons'
 /// MapClass lookup (`cell_grid`), as Launch reads the cell it looked up.
 fn deck_coords(sim: &Simulation, (x, y): (u16, u16)) -> [i32; 3] {
-    let mut coords = fire::cell_coords(sim, (x, y));
+    let ground = crate::sim::projectile::cell_ground_coord(sim.resolved_terrain.as_ref(), x, y);
+    let mut coords = [ground.x, ground.y, ground.z];
     if cell_grid::cell_has_bridge_flag(sim, x as i16, y as i16) {
         coords[2] = coords[2].wrapping_add(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS);
     }

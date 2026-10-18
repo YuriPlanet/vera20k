@@ -66,9 +66,6 @@ use crate::util::fixed_math::{SIM_ONE, SIM_ZERO};
 use crate::util::lepton::{BRIDGE_DECK_HEIGHT_LEPTONS, GROUND_LEVEL_HEIGHT_LEPTONS};
 use crate::util::native_x87::distance_3d_leptons;
 
-/// Foot+64C after a found route (0x00516BCD).
-const FOUND_ROUTE_RETRIES: u32 = 10;
-
 /// What one Hover Process did that its caller reports.
 #[derive(Debug, Default, Clone, Copy)]
 pub(crate) struct HoverProcessOutcome {
@@ -898,7 +895,7 @@ impl Simulation {
             entity
                 .navigation
                 .path_runtime
-                .set_retries_left(FOUND_ROUTE_RETRIES);
+                .set_retries_left(crate::sim::components::FootPathRuntime::RETRY_RELOAD);
         }
         Ok(())
     }

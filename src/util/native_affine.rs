@@ -89,6 +89,11 @@ pub fn rotate_x(matrix: Mat4, sin: f32, cos: f32) -> Mat4 {
     result
 }
 
+/// `Matrix3x4_RotateZ @ 0x005AF1A0`: only columns 0 and 1 change, as
+/// `col0' = col0*cos + col1*sin` and `col1' = col1*cos - col0*sin`, so from the
+/// identity it leaves `[cos, -sin, 0, tx; sin, cos, 0, ty; 0, 0, 1, tz]`. Callers
+/// take `sin`/`cos` from the retail table by signed step
+/// ([`crate::util::native_trig::native_sin_cos_by_step`]).
 pub fn rotate_z(matrix: Mat4, sin: f32, cos: f32) -> Mat4 {
     use crate::util::native_x87::X87Chop53 as Fpu;
     let mut result = matrix;

@@ -1,4 +1,7 @@
-//! Native-shaped CellRect passability and occupancy validators.
+//! Native-shaped CellRect passability and occupancy validators, and the
+//! shared cell leaf `CellClass::CheckCellPassability @ 0x004834A0`
+//! ([`check_cell_passability`]) that the passability rectangle and every
+//! single-cell caller use.
 //!
 //! These are read-only substrate facades over the existing Rust grids. They do
 //! not collapse terrain, overlays, reservations, and object-list occupancy into
@@ -11,14 +14,13 @@ use crate::map::playfield::{lepton_to_packed_cell_component, rect_playfield_corn
 #[cfg(any(test, feature = "test-support"))]
 use crate::map::resolved_terrain::SharedCellDummySnapshot;
 use crate::map::resolved_terrain::{
-    ResolvedTerrainCell, ResolvedTerrainGrid, SharedCellDummy, zone_class,
+    OverlayPassability, ResolvedTerrainCell, ResolvedTerrainGrid, SharedCellDummy, zone_class,
 };
 use crate::rules::locomotor_type::{MovementZone, SpeedType};
-use crate::rules::terrain_rules::SpeedCostProfile;
+use crate::rules::terrain_rules::{LandType, SpeedCostProfile};
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::occupancy::{OccupancyGrid, RawCellOccupationGrid};
 use crate::sim::overlay_grid::OverlayGrid;
-use crate::sim::pathfinding::PathGrid;
 use crate::sim::pathfinding::zone_map::ZoneGrid;
 use crate::util::direction_tables::CELL_DELTAS;
 
@@ -128,6 +130,17 @@ fn native_cell_ref<'a>(
     }
 }
 
+/// The view of `cell`, an identity the canonical lookup on `terrain` returned.
+pub(crate) fn canonical_cell_ref(
+    terrain: &ResolvedTerrainGrid,
+    cell: crate::map::cell_index::NativeCellIdentity,
+) -> CellRef<'_> {
+    native_cell_ref(
+        &crate::map::resolved_terrain::NativeCellQuery::canonical(terrain),
+        cell,
+    )
+}
+
 pub(crate) fn get_cellclass_in_query<'a>(
     terrain: Option<&'a ResolvedTerrainGrid>,
     x: i32,
@@ -171,39 +184,58 @@ pub struct CellRect {
     pub height: i32,
 }
 
-/// Raw, single-cell inputs to the shared YR movement-clearance leaf.
-///
-/// Callers retain responsibility for object-specific admission (Foot's cost
-/// classifier, aircraft owner/shroud rules, and DropPod's Unlimbo path). This
-/// type deliberately represents only `CellClass::IsClearToMove`.
+/// The seven arguments of `CellClass::CheckCellPassability @ 0x004834A0`,
+/// in native order: `(SpeedType, ignoreInfantry, ignoreVehicles, zone,
+/// MovementZone, level, isBridge)`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct IsClearToMoveRequest {
+pub(crate) struct CellPassabilityArgs {
     pub speed_type: SpeedType,
-    pub movement_zone: MovementZone,
-    /// `None` corresponds to native zone `-1` (no zone comparison).
-    pub requested_zone: Option<u32>,
-    pub actual_zone: u32,
-    /// Native signed `CellClass+0x11B` base level.
-    pub base_level: i16,
-    /// Native `CellClass::Flags & 0x100` bridge gate.
-    pub has_bridge: bool,
-    /// `None` corresponds to native level `-1` (select bridge occupation on a bridge cell).
-    pub requested_level: Option<i16>,
-    pub is_bridge: bool,
-    /// Native normal `OccupationFlags+0x124` low byte.
-    pub ground_occupation_bits: u8,
-    /// Native alternate `AltOccupationFlags+0x128` low byte.
-    pub deck_occupation_bits: u8,
     pub ignore_infantry: bool,
     pub ignore_vehicles: bool,
-    /// Whether the selected land-by-SpeedType row permits this cell.
-    pub land_passable: bool,
-    pub is_wall_overlay: bool,
-    /// OverlayTypeClass's extra Crusher/AmphibiousCrusher admission byte.
-    pub wall_allows_crusher: bool,
+    /// `None` is native zone `-1`: no zone comparison.
+    pub zone: Option<u32>,
+    pub movement_zone: MovementZone,
+    /// `None` is native level `-1`: the deck of a bridge cell, else ground.
+    pub level: Option<i16>,
+    /// Forwarded to the nested `GetZoneID`, and admits the ground plane of a
+    /// bridge cell at its base level.
+    pub is_bridge: bool,
 }
 
-/// Deterministic result of the `CellClass::IsClearToMove` leaf.
+/// The live map [`check_cell_passability`] reads through one CellClass.
+#[derive(Clone, Copy)]
+pub(crate) struct CellPassabilityMap<'a> {
+    /// The CellClass array. `None` only before Fill, when every CellClass
+    /// still holds constructor defaults (pre-Fill `Gather_Start_Positions`).
+    pub terrain: Option<&'a ResolvedTerrainGrid>,
+    /// Owner of a real cell's `+0x44` overlay identity.
+    pub overlays: Option<&'a OverlayGrid>,
+    /// `MapClass::GetZoneID @ 0x0056D230` for a zone argument other than -1.
+    pub zones: Option<&'a ZoneGrid>,
+    /// The query that resolved the cell, reused by the nested zone lookup.
+    pub native_cells: Option<&'a crate::map::resolved_terrain::NativeCellQuery<'a>>,
+    /// Live `+0x124`/`+0x128` occupation planes.
+    pub raw_occupation: Option<&'a RawCellOccupationGrid>,
+    /// Without raw planes, a listed object on a layer projects to bit 0x40.
+    pub listed_occupancy: Option<&'a OccupancyGrid>,
+}
+
+impl crate::sim::world::Simulation {
+    /// The live map's cells, overlays, zones and raw occupation planes, for
+    /// [`check_cell_passability`] on a cell from the canonical lookup.
+    pub(crate) fn cell_passability_map(&self) -> CellPassabilityMap<'_> {
+        CellPassabilityMap {
+            terrain: self.resolved_terrain.as_ref(),
+            overlays: self.overlay_grid.as_ref(),
+            zones: self.zone_grid.as_ref(),
+            native_cells: None,
+            raw_occupation: Some(&self.substrate.raw_cell_occupation),
+            listed_occupancy: None,
+        }
+    }
+}
+
+/// Deterministic result of `CellClass::CheckCellPassability @ 0x004834A0`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum IsClearToMoveResult {
     /// Winged returns before CellClass selects a terrain or occupation plane.
@@ -220,125 +252,172 @@ pub(crate) enum IsClearToMoveResult {
     LandBlocked,
 }
 
-/// Live-map adapter for callers that already own the class-specific admission
-/// wrapper around `CellClass::IsClearToMove`.
-///
-/// `land_passable` remains caller-owned because Foot +0x1AC, placement, and
-/// landing wrappers have distinct structural gates. Raw Cell occupation and
-/// bridge-plane selection are centralized here instead of being reconstructed
-/// independently by each caller.
-#[derive(Debug, Clone, Copy)]
-pub(crate) struct LiveCellPassabilityQuery<'a> {
-    pub target: (u16, u16),
-    pub speed_type: SpeedType,
-    pub movement_zone: MovementZone,
-    pub requested_zone: Option<u32>,
-    pub actual_zone: u32,
-    pub requested_layer: Option<MovementLayer>,
-    pub ignore_infantry: bool,
-    pub ignore_vehicles: bool,
-    pub land_passable: bool,
-    pub path_grid: Option<&'a PathGrid>,
-    pub resolved_terrain: Option<&'a ResolvedTerrainGrid>,
-    pub raw_occupation: Option<&'a RawCellOccupationGrid>,
+impl IsClearToMoveResult {
+    /// Whether `0x004834A0` returns true.
+    pub(crate) fn admits(self) -> bool {
+        matches!(self, Self::ClearWinged | Self::Clear { .. })
+    }
 }
 
-/// Evaluate one live Cell through the shared native leaf.
-// Native: `CellClass::CheckCellPassability` @ `0x004834A0`. Callers must still
-// retain their own +0x1AC, CanThisExistHere, aircraft, or virtual-Unlimbo
-// decisions.
-//
-// The earlier citation here — "CellClass::IsClearToMove @ 0x0047C650" — was
-// wrong twice over: `0x0047C650` is not a function entry, and the function
-// containing it is `CellClass::Is_Clear_To_Build` @ `0x0047C620`, a
-// building-placement test whose tail returns the buildable flag.
-pub(crate) fn evaluate_live_cell_passability(
-    query: LiveCellPassabilityQuery<'_>,
+/// `CellClass::CheckCellPassability @ 0x004834A0` on `cell`, the CellClass
+/// its caller looked up. Every port of a native call to `0x004834A0` comes
+/// here, directly or through [`check_rect_cell_passability`]
+/// (`CellRect::CheckPassability @ 0x0056E7C0`). In order:
+/// - Winged admits before any Cell read (`0x004834A7`);
+/// - a zone other than -1 must equal `GetZoneID(+0x24, MovementZone,
+///   isBridge)` (`0x004834BF..0x004834D6`);
+/// - the level selects the ground (`+0x124`) or deck (`+0x128`) occupation
+///   byte, or refuses (`0x004834E1..0x00483552`); the ignore arguments mask
+///   it with `0xE0`/`0x5F` and any bit left refuses (`0x00483558..0x00483572`);
+/// - the land half reads the cell ([`CellLand`], `0x0048357D..0x004835F4`).
+pub(crate) fn check_cell_passability(
+    cell: &CellRef<'_>,
+    args: CellPassabilityArgs,
+    map: &CellPassabilityMap<'_>,
 ) -> IsClearToMoveResult {
-    // Winged is the first native branch and therefore does not require a real
-    // map cell. Preserve that ordering before resolving terrain metadata.
-    if query.speed_type == SpeedType::Winged {
-        return evaluate_is_clear_to_move(IsClearToMoveRequest {
-            speed_type: query.speed_type,
-            movement_zone: query.movement_zone,
-            requested_zone: query.requested_zone,
-            actual_zone: query.actual_zone,
-            base_level: 0,
-            has_bridge: false,
-            requested_level: None,
-            is_bridge: false,
-            ground_occupation_bits: 0,
-            deck_occupation_bits: 0,
-            ignore_infantry: query.ignore_infantry,
-            ignore_vehicles: query.ignore_vehicles,
-            land_passable: query.land_passable,
-            is_wall_overlay: false,
-            wall_allows_crusher: false,
-        });
+    if args.speed_type == SpeedType::Winged {
+        return IsClearToMoveResult::ClearWinged;
     }
-
-    let terrain_cell = query
-        .resolved_terrain
-        .and_then(|terrain| terrain.cell(query.target.0, query.target.1));
-    let path_cell = query
-        .path_grid
-        .and_then(|grid| grid.cell(query.target.0, query.target.1));
-    if terrain_cell.is_none() && path_cell.is_none() {
-        return IsClearToMoveResult::LandBlocked;
-    }
-
-    let base_level = path_cell
-        .map(|cell| cell.signed_level())
-        .or_else(|| terrain_cell.map(|cell| i16::from(cell.level as i8)))
-        .unwrap_or(0);
-    let has_bridge = path_cell.is_some_and(|cell| cell.has_structural_bridge())
-        || terrain_cell.is_some_and(|cell| cell.bridge_facts.has_structural_bridge());
-    let requested_level = query.requested_layer.map(|layer| match layer {
-        MovementLayer::Bridge => base_level.saturating_add(4),
-        _ => base_level,
-    });
-    let ground_occupation_bits = query
-        .raw_occupation
-        .map_or(0, |grid| grid.ground_bits(query.target.0, query.target.1));
-    let deck_occupation_bits = query
-        .raw_occupation
-        .map_or(0, |grid| grid.deck_bits(query.target.0, query.target.1));
-
+    let requested_zone = args.zone.filter(|&zone| zone != u32::MAX);
+    // Raw row 0xFFFF and the missing-record DWORD 0xFFFFFFFF are distinct;
+    // neither is projected through reduced layers. No answer never matches.
+    let actual_zone = match (requested_zone, map.terrain, map.zones) {
+        (None, _, _) => 0,
+        (Some(_), Some(terrain), Some(zones)) => {
+            let coord = match cell {
+                CellRef::Real(cell) => (cell.rx, cell.ry),
+                CellRef::Dummy { cell } => {
+                    let (x, y) = cell.snapshot().coord;
+                    (x as u16, y as u16)
+                }
+            };
+            zones
+                .get_zone_id_native_in_query(
+                    terrain,
+                    coord,
+                    args.movement_zone,
+                    args.is_bridge,
+                    map.native_cells,
+                )
+                .unwrap_or(u32::MAX)
+        }
+        (Some(_), _, _) => u32::MAX,
+    };
+    let canonical = match cell {
+        CellRef::Real(cell) => Some((cell.rx, cell.ry)),
+        CellRef::Dummy { .. } => None,
+    };
+    let (ground_occupation_bits, deck_occupation_bits) = match map.raw_occupation {
+        Some(raw) => {
+            let key = canonical.map_or(crate::sim::occupancy::RawCellKey::Dummy, |(x, y)| {
+                crate::sim::occupancy::RawCellKey::Real(x, y)
+            });
+            (
+                raw.bits_at(key, MovementLayer::Ground),
+                raw.bits_at(key, MovementLayer::Bridge),
+            )
+        }
+        None => {
+            let listed = |layer| {
+                u8::from(canonical.is_some_and(|(x, y)| {
+                    map.listed_occupancy
+                        .is_some_and(|grid| grid.count_on_layer(x, y, layer) > 0)
+                })) * 0x40
+            };
+            (listed(MovementLayer::Ground), listed(MovementLayer::Bridge))
+        }
+    };
     evaluate_is_clear_to_move(IsClearToMoveRequest {
-        speed_type: query.speed_type,
-        movement_zone: query.movement_zone,
-        requested_zone: query.requested_zone,
-        actual_zone: query.actual_zone,
-        base_level,
-        has_bridge,
-        requested_level,
-        is_bridge: query.requested_layer == Some(MovementLayer::Bridge),
+        speed_type: args.speed_type,
+        movement_zone: args.movement_zone,
+        requested_zone,
+        actual_zone,
+        base_level: i16::from(cell.signed_level()),
+        has_bridge: cell.bridge_flags_0x1180() & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL
+            != 0,
+        requested_level: args.level.filter(|&level| level != -1),
+        is_bridge: args.is_bridge,
         ground_occupation_bits,
         deck_occupation_bits,
-        ignore_infantry: query.ignore_infantry,
-        ignore_vehicles: query.ignore_vehicles,
-        land_passable: query.land_passable,
-        is_wall_overlay: terrain_cell.is_some_and(|cell| cell.zone_type == zone_class::WALL),
-        // `OverlayTypeClass+0x22D` (`Crushable=`) is parsed as
-        // `OverlayTypeFlags::crushable`, and a crushable wall reduces to zone
-        // class `CRUSHABLE`, so it never reaches this wall gate as a wall at
-        // all: every zone is admitted where `CheckCellPassability`
-        // (`0x00483598..5C8`) admits only Destroyer/AmphibiousDestroyer/
-        // InfantryDestroyer/CrusherAll and, on `+0x22D`, Crusher and
-        // AmphibiousCrusher. Threading the flag here needs the wall test to
-        // read the overlay's `Wall=` rather than the reduced zone class; the
-        // constant stays `false` until then (recorded 2026-09-15).
-        wall_allows_crusher: false,
+        ignore_infantry: args.ignore_infantry,
+        ignore_vehicles: args.ignore_vehicles,
+        land: map
+            .terrain
+            .map(|terrain| CellLand::read(cell, terrain, map.overlays)),
     })
 }
 
-/// Evaluate the native shared movement-clearance leaf without collapsing its callers.
-// Native: `CellClass::CheckCellPassability` @ `0x004834A0` keeps Winged, bridge,
-// raw-occupation and wall gates distinct; the FootClass +0x1AC predicate and
-// object Unlimbo remain outside this seam. Its Destroyer-class wall escape set
-// matches native's `{2, 3, 8, 0xC}`, tested at `0x004835A2`, `0x004835A7`,
-// `0x004835AC` and `0x004835C5`.
-pub(crate) fn evaluate_is_clear_to_move(input: IsClearToMoveRequest) -> IsClearToMoveResult {
+/// What the land half of `0x004834A0` reads from its CellClass
+/// (`0x0048357D..0x004835DE`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CellLand {
+    /// The row of table `0x0089EA40` the cell's Land (`+0xEC`) selects. A
+    /// real cell keeps its resolved row; the shared Dummy keeps only its
+    /// Land and indexes the grid's projection of the same rules.
+    row: SpeedCostProfile,
+    /// The Clear row, which a wall the mover passes switches to
+    /// (`0x004835D3`).
+    clear_row: SpeedCostProfile,
+    /// `Wall=`/`Crushable=` of the type at `+0x44`: the OverlayGrid holds a
+    /// real cell's identity, the Dummy its own.
+    overlay: Option<OverlayPassability>,
+}
+
+impl CellLand {
+    fn read(
+        cell: &CellRef<'_>,
+        terrain: &ResolvedTerrainGrid,
+        overlays: Option<&OverlayGrid>,
+    ) -> Self {
+        let (row, overlay) = match cell {
+            CellRef::Real(cell) => (
+                cell.speed_costs,
+                overlays
+                    .and_then(|grid| grid.cell(cell.rx, cell.ry).overlay_id)
+                    .map_or(-1, i32::from),
+            ),
+            CellRef::Dummy { cell } => (
+                terrain.land_speed_costs(cell.land_type()),
+                cell.overlay_identity_state().0,
+            ),
+        };
+        Self {
+            row,
+            clear_row: terrain.land_speed_costs(i32::from(LandType::Clear.as_index())),
+            overlay: terrain.overlay_passability(overlay),
+        }
+    }
+}
+
+/// The values `0x004834A0` decides on, once read from its CellClass.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct IsClearToMoveRequest {
+    speed_type: SpeedType,
+    movement_zone: MovementZone,
+    /// `None` corresponds to native zone `-1` (no zone comparison).
+    requested_zone: Option<u32>,
+    actual_zone: u32,
+    /// Native signed `CellClass+0x11B` base level.
+    base_level: i16,
+    /// Native `CellClass::Flags & 0x100` bridge gate.
+    has_bridge: bool,
+    /// `None` corresponds to native level `-1` (select bridge occupation on a bridge cell).
+    requested_level: Option<i16>,
+    is_bridge: bool,
+    /// Native normal `OccupationFlags+0x124` low byte.
+    ground_occupation_bits: u8,
+    /// Native alternate `AltOccupationFlags+0x128` low byte.
+    deck_occupation_bits: u8,
+    ignore_infantry: bool,
+    ignore_vehicles: bool,
+    /// `None` without a CellClass array (pre-Fill): VERA admits. Native's
+    /// constructor-default cells read the Clear row, which refuses Float and
+    /// FloatBeach; the one such caller, the pre-Fill start search, passes
+    /// Track, which that row admits.
+    land: Option<CellLand>,
+}
+
+fn evaluate_is_clear_to_move(input: IsClearToMoveRequest) -> IsClearToMoveResult {
     if input.speed_type == SpeedType::Winged {
         return IsClearToMoveResult::ClearWinged;
     }
@@ -379,30 +458,41 @@ pub(crate) fn evaluate_is_clear_to_move(input: IsClearToMoveRequest) -> IsClearT
         return IsClearToMoveResult::Occupied { remaining_bits };
     }
 
-    let mut wall_cleared = false;
-    if input.is_wall_overlay {
-        let clears_wall = matches!(
-            input.movement_zone,
-            MovementZone::Destroyer
-                | MovementZone::AmphibiousDestroyer
-                | MovementZone::InfantryDestroyer
-                | MovementZone::CrusherAll
-        ) || (input.wall_allows_crusher
-            && matches!(
+    let Some(land) = input.land else {
+        return IsClearToMoveResult::Clear { selected_layer };
+    };
+    // A Wall= type admits Destroyer, AmphibiousDestroyer, InfantryDestroyer
+    // (`0x004835A2..0x004835AC`) and CrusherAll (`0x004835C5`); Crusher and
+    // AmphibiousCrusher only when it is Crushable= (`0x004835B1..0x004835C3`).
+    // The test precedes the deck bypass, so a wall refuses on a deck too.
+    let row = match land.overlay {
+        Some(overlay) if overlay.wall => {
+            let passes = matches!(
                 input.movement_zone,
-                MovementZone::Crusher | MovementZone::AmphibiousCrusher
-            ));
-        if !clears_wall {
-            return IsClearToMoveResult::WallBlocked;
+                MovementZone::Destroyer
+                    | MovementZone::AmphibiousDestroyer
+                    | MovementZone::InfantryDestroyer
+                    | MovementZone::CrusherAll
+            ) || (overlay.crushable
+                && matches!(
+                    input.movement_zone,
+                    MovementZone::Crusher | MovementZone::AmphibiousCrusher
+                ));
+            if !passes {
+                return IsClearToMoveResult::WallBlocked;
+            }
+            land.clear_row
         }
-        wall_cleared = true;
+        _ => land.row,
+    };
+    // `0x004835DE..0x004835F4`: a cost equal to 0.0 refuses unless the deck
+    // was selected. A row the scenario rules lack reads as 0.0.
+    if selected_layer != MovementLayer::Bridge
+        && row.cost_for_speed_type(input.speed_type).unwrap_or(0) == 0
+    {
+        return IsClearToMoveResult::LandBlocked;
     }
-
-    if selected_layer == MovementLayer::Bridge || wall_cleared || input.land_passable {
-        IsClearToMoveResult::Clear { selected_layer }
-    } else {
-        IsClearToMoveResult::LandBlocked
-    }
+    IsClearToMoveResult::Clear { selected_layer }
 }
 
 impl CellRect {
@@ -672,7 +762,6 @@ pub struct CellRectPassabilityContext<'a> {
     pub required_height_or_level: Option<i16>,
     pub bridge_aware_zone: bool,
     pub reject_any_overlay: bool,
-    pub path_grid: Option<&'a PathGrid>,
     pub resolved_terrain: Option<&'a ResolvedTerrainGrid>,
     pub overlay_grid: Option<&'a OverlayGrid>,
     pub occupancy: Option<&'a OccupancyGrid>,
@@ -707,7 +796,9 @@ pub(crate) fn check_passability_rect_with_raw_occupation(
     ctx: CellRectPassabilityContext<'_>,
     raw: Option<&RawCellOccupationGrid>,
 ) -> bool {
-    scan_cell_rect(ctx.rect, |x, y| check_cell_passability(&ctx, raw, x, y))
+    scan_cell_rect(ctx.rect, |x, y| {
+        check_rect_cell_passability(&ctx, raw, x, y)
+    })
 }
 
 pub fn check_occupancy_rect(ctx: CellRectOccupancyContext<'_>) -> bool {
@@ -805,207 +896,45 @@ fn occupancy_blocker_at(
     None
 }
 
-pub(crate) fn check_cell_passability(
+/// One cell of `CellRect::CheckPassability @ 0x0056E7C0`: the packed
+/// `MapClass::GetCellClass @ 0x005657A0` lookup (`0x0056E7E8..0x0056E832`),
+/// which Winged performs too, then the optional any-overlay refusal
+/// (`0x0056E832..0x0056E83E`), then [`check_cell_passability`] with both
+/// ignore arguments 0 (`0x0056E840..0x0056E859`). Fixed-stride aliases use
+/// the real backing CellClass.
+pub(crate) fn check_rect_cell_passability(
     ctx: &CellRectPassabilityContext<'_>,
     raw: Option<&RawCellOccupationGrid>,
     x: i32,
     y: i32,
 ) -> bool {
-    // Native `CellRect::CheckPassability @ 0x0056E7C0` calls packed
-    // `MapClass::GetCellClass @ 0x005657A0` before the optional overlay column
-    // and before `CellClass::CheckCellPassability @ 0x004834A0`. In particular,
-    // Winged still performs the lookup and fixed-stride aliases use the real
-    // backing CellClass coordinates for every projected Rust grid.
     let cell = get_cellclass_in_query(ctx.resolved_terrain, x, y, ctx.native_cells);
-    let canonical = match &cell {
-        CellRef::Real(cell) => Some((cell.rx, cell.ry)),
-        CellRef::Dummy { .. } => None,
-    };
-    // VERA-internal compatibility seam: some focused/headless callers still
-    // carry PathGrid without a resolved CellClass array. Keep their former
-    // checked-u16 cache projection, but never let it replace a terrain-backed
-    // native dummy or the canonical coordinates of a packed real alias.
-    let path_only_projection =
-        canonical.is_none() && ctx.resolved_terrain.is_none() && ctx.path_grid.is_some();
-    let projection_coord = canonical.or_else(|| {
-        if path_only_projection {
-            checked_u16_cell_coord(x, y)
-        } else {
-            None
-        }
-    });
-
     if ctx.reject_any_overlay
-        && projection_coord.is_some_and(|(rx, ry)| overlay_present(ctx.overlay_grid, rx, ry))
+        && matches!(&cell, CellRef::Real(cell) if overlay_present(ctx.overlay_grid, cell.rx, cell.ry))
     {
         return false;
     }
-
-    if ctx.speed_type == SpeedType::Winged {
-        return true;
-    }
-
-    let terrain_cell = match &cell {
-        CellRef::Real(cell) => Some(*cell),
-        CellRef::Dummy { .. } => None,
-    };
-    let path_cell =
-        projection_coord.and_then(|(rx, ry)| ctx.path_grid.and_then(|grid| grid.cell(rx, ry)));
-    if path_only_projection && path_cell.is_none() {
-        return false;
-    }
-
-    if let Some(required_zone) = ctx.required_zone_id {
-        let Some(zone_grid) = ctx.zone_grid else {
-            return false;
-        };
-
-        let actual_zone = if let Some(terrain) = ctx.resolved_terrain {
-            //4834A0 forwards the retained CellClass+24 and the caller's
-            // bridge flag to56D230. Raw rowFFFF and missing-record DWORD
-            // FFFFFFFF are distinct; do not project through reduced layers.
-            let coord = match &cell {
-                CellRef::Real(cell) => (cell.rx, cell.ry),
-                CellRef::Dummy { cell } => {
-                    let (x, y) = cell.snapshot().coord;
-                    (x as u16, y as u16)
-                }
-            };
-            zone_grid.get_zone_id_native_in_query(
-                terrain,
-                coord,
-                ctx.movement_zone,
-                ctx.bridge_aware_zone,
-                ctx.native_cells,
-            )
-        } else {
-            // Detached PathGrid fixtures have no native raw-zone authority.
-            let Some((rx, ry)) = projection_coord else {
-                return false;
-            };
-            let Some(zone_map) = zone_grid.map_for(ctx.movement_zone) else {
-                return false;
-            };
-            let layer = if ctx.bridge_aware_zone {
-                MovementLayer::Bridge
-            } else {
-                MovementLayer::Ground
-            };
-            Some(u32::from(zone_map.zone_at(rx, ry, layer)))
-        };
-        if actual_zone != Some(required_zone) {
-            return false;
-        }
-    }
-
-    let base_level = if raw.is_some() && ctx.resolved_terrain.is_some() {
-        match &cell {
-            CellRef::Real(cell) => i16::from(cell.level as i8),
-            CellRef::Dummy { cell } => i16::from(cell.snapshot().level),
-        }
-    } else if path_only_projection {
-        path_cell.map(|cell| cell.signed_level()).unwrap_or(0)
-    } else {
-        match &cell {
-            CellRef::Real(_) => path_cell
-                .map(|cell| cell.signed_level())
-                .or_else(|| terrain_cell.map(|cell| cell.level as i8 as i16))
-                .unwrap_or(0),
-            CellRef::Dummy { cell } => i16::from(cell.snapshot().level),
-        }
-    };
-    let structural_bridge = if raw.is_some() && ctx.resolved_terrain.is_some() {
-        cell.bridge_flags_0x1180() & crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL != 0
-    } else {
-        path_cell.is_some_and(|cell| cell.has_structural_bridge())
-            || terrain_cell.is_some_and(|cell| cell.bridge_facts.has_structural_bridge())
-    };
-
-    //Compatibility for callers that still omit raw occupation. Exact callers
-    //below select their live plane instead of this older list projection.
-    let projected_ground_bits = u8::from(projection_coord.is_some_and(|(rx, ry)| {
-        ctx.occupancy
-            .is_some_and(|grid| grid.count_on_layer(rx, ry, MovementLayer::Ground) > 0)
-    })) * 0x40;
-    let projected_deck_bits = u8::from(projection_coord.is_some_and(|(rx, ry)| {
-        ctx.occupancy
-            .is_some_and(|grid| grid.count_on_layer(rx, ry, MovementLayer::Bridge) > 0)
-    })) * 0x40;
-    //4834A0 consumes the selected raw plane, including reservations whose
-    //owners are not yet listed here (Walk75C240). Never combine the planes.
-    let (ground_bits, deck_bits) = if let Some(raw) = raw {
-        let key = canonical.map_or(crate::sim::occupancy::RawCellKey::Dummy, |(x, y)| {
-            crate::sim::occupancy::RawCellKey::Real(x, y)
-        });
-        (
-            raw.bits_at(key, MovementLayer::Ground),
-            raw.bits_at(key, MovementLayer::Bridge),
-        )
-    } else {
-        (projected_ground_bits, projected_deck_bits)
-    };
-    let is_wall_overlay = terrain_cell.is_some_and(|cell| cell.zone_type == zone_class::WALL);
-    //48357D retains Cell+EC even for the non-null fallback identity, then
-    //4835D5..DE indexes the same rule table as a real Cell. A Dummy has no
-    //resolved-cell profile; treating that absence as passable let FNPC select
-    //one even when every native speed-table entry was zero (rally_input.json,
-    //no_passable_speed). Read its live Land without another stamping lookup.
-    let speed_costs = match &cell {
-        CellRef::Real(cell) => Some(cell.speed_costs),
-        CellRef::Dummy { cell } => ctx
-            .resolved_terrain
-            .map(|terrain| terrain.land_speed_costs(cell.land_type())),
-    };
-    let land_passable = speed_costs.map_or_else(
-        || {
-            !path_only_projection
-                || projection_coord.is_some_and(|(rx, ry)| {
-                    ctx.path_grid.is_some_and(|grid| grid.is_walkable(rx, ry))
-                })
-        },
-        |costs| speed_type_allows_land(costs, is_wall_overlay, ctx.speed_type, ctx.movement_zone),
-    );
-    matches!(
-        evaluate_is_clear_to_move(IsClearToMoveRequest {
+    check_cell_passability(
+        &cell,
+        CellPassabilityArgs {
             speed_type: ctx.speed_type,
-            movement_zone: ctx.movement_zone,
-            requested_zone: None,
-            actual_zone: 0,
-            base_level,
-            has_bridge: structural_bridge,
-            requested_level: ctx.required_height_or_level,
-            is_bridge: ctx.bridge_aware_zone,
-            ground_occupation_bits: ground_bits,
-            deck_occupation_bits: deck_bits,
             ignore_infantry: false,
             ignore_vehicles: false,
-            land_passable,
-            is_wall_overlay,
-            // The parsed overlay model has no authority for native +0x22D.
-            wall_allows_crusher: false,
-        }),
-        IsClearToMoveResult::Clear { .. } | IsClearToMoveResult::ClearWinged
+            zone: ctx.required_zone_id,
+            movement_zone: ctx.movement_zone,
+            level: ctx.required_height_or_level,
+            is_bridge: ctx.bridge_aware_zone,
+        },
+        &CellPassabilityMap {
+            terrain: ctx.resolved_terrain,
+            overlays: ctx.overlay_grid,
+            zones: ctx.zone_grid,
+            native_cells: ctx.native_cells,
+            raw_occupation: raw,
+            listed_occupancy: ctx.occupancy,
+        },
     )
-}
-
-fn speed_type_allows_land(
-    costs: SpeedCostProfile,
-    is_wall_overlay: bool,
-    speed_type: SpeedType,
-    movement_zone: MovementZone,
-) -> bool {
-    if is_wall_overlay {
-        return matches!(
-            movement_zone,
-            MovementZone::Destroyer
-                | MovementZone::AmphibiousDestroyer
-                | MovementZone::InfantryDestroyer
-                | MovementZone::CrusherAll
-        );
-    }
-    costs
-        .cost_for_speed_type(speed_type)
-        .is_none_or(|cost| cost > 0)
+    .admits()
 }
 
 fn overlay_present(overlay_grid: Option<&OverlayGrid>, rx: u16, ry: u16) -> bool {
@@ -1186,13 +1115,6 @@ fn reservation_mask(reservation_arg: i32) -> u32 {
     }
 }
 
-fn checked_u16_cell_coord(x: i32, y: i32) -> Option<(u16, u16)> {
-    if x < 0 || y < 0 || x > i32::from(u16::MAX) || y > i32::from(u16::MAX) {
-        return None;
-    }
-    Some((x as u16, y as u16))
-}
-
 #[cfg(test)]
 #[path = "cell_rect_clamp_tests.rs"]
 mod clamp_tests;
@@ -1204,8 +1126,11 @@ mod tests {
     use super::*;
     use crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
     use crate::map::map_file::MapHeader;
-    use crate::rules::terrain_rules::SpeedCostProfile;
+    use crate::map::resolved_terrain::TEST_RETAIL_CLEAR_SPEED_COSTS;
+    use crate::rules::overlay_types::OverlayTypeRegistry;
+    use crate::rules::terrain_rules::{SpeedCostProfile, TerrainRules};
     use crate::sim::occupancy::CellListInsertion;
+    use crate::sim::pathfinding::PathGrid;
     use crate::sim::pathfinding::zone_map::ZoneGrid;
 
     include!("cell_rect_native_tests.rs");
@@ -1299,6 +1224,14 @@ mod tests {
         );
     }
 
+    fn clear_land() -> CellLand {
+        CellLand {
+            row: TEST_RETAIL_CLEAR_SPEED_COSTS,
+            clear_row: TEST_RETAIL_CLEAR_SPEED_COSTS,
+            overlay: None,
+        }
+    }
+
     fn clear_to_move_request() -> IsClearToMoveRequest {
         IsClearToMoveRequest {
             speed_type: SpeedType::Track,
@@ -1313,11 +1246,31 @@ mod tests {
             deck_occupation_bits: 0,
             ignore_infantry: false,
             ignore_vehicles: false,
-            land_passable: true,
-            is_wall_overlay: false,
-            wall_allows_crusher: false,
+            land: Some(clear_land()),
         }
     }
+
+    /// The land half of a request whose cell row refuses every SpeedType.
+    fn zero_row_land(overlay: Option<OverlayPassability>) -> Option<CellLand> {
+        Some(CellLand {
+            row: SpeedCostProfile {
+                foot: Some(0),
+                track: Some(0),
+                wheel: Some(0),
+                float: Some(0),
+                amphibious: Some(0),
+                float_beach: Some(0),
+                hover: Some(0),
+            },
+            overlay,
+            ..clear_land()
+        })
+    }
+
+    const WALL: OverlayPassability = OverlayPassability {
+        wall: true,
+        crushable: false,
+    };
 
     #[test]
     fn is_clear_to_move_keeps_winged_and_raw_ignore_masks_separate() {
@@ -1326,8 +1279,7 @@ mod tests {
             requested_zone: Some(99),
             ground_occupation_bits: 0xFF,
             deck_occupation_bits: 0xFF,
-            land_passable: false,
-            is_wall_overlay: true,
+            land: zero_row_land(Some(WALL)),
             ..clear_to_move_request()
         };
         assert_eq!(
@@ -1375,7 +1327,7 @@ mod tests {
             has_bridge: true,
             requested_level: None,
             deck_occupation_bits: 0,
-            land_passable: false,
+            land: zero_row_land(None),
             ..clear_to_move_request()
         };
         assert_eq!(
@@ -1412,9 +1364,10 @@ mod tests {
 
         let crusher_wall = IsClearToMoveRequest {
             movement_zone: MovementZone::Crusher,
-            is_wall_overlay: true,
-            wall_allows_crusher: true,
-            land_passable: false,
+            land: zero_row_land(Some(OverlayPassability {
+                wall: true,
+                crushable: true,
+            })),
             ..clear_to_move_request()
         };
         assert!(matches!(
@@ -1425,56 +1378,242 @@ mod tests {
         ));
 
         let normal_wall = IsClearToMoveRequest {
-            is_wall_overlay: true,
-            land_passable: false,
+            land: zero_row_land(Some(WALL)),
             ..clear_to_move_request()
         };
         assert_eq!(
             evaluate_is_clear_to_move(normal_wall),
             IsClearToMoveResult::WallBlocked
         );
+
+        // `0x00483598` precedes the `0x004835F2` deck bypass.
+        let wall_on_deck = IsClearToMoveRequest {
+            has_bridge: true,
+            requested_level: None,
+            land: zero_row_land(Some(WALL)),
+            ..clear_to_move_request()
+        };
+        assert_eq!(
+            evaluate_is_clear_to_move(wall_on_deck),
+            IsClearToMoveResult::WallBlocked
+        );
     }
 
     #[test]
-    fn live_cell_passability_reads_the_selected_raw_plane() {
-        let path_grid = PathGrid::test_all_passable(2, 2);
+    fn cell_passability_reads_the_selected_raw_plane() {
+        let terrain = flat_terrain(2, 2);
         let mut raw = RawCellOccupationGrid::new();
         raw.mark_ground(1, 1, 0x20);
-        let query = LiveCellPassabilityQuery {
-            target: (1, 1),
+        let args = CellPassabilityArgs {
             speed_type: SpeedType::Track,
-            movement_zone: MovementZone::Normal,
-            requested_zone: None,
-            actual_zone: 0,
-            requested_layer: Some(MovementLayer::Ground),
             ignore_infantry: false,
             ignore_vehicles: false,
-            land_passable: true,
-            path_grid: Some(&path_grid),
-            resolved_terrain: None,
-            raw_occupation: Some(&raw),
+            zone: None,
+            movement_zone: MovementZone::Normal,
+            level: Some(0),
+            is_bridge: false,
         };
-        let occupied = evaluate_live_cell_passability(query);
+        let map = CellPassabilityMap {
+            terrain: Some(&terrain),
+            overlays: None,
+            zones: None,
+            native_cells: None,
+            raw_occupation: Some(&raw),
+            listed_occupancy: None,
+        };
+        let cell = CellRef::Real(terrain.cell(1, 1).unwrap());
         assert_eq!(
-            occupied,
+            check_cell_passability(&cell, args, &map),
             IsClearToMoveResult::Occupied {
                 remaining_bits: 0x20
             }
         );
-
-        let vehicle_ignored = evaluate_live_cell_passability(LiveCellPassabilityQuery {
+        let vehicle_ignored = CellPassabilityArgs {
             ignore_vehicles: true,
-            ..query
-        });
-        assert!(matches!(vehicle_ignored, IsClearToMoveResult::Clear { .. }));
+            ..args
+        };
+        assert!(matches!(
+            check_cell_passability(&cell, vehicle_ignored, &map),
+            IsClearToMoveResult::Clear { .. }
+        ));
     }
 
+    /// A 3x3 grid of retail Clear cells whose centre carries `overlay`,
+    /// written by the production overlay attribute writer, with the retail
+    /// land rows and overlay types bound as a loaded scenario binds them.
+    fn retail_overlay_scene(overlay: &str) -> Option<(ResolvedTerrainGrid, OverlayGrid, u8)> {
+        let ini = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini")?;
+        let rules = TerrainRules::from_ini(&ini);
+        let registry = OverlayTypeRegistry::from_ini(&ini, None);
+        let clear = rules
+            .semantics_for_land_type(LandType::Clear.as_index())
+            .unwrap()
+            .speed_costs;
+        let mut terrain =
+            crate::map::resolved_terrain::test_grid(3, 3, |rx, ry| ResolvedTerrainCell {
+                speed_costs: clear,
+                base_speed_costs: clear,
+                ..crate::map::resolved_terrain::test_clear_cell(rx, ry)
+            });
+        terrain.set_land_speed_rules_for_test(&rules);
+        terrain.set_overlay_types_for_test(&registry);
+        let id = registry.id_for_name(overlay).unwrap();
+        let mut overlays = OverlayGrid::new(3, 3);
+        overlays.place_overlay(1, 1, id, 0);
+        crate::sim::overlay_grid::recalc_overlay_passability(
+            &mut overlays,
+            &mut terrain,
+            &registry,
+            1,
+            1,
+        );
+        Some((terrain, overlays, id))
+    }
+
+    fn mover(speed_type: SpeedType, movement_zone: MovementZone) -> CellPassabilityArgs {
+        CellPassabilityArgs {
+            speed_type,
+            ignore_infantry: false,
+            ignore_vehicles: false,
+            zone: None,
+            movement_zone,
+            level: None,
+            is_bridge: true,
+        }
+    }
+
+    /// Retail sandbags (`[GASAND]` `Wall=yes`, `Crushable=yes`) reduce to
+    /// zone class Crushable, but `0x004834A0` reads the overlay type itself
+    /// through `+0x44`: the wall refuses Infantry and Normal (`0x004835CA`),
+    /// admits Crusher, AmphibiousCrusher on `+0x22D` (`0x004835BB`),
+    /// Destroyer, InfantryDestroyer (`0x004835A2..0x004835AC`) and CrusherAll
+    /// (`0x004835C5`). The non-crushable `[GAWALL]` refuses a Crusher.
+    #[test]
+    fn crushable_wall_admits_only_crushers_and_destroyers() {
+        use IsClearToMoveResult::{Clear, WallBlocked};
+        use MovementZone::*;
+        let ground = Clear {
+            selected_layer: MovementLayer::Ground,
+        };
+        for (overlay, cases) in [
+            (
+                "GASAND",
+                vec![
+                    (SpeedType::Foot, Infantry, WallBlocked),
+                    (SpeedType::Track, Normal, WallBlocked),
+                    (SpeedType::Wheel, Normal, WallBlocked),
+                    (SpeedType::Track, Crusher, ground),
+                    (SpeedType::Amphibious, AmphibiousCrusher, ground),
+                    (SpeedType::Track, Destroyer, ground),
+                    (SpeedType::Foot, InfantryDestroyer, ground),
+                    (SpeedType::Track, CrusherAll, ground),
+                ],
+            ),
+            (
+                "GAWALL",
+                vec![
+                    (SpeedType::Foot, Infantry, WallBlocked),
+                    (SpeedType::Track, Crusher, WallBlocked),
+                    (SpeedType::Track, Destroyer, ground),
+                ],
+            ),
+        ] {
+            let Some((terrain, overlays, _)) = retail_overlay_scene(overlay) else {
+                return;
+            };
+            let map = CellPassabilityMap {
+                terrain: Some(&terrain),
+                overlays: Some(&overlays),
+                zones: None,
+                native_cells: None,
+                raw_occupation: None,
+                listed_occupancy: None,
+            };
+            let cell = CellRef::Real(terrain.cell(1, 1).unwrap());
+            for (speed_type, movement_zone, expected) in cases {
+                assert_eq!(
+                    check_cell_passability(&cell, mover(speed_type, movement_zone), &map),
+                    expected,
+                    "{overlay} {speed_type:?} {movement_zone:?}"
+                );
+            }
+            // The passability rectangle reads the same cell.
+            let mut ctx = clear_passability_context(CellRect::single(1, 1), Some(&terrain));
+            ctx.overlay_grid = Some(&overlays);
+            ctx.speed_type = SpeedType::Foot;
+            ctx.movement_zone = Infantry;
+            assert!(!check_passability_rect(ctx), "{overlay} rectangle");
+        }
+    }
+
+    /// A wall the mover passes switches to the Clear row (`0x004835D3`)
+    /// before the 0.0 test (`0x004835DE..0x004835F4`). Retail Clear gives
+    /// Float 0%, so a Destroyer-zone Float mover stays off a wall while
+    /// Track and Hover pass. The Dummy's own Water row (Float 100%, Track
+    /// 0%) is not read once its wall passes. A Land the rules lack reads 0.0.
+    #[test]
+    fn passed_wall_takes_the_clear_row_cost() {
+        use IsClearToMoveResult::{Clear, LandBlocked};
+        let Some((terrain, overlays, wall)) = retail_overlay_scene("GAWALL") else {
+            return;
+        };
+        let ground = Clear {
+            selected_layer: MovementLayer::Ground,
+        };
+        let map = CellPassabilityMap {
+            terrain: Some(&terrain),
+            overlays: Some(&overlays),
+            zones: None,
+            native_cells: None,
+            raw_occupation: None,
+            listed_occupancy: None,
+        };
+        let real = CellRef::Real(terrain.cell(1, 1).unwrap());
+        let dummy = terrain.shared_cell_dummy();
+        dummy.test_set_land_type(i32::from(LandType::Water.as_index()));
+        dummy.write_overlay_identity_state(i32::from(wall), 0);
+        let dummy = CellRef::Dummy { cell: dummy };
+        for (name, cell) in [("real", &real), ("dummy", &dummy)] {
+            for (speed_type, expected) in [
+                (SpeedType::Float, LandBlocked),
+                (SpeedType::Track, ground),
+                (SpeedType::Hover, ground),
+            ] {
+                assert_eq!(
+                    check_cell_passability(cell, mover(speed_type, MovementZone::Destroyer), &map),
+                    expected,
+                    "{name} {speed_type:?}"
+                );
+            }
+        }
+
+        let CellRef::Dummy { cell } = &dummy else {
+            unreachable!()
+        };
+        cell.write_overlay_identity_state(-1, 0);
+        for (land, speed_type, expected) in [
+            (LandType::Water, SpeedType::Float, ground),
+            (LandType::Water, SpeedType::Track, LandBlocked),
+        ] {
+            cell.test_set_land_type(i32::from(land.as_index()));
+            assert_eq!(
+                check_cell_passability(&dummy, mover(speed_type, MovementZone::Normal), &map),
+                expected,
+                "{land:?} {speed_type:?}"
+            );
+        }
+        cell.test_set_land_type(99);
+        assert_eq!(
+            check_cell_passability(&dummy, mover(SpeedType::Track, MovementZone::Normal), &map),
+            LandBlocked,
+            "an absent row is 0.0"
+        );
+    }
+
+    /// Clear cells carrying the retail Clear row, with the grid's rule rows
+    /// bound as a loaded scenario binds them.
     fn flat_terrain(width: u16, height: u16) -> ResolvedTerrainGrid {
-        crate::map::resolved_terrain::test_grid(
-            width,
-            height,
-            crate::map::resolved_terrain::test_clear_cell,
-        )
+        crate::map::resolved_terrain::test_retail_clear_grid(width, height)
     }
 
     fn assert_dummy(cell: CellRef<'_>, coord: (i32, i32), level: i8, slope_type: u8) {
@@ -1512,7 +1651,6 @@ mod tests {
             required_height_or_level: None,
             bridge_aware_zone: false,
             reject_any_overlay: false,
-            path_grid: None,
             resolved_terrain: terrain,
             overlay_grid: None,
             occupancy: None,
@@ -1537,17 +1675,15 @@ mod tests {
         }
     }
 
-    fn square_zone_grid(terrain: &ResolvedTerrainGrid) -> (PathGrid, ZoneGrid) {
+    fn square_zone_grid(terrain: &ResolvedTerrainGrid) -> ZoneGrid {
         assert_eq!(terrain.width(), terrain.height());
-        let path_grid = PathGrid::from_resolved_terrain(terrain);
-        let zone_grid = ZoneGrid::build_with_terrain(
-            &path_grid,
+        ZoneGrid::build_with_terrain(
+            &PathGrid::from_resolved_terrain(terrain),
             terrain,
             &[],
             terrain.width(),
             terrain.height(),
-        );
-        (path_grid, zone_grid)
+        )
     }
 
     #[test]
@@ -1559,27 +1695,6 @@ mod tests {
             Some(&terrain),
         )));
         assert_eq!(terrain.dummy_cell_requested_coord(), (5, 7));
-    }
-
-    #[test]
-    fn gsi_04_01_passability_path_grid_only_keeps_checked_projection() {
-        let mut path_grid = PathGrid::new(2, 1);
-        path_grid.set_blocked(0, 0, true);
-
-        for (cell, expected) in [
-            ((0, 0), false),
-            ((1, 0), true),
-            ((2, 0), false),
-            ((-1, 0), false),
-        ] {
-            let mut ctx = clear_passability_context(CellRect::new(cell.0, cell.1, 1, 1), None);
-            ctx.path_grid = Some(&path_grid);
-            assert_eq!(
-                check_passability_rect(ctx),
-                expected,
-                "path-only projection at {cell:?}"
-            );
-        }
     }
 
     #[test]
@@ -1849,7 +1964,6 @@ mod tests {
             required_height_or_level: None,
             bridge_aware_zone: false,
             reject_any_overlay: false,
-            path_grid: Some(&path_grid),
             resolved_terrain: Some(&terrain),
             overlay_grid: None,
             occupancy: None,
@@ -1866,7 +1980,6 @@ mod tests {
             required_height_or_level: None,
             bridge_aware_zone: false,
             reject_any_overlay: false,
-            path_grid: Some(&path_grid),
             resolved_terrain: Some(&terrain),
             overlay_grid: None,
             occupancy: None,
@@ -1883,7 +1996,6 @@ mod tests {
             required_height_or_level: None,
             bridge_aware_zone: false,
             reject_any_overlay: false,
-            path_grid: Some(&path_grid),
             resolved_terrain: Some(&terrain),
             overlay_grid: None,
             occupancy: None,
@@ -1976,7 +2088,7 @@ mod tests {
                 ctx.required_height_or_level = (height != -1).then_some(height as i16);
                 ctx.bridge_aware_zone = input["bridge_aware"].as_bool().unwrap();
                 assert_eq!(
-                    check_cell_passability(
+                    check_rect_cell_passability(
                         &ctx,
                         Some(&raw),
                         i32::from(coord.0),
@@ -1995,7 +2107,7 @@ mod tests {
     #[test]
     fn gsi_04_01_cellrect_nonbridge_zone_uses_resolved_cell_canonical_coord() {
         let terrain = flat_terrain(2, 2);
-        let (path_grid, mut zone_grid) = square_zone_grid(&terrain);
+        let mut zone_grid = square_zone_grid(&terrain);
         {
             let base = zone_grid.base_topology_mut();
             base.movement_classes = vec![0; 4];
@@ -2008,7 +2120,6 @@ mod tests {
         let _ = get_cellclass_fallback(Some(&terrain), -1, 0);
 
         let mut ctx = clear_passability_context(CellRect::single(512, 0), Some(&terrain));
-        ctx.path_grid = Some(&path_grid);
         ctx.zone_grid = Some(&zone_grid);
         ctx.required_zone_id = Some(44);
         assert!(
@@ -2025,7 +2136,7 @@ mod tests {
     #[test]
     fn gsi_04_01_cellrect_dummy_routes_raw_nonbridge_zone_without_restamping() {
         let mut terrain = flat_terrain(2, 2);
-        let (path_grid, mut zone_grid) = square_zone_grid(&terrain);
+        let mut zone_grid = square_zone_grid(&terrain);
         {
             let base = zone_grid.base_topology_mut();
             base.movement_classes = vec![0; 4];
@@ -2038,7 +2149,6 @@ mod tests {
 
         let check = |required_zone_id, zone_grid: &ZoneGrid| {
             let mut ctx = clear_passability_context(CellRect::single(1, 0), Some(&terrain));
-            ctx.path_grid = Some(&path_grid);
             ctx.zone_grid = Some(zone_grid);
             ctx.required_zone_id = Some(required_zone_id);
             check_passability_rect(ctx)
@@ -2066,32 +2176,15 @@ mod tests {
     }
 
     #[test]
-    fn gsi_04_01_cellrect_pathgrid_only_required_zone_keeps_compatibility_projection() {
-        let terrain = flat_terrain(2, 1);
-        let path_grid = PathGrid::from_resolved_terrain(&terrain);
-        let compatibility_zones = ZoneGrid::build_with_terrain(&path_grid, &terrain, &[], 2, 1);
-        let zone = compatibility_zones
-            .map_for(MovementZone::Normal)
-            .unwrap()
-            .zone_at(1, 0, MovementLayer::Ground);
-        let mut ctx = clear_passability_context(CellRect::single(1, 0), None);
-        ctx.path_grid = Some(&path_grid);
-        ctx.zone_grid = Some(&compatibility_zones);
-        ctx.required_zone_id = Some(u32::from(zone));
-        assert!(check_passability_rect(ctx));
-    }
-
-    #[test]
     fn gsi_04_01_bridge_required_zone_uses_raw_labels_and_missing_record_dword() {
         let mut terrain = flat_terrain(2, 2);
-        let (path_grid, mut zone_grid) = square_zone_grid(&terrain);
+        let mut zone_grid = square_zone_grid(&terrain);
         let cluster = zone_grid.base_topology_mut().zone_ids[0] as usize;
         let row = MovementZone::Normal.matrix_row().unwrap();
         zone_grid.base_topology_mut().raw_zone_ids_by_row[row].resize(cluster + 1, 0);
         zone_grid.base_topology_mut().raw_zone_ids_by_row[row][cluster] = 91;
         let check = |terrain: &ResolvedTerrainGrid, zones: &ZoneGrid, required, bridge| {
             let mut ctx = clear_passability_context(CellRect::single(0, 0), Some(terrain));
-            ctx.path_grid = Some(&path_grid);
             ctx.zone_grid = Some(zones);
             ctx.required_zone_id = Some(required);
             ctx.bridge_aware_zone = bridge;
@@ -2144,7 +2237,6 @@ mod tests {
             required_height_or_level: None,
             bridge_aware_zone: true,
             reject_any_overlay: false,
-            path_grid: None,
             resolved_terrain: Some(&terrain),
             overlay_grid: None,
             occupancy: Some(&occupancy),
@@ -2532,7 +2624,6 @@ mod tests {
                     required_height_or_level: None,
                     bridge_aware_zone: false,
                     reject_any_overlay: false,
-                    path_grid: Some(&path_grid),
                     resolved_terrain: Some(&terrain),
                     overlay_grid: None,
                     occupancy: None,
@@ -2559,7 +2650,6 @@ mod tests {
             required_height_or_level: None,
             bridge_aware_zone: false,
             reject_any_overlay: false,
-            path_grid: None,
             resolved_terrain: Some(&terrain),
             overlay_grid: None,
             occupancy: None,

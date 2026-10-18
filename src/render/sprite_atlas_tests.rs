@@ -943,7 +943,7 @@ fn gsi_13_08_warpout_keeps_all_frames_and_drives_the_progressive_alpha_ladder() 
                 game_detail_level: 2,
                 translucent_ramp: warpout.translucent,
                 current_frame: frame,
-                frame_count: i32::from(frame_count),
+                end_frame: warpout.loaded_end(i32::from(frame_count)),
                 explicit_translucency: warpout.translucency,
                 instance_ramp: 0,
             },

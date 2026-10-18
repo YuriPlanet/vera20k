@@ -87,7 +87,7 @@ impl Simulation {
                     .ok_or("retired Walk path requester")?
                     .navigation
                     .path_runtime
-                    .set_retries_left(super::PATH_STUCK_INIT);
+                    .set_retries_left(crate::sim::components::FootPathRuntime::RETRY_RELOAD);
                 self.walk_short_path_receiver(id, rules)?;
                 Ok(true)
             }

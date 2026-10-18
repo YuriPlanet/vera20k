@@ -589,6 +589,12 @@ pub struct ResolvedTerrainGrid {
     /// Rebuilt with the grid on each scenario load, including empty grids;
     /// independent of whether a theater/bridge asset catalog was available.
     land_speed_costs: [SpeedCostProfile; LandType::ALL.len()],
+    /// Immutable projection of the scenario's `[OverlayTypes]` `Wall=` and
+    /// `Crushable=`, in registry order. CheckCellPassability4834A0 reads the
+    /// type through the live `CellClass+0x44` identity (`OverlayGrid` for a
+    /// real cell, the shared Dummy's own). Bound beside `land_speed_costs`
+    /// from the same scenario's registry; empty when no registry was bound.
+    overlay_passability: Vec<OverlayPassability>,
     /// Pristine TMP dimensions used by Techno draw depth (0x547150/0x704350).
     /// Derived asset data, keyed by tile identity rather than mutable cell:
     /// never serialized or included in simulation hashes.
@@ -676,6 +682,53 @@ pub fn test_flat_ground_grid(size: u16) -> ResolvedTerrainGrid {
         base_speed_costs: costs,
         ..test_flat_cell(rx, ry)
     })
+}
+
+/// Retail `rulesmd.ini` `[Clear]` speed keys; a resolved-terrain test pins
+/// them to the retail file through the production land reader.
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) const TEST_RETAIL_CLEAR_INI: &str = "[Clear]\nFoot=100%\nTrack=100%\nWheel=100%\nFloat=0%\n\
+    Hover=50%\nAmphibious=80%\nFloatBeach=0%\n";
+
+/// The row the production land reader makes of retail `[Clear]`.
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) const TEST_RETAIL_CLEAR_SPEED_COSTS: SpeedCostProfile = SpeedCostProfile {
+    foot: Some(100),
+    track: Some(100),
+    wheel: Some(100),
+    float: Some(0),
+    amphibious: Some(80),
+    float_beach: Some(0),
+    hover: Some(50),
+};
+
+/// Retail `[Clear]` read by the production land reader, for binding a test
+/// grid's land rows as a scenario load binds its rules.
+#[cfg(any(test, feature = "test-support"))]
+pub fn test_retail_clear_rules() -> TerrainRules {
+    TerrainRules::from_ini(&crate::rules::ini_parser::IniFile::from_str(
+        TEST_RETAIL_CLEAR_INI,
+    ))
+}
+
+/// [`test_clear_cell`] carrying the retail Clear row.
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) fn test_retail_clear_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
+    ResolvedTerrainCell {
+        speed_costs: TEST_RETAIL_CLEAR_SPEED_COSTS,
+        base_speed_costs: TEST_RETAIL_CLEAR_SPEED_COSTS,
+        ..test_clear_cell(rx, ry)
+    }
+}
+
+/// A grid of [`test_retail_clear_cell`] with [`test_retail_clear_rules`]
+/// bound as its land rows: the Clear row reaches the shared Dummy and a wall
+/// a mover passes, as on a loaded map.
+#[cfg(any(test, feature = "test-support"))]
+pub(crate) fn test_retail_clear_grid(width: u16, height: u16) -> ResolvedTerrainGrid {
+    let mut grid = test_grid(width, height, test_retail_clear_cell);
+    grid.set_land_speed_rules_for_test(&test_retail_clear_rules());
+    grid
 }
 
 /// A `width` x `height` grid of `cell(rx, ry)`, in row-major order.
@@ -825,6 +878,30 @@ fn land_speed_cost_profiles(
     })
 }
 
+/// The two `OverlayTypeClass` fields `CellClass::CheckCellPassability @
+/// 0x004834A0` reads through `CellClass+0x44`: `Wall=` (`+0x2A8`,
+/// `0x00483598`) and `Crushable=` (`+0x22D`, `0x004835BB`), as
+/// [`OverlayTypeRegistry::from_ini`] parses them.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct OverlayPassability {
+    pub wall: bool,
+    pub crushable: bool,
+}
+
+fn overlay_passability_flags(registry: Option<&OverlayTypeRegistry>) -> Vec<OverlayPassability> {
+    let Some(registry) = registry else {
+        return Vec::new();
+    };
+    // `OverlayCell` stores the `+0x44` identity as a byte.
+    (0..=u8::MAX)
+        .map_while(|id| registry.flags(id))
+        .map(|flags| OverlayPassability {
+            wall: flags.wall,
+            crushable: flags.crushable,
+        })
+        .collect()
+}
+
 impl ResolvedTerrainGrid {
     pub fn from_cells(width: u16, height: u16, cells: Vec<ResolvedTerrainCell>) -> Self {
         Self::from_cells_with_tubes(width, height, cells, Vec::new())
@@ -856,6 +933,7 @@ impl ResolvedTerrainGrid {
             height,
             cells,
             land_speed_costs: land_speed_cost_profiles(None),
+            overlay_passability: Vec::new(),
             native_tmp_draw_heights: HashMap::new(),
             shared_cell_dummy: SharedCellDummy::fresh(),
             mutation_epoch: 0,
@@ -881,8 +959,8 @@ impl ResolvedTerrainGrid {
 
     /// Original4835D5..4835DE indexes the 89EA40 table using retained Land.
     /// The existing TerrainRules owner supplies these rows; this grid does
-    /// not parse or independently mutate rules. Missing/invalid rows keep the
-    /// existing unbound-profile compatibility policy, also used by real cells.
+    /// not parse or independently mutate rules. A missing or invalid row is
+    /// the unbound profile, every cost absent.
     pub(crate) fn land_speed_costs(&self, land: i32) -> SpeedCostProfile {
         usize::try_from(land)
             .ok()
@@ -892,8 +970,23 @@ impl ResolvedTerrainGrid {
     }
 
     #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn set_land_speed_rules_for_test(&mut self, rules: &TerrainRules) {
+    pub fn set_land_speed_rules_for_test(&mut self, rules: &TerrainRules) {
         self.land_speed_costs = land_speed_cost_profiles(Some(rules));
+    }
+
+    /// `Wall=`/`Crushable=` of the overlay type a `CellClass+0x44` identity
+    /// names; `None` for `-1` (`0x00483589`) or a type the bound registry
+    /// does not hold.
+    pub(crate) fn overlay_passability(&self, overlay: i32) -> Option<OverlayPassability> {
+        usize::try_from(overlay)
+            .ok()
+            .and_then(|index| self.overlay_passability.get(index))
+            .copied()
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn set_overlay_types_for_test(&mut self, registry: &OverlayTypeRegistry) {
+        self.overlay_passability = overlay_passability_flags(Some(registry));
     }
 
     /// Terrain animations to spawn once at map load, in native creation order.

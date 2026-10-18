@@ -161,33 +161,15 @@ pub fn native_sin_cos_by_step(step: i32) -> Option<(f32, f32)> {
     ))
 }
 
-/// Rotate a point about Z by a quantised facing step, the way
-/// `Matrix3x4_RotateZ @ 0x005AF1A0` does.
-///
-/// gamemd-derived: starting from the identity, `RotateZ` leaves the 3x4 matrix
-/// as `[cos, -sin, 0, tx; sin, cos, 0, ty; 0, 0, 1, tz]` — it updates only
-/// columns 0 and 1, as `col0' = col0*cos + col1*sin` and
-/// `col1' = col1*cos - col0*sin`. Applying that to a point through
-/// `Matrix3x4_TransformPoint @ 0x005AFB80` gives the two expressions below; Z
-/// is carried through untouched.
-///
-/// `step` is the signed quarter-facing count, NOT an angle: the caller keeps it
-/// signed and unwrapped so the asymmetric table is indexed exactly as retail
-/// indexes it. Returns `None` for an out-of-range step rather than wrapping.
-pub fn rotate_z_by_step(point: (f32, f32, f32), step: i32) -> Option<(f32, f32, f32)> {
-    let (sin, cos) = native_sin_cos_by_step(step)?;
-    let (px, py, pz) = point;
-    Some((px * cos - py * sin, px * sin + py * cos, pz))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
 
     /// Full original FindFireLocation4197C0 calls record every candidate before
-    /// map/visibility/reservation filtering. This establishes which existing
-    /// deterministic geometry can serve the pending production search port;
-    /// it does not assert that Mission_Attack already calls that search.
+    /// map/visibility/reservation filtering. This pins the candidate geometry
+    /// and ranking distances the production search
+    /// (`Simulation::aircraft_find_fire_location`) builds on;
+    /// `aircraft_fire_location_tests` compares that search's results and RNG.
     #[test]
     fn aircraft_fire_location_candidates_and_distances_match_native() {
         let rows: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
@@ -321,7 +303,9 @@ mod tests {
     }
 
     /// The zero step is the identity, and a quarter turn moves `+X` onto the
-    /// other axis — the orientation a transposed rotation would swap.
+    /// other axis — the orientation a transposed rotation would swap. The
+    /// rotation is `Matrix3x4_RotateZ @ 0x005AF1A0`'s one port,
+    /// [`crate::util::native_affine::rotate_z`], applied to the identity.
     ///
     /// Note what the retail table does at the two quarter turns: step `-8` is
     /// exact (sin 1.0, cos 0.0), while step `+8` returns sin `-0.999998808` and
@@ -330,8 +314,13 @@ mod tests {
     /// the point — a port that used a real cosine would be the one that drifts.
     #[test]
     fn gsi_08_04_rotate_z_matches_the_native_matrix_layout() {
-        let identity = rotate_z_by_step((190.0, 25.0, 120.0), 0).expect("in range");
-        assert_eq!(identity, (190.0, 25.0, 120.0));
+        let point = glam::Vec3::new(190.0, 25.0, 120.0);
+        let turned_by = |step| {
+            let (sin, cos) = native_sin_cos_by_step(step).expect("in range");
+            crate::util::native_affine::rotate_z(glam::Mat4::IDENTITY, sin, cos)
+                .transform_point3(point)
+        };
+        assert_eq!(turned_by(0), point);
 
         let (sin_neg, cos_neg) = native_sin_cos_by_step(-8).expect("in range");
         assert_eq!(
@@ -358,9 +347,9 @@ mod tests {
         );
 
         // The geometry still has to be right within the table's own error.
-        let turned = rotate_z_by_step((190.0, 25.0, 120.0), 8).expect("in range");
-        assert!((turned.0 - 25.0).abs() < 0.5, "x={}", turned.0);
-        assert!((turned.1 + 190.0).abs() < 0.5, "y={}", turned.1);
-        assert_eq!(turned.2, 120.0, "Z is carried through untouched");
+        let turned = turned_by(8);
+        assert!((turned.x - 25.0).abs() < 0.5, "x={}", turned.x);
+        assert!((turned.y + 190.0).abs() < 0.5, "y={}", turned.y);
+        assert_eq!(turned.z, 120.0, "Z is carried through untouched");
     }
 }

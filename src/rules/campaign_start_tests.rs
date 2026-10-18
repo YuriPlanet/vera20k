@@ -6,7 +6,6 @@ use serde_json::Value;
 use super::campaigns::{CampaignDefinition, CampaignRegistry};
 use super::ini_parser::IniFile;
 use super::movies::MovieRegistry;
-use crate::assets::csf_file::CsfFile;
 
 fn native() -> &'static Value {
     let fixture = crate::test_fixture::json("tools/input_oracle/campaign_start.json");
@@ -28,26 +27,6 @@ fn cache_ini(sections: &Value) -> IniFile {
     ini
 }
 
-fn terminated_wide_string(hex: &str) -> String {
-    let bytes: Vec<u8> = hex
-        .as_bytes()
-        .as_chunks::<2>()
-        .0
-        .iter()
-        .map(|pair| {
-            u8::from_str_radix(std::str::from_utf8(pair).unwrap(), 16).expect("native UTF16 byte")
-        })
-        .collect();
-    let units: Vec<u16> = bytes
-        .as_chunks::<2>()
-        .0
-        .iter()
-        .map(|pair| u16::from_le_bytes([pair[0], pair[1]]))
-        .take_while(|unit| *unit != 0)
-        .collect();
-    String::from_utf16_lossy(&units)
-}
-
 fn assert_campaign(actual: &CampaignDefinition, expected: &Value) {
     assert_eq!(actual.id(), expected["id"].as_str().unwrap());
     assert_eq!(actual.cd(), expected["cd"].as_i64().unwrap() as i32);
@@ -55,10 +34,6 @@ fn assert_campaign(actual: &CampaignDefinition, expected: &Value) {
     assert_eq!(
         actual.final_movie(),
         expected["final_movie"].as_i64().unwrap() as i32
-    );
-    assert_eq!(
-        actual.description(),
-        terminated_wide_string(expected["description_utf16_hex"].as_str().unwrap())
     );
 }
 
@@ -180,12 +155,6 @@ fn campaign_catalog_and_retained_reload_controls_match_original_execution() {
         return;
     };
     let native = native();
-    let bytes = assets.get_ref("RA2MD.CSF").expect("initialized retail CSF");
-    assert_eq!(
-        crate::util::sha256::sha256_hex(bytes),
-        native["metadata"]["csf"]["source_sha256"]
-    );
-    let csf = CsfFile::from_bytes(bytes).unwrap();
     let bytes = assets
         .get_ref("BATTLEMD.INI")
         .expect("retail campaign catalog");
@@ -196,7 +165,7 @@ fn campaign_catalog_and_retained_reload_controls_match_original_execution() {
     let battle = IniFile::from_bytes(bytes).unwrap();
     let movies = MovieRegistry::default();
     let mut stock = CampaignRegistry::default();
-    stock.apply_ini(&battle, &movies, Some(&csf));
+    stock.apply_ini(&battle, &movies);
     assert_campaigns(&stock, &native["metadata"]["entries"]);
     for lookup in native["metadata"]["lookups"].as_array().unwrap() {
         assert_eq!(
@@ -209,7 +178,7 @@ fn campaign_catalog_and_retained_reload_controls_match_original_execution() {
 
     let mut retained = CampaignRegistry::default();
     for row in native["metadata_controls"].as_array().unwrap() {
-        retained.apply_ini(&cache_ini(&row["sections"]), &movies, Some(&csf));
+        retained.apply_ini(&cache_ini(&row["sections"]), &movies);
         assert_campaigns(&retained, &row["entries"]);
     }
 }

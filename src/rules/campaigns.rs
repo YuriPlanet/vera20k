@@ -4,8 +4,10 @@
 //! `CampaignClass::ReadINI @ 0x0046CCD0` reads their current fields. The
 //! original list survives ClearScene, which rereads the campaign sources.
 //! The native corpus is `tools/input_oracle/campaign_start.json`.
+//! `DebugOnly=` (`0x0046CD5E`) and `Description=` (`0x0046CD7B`, or
+//! `0x0046CDA3` when DebugOnly) are not read: nothing displays a campaign
+//! description yet.
 
-use crate::assets::csf_file::CsfFile;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::movies::MovieRegistry;
 use crate::rules::native_processing::abstract_type_stored_id;
@@ -16,18 +18,16 @@ pub struct CampaignDefinition {
     cd: i32,
     scenario: String,
     final_movie: i32,
-    description: String,
 }
 
 impl CampaignDefinition {
     fn new(incoming_id: &str) -> Self {
-        // Campaign ctor46CB60: CD/final movie -1, empty Scenario/Description.
+        // Campaign ctor46CB60: CD/final movie -1, empty Scenario.
         Self {
             id: abstract_type_stored_id(incoming_id),
             cd: -1,
             scenario: String::new(),
             final_movie: -1,
-            description: String::new(),
         }
     }
 
@@ -46,10 +46,6 @@ impl CampaignDefinition {
     pub fn final_movie(&self) -> i32 {
         self.final_movie
     }
-
-    pub fn description(&self) -> &str {
-        &self.description
-    }
 }
 
 #[derive(Debug, Default)]
@@ -61,7 +57,7 @@ impl CampaignRegistry {
     /// Read the source-order list using each entry's original 32-byte buffer.
     /// Lookup compares the full incoming spelling against the stored ID;
     /// a repeated overlong spelling can therefore append equal stored IDs.
-    pub fn apply_ini(&mut self, ini: &IniFile, movies: &MovieRegistry, csf: Option<&CsfFile>) {
+    pub fn apply_ini(&mut self, ini: &IniFile, movies: &MovieRegistry) {
         let Some(list) = ini.section("Battles") else {
             return;
         };
@@ -82,20 +78,6 @@ impl CampaignRegistry {
             entry.final_movie = section.read_movie("FinalMovie", entry.final_movie, movies);
             entry.scenario = section.read_string("Scenario", &entry.scenario, 512);
             entry.scenario.make_ascii_uppercase();
-            let debug_only = section.read_bool("DebugOnly", false);
-            let description = section.read_string("Description", "", 1024);
-            entry.description = if debug_only {
-                // Native's debug-only byte-widen branch appends this literal
-                // unboundedly. String storage avoids its buffer overrun; stock
-                // descriptions fit the original 128-wide-character field.
-                format!("{description} - for debug/testing")
-            } else {
-                let localized = csf.map_or_else(
-                    || description.clone(),
-                    |csf| csf.text(&description).into_owned(),
-                );
-                String::from_utf16_lossy(&localized.encode_utf16().take(127).collect::<Vec<_>>())
-            };
         }
     }
 

@@ -11,8 +11,11 @@ use crate::sim::smudge_grid::SimCoord;
 
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::art_data::ArtRegistry;
-use crate::rules::locomotor_type::SpeedType;
+use crate::rules::locomotor_type::{MovementZone, SpeedType};
 use crate::rules::smudge_type::SmudgeTypeRegistry;
+use crate::sim::cell_rect::{
+    CellPassabilityArgs, CellPassabilityMap, CellRef, check_cell_passability,
+};
 use crate::sim::combat::SmudgeSpawnRequest;
 use crate::sim::occupancy::{OccupancyGrid, RawCellOccupationGrid};
 use crate::sim::ore_growth::OreGrowthState;
@@ -267,41 +270,39 @@ pub(crate) fn try_dispatch_building_destruction_smudges(
     );
 }
 
+/// `BuildingClass::SpawnSurvivors @ 0x00442D90` asks
+/// [`check_cell_passability`] with (Track, 1, 1, -1, Normal, -1, 1) of each
+/// foundation cell before its scorch or crater (`0x00443292..0x004432A3`).
 fn survivor_smudge_cell_passable(
     rx: u16,
     ry: u16,
     raw_occupation: &RawCellOccupationGrid,
     terrain: &ResolvedTerrainGrid,
     overlay: &OverlayGrid,
-    overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
 ) -> bool {
-    if overlay
-        .cell(rx, ry)
-        .overlay_id
-        .and_then(|id| overlay_registry.and_then(|registry| registry.flags(id)))
-        .is_some_and(|flags| flags.wall)
-    {
-        return false;
-    }
-
-    let Some(cell) = terrain.cell(rx, ry) else {
-        return false;
-    };
-    let structural_bridge = cell.bridge_facts.has_structural_bridge();
-    let occupation = if structural_bridge {
-        raw_occupation.deck_bits(rx, ry)
-    } else {
-        raw_occupation.ground_bits(rx, ry)
-    };
-    if occupation & 0x40 != 0 {
-        return false;
-    }
-
-    structural_bridge
-        || cell
-            .speed_costs
-            .cost_for_speed_type(SpeedType::Track)
-            .is_some_and(|cost| cost != 0)
+    terrain.cell(rx, ry).is_some_and(|cell| {
+        check_cell_passability(
+            &CellRef::Real(cell),
+            CellPassabilityArgs {
+                speed_type: SpeedType::Track,
+                ignore_infantry: true,
+                ignore_vehicles: true,
+                zone: None,
+                movement_zone: MovementZone::Normal,
+                level: None,
+                is_bridge: true,
+            },
+            &CellPassabilityMap {
+                terrain: Some(terrain),
+                overlays: Some(overlay),
+                zones: None,
+                native_cells: None,
+                raw_occupation: Some(raw_occupation),
+                listed_occupancy: None,
+            },
+        )
+        .admits()
+    })
 }
 
 /// One producer-ordered SpawnSurvivors cell: a passable cell rolls a scorch
@@ -327,7 +328,6 @@ fn try_dispatch_building_survivor_smudge(
         raw_occupation,
         terrain,
         tiberium.overlay_grid(),
-        tiberium.overlay_registry,
     ) {
         return;
     }
@@ -897,45 +897,26 @@ mod dispatch_tests {
             );
             let overlay_registry =
                 crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&registry_ini, None);
+            terrain.set_overlay_types_for_test(&overlay_registry);
             let mut raw = RawCellOccupationGrid::new();
 
             raw.mark_ground(1, 1, 0x80);
             assert!(survivor_smudge_cell_passable(
-                1,
-                1,
-                &raw,
-                &terrain,
-                &overlay,
-                Some(&overlay_registry),
+                1, 1, &raw, &terrain, &overlay,
             ));
 
             raw.mark_ground(1, 2, 0x40);
             assert!(!survivor_smudge_cell_passable(
-                1,
-                2,
-                &raw,
-                &terrain,
-                &overlay,
-                Some(&overlay_registry),
+                1, 2, &raw, &terrain, &overlay,
             ));
 
             terrain.cell_mut(1, 3).unwrap().speed_costs.track = None;
             assert!(!survivor_smudge_cell_passable(
-                1,
-                3,
-                &raw,
-                &terrain,
-                &overlay,
-                Some(&overlay_registry),
+                1, 3, &raw, &terrain, &overlay,
             ));
             terrain.cell_mut(1, 4).unwrap().speed_costs.track = Some(0);
             assert!(!survivor_smudge_cell_passable(
-                1,
-                4,
-                &raw,
-                &terrain,
-                &overlay,
-                Some(&overlay_registry),
+                1, 4, &raw, &terrain, &overlay,
             ));
 
             let bridge = terrain.cell_mut(1, 5).unwrap();
@@ -943,24 +924,12 @@ mod dispatch_tests {
             bridge.bridge_facts.raw_flags = crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
             raw.mark_ground(1, 5, 0x40);
             assert!(
-                survivor_smudge_cell_passable(
-                    1,
-                    5,
-                    &raw,
-                    &terrain,
-                    &overlay,
-                    Some(&overlay_registry),
-                ),
+                survivor_smudge_cell_passable(1, 5, &raw, &terrain, &overlay),
                 "a structural bridge selects the empty deck byte and bypasses Track=0"
             );
             raw.mark_deck(1, 5, 0x40);
             assert!(!survivor_smudge_cell_passable(
-                1,
-                5,
-                &raw,
-                &terrain,
-                &overlay,
-                Some(&overlay_registry),
+                1, 5, &raw, &terrain, &overlay,
             ));
 
             let wall_bridge = terrain.cell_mut(1, 6).unwrap();
@@ -968,12 +937,7 @@ mod dispatch_tests {
             wall_bridge.bridge_facts.raw_flags = crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
             overlay.place_overlay(1, 6, 0, 0);
             assert!(!survivor_smudge_cell_passable(
-                1,
-                6,
-                &raw,
-                &terrain,
-                &overlay,
-                Some(&overlay_registry),
+                1, 6, &raw, &terrain, &overlay,
             ));
 
             let smudge_reg = make_smudge_registry();

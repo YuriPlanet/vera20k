@@ -2820,8 +2820,7 @@ mod reveal_on_fire_tests {
             // Seed a single ordinary observation without refreshing its frame.
             sim.fog
                 .by_owner
-                .entry(viewer)
-                .or_insert_with(|| crate::sim::vision::OwnerVisibility::new(32, 32))
+                .get_or_insert_with(viewer, || crate::sim::vision::OwnerVisibility::new(32, 32))
                 .mark_visible(cell.0, cell.1);
             if aircraft {
                 let firer = sim.substrate.entities.get_mut(1).unwrap();

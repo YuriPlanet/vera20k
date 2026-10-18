@@ -262,6 +262,81 @@ fn scenario_land_speed_rows_survive_nonempty_and_empty_grid_construction() {
     }
 }
 
+/// The production builder binds the scenario registry's `Wall=` and
+/// `Crushable=` for every overlay identity, on empty and nonempty grids, so
+/// `0x004834A0` reads retail sandbags as a crushable wall.
+#[test]
+fn scenario_overlay_wall_flags_bind_with_the_grid() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let registry = OverlayTypeRegistry::from_ini(&retail.processed_rules, Some(&*retail.fixed_art));
+    assert!(!registry.is_empty());
+    let sandbags = registry.id_for_name("GASAND").expect("[GASAND]");
+    for cells in [
+        Vec::new(),
+        vec![MapCell {
+            rx: 0,
+            ry: 0,
+            tile_index: 0,
+            sub_tile: 0,
+            z: 0,
+        }],
+    ] {
+        let map = make_map(cells, Vec::new(), Vec::new());
+        let grid = ResolvedTerrainGrid::build(
+            &map,
+            None,
+            None,
+            Some(&retail.rules.terrain_rules),
+            Some(&registry),
+            false,
+            0,
+        );
+        for id in 0..=u8::MAX {
+            assert_eq!(
+                grid.overlay_passability(i32::from(id)),
+                registry.flags(id).map(|flags| OverlayPassability {
+                    wall: flags.wall,
+                    crushable: flags.crushable,
+                }),
+                "overlay {id}"
+            );
+        }
+        assert_eq!(grid.overlay_passability(-1), None);
+        assert_eq!(
+            grid.overlay_passability(i32::from(sandbags)),
+            Some(OverlayPassability {
+                wall: true,
+                crushable: true,
+            })
+        );
+    }
+}
+
+/// The retail Clear test cells and land rows carry the `[Clear]` row a
+/// retail Battle scenario's rules give the production land reader.
+#[test]
+fn retail_clear_test_rows_are_the_retail_scenario_clear_row() {
+    let clear = |rules: &TerrainRules| {
+        rules
+            .semantics_for_land_type(LandType::Clear.as_index())
+            .expect("Clear row")
+            .speed_costs
+    };
+    assert_eq!(
+        clear(&test_retail_clear_rules()),
+        TEST_RETAIL_CLEAR_SPEED_COSTS
+    );
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    assert_eq!(
+        clear(&retail.rules.terrain_rules),
+        TEST_RETAIL_CLEAR_SPEED_COSTS
+    );
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct ProductionBuildStats {
     fill_calls: usize,

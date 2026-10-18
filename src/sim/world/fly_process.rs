@@ -35,6 +35,9 @@ use crate::sim::combat::TargetKind;
 use crate::sim::components::{DriveCoord, NavTargetRef};
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::movement::air_movement::{self, AirMovementTickStats};
+// The cell of a coordinate as `0x0041BEA0` (vt+0x1B8) and the Fly's cell
+// tests form it.
+use crate::sim::movement::coord_cell;
 use crate::sim::movement::ground_pose;
 use crate::sim::rng::SimRng;
 use crate::sim::world::FrameEffects;
@@ -84,12 +87,6 @@ pub(crate) struct FlyMapEdge {
     /// `MapClass+0x12C`, MapRect's width: `Resize @ 0x00565C10` writes
     /// `Size.W + Size.H - 1`.
     span: i32,
-}
-
-/// The cell of a coordinate as `0x0041BEA0` (vt+0x1B8) and the Fly's cell
-/// tests form it: each axis over 256 toward zero, as a signed word.
-fn coord_cell(coord: DriveCoord) -> (i16, i16) {
-    ((coord.x / 256) as i16, (coord.y / 256) as i16)
 }
 
 /// The map-edge admission of Fly's paid step (`0x004CDB4C..0x004CDD07`): a

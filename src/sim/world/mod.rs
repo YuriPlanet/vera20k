@@ -6322,7 +6322,7 @@ impl Simulation {
                 self.fog.height,
                 self.fog.by_owner.len()
             );
-            for (owner, vis) in &self.fog.by_owner {
+            for (owner, vis) in self.fog.by_owner.iter() {
                 let total = vis.width() as u32 * vis.height() as u32;
                 let visible_count = vis.cells_raw().iter().filter(|c| **c & 0x02 != 0).count();
                 let revealed_count = vis.cells_raw().iter().filter(|c| **c & 0x01 != 0).count();

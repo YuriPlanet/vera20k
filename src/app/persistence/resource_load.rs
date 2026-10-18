@@ -160,6 +160,7 @@ impl PreparedSavedGame {
         let (mut resources, processed_rules, map) =
             saved.into_restored_parts(rules, overlay_registry, SharedCellDummy::fresh())?;
         let rules = &resources.rules;
+        let overlay_types = &resources.overlay_registry;
         let terrain_speed =
             crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig::from_general(
                 rules.general.tracked_uphill,
@@ -177,6 +178,7 @@ impl PreparedSavedGame {
                         &theater,
                         assets,
                         &rules.terrain_rules,
+                        overlay_types,
                         true,
                         rules.general.cliff_back_impassability,
                         size_width,
@@ -198,7 +200,7 @@ impl PreparedSavedGame {
                 .expect("saved terrain restored")
                 .clone(),
             terrain_speed,
-            &resources.overlay_registry,
+            overlay_types,
             Some(&mut bind_loaded_cells),
         )?;
         resources
@@ -209,6 +211,7 @@ impl PreparedSavedGame {
                 &theater,
                 assets,
                 &rules.terrain_rules,
+                overlay_types,
                 true,
                 rules.general.cliff_back_impassability,
                 tile_cache.selector(),

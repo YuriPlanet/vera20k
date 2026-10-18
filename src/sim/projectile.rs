@@ -2263,30 +2263,36 @@ fn proximity_check_distance(a: ProjectileCoord, b: ProjectileCoord) -> i32 {
     crate::util::native_x87::distance_3d_leptons([a.x, a.y, a.z], [b.x, b.y, b.z])
 }
 
-/// `CellClass::GetGroundHeight @ 0x00578080`: signed /256, fixed-512
-/// allocation lookup, and live shared-dummy fallback, evaluated at the original
-/// lepton XY. The fallback stamp is observable by a retained DummyCell target.
+/// `CellClass::GetGroundHeight @ 0x00578080` at the original lepton XY,
+/// through [`query_ground_height`](crate::sim::movement::ground_pose::query_ground_height)
+/// on the canonical query: its shared-dummy fallback stamp is observable by a
+/// retained DummyCell target. Mapless fixtures read the shared dummy directly.
 pub(crate) fn projectile_ground_z(
     terrain: Option<&ResolvedTerrainGrid>,
     shared_cell_dummy: &SharedCellDummy,
     coord: ProjectileCoord,
 ) -> i32 {
-    use crate::sim::cell_rect::{CellRef, get_cellclass_fallback_leptons};
-    let (level, slope) = if let Some(terrain) = terrain {
-        match get_cellclass_fallback_leptons(Some(terrain), coord.x, coord.y) {
-            CellRef::Real(cell) => (cell.level, cell.slope_type),
-            CellRef::Dummy { cell } => {
-                let snapshot = cell.snapshot();
-                (snapshot.level as u8, snapshot.slope_type)
-            }
-        }
+    let ground = if let Some(terrain) = terrain {
+        crate::sim::movement::ground_pose::query_ground_height(
+            &crate::map::resolved_terrain::NativeCellQuery::canonical(terrain),
+            crate::sim::components::DriveCoord {
+                x: coord.x,
+                y: coord.y,
+                z: coord.z,
+            },
+        )
     } else {
         shared_cell_dummy.stamp_coord(coord.x / 256, coord.y / 256);
         let snapshot = shared_cell_dummy.snapshot();
-        (snapshot.level as u8, snapshot.slope_type)
+        crate::util::lepton::ground_height_leptons(
+            snapshot.level as u8,
+            snapshot.slope_type,
+            coord.x,
+            coord.y,
+        )
+        .map_err(|error| format!("{error:?}"))
     };
-    crate::util::lepton::ground_height_leptons(level, slope, coord.x, coord.y)
-        .expect("projectile ground probe requires a supported CellClass slope")
+    ground.expect("projectile ground probe requires a supported CellClass slope")
 }
 
 /// BulletType virtual +6C @ 0x0046C4F0, called by ObjectUnlimbo5F4F88
@@ -2624,16 +2630,13 @@ pub fn projectile_shp_frame(
     if projectile_type.rotates {
         return 0;
     }
-    const FACING_FRAMES: [u8; 32] = [
-        28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17, 16, 15, 14, 13, 12, 11, 10, 9, 8, 7, 6, 5,
-        4, 3, 2, 1, 0, 31, 30, 29,
-    ];
+    use crate::util::direction_tables::{DRAGON_FRAME_TABLE, step32_from_facing16};
     let angle = (-f64::from_bits(projectile.velocity.y.bits()))
         .atan2(f64::from_bits(projectile.velocity.x.bits()));
     let word =
         (((angle - std::f64::consts::FRAC_PI_2) * -10430.06004058427).trunc() as i32) & 0xffff;
-    let bucket = ((((word as u32 >> 10) + 1) >> 1) & 31) as usize;
-    FACING_FRAMES[bucket]
+    // 46805D: the 32-step bucket of the angle word indexes the 0x007F4890 table.
+    DRAGON_FRAME_TABLE[usize::from(step32_from_facing16(word as u16))] as u8
 }
 
 // YR BulletClass::AI linkage: this is the bounded ordinary-flight rung; exact trajectory kernels remain separate.

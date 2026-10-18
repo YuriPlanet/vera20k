@@ -661,10 +661,16 @@ mod tests {
         })
     }
 
+    /// The land rows a scenario load binds: the start footprint's off-map
+    /// cells read the shared Dummy's Clear row.
     fn test_terrain(width: u16, height: u16) -> ResolvedTerrainGrid {
-        crate::map::resolved_terrain::test_grid(width, height, |rx, ry| {
+        let mut terrain = crate::map::resolved_terrain::test_grid(width, height, |rx, ry| {
             test_terrain_cell(rx, ry, Some(100))
-        })
+        });
+        terrain.set_land_speed_rules_for_test(
+            &crate::map::resolved_terrain::test_retail_clear_rules(),
+        );
+        terrain
     }
 
     fn test_terrain_cell(rx: u16, ry: u16, track_cost: Option<u8>) -> ResolvedTerrainCell {

@@ -63,7 +63,7 @@ fn fog_with_visible_cells(owner: &str, visible_cells: &[(u16, u16)]) -> FogState
     by_owner.insert(crate::sim::intern::test_intern(owner), visibility);
 
     let mut fog = FogState::new(64, 64);
-    fog.by_owner = by_owner;
+    fog.by_owner = by_owner.into();
     fog
 }
 
@@ -372,7 +372,7 @@ fn test_band_emptiness_ignores_a_shrouded_unit_but_not_a_shrouded_building() {
         crate::sim::vision::OwnerVisibility::new(64, 64),
     );
     let mut fog = FogState::new(64, 64);
-    fog.by_owner = by_owner;
+    fog.by_owner = by_owner.into();
 
     // One store per case, both populated before the interner snapshot is taken
     // (it is a clone of the shared test interner, so every name has to be in it).

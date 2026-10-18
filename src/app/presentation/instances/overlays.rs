@@ -465,8 +465,8 @@ pub(crate) fn build_display_effect_instances(
 /// Source-pixel weight one animation frame draws with.
 ///
 /// gamemd picks a blitter family per draw from the art type's `Translucency=` /
-/// `Translucent=` keys; `anim_frame_source_alpha` reproduces that selection and
-/// returns the weight the family gives the incoming sprite pixel. An art type
+/// `Translucent=` keys ([`crate::sim::anim_class::anim_translucency_selection`]);
+/// this returns the weight the family gives the incoming sprite pixel. An art type
 /// the registry does not know draws opaque, matching the resolver's own
 /// no-keys result.
 #[cfg(test)]
@@ -504,9 +504,7 @@ fn anim_instance_alpha_with_flags(
             game_detail_level,
             translucent_ramp: config.is_some_and(|value| value.translucent),
             current_frame,
-            frame_count: config
-                .and_then(|value| value.raw_shp_frame_count)
-                .unwrap_or(shp_frame_count),
+            end_frame: config.map_or(shp_frame_count, |value| value.loaded_end(shp_frame_count)),
             explicit_translucency: config.map_or(0, |value| value.translucency),
             instance_ramp: i32::from(draw_runtime.translucency_ramp),
         },
@@ -1798,5 +1796,36 @@ mod tests {
             1.0
         );
         assert_eq!(anim_instance_alpha(None, 4, 8), 1.0);
+    }
+
+    #[test]
+    fn translucent_yes_divides_the_loaded_end_and_wins_over_translucency() {
+        // AnimClass::DrawIt tests Type+0x36A (`Translucent=`) before Type+0x2EC
+        // (`Translucency=`), and its ladder divides End (Type+0x2C0,
+        // `0x004230AC`), which a Shadow=yes SHP halves and `End=` overrides.
+        let ini = IniFile::from_str(
+            "[SMKPUFF]\n\
+             Translucent=yes\n\
+             Translucency=50\n\
+             [SHADOWED]\n\
+             Translucent=yes\n\
+             Shadow=yes\n\
+             [CAPPED]\n\
+             Translucent=yes\n\
+             End=10\n",
+        );
+        let mut reg = ArtRegistry::from_ini(&ini);
+        reg.bind_anim_frame_count_for_test("SMKPUFF", 10);
+
+        let smoke = reg.anim_runtime_config("SMKPUFF");
+        assert_eq!(anim_instance_alpha(smoke, 0, 10), 1.0);
+        assert_eq!(anim_instance_alpha(smoke, 9, 10), 0.25);
+
+        let shadowed = reg.anim_runtime_config("SHADOWED");
+        assert_eq!(anim_instance_alpha(shadowed, 2, 20), 1.0);
+        assert_eq!(anim_instance_alpha(shadowed, 5, 20), 0.5);
+
+        let capped = reg.anim_runtime_config("CAPPED");
+        assert_eq!(anim_instance_alpha(capped, 5, 100), 0.5);
     }
 }

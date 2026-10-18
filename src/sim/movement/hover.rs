@@ -144,7 +144,7 @@ impl HoverRuntime {
     /// `ftol(speed * SpeedCurrent)` (0x00514372..0x00514383): the leptons the
     /// Foot moves this frame, from its current speed (vt+0x538).
     fn step_leptons(&self, foot_speed: i32) -> i32 {
-        ftol(X87Chop53::mul(
+        X87Chop53::ftol_i32_low_masked(X87Chop53::mul(
             X87Chop53::load_i32(foot_speed),
             load(self.speed_current),
         ))
@@ -263,7 +263,7 @@ impl HoverRuntime {
         } else {
             height
         };
-        let resting = ftol(X87Chop53::add(
+        let resting = X87Chop53::ftol_i32_low_masked(X87Chop53::add(
             X87Chop53::load_i32(height),
             load(self.bob_offset),
         ));
@@ -279,14 +279,14 @@ impl HoverRuntime {
         let counter = frame.wrapping_add(id.wrapping_mul(2));
         let phase = X87Chop53::div(
             X87Chop53::mul(
-                X87Chop53::load_i32(counter.wrapping_rem(ftol(period))),
+                X87Chop53::load_i32(counter.wrapping_rem(X87Chop53::ftol_i32_low_masked(period))),
                 load(TWO_PI),
             ),
             period,
         )
         .expect("HoverBob gives a nonzero bob period");
         let sine = crate::map::retail_trig::TrigTable::embedded().sin_from_table(phase);
-        let mut visible = ftol(X87Chop53::add(
+        let mut visible = X87Chop53::ftol_i32_low_masked(X87Chop53::add(
             X87Chop53::add(sine, sine),
             X87Chop53::load_i32(resting),
         ));
@@ -336,11 +336,6 @@ fn load(bits: NativeF64Bits) -> X87Value {
 
 fn store(value: X87Value) -> NativeF64Bits {
     X87Chop53::store_f64(value).expect("Hover doubles stay finite")
-}
-
-/// `Math__ftol` 0x007C5F00 as its callers read EAX.
-fn ftol(value: X87Value) -> i32 {
-    X87Chop53::ftol_i32_low_masked(value)
 }
 
 #[cfg(test)]

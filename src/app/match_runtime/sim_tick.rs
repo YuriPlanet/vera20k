@@ -1223,11 +1223,14 @@ fn advance_one_simulation_frame(
                 // Attached anims are simulation objects; the store detaches
                 // them itself.
                 LifecycleOutput::DetachAttachedAnims { .. } => {}
-                LifecycleOutput::DisplayRemove { .. } => {
+                // Unlimbo's Display admission can introduce a model without
+                // TickResult::spawned_entities (e.g. Action7's ALL01 ORCA
+                // teams). Resolve it before their first ordinary body draw;
+                // crash-pose rendering must not be the first path to load it.
+                LifecycleOutput::RevealDisplay { .. } | LifecycleOutput::DisplayRemove { .. } => {
                     refresh_atlases_after_tick = true;
                 }
-                LifecycleOutput::RevealDisplay { .. }
-                | LifecycleOutput::DirtyTacticalRect { .. }
+                LifecycleOutput::DirtyTacticalRect { .. }
                 | LifecycleOutput::ClearDrawnState { .. }
                 | LifecycleOutput::ClearRedraw { .. } => {}
             }

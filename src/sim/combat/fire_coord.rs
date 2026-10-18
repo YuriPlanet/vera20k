@@ -215,8 +215,8 @@ pub fn turret_pivot_coordinate(
     let base = fire_coordinate_base(world, rules, &source, obj);
     let offset = base.art.map_or(0, |art| art.turret_offset);
     let delta = if entity.locomotor.is_some() {
-        // Retain the existing transform's representable-coordinate boundary;
-        // authored TurretOffset is not clamped by the ART reader.
+        // Authored TurretOffset is not clamped by the ART reader; ftol keeps
+        // the low dword of an out-of-range coordinate, as native does.
         crate::util::flh_transform::native_flh_world_delta(
             0,
             0,

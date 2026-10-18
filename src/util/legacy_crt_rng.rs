@@ -2,6 +2,10 @@
 //!
 //! This is separate from Main and Scenario RNG. The app owns the UI thread's
 //! lifetime; opening another file dialog must not reset the stream.
+//!
+//! `_srand` (`0x007CB49D`) has no port: its only callers are network lobbies
+//! (ModemHost init `0x005B8AEB`, the LAN setup dialog 0xBC's init `0x005DEC4D`
+//! and the WOL chat sink `0x007A41EB`), none of which is ported.
 
 #[derive(Debug, Clone)]
 pub struct LegacyCrtRng {
@@ -20,11 +24,6 @@ impl Default for LegacyCrtRng {
 impl LegacyCrtRng {
     pub const fn with_seed(state: u32) -> Self {
         Self { state }
-    }
-
-    /// `_srand` 0x007CB49D replaces context+0x14 without drawing.
-    pub fn seed(&mut self, state: u32) {
-        self.state = state;
     }
 
     /// `_rand` 0x007CB4AA, arithmetic at 0x007CB4AF..0x007CB4CB.
@@ -59,8 +58,6 @@ mod tests {
                 assert_eq!(u64::from(rng.draw15()), draw["value"].as_u64().unwrap());
                 assert_eq!(u64::from(rng.state), draw["state"].as_u64().unwrap());
             }
-            rng.seed(seed);
-            assert_eq!(u64::from(rng.draw15()), draws[0]["value"].as_u64().unwrap());
         }
     }
 }

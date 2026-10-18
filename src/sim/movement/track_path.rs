@@ -53,9 +53,6 @@ use crate::util::direction::DIRECTION_DELTAS;
 use crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS;
 use crate::util::native_x87::distance_3d_leptons;
 
-/// Foot+64C after a found route (0x4B3285 / 0x6A28D5).
-const FOUND_ROUTE_RETRIES: u32 = 10;
-
 /// A Unit on Drive or Ship, whose class setter is Unit 0x741970.
 fn track_unit(entity: &GameEntity) -> bool {
     entity.category() == EntityCategory::Unit
@@ -284,7 +281,7 @@ impl Simulation {
             .ok_or("retired Drive/Ship path owner")?
             .navigation
             .path_runtime
-            .set_retries_left(FOUND_ROUTE_RETRIES);
+            .set_retries_left(crate::sim::components::FootPathRuntime::RETRY_RELOAD);
         Ok(FootPathOutcome::Resume)
     }
 

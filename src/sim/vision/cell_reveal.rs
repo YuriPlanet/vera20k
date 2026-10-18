@@ -5,7 +5,9 @@
 //! frames. Native constructor47BD28/47BD2E initializes -2/-2;
 //! the separate47BD3A store initializes the sight counter to1.
 
-use super::{FogState, GROUND_OPEN, GROUND_VISIBLE, InternedId, OwnerVisibility, ShroudKnowledge};
+use super::{
+    FogState, GROUND_OPEN, GROUND_VISIBLE, InternedId, OwnerVisibility, PlaneWrite, ShroudKnowledge,
+};
 use crate::map::cell_index::NativeCellIdentity;
 use crate::map::resolved_terrain::{NativeCellQuery, ROW_NEIGHBORS};
 use serde::{Deserialize, Serialize};
@@ -234,7 +236,7 @@ impl OwnerVisibility {
     /// their own coordinates inside this grid: their lookups then neither
     /// miss nor stamp the Dummy, so their visibility cells are plain indices
     /// ([`crate::map::resolved_terrain::ResolvedTerrainGrid::interior_cells`]).
-    fn interior_index(
+    pub(super) fn interior_index(
         &self,
         cell: (u16, u16),
         cells: Option<&NativeCellQuery<'_>>,
@@ -458,6 +460,32 @@ impl OwnerVisibility {
         Some(MapCellNotification { cell, fresh })
     }
 
+    /// [`Self::reveal_map_cell`] with `projection` [`MapRevealProjection::Source`]
+    /// for each of `cells` in turn ([`FogState::reveal_source_map_cells`]).
+    pub(super) fn reveal_source_cells(
+        &mut self,
+        cells: &[(u16, u16)],
+        final_pass: bool,
+        native_cells: Option<&NativeCellQuery<'_>>,
+    ) {
+        for &cell in cells {
+            self.reveal_map_cell(cell, final_pass, native_cells, MapRevealProjection::Source);
+        }
+    }
+
+    /// Recompute and store each of `cells`' ground frame in turn
+    /// ([`FogState::refresh_sight_border_cells`]).
+    pub(super) fn refresh_ground_frames(
+        &mut self,
+        cells: &[(u16, u16)],
+        native_cells: Option<&NativeCellQuery<'_>>,
+    ) {
+        for &cell in cells {
+            let frame = self.map_cell_edge_frame(cell, false, native_cells);
+            self.store_ground_frame(cell, frame, native_cells);
+        }
+    }
+
     /// Store `frame` as `cell`'s ground frame (`Cell+0x120`), `0x00567DA0`'s
     /// store (`0x00567F34`). Native looks the cell up before its 6D8700 call
     /// (`0x00567EE6..0x00567F15`); VERA computes the frame first and looks the
@@ -565,8 +593,7 @@ impl FogState {
     ) {
         let vis = self
             .by_owner
-            .entry(viewer)
-            .or_insert_with(|| OwnerVisibility::new(self.width, self.height));
+            .get_or_insert_with(viewer, || OwnerVisibility::new(self.width, self.height));
         let key = vis.visibility_cell(cell, native_cells);
         let before = vis.edge_inputs(key);
         let (state, ground, _) = vis.map_cell_parts_mut(key);
@@ -623,8 +650,8 @@ impl FogState {
         cell: (u16, u16),
         native_cells: Option<&NativeCellQuery<'_>>,
     ) -> Option<MapCellNotification> {
-        let frame = self.map_cell_edge_frame(viewer, cell, false, native_cells);
         let vis = self.by_owner.get_mut(&viewer)?;
+        let frame = vis.map_cell_edge_frame(cell, false, native_cells);
         let key = vis.visibility_cell(cell, native_cells);
         let (_, _, cache) = vis.map_cell_parts_mut(key);
         if frame == cache.frames[0] {
@@ -636,13 +663,14 @@ impl FogState {
 
     /// Map5673A0 at567856..567870, selected S24=false/S32=true:
     /// skip only when both ground12C bits8/10 and cache140 bits1/2 are set.
+    /// Applies the plane's waiting writes first ([`super::Planes`]).
     pub(crate) fn map_cell_fully_known(
-        &self,
+        &mut self,
         viewer: InternedId,
         cell: (u16, u16),
         native_cells: Option<&NativeCellQuery<'_>>,
     ) -> bool {
-        let Some(vis) = self.by_owner.get(&viewer) else {
+        let Some(vis) = self.by_owner.get_mut(&viewer) else {
             return false;
         };
         let key = vis.visibility_cell(cell, native_cells);
@@ -652,43 +680,30 @@ impl FogState {
             && cache.fog_open
     }
 
-    /// Map567DA0 border tail: recompute only ground frame120 through
-    /// Tactical6D8700. The native dirty138/6DA7D0 is presentation invalidation;
-    /// no sight counter, ground bits, fog frame or discovery callback changes.
-    /// Full A reconstruction per Fog view generation uses current knowledge
-    /// and neighbours, replacing native dirty138/6DA7D0. The stored frame
-    /// remains authoritative for later Cell change/notification decisions.
-    fn refresh_sight_border_cell(
-        &mut self,
-        viewer: InternedId,
-        cell: (u16, u16),
-        native_cells: Option<&NativeCellQuery<'_>>,
-    ) {
-        let frame = self.map_cell_edge_frame(viewer, cell, false, native_cells);
-        self.by_owner
-            .entry(viewer)
-            .or_insert_with(|| OwnerVisibility::new(self.width, self.height))
-            .store_ground_frame(cell, frame, native_cells);
-    }
-
-    /// [`Self::refresh_sight_border_cell`] for each of `cells` in turn, the
-    /// plane looked up once.
+    /// Map567DA0 border tail for each of `cells` in turn: recompute only
+    /// ground frame120 through Tactical6D8700. The native dirty138/6DA7D0 is
+    /// presentation invalidation; no sight counter, ground bits, fog frame or
+    /// discovery callback changes. Full A reconstruction per Fog view
+    /// generation uses current knowledge and neighbours, replacing native
+    /// dirty138/6DA7D0. The stored frame remains authoritative for later Cell
+    /// change/notification decisions. A viewer without a plane gets one,
+    /// whose cells read -2 as a missing plane does.
     pub(crate) fn refresh_sight_border_cells(
         &mut self,
         viewer: InternedId,
         cells: &[(u16, u16)],
         native_cells: Option<&NativeCellQuery<'_>>,
     ) {
-        let Some((&first, rest)) = cells.split_first() else {
+        if cells.is_empty() {
             return;
-        };
-        // Without a plane the first frame reads -2; the store makes one.
-        self.refresh_sight_border_cell(viewer, first, native_cells);
-        let vis = self.by_owner.get_mut(&viewer).expect("stored above");
-        for &cell in rest {
-            let frame = vis.map_cell_edge_frame(cell, false, native_cells);
-            vis.store_ground_frame(cell, frame, native_cells);
         }
+        self.by_owner.write(
+            viewer,
+            (self.width, self.height),
+            PlaneWrite::Border,
+            cells,
+            native_cells,
+        );
     }
 
     /// Original Display4A9890, via Map653810/Execute16. Unlike4A9CA0 it
@@ -710,8 +725,7 @@ impl FogState {
     ) -> Option<MapCellNotification> {
         let vis = self
             .by_owner
-            .entry(viewer)
-            .or_insert_with(|| OwnerVisibility::new(self.width, self.height));
+            .get_or_insert_with(viewer, || OwnerVisibility::new(self.width, self.height));
         let key = vis.visibility_cell(cell, native_cells);
         let before = vis.edge_inputs(key);
         let (ground, old) = vis.map_cell_parts(key);
@@ -760,8 +774,7 @@ impl FogState {
         projection: MapRevealProjection,
     ) -> Option<MapCellNotification> {
         self.by_owner
-            .entry(viewer)
-            .or_insert_with(|| OwnerVisibility::new(self.width, self.height))
+            .get_or_insert_with(viewer, || OwnerVisibility::new(self.width, self.height))
             .reveal_map_cell(cell, final_pass, native_cells, projection)
     }
 
@@ -778,13 +791,13 @@ impl FogState {
         if cells.is_empty() {
             return;
         }
-        let vis = self
-            .by_owner
-            .entry(viewer)
-            .or_insert_with(|| OwnerVisibility::new(self.width, self.height));
-        for &cell in cells {
-            vis.reveal_map_cell(cell, final_pass, native_cells, MapRevealProjection::Source);
-        }
+        self.by_owner.write(
+            viewer,
+            (self.width, self.height),
+            PlaneWrite::Reveal { final_pass },
+            cells,
+            native_cells,
+        );
     }
 
     /// [`OwnerVisibility::map_cell_edge_frame`] on `viewer`'s plane; -2
@@ -843,8 +856,7 @@ impl FogState {
     ) -> Option<MapCellNotification> {
         let vis = self
             .by_owner
-            .entry(viewer)
-            .or_insert_with(|| OwnerVisibility::new(self.width, self.height));
+            .get_or_insert_with(viewer, || OwnerVisibility::new(self.width, self.height));
         let center = vis.visibility_cell(cell, native_cells);
         let before = vis.edge_inputs(center);
         let (state, ground, _) = vis.map_cell_parts_mut(center);

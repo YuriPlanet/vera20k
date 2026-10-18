@@ -490,11 +490,14 @@ fn parse_speed_costs(section: &IniSection) -> SpeedCostProfile {
 /// - **the lower clamp.** gamemd caps the high side only, so a negative row
 ///   would reach the movement chain as a negative multiplier; the `u8` storage
 ///   here cannot carry one and floors it at zero instead. Trigger: a mod INI
-///   authoring a negative percentage. Player effect: none in stock play.
+///   authoring a negative percentage. Player effect: none in stock play. In a
+///   mod, `CheckCellPassability @ 0x004834A0` then refuses the cell, where
+///   gamemd's compare against 0.0 admits it.
 /// - **whole-percent quantisation.** gamemd keeps each row as an `f32`; this
 ///   truncates to a whole percent, so a modded `Track=72.5%` becomes 72.
 ///   Trigger: a fractional percentage. Player effect: none in stock play, where
-///   every authored value is a multiple of five percent.
+///   every authored value is a multiple of five percent. In a mod, a positive
+///   row below 1% becomes 0, which `0x004834A0` refuses where gamemd admits.
 fn parse_cost(section: &IniSection, key: &str) -> Option<u8> {
     let multiplier = (section.read_double(key, 1.0) as f32).clamp(0.0, 1.0);
     Some((multiplier * 100.0) as u8)

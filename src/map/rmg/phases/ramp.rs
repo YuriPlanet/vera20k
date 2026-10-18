@@ -86,16 +86,15 @@ const RAMP_RECORDS: [RampRecord; 4] = [
     },
 ];
 
-/// The table for a straight shape, or `None` for the corner shapes.
-pub fn ramp_record(shape: RampShape) -> Option<&'static RampRecord> {
+/// The table for a straight shape.
+pub fn ramp_record(shape: RampShape) -> &'static RampRecord {
     let index = match shape {
         RampShape::ClearSouth => 0,
         RampShape::ClearEast => 1,
         RampShape::ClearNorth => 2,
         RampShape::ClearWest => 3,
-        _ => return None,
     };
-    Some(&RAMP_RECORDS[index])
+    &RAMP_RECORDS[index]
 }
 
 /// The tile a slope value selects, relative to the theater's ramp base.

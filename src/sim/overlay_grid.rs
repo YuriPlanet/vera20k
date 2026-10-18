@@ -2102,6 +2102,31 @@ fn index_of(width: u16, height: u16, rx: u16, ry: u16) -> Option<usize> {
     (rx < width && ry < height).then_some(ry as usize * width as usize + rx as usize)
 }
 
+/// A `Wall=yes` overlay on each of `cells`, written by the production
+/// overlay attribute writer, with its type bound to `terrain` as a loaded map
+/// binds its registry. Its land is retail `[Clear]`, so `0x004834A0`'s wall
+/// test, not a missing land row, is what refuses a mover.
+#[cfg(test)]
+pub(crate) fn test_wall_overlays(
+    terrain: &mut ResolvedTerrainGrid,
+    cells: &[(u16, u16)],
+) -> OverlayGrid {
+    let registry = OverlayTypeRegistry::from_ini(
+        &crate::rules::ini_parser::IniFile::from_str(&format!(
+            "[OverlayTypes]\n0=TESTWALL\n[TESTWALL]\nWall=yes\n{}",
+            crate::map::resolved_terrain::TEST_RETAIL_CLEAR_INI
+        )),
+        None,
+    );
+    terrain.set_overlay_types_for_test(&registry);
+    let mut overlays = OverlayGrid::new(terrain.width(), terrain.height());
+    for &(x, y) in cells {
+        overlays.place_overlay(x, y, 0, 0);
+        recalc_overlay_passability(&mut overlays, terrain, &registry, x, y);
+    }
+    overlays
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

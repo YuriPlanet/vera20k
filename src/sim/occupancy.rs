@@ -379,6 +379,7 @@ impl RawCellOccupationGrid {
         self.update_and_prune(rx, ry, |cell| cell.deck &= !mask);
     }
 
+    #[cfg(test)]
     pub(crate) fn deck_bits(&self, rx: u16, ry: u16) -> u8 {
         self.cells.get(&(rx, ry)).map_or(0, |cell| cell.deck)
     }

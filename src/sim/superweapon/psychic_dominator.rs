@@ -172,7 +172,12 @@ fn start(sim: &mut Simulation, rules: &RuleSet, owner: InternedId, cell: (i16, i
     }
     sim.psychic_dominator.owner = Some(owner);
     sim.psychic_dominator.cell = cell;
-    let [x, y, z] = super::fire::cell_coords(sim, (cell.0 as u16, cell.1 as u16));
+    let crate::sim::projectile::ProjectileCoord { x, y, z } =
+        crate::sim::projectile::cell_ground_coord(
+            sim.resolved_terrain.as_ref(),
+            cell.0 as u16,
+            cell.1 as u16,
+        );
     let anim = super::spawn_super_anim(
         sim,
         rules,
@@ -291,7 +296,12 @@ fn mind_control_area(
 ) -> bool {
     let general = &rules.general;
     let centre = sim.psychic_dominator.cell;
-    let coords = super::fire::cell_coords(sim, (centre.0 as u16, centre.1 as u16));
+    let ground = crate::sim::projectile::cell_ground_coord(
+        sim.resolved_terrain.as_ref(),
+        centre.0 as u16,
+        centre.1 as u16,
+    );
+    let coords = [ground.x, ground.y, ground.z];
     sim.add_dominator_ion_blast(coords);
     sim.psychic_dominator.anim =
         super::spawn_super_anim(sim, rules, &general.dominator_second_anim, coords);

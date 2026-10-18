@@ -104,9 +104,10 @@ pub fn launch(
     }
 
     // BuildingClass::Array holds the buildings in construction order.
-    let centre = super::fire::cell_coords(sim, (target_rx, target_ry));
-    let launcher = sim.interner.resolve(owner);
     let terrain = sim.resolved_terrain.as_ref();
+    let ground = crate::sim::projectile::cell_ground_coord(terrain, target_rx, target_ry);
+    let centre = [ground.x, ground.y, ground.z];
+    let launcher = sim.interner.resolve(owner);
     let (ids, buildings): (Vec<u64>, Vec<(bool, [i32; 3])>) = sim
         .substrate
         .entities

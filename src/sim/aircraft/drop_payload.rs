@@ -43,9 +43,10 @@
 //!   once they pass. A refused passenger rides on in limbo, where no
 //!   gameplay code reads the byte (ComputeCRC `0x005F62FA` hashes it), and
 //!   its next drop raises it again: the same answer.
-//! - Paradrop compares the landing cell's zone (`MapClass @ 0x0056D230`
-//!   with OnBridge) with itself in IsClearToMove; VERA asks for no zone, the
-//!   same answer.
+//! - Paradrop passes the landing cell's zone (`MapClass::GetZoneID @
+//!   0x0056D230` with OnBridge, which a bridge cell has just set) to
+//!   [`check_cell_passability`], which compares it with the same cell's zone
+//!   for isBridge 1; VERA passes zone -1, the same answer.
 //!
 //! Ledger:
 //! - Scenario draws: PlaceInfantryInCell's row draw for a centre or
@@ -64,14 +65,12 @@ use crate::map::resolved_terrain::NativeCellQuery;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::cell_rect::{
-    IsClearToMoveResult, LiveCellPassabilityQuery, cell_is_in_playfield_leptons,
-    evaluate_live_cell_passability,
+    CellPassabilityArgs, canonical_cell_ref, cell_is_in_playfield_leptons, check_cell_passability,
 };
 use crate::sim::components::DriveCoord;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::movement::infantry_action::DO_PARADROP;
 use crate::sim::movement::infantry_entry::InfantryEntryArgs;
-use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::movement::parachute_descent::begin_parachute_descent;
 use crate::sim::movement::{ground_pose, walk_head};
 #[cfg(any(test, feature = "test-support"))]
@@ -316,8 +315,8 @@ fn spawn_parachuted(
 /// - a bridge cell (`+0x140 & 0x100`) sets OnBridge (`0x005F5986`), which
 ///   no refusal clears, and needs the `0x200` flag too
 ///   (`0x005F598D..0x005F5996`);
-/// - a Techno needs IsClearToMove (`0x004834A0`) for its SpeedType and
-///   MovementZone, any level (`0x005F599C..0x005F5A2D`);
+/// - a Techno needs [`check_cell_passability`] with (SpeedType, 0, 0, zone,
+///   MovementZone, -1, 1) (`0x005F599C..0x005F5A2D`);
 /// - Unlimbo (vt+0xD8) at the coordinate facing south, then SetLocation
 ///   (vt+0x1B4), which the falling Z keeps ([`begin_parachute_descent`]);
 /// - the canopy ([`Simulation::attach_parachute_anim`]).
@@ -350,11 +349,14 @@ fn paradrop(
         .ok_or(DepartureFailure::MissingPassenger)?;
     position.put_world_xy([landing.x, landing.y]);
     let (rx, ry) = (position.rx(), position.ry());
-    let flags = sim.resolved_terrain.as_ref().map_or(0, |terrain| {
-        terrain.native_cell_flags(
+    // The landing Cell, from `MapClass::operator[]`.
+    let landing_cell = sim.resolved_terrain.as_ref().map(|terrain| {
+        (
+            terrain,
             NativeCellQuery::canonical(terrain).lookup_world(landing.x, landing.y),
         )
     });
+    let flags = landing_cell.map_or(0, |(terrain, cell)| terrain.native_cell_flags(cell));
     // OnBridge goes up before the tests below and stays up: neither a refusal
     // here nor Drop_Payload's AddPassenger lowers it, so a passenger refused
     // over a bridge drops later as if onto a deck. Its locomotor layer is the
@@ -393,45 +395,24 @@ fn paradrop(
                 .unwrap_or(crate::rules::locomotor_type::MovementZone::Normal),
         )
     };
-    let path_grid = sim.path_grid_snapshot();
-    let path_grid = path_grid.as_deref();
-    let land_passable = sim
-        .resolved_terrain
-        .as_ref()
-        .and_then(|terrain| terrain.cell(rx, ry))
-        .map(|cell| {
-            cell.speed_costs
-                .cost_for_speed_type(speed_type)
-                .is_none_or(|cost| cost > 0)
-        })
-        .unwrap_or_else(|| path_grid.is_none_or(|grid| grid.is_walkable(rx, ry)));
-    let passability = if path_grid.is_none() && sim.resolved_terrain.is_none() {
-        // Headless fixtures have no Cell substrate to ask.
-        IsClearToMoveResult::Clear {
-            selected_layer: MovementLayer::Ground,
-        }
-    } else {
-        evaluate_live_cell_passability(LiveCellPassabilityQuery {
-            target: (rx, ry),
-            speed_type,
-            movement_zone,
-            requested_zone: None,
-            actual_zone: 0,
-            requested_layer: None,
-            ignore_infantry: false,
-            ignore_vehicles: false,
-            land_passable,
-            path_grid,
-            resolved_terrain: sim.resolved_terrain.as_ref(),
-            raw_occupation: Some(&sim.substrate.raw_cell_occupation),
-        })
-    };
-    match passability {
-        IsClearToMoveResult::Clear {
-            selected_layer: MovementLayer::Ground | MovementLayer::Bridge,
-        }
-        | IsClearToMoveResult::ClearWinged => {}
-        _ => return Err(DepartureFailure::Placement),
+    let admitted = landing_cell.is_some_and(|(terrain, cell)| {
+        check_cell_passability(
+            &canonical_cell_ref(terrain, cell),
+            CellPassabilityArgs {
+                speed_type,
+                ignore_infantry: false,
+                ignore_vehicles: false,
+                zone: None,
+                movement_zone,
+                level: None,
+                is_bridge: true,
+            },
+            &sim.cell_passability_map(),
+        )
+        .admits()
+    });
+    if !admitted {
+        return Err(DepartureFailure::Placement);
     }
 
     // Unlimbo places the passenger at the spot PlaceInfantryInCell chose; the
@@ -522,6 +503,7 @@ mod tests {
     use crate::rules::ini_parser::IniFile;
     use crate::sim::ammo::TechnoAmmo;
     use crate::sim::game_entity::GameEntity;
+    use crate::sim::movement::locomotor::MovementLayer;
     use crate::sim::passenger::PassengerCargo;
     use crate::sim::world::RevealOutcome;
     use crate::util::lepton;
@@ -562,8 +544,14 @@ mod tests {
     };
 
     /// Plane 1 over (50, 20) heading south with Ammo 4 (an odd 3 after the
-    /// decrement, so the drop turns left) and passenger 2 aboard.
+    /// decrement, so the drop turns left) and passenger 2 aboard, over 64x64
+    /// retail Clear ground unless the test installed its own map.
     fn insert_loaded_paradrop_pair(sim: &mut Simulation, aircraft_id: u64, passenger_id: u64) {
+        if sim.resolved_terrain.is_none() {
+            sim.install_resolved_terrain_for_new_map(
+                crate::map::resolved_terrain::test_retail_clear_grid(64, 64),
+            );
+        }
         sim.playfield_bounds = Some(DROP_PLAYFIELD);
         let mut aircraft = GameEntity::test_default_of_category(
             aircraft_id,

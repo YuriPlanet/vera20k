@@ -592,7 +592,7 @@ mod tests {
             "[Battles]\n0=ALL1\n[ALL1]\nCD=2\nScenario=ALL01UMD.MAP\n",
         );
         let mut campaigns = crate::rules::campaigns::CampaignRegistry::default();
-        campaigns.apply_ini(&ini, &crate::rules::movies::MovieRegistry::default(), None);
+        campaigns.apply_ini(&ini, &crate::rules::movies::MovieRegistry::default());
         let mut clock = CountingClock { value: 7, reads: 0 };
         let campaign = prepare_campaign_startup(&campaigns, "ALL1", 1, &mut clock)
             .expect("synthetic campaign catalog admits a selected campaign");

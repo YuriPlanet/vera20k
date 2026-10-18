@@ -395,14 +395,14 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
     ) -> bool {
         use crate::map::cell_index::NativeCellIdentity;
-        use crate::rules::locomotor_type::{LocomotorKind, SpeedType};
+        use crate::rules::locomotor_type::LocomotorKind;
 
         let Some(actor) = self.substrate.entities.get(id) else {
             return false;
         };
-        let Some(object) = self.object_type(actor.type_ref(), rules) else {
+        if self.object_type(actor.type_ref(), rules).is_none() {
             return false;
-        };
+        }
         if !represented_infantry_destination(actor) || actor.infantry.is_none() {
             return false;
         }
@@ -461,39 +461,8 @@ impl Simulation {
         let Some(moving) = super::motion_query::is_moving(actor) else {
             return false;
         };
-        if !moving {
-            return true;
-        }
-        let Some(terrain) = self.resolved_terrain.as_ref() else {
-            return false;
-        };
-        // 51ABA2 resolves the current Cell even for Winged. Availability is
-        // established without issuing native_cell_identity (which stamps
-        // the shared Dummy) or reading occupation/admission.
-        if object.speed_type == SpeedType::Winged {
-            return true;
-        }
-        let xyz = super::foot_coordinate::current_coordinate(actor);
-        let (cell, cost) =
-            match terrain.native_fixed_cell_index((xyz.x / 256) as i16, (xyz.y / 256) as i16) {
-                Some(index) => (
-                    NativeCellIdentity::Real(index),
-                    terrain.cells()[index]
-                        .speed_costs
-                        .cost_for_speed_type(object.speed_type),
-                ),
-                None => (NativeCellIdentity::Dummy, None),
-            };
-        let wall = match self.cell_overlay(cell).overlay_id {
-            Some(overlay) => {
-                let Some(flags) = registry.and_then(|registry| registry.flags(overlay)) else {
-                    return false;
-                };
-                flags.wall
-            }
-            None => false,
-        };
-        terrain.native_cell_flags(cell) & 0x100 != 0 || wall || cost.is_some()
+        // 51ABA2 asks the current Cell, which needs only the map cells.
+        !moving || self.resolved_terrain.is_some()
     }
 
     /// The Infantry class setter `vt+0x480(target, 1)` (`0x0051AA40`) for a
@@ -613,7 +582,7 @@ impl Simulation {
         // 51ABA2 invokes the shared Cell leaf BEFORE the JumpJet and
         // Attack/same-NavCom tests. The current physical coordinate owns this
         // lookup.
-        if moving && self.infantry_destination_current_cell_clear(id, speed_type, registry)? {
+        if moving && self.infantry_destination_current_cell_clear(id, speed_type)? {
             let actor = self.substrate.entities.get(id).unwrap();
             if jumpjet_type
                 || actor.mission.current().raw() != 1
@@ -757,22 +726,20 @@ impl Simulation {
         true
     }
 
-    /// 51AB73..51ABA7 passes (SpeedType,1,0,-1,Normal,-1,true) to4834A0.
-    /// This is not Infantry CanEnter: ignore the five infantry bits, retain
-    /// vehicles, choose the deck on a structural bridge, and reject all walls.
+    /// [`check_cell_passability`](crate::sim::cell_rect::check_cell_passability)
+    /// with (SpeedType, 1, 0, -1, Normal, -1, 1) on the Cell of his GetCoords
+    /// (`0x0051AB73..0x0051ABA7`). This is not Infantry CanEnter: the five
+    /// infantry bits are ignored, vehicles kept, a structural bridge selects
+    /// its deck, and every wall refuses.
     fn infantry_destination_current_cell_clear(
         &self,
         id: u64,
         speed: crate::rules::locomotor_type::SpeedType,
-        registry: Option<&OverlayTypeRegistry>,
     ) -> Result<bool, String> {
-        use super::locomotor::MovementLayer;
-        use crate::map::cell_index::NativeCellIdentity;
-        use crate::rules::locomotor_type::{MovementZone, SpeedType};
+        use crate::rules::locomotor_type::MovementZone;
         use crate::sim::cell_rect::{
-            IsClearToMoveRequest, IsClearToMoveResult, evaluate_is_clear_to_move,
+            CellPassabilityArgs, canonical_cell_ref, check_cell_passability,
         };
-        use crate::sim::occupancy::RawCellKey;
         let actor = self
             .substrate
             .entities
@@ -784,64 +751,20 @@ impl Simulation {
             .as_ref()
             .ok_or("scatter setter requires map cells")?;
         let cell = terrain.native_cell_identity(((coord.x / 256) as i16, (coord.y / 256) as i16));
-        if speed == SpeedType::Winged {
-            return Ok(true);
-        }
-        let raw = &self.substrate.raw_cell_occupation;
-        let key = RawCellKey::from_native(terrain, cell);
-        let (level, cost) = match cell {
-            NativeCellIdentity::Real(index) => {
-                let c = &terrain.cells()[index];
-                (
-                    i16::from(c.level as i8),
-                    c.speed_costs.cost_for_speed_type(speed),
-                )
-            }
-            NativeCellIdentity::Dummy => (
-                i16::from(terrain.shared_cell_dummy().snapshot().level),
-                None,
-            ),
-        };
-        let overlay = self.cell_overlay(cell).overlay_id;
-        let mut input = IsClearToMoveRequest {
-            speed_type: speed,
-            movement_zone: MovementZone::Normal,
-            requested_zone: None,
-            actual_zone: 0,
-            base_level: level,
-            has_bridge: terrain.native_cell_flags(cell) & 0x100 != 0,
-            requested_level: None,
-            is_bridge: true,
-            ground_occupation_bits: raw.bits_at(key, MovementLayer::Ground),
-            deck_occupation_bits: raw.bits_at(key, MovementLayer::Bridge),
-            ignore_infantry: true,
-            ignore_vehicles: false,
-            land_passable: true,
-            is_wall_overlay: false,
-            wall_allows_crusher: false,
-        };
-        if !matches!(
-            evaluate_is_clear_to_move(input),
-            IsClearToMoveResult::Clear { .. }
-        ) {
-            return Ok(false);
-        }
-        if let Some(overlay) = overlay {
-            input.is_wall_overlay = registry
-                .and_then(|r| r.flags(overlay))
-                .ok_or("scatter setter overlay lacks registered type")?
-                .wall;
-        }
-        // Bridge land rows cannot refuse; walls still can. Do not invent a
-        // Clear land speed for a dummy whose native row is not represented.
-        if !input.has_bridge && !input.is_wall_overlay {
-            input.land_passable =
-                cost.ok_or("scatter setter requires current cell speed row")? != 0;
-        }
-        Ok(matches!(
-            evaluate_is_clear_to_move(input),
-            IsClearToMoveResult::Clear { .. }
-        ))
+        Ok(check_cell_passability(
+            &canonical_cell_ref(terrain, cell),
+            CellPassabilityArgs {
+                speed_type: speed,
+                ignore_infantry: true,
+                ignore_vehicles: false,
+                zone: None,
+                movement_zone: MovementZone::Normal,
+                level: None,
+                is_bridge: true,
+            },
+            &self.cell_passability_map(),
+        )
+        .admits())
     }
 }
 

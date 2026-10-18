@@ -18,6 +18,9 @@
 mod cell_reveal;
 mod map_reveal;
 pub(crate) use map_reveal::MapTransition;
+mod planes;
+use planes::PlaneWrite;
+pub use planes::Planes;
 mod shroud_knowledge;
 pub use cell_reveal::SHROUD_EDGE_LUT;
 #[cfg(test)]
@@ -355,6 +358,30 @@ impl OwnerVisibility {
         }
     }
 
+    /// Count a retained footprint in, with `add`, or out of each of its
+    /// `cells`' source counts: the local ones for its owner's own plane
+    /// (`local`), else the allied ones ([`FogState::retain_sight_admission`]).
+    fn count_sources(&mut self, cells: &[(u16, u16)], local: bool, add: bool) {
+        for &(x, y) in cells {
+            let Some(index) = self.index(x, y) else {
+                continue;
+            };
+            let state = &mut self.shroud_knowledge[index];
+            let count = if local {
+                &mut state.local_sources
+            } else {
+                &mut state.allied_sources
+            };
+            *count = if add {
+                count.wrapping_add(1)
+            } else {
+                count
+                    .checked_sub(1)
+                    .expect("retained sight admission is balanced")
+            };
+        }
+    }
+
     /// Clear this frame's sight as the sight pass does, visiting every cell.
     /// The grid stays untracked, so the next pass marks every footprint again.
     #[cfg(any(test, feature = "test-support"))]
@@ -660,7 +687,7 @@ fn sensor_counted(
 pub struct FogState {
     pub width: u16,
     pub height: u16,
-    pub by_owner: BTreeMap<InternedId, OwnerVisibility>,
+    pub by_owner: Planes,
     /// One native source cache per logical viewer. Inactive entries retain
     /// cached254/260 after250 is cleared, until actual object teardown.
     pub(crate) sight_admissions: BTreeMap<(u64, InternedId), SightAdmission>,
@@ -779,28 +806,14 @@ impl FogState {
     }
 
     fn adjust_sight_sources(&mut self, viewer: InternedId, admission: &SightAdmission, add: bool) {
-        let vis = self
-            .by_owner
-            .entry(viewer)
-            .or_insert_with(|| OwnerVisibility::new(self.width, self.height));
-        for &(x, y) in &admission.cells {
-            let Some(index) = vis.index(x, y) else {
-                continue;
-            };
-            let state = &mut vis.shroud_knowledge[index];
-            let count = if viewer == admission.owner {
-                &mut state.local_sources
-            } else {
-                &mut state.allied_sources
-            };
-            *count = if add {
-                count.wrapping_add(1)
-            } else {
-                count
-                    .checked_sub(1)
-                    .expect("retained sight admission is balanced")
-            };
-        }
+        let local = viewer == admission.owner;
+        self.by_owner.write(
+            viewer,
+            (self.width, self.height),
+            PlaneWrite::Sources { local, add },
+            &admission.cells,
+            None,
+        );
     }
 
     pub(crate) fn source_sight_viewers(&self, id: u64) -> Vec<InternedId> {
@@ -845,8 +858,7 @@ impl FogState {
     pub(crate) fn mark_sight_admission(&mut self, viewer: InternedId, admission: &SightAdmission) {
         let vis = self
             .by_owner
-            .entry(viewer)
-            .or_insert_with(|| OwnerVisibility::new(self.width, self.height));
+            .get_or_insert_with(viewer, || OwnerVisibility::new(self.width, self.height));
         for &(x, y) in &admission.cells {
             let Some(index) = vis.index(x, y) else {
                 continue;
@@ -876,7 +888,7 @@ impl FogState {
     /// A cell's source counts count its retained footprints, alternate ones
     /// too (the alternate source registry), which the pass does not mark.
     pub(crate) fn mark_cleared_cells(&mut self) {
-        for (&viewer, vis) in &mut self.by_owner {
+        for (&viewer, vis) in self.by_owner.iter_mut() {
             if vis.tracked.cleared.is_empty() {
                 continue;
             }
@@ -1357,8 +1369,7 @@ impl FogState {
         let (width, height) = (self.width, self.height);
         let vis = self
             .by_owner
-            .entry(owner)
-            .or_insert_with(|| OwnerVisibility::new(width, height));
+            .get_or_insert_with(owner, || OwnerVisibility::new(width, height));
         let index = vis.index(rx, ry).expect("ground byte cell in bounds");
         vis.set_ground_bits(index, bits & (GROUND_VISIBLE | GROUND_OPEN));
         vis.shroud_knowledge[index].open = bits & GROUND_VISIBLE != 0;
@@ -1573,8 +1584,7 @@ impl FogState {
         let h = self.height;
         let state = self
             .by_owner
-            .entry(owner)
-            .or_insert_with(|| OwnerVisibility::new(w, h));
+            .get_or_insert_with(owner, || OwnerVisibility::new(w, h));
         if state.width() < w || state.height() < h {
             *state = state.resized_preserving_state(w, h);
         }
@@ -1766,7 +1776,7 @@ impl FogState {
             self.height = height;
         } else {
             // Hot path: clear visible flags, preserve revealed.
-            for (&viewer, vis) in &mut self.by_owner {
+            for (&viewer, vis) in self.by_owner.iter_mut() {
                 if !vis.clear_frame_sight() {
                     untracked.insert(viewer);
                 }
@@ -2713,7 +2723,7 @@ pub(crate) fn apply_gap_generator_sources_with_spy_sat(
     if width == 0 || height == 0 {
         return;
     }
-    for (&viewer, vis) in &mut fog.by_owner {
+    for (&viewer, vis) in fog.by_owner.iter_mut() {
         let previous = fog.gap_sources.entry(viewer).or_default();
         let mut admitted = std::collections::BTreeSet::new();
         vis.clear_gap_fog();
@@ -2844,7 +2854,7 @@ pub(crate) fn materialize_gap_generator_sources(
     if width == 0 || height == 0 {
         return;
     }
-    for (&viewer, vis) in &mut fog.by_owner {
+    for (&viewer, vis) in fog.by_owner.iter_mut() {
         // Preserve the existing per-viewer receipt container, including empty
         // sets. Materialization does not admit or remove any generator.
         fog.gap_sources.entry(viewer).or_default();

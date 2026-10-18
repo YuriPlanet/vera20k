@@ -7,6 +7,8 @@ use crate::app::match_runtime::sim_tick::ExactStepReceipt;
 use winit::event::{ElementState, MouseButton};
 use winit::keyboard::{Key, KeyCode, KeyLocation, NamedKey};
 
+mod aircraft;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OpeningTarget {
     Locked,
@@ -18,6 +20,8 @@ pub enum OpeningTarget {
     /// ALL01, whose first authored action locks input: an unlocked save
     /// loaded from the Esc menu while a replay of the opening holds the lock.
     LoadUnlockedWhileLocked,
+    /// A fixed committed production tick, for opening aircraft raster diagnosis.
+    AlliedTick(u64),
 }
 
 impl OpeningTarget {
@@ -30,12 +34,13 @@ impl OpeningTarget {
             Self::Unlocked => "opening-unlocked",
             Self::RestoreUnlocked => "opening-restore-unlocked",
             Self::LoadUnlockedWhileLocked => "opening-load-unlocked-while-locked",
+            Self::AlliedTick(_) => "opening-allied-tick",
         }
     }
 
     pub(crate) fn side(self) -> CampaignSide {
         match self {
-            Self::LoadUnlockedWhileLocked => CampaignSide::Allied,
+            Self::LoadUnlockedWhileLocked | Self::AlliedTick(_) => CampaignSide::Allied,
             _ => CampaignSide::Soviet,
         }
     }
@@ -131,6 +136,7 @@ impl OpeningCapture {
                 OpeningTarget::LoadUnlockedWhileLocked => {
                     self.load_while_locked.is_some() && self.steps_after_load >= STEPS_AFTER_LOAD
                 }
+                OpeningTarget::AlliedTick(tick) => sim.session.tick == tick,
             })
     }
 
@@ -368,6 +374,10 @@ impl OpeningCapture {
             "save_restore": self.restored, "current": opening_observation(state)?,
             "pre_lock_save": self.pre_lock_save, "unlocked_save": self.unlocked_save,
             "load_while_locked": self.load_while_locked,
+            "requested_tick": match self.target { OpeningTarget::AlliedTick(tick) => Some(tick), _ => None },
+            "aircraft_raster": if matches!(self.target, OpeningTarget::AlliedTick(_)) {
+                Some(aircraft::observe(state, &self.save_directory)?)
+            } else { None },
             "clock_domain": "one exact production sim/app frame per presented game frame; audio/message service uses its ordinary wall clock",
         }))
     }
@@ -412,6 +422,7 @@ fn opening_observation(state: &AppState) -> Result<Value> {
     let mut active_types = std::collections::BTreeMap::<String, usize>::new();
     let mut flashing = Vec::new();
     let mut building_receivers = Vec::new();
+    let mut aircraft = Vec::new();
     for (_, entity) in sim
         .entities()
         .iter_sorted()
@@ -419,6 +430,18 @@ fn opening_observation(state: &AppState) -> Result<Value> {
     {
         let name = sim.interner.resolve(entity.type_ref()).to_owned();
         *active_types.entry(name.clone()).or_default() += 1;
+        if entity.category() == crate::map::entities::EntityCategory::Aircraft {
+            aircraft.push(json!({
+                "id": entity.stable_id(), "type": name,
+                "cell": [entity.position.rx(), entity.position.ry()],
+                "world_z": entity.position.exact_z_leptons(),
+                "anchor": crate::render::locomotor_visual::screen_position(entity),
+                "voxel": entity.is_voxel(),
+                "display_layer": sim.display_layers().layer_of(entity.stable_id()).map(|layer| layer.index()),
+                "crashing": entity.crash.is_crashing(),
+                "health": entity.health.current(),
+            }));
+        }
         if entity.category() == crate::map::entities::EntityCategory::Structure {
             // Observe existing damage/power owners after exact production
             // frames; this must never substitute a receiver or recalculate power.
@@ -485,9 +508,10 @@ fn opening_observation(state: &AppState) -> Result<Value> {
         "input_locked": sim.session.input_locked(),
         "cursor_depth": state.match_state.input.cursor_visibility.level(),
         "camera": camera::saved_tactical_view(state),
+        "camera_origin": [state.match_state.input.camera_x, state.match_state.input.camera_y],
         "fog_viewer": viewer.map(|viewer| sim.interner.resolve(viewer)),
         "active_types": active_types, "flashing": flashing, "no_effects_anims": markers,
-        "building_receivers": building_receivers,
+        "building_receivers": building_receivers, "aircraft": aircraft,
         "super_timers": state.rules().map(|rules|
             crate::sim::superweapon::super_timer_views(sim, rules).into_iter().map(|view|
                 json!({"owner": sim.interner.resolve(view.owner()),

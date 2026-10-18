@@ -325,8 +325,8 @@ impl Simulation {
     ) -> bool {
         use crate::rules::locomotor_type::{MovementZone, SpeedType};
         use crate::sim::cell_rect::{
-            IsClearToMoveResult, LiveCellPassabilityQuery, cell_is_in_playfield_height_aware,
-            evaluate_live_cell_passability,
+            CellPassabilityArgs, canonical_cell_ref, cell_is_in_playfield_height_aware,
+            check_cell_passability,
         };
         let e = self.substrate.entities.get(id).unwrap();
         let (requested, object) = match destination {
@@ -377,35 +377,26 @@ impl Simulation {
                                 .is_some_and(|o| o.spawned)
                     });
         }
-        let grid = self.path_grid_snapshot();
-        let land = self
-            .resolved_terrain
-            .as_ref()
-            .and_then(|t| t.cell(cell.0 as u16, cell.1 as u16))
-            .is_some_and(|c| {
-                rules
-                    .and_then(|r| r.terrain_rules.semantics_for_land_type(c.yr_cell_land_type))
-                    .and_then(|row| row.cost_for_speed_type(SpeedType::Track))
-                    .is_some_and(|cost| cost > 0)
-            });
-        let result = evaluate_live_cell_passability(LiveCellPassabilityQuery {
-            target: (cell.0 as u16, cell.1 as u16),
-            speed_type: SpeedType::Track,
-            movement_zone: MovementZone::Normal,
-            requested_zone: None,
-            actual_zone: 0,
-            requested_layer: None,
-            ignore_infantry: false,
-            ignore_vehicles: false,
-            land_passable: land,
-            path_grid: grid.as_deref(),
-            resolved_terrain: self.resolved_terrain.as_ref(),
-            raw_occupation: Some(&self.substrate.raw_cell_occupation),
-        });
-        if !matches!(
-            result,
-            IsClearToMoveResult::Clear { .. } | IsClearToMoveResult::ClearWinged
-        ) {
+        // 0x004DDD66..0x004DDD85: (Track, 0, 0, -1, Normal, -1, 1) on the
+        // Cell its lookup returned.
+        let (Some(terrain), Some(retained)) = (self.resolved_terrain.as_ref(), identity) else {
+            return false;
+        };
+        if !check_cell_passability(
+            &canonical_cell_ref(terrain, retained),
+            CellPassabilityArgs {
+                speed_type: SpeedType::Track,
+                ignore_infantry: false,
+                ignore_vehicles: false,
+                zone: None,
+                movement_zone: MovementZone::Normal,
+                level: None,
+                is_bridge: true,
+            },
+            &self.cell_passability_map(),
+        )
+        .admits()
+        {
             return false;
         }
         !self.substrate.entities.values().any(|other| {
@@ -860,6 +851,19 @@ mod tests {
                 },
             )))
             .unwrap();
+            // The map loaded under these rules: its Clear cells carry their
+            // Clear row, which `0x004834A0` reads through `Cell+0xEC`.
+            let clear = rules
+                .terrain_rules
+                .semantics_for_land_type(crate::rules::terrain_rules::LandType::Clear.as_index())
+                .expect("[Clear]")
+                .speed_costs;
+            let terrain = sim.resolved_terrain.as_mut().unwrap();
+            terrain.set_land_speed_rules_for_test(&rules.terrain_rules);
+            for cell in &mut terrain.cells {
+                cell.speed_costs = clear;
+                cell.base_speed_costs = clear;
+            }
             let query = input
                 .get("query")
                 .cloned()

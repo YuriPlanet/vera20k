@@ -1,8 +1,11 @@
-//! DRAGON 32-way rotating-SHP frame table + index formula. gamemd source
-//! `0x007F4890` = `i32[32]` where `table[i] = (28 - i) & 31` (study Verification
-//! Log #4, read_memory 0x007F4890 len128). Used for `Rotates=yes` projectiles
-//! (DRAGON / AAHeatSeeker2). Rust previously lacked it (closes DRIFT D3 at the
-//! data layer; the `app::presentation::fire_effects` cutover is a later slice).
+//! The 32-step facing frame table `0x007F4890` = `i32[32]` where
+//! `table[i] = (28 - i) & 31` (study Verification Log #4, read_memory 0x007F4890
+//! len128). `BulletClass::GetAnimFrame @ 0x00468000` indexes it at `0x0046805D`
+//! with the [`step32_from_facing16`](super::step32_from_facing16) bucket of the
+//! velocity angle when the type's inverse ART `Rotates` byte (Type+0x2A1) is
+//! clear, i.e. for `Rotates=yes` bullets such as DRAGON and AAHeatSeeker2.
+//! Ghidra also lists data references from `0x0043EE8E`, `0x004466BE`,
+//! `0x0044FE10` and `0x0045127F`; none of those readers is ported here.
 
 /// gamemd DRAGON 32-way frame map `0x007F4890`: `table[i] = (28 - i) & 31`,
 /// i.e. `[28,27,…,1,0,31,30,29]`. `&31` on i32 wraps the negative tail correctly
@@ -16,12 +19,6 @@ pub const DRAGON_FRAME_TABLE: [i32; 32] = {
     }
     out
 };
-
-/// DRAGON 32-way frame index from a BAM (binary-angle) value:
-/// `index = (((bam) >> 10) + 1) >> 1 & 0x1F` (study §5).
-pub fn dragon_frame_index(bam: u16) -> usize {
-    super::quantize::step32_from_facing16(bam) as usize
-}
 
 #[cfg(test)]
 mod tests {
@@ -38,16 +35,5 @@ mod tests {
         for (i, &frame) in DRAGON_FRAME_TABLE.iter().enumerate() {
             assert_eq!(frame, (28 - i as i32) & 31);
         }
-    }
-
-    #[test]
-    fn dragon_frame_index_formula() {
-        for bam in [0u16, 0x0400, 0x0800, 0x8000, 0xFC00, 0xFFFF] {
-            assert_eq!(
-                dragon_frame_index(bam),
-                ((((bam >> 10) + 1) >> 1) & 0x1F) as usize
-            );
-        }
-        assert_eq!(dragon_frame_index(0), 0);
     }
 }

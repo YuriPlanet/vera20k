@@ -543,7 +543,6 @@ fn candidate_passes(
             // Caller argument, forwarded verbatim: the engine's two free-unit attempts
             // differ in this one value and nothing else.
             reject_any_overlay: options.reject_any_overlay,
-            path_grid: q.path_grid,
             resolved_terrain: q.resolved_terrain,
             overlay_grid: q.overlay_grid,
             occupancy: q.occupancy,
@@ -847,14 +846,12 @@ impl crate::sim::world::Simulation {
 mod tests {
     use super::*;
     use crate::map::bridge_facts::{BRIDGE_FLAG_FORWARD_SIDE, BRIDGE_FLAG_STRUCTURAL};
-    use crate::map::resolved_terrain::{ResolvedTerrainGrid, zone_class};
+    use crate::map::resolved_terrain::ResolvedTerrainGrid;
 
+    /// Clear cells carrying the retail Clear row, with the grid's land rows
+    /// bound as a loaded scenario binds them.
     fn flat_terrain(width: u16, height: u16) -> ResolvedTerrainGrid {
-        crate::map::resolved_terrain::test_grid(
-            width,
-            height,
-            crate::map::resolved_terrain::test_clear_cell,
-        )
+        crate::map::resolved_terrain::test_retail_clear_grid(width, height)
     }
 
     /// A grid whose every cell sits at the same raised terrain level — a plateau. The
@@ -1530,10 +1527,11 @@ mod tests {
         // — can never return (4,4).
         const GRID: usize = 20;
         let mut terrain = flat_terrain(GRID as u16, GRID as u16);
-        terrain.cells[5 * GRID + 5].zone_type = zone_class::WALL;
+        let walls = crate::sim::overlay_grid::test_wall_overlays(&mut terrain, &[(5, 5)]);
         terrain.cells[5 * GRID + 5].level = 2;
         let path_grid = PathGrid::from_resolved_terrain(&terrain);
-        let q = base_query(&terrain, &path_grid);
+        let mut q = base_query(&terrain, &path_grid);
+        q.overlay_grid = Some(&walls);
 
         let candidates = collect_candidates((5, 5), &q, NearbySearchOptions::default());
         let occluded = candidates
@@ -1636,15 +1634,15 @@ mod tests {
 
     #[test]
     fn find_nearby_no_candidate_returns_none() {
-        // Every cell rejected -> no candidate -> None. WALL zone_type with a Normal
-        // movement-zone rejects in `cell_rect`'s land test (only the destroyer
-        // family crosses walls), so every candidate fails passability.
+        // Every cell rejected -> no candidate -> None. A wall refuses a Normal
+        // movement zone in `cell_rect`'s land test (only the destroyer family
+        // crosses walls), so every candidate fails passability.
         let mut terrain = flat_terrain(3, 3);
-        for c in terrain.cells.iter_mut() {
-            c.zone_type = zone_class::WALL;
-        }
+        let cells: Vec<(u16, u16)> = (0..3).flat_map(|y| (0..3).map(move |x| (x, y))).collect();
+        let walls = crate::sim::overlay_grid::test_wall_overlays(&mut terrain, &cells);
         let path_grid = PathGrid::from_resolved_terrain(&terrain);
         let mut q = base_query(&terrain, &path_grid);
+        q.overlay_grid = Some(&walls);
         q.radius_cap = 2;
         assert_eq!(find_nearby_passable_cell((1, 1), &q, 0), None);
     }
@@ -1687,11 +1685,12 @@ mod tests {
         // (2,1) sits three levels up: it survives with the gate off and is dropped
         // with the gate on, while the level-1 cell at (1,2) survives either way.
         let mut terrain = flat_terrain(5, 5);
-        terrain.cells[2 * 5 + 2].zone_type = zone_class::WALL; // seed rejected
+        let walls = crate::sim::overlay_grid::test_wall_overlays(&mut terrain, &[(2, 2)]); // seed rejected
         terrain.cells[5 + 2].level = 3; // (2,1): three levels above the seed
         terrain.cells[2 * 5 + 1].level = 1; // (1,2): one level above the seed
         let path_grid = PathGrid::from_resolved_terrain(&terrain);
         let mut q = base_query(&terrain, &path_grid);
+        q.overlay_grid = Some(&walls);
 
         let without_gate: Vec<(i32, i32)> =
             collect_candidates((2, 2), &q, NearbySearchOptions::default())

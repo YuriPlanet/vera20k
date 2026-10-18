@@ -79,7 +79,7 @@ fn prepared_campaign() -> crate::app::match_bootstrap::PreparedCampaignStartup {
         "[Battles]\n0=ALL1\n[ALL1]\nCD=2\nScenario=ALL01UMD.MAP\n",
     );
     let mut campaigns = crate::rules::campaigns::CampaignRegistry::default();
-    campaigns.apply_ini(&ini, &crate::rules::movies::MovieRegistry::default(), None);
+    campaigns.apply_ini(&ini, &crate::rules::movies::MovieRegistry::default());
     crate::app::match_bootstrap::prepare_campaign_startup(&campaigns, "ALL1", 1, &mut TestClock(31))
         .expect("synthetic campaign catalog admits a selected campaign")
 }

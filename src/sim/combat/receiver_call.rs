@@ -477,18 +477,6 @@ pub(super) fn postmortem_duration_for_event(
         .then(|| postmortem_delay_duration(warhead, event.distance_leptons))
 }
 
-/// The vt+0x160 `TechnoClass::IsIronCurtained` (`0x0041BF40`) test that
-/// `Apply_area_damage` (`0x00489280`) makes at `0x0048994E` and `0x00489A4F`.
-pub(super) fn has_active_area_invulnerability(entity: &GameEntity, current_tick: u64) -> bool {
-    // Every GameEntity is a TechnoClass-derived object, so the native
-    // AbstractFlags +0x14 bit-0 identity test is inherent in this store. The
-    // virtual +0x160 result is the existing passive IC/FS timer predicate.
-    crate::sim::superweapon::invulnerability::is_invulnerable(
-        entity.invulnerability.as_ref(),
-        current_tick as u32,
-    )
-}
-
 /// `Apply_area_damage` (`0x00489280`)'s isolation pre-scan (`0x0048993E..0x00489968`):
 /// an Iron Curtained receiver under 85 leptons without the Force Shield byte arms it.
 fn event_arms_ic_isolation(
@@ -499,11 +487,15 @@ fn event_arms_ic_isolation(
     event.near_center_ic_isolation_eligible
         && event.distance_leptons < 85
         && entities.get(event.target_id).is_some_and(|target| {
-            has_active_area_invulnerability(target, current_tick)
-                && target.invulnerability.as_ref().is_some_and(|state| {
-                    state.kind()
-                        == crate::sim::superweapon::invulnerability::InvulnKind::IronCurtain
-                })
+            // 0x0048994E: vt+0x160 IsIronCurtained (0x0041BF40). Every
+            // GameEntity is TechnoClass-derived, so the AbstractFlags +0x14
+            // bit-0 identity test before it is inherent in this store.
+            crate::sim::superweapon::invulnerability::is_invulnerable(
+                target.invulnerability.as_ref(),
+                current_tick as u32,
+            ) && target.invulnerability.as_ref().is_some_and(|state| {
+                state.kind() == crate::sim::superweapon::invulnerability::InvulnKind::IronCurtain
+            })
         })
 }
 

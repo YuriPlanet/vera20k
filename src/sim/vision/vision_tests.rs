@@ -978,7 +978,7 @@ fn test_in_place_matches_fresh() {
 
     // Both should have identical by_owner contents.
     assert_eq!(fresh.by_owner.len(), in_place.by_owner.len());
-    for (owner, fresh_vis) in &fresh.by_owner {
+    for (owner, fresh_vis) in fresh.by_owner.iter() {
         let ip_vis = in_place
             .by_owner
             .get(owner)

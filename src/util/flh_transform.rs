@@ -92,6 +92,7 @@ pub fn native_flh_world_delta(
     use crate::util::direction_tables::step32_from_facing16;
     use crate::util::native_affine::{rotate_z, translate_xyz};
     use crate::util::native_trig::native_sin_cos_by_step;
+    use crate::util::native_x87::X87Chop53;
 
     let aim_step = i32::from(step32_from_facing16(facings.aim));
     let body_step = i32::from(step32_from_facing16(facings.body));
@@ -116,20 +117,7 @@ pub fn native_flh_world_delta(
     );
     let world = matrix.w_axis;
 
-    // Y is negated before the three truncations.
-    Some((
-        native_ftol(world.x)?,
-        native_ftol(-world.y)?,
-        native_ftol(world.z)?,
-    ))
-}
-
-/// `Math__ftol @ 0x007C5F00` — truncate toward zero at 53-bit precision.
-fn native_ftol(value: f32) -> Option<i32> {
-    let loaded = crate::util::native_x87::X87Chop53::load_f32(
-        crate::util::native_x87::NativeF32Bits::from_bits(value.to_bits()),
-    )
-    .ok()?;
-    let truncated = crate::util::native_x87::X87Chop53::ftol_i64(loaded).ok()?;
-    i32::try_from(truncated).ok()
+    // Y is negated before the three `Math::ftol @ 0x007C5F00` truncations.
+    let ftol = |value: f32| X87Chop53::ftol_f64_low_masked(f64::from(value));
+    Some((ftol(world.x), ftol(-world.y), ftol(world.z)))
 }

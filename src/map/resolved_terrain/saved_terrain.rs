@@ -148,6 +148,7 @@ impl SavedTerrainTemplate {
             height: self.height,
             cells: self.cells,
             land_speed_costs: land_speed_cost_profiles(None),
+            overlay_passability: Vec::new(),
             native_tmp_draw_heights: HashMap::new(),
             shared_cell_dummy,
             mutation_epoch: 0,
@@ -191,16 +192,22 @@ impl ResolvedTerrainGrid {
 
     /// Derived asset/catalog binding shared by fresh construction and saved
     /// loading. It never materializes cells or enters the variant selector.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "theater, assets, both rules projections and the selector inputs"
+    )]
     pub(super) fn bind_asset_catalogs(
         &mut self,
         theater: Option<&TheaterData>,
         assets: Option<&AssetManager>,
         rules: Option<&TerrainRules>,
+        overlay_types: Option<&OverlayTypeRegistry>,
         lat_enabled: bool,
         cliff_back: u8,
         selector: TileVariantSelector,
     ) {
         self.land_speed_costs = land_speed_cost_profiles(rules);
+        self.overlay_passability = overlay_passability_flags(overlay_types);
         self.clear_tile_id = theater.and_then(|td| td.rmg_tiles.clear_tile).unwrap_or(0);
         self.water_tiles = theater.map_or_else(
             || crate::map::rmg::tiles::TileIds::from_keys(&Default::default()),
@@ -255,11 +262,16 @@ impl ResolvedTerrainGrid {
     /// Bind the future-restore baseline after the actual loaded cells have
     /// visited the selector. A baseline is not itself a native loaded-cell pass
     /// and must never initialize a cold table or consume additional Main draws.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "the existing map binder inputs plus the scenario's overlay types"
+    )]
     pub fn bind_saved_template_assets(
         &mut self,
         theater: &TheaterData,
         assets: &AssetManager,
         rules: &TerrainRules,
+        overlay_types: &OverlayTypeRegistry,
         lat_enabled: bool,
         cliff_back: u8,
         selector: TileVariantSelector,
@@ -270,6 +282,7 @@ impl ResolvedTerrainGrid {
             Some(theater),
             Some(assets),
             Some(rules),
+            Some(overlay_types),
             lat_enabled,
             cliff_back,
             selector,
@@ -291,6 +304,7 @@ impl ResolvedTerrainGrid {
         theater: &TheaterData,
         assets: &AssetManager,
         rules: &TerrainRules,
+        overlay_types: &OverlayTypeRegistry,
         lat_enabled: bool,
         cliff_back: u8,
         size_width: i32,
@@ -311,6 +325,7 @@ impl ResolvedTerrainGrid {
             Some(theater),
             Some(assets),
             Some(rules),
+            Some(overlay_types),
             lat_enabled,
             cliff_back,
             selector.selector(),

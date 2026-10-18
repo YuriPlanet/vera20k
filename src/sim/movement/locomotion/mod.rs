@@ -12,4 +12,4 @@
 pub mod piggyback;
 pub mod power;
 
-pub use piggyback::{BeginOutcome, EndOutcome, LocomotorRuntimePayload, StashedLocomotor};
+pub use piggyback::{BeginOutcome, LocomotorRuntimePayload, StashedLocomotor};

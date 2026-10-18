@@ -10,6 +10,7 @@ use crate::map::resolved_terrain::NativeCellQuery;
 use crate::rules::locomotor_type::{MovementZone, SpeedType};
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
+use crate::sim::cell_kernel::{CellCoordinate, cell_center};
 use crate::sim::cell_rect::{PlayfieldBounds, cell_is_in_playfield_height_aware_in_query};
 use crate::sim::combat::TargetKind;
 use crate::sim::components::{DriveCoord, NavTargetRef};
@@ -22,7 +23,7 @@ use crate::sim::movement::ground_pose::query_ground_height as query_ground;
 use crate::sim::movement::infantry_entry::{EntryQueryMode, InfantryEntryArgs};
 use crate::sim::occupancy::RawCellOccupationGrid;
 use crate::sim::pathfinding::zone_map::{ZoneGrid, ZoneQueryCell};
-use crate::util::lepton::{BRIDGE_DECK_HEIGHT_LEPTONS, GROUND_LEVEL_HEIGHT_LEPTONS};
+use crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS;
 
 /// What_Action's answer, on a Cell (vt+0x70) or over an object (vt+0x74), in
 /// the rungs a Move click reaches.
@@ -469,6 +470,7 @@ impl Simulation {
             cells,
             zones,
             raw: &self.substrate.raw_cell_occupation,
+            overlays: self.overlay_grid.as_ref(),
             bounds,
             size,
             frame: self.session.binary_frame,
@@ -521,23 +523,16 @@ struct ClickMover {
 }
 
 impl ClickMover {
-    /// IsInAir (vt+0x54, `0x005F6B90`): two levels above the ground.
-    fn in_air(&self, cells: &NativeCellQuery<'_>) -> Result<bool, String> {
-        //5F6B90 samples height only when Object+74 is true; +1C8 subtracts
-        //OnBridge's height independently of the ShouldBeOnBridge query.
-        if !self.marked {
-            return Ok(false);
-        }
-        let height = self
-            .current
-            .z
-            .wrapping_sub(query_ground(cells, self.current)?)
-            .wrapping_sub(if self.on_bridge {
-                BRIDGE_DECK_HEIGHT_LEPTONS
-            } else {
-                0
-            });
-        Ok(height >= 2 * GROUND_LEVEL_HEIGHT_LEPTONS)
+    /// IsInAir (vt+0x54, `0x005F6B90`): GetHeight (`0x005F5F40`) two levels
+    /// above the ground, sampled only when Object+74 is true. GetHeight
+    /// subtracts OnBridge's deck independently of the ShouldBeOnBridge query.
+    fn in_air(&self, cells: &NativeCellQuery<'_>) -> bool {
+        use crate::sim::movement::air_movement::{object_flight_predicate, object_height_in_query};
+        object_flight_predicate(
+            self.marked,
+            || object_height_in_query(self.current, self.on_bridge, Some(cells)),
+            true,
+        )
     }
 }
 
@@ -546,6 +541,8 @@ struct ClickMap<'a> {
     cells: NativeCellQuery<'a>,
     zones: &'a ZoneGrid,
     raw: &'a RawCellOccupationGrid,
+    /// The live overlays whose `Wall=` FNPC's passability test reads.
+    overlays: Option<&'a crate::sim::overlay_grid::OverlayGrid>,
     bounds: PlayfieldBounds,
     size: (i32, i32),
     frame: u32,
@@ -656,7 +653,7 @@ impl ClickMap<'_> {
                 target_cell: None,
                 path_grid: None,
                 resolved_terrain: Some(self.cells.terrain()),
-                overlay_grid: None,
+                overlay_grid: self.overlays,
                 occupancy: None,
                 entities: None,
                 zone_grid: Some(self.zones),
@@ -700,21 +697,24 @@ fn clicked_coordinate(
     cells: &NativeCellQuery<'_>,
     clicked: (i16, i16),
 ) -> Result<DriveCoord, String> {
-    let mut point = cell_centre(clicked);
+    let centre = cell_center(
+        CellCoordinate {
+            x: i32::from(clicked.0),
+            y: i32::from(clicked.1),
+        },
+        0,
+    );
+    let mut point = DriveCoord {
+        x: centre.x,
+        y: centre.y,
+        z: 0,
+    };
     point.z = query_ground(cells, point)?;
     //4DE242/4DE38C are separate Map calls after the height query.
     if cells.flags(cells.lookup_world(point.x, point.y)) & 0x100 != 0 {
         point.z = point.z.wrapping_add(BRIDGE_DECK_HEIGHT_LEPTONS);
     }
     Ok(point)
-}
-
-fn cell_centre(cell: (i16, i16)) -> DriveCoord {
-    DriveCoord {
-        x: i32::from(cell.0) * 256 + 128,
-        y: i32::from(cell.1) * 256 + 128,
-        z: 0,
-    }
 }
 
 /// Original 4DE1D0 for every Foot. No A* search and no
@@ -737,7 +737,7 @@ fn resolve_foot_cell_click(
         return Ok(None);
     }
     let source = map.source(&click.mover);
-    let in_air = click.mover.in_air(cells)?;
+    let in_air = click.mover.in_air(cells);
     //4DE2B7..4DE2DA: Subterranean searches as Normal. Fly becomes Infantry
     //only when House53A130 answers true, and it is constant false.
     let movement_zone = match click.mover.movement_zone {
@@ -806,10 +806,21 @@ fn resolve_foot_object_click(
         MovementZone::Fly => MovementZone::Infantry,
         zone => zone,
     };
-    let special = click.mover.in_air(cells)? || click.mover.special_type;
+    let special = click.mover.in_air(cells) || click.mover.special_type;
     let source_bridge = map.source_bridge(&click.mover)?;
     //4D7990..4D79DF: the Cell's centre on its ground, with no bridge raise.
-    let mut centre = cell_centre(click.target);
+    let point = cell_center(
+        CellCoordinate {
+            x: i32::from(click.target.0),
+            y: i32::from(click.target.1),
+        },
+        0,
+    );
+    let mut centre = DriveCoord {
+        x: point.x,
+        y: point.y,
+        z: 0,
+    };
     centre.z = query_ground(cells, centre)?;
     let shrouded = crate::sim::vision::coordinate_is_shrouded(cells, centre, &open)?;
     let own_zone = Some((source, source_bridge));

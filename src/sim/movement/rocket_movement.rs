@@ -34,6 +34,7 @@ use crate::util::lepton::{BRIDGE_DECK_HEIGHT_LEPTONS, lepton_to_cell_packed};
 use crate::util::native_trig::facing_step_world_xy;
 use crate::util::native_x87::{
     NativeF32Bits, NativeF64Bits, X87Chop53, X87Ordering, X87Value, sqrt_approx_f32,
+    sqrt_approx_length,
 };
 
 /// `+0x40` before Move_To: Process runs only the tail, which a zero speed
@@ -377,12 +378,10 @@ fn climb(rocket: &mut RocketRuntime, block: &MissileSpawnParams, host: &mut impl
     }
     rocket.mission_state = STATE_CRUISE;
     let here = host.location();
-    let dx = X87Chop53::load_i32(here[0].wrapping_sub(rocket.destination.x));
-    let dy = X87Chop53::load_i32(here[1].wrapping_sub(rocket.destination.y));
-    rocket.cruise_start_distance = sqrt_approx_ftol(X87Chop53::add(
-        X87Chop53::mul(dy, dy),
-        X87Chop53::mul(dx, dx),
-    ));
+    rocket.cruise_start_distance = sqrt_approx_length([
+        here[1].wrapping_sub(rocket.destination.y),
+        here[0].wrapping_sub(rocket.destination.x),
+    ]);
 }
 
 /// State 4 (`0x006629C7..0x00662CA7`). Answers false when the rocket
@@ -414,14 +413,12 @@ fn cruise(
         let here = host.location();
         let above = here[2].wrapping_sub(destination.z);
         let coords = host.location();
-        let dx = X87Chop53::load_i32(coords[0].wrapping_sub(destination.x));
-        let dy = X87Chop53::load_i32(coords[1].wrapping_sub(destination.y));
-        let dz = X87Chop53::load_i32(coords[2].wrapping_sub(here[2]));
-        let squared = X87Chop53::add(
-            X87Chop53::add(X87Chop53::mul(dz, dz), X87Chop53::mul(dy, dy)),
-            X87Chop53::mul(dx, dx),
-        );
-        if sqrt_approx_ftol(squared) <= above {
+        let distance = sqrt_approx_length([
+            coords[2].wrapping_sub(here[2]),
+            coords[1].wrapping_sub(destination.y),
+            coords[0].wrapping_sub(destination.x),
+        ]);
+        if distance <= above {
             rocket.mission_state = STATE_DIVE;
         }
     } else {
@@ -431,12 +428,10 @@ fn cruise(
             return false;
         }
         let coords = host.location();
-        let dx = X87Chop53::load_i32(coords[0].wrapping_sub(destination.x));
-        let dy = X87Chop53::load_i32(coords[1].wrapping_sub(destination.y));
-        let left = sqrt_approx_ftol(X87Chop53::add(
-            X87Chop53::mul(dy, dy),
-            X87Chop53::mul(dx, dx),
-        ));
+        let left = sqrt_approx_length([
+            coords[1].wrapping_sub(destination.y),
+            coords[0].wrapping_sub(destination.x),
+        ]);
         let share = X87Chop53::div(
             X87Chop53::load_i32(left),
             X87Chop53::load_i32(rocket.cruise_start_distance),
@@ -636,12 +631,6 @@ fn target_angle(destination: DriveCoord, here: [i32; 3]) -> X87Value {
     native_atan_from_table(
         X87Chop53::div(X87Chop53::load_i32(dz), distance).expect("the distance is positive"),
     )
-}
-
-/// `Sqrt_Approx @ 0x004CAC40` then `Math::ftol @ 0x007C5F00`.
-fn sqrt_approx_ftol(squared: X87Value) -> i32 {
-    let root = sqrt_approx_f32(squared).expect("a finite sum of squares has a finite root");
-    X87Chop53::ftol_i32_low_masked(f32_value(root))
 }
 
 /// A pitch key in quarter turns as radians, stored as binary32

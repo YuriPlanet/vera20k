@@ -746,6 +746,7 @@ fn common_raw_request(rx: u16, ry: u16, z: u8, sub_x: i32, sub_y: i32) -> Reveal
     }
 }
 
+/// A retail Clear cell at `level`, optionally under a structural bridge deck.
 pub fn common_raw_terrain_cell(
     rx: u16,
     ry: u16,
@@ -774,7 +775,7 @@ pub fn common_raw_terrain_cell(
             level
         },
         bridge_facts,
-        ..crate::map::resolved_terrain::test_flat_cell(rx, ry)
+        ..crate::map::resolved_terrain::test_retail_clear_cell(rx, ry)
     }
 }
 
@@ -793,6 +794,7 @@ pub(super) fn install_common_raw_terrain(
         })
         .collect();
     let mut terrain = ResolvedTerrainGrid::from_cells(width, height, cells);
+    terrain.set_land_speed_rules_for_test(&crate::map::resolved_terrain::test_retail_clear_rules());
     terrain.bind_shared_cell_dummy(sim.shared_cell_dummy.clone());
     sim.bridge_state = Some(
         crate::sim::bridge_state::BridgeRuntimeState::from_resolved_terrain(&terrain, true, 1500),

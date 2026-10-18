@@ -482,8 +482,8 @@ pub(crate) trait JumpjetFlightHost {
     fn crush_below(&mut self, runtime: &mut JumpjetRuntime) -> bool;
     /// `TechnoTypeClass+0xD94` `JumpJet=` of the owner's type.
     fn jumpjet_type(&self) -> bool;
-    /// `CellClass::IsClearToMove @ 0x004834A0` for SpeedType Wheel, both
-    /// occupant classes ignored, zone and level -1 (`0x0054CE7F..0x0054CE8F`).
+    /// [`check_cell_passability`](crate::sim::cell_rect::check_cell_passability)
+    /// with (Wheel, 1, 1, -1, Normal, -1, 1) (`0x0054CE7F..0x0054CE8F`).
     fn wheel_clear(&self, cell: (i16, i16)) -> bool;
     /// A dropped owner refused the water it falls on sinks
     /// (`0x0054CEB4..0x0054CF37`, `Simulation::dropped_sink`).

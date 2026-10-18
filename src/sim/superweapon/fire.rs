@@ -321,13 +321,17 @@ fn alert_super_weapon_defense(
     let base = house.base_origin();
     let probability = house.difficulty_value(&rules.general.ai_super_defense_probability);
     let first_yard = house.build_const_order.first().copied();
+    let terrain = sim.resolved_terrain.as_ref();
+    let cell_coords = |(x, y): (u16, u16)| {
+        let coord = crate::sim::projectile::cell_ground_coord(terrain, x, y);
+        [coord.x, coord.y, coord.z]
+    };
     let base_coords = if base == (0, 0) {
         [0, 0, 0]
     } else {
-        cell_coords(sim, base)
+        cell_coords(base)
     };
-    let distance =
-        crate::util::native_x87::distance_3d_leptons(base_coords, cell_coords(sim, cell));
+    let distance = crate::util::native_x87::distance_3d_leptons(base_coords, cell_coords(cell));
     if distance > rules.general.ai_super_defense_distance {
         return;
     }
@@ -348,10 +352,4 @@ fn alert_super_weapon_defense(
     if let Some(house) = sim.houses.get_mut(&house_id) {
         house.alert_super_weapon_defense(defended, frame);
     }
-}
-
-/// A cell's GetCoords (vt+0x48, `0x00486840`).
-pub(super) fn cell_coords(sim: &Simulation, (x, y): (u16, u16)) -> [i32; 3] {
-    let coord = crate::sim::projectile::cell_ground_coord(sim.resolved_terrain.as_ref(), x, y);
-    [coord.x, coord.y, coord.z]
 }

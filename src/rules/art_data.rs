@@ -633,7 +633,8 @@ pub fn art_rate_to_delay_ms(ini_rate: i32) -> u32 {
 /// **`Translucency=N` therefore reads as "N percent *transparent*".** The source
 /// weight is `1 - N/100`, so `Translucency=25` is the *most* opaque of the three
 /// and `Translucency=75` the faintest. Reading the key as "N percent opaque"
-/// inverts every explosion, fire and wake in the game.
+/// inverts every explosion, fire and wake in the game. `AnimClass::DrawIt`
+/// picks the stage per draw ([`crate::sim::anim_class::anim_translucency_selection`]).
 pub const ANIM_DRAW_BITS_OPAQUE: u32 = 0x0;
 /// `Translucency=25` — source contributes three quarters.
 pub const ANIM_DRAW_BITS_TRANSLUCENT_25: u32 = 0x2;
@@ -641,18 +642,6 @@ pub const ANIM_DRAW_BITS_TRANSLUCENT_25: u32 = 0x2;
 pub const ANIM_DRAW_BITS_TRANSLUCENT_50: u32 = 0x4;
 /// `Translucency=75` — source contributes one quarter.
 pub const ANIM_DRAW_BITS_TRANSLUCENT_75: u32 = 0x6;
-
-/// Return the fixed draw-bit contribution for an art.ini `Translucency=` value.
-///
-/// `Translucent=` is an independent boolean and is not interpreted by this helper.
-pub const fn anim_fixed_translucency_draw_bits(translucency: i32) -> Option<u32> {
-    match translucency {
-        25 => Some(ANIM_DRAW_BITS_TRANSLUCENT_25),
-        50 => Some(ANIM_DRAW_BITS_TRANSLUCENT_50),
-        75 => Some(ANIM_DRAW_BITS_TRANSLUCENT_75),
-        _ => None,
-    }
-}
 
 /// Which palette an animation type's frames are baked/sampled against.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -682,89 +671,6 @@ pub const fn anim_draw_palette(config: &AnimTypeRuntimeConfig) -> AnimDrawPalett
     }
 }
 
-/// Progressive translucency ladder for `Translucent=yes` animation types.
-///
-/// `Translucent=yes` is **not** a constant blend: gamemd's animation draw path
-/// compares the current frame against fractions of the type's `End` and fades the
-/// animation out as it plays. An animation is opaque for its first fifth, then
-/// steps through three-quarters, one-half and one-quarter source weight. This is
-/// what makes a fire or a ship wake dissipate instead of vanishing in one frame.
-///
-/// The fraction comparisons are evaluated in native double precision against the
-/// literals 0.2 / 0.4 / 0.6 and are reproduced here rather than rewritten as
-/// integer cross-multiplication, because the two disagree at boundary frames for
-/// some `End` values. This is render material selection only — no simulation
-/// state, ordering or RNG depends on it.
-pub fn anim_progressive_translucency_draw_bits(current_frame: i32, end_frame: i32) -> u32 {
-    const OPAQUE_FRACTION: f64 = 0.2;
-    const QUARTER_FRACTION: f64 = 0.4;
-    const HALF_FRACTION: f64 = 0.6;
-
-    let frame = f64::from(current_frame);
-    let end = f64::from(end_frame);
-    if frame > end * HALF_FRACTION {
-        ANIM_DRAW_BITS_TRANSLUCENT_75
-    } else if frame > end * QUARTER_FRACTION {
-        ANIM_DRAW_BITS_TRANSLUCENT_50
-    } else if frame > end * OPAQUE_FRACTION {
-        ANIM_DRAW_BITS_TRANSLUCENT_25
-    } else {
-        ANIM_DRAW_BITS_OPAQUE
-    }
-}
-
-/// Draw-time `End` for the progressive translucency ladder.
-///
-/// gamemd's AnimType loader seeds `End` from the SHP header frame count, halving
-/// it for `Shadow=yes` (the back half of such a SHP holds the shadow frames), and
-/// an explicit art.ini `End=` overrides it. `bind_scheduler_anim_assets`
-/// reproduces that for the scheduler closure, so a bound config already carries
-/// the native value; for a type that has not been through asset binding, derive
-/// the same value from the caller's SHP frame count rather than reading the
-/// unbound zero.
-fn anim_draw_end_frame(config: &AnimTypeRuntimeConfig, shp_frame_count: i32) -> i32 {
-    if config.raw_shp_frame_count.is_some() {
-        return config.end;
-    }
-    if let Some(end) = config.explicit_end {
-        return end;
-    }
-    if config.shadow {
-        shp_frame_count / 2
-    } else {
-        shp_frame_count
-    }
-}
-
-/// Resolve an animation type's translucency draw bits for one drawn frame.
-///
-/// `Translucent=yes` takes the progressive ladder; otherwise an exact
-/// `Translucency=25/50/75` selects a fixed stage and anything else draws opaque.
-/// `shp_frame_count` is only consulted on the progressive path, and only when the
-/// type has not been bound to its SHP yet.
-///
-/// Two native gates are deliberately not modelled and are recorded here rather
-/// than approximated. gamemd skips this whole selection when the type's
-/// `TranslucencyDetailLevel` exceeds the extra-animations video setting; omitting
-/// the gate is equivalent to that setting being at maximum, which is its normal
-/// value in play, and the runtime value is UNCHECKED. gamemd also aborts the draw
-/// outright above a per-instance byte whose source was not traced; it is zero on a
-/// freshly constructed animation and Rust has no counterpart, so this behaves as
-/// that zero — identical for every path that reaches it with zero.
-pub fn anim_translucency_draw_bits(
-    config: &AnimTypeRuntimeConfig,
-    current_frame: i32,
-    shp_frame_count: i32,
-) -> u32 {
-    if config.translucent {
-        return anim_progressive_translucency_draw_bits(
-            current_frame,
-            anim_draw_end_frame(config, shp_frame_count),
-        );
-    }
-    anim_fixed_translucency_draw_bits(config.translucency).unwrap_or(ANIM_DRAW_BITS_OPAQUE)
-}
-
 /// Bits of a `CC_Draw_Shape` flag word that name the translucency family.
 ///
 /// gamemd-derived: `AnimClass::DrawIt` loads the producer's whole flag word out
@@ -791,25 +697,6 @@ pub const fn anim_translucency_source_alpha(draw_bits: u32) -> f32 {
         ANIM_DRAW_BITS_TRANSLUCENT_75 => 0.25,
         _ => 1.0,
     }
-}
-
-/// Alpha an animation sprite instance should carry for one drawn frame.
-///
-/// Single entry point for instance builders: resolve the draw bits for this
-/// frame, then convert them to the source weight the native blend applies. An
-/// animation with neither `Translucent=` nor a recognised `Translucency=` returns
-/// `1.0`, so wiring this in cannot change an opaque animation.
-#[cfg(any(test, feature = "test-support"))]
-pub fn anim_frame_source_alpha(
-    config: &AnimTypeRuntimeConfig,
-    current_frame: i32,
-    shp_frame_count: i32,
-) -> f32 {
-    anim_translucency_source_alpha(anim_translucency_draw_bits(
-        config,
-        current_frame,
-        shp_frame_count,
-    ))
 }
 
 fn parse_anim_runtime_config(section: &IniSection) -> AnimTypeRuntimeConfig {
@@ -1037,7 +924,7 @@ fn resolve_loaded_bounds(
             count: raw_count,
         });
     }
-    let header_end = if shadow { raw_count / 2 } else { raw_count };
+    let header_end = header_end(raw_count, shadow);
     // Native copies the loader-derived End into LoopEnd before applying the
     // explicit INI End and LoopEnd keys.
     let loaded_end = explicit_end.unwrap_or(header_end);
@@ -1045,6 +932,27 @@ fn resolve_loaded_bounds(
     validate_loaded_bound(name, "End", loaded_end, raw_count)?;
     validate_loaded_bound(name, "LoopEnd", loaded_loop_end, raw_count)?;
     Ok((loaded_end, loaded_loop_end))
+}
+
+/// The End the loader takes from a SHP header of `raw_count` frames: the back
+/// half of a `Shadow=yes` SHP holds the shadow frames.
+const fn header_end(raw_count: i32, shadow: bool) -> i32 {
+    if shadow { raw_count / 2 } else { raw_count }
+}
+
+impl AnimTypeRuntimeConfig {
+    /// AnimType `End` (`+0x2C0`), which `AnimClass::DrawIt`'s `Translucent=`
+    /// ladder divides (`0x004230AC`). A bound type carries the loaded value;
+    /// for one not yet bound, it is what binding would load from a SHP of
+    /// `shp_frame_count` frames ([`resolve_loaded_bounds`]): an explicit `End=`,
+    /// else the header count, halved for `Shadow=yes`.
+    pub fn loaded_end(&self, shp_frame_count: i32) -> i32 {
+        if self.raw_shp_frame_count.is_some() {
+            return self.end;
+        }
+        self.explicit_end
+            .unwrap_or(header_end(shp_frame_count, self.shadow))
+    }
 }
 
 /// Verified `TacticalClass::IsometricPixelToWorld` transform for the initialized
@@ -2684,18 +2592,6 @@ mod anim_runtime_metadata_tests {
     }
 
     #[test]
-    fn gsi_02_13_maps_only_exact_fixed_translucency_values_to_draw_bits() {
-        assert_eq!(anim_fixed_translucency_draw_bits(25), Some(0x2));
-        assert_eq!(anim_fixed_translucency_draw_bits(50), Some(0x4));
-        assert_eq!(anim_fixed_translucency_draw_bits(75), Some(0x6));
-        assert_eq!(anim_fixed_translucency_draw_bits(1), None);
-        assert_eq!(anim_fixed_translucency_draw_bits(26), None);
-        assert_eq!(anim_fixed_translucency_draw_bits(100), None);
-        assert_eq!(anim_fixed_translucency_draw_bits(0), None);
-        assert_eq!(anim_fixed_translucency_draw_bits(-25), None);
-    }
-
-    #[test]
     fn translucency_draw_bits_invert_the_ini_percentage_into_source_weight() {
         // Translucency=N is N percent TRANSPARENT: 25 is the most opaque stage.
         assert_eq!(
@@ -2736,108 +2632,30 @@ mod anim_runtime_metadata_tests {
     }
 
     #[test]
-    fn stock_fixed_translucency_sections_resolve_to_their_blend_and_others_stay_opaque() {
-        // BURN-S/M/L are the burning-building fires: Translucency=25, no
-        // Translucent=, so every frame draws at three-quarter source weight.
+    fn loaded_end_is_the_bound_end_or_what_binding_would_load() {
         let ini = IniFile::from_str(
-            "[BURN-S]\n\
-             Layer=ground\n\
-             Translucency=25\n\
-             [FIRE3]\n\
-             Translucency=50\n\
-             [PLAIN]\n\
-             Layer=ground\n",
+            "[WAKE]\nTranslucent=yes\n\
+             [SHADOWED]\nTranslucent=yes\nShadow=yes\n\
+             [CAPPED]\nTranslucent=yes\nEnd=10\n",
         );
-        let reg = ArtRegistry::from_ini(&ini);
-
-        let burn = reg.anim_runtime_config("BURN-S").unwrap();
-        for frame in [0, 1, 30, 61] {
-            assert_eq!(anim_frame_source_alpha(burn, frame, 62), 0.75);
-        }
-
-        let fire = reg.anim_runtime_config("FIRE3").unwrap();
-        assert_eq!(anim_frame_source_alpha(fire, 3, 8), 0.5);
-
-        // An animation carrying neither key must be untouched by this path.
-        let plain = reg.anim_runtime_config("PLAIN").unwrap();
-        assert_eq!(anim_frame_source_alpha(plain, 3, 8), 1.0);
-    }
-
-    #[test]
-    fn translucent_yes_fades_progressively_instead_of_holding_one_blend() {
-        let ini = IniFile::from_str("[WAKE1]\nFlat=yes\nTranslucent=yes\n");
         let mut reg = ArtRegistry::from_ini(&ini);
-        // End comes from the SHP header once the type is bound.
-        reg.bind_anim_frame_count_for_test("WAKE1", 10);
-        let wake = reg.anim_runtime_config("WAKE1").unwrap();
-
-        // (current frame, expected source weight) against End = 10.
-        let ladder = [
-            (0, 1.0),
-            (1, 1.0),
-            (2, 1.0),
-            (3, 0.75),
-            (4, 0.75),
-            (5, 0.5),
-            (6, 0.5),
-            (7, 0.25),
-            (10, 0.25),
-        ];
-        for (frame, expected) in ladder {
-            assert_eq!(
-                anim_frame_source_alpha(wake, frame, 10),
-                expected,
-                "frame {frame} of a Translucent=yes animation"
-            );
-        }
-    }
-
-    #[test]
-    fn translucent_yes_takes_precedence_over_a_numeric_translucency_on_the_same_section() {
-        // Stock SMKPUFF and NUKETO carry both keys; the boolean wins, so their
-        // numeric value never selects a blend and frame 0 is opaque.
-        let ini = IniFile::from_str("[SMKPUFF]\nTranslucent=yes\nTranslucency=50\n");
-        let mut reg = ArtRegistry::from_ini(&ini);
-        reg.bind_anim_frame_count_for_test("SMKPUFF", 10);
-        let smoke = reg.anim_runtime_config("SMKPUFF").unwrap();
-
-        assert_eq!(anim_frame_source_alpha(smoke, 0, 10), 1.0);
-        assert_eq!(anim_frame_source_alpha(smoke, 9, 10), 0.25);
-    }
-
-    #[test]
-    fn progressive_end_uses_the_shp_frame_count_until_the_type_is_bound() {
-        let ini = IniFile::from_str("[WAKE2]\nTranslucent=yes\n");
-        let reg = ArtRegistry::from_ini(&ini);
-        let wake = reg.anim_runtime_config("WAKE2").unwrap();
-
-        // Unbound: End is derived from the caller's SHP frame count, so the
-        // ladder still runs instead of collapsing onto End = 0.
-        assert_eq!(anim_frame_source_alpha(wake, 1, 10), 1.0);
-        assert_eq!(anim_frame_source_alpha(wake, 5, 10), 0.5);
-    }
-
-    #[test]
-    fn progressive_end_honours_explicit_end_and_the_shadow_half_split() {
-        let ini = IniFile::from_str(
-            "[SHADOWED]\n\
-             Translucent=yes\n\
-             Shadow=yes\n\
-             [CAPPED]\n\
-             Translucent=yes\n\
-             End=10\n",
+        // Unbound: the caller's SHP count, halved for Shadow=yes, unless End=
+        // is explicit.
+        assert_eq!(reg.anim_runtime_config("WAKE").unwrap().loaded_end(10), 10);
+        assert_eq!(
+            reg.anim_runtime_config("SHADOWED").unwrap().loaded_end(20),
+            10
         );
-        let reg = ArtRegistry::from_ini(&ini);
-
-        // Shadow=yes puts the shadow frames in the back half of the SHP, so the
-        // drawn animation ends at half the header count.
-        let shadowed = reg.anim_runtime_config("SHADOWED").unwrap();
-        assert_eq!(anim_frame_source_alpha(shadowed, 5, 20), 0.5);
-        assert_eq!(anim_frame_source_alpha(shadowed, 2, 20), 1.0);
-
-        // An explicit End= overrides the header count either way.
-        let capped = reg.anim_runtime_config("CAPPED").unwrap();
-        assert_eq!(anim_frame_source_alpha(capped, 5, 100), 0.5);
+        assert_eq!(
+            reg.anim_runtime_config("CAPPED").unwrap().loaded_end(100),
+            10
+        );
+        // Bound: the loaded End, whatever count the caller passes.
+        reg.bind_anim_frame_count_for_test("SHADOWED", 30);
+        assert_eq!(
+            reg.anim_runtime_config("SHADOWED").unwrap().loaded_end(20),
+            15
+        );
     }
 
     #[test]

@@ -220,7 +220,7 @@ pub fn carve_straight_ramp_clear_south(
         Some(regions.level),
     );
 
-    let record = ramp_record(RampShape::ClearSouth).expect("straight shape has a table");
+    let record = ramp_record(RampShape::ClearSouth);
     let mut shift = (0i32, 0i32);
 
     if dy != 0 {
@@ -374,7 +374,7 @@ pub fn carve_straight_ramp_clear_east(
         Some(regions.level),
     );
 
-    let record = ramp_record(RampShape::ClearEast).expect("straight shape has a table");
+    let record = ramp_record(RampShape::ClearEast);
     let mut shift = (0i32, 0i32);
 
     if dx != 0 {
@@ -527,7 +527,7 @@ pub fn carve_straight_ramp_clear_north(
         Some(regions.level),
     );
 
-    let record = ramp_record(RampShape::ClearNorth).expect("straight shape has a table");
+    let record = ramp_record(RampShape::ClearNorth);
     let mut shift = (0i32, 0i32);
 
     if dy != 0 {
@@ -681,7 +681,7 @@ pub fn carve_straight_ramp_clear_west(
         Some(regions.level),
     );
 
-    let record = ramp_record(RampShape::ClearWest).expect("straight shape has a table");
+    let record = ramp_record(RampShape::ClearWest);
     let mut shift = (0i32, 0i32);
 
     if dx != 0 {
@@ -2640,6 +2640,150 @@ mod tests {
             ctx.rng.next_u32(),
             probe.next_u32(),
             "both north-south shapes were tried, two draws each"
+        );
+    }
+
+    /// Hand the whole harness to the lower plateau, then give the carving
+    /// region the centre ring window around `cell` and the windows at
+    /// `offsets` (in window steps: `(0, -1)` is north, `(1, 0)` east), so the
+    /// ring mask is exactly those bits.
+    fn ring_with_windows(scratch: &mut RmgScratch, cell: (i32, i32), offsets: &[(i32, i32)]) {
+        for slot in scratch.cells_mut() {
+            slot.region = LOWER;
+        }
+        for &(dx, dy) in [(0, 0)].iter().chain(offsets) {
+            let (x0, y0) = (cell.0 - 2 + 5 * dx, cell.1 - 2 + 5 * dy);
+            for y in y0..y0 + 5 {
+                for x in x0..x0 + 5 {
+                    scratch.get_mut(x, y).region = REGION;
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn an_interior_cell_gets_no_ramp_and_spends_nothing() {
+        // The harness owns the whole diamond for the region, so all eight ring
+        // windows pass: an interior cell, rejected before any shape is tried.
+        let (mut grid, mut scratch) = harness();
+        let ids = ids();
+        let blocks = RecordingBlocks::new();
+        let mut rng = RmgRng::new(1);
+        let pf = Playfield::from_local_size(34, 0, 0, 34, 42);
+        let mut ctx = ctx_over!(grid, scratch, ids, blocks, rng, pf);
+        assert!(!try_carve_connector_at_cell(
+            &mut ctx,
+            regions(),
+            (40, 50),
+            0.0
+        ));
+        assert!(blocks.seen.borrow().is_empty(), "stamped");
+        let mut fresh = RmgRng::new(1);
+        assert_eq!(ctx.rng.next_u32(), fresh.next_u32(), "drew");
+    }
+
+    #[test]
+    fn a_corner_guard_is_tried_before_the_straights_and_draws_nothing() {
+        // North and east only: the north-east corner's guard holds, and so does
+        // the west-clear straight's. The corner comes first in the original's
+        // order and takes no jitter, so it carves without a single draw.
+        use super::super::connector::{E, N, ring_orientation_mask};
+        let cell = (45, 51);
+        let (mut grid, mut scratch) = harness();
+        ring_with_windows(&mut scratch, cell, &[(0, -1), (1, 0)]);
+        assert_eq!(
+            ring_orientation_mask(&scratch, cell, REGION, 0.0),
+            Some(N | E)
+        );
+        let ids = ids();
+        let blocks = RecordingBlocks::new();
+        let mut rng = RmgRng::new(1);
+        let pf = Playfield::from_local_size(34, 0, 0, 34, 42);
+        let mut ctx = ctx_over!(grid, scratch, ids, blocks, rng, pf);
+        assert!(try_carve_connector_at_cell(&mut ctx, regions(), cell, 0.0));
+        assert_eq!(
+            blocks.seen.borrow().as_slice(),
+            &[END_BASE + 7, END_BASE + 1],
+            "the north-east corner's pair"
+        );
+        let mut fresh = RmgRng::new(1);
+        assert_eq!(ctx.rng.next_u32(), fresh.next_u32(), "the corner drew");
+    }
+
+    #[test]
+    fn the_fallbacks_open_at_attempt_fifty_one() {
+        // A centre window alone: no ordinary shape's guard holds, so only the
+        // fixed-geometry fallbacks can carve. Fifty steps of the float nearest
+        // 0.01 land just under a half, so attempt 50 must not reach them;
+        // attempt 51 carves the first, the south-clear straight.
+        use super::super::connector::{LENIENCY_STEP, ring_orientation_mask};
+        let cell = (51, 50);
+        for (attempt, carves) in [(50, false), (51, true)] {
+            let leniency = attempt as f32 * LENIENCY_STEP;
+            let (mut grid, mut scratch) = harness();
+            ring_with_windows(&mut scratch, cell, &[]);
+            assert_eq!(
+                ring_orientation_mask(&scratch, cell, REGION, leniency),
+                Some(0)
+            );
+            let ids = ids();
+            let blocks = RecordingBlocks::new();
+            let mut rng = RmgRng::new(1);
+            let pf = Playfield::from_local_size(34, 0, 0, 34, 42);
+            let mut ctx = ctx_over!(grid, scratch, ids, blocks, rng, pf);
+            assert_eq!(
+                try_carve_connector_at_cell(&mut ctx, regions(), cell, leniency),
+                carves,
+                "attempt {attempt}"
+            );
+            let expected: &[i32] = if carves {
+                &[END_BASE, END_BASE + 1]
+            } else {
+                &[]
+            };
+            assert_eq!(
+                blocks.seen.borrow().as_slice(),
+                expected,
+                "attempt {attempt}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_first_and_third_fallbacks_share_the_south_guard() {
+        // South, south-west, south-east, east and north-east: no ordinary guard
+        // holds. The south bit skips the first fallback, the east bit the
+        // second, and the south bit again the third -- the original gates two
+        // fallbacks on one bit. So the fourth, the west-clear straight, carves;
+        // a port gating the third on north would carve the north-clear one.
+        use super::super::connector::{E, LENIENCY_STEP, NE, S, SE, SW, ring_orientation_mask};
+        let cell = (51, 50);
+        let leniency = 51.0 * LENIENCY_STEP;
+        let (mut grid, mut scratch) = harness();
+        ring_with_windows(
+            &mut scratch,
+            cell,
+            &[(0, 1), (-1, 1), (1, 1), (1, 0), (1, -1)],
+        );
+        assert_eq!(
+            ring_orientation_mask(&scratch, cell, REGION, leniency),
+            Some(S | SW | SE | E | NE)
+        );
+        let ids = ids();
+        let blocks = RecordingBlocks::new();
+        let mut rng = RmgRng::new(1);
+        let pf = Playfield::from_local_size(34, 0, 0, 34, 42);
+        let mut ctx = ctx_over!(grid, scratch, ids, blocks, rng, pf);
+        assert!(try_carve_connector_at_cell(
+            &mut ctx,
+            regions(),
+            cell,
+            leniency
+        ));
+        assert_eq!(
+            blocks.seen.borrow().as_slice(),
+            &[END_BASE + 7, END_BASE + 8, END_BASE + 9],
+            "the west-clear straight's blocks"
         );
     }
 }

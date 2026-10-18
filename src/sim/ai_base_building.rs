@@ -470,7 +470,9 @@ pub(crate) enum BuildingExit {
 
 /// The building case of `BuildingClass::Exit_Object @ 0x00443C60`
 /// (`0x00444F19..0x00445696`): yard `factory` places its finished building
-/// `product`.
+/// `product`. The prelude that marks the product a playfield member
+/// (`0x00443C81`) is the caller's (`production_queue::exit_produced_object`);
+/// a placement's Unlimbo then sets it exactly.
 ///
 /// A human's yard places nothing. Otherwise the exit steps the production
 /// mode, forgets the building choice and looks up the product's open node
@@ -490,11 +492,6 @@ pub(crate) fn exit_building(
     let Some(owner) = sim.substrate.entities.get(factory).map(|yard| yard.owner()) else {
         return BuildingExit::Failed;
     };
-    // The prelude marks the leaving object a playfield member whatever the
-    // outcome (`0x00443C81`); a placement's Unlimbo then sets it exactly.
-    if let Some(object) = sim.substrate.entities.get_mut(product) {
-        object.in_playfield.enter();
-    }
     let game_mode_nonzero = sim.session.game_mode_nonzero;
     // `0x00444F19..0x00444F2A` (`0x0050B730`).
     if sim

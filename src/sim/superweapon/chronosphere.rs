@@ -432,12 +432,16 @@ fn arm_chrono_warp(
             entity,
             sim.resolved_terrain.as_ref(),
         );
-        let [ox, oy, oz] = super::fire::cell_coords(sim, warp.source);
-        let [tx, ty, tz] = super::fire::cell_coords(sim, warp.target);
+        // Both cells' GetCoords (vt+0x48, `0x00486840`).
+        let terrain = sim.resolved_terrain.as_ref();
+        let source =
+            crate::sim::projectile::cell_ground_coord(terrain, warp.source.0, warp.source.1);
+        let target =
+            crate::sim::projectile::cell_ground_coord(terrain, warp.target.0, warp.target.1);
         destination = DriveCoord {
-            x: tx.wrapping_add(here.x.wrapping_sub(ox)),
-            y: ty.wrapping_add(here.y.wrapping_sub(oy)),
-            z: tz.wrapping_add(here.z.wrapping_sub(oz)),
+            x: target.x.wrapping_add(here.x.wrapping_sub(source.x)),
+            y: target.y.wrapping_add(here.y.wrapping_sub(source.y)),
+            z: target.z.wrapping_add(here.z.wrapping_sub(source.z)),
         };
         // `MapClass::GetCellAt(CoordStruct) @ 0x00565730`.
         if super::cell_grid::cell_has_bridge_flag(

@@ -140,8 +140,7 @@ impl FogState {
             .chain(alternates.keys().copied())
             .collect();
         self.by_owner
-            .entry(owner)
-            .or_insert_with(|| OwnerVisibility::new(self.width, self.height))
+            .get_or_insert_with(owner, || OwnerVisibility::new(self.width, self.height))
             .tracked
             .complete = false;
         Some(MapTransitionPlan {

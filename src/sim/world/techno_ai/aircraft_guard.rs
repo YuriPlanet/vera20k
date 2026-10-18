@@ -11,7 +11,7 @@ use crate::sim::aircraft::guard_mission::{self, GuardFacts, GuardHost};
 use crate::sim::combat::TargetKind;
 use crate::sim::components::NavTargetRef;
 use crate::sim::intern::InternedId;
-use crate::sim::mission::{MissionId, MissionType};
+use crate::sim::mission::MissionType;
 use crate::sim::movement::air_movement;
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::world::Simulation;
@@ -187,28 +187,25 @@ impl GuardHost for WorldGuard<'_> {
     }
 
     fn queue(&mut self, mission: MissionType) {
-        let entity = self.sim.substrate.entities.get_mut(self.id).unwrap();
-        crate::sim::mission::authority::queue_entity_mission_deferred(
-            entity,
-            MissionId::from_known(mission),
-        );
+        crate::sim::aircraft::queue_mission(self.sim, self.id, mission);
     }
 
     fn rate(&mut self) -> i32 {
         self.rules.mission_control.rate_frames(self.current())
     }
 
-    /// `MapClass::Get_CellClass_At_Coord @ 0x00565730` on the Location, the
-    /// shared dummy cell off the map.
+    /// `MapClass::Get_CellClass_At_Coord @ 0x00565730` on the Location
+    /// (`0x0041A666`), the shared dummy cell off the map.
     fn assign_own_cell(&mut self) {
         let coord =
             crate::sim::movement::ground_pose::position_world_coord(&self.entity().position);
-        let cell = ((coord.x / 256) as i16, (coord.y / 256) as i16);
-        let (x, y) = self
-            .sim
-            .resolved_terrain
-            .as_ref()
-            .map_or(cell, |t| t.native_cell_coord(t.native_cell_identity(cell)));
+        let (x, y) = self.sim.resolved_terrain.as_ref().map_or_else(
+            || crate::sim::movement::coord_cell(coord),
+            |terrain| {
+                let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+                cells.coord(cells.lookup_world(coord.x, coord.y))
+            },
+        );
         self.sim.assign_aircraft_destination(
             self.id,
             Some(NavTargetRef::cell(x as u16, y as u16)),

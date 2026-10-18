@@ -82,7 +82,11 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
     sim.substrate.next_stable_object_id = 2;
     sim.interner = test_interner();
     if passenger {
-        // A playfield holding the aircraft's cell (10, 10).
+        // Retail Clear ground and a playfield holding the aircraft's cell
+        // (10, 10), where Paradrop places the passenger.
+        sim.install_resolved_terrain_for_new_map(
+            crate::map::resolved_terrain::test_retail_clear_grid(64, 64),
+        );
         sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
             base: 10,
             off_fc: 0,

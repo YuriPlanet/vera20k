@@ -67,10 +67,11 @@ pub use crate::map::bridge_facts::Axis;
 
 /// Stateless decode of the CellClass+0x11E bridge state byte.
 ///
-/// Body cells transition Healthy → Damaged → Destroyed under repeated
+/// Body cells transition Healthy → Damaged → destroyed under repeated
 /// damage (per axis). Partial-collapse states are reached only via
-/// bridgehead final-step cascade. `Destroyed` is not a byte value: see
-/// [`cell_render_state`].
+/// bridgehead final-step cascade. The byte writers are the ramp transitions
+/// ([`crate::sim::bridge_specs::apply_ramp_transition`]); a destroyed cell is
+/// not a byte value: see [`cell_render_state`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DamageState {
     /// Healthy body — `variant` carries the 6-frame jitter (0..=5 per axis,
@@ -85,41 +86,9 @@ pub enum DamageState {
     /// Partial collapse: ramp A already collapsed; this cell will fire
     /// CollapseB. State byte 8 (NS) / 16 (EW).
     PartialCollapseB,
-    /// Fully destroyed.
-    Destroyed,
 }
 
 impl DamageState {
-    /// Encode to binary state byte (`CellClass+0x11E`).
-    ///
-    /// Per HIGH §3.1 / `apply_ramp_transition` docstring:
-    /// - NS axis: Healthy{variant: 0..=5} → 0..=5; Damaged → 6;
-    ///   PartialCollapseA → 7; PartialCollapseB → 8; Destroyed → 0.
-    /// - EW axis: Healthy{variant: 0..=5} → 9..=14; Damaged → 0xF;
-    ///   PartialCollapseA → 0x11; PartialCollapseB → 0x10; Destroyed → 0.
-    pub fn to_state_byte(self, axis: Axis) -> u8 {
-        let base: u8 = match axis {
-            Axis::NS => 0,
-            Axis::EW => 9,
-        };
-        match self {
-            DamageState::Healthy { variant } => base + variant.min(5),
-            DamageState::Damaged => match axis {
-                Axis::NS => 6,
-                Axis::EW => 0xF,
-            },
-            DamageState::PartialCollapseA => match axis {
-                Axis::NS => 7,
-                Axis::EW => 0x11,
-            },
-            DamageState::PartialCollapseB => match axis {
-                Axis::NS => 8,
-                Axis::EW => 0x10,
-            },
-            DamageState::Destroyed => 0,
-        }
-    }
-
     /// Decode from binary state byte. Returns `None` for bytes outside the
     /// defined ranges (NS: 0..=8; EW: 9..=0x11). Byte 0 always decodes to
     /// `Healthy{variant: 0}`; [`cell_render_state`] adds the flag context.

@@ -35,6 +35,9 @@ pub(in crate::sim) fn formed_sim(seed: u64, level: u8) -> Simulation {
         let mut c = test_flat_cell(x, y);
         c.level = level;
         c.allows_tiberium = true;
+        //Declared passable Clear-land input, including the actual 89EA40 row.
+        c.speed_costs.track = Some(100);
+        c.base_speed_costs.track = Some(100);
         c
     });
     terrain.shared_cell_dummy().set_level_slope(level as i8, 0);
@@ -107,7 +110,7 @@ fn original_anim_ore_loop_keeps_direction_aliasing_density_and_constructor_refus
     let corpus = crate::test_fixture::json("tools/spatial_oracle/trigger_meteor_ore.json");
     let rows = corpus["rows"].as_array().unwrap();
     assert_eq!(rows.len(), 14);
-    let text = "[OverlayTypes]\n0=TIB01\n1=TIB02\n2=TIB03\n3=TIB04\n[TIB01]\nTiberium=yes\nLand=Clear\n[TIB02]\nTiberium=yes\nLand=Clear\n[TIB03]\nTiberium=yes\nLand=Clear\n[TIB04]\nTiberium=yes\nLand=Clear\n";
+    let text = "[OverlayTypes]\n0=TIB01\n1=TIB02\n2=TIB03\n3=TIB04\n[TIB01]\nTiberium=yes\nLand=Clear\n[TIB02]\nTiberium=yes\nLand=Clear\n[TIB03]\nTiberium=yes\nLand=Clear\n[TIB04]\nTiberium=yes\nLand=Clear\n[Clear]\nTrack=100%\n";
     let ini = IniFile::from_str(text);
     let registry = OverlayTypeRegistry::from_ini(&ini, None);
     let rules = formed_rules("");

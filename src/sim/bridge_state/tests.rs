@@ -428,55 +428,6 @@ fn bridge_runtime_state_snapshot_round_trip() {
 }
 
 #[test]
-fn damage_state_to_byte_ns_axis() {
-    assert_eq!(
-        DamageState::Healthy { variant: 0 }.to_state_byte(Axis::NS),
-        0
-    );
-    assert_eq!(
-        DamageState::Healthy { variant: 3 }.to_state_byte(Axis::NS),
-        3
-    );
-    assert_eq!(
-        DamageState::Healthy { variant: 5 }.to_state_byte(Axis::NS),
-        5
-    );
-    assert_eq!(DamageState::Damaged.to_state_byte(Axis::NS), 6);
-    assert_eq!(DamageState::PartialCollapseA.to_state_byte(Axis::NS), 7);
-    assert_eq!(DamageState::PartialCollapseB.to_state_byte(Axis::NS), 8);
-    assert_eq!(DamageState::Destroyed.to_state_byte(Axis::NS), 0);
-}
-
-#[test]
-fn damage_state_to_byte_ew_axis() {
-    assert_eq!(
-        DamageState::Healthy { variant: 0 }.to_state_byte(Axis::EW),
-        9
-    );
-    assert_eq!(
-        DamageState::Healthy { variant: 5 }.to_state_byte(Axis::EW),
-        14
-    );
-    assert_eq!(DamageState::Damaged.to_state_byte(Axis::EW), 0xF);
-    assert_eq!(DamageState::PartialCollapseA.to_state_byte(Axis::EW), 0x11);
-    assert_eq!(DamageState::PartialCollapseB.to_state_byte(Axis::EW), 0x10);
-    assert_eq!(DamageState::Destroyed.to_state_byte(Axis::EW), 0);
-}
-
-#[test]
-fn damage_state_to_byte_clamps_healthy_variant() {
-    // Variant > 5 is invalid input; should clamp to 5 (max defined healthy).
-    assert_eq!(
-        DamageState::Healthy { variant: 7 }.to_state_byte(Axis::NS),
-        5
-    );
-    assert_eq!(
-        DamageState::Healthy { variant: 10 }.to_state_byte(Axis::EW),
-        14
-    );
-}
-
-#[test]
 fn damage_state_from_byte_ns_range() {
     assert_eq!(
         DamageState::from_state_byte(0),
@@ -529,26 +480,6 @@ fn damage_state_from_byte_ew_range() {
 fn damage_state_from_byte_out_of_range_returns_none() {
     assert_eq!(DamageState::from_state_byte(0x12), None);
     assert_eq!(DamageState::from_state_byte(0xFF), None);
-}
-
-#[test]
-fn damage_state_round_trip_for_each_variant_per_axis() {
-    // For every (axis × variant) pair where Destroyed is excluded (it's the
-    // ambiguous post-collapse state).
-    for axis in [Axis::NS, Axis::EW] {
-        for state in [
-            DamageState::Healthy { variant: 0 },
-            DamageState::Healthy { variant: 5 },
-            DamageState::Damaged,
-            DamageState::PartialCollapseA,
-            DamageState::PartialCollapseB,
-        ] {
-            let byte = state.to_state_byte(axis);
-            let decoded = DamageState::from_state_byte(byte)
-                .expect("decode succeeds for byte produced by encode");
-            assert_eq!(decoded, state, "round-trip {state:?} via {axis:?}");
-        }
-    }
 }
 
 // Admission and callback order compare original instructions in damage_dispatch_tests.

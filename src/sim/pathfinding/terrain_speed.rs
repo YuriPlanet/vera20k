@@ -151,10 +151,18 @@ pub(crate) fn fresh_track_speed_fraction(
         || terrain_speed_factor(speed_type, next_cell, terrain),
         |row| row.min(TERRAIN_SPEED_MAX),
     );
+    // 0x004B3CDA..0x004B3CEC: Map[next cell], its GetCoords 0x00480A30 centre.
+    let centre = crate::sim::cell_kernel::cell_center(
+        crate::sim::cell_kernel::CellCoordinate {
+            x: i32::from(next_cell.0),
+            y: i32::from(next_cell.1),
+        },
+        0,
+    );
     let slope_factor = slope_factor_for(
         speed_type,
         ground_height_at_world(mover_world, terrain),
-        ground_height_at_world(cell_centre_world(next_cell), terrain),
+        ground_height_at_world((centre.x, centre.y), terrain),
         config,
     );
     combine_speed_stages(terrain_factor, slope_factor, below_condition_yellow)
@@ -186,38 +194,21 @@ fn combine_speed_stages(
     }
 }
 
-/// Ground height in leptons under an exact world position.
-///
-/// `CellClass::ComputeGroundHeightAtCoord 0x0047B3A0`, through the evaluator
-/// that `tools/ramp_height_vectors.json` already pins against 158 native
-/// fixtures. The low bytes of the world coordinates carry the sub-cell offset,
-/// which is the whole point: on a ramp, two positions in one cell have
-/// different ground heights.
-///
-/// Falls back to the cell's flat base when the position is off-grid or the
-/// slope is one the evaluator does not model, which is the behaviour this
-/// function replaced (a pure level-byte reading) and so cannot regress.
+/// Ground height in leptons under an exact world position: `GetGroundHeight
+/// 0x00578080` ([`query_ground_height`](crate::sim::movement::ground_pose::query_ground_height)).
+/// The low bytes of the world coordinates carry the sub-cell offset, which is
+/// the whole point: on a ramp, two positions in one cell have different ground
+/// heights. A slope past the native 21-record table reads 0.
 fn ground_height_at_world(world: (i32, i32), terrain: &ResolvedTerrainGrid) -> i32 {
-    let cell = (
-        crate::util::lepton::lepton_to_cell(world.0),
-        crate::util::lepton::lepton_to_cell(world.1),
-    );
-    let (level, slope) = match (u16::try_from(cell.0), u16::try_from(cell.1)) {
-        (Ok(x), Ok(y)) => terrain
-            .cell(x, y)
-            .map_or((0, 0), |c| (c.level, c.slope_type)),
-        _ => (0, 0),
-    };
-    crate::util::lepton::ground_height_leptons(level, slope, world.0, world.1).unwrap_or_else(
-        |_| i32::from(level as i8) * crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS,
+    crate::sim::movement::ground_pose::query_ground_height(
+        &crate::map::resolved_terrain::NativeCellQuery::canonical(terrain),
+        crate::sim::components::DriveCoord {
+            x: world.0,
+            y: world.1,
+            z: 0,
+        },
     )
-}
-
-/// The centre of a cell, in world leptons - what native samples for the
-/// destination (`0x004B3CEC` passes the destination coordinate, not the
-/// mover's).
-fn cell_centre_world(cell: (u16, u16)) -> (i32, i32) {
-    (i32::from(cell.0) * 256 + 128, i32::from(cell.1) * 256 + 128)
+    .unwrap_or(0)
 }
 
 /// Factor 1: terrain type speed from INI land-type percentages.

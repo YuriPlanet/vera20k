@@ -264,12 +264,29 @@ fn saved_terrain_cold_load_then_runtime_selection_shares_process_authority() {
         let mut draw = || main.next_u32();
         let mut selector = candidate.begin_load(&mut draw);
         loaded
-            .finish_loaded_assets(&theater, &assets, &rules, false, 0, 2, &mut selector)
+            .finish_loaded_assets(
+                &theater,
+                &assets,
+                &rules,
+                &OverlayTypeRegistry::empty(),
+                false,
+                0,
+                2,
+                &mut selector,
+            )
             .unwrap();
         assert_eq!(selector.raw_draw_count(), 0);
     }
     baseline
-        .bind_saved_template_assets(&theater, &assets, &rules, false, 0, candidate.selector())
+        .bind_saved_template_assets(
+            &theater,
+            &assets,
+            &rules,
+            &OverlayTypeRegistry::empty(),
+            false,
+            0,
+            candidate.selector(),
+        )
         .unwrap();
     assert!(!candidate.is_initialized());
     assert!(!process.is_initialized());
@@ -337,7 +354,16 @@ fn saved_terrain_cold_load_then_runtime_selection_shares_process_authority() {
         let mut draw = || main.next_u32();
         let mut selector = process.begin_load(&mut draw);
         restored
-            .finish_loaded_assets(&theater, &assets, &rules, false, 0, 2, &mut selector)
+            .finish_loaded_assets(
+                &theater,
+                &assets,
+                &rules,
+                &OverlayTypeRegistry::empty(),
+                false,
+                0,
+                2,
+                &mut selector,
+            )
             .unwrap();
         assert_eq!(
             selector.raw_draw_count() as u64,

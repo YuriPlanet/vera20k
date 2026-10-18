@@ -169,8 +169,8 @@ impl Position {
         path_grid: Option<&PathGrid>,
     ) {
         let world_xy = position_world_xy(self);
-        let (level, slope) = ground_fields_at(world_xy, terrain, path_grid).unwrap_or((0, 0));
-        if let Some(ground) = supported_ground(level, slope, world_xy) {
+        let ground = ground_at(world_xy, terrain, path_grid).unwrap_or(Ok(0));
+        if let Some(ground) = supported_ground(ground, world_xy) {
             self.put_z(z_at_height(ground, height, on_bridge));
         }
     }
@@ -720,36 +720,41 @@ impl Simulation {
     }
 }
 
-/// The level and slope `CellClass::GetGroundHeight @ 0x00578080` reads at
-/// full world XY. With resolved terrain that is Map[coord] (`0x00565730`),
-/// which forms the wrapping fixed-stride index before narrowing fallback
-/// coordinates; keep the common lookup owner. A PathGrid supplies the same
-/// fields only for callers without resolved terrain.
-fn ground_fields_at(
+/// `CellClass::GetGroundHeight @ 0x00578080` at full world XY. With resolved
+/// terrain that is [`query_ground_height`] through the canonical query. A
+/// PathGrid supplies the cell's level and slope only for headless callers
+/// without resolved terrain; `None` when neither holds the cell.
+fn ground_at(
     world_xy: [i32; 2],
     terrain: Option<&ResolvedTerrainGrid>,
     path_grid: Option<&PathGrid>,
-) -> Option<(u8, u8)> {
+) -> Option<Result<i32, String>> {
     if let Some(terrain) = terrain {
-        let cells = NativeCellQuery::canonical(terrain);
-        return Some(cells.ground_fields(cells.lookup_world(world_xy[0], world_xy[1])));
+        let point = DriveCoord {
+            x: world_xy[0],
+            y: world_xy[1],
+            z: 0,
+        };
+        return Some(query_ground_height(
+            &NativeCellQuery::canonical(terrain),
+            point,
+        ));
     }
     let rx = (world_xy[0] / 256) as i16;
     let ry = (world_xy[1] / 256) as i16;
     let cell = path_grid?.cell(rx as u16, ry as u16)?;
-    Some((cell.ground_level, cell.slope_type))
+    Some(
+        ground_height_leptons(cell.ground_level, cell.slope_type, world_xy[0], world_xy[1])
+            .map_err(|error| format!("{error:?}")),
+    )
 }
 
-fn supported_ground(level: u8, slope: u8, world_xy: [i32; 2]) -> Option<i32> {
-    match ground_height_leptons(level, slope, world_xy[0], world_xy[1]) {
-        Ok(ground) => Some(ground),
-        Err(_) => {
-            log::warn!(
-                "ground pose at {world_xy:?} has unsupported slope {slope}; retaining raw Z"
-            );
-            None
-        }
-    }
+/// The sampled ground, or `None` (keeping the raw Z) for a slope the evaluator
+/// does not model.
+fn supported_ground(ground: Result<i32, String>, world_xy: [i32; 2]) -> Option<i32> {
+    ground
+        .inspect_err(|error| log::warn!("ground pose at {world_xy:?}: {error}; retaining raw Z"))
+        .ok()
 }
 
 /// Sample the live surface at full world XY: the ground plus the deck when
@@ -761,12 +766,8 @@ pub(crate) fn ground_surface_z_at(
     terrain: Option<&ResolvedTerrainGrid>,
     path_grid: Option<&PathGrid>,
 ) -> Option<i32> {
-    let (level, slope) = ground_fields_at(world_xy, terrain, path_grid)?;
-    Some(z_at_height(
-        supported_ground(level, slope, world_xy)?,
-        0,
-        on_bridge,
-    ))
+    let ground = supported_ground(ground_at(world_xy, terrain, path_grid)?, world_xy)?;
+    Some(z_at_height(ground, 0, on_bridge))
 }
 
 /// `ObjectClass::SetHeight @ 0x005F5FA0`'s Z for a sampled ground: the

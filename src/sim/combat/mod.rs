@@ -155,9 +155,8 @@ use projectile_delivery::{
 };
 use receiver_call::{
     BuildingReceivePrelude, ResolvedReceiveDamage, apply_building_receive_prelude,
-    area_near_center_ic_isolation_armed, has_active_area_invulnerability,
-    near_center_ic_isolation_armed, postmortem_duration_for_event, receiver_anger_delta,
-    resolve_receive_damage,
+    area_near_center_ic_isolation_armed, near_center_ic_isolation_armed,
+    postmortem_duration_for_event, receiver_anger_delta, resolve_receive_damage,
 };
 use shrapnel::emit_projectile_shrapnel;
 use techno_death::{ConcreteDeathSmudgePlan, append_selected_death_sounds, throw_debris_for_death};

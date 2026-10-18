@@ -553,11 +553,7 @@ impl IdleHost for WorldIdle<'_> {
     }
 
     fn queue(&mut self, mission: MissionType) {
-        let entity = self.sim.substrate.entities.get_mut(self.id).unwrap();
-        crate::sim::mission::authority::queue_entity_mission_deferred(
-            entity,
-            MissionId::from_known(mission),
-        );
+        super::queue_mission(self.sim, self.id, mission);
     }
 
     fn ready(&mut self) -> bool {

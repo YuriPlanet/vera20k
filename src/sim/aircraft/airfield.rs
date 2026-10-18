@@ -223,8 +223,7 @@ impl Simulation {
 }
 
 /// `vt+0x1B8` (`0x0041BEA0`, every class this search meets): the cell of the
-/// Location, each axis over 256 toward zero.
+/// Location.
 fn map_coords(entity: &crate::sim::game_entity::GameEntity) -> (i16, i16) {
-    let location = ground_pose::position_world_coord(&entity.position);
-    ((location.x / 256) as i16, (location.y / 256) as i16)
+    crate::sim::movement::coord_cell(ground_pose::position_world_coord(&entity.position))
 }

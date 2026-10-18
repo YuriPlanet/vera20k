@@ -303,11 +303,19 @@ pub(super) fn chebyshev(a: (i16, i16), b: (i16, i16)) -> i32 {
         .max((i32::from(a.1) - i32::from(b.1)).abs())
 }
 
+/// A packed cell's centre at Z 0 ([`cell_center`](crate::sim::cell_kernel::cell_center)).
 pub(super) fn cell_centre(cell: (i16, i16)) -> DriveCoord {
+    let point = crate::sim::cell_kernel::cell_center(
+        crate::sim::cell_kernel::CellCoordinate {
+            x: i32::from(cell.0),
+            y: i32::from(cell.1),
+        },
+        0,
+    );
     DriveCoord {
-        x: i32::from(cell.0) * 256 + 128,
-        y: i32::from(cell.1) * 256 + 128,
-        z: 0,
+        x: point.x,
+        y: point.y,
+        z: point.z,
     }
 }
 

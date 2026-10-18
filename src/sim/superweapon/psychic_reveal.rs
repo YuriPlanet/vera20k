@@ -85,7 +85,12 @@ pub fn launch(
     if !super::is_charged(sim, owner, sw_type) {
         return false;
     }
-    let coord = super::fire::cell_coords(sim, (target_rx, target_ry));
+    let ground = crate::sim::projectile::cell_ground_coord(
+        sim.resolved_terrain.as_ref(),
+        target_rx,
+        target_ry,
+    );
+    let coord = [ground.x, ground.y, ground.z];
     let radius = rules
         .general
         .psychic_reveal_radius

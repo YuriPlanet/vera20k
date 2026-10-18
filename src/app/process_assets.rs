@@ -189,7 +189,7 @@ impl ProcessAssets {
             .native_rules
             .as_ref()
             .map_or(&empty_movies, |owner| owner.movies());
-        registry.apply_ini(&selected.ini, movies, self.csf.as_ref());
+        registry.apply_ini(&selected.ini, movies);
         log::info!(
             "Campaign catalog read: {}",
             serde_json::json!(selected.source)

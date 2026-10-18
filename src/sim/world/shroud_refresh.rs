@@ -1415,7 +1415,10 @@ impl Simulation {
                     trace.border_receivers.push(cell);
                     if cell.0 < self.fog.width && cell.1 < self.fog.height {
                         trace.border_ground_after.push(
-                            self.fog.by_owner[&viewer]
+                            self.fog
+                                .by_owner
+                                .get_mut(&viewer)
+                                .expect("the refresh made a plane")
                                 .map_cell_edge_cache_for_test(cell)
                                 .0[0],
                         );

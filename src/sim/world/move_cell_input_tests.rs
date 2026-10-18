@@ -27,6 +27,7 @@ fn ordinary_foot_input_matches_native_admission_rows() {
             cells: NativeCellQuery::isolated(&terrain),
             zones: &zones,
             raw: &raw,
+            overlays: None,
             bounds: bounds(),
             size: (8, 8),
             frame: input["frame"].as_u64().unwrap_or(100) as u32,

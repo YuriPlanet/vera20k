@@ -22,7 +22,7 @@ mod native_angle_table;
 pub mod quantize;
 
 pub use cell::{CELL_DELTAS, cell_delta_unchecked};
-pub use dragon::{DRAGON_FRAME_TABLE, dragon_frame_index};
+pub use dragon::DRAGON_FRAME_TABLE;
 pub use lepton::LEPTON_DELTAS;
 pub use native_angle::{facing16_between, facing16_from_angle};
 pub use native_angle::{facing8_from_delta, facing16_from_delta};
