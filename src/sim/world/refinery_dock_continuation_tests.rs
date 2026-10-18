@@ -607,8 +607,9 @@ fn step(s: &mut Scene, step: &Value, context: &str) {
             s.sim.building_now_dead_contacts(
                 s.refinery,
                 &[s.miner],
-                Some(&s.rules),
-                crate::sim::world::FrameEffects::default(),
+                &s.rules,
+                Some(registry()),
+                &mut crate::sim::combat::world_receiver::ReceiverRun::default(),
             );
         }
         "pointer_expiry" => {

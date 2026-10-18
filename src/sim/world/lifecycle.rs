@@ -5,6 +5,7 @@
 //! this module never depends on render, UI, sidebar, audio, or net.
 
 use crate::map::entities::EntityCategory;
+use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::cell_rect::{CellRect, resolve_reservation_real_cell, scan_cell_rect};
 use crate::sim::combat::TargetKind;
@@ -3740,20 +3741,25 @@ impl Simulation {
     /// centre, on a building that is not a `Helipad=`, is sent RUN_AWAY (0x17),
     /// so a War Miner on a destroyed refinery's pad leaves its unload for
     /// Harvest (`radio::receive`), then clears its Unit+0x500 pending entry
-    /// (`0x004425AA`). RESIDUAL: the other arm — a nearer contact, or any
-    /// contact of a helipad, takes the C4 kill (`vt+0x16C` with `Rules+0xFA8`,
-    /// `0x004425B6..0x004425EE`), not wired (units at a building's centre and
-    /// aircraft docked on a destroyed helipad survive).
+    /// (`0x004425AA`). A nearer contact, or any contact of a helipad, takes
+    /// `Strength * 10` C4 damage (`0x004425B6..0x004425EE`), with no source
+    /// and both receiver flags set. Execute each receiver synchronously in
+    /// the caller's transaction: its death effects may alter later contacts.
+    /// Evidence: retail gamemd.exe instructions, inspect with
+    /// `python -m tools.native_inspect disasm 0x442511 --bytes 0xf7`.
     pub(crate) fn building_now_dead_contacts(
         &mut self,
         building_id: u64,
         contacts: &[u64],
-        rules: Option<&RuleSet>,
-        effects: FrameEffects<'_>,
+        rules: &RuleSet,
+        overlay_registry: Option<&OverlayTypeRegistry>,
+        run: &mut crate::sim::combat::world_receiver::ReceiverRun<'_>,
+    ) -> (
+        crate::sim::combat::DeathEffects,
+        Vec<crate::sim::combat::UnderAttackEvent>,
     ) {
-        let Some(rules) = rules else {
-            return;
-        };
+        let mut death_effects = crate::sim::combat::DeathEffects::default();
+        let mut under_attack_events = Vec::new();
         // `0x00442532`/`0x00442543`: both ends are GetCoords (vt+0x48).
         let Some((centre, helipad)) = self.substrate.entities.get(building_id).and_then(|b| {
             let object = self.object_type(b.type_ref(), rules)?;
@@ -3770,7 +3776,7 @@ impl Simulation {
                 object.helipad,
             ))
         }) else {
-            return;
+            return (death_effects, under_attack_events);
         };
         for &contact in contacts {
             let Some(at) = self.substrate.entities.get(contact).map(|c| {
@@ -3801,14 +3807,47 @@ impl Simulation {
                     crate::sim::radio::RadioMessage::RunAway,
                     crate::sim::radio::RadioPayload::default(),
                     Some(rules),
-                    effects,
+                    run.effects(),
                 );
                 if let Some(unit) = self.substrate.entities.get_mut(contact) {
                     // `0x004425AA`, after RUN_AWAY returns.
                     unit.pending_entry.clear();
                 }
+            } else {
+                //4425BA gets the contact's type, not its current Health.
+                //LEA/SHL at4425CC..4425D4 are wrapping i32 arithmetic.
+                let Some(damage) = self.substrate.entities.get(contact).and_then(|entity| {
+                    self.object_type(entity.type_ref(), rules)
+                        .map(|object| object.strength.wrapping_mul(10))
+                }) else {
+                    continue;
+                };
+                let warhead = self.interner.intern(&rules.bridge_warheads.c4_name);
+                let event = crate::sim::combat::EntityDamageEvent::direct_receiver(
+                    contact,
+                    damage,
+                    0,
+                    crate::sim::combat::RAD_NO_ATTACKER,
+                    None,
+                    warhead,
+                    crate::sim::combat::ReceiverCallFlags {
+                        ignore_defenses: true,
+                        arg6: true,
+                    },
+                );
+                let (nested, mut pings) = crate::sim::combat::world_receiver::commit_entities(
+                    self,
+                    run,
+                    &[event],
+                    Some(false),
+                    rules,
+                    overlay_registry,
+                );
+                death_effects.append(nested);
+                under_attack_events.append(&mut pings);
             }
         }
+        (death_effects, under_attack_events)
     }
 
     /// The Stun of TechnoClass::ReceiveDamage's death arm (`0x00702210`),

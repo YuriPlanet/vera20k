@@ -1579,7 +1579,7 @@ pub(crate) fn handle_death(
     // retained entity's current state at that boundary.
     for &dead_id in dead_entities {
         // Building442425 returns from Techno701900 before dispatching
-        // NowDead4 to4424A2/442511. Its saved-contact RUN_AWAY loop follows
+        // NowDead4 to4424A2/442511. Its saved-contact RUN_AWAY/C4 loop follows
         // Destroy's BREAK/expiry and Techno's sounds, Stun, debris and nested
         // death weapon; Building DestructionEffects442665 follows it.
         // Techno702035 also forces result4 on an admitted Health0 re-entry. A
@@ -1596,7 +1596,10 @@ pub(crate) fn handle_death(
                         && building.lifecycle.object_alive()
                 })
         {
-            world.building_now_dead_contacts(dead_id, contacts, Some(rules), run.effects());
+            let (nested, pings) =
+                world.building_now_dead_contacts(dead_id, contacts, rules, overlay_registry, run);
+            effects.append(nested);
+            effects.under_attack_events.extend(pings);
         }
         finish_concrete_death(
             world,
