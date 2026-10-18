@@ -954,7 +954,7 @@ impl Simulation {
     /// RESIDUAL: MCV 53/54 and Map zone 24 (`0x004D8A14..0x004D8D99`), the
     /// `+0x83` / `0x00586360` step (`0x004D8DA7..0x004D8DF5`), the
     /// planning-waypoint upkeep (`0x004D8DFF..0x004D8F1D`) and the Techno
-    /// tail's `+0x420` call, tag event 0x22, `+0x198` call and cell
+    /// tail's `+0x198` call and cell
     /// `0x00486920` are not ported. Trigger: every arrival. Effect: zone
     /// triggers and planning waypoints do not fire from movement. Risk: maps
     /// with those trigger families.
@@ -1006,6 +1006,23 @@ impl Simulation {
         }
         // `0x006F5090`'s head lets a held Temporal target go.
         self.temporal_release_if_warping(id);
+        //6F50FA calls the existing cloak/sensor owner before Tag34. The
+        //ordinary stock arm is dormant without a CloakGenerator field;
+        //custom fields retain the owner's StartCloaking/targeter response.
+        if let Some(rules) = rules {
+            crate::sim::world::techno_ai_cloak::sensor_reevaluate_stock_cloak(
+                self, id, rules, registry,
+            );
+        }
+        //6F5100..6F5115: attached Tag, actor=this, zero cell/source. This
+        //follows earlier cell/line callbacks and precedes playfield promotion.
+        self.dispatch_object_tag_event(
+            id,
+            34,
+            Some(id),
+            None,
+            UninitContext::new(rules, registry).with_effects(effects),
+        );
         self.promote_entity_playfield_membership_after_move(id);
     }
 

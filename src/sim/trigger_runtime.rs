@@ -371,15 +371,17 @@ impl RuntimeDefinitions {
                     .linked_trigger_id
                     .as_deref()
                     .and_then(|name| definitions.trigger_type(name));
-                let events = map
+                let mut events = map
                     .events
                     .get(&id)
                     .map_or_else(Vec::new, |record| record.conditions.clone());
                 // Events are prepended, but their reference factories ran in
                 // source order before the retained reverse traversal.
-                for event in events.iter().rev() {
+                for event in events.iter_mut().rev() {
                     if let Some(team) = event.team_name.as_deref() {
-                        definitions.team_type(team);
+                        event.team_name = definitions
+                            .team_type(team)
+                            .map(|index| definitions.team_types[index].clone());
                     }
                 }
                 let actions = map
@@ -1623,6 +1625,53 @@ impl Simulation {
             .condition
             .clone();
         match condition.kind {
+            23 => {
+                //71EC9A gate, then71EEA9 scans all Teams for the retained
+                //Type pointer, null head and nonzero leaving byte. A match
+                //sets persistence before the generic true tail; a null
+                //incoming House skips that scan without latching.
+                if input.kind != 23 || self.buildup_bypass_active() {
+                    return false;
+                }
+                if incoming_house.is_none() {
+                    return true;
+                }
+                let team_type = match condition.team_name.as_deref() {
+                    Some(name) => {
+                        let Some(id) = self.interner.get(name) else {
+                            return false;
+                        };
+                        Some(id)
+                    }
+                    None => None,
+                };
+                if self.team_script_vm.has_empty_leaving_team(team_type) {
+                    *persistence = true;
+                    true
+                } else {
+                    false
+                }
+            }
+            34 => {
+                //71EDBB..71EE54: 68BD00 waypoint Location versus actor
+                //GetCoords, signed wrapping deltas, sqrtApprox/ftol <=1280.
+                //No persistence, Event+54, timer, RNG or detach write.
+                if input.kind != 34 || self.buildup_bypass_active() {
+                    return false;
+                }
+                let Some(waypoint) = self.trigger_waypoint_location(condition.value) else {
+                    return false;
+                };
+                let Some(actor) = input.actor.and_then(|id| self.substrate.entities.get(id)) else {
+                    return false;
+                };
+                let point = crate::sim::movement::ground_pose::object_get_coords(
+                    actor,
+                    self.resolved_terrain.as_ref(),
+                );
+                crate::util::native_x87::distance_3d_leptons([point.x, point.y, point.z], waypoint)
+                    <= 0x500
+            }
             14 => self.session.scenario_timer_elapsed(),
             17 => {
                 // Steam3e81a617..08600:71EE82 takes the incoming House;
@@ -2041,6 +2090,41 @@ impl Simulation {
                 overlay_registry,
                 frame_effects,
             );
+        }
+        self.publish_trigger_effects(effects);
+    }
+
+    /// Recalc6EA49F..6EA4D2 walks the current Tag array backwards before
+    /// destroying an empty, previously-full leaving Team. No own RNG draws,
+    /// timers or detach: ordinary Register/Reset/actions own those effects.
+    pub(crate) fn raise_team_left_map_tags(
+        &mut self,
+        rules: &crate::rules::ruleset::RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        frame_effects: FrameEffects<'_>,
+    ) {
+        let count = self.trigger_runtime.tag_order.len();
+        let mut effects = Vec::new();
+        for ordinal in (0..count).rev() {
+            // As with House tag traversal, shrinking callbacks can leave a
+            // stale native slot beyond the new count; Rust skips that slot.
+            let Some(&tag) = self.trigger_runtime.tag_order.get(ordinal) else {
+                continue;
+            };
+            if self.dispatch_live_tag_event(
+                tag,
+                TagEventInput {
+                    kind: 23,
+                    ..Default::default()
+                },
+                &mut effects,
+                Some(rules),
+                registry,
+                frame_effects,
+            ) && self.trigger_runtime.tag_order.is_empty()
+            {
+                break;
+            }
         }
         self.publish_trigger_effects(effects);
     }
@@ -3715,7 +3799,7 @@ impl Simulation {
                 // impacts; stock C4=Super is not Bright, so materializes no
                 // light. Do not force a screen/nuke flash from the action name.
                 // Native: trigger_map_lighting.json flash_controls (+meta).
-                let Some([x, y, z]) = self.trigger_waypoint_coord(waypoint) else {
+                let Some([x, y, z]) = self.trigger_waypoint_location(waypoint) else {
                     return false;
                 };
                 let warhead_ref = self.interner.intern(&rules.bridge_warheads.c4_name);
@@ -4074,6 +4158,10 @@ mod lightning_tests;
 #[cfg(test)]
 #[path = "trigger_runtime_explosion_tests.rs"]
 mod explosion_tests;
+
+#[cfg(test)]
+#[path = "trigger_runtime_movement_event_tests.rs"]
+mod movement_event_tests;
 
 #[cfg(test)]
 #[path = "trigger_runtime_map_lighting_tests.rs"]
