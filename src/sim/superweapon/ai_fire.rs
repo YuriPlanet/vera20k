@@ -16,15 +16,9 @@
 //! `ai_psydom` execute the original code; `ai_fire_tests.rs` replays them.
 //!
 //! RESIDUALS:
-//! - The preferred target type (`+0x54EC`, constructor 1 at `0x004F5A77`),
-//!   and the second preferred defensive cell (`+0x54F8`) keep
-//!   their constructor values: TAction35's type writer (`Execute6DE1F1`)
-//!   and House50DA40's secondary-cell writer are not ported; an active caller
-//!   of the latter is not established. Trigger: a map trigger that
-//!   names a superweapon target, mostly in campaigns. Effect: the computer
-//!   aims by its own pickers. `AI_FindTeamTarget @ 0x0050D170`, which another
-//!   preferred type selects (its first team's leader's Greatest_Threat), is
-//!   therefore not ported. TAction135/136's preferred cell54F0 is retained
+//! - The second preferred defensive cell (`+0x54F8`) keeps its constructor
+//!   value: House50DA40's writer is not ported and an active caller is not
+//!   established. TAction35's type54EC and TAction135/136's cell54F0 are retained
 //!   by HouseState and consumed here; its nonzero value bypasses the
 //!   MultiMissile/Storm/GroundRally pickers and suppresses Genetic/Dominator.
 //!   TAction140/141 now set/clear the separate timed defensive alert54F4/54FC
@@ -184,11 +178,11 @@ pub(crate) fn try_fire(
             observe(AiFireEvent::TailArm(arm, sw_type_id));
         }
         let cell = match arm {
-            AiFireArm::MultiMissile => rally_target(sim, rules, owner),
+            AiFireArm::MultiMissile => rally_target(sim, rules, owner, registry),
             AiFireArm::LightningStorm if !super::lightning_storm::raging(sim) => {
-                rally_target(sim, rules, owner)
+                rally_target(sim, rules, owner, registry)
             }
-            AiFireArm::GroundRallyPoint => ground_rally_point(sim, owner),
+            AiFireArm::GroundRallyPoint => ground_rally_point(sim, rules, owner, registry),
             AiFireArm::PsychicDominator => psychic_dominator_target(sim, rules, owner),
             AiFireArm::GeneticMutator => genetic_mutator_target(sim, rules, owner),
             AiFireArm::ForceShield => sim.houses.get(&owner).and_then(|house| {
@@ -206,19 +200,81 @@ pub(crate) fn try_fire(
 /// AI_Fire_LightningStorm's body: with an enemy (`+0x5600`), the preferred
 /// cell, else for preferred type 1 [`find_best_rally_target`]; the empty cell
 /// fires nothing.
-fn rally_target(sim: &mut Simulation, rules: &RuleSet, owner: InternedId) -> Option<(u16, u16)> {
+fn rally_target(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    registry: Option<&OverlayTypeRegistry>,
+) -> Option<(u16, u16)> {
     let house = sim.houses.get(&owner)?;
     let enemy = house.enemy_house?;
     let preferred = house.preferred_super_weapon_target();
+    let kind = house.preferred_super_weapon_target_kind();
     //509968..5099E6 /509E00: the enemy gate precedes this preference.
     if preferred != (0, 0) {
         return Some(preferred);
     }
-    #[cfg(any(test, feature = "test-support"))]
-    observe(AiFireEvent::BestRallyTarget);
-    let (x, y) = find_best_rally_target(sim, rules, owner, enemy);
+    let (x, y) = if kind == 1 {
+        #[cfg(any(test, feature = "test-support"))]
+        observe(AiFireEvent::BestRallyTarget);
+        find_best_rally_target(sim, rules, owner, enemy)
+    } else {
+        find_team_target(sim, rules, owner, kind, registry)
+    };
     // A cell left of or above the map wraps like the native CellStruct.
     ((x, y) != NO_CELL).then_some((x as u16, y as u16))
+}
+
+/// HouseClass::AI_FindTeamTarget50D170 (Steam gamemd3e81a617..08600):
+/// first own Team in registration order, shared GetLeader6EC3D0, then its
+/// GreatestThreat with QuarryToThreat645BB0 and OnlyTargetHouseEnemy=true.
+/// The caller stages that true argument BEFORE GetCoords(vt48); it is not
+/// a GetCoords parameter. Signed coordinates truncate toward zero to cells.
+fn find_team_target(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    quarry: i32,
+    registry: Option<&OverlayTypeRegistry>,
+) -> (i16, i16) {
+    let Some(team) = sim
+        .team_script_vm
+        .teams_in_order()
+        .find(|team| team.owner() == owner)
+        .map(|team| team.id())
+    else {
+        return NO_CELL;
+    };
+    let Some(leader) = sim.team_leader(team, rules) else {
+        return NO_CELL;
+    };
+    let Some(entity) = sim.substrate.entities.get(leader) else {
+        return NO_CELL;
+    };
+    let origin =
+        crate::sim::movement::ground_pose::object_get_coords(entity, sim.resolved_terrain.as_ref());
+    let Some(target) = sim.greatest_threat_represented(
+        rules,
+        registry,
+        leader,
+        crate::sim::combat::ScanMission::Quarry {
+            mask: crate::sim::combat::quarry_mask(quarry),
+            only_target_house_enemy: true,
+        },
+        Some([origin.x, origin.y, origin.z]),
+        crate::sim::combat::combat_targeting::greatest_threat_for_entity,
+    ) else {
+        return NO_CELL;
+    };
+    let Some(entity) = sim.substrate.entities.get(target) else {
+        return NO_CELL;
+    };
+    let coord =
+        crate::sim::movement::ground_pose::object_get_coords(entity, sim.resolved_terrain.as_ref());
+    (
+        crate::util::lepton::lepton_to_cell_packed(coord.x),
+        crate::util::lepton::lepton_to_cell_packed(coord.y),
+    )
 }
 
 /// `HouseClass::AI_FindBestRallyTarget @ 0x0050CBF0`: every Techno of
@@ -408,7 +464,12 @@ fn pick_best_rally_target(entries: &[RallyEntry], rng: &mut SimRng) -> (i16, i16
 /// allowed)`, `0x00509D61..0x00509D9A`; none found is the empty cell: its
 /// `0x0056E7A1` reads `0x00ABD480`, which only the startup `0x005618B0`
 /// writes, with zero), then [`ground_rally_cell`].
-fn ground_rally_point(sim: &Simulation, owner: InternedId) -> Option<(u16, u16)> {
+fn ground_rally_point(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    registry: Option<&OverlayTypeRegistry>,
+) -> Option<(u16, u16)> {
     if let Some(preferred) = sim
         .houses
         .get(&owner)
@@ -417,6 +478,12 @@ fn ground_rally_point(sim: &Simulation, owner: InternedId) -> Option<(u16, u16)>
     {
         //509CF8: neither FNPC nor the two-cell offset applies to this branch.
         return Some(preferred);
+    }
+    let kind = sim.houses.get(&owner)?.preferred_super_weapon_target_kind();
+    if kind != 1 {
+        let cell = find_team_target(sim, rules, owner, kind, registry);
+        //509D34 jumps straight to the empty-cell gate, bypassing FNPC/+2.
+        return (cell != NO_CELL).then_some((cell.0 as u16, cell.1 as u16));
     }
     let (x, y) = ground_rally_seed(&sim.houses, owner);
     let found = sim

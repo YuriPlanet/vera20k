@@ -3351,6 +3351,43 @@ impl Simulation {
                 };
                 self.house_blowup(owner, subset, rules, overlay_registry, frame_effects);
             }
+            37 => {
+                // Active Execute37 6DE136..6DE17A: resolve the selected
+                // House through the same live6E45E0 owner, then MakeAlly
+                // incoming->selected and selected->incoming, in that order.
+                // Both calls ignore CanAlly's refusal; Execute still AL1.
+                let (Some(live), Some(owner), Some(value), Some(rules)) =
+                    (context.live_index, context.incoming_house, value, rules)
+                else {
+                    return false;
+                };
+                let Some(selected) = self.live_action_house(live, value, rules) else {
+                    return false;
+                };
+                self.make_ally(owner, selected, rules, overlay_registry, frame_effects);
+                self.make_ally(selected, owner, rules, overlay_registry, frame_effects);
+            }
+            123 | 124 => {
+                // Actual active table entries6DFA0B/6DFA38 dispatch
+                // 6E0CA0/6E0D00 ->House50D290/50D2D0. A live Trigger is
+                // required even for a literal Country;8997 uses retained House.
+                let (Some(live), Some(owner), Some(value), Some(rules)) =
+                    (context.live_index, context.incoming_house, value, rules)
+                else {
+                    return false;
+                };
+                let Some(selected) = self.live_action_house(live, value, rules) else {
+                    return false;
+                };
+                self.control_house_buildings(
+                    owner,
+                    selected,
+                    action.kind == 124,
+                    rules,
+                    overlay_registry,
+                    frame_effects,
+                );
+            }
             36 => {
                 let (Some(live), Some(owner), Some(value), Some(rules)) =
                     (context.live_index, context.incoming_house, value, rules)
@@ -3748,6 +3785,19 @@ impl Simulation {
                     overlay_registry,
                     frame_effects,
                 );
+            }
+            35 => {
+                // Execute35 6DE1DC..6DE203 uses the incoming House, not
+                // the live selector. A null House succeeds without writes;
+                // only its existing superweapon-target owner changes.
+                let Some(owner) = context.incoming_house else {
+                    return true;
+                };
+                let Some(value) = value else { return false };
+                let Some(house) = self.houses.get_mut(&owner) else {
+                    return false;
+                };
+                house.set_preferred_super_weapon_target_kind(value);
             }
             76 => {
                 // 0x006DF34F: a null incoming House returns success without even
@@ -4276,6 +4326,10 @@ mod chrono_reinforcement_tests;
 #[cfg(test)]
 #[path = "trigger_runtime_lightning_tests.rs"]
 mod lightning_tests;
+
+#[cfg(test)]
+#[path = "trigger_runtime_house_directive_tests.rs"]
+mod house_directive_tests;
 
 #[cfg(test)]
 #[path = "trigger_runtime_explosion_tests.rs"]

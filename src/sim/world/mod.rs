@@ -5389,6 +5389,13 @@ impl Simulation {
         if on_map {
             self.house_added_to_game(stable_id);
         }
+        // TechnoChangeOwner7017A0 clears only the trigger-held original
+        // House; the controlling House+2CC survives an ordinary capture.
+        if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
+            entity
+                .mind_control
+                .clear_house_original_owner_on_owner_change();
+        }
         if build_const_eligible
             && let Some(house) = self.houses.get_mut(&new_owner)
             && !house.build_const_order.contains(&stable_id)

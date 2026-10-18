@@ -752,14 +752,14 @@ pub struct HouseState {
     #[serde(default)]
     spatial_threat: crate::sim::house_threat::HouseSpatialThreat,
     #[serde(default)]
-    super_weapon_cells: HouseSuperWeaponCells,
+    super_weapon_targets: HouseSuperWeaponTargets,
 }
 
-/// The super weapon cells a House keeps: where its nuclear missile flies
+/// The super weapon targeting state a House keeps: where its nuclear missile flies
 /// (`HouseClass+0x5784`), its scripted offensive target (`+0x54F0`) and its
 /// last super weapon alert (`+0x54F4` cell, `+0x54FC` frame).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-struct HouseSuperWeaponCells {
+struct HouseSuperWeaponTargets {
     /// `+0x5784` NukeTarget: `SuperClass::Launch`'s MultiMissile arm stores
     /// the target cell (`0x006CDDC4`) and the silo's Mission_Missile reads
     /// it for the warning anim and the missile (`0x0044C9DC`, `0x0044CAA9`).
@@ -779,15 +779,25 @@ struct HouseSuperWeaponCells {
     /// `+0x54FC`: the frame of that alert (`0x004FB0C9`); constructor -100
     /// (`0x004F5AB1`).
     defense_frame: i32,
+    /// House+54EC: constructor4F5A77 writes1; active Execute35 stores the
+    /// signed Action+90 at6DE1F1. AI target pickers read it independently of
+    /// the scripted target cell. Steam gamemd3e81a617..08600.
+    #[serde(default = "default_super_target_kind")]
+    preferred_kind: i32,
 }
 
-impl Default for HouseSuperWeaponCells {
+const fn default_super_target_kind() -> i32 {
+    1
+}
+
+impl Default for HouseSuperWeaponTargets {
     fn default() -> Self {
         Self {
             nuke_target: (0, 0),
             preferred_target: (0, 0),
             defense_cell: (0, 0),
             defense_frame: -100,
+            preferred_kind: default_super_target_kind(),
         }
     }
 }
@@ -1098,46 +1108,57 @@ impl HouseState {
 
     /// The cell the house's nuclear missile flies to (`HouseClass+0x5784`).
     pub(crate) fn nuke_target(&self) -> (u16, u16) {
-        self.super_weapon_cells.nuke_target
+        self.super_weapon_targets.nuke_target
     }
 
     /// `SuperClass::Launch 0x006CDDC4`: the MultiMissile arm's target.
     pub(crate) fn set_nuke_target(&mut self, cell: (u16, u16)) {
-        self.super_weapon_cells.nuke_target = cell;
+        self.super_weapon_targets.nuke_target = cell;
+    }
+
+    /// House+54EC, separate from the scripted offensive target cell.
+    pub(crate) fn preferred_super_weapon_target_kind(&self) -> i32 {
+        self.super_weapon_targets.preferred_kind
+    }
+
+    /// Execute35 at6DE1F1 stores the full signed dword without clamping,
+    /// starting a timer, drawing RNG or changing an already launched Super.
+    pub(crate) fn set_preferred_super_weapon_target_kind(&mut self, value: i32) {
+        self.super_weapon_targets.preferred_kind = value;
     }
 
     /// House+54F0, shared by AI superweapon target consumers.
     pub(crate) fn preferred_super_weapon_target(&self) -> (u16, u16) {
-        self.super_weapon_cells.preferred_target
+        self.super_weapon_targets.preferred_target
     }
 
     /// House50DA00, reached by TAction1356E43E0. The action rejects an
     /// empty waypoint; this owner stores its packed cell without map clamps.
     /// Identity/controls: tools/spatial_oracle/trigger_superweapon_state.meta.json.
     pub(crate) fn set_preferred_super_weapon_target(&mut self, cell: (u16, u16)) {
-        self.super_weapon_cells.preferred_target = cell;
+        self.super_weapon_targets.preferred_target = cell;
     }
 
     /// House50DA10, reached by TAction1366E4440, copies the initialized
     /// empty cell A8EF98. No timer, RNG, object pointer or detach is involved.
     pub(crate) fn clear_preferred_super_weapon_target(&mut self) {
-        self.super_weapon_cells.preferred_target = (0, 0);
+        self.super_weapon_targets.preferred_target = (0, 0);
     }
 
     /// The last super weapon alert's defence cell and frame (`+0x54F4`,
     /// `+0x54FC`).
     pub(crate) fn super_weapon_defense(&self) -> ((u16, u16), i32) {
         (
-            self.super_weapon_cells.defense_cell,
-            self.super_weapon_cells.defense_frame,
+            self.super_weapon_targets.defense_cell,
+            self.super_weapon_targets.defense_frame,
         )
     }
 
     /// The launch alert's stores (`0x004FB0BD`, `0x004FB0C9`), also made by
     /// House50DA20 from TAction1406E4460 with the current binary frame.
     pub(crate) fn alert_super_weapon_defense(&mut self, cell: (u16, u16), frame: i32) {
-        self.super_weapon_cells.defense_cell = cell;
-        self.super_weapon_cells.defense_frame = frame;
+        self.super_weapon_targets.defense_cell = cell;
+        self.super_weapon_targets.defense_frame = frame;
     }
 
     /// House50DA50, reached by TAction1416E44C0: clear the alert and restore
@@ -1145,15 +1166,15 @@ impl HouseState {
     /// instruction reading. Native also clears +54F8, which currently retains
     /// its constructor zero here (ai_fire's secondary-cell residual).
     pub(crate) fn clear_super_weapon_defense(&mut self) {
-        self.super_weapon_cells.defense_cell = (0, 0);
-        self.super_weapon_cells.defense_frame = -100;
+        self.super_weapon_targets.defense_cell = (0, 0);
+        self.super_weapon_targets.defense_frame = -100;
     }
 
     /// Folded only off the constructor values, so houses that never saw a
     /// super weapon hash as earlier schemas did.
-    pub(crate) fn hash_super_weapon_cells(&self, hasher: &mut impl std::hash::Hasher) {
-        let cells = &self.super_weapon_cells;
-        let default = HouseSuperWeaponCells::default();
+    pub(crate) fn hash_super_weapon_targets(&self, hasher: &mut impl std::hash::Hasher) {
+        let cells = &self.super_weapon_targets;
+        let default = HouseSuperWeaponTargets::default();
         if cells.nuke_target != default.nuke_target
             || cells.defense_cell != default.defense_cell
             || cells.defense_frame != default.defense_frame
@@ -1163,6 +1184,10 @@ impl HouseState {
             std::hash::Hash::hash(&cells.nuke_target, hasher);
             std::hash::Hash::hash(&cells.defense_cell, hasher);
             std::hash::Hash::hash(&cells.defense_frame, hasher);
+        }
+        if cells.preferred_kind != default.preferred_kind {
+            std::hash::Hash::hash(b"house-super-target-kind-v1", hasher);
+            std::hash::Hash::hash(&cells.preferred_kind, hasher);
         }
         if cells.preferred_target != default.preferred_target {
             std::hash::Hash::hash(b"house-preferred-super-target-v377", hasher);
@@ -1782,7 +1807,7 @@ impl HouseState {
             repair_start_latch: false,
             repair_latch_timer: CdTimer::started(0, 0),
             spatial_threat: Default::default(),
-            super_weapon_cells: HouseSuperWeaponCells::default(),
+            super_weapon_targets: HouseSuperWeaponTargets::default(),
         }
     }
 }
