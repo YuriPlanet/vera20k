@@ -94,7 +94,7 @@ impl Simulation {
         }
         let object = self.interner.object_type(entity.type_ref(), rules)?;
         let facts = power_system::OperationalFacts {
-            // `0x004555DA`: an offline building (the warp's latch) is not
+            // `0x004555DA`: an offline building (independent latch) is not
             // operational unless two retained Tesla chargers bypass it.
             online: entity.building_online(),
             tesla_chargers: entity.tesla_charge.chargers().len() as i32,
@@ -264,9 +264,10 @@ impl Simulation {
         );
     }
 
-    /// Techno6F6AC0 calls ordinary release, then6FB470, before Object Conceal.
+    /// Techno6F6AC0 calls6FB470 before Object Conceal; DisableStuff4524E9
+    /// invokes the same removal immediately, independently of operational6C8.
     /// Removal has no operational check and leaves cached26C/Building6C8 alone.
-    pub(super) fn remove_building_gap_before_limbo(&mut self, id: u64) {
+    pub(crate) fn remove_building_gap(&mut self, id: u64) {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };

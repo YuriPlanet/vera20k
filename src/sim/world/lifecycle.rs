@@ -3536,7 +3536,7 @@ impl Simulation {
                 Some(rules) => self.rereveal_sight_to_current_house(stable_id, rules),
                 None => self.release_object_sight_with_context(stable_id, context),
             }
-            self.remove_building_gap_before_limbo(stable_id);
+            self.remove_building_gap(stable_id);
             // Steam gamemd3e81a617, TechnoLimbo6F6B98..6F6BA0 clears an
             // OpenTopped hull's own rider targets before HouseRemoved6F6BD1.
             // Cargo, each rider's +82 and Logic membership survive this call.

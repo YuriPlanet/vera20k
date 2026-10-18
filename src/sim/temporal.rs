@@ -74,8 +74,8 @@
 //!   frozen until the chain lets go; native thaws it once its warp-in ends,
 //!   or when the chain lets go before the warp.
 //! - `Mark(2)` at warp start and release (vtable `+0x124`) and the building's
-//!   paused animation slots (`0x004521C0`/`0x00452210` pause and resume the 21
-//!   slots) are presentation; the online latch they share is
+//!   animation-slot translucency/fades (`0x004521C0`/`0x00452210`, Anim+119,
+//!   distinct from the power pause at+19E) are presentation; their independent online latch is
 //!   [`GameEntity::building_online`].
 //! - House `+0x1FC`, set at a building's warp start (`0x0071B13A`), release
 //!   (`0x0071AC49`, `0x0071AD17`) and erase (`0x0071AA60`), asks the House
@@ -95,7 +95,7 @@
 //!   the shared held-start Resume owner. Temporal pause/release themselves
 //!   make no queue callback: warp alone keeps producing, while release alone
 //!   preserves a hold caused by another building's loss. GoOffline/GoOnline's
-//!   independent +660 lifecycle remains unported.
+//!   independent +660 owner is called by map input and trigger61/62.
 //!   Not wired:
 //!   - `HouseClass::CanBuild`'s upgrade-prerequisite scan
 //!     (`0x004F7DE6..0x004F7E4E`: an upgrade prerequisite counts only on an
@@ -228,6 +228,15 @@ impl TemporalState {
 }
 
 impl GameEntity {
+    /// Stamp the coherent normal Temporal fixture through both state owners.
+    /// Native ClearLinkedList's exceptional still-offline state is configured
+    /// independently with the building power owner's fixture hook.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_temporal_for_test(&mut self, state: TemporalState) {
+        self.temporal = state;
+        self.set_building_online_for_test(!self.temporal.is_warped());
+    }
+
     /// `TechnoClass+0x270` BeingWarpedOut (vtable `+0x1D4`, `0x0070C5B0`):
     /// written by TemporalClass and by the Chronosphere's Teleport states
     /// (state 0 sets it, state 2 clears it). The ordinary teleport never
@@ -256,20 +265,6 @@ impl GameEntity {
         self.teleport_state()
             .is_some_and(|teleport| teleport.warp_in_active())
             || self.chrono_warp().is_some_and(|warp| warp.warping_in())
-    }
-
-    /// `BuildingClass+0x660`, the online latch: cleared at a warp's start
-    /// (`0x004521C0`, reached from InitiateWarp for a building) and set at its
-    /// release (`0x00452210`, from LetGo). Read by `Is_Operational @
-    /// 0x004555D0`, GetPowerDrain `0x0044E88F`, the radar scan `0x00508EA3`
-    /// and the Super hold pass's provider test (`0x0050B020`, `0x0050B04F`).
-    /// VERA represents only this writer: the map and trigger power toggle
-    /// (`GoOffline @ 0x00452360`, `GoOnline @ 0x00452260`) is not ported (no
-    /// player input reaches it: `superweapon::offline_only_supers`), and a
-    /// corrupt-head release (ClearLinkedList) that natively leaves the latch
-    /// cleared cannot arise here.
-    pub fn building_online(&self) -> bool {
-        !self.temporal.is_warped()
     }
 }
 
@@ -483,7 +478,8 @@ impl Simulation {
             }
         }
         // 0x0071B0EA sets `+0x270`, which the head above stands for; a
-        // building's online latch follows it (`0x004521C0`).
+        // building's independent online latch is forced off (`0x004521C0`).
+        self.set_building_online_for_temporal(target, false);
         // 0x0071B0FC..0x0071B10B: a gattling victim winds down one tick.
         if self
             .substrate
@@ -859,6 +855,7 @@ impl Simulation {
                     }
                 } else if let Some(target) = link.target {
                     self.set_temporal_head(target, None);
+                    self.set_building_online_for_temporal(target, true); //71AC3D
                     if let Some(owner) = self.substrate.entities.get(target).and_then(|entity| {
                         (entity.category() == EntityCategory::Structure).then_some(entity.owner())
                     }) {
@@ -896,12 +893,8 @@ impl Simulation {
             return;
         };
         self.set_temporal_head(target, None);
-        if let Some(owner) = self.substrate.entities.get(target).and_then(|entity| {
-            (entity.category() == EntityCategory::Structure).then_some(entity.owner())
-        }) {
-            self.invalidate_house_power(owner, false); //ClearWarp71AD04
-            self.request_house_tech_tree_recheck(owner); //71AD17
-        }
+        //71ADE9..71ADF2 clears Warp/Head, without ForceOnline or House
+        //dirty writes. This is not ClearWarp71ACD0 and can leave660 false.
         if let Some(stored) = self.temporal_link_mut(attacker) {
             stored.target = None;
         }
@@ -941,6 +934,7 @@ impl Simulation {
         };
         if let Some(target) = target {
             self.set_temporal_head(target, None);
+            self.set_building_online_for_temporal(target, true); //ClearWarp71AD0B
             if let Some(owner) = self.substrate.entities.get(target).and_then(|entity| {
                 (entity.category() == EntityCategory::Structure).then_some(entity.owner())
             }) {

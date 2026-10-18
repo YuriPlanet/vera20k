@@ -3107,8 +3107,12 @@ impl Simulation {
                 };
                 let mut matched = false;
                 let mut ordinal = 0;
-                while ordinal < self.substrate.entities.techno_registry_len() {
-                    let id = self.substrate.entities.techno_registry_at(ordinal).unwrap();
+                while ordinal < self.substrate.entities.building_registry_len() {
+                    let id = self
+                        .substrate
+                        .entities
+                        .building_registry_at(ordinal)
+                        .unwrap();
                     let eligible = self.substrate.entities.get(id).is_some_and(|entity| {
                         entity.category() == crate::map::entities::EntityCategory::Structure
                             && entity.lifecycle.object_alive()
@@ -3124,6 +3128,40 @@ impl Simulation {
                             overlay_registry,
                             frame_effects,
                         );
+                        matched = true;
+                    }
+                    ordinal += 1;
+                }
+                return matched;
+            }
+            61 | 62 => {
+                // Execute6DDF65/6DDFD9: live BuildingClass array order,
+                // ObjectAlive+90, Marked+74, !Limbo81 and TagContains6E5380.
+                // Receipt is true once the callee is invoked, even a no-op.
+                let (Some(live), Some(rules)) = (context.live_index, rules) else {
+                    return false;
+                };
+                let online = action.kind == 62;
+                let mut matched = false;
+                let mut ordinal = 0;
+                while ordinal < self.substrate.entities.building_registry_len() {
+                    let id = self
+                        .substrate
+                        .entities
+                        .building_registry_at(ordinal)
+                        .unwrap();
+                    let eligible = self.substrate.entities.get(id).is_some_and(|entity| {
+                        entity.lifecycle.object_alive()
+                            && entity.lifecycle.cell_marked()
+                            && !entity.lifecycle.in_limbo()
+                            && entity.building_online() != online
+                    });
+                    if eligible && self.tag_contains_live_trigger(TagAttachment::Object(id), live) {
+                        if online {
+                            self.go_building_online(id, rules, frame_effects);
+                        } else {
+                            self.go_building_offline(id, rules, frame_effects);
+                        }
                         matched = true;
                     }
                     ordinal += 1;
@@ -4414,6 +4452,10 @@ mod chrono_reinforcement_tests;
 #[cfg(test)]
 #[path = "trigger_runtime_lightning_tests.rs"]
 mod lightning_tests;
+
+#[cfg(test)]
+#[path = "trigger_runtime_building_power_tests.rs"]
+mod building_power_tests;
 
 #[cfg(test)]
 #[path = "trigger_runtime_house_directive_tests.rs"]

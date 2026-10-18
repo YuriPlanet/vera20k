@@ -89,6 +89,15 @@ impl Simulation {
             .collect();
         for id in ids {
             self.allocate_building_light(id, rules);
+            // This eager compatibility projection must retain saved6EA.
+            // Temporal660 alone does not disable614; DisableStuff does.
+            if self
+                .entities()
+                .get(id)
+                .is_some_and(|entity| !entity.building_art.stuff_enabled())
+            {
+                self.set_building_light_active(id, false);
+            }
         }
         self.lighting_sources.pending.clear();
     }

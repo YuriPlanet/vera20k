@@ -251,6 +251,7 @@ fn chain(sim: &mut Simulation, target: u64, attackers: &[u64], warp_remaining: i
         .unwrap()
         .temporal
         .head = attackers.first().copied();
+    sim.set_building_online_for_temporal(target, attackers.is_empty());
 }
 
 /// Where [`place`] puts the oracle's origin, so its negative coordinates fit
@@ -918,6 +919,47 @@ fn a_warped_building_goes_offline() {
     assert!(entity(&sim, plant).building_online());
     assert_eq!(output(&mut sim), 100);
     assert_eq!(sim.building_operational_state(plant, &rules), Some(true));
+}
+
+#[test]
+fn trigger_online_is_independent_of_temporal_and_corrupt_chain_clear_does_not_restore_it() {
+    let rules = rules();
+    let mut sim = sim(0x6162);
+    let building = spawn(&mut sim, &rules, "GACNST", "Americans", 12, 10);
+    let cleg = spawn(&mut sim, &rules, "CLEG", "Russians", 10, 10);
+    let other = spawn(&mut sim, &rules, "CLEG", "Russians", 10, 12);
+    let effects = FrameEffects::default();
+    assert!(sim.go_building_offline(building, &rules, effects));
+    assert!(!entity(&sim, building).is_warped_out());
+    sim.temporal_initiate_warp(cleg, Some(building), &rules, None, effects);
+    assert!(!entity(&sim, building).building_online());
+    assert!(sim.go_building_online(building, &rules, effects));
+    assert!(entity(&sim, building).building_online());
+    assert!(
+        entity(&sim, building).is_warped_out(),
+        "452260 has no Temporal gate"
+    );
+    let saved = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "Independent online", 0);
+    let mut loaded = crate::sim::snapshot::GameSnapshot::load(&saved)
+        .unwrap()
+        .sim;
+    loaded.restore_after_snapshot_load().unwrap();
+    loaded.resolve_type_handles(&rules);
+    assert!(entity(&loaded, building).building_online());
+    assert!(entity(&loaded, building).is_warped_out());
+    sim.temporal_let_go(cleg);
+    assert!(
+        entity(&sim, building).building_online(),
+        "71AC3D forces on without normal callbacks"
+    );
+    sim.temporal_initiate_warp(cleg, Some(building), &rules, None, effects);
+    //71A76B's exceptional head-with-predecessor branch calls71ADE0, which
+    //clears278/270 but never calls452210 or writes House dirty flags.
+    sim.temporal_link_mut(other).unwrap().target = Some(building);
+    sim.temporal_link_mut(cleg).unwrap().prev = Some(other);
+    sim.temporal_update_head(cleg, &rules, None, effects);
+    assert!(!entity(&sim, building).is_warped_out());
+    assert!(!entity(&sim, building).building_online());
 }
 
 /// The fixture with `SILO`, which provides a powered `NukeSpecial`.

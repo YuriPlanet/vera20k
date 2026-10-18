@@ -2788,7 +2788,9 @@ mod tests {
             }
             carrier.passenger_role = PassengerRole::transport(cargo);
             if input["warped"].as_bool().unwrap_or(false) {
-                carrier.temporal = crate::sim::temporal::TemporalState::warped_by_for_test(99);
+                carrier.set_temporal_for_test(
+                    crate::sim::temporal::TemporalState::warped_by_for_test(99),
+                );
             }
             sim.substrate.entities.insert(carrier);
             let passenger_type = sim.intern("E1");

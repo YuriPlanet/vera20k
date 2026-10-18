@@ -256,11 +256,11 @@ fn supply_primary_actor_flags(sim: &mut Simulation, id: u64, flags: &serde_json:
     if let Some(online) = flags["online"].as_u64() {
         // Supplied online-latch control, using its existing Rust owner.
         // This does not claim a real CLEG/lifecycle producer of this prior.
-        entity.temporal = if online == 0 {
+        entity.set_temporal_for_test(if online == 0 {
             crate::sim::temporal::TemporalState::warped_by_for_test(id)
         } else {
             Default::default()
-        };
+        });
     }
     entity.mission.apply_test_fixture(MissionTestFixture {
         current: MissionId::from_raw(

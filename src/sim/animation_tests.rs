@@ -379,7 +379,7 @@ fn gsi_13_06_counter_suppressions_hold_the_persistent_value() {
     variants.push(("falling", falling));
     let mut warp_out = base.clone();
     // BeingWarpedOut (`+0x270`): a Temporal chain's head.
-    warp_out.temporal = crate::sim::temporal::TemporalState::warped_by_for_test(99);
+    warp_out.set_temporal_for_test(crate::sim::temporal::TemporalState::warped_by_for_test(99));
     variants.push(("warp out", warp_out));
     let mut warp_in = base.clone();
     warp_in.install_teleport_state_for_test(Some(TeleportState::for_test(
@@ -1696,7 +1696,9 @@ fn unit_body_counter_matches_original_foot_cadence() {
             // BeingWarpedOut (`+0x270`) through a Temporal chain's head,
             // WarpingIn (`+0x271`) through the teleport's warp-in.
             if flag("warp_out") {
-                entity.temporal = crate::sim::temporal::TemporalState::warped_by_for_test(99);
+                entity.set_temporal_for_test(
+                    crate::sim::temporal::TemporalState::warped_by_for_test(99),
+                );
             }
             if flag("warp_in") {
                 entity.install_teleport_state_for_test(Some(TeleportState::for_test(
@@ -1805,7 +1807,8 @@ fn foot_body_counter_matches_original_concrete_classes() {
         }
         entity.lift.set_swap_active_for_test(flag("locomotor_swap"));
         if flag("warp_out") {
-            entity.temporal = crate::sim::temporal::TemporalState::warped_by_for_test(99);
+            entity
+                .set_temporal_for_test(crate::sim::temporal::TemporalState::warped_by_for_test(99));
         }
         if flag("warp_in") {
             entity.install_teleport_state_for_test(Some(TeleportState::for_test(

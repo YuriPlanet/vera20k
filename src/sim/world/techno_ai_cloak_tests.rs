@@ -264,8 +264,11 @@ fn chrono_warp_surfaces_a_fully_cloaked_sub() {
         .as_mut()
         .unwrap()
         .establish_unlimbo_fully_cloaked();
-    sim.substrate.entities.get_mut(id).unwrap().temporal =
-        crate::sim::temporal::TemporalState::warped_by_for_test(99);
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .unwrap()
+        .set_temporal_for_test(crate::sim::temporal::TemporalState::warped_by_for_test(99));
     tick_stock_cloak_producer(
         &mut sim,
         id,

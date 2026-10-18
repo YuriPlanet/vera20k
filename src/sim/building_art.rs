@@ -53,8 +53,8 @@ pub struct BuildingArt {
     /// Building+6EA, constructor43B996 true; distinct from operational6C8.
     /// Its other native writers (ChangeOwner 4484C6, ReadScenarioBuildings
     /// 44FC80, GoOnline 452260, EnableStuff 452410, DisableStuff 452480) also
-    /// switch lights, cloak and gap generators and laser fences; only their
-    /// animation loop is ported here.
+    /// share the light/gap/animation owner. Dormant CloakGenerator and
+    /// LaserFencePost tails require their separate mechanisms.
     stuff_enabled: bool,
     /// Building+6E4: OnConstructionComplete's one-time allocation guard.
     actually_placed: bool,

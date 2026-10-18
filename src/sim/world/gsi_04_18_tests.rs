@@ -315,8 +315,11 @@ fn gsi_04_18_first_warping_candidate_blocks_later_uplink_but_selling_is_skipped(
     assert!(sim.houses[&owner].map_is_clear);
 
     // BeingWarpedOut (`+0x270`): a Temporal chain's head.
-    sim.substrate.entities.get_mut(1).unwrap().temporal =
-        crate::sim::temporal::TemporalState::warped_by_for_test(2);
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .set_temporal_for_test(crate::sim::temporal::TemporalState::warped_by_for_test(2));
 
     sim.reconcile_active_vision_structures(&rules);
     assert!(!sim.houses[&owner].spy_sat_active);

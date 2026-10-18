@@ -110,6 +110,9 @@ pub struct MapEntity {
     /// building's Unlimbo (`0x0044FBF9`), false when the line stops short.
     /// False for other categories.
     pub structure_ai_repairable: bool,
+    /// Structures field9, default true (44FA11), CRT atoi !=0 (44FA2D).
+    /// Applied after Unlimbo through the shared GoOnline/GoOffline owner.
+    pub structure_online: bool,
     /// Native Unit74346A/Aircraft41B2DD/Infantry51FD29/Building44FB33:
     /// raw CRT token passed to TagType6E5E70 ID-or-display-name lookup.
     /// The loader attaches the shared live Tag before class Unlimbo.
@@ -256,6 +259,7 @@ fn parse_infantry_section(section: &IniSection, entities: &mut Vec<MapEntity>) {
             structure_upgrades: [None, None, None],
             structure_ai_sellable: false,
             structure_ai_repairable: false,
+            structure_online: true,
             trigger_tag: fields.get(8).map(|value| (*value).to_owned()),
         });
     }
@@ -280,6 +284,7 @@ fn parse_structures_section(section: &IniSection, entities: &mut Vec<MapEntity>)
         entity.structure_upgrades = parse_structure_upgrades(&fields);
         entity.structure_ai_sellable = atoi_flag(fields.get(7).copied());
         entity.structure_ai_repairable = atoi_flag(fields.get(15).copied());
+        entity.structure_online = fields.get(9).is_none_or(|value| crt_atoi(value) != 0);
         entities.push(entity);
     }
 }
@@ -368,8 +373,13 @@ fn parse_common_fields(fields: &[&str], category: EntityCategory, key: &str) -> 
         structure_upgrades: [None, None, None],
         structure_ai_sellable: false,
         structure_ai_repairable: false,
+        structure_online: true,
         trigger_tag: fields
-            .get(if category == EntityCategory::Structure { 6 } else { 7 })
+            .get(if category == EntityCategory::Structure {
+                6
+            } else {
+                7
+            })
             .map(|value| (*value).to_owned()),
     })
 }
@@ -511,6 +521,21 @@ mod tests {
         assert_eq!(entities[0].facing, 0);
         assert_eq!(entities[0].category, EntityCategory::Structure);
         assert_eq!(entities[0].structure_upgrades, [None, None, None]);
+    }
+
+    #[test]
+    fn structures_online_token_uses_native_default_and_crt_flags() {
+        //44FA11 defaults true;44FA2D uses atoi!=0 after native strtok.
+        let ini = IniFile::from_str(
+            "[Structures]\n0=A,B,256,1,1,0\n1=A,B,256,2,1,0,None,0,0,0\n2=A,B,256,3,1,0,None,0,0,-7tail\n3=A,B,256,4,1,0,None,0,0,bogus\n",
+        );
+        assert_eq!(
+            parse_map_entities(&ini)
+                .iter()
+                .map(|e| e.structure_online)
+                .collect::<Vec<_>>(),
+            [true, false, true, false]
+        );
     }
 
     /// `BuildingClass::ReadFromINI @ 0x0044F820` stores field 7's `atoi != 0`

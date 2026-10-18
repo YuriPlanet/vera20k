@@ -552,8 +552,12 @@ fn a_warped_factory_keeps_old_infantry_cameos_but_cannot_add_a_new_one() {
         .unwrap()
         .discovery
         .set_discovered_by_current_house_for_test(true);
-    sim.entities_mut().get_mut(factory).unwrap().temporal =
-        crate::sim::temporal::TemporalState::warped_by_for_test(factory);
+    sim.entities_mut()
+        .get_mut(factory)
+        .unwrap()
+        .set_temporal_for_test(crate::sim::temporal::TemporalState::warped_by_for_test(
+            factory,
+        ));
     assert!(!sim.entities().get(factory).unwrap().building_online());
     let options = all_build_options_for_owner(&sim, &rules, "Americans");
     let candidates = cameo_candidates(&sim, &rules, Some(&csf), owner, &options, &[], &[]);
@@ -575,7 +579,10 @@ fn a_warped_factory_keeps_old_infantry_cameos_but_cannot_add_a_new_one() {
         !infantry.iter().any(|entry| entry.id == new_infantry),
         "retention admission must not insert an infantry option while its adding factory is warped"
     );
-    sim.entities_mut().get_mut(factory).unwrap().temporal = Default::default();
+    sim.entities_mut()
+        .get_mut(factory)
+        .unwrap()
+        .set_temporal_for_test(Default::default());
     // Thawing after that House pass cannot retroactively add an option.
     projection.reconcile_cameos(owner, &candidates, 3, &[]);
     assert!(

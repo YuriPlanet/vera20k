@@ -232,7 +232,9 @@ pub(super) fn dress_cmin(s: &mut Scene, input: &Value) {
             .set_paralysis_for_test(crate::sim::timer::CdTimer::started(frame as i32, 30));
     }
     if input["warp_out"] == true {
-        entity.temporal = crate::sim::temporal::TemporalState::warped_by_for_test(s.other);
+        entity.set_temporal_for_test(crate::sim::temporal::TemporalState::warped_by_for_test(
+            s.other,
+        ));
     }
     if input["latch_27c"] == true {
         // Techno+0x27C, which only the Chronosphere's warp writes in VERA:
@@ -674,8 +676,14 @@ fn mission_harvest_teleporter_arms_match_the_original_dispatch() {
             vec![s.other]
         };
         for id in offline {
-            s.sim.substrate.entities.get_mut(id).unwrap().temporal =
-                crate::sim::temporal::TemporalState::warped_by_for_test(s.miner);
+            s.sim
+                .substrate
+                .entities
+                .get_mut(id)
+                .unwrap()
+                .set_temporal_for_test(crate::sim::temporal::TemporalState::warped_by_for_test(
+                    s.miner,
+                ));
         }
         let status = input["status"].as_u64().unwrap();
         fill(&mut s, status);

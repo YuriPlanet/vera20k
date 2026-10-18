@@ -113,6 +113,31 @@ fn refresh(sim: &mut Simulation, rules: &RuleSet) {
 }
 
 #[test]
+fn explicit_power_off_removes_gap_before_the_operational_visit_and_on_defers_add() {
+    let (mut sim, rules, a, b, _) = fixture();
+    insert(&mut sim, 1, a, "GAGAP", 12, 12);
+    insert(&mut sim, 2, a, "POWER", 16, 12);
+    power(&mut sim, &rules);
+    sim.visit_building_operational(1, &rules, None, FrameEffects::default());
+    assert!(sim.fog.is_cell_gap_covered(b, 12, 12));
+    let rng = sim.rng_state();
+    assert!(sim.go_building_offline(1, &rules, FrameEffects::default()));
+    assert!(
+        !sim.fog.is_cell_gap_covered(b, 12, 12),
+        "DisableStuff4524E9 removes immediately"
+    );
+    sim.visit_building_operational(1, &rules, None, FrameEffects::default());
+    assert!(sim.go_building_online(1, &rules, FrameEffects::default()));
+    assert!(
+        !sim.fog.is_cell_gap_covered(b, 12, 12),
+        "GoOnline has no gap-add callback"
+    );
+    sim.visit_building_operational(1, &rules, None, FrameEffects::default());
+    assert!(sim.fog.is_cell_gap_covered(b, 12, 12));
+    assert_eq!(sim.rng_state(), rng);
+}
+
+#[test]
 fn gap_operational_original_gate_and_native_order_corpus() {
     let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
         "tools/spatial_oracle/gap_admission.json",

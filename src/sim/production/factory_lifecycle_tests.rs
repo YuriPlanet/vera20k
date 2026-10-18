@@ -717,8 +717,10 @@ fn offline_backup_preserves_paid_infantry_with_system_hold() {
         return;
     };
     let sim = &mut runtime.simulation;
-    sim.entities_mut().get_mut(backup).unwrap().temporal =
-        TemporalState::warped_by_for_test(backup);
+    sim.entities_mut()
+        .get_mut(backup)
+        .unwrap()
+        .set_temporal_for_test(TemporalState::warped_by_for_test(backup));
     let category = ProductionCategory::Infantry;
     let before = sim.production.factories.view(owner, category).unwrap();
     assert!(before.is_running());

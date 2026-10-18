@@ -20,6 +20,56 @@ use serde_json::{Value, json};
 
 const CATEGORY: ProductionCategory = ProductionCategory::Infantry;
 
+#[test]
+fn explicit_power_toggle_holds_and_resumes_the_existing_paid_factory_head() {
+    let corpus = crate::test_fixture::json("tools/sidebar_oracle/factory_system_hold.json");
+    let Some(mut fixture) = PaidHead::new(&corpus["lifecycle"][0], false, &corpus["type_inputs"])
+    else {
+        return;
+    };
+    let before = fixture.head();
+    let sim = &mut fixture.runtime.simulation;
+    let rules = &fixture.runtime.resources.rules;
+    let rng = sim.rng_state();
+    assert!(sim.go_building_offline(fixture.target, rules, FrameEffects::default()));
+    assert!(
+        !sim.production
+            .factories
+            .view(fixture.owner, CATEGORY)
+            .unwrap()
+            .suspended
+    );
+    assert!(sim.go_building_offline(fixture.barracks, rules, FrameEffects::default()));
+    let held = sim
+        .production
+        .factories
+        .view(fixture.owner, CATEGORY)
+        .unwrap();
+    assert!(held.suspended);
+    assert_eq!(held.object.unwrap().entity_id, Some(fixture.original));
+    let stage = held.progress;
+    let queued: Vec<_> = held.queue.iter().map(|entry| entry.type_id).collect();
+    assert!(sim.go_building_online(fixture.barracks, rules, FrameEffects::default()));
+    let resumed = sim
+        .production
+        .factories
+        .view(fixture.owner, CATEGORY)
+        .unwrap();
+    assert!(!resumed.suspended);
+    assert_eq!(resumed.object.unwrap().entity_id, Some(fixture.original));
+    assert_eq!(resumed.progress, stage);
+    assert_eq!(
+        resumed
+            .queue
+            .iter()
+            .map(|entry| entry.type_id)
+            .collect::<Vec<_>>(),
+        queued
+    );
+    assert_eq!(sim.rng_state(), rng);
+    assert_eq!(fixture.head()["stage"], before["stage"]);
+}
+
 struct PaidHead {
     runtime: SimRuntime,
     owner: InternedId,

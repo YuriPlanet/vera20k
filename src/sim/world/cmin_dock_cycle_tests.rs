@@ -181,8 +181,14 @@ fn fixture_scene(cell: (u16, u16)) -> Scene {
 /// Take the scene's second refinery (NW (20, 20)) offline, so CAN_LOAD
 /// refuses it and the scene has one dock.
 fn one_dock(s: &mut Scene) {
-    s.sim.substrate.entities.get_mut(s.other).unwrap().temporal =
-        crate::sim::temporal::TemporalState::warped_by_for_test(s.miner);
+    s.sim
+        .substrate
+        .entities
+        .get_mut(s.other)
+        .unwrap()
+        .set_temporal_for_test(crate::sim::temporal::TemporalState::warped_by_for_test(
+            s.miner,
+        ));
 }
 
 /// A second full Chrono Miner in Mission_Harvest's FINDING_HOME state.

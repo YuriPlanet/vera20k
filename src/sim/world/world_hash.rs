@@ -1716,6 +1716,11 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
     if !entity.building_art.stuff_enabled() {
         b"building-stuff-disabled-v1".hash(hasher);
     }
+    if entity.category() == crate::map::entities::EntityCategory::Structure
+        && !entity.building_online()
+    {
+        b"building-online-latch-off-v1".hash(hasher);
+    }
     if entity.building_has_engineer.is_set() {
         b"building-has-engineer-v1".hash(hasher);
     }

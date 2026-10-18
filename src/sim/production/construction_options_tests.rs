@@ -59,14 +59,20 @@ fn cameo_draw_state_darkens_where_draw_does_not_decide_retention() {
 
     // An offline factory keeps the entry and darkens it: Draw's
     // `FindFactory(1, 1, 1)` requires `+660`, `Recalculate`'s does not.
-    sim.entities_mut().get_mut(yard).unwrap().temporal = TemporalState::warped_by_for_test(yard);
+    sim.entities_mut()
+        .get_mut(yard)
+        .unwrap()
+        .set_temporal_for_test(TemporalState::warped_by_for_test(yard));
     assert!(!sim.entities().get(yard).unwrap().building_online());
     assert!(strip_refusal(&sim, &rules, owner, plain).is_none());
     let offline = cameo_draw_state(&sim, &rules, owner, plain);
     assert!(!offline.enabled);
     assert!(!offline.at_build_limit);
     // The same live query clears the overlay when the yard is back online.
-    sim.entities_mut().get_mut(yard).unwrap().temporal = TemporalState::default();
+    sim.entities_mut()
+        .get_mut(yard)
+        .unwrap()
+        .set_temporal_for_test(TemporalState::default());
     assert!(cameo_draw_state(&sim, &rules, owner, plain).enabled);
 
     // `BuildLimit=1` reached: still retained, drawn dark, and the press gate
@@ -260,12 +266,14 @@ fn construction_options_match_original_gates_type_order_limit_and_warp_grant() {
             .discovery
             .set_discovered_by_current_house_for_test(row["discovered"].as_bool().unwrap_or(true));
         for phase in row["results"].as_array().unwrap() {
-            sim.entities_mut().get_mut(factory).unwrap().temporal =
-                if phase["online"].as_bool().unwrap() {
+            sim.entities_mut()
+                .get_mut(factory)
+                .unwrap()
+                .set_temporal_for_test(if phase["online"].as_bool().unwrap() {
                     TemporalState::default()
                 } else {
                     TemporalState::warped_by_for_test(factory)
-                };
+                });
             if let Some(grant) = phase["grant"].as_str() {
                 let id = sim.interner.get(grant).unwrap();
                 sim.entities_mut()

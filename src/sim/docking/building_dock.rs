@@ -2879,8 +2879,11 @@ mod tests {
         assert!(linked(&sim, 1));
         let nav = sim.substrate.entities.get(1).unwrap().navigation.nav_com();
         assert!(nav.is_some());
-        sim.substrate.entities.get_mut(DEPOT).unwrap().temporal =
-            crate::sim::temporal::TemporalState::warped_by_for_test(999);
+        sim.substrate
+            .entities
+            .get_mut(DEPOT)
+            .unwrap()
+            .set_temporal_for_test(crate::sim::temporal::TemporalState::warped_by_for_test(999));
         let due = {
             let timer = sim
                 .substrate

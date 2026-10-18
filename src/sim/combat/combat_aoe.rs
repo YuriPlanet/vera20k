@@ -3721,7 +3721,9 @@ mod tests {
                 // BeingWarpedOut (`+0x270`) through a Temporal chain's
                 // head, WarpingIn (`+0x271`) through the teleport's warp-in.
                 if case["warp_out"] == true {
-                    victim.temporal = crate::sim::temporal::TemporalState::warped_by_for_test(99);
+                    victim.set_temporal_for_test(
+                        crate::sim::temporal::TemporalState::warped_by_for_test(99),
+                    );
                 }
                 if case["warp_in"] == true {
                     use crate::sim::movement::teleport_movement::{TeleportPhase, TeleportState};

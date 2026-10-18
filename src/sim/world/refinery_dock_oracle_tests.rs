@@ -368,7 +368,9 @@ fn dress(mut s: Scene, input: &Value) -> Scene {
             .health
             .set_for_test(input["refinery_health"].as_i64().unwrap_or(900) as i32);
         if input["online"] == false {
-            building.temporal = crate::sim::temporal::TemporalState::warped_by_for_test(other);
+            building.set_temporal_for_test(
+                crate::sim::temporal::TemporalState::warped_by_for_test(other),
+            );
         }
         if input["refinery_tether"] == true {
             building.tether.set_for_test(Some(miner));
@@ -819,8 +821,14 @@ fn mission_harvest_states_two_and_three_match_the_original_dispatch() {
             vec![s.other]
         };
         for id in offline {
-            s.sim.substrate.entities.get_mut(id).unwrap().temporal =
-                crate::sim::temporal::TemporalState::warped_by_for_test(s.miner);
+            s.sim
+                .substrate
+                .entities
+                .get_mut(id)
+                .unwrap()
+                .set_temporal_for_test(crate::sim::temporal::TemporalState::warped_by_for_test(
+                    s.miner,
+                ));
         }
         // Full cargo: the Harvest handler is on its return states.
         {

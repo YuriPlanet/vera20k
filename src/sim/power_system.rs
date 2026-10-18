@@ -511,8 +511,8 @@ fn radar_provider_available(
             continue;
         }
         // Building+504 EMP starts zero. VERA has no EMP writer yet; its
-        // online latch represents only the existing Temporal writer. The
-        // separate EMP and independent HasPower transitions remain open.
+        // online latch has independent map/trigger and Temporal writers.
+        // EMP and the independent HasPower transitions remain open.
         return !entity.is_warped_out();
     }
     false

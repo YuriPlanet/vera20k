@@ -4696,8 +4696,12 @@ mod tests {
                     ));
             }
             if gates["warp_out"] == true {
-                sim.entities_mut().get_mut(engineer).unwrap().temporal =
-                    crate::sim::temporal::TemporalState::warped_by_for_test(hover.stable_id);
+                sim.entities_mut()
+                    .get_mut(engineer)
+                    .unwrap()
+                    .set_temporal_for_test(
+                        crate::sim::temporal::TemporalState::warped_by_for_test(hover.stable_id),
+                    );
             }
             if gates["warp_in"] == true {
                 sim.entities_mut()
