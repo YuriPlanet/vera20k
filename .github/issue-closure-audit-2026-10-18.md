@@ -10,7 +10,7 @@ listed separately so that a related merge is not mistaken for full resolution.
 
 - Repository: `YuriPlanet/vera20k`; source inspected at
   [`fc8997b827f5c1e978082d685f5f2c1f1af956c3`](https://github.com/YuriPlanet/vera20k/commit/fc8997b827f5c1e978082d685f5f2c1f1af956c3).
-- Final API snapshot: **220 open issues**, **1,461 PRs**: 1,429 merged,
+- Final API snapshot before this audit PR: **220 open issues**, **1,461 PRs**: 1,429 merged,
   29 closed without merging, and three open. Issue #1902 appeared during the
   scan and was included; it describes a remaining wall-autofill lifetime gap.
 - Retrieved every open issue's title/body and every PR's title/body, state,
