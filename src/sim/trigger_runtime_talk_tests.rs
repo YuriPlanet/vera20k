@@ -114,7 +114,9 @@ fn dispatch(
         None,
         FrameEffects::default(),
     );
-    (result, effects)
+    // The production frame output is the authoritative receipt queue.
+    sim.publish_trigger_effects(effects);
+    (result, sim.drain_trigger_effects())
 }
 
 #[test]
@@ -242,4 +244,84 @@ fn talk_time_survives_registry_snapshot_handoff_and_type_reset() {
             .talk_bubble_time,
         150
     );
+}
+
+#[test]
+fn talk_reveal_passes_native_s28_height_gate_to_the_shared_visibility_owner() {
+    // Original70F15B S28=1,56772E..5677AF. Existing reveal_area_row
+    //executed full5673A0 for center15,15/size16,16/radius2/z0/S28=1/S32=1
+    //and obstruction17,17=4: target16,15 is omitted only with Rules17EE=1.
+    //This pins the native mirror/+2 sample, not a fitted height fixture.
+    for (by_height, expected) in [(true, false), (false, true)] {
+        let (mut sim, rules, _, houses) = tests::event_ingress_fixture_with_rules(&format!(
+            "[General]\nRevealByHeight={}\n",
+            if by_height { "yes" } else { "no" }
+        ));
+        sim.fog = crate::sim::vision::FogState::new(33, 33);
+        sim.session.current_house = Some(houses[0]);
+        let actor = tests::spawn_event_ingress_unit(&mut sim, &rules, houses[1], (15, 15));
+        assert_eq!(
+            crate::sim::movement::ground_pose::object_get_coords(
+                sim.entities().get(actor).unwrap(),
+                sim.resolved_terrain.as_ref()
+            )
+            .z,
+            0
+        );
+        let terrain = sim.resolved_terrain.as_mut().unwrap();
+        let raised = terrain.native_cell_identity((17, 17));
+        terrain.write_native_cell_level(raised, 4);
+        // SightHeights reads the navigation owner's derived level plane.
+        // Publish the declared terrain input through that existing owner.
+        assert!(sim.rebuild_dynamic_navigation(&rules));
+        crate::sim::team_script_vm::join_team_for_test(&mut sim, &[actor], false, false);
+        let mut defs = RuntimeDefinitions::default();
+        defs.trigger_type("SPEECH").unwrap();
+        let ty = defs.team_type("TEST_TEAM").unwrap();
+        sim.trigger_runtime.definitions = defs;
+        assert!(!sim.fog.is_cell_revealed(houses[0], 16, 15));
+        assert!(dispatch(&mut sim, &rules, Some(DefinitionReference::Team(ty)), 1).0);
+        assert_eq!(
+            sim.fog.is_cell_revealed(houses[0], 16, 15),
+            expected,
+            "RevealByHeight={by_height}"
+        );
+    }
+}
+
+#[test]
+fn nested_discovery_speech_overrides_outer_request_in_native_write_order() {
+    let (mut sim, rules, _, houses) = tests::event_ingress_fixture_with_rules("");
+    sim.fog = crate::sim::vision::FogState::new(33, 33);
+    sim.session.current_house = Some(houses[0]);
+    let actor = tests::spawn_event_ingress_unit(&mut sim, &rules, houses[1], (15, 15));
+    crate::sim::team_script_vm::join_team_for_test(&mut sim, &[actor], false, false);
+    tests::install_event_ingress_map(
+        &mut sim,
+        &rules,
+        "[Triggers]\nINNER=Country7,<none>,Discovered speech,0,1,1,1,0\n\
+         [Tags]\nTAG=0,Discovered speech,INNER\n\
+         [Events]\nINNER=1,4,0,0\n\
+         [Actions]\nINNER=1,105,5,TEST_TEAM,0,0,0,0,2\n",
+    );
+    sim.attach_object_trigger_tag(actor, Some("TAG"));
+    let ty = sim
+        .trigger_runtime
+        .definitions
+        .team_types
+        .iter()
+        .position(|id| id == "TEST_TEAM")
+        .unwrap();
+    let (ok, effects) = dispatch(&mut sim, &rules, Some(DefinitionReference::Team(ty)), 1);
+    assert!(ok);
+    let values = effects
+        .iter()
+        .filter_map(|effect| match effect {
+            TriggerEffect::TalkBubble { value, .. } => Some(*value),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    //70F134/13A precedes70F189; Map->6F4A03..4A18 raises Event4
+    //synchronously. The inner assignment survives after the outer returns.
+    assert_eq!(values, [1, 2]);
 }

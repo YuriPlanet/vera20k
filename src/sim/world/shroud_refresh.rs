@@ -604,6 +604,9 @@ impl Simulation {
             context.terrain().or(self.resolved_terrain.as_ref()),
         );
         let config = self.sight_reveal_config(context.rules());
+        //70F15B passesS28=true:56772E..5677AF also gates the existing
+        //signed terrain-height query on General.RevealByHeight.
+        let heights = self.sight_height_grid(&config);
         let viewer = self.session.current_house;
         let viewers = viewer.into_iter().collect::<Vec<_>>();
         let cell = ((coord.x / 256) as u16, (coord.y / 256) as u16);
@@ -612,7 +615,7 @@ impl Simulation {
             cell,
             coord.z,
             2,
-            None,
+            heights.levels(),
             false,
             &config,
             context,

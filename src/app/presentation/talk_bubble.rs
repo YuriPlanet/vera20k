@@ -30,10 +30,10 @@ impl TalkBubble {
             .then(|| (self.value - 1) as usize)
     }
 
-    /// Native keeps an unswizzled process pointer. VERA never lets a new
-    /// world reuse that object's numeric ID as a speech target; retire it at
-    /// world replacement, as for other unsaved local effects. Quickload's
-    /// stale-pointer/allocator-reuse artifact is deliberately not reproduced.
+    /// Native stores the actor in process globalB0EB38. Its setter/draw
+    /// reader are established here; exhaustive cross-load reset/swizzling
+    /// behavior remains outside this coverage. VERA retires the local effect
+    /// at world replacement so a new world cannot reuse the old target ID.
     pub(crate) fn clear_on_load(&mut self) {
         *self = Self::default();
     }

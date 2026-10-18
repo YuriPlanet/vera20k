@@ -4261,6 +4261,10 @@ impl Simulation {
                     value: if actor.is_some() { value } else { 0 },
                     duration,
                 });
+                //70F134/13A/173 commits the request BEFORE Map callbacks.
+                //A nested105 from discovery must win. Commit earlier cues
+                //to the one frame-output queue before entering that receiver.
+                self.publish_trigger_effects(std::mem::take(effects));
                 if let Some(actor) = actor {
                     //70F159..70F189: flags0/0/0/1/1, current player (not
                     //the Team owner), literal radius2, including negative values.
