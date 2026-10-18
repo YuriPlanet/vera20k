@@ -404,9 +404,10 @@ pub(crate) fn band_rect_contains_drawn_object(
 /// unsensed submerged submarine is no object to hover, click or select.
 ///
 /// Without fog (sandbox full visibility) or a known player, only the first
-/// part applies. ProcessClickCoords also drops another house's object whose
-/// type sets `Invisible=` (`+0xC9A`, `0x0069256B..0x0069257F`), which no
-/// retail type sets; that test is not ported.
+/// part applies. ProcessClickCoords also drops its chosen nonlocal object's
+/// TypeInvisible (`+0xC9A`, `0x0069256B..0x0069257F`) after the scan; that
+/// producer gate remains open. Building's InvisibleInGame can derive this byte
+/// too. Display's tooltip owns its separately repeated postwinner gate.
 pub(crate) fn pick_admits_object(
     entity: &crate::sim::game_entity::GameEntity,
     fog: Option<&FogState>,
@@ -418,7 +419,9 @@ pub(crate) fn pick_admits_object(
     let (Some(fog), Some(player)) = (fog, player) else {
         return true;
     };
-    entity.owner() == player
+    //6DA3FF reads retained Techno+41A. Its owner classifies this at
+    // InitManagers6F3F43 and ChangeOwner70173B; save/load preserves the byte.
+    entity.discovery.owned_by_current_house()
         || !entity
             .cloak
             .as_ref()
@@ -1243,6 +1246,76 @@ mod tests {
         entity.lifecycle.set_in_limbo_for_test(false);
         entity.selection.set_selected_for_test(selected);
         entity
+    }
+
+    #[test]
+    fn both_pointer_queries_use_retained_local_ownership_for_cloak_admission() {
+        use crate::sim::cloak_disguise::CloakRuntime;
+        use crate::sim::world::Simulation;
+
+        //6DA3FF and69252D read retained Techno+41A, independently of the
+        // current owner pointer. These explicit retained-byte controls cover
+        // the reader, not a claim that each prior has a natural producer.
+        for (same_owner, retained_owned, sensed, cloak_state, admitted) in [
+            (false, true, false, 2, true),
+            (true, false, false, 2, false),
+            (false, false, true, 2, true),
+            (false, false, false, 2, false),
+            (false, false, false, 0, true),
+        ] {
+            let mut sim = Simulation::new();
+            let viewer = sim.interner.intern("viewer");
+            let other = sim.interner.intern("other");
+            let typ = sim.interner.intern("HTNK");
+            sim.session.current_house = Some(viewer);
+            sim.fog = FogState::new(32, 32);
+            sim.fog.reveal_cells_for_owner(viewer, [(10, 10)]);
+            if sensed {
+                sim.fog.increment_sensor_at(viewer, 10, 10);
+            }
+            let owner = if same_owner { viewer } else { other };
+            let mut entity = item83_entity(1, 10, 10, owner, typ, EntityCategory::Unit, false);
+            entity
+                .discovery
+                .set_owned_by_current_house_for_test(retained_owned);
+            let mut cloak = CloakRuntime::new(0);
+            cloak.set_state_for_test(cloak_state);
+            entity.cloak = Some(cloak);
+            let world =
+                crate::app::presentation::instances::interpolated_screen_position_entity(&entity);
+            sim.entities_mut().insert(entity);
+            sim.resubmit_entity_display_for_test(1);
+            let order = crate::app::presentation::instances::tactical_entity_encounter_order(&sim);
+            let heights = std::collections::BTreeMap::new();
+            let expected = admitted.then_some(1);
+            assert_eq!(
+                pick_entity_at_point(
+                    sim.entities(),
+                    &order,
+                    Some(&sim.fog),
+                    Some("viewer"),
+                    world.0,
+                    world.1,
+                    0.0,
+                    None,
+                    None,
+                    &heights,
+                    None,
+                    Some(&sim.interner),
+                    None,
+                ),
+                expected,
+                "pointer: owner equality{same_owner}, retained{retained_owned}, sensor{sensed}, cloak{cloak_state}"
+            );
+            assert_eq!(
+                hover_target_at_point(
+                    &sim, world.0, world.1, "viewer", false, None, &heights, None
+                )
+                .map(|target| target.stable_id),
+                expected,
+                "hover: owner equality{same_owner}, retained{retained_owned}, sensor{sensed}, cloak{cloak_state}"
+            );
+        }
     }
 
     #[test]

@@ -235,12 +235,20 @@ fn tactical_world_tip_text(
     // Residual: Nominal crew's runtime+6D9 is not represented (crew_survival);
     // its earlier TXT_TECHNICIAN return requires the shared crew/House-count
     // mechanism. This covers constructor-default own infantry, including E2.
-    if entity.owner() != viewer {
+    let own = entity.owner() == viewer;
+    if !own && entity.category() != EntityCategory::Unit {
         return String::new();
     }
     let Some(object) = rules.object(view.interner().resolve(entity.type_ref())) else {
         return String::new();
     };
+    //4AE616..4AE666 repeats admission on the chosen object. On this Unit
+    // anchor path the shared picker already checked cloak/sensors. TypeInvisible
+    // refuses that winner; never pick another object behind it.
+    // The bypass reads retained Techno+41A, not a human/control/alliance flag.
+    if !entity.discovery.owned_by_current_house() && object.invisible {
+        return String::new();
+    }
     match entity.category() {
         EntityCategory::Structure | EntityCategory::Infantry => {}
         // Aircraft41C1D0 returns its actual Type+60 directly, without a
@@ -248,15 +256,22 @@ fn tactical_world_tip_text(
         // and exact-Z projection owner for grounded and flying aircraft.
         // Source: `tools.native_inspect disasm 0x41C1D0 --bytes 0xA`.
         EntityCategory::Aircraft => {}
-        // Exact ownership also makes Unit746750's observer-disguise +C8
-        // false. Unit746B20 then returns actual Type+60 when the first gate
-        // 70DC60 -> 717880 (signed TurretCount > 0) is false, as for HTNK.
+        // Unit746B20 first asks746750's canonical observer-disguise +C8.
+        // When false, actual Type+60 follows if70DC60 ->717880's signed
+        // TurretCount>0 gate is false, as for ordinary own/enemy HTNK.
         // Source: `tools.native_inspect disasm 0x746B20 --bytes 0x165`.
-        EntityCategory::Unit if object.turret_count <= 0 => {}
+        EntityCategory::Unit
+            if object.turret_count <= 0
+                && !entity.is_disguised_to(
+                    viewer,
+                    Some(view.fog()),
+                    Some(&sim.house_alliances),
+                    view.interner(),
+                ) => {}
         // Positive TurretCount can reach HasTurretTooltips and the passenger/
         // current-turret formatter (stock FV). Its retained readers and that
         // name path remain unported; never replace it with the actual name.
-        // Nonlocal names and non-Techno/resource names also remain open.
+        // Disguised/fake names, other nonlocal classes and resources stay open.
         _ => return String::new(),
     }
     crate::assets::csf_file::type_ui_name(object.ui_name.as_deref(), csf)
@@ -716,8 +731,9 @@ mod tests {
 
     #[test]
     fn mapped_own_reactor_tip_uses_retail_ui_name_and_clears_after_limbo() {
-        assert_mapped_own_tip_uses_retail_ui_name_and_clears_after_limbo(
+        assert_mapped_tip_uses_retail_ui_name_and_clears_after_limbo(
             "NAPOWR",
+            "Russians",
             "Russians",
             "Building459ED0",
         );
@@ -725,8 +741,9 @@ mod tests {
 
     #[test]
     fn mapped_own_conscript_tip_uses_retail_ui_name_and_clears_after_limbo() {
-        assert_mapped_own_tip_uses_retail_ui_name_and_clears_after_limbo(
+        assert_mapped_tip_uses_retail_ui_name_and_clears_after_limbo(
             "E2",
+            "Russians",
             "Russians",
             "Infantry51F2C0 flag-zero own-House arm",
         );
@@ -734,8 +751,9 @@ mod tests {
 
     #[test]
     fn mapped_own_rhino_tip_uses_retail_ui_name_and_clears_after_limbo() {
-        assert_mapped_own_tip_uses_retail_ui_name_and_clears_after_limbo(
+        assert_mapped_tip_uses_retail_ui_name_and_clears_after_limbo(
             "HTNK",
+            "Russians",
             "Russians",
             "Unit746B20 own-House TurretCount<=0 arm",
         );
@@ -743,44 +761,107 @@ mod tests {
 
     #[test]
     fn mapped_own_harrier_tip_uses_retail_ui_name_and_clears_after_limbo() {
-        assert_mapped_own_tip_uses_retail_ui_name_and_clears_after_limbo(
+        assert_mapped_tip_uses_retail_ui_name_and_clears_after_limbo(
             "ORCA",
+            "British",
             "British",
             "Aircraft41C1D0",
         );
     }
 
-    fn assert_mapped_own_tip_uses_retail_ui_name_and_clears_after_limbo(
+    #[test]
+    fn mapped_enemy_rhino_tip_uses_retail_ui_name_and_clears_after_limbo() {
+        assert_mapped_tip_uses_retail_ui_name_and_clears_after_limbo(
+            "HTNK",
+            "Russians",
+            "British",
+            "Unit746B20 nonlocal undisguised TurretCount<=0 arm",
+        );
+    }
+
+    struct MappedTipFixture {
+        runtime: crate::sim::runtime::SimRuntime,
+        heights: std::collections::BTreeMap<(u16, u16), u8>,
+        csf: crate::assets::csf_file::CsfFile,
+        entity_id: u64,
+        world: (f32, f32),
+    }
+
+    #[test]
+    fn invisible_type_refuses_nonlocal_tip_after_the_picker() {
+        let patch = crate::rules::ini_parser::IniFile::from_str("[HTNK]\nInvisible=yes\n");
+        for (viewer, shows_name) in [("British", false), ("Russians", true)] {
+            let Some(fixture) = mapped_tip_fixture("HTNK", "Russians", viewer, Some(&patch)) else {
+                return;
+            };
+            let object = fixture.runtime.resources.rules.object("HTNK").unwrap();
+            assert!(
+                object.invisible,
+                "explicit map input reaches the production reader"
+            );
+            let text = tactical_world_tip_text(
+                fixture.runtime.view(),
+                &fixture.runtime.resources.rules,
+                &fixture.heights,
+                Some(&fixture.csf),
+                fixture.world,
+                false,
+            );
+            let expected = if shows_name {
+                fixture
+                    .csf
+                    .text(object.ui_name.as_deref().unwrap())
+                    .into_owned()
+            } else {
+                String::new()
+            };
+            assert_eq!(
+                text, expected,
+                "Display4AE616 retained-owned bypass, viewer{viewer}"
+            );
+        }
+    }
+
+    fn mapped_tip_fixture(
         type_id: &str,
         owner_name: &str,
-        native_name_body: &str,
-    ) {
+        viewer_name: &str,
+        patch: Option<&crate::rules::ini_parser::IniFile>,
+    ) -> Option<MappedTipFixture> {
         use crate::sim::house_state::HouseState;
         use crate::sim::runtime::SimRuntime;
-        use crate::sim::world::{Simulation, UninitContext};
+        use crate::sim::world::Simulation;
 
-        let Some(retail) =
-            crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
-        else {
-            return;
-        };
-        let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
-            return;
-        };
+        let retail = match patch {
+            Some(patch) => {
+                crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+                    "XMP03T4.MAP",
+                    patch,
+                )
+            }
+            None => crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP"),
+        }?;
+        let (_, assets) = crate::rules::retail_ini_fixture::retail_assets()?;
         let csf = crate::app::loading::init::load_csf(&assets).expect("physical retail CSF");
         let rules = retail.rules;
         let mut sim = Simulation::with_seed(0x4AE4_F000);
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
         let owner = sim.intern(owner_name);
+        let viewer = sim.intern(viewer_name);
         sim.houses
-            .insert(owner, HouseState::new(owner, 0, None, true, 50_000, 10));
-        sim.session.house_order.push(owner);
-        sim.session.current_house = Some(owner);
+            .insert(viewer, HouseState::new(viewer, 0, None, true, 50_000, 10));
+        sim.session.house_order.push(viewer);
+        if owner != viewer {
+            sim.houses
+                .insert(owner, HouseState::new(owner, 1, None, false, 50_000, 10));
+            sim.session.house_order.push(owner);
+        }
+        sim.session.current_house = Some(viewer);
         crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
         sim.fog = crate::sim::vision::FogState::new(32, 32);
         sim.fog
-            .reveal_cells_for_owner(owner, (0..32).flat_map(|y| (0..32).map(move |x| (x, y))));
+            .reveal_cells_for_owner(viewer, (0..32).flat_map(|y| (0..32).map(move |x| (x, y))));
         // Admitted, mapped constructor prior. Paid production is a separate
         // witness; this test exercises the actual text/pick owners. Stock E2
         // begins native Infantry+6D9 clear (517A98), with Nominal absent/false.
@@ -788,6 +869,21 @@ mod tests {
         let entity_id = sim
             .spawn_object(type_id, owner_name, 14, 14, 0, &rules)
             .unwrap();
+        let entity = sim.entities().get(entity_id).unwrap();
+        assert_eq!(entity.owner(), owner);
+        assert_eq!(entity.discovery.owned_by_current_house(), owner == viewer);
+        assert!(
+            !entity
+                .cloak
+                .as_ref()
+                .is_some_and(|cloak| cloak.is_fully_cloaked())
+        );
+        assert!(
+            !entity
+                .disguise
+                .as_ref()
+                .is_some_and(|disguise| disguise.is_disguised())
+        );
         let world = crate::app::presentation::instances::interpolated_screen_position_entity(
             sim.entities().get(entity_id).unwrap(),
         );
@@ -798,7 +894,7 @@ mod tests {
                 sim.entities(),
                 &order,
                 Some(&sim.fog),
-                Some(owner_name),
+                Some(viewer_name),
                 world.0,
                 world.1,
                 0.0,
@@ -814,6 +910,33 @@ mod tests {
         );
         let mut runtime = SimRuntime::from_simulation(sim);
         runtime.resources.rules = rules;
+        Some(MappedTipFixture {
+            runtime,
+            heights,
+            csf,
+            entity_id,
+            world,
+        })
+    }
+
+    fn assert_mapped_tip_uses_retail_ui_name_and_clears_after_limbo(
+        type_id: &str,
+        owner_name: &str,
+        viewer_name: &str,
+        native_name_body: &str,
+    ) {
+        use crate::sim::world::UninitContext;
+
+        let Some(MappedTipFixture {
+            mut runtime,
+            heights,
+            csf,
+            entity_id,
+            world,
+        }) = mapped_tip_fixture(type_id, owner_name, viewer_name, None)
+        else {
+            return;
+        };
         let name_key = runtime
             .resources
             .rules
@@ -835,7 +958,7 @@ mod tests {
         );
         assert_eq!(
             text, expected,
-            "mapped own {type_id}: {native_name_body} returns Type+60"
+            "mapped {type_id} owned by {owner_name}, viewed by {viewer_name}: {native_name_body} returns Type+60"
         );
         assert_eq!(
             runtime.simulation.state_hash(),
