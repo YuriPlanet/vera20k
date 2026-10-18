@@ -113,12 +113,32 @@ fn slave_refinery_deploys_digs_carries_home_pays_and_goes_out_again() {
 
     let mut dug = false;
     let mut shovel_shown = false;
+    let mut carry_shown = false;
+    let mut empty_walk_after_payment = false;
     let mut paid_at = None;
     let start = credits(&s);
     for n in 0..3000 {
         frame(&mut s);
         for &slave in &slaves {
             let entity = s.scene.sim.substrate.entities.get(slave).unwrap();
+            if let Some((doing, _)) = entity.infantry_sprite_pose() {
+                if doing == 39 {
+                    assert_eq!(entity.slave.cargo().len(), 4, "Carry needs a full load");
+                    carry_shown = true;
+                    assert_eq!(
+                        s.scene
+                            .rules
+                            .animation_sequence("SLAV")
+                            .unwrap()
+                            .infantry_action(39)
+                            .unwrap()
+                            .start_frame,
+                        228
+                    );
+                }
+                empty_walk_after_payment |=
+                    paid_at.is_some() && doing == 3 && entity.slave.cargo().is_empty();
+            }
             dug |= !entity.slave.cargo().is_empty();
             shovel_shown |= entity
                 .infantry_sprite_pose()
@@ -133,6 +153,11 @@ fn slave_refinery_deploys_digs_carries_home_pays_and_goes_out_again() {
     }
     assert!(dug, "the slaves reach the ore and dig");
     assert!(shovel_shown, "a digging slave shows its Shovel sequence");
+    assert!(carry_shown, "a full returning slave shows the Carry bank");
+    assert!(
+        empty_walk_after_payment,
+        "after deposit an empty slave walks normally"
+    );
     let paid_at = paid_at.expect("a full slave carries its load home and pays");
     assert_eq!(
         (credits(&s) - start) % 100,

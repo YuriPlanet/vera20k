@@ -61,6 +61,7 @@ pub(crate) const DO_AIR_DEATH_START: i32 = 0x22;
 pub(crate) const DO_AIR_DEATH_FALLING: i32 = 0x23;
 pub(crate) const DO_AIR_DEATH_FINISH: i32 = 0x24;
 pub(crate) const DO_PANIC: i32 = 0x25;
+pub(crate) const DO_CARRY: i32 = 0x27;
 
 /// `InfantryClass::IsInDeathSequence @ 0x00522CB0`: Die1..5, WetDie1/2 and the
 /// three AirDeath actions. Assign_Target refuses such an infantryman as a
@@ -183,6 +184,8 @@ impl Simulation {
     /// - The requested action's record must have frames (`0x0051D70F`, Type
     ///   `+0xE3C`).
     /// - A falling paradropper keeps its Paradrop (`0x0051D722..0x0051D733`).
+    /// - A full slave's Walk becomes Carry (`0x0051D739..0x0051D773`),
+    ///   before water, air and fear remaps.
     /// - Down needs `Crawls=` (`0x0051D77A..0x0051D78D`).
     /// - Water remap: an AmphibiousDestroyer type on a Water or Beach cell off
     ///   a bridge (`0x0051D793..0x0051D8B8`) remaps the raw action. It reads
@@ -201,8 +204,6 @@ impl Simulation {
     ///   (`0x0051DAA7..0x0051DAC8`).
     ///
     /// Not represented:
-    /// - the SlaveOwner/storage/full-load Walk-to-Carry remap
-    ///   (`0x0051D739..0x0051D773`), affecting loaded SLAV trips;
     /// - the random first stage a caller's third argument asks for
     ///   (`0x0051DA4A..0x0051DA84`, a Scenario draw): the crash latch, the
     ///   impact notice, the AirDeath arm and the idle fidgets pass 0, and the
@@ -262,7 +263,18 @@ impl Simulation {
         if requested == DO_DOWN && !facts.crawls {
             return Ok(false);
         }
-        let mut requested = requested;
+        // Steam gamemd51D739..51D773: SlaveOwner, nonzero Storage and
+        //Tiberium_Load exactly1 remap Walk before the later water/fear arms.
+        //The original requested sequence was checked above; do not recheck
+        //Carry's count after remapping. The slave owner retains the only cargo.
+        let mut requested = if requested == DO_WALK
+            && actor.slave.owner().is_some()
+            && self.slave_is_full(id, rules)
+        {
+            DO_CARRY
+        } else {
+            requested
+        };
         if facts.movement_zone == MovementZone::AmphibiousDestroyer {
             //51D7B0: virtual+1B8 is Abstract41BEA0, signed physical XYZ/256
             // packed to two WORDs. Map5657A0 retains one canonical Cell,

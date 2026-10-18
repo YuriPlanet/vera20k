@@ -731,3 +731,81 @@ fn retail_teleport_default_action_matches_the_native_sequencer() {
         }
     }
 }
+
+#[test]
+fn retail_full_slaves_remap_walk_before_fear_and_keep_the_action_clock_on_refusal() {
+    use crate::sim::miner::{CargoBale, ResourceType};
+    use crate::sim::slave_manager::SlaveLink;
+    use crate::sim::world::FrameEffects;
+    let Some((ini, art)) = crate::rules::retail_ini_fixture::retail_rules_and_art() else {
+        return;
+    };
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
+    rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
+    rules.bind_animation_sequences(
+        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
+    );
+    assert_eq!(rules.object("SLAV").unwrap().storage, 4);
+    let bank = rules.animation_sequence("SLAV").unwrap();
+    assert_eq!(bank.infantry_action(3).unwrap().start_frame, 8);
+    assert_eq!(bank.infantry_action(39).unwrap().start_frame, 228);
+    for (kind, owner, amount, fear, current, request, expected, accepted) in [
+        ("SLAV", true, 0, 0, 0, 3, 3, true),
+        ("SLAV", true, 3, 0, 0, 3, 3, true),
+        ("SLAV", true, 4, 0, 0, 3, 39, true),
+        ("SLAV", true, 5, 0, 0, 3, 3, true),
+        ("SLAV", false, 4, 0, 0, 3, 3, true),
+        ("E1", true, 4, 0, 0, 3, 3, true), // Storage0
+        ("SLAV", true, 4, 200, 0, 3, 39, true),
+        ("SLAV", false, 4, 200, 0, 3, 37, true),
+        ("SLAV", true, 4, 0, 39, 3, 39, false), // mapped action unchanged
+        ("SLAV", true, 4, 0, 0, 0, 0, false),   // only Walk remaps
+    ] {
+        let mut sim = Simulation::with_seed(6);
+        let id = sim
+            .construct_object_limbo_at_height(
+                kind,
+                "YuriCountry",
+                10,
+                10,
+                0,
+                0,
+                &rules,
+                FrameEffects::default(),
+            )
+            .unwrap();
+        let actor = sim.substrate.entities.get_mut(id).unwrap();
+        actor.slave = SlaveLink::for_test(
+            owner.then_some(123),
+            vec![
+                CargoBale {
+                    resource_type: ResourceType::Ore,
+                    value: 25,
+                };
+                amount
+            ],
+        );
+        actor
+            .infantry
+            .as_mut()
+            .unwrap()
+            .set_fear_level_for_test(fear);
+        actor
+            .mission_leaf
+            .set_infantry_doing_verified(current)
+            .unwrap();
+        let old_stage = actor.native_stage().clone();
+        let rng = sim.rng_state();
+        assert_eq!(
+            sim.infantry_do_action(id, request, false, &rules, FrameEffects::default())
+                .unwrap(),
+            accepted,
+            "{kind}, owner={owner}, cargo={amount}, fear={fear}, current={current}, request={request}"
+        );
+        assert_eq!(doing(&sim, id), expected);
+        if !accepted {
+            assert_eq!(sim.entities().get(id).unwrap().native_stage(), &old_stage);
+        }
+        assert_eq!(sim.rng_state(), rng);
+    }
+}

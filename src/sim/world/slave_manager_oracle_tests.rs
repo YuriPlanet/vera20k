@@ -98,7 +98,7 @@ fn slave_rules(input: &Value) -> String {
 
 /// The Do_Action sequences the slave machine requests; any non-zero count.
 const SLAVE_SEQUENCE: &str = "[SlavSequence]\nReady=0,1,1\nGuard=0,1,1\nWalk=8,6,6\n\
-    Shovel=56,4,4\nCheer=100,8,0,E\n";
+    Shovel=56,4,4\nCarry=228,6,6\nCheer=100,8,0,E\n";
 
 const YAREFN_NW: (u16, u16) = (12, 12);
 /// The oracle's regen spare (`slave_address(7)`).

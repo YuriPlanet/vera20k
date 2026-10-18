@@ -87,12 +87,6 @@
 //!   `UnitClass::What_Action` gives the Harvest action to a
 //!   ResourceGatherer/ResourceDestination type. The dispatch treats it as
 //!   the plain Unit it is natively (`techno_ai/mission_handlers.rs`).
-//! - A loaded slave walks home without Carry (39, Do_Action's remap of Walk
-//!   for a full slave load, `0x0051D739..0x0051D773`). Trigger: every slave carrying a load
-//!   home. Effect: the Doing value and the walk sequence shown; 0, 3, 38 and
-//!   39 are all interruptible, so readiness, Scatter and the fire error
-//!   answer alike. Frequency: every trip. Downstream: none beyond the Doing
-//!   hash.
 //! - FreeSlaves callers other than the death arm (`0x00702065`), the Temporal
 //!   erase (`0x0071AAA7`) and the destructor (`0x006F4571`): the Teleport
 //!   post-warp (`0x00718998`, `0x00718AEF`) and the Jumpjet crash
@@ -1272,7 +1266,7 @@ impl Simulation {
     /// `0x00522D30`: Tiberium_Load (`0x00708BC0`, the stored amount over
     /// `Storage`) equals 1.0. Every cut is a whole level, so that is a full
     /// store.
-    fn slave_is_full(&self, slave: u64, rules: &RuleSet) -> bool {
+    pub(crate) fn slave_is_full(&self, slave: u64, rules: &RuleSet) -> bool {
         let Some(entity) = self.substrate.entities.get(slave) else {
             return false;
         };
