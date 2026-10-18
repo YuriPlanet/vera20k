@@ -1286,6 +1286,17 @@ pub(super) fn event_ingress_fixture() -> (
     crate::rules::overlay_types::OverlayTypeRegistry,
     [crate::sim::intern::InternedId; 3],
 ) {
+    event_ingress_fixture_with_rules("")
+}
+
+pub(super) fn event_ingress_fixture_with_rules(
+    extra_rules: &str,
+) -> (
+    Simulation,
+    crate::rules::ruleset::RuleSet,
+    crate::rules::overlay_types::OverlayTypeRegistry,
+    [crate::sim::intern::InternedId; 3],
+) {
     let mut countries = String::from("[Countries]\n");
     for index in 0..8 {
         countries.push_str(&format!("{index}=Country{index}\n"));
@@ -1296,6 +1307,7 @@ pub(super) fn event_ingress_fixture() -> (
     countries.push_str(
         "[VehicleTypes]\n0=TAGUNIT\n[TAGUNIT]\nStrength=100\nSpeed=5\nSpeedType=Track\nMovementZone=Normal\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n",
     );
+    countries.push_str(extra_rules);
     let (mut sim, rules, overlays) =
         crate::sim::world::entry_test_fixture::fixture_with_rules(&countries);
     let houses = std::array::from_fn(|index| {

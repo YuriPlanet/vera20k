@@ -1844,10 +1844,18 @@ impl Simulation {
                 };
                 (losses as i32) >= condition.value
             }
-            9 | 10 | 11 | 55 | 56 => {
+            3 | 5 | 9 | 10 | 11 | 55 | 56 => {
+                // Steam3e81a617..08600,71EC9A/71F0E1/71F0FB:3 requires
+                // its own raised kind and clear A8ED6B before reading244;
+                // 5 skips that gate and reads1F4. Both use the existing
+                // House notifications. In particular, do not invent a3
+                // raise from Engineer capture or translate a House event8.
+                if condition.kind == 3 && (input.kind != 3 || self.buildup_bypass_active()) {
+                    return false;
+                }
                 //71F069 ->502D30: Event.value selects a Country's first
-                //registered House, independently of the incoming House or
-                //raised event. No matching House reaches the AL1 tail; this
+                //registered House independently of the incoming House. After
+                //the above gate, no matching House reaches the AL1 tail; this
                 //does not write persistence or the Type-owned Event+54.
                 //The private HouseTracking owner preserves separate signed
                 //Unit/Infantry totals and the tracked Building scalar.
@@ -1871,6 +1879,8 @@ impl Simulation {
                     self.houses
                         .get(&owner)
                         .is_none_or(|house| match condition.kind {
+                            3 => house.building_capture_notified(),
+                            5 => house.discovered_by_current_house(),
                             9 => house.tracking.units_destroyed(),
                             10 => house.tracking.buildings() <= 0,
                             11 => house.tracking.all_destroyed(),
@@ -4264,6 +4274,10 @@ mod crate_tests;
 #[cfg(test)]
 #[path = "trigger_runtime_build_type_tests.rs"]
 mod build_type_tests;
+
+#[cfg(test)]
+#[path = "trigger_runtime_house_notification_tests.rs"]
+mod house_notification_tests;
 
 #[cfg(test)]
 #[path = "trigger_runtime_wakeup_tests.rs"]

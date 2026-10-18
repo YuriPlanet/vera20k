@@ -612,8 +612,8 @@ pub struct HouseState {
     /// House+244: Engineer PerCell519F4F records that this House has had a
     /// building captured. Constructor4F577D clears it, and the original
     /// TEvent Evaluate71F0E1 reads it for event kind3 (tables71F328/71F350).
-    /// There is no clearing writer. Live Tag/TEvent polling remains a separate
-    /// trigger mechanism; retaining this prerequisite does not implement it.
+    /// There is no clearing writer. TEvent3 also retains its native raised-kind
+    /// gate: the ordinary House event8 poll alone does not satisfy it.
     #[serde(default)]
     building_capture_notified: bool,
     /// Last type ArrayIndex in each ObjectCategory registry (not a count).
@@ -660,8 +660,7 @@ pub struct HouseState {
     /// House+1F4: first discovery of this House's foreign object by PlayerPtr.
     /// Constructor4F5716 clears it; TechnoDiscovered6F4A25 sets it and no
     /// clearing writer exists. TEvent71F0FB reads it for event kind5, after
-    /// resolving the House by its CountryType index through502D30. Live
-    /// Tag/TEvent evaluation remains a separate trigger mechanism.
+    /// resolving the House by its CountryType index through502D30.
     /// Native House CRC502D60 omits1F4. Like Techno41A/B/C this is a
     /// client-relative retained observation and is excluded from peer hashing.
     #[serde(default)]
@@ -1175,7 +1174,6 @@ impl HouseState {
     }
 
     /// Retained input to original TEvent kind3, not current building ownership.
-    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn building_capture_notified(&self) -> bool {
         self.building_capture_notified
     }
@@ -1319,7 +1317,6 @@ impl HouseState {
         self.discovered_by_current_house = true;
     }
 
-    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn discovered_by_current_house(&self) -> bool {
         self.discovered_by_current_house
     }
