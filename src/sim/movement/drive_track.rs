@@ -3516,10 +3516,14 @@ pub fn select_drive_track(
 
     Some(DriveTrackSelection {
         turn_track_index: turn_index,
+        #[cfg(test)]
         raw_track_index: raw_index,
         entry_index: raw_meta.entry_index,
+        #[cfg(test)]
         chain_index: raw_meta.chain_index,
+        #[cfg(test)]
         occupation_handoff_point_index: raw_meta.occupation_handoff_point_index,
+        #[cfg(test)]
         target_facing: turn_track.target_facing,
     })
 }
@@ -3563,15 +3567,19 @@ pub struct DriveTrackSelection {
     /// Index into TURN_TRACKS (0-63 for normal, 64-71 for special).
     pub turn_track_index: usize,
     /// Index into RAW_TRACKS (1-15, 0 = null is filtered out).
+    #[cfg(test)]
     pub raw_track_index: u8,
     /// First active point index (points before this are lead-in).
     pub entry_index: u16,
     /// Point index where track chaining is attempted (-1 = none).
+    #[cfg(test)]
     pub chain_index: i16,
     /// RawTrack +0x0C occupation handoff point (-1 = none).
     /// Runtime wiring remains intentionally separate from coordinate crossing.
+    #[cfg(test)]
     pub occupation_handoff_point_index: i16,
     /// Target facing after completing the track (0-255).
+    #[cfg(test)]
     pub target_facing: u8,
 }
 

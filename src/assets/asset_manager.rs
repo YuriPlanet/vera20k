@@ -163,6 +163,7 @@ impl MediaArchiveMode {
 pub struct MixFileLoad {
     pub bytes: Arc<[u8]>,
     pub source_archive: Arc<str>,
+    #[cfg(test)]
     pub entry_id: i32,
 }
 
@@ -553,6 +554,7 @@ impl AssetManager {
             MixFileLoad {
                 bytes: Arc::from(bytes),
                 source_archive: Arc::from(loose.source_name.as_str()),
+                #[cfg(test)]
                 entry_id: cache_key,
             }
         } else {
@@ -560,6 +562,7 @@ impl AssetManager {
             MixFileLoad {
                 bytes: Arc::from(named.archive.get_by_id(entry_id)?),
                 source_archive: Arc::from(named.name.as_str()),
+                #[cfg(test)]
                 entry_id,
             }
         };

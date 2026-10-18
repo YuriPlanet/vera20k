@@ -225,6 +225,7 @@ use crate::rules::object_type::ObjectType;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::animation;
 use crate::sim::bridge_state::BridgeRuntimeState;
+#[cfg(any(test, feature = "test-support"))]
 use crate::sim::combat::combat_weapon::WeaponSlot;
 use crate::sim::command::CommandEnvelope;
 use crate::sim::components::{AnimClassSpawnDescriptor, DriveCoord, Position};
@@ -927,6 +928,7 @@ impl SimSoundEvent {
 
 /// The firer's own facing at the authoritative fire tick (the muzzle is
 /// `SimFireEvent::fire_coord`).
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Debug, Clone)]
 pub struct FireOriginSnapshot {
     pub facing: u8,
@@ -940,12 +942,15 @@ pub struct SimFireEvent {
     /// Stable ID of the entity that fired.
     pub attacker_id: u64,
     /// Which weapon slot was used (Primary or Secondary).
+    #[cfg(any(test, feature = "test-support"))]
     pub weapon_slot: WeaponSlot,
     /// Selected weapon section id.
     pub weapon_id: InternedId,
     /// Firing object's facing at the fire tick.
+    #[cfg(any(test, feature = "test-support"))]
     pub facing: u8,
     /// Source facts from the fire tick, before burst/cooldown updates.
+    #[cfg(any(test, feature = "test-support"))]
     pub origin_snapshot: FireOriginSnapshot,
     /// What was fired at — entity stable ID or ground cell coord.
     /// For projectile trajectory: Entity → look up entity position; Cell →
@@ -3696,6 +3701,7 @@ impl Simulation {
     }
 
     /// Intern a string, returning its InternedId.
+    #[cfg(any(test, feature = "test-support"))]
     #[inline]
     pub fn intern(&mut self, s: &str) -> crate::sim::intern::InternedId {
         self.interner.intern(s)

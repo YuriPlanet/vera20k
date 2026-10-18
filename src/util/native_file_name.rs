@@ -20,6 +20,7 @@ impl NativeFileName {
     pub fn truncated(&self, limit: usize) -> Self {
         Self(self.0.iter().copied().take(limit).collect())
     }
+    #[cfg(test)]
     pub fn bytes(&self) -> &[u8] {
         &self.0
     }

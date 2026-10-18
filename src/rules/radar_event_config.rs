@@ -72,6 +72,7 @@ pub struct RadarEventConfig {
     pub min_radius: i32,
     /// Speed at which the ping rectangle shrinks from large to min_radius.
     /// Higher = faster zoom-in.
+    #[cfg(any(test, feature = "test-support"))]
     pub speed: f32,
     /// Rotation speed of the ping rectangle (radians per native frame).
     pub rotation_speed: f32,
@@ -97,6 +98,7 @@ impl RadarEventConfig {
     fn from_scalars(native_scalars: NativeRadarEventScalars) -> Self {
         Self {
             min_radius: native_scalars.min_radius,
+            #[cfg(any(test, feature = "test-support"))]
             speed: f32::from_bits(native_scalars.speed.bits()),
             rotation_speed: f32::from_bits(native_scalars.rotation_speed.bits()),
             color_speed: f32::from_bits(native_scalars.color_speed.bits()),

@@ -231,7 +231,9 @@ use crate::sim::terrain_object::TerrainAreaReceiveResult;
 use crate::sim::terrain_object::TerrainAreaState;
 #[cfg(any(test, feature = "test-support"))]
 use crate::sim::vision::FogState;
-use crate::sim::world::{FireOriginSnapshot, SimFireEvent, SimSoundEvent, Simulation};
+#[cfg(any(test, feature = "test-support"))]
+use crate::sim::world::FireOriginSnapshot;
+use crate::sim::world::{SimFireEvent, SimSoundEvent, Simulation};
 use crate::util::fixed_math::SimFixed;
 use crate::util::lepton::LEPTONS_PER_LEVEL;
 use crate::util::native_x87::{NativeF32Bits, NativeF64Bits, X87Chop53};

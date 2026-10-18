@@ -11,6 +11,5 @@ extra_animations = true   # cosmetic effects: water/ore sparkles (future: laser 
 # Full screen, zoom and the original 4:3 shape are on the Options page (saved in RA2MD.INI).
 
 [gameplay]
-sim_tick_hz = 15
 input_delay_ticks = 15
 pause_on_focus_loss = false   # true freezes a running match (sim and audio) while the window is in the background, like the original game

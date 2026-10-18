@@ -548,6 +548,8 @@ pub struct ObjectType {
     /// Negative values shift the bar UP (above taller sprites). Default 0.
     /// Parsed from `PixelSelectionBracketDelta` in rules.ini.
     pub pixel_selection_bracket_delta: i32,
+    /// Rules LeptonMindControlOffset: Type+3DC ctor710D28=70, read714145.
+    pub lepton_mind_control_offset: i32,
     /// Sidebar/build tab grouping for structures.
     pub build_cat: Option<BuildCategory>,
     /// Human placement radius away from existing base-normal structures.
@@ -2292,6 +2294,7 @@ impl ObjectType {
 
     /// Base weapon-array slot 1 (`TechnoTypeClass+0x8B4`), gamemd's `Secondary`
     /// field. `Secondary=` or `Weapon2=`, same storage.
+    #[cfg(any(test, feature = "test-support"))]
     pub fn secondary(&self) -> Option<&str> {
         self.weapon_at(WEAPON_SLOT_SECONDARY)
     }
@@ -2323,6 +2326,7 @@ impl ObjectType {
     /// `ElitePrimary` field: `ElitePrimary=` or `EliteWeapon1=`. Replaces
     /// [`Self::primary`] when the unit is at Elite tier (veterancy >= 200) and
     /// this slot names a weapon; Veteran tier (100..199) does NOT swap.
+    #[cfg(any(test, feature = "test-support"))]
     pub fn elite_primary(&self) -> Option<&str> {
         self.elite_weapon_at(WEAPON_SLOT_PRIMARY)
     }
@@ -2330,6 +2334,7 @@ impl ObjectType {
     /// Elite weapon-array slot 1 (`TechnoTypeClass+0xAB0`), gamemd's
     /// `EliteSecondary` field: `EliteSecondary=` or `EliteWeapon2=`. Replaces
     /// [`Self::secondary`] at Elite tier under the same rule.
+    #[cfg(test)]
     pub fn elite_secondary(&self) -> Option<&str> {
         self.elite_weapon_at(WEAPON_SLOT_SECONDARY)
     }
@@ -2742,6 +2747,8 @@ impl ObjectType {
             .name
             .to_owned(),
             pixel_selection_bracket_delta: section.read_int("PixelSelectionBracketDelta", 0),
+            // Replaced by the ordered retained Type reader in RuleSet.
+            lepton_mind_control_offset: 70,
             build_cat: section
                 .read_name("BuildCat", 0x20)
                 .and_then(BuildCategory::from_ini),

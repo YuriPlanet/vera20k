@@ -40,6 +40,7 @@ pub struct WaveRecordedCell {
 }
 
 impl WaveRecordedCell {
+    #[cfg(any(test, feature = "test-support"))]
     pub const fn real(rx: u16, ry: u16) -> Self {
         Self {
             identity: WaveCellIdentity::Real {
@@ -48,6 +49,7 @@ impl WaveRecordedCell {
         }
     }
 
+    #[cfg(test)]
     pub const fn shared_dummy() -> Self {
         Self {
             identity: WaveCellIdentity::SharedDummy,

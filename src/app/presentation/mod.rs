@@ -5,6 +5,7 @@
 pub(crate) mod airstrike_lines;
 pub(crate) mod building_anim;
 pub(crate) mod combat_lights;
+pub(crate) mod control_links;
 pub(crate) mod detail;
 pub(crate) mod electric_bolts;
 pub(crate) mod fire_effects;

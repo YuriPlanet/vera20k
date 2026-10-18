@@ -1887,10 +1887,12 @@ pub struct MatchStatistics {
 mod statistics_tests;
 
 impl MatchStatistics {
+    #[cfg(test)]
     pub const fn units_killed(&self) -> u32 {
         self.units_killed
     }
 
+    #[cfg(test)]
     pub const fn buildings_killed(&self) -> u32 {
         self.buildings_killed
     }

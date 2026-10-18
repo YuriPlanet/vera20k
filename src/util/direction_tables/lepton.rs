@@ -23,11 +23,6 @@ pub const LEPTON_DELTAS: [(i32, i32); 8] = {
     out
 };
 
-/// Checked lepton-delta for a direction. `None` for `dir > 7`.
-pub fn lepton_delta(dir: u8) -> Option<(i32, i32)> {
-    LEPTON_DELTAS.get(dir as usize).copied()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -58,11 +53,7 @@ mod tests {
                 })
                 .collect();
             assert_eq!(LEPTON_DELTAS.as_slice(), expected.as_slice());
-            for (i, &e) in expected.iter().enumerate() {
-                assert_eq!(lepton_delta(i as u8), Some(e));
-            }
         }
-        assert_eq!(lepton_delta(8), None);
     }
 
     #[test]

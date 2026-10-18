@@ -631,6 +631,7 @@ impl TeamScriptState {
         self.cursor
     }
 
+    #[cfg(test)]
     pub fn advance_pending(&self) -> bool {
         self.advance_pending
     }
@@ -650,6 +651,7 @@ impl TeamScriptState {
             .map(|pair| pair[1].id)
     }
 
+    #[cfg(test)]
     pub fn member_count(&self) -> usize {
         self.members.len()
     }
@@ -672,14 +674,17 @@ impl TeamScriptState {
         )
     }
 
+    #[cfg(test)]
     pub fn succeeded(&self) -> bool {
         self.succeeded
     }
 
+    #[cfg(test)]
     pub fn refusal(&self) -> Option<TeamScriptRefusal> {
         self.refusal
     }
 
+    #[cfg(test)]
     pub fn formed(&self) -> bool {
         self.formed
     }

@@ -793,11 +793,13 @@ impl FactoryRegistry {
             })
     }
 
-    /// Number of registered factories (test/observation helper).
+    /// Number of registered factories (test helper).
+    #[cfg(test)]
     pub fn len(&self) -> usize {
         self.factories.len()
     }
 
+    #[cfg(test)]
     pub fn is_empty(&self) -> bool {
         self.factories.is_empty()
     }

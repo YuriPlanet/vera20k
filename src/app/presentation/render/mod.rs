@@ -216,7 +216,7 @@ pub(crate) fn render_game(
 
     // Phase 4: Update minimap + build UI instances (selection, health, placement).
     build_instances::update_minimap(state, &local_owner);
-    let ui = build_instances::build_ui_instances(state);
+    let ui = build_instances::build_ui_instances(state, times.radar_ms as u32);
 
     // Phase 5: Build sidebar instances.
     let sidebar = build_instances::build_sidebar_instances(state);

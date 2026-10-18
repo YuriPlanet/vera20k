@@ -718,6 +718,7 @@ pub struct FogState {
 impl FogState {
     /// An empty viewer domain with the allocated map dimensions. Reveal and
     /// gap admission always initialize their own private House+240 state.
+    #[cfg(any(test, feature = "test-support"))]
     pub fn new(width: u16, height: u16) -> Self {
         Self {
             width,
@@ -1018,6 +1019,7 @@ impl FogState {
 
     /// Recreate the serialized CellClass cloak-owner words for current map
     /// bounds without inventing a cloak-generator mask producer.
+    #[cfg(any(test, feature = "test-support"))]
     pub fn reset_cloaked_by_houses(&mut self) {
         self.cloaked_by_houses.clear();
         self.cloaked_by_houses

@@ -735,6 +735,7 @@ impl ReplayLog {
             .with_context(|| format!("Failed to write diagnostic log: {}", path.display()))
     }
 
+    #[cfg(any(test, feature = "test-support"))]
     pub fn load(path: &Path) -> Result<Self> {
         let bytes = std::fs::read(path)
             .with_context(|| format!("Failed to read diagnostic log: {}", path.display()))?;
@@ -743,8 +744,10 @@ impl ReplayLog {
 }
 
 /// Headless runner for the Rust-only deterministic diagnostic log.
+#[cfg(any(test, feature = "test-support"))]
 pub struct ReplayRunner;
 
+#[cfg(any(test, feature = "test-support"))]
 impl ReplayRunner {
     /// Re-run diagnostic-log ticks through the bound runtime (F09): every
     /// tick runs the exact production frame transaction, so rules, heights,
@@ -752,7 +755,6 @@ impl ReplayRunner {
     /// resources and navigation re-snapshots per frame just as a recorded
     /// app session did - nothing is caller-substitutable and a mid-match
     /// path-grid change replays faithfully.
-    #[cfg(any(test, feature = "test-support"))]
     pub fn run_runtime(
         runtime: &mut crate::sim::runtime::SimRuntime,
         replay: &ReplayLog,
@@ -798,7 +800,6 @@ impl ReplayRunner {
     /// Fixture-only replay runner (F09): re-run diagnostic-log ticks with
     /// explicitly supplied resources. Production replay execution goes
     /// through `run_runtime`, whose resources are bound in the `SimRuntime`.
-    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn run_fixture(
         sim: &mut Simulation,
         replay: &ReplayLog,
@@ -812,7 +813,6 @@ impl ReplayRunner {
     /// Fixture-only variant with the static overlay type registry used by the
     /// recorded map. Overlay-backed simulation authority (including miner
     /// resource queries) must see the same registry on record and replay.
-    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn run_fixture_with_overlay_registry(
         sim: &mut Simulation,
         replay: &ReplayLog,
@@ -836,7 +836,6 @@ impl ReplayRunner {
     /// uses, with caller-owned static map trigger definitions. Diagnostic
     /// logs own commands and hashes. Production replay execution is
     /// `run_runtime`.
-    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn run_fixture_master_frame(
         sim: &mut Simulation,
         replay: &ReplayLog,

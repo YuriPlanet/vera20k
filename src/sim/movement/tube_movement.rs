@@ -52,6 +52,7 @@ impl LowBridgeTubeMovementState {
     }
 
     /// The step along the tube's path.
+    #[cfg(test)]
     pub fn cursor(&self) -> u8 {
         self.cursor
     }

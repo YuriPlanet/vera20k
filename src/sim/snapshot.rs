@@ -1130,7 +1130,8 @@ use crate::sim::world::Simulation;
 // 414 -> 415: a path batch's code-2 re-paths keep the urgency they
 // registered at, and the batch keeps those a capped pass left out.
 // 415 -> 416: retain Building+660 independently of Temporal state.
-const SNAPSHOT_VERSION: u32 = 416;
+// 416 -> 417: retain control-node line timers and ordered Rules/Type line settings.
+const SNAPSHOT_VERSION: u32 = 417;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -1321,6 +1322,7 @@ pub enum SnapshotError {
     MapMismatch { expected: u64, found: u64 },
     #[error("rules hash {found:#018x} does not match active rules {expected:#018x}")]
     RulesMismatch { expected: u64, found: u64 },
+    #[cfg(any(test, feature = "test-support"))]
     #[error("snapshot map name {found:?} does not match active map {expected:?}")]
     MapNameMismatch { expected: String, found: String },
     #[error(
@@ -1601,12 +1603,13 @@ impl GameSnapshot {
         bincode::serialize(&snapshot).expect("snapshot serialization should not fail")
     }
 
-    /// Serialize a production save with metadata owned by the active session.
+    /// Serialize a headless save with metadata owned by the active session.
     ///
     /// Map/rules digests come from the app's loaded content owners. Tick and map
     /// name are copied from `ScenarioSession`, so the envelope cannot disagree
     /// with the authoritative body. The app supplies the wall-clock timestamp;
     /// sim code remains clock-independent.
+    #[cfg(any(test, feature = "test-support"))]
     pub fn save_validated(
         sim: &Simulation,
         map_hash: u64,
@@ -1723,6 +1726,7 @@ impl GameSnapshot {
     /// The returned Scenario RNG is the canonical seed-zero state. Main/MapGen
     /// fields are deserialize placeholders; the app's in-scenario production
     /// load seam replaces them with the live process cursors and seed.
+    #[cfg(any(test, feature = "test-support"))]
     pub fn load_validated(
         bytes: &[u8],
         expected_map_hash: u64,

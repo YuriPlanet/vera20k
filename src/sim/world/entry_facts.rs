@@ -10,9 +10,11 @@
 //! the world directly.
 
 use std::sync::OnceLock;
+use std::sync::atomic::{AtomicU32, Ordering};
 
 use crate::map::cell_index::NativeCellIdentity as Cell;
 use crate::map::entities::EntityCategory;
+use crate::rules::locomotor_type::SpeedType;
 use crate::rules::terrain_rules::SpeedCostProfile;
 use crate::sim::components::DriveCoord;
 use crate::sim::game_entity::GameEntity;
@@ -23,11 +25,13 @@ use crate::sim::occupancy::RawCellKey;
 use crate::sim::overlay_grid::OverlayCell;
 use crate::sim::world::Simulation;
 
-/// One batch's [`CellFacts`] by real cell index and [`BlockerFacts`] by
-/// entity slot, each kept from its first ask.
+/// One batch's [`CellFacts`] and [`PlainCell`] by real cell index and
+/// [`BlockerFacts`] by entity slot, each kept from its first ask.
 #[derive(Default)]
 pub(crate) struct EntryFacts {
     cells: Vec<OnceLock<CellFacts>>,
+    /// Each real cell's [`PlainCell`] bits, 0 until asked.
+    plain: Vec<AtomicU32>,
     blockers: Vec<OnceLock<BlockerFacts>>,
 }
 
@@ -48,6 +52,10 @@ impl EntryFacts {
             kept.take();
         });
         self.cells.resize_with(cells, OnceLock::new);
+        crate::sim::parallel::for_each_mut(&mut self.plain, |kept| {
+            *kept.get_mut() = 0;
+        });
+        self.plain.resize_with(cells, AtomicU32::default);
         crate::sim::parallel::for_each_mut(&mut self.blockers, |kept| {
             kept.take();
         });
@@ -64,6 +72,26 @@ impl EntryFacts {
         kept
     }
 
+    /// Real cell `index`'s [`PlainCell`], kept from this batch's first ask.
+    /// Searches asking at once may each read it and store the same bits:
+    /// every read sees the one unchanged world.
+    pub(super) fn plain(&self, index: usize, read: impl Fn() -> PlainCell) -> PlainCell {
+        let kept = &self.plain[index];
+        let cell = match kept.load(Ordering::Relaxed) {
+            0 => {
+                let cell = read();
+                kept.store(cell.0, Ordering::Relaxed);
+                cell
+            }
+            bits => PlainCell(bits),
+        };
+        debug_assert!(
+            !crate::sim::touch_log::live_read_check_enabled() || cell == read(),
+            "real cell {index} changed during a path batch"
+        );
+        cell
+    }
+
     /// The facts of the entity in `slot`, kept from this batch's first ask.
     pub(super) fn blocker(&self, slot: usize, read: impl Fn() -> BlockerFacts) -> &BlockerFacts {
         let kept = self.blockers[slot].get_or_init(&read);
@@ -77,7 +105,7 @@ impl EntryFacts {
 
 /// What Can_Enter_Cell reads of one real cell. Its object lists' members, its
 /// tube, the first-Building lookups and MovementRestrictedTo's land, tile and
-/// overlay reads stay live.
+/// overlay reads stay live; a [`PlainCell`] keeps only whether it has a tube.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct CellFacts {
     pub(super) coord: (i16, i16),
@@ -149,6 +177,91 @@ impl CellFacts {
             MovementLayer::Bridge => self.deck_listed,
             MovementLayer::Air | MovementLayer::Underground => true,
         }
+    }
+}
+
+/// What a step from a flat cell onto an empty one reads of each cell
+/// ([`super::plain_entry`]), packed in one word: a search floods mostly open
+/// ground, and these asks then read four bytes per cell instead of its
+/// [`CellFacts`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct PlainCell(u32);
+
+impl PlainCell {
+    /// Set in every kept word, so 0 is "not asked yet".
+    const KNOWN: u32 = 1 << 31;
+    /// No structural bridge (`0x100`) and no tube: a step into or out of the
+    /// cell reads nothing else of its bridge or tube.
+    const FLAT: u32 = 1 << 30;
+    /// Also no raw ground occupation, nothing in the ground object list (a
+    /// terrain object included), and inside the playfield.
+    const EMPTY: u32 = 1 << 29;
+    /// An overlay, whose type's flags the asker reads.
+    const OVERLAY: u32 = 1 << 28;
+    /// The SpeedTypes this word answers for, in discriminant order.
+    const SPEEDS: [SpeedType; 8] = [
+        SpeedType::Foot,
+        SpeedType::Track,
+        SpeedType::Wheel,
+        SpeedType::Hover,
+        SpeedType::Winged,
+        SpeedType::Float,
+        SpeedType::Amphibious,
+        SpeedType::FloatBeach,
+    ];
+
+    /// The bits of the cell with `facts`, holding a tube when `tube`.
+    pub(super) fn new(facts: &CellFacts, tube: bool) -> Self {
+        let flat = facts.flags & 0x100 == 0 && !tube;
+        let empty = flat && facts.ground == (0, None) && !facts.ground_listed && facts.in_playfield;
+        // Bits 8..16: the land row resolved for SpeedType n; 16..24: nonzero.
+        let rows = Self::SPEEDS
+            .iter()
+            .enumerate()
+            .map(|(n, &speed)| {
+                facts
+                    .speed_costs
+                    .cost_for_speed_type(speed)
+                    .map_or(0, |cost| {
+                        (1 << (8 + n)) | (u32::from(cost != 0) << (16 + n))
+                    })
+            })
+            .fold(0, |rows, row| rows | row);
+        Self(
+            Self::KNOWN
+                | if flat { Self::FLAT } else { 0 }
+                | if empty { Self::EMPTY } else { 0 }
+                | if facts.overlay.overlay_id.is_some() {
+                    Self::OVERLAY
+                } else {
+                    0
+                }
+                | rows
+                | u32::from(facts.level as u8),
+        )
+    }
+
+    pub(super) fn flat(self) -> bool {
+        self.0 & Self::FLAT != 0
+    }
+
+    pub(super) fn empty(self) -> bool {
+        self.0 & Self::EMPTY != 0
+    }
+
+    pub(super) fn overlay(self) -> bool {
+        self.0 & Self::OVERLAY != 0
+    }
+
+    pub(super) fn level(self) -> i8 {
+        self.0 as u8 as i8
+    }
+
+    /// Whether the land row for `speed` is nonzero, when the cell has one
+    /// ([`CellFacts::speed_costs`]).
+    pub(super) fn row_nonzero(self, speed: SpeedType) -> Option<bool> {
+        let n = Self::SPEEDS.iter().position(|&known| known == speed)?;
+        (self.0 >> (8 + n) & 1 != 0).then_some(self.0 >> (16 + n) & 1 != 0)
     }
 }
 

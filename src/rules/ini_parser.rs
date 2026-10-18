@@ -362,6 +362,7 @@ impl IniFile {
             .collect()
     }
 
+    #[cfg(test)]
     pub fn section_count(&self) -> usize {
         self.sections.len()
     }

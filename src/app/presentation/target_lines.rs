@@ -119,12 +119,13 @@ pub(crate) fn build_target_line_instances(
     sim: Option<&Simulation>,
     rules: Option<&RuleSet>,
     palette_bytes: Option<&[u8]>,
+    house_colors: &HouseColorMap,
+    wall_ms: u32,
     viewport: TacticalViewport,
     mut after_entity: Option<&mut dyn FnMut(u64, &mut Vec<SpriteInstance>)>,
 ) -> Vec<SpriteInstance> {
-    // Tactical6D4729..6D472F skips selected Foot4DC060 while PlanMgr is
-    // active. Otherwise its solid strokes cover the animated planning path.
-    // Native controls: action_lines.json::tactical_gate_cases (gate_14/15).
+    // Tactical6D4729 and6D4793 use the same planning gate; the action-line
+    //option/timer gates only Foot4DC060, not CaptureManager relationships.
     if planning_active {
         return Vec::new();
     }
@@ -143,51 +144,63 @@ pub(crate) fn build_target_line_instances(
                 action_line_color(&palette, 8),
             ]
         });
-    if colors.is_none() && after_entity.is_none() {
+    let mut control = rules
+        .map(|rules| super::control_links::prepare(sim, rules, house_colors, wall_ms, viewport))
+        .unwrap_or_default();
+    if colors.is_none() && control.is_empty() && after_entity.is_none() {
         return Vec::new();
     }
-
     let cells = sim.resolved_terrain.as_ref().map(NativeCellQuery::isolated);
-    let mut lines = Vec::new();
     let project = |p: ScreenPoint| {
         [
             p.x as i32 - viewport.camera[0],
             p.y as i32 - viewport.camera[1] + viewport.clip[1],
         ]
     };
-    // Tactical6D4750 walks the construction-ordered Techno array, not the
-    // CurrentObjects selection vector or the Logic active-object order.
-    // EntityStore's monotonic stable IDs retain that represented order.
-    let mut instances = Vec::new();
-    for entity in sim.entities().values() {
-        if let Some(colors) = colors
-            && let Some(line) = selected_action_line_for_entity(entity, sim, rules, cells.as_ref())
-        {
-            let projected = ProjectedActionLine {
+    let line_for = |entity: &GameEntity| {
+        selected_action_line_for_entity(entity, sim, rules, cells.as_ref()).map(|line| {
+            ProjectedActionLine {
                 start: project(line.start),
                 end: project(line.end),
                 kind: line.kind,
-            };
-            if after_entity.is_some() {
+            }
+        })
+    };
+    // Tactical6D4750 walks the construction-ordered Techno array, not the
+    // CurrentObjects selection vector or the Logic active-object order.
+    // EntityStore's monotonic stable IDs retain that represented order.
+    if !control.is_empty() || after_entity.is_some() {
+        //6D4750 ->6D47BF/6D47F6 ->6D47FB within EACH Techno visit. Resolving all
+        //action lines before relationships would reverse cross-object overlaps.
+        let mut instances = Vec::new();
+        for entity in sim.entities().values() {
+            if let Some(colors) = colors
+                && let Some(line) = line_for(entity)
+            {
                 instances.extend(build_selected_action_line_instances(
-                    &[projected],
+                    &[line],
                     colors,
                     viewport,
                 ));
-            } else {
-                lines.push(projected);
+            }
+            if let Some(lines) = control.remove(&entity.stable_id()) {
+                instances.extend(lines);
+            }
+            if let Some(callback) = after_entity.as_mut() {
+                callback(entity.stable_id(), &mut instances);
             }
         }
-        if let Some(callback) = after_entity.as_mut() {
-            callback(entity.stable_id(), &mut instances);
-        }
-    }
-    if after_entity.is_some() {
         return instances;
     }
-    colors.map_or_else(Vec::new, |colors| {
-        build_selected_action_line_instances(&lines, colors, viewport)
-    })
+    let Some(colors) = colors else {
+        return Vec::new();
+    };
+    let lines = sim
+        .entities()
+        .values()
+        .filter_map(line_for)
+        .collect::<Vec<_>>();
+    build_selected_action_line_instances(&lines, colors, viewport)
 }
 
 /// Compose this call's already projected lines in Tactical6D4750 Techno order.
@@ -738,6 +751,8 @@ mod tests {
                 Some(&sim),
                 None,
                 None,
+                &HouseColorMap::new(),
+                0,
                 test_viewport(),
                 Some(&mut callback)
             )
@@ -759,6 +774,8 @@ mod tests {
                 Some(&sim),
                 None,
                 None,
+                &HouseColorMap::new(),
+                0,
                 test_viewport(),
                 Some(&mut callback)
             )
@@ -838,6 +855,8 @@ mod tests {
                 Some(&sim),
                 None,
                 None,
+                &HouseColorMap::new(),
+                0,
                 test_viewport(),
                 None,
             )
@@ -866,6 +885,8 @@ mod tests {
                 None,
                 None,
                 None,
+                &HouseColorMap::new(),
+                0,
                 test_viewport(),
                 None,
             )

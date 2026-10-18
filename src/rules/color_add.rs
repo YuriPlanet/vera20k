@@ -35,6 +35,7 @@ impl Default for ColorAddTable {
 
 impl ColorAddTable {
     /// Parse at most 16 source entries, leaving the unused tail zero-filled.
+    #[cfg(any(test, feature = "test-support"))]
     pub fn from_ini(ini: &IniFile) -> Self {
         let mut table = Self::default();
         table.apply_pass(ini);
@@ -68,6 +69,7 @@ impl ColorAddTable {
     }
 
     /// Read-only source order; mutations remain with the retained rules owner.
+    #[cfg(any(test, feature = "test-support"))]
     pub fn entries(&self) -> &[ColorAddEntry; COLOR_ADD_SLOT_COUNT] {
         &self.slots
     }

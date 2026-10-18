@@ -371,28 +371,6 @@ pub fn producer_candidates_for_owner_category(
     preferred_factories
 }
 
-pub fn is_matching_factory(
-    rules: &RuleSet,
-    structure_id: &str,
-    produced_category: ObjectCategory,
-) -> bool {
-    match produced_category {
-        ObjectCategory::Infantry => {
-            is_production_factory(rules, structure_id, ProductionCategory::Infantry)
-        }
-        ObjectCategory::Vehicle => {
-            is_production_factory(rules, structure_id, ProductionCategory::Vehicle)
-                || is_production_factory(rules, structure_id, ProductionCategory::Ship)
-        }
-        ObjectCategory::Aircraft => {
-            is_production_factory(rules, structure_id, ProductionCategory::Aircraft)
-        }
-        ObjectCategory::Building => {
-            is_production_factory(rules, structure_id, ProductionCategory::Building)
-        }
-    }
-}
-
 /// Returns the base foundation cells for normal building occupancy.
 ///
 /// gamemd keeps these cells separate from `AddOccupy`/`RemoveOccupy`, which only

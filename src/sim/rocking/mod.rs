@@ -49,9 +49,11 @@ impl RockingState {
     pub fn angle_forwards(&self) -> SimFixed {
         fixed(self.angle_forwards)
     }
+    #[cfg(test)]
     pub fn vel_sideways(&self) -> SimFixed {
         fixed(self.vel_sideways)
     }
+    #[cfg(test)]
     pub fn vel_forwards(&self) -> SimFixed {
         fixed(self.vel_forwards)
     }

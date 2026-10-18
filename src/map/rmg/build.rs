@@ -14,6 +14,8 @@ use crate::map::theater::TheaterData;
 use crate::rules::locomotor_type::SpeedType;
 use crate::rules::terrain_rules::TerrainRules;
 
+#[cfg(any(test, feature = "test-support"))]
+use super::executed_stages;
 use super::phases::shore::TileBlocks;
 use super::phases::tech_buildings::TechType;
 use super::pipeline::{self, LAND_TYPES, PipelineInputs};
@@ -21,9 +23,7 @@ use super::rng::{RANGE_K_BITS, RmgRng};
 use super::scratch::RmgScratch;
 use super::tiles::TileIds;
 use super::x87::{Gaussian, TruncF64};
-use super::{
-    GeneratedMap, MapGeometry, RmgOptions, RmgSettings, Stage, emit, executed_stages, grid,
-};
+use super::{GeneratedMap, MapGeometry, RmgOptions, RmgSettings, Stage, emit, grid};
 use crate::map::retail_trig::TrigTable;
 
 /// Land type → rules section, the RA2 `LandType` enum order (verified against
@@ -274,6 +274,7 @@ pub fn generate_map_observed(
         mapgen_continuation: Some(rng.into_continuation()),
         construction_trace: output.construction_trace,
         start_waypoints: output.waypoints,
+        #[cfg(any(test, feature = "test-support"))]
         stages_run: executed_stages(&options),
         unfilled_start_slots: output.unfilled_start_slots,
     }

@@ -84,8 +84,9 @@ pub enum TubeSource {
 }
 
 impl TubeSource {
-    /// Compatibility spelling for generated/synthetic callers. Active authored
+    /// Compatibility spelling for synthetic test fixtures. Active authored
     /// ownership is the automatic Recalc shell named above.
+    #[cfg(test)]
     #[allow(non_upper_case_globals)]
     pub const AutoLowBridge: Self = Self::AutomaticRecalcShell;
 }

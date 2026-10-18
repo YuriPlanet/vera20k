@@ -418,8 +418,8 @@ fn original_reconstruction_retains_each_parent_descriptor_height() {
         let start_index = first["cell"][1].as_u64().unwrap() as usize * width
             + first["cell"][0].as_u64().unwrap() as usize;
         let result = reconstruct_path_dual(
-            &StampedTable::with_all(ground),
-            &StampedTable::with_all(bridge),
+            &SearchTable::with_all(ground),
+            &SearchTable::with_all(bridge),
             start_index,
             false,
             previous,
@@ -506,8 +506,8 @@ fn accepted_descriptor_height_survives_selected_list_transition() {
             ground[1] = next;
         }
         let result = reconstruct_path_dual(
-            &StampedTable::with_all(ground),
-            &StampedTable::with_all(bridge),
+            &SearchTable::with_all(ground),
+            &SearchTable::with_all(bridge),
             0,
             false,
             1,

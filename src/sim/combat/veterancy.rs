@@ -437,10 +437,9 @@ pub fn locomotor_consults_current_speed(kind: Option<LocomotorKind>) -> bool {
 /// (`movement::owner_speed_bonus`). The arithmetic is
 /// [`current_type_speed`]'s.
 ///
-/// Call this instead of `ra2_speed_to_leptons_per_second` wherever a type
-/// `Speed=` becomes an entity's movement speed — native reaches the FASTER
-/// stage on every speed query a mover makes, so a resolver that skips it runs
-/// a promoted unit at rookie speed.
+/// Call this wherever a type `Speed=` becomes an entity's movement speed —
+/// native reaches the FASTER stage on every speed query a mover makes, so a
+/// resolver that skips it runs a promoted unit at rookie speed.
 fn mover_speed_leptons_per_second(
     raw_type_speed: i32,
     loco_kind: Option<LocomotorKind>,

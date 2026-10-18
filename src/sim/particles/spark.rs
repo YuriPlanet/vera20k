@@ -62,6 +62,7 @@ struct SparkCollisionDecision {
     transient_reflection: Option<[NativeF32Bits; 3]>,
 }
 
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SparkTickInputs {
     pub gravity: NativeF32Bits,

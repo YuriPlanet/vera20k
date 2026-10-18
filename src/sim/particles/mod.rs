@@ -447,6 +447,7 @@ impl ParticleSystemStore {
     pub(crate) fn gas_cloud_system(&self) -> Option<u64> {
         self.gas_cloud_system
     }
+    #[cfg(test)]
     pub fn new() -> Self {
         Self::default()
     }

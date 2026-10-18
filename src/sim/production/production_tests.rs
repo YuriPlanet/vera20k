@@ -2,10 +2,9 @@
 //! harvester auto-creation, and sell/undeploy flows through the full production pipeline.
 
 use super::production_spawn::mark_war_factory_spawn_contact;
-use super::{ProductionCategory, STARTING_CREDITS, credits_for_owner, is_matching_factory};
+use super::{ProductionCategory, STARTING_CREDITS, credits_for_owner};
 use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid};
 use crate::rules::ini_parser::IniFile;
-use crate::rules::object_type::ObjectCategory;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::Health;
 use crate::sim::occupancy::CellListInsertion;
@@ -616,43 +615,6 @@ pub(super) fn arm_build_via(
         super::construct_active_factory_fixture(sim, rules, oid, queue_category, tid)
             .expect("test production type must construct at StartProduction");
     }
-}
-
-#[test]
-fn weat_factory_matches_vehicle_category() {
-    let rules = factory_rules();
-    assert!(is_matching_factory(
-        &rules,
-        "GAWEAT",
-        ObjectCategory::Vehicle
-    ));
-    assert!(!is_matching_factory(
-        &rules,
-        "GAWEAT",
-        ObjectCategory::Infantry
-    ));
-}
-
-#[test]
-fn custom_modded_factory_recognized_via_factory_key() {
-    let rules = factory_rules();
-    // MYBARR has Factory=InfantryType — should be recognized without hardcoding its name.
-    assert!(is_matching_factory(
-        &rules,
-        "MYBARR",
-        ObjectCategory::Infantry
-    ));
-    assert!(!is_matching_factory(
-        &rules,
-        "MYBARR",
-        ObjectCategory::Vehicle
-    ));
-    // XAIRFLD has Factory=AircraftType.
-    assert!(is_matching_factory(
-        &rules,
-        "XAIRFLD",
-        ObjectCategory::Aircraft
-    ));
 }
 
 #[test]

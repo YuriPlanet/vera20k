@@ -1,7 +1,0 @@
-interface:
-  display_name: "VERA Rust Scan"
-  short_description: "Parity-first Rust determinism and safety review"
-  default_prompt: "Use $rust-scan to review src/sim/ for confirmed parity, determinism, authoritative-state, safety, and measured performance risks."
-
-policy:
-  allow_implicit_invocation: false

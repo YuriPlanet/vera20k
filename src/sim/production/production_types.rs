@@ -25,6 +25,7 @@ pub struct QueueItemView {
     pub state: BuildQueueState,
     /// Factory progress in steps (`0..=PRODUCTION_STEPS`, Factory `+0x24`, read by
     /// the sidebar through `0x004CA120`); `0` for a queued item.
+    #[cfg(any(test, feature = "test-support"))]
     pub progress: u16,
 }
 

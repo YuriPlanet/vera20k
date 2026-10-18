@@ -12,6 +12,7 @@
 //! - Part of map/ — depends on assets/ (MIX archives), rules/ (INI parser), util/ (base64, lzo).
 
 use std::collections::HashMap;
+#[cfg(any(test, feature = "test-support"))]
 use std::path::Path;
 
 use crate::assets::error::AssetError;
@@ -403,6 +404,7 @@ pub struct OverlayPacksAlreadyConsumed;
 /// description stub. Editor-saved maps (`.map`, `.mpr`, `.yrm`) are raw INI
 /// text. We dispatch on the first two header bytes — `00 00` is the
 /// new-format MIX marker; anything else is treated as INI text.
+#[cfg(any(test, feature = "test-support"))]
 pub fn load_from_path(path: &Path) -> Result<MapFile, MapError> {
     load_from_bytes(std::fs::read(path)?)
 }

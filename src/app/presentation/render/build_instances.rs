@@ -672,7 +672,7 @@ pub(super) fn update_minimap(state: &mut AppState, local_owner: &Option<String>)
 
 /// Build in-game UI overlay instances: health bars,
 /// drag rectangle, building placement preview, and software cursor.
-pub(super) fn build_ui_instances(state: &AppState) -> UiInstances {
+pub(super) fn build_ui_instances(state: &AppState, wall_ms: u32) -> UiInstances {
     let software_cursor = build_software_cursor_instances(state);
     let drag = match &state.match_state.match_presentation.selection_overlay {
         Some(o) => o.build_drag_rect(
@@ -743,6 +743,8 @@ pub(super) fn build_ui_instances(state: &AppState) -> UiInstances {
                 .process_assets
                 .manager()
                 .and_then(|assets| assets.get_ref("palette.pal")),
+            &state.match_state.match_presentation.house_color_map,
+            wall_ms,
             line_view,
             if interleave_enabled {
                 Some(&mut after_entity)

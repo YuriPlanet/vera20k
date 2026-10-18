@@ -12,7 +12,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 
 use super::native_heap::NativeHeap;
 use super::passability;
-use super::stamped_table::StampedTable;
+use super::search_table::SearchTable;
 use super::zone_map::{ZONE_INVALID, ZoneId};
 use crate::rules::locomotor_type::MovementZone;
 use crate::util::lookup_hash::LookupMap;
@@ -837,7 +837,7 @@ type ActiveZoneThreat<'a> = (
 #[derive(Default)]
 struct PrecheckScratch {
     /// The best cost each zone has been reached with in the running search.
-    best: StampedTable<NativeF32Bits>,
+    best: SearchTable<NativeF32Bits>,
     nodes: Vec<PrecheckNode>,
     /// The size the PathfinderClass constructor gives this heap (`0x2710` at
     /// `0x0042A7B2`). A full heap drops the insert, but the record and the

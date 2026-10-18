@@ -133,6 +133,7 @@ impl PassengerCargo {
     }
 
     /// `SizeLimit=`; 0 admits any size.
+    #[cfg(test)]
     pub fn size_limit(&self) -> u32 {
         self.size_limit
     }

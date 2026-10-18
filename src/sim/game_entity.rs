@@ -97,6 +97,7 @@ pub struct StructureUpgradeLink {
 
 impl StructureUpgradeLink {
     /// The host building.
+    #[cfg(test)]
     pub fn parent_stable_id(&self) -> u64 {
         self.parent_stable_id
     }
@@ -1728,6 +1729,7 @@ impl GameEntity {
     /// First-null slot insert: idempotent, and full slots deny without evicting
     /// (the receiver dock idiom). Slot order is hash-relevant and deterministic.
     /// `RadioClass+0xE4`/`+0xE8`, the contact slots; see the field.
+    #[cfg(test)]
     pub fn mark_live_contact_with(&mut self, other_stable_id: u64) {
         self.radio_contacts.insert(other_stable_id);
     }

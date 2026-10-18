@@ -76,7 +76,7 @@ pub use self::production_tech::{
     initial_construction_options,
 };
 pub use self::production_tech::{
-    building_base_foundation_cells, building_movement_blocking_cells, is_matching_factory,
+    building_base_foundation_cells, building_movement_blocking_cells,
     producer_candidates_for_owner_category,
 };
 pub use self::production_types::*;

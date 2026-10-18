@@ -1002,7 +1002,8 @@ pub fn queue_view_for_owner(sim: &Simulation, rules: &RuleSet, owner: &str) -> V
     let Some(owner_id) = sim.interner.get(owner) else {
         return Vec::new();
     };
-    // (category, stamp, type_id, state, progress)
+    // (category, stamp, type_id, state, progress); progress feeds only the
+    // test-support view field.
     let mut items: Vec<(ProductionCategory, u64, InternedId, BuildQueueState, u16)> = Vec::new();
     for f in sim.production.factories.iter_insertion_ordered() {
         if f.owner != owner_id {
@@ -1031,7 +1032,7 @@ pub fn queue_view_for_owner(sim: &Simulation, rules: &RuleSet, owner: &str) -> V
     items.sort_by_key(|&(category, stamp, ..)| (category, stamp));
     items
         .into_iter()
-        .map(|(queue_category, _stamp, type_id, state, progress)| {
+        .map(|(queue_category, _stamp, type_id, state, _progress)| {
             let type_str = sim.interner.resolve(type_id);
             let display_name = rules
                 .object(type_str)
@@ -1042,7 +1043,8 @@ pub fn queue_view_for_owner(sim: &Simulation, rules: &RuleSet, owner: &str) -> V
                 display_name,
                 queue_category,
                 state,
-                progress,
+                #[cfg(any(test, feature = "test-support"))]
+                progress: _progress,
             }
         })
         .collect()

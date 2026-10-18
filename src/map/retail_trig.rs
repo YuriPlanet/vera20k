@@ -3,7 +3,7 @@
 //!
 //! The sine table is the repository's checked copy of the retail bytes
 //! ([`crate::util::native_trig::RETAIL_SINE_TABLE`], hashed whole against
-//! [`RETAIL_FNV1A64`] by this module's tests). Rounding a double-precision sine
+//! `RETAIL_FNV1A64` by this module's tests). Rounding a double-precision sine
 //! to nearest disagrees with it on 4997 of its first 10240 indexed entries.
 //! Truncating instead, gamemd's x87 rounding mode, reproduces every entry except
 //! 4096 and 8192, whose tiny residues of sin pi and sin 2pi differ from double
@@ -28,6 +28,7 @@ const TABLE_VA: u32 = 0x0084_F084;
 /// offset run past the end of the sine range without wrapping; the final exact
 /// `1.0` is part of the retail data extent even though the lookup ceilings stop
 /// one entry before it.
+#[cfg(test)]
 pub const TABLE_LEN: usize = 0x2801;
 /// Entries in one full turn.
 const PERIOD: i32 = 0x2000;
@@ -47,6 +48,7 @@ pub const UNITS_PER_TURN: f64 = (2 * PERIOD) as f64;
 /// FNV-1a (64-bit) over the table's raw little-endian bytes in the retail
 /// image, machine-derived by reading all 40964 bytes out of the binary. This is
 /// the whole-table check: it is a genuine exhaustive comparison, not a sample.
+#[cfg(test)]
 pub const RETAIL_FNV1A64: u64 = 0x74ac_b749_b33d_5aa7;
 
 /// Virtual address of `Acos_lookup @ 0x004CADB0`'s signed arcsine table.
@@ -57,6 +59,7 @@ const ACOS_TABLE_VA: u32 = 0x0085_9094;
 pub const ACOS_TABLE_LEN: usize = 0x1001;
 /// FNV-1a (64-bit) over the retail table's 16388 little-endian bytes, read out
 /// of the binary.
+#[cfg(test)]
 pub const ACOS_RETAIL_FNV1A64: u64 = 0x9251_751b_f328_3bc1;
 /// `[0x007E8978]`: binary32 -2048, `Acos_lookup`'s negative index scale.
 const ACOS_INDEX_SCALE: NativeF32Bits = NativeF32Bits::from_bits(0xc500_0000);
@@ -147,7 +150,7 @@ impl AcosTable {
     ///
     /// Entry `i` is `asin(i / 2048 - 1)` in double precision, stored to binary32
     /// with truncation (`FSTP m32real` under gamemd's chop mode). That reproduces
-    /// all 4097 retail entries ([`ACOS_RETAIL_FNV1A64`]). The image's table is
+    /// all 4097 retail entries (`ACOS_RETAIL_FNV1A64`). The image's table is
     /// static data: the only code that writes it, `0x004CB200` (no caller),
     /// copies each entry onto itself. Every double result lies at least 37,325
     /// ulps from a truncation boundary, and none but entry 2048's zero is an
@@ -168,6 +171,7 @@ impl AcosTable {
         })
     }
 
+    #[cfg(test)]
     pub fn entry(&self, index: usize) -> f32 {
         self.entries[index]
     }

@@ -276,6 +276,7 @@ impl Simulation {
         self.spawn_from_map_with_resolved(entities, rules, None)
     }
 
+    #[cfg(any(test, feature = "test-support"))]
     pub fn spawn_from_map_with_resolved(
         &mut self,
         entities: &[MapEntity],

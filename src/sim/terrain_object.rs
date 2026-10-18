@@ -213,6 +213,7 @@ fn terrain_cell_center(cell: (u16, u16)) -> [i32; 2] {
     ]
 }
 
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TerrainDamageResult {
     Ignored,

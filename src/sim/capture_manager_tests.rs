@@ -991,6 +991,7 @@ fn native_overload_update_corpus() {
             .map(|index| ControlNode {
                 victim: 1_000_000 + index,
                 original_owner: InternedId::default(),
+                line_timer: Default::default(),
             })
             .collect()
     };
@@ -1363,6 +1364,7 @@ fn native_joined_overload_preserves_constructor_rng_ids_and_rate_words() {
             .map(|index| ControlNode {
                 victim: 1_000_000 + index,
                 original_owner: InternedId::default(),
+                line_timer: Default::default(),
             })
             .collect();
         if through_techno {
@@ -2483,4 +2485,85 @@ fn a_due_ivan_bomb_precedes_the_same_turn_mastermind_overload() {
         scene.step();
     }
     panic!("the ordinary retained Ivan fuse never expired");
+}
+
+#[test]
+fn control_link_timer_selection_ports_cleanup_and_snapshot_share_the_manager() {
+    use crate::rules::art_data::ArtRegistry;
+    use crate::sim::world::{FrameEffects, UninitContext};
+    let input = IniFile::from_str(
+        &RULES
+            .replace(
+                "[CombatDamage]",
+                "[CombatDamage]\nMindControlAttackLineFrames=20",
+            )
+            .replace("[E1]", "[E1]\nLeptonMindControlOffset=90"),
+    );
+    let art = IniFile::from_str(
+        "[MIND]\nPrimaryFireFLH=0,0,5\nAlternateFLH0=0,0,20\nAlternateFLH1=0,0,40\n",
+    );
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&input, &art).unwrap();
+    rules.install_art_data(ArtRegistry::from_ini(&art));
+    let mut sim = sim(31);
+    let house = sim.interner.get("YuriCountry").unwrap();
+    sim.houses.get_mut(&house).unwrap().is_human = true;
+    sim.session.binary_frame = 100;
+    let controller = spawn(&mut sim, &rules, "MIND", "YuriCountry", 10, 10);
+    let first = spawn(&mut sim, &rules, "E1", "Americans", 12, 10);
+    let second = spawn(&mut sim, &rules, "HTNK", "Russians", 14, 10);
+    assert!(sim.capture_unit(controller, first, &rules, None, FrameEffects::default()));
+    assert!(sim.capture_unit(controller, second, &rules, None, FrameEffects::default()));
+    let rng = sim.rng_state();
+    let lines = sim.capture_link_coordinates(controller, &rules);
+    assert_eq!(lines.len(), 2);
+    assert_eq!(
+        (
+            lines[0].from.z,
+            lines[0].to.z,
+            lines[1].from.z,
+            lines[1].to.z
+        ),
+        (40, 70, 20, 90)
+    );
+    assert!(lines.iter().all(|line| line.owner == house));
+    assert_eq!(
+        sim.rng_state(),
+        rng,
+        "read-only coordinates do not draw RNG"
+    );
+    sim.session.binary_frame = 119;
+    assert_eq!(sim.capture_link_coordinates(controller, &rules).len(), 2);
+    let bytes = crate::sim::snapshot::GameSnapshot::save_validated(&sim, 0, 0, "control links", 0);
+    let restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
+        .unwrap()
+        .sim;
+    assert_eq!(
+        restored.capture_link_coordinates(controller, &rules),
+        sim.capture_link_coordinates(controller, &rules)
+    );
+    sim.session.binary_frame = 120;
+    assert!(sim.capture_link_coordinates(controller, &rules).is_empty());
+    sim.substrate
+        .entities
+        .get_mut(first)
+        .unwrap()
+        .selection
+        .set_selected_for_test(true);
+    let selected = sim.capture_link_coordinates(controller, &rules);
+    assert_eq!(selected.len(), 1);
+    assert_eq!(
+        selected[0].from.z, 20,
+        "filtering must retain the original node port"
+    );
+    sim.substrate
+        .entities
+        .get_mut(controller)
+        .unwrap()
+        .selection
+        .set_selected_for_test(true);
+    assert_eq!(sim.capture_link_coordinates(controller, &rules).len(), 2);
+    sim.free_unit(controller, first, &rules, None, FrameEffects::default());
+    assert_eq!(sim.capture_link_coordinates(controller, &rules).len(), 1);
+    sim.uninit_with_context(second, UninitContext::new(Some(&rules), None));
+    assert!(sim.capture_link_coordinates(controller, &rules).is_empty());
 }

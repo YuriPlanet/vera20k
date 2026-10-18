@@ -140,7 +140,7 @@ SPAWN_WEAPONS=('V3Launcher','DredLauncher','BoomerTorpedo','BoomerTorpedoE','Cru
 SPAWN_ORIGIN=(2688,2688,416);SPAWN_HEADING=0x2000
 NO_DRAWS=(0x68bcb0,0x65c640,0x65c660,0x65c780,0x65c7e0)
 
-def spawn_launch():
+def spawn_launch(include_negative_flh=False):
  """Physical V3/DRED/BSUB types and weapons, GetFLH with a base, case 0 launch."""
  m,_,cells,init=create(False);u=m.u
  u.mem_write(0xa8ed84,dwords(0))
@@ -187,6 +187,17 @@ def spawn_launch():
   get_flh('zero base','BSUB',1,1,(0,0,0)),
   get_flh('supplied lateral base, odd burst','DRED',0,1,(0,25,0)),
   get_flh('supplied lateral base, even burst','DRED',0,0,(0,25,0))]
+ if include_negative_flh:
+  # Negative GetFLH controls supply five ART-record triples, not code.
+  saved_alternates=bytes(u.mem_read(types['DRED']+0x85c,60))
+  alternates=[[11,22,33],[-64,25,90],[50,-80,120],[100,90,-20],[0,0,220]]
+  for i,flh in enumerate(alternates):u.mem_write(types['DRED']+0x85c+12*i,dwords(*flh))
+  for index in range(-1,-7,-1):
+   for burst in (0,1):
+    row=get_flh('supplied alternate ports','DRED',index,burst,(0,0,0))
+    row['alternate_flh']=alternates
+    flh_rows.append(row)
+  u.mem_write(types['DRED']+0x85c,saved_alternates)
  # Case 0 from the missile-slot test (6B73C4) to the child's Unlimbo call
  # (6B7505), then the burst reset (6B757A..6B758F). Native compares only the
  # CMislType pointer (6B74BC), so a supplied identity stands for CMISL.

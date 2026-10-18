@@ -102,7 +102,9 @@ pub struct VxlFile {
     pub limb_count: u32,
     /// Body data size from the file header (used for offset calculations).
     pub body_size: u32,
-    /// Internal palette (256 RGB colors). Usually unused — game applies theater palette.
+    /// Internal palette (256 RGB colors). Unused at runtime — the game applies
+    /// the theater palette; kept for test and tooling checks of the file layout.
+    #[cfg(any(test, feature = "test-support"))]
     pub palette: Vec<[u8; 3]>,
     /// All limbs in this model.
     pub limbs: Vec<VxlLimb>,
@@ -158,6 +160,7 @@ impl VxlFile {
         // Read the internal palette from the FIRST page only (typical: palette_count = 1).
         // Skip the 1-byte prefix; read 256 RGB triplets. Internal palette is informational
         // — the engine applies the theater palette at draw time.
+        #[cfg(any(test, feature = "test-support"))]
         let palette: Vec<[u8; 3]> = if palette_count >= 1 {
             let palette_start: usize = VXL_FILE_HEADER_SIZE + 1; // skip prefix byte
             (0..256)
@@ -211,6 +214,7 @@ impl VxlFile {
         Ok(VxlFile {
             limb_count,
             body_size,
+            #[cfg(any(test, feature = "test-support"))]
             palette,
             limbs,
         })

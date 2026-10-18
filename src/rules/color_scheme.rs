@@ -99,6 +99,7 @@ pub fn parse_color_schemes(ini: &IniFile) -> Vec<ColorSchemeEntry> {
 /// the schemes "are all doubled"), so runtime scheme index `N` addresses
 /// `[Colors]` list entry `N / 2`; both halves of a pair share the same source
 /// H,S,V. The priority table selects the odd (`2*entry + 1`) half.
+#[cfg(any(test, feature = "test-support"))]
 pub fn scheme_for_priority(
     schemes: &[ColorSchemeEntry],
     priority: i32,

@@ -371,7 +371,8 @@ impl PreviewImage {
         }
     }
 
-    /// The pixel at `(x, y)` as RGB, for tests and callers that inspect output.
+    /// The pixel at `(x, y)` as RGB, for tests that inspect output.
+    #[cfg(test)]
     pub fn pixel(&self, x: u32, y: u32) -> Option<[u8; 3]> {
         if x >= self.width || y >= self.height {
             return None;

@@ -67,6 +67,7 @@ pub struct ProjectileType {
     /// Invisible projectile (no sprite drawn). (+0x29E)
     pub inviso: bool,
     /// Detonates near the target rather than on contact. (+0x29F)
+    #[cfg(test)]
     pub proximity: bool,
     /// Has a maximum range (non-homing). (+0x2A0)
     pub ranged: bool,
@@ -76,8 +77,10 @@ pub struct ProjectileType {
     /// Scatters like flak — random spread pattern for AA. (+0x2A3)
     pub flak_scatter: bool,
     /// Projectile loses health over time. (+0x2A6)
+    #[cfg(test)]
     pub degenerates: bool,
     /// Bounces off terrain on impact. (+0x2A7)
+    #[cfg(test)]
     pub bouncy: bool,
     /// Uses a custom animation palette instead of the unit palette. (+0x2A8)
     pub anim_palette: bool,
@@ -126,6 +129,7 @@ pub struct ProjectileType {
 
     // --- String/reference fields ---
     /// Weapon fired on airburst detonation (weapon type name).
+    #[cfg(test)]
     pub airburst_weapon: Option<String>,
     /// Weapon fired for each shrapnel fragment (weapon type name).
     pub shrapnel_weapon: Option<String>,
@@ -384,11 +388,14 @@ impl ProjectileType {
             dropping: section.read_bool("Dropping", false),
             level: section.read_bool("Level", false),
             inviso: section.read_bool("Inviso", false),
+            #[cfg(test)]
             proximity: section.read_bool("Proximity", false),
             ranged: section.read_bool("Ranged", false),
             rotates: true,
             flak_scatter: section.read_bool("FlakScatter", false),
+            #[cfg(test)]
             degenerates: section.read_bool("Degenerates", false),
+            #[cfg(test)]
             bouncy: section.read_bool("Bouncy", false),
             anim_palette: false,
             firers_palette: section.read_bool("FirersPalette", false),
@@ -414,6 +421,7 @@ impl ProjectileType {
             color_scheme: 0,
             // ReadString 0x80 ahead of each weapon lookup (`0x0046C2B9`,
             // `0x0046C2F8`).
+            #[cfg(test)]
             airburst_weapon: section
                 .read_name("AirburstWeapon", 0x80)
                 .map(str::to_string),

@@ -52,6 +52,7 @@ impl TileRange {
 /// One LAT group expressed entirely as absolute tile ids.
 #[derive(Debug, Clone)]
 pub struct LatGroundType {
+    #[cfg(test)]
     pub name: String,
     pub base_tile: i32,
     pub lat_base: i32,
@@ -183,6 +184,7 @@ pub fn parse_lat_config(ini_data: &[u8], lookup: &TilesetLookup) -> LatConfig {
             .collect::<Vec<_>>();
 
         grounds.push(LatGroundType {
+            #[cfg(test)]
             name: name.to_string(),
             base_tile,
             lat_base,

@@ -25,7 +25,7 @@ use crate::sim::{movement::locomotor::MovementLayer, occupancy::CellObjectMember
 #[path = "entry_facts.rs"]
 mod entry_facts;
 pub(crate) use entry_facts::EntryFacts;
-use entry_facts::{BlockerFacts, CellFacts};
+use entry_facts::{BlockerFacts, CellFacts, PlainCell};
 
 #[cfg(test)]
 #[path = "unit_entry_tests.rs"]
@@ -38,6 +38,10 @@ mod infantry_entry_priority_tests;
 #[cfg(test)]
 #[path = "wall_entry_tests.rs"]
 mod wall_entry_tests;
+
+#[cfg(test)]
+#[path = "plain_entry_tests.rs"]
+mod plain_entry_tests;
 
 /// The +1AC decision reads live simulation state without borrowing the bridge
 /// publisher. Native Map lookups still stamp the canonical shared Dummy through
@@ -66,6 +70,18 @@ impl<'a> EntryReadContext<'a> {
             }
             _ => EntryCell::Live(cell),
         }
+    }
+
+    /// Real cell `index`'s [`PlainCell`], read through the batch's `facts`.
+    fn plain_cell(&self, facts: &EntryFacts, index: usize) -> PlainCell {
+        facts.plain(index, || {
+            PlainCell::new(
+                facts.cell(index, || CellFacts::of(self.sim, index)),
+                self.terrain()
+                    .tube_for_native_cell(Cell::Real(index))
+                    .is_some(),
+            )
+        })
     }
 
     fn prelude_reads(&self) -> PreludeReads<'a> {
@@ -813,6 +829,87 @@ impl Simulation {
 
 /// Infantry 0x0051BF90 / Unit 0x0073F0A0 for a resolved Foot receiver.
 fn classify_foot_entry<'a>(
+    live: &EntryReadContext<'a>,
+    mover: &EntryMover<'a>,
+    cell: Cell,
+    args: crate::sim::movement::infantry_entry::InfantryEntryArgs,
+) -> Result<u8, String> {
+    if let Some(code) = plain_entry(live, mover, cell, args) {
+        debug_assert!(
+            !crate::sim::touch_log::live_read_check_enabled()
+                || full_foot_entry(live, mover, cell, args) == Ok(code),
+            "a plain step to {cell:?} answers {code}, unlike the full +1AC"
+        );
+        return Ok(code);
+    }
+    full_foot_entry(live, mover, cell, args)
+}
+
+/// VERA-only: [`full_foot_entry`]'s answer to a compass step at a known
+/// height between two real cells of a path batch when neither cell has a
+/// structural bridge (`0x100`) or tube, the target holds no raw occupation,
+/// listed object, wall or crate, lies in the playfield and is at the path's
+/// height, and the mover is Infantry or an unrestricted Unit. Every test of
+/// the full body then passes the step through to the land row: the tube
+/// tests find no tube on the target or on the backstep (the source), the
+/// Foot4D9C60 prelude admits a level step from a flat cell and selects the
+/// ground list and ground raw byte, the object walk finds nothing, and both
+/// tails answer 0 for a clear raw byte. So the answer is 0, or 7 for a zero
+/// row (a tethered Infantry skips the row and answers 0), read from both
+/// cells' [`PlainCell`]s instead of their facts: a search's flood asks this
+/// of most cells it reaches. `None` for any other ask, which the full body
+/// answers.
+fn plain_entry(
+    live: &EntryReadContext<'_>,
+    mover: &EntryMover<'_>,
+    cell: Cell,
+    args: crate::sim::movement::infantry_entry::InfantryEntryArgs,
+) -> Option<u8> {
+    let facts = live.facts?;
+    let (Cell::Real(target), Some(Cell::Real(source))) = (cell, args.previous_cell) else {
+        return None;
+    };
+    if !(0..8).contains(&args.direction) || args.height == -1 {
+        return None;
+    }
+    let infantry = mover.e.category() == EntityCategory::Infantry;
+    if !infantry && mover.obj.movement_restricted_to.is_some() {
+        return None;
+    }
+    let to = live.plain_cell(facts, target);
+    if !to.empty() || args.height != i32::from(to.level()) {
+        return None;
+    }
+    if !live.plain_cell(facts, source).flat()
+        || crate::sim::movement::infantry_entry::backstep_cell(
+            &live.prelude_reads(),
+            cell,
+            args.direction,
+        ) != Cell::Real(source)
+    {
+        return None;
+    }
+    if to.overlay() {
+        let overlay = facts
+            .cell(target, || CellFacts::of(live.sim, target))
+            .overlay
+            .overlay_id?;
+        let flags = live.registry?.flags(overlay)?;
+        if flags.crate_type || flags.wall {
+            return None;
+        }
+    }
+    if infantry && mover.e.tether.partner().is_some() {
+        return Some(0);
+    }
+    let nonzero = to.row_nonzero(mover.obj.speed_type)?;
+    Some(if nonzero { 0 } else { 7 })
+}
+
+/// Infantry 0x0051BF90 / Unit 0x0073F0A0, every branch. [`plain_entry`]
+/// answers the steps that pass every test here before the land row; a test
+/// added before the land row needs its condition there too.
+fn full_foot_entry<'a>(
     live: &EntryReadContext<'a>,
     mover: &EntryMover<'a>,
     cell: Cell,

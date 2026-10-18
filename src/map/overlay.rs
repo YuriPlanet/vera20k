@@ -110,6 +110,7 @@ impl OverlayDataPack {
         !self.bytes.is_empty()
     }
 
+    #[cfg(test)]
     pub fn decoded_len(&self) -> usize {
         self.bytes.len()
     }

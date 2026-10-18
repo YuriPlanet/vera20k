@@ -106,12 +106,13 @@ pub enum MissionType {
 
 impl MissionType {
     /// The wire mission id (0..=31; `0xFF` for `None`).
+    #[cfg(test)]
     #[inline]
     pub fn id(self) -> u8 {
         self as u8
     }
 
-    /// Alias of [`MissionType::id`] for dispatch call sites.
+    /// Alias of `MissionType::id` for dispatch call sites.
     #[cfg(any(test, feature = "test-support"))]
     #[inline]
     pub fn dispatch_id(self) -> u8 {
@@ -229,27 +230,6 @@ impl MissionType {
             return None;
         }
         MissionType::all().find(|mission| mission.ini_section().eq_ignore_ascii_case(name))
-    }
-
-    /// Missions with **no completion transition**: the object holds them until
-    /// something else retasks it, so a "the committed mission's work is over"
-    /// reading must never override them.
-    ///
-    /// `Sleep` and `Harmless` dispatch to base handlers that do nothing and
-    /// re-arm themselves forever; `Sticky` shares the Guard handler but is
-    /// excluded from passive acquisition and refuses to promote a queued
-    /// mission at all. All three mean "stand still and do nothing", which is
-    /// the opposite of the idle-Unit `Guard` reading VERA derives for an
-    /// object with no live machine.
-    ///
-    /// These are exactly the three the stock map `MISSION=` column authors for
-    /// neutral scenery objects, so the distinction is load-bearing from the
-    /// first frame of any map that carries them.
-    pub fn holds_until_retasked(self) -> bool {
-        matches!(
-            self,
-            MissionType::Sleep | MissionType::Sticky | MissionType::Harmless
-        )
     }
 }
 
@@ -477,6 +457,7 @@ impl MissionControl {
     }
 
     /// Number of populated mission entries.
+    #[cfg(test)]
     #[inline]
     pub fn len(&self) -> usize {
         self.entries.len()
@@ -616,18 +597,6 @@ mod mission_type_tests {
             MissionType::from_map_name("Sleep"),
             Some(MissionType::Sleep)
         );
-    }
-
-    #[test]
-    fn only_the_stand_still_missions_hold_until_retasked() {
-        for mission in MissionType::all() {
-            let expected = matches!(
-                mission,
-                MissionType::Sleep | MissionType::Sticky | MissionType::Harmless
-            );
-            assert_eq!(mission.holds_until_retasked(), expected, "{mission:?}");
-        }
-        assert!(!MissionType::None.holds_until_retasked());
     }
 
     /// The 32 section names are distinct — a duplicate would make two missions

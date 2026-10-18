@@ -23,6 +23,7 @@ pub struct CampaignLoadingMetadata {
 }
 
 impl CampaignLoadingMetadata {
+    #[cfg(any(test, feature = "test-support"))]
     pub fn new() -> Self {
         Self::default()
     }

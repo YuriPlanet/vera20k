@@ -2658,6 +2658,7 @@ pub struct BridgeRules {
     ///
     /// `[CombatDamage] DestroyableBridges=` exists in retail INI text but is
     /// not read by gamemd as the gameplay gate.
+    #[cfg(test)]
     pub destroyable_by_default: bool,
     /// SHP animation names to spawn when a bridge group is destroyed
     /// (e.g., TWLT026, TWLT036, TWLT050, TWLT070). Picked randomly per cell.
@@ -2665,6 +2666,7 @@ pub struct BridgeRules {
     /// Maximum metallic-debris voxels spawned per destroyed bridge cell.
     /// Parsed from `[General] BridgeVoxelMax=` in rules.ini (default 3).
     /// Consumed by the damage state machine in a later tier.
+    #[cfg(test)]
     pub voxel_max: u8,
     /// Sound ID played when a bridge segment is repaired by an
     /// Engineer entering a `BridgeRepairHut=yes` building.
@@ -2678,8 +2680,10 @@ impl Default for BridgeRules {
     fn default() -> Self {
         Self {
             strength: 1000,
+            #[cfg(test)]
             destroyable_by_default: true,
             explosions: Vec::new(),
+            #[cfg(test)]
             voxel_max: 3,
             repair_sound: None,
         }
@@ -2693,9 +2697,9 @@ impl BridgeRules {
         let strength = ini
             .section("CombatDamage")
             .map_or(1000, |section| section.read_int("BridgeStrength", 1000));
-        let destroyable_by_default = true;
         // Published from the ordered RulesClass reader by from_processed_rules.
         let explosions = Vec::new();
+        #[cfg(test)]
         let voxel_max = ini
             .section_or_empty("General")
             .read_int("BridgeVoxelMax", 3)
@@ -2706,8 +2710,10 @@ impl BridgeRules {
             .map(str::to_uppercase);
         Self {
             strength,
-            destroyable_by_default,
+            #[cfg(test)]
+            destroyable_by_default: true,
             explosions,
+            #[cfg(test)]
             voxel_max,
             repair_sound,
         }
@@ -4073,6 +4079,7 @@ impl RuleSet {
                 .native_techno_type_order
                 .push((category, id.to_owned(), handle));
         }
+        rules.mind_control.attack_line_frames = processed.mind_control_attack_line_frames();
         rules.crate_rules = processed.crate_rules().clone();
         rules.powerups = processed.powerups().clone();
         rules.general.metallic_debris = processed.metallic_debris().to_vec();
@@ -4212,6 +4219,15 @@ impl RuleSet {
                 .find(|object| object.category == category && object.id == name)
             {
                 object.radial_fire_segments = segments;
+            }
+        }
+        for (category, name, offset) in processed.lepton_mind_control_offset_states() {
+            if let Some(object) = rules
+                .object_list
+                .iter_mut()
+                .find(|object| object.category == category && object.id == name)
+            {
+                object.lepton_mind_control_offset = offset;
             }
         }
         for (category, name, prerequisite, prerequisite_override) in processed.prerequisite_states()
@@ -6730,16 +6746,19 @@ impl RuleSet {
     }
 
     /// Total number of game objects across all categories.
+    #[cfg(test)]
     pub fn object_count(&self) -> usize {
         self.object_list.len()
     }
 
     /// Total number of weapons.
+    #[cfg(test)]
     pub fn weapon_count(&self) -> usize {
         self.weapons.len()
     }
 
     /// Total number of warheads.
+    #[cfg(test)]
     pub fn warhead_count(&self) -> usize {
         self.warheads.len()
     }

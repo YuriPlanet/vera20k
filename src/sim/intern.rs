@@ -168,17 +168,19 @@ impl<'de> serde::Deserialize<'de> for StringInterner {
 }
 
 // ---------------------------------------------------------------------------
-// Test / convenience helpers
+// Test helpers
 // ---------------------------------------------------------------------------
 //
-// `pub` (not `#[cfg(test)]`) because integration tests in `tests/` link
-// against the lib compiled WITHOUT `cfg(test)` and would lose access. The
+// Also compiled under `test-support`, because client-crate tests and core
+// fixture code link against the lib compiled WITHOUT `cfg(test)`. The
 // `RefCell` here is safe — single-threaded test use, never read from sim
 // hashed state, never invoked from a sim tick. `#[doc(hidden)]` keeps these
 // out of the public API surface.
 
+#[cfg(any(test, feature = "test-support"))]
 use std::cell::RefCell;
 
+#[cfg(any(test, feature = "test-support"))]
 thread_local! {
     /// Thread-local interner used by `test_intern()` so that test entities
     /// created independently still share consistent IDs.
@@ -190,6 +192,7 @@ thread_local! {
 /// This lets `GameEntity::test_default()` and other test helpers create
 /// entities with consistent `InternedId` values without requiring callers
 /// to manage an explicit interner.
+#[cfg(any(test, feature = "test-support"))]
 #[doc(hidden)]
 pub fn test_intern(s: &str) -> InternedId {
     TEST_INTERNER.with(|cell| cell.borrow_mut().intern(s))

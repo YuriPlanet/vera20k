@@ -11,10 +11,9 @@ use crate::sim::timer::CdTimer;
 /// [`MissionTimer`]'s unarmed anchor. `u32::MAX`: the live counter starts at 0
 /// and would take ~3.3 years at 15fps to reach it, so it is never a live value.
 ///
-/// "Unarmed" reads as "due" only because [`MissionTimer::clear`] zeroes the
-/// duration alongside it — the anchor alone does not force readiness, exactly as
-/// on [`MissionDispatchTimer`]. [`MissionTimer::pause`] parks the live remainder
-/// on this same anchor and is deliberately NOT due.
+/// "Unarmed" reads as "due" only because the default timer pairs it with a zero
+/// duration — the anchor alone does not force readiness, exactly as on
+/// [`MissionDispatchTimer`].
 pub const SENTINEL: u32 = u32::MAX;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -137,13 +136,8 @@ impl MissionTimer {
         self.defer(now, n);
     }
 
-    /// Alias of `defer(now, 0)` — due again on the next check.
-    #[inline]
-    pub fn reset(&mut self, now: u32) {
-        self.defer(now, 0);
-    }
-
     /// Disarm → always due.
+    #[cfg(test)]
     #[inline]
     pub fn clear(&mut self) {
         self.start_frame = SENTINEL;
@@ -151,12 +145,14 @@ impl MissionTimer {
     }
 
     /// `true` while a live frame anchor is set.
+    #[cfg(test)]
     #[inline]
     pub fn is_armed(self) -> bool {
         self.start_frame != SENTINEL
     }
 
     /// Frames since the anchor (0 when unarmed).
+    #[cfg(test)]
     #[inline]
     pub fn elapsed(self, now: u32) -> u32 {
         if self.start_frame == SENTINEL {
@@ -170,24 +166,6 @@ impl MissionTimer {
     #[inline]
     pub fn remaining(self, now: u32) -> u32 {
         self.countdown().remaining(now as i32).max(0) as u32
-    }
-
-    /// Freeze the live remainder until [`MissionTimer::resume`] is called.
-    #[inline]
-    pub fn pause(&mut self, now: u32) {
-        let mut timer = self.countdown();
-        timer.pause(now as i32);
-        self.start_frame = timer.start_frame() as u32;
-        self.duration = timer.duration() as u32;
-    }
-
-    /// Resume a paused timer from the supplied frame.
-    #[inline]
-    pub fn resume(&mut self, now: u32) {
-        let mut timer = self.countdown();
-        timer.resume(now as i32);
-        self.start_frame = timer.start_frame() as u32;
-        self.duration = timer.duration() as u32;
     }
 }
 
@@ -290,13 +268,10 @@ mod tests {
     }
 
     #[test]
-    fn arm_and_reset_alias_defer() {
+    fn arm_aliases_defer() {
         let mut a = MissionTimer::default();
         a.arm(10, 7);
         assert_eq!((a.start_frame, a.duration), (10, 7));
-        let mut b = MissionTimer::default();
-        b.reset(10);
-        assert_eq!((b.start_frame, b.duration), (10, 0));
     }
 
     #[test]
@@ -340,20 +315,5 @@ mod tests {
         let t = MissionTimer::armed(u32::MAX - 2, 5);
         assert!(t.due(2)); // 2 - (MAX-2) wraps to 5 -> due (5 >= 5)
         assert!(!t.due(1)); // wraps to 4 -> not due
-    }
-
-    #[test]
-    fn pause_and_resume_use_signed_countdown_semantics() {
-        let mut timer = MissionTimer::armed(100, 10);
-
-        timer.pause(103);
-        assert_eq!((timer.start_frame, timer.duration), (SENTINEL, 7));
-        assert!(!timer.due(500));
-        assert_eq!(timer.remaining(500), 7);
-
-        timer.resume(500);
-        assert_eq!((timer.start_frame, timer.duration), (500, 7));
-        assert!(!timer.due(506));
-        assert!(timer.due(507));
     }
 }

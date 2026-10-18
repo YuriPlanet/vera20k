@@ -202,15 +202,6 @@ pub struct WarheadType {
     /// Calls in airstrike. `WarheadTypeClass+0x16C` (ReadINI `0x0075D8F0`),
     /// read by `TechnoClass::What_Weapon_Should_I_Use @ 0x006F3481`.
     pub airstrike: bool,
-    /// Tesla weapon. Native offset **UNKNOWN** — VERA-internal, gamemd
-    /// equivalent UNCHECKED. `WarheadTypeClass::ReadINI_Body @ 0x0075D3A0`
-    /// (body `0x0075D3A0`-`0x0075DEBD`) pushes 61 distinct key strings and
-    /// none of them is `Electric`; `search_strings ^Electric$` over the image
-    /// returns nothing. So there is no native `Electric=` warhead key to bind
-    /// to, and `+0x178` — the offset previously claimed here — is
-    /// `PsychicDamage=`. Stock `rulesmd.ini` authors no `Electric=` line, so
-    /// this field is always `false` in stock play.
-    pub electric: bool,
     /// Radiation contamination. `WarheadTypeClass+0x177`, written by
     /// `WarheadTypeClass::ReadINI` @ `0x0075d9c7` from the key string at
     /// `0x00839e80`. (`+0x179` is `AffectsAllies=`, not this.)
@@ -375,7 +366,6 @@ impl WarheadType {
             mind_control: section.read_bool("MindControl", false),
             poison: section.read_bool("Poison", false),
             airstrike: section.read_bool("Airstrike", false),
-            electric: section.read_bool("Electric", false),
             radiation: section.read_bool("Radiation", false),
             culling: section.read_bool("Culling", false),
             paralyzes: section.read_int("Paralyzes", 0),
@@ -547,7 +537,6 @@ mod tests {
 
         assert!(wh.mind_control);
         assert!(!wh.temporal);
-        assert!(!wh.electric);
         assert!(!wh.ivan_bomb);
     }
 

@@ -381,6 +381,7 @@ impl RadiationState {
     }
 
     /// True when nothing is irradiated and no site is alive.
+    #[cfg(any(test, feature = "test-support"))]
     pub fn is_empty(&self) -> bool {
         self.cells.is_empty() && self.sites.is_empty()
     }

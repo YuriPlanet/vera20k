@@ -402,6 +402,7 @@ pub enum RadioMessage {
 
 impl RadioMessage {
     /// The wire opcode byte.
+    #[cfg(any(test, feature = "test-support"))]
     #[inline]
     pub fn code(self) -> u8 {
         self as u8

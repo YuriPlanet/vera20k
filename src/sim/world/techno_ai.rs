@@ -3656,7 +3656,7 @@ mod tests {
         assert_eq!(
             spawned.passive_acquire_mission(),
             MissionType::Sticky,
-            "`holds_until_retasked` must let the authored selector beat the derived Guard"
+            "the authored Sticky selector must beat the derived Guard"
         );
         for _ in 0..90 {
             let _ = sim.advance_tick(&[], Some(&rules), Some(&grid), None, 67);

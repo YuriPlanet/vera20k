@@ -85,6 +85,7 @@ impl TerrainAnimationState {
         }
     }
 
+    #[cfg(test)]
     pub fn type_ref(&self) -> InternedId {
         self.type_ref
     }

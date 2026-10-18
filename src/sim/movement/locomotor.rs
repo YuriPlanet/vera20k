@@ -31,12 +31,13 @@ pub enum MovementLayer {
     Underground,
 }
 
-/// Derived view of Fly height versus target for legacy aircraft missions.
+/// Derived test view of Fly height versus target ([`LocomotorState::air_phase`]).
 /// This is neither serialized controller state nor native takeoff/landing flags.
 ///
 /// Fly units cycle through TakingOff → Cruising → Descending → Landed. A
 /// Jumpjet does not use it: its phase is the native state field,
 /// `JumpjetRuntime::phase`.
+#[cfg(any(test, feature = "test-support"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum AirMovePhase {
     /// On the ground, not yet airborne.

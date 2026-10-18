@@ -49,6 +49,7 @@ use crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig;
 use crate::sim::pathfinding::zone_map::ZoneGrid;
 #[cfg(any(test, feature = "test-support"))]
 use crate::sim::rng::SimRng;
+#[cfg(any(test, feature = "test-support"))]
 use crate::util::fixed_math::facing_from_delta_int;
 
 // --- Internal submodules ---
@@ -243,6 +244,7 @@ impl MovementTickStats {
 ///
 /// Computed directions use the high byte of the native 65,534-scale word;
 /// authored quarter-turn values remain distinct.
+#[cfg(any(test, feature = "test-support"))]
 pub fn facing_from_delta(dx: i32, dy: i32) -> u8 {
     facing_from_delta_int(dx, dy)
 }

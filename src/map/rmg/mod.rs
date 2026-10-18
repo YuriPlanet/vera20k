@@ -76,6 +76,7 @@ pub enum Stage {
 /// rather than alongside the other terrain shaping; and the tail of the LAT
 /// driver runs patches → LAT fixup → trees → rocks in that order (the fixup
 /// creates the sand-LAT tiles the rock pass needs), then a final recalc.
+#[cfg(any(test, feature = "test-support"))]
 pub const STAGE_ORDER: &[Stage] = &[
     Stage::Water,
     Stage::WaterFinalize,
@@ -210,6 +211,7 @@ pub struct GeneratedMap {
     /// `(slot, x, y)` per generated start position.
     pub start_waypoints: Vec<(u8, u16, u16)>,
     /// Stages actually executed, in order.
+    #[cfg(any(test, feature = "test-support"))]
     pub stages_run: Vec<Stage>,
     /// Start slots no region could fill. Non-zero means this map is short of
     /// spawns: fewer usable start positions than the player count implies.
@@ -231,6 +233,7 @@ impl GeneratedMap {
 ///
 /// `options` must already be normalized — `build::generate_map` normalizes its
 /// copy before calling this.
+#[cfg(any(test, feature = "test-support"))]
 pub fn executed_stages(options: &RmgOptions) -> Vec<Stage> {
     STAGE_ORDER
         .iter()

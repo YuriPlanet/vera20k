@@ -307,7 +307,6 @@ fn test_layered_path_cell_bridge_helpers() {
         tube_index: None,
         low_bridge_tube_cell: false,
     };
-    assert!(bridge_cell.is_elevated_bridge_cell());
     assert_eq!(bridge_cell.bridge_deck_level_if_any(), Some(4));
     assert_eq!(
         bridge_cell.effective_cell_z_for_layer(MovementLayer::Bridge),
@@ -330,7 +329,6 @@ fn test_layered_path_cell_bridge_helpers() {
         tube_index: None,
         low_bridge_tube_cell: false,
     };
-    assert!(!low_bridge.is_elevated_bridge_cell());
     assert_eq!(low_bridge.bridge_deck_level_if_any(), Some(2));
     assert_eq!(
         low_bridge.effective_cell_z_for_layer(MovementLayer::Bridge),

@@ -36,12 +36,6 @@ pub const SIM_ONE: SimFixed = SimFixed::ONE;
 /// One half (0.5).
 pub const SIM_HALF: SimFixed = SimFixed::lit("0.5");
 
-/// Two (2.0).
-pub const SIM_TWO: SimFixed = SimFixed::lit("2");
-
-/// One and a half (1.5) — used for jumpjet deceleration multiplier.
-pub const SIM_1_5: SimFixed = SimFixed::lit("1.5");
-
 /// RA2's native game-logic frame rate at normal speed: 15 logic frames per
 /// second. The single authority for every INI minutes/seconds->frames
 /// conversion (ROF, ReloadRate, C4Delay, ore growth, trigger time, ...).
@@ -134,6 +128,7 @@ pub fn ra2_speed_to_leptons_per_frame(raw_speed: i32) -> i32 {
 ///
 /// Examples: Speed=4 (HARV) → ~150 lep/sec, Speed=11 (E1) → ~420 lep/sec,
 /// Speed=100 → ~3825 lep/sec. Speed=0 → 0 (immobile).
+#[cfg(test)]
 pub fn ra2_speed_to_leptons_per_second(raw_speed: i32) -> SimFixed {
     // Conversion: leptons_per_tick = speed * 256 / 100, capped at 255.
     // leptons_per_second = leptons_per_tick * 15 (baseline = gamemd Slowest).
@@ -249,13 +244,6 @@ mod tests {
         let cell: u16 = facing_from_delta_int_u16(3, 4);
         let lepton: u16 = facing_from_delta_int_u16(3 * 256, 4 * 256);
         assert_eq!(cell, lepton);
-    }
-
-    #[test]
-    fn test_new_constants() {
-        assert_eq!(SIM_TWO, SimFixed::from_num(2));
-        let one_five: f32 = SIM_1_5.to_num();
-        assert!((one_five - 1.5).abs() < 0.001);
     }
 
     /// S0 GATE (design Correction 1): pin the ReadDouble->SimFixed quantization.

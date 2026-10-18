@@ -65,11 +65,6 @@ pub struct TechCtx<'a> {
     pub types: &'a [TechType],
 }
 
-pub fn run(ctx: &mut TechCtx<'_>, args: &TechArgs) -> Vec<TechPlacement> {
-    let mut ignored_trace = RmgConstructionTrace::default();
-    run_traced(ctx, args, &mut ignored_trace, 0)
-}
-
 /// Native placement plus the Scenario-constructor trace. Each selected type
 /// constructs before its placement attempts, so an exhausted building remains
 /// as a discarded event even though it contributes no MapFile entity.
@@ -373,7 +368,8 @@ mod tests {
                 regions: &regions,
                 types: &type_list,
             };
-            let placements = run(&mut ctx, &w.args);
+            let mut ignored_trace = RmgConstructionTrace::default();
+            let placements = run_traced(&mut ctx, &w.args, &mut ignored_trace, 0);
             (placements, rng.next_u32())
         };
         assert_eq!(snapshot(2024), snapshot(2024));

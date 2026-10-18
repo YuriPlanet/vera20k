@@ -79,8 +79,8 @@ impl FacingClass {
         self.current
     }
 
-    /// Per-frame step value, exposed for tests and for callers that need
-    /// to know the rotation rate.
+    /// Per-frame step value, for tests that check the rotation rate.
+    #[cfg(test)]
     pub fn rot_per_frame(&self) -> u16 {
         self.rot_per_frame
     }

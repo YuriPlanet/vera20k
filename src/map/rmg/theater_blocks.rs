@@ -48,11 +48,13 @@ impl TheaterTileBlocks {
         Self { blocks }
     }
 
-    /// Number of tiles that resolved to a parsed block (for logging/tests).
+    /// Number of tiles that resolved to a parsed block (for tests).
+    #[cfg(test)]
     pub fn len(&self) -> usize {
         self.blocks.len()
     }
 
+    #[cfg(test)]
     pub fn is_empty(&self) -> bool {
         self.blocks.is_empty()
     }

@@ -160,8 +160,9 @@ pub(crate) fn tick_particle_system(
     true
 }
 
-/// Compatibility batch entry for focused particle tests and tools. Production
+/// Compatibility batch entry for focused particle tests. Production
 /// dispatch uses `tick_particle_system` from the shared live-object walk.
+#[cfg(test)]
 pub fn tick_particle_systems(sim: &mut Simulation, rules: &RuleSet) {
     for id in sim.live_object_order_snapshot() {
         tick_particle_system(

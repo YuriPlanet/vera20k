@@ -1174,11 +1174,10 @@ impl CellOccupancy {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct OccupancyGrid {
     cells: CellMap<CellOccupancy>,
-    /// Monotonic counter bumped on every cell-membership mutation. Lets the
-    /// movement tick detect when a mover's pathfinding entity-block snapshot is
-    /// stale and must be rebuilt before a same-tick repath. Transient scheduling
-    /// state only: never serialized, never part of the state hash — it gates
-    /// *when* a deterministic rebuild happens, never *what* it produces.
+    /// Monotonic counter bumped on every cell-membership mutation, so tests can
+    /// tell whether membership changed between two points. Never serialized,
+    /// never part of the state hash.
+    #[cfg(any(test, feature = "test-support"))]
     #[serde(skip)]
     generation: u64,
 }
@@ -1254,7 +1253,7 @@ impl OccupancyGrid {
 
     /// Hash each native ground/deck list independently: the Vec's interleaving
     /// of the two lists is only Rust storage. Empty retained map buckets and the
-    /// transient generation do not change membership. This stronger Rust peer
+    /// test-only generation counter do not change membership. This stronger Rust peer
     /// hash is not a claim that native64DAB0 directly folds Cell pointers.
     pub(crate) fn hash_memberships(&self, hasher: &mut impl std::hash::Hasher) {
         use std::hash::Hash;
@@ -1291,6 +1290,7 @@ impl OccupancyGrid {
     /// the serialized lists and never calls this lossy phase-based projection.
     /// VERA-only: projects the CellClass lists from each entity's Mark state
     /// (`lifecycle.cell_marked`) and transport role; live play's lists come from Mark.
+    #[cfg(test)]
     pub fn rebuild(entities: &crate::sim::entity_store::EntityStore) -> Self {
         let mut grid = Self::new();
         let mut ordered: Vec<&GameEntity> = entities.values().collect();
@@ -1348,15 +1348,26 @@ impl OccupancyGrid {
     pub fn new() -> Self {
         Self {
             cells: CellMap::new(),
+            #[cfg(any(test, feature = "test-support"))]
             generation: 0,
         }
     }
 
-    /// Current mutation generation. Bumped on every `add`/`remove` (and thus
-    /// `move_entity`). Compare across two points to detect whether cell
+    /// Current mutation generation. Bumped on every `add`/`remove`/`remove_on_layer`
+    /// (and thus `move_entity`). Compare across two points to detect whether cell
     /// membership changed in between. Transient — not hashed, resets to 0 on rebuild.
+    #[cfg(any(test, feature = "test-support"))]
     pub fn generation(&self) -> u64 {
         self.generation
+    }
+
+    /// Bump the test-support `generation`; a no-op in other builds.
+    #[inline]
+    fn bump_generation(&mut self) {
+        #[cfg(any(test, feature = "test-support"))]
+        {
+            self.generation = self.generation.wrapping_add(1);
+        }
     }
 
     /// Add an entity to a cell. For structures, caller must invoke once per
@@ -1370,7 +1381,7 @@ impl OccupancyGrid {
         sub_cell: Option<u8>,
         insertion: CellListInsertion,
     ) {
-        self.generation = self.generation.wrapping_add(1);
+        self.bump_generation();
         let new_occupant = CellOccupant {
             entity_id,
             layer,
@@ -1400,8 +1411,9 @@ impl OccupancyGrid {
 
     /// Remove an entity from a cell, walking ALL layers. No-op if entity not found.
     /// For structures, caller must invoke once per foundation cell.
+    #[cfg(test)]
     pub fn remove(&mut self, rx: u16, ry: u16, entity_id: u64) {
-        self.generation = self.generation.wrapping_add(1);
+        self.bump_generation();
         if let Some(occ) = self.cells.get_mut(&(rx, ry)) {
             occ.occupants.retain(|o| o.entity_id != entity_id);
             if occ.occupants.is_empty() {
@@ -1423,7 +1435,7 @@ impl OccupancyGrid {
     /// `remove`; the per-layer form is the authoritative two-layer selector and keeps
     /// the remove/add halves on the verified independent layers.
     pub fn remove_on_layer(&mut self, rx: u16, ry: u16, entity_id: u64, layer: MovementLayer) {
-        self.generation = self.generation.wrapping_add(1);
+        self.bump_generation();
         if let Some(occ) = self.cells.get_mut(&(rx, ry)) {
             occ.occupants
                 .retain(|o| !(o.entity_id == entity_id && o.layer == layer));
@@ -1437,6 +1449,7 @@ impl OccupancyGrid {
     ///
     /// Convenience for callers that do NOT change the occupant's object-list layer
     /// across the move (teleport, same-layer steps).
+    #[cfg(test)]
     pub fn move_entity(
         &mut self,
         old_rx: u16,

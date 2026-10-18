@@ -18,9 +18,7 @@
 //!
 //! Do not add a new facing/direction conversion without checking all three
 //! headers — a fourth parallel helper is how definition drift starts.
-//! `opposite_direction` below and `direction_tables::quantize::opposite_dir`
-//! are deliberate checked/unchecked twins of the same `(d±4)&7` identity,
-//! both exact-equality tested.
+//! `opposite_direction` below is the single checked `(d±4)&7` helper.
 
 pub const DIRECTION_COUNT: usize = 8;
 pub const TUBE_STEP_DIRECTION: u8 = 8;
@@ -78,10 +76,6 @@ impl Ra2Direction {
         DIRECTION_DELTAS[self.index() as usize]
     }
 
-    pub fn facing_byte(self) -> u8 {
-        self.index() * FACING_UNITS_PER_DIRECTION
-    }
-
     #[cfg(any(test, feature = "test-support"))]
     pub fn short_name(self) -> &'static str {
         match self {
@@ -134,21 +128,20 @@ mod tests {
     #[test]
     fn direction_ids_match_gamemd_compass_table() {
         let expected = [
-            ("N", (0, -1), 0),
-            ("NE", (1, -1), 32),
-            ("E", (1, 0), 64),
-            ("SE", (1, 1), 96),
-            ("S", (0, 1), 128),
-            ("SW", (-1, 1), 160),
-            ("W", (-1, 0), 192),
-            ("NW", (-1, -1), 224),
+            ("N", (0, -1)),
+            ("NE", (1, -1)),
+            ("E", (1, 0)),
+            ("SE", (1, 1)),
+            ("S", (0, 1)),
+            ("SW", (-1, 1)),
+            ("W", (-1, 0)),
+            ("NW", (-1, -1)),
         ];
-        for (idx, &(name, delta, facing)) in expected.iter().enumerate() {
+        for (idx, &(name, delta)) in expected.iter().enumerate() {
             let direction = Ra2Direction::from_index(idx as u8).unwrap();
             assert_eq!(direction.index(), idx as u8);
             assert_eq!(direction.short_name(), name);
             assert_eq!(direction.delta(), delta);
-            assert_eq!(direction.facing_byte(), facing);
             assert_eq!(direction_delta(idx as u8), Some(delta));
         }
     }

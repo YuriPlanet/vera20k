@@ -149,6 +149,7 @@ impl ParticleSystemType {
     /// `holds_what` is always `None` — the resolver in `RuleSet::from_ini`
     /// fills it in after all particle types have been collected.
     /// Use `from_ini_section_pending` if you need the unresolved reference name.
+    #[cfg(test)]
     pub fn from_ini_section(name: &str, section: &IniSection) -> Self {
         Self::from_ini_section_pending(name, section).partial
     }

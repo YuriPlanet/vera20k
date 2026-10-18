@@ -99,7 +99,7 @@ pub struct ArtEntry {
     /// at `0x00715FA4..0x00716005`): the firing ports an `OpenTopped=`
     /// transport lends its passengers, by cargo index. `None` where the
     /// coordinate read kept its default, Weapon[0]'s FLH (`+0x89C`); see
-    /// [`ArtEntry::open_topped_port_flh`]. Stock: only `[BFRT]`'s five gun
+    /// [`ArtEntry::alternate_fire_flh`]. Stock: only `[BFRT]`'s five gun
     /// ports.
     pub alternate_flh: [Option<Flh>; 5],
     /// `SecondSpawnOffset=` (`TechnoTypeClass+0xDB0`): the same art read's
@@ -244,7 +244,7 @@ impl ArtEntry {
     /// `AlternateFLH[k-1]` for `k <= 5`, else a zero FLH
     /// (`0x006F3AF5..0x006F3B21`). A slot the coordinate read left at its
     /// default holds Weapon[0]'s FLH as the weapon arm stored it (`+0x89C`).
-    pub(crate) fn open_topped_port_flh(
+    pub(crate) fn alternate_fire_flh(
         &self,
         port: usize,
         turret_count: i32,
@@ -982,8 +982,9 @@ pub struct ResolvedObjectArt<'a> {
     /// Final image id after art.ini `Image=` override.
     pub image_id: String,
     /// Section id whose metadata should be used for overlays/bibs/anims.
+    #[cfg(test)]
     pub metadata_section_id: String,
-    /// Parsed art entry for `metadata_section_id`, if present.
+    /// Parsed art entry for the metadata section, if present.
     pub entry: Option<&'a ArtEntry>,
 }
 
@@ -999,11 +1000,6 @@ pub struct ArtRegistry {
     can_hide_things: HashMap<String, bool>,
     /// section ID (uppercase) -> `OccupyHeight=`, defaulting to art `Height=`.
     occupy_heights: HashMap<String, i32>,
-    /// section ID (uppercase) -> generic AnimType frame delay from `Rate=`.
-    /// Missing `Rate=` keeps the gamemd constructor default of one logic frame.
-    rates_ms: HashMap<String, u16>,
-    /// section ID (uppercase) -> native AnimType frame delay in logic frames.
-    rates_logic_frames: HashMap<String, u16>,
     /// section ID (uppercase) -> generic AnimType runtime metadata.
     anim_runtime_configs: HashMap<String, AnimTypeRuntimeConfig>,
     /// Full deterministic Next/Trailer closure reachable from scheduler-owned roots.
@@ -1108,8 +1104,6 @@ impl ArtRegistry {
         let mut entry_names: HashMap<String, String> = HashMap::new();
         let mut can_hide_things: HashMap<String, bool> = HashMap::new();
         let mut occupy_heights: HashMap<String, i32> = HashMap::new();
-        let mut rates_ms: HashMap<String, u16> = HashMap::new();
-        let mut rates_logic_frames: HashMap<String, u16> = HashMap::new();
         let mut anim_runtime_configs: HashMap<String, AnimTypeRuntimeConfig> = HashMap::new();
         let mut damage_fire_offsets_valid = true;
 
@@ -1230,12 +1224,6 @@ impl ArtRegistry {
             let [fire_up, fire_prone, secondary_fire, secondary_prone] = discharge_frames;
             let report = section.read_name("Report", 0x80).map(str::to_owned);
             let start_sound = section.read_name("StartSound", 0x80).map(str::to_owned);
-            let rate = read_anim_rate(section);
-            let rate_ms: u16 = rate.map_or(DEFAULT_ART_RATE_MS, |rate| {
-                art_rate_to_delay_ms(rate) as u16
-            });
-            let rate_logic_frames: u16 =
-                rate.map_or(DEFAULT_ART_RATE_LOGIC_FRAMES, art_rate_to_logic_frames);
             let anim_runtime_config = parse_anim_runtime_config(section);
             let extra_light: i32 = section.read_int("ExtraLight", 0);
             let queueing_cell = section.read_minmax("QueueingCell", [0, 0]);
@@ -1312,8 +1300,6 @@ impl ArtRegistry {
             let section_key = section_name.to_uppercase();
             can_hide_things.insert(section_key.clone(), can_hide);
             occupy_heights.insert(section_key.clone(), occupy_height);
-            rates_ms.insert(section_key.clone(), rate_ms);
-            rates_logic_frames.insert(section_key.clone(), rate_logic_frames);
             anim_runtime_configs.insert(section_key.clone(), anim_runtime_config);
             entry_names.insert(section_key, section_name.to_owned());
             entries.insert(
@@ -1398,8 +1384,6 @@ impl ArtRegistry {
             entry_names,
             can_hide_things,
             occupy_heights,
-            rates_ms,
-            rates_logic_frames,
             anim_runtime_configs,
             scheduler_anim_types: BTreeSet::new(),
             damage_fire_offsets_valid,
@@ -1413,8 +1397,6 @@ impl ArtRegistry {
             entry_names: HashMap::new(),
             can_hide_things: HashMap::new(),
             occupy_heights: HashMap::new(),
-            rates_ms: HashMap::new(),
-            rates_logic_frames: HashMap::new(),
             anim_runtime_configs: HashMap::new(),
             scheduler_anim_types: BTreeSet::new(),
             damage_fire_offsets_valid: true,
@@ -1437,18 +1419,6 @@ impl ArtRegistry {
             .get(section)
             .and_then(|entry| entry.foundation)
             .unwrap_or(current)
-    }
-
-    /// Generic AnimType frame delay for an art section, from `Rate=`.
-    pub fn rate_ms(&self, image_id: &str) -> Option<u16> {
-        self.rates_ms.get(&image_id.to_uppercase()).copied()
-    }
-
-    /// Generic AnimType frame delay in native logic frames for an art section.
-    pub fn rate_logic_frames(&self, image_id: &str) -> Option<u16> {
-        self.rates_logic_frames
-            .get(&image_id.to_uppercase())
-            .copied()
     }
 
     /// Generic native-like AnimType runtime metadata for an art section.
@@ -1746,6 +1716,7 @@ impl ArtRegistry {
         ResolvedObjectArt {
             base_art_id,
             image_id,
+            #[cfg(test)]
             metadata_section_id,
             entry,
         }

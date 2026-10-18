@@ -908,6 +908,7 @@ impl EvaRegistry {
     }
 
     /// Look up an EVA sample name by event name and side column.
+    #[cfg(any(test, feature = "test-support"))]
     pub fn get(&self, event_name: &str, side: EvaSide) -> Option<&str> {
         self.entry(event_name)?.column(side)
     }

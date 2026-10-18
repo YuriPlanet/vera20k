@@ -228,10 +228,12 @@ impl LightProfileCache {
         self.profiles.get(id.0)
     }
 
+    #[cfg(test)]
     pub fn len(&self) -> usize {
         self.profiles.len()
     }
 
+    #[cfg(test)]
     pub fn is_empty(&self) -> bool {
         self.profiles.is_empty()
     }
@@ -333,6 +335,7 @@ impl CellLight {
         }
     }
 
+    #[cfg(any(test, feature = "test-support"))]
     pub fn compatibility(
         profile_id: LightProfileId,
         rgb_key: LightRgbKey,
@@ -372,6 +375,7 @@ impl CellLightGrid {
         }
     }
 
+    #[cfg(test)]
     pub fn with_capacity(capacity: usize) -> Self {
         Self {
             cells: HashMap::with_capacity(capacity),
@@ -468,6 +472,7 @@ impl CellLightGrid {
         self.cells.insert(cell, light);
     }
 
+    #[cfg(any(test, feature = "test-support"))]
     pub fn insert_profiled_light(&mut self, cell: (u16, u16), rgb: [f32; 3], common_scalar: f32) {
         let profile_id = self.profiles.profile_id_for_rgb(rgb);
         let rgb_key = rgb_to_key(rgb);
@@ -781,6 +786,7 @@ fn quantize_scenario_light(value: f64, scale: i32) -> i32 {
 }
 
 /// Compute the RGB tint for a single cell given its elevation.
+#[cfg(any(test, feature = "test-support"))]
 pub fn cell_tint(config: &LightingConfig, z: u8) -> [f32; 3] {
     let grid = build_cell_light_grid_from_heights([((1, 1), z)], config);
     grid.tint_or_default((1, 1))
@@ -796,6 +802,7 @@ pub fn terrain_tint(config: &LightingConfig) -> [f32; 3] {
 }
 
 /// Build the profile-backed base cell light grid from known cell heights.
+#[cfg(any(test, feature = "test-support"))]
 pub fn build_cell_light_grid_from_heights<I>(heights: I, config: &LightingConfig) -> CellLightGrid
 where
     I: IntoIterator<Item = ((u16, u16), u8)>,
@@ -804,6 +811,7 @@ where
 }
 
 /// Build a cell-light grid from exact ScenarioClass integer fields.
+#[cfg(any(test, feature = "test-support"))]
 pub fn build_cell_light_grid_from_heights_and_units<I>(
     heights: I,
     profile: LightingProfileUnits,
@@ -923,6 +931,7 @@ impl CellLightSample {
 }
 
 impl DeferredCellLightRefresh {
+    #[cfg(test)]
     pub fn new<I>(heights: I, config: &LightingConfig, lights: Vec<PointLight>) -> Self
     where
         I: IntoIterator<Item = ((u16, u16), u8)>,
@@ -974,6 +983,7 @@ impl DeferredCellLightRefresh {
 
     /// Build the replacement forward only after all samples are gathered.
     /// Returning `None` before then enforces the native atomic-commit boundary.
+    #[cfg(test)]
     pub fn commit(self) -> Option<CellLightGrid> {
         if !self.is_gathered() {
             return None;
@@ -1284,6 +1294,7 @@ pub fn light_value_to_units(value: f32) -> i32 {
     (value * POINT_LIGHT_UNIT_SCALE as f32 + 0.1) as i32
 }
 
+#[cfg(any(test, feature = "test-support"))]
 fn light_float_to_units(value: f32) -> i32 {
     (value * LIGHT_UNIT as f32).round() as i32
 }

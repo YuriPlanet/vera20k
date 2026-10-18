@@ -269,6 +269,7 @@ impl BridgeCellFacts {
         self.has_flag(BRIDGE_FLAG_TRANSITION)
     }
 
+    #[cfg(test)]
     pub fn is_anchor_self(self) -> bool {
         self.has_flag(BRIDGE_FLAG_ANCHOR_SELF)
     }

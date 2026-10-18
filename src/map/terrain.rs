@@ -216,6 +216,7 @@ impl LocalBounds {
     }
 
     /// Check if a screen position is within the playable area.
+    #[cfg(test)]
     pub fn contains(&self, screen_x: f32, screen_y: f32) -> bool {
         screen_x >= self.pixel_x
             && screen_x < self.pixel_x + self.pixel_w
@@ -568,92 +569,6 @@ fn tactical_cardinal_neighbor(rx: u16, ry: u16, direction: u8) -> Option<(u16, u
         return None;
     }
     Some((nx as u16, ny as u16))
-}
-
-/// Convert screen-space pixel position to isometric cell, accounting for terrain elevation.
-///
-/// Iteratively refines the cell guess by looking up the actual terrain height at each
-/// candidate cell and re-solving with the corrected screen Y. This fixes the z=0
-/// assumption in `screen_to_iso` which causes clicks on elevated terrain to resolve
-/// to the wrong cell.
-///
-/// Converges in 1-3 iterations on typical RA2 terrain gradients.
-#[cfg(any(test, feature = "test-support"))]
-pub fn screen_to_iso_with_height(
-    screen_x: f32,
-    screen_y: f32,
-    height_map: &BTreeMap<(u16, u16), u8>,
-) -> (f32, f32) {
-    screen_to_iso_with_height_and_bridges(screen_x, screen_y, height_map, None)
-}
-
-/// Convert screen coordinates to isometric cell coordinates, accounting for
-/// terrain height and optionally bridge deck height.
-///
-/// When `bridge_height_map` is provided and the resolved cell has a bridge deck,
-/// the bridge deck elevation is used instead of the ground elevation. This makes
-/// clicks on high bridge surfaces resolve to the correct cell.
-pub fn screen_to_iso_with_height_and_bridges(
-    screen_x: f32,
-    screen_y: f32,
-    height_map: &BTreeMap<(u16, u16), u8>,
-    bridge_height_map: Option<&BTreeMap<(u16, u16), u8>>,
-) -> (f32, f32) {
-    // First pass: resolve using ground height (existing behavior).
-    let (mut rx, mut ry) = screen_to_iso(screen_x, screen_y);
-    for _ in 0..3 {
-        let cell_rx: u16 = rx.round().max(0.0) as u16;
-        let cell_ry: u16 = ry.round().max(0.0) as u16;
-        let z: u8 = height_map.get(&(cell_rx, cell_ry)).copied().unwrap_or(0);
-        if z == 0 {
-            break;
-        }
-        let corrected_y: f32 = screen_y + f32::from(z as i8) * HEIGHT_STEP;
-        let (new_rx, new_ry) = screen_to_iso(screen_x, corrected_y);
-        if (new_rx - rx).abs() < 0.01 && (new_ry - ry).abs() < 0.01 {
-            break;
-        }
-        rx = new_rx;
-        ry = new_ry;
-    }
-
-    // Second pass: bridge deck click resolution. The bridge surface is elevated
-    // (deck_level = ground + 4), so the ground resolution above can shift the
-    // result by up to ~3 cells away from the actual bridge cell. We search a
-    // neighborhood around the ground-resolved cell for any bridge entries and
-    // test each at its deck height. The closest match wins.
-    if let Some(bridge_map) = bridge_height_map {
-        let cell_rx: u16 = rx.round().max(0.0) as u16;
-        let cell_ry: u16 = ry.round().max(0.0) as u16;
-        let mut best: Option<(f32, f32)> = None;
-        let mut best_dist: f32 = f32::MAX;
-        for dy in -3i32..=3 {
-            for dx in -3i32..=3 {
-                let bx_i: i32 = cell_rx as i32 + dx;
-                let by_i: i32 = cell_ry as i32 + dy;
-                if bx_i < 0 || by_i < 0 {
-                    continue;
-                }
-                let bx: u16 = bx_i as u16;
-                let by: u16 = by_i as u16;
-                if let Some(&bridge_z) = bridge_map.get(&(bx, by)) {
-                    let corrected_y: f32 = screen_y + f32::from(bridge_z as i8) * HEIGHT_STEP;
-                    let (new_rx, new_ry) = screen_to_iso(screen_x, corrected_y);
-                    let dist: f32 = (new_rx - bx as f32).abs() + (new_ry - by as f32).abs();
-                    if dist < 0.7 && dist < best_dist {
-                        best = Some((new_rx, new_ry));
-                        best_dist = dist;
-                    }
-                }
-            }
-        }
-        if let Some((brx, bry)) = best {
-            rx = brx;
-            ry = bry;
-        }
-    }
-
-    (rx, ry)
 }
 
 /// Build a TerrainGrid from the resolved terrain stage's final LAT-adjusted
@@ -1065,50 +980,6 @@ mod tests {
             high_suffix_sentinels > 0,
             "at least one of the 125 visible ClearTile fallbacks must select e/f/g"
         );
-    }
-
-    #[test]
-    fn test_screen_to_iso_with_height_flat_terrain() {
-        // On flat terrain (z=0 everywhere), result matches plain screen_to_iso.
-        let height_map: BTreeMap<(u16, u16), u8> = BTreeMap::new();
-        let (rx, ry) = screen_to_iso_with_height(300.0, 150.0, &height_map);
-        let (rx0, ry0) = screen_to_iso(300.0, 150.0);
-        assert!((rx - rx0).abs() < 0.01);
-        assert!((ry - ry0).abs() < 0.01);
-    }
-
-    #[test]
-    fn test_screen_to_iso_with_height_elevated() {
-        // Cell (10, 5) at z=4:
-        //   iso_to_screen = ((10-5)*30-30, (10+5)*15+15-4*15) = (120, 165)
-        //   Tile center = (120+30, 165+15) = (150, 180)
-        let mut height_map: BTreeMap<(u16, u16), u8> = BTreeMap::new();
-        for rx in 8..=12 {
-            for ry in 3..=7 {
-                height_map.insert((rx, ry), 4);
-            }
-        }
-        let (rx, ry) = screen_to_iso_with_height(150.0, 180.0, &height_map);
-        assert!((rx - 10.0).abs() < 0.6, "rx={rx}, expected ~10");
-        assert!((ry - 5.0).abs() < 0.6, "ry={ry}, expected ~5");
-    }
-
-    #[test]
-    fn test_screen_to_iso_with_height_convergence() {
-        // Verify the function converges and doesn't overshoot on steep terrain.
-        let mut height_map: BTreeMap<(u16, u16), u8> = BTreeMap::new();
-        // A ridge: cells with ry < 10 are at z=6, ry >= 10 at z=0.
-        for rx in 0..30 {
-            for ry in 0..10 {
-                height_map.insert((rx, ry), 6);
-            }
-        }
-        // Click on the elevated part: cell (15, 5) at z=6.
-        // iso_to_screen = ((15-5)*30-30, (15+5)*15+15-6*15) = (270, 225)
-        // Center: (270+30, 225+15) = (300, 240).
-        let (rx, ry) = screen_to_iso_with_height(300.0, 240.0, &height_map);
-        assert!((rx - 15.0).abs() < 0.6, "rx={rx}, expected ~15");
-        assert!((ry - 5.0).abs() < 0.6, "ry={ry}, expected ~5");
     }
 
     #[test]

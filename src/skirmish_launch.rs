@@ -525,6 +525,7 @@ impl SkirmishLaunchSession {
     ///
     /// The supplied RNG must be the app-owned frontend/process Scenario cursor,
     /// never the freshly seeded gameplay cursor.
+    #[cfg(any(test, feature = "test-support"))]
     pub fn resolve_shell_random_assignments(&self, rng: &mut SimRng) -> Self {
         self.resolve_shell_random_assignments_with(rng, |_, rng| {
             LaunchCountry::from_country_index(rng.next_range_u32_inclusive(0, 9))
@@ -535,6 +536,7 @@ impl SkirmishLaunchSession {
     /// selected MPModes authority. Cooperative uses this hook for eligibility
     /// retries; colours remain here so every rejected country candidate shifts
     /// the following colour draw.
+    #[cfg(any(test, feature = "test-support"))]
     pub fn resolve_shell_random_assignments_with(
         &self,
         rng: &mut SimRng,
@@ -552,6 +554,7 @@ impl SkirmishLaunchSession {
     /// authorities whose data can be malformed. An error stops the transaction
     /// immediately, retaining draws already consumed but making no later
     /// country or colour calls.
+    #[cfg(any(test, feature = "test-support"))]
     pub fn try_resolve_shell_random_assignments_with<E>(
         &self,
         rng: &mut SimRng,

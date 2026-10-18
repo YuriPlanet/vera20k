@@ -520,6 +520,7 @@ fn read_tileset_row(ini: &IniFile, ordinal: u32) -> Result<Option<(&IniSection, 
 /// Each section's positive `TilesInSet` advances the global tile_id counter.
 /// The filename is `{FileName}{NN:02}.{extension}` where NN is 1-indexed.
 /// Blank FileName entries consume tile_id slots but map to None.
+#[cfg(any(test, feature = "test-support"))]
 pub fn parse_tileset_ini(ini_data: &[u8], extension: &str) -> Result<TilesetLookup, MapError> {
     let ini = IniFile::from_bytes(ini_data).map_err(MapError::Ini)?;
     parse_tileset_sections(&ini, extension)
@@ -742,12 +743,16 @@ pub struct TheaterData {
     /// `[General] BridgeMiddle2=N` — same for EW.
     pub bridge_middle_2: Option<u16>,
     /// `[General] Tunnels=N` - theater tile set for tunnel/low-bridge tube cells.
+    #[cfg(any(test, feature = "test-support"))]
     pub tunnels: Option<u16>,
     /// `[General] TrackTunnels=N` - track tunnel tile set.
+    #[cfg(any(test, feature = "test-support"))]
     pub track_tunnels: Option<u16>,
     /// `[General] DirtTunnels=N` - dirt tunnel tile set.
+    #[cfg(any(test, feature = "test-support"))]
     pub dirt_tunnels: Option<u16>,
     /// `[General] DirtTrackTunnels=N` - dirt track tunnel tile set.
+    #[cfg(any(test, feature = "test-support"))]
     pub dirt_track_tunnels: Option<u16>,
     /// Exact signed cumulative bases published for the four automatic Tube
     /// families in native comparison order. Missing or unresolved keys retain
@@ -914,9 +919,13 @@ pub fn load_theater(asset_manager: &mut AssetManager, theater_name: &str) -> Opt
         slope_set_pieces,
         bridge_middle_1,
         bridge_middle_2,
+        #[cfg(any(test, feature = "test-support"))]
         tunnels,
+        #[cfg(any(test, feature = "test-support"))]
         track_tunnels,
+        #[cfg(any(test, feature = "test-support"))]
         dirt_tunnels,
+        #[cfg(any(test, feature = "test-support"))]
         dirt_track_tunnels,
         automatic_tube_bases,
         cliff_ranges,

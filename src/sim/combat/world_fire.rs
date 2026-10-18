@@ -1655,12 +1655,16 @@ pub(super) fn emit_admitted_fire(
         .entities
         .get(snap.stable_id)
         .is_some_and(|firer| firer.passenger_role.in_open_transport());
+    #[cfg(any(test, feature = "test-support"))]
     let facing = (snap.hull_facing.current(binary_frame) >> 8) as u8;
     out.fire_events.push(SimFireEvent {
         attacker_id: snap.stable_id,
+        #[cfg(any(test, feature = "test-support"))]
         weapon_slot: selected.slot,
         weapon_id: world.interner.intern(selected.weapon_id),
+        #[cfg(any(test, feature = "test-support"))]
         facing,
+        #[cfg(any(test, feature = "test-support"))]
         origin_snapshot: FireOriginSnapshot { facing },
         target: snap.target,
         report_sound_id,

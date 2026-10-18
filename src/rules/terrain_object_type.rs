@@ -52,6 +52,7 @@ pub struct TerrainObjectType {
 }
 
 impl TerrainObjectType {
+    #[cfg(test)]
     pub fn from_ini_section(name: &str, section: &IniSection) -> Self {
         Self::from_ini_section_with_tree_strength(
             name,

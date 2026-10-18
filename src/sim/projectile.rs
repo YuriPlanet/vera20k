@@ -800,6 +800,7 @@ impl SpecialDetonationAction {
     /// True for every arm that claims the detonation away from
     /// `Apply_area_damage @ 0x00489280` and
     /// `BulletClass::SpawnShrapnel @ 0x0046a310`.
+    #[cfg(test)]
     pub fn suppresses_ordinary_damage(self) -> bool {
         self != SpecialDetonationAction::OrdinaryDamage
     }

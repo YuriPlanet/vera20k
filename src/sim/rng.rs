@@ -437,6 +437,7 @@ impl SimRng {
     }
 
     /// Advance and return next random u64.
+    #[cfg(test)]
     pub fn next_u64(&mut self) -> u64 {
         let lo = u64::from(self.next_u32());
         let hi = u64::from(self.next_u32());

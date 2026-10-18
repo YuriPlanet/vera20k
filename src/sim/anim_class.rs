@@ -488,6 +488,7 @@ impl AnimObject {
     }
 
     /// The owning House (`AnimClass+0x180`).
+    #[cfg(test)]
     pub fn owner_house(&self) -> Option<InternedId> {
         self.owner_house
     }

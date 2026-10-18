@@ -215,7 +215,8 @@ Start `feature/<topic>` from fetched `origin/main`; isolate owned/dirty checkout
 Continue task-owned branches and commit validated increments. Never commit/push
 directly to `main`. Publication requires user/goal authority; PRs target `main`.
 Integrate promptly when authorized. Owners resolve conflicts and revalidate.
-Preserve unique/local data; use `sync` for complex cleanup.
+Preserve unique/local data: remove a worktree or branch only once its work is merged or
+saved, with `git worktree remove` and `git branch -d`, never forced.
 
 After each fetch, fast-forward `<main-checkout>` (`merge --ff-only origin/main`) when it is on
 `main` without tracked changes or a Cargo run; sessions load this contract from it.

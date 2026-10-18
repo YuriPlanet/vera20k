@@ -12,20 +12,16 @@
 //! ## Dependency rules
 //! - util/ has NO dependencies on other game modules.
 
-use crate::util::fixed_math::{SIM_ZERO, SimFixed};
+use crate::util::fixed_math::SimFixed;
 
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
 
-/// Number of leptons per cell (256). This is RA2's fundamental spatial unit ratio.
-pub const LEPTONS_PER_CELL: SimFixed = SimFixed::lit("256");
-
-/// Integer form of the leptons-per-cell ratio, for shift/divide coordinate
-/// math. The single authority for the value 256 across the crate — modules
-/// that want a local name or width (`i64`, hex) derive from this constant
-/// instead of re-declaring the literal. A test pins it equal to the
-/// `SimFixed` form above.
+/// Leptons per cell (256), RA2's fundamental spatial unit ratio, for
+/// shift/divide coordinate math. The single authority for the value 256
+/// across the crate — modules that want a local name or width (`i64`, hex)
+/// derive from this constant instead of re-declaring the literal.
 pub const LEPTONS_PER_CELL_I32: i32 = 256;
 
 /// Lepton offset for the center of a cell (128). Default sub-cell position.
@@ -412,30 +408,6 @@ pub fn lepton_to_screen(rx: u16, ry: u16, sub_x: SimFixed, sub_y: SimFixed, z: u
     )
 }
 
-/// Compute lepton direction vector and length for a cell-to-cell step.
-///
-/// `dx`, `dy` are the cell delta (each in {-1, 0, +1}).
-/// Returns `(dir_x, dir_y, length)` where dir is in leptons and length is
-/// 256 for cardinal moves, ~362 for diagonal moves.
-/// Returns `(0, 0, 0)` if dx=dy=0.
-pub fn cell_delta_to_lepton_dir(dx: i32, dy: i32) -> (SimFixed, SimFixed, SimFixed) {
-    if dx == 0 && dy == 0 {
-        return (SIM_ZERO, SIM_ZERO, SIM_ZERO);
-    }
-    let dir_x: SimFixed = SimFixed::from_num(dx * 256);
-    let dir_y: SimFixed = SimFixed::from_num(dy * 256);
-    // dx,dy ∈ {-1,0,+1} so length is exactly 256 (cardinal) or sqrt(2)*256 ≈ 362 (diagonal).
-    // Compute directly to avoid I16F16 overflow from 256*256.
-    let is_diagonal: bool = dx != 0 && dy != 0;
-    let len: SimFixed = if is_diagonal {
-        // sqrt(2) * 256 ≈ 362.038... — use SimFixed::lit for deterministic precision.
-        SimFixed::lit("362.038")
-    } else {
-        SimFixed::from_num(256)
-    };
-    (dir_x, dir_y, len)
-}
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -443,6 +415,7 @@ pub fn cell_delta_to_lepton_dir(dx: i32, dy: i32) -> (SimFixed, SimFixed, SimFix
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::util::fixed_math::SIM_ZERO;
 
     #[test]
     fn lepton_to_cell_truncates_toward_zero_and_packs_to_16_bits() {
@@ -468,8 +441,7 @@ mod tests {
     }
 
     #[test]
-    fn integer_and_fixed_leptons_per_cell_agree() {
-        assert_eq!(LEPTONS_PER_CELL, SimFixed::from_num(LEPTONS_PER_CELL_I32));
+    fn integer_and_fixed_cell_center_agree() {
         assert_eq!(
             CELL_CENTER_LEPTON,
             SimFixed::from_num(CELL_CENTER_LEPTON_I32)
@@ -709,40 +681,5 @@ mod tests {
         assert_eq!(subcell_lepton_offset(Some(2)), (SUBCELL_2_X, SUBCELL_2_Y));
         assert_eq!(subcell_lepton_offset(Some(3)), (SUBCELL_3_X, SUBCELL_3_Y));
         assert_eq!(subcell_lepton_offset(Some(4)), (SUBCELL_4_X, SUBCELL_4_Y));
-    }
-
-    #[test]
-    fn leptons_per_cell_is_256() {
-        assert_eq!(LEPTONS_PER_CELL.to_num::<i32>(), 256);
-    }
-
-    #[test]
-    fn cell_delta_to_lepton_dir_cardinal() {
-        let (dx, dy, len) = cell_delta_to_lepton_dir(1, 0);
-        assert_eq!(dx.to_num::<i32>(), 256);
-        assert_eq!(dy.to_num::<i32>(), 0);
-        assert_eq!(len.to_num::<i32>(), 256);
-    }
-
-    #[test]
-    fn cell_delta_to_lepton_dir_diagonal() {
-        let (dx, dy, len) = cell_delta_to_lepton_dir(1, 1);
-        assert_eq!(dx.to_num::<i32>(), 256);
-        assert_eq!(dy.to_num::<i32>(), 256);
-        // sqrt(256² + 256²) ≈ 362
-        let len_i: i32 = len.to_num();
-        assert!(
-            (361..=363).contains(&len_i),
-            "diagonal len should be ~362, got {}",
-            len_i
-        );
-    }
-
-    #[test]
-    fn cell_delta_to_lepton_dir_zero() {
-        let (dx, dy, len) = cell_delta_to_lepton_dir(0, 0);
-        assert_eq!(dx.to_num::<i32>(), 0);
-        assert_eq!(dy.to_num::<i32>(), 0);
-        assert_eq!(len.to_num::<i32>(), 0);
     }
 }

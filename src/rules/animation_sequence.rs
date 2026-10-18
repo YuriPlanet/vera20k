@@ -296,11 +296,13 @@ impl SequenceSet {
     }
 
     /// Number of defined sequences.
+    #[cfg(test)]
     pub fn len(&self) -> usize {
         self.sequences.len()
     }
 
     /// Whether no sequences are defined.
+    #[cfg(test)]
     pub fn is_empty(&self) -> bool {
         self.sequences.is_empty()
     }

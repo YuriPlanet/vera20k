@@ -19,6 +19,7 @@ pub const RANDOM_MAP_MAX_PLAYERS: u8 = 8;
 /// This is a *default quota*, not a capacity limit: `RANDOM_MAP_MAX_PLAYERS`
 /// used to alias it, which capped the sentinel at 4 and made 5-8 player random
 /// maps unselectable.
+#[cfg(test)]
 pub const RANDOM_MAP_GENERATED_START_QUOTA: u8 = 4;
 
 /// `GameMode=` copies: the loose map header's 0x100-byte ReadString and the

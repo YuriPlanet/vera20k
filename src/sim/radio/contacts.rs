@@ -64,6 +64,7 @@ impl Contacts {
     }
 
     /// Count of filled slots.
+    #[cfg(any(test, feature = "test-support"))]
     pub fn len(&self) -> usize {
         self.slots.iter().filter(|s| s.is_some()).count()
     }

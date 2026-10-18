@@ -19,6 +19,7 @@ pub struct NativeF32Bits(u32);
 
 impl NativeF32Bits {
     pub const POSITIVE_ZERO: Self = Self(0x0000_0000);
+    #[cfg(test)]
     pub const NEGATIVE_ZERO: Self = Self(0x8000_0000);
     pub const ONE: Self = Self(0x3f80_0000);
 
@@ -36,6 +37,7 @@ pub struct NativeF64Bits(u64);
 
 impl NativeF64Bits {
     pub const POSITIVE_ZERO: Self = Self(0x0000_0000_0000_0000);
+    #[cfg(test)]
     pub const NEGATIVE_ZERO: Self = Self(0x8000_0000_0000_0000);
     pub const HALF: Self = Self(0x3fe0_0000_0000_0000);
     pub const ONE: Self = Self(0x3ff0_0000_0000_0000);

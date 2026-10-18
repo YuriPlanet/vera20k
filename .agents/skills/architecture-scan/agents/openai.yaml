@@ -1,7 +1,0 @@
-interface:
-  display_name: "VERA Architecture Scan"
-  short_description: "Review repository architecture and boundaries"
-  default_prompt: "Use $architecture-scan to review the repository module ownership, dependency direction, API visibility, and code placement."
-
-policy:
-  allow_implicit_invocation: false

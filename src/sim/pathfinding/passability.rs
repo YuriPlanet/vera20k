@@ -24,6 +24,7 @@ pub use crate::rules::terrain_rules::{LandType, tmp_terrain_to_land_type};
 /// Passability values from the matrix.
 pub const PASS_OK: u8 = 1;
 pub const PASS_BLOCKED: u8 = 2;
+#[cfg(any(test, feature = "test-support"))]
 pub const PASS_OUTSIDE_SENTINEL: u8 = 3;
 
 /// Number of zone layers (rows) in the matrix.

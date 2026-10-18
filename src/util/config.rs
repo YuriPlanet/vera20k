@@ -97,9 +97,6 @@ impl Default for GraphicsConfig {
 /// Simulation pacing and command scheduling settings.
 #[derive(Debug, Deserialize)]
 pub struct GameplayConfig {
-    /// Fixed simulation tick rate (Hz).
-    #[serde(default = "default_sim_tick_hz")]
-    pub sim_tick_hz: u32,
     /// Session MaxAhead, used by network scheduling and the local production
     /// prediction clock. Offline commands retain their issue-frame stamp.
     #[serde(default = "default_input_delay_ticks")]
@@ -115,7 +112,6 @@ pub struct GameplayConfig {
 impl Default for GameplayConfig {
     fn default() -> Self {
         Self {
-            sim_tick_hz: default_sim_tick_hz(),
             input_delay_ticks: default_input_delay_ticks(),
             pause_on_focus_loss: false,
         }
@@ -124,10 +120,6 @@ impl Default for GameplayConfig {
 
 fn default_true() -> bool {
     true
-}
-
-fn default_sim_tick_hz() -> u32 {
-    15
 }
 
 /// Session constructor6975C0 stores15 through the CRT initializer
@@ -305,7 +297,6 @@ ra2_dir = "C:/Westwood/RA2"
 "#;
         let config: GameConfig = toml::from_str(toml_str).expect("Failed to parse test config");
         assert!(config.graphics.extra_animations);
-        assert_eq!(config.gameplay.sim_tick_hz, 15);
         assert_eq!(config.gameplay.input_delay_ticks, 15);
         assert!(!config.gameplay.pause_on_focus_loss);
         // No [profile] section -> no pre-filled player name.
@@ -389,7 +380,6 @@ name = "   "
         let config = GameConfig::from_retail_asset_root(PathBuf::from(r"D:\Games\RA2"));
         assert_eq!(config.paths.ra2_dir, PathBuf::from(r"D:\Games\RA2"));
         assert!(config.graphics.extra_animations);
-        assert_eq!(config.gameplay.sim_tick_hz, 15);
         assert_eq!(config.profile.player_name(), None);
     }
 }
