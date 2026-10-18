@@ -708,6 +708,28 @@ impl ProcessedRulesLayers {
             })
     }
 
+    /// TechnoType+3DC after each reached ReadInt714145..714159.
+    pub(crate) fn lepton_mind_control_offset_states(
+        &self,
+    ) -> impl Iterator<Item = (ObjectCategory, &str, i32)> {
+        self.native_type_construction_trace
+            .registry_state()
+            .families
+            .iter()
+            .filter_map(|(family, members)| {
+                family.object_category().map(|category| (category, members))
+            })
+            .flat_map(|(category, members)| {
+                members.iter().map(move |member| {
+                    (
+                        category,
+                        member.native_stored_id.as_str(),
+                        member.lepton_mind_control_offset,
+                    )
+                })
+            })
+    }
+
     /// Retained +A8 speed, +A0 projectile, +A4 Damage and +AC Warhead after
     /// the last Weapon sweep, in the actual WeaponType array order.
     /// References remain native family indices until this read-only projection.
@@ -956,6 +978,13 @@ impl ProcessedRulesLayers {
         )
     }
 
+    /// Rules+310, constructor665ABE=15; CombatDamage66C914..66C92E.
+    pub(crate) fn mind_control_attack_line_frames(&self) -> i32 {
+        self.native_type_construction_trace
+            .registry_state()
+            .rules_mind_control_attack_line_frames
+    }
+
     /// Rules+1866, retained by AudioVisual66B7A7..66B7D2 through the
     /// current-RGB default of ReadColorRGB474B50.
     pub(crate) fn chrono_beam_color(&self) -> [u8; 3] {
@@ -1199,6 +1228,7 @@ pub(crate) struct NativeRulesRegistryState {
     rules_no_parachute_max_fall_rate: i32,
     rules_survivor_divisors: [i32; 3],
     rules_maximum_cheer_rate: i32,
+    rules_mind_control_attack_line_frames: i32,
     rules_line_trail_override: [u8; 3],
     rules_chrono_beam_color: [u8; 3],
     rules_prism_support: PrismSupportRules,
@@ -1238,6 +1268,7 @@ impl Default for NativeRulesRegistryState {
             rules_no_parachute_max_fall_rate: general.no_parachute_max_fall_rate,
             rules_survivor_divisors: crate::rules::ruleset::DEFAULT_SURVIVOR_DIVISORS,
             rules_maximum_cheer_rate: crate::rules::ruleset::DEFAULT_MAXIMUM_CHEER_RATE,
+            rules_mind_control_attack_line_frames: 15,
             rules_line_trail_override: general.line_trail_color_override,
             rules_chrono_beam_color: general.chrono_beam_color,
             rules_prism_support: PrismSupportRules::default(),
@@ -1418,6 +1449,7 @@ impl NativeRulesRegistryState {
             rules_no_parachute_max_fall_rate: self.rules_no_parachute_max_fall_rate,
             rules_survivor_divisors: self.rules_survivor_divisors,
             rules_maximum_cheer_rate: self.rules_maximum_cheer_rate,
+            rules_mind_control_attack_line_frames: self.rules_mind_control_attack_line_frames,
             rules_line_trail_override: self.rules_line_trail_override,
             rules_chrono_beam_color: self.rules_chrono_beam_color,
             rules_prism_support: self.rules_prism_support,
@@ -1601,6 +1633,8 @@ struct ProcessedType {
     /// TechnoType constructor711134 and current-default ReadInt7147B4.
     #[serde(default)]
     radial_fire_segments: i32,
+    /// Type+3DC, constructor710D28 and retained ReadInt714145..714159.
+    lepton_mind_control_offset: i32,
     /// TechnoType `Prerequisite=` (`+0x638`) and `PrerequisiteOverride=`
     /// (`+0x654`), each read with its current list as the default.
     prerequisite: Vec<Prerequisite>,
@@ -1647,6 +1681,7 @@ impl ProcessedType {
             recoil: crate::rules::recoil::RecoilConfig::default(),
             airstrike: crate::rules::airstrike::AirstrikeSettings::default(),
             radial_fire_segments: 0,
+            lepton_mind_control_offset: 70,
             prerequisite: Vec::new(),
             prerequisite_override: Vec::new(),
             weapon: WeaponReadState::default(),
@@ -1681,6 +1716,7 @@ struct RulesPassProcessor {
     rules_no_parachute_max_fall_rate: i32,
     rules_survivor_divisors: [i32; 3],
     rules_maximum_cheer_rate: i32,
+    rules_mind_control_attack_line_frames: i32,
     rules_line_trail_override: [u8; 3],
     rules_chrono_beam_color: [u8; 3],
     rules_prism_support: PrismSupportRules,
@@ -1725,6 +1761,7 @@ impl Default for RulesPassProcessor {
                 .rules_no_parachute_max_fall_rate,
             rules_survivor_divisors: crate::rules::ruleset::DEFAULT_SURVIVOR_DIVISORS,
             rules_maximum_cheer_rate: crate::rules::ruleset::DEFAULT_MAXIMUM_CHEER_RATE,
+            rules_mind_control_attack_line_frames: 15,
             rules_line_trail_override: NativeRulesRegistryState::default()
                 .rules_line_trail_override,
             rules_chrono_beam_color: NativeRulesRegistryState::default().rules_chrono_beam_color,
@@ -1763,6 +1800,8 @@ impl RulesPassProcessor {
             rules_no_parachute_max_fall_rate: registry_state.rules_no_parachute_max_fall_rate,
             rules_survivor_divisors: registry_state.rules_survivor_divisors,
             rules_maximum_cheer_rate: registry_state.rules_maximum_cheer_rate,
+            rules_mind_control_attack_line_frames: registry_state
+                .rules_mind_control_attack_line_frames,
             rules_line_trail_override: registry_state.rules_line_trail_override,
             rules_chrono_beam_color: registry_state.rules_chrono_beam_color,
             rules_prism_support: registry_state.rules_prism_support,
@@ -2770,6 +2809,8 @@ impl RulesPassProcessor {
         // the INI loader) retains it. Present integers stay signed/unclamped.
         // This precedes the AirstrikeTeam constructor reads.
         let member = &mut self.family_mut(family)[index];
+        member.lepton_mind_control_offset =
+            raw.read_int("LeptonMindControlOffset", member.lepton_mind_control_offset);
         member.tech_level = raw.read_int("TechLevel", member.tech_level);
 
         // Preserve both the six-field fallback order and Aircraft constructor
@@ -3041,11 +3082,18 @@ impl RulesPassProcessor {
             let _ = self.resolve_scalar_from(section, key, RulesTypeFamily::Warhead, 0x80);
         }
         let _ = self.resolve_scalar_from(section, "DeathWeapon", RulesTypeFamily::Weapon, 0x80);
-        for key in [
+        let _ = self.resolve_scalar_from(
+            section,
             "DrainAnimationType",
-            "ControlledAnimationType",
-            "PermaControlledAnimationType",
-        ] {
+            RulesTypeFamily::Animation,
+            0x80,
+        );
+        //66C914..66C92E: current signed default, no clamp, before ControlledAnimationType.
+        self.rules_mind_control_attack_line_frames = section.read_int(
+            "MindControlAttackLineFrames",
+            self.rules_mind_control_attack_line_frames,
+        );
+        for key in ["ControlledAnimationType", "PermaControlledAnimationType"] {
             let _ = self.resolve_scalar_from(section, key, RulesTypeFamily::Animation, 0x80);
         }
         let _ =
@@ -3286,6 +3334,8 @@ impl RulesPassProcessor {
                     rules_no_parachute_max_fall_rate: self.rules_no_parachute_max_fall_rate,
                     rules_survivor_divisors: self.rules_survivor_divisors,
                     rules_maximum_cheer_rate: self.rules_maximum_cheer_rate,
+                    rules_mind_control_attack_line_frames: self
+                        .rules_mind_control_attack_line_frames,
                     rules_line_trail_override: self.rules_line_trail_override,
                     rules_chrono_beam_color: self.rules_chrono_beam_color,
                     rules_prism_support: self.rules_prism_support,
@@ -3346,3 +3396,7 @@ mod approach_rules_tests;
 #[cfg(test)]
 #[path = "chrono_beam_rules_tests.rs"]
 mod chrono_beam_rules_tests;
+
+#[cfg(test)]
+#[path = "control_line_rules_tests.rs"]
+mod control_line_rules_tests;

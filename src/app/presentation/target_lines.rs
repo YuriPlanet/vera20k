@@ -119,51 +119,80 @@ pub(crate) fn build_target_line_instances(
     sim: Option<&Simulation>,
     rules: Option<&RuleSet>,
     palette_bytes: Option<&[u8]>,
+    house_colors: &HouseColorMap,
+    wall_ms: u32,
     viewport: TacticalViewport,
 ) -> Vec<SpriteInstance> {
-    // Tactical6D4729..6D472F skips selected Foot4DC060 while PlanMgr is
-    // active. Otherwise its solid strokes cover the animated planning path.
-    // Native controls: action_lines.json::tactical_gate_cases (gate_14/15).
+    // Tactical6D4729 and6D4793 use the same planning gate; the action-line
+    //option/timer gates only Foot4DC060, not CaptureManager relationships.
     if planning_active {
         return Vec::new();
     }
     let Some(sim) = sim else {
         return Vec::new();
     };
-    if !line_state.is_selected_action_active(sim.session.binary_frame) {
+    let colors = line_state
+        .is_selected_action_active(sim.session.binary_frame)
+        .then(|| {
+            palette_bytes.and_then(|bytes| crate::assets::pal_file::Palette::from_bytes(bytes).ok())
+        })
+        .flatten()
+        .map(|palette| {
+            [
+                action_line_color(&palette, 3),
+                action_line_color(&palette, 8),
+            ]
+        });
+    let mut control = rules
+        .map(|rules| super::control_links::prepare(sim, rules, house_colors, wall_ms, viewport))
+        .unwrap_or_default();
+    if colors.is_none() && control.is_empty() {
         return Vec::new();
     }
-    let Some(palette) =
-        palette_bytes.and_then(|bytes| crate::assets::pal_file::Palette::from_bytes(bytes).ok())
-    else {
-        return Vec::new();
-    };
-    let colors = [
-        action_line_color(&palette, 3),
-        action_line_color(&palette, 8),
-    ];
-
     let cells = sim.resolved_terrain.as_ref().map(NativeCellQuery::isolated);
-    let mut lines = Vec::new();
     let project = |p: ScreenPoint| {
         [
             p.x as i32 - viewport.camera[0],
             p.y as i32 - viewport.camera[1] + viewport.clip[1],
         ]
     };
-    // Tactical6D4750 walks the construction-ordered Techno array, not the
-    // CurrentObjects selection vector or the Logic active-object order.
-    // EntityStore's monotonic stable IDs retain that represented order.
-    for entity in sim.entities().values() {
-        let Some(line) = selected_action_line_for_entity(entity, sim, rules, cells.as_ref()) else {
-            continue;
-        };
-        lines.push(ProjectedActionLine {
-            start: project(line.start),
-            end: project(line.end),
-            kind: line.kind,
-        });
+    let line_for = |entity: &GameEntity| {
+        selected_action_line_for_entity(entity, sim, rules, cells.as_ref()).map(|line| {
+            ProjectedActionLine {
+                start: project(line.start),
+                end: project(line.end),
+                kind: line.kind,
+            }
+        })
+    };
+    if !control.is_empty() {
+        //6D4750 ->6D47BF/6D47F6 within EACH Techno visit. Resolving all
+        //action lines before relationships would reverse cross-object overlaps.
+        let mut instances = Vec::new();
+        for entity in sim.entities().values() {
+            if let Some(colors) = colors
+                && let Some(line) = line_for(entity)
+            {
+                instances.extend(build_selected_action_line_instances(
+                    &[line],
+                    colors,
+                    viewport,
+                ));
+            }
+            if let Some(lines) = control.remove(&entity.stable_id()) {
+                instances.extend(lines);
+            }
+        }
+        return instances;
     }
+    let Some(colors) = colors else {
+        return Vec::new();
+    };
+    let lines = sim
+        .entities()
+        .values()
+        .filter_map(line_for)
+        .collect::<Vec<_>>();
     build_selected_action_line_instances(&lines, colors, viewport)
 }
 
@@ -763,8 +792,17 @@ mod tests {
         let rules = rules_with_factory_and_non_factory();
 
         assert!(
-            build_target_line_instances(&state, false, Some(&sim), None, None, test_viewport())
-                .is_empty()
+            build_target_line_instances(
+                &state,
+                false,
+                Some(&sim),
+                None,
+                None,
+                &HouseColorMap::new(),
+                0,
+                test_viewport()
+            )
+            .is_empty()
         );
         assert!(
             !build_factory_rally_line_instances(
@@ -789,6 +827,8 @@ mod tests {
                 None,
                 None,
                 None,
+                &HouseColorMap::new(),
+                0,
                 test_viewport()
             )
             .is_empty()

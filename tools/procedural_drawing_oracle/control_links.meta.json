@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Techno704E40 curve pixels with supplied endpoints/RGB/clock",
+  "assumptions": [
+    "Original code executes geometry, RGB6612C0 adjustment, projection6D2140, clip7BC2B0, endpoint fills and solid lines; FPCW0E7F, RGB565 and160x120 surface.",
+    "World endpoints, RGB and Camera are explicit fixture inputs, not VERA-derived goldens. CaptureManager selection/timer/House creation and Tactical visibility are excluded.",
+    "get_flh composes the existing ifv_fire_coord spawn_launch owner, with five supplied alternate triples in native Type+85C records, indices-1..-6 and burst0/1. Original GetFLH and Ship DrawMatrix execute; physical ART/RULES strings come from production asset extraction. Source pose/lifecycle and alternate data are prepared inputs; no complete Scenario or controller-class override replay is claimed."
+  ],
+  "substitutions": [
+    "Existing Rally memory-surface adapter replaces DirectDraw storage/lock/pitch only; original BSurface opaque draw bodies execute.",
+    "OS GetTickCount is supplied at its imported target. RNG calls fail. Gameplay .text bytes are unchanged."
+  ],
+  "entry_points": {
+    "curve": "0x00704E40",
+    "projection": "0x006D2140",
+    "rgb_adjust": "0x006612C0",
+    "clip": "0x007BC2B0",
+    "solid": "0x007BA5E0"
+  },
+  "replay_command": "python -m tools.procedural_drawing_oracle.control_links",
+  "payload_sha256": "f156b229a6e8b0b19f5024da24f8fbce14ac5c2a9b620c289e00c0dbe93d9268"
+}

@@ -99,7 +99,7 @@ pub struct ArtEntry {
     /// at `0x00715FA4..0x00716005`): the firing ports an `OpenTopped=`
     /// transport lends its passengers, by cargo index. `None` where the
     /// coordinate read kept its default, Weapon[0]'s FLH (`+0x89C`); see
-    /// [`ArtEntry::open_topped_port_flh`]. Stock: only `[BFRT]`'s five gun
+    /// [`ArtEntry::alternate_fire_flh`]. Stock: only `[BFRT]`'s five gun
     /// ports.
     pub alternate_flh: [Option<Flh>; 5],
     /// `SecondSpawnOffset=` (`TechnoTypeClass+0xDB0`): the same art read's
@@ -244,7 +244,7 @@ impl ArtEntry {
     /// `AlternateFLH[k-1]` for `k <= 5`, else a zero FLH
     /// (`0x006F3AF5..0x006F3B21`). A slot the coordinate read left at its
     /// default holds Weapon[0]'s FLH as the weapon arm stored it (`+0x89C`).
-    pub(crate) fn open_topped_port_flh(
+    pub(crate) fn alternate_fire_flh(
         &self,
         port: usize,
         turret_count: i32,

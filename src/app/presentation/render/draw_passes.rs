@@ -666,7 +666,8 @@ pub(super) fn dispatch_draw_passes(
         bracket_tex,
         "factory_rally_second",
     );
-    // Original6D4750 calls the selected Techno's vt+438 (Foot4DC060)
+    // Original6D4750 and6D47BF/6D47F6 interleave action/control lines.
+    // The selected Techno's vt+438 (Foot4DC060) runs
     // AFTER rally pass1 at6D46CF. Its solid surface stores do not read/write Z.
     // See tools/procedural_drawing_oracle/rally-caller.instructions.json.
     draw_pooled_ui_passthrough(

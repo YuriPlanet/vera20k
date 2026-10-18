@@ -309,6 +309,24 @@ fn drawing_fixture(
 }
 
 fn built(row: &Value, zoom: f32) -> (Vec<SpriteInstance>, TacticalViewport) {
+    if row.get("draws").is_some() && row["input"].get("wall_ms").is_some() {
+        let input = &row["input"];
+        let view = viewport(input, zoom);
+        let coord = |value: &Value| {
+            let [x, y, z] = point(value);
+            DriveCoord { x, y, z }
+        };
+        let mut instances = Vec::new();
+        crate::app::presentation::control_links::append_line_instances(
+            &mut instances,
+            coord(&input["source"]),
+            coord(&input["target"]),
+            point(&input["rgb"]).map(|v| v as u8),
+            input["wall_ms"].as_u64().unwrap() as u32,
+            view,
+        );
+        return (instances, view);
+    }
     if let Some(primitives) = row["input"]["primitives"].as_array() {
         let view = viewport(&row["input"], zoom);
         let project = |value: &Value| {
@@ -361,6 +379,8 @@ fn built(row: &Value, zoom: f32) -> (Vec<SpriteInstance>, TacticalViewport) {
         Some(&sim),
         rules.as_ref(),
         Some(&palette_bytes()),
+        &HouseColorMap::new(),
+        0,
         view,
     );
     (instances, view)
@@ -422,16 +442,17 @@ fn has_clip_rounding_residual(row: &Value) -> bool {
     // Saved original clip endpoint [89,119] versus shared f64 [90,119].
     // This is the existing surface_line chop-rounding residual, not a new
     // tolerance for coordinates, colors, timers, uncut lines or other rows.
-    matches!(
-        row["input"]["name"].as_str(),
-        Some(
-            "height_2_bridge_1"
-                | "slope_5_bridge_1"
-                | "slope_6_bridge_1"
-                | "slope_7_bridge_1"
-                | "slope_8_bridge_1"
+    (row["input"]["name"] == "interior_clip" && row["input"].get("wall_ms").is_some())
+        || matches!(
+            row["input"]["name"].as_str(),
+            Some(
+                "height_2_bridge_1"
+                    | "slope_5_bridge_1"
+                    | "slope_6_bridge_1"
+                    | "slope_7_bridge_1"
+                    | "slope_8_bridge_1"
+            )
         )
-    )
 }
 
 fn assert_native_pixels<T: PartialEq>(
@@ -523,6 +544,8 @@ fn original_unit_attack_line_pixels_and_read_only_coordinate_queries() {
             Some(&sim),
             rules.as_ref(),
             Some(&palette_bytes()),
+            &HouseColorMap::new(),
+            0,
             view,
         );
         assert_native_pixels(&raster(&instances, view), &words(row), [160, 120], 0, row);
@@ -792,6 +815,8 @@ fn move_line_query_leaves_the_simulation_dummy_unchanged() {
         Some(&sim),
         None,
         Some(&palette_bytes()),
+        &HouseColorMap::new(),
+        0,
         view,
     );
     assert_eq!(query.dummy().snapshot().coord, before);
@@ -804,6 +829,13 @@ fn production_action_line_gpu_matches_original_surface() {
     use crate::render::terrain_draw_gpu_tests::{Gpu, camera, clear, encoded};
     use wgpu::util::DeviceExt;
     let gpu = Gpu::new();
+    static CONTROL_LINKS: std::sync::OnceLock<Value> = std::sync::OnceLock::new();
+    let control_links = CONTROL_LINKS.get_or_init(|| {
+        serde_json::from_str(crate::test_fixture::text(
+            "tools/procedural_drawing_oracle/control_links.json",
+        ))
+        .unwrap()
+    });
     for format in [
         wgpu::TextureFormat::Bgra8UnormSrgb,
         wgpu::TextureFormat::Rgba8UnormSrgb,
@@ -819,6 +851,7 @@ fn production_action_line_gpu_matches_original_surface() {
             for row in drawing_rows()
                 .chain(attack_rows())
                 .chain(native()["compositing_cases"].as_array().unwrap().iter())
+                .chain(control_links["cases"].as_array().unwrap().iter())
             {
                 let (mut instances, view) = built(row, zoom);
                 batch.write_camera(
@@ -887,7 +920,7 @@ fn production_action_line_gpu_matches_original_surface() {
                     gpu.read(&mut encoder, &depth),
                 ];
                 let output = gpu.finish(encoder, &reads, size);
-                // Five saved clip controls retain the documented1px CPU
+                // Saved clip controls retain the documented1px CPU
                 // rounding residual. For those only, the earlier CPU test
                 // bounds the native difference, and this GPU check verifies
                 // exact nearest presentation of that CPU raster. It is not

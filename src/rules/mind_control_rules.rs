@@ -27,6 +27,8 @@ pub enum CaptureReason {
 
 #[derive(Debug, Clone, Default)]
 pub struct MindControlRules {
+    /// Rules+310; native ordered CombatDamage reader66C914..66C92E.
+    pub attack_line_frames: i32,
     /// `[CombatDamage] ControlledAnimationType=` (Rules `+0x320`, read at
     /// `0x0066CA11`): the ring a captured object wears (stock `MINDANIM`).
     pub controlled_anim: Option<String>,
@@ -68,6 +70,8 @@ impl MindControlRules {
         // `DifficultyClass::ReadINI_IntVector @ 0x00475D70`.
         let list = |section: &IniSection, key: &str| section.read_int_list(key).unwrap_or_default();
         Self {
+            // Published by the ordered native_processing owner in RuleSet.
+            attack_line_frames: 15, // Rules constructor665ABE.
             // ReadString 0x80, then the anim or sound lookup.
             controlled_anim: combat
                 .read_type_name("ControlledAnimationType", 0x80)

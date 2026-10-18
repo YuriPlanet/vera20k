@@ -4073,6 +4073,7 @@ impl RuleSet {
                 .native_techno_type_order
                 .push((category, id.to_owned(), handle));
         }
+        rules.mind_control.attack_line_frames = processed.mind_control_attack_line_frames();
         rules.crate_rules = processed.crate_rules().clone();
         rules.powerups = processed.powerups().clone();
         rules.general.metallic_debris = processed.metallic_debris().to_vec();
@@ -4212,6 +4213,15 @@ impl RuleSet {
                 .find(|object| object.category == category && object.id == name)
             {
                 object.radial_fire_segments = segments;
+            }
+        }
+        for (category, name, offset) in processed.lepton_mind_control_offset_states() {
+            if let Some(object) = rules
+                .object_list
+                .iter_mut()
+                .find(|object| object.category == category && object.id == name)
+            {
+                object.lepton_mind_control_offset = offset;
             }
         }
         for (category, name, prerequisite, prerequisite_override) in processed.prerequisite_states()

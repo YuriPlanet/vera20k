@@ -548,6 +548,8 @@ pub struct ObjectType {
     /// Negative values shift the bar UP (above taller sprites). Default 0.
     /// Parsed from `PixelSelectionBracketDelta` in rules.ini.
     pub pixel_selection_bracket_delta: i32,
+    /// Rules LeptonMindControlOffset: Type+3DC ctor710D28=70, read714145.
+    pub lepton_mind_control_offset: i32,
     /// Sidebar/build tab grouping for structures.
     pub build_cat: Option<BuildCategory>,
     /// Human placement radius away from existing base-normal structures.
@@ -2742,6 +2744,8 @@ impl ObjectType {
             .name
             .to_owned(),
             pixel_selection_bracket_delta: section.read_int("PixelSelectionBracketDelta", 0),
+            // Replaced by the ordered retained Type reader in RuleSet.
+            lepton_mind_control_offset: 70,
             build_cat: section
                 .read_name("BuildCat", 0x20)
                 .and_then(BuildCategory::from_ini),

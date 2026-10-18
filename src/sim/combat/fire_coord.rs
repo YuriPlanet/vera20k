@@ -329,7 +329,16 @@ pub(crate) fn fire_coordinate(
             let use_elite = usize::try_from(weapon_index).is_ok_and(|index| {
                 super::combat_weapon::uses_elite_weapon(obj, snap.veterancy, index)
             });
-            let flh = art.weapon_flh(obj.turret_count, obj.weapon_count, weapon_index, use_elite);
+            // GetFLH6F3AF5..6F3B21 selects AlternateFLH before GetWeapon.
+            let flh = if weapon_index < 0 {
+                art.alternate_fire_flh(
+                    (-i64::from(weapon_index) - 1) as usize,
+                    obj.turret_count,
+                    obj.weapon_count,
+                )
+            } else {
+                art.weapon_flh(obj.turret_count, obj.weapon_count, weapon_index, use_elite)
+            };
             let flh = Flh {
                 forward: flh.forward.wrapping_add(base_coords.forward),
                 lateral: flh.lateral.wrapping_add(base_coords.lateral),
@@ -697,7 +706,7 @@ fn open_topped_port_coordinate(
     let source = FireSource::of_entity(transport);
     let base = fire_coordinate_base(world, rules, &source, transport_obj);
     let flh = base.art.map_or_else(Default::default, |art| {
-        art.open_topped_port_flh(port, transport_obj.turret_count, transport_obj.weapon_count)
+        art.alternate_fire_flh(port, transport_obj.turret_count, transport_obj.weapon_count)
     });
     let burst_index = (transport.weapon_burst.index() & 1) as u8;
     let delta = base
@@ -1221,3 +1230,79 @@ mod tests {
 #[cfg(test)]
 #[path = "fire_coord_building_tests.rs"]
 mod building_tests;
+
+#[cfg(test)]
+mod control_link_port_tests {
+    use super::*;
+    use crate::rules::art_data::ArtRegistry;
+    use crate::rules::ini_parser::IniFile;
+    use crate::sim::world::FrameEffects;
+
+    #[test]
+    fn negative_get_flh_indices_match_original_alternate_ports_and_burst_mirroring() {
+        let Some((ini, retail_art)) = crate::rules::retail_ini_fixture::retail_rules_and_art()
+        else {
+            return;
+        };
+        let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/procedural_drawing_oracle/control_links.json",
+        ))
+        .unwrap();
+        let data = &native["get_flh"];
+        let origin = &data["supplied"]["origin"];
+        let heading = data["supplied"]["primary_and_secondary_heading"]
+            .as_u64()
+            .unwrap() as u16;
+        for row in data["cases"].as_array().unwrap() {
+            let mut art = retail_art.clone();
+            let mut overrides = String::from("[DRED]\n");
+            for (port, flh) in row["alternate_flh"].as_array().unwrap().iter().enumerate() {
+                overrides.push_str(&format!(
+                    "AlternateFLH{port}={},{},{}\n",
+                    flh[0], flh[1], flh[2]
+                ));
+            }
+            art.merge(&IniFile::from_str(&overrides));
+            let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
+            rules.install_art_data(ArtRegistry::from_ini(&art));
+            let mut sim = Simulation::with_seed(1);
+            let id = sim
+                .construct_object_limbo_at_height(
+                    "DRED",
+                    "Russians",
+                    10,
+                    10,
+                    0,
+                    4,
+                    &rules,
+                    FrameEffects::default(),
+                )
+                .unwrap();
+            let actor = sim.substrate.entities.get_mut(id).unwrap();
+            actor.position.put_world_xy([2688, 2688]);
+            actor.position.set_exact_z_leptons_for_test(Some(416));
+            let pose = crate::sim::movement::ground_pose::position_world_coord(&actor.position);
+            assert_eq!(
+                [pose.x, pose.y, pose.z],
+                std::array::from_fn(|i| origin[i].as_i64().unwrap() as i32)
+            );
+            actor.body_facing = crate::sim::movement::FacingClass::new(heading, 0);
+            actor.barrel_facing = Some(crate::sim::movement::FacingClass::new(heading, 0));
+            let source = FireSource::of_entity(actor);
+            let result = fire_coordinate(
+                &sim,
+                &rules,
+                &source,
+                rules.object("DRED").unwrap(),
+                row["weapon_index"].as_i64().unwrap() as i32,
+                row["burst_index"].as_u64().unwrap() as u8,
+                Flh::default(),
+            );
+            assert_eq!(
+                [result.coord.x, result.coord.y, result.coord.z],
+                std::array::from_fn(|i| row["coordinate"][i].as_i64().unwrap() as i32),
+                "{row}"
+            );
+        }
+    }
+}
