@@ -8,6 +8,47 @@ use crate::sim::bridge_state::damage_dispatch::{self, CellFields, CellReader, Da
 use crate::sim::bridge_state::publication::CellCoord;
 use crate::sim::bridge_state::ramp_repair::{Family, HutCells};
 use crate::sim::world::FrameEffects;
+use std::hash::{Hash, Hasher};
+
+/// Map+D4's ordered packed-cell vector, independent of optional bridge geometry.
+/// Native5650E3/5651EB initializes it empty; MouseSave5BE8E1..927 and
+/// MouseLoad5BE598..61E retain the count and every coordinate, including duplicates.
+/// Source: original587180..58740E and47DDD5..47DE2B (gamemd1cdd1180).
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
+pub(in crate::sim::world) struct PendingBridgeCells {
+    cells: Vec<(i16, i16)>,
+}
+
+impl PendingBridgeCells {
+    pub(in crate::sim::world) fn append(&mut self, cell: (i16, i16)) {
+        // Native skips this append on allocation failure, then continues debris.
+        if self.cells.try_reserve(1).is_ok() {
+            self.cells.push(cell);
+        }
+    }
+
+    pub(in crate::sim::world) fn clear(&mut self) {
+        //42F420 frees native capacity too. Retaining Rust capacity is not
+        //observable gameplay state; allocation-failure equivalence is excluded.
+        self.cells.clear();
+    }
+
+    fn at(&self, index: usize) -> Option<(i16, i16)> {
+        self.cells.get(index).copied()
+    }
+
+    pub(in crate::sim::world) fn hash_state(&self, hasher: &mut impl Hasher) {
+        if !self.cells.is_empty() {
+            // Preserve the established empty-map hash representation.
+            0x87f8bcu32.hash(hasher);
+            self.cells.hash(hasher);
+        }
+    }
+}
+
+#[cfg(test)]
+#[path = "bridge_moving_collapse_tests.rs"]
+mod moving_collapse_tests;
 
 /// The live cell reads behind a driver selection and the CABHUT fallback's
 /// anchor search.
@@ -121,18 +162,34 @@ impl<'a> BridgeDamageDrivers<'a> {
 
     /// ApplyDamageToCell `0x00587180`: the driver is chosen again from live
     /// cell state on every call ([`damage_dispatch::select_driver`]); no
-    /// match returns false.
+    /// match returns false. The resident Map+D4 vector is cleared on both
+    /// boundaries, including no-driver calls. Recursive damage uses this same
+    /// owner: never take/copy the vector into a private activation's drain.
     pub(crate) fn apply_damage_to_cell(&mut self, input: (i16, i16)) -> bool {
+        self.sim.pending_bridge_collapses.clear();
         let cell = self
             .sim
             .resolved_terrain
             .as_ref()
             .expect("bridge damage terrain")
             .native_cell_identity(input);
-        let Some(path) = damage_dispatch::select_driver(&mut LiveCells::new(self.sim), cell) else {
-            return false;
-        };
-        self.run(input, path)
+        let returned = damage_dispatch::select_driver(&mut LiveCells::new(self.sim), cell)
+            .is_some_and(|path| self.run(input, path));
+        //587394 reloads the data and5873D4 reloads the live count after each
+        //receiver: nested calls can clear this vector; callbacks can append.
+        let mut index = 0;
+        while let Some(point) = self.sim.pending_bridge_collapses.at(index) {
+            moving_collapse::apply(
+                self.sim,
+                self.rules,
+                self.registry,
+                point,
+                self.frame_effects,
+            );
+            index += 1;
+        }
+        self.sim.pending_bridge_collapses.clear();
+        returned
     }
 
     /// Read-only receipt of the cascades already published by this owner.

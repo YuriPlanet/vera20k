@@ -1249,6 +1249,7 @@ pub fn finalize_constructed_scenario(
         sim.finalize_scenario_post_map(crate::sim::scenario_post_map::ScenarioPostMapInput {
             map_width: map_data.header.width as u16,
             map_height: map_data.header.height as u16,
+            fill_silos: map_data.basic.fill_silos.unwrap_or(false),
             rules,
             overlay_registry,
             house_roster,

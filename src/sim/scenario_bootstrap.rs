@@ -19,6 +19,10 @@ mod scenario_house_name_retail_tests;
 mod scenario_launch_identity_retail_tests;
 
 #[cfg(test)]
+#[path = "scenario_fillsilos_retail_tests.rs"]
+mod scenario_fillsilos_retail_tests;
+
+#[cfg(test)]
 #[path = "scenario_special_money_retail_tests.rs"]
 mod scenario_special_money_retail_tests;
 
@@ -4551,6 +4555,7 @@ mod tests {
         let output = sim.finalize_scenario_post_map(ScenarioPostMapInput {
             map_width: SIZE,
             map_height: SIZE,
+            fill_silos: false,
             rules: &rules,
             overlay_registry: &overlays,
             house_roster: &house_roster,

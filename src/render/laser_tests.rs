@@ -228,6 +228,7 @@ fn production_laser_pixels_match_original_software_surface() {
                     std::iter::empty(),
                     &[],
                     &[],
+                    &[],
                     viewport(input),
                     |color| high_detail(input, color),
                     |[x, y]| match input["alpha"].as_str() {

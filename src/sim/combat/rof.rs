@@ -24,8 +24,8 @@ use crate::util::native_x87::{
 ///   halved for a berserk firer (`0x006FF274..0x006FF2CB`). Its DiskLaser
 ///   path stores the value unhalved, fires the disk laser and returns
 ///   (`0x006FE4A4..0x006FE4EF`). Ported (`world_fire::emit_admitted_fire`,
-///   through `GameEntity::rearm_after_fire`); VERA fires a DiskLaser weapon
-///   through the ordinary path, keeping only the unhalved rearm.
+///   through `GameEntity::rearm_after_fire`); DiskLaser returns before the
+///   ordinary Bullet and report/muzzle/reveal tails.
 /// - `AircraftClass::Drop_Payload` restarts it with no duration
 ///   (`0x00415E88`). Ported (the paradrop success arm).
 /// - A Prism support beam starts the supporter's downtime,
@@ -34,10 +34,12 @@ use crate::util::native_x87::{
 /// - A C4 plant arms the planter with `GetROF(1)`
 ///   (`InfantryClass::Per_Cell_Process 0x0051A564`/`0x0051A624`). Ported
 ///   (`sim::c4_plant`).
-/// - RESIDUAL, with their mechanisms:
-///   - `UnitClass::ReceiveGunner`/`RemoveGunner` read a running rearm
-///     (`0x0074643A`, `0x00746502`) and hand it over (`0x0074646E`,
-///     `0x0074655C`; see `temporal.rs`);
+/// - `UnitClass::ReceiveGunner`/`RemoveGunner` read the donor's active rearm
+///   (`0x0074643A`, `0x00746502`), increment the receiving owner's burst,
+///   and restart its timer with its own GetROF7/0 (`0x00746499`,
+///   `0x00746574`; `passenger::rearm_transferred_gunner`). No charge-delay
+///   write or burst remainder accompanies these callers.
+/// - RESIDUAL, with its mechanism:
 ///   - `UnitClass::PerCellProcess` arms a unit that stops with no NavCom
 ///     and no path with `GetROF(1) / 4` when its type has
 ///     `MobileFire=no` (`0x0073ADCA..0x0073AE18`). Dormant: no retail

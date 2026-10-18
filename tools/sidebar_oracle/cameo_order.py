@@ -17,7 +17,7 @@ import struct
 
 from unicorn import UC_HOOK_CODE
 from unicorn.x86_const import (
-    UC_X86_REG_EAX, UC_X86_REG_EBP, UC_X86_REG_EBX, UC_X86_REG_ECX,
+    UC_X86_REG_EAX, UC_X86_REG_EBP, UC_X86_REG_EBX, UC_X86_REG_ECX, UC_X86_REG_EDI,
     UC_X86_REG_EIP, UC_X86_REG_ESI, UC_X86_REG_ESP,
     UC_X86_REG_FPCW,
 )
@@ -1487,6 +1487,184 @@ def metadata():
     return record
 
 
+def draw_availability_generate():
+    """Execute StripDraw's whole-strip busy scan and per-entry overlay decision.
+
+    The catalog, retained request words and Factory getter fields are explicit
+    inputs. Type availability is supplied by Sidebar's existing query boundary;
+    no admission, event delivery, pixels or production timing is claimed here.
+    """
+    catalog = [item('GAPOWR', 7), item('GAPILE', 7),
+               item('GAPILL', 7, build_cat=5), item('NASAM', 7, build_cat=5),
+               item('E1', 16), item('ENGINEER', 16),
+               item('MTNK'), item('FV'), item('ORCA', 3)]
+    m = Sidebar(catalog)
+    u = m.u
+    from tools.can_build_oracle import OWNED, ACTIVE, PRODUCED, COUNTER_CAPACITY
+    for offset in (*OWNED.values(), *ACTIVE.values(), *PRODUCED):
+        m.invoke(0x49F9B0, obj=m.house + offset)
+        put32(u, m.house + offset + 4, m.alloc(COUNTER_CAPACITY * 4))
+        put32(u, m.house + offset + 8, COUNTER_CAPACITY)
+    for entry in catalog:
+        m.add(entry['id'])
+        # Non-limiting explicit type prior for original CheckBuildLimit.
+        put32(u, m.pointers[entry['id']] + 0x3B8, 2147483647)
+        put32(u, m.pointers[entry['id']] + 0xDF8,
+              m.catalog[entry['id']]['type_index'])
+    image_getters = {read(u, VTABLE[TYPE_NAMES[kind]] + 0x98)[0] & 0xFFFFFFFF
+                     for kind in (7, 16, 40, 3)}
+    def image_boundary(_u, pc, _size, _data):
+        if pc in image_getters:
+            m.native_return(0, 0)  # Image pointer is not an availability input.
+    hook = u.hook_add(UC_HOOK_CODE, image_boundary)
+    factory = m.alloc(0x100)
+    product = m.alloc(0x100)
+    controls = []
+    for tab, source in ((0, 'GAPOWR'), (1, 'GAPILL'), (2, 'E1'), (3, 'MTNK')):
+        strip = STRIPS[tab]
+        names = m.order()[tab]
+        source_slot = names.index(source)
+        for state, linked, stage, label in (
+                (0, False, 0, 'idle'), (1, False, 0, 'pending'),
+                (2, False, 0, 'pending_hold'), (3, False, 0, 'state3'),
+                (1, True, 0, 'building'), (1, True, 54, 'ready')):
+            for other_strip, other_names in zip(STRIPS, m.order()):
+                for slot in range(len(other_names)):
+                    put32(u, other_strip + 0x64 + slot * 0x34, 0)
+                    put32(u, other_strip + 0x68 + slot * 0x34, 0)
+            put32(u, strip + 0x68 + source_slot * 0x34, state)
+            put32(u, strip + 0x64 + source_slot * 0x34, factory if linked else 0)
+            put32(u, factory + 0x58, product)
+            put32(u, factory + 0x24, stage)
+            u.mem_write(STACK, bytes(0x500))
+            u.reg_write(UC_X86_REG_ESI, strip)
+            m.invoke(0x6A95A3, ends=0x6A95EE)
+            busy = u.mem_read(STACK + 0x17, 1)[0]
+            entries = []
+            for slot, name in enumerate(names):
+                u.mem_write(STACK, bytes(0x500))
+                u.mem_write(STACK + 0x490, b'\x01')  # Draw requested, not a skipped repaint.
+                u.mem_write(STACK + 0x17, bytes([busy]))
+                put32(u, STACK + 0x30, strip + slot * 0x34)
+                put32(u, STACK + 0x3C, slot)
+                u.reg_write(UC_X86_REG_EAX, strip + slot * 0x34)
+                u.reg_write(UC_X86_REG_EDI, strip)
+                m.invoke(0x6A9761, obj=m.catalog[name]['kind'], ends=0x6A99C3)
+                entries.append(dict(type=name, unavailable=bool(u.reg_read(UC_X86_REG_EBX) & 255)))
+            controls.append(dict(tab=tab, source=source, state=label,
+                request_state=state, linked=linked, stage=stage,
+                strip_busy=bool(busy), entries=entries))
+    u.hook_del(hook)
+    # Select's unlinked-right-click arm: execute the request-word branch and
+    # actual EventClass ctor/OutList append. Sound, redraw and wall time are
+    # presentation/platform sinks; no request state or event is supplied.
+    pending_clicks, event_arguments = [], []
+    def pending_boundary(_u, pc, size, _data):
+        if pc == 0x4F42F0:
+            m.native_return(0, 4)
+        elif pc == 0x750920:
+            m.native_return(0, 8)
+        elif pc == 0x4C6970:
+            sp = u.reg_read(UC_X86_REG_ESP)
+            event_arguments.append(list(read(u, sp + 4, 5)))
+        elif bytes(u.mem_read(pc, size)) == b'\xFF\x15\x30\x15\x7E\x00':
+            u.reg_write(UC_X86_REG_EAX, 0)
+            u.reg_write(UC_X86_REG_EIP, pc + size)
+    pending_hook = u.hook_add(UC_HOOK_CODE, pending_boundary)
+    select = m.alloc(0x40)
+    for tab, source in ((0, 'GAPOWR'), (1, 'GAPILL'), (2, 'E1'), (3, 'MTNK')):
+        strip = STRIPS[tab]
+        slot = m.order()[tab].index(source)
+        request = strip + 0x68 + slot * 0x34
+        put32(u, select + 0x2C, strip)
+        for state in (0, 1, 2):
+            put32(u, request, state)
+            u.mem_write(STACK, bytes(0x500))
+            put32(u, STACK + 0x20, select)
+            put32(u, STACK + 0x14, m.catalog[source]['type_index'])
+            put32(u, 0xA802C8, 0)
+            put32(u, 0xA802CC, 0)
+            put32(u, 0xA802D0, 0)
+            event_arguments.clear()
+            u.reg_write(UC_X86_REG_ESI, slot)
+            u.reg_write(UC_X86_REG_EDI, m.pointers[source])
+            u.reg_write(UC_X86_REG_EBP, m.catalog[source]['kind'])
+            m.invoke(0x6AB0AC, ends=0x6AB18D)
+            count = read(u, 0xA802C8)[0]
+            pending_clicks.append(dict(tab=tab, source=source, before=state,
+                after=read(u, request)[0], event_arguments=copy.deepcopy(event_arguments),
+                events=[dict(kind=u.mem_read(0xA802D4 + i * 111, 1)[0])
+                        for i in range(count)]))
+    # Retain House's original category request flag across successive clicks.
+    # This executes the entire unlinked left arm, including its original
+    # getter/setter gates, rather than supplying request words between clicks.
+    pending_histories = []
+    histories = [(tab, source, [(tab, source, press)
+                  for press in ('left', 'right', 'left', 'right')])
+                 for tab, source in ((0, 'GAPOWR'), (1, 'GAPILL'), (2, 'E1'), (3, 'MTNK'))]
+    histories.append((3, 'MTNK', [(2, 'E1', 'left'), (3, 'MTNK', 'left'),
+                                 (3, 'MTNK', 'right')]))
+    for tab, source, presses in histories:
+        for other_strip, names in zip(STRIPS, m.order()):
+            for slot in range(len(names)):
+                put32(u, other_strip + 0x64 + slot * 0x34, 0)
+                put32(u, other_strip + 0x68 + slot * 0x34, 0)
+        u.mem_write(m.house + 0x53D0, bytes(9))
+        for address in (0xA802C8, 0xA802CC, 0xA802D0):
+            put32(u, address, 0)
+        event_arguments.clear()
+        steps = []
+        for click_tab, name, press in presses:
+            strip = STRIPS[click_tab]
+            slot = m.order()[click_tab].index(name)
+            entry = m.catalog[name]
+            put32(u, select + 0x2C, strip)
+            u.mem_write(STACK, bytes(0x500))
+            put32(u, STACK + 0x14, entry['type_index'])
+            put32(u, STACK + 0x20, select)
+            put32(u, STACK + 0x24, entry['build_cat'])
+            put32(u, STACK + 0x28, m.pointers[source])
+            put32(u, STACK + 0x2C, slot)
+            u.reg_write(UC_X86_REG_EBX, slot * 0x34)
+            u.reg_write(UC_X86_REG_ESI, slot)
+            u.reg_write(UC_X86_REG_EDI, m.pointers[source])
+            u.reg_write(UC_X86_REG_EBP, entry['kind'])
+            before = read(u, 0xA802C8)[0]
+            m.invoke(0x6AB602 if press == 'left' else 0x6AB0AC,
+                     ends=(0x6AB825, 0x6AB95A) if press == 'left' else 0x6AB18D)
+            count = read(u, 0xA802C8)[0]
+            requests = [dict(source=other_name, request_state=state)
+                        for other_strip, names in zip(STRIPS, m.order())
+                        for other_slot, other_name in enumerate(names)
+                        if (state := read(u, other_strip + 0x68 + other_slot * 0x34)[0])]
+            steps.append(dict(source=name, tab=click_tab, press=press, requests=requests,
+                              events=[u.mem_read(0xA802D4 + i * 111, 1)[0]
+                                      for i in range(before, count)]))
+        pending_histories.append(dict(tab=tab, source=source, steps=steps))
+    u.hook_del(pending_hook)
+    return dict(schema_version=1, catalog=catalog, controls=controls,
+                pending_right_clicks=pending_clicks,
+                pending_click_histories=pending_histories)
+
+
+def draw_availability_metadata():
+    return provenance(
+        scope='StripDraw whole-strip request scan and per-entry unavailable decisions, plus Select unlinked click request transitions and original PRODUCE/SUSPEND event construction, for four strips; no raster or production timing.',
+        assumptions=[
+            'Reuse Sidebar VM, original typed RTTI tables, Compare/Insert/Add and original Factory IsComplete/GetStage getters. Supplied catalog and Factory+24/+58 fields are declared component inputs.',
+            'Request words at strip+68+slot*34 are explicit inputs. Select6AB80D/6AB587 write1 after PRODUCE; pending right-click6AB0C9 writes2; StripAbandon6ABBE7 clears0. The live Factory link alone is not the request word.',
+            'Original6A95A3..6A95EE scans every retained entry, including offscreen entries, for state1 or2. Original6A9761..6A99C3 makes the BuildingType-only gate and linked/pending overrides; none of these boolean outputs is calculated in Python.',
+            'Type BuildLimit=2147483647 and empty House counters isolate busy-strip availability; original CheckBuildLimit executes. No custom rules or whole-map closure claim.'],
+        substitutions=[
+            'Existing Sidebar FindFactory/CanBuild query priors return available/Yes for all types. Image virtual+98 returnsNULL; shape pointers/pixels are outside the selected range.',
+            'Select6AB0AC starts at the no-Factory right-click arm with retained slot/type locals supplied, stopping before the separate queued-copy arm6AB18D. Pending click histories also execute left6AB602 through request/redraw6AB825 or its rejected-request exit6AB95A, retaining the original House request flags between clicks; the cost/clock initialization tail is excluded. Original EventClass4C6970 and OutList append execute. Redraw4F42F0, GUI sound750920, existing EVA sink and WinMM timeGetTime are presentation/platform boundaries.'],
+        entry_points=dict(strip_draw=0x6A9540, busy_scan=0x6A95A3,
+                          busy_scan_end=0x6A95EE, entry_draw=0x6A9761,
+                          decision=0x6A99C3, pending_right_click=0x6AB0AC,
+                          pending_right_click_end=0x6AB18D, pending_left_click=0x6AB602,
+                          pending_left_request_end=0x6AB825, event_ctor=0x4C6970))
+
+
 def trigger_cameo_generate():
     """114/115 callers and original115 deadline/drawing-predicate controls.
 
@@ -1620,7 +1798,13 @@ if __name__ == '__main__':
     import argparse
     selector = argparse.ArgumentParser(add_help=False)
     selector.add_argument('--trigger-cameos', action='store_true')
+    selector.add_argument('--draw-availability', action='store_true')
     selected, remaining = selector.parse_known_args()
+    if selected.draw_availability:
+        finish_vectors(draw_availability_generate,
+            Path(__file__).with_name('draw_availability.json'),
+            provenance=draw_availability_metadata, argv=remaining)
+        raise SystemExit(0)
     if selected.trigger_cameos:
         finish_vectors(trigger_cameo_generate,
             Path(__file__).with_name('trigger_cameos.json'),

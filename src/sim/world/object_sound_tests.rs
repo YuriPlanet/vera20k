@@ -83,7 +83,7 @@ fn insert_structure(sim: &mut Simulation, id: u64, type_name: &str, cell: (u16, 
     sim.add_entity_occupancy(id);
 }
 
-/// The waypoint cell's centre (`trigger_waypoint_coord` on flat level-0
+/// The waypoint cell's centre (`trigger_waypoint_location` on flat level-0
 /// ground).
 const WAYPOINT_COORD: DriveCoord = DriveCoord {
     x: 5 * 256 + 128,
@@ -282,7 +282,7 @@ fn action_116_zero_cell_still_stops_coordinate_requests() {
     sim.session.install_waypoints(&map.waypoints);
     insert_structure(&mut sim, 40, "CAWASH18", (0, 0));
     sim.set_custom_sound(40, Some("TestAmbient"));
-    let expected = sim.trigger_waypoint_coord(1).unwrap();
+    let expected = sim.trigger_waypoint_location(1).unwrap();
     poll(&mut sim, &map);
     assert!(matches!(
         sim.sound_events.as_slice(),
@@ -372,4 +372,26 @@ fn a_custom_sound_reaches_the_hash_and_a_snapshot_restore_rejects_its_missing_ob
         ),
         "{error:?}"
     );
+}
+
+#[test]
+fn sound_actions_resolve_the_selected_cell_coordinate_for_packed_waypoint_aliases() {
+    for action in ["99,7,TestAmbient,0,0,0,0,B", "116,0,0,0,0,0,0,B"] {
+        let (mut sim, mut map) = sim_with_trigger(action);
+        let waypoint = map.waypoints.get_mut(&1).unwrap();
+        waypoint.rx = 512;
+        waypoint.ry = 0;
+        sim.session.install_waypoints(&map.waypoints);
+        // Map5657A0(512,0) aliases the allocated Cell(0,1). Native68BD00
+        // reads that receiver's own centre, not the raw requested centre.
+        poll(&mut sim, &map);
+        let expected = DriveCoord {
+            x: 128,
+            y: 384,
+            z: 0,
+        };
+        assert!(matches!(sim.sound_events.as_slice(),
+            [SimSoundEvent::VocAtCoord{coordinate,..} | SimSoundEvent::VocStopAtCoord{coordinate,..}]
+                if *coordinate==expected));
+    }
 }

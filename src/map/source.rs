@@ -34,10 +34,33 @@ pub enum LoadedMapSource {
     },
     Generated {
         seed_name: String,
+        /// Actual seed-file input to generation. Older or missing-file sources
+        /// retain `None`; their constructor-default gameplay remains valid.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        seed_source: Option<GeneratedSeedSource>,
     },
     LegacyFallback {
         label: String,
     },
+}
+
+/// Identity of the seed bytes consumed by the normal generated-map loader.
+/// These bytes describe generation inputs, not the emitted map's INI bytes.
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct GeneratedSeedSource {
+    pub path: PathBuf,
+    pub payload_len: usize,
+    pub source_sha256: String,
+}
+
+impl GeneratedSeedSource {
+    pub fn from_consumed_bytes(path: PathBuf, bytes: &[u8]) -> Self {
+        Self {
+            path,
+            payload_len: bytes.len(),
+            source_sha256: sha256_hex(bytes),
+        }
+    }
 }
 
 /// Parsed map paired with the exact source consumed by the parser.
@@ -227,6 +250,20 @@ mod tests {
     use super::test_support::{TestDirectory, make_new_format_mix_bytes};
     use super::*;
     use crate::assets::mix_hash::mix_hash;
+
+    #[test]
+    fn legacy_generated_source_keeps_absent_seed_identity() {
+        let legacy = serde_json::json!({"kind": "generated", "seed_name": "Old.SED"});
+        let source: LoadedMapSource = serde_json::from_value(legacy.clone()).unwrap();
+        assert!(matches!(
+            source,
+            LoadedMapSource::Generated {
+                seed_source: None,
+                ..
+            }
+        ));
+        assert_eq!(serde_json::to_value(source).unwrap(), legacy);
+    }
 
     #[test]
     fn asset_map_candidates_adds_retail_map_extensions_for_stems() {

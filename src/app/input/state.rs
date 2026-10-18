@@ -302,18 +302,21 @@ impl MatchInputState {
         }
     }
 
-    /// AllToCheer536C00 ->730F30 uses wrapping ADD and a signed strict
-    /// comparison against the binary frame. Refused input retains the prior;
+    /// AllToCheer536C00 ->730F30 first reads Session+300/A8B538 (local
+    /// defeat), then uses wrapping ADD and a signed strict comparison
+    /// against the binary frame. Refused input retains the prior;
     /// an admitted attempt writes the frame after issue, including a full
     /// OutList. Source and original executed histories: input_oracle/house_cheer.
     pub(crate) fn try_issue_cheer(
         &mut self,
         current_frame: i32,
         maximum_cheer_rate: i32,
-        input_locked: bool,
+        local_player_defeated: bool,
         issue: impl FnOnce() -> Option<u64>,
     ) -> Option<u64> {
-        if input_locked || self.last_cheer_frame.wrapping_add(maximum_cheer_rate) >= current_frame {
+        if local_player_defeated
+            || self.last_cheer_frame.wrapping_add(maximum_cheer_rate) >= current_frame
+        {
             return None;
         }
         let issued = issue();
@@ -610,3 +613,7 @@ mod saved_local_view_tests;
 #[cfg(test)]
 #[path = "house_cheer_tests.rs"]
 mod house_cheer_tests;
+
+#[cfg(test)]
+#[path = "house_cheer_retail_tests.rs"]
+mod house_cheer_retail_tests;

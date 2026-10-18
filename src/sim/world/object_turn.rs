@@ -1039,7 +1039,7 @@ impl Simulation {
             && cell_before_movement != cell_after_movement
         {
             if let Some(rules) = rules {
-                sim.refresh_unit_sensor_at_per_cell(stable_id, rules);
+                sim.refresh_unit_sensor_at_per_cell(stable_id, rules, overlay_registry);
                 crate::sim::world::techno_ai_cloak::uncloak_on_sensor_neighbour_after_cell_entry(
                     sim, stable_id, rules,
                 );

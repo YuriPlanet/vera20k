@@ -1981,6 +1981,7 @@ pub struct ObjectType {
     /// `Cloakable=` — copied into Unit/Infantry runtime cloak ability.
     pub cloakable: bool,
     /// `CloakingSpeed=` — signed frame duration between cloak progress steps.
+    /// TechnoType710BE4 seeds7; ReadINI71243A..71244C retains it when omitted.
     pub cloaking_speed: i32,
     /// `CloakStop=` — FootClass requires an idle locomotor before reporting
     /// its runtime cloak ability as currently usable.
@@ -3327,7 +3328,7 @@ impl ObjectType {
                 .clamp(0, u8::MAX as i32) as u8,
             no_shadow: section.read_bool("NoShadow", false),
             cloakable: section.read_bool("Cloakable", false),
-            cloaking_speed: section.read_int("CloakingSpeed", 1),
+            cloaking_speed: section.read_int("CloakingSpeed", 7),
             cloak_stop: section.read_bool("CloakStop", false),
             cloak_radius_in_cells: section.read_int("CloakRadiusInCells", 20) as i8,
             cloak_generator: section.read_bool("CloakGenerator", false),
@@ -5840,7 +5841,7 @@ mod tests {
             ObjectCategory::Vehicle,
         );
         assert!(!defaults.cloakable && !defaults.cloak_stop);
-        assert_eq!(defaults.cloaking_speed, 1);
+        assert_eq!(defaults.cloaking_speed, 7);
         assert_eq!(defaults.cloak_radius_in_cells, 20);
     }
 

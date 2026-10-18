@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original DESO mode0/kind1 RadBeam wrapper, selected physical readers, FPS spacing, straight geometry, packed pixels and draw-count retirement",
+  "assumptions": [
+    "Selected physical RULESMD, optional LANGRULE, MPBattleMD and retained ordinary-deso-radbeam.map execute in separate reader passes; fixed ARTMD is not layered. Native Rules665650/InfantryType5236A0 constructors and whole66CF70/5240A0/772080/75D3A0 readers execute with explicitly filtered selected keys/sections. This is cached lexical input, not native file/archive loading, complete Rules Process/discovery/order or startup.",
+    "PhysicalBirth reuses BulletReader/Reader native INI/CRT/TLS/allocation/GUID transport. Selected DESO Primary/ElitePrimary/native pointers, fixed ART FLH, weapon beam flags, warhead Temporal/Radiation and RadColor outputs/defaults are measured. Projectile constructors may run for references; projectile reading/firing/damage are outside this component. Voice/sequence/visual assets and unrelated scalar keys are filtered or setup-only boundaries.",
+    "Actors are supplied native Infantry-vtable/physical-type pointers, rookie rank, coordinates, zero burst, no passenger/open-topped links, native Walk75AA90 and initialized Facing state. They are not native Infantry construction, Unlimbo, placement, House/AI/fog or input admission. Source Tactical matrix executes the same original6D1DC5..6D1E1E initializer as LaserScene; default projection scalar/camera inputs remain explicit.",
+    "Whole SpawnRadBeam6FD620 executes mode0 and original GetFLH/coordinate/projection/setters/allocator/constructor. Synthetic fixed-ART controls run original type readers before the wrapper; no FLH, coordinate, depth or beam output is substituted. Original registry growth/insertion runs; mode0 actor links remain zero.",
+    "RadPixels composes existing LaserPixels/Rally surface runtime and borrows unchanged ElectricPixels allocator/return methods plus RngTrace. Its inherited unrelated LaserDraw constructor executes before measurement; its managers never run. No bolt or unrelated palette VM is constructed. RadBeam births are original Allocate/constructor/setters with values copied from independent native wrapper output or explicitly declared component input coordinates/progress/duration.",
+    "Full6591B0/659650/659AC0/65A1B0 run as declared. Length overflow rows stop at65978C before the subsequent draw branch and are not whole-draw results. FPS/current/requested, stage7, RGB565 destination, raw-u16 A/Z, crop, clipping and FPCW0E7F are component inputs; startup/current0 and requested0 retain original masked arithmetic/ftol. Network timing-event producer and scenario save/load remain open.",
+    "Native manager reverse traversal, compaction, return expiry and deletion execute. Complete lifetime controls keep binary frame200 unchanged; source/target links are copied null, not world attachments. No Abstract identity, CdTimer, RNG or detach is added. Existing RngTrace owns seeded Main/Scenario/Mapgen prestates; before/after full1012-byte objects are retained per birth/lifetime family and all rows reject draws or mutation.",
+    "Native projection/clipping and packed4BFD30 execute against existing BSurface lock/stride/unlock and immutable A/Z; all sparse pixels and hashes are original outputs. The partly clipped changing-Z row retains native preclipped XY and original endpoint depth arguments, without normalizing them. Whole tactical composition, GPU upload, live fog/terrain production, audio, eruption/kind2, Chrono/magnetic attachment modes and complete Scene startup are excluded."
+  ],
+  "substitutions": [
+    "Existing Reader bump allocator/no-op delete, native cached-INI/CRT/TLS and Reader.guid_transport Windows services. Type visual asset entries5F8110/5F8CE0 and atexit are recorded setup-only boundaries and forbidden inside measured wrapper. No measured FLH/getter/math/manager/draw return or numeric value is supplied.",
+    "Existing ElectricPixels surface allocations/delete/atexit transport and Rally memory surfaces replace DirectDraw storage only; original packed DSurface body remains installed. Inherited Spark/bolt boundaries are guarded unreachable during RadBeam measurements. No instruction bytes, source vtables, sine table, expected color, raster, RNG or gameplay result are patched."
+  ],
+  "entry_points": {
+    "wrapper": "0x006FD620",
+    "allocate": "0x00659110",
+    "constructor": "0x006593F0",
+    "vector_initializer": "0x00659090",
+    "manager": "0x006591B0",
+    "draw": "0x00659650",
+    "segment": "0x00659AC0",
+    "coordinate_divide": "0x0065A1B0",
+    "rules_ctor": "0x00665650",
+    "radiation_reader": "0x0066CF70",
+    "infantry_type_ctor": "0x005236A0",
+    "infantry_type_reader": "0x005240A0",
+    "weapon_reader": "0x00772080",
+    "warhead_reader": "0x0075D3A0",
+    "infantry_flh": "0x00523250",
+    "techno_flh": "0x006F3AD0",
+    "sine": "0x004CACB0",
+    "sqrt": "0x004CAC40",
+    "ftol": "0x007C5F00",
+    "projection": "0x006D2140",
+    "source_projection": "0x006D1F10",
+    "packed_line": "0x004BFD30"
+  },
+  "replay_command": "python -m tools.procedural_drawing_oracle.rad_beam",
+  "payload_sha256": "3cd73817cc981afcaff09e060f8b4fa8ec6cb551577441941e53f2c2965212a4"
+}

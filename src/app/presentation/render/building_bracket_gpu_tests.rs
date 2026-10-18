@@ -78,6 +78,7 @@ fn native_bracket_pixels_reach_display_replay_without_writing_z() {
                     lines.iter().copied(),
                     &[],
                     &[],
+                    &[],
                     viewport,
                     |_| false,
                     |[x, y]| {

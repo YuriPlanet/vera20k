@@ -1,0 +1,53 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Unit Temporal gunner receive/remove/retry with real GetWeapon/GetROF, receiver rank/House context, Scenario RNG and lone live Unit LetGo",
+  "assumptions": [
+    "Existing BulletReader owns the VM, cached physical lexical INI strings, allocation, CRT/TLS and fixed ART. Whole FV7470D0/747620 and CLEG5236A0/5240A0, ClegSequence523D00, Weapon constructors/readers772FA0/771C70/772080 and ChronoBeam75D3A0 execute. Archive loading, full registry discovery/order and Scenario layer scheduling are supplied boundaries.",
+    "Rules665650, whole66D530 with only VeteranROF/GameSpeedBias/TeamDelays, wholeCombatDamage66BBB0 with only the two ROF multipliers, original difficulty readers66D270, Country5113F0/511850 and wholeHouseSetDifficulty4F6EC0 establish consumed scalar/default inputs. Full House construction, GameMode5, House indexes0/1 and chosen country/difficulty/rank contexts are supplied; cross-House context is a component contrast, not ordinary boarding admission.",
+    "Concrete original Unit/Infantry vtables and type pointers with native-read full health are supplied live actor boundaries. Original InitManagers Temporal producer6F4154..6F41C0 executes actual GetWeapon/Warhead admission, allocation, Temporal71A4E0 constructor, owner binding and weapon Damage copy. Cargo admission, parent pointers, placement and successful/failed Unlimbo are not executed; receive/remove/retry represents the callback order after those existing owners admit it.",
+    "Native receive selects temporary weapon slot7 (CRNuke) before final CLEG mode10 (CRNeutronRifle). Native removal samples the donor timer before manager transfer/LetGo, then queries receiver CLEG slot0 at its current rank/House/burst. No ROF, slot, rank predicate, LetGo, Mark(2) or RNG return is replaced.",
+    "Explicit retained frame/duration and burst inputs bound component cases. The actual_fire_rearm_tail control additionally executes existing original6FF274..6FF2D1 with real GetROF, timer stores, charge-delay copy and signed burst remainder, starting after shot effects. Full FireAt admission/projectile/Temporal shot creation is outside that producer fragment.",
+    "A supplied single-head live Unit target with remaining700 has no other managers, incoming/outgoing warp chain or building/House advisory. Original LetGo clears the target head/warped flag and calls original FootMark(2), whose immediate true arm needs no world reconstruction. Target progression, erase, other links and rendering remain separate Temporal owners.",
+    "Scenario is originally seeded31 or1; Main/MapGen originally seeded0 after setup for each case. Full1012-byte logical states at the initial boundary and every operation boundary, original ranged/next calls, actual raw draws/rejections and ordered writes are retained. Raw draw counts are measured at the native consumer sites, not inferred from an entry counter.",
+    "FPCW0E3F and ftol cache are supplied as in the existing ordinary Mission owner. Caller scratch stack is cleared, making native uninitialized timer+2F0 writes reproducible but not a logical timer expectation. Callbacks do not write charge delay+2F8; no complete-shot modulo is added to their INC. Signed overflow inputs2147483647 expose the actual native INC wrap and subsequent real GetROF branch."
+  ],
+  "substitutions": [
+    "Inherited BulletReader allocator/delete/TLS/physical-file byte transport; original GUID reader Windows ASCII/CLSID services. Setup-only visual asset5F8110/5F8CE0 returns0 and CRT atexit registration is a no-op. No native gameplay/RNG result or original instruction is patched."
+  ],
+  "entry_points": {
+    "receive": "0x00746420",
+    "remove": "0x007464E0",
+    "set_gunner": "0x0070DC70",
+    "get_rof": "0x006FCFA0",
+    "get_weapon": "0x0070E140",
+    "let_go": "0x0071ABC0",
+    "mark": "0x004D3780",
+    "temporal_ctor": "0x0071A4E0",
+    "fire_rearm": "0x006FF274",
+    "fire_rearm_end": "0x006FF2D1",
+    "temporal_producer": "0x006F4154",
+    "temporal_producer_end": "0x006F41C0",
+    "unit_type_ctor": "0x007470D0",
+    "unit_type_reader": "0x00747620",
+    "infantry_type_ctor": "0x005236A0",
+    "infantry_type_reader": "0x005240A0",
+    "weapon_reader": "0x00772080",
+    "rules_ctor": "0x00665650",
+    "general": "0x0066D530",
+    "combat": "0x0066BBB0",
+    "difficulties": "0x00674500",
+    "difficulty_reader": "0x0066D270",
+    "country_ctor": "0x005113F0",
+    "country_reader": "0x00511850",
+    "house_difficulty": "0x004F6EC0"
+  },
+  "replay_command": "python -m tools.spatial_oracle.ifv_turret_switching --temporal-gunner",
+  "payload_sha256": "4c05aaa48ca381e1fda32b5fea2d283b10f9b39192deae5ff13ce08b6033e727"
+}

@@ -463,11 +463,11 @@ fn packet() -> &'static Value {
 #[test]
 #[ignore = "requires physical retail XMP03T4 and GPU; ordinary fence fire publication and native wall rasters with live A"]
 fn retail_authored_fence_fire_reaches_index_a_and_native_cell_raster() {
-    assert_retail_wall_profile_reaches_native_raster(
+    let _ = assert_retail_wall_profile_reaches_native_raster(
         "tools/map_observation.authored-fence.example.json",
         "tools/spatial_oracle/wall_render.json",
         "CAFNCB",
-        true,
+        WallFireHistory::Authored,
     );
 }
 
@@ -477,27 +477,56 @@ fn retail_authored_fence_fire_reaches_index_a_and_native_cell_raster() {
 #[test]
 #[ignore = "requires physical retail XMP03T4 and GPU; paid concrete wall publication and native wall rasters with live A"]
 fn retail_paid_concrete_wall_fire_reaches_index_a_and_native_cell_raster() {
-    assert_retail_wall_profile_reaches_native_raster(
+    // Ordinary neighbor sale isolates a pristine endpoint; endpoint fire
+    // reaches stage two. Compare every original raster across both histories,
+    // without seeding wall bytes or requiring this world's damage RNG history
+    // to match the independent native raster inputs.
+    let Some(mut seen) = assert_retail_wall_profile_reaches_native_raster(
         "tools/map_observation.concrete-wall.example.json",
         "tools/spatial_oracle/concrete_wall_render.json",
         "GAWALL",
-        false,
+        WallFireHistory::PaidBodyWithSale,
+    ) else {
+        return;
+    };
+    seen.extend(
+        assert_retail_wall_profile_reaches_native_raster(
+            "tools/map_observation.concrete-wall.example.json",
+            "tools/spatial_oracle/concrete_wall_render.json",
+            "GAWALL",
+            WallFireHistory::PaidEndpoint,
+        )
+        .expect("retail inputs remain available for the second history"),
     );
+    let native = crate::test_fixture::json("tools/spatial_oracle/concrete_wall_render.json");
+    assert_eq!(
+        seen.len(),
+        native["rows"].as_array().unwrap().len(),
+        "both ordinary paid histories must compare every native raster; saw {seen:?}"
+    );
+}
+
+#[derive(Clone, Copy)]
+enum WallFireHistory {
+    Authored,
+    PaidBodyWithSale,
+    PaidEndpoint,
 }
 
 fn assert_retail_wall_profile_reaches_native_raster(
     profile_path: &'static str,
     native_path: &'static str,
     wall_name: &str,
-    initially_authored: bool,
-) {
+    history: WallFireHistory,
+) -> Option<std::collections::BTreeSet<usize>> {
     use crate::app::presentation::overlay_index::OverlayRenderIndex;
     use crate::sim::command::{Command, CommandEnvelope};
     use crate::sim::world::{FrameEffects, TickLane};
 
     let Some((root, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
-        return;
+        return None;
     };
+    let initially_authored = matches!(history, WallFireHistory::Authored);
     let profile = crate::test_fixture::json(profile_path);
     let native = crate::test_fixture::json(native_path);
     let launch: crate::skirmish_launch::SkirmishLaunchSession =
@@ -531,7 +560,7 @@ fn assert_retail_wall_profile_reaches_native_raster(
     scene.runtime.simulation.batch_path_searches();
     scene.runtime.simulation.batch_target_scans();
     let owner = scene.sim().session.current_house.unwrap();
-    let orders: Vec<_> = profile["commands"]
+    let mut orders: Vec<_> = profile["commands"]
         .as_array()
         .unwrap()
         .iter()
@@ -544,6 +573,27 @@ fn assert_retail_wall_profile_reaches_native_raster(
             )
         })
         .collect();
+    if matches!(history, WallFireHistory::PaidBodyWithSale) {
+        orders.push(CommandEnvelope::new(
+            owner,
+            2300,
+            Command::SellWallAtCell { x: 33, y: 89 },
+        ));
+    }
+    if matches!(history, WallFireHistory::PaidEndpoint) {
+        let (rx, ry) = (33, 87);
+        for order in &mut orders {
+            if let Command::ForceAttackCell {
+                target_rx,
+                target_ry,
+                ..
+            } = &mut order.payload
+            {
+                *target_rx = rx;
+                *target_ry = ry;
+            }
+        }
+    }
     let (attacker_id, source) = orders
         .iter()
         .find_map(|order| match order.payload {
@@ -617,6 +667,7 @@ fn assert_retail_wall_profile_reaches_native_raster(
     let mut placed = std::collections::BTreeSet::new();
     let mut seen = std::collections::BTreeSet::new();
     let mut dispatched = 0;
+    let mut sale_seen = false;
     for step in 0..=profile["ticks"].as_u64().unwrap() {
         for &at in &observed_cells {
             let live = scene.sim().overlay_grid.as_ref().unwrap().cell(at.0, at.1);
@@ -700,6 +751,10 @@ fn assert_retail_wall_profile_reaches_native_raster(
             .advance_frame(&due, 22, TickLane::Ordinary, FrameEffects::default())
             .unwrap();
         assert!(output.tick.frame_committed);
+        sale_seen |= output.sound_events.iter().any(|event| {
+            matches!(event,
+            crate::sim::world::SimSoundEvent::WallSold { receiver } if *receiver == owner)
+        });
         entries.remove_cells(&output.overlay_removals);
         entries.upsert_occupied(output.overlay_updates);
     }
@@ -709,10 +764,18 @@ fn assert_retail_wall_profile_reaches_native_raster(
         "all ordinary profile commands executed"
     );
     assert_eq!(
-        seen.len(),
-        rows.len(),
-        "ordinary {wall_name} fire must reach each independent native raster witness; saw {seen:?}"
+        sale_seen,
+        matches!(history, WallFireHistory::PaidBodyWithSale),
+        "the isolated endpoint must come from the ordinary owned-wall sale"
     );
+    if initially_authored {
+        assert_eq!(
+            seen.len(),
+            rows.len(),
+            "ordinary {wall_name} fire must reach every native raster; saw {seen:?}"
+        );
+    }
+    Some(seen)
 }
 
 /// Cell483710/487190's ordinary source gain reaches the same retained index,

@@ -1,8 +1,9 @@
-//! Authoritative regular-wall autofill scanning and stamping.
+//! Authoritative regular-wall autofill scanning and Overlay Mark publication.
 //!
 //! Native provenance: `HouseClass::Place_Production @ 0x004FB0E0` admits and
-//! consumes the ready product, `FUN_00588750 @ 0x00588750` scans and commits
-//! ordinary fillers, and `OverlayClass::Mark @ 0x005FC570` stamps each overlay.
+//! consumes the ready product, `FUN_00588750 @ 0x00588750` constructs ordinary
+//! fillers, and `OverlayClass::Mark @ 0x005FC570` stamps each overlay. Building
+//! Unlimbo and retirement remain with the shared world lifecycle owner.
 
 use crate::rules::object_type::ObjectType;
 use crate::rules::overlay_types::OverlayTypeRegistry;
@@ -12,13 +13,13 @@ use crate::sim::overlay_grid::{
     WallDamageTransactionHost, refresh_wall_connectivity_after_placement_with_host,
 };
 use crate::sim::pathfinding::zone_incremental::ZoneRepairKind;
-use crate::sim::world::{Simulation, SimulationWallRuntimeHost};
+use crate::sim::world::{FrameEffects, Simulation, SimulationWallRuntimeHost};
 
 /// Native regular-wall visit order: north, east, south, west.
 const CARDINAL_DIRECTIONS: [(i32, i32); 4] = [(0, -1), (1, 0), (0, 1), (-1, 0)];
 
 /// Resolve a BuildingType through its merged ART `ToOverlay=` identity.
-pub(super) fn linked_overlay_id(
+pub(crate) fn linked_overlay_id(
     object_type: &ObjectType,
     registry: &OverlayTypeRegistry,
 ) -> Option<u8> {
@@ -125,26 +126,23 @@ pub(super) fn autofill_cells(
     cells
 }
 
-/// A wall BuildingType placed at `origin` for `owner`: `BuildingClass::Unlimbo`
-/// stamps its `ToOverlay=` wall (`0x00440774..0x00440865`), then the placer
-/// fills towards the owner's walls in reach (`0x00588750`), for the PLACE
-/// event (`HouseClass::Place_Production`) and the computer's building exit
-/// (`0x00445408`) alike. The caller has admitted the site and deletes the
-/// constructed object after.
-pub(crate) fn stamp_wall_with_autofill(
+/// `MapClass588750`: after successful origin Unlimbo, construct every filler
+/// nearest-to-click in cardinal order and call its ordinary Building Unlimbo.
+/// Both HousePlace4FB29A and BuildingExit445408 reach this same scan.
+/// Source: original588750..588952; building_death_anims wall-autofill controls.
+pub(crate) fn autofill_walls(
     sim: &mut Simulation,
     rules: &RuleSet,
     registry: &OverlayTypeRegistry,
     object_type: &ObjectType,
     origin: (u16, u16),
     owner: InternedId,
-) -> bool {
+    effects: FrameEffects<'_>,
+) {
     let Some(overlay_id) = linked_overlay_id(object_type, registry) else {
-        return false;
+        return;
     };
-    if !stamp_wall(sim, registry, origin.0, origin.1, overlay_id, owner) {
-        return false;
-    }
+    let owner_name = sim.interner.resolve(owner).to_owned();
     for direction in CARDINAL_DIRECTIONS {
         let gap = scan_autofill_direction(
             sim,
@@ -158,21 +156,51 @@ pub(crate) fn stamp_wall_with_autofill(
             None,
         );
         for (rx, ry) in gap {
-            let stamped = stamp_wall(sim, registry, rx, ry, overlay_id, owner);
-            debug_assert!(stamped, "scanned wall filler must remain stampable");
+            //5888CE constructs through BuildingType45E880/Building43B740;
+            //the shared constructor owns Scenario RNG, IDs and tracking.
+            let Some(filler) = sim.construct_object_limbo_at_height(
+                &object_type.id,
+                &owner_name,
+                rx,
+                ry,
+                0,
+                0,
+                rules,
+                effects,
+            ) else {
+                continue;
+            };
+            //58890C ignores failure and keeps that alive-limbo constructor.
+            //Requested Z is literal0, independent of the cell's terrain level.
+            let _ = sim.reveal_constructed_object_at_coord_with_overlay_context(
+                filler,
+                crate::sim::components::DriveCoord {
+                    x: i32::from(rx).wrapping_mul(256).wrapping_add(128),
+                    y: i32::from(ry).wrapping_mul(256).wrapping_add(128),
+                    z: 0,
+                },
+                0,
+                crate::sim::world::PlacementEvidence::EvaluateMark,
+                rules,
+                Some(registry),
+                effects,
+            );
         }
     }
-    true
 }
 
-/// Stamp one wall cell and synchronously publish its passability projection.
-pub(super) fn stamp_wall(
+/// Overlay5FC6F4..5FC777's wall arm, after base Mark and slope admission.
+/// The caller owns its transient Overlay lifecycle. Building4407FC stamps
+/// the placing House only after Overlay Unlimbo succeeds; crate constructors
+/// supply discriminator-1, preserving the prior owner here.
+/// Source: original5FC570/5FD270; shared wall-autofill/trigger-crate evidence.
+pub(crate) fn mark_wall(
     sim: &mut Simulation,
+    rules: &RuleSet,
     registry: &OverlayTypeRegistry,
     rx: u16,
     ry: u16,
     overlay_id: u8,
-    owner: InternedId,
 ) -> bool {
     let Some(grid) = sim.overlay_grid.as_ref() else {
         return false;
@@ -180,7 +208,29 @@ pub(super) fn stamp_wall(
     if rx >= grid.width() || ry >= grid.height() {
         return false;
     }
+    // Overlay 0x5FC6F4..0x5FC705 asks the existing Cell 0x47C620 owner with
+    // SpeedType 1 (Track), BuildingType NULL and House NULL before any write.
+    // A refused old-wall sale must not become an unconditional overwrite.
+    let Some(terrain) = sim.resolved_terrain.as_ref() else {
+        return false;
+    };
+    let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+    if !crate::sim::build_site::is_clear_to_build(
+        sim,
+        rules,
+        Some(registry),
+        cells.lookup((rx as i16, ry as i16)),
+        Some(crate::rules::locomotor_type::SpeedType::Track),
+        None,
+        None,
+        Some(&cells),
+    ) {
+        return false;
+    }
 
+    //5FC726..742 skips only the explicit anchor navigation pair in scope.
+    //PostDestructionWallCleanup retains its own hosted effects below.
+    let merge_anchor = !sim.object_placement_scope_active();
     #[cfg(any(test, feature = "test-support"))]
     let mut detach_trace = Vec::new();
     let mut host = SimulationWallRuntimeHost {
@@ -197,32 +247,35 @@ pub(super) fn stamp_wall(
         playfield_bounds: sim.playfield_bounds,
     };
     let grid = sim.overlay_grid.as_mut().expect("validated wall grid");
-    stamp_wall_transaction(
+    mark_wall_transaction(
         grid,
         registry,
         sim.resolved_terrain.as_mut(),
         rx,
         ry,
         overlay_id,
-        owner,
+        merge_anchor,
         &mut host,
-    );
-    true
+    )
 }
 
-fn stamp_wall_transaction(
+fn mark_wall_transaction(
     grid: &mut crate::sim::overlay_grid::OverlayGrid,
     registry: &OverlayTypeRegistry,
     mut terrain: Option<&mut crate::map::resolved_terrain::ResolvedTerrainGrid>,
     rx: u16,
     ry: u16,
     overlay_id: u8,
-    owner: InternedId,
+    merge_anchor: bool,
     host: &mut dyn WallDamageTransactionHost,
-) {
-    // OverlayClass::Mark @ 0x005FC570 makes the pending owner visible only
-    // after hosted cleanup and its explicit runtime Merge/graph step.
-    grid.stamp_wall_identity(rx, ry, overlay_id, 0);
+) -> bool {
+    //5FC717/71E writes only data/type: retained owner and rubble survive.
+    let Some(resolved) = terrain.as_deref_mut() else {
+        return false;
+    };
+    if !grid.write_crate_mark_fields(resolved, registry, rx, ry, overlay_id, 0) {
+        return false;
+    }
     refresh_wall_connectivity_after_placement_with_host(
         grid,
         registry,
@@ -231,12 +284,12 @@ fn stamp_wall_transaction(
         ry,
         Some(&mut *host),
     );
-    if let Some(terrain) = terrain.as_deref() {
+    if merge_anchor && let Some(terrain) = terrain.as_deref() {
         host.navigation_step(terrain, (rx, ry), false, ZoneRepairKind::MergeAdjacent);
     }
-    grid.set_wall_owner(rx, ry, owner);
     grid.add_retained_wall_neighbor_source(terrain.as_deref(), rx, ry);
     if let Some(terrain) = terrain {
         grid.recalculate_runtime_cell(terrain, registry, (rx, ry));
     }
+    true
 }

@@ -49,6 +49,7 @@ pub mod line_of_fire;
 mod object_health;
 pub(crate) mod parasite;
 mod projectile_delivery;
+pub mod radiation_beam;
 mod receiver_call;
 mod receiver_health;
 mod record_kill;
@@ -70,10 +71,6 @@ pub(crate) mod receiver_fixture;
 #[cfg(test)]
 mod aegis_launch_tests;
 #[cfg(test)]
-mod homing_shipyard_tests;
-#[cfg(test)]
-mod shrapnel_chain_tests;
-#[cfg(test)]
 mod bridge_cluster_tests;
 #[cfg(test)]
 mod bridge_launch_tests;
@@ -94,6 +91,8 @@ mod fireat_launch_tests;
 #[cfg(test)]
 mod garrison_oracle_tests;
 #[cfg(test)]
+mod homing_shipyard_tests;
+#[cfg(test)]
 mod ifv_fireat_tests;
 /// Ordinary launch-height, resolved impact presentation and damage-effect
 /// wiring. Bridge Cell+58 launch and +48/+58 impact comparisons use the native
@@ -108,6 +107,10 @@ mod mirage_disguise_tests;
 mod open_topped_fire_tests;
 #[cfg(test)]
 mod prone_damage_tests;
+#[cfg(test)]
+mod radiation_beam_tests;
+#[cfg(test)]
+mod shrapnel_chain_tests;
 #[cfg(test)]
 mod unit_damage_response_tests;
 #[cfg(test)]
@@ -135,7 +138,7 @@ pub(crate) use receiver_health::BerserkState;
 pub(crate) use record_kill::{KillCallback, KillRecord, KillSource};
 pub use techno_death::FatalLifecycleStage;
 pub(crate) use techno_death::{
-    death_announcement_event, death_arm_explodes, death_weapon_detonation,
+    death_announcement_event, death_arm_explodes, death_weapon_detonation, select_death_sound,
 };
 pub(crate) use threat_posed::live_threat_posed;
 /// The threat mask an acquisition callsite pushes into

@@ -18,5 +18,23 @@
     "add_tiberium_credits": "0x004F9610",
     "available_money": "0x004F6990"
   },
-  "payload_sha256": "e4b9a6ad9446d42b288d6ff9fe0ea52a9867c35f26a7f8ac0a92a8b9cfaf7097"
+  "fill_silos": {
+    "scope": "Original 0x684F02 through the unexecuted 0x684F7F interior boundary only.",
+    "entry_points": {
+      "begin": "0x00684F02",
+      "end_before": "0x00684F7F",
+      "available_storage": "0x004F69D0"
+    },
+    "assumptions": [
+      "One synthetic non-null House in A8022C/A80238; EAX is a supplied Scenario with +34B2 flag. No map admission, House/Building constructor or full startup runs.",
+      "All four House +2FC amount words are explicitly zero. Balance, score, spent, capacity, first Tiberium Value and HouseType IncomeMult are supplied scalar priors.",
+      "House +24 uses original vtable 7EA834. Original 4F6990, 4F69D0, 4F9610, 6C9650 and 7C5F00 execute without selected-query or credit substitutions.",
+      "The inherited Emu CRT/allocation transport is not entered by this interior. No RNG, timers, detachment, placement or nonempty-storage history is claimed.",
+      "Positive Values terminate normally. The sole negative Value is -1 with INT_MAX budget, terminating after one signed SUB wrap. Zero and other potentially nonterminating custom Values are not executed."
+    ],
+    "observations": "Signed cash, score, spent, capacity and local ESI budget; four raw amount words and native query/credit call counts. Budget is null when no money query ran. Original code is read back unchanged after every row.",
+    "substitutions": []
+  },
+  "replay_command": "python -m tools.house_money_oracle",
+  "payload_sha256": "c7223e993d6fd6b05a09f76d5f8507ed95acdb10cb8d4f614a991b15ef425824"
 }

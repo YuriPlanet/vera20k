@@ -755,6 +755,16 @@ pub(crate) fn dispatch_foot_mission(
         (EntityCategory::Unit | EntityCategory::Infantry, Some(MissionType::Rescue)) => {
             evaluate_foot_rescue(sim, id, rules, ctx)
         }
+        // Foot Mission_Eaten4D4CB0, dispatched through vt+218.
+        (EntityCategory::Unit | EntityCategory::Infantry, Some(MissionType::Eaten)) => {
+            MissionHandlerEvaluation::cadence(crate::sim::mission::eaten::mission_eaten(
+                sim,
+                rules,
+                ctx.overlay_registry,
+                id,
+                ctx.effects,
+            ))
+        }
         // `FootClass::Mission_Capture @ 0x004D4B20` (vt+0x214), which neither
         // class overrides. Sabotage dispatches to the same slot (jump table
         // `0x005B34E8`, entries 8 and 17).

@@ -1751,6 +1751,7 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                             lines.iter().copied(),
                             &[],
                             &[],
+                            &[],
                             viewport,
                             |_| false,
                             |_| input["a_value"].as_u64().unwrap() as u16,
@@ -1770,6 +1771,7 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                                 .iter()
                                 .copied()
                                 .map(crate::render::surface_line::SurfaceDraw::Line),
+                            &[],
                             &[],
                             &[],
                             viewport,

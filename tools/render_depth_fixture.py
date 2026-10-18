@@ -148,7 +148,8 @@ def build_fixture(*, walls_only: bool = False, cliff_back: bool = False,
                   move_order_voice: str | None = None,
                   bomb_clock: bool = False,
                   ifv_welding: str | None = None,
-                  disk_laser: bool = False) -> str:
+                  disk_laser: bool = False,
+                  temporal_gunner: bool = False) -> str:
     """Keep comparison geometry stable within each selectable scene."""
     if house_self_heal not in (None, 'recovery', 'removal'):
         raise ValueError('Unknown House self-heal scene')
@@ -170,10 +171,10 @@ def build_fixture(*, walls_only: bool = False, cliff_back: bool = False,
     if sum((walls_only, cliff_back, building_brackets, building_repair,
             attack_order_voice is not None, house_self_heal is not None,
             damage_feedback is not None, move_order_voice is not None, bomb_clock,
-            ifv_welding is not None, disk_laser)) > 1:
+            ifv_welding is not None, disk_laser, temporal_gunner)) > 1:
         raise ValueError('Choose one comparison mode')
     building_brackets = building_brackets or building_repair
-    command_scene = bomb_clock or disk_laser or any(mode is not None for mode in
+    command_scene = bomb_clock or disk_laser or temporal_gunner or any(mode is not None for mode in
                         (attack_order_voice, house_self_heal, damage_feedback,
                          move_order_voice, ifv_welding))
     walls_only = walls_only or building_brackets or command_scene
@@ -288,7 +289,7 @@ def build_fixture(*, walls_only: bool = False, cliff_back: bool = False,
         # Stock types and weapons remain unchanged; individual scenes below
         # author map health fractions or the tested VoiceMove reader input.
         # Keep a building's foundation-centre target comfortably in range.
-        unit_target = (bomb_clock or disk_laser or move_order_voice is not None
+        unit_target = (bomb_clock or disk_laser or temporal_gunner or move_order_voice is not None
                        or damage_feedback is not None or house_self_heal is not None
                        or ifv_welding is not None or attack_order_voice == 'unit')
         near, far = (C + (4 if unit_target else 3), C), (C + 12, C + 12)
@@ -343,6 +344,16 @@ def build_fixture(*, walls_only: bool = False, cliff_back: bool = False,
             # Structures44F8CB excludes the current House before construction.
             # Keep only the enemy survivor; the profile uses ShortGame=false.
             structures = [f'0=Computer,GAPOWR,256,{plant_cell[0]},{plant_cell[1]},0,None,0,0,1,0,0,None,None,None,0,0']
+        if temporal_gunner:
+            # Native FromName50C170 scenario names, as in the Disk scene.
+            # Ordinary boarding, approach, firing and unloading must reach
+            # their callbacks at runtime; author no weapon, timer or cargo.
+            units = [
+                f'0=<human player>,FV,256,{C-4},{C},64,Guard,None,0,-1,0,-1,1,1',
+                f'1=Computer,HTNK,256,{C+6},{C},192,Guard,None,0,-1,0,-1,1,1',
+            ]
+            infantry = [f'0=<human player>,CLEG,256,{C-4},{C-1},0,Guard,64,None,0,-1,0,1,1']
+            structures = [f'0=Computer,GAPOWR,256,{plant_cell[0]},{plant_cell[1]},0,None,0,0,1,0,0,None,None,None,0,0']
         if damage_feedback:
             # Full-health stock E1 crosses the real health threshold under
             # ordinary friendly ForceAttack. Additional stock tanks permit
@@ -378,6 +389,7 @@ Color=DarkRed
 ''' if building_brackets or command_scene else ''
 
     name = 'C24 Ordinary Engineer IFV Welding' if ifv_welding else 'Depth Continuation - ' + (
+        'Temporal Gunner' if temporal_gunner else
         'Disk Laser' if disk_laser else
         'Ivan Bomb Clock' if bomb_clock else
         'Move Voice ' + move_order_voice if move_order_voice else
@@ -520,6 +532,10 @@ def main() -> None:
         '--disk-laser', action='store_true',
         help='Use a stock local DISK, full-health enemy MTNK and distant power plants for ordinary Attack',
     )
+    modes.add_argument(
+        '--temporal-gunner', action='store_true',
+        help='Use full-health stock CLEG/FV, an enemy HTNK and distant power plant for ordinary boarding and unloading',
+    )
     args = parser.parse_args()
     mission = build_fixture(walls_only=args.walls_only, cliff_back=args.cliff_back,
                             building_brackets=args.building_brackets,
@@ -530,7 +546,8 @@ def main() -> None:
                             move_order_voice=args.move_order_voice,
                             bomb_clock=args.bomb_clock,
                             ifv_welding=args.ifv_welding,
-                            disk_laser=args.disk_laser)
+                            disk_laser=args.disk_laser,
+                            temporal_gunner=args.temporal_gunner)
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(mission, encoding='ascii')
     print(f'Wrote {args.output} ({len(mission)} characters)')

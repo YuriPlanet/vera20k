@@ -16,7 +16,9 @@
 //! Both trig functions share one table. Cosine is the same data read a quarter
 //! period further along, so there is a single array and two index derivations.
 
-use crate::util::native_x87::{NativeF32Bits, NativeF64Bits, X87Chop53, X87Value};
+use crate::util::native_x87::{
+    MaskedX87Chop53, MaskedX87Value, NativeF32Bits, NativeF64Bits, X87Chop53, X87Value,
+};
 use std::sync::OnceLock;
 
 /// Virtual address of the sine table in the retail image.
@@ -130,12 +132,12 @@ impl TrigTable {
     /// process's x87 mode: the table unit is `Math::ftol` of the radians times
     /// the binary32 scale at `0x008223B0` (16384/2pi), and the entry comes back
     /// as the binary32 it is.
-    pub fn sin_from_table(&self, radians: X87Value) -> X87Value {
+    pub fn sin_from_table(&self, radians: impl Into<MaskedX87Value>) -> X87Value {
         table_value(self.sin(from_table_units(radians)))
     }
 
     /// `Math::CosFromTable @ 0x004CAD00`, as [`Self::sin_from_table`].
-    pub fn cos_from_table(&self, radians: X87Value) -> X87Value {
+    pub fn cos_from_table(&self, radians: impl Into<MaskedX87Value>) -> X87Value {
         table_value(self.cos(from_table_units(radians)))
     }
 }
@@ -266,10 +268,13 @@ fn cos_index(angle_units: i32) -> i32 {
 /// `Math::SinFromTable` and `Math::CosFromTable`.
 const UNITS_PER_RADIAN_F32: u32 = 0x4522_F983;
 
-fn from_table_units(radians: X87Value) -> i32 {
-    let scale = X87Chop53::load_f32(NativeF32Bits::from_bits(UNITS_PER_RADIAN_F32))
-        .expect("the table scale is a finite binary32");
-    X87Chop53::ftol_i32_low_masked(X87Chop53::mul(radians, scale))
+fn from_table_units(radians: impl Into<MaskedX87Value>) -> i32 {
+    //4CACB0/4CAD00 call qword ftol even for a masked exceptional operand.
+    // Its low dword is0 for the integer indefinite. RadBeam659B14 can reach
+    // this on a short segment's zero divisor; finite callers keep the same
+    // arithmetic through the shared finite owner inside MaskedX87Chop53.
+    let scale = MaskedX87Chop53::load_f32(NativeF32Bits::from_bits(UNITS_PER_RADIAN_F32));
+    MaskedX87Chop53::ftol_i32_low_masked(MaskedX87Chop53::mul(radians.into(), scale))
 }
 
 fn table_value(entry: f32) -> X87Value {

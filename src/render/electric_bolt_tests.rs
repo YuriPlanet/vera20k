@@ -386,6 +386,7 @@ fn production_electric_bolt_pixels_match_native_with_bounded_edge_residuals() {
                             .map(crate::render::surface_line::SurfaceDraw::Line),
                         &trails,
                         &[],
+                        &[],
                         viewport(input),
                         |_| true,
                         |[x, y]| match input["alpha"].as_str() {

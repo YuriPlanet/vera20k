@@ -62,6 +62,7 @@ fn production_welding_points_match_original_pixels_and_preserve_depth() {
                     draws.iter().copied(),
                     &[],
                     &[],
+                    &[],
                     SurfaceLineViewport {
                         camera: fixture::array(&input["camera"]),
                         clip: fixture::array(&input["clip"]),

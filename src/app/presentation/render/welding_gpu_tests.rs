@@ -301,6 +301,7 @@ fn ordinary_repair_children_reach_the_actual_effect_builder_and_gpu_without_muta
                             draws.iter().copied(),
                             &[],
                             &[],
+                            &[],
                             SurfaceLineViewport {
                                 camera: view_camera.map(|value| value.floor() as i32),
                                 clip: [0, 0, size[0] as i32, size[1] as i32],
@@ -550,6 +551,7 @@ fn retained_welding_system_then_particles_matches_original_shared_destination() 
                             &gpu.queue,
                             std::iter::empty(),
                             draws.iter().copied(),
+                            &[],
                             &[],
                             &[],
                             SurfaceLineViewport {

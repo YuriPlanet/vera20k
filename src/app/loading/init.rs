@@ -1849,7 +1849,7 @@ impl MapLoadInitial {
         let match_launch_descriptor = fresh_parts.launch;
         let scenario_prefix_plan = fresh_parts.scenario_prefix;
         let source_seed = match &map_source {
-            LoadedMapSource::Generated { seed_name } => seed_name.clone(),
+            LoadedMapSource::Generated { seed_name, .. } => seed_name.clone(),
             other => panic!("random-map lifecycle fixture loaded {other:?}"),
         };
         let mut waypoints: Vec<_> = map_data
@@ -2318,13 +2318,22 @@ pub(crate) fn load_map_initial_with_assets(
         .or(quickplay_seed);
     if let Some(seed_name) = seed_selection.as_deref() {
         let mut options = crate::map::rmg::RmgOptions::default();
-        match std::fs::read(ra2_dir.join(seed_name)) {
-            Ok(bytes) => match crate::rules::ini_parser::IniFile::from_bytes(&bytes) {
-                Ok(ini) => options.apply_sed(&ini),
-                Err(err) => {
-                    log::warn!("random map: {seed_name} is not valid INI ({err}); using defaults")
+        let seed_path = ra2_dir.join(seed_name);
+        let mut seed_source = None;
+        match std::fs::read(&seed_path) {
+            Ok(bytes) => {
+                seed_source = Some(
+                    crate::map::source::GeneratedSeedSource::from_consumed_bytes(seed_path, &bytes),
+                );
+                match crate::rules::ini_parser::IniFile::from_bytes(&bytes) {
+                    Ok(ini) => options.apply_sed(&ini),
+                    Err(err) => {
+                        log::warn!(
+                            "random map: {seed_name} is not valid INI ({err}); using defaults"
+                        )
+                    }
                 }
-            },
+            }
             // Missing seed file is not fatal: the original's options object
             // keeps its constructor defaults when a key (or the file) is absent.
             Err(err) => log::warn!("random map: cannot read {seed_name} ({err}); using defaults"),
@@ -2392,6 +2401,7 @@ pub(crate) fn load_map_initial_with_assets(
             map_data: generated.map_file,
             map_source: LoadedMapSource::Generated {
                 seed_name: seed_name.to_string(),
+                seed_source,
             },
             mapgen_rng_continuation: Some(mapgen_rng_continuation),
             retained_process_mapgen: None,

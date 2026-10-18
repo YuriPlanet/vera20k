@@ -452,6 +452,20 @@ impl Simulation {
         self.object_placement_scope_depth != 0
     }
 
+    /// Crate validation4A18F0 saves A8E7AC, clears it at4A190B, and
+    /// restores it on both success4A1A7D and refusal4A1A8E. Its callbacks
+    /// therefore use ordinary admission even inside an initial-object scope.
+    /// Source: original gamemd; crate_pickup and wall-autofill callers.
+    pub(crate) fn without_object_placement_scope<R>(
+        &mut self,
+        operation: impl FnOnce(&mut Self) -> R,
+    ) -> R {
+        let prior = std::mem::take(&mut self.object_placement_scope_depth);
+        let result = operation(self);
+        self.object_placement_scope_depth = prior;
+        result
+    }
+
     /// Raise VERA's analog of native `0xA8ED6B` around `operation`: an initial
     /// building Unlimbo inside it takes Enter_Idle_Mode's Idle arm
     /// (`0x0044D6A0`) and stands finished, with no build-up. Native sets the
@@ -568,7 +582,12 @@ pub enum RevealFailure {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RevealOutcome {
-    Revealed { logic_registered: bool },
+    Revealed {
+        logic_registered: bool,
+    },
+    /// Building440580's wall arm succeeded and already UnInit'd the
+    /// constructor. It remains in limbo until the shared deferred drain.
+    Consumed,
     AlreadyRevealed,
     Failed(RevealFailure),
 }
@@ -659,6 +678,8 @@ pub enum LifecycleOutput {
     /// Copied LaserDraw54FE60 birth; no source/target pointer to detach.
     LaserCreated(crate::sim::combat::laser::LaserBirth),
     ElectricBoltCreated(crate::sim::combat::electric_bolt::ElectricBoltBirth),
+    /// SpawnRadBeam6FD620 modes0/1 copy endpoints into a Tactical-lived effect.
+    RadiationBeamCreated(crate::sim::combat::radiation_beam::RadiationBeamBirth),
     /// ObjectUnlimbo5F517A/5F5207 constructs and attaches a presentation trail.
     LineTrailConstructed {
         stable_id: u64,
@@ -3553,7 +3574,7 @@ impl Simulation {
         // FootClass::Limbo @ 0x004DB260 and BuildingClass::Limbo @
         // 0x00445880 remove the exact deposited footprint before conceal.
         if let Some(rules) = context.rules() {
-            self.remove_sensor_before_limbo_with_rules(stable_id, rules);
+            self.remove_sensor_before_limbo_with_rules(stable_id, rules, context.registry());
         } else {
             self.remove_sensor_before_limbo(stable_id);
         }

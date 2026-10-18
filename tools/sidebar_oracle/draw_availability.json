@@ -1,0 +1,1038 @@
+{
+  "catalog": [
+    {
+      "build_cat": 0,
+      "considered_aircraft": false,
+      "cost": 500,
+      "free_unit": null,
+      "id": "GAPOWR",
+      "kind": 7,
+      "naval": false,
+      "recharge_frames": 4500,
+      "side": 0,
+      "tech_level": 1,
+      "ui_name": "Same"
+    },
+    {
+      "build_cat": 0,
+      "considered_aircraft": false,
+      "cost": 500,
+      "free_unit": null,
+      "id": "GAPILE",
+      "kind": 7,
+      "naval": false,
+      "recharge_frames": 4500,
+      "side": 0,
+      "tech_level": 1,
+      "ui_name": "Same"
+    },
+    {
+      "build_cat": 5,
+      "considered_aircraft": false,
+      "cost": 500,
+      "free_unit": null,
+      "id": "GAPILL",
+      "kind": 7,
+      "naval": false,
+      "recharge_frames": 4500,
+      "side": 0,
+      "tech_level": 1,
+      "ui_name": "Same"
+    },
+    {
+      "build_cat": 5,
+      "considered_aircraft": false,
+      "cost": 500,
+      "free_unit": null,
+      "id": "NASAM",
+      "kind": 7,
+      "naval": false,
+      "recharge_frames": 4500,
+      "side": 0,
+      "tech_level": 1,
+      "ui_name": "Same"
+    },
+    {
+      "build_cat": 0,
+      "considered_aircraft": false,
+      "cost": 500,
+      "free_unit": null,
+      "id": "E1",
+      "kind": 16,
+      "naval": false,
+      "recharge_frames": 4500,
+      "side": 0,
+      "tech_level": 1,
+      "ui_name": "Same"
+    },
+    {
+      "build_cat": 0,
+      "considered_aircraft": false,
+      "cost": 500,
+      "free_unit": null,
+      "id": "ENGINEER",
+      "kind": 16,
+      "naval": false,
+      "recharge_frames": 4500,
+      "side": 0,
+      "tech_level": 1,
+      "ui_name": "Same"
+    },
+    {
+      "build_cat": 0,
+      "considered_aircraft": false,
+      "cost": 500,
+      "free_unit": null,
+      "id": "MTNK",
+      "kind": 40,
+      "naval": false,
+      "recharge_frames": 4500,
+      "side": 0,
+      "tech_level": 1,
+      "ui_name": "Same"
+    },
+    {
+      "build_cat": 0,
+      "considered_aircraft": false,
+      "cost": 500,
+      "free_unit": null,
+      "id": "FV",
+      "kind": 40,
+      "naval": false,
+      "recharge_frames": 4500,
+      "side": 0,
+      "tech_level": 1,
+      "ui_name": "Same"
+    },
+    {
+      "build_cat": 0,
+      "considered_aircraft": false,
+      "cost": 500,
+      "free_unit": null,
+      "id": "ORCA",
+      "kind": 3,
+      "naval": false,
+      "recharge_frames": 4500,
+      "side": 0,
+      "tech_level": 1,
+      "ui_name": "Same"
+    }
+  ],
+  "controls": [
+    {
+      "entries": [
+        {
+          "type": "GAPILE",
+          "unavailable": false
+        },
+        {
+          "type": "GAPOWR",
+          "unavailable": false
+        }
+      ],
+      "linked": false,
+      "request_state": 0,
+      "source": "GAPOWR",
+      "stage": 0,
+      "state": "idle",
+      "strip_busy": false,
+      "tab": 0
+    },
+    {
+      "entries": [
+        {
+          "type": "GAPILE",
+          "unavailable": true
+        },
+        {
+          "type": "GAPOWR",
+          "unavailable": false
+        }
+      ],
+      "linked": false,
+      "request_state": 1,
+      "source": "GAPOWR",
+      "stage": 0,
+      "state": "pending",
+      "strip_busy": true,
+      "tab": 0
+    },
+    {
+      "entries": [
+        {
+          "type": "GAPILE",
+          "unavailable": true
+        },
+        {
+          "type": "GAPOWR",
+          "unavailable": true
+        }
+      ],
+      "linked": false,
+      "request_state": 2,
+      "source": "GAPOWR",
+      "stage": 0,
+      "state": "pending_hold",
+      "strip_busy": true,
+      "tab": 0
+    },
+    {
+      "entries": [
+        {
+          "type": "GAPILE",
+          "unavailable": false
+        },
+        {
+          "type": "GAPOWR",
+          "unavailable": false
+        }
+      ],
+      "linked": false,
+      "request_state": 3,
+      "source": "GAPOWR",
+      "stage": 0,
+      "state": "state3",
+      "strip_busy": false,
+      "tab": 0
+    },
+    {
+      "entries": [
+        {
+          "type": "GAPILE",
+          "unavailable": true
+        },
+        {
+          "type": "GAPOWR",
+          "unavailable": false
+        }
+      ],
+      "linked": true,
+      "request_state": 1,
+      "source": "GAPOWR",
+      "stage": 0,
+      "state": "building",
+      "strip_busy": true,
+      "tab": 0
+    },
+    {
+      "entries": [
+        {
+          "type": "GAPILE",
+          "unavailable": true
+        },
+        {
+          "type": "GAPOWR",
+          "unavailable": false
+        }
+      ],
+      "linked": true,
+      "request_state": 1,
+      "source": "GAPOWR",
+      "stage": 54,
+      "state": "ready",
+      "strip_busy": true,
+      "tab": 0
+    },
+    {
+      "entries": [
+        {
+          "type": "NASAM",
+          "unavailable": false
+        },
+        {
+          "type": "GAPILL",
+          "unavailable": false
+        }
+      ],
+      "linked": false,
+      "request_state": 0,
+      "source": "GAPILL",
+      "stage": 0,
+      "state": "idle",
+      "strip_busy": false,
+      "tab": 1
+    },
+    {
+      "entries": [
+        {
+          "type": "NASAM",
+          "unavailable": true
+        },
+        {
+          "type": "GAPILL",
+          "unavailable": false
+        }
+      ],
+      "linked": false,
+      "request_state": 1,
+      "source": "GAPILL",
+      "stage": 0,
+      "state": "pending",
+      "strip_busy": true,
+      "tab": 1
+    },
+    {
+      "entries": [
+        {
+          "type": "NASAM",
+          "unavailable": true
+        },
+        {
+          "type": "GAPILL",
+          "unavailable": true
+        }
+      ],
+      "linked": false,
+      "request_state": 2,
+      "source": "GAPILL",
+      "stage": 0,
+      "state": "pending_hold",
+      "strip_busy": true,
+      "tab": 1
+    },
+    {
+      "entries": [
+        {
+          "type": "NASAM",
+          "unavailable": false
+        },
+        {
+          "type": "GAPILL",
+          "unavailable": false
+        }
+      ],
+      "linked": false,
+      "request_state": 3,
+      "source": "GAPILL",
+      "stage": 0,
+      "state": "state3",
+      "strip_busy": false,
+      "tab": 1
+    },
+    {
+      "entries": [
+        {
+          "type": "NASAM",
+          "unavailable": true
+        },
+        {
+          "type": "GAPILL",
+          "unavailable": false
+        }
+      ],
+      "linked": true,
+      "request_state": 1,
+      "source": "GAPILL",
+      "stage": 0,
+      "state": "building",
+      "strip_busy": true,
+      "tab": 1
+    },
+    {
+      "entries": [
+        {
+          "type": "NASAM",
+          "unavailable": true
+        },
+        {
+          "type": "GAPILL",
+          "unavailable": false
+        }
+      ],
+      "linked": true,
+      "request_state": 1,
+      "source": "GAPILL",
+      "stage": 54,
+      "state": "ready",
+      "strip_busy": true,
+      "tab": 1
+    },
+    {
+      "entries": [
+        {
+          "type": "ENGINEER",
+          "unavailable": false
+        },
+        {
+          "type": "E1",
+          "unavailable": false
+        }
+      ],
+      "linked": false,
+      "request_state": 0,
+      "source": "E1",
+      "stage": 0,
+      "state": "idle",
+      "strip_busy": false,
+      "tab": 2
+    },
+    {
+      "entries": [
+        {
+          "type": "ENGINEER",
+          "unavailable": false
+        },
+        {
+          "type": "E1",
+          "unavailable": false
+        }
+      ],
+      "linked": false,
+      "request_state": 1,
+      "source": "E1",
+      "stage": 0,
+      "state": "pending",
+      "strip_busy": true,
+      "tab": 2
+    },
+    {
+      "entries": [
+        {
+          "type": "ENGINEER",
+          "unavailable": false
+        },
+        {
+          "type": "E1",
+          "unavailable": true
+        }
+      ],
+      "linked": false,
+      "request_state": 2,
+      "source": "E1",
+      "stage": 0,
+      "state": "pending_hold",
+      "strip_busy": true,
+      "tab": 2
+    },
+    {
+      "entries": [
+        {
+          "type": "ENGINEER",
+          "unavailable": false
+        },
+        {
+          "type": "E1",
+          "unavailable": false
+        }
+      ],
+      "linked": false,
+      "request_state": 3,
+      "source": "E1",
+      "stage": 0,
+      "state": "state3",
+      "strip_busy": false,
+      "tab": 2
+    },
+    {
+      "entries": [
+        {
+          "type": "ENGINEER",
+          "unavailable": false
+        },
+        {
+          "type": "E1",
+          "unavailable": false
+        }
+      ],
+      "linked": true,
+      "request_state": 1,
+      "source": "E1",
+      "stage": 0,
+      "state": "building",
+      "strip_busy": true,
+      "tab": 2
+    },
+    {
+      "entries": [
+        {
+          "type": "ENGINEER",
+          "unavailable": false
+        },
+        {
+          "type": "E1",
+          "unavailable": false
+        }
+      ],
+      "linked": true,
+      "request_state": 1,
+      "source": "E1",
+      "stage": 54,
+      "state": "ready",
+      "strip_busy": true,
+      "tab": 2
+    },
+    {
+      "entries": [
+        {
+          "type": "ORCA",
+          "unavailable": false
+        },
+        {
+          "type": "FV",
+          "unavailable": false
+        },
+        {
+          "type": "MTNK",
+          "unavailable": false
+        }
+      ],
+      "linked": false,
+      "request_state": 0,
+      "source": "MTNK",
+      "stage": 0,
+      "state": "idle",
+      "strip_busy": false,
+      "tab": 3
+    },
+    {
+      "entries": [
+        {
+          "type": "ORCA",
+          "unavailable": false
+        },
+        {
+          "type": "FV",
+          "unavailable": false
+        },
+        {
+          "type": "MTNK",
+          "unavailable": false
+        }
+      ],
+      "linked": false,
+      "request_state": 1,
+      "source": "MTNK",
+      "stage": 0,
+      "state": "pending",
+      "strip_busy": true,
+      "tab": 3
+    },
+    {
+      "entries": [
+        {
+          "type": "ORCA",
+          "unavailable": false
+        },
+        {
+          "type": "FV",
+          "unavailable": false
+        },
+        {
+          "type": "MTNK",
+          "unavailable": true
+        }
+      ],
+      "linked": false,
+      "request_state": 2,
+      "source": "MTNK",
+      "stage": 0,
+      "state": "pending_hold",
+      "strip_busy": true,
+      "tab": 3
+    },
+    {
+      "entries": [
+        {
+          "type": "ORCA",
+          "unavailable": false
+        },
+        {
+          "type": "FV",
+          "unavailable": false
+        },
+        {
+          "type": "MTNK",
+          "unavailable": false
+        }
+      ],
+      "linked": false,
+      "request_state": 3,
+      "source": "MTNK",
+      "stage": 0,
+      "state": "state3",
+      "strip_busy": false,
+      "tab": 3
+    },
+    {
+      "entries": [
+        {
+          "type": "ORCA",
+          "unavailable": false
+        },
+        {
+          "type": "FV",
+          "unavailable": false
+        },
+        {
+          "type": "MTNK",
+          "unavailable": false
+        }
+      ],
+      "linked": true,
+      "request_state": 1,
+      "source": "MTNK",
+      "stage": 0,
+      "state": "building",
+      "strip_busy": true,
+      "tab": 3
+    },
+    {
+      "entries": [
+        {
+          "type": "ORCA",
+          "unavailable": false
+        },
+        {
+          "type": "FV",
+          "unavailable": false
+        },
+        {
+          "type": "MTNK",
+          "unavailable": false
+        }
+      ],
+      "linked": true,
+      "request_state": 1,
+      "source": "MTNK",
+      "stage": 54,
+      "state": "ready",
+      "strip_busy": true,
+      "tab": 3
+    }
+  ],
+  "pending_click_histories": [
+    {
+      "source": "GAPOWR",
+      "steps": [
+        {
+          "events": [
+            14
+          ],
+          "press": "left",
+          "requests": [
+            {
+              "request_state": 1,
+              "source": "GAPOWR"
+            }
+          ],
+          "source": "GAPOWR",
+          "tab": 0
+        },
+        {
+          "events": [
+            15
+          ],
+          "press": "right",
+          "requests": [
+            {
+              "request_state": 2,
+              "source": "GAPOWR"
+            }
+          ],
+          "source": "GAPOWR",
+          "tab": 0
+        },
+        {
+          "events": [
+            14
+          ],
+          "press": "left",
+          "requests": [
+            {
+              "request_state": 2,
+              "source": "GAPOWR"
+            }
+          ],
+          "source": "GAPOWR",
+          "tab": 0
+        },
+        {
+          "events": [],
+          "press": "right",
+          "requests": [
+            {
+              "request_state": 2,
+              "source": "GAPOWR"
+            }
+          ],
+          "source": "GAPOWR",
+          "tab": 0
+        }
+      ],
+      "tab": 0
+    },
+    {
+      "source": "GAPILL",
+      "steps": [
+        {
+          "events": [
+            14
+          ],
+          "press": "left",
+          "requests": [
+            {
+              "request_state": 1,
+              "source": "GAPILL"
+            }
+          ],
+          "source": "GAPILL",
+          "tab": 1
+        },
+        {
+          "events": [
+            15
+          ],
+          "press": "right",
+          "requests": [
+            {
+              "request_state": 2,
+              "source": "GAPILL"
+            }
+          ],
+          "source": "GAPILL",
+          "tab": 1
+        },
+        {
+          "events": [
+            14
+          ],
+          "press": "left",
+          "requests": [
+            {
+              "request_state": 2,
+              "source": "GAPILL"
+            }
+          ],
+          "source": "GAPILL",
+          "tab": 1
+        },
+        {
+          "events": [],
+          "press": "right",
+          "requests": [
+            {
+              "request_state": 2,
+              "source": "GAPILL"
+            }
+          ],
+          "source": "GAPILL",
+          "tab": 1
+        }
+      ],
+      "tab": 1
+    },
+    {
+      "source": "E1",
+      "steps": [
+        {
+          "events": [
+            14
+          ],
+          "press": "left",
+          "requests": [
+            {
+              "request_state": 1,
+              "source": "E1"
+            }
+          ],
+          "source": "E1",
+          "tab": 2
+        },
+        {
+          "events": [
+            15
+          ],
+          "press": "right",
+          "requests": [
+            {
+              "request_state": 2,
+              "source": "E1"
+            }
+          ],
+          "source": "E1",
+          "tab": 2
+        },
+        {
+          "events": [
+            14
+          ],
+          "press": "left",
+          "requests": [
+            {
+              "request_state": 2,
+              "source": "E1"
+            }
+          ],
+          "source": "E1",
+          "tab": 2
+        },
+        {
+          "events": [],
+          "press": "right",
+          "requests": [
+            {
+              "request_state": 2,
+              "source": "E1"
+            }
+          ],
+          "source": "E1",
+          "tab": 2
+        }
+      ],
+      "tab": 2
+    },
+    {
+      "source": "MTNK",
+      "steps": [
+        {
+          "events": [
+            14
+          ],
+          "press": "left",
+          "requests": [
+            {
+              "request_state": 1,
+              "source": "MTNK"
+            }
+          ],
+          "source": "MTNK",
+          "tab": 3
+        },
+        {
+          "events": [
+            15
+          ],
+          "press": "right",
+          "requests": [
+            {
+              "request_state": 2,
+              "source": "MTNK"
+            }
+          ],
+          "source": "MTNK",
+          "tab": 3
+        },
+        {
+          "events": [
+            14
+          ],
+          "press": "left",
+          "requests": [
+            {
+              "request_state": 2,
+              "source": "MTNK"
+            }
+          ],
+          "source": "MTNK",
+          "tab": 3
+        },
+        {
+          "events": [],
+          "press": "right",
+          "requests": [
+            {
+              "request_state": 2,
+              "source": "MTNK"
+            }
+          ],
+          "source": "MTNK",
+          "tab": 3
+        }
+      ],
+      "tab": 3
+    },
+    {
+      "source": "MTNK",
+      "steps": [
+        {
+          "events": [
+            14
+          ],
+          "press": "left",
+          "requests": [
+            {
+              "request_state": 1,
+              "source": "E1"
+            }
+          ],
+          "source": "E1",
+          "tab": 2
+        },
+        {
+          "events": [
+            14
+          ],
+          "press": "left",
+          "requests": [
+            {
+              "request_state": 1,
+              "source": "E1"
+            }
+          ],
+          "source": "MTNK",
+          "tab": 3
+        },
+        {
+          "events": [],
+          "press": "right",
+          "requests": [
+            {
+              "request_state": 1,
+              "source": "E1"
+            }
+          ],
+          "source": "MTNK",
+          "tab": 3
+        }
+      ],
+      "tab": 3
+    }
+  ],
+  "pending_right_clicks": [
+    {
+      "after": 0,
+      "before": 0,
+      "event_arguments": [],
+      "events": [],
+      "source": "GAPOWR",
+      "tab": 0
+    },
+    {
+      "after": 2,
+      "before": 1,
+      "event_arguments": [
+        [
+          0,
+          15,
+          7,
+          0,
+          0
+        ]
+      ],
+      "events": [
+        {
+          "kind": 15
+        }
+      ],
+      "source": "GAPOWR",
+      "tab": 0
+    },
+    {
+      "after": 2,
+      "before": 2,
+      "event_arguments": [],
+      "events": [],
+      "source": "GAPOWR",
+      "tab": 0
+    },
+    {
+      "after": 0,
+      "before": 0,
+      "event_arguments": [],
+      "events": [],
+      "source": "GAPILL",
+      "tab": 1
+    },
+    {
+      "after": 2,
+      "before": 1,
+      "event_arguments": [
+        [
+          0,
+          15,
+          7,
+          2,
+          0
+        ]
+      ],
+      "events": [
+        {
+          "kind": 15
+        }
+      ],
+      "source": "GAPILL",
+      "tab": 1
+    },
+    {
+      "after": 2,
+      "before": 2,
+      "event_arguments": [],
+      "events": [],
+      "source": "GAPILL",
+      "tab": 1
+    },
+    {
+      "after": 0,
+      "before": 0,
+      "event_arguments": [],
+      "events": [],
+      "source": "E1",
+      "tab": 2
+    },
+    {
+      "after": 2,
+      "before": 1,
+      "event_arguments": [
+        [
+          0,
+          15,
+          16,
+          0,
+          0
+        ]
+      ],
+      "events": [
+        {
+          "kind": 15
+        }
+      ],
+      "source": "E1",
+      "tab": 2
+    },
+    {
+      "after": 2,
+      "before": 2,
+      "event_arguments": [],
+      "events": [],
+      "source": "E1",
+      "tab": 2
+    },
+    {
+      "after": 0,
+      "before": 0,
+      "event_arguments": [],
+      "events": [],
+      "source": "MTNK",
+      "tab": 3
+    },
+    {
+      "after": 2,
+      "before": 1,
+      "event_arguments": [
+        [
+          0,
+          15,
+          40,
+          0,
+          0
+        ]
+      ],
+      "events": [
+        {
+          "kind": 15
+        }
+      ],
+      "source": "MTNK",
+      "tab": 3
+    },
+    {
+      "after": 2,
+      "before": 2,
+      "event_arguments": [],
+      "events": [],
+      "source": "MTNK",
+      "tab": 3
+    }
+  ],
+  "schema_version": 1
+}

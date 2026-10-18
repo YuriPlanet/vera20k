@@ -70,6 +70,8 @@ pub(crate) struct MatchPresentationState {
     pub(crate) line_trails: super::line_trails::LineTrails,
     pub(crate) lasers: super::lasers::Lasers,
     pub(crate) electric_bolts: super::electric_bolts::ElectricBolts,
+    /// Process registry B04A60; ordinary kind1 beams copy their endpoints.
+    pub(crate) radiation_beams: super::radiation_beams::RadiationBeams,
     /// Native process-lived FPS counter and detail hysteresis, never sim state.
     pub(crate) detail: std::cell::RefCell<super::detail::DetailState>,
     /// The client's AnimClass `+0x19D` for Supers' ChronoPlacement anims

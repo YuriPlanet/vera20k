@@ -83,7 +83,7 @@ impl LivePublication<'_> {
         }
         self.sim
             .load_objects
-            .begin_mark(handle)
+            .begin_mark(handle, None)
             .map_err(|error| error.to_string())?;
         self.sim
             .tactical_dirty_cells

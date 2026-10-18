@@ -147,7 +147,12 @@ pub(crate) fn create<'w>(
             .coord;
             (
                 from,
-                super::fire_coord::effect_z_adjust(world, source, from),
+                super::fire_coord::effect_z_adjust(
+                    world,
+                    source,
+                    from,
+                    super::fire_coord::EffectDepthProjection::ClampedBuilding,
+                ),
             )
         };
     let to = super::fire_coord::effect_target_coordinate(world, rules, target)?;

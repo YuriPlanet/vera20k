@@ -52,6 +52,8 @@ class MapObservationTests(unittest.TestCase):
         self.effect_frames = {}
         self.laser_frames = {}
         self.electric_frames = {}
+        self.radiation_frames = {}
+        self.radiation_draws = {}
         self.bomb_frames = {}
         self.crate_frames = {}
         self.input_frames = {}
@@ -144,6 +146,8 @@ class MapObservationTests(unittest.TestCase):
                 frames[-1]['lasers'] = deepcopy(self.laser_frames.get(step, self.laser_snapshot()))
             if observation._observes_electric_step(self.profile, step):
                 frames[-1]['electric_bolts'] = deepcopy(self.electric_frames.get(step, self.electric_snapshot()))
+            if self.profile.get('observe_radiation_beams', False):
+                frames[-1]['radiation_beams'] = deepcopy(self.radiation_frames.get(step, self.radiation_snapshot()))
             if self.profile.get('observe_bombs', False):
                 frames[-1]['bombs'] = deepcopy(self.bomb_frames.get(step, {'carriers': [], 'records': []}))
             if self.profile.get('observe_crates', False):
@@ -171,6 +175,13 @@ class MapObservationTests(unittest.TestCase):
                             'simulation_tick': step, 'binary_frame': step,
                             'effects': deepcopy(self.electric_frames.get(step, self.electric_snapshot()))}
                            for index, step in enumerate(draw_steps)]}
+        if self.profile.get('observe_radiation_beams', False):
+            manifest['observations']['radiation_beam_draws'] = {
+                'policy': 'radiation-beam-after-each-tactical-composite-v1',
+                'frames': [{'ordinal': index, 'completed_steps': step,
+                            'simulation_tick': step, 'binary_frame': step,
+                            'beams': deepcopy(self.radiation_draws.get(step, self.radiation_snapshot()))}
+                           for index, step in enumerate(range(1, ticks + 1) if ticks else [0])]}
         if 'observe_types' in self.profile:
             manifest['observations']['type_filter'] = deepcopy(self.profile['observe_types'])
         if 'gestures' in self.profile:
@@ -610,6 +621,144 @@ class MapObservationTests(unittest.TestCase):
                 with self.assertRaises(ValidationError):
                     self.run_capture()
                 child.assert_not_called()
+
+    def thumb_profile(self, *, locked=False):
+        self.command_bar_profile()
+        request, receipt = self.profile['gestures'][0], self.gesture_receipts[0]
+        request['gesture']['command'] = 'Thumb'
+        receipt['gesture'] = deepcopy(request['gesture'])
+        bar = receipt['command_bar']
+        bar.pop('slot')
+        bar['command'] = 'Thumb'
+        state = {'closed': True, 'pressed': False, 'sticky': False, 'gadget_id': bar['gadget_id'],
+                 'rect': [1, 6, 2, 1], 'disabled': False, 'current_house': 'VERA-OBSERVER',
+                 'side_index': 0, 'local_player_defeated': True, 'input_locked': locked,
+                 'has_lost': True, 'exit_ready': False, 'left_held': False}
+        # Synthetic schema fixtures, not native or gameplay expectations. In
+        # particular, the unlocked defeated Thumb may visibly reopen before a fix.
+        bar['thumb'] = {
+            'before': deepcopy(state),
+            'press': {'state': dict(state, pressed=not locked, left_held=True),
+                      'dispatch': None if locked else
+                          {'masked_flags': 1, 'modifier': 0, 'key_after': 0, 'action_result': 0}},
+            'release': {'state': dict(state, closed=locked),
+                        'dispatch': None if locked else
+                            {'masked_flags': 2, 'modifier': 0, 'key_after': 0x80f1, 'action_result': 1}},
+            'after': dict(state, closed=locked),
+        }
+        receipt['left_press_captured'] = not locked
+        receipt['queued_commands'] = []
+        self.profile_path.write_text(json.dumps(self.profile))
+
+    def test_thumb_receipt_round_trip_keeps_real_result_distinct_from_mutable_key(self):
+        self.thumb_profile()
+        report = self.run_capture()
+        self.assertEqual(report['status'], 'VALID', report['errors'])
+        transcript = report['capture']['observations']['gesture_input']
+        self.assertEqual(transcript['receipts'], self.gesture_receipts)
+        bar = transcript['receipts'][0]['command_bar']
+        self.assertNotIn('slot', bar)
+        self.assertFalse(bar['thumb']['after']['closed'], 'capture validity must not manufacture parity')
+        self.assertEqual(bar['thumb']['release']['dispatch']['key_after'], 0x80f1)
+        self.assertEqual(bar['thumb']['release']['dispatch']['action_result'], 1)
+        self.assertEqual(observation.validate_run(self.output)['status'], 'VALID')
+        self.assertEqual(observation._command_bar_gesture(bar, 'Thumb', 'thumb', (8, 8)), 7)
+        for phase in ('press', 'release'):
+            bar['thumb'][phase]['dispatch'] = None
+        self.assertEqual(observation._command_bar_gesture(bar, 'Thumb', 'thumb', (8, 8)), 5)
+
+    def test_locked_thumb_refusal_retains_physical_edges_without_stale_dispatch(self):
+        self.thumb_profile(locked=True)
+        report = self.run_capture()
+        self.assertEqual(report['status'], 'VALID', report['errors'])
+        transcript = report['capture']['observations']['gesture_input']
+        count = observation._gesture_observations(transcript, self.profile)
+        with patch.object(observation, 'MAX_OBSERVATION_SAMPLES', count - 1):
+            with self.assertRaises(ValidationError):
+                observation._gesture_observations(transcript, self.profile)
+        mutations = [lambda t: t['before'].update(input_locked=False),
+                     lambda t: t['press']['state'].update(input_locked=False),
+                     lambda t: t['release']['state'].update(input_locked=False),
+                     lambda t: t['after'].update(closed=False),
+                     lambda t: t['press']['state'].update(closed=False),
+                     lambda t: t['release']['state'].update(closed=False),
+                     lambda t: t['release'].update(dispatch={
+                         'masked_flags': 0, 'modifier': 0, 'key_after': 0, 'action_result': 0})]
+        for index, mutate in enumerate(mutations):
+            with self.subTest(case=index), self.assertRaises(ValidationError):
+                candidate = deepcopy(transcript)
+                mutate(candidate['receipts'][0]['command_bar']['thumb'])
+                observation._gesture_observations(candidate, self.profile)
+        for phase in ('before', 'press', 'release', 'after'):
+            with self.subTest(physical_phase=phase), self.assertRaises(ValidationError):
+                candidate = deepcopy(transcript)
+                thumb = candidate['receipts'][0]['command_bar']['thumb']
+                state = thumb[phase]['state'] if phase in ('press', 'release') else thumb[phase]
+                state['left_held'] = not state['left_held']
+                observation._gesture_observations(candidate, self.profile)
+        for key in ('neutral_input_restored', 'left_press_captured'):
+            candidate = deepcopy(transcript)
+            candidate['receipts'][0][key] = 0
+            with self.subTest(key=key), self.assertRaises(ValidationError):
+                observation._gesture_observations(candidate, self.profile)
+
+    def test_thumb_cannot_relax_unlocked_or_legacy_command_press_capture(self):
+        self.thumb_profile()
+        self.gesture_receipts[0]['left_press_captured'] = False
+        self.assertEqual(self.run_capture()['status'], 'INVALID')
+        self.command_bar_profile()
+        self.output = self.root / 'uncaptured-command'
+        self.gesture_receipts[0]['left_press_captured'] = False
+        self.assertEqual(self.run_capture()['status'], 'INVALID')
+
+    def test_thumb_schema_requires_exact_typed_states_edges_and_unsigned_dispatch(self):
+        self.thumb_profile()
+        original = self.gesture_receipts[0]['command_bar']
+        mutations = [lambda b: b.pop('thumb'), lambda b: b.update(slot=0),
+                     lambda b: b['thumb'].update(extra=True),
+                     lambda b: b['thumb']['press'].pop('dispatch'),
+                     lambda b: b['thumb']['release'].update(extra=True),
+                     lambda b: b['thumb']['release'].update(state=None)]
+        for phase in ('before', 'press', 'release', 'after'):
+            for key, value in (('closed', 1), ('pressed', None), ('sticky', 'false'), ('disabled', 0),
+                               ('left_held', 0), ('local_player_defeated', 1), ('input_locked', None),
+                               ('has_lost', 0), ('exit_ready', 1), ('current_house', 0),
+                               ('side_index', True), ('side_index', 256), ('side_index', -1),
+                               ('gadget_id', True), ('gadget_id', 65536), ('gadget_id', -1),
+                               ('rect', [1.0, 6, 2, 1]), ('rect', [1, 6, 2]),
+                               ('rect', [1, 6, 2, 1 << 31]), ('extra', True)):
+                def mutate(bar, phase=phase, key=key, value=value):
+                    target = bar['thumb'][phase]
+                    state = target['state'] if phase in ('press', 'release') else target
+                    state[key] = value
+                mutations.append(mutate)
+            def missing(bar, phase=phase):
+                target = bar['thumb'][phase]
+                (target['state'] if phase in ('press', 'release') else target).pop('exit_ready')
+            mutations.append(missing)
+        for phase in ('press', 'release'):
+            for key, value in (('masked_flags', -1), ('masked_flags', 65536), ('modifier', 256),
+                               ('key_after', True), ('key_after', 65536), ('action_result', -1),
+                               ('action_result', 1 << 32), ('action_result', True), ('extra', 0)):
+                mutations.append(lambda b, p=phase, k=key, v=value: b['thumb'][p]['dispatch'].update({k: v}))
+            mutations.append(lambda b, p=phase: b['thumb'][p]['dispatch'].pop('key_after'))
+        for index, mutate in enumerate(mutations):
+            with self.subTest(case=index), self.assertRaises(ValidationError):
+                candidate = deepcopy(original)
+                mutate(candidate)
+                observation._command_bar_gesture(candidate, 'Thumb', 'thumb', (8, 8))
+        nullable = deepcopy(original)
+        for phase in ('before', 'press', 'release', 'after'):
+            target = nullable['thumb'][phase]
+            state = target['state'] if phase in ('press', 'release') else target
+            state.update(current_house=None, side_index=None, has_lost=None, exit_ready=None)
+        self.assertEqual(observation._command_bar_gesture(nullable, 'Thumb', 'thumb', (8, 8)), 7)
+        self.command_bar_profile()
+        legacy = deepcopy(self.gesture_receipts[0]['command_bar'])
+        self.assertEqual(observation._command_bar_gesture(legacy, 'Guard', 'guard', (8, 8)), 1)
+        legacy['thumb'] = original['thumb']
+        with self.assertRaises(ValidationError):
+            observation._command_bar_gesture(legacy, 'Guard', 'guard', (8, 8))
 
     @staticmethod
     def local_input_observation():
@@ -2258,6 +2407,104 @@ class MapObservationTests(unittest.TestCase):
         self.assertEqual(observation.validate_run(self.output)['status'], 'VALID')
 
     @staticmethod
+    def cloak_state_with_runtime():
+        timer = {'start_frame': 17, 'duration': 5, 'remaining': 4}
+        return dict(state_i32=1, progress_i32=0, cloaking_stages_i32=9,
+                    voxel=True, no_shadow=False,
+                    runtime={'in_playfield': True, 'step_delta_i32': 1, 'step_speed_i32': 5,
+                             'step_timer': dict(timer), 'recloak_delay': dict(timer, duration=0, remaining=0)})
+
+    def test_cloak_runtime_opt_in_reuses_fire_and_preserves_sealed_projection(self):
+        self.scripted_profile()
+        self.profile['observe_cloak'] = True
+        self.profile_path.write_text(json.dumps(self.profile))
+        for actors in self.actor_frames.values():
+            actors[0].update(cloak=self.cloak_state_with_runtime(), fire=self.fire_state())
+        report = self.run_capture()
+        self.assertEqual(report['status'], 'VALID', report['errors'])
+        self.assertEqual(observation.validate_run(self.output)['status'], 'VALID')
+        self.assertTrue(all(frame['actors'][0]['cloak'] == self.cloak_state_with_runtime()
+                            and frame['actors'][0]['fire'] == self.fire_state()
+                            and 'bombs' not in frame
+                            for frame in report['capture']['observations']['frames']))
+        actor = dict(self.actor(), cloak=self.cloak_state_with_runtime(), fire=self.fire_state())
+        observation._actor(actor, 'actor', cloak=True, bombs=True)
+        for missing in ('cloak', 'fire'):
+            row = dict(actor)
+            del row[missing]
+            with self.subTest(missing=missing), self.assertRaises(ValidationError):
+                observation._actor(row, 'actor', cloak=True)
+        with self.assertRaises(ValidationError):
+            observation._actor(actor, 'actor')
+        observation._actor(dict(actor, cloak=None), 'actor', cloak=True)
+
+    def test_cloak_runtime_profile_presence_and_old_policy_compatibility(self):
+        self.scripted_profile()
+        for enabled in (False, True):
+            observation._profile_extensions(dict(self.profile, observe_cloak=enabled))
+            with self.assertRaises(ValidationError):
+                observation._profile_extensions(dict(self.profile,
+                    schema_version=observation.PROFILE_V1, observe_cloak=enabled))
+        for value in (None, 0, 1, 'true', [], {}):
+            with self.subTest(value=value), self.assertRaises(ValidationError):
+                observation._profile_extensions(dict(self.profile, observe_cloak=value))
+        for prior in ({'walk_state': False}, {'disk_laser_state': False}):
+            with self.subTest(prior=prior), self.assertRaisesRegex(ValidationError, 'current v8'):
+                observation._observations({}, dict(self.profile, observe_cloak=True), {}, **prior)
+        self.profile['observe_cloak'] = False
+        self.profile_path.write_text(json.dumps(self.profile))
+        for actors in self.actor_frames.values():
+            old = self.cloak_state_with_runtime()
+            del old['runtime']
+            actors[0]['cloak'] = old
+        report = self.run_capture()
+        self.assertEqual(report['status'], 'VALID', report['errors'])
+        self.assertTrue(all('runtime' not in frame['actors'][0]['cloak']
+                            and 'fire' not in frame['actors'][0]
+                            for frame in report['capture']['observations']['frames']))
+        self.make_historical_docking(self.output)
+        manifest = self.output / 'child-output/capture.json'
+        original = manifest.read_bytes()
+        checked = observation.validate_run(self.output)
+        self.assertEqual(checked['status'], 'VALID', checked['errors'])
+        self.assertEqual(manifest.read_bytes(), original)
+
+    def test_cloak_runtime_shape_and_signed_timer_inputs_are_strict(self):
+        observation._cloak(self.cloak_state_with_runtime(), 'cloak', runtime=True)
+        for key, value in (('in_playfield', 1), ('step_speed_i32', True),
+                           ('step_delta_i32', 1 << 31), ('step_timer', None),
+                           ('recloak_delay', {'start_frame': 0, 'duration': 1, 'remaining': True})):
+            row = self.cloak_state_with_runtime()
+            row['runtime'][key] = value
+            with self.subTest(key=key), self.assertRaises(ValidationError):
+                observation._cloak(row, 'cloak', runtime=True)
+        for key in ('runtime', 'step_timer'):
+            row = self.cloak_state_with_runtime()
+            if key == 'runtime':
+                del row[key]
+            else:
+                del row['runtime'][key]
+            with self.subTest(missing=key), self.assertRaises(ValidationError):
+                observation._cloak(row, 'cloak', runtime=True)
+        row = self.cloak_state_with_runtime()
+        row['runtime']['step_delta_i32'] = -(1 << 31)
+        row['runtime']['step_timer'] = {'start_frame': -(1 << 31), 'duration': (1 << 31) - 1,
+                                        'remaining': -1}
+        observation._cloak(row, 'cloak', runtime=True)
+
+    def test_cloak_runtime_uses_shared_sample_budget(self):
+        self.profile.update(schema_version=observation.PROFILE_V2, observe_cloak=True,
+                            observe_owners=['Computer1'], ticks=0)
+        self.profile_path.write_text(json.dumps(self.profile))
+        self.actor_frames[0] = [dict(self.actor(), cloak=self.cloak_state_with_runtime(), fire=self.fire_state())]
+        # One actor, one House and one immutable cloak-runtime row.
+        for budget, status in ((2, 'INVALID'), (3, 'VALID')):
+            self.output = self.root / f'cloak-budget-{budget}'
+            with patch.object(observation, 'MAX_OBSERVATION_SAMPLES', budget):
+                report = self.run_capture()
+            self.assertEqual(report['status'], status, report['errors'])
+
+    @staticmethod
     def action_line_inputs():
         # Schema fixture only; native coordinate values come from the original
         # executable, never this portable fake-child receipt.
@@ -2354,6 +2601,150 @@ class MapObservationTests(unittest.TestCase):
                 'live': [], 'lights': [], 'particle_systems': [], 'native_id_cursor': 1000,
                 'rng': {name: {'disabled': 0, 'index_a': 0, 'index_b': 103, 'words': [0] * 250}
                         for name in ('main', 'scenario', 'mapgen')}}
+
+    @staticmethod
+    def radiation_snapshot(populated=False):
+        # Protocol fixture only, never native numeric or lifetime goldens.
+        if not populated:
+            return {'live': [], 'composites': [], 'segments': []}
+        return {'live': [{'birth_frame': 7, 'from': [256, 256, 0], 'to': [768, 256, 0],
+                          'z_adjust': -32, 'color': [0, 255, 0], 'duration': 15,
+                          'amplitude_bits': 0x4044000000000000, 'progress': 14,
+                          'spacing': 10, 'length_bits': 0x4080000000000000}],
+                'composites': [{'birth_frame': 7, 'progress_before': 13, 'progress_after': 14,
+                                'expired': False, 'segments': 1}],
+                'segments': [{'from': [-1, 32], 'to': [2, 34], 'z_adjust': [-32, -2], 'rgb565': 2016}]}
+
+    def test_radiation_observer_keeps_logic_and_actual_composite_snapshots_separate(self):
+        self.scripted_profile()
+        self.profile['observe_radiation_beams'] = True
+        self.profile_path.write_text(json.dumps(self.profile))
+        logic = self.radiation_snapshot(True)
+        self.radiation_frames[2] = logic
+        draw = self.radiation_snapshot(True)
+        draw['live'].clear()
+        draw['composites'][0].update(progress_before=14, progress_after=15, expired=True)
+        self.radiation_draws[2] = draw
+        report = self.run_capture()
+        self.assertEqual(report['status'], 'VALID', report['errors'])
+        observed = report['capture']['observations']
+        self.assertEqual(observed['frames'][2]['radiation_beams'], logic)
+        self.assertEqual(observed['radiation_beam_draws']['frames'][1]['beams'], draw)
+        self.assertTrue(draw['segments'])
+        self.assertEqual(observation.validate_run(self.output)['status'], 'VALID')
+        self.output = self.root / 'missing-radiation-composite'
+        self.change = lambda m: m['observations']['radiation_beam_draws']['frames'].pop()
+        report = self.run_capture()
+        self.assertEqual(report['status'], 'INVALID')
+        self.assertTrue(any('each requested composite' in error for error in report['errors']), report['errors'])
+
+    def test_radiation_flag_is_strict_and_opt_out_preserves_old_policy_rows(self):
+        self.scripted_profile()
+        for schema in (observation.PROFILE_V2, observation.PROFILE_V3):
+            for enabled in (False, True):
+                observation._profile_extensions(dict(self.profile, schema_version=schema,
+                                                       observe_radiation_beams=enabled))
+        for enabled in (False, True):
+            with self.assertRaises(ValidationError):
+                observation._profile_extensions(dict(self.profile,
+                    schema_version=observation.PROFILE_V1, observe_radiation_beams=enabled))
+        for value in (None, 0, 1, 'true', [], {}):
+            with self.subTest(value=value), self.assertRaises(ValidationError):
+                observation._profile_extensions(dict(self.profile, observe_radiation_beams=value))
+        for prior in ({'walk_state': False}, {'disk_laser_state': False}):
+            with self.subTest(prior=prior), self.assertRaisesRegex(ValidationError, 'current v8'):
+                observation._observations({}, dict(self.profile, observe_radiation_beams=True), {}, **prior)
+        self.profile['observe_radiation_beams'] = False
+        self.profile_path.write_text(json.dumps(self.profile))
+        report = self.run_capture()
+        self.assertEqual(report['status'], 'VALID', report['errors'])
+        observed = report['capture']['observations']
+        self.assertNotIn('radiation_beam_draws', observed)
+        self.assertTrue(all('radiation_beams' not in frame for frame in observed['frames']))
+        self.make_historical_docking(self.output)
+        manifest = self.output / 'child-output/capture.json'
+        original = manifest.read_bytes()
+        checked = observation.validate_run(self.output)
+        self.assertEqual(checked['status'], 'VALID', checked['errors'])
+        self.assertEqual(manifest.read_bytes(), original)
+
+    def test_radiation_composites_ignore_electric_sampling_whitelist(self):
+        self.scripted_profile()
+        self.profile.update(observe_radiation_beams=True, observe_electric_bolts=True,
+                            observe_electric_bolt_steps=[0, 2])
+        self.profile_path.write_text(json.dumps(self.profile))
+        for actors in self.actor_frames.values():
+            for actor in actors:
+                actor['prism'] = ({'support_count': 0, 'pending': None,
+                                   'rearm': {'start': -1, 'duration': 0, 'remaining': 0}}
+                                  if actor['category'] == 'Structure' else None)
+        report = self.run_capture()
+        self.assertEqual(report['status'], 'VALID', report['errors'])
+        observed = report['capture']['observations']
+        self.assertEqual([row['completed_steps'] for row in observed['electric_bolt_draws']['frames']], [2])
+        self.assertEqual([row['completed_steps'] for row in observed['radiation_beam_draws']['frames']], [1, 2, 3])
+
+    def test_unrequested_radiation_observations_are_rejected(self):
+        self.scripted_profile()
+        self.profile['observe_radiation_beams'] = False
+        self.profile_path.write_text(json.dumps(self.profile))
+        for index, change in enumerate((
+                lambda m: m['observations']['frames'][0].update(radiation_beams=self.radiation_snapshot()),
+                lambda m: m['observations'].update(radiation_beam_draws={
+                    'policy': 'radiation-beam-after-each-tactical-composite-v1', 'frames': []}))):
+            self.output = self.root / f'unrequested-radiation-{index}'
+            self.change = change
+            report = self.run_capture()
+            self.assertEqual(report['status'], 'INVALID', report['errors'])
+
+    def test_radiation_repeated_same_logic_frame_retains_expiry_and_geometry(self):
+        self.profile.update(schema_version=observation.PROFILE_V2, observe_radiation_beams=True, ticks=0)
+        rows = []
+        for index in range(3):
+            snapshot = self.radiation_snapshot(True)
+            if index == 2:
+                snapshot['live'].clear()
+                snapshot['composites'][0].update(progress_before=14, progress_after=15, expired=True)
+            rows.append({'ordinal': index, 'completed_steps': 0, 'simulation_tick': 0,
+                         'binary_frame': 0, 'beams': snapshot})
+        value = {'policy': 'radiation-beam-after-each-tactical-composite-v1', 'frames': rows}
+        self.assertEqual(observation._radiation_beam_draws(value, self.profile, [], 2), 11)
+        with self.assertRaises(ValidationError):
+            observation._radiation_beam_draws(value, self.profile, [], 0)
+        value['frames'][2]['binary_frame'] = 1
+        with self.assertRaises(ValidationError):
+            observation._radiation_beam_draws(value, self.profile, [], 2)
+
+    def test_radiation_snapshot_shapes_bits_and_actual_segment_tally_are_strict(self):
+        self.assertEqual(observation._radiation_beams(self.radiation_snapshot(), 'beams'), 1)
+        self.assertEqual(observation._radiation_beams(self.radiation_snapshot(True), 'beams'), 4)
+        for group, key, value in (('live', 'amplitude_bits', 1 << 64), ('live', 'length_bits', True),
+                                 ('live', 'progress', 1 << 31), ('live', 'from', [1, 2]),
+                                 ('live', 'color', [0, 0, 256]), ('live', 'duration', True),
+                                 ('composites', 'expired', 1), ('composites', 'segments', 2),
+                                 ('segments', 'rgb565', 65536), ('segments', 'z_adjust', [0, True]),
+                                 ('segments', 'blend', 'add')):
+            row = self.radiation_snapshot(True)
+            row[group][0][key] = value
+            with self.subTest(group=group, key=key), self.assertRaises(ValidationError):
+                observation._radiation_beams(row, 'beams')
+        row = self.radiation_snapshot(True)
+        row['live'][0]['length_bits'] = None
+        observation._radiation_beams(row, 'beams')
+        del row['composites'][0]['progress_before']
+        with self.assertRaises(ValidationError):
+            observation._radiation_beams(row, 'beams')
+
+    def test_radiation_logic_and_composite_rows_share_aggregate_budget(self):
+        self.profile.update(schema_version=observation.PROFILE_V2, observe_radiation_beams=True, ticks=0)
+        self.profile_path.write_text(json.dumps(self.profile))
+        self.radiation_frames[0] = self.radiation_snapshot(True)
+        self.radiation_draws[0] = self.radiation_snapshot(True)
+        for budget, status in ((7, 'INVALID'), (8, 'VALID')):
+            self.output = self.root / f'radiation-budget-{budget}'
+            with patch.object(observation, 'MAX_OBSERVATION_SAMPLES', budget):
+                report = self.run_capture()
+            self.assertEqual(report['status'], status, report['errors'])
 
     def test_electric_observations_preserve_owner_ids_and_all_rng_words(self):
         self.scripted_profile()
@@ -2763,6 +3154,98 @@ class MapObservationTests(unittest.TestCase):
         self.assertTrue(all('bombs' not in frame and 'fire' not in frame['actors'][0]
                             for frame in report['capture']['observations']['frames']))
 
+    @staticmethod
+    def temporal_state():
+        return {'has_link': True, 'warp_target': 9, 'chain_head': None,
+                'boarding_transport': None, 'inside_transport': None,
+                'cargo': {'count': 2, 'passengers': [11, 8]}}
+
+    def test_temporal_snapshots_and_shared_fire_readback_survive_sealed_recheck(self):
+        self.scripted_profile()
+        self.profile['observe_temporal'] = True
+        self.profile_path.write_text(json.dumps(self.profile))
+        for actors in self.actor_frames.values():
+            actors[0].update(temporal=self.temporal_state(), fire=self.fire_state())
+        report = self.run_capture()
+        self.assertEqual(report['status'], 'VALID', report['errors'])
+        frames = report['capture']['observations']['frames']
+        self.assertTrue(all(frame['actors'][0]['temporal'] == self.temporal_state()
+                            and frame['actors'][0]['fire'] == self.fire_state()
+                            and 'bombs' not in frame for frame in frames))
+        self.assertEqual(observation.validate_run(self.output)['status'], 'VALID')
+
+    def test_temporal_opt_in_preserves_opt_out_rows_and_requires_current_policy(self):
+        self.scripted_profile()
+        for enabled in (False, True):
+            observation._profile_extensions(dict(self.profile, observe_temporal=enabled))
+            with self.assertRaises(ValidationError):
+                observation._profile_extensions(dict(self.profile,
+                    schema_version=observation.PROFILE_V1, observe_temporal=enabled))
+        for value in (None, 0, 1, 'true', [], {}):
+            with self.subTest(value=value), self.assertRaises(ValidationError):
+                observation._profile_extensions(dict(self.profile, observe_temporal=value))
+        actor = dict(self.actor(), temporal=self.temporal_state(), fire=self.fire_state())
+        observation._actor(actor, 'actor', temporal=True)
+        observation._actor(actor, 'actor', temporal=True, bombs=True)
+        for missing in ('fire', 'temporal'):
+            incomplete = dict(actor)
+            del incomplete[missing]
+            with self.subTest(missing=missing), self.assertRaises(ValidationError):
+                observation._actor(incomplete, 'actor', temporal=True)
+        with self.assertRaises(ValidationError):
+            observation._actor(actor, 'actor')
+        for prior in ({'walk_state': False}, {'disk_laser_state': False}):
+            with self.subTest(prior=prior), self.assertRaisesRegex(ValidationError, 'current v8'):
+                observation._observations({}, dict(self.profile, observe_temporal=True), {}, **prior)
+        # The extension is additive inside v8. False has the exact historical
+        # actor shape, so old policy fixtures need no inferred Temporal fields.
+        self.profile['observe_temporal'] = False
+        self.profile_path.write_text(json.dumps(self.profile))
+        report = self.run_capture()
+        self.assertEqual(report['status'], 'VALID', report['errors'])
+        self.assertTrue(all('temporal' not in frame['actors'][0]
+                            and 'fire' not in frame['actors'][0]
+                            for frame in report['capture']['observations']['frames']))
+        self.make_historical_docking(self.output)
+        manifest = self.output / 'child-output/capture.json'
+        original = manifest.read_bytes()
+        checked = observation.validate_run(self.output)
+        self.assertEqual(checked['status'], 'VALID', checked['errors'])
+        self.assertEqual(manifest.read_bytes(), original)
+
+    def test_temporal_snapshot_keeps_independent_queries_and_checks_shapes(self):
+        self.assertEqual(observation._temporal(self.temporal_state(), 'temporal'), 3)
+        row = dict(self.temporal_state(), has_link=False, warp_target=9,
+                   chain_head=10, boarding_transport=12,
+                   inside_transport={'transport': 13, 'open_topped': True},
+                   cargo={'count': 99, 'passengers': [11, 8]})
+        self.assertEqual(observation._temporal(row, 'temporal'), 3)
+        self.assertEqual(observation._temporal(dict(row, cargo=None), 'temporal'), 1)
+        for key, value in (('has_link', 1), ('warp_target', 0), ('chain_head', True),
+                           ('boarding_transport', 1 << 64),
+                           ('cargo', {'count': 0, 'passengers': [True]}),
+                           ('inside_transport', {'transport': 8, 'open_topped': 1})):
+            with self.subTest(key=key), self.assertRaises(ValidationError):
+                observation._temporal(dict(row, **{key: value}), 'temporal')
+        for cargo in ({'count': -1, 'passengers': []}, {'count': 1, 'passengers': None},
+                      {'count': 1, 'passengers': [0]}, {'count': 1, 'passengers': [], 'extra': 0}):
+            with self.subTest(cargo=cargo), self.assertRaises(ValidationError):
+                observation._temporal(dict(row, cargo=cargo), 'temporal')
+        with self.assertRaises(ValidationError):
+            observation._temporal(dict(row, extra=0), 'temporal')
+
+    def test_temporal_cargo_uses_shared_aggregate_sample_budget(self):
+        self.profile.update(schema_version=observation.PROFILE_V2, observe_temporal=True,
+                            observe_owners=['Computer1'], ticks=0)
+        self.profile_path.write_text(json.dumps(self.profile))
+        self.actor_frames[0] = [dict(self.actor(), temporal=self.temporal_state(), fire=self.fire_state())]
+        # One actor, one House, one Temporal snapshot and two cargo entries.
+        for budget, status in ((4, 'INVALID'), (5, 'VALID')):
+            self.output = self.root / f'temporal-budget-{budget}'
+            with patch.object(observation, 'MAX_OBSERVATION_SAMPLES', budget):
+                report = self.run_capture()
+            self.assertEqual(report['status'], status, report['errors'])
+
     def test_electric_and_bomb_observations_keep_both_actor_extensions(self):
         self.scripted_profile()
         self.profile.update(observe_electric_bolts=True, observe_bombs=True)
@@ -2949,13 +3432,15 @@ class MapObservationTests(unittest.TestCase):
                          self.actor_frames[3][0]['building'])
         self.assertEqual(observation.validate_run(self.output)['status'], 'VALID')
 
-    def test_engineer_and_paid_repair_orders_keep_the_existing_command_payload(self):
+    def test_engineer_c4_and_paid_repair_orders_keep_the_existing_command_payload(self):
         self.production_profile()
         self.profile['commands'] = [
             {'issue_after_step': 0, 'owner': 'Computer1',
              'payload': {'ToggleRepair': {'entity_id': 1}}},
             {'issue_after_step': 2, 'owner': 'Computer1',
-             'payload': {'CaptureBuilding': {'engineer_id': 7, 'target_building_id': 1}}}]
+             'payload': {'CaptureBuilding': {'engineer_id': 7, 'target_building_id': 1}}},
+            {'issue_after_step': 2, 'owner': 'Computer1',
+             'payload': {'PlantC4': {'attacker_id': 7, 'target_building_id': 1}}}]
         self.profile_path.write_text(json.dumps(self.profile))
         report = self.run_capture()
         self.assertEqual(report['status'], 'VALID', report['errors'])
@@ -4093,6 +4578,79 @@ class MapObservationTests(unittest.TestCase):
     def test_loose_map_receipt_is_supported(self):
         self.change = lambda m: m['map_source'].update(kind='loose', path='/retail/Fight.MAP')
         self.assertEqual(self.run_capture()['status'], 'VALID')
+
+    def test_generated_seed_receipt_requires_and_retains_consumed_identity(self):
+        # Protocol receipts only: these do not execute Generate or establish
+        # native gameplay/pixel parity. The production reader owns consumption.
+        for index, name in enumerate(('CellRamp11.SED', 'CellRamp11.sEd')):
+            with self.subTest(name=name):
+                self.profile['launch']['selected_map_file'] = name
+                self.profile_path.write_text(json.dumps(self.profile))
+                source = {'kind': 'generated', 'seed_name': name,
+                          'seed_source': {'path': '/retail/' + name, 'payload_len': 90,
+                                          'source_sha256': 'b' * 64}}
+                self.change = lambda m, value=source: m.update(map_source=deepcopy(value))
+                self.output = self.root / f'generated-{index}'
+                report = self.run_capture()
+                self.assertEqual(report['status'], 'VALID', report['errors'])
+                self.assertEqual(report['capture']['map_source'], source)
+                retained = observation.validate_run(self.output)
+                self.assertEqual(retained['status'], 'VALID', retained['errors'])
+
+    def test_generated_seed_receipt_rejects_missing_or_malformed_consumed_identity(self):
+        self.profile['launch']['selected_map_file'] = 'CellRamp11.SED'
+        self.profile_path.write_text(json.dumps(self.profile))
+        original = {'kind': 'generated', 'seed_name': 'CellRamp11.SED',
+                    'seed_source': {'path': '/retail/CellRamp11.SED', 'payload_len': 90,
+                                    'source_sha256': 'b' * 64}}
+        cases = [('name_only', lambda value: value.pop('seed_source')),
+                 ('null_source', lambda value: value.update(seed_source=None)),
+                 ('array_source', lambda value: value.update(seed_source=[])),
+                 ('missing_name', lambda value: value.pop('seed_name')),
+                 ('wrong_name', lambda value: value.update(seed_name='Other.SED')),
+                 ('name_case_mismatch', lambda value: value.update(seed_name='cellramp11.SED')),
+                 ('null_name', lambda value: value.update(seed_name=None))]
+        for field in ('path', 'payload_len', 'source_sha256'):
+            cases.append(('missing_' + field,
+                          lambda value, key=field: value['seed_source'].pop(key)))
+        for field, values in (('path', ('', None, 17)),
+                              ('payload_len', (0, -1, None, True, 1.5)),
+                              ('source_sha256', ('bad', 'B' * 64, 'g' * 64, None, 17))):
+            for index, invalid in enumerate(values):
+                cases.append((f'{field}_{index}',
+                              lambda value, key=field, bad=invalid:
+                              value['seed_source'].update({key: bad})))
+        # An authored-map identity at the top level cannot stand in for the
+        # missing nested identity of the actual seed bytes.
+        cases.append(('top_level_identity_only', lambda value: value.update(
+            seed_source=None, path='/retail/CellRamp11.SED', payload_len=90,
+            source_sha256='b' * 64)))
+        cases.append(('top_level_hash_cannot_repair_nested', lambda value: (
+            value.update(source_sha256='b' * 64),
+            value['seed_source'].pop('source_sha256'))))
+        for index, (name, mutate) in enumerate(cases):
+            with self.subTest(name=name):
+                source = deepcopy(original)
+                mutate(source)
+                self.change = lambda m, value=source: m.update(map_source=deepcopy(value))
+                self.output = self.root / f'generated-invalid-{index}'
+                report = self.run_capture()
+                self.assertEqual(report['status'], 'INVALID', name)
+                self.assertTrue(report['errors'], name)
+
+    def test_generated_seed_receipt_requires_terminal_seed_selection(self):
+        for index, name in enumerate(('CellRamp11.SED.bak', 'CellRamp11.map', 'CellRamp11sed')):
+            with self.subTest(name=name):
+                self.profile['launch']['selected_map_file'] = name
+                self.profile_path.write_text(json.dumps(self.profile))
+                source = {'kind': 'generated', 'seed_name': name,
+                          'seed_source': {'path': '/retail/' + name, 'payload_len': 90,
+                                          'source_sha256': 'b' * 64}}
+                self.change = lambda m, value=source: m.update(map_source=deepcopy(value))
+                self.output = self.root / f'generated-nonseed-{index}'
+                report = self.run_capture()
+                self.assertEqual(report['status'], 'INVALID')
+                self.assertTrue(any('must end in .SED' in error for error in report['errors']))
 
     def test_existing_output_is_never_reused(self):
         self.output.mkdir()

@@ -86,6 +86,7 @@ fn production_line_trail_matches_original_full_line_pixels() {
                 std::iter::empty(),
                 &segments,
                 &[],
+                &[],
                 viewport,
                 |_| true,
                 |[x, y]| {
@@ -193,6 +194,7 @@ fn production_line_trail_preserves_native_overlap_across_chunks() {
                     std::iter::empty(),
                     std::iter::empty(),
                     &segments,
+                    &[],
                     &[],
                     ordered_viewport(row),
                     |_| true,
@@ -342,6 +344,7 @@ fn line_trail_native_fixture_submission_timings() {
                     std::iter::empty(),
                     draws.iter().copied(),
                     segments,
+                    &[],
                     radials,
                     viewport,
                     |_| true,

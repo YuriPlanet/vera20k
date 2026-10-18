@@ -1,0 +1,135 @@
+{
+  "schema_version": "vera20k.map-observation-expectations.v1",
+  "assertions": [
+    {
+      "name": "g0 command_bar.thumb.release.dispatch.key_after",
+      "subject": {
+        "gesture": 0
+      },
+      "at_step": 280,
+      "field": "command_bar.thumb.release.dispatch.key_after",
+      "op": "eq",
+      "value": 33008
+    },
+    {
+      "name": "g0 native required closed outcome",
+      "subject": {
+        "gesture": 0
+      },
+      "at_step": 280,
+      "field": "command_bar.thumb.after.closed",
+      "op": "eq",
+      "value": true
+    },
+    {
+      "name": "g1 command_bar.thumb.before.closed",
+      "subject": {
+        "gesture": 1
+      },
+      "at_step": 350,
+      "field": "command_bar.thumb.before.closed",
+      "op": "eq",
+      "value": true
+    },
+    {
+      "name": "g1 command_bar.thumb.before.input_locked",
+      "subject": {
+        "gesture": 1
+      },
+      "at_step": 350,
+      "field": "command_bar.thumb.before.input_locked",
+      "op": "eq",
+      "value": false
+    },
+    {
+      "name": "g1 queued_commands",
+      "subject": {
+        "gesture": 1
+      },
+      "at_step": 350,
+      "field": "queued_commands",
+      "op": "eq",
+      "value": []
+    },
+    {
+      "name": "g1 command_bar.thumb.release.dispatch.key_after",
+      "subject": {
+        "gesture": 1
+      },
+      "at_step": 350,
+      "field": "command_bar.thumb.release.dispatch.key_after",
+      "op": "eq",
+      "value": 33009
+    },
+    {
+      "name": "g1 command_bar.thumb.release.dispatch.action_result",
+      "subject": {
+        "gesture": 1
+      },
+      "at_step": 350,
+      "field": "command_bar.thumb.release.dispatch.action_result",
+      "op": "eq",
+      "value": 1
+    },
+    {
+      "name": "g1 command_bar.thumb.after.pressed",
+      "subject": {
+        "gesture": 1
+      },
+      "at_step": 350,
+      "field": "command_bar.thumb.after.pressed",
+      "op": "eq",
+      "value": false
+    },
+    {
+      "name": "g1 command_bar.thumb.after.sticky",
+      "subject": {
+        "gesture": 1
+      },
+      "at_step": 350,
+      "field": "command_bar.thumb.after.sticky",
+      "op": "eq",
+      "value": false
+    },
+    {
+      "name": "g1 command_bar.thumb.after.left_held",
+      "subject": {
+        "gesture": 1
+      },
+      "at_step": 350,
+      "field": "command_bar.thumb.after.left_held",
+      "op": "eq",
+      "value": false
+    },
+    {
+      "name": "g1 command_bar.thumb.before.local_player_defeated",
+      "subject": {
+        "gesture": 1
+      },
+      "at_step": 350,
+      "field": "command_bar.thumb.before.local_player_defeated",
+      "op": "eq",
+      "value": true
+    },
+    {
+      "name": "g1 command_bar.thumb.before.exit_ready",
+      "subject": {
+        "gesture": 1
+      },
+      "at_step": 350,
+      "field": "command_bar.thumb.before.exit_ready",
+      "op": "eq",
+      "value": false
+    },
+    {
+      "name": "g1 native required closed outcome",
+      "subject": {
+        "gesture": 1
+      },
+      "at_step": 350,
+      "field": "command_bar.thumb.after.closed",
+      "op": "eq",
+      "value": true
+    }
+  ]
+}

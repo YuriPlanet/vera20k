@@ -175,7 +175,7 @@ impl Simulation {
         if let Some(system_id) = system_id
             && let Some(system) = self.particle_systems_mut().get_mut(system_id)
         {
-            system.done_spawning = true;
+            system.mark_done_spawning();
         }
     }
 
@@ -365,6 +365,78 @@ impl Simulation {
         self.particle_systems_mut().insert(sys);
         self.reveal_particle_system(stable_id, Some(rules));
         Some(stable_id)
+    }
+
+    /// Execute88 at6DF3F7..6DF49B: signed waypoint center642740, then
+    /// Ground578080 (no bridge lookup), then the existing62DC50 constructor.
+    /// Target/owner/House are NULL; target Coord B0E6A0 is zero from6DCF20.
+    /// Original Execute ignores constructor return and returns AL1.
+    pub(crate) fn trigger_create_particle_system_at_waypoint(
+        &mut self,
+        index: i32,
+        waypoint: i32,
+        rules: &RuleSet,
+    ) -> bool {
+        let Some(type_id) = rules.particle_system_type_id_by_index(index) else {
+            // Native indexes unchecked; malformed Rust inputs fail safely.
+            return false;
+        };
+        let Some(cell) = self.session.waypoint_cell(waypoint) else {
+            return false;
+        };
+        let Some(terrain) = self.resolved_terrain.as_ref() else {
+            return false;
+        };
+        let center = crate::sim::cell_kernel::cell_center(
+            crate::sim::cell_kernel::CellCoordinate {
+                x: i32::from(cell.0),
+                y: i32::from(cell.1),
+            },
+            0,
+        );
+        let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+        let Ok(z) = crate::sim::movement::ground_pose::query_ground_height(
+            &cells,
+            crate::sim::components::DriveCoord {
+                x: center.x,
+                y: center.y,
+                z: 0,
+            },
+        ) else {
+            return false;
+        };
+        self.spawn_particle_system(
+            type_id,
+            IVec3::new(center.x, center.y, z),
+            None,
+            None,
+            IVec3::ZERO,
+            None,
+            rules,
+        );
+        true
+    }
+
+    /// Execute89 at6DF49E..6DF518: all Alive systems whose GetCell41BEA0
+    /// equals the waypoint receive virtual F8/6301E0. No type/House filter,
+    /// RNG, timer, detach or physical deletion; even an empty list returns1.
+    pub(crate) fn trigger_mark_particle_systems_done_at_waypoint(&mut self, waypoint: i32) -> bool {
+        let Some(cell) = self.session.waypoint_cell(waypoint) else {
+            return false;
+        };
+        for (_, system) in self.particle_systems_mut().iter_mut() {
+            if !system.alive() {
+                continue;
+            }
+            let at = (
+                crate::util::lepton::lepton_to_cell_packed(system.coords.x),
+                crate::util::lepton::lepton_to_cell_packed(system.coords.y),
+            );
+            if at == cell {
+                system.mark_done_spawning();
+            }
+        }
+        true
     }
 
     /// Maintain TechnoClass's attached damage-Smoke slot from the surviving

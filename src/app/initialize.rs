@@ -543,6 +543,7 @@ impl App {
                     line_trails: Default::default(),
                     lasers: Default::default(),
                     electric_bolts: Default::default(),
+                    radiation_beams: Default::default(),
                     detail: Default::default(),
                     hidden_super_anims: Default::default(),
                     super_timer_blinks: Default::default(),

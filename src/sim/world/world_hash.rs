@@ -667,6 +667,7 @@ impl Simulation {
     fn fold_fog_through_projectiles(&self, fog_digests: &[u64], hasher: &mut impl Hasher) {
         self.hash_fog_and_alliances(fog_digests, hasher);
         self.hash_bridge_state(hasher);
+        self.pending_bridge_collapses.hash_state(hasher);
         // Native local graph updates retain route-selection history even
         // when the current terrain and House threat values are identical.
         // Ordinary native load rebuilds the hierarchy through581F50; its
@@ -1176,6 +1177,7 @@ impl Simulation {
         self.hash_factory_registry(hasher); // P5b: the authoritative factory registry
 
         // Live ore/gem identity and quantity are folded by `hash_overlay_grid`.
+        self.production.ore_growth_config.hash_enabled(hasher);
         self.production
             .ore_growth_state
             .hash_state(hasher, retired_tiberium_fold);
@@ -1603,6 +1605,7 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
         // Naval/Passengers admission as construction, even while in limbo.
         b"naval-tracking-eligibility-v1".hash(hasher);
     }
+    entity.tracking_facts.hash_storage_capacity(hasher);
     if latches != Default::default() {
         b"house-tracking-infantry-latches-v1".hash(hasher);
         latches.hash(hasher);

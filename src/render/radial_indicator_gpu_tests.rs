@@ -106,6 +106,7 @@ fn production_radial_pixels_match_original_in_both_formats_and_immutable_depth()
                         .copied()
                         .map(crate::render::surface_line::SurfaceDraw::Line),
                     &[],
+                    &[],
                     &radials,
                     SurfaceLineViewport {
                         camera: [0; 2],

@@ -1046,6 +1046,14 @@ impl TeamScriptVm {
         }
     }
 
+    /// HasOccurred23 at71EEA9 scans Team+24, head+54 and leaving byte+82.
+    /// The Team owner supplies the same live query before Recalc destroys it.
+    pub(crate) fn has_empty_leaving_team(&self, team_type: Option<InternedId>) -> bool {
+        self.teams_in_order().any(|team| {
+            team.team_type_id == team_type && team.members.is_empty() && team.leaving_map
+        })
+    }
+
     /// The object's destructor: its team to rejoin goes with it.
     pub(crate) fn object_deleted(&mut self, entity_id: u64) {
         self.rejoin_team.remove(&entity_id);
@@ -1527,6 +1535,8 @@ pub(crate) fn join_team_for_test(
     teams.create_team_from_type(owner, team_type_id, &candidates, 0)
 }
 
+#[cfg(test)]
+mod firesale_retail_tests;
 #[cfg(test)]
 mod oracle_tests;
 #[cfg(test)]

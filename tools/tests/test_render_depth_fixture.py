@@ -221,6 +221,33 @@ class RenderDepthFixtureTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             build_fixture(ifv_welding='unknown')
 
+    def test_temporal_gunner_uses_native_house_names_and_full_stock_actors(self):
+        ini = parse_ini(build_fixture(temporal_gunner=True))
+        self.assertEqual([row.split(',')[:5] for row in ini['Units'].values()],
+                         [['<human player>', 'FV', '256', '44', '48'],
+                          ['Computer', 'HTNK', '256', '54', '48']])
+        self.assertEqual([row.split(',')[:5] for row in ini['Infantry'].values()],
+                         [['<human player>', 'CLEG', '256', '44', '47']])
+        self.assertEqual([row.split(',')[:5] for row in ini['Structures'].values()],
+                         [['Computer', 'GAPOWR', '256', '60', '60']])
+        cells = decode_iso_cells(ini['IsoMapPack5'])
+        positions = []
+        for section in ('Units', 'Infantry', 'Structures'):
+            for row in ini[section].values():
+                fields = row.split(',')
+                position = int(fields[3]), int(fields[4])
+                positions.append(position)
+                self.assertEqual(cells[position], (0, 0, 0))
+        self.assertEqual(len(set(positions)), 4)
+        self.assertTrue(all(value == 255 for value in
+                            decode_overlay_section(ini['OverlayPack'])))
+        for section in ('General', 'FV', 'HTNK', 'CLEG', 'GAPOWR', 'AudioVisual',
+                        'CRNeutronRifle', 'NeutronRifle', 'ChronoBeam'):
+            self.assertNotIn(section, ini)
+        for other in ({'disk_laser': True}, {'ifv_welding': 'repair'}, {'bomb_clock': True}):
+            with self.subTest(other=other), self.assertRaises(ValueError):
+                build_fixture(temporal_gunner=True, **other)
+
     def test_existing_fixture_modes_keep_their_authored_bytes(self):
         # Captured from HEAD's generator before the separate --cliff-back mode.
         # Preserve both map payloads, including compression and entity order.

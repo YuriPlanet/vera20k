@@ -18,6 +18,10 @@ use std::collections::BTreeSet;
 mod damage_dispatch;
 pub(crate) use damage_dispatch::BridgeDamageDrivers;
 use damage_dispatch::LiveCells;
+pub(super) use damage_dispatch::PendingBridgeCells;
+
+#[path = "bridge_moving_collapse.rs"]
+mod moving_collapse;
 
 #[path = "bridge_ground.rs"]
 mod ground_fallout;
@@ -124,7 +128,7 @@ pub(crate) fn damage_at_waypoint(
     let warhead_id = sim.interner.intern(&rules.bridge_warheads.c4_name);
     let mut changed = false;
     for (dx, dy) in [(0, 0), (85, 85), (-85, 85), (85, -85), (-85, -85)] {
-        let [x, y, z] = sim.trigger_waypoint_coord(waypoint)?;
+        let [x, y, z] = sim.trigger_waypoint_location(waypoint)?;
         changed |= apply_area_damage(
             sim,
             rules,
@@ -776,6 +780,10 @@ pub(super) fn blow_up_bridge_cell_fallout(
         ry,
         super::UninitContext::new(Some(rules), overlay_registry).with_effects(frame_effects),
     );
+    //47DDD5..47DE2B publishes after ground/deck receivers, before debris
+    //draws/constructors. Direct callers also leave pending entries for save;
+    //only Map587180 owns the clear/consume bracket.
+    sim.pending_bridge_collapses.append((rx as i16, ry as i16));
     let mut one_cell = BTreeSet::new();
     one_cell.insert((rx, ry));
     spawn_bridge_debris(sim, rules, &one_cell);

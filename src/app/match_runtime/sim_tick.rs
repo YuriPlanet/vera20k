@@ -696,11 +696,18 @@ fn advance_in_game_runtime_mode(
             frame_committed,
             tick_lane,
         );
-        // Native Strip AI6A8CF3 requests redraw throughout the authored
-        // flash window, even with no input. Reuse the projection owner here;
-        // gadget idle below also republishes it on every unlocked pump.
-        if frame_committed
-            && state
+        if frame_committed {
+            // House4F92E2's strip pass reaches this frame as a pending
+            // recheck; membership must not wait for the next player input.
+            let recheck = state
+                .match_state
+                .match_presentation
+                .sidebar_projection
+                .cameo_recheck_pending();
+            // Native Strip AI6A8CF3 requests redraw throughout the authored
+            // flash window, even with no input. Reuse the one projection owner
+            // only in these windows; ordinary idle ticks do not enumerate cameos.
+            let flashing = state
                 .match_state
                 .sim_runtime
                 .as_ref()
@@ -710,9 +717,16 @@ fn advance_in_game_runtime_mode(
                         .match_presentation
                         .sidebar_projection
                         .cameo_redraw_requested(runtime.simulation.session.binary_frame as i32)
-                })
-        {
-            crate::app::presentation::sidebar_render::refresh_sidebar_projection(state);
+                });
+            // StripDraw6A9540 asks each entry's availability while drawing, so
+            // the darkening follows the simulation even when no pass, input or
+            // flash window rebuilt the projection this frame.
+            if recheck || flashing {
+                // The rebuilt view ends with this same availability pass.
+                crate::app::presentation::sidebar_render::refresh_sidebar_projection(state);
+            } else {
+                crate::app::presentation::sidebar_render::refresh_sidebar_cameo_availability(state);
+            }
         }
         if frame_committed && decision.admitted_by_pacer {
             let RuntimeAdvanceMode::WallClock { now_ms } = mode else {
@@ -1180,6 +1194,13 @@ fn advance_one_simulation_frame(
                         .match_state
                         .match_presentation
                         .electric_bolts
+                        .create(birth);
+                }
+                LifecycleOutput::RadiationBeamCreated(birth) => {
+                    state
+                        .match_state
+                        .match_presentation
+                        .radiation_beams
                         .create(birth);
                 }
                 LifecycleOutput::LineTrailConstructed { stable_id, style } => {

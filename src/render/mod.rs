@@ -52,6 +52,7 @@ pub mod palette_textures;
 pub mod pixel_fx_sparkles;
 pub mod radar;
 pub(crate) mod radial_indicator;
+pub(crate) mod radiation_beam;
 pub(crate) mod scaled_copy;
 pub mod screenshot;
 pub mod selection_overlay;

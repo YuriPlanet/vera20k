@@ -1,0 +1,199 @@
+{
+  "camera_cell": [
+    88,
+    31
+  ],
+  "commands": [
+    {
+      "issue_after_step": 0,
+      "owner": "Player",
+      "payload": {
+        "DeployMcv": {
+          "entity_id": {
+            "owner": "Player",
+            "type_id": "SMCV"
+          }
+        }
+      }
+    },
+    {
+      "issue_after_step": 300,
+      "owner": "Player",
+      "payload": {
+        "SellBuilding": {
+          "entity_id": {
+            "owner": "Player",
+            "type_id": "NACNST"
+          }
+        }
+      }
+    }
+  ],
+  "cursor_position": [
+    720,
+    556
+  ],
+  "gestures": [
+    {
+      "gesture": {
+        "command": "Thumb",
+        "kind": "command_bar"
+      },
+      "issue_after_step": 280
+    },
+    {
+      "gesture": {
+        "command": "Thumb",
+        "kind": "command_bar"
+      },
+      "issue_after_step": 350
+    }
+  ],
+  "height": 600,
+  "input_delay_ticks": 15,
+  "launch": {
+    "local": {
+      "color_index": 0,
+      "color_random": false,
+      "country": "Russia",
+      "country_random": false,
+      "start_position": {
+        "Position": 1
+      },
+      "team": "None"
+    },
+    "mode": {
+      "allies_allowed": true,
+      "id": 1,
+      "map_filter": "standard",
+      "must_ally": false,
+      "override_file": "MPBattleMD.ini",
+      "random_maps_allowed": true,
+      "tooltip_key": "STT:ModeBattle",
+      "ui_name_key": "GUI:Battle"
+    },
+    "opponents": [
+      {
+        "color_index": 1,
+        "color_random": false,
+        "country": "America",
+        "country_random": false,
+        "difficulty": "Easy",
+        "start_position": {
+          "Position": 2
+        },
+        "team": "None"
+      }
+    ],
+    "options": {
+      "ally_change_allowed": true,
+      "bases": true,
+      "bridges_destroyable": true,
+      "build_off_ally": true,
+      "crates": false,
+      "default_ai_difficulty": 0,
+      "fog_of_war": false,
+      "game_speed": 1,
+      "harvester_truce": false,
+      "mcv_redeploy": true,
+      "multi_engineer": false,
+      "short_game": true,
+      "shroud": false,
+      "starting_credits": 5000,
+      "super_weapons": true,
+      "tech_level": 10,
+      "tiberium_grows": true,
+      "unit_count": 0
+    },
+    "player_name": "Player",
+    "pre_fill_house_roster": {
+      "ai_slots": [
+        {
+          "slot_index": 0,
+          "valid": true
+        },
+        {
+          "slot_index": 1,
+          "valid": false
+        },
+        {
+          "slot_index": 2,
+          "valid": false
+        },
+        {
+          "slot_index": 3,
+          "valid": false
+        },
+        {
+          "slot_index": 4,
+          "valid": false
+        },
+        {
+          "slot_index": 5,
+          "valid": false
+        },
+        {
+          "slot_index": 6,
+          "valid": false
+        }
+      ],
+      "fixed_tail": [
+        "Neutral",
+        "Special"
+      ],
+      "human_nodes": [
+        {
+          "observer": false,
+          "priority": 0,
+          "source_order": 0
+        }
+      ]
+    },
+    "selected_map_file": "XMP03T4.MAP"
+  },
+  "observe_audio": {
+    "completion_tail_ms": 6000,
+    "coordinate_request_scope": "watched",
+    "max_events": 8,
+    "max_samples_per_event": 262144,
+    "sound_ids": [
+      "MenuACBOpen",
+      "MenuACBClose"
+    ]
+  },
+  "observe_diplomacy": true,
+  "observe_owners": [
+    "Player",
+    "Computer1",
+    "Neutral",
+    "Special"
+  ],
+  "observe_sidebar_steps": [
+    0,
+    279,
+    280,
+    281,
+    300,
+    301,
+    327,
+    350,
+    351,
+    370
+  ],
+  "observe_tooltips": true,
+  "observe_types": [
+    "SMCV",
+    "NACNST",
+    "AMCV",
+    "GACNST",
+    "E2",
+    "E1",
+    "ENGINEER"
+  ],
+  "schema_version": "vera20k.map-observation-profile.v3",
+  "seed": 305419896,
+  "terrain_cells": [],
+  "ticks": 370,
+  "timeout_seconds": 900,
+  "width": 800
+}

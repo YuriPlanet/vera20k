@@ -569,12 +569,15 @@ impl Simulation {
     /// `command_owner` at cell `(x, y)`: the player's wall sale and the
     /// computer's in `AI_Manage_Build_Queue` (`sim::ai_build_need`). It sells
     /// only a wall whose owner a human controls, and refunds nothing.
+    /// `suppress_local_cue` is the original second explicit argument:
+    /// 0x4FCF78..0x4FCF98 skips only SellSound; removal and target cleanup still run.
     /// Returns whether a wall went.
     pub(crate) fn sell_wall_at_cell(
         &mut self,
         command_owner: &str,
         x: i16,
         y: i16,
+        suppress_local_cue: bool,
         rules: &RuleSet,
         overlays: &crate::rules::overlay_types::OverlayTypeRegistry,
         effects: FrameEffects<'_>,
@@ -618,7 +621,8 @@ impl Simulation {
 
         // Native emits the global cue before the discarded actual-cost call
         // and before clearing the overlay. Locality belongs to the receiver.
-        if rules.general.sell_sound.is_some()
+        if !suppress_local_cue
+            && rules.general.sell_sound.is_some()
             && let Some(receiver) = self.interner.get(command_owner)
         {
             self.sound_events.push(SimSoundEvent::WallSold { receiver });
@@ -1332,7 +1336,8 @@ impl Simulation {
                 let (Some(rules), Some(overlays)) = (rules, overlay_registry) else {
                     return false;
                 };
-                self.sell_wall_at_cell(command_owner, *x, *y, rules, overlays, frame_effects)
+                // Event 0x4C6FC4 passes 0; ordinary SELL remains audible.
+                self.sell_wall_at_cell(command_owner, *x, *y, false, rules, overlays, frame_effects)
             }
             // Offline game-speed transitions are consumed at master-frame
             // ingress so early authoritative animation work sees the new rate.

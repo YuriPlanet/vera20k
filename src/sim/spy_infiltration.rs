@@ -47,6 +47,10 @@ use crate::util::native_x87::NativeF32Bits;
 #[path = "spy_infiltration_tests.rs"]
 pub mod spy_infiltration_tests;
 
+#[cfg(test)]
+#[path = "spy_infiltration_retail_tests.rs"]
+mod retail_tests;
+
 /// The arm `BuildingClass::Infiltrate` took, which picks its EVA lines.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InfiltrationEffect {

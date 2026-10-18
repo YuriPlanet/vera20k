@@ -114,39 +114,8 @@ fn stock_cloak_producer_healthy_trace_uses_type_speed_and_no_rng() {
 }
 
 #[test]
-fn stock_cloak_producer_current_fire_and_weapons_factory_contact_block_entry() {
+fn stock_cloak_producer_weapons_factory_contact_blocks_entry() {
     let (mut sim, rules, id) = spawned_sub();
-    sim.substrate
-        .entities
-        .get_mut(id)
-        .unwrap()
-        .attack_target
-        .set_for_test(Some(TargetKind::Entity(999)));
-    tick_stock_cloak_producer(
-        &mut sim,
-        id,
-        &rules,
-        None,
-        crate::sim::world::FrameEffects::default(),
-    );
-    assert_eq!(
-        sim.substrate
-            .entities
-            .get(id)
-            .unwrap()
-            .cloak
-            .as_ref()
-            .unwrap()
-            .state(),
-        0
-    );
-
-    sim.substrate
-        .entities
-        .get_mut(id)
-        .unwrap()
-        .attack_target
-        .set_for_test(None);
     let yard = sim
         .spawn_object_at_height("NAYARD", "Soviet", 30, 40, 0, 0, &rules)
         .unwrap();
@@ -395,7 +364,7 @@ fn sensor_deposit_alone_never_force_cloaks_an_eligible_unit() {
         .unwrap();
     sim.fog.mark_visible_for_owner(owner, cell.0, cell.1);
 
-    let outcome = sensor_reevaluate_stock_cloak(&mut sim, cloaker, &rules);
+    let outcome = sensor_reevaluate_stock_cloak(&mut sim, cloaker, &rules, None);
 
     assert_eq!(outcome, SensorCloakReevaluation::default());
     assert_eq!(
@@ -457,7 +426,7 @@ fn sensor_callback_reassigns_admitted_targeters_in_forward_techno_registration_o
         sensor_admitted,
         cloaker,
     ]);
-    let outcome = sensor_reevaluate_stock_cloak(&mut sim, cloaker, &rules);
+    let outcome = sensor_reevaluate_stock_cloak(&mut sim, cloaker, &rules, None);
 
     assert!(outcome.cloak_transitioned);
     assert_eq!(
@@ -559,7 +528,7 @@ fn already_cloaked_object_is_refused_by_can_auto_cloak_step_two() {
     let mission_before = sim.substrate.entities.get(targeter).unwrap().mission;
     let hash_before = sim.state_hash();
 
-    let outcome = sensor_reevaluate_stock_cloak(&mut sim, cloaker, &rules);
+    let outcome = sensor_reevaluate_stock_cloak(&mut sim, cloaker, &rules, None);
 
     assert_eq!(outcome, SensorCloakReevaluation::default());
     assert!(sim.sound_events.is_empty());

@@ -83,6 +83,14 @@ pub(crate) fn effect_target_coordinate(
     }
 }
 
+/// Native policies sharing the effect source/anchor projection. RadBeam's
+/// raw-Y test and unclamped delta6FD696 differ from laser/bolt6FD210/6FD460.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum EffectDepthProjection {
+    ClampedBuilding,
+    ChangedY,
+}
+
 /// The laser's NullCoord arm and every bolt constructor subtract the projected
 /// Building+AC origin from their source and clamp positive deltas to zero
 /// (6FD210/6FD460). Explicit-source lasers bypass this calculation.
@@ -91,18 +99,29 @@ pub(crate) fn effect_z_adjust(
     world: &Simulation,
     source: &GameEntity,
     from: ProjectileCoord,
+    projection: EffectDepthProjection,
 ) -> i32 {
-    if source.category() != EntityCategory::Structure {
+    if projection == EffectDepthProjection::ClampedBuilding
+        && source.category() != EntityCategory::Structure
+    {
         return 0;
     }
     let location =
         crate::sim::movement::ground_pose::object_location(source, world.resolved_terrain.as_ref());
-    let base =
-        crate::sim::movement::ground_pose::building_render_order_parts(location, false, false).0;
+    let base = if source.category() == EntityCategory::Structure {
+        crate::sim::movement::ground_pose::building_render_order_parts(location, false, false).0
+    } else {
+        location
+    };
+    if projection == EffectDepthProjection::ChangedY && from.y == base.y {
+        return 0;
+    }
     let project_y = |x, y, z| crate::util::lepton::absolute_leptons_to_screen(x, y, z).1 as i32;
-    project_y(from.x, from.y, from.z)
-        .wrapping_sub(project_y(base.x, base.y, base.z))
-        .min(0)
+    let delta = project_y(from.x, from.y, from.z).wrapping_sub(project_y(base.x, base.y, base.z));
+    match projection {
+        EffectDepthProjection::ClampedBuilding => delta.min(0),
+        EffectDepthProjection::ChangedY => delta,
+    }
 }
 
 /// The firer facts the fire coordinate reads.

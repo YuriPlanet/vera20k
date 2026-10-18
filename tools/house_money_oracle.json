@@ -171,6 +171,260 @@
       "name": "a negative balance"
     }
   ],
+  "fill_silos": [
+    {
+      "balance": 5000,
+      "capacity": 1,
+      "enabled": false,
+      "expected": {
+        "amount_bits": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "balance": 5000,
+        "budget": null,
+        "calls": {
+          "add_tiberium_credits": 0,
+          "available_money": 0,
+          "available_storage": 0
+        },
+        "capacity": 1,
+        "score": 0,
+        "spent": 7
+      },
+      "income_ppm": 1000000,
+      "name": "false flag",
+      "score": 0,
+      "spent": 7,
+      "value": 25
+    },
+    {
+      "balance": 5000,
+      "capacity": 0,
+      "enabled": true,
+      "expected": {
+        "amount_bits": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "balance": 5000,
+        "budget": 5000,
+        "calls": {
+          "add_tiberium_credits": 0,
+          "available_money": 1,
+          "available_storage": 1
+        },
+        "capacity": 0,
+        "score": 0,
+        "spent": 7
+      },
+      "income_ppm": 1000000,
+      "name": "zero capacity",
+      "score": 0,
+      "spent": 7,
+      "value": 25
+    },
+    {
+      "balance": 5000,
+      "capacity": -1,
+      "enabled": true,
+      "expected": {
+        "amount_bits": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "balance": 5000,
+        "budget": 5000,
+        "calls": {
+          "add_tiberium_credits": 0,
+          "available_money": 1,
+          "available_storage": 1
+        },
+        "capacity": -1,
+        "score": 0,
+        "spent": 7
+      },
+      "income_ppm": 1000000,
+      "name": "negative capacity",
+      "score": 0,
+      "spent": 7,
+      "value": 25
+    },
+    {
+      "balance": 24,
+      "capacity": 1,
+      "enabled": true,
+      "expected": {
+        "amount_bits": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "balance": 24,
+        "budget": 24,
+        "calls": {
+          "add_tiberium_credits": 0,
+          "available_money": 1,
+          "available_storage": 0
+        },
+        "capacity": 1,
+        "score": 0,
+        "spent": 7
+      },
+      "income_ppm": 1000000,
+      "name": "budget below Value",
+      "score": 0,
+      "spent": 7,
+      "value": 25
+    },
+    {
+      "balance": 25,
+      "capacity": 1,
+      "enabled": true,
+      "expected": {
+        "amount_bits": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "balance": 25,
+        "budget": 25,
+        "calls": {
+          "add_tiberium_credits": 0,
+          "available_money": 1,
+          "available_storage": 0
+        },
+        "capacity": 1,
+        "score": 0,
+        "spent": 7
+      },
+      "income_ppm": 1000000,
+      "name": "budget equals Value",
+      "score": 0,
+      "spent": 7,
+      "value": 25
+    },
+    {
+      "balance": 26,
+      "capacity": 1,
+      "enabled": true,
+      "expected": {
+        "amount_bits": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "balance": 51,
+        "budget": 1,
+        "calls": {
+          "add_tiberium_credits": 1,
+          "available_money": 1,
+          "available_storage": 1
+        },
+        "capacity": 1,
+        "score": 5,
+        "spent": 7
+      },
+      "income_ppm": 1000000,
+      "name": "budget is Value plus one",
+      "score": 0,
+      "spent": 7,
+      "value": 25
+    },
+    {
+      "balance": 5000,
+      "capacity": 1,
+      "enabled": true,
+      "expected": {
+        "amount_bits": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "balance": 9975,
+        "budget": 25,
+        "calls": {
+          "add_tiberium_credits": 199,
+          "available_money": 1,
+          "available_storage": 199
+        },
+        "capacity": 1,
+        "score": 995,
+        "spent": 7
+      },
+      "income_ppm": 1000000,
+      "name": "ordinary 5000 budget",
+      "score": 0,
+      "spent": 7,
+      "value": 25
+    },
+    {
+      "balance": 2147483647,
+      "capacity": 1,
+      "enabled": true,
+      "expected": {
+        "amount_bits": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "balance": 2147483646,
+        "budget": -2147483648,
+        "calls": {
+          "add_tiberium_credits": 1,
+          "available_money": 1,
+          "available_storage": 1
+        },
+        "capacity": 1,
+        "score": 5,
+        "spent": 7
+      },
+      "income_ppm": 1000000,
+      "name": "negative Value terminates after signed budget wrap",
+      "score": 0,
+      "spent": 7,
+      "value": -1
+    },
+    {
+      "balance": 26,
+      "capacity": 1,
+      "enabled": true,
+      "expected": {
+        "amount_bits": [
+          0,
+          0,
+          0,
+          0
+        ],
+        "balance": 51,
+        "budget": 1,
+        "calls": {
+          "add_tiberium_credits": 1,
+          "available_money": 1,
+          "available_storage": 1
+        },
+        "capacity": 1,
+        "score": -2147483644,
+        "spent": 7
+      },
+      "income_ppm": 1000000,
+      "name": "score wraps",
+      "score": 2147483647,
+      "spent": 7,
+      "value": 25
+    }
+  ],
   "spend_money": [
     {
       "amount": 300,

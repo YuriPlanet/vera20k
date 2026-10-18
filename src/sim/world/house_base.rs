@@ -549,6 +549,14 @@ impl Simulation {
         rules.cost_of(object, self.house_cost_factors(owner).as_ref())
     }
 
+    /// House+0x98, the grinders, in registration order. Grinding+16AD
+    /// appends at441283..4412D1 and448ECB..448F19; ChangeOwner4487E6..
+    /// 44882E and expiry4FBA99..4FBABB stable-remove. Like the absorber
+    /// list, this is the existing House+68 registry filtered by type.
+    pub(crate) fn house_grinders(&self, owner: InternedId, rules: &RuleSet) -> Vec<u64> {
+        self.house_buildings_where(owner, rules, |object| object.grinding)
+    }
+
     /// Rated input to PowerClass63F850, from the canonical House+68 list.
     /// Original63F889..63F8AB sums Type+EE0/+EE4 without live-state or dirty
     /// assessment gates. BuildingType461060..46109A splits signed `Power`

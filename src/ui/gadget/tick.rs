@@ -47,6 +47,10 @@ pub struct DispatchRecord {
     pub masked_flags: u16,
     /// G9 modifier word: SHIFT=1 | CTRL=2 | ALT=4 (0 outside the broadcast tier).
     pub modifier: u8,
+    /// Actual key after Action (button releases rewrite this to ID|0x8000).
+    pub key_after: u16,
+    /// Action's original return; nonzero means consumed, not a button ID.
+    pub action_result: u32,
 }
 
 /// Tick results. Owned by the driver and reused across ticks (buffers are
@@ -117,12 +121,15 @@ pub(crate) fn clicked_on(
     {
         return 0;
     }
+    let action_result = dispatch_action(g, masked, key, live, focus);
     out.dispatches.push(DispatchRecord {
         handle,
         masked_flags: masked,
         modifier,
+        key_after: *key,
+        action_result,
     });
-    dispatch_action(g, masked, key, live, focus)
+    action_result
 }
 
 /// G19 — draw(forced): paints iff forced or dirty, then clears the dirty

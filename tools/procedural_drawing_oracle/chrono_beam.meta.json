@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original CLEG mode1/kind1 copied beam, selected physical readers, native Teleport FLH and multichannel packed pixels",
+  "assumptions": [
+    "Opt-in --chrono uses only the retained ordinary-cleg-chrono.map as the final layer after physical RULESMD, optional LANGRULE and MPBattleMD. Fixed ARTMD is not layered. Original Rules665650 and InfantryType5236A0 constructors plus whole5240A0/772080/75D3A0 readers execute on explicitly filtered CLEG/NeutronRifle/NeutronRifleE/ChronoBeam sections; native INI parses measured fields. This is cached lexical preparation, not physical file loading, full type discovery, complete Rules Process or startup.",
+    "ChronoBeamColor is AudioVisual, offset1866. Each layer runs original section-gate prefix6691E0 and stops before66920D or66B8F1. An admitted layer then runs original66B7A7..66B7D2 with ESI=Rules, EDI=cached INI, component ESP and EDX=ESP+10 from the preceding66B79D LEA. Whole474B50/528A10 and native CRT parse/default handling execute. Neither prefix is represented as a whole AudioVisual return. Constructor/current RGB is never supplied; all other Rules bytes and output guards are checked. Color precedes selected type reads in this component; full Process read ordering is outside it.",
+    "Selected CLEG Primary/ElitePrimary, native locomotor GUID, fixed ART ClegSequence/FLH, effect flags, Temporal/Radiation and ChronoBeamColor defaults/outputs are retained. Native factories construct/find/insert referenced types in supplied empty registries with spare capacity. Projectile reference constructors may run; projectile reading/firing/damage and visual/sound setup are outside this component.",
+    "Source and target are explicit supplied rookie CLEG Infantry-vtable/native-read-type actors, not native Infantry construction, Unlimbo, House, legal firing/first-shot admission or world placement. Target has no locomotor. Source constructs actual Teleport718000, links its original ILocomotion7F5000 to the actor and verifies +24=55A730. Whole mode1 SpawnRadBeam6FD620 reaches that actual native slot through original GetFLH. Native Facing and Tactical matrix initializer execute; pose, camera/scalar and binary frame200 are supplied. Settled native Teleport is not a teleport movement simulation or COM factory execution.",
+    "Four physical cardinal mode1 births run whole allocation/constructor/FLH/getters/projection/setters/registry insertion. Both actor links remain null, copied endpoints and ChronoBeamColor come from native readers/wrapper, and source/target/locomotor bytes, original text/vtables, ID cursor and full Main/Scenario/Mapgen RNG objects remain unchanged. No measured getter, FLH, depth, color or wrapper return is replaced. No RNG draw or detach is admitted.",
+    "The unchanged RadPixels/LaserPixels/Rally allocator, memory surfaces, native projection, sine/math, DrawStraight/ComputeStraight and packed4BFD30 owners run for four progress7 controls: clear destination, mixed A/Z, black A and partly clipped changing Z. All endpoints, color attenuation, ordered primitive arguments, whole RGB565 hashes, sparse pixel witnesses and immutable A/Z identities are original outputs. An unrelated LaserDraw constructor runs only during inherited surface setup; its managers and bolt/spark hooks must remain unreachable.",
+    "The shared mode1 kind1 renderer/lifetime arithmetic uses the consumed C29 rad_beam.json FPS/length/division/lifetime controls rather than duplicating those families. This variant does not execute whole FireAt, native Temporal detonation/warp/rearm, timing events, scenario load/save, actual retained-map MTNK target construction, whole Tactical/GPU composition, live terrain/fog, sound, eruption/kind2 or magnetic mode2 attachment. Those production/lifecycle gates need separate evidence."
+  ],
+  "substitutions": [
+    "Existing Reader bump allocator/no-op delete, native cached-INI/CRT/TLS and Reader.guid_transport Windows services. Type visual asset entries5F8110/5F8CE0 and atexit are recorded setup-only boundaries and forbidden inside measured wrapper. No measured FLH/getter/math/manager/draw return or numeric value is supplied.",
+    "Existing ElectricPixels surface allocations/delete/atexit transport and Rally memory surfaces replace DirectDraw storage only; original packed DSurface body remains installed. Inherited Spark/bolt boundaries are guarded unreachable during RadBeam measurements. No instruction bytes, source vtables, sine table, expected color, raster, RNG or gameplay result are patched."
+  ],
+  "entry_points": {
+    "wrapper": "0x006FD620",
+    "allocate": "0x00659110",
+    "constructor": "0x006593F0",
+    "vector_initializer": "0x00659090",
+    "draw": "0x00659650",
+    "segment": "0x00659AC0",
+    "rules_ctor": "0x00665650",
+    "audio_visual_gate": "0x006691E0",
+    "audio_visual_present_stop": "0x0066920D",
+    "audio_visual_absent_stop": "0x0066B8F1",
+    "chrono_color_fragment": "0x0066B7A7",
+    "chrono_color_stop": "0x0066B7D2",
+    "color_reader": "0x00474B50",
+    "read_string": "0x00528A10",
+    "section_find": "0x00526810",
+    "infantry_type_ctor": "0x005236A0",
+    "infantry_type_reader": "0x005240A0",
+    "weapon_reader": "0x00772080",
+    "warhead_reader": "0x0075D3A0",
+    "teleport_ctor": "0x00718000",
+    "locomotor_matrix": "0x0055A730",
+    "infantry_flh": "0x00523250",
+    "techno_flh": "0x006F3AD0",
+    "projection": "0x006D2140",
+    "source_projection": "0x006D1F10",
+    "packed_line": "0x004BFD30"
+  },
+  "replay_command": "python -m tools.procedural_drawing_oracle.rad_beam --chrono",
+  "payload_sha256": "22d7368f8e018b8476af0df583d568a172902c8356a06d96e497a0d13f460c8d"
+}

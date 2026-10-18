@@ -588,8 +588,8 @@ pub(in crate::sim) fn release_delivered_mobile(
 
 /// Temporary facts from one actual product. Live delivery captures at its
 /// RecordLastBuilt boundary after promotion/exit. Walls retain ctor Location
-/// through native UnInit5F65F0 until deferred delete725C70; Rust consumes
-/// their entity earlier, so capture before disposal without moving accounting.
+/// through native UnInit5F65F0 until deferred delete725C70. Capture their
+/// retained pending identity before that shared drain without moving accounting.
 /// Type and Location always come from the same authoritative entity.
 #[derive(Debug, Clone, Copy)]
 pub(super) struct BuiltObject {
@@ -732,18 +732,17 @@ impl ReadyFactoryObject {
         );
     }
 
-    /// Primary and autofill overlays are already stamped when the constructor
-    /// identity is consumed. Successor construction follows. Return the
-    /// original facts so HousePlace can record after BuildingSlam and BREAK
+    /// Primary and autofill Unlimbos have queued their constructors. Release
+    /// Factory's retained completion token; the shared drain owns deletion.
+    /// Return the original facts so HousePlace can record after BuildingSlam and BREAK
     /// (`0x004FB314`, `0x004FB4A6`, `0x004FB4B7`).
-    pub(super) fn consume_after_wall_stamp(
+    pub(super) fn release_consumed_wall(
         self,
         sim: &mut Simulation,
         rules: &RuleSet,
         effects: FrameEffects<'_>,
     ) -> BuiltObject {
         let object = BuiltObject::capture(sim, self.entity_id);
-        let _ = sim.discard_constructed_limbo(self.entity_id, Some(rules), effects);
         self.release_after_placement(sim, rules, effects);
         object
     }

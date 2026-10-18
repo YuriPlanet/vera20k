@@ -347,11 +347,9 @@ pub(super) fn append_selected_death_sounds(
     death_sounds: &mut Vec<(String, u16, u16)>,
 ) {
     let mut append_choice = |choices: &[String]| {
-        if choices.is_empty() {
-            return;
+        if let Some(sound) = select_death_sound(choices, main_rng) {
+            death_sounds.push((sound, rx, ry));
         }
-        let index = (main_rng.next_u32() % choices.len() as u32) as usize;
-        death_sounds.push((choices[index].clone(), rx, ry));
     };
 
     if owner_is_human {
@@ -364,6 +362,19 @@ pub(super) fn append_selected_death_sounds(
         && let Some(sound_id) = building_die_sound.filter(|id| !id.is_empty())
     {
         death_sounds.push((sound_id.to_owned(), rx, ry));
+    }
+}
+
+/// Shared list selection in Techno's death block and Infantry's Eaten arm
+/// (5197E5/51984D): one Main draw even for a singleton, none for an empty list.
+pub(crate) fn select_death_sound(
+    choices: &[String],
+    main_rng: &crate::sim::rng::MainRng,
+) -> Option<String> {
+    if choices.is_empty() {
+        None
+    } else {
+        Some(choices[(main_rng.next_u32() % choices.len() as u32) as usize].clone())
     }
 }
 

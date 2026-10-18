@@ -588,6 +588,7 @@ mod tests {
             clear: 0,
             ramp_base: 200,
             ramp_smooth: 220,
+            slope_set_pieces: -1,
             rough: -1,
             sand: -1,
             green: GREEN,
@@ -888,7 +889,6 @@ mod tests {
             blocks: &blocks,
             rng: &mut rng,
             playfield: &playfield,
-            ramp_end_block: -1,
         };
         find_candidate(&ctx, (50, 50), 1, 2).expect("cross has a valid axis")
     }
@@ -988,7 +988,6 @@ mod tests {
                 blocks: &blocks,
                 rng: &mut rng,
                 playfield: &playfield,
-                ramp_end_block: -1,
             };
             carve_connectors_for_region(&mut ctx, regions, flood, 0, &mut structures, &mut trace)
         };
@@ -1116,7 +1115,6 @@ mod tests {
                 blocks: &blocks,
                 rng: &mut rng,
                 playfield: &playfield,
-                ramp_end_block: -1,
             };
             assert!(place_low_bridge_deck(
                 &mut ctx,
@@ -1192,7 +1190,6 @@ mod tests {
                 blocks: &blocks,
                 rng: &mut rng,
                 playfield: &playfield,
-                ramp_end_block: -1,
             };
             assert!(place_low_bridge_deck(
                 &mut ctx,
@@ -1261,7 +1258,6 @@ mod tests {
                 blocks: &blocks,
                 rng: &mut rng,
                 playfield: &playfield,
-                ramp_end_block: -1,
             };
             place_low_bridge_deck(&mut ctx, 0, 1, 2, &mut structures, &mut trace)
         };
@@ -1405,7 +1401,6 @@ mod tests {
                 blocks: &blocks,
                 rng: &mut rng,
                 playfield: &playfield,
-                ramp_end_block: -1,
             };
             // This validator hangs outside the diamond, forcing the default
             // end without a coin while still exercising the production owner.
@@ -1522,7 +1517,6 @@ mod tests {
                         blocks: &blocks,
                         rng: &mut rng,
                         playfield: &playfield,
-                        ramp_end_block: -1,
                     };
                     assert!(
                         commit_candidate(
@@ -1626,7 +1620,6 @@ mod tests {
             blocks: &blocks,
             rng: &mut rng,
             playfield: &playfield,
-            ramp_end_block: -1,
         };
         assert_eq!(
             find_candidate(&ctx, (50, 50), 1, 2),
@@ -1668,7 +1661,6 @@ mod tests {
             blocks: &blocks,
             rng: &mut rng,
             playfield: &playfield,
-            ramp_end_block: -1,
         };
         assert!(!outer_cells_are_usable(&ctx, (40, 48), (41, 48)));
         assert!(!outer_cells_are_usable(&ctx, (0, 0), (41, 48)));
@@ -1711,7 +1703,6 @@ mod tests {
                 blocks: &blocks,
                 rng: &mut rng,
                 playfield: &playfield,
-                ramp_end_block: -1,
             };
             assert!(commit_candidate(
                 &mut ctx,
@@ -1810,7 +1801,6 @@ mod tests {
                 blocks: &blocks,
                 rng: &mut rng,
                 playfield: &playfield,
-                ramp_end_block: -1,
             };
             assert!(commit_candidate(
                 &mut ctx,
@@ -1890,7 +1880,6 @@ mod tests {
                 blocks: &blocks,
                 rng: &mut rng,
                 playfield: &playfield,
-                ramp_end_block: -1,
             };
             stamp_end(
                 &mut ctx,
@@ -1924,7 +1913,6 @@ mod tests {
             blocks: &blocks,
             rng: &mut rng,
             playfield: &playfield,
-            ramp_end_block: -1,
         };
         assert!(commit_candidate(
             &mut ctx,
@@ -1966,7 +1954,6 @@ mod tests {
                 blocks: &blocks,
                 rng: &mut rng,
                 playfield: &playfield,
-                ramp_end_block: -1,
             };
             assert!(commit_candidate(
                 &mut ctx,
@@ -2021,7 +2008,6 @@ mod tests {
                 blocks: &blocks,
                 rng: &mut rng,
                 playfield: &playfield,
-                ramp_end_block: -1,
             };
             assert!(commit_candidate(
                 &mut ctx,
@@ -2081,7 +2067,6 @@ mod tests {
                 blocks: &blocks,
                 rng: &mut rng,
                 playfield: &playfield,
-                ramp_end_block: -1,
             };
             assert!(commit_candidate(
                 &mut ctx,
@@ -2132,7 +2117,6 @@ mod tests {
                 blocks: &blocks,
                 rng: &mut rng,
                 playfield: &playfield,
-                ramp_end_block: -1,
             };
             assert!(commit_candidate(
                 &mut ctx,
@@ -2180,7 +2164,6 @@ mod tests {
             blocks: &blocks,
             rng: &mut rng,
             playfield: &playfield,
-            ramp_end_block: -1,
         };
         place_hut(
             &mut ctx,
@@ -2526,7 +2509,6 @@ mod tests {
                         blocks: &blocks,
                         rng: &mut rng,
                         playfield: &playfield,
-                        ramp_end_block: -1,
                     };
                     stamp_end(&mut ctx, (16, 16, 6, 6), (tile, origin), (tile, origin));
                 }

@@ -410,6 +410,7 @@ impl TerrainDrawRenderer {
         lasers: impl IntoIterator<Item = crate::render::laser::LaserDraw>,
         draws: impl Iterator<Item = SurfaceDraw> + Clone,
         segments: &[LineTrailSegment],
+        post_trail_draws: &[SurfaceDraw],
         radials: &[crate::render::radial_indicator::RadialIndicatorDraw],
         viewport: SurfaceLineViewport,
         mut high_detail: impl FnMut(crate::render::laser::LaserDrawColor) -> bool,
@@ -436,15 +437,18 @@ impl TerrainDrawRenderer {
         // extras and Laser/EBolt/Trail calls need no prior-write index. When
         // rays are possible, index every earlier write in this same batch.
         let track_dependencies = radials.iter().any(|draw| draw.rays)
-            || draws.clone().any(|draw| {
-                matches!(
-                    draw,
-                    SurfaceDraw::Line(SurfaceLine {
-                        blend: SurfaceLineBlend::Antialiased { .. },
-                        ..
-                    })
-                )
-            });
+            || draws
+                .clone()
+                .chain(post_trail_draws.iter().copied())
+                .any(|draw| {
+                    matches!(
+                        draw,
+                        SurfaceDraw::Line(SurfaceLine {
+                            blend: SurfaceLineBlend::Antialiased { .. },
+                            ..
+                        })
+                    )
+                });
         // Tactical6D4669..6D4673 draws LaserDraw, EBolt, then LineTrail.
         // They read the same immutable Z and completed destination. Laser
         // colors and Bolt subdivision consumed Main for this composite;
@@ -510,7 +514,11 @@ impl TerrainDrawRenderer {
                 },
             );
         }
-        //Tactical6D467F follows Laser/EBolt/LineTrail, before the bandbox,
+        //Tactical6D4678 draws RadBeam after trails and before selected radials.
+        for &draw in post_trail_draws {
+            raster_draw(draw, viewport, size, &mut alpha, &mut store);
+        }
+        //Tactical6D467F follows Laser/EBolt/LineTrail/RadBeam, before the bandbox,
         //second rally and selected Foot action. Keep each object's ellipse/ray
         //stores interleaved in CurrentObjects encounter order.
         for &radial in radials {
@@ -599,6 +607,10 @@ mod laser_tests;
 #[cfg(test)]
 #[path = "electric_bolt_tests.rs"]
 mod electric_bolt_tests;
+
+#[cfg(test)]
+#[path = "radiation_beam_gpu_tests.rs"]
+mod radiation_beam_tests;
 
 #[cfg(test)]
 #[path = "radial_indicator_gpu_tests.rs"]

@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original6DA7D0 ->6D2B60/480180 ->6D3660 ->6D2DE0/6D7F20 retained RGB565/Z/A on physical ClearTile0.",
+  "assumptions": [
+    "Existing PaletteReader, physical TMP/palette/SHROUD loaders, native Cell constructors/Map lookups/projection and BSurface/circular planes are reused. All1024 Cells in the declared32x32 registration are real; every prior/measured terrain receiver is checked by address. Map Size16x16 is separately retained, not inferred from draw calls. Flat supplied knowledge/geometry, camera and nonzero HWND are component priors, not native map/window or arrival/reveal bootstrap.",
+    "Original full drawing generates valid priors from black/FFFF/127. Subsequent enqueue/maintenance/shroud/terrain calls retain all three planes. No dirty result, raster output or callback return is supplied.",
+    "Unconditional original cleanup stores6D4571/6D4B37 execute separately; unrelated upper-object/shell paths are excluded. No custom/no-Z first image, other theaters, Fog/AlphaShapes, scrolling or universal reconstruction claim.",
+    "Surface/A interning selects observed native bytes only. All three complete RNG streams are recorded unchanged across the measured transition; Main retains its native warm selector table.",
+    "Default schema2 retains complete prior/final surface runs, intermediate RGB/Z hashes and interned complete RNG states. It is a pure projection of the same original execution. --partial-detail preserves the full schema1 trace in external scratch."
+  ],
+  "substitutions": [
+    "Existing shared allocator/CRT/file/cache/platform and BSurface transport only; original executable sections remain byte-identical."
+  ],
+  "entry_points": {
+    "enqueue": "0x006DA7D0",
+    "maintenance": "0x006D2B60",
+    "cell": "0x00480180",
+    "shroud": "0x006D3660",
+    "terrain": "0x006D2DE0",
+    "full": "0x006D7560",
+    "dirty": "0x006D7F20",
+    "tmp": "0x00547CF0",
+    "queue_clear": "0x006D4571",
+    "redraw_clear": "0x006D4B37"
+  },
+  "replay_command": "python -m tools.spatial_oracle.bridge_shadow_render --tile-partial --partial-output-dir \"$HOME\"/Documents/vera20k-dev/class-parity/cell-class/cell-partial-native-controls-v3",
+  "payload_sha256": "92a49662c740a9533ea24cde3fc4a92b4776e8c5c8cbdabfad0e49e32c8a2355"
+}

@@ -1305,7 +1305,6 @@ pub fn add_garrison_occupant(
 
 /// Gunner caller dispatch to UnitClass +4D4 (746420). Temporal ownership
 /// moves first; its mode7 step precedes the final passenger IFVMode selector.
-/// The existing temporal rearm handover residual is recorded in temporal.rs.
 fn receive_gunner(sim: &mut Simulation, rules: &RuleSet, transport_id: u64, pax_id: u64) {
     let Some(transport) = sim.substrate.entities.get(transport_id) else {
         return;
@@ -1320,15 +1319,26 @@ fn receive_gunner(sim: &mut Simulation, rules: &RuleSet, transport_id: u64, pax_
     let Some(passenger) = sim.substrate.entities.get(pax_id) else {
         return;
     };
-    let mode = sim
-        .interner
-        .object_type(passenger.type_ref(), rules)
-        .map_or(0, |p| p.ifv_mode);
-    if sim.temporal_receive_gunner(transport_id, pax_id)
-        && let Some(transport) = sim.substrate.entities.get_mut(transport_id)
-    {
-        transport.set_gunner_weapon(7, object);
+    // 74643A..746460 samples the donor before moving its manager. Native
+    // tests nonzero, including a paused signed duration, rather than >0.
+    let donor_rearming = passenger
+        .rearm_timer
+        .remaining(sim.session.binary_frame as i32)
+        != 0;
+    if sim.temporal_receive_gunner(transport_id, pax_id) {
+        if let Some(transport) = sim.substrate.entities.get_mut(transport_id) {
+            transport.set_gunner_weapon(7, object);
+        }
+        if donor_rearming {
+            rearm_transferred_gunner(sim, rules, transport_id, 7);
+        }
     }
+    let mode = sim
+        .substrate
+        .entities
+        .get(pax_id)
+        .and_then(|passenger| sim.interner.object_type(passenger.type_ref(), rules))
+        .map_or(0, |passenger| passenger.ifv_mode);
     if let Some(transport) = sim.substrate.entities.get_mut(transport_id) {
         transport.set_gunner_weapon(mode, object);
     }
@@ -1347,11 +1357,74 @@ fn remove_gunner(sim: &mut Simulation, rules: &RuleSet, transport_id: u64, pax_i
     if transport.category() != crate::map::entities::EntityCategory::Unit || !object.gunner {
         return;
     }
-    if let Some(pax_id) = pax_id {
-        sim.temporal_remove_gunner(transport_id, pax_id);
+    // 746502..746528 samples the IFV before transfer/LetGo. The receiving
+    // passenger's current burst/rank/House are read after LetGo below.
+    let donor_rearming = transport
+        .rearm_timer
+        .remaining(sim.session.binary_frame as i32)
+        != 0;
+    if let Some(pax_id) = pax_id
+        && sim.temporal_remove_gunner(transport_id, pax_id)
+        && donor_rearming
+    {
+        rearm_transferred_gunner(sim, rules, pax_id, 0);
     }
     if let Some(transport) = sim.substrate.entities.get_mut(transport_id) {
         transport.set_gunner_weapon(0, object);
+    }
+}
+
+/// Receiving half of Unit746486..7464B8 /746561..74658F. These callbacks
+/// INC the receiver's burst without FireAt's remainder, ask its actual weapon
+/// slot through the shared GetROF context, then start its own timer afresh.
+/// Neither copies the donor's remainder nor writes FireAt's charge delay+2F8.
+/// Original body/RNG controls: `tools/spatial_oracle/ifv_turret_switching.py
+/// --temporal-gunner`, consumed as `ifv_temporal_gunner.json`.
+fn rearm_transferred_gunner(sim: &mut Simulation, rules: &RuleSet, receiver: u64, slot: i32) {
+    let Some(actor) = sim.substrate.entities.get_mut(receiver) else {
+        return;
+    };
+    let burst_index = actor.weapon_burst.advance();
+    let actor = sim.substrate.entities.get(receiver).unwrap();
+    let Some(object) = sim.interner.object_type(actor.type_ref(), rules) else {
+        return;
+    };
+    let weapon = crate::sim::combat::combat_weapon::get_weapon(
+        actor,
+        object,
+        slot,
+        &sim.substrate.entities,
+        rules,
+        &sim.interner,
+    );
+    // GetROF reads the firer's context, never its target. Keep the existing
+    // snapshot adapter used by FireAt/C4; an untargeted actor uses its cell.
+    let target = actor
+        .attack_target
+        .target()
+        .unwrap_or(crate::sim::combat::TargetKind::Cell(
+            actor.position.rx(),
+            actor.position.ry(),
+        ));
+    let snapshot = crate::sim::combat::build_attacker_snapshot(actor, target, None);
+    let live = crate::sim::combat::rof::LiveParticles {
+        spark: actor.spark_particle_system.system().is_some(),
+        // Retained Fire/Railgun links remain unported, as in the C4 caller.
+        // None of the selected stock FV/CLEG slots has these flags.
+        ..Default::default()
+    };
+    let rof = crate::sim::combat::world_fire::snapshot_get_rof(
+        sim,
+        rules,
+        &snapshot,
+        object,
+        weapon,
+        live,
+        burst_index,
+    );
+    let frame = sim.session.binary_frame as i32;
+    if let Some(actor) = sim.substrate.entities.get_mut(receiver) {
+        actor.rearm_timer.start(frame, rof);
     }
 }
 
