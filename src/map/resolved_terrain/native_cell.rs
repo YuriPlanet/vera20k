@@ -1116,7 +1116,7 @@ impl ResolvedTerrainGrid {
             }
         }
         self.native_allocated = Some(mask);
-        self.allocated_cell_order = Default::default();
+        self.allocation_caches = Default::default();
     }
 
     /// `CellIterator_Init @ 0x00578350` / `Next @ 0x00578290`: advance

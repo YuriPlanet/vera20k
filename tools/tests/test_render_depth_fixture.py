@@ -87,7 +87,7 @@ class RenderDepthFixtureTests(unittest.TestCase):
                 ini = parse_ini(build_fixture(move_order_voice=mode))
                 self.assertEqual(len(ini['Units']), 1)
                 self.assertEqual(ini['Units']['0'].split(',')[:5],
-                                 ['Americans', 'MTNK', '256', '48', '48'])
+                                 ['<human player>', 'MTNK', '256', '48', '48'])
                 self.assertEqual(len(ini['Infantry']), 0)
                 self.assertEqual(ini['IsoMapPack5'], stock['IsoMapPack5'])
                 self.assertEqual(decode_iso_cells(ini['IsoMapPack5'])[48, 48], (0, 0, 0))
@@ -107,10 +107,11 @@ class RenderDepthFixtureTests(unittest.TestCase):
             with self.subTest(mode=mode):
                 ini = parse_ini(build_fixture(damage_feedback=mode))
                 gi = ini['Infantry']['0'].split(',')
-                self.assertEqual(gi[:5], ['Americans', 'E1', '256', '52', '48'])
+                self.assertEqual(gi[:5], ['<human player>', 'E1', '256', '52', '48'])
                 units = [entry.split(',') for entry in ini['Units'].values()]
                 self.assertEqual(len(units), tanks)
-                self.assertTrue(all(entry[:3] == ['Americans', 'MTNK', '256'] for entry in units))
+                self.assertTrue(all(entry[:3] == ['<human player>', 'MTNK', '256']
+                                    for entry in units))
                 cells = decode_iso_cells(ini['IsoMapPack5'])
                 actors = units + [gi]
                 positions = [tuple(map(int, entry[3:5])) for entry in actors]
@@ -126,14 +127,21 @@ class RenderDepthFixtureTests(unittest.TestCase):
         for mode, fraction in [('recovery', '256'), ('removal', '32')]:
             with self.subTest(mode=mode):
                 ini = parse_ini(build_fixture(house_self_heal=mode))
+                # A skirmish never creates the human's authored Structures;
+                # the local engineer captures the computer's shop instead.
                 shop = ini['Structures']['1'].split(',')
-                self.assertEqual(shop[:5], ['Americans', 'CAMACH', fraction, '44', '50'])
+                self.assertEqual(shop[:5], ['Computer', 'CAMACH', fraction, '44', '50'])
                 units = [entry.split(',') for entry in ini['Units'].values()]
                 self.assertEqual([entry[:3] for entry in units],
-                                 [['Americans', 'MTNK', '256'], ['Americans', 'MTNK', '256']])
+                                 [['<human player>', 'MTNK', '256'],
+                                  ['<human player>', 'MTNK', '256']])
+                self.assertEqual([row.split(',')[:5] for row in ini['Infantry'].values()],
+                                 [['<human player>', 'ENGINEER', '256', '47', '50']])
                 cells = decode_iso_cells(ini['IsoMapPack5'])
-                for x in (44, 45):
-                    for y in (50, 51):
+                # Retail CAMACH art has a 3x3 Foundation; the engineer waits
+                # on clear ground just east of it.
+                for x in (44, 45, 46, 47):
+                    for y in (50, 51, 52):
                         self.assertEqual(cells[x, y], (0, 0, 0))
                 for section in ('General', 'MTNK', 'CAMACH', '105mm', 'AudioVisual'):
                     self.assertNotIn(section, ini)
@@ -148,7 +156,7 @@ class RenderDepthFixtureTests(unittest.TestCase):
                 self.assertEqual(len(ini['Units']), 2)
                 self.assertEqual(len(ini['Structures']), 1)
                 self.assertEqual(ini['Units']['0'].split(',')[:5],
-                                 ['Americans', 'MTNK', '256', '48', '48'])
+                                 ['<human player>', 'MTNK', '256', '48', '48'])
                 unit = ini['Units']['1'].split(',')
                 plant = ini['Structures']['0'].split(',')
                 near = unit if target == 'unit' else plant
@@ -156,8 +164,8 @@ class RenderDepthFixtureTests(unittest.TestCase):
                 self.assertEqual(near[3:5], ['52' if target == 'unit' else '51', '48'])
                 self.assertEqual(far[3:5], ['60', '60'])
                 self.assertEqual((unit[0:3], plant[0:3]),
-                                 (['Computer1', 'MTNK', '256'],
-                                  ['Computer1', 'GAPOWR', '256']))
+                                 (['Computer', 'MTNK', '256'],
+                                  ['Computer', 'GAPOWR', '256']))
                 for entity in (unit, plant):
                     self.assertEqual(cells[int(entity[3]), int(entity[4])], (0, 0, 0))
                 for section in ('General', 'MTNK', 'GAPOWR', '105mm', 'AudioVisual'):
@@ -182,12 +190,13 @@ class RenderDepthFixtureTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             build_fixture(building_repair=True, walls_only=True)
 
-    def test_ifv_welding_reproduces_authored_maps_with_stock_rows_and_health_control(self):
+    def test_ifv_welding_keeps_stock_rows_and_health_control(self):
+        # The authored maps with native scenario owner names.
         expected = (
-            ('repair', '64', 74022,
-             '23617439622e35879cf0915dff3bc280ede3d3cd369cc2d5727b6e408ae331b5'),
-            ('full-health', '256', 74023,
-             'e9ed190e47e7452efe4588773973d85030d3d7d0309e5b6536678950ec6f09d4'),
+            ('repair', '64', 74046,
+             '22efefc82e53f4fda7ec1e132aad6a60bffc526879b07879e29cfa82b678b365'),
+            ('full-health', '256', 74047,
+             '78a1f9e7fff00c7ce40845fc0d8922ffb0dbfa33dcecec0885aa5cb355678db9'),
         )
         for mode, fraction, size, digest in expected:
             with self.subTest(mode=mode):
@@ -196,16 +205,16 @@ class RenderDepthFixtureTests(unittest.TestCase):
                                  (size, digest))
                 ini = parse_ini(authored.decode('ascii'))
                 self.assertEqual(ini['Units']['0'].split(',')[:5],
-                                 ['Americans', 'FV', '256', '48', '48'])
+                                 ['<human player>', 'FV', '256', '48', '48'])
                 self.assertEqual(ini['Units']['1'].split(',')[:5],
-                                 ['Americans', 'MTNK', fraction, '49', '48'])
+                                 ['<human player>', 'MTNK', fraction, '49', '48'])
                 self.assertEqual(ini['Units']['2'].split(',')[:5],
-                                 ['Americans', 'MTNK', '256', '49', '49'])
+                                 ['<human player>', 'MTNK', '256', '49', '49'])
                 self.assertEqual([row.split(',')[:5] for row in ini['Infantry'].values()],
-                                 [['Americans', 'ENGINEER', '256', '48', '47'],
-                                  ['Americans', 'E1', '256', '47', '48']])
+                                 [['<human player>', 'ENGINEER', '256', '48', '47'],
+                                  ['<human player>', 'E1', '256', '47', '48']])
                 self.assertEqual(ini['Structures']['0'].split(',')[:5],
-                                 ['Computer1', 'GAPOWR', '256', '60', '60'])
+                                 ['Computer', 'GAPOWR', '256', '60', '60'])
                 cells = decode_iso_cells(ini['IsoMapPack5'])
                 for section in ('Units', 'Infantry', 'Structures'):
                     for row in ini[section].values():

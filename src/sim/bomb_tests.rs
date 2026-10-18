@@ -826,13 +826,13 @@ fn retail_fire_once_defuse_releases_target_and_carrier() {
     assert!(rules.weapon("DefuseKit").unwrap().fire_once);
     sim.bomb_attach(ivan, Some(tank), rules);
     let health = entity(&sim, tank).health.current();
-    // The ordinary DisarmBomb click emits ForceAttack for an allied object
+    // The ordinary DisarmBomb click emits Attack for an allied object
     // (`app/input/context_order.rs::bomb_order`), retaining native Attack
     // admission without Command::Attack's enemy-only convenience gate.
     sim.queue_command(CommandEnvelope::new(
         entity(&sim, engineer).owner(),
         sim.session.tick + 1,
-        Command::ForceAttack {
+        Command::Attack {
             attacker_id: engineer,
             target_id: tank,
         },

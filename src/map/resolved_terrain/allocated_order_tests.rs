@@ -125,3 +125,39 @@ fn the_cache_keeps_the_first_width() {
     let other = terrain.allocated_cell_order(5).unwrap();
     assert_eq!(other.len(), walk(&terrain, 5).0.len() as u32);
 }
+
+#[test]
+fn interior_cells_are_those_whose_neighbourhood_looks_up_itself() {
+    let terrain = test_grid(12, 10, test_flat_cell);
+    let (steps, _) = walk(&terrain, 6);
+    let mut allocated: Vec<_> = steps.iter().map(|&(_, cell)| cell).collect();
+    allocated.remove(30);
+    let mut holed = terrain.clone();
+    holed.test_set_native_allocated_cells(&allocated);
+    for terrain in [&terrain, &holed] {
+        let interior = terrain.interior_cells().expect("regular terrain");
+        let query = crate::map::resolved_terrain::NativeCellQuery::isolated(terrain);
+        for y in 0..terrain.height() + 2 {
+            for x in 0..terrain.width() + 2 {
+                let looks_up_itself = (-1..=1).all(|dy| {
+                    (-1..=1).all(|dx| {
+                        let at = (x as i16 + dx, y as i16 + dy);
+                        match query.lookup(at) {
+                            NativeCellIdentity::Real(index) => {
+                                let cell = &terrain.cells()[index];
+                                (cell.rx as i16, cell.ry as i16) == at
+                                    && index
+                                        == at.1 as usize * usize::from(terrain.width())
+                                            + at.0 as usize
+                            }
+                            NativeCellIdentity::Dummy => false,
+                        }
+                    })
+                });
+                assert_eq!(interior.contains((x, y)), looks_up_itself, "({x},{y})");
+            }
+        }
+    }
+    let wide = test_grid(512, 8, test_flat_cell);
+    assert!(wide.interior_cells().is_none());
+}

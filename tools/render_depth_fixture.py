@@ -289,54 +289,58 @@ def build_fixture(*, walls_only: bool = False, cliff_back: bool = False,
         # Stock types and weapons remain unchanged; individual scenes below
         # author map health fractions or the tested VoiceMove reader input.
         # Keep a building's foundation-centre target comfortably in range.
+        # Object rows use the native scenario names FromName50C170 reads,
+        # independently of the launch's internal Americans/Computer1 keys.
         unit_target = (bomb_clock or disk_laser or temporal_gunner or move_order_voice is not None
                        or damage_feedback is not None or house_self_heal is not None
                        or ifv_welding is not None or attack_order_voice == 'unit')
         near, far = (C + (4 if unit_target else 3), C), (C + 12, C + 12)
         unit_cell, plant_cell = (near, far) if unit_target else (far, near)
-        structures = [f'0=Computer1,GAPOWR,256,{plant_cell[0]},{plant_cell[1]},0,None,0,0,1,0,0,None,None,None,0,0']
+        structures = [f'0=Computer,GAPOWR,256,{plant_cell[0]},{plant_cell[1]},0,None,0,0,1,0,0,None,None,None,0,0']
         if house_self_heal:
-            # Normal map loading opens this stock Tech Machine Shop and grants
-            # its owner the retail UnitsGainSelfHeal ability. A friendly tank
-            # admits bounded ForceAttack/Stop damage followed by recovery;
-            # no health/weapon/heal tuning is overridden.
+            # Structures44F8CB never creates the current House's authored
+            # buildings, so this stock Tech Machine Shop starts as the
+            # computer's, an ordinary engineer capture target. The capture
+            # grants its new owner the retail UnitsGainSelfHeal ability. A
+            # friendly tank then admits bounded Attack/Stop damage
+            # followed by recovery; no health/weapon/heal tuning is overridden.
             # The removal variant uses the ordinary map health fraction to
             # let stock damage destroy this native Unsellable=yes building.
             # Strength and the grant reader remain untouched retail values.
             shop_health = 32 if house_self_heal == 'removal' else 256
-            structures.append(f'1=Americans,CAMACH,{shop_health},{C - 4},{C + 2},0,None,0,0,1,0,0,None,None,None,0,0')
+            structures.append(f'1=Computer,CAMACH,{shop_health},{C - 4},{C + 2},0,None,0,0,1,0,0,None,None,None,0,0')
         units = [
-            f'0=Americans,MTNK,256,{C},{C},64,Guard,None,0,-1,0,-1,1,1',
-            f'1={"Americans" if house_self_heal else "Computer1"},MTNK,256,{unit_cell[0]},{unit_cell[1]},192,Guard,None,0,-1,0,-1,1,1',
+            f'0=<human player>,MTNK,256,{C},{C},64,Guard,None,0,-1,0,-1,1,1',
+            f'1={"<human player>" if house_self_heal else "Computer"},MTNK,256,{unit_cell[0]},{unit_cell[1]},192,Guard,None,0,-1,0,-1,1,1',
         ]
         infantry = []
+        if house_self_heal:
+            infantry = [f'0=<human player>,ENGINEER,256,{C - 1},{C + 2},0,Guard,64,None,0,-1,0,1,1']
         if move_order_voice:
             units = units[:1]
         if bomb_clock:
             # Friendly stock MTNK admits Ivan's normal planting order without
             # retaliation. No bomb, visibility, weapon or fuse override.
-            units = [f'0=Americans,MTNK,256,{C+1},{C},64,Guard,None,0,-1,0,-1,1,1']
-            infantry = [f'0=Americans,IVAN,256,{C},{C},0,Guard,64,None,0,-1,0,1,1']
+            units = [f'0=<human player>,MTNK,256,{C+1},{C},64,Guard,None,0,-1,0,-1,1,1']
+            infantry = [f'0=<human player>,IVAN,256,{C},{C},0,Guard,64,None,0,-1,0,1,1']
         if ifv_welding:
             # Stock actors admit normal boarding and friendly repair orders.
             # Only map health fractions differ in the full-health control;
             # no cargo, effect or type is injected.
             target_health = 256 if ifv_welding == 'full-health' else 64
             units = [
-                f'0=Americans,FV,256,{C},{C},64,Guard,None,0,-1,0,-1,1,1',
-                f'1=Americans,MTNK,{target_health},{C+1},{C},192,Guard,None,0,-1,0,-1,1,1',
-                f'2=Americans,MTNK,256,{C+1},{C+1},192,Guard,None,0,-1,0,-1,1,1',
+                f'0=<human player>,FV,256,{C},{C},64,Guard,None,0,-1,0,-1,1,1',
+                f'1=<human player>,MTNK,{target_health},{C+1},{C},192,Guard,None,0,-1,0,-1,1,1',
+                f'2=<human player>,MTNK,256,{C+1},{C+1},192,Guard,None,0,-1,0,-1,1,1',
             ]
             infantry = [
-                f'0=Americans,ENGINEER,256,{C},{C-1},0,Guard,64,None,0,-1,0,1,1',
-                f'1=Americans,E1,256,{C-1},{C},0,Guard,64,None,0,-1,0,1,1',
+                f'0=<human player>,ENGINEER,256,{C},{C-1},0,Guard,64,None,0,-1,0,1,1',
+                f'1=<human player>,E1,256,{C-1},{C},0,Guard,64,None,0,-1,0,1,1',
             ]
         if disk_laser:
             # Separate the stock actors by ten cells; quiet-prefix admission
             # and actual flight/fire ticks are measured by the observer,
             # never authored as state or tuning.
-            # FromName50C170 reads native scenario names, independently of
-            # the launch's internal Americans/Computer1 diagnostic keys.
             units = [
                 f'0=<human player>,DISK,256,{C-4},{C},64,Guard,None,0,-1,0,-1,1,1',
                 f'1=Computer,MTNK,256,{C+6},{C},192,Guard,None,0,-1,0,-1,1,1',
@@ -345,7 +349,6 @@ def build_fixture(*, walls_only: bool = False, cliff_back: bool = False,
             # Keep only the enemy survivor; the profile uses ShortGame=false.
             structures = [f'0=Computer,GAPOWR,256,{plant_cell[0]},{plant_cell[1]},0,None,0,0,1,0,0,None,None,None,0,0']
         if temporal_gunner:
-            # Native FromName50C170 scenario names, as in the Disk scene.
             # Ordinary boarding, approach, firing and unloading must reach
             # their callbacks at runtime; author no weapon, timer or cargo.
             units = [
@@ -356,16 +359,16 @@ def build_fixture(*, walls_only: bool = False, cliff_back: bool = False,
             structures = [f'0=Computer,GAPOWR,256,{plant_cell[0]},{plant_cell[1]},0,None,0,0,1,0,0,None,None,None,0,0']
         if damage_feedback:
             # Full-health stock E1 crosses the real health threshold under
-            # ordinary friendly ForceAttack. Additional stock tanks permit
+            # ordinary friendly Attack. Additional stock tanks permit
             # removal while its unbound GIFear event is still playing.
             positions = [(C, C)]
             if damage_feedback == 'removal':
                 positions += [(C, C - 1), (C + 1, C - 1), (C + 1, C + 1), (C + 2, C + 1)]
             units = [
-                f'{i}=Americans,MTNK,256,{x},{y},64,Guard,None,0,-1,0,-1,1,1'
+                f'{i}=<human player>,MTNK,256,{x},{y},64,Guard,None,0,-1,0,-1,1,1'
                 for i, (x, y) in enumerate(positions)
             ]
-            infantry = [f'0=Americans,E1,256,{near[0]},{near[1]},0,Guard,192,None,0,-1,0,1,1']
+            infantry = [f'0=<human player>,E1,256,{near[0]},{near[1]},0,Guard,192,None,0,-1,0,1,1']
         overlay[:] = b'\xff' * len(overlay)
         overlay_data[:] = bytes(len(overlay_data))
     # Stock cliff-back blocking rejects Track/Foot placement in the exact
@@ -510,7 +513,7 @@ def main() -> None:
     )
     modes.add_argument(
         '--house-self-heal', nargs='?', const='recovery', choices=('recovery', 'removal'),
-        help='Use an owned stock Tech Machine Shop and two friendly tanks; removal starts the shop at authored 32/256 health',
+        help='Use the computer\'s stock Tech Machine Shop, a local engineer to capture it and two friendly tanks; removal starts the shop at authored 32/256 health',
     )
     modes.add_argument(
         '--damage-feedback', choices=('single', 'removal'),

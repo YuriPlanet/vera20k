@@ -33,7 +33,7 @@ use crate::map::rmg::x87::{self, TruncF64};
 
 use super::blob::BlobCtx;
 use super::meander;
-use super::shore::{self, ShoreCtx};
+use super::shore::{self, BlockPlacement, ShoreCtx, place_block};
 
 /// The water-variant draw: `ftol(r · 6/(2³²−1))`, redrawn while above five.
 ///
@@ -260,67 +260,19 @@ const SENTINEL: i32 = crate::map::rmg::tiles::TILE_UNASSIGNED;
 /// One level step, shared by the plateau raise and waterfall adjustments.
 const LEVEL_STEP: u8 = 4;
 
-/// Stamp one waterfall tile block at `anchor`.
-///
-/// This is the iso-tile stamper's waterfall path: the overwrite range covers
-/// tile, so water is stamped over freely; unowned or foreign bare ground is
-/// adopted into `region`; a foreign non-clear cell refuses hard unless it
-/// holds an equivalent shore piece, in which case the whole call succeeds
-/// immediately with the rest of the block left unstamped. Each written cell
-/// gets the tile, its sub-tile index, and the block's own height on top of
-/// `level_base`.
-fn stamp_block(
-    ctx: &mut BlobCtx<'_>,
-    anchor: (i32, i32),
-    tile: i32,
-    level_base: i32,
-    region: i32,
-) -> bool {
-    let Some(block) = ctx.blocks.block(tile) else {
-        // Unknown block: the original silently no-ops.
-        return true;
-    };
-    let block = block.clone();
-    for j in 0..block.height {
-        for i in 0..block.width {
-            let (x, y) = (anchor.0 + i, anchor.1 + j);
-            if !ctx.scratch.in_diamond(x, y) {
-                continue;
-            }
-            let index = (block.width * j + i) as usize;
-            let Some(sub) = block.subtiles.get(index).copied().flatten() else {
-                continue;
-            };
-            let owner = ctx.scratch.get(x, y).region;
-            let target = ctx.grid.cell_native(x, y).tile;
-            let clear = ctx.ids.is_clear(target);
-            if owner < 1 {
-                if clear {
-                    ctx.scratch.get_mut(x, y).region = region;
-                } else {
-                    return false;
-                }
-            } else if owner != region {
-                if clear {
-                    ctx.scratch.get_mut(x, y).region = region;
-                } else if ctx.ids.is_shore_piece(target) && ctx.ids.is_shore_piece(tile) {
-                    // Equivalence would compare piece groups here; this path
-                    // never stamps shore pieces, so this arm cannot be taken
-                    // by any live caller. Kept for shape, refusing is safer
-                    // than guessing a group table result.
-                    return false;
-                } else {
-                    return false;
-                }
-            }
-            let cell = ctx.grid.cell_native_mut(x, y);
-            cell.tile = tile;
-            cell.sub_tile = index as u8;
-            cell.level = (i32::from(sub.height) + level_base) as u8;
-            cell.slope = sub.slope;
-        }
+/// Arguments of BuildRiverBridge's twelve `0x57B440` calls
+/// (`0x59EF7C..0x59FFC7`): window (0, 0x10000), the river's region, keep 0
+/// and the reference cell's level byte. The routine never reads the out-bool
+/// it passes (`[esp+0x17]`) or AL, so every caller drops both results.
+fn waterfall_piece(tile: i32, origin: (i32, i32), level: u8, region: i32) -> BlockPlacement {
+    BlockPlacement {
+        tile,
+        origin,
+        level,
+        window: (0, 0x10000),
+        region,
+        keep: false,
     }
-    true
 }
 
 /// A flank cell beside a waterfall end: unassigned, one level up, adopted.
@@ -345,11 +297,13 @@ fn flank(ctx: &mut BlobCtx<'_>, x: i32, y: i32, region: i32) {
 /// sentinel uses a fixed offset where N's uses the span — transcribed as
 /// found.
 ///
-/// The stamp refusals are deliberately ignored here: the original discards
-/// every ok-flag on this path, so an incomplete waterfall stamp still
-/// counts as placed.
+/// Every piece is one shared `0x57B440` placement ([`waterfall_piece`]),
+/// which writes tile, subtile and height but never Cell+11C slope. Its
+/// refusals are deliberately ignored: the original discards both result
+/// channels on this path, so an incomplete waterfall stamp still counts as
+/// placed.
 fn stamp_waterfall_pieces(ctx: &mut BlobCtx<'_>, args: &BridgeArgs, _layout: &Layout) {
-    let base = ctx.ids.special.waterfalls[args.heading_dir / 2];
+    let base = ctx.ids.cliffs.waterfall_bases()[args.heading_dir / 2];
     if base < 0 {
         // No waterfall set in this theater: nothing to stamp. The placement
         // itself stands, exactly as if every stamp had refused.
@@ -358,14 +312,28 @@ fn stamp_waterfall_pieces(ctx: &mut BlobCtx<'_>, args: &BridgeArgs, _layout: &La
     let region = args.region;
     let (fx, fy) = args.first;
     let (lx, ly) = args.last;
+    // Middle piece and its width: two-cell (+2) while the remaining span is
+    // even, one-cell (+1) when it is odd.
+    let middle = |remaining: i32| {
+        if remaining & 1 == 0 {
+            (base + 2, 2)
+        } else {
+            (base + 1, 1)
+        }
+    };
 
     match args.heading_dir {
         0 => {
             let (ax, ay) = (fx, fy);
             let span = lx - ax;
-            let level = i32::from(ctx.grid.cell_native(ax - 2, ay - 8).level as i8);
-            let _ = stamp_block(ctx, (ax - 2, ay - 6), base, level, region);
-            let _ = stamp_block(ctx, (ax + span + 1, ay - 6), base + 3, level, region);
+            let level = ctx.grid.cell_native(ax - 2, ay - 8).level;
+            for (tile, origin) in [
+                (base, (ax - 2, ay - 6)),
+                (base + 3, (ax + span + 1, ay - 6)),
+            ] {
+                let piece = waterfall_piece(tile, origin, level, region);
+                let _ = place_block(ctx.grid, ctx.scratch, ctx.ids, ctx.blocks, piece);
+            }
             ctx.grid.cell_native_mut(ax - 1, ay - 6).tile = SENTINEL;
             ctx.grid.cell_native_mut(ax + span + 1, ay - 6).tile = SENTINEL;
             for i in 1..=(span + 3) {
@@ -374,66 +342,53 @@ fn stamp_waterfall_pieces(ctx: &mut BlobCtx<'_>, args: &BridgeArgs, _layout: &La
             }
             flank(ctx, ax - 3, ay - 5, region);
             flank(ctx, ax + span + 3, ay - 5, region);
-            let mut remaining = span + 1;
-            let mut i = 0;
+            let (mut i, mut remaining) = (0, span + 1);
             while i < span + 1 {
-                let anchor = (ax + i, ay - 5);
-                if remaining & 1 == 0 {
-                    let _ = stamp_block(ctx, anchor, base + 2, level, region);
-                    i += 2;
-                    remaining -= 2;
-                } else {
-                    let _ = stamp_block(ctx, anchor, base + 1, level, region);
-                    i += 1;
-                    remaining -= 1;
-                }
+                let (tile, width) = middle(remaining);
+                let piece = waterfall_piece(tile, (ax + i, ay - 5), level, region);
+                let _ = place_block(ctx.grid, ctx.scratch, ctx.ids, ctx.blocks, piece);
+                i += width;
+                remaining -= width;
             }
         }
         2 => {
             let (ax, ay) = (fx, fy);
             let span = ly - ay;
             let south = ay + span + 1;
-            let level = i32::from(ctx.grid.cell_native(ax + 7, south).level as i8);
-            let _ = stamp_block(ctx, (ax + 5, south), base, level, region);
-            let _ = stamp_block(ctx, (ax + 5, ay - 2), base + 3, level, region);
+            let level = ctx.grid.cell_native(ax + 7, south).level;
+            for (tile, origin) in [(base, (ax + 5, south)), (base + 3, (ax + 5, ay - 2))] {
+                let piece = waterfall_piece(tile, origin, level, region);
+                let _ = place_block(ctx.grid, ctx.scratch, ctx.ids, ctx.blocks, piece);
+            }
             flank(ctx, ax + 5, south + 2, region);
             flank(ctx, ax + 5, ay - 3, region);
-            let mut remaining = span + 1;
-            let mut i = 0;
+            let (mut i, mut remaining) = (0, span + 1);
             while i < span + 1 {
-                if remaining & 1 == 0 {
-                    let _ = stamp_block(ctx, (ax + 5, south - (i + 2)), base + 2, level, region);
-                    i += 2;
-                    remaining -= 2;
-                } else {
-                    let _ = stamp_block(ctx, (ax + 5, south - (i + 1)), base + 1, level, region);
-                    i += 1;
-                    remaining -= 1;
-                }
+                let (tile, width) = middle(remaining);
+                let piece = waterfall_piece(tile, (ax + 5, south - (i + width)), level, region);
+                let _ = place_block(ctx.grid, ctx.scratch, ctx.ids, ctx.blocks, piece);
+                i += width;
+                remaining -= width;
             }
         }
         4 => {
             let (ax, ay) = (lx, ly);
             let span = fx - ax;
             let row = ay + 5;
-            let level = i32::from(ctx.grid.cell_native(ax - 2, ay + 7).level as i8);
-            let _ = stamp_block(ctx, (ax - 2, row), base, level, region);
-            let _ = stamp_block(ctx, (ax + span + 1, row), base + 3, level, region);
+            let level = ctx.grid.cell_native(ax - 2, ay + 7).level;
+            for (tile, origin) in [(base, (ax - 2, row)), (base + 3, (ax + span + 1, row))] {
+                let piece = waterfall_piece(tile, origin, level, region);
+                let _ = place_block(ctx.grid, ctx.scratch, ctx.ids, ctx.blocks, piece);
+            }
             flank(ctx, ax - 3, row, region);
             flank(ctx, ax + span + 3, row, region);
-            let mut remaining = span + 1;
-            let mut i = 0;
+            let (mut i, mut remaining) = (0, span + 1);
             while i < span + 1 {
-                let anchor = (ax + i, row);
-                if remaining & 1 == 0 {
-                    let _ = stamp_block(ctx, anchor, base + 2, level, region);
-                    i += 2;
-                    remaining -= 2;
-                } else {
-                    let _ = stamp_block(ctx, anchor, base + 1, level, region);
-                    i += 1;
-                    remaining -= 1;
-                }
+                let (tile, width) = middle(remaining);
+                let piece = waterfall_piece(tile, (ax + i, row), level, region);
+                let _ = place_block(ctx.grid, ctx.scratch, ctx.ids, ctx.blocks, piece);
+                i += width;
+                remaining -= width;
             }
         }
         _ => {
@@ -441,9 +396,11 @@ fn stamp_waterfall_pieces(ctx: &mut BlobCtx<'_>, args: &BridgeArgs, _layout: &La
             let span = fy - ay;
             let south = ay + span + 1;
             let col = ax - 6;
-            let level = i32::from(ctx.grid.cell_native(ax - 8, south).level as i8);
-            let _ = stamp_block(ctx, (col, south), base, level, region);
-            let _ = stamp_block(ctx, (col, ay - 2), base + 3, level, region);
+            let level = ctx.grid.cell_native(ax - 8, south).level;
+            for (tile, origin) in [(base, (col, south)), (base + 3, (col, ay - 2))] {
+                let piece = waterfall_piece(tile, origin, level, region);
+                let _ = place_block(ctx.grid, ctx.scratch, ctx.ids, ctx.blocks, piece);
+            }
             ctx.grid.cell_native_mut(col, south - 1).tile = SENTINEL;
             // The original computes this sentinel's offset from the far
             // fill's fixed width (8) + 2, not from the span like the north
@@ -455,18 +412,13 @@ fn stamp_waterfall_pieces(ctx: &mut BlobCtx<'_>, args: &BridgeArgs, _layout: &La
             }
             flank(ctx, col + 1, south + 2, region);
             flank(ctx, col + 1, ay - 3, region);
-            let mut remaining = span + 1;
-            let mut i = 0;
+            let (mut i, mut remaining) = (0, span + 1);
             while i < span + 1 {
-                if remaining & 1 == 0 {
-                    let _ = stamp_block(ctx, (col + 1, south - (i + 2)), base + 2, level, region);
-                    i += 2;
-                    remaining -= 2;
-                } else {
-                    let _ = stamp_block(ctx, (col + 1, south - (i + 1)), base + 1, level, region);
-                    i += 1;
-                    remaining -= 1;
-                }
+                let (tile, width) = middle(remaining);
+                let piece = waterfall_piece(tile, (col + 1, south - (i + width)), level, region);
+                let _ = place_block(ctx.grid, ctx.scratch, ctx.ids, ctx.blocks, piece);
+                i += width;
+                remaining -= width;
             }
         }
     }
@@ -485,16 +437,16 @@ pub(crate) fn jump(heading_dir: usize) -> (i32, i32) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::map::resolved_terrain::ResolvedTerrainGrid;
     use crate::map::rmg::grid::RmgGrid;
-    use crate::map::rmg::{RmgConstructionTrace, emit};
     use crate::map::rmg::options::RmgOptions;
     use crate::map::rmg::phases::shore::{SubTile, TileBlock, TileBlocks};
     use crate::map::rmg::rng::RmgRng;
     use crate::map::rmg::scratch::RmgScratch;
-    use crate::map::rmg::tiles::SpecialTerrain;
     use crate::map::rmg::tiles::{TILE_UNASSIGNED, TileIds};
     use crate::map::rmg::x87::Gaussian;
-    use crate::map::resolved_terrain::ResolvedTerrainGrid;
+    use crate::map::rmg::{RmgConstructionTrace, emit};
+    use crate::map::theater::TheaterCliffRanges;
 
     struct OneByOne(TileBlock);
     impl TileBlocks for OneByOne {
@@ -528,9 +480,15 @@ mod tests {
             paved_roads: -1,
             paved_road_ends: -1,
             medians: -1,
-            special: SpecialTerrain::default(),
+            cliffs: TheaterCliffRanges::default(),
         };
-        ids.special.waterfalls = [600, 610, 620, 630];
+        ids.cliffs = TheaterCliffRanges {
+            waterfall_north: Some(600),
+            waterfall_east: Some(610),
+            waterfall_south: Some(620),
+            waterfall_west: Some(630),
+            ..TheaterCliffRanges::default()
+        };
         for (x, y) in grid.native_cells().collect::<Vec<_>>() {
             grid.get_mut(x, y).expect("native cell").tile = ids.clear;
         }
@@ -640,7 +598,10 @@ mod tests {
         // CellClass bridge flags, Tube topology, structures, or constructors.
         let run = || {
             let (mut grid, mut scratch, ids, mut blocks) = harness();
-            blocks.0.subtiles[0].as_mut().expect("one-by-one subtile").slope = 1;
+            blocks.0.subtiles[0]
+                .as_mut()
+                .expect("one-by-one subtile")
+                .slope = 1;
             let cells_before: Vec<_> = grid
                 .native_cells()
                 .map(|coord @ (x, y)| (coord, *grid.get(x, y).expect("native cell")))
@@ -648,7 +609,13 @@ mod tests {
             let topology_before: Vec<_> = cells_before
                 .iter()
                 .map(|(coord, cell)| {
-                    (*coord, cell.overlay, cell.density, cell.occupied, cell.start_marker)
+                    (
+                        *coord,
+                        cell.overlay,
+                        cell.density,
+                        cell.occupied,
+                        cell.start_marker,
+                    )
                 })
                 .collect();
             let scratch_before = scratch.cells().to_vec();
@@ -702,8 +669,8 @@ mod tests {
                 cells_before
                     .iter()
                     .zip(&cells_after)
-                    .any(|((_, before), (_, after))| before.slope != after.slope),
-                "successful waterfall construction changes shore slopes"
+                    .all(|((_, before), (_, after))| before.slope == after.slope),
+                "0x0059E740 and its 0x0057B440 stamps never write Cell+11C slope"
             );
             assert!(
                 cells_before
@@ -712,7 +679,11 @@ mod tests {
                     .any(|((_, before), (_, after))| before.level != after.level),
                 "successful waterfall construction changes terrain levels"
             );
-            assert_ne!(scratch.cells(), scratch_before.as_slice(), "scratch state changes");
+            assert_ne!(
+                scratch.cells(),
+                scratch_before.as_slice(),
+                "scratch state changes"
+            );
             assert!(
                 cells_after
                     .iter()
@@ -723,7 +694,13 @@ mod tests {
             let topology_after: Vec<_> = cells_after
                 .iter()
                 .map(|(coord, cell)| {
-                    (*coord, cell.overlay, cell.density, cell.occupied, cell.start_marker)
+                    (
+                        *coord,
+                        cell.overlay,
+                        cell.density,
+                        cell.occupied,
+                        cell.start_marker,
+                    )
                 })
                 .collect();
             assert_eq!(
@@ -731,14 +708,16 @@ mod tests {
                 "waterfall terrain cannot write overlay/data, occupancy, or start markers"
             );
             assert_eq!(construction_trace, construction_trace_before);
-            assert!(structures.is_empty(), "waterfall terrain constructs no buildings");
+            assert!(
+                structures.is_empty(),
+                "waterfall terrain constructs no buildings"
+            );
 
             let mut map = emit::empty_map_file(&RmgOptions::default(), 34, 42);
             emit::populate(&mut map, &grid, &[], &structures, &[]);
             assert!(map.overlays.is_empty(), "no emitted OverlayPack entries");
             assert!(
-                !map
-                    .overlay_data_pack()
+                !map.overlay_data_pack()
                     .expect("new RMG map retains raw overlay data")
                     .is_present(),
                 "no emitted OverlayDataPack"
@@ -747,7 +726,10 @@ mod tests {
             assert!(map.explicit_tubes.is_empty(), "no explicit Tube topology");
 
             let resolved = ResolvedTerrainGrid::build_generated_materialized_for_test(&map);
-            assert!(resolved.tube_facts().is_empty(), "no synthesized low-deck tubes");
+            assert!(
+                resolved.tube_facts().is_empty(),
+                "no synthesized low-deck tubes"
+            );
             assert!(
                 resolved
                     .iter()
@@ -770,7 +752,10 @@ mod tests {
 
         let first = run();
         let second = run();
-        assert_eq!(first, second, "fixed input repeats output and MapGen continuation");
+        assert_eq!(
+            first, second,
+            "fixed input repeats output and MapGen continuation"
+        );
     }
 
     #[test]

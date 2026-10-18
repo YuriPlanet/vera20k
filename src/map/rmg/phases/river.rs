@@ -597,9 +597,9 @@ mod tests {
     use crate::map::rmg::phases::shore::{SubTile, TileBlock, TileBlocks};
     use crate::map::rmg::phases::water::PlayableRect;
     use crate::map::rmg::scratch::RmgScratch;
-    use crate::map::rmg::tiles::SpecialTerrain;
     use crate::map::rmg::tiles::TileIds;
     use crate::map::rmg::x87::Gaussian;
+    use crate::map::theater::TheaterCliffRanges;
 
     /// Water amount well above the river gate, so every run carries a river.
     const RIVERED_WATER: i32 = 60;
@@ -645,7 +645,7 @@ mod tests {
             paved_roads: -1,
             paved_road_ends: -1,
             medians: -1,
-            special: SpecialTerrain::default(),
+            cliffs: TheaterCliffRanges::default(),
         }
     }
 
@@ -662,7 +662,13 @@ mod tests {
         let mut identity = ids();
         // The crossing needs waterfall sets; four synthetic bases, disjoint from
         // everything else the test ids use.
-        identity.special.waterfalls = [600, 610, 620, 630];
+        identity.cliffs = TheaterCliffRanges {
+            waterfall_north: Some(600),
+            waterfall_east: Some(610),
+            waterfall_south: Some(620),
+            waterfall_west: Some(630),
+            ..TheaterCliffRanges::default()
+        };
         let blocks = blocks();
         let mut rng = RmgRng::new(seed);
         let mut gauss = Gaussian::default();

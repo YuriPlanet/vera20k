@@ -200,6 +200,23 @@ fn fixture_world(
     (sim, ids)
 }
 
+/// Shared declared map/House/animation priors for original Execute44/45
+/// controls and their production-trigger consumers. Two allied live Houses
+/// and one defeated House distinguish a NULL storm owner from an ally filter.
+pub(crate) fn trigger_control_fixture(
+    seed: i32,
+    size: (i32, i32),
+) -> (RuleSet, Simulation, Vec<InternedId>) {
+    let rules = fixture_rules();
+    let houses = [
+        serde_json::json!([3, false]),
+        serde_json::json!([3, false]),
+        serde_json::json!([4, true]),
+    ];
+    let (sim, ids) = fixture_world(&rules, seed, 1000, size, &[], &houses, Some(0));
+    (rules, sim, ids)
+}
+
 fn house_index(houses: &[InternedId], owner: Option<InternedId>) -> Option<usize> {
     owner.map(|owner| houses.iter().position(|&house| house == owner).unwrap())
 }

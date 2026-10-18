@@ -47,11 +47,7 @@ pub(crate) struct AllocatedCellOrder {
 
 impl AllocatedCellOrder {
     pub(crate) fn build(terrain: &ResolvedTerrainGrid, size_width: i32) -> Option<Self> {
-        let width = usize::from(terrain.width);
-        let row_major = terrain.cells.iter().enumerate().all(|(index, cell)| {
-            usize::from(cell.rx) == index % width && usize::from(cell.ry) == index / width
-        });
-        if size_width < 2 || width >= 512 || !row_major {
+        if size_width < 2 || !terrain.is_regular() {
             return None;
         }
         let mut order = Self {
@@ -172,16 +168,85 @@ impl AllocatedCellOrder {
     }
 }
 
-/// A terrain's [`AllocatedCellOrder`], built at the first ask. The allocation
-/// it derives from never changes once the terrain exists.
+/// The cells of a regular terrain (see [`AllocatedCellOrder`]) whose eight
+/// [`ROW_NEIGHBORS`] are allocated. A fixed-grid lookup of such a cell or of
+/// any neighbour returns that very cell, so it neither misses nor stamps the
+/// shared Dummy, and its storage index is `y * width + x`.
+#[derive(Debug)]
+pub(crate) struct InteriorCells {
+    width: u16,
+    bits: Vec<u64>,
+}
+
+impl InteriorCells {
+    fn build(terrain: &ResolvedTerrainGrid) -> Option<Self> {
+        if !terrain.is_regular() {
+            return None;
+        }
+        let (width, height) = (usize::from(terrain.width), usize::from(terrain.height));
+        let allocated = |x: usize, y: usize| {
+            terrain
+                .native_fixed_cell_index(x as i16, y as i16)
+                .is_some()
+        };
+        let mut bits = vec![0u64; (width * height).div_ceil(64)];
+        for y in 1..height.saturating_sub(1) {
+            for x in 1..width.saturating_sub(1) {
+                if (y - 1..=y + 1).all(|y| (x - 1..=x + 1).all(|x| allocated(x, y))) {
+                    let index = y * width + x;
+                    bits[index / 64] |= 1 << (index % 64);
+                }
+            }
+        }
+        Some(Self {
+            width: terrain.width,
+            bits,
+        })
+    }
+
+    /// Whether `cell` and its eight neighbours are allocated.
+    pub(crate) fn contains(&self, (x, y): (u16, u16)) -> bool {
+        let index = usize::from(y) * usize::from(self.width) + usize::from(x);
+        x < self.width
+            && self
+                .bits
+                .get(index / 64)
+                .is_some_and(|word| word >> (index % 64) & 1 != 0)
+    }
+}
+
+/// What a terrain's allocation gives, built at the first ask. The allocation
+/// never changes once the terrain exists.
 #[derive(Debug, Clone, Default)]
-pub(super) struct AllocatedCellOrderCache(OnceLock<(i32, Option<Arc<AllocatedCellOrder>>)>);
+pub(super) struct AllocationCaches {
+    order: OnceLock<(i32, Option<Arc<AllocatedCellOrder>>)>,
+    interior: OnceLock<Option<Arc<InteriorCells>>>,
+}
 
 impl ResolvedTerrainGrid {
+    /// Cells stored row-major, narrower than the 512 stride, so that no
+    /// neighbour lookup wraps onto a real cell and a real cell's lookup
+    /// index is its storage index.
+    fn is_regular(&self) -> bool {
+        let width = usize::from(self.width);
+        width < 512
+            && self.cells.iter().enumerate().all(|(index, cell)| {
+                usize::from(cell.rx) == index % width && usize::from(cell.ry) == index / width
+            })
+    }
+
+    /// [`InteriorCells`], on a regular terrain.
+    pub(crate) fn interior_cells(&self) -> Option<&InteriorCells> {
+        self.allocation_caches
+            .interior
+            .get_or_init(|| InteriorCells::build(self).map(Arc::new))
+            .as_deref()
+    }
+
     /// [`AllocatedCellOrder`] for walks with Size width `size_width`; the
     /// first width asked is kept.
     pub(crate) fn allocated_cell_order(&self, size_width: i32) -> Option<Arc<AllocatedCellOrder>> {
-        let (cached_width, order) = self.allocated_cell_order.0.get_or_init(|| {
+        let (cached_width, order) = self.allocation_caches.order.get_or_init(|| {
             (
                 size_width,
                 AllocatedCellOrder::build(self, size_width).map(Arc::new),

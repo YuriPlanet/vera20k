@@ -23,7 +23,9 @@ pub(crate) fn fired(
     target: super::TargetKind,
     fired_weapon: &crate::rules::weapon_type::WeaponType,
 ) {
-    if fired_weapon.is_laser || !fired_weapon.is_electric_bolt {
+    if super::world_fire::fire_at_effect(fired_weapon)
+        != super::world_fire::FireAtEffect::ElectricBolt
+    {
         return;
     }
     let Some(source) = world.substrate.entities.get(source_id) else {

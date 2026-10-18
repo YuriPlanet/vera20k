@@ -142,8 +142,8 @@ pub(crate) fn damage_at_waypoint(
     }
     // IsWaypointValid68BD80 gates only the tail, after all five area visits.
     // The retained unset coordinate is zero; the shared session bounds the index.
-    if let Some(cell) = sim.session.waypoint_cell(waypoint)
-        && cell != (0, 0)
+    if sim.session.waypoint_is_valid(waypoint)
+        && let Some(cell) = sim.session.waypoint_cell(waypoint)
     {
         let mut drivers = BridgeDamageDrivers::new(sim, rules, overlay_registry, frame_effects);
         for _ in 0..4 {

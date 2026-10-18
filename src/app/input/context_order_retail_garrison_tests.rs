@@ -234,7 +234,7 @@ fn retail_capture_walk_rechecks_admission_and_respects_a_replacement_order() {
         assert!(actor.passenger_role.is_none());
         assert_eq!(
             actor.navigation.nav_com(),
-            Some(crate::sim::components::NavTargetRef::Building { id: castle })
+            Some(crate::sim::components::NavTargetRef::Object { id: castle })
         );
 
         let expected_cargo = match control {

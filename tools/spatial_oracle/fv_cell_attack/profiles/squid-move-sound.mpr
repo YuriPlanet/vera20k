@@ -67,8 +67,8 @@ Color=Grey
 
 
 [Units]
-0=VERA-OBSERVER,SQD,256,38,48,64,Sleep,None,0,-1,0,-1,1,1
-1=Computer1,LCRF,256,44,48,192,Sleep,None,0,-1,0,-1,1,1
+0=<human player>,SQD,256,38,48,64,Sleep,None,0,-1,0,-1,1,1
+1=Computer,LCRF,256,44,48,192,Sleep,None,0,-1,0,-1,1,1
 
 [Infantry]
 

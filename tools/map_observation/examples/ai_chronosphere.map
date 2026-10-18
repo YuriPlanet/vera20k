@@ -57,25 +57,22 @@ Allies=VERA-OBSERVER,Neutral
 Color=Grey
 
 [Waypoints]
-0=37037
+0=34033
 1=62062
 
 [Structures]
-0=Computer1,GACSPH,256,55,62,0,None,0,0,1,0,0,None,None,None,0,0
-1=Computer1,GAPOWR,256,66,56,0,None,0,0,1,0,0,None,None,None,0,0
-2=Computer1,GAPOWR,256,66,52,0,None,0,0,1,0,0,None,None,None,0,0
-3=Computer1,GAWEAP,256,56,56,0,None,0,0,1,0,0,None,None,None,0,0
-4=VERA-OBSERVER,GACNST,256,32,33,0,None,0,0,1,0,0,None,None,None,0,0
-5=VERA-OBSERVER,GAPOWR,256,38,31,0,None,0,0,1,0,0,None,None,None,0,0
-6=VERA-OBSERVER,GAPILE,256,66,30,0,None,0,0,1,0,0,None,None,None,0,0
+0=Computer,GACSPH,256,55,62,0,None,0,0,1,0,0,None,None,None,0,0
+1=Computer,GAPOWR,256,66,56,0,None,0,0,1,0,0,None,None,None,0,0
+2=Computer,GAPOWR,256,66,52,0,None,0,0,1,0,0,None,None,None,0,0
+3=Computer,GAWEAP,256,56,56,0,None,0,0,1,0,0,None,None,None,0,0
 
 [Units]
-0=Computer1,MTNK,256,50,58,64,Guard,None,0,-1,0,-1,1,1
-1=Computer1,MTNK,256,51,58,64,Guard,None,0,-1,0,-1,1,1
-2=Computer1,MTNK,256,52,58,64,Guard,None,0,-1,0,-1,1,1
+0=Computer,MTNK,256,50,58,64,Guard,None,0,-1,0,-1,1,1
+1=Computer,MTNK,256,51,58,64,Guard,None,0,-1,0,-1,1,1
+2=Computer,MTNK,256,52,58,64,Guard,None,0,-1,0,-1,1,1
 
 [Infantry]
-
+0=<human player>,E1,256,66,30,2,Guard,64,None,0,-1,0,0,0
 
 [OverlayPack]
 1=BQAAIP4AIP+ABQAAIP4AIP+ABQAAIP4AIP+ABQAAIP4AIP+ABQAAIP4AIP+ABQAAIP4AIP

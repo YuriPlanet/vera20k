@@ -8,10 +8,12 @@
 //! it is read as a filtered view ([`Simulation::house_absorbers`]).
 use super::*;
 use crate::rules::ruleset::HouseCostFactors;
-use crate::sim::components::DriveCoord;
+use crate::sim::components::{DriveCoord, NavTargetRef};
 use crate::sim::find_nearby_cell::{
     NearbyFootprint, NearbyQuery, PassabilityArgs, find_nearby_passable_cell, map_owned_radius_cap,
 };
+use crate::sim::mission::authority::EntityReadyInputProvider;
+use crate::sim::mission::{MissionId, MissionType};
 use crate::util::native_x87::NativeF32Bits;
 
 type CostFactors = [NativeF32Bits; 5];
@@ -445,6 +447,94 @@ impl Simulation {
 }
 
 impl Simulation {
+    /// `HouseClass::MoveGroundForcesToBase @ 0x0050C920`, which a computer
+    /// House's Construction Yard deploy calls (`UnitClass::Deploy` at
+    /// `0x00739926`, after the House's AI latches and before the MCV's slave
+    /// transfer and UnInit). One Foot 4x4 nearby-cell search from the base
+    /// origin, moved one cell south-east, becomes the destination of every
+    /// eligible Techno; the class setters and locomotors own the travel.
+    pub(super) fn move_ground_forces_to_base(
+        &mut self,
+        owner: InternedId,
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        frame_effects: FrameEffects<'_>,
+    ) {
+        // 0x0050C924 reads TechnoClass::Array's count before the search; the
+        // walk re-reads each slot (0x0050C9D5).
+        let count = self.substrate.entities.techno_registry_len();
+        let Some(origin) = self.houses.get(&owner).map(HouseState::base_origin) else {
+            return;
+        };
+        // 0x0050C966..0x0050C999: Foot, no zone, Normal, 4x4, bridges
+        // allowed, no target cell. An empty result ends the call
+        // (0x0050C9A7..0x0050C9BC); the offset (0x0050C9C2, 0x0050C9C7)
+        // follows that test.
+        let Some((x, y)) = self
+            .find_plain_passable_cell(
+                (i32::from(origin.0), i32::from(origin.1)),
+                SpeedType::Foot,
+                None,
+                crate::rules::locomotor_type::MovementZone::Normal,
+                (4, 4),
+            )
+            .filter(|&cell| cell != (0, 0))
+        else {
+            return;
+        };
+        let destination = NavTargetRef::cell(x.wrapping_add(1), y.wrapping_add(1));
+        let move_mission = MissionId::from_known(MissionType::Move);
+        for index in 0..count {
+            let Some(id) = self.substrate.entities.techno_registry_at(index) else {
+                continue;
+            };
+            let Some(entity) = self.substrate.entities.get(id) else {
+                continue;
+            };
+            // 0x0050C9E6..0x0050CA3E: the House's own Technos, except
+            // Buildings, Aircraft and types that deploy into a Construction
+            // Yard. There is no health, limbo, Team, naval or mission filter.
+            if entity.owner() != owner
+                || matches!(
+                    entity.category(),
+                    EntityCategory::Structure | EntityCategory::Aircraft
+                )
+                || crate::sim::mcv_deploy::deploys_into(self, entity, rules)
+                    .is_some_and(|target| target.construction_yard)
+            {
+                continue;
+            }
+            // 0x0050CA40..0x0050CA7B re-reads the base origin for each one.
+            if self
+                .houses
+                .get(&owner)
+                .is_none_or(|house| house.base_origin() == (0, 0))
+            {
+                continue;
+            }
+            // Assign_Destination(cell, 1) (vt+0x480, 0x0050CA93), a plain
+            // archive clear (0x0070C610 at 0x0050CA9D), then
+            // Queue_Mission(Move, 0) (vt+0x1E8, 0x0050CAAA) without commencing.
+            let _ = self.assign_destination_represented(
+                id,
+                Some(destination),
+                Some(rules),
+                registry,
+                frame_effects,
+            );
+            if let Some(entity) = self.substrate.entities.get_mut(id) {
+                entity.set_archive_target(None);
+            }
+            let _ = self.mission_queue_exact(
+                id,
+                move_mission,
+                0,
+                self.session.binary_frame,
+                &EntityReadyInputProvider,
+            );
+        }
+    }
+
     /// `HouseClass::Which_Zone @ 0x004FFB20` answering -1 for `owner`: `coord`
     /// is the empty coordinate (`0x00A8EFF8`, all zero) or lies more than four
     /// base radii (`+0x5498`) from the base cell's GetCoords (`0x00486840` on
@@ -1835,5 +1925,102 @@ mod tests {
         sim.uninit_with_rules(plant, &rules);
         assert_eq!(costs(&sim), (900, 450));
         assert!(!plant_fold(&sim));
+    }
+
+    /// `HouseClass::MoveGroundForcesToBase @ 0x0050C920` on its own. Water
+    /// inside the base origin's 4x4 block makes the search's footprint
+    /// matter. The House's Unit and Infantry share one destination at the
+    /// found cell +1/+1, lose their archive target and only queue Move. Its
+    /// Building, Aircraft and Construction Yard maker, and another computer
+    /// House's Unit, keep their orders.
+    #[test]
+    fn moving_ground_forces_to_base_queues_one_shared_move() {
+        use crate::rules::locomotor_type::{MovementZone, SpeedType};
+        use crate::sim::combat::TargetKind;
+
+        let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(
+            "[Countries]\n0=Americans\n1=Russians\n\
+             [InfantryTypes]\n0=E1\n[VehicleTypes]\n0=MTNK\n1=AMCV\n\
+             [AircraftTypes]\n0=ORCA\n[BuildingTypes]\n0=YARD\n\
+             [MTNK]\nStrength=400\nSpeed=6\n\
+             Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
+             [AMCV]\nStrength=1000\nSpeed=5\nDeploysInto=YARD\n\
+             Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
+             [E1]\nStrength=125\nSpeed=4\n\
+             Locomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n\
+             [ORCA]\nStrength=150\nSpeed=8\n\
+             Locomotor={4A582746-9839-11d1-B709-00A024DDAFD1}\n\
+             [YARD]\nStrength=1000\nConstructionYard=yes\nFoundation=1x1\n\
+             [Water]\nFoot=0%\nTrack=0%\nWheel=0%\nFloat=100%\n",
+        ))
+        .unwrap();
+        let mut sim = Simulation::new();
+        crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+        crate::sim::arena_fixture::flood(&mut sim, &rules, 32, [(13, 13)]);
+        let owner = add_house(&mut sim, "Americans", &rules);
+        add_house(&mut sim, "Russians", &rules);
+        let spawn = |sim: &mut Simulation, kind, house, x, y| {
+            let id = sim.spawn_object(kind, house, x, y, 0, &rules).unwrap();
+            sim.substrate
+                .entities
+                .get_mut(id)
+                .unwrap()
+                .set_archive_target(Some(TargetKind::Cell(x, y)));
+            id
+        };
+        let tank = spawn(&mut sim, "MTNK", "Americans", 4, 20);
+        let infantry = spawn(&mut sim, "E1", "Americans", 6, 22);
+        let kept = [
+            spawn(&mut sim, "AMCV", "Americans", 8, 24),
+            spawn(&mut sim, "ORCA", "Americans", 10, 26),
+            spawn(&mut sim, "YARD", "Americans", 22, 4),
+            spawn(&mut sim, "MTNK", "Russians", 26, 20),
+        ];
+        let all = [tank, infantry, kept[0], kept[1], kept[2], kept[3]];
+        let snapshot = |sim: &Simulation| {
+            all.map(|id| {
+                let entity = sim.substrate.entities.get(id).unwrap();
+                (
+                    entity.archive_target(),
+                    entity.navigation.nav_com(),
+                    entity.mission.current(),
+                    entity.mission.queued(),
+                )
+            })
+        };
+        let before = snapshot(&sim);
+
+        // An empty base origin ends the call before the search.
+        let house = sim.houses.get_mut(&owner).unwrap();
+        house.base_center = None;
+        house.alternate_base_center = (0, 0);
+        sim.move_ground_forces_to_base(owner, &rules, None, FrameEffects::default());
+        assert_eq!(snapshot(&sim), before);
+
+        let origin = (12, 12);
+        sim.houses.get_mut(&owner).unwrap().set_base_center(origin);
+        let search = |seed: (u16, u16), footprint| {
+            sim.find_plain_passable_cell(
+                (i32::from(seed.0), i32::from(seed.1)),
+                SpeedType::Foot,
+                None,
+                MovementZone::Normal,
+                footprint,
+            )
+        };
+        let found = search(origin, (4, 4)).unwrap();
+        assert_eq!(search(origin, (1, 1)), Some(origin), "1x1 differs");
+        assert_ne!(found, origin, "the water blocks the origin's 4x4 block");
+        let destination = Some(NavTargetRef::cell(found.0 + 1, found.1 + 1));
+        sim.move_ground_forces_to_base(owner, &rules, None, FrameEffects::default());
+
+        let after = snapshot(&sim);
+        let move_mission = MissionId::from_known(MissionType::Move);
+        for index in 0..2 {
+            let current = before[index].2;
+            assert_eq!(after[index], (None, destination, current, move_mission));
+            assert_ne!(current, move_mission, "Move is queued, not commenced");
+        }
+        assert_eq!(after[2..], before[2..]);
     }
 }

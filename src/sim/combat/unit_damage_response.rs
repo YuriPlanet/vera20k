@@ -3,7 +3,8 @@
 //! tail, after the `Harvester=` ping (`combat::world_receiver`).
 //!
 //! - `0x00737CB6..0x00737D2E`: a unit still inside the war factory it is in
-//!   radio contact with takes no hit ([`Simulation::unit_inside_war_factory`]).
+//!   radio contact with takes no hit, unless the hit ignores defences
+//!   ([`Simulation::unit_in_contact_war_factory`]).
 //! - `0x00738535..0x0073866E`: a computer's vehicle charges an attacker it
 //!   can crush, or, as a damaged miner, heads for a dock
 //!   ([`Simulation::unit_damage_response`]).
@@ -25,7 +26,6 @@ use crate::sim::game_entity::GameEntity;
 use crate::sim::mission::authority::EntityReadyInputProvider;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::movement::bump_crush::{CrushTarget, object_is_crushable_by};
-use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::radio::{self, RadioMessage, RadioPayload, RadioResponse};
 use crate::sim::world::{FrameEffects, Simulation};
 use crate::util::native_x87::{MaskedX87Ordering, sqrt_approx_length};
@@ -90,40 +90,6 @@ pub(crate) fn crush_distance(unit: [i32; 3], source: [i32; 3]) -> i32 {
 }
 
 impl Simulation {
-    /// `0x00737CB6..0x00737D2E`, unless the hit ignores defences: a unit
-    /// whose radio contact 0 (`0x0065AD30(0)`) is a `WeaponsFactory=`
-    /// building (`BuildingType+0x16BD`) standing on the unit's cell
-    /// (`MapClass[Location]`, then the cell's first ground building,
-    /// `0x0047C520`) returns 0 before `FootClass::ReceiveDamage`: no damage,
-    /// team report or response. A vehicle still leaving its factory is the
-    /// case.
-    pub(crate) fn unit_inside_war_factory(&self, id: u64, rules: &RuleSet) -> bool {
-        let Some(unit) = self.substrate.entities.get(id) else {
-            return false;
-        };
-        if unit.category() != EntityCategory::Unit {
-            return false;
-        }
-        let Some(factory) = unit.radio_contacts.slot(0) else {
-            return false;
-        };
-        self.substrate
-            .entities
-            .get(factory)
-            .is_some_and(|building| {
-                building.category() == EntityCategory::Structure
-                    && self
-                        .interner
-                        .object_type(building.type_ref(), rules)
-                        .is_some_and(|object| object.weapons_factory)
-            })
-            && self.substrate.occupancy.first_building_on_layer(
-                unit.position.rx(),
-                unit.position.ry(),
-                MovementLayer::Ground,
-            ) == Some(factory)
-    }
-
     /// `0x00738535..0x0073866E`, reached for results 0 to 3 of
     /// `FootClass::ReceiveDamage` (result 0 skips only the ping,
     /// `0x007384BB`). A unit in no team (`+0x5D4`), hit by a source, not
@@ -262,9 +228,18 @@ impl Simulation {
         CrushCharge {
             crusher: object.crusher
                 || has_weapon_ability(unit.veterancy.rank_kind(), object, Ability::Crusher),
+            // `0x00743927`: Is_Crushable_By, its ally test included.
             crushable: object_is_crushable_by(
                 object.omni_crusher,
                 CrushTarget::from_entity(victim, self.session.binary_frame),
+                |owner| {
+                    crate::sim::combat::combat_weapon::is_ally_by_object(
+                        Some(&self.house_alliances),
+                        &self.interner,
+                        unit.owner(),
+                        owner,
+                    )
+                },
             ),
             distance: crush_distance(coords(unit), coords(victim)),
             reach: rules.combat_damage.crush,

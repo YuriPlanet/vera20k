@@ -53,7 +53,7 @@ pub(crate) fn fired(
     weapon: &WeaponType,
     prism_support_count: i32,
 ) {
-    if !weapon.is_laser {
+    if super::world_fire::fire_at_effect(weapon) != super::world_fire::FireAtEffect::Laser {
         return;
     }
     let Some(source) = world.substrate.entities.get(source_id) else {

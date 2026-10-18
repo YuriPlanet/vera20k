@@ -166,7 +166,7 @@
       "issue_after_step": 800,
       "owner": "VERA-OBSERVER",
       "payload": {
-        "ForceAttack": {
+        "Attack": {
           "attacker_id": 1374,
           "target_id": 1428
         }

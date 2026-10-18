@@ -105,9 +105,9 @@ impl Simulation {
     /// exact authority with `commence_now = 0` — the
     /// native event-execute shape (Queue `0x004C73B9=dynamic/0`). Promotion to
     /// `current` happens at the per-object AI host's Ready→Commence. Used by
-    /// the shared MegaMission command funnel (Move, Attack, ForceAttack,
-    /// ForceAttackCell, AttackMove, Guard, RepairAtDepot, EnterTransport, PlantC4,
-    /// CaptureBuilding). Stop has its own no-queue Event6 route above.
+    /// the MEGAMISSION event arm (`Simulation::apply_megamission_command`,
+    /// through [`Self::queue_megamission`]) and the transport unload's
+    /// passenger moves. Stop has its own no-queue Event6 route above.
     pub fn queue_order_mission(&mut self, id: u64, mission: MissionType) {
         let now = self.session.binary_frame;
         // A missing receiver performs no write (same as the native event path

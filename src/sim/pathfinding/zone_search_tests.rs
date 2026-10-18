@@ -327,7 +327,7 @@ fn gsi_04_12_interaction_order_entry_threads_exact_blocker_counts() {
     let engineer = sim.substrate.entities.get(engineer_id).unwrap();
     assert_eq!(
         engineer.navigation.nav_com(),
-        Some(NavTargetRef::building(target_id))
+        Some(NavTargetRef::object(target_id))
     );
     assert!(
         crate::sim::movement::motion_query::is_moving(&engineer) == Some(true),
@@ -438,7 +438,7 @@ fn gsi_04_12_interaction_order_entry_threads_exact_blocker_counts() {
     let engineer = sim.substrate.entities.get(engineer_id).unwrap();
     assert_eq!(
         engineer.navigation.nav_com(),
-        Some(NavTargetRef::building(target_id))
+        Some(NavTargetRef::object(target_id))
     );
     // Native Infantry 51C300/51C37D/51C71B admits the matching Building
     // NavCom. Foot 4D3A92..4D3E0A passes its original Cell to the core;

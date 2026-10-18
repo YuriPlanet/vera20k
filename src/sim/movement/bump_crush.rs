@@ -480,8 +480,9 @@ fn entity_crush_coord(entity: &GameEntity) -> (i32, i32) {
 ///
 /// Exactly five type-level facts and two instance facts enter the decision:
 /// `Crushable=`, `OmniCrushResistant=`, the victim's class id, the ally
-/// relation (tested by the caller), the deploy crush-immunity byte, and the
-/// Iron Curtain timer. There is no weight, size, armour or `TypeImmune=` term.
+/// relation (the crusher's House asked about the victim's `owner`), the
+/// deploy crush-immunity byte, and the Iron Curtain timer. There is no
+/// weight, size, armour or `TypeImmune=` term.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct CrushTarget {
     pub category: EntityCategory,
@@ -494,6 +495,8 @@ pub struct CrushTarget {
     pub omni_crush_resistant: bool,
     /// Iron Curtain (or Force Shield) currently active on the victim.
     pub iron_curtained: bool,
+    /// The victim's owning House, which the ally test asks about.
+    pub owner: crate::sim::intern::InternedId,
 }
 
 impl CrushTarget {
@@ -508,6 +511,7 @@ impl CrushTarget {
                 entity.invulnerability.as_ref(),
                 current_frame,
             ),
+            owner: entity.owner(),
         }
     }
 }
@@ -559,15 +563,35 @@ impl CrushTarget {
 ///   locomotor test instead.
 /// - **Mind-control release.** A crushed controller does not free its captives
 ///   here, so their ownership stays with a dead object.
-pub fn can_crush(capability: CrushCapability, target: CrushTarget) -> bool {
-    capability.can_crush_units() && object_is_crushable_by(capability.omni_crusher, target)
+pub fn can_crush(
+    capability: CrushCapability,
+    target: CrushTarget,
+    allied: impl FnOnce(crate::sim::intern::InternedId) -> bool,
+) -> bool {
+    capability.can_crush_units() && object_is_crushable_by(capability.omni_crusher, target, allied)
 }
 
-/// Object5F6CD0 after the caller's capability gate and alliance check.
-/// The post-crush-latch Unit entry tail invokes this without retesting Crusher.
-pub(crate) fn object_is_crushable_by(omni_crusher: bool, target: CrushTarget) -> bool {
+/// `ObjectClass::Is_Crushable_By @ 0x005F6CD0` after the caller's capability
+/// gate: the omni arm, else the ordinary arm, each refused for a victim the
+/// crusher's House is allied with or one Iron Curtained. The post-crush-latch
+/// Unit entry tail invokes this without retesting Crusher.
+///
+/// `allied` is the crusher's owning House (`+0x21C`) asking
+/// `HouseClass::Is_Ally_ByObject @ 0x004F9A90` about the victim's owner, at
+/// `0x005F6D1A` and again at `0x005F6D67`
+/// ([`crate::sim::combat::combat_weapon::is_ally_by_object`]). It reads only
+/// the asking House's mask, so a victim whose House allies the crusher's one
+/// way (Neutral's with a paranoid computer's, `sim::house_diplomacy`) is still
+/// crushed. `Can_Enter_Cell` asks the same question again at `0x0073FB53`, so
+/// an allied or own crushable never reaches its crush latch.
+pub(crate) fn object_is_crushable_by(
+    omni_crusher: bool,
+    target: CrushTarget,
+    allied: impl FnOnce(crate::sim::intern::InternedId) -> bool,
+) -> bool {
     ((omni_crusher && target.category != EntityCategory::Structure && !target.omni_crush_resistant)
         || (target.crushable && !target.deploy_crush_immune))
+        && !allied(target.owner)
         && !target.iron_curtained
 }
 
@@ -586,62 +610,6 @@ fn deploy_crush_immune(entity: &GameEntity) -> bool {
     // not current Doing or the Unit deployment controller. Infantry's
     // sequencer520B4E/520BAD owns its writes through GameEntity.
     entity.native_crush_immunity() != 0
-}
-
-/// Who is crushing, for the ally question native asks at admission.
-///
-/// `Is_Crushable_By 0x005F6CD0` asks `HouseClass::Is_Ally_ByObject 0x004F9A90`
-/// of the crusher's owning house (the crusher's `+0x21C`) about the victim at
-/// `0x005F6D1A` and again at `0x005F6D67`, and `Can_Enter_Cell` re-tests at
-/// `0x0073FB53`, so an allied or own crushable never reaches the crush latch
-/// at all.
-///
-/// Carried as a required parameter, not an `Option`: a missing-alliance default
-/// would fail open into the very case this exists to refuse.
-///
-/// `0x004F9A90` reads only the asking house's mask, so a victim whose house
-/// allies the crusher's one way (Neutral's with a paranoid computer's,
-/// `sim::house_diplomacy`) is still crushed.
-#[derive(Clone, Copy)]
-pub struct CrushAllyGate<'a> {
-    /// The crusher's owning house, already resolved by the caller.
-    crusher_owner: &'a str,
-    alliances: &'a crate::map::houses::HouseAllianceMap,
-    interner: &'a crate::sim::intern::StringInterner,
-}
-
-impl<'a> CrushAllyGate<'a> {
-    pub fn new(
-        crusher_owner: &'a str,
-        alliances: &'a crate::map::houses::HouseAllianceMap,
-        interner: &'a crate::sim::intern::StringInterner,
-    ) -> Self {
-        Self {
-            crusher_owner,
-            alliances,
-            interner,
-        }
-    }
-
-    /// True when native would spare this victim for being allied or own.
-    ///
-    /// The kill site and Approach ask it here; Can_Enter_Cell asks the same
-    /// `is_allied_with` through `world::object_entry`. The two disagreeing
-    /// was a defect once.
-    ///
-    /// No id fast path. An earlier version carried the crusher's `InternedId`
-    /// to settle own-house without allocating, which was wasted work:
-    /// `is_allied_with` already returns on a case-insensitive name compare
-    /// *before* it normalizes anything (`houses.rs`), so own-house never
-    /// allocated. The allocating case is a genuinely foreign house, which an id
-    /// compare cannot shortcut anyway.
-    pub fn spares(&self, victim: &GameEntity) -> bool {
-        crate::map::houses::is_allied_with(
-            self.alliances,
-            self.crusher_owner,
-            self.interner.resolve(victim.owner()),
-        )
-    }
 }
 
 /// Emit the normal crush-path `EntityCrushed` (CrushSound) event for a single
@@ -713,17 +681,25 @@ pub fn select_crush_victims(
     let Some(crusher) = entities.get(crusher_id) else {
         return Vec::new();
     };
-    // The same gate admission uses. Two inline copies of one predicate is how
-    // admission and the kill came to disagree.
-    let allies = CrushAllyGate::new(interner.resolve(crusher.owner()), alliances, interner);
+    let crusher_owner = crusher.owner();
     occ.iter()
         .copied()
         .filter(|&id| id != crusher_id)
         .filter(|&id| {
             entities.get(id).is_some_and(|victim| {
-                !allies.spares(victim)
-                    && within_crush_distance_sq(crusher_coord, entity_crush_coord(victim))
-                    && can_crush(capability, CrushTarget::from_entity(victim, current_frame))
+                within_crush_distance_sq(crusher_coord, entity_crush_coord(victim))
+                    && can_crush(
+                        capability,
+                        CrushTarget::from_entity(victim, current_frame),
+                        |owner| {
+                            crate::sim::combat::combat_weapon::is_ally_by_object(
+                                Some(alliances),
+                                interner,
+                                crusher_owner,
+                                owner,
+                            )
+                        },
+                    )
             })
         })
         .collect()

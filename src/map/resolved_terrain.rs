@@ -654,8 +654,9 @@ pub struct ResolvedTerrainGrid {
     /// Immutable pristine/policy inputs, shared by derived clones and snapshot
     /// templates. Mutable terrain, bounds and overlays remain separate owners.
     bridge_recalc_catalog: Option<Arc<BridgeRecalcCatalog>>,
-    /// Derived from the allocation; see [`Self::allocated_cell_order`].
-    allocated_cell_order: allocated_order::AllocatedCellOrderCache,
+    /// Derived from the allocation; see [`Self::allocated_cell_order`] and
+    /// [`Self::interior_cells`].
+    allocation_caches: allocated_order::AllocationCaches,
 }
 
 /// A `size` x `size` flat level-0 grid whose land rows admit Foot, Track and
@@ -872,7 +873,7 @@ impl ResolvedTerrainGrid {
             tile_animations: Vec::new(),
             destroyable_cliff_catalog: None,
             bridge_recalc_catalog: None,
-            allocated_cell_order: Default::default(),
+            allocation_caches: Default::default(),
         }
     }
 

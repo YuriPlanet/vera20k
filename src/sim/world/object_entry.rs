@@ -1219,7 +1219,12 @@ fn classify_foot_entry<'a>(
                 entry_result = entry_result.max(1);
                 continue;
             }
-            if !infantry && crusher && bump_crush::can_crush(capability, b.crush) {
+            if !infantry
+                && crusher
+                && bump_crush::can_crush(capability, b.crush, |owner| {
+                    mover.allied_with(live, owner)
+                })
+            {
                 crush_latch = true;
                 continue;
             }
@@ -1462,10 +1467,12 @@ fn unit_post_walk_tail(
                 )
                 .and_then(|id| live.blocker(id))
                 .is_some_and(|(unit, _)| {
-                    // IsCrushableBy asks the mover's House in both arms; the
-                    // caller's latch stands for the Crusher test.
-                    !mover.allied_with(live, unit.owner)
-                        && bump_crush::object_is_crushable_by(mover.obj.omni_crusher, unit.crush)
+                    // The caller's latch stands for the Crusher test.
+                    bump_crush::object_is_crushable_by(
+                        mover.obj.omni_crusher,
+                        unit.crush,
+                        |owner| mover.allied_with(live, owner),
+                    )
                 })
         };
         return if !walk.vehicle_occupied || first_unit_is_crushable() {

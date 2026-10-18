@@ -42,6 +42,9 @@ pub(crate) struct SurfaceLine {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SurfaceDraw {
     Line(SurfaceLine),
+    /// Wave3 DrawMagBeam7602E0: displaced background with strict u16 Z,
+    /// without A or WriteZ, at this parent's retained Display slot.
+    MagneticWave(crate::render::wave_geometry::MagneticWaveDraw),
     /// ParticleDraw62D02C: packed color after full-u16 A admission, with a
     /// signed candidate tested strictly against the current native Z word.
     Point(crate::render::tactical_compat::PreparedSparkPoint),

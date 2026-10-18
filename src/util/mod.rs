@@ -25,6 +25,7 @@ pub(crate) mod lookup_hash;
 pub mod lzo;
 pub(crate) mod native_ballistics;
 pub mod native_color;
+pub(crate) mod native_coord;
 pub(crate) mod native_random;
 pub mod native_string;
 pub mod native_trig;

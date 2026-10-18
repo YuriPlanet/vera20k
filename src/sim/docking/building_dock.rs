@@ -1037,24 +1037,20 @@ pub(crate) fn try_pending_entry(
     else {
         return;
     };
-    let Some(target) = sim
+    if !sim
         .substrate
         .entities
         .get(depot)
-        .filter(|target| target.is_object_alive())
-    else {
+        .is_some_and(|target| target.is_object_alive())
+    {
         if let Some(unit) = sim.substrate.entities.get_mut(id) {
             unit.pending_entry.clear();
         }
         return;
-    };
-    //70D846 passes the actual Techno target. Preserve the established
-    //Building representation for depots, and admit mobile Unit targets.
-    let destination = if target.category() == crate::map::entities::EntityCategory::Structure {
-        crate::sim::components::NavTargetRef::building(depot)
-    } else {
-        crate::sim::components::NavTargetRef::object(depot)
-    };
+    }
+    //70D846 passes the actual Techno target, a depot or a mobile Unit,
+    //tagged as the MEGAMISSION arm tags an Enter destination.
+    let destination = crate::sim::components::NavTargetRef::object(depot);
     if radio::transmit(
         sim,
         id,
@@ -2352,7 +2348,7 @@ mod tests {
         assert_eq!(unit.mission.queued(), MissionId::NONE);
         assert_eq!(
             unit.navigation.nav_com(),
-            Some(NavTargetRef::Building { id: DEPOT })
+            Some(NavTargetRef::Object { id: DEPOT })
         );
         assert_eq!(unit.pending_entry(), None);
         assert!(linked(&sim, 1));
@@ -2615,7 +2611,7 @@ mod tests {
         assert_eq!(sim.substrate.entities.get(1).unwrap().pending_entry(), None);
         assert_eq!(
             sim.substrate.entities.get(1).unwrap().navigation.nav_com(),
-            Some(NavTargetRef::Building { id: DEPOT })
+            Some(NavTargetRef::object(DEPOT))
         );
         for tank in 2..=3 {
             let e = sim.substrate.entities.get(tank).unwrap();

@@ -634,38 +634,6 @@ pub(super) fn capability_cursor_for_hover(
             };
         }
 
-        // The infiltration arm (`0x0051EE3B..0x0051EEEF`): a spy over a
-        // building it can enter takes Capture (9), whose cursor is Enter
-        // (`DisplayClass::SetCursorFromAction` 0x004AAE90, row 0x19). Its
-        // place before the garrison and C4 arms is the click's residual
-        // (`context_order`).
-        if matches!(
-            hover.kind,
-            HoverTargetKind::FriendlyStructure | HoverTargetKind::EnemyStructure
-        ) && rules
-            .is_some_and(|rules| sim.infiltrator_building_action(best_id, hover.stable_id, rules))
-        {
-            return CursorFeedbackKind::Enter;
-        }
-
-        // 2. C4 plant: SEAL / Tanya / Psi-Corp Trooper hovering an enemy
-        //    structure with CanC4=yes, not InvisibleInGame, not iron-curtained.
-        //    SabotageCursor flag remains in the data model (parsed in
-        //    object_type.rs) for modder weapon-overlay use, but cursor
-        //    logic is now driven by C4=yes — matches gamemd action 0x10.
-        if sel_obj.c4
-            && matches!(hover.kind, HoverTargetKind::EnemyStructure)
-            && hovered_obj.is_some_and(|o| o.can_c4 && !o.invisible_in_game)
-            && !hovered_entity.is_some_and(|e| {
-                crate::sim::superweapon::invulnerability::is_invulnerable(
-                    e.invulnerability.as_ref(),
-                    sim.session.tick as u32,
-                )
-            })
-        {
-            return CursorFeedbackKind::Demolish;
-        }
-
         let is_infantry = sel_entity.category() == EntityCategory::Infantry;
 
         // 5. Infantry boarding a friendly transport (Passengers > 0).
@@ -681,6 +649,25 @@ pub(super) fn capability_cursor_for_hover(
         if is_infantry
             && let Some(rules) = rules
             && crate::sim::passenger::can_enter_transport(sim, rules, best_id, hover.stable_id)
+        {
+            return CursorFeedbackKind::Enter;
+        }
+
+        // Native garrison precedes C4, which precedes the late infiltration
+        // arm. C4 can terminate with ordinary Attack, not just Sabotage.
+        let c4_action = rules
+            .and_then(|rules| super::context_order::infantry_c4_action(sim, rules, best_id, hover));
+        if c4_action == Some(super::context_order::InfantryC4Action::Sabotage) {
+            return CursorFeedbackKind::Demolish;
+        }
+        if c4_action.is_none()
+            && matches!(
+                hover.kind,
+                HoverTargetKind::FriendlyStructure | HoverTargetKind::EnemyStructure
+            )
+            && rules.is_some_and(|rules| {
+                sim.infiltrator_building_action(best_id, hover.stable_id, rules)
+            })
         {
             return CursorFeedbackKind::Enter;
         }
@@ -2406,7 +2393,7 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
                     target_ry: 10,
                 }
             } else {
-                Command::ForceAttack {
+                Command::Attack {
                     attacker_id: house,
                     target_id,
                 }

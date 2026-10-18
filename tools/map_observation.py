@@ -83,7 +83,7 @@ PROFILE_V2 = 'vera20k.map-observation-profile.v2'
 PROFILE_V3 = 'vera20k.map-observation-profile.v3'
 MAX_OBSERVATION_SAMPLES = 100_000
 MAX_RECEIPT_BYTES = 128 * 1024 * 1024
-ORDER_VARIANTS = frozenset(('Select', 'Move', 'Stop', 'Attack', 'ForceAttack', 'Guard',
+ORDER_VARIANTS = frozenset(('Select', 'Move', 'Stop', 'Attack', 'Guard',
                             'DeployMcv', 'ForceAttackCell', 'CaptureBuilding', 'ToggleRepair',
                             'EnterTransport', 'UnloadPassengers', 'RepairAtDepot', 'SellBuilding', 'SetRally', 'PlantC4',
                             'LaunchSuperWeapon', 'TogglePrimaryFactory'))

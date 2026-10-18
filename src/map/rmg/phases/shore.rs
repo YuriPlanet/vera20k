@@ -469,11 +469,6 @@ fn stamp(
 ) -> bool {
     debug_assert!((1..=SHORE_PIECES as i32).contains(&piece));
     let new_tile = ctx.ids.shore + piece - 1;
-    let Some(block) = ctx.blocks.block(new_tile) else {
-        // Unknown block: the original silently no-ops (vtbl type mismatch).
-        return true;
-    };
-    let block = block.clone();
     let (adx, ady) = PIECE_ANCHOR[(piece - 1) as usize];
     let anchor = (x + i32::from(adx), y + i32::from(ady));
     let level = ctx
@@ -487,124 +482,298 @@ fn stamp(
     } else {
         (0, 0)
     };
-    let region = if keep { 0 } else { region_id };
+    place_block(
+        ctx.grid,
+        ctx.scratch,
+        ctx.ids,
+        ctx.blocks,
+        BlockPlacement {
+            tile: new_tile,
+            origin: anchor,
+            level,
+            window: (lo, hi),
+            region: region_id,
+            keep,
+        },
+    )
+    .admitted
+}
 
+/// Inputs to the selected TMP placement owner, native `0x0057B440`.
+/// The selected TileType and placement origin are native globals; keeping
+/// them explicit here avoids shared mutable selection state.
+pub(super) struct BlockPlacement {
+    pub tile: i32,
+    pub origin: (i32, i32),
+    pub level: u8,
+    pub window: (i32, i32),
+    pub region: i32,
+    pub keep: bool,
+}
+
+/// Native AL and caller-owned out-bool are separate result channels. Shore
+/// selection consumes only admission, cliff selection accepts either channel
+/// and BuildRiverBridge reads neither.
+pub(super) struct PlacementResult {
+    pub complete: bool,
+    pub admitted: bool,
+}
+
+/// Shared selected-TMP placement, original gamemd.exe `0x0057B440..0x0057B78D`,
+/// for the shore tiler, the cliff selector and BuildRiverBridge's waterfalls.
+/// Source: original instruction audit and executable controls in
+/// `tools/rmg_oracle/cliff_materialization.py`, whose per-call AL/out-bool
+/// results `cliff_native_tests` compares. Writes tile, subtile and height;
+/// unlike unconditional `5A6C10`, this function never writes Cell+11C (slope).
+pub(super) fn place_block(
+    grid: &mut RmgGrid,
+    scratch: &mut RmgScratch,
+    ids: &TileIds,
+    blocks: &dyn TileBlocks,
+    placement: BlockPlacement,
+) -> PlacementResult {
+    let soft_stop = PlacementResult {
+        complete: false,
+        admitted: true,
+    };
+    let hard_stop = PlacementResult {
+        complete: false,
+        admitted: false,
+    };
+    let complete = PlacementResult {
+        complete: true,
+        admitted: true,
+    };
+    let Some(block) = blocks.block(placement.tile) else {
+        // A missing physical TMP/type does not clear the caller's out-bool.
+        return soft_stop;
+    };
+    let region = if placement.keep { 0 } else { placement.region };
     for j in 0..block.height {
         for i in 0..block.width {
-            let Some(sub) = block.subtiles[(j * block.width + i) as usize] else {
+            let tx = i32::from((placement.origin.0 as i16).wrapping_add(i as i16));
+            let ty = i32::from((placement.origin.1 as i16).wrapping_add(j as i16));
+            if !scratch.in_diamond(tx, ty) {
+                continue;
+            }
+            // Native lookup precedes the sparse-TMP check, including the
+            // shared border cell's coordinate update on an absent header.
+            let target = *grid.cell_native(tx, ty);
+            let index = j * block.width + i;
+            let Some(sub) = block.subtiles[index as usize] else {
                 continue;
             };
-            let (tx, ty) = (anchor.0 + i, anchor.1 + j);
-            if !ctx.scratch.in_diamond(tx, ty) {
-                continue;
-            }
-            let owner = ctx.scratch.get(tx, ty).region;
-            let target_tile = ctx.grid.get(tx, ty).map_or(0, |cell| cell.tile);
-            let target_clear = ctx.ids.is_clear(target_tile);
-
-            // Ownership gate (skipped under keep: region forced 0 above and
-            // the gate collapses to the orientation check).
-            if !keep && owner != region {
-                if owner <= 0 {
-                    if target_clear {
-                        ctx.scratch.get_mut(tx, ty).region = region;
-                    } else if region == -1 {
+            // Only keep zeroes the stored owner (57B576..57B57E). A non-keep
+            // owner <= 0 jumps past that `xor` (57B5DE `jle 57B580`) and is
+            // compared raw, so a stored -1 equals an unowned (-1) request.
+            let owner = if placement.keep {
+                0
+            } else {
+                scratch.get(tx, ty).region
+            };
+            let target_clear = ids.is_clear(target.tile);
+            let old = target.tile.wrapping_sub(ids.shore);
+            let new = placement.tile.wrapping_sub(ids.shore);
+            if owner != region {
+                if owner > 0 && region != -1 {
+                    if !target_clear {
+                        if (0..=0x29).contains(&old)
+                            && (0..=0x29).contains(&new)
+                            && PIECE_CLASS[old as usize] == PIECE_CLASS[new as usize]
+                        {
+                            return complete;
+                        }
+                        return hard_stop;
+                    }
+                } else if !target_clear {
+                    if region == -1 {
                         continue;
-                    } else {
-                        return false;
                     }
-                } else if region == -1 {
-                    if target_clear {
-                        ctx.scratch.get_mut(tx, ty).region = region;
-                    } else {
-                        continue;
-                    }
-                } else if target_clear {
-                    ctx.scratch.get_mut(tx, ty).region = region;
-                } else {
-                    let old = target_tile - ctx.ids.shore;
-                    let new = new_tile - ctx.ids.shore;
-                    if (0..=0x29).contains(&old)
-                        && (0..=0x29).contains(&new)
-                        && PIECE_CLASS[old as usize] == PIECE_CLASS[new as usize]
-                    {
-                        // Equivalent foreign piece already present: the whole
-                        // call succeeds immediately.
-                        return true;
-                    }
-                    return false;
+                    return hard_stop;
                 }
-                // Freshly adopted cells go straight to the write gate.
-                write_subtile(ctx, tx, ty, new_tile, &block, i, j, sub, level);
-                continue;
-            }
-
-            // Orientation check.
-            let old = target_tile - ctx.ids.shore;
-            let new = new_tile - ctx.ids.shore;
-            if (0..=0x29).contains(&old) && (0..=0x29).contains(&new) {
+                scratch.get_mut(tx, ty).region = region;
+            } else if (0..=0x29).contains(&old) && (0..=0x29).contains(&new) {
                 let diff = (PIECE_ORIENT[old as usize] - PIECE_ORIENT[new as usize]).abs();
                 if (3..=5).contains(&diff) {
-                    return false;
+                    return hard_stop;
                 }
             }
-
-            // Write gate.
-            let in_window = target_tile >= lo && target_tile <= hi;
-            if target_clear || in_window {
-                write_subtile(ctx, tx, ty, new_tile, &block, i, j, sub, level);
+            if target_clear
+                || (target.tile >= placement.window.0 && target.tile <= placement.window.1)
+            {
+                let cell = grid.cell_native_mut(tx, ty);
+                cell.tile = placement.tile;
+                cell.sub_tile = index as u8;
+                cell.level = sub.height.wrapping_add(placement.level);
                 continue;
             }
-            let target_sub = ctx.grid.get(tx, ty).map_or(0, |cell| cell.sub_tile);
-            let existing_is_shore = ctx.ids.is_shore_piece(target_tile);
-            let new_is_ramp = ramp_family(ctx, new_tile, (j * block.width + i) as u8);
-            if existing_is_shore && new_is_ramp {
-                return false;
+            if ids.is_shore_piece(target.tile)
+                && ids.cliffs.is_on_bridge_ramp_tile(placement.tile, index)
+            {
+                return hard_stop;
             }
-            let new_in_shore = new_tile >= ctx.ids.shore && new_tile < ctx.ids.shore + 0x2A;
-            if new_in_shore && cliff_family(ctx, target_tile, target_sub) {
-                return false;
+            if ids.is_shore_piece(placement.tile)
+                && ids
+                    .cliffs
+                    .is_special_terrain_tile(target.tile, target.sub_tile)
+            {
+                return hard_stop;
             }
-            // Soft stop: this tile stops stamping, but the pass succeeds.
-            return true;
+            return soft_stop;
         }
     }
-    true
+    complete
 }
 
-fn write_subtile(
-    ctx: &mut ShoreCtx<'_>,
-    tx: i32,
-    ty: i32,
-    new_tile: i32,
-    block: &TileBlock,
-    i: i32,
-    j: i32,
-    sub: SubTile,
-    level: u8,
-) {
-    if let Some(cell) = ctx.grid.get_mut(tx, ty) {
-        cell.tile = new_tile;
-        cell.sub_tile = (j * block.width + i) as u8;
-        cell.level = sub.height.wrapping_add(level);
-        cell.slope = sub.slope;
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::map::theater::RmgTileKeys;
+
+    /// A selected non-shore TMP; the test ids leave every cliff family unset.
+    const CLIFF_TILE: i32 = 900;
+    /// Non-clear identity outside the shore window and every cliff family.
+    const ROCK_TILE: i32 = 77;
+    const SHORE_BASE: i32 = 400;
+    /// The block's two subtiles, in native row-major order.
+    const FIRST: (i32, i32) = (40, 50);
+    const SECOND: (i32, i32) = (41, 50);
+
+    /// Every TileType is a 2x1 block, so a stop at the first subtile leaves
+    /// the second cell visibly untouched.
+    struct TwoByOne(TileBlock);
+    impl TileBlocks for TwoByOne {
+        fn block(&self, _tile: i32) -> Option<&TileBlock> {
+            Some(&self.0)
+        }
     }
-}
 
-/// The new piece's slope/ramp-family membership (the narrow bridge-ramp
-/// predicate, subtile-sensitive).
-///
-/// Shore pieces are never in the cliff/ramp families, and on a freshly
-/// generated all-water map no stamped cell can hold such a tile either, so
-/// `false` is exact for every state reachable from the ported pipeline. The
-/// theater-backed predicates (`TheaterCliffRanges`) get wired here with the
-/// generator deps if a later stage can produce such tiles.
-fn ramp_family(_ctx: &ShoreCtx<'_>, _tile: i32, _sub_tile: u8) -> bool {
-    false
-}
+    struct Fixture {
+        grid: RmgGrid,
+        scratch: RmgScratch,
+        ids: TileIds,
+        blocks: TwoByOne,
+    }
 
-/// The existing tile's broad cliff/bridge-family membership — same reasoning
-/// as [`ramp_family`].
-fn cliff_family(_ctx: &ShoreCtx<'_>, _tile: i32, _sub_tile: u8) -> bool {
-    false
+    impl Fixture {
+        fn new() -> Self {
+            let (dmin, dmax) = (34, 34 + 2 * 42);
+            let stride = 77;
+            let mut grid = RmgGrid::new(stride, dmin, dmax);
+            for (x, y) in grid.native_cells().collect::<Vec<_>>() {
+                grid.get_mut(x, y).expect("native cell").tile = 0;
+            }
+            let sub = SubTile {
+                height: 1,
+                terrain: 0,
+                slope: 0,
+            };
+            Self {
+                grid,
+                scratch: RmgScratch::new(stride, dmin, dmax),
+                ids: TileIds {
+                    shore: SHORE_BASE,
+                    ..TileIds::from_keys(&RmgTileKeys::default())
+                },
+                blocks: TwoByOne(TileBlock {
+                    width: 2,
+                    height: 1,
+                    subtiles: vec![Some(sub); 2],
+                }),
+            }
+        }
+
+        fn set(&mut self, (x, y): (i32, i32), tile: i32, owner: i32) {
+            self.grid.get_mut(x, y).expect("native cell").tile = tile;
+            self.scratch.get_mut(x, y).region = owner;
+        }
+
+        fn cell(&self, (x, y): (i32, i32)) -> (i32, u8, u8, i32) {
+            let cell = self.grid.get(x, y).expect("native cell");
+            let owner = self.scratch.get(x, y).region;
+            (cell.tile, cell.sub_tile, cell.level, owner)
+        }
+
+        /// One `0x57B440` call at FIRST with window (0, 0) and level 4;
+        /// returns (AL, caller out-bool) as (complete, admitted).
+        fn place(&mut self, tile: i32, region: i32, keep: bool) -> (bool, bool) {
+            let result = place_block(
+                &mut self.grid,
+                &mut self.scratch,
+                &self.ids,
+                &self.blocks,
+                BlockPlacement {
+                    tile,
+                    origin: FIRST,
+                    level: 4,
+                    window: (0, 0),
+                    region,
+                    keep,
+                },
+            );
+            (result.complete, result.admitted)
+        }
+    }
+
+    /// Untouched cells keep the default level 4.
+    const UNTOUCHED: (i32, u8, u8, i32) = (0, 0, 4, 0);
+
+    /// 57B5DE `jle 57B580` skips the keep-only `xor eax,eax` at 57B57E, so a
+    /// stored -1 equals an unowned (-1) request raw. The orientation check
+    /// passes, and the write gate soft-stops at a non-clear cell outside the
+    /// window (57B784: AL=0, out-bool untouched) before the second subtile.
+    #[test]
+    fn unowned_request_soft_stops_at_a_nonclear_cell_it_already_owns() {
+        let mut fixture = Fixture::new();
+        fixture.set(FIRST, ROCK_TILE, -1);
+        assert_eq!(fixture.place(CLIFF_TILE, -1, false), (false, true));
+        assert_eq!(fixture.cell(FIRST), (ROCK_TILE, 0, 4, -1));
+        assert_eq!(fixture.cell(SECOND), UNTOUCHED, "later subtile untouched");
+    }
+
+    /// A stored 0 differs from the -1 request (57B6B6): the non-clear cell is
+    /// skipped (57B6DF), and the clear second cell is adopted and written
+    /// with its subtile index and height + level.
+    #[test]
+    fn unowned_request_skips_a_nonclear_cell_owned_by_nobody() {
+        let mut fixture = Fixture::new();
+        fixture.set(FIRST, ROCK_TILE, 0);
+        assert_eq!(fixture.place(CLIFF_TILE, -1, false), (true, true));
+        assert_eq!(fixture.cell(FIRST), (ROCK_TILE, 0, 4, 0));
+        assert_eq!(fixture.cell(SECOND), (CLIFF_TILE, 1, 5, -1));
+    }
+
+    /// 57B6D6..57B77D: a non-clear cell whose stored owner is not positive
+    /// refuses an owned request: out-bool cleared, AL=0, nothing written.
+    #[test]
+    fn owned_request_refuses_a_nonclear_cell_without_a_positive_owner() {
+        let mut fixture = Fixture::new();
+        fixture.set(FIRST, ROCK_TILE, -1);
+        assert_eq!(fixture.place(CLIFF_TILE, 5, false), (false, false));
+        assert_eq!(fixture.cell(SECOND), UNTOUCHED);
+    }
+
+    /// 57B463/57B57E: keep zeroes both the request and the stored owner, so
+    /// foreign cells take the orientation/write path without being adopted.
+    #[test]
+    fn keep_writes_foreign_cells_without_adopting_them() {
+        let mut fixture = Fixture::new();
+        fixture.set(FIRST, 0, 9);
+        fixture.set(SECOND, 0, 9);
+        assert_eq!(fixture.place(CLIFF_TILE, 5, true), (true, true));
+        assert_eq!(fixture.cell(FIRST), (CLIFF_TILE, 0, 5, 9));
+        assert_eq!(fixture.cell(SECOND), (CLIFF_TILE, 1, 5, 9));
+    }
+
+    /// 57B5EF..57B705: a non-clear foreign shore piece in the selected
+    /// piece's class ends the call with AL=1 before the later subtile.
+    #[test]
+    fn equivalent_foreign_shore_piece_ends_the_block_successfully() {
+        let mut fixture = Fixture::new();
+        // Pieces 0, 1 and 2 share class 0 (0x82A7F4).
+        fixture.set(FIRST, SHORE_BASE + 1, 7);
+        assert_eq!(fixture.place(SHORE_BASE, 5, false), (true, true));
+        assert_eq!(fixture.cell(FIRST), (SHORE_BASE + 1, 0, 4, 7));
+        assert_eq!(fixture.cell(SECOND), UNTOUCHED);
+    }
 }

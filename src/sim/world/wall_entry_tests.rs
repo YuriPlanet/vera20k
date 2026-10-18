@@ -411,6 +411,9 @@ fn assert_retail_wall_fire_profile(
     }
     let weapon = scene.runtime.resources.rules.weapon("105mm").unwrap();
     assert_eq!(weapon.damage, 65);
+    // GetROF adds a 0..=2 jitter; a further shot at the expired Cell would
+    // come within one such rearm of the last one.
+    let rearm = u64::try_from(weapon.rof).unwrap() + 3;
     assert_eq!(weapon.warhead.as_deref(), Some("AP"));
     let warhead = scene.runtime.resources.rules.warhead("AP").unwrap();
     assert!(warhead.wall && warhead.wood && !warhead.wall_absolute_destroyer);
@@ -450,7 +453,15 @@ fn assert_retail_wall_fire_profile(
             )
         })
         .collect();
-    for step in 1..=profile["ticks"].as_u64().unwrap() {
+    // Wall damage (Cell480CB0) and that jitter draw the Scenario RNG, so other
+    // Houses' play moves the removal by whole shots. Observe at least the
+    // profile's frames, and one full rearm past the removal.
+    let profile_ticks = profile["ticks"].as_u64().unwrap();
+    let mut step = 0;
+    while step < 4 * profile_ticks
+        && (step < profile_ticks || removed_at.is_none_or(|at| step < at + rearm))
+    {
+        step += 1;
         let before: Vec<_> = patch
             .iter()
             .map(|&(x, y)| *scene.sim().overlay_grid.as_ref().unwrap().cell(x, y))

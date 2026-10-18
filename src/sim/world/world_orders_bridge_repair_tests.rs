@@ -416,7 +416,7 @@ fn capture_building_command_accepts_collapsed_noncapturable_hut_for_every_relati
         let actor = sim.substrate.entities.get(engineer).unwrap();
         assert_eq!(
             actor.navigation.nav_com(),
-            Some(NavTargetRef::building(cabhut)),
+            Some(NavTargetRef::object(cabhut)),
             "relation={relation}"
         );
         assert!(
@@ -526,7 +526,7 @@ fn ordinary_friendly_repair_uses_capture_event_without_hut_exception() {
         let actor = sim.substrate.entities.get(engineer).unwrap();
         assert_eq!(
             actor.navigation.nav_com(),
-            Some(NavTargetRef::building(target)),
+            Some(NavTargetRef::object(target)),
             "target_owner={target_owner}"
         );
         assert_eq!(
@@ -617,10 +617,7 @@ fn queued_hut_capture_survives_repair_before_event_execution() {
             "relation={relation}"
         );
         let actor = sim.substrate.entities.get(engineer).unwrap();
-        assert_eq!(
-            actor.navigation.nav_com(),
-            Some(NavTargetRef::building(hut))
-        );
+        assert_eq!(actor.navigation.nav_com(), Some(NavTargetRef::object(hut)));
         assert_eq!(
             (
                 sim.scenario_rng.logical_state(),

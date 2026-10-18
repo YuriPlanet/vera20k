@@ -859,6 +859,50 @@ fn base_plan_recalc_deploy_skips_human_campaign_and_non_conyard_targets() {
     assert!(sim.substrate.entities.get(miner).is_none());
 }
 
+/// A human House keeps no base cell through its deploy: Building Unlimbo
+/// recalculates (`0x00440D07` -> `0x004FD150`, which stores the empty cell
+/// first) before the yard joins House+68 (`0x00441553..0x00441594`), and
+/// UnitClass::Deploy skips Set_Starting_Cell for a House a human controls
+/// (`0x0073985B..0x00739862`). The House's next Building Unlimbo counts the
+/// yard but not itself. The computer's Spy Plane, Paradrop and zone-tested
+/// teams read this cell (`0x00509CD0`, `0x0041FEE0`).
+#[test]
+fn a_human_deploy_empties_the_base_cell_until_the_next_building_counts_the_yard() {
+    let rules = make_recalc_mcv_rules("0,0,0");
+    let mut sim = deploy_sim(&rules);
+    add_house(&mut sim, "Americans", true);
+    sim.session.game_mode_nonzero = true;
+    let owner = sim.interner.get("Americans").unwrap();
+    // The launch's start cell; the MCV has since driven to (20,22).
+    sim.houses.get_mut(&owner).unwrap().set_base_center((6, 6));
+    let mcv = sim
+        .spawn_object("AMCV", "Americans", 20, 22, 128, &rules)
+        .expect("spawn MCV");
+
+    assert!(sim.deploy_mcv(
+        mcv,
+        &rules,
+        None,
+        crate::sim::world::FrameEffects::default()
+    ));
+    assert!(deployed_type(&sim, "GACNST").building_up());
+    assert_eq!(sim.houses[&owner].base_center, None);
+    assert_eq!(sim.houses[&owner].base_origin(), (0, 0));
+
+    // Far from the yard (4x3 at (19,21)): were it counted, the centre would
+    // move halfway towards it.
+    sim.spawn_object("GAPOWR", "Americans", 28, 8, 0, &rules)
+        .expect("spawn power plant");
+    let (x, y) = sim.houses[&owner]
+        .base_center
+        .expect("the yard gives a base cell");
+    assert!(
+        (18..=23).contains(&x) && (20..=24).contains(&y),
+        "base cell {:?} is not at the yard",
+        (x, y)
+    );
+}
+
 #[test]
 fn base_plan_recalc_deploy_countryless_nonempty_plan_only_reanchors_node_zero() {
     let rules = make_recalc_mcv_rules("");

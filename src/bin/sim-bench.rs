@@ -44,6 +44,11 @@
 //! match does; `--serial-paths` searches and `--serial-scans` scans in native
 //! order instead.
 //!
+//! Beside each frame's wall time, the CSV's `cpu_ms` column and the
+//! `main_thread_cpu_*` line give the main thread's CPU time (Unix only). On a
+//! machine other work keeps busy it moves far less than wall time, so it
+//! compares two builds there; it leaves out the worker pool's share.
+//!
 //! Build with `cargo build --release -p vera20k-core --bin sim-bench`; timings from a debug
 //! build are not meaningful.
 
@@ -436,6 +441,7 @@ fn main() -> Result<(), String> {
     }
 
     let mut times = Vec::with_capacity(ticks as usize);
+    let mut cpu_times = Vec::with_capacity(ticks as usize);
     let mut hashes = Vec::new();
     let mut hash_times = Vec::new();
     for tick in 0..ticks {
@@ -443,11 +449,17 @@ fn main() -> Result<(), String> {
             Plan::March(orders) => orders.get(tick as usize).cloned().unwrap_or_default(),
             Plan::Match(script) => script.orders(runtime, tick),
         };
+        let cpu_started = thread_cpu_time();
         let started = Instant::now();
         runtime
             .advance_frame_for_tooling(&batch, SIM_TICK_MS)
             .map_err(|error| format!("tick {tick}: {error}"))?;
         times.push(started.elapsed());
+        cpu_times.push(
+            cpu_started
+                .zip(thread_cpu_time())
+                .map(|(started, ended)| ended.saturating_sub(started)),
+        );
         if args.hash_every > 0 && (tick + 1) % args.hash_every == 0 {
             let started = Instant::now();
             let hash = runtime.simulation.state_hash();
@@ -471,12 +483,16 @@ fn main() -> Result<(), String> {
     let live_at_end = runtime.simulation.entities().len();
 
     if let Some(path) = &args.csv {
-        let mut text = String::from("tick,ms\n");
-        for (tick, time) in times.iter().enumerate() {
+        let mut text = String::from("tick,ms,cpu_ms\n");
+        for (tick, (time, cpu)) in times.iter().zip(&cpu_times).enumerate() {
             text.push_str(&format!(
-                "{},{:.3}\n",
+                "{},{:.3},{}\n",
                 tick + 1,
-                time.as_secs_f64() * 1000.0
+                time.as_secs_f64() * 1000.0,
+                cpu.map_or(String::new(), |cpu| format!(
+                    "{:.3}",
+                    cpu.as_secs_f64() * 1000.0
+                ))
             ));
         }
         std::fs::write(path, text).map_err(|error| format!("{}: {error}", path.display()))?;
@@ -494,6 +510,18 @@ fn main() -> Result<(), String> {
         percentile(&sorted, 0.95),
         percentile(&sorted, 1.0),
     );
+    let mut cpu_sorted: Vec<Duration> = cpu_times.iter().flatten().copied().collect();
+    if cpu_sorted.len() == times.len() && !cpu_sorted.is_empty() {
+        let cpu_total: Duration = cpu_sorted.iter().sum();
+        cpu_sorted.sort_unstable();
+        println!(
+            "main_thread_cpu_mean_ms={:.2} p50_ms={:.2} p95_ms={:.2} max_ms={:.2}",
+            cpu_total.as_secs_f64() * 1000.0 / cpu_sorted.len() as f64,
+            percentile(&cpu_sorted, 0.5),
+            percentile(&cpu_sorted, 0.95),
+            percentile(&cpu_sorted, 1.0),
+        );
+    }
     if !steady.is_empty() {
         let steady_total: Duration = steady.iter().sum();
         println!(
@@ -518,4 +546,19 @@ fn main() -> Result<(), String> {
     println!("live_objects start={live_at_start} end={live_at_end}");
     println!("final_hash={final_hash:016x}");
     Ok(())
+}
+
+/// The calling thread's CPU time, where the platform reports it.
+fn thread_cpu_time() -> Option<Duration> {
+    #[cfg(unix)]
+    {
+        let mut time = std::mem::MaybeUninit::<libc::timespec>::uninit();
+        // SAFETY: clock_gettime only writes the timespec it is given, and
+        // that timespec is read only when the call reports success.
+        if unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, time.as_mut_ptr()) } == 0 {
+            let time = unsafe { time.assume_init() };
+            return Some(Duration::new(time.tv_sec as u64, time.tv_nsec as u32));
+        }
+    }
+    None
 }

@@ -61,10 +61,10 @@ Color=Grey
 1=62062
 
 [Structures]
-0=VERA-OBSERVER,GTGCAN,256,48,48,64,None,0,0,1,0,0,None,None,None,0,0
-1=VERA-OBSERVER,GAPOWR,256,40,44,0,None,0,0,1,0,0,None,None,None,0,0
-2=VERA-OBSERVER,GAPOWR,256,43,41,0,None,0,0,1,0,0,None,None,None,0,0
-3=VERA-OBSERVER,NASAM,256,52,52,64,None,0,0,1,0,0,None,None,None,0,0
+0=Computer,GTGCAN,256,48,48,64,None,0,0,1,0,0,None,None,None,0,0
+1=Computer,GAPOWR,256,40,44,0,None,0,0,1,0,0,None,None,None,0,0
+2=Computer,GAPOWR,256,43,41,0,None,0,0,1,0,0,None,None,None,0,0
+3=Computer,NASAM,256,52,52,64,None,0,0,1,0,0,None,None,None,0,0
 
 [Units]
 

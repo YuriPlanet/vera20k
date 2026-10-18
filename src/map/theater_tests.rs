@@ -645,7 +645,7 @@ fn retail_lunar_water_family_uses_the_original_postpass() {
 
 #[test]
 fn selected_retail_temperate_rmg_roles_reach_tile_ids() {
-    use crate::map::rmg::tiles::{SpecialTerrain, TileIds};
+    use crate::map::rmg::tiles::TileIds;
     use crate::util::sha256::sha256_hex;
 
     let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
@@ -679,9 +679,9 @@ fn selected_retail_temperate_rmg_roles_reach_tile_ids() {
         "loader publishes every RMG role"
     );
     let mut loaded_ids = TileIds::resolve(&theater);
-    // SpecialTerrain comes from cliff_ranges, not these RMG keys. Its native
+    // Canonical cliff ranges come from the theater, not these RMG keys. The
     // predicates have separate tests; this is only the RMG projection boundary.
-    loaded_ids.special = SpecialTerrain::default();
+    loaded_ids.cliffs = TheaterCliffRanges::default();
     assert_eq!(loaded_ids, TileIds::from_keys(&expected));
 }
 

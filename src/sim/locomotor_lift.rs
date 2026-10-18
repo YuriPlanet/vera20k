@@ -251,7 +251,7 @@ impl Simulation {
     /// owner (`+0x2B0`); a lifted Foot owner (`+0x6AD`). An owner holding
     /// another object then lets it go (`0x004695FD`, [`Self::release_locomotor`])
     /// before the rest are tested: no target object, a Unit target still in
-    /// its war factory ([`Self::unit_in_its_factory`]), a target not in the
+    /// its war factory ([`Self::unit_in_contact_war_factory`]), a target not in the
     /// Ground layer (`vt+0x78`), not a Foot, Iron Curtained (`vt+0x160`), not
     /// a Unit, already lifted, or one whose type's `Size=` the shot does not
     /// exceed (`FCOMP` at `0x004696BD`, so equal refuses). Then
@@ -296,7 +296,7 @@ impl Simulation {
         {
             return;
         }
-        let in_factory = object.is_some_and(|id| self.unit_in_its_factory(id, rules));
+        let in_factory = object.is_some_and(|id| self.unit_in_contact_war_factory(id, rules));
         if firer.lift.target().is_some() {
             self.release_locomotor(owner, false, Some(rules), registry, effects);
         }
@@ -325,44 +325,6 @@ impl Simulation {
         if admitted {
             self.imbue_locomotor(owner, victim_id, kind, rules, registry, effects);
         }
-    }
-
-    /// `0x0046953E..0x004695E6`: a Unit whose radio contact 0
-    /// (`RadioClass::Contact @ 0x0065AD30`) is a `WeaponsFactory=` Building
-    /// that `Look_up_building_in_cell @ 0x0047C520` finds in the cell under
-    /// the Unit's Location: one still leaving its factory.
-    fn unit_in_its_factory(&self, id: u64, rules: &RuleSet) -> bool {
-        let Some(unit) = self
-            .substrate
-            .entities
-            .get(id)
-            .filter(|entity| entity.category() == EntityCategory::Unit)
-        else {
-            return false;
-        };
-        let Some(contact) = unit.radio_contacts.slot(0) else {
-            return false;
-        };
-        let factory = self
-            .substrate
-            .entities
-            .get(contact)
-            .filter(|building| building.category() == EntityCategory::Structure)
-            .and_then(|building| self.object_type(building.type_ref(), rules))
-            .is_some_and(|object| object.weapons_factory);
-        if !factory {
-            return false;
-        }
-        let location = crate::sim::movement::ground_pose::position_world_coord(&unit.position);
-        u16::try_from(location.x / 256)
-            .ok()
-            .zip(u16::try_from(location.y / 256).ok())
-            .and_then(|(rx, ry)| {
-                self.substrate
-                    .occupancy
-                    .first_building_on_layer(rx, ry, MovementLayer::Ground)
-            })
-            == Some(contact)
     }
 
     /// `TechnoClass::ImbueLocomotor @ 0x00710000`: `firer` installs a `kind`

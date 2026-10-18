@@ -68,8 +68,8 @@ use crate::map::entities::EntityCategory;
 use crate::rules::object_type::ObjectCategory;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::combat::ScanMission;
 use crate::sim::combat::fire_error::FireError;
+use crate::sim::combat::{ScanMission, quarry_mask};
 use crate::sim::components::NavTargetRef;
 use crate::sim::entity_store::EntityStore;
 use crate::sim::game_entity::GameEntity;
@@ -1361,8 +1361,9 @@ impl Simulation {
 
     /// The member with the highest `LeadershipRating=` (signed, the first in
     /// list order on a tie) among the live joined members, else the head
-    /// (`0x006EE621..0x006EE683`, `0x006EFA2B..0x006EFA81`).
-    pub(super) fn team_leader(&self, team_id: u64, rules: &RuleSet) -> Option<u64> {
+    /// (`0x006EE621..0x006EE683`, `0x006EFA2B..0x006EFA81`), also the
+    /// shared GetLeader6EC3D0 called by House50D170.
+    pub(crate) fn team_leader(&self, team_id: u64, rules: &RuleSet) -> Option<u64> {
         let team = self.team_script_vm.teams.get(&team_id)?;
         let mut leader = team.members.first()?.id;
         let mut best = -1i32;
@@ -2603,23 +2604,6 @@ pub(super) fn safe_distance_cell(from: [i32; 2], facing: u16, safe_distance: i32
         i32::from((point[0] / 256) as i16),
         i32::from((point[1] / 256) as i16),
     )
-}
-
-/// `Quarry_To_Threat @ 0x00645BB0` (table `0x00645BF8`): script action 0's
-/// quarry as a `Greatest_Threat` mask; 0 outside `2..=11`.
-pub(super) const fn quarry_mask(quarry: i32) -> u32 {
-    match quarry {
-        2 => 0x20,
-        3 => 0x40,
-        4 => 0x8,
-        5 => 0x10,
-        6 => 0x1000,
-        7 => 0x2000,
-        9 => 0x800,
-        10 => 0x8000,
-        11 => 0x10000,
-        _ => 0,
-    }
 }
 
 /// A member's shared live ammunition (`+0x2FC`). A component-only fixture

@@ -15,7 +15,7 @@
     "local": {
       "country": "France",
       "country_random": false,
-      "color_index": 0,
+      "color_index": 1,
       "color_random": false,
       "start_position": {
         "Position": 0
@@ -26,7 +26,7 @@
       {
         "country": "Yuri",
         "country_random": false,
-        "color_index": 1,
+        "color_index": 0,
         "color_random": false,
         "start_position": {
           "Position": 1
@@ -107,12 +107,12 @@
   "height": 600,
   "timeout_seconds": 180,
   "observe_owners": [
-    "VERA-OBSERVER"
+    "Computer1"
   ],
   "commands": [
     {
       "issue_after_step": 25,
-      "owner": "VERA-OBSERVER",
+      "owner": "Computer1",
       "payload": {
         "ForceAttackCell": {
           "attacker_id": 1,
@@ -131,5 +131,9 @@
       48,
       48
     ]
+  ],
+  "cursor_position": [
+    720,
+    556
   ]
 }

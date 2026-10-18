@@ -1,7 +1,7 @@
 [Basic]
-Name=Sidebar Order Observation
+Name=Depth Continuation - Disk Laser
 NewINIFormat=4
-Player=VERA-OBSERVER
+Player=Americans
 HomeCell=49043
 AltHomeCell=49043
 MultiplayerOnly=no
@@ -33,18 +33,19 @@ Ground=0.0
 Level=0.032
 
 [Houses]
-0=VERA-OBSERVER
+0=Americans
 1=Neutral
+2=Computer1
 
-[VERA-OBSERVER]
+[Americans]
 Country=Americans
 PlayerControl=yes
 IQ=0
 TechLevel=10
 Credits=50000
 Edge=North
-Allies=VERA-OBSERVER,Neutral
-Color=Gold
+Allies=Americans,Neutral
+Color=DarkBlue
 
 [Neutral]
 Country=Neutral
@@ -53,30 +54,33 @@ IQ=0
 TechLevel=0
 Credits=0
 Edge=North
-Allies=VERA-OBSERVER,Neutral
+Allies=Americans,Neutral
 Color=Grey
+[Computer1]
+Country=YuriCountry
+PlayerControl=no
+IQ=0
+TechLevel=0
+Credits=0
+Edge=South
+Allies=Computer1
+Color=DarkRed
+
 
 [Waypoints]
 0=33059
 1=62062
 
 [Structures]
-0=VERA-OBSERVER,GACNST,256,40,42,0,None,0,0,1,0,0,None,None,None,0,0
-1=VERA-OBSERVER,GAPOWR,256,34,38,0,None,0,0,1,0,0,None,None,None,0,0
-2=VERA-OBSERVER,GAPOWR,256,34,44,0,None,0,0,1,0,0,None,None,None,0,0
-3=VERA-OBSERVER,GAPOWR,256,34,50,0,None,0,0,1,0,0,None,None,None,0,0
-4=VERA-OBSERVER,GAPOWR,256,34,56,0,None,0,0,1,0,0,None,None,None,0,0
-5=VERA-OBSERVER,GAPILE,256,40,48,0,None,0,0,1,0,0,None,None,None,0,0
-6=VERA-OBSERVER,GAREFN,256,46,48,0,None,0,0,1,0,0,None,None,None,0,0
-7=VERA-OBSERVER,GAWEAP,256,46,40,0,None,0,0,1,0,0,None,None,None,0,0
-8=VERA-OBSERVER,AMRADR,256,52,40,0,None,0,0,1,0,0,None,None,None,0,0
-9=VERA-OBSERVER,GATECH,256,52,48,0,None,0,0,1,0,0,None,None,None,0,0
-10=VERA-OBSERVER,GACSPH,256,40,56,0,None,0,0,1,0,0,None,None,None,0,0
-11=VERA-OBSERVER,GAWEAT,256,48,56,0,None,0,0,1,0,0,None,None,None,0,0
+0=Computer,GAPOWR,256,60,60,0,None,0,0,1,0,0,None,None,None,0,0
 
 [Units]
+0=Computer,MTNK,256,50,48,192,Guard,None,0,-1,0,-1,1,1
+1=<human player>,TELE,256,44,48,64,Guard,None,0,-1,0,-1,1,1
 
 [Infantry]
+
+
 
 [OverlayPack]
 1=BQAAIP4AIP+ABQAAIP4AIP+ABQAAIP4AIP+ABQAAIP4AIP+ABQAAIP4AIP+ABQAAIP4AIP

@@ -164,7 +164,7 @@ fn ordinary_temporal_warp_suppresses_gap_query_and_release_restores_it() {
         .unwrap();
     assert!(sim.apply_command(
         "Americans",
-        &Command::ForceAttack {
+        &Command::Attack {
             attacker_id: legionnaire,
             target_id: gap
         },
