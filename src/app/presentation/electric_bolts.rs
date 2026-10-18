@@ -1,10 +1,12 @@
 //! EBolt4C2830 reverse tactical traversal and4C29E0 scene cleanup. These
-//! copied effects have no Abstract ID, save record or ordinary source link.
-//! Unlike lasers they age on each tactical composite, even without Logic.
+//! copied effects have no Abstract ID or save record. Only a Unit's FireAt
+//! bolt links to its source ([`ElectricBolts::follow_owners`]). Unlike lasers
+//! they age on each tactical composite, even without Logic.
 
 use crate::render::electric_bolt::{ElectricBoltDraw, ElectricBoltPalette};
 use crate::render::surface_line::{SurfaceLine, SurfaceLineViewport};
-use crate::sim::combat::electric_bolt::ElectricBoltBirth;
+use crate::sim::combat::electric_bolt::{ElectricBoltBirth, ElectricBoltOwner};
+use crate::sim::projectile::ProjectileCoord;
 use crate::sim::rng::MainRngDraws;
 
 struct Bolt {
@@ -31,12 +33,46 @@ pub(crate) struct ElectricBolts {
 }
 
 impl ElectricBolts {
-    pub(crate) fn create(&mut self, birth: ElectricBoltBirth) {
+    pub(crate) fn create(&mut self, mut birth: ElectricBoltBirth) {
+        // SpawnElectricBoltEffect (`0x006FD5F2..0x006FD606`) links a bolt
+        // only into an empty Unit `+0x6DC`; the slot holds the Unit's live
+        // owned bolt until that bolt's last pass (`0x004C29A9`).
+        if let Some(owner) = birth.owner
+            && self
+                .live
+                .iter()
+                .any(|bolt| bolt.birth.owner.is_some_and(|held| held.unit == owner.unit))
+        {
+            birth.owner = None;
+        }
         self.live.push(Bolt {
             phase: birth.phase,
             birth,
             decay: 0x10000,
         });
+    }
+
+    /// Manager4C2830's owner arm, ahead of each bolt's draw: an owned bolt's
+    /// source becomes its owner's current FLH, unless that answers the static
+    /// zero coordinate (`0x008A0E50`). `resolve` answers `None` once the Unit
+    /// is gone; its destructor's ClearOwner (`0x00735789`) leaves the bolt at
+    /// its last source.
+    pub(crate) fn follow_owners(
+        &mut self,
+        mut resolve: impl FnMut(ElectricBoltOwner) -> Option<ProjectileCoord>,
+    ) {
+        for bolt in self.live.iter_mut().rev() {
+            let Some(owner) = bolt.birth.owner else {
+                continue;
+            };
+            match resolve(owner) {
+                Some(source) if source != ProjectileCoord::new(0, 0, 0) => {
+                    bolt.birth.from = source;
+                }
+                Some(_) => {}
+                None => bolt.birth.owner = None,
+            }
+        }
     }
 
     pub(crate) fn is_empty(&self) -> bool {

@@ -306,8 +306,8 @@ mod tests {
         ] {
             assert!(display.submit(id, Some(layer), &|_| 0));
         }
-        let bytes = bincode::serialize(&display).unwrap();
-        let mut restored: DisplayLayers = bincode::deserialize(&bytes).unwrap();
+        let bytes = crate::util::save_codec::serialize(&display).unwrap();
+        let mut restored: DisplayLayers = crate::util::save_codec::deserialize(&bytes).unwrap();
         assert_eq!(
             restored.ordered_ids().copied().collect::<Vec<_>>(),
             [3, 1, 4, 2]

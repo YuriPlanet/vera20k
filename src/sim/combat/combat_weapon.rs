@@ -390,7 +390,7 @@ pub(crate) fn secondary_for_tier(obj: &ObjectType, veterancy: u16) -> Option<&st
 /// type is armed only through its *current gunner* slot — which is why this is
 /// still a distinct predicate from reading `obj.primary()`, even now that
 /// `obj.primary()` is the native `Primary` field for every type (see
-/// `ObjectType::read_weapon_arrays`). The elite tier is applied by `GetWeapon`,
+/// `native_processing::WeaponSlots`). The elite tier is applied by `GetWeapon`,
 /// so the read goes through `weapon_for_index`.
 ///
 /// Verified call sites of this predicate, all reached in ordinary play:

@@ -10,6 +10,7 @@ use crate::sim::team_script_vm::{
     TeamScriptAction, TeamScriptDefinition, TeamScriptVm, TeamTaskForceDefinition,
     TeamTaskForceEntry, TeamTypeDefinition, member_type_identity,
 };
+use crate::util::save_codec;
 
 #[test]
 fn wall_sale_detach_clears_only_matching_team_target_fields() {
@@ -639,7 +640,7 @@ fn script17_replacement_and_next_visit_match_original_controls() {
         }
         assert_eq!(sim.scenario_rng.native_state_hex(), rng_before);
         let restored: TeamScriptVm =
-            bincode::deserialize(&bincode::serialize(&sim.team_script_vm).unwrap()).unwrap();
+            save_codec::deserialize(&save_codec::serialize(&sim.team_script_vm).unwrap()).unwrap();
         assert_eq!(restored.team(team), sim.team_script_vm.team(team));
     }
     assert!(action_is_ported(17));

@@ -18,10 +18,8 @@ const EXIT_FAILED: i32 = 1;
 const EXIT_USAGE: i32 = 2;
 
 fn main() {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn"))
-        // Logs go to stderr; stdout is reserved for the JSON payload.
-        .target(env_logger::Target::Stderr)
-        .init();
+    // Logs go to stderr; stdout is reserved for the JSON payload.
+    let _ = vera20k::util::logging::init_stderr_logger("warn");
 
     let cli = match args::parse(std::env::args().skip(1)) {
         Ok(cli) => cli,

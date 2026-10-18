@@ -329,6 +329,19 @@ pub(crate) fn render_game(
         viewport,
         times.radar_ms,
     );
+    // EBolt4C2830 moves each owned bolt to its Unit's FLH before drawing it;
+    // the owner reads take no Main draw, so they run ahead of the borrow.
+    if let Some(runtime) = state.match_state.sim_runtime.as_ref() {
+        let sim = runtime.view().simulation();
+        let rules = &runtime.resources.rules;
+        state
+            .match_state
+            .match_presentation
+            .electric_bolts
+            .follow_owners(|owner| {
+                crate::sim::combat::electric_bolt::owner_source(sim, rules, owner)
+            });
+    }
     let presentation = &mut state.match_state.match_presentation;
     // Tactical6D4669 LaserDraw550240 precedes6D466E EBolt, then6D4673
     // trails, even when this composite ran no Logic. Their shared process

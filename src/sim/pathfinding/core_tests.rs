@@ -874,6 +874,11 @@ fn infantry_under_span_astar_keeps_ground_hierarchy_gate() {
                     level0_zones: &zones,
                     marked_level0: &marked,
                     blocker_neighbor_counts: &counts,
+                    level0_route: &[],
+                    progress: &Cell::new(RouteProgress {
+                        index: 0,
+                        cell: (0, 0),
+                    }),
                 }),
                 ..AStarOptions::new(&WalkableEntry::new(&grid))
             },
@@ -1204,6 +1209,11 @@ fn astar_hierarchy_rejects_unmarked_one_ring_zone_without_blocker_exception() {
                 level0_zones: &level0_zones,
                 marked_level0: &marked_zones,
                 blocker_neighbor_counts: &blocker_counts,
+                level0_route: &[],
+                progress: &Cell::new(RouteProgress {
+                    index: 0,
+                    cell: (0, 0),
+                }),
             }),
             ..AStarOptions::new(&WalkableEntry::new(&grid))
         },
@@ -1233,6 +1243,11 @@ fn astar_hierarchy_allows_off_marker_cell_with_blocker_neighbor_count() {
                 level0_zones: &level0_zones,
                 marked_level0: &marked_zones,
                 blocker_neighbor_counts: &blocker_counts,
+                level0_route: &[],
+                progress: &Cell::new(RouteProgress {
+                    index: 0,
+                    cell: (0, 0),
+                }),
             }),
             ..AStarOptions::new(&WalkableEntry::new(&grid))
         },
@@ -1263,6 +1278,11 @@ fn astar_hierarchy_marker_follows_the_marked_straight_path() {
             level0_zones: &level0_zones,
             marked_level0: &marked_zones,
             blocker_neighbor_counts: &blocker_counts,
+            level0_route: &[],
+            progress: &Cell::new(RouteProgress {
+                index: 0,
+                cell: (0, 0),
+            }),
         }),
         None,
         None,

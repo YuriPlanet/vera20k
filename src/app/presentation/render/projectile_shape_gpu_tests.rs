@@ -21,6 +21,7 @@ use crate::sim::projectile::{
     ProjectileVisualState, TargetExpiryPolicy,
 };
 use crate::sim::world::{Simulation, display_layers::DisplayLayers};
+use crate::util::save_codec;
 use serde_json::Value;
 use std::collections::HashSet;
 
@@ -287,8 +288,8 @@ fn compare_shape_corpus(
             // list or new projectile constructor. Full savegame restoration is
             // tested by its owning runtime; this pins presentation consumers.
             let (restored_store, restored_display): (ProjectileStore, DisplayLayers) =
-                bincode::deserialize(
-                    &bincode::serialize(&(&sim.projectiles, sim.display_layers())).unwrap(),
+                save_codec::deserialize(
+                    &save_codec::serialize(&(&sim.projectiles, sim.display_layers())).unwrap(),
                 )
                 .unwrap();
             let restored_order = NativeDisplayOrder::from_display(&restored_display);

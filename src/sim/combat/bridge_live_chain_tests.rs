@@ -11,6 +11,7 @@ use crate::sim::projectile::{ProjectileCoord, ProjectileTarget};
 use crate::sim::runtime::SimRuntime;
 use crate::sim::snapshot::GameSnapshot;
 use crate::sim::world::TickLane;
+use crate::util::save_codec;
 use std::collections::BTreeMap;
 
 /// A flat bank at deck height, with two deck cells between it and the target.
@@ -81,8 +82,8 @@ fn restore_saved_scenario(
             .expect("saved retail scenario validates")
             .sim;
     assert_eq!(
-        bincode::serialize(&restored.projectiles).unwrap(),
-        bincode::serialize(&live.projectiles).unwrap(),
+        save_codec::serialize(&restored.projectiles).unwrap(),
+        save_codec::serialize(&live.projectiles).unwrap(),
         "serialized Bullet fields survive before native load fixups"
     );
 
@@ -219,7 +220,7 @@ fn assert_live_projectile_restore_continuation(
         scenario.sim().display_layers().layer_of(projectile_id),
         Some(DisplayLayer::AIR)
     );
-    let saved_display = bincode::serialize(scenario.sim().display_layers()).unwrap();
+    let saved_display = save_codec::serialize(scenario.sim().display_layers()).unwrap();
     let live_hash = scenario.sim().state_hash();
     let rules_hash = scenario.runtime.resources.rules.simulation_config_hash();
     let bytes = GameSnapshot::save_validated(
@@ -257,7 +258,7 @@ fn assert_live_projectile_restore_continuation(
         retained.arm_timer = saved_shell.arm_timer;
         assert_eq!(retained, saved_shell);
         assert_eq!(
-            bincode::serialize(restored.display_layers()).unwrap(),
+            save_codec::serialize(restored.display_layers()).unwrap(),
             saved_display,
             "all five retained Display vectors preserve membership and order"
         );

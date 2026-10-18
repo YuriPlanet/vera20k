@@ -60,6 +60,7 @@ fn native_tactical_visits_own_lifetime_reverse_order_and_clear() {
                 z_adjust: int(&birth["z_adjust"]),
                 phase: int(&birth["phase"]),
                 alternate_color: birth["alternate"].as_bool().unwrap(),
+                owner: None,
             });
             // These explicit native manager fixtures include retained zero
             // and last-decay values, independent of the normal constructor.
@@ -195,6 +196,7 @@ fn accepted_bolt_composites_preserve_the_next_actual_bullet_identity() {
             z_adjust: int(&birth["z_adjust"]),
             phase: int(&birth["phase"]),
             alternate_color: birth["alternate"].as_bool().unwrap(),
+            owner: None,
         });
         for visit in row["visits"]
             .as_array()
@@ -250,4 +252,52 @@ fn accepted_bolt_composites_preserve_the_next_actual_bullet_identity() {
         assert_eq!((outcome.1, outcome.2), (outcomes[0].1, outcomes[0].2));
     }
     assert_ne!(outcomes[1].0, outcomes[2].0);
+}
+
+/// A Unit's `+0x6DC` holds one owned bolt: a second bolt while the first
+/// lives gets no owner (`0x006FD5F2`), and once the first has faded the next
+/// one links again. Each pass moves an owned bolt to its owner's FLH, keeps
+/// it on the static zero answer, and detaches it at its last source when the
+/// Unit is gone (`0x004C2830`, `0x00735789`).
+#[test]
+fn a_unit_owns_one_bolt_whose_source_follows_it() {
+    use crate::sim::combat::electric_bolt::ElectricBoltOwner;
+    let owner = ElectricBoltOwner {
+        unit: 7,
+        weapon_index: 0,
+    };
+    let birth = |x| ElectricBoltBirth {
+        frame: 0,
+        from: ProjectileCoord::new(x, 0, 0),
+        to: ProjectileCoord::new(0, 0, 0),
+        z_adjust: 0,
+        phase: 0,
+        alternate_color: false,
+        owner: Some(owner),
+    };
+    let mut bolts = ElectricBolts::default();
+    bolts.create(birth(10));
+    bolts.create(birth(20));
+    let owners: Vec<_> = bolts.live.iter().map(|bolt| bolt.birth.owner).collect();
+    assert_eq!(owners, [Some(owner), None]);
+
+    bolts.follow_owners(|_| Some(ProjectileCoord::new(99, 1, 2)));
+    let sources: Vec<_> = bolts.live.iter().map(|bolt| bolt.birth.from.x).collect();
+    assert_eq!(sources, [99, 20], "only the owned bolt follows");
+    bolts.follow_owners(|_| Some(ProjectileCoord::new(0, 0, 0)));
+    assert_eq!(bolts.live[0].birth.from, ProjectileCoord::new(99, 1, 2));
+    bolts.follow_owners(|_| None);
+    assert_eq!(bolts.live[0].birth.owner, None, "the gone Unit detaches");
+    assert_eq!(bolts.live[0].birth.from, ProjectileCoord::new(99, 1, 2));
+
+    let mut bolts = ElectricBolts::default();
+    bolts.create(birth(10));
+    bolts.live[0].decay = 0;
+    bolts.live.retain(|bolt| bolt.decay != 0);
+    bolts.create(birth(30));
+    assert_eq!(
+        bolts.live[0].birth.owner,
+        Some(owner),
+        "the slot is free again"
+    );
 }

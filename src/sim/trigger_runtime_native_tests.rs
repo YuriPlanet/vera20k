@@ -3,6 +3,7 @@
 
 use super::*;
 use crate::sim::world::{DeferredDeleteQueue, DeferredDeleteTicket};
+use crate::util::save_codec;
 use serde_json::{Value, json};
 use std::collections::HashMap;
 
@@ -2748,7 +2749,7 @@ fn native_trigger_reveal_action_matches_original_controls() {
             "{name}: knowledge survives sight cleanup"
         );
         let restored: FogState =
-            bincode::deserialize(&bincode::serialize(&sim.fog).unwrap()).unwrap();
+            save_codec::deserialize(&save_codec::serialize(&sim.fog).unwrap()).unwrap();
         assert_eq!(
             revealed(&restored),
             expected,
@@ -3118,8 +3119,8 @@ fn physical_team_tag_references_match_original_retention_and_long_id_controls() 
                 );
                 assert_eq!(sim.trigger_runtime.tag(tag).unwrap().refs, 0);
             }
-            let bytes = bincode::serialize(&sim.trigger_runtime).unwrap();
-            sim.trigger_runtime = bincode::deserialize(&bytes).unwrap();
+            let bytes = save_codec::serialize(&sim.trigger_runtime).unwrap();
+            sim.trigger_runtime = save_codec::deserialize(&bytes).unwrap();
             sim.attach_team_trigger_tag(8, typ);
             assert_eq!(sim.trigger_runtime.definitions, before);
             if let Some(retained) = retained {
@@ -3269,10 +3270,11 @@ fn team_member_tag_admission_and_removal_match_original_controls() {
         assert_eq!(i32::from(added), integer(&control["added_al"]), "{input}");
         let after_add = state(&sim);
         sim.trigger_runtime =
-            bincode::deserialize(&bincode::serialize(&sim.trigger_runtime).unwrap()).unwrap();
-        sim.team_script_vm =
-            bincode::deserialize::<TeamScriptVm>(&bincode::serialize(&sim.team_script_vm).unwrap())
-                .unwrap();
+            save_codec::deserialize(&save_codec::serialize(&sim.trigger_runtime).unwrap()).unwrap();
+        sim.team_script_vm = save_codec::deserialize::<TeamScriptVm>(
+            &save_codec::serialize(&sim.team_script_vm).unwrap(),
+        )
+        .unwrap();
         assert_eq!(
             state(&sim),
             after_add,
@@ -4276,9 +4278,10 @@ pub(super) fn replay_native_histories(rows: impl Iterator<Item = Value>) -> usiz
                 "{name}/{step}: {operation}"
             );
             let bytes =
-                bincode::serialize(&(&sim.trigger_runtime, &sim.substrate.pending_delete)).unwrap();
+                save_codec::serialize(&(&sim.trigger_runtime, &sim.substrate.pending_delete))
+                    .unwrap();
             let (mut restored, restored_queue): (TriggerRuntime, DeferredDeleteQueue) =
-                bincode::deserialize(&bytes).unwrap();
+                save_codec::deserialize(&bytes).unwrap();
             assert_eq!(restored, sim.trigger_runtime, "{name}/{step} saved owner");
             assert_eq!(
                 restored_queue, sim.substrate.pending_delete,

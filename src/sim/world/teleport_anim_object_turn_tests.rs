@@ -12,6 +12,7 @@ use crate::sim::movement::locomotor::LocomotorState;
 use crate::sim::movement::teleport_movement::{TeleportPhase, TeleportState};
 use crate::sim::world::FrameEffects;
 use crate::sim::world::common_raw_test_terrain_cell;
+use crate::util::save_codec;
 
 fn rules(bind_warp_art: bool) -> RuleSet {
     let mut rules = RuleSet::from_ini(&IniFile::from_str(
@@ -739,8 +740,8 @@ fn restoration_callbacks_forward_overlay_inputs_before_any_destination_write() {
     overlays.place_overlay(12, 7, overlay, 0);
     sim.overlay_grid = Some(overlays);
     let before = (
-        bincode::serialize(sim.substrate.entities.get(1).unwrap()).unwrap(),
-        bincode::serialize(&sim.substrate.raw_cell_occupation).unwrap(),
+        save_codec::serialize(sim.substrate.entities.get(1).unwrap()).unwrap(),
+        save_codec::serialize(&sim.substrate.raw_cell_occupation).unwrap(),
         sim.rng_state(),
     );
 
@@ -757,8 +758,8 @@ fn restoration_callbacks_forward_overlay_inputs_before_any_destination_write() {
         ));
         assert_eq!(
             (
-                bincode::serialize(sim.substrate.entities.get(1).unwrap()).unwrap(),
-                bincode::serialize(&sim.substrate.raw_cell_occupation).unwrap(),
+                save_codec::serialize(sim.substrate.entities.get(1).unwrap()).unwrap(),
+                save_codec::serialize(&sim.substrate.raw_cell_occupation).unwrap(),
                 sim.rng_state(),
             ),
             before,

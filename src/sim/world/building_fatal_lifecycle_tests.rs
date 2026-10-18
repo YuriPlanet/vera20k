@@ -19,6 +19,7 @@ use crate::sim::movement::ground_pose;
 use crate::sim::native_identity::NativeUniqueIdCursor;
 use crate::sim::power_system::{self, PowerState};
 use crate::sim::rng::SimRng;
+use crate::util::save_codec;
 use serde_json::{Value, json};
 
 fn int(value: &Value) -> i32 {
@@ -1374,8 +1375,8 @@ impl Fixture {
         // lifetime authority and its hash contribution without overriding that
         // existing load behavior or claiming unchanged whole-world execution.
         assert_eq!(
-            bincode::serialize(restored.smudge_grid.as_ref().unwrap()).unwrap(),
-            bincode::serialize(grid).unwrap()
+            save_codec::serialize(restored.smudge_grid.as_ref().unwrap()).unwrap(),
+            save_codec::serialize(grid).unwrap()
         );
         assert_eq!(
             restored.substrate.pending_delete,

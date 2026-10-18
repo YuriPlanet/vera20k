@@ -1,10 +1,11 @@
 //! Original selector, charge arithmetic and FireAt rearm-copy comparisons.
 //! Passenger/cargo caller integration belongs to the passenger-owner tests.
 use super::*;
-use crate::rules::ini_parser::IniSection;
-use crate::rules::object_type::ObjectCategory;
+use crate::rules::ini_parser::{IniFile, IniSection};
+use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::world_fire::fireat_rearm_frames;
 use crate::sim::timer::CdTimer;
+use crate::util::save_codec;
 use serde_json::Value;
 
 fn corpus() -> &'static Value {
@@ -32,12 +33,13 @@ fn object(native: &Value, charge: bool, count: i32, gunner: bool, gattling: bool
     section.set("TurretCount", &count.to_string());
     section.set("Gunner", if gunner { "yes" } else { "no" });
     section.set("IsGattling", if gattling { "yes" } else { "no" });
-    let mut object = ObjectType::from_ini_section("FV", &section, ObjectCategory::Vehicle);
-    // The ordered Process owner's one admitted-pass read of the FV table.
-    object
-        .gunner_turrets
-        .apply_pass("FV", &section, ObjectCategory::Vehicle);
-    object
+    let mut registry = IniSection::new("VehicleTypes".into());
+    registry.set("0", "FV");
+    // The ordered Process owner reads TurretCount and the FV table in its one
+    // admitted pass; RuleSet publishes both.
+    let rules =
+        RuleSet::from_ini(&IniFile::from_sections_for_test([registry, section])).expect("FV rules");
+    rules.object("FV").expect("FV type").clone()
 }
 
 fn assert_selection(entity: &GameEntity, expected: &Value, context: &str) {
@@ -141,8 +143,8 @@ fn charge_turret_ai_and_restored_owner_match_original_arithmetic() {
         ));
         let before_timer = entity.rearm_timer.timer();
         let before_delay = entity.turret_selection.charge_turret_delay;
-        let encoded = bincode::serialize(&entity).unwrap();
-        let mut restored: GameEntity = bincode::deserialize(&encoded).unwrap();
+        let encoded = save_codec::serialize(&entity).unwrap();
+        let mut restored: GameEntity = save_codec::deserialize(&encoded).unwrap();
         for entity in [&mut entity, &mut restored] {
             entity.update_charge_turret(int(input, "frame"), &object);
             assert_selection(entity, &row["after"], context);

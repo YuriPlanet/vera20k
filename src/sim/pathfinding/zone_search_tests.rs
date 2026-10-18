@@ -145,6 +145,7 @@ fn wrapper_rejection_precedes_the_marker_transaction() {
                 urgency: 2,
             },
             Some(&counts),
+            None,
         );
         assert_eq!(
             result.unwrap_err(),
@@ -257,10 +258,55 @@ fn caller_count_bridge_detour(
             .iter()
             .all(|step| step.ry == 0 && step.layer == MovementLayer::Ground)
     );
-    assert!(
-        route(Some(&BlockerNeighborCounts::new(6, 4))).is_none(),
+    // Zero counts keep the corridor search off the unmarked approach: the
+    // precheck marks only zone 1, so the search fails rather than take the
+    // shortcut or the detour.
+    let zero_counts = BlockerNeighborCounts::new(6, 4);
+    let hierarchy = zones.hierarchy_for(mz).expect("the fixture hierarchy");
+    let level0 = hierarchy.level(0).expect("its level 0");
+    let ZonePrecheckOutcome::Passed(precheck) = zone_precheck_flat(
+        hierarchy,
+        level0.zone_at(start.0, start.1),
+        level0.zone_at(goal.0, goal.1),
+        mz,
+        &ZonePrecheckExclusions::default(),
+        None,
+    )
+    .expect("the precheck reads the fixture hierarchy") else {
+        panic!("both endpoints are zone 1");
+    };
+    let corridor = find_layered_path_marker(
+        &path,
+        start,
+        MovementLayer::Ground,
+        goal,
+        Some(HierarchyGate {
+            level0_zones: level0,
+            marked_level0: &precheck.marked[0],
+            blocker_neighbor_counts: &zero_counts,
+            level0_route: &precheck.paths[0],
+            progress: &Cell::new(RouteProgress {
+                index: 0,
+                cell: start,
+            }),
+        }),
+        Some(&terrain),
+        None,
+        MoverSearchFacts {
+            urgency: 0,
+            foot_entry: &super::super::WalkableEntry::new(&path),
+        },
+    );
+    assert_eq!(
+        corridor,
+        Err(PathSearchFailure::CellSearchExhausted),
         "zero counts cannot enter the unmarked ground approach"
     );
+    // The whole search retries. This fixture's levels 1 and 2 map no cells,
+    // so every cell reads zone 0 there: the retry's flood finds that zone
+    // split on a one-zone route, which clears the hierarchy (`0x0042CF9A`),
+    // and the plain search takes the shortcut.
+    assert_eq!(route(Some(&zero_counts)), Some(ordinary));
     let mut live_counts = BlockerNeighborCounts::new(6, 4);
     live_counts.add_single_cell_neighbor_source(0, 2);
     let marked = route(Some(&live_counts)).expect("neighbor escape admits marked bridge detour");

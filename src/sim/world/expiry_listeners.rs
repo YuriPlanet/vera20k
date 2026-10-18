@@ -703,8 +703,10 @@ mod tests {
         stores.projectiles.remove(30);
         assert!(reach(&mut index, &mut stores, 9).is_empty());
         stores.projectiles.await_anim(31, Some(10));
-        let restored: ProjectileStore =
-            bincode::deserialize(&bincode::serialize(&stores.projectiles).unwrap()).unwrap();
+        let restored: ProjectileStore = crate::util::save_codec::deserialize(
+            &crate::util::save_codec::serialize(&stores.projectiles).unwrap(),
+        )
+        .unwrap();
         stores.projectiles.await_anim(31, None);
         assert!(reach(&mut index, &mut stores, 10).is_empty());
         stores.projectiles = restored;

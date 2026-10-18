@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::assets::asset_manager::MediaArchiveMode;
+use crate::util::save_codec;
 
 struct StoredFrameTestDirectory(std::path::PathBuf);
 
@@ -1245,8 +1246,8 @@ fn deployed_anim_palette_and_atlas_coverage_share_the_frozen_house() {
         "covered live animations do not request another upload"
     );
 
-    let bytes = bincode::serialize(&sim).expect("save frozen animation remaps");
-    let restored: Simulation = bincode::deserialize(&bytes).expect("restore animation remaps");
+    let bytes = save_codec::serialize(&sim).expect("save frozen animation remaps");
+    let restored: Simulation = save_codec::deserialize(&bytes).expect("restore animation remaps");
     assert_eq!(collect_anim_remap_base_keys(&restored, &colors), remaps);
     assert_eq!(
         restored.anim(deployed).unwrap().remap(),

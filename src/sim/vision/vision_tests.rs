@@ -6,6 +6,7 @@ use crate::sim::combat::Health;
 use crate::sim::entity_store::EntityStore;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::intern;
+use crate::util::save_codec;
 
 /// Persistent production Simulation for source/frame regression fixtures.
 /// Only fixture input construction lives here; all admission, Cell writes,
@@ -1879,8 +1880,8 @@ fn fog_view_generation_restarts_after_load_and_bumps_per_view() {
     fog.bump_view_generation();
     assert_eq!(fog.view_generation(), 1);
 
-    let bytes = bincode::serialize(&fog).expect("fog serializes");
-    let mut restored: FogState = bincode::deserialize(&bytes).expect("fog deserializes");
+    let bytes = save_codec::serialize(&fog).expect("fog serializes");
+    let mut restored: FogState = save_codec::deserialize(&bytes).expect("fog deserializes");
     assert_eq!(
         restored.view_generation(),
         0,
@@ -2080,8 +2081,8 @@ fn shroud_current_sight_allied_gap_and_pending_survive_serialization() {
     apply_gap_generators(&mut fog, &alliances, &[(gapper, 10, 10, 3)], &interner);
     assert!(fog.is_cell_visible(owner, 10, 10));
     assert!(!fog.is_cell_gap_covered(owner, 10, 10));
-    let encoded = bincode::serialize(&fog).unwrap();
-    let mut restored: FogState = bincode::deserialize(&encoded).unwrap();
+    let encoded = save_codec::serialize(&fog).unwrap();
+    let mut restored: FogState = save_codec::deserialize(&encoded).unwrap();
     apply_gap_generators(&mut restored, &alliances, &[(gapper, 10, 10, 3)], &interner);
     assert!(restored.is_cell_revealed(owner, 10, 10));
     store.remove(1);
@@ -2098,8 +2099,8 @@ fn shroud_current_sight_allied_gap_and_pending_survive_serialization() {
         None,
     );
     apply_gap_generators(&mut restored, &alliances, &[(gapper, 10, 10, 3)], &interner);
-    let encoded = bincode::serialize(&restored).unwrap();
-    let mut restored: FogState = bincode::deserialize(&encoded).unwrap();
+    let encoded = save_codec::serialize(&restored).unwrap();
+    let mut restored: FogState = save_codec::deserialize(&encoded).unwrap();
     apply_gap_generators(&mut restored, &alliances, &[], &interner); // Removal does not cancel native pending20.
     restored.flush_pending_gap_conceal(119);
     assert!(restored.is_cell_revealed(owner, 10, 10));
@@ -2284,7 +2285,7 @@ fn shroud_current_sight_unchanged_refresh_does_not_invent_a_return_event() {
         !fog.is_cell_gap_covered(owner, 10, 10),
         "writer publishes immediately, before House reconciliation"
     );
-    let mut fog: FogState = bincode::deserialize(&bincode::serialize(&fog).unwrap()).unwrap();
+    let mut fog: FogState = save_codec::deserialize(&save_codec::serialize(&fog).unwrap()).unwrap();
     for _ in 0..3 {
         refresh(&mut sight_world, &mut fog, &store);
         apply_gap_generators(&mut fog, &HouseAllianceMap::new(), &both, &interner);

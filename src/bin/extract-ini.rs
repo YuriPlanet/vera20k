@@ -9,7 +9,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 fn main() {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("warn")).init();
+    let _ = vera20k::util::logging::init_stderr_logger("warn");
 
     let explicit = std::env::args_os().nth(1).map(PathBuf::from);
     let (ra2_dir, _) = vera20k::asset_tools::root::resolve_ra2_dir(explicit.as_deref())

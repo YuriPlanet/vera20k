@@ -484,16 +484,24 @@ impl Simulation {
     }
 
     /// `+0x432` reselect memo, consumed only by successful releases
-    /// (`0x0062A71C`, `0x0062A37F`) for the local player's house.
-    fn parasite_reselect(&mut self, owner: u64) {
-        let current = self.session.current_house;
-        if let Some(entity) = self.substrate.entities.get_mut(owner)
-            && entity.parasite.limbo_reselect
-            && current.is_some_and(|house| house == entity.owner())
-        {
-            entity.parasite.limbo_reselect = false;
-            entity.selection.select();
+    /// (`0x0062A71C`, `0x0062A37F`) for a human player's house
+    /// (`HouseClass::IsHumanPlayer @ 0x0050B6F0`), then Select (vt+0x14C,
+    /// `0x0062A744`/`0x0062A3A7`) with the voice latch set.
+    fn parasite_reselect(&mut self, owner: u64, rules: &RuleSet, effects: FrameEffects<'_>) {
+        let Some(entity) = self.substrate.entities.get(owner) else {
+            return;
+        };
+        if !entity.parasite.limbo_reselect || !self.house_is_human_player(entity.owner()) {
+            return;
         }
+        if let Some(entity) = self.substrate.entities.get_mut(owner) {
+            entity.parasite.limbo_reselect = false;
+        }
+        self.techno_select(
+            owner,
+            true,
+            UninitContext::with_rules(rules).with_effects(effects),
+        );
     }
 
     /// ParasiteClass AI `0x00629FD0`, run at the tail of the victim's
@@ -746,7 +754,7 @@ impl Simulation {
                 && self.parasite_unlimbo_owner(owner, coords, dir_type(released), rules, effects)
         });
         if placed {
-            self.parasite_reselect(owner);
+            self.parasite_reselect(owner, rules, effects);
             self.parasite_rejoin_team(owner, rules, effects);
             self.parasite_released_owner_orders(owner, true, rules, effects);
             if let Some(entity) = self.substrate.entities.get_mut(owner) {
@@ -851,7 +859,7 @@ impl Simulation {
             })
         });
         if placed {
-            self.parasite_reselect(owner);
+            self.parasite_reselect(owner, rules, effects);
             self.parasite_rejoin_team(owner, rules, effects);
             self.parasite_released_owner_orders(owner, true, rules, effects);
         } else {
@@ -1193,11 +1201,12 @@ impl Simulation {
         let target_entity = target_id.and_then(|id| self.substrate.entities.get(id));
         let target_infantry =
             target_entity.is_some_and(|target| target.category() == EntityCategory::Infantry);
-        // 0x006FF763..0x006FF79C: ReselectIfLimboed memo for a selected,
-        // locally controlled firer jumping an Infantry target.
+        // 0x006FF763..0x006FF79C: ReselectIfLimboed memo for a selected firer
+        // of a human player's house (IsHumanPlayer 0x0050B6F0, 0x006FF786)
+        // jumping an Infantry target.
         let reselect = object.reselect_if_limboed
             && entity.selection.is_selected()
-            && self.session.current_house == Some(entity.owner())
+            && self.house_is_human_player(entity.owner())
             && target_infantry;
         if reselect {
             self.substrate

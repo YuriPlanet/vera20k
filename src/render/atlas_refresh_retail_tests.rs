@@ -24,6 +24,7 @@ use std::time::{Duration, Instant};
 use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};
 use crate::map::houses::HouseColorMap;
 use crate::render::batch::BatchRenderer;
+use crate::render::gpu::block_on;
 use crate::render::sprite_atlas::{self, ShpPaletteContext, ShpSpriteKey};
 use crate::render::unit_atlas::{self, UnitSpriteKey, VxlLayer};
 use crate::rules::house_colors::HouseColorIndex;
@@ -44,7 +45,7 @@ fn retail_root() -> PathBuf {
 
 fn headless_device() -> (wgpu::Device, wgpu::Queue) {
     let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
-    let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+    let adapter = block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
         power_preference: wgpu::PowerPreference::HighPerformance,
         ..Default::default()
     }))
@@ -56,7 +57,7 @@ fn headless_device() -> (wgpu::Device, wgpu::Queue) {
             .min(crate::render::gpu::MAX_USEFUL_TEXTURE_DIM),
         ..wgpu::Limits::default()
     };
-    pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
+    block_on(adapter.request_device(&wgpu::DeviceDescriptor {
         required_limits,
         ..Default::default()
     }))

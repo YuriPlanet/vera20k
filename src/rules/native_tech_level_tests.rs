@@ -7,6 +7,7 @@
 use super::*;
 use crate::rules::process_owner::{NativeRulesProcessOwner, NativeScenarioRulesPrefix};
 use crate::rules::ruleset::RuleSet;
+use crate::util::save_codec;
 use serde_json::Value;
 
 fn corpus() -> &'static Value {
@@ -114,8 +115,8 @@ fn native_tech_level_lifecycle_retains_prefix_values_then_retires_the_generation
 
     // Save/load preserves the native allocation order and current fields;
     // it does not rerun constructors or a Rules pass.
-    let bytes = bincode::serialize(&state).unwrap();
-    let restored: NativeRulesRegistryState = bincode::deserialize(&bytes).unwrap();
+    let bytes = save_codec::serialize(&state).unwrap();
+    let restored: NativeRulesRegistryState = save_codec::deserialize(&bytes).unwrap();
     assert_stage(&restored, stage(native, "prefix_present_key"));
     let reset = restored.destructive_reset();
     assert_stage(&reset, stage(native, "destructive_reset"));
@@ -300,7 +301,7 @@ fn rules_hash_and_saved_projection_cover_retained_values_and_global_type_order()
         "runtime handoff changes retained fields independently of the compatibility INI"
     );
     let restored: ProcessedRulesLayers =
-        bincode::deserialize(&bincode::serialize(&first).unwrap()).unwrap();
+        save_codec::deserialize(&save_codec::serialize(&first).unwrap()).unwrap();
     assert_eq!(
         RuleSet::from_processed_rules(&restored)
             .unwrap()

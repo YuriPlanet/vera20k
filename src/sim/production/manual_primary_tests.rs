@@ -6,6 +6,7 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::command::Command;
 use crate::sim::house_state::HouseState;
 use crate::sim::world::Simulation;
+use crate::util::save_codec;
 
 fn retail_factories() -> Option<(RuleSet, Simulation, u64, u64)> {
     let retail = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")?;
@@ -593,8 +594,8 @@ fn manual_primary_native_histories_preserve_retained_flags_consumers_and_streams
                     }
                 }
                 assert_eq!(
-                    bincode::serialize(&sim.houses).unwrap(),
-                    bincode::serialize(&houses_before).unwrap(),
+                    save_codec::serialize(&sim.houses).unwrap(),
+                    save_codec::serialize(&houses_before).unwrap(),
                     "{context}: House timers/invariants"
                 );
                 if !has_edge {

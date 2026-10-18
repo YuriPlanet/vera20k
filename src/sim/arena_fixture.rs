@@ -30,7 +30,7 @@ pub(crate) const OPEN_PLAYFIELD: crate::sim::cell_rect::PlayfieldBounds =
 /// The arena's ground with two rival houses, not allied: `Russians`, a Normal
 /// computer house of the skirmish IQ (`[IQ] MaxIQLevels`), and `Americans`, a
 /// human house.
-pub(crate) fn rival_arena(rules: &RuleSet, seed: u64) -> Simulation {
+pub fn rival_arena(rules: &RuleSet, seed: u64) -> Simulation {
     rival_arena_with_size(rules, seed, 32)
 }
 

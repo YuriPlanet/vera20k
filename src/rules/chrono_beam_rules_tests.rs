@@ -5,6 +5,7 @@
 
 use super::*;
 use crate::rules::ruleset::RuleSet;
+use crate::util::save_codec;
 
 #[test]
 fn chrono_beam_color_reads_only_the_exact_audio_visual_key_over_black() {
@@ -89,8 +90,8 @@ fn chrono_beam_color_retains_cold_reads_through_handoff_and_type_reset() {
             .unwrap();
         // SavedScenarioResources serializes this same move-only authority.
         // Restore it rather than re-reading the current (missing/empty) text.
-        let bytes = bincode::serialize(&processed).unwrap();
-        let processed: ProcessedRulesLayers = bincode::deserialize(&bytes).unwrap();
+        let bytes = save_codec::serialize(&processed).unwrap();
+        let processed: ProcessedRulesLayers = save_codec::deserialize(&bytes).unwrap();
         assert_eq!(processed.chrono_beam_color(), [23, 29, 31]);
         let rules = RuleSet::from_processed_rules(&processed).unwrap();
         assert_eq!(rules.general.chrono_beam_color, [23, 29, 31]);

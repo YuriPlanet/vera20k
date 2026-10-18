@@ -2182,9 +2182,9 @@ mod tests {
                 vec![(-1, 0), (1, 2), (-1, 0), (-1, 0)],
                 vec![0, 7, 255, 3],
             ));
-        let bytes = bincode::serialize(&grid).expect("serialize overlay authority");
+        let bytes = crate::util::save_codec::serialize(&grid).expect("serialize overlay authority");
         let restored: OverlayGrid =
-            bincode::deserialize(&bytes).expect("deserialize overlay authority");
+            crate::util::save_codec::deserialize(&bytes).expect("deserialize overlay authority");
 
         assert_eq!(restored.retained_neighbor_counts(), &[0, 7, 255, 3][..]);
         assert_eq!(restored.cell(1, 0), grid.cell(1, 0));

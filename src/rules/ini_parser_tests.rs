@@ -1,14 +1,15 @@
 //! Unit tests for the INI parser (IniFile + IniSection).
 
 use super::*;
+use crate::util::save_codec;
 
 #[test]
 fn saved_standalone_reader_body_rejects_inconsistent_indexes() {
     let ini = IniFile::from_str("[E1]\nCost=100\nStrength=125\n");
     let section = ini.section("E1").unwrap();
-    let bytes = bincode::serialize(section).unwrap();
+    let bytes = save_codec::serialize(section).unwrap();
     assert_eq!(
-        bincode::deserialize::<IniSection>(&bytes).unwrap(),
+        save_codec::deserialize::<IniSection>(&bytes).unwrap(),
         *section
     );
 
@@ -21,8 +22,8 @@ fn saved_standalone_reader_body_rejects_inconsistent_indexes() {
         .projected_values
         .insert("Absent".into(), vec!["1".into()]);
     for invalid in [duplicate_order, missing_order, orphan_history] {
-        let bytes = bincode::serialize(&invalid).unwrap();
-        let error = bincode::deserialize::<IniSection>(&bytes).unwrap_err();
+        let bytes = save_codec::serialize(&invalid).unwrap();
+        let error = save_codec::deserialize::<IniSection>(&bytes).unwrap_err();
         assert!(error.to_string().contains("invalid saved INI key order"));
     }
 }

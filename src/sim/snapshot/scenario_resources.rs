@@ -290,8 +290,9 @@ mod tests {
         );
         // Exercise the production borrowed writer against the owning reader.
         // JSON round trips would miss tagged-enum/bincode incompatibilities.
-        let bytes = bincode::serialize(&saved).unwrap();
-        let restored: SavedScenarioResources = bincode::deserialize(&bytes).unwrap();
+        let bytes = crate::util::save_codec::serialize(&saved).unwrap();
+        let restored: SavedScenarioResources =
+            crate::util::save_codec::deserialize(&bytes).unwrap();
         assert_eq!(restored.map().source(), &source);
         assert_eq!(restored.map().map_hash(), 123);
         assert_eq!(restored.terrain().dimensions(), (3, 3));

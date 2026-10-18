@@ -11,27 +11,23 @@
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
-use serde::Deserialize;
+use anyhow::{Context, Result, bail, ensure};
 
 /// Optional host override, in the working or executable directory.
 const CONFIG_FILE_NAME: &str = "config.toml";
 
-/// Top-level game configuration, deserialized from config.toml.
+/// Top-level game configuration, read from config.toml.
 ///
 /// Add new sections here as features are implemented (audio, game speed, etc.).
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct GameConfig {
     /// File system paths (RA2 install directory).
     pub paths: PathsConfig,
     /// Graphics/window settings (all optional — sensible defaults provided).
-    #[serde(default)]
     pub graphics: GraphicsConfig,
     /// Deterministic simulation settings.
-    #[serde(default)]
     pub gameplay: GameplayConfig,
     /// Local player profile (name pre-filled into skirmish/multiplayer setup).
-    #[serde(default)]
     pub profile: ProfileConfig,
 }
 
@@ -41,11 +37,10 @@ pub struct GameConfig {
 /// the setup screen pre-fills into the name field; when unset the setup UI
 /// falls back to its own default. This mirrors the original reading the player
 /// name from a persistent profile source rather than a baked-in string.
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Default)]
 pub struct ProfileConfig {
     /// Player name shown/edited in skirmish setup. `None` (or empty) means use
     /// the setup screen's built-in default.
-    #[serde(default)]
     pub name: Option<String>,
 }
 
@@ -61,7 +56,7 @@ impl ProfileConfig {
 }
 
 /// Paths to external resources (the player's RA2 installation).
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct PathsConfig {
     /// Path to the user's RA2 installation directory.
     /// MIX files (ra2.mix, language.mix, theme.mix) are loaded from here.
@@ -76,13 +71,12 @@ pub struct PathsConfig {
 /// Options page, saved in RA2MD.INI, not here. The window always presents in
 /// step with the display (`render/gpu.rs`), so an old config's `vsync` line
 /// is ignored.
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct GraphicsConfig {
     /// Enable cosmetic per-frame effects: water/ore sparkles. Also intended to
     /// gate future cosmetic effects (laser beam pulses, particle systems, line
     /// trails) per gamemd's "Extra Animations" option. Default ON to match
     /// gamemd's default.
-    #[serde(default = "default_true")]
     pub extra_animations: bool,
 }
 
@@ -95,17 +89,15 @@ impl Default for GraphicsConfig {
 }
 
 /// Simulation pacing and command scheduling settings.
-#[derive(Debug, Deserialize)]
+#[derive(Debug)]
 pub struct GameplayConfig {
     /// Session MaxAhead, used by network scheduling and the local production
     /// prediction clock. Offline commands retain their issue-frame stamp.
-    #[serde(default = "default_input_delay_ticks")]
     pub input_delay_ticks: u32,
     /// Freeze a running match while the window is not the foreground, as
     /// gamemd does when `WM_ACTIVATEAPP` clears. Off by default: the match
     /// keeps simulating and playing audio behind other windows, and only
     /// input stops. Local pacing policy; never read by the simulation.
-    #[serde(default)]
     pub pause_on_focus_loss: bool,
 }
 
@@ -116,10 +108,6 @@ impl Default for GameplayConfig {
             pause_on_focus_loss: false,
         }
     }
-}
-
-fn default_true() -> bool {
-    true
 }
 
 /// Session constructor6975C0 stores15 through the CRT initializer
@@ -170,7 +158,7 @@ impl GameConfig {
     }
 
     fn parse_from(contents: &str, path: &Path) -> Result<Self> {
-        let mut config: GameConfig = toml::from_str(contents)
+        let mut config = Self::parse(contents)
             .with_context(|| format!("Failed to parse config file: {}", path.display()))?;
 
         // A packaged config must mean the same thing after Finder changes cwd.
@@ -187,6 +175,69 @@ impl GameConfig {
         Ok(config)
     }
 
+    /// Read config.toml's subset of TOML: `[section]` headers, `key = value`
+    /// lines and `#` comments. The keys below take quoted strings, booleans or
+    /// whole numbers. Other keys and sections are skipped without reading their
+    /// values, so old configs with retired keys (`vsync`, `sim_tick_hz`) load.
+    fn parse(contents: &str) -> Result<Self> {
+        let mut ra2_dir = None;
+        let mut graphics = GraphicsConfig::default();
+        let mut gameplay = GameplayConfig::default();
+        let mut profile = ProfileConfig::default();
+        let mut section = "";
+        let mut seen = std::collections::HashSet::new();
+        let contents = contents.strip_prefix('\u{feff}').unwrap_or(contents);
+        for (index, line) in contents.lines().enumerate() {
+            let line_number = index + 1;
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            if line.starts_with('[') {
+                let header = line.split('#').next().unwrap_or_default().trim_end();
+                section = header
+                    .strip_prefix('[')
+                    .and_then(|header| header.strip_suffix(']'))
+                    .with_context(|| format!("line {line_number}: unterminated `[section]`"))?
+                    .trim();
+                continue;
+            }
+            let (key, value) = line
+                .split_once('=')
+                .with_context(|| format!("line {line_number}: expected `key = value`"))?;
+            let key = key.trim();
+            ensure!(
+                seen.insert((section, key)),
+                "line {line_number}: duplicate key `{key}` in [{section}]"
+            );
+            let value = value.trim();
+            let read = match (section, key) {
+                ("paths", "ra2_dir") => {
+                    parse_string(value).map(|path| ra2_dir = Some(PathBuf::from(path)))
+                }
+                ("graphics", "extra_animations") => {
+                    parse_bool(value).map(|on| graphics.extra_animations = on)
+                }
+                ("gameplay", "input_delay_ticks") => {
+                    parse_u32(value).map(|ticks| gameplay.input_delay_ticks = ticks)
+                }
+                ("gameplay", "pause_on_focus_loss") => {
+                    parse_bool(value).map(|on| gameplay.pause_on_focus_loss = on)
+                }
+                ("profile", "name") => parse_string(value).map(|name| profile.name = Some(name)),
+                _ => Ok(()),
+            };
+            read.with_context(|| format!("line {line_number}: [{section}] {key}"))?;
+        }
+        let ra2_dir = ra2_dir.context("missing `ra2_dir` in [paths]")?;
+        Ok(Self {
+            paths: PathsConfig { ra2_dir },
+            graphics,
+            gameplay,
+            profile,
+        })
+    }
+
     fn from_retail_asset_root(ra2_dir: PathBuf) -> Self {
         Self {
             paths: PathsConfig { ra2_dir },
@@ -195,6 +246,88 @@ impl GameConfig {
             profile: ProfileConfig::default(),
         }
     }
+}
+
+/// A TOML basic string (`"…"`, with backslash escapes) or literal string
+/// (`'…'`, taken as written). Windows paths need `'C:\RA2'` or `"C:\\RA2"`.
+fn parse_string(value: &str) -> Result<String> {
+    if let Some(body) = value.strip_prefix('\'') {
+        let (text, rest) = body.split_once('\'').context("unterminated string")?;
+        expect_value_end(rest)?;
+        return Ok(text.to_owned());
+    }
+    let body = value
+        .strip_prefix('"')
+        .context("expected a quoted string")?;
+    let mut text = String::new();
+    let mut chars = body.char_indices();
+    while let Some((index, c)) = chars.next() {
+        match c {
+            '"' => {
+                expect_value_end(&body[index + 1..])?;
+                return Ok(text);
+            }
+            '\\' => {
+                let escaped = match chars.next().map(|(_, c)| c) {
+                    Some('"') => '"',
+                    Some('\\') => '\\',
+                    Some('n') => '\n',
+                    Some('t') => '\t',
+                    Some('r') => '\r',
+                    Some('b') => '\u{8}',
+                    Some('f') => '\u{c}',
+                    Some(kind @ ('u' | 'U')) => {
+                        let digits = if kind == 'u' { 4 } else { 8 };
+                        let hex: String = chars.by_ref().take(digits).map(|(_, c)| c).collect();
+                        u32::from_str_radix(&hex, 16)
+                            .ok()
+                            .filter(|_| hex.len() == digits)
+                            .and_then(char::from_u32)
+                            .with_context(|| format!("invalid escape `\\{kind}{hex}`"))?
+                    }
+                    Some(other) => bail!("invalid escape `\\{other}`"),
+                    None => bail!("unterminated string"),
+                };
+                text.push(escaped);
+            }
+            c => text.push(c),
+        }
+    }
+    bail!("unterminated string")
+}
+
+fn parse_bool(value: &str) -> Result<bool> {
+    match bare_value(value) {
+        "true" => Ok(true),
+        "false" => Ok(false),
+        other => bail!("expected true or false, found `{other}`"),
+    }
+}
+
+fn parse_u32(value: &str) -> Result<u32> {
+    let number = bare_value(value);
+    // TOML allows `_` between digits.
+    number.replace('_', "").parse().with_context(|| {
+        format!(
+            "expected a whole number from 0 to {}, found `{number}`",
+            u32::MAX
+        )
+    })
+}
+
+/// An unquoted value: everything before a `#` comment.
+fn bare_value(value: &str) -> &str {
+    value.split('#').next().unwrap_or_default().trim_end()
+}
+
+/// Only whitespace and a `#` comment may follow a quoted value.
+fn expect_value_end(rest: &str) -> Result<()> {
+    let rest = rest.trim_start();
+    ensure!(
+        rest.is_empty() || rest.starts_with('#'),
+        "unexpected `{rest}` after the value"
+    );
+    Ok(())
 }
 
 /// Return the directory that retail `WinMain` makes its file-search root.
@@ -295,7 +428,7 @@ mod tests {
 [paths]
 ra2_dir = "C:/Westwood/RA2"
 "#;
-        let config: GameConfig = toml::from_str(toml_str).expect("Failed to parse test config");
+        let config = GameConfig::parse(toml_str).expect("Failed to parse test config");
         assert!(config.graphics.extra_animations);
         assert_eq!(config.gameplay.input_delay_ticks, 15);
         assert!(!config.gameplay.pause_on_focus_loss);
@@ -307,7 +440,7 @@ ra2_dir = "C:/Westwood/RA2"
     fn configured_ahead_windows_preserve_zero_and_custom_values() {
         for ahead in [0, 2, 30] {
             let text = format!("[paths]\nra2_dir='.'\n[gameplay]\ninput_delay_ticks={ahead}\n");
-            let config: GameConfig = toml::from_str(&text).unwrap();
+            let config = GameConfig::parse(&text).unwrap();
             assert_eq!(config.gameplay.input_delay_ticks, ahead);
         }
     }
@@ -322,7 +455,7 @@ ra2_dir = "C:/Westwood/RA2"
 vsync = false
 extra_animations = false
 "#;
-        let config: GameConfig = toml::from_str(toml_str).expect("old configs keep loading");
+        let config = GameConfig::parse(toml_str).expect("old configs keep loading");
         assert!(!config.graphics.extra_animations);
     }
 
@@ -335,7 +468,7 @@ ra2_dir = "C:/Westwood/RA2"
 [profile]
 name = "  Commander  "
 "#;
-        let config: GameConfig = toml::from_str(toml_str).expect("Failed to parse test config");
+        let config = GameConfig::parse(toml_str).expect("Failed to parse test config");
         assert_eq!(config.profile.player_name(), Some("Commander"));
 
         let blank = r#"
@@ -345,8 +478,42 @@ ra2_dir = "C:/Westwood/RA2"
 [profile]
 name = "   "
 "#;
-        let config: GameConfig = toml::from_str(blank).expect("Failed to parse test config");
+        let config = GameConfig::parse(blank).expect("Failed to parse test config");
         assert_eq!(config.profile.player_name(), None);
+    }
+
+    #[test]
+    fn reads_comments_both_string_kinds_and_skips_unknown_keys() {
+        let text = "\u{feff}# comment\n[paths] # header comment\nra2_dir = 'C:\\RA2' # literal\n\n\
+                    [graphics]\nvsync = [1, 2]\nextra_animations = false # off\n\
+                    [gameplay]\ninput_delay_ticks = 1_0\n\
+                    [profile]\nname = \"Tab\\there \\u00E9 \\\"q\\\" # not a comment\"\n\
+                    [[unknown]]\nanything = { goes = 1 }\n";
+        let config = GameConfig::parse(text).unwrap();
+        assert_eq!(config.paths.ra2_dir, PathBuf::from("C:\\RA2"));
+        assert!(!config.graphics.extra_animations);
+        assert_eq!(config.gameplay.input_delay_ticks, 10);
+        assert_eq!(
+            config.profile.name.as_deref(),
+            Some("Tab\there é \"q\" # not a comment")
+        );
+    }
+
+    #[test]
+    fn rejects_values_toml_rejects() {
+        for text in [
+            "[paths]\nra2_dir = \"C:\\RA2\"\n",
+            "[paths]\nra2_dir = 'a'\nra2_dir = 'b'\n",
+            "[paths]\nra2_dir = 'a' b\n",
+            "[paths]\nra2_dir = \"a\n",
+            "[paths]\nra2_dir = a\n",
+            "[paths]\nra2_dir\n",
+            "[paths]\nra2_dir = 'a'\n[gameplay]\ninput_delay_ticks = -1\n",
+            "[paths]\nra2_dir = 'a'\n[graphics]\nextra_animations = yes\n",
+            "[graphics]\nextra_animations = true\n",
+        ] {
+            assert!(GameConfig::parse(text).is_err(), "{text:?}");
+        }
     }
 
     /// Host-native paths: `Path` only splits on the host's separators, so a

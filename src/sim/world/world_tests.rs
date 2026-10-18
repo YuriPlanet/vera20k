@@ -1142,10 +1142,13 @@ fn assert_gsi_13_10_vxl_unit(entity: &GameEntity) {
 /// speed, so a flying aircraft starts its MoveSound with no other change.
 #[test]
 fn a_flying_aircraft_starts_its_move_sound_on_its_speed() {
-    let rules = RuleSet::from_ini(&IniFile::from_str(
-        "[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n0=TESTPLANE\n[BuildingTypes]\n\
-         [TESTPLANE]\nStrength=100\nArmor=light\nSpeed=20\nMoveSound=TestMove\n",
-    ))
+    let rules = RuleSet::from_ini_with_sounds_for_test(
+        &IniFile::from_str(
+            "[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n0=TESTPLANE\n[BuildingTypes]\n\
+             [TESTPLANE]\nStrength=100\nArmor=light\nSpeed=20\nMoveSound=TestMove\n",
+        ),
+        &["TestMove"],
+    )
     .expect("aircraft MoveSound rules");
     let run = |speed: SimFixed| {
         let mut sim = Simulation::with_seed(0x1020_3040);
@@ -1247,13 +1250,16 @@ fn move_sound_test_rules(configured: bool) -> RuleSet {
     } else {
         ""
     };
-    RuleSet::from_ini(&IniFile::from_str(&format!(
-        "[InfantryTypes]\n\
-         [VehicleTypes]\n0=TESTUNIT\n\
-         [AircraftTypes]\n\
-         [BuildingTypes]\n\
-         [TESTUNIT]\nStrength=100\nArmor=light\nSpeed=6\n{move_sound}"
-    )))
+    RuleSet::from_ini_with_sounds_for_test(
+        &IniFile::from_str(&format!(
+            "[InfantryTypes]\n\
+             [VehicleTypes]\n0=TESTUNIT\n\
+             [AircraftTypes]\n\
+             [BuildingTypes]\n\
+             [TESTUNIT]\nStrength=100\nArmor=light\nSpeed=6\n{move_sound}"
+        )),
+        &["TestMove"],
+    )
     .expect("MoveSound rules")
 }
 

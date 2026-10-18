@@ -60,7 +60,8 @@ python -m tools.cargo_run --resolve bik-player --profile release
 ```
 
 Run the resolved MIX browser directly. The Bink player accepts a filesystem path
-or an asset name as its first argument. `asset render` remains available without
+or an asset name as its first argument, and loads a `.bik` file dropped on its
+window. `asset render` remains available without
 `tools-ui`, including TMP rendering to PNG and JSON reports.
 
 The in-engine diagnostic overlay is separately opt-in with `dev-ui`:
@@ -69,7 +70,7 @@ The in-engine diagnostic overlay is separately opt-in with `dev-ui`:
 python -m tools.cargo_run -- build --locked --release --features dev-ui --bin vera20k
 ```
 
-egui, egui-wgpu, egui-winit, eframe and rfd belong only to the optional UI
+egui, egui-wgpu, egui-winit and eframe belong only to the optional UI
 builds. Their packages remain in `Cargo.lock` so those builds stay reproducible.
 
 The default `dev-overlays` feature carries the Ctrl+Shift dev chord, including

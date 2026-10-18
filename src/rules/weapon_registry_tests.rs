@@ -3,6 +3,7 @@
 //! retained-state and safe-admission checks exercise the production Rules owner.
 use super::*;
 use crate::rules::ruleset::RuleSet;
+use crate::util::save_codec;
 use serde_json::{Value, json};
 
 fn native() -> &'static Value {
@@ -79,8 +80,8 @@ fn weapon_registry_retains_original_damage_and_warhead_controls_through_save_and
         }
     }
 
-    let saved = bincode::serialize(&processed).unwrap();
-    let restored: ProcessedRulesLayers = bincode::deserialize(&saved).unwrap();
+    let saved = save_codec::serialize(&processed).unwrap();
+    let restored: ProcessedRulesLayers = save_codec::deserialize(&saved).unwrap();
     let restored_rules = RuleSet::from_processed_rules(&restored).unwrap();
     assert_eq!(
         field_state(&restored_rules, "Action42FieldControl"),
@@ -178,13 +179,13 @@ fn effective_weapon_order_damage_and_warhead_change_retained_rules_identity() {
     }
     let processed = RulesLayerStack::new(pass).process().unwrap();
     let original = RuleSet::from_processed_rules(&processed).unwrap();
-    let saved = bincode::serialize(&processed).unwrap();
+    let saved = save_codec::serialize(&processed).unwrap();
     for change in ["order", "damage", "warhead"] {
         // Declared Rust saved-state priors isolate typed ownership from the
         // identical stored INI/hash. They are not native history goldens.
         // Normal Process can also change the compatibility text; comparing
         // those source hashes would not test the effective-state hash here.
-        let mut candidate: ProcessedRulesLayers = bincode::deserialize(&saved).unwrap();
+        let mut candidate: ProcessedRulesLayers = save_codec::deserialize(&saved).unwrap();
         let weapons = candidate
             .native_type_construction_trace
             .registry_state
@@ -235,8 +236,8 @@ fn saved_weapon_warhead_index_is_validated_before_projection() {
         .unwrap()[0]
         .weapon
         .warhead = Some(usize::MAX);
-    let saved = bincode::serialize(&processed).unwrap();
-    let restored = bincode::deserialize(&saved).unwrap();
+    let saved = save_codec::serialize(&processed).unwrap();
+    let restored = save_codec::deserialize(&saved).unwrap();
     assert!(matches!(
         RuleSet::from_processed_rules(&restored),
         Err(RulesError::InvalidSavedState(_))

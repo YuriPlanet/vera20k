@@ -30,6 +30,7 @@ use crate::sim::radar::RadarEventType;
 use crate::sim::scenario_session::{ScenarioLightingProfile, ScenarioLightingState};
 use crate::sim::timer::CdTimer;
 use crate::sim::world::{SimSoundEvent, Simulation};
+use crate::util::save_codec;
 use serde_json::{Value, json};
 
 const TARGET: (u16, u16) = (40, 40);
@@ -1333,7 +1334,7 @@ fn nuke_awaited_anim_reference_restore_validates_without_wait_flag() {
     sim.admit_projectile(id, spawn);
     assert!(!sim.projectiles.get(id).unwrap().awaiting_anim());
     sim.projectiles.await_anim(id, Some(9999));
-    let before = bincode::serialize(&sim.projectiles).unwrap();
+    let before = save_codec::serialize(&sim.projectiles).unwrap();
     assert_eq!(
         sim.restore_after_snapshot_load(),
         Err(
@@ -1347,7 +1348,7 @@ fn nuke_awaited_anim_reference_restore_validates_without_wait_flag() {
         )
     );
     assert_eq!(
-        bincode::serialize(&sim.projectiles).unwrap(),
+        save_codec::serialize(&sim.projectiles).unwrap(),
         before,
         "invalid restore leaves Bullet state atomic"
     );

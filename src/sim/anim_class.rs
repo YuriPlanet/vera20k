@@ -4495,8 +4495,8 @@ mod tests {
         let id = sim.spawn_anim_object(&rules, descriptor).unwrap();
         assert_eq!(sim.anim(id).unwrap().draw_runtime, draw_runtime);
 
-        let serialized = bincode::serialize(&sim.substrate.anims).unwrap();
-        let restored: AnimStore = bincode::deserialize(&serialized).unwrap();
+        let serialized = crate::util::save_codec::serialize(&sim.substrate.anims).unwrap();
+        let restored: AnimStore = crate::util::save_codec::deserialize(&serialized).unwrap();
         assert_eq!(restored.get(id).unwrap().draw_runtime, draw_runtime);
         assert!(restored.get(id).unwrap().use_cell_drawer);
         assert!(restored.get(id).unwrap().terrain_attached);
@@ -4521,16 +4521,19 @@ mod tests {
         let store = &mut sim.substrate.anims;
         let former = Former(&store.anims);
         assert_eq!(
-            bincode::serialize(&*store).unwrap(),
-            bincode::serialize(&former).unwrap()
+            crate::util::save_codec::serialize(&*store).unwrap(),
+            crate::util::save_codec::serialize(&former).unwrap()
         );
         assert_eq!(
             serde_json::to_string(&*store).unwrap(),
             serde_json::to_string(&former).unwrap()
         );
-        let bytes = bincode::serialize(&*store).unwrap();
-        let restored: AnimStore = bincode::deserialize(&bytes).unwrap();
-        assert_eq!(bincode::serialize(&restored).unwrap(), bytes);
+        let bytes = crate::util::save_codec::serialize(&*store).unwrap();
+        let restored: AnimStore = crate::util::save_codec::deserialize(&bytes).unwrap();
+        assert_eq!(
+            crate::util::save_codec::serialize(&restored).unwrap(),
+            bytes
+        );
 
         // Nothing has been derived from a fresh store yet.
         let keys = AnimTouchReader::GroundKeys;
@@ -6166,8 +6169,9 @@ mod tests {
         sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let expected_hash = sim.state_hash();
         let expected_order = sim.live_object_order_snapshot();
-        let bytes = bincode::serialize(&sim).expect("serialize sim with AnimStore");
-        let mut restored: Simulation = bincode::deserialize(&bytes).expect("deserialize AnimStore");
+        let bytes = crate::util::save_codec::serialize(&sim).expect("serialize sim with AnimStore");
+        let mut restored: Simulation =
+            crate::util::save_codec::deserialize(&bytes).expect("deserialize AnimStore");
         restored.rebuild_logic_membership();
         assert_eq!(restored.live_object_order_snapshot(), expected_order);
         assert_eq!(restored.state_hash(), expected_hash);

@@ -28,6 +28,7 @@ pub mod bink_bits;
 pub mod bink_data;
 pub mod bink_decode;
 pub mod bink_file;
+pub(crate) mod blowfish;
 pub mod csf_file;
 pub mod error;
 pub mod fnt_file;

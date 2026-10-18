@@ -1747,3 +1747,52 @@ fn survivor_direction_matches_the_original() {
         );
     }
 }
+
+/// Retail: the crewman of a selected MCV is selected through
+/// `TechnoClass::Select @ 0x006FBFA0`, which speaks his `VoiceSelect=`
+/// (`0x006FC018`, the latch set as every Logic pass leaves it).
+#[test]
+fn a_selected_mcvs_crewman_speaks_his_select_voice() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = retail.rules;
+    let gi_select = &rules.object("E1").unwrap().voice_select;
+    assert!(!gi_select.is_empty(), "retail E1 VoiceSelect binds");
+    let mut crewmen = 0;
+    for seed in 1..=8 {
+        let mut sim = sim_on_arena(seed, &rules);
+        let owner = sim.interner.intern("AlliedHuman");
+        sim.session.current_house = Some(owner);
+        let mcv = spawn(&mut sim, &rules, "AMCV", "AlliedHuman", 20, 10);
+        sim.substrate
+            .entities
+            .get_mut(mcv)
+            .unwrap()
+            .selection
+            .set_selected_for_test(true);
+        let before = sim.substrate.entities.keys_sorted();
+        sim.sound_events.clear();
+        kill_with(&mut sim, &rules, None, mcv, "Super", ORDINARY);
+        for crewman in new_ids(&sim, &before) {
+            if type_name(&sim, crewman) != "E1" {
+                continue;
+            }
+            crewmen += 1;
+            assert!(
+                sim.substrate
+                    .entities
+                    .get(crewman)
+                    .unwrap()
+                    .selection
+                    .is_selected()
+            );
+            assert!(sim.sound_events.iter().any(|event| matches!(
+                event,
+                crate::sim::world::SimSoundEvent::UnitVoiceRequested { owner, sound_id }
+                    if *owner == crewman && gi_select.contains(sound_id)
+            )));
+        }
+    }
+    assert!(crewmen > 0);
+}

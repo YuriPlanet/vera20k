@@ -894,6 +894,16 @@ impl ResolvedTerrainGrid {
         }
     }
 
+    /// Read retained CellClass+4C, the `RecalcZoneType` class. Constructor
+    /// 47BBF0 gives the shared fallback 0 (`0x0047BC27`); a RecalcZoneType
+    /// reaching the Dummy is not modeled.
+    pub(crate) fn native_cell_zone_type(&self, cell: NativeCellIdentity) -> u8 {
+        match cell {
+            NativeCellIdentity::Real(index) => self.cells[index].zone_type,
+            NativeCellIdentity::Dummy => 0,
+        }
+    }
+
     /// Smudge CanPlace's Morphable read (`0x006B601A..0x006B603A`) on one
     /// resolved cell: a real cell's current-tile query; the shared dummy keeps
     /// the constructor's 0xFFFF tile, which reads theater tile 0.

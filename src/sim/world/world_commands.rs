@@ -2179,6 +2179,46 @@ impl Simulation {
         true
     }
 
+    /// `TechnoClass::Select @ 0x006FBFA0` (vt+0x14C) for a logic caller that
+    /// re-selects one of its own objects: an object the current house has
+    /// not discovered (`+0x41B`) and does not own as its human player is
+    /// refused (the graphical client's gate); then ObjectClass::Select and
+    /// the tag event ([`Self::try_select_object`]); then, for a human
+    /// player's or passive house's object while the selection-voice latch
+    /// `0x00822CF2` is set (`0x006FBFF4..0x006FC018`), VoiceSelect (vt+0x360)
+    /// through [`Self::selection_voice_request`].
+    ///
+    /// RESIDUAL: the planning-node selection add (`0x00637840`) is not
+    /// ported; it only matters while a planning path is being built.
+    pub(crate) fn techno_select(
+        &mut self,
+        stable_id: u64,
+        voice_latch: bool,
+        context: super::UninitContext<'_>,
+    ) -> bool {
+        let Some(entity) = self.substrate.entities.get(stable_id) else {
+            return false;
+        };
+        if !entity.discovery.discovered_by_current_house()
+            && !self.house_is_human_player(entity.owner())
+        {
+            return false;
+        }
+        if !self.try_select_object(stable_id, context) {
+            return false;
+        }
+        if let Some(rules) = context.rules()
+            && let Some(sound_id) = self.selection_voice_request(rules, stable_id, voice_latch)
+        {
+            let sound_id = sound_id.to_owned();
+            self.sound_events.push(SimSoundEvent::UnitVoiceRequested {
+                owner: stable_id,
+                sound_id,
+            });
+        }
+        true
+    }
+
     /// Check ownership using stable_id via EntityStore.
     ///
     /// Used only by receivers whose contract includes an owner gate. The

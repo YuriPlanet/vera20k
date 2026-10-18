@@ -1242,10 +1242,10 @@ mod tests {
         }
         let record = CommandRecord::decode_exact(&bytes).unwrap();
 
-        let encoded = bincode::serialize(&record).unwrap();
+        let encoded = crate::util::save_codec::serialize(&record).unwrap();
         assert_eq!(encoded.as_slice(), bytes.as_slice());
         assert_eq!(
-            bincode::deserialize::<CommandRecord>(&encoded).unwrap(),
+            crate::util::save_codec::deserialize::<CommandRecord>(&encoded).unwrap(),
             record
         );
     }

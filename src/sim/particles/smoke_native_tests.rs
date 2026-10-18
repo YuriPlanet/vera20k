@@ -404,7 +404,9 @@ fn original_stored_smoke_accumulator_preserves_long_run_rng_boundaries() {
     let data = corpus();
     let case = &data["accumulator_walk"];
     let mut input = case["input"].clone();
-    input["type_overrides"] = serde_json::json!({"SmallGreySSys":{"HoldsWhat":"none"}});
+    // ParticleType's factory answers -1 only for `<none>` (0x00645430); `none`
+    // would bind a particle type of that name.
+    input["type_overrides"] = serde_json::json!({"SmallGreySSys":{"HoldsWhat":"<none>"}});
     let rules = rules(&data, &input);
     assert_eq!(
         rules

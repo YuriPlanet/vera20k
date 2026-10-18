@@ -692,8 +692,7 @@ fn attack_branch_orders(
 /// `EngSovAttackCommand`; Yuri's two keys hold the same sound, so Yuri was
 /// unaffected).
 ///
-/// Deploy/unload's input acknowledgement remains a separate route. A
-/// building pack-up speaks at Selling stage0, so UndeployBuilding must not
+/// A building pack-up speaks at Selling stage0, so UndeployBuilding must not
 /// queue a second input acknowledgement here.
 ///
 /// The self-click halt is silent in retail as well: it builds a detonate event
@@ -713,6 +712,15 @@ fn order_voice_key(command: &Command) -> Option<&'static str> {
         // Sabotage and area guard have no dedicated slot, so retail takes the
         // default branch and speaks a VoiceSpecialAttack line.
         Command::PlantC4 { .. } | Command::Guard { .. } => Some("VoiceSpecialAttack"),
+        // A self-click's deploy, unload or deploy-fire is the Unload mission
+        // (`FootClass::ClickedAction_Object @ 0x004D74E0` actions 4/0x34/0x38;
+        // `AircraftClass @ 0x00417BD0` action 4; a Building's garrison or
+        // absorber arm `0x004434F2..0x00443562`), whose ClickedMission arm
+        // speaks VoiceDeploy (vt+0x36C, `0x006FFD3A`). EjectBunker and the
+        // factory primary toggle are not mapped.
+        Command::DeployMcv { .. }
+        | Command::ToggleInfantryDeploy { .. }
+        | Command::UnloadPassengers { .. } => Some("VoiceDeploy"),
         _ => None,
     }
 }
@@ -814,6 +822,19 @@ fn emit_entity_order_voice(
     voice_field: &str,
     target: Option<TargetKind>,
 ) {
+    if voice_field == "VoiceDeploy" {
+        if let Some(runtime) = state.match_state.sim_runtime.as_mut()
+            && let Some(event) = crate::app::match_runtime::sound_dispatch::deploy_order_voice_event(
+                &mut runtime.simulation,
+                &runtime.resources.rules,
+                speaker_id,
+                state.match_state.input.selection_voice_enabled,
+            )
+        {
+            state.match_state.match_audio.sound_events.push(event);
+        }
+        return;
+    }
     if voice_field == "VoiceSpecialAttack" {
         if let Some(runtime) = state.match_state.sim_runtime.as_mut()
             && let Some(event) =
@@ -2280,8 +2301,10 @@ pub(super) fn self_deploy_is_blocked(
 /// DeploysInto unit's placement check (`0x0073FEAD..0x0073FFA6`) and a
 /// loaded transport's first-passenger land-speed and height checks
 /// (`0x00740078..0x007400EB`). Trigger: hovering such a unit over itself on
-/// a site it cannot use. Effect: the cursor offers Deploy; the order is then
-/// refused by its receiver.
+/// a site it cannot use. Effect: the cursor offers Deploy, the click speaks
+/// `VoiceDeploy=` (native NoDeploy never reaches ClickedMission, so it is
+/// silent), and the order is then refused by its receiver. Retail: only the
+/// Slave Miner has a `VoiceDeploy=`.
 pub(super) fn self_click_command(
     sim: &crate::sim::world::Simulation,
     rules: &crate::rules::ruleset::RuleSet,
@@ -3798,6 +3821,14 @@ mod tests {
     /// with no dedicated slot fall to the VoiceSpecialAttack default branch.
     #[test]
     fn order_voice_key_follows_the_committed_mission() {
+        // A self-click's deploy, unload or deploy-fire is the Unload mission.
+        for command in [
+            Command::DeployMcv { entity_id: 1 },
+            Command::ToggleInfantryDeploy { entity_id: 1 },
+            Command::UnloadPassengers { transport_id: 1 },
+        ] {
+            assert_eq!(order_voice_key(&command), Some("VoiceDeploy"));
+        }
         assert_eq!(
             order_voice_key(&Command::Move {
                 entity_id: 1,

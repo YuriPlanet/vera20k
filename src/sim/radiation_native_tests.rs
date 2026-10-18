@@ -2,6 +2,7 @@
 //! overlap threshold that changes a stock DOG's first-pulse survival.
 
 use super::*;
+use crate::util::save_codec;
 
 fn integer(value: &serde_json::Value) -> i32 {
     i32::try_from(value.as_i64().unwrap()).unwrap()
@@ -212,8 +213,8 @@ fn assert_light_lifecycle(map: &str, packet: &'static str) {
                     .sim;
                 loaded.restore_after_snapshot_load().unwrap();
                 assert_eq!(
-                    bincode::serialize(&loaded.radiation).unwrap(),
-                    bincode::serialize(&state).unwrap(),
+                    save_codec::serialize(&loaded.radiation).unwrap(),
+                    save_codec::serialize(&state).unwrap(),
                     "load must preserve the source and independent clock"
                 );
                 world
@@ -501,7 +502,7 @@ fn serialized_radius_that_changes_future_decay_is_hash_relevant() {
     );
     let mut restored = crate::sim::world::Simulation::new();
     restored.radiation =
-        bincode::deserialize(&bincode::serialize(&original.radiation).unwrap()).unwrap();
+        save_codec::deserialize(&save_codec::serialize(&original.radiation).unwrap()).unwrap();
     restored
         .radiation
         .sites

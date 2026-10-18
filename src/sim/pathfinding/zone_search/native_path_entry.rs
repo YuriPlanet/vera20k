@@ -67,7 +67,9 @@ fn live_high_nonrock(terrain: &ResolvedTerrainGrid, cell: &CellRef<'_>) -> bool 
     }
 }
 
-fn live_mode_one(
+/// `MapClass::Is_Cell_In_Playfield(c, 1)` (`0x00578460`) for one path
+/// search. A fixture without bounds admits every cell.
+pub(super) fn live_mode_one(
     terrain: &ResolvedTerrainGrid,
     bounds: Option<PlayfieldBounds>,
     c: (u16, u16),

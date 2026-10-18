@@ -10,6 +10,7 @@ use crate::rules::retail_ini_fixture::{retail_assets, retail_rules_owner};
 use crate::sim::rng::SimRng;
 use crate::sim::snapshot::saved_local_view::{SavedLocalView, SavedLocalViewError, SavedPowerBar};
 use crate::sim::snapshot::scenario_resources::SavedScenarioResourcesRef;
+use crate::util::save_codec;
 
 const LOAD_CLOCK_MS: u64 = 16_000;
 const SAVED_ELAPSED_BUCKETS: u32 = 180;
@@ -274,7 +275,7 @@ fn assert_incoming_resources(
         serde_json::to_value(map).unwrap()
     );
     assert_eq!(
-        bincode::serialize(
+        save_codec::serialize(
             &prepared
                 .resources
                 .terrain_template
@@ -284,7 +285,7 @@ fn assert_incoming_resources(
                 .unwrap()
         )
         .unwrap(),
-        bincode::serialize(
+        save_codec::serialize(
             &incoming
                 .resources
                 .terrain_template

@@ -1741,7 +1741,23 @@ fn fixture(inputs: &Inputs, selected: &[u64]) -> (Simulation, RuleSet) {
     ini.push_str(
         "[DOCKBUILDING]\nStrength=100\nFoundation=1x1\n[GUN]\nDamage=10\n[QUIETGUN]\nDamage=0\n",
     );
-    let mut rules = RuleSet::from_ini(&IniFile::from_str(&ini)).expect("native control types");
+    // The production binder reads the ordinary lists against a catalog that
+    // registers every authored voice.
+    let sound_names: Vec<String> = inputs
+        .actors
+        .iter()
+        .flat_map(|actor| {
+            actor
+                .voice_list
+                .iter()
+                .chain(actor.enslaved_voice_list.iter().flatten())
+        })
+        .filter(|&&id| id >= 0)
+        .map(|id| format!("Sound{id}"))
+        .collect();
+    let sound_names: Vec<&str> = sound_names.iter().map(String::as_str).collect();
+    let mut rules = RuleSet::from_ini_with_sounds_for_test(&IniFile::from_str(&ini), &sound_names)
+        .expect("native control types");
     for actor in &inputs.actors {
         let unbound = |voices: &[i64]| voices.contains(&-1);
         if unbound(&actor.voice_list) || actor.enslaved_voice_list.as_deref().is_some_and(unbound) {

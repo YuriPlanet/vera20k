@@ -8,6 +8,7 @@ use crate::sim::{
     bridge_state::BridgeRuntimeState, components::DriveCoord, movement::locomotor::MovementLayer,
     world::Simulation,
 };
+use crate::util::save_codec;
 
 #[test]
 fn structural_fallout_retires_effect_only_ground_victim() {
@@ -190,7 +191,7 @@ fn structural_drop_in_owns_order_footprints_and_restore_without_teardown_side_ef
         .unwrap();
     assert!(drive.ensure_installed_track_state());
     let drive_before =
-        bincode::serialize(drive.selected_drive_runtime().unwrap().retained().unwrap()).unwrap();
+        save_codec::serialize(drive.selected_drive_runtime().unwrap().retained().unwrap()).unwrap();
     sim.substrate
         .entities
         .get_mut(newer)
@@ -247,7 +248,7 @@ fn structural_drop_in_owns_order_footprints_and_restore_without_teardown_side_ef
     );
     let raw_after = sim.substrate.raw_cell_occupation.clone();
     assert_eq!(
-        bincode::serialize(
+        save_codec::serialize(
             sim.substrate
                 .entities
                 .get(older)

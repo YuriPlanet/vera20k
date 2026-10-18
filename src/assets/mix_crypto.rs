@@ -28,13 +28,11 @@
 //!
 //! ## Dependency rules
 //! - Part of assets/ — no dependencies on game modules.
-//! - Uses blowfish crate (RustCrypto) and num-bigint for RSA math.
+//! - Uses `assets::blowfish` for the cipher and num-bigint for RSA math.
 
-use blowfish::Blowfish;
-use blowfish::cipher::BlockDecrypt;
-use blowfish::cipher::KeyInit;
 use num_bigint::BigUint;
 
+use crate::assets::blowfish::Blowfish;
 use crate::assets::error::AssetError;
 
 /// RSA public exponent for MIX decryption.
@@ -132,10 +130,9 @@ pub fn extract_blowfish_key(encrypted_block: &[u8]) -> Result<[u8; BLOWFISH_KEY_
 
 /// Decrypt data in-place using standard Blowfish in ECB mode.
 ///
-/// Uses standard big-endian Blowfish as implemented by the RustCrypto
-/// `blowfish` crate. This matches the behavior of ccmixar (Go) and
-/// ccmix (C++) which both use standard Blowfish without any
-/// endianness modifications at the block level.
+/// Standard big-endian Blowfish matches ccmixar (Go) and ccmix (C++),
+/// which both use it without any endianness modifications at the block
+/// level.
 ///
 /// The data length must be a multiple of 8 bytes (Blowfish block size).
 /// Only the file index is encrypted — body data is NOT encrypted.
@@ -150,17 +147,12 @@ pub fn blowfish_decrypt_ecb(key: &[u8], data: &mut [u8]) -> Result<(), AssetErro
         });
     }
 
-    // Initialize the Blowfish cipher with the given key.
-    let cipher: Blowfish =
-        Blowfish::new_from_slice(key).map_err(|e| AssetError::MixDecryptionError {
-            reason: format!("Failed to initialize Blowfish cipher: {}", e),
-        })?;
+    let cipher = Blowfish::new(key).ok_or_else(|| AssetError::MixDecryptionError {
+        reason: format!("Blowfish key length {} is not 4 to 56 bytes", key.len()),
+    })?;
 
     // Process each 8-byte block independently (ECB mode).
-    // Standard Blowfish: no endianness manipulation needed.
-    for chunk in data.as_chunks_mut::<BLOWFISH_BLOCK_SIZE>().0 {
-        let block: &mut blowfish::cipher::Block<Blowfish> =
-            blowfish::cipher::Block::<Blowfish>::from_mut_slice(chunk);
+    for block in data.as_chunks_mut::<BLOWFISH_BLOCK_SIZE>().0 {
         cipher.decrypt_block(block);
     }
 

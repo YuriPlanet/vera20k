@@ -69,9 +69,11 @@
 //! their requests that frame register again, still at urgency 2, and go
 //! first at the next pass. Which re-paths a pass answers depends on their
 //! expansions alone, not on the thread count, and a re-path waits about as
-//! many passes as the expansions of those ahead of it fill budgets. The
-//! budget binds only when a frame's urgency-2 re-paths flood: in the match
-//! bench's jams one routes round thousands of moving friendlies, often
+//! many passes as the expansions of those ahead of it fill budgets. A
+//! re-path's expansions are those of all its cell searches, the retries
+//! after a failed corridor search included (up to five; see `zone_search`).
+//! The budget binds only when a frame's urgency-2 re-paths flood: in the
+//! match bench's jams one routes round thousands of moving friendlies, often
 //! expanding 40,000 cells, and a pass of a few hundred held its frame for up
 //! to a tenth of a second. A Foot it leaves out stands as one the cap leaves
 //! out does: there the jammed Foots find their detours later, so fewer reach
@@ -137,7 +139,7 @@ use crate::sim::world::{EntryFacts, Simulation};
 const SEARCHES_PER_PASS: usize = 256;
 
 /// The expansions a pass's urgency-2 re-paths make before it starts no more
-/// of them; see the module docs. Four searches at A*'s limit fit.
+/// of them; see the module docs. Four cell searches at A*'s limit fit.
 const URGENCY2_STEPS_PER_PASS: u64 = 4 * crate::sim::pathfinding::MAX_SEARCH_NODES as u64;
 
 /// The path searches waiting for the next frame, and this frame's answers.

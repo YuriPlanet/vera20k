@@ -508,17 +508,22 @@ impl ZoneEdgeKey {
     }
 }
 
-/// Search-local/preseeded exclusions consumed by `zone_precheck_flat`.
-///
-/// This is the consumer side only. The exact failed-A* producer that chooses
-/// which edge to invalidate remains deferred.
-#[derive(Debug, Clone, Default)]
+/// The zone pairs `zone_precheck_flat` may not cross, per level: the three
+/// vectors at `PathfinderClass+0x74` (`0x18` apart), which hold
+/// `min << 16 | max` and which `Zone_precheck` scans for each edge it would
+/// take (`0x0042C618..0x0042C664`). One path search owns them:
+/// `AStar_pathfind_search` clears them as it starts (`0x0042C912..0x0042C925`)
+/// and its retries add to them (`zone_search::precheck_retry`). Native
+/// appends duplicates; a set answers the same scan.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ZonePrecheckExclusions {
     lookup: [BTreeSet<ZoneEdgeKey>; ZONE_PRECHECK_LEVELS],
 }
 
 impl ZonePrecheckExclusions {
-    #[cfg(any(test, feature = "test-support"))]
+    /// Exclude the pair `a`, `b` at `level`. Native never adds a pair of one
+    /// zone (`0x0042CE04`, `0x0042D04E`, `0x0042D0EB`). One naming zone 0,
+    /// the Outside sentinel no row may enter, is not kept.
     pub(crate) fn insert(&mut self, level: usize, a: ZoneId, b: ZoneId) -> bool {
         let Some(key) = ZoneEdgeKey::new(a, b) else {
             return false;

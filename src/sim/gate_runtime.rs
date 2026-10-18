@@ -575,8 +575,8 @@ mod tests {
             let entity = sim.substrate.entities.get(GATE).unwrap();
             // GameSnapshot serializes this same entity. This focused wire
             // check deliberately excludes load's process RNG reset/caches.
-            let bytes = bincode::serialize(entity).unwrap();
-            let restored: GameEntity = bincode::deserialize(&bytes).unwrap();
+            let bytes = crate::util::save_codec::serialize(entity).unwrap();
+            let restored: GameEntity = crate::util::save_codec::deserialize(&bytes).unwrap();
             assert_eq!(restored.mission, entity.mission, "{name}: MissionCom");
             assert_eq!(
                 restored.door_phase(),

@@ -355,8 +355,8 @@ mod tests {
         ] {
             let before = target.map(|target| AttackTargetBefore { target });
             assert_eq!(
-                bincode::serialize(&TarCom { target }).unwrap(),
-                bincode::serialize(&before).unwrap(),
+                crate::util::save_codec::serialize(&TarCom { target }).unwrap(),
+                crate::util::save_codec::serialize(&before).unwrap(),
                 "{target:?}"
             );
         }

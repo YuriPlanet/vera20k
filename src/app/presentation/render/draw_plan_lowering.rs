@@ -981,8 +981,10 @@ mod tests {
                 }
                 // Load must preserve the retained order even when it is only
                 // partly sorted. Removed actors remain in storage below.
-                let display: DisplayLayers =
-                    bincode::deserialize(&bincode::serialize(&display).unwrap()).unwrap();
+                let display: DisplayLayers = crate::util::save_codec::deserialize(
+                    &crate::util::save_codec::serialize(&display).unwrap(),
+                )
+                .unwrap();
                 let order = NativeDisplayOrder::from_display(&display);
                 let entries = actors
                     .iter()

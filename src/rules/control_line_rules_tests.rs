@@ -1,6 +1,7 @@
 //! Control-link scalar readers through ordered production rules passes.
 use super::*;
 use crate::rules::ruleset::RuleSet;
+use crate::util::save_codec;
 
 #[test]
 fn control_line_defaults_exact_keys_and_signed_values() {
@@ -64,7 +65,7 @@ fn control_line_rules_retain_values_over_layers_handoffs_and_saves() {
     }
     let processed = layers.process().unwrap();
     let restored: ProcessedRulesLayers =
-        bincode::deserialize(&bincode::serialize(&processed).unwrap()).unwrap();
+        save_codec::deserialize(&save_codec::serialize(&processed).unwrap()).unwrap();
     let (_, trace) = restored.into_ini_and_native_type_construction_trace();
     let mut state = trace.into_registry_state_discarding_events();
     for reset in [false, true] {

@@ -8,6 +8,7 @@ use crate::sim::world::bridge_test_evidence::{
     save_scene,
 };
 use crate::sim::world::{Simulation, TickLane};
+use crate::util::save_codec;
 use serde_json::{Value, json};
 
 fn authority(sim: &Simulation, source: u64, expected_load: bool) -> Value {
@@ -38,9 +39,9 @@ fn authority(sim: &Simulation, source: u64, expected_load: bool) -> Value {
         "next_stable_id":sim.substrate.next_stable_object_id,
         "clock":[sim.session.tick, u64::from(sim.session.binary_frame)],
         "bridge_authority":crate::util::sha256::sha256_hex(
-            &bincode::serialize(&sim.bridge_state).unwrap()),
+            &save_codec::serialize(&sim.bridge_state).unwrap()),
         "cell_memberships":crate::util::sha256::sha256_hex(
-            &bincode::serialize(&sim.substrate.occupancy).unwrap()),
+            &save_codec::serialize(&sim.substrate.occupancy).unwrap()),
     })
 }
 

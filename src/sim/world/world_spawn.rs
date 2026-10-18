@@ -2253,6 +2253,11 @@ impl Simulation {
         // slot initialization. Otherwise full-health animations consume IDs/RNG
         // here and ActuallyPlaced suppresses the real completion callback.
         converted_health.apply(&mut destination);
+        // RESIDUAL: native Selects the placed building (vt+0x14C,
+        // `0x007399D4`) after its Unlimbo with the voice latch cleared
+        // (`0x007399BD`) and before the MCV's tag moves over (`0x007399F8`),
+        // so only its discovery/IsHumanPlayer gate differs from this raw
+        // flag; `techno_select` would refuse the still-limboed building here.
         if was_selected {
             destination.selection.select();
         }
@@ -2595,6 +2600,10 @@ impl Simulation {
         self.add_unit_sensor_after_unlimbo(new_sid, rules, overlay_registry);
         if let Some(unit) = self.substrate.entities.get_mut(new_sid) {
             converted_health.apply(unit);
+            // RESIDUAL: native Selects the new unit (vt+0x14C, `0x0044A137`)
+            // with the voice latch cleared (`0x0044A123`); this raw flag
+            // skips its discovery/IsHumanPlayer gate, ObjectClass::Select and
+            // tag event 0x21.
             if was_selected {
                 unit.selection.select();
             }

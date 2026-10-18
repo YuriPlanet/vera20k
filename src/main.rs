@@ -16,8 +16,7 @@ fn main() -> Result<()> {
         }
         Err(err) => {
             eprintln!("Failed to initialize file logger: {err}");
-            env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
-                .init();
+            let _ = vera20k::util::logging::init_stderr_logger("info");
             None
         }
     };

@@ -2351,12 +2351,15 @@ mod item83_selection_order_tests {
 
     #[test]
     fn item83_voice_policy_emits_every_tap_voice_in_candidate_order_only() {
-        let rules = RuleSet::from_ini(&IniFile::from_str(
-            "[InfantryTypes]\n0=E1\n1=E2\n\n\
-             [VehicleTypes]\n\n[AircraftTypes]\n\n[BuildingTypes]\n\n\
-             [E1]\nStrength=100\nArmor=none\nSpeed=4\nVoiceSelect=VoiceOne\n\n\
-             [E2]\nStrength=100\nArmor=none\nSpeed=4\nVoiceSelect=VoiceTwo\n",
-        ))
+        let rules = RuleSet::from_ini_with_sounds_for_test(
+            &IniFile::from_str(
+                "[InfantryTypes]\n0=E1\n1=E2\n\n\
+                 [VehicleTypes]\n\n[AircraftTypes]\n\n[BuildingTypes]\n\n\
+                 [E1]\nStrength=100\nArmor=none\nSpeed=4\nVoiceSelect=VoiceOne\n\n\
+                 [E2]\nStrength=100\nArmor=none\nSpeed=4\nVoiceSelect=VoiceTwo\n",
+            ),
+            &["VoiceOne", "VoiceTwo"],
+        )
         .expect("item83 voice rules");
         let mut sim = Simulation::new();
         let owner = sim.interner.intern("Americans");

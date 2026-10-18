@@ -2,6 +2,7 @@
 //! Execute6DDB67 ->6E01C0 uses the live Trigger's Tag membership, not a House.
 use super::*;
 use crate::sim::mission::{MissionId, MissionType};
+use crate::util::save_codec;
 
 fn corpus() -> &'static serde_json::Value {
     let value = crate::test_fixture::json("tools/spatial_oracle/trigger_wakeup.json");
@@ -168,11 +169,11 @@ fn wakeup_selection_and_deferred_mission_state_match_original_controls() {
                 dispatch_timer: expected.mission.dispatch_timer(),
             };
             // Serialize the observed actor before mutating the expected prior.
-            let actual = bincode::serialize(actual).unwrap();
+            let actual = save_codec::serialize(actual).unwrap();
             expected.mission.apply_test_fixture(fixture);
             assert_eq!(
                 actual,
-                bincode::serialize(&expected).unwrap(),
+                save_codec::serialize(&expected).unwrap(),
                 "{name} actor{index}"
             );
         }

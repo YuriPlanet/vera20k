@@ -21,6 +21,7 @@ use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::terrain_rules::{TerrainClass, TerrainRules};
 use crate::sim::rng::SimRng;
+use crate::util::save_codec;
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -1429,8 +1430,8 @@ fn bridge_publication_overlapping_mark_preserves_literal_anchor_pointer() {
         "F1 clears its literal pointer"
     );
     let retained = DynamicTerrainCellState::capture(terrain.cell(4, 3).unwrap());
-    let bytes = bincode::serialize(&retained).unwrap();
-    let restored: DynamicTerrainCellState = bincode::deserialize(&bytes).unwrap();
+    let bytes = save_codec::serialize(&retained).unwrap();
+    let restored: DynamicTerrainCellState = save_codec::deserialize(&bytes).unwrap();
     assert_eq!(restored, retained);
 }
 

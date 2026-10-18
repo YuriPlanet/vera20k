@@ -2860,9 +2860,10 @@ pub(crate) mod tests {
             visible_anim.z_adjust, 775,
             "CellClass +0x10A is ambient*10 + level*height - ground"
         );
-        let encoded = bincode::serialize(&visible).expect("serialize CellAnim remap state");
+        let encoded =
+            crate::util::save_codec::serialize(&visible).expect("serialize CellAnim remap state");
         let restored: Simulation =
-            bincode::deserialize(&encoded).expect("restore CellAnim remap state");
+            crate::util::save_codec::deserialize(&encoded).expect("restore CellAnim remap state");
         let restored_anim = restored.substrate.anims.iter().next().unwrap().1;
         assert_eq!(restored_anim.remap(), visible_anim.remap());
         assert_eq!(restored_anim.z_adjust, visible_anim.z_adjust);

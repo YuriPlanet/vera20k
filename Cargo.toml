@@ -53,7 +53,7 @@ dev-overlays = ["vera20k-core/dev-overlays"]
 # UI owners. Implies `dev-overlays` so a dev build keeps its world overlays.
 dev-ui = ["dep:egui", "dep:egui-wgpu", "dep:egui-winit", "dev-overlays", "vera20k-core/dev-ui"]
 # Standalone asset/video tools; this does not enable the engine overlay.
-tools-ui = ["dep:eframe", "dep:rfd"]
+tools-ui = ["dep:eframe"]
 
 [dependencies]
 # The GPU-free engine. Its dev features follow this package's.
@@ -73,8 +73,6 @@ raw-window-handle = "0.6"
 # `Win32_UI_WindowsAndMessaging` covers ClipCursor/GetClientRect;
 # `Win32_Graphics_Gdi` adds ClientToScreen (maps the client rect into screen coords).
 windows-sys = { version = "0.61", features = ["Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi"] }
-# pollster bridges wgpu's async initialization inside winit's sync event loop.
-pollster = "0.4"
 # bytemuck enables safe transmutation of structs to GPU-friendly byte slices.
 bytemuck = { version = "1", features = ["derive"] }
 
@@ -86,18 +84,14 @@ egui-wgpu = { version = "0.33", optional = true }
 egui-winit = { version = "0.33", default-features = false, optional = true }
 # eframe is egui's standalone app framework — used by tool binaries (mix-browser GUI).
 eframe = { version = "0.33", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"], optional = true }
-# Native file-open dialog — used by the bik-player binary.
-rfd = { version = "0.14", optional = true }
 
 # --- Shared with vera20k-core ([workspace.dependencies]) ---
 glam = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-bincode = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 log = { workspace = true }
-env_logger = { workspace = true }
 
 # --- Image processing ---
 # Used for texture atlas creation and debug image output, not for asset parsing.
@@ -138,16 +132,11 @@ vera20k-core = { path = "src", features = ["test-support"] }
 glam = "0.29"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-bincode = "1"
 # thiserror for structured library errors (AssetError, RulesError, etc.)
 thiserror = "2"
 # anyhow for application-level error propagation (main.rs, app facade)
 anyhow = "1"
 log = "0.4"
-# Without the `regex` feature, the optional `/filter` part of RUST_LOG matches as
-# a substring; module and level filters are unchanged. It was the only user of
-# the regex crates. `humantime` stays for `format_timestamp_secs`.
-env_logger = { version = "0.11", default-features = false, features = ["auto-color", "humantime"] }
 
 [lints]
 workspace = true

@@ -351,7 +351,10 @@ fn carries_crate_uses_unit_defaults_layers_and_retained_process_state() {
         .unwrap();
         let (_, trace) = initial.into_ini_and_native_type_construction_trace();
         let state = trace.into_registry_state_discarding_events();
-        let state = bincode::deserialize(&bincode::serialize(&state).unwrap()).unwrap();
+        let state = crate::util::save_codec::deserialize(
+            &crate::util::save_codec::serialize(&state).unwrap(),
+        )
+        .unwrap();
         let next = RulesLayerStack::new(IniFile::from_str(
             "[VehicleTypes]\n0=CAR\n[CAR]\nName=Continued car\n",
         ))

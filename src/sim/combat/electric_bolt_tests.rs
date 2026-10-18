@@ -362,6 +362,7 @@ fn direct_bolt_uses_explicit_weapon_source_and_existing_rng_constructor() {
         crate::sim::projectile::ProjectileTarget::Entity(target),
         rules.weapon("CoilBolt").unwrap(),
         from,
+        None,
     );
     let births: Vec<_> = sim
         .lifecycle_outputs
@@ -983,4 +984,59 @@ fn natural_charge_expiry_preserves_native_bullet_and_spark_visit_order() {
             "{name}"
         );
     }
+}
+
+/// SpawnElectricBoltEffect (`0x006FD5E2..0x006FD606`) names a live Unit
+/// firer as its bolt's owner with the selected weapon index, and the tactical
+/// pass's owner read (`0x004C2830`) answers the same FLH the bolt started at
+/// until the Unit moves, then its new one; a gone Unit answers nothing.
+#[test]
+fn a_tesla_tank_bolt_names_its_firer_and_follows_its_flh() {
+    let Some(retail) = retail_battle_rules_for_map("Hills.mmx") else {
+        return;
+    };
+    let rules = retail.rules;
+    let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x6FD570);
+    let tank = sim
+        .spawn_object("TTNK", "Russians", 10, 10, 0, &rules)
+        .expect("TTNK spawns");
+    let target = sim
+        .spawn_object("MTNK", "Americans", 13, 10, 0, &rules)
+        .expect("MTNK spawns");
+    electric_bolt::fired(
+        &mut sim,
+        &rules,
+        tank,
+        TargetKind::Entity(target),
+        rules.weapon("TankBolt").unwrap(),
+    );
+    let birth = sim
+        .lifecycle_outputs
+        .iter()
+        .find_map(|output| match output {
+            LifecycleOutput::ElectricBoltCreated(birth) => Some(*birth),
+            _ => None,
+        })
+        .expect("TankBolt builds a bolt");
+    let owner = birth.owner.expect("the Unit owns its bolt");
+    assert_eq!(
+        owner,
+        electric_bolt::ElectricBoltOwner {
+            unit: tank,
+            weapon_index: 0
+        }
+    );
+    assert_eq!(
+        electric_bolt::owner_source(&sim, &rules, owner),
+        Some(birth.from)
+    );
+
+    let entity = sim.substrate.entities.get_mut(tank).unwrap();
+    entity.position.set_rx_for_test(11);
+    let moved = electric_bolt::owner_source(&sim, &rules, owner).expect("tank present");
+    assert_eq!(moved.x, birth.from.x + 256, "the source follows the tank");
+
+    sim.uninit_with_rules(tank, &rules);
+    sim.substrate.entities.remove(tank);
+    assert_eq!(electric_bolt::owner_source(&sim, &rules, owner), None);
 }

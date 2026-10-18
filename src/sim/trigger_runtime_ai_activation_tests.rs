@@ -1,6 +1,7 @@
 //! Trigger controls through the shared House activation and ordinary team owners.
 use super::*;
 use crate::sim::house_state::HouseAiActivationLatches;
+use crate::util::save_codec;
 
 #[test]
 fn authored_ai_trigger_actions_change_only_the_selected_house_latch() {
@@ -223,7 +224,7 @@ fn run_native_action(
     let teams_before: Vec<_> = sim
         .team_script_vm
         .teams_in_order()
-        .map(|team| bincode::serialize(team).unwrap())
+        .map(|team| save_codec::serialize(team).unwrap())
         .collect();
     let rng_before = sim.rng_state();
     let result = sim.apply_live_trigger_action(
@@ -254,7 +255,7 @@ fn run_native_action(
     let teams_after: Vec<_> = sim
         .team_script_vm
         .teams_in_order()
-        .map(|team| bincode::serialize(team).unwrap())
+        .map(|team| save_codec::serialize(team).unwrap())
         .collect();
     assert_eq!(teams_after, teams_before, "{context}: existing Teams");
     assert_eq!(row["rng_unchanged"], true);
@@ -398,7 +399,7 @@ fn ai_activation_replays_original_action_to_timer_selector_histories() {
         sim.session.house_order = houses.to_vec();
         supply_rng(&mut sim, &row["initial_rng_full"]);
         let (old_team, team_types) = install_team_scene(&mut sim, houses[0]);
-        let old_bytes = bincode::serialize(sim.team_script_vm.team(old_team).unwrap()).unwrap();
+        let old_bytes = save_codec::serialize(sim.team_script_vm.team(old_team).unwrap()).unwrap();
         for (step_index, step) in row["steps"].as_array().unwrap().iter().enumerate() {
             let context = format!("{name} step{step_index}");
             if let Some(action) = step.get("action") {
@@ -503,7 +504,7 @@ fn ai_activation_replays_original_action_to_timer_selector_histories() {
                 .collect();
             assert_eq!(autocreate, native_autocreate, "{context}: Autocreate marks");
             assert_eq!(
-                bincode::serialize(sim.team_script_vm.team(old_team).unwrap()).unwrap(),
+                save_codec::serialize(sim.team_script_vm.team(old_team).unwrap()).unwrap(),
                 old_bytes,
                 "{context}: existing Team retained"
             );
@@ -651,7 +652,7 @@ fn retail_all05_elapsed_stop_keeps_explicit_teams_and_saved_activation() {
             .all(|id| sim.houses[id].ai_activation().ai_triggers_active)
     );
     let (old_team, _) = install_team_scene(&mut sim, targets[0]);
-    let old_bytes = bincode::serialize(sim.team_script_vm.team(old_team).unwrap()).unwrap();
+    let old_bytes = save_codec::serialize(sim.team_script_vm.team(old_team).unwrap()).unwrap();
     assert!(!sim.dispatch_live_tag_event(
         stop_tag,
         TagEventInput {
@@ -715,7 +716,7 @@ fn retail_all05_elapsed_stop_keeps_explicit_teams_and_saved_activation() {
             assert_eq!(candidate.houses[id].team_creation.timer(), timers[index]);
         }
         assert_eq!(
-            bincode::serialize(candidate.team_script_vm.team(old_team).unwrap()).unwrap(),
+            save_codec::serialize(candidate.team_script_vm.team(old_team).unwrap()).unwrap(),
             old_bytes
         );
         let explicit = candidate
@@ -782,7 +783,7 @@ fn retail_all05_elapsed_stop_keeps_explicit_teams_and_saved_activation() {
             rng_check.native_state_hex()
         );
         assert_eq!(
-            bincode::serialize(candidate.team_script_vm.team(old_team).unwrap()).unwrap(),
+            save_codec::serialize(candidate.team_script_vm.team(old_team).unwrap()).unwrap(),
             old_bytes
         );
         let after = GameSnapshot::save(candidate, 0, 0, "ALL05UMD.MAP", 0);
@@ -1141,7 +1142,7 @@ fn house_trigger_ratio_original_writer_and_due_selector_keep_signed_values_timer
         house.set_ai_triggers_active(true);
         house.team_creation.restart(0, 10);
         let (old_team, team_types) = install_team_scene(&mut sim, owner);
-        let old_bytes = bincode::serialize(sim.team_script_vm.team(old_team).unwrap()).unwrap();
+        let old_bytes = save_codec::serialize(sim.team_script_vm.team(old_team).unwrap()).unwrap();
         supply_rng(&mut sim, &corpus()["actions"]["rng_full_seed31"]);
         let other = serde_json::to_value(&sim.houses[&enemy]).unwrap();
         let before_hash = sim.state_hash();
@@ -1205,7 +1206,7 @@ fn house_trigger_ratio_original_writer_and_due_selector_keep_signed_values_timer
             }
         );
         assert_eq!(
-            bincode::serialize(sim.team_script_vm.team(old_team).unwrap()).unwrap(),
+            save_codec::serialize(sim.team_script_vm.team(old_team).unwrap()).unwrap(),
             old_bytes
         );
         assert_eq!(
@@ -1264,7 +1265,7 @@ fn house_team_controls_ordered_tag_history_preserves_native_due_selection_and_sa
     }
     sim.houses.get_mut(&houses[0]).unwrap().enemy_house = Some(houses[1]);
     let (old_team, types) = install_team_scene(&mut sim, houses[0]);
-    let old_team_bytes = bincode::serialize(sim.team_script_vm.team(old_team).unwrap()).unwrap();
+    let old_team_bytes = save_codec::serialize(sim.team_script_vm.team(old_team).unwrap()).unwrap();
     let map = super::tests::install_event_ingress_map(
         &mut sim,
         &rules,
@@ -1276,7 +1277,7 @@ fn house_team_controls_ordered_tag_history_preserves_native_due_selection_and_sa
     let rng = sim.rng_state();
     let main_before = sim.main_rng.native_state_hex();
     let mapgen_before = sim.mapgen_rng.native_state_hex();
-    let untouched = bincode::serialize(&sim.houses[&houses[2]]).unwrap();
+    let untouched = save_codec::serialize(&sim.houses[&houses[2]]).unwrap();
     sim.advance_triggers(
         TriggerInputs {
             events: &map.events,
@@ -1299,7 +1300,7 @@ fn house_team_controls_ordered_tag_history_preserves_native_due_selection_and_sa
     assert!(!sim.houses[&houses[1]].ai_activation().ai_triggers_active);
     assert!(sim.houses[&houses[1]].ai_activation().auto_base_building);
     assert_eq!(
-        bincode::serialize(&sim.houses[&houses[2]]).unwrap(),
+        save_codec::serialize(&sim.houses[&houses[2]]).unwrap(),
         untouched
     );
     assert_eq!(sim.houses[&houses[0]].team_creation.ratio(), 100);
@@ -1350,7 +1351,7 @@ fn house_team_controls_ordered_tag_history_preserves_native_due_selection_and_sa
         .collect();
     assert_eq!(created, vec![Some(types[0])]);
     assert_eq!(
-        bincode::serialize(sim.team_script_vm.team(old_team).unwrap()).unwrap(),
+        save_codec::serialize(sim.team_script_vm.team(old_team).unwrap()).unwrap(),
         old_team_bytes
     );
     assert_eq!(

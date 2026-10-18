@@ -13,6 +13,7 @@ use crate::sim::game_entity::GameEntity;
 use crate::sim::house_state::HouseState;
 use crate::sim::snapshot::GameSnapshot;
 use crate::sim::world::Simulation;
+use crate::util::save_codec;
 
 #[test]
 fn pack_voice_requests_match_native_slots_suppression_and_pending_owner() {
@@ -47,7 +48,7 @@ fn pack_voice_requests_match_native_slots_suppression_and_pending_owner() {
             entity.suppress_deploy_voice.suppress();
         }
         let archive_before = entity.archive_target();
-        let mission_before = bincode::serialize(&entity.mission).unwrap();
+        let mission_before = save_codec::serialize(&entity.mission).unwrap();
         let main_before = sim.rng_views().main.native_state_hex();
         let scenario_before = sim.scenario_rng.native_state_hex();
         let mapgen_before = sim.mapgen_rng.native_state_hex();
@@ -82,7 +83,7 @@ fn pack_voice_requests_match_native_slots_suppression_and_pending_owner() {
             "{context}: Archive retained"
         );
         assert_eq!(
-            bincode::serialize(&entity.mission).unwrap(),
+            save_codec::serialize(&entity.mission).unwrap(),
             mission_before,
             "{context}: timers"
         );
@@ -265,9 +266,12 @@ fn simulation(
 
 #[test]
 fn select_wrapper_gates_precede_voice_draw_and_passive_queue_rejection_follows_it() {
-    let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
-        "[VehicleTypes]\n0=TANK\n[TANK]\nVoiceSelect=Sound101,Sound202,Sound303\n",
-    ))
+    let rules = RuleSet::from_ini_with_sounds_for_test(
+        &crate::rules::ini_parser::IniFile::from_str(
+            "[VehicleTypes]\n0=TANK\n[TANK]\nVoiceSelect=Sound101,Sound202,Sound303\n",
+        ),
+        &["Sound101", "Sound202", "Sound303"],
+    )
     .unwrap();
     for (owner, passive, enabled, drew, queued) in [
         ("Local", false, true, true, true),
@@ -373,9 +377,12 @@ fn prefixed_selection_fixture() -> (Simulation, RuleSet, serde_json::Value) {
         .find(|history| history["id"] == "unit_multiple_seed1_after248_main_raw")
         .unwrap()
         .clone();
-    let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
-        "[VehicleTypes]\n0=TANK\n[TANK]\nVoiceSelect=Sound101,Sound202,Sound303\n",
-    ))
+    let rules = RuleSet::from_ini_with_sounds_for_test(
+        &crate::rules::ini_parser::IniFile::from_str(
+            "[VehicleTypes]\n0=TANK\n[TANK]\nVoiceSelect=Sound101,Sound202,Sound303\n",
+        ),
+        &["Sound101", "Sound202", "Sound303"],
+    )
     .unwrap();
     let mut sim = simulation("TANK", EntityCategory::Unit, "Local", false);
     sim.initialize_random_number_system(history["seed"].as_u64().unwrap() as u32);

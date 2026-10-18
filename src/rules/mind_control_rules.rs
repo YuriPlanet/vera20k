@@ -63,15 +63,15 @@ pub struct MindControlRules {
 }
 
 impl MindControlRules {
-    pub fn from_ini(ini: &IniFile) -> Self {
+    /// `attack_line_frames` is the ordered Rules processor's retained value.
+    pub fn from_ini(ini: &IniFile, attack_line_frames: i32) -> Self {
         let combat = ini.section_or_empty("CombatDamage");
         let audio = ini.section_or_empty("AudioVisual");
         let general = ini.section_or_empty("General");
         // `DifficultyClass::ReadINI_IntVector @ 0x00475D70`.
         let list = |section: &IniSection, key: &str| section.read_int_list(key).unwrap_or_default();
         Self {
-            // Published by the ordered native_processing owner in RuleSet.
-            attack_line_frames: 15, // Rules constructor665ABE.
+            attack_line_frames,
             // ReadString 0x80, then the anim or sound lookup.
             controlled_anim: combat
                 .read_type_name("ControlledAnimationType", 0x80)
@@ -130,7 +130,7 @@ mod tests {
              [AudioVisual]\nYuriMindControlSound=YuriMindControl\n\
              MasterMindOverloadDeathSound=MasterMindOverloadVoice\nMindClearedSound=MindCleared\n",
         );
-        let rules = MindControlRules::from_ini(&ini);
+        let rules = MindControlRules::from_ini(&ini, 15);
         assert_eq!(rules.controlled_anim.as_deref(), Some("MINDANIM"));
         assert_eq!(rules.overload_count, [3, 6, 10, 50]);
         assert_eq!(rules.overload_damage, [0, 50, 100, 500]);

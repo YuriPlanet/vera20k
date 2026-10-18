@@ -5,6 +5,7 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::command::{Command, CommandRecord};
 use crate::sim::intern::InternedId;
 use crate::sim::world::Simulation;
+use crate::util::save_codec;
 use serde_json::Value;
 
 fn corpus() -> &'static Value {
@@ -490,8 +491,8 @@ fn planning_snapshot_restores_shared_nodes_loops_current_records_and_hash() {
     let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
     assert_eq!(restored.state_hash(), hash);
     assert_eq!(
-        bincode::serialize(&restored.planning).unwrap(),
-        bincode::serialize(&sim.planning).unwrap()
+        save_codec::serialize(&restored.planning).unwrap(),
+        save_codec::serialize(&sim.planning).unwrap()
     );
     assert_eq!(restored.planning.paths[&1].loop_start, Some(0));
     assert!(restored.planning.paths[&1].executing);
@@ -623,8 +624,8 @@ fn same_batch_commit_precedes_staged_edit_and_next_batch_commit_starts_path() {
 fn restored_planning_rebuilds_location_index_for_node_sharing_and_connect() {
     let (mut sim, rules, owner) = fixture();
     append(&mut sim, &rules, owner, 1, (12, 15));
-    let bytes = bincode::serialize(&sim.planning).unwrap();
-    sim.planning = bincode::deserialize(&bytes).unwrap();
+    let bytes = save_codec::serialize(&sim.planning).unwrap();
+    sim.planning = save_codec::deserialize(&bytes).unwrap();
     assert!(sim.planning_node_at_cell(owner, (12, 15)));
     append(&mut sim, &rules, owner, 2, (12, 15));
     assert_eq!(
@@ -665,9 +666,9 @@ fn planning_restore_rejects_broken_graph_and_record_references() {
             }
             _ => unreachable!(),
         }
-        let bytes = bincode::serialize(&planning).unwrap();
+        let bytes = save_codec::serialize(&planning).unwrap();
         assert!(
-            bincode::deserialize::<super::PlanningState>(&bytes).is_err(),
+            save_codec::deserialize::<super::PlanningState>(&bytes).is_err(),
             "corrupt planning case {corrupt}"
         );
     }
@@ -681,8 +682,8 @@ fn planning_restore_retains_stale_encounter_entries_after_member_detach() {
     }
     sim.planning_detach_actor(1);
     assert_eq!(sim.planning.nodes[&0].member_order, vec![1, 2]);
-    let bytes = bincode::serialize(&sim.planning).unwrap();
-    sim.planning = bincode::deserialize(&bytes).unwrap();
+    let bytes = save_codec::serialize(&sim.planning).unwrap();
+    sim.planning = save_codec::deserialize(&bytes).unwrap();
     let connect = sim.encode_plan_connect_record(owner, 3, (12, 15)).unwrap();
     apply(&mut sim, &rules, connect);
     assert_eq!(sim.planning.paths[&3].nodes, sim.planning.paths[&2].nodes);
@@ -987,8 +988,8 @@ fn connect_rotates_source_loop_suffix_and_preserves_auxiliary_provenance() {
             1,
             "connect rewrites only source, preserving native auxiliary provenance"
         );
-        let bytes = bincode::serialize(&sim.planning).unwrap();
-        sim.planning = bincode::deserialize(&bytes).unwrap();
+        let bytes = save_codec::serialize(&sim.planning).unwrap();
+        sim.planning = save_codec::deserialize(&bytes).unwrap();
     }
 }
 
@@ -1167,8 +1168,8 @@ fn captured_actor_path_commits_for_current_house_and_preserves_original_issuer()
     assert!(
         matches!(&generated[0].payload, Command::PlanningRecord { record } if record.house_id() == 0)
     );
-    let bytes = bincode::serialize(&sim.planning).unwrap();
-    sim.planning = bincode::deserialize(&bytes).unwrap();
+    let bytes = save_codec::serialize(&sim.planning).unwrap();
+    sim.planning = save_codec::deserialize(&bytes).unwrap();
     sim.validate_planning_references().unwrap();
     sim.session.tick += 1;
     let due = sim.take_due_commands();
@@ -1188,8 +1189,8 @@ fn planning_append_defers_actor_lifetime_admission_until_execution() {
     actor.lifecycle.set_in_limbo_for_test(true);
     append(&mut sim, &rules, owner, 1, (12, 15));
     assert_eq!(sim.planning.paths[&1].nodes.len(), 1);
-    let bytes = bincode::serialize(&sim.planning).unwrap();
-    sim.planning = bincode::deserialize(&bytes).unwrap();
+    let bytes = save_codec::serialize(&sim.planning).unwrap();
+    sim.planning = save_codec::deserialize(&bytes).unwrap();
     sim.validate_planning_references().unwrap();
 }
 
@@ -1206,8 +1207,8 @@ fn overlapping_connect_delete_removes_each_occurrence_and_restores_graph() {
     let delete = sim.encode_plan_node_delete_record(owner, (20, 15)).unwrap();
     apply(&mut sim, &rules, delete);
     assert_eq!(sim.planning.paths[&1].nodes, vec![0, 2]);
-    let bytes = bincode::serialize(&sim.planning).unwrap();
-    sim.planning = bincode::deserialize(&bytes).unwrap();
+    let bytes = save_codec::serialize(&sim.planning).unwrap();
+    sim.planning = save_codec::deserialize(&bytes).unwrap();
 }
 
 #[test]
@@ -1259,8 +1260,8 @@ fn overlapping_connect_consumption_preserves_occurrences_and_loop_first_record()
                     if looped { 2 } else { 1 }
                 );
             }
-            let bytes = bincode::serialize(&sim.planning).unwrap();
-            sim.planning = bincode::deserialize(&bytes).unwrap();
+            let bytes = save_codec::serialize(&sim.planning).unwrap();
+            sim.planning = save_codec::deserialize(&bytes).unwrap();
             sim.planning_acknowledge(1);
         }
         if looped {

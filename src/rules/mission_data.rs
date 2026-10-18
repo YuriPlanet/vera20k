@@ -856,7 +856,7 @@ mod acceptance_tests {
                 "{mission:?} discriminant"
             );
             assert_eq!(
-                bincode::serialize(&mission).expect("serialize mission selector"),
+                crate::util::save_codec::serialize(&mission).expect("serialize mission selector"),
                 serde_variant_index.to_le_bytes(),
                 "{mission:?} bincode declaration index"
             );
@@ -881,7 +881,7 @@ mod acceptance_tests {
             scatter: false,
         };
         assert_eq!(
-            bincode::serialize(&entry).expect("serialize mission control entry"),
+            crate::util::save_codec::serialize(&entry).expect("serialize mission control entry"),
             [
                 0x04, 0x03, 0x02, 0x01, 0x14, 0x13, 0x12, 0x11, 1, 0, 1, 0, 1, 0,
             ]

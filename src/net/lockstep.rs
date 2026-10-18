@@ -805,8 +805,9 @@ mod tests {
         queue.admit(opaque(0x15, 0, 10, &[2]));
         queue.dispatch_due_offline(10, &[eligible(owner, 0)], |_, _| {}, |_, _, _| {});
 
-        let encoded = bincode::serialize(&queue).unwrap();
-        let restored: SynchronizedCommandQueue = bincode::deserialize(&encoded).unwrap();
+        let encoded = crate::util::save_codec::serialize(&queue).unwrap();
+        let restored: SynchronizedCommandQueue =
+            crate::util::save_codec::deserialize(&encoded).unwrap();
 
         assert_eq!(restored.local_len(), 2);
         assert_eq!(restored.do_list_len(), 2);
@@ -856,8 +857,9 @@ mod tests {
             queue.apply_timing_update(100, 10, nonzero_u8(5), 20, nonzero_u8(10), false,),
             20
         );
-        let encoded = bincode::serialize(&queue).unwrap();
-        let mut restored: SynchronizedCommandQueue = bincode::deserialize(&encoded).unwrap();
+        let encoded = crate::util::save_codec::serialize(&queue).unwrap();
+        let mut restored: SynchronizedCommandQueue =
+            crate::util::save_codec::deserialize(&encoded).unwrap();
 
         let ineligible_house = CommandDispatchHouse::new(owner, 0, false);
         let history = MultiplayerChecksumHistory::new();

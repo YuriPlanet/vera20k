@@ -24,6 +24,7 @@ use crate::sim::movement::ground_pose::position_world_coord;
 use crate::sim::native_identity::NativeUniqueIdCursor;
 use crate::sim::rng::SimRng;
 use crate::sim::world::{FrameEffects, Simulation};
+use crate::util::save_codec;
 
 fn rows(kind: &str, count: usize) -> Vec<Value> {
     let corpus: Value = serde_json::from_str(crate::test_fixture::text(
@@ -88,7 +89,7 @@ fn on_trans_only_retained_reader_matches_original_and_survives_save() {
             "{visit}"
         );
         let restored: TeamScriptVm =
-            bincode::deserialize(&bincode::serialize(&vm).unwrap()).unwrap();
+            save_codec::deserialize(&save_codec::serialize(&vm).unwrap()).unwrap();
         assert_eq!(
             restored.team_type_ini[&id], vm.team_type_ini[&id],
             "{visit}"
@@ -106,7 +107,7 @@ fn on_trans_only_retained_reader_matches_original_and_survives_save() {
             live.construct_team(id, owner, false, 0, false, None)
                 .unwrap();
             let saved: TeamScriptVm =
-                bincode::deserialize(&bincode::serialize(&live).unwrap()).unwrap();
+                save_codec::deserialize(&save_codec::serialize(&live).unwrap()).unwrap();
             assert_eq!(hash(&saved), hash(&live));
             let mut unrestricted = live.clone();
             unrestricted
@@ -864,7 +865,7 @@ fn transport_origin_fields_match_original_retained_reads_and_survive_save_hash()
         let owner = interner.intern("OWNER");
         vm.construct_team(id, owner, false, 0, false, None).unwrap();
         let restored: TeamScriptVm =
-            bincode::deserialize(&bincode::serialize(&vm).unwrap()).unwrap();
+            save_codec::deserialize(&save_codec::serialize(&vm).unwrap()).unwrap();
         assert_eq!(restored.team_type_ini[&id], vm.team_type_ini[&id]);
         let hash = |vm: &TeamScriptVm| {
             let mut hasher = std::collections::hash_map::DefaultHasher::new();

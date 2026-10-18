@@ -536,8 +536,8 @@ mod native_state_tests {
         let mut visits = 0;
         for history in histories {
             // Transport the semantic projection, without old geometry/slide.
-            let bytes = bincode::serialize(&history.prior.saved()).unwrap();
-            let saved = bincode::deserialize(&bytes).unwrap();
+            let bytes = crate::util::save_codec::serialize(&history.prior.saved()).unwrap();
+            let saved = crate::util::save_codec::deserialize(&bytes).unwrap();
             let mut anim = PowerBarAnimState::from_saved(saved).unwrap();
             anim.set_max_segments(history.input[1] as i32 + 3);
             anim.reanchor_after_load(history.input[0] as u64);

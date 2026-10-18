@@ -3,6 +3,7 @@
 use super::*;
 use crate::map::resolved_terrain::{ResolvedTerrainGrid, test_clear_cell, test_grid};
 use crate::sim::vision::MapTransition;
+use crate::util::save_codec;
 use serde_json::{Value, json};
 
 #[test]
@@ -33,7 +34,7 @@ fn grow_shroud_captures_frontier_before_neighbors_lose_open_and_preserves_counte
     fog.set_ground_bits_for_test(other, 10, 10, 24);
     assert!(fog.admit_whole_map_reveal(viewer));
     let before = fog.by_owner[&viewer].clone();
-    let other_before = bincode::serialize(&fog.by_owner[&other]).unwrap();
+    let other_before = save_codec::serialize(&fog.by_owner[&other]).unwrap();
     fog.grow_shroud(viewer, (16, 16), None);
     let vis = &fog.by_owner[&viewer];
     for (cell, bits, pending) in [
@@ -63,16 +64,17 @@ fn grow_shroud_captures_frontier_before_neighbors_lose_open_and_preserves_counte
     );
     assert!(fog.whole_map_revealed_for_owner(viewer));
     assert_eq!(
-        bincode::serialize(&fog.by_owner[&other]).unwrap(),
+        save_codec::serialize(&fog.by_owner[&other]).unwrap(),
         other_before
     );
-    let mut restored: FogState = bincode::deserialize(&bincode::serialize(&fog).unwrap()).unwrap();
+    let mut restored: FogState =
+        save_codec::deserialize(&save_codec::serialize(&fog).unwrap()).unwrap();
     fog.grow_shroud(viewer, (16, 16), None);
     restored.grow_shroud(viewer, (16, 16), None);
     assert!(!restored.by_owner[&viewer].is_revealed(11, 10));
     assert_eq!(
-        bincode::serialize(&fog).unwrap(),
-        bincode::serialize(&restored).unwrap()
+        save_codec::serialize(&fog).unwrap(),
+        save_codec::serialize(&restored).unwrap()
     );
 }
 
@@ -260,7 +262,8 @@ fn native_forced_map_frontier_cache_and_notifications_preserve_counters() {
         }
         assert_eq!(row["rng_before"], row["rng_after"]);
         assert!(row["rng_calls"].as_array().unwrap().is_empty());
-        let restored: FogState = bincode::deserialize(&bincode::serialize(&fog).unwrap()).unwrap();
+        let restored: FogState =
+            save_codec::deserialize(&save_codec::serialize(&fog).unwrap()).unwrap();
         for cell in row["cells"].as_array().unwrap() {
             assert_native_cell_history(&restored, viewer, cell, &terrain, false);
         }
@@ -413,7 +416,8 @@ fn native_reshroud_leave_and_signed_clear_gate_preserve_gap_and_edge_bytes() {
             .unwrap()
             .store_reshrouded_map_cell(cell);
         assert_native_cell_history(&fog, viewer, &row["stored"], &terrain, false);
-        let loaded: FogState = bincode::deserialize(&bincode::serialize(&fog).unwrap()).unwrap();
+        let loaded: FogState =
+            save_codec::deserialize(&save_codec::serialize(&fog).unwrap()).unwrap();
         assert_native_cell_history(&loaded, viewer, &row["stored"], &terrain, false);
         assert_eq!(row["rng_before"], row["rng_after"], "{}", row["name"]);
         assert!(row["rng_calls"].as_array().unwrap().is_empty());
@@ -575,7 +579,8 @@ fn native_trigger_reveal_retained_cache_admission_matches_original_histories() {
         for row in history["states"].as_array().unwrap() {
             assert_native_cell_history(&fog, viewer, row, &terrain, false);
         }
-        let restored: FogState = bincode::deserialize(&bincode::serialize(&fog).unwrap()).unwrap();
+        let restored: FogState =
+            save_codec::deserialize(&save_codec::serialize(&fog).unwrap()).unwrap();
         for row in history["states"].as_array().unwrap() {
             assert_native_cell_history(&restored, viewer, row, &terrain, false);
         }
