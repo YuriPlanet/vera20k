@@ -180,8 +180,8 @@ use crate::sim::world::Simulation;
 // insertion is exactly the case it cannot cover. A v47 save written before this
 // change would pass the version check and then misread every byte from that
 // field onward, for that vehicle and every entity after it. Both occupation
-// marks are rebuilt into the transient `CellOccupationGrid` on load, so a
-// misread is a wrong cell reservation, not just a cosmetic field.
+// marks were then rebuilt into the transient `CellOccupationGrid` on load, so
+// a misread was a wrong cell reservation, not just a cosmetic field.
 //
 // Bumped 48 -> 49: ObjectSubstrate gains authoritative serialized building
 // hidden-occupation counters, and GameEntity gains the immutable fixed-slot
@@ -1133,8 +1133,11 @@ use crate::sim::world::Simulation;
 // 416 -> 417: retain control-node line timers and ordered Rules/Type line settings.
 // 417 -> 418: saved map presentation retains its parsed campaign `[Ranking]`
 // par times and result strings for the standalone score page.
-// 418 -> 419: retain Infantry+6D8 Psycho independently of Techno Berserk.
-const SNAPSHOT_VERSION: u32 = 419;
+// 418 -> 419: Drive and Ship no longer save head-to and handoff occupation
+// footprints; only the removed vehicle-occupation index read them. The raw
+// ground/deck bytes remain the occupation record.
+// 419 -> 420: retain Infantry+6D8 Psycho independently of Techno Berserk.
+const SNAPSHOT_VERSION: u32 = 420;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -3025,10 +3028,6 @@ impl Simulation {
             .occupancy
             .restore_memberships(&self.substrate.entities)
             .map_err(|reason| SnapshotRestoreError::InvalidCellMembership { reason })?;
-        self.substrate.cell_occupation = crate::sim::occupancy::CellOccupationGrid::rebuild(
-            &self.substrate.entities,
-            &self.substrate.occupancy,
-        );
         Ok(())
     }
 
@@ -3822,10 +3821,6 @@ mod tests {
             .occupancy
             .restore_memberships(&sim.substrate.entities)
             .expect("fixture has valid saved Cell references");
-        sim.substrate.cell_occupation = crate::sim::occupancy::CellOccupationGrid::rebuild(
-            &sim.substrate.entities,
-            &sim.substrate.occupancy,
-        );
         sim.rebuild_caches_after_load(
             terrain,
             crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig::default(),
@@ -4860,8 +4855,9 @@ mod tests {
         // 415 -> 416: Building online latch independent of Temporal.
         // 416 -> 417: control-node line timers and ordered line settings.
         // 417 -> 418: campaign score map-rank presentation metadata.
-        // 418 -> 419: Infantry Psycho latch independent of Techno Berserk.
-        assert_eq!(super::SNAPSHOT_VERSION, 419);
+        // 418 -> 419: the Drive/Ship occupation footprints are gone.
+        // 419 -> 420: Infantry Psycho latch independent of Techno Berserk.
+        assert_eq!(super::SNAPSHOT_VERSION, 420);
     }
 
     #[test]
@@ -5210,7 +5206,6 @@ mod tests {
             None,
             &Default::default(),
             &mut restored.substrate.occupancy,
-            &mut restored.substrate.cell_occupation,
             &mut restored.substrate.raw_cell_occupation,
             &mut restored.scenario_rng,
             52,
@@ -6751,14 +6746,6 @@ mod tests {
                 .occupancy
                 .contains_entity(5, 7, entity_id)
         );
-        assert_eq!(
-            restored.substrate.cell_occupation.vehicle_bits(
-                5,
-                7,
-                crate::sim::movement::locomotor::MovementLayer::Ground,
-            ),
-            0
-        );
         assert_eq!(restored.substrate.raw_cell_occupation.ground_bits(5, 7), 0);
         assert_eq!(restored.state_hash(), expected_hash);
     }
@@ -7680,13 +7667,11 @@ mod tests {
     }
 
     #[test]
-    fn gsi_04_05_v40_roundtrip_restores_drive_footprint_and_cell_occupation() {
+    fn gsi_04_05_v40_roundtrip_restores_drive_runtime_and_cleared_foot_occupation() {
         use crate::rules::locomotor_type::LocomotorKind;
-        use crate::sim::components::DriveOccupationFootprint;
         use crate::sim::game_entity::GameEntity;
         use crate::sim::movement::DriveLocomotionRuntime;
         use crate::sim::movement::locomotor::LocomotorState;
-        use crate::sim::occupancy::{CellOccupationGrid, VEHICLE_OCCUPATION_BIT};
 
         let mut sim = Simulation::new();
         let owner = sim.interner.intern("AMERICANS");
@@ -7699,11 +7684,6 @@ mod tests {
         sim.substrate.entities.insert(entity);
         sim.add_entity_occupancy(entity_id);
 
-        let footprint = DriveOccupationFootprint {
-            rx: 3,
-            ry: 2,
-            layer: MovementLayer::Ground,
-        };
         sim.substrate
             .entities
             .get_mut(entity_id)
@@ -7711,18 +7691,14 @@ mod tests {
             .locomotor
             .as_mut()
             .unwrap()
-            .install_drive_state_for_test(Some(
-                DriveLocomotionRuntime::default().with_occupation_head_to_for_test(Some(footprint)),
-            ));
+            .install_drive_state_for_test(Some(DriveLocomotionRuntime::default()));
         sim.substrate
             .entities
             .get_mut(entity_id)
             .unwrap()
             .set_foot_occupation_enabled(false);
-        sim.substrate.cell_occupation =
-            CellOccupationGrid::rebuild(&sim.substrate.entities, &sim.substrate.occupancy);
         // Native in-scenario load restarts Scenario RNG from Seed0; isolate
-        // Drive footprint persistence on that same post-load cursor.
+        // Drive and Foot enable persistence on that same post-load cursor.
         sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let expected_hash = sim.state_hash();
 
@@ -7744,17 +7720,19 @@ mod tests {
             .expect("second deterministic rebuild");
 
         for restored in [&restored_a, &restored_b] {
-            let drive = restored
-                .substrate
-                .entities
-                .get(entity_id)
-                .expect("restored Drive unit")
-                .locomotor
-                .as_ref()
-                .and_then(|loco| loco.selected_drive_runtime())
-                .and_then(|runtime| runtime.retained())
-                .expect("restored Drive runtime");
-            assert_eq!(drive.occupation_head_to(), Some(footprint));
+            assert!(
+                restored
+                    .substrate
+                    .entities
+                    .get(entity_id)
+                    .expect("restored Drive unit")
+                    .locomotor
+                    .as_ref()
+                    .and_then(|loco| loco.selected_drive_runtime())
+                    .and_then(|runtime| runtime.retained())
+                    .is_some(),
+                "restored Drive runtime"
+            );
             assert!(
                 !restored
                     .substrate
@@ -7764,21 +7742,6 @@ mod tests {
                     .foot_occupation_enabled()
             );
             assert_eq!(restored.state_hash(), expected_hash);
-            assert_eq!(
-                restored
-                    .substrate
-                    .cell_occupation
-                    .vehicle_bits(2, 2, MovementLayer::Ground),
-                0
-            );
-            assert_eq!(
-                restored.substrate.cell_occupation.vehicle_bits(
-                    footprint.rx,
-                    footprint.ry,
-                    footprint.layer
-                ),
-                VEHICLE_OCCUPATION_BIT
-            );
         }
     }
 

@@ -39,9 +39,8 @@
 //!   Limbo pass none, as before this owner existed.
 //!
 //! Mark's list choice is `occupancy::cell_list_layer_for_entity`. Readers of
-//! list membership follow the lists themselves: list walks
-//! (`Simulation::cell_object_list_location`) and the vehicle plane
-//! (`CellOccupationGrid::reconcile_entity`). The blocker plane
+//! list membership follow the lists themselves, as list walks
+//! (`Simulation::cell_object_list_location`) do. The blocker plane
 //! (`bump_crush::blocker_plane_source`) derives it from the object through the
 //! same choice and `cell_marked`: for buildings, and for mobiles only in a
 //! world without an overlay grid. With one, mobiles reach the plane through
@@ -427,7 +426,7 @@ impl Simulation {
         };
         match entity.category() {
             EntityCategory::Unit => {
-                self.track_raw_mark_at(id, coord, put);
+                self.track_raw_mark_at(coord, put);
             }
             EntityCategory::Infantry => {
                 let owner = entity.owner();

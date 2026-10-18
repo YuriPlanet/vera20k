@@ -32,7 +32,6 @@ use crate::rules::locomotor_type::LocomotorKind;
 use super::super::drive_locomotion::{DriveRuntime, ShipRuntime, TrackStateMutation};
 use super::super::locomotor::LocomotorState;
 use super::super::track_process::TrackFamily;
-use crate::sim::components::DriveOccupationFootprint;
 
 /// Walk MoveTo75ACB0 / Stop75ADA0 retain destination independently of the
 /// committed head. Both XYZ values belong to this complete locomotor instance.
@@ -175,24 +174,6 @@ impl StashedLocomotor {
         mutation: TrackStateMutation,
     ) -> bool {
         self.0.apply_track_state_mutation(family, mutation)
-    }
-
-    pub(in crate::sim::movement) fn take_track_occupation(
-        &mut self,
-        family: TrackFamily,
-    ) -> Option<[Option<DriveOccupationFootprint>; 2]> {
-        self.0.take_track_occupation(family)
-    }
-
-    pub(in crate::sim::movement) fn forget_track_occupation(
-        &mut self,
-        mark: DriveOccupationFootprint,
-    ) {
-        self.0.forget_track_occupation(mark);
-    }
-
-    pub(in crate::sim::movement) fn clear_track_occupation_projections(&mut self) {
-        self.0.clear_track_occupation_projections();
     }
 
     /// A suspended warp Teleport finishing its own Process step

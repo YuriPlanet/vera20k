@@ -280,7 +280,7 @@ impl Simulation {
     /// `if (head) { Unit vt+0xF4(head); head = null; }`.
     fn hover_release_head(&mut self, id: u64) {
         if let Some(head) = self.hover_mut(id).and_then(|hover| hover.head.take()) {
-            self.track_raw_mark_at(id, head, false);
+            self.track_raw_mark_at(head, false);
         }
     }
 
@@ -465,7 +465,7 @@ impl Simulation {
         if code == 0 && head_null {
             //514698..5146EF: mark the Location, then Per_Cell_Process(2).
             if let Some(location) = self.hover_location(id) {
-                self.track_raw_mark_at(id, location, true);
+                self.track_raw_mark_at(location, true);
             }
             out.bridge_state_changed |= self.per_cell_process(
                 id,
@@ -521,7 +521,7 @@ impl Simulation {
             entity.foot_occupation_enabled() && runtime(entity).is_some_and(|h| h.head.is_some())
         });
         if release {
-            self.track_raw_mark_at(id, location, false);
+            self.track_raw_mark_at(location, false);
             if let Some(entity) = self.substrate.entities.get_mut(id) {
                 entity.foot_occupation_enabled.suspend();
                 entity.navigation.path_runtime.set_path_blocked(false);
@@ -1199,7 +1199,7 @@ impl Simulation {
                     .get(id)
                     .is_some_and(|entity| entity.in_playfield());
                 if in_playfield && let Some(head) = self.hover(id).and_then(|hover| hover.head) {
-                    self.track_raw_mark_at(id, head, true);
+                    self.track_raw_mark_at(head, true);
                 }
                 if let Some(entity) = self.substrate.entities.get_mut(id) {
                     let queue = &mut entity.navigation.path_replay;

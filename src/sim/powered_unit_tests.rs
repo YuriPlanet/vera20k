@@ -562,8 +562,6 @@ fn a_robot_tank_without_a_powered_center_goes_offline_when_it_moves() {
 /// The same power edges on land leave a living, grounded offline tank.
 #[test]
 fn losing_robot_power_drops_water_hover_and_keeps_land_hover_alive() {
-    use crate::sim::movement::locomotor::MovementLayer;
-
     let Some(mut rules) = retail_rules() else {
         return;
     };
@@ -672,14 +670,6 @@ fn losing_robot_power_drops_water_hover_and_keeps_land_hover_alive() {
             !sim.substrate
                 .occupancy
                 .contains_entity(water_cell.0, water_cell.1, water_tank)
-        );
-        assert_eq!(
-            sim.substrate.cell_occupation.vehicle_bits(
-                water_cell.0,
-                water_cell.1,
-                MovementLayer::Ground
-            ),
-            0
         );
         assert_eq!(
             sim.substrate

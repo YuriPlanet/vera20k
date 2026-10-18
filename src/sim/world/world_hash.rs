@@ -2900,10 +2900,9 @@ mod mission_authority_hash_tests {
 mod track_authority_hash_tests {
     use super::Simulation;
     use crate::rules::locomotor_type::LocomotorKind;
-    use crate::sim::components::{DriveCoord, DriveOccupationFootprint, TrackProgress};
+    use crate::sim::components::{DriveCoord, TrackProgress};
     use crate::sim::game_entity::GameEntity;
     use crate::sim::movement::locomotor::LocomotorState;
-    use crate::sim::movement::locomotor::MovementLayer;
     use crate::sim::movement::track_process::TrackFamily;
     use crate::sim::movement::{DriveLocomotionRuntime, ShipLocomotionRuntime};
 
@@ -2989,29 +2988,20 @@ mod track_authority_hash_tests {
     }
 
     #[test]
-    fn current_hash_covers_retained_coordinates_speed_permission_and_occupation() {
+    fn current_hash_covers_retained_coordinates_speed_and_permission() {
         let point = DriveCoord::cell(3, 4, 731);
-        let mark = DriveOccupationFootprint {
-            rx: 3,
-            ry: 4,
-            layer: MovementLayer::Bridge,
-        };
         let drives = [
             DriveLocomotionRuntime::default().with_destination_for_test(Some(point)),
             DriveLocomotionRuntime::default().with_head_to_for_test(Some(point)),
             DriveLocomotionRuntime::default()
                 .with_target_speed_fraction_for_test(crate::util::fixed_math::SIM_HALF),
             DriveLocomotionRuntime::default().with_end_permitted_for_test(false),
-            DriveLocomotionRuntime::default().with_occupation_head_to_for_test(Some(mark)),
-            DriveLocomotionRuntime::default().with_occupation_handoff_for_test(Some(mark)),
         ];
         let ships = [
             ShipLocomotionRuntime::default().with_destination_for_test(Some(point)),
             ShipLocomotionRuntime::default().with_head_to_for_test(Some(point)),
             ShipLocomotionRuntime::default()
                 .with_target_speed_fraction_for_test(crate::util::fixed_math::SIM_HALF),
-            ShipLocomotionRuntime::default().with_occupation_head_to_for_test(Some(mark)),
-            ShipLocomotionRuntime::default().with_occupation_handoff_for_test(Some(mark)),
         ];
         for (ship, suspended) in [(false, false), (false, true), (true, false), (true, true)] {
             let base = supplied_track_world(ship, false);

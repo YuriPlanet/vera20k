@@ -15,7 +15,6 @@
 
 use crate::sim::cell_kernel::{CellCoordinate, WorldCoordinate, cell_center};
 use crate::sim::intern::InternedId;
-use crate::sim::movement::locomotor::MovementLayer;
 use crate::util::fixed_math::SimFixed;
 
 pub use crate::sim::movement::ground_pose::Position;
@@ -549,18 +548,6 @@ impl FootSpeedState {
 }
 
 pub use crate::sim::movement::track_process::TrackProgress;
-
-/// Drive-owned occupation mark installed ahead of the live object-list cell.
-///
-/// The cell list remains tied to the unit's committed coordinates. This record
-/// persists the independent head-to mark so the transient per-cell occupation
-/// index can be rebuilt after loading a snapshot.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub struct DriveOccupationFootprint {
-    pub rx: u16,
-    pub ry: u16,
-    pub layer: MovementLayer,
-}
 
 /// Constructor row for a generic AnimClass-like runtime spawn.
 ///

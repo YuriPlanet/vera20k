@@ -227,33 +227,13 @@ impl Simulation {
     ) -> Result<LocomotorProcess, super::FrameAdvanceError> {
         let overlay_registry = ctx.overlay_registry;
         use crate::rules::locomotor_type::LocomotorKind;
-        let (admitted, sinking) =
-            self.substrate
-                .entities
-                .get(stable_id)
-                .map_or((None, false), |entity| {
-                    let sinking = entity.sinking.is_active();
-                    let admitted = entity.locomotor.as_ref().and_then(|locomotor| {
-                        (!sinking && !entity.is_falling_down() && !entity.lifecycle.in_limbo())
-                            .then(|| locomotor.active_kind())
-                    });
-                    (admitted, sinking)
-                });
-        let ground = matches!(
-            admitted,
-            Some(LocomotorKind::Drive | LocomotorKind::Ship | LocomotorKind::Walk)
-        );
-        // The vehicle plane is a projection each object turn reconciles once
-        // at Process entry: the ground corridor in `prepare_movement_visit`,
-        // any other turn here. A sinking object keeps its projection.
-        if !ground
-            && !sinking
-            && let Some(entity) = self.substrate.entities.get(stable_id)
-        {
-            self.substrate
-                .cell_occupation
-                .reconcile_entity(entity, &self.substrate.occupancy);
-        }
+        let admitted = self.substrate.entities.get(stable_id).and_then(|entity| {
+            let sinking = entity.sinking.is_active();
+            entity.locomotor.as_ref().and_then(|locomotor| {
+                (!sinking && !entity.is_falling_down() && !entity.lifecycle.in_limbo())
+                    .then(|| locomotor.active_kind())
+            })
+        });
         let Some(kind) = admitted else {
             return Ok(LocomotorProcess::default());
         };
@@ -420,10 +400,10 @@ impl Simulation {
                 sim.parasite_exit_unit(eater, rules, ctx.effects);
             }
             // `0x007195DB` Mark(UP) and `0x007196BF` Mark(DOWN) bracket the
-            // relocation: the cell list entry, and a Unit's raw 0x20 and
-            // vehicle plane, leave the old cell and join the new one on its
-            // OnBridge layer. An infantryman's sub-cell bit stays: his Mark
-            // reaches no receiver, and the window calls none of its own.
+            // relocation: the cell list entry, and a Unit's raw 0x20, leave
+            // the old cell and join the new one on its OnBridge layer. An
+            // infantryman's sub-cell bit stays: his Mark reaches no receiver,
+            // and the window calls none of its own.
             // ChronoOut plays at the old Location (`0x0071962C`).
             sim.foot_mark_remove(stable_id, rules, overlay_registry, ctx.effects);
             if let Some(rules) = rules {
@@ -582,8 +562,6 @@ impl Simulation {
                 &mut sim.substrate.entities,
                 stable_id,
                 current_grid.as_deref(),
-                &sim.substrate.occupancy,
-                &mut sim.substrate.cell_occupation,
                 sim.session.binary_frame,
                 sim.resolved_terrain.as_ref(),
                 sim.playfield_bounds,

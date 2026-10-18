@@ -642,7 +642,6 @@ fn actual_entry_turn_gate_precedes_speed_and_points_for_both_families() {
 #[test]
 fn ordinary_fresh_turn_and_drive_refusal_reach_entry_without_running_speed() {
     use crate::sim::components::FootPathQueue;
-    use crate::sim::movement::locomotor::MovementLayer;
     use crate::util::fixed_math::SimFixed;
 
     let native: Value = serde_json::from_str(crate::test_fixture::text(
@@ -725,12 +724,6 @@ fn ordinary_fresh_turn_and_drive_refusal_reach_entry_without_running_speed() {
                     sim.substrate.entities.insert(blocker);
                     sim.substrate.occupancy =
                         crate::sim::occupancy::OccupancyGrid::rebuild(&sim.substrate.entities);
-                    sim.substrate.cell_occupation.mark_vehicle_on_layer(
-                        9,
-                        8,
-                        99,
-                        MovementLayer::Ground,
-                    );
                 }
                 let stats = sim
                     .process_ground_locomotor_for_test(1, Some(&rules), Some(&grid), None)

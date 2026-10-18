@@ -398,7 +398,6 @@ mod tests {
     use super::*;
     use crate::sim::combat::Health;
     use crate::sim::game_entity::GameEntity;
-    use crate::sim::movement::locomotor::MovementLayer;
     use crate::sim::world::RevealOutcome;
 
     fn rules() -> RuleSet {
@@ -694,26 +693,16 @@ mod tests {
             .expect("Drive runtime");
         assert_eq!(drive.destination(), Some(exact_head));
         assert_eq!(drive.head_to(), Some(exact_head));
-        assert_eq!(
-            drive.occupation_head_to(),
-            Some(crate::sim::components::DriveOccupationFootprint {
-                rx: 10,
-                ry: 10,
-                layer: MovementLayer::Ground,
-            })
-        );
         assert!(sim.substrate.occupancy.contains_entity(9, 10, 1));
         assert!(!sim.substrate.occupancy.contains_entity(10, 10, 1));
         assert_eq!(
-            sim.substrate
-                .cell_occupation
-                .vehicle_bits(9, 10, MovementLayer::Ground),
+            sim.substrate.raw_cell_occupation.ground_bits(9, 10)
+                & crate::sim::occupancy::VEHICLE_OCCUPATION_BIT,
             crate::sim::occupancy::VEHICLE_OCCUPATION_BIT
         );
         assert_eq!(
-            sim.substrate
-                .cell_occupation
-                .vehicle_bits(10, 10, MovementLayer::Ground),
+            sim.substrate.raw_cell_occupation.ground_bits(10, 10)
+                & crate::sim::occupancy::VEHICLE_OCCUPATION_BIT,
             crate::sim::occupancy::VEHICLE_OCCUPATION_BIT,
             "assignment premarks the exact building-head cell without moving the object list"
         );

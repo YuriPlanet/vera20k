@@ -1065,21 +1065,6 @@ fn chained_mover(sim: &mut Simulation, kind: LocomotorKind) -> (GameEntity, Driv
                 crate::sim::movement::track_process::TrackFamily::Drive,
                 Some(head)
             ));
-            assert!(
-                d.publish_track_occupation(
-                    crate::sim::movement::track_process::TrackFamily::Drive,
-                    Some(crate::sim::components::DriveOccupationFootprint {
-                        rx: (head.x / 256) as u16,
-                        ry: (head.y / 256) as u16,
-                        layer: MovementLayer::Ground,
-                    }),
-                    d.selected_drive_runtime()
-                        .unwrap()
-                        .retained()
-                        .unwrap()
-                        .occupation_handoff()
-                )
-            );
         }
         LocomotorKind::Ship => {
             let s = entity.locomotor.as_mut().unwrap();

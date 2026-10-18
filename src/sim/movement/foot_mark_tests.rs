@@ -429,22 +429,11 @@ fn a_list_walk_passes_through_a_listed_landed_jumpjet() {
 }
 
 /// Unit Mark writes a landed Jumpjet's 0x20 through `0x007441B0` as it lists
-/// it. The vehicle plane each object turn reconciles, and rebuilds after a
-/// load, keeps that bit where the receiver left it.
+/// it.
 #[test]
-fn a_listed_landed_jumpjet_units_vehicle_bit_survives_reconcile_and_rebuild() {
-    use crate::sim::occupancy::CellOccupationGrid;
+fn a_listed_landed_jumpjet_units_mark_writes_its_vehicle_bit() {
     let mut sim = fixture(EntityCategory::Unit, LocomotorKind::Jumpjet);
     assert!(sim.foot_mark_put(1, None, None, crate::sim::world::FrameEffects::default()));
     assert!(sim.substrate.occupancy.contains_entity(4, 4, 1));
-    let plane = |grid: &CellOccupationGrid| grid.vehicle_bits(4, 4, MovementLayer::Ground);
-    assert_eq!(plane(&sim.substrate.cell_occupation), 0x20);
-
-    let entity = sim.substrate.entities.get(1).unwrap().clone();
-    sim.substrate
-        .cell_occupation
-        .reconcile_entity(&entity, &sim.substrate.occupancy);
-    assert_eq!(plane(&sim.substrate.cell_occupation), 0x20);
-    let rebuilt = CellOccupationGrid::rebuild(&sim.substrate.entities, &sim.substrate.occupancy);
-    assert_eq!(plane(&rebuilt), 0x20);
+    assert_eq!(sim.substrate.raw_cell_occupation.ground_bits(4, 4), 0x20);
 }

@@ -825,34 +825,35 @@ fn ordinary_foot_limbo_releases_live_head_and_handoff_for_both_families() {
         assert!(loco.store_track_progress(family, state));
         sim.track_apply_occupation(1, family, true);
         let entity = sim.substrate.entities.get(1).unwrap();
-        let (head, handoff) = match family {
-            TrackFamily::Drive => {
-                let state = entity
-                    .locomotor
-                    .as_ref()
-                    .and_then(|l| l.selected_drive_runtime())
-                    .and_then(|r| r.retained())
-                    .unwrap();
-                (
-                    state.occupation_head_to().unwrap(),
-                    state.occupation_handoff().unwrap(),
-                )
-            }
-            TrackFamily::Ship => {
-                let state = entity
-                    .locomotor
-                    .as_ref()
-                    .and_then(|l| l.selected_ship_runtime())
-                    .and_then(|r| r.retained())
-                    .unwrap();
-                (
-                    state.occupation_head_to().unwrap(),
-                    state.occupation_handoff().unwrap(),
-                )
-            }
-        };
-        assert_ne!((head.rx, head.ry), (10, 10));
+        let (handoff, head) = super::super::at_coord::AtCoordQuery::from_state(
+            if family == TrackFamily::Drive {
+                crate::rules::locomotor_type::LocomotorKind::Drive
+            } else {
+                crate::rules::locomotor_type::LocomotorKind::Ship
+            },
+            position_world_coord(&entity.position),
+            Some(head(entity, family)),
+            super::super::at_coord::AtCoordTrack {
+                turn_index: 1,
+                cursor: 0,
+                reversed: false,
+            },
+        )
+        .unwrap()
+        .cells();
+        let head = (head.0 as u16, head.1 as u16);
+        let handoff = handoff.map(|cell| (cell.0 as u16, cell.1 as u16)).unwrap();
+        assert_ne!(head, (10, 10));
         assert_ne!(head, handoff);
+        for cell in [head, handoff] {
+            assert_eq!(
+                sim.substrate
+                    .raw_cell_occupation
+                    .ground_bits(cell.0, cell.1)
+                    & 0x20,
+                0x20
+            );
+        }
         sim.apply_lifecycle_request(LifecycleRequest::Uninit {
             stable_id: 1,
             reason: UninitReason::Crush,
@@ -860,71 +861,17 @@ fn ordinary_foot_limbo_releases_live_head_and_handoff_for_both_families() {
         assert_eq!(
             sim.substrate
                 .raw_cell_occupation
-                .ground_bits(head.rx, head.ry)
+                .ground_bits(head.0, head.1)
                 & 0x20,
             0
         );
         assert_eq!(
             sim.substrate
                 .raw_cell_occupation
-                .ground_bits(handoff.rx, handoff.ry)
+                .ground_bits(handoff.0, handoff.1)
                 & 0x20,
             0
         );
-        assert!(
-            !sim.substrate
-                .cell_occupation
-                .occupied_by_other(head.rx, head.ry, head.layer, 99)
-        );
-    }
-}
-
-#[test]
-fn raw_clear_retires_aliasing_roles_before_reconciliation() {
-    for family in [TrackFamily::Drive, TrackFamily::Ship] {
-        let (mut sim, _, _) = fixture(family, 0);
-        let loco = sim
-            .substrate
-            .entities
-            .get_mut(1)
-            .unwrap()
-            .locomotor
-            .as_mut()
-            .unwrap();
-        let mut state = loco.track_progress(family).unwrap();
-        state.set_turn_index(1);
-        assert!(loco.store_track_progress(family, state));
-        sim.track_apply_occupation(1, family, true);
-        let entity = sim.substrate.entities.get(1).unwrap();
-        let handoff = match family {
-            TrackFamily::Drive => entity
-                .locomotor
-                .as_ref()
-                .and_then(|l| l.selected_drive_runtime())
-                .and_then(|r| r.retained())
-                .unwrap()
-                .occupation_handoff()
-                .unwrap(),
-            TrackFamily::Ship => entity
-                .locomotor
-                .as_ref()
-                .and_then(|l| l.selected_ship_runtime())
-                .and_then(|r| r.retained())
-                .unwrap()
-                .occupation_handoff()
-                .unwrap(),
-        };
-        sim.track_raw_mark_at(1, DriveCoord::cell(handoff.rx, handoff.ry, 0), false);
-        sim.substrate.cell_occupation.reconcile_entity(
-            sim.substrate.entities.get(1).unwrap(),
-            &sim.substrate.occupancy,
-        );
-        assert!(!sim.substrate.cell_occupation.occupied_by_other(
-            handoff.rx,
-            handoff.ry,
-            handoff.layer,
-            99
-        ));
     }
 }
 
@@ -956,7 +903,7 @@ fn repeated_foot_limbo_does_not_clear_a_new_raw_head_claim() {
         // Boarding retains the locomotor head. A later carrier teardown calls
         // UnInit/Limbo again; native Foot's early in-limbo gate preserves the
         // raw bit another mover has since written at that old head.
-        sim.track_raw_mark_at(99, supplied, true);
+        sim.track_raw_mark_at(supplied, true);
         sim.apply_lifecycle_request(LifecycleRequest::Uninit {
             stable_id: 1,
             reason: UninitReason::Crush,

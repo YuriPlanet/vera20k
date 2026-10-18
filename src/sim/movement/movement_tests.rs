@@ -1120,14 +1120,12 @@ fn forced_track_object_turn_relinks_each_committed_cell() {
     // `forced_track_end_requests_its_own_cell_in_the_same_process` covers
     // that continuation.
     assert_eq!(drive.head_to(), None);
-    assert_eq!(drive.occupation_head_to(), None);
     assert!(!drive.track_valid());
     assert_eq!(drive.track().turn_index(), -1);
     assert_eq!(drive.track().cursor(), 0);
     assert_eq!(
-        sim.substrate
-            .cell_occupation
-            .vehicle_bits(13, 12, MovementLayer::Ground),
+        sim.substrate.raw_cell_occupation.ground_bits(13, 12)
+            & crate::sim::occupancy::VEHICLE_OCCUPATION_BIT,
         crate::sim::occupancy::VEHICLE_OCCUPATION_BIT
     );
 }

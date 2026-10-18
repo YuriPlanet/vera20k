@@ -20,7 +20,7 @@ use crate::sim::anim_class::AnimStore;
 use crate::sim::cell_rect::CellReservationGrid;
 use crate::sim::entity_store::EntityStore;
 use crate::sim::occupancy::{
-    AirSlotGrid, CellOccupationGrid, HiddenOccupationGrid, OccupancyGrid, RawCellOccupationGrid,
+    AirSlotGrid, HiddenOccupationGrid, OccupancyGrid, RawCellOccupationGrid,
 };
 use crate::sim::particles::ParticleSystemStore;
 use crate::sim::voxel_anim::VoxelAnimStore;
@@ -366,13 +366,9 @@ pub struct ObjectSubstrate {
     /// Cell483C10/4839F0 saves and swizzles its ground/deck heads; rebuilding
     /// from current locomotor phase or terrain cannot recover those histories.
     pub occupancy: OccupancyGrid,
-    /// Independent ground/deck vehicle-occupation bit planes. Rebuilt from
-    /// entity lifecycle and serialized Drive footprint state after load.
-    #[serde(skip)]
-    pub(crate) cell_occupation: CellOccupationGrid,
-    /// Authoritative raw CellClass occupation bytes. Unlike the owner-aware
-    /// Drive compatibility cache above, these destructive OR/AND-not bytes are
-    /// serialized verbatim and are never rebuilt from entity lists.
+    /// Authoritative raw CellClass occupation bytes. These destructive
+    /// OR/AND-not bytes are serialized verbatim and are never rebuilt from
+    /// entity lists.
     #[serde(default)]
     pub(crate) raw_cell_occupation: RawCellOccupationGrid,
     /// Separate authoritative building hidden-object counters. Serialized
@@ -445,7 +441,6 @@ impl ObjectSubstrate {
             logic: LogicVector::new(),
             display: Default::default(),
             occupancy: OccupancyGrid::new(),
-            cell_occupation: CellOccupationGrid::new(),
             raw_cell_occupation: RawCellOccupationGrid::new(),
             hidden_occupation: HiddenOccupationGrid::new(),
             air_slots: AirSlotGrid::default(),

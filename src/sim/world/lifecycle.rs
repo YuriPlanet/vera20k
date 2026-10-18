@@ -2380,17 +2380,6 @@ impl Simulation {
                 );
             }
         }
-        // Rebuild only the derived vehicle projection, from the list the
-        // member is now in: serialized head-to, handoff and current-cleared
-        // facts retain their existing owners.
-        let entity = self
-            .substrate
-            .entities
-            .get(stable_id)
-            .expect("member remains represented");
-        self.substrate
-            .cell_occupation
-            .reconcile_entity(entity, &self.substrate.occupancy);
         //5F41D0..5F4218: Foot's active Is_Moving chooses the shared
         // locomotor occupation release or the owner's raw Location receiver.
         if let Some(entity) = self.substrate.entities.get(stable_id)
@@ -3468,18 +3457,6 @@ impl Simulation {
         // Native Hover5171C0 itself has no InLimbo gate and retains its head.
         if first_foot_limbo {
             self.locomotor_mark_all_occupation_bits(stable_id, false);
-        }
-        // The Drive instance retains head-to and handoff projections of that
-        // +9C(0) release; they leave with it on the first Limbo.
-        if let Some(entity) = self.substrate.entities.get_mut(stable_id)
-            && !entity.lifecycle.in_limbo
-            && let Some(loco) = entity.locomotor.as_mut()
-        {
-            crate::sim::occupancy::clear_drive_head_to_occupation_for_remove(
-                loco,
-                &mut self.substrate.cell_occupation,
-                stable_id,
-            );
         }
         // FootClass::Limbo (0x004DB260) then Locks the locomotor (+0xB0) on
         // the first Limbo, so a boarded or stored man keeps no Walk

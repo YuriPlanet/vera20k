@@ -6632,6 +6632,7 @@ fn test_stop_command_clears_move_and_attack_intent() {
 
 #[test]
 fn gsi_04_05_stop_preserves_committed_drive_until_reserved_head_finishes() {
+    use crate::sim::occupancy::VEHICLE_OCCUPATION_BIT;
     let mut sim = Simulation::new();
     sim.spawn_from_map(
         &[MapEntity {
@@ -6682,9 +6683,10 @@ fn gsi_04_05_stop_preserves_committed_drive_until_reserved_head_finishes() {
         .track();
     assert!(committed_track.turn_index() >= 0);
     let committed_head = retained_drive(sim.substrate.entities.get(1).unwrap())
-        .and_then(|drive| drive.occupation_head_to())
-        .expect("first Drive step has a committed occupation head");
-    assert_eq!((committed_head.rx, committed_head.ry), (5, 4));
+        .and_then(|drive| drive.head_to())
+        .map(|head| ((head.x / 256) as u16, (head.y / 256) as u16))
+        .expect("first Drive step has a committed head");
+    assert_eq!(committed_head, (5, 4));
     assert_eq!(
         crate::sim::movement::movement_goal_cell(sim.substrate.entities.get(1).unwrap()),
         Some((8, 4))
@@ -6707,11 +6709,11 @@ fn gsi_04_05_stop_preserves_committed_drive_until_reserved_head_finishes() {
         .expect("Stop keeps the committed head");
     assert_eq!(
         ((head.x / 256) as u16, (head.y / 256) as u16),
-        (committed_head.rx, committed_head.ry)
+        committed_head
     );
     assert_eq!(
         crate::sim::movement::movement_goal_cell(stopped),
-        Some((committed_head.rx, committed_head.ry))
+        Some(committed_head)
     );
     let drive = retained_drive(stopped).unwrap();
     assert_eq!(
@@ -6720,12 +6722,11 @@ fn gsi_04_05_stop_preserves_committed_drive_until_reserved_head_finishes() {
         "Stop preserves the active track"
     );
     assert!(drive.head_to().is_some());
-    assert!(drive.occupation_head_to().is_some());
     assert!(sim.substrate.occupancy.contains_entity(4, 4, 1));
     assert!(
         !sim.substrate
             .occupancy
-            .contains_entity(committed_head.rx, committed_head.ry, 1)
+            .contains_entity(committed_head.0, committed_head.1, 1)
     );
 
     let initial_point_index = retained_drive(stopped).unwrap().track().cursor();
@@ -6746,12 +6747,10 @@ fn gsi_04_05_stop_preserves_committed_drive_until_reserved_head_finishes() {
     assert!(
         !sim.substrate
             .occupancy
-            .contains_entity(committed_head.rx, committed_head.ry, 1)
+            .contains_entity(committed_head.0, committed_head.1, 1)
     );
     assert_eq!(
-        sim.substrate
-            .cell_occupation
-            .vehicle_bits(4, 4, MovementLayer::Ground),
+        sim.substrate.raw_cell_occupation.ground_bits(4, 4) & VEHICLE_OCCUPATION_BIT,
         0,
         "the first paid post-Stop point clears current occupation without stranding the track"
     );
@@ -6766,10 +6765,7 @@ fn gsi_04_05_stop_preserves_committed_drive_until_reserved_head_finishes() {
     }
 
     let entity = sim.substrate.entities.get(1).unwrap();
-    assert_eq!(
-        (entity.position.rx(), entity.position.ry()),
-        (committed_head.rx, committed_head.ry)
-    );
+    assert_eq!((entity.position.rx(), entity.position.ry()), committed_head);
     assert!(crate::sim::movement::motion_query::is_moving(&entity) != Some(true));
     let drive = retained_drive(entity).unwrap();
     assert_eq!(
@@ -6777,32 +6773,26 @@ fn gsi_04_05_stop_preserves_committed_drive_until_reserved_head_finishes() {
         (-1, 0)
     );
     assert_eq!(drive.head_to(), None);
-    assert_eq!(drive.occupation_head_to(), None);
     assert!(
         sim.substrate
             .occupancy
-            .contains_entity(committed_head.rx, committed_head.ry, 1)
+            .contains_entity(committed_head.0, committed_head.1, 1)
     );
     assert_eq!(
-        sim.substrate.cell_occupation.vehicle_bits(
-            committed_head.rx,
-            committed_head.ry,
-            MovementLayer::Ground
-        ),
-        crate::sim::occupancy::VEHICLE_OCCUPATION_BIT
+        sim.substrate
+            .raw_cell_occupation
+            .ground_bits(committed_head.0, committed_head.1)
+            & VEHICLE_OCCUPATION_BIT,
+        VEHICLE_OCCUPATION_BIT
     );
     assert!(!sim.substrate.occupancy.contains_entity(6, 4, 1));
     assert!(!sim.substrate.occupancy.contains_entity(8, 4, 1));
     assert_eq!(
-        sim.substrate
-            .cell_occupation
-            .vehicle_bits(6, 4, MovementLayer::Ground),
+        sim.substrate.raw_cell_occupation.ground_bits(6, 4) & VEHICLE_OCCUPATION_BIT,
         0
     );
     assert_eq!(
-        sim.substrate
-            .cell_occupation
-            .vehicle_bits(8, 4, MovementLayer::Ground),
+        sim.substrate.raw_cell_occupation.ground_bits(8, 4) & VEHICLE_OCCUPATION_BIT,
         0
     );
 
@@ -6812,18 +6802,15 @@ fn gsi_04_05_stop_preserves_committed_drive_until_reserved_head_finishes() {
     let parked = sim.substrate.entities.get(1).unwrap();
     assert_eq!(
         (parked.position.rx(), parked.position.ry()),
-        (committed_head.rx, committed_head.ry),
+        committed_head,
         "Stop must remain parked at the committed head after the old route is gone"
     );
     assert!(crate::sim::movement::motion_query::is_moving(&parked) != Some(true));
     let drive = retained_drive(parked).unwrap();
     assert_eq!(drive.head_to(), None);
-    assert_eq!(drive.occupation_head_to(), None);
     assert!(!sim.substrate.occupancy.contains_entity(6, 4, 1));
     assert_eq!(
-        sim.substrate
-            .cell_occupation
-            .vehicle_bits(6, 4, MovementLayer::Ground),
+        sim.substrate.raw_cell_occupation.ground_bits(6, 4) & VEHICLE_OCCUPATION_BIT,
         0
     );
 }
@@ -8953,8 +8940,8 @@ fn stacking_duplicates(cells: &[(u64, u16, u16)]) -> BTreeMap<(u16, u16), Vec<u6
     by_cell
 }
 
-/// (d) raw grid state for one cell: object list, the owner-aware vehicle
-/// occupation plane, and the destructive raw CellClass ground byte.
+/// (d) raw grid state for one cell: object list and the destructive raw
+/// CellClass ground byte.
 fn stacking_cell_state(sim: &Simulation, rx: u16, ry: u16) -> String {
     let list: Vec<(u64, MovementLayer, Option<u8>, bool)> = sim
         .substrate
@@ -8968,10 +8955,7 @@ fn stacking_cell_state(sim: &Simulation, rx: u16, ry: u16) -> String {
         })
         .unwrap_or_default();
     format!(
-        "({rx},{ry}) object_list={list:?} vehicle_bits=0x{:02X} raw_ground=0x{:02X}",
-        sim.substrate
-            .cell_occupation
-            .vehicle_bits(rx, ry, MovementLayer::Ground),
+        "({rx},{ry}) object_list={list:?} raw_ground=0x{:02X}",
         sim.substrate.raw_cell_occupation.ground_bits(rx, ry),
     )
 }
@@ -9943,7 +9927,8 @@ fn stacking_reservation_state(sim: &Simulation, id: u64) -> String {
         e.position.ry(),
         e.position.sub_x(),
         e.position.sub_y(),
-        d.occupation_head_to().map(|f| (f.rx, f.ry)),
+        d.head_to()
+            .map(|head| ((head.x / 256) as u16, (head.y / 256) as u16)),
         !e.foot_occupation_enabled(),
     )
 }
@@ -9972,8 +9957,10 @@ fn repro_two_moving_vehicles_reservation_trace() {
 
     println!("--- repro_two_moving_vehicles_reservation_trace ---");
     // The head-to mark is the only cell-exclusion mechanism a Drive curve
-    // installs. If two movers can hold it on the same cell at the same tick,
-    // the reservation is not exclusive and both will commit into that cell.
+    // installs: Apply(1) ORs 0x20 into its committed head's cell. The raw
+    // byte names no owner, so each mover's retained head records the cell it
+    // marked. If two movers hold it on the same cell at the same tick, the
+    // reservation is not exclusive and both will commit into that cell.
     let mut double_reservation_ticks: Vec<(u64, (u16, u16))> = Vec::new();
     for tick in 0..80u64 {
         let _ = sim.advance_tick(&[], Some(&rules), Some(&grid), None, 100);
@@ -9984,8 +9971,8 @@ fn repro_two_moving_vehicles_reservation_trace() {
                     .entities
                     .get(id)
                     .and_then(retained_drive)
-                    .and_then(|d| d.occupation_head_to())
-                    .map(|f| (f.rx, f.ry))
+                    .and_then(|d| d.head_to())
+                    .map(|head| ((head.x / 256) as u16, (head.y / 256) as u16))
             })
             .collect();
         if let (Some(a), Some(b)) = (heads[0], heads[1])
@@ -10000,9 +9987,7 @@ fn repro_two_moving_vehicles_reservation_trace() {
             .map(|rx| {
                 format!(
                     "({rx},10)=0x{:02X}/n{}",
-                    sim.substrate
-                        .cell_occupation
-                        .vehicle_bits(rx, 10, MovementLayer::Ground),
+                    sim.substrate.raw_cell_occupation.ground_bits(rx, 10),
                     sim.substrate
                         .occupancy
                         .count_on_layer(rx, 10, MovementLayer::Ground),
@@ -10041,9 +10026,7 @@ fn repro_two_moving_vehicles_reservation_trace() {
     assert!(
         double_reservation_ticks.is_empty(),
         "two Drive movers held the head-to cell reservation on the SAME cell: \
-         {double_reservation_ticks:?} — the mark installed by \
-         select_fresh_drive_track_at_current_cell (movement_step.rs) is not \
-         gated on CellOccupationGrid::occupied_by_other"
+         {double_reservation_ticks:?}"
     );
 }
 

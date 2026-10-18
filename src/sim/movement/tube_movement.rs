@@ -515,7 +515,7 @@ impl Simulation {
     /// locomotor's alone and reads no tube.
     ///
     /// The owed destination setter ([`Simulation::complete_pending_order`])
-    /// and the vehicle-plane reconcile run first, as at a Process entry.
+    /// runs first, as at a Process entry.
     pub(crate) fn tube_object_turn(
         &mut self,
         id: u64,
@@ -525,12 +525,6 @@ impl Simulation {
     ) -> Result<TubeObjectTurn, FrameAdvanceError> {
         let mut turn = TubeObjectTurn::default();
         self.complete_pending_order(id, rules, registry, effects);
-        let Some(entity) = self.substrate.entities.get(id) else {
-            return Ok(turn);
-        };
-        self.substrate
-            .cell_occupation
-            .reconcile_entity(entity, &self.substrate.occupancy);
         let Some(terrain) = self.resolved_terrain.as_ref() else {
             return Ok(turn);
         };

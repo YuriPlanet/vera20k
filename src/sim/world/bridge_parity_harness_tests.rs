@@ -370,7 +370,13 @@ const MIN_DISTINCT_DECK_CELLS: usize = 6;
 // keeps its separate replay, gameplay and absolute RNG expectations.
 // The synthetic vehicle omits Crusher/SpeedType and now retains Wheel in
 // its locomotor/rules hash. Geometry, crossing ticks and RNG pins are unchanged.
-const BRIDGE_HARNESS_FINAL_HASH: u64 = 0x9817_453A_929A_AC66;
+// Snapshot419 drops the Drive/Ship head-to and handoff occupation
+// footprints, which only the removed vehicle-occupation index read and every
+// retained Drive/Ship runtime's fold hashed. Hash composition only: a
+// temporary control feeding the hasher the two empty fields the arrived tank
+// held gave the previous value in the same test binary, with every tripwire
+// above green. Control removed. Previous: 0x9817_453A_929A_AC66.
+const BRIDGE_HARNESS_FINAL_HASH: u64 = 0x2FA1_7717_C31C_CF39;
 
 fn bridge_ini() -> IniFile {
     // One armed ground vehicle and one distant infantryman on a second house, so

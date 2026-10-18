@@ -3,7 +3,6 @@ use crate::map::entities::EntityCategory;
 use crate::sim::components::{DriveCoord, TrackProgress};
 use crate::sim::game_entity::GameEntity;
 use crate::sim::movement::drive_track;
-use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::movement::track_host::TrackWorldEvent;
 use crate::sim::movement::track_process::{TrackFamily, TrackInvocation};
 use crate::sim::movement::{DriveLocomotionRuntime, ShipLocomotionRuntime};
@@ -260,12 +259,8 @@ fn drive_track_first_native_frame_uses_native_frame_budget() {
 #[test]
 fn gsi_04_05_paid_track_point_clears_current_before_same_cell_coordinate_commit() {
     let (mut sim, invocation, budget) = native_track_fixture(LocomotorKind::Drive, 8);
-    sim.substrate
-        .cell_occupation
-        .mark_vehicle_on_layer(10, 10, 1, MovementLayer::Ground);
-    sim.substrate
-        .cell_occupation
-        .mark_vehicle_on_layer(10, 9, 1, MovementLayer::Ground);
+    sim.substrate.raw_cell_occupation.mark_ground(10, 10, 0x20);
+    sim.substrate.raw_cell_occupation.mark_ground(10, 9, 0x20);
     let mut paid_commits = 0;
     sim.run_track_points_observed(invocation, budget, None, None, &mut |sim, id, event| {
         if event == TrackWorldEvent::SetCoords {
@@ -273,15 +268,11 @@ fn gsi_04_05_paid_track_point_clears_current_before_same_cell_coordinate_commit(
             let entity = sim.substrate.entities.get(id).unwrap();
             assert_eq!((entity.position.rx(), entity.position.ry()), (10, 10));
             assert_eq!(
-                sim.substrate
-                    .cell_occupation
-                    .vehicle_bits(10, 10, MovementLayer::Ground),
+                sim.substrate.raw_cell_occupation.ground_bits(10, 10) & 0x20,
                 0
             );
             assert_eq!(
-                sim.substrate
-                    .cell_occupation
-                    .vehicle_bits(10, 9, MovementLayer::Ground),
+                sim.substrate.raw_cell_occupation.ground_bits(10, 9) & 0x20,
                 0x20
             );
             assert!(!entity.foot_occupation_enabled());

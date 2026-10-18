@@ -189,53 +189,13 @@ fn structural_drop_in_owns_order_footprints_and_restore_without_teardown_side_ef
         .as_mut()
         .unwrap();
     assert!(drive.ensure_installed_track_state());
-    assert!(
-        drive.publish_track_occupation(
-            crate::sim::movement::track_process::TrackFamily::Drive,
-            Some(crate::sim::components::DriveOccupationFootprint {
-                rx: 8,
-                ry: 8,
-                layer: MovementLayer::Ground,
-            }),
-            drive
-                .selected_drive_runtime()
-                .unwrap()
-                .retained()
-                .unwrap()
-                .occupation_handoff()
-        )
-    );
-    assert!(
-        drive.publish_track_occupation(
-            crate::sim::movement::track_process::TrackFamily::Drive,
-            drive
-                .selected_drive_runtime()
-                .unwrap()
-                .retained()
-                .unwrap()
-                .occupation_head_to(),
-            Some(crate::sim::components::DriveOccupationFootprint {
-                rx: 9,
-                ry: 8,
-                layer: MovementLayer::Bridge,
-            })
-        )
-    );
     let drive_before =
         bincode::serialize(drive.selected_drive_runtime().unwrap().retained().unwrap()).unwrap();
-    sim.substrate.cell_occupation.reconcile_entity(
-        sim.substrate.entities.get(older).unwrap(),
-        &sim.substrate.occupancy,
-    );
     sim.substrate
         .entities
         .get_mut(newer)
         .unwrap()
         .set_foot_occupation_enabled(false);
-    sim.substrate.cell_occupation.reconcile_entity(
-        sim.substrate.entities.get(newer).unwrap(),
-        &sim.substrate.occupancy,
-    );
     let next_order = sim.substrate.next_air_tracker_order.current();
     let raw_before = sim.substrate.raw_cell_occupation.clone();
     let mut smudge = crate::sim::smudge_grid::SmudgeGrid::new(10, 10);
@@ -301,19 +261,6 @@ fn structural_drop_in_owns_order_footprints_and_restore_without_teardown_side_ef
         .unwrap(),
         drive_before
     );
-    for (x, y, layer) in [
-        (4, 4, MovementLayer::Ground),
-        (8, 8, MovementLayer::Ground),
-        (9, 8, MovementLayer::Bridge),
-    ] {
-        assert_ne!(sim.substrate.cell_occupation.vehicle_bits(x, y, layer), 0);
-    }
-    assert_eq!(
-        sim.substrate
-            .cell_occupation
-            .vehicle_bits(4, 4, MovementLayer::Bridge),
-        0
-    );
     assert_eq!(
         *sim.smudge_grid.as_ref().unwrap().cell(3, 4),
         decal,
@@ -326,13 +273,6 @@ fn structural_drop_in_owns_order_footprints_and_restore_without_teardown_side_ef
             .get(newer)
             .unwrap()
             .foot_occupation_enabled()
-    );
-    assert_eq!(
-        sim.substrate
-            .cell_occupation
-            .vehicle_bits_ignoring(4, 4, MovementLayer::Ground, older),
-        0,
-        "a cleared current footprint stays cleared while list membership relayers"
     );
     let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "bridge-deck", 0);
     let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
@@ -365,31 +305,12 @@ fn structural_drop_in_owns_order_footprints_and_restore_without_teardown_side_ef
             .unwrap()
             .foot_occupation_enabled()
     );
-    assert_eq!(
-        restored.substrate.cell_occupation.vehicle_bits_ignoring(
-            4,
-            4,
-            MovementLayer::Ground,
-            older
-        ),
-        0
-    );
     assert_eq!(restored.substrate.raw_cell_occupation, raw_after);
     assert_eq!(
         restored.substrate.next_air_tracker_order.current(),
         next_order,
         "ground list entries do not draw AirTracker orders"
     );
-    for (x, y, layer) in [
-        (4, 4, MovementLayer::Ground),
-        (8, 8, MovementLayer::Ground),
-        (9, 8, MovementLayer::Bridge),
-    ] {
-        assert_eq!(
-            restored.substrate.cell_occupation.vehicle_bits(x, y, layer),
-            sim.substrate.cell_occupation.vehicle_bits(x, y, layer)
-        );
-    }
 }
 
 /// A bomb on a bridge-repair hut drops the hut's bridge after its blast

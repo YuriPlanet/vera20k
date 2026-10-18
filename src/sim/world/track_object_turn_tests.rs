@@ -404,7 +404,7 @@ fn terminal_arrival_resets_owner_speed_before_next_accelerating_move() {
 }
 
 #[test]
-fn ship_fresh_claim_survives_next_object_visit_and_snapshot_rebuild() {
+fn ship_fresh_claim_survives_next_object_visit_and_snapshot() {
     use crate::sim::snapshot::GameSnapshot;
     let (mut sim, rules) = fixture();
     let entity = sim.substrate.entities.get_mut(1).unwrap();
@@ -427,7 +427,7 @@ fn ship_fresh_claim_survives_next_object_visit_and_snapshot_rebuild() {
     let ctx = techno_ai::ObjectAiCtx::default;
     sim.advance_live_object_turn(1, Some(&rules), ctx())
         .expect("fixture object turn must complete");
-    let mark = sim
+    let head = sim
         .substrate
         .entities
         .get(1)
@@ -437,8 +437,9 @@ fn ship_fresh_claim_survives_next_object_visit_and_snapshot_rebuild() {
         .and_then(|l| l.selected_ship_runtime())
         .and_then(|r| r.retained())
         .unwrap()
-        .occupation_head_to()
+        .head_to()
         .unwrap();
+    let mark = ((head.x / 256) as u16, (head.y / 256) as u16);
     assert!(
         !sim.substrate
             .entities
@@ -448,26 +449,13 @@ fn ship_fresh_claim_survives_next_object_visit_and_snapshot_rebuild() {
     );
     sim.advance_live_object_turn(1, Some(&rules), ctx())
         .expect("fixture object turn must complete");
-    assert!(
-        sim.substrate
-            .cell_occupation
-            .occupied_by_other(mark.rx, mark.ry, mark.layer, 99)
-    );
     let bytes = GameSnapshot::save(&sim, 0, 0, "ship_head", 0);
     let loaded = GameSnapshot::load(&bytes).unwrap().sim;
-    let rebuilt = crate::sim::occupancy::CellOccupationGrid::rebuild(
-        &loaded.substrate.entities,
-        &loaded.substrate.occupancy,
-    );
-    assert!(
-        rebuilt.occupied_by_other(mark.rx, mark.ry, mark.layer, 99),
-        "follower entry sees the saved Ship reservation"
-    );
     assert_eq!(
         loaded
             .substrate
             .raw_cell_occupation
-            .ground_bits(mark.rx, mark.ry)
+            .ground_bits(mark.0, mark.1)
             & 0x20,
         0x20
     );

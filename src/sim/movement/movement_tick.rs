@@ -39,8 +39,7 @@ use super::locomotor::MovementLayer;
 use super::movement_step;
 use super::{MovementTickStats, MoverSnapshot, PathfindingContext};
 #[cfg(any(test, feature = "test-support"))]
-use crate::sim::occupancy::RawCellOccupationGrid;
-use crate::sim::occupancy::{CellOccupationGrid, OccupancyGrid};
+use crate::sim::occupancy::{OccupancyGrid, RawCellOccupationGrid};
 
 /// Build a read-only snapshot of the mover's properties before entering the
 /// inner movement loop. This avoids repeated `entities.get()` calls and keeps
@@ -757,19 +756,13 @@ impl MovementPassCache {
 }
 
 /// The visit's entry work, run once before the ordinary mover advances.
-/// Resuming after a world callback must not repeat it: it reconciles the
-/// vehicle plane and runs the idle Walk tail. Returns whether the object
-/// still advances as an ordinary mover.
-fn prepare_movement_visit(
-    entities: &mut EntityStore,
-    entity_id: u64,
-    occupancy: &OccupancyGrid,
-    cell_occupation: &mut CellOccupationGrid,
-) -> bool {
+/// Resuming after a world callback must not repeat it: it runs the idle
+/// Walk tail. Returns whether the object still advances as an ordinary
+/// mover.
+fn prepare_movement_visit(entities: &mut EntityStore, entity_id: u64) -> bool {
     let Some(entity) = entities.get_mut(entity_id) else {
         return false;
     };
-    cell_occupation.reconcile_entity(entity, occupancy);
     // Walk75AEC0 is the Process of every live Foot (FootClass::AI
     // 0x004DA806..0x004DA877) and branches on its own head (+0x28) and
     // destination (+0x1C): either one runs its step, neither the idle tail
@@ -802,7 +795,6 @@ pub(crate) fn tick_movement_with_grids(
     path_grid: Option<&PathGrid>,
     alliances: &HouseAllianceMap,
     occupancy: &mut OccupancyGrid,
-    cell_occupation: &mut CellOccupationGrid,
     raw_cell_occupation: &mut RawCellOccupationGrid,
     rng: &mut SimRng,
     sim_tick: u64,
@@ -821,7 +813,6 @@ pub(crate) fn tick_movement_with_grids(
     let mut sim = crate::sim::world::Simulation::new();
     sim.substrate.entities = std::mem::take(entities);
     sim.substrate.occupancy = std::mem::take(occupancy);
-    sim.substrate.cell_occupation = std::mem::take(cell_occupation);
     sim.substrate.raw_cell_occupation = std::mem::take(raw_cell_occupation);
     sim.interner = std::mem::take(interner);
     sim.scenario_rng = rng.clone();
@@ -853,7 +844,6 @@ pub(crate) fn tick_movement_with_grids(
     }
     *entities = sim.substrate.entities;
     *occupancy = sim.substrate.occupancy;
-    *cell_occupation = sim.substrate.cell_occupation;
     *raw_cell_occupation = sim.substrate.raw_cell_occupation;
     *interner = sim.interner;
     *rng = sim.scenario_rng;
@@ -963,8 +953,6 @@ pub(crate) fn begin_movement(
     entities: &mut EntityStore,
     entity_id: u64,
     path_grid: Option<&PathGrid>,
-    occupancy: &OccupancyGrid,
-    cell_occupation: &mut CellOccupationGrid,
     native_frame: u32,
     resolved_terrain: Option<&ResolvedTerrainGrid>,
     playfield_bounds: Option<PlayfieldBounds>,
@@ -981,7 +969,7 @@ pub(crate) fn begin_movement(
         playfield_bounds,
     };
     let mut effects = MovementPassEffects::default();
-    let ordinary_mover = prepare_movement_visit(entities, entity_id, occupancy, cell_occupation);
+    let ordinary_mover = prepare_movement_visit(entities, entity_id);
     if ordinary_mover {
         advance_ordinary_mover(
             entities,

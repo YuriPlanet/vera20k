@@ -232,16 +232,6 @@ fn assert_raw_cells(sim: &Simulation, case: &Value) {
                 "raw cell ({x},{y}), {}",
                 case["input"]
             );
-            let claims = &sim.substrate.cell_occupation;
-            assert_eq!(
-                [
-                    claims.vehicle_bits(x, y, MovementLayer::Ground),
-                    claims.vehicle_bits(x, y, MovementLayer::Bridge),
-                ],
-                wanted,
-                "rebuildable claims ({x},{y}), {}",
-                case["input"]
-            );
         }
     }
 }

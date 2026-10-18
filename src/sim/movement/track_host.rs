@@ -13,7 +13,7 @@ use super::track_process::{TrackFamily, TrackInvocation, TrackPayment, TrackProc
 use crate::map::entities::EntityCategory;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
-use crate::sim::components::{DriveCoord, DriveOccupationFootprint, TrackProgress};
+use crate::sim::components::{DriveCoord, TrackProgress};
 use crate::sim::game_entity::GameEntity;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::world::{FrameEffects, Simulation};
@@ -400,9 +400,6 @@ impl Simulation {
                             .unwrap()
                             .store_track_progress(family, state);
                     }
-                    if let Some(loco) = entity.locomotor.as_mut() {
-                        loco.clear_track_occupation_projections();
-                    }
                 }
                 // Native clears Head_To and selector before target+4C, then
                 // queries the owner's physical cell and fresh +4C height.
@@ -638,15 +635,11 @@ impl Simulation {
             return;
         };
         let coord = position_world_coord(&entity.position);
-        self.track_raw_mark_at(id, coord, put);
+        self.track_raw_mark_at(coord, put);
     }
 
-    pub(super) fn track_raw_mark_at(
-        &mut self,
-        id: u64,
-        coord: DriveCoord,
-        put: bool,
-    ) -> MovementLayer {
+    pub(super) fn track_raw_mark_at(&mut self, coord: DriveCoord, put: bool) {
+        use crate::sim::occupancy::VEHICLE_OCCUPATION_BIT;
         let (at, layer) = super::foot_mark::raw_occupation_plane(
             coord,
             put,
@@ -655,33 +648,11 @@ impl Simulation {
         );
         let raw = &mut self.substrate.raw_cell_occupation;
         match (put, layer) {
-            (true, MovementLayer::Bridge) => raw.mark_deck(at.0, at.1, 0x20),
-            (true, _) => raw.mark_ground(at.0, at.1, 0x20),
-            (false, MovementLayer::Bridge) => raw.clear_deck(at.0, at.1, 0x20),
-            (false, _) => raw.clear_ground(at.0, at.1, 0x20),
+            (true, MovementLayer::Bridge) => raw.mark_deck(at.0, at.1, VEHICLE_OCCUPATION_BIT),
+            (true, _) => raw.mark_ground(at.0, at.1, VEHICLE_OCCUPATION_BIT),
+            (false, MovementLayer::Bridge) => raw.clear_deck(at.0, at.1, VEHICLE_OCCUPATION_BIT),
+            (false, _) => raw.clear_ground(at.0, at.1, VEHICLE_OCCUPATION_BIT),
         }
-        if put {
-            self.substrate
-                .cell_occupation
-                .mark_vehicle_on_layer(at.0, at.1, id, layer);
-        } else {
-            self.substrate
-                .cell_occupation
-                .clear_vehicle_on_layer(at.0, at.1, id, layer);
-        }
-        if !put {
-            let mark = DriveOccupationFootprint {
-                rx: at.0,
-                ry: at.1,
-                layer,
-            };
-            if let Some(entity) = self.substrate.entities.get_mut(id)
-                && let Some(loco) = entity.locomotor.as_mut()
-            {
-                loco.forget_track_occupation(mark);
-            }
-        }
-        layer
     }
 
     fn track_place(
@@ -875,29 +846,10 @@ impl Simulation {
                 })
             })
             .flatten();
-        let handoff_mark = handoff.map(|coord| {
-            let layer = self.track_raw_mark_at(id, coord, put);
-            DriveOccupationFootprint {
-                rx: cell(coord).0,
-                ry: cell(coord).1,
-                layer,
-            }
-        });
-        let layer = self.track_raw_mark_at(id, supplied, put);
-        if put
-            && let Some(entity) = self.substrate.entities.get_mut(id)
-            && let Some(loco) = entity.locomotor.as_mut()
-        {
-            loco.publish_track_occupation(
-                family,
-                Some(DriveOccupationFootprint {
-                    rx: cell(supplied).0,
-                    ry: cell(supplied).1,
-                    layer,
-                }),
-                handoff_mark,
-            );
+        if let Some(coord) = handoff {
+            self.track_raw_mark_at(coord, put);
         }
+        self.track_raw_mark_at(supplied, put);
     }
 
     fn track_try_chain(

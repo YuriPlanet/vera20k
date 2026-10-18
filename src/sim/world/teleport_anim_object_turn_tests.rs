@@ -517,30 +517,17 @@ fn raw_bits(sim: &Simulation, cell: (u16, u16)) -> u8 {
 }
 
 /// Teleport Process brackets the relocation with Mark(UP) (`0x007195DB`) and
-/// Mark(DOWN) (`0x007196BF`): a Unit's cell list entry, raw vehicle bit and
-/// vehicle plane leave the origin and mark the destination in the warp's own
-/// turn.
+/// Mark(DOWN) (`0x007196BF`): a Unit's cell list entry and raw vehicle bit
+/// leave the origin and mark the destination in the warp's own turn.
 #[test]
 fn warp_moves_a_units_occupation_through_the_mark_pair() {
-    use crate::sim::movement::locomotor::MovementLayer;
-    use crate::sim::occupancy::VEHICLE_OCCUPATION_BIT;
     let rules = rules(false);
     let mut sim = relocating_chrono_unit((8, 9));
-    let occupied = |sim: &Simulation, cell: (u16, u16)| {
-        sim.substrate
-            .cell_occupation
-            .vehicle_bits(cell.0, cell.1, MovementLayer::Ground)
-            & VEHICLE_OCCUPATION_BIT
-            != 0
-    };
-    assert!(occupied(&sim, (5, 5)));
     assert_ne!(raw_bits(&sim, (5, 5)) & 0x20, 0);
 
     sim.advance_live_object_turn(1, Some(&rules), techno_ai::ObjectAiCtx::default())
         .unwrap();
 
-    assert!(!occupied(&sim, (5, 5)), "the origin is released");
-    assert!(occupied(&sim, (8, 9)), "the destination is marked");
     assert_eq!(raw_bits(&sim, (5, 5)) & 0x20, 0);
     assert_ne!(raw_bits(&sim, (8, 9)) & 0x20, 0);
     assert!(!sim.substrate.occupancy.contains_entity(5, 5, 1));

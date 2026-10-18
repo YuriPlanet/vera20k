@@ -1,6 +1,5 @@
 //! Focused regression tests for ordered lifecycle authority.
 
-use crate::sim::movement::DriveLocomotionRuntime;
 use std::collections::BTreeMap;
 
 use crate::map::bridge_facts::{
@@ -12,7 +11,7 @@ use crate::rules::locomotor_type::LocomotorKind;
 use crate::rules::terrain_rules::{SpeedCostProfile, TerrainClass};
 use crate::sim::anim_class::{AnimObject, AnimRuntime, AnimWorldCoord};
 use crate::sim::combat::{Health, TargetKind};
-use crate::sim::components::{DriveOccupationFootprint, NavTargetRef};
+use crate::sim::components::NavTargetRef;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::house_state::HouseState;
 use crate::sim::mission::state::MissionTestFixture;
@@ -1655,27 +1654,10 @@ fn hover_limbo_releases_actual_head_claim_and_repeated_limbo_preserves_a_new_res
             }
         };
         assert_eq!(bits(&sim) & 0x20, 0x20, "accepted Hover head claim");
-        let layer = if deck {
-            MovementLayer::Bridge
-        } else {
-            MovementLayer::Ground
-        };
-        assert_ne!(
-            sim.substrate
-                .cell_occupation
-                .vehicle_bits(cell.0, cell.1, layer),
-            0
-        );
 
         let _ = sim.techno_limbo(1);
 
         assert_eq!(bits(&sim) & 0x20, 0, "actual head must be released");
-        assert_eq!(
-            sim.substrate
-                .cell_occupation
-                .vehicle_bits(cell.0, cell.1, layer),
-            0
-        );
         assert!(!sim.substrate.occupancy.contains_entity(2, 3, 1));
         assert_eq!(
             sim.substrate
@@ -2950,70 +2932,6 @@ fn gsi_04_05_conceal_removes_only_selected_object_list_layer() {
             .unwrap()
             .lifecycle
             .cell_marked()
-    );
-}
-
-#[test]
-fn gsi_04_05_hard_limbo_clears_pending_then_current_vehicle_occupation() {
-    let mut sim = Simulation::new();
-    insert_entity(&mut sim, 1, EntityCategory::Unit);
-    let _ = sim.reveal(1);
-    let current = {
-        let entity = sim.substrate.entities.get(1).unwrap();
-        (entity.position.rx(), entity.position.ry())
-    };
-    let head = (current.0 + 1, current.1);
-    {
-        let entity = sim.substrate.entities.get_mut(1).unwrap();
-        entity.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
-        assert!(
-            entity
-                .locomotor
-                .as_mut()
-                .unwrap()
-                .install_drive_state_for_test(Some(
-                    DriveLocomotionRuntime::default().with_occupation_head_to_for_test(Some(
-                        DriveOccupationFootprint {
-                            rx: head.0,
-                            ry: head.1,
-                            layer: MovementLayer::Ground,
-                        }
-                    ))
-                ))
-        );
-    }
-    sim.substrate
-        .cell_occupation
-        .mark_vehicle_on_layer(head.0, head.1, 1, MovementLayer::Ground);
-
-    // FootClass::Limbo's +9C(0) releases the pending mark before the
-    // Conceal's Mark(UP) clears the current one.
-    let _ = sim.techno_limbo(1);
-
-    assert_eq!(
-        sim.substrate
-            .cell_occupation
-            .vehicle_bits(head.0, head.1, MovementLayer::Ground),
-        0
-    );
-    assert_eq!(
-        sim.substrate
-            .cell_occupation
-            .vehicle_bits(current.0, current.1, MovementLayer::Ground),
-        0
-    );
-    assert_eq!(
-        sim.substrate
-            .entities
-            .get(1)
-            .unwrap()
-            .locomotor
-            .as_ref()
-            .and_then(|l| l.selected_drive_runtime())
-            .and_then(|r| r.retained())
-            .unwrap()
-            .occupation_head_to(),
-        None
     );
 }
 

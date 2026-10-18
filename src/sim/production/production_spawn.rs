@@ -596,48 +596,6 @@ mod tests {
     }
 
     #[test]
-    fn unit_unlimbo_native_empty_raw_byte_is_not_resurrected_by_owner_claims() {
-        let rules = production_admission_rules();
-        let mut sim = production_admission_sim();
-        set_admission_water_cell(&mut sim, (8, 8));
-        let stable_id = sim
-            .create_production_object_limbo_at_height("DEST", "Americans", 8, 8, 0x40, 0, &rules)
-            .unwrap();
-        // Unit7441B0 ORs 0x20; Unit744210 destructively clears it. The
-        // derived owner index can retain another claim after that clear.
-        for owner in [101, 102] {
-            sim.substrate
-                .cell_occupation
-                .mark_vehicle_on_layer(8, 8, owner, MovementLayer::Ground);
-            sim.substrate.raw_cell_occupation.mark_ground(8, 8, 0x20);
-        }
-        sim.substrate
-            .cell_occupation
-            .clear_vehicle_on_layer(8, 8, 101, MovementLayer::Ground);
-        sim.substrate.raw_cell_occupation.clear_ground(8, 8, 0x20);
-        assert_eq!(sim.substrate.raw_cell_occupation.ground_bits(8, 8), 0);
-        assert_eq!(
-            sim.substrate
-                .cell_occupation
-                .vehicle_bits(8, 8, MovementLayer::Ground),
-            0x20
-        );
-        // Original Unit Unlimbo's empty-list/raw-zero control admits. Claims
-        // are not another input of the native +1AC receiver.
-        assert_eq!(
-            unlimbo_held_naval_unit(
-                &mut sim,
-                &rules,
-                stable_id,
-                (8, 8),
-                None,
-                crate::sim::world::FrameEffects::default()
-            ),
-            Some(stable_id)
-        );
-    }
-
-    #[test]
     fn unit_unlimbo_native_deck_query_keeps_the_callers_ground_pose() {
         let rules = production_admission_rules();
         let mut sim = production_admission_sim();
