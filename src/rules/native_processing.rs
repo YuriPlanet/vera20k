@@ -1269,6 +1269,20 @@ impl NativeRulesRegistryState {
         Ok(())
     }
 
+    /// Runtime Execute72/71 writes become retained defaults for later
+    /// AudioVisual reads. Reset6686C0 deletes Types, not these Rules scalars.
+    pub(crate) fn consume_outgoing_ambient_change_inputs(
+        &mut self,
+        inputs: [Option<NativeF64Bits>; 2],
+    ) {
+        if let Some(rate) = inputs[0] {
+            self.rules_ambient_change_rate = rate;
+        }
+        if let Some(step) = inputs[1] {
+            self.rules_ambient_change_step = step;
+        }
+    }
+
     pub(crate) fn anim_type_art_read_states(&self) -> impl Iterator<Item = (&str, bool)> {
         self.families
             .get(&RulesTypeFamily::Animation)

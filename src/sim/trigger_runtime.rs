@@ -3706,11 +3706,12 @@ impl Simulation {
                 let storm = crate::sim::superweapon::lightning_storm::raging(self);
                 self.session.lighting.set_ambient_light(value, storm);
             }
-            66 => {
+            64..=66 => {
                 let (Some(rules), Some(waypoint)) = (rules, value) else {
                     return false;
                 };
-                // Execute6DDEA0..6DDEF5 uses +90, not the +44 tail waypoint.
+                // Execute64/65/66 at6DDDF6/6DDE4B/6DDEA0 uses +90,
+                // not the +44 tail waypoint, with damage50/100/300.
                 // The same C4 reference/coordinate/Flash owners serve ordinary
                 // impacts; stock C4=Super is not Bright, so materializes no
                 // light. Do not force a screen/nuke flash from the action name.
@@ -3722,12 +3723,24 @@ impl Simulation {
                 self.combat_light_requests
                     .push(crate::sim::combat::CombatLightRequest::Impact {
                         target_id: None,
-                        damage: 300,
+                        damage: match action.kind {
+                            64 => 50,
+                            65 => 100,
+                            _ => 300,
+                        },
                         warhead_ref,
                         coord: crate::sim::projectile::ProjectileCoord::new(x, y, z),
                         force_create: false,
                         flags: 0,
                     });
+            }
+            71 | 72 => {
+                let Some(bits) = value else {
+                    return false;
+                };
+                self.session
+                    .lighting
+                    .set_ambient_change_input(action.kind == 72, bits);
             }
             ACTION_DAMAGE_AT_WAYPOINT => {
                 let (Some(rules), Some(waypoint)) = (rules, value) else {

@@ -1704,9 +1704,9 @@ pub struct GeneralRules {
     /// [General] WeaponNullifyAnim (+350), constructor null; retained reader
     /// 66E2AF. Bullet46A2A1 uses it after AreaDamage returns IronCurtain (2).
     pub weapon_nullify_anim: String,
-    /// Whether `[AudioVisual] AmbientChangeRate=` is nonzero before its native
-    /// frame conversion. Kept separately because a nonzero mod value can chop
-    /// to a zero-frame interval while still passing ScenarioClass's outer gate.
+    /// Whether `[AudioVisual] AmbientChangeRate=` passes the native ordered,
+    /// nonzero gate before conversion. A nonzero mod value can chop to a
+    /// zero-frame interval; NaN fails the original FCOMP/C3 gate.
     pub ambient_change_rate_nonzero: bool,
     /// Lightning/global ambient transition interval in native frames:
     /// `ftol(AmbientChangeRate * 900)`.
@@ -2796,7 +2796,21 @@ const VETERAN_CAP_DEFAULT: f64 = 2.0;
 /// `ftol(rate * 900)` (`0x0055B3D8..0x0055B3E4`) and the step
 /// `ftol(step * 100)` (`0x0055B447..0x0055B453`).
 pub(crate) fn ambient_change_terms(rate: f64, step: f64) -> (bool, i32, i32) {
-    (rate != 0.0, (rate * 900.0) as i32, (step * 100.0) as i32)
+    use crate::util::native_x87::{MaskedX87Chop53 as X, MaskedX87Ordering, NativeF64Bits};
+    let rate = X::load_f64(NativeF64Bits::from_bits(rate.to_bits()));
+    let step = X::load_f64(NativeF64Bits::from_bits(step.to_bits()));
+    // FCOMP/test C3 at55B351..55B362 rejects zero and unordered. Math_ftol
+    // returns the low dword of its signed64 result; a Rust saturating cast
+    // differs for large/exceptional binary32 action inputs.
+    let enabled = matches!(
+        X::compare(rate, X::load_i32(0)),
+        MaskedX87Ordering::Less | MaskedX87Ordering::Greater
+    );
+    (
+        enabled,
+        X::ftol_i32_low_masked(X::mul(rate, X::load_i32(900))),
+        X::ftol_i32_low_masked(X::mul(step, X::load_i32(100))),
+    )
 }
 
 impl GeneralRules {

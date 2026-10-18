@@ -968,12 +968,17 @@ fn pump_loading_after_present(state: &mut AppState) -> LoadingPump {
             state.process_assets.native_rules_mut_with_tile_cache();
         let native_rules_owner =
             native_rules_owner.expect("native Rules availability checked before split borrow");
-        // The outgoing scene no longer advances. Return its live TechnoType
-        // values before Full_Init's optional prefix Process; the existing
-        // destructive reset then retires those exact types, not just names.
+        // The outgoing scene no longer advances. Return its live Type and
+        // ambient Rules writes before Full_Init's optional prefix Process.
+        // Type reset deletes Types but retains the ambient scalar defaults.
         if let Some(runtime) = state.match_state.sim_runtime.as_mut() {
-            native_rules_owner.consume_outgoing_type_tech_levels(
+            native_rules_owner.consume_outgoing_scenario_rules(
                 runtime.simulation.retire_object_type_tech_levels(),
+                runtime
+                    .simulation
+                    .session
+                    .lighting
+                    .retire_ambient_change_inputs(),
             )?;
         }
         let load_result = {

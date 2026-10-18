@@ -364,7 +364,7 @@ fn process_owner_accepts_retired_values_before_its_existing_full_init_reset() {
         .load_scenario(NativeScenarioRulesPrefix::Campaign(None), &IniFile::empty())
         .unwrap();
     owner
-        .consume_outgoing_type_tech_levels(
+        .consume_outgoing_scenario_rules(
             stage(native, "actions")["types"]
                 .as_array()
                 .unwrap()
@@ -376,6 +376,7 @@ fn process_owner_accepts_retired_values_before_its_existing_full_init_reset() {
                         number(&ty["tech_level"]),
                     )
                 }),
+            [None; 2],
         )
         .unwrap();
     assert!(

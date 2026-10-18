@@ -1109,7 +1109,8 @@ use crate::sim::world::Simulation;
 // owner keys and display handles; authored-object admission cannot reconstruct
 // them from mutable human flags or country after loading.
 // 401 -> 402: retained DiskLaser bodies and Rules+28C charge-up reference.
-const SNAPSHOT_VERSION: u32 = 402;
+// 402 -> 403: preserve live Action71/72 ambient Rules inputs across saves.
+const SNAPSHOT_VERSION: u32 = 403;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -4805,7 +4806,8 @@ mod tests {
         // 399 -> 400: retain the local Power bar projection.
         // 400 -> 401: retained native House names and their array binding.
         // 401 -> 402: retain delayed DiskLaser bodies and Rules charge-up.
-        assert_eq!(super::SNAPSHOT_VERSION, 402);
+        // 402 -> 403: live ambient Rules writes from Action71/72.
+        assert_eq!(super::SNAPSHOT_VERSION, 403);
     }
 
     #[test]

@@ -3822,6 +3822,8 @@ impl Simulation {
     /// chrono screen's test (`0x0055B39B`) shares the nuke arm. Original
     /// controls: superweapon_oracle.json/ambient_step, chrono=1.
     pub(crate) fn tick_scenario_lighting_transition(&mut self, rules: &RuleSet) {
+        let (rate_nonzero, normal_interval, ambient_step) =
+            self.session.lighting.ambient_change_terms(rules);
         let interval_frames = if self.session.lighting.nuke_flash_running()
             || self.session.chrono_screen().active()
         {
@@ -3829,13 +3831,13 @@ impl Simulation {
         } else if crate::sim::superweapon::psychic_dominator::active(self) {
             self.session.lighting.dominator_change_rate
         } else {
-            rules.general.ambient_change_interval_frames
+            normal_interval
         };
         if self.session.lighting.advance_transition_if_due(
             self.session.binary_frame,
-            rules.general.ambient_change_rate_nonzero,
+            rate_nonzero,
             interval_frames,
-            rules.general.ambient_change_step,
+            ambient_step,
         ) {
             self.publish_global_lighting();
         }
