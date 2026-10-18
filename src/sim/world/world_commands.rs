@@ -1115,14 +1115,8 @@ impl Simulation {
                 }
                 crate::sim::deploy::issue_order(self, *entity_id, rules, frame_effects)
             }
-            // RESIDUAL: retail undeploys a building only through a cell click
-            // (`0x004436F0`: the rally/ArchiveTarget event 0x1E, then SELL
-            // 0x16 -> `Sell_Back(-1) @ 0x00447110` queuing Selling), and its
-            // What_Action never answers ACTION_SELF for an UndeploysInto
-            // building (`0x00447210`); VERA's app offers the undeploy on a
-            // self-click and starts it here with no destination cell: the
-            // pack-up times as an archive-bearing one, but the unit is not
-            // sent anywhere after the conversion.
+            // Legacy targetless deploy-key order. The cell-click path sends
+            // SetRally followed by SellBuilding, preserving native event1E/16.
             Command::UndeployBuilding { entity_id } => {
                 let Some(rules) = rules else { return false };
                 if !self.entity_owned_by_id(command_owner, *entity_id) {
@@ -1994,24 +1988,27 @@ impl Simulation {
         true
     }
 
-    /// Whether a rally order from `owner` reaches this building: `owner`'s
-    /// structure whose type has a rally point. gamemd's cell click
-    /// (`BuildingClass::Active_Click_With 0x004436F0`) calls `SetRallyPoint`
-    /// only for a building with `HasRallyPoint` (vt+0x284, `0x00443792`) or
-    /// an `UndeploysInto=` type (`0x0044377E`); the undeploy arm's
-    /// repack-and-move order is not ported. The click and the event share
-    /// this rule so no building the event ignores is announced.
+    /// Building44377E admits HasRallyPoint OR UndeploysInto; the latter
+    /// archives the move goal before SELL. ConstructionYards must also pass
+    /// the cell click's44374F..443778 redeploy gates.
     pub fn takes_rally_point(&self, stable_id: u64, owner: &str, rules: &RuleSet) -> bool {
-        self.substrate
-            .entities
-            .get(stable_id)
-            .is_some_and(|entity| {
-                entity.category() == crate::map::entities::EntityCategory::Structure
-                    && owner.eq_ignore_ascii_case(self.interner.resolve(entity.owner()))
-                    && self
-                        .object_type(entity.type_ref(), rules)
-                        .is_some_and(|obj| obj.has_rally_line())
-            })
+        let Some(entity) = self.substrate.entities.get(stable_id) else {
+            return false;
+        };
+        if entity.category() != crate::map::entities::EntityCategory::Structure
+            || !owner.eq_ignore_ascii_case(self.interner.resolve(entity.owner()))
+        {
+            return false;
+        }
+        let Some(object) = self.object_type(entity.type_ref(), rules) else {
+            return false;
+        };
+        if object.undeploys_into.is_some() {
+            self.can_undeploy_building_runtime(stable_id, rules)
+                && (!object.construction_yard || self.session.game_mode_nonzero)
+        } else {
+            object.has_rally_line()
+        }
     }
 
     /// Replace the current selection with exactly the given stable entity IDs.

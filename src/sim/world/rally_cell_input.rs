@@ -63,9 +63,8 @@ impl Simulation {
                 naval: object.naval,
             },
         )
-        // A miss sends no rally event and keeps ArchiveTarget. The separate
-        // redeployable ConstructionYard branch requires its repack/move owner;
-        // it is not admitted by the current HasRallyPoint cell-click route.
+        // A miss sends no rally event and keeps ArchiveTarget. The click
+        // owner still queues the following SELL for an UndeploysInto type.
     }
 }
 

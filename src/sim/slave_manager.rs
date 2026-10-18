@@ -64,17 +64,6 @@
 //!   idle slaves and hunts.
 //!
 //! ## Residuals
-//! - A player moves a refinery natively by clicking a cell with it selected
-//!   (`BuildingClass` cell click `0x004436F0`: SetRallyPoint's ArchiveTarget
-//!   event 0x1E, then SELL 0x16 -> `Sell_Back(-1) @ 0x00447110`); Selling
-//!   then runs HandleReturnedSlaves' building arm for an archived field
-//!   (`0x0044AA3D..0x0044AA9F`: FindDeployCell beside it becomes the
-//!   archive) and the Slave Miner drives there. VERA's app has no such click
-//!   (it undeploys on a self-click, which retail never offers); the building
-//!   arm is unreachable without it. Trigger: a player's move order for a
-//!   refinery (or Construction Yard). Effect: no move order. Frequency:
-//!   occasional. Downstream: VERA's rally click archives a cell only on
-//!   rally-line factories, so a refinery never holds a player's archive.
 //! - Two recall sites have no VERA anchor: FootClass::Mission_Hunt's reset
 //!   when it picks a destination (`0x004D553D..0x004D5547`; VERA's Hunt port
 //!   has no destination step) and FootClass::Mission_AreaGuard's hunt start
@@ -1056,8 +1045,9 @@ impl Simulation {
     /// can deploy on and hunts (state 2, its live slaves reset); with no
     /// such cell, or no NavCom, it guards (state 0 at now).
     ///
-    /// The building arm (an archived field) belongs to the refinery's
-    /// relocation (module residual).
+    /// Building6B0F14..6B0FEE uses ArchiveTarget instead: success replaces
+    /// the archive with FindDeployCell, enters PackingUp and recalls slaves;
+    /// a search miss leaves its state/archive intact. Selling44AA9F calls it.
     pub(crate) fn handle_returned_slaves(
         &mut self,
         master: u64,
@@ -1068,9 +1058,18 @@ impl Simulation {
         let Some(owner) = self.substrate.entities.get(master) else {
             return;
         };
-        let field = (owner.category() == EntityCategory::Unit)
-            .then_some(owner.navigation.nav_com())
-            .flatten()
+        let building = owner.category() == EntityCategory::Structure;
+        let destination = if building {
+            owner.archive_target().map(|target| match target {
+                TargetKind::Cell(x, y) => crate::sim::components::NavTargetRef::cell(x, y),
+                TargetKind::Entity(id) => crate::sim::components::NavTargetRef::object(id),
+            })
+        } else if owner.category() == EntityCategory::Unit {
+            owner.navigation.nav_com()
+        } else {
+            None
+        };
+        let field = destination
             .and_then(|target| {
                 crate::sim::movement::nav_target_coordinate(
                     target,
@@ -1092,13 +1091,21 @@ impl Simulation {
             return;
         };
         match self.find_deploy_cell(master, field, rules) {
+            None if building => {} //6B0F8E..6B0FA0: no fallback writes.
             None => {
                 self.set_manager_state(master, ManagerState::Ready, now);
                 self.queue_slave_mission(master, MissionType::Guard);
             }
             Some(cell) => {
-                self.send_slave_master(master, cell, rules, frame_effects);
-                self.set_manager_state(master, ManagerState::Travelling, i32::MAX);
+                if building {
+                    if let Some(owner) = self.substrate.entities.get_mut(master) {
+                        owner.set_archive_target(Some(TargetKind::Cell(cell.0, cell.1)));
+                    }
+                    self.set_manager_state(master, ManagerState::PackingUp, i32::MAX);
+                } else {
+                    self.send_slave_master(master, cell, rules, frame_effects);
+                    self.set_manager_state(master, ManagerState::Travelling, i32::MAX);
+                }
                 self.reset_live_slaves(master, rules, frame_effects);
             }
         }

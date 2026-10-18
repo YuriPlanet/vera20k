@@ -1638,64 +1638,19 @@ pub(crate) fn try_queue_context_order_at_screen_point(
                 };
             }
             {
-                // Set rally point for the structures.
-                {
-                    // `SetRallyPoint 0x00443860` sends the rally event as the
-                    // building's owner; the click names only the local
-                    // player's buildings that take a rally, so that owner is
-                    // the local player. A building without a rally point gets
-                    // `ACTION_NONE` on a cell (`0x0044762A`, `0x0044774F`):
-                    // with no such building the click orders nothing here.
-                    let producer_ids =
-                        selected_rally_producer_ids(sim, &resources.rules, &selected_ids, owner_id);
-                    // `BuildingClass::SetRallyPoint 0x00443A2B..0x00443A69`,
-                    // called per selected factory with announce = 1 by the
-                    // map-click handlers `FUN_00443410` / `FUN_004436F0`:
-                    // after the rally `EventClass` is pushed, the
-                    // clicking machine speaks `EVA_NewRallyPointEstablished`
-                    // when the factory's owner is the local player
-                    // (`0x00443A3C CALL 0x0050B6F0`) and the type is neither
-                    // a `ConstructionYard=` nor a `ResourceDestination=`.
-                    // One `PlayEVA` per factory; VoxClass drops same-entry
-                    // duplicates, so one request per click is equivalent.
-                    for id in producer_ids {
-                        let target = match sim.factory_rally_cell_input(
-                            id,
-                            (target_rx, target_ry),
-                            &resources.rules,
-                        ) {
-                            Ok(target) => target,
-                            Err(error) => {
-                                log::warn!("factory rally input: {error}");
-                                None
-                            }
-                        };
-                        let Some((rx, ry)) = target else {
-                            continue;
-                        };
-                        // Event1E carries this factory's already prepared cell.
-                        // Different selected factories can resolve different zones.
-                        queued.push(CommandEnvelope::new(
-                            owner_id,
-                            execute_tick,
-                            Command::SetRally {
-                                rx,
-                                ry,
-                                producer_ids: vec![id],
-                            },
-                        ));
-                        rally_announce |= sim
-                            .entities()
-                            .get(id)
-                            .and_then(|entity| {
-                                sim.interner
-                                    .object_type(entity.type_ref(), &resources.rules)
-                            })
-                            .is_some_and(
-                                crate::app::match_runtime::eva_producers::rally_point_announces,
-                            );
-                    }
-                }
+                let (orders, announce) = building_cell_orders(
+                    sim,
+                    &resources.rules,
+                    &selected_ids,
+                    owner_id,
+                    (target_rx, target_ry),
+                );
+                queued.extend(
+                    orders
+                        .into_iter()
+                        .map(|command| CommandEnvelope::new(owner_id, execute_tick, command)),
+                );
+                rally_announce |= announce;
                 // Also issue Move commands for any mobile units in the
                 // selection — RA2 moves units AND sets rally when both
                 // are selected.
@@ -2203,15 +2158,11 @@ fn self_click_command(
         return Some(command);
     }
     if entity.category() == EntityCategory::Structure {
-        // A tank bunker ejects its unit, and a building that undeploys
-        // (a Construction Yard) packs up.
+        // Building44731C..447358 keeps self action for cargo/garrisons or
+        // factory primary selection. Repacking is a cell-targeted order.
         return if entity.bunker.occupant().is_some() {
             Some(Command::EjectBunker {
                 bunker_id: target.stable_id,
-            })
-        } else if sim.should_show_undeploy_building_command(target.stable_id, rules) {
-            Some(Command::UndeployBuilding {
-                entity_id: target.stable_id,
             })
         } else if crate::sim::production::can_select_factory_primary(sim, rules, target.stable_id) {
             // Building4472EC preserves Action4 only for a nonprimary
@@ -2640,6 +2591,45 @@ fn shot_is_illegal(
         && sim.effective_shared_cell_dummy().detached(|| {
             sim.selected_weapon_fire_error(rules, actor_id, *target, true, overlay_registry)
         }) == crate::sim::combat::fire_error::FireError::Illegal
+}
+
+/// Building4436F0(1/6, cell): prepare archive event1E, then SELL16 for an
+/// UndeploysInto type. A failed FNPC emits no archive but still queues SELL,
+/// retaining an earlier archive. A factory announces only its queued rally.
+fn building_cell_orders(
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    selected: &[u64],
+    owner: InternedId,
+    cell: (u16, u16),
+) -> (Vec<Command>, bool) {
+    let mut orders = Vec::new();
+    let mut announce = false;
+    for id in selected_rally_producer_ids(sim, rules, selected, owner) {
+        let Some(object) = sim
+            .entities()
+            .get(id)
+            .and_then(|entity| sim.interner.object_type(entity.type_ref(), rules))
+        else {
+            continue;
+        };
+        match sim.factory_rally_cell_input(id, cell, rules) {
+            Ok(Some((rx, ry))) => {
+                orders.push(Command::SetRally {
+                    rx,
+                    ry,
+                    producer_ids: vec![id],
+                });
+                announce |= crate::app::match_runtime::eva_producers::rally_point_announces(object);
+            }
+            Ok(None) => {}
+            Err(error) => log::warn!("building cell input: {error}"),
+        }
+        if object.undeploys_into.is_some() {
+            orders.push(Command::SellBuilding { entity_id: id });
+        }
+    }
+    (orders, announce)
 }
 
 fn selected_rally_producer_ids(
@@ -3416,6 +3406,53 @@ mod tests {
         let producer_ids = selected_rally_producer_ids(&sim, &rules, &[5, 4, 3, 2, 1, 5], owner);
 
         assert_eq!(producer_ids, vec![5, 1]);
+    }
+
+    #[test]
+    fn refinery_cell_click_archives_before_repacking_and_self_click_does_not_repack() {
+        let rules = crate::rules::ruleset::RuleSet::from_ini(
+            &crate::sim::arena_fixture::clear_ground_ini(
+                "[BuildingTypes]\n0=REFN\n[VehicleTypes]\n0=SMIN\n\
+                 [REFN]\nStrength=1000\nUndeploysInto=SMIN\nResourceGatherer=yes\nResourceDestination=yes\n\
+                 [SMIN]\nStrength=1000\nSpeed=3\n")).unwrap();
+        let mut sim = Simulation::with_seed(6);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+        let refinery = sim
+            .spawn_object("REFN", "Americans", 15, 15, 0, &rules)
+            .unwrap();
+        let enemy = sim
+            .spawn_object("REFN", "Russians", 17, 15, 0, &rules)
+            .unwrap();
+        let owner = sim.interner.get("Americans").unwrap();
+        let (orders, announce) =
+            building_cell_orders(&sim, &rules, &[refinery, enemy, refinery], owner, (17, 16));
+        assert!(
+            matches!(orders.as_slice(), [Command::SetRally { producer_ids, .. },
+            Command::SellBuilding { entity_id }] if producer_ids == &[refinery] && *entity_id == refinery)
+        );
+        assert!(
+            !announce,
+            "ResourceDestination does not announce a factory rally"
+        );
+        let hover = HoverTargetKindWithId {
+            kind: HoverTargetKind::FriendlyStructure,
+            stable_id: refinery,
+        };
+        assert_eq!(
+            self_click_command(&sim, &rules, owner, &[refinery], Some(&hover)),
+            None
+        );
+        // A missing input map cannot produce an archive;4437AD still queues SELL.
+        sim.resolved_terrain = None;
+        let (orders, _) = building_cell_orders(&sim, &rules, &[refinery], owner, (17, 16));
+        assert_eq!(
+            orders,
+            [Command::SellBuilding {
+                entity_id: refinery
+            }]
+        );
     }
 
     /// The retail modifier map, one row per chord. Ctrl force-fires, Alt forces

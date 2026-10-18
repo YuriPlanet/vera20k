@@ -399,6 +399,29 @@ fn empty_cell_cursor(
     // resolved object's harvester flags, not the whole selection.
     let shrouded =
         viewer.is_some_and(|viewer| sim.clicked_cell_is_shrouded(viewer, cell) == Ok(true));
+    // Building447563..4475EE: an UndeploysInto resource gatherer/destination
+    //shows Harvest over mapped Tiberium land; its click still archives + sells.
+    let refinery_harvest = !shrouded
+        && best_id.is_some_and(|id| {
+            sim.entities().get(id).is_some_and(|entity| {
+                entity.category() == crate::map::entities::EntityCategory::Structure
+                    && rules
+                        .and_then(|rules| sim.interner.object_type(entity.type_ref(), rules))
+                        .is_some_and(|object| {
+                            object.undeploys_into.is_some()
+                                && object.resource_gatherer
+                                && object.resource_destination
+                        })
+                    && sim.resolved_terrain.as_ref().is_some_and(|terrain| {
+                        let cells =
+                            crate::map::resolved_terrain::NativeCellQuery::isolated(terrain);
+                        cells.land_type(cells.lookup((cell.0 as i16, cell.1 as i16))) == 5
+                    })
+            })
+        });
+    if refinery_harvest {
+        return CursorFeedbackKind::Harvest;
+    }
     let has_ore = !shrouded
         && match (sim.overlay_grid.as_ref(), registry, rules) {
             (Some(grid), Some(registry), Some(rules)) if !rules.tiberium_types.is_empty() => {
@@ -427,7 +450,7 @@ fn empty_cell_cursor(
 /// asks it: DetermineAction (`0x00692610`) from `0x0069300B` sets the
 /// mouse-over argument, so the sim's [`Simulation::cell_move_action`] never
 /// asks Can_Enter_Cell here and a Cell the click will redirect shows Move.
-/// A selected structure answers Move: VERA answers a rally-point click there.
+/// A selected rally/undeploy structure shares the building cell-order admission.
 /// Without a local House, a resolved object or rules, or for a query the sim
 /// cannot answer (no map cells), the cursor keeps Move: VERA-internal, as a
 /// live gamemd session always has a map and a selection here.
@@ -452,12 +475,14 @@ fn what_action_on_cell(
     let (Some(viewer), Some(rules)) = (viewer, rules) else {
         return MoveAction::Move;
     };
-    if sim
-        .entities()
-        .get(id)
-        .is_none_or(|entity| entity.category() == crate::map::entities::EntityCategory::Structure)
+    if let Some(entity) = sim.entities().get(id)
+        && entity.category() == crate::map::entities::EntityCategory::Structure
     {
-        return MoveAction::Move;
+        return if sim.takes_rally_point(id, sim.interner.resolve(viewer), rules) {
+            MoveAction::Move
+        } else {
+            MoveAction::None
+        };
     }
     let query = CellActionQuery {
         mouse_over: true,
@@ -553,11 +578,6 @@ pub(super) fn capability_cursor_for_hover(
             }
             // Own occupied tank bunker self-hover → eject (deploy cursor).
             if entity.bunker.occupant().is_some() {
-                return CursorFeedbackKind::Deploy;
-            }
-            if rules.is_some_and(|rules| {
-                sim.should_show_undeploy_building_command(hover.stable_id, rules)
-            }) {
                 return CursorFeedbackKind::Deploy;
             }
             if sim.session.current_house == Some(entity.owner())

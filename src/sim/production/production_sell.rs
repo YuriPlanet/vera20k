@@ -48,9 +48,6 @@
 //!   empty (`0x006C95E0`), and the inspected storage writers do not fill it.
 //!   `Full=` admits Foot team members, not Buildings (`0x0065DE7B`). Native
 //!   saved games can retain nonempty stores; their sale payout remains open.
-//! - Stage 0's Slave Miner arm (`0x0044AA3D..0x0044AA9F`: HandleReturnedSlaves
-//!   for an archived ore cell) needs the retail undeploy click's cell, which
-//!   VERA's undeploy order does not carry.
 //! - A unit's sale on a repair depot (the SELL event's unit arm,
 //!   `0x004C6F5A..0x004C6F96`) is its own mechanism.
 
@@ -359,8 +356,7 @@ pub fn sell_stage_zero(
     {
         // MissionSelling44A9DF: QueueVoice only latches. Techno6F9EBB was
         // already reached in this visit, so playback waits for its next head.
-        // Select before native44AA3D HandleReturnedSlaves. Its Building
-        // Archive rewrite remains the separate residual documented above.
+        // Select before native44AA3D HandleReturnedSlaves.
         if let Some(sound_id) = sim.deploy_voice_request(rules, id, true) {
             let sound_id = sound_id.to_owned();
             sim.sound_events.push(SimSoundEvent::UnitVoiceRequested {
@@ -382,6 +378,25 @@ pub fn sell_stage_zero(
                 rx,
                 ry,
             });
+        }
+        //44AA3D..44AA9F: only a different archived Cell with LandType5
+        //and a SlaveManager enters the building arm. Blank goals stay literal.
+        let recall = sim.entities().get(id).is_some_and(|building| {
+            if building.slave_manager.is_none() {
+                return false;
+            }
+            let Some(crate::sim::combat::TargetKind::Cell(x, y)) = building.archive_target() else {
+                return false;
+            };
+            let own = crate::sim::slave_manager::owner_cell(building);
+            (x as i16, y as i16) != own
+                && sim.resolved_terrain.as_ref().is_some_and(|terrain| {
+                    let cells = crate::map::resolved_terrain::NativeCellQuery::isolated(terrain);
+                    cells.land_type(cells.lookup((x as i16, y as i16))) == 5
+                })
+        });
+        if recall {
+            sim.handle_returned_slaves(id, rules, frame_effects);
         }
     }
     if sim

@@ -2613,10 +2613,8 @@ impl Simulation {
             unit.veterancy.inherit(&veterancy);
         }
         self.transfer_slave_manager(sid, new_sid, false, rules, overlay_registry, frame_effects);
-        // A building's archive is a cell. Of its VERA writers (the Slave
-        // Miner refinery's relocation in `slave_manager`, the rally click on
-        // rally-line factories), only the relocation reaches an
-        // UndeploysInto building: no retail rally-line type undeploys.
+        // Cell clicks and the SlaveManager relocation share ArchiveTarget;
+        // conversion sends the new Unit to that existing goal.
         if let Some(TargetKind::Cell(x, y)) = archive {
             if !self.set_unit_destination(
                 new_sid,
