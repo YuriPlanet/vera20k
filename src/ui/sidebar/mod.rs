@@ -154,7 +154,9 @@ pub struct SidebarItem {
     /// Native retained-entry flash phase (StripDraw6A9B59).
     pub flash_darkened: bool,
     pub queue_category: ProductionCategory,
-    /// Draw's unavailable overlay; it is not an input admission gate.
+    /// Draw's unavailable overlay; it is not an input admission gate. The
+    /// projection recomputes it from the live simulation every frame, as
+    /// `StripClass::Draw` does (crate::sim::production::cameo_draw_state).
     pub enabled: bool,
     pub at_build_limit: bool,
     pub progress: f32,

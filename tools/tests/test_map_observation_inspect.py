@@ -308,7 +308,100 @@ class AssertionTests(unittest.TestCase):
         self.assertEqual(checked['first_unobserved']['reason'], 'super_weapons_not_observed')
 
 
+class GestureAssertionTests(unittest.TestCase):
+    @staticmethod
+    def observed(*receipts):
+        observed = observations([[], [], []])
+        observed['gesture_input'] = {'receipts': list(receipts)}
+        return observed
+
+    @staticmethod
+    def receipt(ordinal=0, step=1):
+        # Projection fixture only. The capture validator checks the full Thumb
+        # schema; this consumer reads the actual receipt without recomputing it.
+        return {'ordinal': ordinal, 'issue_after_step': step,
+                'command_bar': {'command': 'Thumb', 'thumb': {
+                    'before': {'closed': True, 'has_lost': True, 'exit_ready': False},
+                    'release': {'dispatch': {'key_after': 0x80f1, 'action_result': 1}},
+                    'after': {'closed': False, 'has_lost': True, 'exit_ready': False}}}}
+
+    def test_ordinal_selects_actual_receipt_with_key_and_consumption_kept_distinct(self):
+        observed = self.observed(self.receipt(7), self.receipt(0))
+        before = deepcopy(observed)
+        for field, value in (('command_bar.thumb.release.dispatch.key_after', 0x80f1),
+                             ('command_bar.thumb.release.dispatch.action_result', 1),
+                             ('command_bar.thumb.before.has_lost', True),
+                             ('command_bar.thumb.after.closed', False)):
+            with self.subTest(field=field):
+                checked = result(observed, expectation(subject={'gesture': 7}, field=field,
+                                                       value=value, at_step=1))
+                self.assertEqual(checked['status'], 'PASS')
+                self.assertEqual(checked['binding'], {'gesture': 7, 'issue_after_step': 1})
+        checked = result(observed, expectation(subject={'gesture': 7},
+            field='command_bar.thumb.release.dispatch.action_result', value=0x80f1, at_step=1))
+        self.assertEqual(checked['status'], 'FAIL')
+        self.assertEqual(checked['first_failure']['actual'], 1)
+        self.assertEqual(observed, before)
+
+    def test_missing_duplicate_and_unsampled_gestures_are_unobserved(self):
+        cases = [(self.observed(), 0, 1, 'gesture_not_observed'),
+                 (self.observed(self.receipt(7)), 0, 1, 'gesture_not_observed'),
+                 (self.observed(self.receipt(), self.receipt()), 0, 1, 'ambiguous_gesture'),
+                 (self.observed(self.receipt(step=3)), 0, 3, 'frame_not_observed')]
+        for observed, ordinal, step, reason in cases:
+            with self.subTest(reason=reason, ordinal=ordinal):
+                checked = result(observed, expectation(subject={'gesture': ordinal},
+                    field='command_bar.thumb.after.closed', value=False, at_step=step))
+                self.assertEqual(checked['status'], 'UNOBSERVED')
+                self.assertEqual(checked['first_unobserved']['reason'], reason)
+                self.assertEqual(checked['observed_count'], 0)
+        # Historical captures need no gesture_input section at all.
+        checked = result(observations([[]]), expectation(subject={'gesture': 0}, field='ordinal', value=0))
+        self.assertEqual(checked['status'], 'UNOBSERVED')
+
+    def test_gesture_state_never_persists_before_or_after_its_issue_step(self):
+        observed = self.observed(self.receipt())
+        for step in (0, 2):
+            checked = result(observed, expectation(subject={'gesture': 0},
+                field='command_bar.thumb.after.closed', value=False, at_step=step))
+            self.assertEqual(checked['status'], 'UNOBSERVED')
+            self.assertEqual(checked['first_unobserved']['reason'], 'gesture_not_observed_at_step')
+        checked = result(observed, expectation(subject={'gesture': 0},
+            field='command_bar.thumb.after.closed', value=False, always={'from_step': 0, 'through_step': 2}))
+        self.assertEqual(checked['status'], 'UNOBSERVED')
+        self.assertEqual((checked['observed_count'], checked['unobserved_count']), (1, 2))
+        checked = result(observed, expectation(subject={'gesture': 0},
+            field='command_bar.thumb.after.closed', value=False, eventually={'from_step': 1, 'through_step': 2}))
+        self.assertEqual(checked['status'], 'PASS')
+        self.assertFalse(checked['coverage_complete'])
+
+    def test_null_dispatch_is_observed_but_missing_dispatch_fields_are_not(self):
+        receipt = self.receipt()
+        receipt['command_bar']['thumb']['release']['dispatch'] = None
+        observed = self.observed(receipt)
+        checked = result(observed, expectation(subject={'gesture': 0},
+            field='command_bar.thumb.release.dispatch', value=None, at_step=1))
+        self.assertEqual(checked['status'], 'PASS')
+        checked = result(observed, expectation(subject={'gesture': 0},
+            field='command_bar.thumb.release.dispatch.key_after', value=0, at_step=1))
+        self.assertEqual(checked['status'], 'UNOBSERVED')
+        self.assertEqual(checked['first_unobserved']['reason'], 'field_not_observed')
+        receipt['command_bar']['thumb']['release'].pop('dispatch')
+        checked = result(observed, expectation(subject={'gesture': 0},
+            field='command_bar.thumb.release.dispatch', value=None, at_step=1))
+        self.assertEqual(checked['status'], 'UNOBSERVED')
+
+
 class ExpectationSchemaTests(unittest.TestCase):
+    def test_gesture_subject_is_one_unsigned_ordinal_without_selector_options(self):
+        valid = document(expectation(subject={'gesture': 0}, field='ordinal', value=0))
+        self.assertEqual(validate_expectations(valid)[0]['subject'], {'gesture': 0})
+        for subject in ({'gesture': -1}, {'gesture': True}, {'gesture': 0.0}, {'gesture': '0'},
+                        {'gesture': None}, {'gesture': {'ordinal': 0}}, {'gesture': 1 << 64},
+                        {'gesture': 0, 'house': 'Computer1'}, {'gesture': 0, 'bind_step': 0}):
+            with self.subTest(subject=subject), self.assertRaises(ValidationError):
+                validate_expectations(document(expectation(subject=subject)))
+
     def test_rejects_typos_ambiguous_windows_and_executable_expressions(self):
         original = document(expectation())
         mutations = [lambda d: d.update(unknown=True),

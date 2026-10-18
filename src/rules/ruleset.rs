@@ -52,6 +52,10 @@ use crate::util::native_x87::{NativeF32Bits, NativeF64Bits};
 #[path = "building_damage_sound_tests.rs"]
 mod building_damage_sound_tests;
 
+#[cfg(test)]
+#[path = "command_bar_sound_rules_tests.rs"]
+mod command_bar_sound_rules_tests;
+
 /// Country-level fields needed by gameplay systems.
 #[derive(Debug, Clone)]
 pub struct CountryRules {
@@ -1270,6 +1274,13 @@ pub struct GeneralRules {
     pub gui_combo_open_sound: Option<String>,
     /// Sound event for closing shell combo boxes from [AudioVisual] GUIComboCloseSound.
     pub gui_combo_close_sound: Option<String>,
+    /// Rules+194/+198: constructors665892/665898 store-1. ReadAudioVisual
+    /// 669423..6694B6 reads exact GUIOpenSound then GUICloseSound through
+    /// ReadString128/VocFind7514D0, retaining each prior valid ID. The fixed
+    /// SOUNDMD binder owns these references, separately from the combo keys.
+    /// SidebarInput6D091A/6D0860 consumes them; see tools/audio_catalog_owner.md.
+    gui_open_sound: Option<String>,
+    gui_close_sound: Option<String>,
     /// Sound used by conditional reciprocal-link harvester release. Parsed
     /// from [AudioVisual] BunkerWallsDownSound (retail value "TankBunkerDown").
     /// Stock zero-link refinery unload completion does not play it. None =
@@ -2366,6 +2377,8 @@ impl Default for GeneralRules {
             speak_delay_minutes: 0.0,
             gui_combo_open_sound: None,
             gui_combo_close_sound: None,
+            gui_open_sound: None,
+            gui_close_sound: None,
             bunker_walls_down_sound: None,
             bunker_walls_up_sound: None,
             direct_rocking_coefficient: SimFixed::lit("1.5"),
@@ -2867,6 +2880,17 @@ impl GeneralRules {
 
     pub(crate) fn cheer_sound(&self) -> Option<&str> {
         self.cheer_sound.as_deref()
+    }
+
+    /// Resolved command-bar opener cue. After SidebarInput6D08F5's defeat
+    /// refusal, playback6D091A precedes the open-state test.
+    pub fn gui_open_sound(&self) -> Option<&str> {
+        self.gui_open_sound.as_deref()
+    }
+
+    /// Resolved command-bar close cue used by SidebarInput6D0860.
+    pub fn gui_close_sound(&self) -> Option<&str> {
+        self.gui_close_sound.as_deref()
     }
 
     /// Drive4B3A65, Ship6A30B4 and Foot/Walk's timer producers retain the
@@ -3496,6 +3520,10 @@ impl GeneralRules {
             gui_combo_close_sound: audio_visual
                 .read_name("GUIComboCloseSound", 0x80)
                 .map(str::to_owned),
+            // Constructor -1 until the fixed SOUNDMD binder resolves each
+            // reached ReadString128 value, including failed-read retention.
+            gui_open_sound: None,
+            gui_close_sound: None,
             // Float fields (`FSTP dword` at `0x0066B8B1`/`0x0066B8DB`).
             direct_rocking_coefficient: sim_from_f32(
                 audio_visual.read_float("DirectRockingCoefficient", 1.5),
@@ -4308,6 +4336,14 @@ impl RuleSet {
         ini: &IniFile,
         sounds: &crate::rules::sound_ini::SoundRegistry,
     ) {
+        // Original669423..6694B6, in native open/close read order. The
+        // processed section already owns the reached Rules pass history.
+        self.general.gui_open_sound = ini
+            .section("AudioVisual")
+            .and_then(|section| sounds.read_rules_reference(section, "GUIOpenSound"));
+        self.general.gui_close_sound = ini
+            .section("AudioVisual")
+            .and_then(|section| sounds.read_rules_reference(section, "GUICloseSound"));
         self.general.disk_laser_charge_up = ini
             .section("AudioVisual")
             .and_then(|section| sounds.read_rules_reference(section, "DiskLaserChargeUp"));
@@ -6127,6 +6163,17 @@ impl RuleSet {
     /// Look up a particle system type by ID. Panics if `id` is out of range.
     pub fn particle_system_type(&self, id: ParticleSystemTypeId) -> &ParticleSystemType {
         &self.particle_system_types[id.0 as usize]
+    }
+
+    /// Resolve an ordinal in the native ParticleSystemType registry A83D6C.
+    pub(crate) fn particle_system_type_id_by_index(
+        &self,
+        index: i32,
+    ) -> Option<ParticleSystemTypeId> {
+        let index = usize::try_from(index).ok()?;
+        self.particle_system_types
+            .get(index)
+            .map(|_| ParticleSystemTypeId(index as u32))
     }
 
     /// Resolve a particle type name to its ID (case-insensitive).

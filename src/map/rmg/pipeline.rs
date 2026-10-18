@@ -249,11 +249,6 @@ pub fn run_pipeline(
                 blocks: inputs.blocks,
                 rng: &mut *rng,
                 playfield: &playfield,
-                // The theater key for the ramp end-block tileset is not traced
-                // yet, so the blocks at each ramp's ends are left unstamped.
-                // Absent rather than guessed: stamping costs no draws, so the
-                // gap shows as missing end tiles and never as a divergent map.
-                ramp_end_block: -1,
             };
             carve_driver::carve_connectors_for_region(
                 &mut ctx,
@@ -489,6 +484,7 @@ mod tests {
             clear: 0,
             ramp_base: 600,
             ramp_smooth: 620,
+            slope_set_pieces: -1,
             rough: 700,
             sand: 800,
             green: 100,
@@ -666,7 +662,6 @@ mod tests {
                 blocks: &blocks,
                 rng: &mut rng,
                 playfield: &playfield,
-                ramp_end_block: -1,
             };
             assert!(carve_driver::carve_connectors_for_region(
                 &mut ctx,

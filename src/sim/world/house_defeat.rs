@@ -65,9 +65,10 @@
 //!   saved/closed6D1660 but restored4FC591→6D1610 on the common sole-human
 //!   terminal path, so its retained open state is unchanged. Wider multiplayer
 //!   close/restore paths remain outside this chain. Session+300 already guards
-//!   band-box/type/navigation selection and Cheer input; remaining UI readers
-//!   include beacon and taunt (`0x00731A30`, `0x0053636C`), the sidebar tab
-//!   (`0x006D08F5`), `RadarClass::SetRadarMode` (`0x00656CCC`), MakeAlly's
+//!   band-box/type/navigation selection, Cheer input and the command-bar
+//!   opener (`0x006D08F5`). Its F0 close remains allowed. Remaining UI readers
+//!   include beacon and taunt (`0x00731A30`, `0x0053636C`),
+//!   `RadarClass::SetRadarMode` (`0x00656CCC`), MakeAlly's
 //!   alliance line (`0x004F9E49`) and the dialog and session readers
 //!   (`0x004F1534`, `0x00657F4A`, `0x0078D52A`, `0x004E20BA`, `0x004F10FD`,
 //!   `0x0055EE60` and others). Trigger: the local player is defeated. Effect:
@@ -559,7 +560,8 @@ impl Simulation {
     /// the House radar recheck (`0x004F84FB`), the Lightning Storm's outages
     /// (`0x00539FE0`), the superweapon EVA lines (`0x004468DA`, `0x006CCCF0`
     /// and the other `SuperClass::Launch` cases), selection navigation,
-    /// AllToCheer input (`0x00730F30`) and local planning admission (`0x00731A50`).
+    /// AllToCheer input (`0x00730F30`), the command-bar opener (`0x006D08F5`)
+    /// and local planning admission (`0x00731A50`).
     pub fn local_player_defeated(&self) -> bool {
         self.session
             .current_house

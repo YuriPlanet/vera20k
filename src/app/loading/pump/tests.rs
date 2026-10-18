@@ -640,6 +640,7 @@ fn gsi_04_12_generated_prefix_uses_accepted_staging_once() {
         regenerated_map,
         crate::map::source::LoadedMapSource::Generated {
             seed_name: selected.to_ascii_lowercase(),
+            seed_source: None,
         },
     );
     let request =
@@ -860,6 +861,7 @@ fn load_descriptor_source_family_format_matrix() {
         map.basic.new_ini_format = Some(4);
         let source = crate::map::source::LoadedMapSource::Generated {
             seed_name: selected.to_ascii_lowercase(),
+            seed_source: None,
         };
         let initial =
             crate::app::loading::init::MapLoadInitial::from_test_map_source(map, source.clone());
@@ -962,6 +964,7 @@ fn generic_manual_and_unresolved_legacy_reject_before_receipt_or_staging() {
     let starts = [(0, 20, 24), (1, 42, 46)];
     let source = crate::map::source::LoadedMapSource::Generated {
         seed_name: selected.to_string(),
+        seed_source: None,
     };
     let initial = crate::app::loading::init::MapLoadInitial::from_test_map_source(
         prefix_test_map(&starts),
@@ -1095,6 +1098,7 @@ fn gsi_04_12_generated_prefix_rejects_presentation_only_preview() {
         prefix_test_map(&starts),
         crate::map::source::LoadedMapSource::Generated {
             seed_name: selected.to_string(),
+            seed_source: None,
         },
     );
     let mut request = LoadingRequest::unverified_legacy_skirmish(launch, unverified_seed(0x1313))
@@ -1118,6 +1122,7 @@ fn generated_prefix_rejects_mismatched_source_name() {
         prefix_test_map(&starts),
         crate::map::source::LoadedMapSource::Generated {
             seed_name: "Other.Sed".to_string(),
+            seed_source: None,
         },
     );
     let mut request = LoadingRequest::unverified_legacy_skirmish(launch, unverified_seed(0x1414))
@@ -1146,6 +1151,7 @@ fn generated_prefix_rejects_cooperative_mode() {
         prefix_test_map(&starts),
         crate::map::source::LoadedMapSource::Generated {
             seed_name: selected.to_string(),
+            seed_source: None,
         },
     );
     let mut request = LoadingRequest::unverified_legacy_skirmish(launch, unverified_seed(0x1515))
@@ -1174,6 +1180,7 @@ fn generated_prefix_rejects_a_spoofed_stock_row_before_consuming_staging() {
         prefix_test_map(&starts),
         crate::map::source::LoadedMapSource::Generated {
             seed_name: selected.to_string(),
+            seed_source: None,
         },
     );
     let mut request = LoadingRequest::unverified_legacy_skirmish(launch, unverified_seed(0x1516))

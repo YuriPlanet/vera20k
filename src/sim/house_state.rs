@@ -774,8 +774,7 @@ struct HouseSuperWeaponCells {
     /// @ 0x005098F0` aims its ForceShield there (`0x00509A6D..0x00509A9B`)
     /// while the alert is younger than `[General] AISuperDefenseFrames=`
     /// (`superweapon::ai_fire`). Constructor (0, 0) (`0x004F5A8F`); trigger
-    /// actions also write it (`0x0050DA20`, `0x0050DA50`), which VERA does not
-    /// run.
+    /// actions140/141 also write it (`0x0050DA20`, `0x0050DA50`).
     defense_cell: (u16, u16),
     /// `+0x54FC`: the frame of that alert (`0x004FB0C9`); constructor -100
     /// (`0x004F5AB1`).
@@ -1134,10 +1133,20 @@ impl HouseState {
         )
     }
 
-    /// The launch alert's stores (`0x004FB0BD`, `0x004FB0C9`).
+    /// The launch alert's stores (`0x004FB0BD`, `0x004FB0C9`), also made by
+    /// House50DA20 from TAction1406E4460 with the current binary frame.
     pub(crate) fn alert_super_weapon_defense(&mut self, cell: (u16, u16), frame: i32) {
         self.super_weapon_cells.defense_cell = cell;
         self.super_weapon_cells.defense_frame = frame;
+    }
+
+    /// House50DA50, reached by TAction1416E44C0: clear the alert and restore
+    /// its constructor frame (-100). Original Steam gamemd3e81a617..08600,
+    /// instruction reading. Native also clears +54F8, which currently retains
+    /// its constructor zero here (ai_fire's secondary-cell residual).
+    pub(crate) fn clear_super_weapon_defense(&mut self) {
+        self.super_weapon_cells.defense_cell = (0, 0);
+        self.super_weapon_cells.defense_frame = -100;
     }
 
     /// Folded only off the constructor values, so houses that never saw a

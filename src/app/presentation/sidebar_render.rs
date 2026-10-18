@@ -374,6 +374,43 @@ pub(crate) fn refresh_sidebar_projection(state: &mut AppState) {
         .match_presentation
         .sidebar_projection
         .replace_view(Some(view));
+    // A rebuilt view starts from the update-time answers; keep the drawn ones
+    // authoritative from its first frame on.
+    refresh_sidebar_cameo_availability(state);
+}
+
+/// The per-frame part of the projection: the retained cameos' `StripDraw`
+/// unavailability inputs, taken from the live simulation. `StripClass::Draw @
+/// 0x006A9540` asks `FindFactory(1, 1, 1)`, `CanBuild(type, 0, 0)` and
+/// `CheckBuildLimit` for every entry it draws, so a restriction that appears or
+/// clears between two House rechecks must reach the very next frame. Membership
+/// and the House pass stay with [`refresh_sidebar_projection`].
+pub(crate) fn refresh_sidebar_cameo_availability(state: &mut AppState) {
+    // Without a current House the projection's owner comes from the sandbox
+    // guess, whose resolution scans every entity and each candidate's build
+    // options. That debug path keeps its update-time values.
+    if state
+        .match_state
+        .sim_runtime
+        .as_ref()
+        .is_none_or(|runtime| runtime.simulation.session.current_house.is_none())
+    {
+        return;
+    }
+    let owner_name = preferred_local_owner_name(state).unwrap_or_else(|| "Americans".to_string());
+    let AppState { match_state, .. } = state;
+    let Some(runtime) = match_state.sim_runtime.as_ref() else {
+        return;
+    };
+    let owner = runtime
+        .simulation
+        .interner
+        .get(&owner_name)
+        .unwrap_or_default();
+    match_state
+        .match_presentation
+        .sidebar_projection
+        .refresh_cameo_availability(&runtime.simulation, &runtime.resources.rules, owner);
 }
 
 // ---------------------------------------------------------------------------

@@ -2090,11 +2090,65 @@ def _sidebar_frames(value: Any, profile: Mapping[str, Any]) -> int:
     return count
 
 
+def _command_bar_thumb_state(value: Any, label: str) -> None:
+    state = require_object(value, label)
+    require_exact_keys(state, ('closed', 'pressed', 'sticky', 'gadget_id', 'rect', 'disabled',
+                               'current_house', 'side_index', 'local_player_defeated',
+                               'input_locked', 'has_lost', 'exit_ready', 'left_held'), label)
+    for key in ('closed', 'pressed', 'sticky', 'disabled', 'local_player_defeated',
+                'input_locked', 'left_held'):
+        if type(state[key]) is not bool:
+            raise ValidationError(f'{label}.{key} must be boolean')
+    for key in ('has_lost', 'exit_ready'):
+        if state[key] is not None and type(state[key]) is not bool:
+            raise ValidationError(f'{label}.{key} must be boolean or null')
+    _bounded_int(state['gadget_id'], f'{label}.gadget_id', 0, (1 << 16) - 1)
+    if state['side_index'] is not None:
+        _bounded_int(state['side_index'], f'{label}.side_index', 0, (1 << 8) - 1)
+    if state['current_house'] is not None:
+        require_string(state['current_house'], f'{label}.current_house')
+    rect = require_array(state['rect'], f'{label}.rect')
+    if len(rect) != 4:
+        raise ValidationError(f'{label}.rect must contain four integer components')
+    for index, component in enumerate(rect):
+        _bounded_int(component, f'{label}.rect[{index}]', -(1 << 31), (1 << 31) - 1)
+
+
+def _command_bar_thumb(value: Any, label: str) -> int:
+    thumb = require_object(value, label)
+    require_exact_keys(thumb, ('before', 'press', 'release', 'after'), label)
+    samples = 4
+    for phase in ('before', 'after'):
+        _command_bar_thumb_state(thumb[phase], f'{label}.{phase}')
+    for phase in ('press', 'release'):
+        edge_label = f'{label}.{phase}'
+        edge = require_object(thumb[phase], edge_label)
+        require_exact_keys(edge, ('state', 'dispatch'), edge_label)
+        _command_bar_thumb_state(edge['state'], f'{edge_label}.state')
+        if edge['dispatch'] is not None:
+            dispatch_label = f'{edge_label}.dispatch'
+            dispatch = require_object(edge['dispatch'], dispatch_label)
+            require_exact_keys(dispatch, ('masked_flags', 'modifier', 'key_after', 'action_result'), dispatch_label)
+            for key, bits in (('masked_flags', 16), ('modifier', 8), ('key_after', 16), ('action_result', 32)):
+                _bounded_int(dispatch[key], f'{dispatch_label}.{key}', 0, (1 << bits) - 1)
+            samples += 1
+    # The driver restores physical input even when the Scenario guard prevents
+    # gadget entry. These are input observations, not expected bar outcomes.
+    for phase, state in (('before', thumb['before']), ('release.state', thumb['release']['state']),
+                         ('after', thumb['after'])):
+        require_value(state['left_held'], False, f'{label}.{phase}.left_held')
+    require_value(thumb['press']['state']['left_held'], True, f'{label}.press.state.left_held')
+    return samples
+
+
 def _command_bar_gesture(value: Any, command: str, label: str, extent: tuple[int, int]) -> int:
     receipt = require_object(value, label)
-    require_exact_keys(receipt, ('command', 'slot', 'gadget_id', 'rect', 'resolved_position'), label)
+    thumb = command == 'Thumb'
+    require_exact_keys(receipt, ('command', 'gadget_id', 'rect', 'resolved_position',
+                                 *(('thumb',) if thumb else ('slot',))), label)
     require_value(receipt['command'], command, f'{label}.command')
-    _bounded_int(receipt['slot'], f'{label}.slot', 0, extent[0] - 1)
+    if not thumb:
+        _bounded_int(receipt['slot'], f'{label}.slot', 0, extent[0] - 1)
     _bounded_int(receipt['gadget_id'], f'{label}.gadget_id', 1, (1 << 16) - 1)
     rect = require_array(receipt['rect'], f'{label}.rect')
     if (len(rect) != 4 or any(type(part) not in (int, float) or not math.isfinite(part) for part in rect)
@@ -2106,7 +2160,7 @@ def _command_bar_gesture(value: Any, command: str, label: str, extent: tuple[int
     expected = [math.floor(value) for value in center]
     _screen_point(receipt['resolved_position'], f'{label}.resolved_position', extent)
     _require_equal(receipt['resolved_position'], expected, f'{label}.resolved_position')
-    return 1
+    return 1 + (_command_bar_thumb(receipt['thumb'], f'{label}.thumb') if thumb else 0)
 
 
 def _is_quickload(gesture: Mapping[str, Any]) -> bool:
@@ -2455,7 +2509,19 @@ def _gesture_observations(value: Any, profile: Mapping[str, Any], segments=()) -
         gesture_extent = ((profile['width'], profile['height'])
                           if minimap else extent)
         _gesture(row['gesture'], f'{row_label}.gesture', gesture_extent)
-        for key, expected in (('left_press_captured', not keyboard and not right), ('neutral_input_restored', True),
+        if command_bar:
+            sample_count += _command_bar_gesture(row['command_bar'], request['gesture']['command'],
+                f'{row_label}.command_bar', (profile['width'], profile['height']))
+        if command_bar and request['gesture']['command'] == 'Thumb' and row['left_press_captured'] is False:
+            thumb = row['command_bar']['thumb']
+            states = (thumb['before'], thumb['press']['state'], thumb['release']['state'], thumb['after'])
+            if (not all(state['input_locked'] for state in states[:3])
+                    or any(thumb[phase]['dispatch'] is not None for phase in ('press', 'release'))
+                    or any(state['closed'] != states[0]['closed'] for state in states[1:])):
+                raise ValidationError(f'{row_label}.left_press_captured may be false only for an unchanged locked Thumb')
+        else:
+            require_value(row['left_press_captured'], not keyboard and not right, f'{row_label}.left_press_captured')
+        for key, expected in (('neutral_input_restored', True),
                               ('band_box_before_release', request['gesture']['kind'] == 'drag')):
             require_value(row[key], expected, f'{row_label}.{key}')
         if right:
@@ -2483,9 +2549,6 @@ def _gesture_observations(value: Any, profile: Mapping[str, Any], segments=()) -
         if sidebar:
             sample_count += _sidebar_gesture(row['sidebar'], request['gesture']['target'],
                 f'{row_label}.sidebar', (profile['width'], profile['height']))
-        if command_bar:
-            sample_count += _command_bar_gesture(row['command_bar'], request['gesture']['command'],
-                f'{row_label}.command_bar', (profile['width'], profile['height']))
         if keyboard:
             key_label = f'{row_label}.keyboard'
             receipt = require_object(row['keyboard'], key_label)
@@ -2902,19 +2965,35 @@ def validate_capture(directory: Path, profile: Mapping[str, Any],
         require_value(startup.get(key), expected, f'startup.{key}')
     _integer(startup, 'correlation', 1)
     source = require_object(manifest.get('map_source'), 'map_source')
-    require_sha256(source.get('source_sha256'), 'map_source.source_sha256')
-    _integer(source, 'payload_len', 1)
-    if source.get('kind') == 'loose':
-        path = require_string(source.get('path'), 'map_source.path')
-        if not path:
-            raise ValidationError('empty map source path')
-    elif source.get('kind') == 'mix':
-        for name in ('logical_name', 'source_archive'):
-            if not require_string(source.get(name), f'map_source.{name}'):
-                raise ValidationError(f'empty map_source.{name}')
-        require_int(source.get('entry_id'), 'map_source.entry_id')
+    if source.get('kind') == 'generated':
+        # These are consumed .SED bytes, not bytes of an authored/generated map.
+        # Name-only legacy Generated sources cannot certify a sealed capture.
+        seed_name = require_string(source.get('seed_name'), 'map_source.seed_name')
+        launch = require_object(profile.get('launch'), 'profile.launch')
+        map_name = require_string(launch.get('selected_map_file'),
+                                  'profile.launch.selected_map_file')
+        require_value(seed_name, map_name, 'map_source.seed_name')
+        if not seed_name.lower().endswith('.sed'):
+            raise ValidationError('map_source.seed_name must end in .SED')
+        seed_source = require_object(source.get('seed_source'), 'map_source.seed_source')
+        require_sha256(seed_source.get('source_sha256'), 'map_source.seed_source.source_sha256')
+        _integer(seed_source, 'payload_len', 1)
+        if not require_string(seed_source.get('path'), 'map_source.seed_source.path'):
+            raise ValidationError('empty map_source.seed_source.path')
     else:
-        raise ValidationError('map source must be loaded loose or MIX bytes')
+        require_sha256(source.get('source_sha256'), 'map_source.source_sha256')
+        _integer(source, 'payload_len', 1)
+        if source.get('kind') == 'loose':
+            path = require_string(source.get('path'), 'map_source.path')
+            if not path:
+                raise ValidationError('empty map source path')
+        elif source.get('kind') == 'mix':
+            for name in ('logical_name', 'source_archive'):
+                if not require_string(source.get(name), f'map_source.{name}'):
+                    raise ValidationError(f'empty map_source.{name}')
+            require_int(source.get('entry_id'), 'map_source.entry_id')
+        else:
+            raise ValidationError('map source must be loaded loose, MIX, or consumed .SED bytes')
     lifecycle = require_object(manifest.get('lifecycle'), 'lifecycle')
     for key, expected in (('window_hidden', True), ('window_focused', False),
                           ('focus_violations', 0), ('input_violations', 0)):

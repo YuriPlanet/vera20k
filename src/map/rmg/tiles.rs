@@ -34,6 +34,9 @@ pub struct TileIds {
     pub clear: i32,
     pub ramp_base: i32,
     pub ramp_smooth: i32,
+    /// Native ABC1F8, resolved from General.SlopeSetPieces by the theater owner.
+    /// All connector carvers use this shared end-piece base (545E26/591448).
+    pub slope_set_pieces: i32,
     pub rough: i32,
     pub sand: i32,
     pub green: i32,
@@ -119,6 +122,7 @@ impl TileIds {
             clear: flat(keys.clear_tile),
             ramp_base: flat(keys.ramp_base),
             ramp_smooth: flat(keys.ramp_smooth),
+            slope_set_pieces: flat(keys.slope_set_pieces),
             rough: flat(keys.rough_tile),
             sand: flat(keys.sand_tile),
             green: flat(keys.green_tile),
@@ -267,6 +271,7 @@ mod tests {
             clear_tile: start(0),
             ramp_base: start(1),
             ramp_smooth: start(2),
+            slope_set_pieces: start(3),
             rough_tile: start(2),
             clear_to_rough_lat: start(3),
             sand_tile: start(4),
@@ -287,6 +292,7 @@ mod tests {
         assert_eq!(ids.clear, 0);
         assert_eq!(ids.ramp_base, 64);
         assert_eq!(ids.ramp_smooth, 128);
+        assert_eq!(ids.slope_set_pieces, 192);
         assert_eq!(ids.medians, 16 * 64);
         ids
     }
@@ -332,6 +338,7 @@ mod tests {
             clear: -1,
             ramp_base: -1,
             ramp_smooth: -1,
+            slope_set_pieces: -1,
             rough: -1,
             sand: -1,
             green: -1,

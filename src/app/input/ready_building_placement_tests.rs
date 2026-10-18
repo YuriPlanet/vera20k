@@ -29,6 +29,7 @@ use crate::ui::gadget::{
     GadgetRect, KEY_LMB_DOWN, KEY_LMB_UP, KEY_RMB_DOWN, KEY_RMB_UP, ListId, RESULT_BUTTON,
     RESULT_RIGHT,
 };
+use crate::ui::sidebar::cameo_order::{CameoId, CameoRequestState};
 use crate::ui::sidebar::gadget_flash::SidebarGadgetState;
 use crate::ui::sidebar::{
     ArmedSidebarEntry, SidebarAction, SidebarChromeLayoutSpec, SidebarTab,
@@ -603,6 +604,263 @@ fn advance_commands(fixture: &mut Fixture, commands: &[CommandEnvelope]) -> SimF
             FrameEffects::default(),
         )
         .expect("ordinary authoritative command frame")
+}
+
+#[test]
+fn pending_produce_right_click_suspends_on_arrival_without_duplicate_orders() {
+    let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/sidebar_oracle/draw_availability.json",
+    ))
+    .unwrap();
+    for idle in native["pending_right_clicks"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|control| control["before"] == 0)
+    {
+        let name = idle["source"].as_str().unwrap();
+        let tab = SidebarTab::all()[idle["tab"].as_u64().unwrap() as usize];
+        let Some(mut fixture) = stock_base_fixture(
+            "Americans",
+            &[
+                ("GACNST", 4),
+                ("GAPOWR", 10),
+                ("GAPILE", 15),
+                ("GAREFN", 21),
+                ("GAWEAP", 27),
+            ],
+            false,
+        ) else {
+            return;
+        };
+        let category = production::category_for_object(fixture.rules.object(name).unwrap());
+        let right_idle = press_cameo(&mut fixture, name, tab, CameoPress::Right { shift: false });
+        assert_eq!(right_idle, CameoClick::default());
+        assert_eq!(idle["after"], 0);
+        assert!(idle["events"].as_array().unwrap().is_empty());
+        let type_id = fixture.sim.interner.get(name).unwrap();
+        let left = press_cameo(&mut fixture, name, tab, CameoPress::Left);
+        assert_eq!(left.order, Some(CameoOrder::Produce));
+        crate::app::input::commands::schedule_command_in_sim(
+            &mut fixture.sim,
+            "Americans",
+            Command::QueueProduction { type_id },
+        )
+        .unwrap();
+        assert!(
+            fixture
+                .projection
+                .cameo_factory(&fixture.sim, fixture.owner, type_id)
+                .is_none()
+        );
+
+        let right = press_cameo(&mut fixture, name, tab, CameoPress::Right { shift: false });
+        assert_eq!(
+            right.order,
+            Some(CameoOrder::Suspend),
+            "{name}: unlinked request1"
+        );
+        let running = native["pending_right_clicks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|control| control["source"] == name && control["before"] == 1)
+            .unwrap();
+        assert_eq!(running["events"].as_array().unwrap().len(), 1);
+        assert_eq!(running["events"][0]["kind"], 15);
+        assert!(right.sound && !right.clear_building_placement);
+        assert_eq!(right.eva, Some(sidebar_eva::EVA_ON_HOLD));
+        crate::app::input::commands::schedule_command_in_sim(
+            &mut fixture.sim,
+            "Americans",
+            Command::SuspendProduction { category },
+        )
+        .unwrap();
+        assert_eq!(
+            fixture.projection.cameo_request(type_id),
+            Some(CameoRequestState::Held)
+        );
+        assert_eq!(running["after"], 2);
+        let repeated = press_cameo(&mut fixture, name, tab, CameoPress::Right { shift: true });
+        assert_eq!(
+            repeated,
+            CameoClick::default(),
+            "{name}: request2 adds no second event"
+        );
+        let held = native["pending_right_clicks"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|control| control["source"] == name && control["before"] == 2)
+            .unwrap();
+        assert_eq!(held["after"], running["after"]);
+        assert!(held["events"].as_array().unwrap().is_empty());
+        assert_eq!(fixture.sim.pending_command_snapshot().len(), 2);
+
+        let owner = fixture.owner;
+        let frame = advance_commands(&mut fixture, &[]);
+        consume_frame_outputs(&mut fixture, &frame, Some(owner));
+        let factory = fixture
+            .sim
+            .production
+            .factories
+            .view(fixture.owner, category)
+            .unwrap();
+        assert!(
+            factory.object.is_some(),
+            "the original PRODUCE still executes"
+        );
+        assert_eq!(factory.cameo_state(), BuildQueueState::Paused);
+        let resume = press_cameo(&mut fixture, name, tab, CameoPress::Left);
+        assert_eq!(resume.order, Some(CameoOrder::Produce));
+        let command = CommandEnvelope::new(
+            owner,
+            fixture.sim.session.tick + 1,
+            Command::QueueProduction { type_id },
+        );
+        let frame = advance_commands(&mut fixture, &[command]);
+        consume_frame_outputs(&mut fixture, &frame, Some(owner));
+        assert_eq!(
+            fixture
+                .sim
+                .production
+                .factories
+                .view(fixture.owner, category)
+                .unwrap()
+                .cameo_state(),
+            BuildQueueState::Building
+        );
+        // Scheduling alone cannot mutate the retained request. The local
+        // click owner and Factory lifecycle keep their separate authorities.
+        let request = fixture.projection.cameo_request(type_id);
+        crate::app::input::commands::schedule_command_in_sim(
+            &mut fixture.sim,
+            "Americans",
+            Command::QueueProduction { type_id },
+        )
+        .unwrap();
+        assert_eq!(fixture.projection.cameo_request(type_id), request);
+    }
+}
+
+#[test]
+fn pending_alternating_clicks_retain_native_hold_request_and_resume_on_arrival() {
+    let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/sidebar_oracle/draw_availability.json",
+    ))
+    .unwrap();
+    for history in native["pending_click_histories"].as_array().unwrap() {
+        let name = history["source"].as_str().unwrap();
+        let Some(mut fixture) = stock_base_fixture(
+            "Americans",
+            &[
+                ("GACNST", 4),
+                ("GAPOWR", 10),
+                ("GAPILE", 15),
+                ("GAREFN", 21),
+                ("GAWEAP", 27),
+            ],
+            false,
+        ) else {
+            return;
+        };
+        let category = production::category_for_object(fixture.rules.object(name).unwrap());
+        for step in history["steps"].as_array().unwrap() {
+            let clicked_name = step["source"].as_str().unwrap();
+            let clicked_tab = SidebarTab::all()[step["tab"].as_u64().unwrap() as usize];
+            let type_id = fixture.sim.interner.get(clicked_name).unwrap();
+            let clicked_category =
+                production::category_for_object(fixture.rules.object(clicked_name).unwrap());
+            let press = match step["press"].as_str().unwrap() {
+                "left" => CameoPress::Left,
+                "right" => CameoPress::Right { shift: false },
+                _ => unreachable!(),
+            };
+            let click = press_cameo(&mut fixture, clicked_name, clicked_tab, press);
+            let event = match click.order {
+                Some(CameoOrder::Produce) => Some((14, Command::QueueProduction { type_id })),
+                Some(CameoOrder::Suspend) => Some((
+                    15,
+                    Command::SuspendProduction {
+                        category: clicked_category,
+                    },
+                )),
+                None => None,
+                _ => panic!("unexpected unlinked pending click: {click:?}"),
+            };
+            assert_eq!(
+                serde_json::json!(
+                    event
+                        .as_ref()
+                        .map(|(kind, _)| *kind)
+                        .into_iter()
+                        .collect::<Vec<_>>()
+                ),
+                step["events"],
+                "{name}: {press:?} must emit the native events"
+            );
+            if let Some((_, command)) = event {
+                crate::app::input::commands::schedule_command_in_sim(
+                    &mut fixture.sim,
+                    "Americans",
+                    command,
+                )
+                .unwrap();
+            } else {
+                assert_eq!(click, CameoClick::default());
+            }
+            let mut expected: Vec<_> = step["requests"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|request| {
+                    let id = fixture
+                        .sim
+                        .interner
+                        .get(request["source"].as_str().unwrap())
+                        .unwrap();
+                    let state = match request["request_state"].as_u64().unwrap() {
+                        1 => CameoRequestState::Started,
+                        2 => CameoRequestState::Held,
+                        _ => unreachable!(),
+                    };
+                    (id, state)
+                })
+                .collect();
+            let mut actual: Vec<_> = fixture
+                .projection
+                .cameo_strips()
+                .requested_ids()
+                .filter_map(|id| match id {
+                    CameoId::Object(id) => fixture
+                        .projection
+                        .cameo_request(id)
+                        .map(|state| (id, state)),
+                    CameoId::SuperWeapon(_) => None,
+                })
+                .collect();
+            expected.sort_by_key(|(id, _)| *id);
+            actual.sort_by_key(|(id, _)| *id);
+            assert_eq!(
+                actual, expected,
+                "{name}: {press:?} must retain the native request word"
+            );
+        }
+        let frame = advance_commands(&mut fixture, &[]);
+        let owner = fixture.owner;
+        consume_frame_outputs(&mut fixture, &frame, Some(owner));
+        assert_eq!(
+            fixture
+                .sim
+                .production
+                .factories
+                .view(owner, category)
+                .unwrap()
+                .cameo_state(),
+            BuildQueueState::Building,
+            "the final native PRODUCE resumes the factory without a fourth SUSPEND"
+        );
+    }
 }
 
 /// Admission summary, not an ordered cursor journal. The production cache

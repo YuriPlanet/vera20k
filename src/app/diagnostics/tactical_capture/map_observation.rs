@@ -160,7 +160,8 @@ enum MapGesture {
         )]
         button: Option<MapMouseButton>,
     },
-    /// Resolve a loaded command-bar control and send ordinary mouse edges.
+    /// Resolve a loaded command-bar control (or its diagnostic-only Thumb
+    /// target) and send ordinary mouse edges.
     CommandBar {
         command: String,
     },
@@ -1593,6 +1594,9 @@ fn control_center(rect: [f32; 4], disabled: bool, extent: [u32; 2]) -> Result<[u
 }
 
 fn command_bar_index(command: &str) -> Result<usize> {
+    if command == "Thumb" {
+        return Ok(11);
+    }
     crate::ui::sidebar::command_bar::COMMAND_NAMES
         .iter()
         .position(|name| *name == command)
@@ -1602,24 +1606,174 @@ fn command_bar_index(command: &str) -> Result<usize> {
 #[derive(Debug, Serialize)]
 struct MapCommandBarGestureReceipt {
     command: String,
-    slot: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    slot: Option<usize>,
     gadget_id: u16,
     rect: [f32; 4],
     resolved_position: [u32; 2],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    thumb: Option<MapCommandBarThumbReceipt>,
+}
+
+/// Passive snapshots of the existing owners, only for a requested thumb
+/// gesture. No observation writes House, bar, input or driver state.
+#[derive(Debug, Serialize)]
+struct MapCommandBarThumbState {
+    closed: bool,
+    pressed: bool,
+    sticky: bool,
+    left_held: bool,
+    gadget_id: u16,
+    rect: [i32; 4],
+    disabled: bool,
+    current_house: Option<String>,
+    side_index: Option<u8>,
+    local_player_defeated: bool,
+    input_locked: bool,
+    has_lost: Option<bool>,
+    exit_ready: Option<bool>,
+}
+
+impl MapCommandBarThumbState {
+    fn capture(state: &AppState, handle: crate::ui::gadget::GadgetHandle) -> Result<Self> {
+        let presentation = &state.match_state.match_presentation;
+        let gadgets = &presentation.in_game_gadgets;
+        let gadget = gadgets
+            .list
+            .get(handle)
+            .context("thumb control disappeared")?;
+        let crate::ui::gadget::list::GadgetBehavior::Button(button) = gadget.behavior else {
+            bail!("thumb control is not a button");
+        };
+        let sim = &state
+            .match_state
+            .sim_runtime
+            .as_ref()
+            .context("thumb observation requires a simulation")?
+            .simulation;
+        let owner = sim.session.current_house();
+        let house = owner.and_then(|owner| sim.houses.get(&owner));
+        Ok(Self {
+            closed: presentation.sidebar_gadget_state.command_bar_closed,
+            pressed: button.is_pressed,
+            sticky: gadgets.focus.sticky == Some(handle),
+            left_held: state.match_state.input.tactical_mouse.left_held(),
+            gadget_id: gadget.id,
+            rect: [gadget.rect.x, gadget.rect.y, gadget.rect.w, gadget.rect.h],
+            disabled: gadget.is_disabled,
+            current_house: owner.map(|owner| sim.interner.resolve(owner).to_owned()),
+            side_index: house.map(|house| house.side_index),
+            local_player_defeated: sim.local_player_defeated(),
+            input_locked: sim.session.input_locked(),
+            has_lost: house.map(|house| house.has_lost()),
+            exit_ready: house
+                .and_then(|house| house.outcome())
+                .map(|outcome| outcome.exit_ready),
+        })
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct MapCommandBarDispatchObservation {
+    masked_flags: u16,
+    modifier: u8,
+    key_after: u16,
+    action_result: u32,
+}
+
+#[derive(Debug, Serialize)]
+struct MapCommandBarThumbEdge {
+    state: MapCommandBarThumbState,
+    dispatch: Option<MapCommandBarDispatchObservation>,
+}
+
+impl MapCommandBarThumbEdge {
+    fn capture(state: &AppState, handle: crate::ui::gadget::GadgetHandle) -> Result<Self> {
+        let snapshot = MapCommandBarThumbState::capture(state, handle)?;
+        // Both ordinary input ingress and the gadget handler return before
+        // ticking while Scenario input is locked. Do not mistake retained
+        // output from an earlier tick for a dispatch of this blocked edge.
+        let dispatch = (!snapshot.input_locked)
+            .then(|| {
+                state
+                    .match_state
+                    .match_presentation
+                    .in_game_gadgets
+                    .out
+                    .dispatches
+                    .iter()
+                    .rev()
+                    .find(|record| record.handle == handle)
+                    .map(|record| MapCommandBarDispatchObservation {
+                        masked_flags: record.masked_flags,
+                        modifier: record.modifier,
+                        key_after: record.key_after,
+                        action_result: record.action_result,
+                    })
+            })
+            .flatten();
+        Ok(Self {
+            state: snapshot,
+            dispatch,
+        })
+    }
+}
+
+#[derive(Debug, Serialize)]
+struct MapCommandBarThumbReceipt {
+    before: MapCommandBarThumbState,
+    press: Option<MapCommandBarThumbEdge>,
+    release: Option<MapCommandBarThumbEdge>,
+    after: Option<MapCommandBarThumbState>,
 }
 
 impl MapCommandBarGestureReceipt {
+    fn sample_count(&self) -> usize {
+        1 + self.thumb.as_ref().map_or(0, |thumb| {
+            1 + usize::from(thumb.press.is_some())
+                + usize::from(thumb.release.is_some())
+                + usize::from(thumb.after.is_some())
+                + usize::from(
+                    thumb
+                        .press
+                        .as_ref()
+                        .is_some_and(|edge| edge.dispatch.is_some()),
+                )
+                + usize::from(
+                    thumb
+                        .release
+                        .as_ref()
+                        .is_some_and(|edge| edge.dispatch.is_some()),
+                )
+        })
+    }
+
     fn capture(state: &AppState, command: &str) -> Result<(Self, crate::ui::gadget::GadgetHandle)> {
         let (layout, slots) =
             crate::app::presentation::sidebar_build::command_bar::layout_and_slots(state)
                 .context("command-bar layout is absent")?;
-        Self::resolve(
+        let (mut receipt, handle) = Self::resolve(
             command,
             layout,
             &slots,
             &state.match_state.match_presentation.in_game_gadgets,
             [state.render_width(), state.render_height()],
-        )
+        )?;
+        if command == "Thumb" {
+            ensure!(
+                state.frontend.screen == crate::ui::game_screen::GameScreen::InGame
+                    && !state.match_state.paused()
+                    && state.frontend.keyboard_dialog.is_none(),
+                "thumb gesture requires ordinary unpaused in-game input"
+            );
+            receipt.thumb = Some(MapCommandBarThumbReceipt {
+                before: MapCommandBarThumbState::capture(state, handle)?,
+                press: None,
+                release: None,
+                after: None,
+            });
+        }
+        Ok((receipt, handle))
     }
 
     fn resolve(
@@ -1630,13 +1784,22 @@ impl MapCommandBarGestureReceipt {
         extent: [u32; 2],
     ) -> Result<(Self, crate::ui::gadget::GadgetHandle)> {
         let command_index = command_bar_index(command)?;
-        let slot = slots
-            .iter()
-            .position(|entry| *entry == Some(command_index))
-            .context("requested command is absent from the loaded command bar")?;
-        let layout_rect = layout
-            .slot(slot)
-            .context("requested command-bar slot is closed or clipped")?;
+        let slot = if command_index == 11 {
+            None
+        } else {
+            Some(
+                slots
+                    .iter()
+                    .position(|entry| *entry == Some(command_index))
+                    .context("requested command is absent from the loaded command bar")?,
+            )
+        };
+        let layout_rect = match slot {
+            Some(slot) => layout
+                .slot(slot)
+                .context("requested command-bar slot is closed or clipped")?,
+            None => layout.left_cap,
+        };
         let handle = gadgets
             .command_bar
             .context("command-bar controls are absent")?[command_index];
@@ -1657,6 +1820,7 @@ impl MapCommandBarGestureReceipt {
                 gadget_id: gadget.id,
                 rect,
                 resolved_position,
+                thumb: None,
             },
             handle,
         ))
@@ -2979,8 +3143,13 @@ impl TacticalCaptureSession {
                     source,
                     crate::map::source::LoadedMapSource::Loose { .. }
                         | crate::map::source::LoadedMapSource::Mix { .. }
+                ) || matches!(
+                    source,
+                    crate::map::source::LoadedMapSource::Generated {
+                        seed_source: Some(seed_source), ..
+                    } if seed_source.payload_len > 0
                 ),
-                "map observation requires consumed loose or MIX map bytes"
+                "map observation requires consumed map or nonempty seed-file bytes"
             );
             self.map_source_evidence = Some(serde_json::to_value(source)?);
             // The production load transition has now installed its tactical
@@ -3239,12 +3408,18 @@ impl TacticalCaptureSession {
                     MapGesture::Sidebar { .. } => Some(MapSidebarObservation::capture(state)?),
                     _ => None,
                 };
-                let command_bar = match &scheduled.gesture {
+                let mut command_bar = match &scheduled.gesture {
                     MapGesture::CommandBar { command } => {
                         Some(MapCommandBarGestureReceipt::capture(state, command)?)
                     }
                     _ => None,
                 };
+                let locked_thumb = command_bar.as_ref().is_some_and(|(receipt, _)| {
+                    receipt
+                        .thumb
+                        .as_ref()
+                        .is_some_and(|thumb| thumb.before.input_locked)
+                });
                 let (from, to, sidebar_slot) = match &scheduled.gesture {
                     MapGesture::MinimapObject { entity_id } => {
                         let position = crate::app::presentation::sidebar_render::minimap_object_click_position(state, *entity_id)
@@ -3313,13 +3488,19 @@ impl TacticalCaptureSession {
                     });
                 }
                 button(state, ElementState::Pressed);
+                if let Some((receipt, handle)) = &mut command_bar
+                    && let Some(thumb) = &mut receipt.thumb
+                {
+                    thumb.press = Some(MapCommandBarThumbEdge::capture(state, *handle)?);
+                }
                 let mouse = &state.match_state.input.tactical_mouse;
                 let gadgets = &state.match_state.match_presentation.in_game_gadgets;
                 // A consumed gadget press still reaches the shared physical
                 // button owner; only tactical capture depends on its route.
                 let physical_press_observed =
                     mouse.left_held() == !right && mouse.right_held() == right;
-                let press_captured = physical_press_observed
+                let press_captured = !locked_thumb
+                    && physical_press_observed
                     && if matches!(
                         scheduled.gesture,
                         MapGesture::Sidebar { .. } | MapGesture::CommandBar { .. }
@@ -3362,9 +3543,19 @@ impl TacticalCaptureSession {
                 let band_box_before_release =
                     state.match_state.input.selection_state.is_band_box_active();
                 button(state, ElementState::Released);
+                if let Some((receipt, handle)) = &mut command_bar
+                    && let Some(thumb) = &mut receipt.thumb
+                {
+                    thumb.release = Some(MapCommandBarThumbEdge::capture(state, *handle)?);
+                }
                 move_cursor(state, neutral);
+                if let Some((receipt, handle)) = &mut command_bar
+                    && let Some(thumb) = &mut receipt.thumb
+                {
+                    thumb.after = Some(MapCommandBarThumbState::capture(state, *handle)?);
+                }
                 ensure!(
-                    press_captured,
+                    press_captured || locked_thumb,
                     "gesture mouse press did not reach its retained input target"
                 );
                 let sidebar = sidebar_before
@@ -3475,7 +3666,13 @@ impl TacticalCaptureSession {
                 .checked_add(before.sample_count())
                 .and_then(|count| count.checked_add(after.sample_count()))
                 .and_then(|count| count.checked_add(queued_commands.len()))
-                .and_then(|count| count.checked_add(usize::from(command_bar.is_some())))
+                .and_then(|count| {
+                    count.checked_add(
+                        command_bar
+                            .as_ref()
+                            .map_or(0, MapCommandBarGestureReceipt::sample_count),
+                    )
+                })
                 .and_then(|count| count.checked_add(usize::from(minimap.is_some())))
                 .and_then(|count| {
                     count.checked_add(sidebar.as_ref().map_or(0, |receipt| {
@@ -5977,13 +6174,16 @@ mod tests {
             let handle = gadgets.list.add_tail(GadgetSpec::button(
                 if i == index {
                     GadgetRect::new(rect.x as i32, rect.y as i32, rect.w as i32, rect.h as i32)
+                } else if i == 11 {
+                    let rect = layout.left_cap;
+                    GadgetRect::new(rect.x as i32, rect.y as i32, rect.w as i32, rect.h as i32)
                 } else {
                     GadgetRect::new(0, 0, 0, 0)
                 },
-                0xD6 + i as u16,
+                if i == 11 { 0xF0 } else { 0xD6 + i as u16 },
                 ToggleKind::Plain,
             ));
-            gadgets.list.get_mut(handle).unwrap().is_disabled = i != index;
+            gadgets.list.get_mut(handle).unwrap().is_disabled = i != index && i != 11;
             handle
         }));
         (layout, slots, gadgets)
@@ -5995,7 +6195,7 @@ mod tests {
         let (receipt, handle) =
             MapCommandBarGestureReceipt::resolve("Guard", layout, &slots, &gadgets, [800, 600])
                 .unwrap();
-        assert_eq!(receipt.slot, 1);
+        assert_eq!(receipt.slot, Some(1));
         assert_eq!(
             handle,
             gadgets.command_bar.unwrap()[command_bar_index("Guard").unwrap()]
@@ -6020,6 +6220,51 @@ mod tests {
             MapCommandBarGestureReceipt::resolve("Guard", layout, &slots, &gadgets, [800, 600])
                 .is_err()
         );
+    }
+
+    #[test]
+    fn command_bar_thumb_uses_current_cap_without_inventing_a_button_list_slot() {
+        use crate::ui::gadget::GadgetRect;
+        for open in [true, false] {
+            let (_, slots, mut gadgets) = command_bar_fixture();
+            let layout = crate::ui::sidebar::command_bar::CommandBarLayout::new(
+                [800, 600],
+                168,
+                [28, 32],
+                [52, 32],
+                [28, 32],
+                open,
+            )
+            .unwrap();
+            let handle = gadgets.command_bar.unwrap()[11];
+            let gadget = gadgets.list.get_mut(handle).unwrap();
+            let rect = layout.left_cap;
+            gadget.rect =
+                GadgetRect::new(rect.x as i32, rect.y as i32, rect.w as i32, rect.h as i32);
+            gadget.id = if open { 0xF0 } else { 0xF1 };
+            let (receipt, observed_handle) =
+                MapCommandBarGestureReceipt::resolve("Thumb", layout, &slots, &gadgets, [800, 600])
+                    .unwrap();
+            assert_eq!(observed_handle, handle);
+            assert_eq!(receipt.slot, None);
+            assert_eq!(receipt.gadget_id, if open { 0xF0 } else { 0xF1 });
+            assert_eq!(
+                receipt.resolved_position,
+                if open { [18, 584] } else { [590, 584] }
+            );
+            let value = serde_json::to_value(receipt).unwrap();
+            assert!(value.get("slot").is_none());
+            assert!(
+                value.get("thumb").is_none(),
+                "pure resolution supplies no House observation"
+            );
+            gadgets.list.get_mut(handle).unwrap().is_disabled = true;
+            assert!(MapCommandBarGestureReceipt::resolve(
+                "Thumb", layout, &slots, &gadgets, [800, 600],
+            ).is_err());
+        }
+        assert_eq!(crate::ui::sidebar::command_bar::COMMAND_NAMES.len(), 11);
+        assert!(command_bar_index("thumb").is_err());
     }
 
     #[test]

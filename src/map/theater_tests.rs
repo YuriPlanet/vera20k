@@ -667,15 +667,19 @@ fn selected_retail_temperate_rmg_roles_reach_tile_ids() {
     // Reader/default/ordinal correctness is independently compared with native
     // execution by general_helpers_match_original_reader_and_signed_repair_keys
     // and general_roles_match_original_ordinal_publication below. This assertion
-    // covers production loading/publication, without another 18-key parser.
+    // covers production loading/publication, without another key parser.
     let ini = IniFile::from_bytes(&theater.ini_data).expect("selected theater INI");
-    let expected = resolve_rmg_tile_keys(&theater.lookup, ini.section("General"));
+    let expected = resolve_rmg_tile_keys(
+        &theater.lookup,
+        ini.section("General"),
+        theater.slope_set_pieces,
+    );
     assert_eq!(
         theater.rmg_tiles, expected,
         "loader publishes every RMG role"
     );
     let mut loaded_ids = TileIds::resolve(&theater);
-    // SpecialTerrain comes from cliff_ranges, not these 18 RMG keys. Its native
+    // SpecialTerrain comes from cliff_ranges, not these RMG keys. Its native
     // predicates have separate tests; this is only the RMG projection boundary.
     loaded_ids.special = SpecialTerrain::default();
     assert_eq!(loaded_ids, TileIds::from_keys(&expected));
@@ -787,7 +791,11 @@ fn general_roles_match_original_ordinal_publication() {
             read_general_u16(general, "BridgeSet"),
             read_general_u16(general, "WoodBridgeSet"),
         );
-        let rmg = resolve_rmg_tile_keys(&lookup, general);
+        let rmg = resolve_rmg_tile_keys(
+            &lookup,
+            general,
+            read_general_u16(general, "SlopeSetPieces"),
+        );
         for (key, actual) in [
             ("BridgeSet", cliffs.bridge_set),
             ("WoodBridgeSet", cliffs.wood_bridge_set),
@@ -803,6 +811,7 @@ fn general_roles_match_original_ordinal_publication() {
             ("ClearTile", rmg.clear_tile),
             ("RampBase", rmg.ramp_base),
             ("RampSmooth", rmg.ramp_smooth),
+            ("SlopeSetPieces", rmg.slope_set_pieces),
             ("RoughTile", rmg.rough_tile),
             ("SandTile", rmg.sand_tile),
             ("GreenTile", rmg.green_tile),
@@ -1020,17 +1029,22 @@ fn cliff_ranges_resolve_ordinals_to_cumulative_tile_starts() {
 #[test]
 fn gsi_04_03a_rmg_tile_keys_parse_ramp_smooth_and_resolve_ordinals() {
     let ini_bytes =
-        b"[General]\nClearTile = 0\nRampBase = 1\nRampSmooth = 2\nGreenTile = 2\nWaterSet = 1\n\n\
+        b"[General]\nClearTile = 0\nRampBase = 1\nRampSmooth = 2\nSlopeSetPieces = 0\nGreenTile = 2\nWaterSet = 1\n\n\
                 [TileSet0000]\nTilesInSet=2\nFileName=clear\nSetName=Clear\n\n\
                 [TileSet0001]\nTilesInSet=3\nFileName=water\nSetName=Water\n\n\
                 [TileSet0002]\nTilesInSet=4\nFileName=green\nSetName=Green\n";
     let lookup = super::parse_tileset_ini(ini_bytes, "tem").unwrap();
     let ini = IniFile::from_bytes(ini_bytes).unwrap();
-    let keys = super::resolve_rmg_tile_keys(&lookup, ini.section("General"));
+    let keys = super::resolve_rmg_tile_keys(
+        &lookup,
+        ini.section("General"),
+        super::read_general_u16(ini.section("General"), "SlopeSetPieces"),
+    );
 
     assert_eq!(keys.clear_tile, Some(0));
     assert_eq!(keys.ramp_base, Some(2));
     assert_eq!(keys.ramp_smooth, Some(5));
+    assert_eq!(keys.slope_set_pieces, Some(0), "base zero remains valid");
     assert_eq!(keys.water_set, Some(2), "set 1 starts at cumulative tile 2");
     assert_eq!(
         keys.green_tile,
@@ -1147,6 +1161,7 @@ fn gsi_04_03a_lunar_postpass_preserves_other_declared_ranges() {
         water_set: Some(17),
         shore_pieces: Some(18),
         water_bridge: Some(19),
+        slope_set_pieces: Some(20),
         ..RmgTileKeys::default()
     };
 
@@ -1175,6 +1190,7 @@ fn gsi_04_03a_lunar_postpass_preserves_other_declared_ranges() {
     assert_eq!(rmg_tiles.water_set, None);
     assert_eq!(rmg_tiles.shore_pieces, None);
     assert_eq!(rmg_tiles.water_bridge, None);
+    assert_eq!(rmg_tiles.slope_set_pieces, Some(20));
 }
 
 /// Helper: build a minimal TheaterData for variant-table tests. BridgeSet
