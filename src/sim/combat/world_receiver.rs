@@ -1988,7 +1988,12 @@ fn run_special_detonation_arm(
             // 0x00469A03..0x00469A2A: no bullet Owner (+0xB0) -> nothing;
             // otherwise Owner->DisguiseAs(Target) through vt+0x46C.
             if world.substrate.entities.contains(owner) {
-                world.disguise_as(owner, object, !matches!(target, SpecialArmTarget::None));
+                world.disguise_as(
+                    owner,
+                    object,
+                    !matches!(target, SpecialArmTarget::None),
+                    rules,
+                );
             }
         }
         SpecialDetonationAction::Locomotor => {

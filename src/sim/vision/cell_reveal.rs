@@ -559,6 +559,85 @@ impl OwnerVisibility {
 /// be isolated so diagnostics cannot stamp the retained shared Dummy.
 #[cfg(any(test, feature = "test-support"))]
 impl FogState {
+    /// Display::GrowShroud4ACAC0, Steam gamemd3e81a617..08600. Both
+    /// passes scan the fixed512-square map in y-major order, admitting only
+    /// In_Bounds568300. Capture every8&&!10 cell before any neighbor loses10.
+    /// Existing pending140/20 bits participate too. Unlike578100, the
+    /// receiver4ACDA0 changes neither counters nor cache bits/edge frames.
+    pub(crate) fn grow_shroud(
+        &mut self,
+        viewer: InternedId,
+        size: (i32, i32),
+        native_cells: Option<&NativeCellQuery<'_>>,
+    ) {
+        let vis = self
+            .by_owner
+            .get_or_insert_with(viewer, || OwnerVisibility::new(self.width, self.height));
+        for y in 0..512u16 {
+            for x in 0..512u16 {
+                if !crate::map::playfield::size_diamond_contains(
+                    size.0,
+                    size.1,
+                    (x as i16, y as i16),
+                ) {
+                    continue;
+                }
+                let key = vis.visibility_cell((x, y), native_cells);
+                let (state, ground, _) = vis.map_cell_parts_mut(key);
+                if *ground & (GROUND_VISIBLE | GROUND_OPEN) == GROUND_VISIBLE {
+                    state.pending = true;
+                    if let VisibilityCell::Real(index) = key {
+                        vis.publish_knowledge(index);
+                    }
+                }
+            }
+        }
+        for y in 0..512u16 {
+            for x in 0..512u16 {
+                if !crate::map::playfield::size_diamond_contains(
+                    size.0,
+                    size.1,
+                    (x as i16, y as i16),
+                ) {
+                    continue;
+                }
+                let cell = (x, y);
+                let key = vis.visibility_cell(cell, native_cells);
+                let before = vis.edge_inputs(key);
+                let (state, ground, _) = vis.map_cell_parts_mut(key);
+                if !state.pending {
+                    continue;
+                }
+                //4ACB68 clears20 BEFORE4ACDA0 tests8, including closed cells.
+                state.pending = false;
+                let hide = *ground & GROUND_VISIBLE != 0;
+                if hide {
+                    *ground &= !(GROUND_VISIBLE | GROUND_OPEN);
+                    state.open = false;
+                }
+                vis.note_edge_inputs(key, before);
+                if let VisibilityCell::Real(index) = key {
+                    if hide {
+                        vis.tracked.cleared.push(index as u32);
+                    }
+                    vis.publish_knowledge(index);
+                }
+                if hide {
+                    for neighbor in cell_neighbors(cell) {
+                        let key = vis.visibility_cell(neighbor, native_cells);
+                        let before = vis.edge_inputs(key);
+                        let (_, ground, _) = vis.map_cell_parts_mut(key);
+                        *ground &= !GROUND_OPEN;
+                        vis.note_edge_inputs(key, before);
+                        if let VisibilityCell::Real(index) = key {
+                            vis.publish_knowledge(index);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     pub(crate) fn assert_sight_projection_consistent(&self, cells: Option<&NativeCellQuery<'_>>) {
         for (&(id, viewer), admission) in &self.sight_admissions {
             if !admission.latched {

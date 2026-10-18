@@ -962,7 +962,8 @@ impl Simulation {
     /// Cell-attached 1/59 run in their original `0x004D8978..0x004D8A14`
     /// slot, followed by Map line 25/26 at `0x004D8A70..0x004D8B66`.
     /// Ordinary Fly ingress remains unproven.
-    /// RESIDUAL: MCV 53/54 and Map zone 24 (`0x004D8A14..0x004D8D99`), the
+    /// Agent Infantry54 follows1/59 at4D8A14..4D8A6B;53 is explicitly
+    /// deferred. RESIDUAL: Map zone24 (`0x004D8B66..0x004D8D99`), the
     /// `+0x83` / `0x00586360` step (`0x004D8DA7..0x004D8DF5`), the
     /// planning-waypoint upkeep (`0x004D8DFF..0x004D8F1D`) and the Techno
     /// tail's `+0x198` call and cell

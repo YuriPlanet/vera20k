@@ -933,6 +933,52 @@ impl Simulation {
         }
     }
 
+    /// Execute31 at6DE2B5 ->4ACAC0, then4ADFF0(0,0). The cell passes
+    /// leave sight admissions/House240/241 alone. The Ground display vector
+    /// 8A0394 is re-read after each70ADC0 callback, whose discovery can raise
+    /// Tags. AbstractFlags14/1 admits every GameEntity, with no Alive90 gate.
+    pub(crate) fn trigger_grow_shroud(&mut self, context: UninitContext<'_>) {
+        if let (Some(viewer), Some(size)) = (self.session.current_house, self.map_size_diamond()) {
+            let cells = context
+                .terrain()
+                .or(self.resolved_terrain.as_ref())
+                .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+            self.fog.grow_shroud(viewer, size, cells.as_ref());
+        }
+        let mut ordinal = 0;
+        while let Some(id) = self
+            .substrate
+            .display
+            .members(super::display_layers::DisplayLayer::GROUND)
+            .get(ordinal)
+            .copied()
+        {
+            let reveal = self.substrate.entities.get(id).is_some_and(|entity| {
+                if self.house_is_human_player(entity.owner()) {
+                    entity.discovery.discovered_by_current_house()
+                } else {
+                    entity.category() == EntityCategory::Structure
+                        && context
+                            .rules()
+                            .is_some_and(|rules| rules.general.ally_reveal)
+                        && self.session.current_house.is_some_and(|viewer| {
+                            crate::map::houses::is_allied_with(
+                                &self.house_alliances,
+                                self.interner.resolve(entity.owner()),
+                                self.interner.resolve(viewer),
+                            )
+                        })
+                }
+            });
+            if reveal {
+                self.reveal_uncached_object_sight(id, context);
+            }
+            ordinal += 1;
+        }
+        //6DA7D0/virtual38(1) mark presentation dirty. Fog's existing
+        //ground-change tracking and view publication consume those writes.
+    }
+
     /// The bulk store that `Reveal` and `Reset_Shroud` share. It is bracketed
     /// by `0x004ADEE0` (each callback object releases its sight and gap on
     /// `owner`'s map) and `0x004ADCD0` (each re-admits them, in registration

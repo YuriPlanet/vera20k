@@ -730,6 +730,39 @@ impl DisguiseRuntime {
 }
 
 impl crate::sim::world::Simulation {
+    /// Forced GetDisguise(1): Infantry522640 and Unit7465B0, Steam
+    /// gamemd3e81a617..08600. It reads retained Techno+518 without testing
+    /// Disguised+1D8. Infantry alone falls back to Rules+D58/D5C/D60 by
+    /// PlayerPtr's planning side; NULL/other sides select the third slot.
+    pub(crate) fn forced_disguise_type(
+        &self,
+        actor: u64,
+        rules: &crate::rules::ruleset::RuleSet,
+    ) -> Option<InternedId> {
+        use crate::map::entities::EntityCategory;
+        let entity = self.substrate.entities.get(actor)?;
+        if !matches!(
+            entity.category(),
+            EntityCategory::Infantry | EntityCategory::Unit
+        ) {
+            return None;
+        }
+        if let Some(kind) = entity.disguise.as_ref().and_then(DisguiseRuntime::type_id) {
+            return Some(kind);
+        }
+        if entity.category() != EntityCategory::Infantry {
+            return None;
+        }
+        let side = self
+            .session
+            .current_house
+            .and_then(|id| self.houses.get(&id))
+            .map_or(2, |house| usize::from(house.side_index).min(2));
+        rules.general.infantry_disguises[side]
+            .as_deref()
+            .and_then(|name| self.interner.get(name))
+    }
+
     /// vt+0x46C `DisguiseAs(target)`: what the bullet's Owner does when a
     /// `MakesDisguise=` warhead detonates (`0x00469A03..0x00469A2A`), with the
     /// bullet's Target (`+0x10C`). `target` is that Target's object;
@@ -741,9 +774,9 @@ impl crate::sim::world::Simulation {
     ///   own disguise if the Target is disguised (vt+0xC4, `+0x1D8`), through
     ///   GetDisguise(1) and GetDisguiseHouse(1) (`0x00522640`, `0x005226C0`).
     ///   Otherwise it wears the Target's type (vt+0x88) and owner (vt+0x3C).
-    ///   For a null field those getters fall back on the current player's
-    ///   side or house. VERA never reaches those fallbacks: only this body
-    ///   disguises an infantryman, and it always writes both fields.
+    ///   Null fields use the current player's default type/house through
+    ///   those same getters, including a permanently disguised target that
+    ///   has not yet used its MakeupKit.
     /// - `TechnoClass::DisguiseAs @ 0x0070E280`, the Building and Aircraft
     ///   slot, raises the flag for any non-null Target.
     /// - Each ends in vt+0x49C (`0x0070CCF0`), the radar's dirty mark, which
@@ -754,7 +787,13 @@ impl crate::sim::world::Simulation {
     /// nothing. Trigger: a Unit firing a `MakesDisguise=` warhead. Frequency:
     /// never with retail rules, where only `[SPY]` mounts one (`[MGTK]`'s
     /// `Primary=TankMakeupKit` is commented out). Risk: modded rules only.
-    pub(crate) fn disguise_as(&mut self, firer: u64, target: Option<u64>, target_present: bool) {
+    pub(crate) fn disguise_as(
+        &mut self,
+        firer: u64,
+        target: Option<u64>,
+        target_present: bool,
+        rules: &crate::rules::ruleset::RuleSet,
+    ) {
         use crate::map::entities::EntityCategory;
 
         let Some(category) = self.substrate.entities.get(firer).map(|e| e.category()) else {
@@ -770,7 +809,10 @@ impl crate::sim::world::Simulation {
                 };
                 Some(
                     match target.disguise.as_ref().filter(|d| d.is_disguised()) {
-                        Some(disguise) => (disguise.type_id(), disguise.house()),
+                        Some(disguise) => (
+                            self.forced_disguise_type(target.stable_id(), rules),
+                            disguise.house().or(self.session.current_house),
+                        ),
                         None => (Some(target.type_ref()), Some(target.owner())),
                     },
                 )

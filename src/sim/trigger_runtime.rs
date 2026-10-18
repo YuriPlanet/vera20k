@@ -1635,6 +1635,36 @@ impl Simulation {
             .condition
             .clone();
         match condition.kind {
+            54 => {
+                // HasOccurred71ED59..71EDB8: raised54/non-NULL actor,
+                // forced GetDisguise(1), RTTI InfantryType16, valid+34 and
+                // native array index. Match writes persistence1. Primary
+                // table71F284[53]=0 selects71EC9A's A8ED6B gate first.
+                let (54, Some(actor), Some(rules)) = (input.kind, input.actor, rules) else {
+                    return false;
+                };
+                if self.buildup_bypass_active() {
+                    return false;
+                }
+                let Some(kind) = self.forced_disguise_type(actor, rules) else {
+                    return false;
+                };
+                let matched = condition.value != -1
+                    && rules
+                        .object_in_category(
+                            crate::rules::object_type::ObjectCategory::Infantry,
+                            self.interner.resolve(kind),
+                        )
+                        .is_some()
+                    && rules.type_array_index(
+                        crate::rules::object_type::ObjectCategory::Infantry,
+                        self.interner.resolve(kind),
+                    ) == Some(condition.value);
+                if matched {
+                    *persistence = true;
+                }
+                matched
+            }
             23 => {
                 //71EC9A gate, then71EEA9 scans all Teams for the retained
                 //Type pointer, null head and nonzero leaving byte. A match
@@ -2307,6 +2337,36 @@ impl Simulation {
                 );
             }
         }
+        //4D8A14..4D8A6B: the same retained direct CellTag receives54 from
+        //Agent Infantry after1/59.53 remains explicitly out of scope. The
+        //type/Location are re-read after preceding synchronous callbacks.
+        if let Some(tag) = direct_tag
+            && let Some(rules) = context.rules()
+            && self.substrate.entities.get(actor).is_some_and(|entity| {
+                entity.category() == crate::map::entities::EntityCategory::Infantry
+                    && self
+                        .object_type(entity.type_ref(), rules)
+                        .is_some_and(|ty| ty.agent)
+            })
+        {
+            let entity = self.substrate.entities.get(actor).unwrap();
+            let cell = crate::sim::movement::coord_cell(
+                crate::sim::movement::ground_pose::position_world_coord(&entity.position),
+            );
+            self.dispatch_live_tag_event(
+                tag,
+                TagEventInput {
+                    kind: 54,
+                    actor: Some(actor),
+                    cell,
+                    ..Default::default()
+                },
+                &mut effects,
+                context.rules(),
+                context.registry(),
+                context.effects(),
+            );
+        }
         //4D8A70..4D8B66: a missing/inadmissible direct CellTag does not
         //suppress line checks. Scan each complete native cell-array row/column,
         //looking up the live attachment at every slot. Input Location is
@@ -2377,8 +2437,8 @@ impl Simulation {
             }
         }
         self.publish_trigger_effects(effects);
-        //The Unit MCV53/54 interlude and later Map24 zone scan are outside
-        //these selected ALL01 predicates. Ordinary Fly ingress is unproven.
+        //Event53 remains explicitly deferred; the later Map24 zone scan
+        //and ordinary Fly ingress retain their existing residuals.
     }
 
     ///6E57C0 reads each linked LIVE Trigger's Type+A0, without enabled,
@@ -3078,6 +3138,10 @@ impl Simulation {
                     index: value.unwrap_or(0),
                 });
             }
+            31 => self.trigger_grow_shroud(
+                crate::sim::world::UninitContext::new(rules, overlay_registry)
+                    .with_effects(frame_effects),
+            ),
             51 => {
                 //6DED66 calls the incoming House's577C90 map transition,
                 //then returns AL1 independently of the void service result.
@@ -4498,6 +4562,10 @@ mod explosion_tests;
 #[cfg(test)]
 #[path = "trigger_runtime_movement_event_tests.rs"]
 mod movement_event_tests;
+
+#[cfg(test)]
+#[path = "trigger_runtime_shroud_spy_tests.rs"]
+mod shroud_spy_tests;
 
 #[cfg(test)]
 #[path = "trigger_runtime_ore_tests.rs"]

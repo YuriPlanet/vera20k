@@ -1,9 +1,110 @@
 //! Original MapCell/cache controls. Fixture inputs are native supplied storage;
 //! expected values are executed bytes, never a second edge-frame algorithm.
 use super::*;
-use crate::map::resolved_terrain::{ResolvedTerrainGrid, test_clear_cell};
+use crate::map::resolved_terrain::{ResolvedTerrainGrid, test_clear_cell, test_grid};
 use crate::sim::vision::MapTransition;
 use serde_json::{Value, json};
+
+#[test]
+fn grow_shroud_captures_frontier_before_neighbors_lose_open_and_preserves_counters() {
+    let viewer = crate::sim::intern::test_intern("Player");
+    let other = crate::sim::intern::test_intern("Other");
+    let mut fog = FogState::new(33, 33);
+    for (cell, bits, pending) in [
+        ((10, 10), 8, false),
+        ((11, 10), 24, false),
+        ((20, 20), 24, true),
+        ((22, 20), 0, true),
+        ((1, 1), 8, true), // Outside In_Bounds, despite real storage.
+    ] {
+        fog.set_ground_bits_for_test(viewer, cell.0, cell.1, bits);
+        let vis = fog.by_owner.get_mut(&viewer).unwrap();
+        let index = vis.index(cell.0, cell.1).unwrap();
+        vis.shroud_knowledge[index].counter = -7;
+        vis.shroud_knowledge[index].gap_counter = 3;
+        vis.shroud_knowledge[index].pending = pending;
+        vis.map_cell_edge_cache[index] = MapCellEdgeCache {
+            initialized: true,
+            fog_open: true,
+            frames: [17, 23],
+        };
+        vis.publish_knowledge(index);
+    }
+    fog.set_ground_bits_for_test(other, 10, 10, 24);
+    assert!(fog.admit_whole_map_reveal(viewer));
+    let before = fog.by_owner[&viewer].clone();
+    let other_before = bincode::serialize(&fog.by_owner[&other]).unwrap();
+    fog.grow_shroud(viewer, (16, 16), None);
+    let vis = &fog.by_owner[&viewer];
+    for (cell, bits, pending) in [
+        ((10, 10), 0, false),
+        ((11, 10), 8, false),
+        ((20, 20), 0, false),
+        ((22, 20), 0, false),
+        ((1, 1), 8, true),
+    ] {
+        let i = vis.index(cell.0, cell.1).unwrap();
+        assert_eq!(vis.ground_flags[i], bits, "{cell:?}");
+        assert_eq!(vis.shroud_knowledge[i].pending, pending, "{cell:?}");
+        assert_eq!(
+            vis.shroud_knowledge[i].counter,
+            before.shroud_knowledge[i].counter
+        );
+        assert_eq!(
+            vis.shroud_knowledge[i].gap_counter,
+            before.shroud_knowledge[i].gap_counter
+        );
+        assert_eq!(vis.map_cell_edge_cache[i], before.map_cell_edge_cache[i]);
+    }
+    assert!(!vis.is_revealed(10, 10));
+    assert!(
+        vis.is_revealed(11, 10),
+        "new frontier waits for the next invocation"
+    );
+    assert!(fog.whole_map_revealed_for_owner(viewer));
+    assert_eq!(
+        bincode::serialize(&fog.by_owner[&other]).unwrap(),
+        other_before
+    );
+    let mut restored: FogState = bincode::deserialize(&bincode::serialize(&fog).unwrap()).unwrap();
+    fog.grow_shroud(viewer, (16, 16), None);
+    restored.grow_shroud(viewer, (16, 16), None);
+    assert!(!restored.by_owner[&viewer].is_revealed(11, 10));
+    assert_eq!(
+        bincode::serialize(&fog).unwrap(),
+        bincode::serialize(&restored).unwrap()
+    );
+}
+
+#[test]
+fn grow_shroud_uses_the_shared_dummy_without_clearing_its_cache() {
+    let viewer = crate::sim::intern::test_intern("Player");
+    let mut terrain = test_grid(33, 33, test_clear_cell);
+    terrain.test_set_native_allocated_cells(&[(10, 10)]);
+    let mut fog = FogState::new(33, 33);
+    let mut vis = OwnerVisibility::new(33, 33);
+    vis.dummy_visibility.ground = 8;
+    vis.dummy_visibility.knowledge.open = true;
+    vis.dummy_visibility.knowledge.counter = 9;
+    vis.dummy_visibility.cache = MapCellEdgeCache {
+        initialized: true,
+        fog_open: true,
+        frames: [12, 31],
+    };
+    let cache = vis.dummy_visibility.cache;
+    fog.by_owner.insert(viewer, vis);
+    fog.grow_shroud(
+        viewer,
+        (16, 16),
+        Some(&NativeCellQuery::canonical(&terrain)),
+    );
+    let dummy = fog.by_owner[&viewer].dummy_visibility;
+    assert_eq!(dummy.ground, 0);
+    assert!(!dummy.knowledge.pending);
+    assert!(!dummy.knowledge.open);
+    assert_eq!(dummy.knowledge.counter, 9);
+    assert_eq!(dummy.cache, cache);
+}
 
 pub(crate) fn discovery_corpus() -> Value {
     let rows: Vec<Value> = serde_json::from_str(crate::test_fixture::text(

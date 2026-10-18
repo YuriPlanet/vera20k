@@ -402,6 +402,9 @@ struct GeneralTypeLists {
     /// Rules data+0xFFC/count+0x1008;671D3E uses TerrainType reader67BDD0.
     /// Native reader/identity controls: spatial_oracle/mirage_disguise.
     default_mirage_disguises: Vec<String>,
+    /// Rules+D58/D5C/D60, NULL at6667F8..666804; General66FB94..66FBEB
+    /// uses67BAC0's ReadString128/InfantryType524CB0 scalar reader.
+    infantry_disguises: [Option<String>; 3],
     /// Rules+D00/D1C/D38, emptied by666773..6667F8 and read in that
     /// order at66FA13..66FAD6 through the native ReadString128 list readers.
     secret_lab_choices: [Vec<String>; 3],
@@ -1071,6 +1074,10 @@ impl ProcessedRulesLayers {
 
     pub(crate) fn default_mirage_disguises(&self) -> &[String] {
         &self.general_type_lists.default_mirage_disguises
+    }
+
+    pub(crate) fn infantry_disguises(&self) -> &[Option<String>; 3] {
+        &self.general_type_lists.infantry_disguises
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -2300,6 +2307,15 @@ impl RulesPassProcessor {
             } else if key == "AnimToInfantry" {
                 if let Some(resolved) = self.resolve_list_from(section, key, family, 0x80) {
                     self.general_type_lists.anim_to_infantry = resolved;
+                }
+            } else if let Some(side) = ["AlliedDisguise", "SovietDisguise", "ThirdDisguise"]
+                .iter()
+                .position(|&name| name == key)
+            {
+                // Absent/empty retains the prior pointer; a factory none
+                // token clears it. Reuse the existing allocating scalar reader.
+                if let Some(resolved) = self.resolve_scalar_from(section, key, family, 0x80) {
+                    self.general_type_lists.infantry_disguises[side] = resolved;
                 }
             } else if key == "DefaultMirageDisguises" {
                 // Keep actual FindOrAllocate identities, duplicate slots and

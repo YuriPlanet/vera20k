@@ -12,6 +12,60 @@ use super::native_processing::{
 use super::ruleset::RuleSet;
 use serde_json::{Value, json};
 
+#[test]
+fn infantry_disguise_defaults_use_retained_native_scalar_reads_and_retail_layers() {
+    let mut layers = RulesLayerStack::new(IniFile::from_str(
+        "[General]\nAlliedDisguise=A\nSovietDisguise=B\nThirdDisguise=C\n",
+    ));
+    let read = |layers: &RulesLayerStack| RuleSet::from_rules_layers(layers).unwrap();
+    let first = read(&layers);
+    assert_eq!(
+        first.general.infantry_disguises,
+        [Some("A".into()), Some("B".into()), Some("C".into())]
+    );
+    assert!(
+        first
+            .type_array_index(super::object_type::ObjectCategory::Infantry, "A")
+            .is_some()
+    );
+    layers.push(
+        RulesLayerKind::LangRule,
+        IniFile::from_str("[General]\nAlliedDisguise=\nsovietdisguise=WRONGCASE\n"),
+    );
+    let retained = read(&layers);
+    assert_eq!(
+        retained.general.infantry_disguises,
+        first.general.infantry_disguises
+    );
+    layers.push(
+        RulesLayerKind::GameMode,
+        IniFile::from_str("[General]\nSovietDisguise=<none>\nThirdDisguise=D\n"),
+    );
+    let changed = read(&layers);
+    assert_eq!(
+        changed.general.infantry_disguises,
+        [Some("A".into()), None, Some("D".into())]
+    );
+    assert_ne!(
+        changed.simulation_config_hash(),
+        first.simulation_config_hash()
+    );
+    let defaults = read(&RulesLayerStack::new(IniFile::from_str(
+        "[General]\nMaximumCheerRate=1\n",
+    )));
+    assert_eq!(defaults.general.infantry_disguises, [None, None, None]);
+    // Read every applicable selected scenario layer through the same owner.
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_with_map_patch(
+        &IniFile::from_str("[General]\nAlliedDisguise=\n"),
+    ) else {
+        return;
+    };
+    assert_eq!(
+        retail.rules.general.infantry_disguises,
+        [Some("E1".into()), Some("E2".into()), Some("INIT".into())]
+    );
+}
+
 fn corpus() -> &'static Value {
     let native = crate::test_fixture::json("tools/spatial_oracle/mirage_disguise.json");
     assert_eq!(native["schema_version"], 1);
