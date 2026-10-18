@@ -395,6 +395,8 @@ pub struct GeneralRules {
     /// writes15; ReadGeneral671DB2..671DCC passes the prior signed value to
     /// ReadInteger5276D0 and stores it unchanged, without a clamp.
     pub max_waypoint_path_length: i32,
+    /// General.TalkBubbleTime, Rules+1800; ctor6677A3=300 wall-clock buckets.
+    pub talk_bubble_time: i32,
     /// `[AudioVisual]` thresholds copied to the presentation frame-rate
     /// controller by Fill_In_Data6850F5 and the radar movie transitions.
     pub detail: DetailRules,
@@ -2155,6 +2157,7 @@ impl Default for GeneralRules {
     fn default() -> Self {
         Self {
             max_waypoint_path_length: 15,
+            talk_bubble_time: 300,
             detail: DetailRules::default(),
             pose_dir: 0,
             deploy_dir: 0,
@@ -3084,6 +3087,7 @@ impl GeneralRules {
         // `WARPOUT` — matching gamemd's behaviour.
         let parse_anim_name =
             |key: &str, default: &str| -> String { general.read_string(key, default, 0x80) };
+        let talk_bubble_time = general.read_talk_bubble_time(defaults.talk_bubble_time);
         let mut infantry_death_anims = defaults.infantry_death_anims.clone();
         for (index, key, fallback) in [
             (3, "InfantryExplode", "S_BANG34"),
@@ -3375,6 +3379,7 @@ impl GeneralRules {
             crate_promote_sound: audio_visual
                 .read_name("CratePromoteSound", 0x80)
                 .map(str::to_owned),
+            talk_bubble_time,
             elite_flash_timer: audio_visual.read_int("EliteFlashTimer", defaults.elite_flash_timer),
             idle_action_frequency: audio_visual
                 .read_double("IdleActionFrequency", defaults.idle_action_frequency),
@@ -4132,6 +4137,7 @@ impl RuleSet {
         rules.general.wind_direction = processed.wind_direction();
         rules.general.difficulty_rows = *processed.difficulty_rows();
         rules.general.detail = processed.detail();
+        rules.general.talk_bubble_time = processed.talk_bubble_time();
         let (ambient_rate, ambient_step) = processed.ambient_change_inputs();
         (
             rules.general.ambient_change_rate_nonzero,

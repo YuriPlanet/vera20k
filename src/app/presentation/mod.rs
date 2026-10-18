@@ -26,6 +26,7 @@ pub(crate) mod sidebar_surface;
 pub(crate) mod sidebar_text;
 pub(crate) mod state;
 pub(crate) mod super_timers;
+pub(crate) mod talk_bubble;
 pub(crate) mod target_lines;
 pub(crate) mod ui_overlays;
 

@@ -871,6 +871,13 @@ impl TeamScriptVm {
         self.teams.values()
     }
 
+    /// TeamType6F1F70: first live registry entry of this exact type, without
+    /// owner, member, formed, health or limbo filtering. Steam3e81a617.
+    pub(crate) fn first_team_of_type(&self, id: InternedId) -> Option<&TeamScriptState> {
+        self.teams_in_order()
+            .find(|team| team.team_type_id() == Some(id))
+    }
+
     pub(crate) fn team_type_definition(&self, id: InternedId) -> Option<&TeamTypeDefinition> {
         self.team_types.get(&id)
     }

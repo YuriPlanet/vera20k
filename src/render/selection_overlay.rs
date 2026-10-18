@@ -45,6 +45,8 @@ pub struct SelectionOverlay {
     scale_pips: Option<CenteredShapeStrip>,
     /// BOMBCURS.SHP, the Crazy Ivan bomb clock.
     bomb_clock: Option<CenteredShapeStrip>,
+    /// LoadPipAssets5F77A6..77DD, DrawExtras6F5EC8 (PALETTE.PAL).
+    talk_bubble: Option<CenteredShapeStrip>,
     /// WRENCH.SHP, the repairing building's wrench.
     repair_wrench: Option<CenteredShapeStrip>,
     /// Full PIPS: health, rank, raw garrison Pip values and self-heal.
@@ -310,6 +312,16 @@ impl SelectionOverlay {
         // `Rules+0xFE0`, BOMBCURS.SHP by name (0x0066C5F4), drawn through the
         // convert `[0x0087F6C8]` that Init_Game builds from MOUSEPAL.PAL
         // (0x0052C13D..0x0052C1DD).
+        let talk_bubble = assets.and_then(|assets| {
+            CenteredShapeStrip::from_assets_on_device(
+                device,
+                queue,
+                batch,
+                assets,
+                "talkbubl.shp",
+                "palette.pal",
+            )
+        });
         let bomb_clock = assets.and_then(|assets| {
             CenteredShapeStrip::from_assets_on_device(
                 device,
@@ -356,12 +368,17 @@ impl SelectionOverlay {
             pipbrd,
             scale_pips,
             bomb_clock,
+            talk_bubble,
             repair_wrench,
             pips,
         }
     }
 
     /// The Crazy Ivan bomb clock art (BOMBCURS.SHP), when the assets have it.
+    pub(crate) fn talk_bubble(&self) -> Option<&CenteredShapeStrip> {
+        self.talk_bubble.as_ref()
+    }
+
     pub fn bomb_clock(&self) -> Option<&CenteredShapeStrip> {
         self.bomb_clock.as_ref()
     }

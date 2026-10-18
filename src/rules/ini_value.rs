@@ -342,6 +342,26 @@ impl IniSection {
         })
     }
 
+    /// ReadGeneral671E3B..671E81: unsigned current ticks * the native f32
+    /// reciprocal of60, ReadDouble5283D0, then *60 and ftol low32. This runs
+    /// even for an omitted key on an admitted General pass. Steam3e81a617.
+    pub(crate) fn read_talk_bubble_time(&self, current: i32) -> i32 {
+        let default = MaskedX87Chop53::mul(
+            MaskedX87Chop53::load_f64(NativeF64Bits::from_bits(
+                f64::from(current as u32).to_bits(),
+            )),
+            MaskedX87Chop53::load_f32(NativeF32Bits::from_bits(0x3c88_8889)),
+        );
+        let seconds = self.read_double(
+            "TalkBubbleTime",
+            f64::from_bits(MaskedX87Chop53::store_f64_masked_chop(default).bits()),
+        );
+        MaskedX87Chop53::ftol_i32_low_masked(MaskedX87Chop53::mul(
+            MaskedX87Chop53::load_f64(NativeF64Bits::from_bits(seconds.to_bits())),
+            MaskedX87Chop53::load_i32(60),
+        ))
+    }
+
     /// ReadDouble into a double field, keeping the stored bits.
     pub fn read_double_bits(&self, key: &str, current: NativeF64Bits) -> NativeF64Bits {
         NativeF64Bits::from_bits(

@@ -1136,7 +1136,8 @@ use crate::sim::world::Simulation;
 // 418 -> 419: Drive and Ship no longer save head-to and handoff occupation
 // footprints; only the removed vehicle-occupation index read them. The raw
 // ground/deck bytes remain the occupation record.
-const SNAPSHOT_VERSION: u32 = 419;
+// 419 -> 420: process Rules state retains General.TalkBubbleTime.
+const SNAPSHOT_VERSION: u32 = 420;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -4854,8 +4855,8 @@ mod tests {
         // 415 -> 416: Building online latch independent of Temporal.
         // 416 -> 417: control-node line timers and ordered line settings.
         // 417 -> 418: campaign score map-rank presentation metadata.
-        // 418 -> 419: the Drive/Ship occupation footprints are gone.
-        assert_eq!(super::SNAPSHOT_VERSION, 419);
+        // 419 -> 420: process Rules retain TalkBubbleTime.
+        assert_eq!(super::SNAPSHOT_VERSION, 420);
     }
 
     #[test]

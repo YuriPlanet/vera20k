@@ -137,6 +137,7 @@ pub(crate) enum ObjectExtrasRun {
         self_heal: Option<u32>,
         group_rectangles: std::ops::Range<u32>,
         group_text: std::ops::Range<u32>,
+        talk_bubble: Option<u32>,
     },
 }
 
@@ -373,6 +374,11 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                 let rectangles_end = lowered.extras_instances.len() as u32;
                 lowered.extras_instances.extend(strip.group.text);
                 let text_end = lowered.extras_instances.len() as u32;
+                let talk_bubble = strip.talk_bubble.map(|instance| {
+                    let index = lowered.extras_instances.len() as u32;
+                    lowered.extras_instances.push(instance);
+                    index
+                });
                 ObjectExtrasRun::Status {
                     #[cfg(test)]
                     parent: owner,
@@ -385,6 +391,7 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                     self_heal,
                     group_rectangles: rectangles_start..rectangles_end,
                     group_text: rectangles_end..text_end,
+                    talk_bubble,
                 }
             });
             // Clock6F524E, wrench6F5340 and rank6F5382 precede Building lines
@@ -414,6 +421,7 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                         self_heal: None,
                         group_rectangles: fills.start..fills.start,
                         group_text: fills.start..fills.start,
+                        talk_bubble: None,
                     });
                 }
             }
@@ -467,6 +475,7 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                 self_heal,
                 group_rectangles,
                 group_text,
+                talk_bubble,
                 ..
             }) = strip
             {
@@ -482,6 +491,7 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                     || self_heal.is_some()
                     || !group_rectangles.is_empty()
                     || !group_text.is_empty()
+                    || talk_bubble.is_some()
                 {
                     if is_building {
                         // Tactical6D9153 calls Building Extras before its body;
@@ -501,6 +511,7 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                         self_heal,
                         group_rectangles,
                         group_text,
+                        talk_bubble,
                     });
                 }
             }
@@ -739,6 +750,7 @@ mod tests {
                 fills: vec![SpriteInstance::default(); 15],
                 scale: Vec::new(),
                 group: Default::default(),
+                talk_bubble: None,
                 self_heal: None,
             });
             parent
@@ -802,6 +814,7 @@ mod tests {
             fills: vec![SpriteInstance::default(); 15],
             scale: Vec::new(),
             group: Default::default(),
+            talk_bubble: None,
             self_heal: None,
         });
         let pass = lower_ground_object_instances(vec![parent]);
@@ -871,6 +884,7 @@ mod tests {
                 ..Default::default()
             }],
             group: Default::default(),
+            talk_bubble: None,
             self_heal: None,
         });
         let mut middle = parent(3, 1);
@@ -895,6 +909,7 @@ mod tests {
             }],
             scale: Vec::new(),
             group: Default::default(),
+            talk_bubble: None,
             self_heal: None,
         });
         let pass = lower_ground_object_instances(vec![last, middle, first]);
@@ -1405,6 +1420,28 @@ mod tests {
                 .map(|instance| instance.draw_state.fx_flags)
                 .collect::<Vec<_>>(),
             [1, 21, 22, 23, 3]
+        );
+    }
+    #[test]
+    fn speech_tail_only_parent_keeps_its_native_extras_slot() {
+        use crate::app::presentation::ui_overlays::TechnoExtras;
+        let mut parent = PlannedObjectInstance::object(
+            ObjectDraw {
+                id: 91,
+                layer: TacticalLayer(2),
+                display_order: 0,
+                policy: BlitPolicy::z_read(SpriteEncoding::Rle),
+            },
+            vec![],
+        );
+        parent.status = Some(TechnoExtras {
+            talk_bubble: Some(SpriteInstance::default()),
+            ..Default::default()
+        });
+        let pass = lower_ground_object_instances(vec![parent]);
+        assert_eq!(pass.extras_instances.len(), 1);
+        assert!(
+            matches!(&pass.extras_runs[..], [ObjectExtrasRun::Status { parent:91, talk_bubble:Some(0), fills, scale, group_text, .. }] if fills.is_empty() && scale.is_empty() && group_text.is_empty())
         );
     }
 }

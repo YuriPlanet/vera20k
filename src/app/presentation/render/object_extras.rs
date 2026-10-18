@@ -177,6 +177,7 @@ fn status_instances<'a>(
         self_heal,
         group_rectangles,
         group_text,
+        talk_bubble,
         ..
     } = run
     else {
@@ -184,9 +185,16 @@ fn status_instances<'a>(
     };
     let mut first = u32::MAX;
     let mut last = 0;
-    for index in [*bomb_clock, *wrench, *rank, *background, *self_heal]
-        .into_iter()
-        .flatten()
+    for index in [
+        *bomb_clock,
+        *wrench,
+        *rank,
+        *background,
+        *self_heal,
+        *talk_bubble,
+    ]
+    .into_iter()
+    .flatten()
     {
         first = first.min(index);
         last = last.max(index + 1);
@@ -266,6 +274,7 @@ fn draw_status_group<'a>(
     let ObjectExtrasRun::Status {
         group_rectangles,
         group_text,
+        talk_bubble,
         ..
     } = run
     else {
@@ -282,6 +291,11 @@ fn draw_status_group<'a>(
         group_rectangles.clone(),
         group_text.clone(),
     );
+    if let (Some(index), Some(shape)) = (talk_bubble, overlay.talk_bubble()) {
+        //6F5EDE flags600: ordinary centered, opaque plain53-row Convert,
+        //no A/Z access. The existing passthrough material owns this path.
+        batch.draw_with_buffer_passthrough_range(pass, shape.texture(), buffer, *index, 1);
+    }
 }
 
 /// Building43E7B0/70AA60's one ordered text pass at Tactical6D957A. The
@@ -363,6 +377,7 @@ fn rank_run_end(runs: &[ObjectExtrasRun], start: usize) -> usize {
         fills,
         scale,
         self_heal: None,
+        talk_bubble: None,
         group_rectangles,
         group_text,
         ..
@@ -386,6 +401,7 @@ fn rank_run_end(runs: &[ObjectExtrasRun], start: usize) -> usize {
         fills,
         scale,
         self_heal: None,
+        talk_bubble: None,
         group_rectangles,
         group_text,
         ..

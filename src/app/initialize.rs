@@ -542,6 +542,7 @@ impl App {
                     combat_lights: Default::default(),
                     line_trails: Default::default(),
                     lasers: Default::default(),
+                    talk_bubble: Default::default(),
                     electric_bolts: Default::default(),
                     radiation_beams: Default::default(),
                     detail: Default::default(),

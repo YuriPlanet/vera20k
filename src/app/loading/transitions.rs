@@ -153,6 +153,11 @@ pub(crate) fn install_world_presentation(
     state
         .match_state
         .match_presentation
+        .talk_bubble
+        .clear_on_load();
+    state
+        .match_state
+        .match_presentation
         .electric_bolts
         .clear_on_load();
     if let Some(runtime) = state.match_state.sim_runtime.as_ref() {

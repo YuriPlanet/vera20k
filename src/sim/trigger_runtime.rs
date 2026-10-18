@@ -118,6 +118,13 @@ pub enum TriggerEffect {
     HomeCamera {
         coord: Option<[i32; 3]>,
     },
+    /// Execute105/70F120: the app owns the process wall-clock bubble. Reveal
+    /// is synchronous in sim; this ordered cue never becomes gameplay state.
+    TalkBubble {
+        actor: Option<u64>,
+        value: i32,
+        duration: i32,
+    },
 }
 
 /// Original definition pointers translated to retained registry ordinals.
@@ -4194,6 +4201,44 @@ impl Simulation {
                     frame_effects,
                 );
             }
+            105 => {
+                // Steam gamemd Execute6DF588..6DF5D0, not sibling6E4040.
+                // No matching live Team leaves the previous bubble unchanged;
+                // an absent Type or an empty first Team instead clears it.
+                let actor = if let Some(DefinitionReference::Team(index)) = reference {
+                    let name = &self.trigger_runtime.definitions.team_types[index];
+                    let Some(team_type) = self.interner.get(name) else {
+                        return false;
+                    };
+                    let Some(team) = self.team_script_vm.first_team_of_type(team_type) else {
+                        return false;
+                    };
+                    team.members().next()
+                } else {
+                    None
+                };
+                let value = value.unwrap_or(0);
+                let actor = actor.filter(|_| value != 0);
+                let duration = if actor.is_some() {
+                    rules.map_or(300, |r| r.general.talk_bubble_time)
+                } else {
+                    0
+                };
+                effects.push(TriggerEffect::TalkBubble {
+                    actor,
+                    value: if actor.is_some() { value } else { 0 },
+                    duration,
+                });
+                if let Some(actor) = actor {
+                    //70F159..70F189: flags0/0/0/1/1, current player (not
+                    //the Team owner), literal radius2, including negative values.
+                    self.reveal_talk_bubble_actor(
+                        actor,
+                        crate::sim::world::UninitContext::new(rules, overlay_registry)
+                            .with_effects(frame_effects),
+                    );
+                }
+            }
             106 => {
                 // Active inline Execute6DF5D1, not the similarly annotated
                 // separate helper6E37F0. Type9's string is+54; raw value is+90.
@@ -4670,3 +4715,7 @@ mod meteor_action_tests {
         assert_eq!(invalid.anims().count(), 0);
     }
 }
+
+#[cfg(test)]
+#[path = "trigger_runtime_talk_tests.rs"]
+mod talk_tests;

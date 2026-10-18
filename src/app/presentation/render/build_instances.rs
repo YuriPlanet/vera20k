@@ -326,6 +326,7 @@ pub(super) fn build_world_instances(
             state,
             local_owner.as_deref(),
         );
+        let speech_wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
         for parent in &mut planned_objects {
             parent.status = sim.entities().get(parent.parent.id).map(|entity| {
                 let mut status = crate::app::presentation::ui_overlays::techno_extras_for_parent(
@@ -345,6 +346,30 @@ pub(super) fn build_world_instances(
                     },
                 );
                 status.group = group_labels.remove(&parent.parent.id).unwrap_or_default();
+                if !entity.sinking.is_active() && !entity.passenger_role.is_inside_transport() {
+                    if let (Some(frame), Some(shape)) = (
+                        state
+                            .match_state
+                            .match_presentation
+                            .talk_bubble
+                            .frame_for(entity.stable_id(), speech_wall_ms),
+                        overlay.talk_bubble(),
+                    ) {
+                        let coord = crate::sim::movement::ground_pose::object_get_coords(
+                            entity,
+                            sim.resolved_terrain.as_ref(),
+                        );
+                        let point = crate::util::lepton::absolute_leptons_to_screen(
+                            coord.x, coord.y, coord.z,
+                        );
+                        status.talk_bubble =
+                            shape.instance(frame, point, 0.0).map(|mut instance| {
+                                instance.palette_light =
+                                    crate::render::palette_light::PaletteLight::plain(53, 1000);
+                                instance
+                            });
+                    }
+                }
                 status
             });
         }

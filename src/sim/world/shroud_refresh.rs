@@ -593,6 +593,38 @@ impl Simulation {
         }
     }
 
+    /// Talk70F120's Map5673A0(2,Player,0,0,0,1,1): uncached4A9CA0
+    /// final0 plus its border. Shared geometry/cache/discovery owners; no RNG.
+    pub(crate) fn reveal_talk_bubble_actor(&mut self, actor: u64, context: UninitContext<'_>) {
+        let Some(entity) = self.substrate.entities.get(actor) else {
+            return;
+        };
+        let coord = crate::sim::movement::ground_pose::object_get_coords(
+            entity,
+            context.terrain().or(self.resolved_terrain.as_ref()),
+        );
+        let config = self.sight_reveal_config(context.rules());
+        let viewer = self.session.current_house;
+        let viewers = viewer.into_iter().collect::<Vec<_>>();
+        let cell = ((coord.x / 256) as u16, (coord.y / 256) as u16);
+        if let Some(origin) = self.reveal_area(
+            &viewers,
+            cell,
+            coord.z,
+            2,
+            None,
+            false,
+            &config,
+            context,
+            vision::MapRevealProjection::UncachedConditional,
+            viewer,
+        ) {
+            if let Some(viewer) = viewer {
+                self.refresh_sight_border(viewer, origin, 5, context);
+            }
+        }
+    }
+
     /// Original MapClass::RevealArea5678E0, ordinary no-outline/no-unreveal
     /// route. Geometry stays with the shared native spiral/height owner;
     /// MapCell4A9CA0 publishes each write and its synchronous discovery

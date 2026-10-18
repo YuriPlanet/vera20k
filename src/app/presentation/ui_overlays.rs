@@ -803,6 +803,8 @@ pub(crate) struct TechnoExtras {
     pub self_heal: Option<SpriteInstance>,
     ///709A90's group tail follows this parent's pip scale, not a global sweep.
     pub group: StatusTextOverlayInstances,
+    ///6F5E8D..5EDE: after health/pips/group, plain600 at the caller point.
+    pub talk_bubble: Option<SpriteInstance>,
 }
 
 /// One Techno DrawExtras6F5190 parent: clock, wrench, rank, then health6F64A0.
