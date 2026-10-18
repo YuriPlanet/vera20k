@@ -11,6 +11,25 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::scenario_session::{ScenarioLightingProfile, ScenarioLightingState};
 use crate::sim::world::Simulation;
 
+/// The palette operation that accompanies a global cell refresh. Native
+/// 53AD00 reaches LightConvert556090, whose flag selects the normal or
+/// alternate cache; the ambient fade55B4C6 only refreshes cells.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PaletteUpdate {
+    Preserve,
+    RestoreNormal,
+    Normal([i32; 3]),
+    Alternate([i32; 3]),
+}
+
+impl PaletteUpdate {
+    pub fn from_scenario(state: &ScenarioLightingState) -> Self {
+        state
+            .alternate_rgb()
+            .map_or(Self::RestoreNormal, Self::Alternate)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub enum LightingEvent {
     Building {
@@ -28,11 +47,14 @@ pub enum LightingEvent {
     Global {
         state: ScenarioLightingState,
         cell_profile: ScenarioLightingProfile,
+        palette: PaletteUpdate,
+        constructor_rgb: Option<[i32; 3]>,
     },
     /// The profile later full relights read changed with no refresh: cells
     /// keep the scalars their last refresh gave them.
     RelightProfile {
         cell_profile: ScenarioLightingProfile,
+        constructor_rgb: Option<[i32; 3]>,
     },
 }
 
@@ -140,11 +162,14 @@ impl Simulation {
 
     /// Logic55B4C6 and profile53C280->53AD00 must remain in order with source
     /// invalidations. A final-frame fingerprint cannot recover that history.
-    pub fn publish_global_lighting(&mut self) {
+    pub fn publish_global_lighting(&mut self, palette: PaletteUpdate) {
         let cell_profile = self.lighting_cell_profile();
+        let constructor_rgb = self.palette_constructor_rgb();
         self.lighting_sources.pending.push(LightingEvent::Global {
             state: self.session.lighting,
             cell_profile,
+            palette,
+            constructor_rgb,
         });
     }
 
@@ -152,9 +177,31 @@ impl Simulation {
     /// [`Self::lighting_cell_profile`] that refreshes no cell.
     pub fn publish_relight_profile(&mut self) {
         let cell_profile = self.lighting_cell_profile();
+        let constructor_rgb = self.palette_constructor_rgb();
         self.lighting_sources
             .pending
-            .push(LightingEvent::RelightProfile { cell_profile });
+            .push(LightingEvent::RelightProfile {
+                cell_profile,
+                constructor_rgb,
+            });
+    }
+
+    /// LightConvert555DA0's constructor branches555E50..556067: Storm first,
+    /// then fading-in Nuke/Chrono, then active Dominator. This differs from
+    /// both UpdateLighting's selection and a Cell's Ground/Level reader.
+    pub fn palette_constructor_rgb(&self) -> Option<[i32; 3]> {
+        let profile = if crate::sim::superweapon::lightning_storm::raging(self) {
+            ScenarioLightingProfile::Ion
+        } else if self.session.lighting.nuke_flash_fading_in()
+            || self.session.chrono_screen().active()
+        {
+            ScenarioLightingProfile::Nuke
+        } else if crate::sim::superweapon::psychic_dominator::active(self) {
+            ScenarioLightingProfile::Dominator
+        } else {
+            return None;
+        };
+        Some(self.session.lighting.profile(profile).alternate_rgb())
     }
 
     /// The profile whose Ground/Level a cell's refresh reads
@@ -199,6 +246,6 @@ impl Simulation {
             ScenarioLightingProfile::Normal
         };
         self.session.lighting.select(profile);
-        self.publish_global_lighting();
+        self.publish_global_lighting(PaletteUpdate::from_scenario(&self.session.lighting));
     }
 }

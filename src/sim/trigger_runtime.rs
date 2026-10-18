@@ -3699,6 +3699,21 @@ impl Simulation {
                     );
                 }
             }
+            142..=144 => {
+                let Some(value) = value else {
+                    return false;
+                };
+                // Original Execute6DFD4F/7C/A9 ->6E2E60/6E2EB0/6E2F00:
+                // no House/actor gate;53AD00 uses normal-cache flag0, then
+                // the raw normal component is stored. The published snapshot
+                // includes that store: Cell refresh reads ambient/Ground/Level,
+                // not RGB, and the explicit palette operation preserves order.
+                let rgb = self
+                    .session
+                    .lighting
+                    .retint_normal_component((action.kind - 142) as usize, value);
+                self.publish_global_lighting(crate::sim::light_sources::PaletteUpdate::Normal(rgb));
+            }
             73 => {
                 let Some(value) = value else {
                     return false;
@@ -4078,6 +4093,10 @@ mod explosion_tests;
 #[cfg(test)]
 #[path = "trigger_runtime_map_lighting_tests.rs"]
 mod map_lighting_tests;
+
+#[cfg(test)]
+#[path = "trigger_runtime_tint_tests.rs"]
+mod tint_tests;
 
 #[cfg(test)]
 #[path = "trigger_runtime_nuke_tests.rs"]

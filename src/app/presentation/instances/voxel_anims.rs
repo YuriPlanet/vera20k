@@ -124,12 +124,7 @@ fn piece_palette(
     (
         super::units::house_color_to_remap_row(scheme),
         0,
-        crate::app::presentation::lighting::body_palette_light(
-            light,
-            &sim.session.lighting,
-            (x, y),
-            0,
-        ),
+        crate::app::presentation::lighting::body_palette_light(light, (x, y), 0),
     )
 }
 

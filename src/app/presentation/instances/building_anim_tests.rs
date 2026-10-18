@@ -115,7 +115,6 @@ fn emit(
         [1.0; 3],
         crate::render::palette_light::PaletteLight::default(),
         &grid,
-        &sim.session.lighting,
         (building.position.rx(), building.position.ry()),
         sim,
         building,

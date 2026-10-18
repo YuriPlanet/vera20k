@@ -69,7 +69,7 @@ fn relight_profiles(sim: &Simulation) -> Vec<ScenarioLightingProfile> {
         .pending
         .iter()
         .filter_map(|event| match event {
-            LightingEvent::RelightProfile { cell_profile } => Some(*cell_profile),
+            LightingEvent::RelightProfile { cell_profile, .. } => Some(*cell_profile),
             _ => None,
         })
         .collect()

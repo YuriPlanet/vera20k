@@ -346,6 +346,21 @@ impl ScenarioLightingState {
         self.target_ambient = self.profile(profile).ambient_percent;
     }
 
+    /// Execute1426E2E60 /1436E2EB0 /1446E2F00 retains the raw signed
+    /// percentage at3534/3538/353C. RecalcLighting takes all three normal
+    /// percentages times10 with32-bit wrapping, independently of the selected
+    /// alternate profile. Original Steam gamemd3e81a617..08600;30 executed
+    /// controls cover the reader, call arguments and post-call field stores.
+    pub(crate) fn retint_normal_component(&mut self, component: usize, value: i32) -> [i32; 3] {
+        match component {
+            0 => self.normal.red_percent = value,
+            1 => self.normal.green_percent = value,
+            2 => self.normal.blue_percent = value,
+            _ => unreachable!("RGB component comes from action142..=144"),
+        }
+        self.normal.alternate_rgb()
+    }
+
     /// Execute73 inline6DF292..6DF2D1 writes the ordinary ambient even
     /// during a storm, but changes the current target only outside a raging
     /// storm. This does not select a profile or restart/advance the fade.

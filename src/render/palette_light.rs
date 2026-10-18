@@ -91,26 +91,20 @@ impl PaletteLight {
 
     /// CellClass owns its normalized hue-profile and row count (0x00544E70).
     pub fn cell(grid: &CellLightGrid, cell: (u16, u16), top: bool) -> Self {
-        let (rgb, brightness) = grid.cell_light_at(cell).map_or(([1000; 3], 1000), |light| {
-            (
-                light.rgb_key,
-                if top {
-                    light.top_scalar
-                } else {
-                    light.common_scalar
-                },
-            )
-        });
-        Self::new(
-            grid.palette_rgb(rgb),
-            if rgb.iter().sum::<i32>() < 2000 {
-                27
-            } else {
-                53
-            },
-            brightness,
-            false,
-        )
+        let (rgb, rows, brightness) =
+            grid.cell_light_at(cell)
+                .map_or(([1000; 3], 53, 1000), |light| {
+                    (
+                        grid.palette_rgb(light.profile_id),
+                        grid.palette_rows(light.profile_id),
+                        if top {
+                            light.top_scalar
+                        } else {
+                            light.common_scalar
+                        },
+                    )
+                });
+        Self::new(rgb, rows, brightness, false)
     }
 
     /// The selected house Convert uses 53 rows even on a cell with 27 rows

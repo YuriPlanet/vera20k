@@ -163,8 +163,15 @@ pub struct LightProfileId(pub usize);
 #[derive(Debug, Clone, PartialEq)]
 pub struct LightProfile {
     pub id: LightProfileId,
+    /// Constructor RGB, retained to identify the Convert's row count.
+    /// The lookup index follows mutable normal_rgb_key instead (544EF8).
     pub rgb_key: LightRgbKey,
-    pub rgb: [f32; 3],
+    /// LightConvert+198..1A0. Native556179 changes this normal-cache RGB;
+    /// returning from an alternate palette restores it. New profiles start
+    /// from their own lookup input, not a prior global operation.
+    normal_rgb_key: LightRgbKey,
+    alternate_rgb_key: LightRgbKey,
+    use_alternate: bool,
 }
 
 /// LightConvert-style profile identity cache for render-facing cell light.
@@ -172,6 +179,10 @@ pub struct LightProfile {
 pub struct LightProfileCache {
     profiles: Vec<LightProfile>,
     by_key: HashMap<LightRgbKey, LightProfileId>,
+    /// Current555DA0 constructor inputs, independent of the palette mode of
+    /// an already cached Convert. A normal retint during a storm leaves new
+    /// Converts on the storm branch while existing ones switch to normal.
+    constructor_alternate_rgb: Option<LightRgbKey>,
 }
 
 impl LightProfileCache {
@@ -179,6 +190,7 @@ impl LightProfileCache {
         let mut cache = Self {
             profiles: Vec::new(),
             by_key: HashMap::new(),
+            constructor_alternate_rgb: None,
         };
         cache.profile_id_for_rgb(DEFAULT_TINT);
         cache
@@ -201,7 +213,12 @@ impl LightProfileCache {
         self.profiles.push(LightProfile {
             id,
             rgb_key: key,
-            rgb: key_to_rgb(key),
+            normal_rgb_key: key.map(|v| v.clamp(0, 2000)),
+            alternate_rgb_key: self
+                .constructor_alternate_rgb
+                .unwrap_or(key)
+                .map(|v| v.clamp(0, 2000)),
+            use_alternate: self.constructor_alternate_rgb.is_some(),
         });
         self.by_key.insert(key, id);
         id
@@ -223,6 +240,16 @@ impl LightProfileCache {
 impl Default for LightProfileCache {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+impl LightProfile {
+    fn palette_rgb(&self) -> LightRgbKey {
+        if self.use_alternate {
+            self.alternate_rgb_key
+        } else {
+            self.normal_rgb_key
+        }
     }
 }
 
@@ -334,7 +361,6 @@ pub struct CellLightGrid {
     cells: HashMap<(u16, u16), CellLight>,
     profiles: LightProfileCache,
     detail_level: u32,
-    alternate_rgb: Option<LightRgbKey>,
 }
 
 impl CellLightGrid {
@@ -343,7 +369,6 @@ impl CellLightGrid {
             cells: HashMap::new(),
             profiles: LightProfileCache::new(),
             detail_level: 2,
-            alternate_rgb: None,
         }
     }
 
@@ -352,7 +377,6 @@ impl CellLightGrid {
             cells: HashMap::with_capacity(capacity),
             profiles: LightProfileCache::new(),
             detail_level: 2,
-            alternate_rgb: None,
         }
     }
 
@@ -361,7 +385,6 @@ impl CellLightGrid {
             cells: HashMap::new(),
             profiles: LightProfileCache::new(),
             detail_level: detail_level.min(2),
-            alternate_rgb: None,
         }
     }
 
@@ -372,11 +395,62 @@ impl CellLightGrid {
     /// LightConvert556090 retains normal RGB/row identity while selecting
     /// Ion alternate table RGB; neither normalization nor Cell104 changes.
     pub fn set_alternate_rgb(&mut self, rgb: Option<LightRgbKey>) {
-        self.alternate_rgb = rgb;
+        for profile in &mut self.profiles.profiles {
+            if let Some(rgb) = rgb {
+                profile.alternate_rgb_key = rgb.map(|v| v.clamp(0, 2000));
+            }
+            profile.use_alternate = rgb.is_some();
+        }
     }
 
-    pub fn palette_rgb(&self, normal: LightRgbKey) -> LightRgbKey {
-        self.alternate_rgb.unwrap_or(normal)
+    /// Constructor context changes only future cache entries; it never
+    /// rewrites an existing Convert's retained colors or selected mode.
+    pub fn set_constructor_alternate_rgb(&mut self, rgb: Option<LightRgbKey>) {
+        self.profiles.constructor_alternate_rgb = rgb.map(|rgb| rgb.map(|v| v.clamp(0, 2000)));
+    }
+
+    pub fn constructor_alternate_rgb(&self) -> Option<LightRgbKey> {
+        self.profiles.constructor_alternate_rgb
+    }
+
+    /// RecalcLighting flag0 with explicit RGB changes every existing normal
+    /// Convert cache (5560C5..556111 clamps,556179..55618B stores), and
+    /// selects normal mode. Preserve row counts and Cell104. Lookup544EF8
+    /// compares the mutable normal cache, so rebuild that derived index.
+    pub fn retint_normal_rgb(&mut self, rgb: LightRgbKey) {
+        let rgb = rgb.map(|v| v.clamp(0, 2000));
+        for profile in &mut self.profiles.profiles {
+            profile.normal_rgb_key = rgb;
+            profile.use_alternate = false;
+        }
+        self.profiles.by_key.clear();
+        //544E94 special-cases neutral RGB to the first Convert regardless
+        // of its current tint. The remaining search starts at index1.
+        self.profiles.by_key.insert([1000; 3], LightProfileId(0));
+        for profile in self.profiles.profiles.iter().skip(1) {
+            self.profiles
+                .by_key
+                .entry(profile.normal_rgb_key)
+                .or_insert(profile.id);
+        }
+    }
+
+    /// A cell retains its Convert pointer across a global retint, even when
+    /// a later lookup of the same sampling RGB creates a different Convert.
+    pub fn palette_rgb(&self, id: LightProfileId) -> LightRgbKey {
+        self.profiles
+            .get(id)
+            .map_or([1000; 3], LightProfile::palette_rgb)
+    }
+
+    pub fn palette_rows(&self, id: LightProfileId) -> u32 {
+        self.profiles.get(id).map_or(53, |profile| {
+            if profile.rgb_key.iter().sum::<i32>() < 2000 {
+                27
+            } else {
+                53
+            }
+        })
     }
 
     pub fn refresh_retained_scalars<I>(&mut self, heights: I, profile: LightingProfileUnits)
@@ -532,11 +606,6 @@ impl CellLightGrid {
     }
 
     fn tint_for_light_scalar(&self, light: &CellLight, scalar: i32) -> [f32; 3] {
-        if let Some(rgb) = self.alternate_rgb {
-            return rgb.map(|channel| {
-                channel as f32 / LIGHT_UNIT as f32 * scalar as f32 / LIGHT_UNIT as f32
-            });
-        }
         self.tint_for_profile_scalar(light.profile_id, scalar)
     }
 
@@ -547,11 +616,7 @@ impl CellLightGrid {
             .or_else(|| self.profiles.get(self.profiles.default_profile_id()))
             .expect("default light profile is always present");
         let scalar = scalar as f32 / LIGHT_UNIT as f32;
-        [
-            profile.rgb[0] * scalar,
-            profile.rgb[1] * scalar,
-            profile.rgb[2] * scalar,
-        ]
+        key_to_rgb(profile.palette_rgb()).map(|channel| channel * scalar)
     }
 }
 

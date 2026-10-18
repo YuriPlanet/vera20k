@@ -338,7 +338,6 @@ pub(crate) fn build_unit_instances(
         );
         let palette_light = crate::app::presentation::lighting::body_palette_light(
             state.match_state.match_presentation.lighting.grid(),
-            &sim.session.lighting,
             (pos.rx(), pos.ry()),
             extra_light,
         );

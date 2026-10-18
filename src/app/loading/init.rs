@@ -783,7 +783,9 @@ mod map_wall_owner_candidate_tests {
         sim.session.lighting.current_ambient = 90;
         lights.refresh(&terrain, &sim, 2);
         sim.set_building_light_active(41, false);
-        sim.publish_global_lighting();
+        sim.publish_global_lighting(crate::sim::light_sources::PaletteUpdate::from_scenario(
+            &sim.session.lighting,
+        ));
         assert!(!sim.lighting_sources.pending.is_empty());
         sim.radiation.apply_detonation(
             RadDetonation {
@@ -1025,7 +1027,9 @@ mod map_wall_owner_candidate_tests {
         fatal_lamp_stage(&mut sim, &rules, 41);
         sim.session.lighting.current_ambient = 30;
         sim.session.lighting.target_ambient = 30;
-        sim.publish_global_lighting();
+        sim.publish_global_lighting(crate::sim::light_sources::PaletteUpdate::from_scenario(
+            &sim.session.lighting,
+        ));
         let mut rt = crate::sim::runtime::SimRuntime::from_simulation(sim);
         rt.resources.rules = rules;
         let frame = rt
@@ -1121,7 +1125,9 @@ mod map_wall_owner_candidate_tests {
             &mut sim.lighting_sources.pending,
         );
         sim.session.lighting.current_ambient = 250;
-        sim.publish_global_lighting();
+        sim.publish_global_lighting(crate::sim::light_sources::PaletteUpdate::from_scenario(
+            &sim.session.lighting,
+        ));
         sim.set_building_light_active(41, true);
         sim.radiation.apply_detonation(
             radiation,
@@ -1188,8 +1194,18 @@ mod map_wall_owner_candidate_tests {
             Some((&terrain, &sim)),
         );
         let original_key = lights.grid().cell_light_at((4, 5)).unwrap().rgb_key;
+        //555E50 reads the live storm flag when constructing a new Convert;
+        // selecting a scenario profile alone does not create that condition.
+        let owner = sim.interner.intern("LightingFixture");
+        sim.lightning_storm =
+            crate::sim::superweapon::lightning_storm::LightningStorm::raging_for_test(
+                owner,
+                (0, 0),
+            );
         sim.session.lighting.select(ScenarioLightingProfile::Ion);
-        sim.publish_global_lighting();
+        sim.publish_global_lighting(crate::sim::light_sources::PaletteUpdate::from_scenario(
+            &sim.session.lighting,
+        ));
         seed_live_lamp(&mut sim, &rules);
         apply_lighting_events(&mut lights, &terrain, &mut sim);
         let normal_cell = lights.grid().cell_light_at((4, 5)).unwrap().clone();
@@ -1212,8 +1228,11 @@ mod map_wall_owner_candidate_tests {
             PaletteLight::new([200, 900, 400], rows, normal_cell.common_scalar, false)
         );
         let ion_tint = lights.grid().body_tint_at((4, 5), 0);
+        sim.lightning_storm = Default::default();
         sim.session.lighting.select(ScenarioLightingProfile::Normal);
-        sim.publish_global_lighting();
+        sim.publish_global_lighting(crate::sim::light_sources::PaletteUpdate::from_scenario(
+            &sim.session.lighting,
+        ));
         apply_lighting_events(&mut lights, &terrain, &mut sim);
         let restored = lights.grid().cell_light_at((4, 5)).unwrap();
         assert_eq!(restored.rgb_key, normal_cell.rgb_key);

@@ -36,11 +36,6 @@ fn anim_palette_light(
 ) -> crate::render::palette_light::PaletteLight {
     crate::app::presentation::lighting::anim_palette_light(
         state.match_state.match_presentation.lighting.grid(),
-        state
-            .match_state
-            .sim_runtime
-            .as_ref()
-            .map(|r| &r.simulation.session.lighting),
         cell,
         cfg,
         cell_drawer,
@@ -375,7 +370,6 @@ pub(crate) fn build_display_effect_instances(
         } else {
             crate::app::presentation::lighting::anim_palette_light(
                 input.lighting,
-                Some(&sim.session.lighting),
                 (rx, ry),
                 config,
                 anim.use_cell_drawer,
@@ -592,18 +586,14 @@ pub(super) fn anim_world_render_coords(
 fn ordinary_overlay_palette_light(
     flags: Option<&OverlayTypeFlags>,
     light_grid: &crate::map::lighting::CellLightGrid,
-    scenario_lighting: &crate::sim::scenario_session::ScenarioLightingState,
     cell: (u16, u16),
 ) -> crate::render::palette_light::PaletteLight {
     use crate::render::palette_light::PaletteLight;
     match flags {
         Some(f) if f.tiberium => PaletteLight::plain(53, 1000),
-        Some(f) if f.wall => crate::app::presentation::lighting::body_palette_light(
-            light_grid,
-            scenario_lighting,
-            cell,
-            0,
-        ),
+        Some(f) if f.wall => {
+            crate::app::presentation::lighting::body_palette_light(light_grid, cell, 0)
+        }
         Some(f) if f.is_veins => PaletteLight::plain(
             53,
             light_grid
@@ -629,8 +619,6 @@ struct CellOverlayInputs<'a> {
     terrain: Option<&'a crate::map::resolved_terrain::ResolvedTerrainGrid>,
     heights: &'a std::collections::BTreeMap<(u16, u16), u8>,
     lighting: &'a crate::map::lighting::CellLightGrid,
-    /// Scenario light selecting the ColorScheme Convert's RGB for walls.
-    scenario_lighting: &'a crate::sim::scenario_session::ScenarioLightingState,
     camera: [f32; 2],
     viewport: [f32; 2],
     origin_y: f32,
@@ -782,12 +770,8 @@ fn build_cell_overlay_instances(
         let (policy, z_adjust, z_gradient) =
             ordinary_overlay_z(overlay_flags, slope_type.unwrap_or(0), depth_z);
         let tint: [f32; 3] = input.lighting.overlay_tint_at((entry.rx, entry.ry));
-        let palette_light = ordinary_overlay_palette_light(
-            overlay_flags,
-            input.lighting,
-            input.scenario_lighting,
-            (entry.rx, entry.ry),
-        );
+        let palette_light =
+            ordinary_overlay_palette_light(overlay_flags, input.lighting, (entry.rx, entry.ry));
         planned_cells.push(
             crate::app::presentation::render::draw_plan_lowering::PlannedCellInstance {
                 draw: crate::render::tactical_draw_plan::CellDraw {
@@ -862,7 +846,6 @@ pub(crate) fn build_overlay_instances(
         .map(|g| (g.origin_y, g.world_height))
         .unwrap_or((0.0, 1.0));
 
-    let no_scenario_lighting = crate::sim::scenario_session::ScenarioLightingState::default();
     build_cell_overlay_instances(
         &CellOverlayInputs {
             entries: state.match_state.match_presentation.overlays.as_slice(),
@@ -888,13 +871,6 @@ pub(crate) fn build_overlay_instances(
                 .and_then(|runtime| runtime.simulation.resolved_terrain.as_ref()),
             heights: state.height_map(),
             lighting: state.match_state.match_presentation.lighting.grid(),
-            scenario_lighting: state
-                .match_state
-                .sim_runtime
-                .as_ref()
-                .map_or(&no_scenario_lighting, |runtime| {
-                    &runtime.simulation.session.lighting
-                }),
             camera: [cam_x, cam_y],
             viewport: [sw, sh],
             origin_y,
@@ -1551,12 +1527,11 @@ mod tests {
     #[test]
     fn wall_overlay_convert_reads_shroud_a_like_other_overlays() {
         let grid = crate::map::lighting::CellLightGrid::new();
-        let scenario = crate::sim::scenario_session::ScenarioLightingState::default();
         let wall = OverlayTypeFlags {
             wall: true,
             ..Default::default()
         };
-        let light = super::ordinary_overlay_palette_light(Some(&wall), &grid, &scenario, (3, 4));
+        let light = super::ordinary_overlay_palette_light(Some(&wall), &grid, (3, 4));
         assert_eq!(
             (light.rows(), light.brightness()),
             (53, 1000),
@@ -1573,8 +1548,7 @@ mod tests {
                 ..Default::default()
             },
         ] {
-            let light =
-                super::ordinary_overlay_palette_light(Some(&other), &grid, &scenario, (3, 4));
+            let light = super::ordinary_overlay_palette_light(Some(&other), &grid, (3, 4));
             assert_eq!(light.rgb565(stone, 100, 2), 0);
         }
     }

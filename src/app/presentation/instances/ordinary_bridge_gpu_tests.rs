@@ -359,7 +359,6 @@ impl Probe {
                 terrain: Some(&self.terrain),
                 heights: &heights,
                 lighting: self.lighting.grid(),
-                scenario_lighting: &scene.sim().session.lighting,
                 camera: view.camera_pos,
                 viewport: self.size.map(|value| value as f32),
                 origin_y: view.world_origin_y,
@@ -1157,7 +1156,6 @@ fn assert_retail_cell_body_then_shadow(packet: &Value) {
     // The native component prior is unity CellISOConvert and neutral A127,
     // rather than XMP03T4's actual ambient or its full tactical composition.
     // BatchRenderer's existing unbound-shroud source supplies neutral A127.
-    let scenario_lighting = crate::sim::scenario_session::ScenarioLightingState::default();
     // Align the existing isometric projection with the native unraised Cell
     // point. Height and literal EF displacement remain the production owners'.
     let point = crate::map::terrain::iso_to_screen(coord.0, coord.1, 0);
@@ -1226,7 +1224,6 @@ fn assert_retail_cell_body_then_shadow(packet: &Value) {
                 terrain: Some(terrain),
                 heights: &heights,
                 lighting: &lighting,
-                scenario_lighting: &scenario_lighting,
                 camera: view.camera_pos,
                 viewport: size.map(|v| v as f32),
                 origin_y: view.world_origin_y,
