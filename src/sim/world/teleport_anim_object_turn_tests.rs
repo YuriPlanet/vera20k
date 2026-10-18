@@ -382,6 +382,7 @@ fn retail_cmin_teleport_preserves_departure_cell_through_guidance_and_snapshot()
     .with_installed_weapon(Some(sim.intern("MissileLauncher")));
     let bullet = FiredBullet::launched(
         &sim,
+        &rules,
         100,
         RAD_NO_ATTACKER,
         ProjectileTarget::Entity(1),

@@ -216,6 +216,7 @@ impl FiredBullet {
     /// [`cell_target_coord`]: crate::sim::projectile::cell_target_coord
     pub(crate) fn launched(
         world: &Simulation,
+        rules: &RuleSet,
         native_unique_id: i32,
         source_id: u64,
         target: ProjectileTarget,
@@ -244,6 +245,18 @@ impl FiredBullet {
                 world.production.terrain_objects.get(&id)?.world_coord()
             }
             ProjectileTarget::None => return None,
+        };
+        // Direct callers hand Fire a pre-Fire vector; FireAt's own launch
+        // path already passes through the same numeric owner. Nuclear stock
+        // types have ROT=0; Execute96's ChemMissile has ROT=4 and requires it.
+        let velocity = if payload
+            .projectile_type()
+            .and_then(|id| rules.projectile(world.interner.resolve(id)))
+            .is_some_and(|projectile| projectile.rot > 0)
+        {
+            crate::sim::projectile::launch::bullet_fire_homing_velocity(velocity)
+        } else {
+            velocity
         };
         Some(Self {
             native_unique_id,

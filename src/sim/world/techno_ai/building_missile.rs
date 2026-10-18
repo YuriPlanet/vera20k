@@ -212,6 +212,7 @@ fn launch_missile(
     .with_installed_weapon(Some(sim.interner.intern(&weapon.id)));
     if let Some(bullet) = FiredBullet::launched(
         sim,
+        rules,
         native_unique_id,
         id,
         ProjectileTarget::Cell { rx, ry },

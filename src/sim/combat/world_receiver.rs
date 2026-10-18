@@ -2094,6 +2094,7 @@ fn nuke_maker(world: &mut Simulation, rules: &RuleSet, detonation: &ProjectileDe
     .with_installed_weapon(Some(world.interner.intern(&weapon.id)));
     if let Some(bullet) = super::FiredBullet::launched(
         world,
+        rules,
         native_unique_id,
         detonation.source_id,
         detonation.target,

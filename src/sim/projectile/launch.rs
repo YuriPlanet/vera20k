@@ -531,6 +531,19 @@ fn scale_to_speed(
     v.map(|axis| round(X::mul(factor, axis)))
 }
 
+/// Bullet::Fire468AAC..468B57, for ROT>0 after copying the caller's vector.
+/// Shared by FireAt and direct launches. The squared order is (z²+y²)+x²;
+/// Sqrt_Approx is not host sqrt. Original Execute96's fixed vector becomes
+/// [3CA1A5FFFFFFFFFF,3FEFFFFFFFFFFFFE,0] in a native tail execution.
+pub(crate) fn bullet_fire_homing_velocity(velocity: ProjectileVelocity) -> ProjectileVelocity {
+    ProjectileVelocity::from_native(
+        scale_to_speed(velocity.native().map(d), 1, |[x, y, z]| {
+            X::add(X::add(square(z), square(y)), square(x))
+        })
+        .map(store),
+    )
+}
+
 /// The course `AircraftClass::Fire_At @ 0x00415EE0` sets on the bullet
 /// TechnoClass::FireAt answered, by the bullet type's `ROT=` (`+0x2DC`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -696,7 +709,7 @@ pub fn fireat_launch(input: FireAtLaunch) -> Option<FireAtLaunchResult> {
         vy = round(X::div(vy, cos(trig, existing_pitch)).expect("nonzero initial pitch cosine"));
     }
     let pitch_radians = radians(pitch);
-    let mut velocity = [
+    let velocity = [
         round(X::mul(cos(trig, pitch_radians), vx)),
         round(X::mul(cos(trig, pitch_radians), vy)),
         round(X::mul(sin(trig, pitch_radians), magnitude)),
@@ -705,13 +718,14 @@ pub fn fireat_launch(input: FireAtLaunch) -> Option<FireAtLaunchResult> {
     let before_fire = ProjectileVelocity::from_native(velocity.map(store));
     // Bullet::Fire 468AAC..468B57 renormalizes ROT>0 after the six DWORDs
     // have been copied, with (z*z + y*y) + x*x and another Sqrt_Approx.
-    if input.homing {
-        velocity = scale_to_speed(velocity, 1, |[x, y, z]| {
-            X::add(X::add(square(z), square(y)), square(x))
-        });
-    }
+    let velocity = ProjectileVelocity::from_native(velocity.map(store));
+    let velocity = if input.homing {
+        bullet_fire_homing_velocity(velocity)
+    } else {
+        velocity
+    };
     Some(FireAtLaunchResult {
-        velocity: ProjectileVelocity::from_native(velocity.map(store)),
+        velocity,
         speed,
         #[cfg(any(test, feature = "test-support"))]
         before_fire,

@@ -3880,6 +3880,24 @@ impl Simulation {
                 };
                 return self.trigger_nuke_strike(rules, waypoint as i32);
             }
+            96 => {
+                let (Some(rules), Some(waypoint)) = (rules, action.waypoint_index) else {
+                    return false;
+                };
+                return self.trigger_chemical_strike(rules, waypoint as i32);
+            }
+            109 => {
+                let (Some(rules), Some(waypoint)) = (rules, action.waypoint_index) else {
+                    return false;
+                };
+                return crate::sim::superweapon::iron_curtain::at_waypoint(
+                    self,
+                    rules,
+                    waypoint as i32,
+                    overlay_registry,
+                    frame_effects,
+                );
+            }
             46 | 47 => {
                 let locked = action.kind == 46;
                 let was_locked = self.session.input_locked();
@@ -4454,3 +4472,7 @@ mod ambient_event_tests;
 #[cfg(test)]
 #[path = "trigger_runtime_nuke_tests.rs"]
 mod nuke_tests;
+
+#[cfg(test)]
+#[path = "trigger_runtime_direct_strike_tests.rs"]
+mod direct_strike_tests;

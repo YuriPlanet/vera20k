@@ -112,7 +112,7 @@ mod trigger_camera;
 #[cfg(test)]
 mod trigger_camera_tests;
 mod trigger_explosion;
-mod trigger_nuke;
+mod trigger_strikes;
 pub(crate) use techno_ai::ObjectAiCtx;
 pub(crate) use techno_ai::PassiveScan;
 #[cfg(any(test, feature = "test-support"))]

@@ -619,6 +619,7 @@ fn terrain_bullet_expiry_matches_original_live_observer() {
         .with_installed_weapon(None);
         let bullet = super::projectile_delivery::FiredBullet::launched(
             &scene.world,
+            &scene.rules,
             1,
             scene.source,
             ProjectileTarget::Terrain(tree_id),

@@ -1,5 +1,5 @@
-//! TAction95's direct descending missile. Projectile construction, flight,
-//! impact and retirement stay with the existing combat owners.
+//! TAction95/96's direct missiles. Projectile construction, flight, impact
+//! and retirement stay with the existing combat owners.
 
 use super::Simulation;
 use crate::map::cell_index::NativeCellIdentity;
@@ -15,6 +15,82 @@ use crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS;
 use crate::util::native_x87::NativeF64Bits;
 
 impl Simulation {
+    /// Execute96 -> ChemMissileAtWP6E38F0..6E3B13, Steam3e81a617..08600.
+    /// Literal ChemLauncher (773030 only finds an already allocated type),
+    /// null firer, speed20/Bright=false, ground+structural bridge target.
+    /// Map586AC0's non-inset LocalSize edge supplies launch XY, Z=0.
+    /// Unlike 95, this caller never assigns Bullet+130's Weapon pointer.
+    /// Fire's return is ignored; failed Bullet construction returns false.
+    /// Missing safe prerequisites return false instead of native unchecked
+    /// dereferences. All flight/RNG/damage/timer/cleanup use combat owners.
+    pub(crate) fn trigger_chemical_strike(&mut self, rules: &RuleSet, waypoint: i32) -> bool {
+        let Some(cell) = self.session.waypoint_cell(waypoint) else {
+            return false;
+        };
+        let Some(location) = self.direct_strike_coord(cell) else {
+            return false;
+        };
+        let Some(bounds) = self.playfield_bounds else {
+            return false;
+        };
+        let edge = crate::map::playfield::playfield_edge_cell(
+            bounds,
+            ((location.x / 256) as i16, (location.y / 256) as i16),
+            false,
+        );
+        let Some(weapon) = rules.weapon("ChemLauncher") else {
+            return false;
+        };
+        let Some(warhead) = weapon.warhead.as_deref().and_then(|id| rules.warhead(id)) else {
+            return false;
+        };
+        let Some(projectile) = weapon
+            .projectile
+            .as_deref()
+            .and_then(|id| rules.projectile(id))
+        else {
+            return false;
+        };
+        let target = self.direct_strike_target(location);
+        let payload = ProjectilePayload::new(
+            weapon.damage,
+            self.interner.intern(&warhead.id),
+            Some(self.interner.intern(&projectile.id)),
+            false,
+        );
+        let origin = ProjectileCoord::new(
+            i32::from(edge.0) * 256 + 128,
+            i32::from(edge.1) * 256 + 128,
+            0,
+        );
+        // Fixed native expressions6E3A18..6E3AC5: pitch BF19222D989F5E57,
+        // yaw3FF921C90FE8FBDA, scale100 at7E2AC0. Executed using the
+        // existing nuke_strike_dispatch_case/Emu transport with Execute96,
+        // real586AC0/46B050/4CACB0/4CAD00; nine controls give these double
+        // stores. Keep the tiny X rather than rounding it to (0,100,0).
+        let velocity = crate::sim::projectile::ProjectileVelocity::from_native([
+            NativeF64Bits::from_bits(0x3d0b_9360_0000_0000),
+            NativeF64Bits::from_bits(0x4059_0000_0000_0000),
+            NativeF64Bits::from_bits(0),
+        ]);
+        let stable_id = self.allocate_stable_id();
+        let native_id = self.next_native_runtime_id();
+        if let Some(bullet) = FiredBullet::launched(
+            self,
+            rules,
+            native_id,
+            RAD_NO_ATTACKER,
+            target,
+            payload,
+            20,
+            origin,
+            velocity,
+        ) {
+            admit_fired_bullet(self, rules, weapon, stable_id, bullet);
+        }
+        true
+    }
+
     /// Steam gamemd 3e81a617..08600, Execute95 at6DD9DA ->6E3410..6E35E2.
     /// Uses the literal NukePayload, not a Super or the numeric action value.
     /// Constructor speed50/Bright=false, height+20000 and velocity scale-100
@@ -45,29 +121,9 @@ impl Simulation {
         speed_override: Option<i32>,
         warning_house: Option<InternedId>,
     ) -> bool {
-        let Some(terrain) = self.resolved_terrain.as_ref() else {
+        let Some(location) = self.direct_strike_coord(cell) else {
             return false;
         };
-        let cells = NativeCellQuery::canonical(terrain);
-        let centre = cell_center(
-            CellCoordinate {
-                x: i32::from(cell.0),
-                y: i32::from(cell.1),
-            },
-            0,
-        );
-        let mut location = DriveCoord {
-            x: centre.x,
-            y: centre.y,
-            z: 0,
-        };
-        location.z = query_ground_height(&cells, location)
-            .expect("NukeStrike ground query requires a supported native slope");
-        // 6E3479..6E3495 tests only structural bit100; camera/Action42's
-        // bit100/400 bridge admission is a different native call site.
-        if cells.flags(cells.lookup(cell)) & 0x100 != 0 {
-            location.z = location.z.wrapping_add(BRIDGE_DECK_HEIGHT_LEPTONS);
-        }
         let Some(weapon) = rules.weapon("NukePayload") else {
             return false;
         };
@@ -77,16 +133,7 @@ impl Simulation {
         // 6E34D3's Map565730 looks up world XY again. Preserve truncation
         // and the retained Dummy rather than assuming the packed waypoint
         // is always the CellClass that becomes the Bullet's target.
-        let target = match cells.lookup_world(location.x, location.y) {
-            NativeCellIdentity::Real(index) => {
-                let (x, y) = cells.coord(NativeCellIdentity::Real(index));
-                ProjectileTarget::Cell {
-                    rx: x as u16,
-                    ry: y as u16,
-                }
-            }
-            NativeCellIdentity::Dummy => ProjectileTarget::DummyCell,
-        };
+        let target = self.direct_strike_target(location);
         let payload = ProjectilePayload::new(
             weapon.damage,
             self.interner.intern(&warhead.id),
@@ -134,6 +181,7 @@ impl Simulation {
         );
         if let Some(bullet) = FiredBullet::launched(
             self,
+            rules,
             native_id,
             RAD_NO_ATTACKER,
             target,
@@ -146,5 +194,47 @@ impl Simulation {
         }
         // 6E35D1 returns true independently of Fire's Boolean result.
         true
+    }
+
+    /// Shared coordinate setup in 95's6E3446..6E3495 and 96's6E3917..6E3975.
+    /// Ground578080 and packed lookup5657A0 remain separate, in that order.
+    /// These callers test structural bit100 alone (camera uses100/400).
+    fn direct_strike_coord(&self, cell: (i16, i16)) -> Option<DriveCoord> {
+        let cells = NativeCellQuery::canonical(self.resolved_terrain.as_ref()?);
+        let centre = cell_center(
+            CellCoordinate {
+                x: i32::from(cell.0),
+                y: i32::from(cell.1),
+            },
+            0,
+        );
+        let mut location = DriveCoord {
+            x: centre.x,
+            y: centre.y,
+            z: 0,
+        };
+        location.z = query_ground_height(&cells, location)
+            .expect("direct strike ground query requires a supported native slope");
+        if cells.flags(cells.lookup(cell)) & 0x100 != 0 {
+            location.z = location.z.wrapping_add(BRIDGE_DECK_HEIGHT_LEPTONS);
+        }
+        Some(location)
+    }
+
+    /// Both callers re-query Map565730 with the world XY after Weapon lookup;
+    /// signed division, aliases and retained Dummy belong to NativeCellQuery.
+    fn direct_strike_target(&self, location: DriveCoord) -> ProjectileTarget {
+        let cells =
+            NativeCellQuery::canonical(self.resolved_terrain.as_ref().expect("strike terrain"));
+        match cells.lookup_world(location.x, location.y) {
+            NativeCellIdentity::Real(index) => {
+                let (x, y) = cells.coord(NativeCellIdentity::Real(index));
+                ProjectileTarget::Cell {
+                    rx: x as u16,
+                    ry: y as u16,
+                }
+            }
+            NativeCellIdentity::Dummy => ProjectileTarget::DummyCell,
+        }
     }
 }

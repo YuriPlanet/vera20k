@@ -60,6 +60,144 @@ fn rules(extra: &str) -> RuleSet {
     rules
 }
 
+/// Execute1096E3769..6E37DA uses ABD490[0..9], not Launch's B0C038
+/// ordering, and never selects +E8 or skips +27C. Alias input proves its
+/// Cell GetCoords uses the receiver's canonical coordinate before +5.
+#[test]
+fn waypoint_curtain_uses_ground_spread_order_including_warped_foot() {
+    for waypoint_cell in [(40, 40), (552, 39)] {
+        let (rules, mut sim, _) = world_with(rules(""), 64, &[((40, 40), 2)]);
+        let terrain = sim.resolved_terrain.as_mut().unwrap();
+        let index = terrain.index(40, 40).unwrap();
+        terrain.cells[index].bridge_facts.raw_flags = BRIDGE_FLAG_STRUCTURAL;
+        let offsets = [
+            (0, 0),
+            (1, -1),
+            (0, -1),
+            (-1, -1),
+            (-1, 0),
+            (1, 0),
+            (-1, 1),
+            (0, 1),
+            (1, 1),
+        ];
+        let mut ordered = Vec::new();
+        for &(dx, dy) in &offsets {
+            let centre = dx == 0 && dy == 0;
+            let id = place(
+                &mut sim,
+                &rules,
+                if centre { "CMIN" } else { "MTNK" },
+                ((40 + dx) as u16, (40 + dy) as u16),
+                if centre { 2 } else { 0 },
+                false,
+                centre,
+            );
+            ordered.push(id);
+        }
+        let bridge = place(&mut sim, &rules, "MTNK", (40, 40), 2, true, false);
+        sim.session
+            .install_waypoints(&std::collections::HashMap::from([(
+                1,
+                crate::map::waypoints::Waypoint {
+                    index: 1,
+                    rx: waypoint_cell.0,
+                    ry: waypoint_cell.1,
+                },
+            )]));
+        sim.sound_events.clear();
+        OBSERVED.set(Some(Vec::new()));
+        assert!(super::at_waypoint(
+            &mut sim,
+            &rules,
+            1,
+            None,
+            crate::sim::world::FrameEffects::default()
+        ));
+        let called: Vec<_> = OBSERVED
+            .take()
+            .unwrap()
+            .into_iter()
+            .filter_map(|event| match event {
+                Observed::Curtain(_, id) => Some(id),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(called, ordered);
+        for &id in &ordered {
+            assert_eq!(curtain(&sim, id).unwrap().1, 750);
+        }
+        assert!(curtain(&sim, bridge).is_none());
+        assert!(sim.entities().get(ordered[0]).unwrap().chrono_warp_latch());
+        let anim = sim.substrate.anims.iter().next().unwrap().1;
+        assert_eq!(
+            [anim.world_coord.x, anim.world_coord.y, anim.world_coord.z],
+            [10368, 10368, 213]
+        );
+        assert_eq!((anim.draw_flags, anim.z_adjust), (0x600, 0));
+        assert!(!sim.sound_events.iter().any(|event| matches!(
+            event,
+            SimSoundEvent::SuperWeaponLaunched { .. } | SimSoundEvent::RadarEvent { .. }
+        )));
+        let saved = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "Waypoint IC", 0);
+        let restored = crate::sim::snapshot::GameSnapshot::load(&saved)
+            .unwrap()
+            .sim;
+        for id in ordered {
+            assert_eq!(curtain(&restored, id), curtain(&sim, id));
+        }
+    }
+}
+
+#[test]
+fn waypoint_curtain_calls_existing_infantry_and_organic_receivers_with_null_house() {
+    let (rules, mut sim, _) = world_with(rules(""), 64, &[]);
+    let infantry = place(&mut sim, &rules, "E1", (40, 40), 0, false, false);
+    let organic = place(&mut sim, &rules, "DLPH", (41, 40), 0, false, false);
+    let building = place(&mut sim, &rules, "GAPILL", (39, 40), 0, false, false);
+    sim.session
+        .install_waypoints(&std::collections::HashMap::from([(
+            1,
+            crate::map::waypoints::Waypoint {
+                index: 1,
+                rx: 40,
+                ry: 40,
+            },
+        )]));
+    OBSERVED.set(Some(Vec::new()));
+    assert!(super::at_waypoint(
+        &mut sim,
+        &rules,
+        1,
+        None,
+        crate::sim::world::FrameEffects::default()
+    ));
+    let damage: Vec<_> = OBSERVED
+        .take()
+        .unwrap()
+        .into_iter()
+        .filter_map(|event| match event {
+            Observed::ReceiveDamage(event) => Some(event),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(damage.len(), 2);
+    for (event, id, strength, ignore_defenses) in [
+        (&damage[0], infantry, 125, true),
+        (&damage[1], organic, 200, false),
+    ] {
+        assert_eq!(event.target_id, id);
+        assert_eq!(event.damage, strength);
+        assert_eq!(event.attacker_id, RAD_NO_ATTACKER);
+        assert_eq!(event.source_house, None);
+        assert_eq!(event.receiver_flags.ignore_defenses, ignore_defenses);
+        let entity = sim.entities().get(id).unwrap();
+        assert!(entity.death.is_dying());
+        assert!(entity.invulnerability.is_none());
+    }
+    assert_eq!(curtain(&sim, building).unwrap().1, 750);
+}
+
 fn oracle() -> &'static Value {
     crate::test_fixture::json("tools/superweapon_oracle.json")
 }

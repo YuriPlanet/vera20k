@@ -41,9 +41,9 @@
 //!   the local player's multiplayer defeat; VERA always plays it.
 //! - A null `IronCurtainInvokeAnim=` hands AnimClass a null type natively;
 //!   VERA constructs nothing. Retail sets `IRONBLST`.
-//! - The trigger action IronCurtainAtWP (`TActionClass @ 0x006E36E0`) is not
-//!   ported. Trigger: a map trigger with that action. Effect: no anim and no
-//!   curtain at the waypoint.
+//! TAction109 (`0x006E36E0`) shares the receiver overrides below, but its
+//! ground-only cell-spread walk, null house and unraised invoke animation
+//! differ from SuperClass::Launch; see [`at_waypoint`].
 //!
 //! Ledger:
 //! - Scenario draws: the invoke anim constructor's own, and those of the
@@ -68,6 +68,7 @@ use crate::rules::ruleset::RuleSet;
 #[cfg(any(test, feature = "test-support"))]
 use crate::sim::combat::EntityDamageEvent;
 use crate::sim::intern::InternedId;
+use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::radar::{RadarEventRequest, RadarEventType};
 use crate::sim::superweapon::cell_grid::{live_successor, native_cells_3x3, selected_cell_list};
 use crate::sim::superweapon::invulnerability::{InvulnKind, apply_invulnerability};
@@ -156,36 +157,15 @@ pub(crate) fn launch(
             {
                 #[cfg(any(test, feature = "test-support"))]
                 observe(Observed::Curtain((x, y), id));
-                let duration = rules.general.iron_curtain_duration;
-                match category {
-                    EntityCategory::Infantry => {
-                        receive_strength_as_c4(
-                            sim,
-                            rules,
-                            overlay_registry,
-                            id,
-                            Some(owner),
-                            true,
-                            frame_effects,
-                        );
-                    }
-                    EntityCategory::Unit | EntityCategory::Aircraft => {
-                        foot_iron_curtain(
-                            sim,
-                            rules,
-                            overlay_registry,
-                            id,
-                            duration,
-                            frame_effects,
-                        );
-                    }
-                    _ => {
-                        let frame = sim.session.binary_frame;
-                        if let Some(entity) = sim.substrate.entities.get_mut(id) {
-                            apply_invulnerability(entity, frame, duration, InvulnKind::IronCurtain);
-                        }
-                    }
-                }
+                curtain_object(
+                    sim,
+                    rules,
+                    overlay_registry,
+                    id,
+                    category,
+                    Some(owner),
+                    frame_effects,
+                );
                 curtained += 1;
             }
             next = live_successor(sim, id, (rx, ry), layer);
@@ -200,6 +180,110 @@ pub(crate) fn launch(
         curtained
     );
     true
+}
+
+/// Execute109 -> IronCurtainAtWP6E36E0..6E37E4 (Steam3e81a617..08600).
+/// GetWaypoint68BCC0, Cell486840 GetCoords +5, then the first nine entries
+/// of CellSpread ABD490 (count7ED3D4). Unlike the Super, it reads only +E4,
+/// passes (duration, NULL, 0), and does not test a Foot's +27C warp latch.
+/// Each +30 successor and Rules+FE8 duration is read after prior callbacks.
+/// No Super admission/charge/EVA/radar event and no action-value/House use.
+/// RNG, timers and detach calls remain in the shared anim/receiver owners.
+pub(crate) fn at_waypoint(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    waypoint: i32,
+    overlay_registry: Option<&OverlayTypeRegistry>,
+    frame_effects: FrameEffects<'_>,
+) -> bool {
+    let Some(cell) = sim.session.waypoint_cell(waypoint) else {
+        return false;
+    };
+    if sim.resolved_terrain.is_none() {
+        return false;
+    }
+    let coord = crate::sim::cell_rect::get_cellclass_fallback(
+        sim.resolved_terrain.as_ref(),
+        i32::from(cell.0),
+        i32::from(cell.1),
+    )
+    .center_coordinate()
+    .expect("IronCurtain waypoint requires a supported Cell slope");
+    super::spawn_super_anim(
+        sim,
+        rules,
+        &rules.general.iron_curtain_invoke_anim,
+        [coord.x, coord.y, coord.z.wrapping_add(5)],
+    );
+    for &(dx, dy) in crate::sim::combat::cell_spread::sweep(1) {
+        let (x, y) = (cell.0.wrapping_add(dx), cell.1.wrapping_add(dy));
+        let crate::sim::cell_rect::CellRef::Real(real) =
+            crate::sim::cell_rect::get_cellclass_fallback(
+                sim.resolved_terrain.as_ref(),
+                i32::from(x),
+                i32::from(y),
+            )
+        else {
+            continue;
+        };
+        let cell = (real.rx, real.ry);
+        let layer = MovementLayer::Ground;
+        let mut next = sim
+            .substrate
+            .occupancy
+            .get(cell.0, cell.1)
+            .and_then(|cell| cell.first_on_layer(layer));
+        while let Some(id) = next {
+            if let Some(category) = sim
+                .substrate
+                .entities
+                .get(id)
+                .map(|entity| entity.category())
+            {
+                #[cfg(any(test, feature = "test-support"))]
+                observe(Observed::Curtain((x, y), id));
+                curtain_object(
+                    sim,
+                    rules,
+                    overlay_registry,
+                    id,
+                    category,
+                    None,
+                    frame_effects,
+                );
+            }
+            next = live_successor(sim, id, cell, layer);
+        }
+    }
+    true
+}
+
+/// One dispatch of ObjectClass vt+154. Both Super6CCFF8 and Action6E37C9
+/// enter the same Infantry522600 / Foot4DEAE0 / Building457C90 overrides.
+fn curtain_object(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    overlay_registry: Option<&OverlayTypeRegistry>,
+    id: u64,
+    category: EntityCategory,
+    house: Option<InternedId>,
+    frame_effects: FrameEffects<'_>,
+) {
+    let duration = rules.general.iron_curtain_duration;
+    match category {
+        EntityCategory::Infantry => {
+            receive_strength_as_c4(sim, rules, overlay_registry, id, house, true, frame_effects)
+        }
+        EntityCategory::Unit | EntityCategory::Aircraft => {
+            foot_iron_curtain(sim, rules, overlay_registry, id, duration, frame_effects)
+        }
+        _ => {
+            let frame = sim.session.binary_frame;
+            if let Some(entity) = sim.substrate.entities.get_mut(id) {
+                apply_invulnerability(entity, frame, duration, InvulnKind::IronCurtain);
+            }
+        }
+    }
 }
 
 /// FootClass::IronCurtain `0x004DEAE0`, the Unit and Aircraft override
