@@ -921,6 +921,38 @@ fn a_captive_sent_to_a_bio_reactor_does_not_hunt() {
     assert_eq!(sim.scenario_rng.state(), replay.state());
 }
 
+#[test]
+fn ai_grinder_choice_preserves_the_seek_and_its_single_decision_draw() {
+    for (kind, has_grinder) in [("E1", true), ("HTNK", true), ("E1", false)] {
+        let mut rules = rules_from(&RULES.replace(
+            "[BIOR]\nStrength=900\nPassengers=5",
+            "[BIOR]\nStrength=900\nPassengers=5\nGrinding=yes",
+        ));
+        rules.mind_control.ai_capture = std::array::from_fn(|_| vec![0, 100]);
+        let mut sim = sim(39);
+        let controller = spawn(&mut sim, &rules, "YURI", "YuriCountry", 10, 10);
+        let grinder = has_grinder.then(|| spawn(&mut sim, &rules, "BIOR", "YuriCountry", 16, 10));
+        let captive = spawn(&mut sim, &rules, kind, "Americans", 12, 10);
+        let mut expected_rng = sim.scenario_rng.clone();
+        assert!(sim.capture_unit(controller, captive, &rules, None, FrameEffects::default()));
+        fate_draw(&mut expected_rng);
+        assert_eq!(sim.scenario_rng.state(), expected_rng.state());
+        assert_eq!(
+            queued_mission(&sim, captive),
+            Some(if has_grinder {
+                MissionType::Eaten
+            } else {
+                MissionType::Hunt
+            }),
+            "{kind}, grinder={has_grinder}"
+        );
+        assert_eq!(
+            sim.entities().get(captive).unwrap().navigation.nav_com(),
+            grinder.map(crate::sim::components::NavTargetRef::object)
+        );
+    }
+}
+
 /// Original CaptureManagerClass::Update `0x00471A50` after the original
 /// constructor, frame by frame (`tools/spatial_oracle/capture_overload_update.py`):
 /// which frames check, each check's C4 damage, voice and five spark systems

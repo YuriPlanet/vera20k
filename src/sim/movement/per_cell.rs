@@ -190,6 +190,11 @@ impl Simulation {
             // 0x00739F21..0x00739F59 come first: a `PoweredUnit=` type whose
             // house has no powered center goes offline off a building.
             self.powered_unit_arrival(id, rules, effects);
+            //739F7D..73A234: Eaten consumes the unit before docking, boarding
+            //and the Foot sight/mission tail.
+            if self.foot_per_cell_eaten(id, rules, registry, effects) {
+                return;
+            }
             // The object-destination docking arm73A31F..A547 completes
             // Foot's tail and returns before the later factory clearance.
             if self.unit_dock_now(id, rules, registry, effects) {
@@ -250,12 +255,11 @@ impl Simulation {
         // before Ready/Commence. Evidence: shroud_frontier_moving.json.
         // RESIDUAL: native returns
         // before them from arms VERA runs elsewhere or not at all: the
-        // `Grinding=` and `UnitAbsorb=` entries, their failure
+        // `UnitAbsorb=` entry, its failure
         // tail (`0x0073A796`), and Guard's map exit (`0x0073AC0E..
         // 0x0073AC4F`). Trigger: a unit arriving to enter a building or
-        // to leave the map (VERA retains building entry adapters and has no
-        // grinder). Effect: VERA reveals one more footprint, at that cell,
-        // and its cells stay revealed.
+        // to leave the map (VERA retains building entry adapters). Effect:
+        // VERA reveals one more footprint at that cell, which stays revealed.
         if reason == PerCellReason::Arrival && self.per_cell_owner_alive(id) {
             self.refresh_object_sight(id, rules, 0);
             self.refresh_object_sight_border(id, UninitContext::new(rules, registry));
@@ -759,7 +763,7 @@ impl Simulation {
         }
         if reason == PerCellReason::Arrival
             && let Some(rules) = rules
-            && self.infantry_per_cell_eaten(id, rules, registry, effects)
+            && self.foot_per_cell_eaten(id, rules, registry, effects)
         {
             return Ok(false);
         }

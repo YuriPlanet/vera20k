@@ -122,10 +122,6 @@
 //! - `UnitClass::Receive_Radio` answers WANT_RIDE (`0x24`) with 0 while
 //!   warped (`0x0073745C..0x00737473`); the message is dormant in stock YR
 //!   and not represented.
-//! - A transport put through a Grinder loses its passengers through
-//!   RemoveGunner (`0x0073A0C8`/`0x0073A0DF`); VERA has no grinding. A dying
-//!   transport's pop (`0x00737FD4`) runs RemoveGunner through
-//!   `DepartureRoute::DeathEscape`.
 //! - The cursor readers of `+0x270` (What_Action: Techno `0x006FFF07`,
 //!   `0x007005CD`, `0x00700731`; Infantry `0x0051E59B`; Unit `0x00740165`,
 //!   `0x007402CA`) belong to the app; the sim accepts an Attack order on a

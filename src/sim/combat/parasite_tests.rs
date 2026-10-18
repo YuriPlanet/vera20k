@@ -58,9 +58,13 @@ Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\
 Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n";
 
 fn rules() -> RuleSet {
+    rules_with_ini(&IniFile::from_str(RULES))
+}
+
+fn rules_with_ini(ini: &IniFile) -> RuleSet {
     // Retail `[DRON] PrimaryFireFLH=`: a jump from ground height would
     // detonate on its first AI (`0x00466DB1`, old height <= 0).
-    let mut rules = RuleSet::from_ini(&IniFile::from_str(RULES)).expect("parasite fixture rules");
+    let mut rules = RuleSet::from_ini(ini).expect("parasite fixture rules");
     rules.replace_art_registry_for_test(crate::rules::art_data::ArtRegistry::from_ini(
         &IniFile::from_str("[DRON]\nPrimaryFireFLH=0,0,30\n"),
     ));
@@ -1207,4 +1211,73 @@ fn naval_owner_water_gate_matches_original_can_infect() {
             "{name}"
         );
     }
+}
+
+#[test]
+fn grinder_arrival_refunds_the_infesting_drone_before_forced_release() {
+    use crate::sim::components::NavTargetRef;
+    use crate::sim::mission::{MissionId, MissionType};
+    use crate::sim::movement::PerCellReason;
+    use crate::sim::movement::locomotor::MovementLayer;
+    use crate::sim::world::FrameEffects;
+
+    let input = format!(
+        "[Countries]\n0=Russians\n1=Americans\n{}",
+        RULES
+            .replace("[DRON]\n", "[DRON]\nSoylent=200\n")
+            .replace("[MTNK]\n", "[MTNK]\nSoylent=300\n")
+    );
+    let rules = rules_with_ini(&IniFile::from_str(&input));
+    let mut arena = Arena::new(&rules);
+    let drone = arena.spawn(&rules, "DRON", "Russians", (10, 10));
+    let tank = arena.spawn(&rules, "MTNK", "Americans", (11, 10));
+    arena.infect(&rules, drone, tank);
+    let building = arena.spawn(&rules, "YARD", "Americans", (18, 10));
+    let (x, y, owner) = {
+        let actor = arena.sim.entities().get(tank).unwrap();
+        (actor.position.rx(), actor.position.ry(), actor.owner())
+    };
+    arena.sim.substrate.occupancy.add(
+        x,
+        y,
+        building,
+        MovementLayer::Ground,
+        None,
+        crate::sim::occupancy::CellListInsertion::AppendBuilding,
+    );
+    let actor = arena.sim.substrate.entities.get_mut(tank).unwrap();
+    actor
+        .mission
+        .set_current_for_test(MissionId::from_known(MissionType::Eaten), 0);
+    actor
+        .navigation
+        .set_nav_com_for_test(Some(NavTargetRef::object(building)));
+    arena.sim.houses.insert(
+        owner,
+        crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10),
+    );
+    let russian = arena.sim.interner.get("Russians").unwrap();
+    arena.sim.houses.insert(
+        russian,
+        crate::sim::house_state::HouseState::new(russian, 1, None, false, 0, 10),
+    );
+    let before = arena.sim.houses[&owner].economy.credits();
+    arena
+        .sim
+        .per_cell_process(
+            tank,
+            PerCellReason::Arrival,
+            Some(&rules),
+            None,
+            FrameEffects::default(),
+        )
+        .unwrap();
+    // Unit73A0A5 refunds the tank300, then73A13E refunds the drone200.
+    assert_eq!(arena.sim.houses[&owner].economy.credits(), before + 500);
+    assert!(arena.gone(tank));
+    assert!(
+        arena.gone(drone),
+        "suppression50 precedes ExitUnit's nonnaval arm"
+    );
+    assert_eq!(arena.eater_of(tank), None);
 }

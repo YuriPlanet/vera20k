@@ -23,7 +23,8 @@
 //! Forced releases ported: Sonic hits, third-party damage suppression and
 //! heals (FootClass::ReceiveDamage `0x004D7330`), repair-depot steps (Radio
 //! 0x1C `0x006F4D70`), Iron Curtain (FootClass::IronCurtain `0x004DEAE0`) and
-//! the Teleport warp step (`0x007195BF`). Victim restrictions ported: transport
+//! the Teleport warp step (`0x007195BF`), and Grinder entry (`0x0073A13E`).
+//! Victim restrictions ported: transport
 //! loading, tank bunkers, DeploysInto, retaliation against the eater.
 //!
 //! Every release unlimbos the owner through the class Unlimbo
@@ -65,8 +66,6 @@
 //!   Miner's warp: 180 frames). Effect: such a released owner can be given a
 //!   new destination at once. Frequency: rare. Risk: movement timing only.
 //!   Owner: those locomotors' ports.
-//! - Grinder (UnitClass::PerCellProcess `0x0073A13E..0x0073A181`): credits the
-//!   eater's refund, then suppression 50 + ExitUnit. VERA has no grinding.
 //! - Sonic weapons may target an allied infected Foot (What_Action_OnObject
 //!   `0x00700377`); the Sonic hit already ejects any eater (`0x004D7345`), but
 //!   the order needs the cursor/command legality VERA does not port yet.

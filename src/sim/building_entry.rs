@@ -105,10 +105,10 @@
 //!   into its old house's bunker; what native ChangeOwner does to radio
 //!   contacts is unverified (the DOCKING arm's head, `0x0043C7E9..0x0043C882`,
 //!   has no house test).
-//! - Script60's grinder seek (vt+0x33C `0x004DFA70`) and Infantry's
-//!   Eaten arrival51973C..519948 use the shared navigation, refund, Tag,
-//!   sound, animation and UnInit owners below. Unit's separate grinder
-//!   arrival and DecideUnitFate's choice2 remain unintegrated.
+//!
+//! Script60 and CaptureManager share Foot's grinder seek (4DFA70).
+//! Infantry51973C..519948 and Unit739F7D..73A234 share the Eaten arrival
+//! transaction below; Unit additionally consumes cargo and releases parasites.
 
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
@@ -265,11 +265,12 @@ impl Simulation {
         true
     }
 
-    /// Infantry PerCell51973C..519948, before the ordinary Capture arm.
+    /// Infantry PerCell51973C..519948 / Unit739F7D..73A234, before other
+    /// building-entry arms. Unit additionally refunds cargo and its parasite.
     /// Effective Eaten and the first ground Building matching NavCom OR
     /// TarCom admit this transaction, even if its type is not Grinding.
     /// Original Steam gamemd SHA2563e81a617..08600, instruction-level reading.
-    pub(crate) fn infantry_per_cell_eaten(
+    pub(crate) fn foot_per_cell_eaten(
         &mut self,
         id: u64,
         rules: &RuleSet,
@@ -299,6 +300,7 @@ impl Simulation {
         if !nav_matches && foot.attack_target.target() != Some(TargetKind::Entity(building_id)) {
             return false;
         }
+        let unit = foot.category() == crate::map::entities::EntityCategory::Unit;
         let coordinate = object_get_coords(foot, self.resolved_terrain.as_ref());
         let entry_world = crate::sim::anim_class::AnimWorldCoord {
             x: coordinate.x,
@@ -328,16 +330,27 @@ impl Simulation {
                 effects.flush_sound(self, Some(rules));
             }
         }
-        //51986A reads the victim's refund for ITS owner;519874 credits the
-        //building's current owner. Neither health nor the grinder's costs enter.
-        if let Some(refund) = crate::sim::production::techno_refund(self, rules, id)
-            && let Some(owner) = self
+        // Infantry51986A / Unit73A0A5: the actor's refund comes first.
+        self.credit_grinder_refund(id, building_id, rules);
+        if unit {
+            //73A0BC..73A13C explicitly pops two cargo levels through Foot's
+            //RemoveFirstPassenger (including RemoveGunner), child before parent.
+            self.grind_cargo(id, building_id, true, rules, registry, effects);
+            //73A13E..73A18D credits the eater before suppression50 + ExitUnit.
+            if let Some(eater) = self
                 .substrate
                 .entities
-                .get(building_id)
-                .map(GameEntity::owner)
-        {
-            crate::sim::credit_income::add_credits(self, owner, refund);
+                .get(id)
+                .and_then(|v| v.parasite.eater())
+            {
+                self.credit_grinder_refund(eater, building_id, rules);
+                self.parasite_force_release(
+                    eater,
+                    crate::sim::combat::parasite::FORCED_RELEASE_SUPPRESSION_FRAMES,
+                    rules,
+                    effects,
+                );
+            }
         }
         self.dispatch_object_tag_event(id, 48, Some(id), None, context);
         if let Some(building) = self.substrate.entities.get(building_id)
@@ -374,6 +387,57 @@ impl Simulation {
         }
         self.uninit_with_context(id, context);
         true
+    }
+
+    /// Refund reads the victim's current house; income goes to the building's
+    /// current house (51986A..519874 /73A0A5..73A0B7). Re-read after callbacks.
+    fn credit_grinder_refund(&mut self, victim: u64, building: u64, rules: &RuleSet) {
+        if let Some(refund) = crate::sim::production::techno_refund(self, rules, victim)
+            && let Some(owner) = self.substrate.entities.get(building).map(GameEntity::owner)
+        {
+            crate::sim::credit_income::add_credits(self, owner, refund);
+        }
+    }
+
+    fn grind_cargo(
+        &mut self,
+        transport: u64,
+        building: u64,
+        include_nested: bool,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) {
+        use crate::sim::passenger::{DepartureRoute, depart_cargo_head};
+        let context =
+            crate::sim::world::UninitContext::new(Some(rules), registry).with_effects(effects);
+        while self
+            .substrate
+            .entities
+            .get(transport)
+            .and_then(|e| e.passenger_role.cargo())
+            .is_some_and(|cargo| !cargo.is_empty())
+        {
+            let removed = depart_cargo_head(
+                self,
+                rules,
+                registry,
+                transport,
+                DepartureRoute::Vehicle,
+                |sim, passenger| {
+                    if include_nested {
+                        sim.grind_cargo(passenger, building, false, rules, registry, effects);
+                    }
+                    sim.credit_grinder_refund(passenger, building, rules);
+                    sim.uninit_with_context(passenger, context);
+                    Ok(())
+                },
+                effects,
+            );
+            if removed.is_err() {
+                break;
+            }
+        }
     }
 
     /// Bio Reactor Unload's `IsHuman` gate (`House+0x1EC` at `0x0044DBE6`) and
