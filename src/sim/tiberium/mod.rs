@@ -597,22 +597,40 @@ pub fn reduce_tiberium(
         return ReduceTiberiumOutcome::none();
     }
 
-    let Some(view) = (match (
+    let (Some(grid), Some(registry), Some(types)) = (
         ctx.overlay_grid.as_deref(),
         ctx.overlay_registry,
         ctx.tiberium_types,
-    ) {
-        (Some(grid), Some(registry), Some(types)) => {
-            // A non-tiberium overlay is an invalid reduction target.
-            let Some(view) = tiberium_cell_view(grid, registry, types, cell) else {
-                return ReduceTiberiumOutcome::none();
-            };
-            Some(view)
-        }
-        _ => None,
-    }) else {
+    ) else {
         // Cell overlay identity plus raw OverlayData is the only authority; an
         // incompletely initialized caller reduces nothing.
+        return ReduceTiberiumOutcome::none();
+    };
+
+    // The caller's native Map lookup selects a CellClass, including packed
+    // coordinate aliases. Resolve that identity before reading OverlayGrid;
+    // an unallocated rectangular record is not the shared fallback object's
+    // overlay. Legacy fixtures without terrain retain their grid-only input.
+    let cell = if let Some(terrain) = ctx.resolved_terrain.as_deref() {
+        let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+        let target = cells.lookup((cell.0 as i16, cell.1 as i16));
+        if target == NativeCellIdentity::Dummy {
+            // RESIDUAL: a mineral-bearing shared Dummy needs Cell480A80's
+            // separate overlay/recalc/live-coordinate response. This owner is
+            // grid-backed; keep that Dummy resource unchanged rather than
+            // reducing an unrelated rectangular overlay record. Trigger:
+            // reduction of an unallocated coordinate while Dummy holds ore;
+            // effect/risk: that ore and its downstream queue effects remain.
+            return ReduceTiberiumOutcome::none();
+        }
+        let actual = cells.coord(target);
+        (actual.0 as u16, actual.1 as u16)
+    } else {
+        cell
+    };
+
+    let Some(view) = tiberium_cell_view(grid, registry, types, cell) else {
+        // A non-tiberium overlay is an invalid reduction target.
         return ReduceTiberiumOutcome::none();
     };
     let current = view.overlay_data;

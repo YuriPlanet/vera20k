@@ -608,6 +608,361 @@ fn a_warped_factory_keeps_old_infantry_cameos_but_cannot_add_a_new_one() {
 }
 
 #[test]
+fn a_house_recheck_stays_pending_until_the_projection_runs_it() {
+    // House4F92E2 is event-driven, so the strip pass it requested must run in
+    // the frame that produced it rather than wait for the next player input.
+    let mut projection = SidebarProjectionState::default();
+    let owner = InternedId::default();
+    assert!(!projection.cameo_recheck_pending());
+    projection.apply_lifecycle_output(&LifecycleOutput::SidebarRecalculated { owner }, Some(owner));
+    assert!(projection.cameo_recheck_pending());
+    projection.reconcile_cameos(owner, &[], 3, &[]);
+    assert!(!projection.cameo_recheck_pending());
+}
+
+#[test]
+fn building_production_darkens_other_cameos_until_cancelled() {
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+        .map(|retail| retail.rules)
+    else {
+        return;
+    };
+    let (mut sim, owner) = world(&rules, &["GACNST", "GAPOWR", "GAPILE"]);
+    let options = all_build_options_for_owner(&sim, &rules, "Americans");
+    let candidates = cameo_candidates(&sim, &rules, None, owner, &options, &[], &[]);
+    let mut projection = SidebarProjectionState::default();
+    projection.reconcile_fixture(owner, &candidates, 12);
+    let drawn = view(&sim, &options, &projection, SidebarTab::Building, 1200.0);
+    projection.replace_view(Some(drawn));
+    assert!(crate::sim::production::enqueue_by_type(
+        &mut sim,
+        &rules,
+        "Americans",
+        "GAPOWR",
+        crate::sim::world::FrameEffects::default(),
+        false,
+    ));
+    projection.reconcile_factory_links(&sim, owner);
+    projection.refresh_cameo_availability(&sim, &rules, owner);
+    let items = &projection.view().unwrap().items;
+    assert!(
+        items
+            .iter()
+            .find(|item| item.type_id == "GAPOWR")
+            .unwrap()
+            .enabled
+    );
+    assert!(
+        !items
+            .iter()
+            .find(|item| item.type_id == "GAPILE")
+            .unwrap()
+            .enabled,
+        "StripDraw6A95C8..6A95E9 sees an active request anywhere in the strip"
+    );
+    assert!(crate::sim::production::suspend_production(
+        &mut sim,
+        "Americans",
+        crate::sim::production::ProductionCategory::Building,
+    ));
+    projection.refresh_cameo_availability(&sim, &rules, owner);
+    assert!(
+        projection
+            .view()
+            .unwrap()
+            .items
+            .iter()
+            .find(|item| item.type_id == "GAPOWR")
+            .unwrap()
+            .is_on_hold
+    );
+    assert!(
+        !projection
+            .view()
+            .unwrap()
+            .items
+            .iter()
+            .find(|item| item.type_id == "GAPILE")
+            .unwrap()
+            .enabled
+    );
+    assert!(crate::sim::production::enqueue_by_type(
+        &mut sim,
+        &rules,
+        "Americans",
+        "GAPOWR",
+        crate::sim::world::FrameEffects::default(),
+        false,
+    ));
+    for _ in 0..4096 {
+        let frame = sim
+            .advance_app_frame(
+                &[],
+                Some(&rules),
+                None,
+                67,
+                crate::sim::world::TickLane::Ordinary,
+                None,
+                crate::sim::world::FrameEffects::default(),
+            )
+            .unwrap();
+        for output in &frame.lifecycle_outputs {
+            projection.apply_lifecycle_output(output, Some(owner));
+        }
+        projection.refresh_cameo_availability(&sim, &rules, owner);
+        if projection
+            .view()
+            .unwrap()
+            .items
+            .iter()
+            .any(|item| item.type_id == "GAPOWR" && item.is_ready)
+        {
+            break;
+        }
+    }
+    let items = &projection.view().unwrap().items;
+    let power = items.iter().find(|item| item.type_id == "GAPOWR").unwrap();
+    assert!(power.enabled && power.is_ready && power.progress == 1.0);
+    assert!(
+        !items
+            .iter()
+            .find(|item| item.type_id == "GAPILE")
+            .unwrap()
+            .enabled,
+        "ready-to-place still owns the strip"
+    );
+    assert!(crate::sim::production::cancel_production_for_owner(
+        &mut sim,
+        &rules,
+        "Americans",
+        crate::sim::production::ProductionCancellation::Type {
+            type_id: "GAPOWR",
+            naval: false
+        },
+        false,
+        crate::sim::world::FrameEffects::default(),
+    ));
+    projection.reconcile_factory_links(&sim, owner);
+    projection.refresh_cameo_availability(&sim, &rules, owner);
+    assert!(
+        projection
+            .view()
+            .unwrap()
+            .items
+            .iter()
+            .find(|item| item.type_id == "GAPILE")
+            .unwrap()
+            .enabled,
+        "cancellation releases the strip without another input"
+    );
+    let power = projection
+        .view()
+        .unwrap()
+        .items
+        .iter()
+        .find(|item| item.type_id == "GAPOWR")
+        .unwrap();
+    assert!(!power.is_ready && !power.is_on_hold && power.progress == 0.0);
+}
+
+#[test]
+fn busy_strip_draw_matches_native_pending_and_linked_controls() {
+    use crate::sim::command::{Command, CommandEnvelope};
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+        .map(|retail| retail.rules)
+    else {
+        return;
+    };
+    let native: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/sidebar_oracle/draw_availability.json",
+    ))
+    .unwrap();
+    for control in native["controls"].as_array().unwrap() {
+        let state = control["state"].as_str().unwrap();
+        // State3 is a synthetic draw control with no established writer;
+        // Ready has its own production lifecycle test above.
+        if !matches!(state, "idle" | "pending" | "pending_hold" | "building") {
+            continue;
+        }
+        let (mut sim, owner) = world(
+            &rules,
+            &[
+                "GACNST", "GAPOWR", "GAPILE", "GAREFN", "GAWEAP", "GAAIRC", "GATECH",
+            ],
+        );
+        let options = all_build_options_for_owner(&sim, &rules, "Americans");
+        let candidates = cameo_candidates(&sim, &rules, None, owner, &options, &[], &[]);
+        let mut projection = SidebarProjectionState::default();
+        projection.reconcile_fixture(owner, &candidates, 12);
+        let source = control["source"].as_str().unwrap();
+        if state == "idle" {
+            // A scripted future order must not lock today's strip. The
+            // scheduler admits the next ordinary frame, not every queued tick.
+            sim.queue_command(CommandEnvelope::new(
+                owner,
+                sim.session.tick + 100,
+                Command::QueueProduction {
+                    type_id: sim.interner.get(source).unwrap(),
+                },
+            ));
+            // A different player's due orders must not hold this local strip.
+            let foreign = sim.intern("Russians");
+            sim.queue_commands([
+                CommandEnvelope::new(
+                    foreign,
+                    sim.session.tick + 1,
+                    Command::QueueProduction {
+                        type_id: sim.interner.get(source).unwrap(),
+                    },
+                ),
+                CommandEnvelope::new(
+                    foreign,
+                    sim.session.tick + 1,
+                    Command::SuspendProduction {
+                        category: crate::sim::production::category_for_object(
+                            rules.object(source).unwrap(),
+                        ),
+                    },
+                ),
+            ]);
+        }
+        if matches!(state, "pending" | "pending_hold") {
+            let category =
+                crate::sim::production::category_for_object(rules.object(source).unwrap());
+            let type_id = sim.interner.get(source).unwrap();
+            let click = crate::app::input::sidebar_eva::cameo_click(
+                &[],
+                category,
+                Some(type_id),
+                None,
+                projection.cameo_request(type_id),
+                crate::app::input::sidebar_eva::CameoPress::Left,
+                false,
+            );
+            projection.record_cameo_click(&sim, &rules, owner, type_id, click);
+            if state == "pending_hold" {
+                let click = crate::app::input::sidebar_eva::cameo_click(
+                    &[],
+                    category,
+                    Some(type_id),
+                    None,
+                    projection.cameo_request(type_id),
+                    crate::app::input::sidebar_eva::CameoPress::Right { shift: false },
+                    false,
+                );
+                projection.record_cameo_click(&sim, &rules, owner, type_id, click);
+            }
+        } else if state == "building" {
+            assert!(
+                crate::sim::production::enqueue_by_type(
+                    &mut sim,
+                    &rules,
+                    "Americans",
+                    source,
+                    crate::sim::world::FrameEffects::default(),
+                    false,
+                ),
+                "{control}"
+            );
+        }
+        projection.reconcile_factory_links(&sim, owner);
+        let tab = SidebarTab::all()[control["tab"].as_u64().unwrap() as usize];
+        let drawn = view(&sim, &options, &projection, tab, 2400.0);
+        projection.replace_view(Some(drawn));
+        projection.refresh_cameo_availability(&sim, &rules, owner);
+        for expected in control["entries"].as_array().unwrap() {
+            let name = expected["type"].as_str().unwrap();
+            let item = projection
+                .view()
+                .unwrap()
+                .items
+                .iter()
+                .find(|item| item.type_id == name)
+                .unwrap();
+            assert_eq!(
+                !item.enabled,
+                expected["unavailable"].as_bool().unwrap(),
+                "{control}: {name}"
+            );
+        }
+        // Building and defense are different retained strips.
+        if tab == SidebarTab::Building && state != "idle" {
+            let drawn = view(&sim, &options, &projection, SidebarTab::Defense, 2400.0);
+            projection.replace_view(Some(drawn));
+            projection.refresh_cameo_availability(&sim, &rules, owner);
+            assert!(
+                projection
+                    .view()
+                    .unwrap()
+                    .items
+                    .iter()
+                    .find(|item| item.type_id == "GAPILL")
+                    .unwrap()
+                    .enabled
+            );
+        }
+    }
+}
+
+#[test]
+fn a_retained_cameo_darkens_on_the_frame_its_restriction_appears() {
+    // `StripClass::Draw @ 0x006A9540` re-asks `FindFactory(1, 1, 1)`,
+    // `CanBuild(type, 0, 0)` and `CheckBuildLimit` for every entry it draws.
+    // A BuildLimit reached between two House passes must darken the retained
+    // cameo without another projection rebuild or an unrelated input.
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art() else {
+        return;
+    };
+    let (mut sim, owner) = world(
+        &rules,
+        &[
+            "GACNST", "GAPOWR", "GAPILE", "GAREFN", "GAWEAP", "GAAIRC", "GATECH",
+        ],
+    );
+    let options = all_build_options_for_owner(&sim, &rules, "Americans");
+    let candidates = cameo_candidates(&sim, &rules, None, owner, &options, &[], &[]);
+    let mut projection = SidebarProjectionState::default();
+    projection.reconcile_fixture(owner, &candidates, 12);
+    // Retail `BuildLimit=1` types on both factory kinds: the Chronosphere on
+    // the Buildings factory and Tanya on the house's Infantry factory.
+    let drawn_state = |projection: &SidebarProjectionState, type_id: &str| {
+        let item = projection
+            .view()
+            .expect("reviewed projection")
+            .items
+            .iter()
+            .find(|item| item.type_id == type_id)
+            .unwrap_or_else(|| panic!("the base admits the {type_id} cameo"));
+        (item.enabled, item.at_build_limit)
+    };
+    let drawn = view(&sim, &options, &projection, SidebarTab::Defense, 2400.0);
+    projection.replace_view(Some(drawn));
+    assert_eq!(drawn_state(&projection, "GACSPH"), (true, false));
+
+    // The house builds the one Chronosphere its `BuildLimit=1` allows.
+    sim.spawn_object("GACSPH", "Americans", 30, 4, 0, &rules)
+        .expect("place the Chronosphere");
+    projection.refresh_cameo_availability(&sim, &rules, owner);
+    assert_eq!(
+        drawn_state(&projection, "GACSPH"),
+        (false, true),
+        "the retained cameo draws the unavailable overlay and gates the press"
+    );
+
+    let drawn = view(&sim, &options, &projection, SidebarTab::Infantry, 2400.0);
+    projection.replace_view(Some(drawn));
+    assert_eq!(drawn_state(&projection, "TANY"), (true, false));
+    sim.spawn_object("TANY", "Americans", 4, 20, 0, &rules)
+        .expect("place Tanya");
+    projection.refresh_cameo_availability(&sim, &rules, owner);
+    assert_eq!(
+        drawn_state(&projection, "TANY"),
+        (false, true),
+        "the same Draw queries cover a house factory's retained infantry cameo"
+    );
+}
+
+#[test]
 fn retail_rules_admission_and_csf_names_keep_the_same_identity_in_every_view() {
     // Extracted RULESMD/ARTMD are an explicit base-rules fixture, not a claim
     // about all mode/map layers. The separate native replay supplies order.

@@ -18,8 +18,14 @@ impl Simulation {
         let cell = self.session.waypoint_cell(index)?;
         let terrain = self.resolved_terrain.as_ref()?;
         let cells = NativeCellQuery::canonical(terrain);
-        let x = i32::from(cell.0).wrapping_shl(8).wrapping_add(128);
-        let y = i32::from(cell.1).wrapping_shl(8).wrapping_add(128);
+        let center = crate::sim::cell_kernel::cell_center(
+            crate::sim::cell_kernel::CellCoordinate {
+                x: i32::from(cell.0),
+                y: i32::from(cell.1),
+            },
+            0,
+        );
+        let (x, y) = (center.x, center.y);
         let mut z = query_ground_height(&cells, DriveCoord { x, y, z: 0 })
             .expect("authored camera ground query requires a valid native slope");
         let first = cells.lookup(cell);

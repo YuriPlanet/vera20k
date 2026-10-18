@@ -6165,6 +6165,17 @@ impl RuleSet {
         &self.particle_system_types[id.0 as usize]
     }
 
+    /// Resolve an ordinal in the native ParticleSystemType registry A83D6C.
+    pub(crate) fn particle_system_type_id_by_index(
+        &self,
+        index: i32,
+    ) -> Option<ParticleSystemTypeId> {
+        let index = usize::try_from(index).ok()?;
+        self.particle_system_types
+            .get(index)
+            .map(|_| ParticleSystemTypeId(index as u32))
+    }
+
     /// Resolve a particle type name to its ID (case-insensitive).
     #[cfg(any(test, feature = "test-support"))]
     pub fn p_type_id_by_name(&self, name: &str) -> Option<ParticleTypeId> {

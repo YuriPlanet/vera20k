@@ -79,6 +79,22 @@ pub struct OreGrowthConfig {
 }
 
 impl OreGrowthConfig {
+    /// Execute86 at6DDBB4 stores Action+90's low byte at Scenario+34A6.
+    /// CanGrow483620 and drivers722C40/7221B0 test that byte for nonzero.
+    /// This is independent of the SpecialFlags growth/spread bits.
+    pub(crate) fn set_enabled_from_trigger(&mut self, value: i32) {
+        self.grows = value as u8 != 0;
+    }
+
+    /// The gate is mutable through86, so it must distinguish worlds before
+    /// their queues next run. Preserve the unloaded, disabled legacy fold.
+    pub(crate) fn hash_enabled(&self, hasher: &mut impl Hasher) {
+        if self.grows {
+            b"ore-growth-enabled-v1".hash(hasher);
+            self.grows.hash(hasher);
+        }
+    }
+
     /// Resolve the native gates for this session.
     ///
     /// `[Basic] TiberiumGrowthEnabled` is read in every game mode. The

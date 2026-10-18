@@ -1673,6 +1673,13 @@ impl Simulation {
                     <= 0x500
             }
             14 => self.session.scenario_timer_elapsed(),
+            // HasOccurred45@71EAE7 /46@71EB06 read Scenario+352C,
+            // not normal/target ambient: signed inclusive comparisons with
+            // Event+34. Both return directly, without House/raised-kind or
+            // A8ED6B admission, persistence, timer, RNG or detach writes.
+            // Original Steam gamemd3e81a617..08600, instruction reading.
+            45 => self.session.lighting.current_ambient <= condition.value,
+            46 => self.session.lighting.current_ambient >= condition.value,
             17 => {
                 // Steam3e81a617..08600:71EE82 takes the incoming House;
                 // 71EF3F..71EF89 reads tracked+2F0, then its ordered+68 list.
@@ -3688,6 +3695,40 @@ impl Simulation {
                 self.sound_events.push(SimSoundEvent::TriggerEva { index });
                 frame_effects.flush_sound(self, rules);
             }
+            59 => {
+                let (Some(rules), Some(registry), Some(waypoint)) =
+                    (rules, overlay_registry, value)
+                else {
+                    return false;
+                };
+                return self.trigger_reduce_tiberium_at_waypoint(waypoint, rules, registry);
+            }
+            86 => {
+                let Some(value) = value else {
+                    return false;
+                };
+                self.production
+                    .ore_growth_config
+                    .set_enabled_from_trigger(value);
+            }
+            88 => {
+                let (Some(rules), Some(index), Some(waypoint)) =
+                    (rules, value, action.waypoint_index)
+                else {
+                    return false;
+                };
+                return self.trigger_create_particle_system_at_waypoint(
+                    index,
+                    waypoint as i32,
+                    rules,
+                );
+            }
+            89 => {
+                let Some(waypoint) = action.waypoint_index else {
+                    return false;
+                };
+                return self.trigger_mark_particle_systems_done_at_waypoint(waypoint as i32);
+            }
             41 => {
                 let (Some(rules), Some(index), Some(waypoint)) =
                     (rules, value, action.waypoint_index)
@@ -3924,16 +3965,18 @@ impl Simulation {
                     }
                 }
             }
-            135 | 136 => {
-                // Execute1356E43E0/1366E4440 use Spring's incoming House,
-                // ignoring the action's scalar selector. Only135 reads+44;
-                // its packed-zero rejection preserves the previous target.
-                // Identity/controls: tools/spatial_oracle/
-                // trigger_superweapon_state.meta.json.
+            135 | 136 | 140 | 141 => {
+                // Execute1356E43E0/1366E4440 and1406E4460/1416E44C0 use
+                // Spring's incoming House, ignoring scalar+90. Setters135/140
+                // read waypoint+44 and reject the empty cell; clears ignore it.
+                // 140 calls House50DA20: cell+54F4 and current frame+54FC.
+                // 141 calls50DA50: clear cell and restore frame-100.
+                // 135/136 controls: trigger_superweapon_state.meta.json.
+                // 140/141: original Steam gamemd3e81a617..08600 instructions.
                 let Some(owner) = context.incoming_house else {
                     return false;
                 };
-                let preferred = if action.kind == 135 {
+                let target = if matches!(action.kind, 135 | 140) {
                     let Some(cell) = action
                         .waypoint_index
                         .and_then(|index| self.session.waypoint_cell(index as i32))
@@ -3948,10 +3991,16 @@ impl Simulation {
                 let Some(house) = self.houses.get_mut(&owner) else {
                     return false;
                 };
-                if let Some(cell) = preferred {
-                    house.set_preferred_super_weapon_target(cell);
-                } else {
+                if let Some(cell) = target {
+                    if action.kind == 135 {
+                        house.set_preferred_super_weapon_target(cell);
+                    } else {
+                        house.alert_super_weapon_defense(cell, self.session.binary_frame as i32);
+                    }
+                } else if action.kind == 136 {
                     house.clear_preferred_super_weapon_target();
+                } else {
+                    house.clear_super_weapon_defense();
                 }
             }
             90 => {
@@ -4112,6 +4161,10 @@ mod native_tests;
 mod superweapon_state_tests;
 
 #[cfg(test)]
+#[path = "trigger_runtime_defense_target_tests.rs"]
+mod defense_target_tests;
+
+#[cfg(test)]
 #[path = "trigger_runtime_type_tech_level_tests.rs"]
 mod type_tech_level_tests;
 
@@ -4164,8 +4217,20 @@ mod explosion_tests;
 mod movement_event_tests;
 
 #[cfg(test)]
+#[path = "trigger_runtime_ore_tests.rs"]
+mod ore_tests;
+
+#[cfg(test)]
+#[path = "trigger_runtime_particle_tests.rs"]
+mod particle_tests;
+
+#[cfg(test)]
 #[path = "trigger_runtime_map_lighting_tests.rs"]
 mod map_lighting_tests;
+
+#[cfg(test)]
+#[path = "trigger_runtime_ambient_event_tests.rs"]
+mod ambient_event_tests;
 
 #[cfg(test)]
 #[path = "trigger_runtime_nuke_tests.rs"]

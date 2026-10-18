@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "StripDraw whole-strip request scan and per-entry unavailable decisions, plus Select unlinked click request transitions and original PRODUCE/SUSPEND event construction, for four strips; no raster or production timing.",
+  "assumptions": [
+    "Reuse Sidebar VM, original typed RTTI tables, Compare/Insert/Add and original Factory IsComplete/GetStage getters. Supplied catalog and Factory+24/+58 fields are declared component inputs.",
+    "Request words at strip+68+slot*34 are explicit inputs. Select6AB80D/6AB587 write1 after PRODUCE; pending right-click6AB0C9 writes2; StripAbandon6ABBE7 clears0. The live Factory link alone is not the request word.",
+    "Original6A95A3..6A95EE scans every retained entry, including offscreen entries, for state1 or2. Original6A9761..6A99C3 makes the BuildingType-only gate and linked/pending overrides; none of these boolean outputs is calculated in Python.",
+    "Type BuildLimit=2147483647 and empty House counters isolate busy-strip availability; original CheckBuildLimit executes. No custom rules or whole-map closure claim."
+  ],
+  "substitutions": [
+    "Existing Sidebar FindFactory/CanBuild query priors return available/Yes for all types. Image virtual+98 returnsNULL; shape pointers/pixels are outside the selected range.",
+    "Select6AB0AC starts at the no-Factory right-click arm with retained slot/type locals supplied, stopping before the separate queued-copy arm6AB18D. Pending click histories also execute left6AB602 through request/redraw6AB825 or its rejected-request exit6AB95A, retaining the original House request flags between clicks; the cost/clock initialization tail is excluded. Original EventClass4C6970 and OutList append execute. Redraw4F42F0, GUI sound750920, existing EVA sink and WinMM timeGetTime are presentation/platform boundaries."
+  ],
+  "entry_points": {
+    "strip_draw": "0x006A9540",
+    "busy_scan": "0x006A95A3",
+    "busy_scan_end": "0x006A95EE",
+    "entry_draw": "0x006A9761",
+    "decision": "0x006A99C3",
+    "pending_right_click": "0x006AB0AC",
+    "pending_right_click_end": "0x006AB18D",
+    "pending_left_click": "0x006AB602",
+    "pending_left_request_end": "0x006AB825",
+    "event_ctor": "0x004C6970"
+  },
+  "replay_command": "python -m tools.sidebar_oracle.cameo_order --draw-availability",
+  "payload_sha256": "329ef2bdc156bf11b10501f20761352a6da7db7c578375fa1fb0fcd6fcbf33fa"
+}
