@@ -3604,6 +3604,24 @@ impl Simulation {
                 self.sound_events.push(SimSoundEvent::TriggerEva { index });
                 frame_effects.flush_sound(self, rules);
             }
+            88 => {
+                let (Some(rules), Some(index), Some(waypoint)) =
+                    (rules, value, action.waypoint_index)
+                else {
+                    return false;
+                };
+                return self.trigger_create_particle_system_at_waypoint(
+                    index,
+                    waypoint as i32,
+                    rules,
+                );
+            }
+            89 => {
+                let Some(waypoint) = action.waypoint_index else {
+                    return false;
+                };
+                return self.trigger_mark_particle_systems_done_at_waypoint(waypoint as i32);
+            }
             41 => {
                 let (Some(rules), Some(index), Some(waypoint)) =
                     (rules, value, action.waypoint_index)
@@ -4074,6 +4092,10 @@ mod lightning_tests;
 #[cfg(test)]
 #[path = "trigger_runtime_explosion_tests.rs"]
 mod explosion_tests;
+
+#[cfg(test)]
+#[path = "trigger_runtime_particle_tests.rs"]
+mod particle_tests;
 
 #[cfg(test)]
 #[path = "trigger_runtime_map_lighting_tests.rs"]
