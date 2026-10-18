@@ -2438,7 +2438,8 @@ impl Simulation {
         rules: Option<&RuleSet>,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
-    ) -> crate::sim::movement::air_movement::AirMovementTickStats {
+    ) -> Result<crate::sim::movement::air_movement::AirMovementTickStats, super::FrameAdvanceError>
+    {
         use crate::rules::locomotor_type::LocomotorKind;
         use crate::sim::movement::locomotor::MovementLayer;
 
@@ -2455,7 +2456,7 @@ impl Simulation {
                     })
             });
         if fly {
-            return self.fly_process(stable_id, rules, registry, effects);
+            return Ok(self.fly_process(stable_id, rules, registry, effects));
         }
         let jumpjet_layer_before = self
             .substrate
@@ -2470,17 +2471,17 @@ impl Simulation {
             .and_then(|_| self.entity_display_layer(stable_id, rules));
         // A cruising Jumpjet runs the native Update/State3 body
         // (`world::jumpjet_cruise`).
-        let stats = match self.tick_jumpjet_cruise_one(stable_id, rules, registry, effects) {
+        let stats = match self.tick_jumpjet_cruise_one(stable_id, rules, registry, effects)? {
             // State 5's impact notice UnInits the wreck, so `Process`'s layer
             // tail finds it dead (`0x0054B16C`); the object turn commits it.
-            Some(stats) if stats.impact => return stats,
+            Some(stats) if stats.impact => return Ok(stats),
             Some(stats) => stats,
             None => crate::sim::movement::air_movement::AirMovementTickStats::default(),
         };
         if let Some(before) = jumpjet_layer_before {
             self.complete_jumpjet_display_process(stable_id, before, rules);
         }
-        stats
+        Ok(stats)
     }
 
     /// Fly4CCB40 ->4CD2A0 after4CD600's movement/height Mark pair.

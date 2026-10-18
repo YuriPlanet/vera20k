@@ -1122,7 +1122,8 @@ mod tests {
             Some(&rules),
             None,
             crate::sim::world::FrameEffects::default(),
-        );
+        )
+        .unwrap();
         let e = sim.substrate.entities.get(1).unwrap();
         assert!(e.air_spatial_bucket().is_some());
         assert!(
@@ -1150,7 +1151,8 @@ mod tests {
                     Some(&rules),
                     None,
                     crate::sim::world::FrameEffects::default(),
-                );
+                )
+                .unwrap();
             }
             assert_eq!(sim.state_hash(), restored.state_hash(), "frame{frame}");
         }

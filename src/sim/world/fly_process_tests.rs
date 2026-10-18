@@ -498,7 +498,8 @@ fn fly_process_matches_native_frames() {
                     Some(&rules),
                     None,
                     crate::sim::world::FrameEffects::default(),
-                );
+                )
+                .unwrap();
             });
             if let Some(mismatch) = frame_mismatch(&sim, frame, expected, idle_calls) {
                 failures.push(format!("{name} frame {n}: {mismatch}"));
