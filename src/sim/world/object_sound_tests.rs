@@ -395,3 +395,186 @@ fn sound_actions_resolve_the_selected_cell_coordinate_for_packed_waypoint_aliase
                 if *coordinate==expected));
     }
 }
+
+/// Full original Execute98/IsWaypointValid/642740/Scenario RNG controls;
+///Voc750E20 is the declared output sink. Hashes cover complete native RNG state.
+#[test]
+fn waypoint_cue_random_sound_matches_original_selection_and_rng_without_terrain() {
+    let cases: &[(u64, &[(u32, u16, u16)], [i32; 3], &str, &str)] = &[
+        (
+            0,
+            &[(5, 12, 17)],
+            [3200, 4480, 0],
+            "d8df8547ba3a982ec559cb0e0094f4d307a0486faa263540841140debd754268",
+            "d8df8547ba3a982ec559cb0e0094f4d307a0486faa263540841140debd754268",
+        ),
+        (
+            0,
+            &[(0, 1, 2), (7, 20, 25), (701, 65534, 8)],
+            [-384, 2176, 0],
+            "d8df8547ba3a982ec559cb0e0094f4d307a0486faa263540841140debd754268",
+            "260edfa65df62897368d003460c3a41ea6185c13e6feacc6026dba11cdc687d4",
+        ),
+        (
+            0,
+            &[(0, 0, 0), (1, 0, 3), (701, 4, 0)],
+            [1152, 128, 0],
+            "d8df8547ba3a982ec559cb0e0094f4d307a0486faa263540841140debd754268",
+            "4cbcb8d3b563344b5bc504f509a97b4e7ccb869d2d5c5fa7b69261dd83c848c9",
+        ),
+        (
+            0,
+            &[],
+            [128, 128, 0],
+            "d8df8547ba3a982ec559cb0e0094f4d307a0486faa263540841140debd754268",
+            "4cbcb8d3b563344b5bc504f509a97b4e7ccb869d2d5c5fa7b69261dd83c848c9",
+        ),
+        (
+            1,
+            &[(5, 12, 17)],
+            [3200, 4480, 0],
+            "fe9ca09811e3e0e7e3fe06267ea3ed652674934d68f0fa7cf48e9d868bdad0db",
+            "fe9ca09811e3e0e7e3fe06267ea3ed652674934d68f0fa7cf48e9d868bdad0db",
+        ),
+        (
+            1,
+            &[(0, 1, 2), (7, 20, 25), (701, 65534, 8)],
+            [5248, 6528, 0],
+            "fe9ca09811e3e0e7e3fe06267ea3ed652674934d68f0fa7cf48e9d868bdad0db",
+            "dcb64bdf5580022dfdc2ba97609754a45b909f1fe2dc658eec4dc0ff92fef644",
+        ),
+        (
+            1,
+            &[(0, 0, 0), (1, 0, 3), (701, 4, 0)],
+            [1152, 128, 0],
+            "fe9ca09811e3e0e7e3fe06267ea3ed652674934d68f0fa7cf48e9d868bdad0db",
+            "dcb64bdf5580022dfdc2ba97609754a45b909f1fe2dc658eec4dc0ff92fef644",
+        ),
+        (
+            1,
+            &[],
+            [128, 128, 0],
+            "fe9ca09811e3e0e7e3fe06267ea3ed652674934d68f0fa7cf48e9d868bdad0db",
+            "dcb64bdf5580022dfdc2ba97609754a45b909f1fe2dc658eec4dc0ff92fef644",
+        ),
+        (
+            31,
+            &[(5, 12, 17)],
+            [3200, 4480, 0],
+            "a86f2a8a91a1e270e382e5bd7149570b357d6db028fd06e6445060352114669d",
+            "a86f2a8a91a1e270e382e5bd7149570b357d6db028fd06e6445060352114669d",
+        ),
+        (
+            31,
+            &[(0, 1, 2), (7, 20, 25), (701, 65534, 8)],
+            [5248, 6528, 0],
+            "a86f2a8a91a1e270e382e5bd7149570b357d6db028fd06e6445060352114669d",
+            "f04f3ddbbbc963c9ab693cef92909cb4f81582ce4f0d8ecd1f8bc663e4dcbe51",
+        ),
+        (
+            31,
+            &[(0, 0, 0), (1, 0, 3), (701, 4, 0)],
+            [1152, 128, 0],
+            "a86f2a8a91a1e270e382e5bd7149570b357d6db028fd06e6445060352114669d",
+            "455190bf327892273204c631e560be21409c1922f7166b2942534865fb3c29af",
+        ),
+        (
+            31,
+            &[],
+            [128, 128, 0],
+            "a86f2a8a91a1e270e382e5bd7149570b357d6db028fd06e6445060352114669d",
+            "455190bf327892273204c631e560be21409c1922f7166b2942534865fb3c29af",
+        ),
+    ];
+    for &(seed, points, expected, before, after) in cases {
+        for sound in [Some("TestAmbient"), None] {
+            let mut sim = Simulation::with_seed(seed);
+            let waypoints = points
+                .iter()
+                .map(|&(index, rx, ry)| (index, crate::map::waypoints::Waypoint { index, rx, ry }))
+                .collect();
+            sim.session.install_waypoints(&waypoints);
+            let main = sim.main_rng.native_state_hex();
+            let mapgen = sim.mapgen_rng.native_state_hex();
+            assert_eq!(
+                crate::util::sha256::sha256_hex(sim.scenario_rng.native_state_hex().as_bytes()),
+                before
+            );
+            assert!(sim.trigger_play_sound_at_random_waypoint(
+                sound,
+                None,
+                FrameEffects::default()
+            ));
+            assert_eq!(
+                crate::util::sha256::sha256_hex(sim.scenario_rng.native_state_hex().as_bytes()),
+                after
+            );
+            assert_eq!(sim.main_rng.native_state_hex(), main);
+            assert_eq!(sim.mapgen_rng.native_state_hex(), mapgen);
+            if sound.is_some() {
+                assert!(
+                    matches!(sim.sound_events.as_slice(), [SimSoundEvent::VocAtCoord { sound_id, coordinate, flags:0 }]
+                    if sound_id=="TestAmbient" && [coordinate.x,coordinate.y,coordinate.z]==expected)
+                );
+            } else {
+                assert!(
+                    sim.sound_events.is_empty(),
+                    "an unresolved sound still takes the original RNG request"
+                );
+            }
+        }
+    }
+}
+
+#[test]
+fn waypoint_cue_sound_actions_share_literal_and_named_catalog_through_live_tags() {
+    for kind in [19, 98, 99] {
+        for (parameter, token) in [(0, "1"), (11, "1"), (7, "cowambient")] {
+            let (mut sim, map) = sim_with_trigger(&format!("{kind},{parameter},{token},0,0,0,0,B"));
+            let rng = sim.rng_state();
+            poll(&mut sim, &map);
+            match kind {
+                19 => assert!(
+                    matches!(sim.sound_events.as_slice(),[SimSoundEvent::VocCentered {sound_id}] if sound_id=="CowAmbient")
+                ),
+                98 => assert!(
+                    matches!(sim.sound_events.as_slice(),[SimSoundEvent::VocAtCoord {sound_id,coordinate,flags:0}] if sound_id=="CowAmbient" && *coordinate==WAYPOINT_COORD)
+                ),
+                99 => {
+                    // Parameter11 leaves +44 at its constructor slot0;
+                    // only the other readers materialize the tail B slot1.
+                    let expected = if parameter == 11 {
+                        DriveCoord {
+                            x: 128,
+                            y: 128,
+                            z: 0,
+                        }
+                    } else {
+                        WAYPOINT_COORD
+                    };
+                    assert!(
+                        matches!(sim.sound_events.as_slice(),[SimSoundEvent::VocAtCoord {sound_id,coordinate,flags:1}] if sound_id=="CowAmbient" && *coordinate==expected)
+                    );
+                }
+                _ => unreachable!(),
+            }
+            assert_eq!(
+                sim.rng_state(),
+                rng,
+                "single-waypoint selection takes no RNG draw"
+            );
+        }
+    }
+    let (mut sim, map) = sim_with_trigger("98,7,TestAmbient,0,0,0,0,B");
+    insert_structure(&mut sim, 100, "MARKER", (5, 6));
+    poll(&mut sim, &map);
+    assert!(matches!(
+        sim.sound_events.as_slice(),
+        [SimSoundEvent::VocAtCoord { flags: 0, .. }]
+    ));
+    assert_eq!(
+        sim.object_custom_sounds.get(&100),
+        None,
+        "98 does not attach a custom sound to the waypoint building"
+    );
+}

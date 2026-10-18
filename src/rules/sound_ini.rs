@@ -314,6 +314,9 @@ impl SoundEntry {
 #[derive(Debug, Clone, Default)]
 pub struct SoundRegistry {
     entries: HashMap<String, SoundEntry>,
+    /// First registration order in the native Voc array. Entries owns each
+    ///definition; duplicate reads update it without moving this retained ID.
+    native_order: Vec<String>,
     defaults: SoundDefaults,
 }
 
@@ -340,13 +343,18 @@ impl SoundRegistry {
     /// and process lifetime belong to `audio_sources::AudioDefinitions`.
     pub fn from_ini(ini: &IniFile) -> Self {
         let mut entries: HashMap<String, SoundEntry> = HashMap::new();
+        let mut native_order = Vec::new();
         let defaults = SoundDefaults::read(ini.section("Defaults"));
 
         // No `[SoundList]` means no sounds: `0x0075129D TEST EAX,EAX; JZ`
         // leaves the whole registration loop unexecuted.
         let Some(list) = ini.section("SoundList") else {
             log::info!("SoundRegistry: no [SoundList] section, 0 sound definitions");
-            return Self { entries, defaults };
+            return Self {
+                entries,
+                native_order,
+                defaults,
+            };
         };
 
         // Values in source order, which is native's entry-index order: each
@@ -365,6 +373,9 @@ impl SoundRegistry {
             // twice-listed id ends up carrying its sample list twice — stock
             // `[SoundList]` lists `KirovVoiceDie` twice, in both sound files.
             let previous: Option<SoundEntry> = entries.remove(&key);
+            if previous.is_none() {
+                native_order.push(key.clone());
+            }
             let name: &str = previous.as_ref().map_or(value, |entry| entry.id.as_str());
             let mut entry: SoundEntry = read_entry(ini, name, &defaults);
             if let Some(previous) = previous {
@@ -377,12 +388,24 @@ impl SoundRegistry {
         }
 
         log::info!("SoundRegistry: loaded {} sound definitions", entries.len());
-        Self { entries, defaults }
+        Self {
+            entries,
+            native_order,
+            defaults,
+        }
     }
 
     /// Look up a sound entry by ID (case-insensitive).
     pub fn get(&self, sound_id: &str) -> Option<&SoundEntry> {
         self.entries.get(&sound_id.to_ascii_uppercase())
+    }
+
+    /// Literal action+90 consumers index the Voc array registered by7512CA..
+    ///75133D. Duplicate IDs keep their first slot; a negative/missing slot is
+    ///the existing safe invalid-reference boundary, without creating a sound.
+    pub(crate) fn entry_by_index(&self, index: i32) -> Option<&SoundEntry> {
+        let key = self.native_order.get(usize::try_from(index).ok()?)?;
+        self.entries.get(key)
     }
 
     /// Read a Rules sound reference against the fixed SOUNDMD catalog.
@@ -1581,5 +1604,21 @@ mod tests {
             Some(EvaType::QueuedInterrupt)
         );
         assert_eq!(EvaType::parse("interrupt"), Some(EvaType::Interrupt));
+    }
+    #[test]
+    fn waypoint_cue_literal_sound_ordinals_follow_first_registration_with_duplicates() {
+        let registry = SoundRegistry::from_ini(&IniFile::from_str(
+            "[SoundList]\n42=First\n0=Second\n99=FIRST\n3=Third\n[First]\nSounds=a\n[Second]\nSounds=b\n[Third]\nSounds=c\n",
+        ));
+        for (index, name) in [(0, "First"), (1, "Second"), (2, "Third")] {
+            assert_eq!(registry.entry_by_index(index).unwrap().id, name);
+            assert!(std::ptr::eq(
+                registry.entry_by_index(index).unwrap(),
+                registry.get(name).unwrap()
+            ));
+        }
+        assert_eq!(registry.entry_by_index(0).unwrap().sounds, ["a", "a"]);
+        assert!(registry.entry_by_index(-1).is_none());
+        assert!(registry.entry_by_index(3).is_none());
     }
 }

@@ -1052,6 +1052,75 @@ impl Simulation {
         true
     }
 
+    /// TAction8 DropZoneFlare6E1CC0: its tail waypoint, inline ground/bridge
+    ///coordinate, Rules+147C, then Anim421EA0(delay0,loop1,flags600). The
+    ///post-constructor +198 write leaves first Start and DropZone reveal live.
+    pub(crate) fn trigger_drop_zone_flare(&mut self, rules: &RuleSet, waypoint: i32) -> bool {
+        let Some(type_name) = rules.general.drop_zone_anim.as_deref() else {
+            //Native would pass the null pointer to the constructor.
+            return false;
+        };
+        let Some([x, y, z]) = self.trigger_waypoint_coord(waypoint) else {
+            return false;
+        };
+        let world_coord = AnimWorldCoord { x, y, z };
+        let type_id = self.interner.intern(type_name);
+        let (rx, ry, sub_x, sub_y, level) = world_coord.to_cell_sub_z();
+        let descriptor = AnimClassSpawnDescriptor {
+            draw_flags: 0x600,
+            ..AnimClassSpawnDescriptor::new(type_id, rx, ry, sub_x, sub_y, level)
+        };
+        let Ok(id) = self.spawn_anim_at_world(rules, descriptor, world_coord) else {
+            return false;
+        };
+        self.set_anim_no_effects(id, true);
+        true
+    }
+
+    /// Anim ctor42264D..4226BF: the bound DropZone type reveals twice for
+    ///the current House. Rules+14BC is converted from leptons by signed /256;
+    ///the existing Map5678E0 owner handles height, allies and notifications.
+    fn reveal_drop_zone_from_anim(&mut self, rules: &RuleSet, world: AnimWorldCoord) {
+        let Some(owner) = self.session.current_house else {
+            return;
+        };
+        // Preserve large positive inputs through the narrower Rust parameter;
+        // Map567A3E/the shared reveal owner still applies the native cap10.
+        let radius = (rules.general.drop_zone_radius / 256).min(i32::from(u16::MAX));
+        let Ok(radius) = u16::try_from(radius) else {
+            //Negative radii index before native's spiral table; keep the
+            //existing RevealArea owner's safe supported-range boundary.
+            return;
+        };
+        let (x, y) = crate::sim::movement::coord_cell(crate::sim::components::DriveCoord {
+            x: world.x,
+            y: world.y,
+            z: world.z,
+        });
+        let config = self.sight_reveal_config(Some(rules));
+        let viewers = crate::sim::vision::direct_reveal_viewers(
+            &self.fog,
+            &self.house_alliances,
+            owner,
+            &config,
+            &self.interner,
+        );
+        for final_pass in [false, true] {
+            let _ = self.reveal_area(
+                &viewers,
+                (x as u16, y as u16),
+                world.z,
+                radius,
+                None,
+                final_pass,
+                &config,
+                crate::sim::world::UninitContext::with_rules(rules),
+                crate::sim::vision::MapRevealProjection::Transient,
+                self.session.current_house,
+            );
+        }
+    }
+
     /// Mutation of the retained Anim+198 byte belongs to its instance owner.
     pub(crate) fn set_anim_no_effects(&mut self, id: AnimId, no_effects: bool) {
         if let Some(anim) = self.anim_mut_by_id(id) {
@@ -1194,6 +1263,15 @@ impl Simulation {
             .owner
             .is_some_and(|owner| self.anim_owner_coords(owner).is_some());
         self.reveal_anim(stable_id, Some(rules), !attaches || start_reaches_display);
+        //42264D..4226BF reveals DropZone before the constructor-time Start.
+        if rules
+            .general
+            .drop_zone_anim
+            .as_deref()
+            .is_some_and(|name| name.eq_ignore_ascii_case(&type_name))
+        {
+            self.reveal_drop_zone_from_anim(rules, world_coord);
+        }
         if descriptor.delay == 0 {
             self.anim_start(stable_id, &config, rules, None);
         }
@@ -1391,6 +1469,33 @@ impl Simulation {
             // only; no retail trailer chain starts from a tolerant root.
             self.spawn_anim_at_world(rules, descriptor, world_coord)
                 .expect("validated trailer closure must remain spawnable");
+        }
+
+        //AnimAI424322..42435F: a DropZone marker ends over the first ground
+        //Building at its current GetCoords, before first-AI/delay/timer gates.
+        //NoEffects does not gate this test; a deck-only Building does not end it.
+        if rules
+            .general
+            .drop_zone_anim
+            .as_deref()
+            .is_some_and(|name| name.eq_ignore_ascii_case(&type_name))
+            && self.anim_absolute_coord(id).is_some_and(|world| {
+                self.map_coord_cell(world.x, world.y)
+                    .and_then(|(x, y)| {
+                        self.substrate.occupancy.first_building_on_layer(
+                            x,
+                            y,
+                            crate::sim::movement::locomotor::MovementLayer::Ground,
+                        )
+                    })
+                    .is_some()
+            })
+        {
+            if let Some(anim) = self.anim_mut_by_id(id) {
+                anim.runtime.inactive = true; //424358 writes+19B before UnInit.
+            }
+            self.destroy_anim(id, rules);
+            return false;
         }
 
         if first_guard {
@@ -5804,5 +5909,175 @@ mod tests {
                 .damage_fires
                 .anim_ids,
         );
+    }
+    fn waypoint_cue_flare_scene() -> (
+        Simulation,
+        RuleSet,
+        crate::map::map_file::MapFile,
+        crate::sim::intern::InternedId,
+    ) {
+        // Custom DropZone binding from the original connected controls. ART and
+        // the five-frame SHP metadata are physical ARRWSE inputs; no GPU claim.
+        let mut rules=RuleSet::from_ini(&IniFile::from_str(
+            "[General]\nDropZoneAnim=ARRWSE\n[AudioVisual]\nDropZoneRadius=4\n[Animations]\n0=ARRWSE\n[BuildingTypes]\n0=BLOCK\n[BLOCK]\nStrength=100\n[Clear]\nBuildable=yes\nFoot=100%\nTrack=100%\n",
+        )).unwrap();
+        let mut art = ArtRegistry::from_ini(&IniFile::from_str(
+            "[ARRWSE]\nLoopCount=2\nLoopEnd=4\nRate=450\nDemandLoad=true\nLayer=Top\nZAdjust=-300\nReport=Explosion06\nStopSound=ExplosionShard\nNext=none\n",
+        ));
+        art.bind_anim_frame_count_for_test("ARRWSE", 5);
+        rules.replace_art_registry_for_test(art);
+        let map=crate::map::map_file::MapFile::from_bytes(
+            b"[Map]\nTheater=TEMPERATE\nSize=0,0,16,16\nLocalSize=0,0,16,16\n[IsoMapPack5]\n1=DwALABwBAAIA/////wAAABEAAA==\n[Waypoints]\n59=10010\n123=6005\n[Triggers]\nCUE=Player,<none>,Cue,0,1,1,1,0\n[Events]\nCUE=1,8,0,0\n[Actions]\nCUE=1,8,0,123,0,0,0,0,BH\n[Tags]\nCUETAG=0,Cue,CUE\n",
+        ).unwrap();
+        let mut sim = Simulation::with_seed(31);
+        crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+        // MapRevealArea rejects the arena's default Size20 diamond edge at
+        // (10,10). Install this scene's Size16 through the normal owner.
+        sim.install_playfield_from_map_header(&map.header);
+        sim.fog = crate::sim::vision::FogState::new(32, 32);
+        let player = sim.interner.intern("Player");
+        let other = sim.interner.intern("Other");
+        for (id, human) in [(player, true), (other, false)] {
+            sim.houses.insert(
+                id,
+                crate::sim::house_state::HouseState::new(id, 0, None, human, 0, 10),
+            );
+            sim.session.house_order.push(id);
+        }
+        sim.session.current_house = Some(player);
+        sim.session.binary_frame = 1000;
+        sim.session.install_waypoints(&map.waypoints);
+        sim.initialize_trigger_definitions(
+            &map,
+            &crate::rules::team_ai_ini::TeamAiIniRegistry::default(),
+            None,
+            None,
+        );
+        sim.classify_map_triggers(Some(&rules));
+        (sim, rules, map, player)
+    }
+
+    fn waypoint_cue_spring_flare(
+        sim: &mut Simulation,
+        rules: &RuleSet,
+        map: &crate::map::map_file::MapFile,
+    ) -> AnimId {
+        sim.advance_triggers(
+            crate::sim::world::TriggerInputs {
+                events: &map.events,
+                actions: &map.actions,
+                rules: Some(rules),
+            },
+            None,
+            crate::sim::world::FrameEffects::default(),
+        );
+        let anim = sim
+            .substrate
+            .anims
+            .iter()
+            .map(|(_, anim)| anim)
+            .next()
+            .expect("live Tag8 creates the flare");
+        anim.stable_id
+    }
+
+    #[test]
+    fn waypoint_cue_flare_uses_tail_slot_reveals_current_house_and_keeps_first_start() {
+        let (mut sim, rules, map, player) = waypoint_cue_flare_scene();
+        assert!(!sim.fog.is_cell_revealed(player, 10, 10));
+        let id = waypoint_cue_spring_flare(&mut sim, &rules, &map);
+        let anim = sim.anim(id).unwrap();
+        assert_eq!(
+            anim.world_coord,
+            AnimWorldCoord {
+                x: 2688,
+                y: 2688,
+                z: 0
+            }
+        );
+        assert_eq!(anim.draw_flags, 0x600);
+        assert_eq!(anim.z_adjust, -300);
+        assert!(anim.no_effects());
+        assert!(anim.runtime.first_ai_guard);
+        assert!(sim.sound_events.iter().any(|event|matches!(event,SimSoundEvent::AnimationStarted{anim_id,sound_id,..} if *anim_id==id && sound_id=="EXPLOSION06")),"first Start precedes the action's NoEffects store");
+        assert!(sim.fog.is_cell_revealed(player, 10, 10));
+        assert!(!sim.fog.is_cell_revealed(player, 20, 20));
+        let other = sim.interner.get("Other").unwrap();
+        assert!(!sim.fog.is_cell_revealed(other, 10, 10));
+        sim.sound_events.clear();
+        sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default());
+        assert!(!sim.anim(id).unwrap().runtime.first_ai_guard);
+        assert!(
+            sim.sound_events.is_empty(),
+            "NoEffects suppresses later Start/Stop work"
+        );
+    }
+
+    #[test]
+    fn waypoint_cue_flare_ground_building_ends_before_first_guard_and_deck_does_not() {
+        use crate::sim::movement::locomotor::MovementLayer;
+        for layer in [MovementLayer::Ground, MovementLayer::Bridge] {
+            let (mut sim, rules, map, player) = waypoint_cue_flare_scene();
+            if layer == MovementLayer::Bridge {
+                let terrain = sim.resolved_terrain.as_mut().unwrap();
+                let cell = terrain.native_cell_identity((10, 10));
+                terrain.write_native_cell_flags(cell, 0x100);
+            }
+            let type_ref = sim.interner.intern("BLOCK");
+            let mut building = GameEntity::new_at_frame_zero_for_test(
+                100,
+                10,
+                10,
+                0,
+                0,
+                player,
+                Health::new(100),
+                type_ref,
+                EntityCategory::Structure,
+                0,
+                5,
+                false,
+            );
+            building.health.set(0); //Native Cell47C520 has no Health/Alive admission.
+            sim.substrate.entities.insert(building);
+            sim.substrate.next_stable_object_id = 101;
+            sim.substrate.occupancy.add(
+                10,
+                10,
+                100,
+                layer,
+                None,
+                crate::sim::occupancy::CellListInsertion::AppendBuilding,
+            );
+            let id = waypoint_cue_spring_flare(&mut sim, &rules, &map);
+            assert_eq!(
+                sim.anim(id).unwrap().world_coord.z,
+                if layer == MovementLayer::Bridge {
+                    416
+                } else {
+                    0
+                }
+            );
+            sim.sound_events.clear();
+            let rng = sim.rng_state();
+            sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default());
+            let anim = sim.anim(id).unwrap();
+            if layer == MovementLayer::Ground {
+                assert!(anim.runtime.inactive);
+                assert!(
+                    anim.runtime.first_ai_guard,
+                    "424358 ends the flare before consuming19C"
+                );
+                assert!(sim.substrate.pending_delete.contains_object(&id));
+                assert!(!sim.sound_events.iter().any(|event|matches!(event,SimSoundEvent::VocAtCoord{sound_id,..} | SimSoundEvent::AnimationStarted{sound_id,..} if sound_id=="EXPLOSIONSHARD")));
+                sim.process_pending_delete();
+                assert!(sim.anim(id).is_none());
+            } else {
+                assert!(!anim.runtime.inactive);
+                assert!(!anim.runtime.first_ai_guard);
+                assert!(!sim.substrate.pending_delete.contains_object(&id));
+            }
+            assert_eq!(sim.rng_state(), rng);
+        }
     }
 }

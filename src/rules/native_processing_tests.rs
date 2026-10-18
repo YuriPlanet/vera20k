@@ -3024,3 +3024,89 @@ fn secret_lab_stock_rules_and_mode_use_native_lists_and_unoverridden_lab() {
     assert!(lab.enabled());
     assert_eq!(lab.production_override(), None);
 }
+
+/// Original full Rules ctor and66E5D5/66B385 read-block controls, Steam
+///3e81a617..08600: pointer identity/empty retention and signed ReadRange.
+#[test]
+fn waypoint_cue_drop_zone_rules_keep_native_defaults_layers_and_saved_state() {
+    use crate::rules::ruleset::RuleSet;
+    let publish = |p: &ProcessedRulesLayers| RuleSet::from_processed_rules(p).unwrap();
+    let mut layers = RulesLayerStack::new(IniFile::empty());
+    let initial = publish(&layers.process().unwrap());
+    assert_eq!(initial.general.drop_zone_anim, None);
+    assert_eq!(initial.general.drop_zone_radius, 1024);
+    for (text, name, radius) in [
+        (
+            "[General]\nDropZoneAnim=BEACON\n[AudioVisual]\nDropZoneRadius=4\n",
+            Some("BEACON"),
+            1024,
+        ),
+        (
+            "[General]\nDropZoneAnim=\n[AudioVisual]\nDropZoneRadius=\n",
+            Some("BEACON"),
+            1024,
+        ),
+        ("[AudioVisual]\nDropZoneRadius=2.75\n", Some("BEACON"), 704),
+        ("[AudioVisual]\nDropZoneRadius=-1\n", Some("BEACON"), 704),
+        ("[AudioVisual]\nDropZoneRadius=-0.5\n", Some("BEACON"), -128),
+        (
+            "[General]\ndropzoneanim=OTHER\n[AudioVisual]\ndropzoneradius=12\n",
+            Some("BEACON"),
+            -128,
+        ),
+        ("[General]\nDropZoneAnim=none\n", None, -128),
+        ("[General]\nName=Missing keys\n", None, -128),
+        ("[General]\nDropZoneAnim=beacon\n", Some("BEACON"), -128),
+        ("[General]\nDropZoneAnim=<none>\n", None, -128),
+    ] {
+        layers.push(RulesLayerKind::Scenario, IniFile::from_str(text));
+        let current = publish(&layers.process().unwrap());
+        assert_eq!(current.general.drop_zone_anim.as_deref(), name, "{text}");
+        assert_eq!(current.general.drop_zone_radius, radius, "{text}");
+    }
+    let first = RulesLayerStack::new(IniFile::from_str(
+        "[General]\nDropZoneAnim=BEACON\n[AudioVisual]\nDropZoneRadius=2.75\n",
+    ))
+    .process()
+    .unwrap();
+    let (_, trace) = first.into_ini_and_native_type_construction_trace();
+    let saved = bincode::serialize(&trace.into_registry_state_discarding_events()).unwrap();
+    let retained: NativeRulesRegistryState = bincode::deserialize(&saved).unwrap();
+    let next_layers = RulesLayerStack::new(IniFile::from_str("[General]\nName=Same sources\n"));
+    let continued = next_layers
+        .process_with_fixed_art_and_registry_state(
+            &IniFile::empty(),
+            bincode::deserialize(&saved).unwrap(),
+        )
+        .unwrap();
+    let continued = publish(&continued);
+    assert_eq!(continued.general.drop_zone_anim.as_deref(), Some("BEACON"));
+    assert_eq!(continued.general.drop_zone_radius, 704);
+    let cold = publish(&next_layers.process().unwrap());
+    assert_ne!(
+        continued.simulation_config_hash(),
+        cold.simulation_config_hash()
+    );
+    let reset = next_layers
+        .process_with_fixed_art_and_registry_state(&IniFile::empty(), retained.destructive_reset())
+        .unwrap();
+    let reset = publish(&reset);
+    assert_eq!(
+        reset.general.drop_zone_anim, None,
+        "retired type references are cleared"
+    );
+    assert_eq!(
+        reset.general.drop_zone_radius, 704,
+        "Rules numeric field survives Type reset"
+    );
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    // The original reader on physical RULESMD's exact keys yields BEACON/1024.
+    // The production fixture also reads optional LANGRULE, Battle, Hills and ARTMD.
+    assert_eq!(
+        retail.rules.general.drop_zone_anim.as_deref(),
+        Some("BEACON")
+    );
+    assert_eq!(retail.rules.general.drop_zone_radius, 1024);
+}

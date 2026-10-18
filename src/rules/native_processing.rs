@@ -839,6 +839,17 @@ impl ProcessedRulesLayers {
             .rules_patrol_scan_minutes
     }
 
+    /// Rules+147C/+14BC after ordered General/AudioVisual reads. Original
+    /// ctor665650 and read blocks66E5D5/66B385 establish null/1024 defaults,
+    /// empty retention and exact-case keys; the existing factory owns identity.
+    pub(crate) fn drop_zone_controls(&self) -> (Option<&str>, i32) {
+        let state = self.native_type_construction_trace.registry_state();
+        (
+            state.rules_drop_zone_anim.as_deref(),
+            state.rules_drop_zone_radius,
+        )
+    }
+
     /// `[General] PrismType=` (Rules `+0x498`), the stored ID of its type.
     pub(crate) fn prism_type(&self) -> Option<&str> {
         self.native_type_construction_trace
@@ -1161,6 +1172,8 @@ pub(crate) struct NativeRulesRegistryState {
     rules_prism_support: PrismSupportRules,
     rules_patrol_scan_minutes: NativeF64Bits,
     rules_prism_type: Option<String>,
+    rules_drop_zone_anim: Option<String>,
+    rules_drop_zone_radius: i32,
     rules_prerequisite_proc_alternate: Option<String>,
     /// The six `[General] Prerequisite*` lists (Rules `+0x358..+0x3E4`), in
     /// [`PrerequisiteGroup::ALL`] order.
@@ -1200,6 +1213,8 @@ impl Default for NativeRulesRegistryState {
             rules_patrol_scan_minutes: crate::rules::ruleset::GeneralRules::default()
                 .patrol_scan_minutes,
             rules_prism_type: None,
+            rules_drop_zone_anim: None,
+            rules_drop_zone_radius: 1024,
             rules_prerequisite_proc_alternate: None,
             rules_prerequisite_lists: Default::default(),
             rules_building_types: GeneralBuildingTypes::default(),
@@ -1365,6 +1380,7 @@ impl NativeRulesRegistryState {
             rules_ambient_change_step: self.rules_ambient_change_step,
             rules_difficulty_rows: self.rules_difficulty_rows,
             rules_gravity: self.rules_gravity,
+            rules_drop_zone_radius: self.rules_drop_zone_radius,
             rules_wind_direction: self.rules_wind_direction,
             rules_missile_rot_var: self.rules_missile_rot_var,
             rules_safety_altitude: self.rules_safety_altitude,
@@ -1634,6 +1650,8 @@ struct RulesPassProcessor {
     rules_prism_support: PrismSupportRules,
     rules_patrol_scan_minutes: NativeF64Bits,
     rules_prism_type: Option<String>,
+    rules_drop_zone_anim: Option<String>,
+    rules_drop_zone_radius: i32,
     rules_prerequisite_proc_alternate: Option<String>,
     rules_prerequisite_lists: [Vec<Prerequisite>; 6],
     rules_building_types: GeneralBuildingTypes,
@@ -1678,6 +1696,8 @@ impl Default for RulesPassProcessor {
             rules_patrol_scan_minutes: crate::rules::ruleset::GeneralRules::default()
                 .patrol_scan_minutes,
             rules_prism_type: None,
+            rules_drop_zone_anim: None,
+            rules_drop_zone_radius: NativeRulesRegistryState::default().rules_drop_zone_radius,
             rules_prerequisite_proc_alternate: None,
             rules_prerequisite_lists: Default::default(),
             rules_building_types: GeneralBuildingTypes::default(),
@@ -1712,6 +1732,8 @@ impl RulesPassProcessor {
             rules_prism_support: registry_state.rules_prism_support,
             rules_patrol_scan_minutes: registry_state.rules_patrol_scan_minutes,
             rules_prism_type: registry_state.rules_prism_type,
+            rules_drop_zone_anim: registry_state.rules_drop_zone_anim,
+            rules_drop_zone_radius: registry_state.rules_drop_zone_radius,
             rules_prerequisite_proc_alternate: registry_state.rules_prerequisite_proc_alternate,
             rules_prerequisite_lists: registry_state.rules_prerequisite_lists,
             rules_building_types: registry_state.rules_building_types,
@@ -2217,6 +2239,7 @@ impl RulesPassProcessor {
                     | "WeatherConBoltExplosion"
                     | "WeaponNullifyAnim"
                     | "PrismType"
+                    | "DropZoneAnim"
                     | "PrerequisiteProcAlternate"
                     | "GDIGateOne"
                     | "GDIGateTwo"
@@ -2244,6 +2267,9 @@ impl RulesPassProcessor {
                             self.select_anim.weather_con_bolt_explosion = resolved;
                         }
                         "WeaponNullifyAnim" => self.select_anim.weapon_nullify_anim = resolved,
+                        "DropZoneAnim" => {
+                            self.rules_drop_zone_anim = Some(resolved).filter(|id| !id.is_empty());
+                        }
                         "PrismType" => {
                             self.rules_prism_type = Some(resolved).filter(|id| !id.is_empty());
                         }
@@ -3013,6 +3039,10 @@ impl RulesPassProcessor {
         // Original 66920D..669258 reads these first, including the cold
         // startup's same AudioVisual call before any complete Process.
         self.rules_detail = self.rules_detail.read_pass(section);
+        // AudioVisual66B385..66B39E: ReadRange474620, current +14BC default.
+        // Rules6672FF constructs1024 leptons; literal -1 retains the prior.
+        self.rules_drop_zone_radius =
+            section.read_range("DropZoneRadius", self.rules_drop_zone_radius);
         // Full AudioVisual6691E0's 66B3C4 read uses the retained signed dword
         // default. Cold startup52D132 calls the same reader before Process.
         self.rules_gravity = section.read_int("Gravity", self.rules_gravity);
@@ -3221,6 +3251,8 @@ impl RulesPassProcessor {
                     rules_prism_support: self.rules_prism_support,
                     rules_patrol_scan_minutes: self.rules_patrol_scan_minutes,
                     rules_prism_type: self.rules_prism_type,
+                    rules_drop_zone_anim: self.rules_drop_zone_anim,
+                    rules_drop_zone_radius: self.rules_drop_zone_radius,
                     rules_prerequisite_proc_alternate: self.rules_prerequisite_proc_alternate,
                     rules_prerequisite_lists: self.rules_prerequisite_lists,
                     rules_building_types: self.rules_building_types,

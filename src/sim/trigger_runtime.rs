@@ -320,11 +320,17 @@ impl RuntimeDefinitions {
             entry.literal_value()
         };
         // FindIndex7514D0 compares the untrimmed token case-insensitively.
-        let sound = (parameter_type == 7)
-            .then(|| entry.params.get(1))
-            .flatten()
-            .and_then(|name| sounds?.get(name))
-            .map(|sound| sound.id.clone());
+        let sound = if parameter_type == 7 {
+            entry.params.get(1).and_then(|name| sounds?.get(name))
+        } else if matches!(entry.kind, 19 | 98 | 99) {
+            //Execute's Voc call consumes +90 regardless of the authored
+            //parameter type. Resolve a literal ordinal once in this reader,
+            //through the same fixed catalog as a type7 name.
+            value.and_then(|index| sounds?.entry_by_index(index))
+        } else {
+            None
+        }
+        .map(|sound| sound.id.clone());
         RuntimeAction {
             entry,
             reference,
@@ -3754,6 +3760,15 @@ impl Simulation {
                     return false;
                 };
                 house.team_creation.set_trigger_ratio(value);
+            }
+            8 => {
+                let (Some(rules), Some(waypoint)) = (rules, action.waypoint_index) else {
+                    return false;
+                };
+                return self.trigger_drop_zone_flare(rules, waypoint as i32);
+            }
+            98 => {
+                return self.trigger_play_sound_at_random_waypoint(sound, rules, frame_effects);
             }
             41 => {
                 let (Some(rules), Some(index), Some(waypoint)) =

@@ -728,6 +728,12 @@ pub struct GeneralRules {
     /// Mission_Attack forwards its charge instead of firing
     /// (`sim::world::techno_ai::building_missions`).
     pub prism_type: Option<String>,
+    /// Ordered [General] DropZoneAnim reference at Rules+147C. Constructor
+    /// 66723F clears it;66E5D5 retains an empty read and resolves nonempty names.
+    pub drop_zone_anim: Option<String>,
+    /// [AudioVisual] DropZoneRadius, stored in leptons at+14BC. Constructor
+    /// 6672FF:1024;66B385 uses ReadRange474620 with the retained value.
+    pub drop_zone_radius: i32,
     /// `[General] PrerequisiteProcAlternate=` (Rules `+0x400`): the UnitType
     /// whose on-map units also meet a `PROC` prerequisite
     /// (`sim::production::can_build`).
@@ -2236,6 +2242,8 @@ impl Default for GeneralRules {
             pad_aircraft_types: Vec::new(),
             separate_aircraft: false,
             prism_type: None,
+            drop_zone_anim: None,
+            drop_zone_radius: 1024,
             prerequisite_proc_alternate: None,
             prism_support: PrismSupportRules::default(),
             building_types: GeneralBuildingTypes::default(),
@@ -3334,6 +3342,9 @@ impl GeneralRules {
             // `0x00671144` -> `0x0067BCE0`. The layered reader
             // (`native_processing`) replaces this projection.
             prism_type: read_building_identity(general, "PrismType", defaults.prism_type),
+            // Only the ordered Process projection binds these references/reads.
+            drop_zone_anim: defaults.drop_zone_anim,
+            drop_zone_radius: defaults.drop_zone_radius,
             // `0x0066F787..0x0066F7C9`, replaced by the layered reader too.
             prerequisite_proc_alternate: read_building_identity(
                 general,
@@ -4160,6 +4171,9 @@ impl RuleSet {
         rules.general.prism_support = processed.prism_support();
         rules.general.patrol_scan_minutes = processed.patrol_scan_minutes();
         rules.general.prism_type = processed.prism_type().map(str::to_owned);
+        let (drop_zone_anim, drop_zone_radius) = processed.drop_zone_controls();
+        rules.general.drop_zone_anim = drop_zone_anim.map(str::to_owned);
+        rules.general.drop_zone_radius = drop_zone_radius;
         rules.general.prerequisite_proc_alternate =
             processed.prerequisite_proc_alternate().map(str::to_owned);
         rules.prerequisite_lists = processed.prerequisite_lists().clone();
@@ -5573,6 +5587,12 @@ impl RuleSet {
         self.general.third_survivor_divisor.hash(&mut hasher);
         self.general.maximum_cheer_rate.hash(&mut hasher);
         self.general.patrol_scan_minutes.hash(&mut hasher);
+        // Earlier Process passes can retain these despite identical current text.
+        if self.general.drop_zone_anim.is_some() || self.general.drop_zone_radius != 1024 {
+            b"drop-zone-controls-v1".hash(&mut hasher);
+            self.general.drop_zone_anim.hash(&mut hasher);
+            self.general.drop_zone_radius.hash(&mut hasher);
+        }
         self.general.default_mirage_disguises.hash(&mut hasher);
         if self
             .general
