@@ -43,6 +43,10 @@ use crate::util::fixed_math::{SIM_ZERO, SimFixed};
 /// - The failed-path answer (`+0x6DC`, [`Self::record_cell_entry`]).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct InfantryRuntime {
+    /// Infantry+6D8, initialized0 at517A92. The native5220F0 receiver
+    /// (Infantry vt+514, Execute91 at6DDB46) latches1 without a timer,
+    /// mission change or RNG draw. Distinct from Techno Berserk+298.
+    psycho: bool,
     fear_level: u16,
     is_prone: bool,
     /// Countdown to this man's next idle fidget.
@@ -70,6 +74,15 @@ impl Default for InfantryRuntime {
 }
 
 impl InfantryRuntime {
+    pub(crate) fn is_psycho(&self) -> bool {
+        self.psycho
+    }
+
+    /// Infantry5220F0, Steam gamemd3e81a617..08600.
+    pub(crate) fn make_psycho(&mut self) {
+        self.psycho = true;
+    }
+
     /// The fear level.
     pub fn fear_level(&self) -> u16 {
         self.fear_level
@@ -132,6 +145,7 @@ impl InfantryRuntime {
 
     pub fn new() -> Self {
         Self {
+            psycho: false,
             fear_level: 0,
             is_prone: false,
             idle_action_timer: MissionTimer::default(),

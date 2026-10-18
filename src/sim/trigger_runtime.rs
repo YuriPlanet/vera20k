@@ -3232,6 +3232,38 @@ impl Simulation {
                 }
                 return matched;
             }
+            91 => {
+                // Steam gamemd3e81a617..08600:6DDAF9..6DDB5A walks
+                // Infantry A83DEC/A83DF8, NOT Foot. Only Alive90,
+                // Marked74,!Limbo81 and TagContains6E5380 of this live
+                // Trigger gate virtual514/5220F0. Health/House/value do not.
+                let Some(live) = context.live_index else {
+                    return false;
+                };
+                let mut found = false;
+                let mut ordinal = 0;
+                while let Some(id) = self.substrate.entities.infantry_registry_at(ordinal) {
+                    let eligible = self.substrate.entities.get(id).is_some_and(|entity| {
+                        entity.lifecycle.object_alive()
+                            && entity.lifecycle.cell_marked()
+                            && !entity.lifecycle.in_limbo()
+                            && self.tag_contains_live_trigger(TagAttachment::Object(id), live)
+                    });
+                    if eligible {
+                        self.substrate
+                            .entities
+                            .get_mut(id)
+                            .unwrap()
+                            .infantry
+                            .as_mut()
+                            .expect("Infantry constructor owns its runtime")
+                            .make_psycho();
+                        found = true;
+                    }
+                    ordinal += 1;
+                }
+                return found;
+            }
             81..=83 => {
                 use crate::map::entities::EntityCategory;
                 use crate::sim::mission::{MissionId, MissionType};
@@ -4566,6 +4598,10 @@ mod movement_event_tests;
 #[cfg(test)]
 #[path = "trigger_runtime_shroud_spy_tests.rs"]
 mod shroud_spy_tests;
+
+#[cfg(test)]
+#[path = "trigger_runtime_infantry_psycho_tests.rs"]
+mod infantry_psycho_tests;
 
 #[cfg(test)]
 #[path = "trigger_runtime_ore_tests.rs"]

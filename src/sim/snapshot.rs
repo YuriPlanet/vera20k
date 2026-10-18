@@ -1133,7 +1133,8 @@ use crate::sim::world::Simulation;
 // 416 -> 417: retain control-node line timers and ordered Rules/Type line settings.
 // 417 -> 418: saved map presentation retains its parsed campaign `[Ranking]`
 // par times and result strings for the standalone score page.
-const SNAPSHOT_VERSION: u32 = 418;
+// 418 -> 419: retain Infantry+6D8 Psycho independently of Techno Berserk.
+const SNAPSHOT_VERSION: u32 = 419;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -4859,7 +4860,8 @@ mod tests {
         // 415 -> 416: Building online latch independent of Temporal.
         // 416 -> 417: control-node line timers and ordered line settings.
         // 417 -> 418: campaign score map-rank presentation metadata.
-        assert_eq!(super::SNAPSHOT_VERSION, 418);
+        // 418 -> 419: Infantry Psycho latch independent of Techno Berserk.
+        assert_eq!(super::SNAPSHOT_VERSION, 419);
     }
 
     #[test]

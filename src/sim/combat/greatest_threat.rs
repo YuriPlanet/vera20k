@@ -661,6 +661,9 @@ struct ScanContext<'a> {
     engineer: bool,
     /// Berserk (`+0x298`).
     berserk: bool,
+    /// Infantry+6D8, read only by Evaluate_Candidate6F7EE6 and the
+    /// cell stopping gate6F8ADC. The later offers/air/global gates omit it.
+    psycho: bool,
     /// The house (`+0x21C`) of whoever mind-controls (`+0x2C0`) the
     /// `OpenTopped=` transport (`+0x11C`, TechnoType `+0x5E4`) the scanner
     /// rides: `BL` and `EBP` in Evaluate_Candidate (`0x006F7EA2..0x006F7ED8`),
@@ -742,7 +745,7 @@ impl ScanContext<'_> {
     /// scanner that neither heals, nor is an engineer, nor attacks allies
     /// ([`Self::cell_walk_stops_at`], [`Self::offers`]).
     fn offers_first_non_ally(&self) -> bool {
-        !self.healer && !self.engineer && !self.attacks_allies()
+        !self.healer && !self.engineer && !self.attacks_allies() && !self.psycho
     }
 
     /// The walks' house gates: `OnlyTargetHouseEnemy` (arg3) admits only the
@@ -773,13 +776,12 @@ impl ScanContext<'_> {
     }
 
     /// The walks pass an ally on for an `AttackFriendlies=` scanner
-    /// (TechnoType `+0x6C0`; parsed but not yet consumed by this scanner,
-    /// and no retail type sets it), a berserk one or a controlled transport's
+    /// (TechnoType `+0x6C0`), a berserk one or a controlled transport's
     /// passenger: the aircraft walks (`0x006F9B99..0x006F9BD2`,
     /// `0x006F91FB..0x006F9267`) and, with
     /// [`Self::scans_allies`], [`Self::offers`].
     fn attacks_allies(&self) -> bool {
-        self.berserk || self.controller_house.is_some()
+        self.attacker_obj.attacks_friendlies() || self.berserk || self.controller_house.is_some()
     }
 
     /// A healer, or a computer house's engineer (`0x006F9C9B..0x006F9CE7`,
@@ -813,11 +815,20 @@ impl ScanContext<'_> {
         }
         // `0x006F8A76..0x006F8AB2`: a non-ally, unless the scanner rides a
         // controlled transport; anything, for a berserk scanner.
-        if (!self.is_ally(candidate) && self.controller_house.is_none()) || self.berserk {
+        if (!self.is_ally(candidate) && self.controller_house.is_none())
+            || self.attacker_obj.attacks_friendlies()
+            || self.berserk
+        {
             return true;
         }
         // `0x006F8AB8..0x006F8ACE`: what the transport's controller allies.
         if self.controller_allies(candidate) {
+            return true;
+        }
+        //6F8AD0..6F8AE4 stops at the first Techno for Psycho Infantry,
+        //even when the later6F8B5F..6F8BE0 offer rejects that ally. The
+        //objects behind it are hidden; this is not global attacks_allies.
+        if self.psycho {
             return true;
         }
         // `0x006F8AD0..0x006F8B3C`: an Area Guard (`+0xAC`) engineer stops at
@@ -837,11 +848,11 @@ impl ScanContext<'_> {
     /// `candidate`.
     fn ally_arm_refuses(&self, candidate: &GameEntity, candidate_obj: &ObjectType) -> bool {
         // `0x006F7EDA..0x006F7F1C`: an `AttackFriendlies=` scanner, an
-        // `InfantryClass+0x6D8` infantryman (both scanner arms unported),
+        // `InfantryClass+0x6D8` infantryman,
         // a berserk one or a controlled transport's passenger skips its own house's
         // test; the passenger refuses what the controller's house allies
         // (`0x006F7FE9..0x006F7FFB`).
-        if self.berserk || self.controller_house.is_some() {
+        if self.psycho || self.attacks_allies() {
             return self.controller_allies(candidate);
         }
         if !self.is_ally(candidate) {
@@ -1254,6 +1265,11 @@ pub(crate) fn greatest_threat(
         healer,
         engineer: attacker.category == EntityCategory::Infantry && attacker_obj.engineer,
         berserk: scanner.berserk.is_active(),
+        psycho: attacker.category == EntityCategory::Infantry
+            && scanner
+                .infantry
+                .as_ref()
+                .is_some_and(|state| state.is_psycho()),
         controller_house,
         fire_world,
         allies: Default::default(),
@@ -1984,16 +2000,9 @@ fn evaluate_candidate(
     // self test (`0x006F8001`). A healer (retail: an IFV carrying an engineer,
     // `[FV] Weapon2=RepairBullet`) takes a damaged ally.
     //
-    // RESIDUAL — this scanner does not consume the parsed `AttackFriendlies=`
-    // (TechnoType `+0x6C0`); `InfantryClass+0x6D8` is not represented.
-    // Natively the first scanner takes allies as it takes enemies; no retail
-    // type sets it. The second's
-    // cell walk stops at the first Techno (`0x006F8ADC`) and no walk offers it
-    // an ally, so an ally at the head of a cell's list hides the enemies
-    // behind it, where VERA steps past the ally. Trigger: a map trigger or
-    // team script that sets +0x6D8 (InfantryClass vt+0x514, `0x005220F0`;
-    // called at `0x006DDB46`, `0x006E097D`, `0x006EDD9F`). Frequency: none on
-    // retail rules without such a map. Downstream: target choice only.
+    // The shared owner above keeps AttackFriendlies and Psycho distinct:
+    // Psycho bypasses this candidate ally arm, but the cell walk's later
+    // offer still refuses an ally unless a separate native condition admits it.
     if ctx.ally_arm_refuses(candidate, candidate_obj)
         || candidate.stable_id() == ctx.attacker.stable_id
     {

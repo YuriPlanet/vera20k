@@ -2022,6 +2022,11 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
 
     if let Some(infantry) = entity.infantry {
         1u8.hash(hasher);
+        // Infantry5220F0's retained6D8 changes target admission. Preserve
+        // established streams until this separate latch actually rises.
+        if infantry.is_psycho() {
+            0x36D8_u32.hash(hasher);
+        }
         infantry.fear_level().hash(hasher);
         infantry.is_prone().hash(hasher);
         // The idle-fidget countdown gates a scenario-RNG draw, so a
