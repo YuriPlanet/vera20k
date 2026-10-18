@@ -9582,8 +9582,8 @@ fn unlimbo_levels_then_aims_the_barrel_elevation() {
     let rules =
         crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
             "[VehicleTypes]\n0=TANK\n1=RAISED\n\
-         [TANK]\nStrength=100\nSpeed=6\nLocomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n\
-         [RAISED]\nStrength=100\nSpeed=6\nLocomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n\
+         [TANK]\nStrength=100\nSpeed=6\nSpeedType=Track\nLocomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n\
+         [RAISED]\nStrength=100\nSpeed=6\nSpeedType=Track\nLocomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n\
          FireAngle=32\n",
         ))
         .expect("barrel elevation rules");

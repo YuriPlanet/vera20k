@@ -2494,6 +2494,11 @@ impl ObjectType {
             };
         // `IsGattling=` gates the Stage loop read beside it (`0x0071407E`).
         let is_gattling = section.read_bool("IsGattling", false);
+        // `Crusher=` is read once for both consumers below: TechnoType's
+        // reader (called from UnitTypeClass::ReadINI 0x00747620 at
+        // 0x0074763F) stores it at +0xD28 before UnitTypeClass resolves the
+        // SpeedType seed against it.
+        let crusher = section.read_bool("Crusher", false);
         // The targeting coefficients (`0x0071556B..0x0071570C`) read with a
         // `[General]` default resolved where the value is used; `None` marks
         // an absent key.
@@ -2929,16 +2934,24 @@ impl ObjectType {
             // InfantryType5236A0 and BuildingType45DD9D pass Foot0 to
             // TechnoType710AF0, stored7110E0. Original Infantry constructor and
             // ENGINEER retail-layer reads: rules_oracle/infantry_speed_type.
-            // Other category defaults remain with this existing owner.
+            // The UnitType constructor seeds SpeedType to -1 (0x007470D7);
+            // UnitTypeClass::ReadINI 0x00747620 resolves that seed from
+            // `Crusher=` — set reads Track, clear reads Wheel
+            // (0x007476D3..0x007476EB) — and only then reads `SpeedType=`
+            // with the resolved value as its default. Aircraft's default
+            // chain is a separate reader; it keeps SpeedType::default().
             speed_type: section.read_speed_type(
                 "SpeedType",
-                if matches!(
-                    category,
-                    ObjectCategory::Building | ObjectCategory::Infantry
-                ) {
-                    SpeedType::Foot
-                } else {
-                    SpeedType::default()
+                match category {
+                    ObjectCategory::Building | ObjectCategory::Infantry => SpeedType::Foot,
+                    ObjectCategory::Vehicle => {
+                        if crusher {
+                            SpeedType::Track
+                        } else {
+                            SpeedType::Wheel
+                        }
+                    }
+                    ObjectCategory::Aircraft => SpeedType::default(),
                 },
             ),
             movement_zone: section
@@ -3008,7 +3021,7 @@ impl ObjectType {
             // `false` here makes most of the game's infantry un-crushable.
             crushable: section.read_bool("Crushable", category == ObjectCategory::Infantry),
             deployed_crushable: section.read_bool("DeployedCrushable", true),
-            crusher: section.read_bool("Crusher", false),
+            crusher,
             tilts_when_crushes: section.read_bool("TiltsWhenCrushes", true),
             omni_crusher: section.read_bool("OmniCrusher", false),
             omni_crush_resistant: section.read_bool("OmniCrushResistant", false),
@@ -3492,6 +3505,10 @@ fn building_bool(section: &IniSection, category: ObjectCategory, key: &str) -> b
 #[cfg(test)]
 #[path = "infantry_speed_type_tests.rs"]
 mod infantry_speed_type_tests;
+
+#[cfg(test)]
+#[path = "vehicle_speed_type_tests.rs"]
+mod vehicle_speed_type_tests;
 
 #[cfg(test)]
 #[path = "infantry_pip_tests.rs"]

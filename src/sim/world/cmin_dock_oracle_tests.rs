@@ -57,11 +57,11 @@ const UNREPRESENTED: [&str; 4] = [
 ];
 
 pub(super) const CMIN: &str = "[CMIN]\nStrength=400\nSpeed=4\nROT=5\nHarvester=yes\nTeleporter=yes\n\
-    Dock=GAREFN\nStorage=20\nMovementZone=Crusher\nUnloadingClass=CMON\n\
+    Dock=GAREFN\nStorage=20\nMovementZone=Crusher\nUnloadingClass=CMON\nSpeedType=Track\n\
     ChronoInSound=CminIn\nChronoOutSound=CminOut\n\
     Locomotor={4A582747-9839-11D1-B709-00A024DDAFD1}\n\
     [CMON]\nStrength=400\nSpeed=4\nLocomotor={4A582747-9839-11D1-B709-00A024DDAFD1}\n\
-    [CTNK]\nStrength=400\nSpeed=4\nROT=5\nTeleporter=yes\n\
+    [CTNK]\nStrength=400\nSpeed=4\nROT=5\nTeleporter=yes\nSpeedType=Track\n\
     ChronoInSound=CminIn\nChronoOutSound=CminOut\n\
     Locomotor={4A582747-9839-11D1-B709-00A024DDAFD1}\n";
 

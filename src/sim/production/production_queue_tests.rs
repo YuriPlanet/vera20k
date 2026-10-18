@@ -2460,8 +2460,8 @@ fn hold_rules() -> RuleSet {
          [VehicleTypes]\n0=MTNK\n1=AMCV\n\
          [AircraftTypes]\n\
          [BuildingTypes]\n0=GAWEAP\n\
-         [MTNK]\nCost=700\nStrength=300\nSpeed=6\nTechLevel=1\nOwner=Americans\n\
-         [AMCV]\nCost=3000\nStrength=1000\nSpeed=4\nTechLevel=1\nOwner=Americans\nBuildLimit=1\n\
+         [MTNK]\nCost=700\nStrength=300\nSpeed=6\nSpeedType=Track\nTechLevel=1\nOwner=Americans\n\
+         [AMCV]\nCost=3000\nStrength=1000\nSpeed=4\nSpeedType=Track\nTechLevel=1\nOwner=Americans\nBuildLimit=1\n\
          [GAWEAP]\nOwner=Americans\nFactory=UnitType\n",
     ))
     .expect("hold rules")

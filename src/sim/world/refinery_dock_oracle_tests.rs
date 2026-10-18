@@ -40,10 +40,10 @@ use std::sync::Arc;
 
 pub(super) const RULES: &str = "[VehicleTypes]\n0=HARV\n1=MTNK\n\
     [HARV]\nStrength=1000\nSpeed=4\nROT=5\nHarvester=yes\nDock=GAREFN\nStorage=40\n\
-    MovementZone=Crusher\nUnloadingClass=HORV\n\
+    MovementZone=Crusher\nUnloadingClass=HORV\nSpeedType=Track\n\
     Locomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n\
     [HORV]\nStrength=1000\nSpeed=4\nLocomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n\
-    [MTNK]\nStrength=300\nSpeed=6\nLocomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n\
+    [MTNK]\nStrength=300\nSpeed=6\nSpeedType=Track\nLocomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n\
     [BuildingTypes]\n0=GAREFN\n1=GAREFX\n2=GAOREP\n\
     [GAREFN]\nStrength=900\nRefinery=yes\nDockUnload=yes\nNumberOfDocks=1\n\
     NumberImpassableRows=3\n\
