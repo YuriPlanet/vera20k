@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original physical temperate ClearTile0 TMP preview level table549E90, lookup549E50 and complete selected no-Building/no-overlay Cell47BDB0 path for levels0..12; original scale661190/interpolation661020 controls. No whole RMG generation, thumbnail surface, World startup or GPU claim.",
+  "assumptions": [
+    "Existing tmp_clear_render prepare() shares PaletteReader, physical archive/theater registration readers, original TMP constructors/full lazy loader and warm native selector. File-family links/counts are the existing supplied registration metadata; selected actual clear01.tem bytes and native registered head/header are checked together.",
+    "Existing RGB565 enrollment is conditional device input, not intrinsic native format. Original4BA9CD..4BAA89 derives shifts/losses from declared masksF800/07E0/001F; full DirectDraw descriptor negotiation is outside this component.",
+    "Full original549E90 frees/rebuilds the native13x4-byte table from physical TMP RGB pairs and original661190/661020, with native x87 state and ftol. All expected words/RGB are original output, no copied host math or packing.",
+    "Cell coordinate, tile0, subtile0, rawlevel0..12, rawflags0, overlay-1, empty ground list and bypass-building0 are declared component inputs. Original Cell body traverses its real no-Building/no-bridge branch, native warm selector/file walk and height lookup; no Cell getter is replaced.",
+    "Numeric clamp/rounding RGB and rawf32 inputs are supplied controls. Main warm selector continuation and separately native-seeded Scenario/MapGen full states are captured before/after all preview work. No full-game RNG-startup equivalence follows.",
+    "Particle color controls start after the declared RandomRanged result at62BAC5, executing original sample double scale/FSTPfloat/661020/output stores through62BB06 without RNG interception. The first retained Welding sample19015573 and typeRGB inputs are replayed numerically, not through a new Particle/world fixture."
+  ],
+  "substitutions": [
+    "Existing bounded allocator/free/TLS/CRT and immutable RawFile Windows byte transport only; native table/color/Cell/selector instructions execute unchanged."
+  ],
+  "entry_points": {
+    "table": "0x00549E90",
+    "lookup": "0x00549E50",
+    "cell": "0x0047BDB0",
+    "scale": "0x00661190",
+    "interpolate": "0x00661020",
+    "mask_derivation": "0x004BA9CD",
+    "tmp_constructor": "0x005447C0",
+    "tmp_loader": "0x00547020",
+    "selector": "0x004814F0",
+    "file_walk": "0x00544E00",
+    "particle_color_prefix": "0x0062BAC5"
+  },
+  "replay_command": "python -m tools.spatial_oracle.tmp_clear_render --preview",
+  "payload_sha256": "e6cbd94c3344340d7d62bcdc07a8edbd2093875b1d6d49b92a64b388c771fb72"
+}

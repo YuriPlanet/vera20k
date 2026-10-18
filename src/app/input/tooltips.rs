@@ -10,6 +10,7 @@
 use crate::app::AppState;
 use crate::app::presentation::sidebar_render::{current_sidebar_theme, current_sidebar_view};
 use crate::assets::csf_file::{CsfArg, format_csf};
+use crate::map::entities::EntityCategory;
 use crate::render::batch::SpriteInstance;
 use crate::ui::game_screen::GameScreen;
 use crate::ui::tooltips::{TipRect, TipRegion};
@@ -162,18 +163,103 @@ fn tactical_cell_tip_text(
     world: (f32, f32),
     cursor_coordinates: bool,
     localize: impl FnOnce(&str) -> String,
-) -> String {
+) -> Option<String> {
     let point = crate::map::terrain::screen_to_plane_leptons(world.0, world.1);
     if cursor_coordinates {
-        return format!("({},{})", point.x / 256, point.y / 256);
+        return Some(format!("({},{})", point.x / 256, point.y / 256));
     }
     let cells = crate::map::resolved_terrain::NativeCellQuery::isolated(terrain);
     let cell = cells.lookup_world(point.x, point.y);
     if crate::sim::vision::cell_ground_mapped(fog, terrain, viewer, cell) {
-        String::new()
+        None
     } else {
-        localize(TIP_LABEL_SHADOW)
+        Some(localize(TIP_LABEL_SHADOW))
     }
+}
+
+/// Display4AE4F0's tactical region text. World is in projected world pixels,
+/// shared with the ordinary tactical pointer picker. Source:
+/// `python -m tools.native_inspect disasm 0x4AE4F0 --bytes 0x1B5`.
+fn tactical_world_tip_text(
+    view: crate::sim::runtime::SimView<'_>,
+    rules: &crate::rules::ruleset::RuleSet,
+    height_map: &std::collections::BTreeMap<(u16, u16), u8>,
+    csf: Option<&crate::assets::csf_file::CsfFile>,
+    world: (f32, f32),
+    cursor_coordinates: bool,
+) -> String {
+    let Some((terrain, viewer)) = view.resolved_terrain().zip(view.session().current_house())
+    else {
+        return String::new();
+    };
+    if let Some(text) = tactical_cell_tip_text(
+        view.fog(),
+        terrain,
+        viewer,
+        world,
+        cursor_coordinates,
+        |key| {
+            csf.map(|csf| csf.text(key).into_owned())
+                .unwrap_or_default()
+        },
+    ) {
+        return text;
+    }
+    // ProcessClickCoords692300 uses TacticalPick6DA380's retained Display
+    // registrations. Share the normal click owner, including live admission
+    // and foundation fallback, instead of keeping a tooltip object pointer.
+    let sim = view.simulation();
+    let order = crate::app::presentation::instances::tactical_entity_encounter_order(sim);
+    let picked = crate::app::input::entity_pick::pick_entity_at_point(
+        view.entities(),
+        &order,
+        Some(view.fog()),
+        Some(view.interner().resolve(viewer)),
+        world.0,
+        world.1,
+        crate::app::input::dispatch::CLICK_SELECT_RADIUS,
+        Some(rules),
+        Some(&sim.houses),
+        height_map,
+        crate::app::match_runtime::sim_tick::tactical_bridge_cells(sim),
+        Some(view.interner()),
+        Some(terrain),
+    );
+    let Some(entity) = picked.and_then(|id| view.entities().get(id)) else {
+        return String::new();
+    };
+    // Display4AE616's local-owned arm reaches virtual+90 directly.
+    // Building459ED0 returns Type+60. Infantry51F2C0's ordinary arm does too:
+    // ownerHouse4F9A50(currentHouse) is true for identity even when disguised.
+    // Source: `tools.native_inspect disasm 0x51F2C0 --bytes 0x65`.
+    // Residual: Nominal crew's runtime+6D9 is not represented (crew_survival);
+    // its earlier TXT_TECHNICIAN return requires the shared crew/House-count
+    // mechanism. This covers constructor-default own infantry, including E2.
+    if entity.owner() != viewer {
+        return String::new();
+    }
+    let Some(object) = rules.object(view.interner().resolve(entity.type_ref())) else {
+        return String::new();
+    };
+    match entity.category() {
+        EntityCategory::Structure | EntityCategory::Infantry => {}
+        // Aircraft41C1D0 returns its actual Type+60 directly, without a
+        // disguise, dock or flight-state name branch. Keep the same picker
+        // and exact-Z projection owner for grounded and flying aircraft.
+        // Source: `tools.native_inspect disasm 0x41C1D0 --bytes 0xA`.
+        EntityCategory::Aircraft => {}
+        // Exact ownership also makes Unit746750's observer-disguise +C8
+        // false. Unit746B20 then returns actual Type+60 when the first gate
+        // 70DC60 -> 717880 (signed TurretCount > 0) is false, as for HTNK.
+        // Source: `tools.native_inspect disasm 0x746B20 --bytes 0x165`.
+        EntityCategory::Unit if object.turret_count <= 0 => {}
+        // Positive TurretCount can reach HasTurretTooltips and the passenger/
+        // current-turret formatter (stock FV). Its retained readers and that
+        // name path remain unported; never replace it with the actual name.
+        // Nonlocal names and non-Techno/resource names also remain open.
+        _ => return String::new(),
+    }
+    crate::assets::csf_file::type_ui_name(object.ui_name.as_deref(), csf)
 }
 
 fn tactical_tip_text(state: &AppState) -> String {
@@ -188,8 +274,7 @@ fn tactical_tip_text(state: &AppState) -> String {
     {
         return String::new();
     }
-    let Some((terrain, viewer)) = view.resolved_terrain().zip(view.session().current_house())
-    else {
+    let Some(rules) = state.rules() else {
         return String::new();
     };
     let world = crate::app::match_runtime::sim_tick::screen_point_to_world(
@@ -197,15 +282,31 @@ fn tactical_tip_text(state: &AppState) -> String {
         input.cursor_x,
         input.cursor_y,
     );
-    tactical_cell_tip_text(
-        view.fog(),
-        terrain,
-        viewer,
+    tactical_world_tip_text(
+        view,
+        rules,
+        state.height_map(),
+        state.process_assets.csf.as_ref(),
         world,
         input.cursor_coordinates,
-        |key| csf_text(state, key),
     )
-    // The later object/cloak/resource tooltip ladder remains a separate path.
+}
+
+/// Callback479050 reads WWMouse+0C through virtual+28 (7B89F0), returning
+/// NULL at47905F for negative display depth before Mouse6D1800 resolves text.
+/// Show724AD0 clears an active NULL tip without changing its timer; the
+/// service's empty-text path preserves that behavior. Direct descriptor
+/// labels (repair6AC130/sell6AC0DD) bypass this callback in Show724AD0.
+/// Source: `python -m tools.native_inspect disasm 0x479050 --bytes 0x26`.
+fn dynamic_tip_text(
+    cursor: crate::app::input::cursor::CursorVisibility,
+    resolve: impl FnOnce() -> String,
+) -> String {
+    if cursor.is_visible() {
+        resolve()
+    } else {
+        String::new()
+    }
 }
 
 /// gamemd re-formats a tab/scroll tip as `"<tip>\n(<Tip:Disabled>)"` when the
@@ -257,6 +358,7 @@ fn sync_in_game_regions(state: &mut AppState) {
         return;
     };
     let frame = state.sidebar_frame();
+    let cursor = state.match_state.input.cursor_visibility;
     let mut regions: Vec<TipRegion> = Vec::with_capacity(9 + view.items.len());
     // Set_View_Dimensions4A8960 (registration4A8B50) registers the viewport as
     // dynamic region500. CursorCheat537EF0 toggles its coordinate text at
@@ -265,28 +367,31 @@ fn sync_in_game_regions(state: &mut AppState) {
     regions.push(TipRegion {
         id: 500,
         rect: TipRect::new(x as i32, y as i32, width as i32, height as i32),
-        text: tactical_tip_text(state),
+        text: dynamic_tip_text(cursor, || tactical_tip_text(state)),
     });
     // Power meter first: gamemd asks the power bar for a tip before the
     // sidebar gadget ids, and registration order decides the hit here.
+    // Gadget idle republishes these retained House values each unlocked pump.
     let power_rect = crate::ui::sidebar::power_bar_rect(
         &view.layout,
         state.match_state.match_presentation.sidebar_layout_spec,
     );
-    let power_text = state
-        .process_assets
-        .csf
-        .as_ref()
-        .map(|csf| {
-            format_csf(
-                csf.text(TIP_LABEL_POWER_DRAIN).as_ref(),
-                &[
-                    CsfArg::Int(i64::from(view.power_produced)),
-                    CsfArg::Int(i64::from(view.power_drained)),
-                ],
-            )
-        })
-        .unwrap_or_default();
+    let power_text = dynamic_tip_text(cursor, || {
+        state
+            .process_assets
+            .csf
+            .as_ref()
+            .map(|csf| {
+                format_csf(
+                    csf.text(TIP_LABEL_POWER_DRAIN).as_ref(),
+                    &[
+                        CsfArg::Int(i64::from(view.power_produced)),
+                        CsfArg::Int(i64::from(view.power_drained)),
+                    ],
+                )
+            })
+            .unwrap_or_default()
+    });
     regions.push(TipRegion {
         id: ID_POWER_TIP,
         rect: tip_rect(frame, power_rect),
@@ -297,7 +402,9 @@ fn sync_in_game_regions(state: &mut AppState) {
             .get(i)
             .copied()
             .unwrap_or(TIP_LABELS_TAB[TIP_LABELS_TAB.len() - 1]);
-        let text = with_disabled_suffix(state, csf_text(state, label), tab.disabled);
+        let text = dynamic_tip_text(cursor, || {
+            with_disabled_suffix(state, csf_text(state, label), tab.disabled)
+        });
         regions.push(TipRegion {
             id: crate::app::input::gadget_input::ID_TAB_BASE as u32 + i as u32,
             rect: tip_rect(frame, tab.rect),
@@ -321,27 +428,29 @@ fn sync_in_game_regions(state: &mut AppState) {
         regions.push(TipRegion {
             id: crate::app::input::gadget_input::ID_SCROLL_DOWN as u32,
             rect: tip_rect(frame, view.scroll_down_button.rect),
-            text: csf_text(state, TIP_LABEL_SCROLL_DOWN),
+            text: dynamic_tip_text(cursor, || csf_text(state, TIP_LABEL_SCROLL_DOWN)),
         });
         regions.push(TipRegion {
             id: crate::app::input::gadget_input::ID_SCROLL_UP as u32,
             rect: tip_rect(frame, view.scroll_up_button.rect),
-            text: csf_text(state, TIP_LABEL_SCROLL_UP),
+            text: dynamic_tip_text(cursor, || csf_text(state, TIP_LABEL_SCROLL_UP)),
         });
     }
     for (slot, item) in view.items.iter().enumerate() {
-        let text = if item.is_superweapon {
-            // The retained view carries the same native UIName used for
-            // ordering. Supers display it verbatim, without a cost suffix.
-            item.display_name.clone()
-        } else {
-            let money_format = state
-                .process_assets
-                .csf
-                .as_ref()
-                .map(|csf| csf.text(CAMEO_TIP_MONEY_FORMAT));
-            cameo_tip_text(money_format.as_deref(), &item.display_name, item.cost)
-        };
+        let text = dynamic_tip_text(cursor, || {
+            if item.is_superweapon {
+                // The retained view carries the same native UIName used for
+                // ordering. Supers display it verbatim, without a cost suffix.
+                item.display_name.clone()
+            } else {
+                let money_format = state
+                    .process_assets
+                    .csf
+                    .as_ref()
+                    .map(|csf| csf.text(CAMEO_TIP_MONEY_FORMAT));
+                cameo_tip_text(money_format.as_deref(), &item.display_name, item.cost)
+            }
+        });
         regions.push(TipRegion {
             id: CAMEO_TIP_ID_BASE + slot as u32,
             rect: tip_rect(frame, item.rect),
@@ -537,6 +646,234 @@ mod tests {
     const RETAIL_MONEY_FORMAT_2: &str = "%s $%d";
 
     #[test]
+    fn hidden_dynamic_provider_clears_power_tip_and_retains_its_timer() {
+        use crate::app::input::cursor::CursorVisibility;
+        use crate::ui::tooltips::{TOOLTIP_DURATION_MS, TooltipService};
+
+        let mut cursor = CursorVisibility::default();
+        let region = |cursor| TipRegion {
+            id: ID_POWER_TIP,
+            rect: TipRect::new(0, 0, 8, 100),
+            // Only the provider admission is under test; text is opaque here.
+            text: dynamic_tip_text(cursor, || "power tip".to_owned()),
+        };
+        let mut tips = TooltipService::new();
+        tips.sync_regions(&[region(cursor)]);
+        tips.on_mouse_move(5, 50, 0);
+        tips.poll(1000);
+        let shown = tips.active().unwrap().clone();
+
+        // Production input46's ordinary depth0 -> -1 transition.
+        cursor.apply_input_lock(true, false);
+        tips.sync_regions(&[region(cursor)]);
+        assert!(tips.active().is_none(), "479050 returns NULL while hidden");
+
+        // Unlock before the retained duration expires, without a new move.
+        cursor.apply_input_lock(false, true);
+        tips.sync_regions(&[region(cursor)]);
+        let expiry = shown.shown_at_ms + TOOLTIP_DURATION_MS;
+        tips.poll(expiry - 1);
+        assert!(
+            tips.active().is_none(),
+            "visibility does not rearm the timer"
+        );
+        tips.poll(expiry);
+        assert_eq!(tips.active().unwrap().shown_at_ms, expiry);
+
+        // Let that timer fire while hidden instead: the failed resolve leaves
+        // no further timer, so a later unlock needs a genuine mouse event.
+        cursor.apply_input_lock(true, false);
+        tips.sync_regions(&[region(cursor)]);
+        tips.poll(expiry + TOOLTIP_DURATION_MS);
+        cursor.apply_input_lock(false, true);
+        tips.sync_regions(&[region(cursor)]);
+        tips.poll(expiry + 2 * TOOLTIP_DURATION_MS);
+        assert!(tips.active().is_none());
+        tips.on_mouse_move(6, 50, expiry + 2 * TOOLTIP_DURATION_MS);
+        tips.poll(expiry + 2 * TOOLTIP_DURATION_MS + 1000);
+        assert_eq!(tips.active().unwrap().id, ID_POWER_TIP);
+    }
+
+    #[test]
+    fn dynamic_provider_uses_cursor_depth_before_resolving_any_text() {
+        use crate::app::input::cursor::CursorVisibility;
+
+        for (level, expected_resolution) in [(-3, false), (-1, false), (0, false), (1, true)] {
+            let mut cursor = CursorVisibility::default();
+            cursor.restore_level(level);
+            // A locked Scenario can retain positive cursor depth. The native
+            // predicate is WWMouse's signed depth, not the Scenario flag.
+            cursor.apply_input_lock(true, false);
+            let mut resolved = false;
+            let text = dynamic_tip_text(cursor, || {
+                resolved = true;
+                "dynamic text".to_owned()
+            });
+            assert_eq!(resolved, expected_resolution, "prior depth{level}");
+            assert_eq!(text.is_empty(), !expected_resolution);
+        }
+    }
+
+    #[test]
+    fn mapped_own_reactor_tip_uses_retail_ui_name_and_clears_after_limbo() {
+        assert_mapped_own_tip_uses_retail_ui_name_and_clears_after_limbo(
+            "NAPOWR",
+            "Russians",
+            "Building459ED0",
+        );
+    }
+
+    #[test]
+    fn mapped_own_conscript_tip_uses_retail_ui_name_and_clears_after_limbo() {
+        assert_mapped_own_tip_uses_retail_ui_name_and_clears_after_limbo(
+            "E2",
+            "Russians",
+            "Infantry51F2C0 flag-zero own-House arm",
+        );
+    }
+
+    #[test]
+    fn mapped_own_rhino_tip_uses_retail_ui_name_and_clears_after_limbo() {
+        assert_mapped_own_tip_uses_retail_ui_name_and_clears_after_limbo(
+            "HTNK",
+            "Russians",
+            "Unit746B20 own-House TurretCount<=0 arm",
+        );
+    }
+
+    #[test]
+    fn mapped_own_harrier_tip_uses_retail_ui_name_and_clears_after_limbo() {
+        assert_mapped_own_tip_uses_retail_ui_name_and_clears_after_limbo(
+            "ORCA",
+            "British",
+            "Aircraft41C1D0",
+        );
+    }
+
+    fn assert_mapped_own_tip_uses_retail_ui_name_and_clears_after_limbo(
+        type_id: &str,
+        owner_name: &str,
+        native_name_body: &str,
+    ) {
+        use crate::sim::house_state::HouseState;
+        use crate::sim::runtime::SimRuntime;
+        use crate::sim::world::{Simulation, UninitContext};
+
+        let Some(retail) =
+            crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+        else {
+            return;
+        };
+        let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let csf = crate::app::loading::init::load_csf(&assets).expect("physical retail CSF");
+        let rules = retail.rules;
+        let mut sim = Simulation::with_seed(0x4AE4_F000);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        let owner = sim.intern(owner_name);
+        sim.houses
+            .insert(owner, HouseState::new(owner, 0, None, true, 50_000, 10));
+        sim.session.house_order.push(owner);
+        sim.session.current_house = Some(owner);
+        crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+        sim.fog = crate::sim::vision::FogState::new(32, 32);
+        sim.fog
+            .reveal_cells_for_owner(owner, (0..32).flat_map(|y| (0..32).map(move |x| (x, y))));
+        // Admitted, mapped constructor prior. Paid production is a separate
+        // witness; this test exercises the actual text/pick owners. Stock E2
+        // begins native Infantry+6D9 clear (517A98), with Nominal absent/false.
+        // Stock HTNK's TurretCount=0 bypasses Unit746B20's name formatter.
+        let entity_id = sim
+            .spawn_object(type_id, owner_name, 14, 14, 0, &rules)
+            .unwrap();
+        let world = crate::app::presentation::instances::interpolated_screen_position_entity(
+            sim.entities().get(entity_id).unwrap(),
+        );
+        let heights = sim.resolved_terrain.as_ref().unwrap().build_height_map();
+        let order = crate::app::presentation::instances::tactical_entity_encounter_order(&sim);
+        assert_eq!(
+            crate::app::input::entity_pick::pick_entity_at_point(
+                sim.entities(),
+                &order,
+                Some(&sim.fog),
+                Some(owner_name),
+                world.0,
+                world.1,
+                0.0,
+                Some(&rules),
+                Some(&sim.houses),
+                &heights,
+                None,
+                Some(&sim.interner),
+                sim.resolved_terrain.as_ref(),
+            ),
+            Some(entity_id),
+            "fixture must reach the same ordinary picker before testing the text"
+        );
+        let mut runtime = SimRuntime::from_simulation(sim);
+        runtime.resources.rules = rules;
+        let name_key = runtime
+            .resources
+            .rules
+            .object(type_id)
+            .unwrap()
+            .ui_name
+            .as_deref()
+            .unwrap();
+        let expected = csf.text(name_key).into_owned();
+        assert!(!expected.is_empty());
+        let prior_hash = runtime.simulation.state_hash();
+        let text = tactical_world_tip_text(
+            runtime.view(),
+            &runtime.resources.rules,
+            &heights,
+            Some(&csf),
+            world,
+            false,
+        );
+        assert_eq!(
+            text, expected,
+            "mapped own {type_id}: {native_name_body} returns Type+60"
+        );
+        assert_eq!(
+            runtime.simulation.state_hash(),
+            prior_hash,
+            "text resolution preserves canonical state and Scenario RNG"
+        );
+
+        let mut tips = crate::ui::tooltips::TooltipService::new();
+        let region = |text| TipRegion {
+            id: 500,
+            rect: TipRect::new(0, 0, 100, 100),
+            text,
+        };
+        tips.sync_regions(&[region(text)]);
+        tips.on_mouse_move(20, 20, 0);
+        tips.poll(1000);
+        assert_eq!(tips.active().unwrap().text, expected);
+        runtime.simulation.techno_limbo_with_context(
+            entity_id,
+            UninitContext::with_rules(&runtime.resources.rules),
+        );
+        let text = tactical_world_tip_text(
+            runtime.view(),
+            &runtime.resources.rules,
+            &heights,
+            Some(&csf),
+            world,
+            false,
+        );
+        assert!(text.is_empty(), "the live picker must drop a Limbo object");
+        tips.sync_regions(&[region(text)]);
+        assert!(
+            tips.active().is_none(),
+            "the existing region must discard the old name"
+        );
+    }
+
+    #[test]
     fn tactical_ground_tip_uses_plane_receiver_and_direct_ground_byte() {
         use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid};
         use crate::sim::vision::FogState;
@@ -560,16 +897,16 @@ mod tests {
         let point = (0.0, 615.0); // Native plane(5120,5120,0), receiver20,20.
         assert_eq!(
             tactical_cell_tip_text(&fog, &terrain, viewer, point, false, str::to_owned),
-            "TXT_SHADOW"
+            Some("TXT_SHADOW".to_owned())
         );
         fog.set_ground_bits_for_test(viewer, 20, 20, 8);
         assert_eq!(
             tactical_cell_tip_text(&fog, &terrain, viewer, point, false, str::to_owned),
-            ""
+            None
         );
         assert_eq!(
             tactical_cell_tip_text(&fog, &terrain, other, point, false, str::to_owned),
-            "TXT_SHADOW"
+            Some("TXT_SHADOW".to_owned())
         );
         // Gap6FB3B8 clears the same native bit8 that Display4AE5D0 reads.
         // Its canonical knowledge decision must win over the legacy cache.
@@ -577,7 +914,7 @@ mod tests {
         assert!(!fog.is_cell_revealed(viewer, 20, 20));
         assert_eq!(
             tactical_cell_tip_text(&fog, &terrain, viewer, point, false, str::to_owned),
-            "TXT_SHADOW"
+            Some("TXT_SHADOW".to_owned())
         );
         // The production Display text owner must use its plane XYZ for the
         // coordinate branch too, despite real level6 below this cursor.
@@ -585,13 +922,13 @@ mod tests {
             tactical_cell_tip_text(&fog, &terrain, viewer, point, true, |_| panic!(
                 "CursorCheat precedes localized shroud text"
             )),
-            "(20,20)"
+            Some("(20,20)".to_owned())
         );
         assert_eq!(
             tactical_cell_tip_text(&fog, &terrain, viewer, (-2006.0, 15.0), true, |_| panic!(
                 "CursorCheat precedes localized shroud text"
             )),
-            "(-33,33)"
+            Some("(-33,33)".to_owned())
         );
         let before_dummy = terrain.shared_cell_dummy().snapshot();
         assert_eq!(
@@ -603,7 +940,7 @@ mod tests {
                 false,
                 str::to_owned
             ),
-            "TXT_SHADOW"
+            Some("TXT_SHADOW".to_owned())
         );
         assert_eq!(
             terrain.shared_cell_dummy().snapshot(),

@@ -16,6 +16,19 @@ use serde::{Deserialize, Serialize};
 /// Ten native team-selection slots; an object belongs to at most one slot.
 pub const CONTROL_GROUP_SLOTS: usize = 10;
 
+/// Mouse5BE715/5BE092 preserves Power's semantic state in its raw display
+/// stream. Geometry is derived; Sidebar NoInit6A4F8E/94 overwrites slide start
+/// and duration. Flash keeps its raw signed timer words across process exit.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SavedPowerBar {
+    pub counts_surplus_output_drain: [i32; 3],
+    pub cached_output: i32,
+    pub cached_drain: i32,
+    pub flashes_remaining: i32,
+    pub flash_timer: [i32; 2],
+    pub animating: bool,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SavedLocalView {
     /// Raw signed CellStruct words preserved in the app's u16 bit-pattern form.
@@ -27,6 +40,9 @@ pub struct SavedLocalView {
     control_groups: [Vec<u64>; CONTROL_GROUP_SLOTS],
     follow_target: Option<u64>,
     modes: SavedCursorModes,
+    /// The save coordinator attaches the Power owner's projection after the
+    /// input owner supplies its own facts. App loads require this payload.
+    power_bar: Option<SavedPowerBar>,
 }
 
 /// The Display's armed cursor modes. MouseLoad5BDF70 reads the whole Display
@@ -67,6 +83,10 @@ pub enum SavedLocalViewError {
     SelectionTimelineMismatch,
     #[error("saved {field} names unknown {name}")]
     UnknownName { field: &'static str, name: String },
+    #[error("saved local view has no Power bar state")]
+    MissingPowerBar,
+    #[error("saved Power bar has invalid {field}")]
+    InvalidPowerState { field: &'static str },
 }
 
 impl SavedLocalView {
@@ -85,6 +105,7 @@ impl SavedLocalView {
             control_groups,
             follow_target,
             modes,
+            power_bar: None,
         };
         saved.validate_structure()?;
         Ok(saved)
@@ -131,6 +152,18 @@ impl SavedLocalView {
 
     pub fn modes(&self) -> &SavedCursorModes {
         &self.modes
+    }
+
+    pub fn set_power_bar(&mut self, power_bar: SavedPowerBar) {
+        self.power_bar = Some(power_bar);
+    }
+
+    pub fn power_bar(&self) -> Option<&SavedPowerBar> {
+        self.power_bar.as_ref()
+    }
+
+    pub fn take_power_bar(&mut self) -> Option<SavedPowerBar> {
+        self.power_bar.take()
     }
 
     pub fn into_local_input(

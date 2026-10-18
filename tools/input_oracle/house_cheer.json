@@ -1,0 +1,1081 @@
+{
+  "cases": [
+    {
+      "input": {
+        "house_index": 7,
+        "input_locked": 0,
+        "last_frame": -100,
+        "maximum_cheer_rate": 300,
+        "queue_count": 0,
+        "queue_read_index": 0,
+        "queue_write_index": 0
+      },
+      "name": "stock_initial_boundary",
+      "phases": [
+        {
+          "expected": {
+            "constructor_calls": [],
+            "last_frame": -100,
+            "last_frame_writes": [],
+            "maximum_cheer_rate": 300,
+            "new_events": [],
+            "os_imports": [],
+            "queue_count": 0,
+            "queue_read_index": 0,
+            "queue_write_index": 0
+          },
+          "input": {
+            "current_frame": 0,
+            "kind": "press"
+          }
+        },
+        {
+          "expected": {
+            "constructor_calls": [],
+            "last_frame": -100,
+            "last_frame_writes": [],
+            "maximum_cheer_rate": 300,
+            "new_events": [],
+            "os_imports": [],
+            "queue_count": 0,
+            "queue_read_index": 0,
+            "queue_write_index": 0
+          },
+          "input": {
+            "current_frame": 200,
+            "kind": "press"
+          }
+        },
+        {
+          "expected": {
+            "constructor_calls": [
+              {
+                "house_index": 7,
+                "opcode": 45
+              }
+            ],
+            "last_frame": 201,
+            "last_frame_writes": [
+              201
+            ],
+            "maximum_cheer_rate": 300,
+            "new_events": [
+              {
+                "frame": 201,
+                "house_index": 7,
+                "opcode": 45,
+                "queued_at_ms": 100000
+              }
+            ],
+            "os_imports": [
+              {
+                "result": 100000,
+                "service": "timeGetTime"
+              }
+            ],
+            "queue_count": 1,
+            "queue_read_index": 0,
+            "queue_write_index": 1
+          },
+          "input": {
+            "current_frame": 201,
+            "kind": "press"
+          }
+        },
+        {
+          "expected": {
+            "constructor_calls": [],
+            "last_frame": 201,
+            "last_frame_writes": [],
+            "maximum_cheer_rate": 300,
+            "new_events": [],
+            "os_imports": [],
+            "queue_count": 1,
+            "queue_read_index": 0,
+            "queue_write_index": 1
+          },
+          "input": {
+            "current_frame": 501,
+            "kind": "press"
+          }
+        },
+        {
+          "expected": {
+            "constructor_calls": [
+              {
+                "house_index": 7,
+                "opcode": 45
+              }
+            ],
+            "last_frame": 502,
+            "last_frame_writes": [
+              502
+            ],
+            "maximum_cheer_rate": 300,
+            "new_events": [
+              {
+                "frame": 502,
+                "house_index": 7,
+                "opcode": 45,
+                "queued_at_ms": 100000
+              }
+            ],
+            "os_imports": [
+              {
+                "result": 100000,
+                "service": "timeGetTime"
+              }
+            ],
+            "queue_count": 2,
+            "queue_read_index": 0,
+            "queue_write_index": 2
+          },
+          "input": {
+            "current_frame": 502,
+            "kind": "press"
+          }
+        }
+      ]
+    },
+    {
+      "input": {
+        "house_index": 7,
+        "input_locked": 0,
+        "last_frame": 100,
+        "maximum_cheer_rate": 300,
+        "queue_count": 0,
+        "queue_read_index": 0,
+        "queue_write_index": 0
+      },
+      "name": "positive_boundary",
+      "phases": [
+        {
+          "expected": {
+            "constructor_calls": [],
+            "last_frame": 100,
+            "last_frame_writes": [],
+            "maximum_cheer_rate": 300,
+            "new_events": [],
+            "os_imports": [],
+            "queue_count": 0,
+            "queue_read_index": 0,
+            "queue_write_index": 0
+          },
+          "input": {
+            "current_frame": 399,
+            "kind": "press"
+          }
+        },
+        {
+          "expected": {
+            "constructor_calls": [],
+            "last_frame": 100,
+            "last_frame_writes": [],
+            "maximum_cheer_rate": 300,
+            "new_events": [],
+            "os_imports": [],
+            "queue_count": 0,
+            "queue_read_index": 0,
+            "queue_write_index": 0
+          },
+          "input": {
+            "current_frame": 400,
+            "kind": "press"
+          }
+        },
+        {
+          "expected": {
+            "constructor_calls": [
+              {
+                "house_index": 7,
+                "opcode": 45
+              }
+            ],
+            "last_frame": 401,
+            "last_frame_writes": [
+              401
+            ],
+            "maximum_cheer_rate": 300,
+            "new_events": [
+              {
+                "frame": 401,
+                "house_index": 7,
+                "opcode": 45,
+                "queued_at_ms": 100000
+              }
+            ],
+            "os_imports": [
+              {
+                "result": 100000,
+                "service": "timeGetTime"
+              }
+            ],
+            "queue_count": 1,
+            "queue_read_index": 0,
+            "queue_write_index": 1
+          },
+          "input": {
+            "current_frame": 401,
+            "kind": "press"
+          }
+        }
+      ]
+    },
+    {
+      "input": {
+        "house_index": 7,
+        "input_locked": 0,
+        "last_frame": 100,
+        "maximum_cheer_rate": 0,
+        "queue_count": 0,
+        "queue_read_index": 0,
+        "queue_write_index": 0
+      },
+      "name": "zero_rate",
+      "phases": [
+        {
+          "expected": {
+            "constructor_calls": [],
+            "last_frame": 100,
+            "last_frame_writes": [],
+            "maximum_cheer_rate": 0,
+            "new_events": [],
+            "os_imports": [],
+            "queue_count": 0,
+            "queue_read_index": 0,
+            "queue_write_index": 0
+          },
+          "input": {
+            "current_frame": 100,
+            "kind": "press"
+          }
+        },
+        {
+          "expected": {
+            "constructor_calls": [
+              {
+                "house_index": 7,
+                "opcode": 45
+              }
+            ],
+            "last_frame": 101,
+            "last_frame_writes": [
+              101
+            ],
+            "maximum_cheer_rate": 0,
+            "new_events": [
+              {
+                "frame": 101,
+                "house_index": 7,
+                "opcode": 45,
+                "queued_at_ms": 100000
+              }
+            ],
+            "os_imports": [
+              {
+                "result": 100000,
+                "service": "timeGetTime"
+              }
+            ],
+            "queue_count": 1,
+            "queue_read_index": 0,
+            "queue_write_index": 1
+          },
+          "input": {
+            "current_frame": 101,
+            "kind": "press"
+          }
+        }
+      ]
+    },
+    {
+      "input": {
+        "house_index": 7,
+        "input_locked": 0,
+        "last_frame": 100,
+        "maximum_cheer_rate": -1,
+        "queue_count": 0,
+        "queue_read_index": 0,
+        "queue_write_index": 0
+      },
+      "name": "negative_rate",
+      "phases": [
+        {
+          "expected": {
+            "constructor_calls": [],
+            "last_frame": 100,
+            "last_frame_writes": [],
+            "maximum_cheer_rate": -1,
+            "new_events": [],
+            "os_imports": [],
+            "queue_count": 0,
+            "queue_read_index": 0,
+            "queue_write_index": 0
+          },
+          "input": {
+            "current_frame": 99,
+            "kind": "press"
+          }
+        },
+        {
+          "expected": {
+            "constructor_calls": [
+              {
+                "house_index": 7,
+                "opcode": 45
+              }
+            ],
+            "last_frame": 100,
+            "last_frame_writes": [
+              100
+            ],
+            "maximum_cheer_rate": -1,
+            "new_events": [
+              {
+                "frame": 100,
+                "house_index": 7,
+                "opcode": 45,
+                "queued_at_ms": 100000
+              }
+            ],
+            "os_imports": [
+              {
+                "result": 100000,
+                "service": "timeGetTime"
+              }
+            ],
+            "queue_count": 1,
+            "queue_read_index": 0,
+            "queue_write_index": 1
+          },
+          "input": {
+            "current_frame": 100,
+            "kind": "press"
+          }
+        }
+      ]
+    },
+    {
+      "input": {
+        "house_index": 7,
+        "input_locked": 0,
+        "last_frame": 2147483647,
+        "maximum_cheer_rate": 1,
+        "queue_count": 0,
+        "queue_read_index": 0,
+        "queue_write_index": 0
+      },
+      "name": "add_overflow_max_plus_one",
+      "phases": [
+        {
+          "expected": {
+            "constructor_calls": [
+              {
+                "house_index": 7,
+                "opcode": 45
+              }
+            ],
+            "last_frame": 0,
+            "last_frame_writes": [
+              0
+            ],
+            "maximum_cheer_rate": 1,
+            "new_events": [
+              {
+                "frame": 0,
+                "house_index": 7,
+                "opcode": 45,
+                "queued_at_ms": 100000
+              }
+            ],
+            "os_imports": [
+              {
+                "result": 100000,
+                "service": "timeGetTime"
+              }
+            ],
+            "queue_count": 1,
+            "queue_read_index": 0,
+            "queue_write_index": 1
+          },
+          "input": {
+            "current_frame": 0,
+            "kind": "press"
+          }
+        }
+      ]
+    },
+    {
+      "input": {
+        "house_index": 7,
+        "input_locked": 0,
+        "last_frame": -2147483648,
+        "maximum_cheer_rate": -1,
+        "queue_count": 0,
+        "queue_read_index": 0,
+        "queue_write_index": 0
+      },
+      "name": "add_overflow_min_minus_one",
+      "phases": [
+        {
+          "expected": {
+            "constructor_calls": [],
+            "last_frame": -2147483648,
+            "last_frame_writes": [],
+            "maximum_cheer_rate": -1,
+            "new_events": [],
+            "os_imports": [],
+            "queue_count": 0,
+            "queue_read_index": 0,
+            "queue_write_index": 0
+          },
+          "input": {
+            "current_frame": 0,
+            "kind": "press"
+          }
+        },
+        {
+          "expected": {
+            "constructor_calls": [],
+            "last_frame": -2147483648,
+            "last_frame_writes": [],
+            "maximum_cheer_rate": -1,
+            "new_events": [],
+            "os_imports": [],
+            "queue_count": 0,
+            "queue_read_index": 0,
+            "queue_write_index": 0
+          },
+          "input": {
+            "current_frame": 2147483647,
+            "kind": "press"
+          }
+        }
+      ]
+    },
+    {
+      "input": {
+        "house_index": 7,
+        "input_locked": 0,
+        "last_frame": 2147483647,
+        "maximum_cheer_rate": 1,
+        "queue_count": 0,
+        "queue_read_index": 0,
+        "queue_write_index": 0
+      },
+      "name": "wrapped_sum_equality",
+      "phases": [
+        {
+          "expected": {
+            "constructor_calls": [],
+            "last_frame": 2147483647,
+            "last_frame_writes": [],
+            "maximum_cheer_rate": 1,
+            "new_events": [],
+            "os_imports": [],
+            "queue_count": 0,
+            "queue_read_index": 0,
+            "queue_write_index": 0
+          },
+          "input": {
+            "current_frame": -2147483648,
+            "kind": "press"
+          }
+        },
+        {
+          "expected": {
+            "constructor_calls": [
+              {
+                "house_index": 7,
+                "opcode": 45
+              }
+            ],
+            "last_frame": -2147483647,
+            "last_frame_writes": [
+              -2147483647
+            ],
+            "maximum_cheer_rate": 1,
+            "new_events": [
+              {
+                "frame": -2147483647,
+                "house_index": 7,
+                "opcode": 45,
+                "queued_at_ms": 100000
+              }
+            ],
+            "os_imports": [
+              {
+                "result": 100000,
+                "service": "timeGetTime"
+              }
+            ],
+            "queue_count": 1,
+            "queue_read_index": 0,
+            "queue_write_index": 1
+          },
+          "input": {
+            "current_frame": -2147483647,
+            "kind": "press"
+          }
+        }
+      ]
+    },
+    {
+      "input": {
+        "house_index": 7,
+        "input_locked": 0,
+        "last_frame": -100,
+        "maximum_cheer_rate": 300,
+        "queue_count": 0,
+        "queue_read_index": 0,
+        "queue_write_index": 0
+      },
+      "name": "current_frame_is_signed",
+      "phases": [
+        {
+          "expected": {
+            "constructor_calls": [],
+            "last_frame": -100,
+            "last_frame_writes": [],
+            "maximum_cheer_rate": 300,
+            "new_events": [],
+            "os_imports": [],
+            "queue_count": 0,
+            "queue_read_index": 0,
+            "queue_write_index": 0
+          },
+          "input": {
+            "current_frame": -2147483648,
+            "kind": "press"
+          }
+        }
+      ]
+    },
+    {
+      "input": {
+        "house_index": 7,
+        "input_locked": 1,
+        "last_frame": 100,
+        "maximum_cheer_rate": 300,
+        "queue_count": 0,
+        "queue_read_index": 0,
+        "queue_write_index": 0
+      },
+      "name": "locked_preserves_prior",
+      "phases": [
+        {
+          "expected": {
+            "constructor_calls": [],
+            "last_frame": 100,
+            "last_frame_writes": [],
+            "maximum_cheer_rate": 300,
+            "new_events": [],
+            "os_imports": [],
+            "queue_count": 0,
+            "queue_read_index": 0,
+            "queue_write_index": 0
+          },
+          "input": {
+            "current_frame": 401,
+            "kind": "press"
+          }
+        },
+        {
+          "expected": {
+            "constructor_calls": [
+              {
+                "house_index": 7,
+                "opcode": 45
+              }
+            ],
+            "last_frame": 401,
+            "last_frame_writes": [
+              401
+            ],
+            "maximum_cheer_rate": 300,
+            "new_events": [
+              {
+                "frame": 401,
+                "house_index": 7,
+                "opcode": 45,
+                "queued_at_ms": 100000
+              }
+            ],
+            "os_imports": [
+              {
+                "result": 100000,
+                "service": "timeGetTime"
+              }
+            ],
+            "queue_count": 1,
+            "queue_read_index": 0,
+            "queue_write_index": 1
+          },
+          "input": {
+            "current_frame": 401,
+            "input_locked": 0,
+            "kind": "press"
+          }
+        }
+      ]
+    },
+    {
+      "input": {
+        "house_index": 7,
+        "input_locked": 4294967295,
+        "last_frame": 100,
+        "maximum_cheer_rate": 300,
+        "queue_count": 0,
+        "queue_read_index": 0,
+        "queue_write_index": 0
+      },
+      "name": "any_nonzero_lock",
+      "phases": [
+        {
+          "expected": {
+            "constructor_calls": [],
+            "last_frame": 100,
+            "last_frame_writes": [],
+            "maximum_cheer_rate": 300,
+            "new_events": [],
+            "os_imports": [],
+            "queue_count": 0,
+            "queue_read_index": 0,
+            "queue_write_index": 0
+          },
+          "input": {
+            "current_frame": 401,
+            "kind": "press"
+          }
+        }
+      ]
+    },
+    {
+      "input": {
+        "house_index": 7,
+        "input_locked": 0,
+        "last_frame": -100,
+        "maximum_cheer_rate": 300,
+        "queue_count": 127,
+        "queue_read_index": 0,
+        "queue_write_index": 127
+      },
+      "name": "last_free_slot_wrap",
+      "phases": [
+        {
+          "expected": {
+            "constructor_calls": [
+              {
+                "house_index": 7,
+                "opcode": 45
+              }
+            ],
+            "last_frame": 201,
+            "last_frame_writes": [
+              201
+            ],
+            "maximum_cheer_rate": 300,
+            "new_events": [
+              {
+                "frame": 201,
+                "house_index": 7,
+                "opcode": 45,
+                "queued_at_ms": 100000
+              }
+            ],
+            "os_imports": [
+              {
+                "result": 100000,
+                "service": "timeGetTime"
+              }
+            ],
+            "queue_count": 128,
+            "queue_read_index": 0,
+            "queue_write_index": 0
+          },
+          "input": {
+            "current_frame": 201,
+            "kind": "press"
+          }
+        }
+      ]
+    },
+    {
+      "input": {
+        "house_index": 29,
+        "input_locked": 0,
+        "last_frame": -100,
+        "maximum_cheer_rate": 300,
+        "queue_count": 0,
+        "queue_read_index": 127,
+        "queue_write_index": 127
+      },
+      "name": "empty_ring_wrap",
+      "phases": [
+        {
+          "expected": {
+            "constructor_calls": [
+              {
+                "house_index": 29,
+                "opcode": 45
+              }
+            ],
+            "last_frame": 201,
+            "last_frame_writes": [
+              201
+            ],
+            "maximum_cheer_rate": 300,
+            "new_events": [
+              {
+                "frame": 201,
+                "house_index": 29,
+                "opcode": 45,
+                "queued_at_ms": 100000
+              }
+            ],
+            "os_imports": [
+              {
+                "result": 100000,
+                "service": "timeGetTime"
+              }
+            ],
+            "queue_count": 1,
+            "queue_read_index": 127,
+            "queue_write_index": 0
+          },
+          "input": {
+            "current_frame": 201,
+            "kind": "press"
+          }
+        },
+        {
+          "expected": {
+            "constructor_calls": [
+              {
+                "house_index": 29,
+                "opcode": 45
+              }
+            ],
+            "last_frame": 502,
+            "last_frame_writes": [
+              502
+            ],
+            "maximum_cheer_rate": 300,
+            "new_events": [
+              {
+                "frame": 502,
+                "house_index": 29,
+                "opcode": 45,
+                "queued_at_ms": 100000
+              }
+            ],
+            "os_imports": [
+              {
+                "result": 100000,
+                "service": "timeGetTime"
+              }
+            ],
+            "queue_count": 2,
+            "queue_read_index": 127,
+            "queue_write_index": 1
+          },
+          "input": {
+            "current_frame": 502,
+            "kind": "press"
+          }
+        }
+      ]
+    },
+    {
+      "input": {
+        "house_index": 7,
+        "input_locked": 0,
+        "last_frame": -100,
+        "maximum_cheer_rate": 300,
+        "queue_count": 128,
+        "queue_read_index": 37,
+        "queue_write_index": 37
+      },
+      "name": "full_queue_consumes_opportunity",
+      "phases": [
+        {
+          "expected": {
+            "constructor_calls": [
+              {
+                "house_index": 7,
+                "opcode": 45
+              }
+            ],
+            "last_frame": 201,
+            "last_frame_writes": [
+              201
+            ],
+            "maximum_cheer_rate": 300,
+            "new_events": [],
+            "os_imports": [],
+            "queue_count": 128,
+            "queue_read_index": 37,
+            "queue_write_index": 37
+          },
+          "input": {
+            "current_frame": 201,
+            "kind": "press"
+          }
+        },
+        {
+          "expected": {
+            "constructor_calls": [],
+            "last_frame": 201,
+            "last_frame_writes": [],
+            "maximum_cheer_rate": 300,
+            "new_events": [],
+            "os_imports": [],
+            "queue_count": 0,
+            "queue_read_index": 37,
+            "queue_write_index": 37
+          },
+          "input": {
+            "current_frame": 202,
+            "kind": "press",
+            "queue_count": 0
+          }
+        },
+        {
+          "expected": {
+            "constructor_calls": [],
+            "last_frame": 201,
+            "last_frame_writes": [],
+            "maximum_cheer_rate": 300,
+            "new_events": [],
+            "os_imports": [],
+            "queue_count": 0,
+            "queue_read_index": 37,
+            "queue_write_index": 37
+          },
+          "input": {
+            "current_frame": 501,
+            "kind": "press"
+          }
+        },
+        {
+          "expected": {
+            "constructor_calls": [
+              {
+                "house_index": 7,
+                "opcode": 45
+              }
+            ],
+            "last_frame": 502,
+            "last_frame_writes": [
+              502
+            ],
+            "maximum_cheer_rate": 300,
+            "new_events": [
+              {
+                "frame": 502,
+                "house_index": 7,
+                "opcode": 45,
+                "queued_at_ms": 100000
+              }
+            ],
+            "os_imports": [
+              {
+                "result": 100000,
+                "service": "timeGetTime"
+              }
+            ],
+            "queue_count": 1,
+            "queue_read_index": 37,
+            "queue_write_index": 38
+          },
+          "input": {
+            "current_frame": 502,
+            "kind": "press"
+          }
+        }
+      ]
+    },
+    {
+      "input": {
+        "house_index": 7,
+        "input_locked": 0,
+        "last_frame": 123456,
+        "maximum_cheer_rate": 300,
+        "queue_count": 0,
+        "queue_read_index": 12,
+        "queue_write_index": 12
+      },
+      "name": "scene_reset_stock_rate",
+      "phases": [
+        {
+          "expected": {
+            "constructor_calls": [],
+            "last_frame": -100,
+            "last_frame_writes": [
+              -100
+            ],
+            "maximum_cheer_rate": 300,
+            "new_events": [],
+            "os_imports": [
+              {
+                "result": 100000,
+                "service": "timeGetTime"
+              },
+              {
+                "result": 100000,
+                "service": "timeGetTime"
+              }
+            ],
+            "queue_count": 0,
+            "queue_read_index": 12,
+            "queue_write_index": 12
+          },
+          "input": {
+            "current_frame": 123456,
+            "kind": "reset"
+          }
+        },
+        {
+          "expected": {
+            "constructor_calls": [],
+            "last_frame": -100,
+            "last_frame_writes": [],
+            "maximum_cheer_rate": 300,
+            "new_events": [],
+            "os_imports": [],
+            "queue_count": 0,
+            "queue_read_index": 12,
+            "queue_write_index": 12
+          },
+          "input": {
+            "current_frame": 200,
+            "kind": "press"
+          }
+        },
+        {
+          "expected": {
+            "constructor_calls": [
+              {
+                "house_index": 7,
+                "opcode": 45
+              }
+            ],
+            "last_frame": 201,
+            "last_frame_writes": [
+              201
+            ],
+            "maximum_cheer_rate": 300,
+            "new_events": [
+              {
+                "frame": 201,
+                "house_index": 7,
+                "opcode": 45,
+                "queued_at_ms": 100000
+              }
+            ],
+            "os_imports": [
+              {
+                "result": 100000,
+                "service": "timeGetTime"
+              }
+            ],
+            "queue_count": 1,
+            "queue_read_index": 12,
+            "queue_write_index": 13
+          },
+          "input": {
+            "current_frame": 201,
+            "kind": "press"
+          }
+        }
+      ]
+    },
+    {
+      "input": {
+        "house_index": 7,
+        "input_locked": 0,
+        "last_frame": -100,
+        "maximum_cheer_rate": -987654321,
+        "queue_count": 0,
+        "queue_read_index": 0,
+        "queue_write_index": 0
+      },
+      "name": "constructor_default_rate",
+      "phases": [
+        {
+          "expected": {
+            "constructor_calls": [],
+            "last_frame": -100,
+            "last_frame_writes": [],
+            "maximum_cheer_rate": 1,
+            "new_events": [],
+            "os_imports": [],
+            "queue_count": 0,
+            "queue_read_index": 0,
+            "queue_write_index": 0
+          },
+          "input": {
+            "current_frame": 0,
+            "kind": "constructor_rate"
+          }
+        },
+        {
+          "expected": {
+            "constructor_calls": [],
+            "last_frame": -100,
+            "last_frame_writes": [],
+            "maximum_cheer_rate": 1,
+            "new_events": [],
+            "os_imports": [],
+            "queue_count": 0,
+            "queue_read_index": 0,
+            "queue_write_index": 0
+          },
+          "input": {
+            "current_frame": -99,
+            "kind": "press"
+          }
+        },
+        {
+          "expected": {
+            "constructor_calls": [
+              {
+                "house_index": 7,
+                "opcode": 45
+              }
+            ],
+            "last_frame": -98,
+            "last_frame_writes": [
+              -98
+            ],
+            "maximum_cheer_rate": 1,
+            "new_events": [
+              {
+                "frame": -98,
+                "house_index": 7,
+                "opcode": 45,
+                "queued_at_ms": 100000
+              }
+            ],
+            "os_imports": [
+              {
+                "result": 100000,
+                "service": "timeGetTime"
+              }
+            ],
+            "queue_count": 1,
+            "queue_read_index": 0,
+            "queue_write_index": 1
+          },
+          "input": {
+            "current_frame": -98,
+            "kind": "press"
+          }
+        }
+      ]
+    }
+  ],
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "schema_version": 1,
+  "source": "unicorn/gamemd.exe"
+}

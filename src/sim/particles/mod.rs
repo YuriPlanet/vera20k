@@ -64,7 +64,9 @@ pub struct ParticleSystem {
     pub lifetime: i32,
     pub spark_spawn_frames: i32,
     pub facing: u8,
-    pub attached_entity: Option<u64>,
+    /// Constructor62DE35..62DE5A: the owner's TarCom when it is a Techno,
+    /// otherwise the supplied target only when no owner was supplied.
+    pub target_ref: Option<crate::sim::combat::TargetKind>,
     pub owner_entity: Option<u64>,
     #[serde(with = "ivec3_serde")]
     pub target_coords: IVec3,
@@ -238,12 +240,43 @@ impl Particle {
 }
 
 impl ParticleSystem {
+    /// ParticleSystem virtual F8 ->6301E0: set the native completion byte.
+    /// Subtype AI controls emission; SystemAI62FD60 owns done-and-empty
+    /// retirement. Existing children, Alive and expiry broadcasts stay intact.
+    pub(crate) fn mark_done_spawning(&mut self) {
+        self.done_spawning = true;
+    }
+
     /// The ids [`ParticleSystemStore::pointer_expired`] compares: the target
-    /// (`+0xE4`) and the owner (`+0xE0`). VERA-only: feeds the pointer-expiry
+    /// (`+0xE4`), owner (`+0xE0`) and child vector (`+0xBC`). Feeds the pointer-expiry
     /// listener index (`ExpiryListeners`); a field that callback compares
     /// must be named here too.
-    pub(crate) fn expiry_names(&self) -> [Option<u64>; 2] {
-        [self.attached_entity, self.owner_entity]
+    pub(crate) fn expiry_names(&self) -> impl Iterator<Item = Option<u64>> + '_ {
+        [
+            match self.target_ref {
+                Some(crate::sim::combat::TargetKind::Entity(id)) => Some(id),
+                _ => None,
+            },
+            self.owner_entity,
+        ]
+        .into_iter()
+        .chain(
+            self.particles
+                .iter()
+                .map(|particle| Some(particle.stable_id())),
+        )
+    }
+
+    /// SystemPointerExpired62FEA4..62FEE2 stable-removes the matching
+    /// child reference. Rust transfers the uniquely owned body to the
+    /// retained store rather than freeing it with that vector element.
+    /// Source/control: procedural_drawing_oracle/welding live cleanup.
+    pub(crate) fn remove_expired_child(&mut self, expired: u64) -> Option<Particle> {
+        let index = self
+            .particles
+            .iter()
+            .position(|particle| particle.stable_id() == expired)?;
+        Some(self.particles.remove(index))
     }
 
     pub fn alive(&self) -> bool {
@@ -285,7 +318,7 @@ impl ParticleSystem {
             lifetime: -1,
             spark_spawn_frames: 0,
             facing: 0x1D,
-            attached_entity: None,
+            target_ref: None,
             owner_entity: None,
             target_coords: IVec3::ZERO,
             owner_house: None,
@@ -370,11 +403,24 @@ mod ivec3_serde {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ParticleSystemStore {
     systems: BTreeMap<u64, ParticleSystem>,
+    /// Exclusive ownership after SystemPointerExpired removes a child
+    /// reference. Reference removal alone preserves Object+90 and Display;
+    /// ordinary UnInit then conceals it, clears Alive and queues destruction.
+    /// The shared DeferredDeleteQueue owns ordering until the725C70 drain.
+    detached_particles: BTreeMap<u64, DetachedParticle>,
     /// Which systems may have changed since [`Self::take_touched`]. One
     /// reader: the pointer-expiry listener index. Transient: never saved,
     /// compared or hashed.
     #[serde(skip)]
     touched: TouchLogs<1>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct DetachedParticle {
+    body: Particle,
+    object_alive: bool,
+    /// Object+81 is independent of Alive: common Limbo can precede UnInit.
+    in_limbo: bool,
 }
 
 impl ParticleSystemStore {
@@ -389,15 +435,22 @@ impl ParticleSystemStore {
         let Some(sys) = self.get_mut(listener) else {
             return false;
         };
-        let mut changed = false;
-        if sys.attached_entity == Some(expired) {
-            sys.attached_entity = None;
+        let detached = sys.remove_expired_child(expired);
+        let mut changed = detached.is_some();
+        if sys.target_ref == Some(crate::sim::combat::TargetKind::Entity(expired)) {
+            sys.target_ref = None;
             changed = true;
         }
         if sys.owner_entity == Some(expired) {
             sys.owner_entity = None;
             sys.done_spawning = true;
             changed = true;
+        }
+        if let Some(particle) = detached {
+            // Removing a native pointer from +BC does not run a destructor.
+            // Retain the uniquely owned body without inventing UnInit or
+            // queueing work; both broadcast controls use this same callback.
+            self.retain_detached_particle(particle);
         }
         changed
     }
@@ -418,6 +471,26 @@ impl ParticleSystemStore {
         self.systems.iter_mut()
     }
 
+    /// Bodies eligible for an existing AIR Display entry. A detached live
+    /// Particle remains allocated and drawable until its own Limbo/UnInit;
+    /// dead queued bodies retain identity but contribute no drawing body.
+    pub fn display_particles(&self) -> impl Iterator<Item = (Option<&ParticleSystem>, &Particle)> {
+        self.systems
+            .values()
+            .flat_map(|system| {
+                system
+                    .particles
+                    .iter()
+                    .map(move |particle| (Some(system), particle))
+            })
+            .chain(
+                self.detached_particles
+                    .values()
+                    .filter(|particle| particle.object_alive && !particle.in_limbo)
+                    .map(|particle| (None, &particle.body)),
+            )
+    }
+
     pub fn get(&self, id: u64) -> Option<&ParticleSystem> {
         self.systems.get(&id)
     }
@@ -427,6 +500,68 @@ impl ParticleSystemStore {
         let sys = self.systems.get_mut(&id)?;
         self.touched.note(id, stored);
         Some(sys)
+    }
+
+    pub(crate) fn retain_detached_particle(&mut self, particle: Particle) -> u64 {
+        let id = particle.stable_id();
+        assert!(
+            self.detached_particles
+                .insert(
+                    id,
+                    DetachedParticle {
+                        body: particle,
+                        object_alive: true,
+                        in_limbo: false,
+                    },
+                )
+                .is_none(),
+            "particle {id} detached twice"
+        );
+        id
+    }
+
+    pub(crate) fn finish_particle_retirement(&mut self, id: u64) {
+        self.detached_particles
+            .get_mut(&id)
+            .expect("UnInit retains the particle through its callbacks")
+            .object_alive = false;
+    }
+
+    /// Read Object+90 (Alive), then Object+81 (InLimbo) through this owner.
+    pub(crate) fn detached_particle_lifecycle(&self, id: u64) -> Option<(bool, bool)> {
+        self.detached_particles
+            .get(&id)
+            .map(|particle| (particle.object_alive, particle.in_limbo))
+    }
+
+    pub(crate) fn enter_particle_limbo(&mut self, id: u64) {
+        self.detached_particles
+            .get_mut(&id)
+            .expect("Particle Limbo retains its body")
+            .in_limbo = true;
+    }
+
+    pub(crate) fn detached_particle(&self, id: u64) -> Option<(&Particle, bool)> {
+        self.detached_particles
+            .get(&id)
+            .map(|retired| (&retired.body, retired.object_alive))
+    }
+
+    /// Read-only identity/body view for hashing, snapshot validation and the
+    /// common finalizer. The represented ordinary Particle has null base
+    /// pointer-expiry fields, so it names no ids in the derived listener index.
+    pub(crate) fn detached_particles(
+        &self,
+    ) -> impl ExactSizeIterator<Item = (u64, &Particle, bool, bool)> {
+        self.detached_particles
+            .iter()
+            .map(|(&id, retired)| (id, &retired.body, retired.object_alive, retired.in_limbo))
+    }
+
+    pub(crate) fn finalize_particle(&mut self, id: u64) -> Option<Particle> {
+        self.detached_particles
+            .remove(&id)
+            .map(|retired| retired.body)
     }
 
     /// Insert a system whose identity was assigned by the object substrate.

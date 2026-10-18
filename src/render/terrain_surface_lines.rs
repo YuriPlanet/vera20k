@@ -49,6 +49,28 @@ fn raster_draw(
 ) {
     use crate::render::surface_line::{antialiased_line, ellipse, rasterize_z_clipped};
     let line = match draw {
+        SurfaceDraw::Point(point) => {
+            let screen = point.screen.to_array();
+            let a = alpha(screen);
+            if a != 0 {
+                let word = crate::render::tactical_compat::pack_rgb(
+                    crate::render::tactical_compat::modulate_rgb(point.rgb, a),
+                    crate::render::native_surface_format::RGB565,
+                );
+                emit(&[(
+                    screen,
+                    Operation {
+                        // Keep the signed candidate intact across the scalar ABI.
+                        z: point.candidate_z as u32,
+                        rgb: u32::from(word),
+                        alpha: u32::from(a),
+                        mode: 6,
+                        ..Default::default()
+                    },
+                )]);
+            }
+            return;
+        }
         SurfaceDraw::Ellipse {
             center,
             radius,
@@ -386,11 +408,12 @@ impl TerrainDrawRenderer {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         lasers: impl IntoIterator<Item = crate::render::laser::LaserDraw>,
-        lines: &[SurfaceLine],
+        draws: impl Iterator<Item = SurfaceDraw> + Clone,
         segments: &[LineTrailSegment],
+        post_trail_draws: &[SurfaceDraw],
         radials: &[crate::render::radial_indicator::RadialIndicatorDraw],
         viewport: SurfaceLineViewport,
-        mut high_detail: impl FnMut() -> bool,
+        mut high_detail: impl FnMut(crate::render::laser::LaserDrawColor) -> bool,
         mut alpha: impl FnMut([i32; 2]) -> u16,
     ) -> SurfaceLineBatch {
         let start = self.surface_lines.active;
@@ -414,12 +437,21 @@ impl TerrainDrawRenderer {
         // extras and Laser/EBolt/Trail calls need no prior-write index. When
         // rays are possible, index every earlier write in this same batch.
         let track_dependencies = radials.iter().any(|draw| draw.rays)
-            || lines
-                .iter()
-                .any(|line| matches!(line.blend, SurfaceLineBlend::Antialiased { .. }));
+            || draws
+                .clone()
+                .chain(post_trail_draws.iter().copied())
+                .any(|draw| {
+                    matches!(
+                        draw,
+                        SurfaceDraw::Line(SurfaceLine {
+                            blend: SurfaceLineBlend::Antialiased { .. },
+                            ..
+                        })
+                    )
+                });
         // Tactical6D4669..6D4673 draws LaserDraw, EBolt, then LineTrail.
-        // They read the same immutable Z and completed destination. Bolt
-        // subdivision has already consumed Main once for this composite;
+        // They read the same immutable Z and completed destination. Laser
+        // colors and Bolt subdivision consumed Main for this composite;
         // rasterization, upload chunks and readback cannot request more draws.
         let mut store = |operations: &[([i32; 2], Operation)]| {
             //4BD646/68F read BOTH old words before4BD85B/8C0 write either.
@@ -445,7 +477,7 @@ impl TerrainDrawRenderer {
         };
         for laser in lasers {
             if laser.duration > 0 {
-                laser.lines(viewport.camera, high_detail(), |line| {
+                laser.lines(viewport.camera, high_detail(laser.color), |line| {
                     raster_draw(
                         SurfaceDraw::Line(line),
                         viewport,
@@ -456,14 +488,8 @@ impl TerrainDrawRenderer {
                 });
             }
         }
-        for &line in lines {
-            raster_draw(
-                SurfaceDraw::Line(line),
-                viewport,
-                size,
-                &mut alpha,
-                &mut store,
-            );
+        for draw in draws {
+            raster_draw(draw, viewport, size, &mut alpha, &mut store);
         }
         for &segment in segments {
             rasterize(
@@ -488,7 +514,11 @@ impl TerrainDrawRenderer {
                 },
             );
         }
-        //Tactical6D467F follows Laser/EBolt/LineTrail, before the bandbox,
+        //Tactical6D4678 draws RadBeam after trails and before selected radials.
+        for &draw in post_trail_draws {
+            raster_draw(draw, viewport, size, &mut alpha, &mut store);
+        }
+        //Tactical6D467F follows Laser/EBolt/LineTrail/RadBeam, before the bandbox,
         //second rally and selected Foot action. Keep each object's ellipse/ray
         //stores interleaved in CurrentObjects encounter order.
         for &radial in radials {
@@ -579,5 +609,13 @@ mod laser_tests;
 mod electric_bolt_tests;
 
 #[cfg(test)]
+#[path = "radiation_beam_gpu_tests.rs"]
+mod radiation_beam_tests;
+
+#[cfg(test)]
 #[path = "radial_indicator_gpu_tests.rs"]
 mod radial_indicator_tests;
+
+#[cfg(test)]
+#[path = "welding_gpu_tests.rs"]
+mod welding_tests;

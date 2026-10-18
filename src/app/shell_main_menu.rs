@@ -158,10 +158,7 @@ impl crate::app::persistence::options::launcher::LauncherParentOperations
     }
 
     fn queue_then_stop_score_zero(&mut self) {
-        let now_ms = crate::app::match_runtime::sim_tick::monotonic_frame_pacer_ms(
-            self.state,
-            Instant::now(),
-        );
+        let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
         self.state.audio.queue_then_stop_score_zero(now_ms);
     }
 
@@ -1041,8 +1038,7 @@ impl App {
         if state.frontend.fullscreen_movie.is_some() {
             return;
         }
-        let now_ms =
-            crate::app::match_runtime::sim_tick::monotonic_frame_pacer_ms(state, Instant::now());
+        let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
         // The common service pumps Theme for Credits and WOL too, without
         // these routes running the menu loop's Play_Song(INTRO).
         if state.frontend.credits_roll.is_some() {

@@ -3630,7 +3630,7 @@ fn gsi_04_07_damage_receiver_smoke_creation_precedes_retaliation() {
         "SmallGreySSys"
     );
     assert_eq!(system.owner_entity, Some(victim_id));
-    assert_eq!(system.attached_entity, None);
+    assert_eq!(system.target_ref, None);
     assert_eq!(system.owner_house, None);
     assert_eq!(
         system.coords,

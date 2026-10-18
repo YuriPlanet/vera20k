@@ -271,6 +271,7 @@ mod tests {
             clear: 0,
             ramp_base: 600,
             ramp_smooth: 620,
+            slope_set_pieces: -1,
             rough: 700,
             sand: 800,
             green: 100,

@@ -438,6 +438,93 @@ fn record_last_built_matches_native_class_slots_score_gate_and_rng() {
     }
 }
 
+#[test]
+fn record_last_built_enforces_map_authored_negative_limit() {
+    use crate::sim::house_state::HouseState;
+
+    // Original4FB755 increments the Infantry/E2 produced item; the signed
+    // CanBuild4F808F..4F80C8 comparison then returns No, not AtLimit. This
+    // supported map override is deliberately different from stock E2 rules.
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+        "XMP03T4.MAP",
+        &IniFile::from_str("[E2]\nBuildLimit=-1\nDontScore=no\n"),
+    ) else {
+        return;
+    };
+    let rules = &retail.rules;
+    let e2 = rules.object("E2").expect("retail Conscript");
+    assert_eq!(e2.build_limit, -1);
+    assert!(!e2.dont_score);
+    let mut sim = Simulation::with_seed(0x4FB6_B000);
+    sim.intern_rule_type_ids(rules);
+    sim.resolve_type_handles(rules);
+    let owner = sim.interner.intern("Russians");
+    sim.houses
+        .insert(owner, HouseState::new(owner, 1, None, true, 1000, 10));
+    assert_eq!(
+        super::can_build::can_build(&sim, rules, owner, e2, true, true),
+        super::can_build::CanBuild::Yes
+    );
+    assert!(!super::can_build::check_build_limit(&sim, rules, owner, e2));
+
+    let product = sim
+        .construct_object_limbo_at_height(
+            "E2",
+            "Russians",
+            0,
+            0,
+            0,
+            0,
+            rules,
+            crate::sim::world::FrameEffects::default(),
+        )
+        .expect("supplied valid product for the shared Record call");
+    let object = super::factory_lifecycle::BuiltObject::capture(&sim, product);
+    super::factory_lifecycle::record_last_built(&mut sim, rules, owner, object);
+    assert_eq!(sim.houses[&owner].stats.built(), 1);
+    assert_eq!(
+        super::can_build::can_build(&sim, rules, owner, e2, true, true),
+        super::can_build::CanBuild::No,
+        "a successful produced item consumes the lifetime limit"
+    );
+    assert!(super::can_build::check_build_limit(&sim, rules, owner, e2));
+
+    // The existing ownership and destruction owners move current tracking,
+    // never this House's successful-production history. In particular the
+    // recipient's owned E2 does not consume its own negative lifetime limit.
+    let other = sim.interner.intern("Americans");
+    sim.houses
+        .insert(other, HouseState::new(other, 0, None, true, 1000, 10));
+    sim.change_owner_with_rules(
+        product,
+        other,
+        rules,
+        None,
+        crate::sim::world::FrameEffects::default(),
+    );
+    assert_eq!(sim.entities().get(product).unwrap().owner(), other);
+    assert_eq!(
+        super::can_build::can_build(&sim, rules, owner, e2, true, true),
+        super::can_build::CanBuild::No
+    );
+    assert_eq!(
+        super::can_build::can_build(&sim, rules, other, e2, true, true),
+        super::can_build::CanBuild::Yes
+    );
+    sim.discard_constructed_limbo(
+        product,
+        Some(rules),
+        crate::sim::world::FrameEffects::default(),
+    );
+    assert!(sim.entities().get(product).is_none());
+    assert_eq!(sim.houses[&owner].stats.built(), 1);
+    assert_eq!(sim.houses[&other].stats.built(), 0);
+    assert_eq!(
+        super::can_build::can_build(&sim, rules, owner, e2, true, true),
+        super::can_build::CanBuild::No
+    );
+}
+
 /// Direct RecordLastBuilt control-flow regression, separate from successful
 /// delivery. Original4FB6B0 admits even limbo/nonhuman products; DontScore
 /// gates accounting but not the type override/class fallback or1FC writer.
@@ -2130,6 +2217,19 @@ fn manager_factory_cancellation_finishes_graph_accounting_and_promotion() {
         assert_eq!(counts(&sim, owner), before);
         assert_eq!(sim.substrate.next_stable_object_id, allocated);
         assert_eq!(sim.scenario_rng.logical_state(), expected.logical_state());
+        assert_eq!(
+            sim.houses[&owner].produced_count(
+                crate::rules::object_type::ObjectCategory::Vehicle,
+                rules
+                    .type_array_index(
+                        crate::rules::object_type::ObjectCategory::Vehicle,
+                        parent_type
+                    )
+                    .unwrap(),
+            ),
+            0,
+            "cancelling a held product never records successful production"
+        );
         assert!(
             sim.production
                 .factories

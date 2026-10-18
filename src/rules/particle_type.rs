@@ -217,10 +217,13 @@ impl ParticleType {
             start_color_1: section.read_color_rgb("StartColor1", [0, 0, 0], None),
             start_color_2: section.read_color_rgb("StartColor2", [0, 0, 0], None),
 
-            x_velocity: section.read_int("XVelocity", 0),
-            y_velocity: section.read_int("YVelocity", 0),
+            // ParticleTypeCtor644BE0 initializes these divisors to one;
+            // ReadINI64521A/645234/645268 passes each current value as default.
+            // Original constructor/read controls: procedural_drawing_oracle/welding.
+            x_velocity: section.read_int("XVelocity", 1),
+            y_velocity: section.read_int("YVelocity", 1),
             min_z_velocity: section.read_int("MinZVelocity", 0),
-            z_velocity_range: section.read_int("ZVelocityRange", 0),
+            z_velocity_range: section.read_int("ZVelocityRange", 1),
         };
 
         PendingParticleType {

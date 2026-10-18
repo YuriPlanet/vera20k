@@ -328,9 +328,7 @@ mod tests {
                 crate::sim::scenario_bootstrap::initialize_map_roster_houses(
                     sim, &roster, None, None,
                 );
-                crate::sim::scenario_bootstrap::initialize_campaign_current_house(
-                    sim, &roster, &map.ini,
-                );
+                crate::sim::scenario_bootstrap::initialize_campaign_current_house(sim, &map.ini);
             },
         )
         .expect("staged map-roster construction");
@@ -1130,8 +1128,8 @@ where
 }
 
 /// A building as the map-wall owner search measures it: its GetCoords
-/// (vt+0x48, [`object_get_coords`]) and the foundation of its distance
-/// discount.
+/// (vt+0x48, [`object_get_coords`]). The target is a Cell, so5F6360 applies
+/// no Building-foundation discount; dimensions belong to GetCoords alone.
 /// Serves the wall-owner search `0x0047D210`, which `InitCellAttributes @ 0x00568BB0`
 /// runs per cell; it also tests IsAlive (`+0x90`) and Marked (`+0x74`).
 ///
@@ -1143,16 +1141,11 @@ pub fn map_wall_owner_candidate_from_building(
 ) -> crate::sim::overlay_grid::MapWallOwnerCandidate {
     let coords =
         crate::sim::movement::ground_pose::object_get_coords(entity, Some(resolved_terrain));
-    let (foundation_width, foundation_height) =
-        crate::rules::foundation::foundation_dimensions(entity.type_facts.foundation());
-
     crate::sim::overlay_grid::MapWallOwnerCandidate {
         owner: entity.owner(),
         world_x: coords.x,
         world_y: coords.y,
         world_z: coords.z,
-        foundation_width,
-        foundation_height,
         object_alive: entity.lifecycle.object_alive(),
         cell_marked: entity.lifecycle.cell_marked(),
         house_wall_owner,
@@ -1256,6 +1249,7 @@ pub fn finalize_constructed_scenario(
         sim.finalize_scenario_post_map(crate::sim::scenario_post_map::ScenarioPostMapInput {
             map_width: map_data.header.width as u16,
             map_height: map_data.header.height as u16,
+            fill_silos: map_data.basic.fill_silos.unwrap_or(false),
             rules,
             overlay_registry,
             house_roster,

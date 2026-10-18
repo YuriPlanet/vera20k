@@ -118,10 +118,7 @@ fn play_cue(state: &mut AppState, returning: bool) {
 }
 
 pub(crate) fn apply(state: &mut AppState, command: ChronoScreenCommand) {
-    let wall_ms = crate::app::match_runtime::sim_tick::monotonic_frame_pacer_ms(
-        state,
-        std::time::Instant::now(),
-    );
+    let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
     match command {
         ChronoScreenCommand::Start => {
             let screen = &mut state.match_state.match_presentation.chrono_screen;

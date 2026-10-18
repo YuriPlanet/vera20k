@@ -34,6 +34,7 @@ pub enum DeferredDeleteTicket {
     Overlay(u64),
     Tag(usize),
     Trigger(usize),
+    DiskLaser(u64),
 }
 
 /// Serialized, ordered authority for every725C70 enqueue. Registry membership
@@ -62,6 +63,9 @@ impl DeferredDeleteQueue {
     }
     pub(crate) fn queue_trigger(&mut self, id: usize) {
         self.append(DeferredDeleteTicket::Trigger(id));
+    }
+    pub(super) fn queue_disk_laser(&mut self, id: u64) {
+        self.append(DeferredDeleteTicket::DiskLaser(id));
     }
     pub(crate) fn queue_overlay(&mut self, id: u64) -> Result<(), ()> {
         #[cfg(any(test, feature = "test-support"))]

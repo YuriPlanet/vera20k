@@ -51,18 +51,6 @@ pub fn power_balance_for_owner(sim: &Simulation, _rules: &RuleSet, owner: &str) 
         .unwrap_or((0, 0))
 }
 
-/// Sum of |Power=| from TypeClass for ALL owned buildings (including under
-/// construction). Used by the sidebar power bar fill curve.
-pub fn theoretical_power_for_owner(sim: &Simulation, owner: &str) -> i32 {
-    let Some(owner_id) = sim.interner.get(owner) else {
-        return 0;
-    };
-    sim.power_states
-        .get(&owner_id)
-        .map(|state| state.theoretical_total_power)
-        .unwrap_or(0)
-}
-
 /// The options the player's sidebar shows for `owner`, by category
 /// ([`BuildOption::visible_in_sidebar`]).
 pub fn build_options_for_owner(sim: &Simulation, rules: &RuleSet, owner: &str) -> Vec<BuildOption> {

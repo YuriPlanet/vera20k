@@ -6,6 +6,8 @@ The separate --secret-lab profile also supplies sim::secret_lab and the
 retained rules-reader tests; see can_build_secret_lab.md.
 The --construction-options profile executes the Building's sidebar insertion
 admission with original CanBuild; see can_build_construction_options.md.
+The --produced-history profile joins original RecordLastBuilt to retained
+produced counters and both limit readers; see can_build_produced_history.md.
 
 Sections, each case executed in a fresh emulator:
 - can_build: HouseClass::CanBuild 0x4F7870 over its gates, the human
@@ -19,9 +21,8 @@ Sections, each case executed in a fresh emulator:
 A row names its types: Q is the asked type (index 10 of its class), B0..B7
 BuildingTypes 0..7, U0..U2 UnitTypes 0..2, I0..I1 InfantryTypes 0..1 and
 A0..A2 AircraftTypes 0..2. Every factory holds an object, as VERA's do.
-The fixture house has no secret labs, AltOwner bits or produced counts
-(+0x55A0..+0x55DC), which VERA does not keep (residuals in
-src/sim/production/can_build.rs); a row may give it stolen-tech bytes
+The default fixture house has no secret labs, AltOwner bits or produced counts
+(+0x55A0..+0x55DC); a row may give it stolen-tech bytes
 (+0x2BC..+0x2BE). No BuildingType it reads has PowersUpBuilding= and no
 InfantryType VehicleThief=.
 """
@@ -426,6 +427,292 @@ def check_build_limit():
 
 def generate():
     return dict(can_build=can_build(), check_build_limit=check_build_limit())
+
+
+# ------------------------------------------------------ Produced-history profile
+
+# Original concrete vtables, independently read from the active-retail image.
+# This opt-in profile replaces the older fixture's supplied getter answers;
+# all selected Record/limit/getter/Counter instructions execute unchanged.
+PRODUCED_BASES = dict(zip(('building', 'unit', 'infantry', 'aircraft'), PRODUCED))
+PRODUCED_TYPE_VTABLES = dict(building=0x7E4570, unit=0x7F6218,
+                              infantry=0x7EB610, aircraft=0x7E2868)
+PRODUCED_OBJECT_VTABLES = dict(building=0x7E3EBC, unit=0x7F5C70,
+                                infantry=0x7EB058, aircraft=0x7E22A4)
+PRODUCED_TYPE_FIELDS = dict(building=0x520, unit=0x6C4,
+                             infantry=0x6C0, aircraft=0x6C4)
+LAST_BUILT = dict(building=0x26C, unit=0x274, infantry=0x270, aircraft=0x278)
+
+
+def produced_history_inputs():
+    def case(name, family='infantry', limit=-2, dont_score=False, steps=None,
+             **extra):
+        return dict(name=name, input=dict(family=family, type_index=QUERY_INDEX,
+            limit=limit, dont_score=dont_score, **extra),
+            steps=steps or [dict(kind='observe'), dict(kind='record'),
+                            dict(kind='record')])
+
+    rows = [case(f'{family}_dont_score_{int(dont_score)}', family,
+                 dont_score=dont_score)
+            for family in PRODUCED_BASES for dont_score in (False, True)]
+    rows.append(case('infantry_negative_one', limit=-1,
+                     steps=[dict(kind='observe'), dict(kind='record')]))
+    rows.append(case('four_family_nonpositive_boundaries', query_families=list(PRODUCED_BASES),
+        steps=[*[dict(kind='record', family=family) for family in PRODUCED_BASES],
+               dict(kind='set_limit', limit=0),
+               dict(kind='set_limit', limit=-0x80000000)]))
+    rows.append(case('produced_plus_selected_held_and_fifo', limit=-3,
+        steps=[dict(kind='observe'), dict(kind='record'),
+               dict(kind='factory', held_index=QUERY_INDEX, queued=[QUERY_INDEX], owned=1),
+               dict(kind='factory', held_index=QUERY_INDEX + 1, queued=[QUERY_INDEX], owned=1),
+               dict(kind='factory', held_index=None, queued=[], owned=0)]))
+    rows.append(case('infantry_signed_produced_plus_held_overflow',
+        produced_prior=0x7FFFFFFF,
+        steps=[dict(kind='observe'),
+               dict(kind='factory', held_index=QUERY_INDEX, queued=[], owned=1),
+               dict(kind='record')]))
+    rows.append(case('late_index_growth_retains_old_items', family='unit',
+        steps=[dict(kind='record'),
+               dict(kind='record', type_index=65, sample_indices=[QUERY_INDEX, 64, 65]),
+               dict(kind='observe')], allow_growth=True))
+    rows.append(case('separate_house_histories', family='building', limit=-1,
+        steps=[dict(kind='record'), dict(kind='record', owner='other')],
+        second_house=True))
+    return rows
+
+
+def produced_history_case(row):
+    from unicorn import UC_HOOK_CODE
+
+    e = BuildEmu()
+    u, spec = e.uc, row['input']
+    houses = {'self': HOUSE}
+    if spec.get('second_house'):
+        houses['other'] = OTHER_HOUSE
+    family = spec['family']
+    types, objects = {}, {}
+    actor_top = OBJECTS + 0x10000
+    query_families = spec.get('query_families', [family])
+    samples = [QUERY_INDEX]
+    query_index = QUERY_INDEX
+    limit = spec['limit']
+
+    # Native constructor, with the existing pre-sized buffer supplied after
+    # construction. Original resize remains callable, never answered.
+    for house in houses.values():
+        e.write32(house + 0x34, HOUSE_TYPE)
+        e.write32(house + 0x1D4, 10)
+        u.mem_write(house + 0x1EC, b'\1\1')
+        for base in (*OWNED.values(), *ACTIVE.values(), *PRODUCED):
+            e.invoke(0x49F9B0, ecx=house + base)
+            e.write32(house + base + 4, e.list([0] * COUNTER_CAPACITY))
+            e.write32(house + base + 8, COUNTER_CAPACITY)
+        for offset in LAST_BUILT.values():
+            e.write32(house + offset, -1)
+    if 'produced_prior' in spec:
+        # Declared boundary input, not billions of simulated records. Both
+        # selected item and total start with the same supplied native bits.
+        e.counter(PRODUCED_BASES[family], QUERY_INDEX, spec['produced_prior'])
+        e.write32(HOUSE + PRODUCED_BASES[family] + 0x10, spec['produced_prior'])
+    e.write32(HOUSE_TYPE + 0xB8, 1)
+    e.write32(GAME_MODE, 5)
+    u.mem_write(SW_ALLOWED, b'\1')
+    for offset in (0x178, 0x17C, 0x180):
+        e.write32(RULES + offset, -1)
+    for _code, base in GROUPS.values():
+        e.vector(RULES + base, [])
+    e.write32(RULES + PROC_ALTERNATE, 0)
+    e.vector(RULES + BUILD_TECH, [])
+    e.vector(RULES + PAD_AIRCRAFT, [])
+
+    def add_type(kind, index):
+        nonlocal actor_top
+        key = (kind, index)
+        if key in types:
+            return types[key], objects[key]
+        pointer = e.techno_type(f'History_{kind}_{index}', kind, index)
+        e.write32(pointer, PRODUCED_TYPE_VTABLES[kind])
+        e.write32(pointer + 0x3B8, limit)
+        e.write32(pointer + 0x534, -1)
+        u.mem_write(pointer + 0xC9F, bytes([spec['dont_score']]))
+        product = actor_top
+        actor_top += 0x1000
+        e.write32(product, PRODUCED_OBJECT_VTABLES[kind])
+        e.write32(product + PRODUCED_TYPE_FIELDS[kind], pointer)
+        e.write32(product + 0x21C, HOUSE)
+        types[key], objects[key] = pointer, product
+        return pointer, product
+
+    for kind in PRODUCED_BASES:
+        add_type(kind, QUERY_INDEX)
+    factory = FACTORIES
+    for pointer in RNG_STREAMS.values():
+        e.invoke(0x65C6D0, ecx=pointer, args=(31,))
+    rng_before = {key: bytes(u.mem_read(pointer, 0x3F4))
+                  for key, pointer in RNG_STREAMS.items()}
+    entries, resize_calls, rng_calls, detach_calls, substituted_getters = [], [], [], [], []
+
+    def observe(vm, pc, _size, _data):
+        if pc in (0x4FB6B0, CAN_BUILD, CHECK_BUILD_LIMIT, 0x49FA00, 0x49FAE0):
+            entries.append(pc)
+        elif pc == 0x477C70:
+            resize_calls.append(pc)
+            if not spec.get('allow_growth'):
+                raise OracleError('Unexpected Counter growth in sized history')
+        elif pc in (0x65C780, 0x65C7E0, 0x661C10):
+            rng_calls.append(pc)
+        elif pc in (0x70D4A0, 0x7258D0):
+            detach_calls.append(pc)
+        elif pc in (STUB_RTTI, STUB_INDEX, STUB_OBJECT_TYPE, STUB_TRAP):
+            substituted_getters.append(pc)
+            raise OracleError('Produced history reached an older supplied getter/trap')
+        elif pc == 0x7509E0:
+            raise OracleError('The no-cue produced history reached audio')
+
+    hook = u.hook_add(UC_HOOK_CODE, observe)
+    code_before = bytes(u.mem_read(0x401000, 0x3E0000))
+
+    def state(house):
+        items, totals = {}, {}
+        for kind, base in PRODUCED_BASES.items():
+            capacity = e.read32(house + base + 8)
+            indices = samples if kind == family else [QUERY_INDEX]
+            if any(index >= capacity for index in indices):
+                raise OracleError('Observation would read outside supplied Counter capacity')
+            array = e.read32(house + base + 4)
+            items[kind] = {str(index): e.read32(array + 4 * index) for index in indices}
+            totals[kind] = e.read32(house + base + 0x10)
+        return dict(produced_items=items, produced_totals=totals,
+                    last_built={kind: e.read_i32(house + offset)
+                                for kind, offset in LAST_BUILT.items()})
+
+    phases = []
+    for step in row['steps']:
+        first_entry, first_resize = len(entries), len(resize_calls)
+        kind = step['kind']
+        if kind == 'record':
+            selected = step.get('family', family)
+            index = step.get('type_index', QUERY_INDEX)
+            _typ, product = add_type(selected, index)
+            house = houses[step.get('owner', 'self')]
+            e.write32(product + 0x21C, house)
+            e.invoke(0x4FB6B0, ecx=house, args=(product,),
+                     required=(0x4FB6B0, 0x6F3270))
+            if 'sample_indices' in step:
+                assert len(resize_calls) > first_resize, 'Record must grow before queries'
+                samples, query_index = step['sample_indices'], index
+        elif kind == 'set_limit':
+            limit = step['limit']
+            for typ in types.values():
+                e.write32(typ + 0x3B8, limit)
+        elif kind == 'factory':
+            held = step['held_index']
+            product = add_type(family, held)[1] if held is not None else 0
+            queued = [add_type(family, index)[0] for index in step['queued']]
+            e.write32(factory + 0x6C, HOUSE)
+            e.write32(factory + 0x58, product)
+            e.write32(factory + 0x44, e.list(queued))
+            e.write32(factory + 0x50, len(queued))
+            active = product != 0 or bool(queued)
+            e.write32(HOUSE + SLOTS[KIND[family]], factory if active else 0)
+            e.write32(FACTORY_ARRAY[0], e.list([factory] if active else []))
+            e.write32(FACTORY_ARRAY[1], int(active))
+            e.counter(OWNED[family], QUERY_INDEX, step['owned'])
+        elif kind != 'observe':
+            raise ValueError(kind)
+        queries = []
+        for owner, house in houses.items():
+            for selected in query_families:
+                typ = add_type(selected, query_index)[0]
+                answers = []
+                for skip_tech, count in ((False, True), (True, True), (True, False)):
+                    answer = e.invoke(CAN_BUILD, ecx=house,
+                        args=(typ, int(skip_tech), int(count)), required=(CAN_BUILD,))
+                    answer = answer - (1 << 32) if answer & 0x80000000 else answer
+                    if answer not in (-1, 0, 1):
+                        raise OracleError(f'CanBuild answered {answer}')
+                    answers.append(dict(args=[skip_tech, count], answer=answer))
+                checked = e.invoke(CHECK_BUILD_LIMIT, ecx=house, args=(typ,),
+                                   required=(CHECK_BUILD_LIMIT,)) & 0xFF
+                queries.append(dict(owner=owner, family=selected,
+                    type_index=query_index, limit=limit, can_build=answers,
+                    check_build_limit=bool(checked)))
+        expected = state(HOUSE)
+        if 'other' in houses:
+            expected['other_house'] = state(OTHER_HOUSE)
+        expected['queries'] = queries
+        phases.append(dict(input=step, expected=expected))
+        if kind == 'record' and not spec['dont_score']:
+            assert 0x49FA00 in entries[first_entry:]
+    assert not rng_calls and not detach_calls and not substituted_getters
+    assert rng_before == {key: bytes(u.mem_read(pointer, 0x3F4))
+                          for key, pointer in RNG_STREAMS.items()}
+    assert bytes(u.mem_read(0x401000, 0x3E0000)) == code_before
+    u.hook_del(hook)
+    return dict(name=row['name'], input=spec, phases=phases)
+
+
+def produced_history_generate():
+    if native.image_sha256() != native.NATIVE_SHA256:
+        raise OracleError('Produced history requires the active-retail original image')
+    return dict(schema_version=1, native_sha256=native.image_sha256(),
+                cases=[produced_history_case(row) for row in produced_history_inputs()])
+
+
+def produced_history_metadata():
+    return provenance(
+        scope='Whole RecordLastBuilt4FB6B0 -> retained four-family produced Counter '
+              'items/totals -> whole CanBuild4F7870 and CheckBuildLimit50B370',
+        assumptions=[
+            'The existing BuildEmu/Emu owns the sole VM, bounded memory/heap, original '
+            'loader and invocation. Native49F9B0 initializes each House Counter, then '
+            'valid external capacity64 arrays are supplied. Original7E5C54 vtables '
+            'select original477C70 growth; undeclared growth traps.',
+            'Explicit Type layouts use original concrete vtables and valid supplied '
+            'ArrayIndex10,11,64,65 fields. Original Type RTTI/GetArrayIndex and Object '
+            'GetTechnoType/WhatAmI/+88 getters execute; the old supplied getter hooks '
+            'are present in BuildEmu but are asserted unreached. These are registered-type '
+            'layout priors, not native constructors/list registration or physical INI loading.',
+            'Type DontScore, signed BuildLimit, human House/country/tech, cleared '
+            'prerequisite/SecretLab/Super gates and owned/held/FIFO states are explicit '
+            'inputs. Record gets an original-vtable object with its actual Type pointer. '
+            'Prepared Factory/owned states test query composition, not a full constructor, '
+            'paid exit, queue admission, ownership transition or reachable whole-world history.',
+            'Type CreateSound and all three class fallback IDs are-1. Whole Record '
+            'executes its last-built, Counter and tech/246 flag stores, but no audio '
+            'path. The independently justified246 timer/raw-native-save difference is '
+            'outside this numeric history comparison.',
+            'The late index first executes Record growth from64 to75 while retaining '
+            'the old index10; index64 is observed only after that actual allocation. '
+            'Current family indexes, item bits and totals are read directly, not calculated '
+            'from records or owned objects. Separate Houses use independent buffers.',
+            'One signed-sum boundary history supplies produced item/total0x7FFFFFFF '
+            'before measurement, then an actual matching held product and original '
+            'Record. Original CountTotal addition, signed limit comparisons and Counter '
+            'increments decide the outputs; no counter or arithmetic result is supplied.',
+            'Starting-force reset, whole House initialization and native House/SAV '
+            'reconstruction remain covered only by their separate evidence. This '
+            'profile otherwise supplies fresh zero history and does not require an additional '
+            'reset operation or certify a world-start lifecycle.',
+            'Original65C6D0 seeds all three native RNG buffers31 before measurement. '
+            'Their full states remain unchanged, with zero observed RNG or detach entries. '
+            'Counter storage allocation/free are platform transports, not gameplay detach. '
+            'No image .text writes are permitted. Existing native overflow controls in '
+            'engineer_capture_accounting retain their original payload/provenance; no '
+            'existing corpus is overwritten.'],
+        substitutions=[
+            'Existing Emu operator-new/delete and CRT-registration transport supplies '
+            'bounded successful allocation/free; no selected getter, Record, Counter '
+            'increment/lookup/growth, CanBuild or CheckBuildLimit result is supplied.',
+            'No physical Rules/Type/House/Factory startup, event transport, sound, '
+            'rendering, paid production, native saved-world or complete scheduling '
+            'equivalence is claimed. Valid nonnegative Type index and allocation-success '
+            'domains exclude arbitrary malformed pointers and native out-of-memory failures.'],
+        entry_points=dict(record_last_built=0x4FB6B0,
+            can_build=CAN_BUILD, check_build_limit=CHECK_BUILD_LIMIT,
+            counter_constructor=0x49F9B0, counter_increment=0x49FA00,
+            counter_lookup=0x49FAE0, counter_resize=0x477C70,
+            random_seed=0x65C6D0))
 
 
 # ---------------------------------------------------------- SecretLab profile
@@ -969,7 +1256,17 @@ def metadata():
 
 def main(argv=None):
     args = list(sys.argv[1:] if argv is None else argv)
-    if '--construction-options' in args:
+    if '--produced-history' in args:
+        args.remove('--produced-history')
+        finish_vectors(produced_history_generate,
+                       Path(__file__).with_name('can_build_produced_history.json'),
+                       provenance=produced_history_metadata, argv=args,
+                       source_paths={
+                           'producer': Path(__file__),
+                           'vm_owner': Path(__file__).with_name('ai_base_building_oracle.py'),
+                           'native_runner': Path(__file__).with_name('native_oracle.py'),
+                       })
+    elif '--construction-options' in args:
         args.remove('--construction-options')
         finish_vectors(construction_options_generate,
                        Path(__file__).with_name('can_build_construction_options.json'),

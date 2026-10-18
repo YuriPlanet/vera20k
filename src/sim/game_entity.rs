@@ -780,12 +780,10 @@ pub struct GameEntity {
     /// bytes. Snapshot migration defaults reproduce Techno construction.
     #[serde(default)]
     pub(crate) base_defense_response: BaseDefenseResponseState,
-    /// The damage-Spark system handle (`TechnoClass+0x308`) as its expiry
-    /// tick, a [`DamageSpark`] that `techno_ai` owns.
-    ///
-    /// [`DamageSpark`]: crate::sim::world::DamageSpark
+    /// The actual Spark system link (`TechnoClass+0x308`), shared by
+    /// FireAt and Cyborg AI; particles::spawn owns its mutations.
     #[serde(default)]
-    pub(crate) damage_particle_live_until: crate::sim::world::DamageSpark,
+    pub(crate) spark_particle_system: crate::sim::particles::spawn::AttachedSpark,
     /// The damage-Smoke system handle (`TechnoClass+0x310`), a
     /// [`DamageSmoke`] that `particles::spawn` owns.
     ///
@@ -1555,7 +1553,7 @@ impl GameEntity {
             mission_leaf: MissionLeafState::constructed(category, construction_frame as i32),
             suspended_attack_target: Default::default(),
             base_defense_response: BaseDefenseResponseState::default(),
-            damage_particle_live_until: Default::default(),
+            spark_particle_system: Default::default(),
             damage_smoke_system_id: Default::default(),
             transport_unload_keep_count: Default::default(),
             produce_cash: crate::sim::credit_income::ProduceCash::new(construction_frame),

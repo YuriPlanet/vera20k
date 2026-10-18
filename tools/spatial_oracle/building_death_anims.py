@@ -260,7 +260,7 @@ JOINED_TRANSPORT = frozenset((0x527AF9, 0x527B0C, 0x41C27D, 0x41C2CB, 0x41C28C, 
 
 
 def joined_inputs(root, *, damage_fires=False, stock_smudges=False, damage_sound=False,
-                  typed_debris=False, layers=None):
+                  typed_debris=False, layers=None, wall_autofill=False):
     import hashlib
     from collections import deque
     from types import SimpleNamespace
@@ -276,6 +276,9 @@ def joined_inputs(root, *, damage_fires=False, stock_smudges=False, damage_sound
     extra_assets = JOINED_EXTRA_ASSETS + tuple(name + '.SHP' for name in
                                              (JOINED_DAMAGE_FIRES if damage_fires else ()))
     building_names = (*bc.JOINED_NAMES, 'CAMISC03') if damage_sound else bc.JOINED_NAMES
+    if wall_autofill:
+        building_names = (*building_names, 'GAWALL')
+        extra_assets += ('GTWALL.SHP',)
     if damage_sound:
         extra_assets += ('CTMISC03.SHP',)
     m = er.prepare_joined_inputs(root, layers=layers)
@@ -355,6 +358,21 @@ def joined_inputs(root, *, damage_fires=False, stock_smudges=False, damage_sound
         pointer = m.alloc(0x2000)
         m.invoke(0x45DD90, pointer, (m.cstring('CAMISC03'),))
         m.types['CAMISC03'] = pointer
+    if wall_autofill:
+        pointer = m.alloc(0x2000)
+        m.invoke(0x45DD90, pointer, (m.cstring('GAWALL'),))
+        m.types['GAWALL'] = pointer
+        # The ToOverlay reader must see the real physical registry ordinal,
+        # not a one-item replacement catalog. Original constructors own it.
+        m.invoke(0x4E71E0, 0)
+        m.wall_overlay_names = list(physical_rules['OverlayTypes'].values())
+        m.wall_overlay_types = {}
+        for name in m.wall_overlay_names:
+            typ = m.alloc(0x300)
+            m.invoke(0x5FE250, typ, (m.cstring(name),))
+            m.wall_overlay_types[name] = typ
+        for path in sorted(root.glob('*WALL*.SHP')):
+            m.assets[path.name.upper()] = path.read_bytes()
     wanted = {'Dummy', 'BuildingRepaired', 'PowerPlantDie', 'GrizzlyTankAttack'}
     if typed_debris:
         # The fatal source is MTNK here. Bind its actual death sounds before
@@ -390,7 +408,8 @@ def joined_inputs(root, *, damage_fires=False, stock_smudges=False, damage_sound
     selected_art = {name: art[name] for name in (*bc.JOINED_ART_NAMES, *anim_names,
                     'MTNK', 'GTNK', 'Cannon', '120MM', 'GI', 'GISequence',
                     'ENGINEER', 'EngineerSequence', 'CIV3', 'CivilianSequence',
-                    *(('CAMISC03',) if damage_sound else ())) if name in art}
+                    *(('CAMISC03',) if damage_sound else ()),
+                    *(('GAWALL',) if wall_autofill else ())) if name in art}
     m.death_art_input_sections = dict(selected_art,
         **{name: art.get(name) for name in ('E1', 'GI', 'GISequence', 'GAPOWR', 'gtpowexp')})
     m.make_ini(selected_art)
@@ -441,6 +460,12 @@ def joined_inputs(root, *, damage_fires=False, stock_smudges=False, damage_sound
             rule_block(begin, end, rules_ini)
         building_reads = {name: m.invoke(0x45FE50, m.types[name], (rules_ini,)) & 255
                           for name in building_names}
+        if wall_autofill:
+            m.wall_overlay_reads = getattr(m, 'wall_overlay_reads', [])
+            m.wall_overlay_reads.append(dict(file=filename,
+                result=m.invoke(0x5FE770, m.wall_overlay_types['GAWALL'], (rules_ini,)) & 255,
+                physical_keys=physical.get('GAWALL'),
+                building_to_overlay=read(m.types['GAWALL'] + 0xE54)))
         e1_result = m.invoke(0x5240A0, m.types['E1'], (rules_ini,)) & 255
         tank_result = m.invoke(0x747620, tank, (rules_ini,)) & 255
         assert read(tank + 0x898) == weapon
@@ -503,6 +528,35 @@ def joined_inputs(root, *, damage_fires=False, stock_smudges=False, damage_sound
     u.hook_del(hook)
     if stock_smudges:
         joined_stock_inputs(m, root, root)
+    if wall_autofill:
+        # Reuse the existing clear-tile setup and original theater Boolean
+        # reader. This declared component map is not a physical Hills load.
+        from tools.spatial_oracle.tmp_clear_render import theater_tile_files
+        from tools.spatial_oracle.terrain_recalc import LAT_GLOBALS
+        raw = (root / 'TEMPERATMD.INI').read_bytes()
+        m.make_ini({'TileSet0000': sections(raw)['TileSet0000']})
+        pointer = m.alloc(0x40)
+        u.mem_write(pointer, bytes(u.mem_read(INI, 0x40)))
+        m.stock_theater_inputs = dict(file='TEMPERATMD.INI',
+            sha256=hashlib.sha256(raw).hexdigest(), ini=pointer)
+        # Whole545535..545C3F also initializes the role globals to native
+        # sentinels; cold zero makes ClearTile0 alias LAT/cliff ranges during
+        # Recalc. Reuse the existing original General/ordinal projection
+        # owner, not supplied -1 writes or a tile-result callback.
+        tiles, mapping = theater_tile_files(m, raw, 0, 'tem')
+        m.wall_theater_inputs = dict(mapping=mapping, registered_tile_count=len(tiles),
+            physical_general=sections(raw).get('General'),
+            roles={f'0x{address:08X}': read(address)
+                for address in (*LAT_GLOBALS, 0xAA10B0)},
+            boundary='Original theater General/default stores and ordinal projection; imported native role globals. Only the declared ClearTile0 head is constructed in the joined map; no full theater/TMP world load.')
+        assert read(0xAA10B0) == 0
+        u.mem_write(INI, art_cache)
+        # Full existing Overlay theater owner takes the enum in ECX, not an
+        # individual type receiver. Only selected GAWALL has been read here;
+        # all other physical registry members retain constructor defaults.
+        m.invoke(0x5FE620, 0)
+        assert read(m.wall_overlay_types['GAWALL'] + 0xA4)
+        m.wall_image_assets = [row for row in m.asset_loaded if 'WALL' in str(row)]
     image = native.image_bytes()
     for rva, source, length, _, flags in native._sections(image):
         if length and flags & 0x20000000:
@@ -2230,6 +2284,593 @@ def constructed_cancellation_main(argv):
         source_paths=joined_source_paths())
 
 
+def wall_autofill_execute(inputs, control):
+    """Whole588750 in the existing joined VM; all hooks below only observe.
+
+    Endpoints are original BuildingType::CreateOne -> Building::Unlimbo
+    results. The one custom-land control is a declared pre-entry input, read
+    by674000, never a post-scan answer or a hook mutation.
+    """
+    from unicorn import UC_HOOK_CODE, UC_HOOK_MEM_WRITE
+    from unicorn.x86_const import (UC_X86_REG_EAX, UC_X86_REG_ECX,
+        UC_X86_REG_EIP, UC_X86_REG_ESP)
+    from tools.spatial_oracle import building_construction as bc, engineer_repair_admission as er
+    from tools.spatial_oracle.building_body_rules import INI
+    from tools.spatial_oracle.refinery_dock import cell
+    from tools.spatial_oracle.unit_source_scatter import SCENARIO
+    from tools.spatial_oracle.trigger_action_values import initialize_discovery_geometry
+
+    origin = (20, 14)
+    endpoints = {'no_gap': [(20, 13)], 'two_empty': [(20, 11)],
+        'middle_refusal': [(20, 10), (22, 14)]}[control]
+    f = joined_fixture(inputs, 750, seed=31, building_ai=True)
+    u, read = f.u, f.read32
+    owner, typ = er.HOUSE, f.types['GAWALL']
+    f.phase = 'setup_wall_autofill'
+    u.mem_write(0xA83D80, bytes(inputs.u.mem_read(0xA83D80, 24)))
+    joined_stock_flat_map(f, inputs)
+    # These are actual original-reader outputs, including native sentinels,
+    # copied with the same input-Reader -> joined-runtime transport as types.
+    # Never make a clear tile appear valid by bypassing native LAT/Recalc.
+    for address, value in inputs.wall_theater_inputs['roles'].items():
+        u.mem_write(int(address, 16), dwords(value))
+    assert read(0xAA10B0) == 0 and read(0xA8ED38) == 1
+    clear_head = read(read(0xA8ED2C))
+    assert read(clear_head + 0x294) == 0
+    assert read(read(clear_head) + 0x9C) == 0x544CB0
+    assert read(clear_head + 0xA4) == 0  # explicitly nonresident component prior
+    # Original Overlay registry and translation-unit startup. In particular
+    # EmptyCell must agree with the constructor's own sentinel; don't assign
+    # a special coordinate or rewrite a constructor branch to bypass Mark.
+    for entry in (0x4E68E0, 0x5FC310, 0x5FC320, 0x5FC340, 0x5FC360):
+        bc.invoke(u, entry, 0)
+    assert bytes(u.mem_read(0xAC1608, 4)) == bytes(u.mem_read(0xAC1528, 4))
+    before_geometry = f.rng()
+    geometry = initialize_discovery_geometry(
+        lambda entry, receiver, args: bc.invoke(u, entry, receiver, *args), read, u)
+    assert before_geometry == f.rng()
+    overlay = read(typ + 0xE54)
+    assert overlay == inputs.wall_overlay_types['GAWALL']
+    assert u.mem_read(overlay + 0x2A8, 1) == b'\1'
+    assert read(read(typ) + 0x8C) == 0x45E880
+    assert read(read(overlay) + 0x8C) == 0x5FE570
+
+    def signed(address):
+        return struct.unpack('<i', u.mem_read(address, 4))[0]
+
+    rng_states, rng_indexes = [], {}
+    def rng_index():
+        state = f.rng()
+        key = tuple(state.items())
+        if key not in rng_indexes:
+            rng_indexes[key] = len(rng_states)
+            rng_states.append(state)
+        return rng_indexes[key]
+
+    def members(base):
+        pointer, count = read(base + 4), read(base + 16)
+        assert count <= 4096, (hex(base), count)
+        return [] if not count else [dict(pointer=read(pointer + i * 4),
+            id=read(read(pointer + i * 4) + 0x10)) for i in range(count)]
+
+    objects, calls, active, boundaries, dirty_writes = {}, [], [], [], []
+    phase = 'setup_endpoints'
+    draw_start, advance_start = len(f.draws), len(f.advances)
+    # Full RNG states are interned, not dropped or reconstructed. Native draw
+    # requests retain their own complete before/after buffers via the owner.
+    registries = dict(building=0xA8EB40, overlay=0xA8EC50,
+        generic_object=0xB0F720, abstract=0xB0F670, logic=0x87F778,
+        pending=0xB0F698, house_live=owner + 0x68)
+
+    def object_state(pointer):
+        kind = objects[pointer]
+        return dict(pointer=pointer, kind=kind, id=read(pointer + 0x10),
+            vtable=read(pointer), abstract_flags=read(pointer + 0x14),
+            location=list(struct.unpack('<3i', u.mem_read(pointer + 0x9C, 12))),
+            health=signed(pointer + 0x6C), alive=u.mem_read(pointer + 0x90, 1)[0],
+            limbo=u.mem_read(pointer + 0x81, 1)[0], marked=u.mem_read(pointer + 0x74, 1)[0],
+            logic=u.mem_read(pointer + 0x98, 1)[0],
+            **(dict(type=read(pointer + 0x520), owner=read(pointer + 0x21C),
+                sampled_health=signed(pointer + 0x544),
+                constructor_ax=struct.unpack('<H', u.mem_read(pointer + 0x3C8, 2))[0],
+                raw_words_c0_cc=list(struct.unpack('<3i', u.mem_read(pointer + 0xC0, 12))),
+                passive_scan_timer=list(struct.unpack('<3i', u.mem_read(pointer + 0x180, 12))),
+                radio_capacity=read(pointer + 0xE8),
+                radio_contacts=list(struct.unpack('<' + 'I' * read(pointer + 0xE8),
+                    u.mem_read(read(pointer + 0xE4), read(pointer + 0xE8) * 4)))
+                    if read(pointer + 0xE8) else []) if kind == 'building'
+              else dict(type=read(pointer + 0xAC))))
+
+    def cell_state(x, y):
+        p = cell(x, y)
+        return dict(coord=[x, y], tile=signed(p + 0x38), land=signed(p + 0xEC),
+            level=u.mem_read(p + 0x11B, 1)[0], slope=u.mem_read(p + 0x11C, 1)[0],
+            overlay=signed(p + 0x44), data=u.mem_read(p + 0x11E, 1)[0], owner=signed(p + 0x50),
+            ground_head=read(p + 0xE4), ground_raw=read(p + 0x124), deck_raw=read(p + 0x128),
+            retained_neighbor=u.mem_read(p + 0x122, 1)[0], flags=read(p + 0x12C),
+            ground_frame=struct.unpack('<b', u.mem_read(p + 0x120, 1))[0])
+
+    def state():
+        return dict(rng_state=rng_index(), frame=read(bc.FRAME),
+            unique_id_cursor=read(SCENARIO + 0x214),
+            scenario_init_priority=read(0xA8E7AC),
+            wall_owner_globals={f'0x{address:08X}': read(address)
+                for address in (0x8333BC, 0x880994)},
+            house=dict(pointer=owner, index=read(owner + 0x30),
+                human=u.mem_read(owner + 0x1EC, 1)[0],
+                dirty=list(u.mem_read(owner + 0x5778, 2)),
+                building_count=signed(owner + 0x2F0), credits=signed(owner + 0x30C),
+                tracked=counts(owner + 0x5500), owned=counts(owner + 0x5550)),
+            registries={name: members(base) for name, base in registries.items()},
+            objects=[object_state(pointer) for pointer in objects],
+            cells=[cell_state(x, y) for y in range(9, 17) for x in range(18, 24)])
+
+    # Scalar count vectors store integers, not pointers. Do not dereference
+    # them through the pointer-vector observer used by registries/radio.
+    def counts(base):
+        count = read(base + 16)
+        assert count <= 4096
+        return [] if not count else list(struct.unpack('<' + 'i' * count,
+            u.mem_read(read(base + 4), count * 4)))
+
+    def snapshot():
+        # Keep the same state shape at all boundaries without serializing a
+        # full 32x32 object image, instruction trace or repeated RNG buffers.
+        return state()
+
+    entries = {0x588750: 'autofill', 0x45E880: 'building_create',
+        0x43B740: 'building_constructor', 0x440580: 'building_unlimbo',
+        0x5FE570: 'overlay_create', 0x5FC380: 'overlay_constructor',
+        0x5FD270: 'overlay_unlimbo', 0x5FC570: 'overlay_mark',
+        0x47D2B0: 'cell_recalc', 0x47CA80: 'cell_lat_recalc',
+        0x5471B0: 'tile_slope', 0x544CB0: 'tile_image_getter',
+        0x47C620: 'cell_clearance', 0x5678E0: 'map_reveal_area',
+        0x65ACB0: 'radio_first_contact', 0x65A970: 'radio_transmit',
+        0x5F65F0: 'object_uninit', 0x7258D0: 'pointer_expiry',
+        0x725C70: 'deferred_drain', 0x459F20: 'building_scalar',
+        0x43BCF0: 'building_destructor', 0x5FDF70: 'overlay_scalar',
+        0x4FF700: 'house_add_tracking', 0x4FF550: 'house_remove_tracking',
+        0x4FFA50: 'house_add_owned', 0x4FF980: 'house_remove_owned',
+        0x502A80: 'house_add_live', 0x5025F0: 'house_remove_live'}
+    executed, measured, recalc_dispatches = set(), set(), []
+
+    def diagnostic():
+        from unicorn.x86_const import (UC_X86_REG_EBX, UC_X86_REG_EDX,
+            UC_X86_REG_ESI, UC_X86_REG_EDI, UC_X86_REG_EBP)
+        def safe(address, size=4):
+            try:
+                return bytes(u.mem_read(address & 0xFFFFFFFF, size)).hex()
+            except Exception as exc:
+                return dict(unreadable=f'0x{address & 0xFFFFFFFF:08X}', error=str(exc))
+        regs = {name: u.reg_read(register) for name, register in (
+            ('eax', UC_X86_REG_EAX), ('ebx', UC_X86_REG_EBX), ('ecx', UC_X86_REG_ECX),
+            ('edx', UC_X86_REG_EDX), ('esi', UC_X86_REG_ESI), ('edi', UC_X86_REG_EDI),
+            ('ebp', UC_X86_REG_EBP), ('esp', UC_X86_REG_ESP), ('eip', UC_X86_REG_EIP))}
+        table, count = read(0xA8ED2C), read(0xA8ED38)
+        return dict(phase=phase, registers=regs,
+            cell_at_esi_24=safe(regs['esi'] + 0x24), cell_at_esi_38=safe(regs['esi'] + 0x38),
+            tile_registry=dict(table=table, count=count, header=safe(0xA8ED28, 24),
+                eax_slot=safe(table + regs['eax'] * 4),
+                clear_slot=safe(table + read(0xAA10B0) * 4)),
+            edi_head=safe(regs['edi'], 16), edx_vtable_9c=safe(regs['edx'] + 0x9C),
+            roles={address: read(int(address, 16))
+                for address in inputs.wall_theater_inputs['roles']},
+            recent_recalc_dispatches=recalc_dispatches[-8:])
+    def complete_returns(pc):
+        sp = u.reg_read(UC_X86_REG_ESP)
+        for pending in active[:]:
+            if pending['return_pc'] == pc and sp > pending['sp']:
+                row = pending['row']
+                row['result'] = u.reg_read(UC_X86_REG_EAX)
+                if row['kind'] in ('building_constructor', 'building_unlimbo',
+                        'overlay_constructor', 'overlay_unlimbo', 'object_uninit',
+                        'deferred_drain'):
+                    row['after'] = snapshot()
+                if row['kind'] in ('building_constructor', 'overlay_constructor'):
+                    row['constructed_body_hex'] = bytes(u.mem_read(row['this'],
+                        0x720 if row['kind'] == 'building_constructor' else 0xB0)).hex()
+                active.remove(pending)
+
+    def observe(_u, pc, size, _data):
+        executed.add(pc)
+        if pc in (0x5471B8, 0x5471DC):
+            for pending in reversed(active):
+                if pending['row']['kind'] == 'tile_slope':
+                    if pc == 0x5471B8:
+                        pending['row']['native_image_result'] = u.reg_read(UC_X86_REG_EAX)
+                    else:
+                        pending['row']['zero_branch_pc'] = '0x005471DC'
+                    break
+        if pc == 0x47D1E7:
+            # Observe the actual dispatch before it executes. No change to
+            # EAX/tile, head/vtable, callback address or return is allowed.
+            row = diagnostic()
+            row.pop('recent_recalc_dispatches')
+            recalc_dispatches.append(row)
+        if phase == 'whole_autofill_588750':
+            measured.add(pc)
+        complete_returns(pc)
+        sp, receiver = u.reg_read(UC_X86_REG_ESP), u.reg_read(UC_X86_REG_ECX)
+        if pc in (0x43B740, 0x5FC380):
+            objects[receiver] = 'building' if pc == 0x43B740 else 'overlay'
+        if pc not in entries:
+            return
+        row = dict(pc=f'0x{pc:08X}', kind=entries[pc], phase=phase,
+            this=receiver, return_pc=f'0x{read(sp):08X}')
+        if pc == 0x440580:
+            row.update(coord=list(struct.unpack('<3i', u.mem_read(read(sp + 4), 12))),
+                facing=read(sp + 8))
+        elif pc == 0x5678E0:
+            row.update(coord=list(struct.unpack('<3i', u.mem_read(read(sp + 4), 12))),
+                args=[read(sp + 4 + i * 4) for i in range(8)])
+        elif pc == 0x47C620:
+            row.update(coord=list(struct.unpack('<hh', u.mem_read(receiver + 0x24, 4))),
+                args=[read(sp + 4 + i * 4) for i in range(3)])
+        elif pc == 0x5471B0:
+            row.update(subtile=read(sp + 4), head_vtable=read(receiver),
+                resident_image=read(receiver + 0xA4))
+        elif pc in (0x47D2B0, 0x47CA80):
+            row.update(coord=list(struct.unpack('<hh', u.mem_read(receiver + 0x24, 4))),
+                tile_before=signed(receiver + 0x38))
+        elif pc in (0x65ACB0, 0x65A970, 0x7258D0):
+            row['args'] = [read(sp + 4 + i * 4) for i in range(3 if pc == 0x65A970 else 2 if pc == 0x7258D0 else 1)]
+        calls.append(row)
+        active.append(dict(return_pc=read(sp), sp=sp, row=row))
+
+    def watch_dirty(_u, _access, address, size, value, _data):
+        pc = u.reg_read(UC_X86_REG_EIP)
+        # Keep original constructor field writes, including timer starts and
+        # the AX store, as compact raw observations. No guessed timer layout
+        # is required to recover a field which the Rust consumer needs.
+        for pending in reversed(active):
+            row = pending['row']
+            if row['kind'] in ('building_constructor', 'overlay_constructor'):
+                length = 0x720 if row['kind'] == 'building_constructor' else 0xB0
+                if row['this'] <= address and address + size <= row['this'] + length:
+                    row.setdefault('field_writes', []).append(
+                        [pc, address - row['this'], size, value])
+                    break
+        if address < owner + 0x577A and owner + 0x5778 < address + size:
+            dirty_writes.append(dict(phase=phase, pc=f'0x{pc:08X}',
+                address=address, size=size, value=value,
+                before=list(u.mem_read(owner + 0x5778, 2))))
+
+    hooks = [u.hook_add(UC_HOOK_CODE, observe), u.hook_add(UC_HOOK_MEM_WRITE, watch_dirty)]
+    def invoke(label, entry, receiver, *args):
+        nonlocal phase
+        phase = label
+        f.phase = label
+        before = snapshot()
+        mark = len(f.draws)
+        try:
+            result = bc.invoke(u, entry, receiver, *args)
+        except Exception as exc:
+            import json
+            print('WALL_AUTOFILL_NATIVE_FAULT ' + json.dumps(diagnostic(), sort_keys=True), flush=True)
+            raise RuntimeError(f'{label}: original native entry0x{entry:08X} failed') from exc
+        # A top-level return stops before RET_MAGIC's code hook. Resolve only
+        # that real completed call using the actual returned ESP/EAX.
+        complete_returns(native_ret)
+        boundaries.append(dict(label=label, entry=f'0x{entry:08X}', this=receiver,
+            args=list(args), result=result, before=before, after=snapshot(),
+            rng_request_range=[mark - draw_start, len(f.draws) - draw_start]))
+        return result
+
+    from tools.native_oracle import RET_MAGIC as native_ret
+    prior_land = None
+    try:
+        # Reuse full native wall entry for imported endpoint/origin material.
+        # They are separate Building products, not factory-paid objects.
+        for index, xy in enumerate((*endpoints, origin)):
+            p = invoke(f'setup_wall_{index}_create', 0x45E880, typ, owner)
+            coord = f.allocate(12)
+            u.mem_write(coord, dwords(xy[0] * 256 + 128, xy[1] * 256 + 128, 0))
+            assert invoke(f'setup_wall_{index}_unlimbo', 0x440580, p, coord, 0) & 255 == 1
+            if index + 1 == len(endpoints):
+                invoke('setup_endpoint_deferred_drain', 0x725C70, 0)
+                assert read(0xB0F6A8) == 0
+        # HousePlace calls588750 after origin Unlimbo and before its drain.
+        # Keep that origin's actual transient queue entries alive here.
+        assert read(0xB0F6A8) > 0
+        assert all(signed(cell(*xy) + 0x44) == signed(overlay + 0x294)
+            and read(cell(*xy) + 0x50) == read(owner + 0x30) for xy in (*endpoints, origin))
+        if control == 'middle_refusal':
+            # Supported custom land input: GAWALL's native SpeedType=-1
+            # reads Buildable while Overlay Mark uses Track1. Keep every
+            # other cell's physical land table row unchanged.
+            assert signed(typ + 0x67C) == -1
+            land_names = [inputs.string(inputs.read32(0x839D68 + i * 4)) for i in range(12)]
+            land_index = land_names.index('Rough')
+            inputs.make_ini({'Rough': {'Buildable': 'yes', 'Track': '0%'}})
+            inputs.invoke(0x674000, 0, (INI,))
+            table = 0x89EA40 + land_index * 36
+            old = bytes(u.mem_read(table, 36))
+            raw = bytes(inputs.u.mem_read(table, 36))
+            u.mem_write(table, raw)
+            u.mem_write(cell(20, 12) + 0xEC, dwords(land_index))
+            prior_land = dict(coord=[20, 12], land=land_index,
+                source='Declared custom INI/map prior before whole588750; not stock-map admission',
+                ini={'Rough': {'Buildable': 'yes', 'Track': '0%'}},
+                reader='0x00674000', physical_row_before=old.hex(), supplied_native_row=raw.hex())
+        coord = f.allocate(4)
+        u.mem_write(coord, struct.pack('<hh', *origin))
+        measurement_call_start = len(calls)
+        measurement_draw_start = len(f.draws) - draw_start
+        invoke('whole_autofill_588750', 0x588750, 0x87F7E8, coord, owner, typ)
+        invoke('autofill_deferred_drain', 0x725C70, 0)
+        assert not active, active
+        assert f.code_unchanged()
+        assert 0x588750 in measured
+        if control != 'no_gap':
+            assert {0x43B740, 0x440580, 0x5FC380, 0x5FD270, 0x5678E0} <= measured
+        # These assert the intended branch was actually admitted, not a
+        # manually supplied expected body/RNG/identity result.
+        attempts = [r for r in calls[measurement_call_start:] if r['kind'] == 'building_unlimbo']
+        if control == 'no_gap':
+            assert not attempts
+        elif control == 'two_empty':
+            assert len(attempts) == 2 and all(r['result'] & 255 for r in attempts)
+        else:
+            results = [bool(r['result'] & 255) for r in attempts]
+            assert results == [True, False, True, True], results
+        return dict(input=dict(control=control, seed=31, origin=list(origin),
+            endpoints=[list(xy) for xy in endpoints], owner=owner,
+            type='GAWALL', custom_middle_land=prior_land,
+            map=f.flat_map, geometry_startup=geometry,
+            theater_roles=inputs.wall_theater_inputs,
+            selected_tile=dict(clear_base=read(0xAA10B0), registry_count=read(0xA8ED38),
+                head=read(read(0xA8ED2C)),
+                vtable=read(read(read(0xA8ED2C))),
+                resident_image=read(read(read(0xA8ED2C)) + 0xA4),
+                boundary='Declared original ClearTile0 head; no resident TMP supplied. Original image/slope getters execute and their null-image branch is observed if entered.'),
+            current_viewer=read(0xA83D4C), game_mode=read(0xA8B238),
+            active_game=u.mem_read(0xA8E9A0, 1)[0], scenario_init_priority=read(0xA8E7AC),
+            wall_owner_globals={f'0x{address:08X}': read(address)
+                for address in (0x8333BC, 0x880994)},
+            scenario_flags=read(SCENARIO),
+            reveal_by_height=u.mem_read(f.rules + 0x17EE, 1)[0],
+            boundary='Declared joined32x32 flat clear map and House/target/MTNK priors; full native endpoint wall entry/drain, origin wall entry remains pending, then whole588750 and drain. No Factory payment, HousePlace caller or physical Hills bootstrap.'),
+            rng_states=rng_states, boundaries=boundaries, ordered_calls=calls,
+            measurement_call_start=measurement_call_start,
+            measurement_rng_request_start=measurement_draw_start,
+            rng_requests=f.draws[draw_start:], ranged_raw_advances=f.advances[advance_start:],
+            house_dirty_writes=dirty_writes, final=snapshot(),
+            recalc_tile_dispatches=recalc_dispatches,
+            measured_body_entries=[f'0x{pc:08X}' for pc in entries if pc in measured],
+            original_executable_sections_unchanged=True)
+    finally:
+        for hook in hooks:
+            u.hook_del(hook)
+
+
+def wall_autofill_project(raw):
+    """Pure selection/interning of original observations; no engine answers.
+
+    Pointer identities become typed references, unknown values remain raw.
+    Patch membership is the observed changed-cell union at retained states,
+    plus declared origin/endpoints. Full buffers and patch rows are interned.
+    """
+    import json
+    streams, stream_index, patch_values, patch_index = [], {}, [], {}
+    object_states, object_indexes = [], {}
+    call_kinds, call_kind_indexes, phases, phase_indexes = [], {}, [], {}
+    patch_fields = ('tile', 'land', 'level', 'slope', 'overlay', 'data', 'owner',
+        'retained_neighbor', 'flags', 'ground_frame', 'ground_raw', 'deck_raw', 'ground_head')
+    def intern(value, values, indexes):
+        key = tuple(value) if isinstance(value, list) else value
+        if key not in indexes:
+            indexes[key] = len(values)
+            values.append(value)
+        return indexes[key]
+    controls = []
+    for control in raw['controls']:
+        incoming = control['input']
+        bounds = control['boundaries']
+        origin_label = 'setup_wall_' + str(len(incoming['endpoints'])) + '_unlimbo'
+        origin = next(b for b in bounds if b['label'] == origin_label)
+        selected = {'origin_unlimbo': origin,
+            'autofill': next(b for b in bounds if b['label'] == 'whole_autofill_588750'),
+            'drain': next(b for b in bounds if b['label'] == 'autofill_deferred_drain')}
+        constructors = [c for c in control['ordered_calls']
+            if c['kind'] in ('building_constructor', 'overlay_constructor')]
+        refs, ids, counters = {}, {}, {'building_constructor': 0, 'overlay_constructor': 0}
+        for call in constructors:
+            kind = call['kind']
+            ref = ('B' if kind == 'building_constructor' else 'O') + str(counters[kind])
+            counters[kind] += 1
+            refs[call['this']] = ref
+            obj = next(o for o in call['after']['objects'] if o['pointer'] == call['this'])
+            ids[ref] = obj['id']
+        known = dict(refs)
+        known.update({incoming['owner']: 'House:owner', 0x87F7E8: 'Map',
+            raw['type']['pointer']: 'BuildingType:GAWALL',
+            raw['type']['to_overlay']: 'OverlayType:GAWALL'})
+        def reference(value):
+            return known.get(value, value)
+        def obj_state(obj):
+            keep = ('kind', 'id', 'abstract_flags', 'location', 'health', 'alive',
+                'limbo', 'marked', 'logic', 'sampled_health', 'constructor_ax',
+                'raw_words_c0_cc', 'passive_scan_timer', 'radio_capacity')
+            result = {k: obj[k] for k in keep if k in obj}
+            result['ref'] = refs[obj['pointer']]
+            result['type'] = reference(obj['type'])
+            if 'owner' in obj:
+                result['owner'] = reference(obj['owner'])
+                result['radio_contacts'] = [reference(p) for p in obj['radio_contacts']]
+            key = json.dumps(result, sort_keys=True, separators=(',', ':'))
+            if key not in object_indexes:
+                object_indexes[key] = len(object_states)
+                object_states.append(result)
+            return object_indexes[key]
+        stages = [s for transition in selected.values() for s in
+            (transition['before'], transition['after'])]
+        baseline = {tuple(c['coord']): c for c in stages[0]['cells']}
+        coords = {tuple(incoming['origin']), *(tuple(c) for c in incoming['endpoints'])}
+        for stage in stages:
+            for cell_row in stage['cells']:
+                if cell_row != baseline[tuple(cell_row['coord'])]:
+                    coords.add(tuple(cell_row['coord']))
+        coords = sorted(coords, key=lambda c: (c[1], c[0]))
+        def state(stage):
+            rng = control['rng_states'][stage['rng_state']]
+            cells = {tuple(c['coord']): c for c in stage['cells']}
+            result = dict(cursor=stage['unique_id_cursor'], frame=stage['frame'],
+                rng={name: intern(rng[name], streams, stream_index)
+                    for name in ('main', 'scenario', 'mapgen')},
+                objects=[obj_state(o) for o in stage['objects']],
+                registries={name: [refs.get(p['pointer'], 'prior:' + str(p['id']))
+                    for p in members] for name, members in stage['registries'].items()
+                    if name != 'abstract'},
+                house={k: v for k, v in stage['house'].items() if k != 'pointer'},
+                patch=[intern([reference(cells[xy][field]) if field == 'ground_head'
+                    else cells[xy][field] for field in patch_fields], patch_values,
+                    patch_index) for xy in coords])
+            for key in ('scenario_init_priority', 'wall_owner_globals'):
+                if key in stage:
+                    result[key] = stage[key]
+            return result
+        retained = []
+        omit = {'cell_clearance', 'cell_recalc', 'cell_lat_recalc', 'tile_slope', 'tile_image_getter'}
+        for call in control['ordered_calls']:
+            if call['kind'] in omit or call['phase'] not in (
+                    origin_label, 'whole_autofill_588750', 'autofill_deferred_drain'):
+                continue
+            kind = (call['kind'], call['pc'])
+            if kind not in call_kind_indexes:
+                call_kind_indexes[kind] = len(call_kinds)
+                call_kinds.append(dict(kind=call['kind'], pc=call['pc']))
+            item = [call_kind_indexes[kind], intern(call['phase'], phases, phase_indexes),
+                reference(call['this']), call['return_pc'], call['result']]
+            extra = {}
+            if 'coord' in call:
+                extra['coord'] = call['coord']
+            if 'args' in call:
+                extra['args'] = [reference(a) for a in call['args']]
+                if call['kind'] == 'map_reveal_area':
+                    extra['args'][0] = {'coord': call['coord']}
+            if 'facing' in call:
+                extra['facing'] = call['facing']
+            if call.get('result') in refs:
+                extra['result_ref'] = refs[call['result']]
+            if extra:
+                item.append(extra)
+            retained.append(item)
+        ctor_rows, unlimbo_rows = [], []
+        for call in control['ordered_calls']:
+            if call['kind'] in ('building_constructor', 'overlay_constructor',
+                    'building_unlimbo', 'overlay_unlimbo'):
+                obj = next(o for o in call['after']['objects'] if o['pointer'] == call['this'])
+                row = dict(ref=refs[call['this']], phase=call['phase'],
+                    result=call['result'], state=obj_state(obj))
+                if 'coord' in call:
+                    row['coord'] = call['coord']
+                if call['kind'] == 'building_constructor':
+                    body = bytes.fromhex(call['constructed_body_hex'])
+                    row['mission_timer_raw_c8'] = list(struct.unpack_from('<3i', body, 0xC8))
+                (ctor_rows if call['kind'].endswith('constructor') else unlimbo_rows).append(row)
+        projected_input = {k: v for k, v in incoming.items()
+            if k not in ('owner', 'current_viewer', 'theater_roles')}
+        projected_input.update(owner=reference(incoming['owner']),
+            current_viewer=reference(incoming['current_viewer']))
+        requests = [{k: r[k] for k in ('entry', 'site', 'this', 'frame', 'args', 'result')}
+            for r in control['rng_requests']]
+        controls.append(dict(input=projected_input, native_ids=ids,
+            origin_ref=refs[origin['this']], patch_coordinates=[list(xy) for xy in coords],
+            transitions={name: dict(before=state(b['before']), after=state(b['after']),
+                result=b['result']) for name, b in selected.items()},
+            constructors=ctor_rows, unlimbo=unlimbo_rows,
+            semantic_calls=retained, rng_requests=requests,
+            origin_unlimbo_rng_request_range=origin['rng_request_range'],
+            autofill_rng_request_range=selected['autofill']['rng_request_range'],
+            house_dirty_writes=[dict(phase=w['phase'], pc=w['pc'],
+                offset=w['address'] - incoming['owner'], size=w['size'],
+                value=w['value'], before=w['before']) for w in control['house_dirty_writes']],
+            original_executable_sections_unchanged=control['original_executable_sections_unchanged'],
+            observation_gaps=[] if 'wall_owner_globals' in incoming else ['wall_owner_globals']))
+    return dict(schema_version=2, native_sha256=raw['native_sha256'], source=raw['source'],
+        retail_files=raw['retail_files'], type=raw['type'], physical_art=raw['physical_art'],
+        native_theater_inputs=raw['native_theater_inputs'],
+        native_wall_image_assets=raw['native_wall_image_assets'],
+        native_overlay_layers=raw['native_overlay_layers'],
+        overlay_registry_names=raw['overlay_registry_names'],
+        input_layers=[{k: layer[k] for k in ('file', 'sha256', 'absent') if k in layer}
+            | (dict(physical_GAWALL=layer['physical_input_sections'].get('GAWALL'),
+                admitted_GAWALL=layer['admitted']['buildings']['GAWALL'])
+                if 'physical_input_sections' in layer else {}) for layer in raw['input_layers']],
+        rng_streams=streams, object_states=object_states,
+        semantic_call_kinds=call_kinds, phases=phases,
+        semantic_call_fields=['kind_index', 'phase_index', 'this', 'return_pc', 'result', 'optional_fields'],
+        patch_fields=list(patch_fields), patch_values=patch_values,
+        controls=controls)
+
+
+def wall_autofill_generate(*, detail=False):
+    import hashlib, os
+    from tools.native_oracle import NATIVE_SHA256
+    root = Path(os.environ['VERA20K_BUILDING_DEATH_ASSETS'])
+    inputs = joined_inputs(root, wall_autofill=True)
+    p, u = inputs.types['GAWALL'], inputs.u
+    signed = lambda offset: struct.unpack('<i', u.mem_read(p + offset, 4))[0]
+    overlay = inputs.read32(p + 0xE54)
+    raw = dict(schema_version=1, source='unicorn/gamemd.exe', native_sha256=NATIVE_SHA256,
+        retail_files=[dict(name=path.name, bytes=path.stat().st_size,
+            sha256=hashlib.sha256(path.read_bytes()).hexdigest())
+            for path in sorted(root.iterdir()) if path.is_file() and path.suffix.lower() != '.json'],
+        input_layers=inputs.death_layers, native_overlay_layers=inputs.wall_overlay_reads,
+        overlay_registry_names=inputs.wall_overlay_names,
+        physical_art=inputs.death_art_input_sections.get('GAWALL'),
+        native_theater_inputs=inputs.wall_theater_inputs,
+        native_wall_image_assets=inputs.wall_image_assets,
+        type=dict(name='GAWALL', pointer=p, strength=signed(0xA0),
+            to_overlay=overlay, overlay_index=inputs.read32(overlay + 0x294),
+            guard_range=signed(0x5B8), sight=signed(0x5E8), speed=signed(0x67C),
+            insignificant=u.mem_read(p + 0x232, 1)[0],
+            reveal_by_height=u.mem_read(inputs.rules + 0x17EE, 1)[0]),
+        controls=[wall_autofill_execute(inputs, control) for control in
+            ('no_gap', 'two_empty', 'middle_refusal')])
+    return raw if detail else wall_autofill_project(raw)
+
+
+def wall_autofill_metadata():
+    return provenance(scope='Whole original588750 GAWALL autofill: native temporary Building/Overlay construction, ignored failure and deferred cleanup in existing joined component world',
+        entry_points=dict(autofill=0x588750, building_create=0x45E880,
+            building_ctor=0x43B740, constructor_rng=0x6F3254, building_unlimbo=0x440580,
+            overlay_create=0x5FE570, overlay_ctor=0x5FC380, overlay_unlimbo=0x5FD270,
+            cell_clearance=0x47C620, land_reader=0x674000, sight=0x5678E0,
+            radio=0x65ACB0, uninit=0x5F65F0, expiry=0x7258D0, drain=0x725C70),
+        assumptions=[
+            'Existing physical layered Building/Overlay/Rules readers, joined House and flat clear map, native graph/pathfinder and target/MTNK setup are reused. This is not a paid Factory/HousePlace or full Hills execution.',
+            'Original BuildingType45E880 and Building440580 create endpoint marks and drain them. A fresh origin wall enters Unlimbo and remains pending before whole588750, matching its immediate HousePlace seam; the final drain includes origin and successful fillers. No body result, ID, RNG draw, pending item, sight answer or Unlimbo result is supplied.',
+            'The middle refusal is an explicit pre-entry custom Rough Buildable=yes/Track=0% original674000 output and one supplied Cell land value. It is a native branch control, not a stock map occurrence; original588750 must continue the later attempts.',
+            'All three full RNG streams are interned and referenced at boundaries, with original draw requests/raw advances retained. Final freed-arena readbacks are historical bytes, not live entities. Failure survivors remain constructor-complete in limbo; no eventual shutdown claim.',
+            'Default schema2 is a pure observed-data selection/interning/typed-identity projection; original producer/control execution is unchanged. Optional --autofill-detail retains the full trace only in external scratch. No expected Rust state, RNG continuation or callback answer is calculated.'
+        ], substitutions=[
+            'Only existing joined reader cache, physical-file/allocator/CRT/COM/audio and documented presentation transports. No new VM, instruction patch, native gameplay result substitution, fake iterator or constructor RNG stub.'
+        ])
+
+
+def wall_autofill_main(argv):
+    import argparse
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument('--autofill-output-dir', type=Path, required=True)
+    parser.add_argument('--autofill-detail', action='store_true')
+    args, remaining = parser.parse_known_args(argv)
+    repository = Path(__file__).resolve().parents[2]
+    output = args.autofill_output_dir.expanduser().resolve()
+    if output.is_relative_to(repository) or any(
+            arg == '--output' or arg.startswith('--output=') for arg in remaining):
+        raise SystemExit('Wall autofill generation requires an external scratch --autofill-output-dir; --output is not accepted')
+    sources = joined_source_paths()
+    sources['tools/spatial_oracle/trigger_action_values.py'] = repository / 'tools/spatial_oracle/trigger_action_values.py'
+    for name in ('tools/spatial_oracle/tmp_clear_render.py',
+                 'tools/rules_oracle/theater_general_reader.py',
+                 'tools/spatial_oracle/terrain_recalc.py'):
+        sources[name] = repository / name
+    name = 'building_death_anims_wall_autofill' + ('_detail' if args.autofill_detail else '')
+    finish_vectors(lambda: wall_autofill_generate(detail=args.autofill_detail), output / (name + '.json'),
+        provenance=wall_autofill_metadata, argv=remaining, source_paths=sources)
+
+
 def typed_debris_generate():
     """Actual admitted MTNK fatal receiver and adjacent death-Anim allocation."""
     import os, hashlib
@@ -2971,6 +3612,12 @@ def suicide_fire_main(argv):
 
 if __name__ == "__main__":
     import sys
+    if '--wall-autofill' in sys.argv[1:]:
+        if {'--suicide-fire', '--typed-debris', '--damage-sound-joined',
+                '--joined-stock-smudges', '--constructed-cancellation', '--joined'} & set(sys.argv[1:]):
+            raise SystemExit('Select one native corpus mode')
+        wall_autofill_main([arg for arg in sys.argv[1:] if arg != '--wall-autofill'])
+        raise SystemExit(0)
     if '--suicide-fire' in sys.argv[1:]:
         if {'--typed-debris','--damage-sound-joined','--joined-stock-smudges',
                 '--constructed-cancellation','--joined'} & set(sys.argv[1:]):

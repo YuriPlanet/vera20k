@@ -41,8 +41,7 @@ impl App {
         // HouseClass keeps simulating for SavourDelay, then blocks on the
         // current outcome Vox before it raises the victory/defeat exit global.
         // Drive that gate before deciding whether another sim frame is legal.
-        let scenario_now_ms =
-            crate::app::match_runtime::sim_tick::monotonic_frame_pacer_ms(state, Instant::now());
+        let scenario_now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
         Self::consume_executed_abort_exit(state, scenario_now_ms);
         crate::app::match_runtime::sim_tick::drive_local_player_outcome_voice_wait(
             state,
@@ -108,8 +107,7 @@ impl App {
             && state.match_state.scenario_exit.is_none()
             && state.match_state.scenario_outcome.is_none()
         {
-            let now = Instant::now();
-            let now_ms = sim_tick::monotonic_frame_pacer_ms(state, now);
+            let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
             sim_tick::advance_in_game_runtime(state, now_ms);
             // EventClass EXIT is dispatched at the simulation tail. Consume
             // its terminal edge before any outcome route can claim teardown.
@@ -554,7 +552,7 @@ impl App {
                     [chrono_tactical.0, chrono_tactical.1, chrono_tactical.2, chrono_tactical.3],
                 );
                 let times = render::GameRenderTimes {
-                    radar_ms: state.radar_presentation_ms(Instant::now()),
+                    radar_ms: state.radar_presentation_ms(),
                     tooltip_ms,
                     message_ms,
                 };

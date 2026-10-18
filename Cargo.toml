@@ -113,6 +113,11 @@ image = { version = "0.25", default-features = false, features = ["png", "ico"] 
 # rodio's decoders (symphonia), dither and microphone recording stay off.
 rodio = { version = "0.22", default-features = false, features = ["playback"] }
 
+[target.'cfg(unix)'.dependencies]
+# Continuing presentation uptime across saved-game process restarts. The
+# existing core dependency already pins the same libc version in Cargo.lock.
+libc = "0.2"
+
 # --- macOS application icon ---
 # macOS has no per-window icon; the Dock shows NSApplication's icon image, which
 # `app::window_icon` sets at startup. These are the objc2 0.6 / AppKit 0.3 versions

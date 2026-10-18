@@ -127,7 +127,7 @@ impl AuthoredOverlayLoadHost for SimulationAuthoredLoadHost<'_> {
         handle: Self::Handle,
         _anchor: AuthoredOverlayCellRef,
     ) -> Result<(), Self::Error> {
-        self.sim.load_objects.begin_mark(handle)?;
+        self.sim.load_objects.begin_mark(handle, None)?;
         Ok(())
     }
 

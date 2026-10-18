@@ -531,6 +531,8 @@ pub(crate) fn handle_mouse_button_event(
 /// Once-per-frame idle tick: drives the masked-0 sticky re-dispatch that pops
 /// the pressed visual on drag-off and restores it on drag-back (G22 rows 2/3)
 /// and would drive G23 hold-repeat for any future held-mask gadget.
+/// Each unlocked pass also republishes the complete sidebar projection,
+/// including the retained House power pair consumed by the tooltip driver.
 pub(crate) fn idle_tick(state: &mut AppState) {
     let Some(view) = current_sidebar_view(state).cloned() else {
         return;

@@ -83,6 +83,14 @@ pub(crate) fn effect_target_coordinate(
     }
 }
 
+/// Native policies sharing the effect source/anchor projection. RadBeam's
+/// raw-Y test and unclamped delta6FD696 differ from laser/bolt6FD210/6FD460.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum EffectDepthProjection {
+    ClampedBuilding,
+    ChangedY,
+}
+
 /// The laser's NullCoord arm and every bolt constructor subtract the projected
 /// Building+AC origin from their source and clamp positive deltas to zero
 /// (6FD210/6FD460). Explicit-source lasers bypass this calculation.
@@ -91,18 +99,29 @@ pub(crate) fn effect_z_adjust(
     world: &Simulation,
     source: &GameEntity,
     from: ProjectileCoord,
+    projection: EffectDepthProjection,
 ) -> i32 {
-    if source.category() != EntityCategory::Structure {
+    if projection == EffectDepthProjection::ClampedBuilding
+        && source.category() != EntityCategory::Structure
+    {
         return 0;
     }
     let location =
         crate::sim::movement::ground_pose::object_location(source, world.resolved_terrain.as_ref());
-    let base =
-        crate::sim::movement::ground_pose::building_render_order_parts(location, false, false).0;
+    let base = if source.category() == EntityCategory::Structure {
+        crate::sim::movement::ground_pose::building_render_order_parts(location, false, false).0
+    } else {
+        location
+    };
+    if projection == EffectDepthProjection::ChangedY && from.y == base.y {
+        return 0;
+    }
     let project_y = |x, y, z| crate::util::lepton::absolute_leptons_to_screen(x, y, z).1 as i32;
-    project_y(from.x, from.y, from.z)
-        .wrapping_sub(project_y(base.x, base.y, base.z))
-        .min(0)
+    let delta = project_y(from.x, from.y, from.z).wrapping_sub(project_y(base.x, base.y, base.z));
+    match projection {
+        EffectDepthProjection::ClampedBuilding => delta.min(0),
+        EffectDepthProjection::ChangedY => delta,
+    }
 }
 
 /// The firer facts the fire coordinate reads.
@@ -942,6 +961,117 @@ mod tests {
             );
             let [x, y, z] = triple(&row["coordinate"]);
             assert_eq!(shot.coord, ProjectileCoord::new(x, y, z), "{row}");
+        }
+    }
+
+    #[test]
+    fn retail_disk_muzzle_and_range_queries_match_actual_unit_jumpjet_dispatch() {
+        let Some(retail) =
+            crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+        else {
+            return;
+        };
+        let rules = &retail.rules;
+        let native = crate::test_fixture::json("tools/spatial_oracle/disk_laser.json");
+        let rows = native["muzzle"].as_array().unwrap();
+        assert_eq!(
+            rows.len(),
+            7,
+            "four headings and three high-flight controls"
+        );
+        let int = |v: &serde_json::Value| v.as_i64().unwrap() as i32;
+        let triple = |v: &serde_json::Value| [int(&v[0]), int(&v[1]), int(&v[2])];
+        for row in rows {
+            let input = &row["input"];
+            let mut world = Simulation::new();
+            crate::sim::arena_fixture::flat_arena(&mut world, rules);
+            let mut ids = Vec::new();
+            for (kind, key) in [("DISK", "source"), ("MTNK", "target")] {
+                let [x, y, z] = triple(&input[key]);
+                let id = world
+                    .spawn_object(
+                        kind,
+                        "Americans",
+                        (x / 256) as u16,
+                        (y / 256) as u16,
+                        0,
+                        rules,
+                    )
+                    .unwrap();
+                let actor = world.substrate.entities.get_mut(id).unwrap();
+                actor
+                    .position
+                    .set_sub_x_for_test(SimFixed::from_num(x % 256));
+                actor
+                    .position
+                    .set_sub_y_for_test(SimFixed::from_num(y % 256));
+                actor.position.set_exact_z_leptons_for_test(Some(z));
+                ids.push(id);
+            }
+            let frame = input["frame"].as_u64().unwrap() as u32;
+            world.session.binary_frame = frame;
+            let source = world.substrate.entities.get_mut(ids[0]).unwrap();
+            source.body_facing = crate::sim::movement::FacingClass::new(
+                input["primary_facing"].as_u64().unwrap() as u16,
+                100,
+            );
+            source.barrel_facing = Some(crate::sim::movement::FacingClass::new(
+                input["secondary_facing"].as_u64().unwrap() as u16,
+                100,
+            ));
+            source
+                .lifecycle
+                .set_cell_marked(input["marked"].as_bool().unwrap());
+            let obj = rules.object("DISK").unwrap();
+            assert_eq!(obj.has_turret, input["has_turret"].as_bool().unwrap());
+            assert_eq!(
+                rules.art().get("DISK").unwrap().primary_fire_flh,
+                Flh::from(triple(&input["primary_flh"]))
+            );
+            let before = world.state_hash();
+            let source = world.substrate.entities.get(ids[0]).unwrap();
+            let source_coord = crate::sim::movement::ground_pose::object_get_coords(
+                source,
+                world.resolved_terrain.as_ref(),
+            );
+            assert_eq!(
+                [source_coord.x, source_coord.y, source_coord.z],
+                triple(&row["source_coords"])
+            );
+            let muzzle = fire_coordinate(
+                &world,
+                rules,
+                &FireSource::of_entity(source),
+                obj,
+                int(&input["weapon_index"]),
+                input["burst"].as_u64().unwrap() as u8,
+                Flh::from(triple(&input["base"])),
+            );
+            assert_eq!(
+                [muzzle.coord.x, muzzle.coord.y, muzzle.coord.z],
+                triple(&row["muzzle"]),
+                "{input}"
+            );
+            let target = effect_target_coordinate(
+                &world,
+                rules,
+                crate::sim::projectile::ProjectileTarget::Entity(ids[1]),
+            )
+            .unwrap();
+            assert_eq!(
+                [target.x, target.y, target.z],
+                triple(&row["target_effect_coords"])
+            );
+            assert_eq!(
+                crate::sim::movement::air_movement::is_high_flying(
+                    source,
+                    world.resolved_terrain.as_ref(),
+                    Some((rules, &world.interner))
+                ),
+                row["high_flying"].as_bool().unwrap(),
+                "{input}"
+            );
+            assert_eq!(world.state_hash(), before, "queries are read-only: {input}");
         }
     }
 

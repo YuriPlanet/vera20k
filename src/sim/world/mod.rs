@@ -25,11 +25,15 @@ pub(crate) mod building_anim;
 mod building_scatter;
 mod cell_content;
 mod crash;
+mod disk_laser;
+pub use disk_laser::DiskLaserObservation;
+#[cfg(test)]
+mod disk_laser_tests;
 #[cfg(test)]
 pub(crate) mod entry_test_fixture;
+mod frame_effects;
 mod object_entry;
 mod sinking;
-mod frame_effects;
 mod time_warp;
 mod trigger_chrono;
 mod type_tech_levels;
@@ -43,6 +47,8 @@ mod gap_generator;
 pub(crate) use gap_generator::GapGeneratorRuntime;
 pub(crate) use gap_generator::LastOperational;
 mod house_base;
+#[cfg(test)]
+mod house_cheer_tests;
 mod house_defeat;
 pub(crate) use house_defeat::HouseBlowupSubset;
 mod ion_blast;
@@ -102,11 +108,10 @@ mod projectile_collision;
 mod substrate;
 mod techno_ai;
 mod trigger_camera;
-mod trigger_explosion;
-mod trigger_nuke;
 #[cfg(test)]
 mod trigger_camera_tests;
-pub(crate) use techno_ai::DamageSpark;
+mod trigger_explosion;
+mod trigger_nuke;
 pub(crate) use techno_ai::ObjectAiCtx;
 pub(crate) use techno_ai::PassiveScan;
 #[cfg(any(test, feature = "test-support"))]
@@ -133,6 +138,8 @@ mod world_commands;
 mod world_hash;
 mod world_orders;
 mod world_spawn;
+#[cfg(test)]
+mod wall_autofill_oracle_tests;
 
 #[cfg(test)]
 mod aegis_distributed_fire_tests;
@@ -150,8 +157,6 @@ mod crash_tests;
 mod damage_consequence_tests;
 #[cfg(test)]
 mod drone_rocking_tests;
-#[cfg(test)]
-mod suicide_fire_tests;
 #[cfg(test)]
 mod engineer_building_repair_tests;
 #[cfg(test)]
@@ -174,6 +179,8 @@ mod mastermind_overload_tests;
 mod projectile_trailer_tests;
 #[cfg(test)]
 mod squid_grapple_tests;
+#[cfg(test)]
+mod suicide_fire_tests;
 #[cfg(any(test, feature = "test-support"))]
 pub use lifecycle_tests::common_raw_terrain_cell as common_raw_test_terrain_cell;
 #[cfg(test)]
@@ -1323,6 +1330,10 @@ pub struct Simulation {
     pub dynamic_terrain_cells:
         BTreeMap<(u16, u16), crate::map::resolved_terrain::DynamicTerrainCellState>,
     pub bridge_state: Option<BridgeRuntimeState>,
+    /// Resident Map+D4 ordered collapse coordinates. Independent of optional
+    /// geometry so even standalone fallout/save retains its native publication.
+    /// The bridge damage controller owns its mutations and synchronous drain.
+    pending_bridge_collapses: bridge_orchestrator::PendingBridgeCells,
     /// Per-cell mutable overlay state (ore density, wall damage, bridge frames).
     /// Seeded from map [OverlayPack] at init, mutated during gameplay.
     pub overlay_grid: Option<crate::sim::overlay_grid::OverlayGrid>,
@@ -1346,6 +1357,9 @@ pub struct Simulation {
     /// control and the cells they fly at, owned by `kamikaze`. Its timer is
     /// not saved; a load restarts it.
     pub(crate) kamikaze: crate::sim::kamikaze::KamikazeTracker,
+    /// DiskLaser Save4A7C10 retains delayed shots; emitted LaserDraws remain
+    /// copied presentation facts. This owner has no Logic/Display membership.
+    disk_lasers: disk_laser::DiskLasers,
     /// The map's isometric playfield diamond ([Map] Size width + the raw
     /// LocalSize rect), set at map init. Threaded into the cell-rect occupancy
     /// validator's final playfield-corner test (the engine diamond, not a
@@ -3461,12 +3475,14 @@ impl Simulation {
             real_cell_bridge_flags_0x1180: RealCellBridgeFlags0x1180::default(),
             dynamic_terrain_cells: BTreeMap::new(),
             bridge_state: None,
+            pending_bridge_collapses: Default::default(),
             overlay_grid: None,
             crate_authority: crate::sim::crates::CrateAuthority::default(),
             smudge_grid: None,
             radiation: crate::sim::radiation::RadiationState::default(),
             bombs: crate::sim::bomb::BombList::default(),
             kamikaze: crate::sim::kamikaze::KamikazeTracker::default(),
+            disk_lasers: disk_laser::DiskLasers::default(),
             playfield_bounds: None,
             playfield_size_height: None,
             playfield_revision: 0,
@@ -3678,6 +3694,38 @@ impl Simulation {
             );
         }
         self.flush_smudge_dirty();
+    }
+
+    /// Execute59 at6DE313 uses +90 as a waypoint, not the +44 tail or an
+    /// amount. Map57B790..57B860 tests121 offsets with sqrtApprox/ftol and
+    /// always reduces the unchanged centre pointer, never the candidate.
+    /// Seven original executions (Steam3e81a617..08600, real and Dummy,
+    /// signed extremes) each observed109 ordered calls480A80(receiver,1).
+    /// Packed subtraction leaves offsets independent of the centre, so reuse
+    /// that constant count without adding another floating distance kernel.
+    pub(crate) fn trigger_reduce_tiberium_at_waypoint(
+        &mut self,
+        waypoint: i32,
+        rules: &RuleSet,
+        overlay_registry: &crate::rules::overlay_types::OverlayTypeRegistry,
+    ) -> bool {
+        let Some(cell) = self.session.waypoint_cell(waypoint) else {
+            return false;
+        };
+        if self.resolved_terrain.is_none() || self.overlay_grid.is_none() {
+            return false;
+        }
+        // Keep every call, including after depletion. The shared owner
+        // performs each native lookup and owns RNG/queues/radar/cleanup.
+        for _ in 0..109 {
+            self.reduce_tiberium_at_with_native_context(
+                (cell.0 as u16, cell.1 as u16),
+                1,
+                Some(rules),
+                Some(overlay_registry),
+            );
+        }
+        true
     }
 
     pub(crate) fn reduce_tiberium_at_with_native_context<A: Into<i32>>(
@@ -4845,9 +4893,10 @@ impl Simulation {
     /// owner's house, priced like [`Self::house_added_to_game`]. Between its
     /// sidebar update and its class switch, a counted `PowersUnit=` building
     /// stops counting (`0x0050263B..0x00502776`,
-    /// [`Self::powered_center_removed`]); neither half reads what the other
-    /// writes. A Building invalidates its house's power even before the
-    /// DontScore gate (`0x005027FA`).
+    /// [`Self::powered_center_removed`]). The prefix counters precede that
+    /// callback; class/type/capacity reads follow it on the same receiving House.
+    /// A Building invalidates its house's power regardless of
+    /// DontScore (`0x005027FA`).
     pub(crate) fn house_removed_from_game(
         &mut self,
         stable_id: u64,
@@ -4860,10 +4909,17 @@ impl Simulation {
         let owner = entity.owner();
         let structure = entity.category() == EntityCategory::Structure;
         if let Some(house) = self.houses.get_mut(&owner) {
+            house.tracking.removed_from_game_prefix(entity);
+        }
+        self.powered_center_removed(stable_id, rules, effects);
+        //50277B resumes after the callback prelude. Pin the original House
+        // receiver, but reborrow the live object/type at this actual phase.
+        if let Some(entity) = self.substrate.entities.get(stable_id)
+            && let Some(house) = self.houses.get_mut(&owner)
+        {
             let factors = house.cost_factors();
             house.tracking.removed_from_game(entity, &factors);
         }
-        self.powered_center_removed(stable_id, rules, effects);
         if structure {
             self.invalidate_house_power(owner, false);
         }
@@ -5111,7 +5167,9 @@ impl Simulation {
         // FootClass::ChangeOwner @ 0x004DBED0 removes from the deposited old
         // owner and adds to the new owner before later readers observe it.
         if let Some(rules) = rules {
-            self.transfer_sensor_before_owner_change_with_rules(stable_id, new_owner, rules);
+            self.transfer_sensor_before_owner_change_with_rules(
+                stable_id, new_owner, rules, registry,
+            );
         } else {
             self.transfer_sensor_before_owner_change(stable_id, new_owner);
         }
@@ -6911,6 +6969,9 @@ impl Simulation {
             // Process` runs whatever the superweapons option (0x0055B5C8): a
             // map's NUKE weapon starts the nuke flash without a Super.
             self.kamikaze_update(rules, effects);
+            // Logic55B5A1..55B5BD: reverse Disk AI before LaserUpdate and
+            // ordinary object visits. FireAt births below wait until next tick.
+            bridge_state_changed |= self.tick_disk_lasers(rules, overlay_registry, effects);
             self.lifecycle_outputs.push(LifecycleOutput::LaserUpdate {
                 frame: self.session.binary_frame as i32,
             });

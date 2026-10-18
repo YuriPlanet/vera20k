@@ -70,16 +70,17 @@ fn native_bracket_pixels_reach_display_replay_without_writing_z() {
                 z_origin_y: 0,
                 zoom: 1.0,
             };
-            for lines in &layer.before_lines {
+            for lines in &layer.surface_draws {
                 layer.line_batches.push(terrain.prepare_surface_lines(
                     &gpu.device,
                     &gpu.queue,
                     std::iter::empty(),
-                    lines,
+                    lines.iter().copied(),
+                    &[],
                     &[],
                     &[],
                     viewport,
-                    || false,
+                    |_| false,
                     |[x, y]| {
                         if input["alpha"] == "mixed" {
                             [0, 1, 63, 127, 255][((x / 9 + y / 7) % 5) as usize]
@@ -147,6 +148,7 @@ fn native_bracket_pixels_reach_display_replay_without_writing_z() {
                 None,
                 None,
                 batch.default_zshape_bind_group(),
+                None,
                 None,
             );
             let reads = [

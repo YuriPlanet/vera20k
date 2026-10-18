@@ -58,7 +58,7 @@ impl Holds {
 
 /// An object's re-read whose callback compares `held`: it names those ids,
 /// and no object but an entity holds something any expiry reaches.
-fn named<const N: usize>(names: &mut Vec<u64>, held: [Option<u64>; N]) -> bool {
+fn named(names: &mut Vec<u64>, held: impl IntoIterator<Item = Option<u64>>) -> bool {
     names.extend(held.into_iter().flatten());
     false
 }
@@ -186,7 +186,7 @@ impl ExpiryListeners {
             stores
                 .particle_systems
                 .iter()
-                .filter(|(_, system)| names(&system.expiry_names()))
+                .filter(|(_, system)| system.expiry_names().any(|name| name == Some(expired)))
                 .map(|(&id, _)| (id, ObjectKind::ParticleSystem)),
         );
         reached.extend(
@@ -619,7 +619,7 @@ mod tests {
         stores.anims.insert(anim(11, None));
         let mut system =
             ParticleSystem::test_fixture(20, ParticleSystemTypeId(0), glam::IVec3::ZERO);
-        system.attached_entity = Some(3);
+        system.target_ref = Some(crate::sim::combat::TargetKind::Entity(3));
         system.owner_entity = Some(4);
         stores.particle_systems.insert(system);
         bullet(&mut stores, 30, 4, ProjectileTarget::Entity(3));

@@ -239,14 +239,42 @@ pub(super) fn build_world_instances(
         &mut planned_objects,
         &display_order,
     );
-    instances::build_anim_class_instances(state, &mut planned_objects, &display_order);
+    // Building slots keep their sole existing binding/light producer. Dynamic
+    // Anim/System/Particle bodies then share one retained Display traversal.
+    instances::build_building_anim_instances(state, &mut planned_objects, &display_order);
+    let mut particle_draws = state.diagnostic_presentation_ms().map(|_| Vec::new());
+    if let Some(runtime) = state.match_state.sim_runtime.as_ref() {
+        let presentation = &state.match_state.match_presentation;
+        let (x, y, width, height) = crate::app::input::camera::tactical_viewport_px(state);
+        let local_owner = crate::app::input::commands::preferred_local_owner_name(state)
+            .and_then(|name| runtime.simulation.interner.get(&name));
+        particle_draws = instances::build_display_effect_instances(
+            &instances::DisplayEffectInputs {
+                sim: &runtime.simulation,
+                rules: &runtime.resources.rules,
+                camera: [
+                    state.match_state.input.camera_x,
+                    state.match_state.input.camera_y,
+                ],
+                render_size: [state.render_width(), state.render_height()],
+                tactical: [x, y, width, height],
+                zoom: state.match_state.input.zoom_level,
+                axis: instances::depth_axis(state),
+                atlas: presentation.sprite_atlas.as_ref(),
+                detail: &presentation.detail,
+                detail_level: presentation.in_game_options.detail_level,
+                lighting: presentation.lighting.grid(),
+                house_colors: &presentation.house_color_map,
+                hidden_super_anims: &presentation.hidden_super_anims,
+                local_owner,
+                observe_particles: state.diagnostic_presentation_ms().is_some(),
+            },
+            &mut planned_objects,
+            &display_order,
+        );
+    }
     instances::build_projectile_visual_instances(state, &mut planned_objects, &display_order);
     instances::build_parachute_instances(state, &mut planned_objects, &parachute_body_depths);
-
-    // Every Particle owns its retained AIR slot. Its indexed SHP piece shares
-    // native Z/palette/packed composition with the other object families.
-    let particle_draws =
-        instances::build_particle_instances(state, &mut planned_objects, &display_order);
 
     // Every dynamic pose consumer, including Bullet46B0C0, has now populated
     // the shared page. One upload precedes this frame's draw submission.

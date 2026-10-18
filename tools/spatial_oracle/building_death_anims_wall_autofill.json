@@ -1,0 +1,7112 @@
+{
+  "controls": [
+    {
+      "autofill_rng_request_range": [
+        2,
+        2
+      ],
+      "constructors": [
+        {
+          "mission_timer_raw_c8": [
+            0,
+            0,
+            0
+          ],
+          "phase": "setup_wall_0_create",
+          "ref": "B0",
+          "result": 675790336,
+          "state": 0
+        },
+        {
+          "phase": "setup_wall_0_unlimbo",
+          "ref": "O0",
+          "result": 675792352,
+          "state": 2
+        },
+        {
+          "mission_timer_raw_c8": [
+            0,
+            0,
+            0
+          ],
+          "phase": "setup_wall_1_create",
+          "ref": "B1",
+          "result": 675816688,
+          "state": 4
+        },
+        {
+          "phase": "setup_wall_1_unlimbo",
+          "ref": "O1",
+          "result": 675818704,
+          "state": 6
+        }
+      ],
+      "house_dirty_writes": [
+        {
+          "before": [
+            1,
+            1
+          ],
+          "offset": 22392,
+          "pc": "0x0043BF11",
+          "phase": "setup_endpoint_deferred_drain",
+          "size": 1,
+          "value": 1
+        },
+        {
+          "before": [
+            1,
+            1
+          ],
+          "offset": 22392,
+          "pc": "0x0043BF11",
+          "phase": "autofill_deferred_drain",
+          "size": 1,
+          "value": 1
+        }
+      ],
+      "input": {
+        "active_game": 1,
+        "boundary": "Declared joined32x32 flat clear map and House/target/MTNK priors; full native endpoint wall entry/drain, origin wall entry remains pending, then whole588750 and drain. No Factory payment, HousePlace caller or physical Hills bootstrap.",
+        "control": "no_gap",
+        "current_viewer": "House:owner",
+        "custom_middle_land": null,
+        "endpoints": [
+          [
+            20,
+            13
+          ]
+        ],
+        "game_mode": 1,
+        "geometry_startup": {
+          "b0cd48": "60493474535ec23f",
+          "entries": [
+            "006D1830",
+            "006D18C0",
+            "006D1BB0",
+            "0049F2F0",
+            "00561710",
+            "005617A0",
+            "005617C0",
+            "005617E0",
+            "00561910",
+            "005638D0",
+            "0047B150",
+            "0047B180",
+            "0047B1A0",
+            "0047B1C0",
+            "0047B1E0",
+            "0047B200",
+            "0047B220",
+            "0047B260",
+            "0047B290",
+            "0047B2C0",
+            "0047B2F0",
+            "0047B300",
+            "0047B320",
+            "0047B340",
+            "006DCD70",
+            "006DCDA0",
+            "006DCDC0",
+            "006DCDE0",
+            "006DCE00",
+            "006DCE20",
+            "006DCE40",
+            "006DCE80",
+            "006DCEB0",
+            "006DCEE0",
+            "006DCF10",
+            "006DCF20",
+            "006DCF40",
+            "006DCF60"
+          ]
+        },
+        "map": {
+          "class_height_plane_sha256": "2f9802d51af1433d57ad37ddb056c04b297f71b0439addbce8906034d641326e",
+          "client_view_prior": {
+            "cell_flags_12c": 24,
+            "native_projection_entry": "0x004876F0",
+            "occupied_ground_list": "original BuildingMark0/3 reinserts the admitted2x2 foundation; native MTNK and escaped E1 admissions",
+            "raw_foot_deck_offset": "0x128",
+            "raw_foot_ground_offset": "0x124",
+            "raw_foot_initial": 0,
+            "shrouded_reader": "0x00586360",
+            "visible_reader": "0x005656D0"
+          },
+          "coordinate_bounds": [
+            0,
+            0,
+            32,
+            32
+          ],
+          "native_zone_count": 2,
+          "prior": "33x33 class/height samples; class0/level0 interior1..31, class7/level0 border; supplied flat clear Cell data; original connectivity and Pathfinder execute",
+          "size": [
+            16,
+            16
+          ]
+        },
+        "origin": [
+          20,
+          14
+        ],
+        "owner": "House:owner",
+        "reveal_by_height": 1,
+        "scenario_flags": 0,
+        "scenario_init_priority": 0,
+        "seed": 31,
+        "selected_tile": {
+          "boundary": "Declared original ClearTile0 head; no resident TMP supplied. Original image/slope getters execute and their null-image branch is observed if entered.",
+          "clear_base": 0,
+          "head": 675789232,
+          "registry_count": 1,
+          "resident_image": 0,
+          "vtable": 8309832
+        },
+        "type": "GAWALL",
+        "wall_owner_globals": {
+          "0x008333BC": 4294967295,
+          "0x00880994": 0
+        }
+      },
+      "native_ids": {
+        "B0": 4,
+        "B1": 6,
+        "O0": 5,
+        "O1": 7
+      },
+      "observation_gaps": [],
+      "origin_ref": "B1",
+      "origin_unlimbo_rng_request_range": [
+        2,
+        2
+      ],
+      "original_executable_sections_unchanged": true,
+      "patch_coordinates": [
+        [
+          19,
+          13
+        ],
+        [
+          20,
+          13
+        ],
+        [
+          21,
+          13
+        ],
+        [
+          19,
+          14
+        ],
+        [
+          20,
+          14
+        ],
+        [
+          21,
+          14
+        ],
+        [
+          19,
+          15
+        ],
+        [
+          20,
+          15
+        ],
+        [
+          21,
+          15
+        ]
+      ],
+      "rng_requests": [
+        {
+          "args": [],
+          "entry": 6670208,
+          "frame": 0,
+          "result": 2225548056,
+          "site": 7287380,
+          "this": 536908312
+        },
+        {
+          "args": [],
+          "entry": 6670208,
+          "frame": 0,
+          "result": 1502837926,
+          "site": 7287380,
+          "this": 536908312
+        }
+      ],
+      "semantic_calls": [
+        [
+          0,
+          0,
+          "B1",
+          "0x30000000",
+          1,
+          {
+            "coord": [
+              5248,
+              3712,
+              0
+            ],
+            "facing": 0
+          }
+        ],
+        [
+          1,
+          0,
+          "OverlayType:GAWALL",
+          "0x004407C9",
+          675818704,
+          {
+            "result_ref": "O1"
+          }
+        ],
+        [
+          2,
+          0,
+          "O1",
+          "0x005FE593",
+          675818704,
+          {
+            "result_ref": "O1"
+          }
+        ],
+        [
+          3,
+          0,
+          "O1",
+          "0x004407DE",
+          1
+        ],
+        [
+          4,
+          0,
+          "O1",
+          "0x005F4FBA",
+          1
+        ],
+        [
+          5,
+          0,
+          "O1",
+          "0x005FD21C",
+          0
+        ],
+        [
+          6,
+          0,
+          "O1",
+          "0x005F661B",
+          20,
+          {
+            "args": [
+              8,
+              6279708
+            ]
+          }
+        ],
+        [
+          7,
+          0,
+          "B1",
+          "0x00440809",
+          0,
+          {
+            "args": [
+              3
+            ]
+          }
+        ],
+        [
+          8,
+          0,
+          "Map",
+          "0x00440832",
+          0,
+          {
+            "args": [
+              {
+                "coord": [
+                  5248,
+                  3712,
+                  0
+                ]
+              },
+              1,
+              "House:owner",
+              0,
+              0,
+              0,
+              1,
+              0
+            ],
+            "coord": [
+              5248,
+              3712,
+              0
+            ]
+          }
+        ],
+        [
+          8,
+          0,
+          "Map",
+          "0x0044085B",
+          0,
+          {
+            "args": [
+              {
+                "coord": [
+                  5248,
+                  3712,
+                  0
+                ]
+              },
+              1,
+              "House:owner",
+              0,
+              0,
+              0,
+              1,
+              1
+            ],
+            "coord": [
+              5248,
+              3712,
+              0
+            ]
+          }
+        ],
+        [
+          5,
+          0,
+          "B1",
+          "0x00440865",
+          1
+        ],
+        [
+          6,
+          0,
+          "B1",
+          "0x005F661B",
+          6,
+          {
+            "args": [
+              "B1",
+              4458597
+            ]
+          }
+        ],
+        [
+          9,
+          1,
+          "Map",
+          "0x30000000",
+          8
+        ],
+        [
+          10,
+          2,
+          0,
+          "0x30000000",
+          675816688,
+          {
+            "result_ref": "B1"
+          }
+        ],
+        [
+          11,
+          2,
+          "O1",
+          "0x00725D7D",
+          675818704,
+          {
+            "result_ref": "O1"
+          }
+        ],
+        [
+          6,
+          2,
+          "O1",
+          "0x005FDF96",
+          20,
+          {
+            "args": [
+              0,
+              "O1"
+            ]
+          }
+        ],
+        [
+          12,
+          2,
+          "B1",
+          "0x00725D7D",
+          675816688,
+          {
+            "result_ref": "B1"
+          }
+        ],
+        [
+          13,
+          2,
+          "B1",
+          "0x00459F28",
+          675816704
+        ],
+        [
+          6,
+          2,
+          "B1",
+          "0x0043BD6C",
+          6,
+          {
+            "args": [
+              0,
+              "B1"
+            ]
+          }
+        ],
+        [
+          14,
+          2,
+          "House:owner",
+          "0x0043BF39",
+          605731008
+        ]
+      ],
+      "transitions": {
+        "autofill": {
+          "after": {
+            "cursor": 7,
+            "frame": 0,
+            "house": {
+              "building_count": 0,
+              "credits": 0,
+              "dirty": [
+                1,
+                1
+              ],
+              "human": 1,
+              "index": 0,
+              "owned": [
+                0
+              ],
+              "tracked": [
+                0
+              ]
+            },
+            "objects": [
+              8,
+              9,
+              5,
+              7
+            ],
+            "patch": [
+              3,
+              4,
+              3,
+              3,
+              5,
+              3,
+              0,
+              0,
+              0
+            ],
+            "registries": {
+              "building": [
+                "prior:1",
+                "B1"
+              ],
+              "generic_object": [
+                "prior:1",
+                "prior:2",
+                "prior:3",
+                "B1",
+                "O1"
+              ],
+              "house_live": [],
+              "logic": [
+                "prior:1",
+                "prior:2",
+                "prior:3"
+              ],
+              "overlay": [
+                "O1"
+              ],
+              "pending": [
+                "O1",
+                "B1"
+              ]
+            },
+            "rng": {
+              "main": 0,
+              "mapgen": 0,
+              "scenario": 1
+            },
+            "scenario_init_priority": 0,
+            "wall_owner_globals": {
+              "0x008333BC": 4294967295,
+              "0x00880994": 0
+            }
+          },
+          "before": {
+            "cursor": 7,
+            "frame": 0,
+            "house": {
+              "building_count": 0,
+              "credits": 0,
+              "dirty": [
+                1,
+                1
+              ],
+              "human": 1,
+              "index": 0,
+              "owned": [
+                0
+              ],
+              "tracked": [
+                0
+              ]
+            },
+            "objects": [
+              8,
+              9,
+              5,
+              7
+            ],
+            "patch": [
+              3,
+              4,
+              3,
+              3,
+              5,
+              3,
+              0,
+              0,
+              0
+            ],
+            "registries": {
+              "building": [
+                "prior:1",
+                "B1"
+              ],
+              "generic_object": [
+                "prior:1",
+                "prior:2",
+                "prior:3",
+                "B1",
+                "O1"
+              ],
+              "house_live": [],
+              "logic": [
+                "prior:1",
+                "prior:2",
+                "prior:3"
+              ],
+              "overlay": [
+                "O1"
+              ],
+              "pending": [
+                "O1",
+                "B1"
+              ]
+            },
+            "rng": {
+              "main": 0,
+              "mapgen": 0,
+              "scenario": 1
+            },
+            "scenario_init_priority": 0,
+            "wall_owner_globals": {
+              "0x008333BC": 4294967295,
+              "0x00880994": 0
+            }
+          },
+          "result": 8
+        },
+        "drain": {
+          "after": {
+            "cursor": 7,
+            "frame": 0,
+            "house": {
+              "building_count": 0,
+              "credits": 0,
+              "dirty": [
+                1,
+                1
+              ],
+              "human": 1,
+              "index": 0,
+              "owned": [
+                0
+              ],
+              "tracked": [
+                0
+              ]
+            },
+            "objects": [
+              8,
+              9,
+              10,
+              11
+            ],
+            "patch": [
+              3,
+              4,
+              3,
+              3,
+              5,
+              3,
+              0,
+              0,
+              0
+            ],
+            "registries": {
+              "building": [
+                "prior:1"
+              ],
+              "generic_object": [
+                "prior:1",
+                "prior:2",
+                "prior:3"
+              ],
+              "house_live": [],
+              "logic": [
+                "prior:1",
+                "prior:2",
+                "prior:3"
+              ],
+              "overlay": [],
+              "pending": []
+            },
+            "rng": {
+              "main": 0,
+              "mapgen": 0,
+              "scenario": 1
+            },
+            "scenario_init_priority": 0,
+            "wall_owner_globals": {
+              "0x008333BC": 4294967295,
+              "0x00880994": 0
+            }
+          },
+          "before": {
+            "cursor": 7,
+            "frame": 0,
+            "house": {
+              "building_count": 0,
+              "credits": 0,
+              "dirty": [
+                1,
+                1
+              ],
+              "human": 1,
+              "index": 0,
+              "owned": [
+                0
+              ],
+              "tracked": [
+                0
+              ]
+            },
+            "objects": [
+              8,
+              9,
+              5,
+              7
+            ],
+            "patch": [
+              3,
+              4,
+              3,
+              3,
+              5,
+              3,
+              0,
+              0,
+              0
+            ],
+            "registries": {
+              "building": [
+                "prior:1",
+                "B1"
+              ],
+              "generic_object": [
+                "prior:1",
+                "prior:2",
+                "prior:3",
+                "B1",
+                "O1"
+              ],
+              "house_live": [],
+              "logic": [
+                "prior:1",
+                "prior:2",
+                "prior:3"
+              ],
+              "overlay": [
+                "O1"
+              ],
+              "pending": [
+                "O1",
+                "B1"
+              ]
+            },
+            "rng": {
+              "main": 0,
+              "mapgen": 0,
+              "scenario": 1
+            },
+            "scenario_init_priority": 0,
+            "wall_owner_globals": {
+              "0x008333BC": 4294967295,
+              "0x00880994": 0
+            }
+          },
+          "result": 675816688
+        },
+        "origin_unlimbo": {
+          "after": {
+            "cursor": 7,
+            "frame": 0,
+            "house": {
+              "building_count": 0,
+              "credits": 0,
+              "dirty": [
+                1,
+                1
+              ],
+              "human": 1,
+              "index": 0,
+              "owned": [
+                0
+              ],
+              "tracked": [
+                0
+              ]
+            },
+            "objects": [
+              8,
+              9,
+              5,
+              7
+            ],
+            "patch": [
+              3,
+              4,
+              3,
+              3,
+              5,
+              3,
+              0,
+              0,
+              0
+            ],
+            "registries": {
+              "building": [
+                "prior:1",
+                "B1"
+              ],
+              "generic_object": [
+                "prior:1",
+                "prior:2",
+                "prior:3",
+                "B1",
+                "O1"
+              ],
+              "house_live": [],
+              "logic": [
+                "prior:1",
+                "prior:2",
+                "prior:3"
+              ],
+              "overlay": [
+                "O1"
+              ],
+              "pending": [
+                "O1",
+                "B1"
+              ]
+            },
+            "rng": {
+              "main": 0,
+              "mapgen": 0,
+              "scenario": 1
+            },
+            "scenario_init_priority": 0,
+            "wall_owner_globals": {
+              "0x008333BC": 4294967295,
+              "0x00880994": 0
+            }
+          },
+          "before": {
+            "cursor": 6,
+            "frame": 0,
+            "house": {
+              "building_count": 0,
+              "credits": 0,
+              "dirty": [
+                1,
+                1
+              ],
+              "human": 1,
+              "index": 0,
+              "owned": [
+                0
+              ],
+              "tracked": [
+                0
+              ]
+            },
+            "objects": [
+              8,
+              9,
+              4
+            ],
+            "patch": [
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              2,
+              2,
+              2
+            ],
+            "registries": {
+              "building": [
+                "prior:1",
+                "B1"
+              ],
+              "generic_object": [
+                "prior:1",
+                "prior:2",
+                "prior:3",
+                "B1"
+              ],
+              "house_live": [],
+              "logic": [
+                "prior:1",
+                "prior:2",
+                "prior:3"
+              ],
+              "overlay": [],
+              "pending": []
+            },
+            "rng": {
+              "main": 0,
+              "mapgen": 0,
+              "scenario": 1
+            },
+            "scenario_init_priority": 0,
+            "wall_owner_globals": {
+              "0x008333BC": 4294967295,
+              "0x00880994": 0
+            }
+          },
+          "result": 1
+        }
+      },
+      "unlimbo": [
+        {
+          "coord": [
+            5248,
+            3456,
+            0
+          ],
+          "phase": "setup_wall_0_unlimbo",
+          "ref": "B0",
+          "result": 1,
+          "state": 1
+        },
+        {
+          "phase": "setup_wall_0_unlimbo",
+          "ref": "O0",
+          "result": 1,
+          "state": 3
+        },
+        {
+          "coord": [
+            5248,
+            3712,
+            0
+          ],
+          "phase": "setup_wall_1_unlimbo",
+          "ref": "B1",
+          "result": 1,
+          "state": 5
+        },
+        {
+          "phase": "setup_wall_1_unlimbo",
+          "ref": "O1",
+          "result": 1,
+          "state": 7
+        }
+      ]
+    },
+    {
+      "autofill_rng_request_range": [
+        2,
+        4
+      ],
+      "constructors": [
+        {
+          "mission_timer_raw_c8": [
+            0,
+            0,
+            0
+          ],
+          "phase": "setup_wall_0_create",
+          "ref": "B0",
+          "result": 675790336,
+          "state": 0
+        },
+        {
+          "phase": "setup_wall_0_unlimbo",
+          "ref": "O0",
+          "result": 675792352,
+          "state": 2
+        },
+        {
+          "mission_timer_raw_c8": [
+            0,
+            0,
+            0
+          ],
+          "phase": "setup_wall_1_create",
+          "ref": "B1",
+          "result": 675817648,
+          "state": 4
+        },
+        {
+          "phase": "setup_wall_1_unlimbo",
+          "ref": "O1",
+          "result": 675819664,
+          "state": 6
+        },
+        {
+          "mission_timer_raw_c8": [
+            0,
+            0,
+            0
+          ],
+          "phase": "whole_autofill_588750",
+          "ref": "B2",
+          "result": 675846304,
+          "state": 13
+        },
+        {
+          "phase": "whole_autofill_588750",
+          "ref": "O2",
+          "result": 675848304,
+          "state": 15
+        },
+        {
+          "mission_timer_raw_c8": [
+            0,
+            0,
+            0
+          ],
+          "phase": "whole_autofill_588750",
+          "ref": "B3",
+          "result": 675876960,
+          "state": 17
+        },
+        {
+          "phase": "whole_autofill_588750",
+          "ref": "O3",
+          "result": 675878960,
+          "state": 19
+        }
+      ],
+      "house_dirty_writes": [
+        {
+          "before": [
+            1,
+            1
+          ],
+          "offset": 22392,
+          "pc": "0x0043BF11",
+          "phase": "setup_endpoint_deferred_drain",
+          "size": 1,
+          "value": 1
+        },
+        {
+          "before": [
+            1,
+            1
+          ],
+          "offset": 22392,
+          "pc": "0x0043BF11",
+          "phase": "autofill_deferred_drain",
+          "size": 1,
+          "value": 1
+        },
+        {
+          "before": [
+            1,
+            1
+          ],
+          "offset": 22392,
+          "pc": "0x0043BF11",
+          "phase": "autofill_deferred_drain",
+          "size": 1,
+          "value": 1
+        },
+        {
+          "before": [
+            1,
+            1
+          ],
+          "offset": 22392,
+          "pc": "0x0043BF11",
+          "phase": "autofill_deferred_drain",
+          "size": 1,
+          "value": 1
+        }
+      ],
+      "input": {
+        "active_game": 1,
+        "boundary": "Declared joined32x32 flat clear map and House/target/MTNK priors; full native endpoint wall entry/drain, origin wall entry remains pending, then whole588750 and drain. No Factory payment, HousePlace caller or physical Hills bootstrap.",
+        "control": "two_empty",
+        "current_viewer": "House:owner",
+        "custom_middle_land": null,
+        "endpoints": [
+          [
+            20,
+            11
+          ]
+        ],
+        "game_mode": 1,
+        "geometry_startup": {
+          "b0cd48": "60493474535ec23f",
+          "entries": [
+            "006D1830",
+            "006D18C0",
+            "006D1BB0",
+            "0049F2F0",
+            "00561710",
+            "005617A0",
+            "005617C0",
+            "005617E0",
+            "00561910",
+            "005638D0",
+            "0047B150",
+            "0047B180",
+            "0047B1A0",
+            "0047B1C0",
+            "0047B1E0",
+            "0047B200",
+            "0047B220",
+            "0047B260",
+            "0047B290",
+            "0047B2C0",
+            "0047B2F0",
+            "0047B300",
+            "0047B320",
+            "0047B340",
+            "006DCD70",
+            "006DCDA0",
+            "006DCDC0",
+            "006DCDE0",
+            "006DCE00",
+            "006DCE20",
+            "006DCE40",
+            "006DCE80",
+            "006DCEB0",
+            "006DCEE0",
+            "006DCF10",
+            "006DCF20",
+            "006DCF40",
+            "006DCF60"
+          ]
+        },
+        "map": {
+          "class_height_plane_sha256": "2f9802d51af1433d57ad37ddb056c04b297f71b0439addbce8906034d641326e",
+          "client_view_prior": {
+            "cell_flags_12c": 24,
+            "native_projection_entry": "0x004876F0",
+            "occupied_ground_list": "original BuildingMark0/3 reinserts the admitted2x2 foundation; native MTNK and escaped E1 admissions",
+            "raw_foot_deck_offset": "0x128",
+            "raw_foot_ground_offset": "0x124",
+            "raw_foot_initial": 0,
+            "shrouded_reader": "0x00586360",
+            "visible_reader": "0x005656D0"
+          },
+          "coordinate_bounds": [
+            0,
+            0,
+            32,
+            32
+          ],
+          "native_zone_count": 2,
+          "prior": "33x33 class/height samples; class0/level0 interior1..31, class7/level0 border; supplied flat clear Cell data; original connectivity and Pathfinder execute",
+          "size": [
+            16,
+            16
+          ]
+        },
+        "origin": [
+          20,
+          14
+        ],
+        "owner": "House:owner",
+        "reveal_by_height": 1,
+        "scenario_flags": 0,
+        "scenario_init_priority": 0,
+        "seed": 31,
+        "selected_tile": {
+          "boundary": "Declared original ClearTile0 head; no resident TMP supplied. Original image/slope getters execute and their null-image branch is observed if entered.",
+          "clear_base": 0,
+          "head": 675789232,
+          "registry_count": 1,
+          "resident_image": 0,
+          "vtable": 8309832
+        },
+        "type": "GAWALL",
+        "wall_owner_globals": {
+          "0x008333BC": 4294967295,
+          "0x00880994": 0
+        }
+      },
+      "native_ids": {
+        "B0": 4,
+        "B1": 6,
+        "B2": 8,
+        "B3": 10,
+        "O0": 5,
+        "O1": 7,
+        "O2": 9,
+        "O3": 11
+      },
+      "observation_gaps": [],
+      "origin_ref": "B1",
+      "origin_unlimbo_rng_request_range": [
+        2,
+        2
+      ],
+      "original_executable_sections_unchanged": true,
+      "patch_coordinates": [
+        [
+          19,
+          11
+        ],
+        [
+          20,
+          11
+        ],
+        [
+          21,
+          11
+        ],
+        [
+          19,
+          12
+        ],
+        [
+          20,
+          12
+        ],
+        [
+          21,
+          12
+        ],
+        [
+          19,
+          13
+        ],
+        [
+          20,
+          13
+        ],
+        [
+          21,
+          13
+        ],
+        [
+          19,
+          14
+        ],
+        [
+          20,
+          14
+        ],
+        [
+          21,
+          14
+        ],
+        [
+          19,
+          15
+        ],
+        [
+          20,
+          15
+        ],
+        [
+          21,
+          15
+        ]
+      ],
+      "rng_requests": [
+        {
+          "args": [],
+          "entry": 6670208,
+          "frame": 0,
+          "result": 2225548056,
+          "site": 7287380,
+          "this": 536908312
+        },
+        {
+          "args": [],
+          "entry": 6670208,
+          "frame": 0,
+          "result": 1502837926,
+          "site": 7287380,
+          "this": 536908312
+        },
+        {
+          "args": [],
+          "entry": 6670208,
+          "frame": 0,
+          "result": 107402731,
+          "site": 7287380,
+          "this": 536908312
+        },
+        {
+          "args": [],
+          "entry": 6670208,
+          "frame": 0,
+          "result": 577279072,
+          "site": 7287380,
+          "this": 536908312
+        }
+      ],
+      "semantic_calls": [
+        [
+          0,
+          0,
+          "B1",
+          "0x30000000",
+          1,
+          {
+            "coord": [
+              5248,
+              3712,
+              0
+            ],
+            "facing": 0
+          }
+        ],
+        [
+          1,
+          0,
+          "OverlayType:GAWALL",
+          "0x004407C9",
+          675819664,
+          {
+            "result_ref": "O1"
+          }
+        ],
+        [
+          2,
+          0,
+          "O1",
+          "0x005FE593",
+          675819664,
+          {
+            "result_ref": "O1"
+          }
+        ],
+        [
+          3,
+          0,
+          "O1",
+          "0x004407DE",
+          1
+        ],
+        [
+          4,
+          0,
+          "O1",
+          "0x005F4FBA",
+          1
+        ],
+        [
+          5,
+          0,
+          "O1",
+          "0x005FD21C",
+          0
+        ],
+        [
+          6,
+          0,
+          "O1",
+          "0x005F661B",
+          20,
+          {
+            "args": [
+              8,
+              6279708
+            ]
+          }
+        ],
+        [
+          7,
+          0,
+          "B1",
+          "0x00440809",
+          0,
+          {
+            "args": [
+              3
+            ]
+          }
+        ],
+        [
+          8,
+          0,
+          "Map",
+          "0x00440832",
+          0,
+          {
+            "args": [
+              {
+                "coord": [
+                  5248,
+                  3712,
+                  0
+                ]
+              },
+              1,
+              "House:owner",
+              0,
+              0,
+              0,
+              1,
+              0
+            ],
+            "coord": [
+              5248,
+              3712,
+              0
+            ]
+          }
+        ],
+        [
+          8,
+          0,
+          "Map",
+          "0x0044085B",
+          0,
+          {
+            "args": [
+              {
+                "coord": [
+                  5248,
+                  3712,
+                  0
+                ]
+              },
+              1,
+              "House:owner",
+              0,
+              0,
+              0,
+              1,
+              1
+            ],
+            "coord": [
+              5248,
+              3712,
+              0
+            ]
+          }
+        ],
+        [
+          5,
+          0,
+          "B1",
+          "0x00440865",
+          1
+        ],
+        [
+          6,
+          0,
+          "B1",
+          "0x005F661B",
+          6,
+          {
+            "args": [
+              "B1",
+              4458597
+            ]
+          }
+        ],
+        [
+          9,
+          1,
+          "Map",
+          "0x30000000",
+          8
+        ],
+        [
+          15,
+          1,
+          "BuildingType:GAWALL",
+          "0x005888D4",
+          675846304,
+          {
+            "result_ref": "B2"
+          }
+        ],
+        [
+          16,
+          1,
+          "B2",
+          "0x0045E8A1",
+          675846304,
+          {
+            "result_ref": "B2"
+          }
+        ],
+        [
+          17,
+          1,
+          "House:owner",
+          "0x00442C67",
+          605731008
+        ],
+        [
+          0,
+          1,
+          "B2",
+          "0x00588912",
+          1,
+          {
+            "coord": [
+              5248,
+              3456,
+              0
+            ],
+            "facing": 0
+          }
+        ],
+        [
+          1,
+          1,
+          "OverlayType:GAWALL",
+          "0x004407C9",
+          675848304,
+          {
+            "result_ref": "O2"
+          }
+        ],
+        [
+          2,
+          1,
+          "O2",
+          "0x005FE593",
+          675848304,
+          {
+            "result_ref": "O2"
+          }
+        ],
+        [
+          3,
+          1,
+          "O2",
+          "0x004407DE",
+          1
+        ],
+        [
+          4,
+          1,
+          "O2",
+          "0x005F4FBA",
+          1
+        ],
+        [
+          5,
+          1,
+          "O2",
+          "0x005FD21C",
+          2
+        ],
+        [
+          6,
+          1,
+          "O2",
+          "0x005F661B",
+          20,
+          {
+            "args": [
+              8,
+              6279708
+            ]
+          }
+        ],
+        [
+          7,
+          1,
+          "B2",
+          "0x00440809",
+          0,
+          {
+            "args": [
+              3
+            ]
+          }
+        ],
+        [
+          8,
+          1,
+          "Map",
+          "0x00440832",
+          0,
+          {
+            "args": [
+              {
+                "coord": [
+                  5248,
+                  3456,
+                  0
+                ]
+              },
+              1,
+              "House:owner",
+              0,
+              0,
+              0,
+              1,
+              0
+            ],
+            "coord": [
+              5248,
+              3456,
+              0
+            ]
+          }
+        ],
+        [
+          8,
+          1,
+          "Map",
+          "0x0044085B",
+          0,
+          {
+            "args": [
+              {
+                "coord": [
+                  5248,
+                  3456,
+                  0
+                ]
+              },
+              1,
+              "House:owner",
+              0,
+              0,
+              0,
+              1,
+              1
+            ],
+            "coord": [
+              5248,
+              3456,
+              0
+            ]
+          }
+        ],
+        [
+          5,
+          1,
+          "B2",
+          "0x00440865",
+          3
+        ],
+        [
+          6,
+          1,
+          "B2",
+          "0x005F661B",
+          6,
+          {
+            "args": [
+              "B2",
+              4458597
+            ]
+          }
+        ],
+        [
+          15,
+          1,
+          "BuildingType:GAWALL",
+          "0x005888D4",
+          675876960,
+          {
+            "result_ref": "B3"
+          }
+        ],
+        [
+          16,
+          1,
+          "B3",
+          "0x0045E8A1",
+          675876960,
+          {
+            "result_ref": "B3"
+          }
+        ],
+        [
+          17,
+          1,
+          "House:owner",
+          "0x00442C67",
+          605731008
+        ],
+        [
+          0,
+          1,
+          "B3",
+          "0x00588912",
+          1,
+          {
+            "coord": [
+              5248,
+              3200,
+              0
+            ],
+            "facing": 0
+          }
+        ],
+        [
+          1,
+          1,
+          "OverlayType:GAWALL",
+          "0x004407C9",
+          675878960,
+          {
+            "result_ref": "O3"
+          }
+        ],
+        [
+          2,
+          1,
+          "O3",
+          "0x005FE593",
+          675878960,
+          {
+            "result_ref": "O3"
+          }
+        ],
+        [
+          3,
+          1,
+          "O3",
+          "0x004407DE",
+          1
+        ],
+        [
+          4,
+          1,
+          "O3",
+          "0x005F4FBA",
+          1
+        ],
+        [
+          5,
+          1,
+          "O3",
+          "0x005FD21C",
+          4
+        ],
+        [
+          6,
+          1,
+          "O3",
+          "0x005F661B",
+          20,
+          {
+            "args": [
+              8,
+              6279708
+            ]
+          }
+        ],
+        [
+          7,
+          1,
+          "B3",
+          "0x00440809",
+          0,
+          {
+            "args": [
+              3
+            ]
+          }
+        ],
+        [
+          8,
+          1,
+          "Map",
+          "0x00440832",
+          0,
+          {
+            "args": [
+              {
+                "coord": [
+                  5248,
+                  3200,
+                  0
+                ]
+              },
+              1,
+              "House:owner",
+              0,
+              0,
+              0,
+              1,
+              0
+            ],
+            "coord": [
+              5248,
+              3200,
+              0
+            ]
+          }
+        ],
+        [
+          8,
+          1,
+          "Map",
+          "0x0044085B",
+          0,
+          {
+            "args": [
+              {
+                "coord": [
+                  5248,
+                  3200,
+                  0
+                ]
+              },
+              1,
+              "House:owner",
+              0,
+              0,
+              0,
+              1,
+              1
+            ],
+            "coord": [
+              5248,
+              3200,
+              0
+            ]
+          }
+        ],
+        [
+          5,
+          1,
+          "B3",
+          "0x00440865",
+          5
+        ],
+        [
+          6,
+          1,
+          "B3",
+          "0x005F661B",
+          6,
+          {
+            "args": [
+              "B3",
+              4458597
+            ]
+          }
+        ],
+        [
+          10,
+          2,
+          0,
+          "0x30000000",
+          675876960,
+          {
+            "result_ref": "B3"
+          }
+        ],
+        [
+          11,
+          2,
+          "O1",
+          "0x00725D7D",
+          675819664,
+          {
+            "result_ref": "O1"
+          }
+        ],
+        [
+          6,
+          2,
+          "O1",
+          "0x005FDF96",
+          20,
+          {
+            "args": [
+              0,
+              "O1"
+            ]
+          }
+        ],
+        [
+          12,
+          2,
+          "B1",
+          "0x00725D7D",
+          675817648,
+          {
+            "result_ref": "B1"
+          }
+        ],
+        [
+          13,
+          2,
+          "B1",
+          "0x00459F28",
+          675817728
+        ],
+        [
+          6,
+          2,
+          "B1",
+          "0x0043BD6C",
+          6,
+          {
+            "args": [
+              0,
+              "B1"
+            ]
+          }
+        ],
+        [
+          14,
+          2,
+          "House:owner",
+          "0x0043BF39",
+          605731008
+        ],
+        [
+          11,
+          2,
+          "O2",
+          "0x00725D7D",
+          675848304,
+          {
+            "result_ref": "O2"
+          }
+        ],
+        [
+          6,
+          2,
+          "O2",
+          "0x005FDF96",
+          20,
+          {
+            "args": [
+              0,
+              "O2"
+            ]
+          }
+        ],
+        [
+          12,
+          2,
+          "B2",
+          "0x00725D7D",
+          675846304,
+          {
+            "result_ref": "B2"
+          }
+        ],
+        [
+          13,
+          2,
+          "B2",
+          "0x00459F28",
+          675846144
+        ],
+        [
+          6,
+          2,
+          "B2",
+          "0x0043BD6C",
+          6,
+          {
+            "args": [
+              0,
+              "B2"
+            ]
+          }
+        ],
+        [
+          14,
+          2,
+          "House:owner",
+          "0x0043BF39",
+          605731008
+        ],
+        [
+          11,
+          2,
+          "O3",
+          "0x00725D7D",
+          675878960,
+          {
+            "result_ref": "O3"
+          }
+        ],
+        [
+          6,
+          2,
+          "O3",
+          "0x005FDF96",
+          20,
+          {
+            "args": [
+              0,
+              "O3"
+            ]
+          }
+        ],
+        [
+          12,
+          2,
+          "B3",
+          "0x00725D7D",
+          675876960,
+          {
+            "result_ref": "B3"
+          }
+        ],
+        [
+          13,
+          2,
+          "B3",
+          "0x00459F28",
+          675876864
+        ],
+        [
+          6,
+          2,
+          "B3",
+          "0x0043BD6C",
+          6,
+          {
+            "args": [
+              0,
+              "B3"
+            ]
+          }
+        ],
+        [
+          14,
+          2,
+          "House:owner",
+          "0x0043BF39",
+          605731008
+        ]
+      ],
+      "transitions": {
+        "autofill": {
+          "after": {
+            "cursor": 11,
+            "frame": 0,
+            "house": {
+              "building_count": 0,
+              "credits": 0,
+              "dirty": [
+                1,
+                1
+              ],
+              "human": 1,
+              "index": 0,
+              "owned": [
+                0
+              ],
+              "tracked": [
+                0
+              ]
+            },
+            "objects": [
+              8,
+              21,
+              5,
+              7,
+              14,
+              16,
+              18,
+              20
+            ],
+            "patch": [
+              3,
+              4,
+              3,
+              6,
+              7,
+              6,
+              6,
+              7,
+              6,
+              3,
+              5,
+              3,
+              0,
+              0,
+              0
+            ],
+            "registries": {
+              "building": [
+                "prior:1",
+                "B1",
+                "B2",
+                "B3"
+              ],
+              "generic_object": [
+                "prior:1",
+                "prior:2",
+                "prior:3",
+                "B1",
+                "O1",
+                "B2",
+                "O2",
+                "B3",
+                "O3"
+              ],
+              "house_live": [],
+              "logic": [
+                "prior:1",
+                "prior:2",
+                "prior:3"
+              ],
+              "overlay": [
+                "O1",
+                "O2",
+                "O3"
+              ],
+              "pending": [
+                "O1",
+                "B1",
+                "O2",
+                "B2",
+                "O3",
+                "B3"
+              ]
+            },
+            "rng": {
+              "main": 0,
+              "mapgen": 0,
+              "scenario": 2
+            },
+            "scenario_init_priority": 0,
+            "wall_owner_globals": {
+              "0x008333BC": 4294967295,
+              "0x00880994": 0
+            }
+          },
+          "before": {
+            "cursor": 7,
+            "frame": 0,
+            "house": {
+              "building_count": 0,
+              "credits": 0,
+              "dirty": [
+                1,
+                1
+              ],
+              "human": 1,
+              "index": 0,
+              "owned": [
+                0
+              ],
+              "tracked": [
+                0
+              ]
+            },
+            "objects": [
+              8,
+              21,
+              5,
+              7
+            ],
+            "patch": [
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0
+            ],
+            "registries": {
+              "building": [
+                "prior:1",
+                "B1"
+              ],
+              "generic_object": [
+                "prior:1",
+                "prior:2",
+                "prior:3",
+                "B1",
+                "O1"
+              ],
+              "house_live": [],
+              "logic": [
+                "prior:1",
+                "prior:2",
+                "prior:3"
+              ],
+              "overlay": [
+                "O1"
+              ],
+              "pending": [
+                "O1",
+                "B1"
+              ]
+            },
+            "rng": {
+              "main": 0,
+              "mapgen": 0,
+              "scenario": 1
+            },
+            "scenario_init_priority": 0,
+            "wall_owner_globals": {
+              "0x008333BC": 4294967295,
+              "0x00880994": 0
+            }
+          },
+          "result": 8
+        },
+        "drain": {
+          "after": {
+            "cursor": 11,
+            "frame": 0,
+            "house": {
+              "building_count": 0,
+              "credits": 0,
+              "dirty": [
+                1,
+                1
+              ],
+              "human": 1,
+              "index": 0,
+              "owned": [
+                0
+              ],
+              "tracked": [
+                0
+              ]
+            },
+            "objects": [
+              8,
+              21,
+              10,
+              11,
+              22,
+              23,
+              24,
+              25
+            ],
+            "patch": [
+              3,
+              4,
+              3,
+              6,
+              7,
+              6,
+              6,
+              7,
+              6,
+              3,
+              5,
+              3,
+              0,
+              0,
+              0
+            ],
+            "registries": {
+              "building": [
+                "prior:1"
+              ],
+              "generic_object": [
+                "prior:1",
+                "prior:2",
+                "prior:3"
+              ],
+              "house_live": [],
+              "logic": [
+                "prior:1",
+                "prior:2",
+                "prior:3"
+              ],
+              "overlay": [],
+              "pending": []
+            },
+            "rng": {
+              "main": 0,
+              "mapgen": 0,
+              "scenario": 2
+            },
+            "scenario_init_priority": 0,
+            "wall_owner_globals": {
+              "0x008333BC": 4294967295,
+              "0x00880994": 0
+            }
+          },
+          "before": {
+            "cursor": 11,
+            "frame": 0,
+            "house": {
+              "building_count": 0,
+              "credits": 0,
+              "dirty": [
+                1,
+                1
+              ],
+              "human": 1,
+              "index": 0,
+              "owned": [
+                0
+              ],
+              "tracked": [
+                0
+              ]
+            },
+            "objects": [
+              8,
+              21,
+              5,
+              7,
+              14,
+              16,
+              18,
+              20
+            ],
+            "patch": [
+              3,
+              4,
+              3,
+              6,
+              7,
+              6,
+              6,
+              7,
+              6,
+              3,
+              5,
+              3,
+              0,
+              0,
+              0
+            ],
+            "registries": {
+              "building": [
+                "prior:1",
+                "B1",
+                "B2",
+                "B3"
+              ],
+              "generic_object": [
+                "prior:1",
+                "prior:2",
+                "prior:3",
+                "B1",
+                "O1",
+                "B2",
+                "O2",
+                "B3",
+                "O3"
+              ],
+              "house_live": [],
+              "logic": [
+                "prior:1",
+                "prior:2",
+                "prior:3"
+              ],
+              "overlay": [
+                "O1",
+                "O2",
+                "O3"
+              ],
+              "pending": [
+                "O1",
+                "B1",
+                "O2",
+                "B2",
+                "O3",
+                "B3"
+              ]
+            },
+            "rng": {
+              "main": 0,
+              "mapgen": 0,
+              "scenario": 2
+            },
+            "scenario_init_priority": 0,
+            "wall_owner_globals": {
+              "0x008333BC": 4294967295,
+              "0x00880994": 0
+            }
+          },
+          "result": 675876960
+        },
+        "origin_unlimbo": {
+          "after": {
+            "cursor": 7,
+            "frame": 0,
+            "house": {
+              "building_count": 0,
+              "credits": 0,
+              "dirty": [
+                1,
+                1
+              ],
+              "human": 1,
+              "index": 0,
+              "owned": [
+                0
+              ],
+              "tracked": [
+                0
+              ]
+            },
+            "objects": [
+              8,
+              21,
+              5,
+              7
+            ],
+            "patch": [
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              0,
+              1,
+              0,
+              0,
+              0,
+              0
+            ],
+            "registries": {
+              "building": [
+                "prior:1",
+                "B1"
+              ],
+              "generic_object": [
+                "prior:1",
+                "prior:2",
+                "prior:3",
+                "B1",
+                "O1"
+              ],
+              "house_live": [],
+              "logic": [
+                "prior:1",
+                "prior:2",
+                "prior:3"
+              ],
+              "overlay": [
+                "O1"
+              ],
+              "pending": [
+                "O1",
+                "B1"
+              ]
+            },
+            "rng": {
+              "main": 0,
+              "mapgen": 0,
+              "scenario": 1
+            },
+            "scenario_init_priority": 0,
+            "wall_owner_globals": {
+              "0x008333BC": 4294967295,
+              "0x00880994": 0
+            }
+          },
+          "before": {
+            "cursor": 6,
+            "frame": 0,
+            "house": {
+              "building_count": 0,
+              "credits": 0,
+              "dirty": [
+                1,
+                1
+              ],
+              "human": 1,
+              "index": 0,
+              "owned": [
+                0
+              ],
+              "tracked": [
+                0
+              ]
+            },
+            "objects": [
+              8,
+              21,
+              4
+            ],
+            "patch": [
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              2,
+              2,
+              2,
+              2,
+              2,
+              2,
+              2,
+              2,
+              2
+            ],
+            "registries": {
+              "building": [
+                "prior:1",
+                "B1"
+              ],
+              "generic_object": [
+                "prior:1",
+                "prior:2",
+                "prior:3",
+                "B1"
+              ],
+              "house_live": [],
+              "logic": [
+                "prior:1",
+                "prior:2",
+                "prior:3"
+              ],
+              "overlay": [],
+              "pending": []
+            },
+            "rng": {
+              "main": 0,
+              "mapgen": 0,
+              "scenario": 1
+            },
+            "scenario_init_priority": 0,
+            "wall_owner_globals": {
+              "0x008333BC": 4294967295,
+              "0x00880994": 0
+            }
+          },
+          "result": 1
+        }
+      },
+      "unlimbo": [
+        {
+          "coord": [
+            5248,
+            2944,
+            0
+          ],
+          "phase": "setup_wall_0_unlimbo",
+          "ref": "B0",
+          "result": 1,
+          "state": 1
+        },
+        {
+          "phase": "setup_wall_0_unlimbo",
+          "ref": "O0",
+          "result": 1,
+          "state": 12
+        },
+        {
+          "coord": [
+            5248,
+            3712,
+            0
+          ],
+          "phase": "setup_wall_1_unlimbo",
+          "ref": "B1",
+          "result": 1,
+          "state": 5
+        },
+        {
+          "phase": "setup_wall_1_unlimbo",
+          "ref": "O1",
+          "result": 1,
+          "state": 7
+        },
+        {
+          "coord": [
+            5248,
+            3456,
+            0
+          ],
+          "phase": "whole_autofill_588750",
+          "ref": "B2",
+          "result": 1,
+          "state": 14
+        },
+        {
+          "phase": "whole_autofill_588750",
+          "ref": "O2",
+          "result": 1,
+          "state": 16
+        },
+        {
+          "coord": [
+            5248,
+            3200,
+            0
+          ],
+          "phase": "whole_autofill_588750",
+          "ref": "B3",
+          "result": 1,
+          "state": 18
+        },
+        {
+          "phase": "whole_autofill_588750",
+          "ref": "O3",
+          "result": 1,
+          "state": 20
+        }
+      ]
+    },
+    {
+      "autofill_rng_request_range": [
+        3,
+        7
+      ],
+      "constructors": [
+        {
+          "mission_timer_raw_c8": [
+            0,
+            0,
+            0
+          ],
+          "phase": "setup_wall_0_create",
+          "ref": "B0",
+          "result": 675790336,
+          "state": 0
+        },
+        {
+          "phase": "setup_wall_0_unlimbo",
+          "ref": "O0",
+          "result": 675792352,
+          "state": 2
+        },
+        {
+          "mission_timer_raw_c8": [
+            0,
+            0,
+            0
+          ],
+          "phase": "setup_wall_1_create",
+          "ref": "B1",
+          "result": 675816688,
+          "state": 4
+        },
+        {
+          "phase": "setup_wall_1_unlimbo",
+          "ref": "O1",
+          "result": 675818704,
+          "state": 6
+        },
+        {
+          "mission_timer_raw_c8": [
+            0,
+            0,
+            0
+          ],
+          "phase": "setup_wall_2_create",
+          "ref": "B2",
+          "result": 675844368,
+          "state": 13
+        },
+        {
+          "phase": "setup_wall_2_unlimbo",
+          "ref": "O2",
+          "result": 675846384,
+          "state": 15
+        },
+        {
+          "mission_timer_raw_c8": [
+            0,
+            0,
+            0
+          ],
+          "phase": "whole_autofill_588750",
+          "ref": "B3",
+          "result": 675878912,
+          "state": 17
+        },
+        {
+          "phase": "whole_autofill_588750",
+          "ref": "O3",
+          "result": 675880912,
+          "state": 19
+        },
+        {
+          "mission_timer_raw_c8": [
+            0,
+            0,
+            0
+          ],
+          "phase": "whole_autofill_588750",
+          "ref": "B4",
+          "result": 675907152,
+          "state": 30
+        },
+        {
+          "phase": "whole_autofill_588750",
+          "ref": "O4",
+          "result": 675909152,
+          "state": 31
+        },
+        {
+          "mission_timer_raw_c8": [
+            0,
+            0,
+            0
+          ],
+          "phase": "whole_autofill_588750",
+          "ref": "B5",
+          "result": 675909328,
+          "state": 33
+        },
+        {
+          "phase": "whole_autofill_588750",
+          "ref": "O5",
+          "result": 675911328,
+          "state": 35
+        },
+        {
+          "mission_timer_raw_c8": [
+            0,
+            0,
+            0
+          ],
+          "phase": "whole_autofill_588750",
+          "ref": "B6",
+          "result": 675940960,
+          "state": 37
+        },
+        {
+          "phase": "whole_autofill_588750",
+          "ref": "O6",
+          "result": 675942960,
+          "state": 39
+        }
+      ],
+      "house_dirty_writes": [
+        {
+          "before": [
+            1,
+            1
+          ],
+          "offset": 22392,
+          "pc": "0x0043BF11",
+          "phase": "setup_endpoint_deferred_drain",
+          "size": 1,
+          "value": 1
+        },
+        {
+          "before": [
+            1,
+            1
+          ],
+          "offset": 22392,
+          "pc": "0x0043BF11",
+          "phase": "setup_endpoint_deferred_drain",
+          "size": 1,
+          "value": 1
+        },
+        {
+          "before": [
+            1,
+            1
+          ],
+          "offset": 22392,
+          "pc": "0x0043BF11",
+          "phase": "autofill_deferred_drain",
+          "size": 1,
+          "value": 1
+        },
+        {
+          "before": [
+            1,
+            1
+          ],
+          "offset": 22392,
+          "pc": "0x0043BF11",
+          "phase": "autofill_deferred_drain",
+          "size": 1,
+          "value": 1
+        },
+        {
+          "before": [
+            1,
+            1
+          ],
+          "offset": 22392,
+          "pc": "0x0043BF11",
+          "phase": "autofill_deferred_drain",
+          "size": 1,
+          "value": 1
+        },
+        {
+          "before": [
+            1,
+            1
+          ],
+          "offset": 22392,
+          "pc": "0x0043BF11",
+          "phase": "autofill_deferred_drain",
+          "size": 1,
+          "value": 1
+        }
+      ],
+      "input": {
+        "active_game": 1,
+        "boundary": "Declared joined32x32 flat clear map and House/target/MTNK priors; full native endpoint wall entry/drain, origin wall entry remains pending, then whole588750 and drain. No Factory payment, HousePlace caller or physical Hills bootstrap.",
+        "control": "middle_refusal",
+        "current_viewer": "House:owner",
+        "custom_middle_land": {
+          "coord": [
+            20,
+            12
+          ],
+          "ini": {
+            "Rough": {
+              "Buildable": "yes",
+              "Track": "0%"
+            }
+          },
+          "land": 7,
+          "physical_row_before": "0000803f0000803f0000803f0000003f0000803f00000000cccc4c3f0000000001000000",
+          "reader": "0x00674000",
+          "source": "Declared custom INI/map prior before whole588750; not stock-map admission",
+          "supplied_native_row": "0000803f000000000000803f0000803f0000803f0000803f0000803f0000803f01000000"
+        },
+        "endpoints": [
+          [
+            20,
+            10
+          ],
+          [
+            22,
+            14
+          ]
+        ],
+        "game_mode": 1,
+        "geometry_startup": {
+          "b0cd48": "60493474535ec23f",
+          "entries": [
+            "006D1830",
+            "006D18C0",
+            "006D1BB0",
+            "0049F2F0",
+            "00561710",
+            "005617A0",
+            "005617C0",
+            "005617E0",
+            "00561910",
+            "005638D0",
+            "0047B150",
+            "0047B180",
+            "0047B1A0",
+            "0047B1C0",
+            "0047B1E0",
+            "0047B200",
+            "0047B220",
+            "0047B260",
+            "0047B290",
+            "0047B2C0",
+            "0047B2F0",
+            "0047B300",
+            "0047B320",
+            "0047B340",
+            "006DCD70",
+            "006DCDA0",
+            "006DCDC0",
+            "006DCDE0",
+            "006DCE00",
+            "006DCE20",
+            "006DCE40",
+            "006DCE80",
+            "006DCEB0",
+            "006DCEE0",
+            "006DCF10",
+            "006DCF20",
+            "006DCF40",
+            "006DCF60"
+          ]
+        },
+        "map": {
+          "class_height_plane_sha256": "2f9802d51af1433d57ad37ddb056c04b297f71b0439addbce8906034d641326e",
+          "client_view_prior": {
+            "cell_flags_12c": 24,
+            "native_projection_entry": "0x004876F0",
+            "occupied_ground_list": "original BuildingMark0/3 reinserts the admitted2x2 foundation; native MTNK and escaped E1 admissions",
+            "raw_foot_deck_offset": "0x128",
+            "raw_foot_ground_offset": "0x124",
+            "raw_foot_initial": 0,
+            "shrouded_reader": "0x00586360",
+            "visible_reader": "0x005656D0"
+          },
+          "coordinate_bounds": [
+            0,
+            0,
+            32,
+            32
+          ],
+          "native_zone_count": 2,
+          "prior": "33x33 class/height samples; class0/level0 interior1..31, class7/level0 border; supplied flat clear Cell data; original connectivity and Pathfinder execute",
+          "size": [
+            16,
+            16
+          ]
+        },
+        "origin": [
+          20,
+          14
+        ],
+        "owner": "House:owner",
+        "reveal_by_height": 1,
+        "scenario_flags": 0,
+        "scenario_init_priority": 0,
+        "seed": 31,
+        "selected_tile": {
+          "boundary": "Declared original ClearTile0 head; no resident TMP supplied. Original image/slope getters execute and their null-image branch is observed if entered.",
+          "clear_base": 0,
+          "head": 675789232,
+          "registry_count": 1,
+          "resident_image": 0,
+          "vtable": 8309832
+        },
+        "type": "GAWALL",
+        "wall_owner_globals": {
+          "0x008333BC": 4294967295,
+          "0x00880994": 0
+        }
+      },
+      "native_ids": {
+        "B0": 4,
+        "B1": 6,
+        "B2": 8,
+        "B3": 10,
+        "B4": 12,
+        "B5": 14,
+        "B6": 16,
+        "O0": 5,
+        "O1": 7,
+        "O2": 9,
+        "O3": 11,
+        "O4": 13,
+        "O5": 15,
+        "O6": 17
+      },
+      "observation_gaps": [],
+      "origin_ref": "B2",
+      "origin_unlimbo_rng_request_range": [
+        3,
+        3
+      ],
+      "original_executable_sections_unchanged": true,
+      "patch_coordinates": [
+        [
+          19,
+          10
+        ],
+        [
+          20,
+          10
+        ],
+        [
+          21,
+          10
+        ],
+        [
+          19,
+          11
+        ],
+        [
+          20,
+          11
+        ],
+        [
+          21,
+          11
+        ],
+        [
+          19,
+          12
+        ],
+        [
+          20,
+          12
+        ],
+        [
+          21,
+          12
+        ],
+        [
+          19,
+          13
+        ],
+        [
+          20,
+          13
+        ],
+        [
+          21,
+          13
+        ],
+        [
+          22,
+          13
+        ],
+        [
+          19,
+          14
+        ],
+        [
+          20,
+          14
+        ],
+        [
+          21,
+          14
+        ],
+        [
+          22,
+          14
+        ],
+        [
+          19,
+          15
+        ],
+        [
+          20,
+          15
+        ],
+        [
+          21,
+          15
+        ],
+        [
+          22,
+          15
+        ]
+      ],
+      "rng_requests": [
+        {
+          "args": [],
+          "entry": 6670208,
+          "frame": 0,
+          "result": 2225548056,
+          "site": 7287380,
+          "this": 536908312
+        },
+        {
+          "args": [],
+          "entry": 6670208,
+          "frame": 0,
+          "result": 1502837926,
+          "site": 7287380,
+          "this": 536908312
+        },
+        {
+          "args": [],
+          "entry": 6670208,
+          "frame": 0,
+          "result": 107402731,
+          "site": 7287380,
+          "this": 536908312
+        },
+        {
+          "args": [],
+          "entry": 6670208,
+          "frame": 0,
+          "result": 577279072,
+          "site": 7287380,
+          "this": 536908312
+        },
+        {
+          "args": [],
+          "entry": 6670208,
+          "frame": 0,
+          "result": 1766806041,
+          "site": 7287380,
+          "this": 536908312
+        },
+        {
+          "args": [],
+          "entry": 6670208,
+          "frame": 0,
+          "result": 2171444653,
+          "site": 7287380,
+          "this": 536908312
+        },
+        {
+          "args": [],
+          "entry": 6670208,
+          "frame": 0,
+          "result": 789772035,
+          "site": 7287380,
+          "this": 536908312
+        }
+      ],
+      "semantic_calls": [
+        [
+          0,
+          3,
+          "B2",
+          "0x30000000",
+          1,
+          {
+            "coord": [
+              5248,
+              3712,
+              0
+            ],
+            "facing": 0
+          }
+        ],
+        [
+          1,
+          3,
+          "OverlayType:GAWALL",
+          "0x004407C9",
+          675846384,
+          {
+            "result_ref": "O2"
+          }
+        ],
+        [
+          2,
+          3,
+          "O2",
+          "0x005FE593",
+          675846384,
+          {
+            "result_ref": "O2"
+          }
+        ],
+        [
+          3,
+          3,
+          "O2",
+          "0x004407DE",
+          1
+        ],
+        [
+          4,
+          3,
+          "O2",
+          "0x005F4FBA",
+          1
+        ],
+        [
+          5,
+          3,
+          "O2",
+          "0x005FD21C",
+          0
+        ],
+        [
+          6,
+          3,
+          "O2",
+          "0x005F661B",
+          20,
+          {
+            "args": [
+              8,
+              6279708
+            ]
+          }
+        ],
+        [
+          7,
+          3,
+          "B2",
+          "0x00440809",
+          0,
+          {
+            "args": [
+              3
+            ]
+          }
+        ],
+        [
+          8,
+          3,
+          "Map",
+          "0x00440832",
+          0,
+          {
+            "args": [
+              {
+                "coord": [
+                  5248,
+                  3712,
+                  0
+                ]
+              },
+              1,
+              "House:owner",
+              0,
+              0,
+              0,
+              1,
+              0
+            ],
+            "coord": [
+              5248,
+              3712,
+              0
+            ]
+          }
+        ],
+        [
+          8,
+          3,
+          "Map",
+          "0x0044085B",
+          0,
+          {
+            "args": [
+              {
+                "coord": [
+                  5248,
+                  3712,
+                  0
+                ]
+              },
+              1,
+              "House:owner",
+              0,
+              0,
+              0,
+              1,
+              1
+            ],
+            "coord": [
+              5248,
+              3712,
+              0
+            ]
+          }
+        ],
+        [
+          5,
+          3,
+          "B2",
+          "0x00440865",
+          1
+        ],
+        [
+          6,
+          3,
+          "B2",
+          "0x005F661B",
+          6,
+          {
+            "args": [
+              "B2",
+              4458597
+            ]
+          }
+        ],
+        [
+          9,
+          1,
+          "Map",
+          "0x30000000",
+          8
+        ],
+        [
+          15,
+          1,
+          "BuildingType:GAWALL",
+          "0x005888D4",
+          675878912,
+          {
+            "result_ref": "B3"
+          }
+        ],
+        [
+          16,
+          1,
+          "B3",
+          "0x0045E8A1",
+          675878912,
+          {
+            "result_ref": "B3"
+          }
+        ],
+        [
+          17,
+          1,
+          "House:owner",
+          "0x00442C67",
+          605731008
+        ],
+        [
+          0,
+          1,
+          "B3",
+          "0x00588912",
+          1,
+          {
+            "coord": [
+              5248,
+              3456,
+              0
+            ],
+            "facing": 0
+          }
+        ],
+        [
+          1,
+          1,
+          "OverlayType:GAWALL",
+          "0x004407C9",
+          675880912,
+          {
+            "result_ref": "O3"
+          }
+        ],
+        [
+          2,
+          1,
+          "O3",
+          "0x005FE593",
+          675880912,
+          {
+            "result_ref": "O3"
+          }
+        ],
+        [
+          3,
+          1,
+          "O3",
+          "0x004407DE",
+          1
+        ],
+        [
+          4,
+          1,
+          "O3",
+          "0x005F4FBA",
+          1
+        ],
+        [
+          5,
+          1,
+          "O3",
+          "0x005FD21C",
+          2
+        ],
+        [
+          6,
+          1,
+          "O3",
+          "0x005F661B",
+          20,
+          {
+            "args": [
+              8,
+              6279708
+            ]
+          }
+        ],
+        [
+          7,
+          1,
+          "B3",
+          "0x00440809",
+          0,
+          {
+            "args": [
+              3
+            ]
+          }
+        ],
+        [
+          8,
+          1,
+          "Map",
+          "0x00440832",
+          0,
+          {
+            "args": [
+              {
+                "coord": [
+                  5248,
+                  3456,
+                  0
+                ]
+              },
+              1,
+              "House:owner",
+              0,
+              0,
+              0,
+              1,
+              0
+            ],
+            "coord": [
+              5248,
+              3456,
+              0
+            ]
+          }
+        ],
+        [
+          8,
+          1,
+          "Map",
+          "0x0044085B",
+          0,
+          {
+            "args": [
+              {
+                "coord": [
+                  5248,
+                  3456,
+                  0
+                ]
+              },
+              1,
+              "House:owner",
+              0,
+              0,
+              0,
+              1,
+              1
+            ],
+            "coord": [
+              5248,
+              3456,
+              0
+            ]
+          }
+        ],
+        [
+          5,
+          1,
+          "B3",
+          "0x00440865",
+          3
+        ],
+        [
+          6,
+          1,
+          "B3",
+          "0x005F661B",
+          6,
+          {
+            "args": [
+              "B3",
+              4458597
+            ]
+          }
+        ],
+        [
+          15,
+          1,
+          "BuildingType:GAWALL",
+          "0x005888D4",
+          675907152,
+          {
+            "result_ref": "B4"
+          }
+        ],
+        [
+          16,
+          1,
+          "B4",
+          "0x0045E8A1",
+          675907152,
+          {
+            "result_ref": "B4"
+          }
+        ],
+        [
+          17,
+          1,
+          "House:owner",
+          "0x00442C67",
+          605731008
+        ],
+        [
+          0,
+          1,
+          "B4",
+          "0x00588912",
+          0,
+          {
+            "coord": [
+              5248,
+              3200,
+              0
+            ],
+            "facing": 0
+          }
+        ],
+        [
+          1,
+          1,
+          "OverlayType:GAWALL",
+          "0x004407C9",
+          675909152,
+          {
+            "result_ref": "O4"
+          }
+        ],
+        [
+          2,
+          1,
+          "O4",
+          "0x005FE593",
+          675909152,
+          {
+            "result_ref": "O4"
+          }
+        ],
+        [
+          3,
+          1,
+          "O4",
+          "0x004407DE",
+          0
+        ],
+        [
+          4,
+          1,
+          "O4",
+          "0x005F4FBA",
+          0
+        ],
+        [
+          5,
+          1,
+          "O4",
+          "0x005FC784",
+          4
+        ],
+        [
+          6,
+          1,
+          "O4",
+          "0x005F661B",
+          20,
+          {
+            "args": [
+              2,
+              6276996
+            ]
+          }
+        ],
+        [
+          6,
+          1,
+          "O4",
+          "0x005F5316",
+          20,
+          {
+            "args": [
+              "O4",
+              "O4"
+            ]
+          }
+        ],
+        [
+          4,
+          1,
+          "O4",
+          "0x005F4D73",
+          0
+        ],
+        [
+          15,
+          1,
+          "BuildingType:GAWALL",
+          "0x005888D4",
+          675909328,
+          {
+            "result_ref": "B5"
+          }
+        ],
+        [
+          16,
+          1,
+          "B5",
+          "0x0045E8A1",
+          675909328,
+          {
+            "result_ref": "B5"
+          }
+        ],
+        [
+          17,
+          1,
+          "House:owner",
+          "0x00442C67",
+          605731008
+        ],
+        [
+          0,
+          1,
+          "B5",
+          "0x00588912",
+          1,
+          {
+            "coord": [
+              5248,
+              2944,
+              0
+            ],
+            "facing": 0
+          }
+        ],
+        [
+          1,
+          1,
+          "OverlayType:GAWALL",
+          "0x004407C9",
+          675911328,
+          {
+            "result_ref": "O5"
+          }
+        ],
+        [
+          2,
+          1,
+          "O5",
+          "0x005FE593",
+          675911328,
+          {
+            "result_ref": "O5"
+          }
+        ],
+        [
+          3,
+          1,
+          "O5",
+          "0x004407DE",
+          1
+        ],
+        [
+          4,
+          1,
+          "O5",
+          "0x005F4FBA",
+          1
+        ],
+        [
+          5,
+          1,
+          "O5",
+          "0x005FD21C",
+          5
+        ],
+        [
+          6,
+          1,
+          "O5",
+          "0x005F661B",
+          20,
+          {
+            "args": [
+              8,
+              6279708
+            ]
+          }
+        ],
+        [
+          7,
+          1,
+          "B5",
+          "0x00440809",
+          0,
+          {
+            "args": [
+              3
+            ]
+          }
+        ],
+        [
+          8,
+          1,
+          "Map",
+          "0x00440832",
+          0,
+          {
+            "args": [
+              {
+                "coord": [
+                  5248,
+                  2944,
+                  0
+                ]
+              },
+              1,
+              "House:owner",
+              0,
+              0,
+              0,
+              1,
+              0
+            ],
+            "coord": [
+              5248,
+              2944,
+              0
+            ]
+          }
+        ],
+        [
+          8,
+          1,
+          "Map",
+          "0x0044085B",
+          0,
+          {
+            "args": [
+              {
+                "coord": [
+                  5248,
+                  2944,
+                  0
+                ]
+              },
+              1,
+              "House:owner",
+              0,
+              0,
+              0,
+              1,
+              1
+            ],
+            "coord": [
+              5248,
+              2944,
+              0
+            ]
+          }
+        ],
+        [
+          5,
+          1,
+          "B5",
+          "0x00440865",
+          6
+        ],
+        [
+          6,
+          1,
+          "B5",
+          "0x005F661B",
+          6,
+          {
+            "args": [
+              "B5",
+              4458597
+            ]
+          }
+        ],
+        [
+          15,
+          1,
+          "BuildingType:GAWALL",
+          "0x005888D4",
+          675940960,
+          {
+            "result_ref": "B6"
+          }
+        ],
+        [
+          16,
+          1,
+          "B6",
+          "0x0045E8A1",
+          675940960,
+          {
+            "result_ref": "B6"
+          }
+        ],
+        [
+          17,
+          1,
+          "House:owner",
+          "0x00442C67",
+          605731008
+        ],
+        [
+          0,
+          1,
+          "B6",
+          "0x00588912",
+          1,
+          {
+            "coord": [
+              5504,
+              3712,
+              0
+            ],
+            "facing": 0
+          }
+        ],
+        [
+          1,
+          1,
+          "OverlayType:GAWALL",
+          "0x004407C9",
+          675942960,
+          {
+            "result_ref": "O6"
+          }
+        ],
+        [
+          2,
+          1,
+          "O6",
+          "0x005FE593",
+          675942960,
+          {
+            "result_ref": "O6"
+          }
+        ],
+        [
+          3,
+          1,
+          "O6",
+          "0x004407DE",
+          1
+        ],
+        [
+          4,
+          1,
+          "O6",
+          "0x005F4FBA",
+          1
+        ],
+        [
+          5,
+          1,
+          "O6",
+          "0x005FD21C",
+          7
+        ],
+        [
+          6,
+          1,
+          "O6",
+          "0x005F661B",
+          20,
+          {
+            "args": [
+              8,
+              6279708
+            ]
+          }
+        ],
+        [
+          7,
+          1,
+          "B6",
+          "0x00440809",
+          0,
+          {
+            "args": [
+              3
+            ]
+          }
+        ],
+        [
+          8,
+          1,
+          "Map",
+          "0x00440832",
+          0,
+          {
+            "args": [
+              {
+                "coord": [
+                  5504,
+                  3712,
+                  0
+                ]
+              },
+              1,
+              "House:owner",
+              0,
+              0,
+              0,
+              1,
+              0
+            ],
+            "coord": [
+              5504,
+              3712,
+              0
+            ]
+          }
+        ],
+        [
+          8,
+          1,
+          "Map",
+          "0x0044085B",
+          0,
+          {
+            "args": [
+              {
+                "coord": [
+                  5504,
+                  3712,
+                  0
+                ]
+              },
+              1,
+              "House:owner",
+              0,
+              0,
+              0,
+              1,
+              1
+            ],
+            "coord": [
+              5504,
+              3712,
+              0
+            ]
+          }
+        ],
+        [
+          5,
+          1,
+          "B6",
+          "0x00440865",
+          8
+        ],
+        [
+          6,
+          1,
+          "B6",
+          "0x005F661B",
+          6,
+          {
+            "args": [
+              "B6",
+              4458597
+            ]
+          }
+        ],
+        [
+          10,
+          2,
+          0,
+          "0x30000000",
+          675940960,
+          {
+            "result_ref": "B6"
+          }
+        ],
+        [
+          11,
+          2,
+          "O2",
+          "0x00725D7D",
+          675846384,
+          {
+            "result_ref": "O2"
+          }
+        ],
+        [
+          6,
+          2,
+          "O2",
+          "0x005FDF96",
+          20,
+          {
+            "args": [
+              0,
+              "O2"
+            ]
+          }
+        ],
+        [
+          12,
+          2,
+          "B2",
+          "0x00725D7D",
+          675844368,
+          {
+            "result_ref": "B2"
+          }
+        ],
+        [
+          13,
+          2,
+          "B2",
+          "0x00459F28",
+          675844352
+        ],
+        [
+          6,
+          2,
+          "B2",
+          "0x0043BD6C",
+          6,
+          {
+            "args": [
+              0,
+              "B2"
+            ]
+          }
+        ],
+        [
+          14,
+          2,
+          "House:owner",
+          "0x0043BF39",
+          605731008
+        ],
+        [
+          11,
+          2,
+          "O3",
+          "0x00725D7D",
+          675880912,
+          {
+            "result_ref": "O3"
+          }
+        ],
+        [
+          6,
+          2,
+          "O3",
+          "0x005FDF96",
+          20,
+          {
+            "args": [
+              0,
+              "O3"
+            ]
+          }
+        ],
+        [
+          12,
+          2,
+          "B3",
+          "0x00725D7D",
+          675878912,
+          {
+            "result_ref": "B3"
+          }
+        ],
+        [
+          13,
+          2,
+          "B3",
+          "0x00459F28",
+          675878912,
+          {
+            "result_ref": "B3"
+          }
+        ],
+        [
+          6,
+          2,
+          "B3",
+          "0x0043BD6C",
+          6,
+          {
+            "args": [
+              0,
+              "B3"
+            ]
+          }
+        ],
+        [
+          14,
+          2,
+          "House:owner",
+          "0x0043BF39",
+          605731008
+        ],
+        [
+          11,
+          2,
+          "O4",
+          "0x00725D7D",
+          675909152,
+          {
+            "result_ref": "O4"
+          }
+        ],
+        [
+          6,
+          2,
+          "O4",
+          "0x005FDF96",
+          20,
+          {
+            "args": [
+              0,
+              "O4"
+            ]
+          }
+        ],
+        [
+          11,
+          2,
+          "O5",
+          "0x00725D7D",
+          675911328,
+          {
+            "result_ref": "O5"
+          }
+        ],
+        [
+          6,
+          2,
+          "O5",
+          "0x005FDF96",
+          20,
+          {
+            "args": [
+              0,
+              "O5"
+            ]
+          }
+        ],
+        [
+          12,
+          2,
+          "B5",
+          "0x00725D7D",
+          675909328,
+          {
+            "result_ref": "B5"
+          }
+        ],
+        [
+          13,
+          2,
+          "B5",
+          "0x00459F28",
+          675909376
+        ],
+        [
+          6,
+          2,
+          "B5",
+          "0x0043BD6C",
+          6,
+          {
+            "args": [
+              0,
+              "B5"
+            ]
+          }
+        ],
+        [
+          14,
+          2,
+          "House:owner",
+          "0x0043BF39",
+          605731008
+        ],
+        [
+          11,
+          2,
+          "O6",
+          "0x00725D7D",
+          675942960,
+          {
+            "result_ref": "O6"
+          }
+        ],
+        [
+          6,
+          2,
+          "O6",
+          "0x005FDF96",
+          20,
+          {
+            "args": [
+              0,
+              "O6"
+            ]
+          }
+        ],
+        [
+          12,
+          2,
+          "B6",
+          "0x00725D7D",
+          675940960,
+          {
+            "result_ref": "B6"
+          }
+        ],
+        [
+          13,
+          2,
+          "B6",
+          "0x00459F28",
+          675940864
+        ],
+        [
+          6,
+          2,
+          "B6",
+          "0x0043BD6C",
+          6,
+          {
+            "args": [
+              0,
+              "B6"
+            ]
+          }
+        ],
+        [
+          14,
+          2,
+          "House:owner",
+          "0x0043BF39",
+          605731008
+        ]
+      ],
+      "transitions": {
+        "autofill": {
+          "after": {
+            "cursor": 17,
+            "frame": 0,
+            "house": {
+              "building_count": 0,
+              "credits": 0,
+              "dirty": [
+                1,
+                1
+              ],
+              "human": 1,
+              "index": 0,
+              "owned": [
+                0
+              ],
+              "tracked": [
+                0
+              ]
+            },
+            "objects": [
+              8,
+              41,
+              10,
+              42,
+              14,
+              28,
+              18,
+              29,
+              30,
+              32,
+              34,
+              36,
+              38,
+              40
+            ],
+            "patch": [
+              3,
+              4,
+              3,
+              3,
+              5,
+              3,
+              3,
+              9,
+              3,
+              3,
+              10,
+              11,
+              3,
+              3,
+              12,
+              13,
+              14,
+              0,
+              3,
+              6,
+              3
+            ],
+            "registries": {
+              "building": [
+                "prior:1",
+                "B2",
+                "B3",
+                "B4",
+                "B5",
+                "B6"
+              ],
+              "generic_object": [
+                "prior:1",
+                "prior:2",
+                "prior:3",
+                "B2",
+                "O2",
+                "B3",
+                "O3",
+                "B4",
+                "O4",
+                "B5",
+                "O5",
+                "B6",
+                "O6"
+              ],
+              "house_live": [],
+              "logic": [
+                "prior:1",
+                "prior:2",
+                "prior:3"
+              ],
+              "overlay": [
+                "O2",
+                "O3",
+                "O4",
+                "O5",
+                "O6"
+              ],
+              "pending": [
+                "O2",
+                "B2",
+                "O3",
+                "B3",
+                "O4",
+                "O5",
+                "B5",
+                "O6",
+                "B6"
+              ]
+            },
+            "rng": {
+              "main": 0,
+              "mapgen": 0,
+              "scenario": 4
+            },
+            "scenario_init_priority": 0,
+            "wall_owner_globals": {
+              "0x008333BC": 4294967295,
+              "0x00880994": 0
+            }
+          },
+          "before": {
+            "cursor": 9,
+            "frame": 0,
+            "house": {
+              "building_count": 0,
+              "credits": 0,
+              "dirty": [
+                1,
+                1
+              ],
+              "human": 1,
+              "index": 0,
+              "owned": [
+                0
+              ],
+              "tracked": [
+                0
+              ]
+            },
+            "objects": [
+              8,
+              41,
+              10,
+              42,
+              14,
+              28
+            ],
+            "patch": [
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              2,
+              8,
+              2,
+              0,
+              0,
+              3,
+              0,
+              0,
+              1,
+              3,
+              1,
+              0,
+              0,
+              3,
+              0
+            ],
+            "registries": {
+              "building": [
+                "prior:1",
+                "B2"
+              ],
+              "generic_object": [
+                "prior:1",
+                "prior:2",
+                "prior:3",
+                "B2",
+                "O2"
+              ],
+              "house_live": [],
+              "logic": [
+                "prior:1",
+                "prior:2",
+                "prior:3"
+              ],
+              "overlay": [
+                "O2"
+              ],
+              "pending": [
+                "O2",
+                "B2"
+              ]
+            },
+            "rng": {
+              "main": 0,
+              "mapgen": 0,
+              "scenario": 3
+            },
+            "scenario_init_priority": 0,
+            "wall_owner_globals": {
+              "0x008333BC": 4294967295,
+              "0x00880994": 0
+            }
+          },
+          "result": 8
+        },
+        "drain": {
+          "after": {
+            "cursor": 17,
+            "frame": 0,
+            "house": {
+              "building_count": 0,
+              "credits": 0,
+              "dirty": [
+                1,
+                1
+              ],
+              "human": 1,
+              "index": 0,
+              "owned": [
+                0
+              ],
+              "tracked": [
+                0
+              ]
+            },
+            "objects": [
+              8,
+              41,
+              10,
+              42,
+              22,
+              43,
+              24,
+              44,
+              30,
+              45,
+              46,
+              47,
+              48,
+              49
+            ],
+            "patch": [
+              3,
+              4,
+              3,
+              3,
+              5,
+              3,
+              3,
+              9,
+              3,
+              3,
+              10,
+              11,
+              3,
+              3,
+              12,
+              13,
+              14,
+              0,
+              3,
+              6,
+              3
+            ],
+            "registries": {
+              "building": [
+                "prior:1",
+                "B4"
+              ],
+              "generic_object": [
+                "prior:1",
+                "prior:2",
+                "prior:3",
+                "B4"
+              ],
+              "house_live": [],
+              "logic": [
+                "prior:1",
+                "prior:2",
+                "prior:3"
+              ],
+              "overlay": [],
+              "pending": []
+            },
+            "rng": {
+              "main": 0,
+              "mapgen": 0,
+              "scenario": 4
+            },
+            "scenario_init_priority": 0,
+            "wall_owner_globals": {
+              "0x008333BC": 4294967295,
+              "0x00880994": 0
+            }
+          },
+          "before": {
+            "cursor": 17,
+            "frame": 0,
+            "house": {
+              "building_count": 0,
+              "credits": 0,
+              "dirty": [
+                1,
+                1
+              ],
+              "human": 1,
+              "index": 0,
+              "owned": [
+                0
+              ],
+              "tracked": [
+                0
+              ]
+            },
+            "objects": [
+              8,
+              41,
+              10,
+              42,
+              14,
+              28,
+              18,
+              29,
+              30,
+              32,
+              34,
+              36,
+              38,
+              40
+            ],
+            "patch": [
+              3,
+              4,
+              3,
+              3,
+              5,
+              3,
+              3,
+              9,
+              3,
+              3,
+              10,
+              11,
+              3,
+              3,
+              12,
+              13,
+              14,
+              0,
+              3,
+              6,
+              3
+            ],
+            "registries": {
+              "building": [
+                "prior:1",
+                "B2",
+                "B3",
+                "B4",
+                "B5",
+                "B6"
+              ],
+              "generic_object": [
+                "prior:1",
+                "prior:2",
+                "prior:3",
+                "B2",
+                "O2",
+                "B3",
+                "O3",
+                "B4",
+                "O4",
+                "B5",
+                "O5",
+                "B6",
+                "O6"
+              ],
+              "house_live": [],
+              "logic": [
+                "prior:1",
+                "prior:2",
+                "prior:3"
+              ],
+              "overlay": [
+                "O2",
+                "O3",
+                "O4",
+                "O5",
+                "O6"
+              ],
+              "pending": [
+                "O2",
+                "B2",
+                "O3",
+                "B3",
+                "O4",
+                "O5",
+                "B5",
+                "O6",
+                "B6"
+              ]
+            },
+            "rng": {
+              "main": 0,
+              "mapgen": 0,
+              "scenario": 4
+            },
+            "scenario_init_priority": 0,
+            "wall_owner_globals": {
+              "0x008333BC": 4294967295,
+              "0x00880994": 0
+            }
+          },
+          "result": 675940960
+        },
+        "origin_unlimbo": {
+          "after": {
+            "cursor": 9,
+            "frame": 0,
+            "house": {
+              "building_count": 0,
+              "credits": 0,
+              "dirty": [
+                1,
+                1
+              ],
+              "human": 1,
+              "index": 0,
+              "owned": [
+                0
+              ],
+              "tracked": [
+                0
+              ]
+            },
+            "objects": [
+              8,
+              41,
+              10,
+              42,
+              14,
+              28
+            ],
+            "patch": [
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              2,
+              2,
+              2,
+              0,
+              0,
+              3,
+              0,
+              0,
+              1,
+              3,
+              1,
+              0,
+              0,
+              3,
+              0
+            ],
+            "registries": {
+              "building": [
+                "prior:1",
+                "B2"
+              ],
+              "generic_object": [
+                "prior:1",
+                "prior:2",
+                "prior:3",
+                "B2",
+                "O2"
+              ],
+              "house_live": [],
+              "logic": [
+                "prior:1",
+                "prior:2",
+                "prior:3"
+              ],
+              "overlay": [
+                "O2"
+              ],
+              "pending": [
+                "O2",
+                "B2"
+              ]
+            },
+            "rng": {
+              "main": 0,
+              "mapgen": 0,
+              "scenario": 3
+            },
+            "scenario_init_priority": 0,
+            "wall_owner_globals": {
+              "0x008333BC": 4294967295,
+              "0x00880994": 0
+            }
+          },
+          "before": {
+            "cursor": 8,
+            "frame": 0,
+            "house": {
+              "building_count": 0,
+              "credits": 0,
+              "dirty": [
+                1,
+                1
+              ],
+              "human": 1,
+              "index": 0,
+              "owned": [
+                0
+              ],
+              "tracked": [
+                0
+              ]
+            },
+            "objects": [
+              8,
+              41,
+              10,
+              42,
+              13
+            ],
+            "patch": [
+              0,
+              1,
+              0,
+              0,
+              0,
+              0,
+              2,
+              2,
+              2,
+              2,
+              2,
+              0,
+              0,
+              2,
+              2,
+              0,
+              1,
+              2,
+              2,
+              0,
+              0
+            ],
+            "registries": {
+              "building": [
+                "prior:1",
+                "B2"
+              ],
+              "generic_object": [
+                "prior:1",
+                "prior:2",
+                "prior:3",
+                "B2"
+              ],
+              "house_live": [],
+              "logic": [
+                "prior:1",
+                "prior:2",
+                "prior:3"
+              ],
+              "overlay": [],
+              "pending": []
+            },
+            "rng": {
+              "main": 0,
+              "mapgen": 0,
+              "scenario": 3
+            },
+            "scenario_init_priority": 0,
+            "wall_owner_globals": {
+              "0x008333BC": 4294967295,
+              "0x00880994": 0
+            }
+          },
+          "result": 1
+        }
+      },
+      "unlimbo": [
+        {
+          "coord": [
+            5248,
+            2688,
+            0
+          ],
+          "phase": "setup_wall_0_unlimbo",
+          "ref": "B0",
+          "result": 1,
+          "state": 1
+        },
+        {
+          "phase": "setup_wall_0_unlimbo",
+          "ref": "O0",
+          "result": 1,
+          "state": 26
+        },
+        {
+          "coord": [
+            5760,
+            3712,
+            0
+          ],
+          "phase": "setup_wall_1_unlimbo",
+          "ref": "B1",
+          "result": 1,
+          "state": 5
+        },
+        {
+          "phase": "setup_wall_1_unlimbo",
+          "ref": "O1",
+          "result": 1,
+          "state": 27
+        },
+        {
+          "coord": [
+            5248,
+            3712,
+            0
+          ],
+          "phase": "setup_wall_2_unlimbo",
+          "ref": "B2",
+          "result": 1,
+          "state": 14
+        },
+        {
+          "phase": "setup_wall_2_unlimbo",
+          "ref": "O2",
+          "result": 1,
+          "state": 28
+        },
+        {
+          "coord": [
+            5248,
+            3456,
+            0
+          ],
+          "phase": "whole_autofill_588750",
+          "ref": "B3",
+          "result": 1,
+          "state": 18
+        },
+        {
+          "phase": "whole_autofill_588750",
+          "ref": "O3",
+          "result": 1,
+          "state": 29
+        },
+        {
+          "coord": [
+            5248,
+            3200,
+            0
+          ],
+          "phase": "whole_autofill_588750",
+          "ref": "B4",
+          "result": 0,
+          "state": 30
+        },
+        {
+          "phase": "whole_autofill_588750",
+          "ref": "O4",
+          "result": 0,
+          "state": 32
+        },
+        {
+          "coord": [
+            5248,
+            2944,
+            0
+          ],
+          "phase": "whole_autofill_588750",
+          "ref": "B5",
+          "result": 1,
+          "state": 34
+        },
+        {
+          "phase": "whole_autofill_588750",
+          "ref": "O5",
+          "result": 1,
+          "state": 36
+        },
+        {
+          "coord": [
+            5504,
+            3712,
+            0
+          ],
+          "phase": "whole_autofill_588750",
+          "ref": "B6",
+          "result": 1,
+          "state": 38
+        },
+        {
+          "phase": "whole_autofill_588750",
+          "ref": "O6",
+          "result": 1,
+          "state": 40
+        }
+      ]
+    }
+  ],
+  "input_layers": [
+    {
+      "admitted_GAWALL": 1,
+      "file": "RULESMD.INI",
+      "physical_GAWALL": {
+        "AIBasePlanningSide": "0",
+        "Adjacent": "8",
+        "Armor": "concrete",
+        "BaseNormal": "no",
+        "BuildCat": "Combat",
+        "Cost": "100",
+        "Explosion": "TWLT070,S_BANG48,S_BRNL58,S_CLSN58,S_TUMU60",
+        "GuardRange": "5",
+        "Insignificant": "yes",
+        "Name": "Allied Wall",
+        "Nominal": "yes",
+        "Owner": "British,French,Germans,Americans,Alliance,Russians,Confederation,Africans,Arabs,YuriCountry",
+        "Points": "5",
+        "Prerequisite": "GAPILE",
+        "Repairable": "false",
+        "Selectable": "no",
+        "Sight": "1",
+        "Strength": "300",
+        "TechLevel": "1",
+        "ThreatPosed": "0",
+        "UIName": "Name:GAWALL",
+        "Wall": "yes"
+      },
+      "sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef"
+    },
+    {
+      "absent": true,
+      "file": "LANGRULE.INI"
+    },
+    {
+      "admitted_GAWALL": 0,
+      "file": "MPBattleMD.ini",
+      "physical_GAWALL": null,
+      "sha256": "50406e81d7523f6be1954daab6b25bd85a8347c455f3d53dcf515d7f719b4963"
+    },
+    {
+      "admitted_GAWALL": 0,
+      "file": "Hills.map",
+      "physical_GAWALL": null,
+      "sha256": "780d5d6e6d3c81ac0d510a5df326848dd426b3d840ac290114f44faf8eab9e9e"
+    }
+  ],
+  "native_overlay_layers": [
+    {
+      "building_to_overlay": 605740848,
+      "file": "RULESMD.INI",
+      "physical_keys": {
+        "AIBasePlanningSide": "0",
+        "Adjacent": "8",
+        "Armor": "concrete",
+        "BaseNormal": "no",
+        "BuildCat": "Combat",
+        "Cost": "100",
+        "Explosion": "TWLT070,S_BANG48,S_BRNL58,S_CLSN58,S_TUMU60",
+        "GuardRange": "5",
+        "Insignificant": "yes",
+        "Name": "Allied Wall",
+        "Nominal": "yes",
+        "Owner": "British,French,Germans,Americans,Alliance,Russians,Confederation,Africans,Arabs,YuriCountry",
+        "Points": "5",
+        "Prerequisite": "GAPILE",
+        "Repairable": "false",
+        "Selectable": "no",
+        "Sight": "1",
+        "Strength": "300",
+        "TechLevel": "1",
+        "ThreatPosed": "0",
+        "UIName": "Name:GAWALL",
+        "Wall": "yes"
+      },
+      "result": 1
+    },
+    {
+      "building_to_overlay": 605740848,
+      "file": "MPBattleMD.ini",
+      "physical_keys": null,
+      "result": 0
+    },
+    {
+      "building_to_overlay": 605740848,
+      "file": "Hills.map",
+      "physical_keys": null,
+      "result": 0
+    }
+  ],
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "native_theater_inputs": {
+    "boundary": "Original theater General/default stores and ordinal projection; imported native role globals. Only the declared ClearTile0 head is constructed in the joined map; no full theater/TMP world load.",
+    "mapping": {
+      "base": 0,
+      "boundary": "Native INI scalar/string reads; prefix accumulation is the supplied selected theater registration boundary.",
+      "file_name": "Clear",
+      "section": "TileSet0000",
+      "tile_id": 0,
+      "tiles_in_set": 1
+    },
+    "physical_general": {
+      "BlackTile": "6",
+      "BridgeBottomLeft1": "6",
+      "BridgeBottomLeft2": "6",
+      "BridgeBottomRight1": "3",
+      "BridgeBottomRight2": "3",
+      "BridgeMiddle1": "7",
+      "BridgeMiddle2": "12",
+      "BridgeSet": "19",
+      "BridgeTopLeft1": "1",
+      "BridgeTopLeft2": "2",
+      "BridgeTopRight1": "4",
+      "BridgeTopRight2": "5",
+      "ClearTile": "0",
+      "ClearToGreenLat": "42",
+      "ClearToPaveLat": "39",
+      "ClearToRoughLat": "14",
+      "ClearToSandLat": "34",
+      "CliffRamps": "25",
+      "CliffSet": "10",
+      "DestroyableCliffs": "56",
+      "DirtRoadCurve": "16",
+      "DirtRoadJunction": "17",
+      "DirtRoadSlopes": "23",
+      "DirtRoadStraight": "18",
+      "DirtTrackTunnels": "73",
+      "DirtTunnels": "72",
+      "GreenTile": "41",
+      "HeightBase": "52",
+      "Ice1Set": "31",
+      "Ice2Set": "32",
+      "IceShoreSet": "32",
+      "MMRampBase": "7",
+      "Medians": "40",
+      "MiscPaveTile": "38",
+      "MonorailSlopes": "48",
+      "PaveTile": "46",
+      "PavedRoadEnds": "36",
+      "PavedRoadSlopes": "47",
+      "PavedRoads": "20",
+      "RampBase": "9",
+      "RampSmooth": "43",
+      "RoughGround": "35",
+      "RoughTile": "13",
+      "SandTile": "33",
+      "ShorePieces": "12",
+      "SlopeSetPieces": "25",
+      "SlopeSetPieces2": "26",
+      "TrackTunnels": "55",
+      "TrainBridgeSet": "37",
+      "Tunnels": "53",
+      "WaterBridge": "76",
+      "WaterCaves": "57",
+      "WaterCliffs": "15",
+      "WaterSet": "21",
+      "WaterfallEast": "49",
+      "WaterfallNorth": "50",
+      "WaterfallSouth": "30",
+      "WaterfallWest": "51",
+      "WoodBridgeSet": "80"
+    },
+    "registered_tile_count": 838,
+    "roles": {
+      "0x00AA0748": 494,
+      "0x00AA0E18": 493,
+      "0x00AA0E20": 479,
+      "0x00AA0E24": 419,
+      "0x00AA1058": 510,
+      "0x00AA1090": 804,
+      "0x00AA10A4": 449,
+      "0x00AA10A8": 463,
+      "0x00AA10B0": 0,
+      "0x00AA1134": 132,
+      "0x00ABAD28": 89,
+      "0x00ABB104": 418,
+      "0x00ABBEC8": 293,
+      "0x00ABC1D8": 29,
+      "0x00ABC2B0": 534,
+      "0x00ABC2B8": 131
+    }
+  },
+  "native_wall_image_assets": [
+    {
+      "bytes": 87936,
+      "header8_hex": "00004e0046006000",
+      "name": "GTWALL.SHP",
+      "sha256": "23c35bc6da4e2f81cfaaae726ec431264d526303f788249c9e44087e1310b31a"
+    },
+    {
+      "bytes": 0,
+      "header8_hex": null,
+      "name": "WALLICON.SHP",
+      "sha256": null
+    },
+    {
+      "bytes": 87936,
+      "header8_hex": "00004e0046006000",
+      "name": "GTWALL.SHP",
+      "sha256": "23c35bc6da4e2f81cfaaae726ec431264d526303f788249c9e44087e1310b31a"
+    },
+    {
+      "bytes": 87936,
+      "header8_hex": "00004e0046006000",
+      "name": "GTWALL.SHP",
+      "sha256": "23c35bc6da4e2f81cfaaae726ec431264d526303f788249c9e44087e1310b31a"
+    },
+    {
+      "bytes": 0,
+      "header8_hex": null,
+      "name": "GAWALL.SHP",
+      "sha256": null
+    },
+    {
+      "bytes": 87936,
+      "header8_hex": "00004e0046006000",
+      "name": "GTWALL.SHP",
+      "sha256": "23c35bc6da4e2f81cfaaae726ec431264d526303f788249c9e44087e1310b31a"
+    }
+  ],
+  "object_states": [
+    {
+      "abstract_flags": 3,
+      "alive": 1,
+      "constructor_ax": 11032,
+      "health": 300,
+      "id": 4,
+      "kind": "building",
+      "limbo": 1,
+      "location": [
+        0,
+        0,
+        0
+      ],
+      "logic": 0,
+      "marked": 0,
+      "owner": "House:owner",
+      "passive_scan_timer": [
+        0,
+        0,
+        45
+      ],
+      "radio_capacity": 1,
+      "radio_contacts": [
+        0
+      ],
+      "raw_words_c0_cc": [
+        0,
+        0,
+        0
+      ],
+      "ref": "B0",
+      "sampled_health": 0,
+      "type": "BuildingType:GAWALL"
+    },
+    {
+      "abstract_flags": 3,
+      "alive": 0,
+      "constructor_ax": 11032,
+      "health": 300,
+      "id": 4,
+      "kind": "building",
+      "limbo": 1,
+      "location": [
+        0,
+        0,
+        0
+      ],
+      "logic": 0,
+      "marked": 0,
+      "owner": "House:owner",
+      "passive_scan_timer": [
+        0,
+        0,
+        45
+      ],
+      "radio_capacity": 1,
+      "radio_contacts": [
+        0
+      ],
+      "raw_words_c0_cc": [
+        0,
+        0,
+        0
+      ],
+      "ref": "B0",
+      "sampled_health": 0,
+      "type": "BuildingType:GAWALL"
+    },
+    {
+      "abstract_flags": 2,
+      "alive": 1,
+      "health": 255,
+      "id": 5,
+      "kind": "overlay",
+      "limbo": 1,
+      "location": [
+        0,
+        0,
+        0
+      ],
+      "logic": 0,
+      "marked": 0,
+      "ref": "O0",
+      "type": "OverlayType:GAWALL"
+    },
+    {
+      "abstract_flags": 2,
+      "alive": 0,
+      "health": 255,
+      "id": 5,
+      "kind": "overlay",
+      "limbo": 1,
+      "location": [
+        5248,
+        3456,
+        0
+      ],
+      "logic": 0,
+      "marked": 0,
+      "ref": "O0",
+      "type": "OverlayType:GAWALL"
+    },
+    {
+      "abstract_flags": 3,
+      "alive": 1,
+      "constructor_ax": 31910,
+      "health": 300,
+      "id": 6,
+      "kind": "building",
+      "limbo": 1,
+      "location": [
+        0,
+        0,
+        0
+      ],
+      "logic": 0,
+      "marked": 0,
+      "owner": "House:owner",
+      "passive_scan_timer": [
+        0,
+        0,
+        45
+      ],
+      "radio_capacity": 1,
+      "radio_contacts": [
+        0
+      ],
+      "raw_words_c0_cc": [
+        0,
+        0,
+        0
+      ],
+      "ref": "B1",
+      "sampled_health": 0,
+      "type": "BuildingType:GAWALL"
+    },
+    {
+      "abstract_flags": 3,
+      "alive": 0,
+      "constructor_ax": 31910,
+      "health": 300,
+      "id": 6,
+      "kind": "building",
+      "limbo": 1,
+      "location": [
+        0,
+        0,
+        0
+      ],
+      "logic": 0,
+      "marked": 0,
+      "owner": "House:owner",
+      "passive_scan_timer": [
+        0,
+        0,
+        45
+      ],
+      "radio_capacity": 1,
+      "radio_contacts": [
+        0
+      ],
+      "raw_words_c0_cc": [
+        0,
+        0,
+        0
+      ],
+      "ref": "B1",
+      "sampled_health": 0,
+      "type": "BuildingType:GAWALL"
+    },
+    {
+      "abstract_flags": 2,
+      "alive": 1,
+      "health": 255,
+      "id": 7,
+      "kind": "overlay",
+      "limbo": 1,
+      "location": [
+        0,
+        0,
+        0
+      ],
+      "logic": 0,
+      "marked": 0,
+      "ref": "O1",
+      "type": "OverlayType:GAWALL"
+    },
+    {
+      "abstract_flags": 2,
+      "alive": 0,
+      "health": 255,
+      "id": 7,
+      "kind": "overlay",
+      "limbo": 1,
+      "location": [
+        5248,
+        3712,
+        0
+      ],
+      "logic": 0,
+      "marked": 0,
+      "ref": "O1",
+      "type": "OverlayType:GAWALL"
+    },
+    {
+      "abstract_flags": 3,
+      "alive": 0,
+      "constructor_ax": 11032,
+      "health": 300,
+      "id": 4,
+      "kind": "building",
+      "limbo": 1,
+      "location": [
+        0,
+        0,
+        0
+      ],
+      "logic": 0,
+      "marked": 0,
+      "owner": 0,
+      "passive_scan_timer": [
+        0,
+        0,
+        45
+      ],
+      "radio_capacity": 0,
+      "radio_contacts": [],
+      "raw_words_c0_cc": [
+        0,
+        0,
+        0
+      ],
+      "ref": "B0",
+      "sampled_health": 0,
+      "type": 0
+    },
+    {
+      "abstract_flags": 2,
+      "alive": 0,
+      "health": 255,
+      "id": 5,
+      "kind": "overlay",
+      "limbo": 1,
+      "location": [
+        5248,
+        3456,
+        0
+      ],
+      "logic": 0,
+      "marked": 0,
+      "ref": "O0",
+      "type": 0
+    },
+    {
+      "abstract_flags": 3,
+      "alive": 0,
+      "constructor_ax": 31910,
+      "health": 300,
+      "id": 6,
+      "kind": "building",
+      "limbo": 1,
+      "location": [
+        0,
+        0,
+        0
+      ],
+      "logic": 0,
+      "marked": 0,
+      "owner": 0,
+      "passive_scan_timer": [
+        0,
+        0,
+        45
+      ],
+      "radio_capacity": 0,
+      "radio_contacts": [],
+      "raw_words_c0_cc": [
+        0,
+        0,
+        0
+      ],
+      "ref": "B1",
+      "sampled_health": 0,
+      "type": 0
+    },
+    {
+      "abstract_flags": 2,
+      "alive": 0,
+      "health": 255,
+      "id": 7,
+      "kind": "overlay",
+      "limbo": 1,
+      "location": [
+        5248,
+        3712,
+        0
+      ],
+      "logic": 0,
+      "marked": 0,
+      "ref": "O1",
+      "type": 0
+    },
+    {
+      "abstract_flags": 2,
+      "alive": 0,
+      "health": 255,
+      "id": 5,
+      "kind": "overlay",
+      "limbo": 1,
+      "location": [
+        5248,
+        2944,
+        0
+      ],
+      "logic": 0,
+      "marked": 0,
+      "ref": "O0",
+      "type": "OverlayType:GAWALL"
+    },
+    {
+      "abstract_flags": 3,
+      "alive": 1,
+      "constructor_ax": 54763,
+      "health": 300,
+      "id": 8,
+      "kind": "building",
+      "limbo": 1,
+      "location": [
+        0,
+        0,
+        0
+      ],
+      "logic": 0,
+      "marked": 0,
+      "owner": "House:owner",
+      "passive_scan_timer": [
+        0,
+        0,
+        45
+      ],
+      "radio_capacity": 1,
+      "radio_contacts": [
+        0
+      ],
+      "raw_words_c0_cc": [
+        0,
+        0,
+        0
+      ],
+      "ref": "B2",
+      "sampled_health": 0,
+      "type": "BuildingType:GAWALL"
+    },
+    {
+      "abstract_flags": 3,
+      "alive": 0,
+      "constructor_ax": 54763,
+      "health": 300,
+      "id": 8,
+      "kind": "building",
+      "limbo": 1,
+      "location": [
+        0,
+        0,
+        0
+      ],
+      "logic": 0,
+      "marked": 0,
+      "owner": "House:owner",
+      "passive_scan_timer": [
+        0,
+        0,
+        45
+      ],
+      "radio_capacity": 1,
+      "radio_contacts": [
+        0
+      ],
+      "raw_words_c0_cc": [
+        0,
+        0,
+        0
+      ],
+      "ref": "B2",
+      "sampled_health": 0,
+      "type": "BuildingType:GAWALL"
+    },
+    {
+      "abstract_flags": 2,
+      "alive": 1,
+      "health": 255,
+      "id": 9,
+      "kind": "overlay",
+      "limbo": 1,
+      "location": [
+        0,
+        0,
+        0
+      ],
+      "logic": 0,
+      "marked": 0,
+      "ref": "O2",
+      "type": "OverlayType:GAWALL"
+    },
+    {
+      "abstract_flags": 2,
+      "alive": 0,
+      "health": 255,
+      "id": 9,
+      "kind": "overlay",
+      "limbo": 1,
+      "location": [
+        5248,
+        3456,
+        0
+      ],
+      "logic": 0,
+      "marked": 0,
+      "ref": "O2",
+      "type": "OverlayType:GAWALL"
+    },
+    {
+      "abstract_flags": 3,
+      "alive": 1,
+      "constructor_ax": 37984,
+      "health": 300,
+      "id": 10,
+      "kind": "building",
+      "limbo": 1,
+      "location": [
+        0,
+        0,
+        0
+      ],
+      "logic": 0,
+      "marked": 0,
+      "owner": "House:owner",
+      "passive_scan_timer": [
+        0,
+        0,
+        45
+      ],
+      "radio_capacity": 1,
+      "radio_contacts": [
+        0
+      ],
+      "raw_words_c0_cc": [
+        0,
+        0,
+        0
+      ],
+      "ref": "B3",
+      "sampled_health": 0,
+      "type": "BuildingType:GAWALL"
+    },
+    {
+      "abstract_flags": 3,
+      "alive": 0,
+      "constructor_ax": 37984,
+      "health": 300,
+      "id": 10,
+      "kind": "building",
+      "limbo": 1,
+      "location": [
+        0,
+        0,
+        0
+      ],
+      "logic": 0,
+      "marked": 0,
+      "owner": "House:owner",
+      "passive_scan_timer": [
+        0,
+        0,
+        45
+      ],
+      "radio_capacity": 1,
+      "radio_contacts": [
+        0
+      ],
+      "raw_words_c0_cc": [
+        0,
+        0,
+        0
+      ],
+      "ref": "B3",
+      "sampled_health": 0,
+      "type": "BuildingType:GAWALL"
+    },
+    {
+      "abstract_flags": 2,
+      "alive": 1,
+      "health": 255,
+      "id": 11,
+      "kind": "overlay",
+      "limbo": 1,
+      "location": [
+        0,
+        0,
+        0
+      ],
+      "logic": 0,
+      "marked": 0,
+      "ref": "O3",
+      "type": "OverlayType:GAWALL"
+    },
+    {
+      "abstract_flags": 2,
+      "alive": 0,
+      "health": 255,
+      "id": 11,
+      "kind": "overlay",
+      "limbo": 1,
+      "location": [
+        5248,
+        3200,
+        0
+      ],
+      "logic": 0,
+      "marked": 0,
+      "ref": "O3",
+      "type": "OverlayType:GAWALL"
+    },
+    {
+      "abstract_flags": 2,
+      "alive": 0,
+      "health": 255,
+      "id": 5,
+      "kind": "overlay",
+      "limbo": 1,
+      "location": [
+        5248,
+        2944,
+        0
+      ],
+      "logic": 0,
+      "marked": 0,
+      "ref": "O0",
+      "type": 0
+    },
+    {
+      "abstract_flags": 3,
+      "alive": 0,
+      "constructor_ax": 54763,
+      "health": 300,
+      "id": 8,
+      "kind": "building",
+      "limbo": 1,
+      "location": [
+        0,
+        0,
+        0
+      ],
+      "logic": 0,
+      "marked": 0,
+      "owner": 0,
+      "passive_scan_timer": [
+        0,
+        0,
+        45
+      ],
+      "radio_capacity": 0,
+      "radio_contacts": [],
+      "raw_words_c0_cc": [
+        0,
+        0,
+        0
+      ],
+      "ref": "B2",
+      "sampled_health": 0,
+      "type": 0
+    },
+    {
+      "abstract_flags": 2,
+      "alive": 0,
+      "health": 255,
+      "id": 9,
+      "kind": "overlay",
+      "limbo": 1,
+      "location": [
+        5248,
+        3456,
+        0
+      ],
+      "logic": 0,
+      "marked": 0,
+      "ref": "O2",
+      "type": 0
+    },
+    {
+      "abstract_flags": 3,
+      "alive": 0,
+      "constructor_ax": 37984,
+      "health": 300,
+      "id": 10,
+      "kind": "building",
+      "limbo": 1,
+      "location": [
+        0,
+        0,
+        0
+      ],
+      "logic": 0,
+      "marked": 0,
+      "owner": 0,
+      "passive_scan_timer": [
+        0,
+        0,
+        45
+      ],
+      "radio_capacity": 0,
+      "radio_contacts": [],
+      "raw_words_c0_cc": [
+        0,
+        0,
+        0
+      ],
+      "ref": "B3",
+      "sampled_health": 0,
+      "type": 0
+    },
+    {
+      "abstract_flags": 2,
+      "alive": 0,
+      "health": 255,
+      "id": 11,
+      "kind": "overlay",
+      "limbo": 1,
+      "location": [
+        5248,
+        3200,
+        0
+      ],
+      "logic": 0,
+      "marked": 0,
+      "ref": "O3",
+      "type": 0
+    },
+    {
+      "abstract_flags": 2,
+      "alive": 0,
+      "health": 255,
+      "id": 5,
+      "kind": "overlay",
+      "limbo": 1,
+      "location": [
+        5248,
+        2688,
+        0
+      ],
+      "logic": 0,
+      "marked": 0,
+      "ref": "O0",
+      "type": "OverlayType:GAWALL"
+    },
+    {
+      "abstract_flags": 2,
+      "alive": 0,
+      "health": 255,
+      "id": 7,
+      "kind": "overlay",
+      "limbo": 1,
+      "location": [
+        5760,
+        3712,
+        0
+      ],
+      "logic": 0,
+      "marked": 0,
+      "ref": "O1",
+      "type": "OverlayType:GAWALL"
+    },
+    {
+      "abstract_flags": 2,
+      "alive": 0,
+      "health": 255,
+      "id": 9,
+      "kind": "overlay",
+      "limbo": 1,
+      "location": [
+        5248,
+        3712,
+        0
+      ],
+      "logic": 0,
+      "marked": 0,
+      "ref": "O2",
+      "type": "OverlayType:GAWALL"
+    },
+    {
+      "abstract_flags": 2,
+      "alive": 0,
+      "health": 255,
+      "id": 11,
+      "kind": "overlay",
+      "limbo": 1,
+      "location": [
+        5248,
+        3456,
+        0
+      ],
+      "logic": 0,
+      "marked": 0,
+      "ref": "O3",
+      "type": "OverlayType:GAWALL"
+    },
+    {
+      "abstract_flags": 3,
+      "alive": 1,
+      "constructor_ax": 21017,
+      "health": 300,
+      "id": 12,
+      "kind": "building",
+      "limbo": 1,
+      "location": [
+        0,
+        0,
+        0
+      ],
+      "logic": 0,
+      "marked": 0,
+      "owner": "House:owner",
+      "passive_scan_timer": [
+        0,
+        0,
+        45
+      ],
+      "radio_capacity": 1,
+      "radio_contacts": [
+        0
+      ],
+      "raw_words_c0_cc": [
+        0,
+        0,
+        0
+      ],
+      "ref": "B4",
+      "sampled_health": 0,
+      "type": "BuildingType:GAWALL"
+    },
+    {
+      "abstract_flags": 2,
+      "alive": 1,
+      "health": 255,
+      "id": 13,
+      "kind": "overlay",
+      "limbo": 1,
+      "location": [
+        0,
+        0,
+        0
+      ],
+      "logic": 0,
+      "marked": 0,
+      "ref": "O4",
+      "type": "OverlayType:GAWALL"
+    },
+    {
+      "abstract_flags": 2,
+      "alive": 0,
+      "health": 255,
+      "id": 13,
+      "kind": "overlay",
+      "limbo": 1,
+      "location": [
+        5248,
+        3200,
+        0
+      ],
+      "logic": 0,
+      "marked": 0,
+      "ref": "O4",
+      "type": "OverlayType:GAWALL"
+    },
+    {
+      "abstract_flags": 3,
+      "alive": 1,
+      "constructor_ax": 40365,
+      "health": 300,
+      "id": 14,
+      "kind": "building",
+      "limbo": 1,
+      "location": [
+        0,
+        0,
+        0
+      ],
+      "logic": 0,
+      "marked": 0,
+      "owner": "House:owner",
+      "passive_scan_timer": [
+        0,
+        0,
+        45
+      ],
+      "radio_capacity": 1,
+      "radio_contacts": [
+        0
+      ],
+      "raw_words_c0_cc": [
+        0,
+        0,
+        0
+      ],
+      "ref": "B5",
+      "sampled_health": 0,
+      "type": "BuildingType:GAWALL"
+    },
+    {
+      "abstract_flags": 3,
+      "alive": 0,
+      "constructor_ax": 40365,
+      "health": 300,
+      "id": 14,
+      "kind": "building",
+      "limbo": 1,
+      "location": [
+        0,
+        0,
+        0
+      ],
+      "logic": 0,
+      "marked": 0,
+      "owner": "House:owner",
+      "passive_scan_timer": [
+        0,
+        0,
+        45
+      ],
+      "radio_capacity": 1,
+      "radio_contacts": [
+        0
+      ],
+      "raw_words_c0_cc": [
+        0,
+        0,
+        0
+      ],
+      "ref": "B5",
+      "sampled_health": 0,
+      "type": "BuildingType:GAWALL"
+    },
+    {
+      "abstract_flags": 2,
+      "alive": 1,
+      "health": 255,
+      "id": 15,
+      "kind": "overlay",
+      "limbo": 1,
+      "location": [
+        0,
+        0,
+        0
+      ],
+      "logic": 0,
+      "marked": 0,
+      "ref": "O5",
+      "type": "OverlayType:GAWALL"
+    },
+    {
+      "abstract_flags": 2,
+      "alive": 0,
+      "health": 255,
+      "id": 15,
+      "kind": "overlay",
+      "limbo": 1,
+      "location": [
+        5248,
+        2944,
+        0
+      ],
+      "logic": 0,
+      "marked": 0,
+      "ref": "O5",
+      "type": "OverlayType:GAWALL"
+    },
+    {
+      "abstract_flags": 3,
+      "alive": 1,
+      "constructor_ax": 63235,
+      "health": 300,
+      "id": 16,
+      "kind": "building",
+      "limbo": 1,
+      "location": [
+        0,
+        0,
+        0
+      ],
+      "logic": 0,
+      "marked": 0,
+      "owner": "House:owner",
+      "passive_scan_timer": [
+        0,
+        0,
+        45
+      ],
+      "radio_capacity": 1,
+      "radio_contacts": [
+        0
+      ],
+      "raw_words_c0_cc": [
+        0,
+        0,
+        0
+      ],
+      "ref": "B6",
+      "sampled_health": 0,
+      "type": "BuildingType:GAWALL"
+    },
+    {
+      "abstract_flags": 3,
+      "alive": 0,
+      "constructor_ax": 63235,
+      "health": 300,
+      "id": 16,
+      "kind": "building",
+      "limbo": 1,
+      "location": [
+        0,
+        0,
+        0
+      ],
+      "logic": 0,
+      "marked": 0,
+      "owner": "House:owner",
+      "passive_scan_timer": [
+        0,
+        0,
+        45
+      ],
+      "radio_capacity": 1,
+      "radio_contacts": [
+        0
+      ],
+      "raw_words_c0_cc": [
+        0,
+        0,
+        0
+      ],
+      "ref": "B6",
+      "sampled_health": 0,
+      "type": "BuildingType:GAWALL"
+    },
+    {
+      "abstract_flags": 2,
+      "alive": 1,
+      "health": 255,
+      "id": 17,
+      "kind": "overlay",
+      "limbo": 1,
+      "location": [
+        0,
+        0,
+        0
+      ],
+      "logic": 0,
+      "marked": 0,
+      "ref": "O6",
+      "type": "OverlayType:GAWALL"
+    },
+    {
+      "abstract_flags": 2,
+      "alive": 0,
+      "health": 255,
+      "id": 17,
+      "kind": "overlay",
+      "limbo": 1,
+      "location": [
+        5504,
+        3712,
+        0
+      ],
+      "logic": 0,
+      "marked": 0,
+      "ref": "O6",
+      "type": "OverlayType:GAWALL"
+    },
+    {
+      "abstract_flags": 2,
+      "alive": 0,
+      "health": 255,
+      "id": 5,
+      "kind": "overlay",
+      "limbo": 1,
+      "location": [
+        5248,
+        2688,
+        0
+      ],
+      "logic": 0,
+      "marked": 0,
+      "ref": "O0",
+      "type": 0
+    },
+    {
+      "abstract_flags": 2,
+      "alive": 0,
+      "health": 255,
+      "id": 7,
+      "kind": "overlay",
+      "limbo": 1,
+      "location": [
+        5760,
+        3712,
+        0
+      ],
+      "logic": 0,
+      "marked": 0,
+      "ref": "O1",
+      "type": 0
+    },
+    {
+      "abstract_flags": 2,
+      "alive": 0,
+      "health": 255,
+      "id": 9,
+      "kind": "overlay",
+      "limbo": 1,
+      "location": [
+        5248,
+        3712,
+        0
+      ],
+      "logic": 0,
+      "marked": 0,
+      "ref": "O2",
+      "type": 0
+    },
+    {
+      "abstract_flags": 2,
+      "alive": 0,
+      "health": 255,
+      "id": 11,
+      "kind": "overlay",
+      "limbo": 1,
+      "location": [
+        5248,
+        3456,
+        0
+      ],
+      "logic": 0,
+      "marked": 0,
+      "ref": "O3",
+      "type": 0
+    },
+    {
+      "abstract_flags": 2,
+      "alive": 0,
+      "health": 255,
+      "id": 13,
+      "kind": "overlay",
+      "limbo": 1,
+      "location": [
+        5248,
+        3200,
+        0
+      ],
+      "logic": 0,
+      "marked": 0,
+      "ref": "O4",
+      "type": 0
+    },
+    {
+      "abstract_flags": 3,
+      "alive": 0,
+      "constructor_ax": 40365,
+      "health": 300,
+      "id": 14,
+      "kind": "building",
+      "limbo": 1,
+      "location": [
+        0,
+        0,
+        0
+      ],
+      "logic": 0,
+      "marked": 0,
+      "owner": 0,
+      "passive_scan_timer": [
+        0,
+        0,
+        45
+      ],
+      "radio_capacity": 0,
+      "radio_contacts": [],
+      "raw_words_c0_cc": [
+        0,
+        0,
+        0
+      ],
+      "ref": "B5",
+      "sampled_health": 0,
+      "type": 0
+    },
+    {
+      "abstract_flags": 2,
+      "alive": 0,
+      "health": 255,
+      "id": 15,
+      "kind": "overlay",
+      "limbo": 1,
+      "location": [
+        5248,
+        2944,
+        0
+      ],
+      "logic": 0,
+      "marked": 0,
+      "ref": "O5",
+      "type": 0
+    },
+    {
+      "abstract_flags": 3,
+      "alive": 0,
+      "constructor_ax": 63235,
+      "health": 300,
+      "id": 16,
+      "kind": "building",
+      "limbo": 1,
+      "location": [
+        0,
+        0,
+        0
+      ],
+      "logic": 0,
+      "marked": 0,
+      "owner": 0,
+      "passive_scan_timer": [
+        0,
+        0,
+        45
+      ],
+      "radio_capacity": 0,
+      "radio_contacts": [],
+      "raw_words_c0_cc": [
+        0,
+        0,
+        0
+      ],
+      "ref": "B6",
+      "sampled_health": 0,
+      "type": 0
+    },
+    {
+      "abstract_flags": 2,
+      "alive": 0,
+      "health": 255,
+      "id": 17,
+      "kind": "overlay",
+      "limbo": 1,
+      "location": [
+        5504,
+        3712,
+        0
+      ],
+      "logic": 0,
+      "marked": 0,
+      "ref": "O6",
+      "type": 0
+    }
+  ],
+  "overlay_registry_names": [
+    "GASAND",
+    "CYCL",
+    "GAWALL",
+    "BARB",
+    "WOOD",
+    "DUMMY",
+    "DUMMY2",
+    "DUMMY3",
+    "DUMMY4",
+    "DUMMY5",
+    "DUMMY6",
+    "DUMMY7",
+    "DUMMY8",
+    "DUMMY9",
+    "DUMMY10",
+    "DUMMY11",
+    "DUMMY12",
+    "V16",
+    "V17",
+    "V18",
+    "DUMMY13",
+    "DUMMY14",
+    "FENC",
+    "DUMMY15",
+    "BRIDGE1",
+    "BRIDGE2",
+    "NAWALL",
+    "GEM01",
+    "GEM02",
+    "GEM03",
+    "GEM04",
+    "GEM05",
+    "GEM06",
+    "GEM07",
+    "GEM08",
+    "GEM09",
+    "GEM10",
+    "GEM11",
+    "GEM12",
+    "TRACKS01",
+    "TRACKS02",
+    "TRACKS03",
+    "TRACKS04",
+    "TRACKS05",
+    "TRACKS06",
+    "TRACKS07",
+    "TRACKS08",
+    "TRACKS09",
+    "TRACKS10",
+    "TRACKS11",
+    "TRACKS12",
+    "TRACKS13",
+    "TRACKS14",
+    "TRACKS15",
+    "TRACKS16",
+    "TRACKTUNNEL01",
+    "TRACKTUNNEL02",
+    "TRACKTUNNEL03",
+    "TRACKTUNNEL04",
+    "RAILBRDG1",
+    "RAILBRDG2",
+    "CRAT01",
+    "CRAT02",
+    "CRAT03",
+    "CRAT04",
+    "CRAT0A",
+    "CRAT0B",
+    "CRAT0C",
+    "DRUM01",
+    "DRUM02",
+    "PALET01",
+    "PALET02",
+    "PALET03",
+    "PALET04",
+    "LOBRDG01",
+    "LOBRDG02",
+    "LOBRDG03",
+    "LOBRDG04",
+    "LOBRDG05",
+    "LOBRDG06",
+    "LOBRDG07",
+    "LOBRDG08",
+    "LOBRDG09",
+    "LOBRDG10",
+    "LOBRDG11",
+    "LOBRDG12",
+    "LOBRDG13",
+    "LOBRDG14",
+    "LOBRDG15",
+    "LOBRDG16",
+    "LOBRDG17",
+    "LOBRDG18",
+    "LOBRDG19",
+    "LOBRDG20",
+    "LOBRDG21",
+    "LOBRDG22",
+    "LOBRDG23",
+    "LOBRDG24",
+    "LOBRDG25",
+    "LOBRDG26",
+    "LOBRDG27",
+    "LOBRDG28",
+    "TIB01",
+    "TIB02",
+    "TIB03",
+    "TIB04",
+    "TIB05",
+    "TIB06",
+    "TIB07",
+    "TIB08",
+    "TIB09",
+    "TIB10",
+    "TIB11",
+    "TIB12",
+    "TIB13",
+    "TIB14",
+    "TIB15",
+    "TIB16",
+    "TIB17",
+    "TIB18",
+    "TIB19",
+    "TIB20",
+    "LOBRDGE1",
+    "LOBRDGE2",
+    "LOBRDGE3",
+    "LOBRDGE4",
+    "DUMMYOLD",
+    "TIB2_01",
+    "TIB2_02",
+    "TIB2_03",
+    "TIB2_04",
+    "TIB2_05",
+    "TIB2_06",
+    "TIB2_07",
+    "TIB2_08",
+    "TIB2_09",
+    "TIB2_10",
+    "TIB2_11",
+    "TIB2_12",
+    "TIB2_13",
+    "TIB2_14",
+    "TIB2_15",
+    "TIB2_16",
+    "TIB2_17",
+    "TIB2_18",
+    "TIB2_19",
+    "TIB2_20",
+    "TIB3_01",
+    "TIB3_02",
+    "TIB3_03",
+    "TIB3_04",
+    "TIB3_05",
+    "TIB3_06",
+    "TIB3_07",
+    "TIB3_08",
+    "TIB3_09",
+    "TIB3_10",
+    "TIB3_11",
+    "TIB3_12",
+    "TIB3_13",
+    "TIB3_14",
+    "TIB3_15",
+    "TIB3_16",
+    "TIB3_17",
+    "TIB3_18",
+    "TIB3_19",
+    "TIB3_20",
+    "USELESS",
+    "SROCK01",
+    "SROCK02",
+    "SROCK03",
+    "SROCK04",
+    "SROCK05",
+    "TROCK01",
+    "TROCK02",
+    "TROCK03",
+    "TROCK04",
+    "TROCK05",
+    "VEINHOLEDUMMY",
+    "CRATE",
+    "FENCE01",
+    "FENCE02",
+    "FENCE03",
+    "FENCE04",
+    "FENCE05",
+    "FENCE06",
+    "FENCE07",
+    "FENCE08",
+    "FENCE09",
+    "FENCE10",
+    "FENCE11",
+    "FENCE12",
+    "FENCE13",
+    "FENCE14",
+    "FENCE15",
+    "FENCE16",
+    "FENCE17",
+    "FENCE18",
+    "FENCE19",
+    "FENCE20",
+    "FENCE21",
+    "FENCE22",
+    "GAWRONG",
+    "CAFNCB",
+    "CAFNCW",
+    "LOBRDB01",
+    "LOBRDB02",
+    "LOBRDB03",
+    "LOBRDB04",
+    "LOBRDB05",
+    "LOBRDB06",
+    "LOBRDB07",
+    "LOBRDB08",
+    "LOBRDB09",
+    "LOBRDB10",
+    "LOBRDB11",
+    "LOBRDB12",
+    "LOBRDB13",
+    "LOBRDB14",
+    "LOBRDB15",
+    "LOBRDB16",
+    "LOBRDB17",
+    "LOBRDB18",
+    "LOBRDB19",
+    "LOBRDB20",
+    "LOBRDB21",
+    "LOBRDB22",
+    "LOBRDB23",
+    "LOBRDB24",
+    "LOBRDB25",
+    "LOBRDB26",
+    "LOBRDB27",
+    "LOBRDB28",
+    "LOBRDGB1",
+    "LOBRDGB2",
+    "LOBRDGB3",
+    "LOBRDGB4",
+    "BRIDGEB1",
+    "BRIDGEB2",
+    "RUBBLE_OVERLAY",
+    "CAKRMW",
+    "CAFNCP",
+    "WCRATE",
+    "GAFWLL",
+    "LUNRK1",
+    "LUNRK2",
+    "LUNRK3",
+    "LUNRK4",
+    "LUNRK5",
+    "LUNRK6"
+  ],
+  "patch_fields": [
+    "tile",
+    "land",
+    "level",
+    "slope",
+    "overlay",
+    "data",
+    "owner",
+    "retained_neighbor",
+    "flags",
+    "ground_frame",
+    "ground_raw",
+    "deck_raw",
+    "ground_head"
+  ],
+  "patch_values": [
+    [
+      0,
+      0,
+      0,
+      0,
+      -1,
+      0,
+      0,
+      1,
+      24,
+      -1,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      2,
+      0,
+      0,
+      0,
+      24,
+      -1,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      -1,
+      0,
+      0,
+      0,
+      24,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      -1,
+      0,
+      0,
+      2,
+      24,
+      -1,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      2,
+      4,
+      0,
+      1,
+      24,
+      -1,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      2,
+      1,
+      0,
+      1,
+      24,
+      -1,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      -1,
+      0,
+      0,
+      3,
+      24,
+      -1,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      2,
+      5,
+      0,
+      2,
+      24,
+      -1,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      7,
+      0,
+      0,
+      -1,
+      0,
+      0,
+      0,
+      24,
+      0,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      7,
+      0,
+      0,
+      -1,
+      0,
+      0,
+      2,
+      24,
+      -1,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      2,
+      4,
+      0,
+      2,
+      24,
+      -1,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      -1,
+      0,
+      0,
+      4,
+      24,
+      -1,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      2,
+      3,
+      0,
+      2,
+      24,
+      -1,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      2,
+      10,
+      0,
+      3,
+      24,
+      -1,
+      0,
+      0,
+      0
+    ],
+    [
+      0,
+      0,
+      0,
+      0,
+      2,
+      8,
+      0,
+      1,
+      24,
+      -1,
+      0,
+      0,
+      0
+    ]
+  ],
+  "phases": [
+    "setup_wall_1_unlimbo",
+    "whole_autofill_588750",
+    "autofill_deferred_drain",
+    "setup_wall_2_unlimbo"
+  ],
+  "physical_art": {
+    "Cameo": "WALLICON",
+    "DamageLevels": "3",
+    "Foundation": "1x1",
+    "NewTheater": "yes",
+    "ToOverlay": "GAWALL"
+  },
+  "retail_files": [
+    {
+      "bytes": 48,
+      "name": "120MM.SHP",
+      "sha256": "4c98740538c483eb9ff631d852b2a963eb08928763f1d8383e8098e3a5d6ab3b"
+    },
+    {
+      "bytes": 336535,
+      "name": "ARTMD.INI",
+      "sha256": "e1f0378394313c04ebbd5073f47785ee3e46f1b3c62d65724e8f3c310ee7ba31"
+    },
+    {
+      "bytes": 2672,
+      "name": "CTMISC03.SHP",
+      "sha256": "2bcef904fd968c5bf400e436e5c195000612e174313c810de9c650f5ac4d9161"
+    },
+    {
+      "bytes": 1728,
+      "name": "DBRIS1LG.SHP",
+      "sha256": "e45eee6368cc397d13b56dff989d5695cd605212a0055e64cadbb988a57d8f9f"
+    },
+    {
+      "bytes": 1536,
+      "name": "DBRIS1SM.SHP",
+      "sha256": "9f39db7add44a9d3ac33c5025705c0511b63ba3313d531074432ee88c4c4e422"
+    },
+    {
+      "bytes": 2600,
+      "name": "DBRIS4LG.SHP",
+      "sha256": "4262df2a6f4aaf5600c6a726f2b977fbbfc8f8824ba79b4857af0b06a4743bcc"
+    },
+    {
+      "bytes": 2824,
+      "name": "DBRIS4SM.SHP",
+      "sha256": "81cf49b9f7849b69c71e92844ece9c4494e329abf718edc8fd80c7dc66f299ca"
+    },
+    {
+      "bytes": 2104,
+      "name": "DBRIS5LG.SHP",
+      "sha256": "db855e5306685a81310789fc3f3ade6e25bc8be36efb05cca38db5323654737d"
+    },
+    {
+      "bytes": 1536,
+      "name": "DBRIS5SM.SHP",
+      "sha256": "df75d0676499c700358f36377f1b042577ffef82ea38ee871249cdfebf15b432"
+    },
+    {
+      "bytes": 114032,
+      "name": "ENGINEER.SHP",
+      "sha256": "f8eb0dc0156a877028ac2ed57bf2e71a9445ffcb6ef6a4caf3b0dbb7b111834c"
+    },
+    {
+      "bytes": 6344,
+      "name": "GGCNST_A.SHP",
+      "sha256": "f7ddb3c50e2a44894db6d0e6b455ba57a6c252eec3b4daba79363daa04135559"
+    },
+    {
+      "bytes": 320968,
+      "name": "GGCNST_B.SHP",
+      "sha256": "aa037ee1329c2ea6db5275485c0d864554452f2f4b871a4f2c5d38e2f3f8fe25"
+    },
+    {
+      "bytes": 23584,
+      "name": "GGPILE_A.SHP",
+      "sha256": "37bd29c741fbe235411c8416e78abd41a59c57f935f60a4fbf091e501462c23e"
+    },
+    {
+      "bytes": 49480,
+      "name": "GGPOWR_A.SHP",
+      "sha256": "4761e4c39be2683362baa8987fbbcff9ab0deacda75344848b9427e84c621724"
+    },
+    {
+      "bytes": 186032,
+      "name": "GI.SHP",
+      "sha256": "bceaee9c270d6382d80d509f2c4b2893c10565f779096b3add37a4d5321e8be1"
+    },
+    {
+      "bytes": 428080,
+      "name": "GTCNSTMK.SHP",
+      "sha256": "cfefb3b412c48ffd57852ec4e22b1109affdaac62b3061e2a58a7c071daeed46"
+    },
+    {
+      "bytes": 181888,
+      "name": "GTPILEMK.SHP",
+      "sha256": "bacb42b4048a5077101c6f35fb403a1835def1348567aafb67356f52b6c92297"
+    },
+    {
+      "bytes": 101960,
+      "name": "GTPOWRMK.SHP",
+      "sha256": "0ae9b81804b725ff662a56c81d23b3af031d66ac273554651bb0ccf189fdc873"
+    },
+    {
+      "bytes": 87936,
+      "name": "GTWALL.SHP",
+      "sha256": "23c35bc6da4e2f81cfaaae726ec431264d526303f788249c9e44087e1310b31a"
+    },
+    {
+      "bytes": 792,
+      "name": "GUNFIRE.SHP",
+      "sha256": "863ad6a6a184f8ca1863ea1546af75972f0af973c36efa7e270575ae28a161e9"
+    },
+    {
+      "bytes": 144458,
+      "name": "Hills.map",
+      "sha256": "780d5d6e6d3c81ac0d510a5df326848dd426b3d840ac290114f44faf8eab9e9e"
+    },
+    {
+      "bytes": 144760,
+      "name": "Hills.mmx",
+      "sha256": "96de259a741f1fc4d0d4bc4de1a1582755e90a77c2404978814149113fc42f22"
+    },
+    {
+      "bytes": 295,
+      "name": "MPBattleMD.ini",
+      "sha256": "50406e81d7523f6be1954daab6b25bd85a8347c455f3d53dcf515d7f719b4963"
+    },
+    {
+      "bytes": 743215,
+      "name": "RULESMD.INI",
+      "sha256": "3d341ef8a13a4b5ab24af2eef48ac94931ac2bb87d950fe3330a07e2d25672ef"
+    },
+    {
+      "bytes": 2488,
+      "name": "SMOKEY2.SHP",
+      "sha256": "52f6faf0f78607bb4215c8c22a502c516dbbe0a5734440229f1c9ea4290f30ea"
+    },
+    {
+      "bytes": 99392,
+      "name": "SOUNDMD.INI",
+      "sha256": "0a8e85381aef1a0f97074c953bfe99504da00c6220fae1a023a1afd857023232"
+    },
+    {
+      "bytes": 65744,
+      "name": "S_BANG48.SHP",
+      "sha256": "653bd2cfd875bf71ddb8b0ce48f5855a65869eede7d510bacd4f11cf0a3535c1"
+    },
+    {
+      "bytes": 21544,
+      "name": "S_BRNL58.SHP",
+      "sha256": "ed2a252d2479facadd219496c9a4d47165b9e52857e239633a62b1a6cfa5d986"
+    },
+    {
+      "bytes": 6088,
+      "name": "S_CLSN16.SHP",
+      "sha256": "771b2c8f180dc29d6296cd96084425bdb4323c708aa133fe1e339eb0b2d2d3da"
+    },
+    {
+      "bytes": 9536,
+      "name": "S_CLSN22.SHP",
+      "sha256": "4217fa39c3c970fa718c8e16d500a6bf39ecdb72c1dd7df21a1a6271abb0a294"
+    },
+    {
+      "bytes": 77960,
+      "name": "S_CLSN58.SHP",
+      "sha256": "8a976413360cd20392bab3b98ec2dafa82c123a4aee4dfee13a3d9e05d019e37"
+    },
+    {
+      "bytes": 66672,
+      "name": "S_TUMU60.SHP",
+      "sha256": "9a22506695d0a7cb6b94058100b40bb11e52ca3c24987c9bc962af590d90c2fb"
+    },
+    {
+      "bytes": 25269,
+      "name": "TEMPERATMD.INI",
+      "sha256": "bf656852ad19636068f2dde6f9ddd1440ecf0e13e6e4de6cd7fb179a3592549d"
+    },
+    {
+      "bytes": 7120,
+      "name": "TWLT026.SHP",
+      "sha256": "ceef1aadc2ad3dcd11755b065631836e154041060b3fd3ec09ceb73173d089a7"
+    },
+    {
+      "bytes": 12024,
+      "name": "TWLT036.SHP",
+      "sha256": "9e210bc3ccd550439fc96e46b9db2f494a18b6ac2b6ff6f953ec42597a3eadee"
+    },
+    {
+      "bytes": 95472,
+      "name": "TWLT070.SHP",
+      "sha256": "2b48d44f23c91591f8b905fbbc9bfcb584e0069784d7472212d6a5e3df5fcd2f"
+    },
+    {
+      "bytes": 37625632,
+      "name": "audio.bag",
+      "sha256": "8917fb579eb9f312b09f626e8b6b085958a36d0aa86b4e7db3f4cfb87016f69f"
+    },
+    {
+      "bytes": 82272,
+      "name": "audio.idx",
+      "sha256": "b3be1ac75032d062dce3d7415cb7dbe7ceec0b479bc6450241dee3148b7c12c1"
+    }
+  ],
+  "rng_streams": [
+    "0000000000000000670000007d8d3bb774572455b434a5f30ce9e4f005a0e3b4758cdee8a6bbbcc84508d168b73af1642547b1baa1f60a2bee68538bb5c0422d7371cdea5cd358054a832e0b2513295b2fa6c22ddebf08382d79e5590794753d08a63e9f81a42283e74aee997f69b520dde807ff718dfb6e36926ec78425ae2e85e645ac85f787b5fc95b15362269ce187ca057a03f779933bcb1c6e207782d8ad5a4d904c590afb1b8d491b7996901ef35ad76acbf963ea662f651f59a2b7c0935cfb3e714bdcfabb9fc0bc485677c09a8b78a9baae0c3c44a06c2de7c3320a0e238449f12a0fb0494ce64229262e65fc3a05dc5c3106a80d7662e4fa0e825879ef2b335f641a63c47cbc47cc076256f953aa0fc5b6ee6a143abe13f4f838ec925e06a2e86fd641be52f5c9f0fa224e4572d4aa75f3bf2e89568d90e2d5ce80ed080c147de64a410eac7e76ae1d40d7d5c0d5a498705ed9d4f7a366265fb40a884bfa3b2f52bb09d2363fa82ec68b26f914a2264818e776c84f631235c25530493f97055f97f6749a66bb5822c2d8842e72d06ab30490581a17f48b767f9ff2e17257f9a6896eeb2ef4f8cfe1fe7dddac1f0277aa9577a9ee7585b21518b6cabfe9f3a1e895bce9b4cde34b0943ea94850845280bbeea4dbcee783a7fc96867bf456cf26ad773bee474d851d17ea98be8d5c502cba200fd8a144ac8ca52223203574ff1f74b8175b98f937916f85049919d4ab1fe175d98569828d29836f3e362496b458584bf80b2a6abd08935d9bfae3247fe3731a19951e89a09f583cd24b33fc310f5acbbac56615cc6f5a4e5b32b91a769e34d6be26bd1e11edb2e397109862492c9412e4a79fe6ee0ae98df206f7b94d559a2485b6f57589f631fc6265c040896cb81f8ffc789c16eabb99d80939e64fa257641dc2cba6e7ff47b640517f85cd89f41b8f6476b8a17714969bf7c900f0e9eb6e81f672d0140803403302739e4c708113faa50152f09cd9349c15e15c4882ec108a0eba147524827c1397100c787ac53db5a626ae2b2055c4182a7ddc0665e0dfc6ba9ec12b9d509a86b1be4c61c8d0ecfe1025617b35a13a7ff5158d8b0399b7708ab07724738060a6fb9cfc3f02c8e18c12c84c45380378305b44513d23ab0e97aafa0edd10d0da130b9edda65a3785144a37bbead9a326c05585309ee3c0e3be6b9ecf8fdce1a1ddef39f181d9cfd8f52177bc90d2ac6f9b89d7e1763be0e61ce30418bddde52e4df6e98046dfd0ff036f03a1af83be02c34c0e78b1480aaba74da45871d1d18f3c65059ec2ef905a09b62fb796f8996c3f9081f445e6c28119e2d72223bb105a063cc9f438de40254f6b99c237b928a10dcb6f25f93400b1222bc2f1f91197c70336006f15798cf23b09a7820b123e71776aab17a49",
+    "00000000040000006b0000005379c37895a95988182ba784a67c935905a0e3b4758cdee8a6bbbcc84508d168b73af1642547b1baa1f60a2bee68538bb5c0422d7371cdea5cd358054a832e0b2513295b2fa6c22ddebf08382d79e5590794753d08a63e9f81a42283e74aee997f69b520dde807ff718dfb6e36926ec78425ae2e85e645ac85f787b5fc95b15362269ce187ca057a03f779933bcb1c6e207782d8ad5a4d904c590afb1b8d491b7996901ef35ad76acbf963ea662f651f59a2b7c0935cfb3e714bdcfabb9fc0bc485677c09a8b78a9baae0c3c44a06c2de7c3320a0e238449f12a0fb0494ce64229262e65fc3a05dc5c3106a80d7662e4fa0e825879ef2b335f641a63c47cbc47cc076256f953aa0fc5b6ee6a143abe13f4f838ec925e06a2e86fd641be52f5c9f0fa224e4572d4aa75f3bf2e89568d90e2d5ce80ed080c147de64a410eac7e76ae1d40d7d5c0d5a498705ed9d4f7a366265fb40a884bfa3b2f52bb09d2363fa82ec68b26f914a2264818e776c84f631235c25530493f97055f97f6749a66bb5822c2d8842e72d06ab30490581a17f48b767f9ff2e17257f9a6896eeb2ef4f8cfe1fe7dddac1f0277aa9577a9ee7585b21518b6cabfe9f3a1e895bce9b4cde34b0943ea94850845280bbeea4dbcee783a7fc96867bf456cf26ad773bee474d851d17ea98be8d5c502cba200fd8a144ac8ca52223203574ff1f74b8175b98f937916f85049919d4ab1fe175d98569828d29836f3e362496b458584bf80b2a6abd08935d9bfae3247fe3731a19951e89a09f583cd24b33fc310f5acbbac56615cc6f5a4e5b32b91a769e34d6be26bd1e11edb2e397109862492c9412e4a79fe6ee0ae98df206f7b94d559a2485b6f57589f631fc6265c040896cb81f8ffc789c16eabb99d80939e64fa257641dc2cba6e7ff47b640517f85cd89f41b8f6476b8a17714969bf7c900f0e9eb6e81f672d0140803403302739e4c708113faa50152f09cd9349c15e15c4882ec108a0eba147524827c1397100c787ac53db5a626ae2b2055c4182a7ddc0665e0dfc6ba9ec12b9d509a86b1be4c61c8d0ecfe1025617b35a13a7ff5158d8b0399b7708ab07724738060a6fb9cfc3f02c8e18c12c84c45380378305b44513d23ab0e97aafa0edd10d0da130b9edda65a3785144a37bbead9a326c05585309ee3c0e3be6b9ecf8fdce1a1ddef39f181d9cfd8f52177bc90d2ac6f9b89d7e1763be0e61ce30418bddde52e4df6e98046dfd0ff036f03a1af83be02c34c0e78b1480aaba74da45871d1d18f3c65059ec2ef905a09b62fb796f8996c3f9081f445e6c28119e2d72223bb105a063cc9f438de40254f6b99c237b928a10dcb6f25f93400b1222bc2f1f91197c70336006f15798cf23b09a7820b123e71776aab17a49",
+    "00000000060000006d0000005379c37895a95988182ba784a67c9359ebd5660660946822a6bbbcc84508d168b73af1642547b1baa1f60a2bee68538bb5c0422d7371cdea5cd358054a832e0b2513295b2fa6c22ddebf08382d79e5590794753d08a63e9f81a42283e74aee997f69b520dde807ff718dfb6e36926ec78425ae2e85e645ac85f787b5fc95b15362269ce187ca057a03f779933bcb1c6e207782d8ad5a4d904c590afb1b8d491b7996901ef35ad76acbf963ea662f651f59a2b7c0935cfb3e714bdcfabb9fc0bc485677c09a8b78a9baae0c3c44a06c2de7c3320a0e238449f12a0fb0494ce64229262e65fc3a05dc5c3106a80d7662e4fa0e825879ef2b335f641a63c47cbc47cc076256f953aa0fc5b6ee6a143abe13f4f838ec925e06a2e86fd641be52f5c9f0fa224e4572d4aa75f3bf2e89568d90e2d5ce80ed080c147de64a410eac7e76ae1d40d7d5c0d5a498705ed9d4f7a366265fb40a884bfa3b2f52bb09d2363fa82ec68b26f914a2264818e776c84f631235c25530493f97055f97f6749a66bb5822c2d8842e72d06ab30490581a17f48b767f9ff2e17257f9a6896eeb2ef4f8cfe1fe7dddac1f0277aa9577a9ee7585b21518b6cabfe9f3a1e895bce9b4cde34b0943ea94850845280bbeea4dbcee783a7fc96867bf456cf26ad773bee474d851d17ea98be8d5c502cba200fd8a144ac8ca52223203574ff1f74b8175b98f937916f85049919d4ab1fe175d98569828d29836f3e362496b458584bf80b2a6abd08935d9bfae3247fe3731a19951e89a09f583cd24b33fc310f5acbbac56615cc6f5a4e5b32b91a769e34d6be26bd1e11edb2e397109862492c9412e4a79fe6ee0ae98df206f7b94d559a2485b6f57589f631fc6265c040896cb81f8ffc789c16eabb99d80939e64fa257641dc2cba6e7ff47b640517f85cd89f41b8f6476b8a17714969bf7c900f0e9eb6e81f672d0140803403302739e4c708113faa50152f09cd9349c15e15c4882ec108a0eba147524827c1397100c787ac53db5a626ae2b2055c4182a7ddc0665e0dfc6ba9ec12b9d509a86b1be4c61c8d0ecfe1025617b35a13a7ff5158d8b0399b7708ab07724738060a6fb9cfc3f02c8e18c12c84c45380378305b44513d23ab0e97aafa0edd10d0da130b9edda65a3785144a37bbead9a326c05585309ee3c0e3be6b9ecf8fdce1a1ddef39f181d9cfd8f52177bc90d2ac6f9b89d7e1763be0e61ce30418bddde52e4df6e98046dfd0ff036f03a1af83be02c34c0e78b1480aaba74da45871d1d18f3c65059ec2ef905a09b62fb796f8996c3f9081f445e6c28119e2d72223bb105a063cc9f438de40254f6b99c237b928a10dcb6f25f93400b1222bc2f1f91197c70336006f15798cf23b09a7820b123e71776aab17a49",
+    "00000000050000006c0000005379c37895a95988182ba784a67c9359ebd56606758cdee8a6bbbcc84508d168b73af1642547b1baa1f60a2bee68538bb5c0422d7371cdea5cd358054a832e0b2513295b2fa6c22ddebf08382d79e5590794753d08a63e9f81a42283e74aee997f69b520dde807ff718dfb6e36926ec78425ae2e85e645ac85f787b5fc95b15362269ce187ca057a03f779933bcb1c6e207782d8ad5a4d904c590afb1b8d491b7996901ef35ad76acbf963ea662f651f59a2b7c0935cfb3e714bdcfabb9fc0bc485677c09a8b78a9baae0c3c44a06c2de7c3320a0e238449f12a0fb0494ce64229262e65fc3a05dc5c3106a80d7662e4fa0e825879ef2b335f641a63c47cbc47cc076256f953aa0fc5b6ee6a143abe13f4f838ec925e06a2e86fd641be52f5c9f0fa224e4572d4aa75f3bf2e89568d90e2d5ce80ed080c147de64a410eac7e76ae1d40d7d5c0d5a498705ed9d4f7a366265fb40a884bfa3b2f52bb09d2363fa82ec68b26f914a2264818e776c84f631235c25530493f97055f97f6749a66bb5822c2d8842e72d06ab30490581a17f48b767f9ff2e17257f9a6896eeb2ef4f8cfe1fe7dddac1f0277aa9577a9ee7585b21518b6cabfe9f3a1e895bce9b4cde34b0943ea94850845280bbeea4dbcee783a7fc96867bf456cf26ad773bee474d851d17ea98be8d5c502cba200fd8a144ac8ca52223203574ff1f74b8175b98f937916f85049919d4ab1fe175d98569828d29836f3e362496b458584bf80b2a6abd08935d9bfae3247fe3731a19951e89a09f583cd24b33fc310f5acbbac56615cc6f5a4e5b32b91a769e34d6be26bd1e11edb2e397109862492c9412e4a79fe6ee0ae98df206f7b94d559a2485b6f57589f631fc6265c040896cb81f8ffc789c16eabb99d80939e64fa257641dc2cba6e7ff47b640517f85cd89f41b8f6476b8a17714969bf7c900f0e9eb6e81f672d0140803403302739e4c708113faa50152f09cd9349c15e15c4882ec108a0eba147524827c1397100c787ac53db5a626ae2b2055c4182a7ddc0665e0dfc6ba9ec12b9d509a86b1be4c61c8d0ecfe1025617b35a13a7ff5158d8b0399b7708ab07724738060a6fb9cfc3f02c8e18c12c84c45380378305b44513d23ab0e97aafa0edd10d0da130b9edda65a3785144a37bbead9a326c05585309ee3c0e3be6b9ecf8fdce1a1ddef39f181d9cfd8f52177bc90d2ac6f9b89d7e1763be0e61ce30418bddde52e4df6e98046dfd0ff036f03a1af83be02c34c0e78b1480aaba74da45871d1d18f3c65059ec2ef905a09b62fb796f8996c3f9081f445e6c28119e2d72223bb105a063cc9f438de40254f6b99c237b928a10dcb6f25f93400b1222bc2f1f91197c70336006f15798cf23b09a7820b123e71776aab17a49",
+    "0000000009000000700000005379c37895a95988182ba784a67c9359ebd566066094682219524f69ad9d6d8103f7122f2547b1baa1f60a2bee68538bb5c0422d7371cdea5cd358054a832e0b2513295b2fa6c22ddebf08382d79e5590794753d08a63e9f81a42283e74aee997f69b520dde807ff718dfb6e36926ec78425ae2e85e645ac85f787b5fc95b15362269ce187ca057a03f779933bcb1c6e207782d8ad5a4d904c590afb1b8d491b7996901ef35ad76acbf963ea662f651f59a2b7c0935cfb3e714bdcfabb9fc0bc485677c09a8b78a9baae0c3c44a06c2de7c3320a0e238449f12a0fb0494ce64229262e65fc3a05dc5c3106a80d7662e4fa0e825879ef2b335f641a63c47cbc47cc076256f953aa0fc5b6ee6a143abe13f4f838ec925e06a2e86fd641be52f5c9f0fa224e4572d4aa75f3bf2e89568d90e2d5ce80ed080c147de64a410eac7e76ae1d40d7d5c0d5a498705ed9d4f7a366265fb40a884bfa3b2f52bb09d2363fa82ec68b26f914a2264818e776c84f631235c25530493f97055f97f6749a66bb5822c2d8842e72d06ab30490581a17f48b767f9ff2e17257f9a6896eeb2ef4f8cfe1fe7dddac1f0277aa9577a9ee7585b21518b6cabfe9f3a1e895bce9b4cde34b0943ea94850845280bbeea4dbcee783a7fc96867bf456cf26ad773bee474d851d17ea98be8d5c502cba200fd8a144ac8ca52223203574ff1f74b8175b98f937916f85049919d4ab1fe175d98569828d29836f3e362496b458584bf80b2a6abd08935d9bfae3247fe3731a19951e89a09f583cd24b33fc310f5acbbac56615cc6f5a4e5b32b91a769e34d6be26bd1e11edb2e397109862492c9412e4a79fe6ee0ae98df206f7b94d559a2485b6f57589f631fc6265c040896cb81f8ffc789c16eabb99d80939e64fa257641dc2cba6e7ff47b640517f85cd89f41b8f6476b8a17714969bf7c900f0e9eb6e81f672d0140803403302739e4c708113faa50152f09cd9349c15e15c4882ec108a0eba147524827c1397100c787ac53db5a626ae2b2055c4182a7ddc0665e0dfc6ba9ec12b9d509a86b1be4c61c8d0ecfe1025617b35a13a7ff5158d8b0399b7708ab07724738060a6fb9cfc3f02c8e18c12c84c45380378305b44513d23ab0e97aafa0edd10d0da130b9edda65a3785144a37bbead9a326c05585309ee3c0e3be6b9ecf8fdce1a1ddef39f181d9cfd8f52177bc90d2ac6f9b89d7e1763be0e61ce30418bddde52e4df6e98046dfd0ff036f03a1af83be02c34c0e78b1480aaba74da45871d1d18f3c65059ec2ef905a09b62fb796f8996c3f9081f445e6c28119e2d72223bb105a063cc9f438de40254f6b99c237b928a10dcb6f25f93400b1222bc2f1f91197c70336006f15798cf23b09a7820b123e71776aab17a49"
+  ],
+  "schema_version": 2,
+  "semantic_call_fields": [
+    "kind_index",
+    "phase_index",
+    "this",
+    "return_pc",
+    "result",
+    "optional_fields"
+  ],
+  "semantic_call_kinds": [
+    {
+      "kind": "building_unlimbo",
+      "pc": "0x00440580"
+    },
+    {
+      "kind": "overlay_create",
+      "pc": "0x005FE570"
+    },
+    {
+      "kind": "overlay_constructor",
+      "pc": "0x005FC380"
+    },
+    {
+      "kind": "overlay_unlimbo",
+      "pc": "0x005FD270"
+    },
+    {
+      "kind": "overlay_mark",
+      "pc": "0x005FC570"
+    },
+    {
+      "kind": "object_uninit",
+      "pc": "0x005F65F0"
+    },
+    {
+      "kind": "pointer_expiry",
+      "pc": "0x007258D0"
+    },
+    {
+      "kind": "radio_first_contact",
+      "pc": "0x0065ACB0"
+    },
+    {
+      "kind": "map_reveal_area",
+      "pc": "0x005678E0"
+    },
+    {
+      "kind": "autofill",
+      "pc": "0x00588750"
+    },
+    {
+      "kind": "deferred_drain",
+      "pc": "0x00725C70"
+    },
+    {
+      "kind": "overlay_scalar",
+      "pc": "0x005FDF70"
+    },
+    {
+      "kind": "building_scalar",
+      "pc": "0x00459F20"
+    },
+    {
+      "kind": "building_destructor",
+      "pc": "0x0043BCF0"
+    },
+    {
+      "kind": "house_remove_tracking",
+      "pc": "0x004FF550"
+    },
+    {
+      "kind": "building_create",
+      "pc": "0x0045E880"
+    },
+    {
+      "kind": "building_constructor",
+      "pc": "0x0043B740"
+    },
+    {
+      "kind": "house_add_tracking",
+      "pc": "0x004FF700"
+    }
+  ],
+  "source": "unicorn/gamemd.exe",
+  "type": {
+    "guard_range": 1280,
+    "insignificant": 1,
+    "name": "GAWALL",
+    "overlay_index": 2,
+    "pointer": 605731008,
+    "reveal_by_height": 1,
+    "sight": 1,
+    "speed": -1,
+    "strength": 300,
+    "to_overlay": 605740848
+  }
+}

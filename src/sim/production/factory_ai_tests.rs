@@ -114,6 +114,13 @@ fn the_yard_builds_its_choice_and_places_it_on_the_node() {
     let house = &f.sim.houses[&f.owner];
     assert_eq!(house.economy.credits(), 900, "paid for");
     assert_eq!(house.stats.built(), 1, "Record_Last_Built");
+    assert_eq!(
+        house.produced_count(
+            ObjectCategory::Building,
+            f.rules.building_type_index("PLAIN").unwrap()
+        ),
+        1
+    );
     assert!(f.held_object().is_none(), "the yard's factory is gone");
 }
 
@@ -127,6 +134,13 @@ fn a_placed_building_that_does_not_score_is_not_counted() {
     }
     assert_eq!(f.placed(), Some((16, 16)), "after {frames} frames");
     assert_eq!(f.sim.houses[&f.owner].stats.built(), 0);
+    assert_eq!(
+        f.sim.houses[&f.owner].produced_count(
+            ObjectCategory::Building,
+            f.rules.building_type_index("PLAIN").unwrap(),
+        ),
+        0
+    );
 }
 
 /// AI4501A4 records after ExitObject has consumed its wall. The original
@@ -275,4 +289,12 @@ fn a_failed_exit_abandons_the_object_and_refunds_it() {
     );
     assert_eq!(f.sim.houses[&f.owner].economy.credits(), 1_000, "refunded");
     assert_eq!(f.sim.houses[&f.owner].stats.built(), 0);
+    assert_eq!(
+        f.sim.houses[&f.owner].produced_count(
+            ObjectCategory::Building,
+            f.rules.building_type_index("PLAIN").unwrap(),
+        ),
+        0,
+        "a failed ExitObject does not consume the lifetime limit"
+    );
 }

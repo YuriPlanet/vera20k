@@ -1,8 +1,9 @@
-# Prepared native GI berserk body
+# Prepared native GI body and viewport
 
-`shroud.py --infantry-berserk-body` executes eight original GI body draws into
-independent RGB565 surfaces. The consumed JSON contains the physical inputs,
-native draw parameters, body pixels before shadow and final pixels after shadow.
+`shroud.py --infantry-berserk-body` keeps eight original GI body controls and
+adds 28 joined Object admission/projection/body controls in the same VM.
+The consumed JSON contains the physical inputs, native draw parameters,
+legacy body pixels before shadow and final pixels after each Object return.
 Its sidecar records the original binary identity, command and proof boundaries.
 No VERA framebuffer, palette table or hand-computed pixel supplies a golden.
 
@@ -15,6 +16,8 @@ PYTHONDONTWRITEBYTECODE=1 python -m tools.procedural_drawing_oracle.shroud --inf
 
 `--write` deliberately regenerates the JSON and metadata from original execution.
 The default shroud corpus and other opt-in modes keep their existing generators.
+The existing eight `rows` and prior `shared` fields retain their values; the
+viewport group is additive. The same command produces and checks both groups.
 
 ## Native route and reused owners
 
@@ -43,6 +46,9 @@ This mode composes existing owners:
   the original physical TMP registry/lazy loader required by GetZAdjust `704350`.
 - `prepare_surface` owns original BSurface storage and circular A/Z planes.
   The existing Infantry atomic service supplies only the Windows Interlocked ABI.
+- The joined group borrows `EntityReveal`'s original retained-viewport prefix
+  `6D5F60..6D5F8D` through the existing reader-block runner. It runs inside the
+  existing `PaletteReader`, without constructing another `EntityReveal` VM.
 
 No VM, gameplay world, reader, numeric kernel or raster implementation is copied.
 Original executable code remains unchanged throughout the measured draws.
@@ -94,13 +100,84 @@ The final buffer follows the actual separate shadow call. It equals the body
 buffer for these physical empty-shadow frames; no positive shadow-store or
 shadow-overlap result is established.
 
+## Joined Object viewport group
+
+`shared.viewport` records the unchanged Infantry table and actual method slots,
+original zero-camera projected point, retained viewport prefix, ordinary client
+priors and projection margins. The native camera uses Tactical `+B0/+B4` in
+the original projected-world frame. A Rust consumer translates the declared
+camera using the existing shared projection-origin query, then applies its
+canonical actor projection and ordinary camera uniform. This preserves VERA's
+common world-row bias without using a native output point to place the sprite.
+
+Native `RenderCoords` `41BE00` delegates to the actual `GetCoords` `5F65A0`.
+Original `6D2140` first produces the zero-camera point from that coordinate.
+Control cameras subtract selected screen anchors from this original point.
+Partial anchors use approximately half the selected header width or height;
+adjacent outside anchors put that header exactly beyond the relevant surface
+edge. Neither a VERA projection nor expected pixels supply those inputs.
+
+Every joined draw calls whole Object `5F4B10` with the actual constructed
+Infantry receiver and `(caller_clip,1,0)`. The viewport and caller clip are
+`[0,0,64,96]`, graphical-client handle `B73550` is nonzero, editor `A8ED6B`
+is zero, and the declared receiver starts with Redraw0/Limbo0. Actual native
+projection and caller clipping choose whether to call virtual `+114` `518F90`;
+the fixture does not substitute an admission result or body point.
+
+`viewport_rows` contains 14 visits for each physical frame0 and frame1:
+
+- Center and four partial overlaps, required to produce original nonbackground
+  pixels.
+- Four adjacent outside placements, required to leave the destination unchanged
+  even though Object projection admits and calls the body.
+- Four rejected projections, required to leave the destination unchanged and
+  never call the body. Original `6D2223..6D2269` uses inclusive bounds
+  X `[-360,W+360]` and Y `[-180,H+180]`; these controls sit one beyond each
+  bound. The strict boundary interpretation comes from the original branches,
+  rather than from a Rust predicate.
+- Return to the original center camera, required to reproduce its exact buffer.
+
+Frame0 retains prepared facing53248. Frame1 uses49152, the authored map-facing
+192 shifted left8; original table `7EAEFC` and selector `518D80` choose frame1
+for Ready/Guard with the physical `0,1,1` record. This does not itself establish
+a live scenario's Doing, facing, Stage or input admission.
+
+Each joined row records:
+
+- `input`: the standard ordinary frame/facing/shroud/Z priors plus native
+  `camera`, `caller_clip`, `redraw`, `force` and `limbo`.
+- `admission`: actual `raw_return` and `returned_al`, `projection_admitted`,
+  full-viewport projected `point`, separately observed `body_point`,
+  `body_entry_count`, `body_admitted`, actual mutated `clip`, `redraw_after`
+  and bounded entry events. Projection outputs are read at actual caller return
+  `5F4B6F`; body arguments are read only when native `518F90` is reached.
+- `body` and `shadow`: nullable actual shape argument records. Body admission
+  can reach `518F90` yet emit no `4AED70` shape call. These records omit duplicate
+  per-shape RGB buffers; `final_rgb565_le_hex` always records the full destination
+  after the Object return, including rejections. `changed_pixel_count` counts
+  its words that differ from the declared background.
+- `invariants`: the existing source/A/Z/all-three-full-RNG/code guards plus
+  `vtable_unchanged` and `facing_table_unchanged`. The actual Infantry vtable
+  and `7EAEFC`'s 128 facing-table bytes are compared with original file bytes.
+  Every row checks these guards, including rejected draws.
+
+Object AL1 means body dispatch, not visible pixels. A Rust comparison must
+submit its own canonical actor projection, camera and atlas through its ordinary
+clipping owner; native point, clip and admission outputs must never gate or
+position that Rust draw. The original buffer alone supplies expected pixels.
+
 ## Proof boundary
 
 These are complete selected body draws on declared component inputs. The
 shrouded case deliberately enters DrawIt to exercise word clearing; it does
-not prove that whole Object DrawIfVisible admits a shrouded GI. Constructor
+not prove that whole Object DrawIfVisible admits a shrouded GI. The ordinary
+joined viewport group establishes only its explicit client/camera/lifecycle
+priors and selected physical body poses. Constructor
 RNG/timer observations are separate from the RNG-free measured draw interval.
 Full constructor/COM activation/Unlimbo, actual House/scenario/Cell production,
-display admission, CAOS hit/refresh/expiry, GPU output and whole frames/worlds
+full Tactical traversal/display registration, CAOS hit/refresh/expiry, GPU output and whole frames/worlds
 require their own evidence. Other stances, effects/translucency, custom rules,
-nonflat sites, global ordering and Behind remain outside these eight samples.
+nonflat sites, global ordering and Behind remain outside these bounded samples.
+Object admission clears Redraw+80 before projection and adds no RNG draw, timer
+write or detach call. No simulation dirty latch or duplicate display state is
+introduced for the ordinary main-Tactical force1 route.

@@ -294,11 +294,8 @@ impl<'a> FireSubject<'a> {
                 .world
                 .active_wave_links
                 .contains_key(&firer.stable_id()),
-            // `+0x308`: the damage-spark system, armed and expired on
-            // `session.tick` by `techno_ai`'s common post step (`0` none,
-            // `u64::MAX` held).
-            spark_particles_live: self.world.session.tick
-                < firer.damage_particle_live_until.live_until(),
+            // FireError6FC6D5/6FC9C7 reads the actual Techno+308 pointer.
+            spark_particles_live: firer.spark_particle_system.system().is_some(),
             // T45: the object's own rearm countdown (`+0x2EC`).
             rearming: firer
                 .rearm_timer

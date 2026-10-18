@@ -133,7 +133,7 @@ pub(crate) fn tick_particle_system(sim: &mut Simulation, rules: &RuleSet, id: u6
     // past zero and never triggers it, exactly as here.
     sys.lifetime = sys.lifetime.wrapping_sub(1);
     if sys.lifetime == 0 {
-        sys.done_spawning = true;
+        sys.mark_done_spawning();
     }
 
     // `alive && this[+0xF8] && particle_count == 0`, from the same function.
@@ -234,8 +234,10 @@ where
     // forward tick/RNG order of surviving particles.
     for index in (0..sys.particles.len()).rev() {
         if sys.particles[index].marked_for_deletion {
-            sim.conceal_particle(sys.particles[index].stable_id());
-            sys.particles.remove(index);
+            let particle = sys
+                .remove_expired_child(sys.particles[index].stable_id())
+                .expect("the current child is present");
+            sim.retire_particle(particle, rules);
         }
     }
     Ok(())

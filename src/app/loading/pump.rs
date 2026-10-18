@@ -671,10 +671,7 @@ impl LoadingJob {
 }
 
 pub(crate) fn begin_loading(state: &mut AppState, request: LoadingRequest) {
-    let wall_ms = crate::app::match_runtime::sim_tick::monotonic_frame_pacer_ms(
-        state,
-        std::time::Instant::now(),
-    );
+    let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
     crate::app::radar_movie::retire(state, wall_ms);
     crate::app::chrono_screen::retire(state, wall_ms);
     // The shell writes GameMode before the loading screen (`0x0052E10F`
@@ -696,10 +693,7 @@ pub(crate) fn begin_loading(state: &mut AppState, request: LoadingRequest) {
     if let (Some(native), Some(rules)) = (session.native.as_mut(), state.rules()) {
         native.resolve_player_colors(&rules.color_schemes, &rules.house_color_ramps);
     }
-    let now_ms = crate::app::match_runtime::sim_tick::monotonic_frame_pacer_ms(
-        state,
-        std::time::Instant::now(),
-    );
+    let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
     reset_loading_presentation(state);
     // A finished match keeps its presentation at the shell, and its entity
     // atlases are its largest GPU allocations (SHP pages up to the texture

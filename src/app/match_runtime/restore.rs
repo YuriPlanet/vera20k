@@ -11,10 +11,7 @@ pub(crate) fn commit_prepared_load(
     prepared: crate::app::persistence::PreparedSavedGame,
     from_menu: bool,
 ) {
-    let wall_ms = crate::app::match_runtime::sim_tick::monotonic_frame_pacer_ms(
-        state,
-        std::time::Instant::now(),
-    );
+    let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
     crate::app::radar_movie::retire(state, wall_ms);
     crate::app::chrono_screen::retire(state, wall_ms);
     let native_tiberium_stats = prepared.native_tiberium_stats();
@@ -105,11 +102,16 @@ pub(crate) fn commit_prepared_load(
         committed.presentation,
     );
 
+    // MouseLoad5BE092 restores incoming Power; SidebarNoInit6A4F89/94
+    // rearms only slide. Sample after world adoption so diagnostic time uses
+    // the incoming tick too. Rejected preparation never reaches this commit.
+    let power_ms = state.radar_presentation_ms();
+    let mut power = committed.power_bar_anim;
+    power.reanchor_after_load(power_ms);
+    state.match_state.match_presentation.power_bar_anim = power;
+
     crate::app::audio_runtime::bind_match_theme_context(state);
-    let music_now_ms = crate::app::match_runtime::sim_tick::monotonic_frame_pacer_ms(
-        state,
-        std::time::Instant::now(),
-    );
+    let music_now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
     if let Some(assets) = state.process_assets.manager() {
         state.audio.restore_saved_theme(
             committed.map.theme_slots(),
@@ -169,5 +171,18 @@ pub(crate) fn commit_prepared_load(
     state.platform.frame_pacer.reset_for_immediate_frame();
     state.persistence.last_loaded_save_path = Some(path.to_path_buf());
     crate::app::presentation::sidebar_render::refresh_sidebar_projection(state);
+    // The incoming chrome owns the footer allowance; refresh its layout
+    // before initializing derived geometry, including on a cold/different-side
+    // load. No Power AI visit or retained-band clamp belongs in this phase.
+    let power_budget = crate::app::presentation::building_anim::power_bar_budget_px(state);
+    state
+        .match_state
+        .match_presentation
+        .power_bar_anim
+        .set_max_segments(power_budget);
+    log::debug!(
+        "Load: restored Power at {power_ms}ms: {:?}",
+        state.match_state.match_presentation.power_bar_anim,
+    );
     log::info!("Load: restored simulation from {}", path.display());
 }

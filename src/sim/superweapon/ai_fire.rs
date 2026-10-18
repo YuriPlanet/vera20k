@@ -18,16 +18,18 @@
 //! RESIDUALS:
 //! - The preferred target type (`+0x54EC`, constructor 1 at `0x004F5A77`),
 //!   and the second preferred defensive cell (`+0x54F8`) keep
-//!   their constructor values: their writers are trigger actions VERA's
-//!   trigger runtime does not run (`TActionClass 0x006E0ED0`,
-//!   `TriggerAction::Execute 0x006DE1F1`, the House setters at
-//!   `0x0050DA20`). Trigger: a map trigger that
+//!   their constructor values: TAction35's type writer (`Execute6DE1F1`)
+//!   and House50DA40's secondary-cell writer are not ported; an active caller
+//!   of the latter is not established. Trigger: a map trigger that
 //!   names a superweapon target, mostly in campaigns. Effect: the computer
 //!   aims by its own pickers. `AI_FindTeamTarget @ 0x0050D170`, which another
 //!   preferred type selects (its first team's leader's Greatest_Threat), is
 //!   therefore not ported. TAction135/136's preferred cell54F0 is retained
 //!   by HouseState and consumed here; its nonzero value bypasses the
 //!   MultiMissile/Storm/GroundRally pickers and suppresses Genetic/Dominator.
+//!   TAction140/141 now set/clear the separate timed defensive alert54F4/54FC
+//!   through that same HouseState owner. Native141 also clears54F8, whose
+//!   current constructor-zero restriction remains part of this residual.
 //! - A building's cloak stage (`BuildingClass+0x6ED`): a stage of 15 also
 //!   draws in AI_FindBestRallyTarget (`0x0050CF99..0x0050CFA8`); VERA has no
 //!   writer of the stage, so only CloakState 2 draws.

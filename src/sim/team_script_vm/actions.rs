@@ -17,7 +17,7 @@
 //! `deploy` rows (actions 14, 43, 8 and 9) in `transport_tests`.
 //!
 //! RESIDUALS:
-//! - Actions other than 0, 1, 2, 3, 5, 6, 8, 9, 11, 14, 16, 17, 19, 20, 21, 24, 37, 39, 40, 42, 43,
+//! - Actions other than 0, 1, 2, 3, 5, 6, 8, 9, 11, 14, 16, 17, 19, 20, 21, 24, 30, 37, 39, 40, 42, 43,
 //!   46, 47, 49, 50, 53, 54, 55, 57, 58, 59, 60, 61, 62, 63 and 64 are not ported. A team
 //!   that reaches one stays on it, as a native handler that has not
 //!   finished does, and records the first as its refusal; the rest of its
@@ -132,6 +132,7 @@ pub(super) const fn action_is_ported(action_id: i32) -> bool {
             | 20
             | 21
             | 24
+            | 30
             | 37
             | 39
             | 40
@@ -551,6 +552,23 @@ impl Simulation {
                     ) {
                         log::debug!("team member {member} did not scatter: {cause}");
                     }
+                }
+                if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
+                    team.advance_pending = true;
+                }
+            }
+            // Original gamemd1cdd1180,6E9FEC ->6E99E1..6E99FD
+            // (tools/native_inspect): House+250=4, then Team+80=1.
+            // Argument/first are unused; the existing House Strategy timer
+            // decides when FireSale/Hunt runs. No direct RNG/timer/detach.
+            30 => {
+                let owner = self
+                    .team_script_vm
+                    .teams
+                    .get(&team_id)
+                    .map(TeamScriptState::owner);
+                if let Some(house) = owner.and_then(|owner| self.houses.get_mut(&owner)) {
+                    house.strategy_emergency.set_state_four();
                 }
                 if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
                     team.advance_pending = true;

@@ -453,22 +453,28 @@ fn retail_ore_depletion_reaches_uploaded_minimap_and_acknowledges_once() {
             let entity = view.entities().get(miner).unwrap();
             assert_eq!((entity.position.rx(), entity.position.ry()), ORE);
             let (cells, generation) = scene.runtime.view().radar_terrain_dirty();
-            assert_eq!(
-                cells.iter().filter(|&&coord| coord == ORE).count(),
-                usize::from(name == "empty"),
-                "only identity removal dirties this Cell's radar"
-            );
-            let commit = present(&gpu, &mut scene, &mut presentations);
+            // Partial reduction itself is tactical-only, but fresh sight
+            // notifications (original5865F0) independently enqueue radar cells
+            // during this unpresented HARV journey. Consume that real pending
+            // batch too; only full removal requires ORE to be in it.
             if name == "empty" {
+                assert!(cells.contains(&ORE), "identity removal dirties this Cell");
+            }
+            let pending = !cells.is_empty();
+            let commit = present(&gpu, &mut scene, &mut presentations);
+            if pending {
                 assert_eq!(commit.consumed_generation, Some(generation));
                 assert!(
                     commit.acknowledged,
-                    "the identity-removal upload is acknowledged"
+                    "the pending terrain upload is acknowledged"
                 );
                 assert!(
                     scene.runtime.view().radar_terrain_dirty().0.is_empty(),
                     "the successful upload retires the runtime's actual batch"
                 );
+            } else {
+                assert_eq!(commit.consumed_generation, None);
+                assert!(!commit.acknowledged);
             }
             for presented in &presentations {
                 let surface = presented.minimap.native_radar_terrain.as_ref().unwrap();

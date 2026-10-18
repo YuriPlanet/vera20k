@@ -2,7 +2,7 @@ use super::*;
 
 /// The random-map seed file the `.SED` launch branch recognises. Written into
 /// the RA2 directory so `map_load` finds it where the original puts it.
-const RANDMAP_SED_FILE: &str = "RandMap.Sed";
+pub(crate) const RANDMAP_SED_FILE: &str = "RandMap.Sed";
 /// Description the setup dialog stamps onto a randomized configuration; it also
 /// becomes the sentinel row's displayed name.
 pub(super) const RANDOM_MAP_DESCRIPTION_KEY: &str = "TXT_RANDOM_MAP_DESCRIPTION";
@@ -971,11 +971,19 @@ impl App {
             .filter(|rgb| *rgb != [0, 0, 0]);
             from_art.or_else(|| registry.flags(overlay_id)?.radar_color)
         };
-        let cells = crate::map::rmg::preview::preview_cells_from_map(
+        let mut cells = crate::map::rmg::preview::preview_cells_from_map(
             map_file,
             &resolved_terrain,
             &overlay_radar,
         );
+        // Original641140 writes packed surface words before preview scaling.
+        // Keep format conversion in the existing app presentation authority;
+        // the engine's TMP table supplies encoded RGB, not a device layout.
+        let format = crate::render::native_surface_format::ACTIVE_RETAIL_RGB565_PRESENTATION;
+        for cell in &mut cells {
+            cell.left = format.storage_roundtrip_rgb8(cell.left);
+            cell.right = format.storage_roundtrip_rgb8(cell.right);
+        }
         let waypoints = crate::map::rmg::preview::marker_waypoints(start_waypoints);
         crate::map::rmg::preview::render_preview(&cells, &waypoints)
     }
@@ -1328,6 +1336,169 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn generated_raised_clear_preview_matches_original_tmp_level_colors() {
+        let Some((retail_dir, _)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let native = crate::test_fixture::json("tools/spatial_oracle/tmp_preview.json");
+        let selected = &native["inputs"]["selected_tmp"];
+        let mut assets = crate::assets::asset_manager::AssetManager::new(
+            &retail_dir,
+            crate::assets::asset_manager::MediaArchiveMode::STOCK_DIGITAL,
+        )
+        .expect("retail preview assets");
+        let (_, _, rules) = crate::rules::retail_sources::load_startup_rules(
+            &assets,
+            std::sync::Arc::clone(
+                crate::rules::audio_sources::AudioDefinitions::select(&assets).sounds(),
+            ),
+        )
+        .expect("retail preview Rules")
+        .into_parts();
+        // The existing .SED lifecycle recipe, not a claim about Generate's
+        // preceding parameter-reroll RNG. No cell height or color is supplied.
+        let options = crate::map::rmg::RmgOptions {
+            theater: 0,
+            map_type: 3,
+            resources: 2,
+            ruggedness: 35,
+            water_amount: 50,
+            num_players: 2,
+            tiberium: 35,
+            vegetation: 30,
+            urban_presence: 40,
+            seed: 4242,
+            ..Default::default()
+        };
+        let prepared = prepare_random_map_generation(&mut assets, &options, Some(&rules))
+            .expect("registered production theater");
+        let tech_footprints: std::collections::HashMap<_, _> = prepared
+            .tech_types
+            .iter()
+            .map(|kind| (kind.name.clone(), kind.footprint.clone()))
+            .collect();
+        let retention = RandomMapGenerationRetention::default();
+        let decision = retention.map_storage_decision(&options);
+        let receiver = spawn_random_map_generation_worker(
+            options,
+            prepared.settings,
+            prepared.resolved_inputs,
+            prepared.blocks,
+            prepared.tech_types,
+            crate::map::resolved_terrain::SharedCellDummy::fresh(),
+            decision,
+        )
+        .expect("production generation worker");
+        let mut entries = 0;
+        let generated = loop {
+            match receiver
+                .recv_timeout(std::time::Duration::from_secs(60))
+                .expect("production generation receipt")
+            {
+                RandomMapUpdate::Started => entries += 1,
+                RandomMapUpdate::Progress(_) => {}
+                RandomMapUpdate::Finished(map) => break map,
+            }
+        };
+        assert_eq!(entries, 1);
+        let mut main_rng = crate::sim::rng::MainRng::new(0x0401_599d);
+        let mut main = crate::app::state::process_main_draws(None, &mut main_rng);
+        let mut selector = crate::map::tile_variant_selector::TileVariantSelectorCache::default();
+        let resolved = build_random_map_preview_grid(
+            &generated.map_file,
+            Some(&prepared.theater),
+            Some(&assets),
+            Some(&prepared.terrain_rules),
+            &mut main,
+            &mut selector,
+        );
+        let cells = crate::map::rmg::preview::preview_cells_from_map(
+            &generated.map_file,
+            &resolved,
+            &|_, _| None,
+        );
+        let occupied: std::collections::HashSet<_> = generated
+            .map_file
+            .entities
+            .iter()
+            .flat_map(|entity| {
+                tech_footprints[&entity.type_id]
+                    .iter()
+                    .map(move |&(dx, dy)| {
+                        (
+                            entity.cell_x.wrapping_add_signed(dx),
+                            entity.cell_y.wrapping_add_signed(dy),
+                        )
+                    })
+            })
+            .collect();
+        let cell = cells
+            .iter()
+            .find(|cell| {
+                let tile = resolved.cell(cell.x, cell.y).expect("preview Cell");
+                tile.final_tile_index == selected["tile"].as_i64().unwrap() as i32
+                    && tile.final_sub_tile == selected["subtile"].as_u64().unwrap() as u8
+                    && tile.variant == 0
+                    && (1..=12).contains(&tile.level)
+                    && tile.slope_type == 0
+                    && !tile.has_bridge_deck
+                    && tile.terrain_object_occupation.is_none()
+                    && !occupied.contains(&(cell.x, cell.y))
+                    && !generated
+                        .map_file
+                        .terrain_objects
+                        .iter()
+                        .any(|object| object.rx == cell.x && object.ry == cell.y)
+                    && !generated
+                        .map_file
+                        .overlays
+                        .iter()
+                        .any(|overlay| overlay.rx == cell.x && overlay.ry == cell.y)
+            })
+            .expect("seed4242 must actually generate an unobscured raised pristine Clear Cell");
+        let tile = resolved.cell(cell.x, cell.y).unwrap();
+        let presentation_tile = resolved.presentation_tile(tile);
+        assert_eq!(presentation_tile, (0, 0));
+        let name = prepared
+            .theater
+            .lookup
+            .filename_for_variant(presentation_tile.0, tile.variant)
+            .expect("registered selected TMP");
+        assert!(name.eq_ignore_ascii_case(selected["name"].as_str().unwrap()));
+        let (bytes, source) = assets.get_with_source_ref(name).expect("active TMP winner");
+        assert_eq!(
+            crate::util::sha256::sha256_hex(bytes),
+            selected["physical_sha256"].as_str().unwrap()
+        );
+        assert_eq!(
+            serde_json::json!([tile.radar_left, tile.radar_right]),
+            selected["raw_pair_rgb"]
+        );
+        let row = native["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["input"]["level"].as_u64() == Some(u64::from(tile.level)))
+            .unwrap();
+        println!(
+            "RMG preview Cell=({},{}), level={}, tile={}, sub={}, variant={}, file={name}, source={source}",
+            cell.x, cell.y, tile.level, tile.final_tile_index, tile.final_sub_tile, tile.variant
+        );
+        assert_eq!(
+            serde_json::json!([cell.left, cell.right]),
+            row["output"]["preview_rgb_pair"],
+            "production raised-cell colors must consume original549E90/661190/661020 outputs"
+        );
+        let format = crate::render::native_surface_format::RGB565;
+        assert_eq!(
+            (u32::from(format.pack_rgb8(cell.left)) << 16)
+                | u32::from(format.pack_rgb8(cell.right)),
+            row["output"]["cell_packed"].as_u64().unwrap() as u32,
+            "native Cell puts the left word in the high half"
+        );
+    }
 
     #[test]
     fn gsi_04_12_preview_file_is_teardown_owned_and_precedes_accepted_commit() {
@@ -1951,3 +2122,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "random_map_ramp_end_tests.rs"]
+mod ramp_end_tests;

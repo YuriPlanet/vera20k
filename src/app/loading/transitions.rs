@@ -5,7 +5,6 @@
 use std::collections::{BTreeMap, HashMap};
 
 use crate::app::loading::init;
-use crate::app::match_runtime::sim_tick;
 use crate::app::presentation::render;
 use crate::map::basic::BasicSection;
 use crate::map::houses::HouseRoster;
@@ -326,10 +325,7 @@ pub(crate) fn finish_fresh_scenario_read(state: &mut AppState, mut result: init:
 }
 
 pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadResult) {
-    let wall_ms = crate::app::match_runtime::sim_tick::monotonic_frame_pacer_ms(
-        state,
-        std::time::Instant::now(),
-    );
+    let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
     crate::app::radar_movie::retire(state, wall_ms);
     crate::app::chrono_screen::retire(state, wall_ms);
     crate::app::input::dispatch::selection_navigation::reset_for_world_replacement(
@@ -423,6 +419,15 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
         .borrow_mut()
         .clear();
     // Fresh SidebarClass admission silently seeds its first projection.
+    // ClearScene685573 -> Mouse5BDF50 -> Sidebar6A5030 -> Power63F730:
+    // fresh matches clear the retained Power fields. The saved-load route
+    // shares install_world_presentation but has a distinct NoInit contract.
+    let wall_ms = state.radar_presentation_ms();
+    state
+        .match_state
+        .match_presentation
+        .power_bar_anim
+        .reset(wall_ms);
     state
         .match_state
         .match_presentation
@@ -489,7 +494,7 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
     // `Queue_Song(-2)` and the audio pump's AI picks the first allowed track
     // once the fade lands. Theme AI borrows the installed process Main cursor;
     // `Is_Allowed`'s `Side=` gate compares the local player's side.
-    let music_now_ms = sim_tick::monotonic_frame_pacer_ms(state, std::time::Instant::now());
+    let music_now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
     crate::app::audio_runtime::bind_match_theme_context(state);
     if let Some(assets) = state.process_assets.manager() {
         state.audio.request_scenario_theme(
@@ -544,7 +549,7 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
     };
     match installation {
         Ok(()) => {
-            let now_ms = sim_tick::monotonic_frame_pacer_ms(state, std::time::Instant::now());
+            let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
             state.match_state.scenario_elapsed_clock.start(now_ms);
             state.frontend.screen = GameScreen::InGame;
             if returns_scenario_rng_to_offline_shell {

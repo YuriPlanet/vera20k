@@ -112,7 +112,7 @@ fn terminal_sensor_receiver_finishes_before_shp_and_is_not_deferred_to_cell_chan
         .unwrap()
         .position
         .set_rx_for_test(5);
-    sim.add_unit_sensor_after_unlimbo(1, &rules);
+    sim.add_unit_sensor_after_unlimbo(1, &rules, None);
     let owner = sim.substrate.entities.get(1).unwrap().owner();
     let entity = sim.substrate.entities.get_mut(1).unwrap();
     entity.position.set_rx_for_test(10);
@@ -184,7 +184,7 @@ fn accepted_chain_runs_sensor_callback_and_consumes_more_paid_points_in_same_obj
         crate::sim::pathfinding::PathGrid::from_resolved_terrain(&terrain),
     ));
     sim.resolved_terrain = Some(terrain);
-    sim.add_unit_sensor_after_unlimbo(1, &rules);
+    sim.add_unit_sensor_after_unlimbo(1, &rules, None);
     let selection = drive_track::select_drive_track(32, 64, false).unwrap();
     assert!(selection.entry_index > 0);
     let entity = sim.substrate.entities.get_mut(1).unwrap();

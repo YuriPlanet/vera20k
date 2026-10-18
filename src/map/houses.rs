@@ -111,6 +111,19 @@ pub struct HouseRoster {
     pub houses: Vec<HouseDefinition>,
 }
 
+/// `HouseClass::FromName @ 0x0050C170`: the first byte-exact stored name in
+/// House-array order. Names are the bounded native strings, not case-folded
+/// owner keys, country selectors or participant display handles. The roster
+/// readers and live authored-object admission share this one query.
+/// Source: original gamemd instructions50C170..50C20D; the consumed native
+/// campaign_start_houses corpus also covers the Allies/Basic.Player callers.
+pub(crate) fn find_house_index<'a>(
+    names: impl IntoIterator<Item = &'a str>,
+    requested: &str,
+) -> Option<usize> {
+    names.into_iter().position(|name| name == requested)
+}
+
 impl HouseRoster {
     /// Convert roster entries to the color map used by render code.
     pub fn color_map(&self) -> HouseColorMap {
@@ -118,11 +131,6 @@ impl HouseRoster {
             .iter()
             .map(|house| (house.name.clone(), house.color))
             .collect()
-    }
-
-    /// Original House::FromName50C170 uses byte-exact names in array order.
-    pub(crate) fn find_house_index(&self, name: &str) -> Option<usize> {
-        self.houses.iter().position(|house| house.name == name)
     }
 
     /// Project the authored directed graph. Full scenario admission and its
@@ -307,7 +315,9 @@ pub fn parse_house_roster(
     for index in 0..roster.houses.len() {
         let allies = ini
             .section_or_empty(&roster.houses[index].name)
-            .read_houses_list("Allies", 0, |name| roster.find_house_index(name));
+            .read_houses_list("Allies", 0, |name| {
+                find_house_index(roster.houses.iter().map(|house| house.name.as_str()), name)
+            });
         roster.houses[index].allies = allies;
     }
     log::info!(

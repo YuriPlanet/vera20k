@@ -34,13 +34,14 @@ impl SightHeights {
 #[derive(Default)]
 struct RevealCalls {
     walks: Vec<Vec<(u16, u16)>>,
-    /// Actual567DA0 receiver calls from the uncached5673A0 suffix.
-    uncached_border_receivers: Vec<(u16, u16)>,
-    uncached_border_ground_after: Vec<i8>,
+    /// Actual567DA0 receiver calls, in order.
+    border_receivers: Vec<(u16, u16)>,
+    border_ground_after: Vec<i8>,
     discovery_queries: std::collections::BTreeSet<(u16, u16)>,
     notifications: Vec<((u16, u16), bool)>,
     /// Map578100 receiver calls.
     edge_visits: usize,
+    edge_notifications: Vec<(bool, (u16, u16), bool)>,
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -284,13 +285,24 @@ impl Simulation {
             .terrain()
             .or(self.resolved_terrain.as_ref())
             .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
-        if refresh {
+        let change = if refresh {
             self.fog
                 .refresh_map_cell_ground_frame(viewer, cell, cells.as_ref())
         } else {
             self.fog
                 .sweep_pending_map_cell(viewer, cell, cells.as_ref())
+        };
+        #[cfg(any(test, feature = "test-support"))]
+        if let Some(change) = &change {
+            REVEAL_CALLS.with_borrow_mut(|trace| {
+                if let Some(trace) = trace {
+                    trace
+                        .edge_notifications
+                        .push((refresh, change.cell, change.fresh));
+                }
+            });
         }
+        change
     }
 
     /// One Map578100 pass over `order`'s cells in walk order: the `listed`
@@ -628,10 +640,13 @@ impl Simulation {
                         .terrain()
                         .or(self.resolved_terrain.as_ref())
                         .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
-                    if projection == vision::MapRevealProjection::UncachedConditional
-                        && self
-                            .fog
-                            .map_cell_fully_known(viewer, cell, native_cells.as_ref())
+                    if matches!(
+                        projection,
+                        vision::MapRevealProjection::UncachedConditional
+                            | vision::MapRevealProjection::Fire
+                    ) && self
+                        .fog
+                        .map_cell_fully_known(viewer, cell, native_cells.as_ref())
                     {
                         continue;
                     }
@@ -656,7 +671,7 @@ impl Simulation {
         local_origin.filter(|_| notification_viewer.is_some())
     }
 
-    /// Original CellChangeNotify5865F0..586709: seven height-admitted
+    /// Original CellChangeNotify5865F0..5866BA: seven height-admitted
     /// diagonal cells, one nearest ground Techno per cell in native linked
     /// order, then its virtual+198. It does not scan every resident.
     /// Fresh knowledge additionally marks radar terrain dirty (6565A0);
@@ -1346,14 +1361,40 @@ impl Simulation {
                 .sight_admissions
                 .get(&(id, viewer))
                 .map_or(0, |source| source.radius);
-            for cell in vision::sight_border_cells(origin, radius.wrapping_add(3), 0) {
-                let cells = context
-                    .terrain()
-                    .or(self.resolved_terrain.as_ref())
-                    .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
-                self.fog
-                    .refresh_sight_border_cell(viewer, cell, cells.as_ref());
-            }
+            self.refresh_sight_border(viewer, origin, radius.wrapping_add(3), context);
+        }
+    }
+
+    /// Map567DA0: ground-frame storage only, with no discovery callback.
+    /// Shared by arrival, uncached reveal and both FireAt routes. Renderer
+    /// view generations replace6DA7D0's dirty queue, not retained Cell120.
+    pub(crate) fn refresh_sight_border(
+        &mut self,
+        viewer: crate::sim::intern::InternedId,
+        origin: (u16, u16, i32),
+        radius: i32,
+        context: UninitContext<'_>,
+    ) {
+        for cell in vision::sight_border_cells(origin, radius, 0) {
+            let cells = context
+                .terrain()
+                .or(self.resolved_terrain.as_ref())
+                .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
+            self.fog
+                .refresh_sight_border_cell(viewer, cell, cells.as_ref());
+            #[cfg(any(test, feature = "test-support"))]
+            REVEAL_CALLS.with_borrow_mut(|trace| {
+                if let Some(trace) = trace {
+                    trace.border_receivers.push(cell);
+                    if cell.0 < self.fog.width && cell.1 < self.fog.height {
+                        trace.border_ground_after.push(
+                            self.fog.by_owner[&viewer]
+                                .map_cell_edge_cache_for_test(cell)
+                                .0[0],
+                        );
+                    }
+                }
+            });
         }
     }
 
@@ -1406,29 +1447,12 @@ impl Simulation {
             //5673F8/56742A store translated XY in the Map local XYZ;
             //5678C0/C7 passes that local to567DA0, which applies its own
             //height translation. Z is unchanged, not doubled.
-            for cell in
-                vision::sight_border_cells(border_origin, geometry.radius.wrapping_add(3), 0)
-            {
-                let cells = context
-                    .terrain()
-                    .or(self.resolved_terrain.as_ref())
-                    .map(crate::map::resolved_terrain::NativeCellQuery::canonical);
-                self.fog
-                    .refresh_sight_border_cell(viewer, cell, cells.as_ref());
-                #[cfg(any(test, feature = "test-support"))]
-                REVEAL_CALLS.with_borrow_mut(|trace| {
-                    if let Some(trace) = trace {
-                        trace.uncached_border_receivers.push(cell);
-                        if cell.0 < self.fog.width && cell.1 < self.fog.height {
-                            trace.uncached_border_ground_after.push(
-                                self.fog.by_owner[&viewer]
-                                    .map_cell_edge_cache_for_test(cell)
-                                    .0[0],
-                            );
-                        }
-                    }
-                });
-            }
+            self.refresh_sight_border(
+                viewer,
+                border_origin,
+                geometry.radius.wrapping_add(3),
+                context,
+            );
         }
     }
 

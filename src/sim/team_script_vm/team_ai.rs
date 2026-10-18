@@ -15,14 +15,6 @@
 //!   friendly unit, `0x006EAF1C..0x006EB1B0`) is not ported; action 10 is
 //!   not, so such a team is stopped on it, and its centre is the mean as for
 //!   any other action.
-//! - `Recalc` destroying an empty team that was leaving the map (`+0x82`)
-//!   first springs trigger event 0x17 ("team leaves map") on every tag
-//!   (`0x006EA49F..0x006EA4D2`, `0x006E53A0`), whose evaluation draws on the
-//!   Scenario RNG for a trigger with event 51 (`0x007264C0` ->
-//!   `0x00726400`). That producer is not connected to the shared live Tag
-//!   owner. Trigger: a team sent to an off-map cell (action 54
-//!   without a passable cell) loses its last member. Effect: map triggers on
-//!   event 0x17 never fire from it.
 //! - `+0x75` (NeedsRegrouping, written by Regroup and the damage report)
 //!   and `+0x76` (written by Recalc under `GuardSlower=`) are not kept: no
 //!   TeamClass code reads either. The private forced-active `+0x77` is
@@ -191,7 +183,7 @@ impl Simulation {
         }
         // `0x006E917B`: a changed membership is recounted; an emptied team
         // that has been full is destroyed there.
-        if team.altered && !self.team_recalc(team_id, rules, frame_effects) {
+        if team.altered && !self.team_recalc(team_id, rules, registry, frame_effects) {
             return;
         }
         let Some(team) = self.team_script_vm.teams.get(&team_id) else {
@@ -306,6 +298,7 @@ impl Simulation {
         &mut self,
         team_id: u64,
         rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> bool {
         let vm = &mut self.team_script_vm;
@@ -327,6 +320,11 @@ impl Simulation {
             team.full_strength = false;
             team.zone = None;
             if team.has_been_full {
+                if team.leaving_map {
+                    //6EA49F..6EA4D2 raises23 while this empty Team still
+                    //exists. Callbacks can destroy Teams or create new Tags.
+                    self.raise_team_left_map_tags(rules, registry, frame_effects);
+                }
                 self.destroy_team(team_id, rules, frame_effects);
                 return false;
             }

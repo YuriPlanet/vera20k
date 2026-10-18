@@ -1,15 +1,27 @@
 //! Original full LaserDraw -> software DSurface comparisons, including live
 //! production GPU destination blending and immutable native depth.
 use super::*;
+use crate::app::presentation::lasers::Lasers;
 use crate::render::batch::BatchRenderer;
-use crate::render::laser::LaserDraw;
+use crate::render::laser::{LaserDraw, LaserDrawColor};
 use crate::render::surface_line::{SurfaceLine, SurfaceLineBlend};
 use crate::render::terrain_draw_gpu_tests::{Gpu, camera, clear, encoded, seed_depth_grid};
+use crate::sim::combat::laser::{LaserBirth, LaserColor};
+use crate::sim::intern::InternedId;
 use crate::sim::projectile::ProjectileCoord;
+use crate::sim::rng::{MainRng, SimRng};
+use crate::util::native_x87::NativeF32Bits;
 use serde_json::Value;
 
 fn corpus() -> &'static Value {
     crate::test_fixture::json("tools/spatial_oracle/building_prism.json")
+}
+fn drawing_rows() -> impl Iterator<Item = &'static Value> {
+    corpus()["laser_draw"].as_array().unwrap().iter().chain(
+        crate::test_fixture::json("tools/spatial_oracle/disk_laser.json")["laser_draw"]
+            .as_array()
+            .unwrap(),
+    )
 }
 fn integer(v: &Value) -> i32 {
     v.as_i64().unwrap() as i32
@@ -23,35 +35,69 @@ fn coord(v: &Value) -> ProjectileCoord {
 }
 fn draws(row: &Value) -> Vec<LaserDraw> {
     let laser = &row["laser"];
-    let first = LaserDraw {
+    let inner = array::<3>(&laser["inner"]).map(|v| v as u8);
+    let first = LaserBirth {
+        frame: integer(&laser["timer_start"]),
         from: coord(&laser["source"]),
         to: coord(&laser["target"]),
         z_adjust: integer(&laser["z_adjust"]),
         width: integer(&laser["width"]),
         supported: laser["supported"] == 1,
-        rgb: array::<3>(&laser["inner"]).map(|v| v as u8),
+        color: if integer(&laser["house_color"]) != 0 {
+            LaserColor::House(InternedId::default())
+        } else {
+            LaserColor::Explicit {
+                inner,
+                outer: array::<3>(&laser["outer"]).map(|v| v as u8),
+                spread: array::<3>(&laser["spread"]).map(|v| v as u8),
+            }
+        },
         duration: integer(&laser["duration"]),
-        age: integer(&laser["age"]),
+        fade_end: NativeF32Bits::from_bits(laser["fade_end_bits"].as_u64().unwrap() as u32),
     };
-    let mut draws = Vec::new();
+    let mut lasers = Lasers::default();
+    lasers.create(first, |_| inner);
     if row["input"]["second_laser"] == true {
         // Original fixture's second constructor, then reverse registry draw.
-        draws.push(LaserDraw {
-            from: first.to,
-            to: first.from,
-            z_adjust: -2,
-            width: 1,
-            supported: false,
-            rgb: [200, 150, 100],
-            age: 0,
-            duration: 15,
-        });
+        lasers.create(
+            LaserBirth {
+                from: first.to,
+                to: first.from,
+                z_adjust: -2,
+                width: 1,
+                supported: false,
+                color: LaserColor::House(InternedId::default()),
+                duration: 15,
+                ..first
+            },
+            |_| [200, 150, 100],
+        );
     }
-    draws.push(first);
+    let main: MainRng = if let Some(state) = row["rng_before"]["main"].as_str() {
+        SimRng::from_native_state_hex_for_test(state).into()
+    } else {
+        assert!(matches!(first.color, LaserColor::House(_)));
+        SimRng::new(31).into()
+    };
+    // Color spread uses the actual production owner once. Prepared native
+    // age remains a declared draw input, including age==duration controls
+    // that an ordinary Logic update would already have removed.
+    lasers.composite(&mut main.draws());
+    if let Some(expected) = row["rng_after"]["main"].as_str() {
+        assert_eq!(
+            main.native_state_hex(),
+            expected,
+            "{}: Main",
+            row["input"]["name"]
+        );
+    }
+    let mut draws = lasers.draws().collect::<Vec<_>>();
+    draws.last_mut().unwrap().age = integer(&laser["age"]);
     draws
 }
-fn high_detail(input: &Value) -> bool {
-    input["detail"].as_i64().unwrap_or(2) != 0 && input["fps"].as_u64().unwrap_or(60) >= 15
+fn high_detail(input: &Value, color: LaserDrawColor) -> bool {
+    input["detail"].as_i64().unwrap_or(2) != 0
+        && (!matches!(color, LaserDrawColor::House(_)) || input["fps"].as_u64().unwrap_or(60) >= 15)
 }
 fn viewport(input: &Value) -> SurfaceLineViewport {
     let mut camera: [i32; 2] = array(&input["camera"]);
@@ -70,14 +116,17 @@ fn viewport(input: &Value) -> SurfaceLineViewport {
 
 #[test]
 fn laser_geometry_color_and_fade_match_original_draw_arguments() {
-    for row in corpus()["laser_draw"].as_array().unwrap() {
+    for row in drawing_rows() {
         let mut actual = Vec::new();
         let draws = draws(row);
-        for (draw, fade) in draws
-            .iter()
-            .filter(|d| d.duration > 0)
-            .zip(row["fade"].as_array().unwrap())
-        {
+        let fades = row["fade"].as_array().unwrap();
+        assert_eq!(
+            fades.len(),
+            draws.iter().filter(|draw| draw.duration > 0).count(),
+            "{}: original retained fade for every admitted draw",
+            row["input"]["name"]
+        );
+        for (draw, fade) in draws.iter().filter(|d| d.duration > 0).zip(fades) {
             assert_eq!(
                 draw.intensity().bits(),
                 fade["intensity_bits"].as_u64().unwrap() as u32,
@@ -88,7 +137,7 @@ fn laser_geometry_color_and_fade_match_original_draw_arguments() {
         for draw in draws {
             draw.lines(
                 viewport(&row["input"]).camera,
-                high_detail(&row["input"]),
+                high_detail(&row["input"], draw.color),
                 |line| actual.push(line),
             );
         }
@@ -122,9 +171,8 @@ fn laser_geometry_color_and_fade_match_original_draw_arguments() {
 }
 
 #[test]
-#[ignore = "requires GPU; full original house-laser RGB565 pixels, shared Z and bounded batches"]
+#[ignore = "requires GPU; original House/General laser RGB565 pixels, shared Z and bounded batches"]
 fn production_laser_pixels_match_original_software_surface() {
-    let native = corpus();
     let gpu = Gpu::new();
     let size = [160, 120];
     let mut failures = Vec::new();
@@ -140,11 +188,15 @@ fn production_laser_pixels_match_original_software_surface() {
         let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
         let dv = depth.create_view(&Default::default());
         terrain.prepare(&gpu.device, &color, &dv, batch.camera_uniform());
-        for row in native["laser_draw"].as_array().unwrap() {
+        for row in drawing_rows() {
             let input = &row["input"];
             let name = input["name"].as_str().unwrap();
             for chunk in [None, Some(97)] {
-                if chunk.is_some() && name != "reverse_draw_order" && name != "detail2_saturation" {
+                if chunk.is_some()
+                    && name != "reverse_draw_order"
+                    && name != "detail2_saturation"
+                    && integer(&row["laser"]["house_color"]) != 0
+                {
                     continue;
                 }
                 terrain.surface_lines.test_operation_limit = chunk;
@@ -173,11 +225,12 @@ fn production_laser_pixels_match_original_software_surface() {
                     &gpu.device,
                     &gpu.queue,
                     draws(row),
+                    std::iter::empty(),
                     &[],
                     &[],
                     &[],
                     viewport(input),
-                    || high_detail(input),
+                    |color| high_detail(input, color),
                     |[x, y]| match input["alpha"].as_str() {
                         Some("mixed") => [0, 1, 63, 127, 255][((x / 9 + y / 7) % 5) as usize],
                         Some("black") => 0,

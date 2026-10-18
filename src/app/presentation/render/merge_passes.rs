@@ -38,6 +38,7 @@ pub(super) fn draw_native_object_pass<'a>(
         &'a wgpu::Buffer,
         Option<&'a crate::render::batch::BatchTexture>,
     )>,
+    lights: Option<&crate::render::combat_light::CombatLightRenderer>,
 ) -> crate::render::terrain_draw::TerrainBatchStats {
     let mut terrain_stats = crate::render::terrain_draw::TerrainBatchStats::default();
     assert_eq!(
@@ -82,6 +83,14 @@ pub(super) fn draw_native_object_pass<'a>(
         let run = &ground.runs[cursor];
         if let ObjectTexture::SurfaceLines(index) = run.target {
             terrain.draw_surface_lines(encoder, color, ground.line_batches[index]);
+            cursor += 1;
+            continue;
+        }
+        if let ObjectTexture::CombatLight(index) = run.target {
+            let lights = lights.expect("a System light has this frame's prepared renderer");
+            if lights.draw_record(encoder, tactical, ground.light_record_base + index) {
+                terrain.note_external_passes(encoder, 1);
+            }
             cursor += 1;
             continue;
         }
@@ -237,7 +246,9 @@ pub(super) fn draw_native_object_pass<'a>(
             && destination_edit(ground.runs[cursor].target).is_none()
             && !matches!(
                 ground.runs[cursor].target,
-                ObjectTexture::SurfaceLines(_) | ObjectTexture::Status(_)
+                ObjectTexture::SurfaceLines(_)
+                    | ObjectTexture::CombatLight(_)
+                    | ObjectTexture::Status(_)
             )
         {
             let run = &ground.runs[cursor];
@@ -255,7 +266,9 @@ pub(super) fn draw_native_object_pass<'a>(
                 break;
             }
             match run.target {
-                ObjectTexture::SurfaceLines(_) | ObjectTexture::Status(_) => {
+                ObjectTexture::SurfaceLines(_)
+                | ObjectTexture::CombatLight(_)
+                | ObjectTexture::Status(_) => {
                     unreachable!("surface commands replay before sprite dispatch")
                 }
                 ObjectTexture::TerrainShp(_) | ObjectTexture::ProjectileShp(_, _) => {
@@ -633,3 +646,7 @@ mod infantry_berserk_gpu_tests;
 #[cfg(test)]
 #[path = "projectile_voxel_gpu_tests.rs"]
 mod projectile_voxel_gpu_tests;
+
+#[cfg(test)]
+#[path = "welding_gpu_tests.rs"]
+mod welding_gpu_tests;

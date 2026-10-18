@@ -159,18 +159,37 @@ class CargoRunTests(unittest.TestCase):
         cases = (
             (['test', '-p', 'vera20k-core', '--lib', 'sim::'], features),
             (['test', '--package=vera20k-core', '--lib'], features),
-            (['test', '-pvera20k-core', '--lib', '--', '--ignored'], features),
+            (['test', '-pvera20k-core', '--lib'], features),
             (['test', '-p', 'vera20k', '--lib'], []),
             (['test', '--workspace', '--lib'], []),
             (['test', '-p', 'vera20k-core', '-p', 'vera20k', '--lib'], []),
             (['test', '-p', 'vera20k-core', '--features', 'dev-ui', '--lib'], []),
             (['test', '-p', 'vera20k-core', '--no-default-features', '--lib'], []),
+            (['test', '-p', 'vera20k-core', '--features', 'dev-overlays,test-support',
+              '--lib', '--', '--ignored', '--nocapture'], []),
+            (['test', '-p', 'vera20k-core', '--all-features', '--lib', '--', '--exact'], []),
             (['build', '-p', 'vera20k-core', '--release'], []),
         )
         for args, added in cases:
             with self.subTest(args=args):
                 rendered = cargo_run.cargo_args(args, None)
                 self.assertEqual(rendered, [args[0], '--message-format=json-render-diagnostics', *args[1:], *added])
+
+    def test_automatic_core_features_stay_before_libtest_separator(self):
+        # Cargo consumes the feature selection; everything after -- belongs
+        # to libtest. Issue #1841 built successfully, then ran zero assertions.
+        options = ['test', '-p', 'vera20k-core', '--lib', 'wall_sale_detach']
+        for libtest_args in (['--nocapture'], ['--ignored', '--nocapture'],
+                             ['--exact', '--nocapture'], []):
+            with self.subTest(libtest_args=libtest_args):
+                rendered = cargo_run.cargo_args([*options, '--', *libtest_args], None)
+                separator = rendered.index('--')
+                self.assertEqual(rendered[separator + 1:], libtest_args)
+                self.assertEqual(rendered[:separator], [
+                    'test', '--message-format=json-render-diagnostics',
+                    '-p', 'vera20k-core', '--lib', 'wall_sale_detach',
+                    '--features', 'dev-overlays,test-support',
+                ])
 
     def test_core_only_and_workspace_tests_resolve_core_dependencies_alike(self):
         # Any feature difference gives `-p vera20k-core` its own core test

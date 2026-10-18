@@ -174,12 +174,12 @@ pub(super) fn radar_colors_for_tmp_metadata(
     // and `Math__ftol` truncates. `CellClass::GetRadarColor @ 0x0047C060`
     // then reads only TMP +0x2B..0x2D (RadarLeft), unsigned-shifts each byte,
     // and copies the same triple to both raw footprint pixels.
-    let color = radar_left.map(|channel| {
-        ((f32::from(channel) * terrain_brightness)
-            .clamp(0.0, 255.0)
-            .trunc() as u8)
-            >> 1
-    });
+    let color = crate::util::native_color::scale_rgb8(
+        radar_left,
+        crate::util::native_x87::NativeF32Bits::from_bits(terrain_brightness.to_bits()),
+    )
+    .expect("radar theater brightness is finite")
+    .map(|channel| channel >> 1);
     (color, color)
 }
 

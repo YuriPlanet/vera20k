@@ -741,11 +741,16 @@ mod tests {
     fn current_house_collision_preserves_launch_label_and_distinct_colors() {
         for (handle, expected_key) in [
             ("Neutral", "Player"),
+            (" Neutral ", "Player"),
             ("SPECIAL", "Player"),
+            (" Special ", "Player"),
             ("computer1", "Player"),
+            (" Computer1 ", "Player"),
             ("Computer2", "Computer2"),
+            (" Computer2 ", " Computer2 "),
             ("Computer01", "Computer01"),
             ("Commander", "Commander"),
+            (" Commander ", " Commander "),
         ] {
             let mut session = test_session();
             session.player_name = handle.to_string();
@@ -777,9 +782,11 @@ mod tests {
             "Computer1"
         );
         let mut two_ai = test_session();
-        two_ai.player_name = "cOmPuTeR2".to_string();
         two_ai.opponents.push(two_ai.opponents[0].clone());
-        assert_eq!(normalized_launch_slots(&two_ai)[0].owner_name, "Player");
+        for handle in ["cOmPuTeR2", " Computer2 "] {
+            two_ai.player_name = handle.to_owned();
+            assert_eq!(normalized_launch_slots(&two_ai)[0].owner_name, "Player");
+        }
     }
 
     /// gamemd-derived: active YR `ScenarioClass__Gather_Start_Positions
@@ -1212,7 +1219,9 @@ mod tests {
 
         let spawned = sim.spawn_from_map(
             &[crate::map::entities::MapEntity {
-                owner: "Player".to_owned(),
+                // Native offline Structures resolves the generated AI name.
+                // The current human is excluded before the constructor.
+                owner: "Computer".to_owned(),
                 type_id: "GACNST".to_owned(),
                 health: 256,
                 cell_x: 30,
@@ -1234,14 +1243,14 @@ mod tests {
         );
 
         assert_eq!(spawned, 1);
-        let player = sim
+        let computer = sim
             .interner
-            .get("Player")
-            .expect("pre-created player house");
-        assert_eq!(sim.houses[&player].tracking.buildings(), 1);
+            .get("Computer1")
+            .expect("pre-created first AI house");
+        assert_eq!(sim.houses[&computer].tracking.buildings(), 1);
         assert_eq!(
             sim.substrate.base_reservations.raw_mask(None, 28, 38),
-            1,
+            2,
             "Reveal writes the participant's house-index bit without a repair pass"
         );
     }
@@ -1307,8 +1316,10 @@ mod tests {
         );
         assert_eq!(credits("Computer3"), Some(10_000), "Normal: +0%");
         assert_eq!(credits("Computer4"), Some(10_000), "Easy: +0%");
-        assert_eq!(credits("Neutral"), Some(10_000));
-        assert_eq!(credits("Special"), Some(10_000));
+        // Fixed-tail Houses retain ctor4F58D8 cash0; the passive grant
+        // neither seeds them with participant cash nor adds a bonus.
+        assert_eq!(credits("Neutral"), Some(0));
+        assert_eq!(credits("Special"), Some(0));
         assert_eq!(credits("Observer"), Some(10_000));
     }
 

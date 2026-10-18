@@ -27,7 +27,7 @@
 //! - Part of sim/ — depends on util/ and the rest of sim/.
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.
 
-use glam::IVec3;
+use glam::{IVec3, Mat4, Vec3};
 use serde::{Deserialize, Serialize};
 
 use crate::sim::rng::SimRng;
@@ -375,8 +375,8 @@ fn quaternion_multiply(
 ///    away, so it must be read from disassembly.
 /// 8. Slope re-bounce, when `cell(new).level - cell(old).level >= 2` and the
 ///    entry-tick velocity conditions against `-0.0002` / `-0.0003` hold: roll
-///    back to the snapshot, transform the velocity by one of four planar
-///    mirror matrices (`FUN_00755C60 @ 0x00755C60`), then scale all three
+///    back to the snapshot, transform the velocity by the Cell cliff direction's
+///    matrix (`FUN_00755C60 @ 0x00755C60`), then scale all three
 ///    components by `Elasticity` — as a `double` here, unlike step 7's f32
 ///    narrowing. This REPLACES step 7 rather than following it.
 /// 9. Stop test — and it is not `|Velocity|`. `FUN_00439A10 @ 0x00439A10`
@@ -403,8 +403,8 @@ fn quaternion_multiply(
 ///   default.
 ///
 /// Ground/deck queries are delivered by the current
-/// Phase 3 Bounce ground-height comparison. The cliff mirror remains a
-/// separate residual below.
+/// Phase 3 Bounce ground-height comparison and the native cliff controls in
+/// tools/spatial_oracle/bounce_cliff.{json,md} retain the query/numeric evidence.
 const FLAT_RAMP: u8 = 0;
 
 /// The drop applied when the body rises back through the deck plane
@@ -457,6 +457,10 @@ pub trait BounceTerrain {
     fn cell_height_level(&self, coord: IVec3) -> i32;
     /// The cell's ramp index, which selects the reflection matrix.
     fn ramp(&self, coord: IVec3) -> u8;
+    /// Bounce439FF1/4848B0: independently select the post-snap Cell and query
+    /// its cliff direction against the previous world coordinate. None is the
+    /// native -1 result or an unrepresented raw displacement; faces are0..8.
+    fn cliff_face_direction(&self, coord: IVec3, previous: IVec3) -> Option<u8>;
     /// `Look_up_building_in_cell` non-null, or
     /// `CellClass::IsWallConnectableInDirection(-1, -1)`.
     fn has_bounce_surface(&self, cell: &Self::Cell) -> bool;
@@ -643,8 +647,6 @@ impl BounceState {
     /// 10. The tumble: a reflection negates the rotation's vector part, and
     ///     every tick integrates the orientation ([`Self::finish_tick`]).
     ///
-    /// One arm is NOT modelled, recorded where it is skipped: the cliff-face
-    /// mirror for a bouncy body.
     pub fn update(
         &mut self,
         terrain: &impl BounceTerrain,
@@ -739,34 +741,66 @@ impl BounceState {
         // -0.0002 with the body now above where it was, or else not below
         // -0.0003 with the body now more than `vz + 1` above it.
         let old_level = terrain.cell_height_level(old_coord);
-        let new_level = terrain.cell_height_level(ftol_coord(self.position)?);
+        let post_snap_coord = ftol_coord(self.position)?;
+        let new_level = terrain.cell_height_level(post_snap_coord);
         if new_level.wrapping_sub(old_level) >= CLIFF_FACE_LEVELS
             && Self::enters_cliff_face(snapshot, self.position[2])?
         {
             (self.position, self.velocity) = snapshot;
-            // RESIDUAL (GSI-05.14): the mirror is one of the planar matrices
-            // `FUN_00755C60` builds for the face's direction (`0x004848B0`),
-            // unreadable through this instrument. `Elasticity=0` — every
-            // stock SHP debris chunk — zeroes it whatever the matrix (the
-            // sign of each zero is not modelled); any other elasticity keeps
-            // the flat reflection of the restored velocity.
-            // - Trigger: a bouncing body entering a cell two or more levels up.
-            // - Player effect: a bouncy piece rebounds off the face vertically
-            //   instead of away from it.
-            // - Frequency: rare; only `[TIRE]` (0.8) bounces among stock types.
-            // - Downstream risk: none to the stream; no draws are involved.
-            self.velocity = if self.elasticity.bits() & !(1 << 63) == 0 {
-                [NativeF32Bits::POSITIVE_ZERO; 3]
-            } else {
-                Self::reflect_off_ground_or_flat(
-                    self.velocity,
-                    self.elasticity,
-                    terrain.ramp(new_coord),
-                )?
-            };
+            if let Some(direction) = terrain.cliff_face_direction(post_snap_coord, old_coord) {
+                self.velocity = Self::reflect_off_cliff(self.velocity, self.elasticity, direction)?;
+            }
         }
 
         self.finish_tick(terrain, BounceOutcome::Bounced)
+    }
+
+    /// Original755C60 ->5AFB80 ->43A043..43A05A. Startup754CB0 initializes
+    /// B450B8's four mirrors; direction8 copies the adjacent fifth48-byte row.
+    /// Consumed original startup/selector/fullUpdate: bounce_cliff.json.
+    fn reflect_off_cliff(
+        velocity: [NativeF32Bits; 3],
+        elasticity: NativeF64Bits,
+        direction: u8,
+    ) -> Result<[NativeF32Bits; 3], NativeX87Error> {
+        const ROWS: [[f32; 12]; 5] = [
+            [1., 0., 0., 0., 0., -1., 0., 0., 0., 0., 1., 0.],
+            [0., 1., 0., 0., 1., 0., 0., 0., 0., 0., 1., 0.],
+            [-1., 0., 0., 0., 0., 1., 0., 0., 0., 0., 1., 0.],
+            [0., -1., 0., 0., -1., 0., 0., 0., 0., 0., 1., 0.],
+            [0., 0., 0., 0., 1., 0., 0., 0., 0., 1., 0., 0.],
+        ];
+        // This is a single subtraction, not direction&3.
+        let index = if direction >= 4 {
+            direction - 4
+        } else {
+            direction
+        };
+        let row = ROWS
+            .get(usize::from(index))
+            .expect("Cell4848B0 cliff direction must be in0..8");
+        let matrix = Mat4::from_cols_array_2d(&[
+            [row[0], row[4], row[8], 0.],
+            [row[1], row[5], row[9], 0.],
+            [row[2], row[6], row[10], 0.],
+            [row[3], row[7], row[11], 1.],
+        ]);
+        // Reuse the single5AFB80 owner, including its per-row addition order
+        // and float stores. Each row selects at most one finite component.
+        let transformed = crate::util::native_affine::transform_point(
+            matrix,
+            Vec3::from_array(velocity.map(f32_of)),
+        )
+        .ok_or(NativeX87Error::NonFiniteInput { format: "f32" })?;
+        let scale = X87Chop53::load_f64(elasticity)?;
+        let mut result = [NativeF32Bits::POSITIVE_ZERO; 3];
+        for (axis, component) in transformed.to_array().into_iter().enumerate() {
+            result[axis] = X87Chop53::store_f32(X87Chop53::mul(
+                scale,
+                X87Chop53::load_f32(NativeF32Bits::from_bits(component.to_bits()))?,
+            ))?;
+        }
+        Ok(result)
     }
 
     /// The cliff-face entry test (`0x00439F67..0x00439FB1`) on the pre-tick

@@ -221,41 +221,92 @@ fn overlay_display_identity(
     (display_overlay_id, overlay_data)
 }
 
-pub(crate) fn build_anim_class_instances(
-    state: &AppState,
+/// Borrowed inputs to the one retained dynamic-effect traversal. App startup,
+/// platform windows and unrelated presentation resources are not draw inputs.
+pub(crate) struct DisplayEffectInputs<'a> {
+    pub sim: &'a crate::sim::world::Simulation,
+    pub rules: &'a crate::rules::ruleset::RuleSet,
+    pub camera: [f32; 2],
+    pub render_size: [u32; 2],
+    pub tactical: [u32; 4],
+    pub zoom: f32,
+    pub axis: crate::render::batch::DepthAxis,
+    pub atlas: Option<&'a crate::render::sprite_atlas::SpriteAtlas>,
+    pub detail: &'a std::cell::RefCell<crate::app::presentation::detail::DetailState>,
+    pub detail_level: u32,
+    pub lighting: &'a crate::map::lighting::CellLightGrid,
+    pub house_colors: &'a crate::map::houses::HouseColorMap,
+    pub hidden_super_anims: &'a std::collections::BTreeSet<crate::sim::anim_class::AnimId>,
+    pub local_owner: Option<crate::sim::intern::InternedId>,
+    pub observe_particles: bool,
+}
+
+/// Traverse dynamic effect bodies in actual Display order. Anim and particle
+/// consumers share the mutative55AF60 FPS latch; grouping them by class changes
+/// native admission when the unsigned minimum/buffer arithmetic wraps.
+pub(crate) fn build_display_effect_instances(
+    input: &DisplayEffectInputs<'_>,
     ground_objects: &mut Vec<
         crate::app::presentation::render::draw_plan_lowering::PlannedObjectInstance,
     >,
     ground_order: &crate::app::presentation::render::draw_plan_lowering::NativeDisplayOrder,
-) {
-    // Slot animations use their existing binding/light path but are now
-    // independent Display objects, including when their body is culled.
-    super::shp::build_building_anim_instances(state, ground_objects, ground_order);
-    let (sim, atlas) = match (
-        state
-            .match_state
-            .sim_runtime
-            .as_ref()
-            .map(|rt| &rt.simulation),
-        &state.match_state.match_presentation.sprite_atlas,
-    ) {
-        (Some(s), Some(a)) => (s, a),
-        _ => return,
-    };
-    let z2 = state.match_state.input.zoom_level;
-    let (cam_x, cam_y, sw, sh) = (
-        state.match_state.input.camera_x,
-        state.match_state.input.camera_y,
-        state.render_width() as f32 / z2,
-        state.render_height() as f32 / z2,
+) -> Option<Vec<super::particles::ParticleDrawObservation>> {
+    let mut observations = input.observe_particles.then(Vec::new);
+    let sim = input.sim;
+    let context = super::particles::ParticleDrawContext::new(
+        input.camera,
+        input.zoom,
+        input.tactical,
+        input.axis,
     );
-    let parachute_type = state
-        .rules()
-        .and_then(|rules| rules.general.parachute_shp.as_deref())
+    // Particles have independent AIR registrations, including live bodies
+    // detached from a System. The store owns their lifetime; Display supplies
+    // every encounter, never this frame-local lookup's iteration/hash order.
+    let particles: HashMap<_, _> = sim
+        .particle_systems()
+        .display_particles()
+        .map(|(system, particle)| (particle.stable_id(), (system, particle)))
+        .collect();
+    let z2 = input.zoom;
+    let (cam_x, cam_y, sw, sh) = (
+        input.camera[0],
+        input.camera[1],
+        input.render_size[0] as f32 / z2,
+        input.render_size[1] as f32 / z2,
+    );
+    let parachute_type = input
+        .rules
+        .general
+        .parachute_shp
+        .as_deref()
         .and_then(|name| sim.interner.get(name));
-    let local_owner = crate::app::input::commands::preferred_local_owner_name(state)
-        .and_then(|name| sim.interner.get(&name));
+    let local_owner = input.local_owner;
     for &stable_id in sim.display_layers().ordered_ids() {
+        if let Some(system) = sim.particle_systems().get(stable_id) {
+            super::particles::build_particle_system_instance(
+                input,
+                system,
+                &context,
+                ground_objects,
+                ground_order,
+            );
+            continue;
+        }
+        if let Some(&(system, particle)) = particles.get(&stable_id) {
+            super::particles::build_particle_instance(
+                input,
+                system,
+                particle,
+                &context,
+                ground_objects,
+                ground_order,
+                &mut observations,
+            );
+            continue;
+        }
+        let Some(atlas) = input.atlas else {
+            continue;
+        };
         let Some(anim) = sim.anim(stable_id) else {
             continue;
         };
@@ -270,41 +321,28 @@ pub(crate) fn build_anim_class_instances(
             continue;
         }
         let type_name: &str = sim.interner.resolve(anim.type_id);
-        let config = state
-            .rules()
-            .and_then(|rules| rules.art().anim_runtime_config(type_name));
+        let config = input.rules.art().anim_runtime_config(type_name);
         if config.is_some_and(|config| !config.art_body_read) {
             continue;
         }
         if !crate::sim::anim_class::anim_draw_detail_visible(
             crate::sim::anim_class::AnimDrawDetailInput {
                 frame_rate_below_minimum: {
-                    let mut detail = state.match_state.match_presentation.detail.borrow_mut();
+                    let mut detail = input.detail.borrow_mut();
                     detail.frame_rate() < detail.minimum_frame_rate()
                 },
                 type_detail_level: config.map_or(0, |value| value.detail_level),
-                game_detail_level: state
-                    .match_state
-                    .match_presentation
-                    .in_game_options
-                    .detail_level as i32,
+                game_detail_level: input.detail_level as i32,
                 // `AnimClass::AI` rewrites a PsiWarning anim's hidden byte
                 // every frame from the local player's detection.
-                hidden: match (
-                    config.is_some_and(|config| config.psi_warning),
-                    state.rules(),
-                ) {
-                    (true, Some(rules)) => !local_owner
-                        .is_some_and(|viewer| sim.psi_warning_detected_by(viewer, anim, rules)),
+                hidden: match config.is_some_and(|config| config.psi_warning) {
+                    true => !local_owner.is_some_and(|viewer| {
+                        sim.psi_warning_detected_by(viewer, anim, input.rules)
+                    }),
                     // A Super's ChronoPlacement anim: the client's byte
                     // (`match_runtime::super_selection`).
-                    _ => {
-                        anim.draw_runtime.hidden
-                            || state
-                                .match_state
-                                .match_presentation
-                                .hidden_super_anims
-                                .contains(&stable_id)
+                    false => {
+                        anim.draw_runtime.hidden || input.hidden_super_anims.contains(&stable_id)
                     }
                 },
                 special_hidden: anim.draw_runtime.special_hidden,
@@ -329,21 +367,19 @@ pub(crate) fn build_anim_class_instances(
         ) {
             continue;
         }
-        let tint = state
-            .match_state
-            .match_presentation
-            .lighting
-            .grid()
-            .anim_tint_at((rx, ry), config);
-        let remap_color = crate::render::sprite_atlas::anim_remap_color(
-            anim,
-            &sim.interner,
-            &state.match_state.match_presentation.house_color_map,
-        );
+        let tint = input.lighting.anim_tint_at((rx, ry), config);
+        let remap_color =
+            crate::render::sprite_atlas::anim_remap_color(anim, &sim.interner, input.house_colors);
         let palette_light = if remap_color.is_some() {
             Default::default()
         } else {
-            anim_palette_light(state, (rx, ry), config, anim.use_cell_drawer)
+            crate::app::presentation::lighting::anim_palette_light(
+                input.lighting,
+                Some(&sim.session.lighting),
+                (rx, ry),
+                config,
+                anim.use_cell_drawer,
+            )
         };
         let key = ShpSpriteKey {
             palette_context: if anim.use_cell_drawer {
@@ -369,22 +405,12 @@ pub(crate) fn build_anim_class_instances(
                 presentation_anim_frame_count(&atlas.active_anim_frame_counts, type_name)
                     .unwrap_or(0),
             ),
-            state
-                .match_state
-                .match_presentation
-                .in_game_options
-                .detail_level as i32,
+            input.detail_level as i32,
             anim.draw_runtime,
         ) else {
             continue;
         };
-        let (origin_y, world_height) = state
-            .match_state
-            .match_presentation
-            .terrain_grid
-            .as_ref()
-            .map(|grid| (grid.origin_y, grid.world_height))
-            .unwrap_or((0.0, 1.0));
+        let (origin_y, world_height) = (input.axis.origin_y, input.axis.world_height);
         let fire_depth = super::helpers::compute_sprite_depth_params_lifted(
             origin_y,
             world_height,
@@ -439,6 +465,7 @@ pub(crate) fn build_anim_class_instances(
             );
         }
     }
+    observations
 }
 
 /// Source-pixel weight one animation frame draws with.

@@ -130,13 +130,16 @@ fn pending_deploy_survives_snapshot_and_paid_head_completion() {
 }
 
 #[test]
-fn retail_gi_and_guardian_gi_complete_deploy_in_bound_runtime() {
+fn retail_gi_and_guardian_gi_deploy_then_team_move_in_bound_runtime() {
     use crate::map::resolved_terrain::test_flat_ground_grid;
     use crate::rules::art_data::ArtRegistry;
     use crate::rules::ini_parser::IniFile;
     use crate::rules::ruleset::RuleSet;
+    use crate::rules::team_ai_ini::TeamAiDefinitionSource;
     use crate::sim::house_state::{HouseDifficulty, HouseState};
+    use crate::sim::mission::MissionType;
     use crate::sim::runtime::{SimResources, SimRuntime};
+    use crate::sim::team_script_vm::{TeamScriptAction, TeamScriptDefinition};
     use crate::sim::world::{Simulation, TickLane};
 
     let Some(rules_bytes) = crate::rules::retail_ini_fixture::retail_ini_bytes("rulesmd.ini")
@@ -176,7 +179,12 @@ fn retail_gi_and_guardian_gi_complete_deploy_in_bound_runtime() {
     // Supply the Clear/Foot row that ordinary Infantry Unlimbo reads before
     // these retail automatic-deploy frames begin.
     let terrain = test_flat_ground_grid(64);
-    sim.resolved_terrain = Some(terrain.clone());
+    sim.session.map_width = 64;
+    sim.session.map_height = 64;
+    sim.install_resolved_terrain_for_new_map(terrain.clone());
+    sim.playfield_bounds = Some(crate::sim::arena_fixture::OPEN_PLAYFIELD);
+    sim.playfield_size_height = Some(20);
+    assert!(sim.rebuild_dynamic_navigation(&rules));
     for (name, human) in [("Americans", false), ("French", true)] {
         let owner = sim.interner.intern(name);
         let mut house = HouseState::new(owner, 0, None, human, 0, 10);
@@ -248,4 +256,144 @@ fn retail_gi_and_guardian_gi_complete_deploy_in_bound_runtime() {
                 .infantry_deploy_doing()
         );
     }
+
+    assert!(
+        !runtime
+            .resources
+            .rules
+            .object("GGI")
+            .unwrap()
+            .deployed_crushable
+    );
+    assert_eq!(
+        runtime
+            .simulation
+            .substrate
+            .entities
+            .get(guardian)
+            .unwrap()
+            .native_crush_immunity(),
+        1,
+        "the real Deploy27 completion granted the Guardian GI's retained immunity"
+    );
+    // A formed team sends each already-deployed member through real script3
+    // and CoordinateMove6EBAD0: QueueMove6EBE24, Ready6EBE2E,
+    // Commence6EBE3C, then class destination6EBE56. This supplies only the
+    // team membership and script cursor; Doing, Stage and deployment state
+    // above and below are produced by ordinary bound-runtime frames.
+    let waypoints = crate::map::waypoints::parse_waypoints(&IniFile::from_str(
+        "[Waypoints]\n0=10020\n1=10022\n",
+    ));
+    runtime.simulation.session.install_waypoints(&waypoints);
+    for (waypoint, id) in [gi, guardian].into_iter().enumerate() {
+        let sim = &mut runtime.simulation;
+        let script = sim.interner.intern(&format!("DEPLOYED_MOVE_{waypoint}"));
+        sim.team_script_vm.register_script(TeamScriptDefinition {
+            id: script,
+            source: TeamAiDefinitionSource::Scenario,
+            actions: vec![TeamScriptAction {
+                action_id: 3,
+                argument: waypoint as i32,
+            }],
+        });
+        let owner = sim.substrate.entities.get(id).unwrap().owner();
+        let team = sim.team_script_vm.create_team(
+            owner,
+            script,
+            vec![id],
+            sim.session.binary_frame as i32,
+        );
+        sim.team_script_vm.seek_line_for_test(team, 0);
+    }
+    let mut entered_undeploy = [false; 2];
+    let mut completed_undeploy = [false; 2];
+    let mut arrived = [false; 2];
+    for _ in 0..600 {
+        runtime
+            .advance_frame(
+                &[],
+                22,
+                TickLane::Ordinary,
+                crate::sim::world::FrameEffects::default(),
+            )
+            .unwrap();
+        for (index, id) in [gi, guardian].into_iter().enumerate() {
+            if arrived[index] {
+                continue;
+            }
+            let actor = runtime.simulation.substrate.entities.get(id).unwrap();
+            let doing = actor.mission_leaf.as_infantry().unwrap().doing();
+            if doing == 31 {
+                entered_undeploy[index] = true;
+                assert_eq!(
+                    actor.native_crush_immunity(),
+                    u8::from(id == guardian),
+                    "Undeploy31 retains crush immunity until its own completion"
+                );
+            }
+            if entered_undeploy[index] && !completed_undeploy[index] && matches!(doing, 0 | 3) {
+                assert_eq!(
+                    actor.native_crush_immunity(),
+                    0,
+                    "Undeploy31 completion revoked immunity before normal walking"
+                );
+                completed_undeploy[index] = true;
+            }
+            // Guard's idle action and automatic deployment can replace Doing
+            // by the time navigation settles; their poses do not own arrival.
+            if completed_undeploy[index] {
+                let at_destination =
+                    (actor.position.rx(), actor.position.ry()) == (20 + index as u16 * 2, 10);
+                let stopped = crate::sim::movement::motion_query::is_moving(actor) == Some(false);
+                arrived[index] = at_destination
+                    && stopped
+                    && actor.navigation.nav_com().is_none()
+                    && matches!(
+                        actor.mission.effective().known(),
+                        Some(MissionType::Guard | MissionType::AreaGuard)
+                    );
+            }
+        }
+        if arrived == [true, true] {
+            break;
+        }
+    }
+    assert_eq!(
+        entered_undeploy,
+        [true, true],
+        "both stock infantry took the AI Move wrapper's Undeploy31 request"
+    );
+    assert_eq!(
+        completed_undeploy,
+        [true, true],
+        "both completed Undeploy31 and restored ordinary crush admission"
+    );
+    assert_eq!(
+        arrived,
+        [true, true],
+        "both walked to their team's waypoint, cleared NavCom and returned to Guard: {:?}",
+        [gi, guardian].map(|id| {
+            let sim = &runtime.simulation;
+            let actor = sim.substrate.entities.get(id).unwrap();
+            let loco = actor.locomotor.as_ref().unwrap();
+            let team = sim
+                .team_script_vm
+                .team_for_member(id)
+                .and_then(|(team, _)| sim.team_script_vm.team(team))
+                .map(|team| (team.id(), team.cursor(), team.advance_pending(), team.formed(), team.refusal()));
+            format!(
+                "id={id} frame={} position={:?} Doing={} current={:?} queued={:?} NavCom={:?} destination={:?} head={:?} moving={:?} immunity={} team={team:?}",
+                sim.session.binary_frame,
+                crate::sim::movement::ground_pose::position_world_coord(&actor.position),
+                actor.mission_leaf.as_infantry().unwrap().doing(),
+                actor.mission.current(),
+                actor.mission.queued(),
+                actor.navigation.nav_com(),
+                loco.walk_destination(),
+                loco.step_head(),
+                crate::sim::movement::motion_query::is_moving(actor),
+                actor.native_crush_immunity(),
+            )
+        })
+    );
 }

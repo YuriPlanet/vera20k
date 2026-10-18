@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original4848B0 directions,755C60 initialized rows0..4,5AFB80,23 complete439B00 controls and physical Hills TIRE constructor/749F30 flight through retirement/drain",
+  "assumptions": [
+    "Original native_slope.initialize_slope_tables runs full startup in each same VM before any direction, matrix or Update call; fifth selector row is read literally, including its adjacency to slope storage. FPCW0E7F is restored.",
+    "TIRE scalar bits and complete constructed Bounce0x50 body are inputs from existing consumed typed_warhead_debris original physical reader/constructor row. Only position/velocity are supplied numerical boundary priors for single-tick cliff controls; no ordinary death-to-cliff trajectory is claimed.",
+    "Mapped sparse Cell table with explicit signed levels/slope/flags/overlay and one shared initialized Dummy. No objects, OS, scheduler, damage, renderer or complete save/load lifecycle. Numeric three-stream states are supplied prior native outputs and asserted unchanged.",
+    "Direct direction rows cover four cardinals, four diagonals times four side admissions, same cell and two shared-Dummy histories. Update rows cover the20 directional cases and three no-cliff/contact controls. No host-computed direction/matrix/velocity is an expected native output.",
+    "Physical extension unwraps loose Hills.mmx with existing archive owner and decodes actual map packs; native theater reader, TMP loader, slope5471B0 and land544BE0 supply20 Cell priors. Sparse enrollment is supplied; every queried Cell must return one of those coordinates, never Dummy.",
+    "Existing typed_setup runs physical TIRE scalar reader/full7493B0 constructor, using authored Smashing list only for type allocation. Constructor-entry Scenario seed5 is explicit; no ordinary death/world-seed prefix. The SAME retained object/VM then executes full749F30 until actual stop144/logical retirement145 and original725C70 drain. No lifetime is inferred by subtraction."
+  ],
+  "substitutions": [
+    "The23+23 numeric controls replace no native code. Physical extension inherits typed_setup lexical INI caches, archive bytes, allocator/delete/CRT/TLS transport; native Cell enrollment is a declared input boundary. No constructor, Bounce, VoxelAI, RNG, duration, UnInit or scalar cleanup result is supplied.",
+    "Original deferred drain uses existing ifv_impact.retirement_transport OS readability boundary. The fixture allocator/delete retain readable storage; native registry removal and pending compaction execute, not host physical memory deallocation."
+  ],
+  "entry_points": {
+    "direction": "0x004848B0",
+    "mirror": "0x00755C60",
+    "transform": "0x005AFB80",
+    "update": "0x00439B00",
+    "world_cell": "0x00565730",
+    "packed_cell": "0x005657A0",
+    "startup": "0x00754CB0",
+    "voxel_constructor": "0x007493B0",
+    "voxel_ai": "0x00749F30",
+    "deferred_drain": "0x00725C70",
+    "tmp_slope": "0x005471B0",
+    "tmp_land": "0x00544BE0"
+  },
+  "replay_command": "python -m tools.spatial_oracle.bounce_height --cliff",
+  "payload_sha256": "cba2ae023e4450591be6f25dc2e2b0ecd1a877537b777348540ad6e4e28b297d"
+}

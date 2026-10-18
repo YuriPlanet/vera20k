@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Power typed-House-list sums/fill returns, numeric and retained AI/draw histories plus eight loaded-state Sidebar NoInit controls; supplied House accounting, geometry and raw state.",
+  "assumptions": [
+    "House power interface vtable7EA834 and its real getters; supplied House output/drain and owned typed-building list.",
+    "Native PC53/chop control word0x0E7F. No House producer/native scenario equivalence.",
+    "Constructor/reset inherited Radar body excluded. Power initial fields and clocks execute original instructions.",
+    "Six loaded priors are supplied raw controls; native ctor/AI produces the active and settled-resize priors. No Mouse storage/swizzle or cross-process load equivalence."
+  ],
+  "substitutions": [
+    "timeGetTime returns explicit input;6C8C40 executes original SHR4.",
+    "Inherited Radar constructor/reset/AI returns at its interface. No Radar-state equivalence.",
+    "Sidebar NoInit6A4F20 executes; inherited6AC840 returns RET4, member42F670/6AC8D0 RET8,4F1B00 RET4,405BE0 RET0 and Strip iterator4068F0 RET16. Their bodies are excluded.",
+    "Existing surface-bounds and CC_Draw_Shape command transport; no native pixels."
+  ],
+  "entry_points": {
+    "constructor": "0x0063F6B0",
+    "reset": "0x0063F730",
+    "fill": "0x0063F850",
+    "rated_sum_observer": "0x0063F8AB",
+    "distribution": "0x0063F960",
+    "animation": "0x0063FEA0",
+    "draw": "0x0063FB20",
+    "no_init": "0x006A4F20",
+    "no_init_slide_start": "0x006A4F8E",
+    "no_init_slide_duration": "0x006A4F94",
+    "wall_clock": "0x006C8C40"
+  },
+  "replay_command": "python -m tools.sidebar_oracle.power_draw --state",
+  "payload_sha256": "83e0204f09757ba7dc5cfe48531b105b1ea04db2a57d5afc75130412a1a5c432"
+}

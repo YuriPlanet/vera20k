@@ -1270,11 +1270,7 @@ mod tests {
             Some(&rules),
             Some(&roster_ini),
         );
-        crate::sim::scenario_bootstrap::initialize_campaign_current_house(
-            &mut saved,
-            &roster,
-            &roster_ini,
-        );
+        crate::sim::scenario_bootstrap::initialize_campaign_current_house(&mut saved, &roster_ini);
         let saved_owner = saved.interner.get("SavedPlayer").unwrap();
         let outgoing_owner = saved.interner.get("OutgoingPlayer").unwrap();
         let directory = isolated_directory("current-house-full-load");
@@ -1291,7 +1287,6 @@ mod tests {
         );
         crate::sim::scenario_bootstrap::initialize_campaign_current_house(
             &mut current,
-            &roster,
             &IniFile::from_str("[Basic]\nPlayer=OutgoingPlayer\n"),
         );
         assert_eq!(current.session.current_house, Some(outgoing_owner));

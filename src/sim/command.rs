@@ -25,6 +25,8 @@ const COMMAND_RECORD_PROCESSED_FLAG: u8 = 0x01;
 pub const SELL_WALL_AT_CELL_OPCODE: u8 = 0x17;
 /// Native `EventClass` opcode for leaving the active scenario.
 pub const EXIT_OPCODE: u8 = 0x13;
+/// House-wide Cheer, issued by AllToCheer730F30.
+pub const CHEER_OPCODE: u8 = 0x2d;
 /// Native `EventClass` opcode for a MegaMission order envelope.
 pub const MEGAMISSION_OPCODE: u8 = 0x04;
 /// Native selected-object Scatter event.
@@ -773,6 +775,8 @@ pub enum Command {
     /// only for a nonprimary factory; a queued duplicate can toggle it off.
     /// Appended to preserve existing saved/replayed command variant indices.
     TogglePrimaryFactory { entity_id: u64 },
+    /// Event2D: execute House50C8C0. Input rate admission is local, not replayed.
+    Cheer,
 }
 
 impl Command {

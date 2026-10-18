@@ -271,9 +271,9 @@ impl Simulation {
     /// and draws `RandomRanged(3, 5)`; PTROOP's empty slot answers 1 without
     /// a draw.
     ///
-    /// RESIDUAL: VERA keeps no live particle systems on an object, so
-    /// GetROF's spark, fire and railgun arms see none. No retail planter's
-    /// slot-1 weapon has those flags.
+    /// GetROF's Spark arm reads the same actual +308 link as FireAt.
+    /// RESIDUAL: Fire/Railgun retained links remain unported. No retail
+    /// planter's slot-1 weapon has those flags.
     fn rearm_c4_planter(&mut self, id: u64, building: u64, rules: &RuleSet) {
         let Some(planter) = self.substrate.entities.get(id) else {
             return;
@@ -295,13 +295,17 @@ impl Simulation {
             None,
         );
         let burst_index = planter.weapon_burst.index();
+        let live = crate::sim::combat::rof::LiveParticles {
+            spark: planter.spark_particle_system.system().is_some(),
+            ..Default::default()
+        };
         let rof = crate::sim::combat::world_fire::snapshot_get_rof(
             self,
             rules,
             &snap,
             obj,
             weapon,
-            crate::sim::combat::rof::LiveParticles::default(),
+            live,
             burst_index,
         );
         let frame = self.session.binary_frame as i32;

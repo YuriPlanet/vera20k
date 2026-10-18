@@ -9,6 +9,81 @@ use crate::sim::rng::trace_draws;
 use crate::sim::temporal::TemporalState;
 use std::fmt::Write;
 
+/// One Allied yard, a type with a prerequisite, and a type at `BuildLimit=1`.
+fn draw_state_world() -> (Simulation, RuleSet, InternedId, u64) {
+    let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(
+        "[Countries]\n0=C0\n[C0]\nSide=GDI\n\
+         [BuildingTypes]\n0=Yard\n1=Limit\n2=Req\n3=Needs\n4=Plain\n\
+         [Yard]\nStrength=1000\nTechLevel=-1\nFactory=BuildingType\nOwner=C0\n\
+         [Limit]\nStrength=100\nTechLevel=1\nBuildLimit=1\nOwner=C0\n\
+         [Req]\nStrength=100\nTechLevel=1\nOwner=C0\n\
+         [Needs]\nStrength=100\nTechLevel=1\nPrerequisite=Req\nOwner=C0\n\
+         [Plain]\nStrength=100\nTechLevel=1\nOwner=C0\n",
+    ))
+    .unwrap();
+    let mut sim = Simulation::new();
+    sim.intern_rule_type_ids(&rules);
+    sim.resolve_type_handles(&rules);
+    crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+    let country = sim.interner.intern("C0");
+    let owner = sim.interner.intern("H");
+    sim.houses.insert(
+        owner,
+        HouseState::new(owner, 0, Some(country), true, 1000, 10),
+    );
+    sim.session.house_order.push(owner);
+    sim.session.current_house = Some(owner);
+    let yard = sim.spawn_object("Yard", "H", 8, 8, 0, &rules).unwrap();
+    (sim, rules, owner, yard)
+}
+
+/// `StripClass::Draw`'s two queries are the drawn result; `Recalculate`'s
+/// retention test is a separate pass and a separate answer.
+#[test]
+fn cameo_draw_state_darkens_where_draw_does_not_decide_retention() {
+    let (mut sim, rules, owner, yard) = draw_state_world();
+    let needs = rules.object("Needs").unwrap();
+    let limit = rules.object("Limit").unwrap();
+    let plain = rules.object("Plain").unwrap();
+
+    // A missing `Prerequisite=` is Recalculate's refusal, not Draw's darkening:
+    // the entry keeps its brightness until the membership pass drops it.
+    assert_eq!(
+        strip_refusal(&sim, &rules, owner, needs),
+        Some(BuildDisabledReason::CannotBuild)
+    );
+    assert!(cameo_draw_state(&sim, &rules, owner, needs).enabled);
+
+    assert!(cameo_draw_state(&sim, &rules, owner, limit).enabled);
+    assert!(cameo_draw_state(&sim, &rules, owner, plain).enabled);
+
+    // An offline factory keeps the entry and darkens it: Draw's
+    // `FindFactory(1, 1, 1)` requires `+660`, `Recalculate`'s does not.
+    sim.entities_mut().get_mut(yard).unwrap().temporal = TemporalState::warped_by_for_test(yard);
+    assert!(!sim.entities().get(yard).unwrap().building_online());
+    assert!(strip_refusal(&sim, &rules, owner, plain).is_none());
+    let offline = cameo_draw_state(&sim, &rules, owner, plain);
+    assert!(!offline.enabled);
+    assert!(!offline.at_build_limit);
+    // The same live query clears the overlay when the yard is back online.
+    sim.entities_mut().get_mut(yard).unwrap().temporal = TemporalState::default();
+    assert!(cameo_draw_state(&sim, &rules, owner, plain).enabled);
+
+    // `BuildLimit=1` reached: still retained, drawn dark, and the press gate
+    // reports the limit independently.
+    sim.spawn_object("Limit", "H", 20, 8, 0, &rules).unwrap();
+    assert!(strip_refusal(&sim, &rules, owner, limit).is_none());
+    let at_limit = cameo_draw_state(&sim, &rules, owner, limit);
+    assert!(!at_limit.enabled);
+    assert!(at_limit.at_build_limit);
+    // The ready-factory query asks the limit itself (`CanBuild(type, 1, 1)`),
+    // so its null answer comes first; both arms draw the same overlay.
+    assert_eq!(
+        sidebar_state(&sim, &rules, owner, limit),
+        Some(BuildDisabledReason::NoReadyFactory)
+    );
+}
+
 #[test]
 fn house_pass_carries_stored_building_order_before_recalculation() {
     // House4F9280 scans House+6C; startup684C58 instead scans the global

@@ -2,6 +2,107 @@
 
 use super::*;
 
+/// Rules+580 is a signed retained ReadInt/current-default, not stock300.
+#[test]
+fn maximum_cheer_rate_preserves_native_defaults_layers_and_rules_lifetime() {
+    use crate::rules::ruleset::{GeneralRules, RuleSet};
+    let publish =
+        |processed: &ProcessedRulesLayers| RuleSet::from_processed_rules(processed).unwrap();
+    assert_eq!(GeneralRules::default().maximum_cheer_rate(), 1);
+    let mut layers = RulesLayerStack::new(IniFile::from_str("[General]\n"));
+    assert_eq!(
+        publish(&layers.process().unwrap())
+            .general
+            .maximum_cheer_rate(),
+        1
+    );
+    for (kind, text, expected) in [
+        (
+            RulesLayerKind::LangRule,
+            "[General]\nMaximumCheerRate=300\n",
+            300,
+        ),
+        (
+            RulesLayerKind::GameMode,
+            "[General]\nMaximumCheerRate=-17tail\n",
+            -17,
+        ),
+        (
+            RulesLayerKind::Scenario,
+            "[General]\nMaximumCheerRate=\n",
+            -17,
+        ),
+        (
+            RulesLayerKind::Scenario,
+            "[General]\nMaximumcheerRate=99\n",
+            -17,
+        ),
+        (
+            RulesLayerKind::Scenario,
+            "[General]\nMaximumCheerRate=0\n",
+            0,
+        ),
+    ] {
+        layers.push(kind, IniFile::from_str(text));
+        assert_eq!(
+            publish(&layers.process().unwrap())
+                .general
+                .maximum_cheer_rate(),
+            expected,
+            "{text}"
+        );
+    }
+    let (_, trace) = layers
+        .process()
+        .unwrap()
+        .into_ini_and_native_type_construction_trace();
+    let state = trace.into_registry_state_discarding_events();
+    let mut retained: NativeRulesRegistryState =
+        bincode::deserialize(&bincode::serialize(&state).unwrap()).unwrap();
+    for reset in [false, true] {
+        if reset {
+            retained = retained.destructive_reset();
+        }
+        let next = RulesLayerStack::new(IniFile::from_str("[General]\nName=Next scene\n"))
+            .process_with_fixed_art_and_registry_state(&IniFile::empty(), retained)
+            .unwrap();
+        assert_eq!(publish(&next).general.maximum_cheer_rate(), 0);
+        let (_, trace) = next.into_ini_and_native_type_construction_trace();
+        retained = trace.into_registry_state_discarding_events();
+    }
+    let continued = |value: i32| {
+        let first = RulesLayerStack::new(IniFile::from_str(&format!(
+            "[General]\nPrismSupportModifier=0\nMaximumCheerRate={value}\n"
+        )))
+        .process()
+        .unwrap();
+        let (_, trace) = first.into_ini_and_native_type_construction_trace();
+        let next = RulesLayerStack::new(IniFile::from_str(
+            "[General]\nPrismSupportModifier=0\nName=Same current sources\n",
+        ))
+        .process_with_fixed_art_and_registry_state(
+            &IniFile::empty(),
+            trace.into_registry_state_discarding_events(),
+        )
+        .unwrap();
+        publish(&next)
+    };
+    let a = continued(1);
+    let b = continued(2);
+    assert_eq!(a.source_ini_hash(), b.source_ini_hash());
+    assert_ne!(a.simulation_config_hash(), b.simulation_config_hash());
+}
+
+#[test]
+fn retail_battle_cheer_rate_uses_the_production_layered_reader() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+    else {
+        return;
+    };
+    assert_eq!(retail.rules.general.maximum_cheer_rate(), 300);
+    assert_eq!(retail.rules.general.cheer_sound(), Some("Cheer"));
+}
+
 /// Rules ctor667371/66737B/667385 initializes +14F8/+14FC/+1500, then
 /// ReadGeneral uses the retained integers as ReadInt5276D0 defaults. These
 /// are instruction-derived reader expectations, not native timing goldens.

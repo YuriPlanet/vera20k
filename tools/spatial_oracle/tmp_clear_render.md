@@ -89,3 +89,54 @@ Native Cell/Convert destruction is not invoked when resetting supplied cold
 component rows. Its reference counts are observed effects, not a resource
 retirement comparison. This selected draw passes no gameplay timer or detach;
 its only RNG is the recorded cold process-table generation.
+
+## Retained partial redraw versus full reconstruction
+
+The additive `--tile-partial` mode generates `tmp_partial_redraw.json` and its
+sidecar in external scratch. Copy the committed pair there before checking:
+
+```sh
+mkdir -p "$HOME/Documents/vera20k-dev/class-parity/cell-class/cell-partial-native-controls-v3"
+cp tools/spatial_oracle/tmp_partial_redraw{,.meta}.json \
+  "$HOME/Documents/vera20k-dev/class-parity/cell-class/cell-partial-native-controls-v3/"
+python -m tools.spatial_oracle.bridge_shadow_render --tile-partial \
+  --partial-output-dir "$HOME/Documents/vera20k-dev/class-parity/cell-class/cell-partial-native-controls-v3" --check
+```
+
+Use the shared physical projectile-render input directory required by the other
+modes (`VERA20K_PROJECTILE_RENDER_ASSETS` when the default extraction is absent).
+`--write` regenerates controls for review. `--partial-detail` keeps all intermediate
+surface runs in a separate scratch file. Existing modes and reset defaults retain
+their behavior. The new mode directly invokes original functions on their shared
+VM/surfaces, since the independent-row TMP and Shroud wrappers reset their planes.
+
+Original Cell constructors enroll every member of a declared 32×32 registration;
+MapSize16×16 remains an independent supplied input. Every prior and measured
+Cell480180/480350 receiver must belong to that registration by address, including
+offscreen traversal. No scene membership is inferred from the resulting draw list.
+Flat tile0/subtile0/level0, known flags, camera, HWND and disabled Fog/AlphaShapes
+are component priors, not a native map/window/reveal bootstrap.
+
+Original full Shroud6D3660 and terrain6D2DE0 first produce each prior from
+black/FFFF/A127. Physical SHROUD output must be nonuniform. Four histories then
+retain RGB/Z/A: no dirty cells, actual6DA7D0 enqueue, full-redraw bypass, and a
+clipped maintenance rectangle. Tactical6D2B60 invokes Cell480180 at6D2DB1;
+480180 selects the first TMP/LightConvert, signed Cell10C/11B and special
+flags[0,1,0,0]. Actual Shroud then terrain continue on those retained planes.
+The two unconditional queue/redraw cleanup stores6D4571/6D4B37 execute separately;
+unrelated upper-object/shell bodies are excluded. Executable sections remain
+byte-identical to the original executable.
+
+The compact corpus retains lossless prior/final RGB565/Z runs, native A bytes,
+intermediate hashes, queue transitions, actual calls and all three complete RNG
+states. Interner indexes only select observed data. It supplies no expected
+pixels or native callback results. Main's cold selector setup precedes the measured
+transition; measured RNG requests and states cover Main, Scenario and Mapgen.
+No gameplay timer or detach occurs on the selected component route.
+
+The production consumer in `tmp_clear_gpu_tests.rs` compares full reconstruction
+through `begin_main_pass`, unlike the independent-row load-pass tests above.
+This is a bounded flat temperate comparison. Native-produced A is a presentation
+input, not proof of live reveal/A lifecycle. Other theaters, custom/no-Z first
+images (which can affect RGB), scrolling, Fog/AlphaShapes, upper-object
+interleaving and universal partial/full reconstruction equivalence remain open.

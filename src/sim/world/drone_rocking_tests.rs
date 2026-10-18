@@ -1065,7 +1065,7 @@ fn stock_drone_monotonic_bites_match_native_state_rng_spark_births_and_flh() {
                 assert!(system.alive() && !system.in_limbo());
                 assert!(
                     system.owner_entity.is_none()
-                        && system.attached_entity.is_none()
+                        && system.target_ref.is_none()
                         && system.owner_house.is_none()
                 );
                 assert_eq!(json!(system.target_coords.to_array()), state["target"]);

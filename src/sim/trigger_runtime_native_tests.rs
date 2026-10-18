@@ -3814,8 +3814,8 @@ fn history_state(
             json!(["tag", identities.iter().position(|&tag| tag == id).unwrap()])
         }
         DeferredDeleteTicket::Trigger(id) => json!(["trigger", id]),
-        DeferredDeleteTicket::Overlay(_) => {
-            panic!("mixed Object/Tag/Trigger controls contain no Overlay")
+        DeferredDeleteTicket::Overlay(_) | DeferredDeleteTicket::DiskLaser(_) => {
+            panic!("mixed Object/Tag/Trigger controls contain no Overlay/DiskLaser")
         }
     };
     let destructs: Vec<_> = sim
@@ -3892,7 +3892,8 @@ fn history_state(
                         DeferredDeleteTicket::Object(_) => "object",
                         DeferredDeleteTicket::Tag(_) => "tag",
                         DeferredDeleteTicket::Trigger(_) => "trigger",
-                        DeferredDeleteTicket::Overlay(_) => unreachable!(),
+                        DeferredDeleteTicket::Overlay(_) | DeferredDeleteTicket::DiskLaser(_) =>
+                            unreachable!(),
                     })
                     .collect::<Vec<_>>()
             )

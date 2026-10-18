@@ -10,6 +10,8 @@ use std::hash::{Hash, Hasher};
 /// A spawn manager's missile launch whose GetWeapon(0) has `Burst > 1` sets
 /// it to the slot's parity around its GetFLH and stores 0 after the child's
 /// Unlimbo (`0x006B73F6`, `0x006B7585`).
+/// Unit ReceiveGunner/RemoveGunner increment the receiving owner's index
+/// before GetROF without applying a remainder (`0x00746493`, `0x0074656C`).
 /// This owner replaces the old target-owned remaining-shot count. FLH and
 /// the next GetROF branch both read this retained index.
 #[derive(Debug, Default, Clone, Copy, Serialize, Deserialize)]
@@ -43,6 +45,13 @@ impl WeaponBurst {
         self.index.wrapping_add(1)
     }
 
+    /// Store the signed INC before GetROF. Gunner handover keeps this value;
+    /// a completed FireAt also applies its weapon's remainder below.
+    pub(crate) fn advance(&mut self) -> i32 {
+        self.index = self.next_index();
+        self.index
+    }
+
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn radial_index(self) -> i32 {
         self.radial_index
@@ -70,7 +79,7 @@ impl WeaponBurst {
     pub(crate) fn complete_shot(&mut self, burst: i32) {
         // Native faults on Burst=0. Aircraft never calls FireAt for that
         // value; the ordinary caller retains its existing max(1) policy.
-        self.index = self.next_index().wrapping_rem(burst);
+        self.index = self.advance().wrapping_rem(burst);
     }
 }
 

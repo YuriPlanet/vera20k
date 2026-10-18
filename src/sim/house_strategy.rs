@@ -42,12 +42,10 @@
 //! All_To_Hunt draws nothing itself. The damage its Dominator arm deals
 //! ([`all_to_hunt`]) goes through the shared ReceiveDamage receiver, where a
 //! kill's random draws, anims and detach run as for any other damage.
+//! The All-To-Hunt latch is consumed by the shared greatest_threat candidate
+//! scoring (`TechnoClass::Evaluate_Candidate @ 0x006F8765`).
 //!
 //! RESIDUALS:
-//! - Team script30 (`0x006E99E5`) does not yet write state four. Trigger
-//!   Action9 (`0x006DEAFF`) uses the existing state owner. The All-To-Hunt
-//!   latch is consumed by the shared greatest_threat candidate scoring
-//!   (`TechnoClass::Evaluate_Candidate @ 0x006F8765`).
 //! - The own-coordinate test against the empty coordinate
 //!   (`0x004FD5B9..0x004FD5E5`) is dormant: no cell's coordinate is zero.
 

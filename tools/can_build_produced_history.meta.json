@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Whole RecordLastBuilt4FB6B0 -> retained four-family produced Counter items/totals -> whole CanBuild4F7870 and CheckBuildLimit50B370",
+  "assumptions": [
+    "The existing BuildEmu/Emu owns the sole VM, bounded memory/heap, original loader and invocation. Native49F9B0 initializes each House Counter, then valid external capacity64 arrays are supplied. Original7E5C54 vtables select original477C70 growth; undeclared growth traps.",
+    "Explicit Type layouts use original concrete vtables and valid supplied ArrayIndex10,11,64,65 fields. Original Type RTTI/GetArrayIndex and Object GetTechnoType/WhatAmI/+88 getters execute; the old supplied getter hooks are present in BuildEmu but are asserted unreached. These are registered-type layout priors, not native constructors/list registration or physical INI loading.",
+    "Type DontScore, signed BuildLimit, human House/country/tech, cleared prerequisite/SecretLab/Super gates and owned/held/FIFO states are explicit inputs. Record gets an original-vtable object with its actual Type pointer. Prepared Factory/owned states test query composition, not a full constructor, paid exit, queue admission, ownership transition or reachable whole-world history.",
+    "Type CreateSound and all three class fallback IDs are-1. Whole Record executes its last-built, Counter and tech/246 flag stores, but no audio path. The independently justified246 timer/raw-native-save difference is outside this numeric history comparison.",
+    "The late index first executes Record growth from64 to75 while retaining the old index10; index64 is observed only after that actual allocation. Current family indexes, item bits and totals are read directly, not calculated from records or owned objects. Separate Houses use independent buffers.",
+    "One signed-sum boundary history supplies produced item/total0x7FFFFFFF before measurement, then an actual matching held product and original Record. Original CountTotal addition, signed limit comparisons and Counter increments decide the outputs; no counter or arithmetic result is supplied.",
+    "Starting-force reset, whole House initialization and native House/SAV reconstruction remain covered only by their separate evidence. This profile otherwise supplies fresh zero history and does not require an additional reset operation or certify a world-start lifecycle.",
+    "Original65C6D0 seeds all three native RNG buffers31 before measurement. Their full states remain unchanged, with zero observed RNG or detach entries. Counter storage allocation/free are platform transports, not gameplay detach. No image .text writes are permitted. Existing native overflow controls in engineer_capture_accounting retain their original payload/provenance; no existing corpus is overwritten."
+  ],
+  "substitutions": [
+    "Existing Emu operator-new/delete and CRT-registration transport supplies bounded successful allocation/free; no selected getter, Record, Counter increment/lookup/growth, CanBuild or CheckBuildLimit result is supplied.",
+    "No physical Rules/Type/House/Factory startup, event transport, sound, rendering, paid production, native saved-world or complete scheduling equivalence is claimed. Valid nonnegative Type index and allocation-success domains exclude arbitrary malformed pointers and native out-of-memory failures."
+  ],
+  "entry_points": {
+    "record_last_built": "0x004FB6B0",
+    "can_build": "0x004F7870",
+    "check_build_limit": "0x0050B370",
+    "counter_constructor": "0x0049F9B0",
+    "counter_increment": "0x0049FA00",
+    "counter_lookup": "0x0049FAE0",
+    "counter_resize": "0x00477C70",
+    "random_seed": "0x0065C6D0"
+  },
+  "replay_command": "python -m tools.can_build_oracle --produced-history",
+  "payload_sha256": "d6a2b996a5f91c586b03055de76fc9292eb7c34028ef16c5120988a775d9c359"
+}

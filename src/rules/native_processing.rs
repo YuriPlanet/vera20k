@@ -913,6 +913,14 @@ impl ProcessedRulesLayers {
         )
     }
 
+    /// Rules+1866, retained by AudioVisual66B7A7..66B7D2 through the
+    /// current-RGB default of ReadColorRGB474B50.
+    pub(crate) fn chrono_beam_color(&self) -> [u8; 3] {
+        self.native_type_construction_trace
+            .registry_state()
+            .rules_chrono_beam_color
+    }
+
     /// RulesClass's retained ObjectAI fall-rate limits, with and without a
     /// parachute respectively (`+0x7B8`, `+0x7BC`).
     pub(crate) fn fall_rate_controls(&self) -> (i32, i32) {
@@ -928,6 +936,13 @@ impl ProcessedRulesLayers {
         self.native_type_construction_trace
             .registry_state()
             .rules_survivor_divisors
+    }
+
+    /// Retained General.MaximumCheerRate at Rules+580 (ReadGeneral66EBD4).
+    pub(crate) fn maximum_cheer_rate(&self) -> i32 {
+        self.native_type_construction_trace
+            .registry_state()
+            .rules_maximum_cheer_rate
     }
 
     /// Consume only the typed-reader compatibility projection and deliberately
@@ -1140,7 +1155,9 @@ pub(crate) struct NativeRulesRegistryState {
     rules_parachute_max_fall_rate: i32,
     rules_no_parachute_max_fall_rate: i32,
     rules_survivor_divisors: [i32; 3],
+    rules_maximum_cheer_rate: i32,
     rules_line_trail_override: [u8; 3],
+    rules_chrono_beam_color: [u8; 3],
     rules_prism_support: PrismSupportRules,
     rules_patrol_scan_minutes: NativeF64Bits,
     rules_prism_type: Option<String>,
@@ -1175,7 +1192,10 @@ impl Default for NativeRulesRegistryState {
             rules_parachute_max_fall_rate: -3,
             rules_no_parachute_max_fall_rate: -100,
             rules_survivor_divisors: crate::rules::ruleset::DEFAULT_SURVIVOR_DIVISORS,
+            rules_maximum_cheer_rate: crate::rules::ruleset::DEFAULT_MAXIMUM_CHEER_RATE,
             rules_line_trail_override: [0; 3],
+            // Rules665650 clears +1866/+1867/+1868 at66785E/667864/66786A.
+            rules_chrono_beam_color: [0; 3],
             rules_prism_support: PrismSupportRules::default(),
             rules_patrol_scan_minutes: crate::rules::ruleset::GeneralRules::default()
                 .patrol_scan_minutes,
@@ -1337,7 +1357,9 @@ impl NativeRulesRegistryState {
             rules_parachute_max_fall_rate: self.rules_parachute_max_fall_rate,
             rules_no_parachute_max_fall_rate: self.rules_no_parachute_max_fall_rate,
             rules_survivor_divisors: self.rules_survivor_divisors,
+            rules_maximum_cheer_rate: self.rules_maximum_cheer_rate,
             rules_line_trail_override: self.rules_line_trail_override,
+            rules_chrono_beam_color: self.rules_chrono_beam_color,
             rules_prism_support: self.rules_prism_support,
             rules_patrol_scan_minutes: self.rules_patrol_scan_minutes,
             // Plain index vectors, so RulesClass keeps them; the next pass
@@ -1592,7 +1614,9 @@ struct RulesPassProcessor {
     rules_parachute_max_fall_rate: i32,
     rules_no_parachute_max_fall_rate: i32,
     rules_survivor_divisors: [i32; 3],
+    rules_maximum_cheer_rate: i32,
     rules_line_trail_override: [u8; 3],
+    rules_chrono_beam_color: [u8; 3],
     rules_prism_support: PrismSupportRules,
     rules_patrol_scan_minutes: NativeF64Bits,
     rules_prism_type: Option<String>,
@@ -1632,8 +1656,10 @@ impl Default for RulesPassProcessor {
             rules_no_parachute_max_fall_rate: NativeRulesRegistryState::default()
                 .rules_no_parachute_max_fall_rate,
             rules_survivor_divisors: crate::rules::ruleset::DEFAULT_SURVIVOR_DIVISORS,
+            rules_maximum_cheer_rate: crate::rules::ruleset::DEFAULT_MAXIMUM_CHEER_RATE,
             rules_line_trail_override: NativeRulesRegistryState::default()
                 .rules_line_trail_override,
+            rules_chrono_beam_color: NativeRulesRegistryState::default().rules_chrono_beam_color,
             rules_prism_support: PrismSupportRules::default(),
             rules_patrol_scan_minutes: crate::rules::ruleset::GeneralRules::default()
                 .patrol_scan_minutes,
@@ -1666,7 +1692,9 @@ impl RulesPassProcessor {
             rules_parachute_max_fall_rate: registry_state.rules_parachute_max_fall_rate,
             rules_no_parachute_max_fall_rate: registry_state.rules_no_parachute_max_fall_rate,
             rules_survivor_divisors: registry_state.rules_survivor_divisors,
+            rules_maximum_cheer_rate: registry_state.rules_maximum_cheer_rate,
             rules_line_trail_override: registry_state.rules_line_trail_override,
+            rules_chrono_beam_color: registry_state.rules_chrono_beam_color,
             rules_prism_support: registry_state.rules_prism_support,
             rules_patrol_scan_minutes: registry_state.rules_patrol_scan_minutes,
             rules_prism_type: registry_state.rules_prism_type,
@@ -2096,6 +2124,10 @@ impl RulesPassProcessor {
         let Some(section) = pass.section("General") else {
             return;
         };
+        // ReadGeneral66EBD4..66EBEE: exact-case signed ReadInt5276D0,
+        // current Rules+580 as default, no clamp. Ctor665D92 stores1.
+        self.rules_maximum_cheer_rate =
+            section.read_int("MaximumCheerRate", self.rules_maximum_cheer_rate);
         // General66EC37/66EC57 read current RulesClass values as defaults.
         // Both survive empty/missing later passes and destructive Type resets.
         self.rules_missile_rot_var =
@@ -2984,6 +3016,11 @@ impl RulesPassProcessor {
             self.rules_line_trail_override,
             None,
         );
+        // AudioVisual66B7A7..66B7D2 reads this next, even without General.
+        // Its default is the current unsigned RGB; complete scans narrow to
+        // bytes. Incomplete scans retain ini_value's deterministic safe policy.
+        self.rules_chrono_beam_color =
+            section.read_color_rgb("ChronoBeamColor", self.rules_chrono_beam_color, None);
         self.rules_color_add_selectors.read_pass(section);
         for key in ["DropPodPuff", "VeinAttack", "Dig", "AtmosphereEntry"] {
             let _ = self.resolve_scalar_from(section, key, RulesTypeFamily::Animation, 0x80);
@@ -3164,7 +3201,9 @@ impl RulesPassProcessor {
                     rules_parachute_max_fall_rate: self.rules_parachute_max_fall_rate,
                     rules_no_parachute_max_fall_rate: self.rules_no_parachute_max_fall_rate,
                     rules_survivor_divisors: self.rules_survivor_divisors,
+                    rules_maximum_cheer_rate: self.rules_maximum_cheer_rate,
                     rules_line_trail_override: self.rules_line_trail_override,
+                    rules_chrono_beam_color: self.rules_chrono_beam_color,
                     rules_prism_support: self.rules_prism_support,
                     rules_patrol_scan_minutes: self.rules_patrol_scan_minutes,
                     rules_prism_type: self.rules_prism_type,
@@ -3217,3 +3256,7 @@ mod select_anim_rules_tests;
 #[cfg(test)]
 #[path = "approach_rules_tests.rs"]
 mod approach_rules_tests;
+
+#[cfg(test)]
+#[path = "chrono_beam_rules_tests.rs"]
+mod chrono_beam_rules_tests;

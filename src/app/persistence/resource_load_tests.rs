@@ -8,7 +8,7 @@ use crate::map::source::{LoadedMap, test_support::TestDirectory};
 use crate::rules::ini_parser::IniFile;
 use crate::rules::retail_ini_fixture::{retail_assets, retail_rules_owner};
 use crate::sim::rng::SimRng;
-use crate::sim::snapshot::saved_local_view::{SavedLocalView, SavedLocalViewError};
+use crate::sim::snapshot::saved_local_view::{SavedLocalView, SavedLocalViewError, SavedPowerBar};
 use crate::sim::snapshot::scenario_resources::SavedScenarioResourcesRef;
 
 const LOAD_CLOCK_MS: u64 = 16_000;
@@ -152,6 +152,24 @@ fn bound_saved_world(
     )
 }
 
+fn native_saved_power() -> SavedPowerBar {
+    let packet = crate::test_fixture::json("tools/sidebar_oracle/power_state.json");
+    let prior = &packet["loaded_histories"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["name"] == "retained-active")
+        .unwrap()["prior"];
+    SavedPowerBar {
+        counts_surplus_output_drain: serde_json::from_value(prior["counts"].clone()).unwrap(),
+        cached_output: prior["cached"][1].as_i64().unwrap() as i32,
+        cached_drain: prior["cached"][0].as_i64().unwrap() as i32,
+        flashes_remaining: prior["flash"].as_i64().unwrap() as i32,
+        flash_timer: serde_json::from_value(prior["flash_timer"].clone()).unwrap(),
+        animating: prior["animating"].as_bool().unwrap(),
+    }
+}
+
 fn snapshot_bytes(
     runtime: &SimRuntime,
     owner: &NativeRulesProcessOwner,
@@ -173,7 +191,7 @@ fn snapshot_bytes(
         terrain,
         map.clone(),
     );
-    let view = SavedLocalView::new(
+    let mut view = SavedLocalView::new(
         [[4, 5], [5, 4], [0, 0], [u16::MAX, 0]],
         Vec::new(),
         false,
@@ -182,6 +200,7 @@ fn snapshot_bytes(
         Default::default(),
     )
     .unwrap();
+    view.set_power_bar(native_saved_power());
     GameSnapshot::save_validated_with_presentation(
         &runtime.simulation,
         map.map_hash(),
@@ -211,6 +230,11 @@ fn assert_incoming_resources(
     incoming: &SimRuntime,
     map: &SavedMapMetadata,
 ) {
+    assert_eq!(
+        prepared.power_bar_anim.saved(),
+        native_saved_power(),
+        "incoming retained Power wins on warm and cold preparation"
+    );
     let sim = &prepared.world.simulation;
     assert_eq!(sim.session.map_name, incoming.simulation.session.map_name);
     assert_eq!(sim.session.theater, "TEMPERATE");

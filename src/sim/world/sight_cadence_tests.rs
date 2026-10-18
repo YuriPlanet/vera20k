@@ -1142,7 +1142,7 @@ fn retail_goldst_uncached_reveal_border_matches_native_admission_and_transport()
             })
             .collect();
         assert_eq!(
-            trace.uncached_border_receivers, targets,
+            trace.border_receivers, targets,
             "actual border receivers {name}"
         );
         let ground_after: Vec<i8> = border
@@ -1156,7 +1156,7 @@ fn retail_goldst_uncached_reveal_border_matches_native_admission_and_transport()
             })
             .collect();
         assert_eq!(
-            trace.uncached_border_ground_after, ground_after,
+            trace.border_ground_after, ground_after,
             "ground cache after each receiver {name}"
         );
         assert_eq!(
@@ -1203,9 +1203,312 @@ fn retail_goldst_uncached_reveal_border_matches_native_admission_and_transport()
         if name == "admitted_empty_height_walk" {
             assert!(trace.walks.iter().all(Vec::is_empty));
             assert!(
-                !trace.uncached_border_receivers.is_empty(),
+                !trace.border_receivers.is_empty(),
                 "empty LOS is admitted, not rejected"
             );
         }
+    }
+}
+
+/// Executed original Map5673A0→border6→rawborder4→Logic578100.
+/// This component starts from actual native constructor/prefix knowledge;
+/// the separate loaded Carrier test proves ordinary FireAt admission. Native
+/// outputs never take expected knowledge, frames or callbacks from Rust.
+#[test]
+#[ignore = "requires RA2_DIR with installed retail RA2/YR assets and stock GoldSt.mmx"]
+fn retail_goldst_cold_fire_borders_and_conceal_notifications_match_native() {
+    for indexed in [false, true] {
+        use serde_json::{Value, json};
+        use std::collections::BTreeMap;
+        let native: Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/procedural_drawing_oracle/shroud_frontier_fire.json",
+        ))
+        .unwrap();
+        // The full physical level/coordinate input comes from these exact retail
+        // bytes, independently identified by native execution's source record.
+        let retail = std::path::PathBuf::from(std::env::var("RA2_DIR").unwrap());
+        let assets = crate::assets::asset_manager::AssetManager::new(
+            &retail,
+            crate::assets::asset_manager::MediaArchiveMode::STOCK_DIGITAL,
+        )
+        .unwrap();
+        let selected = crate::map::source::load_map_by_name_or_path_with_assets(
+            &retail,
+            "GoldSt.mmx",
+            &assets,
+        )
+        .unwrap();
+        let native_map = native["inputs"]["sources"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|source| {
+                source["name"]
+                    .as_str()
+                    .unwrap()
+                    .eq_ignore_ascii_case("GoldSt.mmx")
+            })
+            .unwrap();
+        assert_eq!(
+            serde_json::to_value(selected.source).unwrap()["source_sha256"],
+            native_map["sha256"]
+        );
+        let mut scenario = retail_goldst_initial_scenario();
+        let rules = &scenario.runtime.resources.rules;
+        let sim = &mut scenario.runtime.simulation;
+        let viewer = sim.session.current_house.unwrap();
+        let coord = |v: &Value| (v[0].as_i64().unwrap() as u16, v[1].as_i64().unwrap() as u16);
+        let row = |v: &Value| {
+            json!({
+                "cell": [v[0],v[1]], "level": v[2], "counter":v[3],
+                "gap":v[4], "alt":v[5], "flags":v[6], "cache":[v[7],v[8]],
+            })
+        };
+        let terrain = sim.resolved_terrain.as_ref().unwrap();
+        let cells: Vec<_> = terrain
+            .native_cell_iterator(103)
+            .map(|cell| ((cell.rx, cell.ry), cell.level))
+            .collect();
+        assert_eq!(
+            cells.len() as u64,
+            native["inputs"]["allocated_knowledge_cells"]
+                .as_u64()
+                .unwrap()
+        );
+        let order_bytes: Vec<_> = cells
+            .iter()
+            .flat_map(|&((x, y), _)| {
+                (x as i16)
+                    .to_le_bytes()
+                    .into_iter()
+                    .chain((y as i16).to_le_bytes())
+            })
+            .collect();
+        let order_hash = crate::util::sha256::sha256_hex(&order_bytes);
+        for sweep in native["sweeps"].as_array().unwrap() {
+            for pass in sweep["passes"].as_array().unwrap() {
+                assert_eq!(pass["ordered_coords_sha256"], order_hash);
+                assert_eq!(pass["count"], cells.len());
+            }
+        }
+        let cold = row(&native["initial_source_cell"]);
+        let mut expected: BTreeMap<_, _> = cells
+            .iter()
+            .map(|&(xy, level)| {
+                let mut state = cold.clone();
+                state["cell"] = json!([xy.0, xy.1]);
+                state["level"] = json!(level);
+                (xy, state)
+            })
+            .collect();
+        for state in native["initial_nonconstructor_cells"].as_array().unwrap() {
+            expected.insert(coord(state), row(state));
+        }
+        // The selected visible neighborhoods are entirely real. Neither an
+        // outside/Dummy prior nor its final stamping is certified by this corpus.
+        for xy in native["borders"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|b| b["cells"].as_array().unwrap())
+            .map(coord)
+            .chain(
+                native["initial_nonconstructor_cells"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(coord),
+            )
+        {
+            for dx in -1i16..=1 {
+                for dy in -1i16..=1 {
+                    assert!(
+                        expected
+                            .contains_key(&((xy.0 as i16 + dx) as u16, (xy.1 as i16 + dy) as u16))
+                    );
+                }
+            }
+        }
+        for notification in native["notifications"].as_array().unwrap() {
+            let xy = coord(&notification["cell"]);
+            for rung in 0u16..7 {
+                assert!(expected.contains_key(&(xy.0 + rung, xy.1 + rung)));
+            }
+        }
+        let topology = json!({
+            "allocated_cells": expected.values().collect::<Vec<_>>(),
+            "dimensions": [sim.fog.width,sim.fog.height],
+            // Existing executed receiver fixture supplies the unexamined Dummy.
+            "dummy_prior": vision::discovery_corpus()["cache_controls"]["topology"]["dummy_prior"],
+        });
+        let (fog, _) = vision::native_map_cell_fixture(&topology, viewer);
+        sim.fog = fog;
+        let actual_xyz = {
+            let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(
+                sim.resolved_terrain.as_ref().unwrap(),
+            );
+            let p = coord(&native["inputs"]["physical_fire_cell"]["coords"]);
+            crate::sim::cell_kernel::native_cell_own_coords(
+                cells.lookup((p.0 as i16, p.1 as i16)),
+                &cells,
+            )
+            .unwrap()
+        };
+        assert_eq!(
+            json!([actual_xyz.0, actual_xyz.1, actual_xyz.2]),
+            native["inputs"]["native_coordinate"]["xyz"]
+        );
+        let origin = (
+            (actual_xyz.0 / 256) as u16,
+            (actual_xyz.1 / 256) as u16,
+            actual_xyz.2 as i32,
+        );
+        let config = sim.sight_reveal_config(Some(rules));
+        let heights = sim.sight_height_grid(&config);
+        let context = UninitContext::with_rules(rules);
+        let rng = (
+            sim.scenario_rng.native_state_hex(),
+            sim.main_rng.native_state_hex(),
+            sim.mapgen_rng.native_state_hex(),
+        );
+        if indexed {
+            // Establish the derived index through its production owner. All native
+            // input fields and callback history must stay unchanged while priming.
+            let (_, trace) = trace_reveal_calls(|| sim.update_shroud_edges(viewer, context));
+            assert_eq!(trace.edge_visits, 2 * cells.len());
+            assert!(trace.notifications.is_empty());
+            for state in expected.values() {
+                vision::assert_native_cell_history(
+                    &sim.fog,
+                    viewer,
+                    state,
+                    sim.resolved_terrain.as_ref().unwrap(),
+                    false,
+                );
+            }
+        }
+        let mut stage_index = 0;
+        let mut compare_stage = |sim: &Simulation| {
+            let stage = &native["stages"][stage_index];
+            stage_index += 1;
+            for state in stage["changes"].as_array().unwrap() {
+                let xy = coord(state);
+                assert_eq!(expected[&xy]["level"], state[2], "physical level");
+                expected.insert(xy, row(state));
+            }
+            for state in expected.values() {
+                vision::assert_native_cell_history(
+                    &sim.fog,
+                    viewer,
+                    state,
+                    sim.resolved_terrain.as_ref().unwrap(),
+                    false,
+                );
+            }
+        };
+        for phase in ["cold_fire", "warm_repeat"] {
+            let (local, trace) = trace_reveal_calls(|| {
+                sim.reveal_area(
+                    &[viewer],
+                    (origin.0, origin.1),
+                    origin.2,
+                    3,
+                    heights.levels(),
+                    false,
+                    &config,
+                    context,
+                    vision::MapRevealProjection::Fire,
+                    Some(viewer),
+                )
+            });
+            let leaf: Vec<_> = native["leaf_receivers"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|r| r["phase"] == phase)
+                .map(|r| coord(&r["cell"]))
+                .collect();
+            assert_eq!(trace.walks, [leaf]);
+            assert!(
+                trace.notifications.is_empty(),
+                "fire leaf never calls5865F0"
+            );
+            compare_stage(sim);
+            for (border_origin, radius) in [(local.unwrap(), 6), (origin, 4)] {
+                let (_, trace) = trace_reveal_calls(|| {
+                    sim.refresh_sight_border(viewer, border_origin, radius, context)
+                });
+                let border = native["borders"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|b| b["phase"] == phase && b["radius"] == radius)
+                    .unwrap();
+                let receivers: Vec<_> = border["cells"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(coord)
+                    .collect();
+                let frames: Vec<_> = border["cells"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|r| r[3].as_i64().unwrap() as i8)
+                    .collect();
+                assert_eq!(trace.border_receivers, receivers);
+                assert_eq!(trace.border_ground_after, frames);
+                assert!(trace.notifications.is_empty());
+                compare_stage(sim);
+            }
+        }
+        for frame in [119, 120, 240] {
+            sim.session.binary_frame = frame;
+            let (_, trace) = trace_reveal_calls(|| sim.tick_pending_shroud_conceal(context));
+            if frame == 120 {
+                if indexed {
+                    assert!(
+                        trace.edge_visits > 0 && trace.edge_visits < 2 * cells.len(),
+                        "the completed index must use the sparse production walk"
+                    );
+                } else {
+                    assert_eq!(trace.edge_visits, 2 * cells.len());
+                }
+            }
+            let phase = format!("logic_{frame}");
+            let expected_calls: Vec<_> = native["notifications"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|r| r["phase"] == phase)
+                .map(|r| {
+                    assert_eq!(r["house_is_current"], true);
+                    (r["sweep_pass"] == 1, coord(&r["cell"]), r["fresh"] == 1)
+                })
+                .collect();
+            assert_eq!(
+                trace.edge_notifications, expected_calls,
+                "actual notification pass/order at{frame}"
+            );
+            assert_eq!(
+                trace.notifications,
+                expected_calls
+                    .iter()
+                    .map(|&(_, cell, fresh)| (cell, fresh))
+                    .collect::<Vec<_>>()
+            );
+            compare_stage(sim);
+        }
+        assert_eq!(stage_index, native["stages"].as_array().unwrap().len());
+        assert_eq!(
+            rng,
+            (
+                sim.scenario_rng.native_state_hex(),
+                sim.main_rng.native_state_hex(),
+                sim.mapgen_rng.native_state_hex()
+            )
+        );
+        assert_eq!(native["rng"]["before"], native["rng"]["after"]);
+        assert_eq!(native["rng"]["requests"], json!([]));
     }
 }

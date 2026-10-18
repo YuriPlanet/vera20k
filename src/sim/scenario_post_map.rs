@@ -18,6 +18,8 @@ use crate::sim::world::Simulation;
 pub(crate) struct ScenarioPostMapInput<'a> {
     pub(crate) map_width: u16,
     pub(crate) map_height: u16,
+    /// Map Basic.FillSilos after the fresh Scenario reset(false).
+    pub(crate) fill_silos: bool,
     pub(crate) rules: &'a RuleSet,
     pub(crate) overlay_registry: &'a OverlayTypeRegistry,
     pub(crate) house_roster: &'a HouseRoster,
@@ -115,6 +117,38 @@ impl Simulation {
         // Post_Map_Init686AFE calls68C050 after launch alliances, before
         // Full_Init's particle/OreTwinkle tail. Restore never reruns this pass.
         self.assign_secret_lab_production(input.rules);
+
+        // ReadScenario684ACE → FillInData684F02..684F7F, before restamp
+        // and the particle/OreTwinkle tail. Every nonnull House participates;
+        // restore never enters this fresh-only owner or repeats its credits.
+        if input.fill_silos {
+            for &owner in &self.session.house_order {
+                let income = crate::sim::house_state::income_ppm_for_owner(
+                    &self.houses,
+                    &self.interner,
+                    input.rules,
+                    self.interner.resolve(owner),
+                );
+                let Some(house) = self.houses.get_mut(&owner) else {
+                    continue;
+                };
+                // Native dereferences Tiberium[0], even if its Value is0.
+                // Do not substitute a name/default or silently skip an invalid
+                // empty registry on an enabled nonempty-House scenario.
+                let value = input
+                    .rules
+                    .tiberium_types
+                    .types()
+                    .first()
+                    .expect("native FillSilos requires Tiberium registry slot0")
+                    .value;
+                house.economy.fill_silos_fresh_empty_store(
+                    value,
+                    house.tracking.storage_capacity(),
+                    income,
+                );
+            }
+        }
 
         // Original684C30 performs586BF0 after the zone rebuilds and before its
         // particle/twinkle tail. This command is fresh-load-only: restore writes
@@ -308,6 +342,7 @@ mod tests {
         ScenarioPostMapInput {
             map_width: MAP_SIZE,
             map_height: MAP_SIZE,
+            fill_silos: false,
             rules,
             overlay_registry: overlays,
             house_roster,

@@ -352,6 +352,7 @@ fn retained_mobile_translucency_matches_original_packed_words() {
                             Some(&palettes),
                             batch.default_zshape_bind_group(),
                             None,
+                            None,
                         );
                         let reads = [
                             gpu.read(&mut encoder, &color),
@@ -676,6 +677,7 @@ fn retained_stock_grizzly_berserk_material_matches_original_pixels() {
                     Some(&palettes),
                     batch.default_zshape_bind_group(),
                     None,
+                    None,
                 );
                 assert_eq!(
                     stats.passes > 0,
@@ -839,6 +841,7 @@ fn retained_packed_high_resolution_dispatch_preserves_native_pixels() {
             None,
             batch.default_zshape_bind_group(),
             None,
+            None,
         );
         let read = gpu.read(&mut encoder, &color);
         let output = gpu.finish(encoder, &[read], size);
@@ -952,6 +955,7 @@ fn retained_packed_workload_timing() {
             Some(&shp),
             None,
             batch.default_zshape_bind_group(),
+            None,
             None,
         );
         let command = encoder.finish();

@@ -113,12 +113,16 @@ pub(super) fn tick_system(sys: &mut ParticleSystem, sim: &mut Simulation, rules:
 
     // Phase 2 — prune dead particles. Fire has no NextParticle chaining
     // (the [FireStream] type has none and no fire chain exists in vanilla).
-    for p in &sys.particles {
-        if p.marked_for_deletion {
-            sim.conceal_particle(p.stable_id());
+    // Native System cleanup walks backward; each child reaches the same
+    // inherited ObjectUnInit5F65F0 and common deferred drain as Spark/Smoke.
+    for index in (0..sys.particles.len()).rev() {
+        if sys.particles[index].marked_for_deletion {
+            let particle = sys
+                .remove_expired_child(sys.particles[index].stable_id())
+                .expect("the current child is present");
+            sim.retire_particle(particle, rules);
         }
     }
-    sys.particles.retain(|p| !p.marked_for_deletion);
 
     // Phase 3 — spawn at SpawnFrames cadence via the insert-shuffle helper.
     // Orbital attached-object tracking + the target-moved 3-tick fallback

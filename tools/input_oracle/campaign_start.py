@@ -14,10 +14,10 @@ import struct
 from pathlib import Path
 from types import SimpleNamespace
 
-from unicorn import UC_HOOK_CODE
+from unicorn import UC_HOOK_CODE, UC_HOOK_MEM_WRITE
 from unicorn.x86_const import (
     UC_X86_REG_EAX, UC_X86_REG_EBP, UC_X86_REG_EBX, UC_X86_REG_ECX,
-    UC_X86_REG_EDI, UC_X86_REG_EDX, UC_X86_REG_EIP, UC_X86_REG_ESI,
+    UC_X86_REG_EDI, UC_X86_REG_EDX, UC_X86_REG_EFLAGS, UC_X86_REG_EIP, UC_X86_REG_ESI,
     UC_X86_REG_ESP,
 )
 
@@ -1248,6 +1248,202 @@ def generate_houses():
                 side_controls=side_controls())
 
 
+def generate_scenario_names():
+    """Original generated names and authored Building admission, before new.
+
+    Reuses the CampaignReader and trigger_action_values provider-record prefix
+    composition. Prepared House lookup storage is not a full House constructor;
+    positive Building rows stop before allocation, never at a supplied return.
+    """
+    m = CampaignReader()
+    u = m.u
+    m.seed_streams(31)
+    rng = m.rng_state()
+    houses = [m.alloc(0x16100) for _ in range(3)]
+    for slot, pointer in enumerate(houses):
+        u.mem_write(pointer, bytes(0x16100))
+        u.mem_write(pointer + 0x30, dwords(slot))
+    # Display handle is a separate declared prior. Original name blocks below
+    # alone establish the +15FF4 strings that whole50C170 actually reads.
+    u.mem_write(houses[0] + 0x1602A, "Computer\0".encode("utf-16-le"))
+    items = m.alloc(12)
+    phase = None
+    writes, observations, reached = [], {}, set()
+
+    def observe(_u, pc, _size, _data):
+        if phase is None:
+            return
+        reached.add(pc)
+        if pc == 0x44F8AD:
+            observations["house_lookup"] = struct.unpack("<i", dwords(u.reg_read(UC_X86_REG_EAX)))[0]
+        elif pc == 0x44F8DB:
+            observations["current_comparison"] = bool(u.reg_read(UC_X86_REG_EFLAGS) & 0x40)
+        elif pc == 0x44F8F7:
+            observations["type_lookup"] = struct.unpack("<i", dwords(u.reg_read(UC_X86_REG_EAX)))[0]
+
+    def observe_write(_u, _access, address, size, _value, _data):
+        if phase is None:
+            return
+        for slot, pointer in enumerate(houses):
+            if pointer <= address < pointer + 0x16100:
+                writes.append((slot, address - pointer, size))
+
+    def begin(label):
+        nonlocal phase
+        assert phase is None and m.rng_state() == rng
+        writes.clear()
+        observations.clear()
+        reached.clear()
+        phase = label
+
+    def end():
+        nonlocal phase
+        assert m.rng_state() == rng
+        m.check_code()
+        phase = None
+
+    def install_array(order, current=0):
+        u.mem_write(items, dwords(*(houses[slot] for slot in order)))
+        u.mem_write(0xA8022C, dwords(items))
+        u.mem_write(0xA80238, dwords(len(order)))
+        u.mem_write(0xA83D4C, dwords(houses[current]))
+
+    code_hook = u.hook_add(UC_HOOK_CODE, observe)
+    write_hook = u.hook_add(UC_HOOK_MEM_WRITE, observe_write)
+    try:
+        house_rows = []
+        for slot, kind, start, stop in ((0, "human", 0x68804A, 0x688092),
+                                      (1, "computer", 0x688210, 0x688252),
+                                      (2, "computer", 0x688210, 0x688252)):
+            begin("name_copy")
+            u.reg_write(UC_X86_REG_EBP, houses[slot])
+            m.region(start, stop, required=(0x7C91D0,))
+            assert writes and all(written_slot == slot and 0x15FF4 <= offset
+                                  and offset + size <= 0x16009
+                                  for written_slot, offset, size in writes)
+            house_rows.append(dict(slot=slot, generated_kind=kind,
+                native_name=m.string(houses[slot] + 0x15FF4),
+                display_handle="Computer" if slot == 0 else None,
+                stored_index=m.read32(houses[slot] + 0x30)))
+            end()
+
+        lookup_rows = []
+        for name, order, token in (
+            ("human_exact", [0, 1, 2], "<human player>"),
+            ("computer_duplicate_first", [0, 1, 2], "Computer"),
+            ("wrong_case", [0, 1, 2], "computer"),
+            ("trailing_space", [0, 1, 2], "Computer "),
+            ("leading_space", [0, 1, 2], " Computer"),
+            ("internal_rust_owner", [0, 1, 2], "Computer1"),
+            ("player_slot_token", [0, 1, 2], "<Player @ B>"),
+            ("country_token", [0, 1, 2], "Russians"),
+            ("display_handle_without_ai", [0], "Computer"),
+            ("reversed_duplicate_ai_order", [0, 2, 1], "Computer"),
+            ("empty_array", [], "Computer")):
+            install_array(order)
+            begin("lookup")
+            result = struct.unpack("<i", dwords(m.invoke(0x50C170, m.cstring(token))))[0]
+            assert not writes
+            resolved = order[result] if result >= 0 else None
+            lookup_rows.append(dict(name=name, house_order=order, token=token,
+                result_index=result, resolved_house=resolved,
+                resolved_stored_index=m.read32(houses[resolved] + 0x30) if resolved is not None else None))
+            end()
+
+        # Same original constructor/registry setup as the existing authored
+        # provider prefix. Name/index are native outputs, not stock ordinals.
+        u.mem_write(0xA83C68, dwords(0x7EB6D4, m.alloc(4096), 1024, 1, 0, 10))
+        type_pointer = m.alloc(0x2000)
+        m.invoke(0x45DD90, type_pointer, (m.cstring("NAHAND"),))
+        assert m.rng_state() == rng
+        m.check_code()
+        assert m.read32(0xA83C78) == 1
+        assert m.read32(m.read32(0xA83C6C)) == type_pointer
+        building_type = dict(name=m.string(type_pointer + 0x24), index=m.read32(type_pointer + 0x98))
+
+        reader_rows = []
+        for name, mode, owner, type_name, current in (
+            ("skirmish_first_ai", 5, "Computer", "NAHAND", 0),
+            ("skirmish_current_human", 5, "<human player>", "NAHAND", 0),
+            ("campaign_current_human", 0, "<human player>", "NAHAND", 0),
+            ("skirmish_unknown_house", 5, "Unknown", "NAHAND", 0),
+            ("campaign_unknown_house", 0, "Unknown", "NAHAND", 0),
+            ("skirmish_wrong_case", 5, "computer", "NAHAND", 0),
+            ("skirmish_trailing_space", 5, "Computer ", "NAHAND", 0),
+            ("skirmish_internal_owner", 5, "Computer1", "NAHAND", 0),
+            ("campaign_first_ai", 0, "Computer", "NAHAND", 0),
+            ("skirmish_unknown_type", 5, "Computer", "UNKNOWN_TYPE", 0),
+            ("skirmish_first_duplicate_is_current", 5, "Computer", "NAHAND", 1)):
+            install_array([0, 1, 2], current)
+            u.mem_write(0xA8B238, dwords(mode))
+            basic = {"NewINIFormat": "4"}
+            structures = {"0": f"{owner},{type_name},256,20,20,0,None,0,0,1,0"}
+            m.ordered_ini({"Basic": basic, "Structures": structures})
+            u.reg_write(UC_X86_REG_ESI, m.scenario)
+            u.reg_write(UC_X86_REG_EDI, INI)
+            u.reg_write(UC_X86_REG_EAX, m.read32(m.scenario + 0x1C70))
+            m.region(0x68A13D, 0x68A15B, required=(0x5276D0,))
+            assert m.read32(0xA8ED7C) == 4
+            begin("building_reader")
+            u.mem_write(SP, dwords(RET_MAGIC))
+            u.reg_write(UC_X86_REG_ECX, INI)
+            # PUSH720 executes; the allocator CALL44FAFD does not. Rejected
+            # rows instead run their real loop, epilogue and RET44FE51.
+            m.region(0x44F820, (0x44FAFD, RET_MAGIC), required=(0x528A10, 0x50C170))
+            stop = u.reg_read(UC_X86_REG_EIP)
+            assert not writes and not reached.intersection((0x7C8E17, 0x43B740))
+            assert stop == 0x44FAFD or 0x44FE51 in reached
+            row = dict(name=name, game_mode=mode, current_house=current,
+                house_order=[0, 1, 2], basic=basic, structures=structures,
+                outcome="allocation_boundary" if stop == 0x44FAFD else "reader_return",
+                house_lookup=observations.get("house_lookup"),
+                type_lookup=observations.get("type_lookup"),
+                current_comparison=observations.get("current_comparison"),
+                selected_house=None, type_index=None, allocation_size=None,
+                authored_health=None, cell=None, tag=None, stop_pc=f"{stop:08X}")
+            if stop == 0x44FAFD:
+                sp = u.reg_read(UC_X86_REG_ESP)
+                frame = sp + 4  # undo the allocation-size PUSH for local offsets
+                row.update(selected_house=houses.index(m.read32(frame + 0x24)),
+                    type_index=m.read32(frame + 0x20), allocation_size=m.read32(sp),
+                    authored_health=m.read32(frame + 0x18),
+                    cell=list(struct.unpack("<2h", u.mem_read(frame + 0x14, 4))),
+                    tag=m.string(u.reg_read(UC_X86_REG_EBP)))
+            reader_rows.append(row)
+            end()
+        assert not m.asset_loaded
+        return dict(schema_version=1, native_sha256=image_sha256(), houses=house_rows,
+            building_type=building_type, lookup_rows=lookup_rows, building_reader_rows=reader_rows,
+            execution_checks=dict(complete_rng_bytes_per_stream=STRUCT_LEN,
+                all_three_rng_buffers_unchanged=True, original_executable_bytes_unchanged=True,
+                name_copy_writes_only_name=True, lookup_and_reader_house_writes=False,
+                reader_allocator_or_building_constructor_reached=False))
+    finally:
+        u.hook_del(code_hook)
+        u.hook_del(write_hook)
+
+
+def scenario_names_metadata():
+    return provenance(
+        scope="Original generated House name copies, whole50C170 and authored Building44F820 admission to before allocation or real rejection return.",
+        entry_points=dict(human_name_copy=0x68804A, computer_name_copy=0x688210,
+            house_from_name=0x50C170, building_type_ctor=0x45DD90,
+            building_type_lookup=0x45E7B0, basic_new_ini_format=0x68A13D,
+            building_reader=0x44F820, building_allocation_boundary=0x44FAFD),
+        assumptions=[
+            "Three prepared0x16100 House lookup-storage regions and supplied stored indexes0/1/2 are not whole House constructors or Create_Houses startup. Original68804A..688092 and688210..688252 alone produce their native names. Human display handleComputer at+1602A is a separate UTF16 prior.",
+            "Array order/count and current House pointer are explicit per-control priors. Whole50C170 observes byte-exact names, duplicates, first array match, and wrong case/space/internal-owner/player-token/country controls. Stored House index and array ordinal remain distinct.",
+            "Original whole45DD90 constructs supplied actual registered ID NAHAND in a bounded single-entry BuildingType registry. No physical type scalar/ART read or full retail type ordinal is claimed.",
+            "Original Basic.NewINIFormat reader runs before every Structures control. Original44F820/ReadString128/strtok/atoi/type lookup execute. Positive rows stop before CALL44FAFD after PUSH720; rejected rows execute through real RET44FE51. No allocation, Building constructor, placement, capture or production occurs.",
+            "All three complete0x3F4 RNG buffers are compared to the original seed31 state after every selected execution; the corpus retains the bounded unchanged result rather than repeated raw RNG state. Existing campaign --houses controls retain constructor RNG/timers. No whole startup/constructor/capture/production zero-draw claim follows.",
+            "Every original executable-section byte is checked after each selected execution. House write observation admits only native-name writes in copy rows and no House writes in lookup/reader rows. Type-constructor setup owns its bounded Type registration/ID writes.",
+            "VERA20K_CAMPAIGN_START_ASSETS names an existing directory, preferably empty; selected controls request no physical asset. Physical INI loading, full Rules/Scenario startup and terrain admission are excluded."],
+        substitutions=[
+            "Existing CampaignReader/BulletReader/Reader/Lists ordered linked-and-CRC INI cache, bounded bump allocation/inert delete, CRT TLS and declared OS import transports. No native name/admission/type/gameplay return is supplied and no original code is patched.",
+            "Prepared lookup storage, separate display handle, type-constructor name input and map lexical records are declared inputs. Cell20,20 is parsed only; it is not an observed successful world placement."],
+    ) | dict(reproduce_command="VERA20K_GAMEMD_EXE='<original-gamemd.exe>' VERA20K_CAMPAIGN_START_ASSETS='<existing-empty-directory>' python -m tools.input_oracle.campaign_start --scenario-names --check")
+
+
 def generate():
     return dict(schema_version=1, native_sha256=image_sha256(), metadata=metadata_history(),
                 metadata_controls=metadata_controls(), movies=movie_catalog(),
@@ -1369,9 +1565,13 @@ def source_paths():
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("--houses", action="store_true")
+    selection = parser.add_mutually_exclusive_group()
+    selection.add_argument("--houses", action="store_true")
+    selection.add_argument("--scenario-names", action="store_true")
     args, remaining = parser.parse_known_args()
-    finish_vectors(generate_houses if args.houses else generate,
-                   HERE / ("campaign_start_houses.json" if args.houses else "campaign_start.json"),
-                   provenance=lambda: metadata(houses=args.houses), argv=remaining,
+    generator = generate_scenario_names if args.scenario_names else generate_houses if args.houses else generate
+    filename = "campaign_house_names.json" if args.scenario_names else "campaign_start_houses.json" if args.houses else "campaign_start.json"
+    evidence = scenario_names_metadata if args.scenario_names else lambda: metadata(houses=args.houses)
+    finish_vectors(generator, HERE / filename,
+                   provenance=evidence, argv=remaining,
                    source_paths=source_paths())

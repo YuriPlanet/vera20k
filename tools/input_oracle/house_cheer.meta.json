@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Registered AllToCheer536C00 -> whole730F30, actual Event4C66C0 and inlined OutList append, reset734210 and Rules default store665D92",
+  "assumptions": [
+    "Existing SelectionFixture/KeyboardFixture owns the VM, original532150 command registration, scratch/stack allocation, empty actors/layers, native call invocation and original .text immutability checks. No additional VM or admission/queue implementation is supplied.",
+    "The selected current House index, Rules+580, signed last/current frames, Session+300 input lock and capacity128 OutList count/read/write indexes are explicit priors. Existing occupied records are opaque; only newly written event opcode/House/frame fields are observed. The constructor does not initialize byte+1 or arbitrary payload, so those bytes are not goldens.",
+    "Every press invokes actual registered Execute536C00 with argument0 and executes whole730F30, including real4C66C0 and the inlined111-byte OutList copy, timestamp and index/count writes when admitted. This handler does not call the separate6521C0 enqueue body.",
+    "The full-queue history explicitly supplies a drained queue_count0 before its second press, retaining both indexes. That boundary is not execution of local/network scheduling. Equality/rearm, signed wrapping ADD, signed current-frame CMP, nonzero lock and full-buffer rate consumption are original outputs.",
+    "Reset controls execute whole734210, including both OS clock calls and the actual last-frame=-100 store. The constructor-default control executes only the original665D92 ten-byte store with supplied ESI=Rules; it is not whole Rules construction/loading. The stock300 input is independently retail-derived, not invented as a constructor default.",
+    "Main/Scenario/MapGen buffers are initialized with the existing seed31 transport and asserted byte-identical through each history; no65C780/65C7E0 or detach70D4A0/7258D0 calls occur in these producer/reset controls. This does not cover downstream House/Infantry/audio RNG or timers.",
+    "No Windows key delivery/loader, full keyboard configuration, event dispatch/House scan, Infantry DoAction, rendering, sound/device, saved-game or whole-frame scheduling is executed here. Existing Steam infantry_cheer controls retain their separate provenance and payload."
+  ],
+  "substitutions": [
+    "Existing original-registration malloc7C8E17 transport supplies bounded zero-filled scratch storage; registry execution stops before533D20 file I/O.",
+    "The declared timeGetTime import7E1530 returns100000 milliseconds using the existing return_from_sink OS transport. These values stamp OutList transport and independent reset click clocks, not the simulation frame or admission decision.",
+    "Event constructor diagnostic4068E0 is an observed platform log boundary returning0 with cdecl caller cleanup; original Event, producer, reset and queue stores execute unchanged. No selected simulated-input, event/header, last-frame, gate, arithmetic or queue return is substituted."
+  ],
+  "entry_points": {
+    "registry": "0x00532150",
+    "registry_stop": "0x00533D20",
+    "registered_execute": "0x00536C00",
+    "command_handler": "0x00730F30",
+    "event_constructor": "0x004C66C0",
+    "queue_copy": "0x00730F99",
+    "queue_full_branch": "0x00730F7B",
+    "last_frame_store": "0x00730FD3",
+    "scene_input_reset": "0x00734210",
+    "constructor_rate_store": "0x00665D92"
+  },
+  "replay_command": "python -m tools.input_oracle.selection_navigation --house-cheer",
+  "payload_sha256": "5d643c5fb8b2ddfad1041d58170378228885b99fcbd0d80bf5450ad3a2ccdb76"
+}

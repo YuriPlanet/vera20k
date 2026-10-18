@@ -940,7 +940,7 @@ fn emit_building_bib(
 /// This entry is independent of the parent's body admission and viewport:
 /// a slot offset can put an animation on screen while its parent is outside.
 /// The existing slot palette/frame/light owner is shared by every building.
-pub(super) fn build_building_anim_instances(
+pub(crate) fn build_building_anim_instances(
     state: &AppState,
     objects: &mut Vec<PlannedObjectInstance>,
     order: &NativeDisplayOrder,

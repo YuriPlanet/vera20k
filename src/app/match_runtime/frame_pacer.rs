@@ -4,8 +4,6 @@
 //! whether one outer event-loop iteration may admit a gameplay frame, while the
 //! scenario elapsed clock supplies the score screen's match duration.
 
-use std::time::Instant;
-
 const FRAME_BUCKET_SHIFT: u32 = 4;
 const FRAME_BUCKET_MS: u64 = 1 << FRAME_BUCKET_SHIFT;
 /// Wake interval of the hidden-window match service loop: half a pacer
@@ -23,21 +21,44 @@ unsafe extern "system" {
     fn timeGetTime() -> u32;
 }
 
-/// Return the app-local pacing clock.
+/// Return system uptime for the app's wall-clock consumers.
 ///
-/// On Windows this is the same wrapping millisecond authority used by the
-/// retail executable. Other targets retain a monotonic development fallback.
-pub(crate) fn wall_clock_ms(fallback_epoch: Instant, now: Instant) -> u64 {
+/// Original6C8C40/50 reads timeGetTime, then selects the low32 millisecond
+/// word before shifting. Keep a continuing system clock across process
+/// restarts: Mouse5BE092 retains raw Power Flash timestamps. Consumers select
+/// their own units/word; the deterministic simulation never reads this clock.
+/// Windows: learn.microsoft.com/en-us/windows/win32/api/timeapi/nf-timeapi-timegettime
+/// Darwin RAW includes sleep (Apple Libc/gen/clock_gettime.c); Linux BOOTTIME
+/// includes suspend (docs.kernel.org/core-api/timekeeping.html). Exact historic
+/// Windows suspend behavior is not established by the same-boot restart proof.
+pub(crate) fn wall_clock_ms() -> u64 {
     #[cfg(windows)]
     {
-        let _ = (fallback_epoch, now);
         // SAFETY: timeGetTime takes no arguments and returns the process-wide
         // Windows uptime counter as an unsigned 32-bit millisecond word.
         u64::from(unsafe { timeGetTime() })
     }
-    #[cfg(not(windows))]
+    #[cfg(unix)]
     {
-        now.duration_since(fallback_epoch).as_millis() as u64
+        #[cfg(target_os = "macos")]
+        let clock = libc::CLOCK_MONOTONIC_RAW;
+        #[cfg(target_os = "linux")]
+        let clock = libc::CLOCK_BOOTTIME;
+        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+        let clock = libc::CLOCK_MONOTONIC;
+        let mut sample = std::mem::MaybeUninit::<libc::timespec>::uninit();
+        // SAFETY: sample points to writable, aligned timespec storage. The
+        // valid system clock writes it on success, checked before reading.
+        let result = unsafe { libc::clock_gettime(clock, sample.as_mut_ptr()) };
+        assert_eq!(
+            result,
+            0,
+            "presentation uptime: {}",
+            std::io::Error::last_os_error()
+        );
+        // SAFETY: the successful clock_gettime call initialized both fields.
+        let sample = unsafe { sample.assume_init() };
+        (sample.tv_sec as u64) * 1_000 + (sample.tv_nsec as u64) / 1_000_000
     }
 }
 
@@ -238,6 +259,47 @@ const fn frame_bucket(now_ms: u64) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn wall_clock_process_probe() {
+        if std::env::var_os("VERA20K_PACING_CLOCK_PROBE").is_some() {
+            println!("VERA20K_PACING_CLOCK_MS={}", wall_clock_ms());
+        }
+    }
+
+    #[test]
+    fn wall_clock_continues_between_processes() {
+        // Raw Mouse-saved Flash timestamps use the same clock after a cold
+        // process restart. A new process must not install its own epoch.
+        let before = wall_clock_ms() as u32;
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "app::match_runtime::frame_pacer::tests::wall_clock_process_probe",
+                "--nocapture",
+                "--test-threads=1",
+            ])
+            .env("VERA20K_PACING_CLOCK_PROBE", "1")
+            .output()
+            .unwrap();
+        let after = wall_clock_ms() as u32;
+        assert!(output.status.success(), "{output:?}");
+        let stdout = String::from_utf8(output.stdout).unwrap();
+        let child: u64 = stdout
+            .split_once("VERA20K_PACING_CLOCK_MS=")
+            .expect("child clock sample")
+            .1
+            .split_whitespace()
+            .next()
+            .unwrap()
+            .parse()
+            .unwrap();
+        let child = child as u32;
+        assert!(
+            child.wrapping_sub(before) <= after.wrapping_sub(before),
+            "new process clock {child} outside parent samples {before}..{after}"
+        );
+    }
 
     #[test]
     fn first_unpaused_iteration_is_immediately_eligible() {

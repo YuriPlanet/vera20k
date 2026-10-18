@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Whole original SUB CanAutoCloak with real retained-target SelectWeapon/GetWeapon/CanFireAt/InRange and native-read physical inputs",
+  "assumptions": [
+    "Existing bridge_target_composed.setup/BulletReader own the VM, native scalar CRT groups, sparse flat Cell table, cached lexical INI transport, allocation and physical SHP transport. Its earlier FV/HoverMissile setup is retained provenance, not a C28 actor/type/whole-scenario claim.",
+    "Fresh Rules665650 and SUB/DEST UnitType7470D0 constructors execute. Whole General66D530 sees only physical CloakingStages/CloakDelay; whole UnitType747620, selected Weapon772080, Bullet46BEE0 and Warhead75D3A0 see their physical selected sections across RULESMD, optional LANGRULE, MPBattleMD and the exact selected map, in that order. Fixed ART is not layered. Native registry discovery/order and archive/file parsing remain supplied boundaries.",
+    "Selected normal/elite slots0/1 establish dependencies using original native pointers/names. Newly encountered dependencies receive earlier physical layers through original readers. Unrelated General keys are excluded. Type visual/voxel loading is an explicit setup boundary; this is not an asset-rendering or whole Rules Process closure.",
+    "Source SUB and target DEST are supplied live marked actors, hostile human House indexes0/1, rookie rank, in-playfield membership and coordinates, with original type-to-Ammo/Cloak/health initialization735592..7355C6 and Ship69EC50 constructors. Their full construction, Unlimbo, world-list admission, terrain loading, visibility, diplomacy admission, targeting orders and movement are not executed.",
+    "Ten independent component inputs supply cloak state/progress, current frame, weapon-rearm/recloak timers and target identity. These are not gameplay injections in a production capture. All selected CanAuto6FBDC0 instructions and reached real target range/weapon/map query callees execute. CanFireAtTarget6F7780 asks weapon selection/range, not full weapon legality/GetFireError.",
+    "Scenario31, Main0 and Mapgen0 are seeded by original65C6D0; each row records all1012 bytes of every stream before/after and rejects a query draw or mutation. No CloakingTick, transition, timer producer, DetachAll, sensor outer admission, audio, drawing or whole-game RNG claim is made."
+  ],
+  "substitutions": [
+    "Inherited allocation/delete/CRT-TLS and physical cached-INI/SHP transports; Windows GUID conversion uses shared Reader.guid_transport. Type visual asset functions and CRT atexit are setup-only boundaries, recorded and forbidden during measured query execution.",
+    "Explicit sparse flat water Cell/actor/House/timer inputs. No gameplay callable, RNG, range value, result, weapon selection or cloak verdict is replaced."
+  ],
+  "entry_points": {
+    "can_auto_cloak": "0x006FBDC0",
+    "can_fire_at_target": "0x006F7780",
+    "can_fire_at": "0x006F77B0",
+    "unit_select_weapon": "0x00746CD0",
+    "techno_select_weapon": "0x006F3330",
+    "get_weapon": "0x0070E140",
+    "in_range": "0x006F7220",
+    "unit_type_ctor": "0x007470D0",
+    "unit_type_read": "0x00747620",
+    "rules_ctor": "0x00665650",
+    "general_read": "0x0066D530",
+    "weapon_read": "0x00772080",
+    "bullet_read": "0x0046BEE0",
+    "warhead_read": "0x0075D3A0"
+  },
+  "replay_command": "python -m tools.spatial_oracle.cloak_target_gate",
+  "payload_sha256": "89616301f87faee968115b1866bced60a625f8834be47dc9de08f67c0a7dbc79"
+}

@@ -88,6 +88,66 @@ fn trace_wall_sell_zone_repair_step(
 }
 
 impl Simulation {
+    /// HouseClass::Cheer50C8C0, original1cdd1180. Trigger113 and Event2D
+    /// share this owner. Capture the initial Techno count; re-read each live
+    /// ordinal and delegate admission to virtual388/Infantry522C00. There is
+    /// no House-level selected, alive, limbo, health or local-player test.
+    /// Building7E3EBC/Unit7F5C70 slot388 targets41BF90 (RET4/no effect).
+    /// Source: tools/input_oracle/house_cheer.md; existing infantry_cheer.json.
+    pub(crate) fn house_cheer(
+        &mut self,
+        owner: crate::sim::intern::InternedId,
+        rules: &RuleSet,
+        effects: FrameEffects<'_>,
+    ) {
+        let count = self.substrate.entities.techno_registry_len();
+        for ordinal in 0..count {
+            let Some(id) = self.substrate.entities.techno_registry_at(ordinal) else {
+                continue;
+            };
+            if self
+                .substrate
+                .entities
+                .get(id)
+                .is_some_and(|entity| entity.owner() == owner)
+            {
+                self.infantry_cheer(id, false, rules, effects);
+            }
+        }
+        //50C905/50C90B: centered cue follows every member callback, even
+        //when the registry is empty or every infantry refuses the action.
+        if let Some(sound_id) = rules.general.cheer_sound() {
+            self.sound_events.push(SimSoundEvent::VocCentered {
+                sound_id: sound_id.to_owned(),
+            });
+            effects.flush_sound(self, Some(rules));
+        }
+    }
+
+    ///730F5C..730F6C -> shared EventCtor4C66C0. The payload is unused.
+    /// The House byte is the registration index, independent of interning.
+    pub fn encode_cheer_record(
+        &self,
+        owner: crate::sim::intern::InternedId,
+    ) -> Option<CommandRecord> {
+        if !self.houses.contains_key(&owner) {
+            return None;
+        }
+        let index = self
+            .session
+            .house_order
+            .iter()
+            .position(|&registered| registered == owner)?;
+        let index = i8::try_from(index).ok()?;
+        CommandRecord::encode(
+            crate::sim::command::CHEER_OPCODE,
+            i32::from(index),
+            self.session.binary_frame as i32,
+            &[],
+        )
+        .ok()
+    }
+
     /// ScatterSelectedObjects730FE0 admits Techno vt+A0, without Guard's
     /// IsActive test or miner exception. All retained entities are Technos.
     pub fn scatter_key_command(&self, id: u64, rules: &RuleSet) -> Option<Command> {
@@ -409,6 +469,17 @@ impl Simulation {
             return Some(CommandEnvelope::new(owner, execute_tick, command));
         }
 
+        // Event2D4C6E2E resolves its House and calls50C8C0 without input
+        //lock, cooldown, selection or product admission being repeated.
+        if record.opcode() == crate::sim::command::CHEER_OPCODE {
+            let index = usize::try_from(record.house_id()).ok()?;
+            let owner = *self.session.house_order.get(index)?;
+            return self
+                .houses
+                .contains_key(&owner)
+                .then(|| CommandEnvelope::new(owner, execute_tick, Command::Cheer));
+        }
+
         if let Some(typed) = ExitRecord::decode(record) {
             let house_index = usize::try_from(typed.house_id).ok()?;
             let owner = *self.session.house_order.get(house_index)?;
@@ -498,12 +569,15 @@ impl Simulation {
     /// `command_owner` at cell `(x, y)`: the player's wall sale and the
     /// computer's in `AI_Manage_Build_Queue` (`sim::ai_build_need`). It sells
     /// only a wall whose owner a human controls, and refunds nothing.
+    /// `suppress_local_cue` is the original second explicit argument:
+    /// 0x4FCF78..0x4FCF98 skips only SellSound; removal and target cleanup still run.
     /// Returns whether a wall went.
     pub(crate) fn sell_wall_at_cell(
         &mut self,
         command_owner: &str,
         x: i16,
         y: i16,
+        suppress_local_cue: bool,
         rules: &RuleSet,
         overlays: &crate::rules::overlay_types::OverlayTypeRegistry,
         effects: FrameEffects<'_>,
@@ -547,7 +621,8 @@ impl Simulation {
 
         // Native emits the global cue before the discarded actual-cost call
         // and before clearing the overlay. Locality belongs to the receiver.
-        if rules.general.sell_sound.is_some()
+        if !suppress_local_cue
+            && rules.general.sell_sound.is_some()
             && let Some(receiver) = self.interner.get(command_owner)
         {
             self.sound_events.push(SimSoundEvent::WallSold { receiver });
@@ -1261,12 +1336,23 @@ impl Simulation {
                 let (Some(rules), Some(overlays)) = (rules, overlay_registry) else {
                     return false;
                 };
-                self.sell_wall_at_cell(command_owner, *x, *y, rules, overlays, frame_effects)
+                // Event 0x4C6FC4 passes 0; ordinary SELL remains audible.
+                self.sell_wall_at_cell(command_owner, *x, *y, false, rules, overlays, frame_effects)
             }
             // Offline game-speed transitions are consumed at master-frame
             // ingress so early authoritative animation work sees the new rate.
             // Reaching the ordinary EventClass-shaped tail must not apply one.
             Command::SetGameSpeed { .. } => false,
+            Command::Cheer => {
+                let (Some(owner), Some(rules)) = (self.interner.get(command_owner), rules) else {
+                    return false;
+                };
+                if !self.houses.contains_key(&owner) {
+                    return false;
+                }
+                self.house_cheer(owner, rules, frame_effects);
+                true
+            }
             Command::ExitMatch => {
                 let Some(owner) = self.interner.get(command_owner) else {
                     return false;

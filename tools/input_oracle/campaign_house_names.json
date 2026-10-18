@@ -1,0 +1,475 @@
+{
+  "building_reader_rows": [
+    {
+      "allocation_size": 1824,
+      "authored_health": 256,
+      "basic": {
+        "NewINIFormat": "4"
+      },
+      "cell": [
+        20,
+        20
+      ],
+      "current_comparison": false,
+      "current_house": 0,
+      "game_mode": 5,
+      "house_lookup": 1,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "name": "skirmish_first_ai",
+      "outcome": "allocation_boundary",
+      "selected_house": 1,
+      "stop_pc": "0044FAFD",
+      "structures": {
+        "0": "Computer,NAHAND,256,20,20,0,None,0,0,1,0"
+      },
+      "tag": "None",
+      "type_index": 0,
+      "type_lookup": 0
+    },
+    {
+      "allocation_size": null,
+      "authored_health": null,
+      "basic": {
+        "NewINIFormat": "4"
+      },
+      "cell": null,
+      "current_comparison": true,
+      "current_house": 0,
+      "game_mode": 5,
+      "house_lookup": 0,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "name": "skirmish_current_human",
+      "outcome": "reader_return",
+      "selected_house": null,
+      "stop_pc": "30000000",
+      "structures": {
+        "0": "<human player>,NAHAND,256,20,20,0,None,0,0,1,0"
+      },
+      "tag": null,
+      "type_index": null,
+      "type_lookup": null
+    },
+    {
+      "allocation_size": 1824,
+      "authored_health": 256,
+      "basic": {
+        "NewINIFormat": "4"
+      },
+      "cell": [
+        20,
+        20
+      ],
+      "current_comparison": null,
+      "current_house": 0,
+      "game_mode": 0,
+      "house_lookup": 0,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "name": "campaign_current_human",
+      "outcome": "allocation_boundary",
+      "selected_house": 0,
+      "stop_pc": "0044FAFD",
+      "structures": {
+        "0": "<human player>,NAHAND,256,20,20,0,None,0,0,1,0"
+      },
+      "tag": "None",
+      "type_index": 0,
+      "type_lookup": 0
+    },
+    {
+      "allocation_size": null,
+      "authored_health": null,
+      "basic": {
+        "NewINIFormat": "4"
+      },
+      "cell": null,
+      "current_comparison": null,
+      "current_house": 0,
+      "game_mode": 5,
+      "house_lookup": -1,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "name": "skirmish_unknown_house",
+      "outcome": "reader_return",
+      "selected_house": null,
+      "stop_pc": "30000000",
+      "structures": {
+        "0": "Unknown,NAHAND,256,20,20,0,None,0,0,1,0"
+      },
+      "tag": null,
+      "type_index": null,
+      "type_lookup": null
+    },
+    {
+      "allocation_size": null,
+      "authored_health": null,
+      "basic": {
+        "NewINIFormat": "4"
+      },
+      "cell": null,
+      "current_comparison": null,
+      "current_house": 0,
+      "game_mode": 0,
+      "house_lookup": -1,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "name": "campaign_unknown_house",
+      "outcome": "reader_return",
+      "selected_house": null,
+      "stop_pc": "30000000",
+      "structures": {
+        "0": "Unknown,NAHAND,256,20,20,0,None,0,0,1,0"
+      },
+      "tag": null,
+      "type_index": null,
+      "type_lookup": null
+    },
+    {
+      "allocation_size": null,
+      "authored_health": null,
+      "basic": {
+        "NewINIFormat": "4"
+      },
+      "cell": null,
+      "current_comparison": null,
+      "current_house": 0,
+      "game_mode": 5,
+      "house_lookup": -1,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "name": "skirmish_wrong_case",
+      "outcome": "reader_return",
+      "selected_house": null,
+      "stop_pc": "30000000",
+      "structures": {
+        "0": "computer,NAHAND,256,20,20,0,None,0,0,1,0"
+      },
+      "tag": null,
+      "type_index": null,
+      "type_lookup": null
+    },
+    {
+      "allocation_size": null,
+      "authored_health": null,
+      "basic": {
+        "NewINIFormat": "4"
+      },
+      "cell": null,
+      "current_comparison": null,
+      "current_house": 0,
+      "game_mode": 5,
+      "house_lookup": -1,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "name": "skirmish_trailing_space",
+      "outcome": "reader_return",
+      "selected_house": null,
+      "stop_pc": "30000000",
+      "structures": {
+        "0": "Computer ,NAHAND,256,20,20,0,None,0,0,1,0"
+      },
+      "tag": null,
+      "type_index": null,
+      "type_lookup": null
+    },
+    {
+      "allocation_size": null,
+      "authored_health": null,
+      "basic": {
+        "NewINIFormat": "4"
+      },
+      "cell": null,
+      "current_comparison": null,
+      "current_house": 0,
+      "game_mode": 5,
+      "house_lookup": -1,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "name": "skirmish_internal_owner",
+      "outcome": "reader_return",
+      "selected_house": null,
+      "stop_pc": "30000000",
+      "structures": {
+        "0": "Computer1,NAHAND,256,20,20,0,None,0,0,1,0"
+      },
+      "tag": null,
+      "type_index": null,
+      "type_lookup": null
+    },
+    {
+      "allocation_size": 1824,
+      "authored_health": 256,
+      "basic": {
+        "NewINIFormat": "4"
+      },
+      "cell": [
+        20,
+        20
+      ],
+      "current_comparison": null,
+      "current_house": 0,
+      "game_mode": 0,
+      "house_lookup": 1,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "name": "campaign_first_ai",
+      "outcome": "allocation_boundary",
+      "selected_house": 1,
+      "stop_pc": "0044FAFD",
+      "structures": {
+        "0": "Computer,NAHAND,256,20,20,0,None,0,0,1,0"
+      },
+      "tag": "None",
+      "type_index": 0,
+      "type_lookup": 0
+    },
+    {
+      "allocation_size": null,
+      "authored_health": null,
+      "basic": {
+        "NewINIFormat": "4"
+      },
+      "cell": null,
+      "current_comparison": false,
+      "current_house": 0,
+      "game_mode": 5,
+      "house_lookup": 1,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "name": "skirmish_unknown_type",
+      "outcome": "reader_return",
+      "selected_house": null,
+      "stop_pc": "30000000",
+      "structures": {
+        "0": "Computer,UNKNOWN_TYPE,256,20,20,0,None,0,0,1,0"
+      },
+      "tag": null,
+      "type_index": null,
+      "type_lookup": -1
+    },
+    {
+      "allocation_size": null,
+      "authored_health": null,
+      "basic": {
+        "NewINIFormat": "4"
+      },
+      "cell": null,
+      "current_comparison": true,
+      "current_house": 1,
+      "game_mode": 5,
+      "house_lookup": 1,
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "name": "skirmish_first_duplicate_is_current",
+      "outcome": "reader_return",
+      "selected_house": null,
+      "stop_pc": "30000000",
+      "structures": {
+        "0": "Computer,NAHAND,256,20,20,0,None,0,0,1,0"
+      },
+      "tag": null,
+      "type_index": null,
+      "type_lookup": null
+    }
+  ],
+  "building_type": {
+    "index": 0,
+    "name": "NAHAND"
+  },
+  "execution_checks": {
+    "all_three_rng_buffers_unchanged": true,
+    "complete_rng_bytes_per_stream": 1012,
+    "lookup_and_reader_house_writes": false,
+    "name_copy_writes_only_name": true,
+    "original_executable_bytes_unchanged": true,
+    "reader_allocator_or_building_constructor_reached": false
+  },
+  "houses": [
+    {
+      "display_handle": "Computer",
+      "generated_kind": "human",
+      "native_name": "<human player>",
+      "slot": 0,
+      "stored_index": 0
+    },
+    {
+      "display_handle": null,
+      "generated_kind": "computer",
+      "native_name": "Computer",
+      "slot": 1,
+      "stored_index": 1
+    },
+    {
+      "display_handle": null,
+      "generated_kind": "computer",
+      "native_name": "Computer",
+      "slot": 2,
+      "stored_index": 2
+    }
+  ],
+  "lookup_rows": [
+    {
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "name": "human_exact",
+      "resolved_house": 0,
+      "resolved_stored_index": 0,
+      "result_index": 0,
+      "token": "<human player>"
+    },
+    {
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "name": "computer_duplicate_first",
+      "resolved_house": 1,
+      "resolved_stored_index": 1,
+      "result_index": 1,
+      "token": "Computer"
+    },
+    {
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "name": "wrong_case",
+      "resolved_house": null,
+      "resolved_stored_index": null,
+      "result_index": -1,
+      "token": "computer"
+    },
+    {
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "name": "trailing_space",
+      "resolved_house": null,
+      "resolved_stored_index": null,
+      "result_index": -1,
+      "token": "Computer "
+    },
+    {
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "name": "leading_space",
+      "resolved_house": null,
+      "resolved_stored_index": null,
+      "result_index": -1,
+      "token": " Computer"
+    },
+    {
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "name": "internal_rust_owner",
+      "resolved_house": null,
+      "resolved_stored_index": null,
+      "result_index": -1,
+      "token": "Computer1"
+    },
+    {
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "name": "player_slot_token",
+      "resolved_house": null,
+      "resolved_stored_index": null,
+      "result_index": -1,
+      "token": "<Player @ B>"
+    },
+    {
+      "house_order": [
+        0,
+        1,
+        2
+      ],
+      "name": "country_token",
+      "resolved_house": null,
+      "resolved_stored_index": null,
+      "result_index": -1,
+      "token": "Russians"
+    },
+    {
+      "house_order": [
+        0
+      ],
+      "name": "display_handle_without_ai",
+      "resolved_house": null,
+      "resolved_stored_index": null,
+      "result_index": -1,
+      "token": "Computer"
+    },
+    {
+      "house_order": [
+        0,
+        2,
+        1
+      ],
+      "name": "reversed_duplicate_ai_order",
+      "resolved_house": 2,
+      "resolved_stored_index": 2,
+      "result_index": 1,
+      "token": "Computer"
+    },
+    {
+      "house_order": [],
+      "name": "empty_array",
+      "resolved_house": null,
+      "resolved_stored_index": null,
+      "result_index": -1,
+      "token": "Computer"
+    }
+  ],
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "schema_version": 1
+}

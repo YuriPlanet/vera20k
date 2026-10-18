@@ -6,6 +6,7 @@
 use std::collections::BTreeMap;
 
 use crate::render::batch::SpriteInstance;
+use crate::render::surface_line::SurfaceDraw;
 use crate::render::tactical_draw_plan::{
     BlitPolicy, BuildingOwnedPlan, BuildingPiece, BuildingPieceKind, CellDraw, CellDrawKind,
     DrawId, ObjectDraw, RenderZPolicy, SpriteEncoding, TacticalDrawInput, TacticalDrawPlan,
@@ -36,8 +37,10 @@ pub(crate) struct PlannedBuildingPieceInstance {
 /// key. Parent order comes exclusively from the retained Display vector.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum ObjectTexture {
-    /// Ordered DSurface calls before this parent's body, with no sprite data.
+    /// Ordered DSurface calls, fenced into this parent's native draw slot.
     SurfaceLines(usize),
+    /// Temporary System62E280 Spotlight, in this parent's body slot.
+    CombatLight(usize),
     /// Initial Building Extras status, sharing the late run's instance range.
     Status(usize),
     OverlayAtlas,
@@ -60,11 +63,18 @@ pub(crate) struct ObjectPieceInstance {
     pub instance: SpriteInstance,
 }
 
+/// A native body that edits the destination without a source sprite.
+pub(crate) enum ObjectBodyDraw {
+    Surface(SurfaceDraw),
+    CombatLight(crate::render::combat_light::CombatLightDrawRecord),
+}
+
 /// One native Display registration and every sprite its display call owns.
 pub(crate) struct PlannedObjectInstance {
     pub parent: ObjectDraw,
     pub pieces: Vec<ObjectPieceInstance>,
     pub building_pieces: Option<Vec<PlannedBuildingPieceInstance>>,
+    pub body_draw: Option<ObjectBodyDraw>,
     pub brackets: Option<crate::app::presentation::selection_brackets::BuildingBracketLines>,
     pub status: Option<crate::app::presentation::ui_overlays::TechnoExtras>,
 }
@@ -75,6 +85,7 @@ impl PlannedObjectInstance {
             parent,
             pieces,
             building_pieces: None,
+            body_draw: None,
             brackets: None,
             status: None,
         }
@@ -85,6 +96,7 @@ impl PlannedObjectInstance {
             parent,
             pieces: Vec::new(),
             building_pieces: Some(pieces),
+            body_draw: None,
             brackets: None,
             status: None,
         }
@@ -133,10 +145,13 @@ pub(crate) enum ObjectExtrasRun {
 pub(crate) struct ObjectLayerPass {
     pub instances: Vec<SpriteInstance>,
     pub runs: Vec<ObjectDrawRun>,
-    /// Native6D913C/6D9153 calls, fenced into their Display parent's slot.
-    pub before_lines: Vec<Vec<crate::render::surface_line::SurfaceLine>>,
-    /// Frame-local uploads of `before_lines`, prepared after the shared A plane.
+    /// Native6D913C/6D9153 lines and Particle body points, in parent order.
+    pub surface_draws: Vec<Vec<crate::render::surface_line::SurfaceDraw>>,
+    /// Frame-local uploads of `surface_draws`, prepared after the shared A plane.
     pub line_batches: Vec<crate::render::terrain_draw::SurfaceLineBatch>,
+    pub light_records: Vec<crate::render::combat_light::CombatLightDrawRecord>,
+    /// Derived offset into this frame's single light upload; assigned on prepare.
+    pub light_record_base: usize,
     /// Native6D9789 repeats Extras in the same five retained layer orders.
     pub extras_lines: Vec<crate::render::surface_line::SurfaceLine>,
     pub extras_instances: Vec<SpriteInstance>,
@@ -248,10 +263,18 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
     let mut buildings = BTreeMap::new();
     let mut brackets = BTreeMap::new();
     let mut status = BTreeMap::new();
+    let mut body_draws = BTreeMap::new();
     let mut inputs = Vec::with_capacity(entries.len());
 
     for entry in entries {
         let id = entry.parent.id;
+        if let Some(draw) = entry.body_draw {
+            assert!(
+                entry.pieces.is_empty() && entry.building_pieces.is_none(),
+                "one Display body uses sprites or one surface operation"
+            );
+            assert!(body_draws.insert(id, draw).is_none());
+        }
         if let Some(lines) = entry.brackets {
             assert!(brackets.insert(id, lines).is_none());
         }
@@ -396,13 +419,31 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
             }
             if let Some(lines) = lines {
                 if let Some(index) = split_prefix.filter(|_| is_building) {
-                    push_before_lines(lowered, lines.behind);
+                    push_surface_draws(
+                        lowered,
+                        lines
+                            .behind
+                            .into_iter()
+                            .map(crate::render::surface_line::SurfaceDraw::Line),
+                    );
                     push_initial_status(lowered, index);
-                    push_before_lines(lowered, lines.extras.clone());
+                    push_surface_draws(
+                        lowered,
+                        lines
+                            .extras
+                            .iter()
+                            .copied()
+                            .map(crate::render::surface_line::SurfaceDraw::Line),
+                    );
                 } else {
                     let mut before = lines.behind;
                     before.extend_from_slice(&lines.extras);
-                    push_before_lines(lowered, before);
+                    push_surface_draws(
+                        lowered,
+                        before
+                            .into_iter()
+                            .map(crate::render::surface_line::SurfaceDraw::Line),
+                    );
                 }
                 let start = lowered.extras_lines.len();
                 lowered.extras_lines.extend(lines.extras);
@@ -463,6 +504,24 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                     });
                 }
             }
+            if let Some(body) = body_draws.remove(&owner) {
+                match body {
+                    ObjectBodyDraw::Surface(draw) => {
+                        push_surface_draws(lowered, std::iter::once(draw))
+                    }
+                    ObjectBodyDraw::CombatLight(record) => {
+                        let index = lowered.light_records.len();
+                        lowered.light_records.push(record);
+                        lowered.runs.push(ObjectDrawRun {
+                            target: ObjectTexture::CombatLight(index),
+                            render_z: RenderZPolicy::None,
+                            packed_parent: None,
+                            start: lowered.instances.len() as u32,
+                            count: 0,
+                        });
+                    }
+                }
+            }
             match entry {
                 crate::render::tactical_draw_plan::LayerEntry::Object(_) => {
                     for piece in ordinary
@@ -489,12 +548,23 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
     layers
 }
 
-fn push_before_lines(
+fn push_surface_draws(
     pass: &mut ObjectLayerPass,
-    lines: Vec<crate::render::surface_line::SurfaceLine>,
+    draws: impl IntoIterator<Item = crate::render::surface_line::SurfaceDraw>,
 ) {
-    let index = pass.before_lines.len();
-    pass.before_lines.push(lines);
+    // Adjacent surface-only bodies share immutable Z. Keeping their ordered
+    // stores in one batch avoids a snapshot/pass pair per Spark, while any
+    // sprite, status or light command remains a destination/order fence.
+    if let Some(ObjectDrawRun {
+        target: ObjectTexture::SurfaceLines(index),
+        ..
+    }) = pass.runs.last()
+    {
+        pass.surface_draws[*index].extend(draws);
+        return;
+    }
+    let index = pass.surface_draws.len();
+    pass.surface_draws.push(draws.into_iter().collect());
     pass.runs.push(ObjectDrawRun {
         target: ObjectTexture::SurfaceLines(index),
         render_z: RenderZPolicy::ReadOnly,
@@ -613,8 +683,11 @@ mod tests {
         ]);
         assert_eq!(pass.owners, [900, 500, 1]);
         assert_eq!(
-            pass.before_lines,
-            [vec![line(900), line(901)], vec![line(1), line(2)]]
+            pass.surface_draws,
+            [
+                vec![SurfaceDraw::Line(line(900)), SurfaceDraw::Line(line(901))],
+                vec![SurfaceDraw::Line(line(1)), SurfaceDraw::Line(line(2))]
+            ]
         );
         assert_eq!(pass.extras_lines, [line(901), line(2)]);
         assert!(matches!(&pass.extras_runs[..], [
@@ -735,7 +808,13 @@ mod tests {
         // Native6D913C Behind,6D9153 Extras:6F5382 rank,6F5396..5E10
         // selected Building lines,6F5E27 health, then the body.6D9789 repeats
         // rank->Extras-lines->health, using the same uploaded instances.
-        assert_eq!(pass.before_lines, [vec![line(10)], vec![line(11)]]);
+        assert_eq!(
+            pass.surface_draws,
+            [
+                vec![SurfaceDraw::Line(line(10))],
+                vec![SurfaceDraw::Line(line(11))]
+            ]
+        );
         assert_eq!(pass.extras_instances.len(), 16);
         assert!(matches!(&pass.extras_runs[..], [
             ObjectExtrasRun::Status { parent: 42, rank: Some(0), background: None, fills: a, .. },

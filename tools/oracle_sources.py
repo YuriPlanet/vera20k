@@ -58,10 +58,26 @@ def _repo_relative(argument: str) -> str:
     return argument
 
 
+def _quote_replay_argument(argument: str) -> str:
+    """Quote literal text while expanding recorded home paths at replay time."""
+    home = Path.home()
+    if home.parent == home:
+        return shlex.quote(argument)
+    prefixes = '|'.join(re.escape(prefix) for prefix in {str(home), home.as_posix()})
+    parts = re.split(rf'(?<![^=:,])(?:{prefixes})(?=$|[/\\:,])', argument)
+    if len(parts) == 1:
+        return shlex.quote(argument)
+    # Quote HOME independently: neither spaces in it nor shell syntax in the
+    # literal suffix may split arguments or execute a substitution. A quoted
+    # '~' would not expand, including in --option=path and path-list arguments.
+    return '"$HOME"'.join(shlex.quote(part) if part else '' for part in parts)
+
+
 def replay_command(argv=None, main=None) -> str | None:
     """The `python -m tools...` invocation running now, without its mode or output.
 
-    Checkout paths in its arguments are recorded relative to the repository root."""
+    Checkout paths are repository-relative; external home paths use quoted HOME.
+    All other argument text remains literal."""
     main = sys.modules.get('__main__') if main is None else main
     spec = getattr(main, '__spec__', None)
     module = spec.name.removesuffix('.__main__') if spec is not None and spec.name else None
@@ -79,4 +95,4 @@ def replay_command(argv=None, main=None) -> str | None:
             output = True
         elif value not in MODE_FLAGS and not value.startswith(OUTPUT_FLAG + '='):
             arguments.append(_repo_relative(value))
-    return shlex.join(['python', '-m', module, *arguments])
+    return ' '.join(_quote_replay_argument(value) for value in ['python', '-m', module, *arguments])

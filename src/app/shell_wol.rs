@@ -3,8 +3,6 @@
 //! `TXT_APIMISSING` box `0xD0`. Both ways out return to a new `0xE2`
 //! (`0x0052E28E`).
 
-use std::time::Instant;
-
 use super::{App, AppState};
 use crate::app::frontend::shell_transition::ShellExitThen;
 use crate::app::shell_route::ShellRoute;
@@ -28,8 +26,7 @@ impl App {
         // The message box paints from the skirmish chrome atlas.
         let _ = Self::ensure_skirmish_shell_chrome(state);
         Self::ensure_wol_welcome_art(state);
-        let now_ms =
-            crate::app::match_runtime::sim_tick::monotonic_frame_pacer_ms(state, Instant::now());
+        let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
         let lobby_music = state.persistence.options_profile.wol_lobby_music != 0;
         let saved_shuffle = state.audio.enter_wol_lobby_music(lobby_music, now_ms);
         state.frontend.wol_welcome = Some(WolWelcomeState::open(saved_shuffle));

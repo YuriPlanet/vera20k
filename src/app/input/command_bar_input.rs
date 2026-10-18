@@ -75,18 +75,44 @@ fn sync_prepared(
 pub(super) fn apply(state: &mut AppState, result: u16) -> bool {
     let id = result & !(RESULT_BUTTON | RESULT_RIGHT);
     if id == 0xF0 || id == 0xF1 {
+        let opening = id == 0xF1;
+        // Original gamemd.exe (SHA2561cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c):
+        // SidebarInput6D08F5 refuses F1 on Session+300 before its cue,
+        // state or gadget changes. F0 has no defeat guard. The retained
+        // driver has already consumed/released the physical button.
+        if opening
+            && state
+                .match_state
+                .sim_runtime
+                .as_ref()
+                .is_some_and(|runtime| runtime.simulation.local_player_defeated())
+        {
+            return true;
+        }
+        // 6D0860/6D091A call750920 with Rules+198/+194, even when the
+        // existing bar state already matches. Programmatic6D1610/6D1660
+        // remain separate soundless paths. Reuse the fixed catalog/player.
+        let sound = state.rules().and_then(|rules| {
+            if opening {
+                rules.general.gui_open_sound()
+            } else {
+                rules.general.gui_close_sound()
+            }
+            .map(str::to_owned)
+        });
+        crate::app::App::play_shell_ui_sound_by_id(state, sound.as_deref());
         state
             .match_state
             .match_presentation
             .sidebar_gadget_state
-            .command_bar_closed = id == 0xF0;
+            .command_bar_closed = !opening;
         return true;
     }
     if !(0xD6..0xE1).contains(&id) {
         return false;
     }
     // Original6D0660 routes these IDs by command identity. Existing action
-    // owners retain gameplay authority; unsupported Beacon/Cheer
+    // owners retain gameplay authority; unsupported Beacon
     // mechanics remain the same explicit residual as their keyboard commands.
     crate::app::input::dispatch::dispatch_command_bar(
         state,
@@ -268,6 +294,13 @@ mod tests {
             &input(KEY_LMB_DOWN, 580, true),
             &mut gadgets.out,
         );
+        let press = gadgets
+            .out
+            .dispatches
+            .iter()
+            .find(|record| record.handle == handles[11])
+            .unwrap();
+        assert_eq!((press.key_after, press.action_result), (0, 1));
         assert_eq!(
             tick(
                 &mut gadgets.list,
@@ -277,5 +310,13 @@ mod tests {
             ),
             0x80F1
         );
+        let release = gadgets
+            .out
+            .dispatches
+            .iter()
+            .find(|record| record.handle == handles[11])
+            .unwrap();
+        assert_eq!((release.key_after, release.action_result), (0x80F1, 1));
+        assert!(gadgets.focus.sticky.is_none());
     }
 }

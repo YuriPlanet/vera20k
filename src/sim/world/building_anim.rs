@@ -248,7 +248,7 @@ mod tests {
                 assert_eq!(system.target_coords, vector(&call["target"]));
                 assert_eq!(system.lifetime, call["lifetime"].as_i64().unwrap() as i32);
                 assert_eq!(system.owner_entity, Some(id));
-                assert_eq!(system.attached_entity, None);
+                assert_eq!(system.target_ref, None);
                 assert_eq!(system.owner_house, None);
             }
             represented += 1;
@@ -392,7 +392,8 @@ mod tests {
                 67,
                 crate::sim::world::TickLane::Ordinary,
                 None,
-             crate::sim::world::FrameEffects::default(),)
+                crate::sim::world::FrameEffects::default(),
+            )
             .expect("fixture frame must complete");
         let headless_tick = headless_sim.advance_tick(&[], Some(&rules), None, None, 67);
 
@@ -426,7 +427,8 @@ mod tests {
                 67,
                 crate::sim::world::TickLane::Ordinary,
                 None,
-             crate::sim::world::FrameEffects::default(),)
+                crate::sim::world::FrameEffects::default(),
+            )
             .expect("fixture frame must complete");
 
         assert!(output.tick.frame_committed);

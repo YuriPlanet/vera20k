@@ -55,7 +55,13 @@ pub(crate) struct CombatLightRenderer {
     scene_bind_group_layout: wgpu::BindGroupLayout,
     instance_buffer: wgpu::Buffer,
     capacity: usize,
-    record_count: usize,
+    /// Frame-local logical record -> uploaded instance. Unsupported native
+    /// indices remain holes rather than shifting subsequent Display commands.
+    prepared_indices: Vec<Option<u32>>,
+    instances: Vec<GpuLightInstance>,
+    /// Conservative target-space bounds aligned with the uploaded instances.
+    /// Rebuilt with the camera, resolution and logical map on every prepare.
+    copy_bounds: Vec<[u32; 4]>,
     surface_format: wgpu::TextureFormat,
     encoded_format: wgpu::TextureFormat,
     targets: CompositionTargets,
@@ -66,7 +72,7 @@ impl CombatLightRenderer {
         Self::new_with_device(&gpu.device, &gpu.queue, gpu.surface_format)
     }
 
-    fn new_with_device(
+    pub(crate) fn new_with_device(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         surface_format: wgpu::TextureFormat,
@@ -208,7 +214,9 @@ impl CombatLightRenderer {
             scene_bind_group_layout,
             instance_buffer,
             capacity: INITIAL_CAPACITY,
-            record_count: 0,
+            prepared_indices: Vec::new(),
+            instances: Vec::new(),
+            copy_bounds: Vec::new(),
             surface_format,
             encoded_format,
             targets,
@@ -235,7 +243,7 @@ impl CombatLightRenderer {
 
     /// Prepare one tactical frame. The composition surface is recreated only
     /// when the render resolution changes.
-    fn prepare_with_device(
+    pub(crate) fn prepare_with_device(
         &mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
@@ -256,45 +264,55 @@ impl CombatLightRenderer {
                 height,
             );
         }
-        queue.write_buffer(
-            &self.camera_buffer,
-            0,
-            bytemuck::bytes_of(&CameraUniform {
-                screen_size,
-                camera_pos,
-                zoom,
-                world_origin_y: 0.0,
-                world_height: 1.0,
-                _pad: 0.0,
+        let camera = CameraUniform {
+            screen_size,
+            camera_pos,
+            zoom,
+            world_origin_y: 0.0,
+            world_height: 1.0,
+            _pad: 0.0,
 
-                native_z_origin_y: 0.0,
-                _native_z_pad: 0.0,
-            }),
-        );
-        self.record_count = records.len();
-        if records.is_empty() {
-            return;
-        }
-        if records.len() > self.capacity {
-            self.capacity = records.len().next_power_of_two();
-            self.instance_buffer = allocate_instance_buffer(device, self.capacity);
-        }
-        let instances: Vec<GpuLightInstance> = records
-            .iter()
-            // Original5FF850 directly indexes its64-entry bank. An authored
-            // Spark LightSize yielding an out-of-bank index is unsafe in native;
-            // retain its full signed result, then omit that unsupported draw
-            // instead of wrapping it into a different valid mask. Retail15
-            // and every damage-helper size stay inside the original bank.
-            .filter(|record| (0..MASK_LAYER_COUNT as i32).contains(&record.surface_index))
-            .map(|record| GpuLightInstance {
+            native_z_origin_y: 0.0,
+            _native_z_pad: 0.0,
+        };
+        queue.write_buffer(&self.camera_buffer, 0, bytemuck::bytes_of(&camera));
+        self.prepared_indices.clear();
+        self.instances.clear();
+        self.copy_bounds.clear();
+        for record in records {
+            // Original5FF850 indexes64 surfaces without a clamp. Preserve a
+            // missing logical slot for unsupported authored indices; a later
+            // retained System or persistent light still addresses its own row.
+            if !(0..MASK_LAYER_COUNT as i32).contains(&record.surface_index) {
+                self.prepared_indices.push(None);
+                continue;
+            }
+            self.prepared_indices
+                .push(Some(self.instances.len() as u32));
+            let instance = GpuLightInstance {
                 center: project_combat_light_anchor(record.coord),
                 surface_index: record.surface_index as u32,
                 flags: record.flags,
-            })
-            .collect();
-        self.record_count = instances.len();
-        queue.write_buffer(&self.instance_buffer, 0, bytemuck::cast_slice(&instances));
+            };
+            self.copy_bounds
+                .push(light_copy_bounds(instance.center, &camera, [width, height]));
+            self.instances.push(instance);
+        }
+        if self.instances.is_empty() {
+            return;
+        }
+        if self.instances.len() > self.capacity {
+            self.capacity = self.instances.len().next_power_of_two();
+            self.instance_buffer = allocate_instance_buffer(device, self.capacity);
+        }
+        // Upload the entire immutable frame before any draw is encoded.
+        // Queue writes precede the next submit; rewriting a single slot
+        // between parent draws would make all of them read the last value.
+        queue.write_buffer(
+            &self.instance_buffer,
+            0,
+            bytemuck::cast_slice(&self.instances),
+        );
     }
 
     pub(crate) fn composition_view(&self) -> wgpu::TextureView {
@@ -307,57 +325,83 @@ impl CombatLightRenderer {
         &self.targets.texture
     }
 
-    /// Apply the vector after tactical objects and before later tactical
-    /// families. A scene copy per record preserves destination-dependent
-    /// overlap while the records are consumed in their already-reversed order.
-    pub(crate) fn draw(&self, encoder: &mut wgpu::CommandEncoder, tactical: [u32; 4]) {
-        if self.record_count == 0 {
-            return;
-        }
-        let extent = wgpu::Extent3d {
-            width: self.targets.width,
-            height: self.targets.height,
-            depth_or_array_layers: 1,
+    /// Spotlight5FF850 edits this one prepared record's current destination.
+    /// The caller retains its Display slot or later persistent-vector order,
+    /// and accounts each closed pass through the shared submission owner.
+    pub(crate) fn draw_record(
+        &self,
+        encoder: &mut wgpu::CommandEncoder,
+        tactical: [u32; 4],
+        record: usize,
+    ) -> bool {
+        let Some(index) = *self
+            .prepared_indices
+            .get(record)
+            .expect("light draw references this frame's prepared record")
+        else {
+            return false;
         };
-        for index in 0..self.record_count {
+        let [left, top, right, bottom] = self.copy_bounds[index as usize];
+        let left = left.max(tactical[0]);
+        let top = top.max(tactical[1]);
+        let right = right.min(tactical[0].saturating_add(tactical[2]));
+        let bottom = bottom.min(tactical[1].saturating_add(tactical[3]));
+        if left < right && top < bottom {
+            // The shader loads only this fragment's global destination texel,
+            // without filtering or neighbours. Keep both origins identical:
+            // stale scratch outside the quad/scissor cannot be sampled. wgpu27
+            // permits partial copies for these single-sample RGBA/BGRA textures:
+            // https://github.com/gfx-rs/wgpu/blob/d61dc3af8856f0cd9023c5e888b791d1b7118559/wgpu-core/src/command/transfer.rs#L489-L574
+            let origin = wgpu::Origin3d {
+                x: left,
+                y: top,
+                z: 0,
+            };
             encoder.copy_texture_to_texture(
                 wgpu::TexelCopyTextureInfo {
                     texture: &self.targets.texture,
                     mip_level: 0,
-                    origin: wgpu::Origin3d::ZERO,
+                    origin,
                     aspect: wgpu::TextureAspect::All,
                 },
                 wgpu::TexelCopyTextureInfo {
                     texture: &self.targets.scratch_texture,
                     mip_level: 0,
-                    origin: wgpu::Origin3d::ZERO,
+                    origin,
                     aspect: wgpu::TextureAspect::All,
                 },
-                extent,
+                wgpu::Extent3d {
+                    width: right - left,
+                    height: bottom - top,
+                    depth_or_array_layers: 1,
+                },
             );
-            let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some("Combat Light Native Surface Edit"),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &self.targets.encoded_view,
-                    resolve_target: None,
-                    depth_slice: None,
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: wgpu::StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: None,
-                timestamp_writes: None,
-                occlusion_query_set: None,
-            });
-            pass.set_pipeline(&self.pipeline);
-            pass.set_bind_group(0, &self.camera_bind_group, &[]);
-            pass.set_bind_group(1, &self.targets.scene_bind_group, &[]);
-            pass.set_bind_group(2, &self.mask_bind_group, &[]);
-            pass.set_vertex_buffer(0, self.instance_buffer.slice(..));
-            pass.set_scissor_rect(tactical[0], tactical[1], tactical[2], tactical[3]);
-            pass.draw(0..6, index as u32..index as u32 + 1);
         }
+        // Even an offscreen supported record retains its ordered closed pass
+        // and the caller's PassSubmission accounting; only its copy is empty.
+        let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            label: Some("Combat Light Native Surface Edit"),
+            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                view: &self.targets.encoded_view,
+                resolve_target: None,
+                depth_slice: None,
+                ops: wgpu::Operations {
+                    load: wgpu::LoadOp::Load,
+                    store: wgpu::StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        });
+        pass.set_pipeline(&self.pipeline);
+        pass.set_bind_group(0, &self.camera_bind_group, &[]);
+        pass.set_bind_group(1, &self.targets.scene_bind_group, &[]);
+        pass.set_bind_group(2, &self.mask_bind_group, &[]);
+        pass.set_vertex_buffer(0, self.instance_buffer.slice(..));
+        pass.set_scissor_rect(tactical[0], tactical[1], tactical[2], tactical[3]);
+        pass.draw(0..6, index..index + 1);
+        true
     }
 
     /// Copy the completed tactical frame into the swapchain or upscale input.
@@ -384,6 +428,54 @@ impl CombatLightRenderer {
             },
         );
     }
+}
+
+/// Bounds of combat_light.wgsl's uploaded quad, after its existing integer
+/// world projection. Zoom moves the centre; the mask remains 256x128 pixels.
+fn light_copy_bounds(center: [i32; 2], camera: &CameraUniform, target: [u32; 2]) -> [u32; 4] {
+    let full = [0, 0, target[0], target[1]];
+    // Restrict this optimisation to normal finite presentation inputs. The
+    // integer centre converts exactly here, and screen_size equals the actual
+    // viewport. Keep the existing full copy for other domains rather than
+    // inferring the shader's extreme-value/overflow behaviour.
+    const LIMIT: f32 = 65_536.0;
+    if target.iter().any(|&extent| extent > LIMIT as u32)
+        || camera.screen_size != target.map(|extent| extent as f32)
+        || center
+            .iter()
+            .any(|&value| value.unsigned_abs() > LIMIT as u32)
+        || camera
+            .camera_pos
+            .iter()
+            .any(|value| !value.is_finite() || value.abs() > LIMIT)
+        || !(1.0 / 16.0..=16.0).contains(&camera.zoom)
+    {
+        return full;
+    }
+    let mut bounds = full;
+    for axis in 0..2 {
+        let center = f64::from(center[axis]);
+        let camera_pos = f64::from(camera.camera_pos[axis]);
+        let zoom = f64::from(camera.zoom);
+        let half = f64::from([MASK_WIDTH, MASK_HEIGHT][axis]) / 2.0;
+        let extent = f64::from(target[axis]);
+        let screen_center = (center - camera_pos) * zoom;
+        // Outward rounding includes a conservative error budget for the small
+        // f32 vertex expression (including reassociation and clip/viewport
+        // conversion), plus two pixels of raster margin. This is derived from
+        // operand magnitude, not fitted to mask pixels. WGSL allows 2.5 ULP
+        // division and reassociation; 64 epsilons covers those operations in
+        // the bounded domain above:
+        // https://www.w3.org/TR/WGSL/#floating-point-accuracy
+        // https://www.w3.org/TR/WGSL/#floating-point-reassociation
+        let magnitude = (center.abs() + camera_pos.abs()) * zoom + half + extent;
+        let margin = magnitude * f64::from(f32::EPSILON) * 64.0 + 2.0;
+        // All operands are finite and bounded. Clamp before converting, so no
+        // non-finite/out-of-range float-to-integer cast enters copy commands.
+        bounds[axis] = (screen_center - half - margin).floor().clamp(0.0, extent) as u32;
+        bounds[axis + 2] = (screen_center + half + margin).ceil().clamp(0.0, extent) as u32;
+    }
+    bounds
 }
 
 /// Native `CoordsToClient2` projects the planar terms with signed integer
@@ -581,6 +673,337 @@ fn draw_span(surface: &mut [u8], y: i32, x0: i32, x1: i32, intensity: u8) {
 mod tests {
     use super::*;
 
+    #[test]
+    fn welding_reached_masks_match_original_construction() {
+        let native = crate::render::tactical_compat::welding_tests::native();
+        let atlas = build_native_mask_atlas();
+        let stride = (MASK_WIDTH * MASK_HEIGHT) as usize;
+        let rows = native["light_masks"].as_array().unwrap();
+        assert!(!rows.is_empty());
+        for row in rows {
+            let index = row["index"].as_u64().unwrap() as usize;
+            assert_eq!(row["size"], serde_json::json!([MASK_WIDTH, MASK_HEIGHT]));
+            let expected =
+                crate::render::tactical_compat::welding_tests::decode_hex(&row["bytes_hex"]);
+            assert_eq!(
+                &atlas[index * stride..(index + 1) * stride],
+                expected,
+                "original5FF420 Welding mask{index}"
+            );
+        }
+    }
+
+    #[test]
+    #[ignore = "requires GPU; whole original immediate Welding light pixels and filtered logical index mapping"]
+    fn production_welding_light_pixels_and_logical_indices_match_original() {
+        use crate::render::tactical_compat::welding_tests as fixture;
+        use crate::render::terrain_draw_gpu_tests::{Gpu, encoded};
+        let gpu = Gpu::new();
+        for format in [
+            wgpu::TextureFormat::Bgra8UnormSrgb,
+            wgpu::TextureFormat::Rgba8UnormSrgb,
+        ] {
+            let mut renderer =
+                CombatLightRenderer::new_with_device(&gpu.device, &gpu.queue, format);
+            for row in fixture::native()["system_draw_cases"].as_array().unwrap() {
+                let input = &row["input"];
+                let light = &row["light"];
+                let size = fixture::array::<2>(&input["size"]).map(|value| value as u32);
+                let mut camera = fixture::array::<2>(&input["camera"]);
+                camera[1] += crate::util::lepton::absolute_leptons_to_screen(0, 0, 0).1 as i32;
+                let at = fixture::array::<3>(&input["position"]);
+                let mut records = Vec::new();
+                if light["admitted"] == true {
+                    let record = CombatLightDrawRecord {
+                        coord: crate::sim::projectile::ProjectileCoord::new(at[0], at[1], at[2]),
+                        surface_index: fixture::int(&light["surface_index"]),
+                        flags: fixture::int(&light["flags"]) as u32,
+                    };
+                    records.extend([
+                        CombatLightDrawRecord {
+                            surface_index: -1,
+                            ..record
+                        },
+                        record,
+                        CombatLightDrawRecord {
+                            surface_index: 64,
+                            ..record
+                        },
+                        CombatLightDrawRecord {
+                            coord: crate::sim::projectile::ProjectileCoord::new(
+                                at[0] + 4096,
+                                at[1],
+                                at[2],
+                            ),
+                            ..record
+                        },
+                    ]);
+                }
+                renderer.prepare_with_device(
+                    &gpu.device,
+                    &gpu.queue,
+                    &records,
+                    size.map(|value| value as f32),
+                    camera.map(|value| value as f32),
+                    1.,
+                );
+                let initial = encoded(fixture::int(&input["background"]) as u16, format)
+                    .repeat((size[0] * size[1]) as usize);
+                gpu.queue.write_texture(
+                    wgpu::TexelCopyTextureInfo {
+                        texture: renderer.composition_texture(),
+                        mip_level: 0,
+                        origin: wgpu::Origin3d::ZERO,
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    &initial,
+                    wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(size[0] * 4),
+                        rows_per_image: Some(size[1]),
+                    },
+                    renderer.composition_texture().size(),
+                );
+                let mut encoder = gpu.device.create_command_encoder(&Default::default());
+                if !records.is_empty() {
+                    let clip = fixture::array::<4>(&input["clip"]).map(|value| value as u32);
+                    assert!(!renderer.draw_record(&mut encoder, clip, 0));
+                    assert!(renderer.draw_record(&mut encoder, clip, 1));
+                    assert!(!renderer.draw_record(&mut encoder, clip, 2));
+                }
+                let read = gpu.read(&mut encoder, renderer.composition_texture());
+                let output = gpu.finish(encoder, &[read], size);
+                let expected = fixture::expected_words(row);
+                for (index, (pixel, &expected)) in output[0]
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .zip(&expected)
+                    .enumerate()
+                {
+                    let rgb = if format == wgpu::TextureFormat::Bgra8UnormSrgb {
+                        [pixel[2], pixel[1], pixel[0]]
+                    } else {
+                        [pixel[0], pixel[1], pixel[2]]
+                    };
+                    assert_eq!(
+                        crate::render::native_surface_format::RGB565.pack_rgb8(rgb),
+                        expected,
+                        "{} {format:?} pixel{index}",
+                        input["name"]
+                    );
+                    assert_eq!(pixel[3], 255);
+                }
+            }
+        }
+    }
+
+    #[test]
+    #[ignore = "requires GPU; bounded destination copies against full-current scratch through the same light raster"]
+    fn bounded_light_copies_match_full_current_scratch() {
+        use crate::render::terrain_draw_gpu_tests::{Gpu, encoded};
+
+        let gpu = Gpu::new();
+        let base = CombatLightDrawRecord {
+            coord: crate::sim::projectile::ProjectileCoord::new(1024, 768, 128),
+            surface_index: 63,
+            flags: 1,
+        };
+        let anchor = project_combat_light_anchor(base.coord).map(|value| value as f32);
+        let cases = [
+            (
+                "fractional",
+                [512_u32, 256],
+                [180.375_f32, 125.625],
+                1.25_f32,
+                [7, 5, 490, 240],
+                true,
+            ),
+            (
+                "negative_partial",
+                [512, 256],
+                [-40.25, 8.125],
+                0.75,
+                [0, 0, 120, 90],
+                true,
+            ),
+            (
+                "resized_partial",
+                [333, 219],
+                [330.625, 209.375],
+                2.375,
+                [19, 11, 314, 208],
+                true,
+            ),
+            (
+                "offscreen",
+                [333, 219],
+                [-400.25, -200.375],
+                0.625,
+                [0, 0, 333, 219],
+                false,
+            ),
+            (
+                "scissored_overlap",
+                [512, 256],
+                [200.125, 130.875],
+                1.875,
+                [85, 30, 190, 150],
+                true,
+            ),
+            // An unusual but finite zoom exercises the conservative fallback.
+            (
+                "fallback",
+                [512, 256],
+                [180.375, 125.625],
+                1.0 / 32.0,
+                [7, 5, 490, 240],
+                true,
+            ),
+        ];
+        for format in [
+            wgpu::TextureFormat::Bgra8UnormSrgb,
+            wgpu::TextureFormat::Rgba8UnormSrgb,
+        ] {
+            // Reuse both renderers across camera/zoom/record changes and a
+            // resize, so bounds must be invalidated by the actual prepare.
+            let mut renderers = std::array::from_fn::<_, 2, _>(|_| {
+                CombatLightRenderer::new_with_device(&gpu.device, &gpu.queue, format)
+            });
+            for (case, &(name, size, screen_center, zoom, tactical, visible)) in
+                cases.iter().enumerate()
+            {
+                let camera = std::array::from_fn(|axis| anchor[axis] - screen_center[axis] / zoom);
+                let mut records = vec![
+                    CombatLightDrawRecord {
+                        surface_index: -1,
+                        ..base
+                    },
+                    base,
+                    CombatLightDrawRecord {
+                        coord: crate::sim::projectile::ProjectileCoord::new(1152, 768, 128),
+                        flags: 0,
+                        ..base
+                    },
+                    CombatLightDrawRecord {
+                        surface_index: 64,
+                        ..base
+                    },
+                    CombatLightDrawRecord {
+                        coord: crate::sim::projectile::ProjectileCoord::new(1024, 832, 128),
+                        surface_index: 24,
+                        flags: 6,
+                    },
+                    CombatLightDrawRecord {
+                        coord: crate::sim::projectile::ProjectileCoord::new(33792, 768, 128),
+                        ..base
+                    },
+                ];
+                if case % 2 == 1 {
+                    records.pop();
+                    records.rotate_left(1);
+                }
+                let initial: Vec<u8> = (0..size[1])
+                    .flat_map(|y| {
+                        (0..size[0]).flat_map(move |x| {
+                            let word = 0x5269_u16.wrapping_add(((x * 17 + y * 31) & 0x0fff) as u16);
+                            let mut pixel = encoded(word, format);
+                            pixel[3] = (128 + ((x + y) & 127)) as u8;
+                            pixel
+                        })
+                    })
+                    .collect();
+                let stale = [251_u8, 3, 157, 37].repeat((size[0] * size[1]) as usize);
+                for renderer in &mut renderers {
+                    renderer.prepare_with_device(
+                        &gpu.device,
+                        &gpu.queue,
+                        &records,
+                        size.map(|value| value as f32),
+                        camera,
+                        zoom,
+                    );
+                    for (texture, bytes) in [
+                        (renderer.composition_texture(), &initial),
+                        (&renderer.targets.scratch_texture, &stale),
+                    ] {
+                        gpu.queue.write_texture(
+                            wgpu::TexelCopyTextureInfo {
+                                texture,
+                                mip_level: 0,
+                                origin: wgpu::Origin3d::ZERO,
+                                aspect: wgpu::TextureAspect::All,
+                            },
+                            bytes,
+                            wgpu::TexelCopyBufferLayout {
+                                offset: 0,
+                                bytes_per_row: Some(size[0] * 4),
+                                rows_per_image: Some(size[1]),
+                            },
+                            texture.size(),
+                        );
+                    }
+                }
+                let mut encoder = gpu.device.create_command_encoder(&Default::default());
+                let mut reads = Vec::new();
+                for (record, light) in records.iter().enumerate() {
+                    for (variant, renderer) in renderers.iter().enumerate() {
+                        if variant == 1 {
+                            // Transport reference only: seed the entire current
+                            // destination immediately before the SAME production
+                            // draw. No second raster, mask, blend or geometry
+                            // implementation supplies an expected pixel.
+                            encoder.copy_texture_to_texture(
+                                wgpu::TexelCopyTextureInfo {
+                                    texture: renderer.composition_texture(),
+                                    mip_level: 0,
+                                    origin: wgpu::Origin3d::ZERO,
+                                    aspect: wgpu::TextureAspect::All,
+                                },
+                                wgpu::TexelCopyTextureInfo {
+                                    texture: &renderer.targets.scratch_texture,
+                                    mip_level: 0,
+                                    origin: wgpu::Origin3d::ZERO,
+                                    aspect: wgpu::TextureAspect::All,
+                                },
+                                renderer.composition_texture().size(),
+                            );
+                        }
+                        assert_eq!(
+                            renderer.draw_record(&mut encoder, tactical, record),
+                            (0..64).contains(&light.surface_index),
+                            "{name} {format:?} logical{record}"
+                        );
+                        reads.push(gpu.read(&mut encoder, renderer.composition_texture()));
+                    }
+                }
+                let output = gpu.finish(encoder, &reads, size);
+                let mut previous = &initial;
+                let mut changed_draws = 0;
+                for (record, pair) in output.chunks_exact(2).enumerate() {
+                    assert_eq!(
+                        pair[0].iter().zip(&pair[1]).position(|(a, b)| a != b),
+                        None,
+                        "{name} {format:?} logical{record}: bounded/full-scratch byte"
+                    );
+                    changed_draws += usize::from(previous != &pair[1]);
+                    previous = &pair[1];
+                }
+                if visible {
+                    assert!(
+                        changed_draws >= 2,
+                        "{name} must exercise sequential overlapping edits"
+                    );
+                } else {
+                    assert_eq!(
+                        changed_draws, 0,
+                        "offscreen records retain their closed passes"
+                    );
+                }
+            }
+        }
+    }
+
     fn electric_native() -> &'static serde_json::Value {
         static CORPUS: std::sync::OnceLock<serde_json::Value> = std::sync::OnceLock::new();
         CORPUS.get_or_init(|| {
@@ -702,7 +1125,7 @@ mod tests {
                         renderer.composition_texture().size(),
                     );
                     let mut encoder = gpu.device.create_command_encoder(&Default::default());
-                    renderer.draw(&mut encoder, clip);
+                    assert!(renderer.draw_record(&mut encoder, clip, 0));
                     let read = gpu.read(&mut encoder, renderer.composition_texture());
                     let output = gpu.finish(encoder, &[read], size);
                     let mut expected = vec![background; (size[0] * size[1]) as usize];

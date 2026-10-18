@@ -31,6 +31,16 @@ fn fs_main(input: Output) -> @location(0) vec4f {
     var touched = false;
     for(var i = input.span.x; i < input.span.x + input.span.y; i += 1u) {
         let op = operations[i];
+        //Particle62D02C compares a signed candidate with an unsigned stored
+        //word. CPU preparation used the shared interpolation/A/pack owner;
+        //the current Z is available only at this retained Display slot.
+        if op.mode == 6u {
+            if op.alpha != 0u && bitcast<i32>(op.z) < i32(old_z) {
+                word = op.rgb;
+                touched = true;
+            }
+            continue;
+        }
         //XSurface7BB350 writes opaque words, with no A/Z predicate.
         if op.mode == 4u {
             word = op.rgb;

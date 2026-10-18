@@ -83,7 +83,7 @@ def waypoint(m, raw):
                 entry='0068BDE7', end='0068BE35')
 
 
-def world(f, assets):
+def world(f, assets, *, full_knowledge=False):
     """Supplied bounded registration of native-constructed physical Cell fields."""
     m, u = f.m, f.u
     parsed, authored = decode_cells(assets['GOLDST.MMX'])
@@ -105,16 +105,26 @@ def world(f, assets):
     u.mem_write(table, bytes(0x100000))
     f.resident.ptrs = {}
     native_fields = {}
-    for xy, row in crop.items():
+    # The optional fire/sweep mode must not terminate578290 at the first
+    # absent pointer. Outside the raster crop only native knowledge/coordinate
+    # fields are enrolled; no extra TMP/zone/render result is supplied.
+    for xy, row in (authored if full_knowledge else crop).items():
         pointer = m.alloc(0x148)
         m.invoke(0x47BBF0, pointer)
         pair = m.alloc(4)
         u.mem_write(pair, struct.pack('<hh', *xy))
         m.invoke(0x485240, pointer, (pair,))
         tile = row['tile'] if row['tile'] != 65535 else 0
-        head = heads[tiles[tile]]
-        slope = m.invoke(0x5471B0, head, (row['subtile'],)) & 255
-        land = m.invoke(0x544BE0, head, (row['subtile'],))
+        if xy in crop:
+            head = heads[tiles[tile]]
+            slope = m.invoke(0x5471B0, head, (row['subtile'],)) & 255
+            land = m.invoke(0x544BE0, head, (row['subtile'],))
+        else:
+            # Preserve original constructor defaults for fields this selected
+            # knowledge traversal does not consume. Physical height and tile
+            # below are independent of a raster/TMP metadata interpretation.
+            slope = u.mem_read(pointer + 0x11C, 1)[0]
+            land = m.read32(pointer + 0xEC)
         u.mem_write(pointer + 0x38, dwords(tile))
         u.mem_write(pointer + 0x11A, bytes((row['subtile'], row['level'], slope, 0)))
         u.mem_write(pointer + 0xEC, dwords(land))
@@ -123,6 +133,9 @@ def world(f, assets):
         u.mem_write(table + (xy[1] * 512 + xy[0]) * 4, dwords(pointer))
         f.resident.ptrs[xy] = pointer
         native_fields[xy] = dict(tile=tile, subtile=row['subtile'], level=row['level'], slope=slope, land=land)
+        if full_knowledge:
+            native_fields[xy].update(knowledge_only=xy not in crop,
+                                    file=tiles[tile] if xy in crop else None)
     u.mem_write(0x87F7E8 + 0xF4, dwords(103, 82, 2, 4, 99, 72))
     u.mem_write(0x87F7E8 + 0x124, dwords(0, 0, 511, 511))
     # Existing Resident zone-storage format; outside this physical crop stays
@@ -178,7 +191,7 @@ def observe_admission(f, stages, seen, geometry_calls, area, targets, notificati
     return u.hook_add(UC_HOOK_CODE, observe)
 
 
-def joined(assets, sources, selected_layers, *, moving=False):
+def joined(assets, sources, selected_layers, *, moving=False, fire=False):
     f = Mission(reader_factory=PaletteReader)
     m, u = f.m, f.u
     m.phase = 'frontier'
@@ -195,7 +208,7 @@ def joined(assets, sources, selected_layers, *, moving=False):
     startup = geometry(f)
     f.resident.phase = 'frontier'  # no inherited measurement/gameplay/projection substitutions
     m.assets.update(assets)
-    authored, fields, heads, registry, map_input, tmp_sources = world(f, assets)
+    authored, fields, heads, registry, map_input, tmp_sources = world(f, assets, full_knowledge=fire)
     scenario = m.read32(0xA8B230)
     m.invoke(0x6B8AE0, scenario)
     special_constructor = m.read32(scenario)
@@ -205,7 +218,8 @@ def joined(assets, sources, selected_layers, *, moving=False):
     m.invoke(0x6B8CA0, scenario, (RULES,))
     special_flags = dict(constructor=special_constructor, physical_map=special,
                          after_physical_map=m.read32(scenario))
-    assert m.read32(scenario) & 1 == 0  # native ordinary FogOfWar=no
+    # Scenario SpecialFlags.FogOfWar is bit12 (6B8E63..89), not bit0.
+    assert m.read32(scenario) & 0x1000 == 0
     stages = dict(before=dict(cells=cell_states(f)))
     seen, height_calls, areas, targets, notifications, discovers, border = {}, [], [], [], [], [], []
     observer = observe_admission(f, stages, seen, height_calls, areas, targets, notifications, discovers, border)
@@ -217,6 +231,11 @@ def joined(assets, sources, selected_layers, *, moving=False):
         discovery=list(u.mem_read(f.src + 0x41A, 3)))
     assert stages['before_unlimbo']['rng'] == stages['after_unlimbo']['rng']
     assert f.after_placement['position'] == [28032, 7040, 624]
+    assert m.read32(scenario) & 0x1000 == 0  # also guard the measured post-setup state
+    if fire:
+        u.hook_del(observer)
+        return fire_history(f, assets, sources + tmp_sources, authored, fields,
+                            map_input, startup, special_flags, stages['before']['cells'])
     # Shared BSurface/circular A/Z owner. Native A fill/draw follows this setup;
     # no subsequent material setup may replace this plane.
     u.mem_map(0x21000000, 0x200000)
@@ -640,12 +659,173 @@ def cached_release(assets, selected_layers):
         after_unlimbo=after,after_sight0_gate=gated,unlimbo=f.placement_result&255)
 
 
-def generate(*, moving=False):
+def fire_history(f, assets, sources, authored, fields, map_input, startup, special_flags, constructed):
+    """Cold physical knowledge, full fire Map/borders and original Logic sweep.
+
+    The existing Mission owns this VM. Full physical knowledge enrollment is
+    necessary for the original allocated iterator; it is not a world loader.
+    No constructor Cell counter/cache is replaced to make the case cold.
+    """
+    m, u = f.m, f.u
+    xy = (120, 30)
+    assert xy in f.resident.ptrs and not fields[xy]['knowledge_only']
+    assert len(f.resident.ptrs) == len(authored) and (1, 103) in f.resident.ptrs
+    pointer = f.resident.ptrs[xy]
+    coord = m.alloc(12)
+    coordinate_result = m.invoke(0x486840, pointer, (coord,))
+    xyz = ints(u, coord, 3)
+    before = cell_states(f)
+    cold = before[xy]
+    assert cold['counter'] == 1 and cold['gap'] == 0 and cold['alt'] & 0x18 == 0
+    assert cold['cache'] == [-2, -2] and cold['flags'] & 0x20 == 0
+    columns = ['x', 'y', 'level', 'counter', 'gap', 'alt', 'flags',
+               'ground_frame', 'fog_frame', 'dirty']
+    def compact(state):
+        return [*state['cell'], state['level'], state['counter'], state['gap'],
+                state['alt'], state['flags'], *state['cache'], state['dirty']]
+    prior = before
+    stages, calls, borders, leaves, notifications, sweeps = [], [], [], [], [], []
+    phase = 'before_fire'
+    active_border, border_receiver, active_sweep, sweep_pass = None, None, None, None
+    reverse = {p: cell for cell, p in f.resident.ptrs.items()}
+    rng_before = {name: bytes(u.mem_read(p, 0x3F4)).hex() for name, p in f.resident.rngs.items()}
+    request_start = len(f.events)
+    code_ranges = ((0x4876F0, 0x487717), (0x5673A0, 0x5678D9),
+                   (0x567DA0, 0x567F64), (0x578100, 0x57828B),
+                   (0x578290, 0x578342), (0x5865F0, 0x5866BA),
+                   (0x6D8700, 0x6D8ADD), (0x6DA7D0, 0x6DA978))
+    original = [(a, native.file_span(native.image_bytes(), a, b-a)[1]) for a,b in code_ranges]
+    assert all(bytes(u.mem_read(a, len(raw))) == raw for a, raw in original)
+
+    def stage(name):
+        nonlocal prior
+        current = cell_states(f)
+        changed = [compact(state) for cell, state in current.items() if state != prior[cell]]
+        stages.append(dict(name=name, changes=changed,
+            source_cell=compact(current[xy]),
+            ground_frame_changes=sum(state['cache'][0] != prior[cell]['cache'][0]
+                                     for cell, state in current.items())))
+        prior = current
+        return current
+
+    def observe(_u, pc, _size, _data):
+        nonlocal active_border, border_receiver, active_sweep, sweep_pass
+        sp = u.reg_read(UC_X86_REG_ESP)
+        if pc == 0x5673A0:
+            args = ints(u, sp+4, 8)
+            calls.append(dict(phase=phase, entry='005673A0', coords=ints(u,args[0],3),
+                radius=args[1], house_is_current=args[2] == m.read32(0xA83D4C),
+                flags=args[3:]))
+        elif pc == 0x4876F0:
+            p = u.reg_read(UC_X86_REG_ECX)
+            assert p in reverse, ('unrepresented fire receiver', hex(p))
+            leaves.append(dict(phase=phase, cell=list(reverse[p])))
+        elif pc == 0x5678B7:
+            stage(phase + '_before_internal_border')
+        elif pc == 0x567DA0:
+            args = ints(u, sp+4, 4)
+            active_border = dict(phase=phase, caller=f'{m.read32(sp):08X}',
+                coords=ints(u,args[0],3), inner_height=args[1], radius=args[2],
+                skip=args[3], cells=[])
+            borders.append(active_border)
+        elif pc == 0x567F2C:
+            p = u.reg_read(UC_X86_REG_EBX)
+            assert p in reverse, ('unrepresented border receiver', hex(p))
+            old = DiscoveryFixture.pointer_state(SimpleNamespace(uc=u, read32=m.read32), p, include_dirty=True)
+            border_receiver = [*reverse[p], old['cache'][0], None, old['dirty'], None]
+        elif pc == 0x567F4D:
+            assert active_border is not None and border_receiver is not None
+            p = u.reg_read(UC_X86_REG_EBX)
+            border_receiver[3] = struct.unpack('<b', u.mem_read(p+0x120,1))[0]
+            border_receiver[5] = u.mem_read(p+0x138,1)[0]
+            active_border['cells'].append(border_receiver)
+            border_receiver = None
+        elif pc == 0x567F61:
+            active_border = None
+        elif pc == 0x578100:
+            active_sweep = dict(phase=phase, frame=m.read32(0xA8ED84), passes=[[], []])
+            sweeps.append(active_sweep)
+        elif pc in (0x578148, 0x5781E8):
+            p = u.reg_read(UC_X86_REG_ESI)
+            assert active_sweep is not None and p in reverse
+            sweep_pass = int(pc == 0x5781E8)
+            active_sweep['passes'][sweep_pass].append(reverse[p])
+        elif pc == 0x5865F0:
+            p = m.read32(sp+4)
+            assert p in reverse, ('unrepresented notification', hex(p))
+            notifications.append(dict(phase=phase, sweep_pass=sweep_pass,
+                cell=list(reverse[p]), fresh=m.read32(sp+12),
+                house_is_current=m.read32(sp+8) == m.read32(0xA83D4C),
+                ground_frame=struct.unpack('<b',u.mem_read(p+0x120,1))[0]))
+        elif pc == 0x57828A:
+            active_sweep = None
+            sweep_pass = None
+
+    hook = u.hook_add(UC_HOOK_CODE, observe)
+    try:
+        # Declared component frame;119/120 exercise the real modulo gate.
+        # It is not the full original match/attack frame chronology.
+        u.mem_write(0xA8ED84, dwords(119))
+        for phase in ('cold_fire', 'warm_repeat'):
+            m.invoke(0x5673A0, 0x87F7E8, (coord,3,f.house,0,0,0,1,0),
+                     instruction_limit=2000000)
+            current = stage(phase + '_after_map')
+            if phase == 'cold_fire':
+                assert any(state['cache'][0] != before[cell]['cache'][0]
+                           for cell,state in current.items()), 'cold fire must change stored120'
+            m.invoke(0x567DA0, 0x87F7E8, (coord,0,4,0))
+            stage(phase + '_after_extra_border')
+        for frame in (119,120,240):
+            phase = f'logic_{frame}'
+            u.mem_write(0xA8ED84, dwords(frame))
+            u.reg_write(UC_X86_REG_ESP, SP)
+            u.reg_write(UC_X86_REG_EDI, frame)
+            native.run_checked(u,0x55B29A,0x55B2C4,count=25000000,timeout_us=120000000)
+            stage(phase)
+    finally:
+        u.hook_del(hook)
+    assert len(calls) == 2 and len(borders) == 4 and leaves
+    assert [r['radius'] for r in borders] == [6,4,6,4]
+    assert [r['phase'] for r in sweeps] == ['logic_120','logic_240']
+    assert any(row['phase'] == 'logic_120' for row in notifications)
+    for sweep in sweeps:
+        compact_passes = []
+        for visits in sweep.pop('passes'):
+            assert len(visits) == len(authored) and set(visits) == set(authored), (
+                'incomplete original578290 coverage', sweep['phase'],len(visits),len(authored))
+            raw = b''.join(struct.pack('<hh', *cell) for cell in visits)
+            compact_passes.append(dict(count=len(visits), ordered_coords_sha256=sha(raw),
+                first=list(visits[0]), last=list(visits[-1])))
+        sweep['passes'] = compact_passes
+    rng_after = {name: bytes(u.mem_read(p,0x3F4)).hex() for name,p in f.resident.rngs.items()}
+    requests = [e for e in f.events[request_start:] if e.get('kind') in ('rng','raw')]
+    assert rng_before == rng_after and not requests
+    assert all(bytes(u.mem_read(a,len(raw))) == raw for a,raw in original)
+    retained_sources = [s for s in sources if s['name'].upper() in
+                        {'GOLDST.MMX','RULESMD.INI','ARTMD.INI','MPBATTLEMD.INI','URBANMD.INI'}]
+    return dict(inputs=dict(sources=retained_sources, map=map_input,
+        physical_fire_cell=dict(coords=list(xy), authored=authored[xy], native=fields[xy]),
+        native_coordinate=dict(entry='00486840', result_is_output=coordinate_result == coord,xyz=xyz),
+        map_args=dict(radius=3,house='existing current eligible House',flags=[0,0,0,1,0]),
+        extra_border_args=[0,4,0], frames=[119,120,240], startup=startup,
+        special_flags=special_flags, allocated_knowledge_cells=len(authored),
+        knowledge_boundary='All physical GoldSt authored cells receive original Cell constructor/coordinate plus physical tile/sub/level. Outside existing raster crop, unused slope/land retain constructor defaults; no new full world/TMP/zone loading.'),
+        state_columns=columns, initial_source_cell=compact(cold),
+        initial_nonconstructor_cells=[compact(s) for cell,s in before.items() if s != constructed[cell]],
+        stages=stages,map_calls=calls,leaf_receivers=leaves,borders=borders,
+        border_cell_columns=['x','y','old_ground_frame','new_ground_frame','old_dirty','new_dirty'],
+        sweeps=sweeps,notifications=notifications,
+        rng=dict(before=rng_before,after=rng_after,requests=requests),
+        original_selected_code_unchanged=True,
+        boundary='Native Map and both fire border calls under declared component priors, then original119/120/240 Logic gate/full sweep. No FireAt/Spawner constructor/gate execution, natural attack timing, occupied Tag callback or rendered output claim.')
+
+
+def generate(*, moving=False, fire=False):
     assets,sources=physical_assets(frontier=True)
     with TemporaryDirectory(prefix='vera-shroud-frontier-') as directory:
         selected=layers(assets,directory)
-        packet=joined(assets,sources,selected,moving=moving)
-        if not moving:packet['controls']['cached_release']=cached_release(assets,selected)
+        packet=joined(assets,sources,selected,moving=moving,fire=fire)
+        if not moving and not fire:packet['controls']['cached_release']=cached_release(assets,selected)
     return packet
 
 
@@ -699,14 +879,37 @@ def moving_metadata():
         ])
 
 
+def fire_metadata():
+    return native.provenance(
+        scope='Cold physical GoldSt Cell knowledge through full original fire Map5673A0, its internal border, explicit raw-coordinate border4, warm repeat and119/120/240 Logic sweep observations.',
+        assumptions=[
+            'Existing Mission/PaletteReader/frontier physical world, original Discovery/Tactical/Cell startup and AMCV reader/constructor/Unlimbo prefix are reused. Physical GoldSt120,30 is an independently cold registered Cell after that prefix; original486840 derives its XYZ. No Rust position, radius outcome, knowledge, cache or expected callback result initializes native execution.',
+            'Original FireAt6FDF13..30 and6FF6FE..71B supply Map args(coord,3,current eligible victim House,0,0,0,1,0);6FDF35..4D and6FF720..738 supply raw-coordinate567DA0(coord,0,4,0). Full FireAt/Spawner admission predicates are not executed by this component. Internal5678CA supplies its own shifted localXYZ/radius6 unchanged.',
+            'Full physical GoldSt knowledge enrollment extends only the existing world owner: original47BBF0/485240 and authored tile/sub/height for every decoded Cell. Actual slope/land getters and zone/TMP loading remain the existing raster crop; unused outside-crop metadata keeps constructor defaults. Original578290 must visit every authored Cell in both complete578100 passes, or generation fails.',
+            'Cold and warm Map/border measurements retain actual ordered leaf/ground-frame receivers and compact before/after state. Native Logic modulo gate runs at declared component frames119,120,240; complete578100 and5865F0 execute, with real phase/pass notifications recorded. No fake iterator, shortened Size, patched border, cache poison, full object-AI timeline or supplied callback is used.',
+            'All three existing native RNG streams are retained byte-for-byte around measured work; no request may occur. Selected original body bytes remain unchanged. Existing setup platform/House/physical-registration boundaries apply; this control does not certify occupied discovery Tags, native attack scheduling, rendering or whole GoldSt bootstrap.',
+        ],
+        substitutions=[
+            'Only inherited Mission native-image/CRT/heap/TLS/INI/RawFile/Windows transports, eligible current House and explicit physical map/zone registration. No new VM, pixel/math/parser/shape implementation or gameplay return replacement.',
+        ],
+        entry_points=dict(cell_ctor=0x47BBF0,cell_coord=0x485240,cell_xyz=0x486840,
+            fire_map=0x5673A0,fire_leaf=0x4876F0,border=0x567DA0,
+            ground_frame=0x6D8700,tactical_dirty=0x6DA7D0,
+            logic_gate=0x55B29A,update=0x578100,allocated_next=0x578290,
+            notify=0x5865F0))
+
+
 if __name__ == '__main__':
     import argparse
     parser=argparse.ArgumentParser(add_help=False)
-    parser.add_argument('--moving',action='store_true')
+    modes=parser.add_mutually_exclusive_group()
+    modes.add_argument('--moving',action='store_true')
+    modes.add_argument('--fire',action='store_true')
     options,remaining=parser.parse_known_args()
-    native.finish_vectors(lambda:generate(moving=options.moving),
-        Path(__file__).with_name('shroud_frontier_moving.json' if options.moving else 'shroud_frontier.json'),
-        provenance=moving_metadata if options.moving else metadata,argv=remaining,
+    native.finish_vectors(lambda:generate(moving=options.moving,fire=options.fire),
+        Path(__file__).with_name('shroud_frontier_fire.json' if options.fire else
+                                'shroud_frontier_moving.json' if options.moving else 'shroud_frontier.json'),
+        provenance=fire_metadata if options.fire else moving_metadata if options.moving else metadata,argv=remaining,
         source_paths={name:Path(__file__).resolve().parents[1]/path for name,path in {
             'frontier':'procedural_drawing_oracle/shroud_frontier.py',
             'drawing':'procedural_drawing_oracle/shroud.py',

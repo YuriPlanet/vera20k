@@ -19,7 +19,8 @@ from unicorn.x86_const import (
 )
 
 from tools.native_oracle import (
-    RET_MAGIC, SCRATCH, NativeCallTrace, finish_vectors, provenance, run_checked,
+    NATIVE_SHA256, RET_MAGIC, SCRATCH, NativeCallTrace, finish_vectors,
+    image_sha256, provenance, run_checked,
 )
 from tools.input_oracle.fast_scroll import (
     DISPLAY, byte, i32, put8, return_from_sink,
@@ -1945,7 +1946,197 @@ def metadata():
     return result
 
 
+def house_cheer_inputs():
+    """Authored priors; admission and queue outputs are never calculated here."""
+    def case(name, *, last=-100, rate=300, locked=0, count=0, read=0,
+             write=0, house=7, frames=(), operations=None):
+        return dict(name=name, input=dict(last_frame=last,
+            maximum_cheer_rate=rate, input_locked=locked, queue_count=count,
+            queue_read_index=read, queue_write_index=write, house_index=house),
+            operations=operations or [dict(kind="press", current_frame=frame)
+                                      for frame in frames])
+
+    return [
+        case("stock_initial_boundary", frames=(0, 200, 201, 501, 502)),
+        case("positive_boundary", last=100, frames=(399, 400, 401)),
+        case("zero_rate", last=100, rate=0, frames=(100, 101)),
+        case("negative_rate", last=100, rate=-1, frames=(99, 100)),
+        case("add_overflow_max_plus_one", last=2147483647, rate=1,
+             frames=(0,)),
+        case("add_overflow_min_minus_one", last=-2147483648, rate=-1,
+             frames=(0, 2147483647)),
+        case("wrapped_sum_equality", last=2147483647, rate=1,
+             frames=(-2147483648, -2147483647)),
+        case("current_frame_is_signed", frames=(-2147483648,)),
+        case("locked_preserves_prior", last=100, locked=1,
+             operations=[dict(kind="press", current_frame=401),
+                         dict(kind="press", current_frame=401, input_locked=0)]),
+        case("any_nonzero_lock", last=100, locked=4294967295, frames=(401,)),
+        case("last_free_slot_wrap", count=127, write=127, frames=(201,)),
+        case("empty_ring_wrap", read=127, write=127, frames=(201, 502), house=29),
+        case("full_queue_consumes_opportunity", count=128, read=37, write=37,
+             operations=[dict(kind="press", current_frame=201),
+                         dict(kind="press", current_frame=202, queue_count=0),
+                         dict(kind="press", current_frame=501),
+                         dict(kind="press", current_frame=502)]),
+        case("scene_reset_stock_rate", last=123456, read=12, write=12,
+             operations=[dict(kind="reset", current_frame=123456),
+                         dict(kind="press", current_frame=200),
+                         dict(kind="press", current_frame=201)]),
+        case("constructor_default_rate", last=-100, rate=-987654321,
+             operations=[dict(kind="constructor_rate", current_frame=0),
+                         dict(kind="press", current_frame=-99),
+                         dict(kind="press", current_frame=-98)]),
+    ]
+
+
+def house_cheer_case(spec):
+    """Reuse the registered keyboard VM; execute the selected producer unchanged."""
+    m = SelectionFixture([], [[], [], [], [], []], seed=31)
+    u, prior = m.uc, spec["input"]
+    rules, clock = m.alloc(0x2000), m.alloc(16)
+    m.put(0x8871E0, rules)
+    m.put(0x7E1530, clock)
+    m.put(m.houses["local"] + 0x30, prior["house_index"])
+    m.put(0x84555C, prior["last_frame"] & 0xFFFFFFFF)
+    m.put(rules + 0x580, prior["maximum_cheer_rate"] & 0xFFFFFFFF)
+    m.put(0xA8B538, prior["input_locked"])
+    for address, field in ((0xA802C8, "queue_count"),
+                           (0xA802CC, "queue_read_index"),
+                           (0xA802D0, "queue_write_index")):
+        m.put(address, prior[field])
+    # Existing records are supplied opaque occupied slots. Only actual new
+    # writes are decoded, never their unused/padding bytes or prior payload.
+    u.mem_write(0xA802D4, bytes(128 * 0x6F))
+    u.mem_write(0xA83A54, bytes(128 * 4))
+    command = m.objects["AllToCheer"]
+    execute = m.get(m.get(command) + 0x20)
+    assert execute == 0x536C00
+    constructor_calls, imports, last_writes, queue_slots = [], [], [], set()
+    rng_requests, detach = [], []
+
+    def observe(vm, pc, _size, _data):
+        sp = vm.reg_read(UC_X86_REG_ESP)
+        if pc == 0x4C66C0:
+            constructor_calls.append(dict(house_index=i32(vm, sp + 4),
+                                          opcode=m.get(sp + 8)))
+        elif pc == clock:
+            imports.append(dict(service="timeGetTime", result=100000))
+            return_from_sink(vm, 0, 100000)
+        elif pc == 0x4068E0:
+            # Existing event-constructor diagnostic transport, before its
+            # actual opcode/House/frame stores; not a gameplay answer.
+            return_from_sink(vm, 0)
+        elif pc in (0x65C780, 0x65C7E0):
+            rng_requests.append(f"{pc:08X}")
+        elif pc in (0x70D4A0, 0x7258D0):
+            detach.append(f"{pc:08X}")
+
+    def observe_write(vm, _access, address, size, value, _data):
+        if address == 0x84555C:
+            last_writes.append(i32_value(value))
+        elif 0xA802D4 <= address < 0xA802D4 + 128 * 0x6F:
+            first = (address - 0xA802D4) // 0x6F
+            last = (address + size - 1 - 0xA802D4) // 0x6F
+            queue_slots.update(range(first, last + 1))
+
+    u.hook_add(UC_HOOK_CODE, observe)
+    u.hook_add(UC_HOOK_MEM_WRITE, observe_write,
+               begin=0x84555C, end=0x84555F)
+    u.hook_add(UC_HOOK_MEM_WRITE, observe_write,
+               begin=0xA802D4, end=0xA802D4 + 128 * 0x6F - 1)
+    before = m.rng_bytes()
+    phases = []
+    for operation in spec["operations"]:
+        m.put(0xA8ED84, operation["current_frame"] & 0xFFFFFFFF)
+        if "input_locked" in operation:
+            m.put(0xA8B538, operation["input_locked"])
+        if "queue_count" in operation:
+            # Explicit scheduler boundary: prior records have been drained.
+            # This does not emulate that drain or change native queue indexes.
+            m.put(0xA802C8, operation["queue_count"])
+        constructor_calls.clear()
+        imports.clear()
+        last_writes.clear()
+        queue_slots.clear()
+        kind = operation["kind"]
+        if kind == "press":
+            m.invoke(execute, command, (0,))
+        elif kind == "reset":
+            m.invoke(0x734210, 0)
+        elif kind == "constructor_rate":
+            u.reg_write(UC_X86_REG_ESI, rules)
+            m.run_region(0x665D92, 0x665D9C, required=(0x665D92,))
+        else:
+            raise ValueError(kind)
+        events = []
+        for slot in sorted(queue_slots):
+            pointer = 0xA802D4 + slot * 0x6F
+            events.append(dict(opcode=u.mem_read(pointer, 1)[0],
+                house_index=struct.unpack("<b", u.mem_read(pointer + 2, 1))[0],
+                frame=i32(u, pointer + 3),
+                queued_at_ms=m.get(0xA83A54 + slot * 4)))
+        phases.append(dict(input=operation, expected=dict(
+            last_frame=i32(u, 0x84555C),
+            maximum_cheer_rate=i32(u, rules + 0x580),
+            queue_count=m.get(0xA802C8),
+            queue_read_index=m.get(0xA802CC),
+            queue_write_index=m.get(0xA802D0),
+            new_events=events, constructor_calls=list(constructor_calls),
+            last_frame_writes=list(last_writes), os_imports=list(imports))))
+    assert m.rng_bytes() == before and not rng_requests and not detach
+    assert m.text_hash() == m.code_hash
+    return dict(name=spec["name"], input=prior, phases=phases)
+
+
+def i32_value(value):
+    return struct.unpack("<i", struct.pack("<I", value & 0xFFFFFFFF))[0]
+
+
+def house_cheer_generate():
+    assert image_sha256() == NATIVE_SHA256
+    return dict(schema_version=1, source="unicorn/gamemd.exe",
+        native_sha256=image_sha256(),
+        cases=[house_cheer_case(spec) for spec in house_cheer_inputs()])
+
+
+def house_cheer_metadata():
+    return provenance(
+        scope="Registered AllToCheer536C00 -> whole730F30, actual Event4C66C0 and inlined OutList append, reset734210 and Rules default store665D92",
+        assumptions=[
+            "Existing SelectionFixture/KeyboardFixture owns the VM, original532150 command registration, scratch/stack allocation, empty actors/layers, native call invocation and original .text immutability checks. No additional VM or admission/queue implementation is supplied.",
+            "The selected current House index, Rules+580, signed last/current frames, Session+300 input lock and capacity128 OutList count/read/write indexes are explicit priors. Existing occupied records are opaque; only newly written event opcode/House/frame fields are observed. The constructor does not initialize byte+1 or arbitrary payload, so those bytes are not goldens.",
+            "Every press invokes actual registered Execute536C00 with argument0 and executes whole730F30, including real4C66C0 and the inlined111-byte OutList copy, timestamp and index/count writes when admitted. This handler does not call the separate6521C0 enqueue body.",
+            "The full-queue history explicitly supplies a drained queue_count0 before its second press, retaining both indexes. That boundary is not execution of local/network scheduling. Equality/rearm, signed wrapping ADD, signed current-frame CMP, nonzero lock and full-buffer rate consumption are original outputs.",
+            "Reset controls execute whole734210, including both OS clock calls and the actual last-frame=-100 store. The constructor-default control executes only the original665D92 ten-byte store with supplied ESI=Rules; it is not whole Rules construction/loading. The stock300 input is independently retail-derived, not invented as a constructor default.",
+            "Main/Scenario/MapGen buffers are initialized with the existing seed31 transport and asserted byte-identical through each history; no65C780/65C7E0 or detach70D4A0/7258D0 calls occur in these producer/reset controls. This does not cover downstream House/Infantry/audio RNG or timers.",
+            "No Windows key delivery/loader, full keyboard configuration, event dispatch/House scan, Infantry DoAction, rendering, sound/device, saved-game or whole-frame scheduling is executed here. Existing Steam infantry_cheer controls retain their separate provenance and payload."],
+        substitutions=[
+            "Existing original-registration malloc7C8E17 transport supplies bounded zero-filled scratch storage; registry execution stops before533D20 file I/O.",
+            "The declared timeGetTime import7E1530 returns100000 milliseconds using the existing return_from_sink OS transport. These values stamp OutList transport and independent reset click clocks, not the simulation frame or admission decision.",
+            "Event constructor diagnostic4068E0 is an observed platform log boundary returning0 with cdecl caller cleanup; original Event, producer, reset and queue stores execute unchanged. No selected simulated-input, event/header, last-frame, gate, arithmetic or queue return is substituted."],
+        entry_points=dict(registry=0x532150, registry_stop=0x533D20,
+            registered_execute=0x536C00, command_handler=0x730F30,
+            event_constructor=0x4C66C0, queue_copy=0x730F99,
+            queue_full_branch=0x730F7B, last_frame_store=0x730FD3,
+            scene_input_reset=0x734210, constructor_rate_store=0x665D92))
+
+
 if __name__ == "__main__":
+    import sys
+    if "--house-cheer" in sys.argv[1:]:
+        args = list(sys.argv[1:])
+        args.remove("--house-cheer")
+        finish_vectors(house_cheer_generate, HERE / "house_cheer.json",
+            provenance=house_cheer_metadata, argv=args,
+            source_paths={
+                "selection_navigation": Path(__file__),
+                "native_oracle": HERE.parent / "native_oracle.py",
+                "keyboard_bindings": HERE.parent / "storage_oracle/keyboard_bindings.py",
+                "fast_scroll": HERE / "fast_scroll.py",
+                "rng": HERE.parent / "rmg_oracle/gen_rng_vectors.py",
+            })
+        sys.exit(0)
     finish_vectors(generate, HERE / "selection_navigation.json", provenance=metadata,
                    source_paths={
                        "selection_navigation": Path(__file__),

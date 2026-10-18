@@ -243,8 +243,9 @@ impl HouseStrategyEmergencyState {
         self.last_attacker_house_index
     }
 
-    /// Trigger action9 writes only House+250=4 at6DEAFF; the existing
-    /// strategy timer and its eventual FireSale/Hunt remain untouched.
+    /// Trigger action9 (6DEAFF) and Team script30 (6E99E5) write only
+    /// House+250=4; the existing strategy timer and eventual FireSale/Hunt
+    /// remain untouched.
     pub(crate) fn set_state_four(&mut self) {
         self.mode = 4;
     }
@@ -392,6 +393,12 @@ impl Default for LastBuiltTypes {
 pub struct HouseState {
     /// Owner name as interned ID (resolve via interner for display).
     pub name: InternedId,
+    /// House+15FF4's bounded narrow name, independent of its owner key and
+    /// participant display handle. Fresh scenario initialization installs it
+    /// before map objects; None marks partial diagnostic Houses that have not
+    /// run that admission. Save504080/Load503040 retain the native name.
+    #[serde(default)]
+    native_scenario_name: Option<String>,
     #[serde(default)]
     native_construction: Option<NativeHouseConstruction>,
     #[serde(default)]
@@ -592,7 +599,8 @@ pub struct HouseState {
     /// `UnitsKilled`/`BuildingsKilled` tables that the score screen sums, a
     /// `UnitsLost`/`BuildingsLost` pair, and four "quantity built" counters that
     /// its `Record_Last_Built` step increments once per finished factory item.
-    /// Only the totals are player-visible, so the Rust model keeps totals.
+    /// The score reads totals; negative BuildLimit additionally reads the
+    /// successful-production items retained by `produced_type_counts`.
     ///
     /// House Save504080/Load503040 preserve the native inline statistics and
     /// all four built Counters (naval_house_stats native execution). Keep the
@@ -615,6 +623,20 @@ pub struct HouseState {
     /// Executed controls: tag_lifecycle --build-type-events (Steam3e81a617).
     #[serde(default)]
     last_built_types: LastBuiltTypes,
+    /// Successful scored factory deliveries by category and native Type
+    /// ArrayIndex: House+55A0/55B4/55C8/55DC, Record_Last_Built4FB6B0
+    /// -> Counter49FA00. Owned/active tracking, discovery, construction and
+    /// ChangeOwner do not write this history. Missing indices mean zero;
+    /// registration growth cannot erase earlier items. Save504080/Load503040
+    /// retain the four native streams (naval_house_stats executed corpus).
+    ///
+    /// House4F5B13..34 calls Counter constructor49F9B0, starting empty.
+    /// Starting forces never call Record in this model, so their
+    /// clear5D6FAD..5D6FDA is an elided zero reset.
+    /// Only nonzero items are stored; MatchStatistics.built is their wrapping
+    /// sum, updated by the same owner and checked when restoring a save.
+    #[serde(default)]
+    produced_type_counts: [BTreeMap<i32, i32>; 4],
     /// House+54E0: the last building that left this House through an owner
     /// change. `BuildingClass::ChangeOwner` records it on the old owner after
     /// the Techno owner swap (`0x00448C70`) and forgets it on the new owner
@@ -752,8 +774,7 @@ struct HouseSuperWeaponCells {
     /// @ 0x005098F0` aims its ForceShield there (`0x00509A6D..0x00509A9B`)
     /// while the alert is younger than `[General] AISuperDefenseFrames=`
     /// (`superweapon::ai_fire`). Constructor (0, 0) (`0x004F5A8F`); trigger
-    /// actions also write it (`0x0050DA20`, `0x0050DA50`), which VERA does not
-    /// run.
+    /// actions140/141 also write it (`0x0050DA20`, `0x0050DA50`).
     defense_cell: (u16, u16),
     /// `+0x54FC`: the frame of that alert (`0x004FB0C9`); constructor -100
     /// (`0x004F5AB1`).
@@ -772,6 +793,40 @@ impl Default for HouseSuperWeaponCells {
 }
 
 impl HouseState {
+    /// Final fresh-reader name: HouseReadINI500A62 or offline generated
+    /// CreateHouses688072/688238. The original copies at most20 narrow bytes;
+    /// parsed INI names use one widened scalar per native byte. No case/space
+    /// normalization or mutable human/owner classification chooses this name.
+    pub(crate) fn initialize_scenario_name(&mut self, name: &str) {
+        assert!(
+            self.native_scenario_name.is_none(),
+            "fresh House name installed once"
+        );
+        self.native_scenario_name = Some(
+            name.split('\0')
+                .next()
+                .unwrap_or_default()
+                .chars()
+                .take(20)
+                .collect(),
+        );
+    }
+
+    pub(crate) fn native_scenario_name(&self) -> Option<&str> {
+        self.native_scenario_name.as_deref()
+    }
+
+    pub(crate) fn validate_scenario_name(&self) -> Result<(), &'static str> {
+        if self.native_scenario_name.as_ref().is_some_and(|name| {
+            name.contains('\0')
+                || name.chars().count() > 20
+                || name.chars().any(|c| u32::from(c) > 255)
+        }) {
+            return Err("House native name exceeds its terminated20-byte storage");
+        }
+        Ok(())
+    }
+
     /// The shared House field writer for production4FB6B0 and discovery44D601.
     /// Scoring, admission and notification effects stay with those callers.
     pub(crate) fn record_built_type(&mut self, category: ObjectCategory, type_index: i32) {
@@ -781,6 +836,80 @@ impl HouseState {
     /// HasOccurred71EFEB..71F03D reads the incoming House's class-local slot.
     pub(crate) fn last_built_type_index(&self, category: ObjectCategory) -> i32 {
         self.last_built_types.0[category as usize]
+    }
+
+    /// Record4FB6B0's four DontScore-admitted Counter increments. The caller
+    /// stores LastBuilt first and retains cue/tech-recheck ordering afterward.
+    pub(crate) fn record_scored_production(&mut self, category: ObjectCategory, type_index: i32) {
+        assert!(type_index >= 0, "produced Type must have a registry index");
+        let items = &mut self.produced_type_counts[category as usize];
+        let count = items.entry(type_index).or_default();
+        *count = count.wrapping_add(1);
+        if *count == 0 {
+            items.remove(&type_index);
+        }
+        self.stats.record_built();
+    }
+
+    /// Counter49FAE0's logical item query. Sparse lookup replaces native
+    /// allocation/zero-fill; allocator capacity has no gameplay consumer here.
+    pub(crate) fn produced_count(&self, category: ObjectCategory, type_index: i32) -> i32 {
+        self.produced_type_counts[category as usize]
+            .get(&type_index)
+            .copied()
+            .unwrap_or(0)
+    }
+
+    /// Explicit retained Counter prior for native execution comparisons.
+    /// Normal construction/acquisition must never call this fixture adapter.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn set_produced_count_for_test(
+        &mut self,
+        category: ObjectCategory,
+        type_index: i32,
+        count: i32,
+    ) {
+        assert!(type_index >= 0);
+        let items = &mut self.produced_type_counts[category as usize];
+        if count == 0 {
+            items.remove(&type_index);
+        } else {
+            items.insert(type_index, count);
+        }
+        self.stats.built = self
+            .produced_type_counts
+            .iter()
+            .flat_map(|items| items.values())
+            .fold(0_u32, |total, &item| total.wrapping_add(item as u32));
+    }
+
+    pub(crate) fn hash_production_history(&self, hasher: &mut impl std::hash::Hasher) {
+        if self
+            .produced_type_counts
+            .iter()
+            .any(|items| !items.is_empty())
+        {
+            std::hash::Hash::hash(b"house-produced-type-counts-v1", hasher);
+            std::hash::Hash::hash(&self.produced_type_counts, hasher);
+        }
+    }
+
+    /// VERA's derived Built cache is not independently mutable or rebuilt
+    /// from live objects. Reject an inconsistent saved cache before commit.
+    pub(crate) fn validate_production_history(&self) -> Result<(), &'static str> {
+        let mut total = 0_u32;
+        for items in &self.produced_type_counts {
+            for (&index, &count) in items {
+                if index < 0 || count == 0 {
+                    return Err("produced items require nonnegative indices and nonzero counts");
+                }
+                total = total.wrapping_add(count as u32);
+            }
+        }
+        if total != self.stats.built() {
+            return Err("Built total disagrees with produced type history");
+        }
+        Ok(())
     }
 
     /// Original50D610 appends even when an earlier snapshot already exists.
@@ -920,6 +1049,10 @@ impl HouseState {
 
     pub(crate) fn hash_native_construction(&self, hasher: &mut impl std::hash::Hasher) {
         use std::hash::Hash;
+        if let Some(name) = &self.native_scenario_name {
+            b"house-native-scenario-name-v1".hash(hasher);
+            name.hash(hasher);
+        }
         if let Some(construction) = self.native_construction {
             b"house-native-construction-v1".hash(hasher);
             construction.hash(hasher);
@@ -1000,10 +1133,20 @@ impl HouseState {
         )
     }
 
-    /// The launch alert's stores (`0x004FB0BD`, `0x004FB0C9`).
+    /// The launch alert's stores (`0x004FB0BD`, `0x004FB0C9`), also made by
+    /// House50DA20 from TAction1406E4460 with the current binary frame.
     pub(crate) fn alert_super_weapon_defense(&mut self, cell: (u16, u16), frame: i32) {
         self.super_weapon_cells.defense_cell = cell;
         self.super_weapon_cells.defense_frame = frame;
+    }
+
+    /// House50DA50, reached by TAction1416E44C0: clear the alert and restore
+    /// its constructor frame (-100). Original Steam gamemd3e81a617..08600,
+    /// instruction reading. Native also clears +54F8, which currently retains
+    /// its constructor zero here (ai_fire's secondary-cell residual).
+    pub(crate) fn clear_super_weapon_defense(&mut self) {
+        self.super_weapon_cells.defense_cell = (0, 0);
+        self.super_weapon_cells.defense_frame = -100;
     }
 
     /// Folded only off the constructor values, so houses that never saw a
@@ -1572,6 +1715,7 @@ impl HouseState {
     ) -> Self {
         Self {
             name,
+            native_scenario_name: None,
             native_construction: None,
             scenario_parameters: HouseScenarioParameters::default(),
             initial_techno_records: Vec::new(),
@@ -1612,6 +1756,7 @@ impl HouseState {
             stats: MatchStatistics::default(),
             building_capture_notified: false,
             last_built_types: LastBuiltTypes::default(),
+            produced_type_counts: Default::default(),
             lost_building: None,
             spy_gains: SpyGains::default(),
             powered_unit_centers: 0,
@@ -1631,6 +1776,26 @@ impl HouseState {
             spatial_threat: Default::default(),
             super_weapon_cells: HouseSuperWeaponCells::default(),
         }
+    }
+}
+
+impl crate::sim::world::Simulation {
+    /// Bind the common exact-name query's native ordinal to the existing
+    /// internal House identity. Only fully initialized scenario Houses take
+    /// this path; generated preconsumed and partial diagnostic rows retain
+    /// their explicit internal-key projection in the map constructor owner.
+    pub(crate) fn scenario_house_named(&self, requested: &str) -> Option<InternedId> {
+        let index = crate::map::houses::find_house_index(
+            self.session.house_order.iter().map(|owner| {
+                self.houses
+                    .get(owner)
+                    .expect("registered House array entry")
+                    .native_scenario_name()
+                    .expect("scenario House names initialized before object readers")
+            }),
+            requested,
+        )?;
+        Some(self.session.house_order[index])
     }
 }
 
@@ -1658,8 +1823,8 @@ pub struct MatchStatistics {
     units_lost: u32,
     /// Admitted building loss callbacks for this house, including captures.
     buildings_lost: u32,
-    /// Objects of this house that left their factory, `DontScore=` types
-    /// excepted: placed buildings and delivered units
+    /// Derived wrapping sum of HouseState's successful-production items:
+    /// placed buildings and delivered units, `DontScore=` types excepted
     /// (`production::factory_lifecycle::record_last_built`).
     built: u32,
 }
@@ -1712,8 +1877,8 @@ impl MatchStatistics {
         *counter = counter.wrapping_add(1);
     }
 
-    /// The existing Record_Last_Built caller owns its DontScore admission.
-    pub(crate) fn record_built(&mut self) {
+    /// Only HouseState's successful-production owner updates this derived sum.
+    fn record_built(&mut self) {
         self.built = self.built.wrapping_add(1);
     }
 

@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original generated House name copies, whole50C170 and authored Building44F820 admission to before allocation or real rejection return.",
+  "assumptions": [
+    "Three prepared0x16100 House lookup-storage regions and supplied stored indexes0/1/2 are not whole House constructors or Create_Houses startup. Original68804A..688092 and688210..688252 alone produce their native names. Human display handleComputer at+1602A is a separate UTF16 prior.",
+    "Array order/count and current House pointer are explicit per-control priors. Whole50C170 observes byte-exact names, duplicates, first array match, and wrong case/space/internal-owner/player-token/country controls. Stored House index and array ordinal remain distinct.",
+    "Original whole45DD90 constructs supplied actual registered ID NAHAND in a bounded single-entry BuildingType registry. No physical type scalar/ART read or full retail type ordinal is claimed.",
+    "Original Basic.NewINIFormat reader runs before every Structures control. Original44F820/ReadString128/strtok/atoi/type lookup execute. Positive rows stop before CALL44FAFD after PUSH720; rejected rows execute through real RET44FE51. No allocation, Building constructor, placement, capture or production occurs.",
+    "All three complete0x3F4 RNG buffers are compared to the original seed31 state after every selected execution; the corpus retains the bounded unchanged result rather than repeated raw RNG state. Existing campaign --houses controls retain constructor RNG/timers. No whole startup/constructor/capture/production zero-draw claim follows.",
+    "Every original executable-section byte is checked after each selected execution. House write observation admits only native-name writes in copy rows and no House writes in lookup/reader rows. Type-constructor setup owns its bounded Type registration/ID writes.",
+    "VERA20K_CAMPAIGN_START_ASSETS names an existing directory, preferably empty; selected controls request no physical asset. Physical INI loading, full Rules/Scenario startup and terrain admission are excluded."
+  ],
+  "substitutions": [
+    "Existing CampaignReader/BulletReader/Reader/Lists ordered linked-and-CRC INI cache, bounded bump allocation/inert delete, CRT TLS and declared OS import transports. No native name/admission/type/gameplay return is supplied and no original code is patched.",
+    "Prepared lookup storage, separate display handle, type-constructor name input and map lexical records are declared inputs. Cell20,20 is parsed only; it is not an observed successful world placement."
+  ],
+  "entry_points": {
+    "human_name_copy": "0x0068804A",
+    "computer_name_copy": "0x00688210",
+    "house_from_name": "0x0050C170",
+    "building_type_ctor": "0x0045DD90",
+    "building_type_lookup": "0x0045E7B0",
+    "basic_new_ini_format": "0x0068A13D",
+    "building_reader": "0x0044F820",
+    "building_allocation_boundary": "0x0044FAFD"
+  },
+  "reproduce_command": "VERA20K_GAMEMD_EXE='<original-gamemd.exe>' VERA20K_CAMPAIGN_START_ASSETS='<existing-empty-directory>' python -m tools.input_oracle.campaign_start --scenario-names --check",
+  "replay_command": "python -m tools.input_oracle.campaign_start --scenario-names",
+  "payload_sha256": "2c29de83a969a81e49a8e8e4a1dfa60a4ddd9df3ef0bd9da573b8fea7e8d6dc8"
+}

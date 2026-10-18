@@ -57,6 +57,12 @@ pub enum MaskedX87Ordering {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MaskedX87Value(Value);
 
+impl From<X87Value> for MaskedX87Value {
+    fn from(value: X87Value) -> Self {
+        Self(Value::Finite(value))
+    }
+}
+
 /// Value semantics for PC53/chop with all exceptions masked.
 ///
 /// Original warhead execution covers the damage consumer's exceptional paths;

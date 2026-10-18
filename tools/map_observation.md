@@ -5,6 +5,22 @@
 and retains a hidden-window GPU readback. This is a production observation, not a
 native comparator or a gameplay/pixel parity certification.
 
+## Accepted random maps
+
+A profile selecting the exact normal `RandMap.Sed` record can observe a generated
+match. Place the desired `.SED` in a real isolated retail directory and point the
+capture's `config.toml` there. The capture runs the existing setup generator and
+acceptance before normal launch regeneration. Setup writes `RandMap.Sed` and
+`RandMap.img` in that directory; retain original retail files separately. The
+`.SED` seed controls MapGen, while the profile seed controls match startup.
+
+The generated `map_source` receipt retains `seed_name` and nested `seed_source`
+(`path`, `payload_len`, `source_sha256`) from the exact seed buffer consumed by
+launch loading. Setup may normalize the record and stamp its localized description
+before that read. Legacy name-only sources and empty seed files cannot certify a
+capture. Other selected `.SED` names are not supported by this setup adapter.
+This demonstrates the recorded production path, not native full-generation parity.
+
 ## Named commands and outcome inspection
 
 Use `vera20k.map-observation-profile.v3` to name command targets without a separate
@@ -25,6 +41,11 @@ resolves its selectors afresh, so a later command can address a newly produced u
 Use a recorded numeric ID when subsequent commands must retain one actor despite
 movement or ownership changes. A cell means the actor's cell at the issue boundary.
 Rule-name lookup reads the existing registry and interner; it creates no types.
+
+`PlantC4` accepts the existing command's `attacker_id` and `target_building_id`,
+including named actor selectors. It queues the ordinary Sabotage input; infantry
+entry, charge planting, the building fuse and bridge-hut expiry stay with their
+production owners. Acceptance of the profile alone does not establish a plant.
 
 ```json
 {"issue_after_step":4510,"owner":"VERA-OBSERVER",
@@ -91,7 +112,8 @@ An expectation file declares one or more explicit checks:
 ```
 
 Subjects are `actor` (a `stable_id`, or a type/optional owner/cell selector), `house`
-(an owner string), or `super_weapon` (`owner` and exact `type`). A named assertion
+(an owner string), `super_weapon` (`owner` and exact `type`), or `gesture` (a
+nonnegative receipt ordinal). A named assertion
 binds exactly one actor at `bind_step` (default 0), then follows its stable ID within
 that load epoch; it never substitutes another matching actor. Actor assertions
 crossing a quickload report identity as `UNOBSERVED`, even when type and ID match.
@@ -110,6 +132,16 @@ failing and unavailable samples plus coverage counts. Assertions are independent
 timeline filters and bounded to 128 checks and 1,000,000 requested samples.
 Enable the corresponding `observe_owners`, `observe_types` and optional observations
 in the capture profile: an offline report cannot recover unrecorded state.
+
+`{"gesture":0}` selects the actual `observations.gesture_input.receipts` row whose
+`ordinal` is 0. Fields address that receipt, for example
+`command_bar.thumb.release.dispatch.key_after` or `command_bar.thumb.after.closed`.
+It is observed only at its `issue_after_step`, with that completed-step frame
+retained. Missing or duplicate ordinals, an unsampled issue step, other steps and
+missing fields yield `UNOBSERVED`; a gesture's state is never carried into later
+samples or replaced by another gesture. An explicitly recorded `dispatch:null`
+can be compared to `null`, while its unrecorded `key_after` remains `UNOBSERVED`.
+This is an assertion subject, independent of timeline actor/House filters.
 
 Exit status is 0 for `INSPECTED` or assertion `PASS`, 1 for assertion `FAIL` (including
 unobserved requirements), and 2 for invalid evidence/input. Reports distinguish
@@ -177,6 +209,30 @@ no transition, timer or movement callback. Historical sealed receipts may omit
 it; omission supplies no cloak-state evidence. This records VERA production
 inputs and does not independently establish native timing or whole-object parity.
 
+Optional v2/v3 `observe_cloak: true` extends this same `cloak` projection with
+`runtime`: retained `in_playfield` (`Techno+3D5`), signed `step_delta_i32` and
+`step_speed_i32`, and `step_timer`/`recloak_delay` rows containing signed
+`start_frame`, `duration` and `remaining`. A null cloak stays null. The same flag
+adds the existing actor `fire` readback, including the separate weapon rearm
+timer; combining it with bomb or Temporal observation emits `fire` once. These
+are public immutable owner queries, with no range test, transition, RNG draw,
+membership change or inferred phase. Count each non-null extended cloak row
+toward the shared 100000-sample budget. False or absent preserves the old cloak
+and actor byte schema. This additive extension requires current child/wrapper
+v8 when true; older sealed policies remain readable without it or with false.
+V1 rejects any presence, and null/nonboolean flag values are invalid.
+
+For an ordinary SUB retained-target control, reuse the Dreadnought water terrain
+as in the AEGIS recipe below. Its existing lake includes (38,48) and (54,48).
+Author full-health stock SUB/DEST with native scenario House names
+`<human player>`/`Computer`, then issue ordinary Attack at completed step0.
+Measure L0 playfield/cell/Logic membership, state and timers, actual command
+execution and the next committed state before relying on pre-first-AI admission.
+Do not infer reveal from a SUB shot: retail SubTorpedo has `DecloakToFire=no`.
+An ordinary Stop can clear the retained target for cleanup. A schedule is not
+proof of admission, and this fixture does not independently establish native
+range, frame, pixel or sound parity.
+
 Foot's optional `track` observation reads the installed Drive/Ship owner's
 destination and head XYZ, selector, signed cursor and valid byte. It sends no
 movement callback and creates no runtime. A paid head may survive Stop after
@@ -240,14 +296,25 @@ committed frame. L0 reads initial state; later snapshots follow the app's
 ordered simulation handoff and FPS sample, before that frame's draw.
 `live` reads retained lasers in birth
 order: copied source/target leptons, birth frame, Z adjustment, width, support
-flag, House-color flag, resolved RGB, duration, age and timer. `detail` reads the
+flag, House-color flag, resolved RGB, duration, age and timer. Current policy v5
+also requires three-channel byte arrays `outer` and `spread`, plus the raw u32
+`fade_end_bits`. `detail` reads the
 process FPS counter, selected minimum/buffer, latch and sampling timer; it never
 calls the mutative minimum-frame-rate query. Each observed actor also receives
 `prism`: `null` for non-buildings, otherwise the support count, pending mode and
 payload/countdown, and rearm timer. These are owner snapshots, not inferred
 firing events or proof that a beam reached the GPU. One detail row and each live
-beam count toward the shared sample budget. False/absent adds no fields; v1
-rejects the option, and present null/nonboolean values are invalid.
+beam count toward the shared sample budget. The current observation policy v5 also
+requires `disk_shots`: copied delayed-shot owner rows in birth order, with an
+independent positive `id`, nullable source ID, tagged target and weapon name,
+signed damage, countdown (at most 1), ring `start` (0..15) and `step` (0..8).
+Each delayed shot adds one sample. These reads do not advance a shot or query
+coordinates; the validator checks structure rather than reconstructing gameplay.
+Accepted older observation policies, including prior walk policy v4, retain the
+previous `detail`/`live` schema and beam fields; missing disk/color/fade observations
+are not reconstructed.
+False/absent adds no fields; v1 rejects the option, and present null/nonboolean
+values are invalid.
 
 Optional v2 `observe_electric_bolts: true` adds immutable bolt, Spotlight and
 particle snapshots at L0, each committed frame, and after every tactical
@@ -261,6 +328,35 @@ captures to establish that diagnostics leave production output unchanged. Draw
 rows describe the post-composite registry: the last submitted geometry of an
 expiring bolt is absent from its retained live vector. False/absent adds no
 fields; v1 and present null/nonboolean values are rejected.
+
+Optional v2/v3 `observe_radiation_beams: true` adds `radiation_beams` at L0
+and each committed Logic boundary, plus `radiation_beam_draws` with policy
+`radiation-beam-after-each-tactical-composite-v1`. Every actual map render is
+sampled after the production composite, including repeated audio-tail renders
+with no Logic advance. This does not depend on the electric-bolt flag or its
+step whitelist. Each draw row retains ordinal, completed steps, simulation tick,
+binary frame and `beams`. The ordinary map presentation clock remains unchanged.
+
+Both snapshots contain `live`, `composites` and `segments`. `live` copies birth
+frame, world-lepton endpoints, Z adjustment, RGB color, duration, amplitude bits,
+current progress/spacing and nullable cached length bits from the existing beam
+owner. `composites` copies the last actual per-beam progress-before/after, expiry
+and segment-count records. `segments` copies the exact submitted line endpoints
+in logical screen pixels, their two signed Z adjustments, and packed replacement
+`rgb565` words from that composite. The observer performs no projection, color
+conversion, progress advancement, birth, RNG draw or extra composite. Logic
+snapshots may still hold work from the previous draw; the separate draw rows
+identify the actual consumption boundary. An expired beam can be absent from
+`live` while its final composite record and visible segments remain recorded.
+
+The selected mode0/kind1 birth lasts 15 Tactical composites, not 15 Logic ticks.
+The validator checks receipt shape, clock coverage and the submitted segment
+tally; it does not reconstruct native lifetime or geometry. Count one snapshot
+plus every live, composite and segment row against the shared 100000-sample
+budget. Absent/false emits no new fields and preserves historical payloads.
+True requires current child/wrapper v8; v1 rejects any presence and present
+null/nonboolean flags are invalid. This telemetry does not certify native
+frame/color parity or the unselected radiation-beam family.
 
 Optional v2 `observe_bombs: true` adds `bombs` at L0 and each committed frame.
 The bomb owner independently reads its sorted carrier index and the carried
@@ -276,6 +372,30 @@ arithmetic or whole-weapon parity. The owner snapshot plus each carrier index
 entry and each carried record count toward the shared 100000-sample budget;
 the 128 MiB receipt limit is unchanged. False/absent adds no frame or actor
 fields, v1 rejects any presence, and present null/nonboolean values are invalid.
+
+Optional v2/v3 `observe_temporal: true` adds `temporal` and the same `fire`
+readback to every observed actor at L0 and each committed frame. `temporal`
+reads public owner queries: `has_link`, nullable `warp_target` and `chain_head`,
+nullable `boarding_transport`, nullable `inside_transport` (`transport`,
+`open_topped`), and nullable `cargo` (`count`, ordered `passengers`). The count,
+list, carrier relationship and link queries remain independent; the observer
+never repairs membership, calls a gunner callback, advances a timer or draws RNG.
+The existing Unit `current_weapon_138` and `current_turret_124` report IFV mode;
+private burst/charge state is not exposed. Count one snapshot and every cargo
+entry toward the shared sample budget. Fire state is emitted once when both
+bomb and Temporal observations are enabled. A preceding Attack does not prove a
+live Temporal victim at gunner removal: ordinary UnloadPassengers clears its
+attack target before the callback, so inspect the reached phase boundaries.
+
+This opt-in is additive within child/wrapper v8: false or absent leaves the
+historical actor and fire byte schema unchanged. True requires the current v8
+policy; older sealed policies without the flag remain readable. V1 rejects any
+presence, and present null/nonboolean values are invalid. Use the existing
+`render_depth_fixture --temporal-gunner` scene for stock full-health CLEG/FV,
+enemy HTNK and distant enemy GAPOWR. Its authored native House names are
+`<human player>`/`Computer`; ordinary launch diagnostics still use
+`Americans`/`Computer1`. Boarding, approach, live rearm, unload and later CLEG
+firing must be established by runtime history, without actor or rule injection.
 
 Optional v2/v3 `observe_spawns: true` adds `spawns` to every observed actor at L0
 and each committed frame. It is `null` when the actor has no spawn manager.
@@ -603,6 +723,31 @@ request a right button as described below. It accepts no
 click modifiers. Python checks receipt shape/geometry without reproducing the
 runtime command registry, layout or action admission.
 
+The diagnostic-only `{"kind":"command_bar","command":"Thumb"}` targets the
+retained open/close thumb through the same mouse driver. It does not add a gameplay
+command or a command slot: its receipt omits `slot` and adds `thumb` with `before`,
+`press`, `release` and `after`. `before`/`after` are state objects; each edge has
+exactly `state` and `dispatch`. Each state records boolean `closed`, `pressed`,
+`sticky`, `disabled`, `local_player_defeated`, `input_locked` and `left_held`, u16
+`gadget_id`, four i32 `rect` components, nullable string `current_house`, nullable
+u8 `side_index`, and nullable boolean `has_lost`/`exit_ready`. These are passive
+observations of the existing owners, not flags inferred from remaining actors.
+Each nonnull dispatch records u16 `masked_flags`, u8 `modifier`, u16 `key_after`
+and u32 `action_result`. `key_after` is the actual mutable gadget key after
+dispatch; `action_result` records consumption and is not a fired gadget ID.
+Validation preserves the observed bar result, including a pre-fix reopening.
+
+A Thumb may record `left_press_captured:false` only when `before`, press and
+release all record `input_locked:true`, both edge dispatches are `null`, and
+`closed` is unchanged through all four states. The driver does not read a stale
+dispatch when the Scenario guard prevents entry. Physical input still records
+`left_held:true` on press and `false` before, on release and after neutral refresh;
+`neutral_input_restored` remains required. Other gestures keep their existing
+capture requirements. A Thumb adds four state samples and one sample for each
+nonnull dispatch to the existing one-sample command-bar receipt (normally seven
+total, or five for a locked refusal). Legacy command receipts retain their exact
+schema and require no Thumb observations.
+
 The Area Guard [standing discovery](input_oracle/profiles/area-guard-standing-discovery.json)
 and [combat discovery](input_oracle/profiles/area-guard-combat-discovery.json)
 profiles load authored object placements on unchanged terrain with retail MTNK
@@ -836,7 +981,7 @@ first before Process. The optional type filter keeps its 10000-step capture with
 the fixed sample budget. The [destination evidence owner](spatial_oracle/infantry_teleport_destination.md#production-integration-and-validation)
 records the observed arrival, NavCom cleanup, Guard return and GPU/input identities.
 
-A new wrapper v6 bundle contains sealed `profile.json`, `config.toml` and
+A new wrapper v8 bundle contains sealed `profile.json`, `config.toml` and
 `contract.json` copies, plus `stdout.log`, `stderr.log`, `run.json` and the child's
 atomically published `child-output/{capture.json,frame.bgra}`. Runtime still reads
 the supplied original paths; retaining copies does not redirect the game loader.
@@ -844,7 +989,7 @@ Original files and retained copies must remain unchanged during capture.
 `run.json` records exact input hashes, command, child PID/status, timeout, receipt
 validation and capture artifact identities. A valid observation requires unchanged
 profile/config/executable/contract files, matching profile and contract receipts,
-a v6 child manifest with resident UnitAtlas statistics, a checked presentation-clock
+a v8 child manifest with resident UnitAtlas statistics, a checked presentation-clock
 transcript and neutral-input evidence, zero initial tick/frame/time,
 the requested final tick/frame and endpoint step
 receipts, a loaded loose/MIX map digest, hidden unfocused rendering without input
@@ -2593,7 +2738,7 @@ a labeled preserved build makes that requirement durable. The report marks this
 as `EXTERNALLY_REVALIDATED`. It cannot validate a deleted or replaced executable
 from its old receipt alone.
 
-A new wrapper v6 run validates its `SEALED_COPY` inputs without requiring the
+A new wrapper v8 run validates its `SEALED_COPY` inputs without requiring the
 original profile, config or contract files to remain available. It validates the
 retained contract's v2 rules without requiring today's checkout to have identical
 contract bytes. Offline checking does not apply the current process environment
@@ -2609,8 +2754,9 @@ legacy wall-clock observation and a diagnostic-clock observation are `INVALID`
 together even when their pixels match.
 Differences name precise field paths and before/after values. There are no pixel
 tolerances or omitted atlas fields.
-Current v6 pairs also compare the complete command, rule-handle inventory,
-actor/building/animation/unit/miner/radio/House/terrain transcript and camera. Historical
+Current v8 pairs also compare the complete command, rule-handle inventory,
+actor/building/animation/unit/miner/radio/House/terrain transcript and camera,
+including the delayed-shot and color/fade observations when requested. Historical
 v5 pairs retain their original building/animation and rule-handle transcript,
 including optional `unit` deployment observations when recorded. V4 pairs
 compare their original command and actor/terrain transcript and camera, while
@@ -2636,9 +2782,14 @@ Offline `validate` and `compare` reject old wall-clock observations by default.
 `--allow-legacy-clock` permits child v2 with sealed wrapper v2, preserving its
 original `run.capture` projection. Validation identifies its clock separately as
 `legacy-wall-clock`; it does not invent a diagnostic transcript or neutral-input
-guarantee. Live capture accepts only child v6 and never offers this override.
-Wrapper and child generations must correspond: v6/v6, v5/v5, v4/v4, v3/v3, v2/v2,
-or v1/v2. Historical v5 remains readable with its original policy, production
+guarantee. Live capture accepts only child v8 and never offers this override.
+Wrapper and child generations must correspond: v8/v8, v7/v7, v6/v6, v5/v5,
+v4/v4, v3/v3, v2/v2 or v1/v2. Current v8 uses ordinary observation policy v5.
+Sealed v7 uses prior walk policy v4: all existing walk actor fields remain required,
+while laser snapshots retain their original beam-only schema. V7 and v8 captures
+remain individually readable but cannot be compared as equal observation policies;
+missing delayed shots and beam color/fade fields are never invented.
+Historical v5 remains readable with its original policy, production
 commands, rule handles and building fields, including the optional `unit` extension
 when present, without miner/radio/House projections. Older rows without `unit`
 remain unchanged.

@@ -170,6 +170,8 @@ pub mod area_guard_tests;
 #[cfg(any(test, feature = "test-support"))]
 pub mod deploy_voice_tests;
 #[cfg(test)]
+mod disk_laser_tests;
+#[cfg(test)]
 mod ini_token_readers_tests;
 #[cfg(test)]
 mod mirage_disguise_tests;

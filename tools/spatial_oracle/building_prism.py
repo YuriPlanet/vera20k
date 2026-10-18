@@ -1020,6 +1020,27 @@ LASER_ADDITIVE, LASER_PACKED = 0x4BDF00, 0x4BFD30
 LASER_VECTOR_INIT, ATEXIT, OPERATOR_DELETE = 0x54FDC0, 0x7C978A, 0x7C8B3D
 LASER_FIRE_ARM, LASER_FIRE_END = 0x6FF4CC, 0x6FF656
 LASER_TACTICAL = COORD + 0x1000
+DISK_RING_INIT, DISK_RING = 0x4A6CF0, 0x8A0180
+GENERAL_OFFSETS = 0xABC738
+DISK_CTOR, DISK_FIRE, DISK_AI, DISK_DETACH, DISK_SCALAR_DTOR = (
+    0x4A7A30, 0x4A71A0, 0x4A7340, 0x4A7900, 0x4A7C90)
+DISKS, PENDING_DELETE = 0x8A0208, 0xB0F698
+DISK_LOGIC, DISK_EXPIRY = (0x55B5A1, 0x55B5BE), (0x725977, 0x725995)
+DISK_SOURCE, DISK_TYPE, DISK_LOCO, DISK_TARGET, DISK_TARGET_TYPE, DISK_OUT = (
+    PRISM + offset for offset in (0x48000, 0x49000, 0x4A000, 0x4B000, 0x4C000, 0x4D000))
+
+
+def laser_rng_state(u, scenario):
+    return {name: bytes(u.mem_read(pointer, 0x3F4)).hex()
+            for name, pointer in (('main', 0x886B88), ('scenario', scenario + 0x218),
+                                  ('mapgen', 0xABE890))}
+
+
+def seed_laser_rngs(invoke, scenario, seed):
+    # Existing native seed owner; never construct a host RNG or copy a VERA cursor.
+    from tools.rmg_oracle.gen_rng_vectors import SEED_FN
+    for pointer in (0x886B88, scenario + 0x218, 0xABE890):
+        invoke(SEED_FN, pointer, seed)
 
 
 def laser_state(u, address):
@@ -1050,7 +1071,7 @@ class LaserScene(Scene):
         self.at(ATEXIT, lambda: self.ret(0))
         self.at(OPERATOR_DELETE, self.deleted)
         self.invoke(LASER_VECTOR_INIT, 0)
-        u.mem_write(LASERS + 4, dwords(LASER_ITEMS, 16))
+        u.mem_write(LASERS + 4, dwords(LASER_ITEMS, case.get('laser_capacity', 16)))
         u.mem_write(LASERS + 0xD, b'\0')
         # Native Tactical constructor's matrix initializer; no supplied inverse.
         u.mem_write(0x887324, dwords(LASER_TACTICAL))
@@ -1124,9 +1145,7 @@ class LaserScene(Scene):
 
     def rng(self):
         assert hashlib.sha256(self.u.mem_read(TEXT_BEGIN, TEXT_SIZE)).hexdigest() == self.text_sha256
-        return {name: bytes(self.u.mem_read(pointer, 0x3F4)).hex()
-                for name, pointer in (('main', 0x886B88), ('scenario', SCENARIO + 0x218),
-                                      ('mapgen', 0xABE890))}
+        return laser_rng_state(self.u, SCENARIO)
 
     def registered(self):
         return [self.read32(LASER_ITEMS + 4 * i) for i in range(self.read32(LASERS + 0x10))]
@@ -1245,6 +1264,151 @@ def laser_flh_cases():
             for slot in (0, 1) for burst in (0, 1)]
 
 
+def disk_ring_init():
+    s = LaserScene(dict(name='disk_ring_init'))
+    seed_laser_rngs(s.invoke, SCENARIO, 31)
+    before = s.rng()
+    trig = bytes(s.u.mem_read(0x84F084, 40960))
+    s.invoke(DISK_RING_INIT, 0)
+    raw = bytes(s.u.mem_read(DISK_RING, 128))
+    assert before == s.rng() and not s.rng_entries
+    assert trig == bytes(s.u.mem_read(0x84F084, 40960))
+    return dict(entry=hex(DISK_RING_INIT), table=hex(DISK_RING),
+                xy=[list(pair) for pair in struct.iter_unpack('<2i', raw)],
+                rng_before=before, rng_after=s.rng(),
+                invariants=dict(text_unchanged=True, trig_table_unchanged=True,
+                                rng_unchanged=True))
+
+
+def disk_muzzle_cases():
+    base = dict(source=[2688, 2688, 750], target=[2944, 2688, 0],
+                marked=True, on_bridge=False, seed=31, frame=200,
+                primary_flh=[0, 0, 75], turret_offset=0, has_turret=True,
+                tilt_crash_jumpjet=True, rocking_bits=[0, 0],
+                weapon_index=0, burst=0, base=[0, 0, 0])
+    rows = [dict(base, name=f'stock_facing_{heading:04x}',
+                 primary_facing=heading, secondary_facing=heading)
+            for heading in (0, 0x4000, 0x6200, 0xC000)]
+    rows.append(dict(base, name='unmarked_750', marked=False,
+                     primary_facing=0x4000, secondary_facing=0x4000))
+    rows.extend(dict(base, name=f'marked_{height}', source=[2688, 2688, height],
+                     primary_facing=0x4000, secondary_facing=0x4000)
+                for height in (207, 208))
+    return rows
+
+
+def prepare_disk_scene(case):
+    """Shared retained Unit/Jumpjet inputs on the existing LaserScene owner.
+
+    The inherited building/Drive is not reinterpreted as a Jumpjet. Spare
+    storage in this same LaserScene VM holds the native-constructed locomotor
+    and a retained Unit prestate; no getter/matrix/height answer is supplied.
+    """
+    from tools.spatial_oracle.jumpjet_coordinates import initialize_jumpjet_levels
+    from tools.spatial_oracle.object_flight_height import initialize_object_scalars
+    s = LaserScene(dict(name=case['name'], laser_capacity=case.get('laser_capacity', 16)))
+    u = s.u
+    assert 'unit_boundary' not in s.case
+    for pointer, size in ((DISK_SOURCE, 0x700), (DISK_TYPE, 0x1000),
+                          (DISK_LOCO, 0x98), (DISK_TARGET, 0x700),
+                          (DISK_TARGET_TYPE, 0x1000)):
+        u.mem_write(pointer, bytes(size))
+    # Original Unit73543A and Foot4D34DA..4D34E2 establish the actual table
+    # and Foot classification bit. These are retained object inputs, not a
+    # full object constructor/Scenario loading claim.
+    for pointer, typ, coord, health in ((DISK_SOURCE, DISK_TYPE, case['source'], 600),
+                                        (DISK_TARGET, DISK_TARGET_TYPE, case['target'], 300)):
+        u.mem_write(pointer, dwords(0x7F5C70))
+        u.mem_write(pointer + 0x14, dwords(7))
+        u.mem_write(pointer + 0x6C, dwords(health))
+        u.mem_write(pointer + 0x90, b'\1')
+        u.mem_write(pointer + 0x9C, dwords(*coord))
+        u.mem_write(pointer + 0x6C4, dwords(typ))
+        u.mem_write(pointer + 0x21C, dwords(HOUSE))
+        u.mem_write(typ, dwords(0x7F6218))
+    u.mem_write(DISK_SOURCE + 0x74, bytes([case['marked']]))
+    u.mem_write(DISK_SOURCE + 0x8C, bytes([case['on_bridge']]))
+    u.mem_write(DISK_SOURCE + 0x2B4, dwords(DISK_TARGET))
+    u.mem_write(DISK_SOURCE + 0x328, dwords(*case['rocking_bits']))
+    u.mem_write(DISK_SOURCE + 0x3B8, dwords(case['burst']))
+    u.mem_write(DISK_TYPE + 0x898, dwords(SHOT_WEAPON, *case['primary_flh']))
+    u.mem_write(DISK_TYPE + 0x720, dwords(case['turret_offset']))
+    u.mem_write(DISK_TYPE + 0xCA1, bytes([case['has_turret']]))
+    u.mem_write(DISK_TYPE + 0xD22, bytes([case['tilt_crash_jumpjet']]))
+    # Stock DISK values copied by original Link54AD30. The differing-case
+    # JumpJetTurnRate/JumpJetAccel keys leave native defaults4/2.0 intact.
+    u.mem_write(DISK_TYPE + 0xD70, dwords(4, 16) + struct.pack('<ff', 8., 15.)
+                + dwords(750) + struct.pack('<ff', 2., .1) + dwords(1, 15))
+    object_initializers = initialize_object_scalars(
+        u, lambda entry, receiver, args: s.invoke(entry, receiver, *args))
+    initialize_jumpjet_levels(lambda entry, receiver, args: s.invoke(entry, receiver, *args))
+    u.mem_write(FRAME, dwords(case['frame']))
+    s.invoke(0x54AC40, DISK_LOCO)
+    s.invoke(0x54AD30, 0, DISK_LOCO + 4, DISK_SOURCE)
+    u.mem_write(DISK_SOURCE + 0x674, dwords(DISK_LOCO + 4))
+    for offset, heading in ((0x388, case['primary_facing']), (0x3A0, case['secondary_facing'])):
+        s.invoke(0x4C91E0, DISK_SOURCE + offset, 100)
+        u.mem_write(DISK_OUT + 0xC0, dwords(heading))
+        s.invoke(0x4C9300, DISK_SOURCE + offset, DISK_OUT + 0xC0)
+    seed_laser_rngs(s.invoke, SCENARIO, case['seed'])
+    assert s.read32(DISK_LOCO + 4) == 0x7ECD68
+    assert s.read32(0x7ECD68 + 0x24) == 0x54DCC0
+    assert s.read32(0x7F5C70 + 0xB0) == 0x6F3AD0
+    return s, object_initializers
+
+
+def disk_muzzle(case):
+    """Actual Unit/Jumpjet GetFLH from declared post-read stock component inputs."""
+    s, object_initializers = prepare_disk_scene(case)
+    u = s.u
+    tables = {pointer: bytes(u.mem_read(pointer, size)) for pointer, size in
+              ((0x7F5C70, 0x600), (0x7F6218, 0x100), (0x7ECD68, 0xD0))}
+    bodies = {pointer: bytes(u.mem_read(pointer, size)) for pointer, size in
+              ((DISK_SOURCE, 0x700), (DISK_TYPE, 0x1000), (DISK_LOCO, 0x98),
+               (DISK_TARGET, 0x700), (DISK_TARGET_TYPE, 0x1000))}
+    trig = bytes(u.mem_read(0x84F084, 40960))
+    entries = []
+    reached = (0x6F3AD0, 0x54DCC0, 0x55A730, 0x5F65A0, 0x41BE00, 0x41BDD0,
+               0x4DE620, 0x5F6B90, 0x5F5F40, 0x578080, 0x746E30, 0x70E140, 0x7C5F00)
+    for entry in reached:
+        s.at(entry, lambda entry=entry: entries.append(hex(entry)))
+    before = s.rng()
+    def coordinate(pointer, slot, output):
+        s.invoke(s.read32(s.read32(pointer) + slot), pointer, output)
+        return list(struct.unpack('<3i', u.mem_read(output, 12)))
+    source = coordinate(DISK_SOURCE, 0x48, DISK_OUT)
+    render = coordinate(DISK_SOURCE, 0xAC, DISK_OUT + 0x10)
+    target = coordinate(DISK_TARGET, 0x48, DISK_OUT + 0x20)
+    target_effect = coordinate(DISK_TARGET, 0xA4, DISK_OUT + 0x30)
+    s.invoke(s.read32(s.read32(DISK_SOURCE) + 0xB0), DISK_SOURCE,
+             DISK_OUT + 0x40, case['weapon_index'], *case['base'])
+    muzzle = list(struct.unpack('<3i', u.mem_read(DISK_OUT + 0x40, 12)))
+    s.invoke(s.read32(0x7ECD68 + 0x24), 0, DISK_LOCO + 4, DISK_OUT + 0x60, 0)
+    matrix = [f'{word:08x}' for word in struct.unpack('<12I', u.mem_read(DISK_OUT + 0x60, 48))]
+    height_begin = len(entries)
+    height = signed(s.invoke(s.read32(0x7F5C70 + 0x1C8), DISK_SOURCE))
+    height_entries = entries[height_begin:]
+    high_begin = len(entries)
+    high = bool(s.invoke(s.read32(0x7F5C70 + 0x54), DISK_SOURCE) & 255)
+    high_entries = entries[high_begin:]
+    assert before == s.rng() and not s.rng_entries
+    assert all(raw == bytes(u.mem_read(pointer, len(raw))) for pointer, raw in tables.items())
+    assert all(raw == bytes(u.mem_read(pointer, len(raw))) for pointer, raw in bodies.items())
+    assert trig == bytes(u.mem_read(0x84F084, 40960))
+    assert all(hex(entry) in entries for entry in (0x6F3AD0, 0x54DCC0, 0x55A730, 0x41BE00, 0x41BDD0))
+    assert ('0x5f5f40' in high_entries) == case['marked']
+    return dict(input=case, source_coords=source, render_coords=render, muzzle=muzzle,
+                target_coords=target, target_effect_coords=target_effect,
+                height=height, high_flying=high, draw_matrix_bits=matrix,
+                getter_entries=entries, height_query_entries=height_entries,
+                high_flying_entries=high_entries,
+                object_initializers=[hex(entry) for entry in object_initializers],
+                rng_before=before, rng_after=s.rng(),
+                invariants=dict(text_unchanged=True, vtable_unchanged=True,
+                                source_target_type_locomotor_unchanged=True,
+                                trig_table_unchanged=True, rng_unchanged=True))
+
+
 class LaserPixels:
     """Original laser draw on the existing rally surface/A/projection owner."""
     def __init__(self, case):
@@ -1252,12 +1416,23 @@ class LaserPixels:
         self.surface = rally.Rally(case, size=case.get('size', rally.SIZE))
         self.u = u = self.surface.u
         self.calls, self.rng_entries, self.draw_order, self.fade = [], [], [], []
+        self.ranged_calls, self.pending_ranges = [], []
+        self.raw_draws = []
+        self.general = not case.get('house_color', True)
         u.mem_map(PRISM, PRISM_SIZE)
+        if self.general:
+            # Declared complete unrelated stream priors for this draw boundary.
+            # GeneralDraw itself consumes only process Main through Ranged.
+            self.scenario = PRISM + 0x50000
+            u.mem_write(0xA8B230, dwords(self.scenario))
+            seed_laser_rngs(self.call, self.scenario, case.get('seed', 31))
         self.pointer = HEAP
         # Only these DSurface draw entries replace BSurface's no-op slots;
         # the original BSurface lock/stride/unlock methods still execute.
         u.mem_write(rally.VTABLE + 0x34, dwords(LASER_PACKED))
         u.mem_write(rally.VTABLE + 0x40, dwords(LASER_ADDITIVE))
+        self.surface_tables = {pointer: bytes(u.mem_read(pointer, 0x84))
+                               for pointer in (rally.VTABLE, 0x7E2070)}
         self.z_surface, self.z_object, self.z_pixels = (rally.MEM + n for n in (0x60000, 0x60080, 0x70000))
         w, h = self.surface.size
         self.pixel_bytes = w * h * 2
@@ -1270,6 +1445,7 @@ class LaserPixels:
                   else [z[(x // 11 + y // 7) % len(z)] for y in range(h) for x in range(w)])
         self.before_z = struct.pack('<' + 'H' * len(values), *values)
         u.mem_write(self.z_pixels, self.before_z)
+        self.before_alpha = bytes(u.mem_read(rally.ALPHA, self.pixel_bytes))
         background = case.get('background', rally.BACKGROUND)
         self.before = struct.pack('<H', background) * (w * h)
         u.mem_write(rally.PIXELS, self.before)
@@ -1287,13 +1463,18 @@ class LaserPixels:
         # arguments are also asserted against original laser_birth below.
         rgb = case.get('rgb', LASER_COLOR)
         packed_rgb = rgb[0] | rgb[1] << 8 | rgb[2] << 16
+        outer, spread = case.get('outer', [0, 0, 0]), case.get('spread', [0, 0, 0])
+        packed_outer = outer[0] | outer[1] << 8 | outer[2] << 16
+        packed_spread = spread[0] | spread[1] << 8 | spread[2] << 16
         self.call(LASER_CTOR, self.pointer,
                   *case.get('source', [3038, 3038, 0]), *case.get('target', [3600, 2700, 0]),
-                  case.get('z_adjust', -4), 1, packed_rgb, 0, 0, case.get('duration', 15),
-                  0, case.get('fades', 1), 0x3F800000, 0)
+                  case.get('z_adjust', -4), 1, packed_rgb, packed_outer, packed_spread,
+                  case.get('duration', 15), 0, case.get('fades', 1),
+                  case.get('fade_start_bits', 0x3F800000), case.get('fade_end_bits', 0))
         u.mem_write(self.pointer, dwords(case.get('age', 0)))
         u.mem_write(self.pointer + 0x1C, dwords(case.get('width', 3)))
-        u.mem_write(self.pointer + 0x20, bytes([1, case.get('supported', False)]))
+        u.mem_write(self.pointer + 0x20,
+                    bytes([case.get('house_color', True), case.get('supported', False)]))
         self.pointers = [self.pointer]
         if case.get('second_laser'):
             second = self.pointer + 96
@@ -1323,6 +1504,11 @@ class LaserPixels:
             self.fade.append(dict(octant=struct.unpack('<I', u.mem_read(sp + 0x28, 4))[0],
                                   intensity_bits=struct.unpack('<I', u.mem_read(sp + 0x44, 4))[0],
                                   toward_white=signed(u.reg_read(UC_X86_REG_EAX))))
+        if self.general and pc == 0x550611:
+            # Whole GeneralDraw's native float store precedes the detail test.
+            # Detail0 records this intensity too, although packed drawing ignores it.
+            self.fade.append(dict(octant=u.reg_read(UC_X86_REG_ESI),
+                                  intensity_bits=struct.unpack('<I', u.mem_read(sp + 0x1C, 4))[0]))
         if pc in (LASER_PACKED, LASER_ADDITIVE):
             args = struct.unpack('<7I', u.mem_read(sp + 4, 28))
             row = dict(entry=hex(pc), clip=list(struct.unpack('<4i', u.mem_read(args[0], 16))),
@@ -1336,11 +1522,31 @@ class LaserPixels:
             self.calls.append(row)
         if pc in (0x65C780, 0x65C7E0):
             self.rng_entries.append(hex(pc))
+        if self.general:
+            assert pc != 0x4BC750, 'zero-outer AA drawing is outside these General controls'
+            # The canonical RNG oracle (gen_rng_vectors.ranged_history)
+            # observes these unmasked ESI stores: RandomRanged inlines its
+            # raw draw, so entering RandomNext is not a draw-count receipt.
+            if pc in (0x65C79D, 0x65C84B):
+                self.raw_draws.append(dict(entry=hex(pc),
+                                           word=u.reg_read(UC_X86_REG_ESI) & 0xFFFFFFFF))
+            if self.pending_ranges and pc == self.pending_ranges[-1][0]:
+                _, index = self.pending_ranges.pop()
+                self.ranged_calls[index]['value'] = signed(u.reg_read(UC_X86_REG_EAX))
+            if pc == 0x65C7E0:
+                receiver = u.reg_read(UC_X86_REG_ECX)
+                stream = {0x886B88: 'main', self.scenario + 0x218: 'scenario',
+                          0xABE890: 'mapgen'}.get(receiver, hex(receiver))
+                lo, hi = struct.unpack('<2i', u.mem_read(sp + 4, 8))
+                self.ranged_calls.append(dict(stream=stream, lo=lo, hi=hi))
+                self.pending_ranges.append((struct.unpack('<I', u.mem_read(sp, 4))[0],
+                                            len(self.ranged_calls) - 1))
 
     def draw(self):
         before_laser = [bytes(self.u.mem_read(pointer, 0x5C)) for pointer in self.pointers]
-        rng_before = {name: bytes(self.u.mem_read(pointer, 0x3F4))
-                      for name, pointer in (('main', 0x886B88), ('mapgen', 0xABE890))}
+        rng_before = (laser_rng_state(self.u, self.scenario) if self.general else
+                      {name: bytes(self.u.mem_read(pointer, 0x3F4))
+                       for name, pointer in (('main', 0x886B88), ('mapgen', 0xABE890))})
         self.call(LASER_DRAW_ALL)
         raw = bytes(self.u.mem_read(rally.PIXELS, self.pixel_bytes))
         assert self.before_z == bytes(self.u.mem_read(self.z_pixels, self.pixel_bytes))
@@ -1348,18 +1554,38 @@ class LaserPixels:
         assert self.guard == bytes(self.u.mem_read(rally.PIXELS + self.pixel_bytes, 32))
         assert before_laser == [bytes(self.u.mem_read(pointer, 0x5C)) for pointer in self.pointers]
         assert hashlib.sha256(self.u.mem_read(TEXT_BEGIN, TEXT_SIZE)).hexdigest() == self.text_sha256
-        assert not self.rng_entries
-        assert all(blob == bytes(self.u.mem_read(pointer, 0x3F4))
-                   for name, pointer in (('main', 0x886B88), ('mapgen', 0xABE890))
-                   for blob in (rng_before[name],))
+        if self.general:
+            rng_after = laser_rng_state(self.u, self.scenario)
+            assert not self.pending_ranges
+            assert len(self.ranged_calls) == 3
+            assert all(row['stream'] == 'main' and 'value' in row for row in self.ranged_calls)
+            assert rng_before['scenario'] == rng_after['scenario']
+            assert rng_before['mapgen'] == rng_after['mapgen']
+            if not any(self.case.get('spread', [0, 0, 0])):
+                assert rng_before == rng_after
+                assert not self.raw_draws
+            assert self.before_alpha == bytes(self.u.mem_read(rally.ALPHA, self.pixel_bytes))
+            assert all(blob == bytes(self.u.mem_read(pointer, len(blob)))
+                       for pointer, blob in self.surface_tables.items())
+        else:
+            assert not self.rng_entries
+            assert all(blob == bytes(self.u.mem_read(pointer, 0x3F4))
+                       for name, pointer in (('main', 0x886B88), ('mapgen', 0xABE890))
+                       for blob in (rng_before[name],))
         w, _ = self.surface.size
-        return dict(input=self.case, laser=laser_state(self.u, self.pointer), fade=self.fade,
-                    segments=self.calls, draw_order=self.draw_order, rng_entries=self.rng_entries,
-                    reduced_effects_after=self.u.mem_read(0xABCD50, 1)[0],
-                    pixels=[[i % w, i // w, value[0]] for i, value in enumerate(struct.iter_unpack('<H', raw))
-                            if raw[i * 2:i * 2 + 2] != self.before[i * 2:i * 2 + 2]],
-                    pixel_sha256=hashlib.sha256(raw).hexdigest(), z_unchanged=True,
-                    laser_unchanged=True, guard_unchanged=True)
+        result = dict(input=self.case, laser=laser_state(self.u, self.pointer), fade=self.fade,
+                      segments=self.calls, draw_order=self.draw_order, rng_entries=self.rng_entries,
+                      reduced_effects_after=self.u.mem_read(0xABCD50, 1)[0],
+                      pixels=[[i % w, i // w, value[0]] for i, value in enumerate(struct.iter_unpack('<H', raw))
+                              if raw[i * 2:i * 2 + 2] != self.before[i * 2:i * 2 + 2]],
+                      pixel_sha256=hashlib.sha256(raw).hexdigest(), z_unchanged=True,
+                      laser_unchanged=True, guard_unchanged=True)
+        if self.general:
+            result.update(rng_before=rng_before, rng_after=rng_after,
+                          ranged_calls=self.ranged_calls,
+                          raw_draws=self.raw_draws,
+                          alpha_unchanged=True, text_unchanged=True, vtable_unchanged=True)
+        return result
 
 
 def laser_draw_cases():
@@ -1398,6 +1624,396 @@ def laser_draw_cases():
                  source=[9694, 14046, 378], target=[9694, 12254, 378], z_adjust=0,
                  camera=[-550, 1220])])
     return rows
+
+
+def disk_laser_draw_cases():
+    base = dict(camera=[-20, 300], house_color=False, rgb=[216, 0, 184],
+                outer=[80, 0, 88], spread=[0, 0, 0], width=1, supported=False,
+                seed=31, fades=1, fade_start_bits=0x3F800000)
+    rows = [dict(base, name=f'explicit_detail{detail}_age{age}_end{end:08x}',
+                 detail=detail, age=age, duration=8, fade_end_bits=end)
+            for detail, age, end in ((2, 4, 0x3F000000), (0, 4, 0x3F000000), (2, 7, 0))]
+    for detail in (0, 2):
+        for dx, dy in ((512, 0), (512, 512), (0, 512), (-512, 512),
+                       (-512, 0), (-512, -512), (0, -512), (512, -512)):
+            rows.append(dict(base, name=f'general_octant_{detail}_{dx}_{dy}',
+                             source=[3200, 3200, 0], target=[3200 + dx, 3200 + dy, 0],
+                             camera=[-80, 315], detail=detail, duration=8,
+                             age=4, fade_end_bits=0x3F000000))
+        for duration, age, end in ((1, 0, 0x3F000000), (8, 0, 0x3F000000),
+                                   (8, 7, 0x3F000000), (15, 0, 0), (15, 7, 0), (15, 14, 0)):
+            rows.append(dict(base, name=f'general_detail{detail}_duration{duration}_age{age}',
+                             detail=detail, duration=duration, age=age, fade_end_bits=end))
+        for suffix, extra in (
+                ('alpha_mixed', dict(alpha='mixed')), ('alpha_black', dict(alpha='black')),
+                ('z_mixed', dict(z=[0, 32700, 65535])),
+                ('raised', dict(source=[3038, 3038, 208], target=[3600, 2700, 416])),
+                ('clip_left', dict(camera=[20, 300])), ('clip_right', dict(camera=[-100, 300])),
+                ('clip_origin', dict(clip=[10, 12, 110, 85]))):
+            rows.append(dict(base, name=f'general_detail{detail}_{suffix}', detail=detail,
+                             duration=8, age=4, fade_end_bits=0x3F000000, **extra))
+    rows.append(dict(base, name='nonzero_spread_order', detail=2, duration=8,
+                     age=4, fade_end_bits=0x3F000000, spread=[3, 5, 7]))
+    return rows
+
+
+def disk_lifecycle_priors():
+    """Physical-informed post-read inputs, not a second Rules/SOUNDMD reader."""
+    return dict(range_leptons=1792, inner=[216, 0, 184], outer=[80, 0, 88],
+                spread=[0, 0, 0], duration_byte=15, is_house_color=False,
+                warhead='disk_wh', charge_sound=0, report_sounds=[1],
+                sound_indices_fixture_relative=True, source_report_selector=0,
+                area_damage_boundary='0x489280', sound_boundary='0x7509e0')
+
+
+def disk_lifecycle_cases():
+    base = dict(disk_muzzle_cases()[1], laser_capacity=128, max_visits=64,
+                births=[dict(name='shot', damage=90)], actions=[])
+    rows = [dict(base, name='ordinary'),
+            dict(base, name='current_coordinates', actions=[
+                dict(frame=203, kind='coords', role='source', value=[2704, 2720, 750]),
+                dict(frame=205, kind='coords', role='target', value=[2976, 2672, 0])]),
+            dict(base, name='range_exit', actions=[
+                dict(frame=202, kind='coords', role='target', value=[6000, 2688, 0])]),
+            dict(base, name='owner_crashes', actions=[dict(frame=202, kind='crash')]),
+            dict(base, name='owner_expiry', actions=[
+                dict(frame=202, kind='expire', role='different'),
+                dict(frame=203, kind='expire', role='source')]),
+            dict(base, name='target_expiry', actions=[dict(frame=202, kind='expire', role='target')]),
+            dict(base, name='duplicate_owner_expiry', actions=[
+                dict(frame=202, kind='expire', role='source'),
+                dict(frame=202, kind='expire', role='source')]),
+            dict(base, name='reverse_birth_order', births=[
+                dict(name='older', damage=90), dict(name='newer', damage=90)])]
+    rows.append(dict(base, name='relative_angle_fire', births=[
+        dict(name=f'angle_{dx}_{dy}', damage=90,
+             target_coords=[2688 + dx, 2688 + dy, 0])
+        for dx, dy in ((256, 0), (256, 256), (0, 256), (-256, 256),
+                       (-256, 0), (-256, -256), (0, -256), (256, -256))],
+        actions=[dict(frame=201, kind='expire', role='source')]))
+    rows.append(dict(base, name='null_fire_inputs', births=[
+        dict(name='null_owner', owner=None, damage=90),
+        dict(name='null_target', target=None, damage=90),
+        dict(name='null_weapon', weapon=None, damage=90)]))
+    return rows
+
+
+def disk_lifecycle(case, priors):
+    """Same native source/target VM, actual Disk rungs and common queue drain.
+
+    Damage and audio terminate at declared existing service boundaries. The
+    original Disk, coordinates, LaserDraw construction/update, duplicate queue
+    compaction, RTTI and scalar destruction execute; freed bytes are not state.
+    """
+    from tools.native_oracle import initialize_empty_windows_seh
+    from tools.projectile_oracle.ifv_impact import retirement_transport
+    s, _object_initializers = prepare_disk_scene(case)
+    u = s.u
+    roles = {None: 0, 'source': DISK_SOURCE, 'target': DISK_TARGET,
+             'weapon': SHOT_WEAPON, 'warhead': WARHEAD, 'different': ACTOR}
+    s.names.update({pointer: name for name, pointer in roles.items()})
+    phase, current_disk = 'setup', None
+    births, states, laser_births, ai_visits = [], [], [], []
+    damage_calls, sound_calls, detach_calls, retire_calls = [], [], [], []
+    pending_lasers, transports = {}, []
+    disks, freed_seen, free_calls = {}, 0, []
+
+    def registry(vector):
+        count = s.read32(vector + 0x10)
+        assert count <= s.read32(vector + 8)
+        pointer = s.read32(vector + 4)
+        return [s.read32(pointer + 4 * index) for index in range(count)]
+
+    assert not registry(DISKS) and not registry(PENDING_DELETE) and not s.registered()
+    initialize_empty_windows_seh(u)
+    # Native vector startup and native Resize own all headers and insertion.
+    # The existing Scene allocator supplies storage; no host queue is written.
+    for initializer, vector in ((0x4A6C70, DISKS), (0x725850, PENDING_DELETE)):
+        s.invoke(initializer, 0)
+        assert s.invoke(s.read32(s.read32(vector) + 8), vector, 64, 0) & 255
+        assert not registry(vector)
+    s.invoke(DISK_RING_INIT, 0)
+    u.mem_write(SHOT_WEAPON + 0xAC, dwords(WARHEAD))
+    u.mem_write(SHOT_WEAPON + 0xB4, dwords(priors['range_leptons']))
+    u.mem_write(SHOT_WEAPON + 0x120, bytes(priors['inner'] + priors['outer'] + priors['spread']))
+    u.mem_write(SHOT_WEAPON + 0x14D, bytes([priors['is_house_color'], priors['duration_byte']]))
+    u.mem_write(RULES + 0x28C, dwords(priors['charge_sound']))
+    report_items = COORD + 0x200
+    u.mem_write(report_items, dwords(*priors['report_sounds']))
+    u.mem_write(SHOT_WEAPON + 0xBC, dwords(0, report_items, len(priors['report_sounds']),
+                                         0, len(priors['report_sounds']), 0))
+    u.mem_write(DISK_SOURCE + 0x3C8, struct.pack('<H', priors['source_report_selector']))
+    cursor = s.read32(SCENARIO + 0x214)
+    rng_before = s.rng()
+    tables = {pointer: bytes(u.mem_read(pointer, size)) for pointer, size in (
+        (0x7F5C70, 0x600), (0x7F6218, 0x100), (0x7ECD68, 0xD0),
+        (0x7E5FB8, 0x90), (0x7E5EDC, 0x18), (0x7E91EC, 0x18),
+        (DISK_RING, 128), (0x84F084, 40960))}
+    retained = {pointer: bytearray(u.mem_read(pointer, size)) for pointer, size in (
+        (DISK_SOURCE, 0x700), (DISK_TYPE, 0x1000), (DISK_LOCO, 0x98),
+        (DISK_TARGET, 0x700), (DISK_TARGET_TYPE, 0x1000), (SHOT_WEAPON, 0x200))}
+
+    def authored_write(pointer, offset, raw):
+        retained[pointer][offset:offset + len(raw)] = raw
+        u.mem_write(pointer + offset, raw)
+
+    def disk_state(pointer):
+        assert s.read32(pointer) == 0x7E5FB8
+        return dict(native_id=s.s32(pointer + 0x10), owner=s.name(s.read32(pointer + 0x24)),
+                    target=s.name(s.read32(pointer + 0x28)), weapon=s.name(s.read32(pointer + 0x2C)),
+                    countdown=s.s32(pointer + 0x30), start_index=s.s32(pointer + 0x34),
+                    step=s.s32(pointer + 0x38), damage=s.s32(pointer + 0x3C))
+
+    def boundary(logic_frame=None):
+        nonlocal freed_seen
+        assert s.read32(SCENARIO + 0x214) == cursor
+        assert rng_before == laser_rng_state(u, SCENARIO)
+        assert all(raw == bytes(u.mem_read(pointer, len(raw))) for pointer, raw in tables.items())
+        assert all(bytes(raw) == bytes(u.mem_read(pointer, len(raw))) for pointer, raw in retained.items())
+        active, lasers = registry(DISKS), s.registered()
+        for offset in s.freed[freed_seen:]:
+            free_calls.append(dict(frame=s.read32(FRAME), phase=phase, object=s.name(HEAP + offset)))
+        freed_seen = len(s.freed)
+        row = dict(frame=s.read32(FRAME), logic_frame=logic_frame, phase=phase,
+                   disk_order=[s.name(pointer) for pointer in active],
+                   pending=[s.name(pointer) for pointer in registry(PENDING_DELETE)],
+                   disks={name: disk_state(pointer) if pointer in active else None
+                          for name, pointer in disks.items()},
+                   laser_order=[s.name(pointer) for pointer in lasers],
+                   laser_ages=[s.s32(pointer) for pointer in lasers],
+                   native_id_cursor=cursor, rng_unchanged=True)
+        assert all(state is None or state['native_id'] == -1 for state in row['disks'].values())
+        states.append(row)
+        return row
+
+    def observe(_u, pc, _size, _data):
+        nonlocal current_disk
+        sp = u.reg_read(UC_X86_REG_ESP)
+        if pc in pending_lasers:
+            row, pointer = pending_lasers.pop(pc)
+            row['laser'] = laser_state(u, pointer)
+        if pc == DISK_AI:
+            pointer = u.reg_read(UC_X86_REG_ECX)
+            current_disk = s.name(pointer)
+            ai_visits.append(dict(frame=s.read32(FRAME), shot=current_disk,
+                                  countdown=s.s32(pointer + 0x30), step=s.s32(pointer + 0x38)))
+        elif pc == LASER_CTOR:
+            assert s.events[-1][0] == 'laser'
+            pointer = u.reg_read(UC_X86_REG_ECX)
+            name = f'beam_{len(laser_births)}'
+            s.names[pointer] = name
+            row = dict(frame=s.read32(FRAME), shot=current_disk, name=name,
+                       constructor=s.events[-1][1])
+            laser_births.append(row)
+            pending_lasers[s.read32(sp)] = row, pointer
+        elif pc in (0x4A776B, 0x4A76E8):
+            # Observe before CALL: inherited building_fixture owns7509E0's
+            # supplied request return and changes ESP before later entry hooks.
+            sound_calls.append(dict(frame=s.read32(FRAME), shot=current_disk,
+                call_site=hex(pc), entry='0x7509e0', sound_id=signed(u.reg_read(UC_X86_REG_ECX)),
+                coords=list(struct.unpack('<3i', u.mem_read(u.reg_read(UC_X86_REG_EDX), 12))),
+                handle=s.name(s.read32(sp))))
+        elif pc == 0x489280:
+            args = [s.read32(sp + offset) for offset in (4, 8, 12, 16)]
+            damage_calls.append(dict(frame=s.read32(FRAME), shot=current_disk,
+                entry=hex(pc), coords=list(struct.unpack('<3i', u.mem_read(u.reg_read(UC_X86_REG_ECX), 12))),
+                damage=signed(u.reg_read(UC_X86_REG_EDX)), firer=s.name(args[0]),
+                warhead=s.name(args[1]), affects_tiberium=args[2], house=s.name(args[3])))
+            s.ret(16, 0)
+        elif pc == DISK_DETACH:
+            detach_calls.append(dict(frame=s.read32(FRAME), phase=phase,
+                shot=s.name(u.reg_read(UC_X86_REG_ECX)), expired=s.name(s.read32(sp + 4))))
+        elif pc in (DISK_SCALAR_DTOR, 0x4101F0):
+            pointer = u.reg_read(UC_X86_REG_ECX)
+            if pointer in disks.values():
+                retire_calls.append(dict(frame=s.read32(FRAME), phase=phase,
+                    entry=hex(pc), shot=s.name(pointer),
+                    delete_flag=s.read32(sp + 4) if pc == DISK_SCALAR_DTOR else None))
+        elif pc in (0x410230, 0x68BCB0, 0x65C79D, 0x65C84B):
+            raise AssertionError(('unexpected identity/RNG producer', hex(pc)))
+        retirement_transport(s, pc, transports)
+
+    hook = u.hook_add(UC_HOOK_CODE, observe)
+    try:
+        for birth in case['births']:
+            phase = 'constructor'
+            if 'target_coords' in birth:
+                authored_write(DISK_TARGET, 0x9C, dwords(*birth['target_coords']))
+            pointer = s.invoke(OPERATOR_NEW, 0, 0x40)
+            assert pointer
+            disks[birth['name']] = pointer
+            s.names[pointer] = birth['name']
+            assert s.invoke(DISK_CTOR, pointer) == pointer
+            constructed = disk_state(pointer)
+            boundary()
+            phase = 'fire'
+            s.invoke(DISK_FIRE, pointer, roles[birth.get('owner', 'source')],
+                     roles[birth.get('target', 'target')], roles[birth.get('weapon', 'weapon')],
+                     birth['damage'])
+            births.append(dict(name=birth['name'], constructed=constructed,
+                               after_fire=disk_state(pointer)))
+            boundary()
+        retired = False
+        for visit in range(case['max_visits']):
+            frame = case['frame'] + 1 + visit
+            u.mem_write(FRAME, dwords(frame))
+            for action in case['actions']:
+                if action['frame'] != frame:
+                    continue
+                phase = 'action'
+                if action['kind'] == 'coords':
+                    authored_write(roles[action['role']], 0x9C, dwords(*action['value']))
+                elif action['kind'] == 'crash':
+                    authored_write(DISK_SOURCE, 0x425, b'\1')
+                elif action['kind'] == 'expire':
+                    u.mem_write(SP, dwords(RET_MAGIC))
+                    u.reg_write(UC_X86_REG_ESP, SP)
+                    u.reg_write(UC_X86_REG_ESI, roles[action['role']])
+                    run_checked(u, *DISK_EXPIRY, count=200000,
+                                context=dict(control='disk_lifecycle', case=case['name'],
+                                             phase=phase, frame=frame))
+                    assert u.reg_read(UC_X86_REG_ESP) == SP
+                else:
+                    raise ValueError(action)
+                boundary(frame)
+            phase = 'disk'
+            u.mem_write(SP, dwords(RET_MAGIC))
+            u.reg_write(UC_X86_REG_ESP, SP)
+            run_checked(u, *DISK_LOGIC, count=2000000,
+                        context=dict(control='disk_lifecycle', case=case['name'],
+                                     phase=phase, frame=frame))
+            assert u.reg_read(UC_X86_REG_ESP) == SP and not pending_lasers
+            boundary(frame)
+            phase = 'laser_update'
+            s.invoke(LASER_UPDATE, 0)
+            boundary(frame)
+            # Actual Main_Tick advances Frame before common725C70. These
+            # rows isolate the already-ordered rungs rather than all Logic.
+            u.mem_write(FRAME, dwords(frame + 1))
+            phase = 'drain'
+            s.invoke(0x725C70, 0)
+            final = boundary(frame)
+            if not final['disk_order'] and not final['pending'] and not final['laser_order']:
+                retired = True
+                break
+        assert retired, (case['name'], 'bounded lifecycle did not retire')
+        assert not pending_lasers and all('laser' in row for row in laser_births)
+        for name in disks:
+            assert sum(row['shot'] == name and row['entry'] == hex(DISK_SCALAR_DTOR)
+                       for row in retire_calls) == 1
+            assert sum(row['shot'] == name and row['entry'] == '0x4101f0'
+                       for row in retire_calls) == 1
+            assert sum(row['object'] == name for row in free_calls) == 1
+        assert not s.rng_entries and rng_before == s.rng()
+    finally:
+        u.hook_del(hook)
+    return dict(input=case, births=births, states=states, ai_visits=ai_visits, laser_births=laser_births,
+                damage_calls=damage_calls, sound_calls=sound_calls, detach_calls=detach_calls,
+                retire_calls=retire_calls, free_calls=free_calls, transports=transports,
+                rng_before=rng_before, rng_after=s.rng(), native_id_cursor=cursor,
+                invariants=dict(text_unchanged=True, vtable_and_numeric_tables_unchanged=True,
+                    retained_inputs_unchanged_except_actions=True, rng_unchanged=True,
+                    native_id_cursor_unchanged=True, natural_retirement=True))
+
+
+def generate_disk():
+    ring = disk_ring_init()
+    muzzle = [disk_muzzle(case) for case in disk_muzzle_cases()]
+    draws, offsets = [], None
+    for case in disk_laser_draw_cases():
+        s = LaserPixels(case)
+        draws.append(s.draw())
+        actual = [list(row) for row in struct.iter_unpack('<4i', s.u.mem_read(GENERAL_OFFSETS, 128))]
+        if offsets is None:
+            offsets = actual
+        else:
+            assert offsets == actual
+    priors = disk_lifecycle_priors()
+    return dict(source='unicorn/gamemd.exe', ring_init=ring,
+                general_offsets=offsets, muzzle=muzzle, laser_draw=draws,
+                lifecycle_priors=priors,
+                lifecycle=[disk_lifecycle(case, priors) for case in disk_lifecycle_cases()])
+
+
+def disk_metadata():
+    return provenance(
+        scope='Selected stock DISK query prerequisite and explicit nonblinking nonzero-outer '
+              'LaserDraw general software path; original ring/table initialization and joined '
+              'Disk constructor/Fire/AI/expiry/common deferred retirement with copied LaserDraw '
+              'lifetimes. Damage and sound are service boundaries; no whole Scenario or save/load replay.',
+        entry_points={'disk_ring_initializer': DISK_RING_INIT, 'techno_get_flh': 0x6F3AD0,
+                      'jumpjet_constructor': 0x54AC40, 'jumpjet_link': 0x54AD30,
+                      'jumpjet_draw_matrix': 0x54DCC0, 'base_draw_matrix': 0x55A730,
+                      'get_coords': 0x5F65A0, 'get_render_coords': 0x41BE00,
+                      'get_target_coords': 0x41BDD0, 'high_flying': 0x4DE620,
+                      'object_high_flying': 0x5F6B90, 'get_height': 0x5F5F40,
+                      'object_crt_table': 0x8141D8, 'laser_constructor': LASER_CTOR,
+                      'laser_draw_all': LASER_DRAW_ALL, 'laser_general_draw': LASER_DRAW,
+                      'general_intensity_observer': 0x550611,
+                      'dsurface_additive': LASER_ADDITIVE, 'dsurface_packed': LASER_PACKED,
+                      'disk_vector_initializer': 0x4A6C70, 'disk_constructor': DISK_CTOR,
+                      'disk_fire': DISK_FIRE, 'disk_ai': DISK_AI,
+                      'disk_logic_block': DISK_LOGIC[0], 'disk_expiry_block': DISK_EXPIRY[0],
+                      'disk_detach': DISK_DETACH, 'pending_initializer': 0x725850,
+                      'pending_append': 0x4A7FE0, 'pending_drain': 0x725C70,
+                      'disk_scalar_destructor': DISK_SCALAR_DTOR,
+                      'abstract_destructor': 0x4101F0, 'laser_update': LASER_UPDATE,
+                      'area_damage_boundary': 0x489280, 'sound_boundary': 0x7509E0},
+        assumptions=['FPCW0E7F; original file trig and affine/ftol bodies. Ring16pairs '
+                     'come from original4A6CF0, not a regular polygon or host trigonometry.',
+                     'Muzzle uses original Unit7F5C70/type7F6218, separately constructed '
+                     'Jumpjet ILoco7ECD68 at object+4 and original Link/Facing. Source/target '
+                     'retained locations, normal rank, source marked/OnBridge and zero rocking '
+                     'are declared component priors. Type post-read priors are stock DISK '
+                     'FLH0,0,75/TurretOffset0/Turret=yes/TiltCrashJumpjet=yes and Jumpjet '
+                     'parameters4/16/8/15/750/2/.1/no-wobbles/15. Native Rules/ART registration '
+                     'and full Unit construction/flight are not executed by this query boundary.',
+                     'The inherited sparse flat Cell/map fixture supplies level0/slope0; actual '
+                     'Map floor/GetHeight executes. Original Object14-entry CRT and Jumpjet '
+                     'startup run. No native getter/matrix or VERA-derived output is supplied.',
+                     'General draw controls use original LaserDraw ctor, explicit stock '
+                     'inner216,0,184/outer80,0,88/spread0 and fade1->0 or1->.5. '
+                     'The one custom nonzero-spread control retains original request/response '
+                     'and complete Main/Scenario/Mapgen states seeded by the existing native owner.',
+                     'General offset tableABC738 is read after original whole GeneralDraw '
+                     'initializes it. It is separate from Special offsets. Existing Rally '
+                     'projection/BSurface/DSurface, RGB565, Z/A and clip/camera are retained '
+                     'component inputs; no new raster or GPU/whole Display claim.',
+                     'Joined lifecycle retains the SAME prepared Unit/Jumpjet and target VM. '
+                     'Native vector initializers and virtual Resize allocate headers/backing; '
+                     'actual55B5A1..55B5BD runs Disk AI in reverse birth order, then original '
+                     'LaserUpdate. Frame increments before actual725C70. The max-visits bound '
+                     'must reach empty Disk/pending/Laser rosters without host removal.',
+                     'Range1792 is a physical-informed post-read input (exact-case Range7 in '
+                     'RULESMD; absent LANGRULE and no selected Battle/XMP03T4 override), not '
+                     'native whole-reader execution here. Source/target coordinate changes, '
+                     'crash byte425 and pointer-expiry inputs are declared between-rung controls, '
+                     'not execution of movement, crash production or complete Unit UnInit.',
+                     'Actual725977..725994 calls Detach in reverse Disk order. Fire/Detach '
+                     'append directly and AI calls original4A7FE0; duplicates are retained until '
+                     '725C70 removes all matching tickets before one actual4A7C90 scalar '
+                     'destructor. This scalar body inlines4A7B00 work, calls Abstract4101F0 '
+                     'and frees through the inherited allocator transport. Freed bytes are '
+                     'never emitted as live Disk state.',
+                     'Disk ctor leaves nativeID+10=-1 and does not spend Scenario+214. '
+                     'Each phase checks that cursor and all complete Main/Scenario/Mapgen '
+                     'states. Earlier FireAt GetROF/rearm draws and downstream damage/audio '
+                     'RNG lie outside these joined service boundaries.'],
+        substitutions=['Inherited LaserScene transport/unused building fixture seams remain; '
+                       'none substitutes a reached Unit GetFLH, coordinate, height, Facing or '
+                       'DrawMatrix query. Retained Unit/type state is supplied, not constructed '
+                       'by an entire native Scenario.',
+                       'Surface backing/locking use the existing original BSurface methods; '
+                       'its copied draw slots select existing original DSurface implementations. '
+                       'Outer-zero4BC750 AA, blinking and held tilt/bridge/movement are excluded.',
+                       'Joined original AreaDamage489280 terminates after recording its actual '
+                       'coordinates, damage and four arguments; no receiver health outcome is '
+                       'invented. Existing building_fixture7509E0 transport ends at the sound '
+                       'request; fixture-relative IDs0/1 do not claim SOUNDMD registration or '
+                       'playback. Original caller PCs retain actual sound coordinates/NULL handle. '
+                       'Existing initialize_empty_windows_seh and ifv_impact.retirement_transport '
+                       'supply only Windows SEH/readability boundaries during original CRT RTTI. '
+                       'Save/load/swizzle and whole native FireAt/Logic/Scenario remain excluded.'])
 
 
 def laser_reset():
@@ -1621,6 +2237,18 @@ def generate():
 
 
 def main(argv=None):
+    selected = list(sys.argv[1:] if argv is None else argv)
+    if '--disk' in selected:
+        selected.remove('--disk')
+        finish_vectors(
+            generate_disk, Path(__file__).with_name('disk_laser.json'),
+            provenance=disk_metadata,
+            source_paths={name: Path(module.__file__) for name, module in sorted(sys.modules.items())
+                          if (name == '__main__' or name.startswith('tools.'))
+                          and getattr(module, '__file__', None)
+                          and str(module.__file__).endswith('.py')},
+            argv=selected)
+        return
     finish_vectors(
         generate, Path(__file__).with_suffix('.json'),
         provenance=lambda: provenance(

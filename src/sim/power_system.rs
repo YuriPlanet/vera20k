@@ -72,10 +72,6 @@ pub struct PowerState {
     pub is_low_power: bool,
     /// House+2A4/+2AC, read through the shared native countdown owner.
     blackout_timer: crate::sim::timer::CdTimer,
-    /// Sum of absolute `|Power=|` values from TypeClass for ALL owned buildings,
-    /// regardless of health, construction state, or online status. Used by the
-    /// sidebar power bar fill curve (asymptotic: `400 / (total + 400)`).
-    pub theoretical_total_power: i32,
     /// House ctor4F5C5F/4F5C66 initializes both dirty bytes to one.
     power_dirty: bool,
     radar_dirty: bool,
@@ -102,7 +98,6 @@ impl Default for PowerState {
             //HouseCtor4F583D seeds the native current frame. Scenario Houses
             //are constructed at0; the empty retained timer is not stopped−1.
             blackout_timer: crate::sim::timer::CdTimer::started(0, 0),
-            theoretical_total_power: 0,
             power_dirty: true,
             radar_dirty: true,
             radar_outage_timer: crate::sim::timer::CdTimer::started(0, 0),
@@ -332,11 +327,6 @@ fn recalculate_power_for_owner(
     let mut produced: i32 = 0;
     let mut drained: i32 = 0;
     let mut has_drained_power_source = false;
-    // Theoretical total: sum of |Power=| from TypeClass for ALL buildings,
-    // including those under construction. Used by the power bar fill curve.
-    // Does NOT include the ExtraPower garrison bonus.
-    let mut theoretical: i32 = 0;
-
     for entity in entities.values() {
         if !participates_in_power_accounting(entity) || entity.owner() != owner_id {
             continue;
@@ -344,10 +334,6 @@ fn recalculate_power_for_owner(
         let Some(obj) = interner.object_type(entity.type_ref(), rules) else {
             continue;
         };
-
-        // Theoretical total includes ALL buildings regardless of state.
-        // This derived sidebar capacity retains its dword storage contract.
-        theoretical = theoretical.wrapping_add(obj.power.wrapping_abs());
 
         // A building still building up counts as well. Native
         // AI_AssessPower iterates every live owned building and lets
@@ -407,7 +393,6 @@ fn recalculate_power_for_owner(
     state.total_output = produced;
     state.total_drain = drained;
     state.is_low_power = !state.has_full_power();
-    state.theoretical_total_power = theoretical;
 }
 
 /// Fixture-only assessment of supplied buildings. Production visits each

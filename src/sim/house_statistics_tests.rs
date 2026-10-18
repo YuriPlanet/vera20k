@@ -1,6 +1,6 @@
-//! The existing total-only statistics model and the score (`Economy::score`)
-//! through native House save/load values. Native field retention is compared;
-//! per-house kill-table aggregation is not newly certified by this test.
+//! House statistics, produced items and score (`Economy::score`) through
+//! native House save/load values. Native field retention is compared;
+//! per-house kill-table aggregation is not newly certified by these tests.
 
 use super::*;
 use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
@@ -186,30 +186,103 @@ fn native_change_owner_score_and_kill_counter_wrap() {
 fn native_record_last_built_counter_wrap() {
     // Original whole4FB6B0 enters the existing-capacity49FA00 branch;
     // item49FA47 and total49FA50 are retained native outputs. Counter growth
-    // and full PLACE are outside this shared total-only mutation comparison.
+    // and full PLACE are outside this shared owner mutation comparison.
     let corpus = capture_accounting_corpus();
     let rows = corpus["built_controls"].as_array().unwrap();
     assert_eq!(rows.len(), 2);
     for (row, name) in rows.iter().zip(["built_zero", "built_wrap"]) {
         assert_eq!(row["name"], name);
-        let mut stats = MatchStatistics::from_totals_for_test(
+        let mut sim = Simulation::new();
+        let owner = sim.interner.intern("Americans");
+        let mut house = HouseState::new(owner, 0, None, true, 0, 10);
+        house.set_produced_count_for_test(
+            ObjectCategory::Building,
             0,
-            0,
-            0,
-            0,
-            capture_count(&row["before"]["total"]),
+            capture_count(&row["before"]["item"]) as i32,
         );
-        stats.record_built();
+        assert_eq!(house.stats.built(), capture_count(&row["before"]["total"]));
+        house.record_scored_production(ObjectCategory::Building, 0);
         assert_eq!(
-            stats.built(),
+            house.stats.built(),
             capture_count(&row["after"]["total"]),
             "{name}"
         );
-        assert_eq!(row["after"]["item"], row["after"]["total"], "{name}");
+        assert_eq!(
+            house.produced_count(ObjectCategory::Building, 0) as u32,
+            capture_count(&row["after"]["item"]),
+            "{name}"
+        );
+        house.validate_production_history().unwrap();
         assert_eq!(
             row["observation"]["rng_before"], row["observation"]["rng_after"],
             "{name}: native counter control made no draw"
         );
+    }
+}
+
+#[test]
+fn produced_history_distinguishes_equal_built_totals_and_last_types() {
+    let fixture = || {
+        let mut sim = Simulation::new();
+        let owner = sim.interner.intern("Americans");
+        sim.houses
+            .insert(owner, HouseState::new(owner, 0, None, true, 0, 10));
+        (sim, owner)
+    };
+    let (mut first, owner) = fixture();
+    let (mut second, other_owner) = fixture();
+    assert_eq!(owner, other_owner);
+    for (sim, prior_index) in [(&mut first, 0), (&mut second, 1)] {
+        let house = sim.houses.get_mut(&owner).unwrap();
+        house.record_scored_production(ObjectCategory::Infantry, prior_index);
+        house.record_scored_production(ObjectCategory::Infantry, 1);
+        house.record_built_type(ObjectCategory::Infantry, 1);
+        house.validate_production_history().unwrap();
+    }
+    assert_eq!(first.houses[&owner].stats, second.houses[&owner].stats);
+    assert_eq!(
+        first.houses[&owner].last_built_types,
+        second.houses[&owner].last_built_types
+    );
+    assert_ne!(first.state_hash(), second.state_hash());
+    let encoded = serde_json::to_vec(&first.houses[&owner]).unwrap();
+    let restored: HouseState = serde_json::from_slice(&encoded).unwrap();
+    assert_eq!(restored.produced_count(ObjectCategory::Infantry, 0), 1);
+    assert_eq!(restored.produced_count(ObjectCategory::Infantry, 1), 1);
+    assert_eq!(restored.produced_count(ObjectCategory::Vehicle, 0), 0);
+    assert_eq!(restored.produced_count(ObjectCategory::Infantry, 65), 0);
+    restored.validate_production_history().unwrap();
+}
+
+#[test]
+fn saved_produced_history_rejects_inconsistent_cache_or_sparse_items() {
+    for corruption in 0..3 {
+        let mut sim = Simulation::new();
+        sim.session.map_name = "PRODUCED-HISTORY.MAP".into();
+        let owner = sim.interner.intern("Americans");
+        let mut house = HouseState::new(owner, 0, None, true, 0, 10);
+        house.record_scored_production(ObjectCategory::Infantry, 0);
+        match corruption {
+            0 => house.stats.built += 1,
+            1 => {
+                house.produced_type_counts[ObjectCategory::Infantry as usize].insert(-1, 1);
+            }
+            _ => {
+                house.produced_type_counts[ObjectCategory::Infantry as usize].insert(2, 0);
+            }
+        }
+        sim.houses.insert(owner, house);
+        let bytes = GameSnapshot::save_validated(&sim, 1, 2, "invalid produced history", 0);
+        let mut saved = GameSnapshot::load_validated(&bytes, 1, 2, "PRODUCED-HISTORY.MAP")
+            .unwrap()
+            .sim;
+        assert!(matches!(
+            saved.restore_after_snapshot_load(),
+            Err(crate::sim::snapshot::SnapshotRestoreError::InvalidHouseProductionHistory {
+                owner: actual,
+                ..
+            }) if actual == owner
+        ));
     }
 }
 
@@ -315,6 +388,21 @@ fn native_house_statistics_survive_snapshot_and_retained_ship_terminal_record() 
         let mut house = HouseState::new(owner, 0, None, false, 0, 10);
         let (stats, score) = native_totals(&row["before"]);
         house.stats = stats;
+        for (counter, category) in row["before"]["built"].as_array().unwrap().iter().zip([
+            ObjectCategory::Building,
+            ObjectCategory::Vehicle,
+            ObjectCategory::Infantry,
+            ObjectCategory::Aircraft,
+        ]) {
+            for (index, count) in counter["items"].as_array().unwrap().iter().enumerate() {
+                house.set_produced_count_for_test(
+                    category,
+                    i32::try_from(index).unwrap(),
+                    i32::try_from(count.as_i64().unwrap()).unwrap(),
+                );
+            }
+        }
+        assert_eq!(house.stats, stats, "native Built total equals its item sum");
         house.economy.set_score_for_test(score);
         sim.houses.insert(owner, house);
         sim.session.house_order.push(owner);
@@ -335,6 +423,20 @@ fn native_house_statistics_survive_snapshot_and_retained_ship_terminal_record() 
             house_totals(&restored.houses[&owner]),
             native_totals(&row["after"])
         );
+        for (counter, category) in row["after"]["built"].as_array().unwrap().iter().zip([
+            ObjectCategory::Building,
+            ObjectCategory::Vehicle,
+            ObjectCategory::Infantry,
+            ObjectCategory::Aircraft,
+        ]) {
+            for (index, count) in counter["items"].as_array().unwrap().iter().enumerate() {
+                assert_eq!(
+                    i64::from(restored.houses[&owner].produced_count(category, index as i32)),
+                    count.as_i64().unwrap(),
+                    "{category:?} produced item{index} survives the saved world"
+                );
+            }
+        }
         assert_eq!(restored.state_hash(), sim.state_hash());
         assert_eq!(restored.rng_state(), sim.rng_state());
         if let Some(expected) = row["terminal_record_loss"].as_u64() {
@@ -366,8 +468,10 @@ fn saved_live_statistics_preserve_terminal_score_and_rng_continuation() {
         buildings_killed: 1,
         units_lost: 1,
         buildings_lost: 3,
-        built: 4,
+        built: 0,
     };
+    // Explicit four-produced-item prior for this synthetic score scene.
+    house.set_produced_count_for_test(ObjectCategory::Infantry, 0, 4);
     house.economy.set_score_for_test(700);
     sim.houses.insert(owner, house);
     sim.session.house_order.push(owner);

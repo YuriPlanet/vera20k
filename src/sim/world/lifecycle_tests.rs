@@ -4125,6 +4125,139 @@ fn infantry_target_expiry_clears_firing_action_before_target() {
 }
 
 #[test]
+fn particle_system_retirement_clears_only_the_indexed_techno_spark_link() {
+    let mut sim = Simulation::new();
+    insert_particle_system(&mut sim, 1);
+    insert_particle_system(&mut sim, 2);
+    insert_entity(&mut sim, 3, EntityCategory::Unit);
+    insert_entity(&mut sim, 4, EntityCategory::Unit);
+    sim.substrate
+        .entities
+        .get_mut(3)
+        .unwrap()
+        .spark_particle_system
+        .bind(Some(1));
+    sim.substrate
+        .entities
+        .get_mut(4)
+        .unwrap()
+        .spark_particle_system
+        .bind(Some(2));
+    sim.substrate
+        .particle_systems
+        .get_mut(1)
+        .unwrap()
+        .done_spawning = true;
+    let rng = [
+        sim.scenario_rng.native_state_hex(),
+        sim.main_rng.native_state_hex(),
+        sim.mapgen_rng.native_state_hex(),
+    ];
+    sim.retire_particle_system(1, super::UninitContext::default());
+    assert_eq!(
+        sim.substrate
+            .entities
+            .get(3)
+            .unwrap()
+            .spark_particle_system
+            .system(),
+        None
+    );
+    assert_eq!(
+        sim.substrate
+            .entities
+            .get(4)
+            .unwrap()
+            .spark_particle_system
+            .system(),
+        Some(2)
+    );
+    assert!(sim.particle_systems().get(1).unwrap().in_limbo());
+    assert!(sim.substrate.pending_delete.object_ids().contains(&1));
+    assert_eq!(
+        [
+            sim.scenario_rng.native_state_hex(),
+            sim.main_rng.native_state_hex(),
+            sim.mapgen_rng.native_state_hex()
+        ],
+        rng
+    );
+    sim.process_pending_delete();
+    assert!(sim.particle_systems().get(1).is_none());
+}
+
+#[test]
+fn techno_spark_pointer_expiry_is_exact_and_independent_of_control() {
+    use super::lifecycle::PointerExpiryControl;
+    let native = crate::test_fixture::json("tools/procedural_drawing_oracle/welding.json");
+    let rows: Vec<_> = native["lifecycle_cases"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|row| row["input"]["receiver"] == "owner" && row["input"]["expired"].is_string())
+        .collect();
+    assert_eq!(rows.len(), 4);
+    for row in rows {
+        let control = if row["input"]["removed"] == 0 {
+            PointerExpiryControl::DetachAll
+        } else {
+            PointerExpiryControl::Uninit
+        };
+        let mut sim = Simulation::new();
+        insert_entity(&mut sim, 3, EntityCategory::Unit);
+        sim.substrate
+            .entities
+            .get_mut(3)
+            .unwrap()
+            .spark_particle_system
+            .bind(Some(1));
+        let before = [
+            sim.main_rng.native_state_hex(),
+            sim.scenario_rng.native_state_hex(),
+            sim.mapgen_rng.native_state_hex(),
+        ];
+        assert_eq!(row["before"]["spark_link"], "system");
+        let expired = if row["input"]["expired"] == "system" {
+            1
+        } else {
+            2
+        };
+        sim.notify_entity_pointer_expired(
+            3,
+            expired,
+            None,
+            true,
+            1,
+            false,
+            None,
+            control,
+            None,
+            None,
+            super::FrameEffects::default(),
+        );
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(3)
+                .unwrap()
+                .spark_particle_system
+                .system()
+                .map(|_| "system"),
+            row["after"]["spark_link"].as_str()
+        );
+        assert_eq!(
+            [
+                sim.main_rng.native_state_hex(),
+                sim.scenario_rng.native_state_hex(),
+                sim.mapgen_rng.native_state_hex(),
+            ],
+            before
+        );
+        assert_eq!(row["rng_unchanged"], true);
+    }
+}
+
+#[test]
 fn pointer_expiry_stops_particle_owner_without_deleting_living_children() {
     let mut sim = Simulation::new();
     insert_particle_system(&mut sim, 1);
@@ -4142,12 +4275,12 @@ fn pointer_expiry_stops_particle_owner_without_deleting_living_children() {
     owned.particles.push(child);
     let attached = sim.substrate.particle_systems.get_mut(2).unwrap();
     attached.owner_entity = Some(3);
-    attached.attached_entity = Some(3);
+    attached.target_ref = Some(crate::sim::combat::TargetKind::Entity(3));
     sim.substrate
         .particle_systems
         .get_mut(4)
         .unwrap()
-        .attached_entity = Some(3);
+        .target_ref = Some(crate::sim::combat::TargetKind::Entity(3));
     let rng = [
         sim.scenario_rng.native_state_hex(),
         sim.main_rng.native_state_hex(),
@@ -4169,10 +4302,10 @@ fn pointer_expiry_stops_particle_owner_without_deleting_living_children() {
     );
     let attached = sim.substrate.particle_systems.get(2).unwrap();
     assert!(attached.owner_entity.is_none());
-    assert!(attached.attached_entity.is_none());
+    assert!(attached.target_ref.is_none());
     assert!(attached.done_spawning);
     let target_only = sim.substrate.particle_systems.get(4).unwrap();
-    assert!(target_only.attached_entity.is_none());
+    assert!(target_only.target_ref.is_none());
     assert!(
         !target_only.done_spawning,
         "target+E4 expiry has no done write"

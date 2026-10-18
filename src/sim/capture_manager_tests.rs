@@ -1130,7 +1130,7 @@ fn native_overload_update_corpus() {
                 .map(|(_, system)| {
                     assert_eq!(system.type_id, spark_type);
                     assert_eq!(system.target_coords, glam::IVec3::ZERO);
-                    assert!(system.attached_entity.is_none() && system.owner_entity.is_none());
+                    assert!(system.target_ref.is_none() && system.owner_entity.is_none());
                     assert!(system.owner_house.is_none());
                     let offset = system.coords - location;
                     [offset.x, offset.y, offset.z]
@@ -1445,7 +1445,7 @@ fn native_joined_overload_preserves_constructor_rng_ids_and_rate_words() {
             assert!(system.alive() && !system.in_limbo() && system.particles.is_empty());
             assert!(
                 system.owner_entity.is_none()
-                    && system.attached_entity.is_none()
+                    && system.target_ref.is_none()
                     && system.owner_house.is_none()
             );
             for key in ["owner", "target_object", "house"] {

@@ -7,7 +7,7 @@
     1,
     33621247
   ],
-  "scope": "Eight original prepared ground GI body/shadow draws through physical raw/RLE SHP, native DarkRed Convert and packed RGB565 pixels",
+  "scope": "Eight prepared GI body/shadow controls and28 joined Object viewport controls through original admission/projection, physical raw/RLE SHP, DarkRed Convert and packed RGB565 pixels",
   "assumptions": [
     "Original Rules665650/66D480/6691E0 read physical root ColorAdd and AudioVisual BerserkColor/ExtraInfantryLight. InfantryType5236A0/full5240A0 receive only physical E1 Image/Strength/Armor plus fixed ART GI/GISequence. Native Image/sequence loading executes; unrelated type fields retain constructor defaults. This is not full retail type/scenario fill or a layered rules history.",
     "The existing shroud status preparation runs Infantry prefix517A50..517AE6 including Foot/Techno/Object and whole Walk75AA90. Prepared owner/current House, local DarkRed scheme index1, Alive1/Limbo0/HP125, Location2688/5248/0, Ready/Stage0 and ordinary guardFF admit the draw. Whole Infantry construction, COM activation, Unlimbo, display admission and CAOS receiver/refresh/expiry are not executed.",
@@ -15,7 +15,11 @@
     "GetZAdjust704350 runs with original geometry initialization and existing theater_tile_files/load_tmp_files native TMP registry/lazy loader. Prepared native-constructed3x3 Cells around10/20 have flat level/slope0, tile0/subtile0, no bridge/overlay and top light1000. Selected theater registration base0, actor pose, tactical rectangle/point and Cell visibility are explicit priors, not a whole map/topology lifecycle.",
     "Whole Infantry518F90->Foot41C090->Techno705E00 and actual705D70/518D80/GetZAdjust/shape4AED70/pickers/rowwalkers/raw or RLE leaves run unchanged. Facing inputs are selected from original table7EAEFC and snapped by4C9300; no frame, word, intensity, shape, shadow or pixel result is substituted. Physical frames0/1 plus shadows372/373 are bounded controls, not whole DrawIt/DrawSHP coverage.",
     "Each body buffer is observed immediately at actual shape return70645D before shadow; final buffer is observed after actual shadow return706602. Physical shadow372/373 have original empty rectangles, so final equals body; real shadow calls/pickers execute but no positive shadow-store/overlap is established. Source holes, packed colour, A/Z predicates and blocked stores are native results. The shrouded control deliberately enters the body and proves caller-word clearing, not that full DrawIfVisible admits a shrouded GI. All three full RNG buffers, physical GI bytes, A/Z and original executable code are checked unchanged after every measured draw; constructor RNG/timer evidence is separate.",
-    "Prepared64x96 BSurface/circular planes use A127, baseline1024, background39E7 and oldZ2000 or0. No VERA raster/table provides expected pixels. These component crops do not establish GPU, whole frame, CAOS lifecycle, arbitrary stance/effects/custom values/nonflat sites/global ordering or Behind behavior."
+    "Prepared64x96 BSurface/circular planes use A127, baseline1024, background39E7 and oldZ2000 or0. No VERA raster/table provides expected pixels. These component crops do not establish GPU, whole frame, CAOS lifecycle, arbitrary stance/effects/custom values/nonflat sites/global ordering or Behind behavior.",
+    "The additive viewport_rows reuse the SAME PaletteReader/actor/physical GI/TMP/palette/surface owners after the eight legacy rows. The original retained viewport prefix6D5F60..6D5F8D installs dimensions64x96; no downstream COM/window work executes. GraphicalB73550=1/editorA8ED6B=0, Redraw0/Limbo0, force1 and callerclip0/0/64/96 are declared ordinary caller priors, not a whole Tactical6D8DB0 or display-registration run.",
+    "Original actor RenderCoords+AC41BE00/GetCoords5F65A0 and6D2140 establish the zero-camera point. Cameras are selected from that ORIGINAL point and original69E7E0 physical frame headers. Every viewport row then executes whole Object5F4B10 through actual+114Infantry518F90 where admitted. No VERA coordinate, frame, clip, admission, raster or framebuffer initializes a native expected output. Frame0 retains facing53248; frame1 uses49152, the authored192<<8 production pose; native7EAEFC and518D80 select the frames.",
+    "Each frame has center, four positive partial-header overlaps, four adjacent empty placements, four projection-rejected placements and center return. Actual6D2223..2269 branches admit inclusive X[-360,W+360]/Y[-180,H+180]; far controls are one beyond those limits. Actual projection AL/point is observed at caller5F4B6F; actual body point and entry count at518F90, raw ObjectEAX/AL after whole return and actual mutated callerclip are recorded separately. A body entry is not a shape call or proof of pixels; adjacent outside may enter518F90 yet emit no shape. Final pixels establish positive versus empty controls; original ObjectAL does not supply that answer.",
+    "Every joined row reads final RGB565 including rejected draws and checks unchanged physical GI, A/Z, all three full RNG buffers, original code, actual Infantry vtable and facing table7EAEFC/128B against original file bytes. Center/return final bytes must match. Object5F4B10 clears Redraw+80 before projection and has no RNG draw, timer write or detach call; its main-Tactical force1 prior needs no simulation dirty latch. The selected28 controls do not establish earlier Tactical world-bound admissions, viewport/camera production, minimap input, arbitrary caller clips, other classes, zoom, nonflat height, whole gameplay/frame equivalence or Behind."
   ],
   "substitutions": [
     "Existing PaletteReader/BulletReader/HutTypeReader supplies immutable archive-selected file bytes, lexical linked/cache INI objects, successful allocator/delete/CRT/TLS and OS resource transport. Existing stock MIX decoding selects physical inputs; original native readers/frame accessors/shape/blitters produce draw outputs. The full native archive/scenario startup is outside this prepared fixture.",
@@ -30,6 +34,13 @@
     "infantry_prefix": "0x00517A50",
     "infantry_prefix_stop": "0x00517AE6",
     "walk_ctor": "0x0075AA90",
+    "viewport_begin": "0x006D5F60",
+    "viewport_stop": "0x006D5F8D",
+    "render_coords": "0x0041BE00",
+    "get_coords": "0x005F65A0",
+    "projection": "0x006D2140",
+    "draw_if_visible": "0x005F4B10",
+    "projection_return": "0x005F4B6F",
     "infantry_body": "0x00518F90",
     "berserk_reader": "0x00518FDA",
     "frame": "0x00518D80",
@@ -52,5 +63,5 @@
     "shadow_return": "0x00706602"
   },
   "replay_command": "python -m tools.procedural_drawing_oracle.shroud --infantry-berserk-body",
-  "payload_sha256": "df2e0c537dacb1476aefcadbccbb0ef7456e1705a33d620506eb215edcc3bbc2"
+  "payload_sha256": "7066da8d42fe3dd07885ab14c48b93cef733f15337af5954f448eac54446be0a"
 }

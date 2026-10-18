@@ -150,7 +150,9 @@ def cargo_args(args: list[str], label: str | None) -> list[str]:
         raise ValueError('Repository tests must select --lib')
     if label and not (args[0] == 'build' or (args[0] == 'test' and '--no-run' in options)):
         raise ValueError('--label requires build or test --lib --no-run')
-    return [args[0], '--message-format=json-render-diagnostics', *args[1:], *core_test_features(args[0], options)]
+    # Cargo options must precede --; leave libtest's arguments unchanged.
+    return [args[0], '--message-format=json-render-diagnostics', *options[1:],
+            *core_test_features(args[0], options), *args[len(options):]]
 
 
 # `cargo test --workspace` builds core's tests with the features the client

@@ -237,7 +237,7 @@ impl LoadObjectLifecycle {
         if receipt.terrain_refusal {
             self.finish_unrevealed_survivor(handle)
         } else {
-            self.begin_mark(handle)?;
+            self.begin_mark(handle, None)?;
             self.finish_common(handle, queue)
         }
     }
@@ -247,19 +247,24 @@ impl LoadObjectLifecycle {
     pub(crate) fn begin_mark(
         &mut self,
         handle: LoadOverlayHandle,
+        requested_world: Option<[i32; 3]>,
     ) -> Result<(u16, u16), LoadOverlayLifecycleError> {
         let object = self.object_mut_for_transition(handle)?;
         if object.terminal_path != LoadOverlayTerminalPath::Constructed {
             return Err(LoadOverlayLifecycleError::InvalidTransition(handle.0));
         }
         object.limbo = false;
-        //5FC380 supplies the requested signed CellStruct center to5F4EC0.
-        // A Terrain/EmptyCell rejection never reaches this world-position store.
-        object.world = [
-            i32::from(object.cell.0 as i16) * 256 + 128,
-            i32::from(object.cell.1 as i16) * 256 + 128,
-            0,
-        ];
+        //5FC380 supplies a signed CellStruct center; Building440580 calls
+        //5FD270 with its original XYZ. OverlayType5FEA30 (vt7EF600+6C)
+        //copies that XYZ unchanged before Object5F4FA8 commits Location.
+        //Terrain/EmptyCell rejection never reaches this position store.
+        object.world = requested_world.unwrap_or_else(|| {
+            [
+                i32::from(object.cell.0 as i16) * 256 + 128,
+                i32::from(object.cell.1 as i16) * 256 + 128,
+                0,
+            ]
+        });
         object.on_map = true;
         object.redraw = true;
         let cell = object.cell;
@@ -607,11 +612,11 @@ mod tests {
         let wall = construct(&mut lifecycle, 2, 102);
         let slope = construct(&mut lifecycle, 3, 103);
 
-        lifecycle.begin_mark(common).unwrap();
+        lifecycle.begin_mark(common, None).unwrap();
         lifecycle.finish_common(common, &mut queue).unwrap();
-        lifecycle.begin_mark(wall).unwrap();
+        lifecycle.begin_mark(wall, None).unwrap();
         lifecycle.finish_wall_reject(wall, &mut queue).unwrap();
-        lifecycle.begin_mark(slope).unwrap();
+        lifecycle.begin_mark(slope, None).unwrap();
         lifecycle.finish_slope_survivor(slope).unwrap();
 
         let common_before_drain = lifecycle.snapshot(common, &queue).unwrap();
@@ -660,7 +665,7 @@ mod tests {
         let alive_c = construct(&mut lifecycle, 3, 13);
         let dead_d = construct(&mut lifecycle, 4, 14);
         for handle in [dead_b, dead_d] {
-            lifecycle.begin_mark(handle).unwrap();
+            lifecycle.begin_mark(handle, None).unwrap();
             lifecycle.finish_common(handle, &mut queue).unwrap();
         }
         queue.clear_for_test();
@@ -718,7 +723,7 @@ mod tests {
         let mut lifecycle = LoadObjectLifecycle::default();
         let mut queue = DeferredDeleteQueue::default();
         let handle = construct(&mut lifecycle, 1, 99);
-        lifecycle.begin_mark(handle).unwrap();
+        lifecycle.begin_mark(handle, None).unwrap();
         queue.fail_next_overlay_queue_for_test();
 
         assert_eq!(

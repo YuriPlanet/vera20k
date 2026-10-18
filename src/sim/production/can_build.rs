@@ -20,10 +20,6 @@
 //!   house's masks (`+0x2C4..+0x2D0`, `0x004F7A07..0x004F7A51`), but only the
 //!   House constructor writes them (zero; operand census of each offset,
 //!   2026-10-12), so it admits the house's own country only, as VERA does.
-//! - A build limit below 1 counts what the house has produced of the type
-//!   (`+0x55A0`, `+0x55B4`, `+0x55C8`, `+0x55DC`), which is not kept: VERA
-//!   counts none. Dormant: retail `rulesmd.ini` sets `BuildLimit=1` on twelve
-//!   types and nothing lower, and the nine mode INIs set none.
 //! - An infantry type with `VehicleThief=` also counts the house's units
 //!   that hold one of it (`UnitClass+0x338`); VERA has no hijacking, so the
 //!   count adds none.
@@ -91,7 +87,7 @@ pub(crate) fn can_build(
     count_in_production: bool,
 ) -> CanBuild {
     if skip_tech {
-        return build_limit(sim, owner, obj, count_in_production);
+        return build_limit(sim, rules, owner, obj, count_in_production);
     }
     let Some(house) = sim.houses.get(&owner) else {
         return CanBuild::No;
@@ -107,7 +103,7 @@ pub(crate) fn can_build(
     // shortcut precedes all ordinary tech/country/prerequisite gates, for
     // humans and AI alike, and still asks the common build-limit owner.
     if override_on_map || crate::sim::secret_lab::house_grants(sim, rules, house, obj) {
-        return build_limit(sim, owner, obj, count_in_production);
+        return build_limit(sim, rules, owner, obj, count_in_production);
     }
     // `0x004F7976..0x004F79E2`: each `RequiresStolen*Tech=` needs the
     // house's stolen-tech byte, which a spy's BuildTech infiltration sets.
@@ -149,7 +145,7 @@ pub(crate) fn can_build(
     {
         return CanBuild::No;
     }
-    build_limit(sim, owner, obj, count_in_production)
+    build_limit(sim, rules, owner, obj, count_in_production)
 }
 
 /// One `Prerequisite=` entry of CanBuild's human arm
@@ -208,17 +204,24 @@ fn buildings_on_map(sim: &Simulation, rules: &RuleSet, house: &HouseState, index
 /// factory scan runs only when the count equals the limit exactly.
 fn build_limit(
     sim: &Simulation,
+    rules: &RuleSet,
     owner: InternedId,
     obj: &ObjectType,
     count_in_production: bool,
 ) -> CanBuild {
     let limit = obj.build_limit;
-    // `limit < 1` compares `|limit|` with the produced count, which VERA
-    // does not keep (module residual): a count of zero refuses a zero limit
-    // (and `i32::MIN`, whose magnitude stays negative), and passes any other.
-    // Only aircraft, buildings and units answer Yes at once.
+    // 4F7FD6/4F80A1/4F81D0/4F829B query the type's produced item,
+    // not its owned count. CDQ/XOR/SUB keeps INT_MIN's magnitude negative.
+    // Record and both query ports share HouseState's Counter49FAE0 owner;
+    // tools/can_build_produced_history executes the connected original bodies.
     if limit < 1 {
-        if limit.wrapping_abs() <= 0 {
+        let produced = rules
+            .type_array_index(obj.category, &obj.id)
+            .zip(sim.houses.get(&owner))
+            .map_or(0, |(index, house)| {
+                house.produced_count(obj.category, index)
+            });
+        if produced >= limit.wrapping_abs() {
             return CanBuild::No;
         }
         if obj.category != ObjectCategory::Infantry {
@@ -267,8 +270,8 @@ fn build_limit(
 /// aircraft on the map (`+0x558C`) and in that factory must stay below it
 /// (`0x0050B570..0x0050B5EB`); its `BuildLimit=` is not read. Any other
 /// type with a `BuildLimit=` below 1 is at its limit once the limit's
-/// magnitude is reached by what the house produced (module residual: VERA
-/// counts none) and what the factory holds; with a positive one, once the
+/// magnitude is reached by what the house produced and what the factory
+/// holds; with a positive one, once the
 /// tracked count (`owned_count`) and the factory's reach it. An infantry
 /// `VehicleThief=` would add the units that hold one (module residual).
 pub(crate) fn check_build_limit(
@@ -307,7 +310,15 @@ pub(crate) fn check_build_limit(
     let type_id = sim.interner.get(&obj.id);
     let queued = in_factory(type_id);
     if limit < 1 {
-        return limit.wrapping_abs() <= queued;
+        // 50B405/48B/537/60B use the same retained produced item as
+        // CanBuild, add Factory CountTotal with ADD32, then compare signed.
+        let produced = rules
+            .type_array_index(obj.category, &obj.id)
+            .zip(sim.houses.get(&owner))
+            .map_or(0, |(index, house)| {
+                house.produced_count(obj.category, index)
+            });
+        return produced.wrapping_add(queued) >= limit.wrapping_abs();
     }
     let owned = type_id.zip(tracking).map_or(0, |(type_id, tracking)| {
         tracking.owned_count(EntityCategory::from(obj.category), type_id)
@@ -555,3 +566,7 @@ fn get_ownable(obj: &ObjectType, rules: &RuleSet, game_mode_nonzero: bool) -> u3
 #[cfg(test)]
 #[path = "can_build_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "can_build_produced_history_tests.rs"]
+mod produced_history_tests;

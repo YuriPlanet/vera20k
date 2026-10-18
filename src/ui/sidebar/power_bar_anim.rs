@@ -1,84 +1,30 @@
-//! Power segment state and native sidebar draw commands.
+//! PowerClass's retained segment animation and native draw commands.
 //!
-//! `visit_draw_segments` reproduces the original 63FB20 command loop from
-//! executable fixtures. The inherited target/count/tick producers are retained;
-//! their complete gamemd timing and numeric equivalence remain UNCHECKED.
-//!
-//! Draw order top-to-bottom: empty → blink → surplus (green, frame 1)
-//! → output (yellow, frame 2) → drain (red, frame 3).
-//!
-//! ## Dependency rules
-//! - Part of sidebar/ — pure data + logic, no rendering or sim dependencies.
+//! Original `63F850`, `63F960`, `63FEA0` and `63FB20` execute in
+//! `tools/sidebar_oracle/power_draw.py --state`. Only presentation state lives
+//! here; House power accounting and building membership retain their owners.
 
-/// Segment paint stride. Native POWERP canvas is 2px tall, separated by 1px.
+use crate::sim::snapshot::saved_local_view::{SavedLocalViewError, SavedPowerBar};
+use crate::sim::timer::CdTimer;
+use crate::util::native_x87::{MaskedX87Chop53 as Fpu, MaskedX87Ordering, NativeF64Bits};
+
 const SEGMENT_HEIGHT_PX: i32 = 3;
-
-/// Number of flashes when power values change (original: 10).
 const FLASH_COUNT: i32 = 10;
+const FLASH_BUCKETS: i32 = 3;
 
-/// Ticks between flash blink steps.
-/// Original game: 48ms wall-clock per step (16ms timer × 3 units).
-/// Retained VERA approximation: 2 ticks at 45Hz = ~44ms per step.
-const FLASH_TICKS_PER_STEP: i32 = 2;
-
-/// Ticks between segment-slide animation steps.
-/// Original game: dynamic wall-clock interval, exact value unverified.
-/// 9 ticks at 45Hz = ~200ms per step; placeholder until verified.
-const SLIDE_TICKS_PER_STEP: i32 = 9;
-
-/// Scale factor for the asymptotic bar fill curve (original: 400.0 at 0x7ED8C8).
-/// When total theoretical power equals this value, the bar is exactly half full.
-const FILL_SCALE: f64 = 400.0;
-
-/// Cap on the "output portion" before surplus kicks in (original: 100.0 at 0x7E2AC0).
-/// When surplus (output - drain) exceeds this, the excess becomes the surplus band.
-const OUTPUT_CAP: f64 = 100.0;
-
-/// Persistent animation state for the sidebar power bar.
-///
-/// Tracks three segment counts that animate toward target values one segment at
-/// a time. Segment names match the original binary's verified semantics:
-/// - surplus = excess power (green, frame 1, top of filled area)
-/// - output = production matching drain (yellow, frame 2, middle)
-/// - drain = power consumption (red, frame 3, bottom of bar)
+/// Presentation state owned by PowerClass (`+1510..+1540`). Counts are ordered
+/// surplus/green, output/yellow, drain/red. Timers use 16-ms wall-clock buckets,
+/// through the shared signed countdown primitive, rather than simulation ticks.
 #[derive(Debug, Clone)]
 pub struct PowerBarAnimState {
-    /// Current animated surplus segment count (green, top of filled area).
-    pub surplus_segments: i32,
-    /// Current animated output segment count (yellow, middle).
-    pub output_segments: i32,
-    /// Current animated drain segment count (red, bottom).
-    pub drain_segments: i32,
-
-    /// Target surplus segments (computed from power values).
-    target_surplus: i32,
-    /// Target output segments.
-    target_output: i32,
-    /// Target drain segments.
-    target_drain: i32,
-
-    /// Maximum segments that fit in the bar (bar_height / 3).
+    counts: [i32; 3],
     max_segments: i32,
-
-    /// Last-seen power output — used to detect changes.
     cached_output: i32,
-    /// Last-seen power drain — used to detect changes.
     cached_drain: i32,
-    /// Last-seen theoretical total — used to detect changes.
-    cached_theoretical: i32,
-
-    /// Remaining flash blinks (starts at FLASH_COUNT on power change).
     flashes_remaining: i32,
-    /// Tick counter for flash timing (counts down from FLASH_TICKS_PER_STEP).
-    flash_tick_counter: i32,
-
-    /// Tick counter for segment animation (counts down from SLIDE_TICKS_PER_STEP).
-    anim_tick_counter: i32,
-    /// True while current segments differ from targets.
+    flash_timer: CdTimer,
+    slide_timer: CdTimer,
     animating: bool,
-
-    /// Whether initial values have been set (first update jumps instantly).
-    initialized: bool,
 }
 
 impl Default for PowerBarAnimState {
@@ -90,138 +36,172 @@ impl Default for PowerBarAnimState {
 impl PowerBarAnimState {
     pub fn new() -> Self {
         Self {
-            surplus_segments: 0,
-            output_segments: 0,
-            drain_segments: 0,
-            target_surplus: 0,
-            target_output: 0,
-            target_drain: 0,
+            counts: [0; 3],
             max_segments: 0,
             cached_output: -1,
             cached_drain: -1,
-            cached_theoretical: -1,
             flashes_remaining: 0,
-            flash_tick_counter: 0,
-            anim_tick_counter: 0,
+            flash_timer: CdTimer::started(0, 0),
+            slide_timer: CdTimer::started(0, 0),
             animating: false,
-            initialized: false,
         }
     }
 
-    /// Update the bar capacity from the available pixel height.
-    pub fn set_max_segments(&mut self, bar_height_px: i32) {
-        let new_max = bar_height_px / SEGMENT_HEIGHT_PX;
-        if new_max != self.max_segments {
-            self.max_segments = new_max;
-            if self.initialized {
-                self.compute_targets(
-                    self.cached_output,
-                    self.cached_drain,
-                    self.cached_theoretical,
-                );
-                self.clamp_segments();
-            }
+    /// MouseSave5BE715 copies the retained state without pausing Flash. Its
+    /// opaque timer words are not semantic fields. The existing Rust draw path
+    /// rebuilds meter commands from this owner, without a native dirty latch.
+    pub(crate) fn saved(&self) -> SavedPowerBar {
+        SavedPowerBar {
+            counts_surplus_output_drain: self.counts,
+            cached_output: self.cached_output,
+            cached_drain: self.cached_drain,
+            flashes_remaining: self.flashes_remaining,
+            flash_timer: [self.flash_timer.start_frame(), self.flash_timer.duration()],
+            animating: self.animating,
         }
     }
 
-    /// Feed current power values. Detects changes and starts flash/animation.
-    ///
-    /// - `power_output`: health-scaled operational output (for segment distribution)
-    /// - `power_drain`: full-rated operational drain (for segment distribution)
-    /// - `theoretical_total`: sum of |Power=| from TypeClass for ALL buildings (for fill curve)
-    pub fn update(&mut self, power_output: i32, power_drain: i32, theoretical_total: i32) {
-        if !self.initialized {
-            self.initialized = true;
-            self.cached_output = power_output;
-            self.cached_drain = power_drain;
-            self.cached_theoretical = theoretical_total;
-            self.compute_targets(power_output, power_drain, theoretical_total);
-            self.surplus_segments = self.target_surplus;
-            self.output_segments = self.target_output;
-            self.drain_segments = self.target_drain;
-            return;
-        }
-
-        if power_output != self.cached_output
-            || power_drain != self.cached_drain
-            || theoretical_total != self.cached_theoretical
+    /// Prepare the incoming Power owner before mutating a live app. Ordinary
+    /// own writers keep nonnegative bands and Flash0..10. A resize may leave
+    /// more bands than today's capacity; caches and timer words stay verbatim.
+    pub(crate) fn from_saved(saved: SavedPowerBar) -> Result<Self, SavedLocalViewError> {
+        if saved
+            .counts_surplus_output_drain
+            .iter()
+            .any(|&count| count < 0)
+            || saved
+                .counts_surplus_output_drain
+                .iter()
+                .try_fold(0_i32, |total, &count| total.checked_add(count))
+                .is_none()
         {
-            self.cached_output = power_output;
-            self.cached_drain = power_drain;
-            self.cached_theoretical = theoretical_total;
-            self.compute_targets(power_output, power_drain, theoretical_total);
-
-            // Start flash phase.
-            self.flashes_remaining = FLASH_COUNT;
-            self.flash_tick_counter = FLASH_TICKS_PER_STEP;
-
-            // Start animation phase.
-            self.animating = true;
-            self.anim_tick_counter = SLIDE_TICKS_PER_STEP;
+            return Err(SavedLocalViewError::InvalidPowerState {
+                field: "band counts",
+            });
         }
+        if !(0..=FLASH_COUNT).contains(&saved.flashes_remaining) {
+            return Err(SavedLocalViewError::InvalidPowerState {
+                field: "flash count",
+            });
+        }
+        Ok(Self {
+            counts: saved.counts_surplus_output_drain,
+            cached_output: saved.cached_output,
+            cached_drain: saved.cached_drain,
+            flashes_remaining: saved.flashes_remaining,
+            flash_timer: CdTimer::from_raw(saved.flash_timer[0], saved.flash_timer[1]),
+            // NoInit replaces this pair at the successful app commit.
+            slide_timer: CdTimer::default(),
+            max_segments: 0,
+            animating: saved.animating,
+        })
     }
 
-    /// Advance one simulation tick. Handles flash countdown and segment animation.
-    pub fn tick(&mut self) {
-        if !self.initialized {
+    /// SidebarNoInit6A4F89..94 rearms only slide, preserving the loaded Flash,
+    /// bands, caches and active flag. Use the same effective HUD clock as AI.
+    pub(crate) fn reanchor_after_load(&mut self, wall_ms: u64) {
+        self.slide_timer.start(((wall_ms as u32) >> 4) as i32, 0);
+    }
+
+    /// Fresh-scenario clear `63F730`. Geometry belongs to Sidebar, and is not
+    /// reset here. Native save/load retains Power fields and has a different
+    /// NoInit path; it must not use this clear.
+    pub fn reset(&mut self, wall_ms: u64) {
+        let capacity = self.max_segments;
+        *self = Self::new();
+        self.max_segments = capacity;
+        let bucket = ((wall_ms as u32) >> 4) as i32;
+        self.flash_timer.start(bucket, 0);
+        self.slide_timer.start(bucket, 0);
+    }
+
+    /// Set the available pixel budget (native strip height plus three).
+    /// Resizing does not clamp the retained counts or start an animation.
+    pub fn set_max_segments(&mut self, bar_height_px: i32) {
+        self.max_segments = bar_height_px / SEGMENT_HEIGHT_PX;
+    }
+
+    /// One ordinary visible Sidebar AI visit (`63FEA0..640385`). The caller
+    /// supplies its wall clock even when no simulation frame was admitted.
+    /// The rated-list read runs only after the native unchanged/idle return.
+    pub fn update(
+        &mut self,
+        output: i32,
+        drain: i32,
+        theoretical_total: impl FnOnce() -> i32,
+        wall_ms: u64,
+    ) {
+        let bucket = ((wall_ms as u32) >> 4) as i32;
+        // Flashing waits for the entire segment transition, then advances at
+        // most once per visit. A long draw stall does not catch up ten blinks.
+        if !self.animating && self.flashes_remaining > 0 && self.flash_timer.expired(bucket) {
+            self.flashes_remaining -= 1;
+            self.flash_timer.start(bucket, FLASH_BUCKETS);
+        }
+        let changed = output != self.cached_output || drain != self.cached_drain;
+        if !changed && !self.animating {
+            return;
+        }
+        if changed {
+            self.animating = true;
+            self.flashes_remaining = FLASH_COUNT;
+            self.flash_timer.start(bucket, FLASH_BUCKETS);
+        }
+        self.cached_output = output;
+        self.cached_drain = drain;
+        let theoretical_total = theoretical_total();
+        let targets = self.compute_targets(output, drain, theoretical_total);
+        if !self.slide_timer.expired(bucket) {
             return;
         }
 
-        // Flash phase: count down flashes.
-        if self.flashes_remaining > 0 {
-            self.flash_tick_counter -= 1;
-            if self.flash_tick_counter <= 0 {
-                self.flashes_remaining -= 1;
-                self.flash_tick_counter = FLASH_TICKS_PER_STEP;
+        // 640064 chooses drain, surplus, output. Each move then performs the
+        // opposite transfer (63FE30: drain/surplus/output;
+        // 63FDC0: surplus/drain/output). This preserves fill during a color
+        // transfer, while allowing a changing theoretical total to grow/shrink.
+        self.animating = false;
+        if let Some(index) = [2, 0, 1]
+            .into_iter()
+            .find(|&i| self.counts[i] != targets[i])
+        {
+            self.animating = true;
+            if self.counts[index] > targets[index] {
+                self.counts[index] -= 1;
+                if let Some(other) = [2, 0, 1].into_iter().find(|&i| self.counts[i] < targets[i]) {
+                    self.counts[other] += 1;
+                }
+            } else {
+                self.counts[index] += 1;
+                if let Some(other) = [0, 2, 1].into_iter().find(|&i| self.counts[i] > targets[i]) {
+                    self.counts[other] -= 1;
+                }
             }
         }
-
-        // Segment animation: move one segment toward target per step.
         if self.animating {
-            self.anim_tick_counter -= 1;
-            if self.anim_tick_counter <= 0 {
-                self.anim_tick_counter = SLIDE_TICKS_PER_STEP;
-                self.step_one_segment();
-            }
+            let filled = self.filled_segments(theoretical_total);
+            // 63F8F0 and its inline AI consumer64032B: signed sum, no clamp
+            // to zero; truncate(min(displayed, filled) / filled * 5).
+            let displayed = self.counts.iter().copied().fold(0_i32, i32::wrapping_add);
+            let ratio = Fpu::div(Fpu::load_i32(displayed.min(filled)), Fpu::load_i32(filled));
+            let duration = Fpu::ftol_i32_low_masked(Fpu::mul(ratio, Fpu::load_i32(5)));
+            self.slide_timer.start(bucket, duration);
         }
     }
 
-    /// Whether the bar is currently in the flash/blink phase.
-    /// Even counter values = draw blink (matching binary's `counter & 0x80000001`).
-    /// Counter starts at 10 (even) so the first frame IS blinking.
     pub fn is_flashing(&self) -> bool {
-        self.flashes_remaining > 0 && (self.flashes_remaining % 2 == 0)
+        self.flashes_remaining > 0 && self.flashes_remaining % 2 == 0
     }
 
-    /// Returns `(empty, surplus, output, drain)` segment counts for drawing.
-    /// Draw order top-to-bottom: empty → surplus(green) → output(yellow) → drain(red).
-    #[cfg(test)]
-    pub fn segment_counts(&self) -> (i32, i32, i32, i32) {
-        let filled = self.surplus_segments + self.output_segments + self.drain_segments;
-        let empty = (self.max_segments - filled).max(0);
-        (
-            empty,
-            self.surplus_segments,
-            self.output_segments,
-            self.drain_segments,
-        )
-    }
-
-    /// The maximum number of segments the bar can display.
     pub fn max_segments(&self) -> i32 {
         self.max_segments
     }
 
-    /// Original PowerClass draw loop `63FB20..63FDA5`, called after strips.
-    /// Emits (SHP frame, vertical row). Its blink consumes the first segment
-    /// of the first nonempty band; zero bands do not reset that cursor.
+    /// Original PowerClass draw loop `63FB20..63FDA5`, after the strips.
+    /// A blink consumes the first segment of the first nonempty band.
     pub fn visit_draw_segments(&self, mut emit: impl FnMut(u8, i32)) {
         let mut row = 0;
-        for _ in 0..self.max_segments
-            - self.surplus_segments
-            - self.output_segments
-            - self.drain_segments
-        {
+        let filled = self.counts.iter().copied().fold(0_i32, i32::wrapping_add);
+        for _ in 0..self.max_segments.wrapping_sub(filled) {
             emit(0, row);
             row += 1;
         }
@@ -231,11 +211,7 @@ impl PowerBarAnimState {
             row += 1;
             consumed = 1;
         }
-        for (frame, count) in [
-            (1, self.surplus_segments),
-            (2, self.output_segments),
-            (3, self.drain_segments),
-        ] {
+        for (frame, count) in [1, 2, 3].into_iter().zip(self.counts) {
             if count > 0 {
                 for _ in consumed..count {
                     emit(frame, row);
@@ -246,308 +222,57 @@ impl PowerBarAnimState {
         }
     }
 
-    // -----------------------------------------------------------------------
-    // Internal
-    // -----------------------------------------------------------------------
-
-    /// Compute target segment distribution from power values.
-    ///
-    /// Phase 1: Total filled segments via asymptotic curve (original Calc_Segments).
-    ///   `filled = max_segs - ftol(max_segs * 400 / (theoretical_total + 400))`
-    ///   Bar is half-full when theoretical total power = 400.
-    ///
-    /// Phase 2: Split filled into drain/output/surplus (original Calc_Power_Distribution).
-    ///   surplus_raw = output - drain. Output portion capped at 100 before surplus
-    ///   kicks in. Three zones drawn proportionally within the filled area.
-    fn compute_targets(&mut self, power_output: i32, power_drain: i32, theoretical_total: i32) {
-        if self.max_segments <= 0 {
-            self.target_surplus = 0;
-            self.target_output = 0;
-            self.target_drain = 0;
-            return;
-        }
-
-        // Phase 1: Filled segments (asymptotic curve from original Calc_Segments).
-        let total = theoretical_total.max(0) as f64;
-        let empty_ratio = FILL_SCALE / (total + FILL_SCALE);
-        let empty = (self.max_segments as f64 * empty_ratio) as i32;
-        let empty = empty.clamp(0, self.max_segments - 1);
-        let filled = self.max_segments - empty;
-
-        // Phase 2: Drain/output/surplus split (original Calc_Power_Distribution).
-        let drain = power_drain.max(0) as f64;
-        let output = power_output.max(0) as f64;
-        let surplus_raw = output - drain;
-
-        let (output_portion, surplus_portion) = if surplus_raw < 0.0 {
-            (0.0, 0.0)
-        } else if surplus_raw < OUTPUT_CAP {
-            (surplus_raw, 0.0)
-        } else {
-            (OUTPUT_CAP, surplus_raw - OUTPUT_CAP)
-        };
-
-        let sum = drain + output_portion + surplus_portion;
-        let (drain_frac, output_frac, surplus_frac) = if sum > 0.0 {
-            (drain / sum, output_portion / sum, surplus_portion / sum)
-        } else {
-            (1.0, 0.0, 0.0)
-        };
-
-        let filled_f = filled as f64;
-        self.target_drain = (filled_f * drain_frac) as i32;
-        self.target_output = (filled_f * output_frac) as i32;
-        self.target_surplus = (filled_f * surplus_frac) as i32;
-
-        // Rounding residual goes to drain (matches original + 0.01 epsilon behavior).
-        let residual = filled - self.target_drain - self.target_output - self.target_surplus;
-        self.target_drain += residual;
+    /// Calc_Segments63F850. The native clamp guarantees at least one filled
+    /// segment. It applies after conversion, including masked-invalid FTOL.
+    fn filled_segments(&self, theoretical_total: i32) -> i32 {
+        let scale = Fpu::load_i32(400); // original double7ED8C8
+        let ratio = Fpu::div(scale, Fpu::add(Fpu::load_i32(theoretical_total), scale));
+        let empty = Fpu::ftol_i32_low_masked(Fpu::mul(ratio, Fpu::load_i32(self.max_segments)));
+        let empty = empty.max(0).min(self.max_segments.wrapping_sub(1));
+        self.max_segments.wrapping_sub(empty)
     }
 
-    /// Move one segment toward the target.
-    /// Priority: drain first, then surplus, then output (matches original game order).
-    fn step_one_segment(&mut self) {
-        if self.drain_segments != self.target_drain {
-            if self.drain_segments < self.target_drain {
-                self.drain_segments += 1;
+    /// Calc_Power_Distribution63F960. Reuse the existing deterministic PC53/chop
+    /// owner: a native 1/3 * 3 can remain below one before FTOL, changing visible
+    /// color bands. The native --state controls pin this arithmetic trap.
+    fn compute_targets(&self, output: i32, drain: i32, theoretical_total: i32) -> [i32; 3] {
+        let filled = Fpu::load_i32(self.filled_segments(theoretical_total));
+        let spare = output.wrapping_sub(drain); //63F9AB subtracts signed dwords
+        let yellow = spare.clamp(0, 100); // double100 at7E2AC0
+        let green = if spare < 0 { 0 } else { spare - yellow };
+        let drain_value = Fpu::load_i32(drain);
+        let yellow_value = Fpu::load_i32(yellow);
+        let green_value = Fpu::load_i32(green);
+        let total = Fpu::add(Fpu::add(drain_value, yellow_value), green_value);
+        let (drain_fraction, green_fraction, yellow_fraction) =
+            if Fpu::compare(total, Fpu::load_i32(0)) == MaskedX87Ordering::Greater {
+                (
+                    Fpu::div(drain_value, total),
+                    Fpu::div(green_value, total),
+                    Fpu::div(yellow_value, total),
+                )
             } else {
-                self.drain_segments -= 1;
-            }
-        } else if self.surplus_segments != self.target_surplus {
-            if self.surplus_segments < self.target_surplus {
-                self.surplus_segments += 1;
-            } else {
-                self.surplus_segments -= 1;
-            }
-        } else if self.output_segments != self.target_output {
-            if self.output_segments < self.target_output {
-                self.output_segments += 1;
-            } else {
-                self.output_segments -= 1;
-            }
-        } else {
-            self.animating = false;
-        }
-
-        self.clamp_segments();
-    }
-
-    /// Ensure segment counts stay within valid bounds.
-    fn clamp_segments(&mut self) {
-        self.surplus_segments = self.surplus_segments.clamp(0, self.max_segments);
-        self.output_segments = self.output_segments.clamp(0, self.max_segments);
-        self.drain_segments = self.drain_segments.clamp(0, self.max_segments);
-
-        let total = self.surplus_segments + self.output_segments + self.drain_segments;
-        if total > self.max_segments {
-            let excess = total - self.max_segments;
-            let drain_reduce = excess.min(self.drain_segments);
-            self.drain_segments -= drain_reduce;
-            let remaining = excess - drain_reduce;
-            self.output_segments = (self.output_segments - remaining).max(0);
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_initial_jump_to_target() {
-        let mut anim = PowerBarAnimState::new();
-        anim.set_max_segments(150); // 50 segments
-        anim.update(200, 100, 300);
-
-        assert_eq!(anim.surplus_segments, anim.target_surplus);
-        assert_eq!(anim.output_segments, anim.target_output);
-        assert_eq!(anim.drain_segments, anim.target_drain);
-        assert_eq!(anim.flashes_remaining, 0, "no flash on initial set");
-    }
-
-    #[test]
-    fn test_asymptotic_fill_curve() {
-        let mut anim = PowerBarAnimState::new();
-        anim.set_max_segments(300); // 100 segments
-
-        // At theoretical=400, bar should be half full (50 filled).
-        anim.update(200, 200, 400);
-        let (empty, surplus, output, drain) = anim.segment_counts();
-        let filled = surplus + output + drain;
-        assert_eq!(filled, 50, "bar should be half full at theoretical=400");
-        assert_eq!(empty, 50);
-
-        // At theoretical=0, bar should have 1 filled segment (minimum).
-        let mut anim2 = PowerBarAnimState::new();
-        anim2.set_max_segments(300);
-        anim2.update(0, 0, 0);
-        let (empty2, surplus2, output2, drain2) = anim2.segment_counts();
-        let filled2 = surplus2 + output2 + drain2;
-        assert_eq!(filled2, 1, "bar should have at least 1 filled segment");
-        assert_eq!(empty2, 99);
-    }
-
-    #[test]
-    fn test_surplus_distribution() {
-        let mut anim = PowerBarAnimState::new();
-        anim.set_max_segments(300); // 100 segments
-        // Output 300, drain 100 → surplus = 200. output_portion = 100, surplus_portion = 100.
-        // Sum = 100 + 100 + 100 = 300. Each fraction = 1/3.
-        anim.update(300, 100, 400);
-        let (_, surplus, output, drain) = anim.segment_counts();
-        // With theoretical=400, filled=50.
-        // Each should be roughly 50/3 ≈ 16-17.
-        assert!(drain > 0, "drain should be nonzero");
-        assert!(output > 0, "output should be nonzero");
-        assert!(surplus > 0, "surplus should be nonzero");
-        assert_eq!(
-            surplus + output + drain,
-            50,
-            "segments should sum to filled"
+                (Fpu::load_i32(1), Fpu::load_i32(0), Fpu::load_i32(0))
+            };
+        let raw_drain = Fpu::mul(filled, drain_fraction);
+        let raw_yellow = Fpu::mul(filled, yellow_fraction);
+        let raw_green = Fpu::mul(filled, green_fraction);
+        let drain_count = Fpu::ftol_i32_low_masked(raw_drain);
+        let yellow_count = Fpu::ftol_i32_low_masked(raw_yellow);
+        let green_count = Fpu::ftol_i32_low_masked(raw_green);
+        // 63FAE8..63FB0D adds each fractional remainder back to drain in this
+        // order, then the stored double0.01 at7E3808 before its final FTOL.
+        let remainder = Fpu::add(
+            Fpu::sub(raw_green, Fpu::load_i32(green_count)),
+            Fpu::sub(raw_yellow, Fpu::load_i32(yellow_count)),
         );
-    }
-
-    #[test]
-    fn test_deficit_all_drain() {
-        let mut anim = PowerBarAnimState::new();
-        anim.set_max_segments(300); // 100 segments
-        // Output=0, drain=200 → surplus_raw = -200. output_portion=0, surplus_portion=0.
-        // All filled segments should be drain.
-        anim.update(0, 200, 200);
-        let (_, surplus, output, drain) = anim.segment_counts();
-        assert_eq!(surplus, 0);
-        assert_eq!(output, 0);
-        assert!(drain > 0, "all filled should be drain");
-    }
-
-    #[test]
-    fn test_zero_power_minimal_bar() {
-        let mut anim = PowerBarAnimState::new();
-        anim.set_max_segments(150); // 50 segments
-        anim.update(0, 0, 0);
-
-        let (empty, surplus, output, drain) = anim.segment_counts();
-        let filled = surplus + output + drain;
-        assert_eq!(filled, 1, "minimum 1 filled segment");
-        // With 0 power, sum=0 → default all-drain fraction.
-        assert_eq!(drain, 1);
-        assert_eq!(empty, 49);
-    }
-
-    #[test]
-    fn test_animation_starts_on_change() {
-        let mut anim = PowerBarAnimState::new();
-        anim.set_max_segments(150);
-        anim.update(200, 100, 300); // initial
-
-        anim.update(200, 150, 350); // change
-        assert_eq!(anim.flashes_remaining, FLASH_COUNT);
-        assert!(anim.animating);
-    }
-
-    #[test]
-    fn test_no_animation_on_same_values() {
-        let mut anim = PowerBarAnimState::new();
-        anim.set_max_segments(150);
-        anim.update(200, 100, 300);
-
-        anim.update(200, 100, 300); // same values
-        assert_eq!(anim.flashes_remaining, 0);
-    }
-
-    #[test]
-    fn test_segment_animation_converges() {
-        let mut anim = PowerBarAnimState::new();
-        anim.set_max_segments(150); // 50 segments
-        anim.update(200, 100, 300); // initial
-
-        anim.update(200, 0, 200); // change
-
-        for _ in 0..(50 * SLIDE_TICKS_PER_STEP + 100) {
-            anim.tick();
-        }
-
-        assert_eq!(anim.surplus_segments, anim.target_surplus);
-        assert_eq!(anim.output_segments, anim.target_output);
-        assert_eq!(anim.drain_segments, anim.target_drain);
-        assert!(!anim.animating);
-    }
-
-    #[test]
-    fn test_flash_even_blink() {
-        let mut anim = PowerBarAnimState::new();
-        anim.set_max_segments(150);
-        anim.update(200, 100, 300); // initial
-        anim.update(200, 50, 250); // change → starts flash at 10
-
-        // Counter=10 (even) → is_flashing() should be true.
-        assert!(anim.is_flashing(), "even counter should blink");
-
-        // Tick through one flash step → counter becomes 9 (odd).
-        for _ in 0..FLASH_TICKS_PER_STEP {
-            anim.tick();
-        }
-        assert!(!anim.is_flashing(), "odd counter should not blink");
-
-        // Another step → counter becomes 8 (even).
-        for _ in 0..FLASH_TICKS_PER_STEP {
-            anim.tick();
-        }
-        assert!(anim.is_flashing(), "even counter should blink again");
-    }
-
-    #[test]
-    fn test_flash_timer_decrements() {
-        let mut anim = PowerBarAnimState::new();
-        anim.set_max_segments(150);
-        anim.update(200, 100, 300);
-        anim.update(200, 50, 250);
-
-        assert_eq!(anim.flashes_remaining, FLASH_COUNT);
-
-        for _ in 0..(FLASH_COUNT * FLASH_TICKS_PER_STEP) {
-            anim.tick();
-        }
-
-        assert_eq!(anim.flashes_remaining, 0);
-    }
-
-    #[test]
-    fn test_segment_counts_sum_correctly() {
-        let mut anim = PowerBarAnimState::new();
-        anim.set_max_segments(150); // 50 segments
-        anim.update(200, 100, 300);
-
-        let (empty, surplus, output, drain) = anim.segment_counts();
-        assert_eq!(empty + surplus + output + drain, 50);
-    }
-
-    #[test]
-    fn test_equal_power_drain() {
-        let mut anim = PowerBarAnimState::new();
-        anim.set_max_segments(300); // 100 segments
-        anim.update(100, 100, 200);
-
-        // surplus_raw = 0. output_portion=0, surplus_portion=0.
-        // All filled = drain.
-        let (_, surplus, output, drain) = anim.segment_counts();
-        assert_eq!(surplus, 0, "no surplus when output == drain");
-        assert_eq!(output, 0, "no output band when surplus_raw == 0");
-        assert!(drain > 0, "all filled should be drain");
-    }
-
-    #[test]
-    fn test_small_surplus_goes_to_output_band() {
-        let mut anim = PowerBarAnimState::new();
-        anim.set_max_segments(300); // 100 segments
-        // Output=150, drain=100 → surplus_raw=50 < 100 cap.
-        // output_portion=50, surplus_portion=0.
-        anim.update(150, 100, 250);
-
-        let (_, surplus, output, drain) = anim.segment_counts();
-        assert_eq!(surplus, 0, "surplus_portion is 0 when surplus < 100");
-        assert!(output > 0, "output band should exist for small surplus");
-        assert!(drain > 0, "drain should be nonzero");
+        let remainder = Fpu::add(Fpu::sub(raw_drain, Fpu::load_i32(drain_count)), remainder);
+        let epsilon = Fpu::load_f64(NativeF64Bits::from_bits(0x3f84_7ae1_47ae_147b));
+        let drain_count = Fpu::ftol_i32_low_masked(Fpu::add(
+            Fpu::add(remainder, Fpu::load_i32(drain_count)),
+            epsilon,
+        ));
+        [green_count, yellow_count, drain_count]
     }
 }
 
@@ -575,11 +300,8 @@ mod native_draw_tests {
         .unwrap();
         assert_eq!(packet.cases.len(), 1215);
         for c in packet.cases {
-            let [surplus_segments, output_segments, drain_segments] = c.counts_surplus_output_drain;
             let a = PowerBarAnimState {
-                surplus_segments,
-                output_segments,
-                drain_segments,
+                counts: c.counts_surplus_output_drain,
                 max_segments: (c.strip_height + 3) / 3,
                 flashes_remaining: c.flashes,
                 ..Default::default()
@@ -597,6 +319,244 @@ mod native_draw_tests {
                 "side{} height{} counts{:?} flashes{}",
                 c.side, c.strip_height, c.counts_surplus_output_drain, c.flashes
             );
+        }
+    }
+}
+
+#[cfg(test)]
+mod native_state_tests {
+    use super::*;
+    use serde::Deserialize;
+
+    #[derive(Deserialize)]
+    struct Packet {
+        rated_lists: Vec<RatedList>,
+        numeric: Vec<Numeric>,
+        histories: Vec<History>,
+        loaded_histories: Vec<LoadedHistory>,
+    }
+
+    #[derive(Deserialize)]
+    struct RatedList {
+        name: String,
+        total: i32,
+        strip_height: i32,
+        filled: i32,
+    }
+
+    #[derive(Deserialize)]
+    struct Numeric {
+        input: [i32; 4],
+        counts: [i32; 3],
+    }
+
+    #[derive(Deserialize)]
+    struct History {
+        name: String,
+        visits: Vec<Visit>,
+    }
+
+    #[derive(Deserialize)]
+    struct Retained {
+        counts: [i32; 3],
+        flash: i32,
+        flash_timer: [i32; 2],
+        slide_timer: [i32; 2],
+        cached: [i32; 2],
+        animating: bool,
+    }
+
+    impl Retained {
+        fn saved(&self) -> SavedPowerBar {
+            SavedPowerBar {
+                counts_surplus_output_drain: self.counts,
+                cached_output: self.cached[1],
+                cached_drain: self.cached[0],
+                flashes_remaining: self.flash,
+                flash_timer: self.flash_timer,
+                animating: self.animating,
+            }
+        }
+    }
+
+    #[derive(Deserialize)]
+    struct Visit {
+        input: [i64; 7],
+        #[serde(flatten)]
+        retained: Retained,
+        fill_calls: usize,
+        frames: Vec<u8>,
+    }
+
+    #[derive(Deserialize)]
+    struct LoadedHistory {
+        name: String,
+        input: [i64; 7],
+        prior: Retained,
+        no_init: Retained,
+        visits: Vec<Visit>,
+    }
+
+    fn assert_retained(anim: &PowerBarAnimState, expected: &Retained, label: &str) {
+        assert_eq!(anim.saved(), expected.saved(), "{label}");
+        assert_eq!(
+            [anim.slide_timer.start_frame(), anim.slide_timer.duration()],
+            expected.slide_timer,
+            "{label} slide"
+        );
+    }
+
+    fn exercise_visit(anim: &mut PowerBarAnimState, c: &Visit, label: &str) {
+        let [wall_ms, height, output, drain, total, visible, reset] = c.input;
+        if reset != 0 {
+            anim.reset(wall_ms as u64);
+        }
+        anim.set_max_segments(height as i32 + 3);
+        let mut supplied = 0;
+        if visible != 0 {
+            anim.update(
+                output as i32,
+                drain as i32,
+                || {
+                    supplied += 1;
+                    total as i32
+                },
+                wall_ms as u64,
+            );
+        }
+        // Native can repeat the pure query; Rust reads the stable list once.
+        assert_eq!(supplied > 0, c.fill_calls > 0, "{label} list admission");
+        assert_retained(anim, &c.retained, label);
+        let mut frames = Vec::new();
+        if visible != 0 {
+            anim.visit_draw_segments(|frame, _row| frames.push(frame));
+        }
+        assert_eq!(frames, c.frames, "{label} draw");
+    }
+
+    fn packet() -> Packet {
+        serde_json::from_str(crate::test_fixture::text(
+            "tools/sidebar_oracle/power_state.json",
+        ))
+        .unwrap()
+    }
+
+    #[test]
+    fn original_power_numeric_controls_match() {
+        let packet = packet();
+        for row in packet.rated_lists {
+            let mut anim = PowerBarAnimState::new();
+            anim.set_max_segments(row.strip_height + 3);
+            assert_eq!(anim.filled_segments(row.total), row.filled, "{}", row.name);
+        }
+        for c in packet.numeric {
+            let [height, output, drain, total] = c.input;
+            let mut anim = PowerBarAnimState::new();
+            anim.set_max_segments(height + 3);
+            assert_eq!(
+                anim.compute_targets(output, drain, total),
+                c.counts,
+                "native distribution {input:?}",
+                input = c.input,
+            );
+        }
+    }
+
+    #[test]
+    fn retail_russian_opening_targets_consume_native_controls() {
+        let Some(retail) =
+            crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+        else {
+            return;
+        };
+        let power = retail.rules.object("NAPOWR").unwrap().power;
+        let barracks_drain = retail.rules.object("NAHAND").unwrap().power.wrapping_neg();
+        let refinery_drain = retail.rules.object("NAREFN").unwrap().power.wrapping_neg();
+        let packet = packet();
+        let mut anim = PowerBarAnimState::new();
+        anim.set_max_segments(303);
+        for drain in [
+            0,
+            barracks_drain,
+            barracks_drain.wrapping_add(refinery_drain),
+        ] {
+            let total = power.wrapping_abs().wrapping_add(drain);
+            let case = packet
+                .numeric
+                .iter()
+                .find(|case| case.input == [300, power, drain, total])
+                .expect("layered retail Power values must have native input evidence");
+            assert_eq!(anim.compute_targets(power, drain, total), case.counts);
+        }
+    }
+
+    #[test]
+    fn original_power_constructor_ai_draw_histories_match() {
+        let mut queried = 0;
+        let mut flash_only = 0;
+        for history in packet().histories {
+            let mut anim = PowerBarAnimState::new();
+            for (index, c) in history.visits.iter().enumerate() {
+                exercise_visit(&mut anim, c, &format!("{} visit{index}", history.name));
+                if c.input[5] != 0 {
+                    queried += usize::from(c.fill_calls > 0);
+                    flash_only += usize::from(c.fill_calls == 0 && c.retained.flash > 0);
+                }
+            }
+        }
+        assert!(
+            queried > 0 && flash_only > 0,
+            "native query/flash-only coverage"
+        );
+    }
+
+    #[test]
+    fn original_saved_power_no_init_and_continuation_match() {
+        let histories = packet().loaded_histories;
+        assert_eq!(histories.len(), 8);
+        let mut visits = 0;
+        for history in histories {
+            // Transport the semantic projection, without old geometry/slide.
+            let bytes = bincode::serialize(&history.prior.saved()).unwrap();
+            let saved = bincode::deserialize(&bytes).unwrap();
+            let mut anim = PowerBarAnimState::from_saved(saved).unwrap();
+            anim.set_max_segments(history.input[1] as i32 + 3);
+            anim.reanchor_after_load(history.input[0] as u64);
+            assert_retained(&anim, &history.no_init, &format!("{} NoInit", history.name));
+            for (index, c) in history.visits.iter().enumerate() {
+                exercise_visit(
+                    &mut anim,
+                    c,
+                    &format!("{} loaded visit{index}", history.name),
+                );
+                visits += 1;
+            }
+        }
+        assert_eq!(visits, 22);
+    }
+
+    #[test]
+    fn malformed_saved_counters_are_rejected_without_normalization() {
+        let good = packet()
+            .loaded_histories
+            .into_iter()
+            .find(|row| row.name == "retained-active")
+            .unwrap()
+            .prior
+            .saved();
+        for (counts, flash) in [
+            ([-1, 0, 0], 4),
+            ([i32::MAX, 1, 0], 4),
+            ([0, 0, 3], -1),
+            ([0, 0, 3], 11),
+        ] {
+            let mut saved = good.clone();
+            saved.counts_surplus_output_drain = counts;
+            saved.flashes_remaining = flash;
+            assert!(matches!(
+                PowerBarAnimState::from_saved(saved),
+                Err(SavedLocalViewError::InvalidPowerState { .. })
+            ));
         }
     }
 }

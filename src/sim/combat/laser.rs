@@ -8,6 +8,7 @@ use crate::rules::weapon_type::WeaponType;
 use crate::sim::intern::InternedId;
 use crate::sim::projectile::{ProjectileCoord, ProjectileTarget};
 use crate::sim::world::{LifecycleOutput, Simulation};
+use crate::util::native_x87::NativeF32Bits;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LaserBirth {
@@ -20,6 +21,9 @@ pub struct LaserBirth {
     /// Laser+21: the supported Prism main beam's doubled first color.
     pub supported: bool,
     pub color: LaserColor,
+    /// Laser+58, copied by54FE60. Ordinary lasers fade1→0; the delayed
+    /// ring caller4A778E/4A785F retains0.5 as its other endpoint.
+    pub fade_end: NativeF32Bits,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,6 +31,9 @@ pub enum LaserColor {
     /// House+56FC is resolved once at construction by the existing client
     /// color owner. Capture the owner now, never look up the firer later.
     House(InternedId),
+    /// The general54FE60 caller4A7526 copies the same House RGB and half
+    /// of it for the outer lines. It does not select DrawBeamSpecial.
+    HouseWithHalfOuter { owner: InternedId, spread: [u8; 3] },
     Explicit {
         inner: [u8; 3],
         outer: [u8; 3],
@@ -140,7 +147,12 @@ pub(crate) fn create<'w>(
             .coord;
             (
                 from,
-                super::fire_coord::effect_z_adjust(world, source, from),
+                super::fire_coord::effect_z_adjust(
+                    world,
+                    source,
+                    from,
+                    super::fire_coord::EffectDepthProjection::ClampedBuilding,
+                ),
             )
         };
     let to = super::fire_coord::effect_target_coordinate(world, rules, target)?;
@@ -151,18 +163,20 @@ pub(crate) fn create<'w>(
         z_adjust,
         weapon.laser_duration,
         color,
+        NativeF32Bits::POSITIVE_ZERO,
     ))
 }
 
 /// LaserDraw54FE60 initializes every caller's width1/unsupported object;
 /// caller-specific postprocessing mutates that one returned birth.
-fn construct(
+pub(crate) fn construct(
     world: &mut Simulation,
     from: ProjectileCoord,
     to: ProjectileCoord,
     z_adjust: i32,
     duration: i32,
     color: LaserColor,
+    fade_end: NativeF32Bits,
 ) -> &mut LaserBirth {
     world
         .lifecycle_outputs
@@ -175,6 +189,7 @@ fn construct(
             width: 1,
             supported: false,
             color,
+            fade_end,
         }));
     let Some(LifecycleOutput::LaserCreated(laser)) = world.lifecycle_outputs.last_mut() else {
         unreachable!("newly appended laser birth")
@@ -214,6 +229,7 @@ pub(crate) fn support(
         0,
         rules.general.prism_support.duration,
         color,
+        NativeF32Bits::POSITIVE_ZERO,
     )
     .width = 3;
 }

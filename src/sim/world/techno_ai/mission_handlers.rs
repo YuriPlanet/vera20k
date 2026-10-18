@@ -24,6 +24,10 @@ mod deployed_guard_oracle_tests;
 mod automatic_deploy_oracle_tests;
 
 #[cfg(test)]
+#[path = "infantry_move_oracle_tests.rs"]
+mod infantry_move_oracle_tests;
+
+#[cfg(test)]
 #[path = "../infantry_fire_oracle_tests.rs"]
 mod infantry_fire_oracle_tests;
 
@@ -159,23 +163,53 @@ pub(crate) fn dispatch_foot_mission(
                 queue: Some(MissionType::Guard),
             }
         }
-        // `FootClass::Mission_Move` is the native named location for this
-        // handler-return cadence; movement execution remains in movement/.
-        // **Infantry take a leaf override first, and VERA does not model it.**
-        // `InfantryClass`'s Move slot is `+0x22C` = `0x0051F660`, which gates on
-        // `[this+0x6C4] ∈ {0x1B, 0x1C, 0x1D, 0x1E}` — the shared
-        // Infantry Doing owner, also read by `0x00521320` — and for
-        // a human-owned unit (`vtable+0x3C` → `HouseClass::IsControlledByHuman`
-        // @ `0x0050B730`) calls `Set_Destination(NULL, true)` through `+0x480`
-        // and returns 1, never entering `FootClass::Mission_Move` @ `0x004D4200`
-        // and never drawing its jitter. Trigger: a deployed infantryman ordered
-        // to move. Player effect: retail drops the destination and re-dispatches
-        // next frame; VERA keeps the destination and draws the cadence jitter.
-        // Frequency: GI, Guardian GI and Desolator deploy is routine, so this is
-        // not rare. Downstream risk: it is one RNG draw per occurrence, so the
-        // stream diverges too. **Note the frame trap**: `[this+0x6C4]` is a
-        // `UnitTypeClass*` on UnitClass and this state enum on InfantryClass,
-        // which caches its own type at `+0x6C0`.
+        // Infantry51F660's Doing27..30 wrapper precedes Foot4D4200.
+        // Human51F68F calls the original class NULL setter, which refuses
+        // while deployed (51AA49..51AA7E); NavCom therefore survives. The
+        // handler still returns1 without the Foot cadence draw. Native
+        // controls: infantry_deploy_action --mission-move --check.
+        (EntityCategory::Infantry, Some(MissionType::Move))
+            if input.infantry_deployed_do_type
+                && sim
+                    .substrate
+                    .entities
+                    .get(id)
+                    .is_some_and(|actor| sim.owner_is_human(actor.owner())) =>
+        {
+            sim.set_infantry_null_destination(id, Some(rules), ctx.overlay_registry, ctx.effects);
+            MissionHandlerEvaluation::cadence(1)
+        }
+        // AI51F6A4: UndeployDelay<=-1 requests unforced Undeploy31. Read
+        // raw signed Count31 AFTER the action, even when it refused; doing
+        // Deploy27 cannot be interrupted and a missing record returns0.
+        // The existing action/sequencer owns Stage, sound and immunity
+        // cleanup. Other delays/Doing inherit the Foot body below.
+        (EntityCategory::Infantry, Some(MissionType::Move))
+            if input.infantry_deployed_do_type
+                && sim
+                    .substrate
+                    .entities
+                    .get(id)
+                    .and_then(|actor| sim.object_type(actor.type_ref(), rules))
+                    .is_some_and(|object| object.undeploy_delay < 0) =>
+        {
+            let _ = sim.infantry_do_action(
+                id,
+                crate::sim::movement::infantry_action::DO_UNDEPLOY,
+                false,
+                rules,
+                ctx.effects,
+            );
+            let count = sim
+                .substrate
+                .entities
+                .get(id)
+                .and_then(|actor| sim.object_type(actor.type_ref(), rules))
+                .and_then(|object| rules.animation_sequence(&object.id))
+                .and_then(|set| set.infantry_action(31))
+                .map_or(0, |record| record.frames_per_facing);
+            MissionHandlerEvaluation::cadence(count)
+        }
         (EntityCategory::Unit | EntityCategory::Infantry, Some(MissionType::Move)) => {
             //Unit740AB8..740AEC closes its own Techno+350 Door before the
             //shared Foot4D4200 cadence. DeployTime is the same native type

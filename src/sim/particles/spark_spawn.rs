@@ -342,10 +342,16 @@ where
         let sample = sim
             .particle_rng()
             .next_range_u32_inclusive(0, MAX_RANDOM_RANGED_SAMPLE);
-        interpolate_start_color(
+        // Original Particle62BADF..62BAEE narrows the scaled draw to float
+        // before661020. The helper owns weighted RGB arithmetic, not RNG.
+        let fraction = X87Chop53::store_f32(X87Chop53::mul(
+            X87Chop53::load_i32(sample as i32),
+            X87Chop53::load_f64(RANDOM_RANGED_UNIT_SCALE)?,
+        ))?;
+        crate::util::native_color::interpolate_rgb8(
             particle_type.start_color_1,
             particle_type.start_color_2,
-            sample,
+            fraction,
         )?
     };
 
@@ -361,27 +367,6 @@ where
     });
     sim.reveal_particle(particle.stable_id());
     Ok(particle)
-}
-
-/// `FUN_00661020(start1, start2, t)` — per-channel linear blend on the scaled
-/// draw, rounded the way the x87 store does it.
-fn interpolate_start_color(
-    start_1: [u8; 3],
-    start_2: [u8; 3],
-    sample: u32,
-) -> Result<[u8; 3], SparkSpawnError> {
-    let t = X87Chop53::mul(
-        X87Chop53::load_i32(sample as i32),
-        X87Chop53::load_f64(RANDOM_RANGED_UNIT_SCALE)?,
-    );
-    let mut out = [0u8; 3];
-    for channel in 0..3 {
-        let lo = X87Chop53::load_i32(i32::from(start_1[channel]));
-        let hi = X87Chop53::load_i32(i32::from(start_2[channel]));
-        let blended = X87Chop53::add(lo, X87Chop53::mul(X87Chop53::sub(hi, lo), t));
-        out[channel] = X87Chop53::ftol_i64(blended)?.clamp(0, 255) as u8;
-    }
-    Ok(out)
 }
 
 /// `Sqrt_Approx((x*x + y*y) + z*z)`.

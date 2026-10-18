@@ -7,6 +7,9 @@ use crate::sim::overlay_grid::OverlayGrid;
 use crate::util::native_x87::{NativeF32Bits, NativeF64Bits};
 use serde_json::Value;
 
+#[path = "bounce_cliff_tests.rs"]
+mod cliff_tests;
+
 fn terrain_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
     ResolvedTerrainCell {
         tileset_index: None,
@@ -259,6 +262,9 @@ impl<'a> BounceTerrain for RecordingTerrain<'a> {
     fn ramp(&self, c: IVec3) -> u8 {
         self.query("0x565730", c);
         self.inner.ramp(c)
+    }
+    fn cliff_face_direction(&self, c: IVec3, previous: IVec3) -> Option<u8> {
+        self.inner.cliff_face_direction(c, previous)
     }
     fn is_water(&self, c: IVec3) -> bool {
         self.query("0x565730", c);

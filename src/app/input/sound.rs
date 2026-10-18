@@ -87,10 +87,7 @@ fn back(state: &mut AppState) {
             false,
         );
         if id == SoundSlider::Music && dialog.positions[0] == 0 {
-            let now = crate::app::match_runtime::sim_tick::monotonic_frame_pacer_ms(
-                state,
-                std::time::Instant::now(),
-            );
+            let now = crate::app::match_runtime::frame_pacer::wall_clock_ms();
             state.audio.queue_then_stop_score_zero(now);
         }
     }
@@ -109,10 +106,7 @@ fn back(state: &mut AppState) {
     state.match_state.match_presentation.in_game_menu = InGameMenuState::Options;
 }
 fn activate(state: &mut AppState, id: SoundButton) {
-    let now = crate::app::match_runtime::sim_tick::monotonic_frame_pacer_ms(
-        state,
-        std::time::Instant::now(),
-    );
+    let now = crate::app::match_runtime::frame_pacer::wall_clock_ms();
     match id {
         SoundButton::Back => back(state),
         SoundButton::Play => {

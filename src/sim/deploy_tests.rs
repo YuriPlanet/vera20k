@@ -1111,7 +1111,7 @@ fn native_deploy_rules(input: &serde_json::Value) -> RuleSet {
         .unwrap_or_default();
     let ini = IniFile::from_str(&format!(
         "{idle_keys}[General]\nAIAutoDeployFrameDelay={delays}\n\
-         [Guard]\nRate=0.1\n[Sticky]\nRate=0.1\n[Area Guard]\nRate=0.1\n\
+         [Guard]\nRate=0.1\n[Sticky]\nRate=0.1\n[Area Guard]\nRate=0.1\n[Move]\nRate=0.1\n\
          [AI]\nBlockagePathDelay={}\n[InfantryTypes]\n0={type_name}\n\
          [{type_name}]\nStrength=100\nSpeed=4\n\
          Locomotor={{4A582744-9839-11D1-B709-00A024DDAFD1}}\n\
@@ -1196,6 +1196,7 @@ pub(crate) fn native_deploy_fixture(row: &serde_json::Value) -> (Simulation, Rul
     sim.mapgen_rng = crate::sim::rng::SimRng::new(31);
     sim.session.binary_frame = input["now"].as_i64().unwrap_or(100) as u32;
     sim.session.game_options.game_speed = input["game_speed_index"].as_i64().unwrap_or(0) as i32;
+    sim.session.game_mode_nonzero = input["game_mode_nonzero"].as_bool().unwrap_or(false);
     let owner = sim.interner.intern("Americans");
     let human = input["human"].as_i64().unwrap_or(0) != 0;
     sim.houses.insert(

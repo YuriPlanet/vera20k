@@ -79,7 +79,12 @@ pub(crate) fn create(
     let Some(source) = world.substrate.entities.get(source_id) else {
         return;
     };
-    let z_adjust = super::fire_coord::effect_z_adjust(world, source, from);
+    let z_adjust = super::fire_coord::effect_z_adjust(
+        world,
+        source,
+        from,
+        super::fire_coord::EffectDepthProjection::ClampedBuilding,
+    );
     let Some(to) = super::fire_coord::effect_target_coordinate(world, rules, target) else {
         return;
     };

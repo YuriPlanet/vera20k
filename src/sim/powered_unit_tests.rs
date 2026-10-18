@@ -71,7 +71,7 @@ fn offline_sparks_match_original_execution() {
                 let coord = |coord: glam::IVec3| serde_json::json!([coord.x, coord.y, coord.z]);
                 serde_json::json!({
                     "coords": coord(system.coords),
-                    "target": system.attached_entity.map_or(0, |_| 1),
+                    "target": system.target_ref.map_or(0, |_| 1),
                     "owner": system.owner_entity.map_or(0, |_| 1),
                     "target_coords": coord(system.target_coords),
                     "house": system.owner_house.map_or(0, |_| 1),

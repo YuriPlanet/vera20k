@@ -557,6 +557,32 @@ impl Simulation {
         self.house_buildings_where(owner, rules, |object| object.grinding)
     }
 
+    /// Rated input to PowerClass63F850, from the canonical House+68 list.
+    /// Original63F889..63F8AB sums Type+EE0/+EE4 without live-state or dirty
+    /// assessment gates. BuildingType461060..46109A splits signed `Power`
+    /// into these fields; wrapping abs/add also preserve NEG MIN and ADD32.
+    /// Executed list controls: tools/sidebar_oracle/power_state.json.
+    /// Missing Rust records/types retain the other House projections' safe
+    /// fallback for incomplete worlds; native assumes valid listed pointers.
+    pub fn theoretical_power_for_owner(&self, rules: &RuleSet, owner: &str) -> i32 {
+        let Some(house) = self.interner.get(owner).and_then(|id| self.houses.get(&id)) else {
+            return 0;
+        };
+        house
+            .base_projection
+            .buildings()
+            .iter()
+            .filter_map(|&id| {
+                self.substrate
+                    .entities
+                    .get(id)
+                    .and_then(|entity| self.object_type(entity.type_ref(), rules))
+            })
+            .fold(0_i32, |total, object| {
+                total.wrapping_add(object.power.wrapping_abs())
+            })
+    }
+
     /// House+0xB0, the absorbers (Items `+0xB4`, Count `+0xC0`), in vector
     /// order. Unlimbo appends a `UnitAbsorb=`/`InfantryAbsorb=` building
     /// (Type `+0x16AE`/`+0x16AF`, `0x004412D4..0x00441335`) ahead of its
@@ -794,6 +820,93 @@ mod tests {
              [SECOND]\nCost=1000\nStrength=1000\nFoundation=1x1\n",
         ))
         .unwrap()
+    }
+
+    #[test]
+    fn theoretical_power_reads_native_house_list_without_assessment() {
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/sidebar_oracle/power_state.json",
+        ))
+        .unwrap();
+        // Original63F850 observes Type+EE0/+EE4 through House+68. These
+        // are supplied registered-state fixtures, not native frame timing.
+        for row in corpus["rated_lists"].as_array().unwrap() {
+            let powers = row["powers"].as_array().unwrap();
+            let power = |index: usize| powers.get(index).and_then(|p| p.as_i64()).unwrap_or(0);
+            let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(&format!(
+                "[Countries]\n0=Americans\n1=Russians\n\
+                 [BuildingTypes]\n0=FIRST\n1=SECOND\n\
+                 [FIRST]\nCost=2000\nStrength=1000\nFoundation=1x1\nPower={}\n\
+                 [SECOND]\nCost=1000\nStrength=1000\nFoundation=1x1\nPower={}\n",
+                power(0),
+                power(1),
+            )))
+            .unwrap();
+            let mut sim = native_map_fixture();
+            let owner = add_house(&mut sim, "Americans", &rules);
+            for (index, kind) in ["FIRST", "SECOND"].iter().take(powers.len()).enumerate() {
+                sim.spawn_object(kind, "Americans", 5 + index as u16 * 4, 5, 0, &rules)
+                    .unwrap();
+            }
+            assert_eq!(
+                sim.houses[&owner].base_projection.buildings().len(),
+                powers.len()
+            );
+            let before = sim.state_hash();
+            assert_eq!(
+                sim.theoretical_power_for_owner(&rules, "Americans"),
+                row["total"].as_i64().unwrap() as i32,
+                "original House list sum: {}",
+                row["name"],
+            );
+            assert_eq!(sim.state_hash(), before, "read-only query: {}", row["name"]);
+            let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "rated-power", 0);
+            let restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
+                .unwrap()
+                .sim;
+            assert_eq!(
+                restored.theoretical_power_for_owner(&rules, "Americans"),
+                row["total"].as_i64().unwrap() as i32,
+                "restored canonical membership: {}",
+                row["name"],
+            );
+            if row["name"] == "stock-mixed" {
+                let native_total = |name| {
+                    corpus["rated_lists"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .find(|case| case["name"] == name)
+                        .unwrap()["total"]
+                        .as_i64()
+                        .unwrap() as i32
+                };
+                let ids = sim.houses[&owner].base_projection.buildings().to_vec();
+                let other = add_house(&mut sim, "Russians", &rules);
+                sim.change_owner_with_rules(ids[0], other, &rules, None, FrameEffects::default());
+                assert_eq!(
+                    sim.theoretical_power_for_owner(&rules, "Americans"),
+                    native_total("stock-drain")
+                );
+                assert_eq!(
+                    sim.theoretical_power_for_owner(&rules, "Russians"),
+                    native_total("stock-output")
+                );
+                assert_eq!(
+                    sim.techno_limbo_with_rules(ids[1], &rules, None),
+                    lifecycle::ConcealOutcome::Concealed
+                );
+                assert_eq!(
+                    sim.theoretical_power_for_owner(&rules, "Americans"),
+                    native_total("empty")
+                );
+                sim.uninit_with_rules(ids[0], &rules);
+                assert_eq!(
+                    sim.theoretical_power_for_owner(&rules, "Russians"),
+                    native_total("empty")
+                );
+            }
+        }
     }
 
     /// Supplied postconstruction physical inputs shared with the native

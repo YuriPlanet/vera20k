@@ -19,7 +19,8 @@ use crate::app::AppState;
 use crate::app::input::commands::{
     cancel_build_by_type, cycle_active_producer, cycle_local_owner, place_ready_building_at_cursor,
     place_starter_base_for_local_owner, preferred_local_owner, preferred_local_owner_name,
-    queue_build_by_type, schedule_command, spawn_test_units_for_local_owner, suspend_build,
+    queue_build_by_type, queue_house_cheer, schedule_command, spawn_test_units_for_local_owner,
+    suspend_build,
 };
 use crate::app::input::context_order::try_queue_context_order_at_screen_point;
 use crate::app::input::entity_pick::{
@@ -1683,25 +1684,24 @@ fn dispatch_retail_hotkey(state: &mut AppState, command: HotkeyCommand) {
         HotkeyCommand::PlanningMode => crate::app::input::planning_mode::toggle(state),
         HotkeyCommand::Delete => crate::app::input::planning_mode::delete_at_cursor(state),
         HotkeyCommand::ScatterObject => queue_scatter_for_selected(state),
+        HotkeyCommand::AllToCheer => queue_house_cheer(state),
         HotkeyCommand::VeterancyNav => selection_navigation::execute_category_navigation(
             state,
             crate::app::types::CategoryNavigationKind::Veterancy,
         ),
-        // UNCHECKED residual, all still no-ops. Three of them are audio
+        // UNCHECKED residual, all still no-ops. Two of them are audio
         // triggers whose rules keys VERA already parses or could:
         // `PlaceBeacon` should place the beacon and play `[AudioVisual]
-        // PlaceBeaconSound` (`Rules+0x1CC`, stock `BeaconPlaced`),
-        // `AllToCheer` should run the cheer animation and play `CheerSound`
-        // (`Rules+0x1C8`, stock `Cheer`), and `Taunt(n)` should broadcast the
-        // multiplayer taunt sample. None of their native command handlers was
+        // PlaceBeaconSound` (`Rules+0x1CC`, stock `BeaconPlaced`), and
+        // `Taunt(n)` should broadcast the multiplayer taunt sample.
+        // None of their native command handlers was
         // read this session, so no mapping is asserted and nothing is wired.
         // Trigger: pressing the bound key. Player effect: the key does
-        // nothing. Frequency: rare in skirmish — all three are multiplayer
+        // nothing. Frequency: rare in skirmish — both are multiplayer
         // social commands. Downstream risk: beacons and taunts are network
         // messages, so they belong with `net/`, not with this row.
         HotkeyCommand::ToggleAlliance
         | HotkeyCommand::PlaceBeacon
-        | HotkeyCommand::AllToCheer
         | HotkeyCommand::PageUser
         | HotkeyCommand::Taunt(_) => {}
     }

@@ -7,6 +7,7 @@
 
 use crate::map::entities::EntityCategory;
 use crate::rules::object_type::{ObjectCategory, ObjectType};
+use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::InternedId;
 use crate::sim::movement::locomotor::MovementLayer;
@@ -144,6 +145,7 @@ impl Simulation {
         &mut self,
         cell: (u16, u16),
         rules: Option<&RuleSet>,
+        registry: Option<&OverlayTypeRegistry>,
     ) -> Vec<u64> {
         let Some(rules) = rules else {
             return Vec::new();
@@ -154,7 +156,7 @@ impl Simulation {
         let residents = self.sensor_residents_in_native_order(cell);
         for &stable_id in &residents {
             crate::sim::world::techno_ai_cloak::sensor_reevaluate_stock_cloak(
-                self, stable_id, rules,
+                self, stable_id, rules, registry,
             );
         }
         residents
@@ -166,11 +168,12 @@ impl Simulation {
         center: (u16, u16),
         radius: u16,
         rules: Option<&RuleSet>,
+        registry: Option<&OverlayTypeRegistry>,
     ) -> Vec<u64> {
         let mut callbacks = Vec::new();
         for cell in self.fog.sensor_circle_cells(center, radius) {
             self.fog.increment_sensor_at(owner, cell.0, cell.1);
-            callbacks.extend(self.sensor_reevaluate_residents(cell, rules));
+            callbacks.extend(self.sensor_reevaluate_residents(cell, rules, registry));
         }
         callbacks
     }
@@ -181,6 +184,7 @@ impl Simulation {
         center: (u16, u16),
         radius: u16,
         rules: Option<&RuleSet>,
+        registry: Option<&OverlayTypeRegistry>,
     ) -> Vec<u64> {
         let mut callbacks = Vec::new();
         for cell in self.fog.sensor_circle_cells(center, radius) {
@@ -190,7 +194,7 @@ impl Simulation {
                 .fog
                 .decrement_sensor_at_if_positive(owner, cell.0, cell.1)
             {
-                callbacks.extend(self.sensor_reevaluate_residents(cell, rules));
+                callbacks.extend(self.sensor_reevaluate_residents(cell, rules, registry));
             }
         }
         callbacks
@@ -202,12 +206,13 @@ impl Simulation {
         center: (u16, u16),
         radius: u16,
         rules: Option<&RuleSet>,
+        registry: Option<&OverlayTypeRegistry>,
     ) -> Vec<u64> {
         let mut callbacks = Vec::new();
         for cell in self.fog.sensor_circle_cells(center, radius) {
             self.fog
                 .decrement_sensor_at_unconditional(owner, cell.0, cell.1);
-            callbacks.extend(self.sensor_reevaluate_residents(cell, rules));
+            callbacks.extend(self.sensor_reevaluate_residents(cell, rules, registry));
         }
         callbacks
     }
@@ -235,6 +240,7 @@ impl Simulation {
         &mut self,
         stable_id: u64,
         rules: Option<&RuleSet>,
+        registry: Option<&OverlayTypeRegistry>,
     ) -> Option<SensorDeposit> {
         let (deposit, remove_owner) =
             self.substrate
@@ -272,6 +278,7 @@ impl Simulation {
                     deposit.center,
                     deposit.remove_radius.max(0) as u16,
                     rules,
+                    registry,
                 );
             }
         } else {
@@ -280,6 +287,7 @@ impl Simulation {
                 deposit.center,
                 deposit.remove_radius.max(0) as u16,
                 rules,
+                registry,
             );
         }
         Some(deposit)
@@ -289,7 +297,12 @@ impl Simulation {
     /// rules-less/headless fixture and for non-Foot objects.
     /// `FootClass::Unlimbo @ 0x004D7170`'s sensor add (vt+0x4E8 at `0x004D7318`), at
     /// the cell of the object it took out of limbo.
-    pub(crate) fn add_unit_sensor_after_unlimbo(&mut self, stable_id: u64, rules: &RuleSet) {
+    pub(crate) fn add_unit_sensor_after_unlimbo(
+        &mut self,
+        stable_id: u64,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+    ) {
         let Some((owner, center, radius, in_limbo)) =
             self.substrate.entities.get(stable_id).and_then(|entity| {
                 let object = self.interner.object_type(entity.type_ref(), rules)?;
@@ -306,8 +319,8 @@ impl Simulation {
         if in_limbo {
             return;
         }
-        let _ = self.remove_cached_sensor_deposit(stable_id, Some(rules));
-        self.apply_sensor_add(owner, center, radius, Some(rules));
+        let _ = self.remove_cached_sensor_deposit(stable_id, Some(rules), registry);
+        self.apply_sensor_add(owner, center, radius, Some(rules), registry);
         if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
             entity.sensor_deposit = Some(SensorDeposit::unit(owner, center, radius));
         }
@@ -331,7 +344,12 @@ impl Simulation {
     /// circle, because `DetectDisguiseRange=` defaults to zero
     /// (`TechnoTypeClass::Constructor @ 0x0071100E`) and YAPSYT / NAPSYB carry
     /// `DetectDisguise=yes` without a range.
-    pub(crate) fn add_building_sensor_array_if_powered(&mut self, stable_id: u64, rules: &RuleSet) {
+    pub(crate) fn add_building_sensor_array_if_powered(
+        &mut self,
+        stable_id: u64,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+    ) {
         let Some((owner, center, sight, remove_radius, detect_radius, powered, in_limbo)) =
             self.substrate.entities.get(stable_id).and_then(|entity| {
                 let object = self.interner.object_type(entity.type_ref(), rules)?;
@@ -374,9 +392,9 @@ impl Simulation {
         if !powered || in_limbo {
             return;
         }
-        let _ = self.remove_cached_sensor_deposit(stable_id, Some(rules));
+        let _ = self.remove_cached_sensor_deposit(stable_id, Some(rules), registry);
         if sight > 0 {
-            self.apply_sensor_add(owner, center, sight, Some(rules));
+            self.apply_sensor_add(owner, center, sight, Some(rules), registry);
         }
         if detect_radius > 0 {
             // The disguise-detect walk issues no resident `+0x420` callback —
@@ -397,20 +415,26 @@ impl Simulation {
 
     /// Exact cached remove used by Foot/Building Limbo.
     pub(crate) fn remove_sensor_before_limbo(&mut self, stable_id: u64) {
-        let _ = self.remove_cached_sensor_deposit(stable_id, None);
+        let _ = self.remove_cached_sensor_deposit(stable_id, None, None);
     }
 
     pub(crate) fn remove_sensor_before_limbo_with_rules(
         &mut self,
         stable_id: u64,
         rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
     ) {
-        let _ = self.remove_cached_sensor_deposit(stable_id, Some(rules));
+        let _ = self.remove_cached_sensor_deposit(stable_id, Some(rules), registry);
     }
 
     /// Foot4D8611/4D8621 executes both receivers for PerCellProcess(2),
     /// including a terminal or chain callback in the same cell.
-    pub fn refresh_unit_sensor_at_per_cell(&mut self, stable_id: u64, rules: &RuleSet) {
+    pub fn refresh_unit_sensor_at_per_cell(
+        &mut self,
+        stable_id: u64,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+    ) {
         let had_unit_deposit = self
             .substrate
             .entities
@@ -418,9 +442,9 @@ impl Simulation {
             .and_then(|entity| entity.sensor_deposit)
             .is_some_and(|deposit| !deposit.building_array);
         if had_unit_deposit {
-            let _ = self.remove_cached_sensor_deposit(stable_id, Some(rules));
+            let _ = self.remove_cached_sensor_deposit(stable_id, Some(rules), registry);
         }
-        self.add_unit_sensor_after_unlimbo(stable_id, rules);
+        self.add_unit_sensor_after_unlimbo(stable_id, rules, registry);
     }
 
     /// `FootClass::ChangeOwner @ 0x004DBED0` old-remove/new-add pair — both
@@ -461,6 +485,7 @@ impl Simulation {
         stable_id: u64,
         new_owner: InternedId,
         rules: Option<&RuleSet>,
+        registry: Option<&OverlayTypeRegistry>,
     ) {
         let building_deposit = self
             .substrate
@@ -471,11 +496,18 @@ impl Simulation {
         if building_deposit {
             return;
         }
-        let Some(mut deposit) = self.remove_cached_sensor_deposit(stable_id, rules) else {
+        let Some(mut deposit) = self.remove_cached_sensor_deposit(stable_id, rules, registry)
+        else {
             return;
         };
         deposit.owner = new_owner;
-        self.apply_sensor_add(new_owner, deposit.center, deposit.add_radius, rules);
+        self.apply_sensor_add(
+            new_owner,
+            deposit.center,
+            deposit.add_radius,
+            rules,
+            registry,
+        );
         if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
             entity.sensor_deposit = Some(deposit);
         }
@@ -486,7 +518,7 @@ impl Simulation {
         stable_id: u64,
         new_owner: InternedId,
     ) {
-        self.transfer_sensor_before_owner_change_inner(stable_id, new_owner, None);
+        self.transfer_sensor_before_owner_change_inner(stable_id, new_owner, None, None);
     }
 
     pub(crate) fn transfer_sensor_before_owner_change_with_rules(
@@ -494,8 +526,9 @@ impl Simulation {
         stable_id: u64,
         new_owner: InternedId,
         rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
     ) {
-        self.transfer_sensor_before_owner_change_inner(stable_id, new_owner, Some(rules));
+        self.transfer_sensor_before_owner_change_inner(stable_id, new_owner, Some(rules), registry);
     }
 }
 
@@ -561,7 +594,7 @@ mod tests {
             .unwrap()
             .position
             .set_rx_for_test(50);
-        sim.refresh_unit_sensor_at_per_cell(second, &rules);
+        sim.refresh_unit_sensor_at_per_cell(second, &rules, None);
         assert!(!sim.fog.has_sensor_for_house(americans, 33, 30));
         assert!(sim.fog.has_sensor_for_house(americans, 57, 30));
 
@@ -814,7 +847,7 @@ mod tests {
             cloak.set_state_for_test(0);
         }
 
-        let added = sim.apply_sensor_add(detector, (40, 30), 1, Some(&rules));
+        let added = sim.apply_sensor_add(detector, (40, 30), 1, Some(&rules), None);
         assert_eq!(
             added,
             vec![newer, older],
@@ -848,18 +881,18 @@ mod tests {
                 .unwrap();
             cloak.set_state_for_test(0);
         }
-        let removed = sim.apply_unit_sensor_remove(detector, (40, 30), 1, Some(&rules));
+        let removed = sim.apply_unit_sensor_remove(detector, (40, 30), 1, Some(&rules), None);
         assert_eq!(removed, vec![newer, older]);
         assert!(sim.sound_events.is_empty());
         assert!(
-            sim.apply_unit_sensor_remove(detector, (40, 30), 1, Some(&rules))
+            sim.apply_unit_sensor_remove(detector, (40, 30), 1, Some(&rules), None)
                 .is_empty(),
             "unit RemoveSensorsAt skips decrement and callbacks at nonpositive pre-count"
         );
         assert!(sim.sound_events.is_empty());
 
         let building_removed =
-            sim.apply_building_sensor_remove(detector, (40, 30), 1, Some(&rules));
+            sim.apply_building_sensor_remove(detector, (40, 30), 1, Some(&rules), None);
         assert_eq!(building_removed, vec![newer, older]);
         let index = 30 * usize::from(sim.fog.width) + 40;
         assert_eq!(

@@ -6,13 +6,14 @@ See tmp_clear_render.md for supplied boundaries.
 """
 import hashlib
 import struct
+from pathlib import Path
 
 from unicorn import UC_HOOK_CODE
 from unicorn.x86_const import (
     UC_X86_REG_EAX, UC_X86_REG_EBP, UC_X86_REG_EBX, UC_X86_REG_ECX,
-    UC_X86_REG_EDI, UC_X86_REG_ESI, UC_X86_REG_ESP,
+    UC_X86_REG_EDI, UC_X86_REG_ESI, UC_X86_REG_ESP, UC_X86_REG_FPCW,
 )
-from tools.native_oracle import NATIVE_SHA256, RET_MAGIC, configured_gamemd, provenance, run_checked
+from tools.native_oracle import NATIVE_SHA256, RET_MAGIC, NativeCallTrace, configured_gamemd, finish_vectors, provenance, run_checked
 from tools.spatial_oracle.bridge_shadow_render import (
     prepare as prepare_shared, CELL, POINT, CLIP, WIDTH, HEIGHT, COUNT,
     PIXELS, Z, A, ints, snapshot, physical_assets,
@@ -453,3 +454,495 @@ def metadata():
                           full_view=0x6D7560, tile_bounds=0x47FF80, shroud_leaf=0x47EFE0,
                           winmain_cpu_profile_call=0x6BDF5F, cpu_profile=0x5355D0,
                           cpu_dispatch=0x4E6190, cpu_mmx=0x7C5F3D, cpu_cmov=0x7C5FFF))
+
+
+def generate_preview():
+    """Original TMP height tables and selected Cell preview, in the same VM.
+
+    No interpolation, RGB packing or expected level-table implementation is
+    present here. Physical registration/lazy loading stays with prepare().
+    """
+    m, inputs, files = prepare()
+    u = m.u
+    # Native primary-surface mask derivation, on the existing owner's declared
+    # enrolled RGB565 descriptor masks. This is not universal Windows startup.
+    descriptor_masks = [0xF800, 0x07E0, 0x001F]
+    u.mem_write(0x8A0958, dwords(*descriptor_masks))
+    u.reg_write(UC_X86_REG_ESP, SP)
+    run_checked(u, 0x4BA9CD, 0x4BAA89,
+                required_addresses=(0x4BA9EE, 0x4BAA27, 0x4BAA61, 0x4BAA83))
+    format_globals = ints(u, 0x8A0DD0, 6)
+    assert format_globals == [11, 3, 0, 3, 5, 2]
+    inputs['surface_format'] = dict(descriptor_masks=descriptor_masks,
+        shift_loss_globals=format_globals, derivation=['004BA9CD', '004BAA89'],
+        boundary='Existing PaletteReader RGB565 enrollment; original mask derivation executes on those declared device masks, not a full DirectDraw device negotiation.')
+    inputs['numeric_environment'] = dict(fpcw=f'{u.reg_read(UC_X86_REG_FPCW):04x}',
+        boundary='Actual shared native VM x87 control word; no full WinMain floating-point startup claimed.')
+    registry = m.read32(0xA8ED2C)
+    head = m.read32(registry)
+    assert head and m.read32(0xAA10B0) == 0
+    names = inputs['tmp_loader']['names']
+    assert names[0] == 'clear01.tem'
+    assert m.string(head + 0x2F5).lower() == names[0]
+    image = m.read32(head + 0xA4)
+    assert image and bytes(u.mem_read(image, 16)) == files[names[0]][:16]
+    source = m.read32(image + 16)
+    assert source
+    pair_rgb = [list(u.mem_read(source + offset, 3)) for offset in (0x2B, 0x2E)]
+    inputs['selected_tmp'] = dict(tile=0, subtile=0, name=names[0],
+        physical_sha256=sha(files[names[0]]), dimensions=ints(u, image, 2),
+        raw_pair_rgb=pair_rgb, registered_file_count=m.read32(head + 0x2F0),
+        boundary='Original theater General/TileSet0000 reads and constructors publish the selected ClearTile0 registry head; original lazy loader binds physical bytes. Contiguous family links remain the existing supplied registration boundary.')
+    # Main is the actual warm selector continuation; the other two streams
+    # receive declared native seeds. Snapshot all bytes, not only cursors.
+    streams = dict(main=LOAD_MAIN, scenario=m.read32(0xA8B230) + 0x218, mapgen=0xABE890)
+    for name in ('scenario', 'mapgen'):
+        m.invoke(0x65C6D0, streams[name], (0,))
+    before = {name: bytes(u.mem_read(address, STRUCT_LEN)).hex()
+              for name, address in streams.items()}
+    reached, draws, lookups = set(), [], []
+    phase = ['producer']
+    trace = NativeCallTrace(u, m.read32)
+    produced_colors, brightened_pair, particle_returns = [], [], []
+    def observe(uc, pc, _size, _data):
+        if pc in (0x549E90, 0x549E50, 0x47BDB0, 0x661020, 0x661190, 0x544E00, 0x4814F0):
+            reached.add(pc)
+        sp = uc.reg_read(UC_X86_REG_ESP)
+        for index in trace.returned(pc, sp):
+            call = trace.calls[index]
+            rgb = list(u.mem_read(call['return_eax'], 3))
+            if call['name'] == 'scale':
+                brightened_pair.append(rgb)
+            elif call['name'] == 'particle':
+                particle_returns.append(dict(fraction_f32_bits=f'{call["args"][2]:08x}', rgb=rgb))
+            else:
+                produced_colors.append(dict(level=call['level'],
+                    side='left' if call['caller'] == '0x549fd1' else 'right',
+                    fraction_f32_bits=f'{call["args"][2]:08x}',
+                    left_rgb=call['left_rgb'], right_rgb=call['right_rgb'], rgb=rgb))
+        if phase[0] == 'producer' and pc in (0x661190, 0x661020):
+            index = trace.entered(pc, sp,
+                ('scale', 2, 8) if pc == 0x661190 else ('weighted', 3, 12))
+            call = trace.calls[index]
+            if pc == 0x661020:
+                assert call['caller'] in ('0x549fd1', '0x54a03c')
+                call.update(level=uc.reg_read(UC_X86_REG_EBX),
+                    left_rgb=list(u.mem_read(call['args'][0], 3)),
+                    right_rgb=list(u.mem_read(call['args'][1], 3)))
+        elif phase[0] == 'particle' and pc == 0x661020:
+            trace.entered(pc, sp, ('particle', 3, 12))
+        if pc in (0x65C780, 0x65C7E0, 0x65C837):
+            draws.append(hex(pc))
+        if pc == 0x549E50:
+            lookups.append(dict(subtile=m.read32(sp + 4), level=m.read32(sp + 8),
+                                selected_name=m.string(uc.reg_read(UC_X86_REG_ECX) + 0x2F5)))
+    hook = u.hook_add(UC_HOOK_CODE, observe)
+    try:
+        m.invoke(0x549E90, head)
+        phase[0] = 'consumers'
+        assert len(brightened_pair) == 2 and len(produced_colors) == 26
+        assert not trace.pending
+        count = m.read32(head + 0x2B4)
+        assert count == 1
+        table = m.read32(m.read32(head + 0x2A8))
+        assert table
+        packed_table = bytes(u.mem_read(table, 13 * 4)).hex()
+        # The original warm selector supplies the selected base file. Search
+        # declared small coordinates; never force its answer or rewrite table.
+        coords = None
+        for y in range(8):
+            for x in range(8):
+                u.mem_write(CELL + 0x24, struct.pack('<hh', x, y))
+                if m.invoke(0x4814F0, CELL, (0, len(names))) == 0:
+                    coords = [x, y]
+                    break
+            if coords is not None:
+                break
+        assert coords is not None
+        u.mem_write(CELL + 0x38, dwords(0))
+        u.mem_write(CELL + 0x44, dwords(-1))
+        u.mem_write(CELL + 0xE4, dwords(0))
+        u.mem_write(CELL + 0x140, dwords(0))
+        marker = m.alloc(4)
+        rows = []
+        for level in range(13):
+            pointer = m.invoke(0x549E50, head, (0, level))
+            words = list(struct.unpack('<2H', u.mem_read(pointer, 4)))
+            u.mem_write(CELL + 0x11A, bytes((0, level)))
+            u.mem_write(marker, b'\xFF' * 4)
+            start = len(lookups)
+            packed = m.invoke(0x47BDB0, CELL, (marker, 0))
+            assert lookups[start:] == [dict(subtile=0, level=level, selected_name=names[0])]
+            assert u.mem_read(marker, 1) == b'\0'
+            colors = [row for row in produced_colors if row['level'] == level]
+            assert [row['side'] for row in colors] == ['left', 'right']
+            rows.append(dict(input=dict(coords=coords, tile=0, subtile=0, level=level,
+                raw_flags=0, overlay=-1, ground_first_object=0, bypass_building=0),
+                output=dict(preview_rgb_pair=[row['rgb'] for row in colors],
+                    fraction_f32_bits=colors[0]['fraction_f32_bits'],
+                    lookup_words=words, cell_packed=packed, marker=0)))
+        # Numeric inputs are supplied controls. Every output executes the
+        # unchanged original kernel, including clamp and ftol instructions.
+        color_a, color_b, output = (m.alloc(16) for _ in range(3))
+        scale = []
+        scale_bits = m.read32(0x7ECBD4)
+        for rgb, factor in ((pair_rgb[0], scale_bits), ([181, 182, 183], scale_bits),
+                            ([162, 168, 80], 0x3F800000), ([80, 162, 255], 0x3F4CCCCD),
+                            ([0, 1, 255], 0x3F000000), ([255, 128, 1], 0xBF800000)):
+            u.mem_write(color_a, bytes(rgb))
+            pointer = m.invoke(0x661190, output, (color_a, factor))
+            assert pointer == output
+            scale.append(dict(input=dict(rgb=rgb, factor_f32_bits=f'{factor:08x}'),
+                              output_rgb=list(u.mem_read(output, 3))))
+        interpolation = []
+        for left, right, fraction in ((pair_rgb[0], brightened_pair[0], 0x3F000000),
+                ([0, 1, 255], [255, 0, 0], 0x3F000000),
+                ([1, 2, 3], [4, 5, 6], 0x3EAAAAAA),
+                ([1, 2, 3], [4, 5, 6], 0x3EAAAAAB),
+                ([0, 1, 255], [255, 0, 0], 0xBF000000),
+                ([0, 1, 255], [255, 0, 0], 0x3FC00000)):
+            u.mem_write(color_a, bytes(left))
+            u.mem_write(color_b, bytes(right))
+            pointer = m.invoke(0x661020, output, (color_a, color_b, fraction))
+            assert pointer == output
+            interpolation.append(dict(input=dict(left_rgb=left, right_rgb=right,
+                fraction_f32_bits=f'{fraction:08x}'), output_rgb=list(u.mem_read(output, 3))))
+        particle, particle_type = m.alloc(0x180), m.alloc(0x400)
+        start_1, start_2 = [80, 255, 255], [255, 255, 100]
+        u.mem_write(particle + 0xAC, dwords(particle_type))
+        u.mem_write(particle_type + 0x2D4, bytes(start_1 + start_2))
+        particle_controls = []
+        phase[0] = 'particle'
+        for name, sample in (('zero', 0), ('one', 1), ('mid', 1073741823),
+                             ('upper', 2147483646), ('welding_first_produced', 19015573)):
+            # Boundary is AFTER native RandomRanged returns. Actual FILD,
+            # double multiply, narrowing FSTPfloat, 661020 and Particle stores
+            # execute. No RNG return or caller is hooked/substituted.
+            u.reg_write(UC_X86_REG_ESP, SP)
+            u.reg_write(UC_X86_REG_ESI, particle)
+            u.reg_write(UC_X86_REG_EAX, sample)
+            run_checked(u, 0x62BAC5, 0x62BB06,
+                        required_addresses=(0x62BADF, 0x62BAE5, 0x661020, 0x62BB00))
+            returned = particle_returns[-1]
+            rgb = list(u.mem_read(particle + 0xB0, 3))
+            assert rgb == returned['rgb']
+            particle_controls.append(dict(input=dict(name=name, sample=sample,
+                start_color1=start_1, start_color2=start_2),
+                output=dict(fraction_f32_bits=returned['fraction_f32_bits'], start_rgb=rgb)))
+        assert particle_controls[-1]['output']['start_rgb'] == [81, 255, 253]
+        assert not trace.pending
+    finally:
+        u.hook_del(hook)
+    after = {name: bytes(u.mem_read(address, STRUCT_LEN)).hex()
+             for name, address in streams.items()}
+    assert before == after and not draws
+    assert reached >= {0x549E90, 0x549E50, 0x47BDB0, 0x661020, 0x661190, 0x544E00, 0x4814F0}
+    return dict(native_sha256=NATIVE_SHA256, inputs=inputs,
+        producer=dict(entry='00549E90', subtile_count=count, levels=13,
+            bytes_per_level=4, table_hex=packed_table, brightness_f32_bits=f'{scale_bits:08x}',
+            fraction_multiplier_f64_bits=f'{struct.unpack("<Q", u.mem_read(0x7ECD28, 8))[0]:016x}',
+            brightened_pair_rgb=brightened_pair, interpolation_returns=produced_colors),
+        rows=rows, scale_controls=scale, interpolation_controls=interpolation,
+        particle_color_controls=particle_controls,
+        rng=dict(before=before, after=after, calls=draws,
+            boundary='Main follows native seed0/128 selector draws; Scenario and MapGen native seeds0. Full preview/table/numeric calls leave all three complete states unchanged.'),
+        native_entries=sorted(f'{pc:08X}' for pc in reached))
+
+
+def preview_metadata():
+    return provenance(scope='Original physical temperate ClearTile0 TMP preview level table549E90, lookup549E50 and complete selected no-Building/no-overlay Cell47BDB0 path for levels0..12; original scale661190/interpolation661020 controls. No whole RMG generation, thumbnail surface, World startup or GPU claim.',
+        assumptions=[
+            'Existing tmp_clear_render prepare() shares PaletteReader, physical archive/theater registration readers, original TMP constructors/full lazy loader and warm native selector. File-family links/counts are the existing supplied registration metadata; selected actual clear01.tem bytes and native registered head/header are checked together.',
+            'Existing RGB565 enrollment is conditional device input, not intrinsic native format. Original4BA9CD..4BAA89 derives shifts/losses from declared masksF800/07E0/001F; full DirectDraw descriptor negotiation is outside this component.',
+            'Full original549E90 frees/rebuilds the native13x4-byte table from physical TMP RGB pairs and original661190/661020, with native x87 state and ftol. All expected words/RGB are original output, no copied host math or packing.',
+            'Cell coordinate, tile0, subtile0, rawlevel0..12, rawflags0, overlay-1, empty ground list and bypass-building0 are declared component inputs. Original Cell body traverses its real no-Building/no-bridge branch, native warm selector/file walk and height lookup; no Cell getter is replaced.',
+            'Numeric clamp/rounding RGB and rawf32 inputs are supplied controls. Main warm selector continuation and separately native-seeded Scenario/MapGen full states are captured before/after all preview work. No full-game RNG-startup equivalence follows.',
+            'Particle color controls start after the declared RandomRanged result at62BAC5, executing original sample double scale/FSTPfloat/661020/output stores through62BB06 without RNG interception. The first retained Welding sample19015573 and typeRGB inputs are replayed numerically, not through a new Particle/world fixture.',
+        ], substitutions=['Existing bounded allocator/free/TLS/CRT and immutable RawFile Windows byte transport only; native table/color/Cell/selector instructions execute unchanged.'],
+        entry_points=dict(table=0x549E90, lookup=0x549E50, cell=0x47BDB0,
+            scale=0x661190, interpolate=0x661020, mask_derivation=0x4BA9CD,
+            tmp_constructor=0x5447C0, tmp_loader=0x547020, selector=0x4814F0,
+            file_walk=0x544E00, particle_color_prefix=0x62BAC5))
+
+
+def generate_partial_redraw(*, detail=False):
+    """Observe dirty maintenance and terrain in the existing surface/VM owner."""
+    from tools import native_oracle as native
+    from tools.native_inspect import section_rows
+    from tools.projectile_oracle import bridge_render_shape as surfaces
+    from tools.procedural_drawing_oracle.shroud import Shroud, _prepare_flat_cells, asset
+    from tools.spatial_oracle.bridge_recalc_presentation import LOAD_MAPGEN
+
+    m, inputs, files = prepare()
+    u, lighting = m.u, profile(m)
+    raw = native.image_bytes()
+    executable = [r for r in section_rows(raw) if r['flags'] & 0x20000000]
+
+    def original_code():
+        for r in executable:
+            expected = raw[r['file_offset']:r['file_offset'] + r['file_bytes']]
+            assert bytes(u.mem_read(r['address'], len(expected))) == expected
+
+    # Reuse native Cell construction and sparse Map enrollment. The flat scene,
+    # knowledge and camera are declared component priors, not a map/reveal load.
+    _table, pointers = _prepare_flat_cells(m, range(32), range(32))
+    cells = {struct.unpack('<hh', u.mem_read(p + 0x24, 4)): p for p in pointers}
+    real_pointers = frozenset(pointers)
+    map_size = ints(u, 0x87F7E8 + 0xF4, 2)
+    assert map_size == [16, 16] and len(cells) == 1024
+    m.invoke(0x47BBF0, 0xABDC50)
+    scene = []
+    for xy, p in sorted(cells.items(), key=lambda item: (item[0][1], item[0][0])):
+        flags = 0x18 if 8 <= xy[0] <= 12 and 18 <= xy[1] <= 22 else 0
+        u.mem_write(p + 0x12C, dwords(flags))
+        scene.append(dict(coords=list(xy), tile_id=0, sub_tile=0, level=0, flags=flags))
+    tactical = m.alloc(0x1000)
+    u.reg_write(UC_X86_REG_ESP, SP)
+    u.reg_write(UC_X86_REG_ESI, tactical)
+    u.reg_write(UC_X86_REG_EBX, 0)
+    run_checked(u, *MATRIX_INITIALIZER)
+    camera = [-396, 354]
+    u.mem_write(tactical + 0xB0, dwords(*camera))
+    u.mem_write(0x887324, dwords(tactical))
+    # Only the nonzero HWND test is reached; this is not a native window.
+    u.mem_write(0xB73550, dwords(1))
+    for p in (0x87F7F4, 0xB0CE88, 0x88A100):
+        u.mem_write(p, dwords(0))
+    u.mem_write(0x886FA0, dwords(0, 0, WIDTH, HEIGHT))
+    u.mem_write(0xB0CE30, dwords(WIDTH, HEIGHT))
+    u.mem_write(0xB0CD48, struct.pack('<Q', 0x3FC25E5374344960))
+    streams = dict(main=LOAD_MAIN, scenario=m.read32(0xA8B230) + 0x218, mapgen=LOAD_MAPGEN)
+    assert m.read32(m.read32(0xA8B230)) & 0x1000 == 0
+    for name in ('scenario', 'mapgen'):
+        m.invoke(0x65C6D0, streams[name], (0,))
+
+    def rng():
+        return {name: bytes(u.mem_read(p, STRUCT_LEN)).hex() for name, p in streams.items()}
+
+    shp, identity = asset()
+    assert shp == files['SHROUD.SHP']
+    image = m.alloc(len(shp))
+    u.mem_write(image, shp)
+    u.mem_write(0x89E794, dwords(image))
+    u.mem_write(0x89E7C5, b'\1')
+    drawing = Shroud.attach(m, size=(WIDTH, HEIGHT), tactical=tactical,
+                           abuffer=surfaces.AOBJ, alpha=A, cells=cells)
+    zero, clip = m.alloc(16), m.alloc(16)
+    u.mem_write(zero, bytes(16))
+    target = cells[10, 20]
+    states, alphas, histories, state_refs, alpha_refs = [], [], [], {}, {}
+    phase, calls, requests = 'setup', [], []
+
+    def queue():
+        n = m.read32(tactical + 0xE0)
+        assert n <= 799
+        reverse = {p: list(xy) for xy, p in cells.items()}
+        refs = ints(u, tactical + 0xE4, n)
+        assert all(p in reverse for p in refs)
+        return dict(cells=[reverse[p] for p in refs], count=n,
+                    redraw=u.mem_read(tactical + 0xD7D, 1)[0],
+                    cell_frame=m.read32(target + 0x5C),
+                    cell_dirty=u.mem_read(target + 0x138, 1)[0])
+
+    def capture(name):
+        state = snapshot(u, 0, 65535)
+        key = state['color_sha256'], state['depth_sha256']
+        if key not in state_refs:
+            state_refs[key] = len(states)
+            states.append(state)
+        alpha = drawing.alpha()
+        key_a = sha(alpha)
+        if key_a not in alpha_refs:
+            alpha_refs[key_a] = len(alphas)
+            alphas.append(dict(hex=alpha.hex(), sha256=key_a))
+        return dict(name=name, surface_ref=state_refs[key], alpha_ref=alpha_refs[key_a],
+                    queue=queue(), rng=rng())
+
+    entries = {0x6DA7D0, 0x6D2B60, 0x480180, 0x6D3660, 0x6D2DE0,
+               0x6D7560, 0x6D7F20, 0x480350, 0x547CF0}
+
+    def observe(_u, pc, _size, _data):
+        sp = u.reg_read(UC_X86_REG_ESP)
+        if pc in (0x65C780, 0x65C7E0):
+            requests.append(dict(phase=phase, entry=f'{pc:08X}', caller=f'{m.read32(sp):08X}',
+                                 stream=u.reg_read(UC_X86_REG_ECX)))
+        if pc not in entries:
+            return
+        row = dict(phase=phase, entry=f'{pc:08X}', caller=f'{m.read32(sp):08X}')
+        if pc == 0x547CF0:
+            args = ints(u, sp + 4, 17)
+            row.update(x=args[3], y=args[4], clip=args[5:9], level=args[9],
+                       common_scalar=args[10], z_enabled=args[11],
+                       file_index=args[12], flags=args[13:])
+        elif pc in (0x480180, 0x480350):
+            point, rectangle = ints(u, sp + 4, 2)
+            p = u.reg_read(UC_X86_REG_ECX)
+            assert p in real_pointers, f'{pc:08X} drew an unenrolled Cell {p:08X}'
+            row.update(cell=list(struct.unpack('<hh', u.mem_read(p + 0x24, 4))),
+                       point=ints(u, point, 2), clip=ints(u, rectangle, 4))
+        calls.append(row)
+
+    hook = u.hook_add(UC_HOOK_CODE, observe)
+
+    def draw(full):
+        nonlocal phase
+        phase = 'shroud'
+        m.invoke(0x6D3660, tactical, (zero, zero, clip, int(full)),
+                 instruction_limit=12_000_000, timeout_us=120_000_000)
+        phase = 'terrain'
+        m.invoke(0x6D2DE0, tactical, (zero, zero, int(full)),
+                 instruction_limit=12_000_000, timeout_us=120_000_000)
+
+    def drain():
+        # Execute original unconditional stores; unrelated upper-object/shell
+        # portions of Tactical.Draw are outside this component.
+        u.reg_write(UC_X86_REG_EBP, tactical)
+        run_checked(u, 0x6D4571, 0x6D457B)
+        run_checked(u, 0x6D4B37, 0x6D4B3E)
+        assert queue()['count'] == queue()['redraw'] == 0
+
+    try:
+        original_code()
+        for ordinal, (name, full, dirty, rectangle) in enumerate((
+                ('no_dirty', False, False, [0, 0, WIDTH, HEIGHT]),
+                ('incremental', False, True, [0, 0, WIDTH, HEIGHT]),
+                ('full_redraw', True, True, [0, 0, WIDTH, HEIGHT]),
+                ('clipped', False, True, [80, 84, 40, 20]))):
+            # Each valid prior is produced natively, never restored from an
+            # expected snapshot. All subsequent calls retain RGB, Z and A.
+            surfaces.prepare_surface(u, dict(depth_baseline=32768, background=0,
+                old_z=65535, a_value=127), size=(WIDTH, HEIGHT),
+                initialize_buffer_height=True)
+            assert queue()['count'] == 0
+            u.mem_write(clip, dwords(0, 0, WIDTH, HEIGHT))
+            u.mem_write(0xA8ED84, dwords(2 * ordinal))
+            draw(True)
+            drain()
+            assert len(set(drawing.alpha())) > 1, 'native physical A must be nonuniform'
+            phases = [capture('prior')]
+            assert states[phases[0]['surface_ref']]['runs']
+            calls.clear()
+            requests.clear()
+            u.mem_write(0xA8ED84, dwords(2 * ordinal + 1))
+            phase = 'enqueue'
+            before = queue()
+            if dirty:
+                m.invoke(0x6DA7D0, tactical, (target,))
+                assert queue()['cells'] == [[10, 20]], queue()
+            after = queue()
+            u.mem_write(clip, dwords(*rectangle))
+            phase = 'maintenance'
+            m.invoke(0x6D2B60, tactical, (int(full), 0, 0, clip),
+                     instruction_limit=12_000_000, timeout_us=120_000_000)
+            phases.append(capture('after_maintenance'))
+            special = [r for r in calls if r['phase'] == phase and r['entry'] == '00547CF0']
+            assert bool(special) == (dirty and not full)
+            if special:
+                assert all(r['flags'] == [0, 1, 0, 0] for r in special)
+                prior, maintained = (states[p['surface_ref']] for p in phases)
+                assert prior['color_sha256'] == maintained['color_sha256']
+                assert phases[0]['alpha_ref'] == phases[1]['alpha_ref']
+                assert prior['depth_sha256'] != maintained['depth_sha256']
+            draw(full)
+            phases.append(capture('after_terrain'))
+            phase = 'cleanup'
+            drain()
+            phases.append(capture('after_cleanup'))
+            assert phases[0]['rng'] == phases[-1]['rng'] and not requests
+            original_code()
+            histories.append(dict(name=name, full_redraw=full, enqueue=dirty,
+                maintenance_clip=rectangle, enqueue_before=before, enqueue_after=after,
+                phases=phases, calls=list(calls), rng_requests=list(requests)))
+    finally:
+        u.hook_del(hook)
+    data = dict(schema_version=1, native_sha256=NATIVE_SHA256, inputs=inputs,
+        scene=dict(cells=scene, map_size=map_size, registration_bounds=[0, 0, 32, 32],
+                   every_draw_receiver_real=True,
+                   camera=camera, lighting=lighting, native_shroud=identity,
+                   selector_table=inputs['selector_table']),
+        surface=dict(width=WIDTH, height=HEIGHT, baseline=32768,
+                     background=0, old_z=65535, bytes_per_pixel=2),
+        surface_states=states, alpha_planes=alphas, histories=histories,
+        original_executable_sections_unchanged=True)
+    return data if detail else partial_redraw_projection(data)
+
+
+def partial_redraw_projection(data):
+    """Pure observed-data selection; the native producer is unchanged.
+
+    Rust reconstructs prior/final frames, never an intermediate dirty diamond.
+    Keep their full lossless runs and the intermediate native hashes. Intern
+    repeated complete RNG states rather than writing them at every boundary.
+    """
+    retained = {phase['surface_ref'] for history in data['histories']
+                for phase in history['phases'] if phase['name'] != 'after_maintenance'}
+    states, refs, histories = [], {}, []
+    for history in data['histories']:
+        phases = []
+        for phase in history['phases']:
+            rng = {}
+            for name, raw in phase['rng'].items():
+                if raw not in refs:
+                    refs[raw] = len(states)
+                    states.append(raw)
+                rng[name] = refs[raw]
+            phases.append(phase | dict(rng=rng))
+        histories.append(history | dict(phases=phases))
+    surfaces = [{k: v for k, v in surface.items() if k != 'runs' or i in retained}
+                for i, surface in enumerate(data['surface_states'])]
+    return data | dict(schema_version=2, histories=histories,
+                       surface_states=surfaces, rng_streams=states)
+
+
+def partial_redraw_metadata():
+    return provenance(
+        scope='Original6DA7D0 ->6D2B60/480180 ->6D3660 ->6D2DE0/6D7F20 retained RGB565/Z/A on physical ClearTile0.',
+        assumptions=[
+            'Existing PaletteReader, physical TMP/palette/SHROUD loaders, native Cell constructors/Map lookups/projection and BSurface/circular planes are reused. All1024 Cells in the declared32x32 registration are real; every prior/measured terrain receiver is checked by address. Map Size16x16 is separately retained, not inferred from draw calls. Flat supplied knowledge/geometry, camera and nonzero HWND are component priors, not native map/window or arrival/reveal bootstrap.',
+            'Original full drawing generates valid priors from black/FFFF/127. Subsequent enqueue/maintenance/shroud/terrain calls retain all three planes. No dirty result, raster output or callback return is supplied.',
+            'Unconditional original cleanup stores6D4571/6D4B37 execute separately; unrelated upper-object/shell paths are excluded. No custom/no-Z first image, other theaters, Fog/AlphaShapes, scrolling or universal reconstruction claim.',
+            'Surface/A interning selects observed native bytes only. All three complete RNG streams are recorded unchanged across the measured transition; Main retains its native warm selector table.',
+            'Default schema2 retains complete prior/final surface runs, intermediate RGB/Z hashes and interned complete RNG states. It is a pure projection of the same original execution. --partial-detail preserves the full schema1 trace in external scratch.',
+        ], substitutions=['Existing shared allocator/CRT/file/cache/platform and BSurface transport only; original executable sections remain byte-identical.'],
+        entry_points=dict(enqueue=0x6DA7D0, maintenance=0x6D2B60, cell=0x480180,
+                          shroud=0x6D3660, terrain=0x6D2DE0, full=0x6D7560,
+                          dirty=0x6D7F20, tmp=0x547CF0,
+                          queue_clear=0x6D4571, redraw_clear=0x6D4B37))
+
+
+def partial_redraw_main(argv):
+    import argparse
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument('--partial-output-dir', type=Path, required=True)
+    parser.add_argument('--partial-detail', action='store_true')
+    args, remaining = parser.parse_known_args(argv)
+    repo = Path(__file__).resolve().parents[2]
+    directory = args.partial_output_dir.resolve()
+    if directory.is_relative_to(repo) or any(
+            arg == '--output' or arg.startswith('--output=') for arg in remaining):
+        raise ValueError('Partial redraw controls require an external scratch directory')
+    names = ('native_oracle.py', 'oracle_sources.py', 'native_inspect.py',
+             'spatial_oracle/tmp_clear_render.py', 'spatial_oracle/bridge_shadow_render.py',
+             'projectile_oracle/bridge_render_shape.py',
+             'projectile_oracle/bridge_render_inputs.py',
+             'projectile_oracle/bridge_render_inputs_palette.py',
+             'procedural_drawing_oracle/shroud.py',
+             'rules_oracle/theater_general_reader.py', 'bridge_click_oracle.py',
+             'spatial_oracle/bridge_recalc_presentation.py',
+             'spatial_oracle/building_body_rules.py',
+             'spatial_oracle/engineer_repair_admission.py',
+             'rmg_oracle/gen_rng_vectors.py')
+    filename = 'tmp_partial_redraw_detail.json' if args.partial_detail else 'tmp_partial_redraw.json'
+    finish_vectors(lambda: generate_partial_redraw(detail=args.partial_detail), directory / filename,
+                   provenance=partial_redraw_metadata, argv=remaining,
+                   source_paths={f'tools/{name}': repo / 'tools' / name for name in names})
+
+
+if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument('--preview', action='store_true')
+    args, rest = parser.parse_known_args()
+    finish_vectors(generate_preview if args.preview else generate,
+        Path(__file__).with_name('tmp_preview.json') if args.preview else Path(__file__).with_suffix('.json'),
+        provenance=preview_metadata if args.preview else metadata, argv=rest)

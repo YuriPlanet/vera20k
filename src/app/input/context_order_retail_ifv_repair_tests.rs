@@ -22,6 +22,12 @@ fn boarded_ifv(rules: &RuleSet, passenger_type: &str) -> (Simulation, u64, u64) 
     }
     sim.session.current_house = sim.interner.get(OWNER);
     crate::sim::arena_fixture::flat_arena(&mut sim, rules);
+    // The arena supplies terrain/navigation. Real Spark ground-contact
+    // queries also need the map's mutable overlay owner, even on clear cells.
+    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(
+        sim.session.map_width,
+        sim.session.map_height,
+    ));
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
     let ifv = sim.spawn_object("FV", OWNER, 16, 16, 64, rules).unwrap();
@@ -238,12 +244,18 @@ fn retail_berserk_engineer_ifv_keeps_cursor_but_refuses_click() {
     );
 }
 
-#[test]
-fn retail_engineer_ifv_plain_repair_click_reaches_attack_mission_and_heals() {
-    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
-        return;
-    };
-    let rules = &retail.rules;
+/// Shared ordinary input fixture: real boarding, normal repair dispatch and
+/// committed Logic create the first live Welding children. No particle, timer,
+/// Display or effect field is installed by this fixture.
+pub(in crate::app) struct OrdinaryWeldingScene {
+    pub sim: Simulation,
+    pub ifv: u64,
+    pub target: u64,
+    pub system: u64,
+    pub first_repair_health: i32,
+}
+
+pub(in crate::app) fn ordinary_welding_children(rules: &RuleSet) -> OrdinaryWeldingScene {
     let (mut sim, ifv, tank) = repair_ifv(rules);
     // No Ctrl: the actual normal-click producer uses the existing friendly
     // Attack-event alias. It is one native Attack mission, not force-fire state.
@@ -266,6 +278,106 @@ fn retail_engineer_ifv_plain_repair_click_reaches_attack_mission_and_heals() {
         after > before && after <= rules.object("MTNK").unwrap().strength,
         "the ordinary selected repair weapon must raise target health"
     );
+    // FireAt6FF1AD..6FF1F5 constructs the selected RepairBullet's retained
+    // WeldingSys before GetROF/rearm. Healing alone does not exercise that
+    // connected effect: its actual system must enter ordinary Logic/Display.
+    let welding = rules.ps_type_id_by_name("WeldingSys").unwrap();
+    let systems: Vec<_> = sim
+        .particle_systems()
+        .iter()
+        .filter(|(_, system)| system.type_id == welding)
+        .collect();
+    let [(_, system)] = systems.as_slice() else {
+        panic!("the first ordinary repair must create one WeldingSys");
+    };
+    assert_eq!(system.owner_entity, Some(ifv));
+    assert_eq!(
+        system.target_ref,
+        Some(crate::sim::combat::TargetKind::Entity(tank))
+    );
+    assert!(system.in_logic_vector);
+    assert!(
+        sim.display_layers()
+            .ordered_ids()
+            .any(|&id| id == system.stable_id),
+        "the constructed system must retain its ordinary Display membership"
+    );
+    let first_system = system.stable_id;
+    for _ in 0..120 {
+        if sim
+            .particle_systems()
+            .get(first_system)
+            .is_some_and(|system| !system.particles.is_empty())
+        {
+            break;
+        }
+        sim.advance_tick(&[], Some(rules), Some(&grid), None, 67);
+    }
+    let system = sim
+        .particle_systems()
+        .get(first_system)
+        .expect("the first system still lives");
+    assert!(
+        !system.particles.is_empty(),
+        "ordinary Logic must create real Welding children"
+    );
+    assert_eq!(
+        sim.entities().get(tank).unwrap().health.current(),
+        after,
+        "the fixture stops before the next repair"
+    );
+    OrdinaryWeldingScene {
+        sim,
+        ifv,
+        target: tank,
+        system: first_system,
+        first_repair_health: after,
+    }
+}
+
+#[test]
+fn retail_engineer_ifv_plain_repair_click_reaches_attack_mission_and_heals() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = &retail.rules;
+    let OrdinaryWeldingScene {
+        mut sim,
+        ifv,
+        target: tank,
+        system: first_system,
+        first_repair_health: after,
+    } = ordinary_welding_children(rules);
+    let grid = sim.path_grid_snapshot().unwrap();
+    let welding = rules.ps_type_id_by_name("WeldingSys").unwrap();
+    let mut drained_after_emission = false;
+    let mut retired = false;
+    for _ in 0..300 {
+        sim.advance_tick(&[], Some(rules), Some(&grid), None, 67);
+        match sim.particle_systems().get(first_system) {
+            Some(system) => {
+                drained_after_emission |= system.spark_spawn_frames <= 0
+                    && system.done_spawning
+                    && !system.particles.is_empty();
+            }
+            None => retired = true,
+        }
+        if sim.entities().get(tank).unwrap().health.current() > after {
+            break;
+        }
+    }
+    assert!(
+        drained_after_emission,
+        "the real children outlive the emission countdown"
+    );
+    assert!(retired, "the first system must retire through ordinary AI");
+    assert!(
+        sim.entities().get(tank).unwrap().health.current() > after,
+        "the next ordinary repair must resume after actual system expiry and rearm"
+    );
+    assert!(sim.particle_systems().iter().any(|(&id, system)| {
+        id != first_system && system.type_id == welding && system.owner_entity == Some(ifv)
+    }));
 }
 
 #[test]

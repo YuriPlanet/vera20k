@@ -1330,11 +1330,13 @@ class _HealthRecorder:
 
 
 def _prepare_unit_rank(m, typ, actor, house, *, locomotor_ctor=0x4AF540, aircraft=False,
-                       existing_cells=None):
+                       existing_cells=None, reuse_existing_expiry_registry=False):
     """Existing original mobile/Foot prefix and locomotor constructor, in this VM.
 
     CoCreate/whole typed Unit constructor and Unlimbo are excluded priors.
     No visual-character or observer predicate result is supplied.
+    Multi-actor callers may retain initialized expiry-listener capacity so
+    each original Object constructor appends without discarding earlier actors.
     """
     from tools.spatial_oracle.building_body_rules import SP as READER_SP
     u = m.u
@@ -1342,7 +1344,11 @@ def _prepare_unit_rank(m, typ, actor, house, *, locomotor_ctor=0x4AF540, aircraf
     rngs = (0x886B88,scenario+0x218,0xABE890)
     for stream in rngs:
         m.invoke(0x65C6D0,stream,(0,))
-    u.mem_write(0xB0F720,words(0x7EB6D4,m.alloc(4096),1024,1,0,10))
+    if reuse_existing_expiry_registry:
+        assert m.read32(0xB0F724) and m.read32(0xB0F728) > 0
+        assert m.read32(0xB0F730) <= m.read32(0xB0F728)
+    else:
+        u.mem_write(0xB0F720,words(0x7EB6D4,m.alloc(4096),1024,1,0,10))
     requests=[]
     def observe_constructor(_u,pc,_size,_data):
         if pc in (0x65C780,0x65C7E0):
@@ -4416,7 +4422,7 @@ def radial_indicator_metadata():
 
 
 def generate_infantry_berserk_body():
-    """Eight prepared GI draws; the original body, shadow and blitters run.
+    """Eight body draws and 28 joined Object/viewport draws in one owner.
 
     The shared owner supplies only immutable file/cache and platform storage.
     Actor/House/Cell admission is a declared prior, not a simulated gas hit.
@@ -4529,12 +4535,28 @@ def generate_infantry_berserk_body():
     u.mem_map(0x21000000, 0x100000)
 
     draws, reached, rng_requests = [], set(), []
+    viewport_admission = None
     expected_entries = {0x518F90, 0x518D80, 0x41C090, 0x705E00,
                         0x705D70, 0x704350, 0x4AED70, 0x487950}
     def observe(_u, pc, _size, _data):
         if pc in expected_entries:
             reached.add(pc)
         sp = u.reg_read(UC_X86_REG_ESP)
+        if viewport_admission is not None:
+            if pc in (0x5F4B10, 0x41BE00, 0x5F65A0, 0x6D2140, 0x518F90):
+                viewport_admission['events'].append(f'{pc:08X}')
+            if pc == 0x6D2140:
+                # Original RET8 ABI: XYZ pointer, then output Point2D pointer.
+                viewport_admission['_projection_output'] = m.read32(sp+8)
+            elif pc == 0x5F4B6F:
+                # Observe after the actual CALL6D2140, before TEST AL,AL.
+                viewport_admission['projection_admitted'] = bool(u.reg_read(UC_X86_REG_EAX)&255)
+                viewport_admission['point'] = list(struct.unpack('<2i',
+                    u.mem_read(viewport_admission['_projection_output'], 8)))
+            elif pc == 0x518F90:
+                viewport_admission['body_entry_count'] += 1
+                viewport_admission['body_point'] = list(struct.unpack('<2i',
+                    u.mem_read(m.read32(sp+4), 8)))
         if pc == 0x4AED70:
             args = list(struct.unpack('<14i', u.mem_read(sp+4, 56)))
             draws.append(dict(return_pc=m.read32(sp), frame=args[1],
@@ -4558,7 +4580,8 @@ def generate_infantry_berserk_body():
 
     hook = u.hook_add(UC_HOOK_CODE, observe)
     try:
-        lut = list(struct.unpack('<32I', native.file_span(native.image_bytes(), 0x7EAEFC, 128)[1]))
+        facing_table_bytes = native.file_span(native.image_bytes(),0x7EAEFC,128)[1]
+        lut = list(struct.unpack('<32I',facing_table_bytes))
         rows = []
         for frame in (0, 1):
             angle = lut.index(frame)*2048
@@ -4606,6 +4629,129 @@ def generate_infantry_berserk_body():
             frames.append(dict(frame=frame,
                 native_rect=list(struct.unpack('<4i', u.mem_read(rectangle, 16))),
                 compressed=bool(m.invoke(0x69E900, shp, (frame,)) & 255)))
+
+        # The original eight rows above retain their exact inputs and outputs.
+        # Join Object admission to that same physical GI/palette/surface owner;
+        # EntityReveal establishes this viewport prefix, not a second VM.
+        from tools.spatial_oracle.building_body_rules import SP as reader_sp
+        u.mem_write(reader_sp+4, dwords(0x886FA0))
+        _status_reader_block(m, 0x6D5F60, 0x6D5F8D,
+            {UC_X86_REG_ECX:tactical}, stack_delta=-12)
+        assert list(struct.unpack('<4i',u.mem_read(0xB0CE28,16))) == [0,0,64,96]
+        vtable = m.read32(actor)
+        assert vtable == VTABLES['infantry']
+        assert [m.read32(vtable+offset) for offset in (0xAC,0x104,0x114)] == [
+            0x41BE00,0x5F4B10,0x518F90]
+        original_vtable = native.file_span(native.image_bytes(),vtable,0x600)[1]
+        assert bytes(u.mem_read(vtable,0x600)) == original_vtable
+        u.mem_write(0xB73550,dwords(1))
+        u.mem_write(0xA8ED6B,b'\0')
+        u.mem_write(tactical+0xB0,dwords(0,0))
+        coords = m.alloc(12)
+        m.invoke(m.read32(vtable+0xAC),actor,(coords,))
+        zero_return = m.invoke(0x6D2140,tactical,(coords,point))
+        zero_point = list(struct.unpack('<2i',u.mem_read(point,8)))
+        viewport_rows = []
+        for frame in (0,1):
+            #49152 is the physical production fixture's authored facing192.
+            angle = 49152 if frame == 1 else lut.index(frame)*2048
+            assert lut[(((angle>>10)+1)>>1)&31] == frame
+            selected = next(entry for entry in frames if entry['frame']==frame)
+            x,y,w,h = selected['native_rect']
+            left,top = x-canvas_width//2,y-canvas_height//2
+            right,bottom = left+w,top+h
+            # Camera inputs come from original zero-camera projection and
+            # original frame headers. No VERA point or raster is consulted.
+            cases = (
+                ('center',(32,48),'positive'),
+                ('left_partial',(-left-w//2,48),'positive'),
+                ('right_partial',(64-left-w//2,48),'positive'),
+                ('top_partial',(32,-top-h//2),'positive'),
+                ('bottom_partial',(32,96-top-h//2),'positive'),
+                ('left_adjacent_outside',(-right,48),'empty'),
+                ('right_adjacent_outside',(64-left,48),'empty'),
+                ('top_adjacent_outside',(32,-bottom),'empty'),
+                ('bottom_adjacent_outside',(32,96-top),'empty'),
+                #6D2223..2269 admits inclusive[-360,W+360]/[-180,H+180].
+                ('left_projection_rejected',(-361,48),'rejected'),
+                ('right_projection_rejected',(64+361,48),'rejected'),
+                ('top_projection_rejected',(32,-181),'rejected'),
+                ('bottom_projection_rejected',(32,96+181),'rejected'),
+                ('return_center',(32,48),'positive'))
+            for label,target,result_kind in cases:
+                camera = [zero_point[axis]-target[axis] for axis in range(2)]
+                buffers = prepare_surface(u,dict(old_z=2000,a_value=127,background=0x39E7))
+                u.mem_write(facing,dwords(angle))
+                m.invoke(0x4C9300,actor+0x388,(facing,))
+                u.mem_write(actor+0x298,b'\0')
+                u.mem_write(actor+0x80,b'\0\0')  # Redraw0/Limbo0; force1 owns admission.
+                for cell in cells:
+                    u.mem_write(cell+0x12C,dwords(0x18))
+                u.mem_write(tactical+0xB0,dwords(*camera))
+                u.mem_write(clip,dwords(0,0,64,96))
+                before = {name:bytes(u.mem_read(pointer,0x3F4)) for name,pointer in streams.items()}
+                reached.clear()
+                draws.clear()
+                rng_requests.clear()
+                viewport_admission = dict(projection_admitted=None,point=None,
+                    body_point=None,body_entry_count=0,events=[])
+                raw_return = m.invoke(0x5F4B10,actor,(clip,1,0),
+                    timeout_us=120000000,instruction_limit=10000000)
+                viewport_admission.pop('_projection_output',None)
+                viewport_admission.update(raw_return=raw_return,returned_al=raw_return&255,
+                    body_admitted=bool(viewport_admission['body_entry_count']),
+                    clip=list(struct.unpack('<4i',u.mem_read(clip,16))),
+                    redraw_after=bool(u.mem_read(actor+0x80,1)[0]))
+                body,shadow = None,None
+                for original_draw in draws:
+                    draw = dict(original_draw)
+                    return_pc = draw.pop('return_pc')
+                    # One final buffer below suffices for these empty shadows.
+                    draw.pop('rgb565_le_hex',None)
+                    if return_pc == 0x70645D:
+                        assert body is None and draw['frame'] == frame
+                        body = draw
+                    else:
+                        assert return_pc == 0x706602 and shadow is None
+                        shadow = draw
+                final = bytes(u.mem_read(PIXELS,64*96*2))
+                changed = sum(value[0] != 0x39E7 for value in struct.iter_unpack('<H',final))
+                # These assertions require original pixels and dispatch, not
+                # the row label or a supplied VERA answer, to establish them.
+                assert viewport_admission['point'] is not None
+                assert viewport_admission['returned_al'] == int(viewport_admission['body_admitted'])
+                if result_kind == 'positive':
+                    assert changed > 0 and body is not None
+                else:
+                    assert changed == 0
+                if result_kind == 'rejected':
+                    assert not viewport_admission['projection_admitted']
+                    assert viewport_admission['body_entry_count'] == 0 and not draws
+                else:
+                    assert viewport_admission['projection_admitted']
+                    assert viewport_admission['body_entry_count'] == 1
+                invariants = dict(
+                    source_unchanged=bytes(u.mem_read(shp,len(assets['GI.SHP']))) == assets['GI.SHP'],
+                    a_unchanged=bytes(u.mem_read(A,len(buffers['lighting']))) == buffers['lighting'],
+                    z_unchanged=bytes(u.mem_read(Z,len(buffers['depths']))) == buffers['depths'],
+                    rng_unchanged={name:bytes(u.mem_read(pointer,0x3F4)) == before[name]
+                        for name,pointer in streams.items()},rng_requests=rng_requests.copy(),
+                    vtable_unchanged=bytes(u.mem_read(vtable,0x600)) == original_vtable,
+                    facing_table_unchanged=bytes(u.mem_read(0x7EAEFC,128)) == facing_table_bytes)
+                assert all(invariants[key] for key in ('source_unchanged','a_unchanged',
+                    'z_unchanged','vtable_unchanged','facing_table_unchanged'))
+                assert all(invariants['rng_unchanged'].values()) and not rng_requests
+                CampaignReader.check_code(m)
+                invariants['original_code_unchanged'] = True
+                viewport_rows.append(dict(name=f'frame{frame}_{label}',
+                    input=dict(frame=frame,facing=angle,berserk=False,shrouded=False,
+                        old_z=2000,camera=camera,caller_clip=[0,0,64,96],
+                        redraw=False,force=True,limbo=False),
+                    admission=viewport_admission,body=body,shadow=shadow,
+                    changed_pixel_count=changed,final_rgb565_le_hex=final.hex(),invariants=invariants))
+                viewport_admission = None
+            assert viewport_rows[-14]['final_rgb565_le_hex'] == viewport_rows[-1]['final_rgb565_le_hex']
+        assert len(viewport_rows) == 28
         assets.update({name:tile_assets[name] for name in ('TEMPERATMD.INI', 'CLEAR01.TEM')})
         shared = dict(
             assets=[dict(name=name, bytes=len(raw), sha256=sha(raw)) for name, raw in assets.items()],
@@ -4626,7 +4772,16 @@ def generate_infantry_berserk_body():
                 a_value=127, scroll_rows=0, fpcw=0x0E7F, cmov=True, mmx=True,
                 canvas=[canvas_width,canvas_height]),
             frames=frames)
-        return dict(schema_version=1, native_sha256=native.image_sha256(), shared=shared, rows=rows)
+        shared['viewport'] = dict(rect=[0,0,64,96],caller_clip=[0,0,64,96],
+            graphical_client=1,editor=False,force=True,redraw=False,
+            vtable=f'{vtable:08X}',render_coords='0041BE00',get_coords='005F65A0',
+            draw_if_visible='005F4B10',draw_it='00518F90',viewport_writer=['006D5F60','006D5F8D'],
+            projection='006D2140',projection_return='005F4B6F',
+            projection_inclusive_padding=[360,180],zero_camera_point=zero_point,
+            zero_camera_raw_return=zero_return,zero_camera_returned_al=zero_return&255,
+            camera_frame='Original Tactical+B0/B4 projected-world top-left; no VERA row bias')
+        return dict(schema_version=1, native_sha256=native.image_sha256(),shared=shared,
+            rows=rows,viewport_rows=viewport_rows)
     finally:
         u.hook_del(hook)
         u.hook_del(atomic_hook)
@@ -4634,7 +4789,7 @@ def generate_infantry_berserk_body():
 
 def infantry_berserk_body_metadata():
     return native.provenance(
-        scope='Eight original prepared ground GI body/shadow draws through physical raw/RLE SHP, native DarkRed Convert and packed RGB565 pixels',
+        scope='Eight prepared GI body/shadow controls and28 joined Object viewport controls through original admission/projection, physical raw/RLE SHP, DarkRed Convert and packed RGB565 pixels',
         assumptions=[
             'Original Rules665650/66D480/6691E0 read physical root ColorAdd and AudioVisual BerserkColor/ExtraInfantryLight. InfantryType5236A0/full5240A0 receive only physical E1 Image/Strength/Armor plus fixed ART GI/GISequence. Native Image/sequence loading executes; unrelated type fields retain constructor defaults. This is not full retail type/scenario fill or a layered rules history.',
             'The existing shroud status preparation runs Infantry prefix517A50..517AE6 including Foot/Techno/Object and whole Walk75AA90. Prepared owner/current House, local DarkRed scheme index1, Alive1/Limbo0/HP125, Location2688/5248/0, Ready/Stage0 and ordinary guardFF admit the draw. Whole Infantry construction, COM activation, Unlimbo, display admission and CAOS receiver/refresh/expiry are not executed.',
@@ -4643,12 +4798,19 @@ def infantry_berserk_body_metadata():
             'Whole Infantry518F90->Foot41C090->Techno705E00 and actual705D70/518D80/GetZAdjust/shape4AED70/pickers/rowwalkers/raw or RLE leaves run unchanged. Facing inputs are selected from original table7EAEFC and snapped by4C9300; no frame, word, intensity, shape, shadow or pixel result is substituted. Physical frames0/1 plus shadows372/373 are bounded controls, not whole DrawIt/DrawSHP coverage.',
             'Each body buffer is observed immediately at actual shape return70645D before shadow; final buffer is observed after actual shadow return706602. Physical shadow372/373 have original empty rectangles, so final equals body; real shadow calls/pickers execute but no positive shadow-store/overlap is established. Source holes, packed colour, A/Z predicates and blocked stores are native results. The shrouded control deliberately enters the body and proves caller-word clearing, not that full DrawIfVisible admits a shrouded GI. All three full RNG buffers, physical GI bytes, A/Z and original executable code are checked unchanged after every measured draw; constructor RNG/timer evidence is separate.',
             'Prepared64x96 BSurface/circular planes use A127, baseline1024, background39E7 and oldZ2000 or0. No VERA raster/table provides expected pixels. These component crops do not establish GPU, whole frame, CAOS lifecycle, arbitrary stance/effects/custom values/nonflat sites/global ordering or Behind behavior.',
+            'The additive viewport_rows reuse the SAME PaletteReader/actor/physical GI/TMP/palette/surface owners after the eight legacy rows. The original retained viewport prefix6D5F60..6D5F8D installs dimensions64x96; no downstream COM/window work executes. GraphicalB73550=1/editorA8ED6B=0, Redraw0/Limbo0, force1 and callerclip0/0/64/96 are declared ordinary caller priors, not a whole Tactical6D8DB0 or display-registration run.',
+            'Original actor RenderCoords+AC41BE00/GetCoords5F65A0 and6D2140 establish the zero-camera point. Cameras are selected from that ORIGINAL point and original69E7E0 physical frame headers. Every viewport row then executes whole Object5F4B10 through actual+114Infantry518F90 where admitted. No VERA coordinate, frame, clip, admission, raster or framebuffer initializes a native expected output. Frame0 retains facing53248; frame1 uses49152, the authored192<<8 production pose; native7EAEFC and518D80 select the frames.',
+            'Each frame has center, four positive partial-header overlaps, four adjacent empty placements, four projection-rejected placements and center return. Actual6D2223..2269 branches admit inclusive X[-360,W+360]/Y[-180,H+180]; far controls are one beyond those limits. Actual projection AL/point is observed at caller5F4B6F; actual body point and entry count at518F90, raw ObjectEAX/AL after whole return and actual mutated callerclip are recorded separately. A body entry is not a shape call or proof of pixels; adjacent outside may enter518F90 yet emit no shape. Final pixels establish positive versus empty controls; original ObjectAL does not supply that answer.',
+            'Every joined row reads final RGB565 including rejected draws and checks unchanged physical GI, A/Z, all three full RNG buffers, original code, actual Infantry vtable and facing table7EAEFC/128B against original file bytes. Center/return final bytes must match. Object5F4B10 clears Redraw+80 before projection and has no RNG draw, timer write or detach call; its main-Tactical force1 prior needs no simulation dirty latch. The selected28 controls do not establish earlier Tactical world-bound admissions, viewport/camera production, minimap input, arbitrary caller clips, other classes, zoom, nonflat height, whole gameplay/frame equivalence or Behind.',
         ], substitutions=[
             'Existing PaletteReader/BulletReader/HutTypeReader supplies immutable archive-selected file bytes, lexical linked/cache INI objects, successful allocator/delete/CRT/TLS and OS resource transport. Existing stock MIX decoding selects physical inputs; original native readers/frame accessors/shape/blitters produce draw outputs. The full native archive/scenario startup is outside this prepared fixture.',
             'Existing infantry_deploy_action atomic service handles only Windows InterlockedIncrement/Decrement through IAT7E11C8/CC. Existing bridge_render_shape BSurface storage/locks/pitch replace DirectDraw backing. Existing TMP RawFile service supplies exact selected physical bytes. No original executable bytes or selected gameplay/draw/pixel results are patched.',
         ], entry_points=dict(rules_ctor=0x665650, color_add=0x66D480, audio_visual=0x6691E0,
             infantry_type_ctor=0x5236A0, infantry_type_read=0x5240A0,
             infantry_prefix=0x517A50, infantry_prefix_stop=0x517AE6, walk_ctor=0x75AA90,
+            viewport_begin=0x6D5F60, viewport_stop=0x6D5F8D,
+            render_coords=0x41BE00, get_coords=0x5F65A0, projection=0x6D2140,
+            draw_if_visible=0x5F4B10, projection_return=0x5F4B6F,
             infantry_body=0x518F90, berserk_reader=0x518FDA, frame=0x518D80,
             foot_shape=0x41C090, draw_shp=0x705E00, house_convert=0x705D70,
             get_z_adjust=0x704350, tmp_query=0x547150, tmp_load=0x544CB0,

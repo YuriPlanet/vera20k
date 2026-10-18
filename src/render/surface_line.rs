@@ -42,6 +42,9 @@ pub(crate) struct SurfaceLine {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum SurfaceDraw {
     Line(SurfaceLine),
+    /// ParticleDraw62D02C: packed color after full-u16 A admission, with a
+    /// signed candidate tested strictly against the current native Z word.
+    Point(crate::render::tactical_compat::PreparedSparkPoint),
     /// XSurface7BB350: packed opaque stores, without A/Z admission.
     Ellipse {
         center: [i32; 2],

@@ -4810,7 +4810,7 @@ mod retail_garrison_tests;
 
 #[cfg(test)]
 #[path = "context_order_retail_ifv_repair_tests.rs"]
-mod retail_ifv_repair_tests;
+pub(in crate::app) mod retail_ifv_repair_tests;
 
 #[cfg(test)]
 mod stationary_attack_dispatch_tests {

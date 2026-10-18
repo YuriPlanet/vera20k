@@ -196,81 +196,46 @@ pub fn overlay_densities(map: &crate::map::map_file::MapFile) -> OverlayDensitie
         .collect()
 }
 
-/// Collect the playfield cells of a map with the radar colours the resolved
-/// terrain gave them.
-///
-/// Every playfield cell contributes, including ones the resolver produced no
-/// entry for: a missing colour becomes the same grey a black lookup does, rather
-/// than dropping the cell. That matters because the preview's surface is sized
-/// from the extent of this set, so silently skipping cells shrinks the image.
-/// The colours the rasteriser needs, with no asset handles — safe to move to a
-/// worker thread.
-///
-/// Keyed on the cell identity as it appears in the map file, with the values
-/// taken from what the terrain resolver produced for cells carrying that
-/// identity. Recording the resolver's answer rather than re-deriving one is the
-/// point: the resolver decides which tile a cell actually ends up with, and a
-/// table that second-guessed it would drift from the colours on screen today.
-///
-/// A tile the table has never seen falls back to black, which the rasteriser
-/// then substitutes with grey — the same treatment a failed colour lookup gets
-/// in the original.
-#[derive(Debug, Clone, Default)]
-pub struct PreviewPalette {
-    tiles: std::collections::HashMap<(i32, u8), ([u8; 3], [u8; 3])>,
-    overlays: std::collections::HashMap<(u8, u8), [u8; 3]>,
+type PreviewColorPair = ([u8; 3], [u8; 3]);
+
+/// Original TMP549E90's13-row color table, derived from selected TMP bytes.
+/// This preview-local cache keys the actual resolved RGB pair, including the
+/// selected independent file. It is discarded with the preview; there is no
+/// mutable asset/Cell authority or invalidation state here.
+#[derive(Default)]
+struct PreviewPalette {
+    tiles: std::collections::HashMap<PreviewColorPair, [PreviewColorPair; 13]>,
 }
 
 impl PreviewPalette {
-    /// Record what the resolver produced for every tile identity this map uses,
-    /// plus the overlay colours its overlays resolve to.
-    pub fn from_map(
-        map: &crate::map::map_file::MapFile,
-        resolved: &crate::map::resolved_terrain::ResolvedTerrainGrid,
-        overlay_radar: &dyn Fn(u8, u8) -> Option<[u8; 3]>,
-    ) -> Self {
-        let mut palette = Self::default();
-        for cell in &map.cells {
-            if let Some(resolved_cell) = resolved.cell(cell.rx, cell.ry) {
-                palette
-                    .tiles
-                    .entry((cell.tile_index, cell.sub_tile))
-                    .or_insert((resolved_cell.radar_left, resolved_cell.radar_right));
-            }
-        }
-        for overlay in &map.overlays {
-            let key = (overlay.overlay_id, overlay.frame);
-            if palette.overlays.contains_key(&key) {
-                continue;
-            }
-            if let Some(rgb) = overlay_radar(overlay.overlay_id, overlay.frame) {
-                palette.overlays.insert(key, rgb);
-            }
-        }
-        palette
-    }
-
-    /// The terrain colour pair for a raw cell identity.
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn tile_colours(&self, tile_index: i32, sub_tile: u8) -> ([u8; 3], [u8; 3]) {
-        self.tiles
-            .get(&(tile_index, sub_tile))
-            .copied()
-            .unwrap_or(([0, 0, 0], [0, 0, 0]))
-    }
-
-    /// The overlay colour for an id and growth stage, already channel-ordered.
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn overlay_colour(&self, overlay_id: u8, density: u8) -> Option<[u8; 3]> {
-        self.overlays
-            .get(&(overlay_id, density))
-            .map(|rgb| overlay_radar_channel_order(overlay_id, *rgb))
-            .filter(|rgb| *rgb != [0, 0, 0])
-    }
-
-    /// How many distinct tile identities the table covers, for diagnostics.
-    pub fn tile_count(&self) -> usize {
-        self.tiles.len()
+    fn tile_colors(&mut self, pair: PreviewColorPair, level: u8) -> PreviewColorPair {
+        use crate::util::native_color::{interpolate_rgb8, scale_rgb8};
+        use crate::util::native_x87::{NativeF32Bits, NativeF64Bits, X87Chop53};
+        assert!(
+            level <= 12,
+            "RMG preview level{level} exceeds the native TMP color table"
+        );
+        let table = self.tiles.entry(pair).or_insert_with(|| {
+            // Original549F72/549F8E load float1.4;549FB7 multiplies the
+            // integer level by stored double1/12, then narrows to float.
+            // In particular level12 is3f7fffff, not the bright endpoint.
+            let brightness = NativeF32Bits::from_bits(0x3fb3_3333);
+            let bright_left = scale_rgb8(pair.0, brightness).expect("finite TMP RGB scale");
+            let bright_right = scale_rgb8(pair.1, brightness).expect("finite TMP RGB scale");
+            std::array::from_fn(|level| {
+                let fraction = X87Chop53::store_f32(X87Chop53::mul(
+                    X87Chop53::load_i32(level as i32),
+                    X87Chop53::load_f64(NativeF64Bits::from_bits(0x3fb5_5555_5555_5555))
+                        .expect("finite TMP level multiplier"),
+                ))
+                .expect("finite TMP level fraction");
+                (
+                    interpolate_rgb8(pair.0, bright_left, fraction).expect("finite TMP RGB blend"),
+                    interpolate_rgb8(pair.1, bright_right, fraction).expect("finite TMP RGB blend"),
+                )
+            })
+        });
+        table[usize::from(level)]
     }
 }
 
@@ -285,6 +250,7 @@ pub fn preview_cells_from_map(
 ) -> Vec<PreviewCell> {
     let playfield = Playfield::from_header(&map.header);
     let overlays = overlay_densities(map);
+    let mut palette = PreviewPalette::default();
     let mut cells = Vec::with_capacity(map.cells.len());
     for cell in &map.cells {
         if !playfield.contains(cell.rx, cell.ry) {
@@ -301,10 +267,9 @@ pub fn preview_cells_from_map(
         let resolved_cell = resolved.cell(cell.rx, cell.ry);
         let (left, right) = match overlay {
             Some(rgb) => (rgb, rgb),
-            None => (
-                resolved_cell.map_or([0, 0, 0], |resolved| resolved.radar_left),
-                resolved_cell.map_or([0, 0, 0], |resolved| resolved.radar_right),
-            ),
+            None => resolved_cell.map_or(([0, 0, 0], [0, 0, 0]), |resolved| {
+                palette.tile_colors((resolved.radar_left, resolved.radar_right), resolved.level)
+            }),
         };
         cells.push(PreviewCell {
             x: cell.rx,
@@ -734,56 +699,23 @@ mod tests {
         }
     }
 
-    /// A palette built by hand, standing in for one recorded off a resolved map.
-    fn palette_with(tile: (i32, u8), colours: ([u8; 3], [u8; 3])) -> PreviewPalette {
-        let mut palette = PreviewPalette::default();
-        palette.tiles.insert(tile, colours);
-        palette
-    }
-
     #[test]
-    fn an_unknown_tile_falls_back_to_black_so_the_rasteriser_greys_it() {
-        let palette = palette_with((7, 0), ([1, 2, 3], [4, 5, 6]));
-        assert_eq!(palette.tile_colours(7, 0), ([1, 2, 3], [4, 5, 6]));
-        assert_eq!(
-            palette.tile_colours(9, 0),
-            ([0, 0, 0], [0, 0, 0]),
-            "an unseen tile yields black, which becomes grey when drawn"
-        );
-        assert_eq!(
-            substitute_if_black(palette.tile_colours(9, 0).0),
-            BLACK_PIXEL_SUBSTITUTE
-        );
-    }
-
-    #[test]
-    fn the_palette_applies_the_channel_order_exactly_once() {
+    fn physical_clear_level_table_matches_original_producer_rgb() {
+        let native = crate::test_fixture::json("tools/spatial_oracle/tmp_preview.json");
+        let raw = &native["inputs"]["selected_tmp"]["raw_pair_rgb"];
+        let rgb =
+            |value: &serde_json::Value| std::array::from_fn(|i| value[i].as_u64().unwrap() as u8);
+        let pair = (rgb(&raw[0]), rgb(&raw[1]));
         let mut palette = PreviewPalette::default();
-        // Stored raw, as recorded from the overlay lookup.
-        palette.overlays.insert((0x80, 3), [10, 20, 30]);
-        palette.overlays.insert((0x10, 3), [10, 20, 30]);
-        assert_eq!(
-            palette.overlay_colour(0x80, 3),
-            Some([10, 30, 20]),
-            "a swapped-band id reorders on the way out"
-        );
-        assert_eq!(
-            palette.overlay_colour(0x10, 3),
-            Some([10, 20, 30]),
-            "an ordinary id passes straight through"
-        );
-    }
-
-    #[test]
-    fn a_black_overlay_colour_is_treated_as_absent() {
-        let mut palette = PreviewPalette::default();
-        palette.overlays.insert((0x10, 0), [0, 0, 0]);
-        assert_eq!(
-            palette.overlay_colour(0x10, 0),
-            None,
-            "black means no overlay colour, so the terrain shows through"
-        );
-        assert_eq!(palette.overlay_colour(0x10, 5), None, "unseen density");
+        for row in native["rows"].as_array().unwrap() {
+            let level = row["input"]["level"].as_u64().unwrap() as u8;
+            let (left, right) = palette.tile_colors(pair, level);
+            assert_eq!(
+                serde_json::json!([left, right]),
+                row["output"]["preview_rgb_pair"],
+                "original549E90 level{level}"
+            );
+        }
     }
 
     #[test]

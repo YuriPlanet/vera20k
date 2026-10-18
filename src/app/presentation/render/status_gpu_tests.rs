@@ -1741,18 +1741,19 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                     zoom: 1.0,
                 };
                 layer.line_batches = layer
-                    .before_lines
+                    .surface_draws
                     .iter()
                     .map(|lines| {
                         terrain.prepare_surface_lines(
                             &gpu.device,
                             &gpu.queue,
                             std::iter::empty(),
-                            lines,
+                            lines.iter().copied(),
+                            &[],
                             &[],
                             &[],
                             viewport,
-                            || false,
+                            |_| false,
                             |_| input["a_value"].as_u64().unwrap() as u16,
                         )
                     })
@@ -1766,11 +1767,15 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                             &gpu.device,
                             &gpu.queue,
                             std::iter::empty(),
-                            &layer.extras_lines[lines.clone()],
+                            layer.extras_lines[lines.clone()]
+                                .iter()
+                                .copied()
+                                .map(crate::render::surface_line::SurfaceDraw::Line),
+                            &[],
                             &[],
                             &[],
                             viewport,
-                            || false,
+                            |_| false,
                             |_| input["a_value"].as_u64().unwrap() as u16,
                         );
                     }
@@ -1826,6 +1831,7 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                     overlay_resource(&overlay, &pool).map(|(overlay, buffer)| {
                         (overlay, buffer, font.as_ref().map(|font| font.atlas()))
                     }),
+                    None,
                 );
                 let reads = [
                     gpu.read(&mut encoder, &color),

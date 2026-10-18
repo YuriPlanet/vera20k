@@ -178,28 +178,19 @@ mod map_wall_owner_candidate_tests {
     fn gsi_04_07_placement_production_wall_owner_uses_building_get_coords_center() {
         let terrain = flat_terrain(15, 10);
         let gacnst = building(1, "GACNST", "GDI", 8, 8, "4x4");
-        let gaspot = building(2, "GASPOT", "Neutral", 14, 9, "1x1");
+        let cabhut = building(2, "CABHUT", "Neutral", 14, 9, "1x1");
         let gacnst_candidate = map_wall_owner_candidate_from_building(&gacnst, &terrain, true);
-        let gaspot_candidate = map_wall_owner_candidate_from_building(&gaspot, &terrain, true);
+        let cabhut_candidate = map_wall_owner_candidate_from_building(&cabhut, &terrain, true);
 
         assert_eq!(
             (gacnst_candidate.world_x, gacnst_candidate.world_y),
             (8 * 256 + 128 + 3 * 128, 8 * 256 + 128 + 3 * 128)
         );
         assert_eq!(
-            (gaspot_candidate.world_x, gaspot_candidate.world_y),
+            (cabhut_candidate.world_x, cabhut_candidate.world_y),
             (14 * 256 + 128, 9 * 256 + 128),
             "a 1x1 foundation has zero GetCoords projection"
         );
-        assert_eq!(
-            (
-                gacnst_candidate.foundation_width,
-                gacnst_candidate.foundation_height
-            ),
-            (4, 4),
-            "candidate uses the dimensions stamped on the entity"
-        );
-
         let registry = OverlayTypeRegistry::from_ini(
             &IniFile::from_str("[OverlayTypes]\n0=GAWALL\n[GAWALL]\nWall=yes\n"),
             None,
@@ -209,12 +200,21 @@ mod map_wall_owner_candidate_tests {
         projected_grid.reconstruct_map_wall_owners(
             &terrain,
             &registry,
-            &[gacnst_candidate, gaspot_candidate],
+            &[gacnst_candidate, cabhut_candidate],
         );
-        assert_eq!(projected_grid.cell(12, 9).wall_owner, Some(gacnst.owner()));
+        assert_eq!(projected_grid.cell(12, 9).wall_owner, Some(cabhut.owner()));
+
+        let mut centered_grid = OverlayGrid::new(15, 10);
+        centered_grid.place_overlay(11, 9, 0, 0);
+        centered_grid.reconstruct_map_wall_owners(
+            &terrain,
+            &registry,
+            &[gacnst_candidate, cabhut_candidate],
+        );
+        assert_eq!(centered_grid.cell(11, 9).wall_owner, Some(gacnst.owner()));
 
         let mut northwest_grid = OverlayGrid::new(15, 10);
-        northwest_grid.place_overlay(12, 9, 0, 0);
+        northwest_grid.place_overlay(11, 9, 0, 0);
         northwest_grid.reconstruct_map_wall_owners(
             &terrain,
             &registry,
@@ -227,15 +227,252 @@ mod map_wall_owner_candidate_tests {
                 MapWallOwnerCandidate {
                     world_x: 14 * 256 + 128,
                     world_y: 9 * 256 + 128,
-                    ..gaspot_candidate
+                    ..cabhut_candidate
                 },
             ],
         );
         assert_eq!(
-            northwest_grid.cell(12, 9).wall_owner,
-            Some(gaspot.owner()),
+            northwest_grid.cell(11, 9).wall_owner,
+            Some(cabhut.owner()),
             "the former north-west candidate coordinates select the wrong owner"
         );
+    }
+
+    /// Full authored-map admission, before the selected owner-sensitive repair.
+    /// Native47D278 passes the Cell to Building5F6360, whose foundation
+    /// discount tests the target's RTTI. Cell487E60 returns11, not Building6.
+    #[test]
+    fn retail_authored_wall_owner_measures_building_to_cell() {
+        use crate::skirmish_launch::{AiDifficulty, LaunchCountry};
+
+        let Some((retail, _)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let map = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tools/map_observation.wall-owner-repair.scenario");
+        let map = map.to_str().unwrap();
+        let mut launch = crate::headless_scenario::battle_session(
+            map,
+            &[(LaunchCountry::America, AiDifficulty::Easy)],
+        );
+        launch.player_name = "VERA-OBSERVER".into();
+        launch.local.country = LaunchCountry::America;
+        launch.options.bases = false;
+        launch.options.unit_count = 0;
+        launch.options.short_game = false;
+        launch.options.starting_credits = 10_000;
+        launch.options.shroud = true;
+        launch.options.fog_of_war = false;
+        let mut scene =
+            crate::headless_scenario::load_session(&retail, map, 0x1234_5678, launch).unwrap();
+        let sim = scene.sim();
+        let current = sim.session.current_house.unwrap();
+        let computer = sim.interner.get("Computer1").unwrap();
+        let neutral = sim.interner.get("Neutral").unwrap();
+        assert!(sim.owner_is_human(current));
+        assert!(!sim.owner_is_human(computer));
+        let terrain = sim.resolved_terrain.as_ref().unwrap();
+        for (name, owner, origin) in [
+            ("GACNST", computer, (86, 43)),
+            ("CABHUT", neutral, (92, 44)),
+            ("GAPILE", computer, (84, 43)),
+            ("GAPOWR", computer, (84, 46)),
+            ("SPY", current, (90, 41)),
+        ] {
+            let entity = sim
+                .entities()
+                .iter_sorted()
+                .find_map(|(_, entity)| {
+                    (sim.interner.resolve(entity.type_ref()) == name
+                        && entity.owner() == owner
+                        && (entity.position.rx(), entity.position.ry()) == origin)
+                        .then_some(entity)
+                })
+                .unwrap_or_else(|| {
+                    let observed: Vec<_> = sim
+                        .entities()
+                        .iter_sorted()
+                        .filter(|(_, entity)| {
+                            entity.owner() == current
+                                || sim.interner.resolve(entity.type_ref()) == name
+                        })
+                        .map(|(id, entity)| {
+                            (
+                                id,
+                                sim.interner.resolve(entity.type_ref()),
+                                sim.interner.resolve(entity.owner()),
+                                (entity.position.rx(), entity.position.ry()),
+                                entity.lifecycle.in_limbo(),
+                            )
+                        })
+                        .collect();
+                    panic!("normal authored {name}/{origin:?} admission; observed {observed:?}")
+                });
+            assert!(entity.lifecycle.object_alive());
+            assert!(entity.lifecycle.cell_marked());
+            assert!(!entity.lifecycle.in_limbo());
+            if entity.category() == EntityCategory::Structure {
+                for (dx, dy) in crate::rules::foundation::foundation_cell_offsets(
+                    entity.type_facts.foundation(),
+                ) {
+                    let cell = terrain
+                        .cell((origin.0 as i16 + dx) as u16, (origin.1 as i16 + dy) as u16)
+                        .unwrap();
+                    assert_eq!((cell.level, cell.slope_type, cell.is_water), (2, 0, false));
+                }
+            }
+        }
+        let registry = &scene.runtime.resources.overlay_registry;
+        let wall = sim.overlay_grid.as_ref().unwrap().cell(90, 44);
+        assert_eq!(wall.overlay_id, registry.id_for_name("GAWALL"));
+        assert_eq!(wall.overlay_data & 0xF0, 0x10, "authored damaged wall");
+        assert!(
+            sim.fog.is_cell_revealed(current, 90, 44),
+            "ordinary SPY sight"
+        );
+        eprintln!(
+            "loaded wall owner {:?}, Computer {computer:?}, Neutral {neutral:?}",
+            wall.wall_owner
+        );
+        assert_eq!(
+            wall.wall_owner,
+            Some(neutral),
+            "native47D210 measures Building→Cell without a Building-target foundation discount"
+        );
+        // Delivered Computer PRODUCE is admitted by native Event4C7130 /
+        // House4FA350 without a Human flag. This is a supplied normal event,
+        // not a claim that autonomous AI selects this wall and site.
+        use crate::sim::command::{Command, CommandEnvelope};
+        use crate::sim::world::{FrameEffects, TickLane};
+        let wall_type = scene.runtime.simulation.interner.intern("GAWALL");
+        let rules = &scene.runtime.resources.rules;
+        assert_eq!(rules.object("GAWALL").unwrap().cost, 100);
+        let credits_before = scene.sim().houses[&computer].economy.credits();
+        let spent_before = scene.sim().houses[&computer].economy.spent_credits();
+        let cost = scene
+            .sim()
+            .cost_of(computer, rules.object("GAWALL").unwrap(), rules);
+        let mut ready = None;
+        for step in 0..4096 {
+            let commands = if step == 0 {
+                vec![CommandEnvelope::new(
+                    computer,
+                    scene.sim().session.tick,
+                    Command::QueueProduction { type_id: wall_type },
+                )]
+            } else {
+                Vec::new()
+            };
+            scene
+                .runtime
+                .advance_frame(
+                    &commands,
+                    crate::app::types::SIM_TICK_MS,
+                    TickLane::Ordinary,
+                    FrameEffects::default(),
+                )
+                .unwrap();
+            if let Some(id) = crate::sim::production::ready_building_entity_for_owner(
+                scene.sim(),
+                &scene.runtime.resources.rules,
+                computer,
+                wall_type,
+            ) {
+                eprintln!(
+                    "GAWALL paid product{id} ready at step{} cost{cost}",
+                    step + 1
+                );
+                ready = Some(id);
+                break;
+            }
+        }
+        let product = ready.expect("ordinary Computer factory must finish its paid GAWALL");
+        assert_eq!(
+            scene.sim().houses[&computer].economy.credits(),
+            credits_before - cost
+        );
+        assert_eq!(
+            scene.sim().houses[&computer].economy.spent_credits(),
+            spent_before + cost
+        );
+        let command = CommandEnvelope::new(
+            computer,
+            scene.sim().session.tick,
+            Command::PlaceReadyBuilding {
+                type_id: wall_type,
+                rx: 90,
+                ry: 44,
+            },
+        );
+        scene
+            .runtime
+            .advance_frame(
+                &[command],
+                crate::app::types::SIM_TICK_MS,
+                TickLane::Ordinary,
+                FrameEffects::default(),
+            )
+            .unwrap();
+        assert_eq!(
+            crate::sim::production::ready_building_entity_for_owner(
+                scene.sim(),
+                &scene.runtime.resources.rules,
+                computer,
+                wall_type,
+            ),
+            Some(product),
+            "foreign-wall refusal keeps the same completed product"
+        );
+        let held = scene.sim().entities().get(product).unwrap();
+        assert!(held.lifecycle.object_alive() && held.lifecycle.in_limbo());
+        let wall = scene.sim().overlay_grid.as_ref().unwrap().cell(90, 44);
+        assert_eq!(wall.wall_owner, Some(neutral));
+        assert_eq!(
+            wall.overlay_data & 0xF0,
+            0x10,
+            "refusal keeps damaged material"
+        );
+        let command = CommandEnvelope::new(
+            computer,
+            scene.sim().session.tick,
+            Command::CancelProductionByType {
+                type_id: wall_type,
+                all: false,
+            },
+        );
+        scene
+            .runtime
+            .advance_frame(
+                &[command],
+                crate::app::types::SIM_TICK_MS,
+                TickLane::Ordinary,
+                FrameEffects::default(),
+            )
+            .unwrap();
+        assert!(
+            crate::sim::production::ready_building_entity_for_owner(
+                scene.sim(),
+                &scene.runtime.resources.rules,
+                computer,
+                wall_type,
+            )
+            .is_none()
+        );
+        assert!(
+            scene.sim().entities().get(product).is_none(),
+            "abandoned product cleanup"
+        );
+        assert_eq!(
+            scene.sim().houses[&computer].economy.credits(),
+            credits_before
+        );
+        assert_eq!(
+            scene.sim().houses[&computer].economy.spent_credits(),
+            spent_before + cost
+        );
+        let wall = scene.sim().overlay_grid.as_ref().unwrap().cell(90, 44);
+        assert_eq!(wall.wall_owner, Some(neutral));
+        assert_eq!(wall.overlay_data & 0xF0, 0x10);
     }
 
     #[test]
@@ -1612,7 +1849,7 @@ impl MapLoadInitial {
         let match_launch_descriptor = fresh_parts.launch;
         let scenario_prefix_plan = fresh_parts.scenario_prefix;
         let source_seed = match &map_source {
-            LoadedMapSource::Generated { seed_name } => seed_name.clone(),
+            LoadedMapSource::Generated { seed_name, .. } => seed_name.clone(),
             other => panic!("random-map lifecycle fixture loaded {other:?}"),
         };
         let mut waypoints: Vec<_> = map_data
@@ -2081,13 +2318,22 @@ pub(crate) fn load_map_initial_with_assets(
         .or(quickplay_seed);
     if let Some(seed_name) = seed_selection.as_deref() {
         let mut options = crate::map::rmg::RmgOptions::default();
-        match std::fs::read(ra2_dir.join(seed_name)) {
-            Ok(bytes) => match crate::rules::ini_parser::IniFile::from_bytes(&bytes) {
-                Ok(ini) => options.apply_sed(&ini),
-                Err(err) => {
-                    log::warn!("random map: {seed_name} is not valid INI ({err}); using defaults")
+        let seed_path = ra2_dir.join(seed_name);
+        let mut seed_source = None;
+        match std::fs::read(&seed_path) {
+            Ok(bytes) => {
+                seed_source = Some(
+                    crate::map::source::GeneratedSeedSource::from_consumed_bytes(seed_path, &bytes),
+                );
+                match crate::rules::ini_parser::IniFile::from_bytes(&bytes) {
+                    Ok(ini) => options.apply_sed(&ini),
+                    Err(err) => {
+                        log::warn!(
+                            "random map: {seed_name} is not valid INI ({err}); using defaults"
+                        )
+                    }
                 }
-            },
+            }
             // Missing seed file is not fatal: the original's options object
             // keeps its constructor defaults when a key (or the file) is absent.
             Err(err) => log::warn!("random map: cannot read {seed_name} ({err}); using defaults"),
@@ -2155,6 +2401,7 @@ pub(crate) fn load_map_initial_with_assets(
             map_data: generated.map_file,
             map_source: LoadedMapSource::Generated {
                 seed_name: seed_name.to_string(),
+                seed_source,
             },
             mapgen_rng_continuation: Some(mapgen_rng_continuation),
             retained_process_mapgen: None,

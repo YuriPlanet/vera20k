@@ -73,6 +73,8 @@ pub(crate) enum MapRevealProjection {
     /// Map5673A0 S32=true: skip a fully initialized/open receiver first;
     /// uncached4A9CA0 final0, not a retained source admission.
     UncachedConditional,
+    /// Map5673A0 final0: Cell4876F0, without MapCell cache initialization.
+    Fire,
 }
 
 /// Synchronous MapCell receiver arguments. The coordinate is read after both
@@ -510,7 +512,8 @@ impl FogState {
         Some(MapCellNotification { cell, fresh })
     }
 
-    /// Original MapCell4A9CA0..4A9DC9, with ordinary final0/1 counter leaves.
+    /// Map receiver state: MapCell4A9CA0..4A9DC9's final0/1 leaves, or
+    /// Map5673A0's fire4876F0 leaf without cache initialization/notification.
     /// Emit only when4A9D94 calls CellChangeNotify; fresh is its separate
     /// new-knowledge argument, independently of cache-change admission.
     /// Executed cell/cache/channel/Dummy controls:
@@ -531,6 +534,19 @@ impl FogState {
         //4A9CA9 is distinct from each6D8713 center lookup below.
         let key = vis.visibility_cell(cell, native_cells);
         let before = vis.edge_inputs(key);
+        if projection == MapRevealProjection::Fire {
+            // Cell4876F0 ORs12C with18 and conditionally140 with20.
+            // It neither initializes cache140 bits1/2 nor writes120/121.
+            let (state, ground, _) = vis.map_cell_parts_mut(key);
+            state.fire_unshroud();
+            *ground |= GROUND_VISIBLE | GROUND_OPEN;
+            if let VisibilityCell::Real(index) = key {
+                vis.set_transient_visible(index);
+                vis.publish_knowledge(index);
+            }
+            vis.note_edge_inputs(key, before);
+            return None;
+        }
         let (ground, old) = vis.map_cell_parts(key);
         let fresh = !(old.initialized && ground & GROUND_VISIBLE != 0);
         let (state, ground, cache) = vis.map_cell_parts_mut(key);

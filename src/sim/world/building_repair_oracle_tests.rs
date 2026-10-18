@@ -409,7 +409,7 @@ fn update_scene(corpus: &Value, input: &Value) -> (Simulation, RuleSet, Option<u
             .spawn_particle_system(
                 crate::rules::particle_system_type::ParticleSystemTypeId(0),
                 glam::IVec3::ZERO,
-                Some(1),
+                Some(crate::sim::combat::TargetKind::Entity(1)),
                 Some(1),
                 glam::IVec3::ZERO,
                 None,
@@ -685,7 +685,12 @@ fn retail_repair_keys_read_as_the_oracle_writes_them() {
     ))
     .unwrap();
     assert_eq!(
-        bits(without_key.general.difficulty_rows.map(|row| row.repair_delay)),
+        bits(
+            without_key
+                .general
+                .difficulty_rows
+                .map(|row| row.repair_delay)
+        ),
         [constant(&corpus, "delay_02_default"); 3]
     );
     assert_eq!(
@@ -725,8 +730,18 @@ fn retail_repair_keys_read_as_the_oracle_writes_them() {
     // SetDifficulty copies the house's row (HouseDifficulty order: 0 is a
     // Hard AI reading [Easy]).
     let mut house = HouseState::new(Default::default(), 0, None, false, 0, 10);
-    house.set_difficulty(HouseDifficulty::Easy, &rules.general, Default::default(), true, 0, 0);
-    assert_eq!(house.repair_delay().to_bits(), constant(&corpus, "delay_05"));
+    house.set_difficulty(
+        HouseDifficulty::Easy,
+        &rules.general,
+        Default::default(),
+        true,
+        0,
+        0,
+    );
+    assert_eq!(
+        house.repair_delay().to_bits(),
+        constant(&corpus, "delay_05")
+    );
 }
 
 /// The repair step's `ADD`s wrap and its clamp compares signed against the

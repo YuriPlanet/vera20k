@@ -35,6 +35,66 @@ pub(crate) struct CombatLight {
     pub flags: u32,
 }
 
+impl CombatLight {
+    /// Spotlight5FF850's shared admission and stage selection. Both temporary
+    /// System62E280 lights and the later5FFFA0 vector call this owner.
+    pub(crate) fn draw_record(self, detail: &mut DetailState) -> Option<CombatLightDrawRecord> {
+        if self.flags & 0xE == 0 && detail.frame_rate() < detail.minimum_frame_rate() {
+            return None;
+        }
+        Some(CombatLightDrawRecord {
+            coord: self.coord,
+            surface_index: scaled_surface_index(self.base_size, self.stage),
+            flags: self.flags,
+        })
+    }
+}
+
+/// ParticleSystemDraw62E280 constructs/draws/destroys one temporary Spotlight.
+/// F4 is the current stage, independent of persistent light ageing. The body
+/// continues drawing after F0 ends while its children remain registered.
+pub(crate) fn particle_system_light(
+    system: &crate::sim::particles::ParticleSystem,
+    kind: &crate::rules::particle_system_type::ParticleSystemType,
+    detail: &mut DetailState,
+) -> Option<CombatLightDrawRecord> {
+    if !kind.one_frame_light || kind.light_size <= 0 || system.particles.is_empty() {
+        return None;
+    }
+    let count =
+        i32::try_from(system.particles.len()).expect("native particle vector count fits i32");
+    let base_size =
+        system_light_base_size(count, kind.particle_cap as i32, kind.light_size).ok()?;
+    CombatLight {
+        coord: ProjectileCoord::new(system.coords.x, system.coords.y, system.coords.z),
+        stage: system.facing,
+        base_size,
+        flags: 0,
+    }
+    .draw_record(detail)
+}
+
+fn system_light_base_size(
+    count: i32,
+    cap: i32,
+    light_size: i32,
+) -> Result<i32, crate::util::native_x87::NativeX87Error> {
+    use crate::util::native_x87::{NativeF32Bits, NativeF64Bits, X87Chop53 as X, X87Ordering};
+    // Original62E280: division, binary64 lower clamp7E3550,
+    // binary32 upper clamp7E2AC8, multiplication then Math::ftol.
+    // Consumed original controls: procedural_drawing_oracle/welding.json.
+    let mut ratio = X::div(X::load_i32(count), X::load_i32(cap))?;
+    let minimum = X::load_f64(NativeF64Bits::from_bits(0x3fd9_9999_9999_999a))?;
+    let maximum = X::load_f32(NativeF32Bits::from_bits(0x3f80_0000))?;
+    if X::compare(ratio, minimum) == X87Ordering::Less {
+        ratio = minimum;
+    }
+    if X::compare(ratio, maximum) == X87Ordering::Greater {
+        ratio = maximum;
+    }
+    Ok(X::ftol_i64(X::mul(ratio, X::load_i32(light_size)))? as i32)
+}
+
 #[derive(Debug, serde::Serialize)]
 pub(crate) struct CombatLightObservation {
     coord: [i32; 3],
@@ -88,14 +148,7 @@ impl CombatLightRuntime {
         self.entries
             .iter()
             .rev()
-            .filter(|entry| {
-                entry.flags & 0xE != 0 || detail.frame_rate() >= detail.minimum_frame_rate()
-            })
-            .map(|entry| CombatLightDrawRecord {
-                coord: entry.coord,
-                surface_index: scaled_surface_index(entry.base_size, entry.stage),
-                flags: entry.flags,
-            })
+            .filter_map(|entry| entry.draw_record(detail))
             .collect()
     }
 }
@@ -179,6 +232,94 @@ mod tests {
     use crate::rules::ruleset::DetailRules;
     use crate::sim::world::Simulation;
 
+    #[test]
+    fn welding_immediate_light_size_stage_and_admission_match_original_system_draw() {
+        let native = crate::render::tactical_compat::welding_tests::native();
+        let stage_bytes =
+            crate::render::tactical_compat::welding_tests::decode_hex(&native["stage_table_hex"]);
+        assert_eq!(STAGE_SCALE.as_slice(), stage_bytes);
+        let rows = native["system_draw_cases"].as_array().unwrap();
+        assert!(!rows.is_empty());
+        for row in rows {
+            let input = &row["input"];
+            let light = &row["light"];
+            if light.is_null() {
+                continue;
+            }
+            let int = crate::render::tactical_compat::welding_tests::int;
+            let size = system_light_base_size(
+                int(&input["particle_count"]),
+                int(&input["particle_cap"]),
+                int(&input["light_size"]),
+            )
+            .unwrap();
+            assert_eq!(
+                serde_json::json!(size),
+                light["base_size"],
+                "{}",
+                input["name"]
+            );
+            let mut detail = creation_detail(input);
+            let position =
+                crate::render::tactical_compat::welding_tests::array::<3>(&input["position"]);
+            let actual = CombatLight {
+                coord: ProjectileCoord::new(position[0], position[1], position[2]),
+                stage: u8::try_from(int(&input["stage"])).unwrap(),
+                base_size: size,
+                flags: 0,
+            }
+            .draw_record(&mut detail);
+            if let Some(performance_passed) = light["performance_passed"].as_bool() {
+                assert_eq!(
+                    actual.is_some(),
+                    performance_passed,
+                    "{} FPS admission",
+                    input["name"]
+                );
+            }
+            if let Some(actual) = actual {
+                if !light["surface_index"].is_null() {
+                    assert_eq!(
+                        serde_json::json!(actual.surface_index),
+                        light["surface_index"],
+                        "{}",
+                        input["name"]
+                    );
+                }
+                assert_eq!(serde_json::json!(actual.flags), light["flags"]);
+            }
+        }
+    }
+
+    #[test]
+    fn welding_points_keep_original_shared_unsigned_detail_query_history() {
+        let native = crate::render::tactical_compat::welding_tests::native();
+        for row in native["spark_draw_cases"].as_array().unwrap() {
+            let mut detail = creation_detail(&row["input"]);
+            for (index, draw) in row["draws"].as_array().unwrap().iter().enumerate() {
+                let threshold = detail.minimum_frame_rate();
+                assert_eq!(
+                    serde_json::json!(threshold),
+                    draw["threshold"],
+                    "{} point{index}",
+                    row["input"]["name"]
+                );
+                assert_eq!(
+                    serde_json::json!(detail.frame_rate() >= threshold),
+                    draw["performance_passed"],
+                    "{} point{index}",
+                    row["input"]["name"]
+                );
+                assert_eq!(
+                    serde_json::to_value(detail.observation()).unwrap()["reduced"],
+                    draw["reduced_after"],
+                    "{} point{index}",
+                    row["input"]["name"]
+                );
+            }
+        }
+    }
+
     fn original_light_corpus() -> serde_json::Value {
         serde_json::from_str(crate::test_fixture::text(
             "tools/procedural_drawing_oracle/electric_bolt.json",
@@ -206,7 +347,7 @@ mod tests {
 
     fn creation_detail(input: &serde_json::Value) -> DetailState {
         let mut detail = DetailState::new();
-        if input["reduced"] == 1 {
+        if input["reduced"] == 1 || input["reduced"] == true {
             detail.minimum_frame_rate();
         }
         detail.configure_normal(&DetailRules {

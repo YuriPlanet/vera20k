@@ -75,6 +75,7 @@ fn radial_geometry_colors_and_call_order_match_original_executable() {
         for draw in draws(row) {
             draw.draws(clip,|command|actual.push(match command {
                 SurfaceDraw::Ellipse {center,radius,word} => json!({"kind":"ellipse","center":center,"radius":radius,"clip":clip,"color":word}),
+                SurfaceDraw::Point(_) => unreachable!("radial indicators emit ellipses and rays"),
                 SurfaceDraw::Line(line) => {
                     let SurfaceLineBlend::Antialiased {rgb,intensity}=line.blend else {panic!("radial uses4BC750");};
                     json!({"kind":"ray","start":line.from,"end":line.to,"clip":clip,"rgb":rgb,"z":line.z_adjust,"write_z":false,"channels":[true,true,true],"strength_f32_bits":format!("{:08X}",intensity.bits())})

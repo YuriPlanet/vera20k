@@ -84,6 +84,9 @@ pub(crate) fn native_map_cell_fixture(
         .max()
         .unwrap()
         + 1;
+    // A physical map can retain a dense projection wider than its final
+    // allocated Cell. Keep that stride when seeding native component priors.
+    let (width, height) = topology.get("dimensions").map_or((width, height), pair);
     let mut fog = FogState::new(width, height);
     let mut view = OwnerVisibility::new(width, height);
     for input in &inputs {

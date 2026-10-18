@@ -306,7 +306,7 @@ fn retail_birth_fields_match_native_with_documented_flh_residual() {
             assert_eq!(json!(system.target_coords.to_array()), call["target"]);
             assert!(
                 system.owner_entity.is_none()
-                    && system.attached_entity.is_none()
+                    && system.target_ref.is_none()
                     && system.owner_house.is_none()
             );
             assert_eq!(system.lifetime, int(&original_system["lifetime"]));

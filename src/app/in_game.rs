@@ -25,8 +25,7 @@ impl App {
 
     pub(super) fn return_to_main_menu(state: &mut AppState) {
         state.match_state.input.planning.reset();
-        let wall_ms =
-            crate::app::match_runtime::sim_tick::monotonic_frame_pacer_ms(state, Instant::now());
+        let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
         crate::app::radar_movie::retire(state, wall_ms);
         crate::app::chrono_screen::retire(state, wall_ms);
         if let Some(runtime) = state.match_state.sim_runtime.as_mut() {
@@ -215,10 +214,7 @@ impl App {
             }
         }
         if was_open != will_be_open && !state.match_state.session.mode().is_network() {
-            let now_ms = crate::app::match_runtime::sim_tick::monotonic_frame_pacer_ms(
-                state,
-                Instant::now(),
-            );
+            let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
             if will_be_open
                 || state
                     .match_state
@@ -665,8 +661,7 @@ impl App {
     /// calls this instead of exiting immediately; `render_frame` drives it to
     /// completion and then exits the event loop.
     pub(super) fn start_quit_cascade(state: &mut AppState) {
-        let wall_ms =
-            crate::app::match_runtime::sim_tick::monotonic_frame_pacer_ms(state, Instant::now());
+        let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
         crate::app::radar_movie::retire(state, wall_ms);
         crate::app::chrono_screen::retire(state, wall_ms);
         let start_volume = state

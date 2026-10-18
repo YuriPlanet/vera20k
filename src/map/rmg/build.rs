@@ -335,6 +335,7 @@ mod tests {
             clear: 0,
             ramp_base: 600,
             ramp_smooth: 620,
+            slope_set_pieces: -1,
             rough: 700,
             sand: 800,
             green: 100,
@@ -996,6 +997,5 @@ mod send_check {
         assert_send::<crate::map::rmg::GeneratedMap>();
         // The worker publishes these as it goes.
         assert_send::<super::GenerationSnapshot>();
-        assert_send::<crate::map::rmg::preview::PreviewPalette>();
     }
 }

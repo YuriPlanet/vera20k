@@ -73,6 +73,58 @@ pub(crate) fn wall_connection_step(stored: i32, requested: i32) -> WallConnectio
     }
 }
 
+/// Cell4848B0: direction of a cliff entered from `previous_world_xy`.
+/// The receiver was selected separately by the caller. Original table81CD4C,
+/// ordered canonical lookups and asymmetric corner returns are consumed by
+/// tools/spatial_oracle/bounce_cliff.{json,md}.
+///
+/// Ordinary TIRE motion crosses neighboring cells. Native indexes beyond this
+/// nine-dword table for larger raw displacements; those unrelated image bytes
+/// are outside the represented domain and produce no reflection here.
+pub(crate) fn cliff_face_direction(
+    cells: &NativeCellQuery<'_>,
+    receiver: NativeCellIdentity,
+    previous_world_xy: (i32, i32),
+) -> Option<u8> {
+    let previous = cells.lookup_world(previous_world_xy.0, previous_world_xy.1);
+    let (x, y) = cells.coord(previous);
+    // Read the receiver after that lookup: both identities may be the Dummy.
+    let (receiver_x, receiver_y) = cells.coord(receiver);
+    let dx = i32::from(receiver_x) - i32::from(x);
+    let dy = i32::from(receiver_y) - i32::from(y);
+    const DIRECTIONS: [i8; 9] = [7, 0, 1, 6, -1, 2, 5, 4, 3];
+    let table_index = dx + 3 * dy + 4;
+    let Some(&direction) = usize::try_from(table_index)
+        .ok()
+        .and_then(|index| DIRECTIONS.get(index))
+    else {
+        log::warn!("Cell4848B0 displacement ({dx},{dy}) exceeds the native neighbor table");
+        return None;
+    };
+    let direction = u8::try_from(direction).ok()?;
+    if dx == 0 || dy == 0 {
+        return Some(direction);
+    }
+
+    let (side_x, side_y) = if dx == dy { (dx, dy) } else { (dy, dx) };
+    let side_a = ((i32::from(x) + side_x) as i16, y);
+    let side_b = (x, (i32::from(y) + side_y) as i16);
+    let raised_side = |coord| {
+        // Each test independently reselects the previous world Cell BEFORE
+        // selecting its side. A missing side can stamp the retained Dummy.
+        let previous = cells.lookup_world(previous_world_xy.0, previous_world_xy.1);
+        let threshold = i32::from(cells.ground_fields(previous).0 as i8) + 2;
+        let side = cells.lookup(coord);
+        i32::from(cells.ground_fields(side).0 as i8) >= threshold
+    };
+    match (raised_side(side_a), raised_side(side_b)) {
+        (true, false) => Some(direction.wrapping_sub(1) & 7),
+        // Native484A62 increments without &7; NW can return8.
+        (false, true) => Some(direction + 1),
+        _ => Some(direction),
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct WorldCoordinate {
     pub x: i32,
@@ -145,7 +197,9 @@ impl crate::sim::world::Simulation {
     }
 }
 
-/// YR `CellClass::GetCellCoords`: center the cell and keep its terrain floor.
+/// Shared cell-center arithmetic, including CellStruct-to-Coord642740.
+/// That caller sign-extends the packed cell words before entering here.
+/// Other callers retain their supplied cell width and height.
 pub fn cell_center(cell: CellCoordinate, floor_z: i32) -> WorldCoordinate {
     WorldCoordinate {
         x: cell

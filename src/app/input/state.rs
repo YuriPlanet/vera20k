@@ -175,6 +175,7 @@ impl PreparedSavedLocalView {
         // same next-press behavior without persisting a wall-clock Instant.
         // Original reset witnesses: saved_game_layout.json/postload_clock_reset.
         input.last_control_group_press = None;
+        input.reset_cheer_clock();
     }
 }
 
@@ -210,6 +211,9 @@ pub(crate) struct MatchInputState {
     pub(crate) keys_held: HashSet<KeyCode>,
     pub(crate) hotkey_bindings: crate::app::input::hotkeys::HotkeyBindings,
     pub(crate) hotkey_modifiers: ModifiersState,
+    /// Local AllToCheer730F30 admission scalar84555C. The simulation owns
+    /// queued events; this frame only throttles their local input producer.
+    last_cheer_frame: i32,
     /// Hybrid held/tap state for the retail TypeSelect command.
     pub(crate) type_select: crate::app::types::TypeSelectInputState,
     pub(crate) planning: crate::app::input::planning_mode::PlanningInputState,
@@ -289,12 +293,41 @@ impl MatchInputState {
             keys_held: HashSet::new(),
             hotkey_bindings,
             hotkey_modifiers: ModifiersState::empty(),
+            last_cheer_frame: -100,
             type_select: crate::app::types::TypeSelectInputState::default(),
             planning: Default::default(),
             category_navigation: Default::default(),
             cursor_coordinates: false,
             retail_screenshot_requested: false,
         }
+    }
+
+    /// AllToCheer536C00 ->730F30 first reads Session+300/A8B538 (local
+    /// defeat), then uses wrapping ADD and a signed strict comparison
+    /// against the binary frame. Refused input retains the prior;
+    /// an admitted attempt writes the frame after issue, including a full
+    /// OutList. Source and original executed histories: input_oracle/house_cheer.
+    pub(crate) fn try_issue_cheer(
+        &mut self,
+        current_frame: i32,
+        maximum_cheer_rate: i32,
+        local_player_defeated: bool,
+        issue: impl FnOnce() -> Option<u64>,
+    ) -> Option<u64> {
+        if local_player_defeated
+            || self.last_cheer_frame.wrapping_add(maximum_cheer_rate) >= current_frame
+        {
+            return None;
+        }
+        let issued = issue();
+        self.last_cheer_frame = current_frame;
+        issued
+    }
+
+    /// ClearScene685640 and PostLoad6851D2 call734210, whose store734234
+    /// resets84555C independently of the saved world's simulation frame.
+    fn reset_cheer_clock(&mut self) {
+        self.last_cheer_frame = -100;
     }
 
     /// The cursor in whole window pixels, rounded to nearest: the position the
@@ -462,6 +495,7 @@ impl MatchInputState {
 
     /// New-scenario installation discards references into the outgoing world.
     pub(crate) fn reset_targeting_for_new_world(&mut self) {
+        self.reset_cheer_clock();
         self.planning.reset();
         self.targeting_mode = None;
         self.building_placement_preview = None;
@@ -575,3 +609,11 @@ impl MatchInputState {
 #[cfg(test)]
 #[path = "saved_local_view_tests.rs"]
 mod saved_local_view_tests;
+
+#[cfg(test)]
+#[path = "house_cheer_tests.rs"]
+mod house_cheer_tests;
+
+#[cfg(test)]
+#[path = "house_cheer_retail_tests.rs"]
+mod house_cheer_retail_tests;

@@ -1067,6 +1067,9 @@ mod tests {
         fn ramp(&self, _coord: IVec3) -> u8 {
             0
         }
+        fn cliff_face_direction(&self, _coord: IVec3, _previous: IVec3) -> Option<u8> {
+            None
+        }
         fn has_bounce_surface(&self, _coord: &IVec3) -> bool {
             false
         }
@@ -1169,6 +1172,9 @@ mod tests {
             }
             fn ramp(&self, _coord: IVec3) -> u8 {
                 0
+            }
+            fn cliff_face_direction(&self, _coord: IVec3, _previous: IVec3) -> Option<u8> {
+                None
             }
             fn has_bounce_surface(&self, _coord: &IVec3) -> bool {
                 false

@@ -82,8 +82,10 @@ pub(super) fn tick_system(sys: &mut ParticleSystem, sim: &mut Simulation, rules:
                 sys.particles.push(child);
             }
         }
-        sim.conceal_particle(parent.stable_id());
-        sys.particles.remove(index);
+        let particle = sys
+            .remove_expired_child(parent.stable_id())
+            .expect("the current child is present");
+        sim.retire_particle(particle, rules);
     }
 
     //62F047: Smoke ignores Spawns and ParticleCap. Offset draws precede

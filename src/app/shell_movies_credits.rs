@@ -282,8 +282,7 @@ impl App {
         //5BEDFB..5BEE38 enters the same ABF35C movie hold as radar5BF580:
         //Vox/streams pause, both VolumeInterp targets become0x2000.
         //The separate menu pause owner must not acquire another movie credit.
-        let wall_ms =
-            crate::app::match_runtime::sim_tick::monotonic_frame_pacer_ms(state, Instant::now());
+        let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
         state.audio.set_movie_audio_held(true, wall_ms);
         // The Bink soundtrack plays at VoiceVolume: BinkSetVolume(ftol(
         // VoiceVolume * 32768.0)) at `0x00432897` (32768 = unity gain).
@@ -313,8 +312,7 @@ impl App {
             return;
         };
         let return_to = movie.into_return();
-        let wall_ms =
-            crate::app::match_runtime::sim_tick::monotonic_frame_pacer_ms(state, Instant::now());
+        let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
         state.audio.retire_movie_audio(wall_ms);
         Self::return_from_fullscreen_movie(state, return_to);
     }
@@ -344,8 +342,7 @@ impl App {
 
     /// Per-frame Show_Credits service on the native 16 ms bucket schedule.
     pub(super) fn advance_credits_roll(state: &mut AppState) {
-        let now_ms =
-            crate::app::match_runtime::sim_tick::monotonic_frame_pacer_ms(state, Instant::now());
+        let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
         let Some(session) = state.frontend.credits_roll.as_mut() else {
             return;
         };
@@ -417,8 +414,7 @@ impl App {
             state.renderer.gpu.config.height as i32,
             &lookup,
         );
-        let now_ms =
-            crate::app::match_runtime::sim_tick::monotonic_frame_pacer_ms(state, Instant::now());
+        let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
         // ThemeClass::Stop(0), then a silent ScoreVolume is lifted to 0.4 for
         // the CREDITS theme; the saved value is restored afterwards.
         state.audio.stop_theme();
@@ -474,8 +470,7 @@ impl App {
     }
 
     fn finish_credits_roll_return(state: &mut AppState, return_to: CreditsReturn) {
-        let now_ms =
-            crate::app::match_runtime::sim_tick::monotonic_frame_pacer_ms(state, Instant::now());
+        let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
         state
             .audio
             .queue_theme(&ThemeRequest::Name("INTRO".into()), now_ms);

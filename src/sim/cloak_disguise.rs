@@ -61,12 +61,15 @@ pub struct CloakRuntime {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CloakTickFacts {
     pub current_frame: i32,
-    /// Head gate at 0x006FB740: usable intrinsic cloak with no firing/chrono
-    /// activity, or the current rank's CLOAK ability.
+    /// State-zero head at6FB740: usable intrinsic cloak without EMP/paralysis/
+    /// chrono activity, or the current rank's CLOAK ability, followed by the
+    /// WeaponsFactory radio-contact exclusion. Retained-target range belongs
+    /// to CanAutoCloak below.
     pub state_zero_head_allows: bool,
-    /// Exact `CanAutoCloak @ 0x006FBDC0` result from current world facts.
+    /// `CanAutoCloak @ 0x006FBDC0` input from the current world adapter;
+    /// its ability producers and remaining coverage are documented there.
     pub can_auto_cloak: bool,
-    /// Exact `ShouldUncloak @ 0x006FBC90` result from current world facts.
+    /// `ShouldUncloak @ 0x006FBC90` input from the same world adapter.
     pub should_uncloak: bool,
     /// Strict `ConditionRed < health_ratio` comparison.
     pub health_above_red: bool,
@@ -450,14 +453,6 @@ impl CloakRuntime {
             _ => {}
         }
         result
-    }
-
-    /// `CanAutoCloak @ 0x006FBDC0`'s two timer gates: the object's weapon
-    /// rearm countdown (`+0x2EC`, `param_1[0xbb]`/`[0xbd]`, checked right after
-    /// the `CloakState == 2` early-out, so a sub that just fired stays surfaced
-    /// for its whole `ROF=`), then the CloakDelay above.
-    pub fn recloak_delay_expired(&self, now: i32, rearm_timer: CdTimer) -> bool {
-        rearm_timer.expired(now) && self.recloak_delay.expired(now)
     }
 
     /// `CloakState == 2` — fully cloaked. The only state the native target

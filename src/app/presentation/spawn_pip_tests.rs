@@ -205,3 +205,160 @@ fn stock_carrier_pips_follow_construction_sortie_recall_reload_and_selection() {
     assert!(frames(&sim, rules, carrier, None).is_empty());
     assert_eq!(frames(&sim, rules, carrier, Some(carrier)), expected[3]);
 }
+
+/// An authored stock-unit scenario through the normal skirmish loader. This
+/// reaches the parent Spawner FireAt before any Hornet can disclose the ship.
+#[test]
+fn stock_carrier_spawner_fire_reveals_to_its_human_victim() {
+    use crate::sim::combat::TargetKind;
+    use crate::sim::command::CommandEnvelope;
+    use crate::sim::world::{FrameEffects, TickLane};
+    use crate::skirmish_launch::{AiDifficulty, LaunchCountry};
+
+    let Some((retail, _)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let map = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tools/map_observation.carrier-fire-reveal.scenario");
+    let map = map.to_str().unwrap();
+    let mut launch = crate::headless_scenario::battle_session(
+        map,
+        &[(LaunchCountry::Russia, AiDifficulty::Easy)],
+    );
+    launch.player_name = "VERA-OBSERVER".into();
+    launch.local.country = LaunchCountry::America;
+    launch.options.bases = false;
+    launch.options.unit_count = 0;
+    launch.options.short_game = false;
+    launch.options.shroud = true;
+    launch.options.fog_of_war = false;
+    let mut scene =
+        crate::headless_scenario::load_session(&retail, map, 0x1234_5678, launch).unwrap();
+    let current = scene.sim().session.current_house.unwrap();
+    let carrier = scene
+        .sim()
+        .entities()
+        .iter_sorted()
+        .find_map(|(id, entity)| {
+            (scene.sim().interner.resolve(entity.type_ref()) == "CARRIER").then_some(id)
+        })
+        .expect("authored Carrier admitted through normal Unlimbo");
+    let target = scene
+        .sim()
+        .entities()
+        .iter_sorted()
+        .find_map(|(id, entity)| {
+            (entity.owner() == current && scene.sim().interner.resolve(entity.type_ref()) == "LCRF")
+                .then_some(id)
+        })
+        .expect("normal local human LCRF");
+    assert!(scene.sim().owner_is_human(current));
+    let firer = scene.sim().entities().get(carrier).unwrap();
+    let owner = firer.owner();
+    assert!(!scene.sim().owner_is_human(owner));
+    assert_ne!(owner, current);
+    let source = (firer.position.rx(), firer.position.ry());
+    assert!(
+        scene
+            .sim()
+            .resolved_terrain
+            .as_ref()
+            .unwrap()
+            .cell(source.0, source.1)
+            .unwrap()
+            .is_water,
+        "authored source is real loaded Water"
+    );
+    let weapon = scene
+        .runtime
+        .resources
+        .rules
+        .weapon("HornetLauncher")
+        .unwrap();
+    assert!(
+        weapon.spawner && weapon.reveal_on_fire,
+        "actual layered stock weapon"
+    );
+    let manager = firer
+        .spawn_manager
+        .as_ref()
+        .expect("constructor-owned pool");
+    assert_eq!(manager.slots().len(), 3);
+    assert!(manager.slots().iter().all(|slot| {
+        slot.state() == SpawnSlotState::ReadyDocked
+            && scene
+                .sim()
+                .entities()
+                .get(slot.spawn().unwrap())
+                .unwrap()
+                .lifecycle
+                .in_limbo()
+    }));
+    assert!(
+        !scene
+            .sim()
+            .fog
+            .is_cell_revealed(current, source.0, source.1)
+    );
+
+    for frame in 0..30 {
+        let commands = if frame == 0 {
+            vec![CommandEnvelope::new(
+                owner,
+                scene.sim().session.tick,
+                Command::Attack {
+                    attacker_id: carrier,
+                    target_id: target,
+                },
+            )]
+        } else {
+            Vec::new()
+        };
+        scene
+            .runtime
+            .advance_frame(
+                &commands,
+                crate::app::types::SIM_TICK_MS,
+                TickLane::Ordinary,
+                FrameEffects::default(),
+            )
+            .unwrap();
+        let manager = scene
+            .sim()
+            .entities()
+            .get(carrier)
+            .unwrap()
+            .spawn_manager
+            .as_ref()
+            .unwrap();
+        if manager.queued_target() == Some(TargetKind::Entity(target))
+            || manager.current_target() == Some(TargetKind::Entity(target))
+        {
+            assert!(
+                manager.slots().iter().all(|slot| {
+                    slot.state() == SpawnSlotState::ReadyDocked
+                        && scene
+                            .sim()
+                            .entities()
+                            .get(slot.spawn().unwrap())
+                            .unwrap()
+                            .lifecycle
+                            .in_limbo()
+                }),
+                "parent admission must precede child-fire disclosure"
+            );
+            eprintln!(
+                "stock Carrier parent Spawner FireAt admitted at frame{frame}, source{source:?}"
+            );
+            assert!(
+                scene
+                    .sim()
+                    .fog
+                    .is_cell_revealed(current, source.0, source.1),
+                "original6FDF30 reveals a stock Spawner firer to its human victim"
+            );
+            return;
+        }
+    }
+    panic!("normal Carrier Attack did not reach the parent Spawner fire handoff");
+}

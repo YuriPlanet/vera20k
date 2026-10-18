@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Cold physical GoldSt Cell knowledge through full original fire Map5673A0, its internal border, explicit raw-coordinate border4, warm repeat and119/120/240 Logic sweep observations.",
+  "assumptions": [
+    "Existing Mission/PaletteReader/frontier physical world, original Discovery/Tactical/Cell startup and AMCV reader/constructor/Unlimbo prefix are reused. Physical GoldSt120,30 is an independently cold registered Cell after that prefix; original486840 derives its XYZ. No Rust position, radius outcome, knowledge, cache or expected callback result initializes native execution.",
+    "Original FireAt6FDF13..30 and6FF6FE..71B supply Map args(coord,3,current eligible victim House,0,0,0,1,0);6FDF35..4D and6FF720..738 supply raw-coordinate567DA0(coord,0,4,0). Full FireAt/Spawner admission predicates are not executed by this component. Internal5678CA supplies its own shifted localXYZ/radius6 unchanged.",
+    "Full physical GoldSt knowledge enrollment extends only the existing world owner: original47BBF0/485240 and authored tile/sub/height for every decoded Cell. Actual slope/land getters and zone/TMP loading remain the existing raster crop; unused outside-crop metadata keeps constructor defaults. Original578290 must visit every authored Cell in both complete578100 passes, or generation fails.",
+    "Cold and warm Map/border measurements retain actual ordered leaf/ground-frame receivers and compact before/after state. Native Logic modulo gate runs at declared component frames119,120,240; complete578100 and5865F0 execute, with real phase/pass notifications recorded. No fake iterator, shortened Size, patched border, cache poison, full object-AI timeline or supplied callback is used.",
+    "All three existing native RNG streams are retained byte-for-byte around measured work; no request may occur. Selected original body bytes remain unchanged. Existing setup platform/House/physical-registration boundaries apply; this control does not certify occupied discovery Tags, native attack scheduling, rendering or whole GoldSt bootstrap."
+  ],
+  "substitutions": [
+    "Only inherited Mission native-image/CRT/heap/TLS/INI/RawFile/Windows transports, eligible current House and explicit physical map/zone registration. No new VM, pixel/math/parser/shape implementation or gameplay return replacement."
+  ],
+  "entry_points": {
+    "cell_ctor": "0x0047BBF0",
+    "cell_coord": "0x00485240",
+    "cell_xyz": "0x00486840",
+    "fire_map": "0x005673A0",
+    "fire_leaf": "0x004876F0",
+    "border": "0x00567DA0",
+    "ground_frame": "0x006D8700",
+    "tactical_dirty": "0x006DA7D0",
+    "logic_gate": "0x0055B29A",
+    "update": "0x00578100",
+    "allocated_next": "0x00578290",
+    "notify": "0x005865F0"
+  },
+  "replay_command": "python -m tools.procedural_drawing_oracle.shroud_frontier --fire",
+  "payload_sha256": "afe71a7829a7ac6f8e0bfaea3ff3e4d11689f467a9370140fcdb4272f6104cae"
+}

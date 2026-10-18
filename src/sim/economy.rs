@@ -13,7 +13,7 @@
 //! the empty-store boundary must not be extended to arbitrary native saves.
 //!
 //! `Fill_In_Data`'s exact `[Basic] FillSilos=` path (`0x00684F02..0x00684F7C`)
-//! is a separate unported cash/score writer, not a storage fill: it retains
+//! is a fresh-start cash/score writer, not a storage fill: it retains
 //! the initial Available_Money as a local budget. While that budget exceeds
 //! the first Tiberium's Value and Available_Storage is positive, it calls
 //! Add_Tiberium_Credits with amount1.0/type0 and subtracts Value from the
@@ -101,6 +101,31 @@ impl Economy {
     /// represented domain; the two consumed oracle controls use empty storage.
     pub const fn available_money(&self) -> i32 {
         self.credits
+    }
+
+    /// Fresh empty-store arm of FillInData684F2A..684F6B. Source/controls:
+    /// tools/house_money_oracle.py, original binary pinned by its sidecar.
+    /// The local budget is sampled once; AddTib changes cash/score only.
+    /// Capacity is HouseTracking's retained+310, never a Building scan.
+    ///
+    /// Fresh House/Building6C95E0 zeroes amount stores; Added502B83 merges
+    /// those zero Building amounts. Team Full fills Foot cargo, while ordinary
+    /// unload4F9610 pays cash (Weeder uses separate+314). Thus capacity alone
+    /// decides AvailableStorage on this fresh history. Native saves/nonempty
+    /// stores must not enter here; this is not a general4F69D0 port.
+    pub(crate) fn fill_silos_fresh_empty_store(
+        &mut self,
+        value: i32,
+        capacity: i32,
+        income_ppm: i64,
+    ) {
+        let mut budget = self.available_money();
+        // Preserve signed comparison and SUB32, including custom zero/negative
+        // Values. A division shortcut or safety clamp changes native behavior.
+        while budget > value && capacity > 0 {
+            self.add_tiberium_credits(value, 1, INCOME_PPM_SCALE, income_ppm);
+            budget = budget.wrapping_sub(value);
+        }
     }
 
     /// `HouseClass::Add_Credits @ 0x004F9950..0x004F9962`: the complete body
@@ -264,5 +289,38 @@ mod tests {
                 row["name"]
             );
         }
+    }
+
+    #[test]
+    fn fresh_fill_silos_money_arm_matches_the_original() {
+        let mut compared = 0;
+        for row in rows("fill_silos") {
+            // The flag belongs to the scenario caller; its false arm is
+            // covered through the actual map loader in the retail chain.
+            if !row["enabled"].as_bool().unwrap() {
+                continue;
+            }
+            let mut wallet = Economy::new(int(&row["balance"]));
+            wallet.set_score_for_test(int(&row["score"]));
+            wallet.set_spent_for_test(int(&row["spent"]));
+            wallet.fill_silos_fresh_empty_store(
+                int(&row["value"]),
+                int(&row["capacity"]),
+                row["income_ppm"].as_i64().unwrap(),
+            );
+            let expected = &row["expected"];
+            assert_eq!(
+                (wallet.credits(), wallet.score(), wallet.spent_credits()),
+                (
+                    int(&expected["balance"]),
+                    int(&expected["score"]),
+                    int(&expected["spent"])
+                ),
+                "{}",
+                row["name"]
+            );
+            compared += 1;
+        }
+        assert_eq!(compared, 8);
     }
 }

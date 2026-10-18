@@ -1,0 +1,3783 @@
+{
+  "cases": [
+    {
+      "input": {
+        "dont_score": false,
+        "family": "building",
+        "limit": -2,
+        "type_index": 10
+      },
+      "name": "building_dont_score_0",
+      "phases": [
+        {
+          "expected": {
+            "last_built": {
+              "aircraft": -1,
+              "building": -1,
+              "infantry": -1,
+              "unit": -1
+            },
+            "produced_items": {
+              "aircraft": {
+                "10": 0
+              },
+              "building": {
+                "10": 0
+              },
+              "infantry": {
+                "10": 0
+              },
+              "unit": {
+                "10": 0
+              }
+            },
+            "produced_totals": {
+              "aircraft": 0,
+              "building": 0,
+              "infantry": 0,
+              "unit": 0
+            },
+            "queries": [
+              {
+                "can_build": [
+                  {
+                    "answer": 1,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": false,
+                "family": "building",
+                "limit": -2,
+                "owner": "self",
+                "type_index": 10
+              }
+            ]
+          },
+          "input": {
+            "kind": "observe"
+          }
+        },
+        {
+          "expected": {
+            "last_built": {
+              "aircraft": -1,
+              "building": 10,
+              "infantry": -1,
+              "unit": -1
+            },
+            "produced_items": {
+              "aircraft": {
+                "10": 0
+              },
+              "building": {
+                "10": 1
+              },
+              "infantry": {
+                "10": 0
+              },
+              "unit": {
+                "10": 0
+              }
+            },
+            "produced_totals": {
+              "aircraft": 0,
+              "building": 1,
+              "infantry": 0,
+              "unit": 0
+            },
+            "queries": [
+              {
+                "can_build": [
+                  {
+                    "answer": 1,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": false,
+                "family": "building",
+                "limit": -2,
+                "owner": "self",
+                "type_index": 10
+              }
+            ]
+          },
+          "input": {
+            "kind": "record"
+          }
+        },
+        {
+          "expected": {
+            "last_built": {
+              "aircraft": -1,
+              "building": 10,
+              "infantry": -1,
+              "unit": -1
+            },
+            "produced_items": {
+              "aircraft": {
+                "10": 0
+              },
+              "building": {
+                "10": 2
+              },
+              "infantry": {
+                "10": 0
+              },
+              "unit": {
+                "10": 0
+              }
+            },
+            "produced_totals": {
+              "aircraft": 0,
+              "building": 2,
+              "infantry": 0,
+              "unit": 0
+            },
+            "queries": [
+              {
+                "can_build": [
+                  {
+                    "answer": 0,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 0,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 0,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": true,
+                "family": "building",
+                "limit": -2,
+                "owner": "self",
+                "type_index": 10
+              }
+            ]
+          },
+          "input": {
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "input": {
+        "dont_score": true,
+        "family": "building",
+        "limit": -2,
+        "type_index": 10
+      },
+      "name": "building_dont_score_1",
+      "phases": [
+        {
+          "expected": {
+            "last_built": {
+              "aircraft": -1,
+              "building": -1,
+              "infantry": -1,
+              "unit": -1
+            },
+            "produced_items": {
+              "aircraft": {
+                "10": 0
+              },
+              "building": {
+                "10": 0
+              },
+              "infantry": {
+                "10": 0
+              },
+              "unit": {
+                "10": 0
+              }
+            },
+            "produced_totals": {
+              "aircraft": 0,
+              "building": 0,
+              "infantry": 0,
+              "unit": 0
+            },
+            "queries": [
+              {
+                "can_build": [
+                  {
+                    "answer": 1,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": false,
+                "family": "building",
+                "limit": -2,
+                "owner": "self",
+                "type_index": 10
+              }
+            ]
+          },
+          "input": {
+            "kind": "observe"
+          }
+        },
+        {
+          "expected": {
+            "last_built": {
+              "aircraft": -1,
+              "building": 10,
+              "infantry": -1,
+              "unit": -1
+            },
+            "produced_items": {
+              "aircraft": {
+                "10": 0
+              },
+              "building": {
+                "10": 0
+              },
+              "infantry": {
+                "10": 0
+              },
+              "unit": {
+                "10": 0
+              }
+            },
+            "produced_totals": {
+              "aircraft": 0,
+              "building": 0,
+              "infantry": 0,
+              "unit": 0
+            },
+            "queries": [
+              {
+                "can_build": [
+                  {
+                    "answer": 1,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": false,
+                "family": "building",
+                "limit": -2,
+                "owner": "self",
+                "type_index": 10
+              }
+            ]
+          },
+          "input": {
+            "kind": "record"
+          }
+        },
+        {
+          "expected": {
+            "last_built": {
+              "aircraft": -1,
+              "building": 10,
+              "infantry": -1,
+              "unit": -1
+            },
+            "produced_items": {
+              "aircraft": {
+                "10": 0
+              },
+              "building": {
+                "10": 0
+              },
+              "infantry": {
+                "10": 0
+              },
+              "unit": {
+                "10": 0
+              }
+            },
+            "produced_totals": {
+              "aircraft": 0,
+              "building": 0,
+              "infantry": 0,
+              "unit": 0
+            },
+            "queries": [
+              {
+                "can_build": [
+                  {
+                    "answer": 1,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": false,
+                "family": "building",
+                "limit": -2,
+                "owner": "self",
+                "type_index": 10
+              }
+            ]
+          },
+          "input": {
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "input": {
+        "dont_score": false,
+        "family": "unit",
+        "limit": -2,
+        "type_index": 10
+      },
+      "name": "unit_dont_score_0",
+      "phases": [
+        {
+          "expected": {
+            "last_built": {
+              "aircraft": -1,
+              "building": -1,
+              "infantry": -1,
+              "unit": -1
+            },
+            "produced_items": {
+              "aircraft": {
+                "10": 0
+              },
+              "building": {
+                "10": 0
+              },
+              "infantry": {
+                "10": 0
+              },
+              "unit": {
+                "10": 0
+              }
+            },
+            "produced_totals": {
+              "aircraft": 0,
+              "building": 0,
+              "infantry": 0,
+              "unit": 0
+            },
+            "queries": [
+              {
+                "can_build": [
+                  {
+                    "answer": 1,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": false,
+                "family": "unit",
+                "limit": -2,
+                "owner": "self",
+                "type_index": 10
+              }
+            ]
+          },
+          "input": {
+            "kind": "observe"
+          }
+        },
+        {
+          "expected": {
+            "last_built": {
+              "aircraft": -1,
+              "building": -1,
+              "infantry": -1,
+              "unit": 10
+            },
+            "produced_items": {
+              "aircraft": {
+                "10": 0
+              },
+              "building": {
+                "10": 0
+              },
+              "infantry": {
+                "10": 0
+              },
+              "unit": {
+                "10": 1
+              }
+            },
+            "produced_totals": {
+              "aircraft": 0,
+              "building": 0,
+              "infantry": 0,
+              "unit": 1
+            },
+            "queries": [
+              {
+                "can_build": [
+                  {
+                    "answer": 1,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": false,
+                "family": "unit",
+                "limit": -2,
+                "owner": "self",
+                "type_index": 10
+              }
+            ]
+          },
+          "input": {
+            "kind": "record"
+          }
+        },
+        {
+          "expected": {
+            "last_built": {
+              "aircraft": -1,
+              "building": -1,
+              "infantry": -1,
+              "unit": 10
+            },
+            "produced_items": {
+              "aircraft": {
+                "10": 0
+              },
+              "building": {
+                "10": 0
+              },
+              "infantry": {
+                "10": 0
+              },
+              "unit": {
+                "10": 2
+              }
+            },
+            "produced_totals": {
+              "aircraft": 0,
+              "building": 0,
+              "infantry": 0,
+              "unit": 2
+            },
+            "queries": [
+              {
+                "can_build": [
+                  {
+                    "answer": 0,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 0,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 0,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": true,
+                "family": "unit",
+                "limit": -2,
+                "owner": "self",
+                "type_index": 10
+              }
+            ]
+          },
+          "input": {
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "input": {
+        "dont_score": true,
+        "family": "unit",
+        "limit": -2,
+        "type_index": 10
+      },
+      "name": "unit_dont_score_1",
+      "phases": [
+        {
+          "expected": {
+            "last_built": {
+              "aircraft": -1,
+              "building": -1,
+              "infantry": -1,
+              "unit": -1
+            },
+            "produced_items": {
+              "aircraft": {
+                "10": 0
+              },
+              "building": {
+                "10": 0
+              },
+              "infantry": {
+                "10": 0
+              },
+              "unit": {
+                "10": 0
+              }
+            },
+            "produced_totals": {
+              "aircraft": 0,
+              "building": 0,
+              "infantry": 0,
+              "unit": 0
+            },
+            "queries": [
+              {
+                "can_build": [
+                  {
+                    "answer": 1,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": false,
+                "family": "unit",
+                "limit": -2,
+                "owner": "self",
+                "type_index": 10
+              }
+            ]
+          },
+          "input": {
+            "kind": "observe"
+          }
+        },
+        {
+          "expected": {
+            "last_built": {
+              "aircraft": -1,
+              "building": -1,
+              "infantry": -1,
+              "unit": 10
+            },
+            "produced_items": {
+              "aircraft": {
+                "10": 0
+              },
+              "building": {
+                "10": 0
+              },
+              "infantry": {
+                "10": 0
+              },
+              "unit": {
+                "10": 0
+              }
+            },
+            "produced_totals": {
+              "aircraft": 0,
+              "building": 0,
+              "infantry": 0,
+              "unit": 0
+            },
+            "queries": [
+              {
+                "can_build": [
+                  {
+                    "answer": 1,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": false,
+                "family": "unit",
+                "limit": -2,
+                "owner": "self",
+                "type_index": 10
+              }
+            ]
+          },
+          "input": {
+            "kind": "record"
+          }
+        },
+        {
+          "expected": {
+            "last_built": {
+              "aircraft": -1,
+              "building": -1,
+              "infantry": -1,
+              "unit": 10
+            },
+            "produced_items": {
+              "aircraft": {
+                "10": 0
+              },
+              "building": {
+                "10": 0
+              },
+              "infantry": {
+                "10": 0
+              },
+              "unit": {
+                "10": 0
+              }
+            },
+            "produced_totals": {
+              "aircraft": 0,
+              "building": 0,
+              "infantry": 0,
+              "unit": 0
+            },
+            "queries": [
+              {
+                "can_build": [
+                  {
+                    "answer": 1,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": false,
+                "family": "unit",
+                "limit": -2,
+                "owner": "self",
+                "type_index": 10
+              }
+            ]
+          },
+          "input": {
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "input": {
+        "dont_score": false,
+        "family": "infantry",
+        "limit": -2,
+        "type_index": 10
+      },
+      "name": "infantry_dont_score_0",
+      "phases": [
+        {
+          "expected": {
+            "last_built": {
+              "aircraft": -1,
+              "building": -1,
+              "infantry": -1,
+              "unit": -1
+            },
+            "produced_items": {
+              "aircraft": {
+                "10": 0
+              },
+              "building": {
+                "10": 0
+              },
+              "infantry": {
+                "10": 0
+              },
+              "unit": {
+                "10": 0
+              }
+            },
+            "produced_totals": {
+              "aircraft": 0,
+              "building": 0,
+              "infantry": 0,
+              "unit": 0
+            },
+            "queries": [
+              {
+                "can_build": [
+                  {
+                    "answer": 1,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": false,
+                "family": "infantry",
+                "limit": -2,
+                "owner": "self",
+                "type_index": 10
+              }
+            ]
+          },
+          "input": {
+            "kind": "observe"
+          }
+        },
+        {
+          "expected": {
+            "last_built": {
+              "aircraft": -1,
+              "building": -1,
+              "infantry": 10,
+              "unit": -1
+            },
+            "produced_items": {
+              "aircraft": {
+                "10": 0
+              },
+              "building": {
+                "10": 0
+              },
+              "infantry": {
+                "10": 1
+              },
+              "unit": {
+                "10": 0
+              }
+            },
+            "produced_totals": {
+              "aircraft": 0,
+              "building": 0,
+              "infantry": 1,
+              "unit": 0
+            },
+            "queries": [
+              {
+                "can_build": [
+                  {
+                    "answer": 1,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": false,
+                "family": "infantry",
+                "limit": -2,
+                "owner": "self",
+                "type_index": 10
+              }
+            ]
+          },
+          "input": {
+            "kind": "record"
+          }
+        },
+        {
+          "expected": {
+            "last_built": {
+              "aircraft": -1,
+              "building": -1,
+              "infantry": 10,
+              "unit": -1
+            },
+            "produced_items": {
+              "aircraft": {
+                "10": 0
+              },
+              "building": {
+                "10": 0
+              },
+              "infantry": {
+                "10": 2
+              },
+              "unit": {
+                "10": 0
+              }
+            },
+            "produced_totals": {
+              "aircraft": 0,
+              "building": 0,
+              "infantry": 2,
+              "unit": 0
+            },
+            "queries": [
+              {
+                "can_build": [
+                  {
+                    "answer": 0,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 0,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 0,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": true,
+                "family": "infantry",
+                "limit": -2,
+                "owner": "self",
+                "type_index": 10
+              }
+            ]
+          },
+          "input": {
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "input": {
+        "dont_score": true,
+        "family": "infantry",
+        "limit": -2,
+        "type_index": 10
+      },
+      "name": "infantry_dont_score_1",
+      "phases": [
+        {
+          "expected": {
+            "last_built": {
+              "aircraft": -1,
+              "building": -1,
+              "infantry": -1,
+              "unit": -1
+            },
+            "produced_items": {
+              "aircraft": {
+                "10": 0
+              },
+              "building": {
+                "10": 0
+              },
+              "infantry": {
+                "10": 0
+              },
+              "unit": {
+                "10": 0
+              }
+            },
+            "produced_totals": {
+              "aircraft": 0,
+              "building": 0,
+              "infantry": 0,
+              "unit": 0
+            },
+            "queries": [
+              {
+                "can_build": [
+                  {
+                    "answer": 1,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": false,
+                "family": "infantry",
+                "limit": -2,
+                "owner": "self",
+                "type_index": 10
+              }
+            ]
+          },
+          "input": {
+            "kind": "observe"
+          }
+        },
+        {
+          "expected": {
+            "last_built": {
+              "aircraft": -1,
+              "building": -1,
+              "infantry": 10,
+              "unit": -1
+            },
+            "produced_items": {
+              "aircraft": {
+                "10": 0
+              },
+              "building": {
+                "10": 0
+              },
+              "infantry": {
+                "10": 0
+              },
+              "unit": {
+                "10": 0
+              }
+            },
+            "produced_totals": {
+              "aircraft": 0,
+              "building": 0,
+              "infantry": 0,
+              "unit": 0
+            },
+            "queries": [
+              {
+                "can_build": [
+                  {
+                    "answer": 1,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": false,
+                "family": "infantry",
+                "limit": -2,
+                "owner": "self",
+                "type_index": 10
+              }
+            ]
+          },
+          "input": {
+            "kind": "record"
+          }
+        },
+        {
+          "expected": {
+            "last_built": {
+              "aircraft": -1,
+              "building": -1,
+              "infantry": 10,
+              "unit": -1
+            },
+            "produced_items": {
+              "aircraft": {
+                "10": 0
+              },
+              "building": {
+                "10": 0
+              },
+              "infantry": {
+                "10": 0
+              },
+              "unit": {
+                "10": 0
+              }
+            },
+            "produced_totals": {
+              "aircraft": 0,
+              "building": 0,
+              "infantry": 0,
+              "unit": 0
+            },
+            "queries": [
+              {
+                "can_build": [
+                  {
+                    "answer": 1,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": false,
+                "family": "infantry",
+                "limit": -2,
+                "owner": "self",
+                "type_index": 10
+              }
+            ]
+          },
+          "input": {
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "input": {
+        "dont_score": false,
+        "family": "aircraft",
+        "limit": -2,
+        "type_index": 10
+      },
+      "name": "aircraft_dont_score_0",
+      "phases": [
+        {
+          "expected": {
+            "last_built": {
+              "aircraft": -1,
+              "building": -1,
+              "infantry": -1,
+              "unit": -1
+            },
+            "produced_items": {
+              "aircraft": {
+                "10": 0
+              },
+              "building": {
+                "10": 0
+              },
+              "infantry": {
+                "10": 0
+              },
+              "unit": {
+                "10": 0
+              }
+            },
+            "produced_totals": {
+              "aircraft": 0,
+              "building": 0,
+              "infantry": 0,
+              "unit": 0
+            },
+            "queries": [
+              {
+                "can_build": [
+                  {
+                    "answer": 1,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": false,
+                "family": "aircraft",
+                "limit": -2,
+                "owner": "self",
+                "type_index": 10
+              }
+            ]
+          },
+          "input": {
+            "kind": "observe"
+          }
+        },
+        {
+          "expected": {
+            "last_built": {
+              "aircraft": 10,
+              "building": -1,
+              "infantry": -1,
+              "unit": -1
+            },
+            "produced_items": {
+              "aircraft": {
+                "10": 1
+              },
+              "building": {
+                "10": 0
+              },
+              "infantry": {
+                "10": 0
+              },
+              "unit": {
+                "10": 0
+              }
+            },
+            "produced_totals": {
+              "aircraft": 1,
+              "building": 0,
+              "infantry": 0,
+              "unit": 0
+            },
+            "queries": [
+              {
+                "can_build": [
+                  {
+                    "answer": 1,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": false,
+                "family": "aircraft",
+                "limit": -2,
+                "owner": "self",
+                "type_index": 10
+              }
+            ]
+          },
+          "input": {
+            "kind": "record"
+          }
+        },
+        {
+          "expected": {
+            "last_built": {
+              "aircraft": 10,
+              "building": -1,
+              "infantry": -1,
+              "unit": -1
+            },
+            "produced_items": {
+              "aircraft": {
+                "10": 2
+              },
+              "building": {
+                "10": 0
+              },
+              "infantry": {
+                "10": 0
+              },
+              "unit": {
+                "10": 0
+              }
+            },
+            "produced_totals": {
+              "aircraft": 2,
+              "building": 0,
+              "infantry": 0,
+              "unit": 0
+            },
+            "queries": [
+              {
+                "can_build": [
+                  {
+                    "answer": 0,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 0,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 0,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": true,
+                "family": "aircraft",
+                "limit": -2,
+                "owner": "self",
+                "type_index": 10
+              }
+            ]
+          },
+          "input": {
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "input": {
+        "dont_score": true,
+        "family": "aircraft",
+        "limit": -2,
+        "type_index": 10
+      },
+      "name": "aircraft_dont_score_1",
+      "phases": [
+        {
+          "expected": {
+            "last_built": {
+              "aircraft": -1,
+              "building": -1,
+              "infantry": -1,
+              "unit": -1
+            },
+            "produced_items": {
+              "aircraft": {
+                "10": 0
+              },
+              "building": {
+                "10": 0
+              },
+              "infantry": {
+                "10": 0
+              },
+              "unit": {
+                "10": 0
+              }
+            },
+            "produced_totals": {
+              "aircraft": 0,
+              "building": 0,
+              "infantry": 0,
+              "unit": 0
+            },
+            "queries": [
+              {
+                "can_build": [
+                  {
+                    "answer": 1,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": false,
+                "family": "aircraft",
+                "limit": -2,
+                "owner": "self",
+                "type_index": 10
+              }
+            ]
+          },
+          "input": {
+            "kind": "observe"
+          }
+        },
+        {
+          "expected": {
+            "last_built": {
+              "aircraft": 10,
+              "building": -1,
+              "infantry": -1,
+              "unit": -1
+            },
+            "produced_items": {
+              "aircraft": {
+                "10": 0
+              },
+              "building": {
+                "10": 0
+              },
+              "infantry": {
+                "10": 0
+              },
+              "unit": {
+                "10": 0
+              }
+            },
+            "produced_totals": {
+              "aircraft": 0,
+              "building": 0,
+              "infantry": 0,
+              "unit": 0
+            },
+            "queries": [
+              {
+                "can_build": [
+                  {
+                    "answer": 1,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": false,
+                "family": "aircraft",
+                "limit": -2,
+                "owner": "self",
+                "type_index": 10
+              }
+            ]
+          },
+          "input": {
+            "kind": "record"
+          }
+        },
+        {
+          "expected": {
+            "last_built": {
+              "aircraft": 10,
+              "building": -1,
+              "infantry": -1,
+              "unit": -1
+            },
+            "produced_items": {
+              "aircraft": {
+                "10": 0
+              },
+              "building": {
+                "10": 0
+              },
+              "infantry": {
+                "10": 0
+              },
+              "unit": {
+                "10": 0
+              }
+            },
+            "produced_totals": {
+              "aircraft": 0,
+              "building": 0,
+              "infantry": 0,
+              "unit": 0
+            },
+            "queries": [
+              {
+                "can_build": [
+                  {
+                    "answer": 1,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": false,
+                "family": "aircraft",
+                "limit": -2,
+                "owner": "self",
+                "type_index": 10
+              }
+            ]
+          },
+          "input": {
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "input": {
+        "dont_score": false,
+        "family": "infantry",
+        "limit": -1,
+        "type_index": 10
+      },
+      "name": "infantry_negative_one",
+      "phases": [
+        {
+          "expected": {
+            "last_built": {
+              "aircraft": -1,
+              "building": -1,
+              "infantry": -1,
+              "unit": -1
+            },
+            "produced_items": {
+              "aircraft": {
+                "10": 0
+              },
+              "building": {
+                "10": 0
+              },
+              "infantry": {
+                "10": 0
+              },
+              "unit": {
+                "10": 0
+              }
+            },
+            "produced_totals": {
+              "aircraft": 0,
+              "building": 0,
+              "infantry": 0,
+              "unit": 0
+            },
+            "queries": [
+              {
+                "can_build": [
+                  {
+                    "answer": 1,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": false,
+                "family": "infantry",
+                "limit": -1,
+                "owner": "self",
+                "type_index": 10
+              }
+            ]
+          },
+          "input": {
+            "kind": "observe"
+          }
+        },
+        {
+          "expected": {
+            "last_built": {
+              "aircraft": -1,
+              "building": -1,
+              "infantry": 10,
+              "unit": -1
+            },
+            "produced_items": {
+              "aircraft": {
+                "10": 0
+              },
+              "building": {
+                "10": 0
+              },
+              "infantry": {
+                "10": 1
+              },
+              "unit": {
+                "10": 0
+              }
+            },
+            "produced_totals": {
+              "aircraft": 0,
+              "building": 0,
+              "infantry": 1,
+              "unit": 0
+            },
+            "queries": [
+              {
+                "can_build": [
+                  {
+                    "answer": 0,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 0,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 0,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": true,
+                "family": "infantry",
+                "limit": -1,
+                "owner": "self",
+                "type_index": 10
+              }
+            ]
+          },
+          "input": {
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "input": {
+        "dont_score": false,
+        "family": "infantry",
+        "limit": -2,
+        "query_families": [
+          "building",
+          "unit",
+          "infantry",
+          "aircraft"
+        ],
+        "type_index": 10
+      },
+      "name": "four_family_nonpositive_boundaries",
+      "phases": [
+        {
+          "expected": {
+            "last_built": {
+              "aircraft": -1,
+              "building": 10,
+              "infantry": -1,
+              "unit": -1
+            },
+            "produced_items": {
+              "aircraft": {
+                "10": 0
+              },
+              "building": {
+                "10": 1
+              },
+              "infantry": {
+                "10": 0
+              },
+              "unit": {
+                "10": 0
+              }
+            },
+            "produced_totals": {
+              "aircraft": 0,
+              "building": 1,
+              "infantry": 0,
+              "unit": 0
+            },
+            "queries": [
+              {
+                "can_build": [
+                  {
+                    "answer": 1,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": false,
+                "family": "building",
+                "limit": -2,
+                "owner": "self",
+                "type_index": 10
+              },
+              {
+                "can_build": [
+                  {
+                    "answer": 1,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": false,
+                "family": "unit",
+                "limit": -2,
+                "owner": "self",
+                "type_index": 10
+              },
+              {
+                "can_build": [
+                  {
+                    "answer": 1,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": false,
+                "family": "infantry",
+                "limit": -2,
+                "owner": "self",
+                "type_index": 10
+              },
+              {
+                "can_build": [
+                  {
+                    "answer": 1,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": false,
+                "family": "aircraft",
+                "limit": -2,
+                "owner": "self",
+                "type_index": 10
+              }
+            ]
+          },
+          "input": {
+            "family": "building",
+            "kind": "record"
+          }
+        },
+        {
+          "expected": {
+            "last_built": {
+              "aircraft": -1,
+              "building": 10,
+              "infantry": -1,
+              "unit": 10
+            },
+            "produced_items": {
+              "aircraft": {
+                "10": 0
+              },
+              "building": {
+                "10": 1
+              },
+              "infantry": {
+                "10": 0
+              },
+              "unit": {
+                "10": 1
+              }
+            },
+            "produced_totals": {
+              "aircraft": 0,
+              "building": 1,
+              "infantry": 0,
+              "unit": 1
+            },
+            "queries": [
+              {
+                "can_build": [
+                  {
+                    "answer": 1,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": false,
+                "family": "building",
+                "limit": -2,
+                "owner": "self",
+                "type_index": 10
+              },
+              {
+                "can_build": [
+                  {
+                    "answer": 1,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": false,
+                "family": "unit",
+                "limit": -2,
+                "owner": "self",
+                "type_index": 10
+              },
+              {
+                "can_build": [
+                  {
+                    "answer": 1,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": false,
+                "family": "infantry",
+                "limit": -2,
+                "owner": "self",
+                "type_index": 10
+              },
+              {
+                "can_build": [
+                  {
+                    "answer": 1,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": false,
+                "family": "aircraft",
+                "limit": -2,
+                "owner": "self",
+                "type_index": 10
+              }
+            ]
+          },
+          "input": {
+            "family": "unit",
+            "kind": "record"
+          }
+        },
+        {
+          "expected": {
+            "last_built": {
+              "aircraft": -1,
+              "building": 10,
+              "infantry": 10,
+              "unit": 10
+            },
+            "produced_items": {
+              "aircraft": {
+                "10": 0
+              },
+              "building": {
+                "10": 1
+              },
+              "infantry": {
+                "10": 1
+              },
+              "unit": {
+                "10": 1
+              }
+            },
+            "produced_totals": {
+              "aircraft": 0,
+              "building": 1,
+              "infantry": 1,
+              "unit": 1
+            },
+            "queries": [
+              {
+                "can_build": [
+                  {
+                    "answer": 1,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": false,
+                "family": "building",
+                "limit": -2,
+                "owner": "self",
+                "type_index": 10
+              },
+              {
+                "can_build": [
+                  {
+                    "answer": 1,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": false,
+                "family": "unit",
+                "limit": -2,
+                "owner": "self",
+                "type_index": 10
+              },
+              {
+                "can_build": [
+                  {
+                    "answer": 1,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": false,
+                "family": "infantry",
+                "limit": -2,
+                "owner": "self",
+                "type_index": 10
+              },
+              {
+                "can_build": [
+                  {
+                    "answer": 1,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": false,
+                "family": "aircraft",
+                "limit": -2,
+                "owner": "self",
+                "type_index": 10
+              }
+            ]
+          },
+          "input": {
+            "family": "infantry",
+            "kind": "record"
+          }
+        },
+        {
+          "expected": {
+            "last_built": {
+              "aircraft": 10,
+              "building": 10,
+              "infantry": 10,
+              "unit": 10
+            },
+            "produced_items": {
+              "aircraft": {
+                "10": 1
+              },
+              "building": {
+                "10": 1
+              },
+              "infantry": {
+                "10": 1
+              },
+              "unit": {
+                "10": 1
+              }
+            },
+            "produced_totals": {
+              "aircraft": 1,
+              "building": 1,
+              "infantry": 1,
+              "unit": 1
+            },
+            "queries": [
+              {
+                "can_build": [
+                  {
+                    "answer": 1,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": false,
+                "family": "building",
+                "limit": -2,
+                "owner": "self",
+                "type_index": 10
+              },
+              {
+                "can_build": [
+                  {
+                    "answer": 1,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": false,
+                "family": "unit",
+                "limit": -2,
+                "owner": "self",
+                "type_index": 10
+              },
+              {
+                "can_build": [
+                  {
+                    "answer": 1,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": false,
+                "family": "infantry",
+                "limit": -2,
+                "owner": "self",
+                "type_index": 10
+              },
+              {
+                "can_build": [
+                  {
+                    "answer": 1,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": false,
+                "family": "aircraft",
+                "limit": -2,
+                "owner": "self",
+                "type_index": 10
+              }
+            ]
+          },
+          "input": {
+            "family": "aircraft",
+            "kind": "record"
+          }
+        },
+        {
+          "expected": {
+            "last_built": {
+              "aircraft": 10,
+              "building": 10,
+              "infantry": 10,
+              "unit": 10
+            },
+            "produced_items": {
+              "aircraft": {
+                "10": 1
+              },
+              "building": {
+                "10": 1
+              },
+              "infantry": {
+                "10": 1
+              },
+              "unit": {
+                "10": 1
+              }
+            },
+            "produced_totals": {
+              "aircraft": 1,
+              "building": 1,
+              "infantry": 1,
+              "unit": 1
+            },
+            "queries": [
+              {
+                "can_build": [
+                  {
+                    "answer": 0,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 0,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 0,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": true,
+                "family": "building",
+                "limit": 0,
+                "owner": "self",
+                "type_index": 10
+              },
+              {
+                "can_build": [
+                  {
+                    "answer": 0,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 0,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 0,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": true,
+                "family": "unit",
+                "limit": 0,
+                "owner": "self",
+                "type_index": 10
+              },
+              {
+                "can_build": [
+                  {
+                    "answer": 0,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 0,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 0,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": true,
+                "family": "infantry",
+                "limit": 0,
+                "owner": "self",
+                "type_index": 10
+              },
+              {
+                "can_build": [
+                  {
+                    "answer": 0,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 0,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 0,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": true,
+                "family": "aircraft",
+                "limit": 0,
+                "owner": "self",
+                "type_index": 10
+              }
+            ]
+          },
+          "input": {
+            "kind": "set_limit",
+            "limit": 0
+          }
+        },
+        {
+          "expected": {
+            "last_built": {
+              "aircraft": 10,
+              "building": 10,
+              "infantry": 10,
+              "unit": 10
+            },
+            "produced_items": {
+              "aircraft": {
+                "10": 1
+              },
+              "building": {
+                "10": 1
+              },
+              "infantry": {
+                "10": 1
+              },
+              "unit": {
+                "10": 1
+              }
+            },
+            "produced_totals": {
+              "aircraft": 1,
+              "building": 1,
+              "infantry": 1,
+              "unit": 1
+            },
+            "queries": [
+              {
+                "can_build": [
+                  {
+                    "answer": 0,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 0,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 0,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": true,
+                "family": "building",
+                "limit": -2147483648,
+                "owner": "self",
+                "type_index": 10
+              },
+              {
+                "can_build": [
+                  {
+                    "answer": 0,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 0,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 0,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": true,
+                "family": "unit",
+                "limit": -2147483648,
+                "owner": "self",
+                "type_index": 10
+              },
+              {
+                "can_build": [
+                  {
+                    "answer": 0,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 0,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 0,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": true,
+                "family": "infantry",
+                "limit": -2147483648,
+                "owner": "self",
+                "type_index": 10
+              },
+              {
+                "can_build": [
+                  {
+                    "answer": 0,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 0,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 0,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": true,
+                "family": "aircraft",
+                "limit": -2147483648,
+                "owner": "self",
+                "type_index": 10
+              }
+            ]
+          },
+          "input": {
+            "kind": "set_limit",
+            "limit": -2147483648
+          }
+        }
+      ]
+    },
+    {
+      "input": {
+        "dont_score": false,
+        "family": "infantry",
+        "limit": -3,
+        "type_index": 10
+      },
+      "name": "produced_plus_selected_held_and_fifo",
+      "phases": [
+        {
+          "expected": {
+            "last_built": {
+              "aircraft": -1,
+              "building": -1,
+              "infantry": -1,
+              "unit": -1
+            },
+            "produced_items": {
+              "aircraft": {
+                "10": 0
+              },
+              "building": {
+                "10": 0
+              },
+              "infantry": {
+                "10": 0
+              },
+              "unit": {
+                "10": 0
+              }
+            },
+            "produced_totals": {
+              "aircraft": 0,
+              "building": 0,
+              "infantry": 0,
+              "unit": 0
+            },
+            "queries": [
+              {
+                "can_build": [
+                  {
+                    "answer": 1,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": false,
+                "family": "infantry",
+                "limit": -3,
+                "owner": "self",
+                "type_index": 10
+              }
+            ]
+          },
+          "input": {
+            "kind": "observe"
+          }
+        },
+        {
+          "expected": {
+            "last_built": {
+              "aircraft": -1,
+              "building": -1,
+              "infantry": 10,
+              "unit": -1
+            },
+            "produced_items": {
+              "aircraft": {
+                "10": 0
+              },
+              "building": {
+                "10": 0
+              },
+              "infantry": {
+                "10": 1
+              },
+              "unit": {
+                "10": 0
+              }
+            },
+            "produced_totals": {
+              "aircraft": 0,
+              "building": 0,
+              "infantry": 1,
+              "unit": 0
+            },
+            "queries": [
+              {
+                "can_build": [
+                  {
+                    "answer": 1,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": false,
+                "family": "infantry",
+                "limit": -3,
+                "owner": "self",
+                "type_index": 10
+              }
+            ]
+          },
+          "input": {
+            "kind": "record"
+          }
+        },
+        {
+          "expected": {
+            "last_built": {
+              "aircraft": -1,
+              "building": -1,
+              "infantry": 10,
+              "unit": -1
+            },
+            "produced_items": {
+              "aircraft": {
+                "10": 0
+              },
+              "building": {
+                "10": 0
+              },
+              "infantry": {
+                "10": 1
+              },
+              "unit": {
+                "10": 0
+              }
+            },
+            "produced_totals": {
+              "aircraft": 0,
+              "building": 0,
+              "infantry": 1,
+              "unit": 0
+            },
+            "queries": [
+              {
+                "can_build": [
+                  {
+                    "answer": 1,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": true,
+                "family": "infantry",
+                "limit": -3,
+                "owner": "self",
+                "type_index": 10
+              }
+            ]
+          },
+          "input": {
+            "held_index": 10,
+            "kind": "factory",
+            "owned": 1,
+            "queued": [
+              10
+            ]
+          }
+        },
+        {
+          "expected": {
+            "last_built": {
+              "aircraft": -1,
+              "building": -1,
+              "infantry": 10,
+              "unit": -1
+            },
+            "produced_items": {
+              "aircraft": {
+                "10": 0
+              },
+              "building": {
+                "10": 0
+              },
+              "infantry": {
+                "10": 1
+              },
+              "unit": {
+                "10": 0
+              }
+            },
+            "produced_totals": {
+              "aircraft": 0,
+              "building": 0,
+              "infantry": 1,
+              "unit": 0
+            },
+            "queries": [
+              {
+                "can_build": [
+                  {
+                    "answer": 1,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": false,
+                "family": "infantry",
+                "limit": -3,
+                "owner": "self",
+                "type_index": 10
+              }
+            ]
+          },
+          "input": {
+            "held_index": 11,
+            "kind": "factory",
+            "owned": 1,
+            "queued": [
+              10
+            ]
+          }
+        },
+        {
+          "expected": {
+            "last_built": {
+              "aircraft": -1,
+              "building": -1,
+              "infantry": 10,
+              "unit": -1
+            },
+            "produced_items": {
+              "aircraft": {
+                "10": 0
+              },
+              "building": {
+                "10": 0
+              },
+              "infantry": {
+                "10": 1
+              },
+              "unit": {
+                "10": 0
+              }
+            },
+            "produced_totals": {
+              "aircraft": 0,
+              "building": 0,
+              "infantry": 1,
+              "unit": 0
+            },
+            "queries": [
+              {
+                "can_build": [
+                  {
+                    "answer": 1,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": false,
+                "family": "infantry",
+                "limit": -3,
+                "owner": "self",
+                "type_index": 10
+              }
+            ]
+          },
+          "input": {
+            "held_index": null,
+            "kind": "factory",
+            "owned": 0,
+            "queued": []
+          }
+        }
+      ]
+    },
+    {
+      "input": {
+        "dont_score": false,
+        "family": "infantry",
+        "limit": -2,
+        "produced_prior": 2147483647,
+        "type_index": 10
+      },
+      "name": "infantry_signed_produced_plus_held_overflow",
+      "phases": [
+        {
+          "expected": {
+            "last_built": {
+              "aircraft": -1,
+              "building": -1,
+              "infantry": -1,
+              "unit": -1
+            },
+            "produced_items": {
+              "aircraft": {
+                "10": 0
+              },
+              "building": {
+                "10": 0
+              },
+              "infantry": {
+                "10": 2147483647
+              },
+              "unit": {
+                "10": 0
+              }
+            },
+            "produced_totals": {
+              "aircraft": 0,
+              "building": 0,
+              "infantry": 2147483647,
+              "unit": 0
+            },
+            "queries": [
+              {
+                "can_build": [
+                  {
+                    "answer": 0,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 0,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 0,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": true,
+                "family": "infantry",
+                "limit": -2,
+                "owner": "self",
+                "type_index": 10
+              }
+            ]
+          },
+          "input": {
+            "kind": "observe"
+          }
+        },
+        {
+          "expected": {
+            "last_built": {
+              "aircraft": -1,
+              "building": -1,
+              "infantry": -1,
+              "unit": -1
+            },
+            "produced_items": {
+              "aircraft": {
+                "10": 0
+              },
+              "building": {
+                "10": 0
+              },
+              "infantry": {
+                "10": 2147483647
+              },
+              "unit": {
+                "10": 0
+              }
+            },
+            "produced_totals": {
+              "aircraft": 0,
+              "building": 0,
+              "infantry": 2147483647,
+              "unit": 0
+            },
+            "queries": [
+              {
+                "can_build": [
+                  {
+                    "answer": 0,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 0,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 0,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": false,
+                "family": "infantry",
+                "limit": -2,
+                "owner": "self",
+                "type_index": 10
+              }
+            ]
+          },
+          "input": {
+            "held_index": 10,
+            "kind": "factory",
+            "owned": 1,
+            "queued": []
+          }
+        },
+        {
+          "expected": {
+            "last_built": {
+              "aircraft": -1,
+              "building": -1,
+              "infantry": 10,
+              "unit": -1
+            },
+            "produced_items": {
+              "aircraft": {
+                "10": 0
+              },
+              "building": {
+                "10": 0
+              },
+              "infantry": {
+                "10": 2147483648
+              },
+              "unit": {
+                "10": 0
+              }
+            },
+            "produced_totals": {
+              "aircraft": 0,
+              "building": 0,
+              "infantry": 2147483648,
+              "unit": 0
+            },
+            "queries": [
+              {
+                "can_build": [
+                  {
+                    "answer": 1,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": false,
+                "family": "infantry",
+                "limit": -2,
+                "owner": "self",
+                "type_index": 10
+              }
+            ]
+          },
+          "input": {
+            "kind": "record"
+          }
+        }
+      ]
+    },
+    {
+      "input": {
+        "allow_growth": true,
+        "dont_score": false,
+        "family": "unit",
+        "limit": -2,
+        "type_index": 10
+      },
+      "name": "late_index_growth_retains_old_items",
+      "phases": [
+        {
+          "expected": {
+            "last_built": {
+              "aircraft": -1,
+              "building": -1,
+              "infantry": -1,
+              "unit": 10
+            },
+            "produced_items": {
+              "aircraft": {
+                "10": 0
+              },
+              "building": {
+                "10": 0
+              },
+              "infantry": {
+                "10": 0
+              },
+              "unit": {
+                "10": 1
+              }
+            },
+            "produced_totals": {
+              "aircraft": 0,
+              "building": 0,
+              "infantry": 0,
+              "unit": 1
+            },
+            "queries": [
+              {
+                "can_build": [
+                  {
+                    "answer": 1,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": false,
+                "family": "unit",
+                "limit": -2,
+                "owner": "self",
+                "type_index": 10
+              }
+            ]
+          },
+          "input": {
+            "kind": "record"
+          }
+        },
+        {
+          "expected": {
+            "last_built": {
+              "aircraft": -1,
+              "building": -1,
+              "infantry": -1,
+              "unit": 65
+            },
+            "produced_items": {
+              "aircraft": {
+                "10": 0
+              },
+              "building": {
+                "10": 0
+              },
+              "infantry": {
+                "10": 0
+              },
+              "unit": {
+                "10": 1,
+                "64": 0,
+                "65": 1
+              }
+            },
+            "produced_totals": {
+              "aircraft": 0,
+              "building": 0,
+              "infantry": 0,
+              "unit": 2
+            },
+            "queries": [
+              {
+                "can_build": [
+                  {
+                    "answer": 1,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": false,
+                "family": "unit",
+                "limit": -2,
+                "owner": "self",
+                "type_index": 65
+              }
+            ]
+          },
+          "input": {
+            "kind": "record",
+            "sample_indices": [
+              10,
+              64,
+              65
+            ],
+            "type_index": 65
+          }
+        },
+        {
+          "expected": {
+            "last_built": {
+              "aircraft": -1,
+              "building": -1,
+              "infantry": -1,
+              "unit": 65
+            },
+            "produced_items": {
+              "aircraft": {
+                "10": 0
+              },
+              "building": {
+                "10": 0
+              },
+              "infantry": {
+                "10": 0
+              },
+              "unit": {
+                "10": 1,
+                "64": 0,
+                "65": 1
+              }
+            },
+            "produced_totals": {
+              "aircraft": 0,
+              "building": 0,
+              "infantry": 0,
+              "unit": 2
+            },
+            "queries": [
+              {
+                "can_build": [
+                  {
+                    "answer": 1,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": false,
+                "family": "unit",
+                "limit": -2,
+                "owner": "self",
+                "type_index": 65
+              }
+            ]
+          },
+          "input": {
+            "kind": "observe"
+          }
+        }
+      ]
+    },
+    {
+      "input": {
+        "dont_score": false,
+        "family": "building",
+        "limit": -1,
+        "second_house": true,
+        "type_index": 10
+      },
+      "name": "separate_house_histories",
+      "phases": [
+        {
+          "expected": {
+            "last_built": {
+              "aircraft": -1,
+              "building": 10,
+              "infantry": -1,
+              "unit": -1
+            },
+            "other_house": {
+              "last_built": {
+                "aircraft": -1,
+                "building": -1,
+                "infantry": -1,
+                "unit": -1
+              },
+              "produced_items": {
+                "aircraft": {
+                  "10": 0
+                },
+                "building": {
+                  "10": 0
+                },
+                "infantry": {
+                  "10": 0
+                },
+                "unit": {
+                  "10": 0
+                }
+              },
+              "produced_totals": {
+                "aircraft": 0,
+                "building": 0,
+                "infantry": 0,
+                "unit": 0
+              }
+            },
+            "produced_items": {
+              "aircraft": {
+                "10": 0
+              },
+              "building": {
+                "10": 1
+              },
+              "infantry": {
+                "10": 0
+              },
+              "unit": {
+                "10": 0
+              }
+            },
+            "produced_totals": {
+              "aircraft": 0,
+              "building": 1,
+              "infantry": 0,
+              "unit": 0
+            },
+            "queries": [
+              {
+                "can_build": [
+                  {
+                    "answer": 0,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 0,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 0,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": true,
+                "family": "building",
+                "limit": -1,
+                "owner": "self",
+                "type_index": 10
+              },
+              {
+                "can_build": [
+                  {
+                    "answer": 1,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 1,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": false,
+                "family": "building",
+                "limit": -1,
+                "owner": "other",
+                "type_index": 10
+              }
+            ]
+          },
+          "input": {
+            "kind": "record"
+          }
+        },
+        {
+          "expected": {
+            "last_built": {
+              "aircraft": -1,
+              "building": 10,
+              "infantry": -1,
+              "unit": -1
+            },
+            "other_house": {
+              "last_built": {
+                "aircraft": -1,
+                "building": 10,
+                "infantry": -1,
+                "unit": -1
+              },
+              "produced_items": {
+                "aircraft": {
+                  "10": 0
+                },
+                "building": {
+                  "10": 1
+                },
+                "infantry": {
+                  "10": 0
+                },
+                "unit": {
+                  "10": 0
+                }
+              },
+              "produced_totals": {
+                "aircraft": 0,
+                "building": 1,
+                "infantry": 0,
+                "unit": 0
+              }
+            },
+            "produced_items": {
+              "aircraft": {
+                "10": 0
+              },
+              "building": {
+                "10": 1
+              },
+              "infantry": {
+                "10": 0
+              },
+              "unit": {
+                "10": 0
+              }
+            },
+            "produced_totals": {
+              "aircraft": 0,
+              "building": 1,
+              "infantry": 0,
+              "unit": 0
+            },
+            "queries": [
+              {
+                "can_build": [
+                  {
+                    "answer": 0,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 0,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 0,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": true,
+                "family": "building",
+                "limit": -1,
+                "owner": "self",
+                "type_index": 10
+              },
+              {
+                "can_build": [
+                  {
+                    "answer": 0,
+                    "args": [
+                      false,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 0,
+                    "args": [
+                      true,
+                      true
+                    ]
+                  },
+                  {
+                    "answer": 0,
+                    "args": [
+                      true,
+                      false
+                    ]
+                  }
+                ],
+                "check_build_limit": true,
+                "family": "building",
+                "limit": -1,
+                "owner": "other",
+                "type_index": 10
+              }
+            ]
+          },
+          "input": {
+            "kind": "record",
+            "owner": "other"
+          }
+        }
+      ]
+    }
+  ],
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "schema_version": 1
+}

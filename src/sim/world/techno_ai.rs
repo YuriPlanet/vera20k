@@ -44,7 +44,6 @@ use target_scan::{can_acquire_target, passive_acquire_step};
 use super::{FrameEffects, Simulation};
 use crate::map::entities::EntityCategory;
 use crate::rules::overlay_types::OverlayTypeRegistry;
-use crate::rules::particle_system_type::ParticleSystemBehavesLike;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::miner::MinerConfig;
 use crate::sim::mission::MissionType;
@@ -1796,70 +1795,8 @@ fn techno_after_acquisition(
     true
 }
 
-/// Sim-side model of gamemd's TechnoClass `+0x308` (`DamageSparkSystem`): the
-/// `session.tick` at which the live AI_Update damage-Spark particle system
-/// expires and the object may roll again. `0` = no live system (may roll;
-/// matches `+0x308 == NULL`); `u64::MAX` = a system whose `Lifetime <= 0`
-/// holds indefinitely; otherwise the system is live while `session.tick <
-/// live_until`. Set on a successful spark roll to `spawn_tick + sparkType.Lifetime`
-/// (matching the spawned `ParticleSystemClass` decrementing once per tick), so
-/// the per-object draw cadence stays bit-aligned with gamemd. Hashed (it gates
-/// future `scenario_rng` draws). Dormant in stock YR — see
-/// [`crate::rules::object_type::ObjectType::emits_damage_spark`]. Only the
-/// spark roll writes it.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-#[serde(transparent)]
-pub(crate) struct DamageSpark {
-    live_until: u64,
-}
-
-impl DamageSpark {
-    /// The tick the live system expires.
-    pub(crate) const fn live_until(self) -> u64 {
-        self.live_until
-    }
-}
-
-/// `damage_particle_live_until` sentinel for a spawned spark system whose
-/// `Lifetime <= 0`: gamemd's `ParticleSystemClass::AI` removal counter (set from
-/// `Type+0x2b8`) only fires on `--counter == 0`, so a non-positive lifetime never
-/// reaches 0 going down → the system (and thus `+0x308`) holds for the whole
-/// match. Distinct from a real finite `spawn_tick + lifetime` (always `>= 1` for
-/// `lifetime > 0`, and `tick` won't reach `u64::MAX` in any real match).
-const DAMAGE_PARTICLE_LIVE_FOREVER: u64 = u64::MAX;
-
-/// Largest `roll` value the gamemd damage-Spark prob-roll yields
-/// (`RandomRanged(0, 0x7ffffffe)`).
-const DAMAGE_SPARK_ROLL_MAX: u32 = 0x7fff_fffe;
-
-/// S4a post-mission common block (the steps after `Mission_Dispatch`: passive
-/// acquire (S4c), the damage-particle RNG (S4b), the timer accumulator, EMP
-/// recovery).
-///
-/// S4b — the AI_Update damage-Spark `scenario_rng` consumption, modelled exactly
-/// from the verified gamemd block. Per object, per tick:
-///   - Outer gate: `emits_damage_spark` (TechnoTypeClass `+0xC8F` = `Cyborg`,
-///     infantry-only) AND `HealthRatio < ConditionYellow` (STRICT) AND
-///     not-in-special-damage-state (`vtable+0x1c8() > -10`, unmodelled → pass).
-///   - Build the Spark sublist of `DamageParticleSystems` (`BehavesLike == Spark`).
-///     No RNG.
-///   - Inner gate: no live spark system (`+0x308`-equivalent empty) AND Spark
-///     count > 0.
-///   - Draw #1 (always, on inner-gate pass): the prob-roll on `scenario_rng`;
-///     succeed iff `roll < threshold` (red band if `HealthRatio < ConditionRed`,
-///     else yellow). On success → Draw #2: the list-pick `n(0, count-1)` (consumes
-///     no draw when count == 1, matching gamemd `RandomRanged(min == max)`), and
-///     arm the live-system hold to `tick + sparkType.Lifetime`.
-///
-/// Draw truth table (`scenario_rng`): 0 (outer gate fail / live system / no
-/// Spark) — 1 (roll fails) — 2 (roll succeeds, count >= 2) — 1 (roll succeeds,
-/// count == 1). The spawn/offset/ctor draw NOTHING. The visual is render-side;
-/// this consumes the draws and tracks the gate only.
-///
-/// Dormant in stock YR: `emits_damage_spark` is false for every stock type (no
-/// `Cyborg=yes` units, and `techno_common_post` runs only for the vehicle arm),
-/// so the early-out fires before any allocation or draw — zero `scenario_rng`
-/// movement. Modelled exactly so the stream stays aligned if a mod ever enables it.
+/// The common Techno post-mission stage and the stock-dormant Cyborg Spark
+/// producer. The retained system and both native producers share particles::spawn.
 fn techno_common_post(sim: &mut Simulation, id: u64, rules: Option<&RuleSet>) {
     // Techno6FABC4 follows Mission, passive acquisition and the reach slot.
     // Native Buildings step at4509DE in UpdateAnimation before Techno and
@@ -1875,96 +1812,7 @@ fn techno_common_post(sim: &mut Simulation, id: u64, rules: Option<&RuleSet>) {
         return;
     };
 
-    // Read the entity facts we need, then resolve the type. `obj` borrows `rules`
-    // (external), not `sim`, so the later &mut sim draws/writes don't alias it.
-    let Some(entity) = sim.substrate.entities.get(id) else {
-        return;
-    };
-    let type_ref = entity.type_ref();
-    let live_until_in = entity.damage_particle_live_until.live_until();
-    let Some(obj) = sim.interner.object_type(type_ref, rules) else {
-        return;
-    };
-
-    use crate::util::native_x87::{MaskedX87Chop53 as X87, MaskedX87Ordering, NativeF64Bits};
-    let health_ratio = entity.health.ratio(obj.strength);
-    let below = |threshold: f64| {
-        matches!(
-            X87::compare(
-                health_ratio,
-                X87::load_f64(NativeF64Bits::from_bits(threshold.to_bits()))
-            ),
-            MaskedX87Ordering::Less | MaskedX87Ordering::Unordered
-        )
-    };
-
-    // Outer gate. Check the cheap, near-always-false `emits_damage_spark` first so
-    // the common path (every stock vehicle) exits before building the Spark list.
-    // 6FACF3..FE tests x87 C0: strict Less or Unordered. The red selector
-    // at6FADDA..E5 uses the same predicate on the signed live-Strength ratio.
-    // The `vtable+0x1c8() > -10` special-state term is unmodelled here → pass.
-    let below_yellow = below(rules.general.condition_yellow);
-    if !(obj.emits_damage_spark() && below_yellow) {
-        return;
-    }
-
-    // Spark sublist: `DamageParticleSystems` entries resolving to a
-    // `BehavesLike == Spark` particle system, in list order. Collect each one's
-    // Lifetime for the `+0x308` hold; the list-pick indexes into this sublist.
-    let mut spark_lifetimes: Vec<i32> = Vec::new();
-    for name in &obj.damage_particle_systems {
-        if let Some(ps_id) = rules.ps_type_id_by_name(name) {
-            let pst = rules.particle_system_type(ps_id);
-            if pst.behaves_like == ParticleSystemBehavesLike::Spark {
-                spark_lifetimes.push(pst.lifetime);
-            }
-        }
-    }
-    let spark_count = spark_lifetimes.len() as u32;
-    // Band select needs ConditionRed; bind once (both gate and draw read it).
-    let below_red = below(rules.general.condition_red);
-
-    // `+0x308`-equivalent live-system gate. Resolve expiry lazily here (the only
-    // observable effect of the hold is gating draws, which only happen under this
-    // gate, so lazy expiry yields the same draw sequence as gamemd's eager null).
-    let tick = sim.session.tick;
-    let mut live_until = live_until_in;
-    if live_until != 0 && live_until != DAMAGE_PARTICLE_LIVE_FOREVER && tick >= live_until {
-        live_until = 0; // system expired → `+0x308` nulls; may roll again this tick
-    }
-    let system_live = live_until != 0;
-
-    // Inner gate: no live system AND at least one Spark system.
-    if !system_live && spark_count > 0 {
-        // Draw #1 — prob-roll on Scen->Random (always, on inner-gate pass).
-        let roll = sim
-            .scenario_rng
-            .next_range_u32_inclusive(0, DAMAGE_SPARK_ROLL_MAX);
-        let threshold = if below_red {
-            rules.general.condition_red_spark_threshold
-        } else {
-            rules.general.condition_yellow_spark_threshold
-        };
-        if roll < threshold {
-            // Draw #2 — list-pick (no draw when spark_count == 1: n(0,0)).
-            let idx = sim
-                .scenario_rng
-                .next_range_u32_inclusive(0, spark_count - 1) as usize;
-            let lifetime = spark_lifetimes[idx];
-            live_until = if lifetime > 0 {
-                tick.saturating_add(lifetime as u64)
-            } else {
-                DAMAGE_PARTICLE_LIVE_FOREVER
-            };
-        }
-    }
-
-    // Commit the (possibly cleared or freshly-armed) live-system state.
-    if live_until != live_until_in
-        && let Some(entity) = sim.substrate.entities.get_mut(id)
-    {
-        entity.damage_particle_live_until.live_until = live_until;
-    }
+    sim.update_damage_spark_after_ai(id, rules);
 }
 
 /// Shared late Techno6FAC31..6FAC79 slot for every represented category.
@@ -6020,8 +5868,8 @@ MinLowPowerProductionSpeed=0.4\nMaxLowPowerProductionSpeed=0.85\n\n\
 
     // ===== Slice S4b — AI_Update damage-Spark scenario_rng consumption =====
 
-    /// Two Spark systems, each `Lifetime=5`, so the list-pick (count==2) consumes
-    /// a draw and the armed hold is `tick+5` regardless of the picked index.
+    /// Two Spark systems, each `Lifetime=5`; the list-pick consumes a draw
+    /// before the selected real system is constructed.
     const TWO_SPARK_SYSTEMS: &str = "[ParticleSystems]\n\
 1=SparkA\n2=SparkB\n\n[SparkA]\nBehavesLike=Spark\nLifetime=5\n\n[SparkB]\nBehavesLike=Spark\nLifetime=5\n";
 
@@ -6057,6 +5905,7 @@ ConditionRedSparkingProbability={red_prob}\nConditionYellowSparkingProbability={
     /// gate keys off the TYPE's `emits_damage_spark`, so this exercises the draw
     /// path. Live CYB Strength100 and the supplied actual HP set the health band.
     fn insert_cyborg_unit(sim: &mut Simulation, id: u64, current: i32) {
+        assert_eq!(sim.allocate_stable_id(), id);
         let e = interned_entity(
             sim,
             id,
@@ -6069,13 +5918,15 @@ ConditionRedSparkingProbability={red_prob}\nConditionYellowSparkingProbability={
         sim.substrate.entities.insert(e);
     }
 
-    fn live_until(sim: &Simulation, id: u64) -> u64 {
+    const DAMAGE_SPARK_ROLL_MAX: u32 = 0x7fff_fffe;
+
+    fn spark_system(sim: &Simulation, id: u64) -> Option<u64> {
         sim.substrate
             .entities
             .get(id)
             .unwrap()
-            .damage_particle_live_until
-            .live_until()
+            .spark_particle_system
+            .system()
     }
 
     #[test]
@@ -6093,7 +5944,7 @@ ConditionRedSparkingProbability={red_prob}\nConditionYellowSparkingProbability={
             "no scenario draw above ConditionYellow"
         );
         assert_eq!(sim.main_rng.state(), main);
-        assert_eq!(live_until(&sim, 1), 0);
+        assert_eq!(spark_system(&sim, 1), None);
     }
 
     #[test]
@@ -6117,17 +5968,16 @@ ConditionRedSparkingProbability={red_prob}\nConditionYellowSparkingProbability={
             main,
             "scenario stream only, never main"
         );
-        assert_eq!(live_until(&sim, 1), 0, "roll failed → no live system");
+        assert_eq!(spark_system(&sim, 1), None, "roll failed → no live system");
     }
 
     #[test]
     fn s4b_two_draws_when_roll_succeeds() {
         // prob 1.0 → threshold MAX → roll always succeeds; 2 Spark systems → the
-        // list-pick (n(0,1)) consumes a second draw, and the hold arms to tick+5.
+        // list-pick (n(0,1)) consumes a second draw before construction.
         let rules = cyborg_rules("1.0", "1.0", "SparkA,SparkB", TWO_SPARK_SYSTEMS);
         let mut sim = Simulation::new();
         insert_cyborg_unit(&mut sim, 1, 20);
-        let tick = sim.session.tick;
         let mut expect = sim.scenario_rng.clone();
         let main = sim.main_rng.state();
         techno_common_post(&mut sim, 1, Some(&rules));
@@ -6139,10 +5989,17 @@ ConditionRedSparkingProbability={red_prob}\nConditionYellowSparkingProbability={
             "roll + list-pick = two draws"
         );
         assert_eq!(sim.main_rng.state(), main);
-        assert_eq!(
-            live_until(&sim, 1),
-            tick + 5,
-            "armed to spawn_tick + Lifetime"
+        let system = sim
+            .particle_systems()
+            .get(spark_system(&sim, 1).unwrap())
+            .unwrap();
+        assert_eq!(system.owner_entity, Some(1));
+        assert_eq!(system.lifetime, 5);
+        assert!(system.in_logic_vector);
+        assert!(
+            sim.display_layers()
+                .ordered_ids()
+                .any(|&id| id == system.stable_id)
         );
     }
 
@@ -6153,7 +6010,6 @@ ConditionRedSparkingProbability={red_prob}\nConditionYellowSparkingProbability={
         let rules = cyborg_rules("1.0", "1.0", "SparkA,SmokeA", ONE_SPARK_ONE_SMOKE_SYSTEMS);
         let mut sim = Simulation::new();
         insert_cyborg_unit(&mut sim, 1, 20);
-        let tick = sim.session.tick;
         let mut expect = sim.scenario_rng.clone();
         techno_common_post(&mut sim, 1, Some(&rules));
         expect.next_range_u32_inclusive(0, DAMAGE_SPARK_ROLL_MAX); // roll only
@@ -6162,45 +6018,37 @@ ConditionRedSparkingProbability={red_prob}\nConditionYellowSparkingProbability={
             expect.state(),
             "single-spark success = one draw"
         );
-        assert_eq!(
-            live_until(&sim, 1),
-            tick + 5,
-            "armed despite the no-draw list-pick"
-        );
+        assert!(spark_system(&sim, 1).is_some());
+        assert_eq!(sim.particle_systems().len(), 1);
     }
 
     #[test]
-    fn s4b_no_draw_while_system_live() {
-        // After a successful spawn (live_until = 5 at tick 0), a same-tick re-entry
-        // sees the live system (+0x308 != 0) and makes zero draws; advancing past
-        // live_until expires it and rolling resumes.
+    fn s4b_no_draw_while_actual_system_live_then_expiry_resumes_roll() {
         let rules = cyborg_rules("1.0", "1.0", "SparkA,SparkB", TWO_SPARK_SYSTEMS);
         let mut sim = Simulation::new();
         insert_cyborg_unit(&mut sim, 1, 20);
-        techno_common_post(&mut sim, 1, Some(&rules)); // spawn → live_until = 5
-        assert_eq!(live_until(&sim, 1), 5);
-
-        let frozen = sim.scenario_rng.state();
-        techno_common_post(&mut sim, 1, Some(&rules)); // still tick 0 < 5 → no draw
-        assert_eq!(
-            sim.scenario_rng.state(),
-            frozen,
-            "live system blocks the draw"
-        );
-        assert_eq!(live_until(&sim, 1), 5, "hold unchanged while live");
-
-        // At tick 5 the system has expired: clears and re-rolls (2 draws, re-armed).
-        sim.session.tick = 5;
-        let mut expect = sim.scenario_rng.clone();
         techno_common_post(&mut sim, 1, Some(&rules));
+        let first = spark_system(&sim, 1).unwrap();
+        let frozen = sim.scenario_rng.state();
+        // Advancing the session clock alone must never expire a live link.
+        sim.session.tick = 1_000_000;
+        techno_common_post(&mut sim, 1, Some(&rules));
+        assert_eq!(sim.scenario_rng.state(), frozen);
+        assert_eq!(spark_system(&sim, 1), Some(first));
+
+        sim.particle_systems_mut()
+            .get_mut(first)
+            .unwrap()
+            .done_spawning = true;
+        sim.retire_particle_system(first, crate::sim::world::UninitContext::with_rules(&rules));
+        assert_eq!(spark_system(&sim, 1), None);
+        let mut expect = sim.scenario_rng.clone();
         expect.next_range_u32_inclusive(0, DAMAGE_SPARK_ROLL_MAX);
         expect.next_range_u32_inclusive(0, 1);
-        assert_eq!(
-            sim.scenario_rng.state(),
-            expect.state(),
-            "expiry resumes rolling"
-        );
-        assert_eq!(live_until(&sim, 1), 10, "re-armed to 5 + Lifetime");
+        techno_common_post(&mut sim, 1, Some(&rules));
+        assert_eq!(sim.scenario_rng.state(), expect.state());
+        assert_ne!(spark_system(&sim, 1), Some(first));
+        assert!(spark_system(&sim, 1).is_some());
     }
 
     #[test]
@@ -6213,7 +6061,7 @@ ConditionRedSparkingProbability={red_prob}\nConditionYellowSparkingProbability={
         let scen = sim.scenario_rng.state();
         techno_common_post(&mut sim, 1, Some(&rules));
         assert_eq!(sim.scenario_rng.state(), scen, "no Spark system → no draw");
-        assert_eq!(live_until(&sim, 1), 0);
+        assert_eq!(spark_system(&sim, 1), None);
     }
 
     #[test]
@@ -6260,35 +6108,33 @@ ConditionRedSparkingProbability=1.0\nConditionYellowSparkingProbability=1.0\n\n\
             scen,
             "non-Cyborg-infantry type makes zero draws"
         );
-        assert_eq!(live_until(&sim, 1), 0);
+        assert_eq!(spark_system(&sim, 1), None);
     }
 
     #[test]
-    fn s4b_permanent_hold_blocks_draw() {
-        // A spawned spark whose Lifetime <= 0 holds +0x308 indefinitely: live_until
-        // = u64::MAX never expires, so the object never rolls again.
+    fn s4b_nonpositive_lifetime_retires_through_done_empty_system_ai() {
         let rules = cyborg_rules(
             "1.0",
             "1.0",
             "SparkA",
-            "[ParticleSystems]\n1=SparkA\n\n[SparkA]\nBehavesLike=Spark\nLifetime=-1\n",
+            "[ParticleSystems]\n1=SparkA\n[SparkA]\nBehavesLike=Spark\nLifetime=-1\n",
         );
         let mut sim = Simulation::new();
         insert_cyborg_unit(&mut sim, 1, 20);
-        techno_common_post(&mut sim, 1, Some(&rules)); // success → permanent hold
-        assert_eq!(
-            live_until(&sim, 1),
-            u64::MAX,
-            "Lifetime<=0 → indefinite hold"
-        );
-        sim.session.tick = 1_000_000;
-        let frozen = sim.scenario_rng.state();
         techno_common_post(&mut sim, 1, Some(&rules));
-        assert_eq!(
-            sim.scenario_rng.state(),
-            frozen,
-            "permanent hold never re-rolls"
-        );
+        let system_id = spark_system(&sim, 1).unwrap();
+        assert_eq!(sim.particle_systems().get(system_id).unwrap().lifetime, -1);
+        // This is an explicit done-empty prior. Its real common AI, rather
+        // than a guessed Lifetime<=0 timer, broadcasts the matching expiry.
+        sim.particle_systems_mut()
+            .get_mut(system_id)
+            .unwrap()
+            .done_spawning = true;
+        crate::sim::particles::system_ai::tick_particle_system(&mut sim, &rules, system_id);
+        assert_eq!(spark_system(&sim, 1), None);
+        assert!(sim.particle_systems().get(system_id).unwrap().in_limbo());
+        sim.process_pending_delete();
+        assert!(sim.particle_systems().get(system_id).is_none());
     }
 }
 

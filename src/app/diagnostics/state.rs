@@ -181,10 +181,9 @@ impl crate::app::AppState {
         self.diag.presentation_ms(tick)
     }
 
-    pub(crate) fn radar_presentation_ms(&self, now: std::time::Instant) -> u64 {
-        self.diagnostic_presentation_ms().unwrap_or_else(|| {
-            crate::app::match_runtime::sim_tick::monotonic_frame_pacer_ms(self, now)
-        })
+    pub(crate) fn radar_presentation_ms(&self) -> u64 {
+        self.diagnostic_presentation_ms()
+            .unwrap_or_else(crate::app::match_runtime::frame_pacer::wall_clock_ms)
     }
 }
 

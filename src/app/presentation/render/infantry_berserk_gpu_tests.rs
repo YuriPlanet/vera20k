@@ -1,6 +1,8 @@
 //! Physical GI atlas/frame/material/replay against original518F90 body pixels.
-//! Pose, Cell light, point/clip and final shape Z are declared native priors.
-//! CAOS gameplay and the full builder are covered by their separate runtime tests.
+//! The viewport controls join Object5F4B10 and its original camera projection;
+//! Rust derives their positions through the production screen-position owner.
+//! Pose, Cell light and final shape Z remain declared native priors. CAOS
+//! gameplay and the full builder have separate production controls.
 
 use super::super::draw_plan_lowering::{
     NativeDisplayOrder, ObjectPieceInstance, PlannedObjectInstance, lower_object_instances,
@@ -98,11 +100,21 @@ fn physical_rules(assets: &AssetManager, shared: &Value) -> crate::rules::rulese
 #[test]
 #[ignore = "requires GPU and retail assets; physical GI atlas and retained material versus eight original whole-body draws"]
 fn retail_gi_berserk_atlas_and_replay_match_original_body_pixels() {
+    compare_original_body_pixels(false);
+}
+
+#[test]
+#[ignore = "requires GPU and retail assets; physical GI camera projection and clipping versus original Object DrawIfVisible and body pixels"]
+fn retail_gi_viewport_camera_and_replay_match_original_admission_pixels() {
+    compare_original_body_pixels(true);
+}
+
+fn compare_original_body_pixels(join_viewport: bool) {
     let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
         return;
     };
-    // Use the existing theater owner to admit the physical CLEAR01 input;
-    // the GPU comparison still supplies point/Z instead of deriving a world.
+    // Use the existing theater owner to admit the physical CLEAR01 input.
+    // Final shape Z remains an observed native prior for this flat crop.
     crate::map::theater::load_theater(&mut assets, "TEMPERATE").unwrap();
     let native =
         crate::test_fixture::json("tools/procedural_drawing_oracle/infantry_berserk_body.json");
@@ -192,8 +204,14 @@ fn retail_gi_berserk_atlas_and_replay_match_original_body_pixels() {
     let pixels = (size[0] * size[1]) as usize;
     let a_value = int(&surface["a_value"]) as u8;
     let background = int(&surface["background"]) as u16;
-    let rows = native["rows"].as_array().unwrap();
-    assert_eq!(rows.len(), 8);
+    let rows = native[if join_viewport {
+        "viewport_rows"
+    } else {
+        "rows"
+    }]
+    .as_array()
+    .unwrap();
+    assert_eq!(rows.len(), if join_viewport { 28 } else { 8 });
     let gpu = Gpu::new();
     let mut compared = 0;
     for format in [
@@ -235,7 +253,24 @@ fn retail_gi_berserk_atlas_and_replay_match_original_body_pixels() {
         for row in rows {
             let name = row["name"].as_str().unwrap();
             let input = &row["input"];
-            let body = &row["body"];
+            // DrawIfVisible may return before the body. Its return value never
+            // gates the Rust draw: a conservatively submitted outside sprite
+            // must still produce the same final pixels. Use the original
+            // ordinary body of this physical frame for its flat material/Z.
+            let body = if row["body"].is_null() {
+                native["rows"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .find(|control| {
+                        control["input"]["frame"] == input["frame"]
+                            && control["name"].as_str().unwrap().ends_with("_ordinary")
+                    })
+                    .map(|control| &control["body"])
+                    .unwrap()
+            } else {
+                &row["body"]
+            };
             for key in [
                 "source_unchanged",
                 "a_unchanged",
@@ -253,6 +288,19 @@ fn retail_gi_berserk_atlas_and_replay_match_original_body_pixels() {
                     .unwrap()
                     .is_empty()
             );
+            if join_viewport {
+                assert_eq!(row["invariants"]["vtable_unchanged"], true);
+                assert_eq!(row["invariants"]["facing_table_unchanged"], true);
+                // Native Tactical and VERA retain different world-row origins.
+                // Use the same origin query as the production camera owner;
+                // the observed native actor point never positions this draw.
+                let origin = crate::util::lepton::absolute_leptons_to_screen(0, 0, 0);
+                view.camera_pos = [
+                    int(&input["camera"][0]) as f32 + origin.0,
+                    int(&input["camera"][1]) as f32 + origin.1,
+                ];
+                batch.write_camera(&gpu.queue, view);
+            }
             let gi = sim.entities_mut().get_mut(1).unwrap();
             gi.berserk
                 .set_active_for_test(input["berserk"].as_bool().unwrap());
@@ -305,10 +353,20 @@ fn retail_gi_berserk_atlas_and_replay_match_original_body_pixels() {
                 int(&body["colour_word"]),
                 "{name}: original caller word"
             );
-            let position = [
-                int(&body["point"][0]) as f32 + entry.offset_x,
-                int(&body["point"][1]) as f32 + entry.offset_y,
-            ];
+            let anchor = if join_viewport {
+                let (x, y) = crate::render::locomotor_visual::screen_position(gi);
+                if let Some(point) = row["admission"]["point"].as_array() {
+                    assert_eq!(
+                        [x - view.camera_pos[0], y - view.camera_pos[1]],
+                        [int(&point[0]) as f32, int(&point[1]) as f32],
+                        "{name}: production projection versus original41BE00/6D2140"
+                    );
+                }
+                [x, y]
+            } else {
+                [int(&body["point"][0]) as f32, int(&body["point"][1]) as f32]
+            };
+            let position = [anchor[0] + entry.offset_x, anchor[1] + entry.offset_y];
             let gradient = pack_z_gradient(ZGradient::Vertical, false);
             assert_eq!(gradient, int(&body["gradient"]) as u32);
             let layers = lower_object_instances(vec![PlannedObjectInstance::object(
@@ -361,12 +419,21 @@ fn retail_gi_berserk_atlas_and_replay_match_original_body_pixels() {
             let mut encoder = gpu.device.create_command_encoder(&Default::default());
             let old_z = int(&input["old_z"]) as u16;
             clear(&mut encoder, &cv, &dv, old_z, wgpu::LoadOp::Load);
+            let clip = if join_viewport {
+                let caller_clip = [0, 0, size[0], size[1]];
+                assert_eq!(input["caller_clip"], serde_json::json!(caller_clip));
+                // The existing pass owns target/scissor clipping. Native's
+                // mutated clip is an observation, never a Rust draw input.
+                caller_clip
+            } else {
+                std::array::from_fn(|i| int(&body["clip"][i]) as u32)
+            };
             draw_native_object_pass(
                 &mut encoder,
                 &cv,
                 &dv,
                 &mut terrain,
-                std::array::from_fn(|i| int(&body["clip"][i]) as u32),
+                clip,
                 &batch,
                 pool.get("gi_native_body"),
                 layer,
@@ -377,6 +444,7 @@ fn retail_gi_berserk_atlas_and_replay_match_original_body_pixels() {
                 None,
                 batch.default_zshape_bind_group(),
                 None,
+                None,
             );
             let reads = [
                 gpu.read(&mut encoder, &color),
@@ -385,12 +453,18 @@ fn retail_gi_berserk_atlas_and_replay_match_original_body_pixels() {
             let output = gpu.finish(encoder, &reads, size);
             // Actual native shadow calls372/373 see empty physical rectangles.
             // Comparing both observations establishes no positive shadow stores.
-            let shadow = &source.frames[int(&row["shadow"]["frame"]) as usize];
+            let shadow_frame = row["shadow"]["frame"]
+                .as_u64()
+                .unwrap_or(u64::from(frame) + 372);
+            let shadow = &source.frames[shadow_frame as usize];
             assert_eq!((shadow.frame_width, shadow.frame_height), (0, 0));
-            for (stage, expected) in [
-                ("body", &body["rgb565_le_hex"]),
-                ("final", &row["final_rgb565_le_hex"]),
-            ] {
+            let final_pixels = &row["final_rgb565_le_hex"];
+            let stages = if join_viewport {
+                vec![("final", final_pixels)]
+            } else {
+                vec![("body", &body["rgb565_le_hex"]), ("final", final_pixels)]
+            };
+            for (stage, expected) in stages {
                 let expected = decode(expected);
                 assert_eq!(expected.len(), pixels * 2);
                 for (at, pixel) in output[0].as_chunks::<4>().0.iter().enumerate() {
@@ -406,8 +480,14 @@ fn retail_gi_berserk_atlas_and_replay_match_original_body_pixels() {
             let mut holes = 0;
             for (at, &index) in frame.pixels.iter().enumerate() {
                 if index == 0 {
-                    let x = position[0] as usize + at % usize::from(frame.frame_width);
-                    let y = position[1] as usize + at / usize::from(frame.frame_width);
+                    let x = (position[0] - view.camera_pos[0]) as i32
+                        + (at % usize::from(frame.frame_width)) as i32;
+                    let y = (position[1] - view.camera_pos[1]) as i32
+                        + (at / usize::from(frame.frame_width)) as i32;
+                    if x < 0 || y < 0 || x >= size[0] as i32 || y >= size[1] as i32 {
+                        continue;
+                    }
+                    let (x, y) = (x as usize, y as usize);
                     assert_eq!(
                         &output[0][(y * size[0] as usize + x) * 4..][..4],
                         &encoded(background, format),
@@ -416,7 +496,9 @@ fn retail_gi_berserk_atlas_and_replay_match_original_body_pixels() {
                     holes += 1;
                 }
             }
-            assert!(holes > 0);
+            if !join_viewport {
+                assert!(holes > 0);
+            }
             for pixel in output[1].as_chunks::<4>().0 {
                 assert_eq!(
                     stored_z(f32::from_le_bytes(*pixel)),

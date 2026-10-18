@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original RepairBullet Welding constructor, live-link admission/expiry, Spark AI and whole Particle/System packed drawing",
+  "assumptions": [
+    "Optional --welding mode has a separate consumed corpus. Default electric_bolt outputs retain their historical schema and controls. Original image text and vtables are never patched.",
+    "Existing stock.mix/lexical/cache transport supplies physical RULESMD, optional LANGRULE, MPBattleMD, unchanged inner HILLS.MAP from loose Hills.mmx and each explicitly supplied generated scenario INI. Original complete ParticleSystemType6440A0/6442D0, ParticleType644BE0/644F50 and WeaponType771C70/772080 own selected defaults/read semantics. Layer hashes are physical inputs, not repository source pins.",
+    "Fresh FV/ENGINEER histories reuse ifv_turret_switching.Machine.read_layer unchanged: only its IFVMode, fixed FV turret mappings, TurretCount, WeaponCount and IsChargeTurret scope is claimed. Gunner/passenger limits/numbered weapons and complete boarding retain their existing production/native owners. These scenario maps author no effect-type overrides; native selected outputs must agree across profiles.",
+    "Existing BulletReader/SparkBirth supplies the one reader/world VM for each independent birth/control. After initialize_effect_registries executes original7252D0 and resets the B0F720 header, existing prepare_spark_capacity supplies its empty capacity once before the first actor. shroud._prepare_unit_rank owns original Unit7353C0..7354CE before CoCreate, Foot/Techno prefixes and Drive4AF540. Its selected reuse flag preserves that capacity; actual Object5F3A76..5F3A8B appends every actor, each guarded exactly once after all three constructors. Native72593E..72595F notification traverses this registry independently of Logic. Type constructors, stationary coordinates, ownerHouseROF1, Health100/alive and an unplaced/non-Logic source are explicit component priors, not a whole Unit construction, placement, boarding, target acquisition or Bullet launch.",
+    "Original static initializer6F2A50 writes actual B0EA90 zero-coordinate bytes. Whole ParticleSystem62DC50 executes with Entity/NULL/Cell target, owner/NULL and ownerTarCom different from supplied target. The existing real Cell getter/RTTI and bridge flag140/AC4A8C416 own the Cell controls. Retail SmallGreySSys/SmallGreySmoke and SparkSys/Spark controls use the same constructor, not caller-specific behavior.",
+    "FireAt birth6FF1AD..6FF1FB supplies its already-computed muzzle and actual target; original pushes, allocation, complete constructor and Techno+308 store execute. Earlier Bullet/healing/report/FLH/FireAt admission and the full shot scheduler are excluded. Guard6FDE36, T37 at6FC6D5 and T46 at6FC9C7 start from declared original-register/stack priors and run to their native continuation or return. Whole GetROF6FCFA0 and actual FireAt6FF274..6FF2D1 own ROF, Berserk+298 halving, timer stores and signed burst division.",
+    "Existing RngTrace uses Main seed1, Scenario seed2 and Mapgen seed3 for default case seed1. Seeds are reset after supplied mobile preparation. Constructors consume original Abstract IDs; no hook supplies IDs, probability, velocity, life, color, RNG value, timer, collision or pointer-expiry outcome. Admission rows deliberately vary current weapon flag and retained native pointer to test their intersection.",
+    "Whole Techno7077C0 and System62FE90 PointerExpired execute with both removed controls, matching and different pointers. Actual target setter6FCDB0 and Stop NULL-destination/target setter fragment4C75E6..4C75FE execute. Full Event admission/queue/mission dispatch and every possible target writer are excluded. Natural continuation retains original live Logic55B5FF..55B61B, System62FD60, Spark62E840, child62C6E0 and actual725C70 deferred drain after each visit, bounded to600 visits on the existing flat-cell fixture. Spawn boundaries, final pre-drain still-allocated System and at most five queued children are separate from post-drain live rosters/pending/source link/IDs/RNG; freed bytes are never live state. Only compact boundaries/RNG totals and final child registry/physical flags are retained, not a replay dump.",
+    "Whole ParticleDraw62CEC0 uses declared valid physical-Welding color states plus one originally produced child. The actual Draw ABI is ECX=receiver, argument2=bounds, RET8; selected Spark/System bodies ignore argument1, suppliedNULL. Native55AF60 owns FPS hysteresis; actual5865E0 runs under its optional retail fog gates and returns its active-retail false. Original6D2140/6D20E0 projection, clip, full-u16 A read, strict signed candidate versus unsigned Z, x87 interpolation, A modulation, format packing and BSurface7BAEB0 pixel store execute. FPCW0E7F is the existing owner PC53/chop input. Invalid color indices, NaN/Infinity, malformed types and other particle families are excluded.",
+    "Whole SystemDraw62E280 owns positive count/cap/light admission, binary64(0.4)/binary32(1.0) clamp, x87 multiply/ftol, temporary5FF250 light, current F4 stage, complete5FF850 and immediate destruction. Original normal-bank5FF420 prefix constructs slots0..24; LightSize25/table maximum63 bounds all selected indices, whose actual whole-draw values select the retained masks. No persistent-light ageing, type16 bank or hand light raster supplies a result.",
+    "RGB565 destination, BSurface/A/Z circular planes, current camera/viewport/format, raw u32 FPS/detail state and signed i16 Z terms are declared transport. Original6D2140 chooses the explicit80,60 crop where used. Draws must preserve all three RNG states, native ID cursor, A/Z planes, destination guards and original text. Mixed rows execute complete System then Particle bodies and reversed component order on one destination without reset; they do not execute or certify the full Display object loop or common Object Render prefix."
+  ],
+  "substitutions": [
+    "Reuse existing BulletReader allocator/delete/CRT/TLS, cached INI and empty archive/sound transport, existing native.initialize_empty_windows_seh storage for original CRT RTTI, and existing ifv_impact.retirement_transport for Windows atomic-decrement/checked-readability calls during actual deferred destruction. Original RTTI/receiver bodies still execute. Existing original mobile/flat-world fixtures supply only their documented constructor/lifecycle/world boundaries; no new mapper, VM, scalar parser or gameplay stub is introduced.",
+    "Reuse LightPixels/Rally BSurface storage/lock/stride and existing operator-new/delete/atexit transport. Draw controls contain no EBolt and assert the older isolated ParticleSystem producer boundary is never reached. Original System/Particle/light numerical bodies and real BSurface pixel methods execute unchanged."
+  ],
+  "entry_points": {
+    "zero_coord_init": "0x006F2A50",
+    "system_ctor": "0x0062DC50",
+    "system_type_ctor": "0x006440A0",
+    "system_type_reader": "0x006442D0",
+    "particle_type_ctor": "0x00644BE0",
+    "particle_type_reader": "0x00644F50",
+    "weapon_ctor": "0x00771C70",
+    "weapon_reader": "0x00772080",
+    "fireat_birth": "0x006FF1AD",
+    "fireat_guard": "0x006FDE36",
+    "t37": "0x006FC6D5",
+    "t46": "0x006FC9C7",
+    "get_rof": "0x006FCFA0",
+    "fireat_rearm": "0x006FF274",
+    "techno_pointer_expired": "0x007077C0",
+    "system_pointer_expired": "0x0062FE90",
+    "set_target": "0x006FCDB0",
+    "stop_setters": "0x004C75E6",
+    "logic": "0x0055B5FF",
+    "system_ai": "0x0062FD60",
+    "spark_ai": "0x0062E840",
+    "spark_particle_ai": "0x0062C6E0",
+    "particle_draw": "0x0062CEC0",
+    "system_draw": "0x0062E280",
+    "projection": "0x006D2140",
+    "adjust_z": "0x006D20E0",
+    "detail": "0x0055AF60",
+    "fog": "0x005865E0",
+    "pixel": "0x007BAEB0",
+    "light_ctor": "0x005FF250",
+    "light_draw": "0x005FF850",
+    "light_destructor": "0x005FF2D0",
+    "light_masks": "0x005FF420"
+  },
+  "reproduction_commands": {
+    "working_directory": "repository root with configured original retail installation",
+    "check": "python -m tools.procedural_drawing_oracle.electric_bolt --welding --welding-map <ordinary-ifv-welding.map> --welding-map <ordinary-ifv-full-health.map> --check",
+    "write": "python -m tools.procedural_drawing_oracle.electric_bolt --welding --welding-map <ordinary-ifv-welding.map> --welding-map <ordinary-ifv-full-health.map> --write"
+  },
+  "replay_command": "python -m tools.procedural_drawing_oracle.electric_bolt --welding --welding-map \"$HOME\"/Documents/vera20k-dev/techno-active-retail/C24-ifv-welding-production-controls/ordinary-ifv-welding.map --welding-map \"$HOME\"/Documents/vera20k-dev/techno-active-retail/C24-ifv-welding-production-controls/ordinary-ifv-full-health.map",
+  "payload_sha256": "6e0ef73fdf67a33fc7b78ae9b79d790688d905b53da78cac0d310bb13c9b6781"
+}

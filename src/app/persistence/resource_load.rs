@@ -20,6 +20,7 @@ use crate::sim::runtime::{SimResources, SimRuntime};
 use crate::sim::snapshot::scenario_resources::SavedMapMetadata;
 use crate::sim::snapshot::{GameSnapshot, SnapshotError};
 use crate::sim::world::{Simulation, SnapshotProcessState};
+use crate::ui::sidebar::power_bar_anim::PowerBarAnimState;
 
 /// Borrowed preparation capabilities. Outgoing app presentation/input is not
 /// available to the fallible candidate; both menu and game supply this view.
@@ -46,6 +47,7 @@ struct PreparedSavedResources {
     processed_rules: ProcessedRulesLayers,
     map: SavedMapMetadata,
     local_view: PreparedSavedLocalView,
+    power_bar_anim: PowerBarAnimState,
     tile_cache: TileVariantSelectorCache,
     theater: theater::TheaterData,
     elapsed_clock: crate::app::match_runtime::frame_pacer::ScenarioElapsedClock,
@@ -56,6 +58,7 @@ pub(crate) struct CommittedSavedGame {
     pub(crate) presentation: init::PresentationLoadAssets,
     pub(crate) terrain_grid: Option<TerrainGrid>,
     pub(crate) local_view: PreparedSavedLocalView,
+    pub(crate) power_bar_anim: PowerBarAnimState,
     pub(crate) details: CommittedLoadPresentation,
     pub(crate) elapsed_clock: crate::app::match_runtime::frame_pacer::ScenarioElapsedClock,
 }
@@ -92,9 +95,14 @@ impl PreparedSavedGame {
                 saved.map().elapsed_buckets(),
                 (view.load_clock)(),
             );
-        let saved_view = snapshot
+        let mut saved_view = snapshot
             .take_local_view()
             .ok_or(SnapshotError::MissingLocalView)?;
+        let power_bar_anim = PowerBarAnimState::from_saved(
+            saved_view.take_power_bar().ok_or(
+                crate::sim::snapshot::saved_local_view::SavedLocalViewError::MissingPowerBar,
+            )?,
+        )?;
         if saved.fixed_art_hash() != view.rules_owner.fixed_art().content_hash() {
             return Err(PreparedLoadError::Resources(
                 "fixed ARTMD differs from the saved game".into(),
@@ -220,6 +228,7 @@ impl PreparedSavedGame {
             processed_rules,
             map,
             local_view,
+            power_bar_anim,
             tile_cache,
             theater,
             elapsed_clock,
@@ -342,6 +351,7 @@ impl PreparedSavedGame {
             processed_rules,
             map,
             local_view,
+            power_bar_anim,
             tile_cache,
             elapsed_clock,
             ..
@@ -372,6 +382,7 @@ impl PreparedSavedGame {
             presentation: self.presentation,
             terrain_grid: self.terrain_grid,
             local_view,
+            power_bar_anim,
             details,
             elapsed_clock,
         }

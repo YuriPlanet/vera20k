@@ -30,6 +30,7 @@ pub(super) struct DrawPassData<'a> {
     pub building_status_text:
         &'a crate::app::presentation::ui_overlays::BuildingStatusTextInstances,
     pub surface_effects: crate::render::terrain_draw::SurfaceLineBatch,
+    pub persistent_lights: std::ops::Range<usize>,
     pub sidebar_unavailable: &'a [SpriteInstance],
     pub sidebar_flash: &'a [SpriteInstance],
     pub sidebar_gclock: &'a [SpriteInstance],
@@ -407,6 +408,7 @@ pub(super) fn dispatch_draw_passes(
                         .map(|(buffer, _)| buffer),
                 )
                 .map(|(overlay, buffer)| (overlay, buffer, Some(state.renderer.bit_font.atlas()))),
+            Some(&state.renderer.combat_light_renderer),
         );
         if layer == 2 {
             // Tactical6D9427 admits this BuildingClass::Array sweep only
@@ -504,6 +506,7 @@ pub(super) fn dispatch_draw_passes(
                     .map(|(buffer, _)| buffer),
             )
             .map(|(overlay, buffer)| (overlay, buffer, Some(state.renderer.bit_font.atlas()))),
+        Some(&state.renderer.combat_light_renderer),
     );
 
     let mut pass = begin_main_load_pass(encoder, view, &state.renderer.depth_view);
@@ -616,10 +619,18 @@ pub(super) fn dispatch_draw_passes(
     }
     // Original6D4664 -> Spotlight5FFFA0 edits the destination after the first
     // rally pass. Preserve this overlap, including the rally's black shadow.
-    state
-        .renderer
-        .combat_light_renderer
-        .draw(encoder, [tac_x, tac_y, tac_w, tac_h]);
+    for record in data.persistent_lights.clone() {
+        if state.renderer.combat_light_renderer.draw_record(
+            encoder,
+            [tac_x, tac_y, tac_w, tac_h],
+            record,
+        ) {
+            state
+                .renderer
+                .terrain_draw_renderer
+                .note_external_passes(encoder, 1);
+        }
+    }
 
     // Tactical LaserDraw550240, EBolt, LineTrail556D40, then selected
     // radial indicators6D467F edit the destination and
@@ -1102,7 +1113,7 @@ mod tests {
         let first_rally = source_offset("\"factory_rally_first\"");
         let ion_blasts = source_offset(".draw_ion_blasts(encoder, view)");
         let objects = source_offset("merge_passes::draw_native_object_pass(");
-        let combat_lights = source_offset(".combat_light_renderer");
+        let combat_lights = source_offset("for record in data.persistent_lights.clone()");
         let second_rally = source_offset("\"factory_rally_second\"");
         let target_lines = source_offset("\"target_lines\"");
         let status = source_offset("super::object_extras::draw_object_extras(");

@@ -2515,11 +2515,10 @@ pub fn reveal_radius(
     fire_reveal_cells(fog, owner, cells);
 }
 
-/// `MapClass::RevealShroud @ 0x005673A0` as FireAt's RevealOnFire calls it
-/// (`0x006FF6F2`): radius 3 around the firer's coordinate, centred on its
-/// height-shifted cell, with `RevealByHeight=`'s line of sight (arg 7 = 1),
-/// for `house`'s map, bounded by `config`'s map `Size=` diamond as
-/// [`collect_reveal_cells`]. Each cell takes the fire leaf `0x004876F0`.
+/// Test adapter for the fire receiver's radius3 geometry. Production FireAt
+/// uses Simulation::reveal_area(Fire) and both shared border calls; this
+/// adapter alone does not reproduce the enclosing Map/cache sequence.
+#[cfg(any(test, feature = "test-support"))]
 pub(crate) fn reveal_shroud_on_fire(
     fog: &mut FogState,
     house: InternedId,
@@ -2543,7 +2542,8 @@ pub(crate) fn reveal_shroud_on_fire(
     fire_reveal_cells(fog, house, cells);
 }
 
-/// FireAt's reveal radius (`PUSH 0x3` at `0x006FF6E0`).
+/// FireAt's literal radius3 for Map5673A0 at6FDF30/6FF71B.
+#[cfg(any(test, feature = "test-support"))]
 const REVEAL_ON_FIRE_RADIUS: u16 = 3;
 
 /// The fire leaf `0x004876F0` over collected cells: unlike Psychic's
@@ -2555,16 +2555,8 @@ fn fire_reveal_cells(fog: &mut FogState, owner: InternedId, cells: Vec<(u16, u16
     if width == 0 || height == 0 {
         return;
     }
-    let vis = fog
-        .by_owner
-        .entry(owner)
-        .or_insert_with(|| OwnerVisibility::new(width, height));
-    for (rx, ry) in cells {
-        vis.mark_sight(rx, ry);
-        let index = vis.index(rx, ry).expect("collected cell is in bounds");
-        vis.shroud_knowledge[index].fire_unshroud();
-        vis.set_transient_visible(index);
-        vis.publish_knowledge(index);
+    for cell in cells {
+        fog.reveal_map_cell(owner, cell, false, None, MapRevealProjection::Fire);
     }
 }
 

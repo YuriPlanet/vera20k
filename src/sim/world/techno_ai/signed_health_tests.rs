@@ -67,7 +67,7 @@ fn original_selfheal_tail_and_192_height_rows_retain_art_and_mark_smoke() {
             .spawn_particle_system(
                 ParticleSystemTypeId(0),
                 glam::IVec3::ZERO,
-                Some(1),
+                Some(crate::sim::combat::TargetKind::Entity(1)),
                 Some(1),
                 glam::IVec3::ZERO,
                 None,

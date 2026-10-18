@@ -56,6 +56,15 @@ impl<'a> BounceTerrain for ResolvedBounceTerrain<'a> {
         }
     }
 
+    fn cliff_face_direction(&self, coord: IVec3, previous: IVec3) -> Option<u8> {
+        let terrain = self.sim.resolved_terrain.as_ref()?;
+        let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+        // Bounce439FF1 selects the post-snap receiver independently, then
+        // Cell4848B0 reselects the previous world coordinate internally.
+        let receiver = cells.lookup_world(coord.x, coord.y);
+        crate::sim::cell_kernel::cliff_face_direction(&cells, receiver, (previous.x, previous.y))
+    }
+
     fn has_bounce_surface(&self, selected: &Self::Cell) -> bool {
         // 439CAB retains the initial NEW Cell pointer across the optional OLD
         // lookup. Dummy has no native object list; its overlay identity persists.
