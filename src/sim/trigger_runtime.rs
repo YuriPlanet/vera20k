@@ -1624,6 +1624,13 @@ impl Simulation {
             .clone();
         match condition.kind {
             14 => self.session.scenario_timer_elapsed(),
+            // HasOccurred45@71EAE7 /46@71EB06 read Scenario+352C,
+            // not normal/target ambient: signed inclusive comparisons with
+            // Event+34. Both return directly, without House/raised-kind or
+            // A8ED6B admission, persistence, timer, RNG or detach writes.
+            // Original Steam gamemd3e81a617..08600, instruction reading.
+            45 => self.session.lighting.current_ambient <= condition.value,
+            46 => self.session.lighting.current_ambient >= condition.value,
             17 => {
                 // Steam3e81a617..08600:71EE82 takes the incoming House;
                 // 71EF3F..71EF89 reads tracked+2F0, then its ordered+68 list.
@@ -4078,6 +4085,10 @@ mod explosion_tests;
 #[cfg(test)]
 #[path = "trigger_runtime_map_lighting_tests.rs"]
 mod map_lighting_tests;
+
+#[cfg(test)]
+#[path = "trigger_runtime_ambient_event_tests.rs"]
+mod ambient_event_tests;
 
 #[cfg(test)]
 #[path = "trigger_runtime_nuke_tests.rs"]
