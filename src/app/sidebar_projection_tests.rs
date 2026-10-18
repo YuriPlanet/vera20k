@@ -73,6 +73,24 @@ fn view(
     tab: SidebarTab,
     height: f32,
 ) -> SidebarView {
+    view_with_gadgets(
+        sim,
+        options,
+        projection,
+        tab,
+        height,
+        &SidebarGadgetState::new(),
+    )
+}
+
+fn view_with_gadgets(
+    sim: &Simulation,
+    options: &[BuildOption],
+    projection: &SidebarProjectionState,
+    tab: SidebarTab,
+    height: f32,
+    gadgets: &SidebarGadgetState,
+) -> SidebarView {
     build_sidebar_view_with_spec(
         SidebarChromeLayoutSpec::stock(),
         800.0,
@@ -89,7 +107,7 @@ fn view(
         &[],
         Some(&sim.interner),
         &[],
-        &SidebarGadgetState::new(),
+        gadgets,
         None,
         None,
         None,
@@ -97,6 +115,101 @@ fn view(
         [None; 2],
         projection.cameo_strips(),
     )
+}
+
+#[test]
+fn retail_ready_buildings_flash_retained_tabs_and_stop_after_cancel() {
+    use crate::sim::production::{self, ProductionCategory};
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+    else {
+        return;
+    };
+    let rules = &retail.rules;
+    let (mut sim, owner) = world(rules, &["GACNST", "GAPOWR", "GAPILE"]);
+    let options = all_build_options_for_owner(&sim, rules, "Americans");
+    let candidates = cameo_candidates(&sim, rules, None, owner, &options, &[], &[]);
+    let mut projection = SidebarProjectionState::default();
+    projection.reconcile_fixture(owner, &candidates, 1);
+    for kind in ["GAPOWR", "GAPILL"] {
+        assert!(production::enqueue_by_type(
+            &mut sim,
+            rules,
+            "Americans",
+            kind,
+            crate::sim::world::FrameEffects::default(),
+            false
+        ));
+    }
+    projection.reconcile_factory_links(&sim, owner);
+    assert_eq!(projection.ready_building_tabs(&sim, owner), [false; 2]);
+    for category in [ProductionCategory::Building, ProductionCategory::Defense] {
+        assert!(sim.production.factories.test_arm_ready(owner, category));
+    }
+    let ready = projection.ready_building_tabs(&sim, owner);
+    assert_eq!(ready, [true; 2]);
+    assert_eq!(
+        SidebarProjectionState::default().ready_building_tabs(&sim, owner),
+        [false; 2]
+    );
+    let foreign_owner = sim.intern("Russians");
+    assert_eq!(
+        projection.ready_building_tabs(&sim, foreign_owner),
+        [false; 2]
+    );
+
+    let mut gadgets = SidebarGadgetState::default();
+    gadgets.update_tab_flashes(10, 10, [ready[0], ready[1], false, false]);
+    // Flashing belongs to every retained strip, including the tabs whose
+    // cameos are absent from the current view. Both active and inactive
+    // buttons consume the pulsing state through the production view builder.
+    let other_tab = view_with_gadgets(
+        &sim,
+        &options,
+        &projection,
+        SidebarTab::Vehicle,
+        480.0,
+        &gadgets,
+    );
+    assert_eq!(other_tab.tabs[0].frame_index, 3);
+    assert_eq!(other_tab.tabs[1].frame_index, 3);
+    let building_tab = view_with_gadgets(
+        &sim,
+        &options,
+        &projection,
+        SidebarTab::Building,
+        480.0,
+        &gadgets,
+    );
+    assert_eq!(building_tab.tabs[0].frame_index, 4);
+    gadgets.update_tab_flashes(29, 29, [true, true, false, false]);
+    let normal = view_with_gadgets(
+        &sim,
+        &options,
+        &projection,
+        SidebarTab::Building,
+        480.0,
+        &gadgets,
+    );
+    assert_eq!(normal.tabs[0].frame_index, 1);
+    assert_eq!(normal.tabs[1].frame_index, 0);
+
+    for (kind, expected) in [("GAPOWR", [false, true]), ("GAPILL", [false, false])] {
+        assert!(production::cancel_production_for_owner(
+            &mut sim,
+            rules,
+            "Americans",
+            production::ProductionCancellation::Type {
+                type_id: kind,
+                naval: false
+            },
+            false,
+            crate::sim::world::FrameEffects::default()
+        ));
+        assert_eq!(projection.ready_building_tabs(&sim, owner), expected);
+    }
+    gadgets.update_tab_flashes(30, 30, [false; 4]);
+    assert!(!gadgets.tab_flashes[0].is_active());
+    assert!(!gadgets.tab_flashes[1].is_active());
 }
 
 fn native_context_world(context: &Value) -> (Simulation, RuleSet, InternedId, CsfFile) {

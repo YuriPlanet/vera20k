@@ -3,8 +3,8 @@
 //! Mirrors the SBGadgetClass flash sub-struct (+0x34 state / +0x38 period /
 //! +0x3c countdown / +0x1e disabled) and the three driver functions
 //! Start_Flash / Stop_Flash / Flash_AI. One instance per pressable gadget
-//! that may flash. See ra2-rust-game-docs/SIDEBAR_TAB_FLASH_SCHEDULER_GHIDRA_REPORT.md
-//! for the source semantics.
+//! that may flash. Native entries: Start69DFC0, Stop69DFF0, FlashAI69E010;
+//! tools/sidebar_oracle/tab_flash.json executes their caller and timer states.
 //!
 //! ## Dependency rules
 //! - Part of `sidebar/` — pure data + logic, no rendering or sim dependencies.
@@ -35,6 +35,16 @@ pub struct GadgetFlash {
 }
 
 impl GadgetFlash {
+    /// StripAI 0x006A8E52..0x006A8E9B (also Sidebar 0x006A76F0): align
+    /// tab pulses to the next ten-frame boundary. At an exact boundary the
+    /// initial delay is ten, not zero. LEA wraps before the signed division.
+    /// Original executed controls: tools/sidebar_oracle/tab_flash.json.
+    pub(crate) fn start_tab_flash(&mut self, frame: i32) -> bool {
+        let delay = 10 - frame % 10;
+        let next_boundary = frame.wrapping_add(delay) / 10;
+        self.start(10, delay as u32, u8::from(next_boundary % 2 == 0))
+    }
+
     /// Schedule a flash. No-op (returns `false`) if a flash is already active —
     /// matches the gamemd Start_Flash guard at +0x38 != 0.
     ///
@@ -138,9 +148,8 @@ pub fn scroll_frame_select(pressed: bool) -> u8 {
 #[derive(Debug, Clone, Default)]
 pub struct SidebarGadgetState {
     /// One flash per tab gadget, indexed by `SidebarTab::tab_index()`.
-    /// Building (0) and Infantry (2) are kept in the array for uniformity
-    /// but the orchestrator unconditionally `stop()`s them — they never
-    /// flash in retail.
+    /// Building/Defense flash for linked completed buildings; Defense also
+    /// flashes for ready Supers. Infantry has no native ready-flash poll.
     pub tab_flashes: [GadgetFlash; 4],
 
     /// Strip availability projected at sidebar refresh (native gadget+1E).
@@ -180,6 +189,32 @@ pub struct SidebarGadgetState {
 }
 
 impl SidebarGadgetState {
+    /// Advance existing pulses through missed ticks, then perform the current
+    /// frame's poll followed by FlashAI, as Sidebar Action6A77CD/6A7A8C does.
+    /// A newly ready item starts at this frame, rather than consuming ticks
+    /// that passed before it was observed. Repeated renders do not tick again.
+    pub(crate) fn update_tab_flashes(&mut self, tick: u64, frame: i32, ready: [bool; 4]) {
+        let delta = tick.saturating_sub(self.last_sim_tick);
+        for _ in 1..delta {
+            for flash in &mut self.tab_flashes {
+                flash.tick();
+            }
+        }
+        for (flash, ready) in self.tab_flashes.iter_mut().zip(ready) {
+            if ready {
+                flash.start_tab_flash(frame);
+            } else {
+                flash.stop();
+            }
+        }
+        if delta != 0 {
+            for flash in &mut self.tab_flashes {
+                flash.tick();
+            }
+        }
+        self.last_sim_tick = tick;
+    }
+
     /// Display4AC8C0(0)/4AC660(0): a pending building placement refuses mode
     /// changes. Power/planning have no active owner yet; a bare superweapon
     /// target is independent and is not canceled by these calls.
@@ -433,4 +468,60 @@ mod tests {
         assert_eq!(s.scroll_down_frame(), 0);
         assert_eq!(s.scroll_up_frame(), 1);
     }
+}
+#[test]
+fn native_tab_flash_phase_and_timer_controls() {
+    let rows = crate::test_fixture::json("tools/sidebar_oracle/tab_flash.json");
+    for row in rows.as_array().unwrap() {
+        let input = &row["input"];
+        let prior = input["prior"].as_array();
+        let mut flash = GadgetFlash {
+            state: prior.map_or(0, |p| p[0].as_u64().unwrap() as u8),
+            period: prior.map_or(0, |p| p[1].as_u64().unwrap() as u32),
+            countdown: prior.map_or(0, |p| p[2].as_u64().unwrap() as u32),
+            disabled: false,
+        };
+        // The original poll supplies the admission; this comparison tests
+        // the shared phase/timer port, not a second Rust ready predicate.
+        if row["stop"] == "0x6a8ea0" {
+            flash.start_tab_flash(input["frame"].as_i64().unwrap() as i32);
+        } else {
+            flash.stop();
+        }
+        let state =
+            |flash: &GadgetFlash| serde_json::json!([flash.state, flash.period, flash.countdown]);
+        assert_eq!(state(&flash), row["output"], "{input}");
+        let mut tick = 0;
+        for checkpoint in row["history"].as_array().unwrap() {
+            let until = checkpoint["ticks"].as_u64().unwrap();
+            while tick < until {
+                flash.tick();
+                tick += 1;
+            }
+            assert_eq!(state(&flash), checkpoint["state"], "{input}, tick {tick}");
+        }
+    }
+}
+
+#[test]
+fn tab_flash_catchup_starts_new_ready_state_at_current_frame() {
+    let mut caught_up = SidebarGadgetState::default();
+    let mut stepped = SidebarGadgetState::default();
+    caught_up.update_tab_flashes(0, 0, [false; 4]);
+    for tick in 0..=100 {
+        stepped.update_tab_flashes(tick, tick as i32, [tick == 100, false, false, false]);
+    }
+    caught_up.update_tab_flashes(100, 100, [true, false, false, false]);
+    assert_eq!(caught_up.tab_flashes[0].countdown, 19);
+    for tick in 101..=200 {
+        stepped.update_tab_flashes(tick, tick as i32, [true, false, false, false]);
+    }
+    caught_up.update_tab_flashes(200, 200, [true, false, false, false]);
+    let flash = caught_up.tab_flashes[0];
+    assert_eq!(flash.state, stepped.tab_flashes[0].state);
+    assert_eq!(flash.countdown, stepped.tab_flashes[0].countdown);
+    caught_up.update_tab_flashes(200, 200, [true, false, false, false]);
+    assert_eq!(caught_up.tab_flashes[0].countdown, flash.countdown);
+    caught_up.update_tab_flashes(201, 201, [false; 4]);
+    assert!(!caught_up.tab_flashes[0].is_active());
 }

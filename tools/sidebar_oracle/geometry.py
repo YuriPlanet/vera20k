@@ -1,6 +1,7 @@
 """Original sidebar screen constants, shape dimensions and tab initialization."""
 from pathlib import Path
 import struct
+import sys
 from unicorn import Uc, UC_ARCH_X86, UC_MODE_32
 from unicorn.x86_const import UC_X86_REG_ECX, UC_X86_REG_ESP
 from tools.native_oracle import load_image, run_checked, finish_vectors, provenance, STACK_BASE, STACK_SIZE, SCRATCH, SCRATCH_SIZE, RET_MAGIC
@@ -55,7 +56,66 @@ def generate():
    disabled_after=[bool(u.mem_read(0xB07C48+tab*0x60+0x1E,1)[0]) for tab in range(4)]))
  return dict(cases=cases,shape_gadgets=gadgets,tab_initialization=tab_initialization)
 
-if __name__=='__main__':
+def tab_flash_controls():
+ """Original StripAI ready poll and gadget writes; no supplied ready result."""
+ from unicorn.x86_const import UC_X86_REG_EBX
+ controls=[]
+ cases=[dict(tab=tab,frame=frame,stage=54,product=6,linked=True)
+        for tab in (0,1) for frame in (0,1,9,10,15,20,2147483647,-1)]
+ cases += [dict(tab=tab,frame=9,stage=stage,product=kind,linked=linked)
+           for tab,stage,kind,linked in (
+            (0,53,6,True),(1,53,6,True),(0,54,None,True),
+            (0,54,6,False),(0,54,1,True),(2,54,6,True),(3,54,6,True))]
+ cases += [dict(tab=0,frame=9,stage=stage,product=6,linked=True,prior=[1,10,3])
+           for stage in (53,54)]
+ for case in cases:
+  u=machine()
+  strip,factory,obj=SCRATCH+0x1000,SCRATCH+0x3000,SCRATCH+0x4000
+  tab=case['tab'];gadget=0xB07C48+tab*0x60
+  put32(u,0xA8ED84,case['frame'])
+  put32(u,strip+0x38,tab);put32(u,strip+0x54,1)
+  put32(u,strip+0x5C,7) # BuildingType retained identity, not a Super.
+  put32(u,strip+0x64,factory if case['linked'] else 0)
+  put32(u,factory+0x24,case['stage'])
+  put32(u,factory+0x58,obj if case['product'] is not None else 0)
+  put32(u,factory+0x68,-1) # Factory constructor's inactive SpecialItem.
+  # Original Building and Unit vtables supply their actual WhatAmI leaves.
+  put32(u,obj,0x7E3EBC if case['product']==6 else 0x7F5C70)
+  prior=case.get('prior',[0,0,0])
+  u.mem_write(gadget+0x34,bytes([prior[0]]))
+  put32(u,gadget+0x38,prior[1]);put32(u,gadget+0x3C,prior[2])
+  sp=STACK_BASE+STACK_SIZE-0x1000
+  u.reg_write(UC_X86_REG_ESP,sp);u.reg_write(UC_X86_REG_EBX,strip)
+  # Declared poll slice: real IsComplete4CA130, GetObject4CA160,
+  # WhatAmI, phase arithmetic, Start69DFC0 / Stop69DFF0 execute.
+  # Excludes earlier scroll/input and the later EVA/mobile delivery loop.
+  required=[0x6A8D07]
+  if tab in (0,1) and case['linked']:
+   required.append(0x4CA130)
+   if case['stage']==54 and case['product'] is not None:
+    required.append(0x4CA160)
+    if case['product'] is not None:required.append(read(u,read(u,obj)[0]+0x2C)[0])
+  stop=run_checked(u,0x6A8D07,(0x6A8D9F,0x6A8EA0),
+                   required_addresses=required,context={'case':case})
+  state=lambda:[u.mem_read(gadget+0x34,1)[0],*read(u,gadget+0x38,2)]
+  output=state();history=[]
+  for step in range(1,31):
+   call(u,0x69E010,ecx=gadget)
+   if step in (1,9,10,19,20,30):history.append(dict(ticks=step,state=state()))
+  controls.append(dict(input=case,stop=hex(stop),output=output,history=history))
+ return controls
+
+if __name__=='__main__' and '--tab-flash' in sys.argv:
+ finish_vectors(tab_flash_controls,Path(__file__).with_name('tab_flash.json'),
+  provenance=lambda:provenance(
+   scope='25 original StripAI ready-building poll/phase controls and six FlashAI checkpoints each.',
+   assumptions=['Retained BuildingType entry, one explicit Factory link/stage/product and constructor-default SpecialItem=-1. Original Building/Unit WhatAmI vtables. Tab gadgets begin with supplied state/period/countdown and disabled=false.',
+                'Frames include ten-frame boundaries, signed wrap and negative controls; no frame-history/scenario inputs are inferred from VERA.'],
+   substitutions=['Declared original slice6A8D07 stops at6A8D9F after Stop, or6A8EA0 after Start. Earlier input/scroll, later EVA/mobile delivery and surface dirty notification are excluded. No readiness, RTTI, timer or draw result is stubbed.'],
+   entry_points={'poll':0x6A8D07,'ready':0x4CA130,'object':0x4CA160,
+                 'start':0x69DFC0,'stop':0x69DFF0,'ai':0x69E010}),
+  argv=[arg for arg in sys.argv[1:] if arg!='--tab-flash'])
+elif __name__=='__main__':
  finish_vectors(generate,Path(__file__).with_suffix('.json'),provenance=lambda:provenance(
   scope='21 ordinary right-sidebar layouts, 10 shape-gadget header/override cases and three four-tab initialization controls; original native instructions only.',
   assumptions=['Normal sidebar-right; editor flag clear; scenario side0/1/2.', 'Set_View_Dimensions copies native viewport before InitSurface; rectangle initialization precedes constants.', 'Gadgets have no previously-owned SHP to free. Synthetic signed SHP canvas headers are explicit inputs.', 'Cameo60x48 positions are separate from shape gadgets; original6A82FD/8304 and6ABF6E..BFA7 establish their fixed hit dimensions.'],

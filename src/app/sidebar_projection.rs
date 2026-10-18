@@ -471,6 +471,38 @@ impl SidebarProjectionState {
         (factory.construction_order() == link.construction_order).then_some(factory)
     }
 
+    /// StripAI6A8D07..6A8D7A polls every retained Building/Defense entry,
+    /// including offscreen entries. A linked Factory must be complete and
+    /// still hold a Building object; pending requests or orphan types do not
+    /// flash a tab. Keep the same validated Factory handles input/draw use.
+    pub(crate) fn ready_building_tabs(
+        &self,
+        sim: &crate::sim::world::Simulation,
+        owner: InternedId,
+    ) -> [bool; 2] {
+        use crate::map::entities::EntityCategory;
+        use crate::ui::sidebar::SidebarTab;
+
+        let Some((local_owner, strips)) = self.cameos.as_ref() else {
+            return [false; 2];
+        };
+        if *local_owner != owner {
+            return [false; 2];
+        }
+        [SidebarTab::Building, SidebarTab::Defense].map(|tab| {
+            strips.items(tab).iter().any(|entry| {
+                let CameoId::Object(type_id) = entry.id else {
+                    return false;
+                };
+                self.cameo_factory(sim, owner, type_id)
+                    .and_then(|factory| factory.complete_object())
+                    .and_then(|object| object.entity_id)
+                    .and_then(|id| sim.entities().get(id))
+                    .is_some_and(|object| object.category() == EntityCategory::Structure)
+            })
+        })
+    }
+
     /// StripDraw6A9812/6A9822/6A985D/6A9E9C reads each entry's linked
     /// Factory and retained request for Ready, stage and Hold. Input resolves
     /// these same handles and request records.

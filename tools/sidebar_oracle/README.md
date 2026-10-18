@@ -7,6 +7,16 @@ Set `VERA20K_GAMEMD_EXE` to that executable and run, for example,
 its complete execution boundary and substitutions in the associated metadata.
 `--check` compares regenerated outputs without writing files.
 
+`python -m tools.sidebar_oracle.geometry --tab-flash --check` checks the
+separate [tab flash controls](tab_flash.json). Original StripAI polls retained
+Factory links on Building/Defense tabs, then runs the common ten-frame phase
+calculation and Start/Stop primitives. Twenty-five controls cover completion,
+missing/non-Building products, exact boundaries, signed frames and repeat
+starts, with six FlashAI checkpoints each. The earlier scroll/input and later
+EVA/delivery paths are excluded; no readiness or timer answer is supplied.
+Rust consumes these phase/timer outputs, while the retail projection regression
+checks actual Factory links and the tab frames displayed by the view builder.
+
 - [`cameo_order`](cameo_order.md): original comparison, admitted insertion,
   retained removal and recharge-reader boundaries; includes localized UTF-16
   names and house-adjusted costs. The shared retained strip owner consumes
