@@ -4069,6 +4069,36 @@ impl Simulation {
                 };
                 crate::sim::superweapon::lightning_storm::create_cloud_bolt(self, rules, cell);
             }
+            44 => {
+                // Active YR Execute6DED1C..6DED52 calls LightningStorm,
+                // despite the legacy IonStorm name. IsActive53A100 tests
+                // only the active byte; a countdown still admits this call.
+                // Start539EB0 gets +90 duration, Rules+1794 deferment, the
+                // zero EmptyCell (initializer6DCF10), and NULL House.
+                if crate::sim::superweapon::lightning_storm::raging(self) {
+                    return false;
+                }
+                let (Some(rules), Some(duration)) = (rules, value) else {
+                    return false;
+                };
+                crate::sim::superweapon::lightning_storm::start(
+                    self,
+                    rules,
+                    duration,
+                    rules.general.lightning_deferment,
+                    (0, 0),
+                    None,
+                );
+            }
+            45 => {
+                // Execute6DED61..6DED7C refuses an inactive/counting-down
+                // storm; Stop53A090 merely requests its eventual end. No
+                // immediate cloud deletion, timer write, RNG draw or detach.
+                if !crate::sim::superweapon::lightning_storm::raging(self) {
+                    return false;
+                }
+                crate::sim::superweapon::lightning_storm::request_end(self);
+            }
             102 => {
                 // 6DD9EC..6DDAB8: the waypoint's signed centre/Ground/bridge
                 // coordinate is truncated back to a cell (413A30). A raging
