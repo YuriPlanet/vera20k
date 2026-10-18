@@ -333,6 +333,7 @@ fn original_dead_missing_cell_candidate_runs_fire_probe_before_health_rejection(
         healer: false,
         engineer: false,
         berserk: false,
+        psycho: false,
         controller_house: None,
         fire_world: Some(&world),
         allies: Default::default(),
