@@ -62,6 +62,7 @@ impl Simulation {
                 .is_some_and(|object| object.dock_unload);
         if !tethered || break_tether {
             radio::transmit_to_contact(self, id, RadioMessage::Break, rules, frame_effects);
+            crate::sim::docking::bunker_link::cancel_approach(self, id);
         }
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             if break_tether {

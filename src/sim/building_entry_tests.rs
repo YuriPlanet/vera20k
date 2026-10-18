@@ -2245,6 +2245,182 @@ fn a_tank_bunker_team_member_drives_in_and_installs() {
     assert!(sim.team_script_vm.team(team).is_none());
 }
 
+#[test]
+fn cancelling_a_manual_bunker_entry_frees_it_for_another_tank() {
+    let rules = rules();
+    for stop in [true, false] {
+        let (mut sim, grid) = arena(&rules);
+        let bunker = spawn(&mut sim, &rules, "NATBNK", "Americans", 16, 10);
+        let first = spawn(&mut sim, &rules, "YTNK", "Americans", 10, 10);
+        let second = spawn(&mut sim, &rules, "YTNK", "Americans", 12, 14);
+        assert!(sim.apply_command(
+            "Americans",
+            &Command::EnterBunker {
+                unit_id: first,
+                bunker_id: bunker,
+            },
+            Some(&rules)
+        ));
+        assert!(!sim.apply_command(
+            "YuriCountry",
+            &Command::Stop { entity_id: first },
+            Some(&rules)
+        ));
+        assert_eq!(
+            install_state(&sim, bunker),
+            (BunkerState::ArriveWait, Some(first))
+        );
+        assert!(run_until(&mut sim, &rules, &grid, 30, |sim| {
+            entity(sim, first).mission.current().known() == Some(MissionType::Enter)
+        }));
+        let cancel = if stop {
+            Command::Stop { entity_id: first }
+        } else {
+            Command::Move {
+                entity_id: first,
+                target_rx: 10,
+                target_ry: 18,
+            }
+        };
+        assert!(sim.apply_command("Americans", &cancel, Some(&rules)));
+        assert!(
+            sim.apply_command(
+                "Americans",
+                &Command::EnterBunker {
+                    unit_id: second,
+                    bunker_id: bunker,
+                },
+                Some(&rules)
+            ),
+            "after {cancel:?}, the empty bunker must accept the second tank"
+        );
+        assert_eq!(entity(&sim, first).bunker.link(), BunkerLink::None);
+        assert!(run_until(&mut sim, &rules, &grid, 900, |sim| {
+            entity(sim, bunker).bunker.occupant() == Some(second)
+        }));
+        assert_eq!(
+            entity(&sim, second).bunker.link(),
+            BunkerLink::Installed(bunker)
+        );
+
+        // Once installed, normal order cancellation must not eject the tank.
+        let installed_order = if stop {
+            Command::Stop { entity_id: second }
+        } else {
+            Command::Move {
+                entity_id: second,
+                target_rx: 12,
+                target_ry: 18,
+            }
+        };
+        assert!(sim.apply_command("Americans", &installed_order, Some(&rules)));
+        assert_eq!(entity(&sim, bunker).bunker.occupant(), Some(second));
+        assert_eq!(
+            entity(&sim, second).bunker.link(),
+            BunkerLink::Installed(bunker)
+        );
+    }
+}
+
+#[test]
+fn replacing_a_bunker_entry_releases_only_the_previous_bunker() {
+    let rules = rules();
+    for ai in [false, true] {
+        let (mut sim, grid) = arena(&rules);
+        let previous = spawn(&mut sim, &rules, "NATBNK", "Americans", 16, 10);
+        let next = spawn(&mut sim, &rules, "NATBNK", "Americans", 24, 18);
+        let first = spawn(&mut sim, &rules, "YTNK", "Americans", 10, 10);
+        let second = spawn(&mut sim, &rules, "YTNK", "Americans", 12, 14);
+        assert!(sim.apply_command(
+            "Americans",
+            &Command::EnterBunker {
+                unit_id: first,
+                bunker_id: previous,
+            },
+            Some(&rules)
+        ));
+        if ai {
+            // The AI seek skips the held previous bunker and queues directly.
+            assert!(tank_bunker_seek(&mut sim, &rules, first));
+        } else {
+            assert!(sim.apply_command(
+                "Americans",
+                &Command::EnterBunker {
+                    unit_id: first,
+                    bunker_id: next,
+                },
+                Some(&rules)
+            ));
+        }
+        assert_eq!(
+            entity(&sim, first).bunker.link(),
+            BunkerLink::Approaching(next)
+        );
+        assert_eq!(install_state(&sim, previous), (BunkerState::Idle, None));
+        assert_eq!(
+            install_state(&sim, next),
+            (BunkerState::ArriveWait, Some(first))
+        );
+        assert!(sim.apply_command(
+            "Americans",
+            &Command::EnterBunker {
+                unit_id: second,
+                bunker_id: previous,
+            },
+            Some(&rules)
+        ));
+        assert!(
+            run_until(&mut sim, &rules, &grid, 900, |sim| {
+                entity(sim, previous).bunker.occupant() == Some(second)
+                    && entity(sim, next).bunker.occupant() == Some(first)
+            }),
+            "replacement via AI seek: {ai}"
+        );
+    }
+}
+
+#[test]
+#[ignore = "slow; run when changing tank-bunker entry"]
+fn retail_manual_tank_bunker_entry_installs_from_each_side() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+    else {
+        return;
+    };
+    let rules = &retail.rules;
+    for kind in ["LTNK", "YTNK", "MTNK", "HTNK"] {
+        for (rx, ry) in [(10, 16), (24, 16), (16, 10), (16, 24)] {
+            let (mut sim, grid) = arena(rules);
+            let bunker = spawn(&mut sim, rules, "NATBNK", "Americans", 16, 16);
+            let tank = spawn(&mut sim, rules, kind, "Americans", rx, ry);
+            assert!(
+                sim.apply_command(
+                    "Americans",
+                    &Command::EnterBunker {
+                        unit_id: tank,
+                        bunker_id: bunker
+                    },
+                    Some(rules),
+                ),
+                "{kind} at ({rx}, {ry}) admitted"
+            );
+            let installed = run_until(&mut sim, rules, &grid, 900, |sim| {
+                entity(sim, bunker).bunker.occupant() == Some(tank)
+            });
+            let unit = entity(&sim, tank);
+            assert!(
+                installed,
+                "{kind} from ({rx}, {ry}): cell {:?}, nav {:?}, mission {:?}, link {:?}, bunker {:?}",
+                (unit.position.rx(), unit.position.ry()),
+                unit.navigation.nav_com(),
+                unit.mission,
+                unit.bunker.link(),
+                install_state(&sim, bunker)
+            );
+            assert_eq!(unit.bunker.link(), BunkerLink::Installed(bunker));
+        }
+    }
+}
+
 /// A bunker destroyed while a seeker drives to it, or a seeker destroyed on
 /// its way: the despawn teardown drops the adapter's approach link on the
 /// other side, as an expiry drops a radio contact both ways, so once the

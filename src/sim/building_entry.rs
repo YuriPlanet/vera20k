@@ -97,11 +97,11 @@
 //!   retail "Yuri Unit Hunter" TeamTypes reaching action 61 while its house
 //!   has a free Yuri Tank Bunker (`ThirdBaseDefenses=`). Effect: the
 //!   Scenario stream misses one draw per approaching unit per dispatch.
-//!   Frequency: AI Yuri games with Tank Bunkers. A player order to a unit on
-//!   its way in keeps the bunker holding it, where the order's break of the
-//!   first radio contact (`0x004C72F8`) would free it. Neither an owner
-//!   change nor a retask clears the approach, and the install does not check
-//!   the unit's owner, so a seeker mind-controlled on its way still installs
+//!   Frequency: AI Yuri games with Tank Bunkers. Player retasks and Stop
+//!   explicitly cancel this contact-free approach through
+//!   [`bunker_link::cancel_approach`]. An owner change does not clear it,
+//!   and the install does not check the unit's owner, so a seeker
+//!   mind-controlled on its way still installs
 //!   into its old house's bunker; what native ChangeOwner does to radio
 //!   contacts is unverified (the DOCKING arm's head, `0x0043C7E9..0x0043C882`,
 //!   has no house test).

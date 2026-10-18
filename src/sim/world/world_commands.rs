@@ -947,6 +947,7 @@ impl Simulation {
                 // at4C75E0), before NULL destination4C75ED/target4C75F8.
                 // Unlike MEGAMISSION it never clears Foot pending-entry+500.
                 crate::sim::radio::broadcast_break(self, *entity_id, rules, frame_effects);
+                crate::sim::docking::bunker_link::cancel_approach(self, *entity_id);
                 // `0x004C75ED`: the class setter's null destination, which
                 // reaches the active locomotor's Stop_Moving (a Teleport's
                 // drops only an armed warp, a moving Jumpjet's re-targets the

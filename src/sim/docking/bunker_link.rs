@@ -29,8 +29,8 @@ pub enum BunkerLink {
     /// Ordered into bunker `id`, still approaching (pre-install); the install
     /// machine resets once this marker no longer names its bunker. Cleared by
     /// the install and by either side's despawn
-    /// (`bunker_link::break_links_on_despawn`); a retask leaves it
-    /// (`sim::building_entry` residual).
+    /// (`bunker_link::break_links_on_despawn`) and by cancelled/replaced orders
+    /// ([`cancel_approach`]).
     Approaching(u64),
     /// Installed inside bunker `id` (reciprocal of the building's occupant).
     Installed(u64),
@@ -149,6 +149,10 @@ pub(crate) fn begin_entry(
     {
         return false;
     }
+    // Replacing a seek must release its previous bunker, including the AI
+    // caller whose retask only queues a mission. Native HELLO replaces the
+    // old radio link (65A970); this adapter carries that link separately.
+    cancel_approach(sim, unit_id);
     transmit(
         sim,
         unit_id,
@@ -180,6 +184,32 @@ pub(crate) fn begin_entry(
         log::warn!("Bunker approach {unit_id}: {cause}");
     }
     true
+}
+
+/// Cancel only the entry adapter's pre-install link. Native accepted orders
+/// break contact at Event 0x004C72F8 (MEGAMISSION) /0x004C75E0 (Stop).
+/// Radio 0x0065A8A0 clears the bunker's contact; UpdateBunker 0x00458E50
+/// then finds neither an occupant nor contact, and 0x00458E7E..0x00458E98
+/// resets status and queues Guard(5,0).
+/// The adapter has no radio contact, so the same order boundaries must release
+/// its two ends explicitly. Installed occupants use the distinct release paths.
+pub(crate) fn cancel_approach(sim: &mut Simulation, unit_id: u64) {
+    let Some(unit) = sim.substrate.entities.get_mut(unit_id) else {
+        return;
+    };
+    let BunkerLink::Approaching(building_id) = unit.bunker.link else {
+        return;
+    };
+    unit.bunker.link = BunkerLink::None;
+    let held_by_unit = sim.substrate.entities.get(building_id).is_some_and(|b| {
+        b.bunker.occupant().is_none()
+            && b.bunker_runtime
+                .is_some_and(|runtime| runtime.installing_unit() == Some(unit_id))
+    });
+    if held_by_unit {
+        reset_bunker_idle(sim, building_id);
+        queue_guard(sim, building_id);
+    }
 }
 
 /// Bunker install state 5 (459301..459337): reciprocal links, deselection,
