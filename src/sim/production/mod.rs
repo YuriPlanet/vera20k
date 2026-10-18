@@ -75,7 +75,8 @@ pub(crate) use self::production_sell::{
     archive_less_sale, sell_complete, sell_stage_one, techno_refund, type_refund, undeploy_target,
 };
 pub use self::production_tech::{
-    all_build_options_for_owner, construction_options_for_owner, initial_construction_options,
+    CameoDrawState, all_build_options_for_owner, cameo_draw_state, construction_options_for_owner,
+    initial_construction_options,
 };
 pub use self::production_tech::{
     building_base_foundation_cells, building_movement_blocking_cells, is_matching_factory,
@@ -105,7 +106,9 @@ pub(in crate::sim) use self::factory_lifecycle::{
 #[cfg(any(test, feature = "test-support"))]
 pub(in crate::sim) use self::production_queue::exit_produced_object;
 pub(crate) use self::production_tech::factory_category_for_building;
-pub(crate) use self::wall_placement::stamp_wall_with_autofill;
+pub(crate) use self::wall_placement::{
+    autofill_walls, linked_overlay_id as linked_wall_overlay_id, mark_wall,
+};
 
 #[cfg(test)]
 #[path = "production_tests.rs"]

@@ -93,3 +93,69 @@ fn waypoint_ground_bridge_and_dummy_coordinates_match_original_actions48_and112(
         }
     }
 }
+
+/// Original Steam3e81a617..08600 GetWaypointLocation68BD00 + Cell486840 /
+/// 47B3A0, with Scenario CRT8148A8..8148CC deriving deck416. Sparse Cell
+/// fields are declared inputs; this is not a full map-load comparison.
+#[test]
+fn eleven_original_waypoint_location_controls_keep_receiver_identity_and_signed_height() {
+    for (request, real, level, slope, flags, point) in [
+        ((12, 17), Some((12, 17)), 0, 0, 0, [3200, 4480, 0]),
+        ((12, 17), Some((12, 17)), 2, 1, 0, [3200, 4480, 260]),
+        ((12, 17), Some((12, 17)), 2, 0, 0x100, [3200, 4480, 624]),
+        ((12, 17), Some((12, 17)), 2, 0, 0x400, [3200, 4480, 624]),
+        ((512, 0), Some((0, 1)), 2, 0, 0, [128, 384, 208]),
+        ((512, 0), Some((0, 1)), 2, 0, 0x100, [128, 384, 624]),
+        ((-1, -1), None, -3, 0, 0, [-128, -128, -311]),
+        ((-1, -1), None, -3, 0, 0x400, [-128, -128, 105]),
+        (
+            (32767, -32768),
+            None,
+            127,
+            15,
+            0,
+            [8388480, -8388480, 13312],
+        ),
+        (
+            (-32768, 32767),
+            None,
+            -128,
+            4,
+            0x500,
+            [-8388480, 8388480, -12843],
+        ),
+        ((12, 17), Some((12, 17)), -3, 0, 0, [3200, 4480, -311]),
+    ] {
+        let mut terrain = crate::map::resolved_terrain::test_grid(32, 32, test_flat_cell);
+        terrain.test_set_native_allocated_cells(&real.into_iter().collect::<Vec<_>>());
+        let identity = if let Some((x, y)) = real {
+            terrain.cell_mut(x, y).unwrap().slope_type = slope;
+            terrain.native_cell_identity((x as i16, y as i16))
+        } else {
+            terrain.shared_cell_dummy().set_level_slope(level, slope);
+            NativeCellIdentity::Dummy
+        };
+        terrain.write_native_cell_level(identity, level as u8);
+        terrain.write_native_cell_flags(identity, flags);
+        let mut sim = Simulation::with_seed(7);
+        sim.install_resolved_terrain_for_new_map(terrain);
+        sim.session.install_waypoints(&HashMap::from([(
+            7,
+            Waypoint {
+                index: 7,
+                rx: request.0 as u16,
+                ry: request.1 as u16,
+            },
+        )]));
+        let rng = sim.scenario_rng.native_state_hex();
+        assert_eq!(
+            sim.trigger_waypoint_location(7),
+            Some(point),
+            "{request:?} {real:?}"
+        );
+        assert_eq!(sim.scenario_rng.native_state_hex(), rng);
+        if real.is_none() {
+            assert_eq!(sim.effective_shared_cell_dummy().snapshot().coord, request);
+        }
+    }
+}

@@ -7,7 +7,7 @@ use crate::map::lighting::{LightingProfileUnits, build_cell_light_grid_from_heig
 use crate::map::map_file::{MapCell, MapFile};
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::map::terrain::{TilePlacement, build_terrain_grid_from_resolved, iso_to_screen};
-use crate::map::theater::{TileKey, load_theater, load_tile_images};
+use crate::map::theater::{TheaterData, TileImage, TileKey, load_theater, load_tile_images};
 use crate::map::tile_variant_selector::TileVariantSelectorCache;
 use crate::render::batch::{BatchRenderer, CameraUniform, InstanceBufferPool};
 use crate::render::shroud_buffer::ShroudBuffer;
@@ -16,7 +16,7 @@ use crate::render::terrain_draw_gpu_tests::{
 };
 use crate::render::tile_atlas::TileAtlas;
 use serde_json::Value;
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::PathBuf;
 
 fn profile(input: &Value) -> LightingProfileUnits {
@@ -757,8 +757,6 @@ fn assert_tmp_raster(
     batch.write_camera(&gpu.queue, camera);
     let color = gpu.target(size, format);
     let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
-    let cv = color.create_view(&Default::default());
-    let dv = depth.create_view(&Default::default());
     let background = input["background"].as_u64().unwrap() as u16;
     gpu.queue.write_texture(
         wgpu::TexelCopyTextureInfo {
@@ -775,27 +773,60 @@ fn assert_tmp_raster(
         },
         extent(size),
     );
-    let mut encoder = gpu.device.create_command_encoder(&Default::default());
-    clear(
-        &mut encoder,
-        &cv,
-        &dv,
-        input["old_z"].as_u64().unwrap() as u16,
-        wgpu::LoadOp::Load,
+    assert_tmp_pass(
+        gpu,
+        batch,
+        pool,
+        atlas,
+        (&color, &depth),
+        row,
+        format,
+        size,
+        false,
     );
+}
+
+/// The retained-surface comparison and existing leaf controls share the same
+/// terrain submission/readback responsibility. Only the actual App pass seam
+/// differs: frame reconstruction clears, while individual TMP controls load.
+fn assert_tmp_pass(
+    gpu: &Gpu,
+    batch: &BatchRenderer,
+    pool: &InstanceBufferPool,
+    atlas: &TileAtlas,
+    targets: (&wgpu::Texture, &wgpu::Texture),
+    row: &Value,
+    format: wgpu::TextureFormat,
+    size: [u32; 2],
+    reconstruct: bool,
+) {
+    let (color, depth) = targets;
+    let cv = color.create_view(&Default::default());
+    let dv = depth.create_view(&Default::default());
+    let mut encoder = gpu.device.create_command_encoder(&Default::default());
+    if !reconstruct {
+        clear(
+            &mut encoder,
+            &cv,
+            &dv,
+            row["input"]["old_z"].as_u64().unwrap() as u16,
+            wgpu::LoadOp::Load,
+        );
+    }
     {
-        let mut pass =
-            crate::app::presentation::sidebar_render::begin_main_load_pass(&mut encoder, &cv, &dv);
+        let mut pass = if reconstruct {
+            crate::app::presentation::sidebar_render::begin_main_pass(&mut encoder, &cv, &dv)
+        } else {
+            crate::app::presentation::sidebar_render::begin_main_load_pass(&mut encoder, &cv, &dv)
+        };
+        let input = &row["input"];
         let clip: [u32; 4] = std::array::from_fn(|i| input["clip"][i].as_u64().unwrap() as u32);
         pass.set_scissor_rect(clip[0], clip[1], clip[2], clip[3]);
         for _ in 0..input["repeat"].as_u64().unwrap() {
             draw_pooled_zdepth(&mut pass, batch, pool, Some(atlas), "tmp-clear-native");
         }
     }
-    let reads = [
-        gpu.read(&mut encoder, &color),
-        gpu.read(&mut encoder, &depth),
-    ];
+    let reads = [gpu.read(&mut encoder, color), gpu.read(&mut encoder, depth)];
     let output = gpu.finish(encoder, &reads, size);
     assert_native_color_and_depth(&output, row, format, size);
 }
@@ -846,7 +877,17 @@ fn retail_cliff_extra_matches_original_cell_raster() {
 
 /// Keep the original TMP controls on one production decoder/atlas/light/pool
 /// path. Only the selected physical file and subtile differ between fixtures.
-fn assert_retail_tmp_rasters(packet: &Value, filename: &str, sub_tile: u8) {
+struct RetailTmpMaterials {
+    root: PathBuf,
+    assets: AssetManager,
+    theater: TheaterData,
+    tile_id: u16,
+    tiles: HashMap<TileKey, TileImage>,
+}
+
+/// Bind the same physical theater/material closure for individual TMP leaves
+/// and the retained-surface terrain continuation.
+fn retail_tmp_materials(packet: &Value, filename: &str, sub_tile: u8) -> RetailTmpMaterials {
     let root = PathBuf::from(std::env::var_os("RA2_DIR").expect("physical retail root"));
     let mut assets = AssetManager::new(&root, MediaArchiveMode::STOCK_DIGITAL).unwrap();
     let theater = load_theater(&mut assets, "TEMPERATE").unwrap();
@@ -896,7 +937,7 @@ fn assert_retail_tmp_rasters(packet: &Value, filename: &str, sub_tile: u8) {
         if !(lower.ends_with(".tem")
             || matches!(
                 lower.as_str(),
-                "isotem.pal" | "temperatmd.ini" | "xmp03t4.map" | "shroud.shp"
+                "isotem.pal" | "temperat.pal" | "temperatmd.ini" | "xmp03t4.map" | "shroud.shp"
             ))
         {
             continue;
@@ -921,6 +962,23 @@ fn assert_retail_tmp_rasters(packet: &Value, filename: &str, sub_tile: u8) {
         tiles.len(),
         usize::from(theater.lookup.total_file_count(tile_id))
     );
+    RetailTmpMaterials {
+        root,
+        assets,
+        theater,
+        tile_id,
+        tiles,
+    }
+}
+
+fn assert_retail_tmp_rasters(packet: &Value, filename: &str, sub_tile: u8) {
+    let RetailTmpMaterials {
+        root,
+        assets,
+        theater,
+        tile_id,
+        tiles,
+    } = retail_tmp_materials(packet, filename, sub_tile);
     if let Some(planes) = packet["rows"][0]["output"].get("plane_writes") {
         // The original two passes have no shared written destination in this
         // physical subtile. Compare their actual union with decoded coverage;
@@ -1140,5 +1198,269 @@ fn assert_retail_tmp_rasters(packet: &Value, filename: &str, sub_tile: u8) {
     }
     for (scene, _, hash) in scenes.values() {
         assert_eq!(scene.sim().state_hash(), *hash);
+    }
+}
+
+/// Original dirty enqueue6DA7D0 -> maintenance6D2B60/Cell480180 -> Shroud
+/// 6D3660 -> terrain6D2DE0/Cell480350 -> isolated cleanup6D4571/6D4B37,
+/// on retained nonuniform RGB/Z/A.
+/// This compares the existing App full reconstruction with the native joined
+/// destination, not with a clear-only or a hand-computed replacement.
+///
+/// The native component explicitly supplies its registered flat cells,
+/// Tactical camera, warm selector, and SHROUD-produced A. Rust consumes those
+/// inputs through the ordinary material/terrain/instance owners. It does not
+/// establish map/bootstrap or reveal lifecycle equivalence, arbitrary terrain,
+/// custom/no-Z paths, or equivalence of the intermediate maintenance Z plane.
+#[test]
+#[ignore = "requires retail assets and GPU; original joined dirty-cell histories against retained App reconstruction"]
+fn retail_partial_redraw_continuation_matches_full_reconstruction() {
+    let packet = crate::test_fixture::json("tools/spatial_oracle/tmp_partial_redraw.json");
+    assert_eq!(packet["schema_version"], 2);
+    assert_eq!(packet["original_executable_sections_unchanged"], true);
+    let RetailTmpMaterials {
+        assets,
+        theater,
+        tile_id,
+        tiles,
+        ..
+    } = retail_tmp_materials(&packet, "clear01.tem", 0);
+    let scene = &packet["scene"];
+    assert_eq!(scene["every_draw_receiver_real"], true);
+    assert_eq!(
+        scene["registration_bounds"],
+        serde_json::json!([0, 0, 32, 32])
+    );
+    let inputs = scene["cells"].as_array().unwrap();
+    assert_eq!(
+        inputs.len(),
+        1024,
+        "all enrolled native cells are scene inputs"
+    );
+    let mut map = MapFile::from_bytes(assets.get_ref("XMP03T4.MAP").unwrap()).unwrap();
+    map.header.width = scene["map_size"][0].as_u64().unwrap() as u32;
+    map.header.height = scene["map_size"][1].as_u64().unwrap() as u32;
+    map.header.fill = "Clear".into();
+    map.header.level = 0;
+    map.header.local_left = 0;
+    map.header.local_top = 0;
+    map.header.local_width = map.header.width;
+    map.header.local_height = map.header.height;
+    map.cells = inputs
+        .iter()
+        .map(|cell| MapCell {
+            rx: cell["coords"][0].as_u64().unwrap() as u16,
+            ry: cell["coords"][1].as_u64().unwrap() as u16,
+            tile_index: cell["tile_id"].as_i64().unwrap() as i32,
+            sub_tile: cell["sub_tile"].as_u64().unwrap() as u8,
+            z: cell["level"].as_u64().unwrap() as u8,
+        })
+        .collect();
+    let coords: HashSet<_> = map.cells.iter().map(|cell| (cell.rx, cell.ry)).collect();
+    assert_eq!(coords.len(), inputs.len());
+    for y in 0..32 {
+        for x in 0..32 {
+            assert!(
+                coords.contains(&(x, y)),
+                "complete declared component rectangle"
+            );
+        }
+    }
+    // This is an explicit component map, not XMP03T4's authored map load.
+    // Retain the native Size16 admission instead of making a Size32 map or
+    // selecting only the Cells the native observer happened to draw.
+    map.iso_map_pack_lookups.clear();
+    map.entities.clear();
+    map.overlays.clear();
+    map.smudges.clear();
+    map.terrain_objects.clear();
+    map.explicit_tubes.clear();
+    let table = &scene["selector_table"];
+    let table = std::array::from_fn(|i| table[i].as_u64().unwrap() as u8);
+    let mut cache = TileVariantSelectorCache::initialized_for_test(table);
+    let mut unexpected_main_draw = || panic!("retained warm selector must not consume Main RNG");
+    let mut selector = cache.begin_load(&mut unexpected_main_draw);
+    let mut scenario_fill = |low, high| {
+        assert_eq!((low, high), (0, 0), "declared flat Clear fill");
+        0
+    };
+    let terrain = ResolvedTerrainGrid::build_with_variant_selector(
+        &map,
+        Some(&theater),
+        Some(&assets),
+        None,
+        None,
+        None,
+        false,
+        0,
+        &mut scenario_fill,
+        &mut selector,
+    );
+    for cell in terrain.iter() {
+        assert!(coords.contains(&(cell.rx, cell.ry)));
+        assert_eq!(terrain.presentation_tile(cell), (tile_id, 0));
+        assert_eq!(cell.level, 0);
+    }
+    // Calls are admission witnesses only. They never choose Rust membership,
+    // variant selection, culling, or instance order.
+    for history in packet["histories"].as_array().unwrap() {
+        for call in history["calls"].as_array().unwrap() {
+            if let Some(cell) = call["cell"].as_array() {
+                let x = cell[0].as_u64().unwrap() as u16;
+                let y = cell[1].as_u64().unwrap() as u16;
+                assert!(coords.contains(&(x, y)));
+                assert!(
+                    terrain.cell(x, y).is_some(),
+                    "original drawn Cell passes canonical admission"
+                );
+            }
+        }
+    }
+    let mut sim = crate::sim::world::Simulation::with_seed(0x480180);
+    sim.install_playfield_from_map_header(&map.header);
+    sim.install_resolved_terrain_for_new_map(terrain);
+    let hash = sim.state_hash();
+    let rng = sim.rng_state();
+    let terrain = sim.resolved_terrain.as_ref().unwrap();
+    let grid = build_terrain_grid_from_resolved(terrain, None, None);
+    let lights = build_cell_light_grid_from_heights_and_units(
+        terrain.iter().map(|cell| ((cell.rx, cell.ry), cell.level)),
+        profile(&serde_json::json!({"scene_lighting": scene["lighting"]})),
+    );
+    let size = [
+        packet["surface"]["width"].as_u64().unwrap() as u32,
+        packet["surface"]["height"].as_u64().unwrap() as u32,
+    ];
+    // begin_main_pass's actual clear agrees with this native component premise.
+    assert_eq!(packet["surface"]["background"], 0);
+    assert_eq!(packet["surface"]["old_z"], 65535);
+    let mut camera = camera(size);
+    camera.camera_pos = [
+        scene["camera"][0].as_i64().unwrap() as f32,
+        // Existing production coordinate convention; no capture fitting.
+        scene["camera"][1].as_i64().unwrap() as f32 + 15.0,
+    ];
+    let gpu = Gpu::new();
+    for format in [
+        wgpu::TextureFormat::Bgra8UnormSrgb,
+        wgpu::TextureFormat::Rgba8UnormSrgb,
+    ] {
+        let mut batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);
+        let atlas = crate::render::tile_atlas::build_atlas(&gpu.device, &gpu.queue, &batch, &tiles);
+        let lookup = |tile_id, sub_tile, variant| {
+            atlas
+                .get_uv(TileKey {
+                    tile_id,
+                    sub_tile,
+                    variant,
+                })
+                .map(|uv| TilePlacement {
+                    uv_origin: uv.uv_origin,
+                    uv_size: uv.uv_size,
+                    pixel_size: uv.pixel_size,
+                    draw_offset: uv.draw_offset,
+                })
+        };
+        let instances = crate::render::terrain_instances::build_visible_instances(
+            &grid,
+            Some(&lights),
+            camera.camera_pos[0],
+            camera.camera_pos[1],
+            size[0] as f32,
+            size[1] as f32,
+            Some(&lookup),
+            Some(terrain),
+        );
+        assert!(!instances.normal.is_empty());
+        let mut pool = InstanceBufferPool::new();
+        pool.upload_on_device(
+            &gpu.device,
+            &gpu.queue,
+            "tmp-clear-native",
+            &instances.normal,
+        );
+        // Reuse the actual attachments across prior and reconstructed phases;
+        // no native expected pixels are uploaded as the prior RGB/Z image.
+        let color = gpu.target(size, format);
+        let depth = gpu.target(size, wgpu::TextureFormat::Depth32Float);
+        for history in packet["histories"].as_array().unwrap() {
+            let phases = history["phases"].as_array().unwrap();
+            let prior = &phases[0];
+            let native_rng = |phase: &Value, stream: &str| {
+                let index = phase["rng"][stream].as_u64().unwrap() as usize;
+                packet["rng_streams"][index].as_str().unwrap()
+            };
+            assert!(history["rng_requests"].as_array().unwrap().is_empty());
+            for phase in phases {
+                for stream in ["main", "scenario", "mapgen"] {
+                    assert_eq!(native_rng(phase, stream), native_rng(prior, stream));
+                }
+                assert_eq!(phase["alpha_ref"], prior["alpha_ref"]);
+            }
+            let alpha = &packet["alpha_planes"][prior["alpha_ref"].as_u64().unwrap() as usize];
+            let pixels = a_pixels(&serde_json::json!({"a_hex": alpha["hex"]}), size);
+            assert_eq!(pixels.len(), (size[0] * size[1]) as usize);
+            assert_eq!(crate::util::sha256::sha256_hex(&pixels), alpha["sha256"]);
+            assert!(
+                pixels.windows(2).any(|pair| pair[0] != pair[1]),
+                "native A is nonuniform"
+            );
+            let a =
+                ShroudBuffer::fixture(&gpu.device, &gpu.queue, size, camera.camera_pos, &pixels);
+            batch.bind_shroud(&gpu.device, Some(&a));
+            batch.write_camera(&gpu.queue, camera);
+            for phase in phases.iter().filter(|phase| {
+                matches!(
+                    phase["name"].as_str().unwrap(),
+                    "prior" | "after_terrain" | "after_cleanup"
+                )
+            }) {
+                let state =
+                    &packet["surface_states"][phase["surface_ref"].as_u64().unwrap() as usize];
+                assert!(
+                    state["runs"].is_array(),
+                    "complete native destination is required"
+                );
+                let row = serde_json::json!({
+                    "name": format!("{}:{}", history["name"].as_str().unwrap(), phase["name"].as_str().unwrap()),
+                    "input": {
+                        "background": packet["surface"]["background"],
+                        "old_z": packet["surface"]["old_z"],
+                        "clip": [0, 0, size[0], size[1]], "repeat": 1,
+                    },
+                    "output": state,
+                });
+                assert_tmp_pass(
+                    &gpu,
+                    &batch,
+                    &pool,
+                    &atlas,
+                    (&color, &depth),
+                    &row,
+                    format,
+                    size,
+                    true,
+                );
+                let actual_a: Vec<_> = gpu
+                    .read_float_texels(a.gpu_source().0, [0, 0], size)
+                    .into_iter()
+                    .map(|pixel| (pixel[0] * 255.0).round() as u8)
+                    .collect();
+                assert_eq!(
+                    actual_a, pixels,
+                    "terrain reconstruction preserves supplied native A"
+                );
+                assert_eq!(
+                    sim.state_hash(),
+                    hash,
+                    "presentation preserves actual simulation"
+                );
+                assert_eq!(
+                    sim.rng_state(),
+                    rng,
+                    "presentation preserves all three actual RNGs"
+                );
+            }
+        }
     }
 }

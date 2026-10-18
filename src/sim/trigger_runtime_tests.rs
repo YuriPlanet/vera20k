@@ -1742,9 +1742,10 @@ fn entered_cell_retains_the_actual_duplicate_country_house_for_8997_actions() {
     assert_eq!(sim.live_action_house(live, 9001, &rules), None);
     // ChangeOwner's null-killer Unit E0 callback744720 raises48/29 before
     // the retained PerCell tail59; see unit_record_kill_ native-prefix checks.
+    // Techno6F5115 then raises34 on the still-attached object Tag.
     assert_eq!(
         sim.trigger_runtime.dispatch_trace,
-        [(tag, 1), (tag, 48), (tag, 29), (tag, 59)]
+        [(tag, 1), (tag, 48), (tag, 29), (tag, 59), (tag, 34)]
     );
 }
 

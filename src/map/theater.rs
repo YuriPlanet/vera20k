@@ -210,6 +210,9 @@ pub struct RmgTileKeys {
     pub clear_tile: Option<u16>,
     pub ramp_base: Option<u16>,
     pub ramp_smooth: Option<u16>,
+    /// Resolved ABC1F8: SlopeSetPieces read545776, published545E26.
+    /// Ramp-end blocks use this family independently of RampBase/CliffRamps.
+    pub slope_set_pieces: Option<u16>,
     pub rough_tile: Option<u16>,
     pub sand_tile: Option<u16>,
     pub green_tile: Option<u16>,
@@ -842,7 +845,7 @@ pub fn load_theater(asset_manager: &mut AssetManager, theater_name: &str) -> Opt
                 .map_or(-1, |bounds| i32::from(bounds.start))
         });
     let mut cliff_ranges = resolve_cliff_ranges(&lookup, general, bridge_set, wood_bridge_set);
-    let mut rmg_tiles = resolve_rmg_tile_keys(&lookup, general);
+    let mut rmg_tiles = resolve_rmg_tile_keys(&lookup, general, slope_set_pieces);
     apply_lunar_global_zeroing(
         theater_name,
         &mut bridge_set,
@@ -976,7 +979,11 @@ fn resolve_tileset_start(lookup: &TilesetLookup, ordinal: i32) -> Option<u16> {
         .map(|bounds| bounds.start)
 }
 
-fn resolve_rmg_tile_keys(lookup: &TilesetLookup, general: Option<&IniSection>) -> RmgTileKeys {
+fn resolve_rmg_tile_keys(
+    lookup: &TilesetLookup,
+    general: Option<&IniSection>,
+    slope_set_pieces: Option<u16>,
+) -> RmgTileKeys {
     let resolve = |key: &str| {
         let ordinal = general.map_or(-1, |section| section.read_int(key, -1));
         resolve_tileset_start(lookup, ordinal)
@@ -985,6 +992,9 @@ fn resolve_rmg_tile_keys(lookup: &TilesetLookup, general: Option<&IniSection>) -
         clear_tile: resolve("ClearTile"),
         ramp_base: resolve("RampBase"),
         ramp_smooth: resolve("RampSmooth"),
+        // Reuse the existing General reader's ordinal. Original545E1D/545E26
+        // publishes the cumulative base, not that ordinal, to ABC1F8.
+        slope_set_pieces: resolve_tileset_start(lookup, slope_set_pieces.map_or(-1, i32::from)),
         rough_tile: resolve("RoughTile"),
         sand_tile: resolve("SandTile"),
         green_tile: resolve("GreenTile"),

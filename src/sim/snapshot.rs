@@ -1111,7 +1111,9 @@ use crate::sim::world::Simulation;
 // 401 -> 402: retained DiskLaser bodies and Rules+28C charge-up reference.
 // 402 -> 403: resident Map+D4 ordered pending bridge-collapse coordinates.
 // 403 -> 404: retained House+310 capacity and Building Storage type input.
-const SNAPSHOT_VERSION: u32 = 404;
+// 404 -> 405: retained Rules+1866 ChronoBeamColor in saved processed rules.
+// 405 -> 406: preserve live Action71/72 ambient Rules inputs across saves.
+const SNAPSHOT_VERSION: u32 = 406;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -4809,7 +4811,9 @@ mod tests {
         // 401 -> 402: retain delayed DiskLaser bodies and Rules charge-up.
         // 402 -> 403: retain pending Map+D4 collapse coordinates/order.
         // 403 -> 404: retain House capacity and future Building Storage input.
-        assert_eq!(super::SNAPSHOT_VERSION, 404);
+        // 404 -> 405: retain AudioVisual ChronoBeamColor in processed rules.
+        // 405 -> 406: live ambient Rules writes from Action71/72.
+        assert_eq!(super::SNAPSHOT_VERSION, 406);
     }
 
     #[test]

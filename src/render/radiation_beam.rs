@@ -10,7 +10,7 @@ use crate::util::native_x87::{
     MaskedX87Chop53 as M, MaskedX87Value, NativeF64Bits, X87Chop53 as X,
 };
 
-/// Derived once on the first draw. Copied mode0 endpoints never change, so
+/// Derived once on the first draw. Copied mode0/1 endpoints never change, so
 /// this cache needs no invalidation before its owning registry entry retires.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct BeamGeometry {

@@ -240,6 +240,13 @@ impl Particle {
 }
 
 impl ParticleSystem {
+    /// ParticleSystem virtual F8 ->6301E0: set the native completion byte.
+    /// Subtype AI controls emission; SystemAI62FD60 owns done-and-empty
+    /// retirement. Existing children, Alive and expiry broadcasts stay intact.
+    pub(crate) fn mark_done_spawning(&mut self) {
+        self.done_spawning = true;
+    }
+
     /// The ids [`ParticleSystemStore::pointer_expired`] compares: the target
     /// (`+0xE4`), owner (`+0xE0`) and child vector (`+0xBC`). Feeds the pointer-expiry
     /// listener index (`ExpiryListeners`); a field that callback compares

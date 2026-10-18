@@ -623,18 +623,25 @@ fn place_building(
         let Some(registry) = registry else {
             return false;
         };
-        if !crate::sim::production::stamp_wall_with_autofill(
-            sim,
-            rules,
-            registry,
-            ty,
-            (rx, ry),
-            owner,
-            effects,
-        ) {
+        if sim
+            .reveal_constructed_object_at_coord_with_overlay_context(
+                product,
+                crate::sim::components::DriveCoord {
+                    x: i32::from(rx) * 256 + 128,
+                    y: i32::from(ry) * 256 + 128,
+                    z: 0,
+                },
+                0,
+                PlacementEvidence::EvaluateMark,
+                rules,
+                Some(registry),
+                effects,
+            )
+            .is_none()
+        {
             return false;
         }
-        let _ = sim.discard_constructed_limbo(product, Some(rules), effects);
+        crate::sim::production::autofill_walls(sim, rules, registry, ty, (rx, ry), owner, effects);
         return true;
     }
     let z = sim.terrain_cell_level(rx, ry).unwrap_or(0);

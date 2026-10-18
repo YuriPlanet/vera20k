@@ -52,6 +52,10 @@ use crate::util::native_x87::{NativeF32Bits, NativeF64Bits};
 #[path = "building_damage_sound_tests.rs"]
 mod building_damage_sound_tests;
 
+#[cfg(test)]
+#[path = "command_bar_sound_rules_tests.rs"]
+mod command_bar_sound_rules_tests;
+
 /// Country-level fields needed by gameplay systems.
 #[derive(Debug, Clone)]
 pub struct CountryRules {
@@ -632,6 +636,11 @@ pub struct GeneralRules {
     /// Rules+1863, AudioVisual66B77D ReadColorRGB. Any nonzero channel
     /// replaces ObjectType ART LineTrailColor on trail construction.
     pub line_trail_color_override: [u8; 3],
+    /// Rules+1866, AudioVisual66B7A7 ReadColorRGB. SpawnRadBeam6FD752
+    /// copies this RGB for an admitted Temporal weapon's mode1 beam.
+    /// Constructor66785E/667864/66786A initializes all three bytes to zero.
+    /// Original controls: tools/procedural_drawing_oracle/chrono_beam.md.
+    pub chrono_beam_color: [u8; 3],
     /// Default cruise altitude for Fly-locomotor aircraft (FlightLevel= in [General]).
     /// Fallback 500 leptons matches the engine constructor default; retail
     /// rulesmd.ini always supplies its own (1500), so the fallback only fires
@@ -805,6 +814,10 @@ pub struct GeneralRules {
     /// @ 0x00519630` (`0x0051A298..0x0051A30A`). `None` is the constructor's
     /// invalid Voc index; the fixed SOUNDMD binder resolves the name.
     pub enter_bio_reactor_sound: Option<String>,
+    /// Rules+268: ReadAudioVisual66A10B..66A141 resolves the exact-case
+    /// EnterGrinderSound through the fixed Voc catalog, retaining the prior
+    /// index on absent/empty/unknown values. Constructor default is -1.
+    pub enter_grinder_sound: Option<String>,
     /// `[AudioVisual] UpgradeVeteranSound=` — `RulesClass::ReadAudioVisual @
     /// 0x006691E0` resolves it to a Voc index at `RulesClass+0x228`
     /// (`0x00669CFD..0x00669D27`); `TechnoClass::AI_Update` plays that index
@@ -1265,6 +1278,13 @@ pub struct GeneralRules {
     pub gui_combo_open_sound: Option<String>,
     /// Sound event for closing shell combo boxes from [AudioVisual] GUIComboCloseSound.
     pub gui_combo_close_sound: Option<String>,
+    /// Rules+194/+198: constructors665892/665898 store-1. ReadAudioVisual
+    /// 669423..6694B6 reads exact GUIOpenSound then GUICloseSound through
+    /// ReadString128/VocFind7514D0, retaining each prior valid ID. The fixed
+    /// SOUNDMD binder owns these references, separately from the combo keys.
+    /// SidebarInput6D091A/6D0860 consumes them; see tools/audio_catalog_owner.md.
+    gui_open_sound: Option<String>,
+    gui_close_sound: Option<String>,
     /// Sound used by conditional reciprocal-link harvester release. Parsed
     /// from [AudioVisual] BunkerWallsDownSound (retail value "TankBunkerDown").
     /// Stock zero-link refinery unload completion does not play it. None =
@@ -1705,9 +1725,9 @@ pub struct GeneralRules {
     /// [General] WeaponNullifyAnim (+350), constructor null; retained reader
     /// 66E2AF. Bullet46A2A1 uses it after AreaDamage returns IronCurtain (2).
     pub weapon_nullify_anim: String,
-    /// Whether `[AudioVisual] AmbientChangeRate=` is nonzero before its native
-    /// frame conversion. Kept separately because a nonzero mod value can chop
-    /// to a zero-frame interval while still passing ScenarioClass's outer gate.
+    /// Whether `[AudioVisual] AmbientChangeRate=` passes the native ordered,
+    /// nonzero gate before conversion. A nonzero mod value can chop to a
+    /// zero-frame interval; NaN fails the original FCOMP/C3 gate.
     pub ambient_change_rate_nonzero: bool,
     /// Lightning/global ambient transition interval in native frames:
     /// `ftol(AmbientChangeRate * 900)`.
@@ -2191,6 +2211,7 @@ impl Default for GeneralRules {
             missile_rot_var: 0.25,
             safety_altitude: 500,
             line_trail_color_override: [0; 3],
+            chrono_beam_color: [0; 3],
             flight_level: 500,
             attacking_aircraft_sight_range: 5,
             display_cruise_height: 400, // Rules constructor665C3A
@@ -2265,6 +2286,7 @@ impl Default for GeneralRules {
             cloak_sound: None,
             leave_bio_reactor_sound: None,
             enter_bio_reactor_sound: None,
+            enter_grinder_sound: None,
             upgrade_veteran_sound: None,
             upgrade_elite_sound: None,
             slaves_free_sound: None,
@@ -2360,6 +2382,8 @@ impl Default for GeneralRules {
             speak_delay_minutes: 0.0,
             gui_combo_open_sound: None,
             gui_combo_close_sound: None,
+            gui_open_sound: None,
+            gui_close_sound: None,
             bunker_walls_down_sound: None,
             bunker_walls_up_sound: None,
             direct_rocking_coefficient: SimFixed::lit("1.5"),
@@ -2799,7 +2823,21 @@ const VETERAN_CAP_DEFAULT: f64 = 2.0;
 /// `ftol(rate * 900)` (`0x0055B3D8..0x0055B3E4`) and the step
 /// `ftol(step * 100)` (`0x0055B447..0x0055B453`).
 pub(crate) fn ambient_change_terms(rate: f64, step: f64) -> (bool, i32, i32) {
-    (rate != 0.0, (rate * 900.0) as i32, (step * 100.0) as i32)
+    use crate::util::native_x87::{MaskedX87Chop53 as X, MaskedX87Ordering, NativeF64Bits};
+    let rate = X::load_f64(NativeF64Bits::from_bits(rate.to_bits()));
+    let step = X::load_f64(NativeF64Bits::from_bits(step.to_bits()));
+    // FCOMP/test C3 at55B351..55B362 rejects zero and unordered. Math_ftol
+    // returns the low dword of its signed64 result; a Rust saturating cast
+    // differs for large/exceptional binary32 action inputs.
+    let enabled = matches!(
+        X::compare(rate, X::load_i32(0)),
+        MaskedX87Ordering::Less | MaskedX87Ordering::Greater
+    );
+    (
+        enabled,
+        X::ftol_i32_low_masked(X::mul(rate, X::load_i32(900))),
+        X::ftol_i32_low_masked(X::mul(step, X::load_i32(100))),
+    )
 }
 
 impl GeneralRules {
@@ -2861,6 +2899,17 @@ impl GeneralRules {
 
     pub(crate) fn cheer_sound(&self) -> Option<&str> {
         self.cheer_sound.as_deref()
+    }
+
+    /// Resolved command-bar opener cue. After SidebarInput6D08F5's defeat
+    /// refusal, playback6D091A precedes the open-state test.
+    pub fn gui_open_sound(&self) -> Option<&str> {
+        self.gui_open_sound.as_deref()
+    }
+
+    /// Resolved command-bar close cue used by SidebarInput6D0860.
+    pub fn gui_close_sound(&self) -> Option<&str> {
+        self.gui_close_sound.as_deref()
     }
 
     /// Drive4B3A65, Ship6A30B4 and Foot/Walk's timer producers retain the
@@ -3237,6 +3286,11 @@ impl GeneralRules {
                 defaults.line_trail_color_override,
                 None,
             ),
+            chrono_beam_color: audio_visual.read_color_rgb(
+                "ChronoBeamColor",
+                defaults.chrono_beam_color,
+                None,
+            ),
             flight_level: general.read_int("FlightLevel", 500),
             attacking_aircraft_sight_range: general.read_int(
                 "AttackingAircraftSightRange",
@@ -3326,6 +3380,7 @@ impl GeneralRules {
             // Keep the constructor's invalid index until that owner binds it.
             leave_bio_reactor_sound: None,
             enter_bio_reactor_sound: None,
+            enter_grinder_sound: None,
             upgrade_veteran_sound: audio_visual
                 .read_name("UpgradeVeteranSound", 0x80)
                 .map(str::to_owned),
@@ -3485,6 +3540,10 @@ impl GeneralRules {
             gui_combo_close_sound: audio_visual
                 .read_name("GUIComboCloseSound", 0x80)
                 .map(str::to_owned),
+            // Constructor -1 until the fixed SOUNDMD binder resolves each
+            // reached ReadString128 value, including failed-read retention.
+            gui_open_sound: None,
+            gui_close_sound: None,
             // Float fields (`FSTP dword` at `0x0066B8B1`/`0x0066B8DB`).
             direct_rocking_coefficient: sim_from_f32(
                 audio_visual.read_float("DirectRockingCoefficient", 1.5),
@@ -4126,6 +4185,7 @@ impl RuleSet {
             rules.general.safety_altitude,
             rules.general.line_trail_color_override,
         ) = processed.projectile_rule_controls();
+        rules.general.chrono_beam_color = processed.chrono_beam_color();
         (
             rules.general.parachute_max_fall_rate,
             rules.general.no_parachute_max_fall_rate,
@@ -4296,6 +4356,14 @@ impl RuleSet {
         ini: &IniFile,
         sounds: &crate::rules::sound_ini::SoundRegistry,
     ) {
+        // Original669423..6694B6, in native open/close read order. The
+        // processed section already owns the reached Rules pass history.
+        self.general.gui_open_sound = ini
+            .section("AudioVisual")
+            .and_then(|section| sounds.read_rules_reference(section, "GUIOpenSound"));
+        self.general.gui_close_sound = ini
+            .section("AudioVisual")
+            .and_then(|section| sounds.read_rules_reference(section, "GUICloseSound"));
         self.general.disk_laser_charge_up = ini
             .section("AudioVisual")
             .and_then(|section| sounds.read_rules_reference(section, "DiskLaserChargeUp"));
@@ -4328,6 +4396,9 @@ impl RuleSet {
         self.general.enter_bio_reactor_sound = ini
             .section("AudioVisual")
             .and_then(|section| sounds.read_rules_reference(section, "EnterBioReactorSound"));
+        self.general.enter_grinder_sound = ini
+            .section("AudioVisual")
+            .and_then(|section| sounds.read_rules_reference(section, "EnterGrinderSound"));
         self.general.sinking_sound = ini
             .section("AudioVisual")
             .and_then(|section| sounds.read_rules_reference(section, "SinkingSound"));
@@ -5546,6 +5617,7 @@ impl RuleSet {
         self.general.missile_rot_var.to_bits().hash(&mut hasher);
         self.general.safety_altitude.hash(&mut hasher);
         self.general.line_trail_color_override.hash(&mut hasher);
+        self.general.chrono_beam_color.hash(&mut hasher);
         self.general.lightning_warhead.hash(&mut hasher);
         self.general.weather_con_bolt_explosion.hash(&mut hasher);
         self.general.weapon_nullify_anim.hash(&mut hasher);
@@ -6114,6 +6186,17 @@ impl RuleSet {
     /// Look up a particle system type by ID. Panics if `id` is out of range.
     pub fn particle_system_type(&self, id: ParticleSystemTypeId) -> &ParticleSystemType {
         &self.particle_system_types[id.0 as usize]
+    }
+
+    /// Resolve an ordinal in the native ParticleSystemType registry A83D6C.
+    pub(crate) fn particle_system_type_id_by_index(
+        &self,
+        index: i32,
+    ) -> Option<ParticleSystemTypeId> {
+        let index = usize::try_from(index).ok()?;
+        self.particle_system_types
+            .get(index)
+            .map(|_| ParticleSystemTypeId(index as u32))
     }
 
     /// Resolve a particle type name to its ID (case-insensitive).

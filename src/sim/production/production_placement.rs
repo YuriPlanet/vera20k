@@ -389,22 +389,31 @@ pub(crate) fn place_production_with_overlays(
             failed_building_unlimbo(sim, rules, owner_id, yard, effects);
             return false;
         };
-        if !wall_placement::stamp_wall_with_autofill(
-            sim,
-            rules,
-            registry,
-            obj,
-            (rx, ry),
-            owner_id,
-            effects,
-        ) {
+        //4FB1F7..4FB22E forms centered XY and literal Z0 for +D8. The
+        //shared Building wall arm owns sale/Overlay/radio/sight/UnInit.
+        if sim
+            .reveal_constructed_object_at_coord_with_overlay_context(
+                held.entity_id(),
+                crate::sim::components::DriveCoord {
+                    x: i32::from(rx) * 256 + 128,
+                    y: i32::from(ry) * 256 + 128,
+                    z: 0,
+                },
+                0,
+                crate::sim::world::PlacementEvidence::EvaluateMark,
+                rules,
+                Some(registry),
+                effects,
+            )
+            .is_none()
+        {
             failed_building_unlimbo(sim, rules, owner_id, yard, effects);
             return false;
         }
-        // Wall placement consumes the factory-created BuildingClass into
-        // overlay state; the constructor identity is destroyed, never
-        // reconstructed at placement.
-        let object = held.consume_after_wall_stamp(sim, rules, effects);
+        wall_placement::autofill_walls(sim, rules, registry, obj, (rx, ry), owner_id, effects);
+        // UnInit already expired Factory's pointer; keep the admission token
+        // captured before entry. Physical deletion belongs to725C70.
+        let object = held.release_consumed_wall(sim, rules, effects);
         sim.sound_events
             .push(crate::sim::world::SimSoundEvent::BuildingPlaced { owner: owner_id });
         sim.lifecycle_outputs.push(

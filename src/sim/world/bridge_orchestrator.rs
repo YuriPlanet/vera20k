@@ -128,7 +128,7 @@ pub(crate) fn damage_at_waypoint(
     let warhead_id = sim.interner.intern(&rules.bridge_warheads.c4_name);
     let mut changed = false;
     for (dx, dy) in [(0, 0), (85, 85), (-85, 85), (85, -85), (-85, -85)] {
-        let [x, y, z] = sim.trigger_waypoint_coord(waypoint)?;
+        let [x, y, z] = sim.trigger_waypoint_location(waypoint)?;
         changed |= apply_area_damage(
             sim,
             rules,

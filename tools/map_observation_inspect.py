@@ -16,7 +16,8 @@ Example expectation document::
        "field": "health", "op": "eq", "value": 750}]}
 
 Subjects are ``actor`` (stable_id OR type_id/optional owner/cell, plus bind_step),
-``house`` (owner name), or ``super_weapon`` (owner and exact type name). Exactly
+``house`` (owner name), ``super_weapon`` (owner and exact type name), or ``gesture``
+(receipt ordinal, observed only at its issue_after_step). Exactly
 one of ``at_step``, ``eventually`` or ``always`` selects completed-step samples.
 Fields are literal dotted object keys; operators are eq/ne/lt/le/gt/ge. Actor
 ``present`` is the only synthetic field: false requires a missing_actor_ids
@@ -104,7 +105,7 @@ def _literal(value: Any, label: str, budget: list[int], depth=0) -> None:
 
 def _subject(value: Any, label: str) -> None:
     if not isinstance(value, dict) or len(value) != 1:
-        raise ValidationError(f'{label} must contain exactly one actor, house or super_weapon')
+        raise ValidationError(f'{label} must contain exactly one actor, house, super_weapon or gesture')
     if 'actor' in value:
         selector = value['actor']
         if isinstance(selector, dict) and 'stable_id' in selector:
@@ -129,8 +130,10 @@ def _subject(value: Any, label: str) -> None:
         selector = _object(value['super_weapon'], label + '.super_weapon', {'owner', 'type'})
         for key in selector:
             _string(selector[key], label + '.super_weapon.' + key)
+    elif 'gesture' in value:
+        _integer(value['gesture'], label + '.gesture', 0, (1 << 64) - 1)
     else:
-        raise ValidationError(f'{label} must select actor, house or super_weapon')
+        raise ValidationError(f'{label} must select actor, house, super_weapon or gesture')
 
 
 def validate_expectations(document: Any) -> list[dict[str, Any]]:
@@ -228,6 +231,9 @@ class _Index:
                        for step, frame in self.frames.items()}
         self.restore_steps = [row['after_step'] for row in
                               observations.get('load_segments', {}).get('transitions', [])]
+        self.gestures: dict[int, list[Mapping[str, Any]]] = {}
+        for receipt in observations.get('gesture_input', {}).get('receipts', []):
+            self.gestures.setdefault(receipt['ordinal'], []).append(receipt)
 
     def epoch(self, step: int) -> int:
         # sim/world/substrate.rs serializes the allocation counter with saves.
@@ -237,6 +243,12 @@ class _Index:
         return bisect_left(self.restore_steps, step)
 
     def bind(self, subject: Mapping[str, Any]) -> tuple[dict[str, Any], str | None]:
+        if 'gesture' in subject:
+            matches = self.gestures.get(subject['gesture'], [])
+            binding = dict(subject)
+            if len(matches) != 1:
+                return binding, 'ambiguous_gesture' if matches else 'gesture_not_observed'
+            return {**binding, 'issue_after_step': matches[0]['issue_after_step']}, None
         if 'actor' not in subject:
             return dict(subject), None
         selector = subject['actor']
@@ -258,7 +270,11 @@ class _Index:
     def value(self, step: int, binding: Mapping[str, Any], field: str) -> tuple[Any, str | None]:
         if step not in self.frames:
             return _ABSENT, 'frame_not_observed'
-        if 'actor' in binding:
+        if 'gesture' in binding:
+            row = self.gestures[binding['gesture']][0]
+            if step != row['issue_after_step']:
+                return _ABSENT, 'gesture_not_observed_at_step'
+        elif 'actor' in binding:
             if self.epoch(step) != binding['observation_epoch']:
                 return _ABSENT, 'actor_identity_crosses_load'
             identity = binding['actor']

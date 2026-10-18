@@ -19,8 +19,8 @@ separate references. This option does not regenerate them. In particular,
 it supplies no current-image keyboard, event, House-scan or sound evidence.
 
 The 15 retained histories contain 34 visits. Their inputs supply the current
-House index, Rules rate, signed last/current simulation frames, Session lock,
-and a capacity-128 OutList's occupied count/read/write indexes. Every press
+House index, Rules rate, signed last/current simulation frames, the Session+300
+local-defeat guard, and a capacity-128 OutList's occupied count/read/write indexes. Every press
 executes the registered command with argument zero. Refused presses leave
 the native last-frame scalar and queue unchanged. Accepted presses construct
 opcode `2D`; only an available slot receives the actual 111-byte copy and OS
@@ -33,6 +33,13 @@ the last free slot and a wrapping write index. A full-buffer history supplies
 a later drained count as an explicit scheduler boundary, retaining both
 indexes. The original producer then supplies the subsequent refusal/rearm
 results; the fixture does not emulate draining or calculate those outcomes.
+
+The retained JSON field `input_locked` supplies dword `A8B538`, the native
+Session+300 local-defeat guard. Its historical name does not refer to the
+separate Scenario+35A2/A8ED9C cinematic lock. Rust's component adapter uses
+the current House defeat projection; the production keyboard and command-bar
+paths retain their independent Scenario lock gates. Real loss/input integration
+is tested separately without assigning either flag.
 
 Whole original reset `734210` supplies the last-frame value `-100`, including
 its two OS-clock calls. The default-rate control starts from a sentinel,

@@ -13,7 +13,6 @@ use crate::sim::movement::infantry_entry::InfantryEntryArgs;
 use crate::sim::movement::locomotor::LocomotorState;
 use crate::sim::overlay_grid::damage_wall_overlay_with_terrain;
 use crate::sim::rng::SimRng;
-use crate::sim::world::FrameEffects;
 use crate::sim::world::entry_test_fixture;
 
 /// Wall overlays `O2` (stone, `DamageLevels=3`) and `O3` (wooden), the wall
@@ -129,17 +128,19 @@ fn a_wall_built_in_play_refuses_a_mover_that_cannot_shoot_it() {
     for id in [ENGINEER, TRUCK] {
         assert_eq!(entry(&sim, &rules, &registry, id), Ok(0));
     }
-    let owner = sim.intern("Americans");
-    let wall = rules.object("WALLB").unwrap();
-    assert!(crate::sim::production::stamp_wall_with_autofill(
-        &mut sim,
-        &rules,
-        &registry,
-        wall,
-        (16, 15),
-        owner,
-        FrameEffects::default(),
-    ));
+    assert!(
+        sim.spawn_object_at_height_with_overlay_registry(
+            "WALLB",
+            "Americans",
+            16,
+            15,
+            0,
+            0,
+            &rules,
+            &registry,
+        )
+        .is_some()
+    );
     // Unarmed: Infantry `0x0051C1EB`, Unit `0x0073F48F`.
     for id in [ENGINEER, TRUCK] {
         assert_eq!(entry(&sim, &rules, &registry, id), Ok(7), "{id}");
@@ -318,7 +319,7 @@ fn assert_retail_wall_fire_profile(
         .hash_state_every(crate::sim::replay::PLAY_HASH_INTERVAL);
     let initial_hash = scene.sim().state_hash();
     let owner = scene.sim().session.current_house.unwrap();
-    let orders: Vec<_> = profile["commands"]
+    let mut orders: Vec<_> = profile["commands"]
         .as_array()
         .unwrap()
         .iter()
@@ -331,6 +332,16 @@ fn assert_retail_wall_fire_profile(
             )
         })
         .collect();
+    if wall_name == "GAWALL" {
+        // Target the paid endpoint using an ordinary attack order. Filler
+        // constructor draws change the later damage history; retain this
+        // witness's pristine-child branch without seeding RNG or wall state.
+        for order in &mut orders {
+            if let Command::ForceAttackCell { target_ry, .. } = &mut order.payload {
+                *target_ry = 87;
+            }
+        }
+    }
     let (attacker_id, source) = orders
         .iter()
         .find_map(|order| match order.payload {
@@ -910,24 +921,21 @@ fn assert_retail_wall_history(native_path: &'static str, wall_name: &str, direct
         let wall = registry.id_for_name(wall_name).unwrap();
         if let Some(construction) = case.get("construction") {
             // The original component starts before the later Building/Foot
-            // population. Stamp through the existing production wall owner;
+            // population. Run its wall Mark material through the shared owner;
             // do not copy its resulting data/122/zone fields from the packet.
-            let wall_type = rules.object(wall_name).unwrap();
-            let owner = sim.interner.get("Neutral").unwrap();
             sim.acknowledge_radar_terrain_dirty(sim.radar_terrain_dirty_generation);
             for placement in construction["placements"].as_array().unwrap() {
                 let coordinate = (
                     placement["cell"][0].as_u64().unwrap() as u16,
                     placement["cell"][1].as_u64().unwrap() as u16,
                 );
-                assert!(crate::sim::production::stamp_wall_with_autofill(
+                assert!(crate::sim::production::mark_wall(
                     sim,
                     rules,
                     registry,
-                    wall_type,
-                    coordinate,
-                    owner,
-                    FrameEffects::default(),
+                    coordinate.0,
+                    coordinate.1,
+                    wall,
                 ));
                 for change in placement["changed"].as_array().unwrap() {
                     assert_cell(sim, &change["after"], &neighbor_domain);

@@ -515,288 +515,273 @@ fn validate_and_stamp_candidate_inner(
     lighting_profile: LightingProfileUnits,
     forced_failure: ForcedPostPrecheckFailure,
 ) -> AcceptedCellResult {
-    let water_id = rules
-        .water_crate_img
-        .as_deref()
-        .and_then(|name| overlay_registry.id_for_name(name));
-    let wood_id = rules
-        .wood_crate_img
-        .as_deref()
-        .and_then(|name| overlay_registry.id_for_name(name));
-    let crate_id = rules
-        .crate_img
-        .as_deref()
-        .and_then(|name| overlay_registry.id_for_name(name));
-    let selected_id = match crate_surface_at(sim, cell) {
-        CrateSurface::Water => water_id,
-        CrateSurface::Land => wood_id,
-    };
-    let Some(selected_id) = selected_id else {
-        return AcceptedCellResult::Ghost;
-    };
-
-    if forced_failure != ForcedPostPrecheckFailure::None {
-        return AcceptedCellResult::Ghost;
-    }
-
-    let Some(selected_flags) = overlay_registry.flags(selected_id).cloned() else {
-        return AcceptedCellResult::Ghost;
-    };
-    // Original5FC380 constructs Object/Abstract and joins all five registries
-    // before its Terrain/Unlimbo/Mark gates. Reuse the authored/runtime owner:
-    // an ordinary crate spends an ID even though Mark immediately UnInit's
-    // this transient object. Evidence: trigger_crate money.lifecycle and the
-    // shared bridge_constructor corpus. Allocate before a nested CellAnim.
-    let stable_id = sim.allocate_stable_id();
-    let handle = sim
-        .load_objects
-        .construct_overlay(stable_id, cell, || {
-            crate::sim::native_identity::NativeUniqueIdCursor::assign_runtime(
-                &mut sim.native_unique_ids,
-            )
-        })
-        .expect("crate Overlay constructor must join its owned registries");
-    // `OverlayClass::OverlayClass @ 0x005FC380` performs the TerrainClass scan
-    // before calling Unlimbo. A hit skips Unlimbo, so Mark never reaches its
-    // slope, bridge, CellAnim, or common RecalcAttributes paths.
-    if sim.production.terrain_object_cells.contains_key(&cell) {
-        sim.load_objects
-            .finish_unrevealed_survivor(handle)
-            .expect("Terrain-refused crate retains its constructed Overlay");
-        return AcceptedCellResult::Ghost;
-    }
-    let Some(slope_type) = sim
-        .resolved_terrain
-        .as_ref()
-        .and_then(|terrain| terrain.cell(cell.0, cell.1))
-        .map(|terrain_cell| terrain_cell.slope_type)
-    else {
-        sim.load_objects
-            .finish_unrevealed_survivor(handle)
-            .expect("an unavailable crate cell cannot reveal its Overlay");
-        return AcceptedCellResult::Ghost;
-    };
-    let dirty_cell = sim
-        .load_objects
-        .begin_mark(handle)
-        .expect("crate Overlay enters Mark once");
-    sim.tactical_dirty_cells.push(dirty_cell);
-    // `OverlayClass::Mark @ 0x005FC5E0..0x005FC5F4`: every derived branch,
-    // including the hard-coded bridge and TS-legacy identities, shares this
-    // gate before any overlay write or branch-local Scenario draw.
-    if slope_type > 4 && selected_id != 0xB2 {
-        sim.load_objects
-            .finish_slope_survivor(handle)
-            .expect("steep-slope crate retains its live limbo Overlay");
-        return AcceptedCellResult::Ghost;
-    }
-
-    // All derived arms below share Mark's ordinary UnInit/deferred tail,
-    // except a wall refusal, which additionally performs full Limbo. Keep
-    // that lifecycle exit outside the cell mutation's early-return paths.
-    let mut wall_rejected = false;
-    let result = 'mark: {
-        // The four high-anchor identities call their bridge setter first, then
-        // continue through Mark's ordinary precedence. The setters write raw data
-        // on anchor/F1/F2/opposite even before any overlay identity exists.
-        let high_bridge_data =
-            high_bridge_stamp_for_overlay(selected_id).map(|(family, direction)| {
-                let stamp = BridgeFlagStamp::new(cell, direction, true);
-                let data = if direction == 0 { 0 } else { 9 };
-                apply_high_bridge_crate_setter(sim, stamp, family, data);
-                data
-            });
-
-        // GSI-18.01 is explicitly excluded by the Phase 14 contract: these two
-        // hard-coded branches are the TS veins/veinhole carryover. Preserve crate
-        // admission/timer behavior but do not port their legacy world mutation.
-        if matches!(selected_id, 0x7E | 0xA7) {
-            recalc_real_crate_mark_cell(sim, overlay_registry, cell);
-            break 'mark AcceptedCellResult::Ghost;
-        }
-
-        if selected_flags.land == LandType::Railroad {
-            let wrote = write_real_crate_mark_fields(sim, overlay_registry, cell, selected_id, 0);
-            recalc_real_crate_mark_cell(sim, overlay_registry, cell);
-            break 'mark if wrote {
-                AcceptedCellResult::Visible
-            } else {
-                AcceptedCellResult::Ghost
-            };
-        }
-
-        if selected_flags.wall {
-            // `CellClass::Is_Clear_To_Build @ 0x0047C620` receives
-            // `(cell, 1, 0, 0)` here. The crate caller already proved allocated,
-            // in-playfield, and overlay-empty; with the null object argument the
-            // surviving admission is the LandType's Track speed, not
-            // terrain-object/occupation.
-            let wall_passes = full_rules.is_some_and(|full_rules| {
-                sim.resolved_terrain.as_ref().is_some_and(|terrain| {
-                    crate::sim::build_site::is_clear_to_build(
-                        sim,
-                        full_rules,
-                        Some(overlay_registry),
-                        terrain.native_cell_identity((cell.0 as i16, cell.1 as i16)),
-                        Some(SpeedType::Track),
-                        None,
-                        None,
-                        None,
-                    )
-                })
-            });
-            if !wall_passes {
-                wall_rejected = true;
-                break 'mark AcceptedCellResult::Ghost;
-            }
-            let wrote = write_real_crate_mark_fields(sim, overlay_registry, cell, selected_id, 0);
-            if wrote && let Some(grid) = sim.overlay_grid.as_mut() {
-                crate::sim::overlay_grid::refresh_wall_connectivity_after_placement(
-                    grid,
-                    overlay_registry,
-                    sim.resolved_terrain.as_mut(),
-                    cell.0,
-                    cell.1,
-                );
-            }
-            recalc_real_crate_mark_cell(sim, overlay_registry, cell);
-            break 'mark if wrote {
-                AcceptedCellResult::Visible
-            } else {
-                AcceptedCellResult::Ghost
-            };
-        }
-
-        if let Some(spec) = LowBridgeCrateSpec::for_trigger(selected_id) {
-            let visible = execute_low_bridge_crate_mark(sim, overlay_registry, cell, spec);
-            break 'mark if visible {
-                AcceptedCellResult::Visible
-            } else {
-                AcceptedCellResult::Ghost
-            };
-        }
-
-        // `OverlayClass__Mark @ 0x005FC570` compares live Rules pointers, with
-        // Water first. Numeric registry identity is the Rust-native pointer alias.
-        let mark_speed = if Some(selected_id) == water_id {
-            SpeedType::Float
-        } else if Some(selected_id) == crate_id || Some(selected_id) == wood_id {
-            SpeedType::Track
-        } else {
-            break 'mark AcceptedCellResult::Ghost;
+    // CrateValidate4A18F0 clears ScenarioInit at4A190B and restores it on
+    // both returns (4A1A7D/4A1A8E). The shared admission/Mark/navigation
+    // owners must observe this bracket, including during startup placement.
+    sim.without_object_placement_scope(|sim| {
+        let water_id = rules
+            .water_crate_img
+            .as_deref()
+            .and_then(|name| overlay_registry.id_for_name(name));
+        let wood_id = rules
+            .wood_crate_img
+            .as_deref()
+            .and_then(|name| overlay_registry.id_for_name(name));
+        let crate_id = rules
+            .crate_img
+            .as_deref()
+            .and_then(|name| overlay_registry.id_for_name(name));
+        let selected_id = match crate_surface_at(sim, cell) {
+            CrateSurface::Water => water_id,
+            CrateSurface::Land => wood_id,
+        };
+        let Some(selected_id) = selected_id else {
+            return AcceptedCellResult::Ghost;
         };
 
-        // `OverlayClass::Mark @ 0x005FCFE7..0x005FD003` forces passability true
-        // for the four high-anchor IDs after their setter. This is an explicit
-        // identity bypass, not an inferred consequence of selecting deck facts;
-        // even a nonzero deck occupation byte does not reject the ordinary tail.
-        if high_bridge_data.is_none() {
-            let Some((bridge_layer_selected, selected_speed_cost)) = sim
-                .resolved_terrain
-                .as_ref()
-                .and_then(|terrain| terrain.cell(cell.0, cell.1))
-                .map(|terrain_cell| {
-                    (
-                        terrain_cell.bridge_facts.raw_flags & BRIDGE_FLAG_STRUCTURAL != 0,
-                        terrain_cell.speed_costs.cost_for_speed_type(mark_speed),
-                    )
-                })
-            else {
-                break 'mark AcceptedCellResult::Ghost;
-            };
-            let selected_occupation = if bridge_layer_selected {
-                sim.substrate.raw_cell_occupation.deck_bits(cell.0, cell.1)
-            } else {
-                sim.substrate
-                    .raw_cell_occupation
-                    .ground_bits(cell.0, cell.1)
-            };
-            // `CellClass::CheckCellPassability @ 0x004834A0` applies both native
-            // occupation filters; their intersection is exactly bit 0x40. Other
-            // raw occupation bits do not reject this Mark admission.
-            if selected_occupation & OBJECT_OCCUPATION_BIT != 0 {
-                if let Some(full_rules) = full_rules {
-                    spawn_crate_cell_anim(
-                        sim,
-                        full_rules,
-                        overlay_registry,
-                        cell,
-                        selected_flags.cell_anim.as_deref(),
-                        lighting_profile,
-                    );
-                }
-                recalc_real_crate_mark_cell(sim, overlay_registry, cell);
-                break 'mark AcceptedCellResult::Ghost;
-            }
-            if !bridge_layer_selected && selected_speed_cost == Some(0) {
-                if let Some(full_rules) = full_rules {
-                    spawn_crate_cell_anim(
-                        sim,
-                        full_rules,
-                        overlay_registry,
-                        cell,
-                        selected_flags.cell_anim.as_deref(),
-                        lighting_profile,
-                    );
-                }
-                recalc_real_crate_mark_cell(sim, overlay_registry, cell);
-                break 'mark AcceptedCellResult::Ghost;
-            }
+        if forced_failure != ForcedPostPrecheckFailure::None {
+            return AcceptedCellResult::Ghost;
         }
 
-        let wrote = write_real_crate_mark_fields(
-            sim,
-            overlay_registry,
-            cell,
-            selected_id,
-            high_bridge_data.unwrap_or(0),
-        );
-        if wrote && selected_flags.land == LandType::Road {
-            set_crate_mark_data(sim, cell, 1);
+        let Some(selected_flags) = overlay_registry.flags(selected_id).cloned() else {
+            return AcceptedCellResult::Ghost;
+        };
+        // Original5FC380 constructs Object/Abstract and joins all five registries
+        // before its Terrain/Unlimbo/Mark gates. Reuse the authored/runtime owner:
+        // an ordinary crate spends an ID even though Mark immediately UnInit's
+        // this transient object. Evidence: trigger_crate money.lifecycle and the
+        // shared bridge_constructor corpus. Allocate before a nested CellAnim.
+        let stable_id = sim.allocate_stable_id();
+        let handle = sim
+            .load_objects
+            .construct_overlay(stable_id, cell, || {
+                crate::sim::native_identity::NativeUniqueIdCursor::assign_runtime(
+                    &mut sim.native_unique_ids,
+                )
+            })
+            .expect("crate Overlay constructor must join its owned registries");
+        // `OverlayClass::OverlayClass @ 0x005FC380` performs the TerrainClass scan
+        // before calling Unlimbo. A hit skips Unlimbo, so Mark never reaches its
+        // slope, bridge, CellAnim, or common RecalcAttributes paths.
+        if sim.production.terrain_object_cells.contains_key(&cell) {
+            sim.load_objects
+                .finish_unrevealed_survivor(handle)
+                .expect("Terrain-refused crate retains its constructed Overlay");
+            return AcceptedCellResult::Ghost;
+        }
+        let Some(slope_type) = sim
+            .resolved_terrain
+            .as_ref()
+            .and_then(|terrain| terrain.cell(cell.0, cell.1))
+            .map(|terrain_cell| terrain_cell.slope_type)
+        else {
+            sim.load_objects
+                .finish_unrevealed_survivor(handle)
+                .expect("an unavailable crate cell cannot reveal its Overlay");
+            return AcceptedCellResult::Ghost;
+        };
+        let dirty_cell = sim
+            .load_objects
+            .begin_mark(handle, None)
+            .expect("crate Overlay enters Mark once");
+        sim.tactical_dirty_cells.push(dirty_cell);
+        // `OverlayClass::Mark @ 0x005FC5D9..0x005FC5E3`: every derived branch,
+        // including the hard-coded bridge and TS-legacy identities, shares this
+        // gate before any overlay write or branch-local Scenario draw.
+        if !crate::sim::overlay_grid::overlay_mark_accepts_slope(selected_id, slope_type) {
+            sim.load_objects
+                .finish_slope_survivor(handle)
+                .expect("steep-slope crate retains its live limbo Overlay");
+            return AcceptedCellResult::Ghost;
+        }
+
+        // All derived arms below share Mark's ordinary UnInit/deferred tail,
+        // except a wall refusal, which additionally performs full Limbo. Keep
+        // that lifecycle exit outside the cell mutation's early-return paths.
+        let mut wall_rejected = false;
+        let result = 'mark: {
+            // The four high-anchor identities call their bridge setter first, then
+            // continue through Mark's ordinary precedence. The setters write raw data
+            // on anchor/F1/F2/opposite even before any overlay identity exists.
+            let high_bridge_data =
+                high_bridge_stamp_for_overlay(selected_id).map(|(family, direction)| {
+                    let stamp = BridgeFlagStamp::new(cell, direction, true);
+                    let data = if direction == 0 { 0 } else { 9 };
+                    apply_high_bridge_crate_setter(sim, stamp, family, data);
+                    data
+                });
+
+            // GSI-18.01 is explicitly excluded by the Phase 14 contract: these two
+            // hard-coded branches are the TS veins/veinhole carryover. Preserve crate
+            // admission/timer behavior but do not port their legacy world mutation.
+            if matches!(selected_id, 0x7E | 0xA7) {
+                recalc_real_crate_mark_cell(sim, overlay_registry, cell);
+                break 'mark AcceptedCellResult::Ghost;
+            }
+
+            if selected_flags.land == LandType::Railroad {
+                let wrote =
+                    write_real_crate_mark_fields(sim, overlay_registry, cell, selected_id, 0);
+                recalc_real_crate_mark_cell(sim, overlay_registry, cell);
+                break 'mark if wrote {
+                    AcceptedCellResult::Visible
+                } else {
+                    AcceptedCellResult::Ghost
+                };
+            }
+
+            if selected_flags.wall {
+                // Both crate image branches pass constructor discriminator-1
+                // (4A1966/4A1983). Reuse the owner-neutral5FC6F4 wall Mark arm;
+                // its hosted cleanup and retained neighbor counts are synchronous.
+                let wall_passes = full_rules.is_some_and(|full_rules| {
+                    crate::sim::production::mark_wall(
+                        sim,
+                        full_rules,
+                        overlay_registry,
+                        cell.0,
+                        cell.1,
+                        selected_id,
+                    )
+                });
+                if !wall_passes {
+                    wall_rejected = true;
+                    break 'mark AcceptedCellResult::Ghost;
+                }
+                break 'mark AcceptedCellResult::Visible;
+            }
+
+            if let Some(spec) = LowBridgeCrateSpec::for_trigger(selected_id) {
+                let visible = execute_low_bridge_crate_mark(sim, overlay_registry, cell, spec);
+                break 'mark if visible {
+                    AcceptedCellResult::Visible
+                } else {
+                    AcceptedCellResult::Ghost
+                };
+            }
+
+            // `OverlayClass__Mark @ 0x005FC570` compares live Rules pointers, with
+            // Water first. Numeric registry identity is the Rust-native pointer alias.
+            let mark_speed = if Some(selected_id) == water_id {
+                SpeedType::Float
+            } else if Some(selected_id) == crate_id || Some(selected_id) == wood_id {
+                SpeedType::Track
+            } else {
+                break 'mark AcceptedCellResult::Ghost;
+            };
+
+            // `OverlayClass::Mark @ 0x005FCFE7..0x005FD003` forces passability true
+            // for the four high-anchor IDs after their setter. This is an explicit
+            // identity bypass, not an inferred consequence of selecting deck facts;
+            // even a nonzero deck occupation byte does not reject the ordinary tail.
+            if high_bridge_data.is_none() {
+                let Some((bridge_layer_selected, selected_speed_cost)) = sim
+                    .resolved_terrain
+                    .as_ref()
+                    .and_then(|terrain| terrain.cell(cell.0, cell.1))
+                    .map(|terrain_cell| {
+                        (
+                            terrain_cell.bridge_facts.raw_flags & BRIDGE_FLAG_STRUCTURAL != 0,
+                            terrain_cell.speed_costs.cost_for_speed_type(mark_speed),
+                        )
+                    })
+                else {
+                    break 'mark AcceptedCellResult::Ghost;
+                };
+                let selected_occupation = if bridge_layer_selected {
+                    sim.substrate.raw_cell_occupation.deck_bits(cell.0, cell.1)
+                } else {
+                    sim.substrate
+                        .raw_cell_occupation
+                        .ground_bits(cell.0, cell.1)
+                };
+                // `CellClass::CheckCellPassability @ 0x004834A0` applies both native
+                // occupation filters; their intersection is exactly bit 0x40. Other
+                // raw occupation bits do not reject this Mark admission.
+                if selected_occupation & OBJECT_OCCUPATION_BIT != 0 {
+                    if let Some(full_rules) = full_rules {
+                        spawn_crate_cell_anim(
+                            sim,
+                            full_rules,
+                            overlay_registry,
+                            cell,
+                            selected_flags.cell_anim.as_deref(),
+                            lighting_profile,
+                        );
+                    }
+                    recalc_real_crate_mark_cell(sim, overlay_registry, cell);
+                    break 'mark AcceptedCellResult::Ghost;
+                }
+                if !bridge_layer_selected && selected_speed_cost == Some(0) {
+                    if let Some(full_rules) = full_rules {
+                        spawn_crate_cell_anim(
+                            sim,
+                            full_rules,
+                            overlay_registry,
+                            cell,
+                            selected_flags.cell_anim.as_deref(),
+                            lighting_profile,
+                        );
+                    }
+                    recalc_real_crate_mark_cell(sim, overlay_registry, cell);
+                    break 'mark AcceptedCellResult::Ghost;
+                }
+            }
+
+            let wrote = write_real_crate_mark_fields(
+                sim,
+                overlay_registry,
+                cell,
+                selected_id,
+                high_bridge_data.unwrap_or(0),
+            );
+            if wrote && selected_flags.land == LandType::Road {
+                set_crate_mark_data(sim, cell, 1);
+                if let Some(full_rules) = full_rules {
+                    spread_cell_germinate_without_randomization(
+                        sim,
+                        full_rules,
+                        overlay_registry,
+                        (cell.0 as i16, cell.1 as i16),
+                    );
+                }
+            }
+            if wrote && selected_flags.crate_type {
+                set_crate_mark_data(sim, cell, u8::MAX);
+            }
             if let Some(full_rules) = full_rules {
-                spread_cell_germinate_without_randomization(
+                spawn_crate_cell_anim(
                     sim,
                     full_rules,
                     overlay_registry,
-                    (cell.0 as i16, cell.1 as i16),
+                    cell,
+                    selected_flags.cell_anim.as_deref(),
+                    lighting_profile,
                 );
             }
-        }
-        if wrote && selected_flags.crate_type {
-            set_crate_mark_data(sim, cell, u8::MAX);
-        }
-        if let Some(full_rules) = full_rules {
-            spawn_crate_cell_anim(
-                sim,
-                full_rules,
-                overlay_registry,
-                cell,
-                selected_flags.cell_anim.as_deref(),
-                lighting_profile,
-            );
-        }
-        recalc_real_crate_mark_cell(sim, overlay_registry, cell);
-        if wrote
-            && sim
-                .overlay_grid
-                .as_ref()
-                .is_some_and(|grid| grid.cell(cell.0, cell.1).overlay_id.is_some())
-        {
-            AcceptedCellResult::Visible
+            recalc_real_crate_mark_cell(sim, overlay_registry, cell);
+            if wrote
+                && sim
+                    .overlay_grid
+                    .as_ref()
+                    .is_some_and(|grid| grid.cell(cell.0, cell.1).overlay_id.is_some())
+            {
+                AcceptedCellResult::Visible
+            } else {
+                AcceptedCellResult::Ghost
+            }
+        };
+        if wall_rejected {
+            sim.load_objects
+                .finish_wall_reject(handle, &mut sim.substrate.pending_delete)
+                .expect("refused wall crate completes its shared Overlay lifecycle");
         } else {
-            AcceptedCellResult::Ghost
+            sim.load_objects
+                .finish_common(handle, &mut sim.substrate.pending_delete)
+                .expect("crate Mark completes its shared Overlay lifecycle");
         }
-    };
-    if wall_rejected {
-        sim.load_objects
-            .finish_wall_reject(handle, &mut sim.substrate.pending_delete)
-            .expect("refused wall crate completes its shared Overlay lifecycle");
-    } else {
-        sim.load_objects
-            .finish_common(handle, &mut sim.substrate.pending_delete)
-            .expect("crate Mark completes its shared Overlay lifecycle");
-    }
-    result
+        result
+    })
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -2439,6 +2424,102 @@ pub(crate) mod tests {
         assert_eq!(
             blocked
                 .overlay_grid
+                .as_ref()
+                .unwrap()
+                .cell(cell.0, cell.1)
+                .overlay_id,
+            None
+        );
+    }
+
+    #[test]
+    fn wall_crate_mark_preserves_cell_metadata_and_publishes_retained_neighbors() {
+        let registry = dense_registry(0, &[(0, "WALLCRATE", "Wall=yes\nLand=Wall\n")]);
+        let rules = crate_ruleset_with_images(
+            "WALLCRATE",
+            "WALLCRATE",
+            "WALLCRATE",
+            "[Clear]\nTrack=100%\n",
+        );
+        let mut sim = sim_with_grid(0x1409_0004);
+        let cell = (12, 13);
+        let retained_owner = sim.interner.intern("RetainedOwner");
+        let rubble = sim.interner.intern("RetainedRubble");
+        {
+            let grid = sim.overlay_grid.as_mut().unwrap();
+            let target = grid.cell_mut(cell.0, cell.1);
+            target.wall_owner = Some(retained_owner);
+            target.rubble_building_type = Some(rubble);
+            target.overlay_data = u8::MAX;
+        }
+
+        let result = sim.with_object_placement_scope(|sim| {
+            let result = validate_and_stamp_candidate_with_rules(
+                sim,
+                &rules,
+                &registry,
+                cell,
+                ForcedPostPrecheckFailure::None,
+            );
+            assert!(sim.object_placement_scope_active());
+            result
+        });
+        assert_eq!(result, AcceptedCellResult::Visible);
+        assert!(!sim.object_placement_scope_active());
+        let grid = sim.overlay_grid.as_ref().unwrap();
+        let marked = grid.cell(cell.0, cell.1);
+        assert_eq!((marked.overlay_id, marked.overlay_data), (Some(0), 0));
+        assert_eq!(marked.wall_owner, Some(retained_owner));
+        assert_eq!(marked.rubble_building_type, Some(rubble));
+        //5FC75A..775 contributes to eight neighboring Cell+122 bytes,
+        //not the source; later Foot/wall cleanup consumes this retained plane.
+        let counts = grid.retained_neighbor_counts();
+        let at = |x: u16, y: u16| counts[usize::from(y) * usize::from(MAP) + usize::from(x)];
+        assert_eq!(at(cell.0 - 1, cell.1), 1);
+        assert_eq!(at(cell.0 + 1, cell.1 - 1), 1);
+        assert_eq!(at(cell.0, cell.1), 0);
+        assert_eq!(
+            counts
+                .iter()
+                .map(|&count| usize::from(count))
+                .sum::<usize>(),
+            8
+        );
+        assert!(sim.radar_terrain_dirty_cells.contains(&cell));
+        assert!(sim.tactical_dirty_cells.contains(&(cell.0 - 1, cell.1)));
+    }
+
+    #[test]
+    fn wall_crate_mark_clears_and_restores_nested_placement_scope_on_refusal() {
+        let registry = dense_registry(0, &[(0, "WALLCRATE", "Wall=yes\nLand=Wall\n")]);
+        let rules = crate_ruleset_with_images(
+            "WALLCRATE",
+            "WALLCRATE",
+            "WALLCRATE",
+            "[Clear]\nBuildable=yes\nTrack=0%\n",
+        );
+        let mut sim = sim_with_grid(0x1409_0005);
+        let cell = (12, 13);
+        sim.with_object_placement_scope(|sim| {
+            sim.with_object_placement_scope(|sim| {
+                assert_eq!(
+                    validate_and_stamp_candidate_with_rules(
+                        sim,
+                        &rules,
+                        &registry,
+                        cell,
+                        ForcedPostPrecheckFailure::None,
+                    ),
+                    AcceptedCellResult::Ghost,
+                    "4A190B's cleared scope must not bypass Track admission"
+                );
+                assert!(sim.object_placement_scope_active());
+            });
+            assert!(sim.object_placement_scope_active());
+        });
+        assert!(!sim.object_placement_scope_active());
+        assert_eq!(
+            sim.overlay_grid
                 .as_ref()
                 .unwrap()
                 .cell(cell.0, cell.1)

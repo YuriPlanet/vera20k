@@ -47,6 +47,13 @@ pub(crate) fn drawing_rows() -> impl Iterator<Item = &'static Value> {
         .as_array()
         .unwrap()
         .iter()
+        .chain(
+            crate::test_fixture::json("tools/procedural_drawing_oracle/chrono_beam.json")
+                ["geometry_rows"]
+                .as_array()
+                .unwrap()
+                .iter(),
+        )
         // Ordinary SpawnRadBeam never disables its drawing flag. The
         // retained disabled control documents that separate caller domain.
         .filter(|row| row["input"]["draw_enabled"] != false)

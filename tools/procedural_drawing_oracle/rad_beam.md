@@ -6,6 +6,10 @@ math/RNG, memory surface, allocator and raster owners. Python supplies declared
 component inputs and records native outputs; it implements no FLH transform,
 beam geometry, FPS expression, trigonometry, clipping or pixel formula.
 
+The opt-in [`--chrono` variant](chrono_beam.md) uses this same producer for CLEG
+mode1 with separate inputs and output files. Omitting that flag retains this
+DESO corpus, its schema and its provenance independently.
+
 From the repository root, after freezing the producer and its imported sources:
 
 ```sh

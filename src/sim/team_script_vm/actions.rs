@@ -18,7 +18,7 @@
 //!
 //! RESIDUALS:
 //! - Actions other than 0, 1, 2, 3, 5, 6, 8, 9, 11, 14, 16, 17, 19, 20, 21, 24, 30, 37, 39, 40, 42, 43,
-//!   46, 47, 49, 50, 53, 54, 55, 57, 58, 59, 61, 62, 63 and 64 are not ported. A team
+//!   46, 47, 49, 50, 53, 54, 55, 57, 58, 59, 60, 61, 62, 63 and 64 are not ported. A team
 //!   that reaches one stays on it, as a native handler that has not
 //!   finished does, and records the first as its refusal; the rest of its
 //!   update runs. Trigger: none of the 163 retail AIMD TeamTypes reaches
@@ -148,6 +148,7 @@ pub(super) const fn action_is_ported(action_id: i32) -> bool {
             | 57
             | 58
             | 59
+            | 60
             | 61
             | 62
             | 63
@@ -633,16 +634,17 @@ impl Simulation {
                 registry,
                 frame_effects,
             ),
+            // `0x006E9DF9..0x006E9E3D` (60),
             // `0x006E9E3E..0x006E9E82` (61), `0x006E9E83..0x006E9EC7` (62)
             // and `0x006E9EC8..` (63): each member, in list order, seeks a
-            // tank bunker (Foot vt+0x344, [`Self::foot_enter_tank_bunker`]),
+            // grinder (vt+0x33C), tank bunker (Foot vt+0x344),
             // a Bio Reactor (vt+0x340, [`Self::foot_enter_bio_reactor`]) or
             // an occupiable building (vt+0x348,
             // [`Self::foot_enter_battle_bunker`]); one that finds one leaves
             // the team (`Remove_Member(member, -1, 1)`, `0x006E9E69`,
             // `0x006E9EAE`, `0x006E9EF3`). The action is finished at once,
             // also with no member (`0x006E953E`).
-            61..=63 => {
+            60..=63 => {
                 let members: Vec<u64> = self
                     .team_script_vm
                     .teams
@@ -651,6 +653,7 @@ impl Simulation {
                     .unwrap_or_default();
                 for member in members {
                     let found = match action.action_id {
+                        60 => self.foot_enter_grinder(member, rules, registry, frame_effects),
                         61 => self.foot_enter_tank_bunker(member, rules, registry, frame_effects),
                         62 => self.foot_enter_bio_reactor(member, rules, registry, frame_effects),
                         _ => self.foot_enter_battle_bunker(member, rules, registry, frame_effects),

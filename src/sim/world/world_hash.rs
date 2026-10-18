@@ -1177,6 +1177,7 @@ impl Simulation {
         self.hash_factory_registry(hasher); // P5b: the authoritative factory registry
 
         // Live ore/gem identity and quantity are folded by `hash_overlay_grid`.
+        self.production.ore_growth_config.hash_enabled(hasher);
         self.production
             .ore_growth_state
             .hash_state(hasher, retired_tiberium_fold);

@@ -2,7 +2,7 @@ use super::*;
 
 /// The random-map seed file the `.SED` launch branch recognises. Written into
 /// the RA2 directory so `map_load` finds it where the original puts it.
-const RANDMAP_SED_FILE: &str = "RandMap.Sed";
+pub(crate) const RANDMAP_SED_FILE: &str = "RandMap.Sed";
 /// Description the setup dialog stamps onto a randomized configuration; it also
 /// becomes the sentinel row's displayed name.
 pub(super) const RANDOM_MAP_DESCRIPTION_KEY: &str = "TXT_RANDOM_MAP_DESCRIPTION";
@@ -2122,3 +2122,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "random_map_ramp_end_tests.rs"]
+mod ramp_end_tests;

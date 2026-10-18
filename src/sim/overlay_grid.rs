@@ -19,6 +19,13 @@ use crate::util::direction_tables::CELL_DELTAS;
 use crate::util::native_x87::object_distance;
 use std::collections::BTreeSet;
 
+/// OverlayClass::Mark5FC5D9..5FC5E3: the common unsigned slope gate,
+/// before Railroad, Wall and other derived arms. Literal0xB2 is exempt.
+/// Source: original gamemd; trigger-crate and wall-autofill controls.
+pub(crate) const fn overlay_mark_accepts_slope(overlay_id: u8, slope: u8) -> bool {
+    slope <= MARK_MAX_SLOPE || overlay_id == MARK_STEEP_SLOPE_EXCEPTION_ID
+}
+
 /// The overlay index `BuildingClass::AfterDestruction` stamps on a destroyed
 /// building's foundation (`MOV [ESI+0x44],0xEF` at `0x0044202C`). Retail
 /// `[OverlayTypes]` puts `RUBBLE_OVERLAY` (`IsRubble=yes`) there.
@@ -26,11 +33,6 @@ pub const RUBBLE_OVERLAY_INDEX: u8 = 0xEF;
 
 const MARK_MAX_SLOPE: u8 = 4;
 const MARK_STEEP_SLOPE_EXCEPTION_ID: u8 = 0xB2;
-
-/// Universal pre-stamp slope gate shared by native-style Mark entry points.
-fn mark_rejects_steep_slope(slope_type: u8, overlay_id: u8) -> bool {
-    slope_type > MARK_MAX_SLOPE && overlay_id != MARK_STEEP_SLOPE_EXCEPTION_ID
-}
 
 /// Building facts consumed by the one-shot map-wall owner reconstruction pass.
 /// Callers preserve BuildingClass allocation order in this slice.
@@ -375,7 +377,7 @@ impl OverlayGrid {
                     && !(game_mode_nonzero && flags.crate_type)
             });
             if let Some(flags) = accepted_flags
-                && !mark_rejects_steep_slope(slope_type, entry.overlay_id)
+                && overlay_mark_accepts_slope(entry.overlay_id, slope_type)
             {
                 let idx = entry.ry as usize * width as usize + entry.rx as usize;
                 grid.cells[idx] = OverlayCell {
@@ -649,9 +651,9 @@ impl OverlayGrid {
     }
 
     /// Write the two literal CellClass overlay fields without running the
-    /// common `RecalcAttributes` tail yet. Ordinary Mark needs this split so
-    /// Road germination, the Crate-data override, and CellAnim construction
-    /// occur in their native order before the tail recalc.
+    /// common `RecalcAttributes` tail yet. Runtime Mark needs this split so
+    /// Wall cleanup, Road germination, the Crate-data override, and CellAnim
+    /// construction occur in their native order before the tail recalc.
     pub(crate) fn write_crate_mark_fields(
         &mut self,
         resolved_terrain: &mut ResolvedTerrainGrid,
@@ -661,14 +663,19 @@ impl OverlayGrid {
         overlay_id: u8,
         overlay_data: u8,
     ) -> bool {
-        self.write_identity_fields(
-            resolved_terrain,
-            registry,
-            (rx, ry),
-            overlay_id,
-            Some(overlay_data),
-        )
-        .is_some()
+        let wrote = self
+            .write_identity_fields(
+                resolved_terrain,
+                registry,
+                (rx, ry),
+                overlay_id,
+                Some(overlay_data),
+            )
+            .is_some();
+        if wrote {
+            self.mutation_epoch = self.mutation_epoch.wrapping_add(1);
+        }
+        wrote
     }
 
     /// `BuildingClass::AfterDestruction @ 0x00441F60`'s foundation-cell
@@ -927,9 +934,9 @@ impl OverlayGrid {
         self.set_wall_owner(rx, ry, owner);
     }
 
-    /// Stamp runtime wall identity/data before native cleanup. OverlayClass::Mark
-    /// does not make its pending House visible until cleanup and the explicit
-    /// anchor Merge/graph step have completed.
+    /// Initialize a test wall fixture before assigning its owner. Runtime
+    /// OverlayClass::Mark uses `write_crate_mark_fields` to retain cell state.
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn stamp_wall_identity(&mut self, rx: u16, ry: u16, overlay_id: u8, data: u8) {
         self.mutation_epoch = self.mutation_epoch.wrapping_add(1);
         if let Some(idx) = index_of(self.width, self.height, rx, ry) {

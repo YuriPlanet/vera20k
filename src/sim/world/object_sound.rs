@@ -131,7 +131,8 @@ impl Simulation {
         rules: Option<&RuleSet>,
         effects: FrameEffects<'_>,
     ) -> bool {
-        let Some([x, y, z]) = waypoint.and_then(|index| self.trigger_waypoint_coord(index as i32))
+        let Some([x, y, z]) =
+            waypoint.and_then(|index| self.trigger_waypoint_location(index as i32))
         else {
             return false;
         };
@@ -164,7 +165,8 @@ impl Simulation {
         rules: Option<&RuleSet>,
         effects: FrameEffects<'_>,
     ) -> bool {
-        let Some([x, y, z]) = waypoint.and_then(|index| self.trigger_waypoint_coord(index as i32))
+        let Some([x, y, z]) =
+            waypoint.and_then(|index| self.trigger_waypoint_location(index as i32))
         else {
             return false;
         };

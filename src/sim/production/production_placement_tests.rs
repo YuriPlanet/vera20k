@@ -2165,14 +2165,20 @@ fn gsi_04_07_regular_wall_autofill_is_cardinal_ordered_bounded_and_consumes_once
     assert!(retained.object.is_none() && retained.queue.is_empty());
     assert_eq!(retained.progress, 0);
     assert!(!retained.is_running());
-    assert_eq!(
-        sim.scenario_rng.logical_state(),
-        expected_rng.logical_state()
-    );
-    assert!(
-        sim.substrate.entities.get(held_id).is_none(),
-        "wall placement must destroy the consumed Factory+0x58 entity"
-    );
+    // Each filler now reaches the shared constructor's Scenario draw. The
+    // consumed original-code corpus compares full streams and request order;
+    // this larger cardinal fixture checks that placement no longer skips them.
+    assert!(sim.scenario_rng.logical_state() != expected_rng.logical_state());
+    let retained = sim.substrate.entities.get(held_id).unwrap();
+    assert!(!retained.lifecycle.object_alive() && retained.lifecycle.in_limbo());
+    let pending: Vec<_> = sim.substrate.pending_delete.object_tickets().collect();
+    assert_eq!(pending.len(), 1 + expected.len());
+    assert_eq!(pending[0], held_id, "origin queues before the fillers");
+    for id in pending {
+        let object = sim.substrate.entities.get(id).unwrap();
+        assert_eq!(object.type_ref(), wall_type);
+        assert!(!object.lifecycle.object_alive() && object.lifecycle.in_limbo());
+    }
     assert_eq!(
         credits_for_owner(&sim, "Americans"),
         placement_credits,
@@ -2206,6 +2212,7 @@ fn gsi_04_07_regular_wall_autofill_is_cardinal_ordered_bounded_and_consumes_once
     let mut expected_tactical = Vec::new();
     for (rx, ry) in std::iter::once(origin).chain(expected.iter().copied()) {
         expected_tactical.extend([
+            (rx, ry), // Object5F64B0 base Mark dirties before the wall arm.
             (rx, ry - 1),
             (rx + 1, ry),
             (rx, ry + 1),
@@ -2457,7 +2464,11 @@ fn gsi_04_07_wall_placement_publishes_connectivity_neighbor_auto_destruction() {
         "cleanup removal must broadcast CellClass pointer expiry before returning"
     );
     let expected_dirty = vec![(12, 9), (13, 10), (12, 11), (11, 10), (12, 10)];
-    assert_eq!(sim.tactical_dirty_cells, expected_dirty);
+    // Object base Mark publishes the anchor before wall connectivity's
+    // existing N/E/S/W/self visits; radar belongs to connectivity only.
+    let mut expected_tactical = vec![(12, 10)];
+    expected_tactical.extend_from_slice(&expected_dirty);
+    assert_eq!(sim.tactical_dirty_cells, expected_tactical);
     assert_eq!(sim.radar_terrain_dirty_cells, expected_dirty);
     assert_eq!(
         sim.radar_terrain_dirty_generation, 5,
@@ -3492,10 +3503,9 @@ fn wall_mark_rejects_buildable_ground_that_track_cannot_enter() {
     );
     let mut sim = placement_sim();
     sim.overlay_grid = Some(OverlayGrid::new(64, 64));
-    let owner = sim.intern("WallOwner");
     let before = sim.state_hash();
-    assert!(!super::wall_placement::stamp_wall(
-        &mut sim, &rules, &registry, 12, 12, 0, owner
+    assert!(!super::wall_placement::mark_wall(
+        &mut sim, &rules, &registry, 12, 12, 0
     ));
     assert_eq!(
         sim.state_hash(),
@@ -3518,9 +3528,8 @@ fn retained_wall_plane_runtime_placement_and_damage_update_once() {
     let mut sim = placement_sim();
     sim.resolved_terrain = Some(resolved_clear_grid_with_override(5, 5, |_| {}));
     sim.overlay_grid = Some(OverlayGrid::new(5, 5));
-    let owner = sim.interner.intern("WallOwner");
-    assert!(super::wall_placement::stamp_wall(
-        &mut sim, &rules, &registry, 2, 2, 0, owner
+    assert!(super::wall_placement::mark_wall(
+        &mut sim, &rules, &registry, 2, 2, 0
     ));
     let mut grid = sim.overlay_grid.take().unwrap();
     let mut terrain = sim.resolved_terrain.take().unwrap();
@@ -3591,9 +3600,8 @@ fn retained_wall_plane_placement_reaches_fixed_stride_alias() {
         .as_mut()
         .unwrap()
         .place_overlay(511, 0, 0, 0);
-    let owner = sim.interner.intern("WallOwner");
-    assert!(super::wall_placement::stamp_wall(
-        &mut sim, &rules, &registry, 0, 1, 0, owner
+    assert!(super::wall_placement::mark_wall(
+        &mut sim, &rules, &registry, 0, 1, 0
     ));
     let alias_grid = sim.overlay_grid.as_ref().unwrap();
     assert_eq!(

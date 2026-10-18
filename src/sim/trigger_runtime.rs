@@ -371,15 +371,17 @@ impl RuntimeDefinitions {
                     .linked_trigger_id
                     .as_deref()
                     .and_then(|name| definitions.trigger_type(name));
-                let events = map
+                let mut events = map
                     .events
                     .get(&id)
                     .map_or_else(Vec::new, |record| record.conditions.clone());
                 // Events are prepended, but their reference factories ran in
                 // source order before the retained reverse traversal.
-                for event in events.iter().rev() {
+                for event in events.iter_mut().rev() {
                     if let Some(team) = event.team_name.as_deref() {
-                        definitions.team_type(team);
+                        event.team_name = definitions
+                            .team_type(team)
+                            .map(|index| definitions.team_types[index].clone());
                     }
                 }
                 let actions = map
@@ -1623,7 +1625,61 @@ impl Simulation {
             .condition
             .clone();
         match condition.kind {
+            23 => {
+                //71EC9A gate, then71EEA9 scans all Teams for the retained
+                //Type pointer, null head and nonzero leaving byte. A match
+                //sets persistence before the generic true tail; a null
+                //incoming House skips that scan without latching.
+                if input.kind != 23 || self.buildup_bypass_active() {
+                    return false;
+                }
+                if incoming_house.is_none() {
+                    return true;
+                }
+                let team_type = match condition.team_name.as_deref() {
+                    Some(name) => {
+                        let Some(id) = self.interner.get(name) else {
+                            return false;
+                        };
+                        Some(id)
+                    }
+                    None => None,
+                };
+                if self.team_script_vm.has_empty_leaving_team(team_type) {
+                    *persistence = true;
+                    true
+                } else {
+                    false
+                }
+            }
+            34 => {
+                //71EDBB..71EE54: 68BD00 waypoint Location versus actor
+                //GetCoords, signed wrapping deltas, sqrtApprox/ftol <=1280.
+                //No persistence, Event+54, timer, RNG or detach write.
+                if input.kind != 34 || self.buildup_bypass_active() {
+                    return false;
+                }
+                let Some(waypoint) = self.trigger_waypoint_location(condition.value) else {
+                    return false;
+                };
+                let Some(actor) = input.actor.and_then(|id| self.substrate.entities.get(id)) else {
+                    return false;
+                };
+                let point = crate::sim::movement::ground_pose::object_get_coords(
+                    actor,
+                    self.resolved_terrain.as_ref(),
+                );
+                crate::util::native_x87::distance_3d_leptons([point.x, point.y, point.z], waypoint)
+                    <= 0x500
+            }
             14 => self.session.scenario_timer_elapsed(),
+            // HasOccurred45@71EAE7 /46@71EB06 read Scenario+352C,
+            // not normal/target ambient: signed inclusive comparisons with
+            // Event+34. Both return directly, without House/raised-kind or
+            // A8ED6B admission, persistence, timer, RNG or detach writes.
+            // Original Steam gamemd3e81a617..08600, instruction reading.
+            45 => self.session.lighting.current_ambient <= condition.value,
+            46 => self.session.lighting.current_ambient >= condition.value,
             17 => {
                 // Steam3e81a617..08600:71EE82 takes the incoming House;
                 // 71EF3F..71EF89 reads tracked+2F0, then its ordered+68 list.
@@ -2041,6 +2097,41 @@ impl Simulation {
                 overlay_registry,
                 frame_effects,
             );
+        }
+        self.publish_trigger_effects(effects);
+    }
+
+    /// Recalc6EA49F..6EA4D2 walks the current Tag array backwards before
+    /// destroying an empty, previously-full leaving Team. No own RNG draws,
+    /// timers or detach: ordinary Register/Reset/actions own those effects.
+    pub(crate) fn raise_team_left_map_tags(
+        &mut self,
+        rules: &crate::rules::ruleset::RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        frame_effects: FrameEffects<'_>,
+    ) {
+        let count = self.trigger_runtime.tag_order.len();
+        let mut effects = Vec::new();
+        for ordinal in (0..count).rev() {
+            // As with House tag traversal, shrinking callbacks can leave a
+            // stale native slot beyond the new count; Rust skips that slot.
+            let Some(&tag) = self.trigger_runtime.tag_order.get(ordinal) else {
+                continue;
+            };
+            if self.dispatch_live_tag_event(
+                tag,
+                TagEventInput {
+                    kind: 23,
+                    ..Default::default()
+                },
+                &mut effects,
+                Some(rules),
+                registry,
+                frame_effects,
+            ) && self.trigger_runtime.tag_order.is_empty()
+            {
+                break;
+            }
         }
         self.publish_trigger_effects(effects);
     }
@@ -3604,6 +3695,40 @@ impl Simulation {
                 self.sound_events.push(SimSoundEvent::TriggerEva { index });
                 frame_effects.flush_sound(self, rules);
             }
+            59 => {
+                let (Some(rules), Some(registry), Some(waypoint)) =
+                    (rules, overlay_registry, value)
+                else {
+                    return false;
+                };
+                return self.trigger_reduce_tiberium_at_waypoint(waypoint, rules, registry);
+            }
+            86 => {
+                let Some(value) = value else {
+                    return false;
+                };
+                self.production
+                    .ore_growth_config
+                    .set_enabled_from_trigger(value);
+            }
+            88 => {
+                let (Some(rules), Some(index), Some(waypoint)) =
+                    (rules, value, action.waypoint_index)
+                else {
+                    return false;
+                };
+                return self.trigger_create_particle_system_at_waypoint(
+                    index,
+                    waypoint as i32,
+                    rules,
+                );
+            }
+            89 => {
+                let Some(waypoint) = action.waypoint_index else {
+                    return false;
+                };
+                return self.trigger_mark_particle_systems_done_at_waypoint(waypoint as i32);
+            }
             41 => {
                 let (Some(rules), Some(index), Some(waypoint)) =
                     (rules, value, action.waypoint_index)
@@ -3721,28 +3846,41 @@ impl Simulation {
                 let storm = crate::sim::superweapon::lightning_storm::raging(self);
                 self.session.lighting.set_ambient_light(value, storm);
             }
-            66 => {
+            64..=66 => {
                 let (Some(rules), Some(waypoint)) = (rules, value) else {
                     return false;
                 };
-                // Execute6DDEA0..6DDEF5 uses +90, not the +44 tail waypoint.
+                // Execute64/65/66 at6DDDF6/6DDE4B/6DDEA0 uses +90,
+                // not the +44 tail waypoint, with damage50/100/300.
                 // The same C4 reference/coordinate/Flash owners serve ordinary
                 // impacts; stock C4=Super is not Bright, so materializes no
                 // light. Do not force a screen/nuke flash from the action name.
                 // Native: trigger_map_lighting.json flash_controls (+meta).
-                let Some([x, y, z]) = self.trigger_waypoint_coord(waypoint) else {
+                let Some([x, y, z]) = self.trigger_waypoint_location(waypoint) else {
                     return false;
                 };
                 let warhead_ref = self.interner.intern(&rules.bridge_warheads.c4_name);
                 self.combat_light_requests
                     .push(crate::sim::combat::CombatLightRequest::Impact {
                         target_id: None,
-                        damage: 300,
+                        damage: match action.kind {
+                            64 => 50,
+                            65 => 100,
+                            _ => 300,
+                        },
                         warhead_ref,
                         coord: crate::sim::projectile::ProjectileCoord::new(x, y, z),
                         force_create: false,
                         flags: 0,
                     });
+            }
+            71 | 72 => {
+                let Some(bits) = value else {
+                    return false;
+                };
+                self.session
+                    .lighting
+                    .set_ambient_change_input(action.kind == 72, bits);
             }
             ACTION_DAMAGE_AT_WAYPOINT => {
                 let (Some(rules), Some(waypoint)) = (rules, value) else {
@@ -3855,16 +3993,18 @@ impl Simulation {
                     }
                 }
             }
-            135 | 136 => {
-                // Execute1356E43E0/1366E4440 use Spring's incoming House,
-                // ignoring the action's scalar selector. Only135 reads+44;
-                // its packed-zero rejection preserves the previous target.
-                // Identity/controls: tools/spatial_oracle/
-                // trigger_superweapon_state.meta.json.
+            135 | 136 | 140 | 141 => {
+                // Execute1356E43E0/1366E4440 and1406E4460/1416E44C0 use
+                // Spring's incoming House, ignoring scalar+90. Setters135/140
+                // read waypoint+44 and reject the empty cell; clears ignore it.
+                // 140 calls House50DA20: cell+54F4 and current frame+54FC.
+                // 141 calls50DA50: clear cell and restore frame-100.
+                // 135/136 controls: trigger_superweapon_state.meta.json.
+                // 140/141: original Steam gamemd3e81a617..08600 instructions.
                 let Some(owner) = context.incoming_house else {
                     return false;
                 };
-                let preferred = if action.kind == 135 {
+                let target = if matches!(action.kind, 135 | 140) {
                     let Some(cell) = action
                         .waypoint_index
                         .and_then(|index| self.session.waypoint_cell(index as i32))
@@ -3879,10 +4019,16 @@ impl Simulation {
                 let Some(house) = self.houses.get_mut(&owner) else {
                     return false;
                 };
-                if let Some(cell) = preferred {
-                    house.set_preferred_super_weapon_target(cell);
-                } else {
+                if let Some(cell) = target {
+                    if action.kind == 135 {
+                        house.set_preferred_super_weapon_target(cell);
+                    } else {
+                        house.alert_super_weapon_defense(cell, self.session.binary_frame as i32);
+                    }
+                } else if action.kind == 136 {
                     house.clear_preferred_super_weapon_target();
+                } else {
+                    house.clear_super_weapon_defense();
                 }
             }
             90 => {
@@ -4043,6 +4189,10 @@ mod native_tests;
 mod superweapon_state_tests;
 
 #[cfg(test)]
+#[path = "trigger_runtime_defense_target_tests.rs"]
+mod defense_target_tests;
+
+#[cfg(test)]
 #[path = "trigger_runtime_type_tech_level_tests.rs"]
 mod type_tech_level_tests;
 
@@ -4091,12 +4241,28 @@ mod lightning_tests;
 mod explosion_tests;
 
 #[cfg(test)]
+#[path = "trigger_runtime_movement_event_tests.rs"]
+mod movement_event_tests;
+
+#[cfg(test)]
+#[path = "trigger_runtime_ore_tests.rs"]
+mod ore_tests;
+
+#[cfg(test)]
+#[path = "trigger_runtime_particle_tests.rs"]
+mod particle_tests;
+
+#[cfg(test)]
 #[path = "trigger_runtime_map_lighting_tests.rs"]
 mod map_lighting_tests;
 
 #[cfg(test)]
 #[path = "trigger_runtime_tint_tests.rs"]
 mod tint_tests;
+
+#[cfg(test)]
+#[path = "trigger_runtime_ambient_event_tests.rs"]
+mod ambient_event_tests;
 
 #[cfg(test)]
 #[path = "trigger_runtime_nuke_tests.rs"]

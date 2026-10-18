@@ -167,15 +167,17 @@ fn strip_refusal(
 }
 
 /// Whether the sidebar lists `obj` for `owner` ([`strip_keeps`]), and, if it
-/// does, the unlinked cameo's unavailable drawing input: `StripClass::Draw @ 0x006A9540`
-/// (`0x006A97A8..0x006A97F9`) darkens it while no online factory may build
-/// it (`FindFactory(1, 1, 1)`), or while it is at its limit
-/// (`CanBuild(type, 0, 0)` answers -1, or [`check_build_limit`]). A retained
-/// Factory link clears that overlay at6A98D3; the sidebar owner applies it.
+/// does, the unlinked cameo's unavailable drawing input at the moment of the
+/// query: `StripClass::Draw @ 0x006A9540` (`0x006A97A8..0x006A97F9`) darkens
+/// it while no online factory may build it (`FindFactory(1, 1, 1)`), or while
+/// it is at its limit ([`draw_at_build_limit`]). A retained Factory link
+/// clears that overlay at `0x006A98D3`; the sidebar owner applies it.
 ///
-/// This query supplies retention and drawing, never new-entry admission.
-/// [`construction_options_for_owner`] supplies the House pass's ordered
-/// AddCameo attempts through the existing lifecycle handoff.
+/// This query supplies retention and a full projection refresh, never
+/// new-entry admission. [`construction_options_for_owner`] supplies the House
+/// pass's ordered AddCameo attempts through the existing lifecycle handoff.
+/// Drawing itself asks [`cameo_draw_state`], which leaves the retention test
+/// to `Recalculate`.
 fn sidebar_state(
     sim: &Simulation,
     rules: &RuleSet,
@@ -188,12 +190,56 @@ fn sidebar_state(
     if find_factory(sim, rules, owner, obj, true, true, true).is_none() {
         return Some(BuildDisabledReason::NoReadyFactory);
     }
-    if can_build(sim, rules, owner, obj, false, false) == CanBuild::AtLimit
-        || check_build_limit(sim, rules, owner, obj)
-    {
+    if draw_at_build_limit(sim, rules, owner, obj) {
         return Some(BuildDisabledReason::AtBuildLimit);
     }
     None
+}
+
+/// What `StripClass::Draw` reads for one retained cameo: the unavailable
+/// overlay and the build-limit gate a press reads.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CameoDrawState {
+    /// The unlinked cameo keeps its normal brightness.
+    pub enabled: bool,
+    /// `check_build_limit`, the independent gate `Select6AB656` reads.
+    pub at_build_limit: bool,
+}
+
+/// `StripClass::Draw`'s per-entry unavailability (`0x006A97A8..0x006A97F9`)
+/// for one retained cameo of `owner`: the unlinked entry is drawn dark while
+/// no online factory may build it (`FindFactory(1, 1, 1)`), or while it is at
+/// its limit.
+///
+/// Draw asks only these two queries. `strip_refusal` belongs to
+/// `StripClass::Recalculate @ 0x006AA600`, which drops the entry instead, so a
+/// cameo whose `CanBuild(type, 0, 1)` just turned zero keeps its brightness
+/// until that membership pass removes it. Both answers are live queries inside
+/// the original's drawing body, so a drawing owner re-asks them for each drawn
+/// frame instead of caching `sidebar_state`.
+pub fn cameo_draw_state(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    obj: &ObjectType,
+) -> CameoDrawState {
+    CameoDrawState {
+        enabled: find_factory(sim, rules, owner, obj, true, true, true).is_some()
+            && !draw_at_build_limit(sim, rules, owner, obj),
+        at_build_limit: check_build_limit(sim, rules, owner, obj),
+    }
+}
+
+/// Draw's at-limit arm inside `0x006A97A8..0x006A97F9`: `CanBuild(type, 0, 0)`
+/// answers -1, or [`check_build_limit`].
+fn draw_at_build_limit(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    obj: &ObjectType,
+) -> bool {
+    can_build(sim, rules, owner, obj, false, false) == CanBuild::AtLimit
+        || check_build_limit(sim, rules, owner, obj)
 }
 
 /// Every rules type's build option for `owner`, by category, including rejected

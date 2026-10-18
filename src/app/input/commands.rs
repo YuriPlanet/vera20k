@@ -996,12 +996,18 @@ pub(super) fn queue_house_cheer_in_sim(
     input: &mut crate::app::input::state::MatchInputState,
     owner: &str,
 ) -> Option<u64> {
+    // Preserve the ordinary keyboard/bar Scenario+35A2 lock before entering
+    // the producer. Original730F30's own guard is the distinct Session+300
+    // defeat flag (active1cdd; tools/input_oracle/house_cheer.md).
+    if sim.session.input_locked() {
+        return None;
+    }
     let current_frame = sim.session.binary_frame as i32;
-    let input_locked = sim.session.input_locked();
+    let local_defeated = sim.local_player_defeated();
     input.try_issue_cheer(
         current_frame,
         rules.general.maximum_cheer_rate(),
-        input_locked,
+        local_defeated,
         || schedule_command_in_sim(sim, owner, Command::Cheer),
     )
 }

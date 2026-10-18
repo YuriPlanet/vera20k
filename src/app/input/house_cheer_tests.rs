@@ -70,8 +70,12 @@ fn all_to_cheer_matches_original_admission_outlist_and_reset_histories() {
         let mut rules = rules_with_rate(initial["maximum_cheer_rate"].as_i64().unwrap());
         let mut input = MatchInputState::new(HotkeyBindings::default());
         input.last_cheer_frame = initial["last_frame"].as_i64().unwrap() as i32;
-        sim.session
-            .set_input_locked(initial["input_locked"].as_u64().unwrap() != 0);
+        // Historical corpus name: input_locked is the native Session+300
+        // dword atA8B538, not Scenario+35A2. These explicit component priors
+        // are separate from the real-loader local-loss regression.
+        sim.houses.get_mut(&owner).unwrap().is_defeated =
+            initial["input_locked"].as_u64().unwrap() != 0;
+        assert!(!sim.session.input_locked());
         let mut queue = SynchronizedCommandQueue::new();
         for _ in 0..initial["queue_count"].as_u64().unwrap() {
             assert!(
@@ -91,8 +95,8 @@ fn all_to_cheer_matches_original_admission_outlist_and_reset_histories() {
             let boundary = &phase["input"];
             let expected = &phase["expected"];
             sim.session.binary_frame = boundary["current_frame"].as_i64().unwrap() as u32;
-            if let Some(locked) = boundary["input_locked"].as_u64() {
-                sim.session.set_input_locked(locked != 0);
+            if let Some(session300) = boundary["input_locked"].as_u64() {
+                sim.houses.get_mut(&owner).unwrap().is_defeated = session300 != 0;
             }
             if let Some(count) = boundary["queue_count"].as_u64() {
                 // This history declares an external OutList drain between
@@ -108,7 +112,7 @@ fn all_to_cheer_matches_original_admission_outlist_and_reset_histories() {
                     let issued = input.try_issue_cheer(
                         sim.session.binary_frame as i32,
                         rules.general.maximum_cheer_rate(),
-                        sim.session.input_locked(),
+                        sim.local_player_defeated(),
                         || {
                             let record = sim.encode_cheer_record(owner).unwrap();
                             constructed.push(json!({

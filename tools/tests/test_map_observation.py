@@ -622,6 +622,144 @@ class MapObservationTests(unittest.TestCase):
                     self.run_capture()
                 child.assert_not_called()
 
+    def thumb_profile(self, *, locked=False):
+        self.command_bar_profile()
+        request, receipt = self.profile['gestures'][0], self.gesture_receipts[0]
+        request['gesture']['command'] = 'Thumb'
+        receipt['gesture'] = deepcopy(request['gesture'])
+        bar = receipt['command_bar']
+        bar.pop('slot')
+        bar['command'] = 'Thumb'
+        state = {'closed': True, 'pressed': False, 'sticky': False, 'gadget_id': bar['gadget_id'],
+                 'rect': [1, 6, 2, 1], 'disabled': False, 'current_house': 'VERA-OBSERVER',
+                 'side_index': 0, 'local_player_defeated': True, 'input_locked': locked,
+                 'has_lost': True, 'exit_ready': False, 'left_held': False}
+        # Synthetic schema fixtures, not native or gameplay expectations. In
+        # particular, the unlocked defeated Thumb may visibly reopen before a fix.
+        bar['thumb'] = {
+            'before': deepcopy(state),
+            'press': {'state': dict(state, pressed=not locked, left_held=True),
+                      'dispatch': None if locked else
+                          {'masked_flags': 1, 'modifier': 0, 'key_after': 0, 'action_result': 0}},
+            'release': {'state': dict(state, closed=locked),
+                        'dispatch': None if locked else
+                            {'masked_flags': 2, 'modifier': 0, 'key_after': 0x80f1, 'action_result': 1}},
+            'after': dict(state, closed=locked),
+        }
+        receipt['left_press_captured'] = not locked
+        receipt['queued_commands'] = []
+        self.profile_path.write_text(json.dumps(self.profile))
+
+    def test_thumb_receipt_round_trip_keeps_real_result_distinct_from_mutable_key(self):
+        self.thumb_profile()
+        report = self.run_capture()
+        self.assertEqual(report['status'], 'VALID', report['errors'])
+        transcript = report['capture']['observations']['gesture_input']
+        self.assertEqual(transcript['receipts'], self.gesture_receipts)
+        bar = transcript['receipts'][0]['command_bar']
+        self.assertNotIn('slot', bar)
+        self.assertFalse(bar['thumb']['after']['closed'], 'capture validity must not manufacture parity')
+        self.assertEqual(bar['thumb']['release']['dispatch']['key_after'], 0x80f1)
+        self.assertEqual(bar['thumb']['release']['dispatch']['action_result'], 1)
+        self.assertEqual(observation.validate_run(self.output)['status'], 'VALID')
+        self.assertEqual(observation._command_bar_gesture(bar, 'Thumb', 'thumb', (8, 8)), 7)
+        for phase in ('press', 'release'):
+            bar['thumb'][phase]['dispatch'] = None
+        self.assertEqual(observation._command_bar_gesture(bar, 'Thumb', 'thumb', (8, 8)), 5)
+
+    def test_locked_thumb_refusal_retains_physical_edges_without_stale_dispatch(self):
+        self.thumb_profile(locked=True)
+        report = self.run_capture()
+        self.assertEqual(report['status'], 'VALID', report['errors'])
+        transcript = report['capture']['observations']['gesture_input']
+        count = observation._gesture_observations(transcript, self.profile)
+        with patch.object(observation, 'MAX_OBSERVATION_SAMPLES', count - 1):
+            with self.assertRaises(ValidationError):
+                observation._gesture_observations(transcript, self.profile)
+        mutations = [lambda t: t['before'].update(input_locked=False),
+                     lambda t: t['press']['state'].update(input_locked=False),
+                     lambda t: t['release']['state'].update(input_locked=False),
+                     lambda t: t['after'].update(closed=False),
+                     lambda t: t['press']['state'].update(closed=False),
+                     lambda t: t['release']['state'].update(closed=False),
+                     lambda t: t['release'].update(dispatch={
+                         'masked_flags': 0, 'modifier': 0, 'key_after': 0, 'action_result': 0})]
+        for index, mutate in enumerate(mutations):
+            with self.subTest(case=index), self.assertRaises(ValidationError):
+                candidate = deepcopy(transcript)
+                mutate(candidate['receipts'][0]['command_bar']['thumb'])
+                observation._gesture_observations(candidate, self.profile)
+        for phase in ('before', 'press', 'release', 'after'):
+            with self.subTest(physical_phase=phase), self.assertRaises(ValidationError):
+                candidate = deepcopy(transcript)
+                thumb = candidate['receipts'][0]['command_bar']['thumb']
+                state = thumb[phase]['state'] if phase in ('press', 'release') else thumb[phase]
+                state['left_held'] = not state['left_held']
+                observation._gesture_observations(candidate, self.profile)
+        for key in ('neutral_input_restored', 'left_press_captured'):
+            candidate = deepcopy(transcript)
+            candidate['receipts'][0][key] = 0
+            with self.subTest(key=key), self.assertRaises(ValidationError):
+                observation._gesture_observations(candidate, self.profile)
+
+    def test_thumb_cannot_relax_unlocked_or_legacy_command_press_capture(self):
+        self.thumb_profile()
+        self.gesture_receipts[0]['left_press_captured'] = False
+        self.assertEqual(self.run_capture()['status'], 'INVALID')
+        self.command_bar_profile()
+        self.output = self.root / 'uncaptured-command'
+        self.gesture_receipts[0]['left_press_captured'] = False
+        self.assertEqual(self.run_capture()['status'], 'INVALID')
+
+    def test_thumb_schema_requires_exact_typed_states_edges_and_unsigned_dispatch(self):
+        self.thumb_profile()
+        original = self.gesture_receipts[0]['command_bar']
+        mutations = [lambda b: b.pop('thumb'), lambda b: b.update(slot=0),
+                     lambda b: b['thumb'].update(extra=True),
+                     lambda b: b['thumb']['press'].pop('dispatch'),
+                     lambda b: b['thumb']['release'].update(extra=True),
+                     lambda b: b['thumb']['release'].update(state=None)]
+        for phase in ('before', 'press', 'release', 'after'):
+            for key, value in (('closed', 1), ('pressed', None), ('sticky', 'false'), ('disabled', 0),
+                               ('left_held', 0), ('local_player_defeated', 1), ('input_locked', None),
+                               ('has_lost', 0), ('exit_ready', 1), ('current_house', 0),
+                               ('side_index', True), ('side_index', 256), ('side_index', -1),
+                               ('gadget_id', True), ('gadget_id', 65536), ('gadget_id', -1),
+                               ('rect', [1.0, 6, 2, 1]), ('rect', [1, 6, 2]),
+                               ('rect', [1, 6, 2, 1 << 31]), ('extra', True)):
+                def mutate(bar, phase=phase, key=key, value=value):
+                    target = bar['thumb'][phase]
+                    state = target['state'] if phase in ('press', 'release') else target
+                    state[key] = value
+                mutations.append(mutate)
+            def missing(bar, phase=phase):
+                target = bar['thumb'][phase]
+                (target['state'] if phase in ('press', 'release') else target).pop('exit_ready')
+            mutations.append(missing)
+        for phase in ('press', 'release'):
+            for key, value in (('masked_flags', -1), ('masked_flags', 65536), ('modifier', 256),
+                               ('key_after', True), ('key_after', 65536), ('action_result', -1),
+                               ('action_result', 1 << 32), ('action_result', True), ('extra', 0)):
+                mutations.append(lambda b, p=phase, k=key, v=value: b['thumb'][p]['dispatch'].update({k: v}))
+            mutations.append(lambda b, p=phase: b['thumb'][p]['dispatch'].pop('key_after'))
+        for index, mutate in enumerate(mutations):
+            with self.subTest(case=index), self.assertRaises(ValidationError):
+                candidate = deepcopy(original)
+                mutate(candidate)
+                observation._command_bar_gesture(candidate, 'Thumb', 'thumb', (8, 8))
+        nullable = deepcopy(original)
+        for phase in ('before', 'press', 'release', 'after'):
+            target = nullable['thumb'][phase]
+            state = target['state'] if phase in ('press', 'release') else target
+            state.update(current_house=None, side_index=None, has_lost=None, exit_ready=None)
+        self.assertEqual(observation._command_bar_gesture(nullable, 'Thumb', 'thumb', (8, 8)), 7)
+        self.command_bar_profile()
+        legacy = deepcopy(self.gesture_receipts[0]['command_bar'])
+        self.assertEqual(observation._command_bar_gesture(legacy, 'Guard', 'guard', (8, 8)), 1)
+        legacy['thumb'] = original['thumb']
+        with self.assertRaises(ValidationError):
+            observation._command_bar_gesture(legacy, 'Guard', 'guard', (8, 8))
+
     @staticmethod
     def local_input_observation():
         return {'camera_top_left': [100.0, -50.0], 'camera_zoom': 1.0,
@@ -4440,6 +4578,79 @@ class MapObservationTests(unittest.TestCase):
     def test_loose_map_receipt_is_supported(self):
         self.change = lambda m: m['map_source'].update(kind='loose', path='/retail/Fight.MAP')
         self.assertEqual(self.run_capture()['status'], 'VALID')
+
+    def test_generated_seed_receipt_requires_and_retains_consumed_identity(self):
+        # Protocol receipts only: these do not execute Generate or establish
+        # native gameplay/pixel parity. The production reader owns consumption.
+        for index, name in enumerate(('CellRamp11.SED', 'CellRamp11.sEd')):
+            with self.subTest(name=name):
+                self.profile['launch']['selected_map_file'] = name
+                self.profile_path.write_text(json.dumps(self.profile))
+                source = {'kind': 'generated', 'seed_name': name,
+                          'seed_source': {'path': '/retail/' + name, 'payload_len': 90,
+                                          'source_sha256': 'b' * 64}}
+                self.change = lambda m, value=source: m.update(map_source=deepcopy(value))
+                self.output = self.root / f'generated-{index}'
+                report = self.run_capture()
+                self.assertEqual(report['status'], 'VALID', report['errors'])
+                self.assertEqual(report['capture']['map_source'], source)
+                retained = observation.validate_run(self.output)
+                self.assertEqual(retained['status'], 'VALID', retained['errors'])
+
+    def test_generated_seed_receipt_rejects_missing_or_malformed_consumed_identity(self):
+        self.profile['launch']['selected_map_file'] = 'CellRamp11.SED'
+        self.profile_path.write_text(json.dumps(self.profile))
+        original = {'kind': 'generated', 'seed_name': 'CellRamp11.SED',
+                    'seed_source': {'path': '/retail/CellRamp11.SED', 'payload_len': 90,
+                                    'source_sha256': 'b' * 64}}
+        cases = [('name_only', lambda value: value.pop('seed_source')),
+                 ('null_source', lambda value: value.update(seed_source=None)),
+                 ('array_source', lambda value: value.update(seed_source=[])),
+                 ('missing_name', lambda value: value.pop('seed_name')),
+                 ('wrong_name', lambda value: value.update(seed_name='Other.SED')),
+                 ('name_case_mismatch', lambda value: value.update(seed_name='cellramp11.SED')),
+                 ('null_name', lambda value: value.update(seed_name=None))]
+        for field in ('path', 'payload_len', 'source_sha256'):
+            cases.append(('missing_' + field,
+                          lambda value, key=field: value['seed_source'].pop(key)))
+        for field, values in (('path', ('', None, 17)),
+                              ('payload_len', (0, -1, None, True, 1.5)),
+                              ('source_sha256', ('bad', 'B' * 64, 'g' * 64, None, 17))):
+            for index, invalid in enumerate(values):
+                cases.append((f'{field}_{index}',
+                              lambda value, key=field, bad=invalid:
+                              value['seed_source'].update({key: bad})))
+        # An authored-map identity at the top level cannot stand in for the
+        # missing nested identity of the actual seed bytes.
+        cases.append(('top_level_identity_only', lambda value: value.update(
+            seed_source=None, path='/retail/CellRamp11.SED', payload_len=90,
+            source_sha256='b' * 64)))
+        cases.append(('top_level_hash_cannot_repair_nested', lambda value: (
+            value.update(source_sha256='b' * 64),
+            value['seed_source'].pop('source_sha256'))))
+        for index, (name, mutate) in enumerate(cases):
+            with self.subTest(name=name):
+                source = deepcopy(original)
+                mutate(source)
+                self.change = lambda m, value=source: m.update(map_source=deepcopy(value))
+                self.output = self.root / f'generated-invalid-{index}'
+                report = self.run_capture()
+                self.assertEqual(report['status'], 'INVALID', name)
+                self.assertTrue(report['errors'], name)
+
+    def test_generated_seed_receipt_requires_terminal_seed_selection(self):
+        for index, name in enumerate(('CellRamp11.SED.bak', 'CellRamp11.map', 'CellRamp11sed')):
+            with self.subTest(name=name):
+                self.profile['launch']['selected_map_file'] = name
+                self.profile_path.write_text(json.dumps(self.profile))
+                source = {'kind': 'generated', 'seed_name': name,
+                          'seed_source': {'path': '/retail/' + name, 'payload_len': 90,
+                                          'source_sha256': 'b' * 64}}
+                self.change = lambda m, value=source: m.update(map_source=deepcopy(value))
+                self.output = self.root / f'generated-nonseed-{index}'
+                report = self.run_capture()
+                self.assertEqual(report['status'], 'INVALID')
+                self.assertTrue(any('must end in .SED' in error for error in report['errors']))
 
     def test_existing_output_is_never_reused(self):
         self.output.mkdir()

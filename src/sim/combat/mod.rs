@@ -138,7 +138,7 @@ pub(crate) use receiver_health::BerserkState;
 pub(crate) use record_kill::{KillCallback, KillRecord, KillSource};
 pub use techno_death::FatalLifecycleStage;
 pub(crate) use techno_death::{
-    death_announcement_event, death_arm_explodes, death_weapon_detonation,
+    death_announcement_event, death_arm_explodes, death_weapon_detonation, select_death_sound,
 };
 pub(crate) use threat_posed::live_threat_posed;
 /// The threat mask an acquisition callsite pushes into

@@ -1,0 +1,40 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Whole original588750 GAWALL autofill: native temporary Building/Overlay construction, ignored failure and deferred cleanup in existing joined component world",
+  "assumptions": [
+    "Existing physical layered Building/Overlay/Rules readers, joined House and flat clear map, native graph/pathfinder and target/MTNK setup are reused. This is not a paid Factory/HousePlace or full Hills execution.",
+    "Original BuildingType45E880 and Building440580 create endpoint marks and drain them. A fresh origin wall enters Unlimbo and remains pending before whole588750, matching its immediate HousePlace seam; the final drain includes origin and successful fillers. No body result, ID, RNG draw, pending item, sight answer or Unlimbo result is supplied.",
+    "The middle refusal is an explicit pre-entry custom Rough Buildable=yes/Track=0% original674000 output and one supplied Cell land value. It is a native branch control, not a stock map occurrence; original588750 must continue the later attempts.",
+    "All three full RNG streams are interned and referenced at boundaries, with original draw requests/raw advances retained. Final freed-arena readbacks are historical bytes, not live entities. Failure survivors remain constructor-complete in limbo; no eventual shutdown claim.",
+    "Default schema2 is a pure observed-data selection/interning/typed-identity projection; original producer/control execution is unchanged. Optional --autofill-detail retains the full trace only in external scratch. No expected Rust state, RNG continuation or callback answer is calculated."
+  ],
+  "substitutions": [
+    "Only existing joined reader cache, physical-file/allocator/CRT/COM/audio and documented presentation transports. No new VM, instruction patch, native gameplay result substitution, fake iterator or constructor RNG stub."
+  ],
+  "entry_points": {
+    "autofill": "0x00588750",
+    "building_create": "0x0045E880",
+    "building_ctor": "0x0043B740",
+    "constructor_rng": "0x006F3254",
+    "building_unlimbo": "0x00440580",
+    "overlay_create": "0x005FE570",
+    "overlay_ctor": "0x005FC380",
+    "overlay_unlimbo": "0x005FD270",
+    "cell_clearance": "0x0047C620",
+    "land_reader": "0x00674000",
+    "sight": "0x005678E0",
+    "radio": "0x0065ACB0",
+    "uninit": "0x005F65F0",
+    "expiry": "0x007258D0",
+    "drain": "0x00725C70"
+  },
+  "replay_command": "python -m tools.spatial_oracle.building_death_anims --wall-autofill --autofill-output-dir \"$HOME\"/Documents/vera20k-dev/class-parity/cell-class/cell-autofill-native-controls-v3",
+  "payload_sha256": "3d580ea63036f39754c7beda69d4f73b5327549f5db2be81b412e19fa591f8cf"
+}

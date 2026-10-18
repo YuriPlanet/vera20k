@@ -1716,10 +1716,15 @@ if __name__ == '__main__':
     modes.add_argument('--concrete-wall', action='store_true')
     modes.add_argument('--low-concrete-bridge', action='store_true')
     modes.add_argument('--tile', action='store_true')
+    modes.add_argument('--tile-partial', action='store_true')
     modes.add_argument('--placement', action='store_true')
     modes.add_argument('--smudge', action='store_true')
     modes.add_argument('--cliff', action='store_true')
     selected, remaining = parser.parse_known_args()
+    if selected.tile_partial:
+        from tools.spatial_oracle.tmp_clear_render import partial_redraw_main
+        partial_redraw_main(remaining)
+        raise SystemExit(0)
     if selected.rubble or selected.crate:
         # Guard the actual shared reader/runtime/asset/raster inputs only for
         # this invocation. No repository-source hashes enter the sidecar.

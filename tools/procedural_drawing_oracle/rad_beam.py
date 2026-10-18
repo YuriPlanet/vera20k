@@ -1,9 +1,10 @@
-"""Original DESO mode0/kind1 RadBeam birth, geometry, drawing and retirement.
+"""Original DESO mode0 or opt-in CLEG mode1/kind1 beam component controls.
 
 Cached physical INI/ART inputs and surface/actor prestates are explicit component
 boundaries. All emitted numeric values/pixels come from original instructions.
-See rad_beam.md; generation belongs to the coordinated source/input freeze.
+See rad_beam.md / chrono_beam.md; generation requires the source/input freeze.
 """
+import argparse
 import hashlib
 import os
 from pathlib import Path
@@ -12,7 +13,7 @@ import sys
 
 from unicorn.x86_const import (
     UC_X86_REG_EAX, UC_X86_REG_EBX, UC_X86_REG_ECX, UC_X86_REG_EDX,
-    UC_X86_REG_EIP, UC_X86_REG_ESI, UC_X86_REG_ESP,
+    UC_X86_REG_EDI, UC_X86_REG_EIP, UC_X86_REG_ESI, UC_X86_REG_ESP,
 )
 
 from tools import native_oracle as native
@@ -26,6 +27,11 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 RETAINED_MAP = HERE / 'rad_beam' / 'ordinary-deso-radbeam.map'
 MAP_SHA256 = '565b61d34519b501a3d7b249fd7566e0621832719402b04a369df405e38f87b5'
+CHRONO_MAP = HERE / 'rad_beam' / 'ordinary-cleg-chrono.map'
+CHRONO_MAP_SHA256 = 'cd2a316907719f79cd43f67bcad45076e107677b8327e66fcdc6e99ffeccfda5'
+CHRONO_WEAPONS = ('NeutronRifle', 'NeutronRifleE')
+AV_GATE, AV_PRESENT, AV_ABSENT = 0x6691E0, 0x66920D, 0x66B8F1
+CHRONO_COLOR_BEGIN, CHRONO_COLOR_END = 0x66B7A7, 0x66B7D2
 WRAPPER, ALLOCATE, CTOR, VECTOR_INIT, VECTOR = (
     0x6FD620, 0x659110, 0x6593F0, 0x659090, 0xB04A60)
 MANAGER, DRAW, SEGMENT, DIVIDE = 0x6591B0, 0x659650, 0x659AC0, 0x65A1B0
@@ -84,10 +90,14 @@ def beam_state(u, p, *, geometry=False):
     return out
 
 
-def selected(raw):
-    sections, lines = lexical(raw, {'DESO', *WEAPONS, 'RadBeamWarhead', 'Radiation'})
-    filters = {'DESO': TYPE_KEYS, 'RadBeamWarhead': WARHEAD_KEYS,
-               'Radiation': {'RadColor'}, **{name: WEAPON_KEYS for name in WEAPONS}}
+def selected(raw, *, chrono=False):
+    filters = ({'CLEG': TYPE_KEYS | {'Locomotor', 'Teleporter'},
+                'ChronoBeam': WARHEAD_KEYS, 'AudioVisual': {'ChronoBeamColor'},
+                **{name: WEAPON_KEYS for name in CHRONO_WEAPONS}}
+               if chrono else
+               {'DESO': TYPE_KEYS, 'RadBeamWarhead': WARHEAD_KEYS,
+                'Radiation': {'RadColor'}, **{name: WEAPON_KEYS for name in WEAPONS}})
+    sections, lines = lexical(raw, set(filters))
     # Section existence survives filtering. Native section admission still runs.
     sections = {name: {k: v for k, v in values.items() if k in filters[name]}
                 for name, values in sections.items()}
@@ -95,7 +105,7 @@ def selected(raw):
     return sections, lines
 
 
-def physical_files(root, map_path):
+def physical_files(root, map_path, *, chrono=False):
     files = []
     for name in ('RULESMD.INI', 'LANGRULE.INI', 'MPBattleMD.ini'):
         p = root / name
@@ -105,31 +115,44 @@ def physical_files(root, map_path):
         else:
             files.append((name, p.read_bytes()))
     raw = map_path.read_bytes()
-    assert hashlib.sha256(raw).hexdigest() == MAP_SHA256, 'selected map differs from retained input'
-    assert raw == RETAINED_MAP.read_bytes(), 'configured map is not byte-identical to retained map'
-    files.append((RETAINED_MAP.relative_to(REPO).as_posix(), raw))
+    retained, digest = (CHRONO_MAP, CHRONO_MAP_SHA256) if chrono else (RETAINED_MAP, MAP_SHA256)
+    assert hashlib.sha256(raw).hexdigest() == digest, 'selected map differs from retained input'
+    assert raw == retained.read_bytes(), 'configured map is not byte-identical to retained map'
+    files.append((retained.relative_to(REPO).as_posix(), raw))
     return files
 
 
 class PhysicalBirth(BulletReader):
     """One existing Reader VM; original readers, FLH and wrapper share pointers."""
-    def __init__(self, root, map_path):
+    def __init__(self, root, map_path, *, chrono=False):
+        self.chrono = chrono
+        self.type_name = 'CLEG' if chrono else 'DESO'
+        self.weapon_names = CHRONO_WEAPONS if chrono else WEAPONS
+        self.warhead_name = 'ChronoBeam' if chrono else 'RadBeamWarhead'
+        self.color_offset = 0x1866 if chrono else 0x1830
+        self.read_keys = READ_KEYS | ({'Locomotor', 'Teleporter', 'ChronoBeamColor'} if chrono else set())
+        self.birth_specs = dict(BIRTH_CALLS)
+        if chrono:
+            self.birth_specs[0x55A730] = ('locomotor_matrix', 3, 12)
         self.phase, self.platform_counts, self.layer_name = 'setup', {}, 'constructor'
         self.call_trace, self.birth_calls = None, []
         self.selected_reads = []
-        self.layers = physical_files(root, map_path)
+        self.layers = physical_files(root, map_path, chrono=chrono)
         self.art_raw = (root / 'ARTMD.INI').read_bytes()
-        art, lines = lexical(self.art_raw, {'DESO', 'DesoSequence'})
-        self.art = {name: (dict(values) if name != 'DESO' else
+        sequence = 'ClegSequence' if chrono else 'DesoSequence'
+        art, lines = lexical(self.art_raw, {self.type_name, sequence})
+        self.art = {name: (dict(values) if name != self.type_name else
                           {k: v for k, v in values.items() if k in ART_KEYS})
                     for name, values in art.items()}
-        self.art_lines = [row for row in lines if row['section'] != 'DESO'
+        self.art_lines = [row for row in lines if row['section'] != self.type_name
                           or row['key'] in ART_KEYS]
         super().__init__(self.art, root, arena_size=0x800000)
         u = self.u
         self.text = bytes(u.mem_read(prism.TEXT_BEGIN, prism.TEXT_SIZE))
         self.vtables = {p: bytes(u.mem_read(p, size)) for p, size in (
             (0x7EB058, 0x59C), (0x7EB610, 0x190))}
+        if chrono:
+            self.vtables[0x7F4FDC] = bytes(u.mem_read(0x7F4FDC, 0x150))
         self.rules = self.alloc(0x2000)
         u.mem_write(0x8871E0, words(self.rules))
         # Declared empty capacity; native factories still construct/find/append.
@@ -138,27 +161,31 @@ class PhysicalBirth(BulletReader):
             u.mem_write(registry, words(0x7EB6D4, self.alloc(4096), 1024, 1, 0, 10))
         self.invoke(0x665650, self.rules)
         self.type = self.alloc(0x1900)
-        self.invoke(0x5236A0, self.type, (self.cstring('DESO'),))
+        self.invoke(0x5236A0, self.type, (self.cstring(self.type_name),))
         self.weapons, self.warheads = {}, {}
         self.reader_inputs = dict(constructor=self.fields(), layers=[])
-        self.latest_deso = {}
+        self.latest_type = {}
         for name, raw in self.layers:
             self.layer_name = name
             if raw is None:
                 self.reader_inputs['layers'].append(dict(file=name, absent=True))
                 continue
-            sections, source_lines = selected(raw)
-            self.latest_deso.update(sections.get('DESO', {}))
+            sections, source_lines = selected(raw, chrono=chrono)
+            self.latest_type.update(sections.get(self.type_name, {}))
             self.make_ini(self.art)
             self.rules_cache(sections)
             mark = len(self.selected_reads)
-            rad_admitted = self.invoke(0x66CF70, self.rules, (RULES,)) & 255
+            if chrono:
+                color_read = self.read_chrono_color(self.rules)
+                admitted = dict(audio_visual=color_read['admitted'])
+            else:
+                admitted = dict(radiation=self.invoke(0x66CF70, self.rules, (RULES,)) & 255)
             type_admitted = self.invoke(0x5240A0, self.type, (RULES,)) & 255
             for offset in (0x898, 0xA94):
                 p = self.read32(self.type + offset)
                 if p:
                     label = self.string(p + 0x24)
-                    assert label in WEAPONS, ('selected physical weapon changed', label)
+                    assert label in self.weapon_names, ('selected physical weapon changed', label)
                     assert self.weapons.get(label, p) == p
                     self.weapons[label] = p
             for p in self.weapons.values():
@@ -166,36 +193,57 @@ class PhysicalBirth(BulletReader):
                 wh = self.read32(p + 0xAC)
                 if wh:
                     label = self.string(wh + 0x24)
-                    assert label == 'RadBeamWarhead', label
+                    assert label == self.warhead_name, label
                     assert self.warheads.get(label, wh) == wh
                     self.warheads[label] = wh
             for p in self.warheads.values():
                 self.invoke(0x75D3A0, p, (RULES,))
-            self.reader_inputs['layers'].append(dict(file=name, bytes=len(raw),
+            admitted['type'] = type_admitted
+            layer = dict(file=name, bytes=len(raw),
                 sha256=hashlib.sha256(raw).hexdigest(), sections=sections,
-                source_lines=source_lines, admitted=dict(radiation=rad_admitted, type=type_admitted),
-                reads=self.selected_reads[mark:], after=self.fields()))
-        assert set(self.weapons) == set(WEAPONS)
+                source_lines=source_lines, admitted=admitted,
+                reads=self.selected_reads[mark:], after=self.fields())
+            if chrono:
+                layer['color_fragment'] = color_read
+            self.reader_inputs['layers'].append(layer)
+        assert set(self.weapons) == set(self.weapon_names)
         final = self.fields()
         assert all(v['is_rad_beam'] and not v['is_rad_eruption']
                    and not v['is_laser'] and not v['is_electric_bolt']
                    for v in final['weapons'].values()), 'physical direct-beam arm changed'
-        assert not final['warheads']['RadBeamWarhead']['temporal'], 'physical mode0 gate changed'
+        assert final['warheads'][self.warhead_name]['temporal'] == chrono, 'physical beam mode gate changed'
         self.reader_inputs.update(final=final, art=dict(file='ARTMD.INI',
             bytes=len(self.art_raw), sha256=hashlib.sha256(self.art_raw).hexdigest(),
             sections=self.art, source_lines=self.art_lines),
             platform_boundaries=dict(self.platform_counts))
-        # Component actor/Walk admission, not an Infantry ctor/Unlimbo/world run.
+        # Supplied Infantry components, not ctor/Unlimbo/world admission.
         self.source, self.target = self.alloc(0x1000), self.alloc(0x1000)
         for p in (self.source, self.target):
             u.mem_write(p, words(0x7EB058))
             u.mem_write(p + 0x14, words(7))
             u.mem_write(p + 0x6C0, words(self.type))
             u.mem_write(p + 0x150, struct.pack('<f', 0.0))
-        self.walk = self.alloc(0x100)
-        self.invoke(0x75AA90, self.walk)
-        u.mem_write(self.walk + 0xC, words(self.source))
-        u.mem_write(self.source + 0x674, words(self.walk + 4))
+        self.locomotor = self.alloc(0x100)
+        self.invoke(0x718000 if chrono else 0x75AA90, self.locomotor)
+        u.mem_write(self.locomotor + 0xC, words(self.source))
+        u.mem_write(self.source + 0x674, words(self.locomotor + 4))
+        if chrono:
+            assert self.read32(self.locomotor) == 0x7F50CC
+            assert self.read32(self.locomotor + 4) == 0x7F5000
+            assert self.read32(0x7F5000 + 0x24) == 0x55A730
+            assert final['cleg']['locomotor_clsid_hex'] == '4727584a3998d111b70900a024ddafd1'
+            assert final['cleg']['teleporter'], 'selected physical CLEG Teleporter changed'
+            self.reader_inputs['actor_components'] = dict(
+                source=dict(type='CLEG', vtable=hex(0x7EB058), rank='rookie', burst=0,
+                    passengers=False, locomotor_ctor=hex(0x718000),
+                    locomotor_vtable=hex(self.read32(self.locomotor)),
+                    ilocomotion_vtable=hex(self.read32(self.locomotor + 4)),
+                    draw_matrix=hex(self.read32(0x7F5000 + 0x24)),
+                    linked_to_source=True,
+                    constructor_selection='declared Teleport identity from physical native-read GUID; native COM factory not executed'),
+                target=dict(type='CLEG', vtable=hex(0x7EB058), rank='rookie',
+                    locomotor=None, passengers=False),
+                actor_constructor_executed=False, native_com_factory_executed=False)
         self.temp = self.alloc(64)
         self.tactical = self.alloc(0x1000)
         u.mem_write(0x887324, words(self.tactical))
@@ -210,10 +258,75 @@ class PhysicalBirth(BulletReader):
         self.rng_trace = electric.RngTrace(u, self.read32(0xA8B230), 31)
         self.rng_initial = self.rng_trace.states()
 
+    def read_chrono_color(self, rules):
+        """Original AV section gate, then the exact color block in a supplied frame.
+
+        The gate stops before any AV scalar read. The separate block receives
+        only its live ESI/EDI/EDX/frame inputs; whole ReadColorRGB and CRT run.
+        Neither stop boundary pretends to return from the whole AV reader.
+        """
+        assert self.chrono
+        u, previous_phase = self.u, self.phase
+        before = bytes(u.mem_read(rules, 0x2000))
+        self.phase = 'color'
+        self.color_calls = []
+        mark = len(self.selected_reads)
+        u.mem_write(SP, words(native.RET_MAGIC, RULES))
+        u.reg_write(UC_X86_REG_ESP, SP)
+        u.reg_write(UC_X86_REG_ECX, rules)
+        native.run_checked(u, AV_GATE, (AV_PRESENT, AV_ABSENT),
+            required_addresses=(0x526810,), count=10000,
+            context=dict(component='chrono_color_section_gate', file=self.layer_name))
+        stop = u.reg_read(UC_X86_REG_EIP)
+        admitted = int(stop == AV_PRESENT)
+        assert u.reg_read(UC_X86_REG_ESP) == SP - 0xCC
+        assert u.reg_read(UC_X86_REG_ESI) == rules
+        assert u.reg_read(UC_X86_REG_EDI) == RULES
+        assert (u.reg_read(UC_X86_REG_EAX) & 255) == admitted
+        assert before == bytes(u.mem_read(rules, 0x2000)), 'section gate wrote Rules'
+        receipt = dict(admitted=admitted, current_default=list(before[0x1866:0x1869]),
+            gate=dict(entry=hex(AV_GATE), stop_before=hex(stop),
+                supplied_entry='ECX=Rules; [entry ESP+4]=cached layer INI',
+                stack_delta=-0xCC, whole_audio_visual=False),
+            fragment=None)
+        if admitted:
+            # Original66B79D supplies EDX=ESP+10, before the preceding color's
+            # final store. Start66B7A7 with that same live pointer, not its RGB.
+            guard = bytes.fromhex('d6a93c75')
+            u.mem_write(SP + 0xC, guard + b'\xA5' * 3 + guard)
+            u.reg_write(UC_X86_REG_ESP, SP)
+            u.reg_write(UC_X86_REG_ESI, rules)
+            u.reg_write(UC_X86_REG_EDI, RULES)
+            u.reg_write(UC_X86_REG_EDX, SP + 0x10)
+            native.run_checked(u, CHRONO_COLOR_BEGIN, CHRONO_COLOR_END,
+                required_addresses=(0x474B50, 0x528A10), count=200000,
+                context=dict(component='chrono_color_fragment', file=self.layer_name))
+            assert u.reg_read(UC_X86_REG_ESP) == SP
+            assert bytes(u.mem_read(SP + 0xC, 4)) == guard
+            assert bytes(u.mem_read(SP + 0x13, 4)) == guard
+            assert bytes(u.mem_read(SP + 0x10, 3)) == bytes(u.mem_read(rules + 0x1866, 3))
+            receipt['fragment'] = dict(entry=hex(CHRONO_COLOR_BEGIN),
+                stop_before=hex(CHRONO_COLOR_END),
+                supplied_frame='ESP=component frame; ESI=Rules; EDI=cached layer INI; EDX=ESP+10',
+                whole_audio_visual=False, whole_color_reader=True, local_guards_unchanged=True)
+        after = bytes(u.mem_read(rules, 0x2000))
+        assert before[:0x1866] == after[:0x1866] and before[0x1869:] == after[0x1869:]
+        receipt.update(rgb=list(after[0x1866:0x1869]), reads=self.selected_reads[mark:],
+                       calls=self.color_calls, other_rules_bytes_unchanged=True)
+        self.phase = previous_phase
+        self.unchanged()
+        return receipt
+
     def hook(self, u, pc, size, user):
         sp = u.reg_read(UC_X86_REG_ESP)
-        if self.phase == 'setup':
-            if Reader.guid_transport(self, u, pc, sp, self.events):
+        if self.phase in ('setup', 'color'):
+            if self.phase == 'color':
+                assert pc not in (0x5F8110, 0x5F8CE0, 0x5B40B0, 0x527AF9,
+                                  0x527B0C, 0x7C978A, 0x65C780, 0x65C7E0,
+                                  0x7258D0, 0x70D4A0), ('setup/gameplay seam in color', hex(pc))
+                if pc in (0x526810, 0x474B50, 0x528A10, 0x7CA530, 0x7D140B):
+                    self.color_calls.append(hex(pc))
+            if self.phase == 'setup' and Reader.guid_transport(self, u, pc, sp, self.events):
                 self.platform_counts['GUID'] = self.platform_counts.get('GUID', 0) + 1
                 return
             if pc in (0x5F8110, 0x5F8CE0, 0x7C978A):
@@ -228,7 +341,7 @@ class PhysicalBirth(BulletReader):
                     default_rgb=list(u.mem_read(self.read32(sp + 16), 3))))
             elif pc in (0x5276D0, 0x5295F0, 0x528A10):
                 key = self.string(self.read32(sp + 8))
-                if key in READ_KEYS:
+                if key in self.read_keys:
                     row = dict(file=self.layer_name, reader=hex(pc),
                                section=self.string(self.read32(sp + 4)), key=key)
                     if pc != 0x528A10:
@@ -245,8 +358,11 @@ class PhysicalBirth(BulletReader):
                 if row['name'] in ('infantry_flh', 'techno_flh', 'render_coord',
                                    'target_coord', 'object_coord'):
                     row['coordinate'] = ints(u, row['args'][0], 3)
-            if pc in BIRTH_CALLS:
-                index = self.call_trace.entered(pc, sp, BIRTH_CALLS[pc])
+                if row['name'] == 'locomotor_matrix':
+                    assert row['args'][0] == self.locomotor + 4
+                    row['matrix_f32_le_hex'] = bytes(u.mem_read(row['args'][1], 48)).hex()
+            if pc in self.birth_specs:
+                index = self.call_trace.entered(pc, sp, self.birth_specs[pc])
                 self.birth_calls[index]['receiver'] = (
                     'source' if u.reg_read(UC_X86_REG_ECX) == self.source else
                     'target' if u.reg_read(UC_X86_REG_ECX) == self.target else None)
@@ -257,13 +373,21 @@ class PhysicalBirth(BulletReader):
 
     def fields(self):
         u = self.u
-        return dict(rad_color=list(u.mem_read(self.rules + 0x1830, 3)),
-            deso=dict(primary=self.reference(self.read32(self.type + 0x898)),
+        actor_type = dict(primary=self.reference(self.read32(self.type + 0x898)),
                 elite_primary=self.reference(self.read32(self.type + 0xA94)),
                 primary_flh=ints(u, self.type + 0x89C, 3),
                 turret_offset=signed(self.read32(self.type + 0x720)),
-                strength=signed(self.read32(self.type + 0xA0))),
-            weapons={name: dict(is_rad_beam=bool(u.mem_read(p + 0x154, 1)[0]),
+                strength=signed(self.read32(self.type + 0xA0)))
+        if self.chrono:
+            # Whole TechnoType reader71241D..2437 copies ReadGUID to+34C;
+            # literal Teleporter843E60 -> ReadBool713FF1 -> store+CD4 at713FF6.
+            actor_type['locomotor_clsid_hex'] = bytes(u.mem_read(self.type + 0x34C, 16)).hex()
+            actor_type['teleporter'] = bool(u.mem_read(self.type + 0xCD4, 1)[0])
+        return {
+            'chrono_beam_color' if self.chrono else 'rad_color':
+                list(u.mem_read(self.rules + self.color_offset, 3)),
+            'cleg' if self.chrono else 'deso': actor_type,
+            'weapons': {name: dict(is_rad_beam=bool(u.mem_read(p + 0x154, 1)[0]),
                 is_rad_eruption=bool(u.mem_read(p + 0x155, 1)[0]),
                 is_laser=bool(u.mem_read(p + 0x149, 1)[0]),
                 is_electric_bolt=bool(u.mem_read(p + 0x151, 1)[0]),
@@ -271,9 +395,9 @@ class PhysicalBirth(BulletReader):
                 projectile=self.reference(self.read32(p + 0xA0)),
                 warhead=self.reference(self.read32(p + 0xAC)))
                 for name, p in self.weapons.items()},
-            warheads={name: dict(temporal=bool(u.mem_read(p + 0x15A, 1)[0]),
+            'warheads': {name: dict(temporal=bool(u.mem_read(p + 0x15A, 1)[0]),
                 radiation=bool(u.mem_read(p + 0x177, 1)[0]))
-                for name, p in self.warheads.items()})
+                for name, p in self.warheads.items()}}
 
     def unchanged(self):
         assert self.text == bytes(self.u.mem_read(prism.TEXT_BEGIN, prism.TEXT_SIZE))
@@ -286,6 +410,20 @@ class PhysicalBirth(BulletReader):
         self.phase = 'setup'
         p = self.alloc(0x2000)
         self.invoke(0x665650, p)
+        if self.chrono:
+            rows = [dict(name='constructor', sections=None, current_default=None,
+                         rgb=list(self.u.mem_read(p + self.color_offset, 3)), reads=[])]
+            for name, sections in (
+                ('absent_section', {}),
+                ('present_missing_key', {'AudioVisual': {'C30KeepSection': '1'}}),
+                ('retained_nondefault', {'AudioVisual': {'ChronoBeamColor': '11,22,33'}}),
+                ('missing_retains_current', {'AudioVisual': {'C30KeepSection': '1'}}),
+            ):
+                self.layer_name = 'color_control/' + name
+                self.rules_cache(sections)
+                rows.append(dict(name=name, sections=sections, **self.read_chrono_color(p)))
+            self.unchanged()
+            return rows
         rows = [dict(name='constructor', rgb=list(self.u.mem_read(p + 0x1830, 3)))]
         for name, sections in (
             ('absent_section', {}),
@@ -307,9 +445,9 @@ class PhysicalBirth(BulletReader):
         self.phase = 'setup'
         art = {name: dict(values) for name, values in self.art.items()}
         if 'art_flh_control' in case:
-            art['DESO']['PrimaryFireFLH'] = case['art_flh_control']
+            art[self.type_name]['PrimaryFireFLH'] = case['art_flh_control']
         self.make_ini(art)
-        self.rules_cache({'DESO': dict(self.latest_deso)})
+        self.rules_cache({self.type_name: dict(self.latest_type)})
         assert self.invoke(0x5240A0, self.type, (RULES,)) & 255
         u = self.u
         for p, xyz in ((self.source, case['location']), (self.target, case['target'])):
@@ -320,13 +458,14 @@ class PhysicalBirth(BulletReader):
         self.invoke(0x4C9300, self.source + 0x388, (self.temp,))
         u.mem_write(self.source + 0x3B8, words(case.get('burst', 0)))
         before = [bytes(u.mem_read(p, 0x1000)) for p in (self.source, self.target)]
+        before_locomotor = bytes(u.mem_read(self.locomotor, 0x100)) if self.chrono else None
         count_before = self.read32(VECTOR + 0x10)
         id_ptr = self.read32(0xA8B230) + 0x214
         id_before = self.read32(id_ptr)
         self.birth_calls = []
         self.call_trace = native.NativeCallTrace(u, self.read32, self.birth_calls)
         self.phase = 'birth'
-        self.invoke(WRAPPER, self.source, (self.target, 0))
+        self.invoke(WRAPPER, self.source, (self.target, int(self.chrono)))
         self.call_trace.returned(native.RET_MAGIC, u.reg_read(UC_X86_REG_ESP))
         self.phase = 'setup'
         assert not self.call_trace.pending
@@ -334,12 +473,16 @@ class PhysicalBirth(BulletReader):
         assert before == [bytes(u.mem_read(q, 0x1000)) for q in (self.source, self.target)]
         assert id_before == self.read32(id_ptr)
         assert self.read32(VECTOR + 0x10) == count_before + 1
-        # The wrapper is void: registry membership, not residual EAX, owns birth.
+        # Registry membership, rather than the raw EAX receipt, owns birth.
         p = self.read32(self.read32(VECTOR + 4) + count_before * 4)
         state = beam_state(u, p)
         assert state['kind'] == 1 and not state['source_link'] and not state['target_link']
         assert {'infantry_flh', 'techno_flh', 'set_source', 'set_target'} <= {
             row['name'] for row in self.birth_calls}
+        if self.chrono:
+            assert before_locomotor == bytes(u.mem_read(self.locomotor, 0x100))
+            assert 'locomotor_matrix' in {row['name'] for row in self.birth_calls}
+            assert state['rgb'] == self.fields()['chrono_beam_color']
         self.unchanged()
         return dict(input=case, physical_flh=ints(u, self.type + 0x89C, 3),
             beam=state, registered_before=count_before, registered_after=count_before + 1,
@@ -603,18 +746,19 @@ def division_rows():
     return rows
 
 
-def geometry_rows(birth):
+def geometry_rows(birth, *, cases=None):
     rows = []
     base = dict(name='physical_birth_progress7')
-    cases = [
-        base, dict(name='mixed_alpha_depth', alpha='mixed', z=[0, 32760, 65535]),
-        dict(name='black_alpha', alpha='black'),
-        dict(name='partial_clip_changing_z', partial=True),
-        dict(name='short_zero_divisor', coords=[[3038, 3038, 0], [3039, 3038, 0]]),
-        dict(name='nonintegral_divisor_overshoot', coords=[[3038, 3038, 0], [3063, 3038, 0]]),
-        dict(name='zero_length', coords=[[3038, 3038, 0], [3038, 3038, 0]]),
-        dict(name='disabled_draw_advances', draw_enabled=False),
-    ]
+    if cases is None:
+        cases = [
+            base, dict(name='mixed_alpha_depth', alpha='mixed', z=[0, 32760, 65535]),
+            dict(name='black_alpha', alpha='black'),
+            dict(name='partial_clip_changing_z', partial=True),
+            dict(name='short_zero_divisor', coords=[[3038, 3038, 0], [3039, 3038, 0]]),
+            dict(name='nonintegral_divisor_overshoot', coords=[[3038, 3038, 0], [3063, 3038, 0]]),
+            dict(name='zero_length', coords=[[3038, 3038, 0], [3038, 3038, 0]]),
+            dict(name='disabled_draw_advances', draw_enabled=False),
+        ]
     for case in cases:
         m = RadPixels(case)
         supplied = dict(birth)
@@ -664,8 +808,8 @@ def lifetime_rows(birth):
     return rows
 
 
-def input_identities(root, map_path):
-    files = physical_files(root, map_path)
+def input_identities(root, map_path, *, chrono=False):
+    files = physical_files(root, map_path, chrono=chrono)
     art = (root / 'ARTMD.INI').read_bytes()
     return [(name, None if raw is None else hashlib.sha256(raw).hexdigest())
             for name, raw in [*files, ('ARTMD.INI', art)]]
@@ -700,6 +844,29 @@ def generate():
     return result
 
 
+def generate_chrono():
+    root = assets_root()
+    map_path = Path(os.environ.get('VERA20K_CHRONO_BEAM_MAP', str(CHRONO_MAP)))
+    before_inputs = input_identities(root, map_path, chrono=True)
+    machine = PhysicalBirth(root, map_path, chrono=True)
+    colors = machine.color_controls()
+    cases = [dict(case, name=case['name'].replace('deso', 'cleg'))
+             for case in birth_cases()[:4]]
+    births = [machine.birth(case) for case in cases]
+    result = dict(schema_version=1, native_sha256=native.image_sha256(),
+        inputs=machine.reader_inputs, color_controls=colors,
+        birth_rng_before=machine.rng_initial, birth_rng_after=machine.rng_trace.states(),
+        birth_rows=births, geometry_rows=geometry_rows(births[0]['beam'], cases=[
+            dict(name='physical_birth_progress7'),
+            dict(name='mixed_alpha_depth', alpha='mixed', z=[0, 32760, 65535]),
+            dict(name='black_alpha', alpha='black'),
+            dict(name='partial_clip_changing_z', partial=True),
+        ]), original_text_and_vtables_unchanged=True)
+    machine.unchanged()
+    assert before_inputs == input_identities(root, map_path, chrono=True), 'physical input drift'
+    return result
+
+
 def metadata():
     return native.provenance(
         scope='Original DESO mode0/kind1 RadBeam wrapper, selected physical readers, FPS spacing, straight geometry, packed pixels and draw-count retirement',
@@ -726,10 +893,43 @@ def metadata():
             projection=0x6D2140, source_projection=0x6D1F10, packed_line=0x4BFD30))
 
 
+def chrono_metadata():
+    return native.provenance(
+        scope='Original CLEG mode1/kind1 copied beam, selected physical readers, native Teleport FLH and multichannel packed pixels',
+        assumptions=[
+            'Opt-in --chrono uses only the retained ordinary-cleg-chrono.map as the final layer after physical RULESMD, optional LANGRULE and MPBattleMD. Fixed ARTMD is not layered. Original Rules665650 and InfantryType5236A0 constructors plus whole5240A0/772080/75D3A0 readers execute on explicitly filtered CLEG/NeutronRifle/NeutronRifleE/ChronoBeam sections; native INI parses measured fields. This is cached lexical preparation, not physical file loading, full type discovery, complete Rules Process or startup.',
+            'ChronoBeamColor is AudioVisual, offset1866. Each layer runs original section-gate prefix6691E0 and stops before66920D or66B8F1. An admitted layer then runs original66B7A7..66B7D2 with ESI=Rules, EDI=cached INI, component ESP and EDX=ESP+10 from the preceding66B79D LEA. Whole474B50/528A10 and native CRT parse/default handling execute. Neither prefix is represented as a whole AudioVisual return. Constructor/current RGB is never supplied; all other Rules bytes and output guards are checked. Color precedes selected type reads in this component; full Process read ordering is outside it.',
+            'Selected CLEG Primary/ElitePrimary, native locomotor GUID, fixed ART ClegSequence/FLH, effect flags, Temporal/Radiation and ChronoBeamColor defaults/outputs are retained. Native factories construct/find/insert referenced types in supplied empty registries with spare capacity. Projectile reference constructors may run; projectile reading/firing/damage and visual/sound setup are outside this component.',
+            'Source and target are explicit supplied rookie CLEG Infantry-vtable/native-read-type actors, not native Infantry construction, Unlimbo, House, legal firing/first-shot admission or world placement. Target has no locomotor. Source constructs actual Teleport718000, links its original ILocomotion7F5000 to the actor and verifies +24=55A730. Whole mode1 SpawnRadBeam6FD620 reaches that actual native slot through original GetFLH. Native Facing and Tactical matrix initializer execute; pose, camera/scalar and binary frame200 are supplied. Settled native Teleport is not a teleport movement simulation or COM factory execution.',
+            'Four physical cardinal mode1 births run whole allocation/constructor/FLH/getters/projection/setters/registry insertion. Both actor links remain null, copied endpoints and ChronoBeamColor come from native readers/wrapper, and source/target/locomotor bytes, original text/vtables, ID cursor and full Main/Scenario/Mapgen RNG objects remain unchanged. No measured getter, FLH, depth, color or wrapper return is replaced. No RNG draw or detach is admitted.',
+            'The unchanged RadPixels/LaserPixels/Rally allocator, memory surfaces, native projection, sine/math, DrawStraight/ComputeStraight and packed4BFD30 owners run for four progress7 controls: clear destination, mixed A/Z, black A and partly clipped changing Z. All endpoints, color attenuation, ordered primitive arguments, whole RGB565 hashes, sparse pixel witnesses and immutable A/Z identities are original outputs. An unrelated LaserDraw constructor runs only during inherited surface setup; its managers and bolt/spark hooks must remain unreachable.',
+            'The shared mode1 kind1 renderer/lifetime arithmetic uses the consumed C29 rad_beam.json FPS/length/division/lifetime controls rather than duplicating those families. This variant does not execute whole FireAt, native Temporal detonation/warp/rearm, timing events, scenario load/save, actual retained-map MTNK target construction, whole Tactical/GPU composition, live terrain/fog, sound, eruption/kind2 or magnetic mode2 attachment. Those production/lifecycle gates need separate evidence.',
+        ],
+        substitutions=metadata()['substitutions'],
+        entry_points=dict(wrapper=WRAPPER, allocate=ALLOCATE, constructor=CTOR,
+            vector_initializer=VECTOR_INIT, draw=DRAW, segment=SEGMENT,
+            rules_ctor=0x665650, audio_visual_gate=AV_GATE,
+            audio_visual_present_stop=AV_PRESENT, audio_visual_absent_stop=AV_ABSENT,
+            chrono_color_fragment=CHRONO_COLOR_BEGIN, chrono_color_stop=CHRONO_COLOR_END,
+            color_reader=0x474B50, read_string=0x528A10, section_find=0x526810,
+            infantry_type_ctor=0x5236A0, infantry_type_reader=0x5240A0,
+            weapon_reader=0x772080, warhead_reader=0x75D3A0,
+            teleport_ctor=0x718000, locomotor_matrix=0x55A730,
+            infantry_flh=0x523250, techno_flh=0x6F3AD0,
+            projection=0x6D2140, source_projection=0x6D1F10, packed_line=0x4BFD30))
+
+
 if __name__ == '__main__':
+    selector = argparse.ArgumentParser(add_help=False)
+    selector.add_argument('--chrono', action='store_true')
+    selected_mode, remaining = selector.parse_known_args()
     sources = {name: Path(module.__file__) for name, module in sorted(sys.modules.items())
                if name.startswith('tools.') and getattr(module, '__file__', None)
                and str(module.__file__).endswith('.py')}
-    sources.update(producer=Path(__file__), retained_map=RETAINED_MAP)
-    native.finish_vectors(generate, HERE / 'rad_beam.json', provenance=metadata,
-                          source_paths=sources)
+    sources.update(producer=Path(__file__), retained_map=CHRONO_MAP if selected_mode.chrono else RETAINED_MAP)
+    if selected_mode.chrono:
+        native.finish_vectors(generate_chrono, HERE / 'chrono_beam.json',
+            provenance=chrono_metadata, argv=remaining, source_paths=sources)
+    else:
+        native.finish_vectors(generate, HERE / 'rad_beam.json', provenance=metadata,
+                              argv=remaining, source_paths=sources)

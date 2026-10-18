@@ -138,6 +138,8 @@ mod world_commands;
 mod world_hash;
 mod world_orders;
 mod world_spawn;
+#[cfg(test)]
+mod wall_autofill_oracle_tests;
 
 #[cfg(test)]
 mod aegis_distributed_fire_tests;
@@ -3694,6 +3696,38 @@ impl Simulation {
         self.flush_smudge_dirty();
     }
 
+    /// Execute59 at6DE313 uses +90 as a waypoint, not the +44 tail or an
+    /// amount. Map57B790..57B860 tests121 offsets with sqrtApprox/ftol and
+    /// always reduces the unchanged centre pointer, never the candidate.
+    /// Seven original executions (Steam3e81a617..08600, real and Dummy,
+    /// signed extremes) each observed109 ordered calls480A80(receiver,1).
+    /// Packed subtraction leaves offsets independent of the centre, so reuse
+    /// that constant count without adding another floating distance kernel.
+    pub(crate) fn trigger_reduce_tiberium_at_waypoint(
+        &mut self,
+        waypoint: i32,
+        rules: &RuleSet,
+        overlay_registry: &crate::rules::overlay_types::OverlayTypeRegistry,
+    ) -> bool {
+        let Some(cell) = self.session.waypoint_cell(waypoint) else {
+            return false;
+        };
+        if self.resolved_terrain.is_none() || self.overlay_grid.is_none() {
+            return false;
+        }
+        // Keep every call, including after depletion. The shared owner
+        // performs each native lookup and owns RNG/queues/radar/cleanup.
+        for _ in 0..109 {
+            self.reduce_tiberium_at_with_native_context(
+                (cell.0 as u16, cell.1 as u16),
+                1,
+                Some(rules),
+                Some(overlay_registry),
+            );
+        }
+        true
+    }
+
     pub(crate) fn reduce_tiberium_at_with_native_context<A: Into<i32>>(
         &mut self,
         cell: (u16, u16),
@@ -3827,6 +3861,8 @@ impl Simulation {
     /// chrono screen's test (`0x0055B39B`) shares the nuke arm. Original
     /// controls: superweapon_oracle.json/ambient_step, chrono=1.
     pub(crate) fn tick_scenario_lighting_transition(&mut self, rules: &RuleSet) {
+        let (rate_nonzero, normal_interval, ambient_step) =
+            self.session.lighting.ambient_change_terms(rules);
         let interval_frames = if self.session.lighting.nuke_flash_running()
             || self.session.chrono_screen().active()
         {
@@ -3834,13 +3870,13 @@ impl Simulation {
         } else if crate::sim::superweapon::psychic_dominator::active(self) {
             self.session.lighting.dominator_change_rate
         } else {
-            rules.general.ambient_change_interval_frames
+            normal_interval
         };
         if self.session.lighting.advance_transition_if_due(
             self.session.binary_frame,
-            rules.general.ambient_change_rate_nonzero,
+            rate_nonzero,
             interval_frames,
-            rules.general.ambient_change_step,
+            ambient_step,
         ) {
             //55B4C6 refreshes Cell scalars without calling palette53AD00.
             self.publish_global_lighting(crate::sim::light_sources::PaletteUpdate::Preserve);

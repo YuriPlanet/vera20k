@@ -197,7 +197,9 @@ impl crate::sim::world::Simulation {
     }
 }
 
-/// YR `CellClass::GetCellCoords`: center the cell and keep its terrain floor.
+/// Shared cell-center arithmetic, including CellStruct-to-Coord642740.
+/// That caller sign-extends the packed cell words before entering here.
+/// Other callers retain their supplied cell width and height.
 pub fn cell_center(cell: CellCoordinate, floor_z: i32) -> WorldCoordinate {
     WorldCoordinate {
         x: cell

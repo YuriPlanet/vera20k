@@ -107,6 +107,7 @@ pub(crate) struct TacticalCaptureSession {
     map_source_evidence: Option<Value>,
     startup_evidence: Option<Value>,
     controller: CaptureController,
+    preparing_random_map: bool,
     exact_step_receipts: Vec<crate::app::match_runtime::sim_tick::ExactStepReceipt>,
     last_render_ready: bool,
     last_render_evidence: Option<Value>,
@@ -135,6 +136,7 @@ impl TacticalCaptureSession {
             map_source_evidence: None,
             startup_evidence: None,
             controller,
+            preparing_random_map: false,
             exact_step_receipts: Vec::new(),
             last_render_ready: false,
             last_render_evidence: None,
@@ -169,6 +171,48 @@ impl TacticalCaptureSession {
 
         if self.request.map_profile().is_some() {
             self.prepare_map_observation(state)?;
+            let launch = self.request.launch_session();
+            if let Some(seed_name) = launch
+                .selected_map_file
+                .as_deref()
+                .filter(|name| crate::map::rmg::is_seed_selection(name))
+            {
+                // The normal setup accept writes the canonical seed record and
+                // owns the unique start-staging token. Drive that owner before
+                // launch regeneration; never reconstruct starts from map cells.
+                ensure!(
+                    seed_name == crate::app::shell_random_map::RANDMAP_SED_FILE,
+                    "generated capture requires the normal accepted RandMap.Sed record"
+                );
+                let path = state
+                    .platform
+                    .game_config
+                    .as_ref()
+                    .unwrap()
+                    .paths
+                    .ra2_dir
+                    .join(seed_name);
+                let bytes = std::fs::read(&path).context("read capture setup seed")?;
+                let ini = crate::rules::ini_parser::IniFile::from_bytes(&bytes)
+                    .context("parse capture setup seed")?;
+                let mut options = crate::map::rmg::RmgOptions::default();
+                options.apply_sed(&ini);
+                options.normalize();
+                let mut modal = crate::ui::skirmish_shell::RandomMapSetupModalState::open(
+                    options.clone(),
+                    None,
+                    false,
+                );
+                modal.begin_generate();
+                state.frontend.skirmish_shell_state.random_map_setup_modal = Some(modal);
+                ensure!(
+                    crate::app::App::start_random_map_generation(state, &options, false),
+                    "cannot start normal random-map setup generation"
+                );
+                self.preparing_random_map = true;
+                self.failure_stage = "random-map-setup".to_owned();
+                return Ok(());
+            }
             self.begin_accepted_loading(state)?;
             self.failure_stage = "loading".to_owned();
             return Ok(());
@@ -318,7 +362,12 @@ impl TacticalCaptureSession {
         state.frontend.shell_route = crate::app::shell_route::ShellRoute::MainMenu;
         state.frontend.shell_first_paint_slide = None;
         state.frontend.skirmish_preview_texture = None;
-        let request = crate::app::loading::pump::LoadingRequest::accepted_skirmish(startup);
+        let accepted_random_map = state
+            .frontend
+            .random_map_retention
+            .take_acceptance_for_loading(launch.selected_map_file.as_deref());
+        let request = crate::app::loading::pump::LoadingRequest::accepted_skirmish(startup)
+            .with_accepted_random_map(accepted_random_map);
         crate::app::loading::pump::begin_loading(state, request);
         state.match_state.input.zoom_level = 1.0;
         state.match_state.input.zoom_target = 1.0;
@@ -348,6 +397,30 @@ impl TacticalCaptureSession {
         if state.platform.window.has_focus() {
             self.record_focus_violation();
             bail!("hidden tactical capture window gained focus");
+        }
+
+        if self.preparing_random_map {
+            crate::app::App::poll_random_map_generation(state);
+            if state.frontend.random_map_generation.is_some() {
+                return Ok(());
+            }
+            ensure!(
+                matches!(
+                    state
+                        .frontend
+                        .skirmish_shell_state
+                        .random_map_setup_modal
+                        .as_ref()
+                        .map(|modal| modal.accept()),
+                    Some(crate::ui::skirmish_shell::AcceptOutcome::Commit(_))
+                ),
+                "random-map setup did not produce an accepted candidate"
+            );
+            crate::app::App::accept_random_map_setup(state);
+            self.preparing_random_map = false;
+            self.begin_accepted_loading(state)?;
+            self.failure_stage = "loading".to_owned();
+            return Ok(());
         }
 
         match state.frontend.screen {

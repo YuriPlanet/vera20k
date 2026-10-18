@@ -5,6 +5,22 @@
 and retains a hidden-window GPU readback. This is a production observation, not a
 native comparator or a gameplay/pixel parity certification.
 
+## Accepted random maps
+
+A profile selecting the exact normal `RandMap.Sed` record can observe a generated
+match. Place the desired `.SED` in a real isolated retail directory and point the
+capture's `config.toml` there. The capture runs the existing setup generator and
+acceptance before normal launch regeneration. Setup writes `RandMap.Sed` and
+`RandMap.img` in that directory; retain original retail files separately. The
+`.SED` seed controls MapGen, while the profile seed controls match startup.
+
+The generated `map_source` receipt retains `seed_name` and nested `seed_source`
+(`path`, `payload_len`, `source_sha256`) from the exact seed buffer consumed by
+launch loading. Setup may normalize the record and stamp its localized description
+before that read. Legacy name-only sources and empty seed files cannot certify a
+capture. Other selected `.SED` names are not supported by this setup adapter.
+This demonstrates the recorded production path, not native full-generation parity.
+
 ## Named commands and outcome inspection
 
 Use `vera20k.map-observation-profile.v3` to name command targets without a separate
@@ -96,7 +112,8 @@ An expectation file declares one or more explicit checks:
 ```
 
 Subjects are `actor` (a `stable_id`, or a type/optional owner/cell selector), `house`
-(an owner string), or `super_weapon` (`owner` and exact `type`). A named assertion
+(an owner string), `super_weapon` (`owner` and exact `type`), or `gesture` (a
+nonnegative receipt ordinal). A named assertion
 binds exactly one actor at `bind_step` (default 0), then follows its stable ID within
 that load epoch; it never substitutes another matching actor. Actor assertions
 crossing a quickload report identity as `UNOBSERVED`, even when type and ID match.
@@ -115,6 +132,16 @@ failing and unavailable samples plus coverage counts. Assertions are independent
 timeline filters and bounded to 128 checks and 1,000,000 requested samples.
 Enable the corresponding `observe_owners`, `observe_types` and optional observations
 in the capture profile: an offline report cannot recover unrecorded state.
+
+`{"gesture":0}` selects the actual `observations.gesture_input.receipts` row whose
+`ordinal` is 0. Fields address that receipt, for example
+`command_bar.thumb.release.dispatch.key_after` or `command_bar.thumb.after.closed`.
+It is observed only at its `issue_after_step`, with that completed-step frame
+retained. Missing or duplicate ordinals, an unsampled issue step, other steps and
+missing fields yield `UNOBSERVED`; a gesture's state is never carried into later
+samples or replaced by another gesture. An explicitly recorded `dispatch:null`
+can be compared to `null`, while its unrecorded `key_after` remains `UNOBSERVED`.
+This is an assertion subject, independent of timeline actor/House filters.
 
 Exit status is 0 for `INSPECTED` or assertion `PASS`, 1 for assertion `FAIL` (including
 unobserved requirements), and 2 for invalid evidence/input. Reports distinguish
@@ -695,6 +722,31 @@ key-only profiles keep their existing policy and receipt shape unless they also
 request a right button as described below. It accepts no
 click modifiers. Python checks receipt shape/geometry without reproducing the
 runtime command registry, layout or action admission.
+
+The diagnostic-only `{"kind":"command_bar","command":"Thumb"}` targets the
+retained open/close thumb through the same mouse driver. It does not add a gameplay
+command or a command slot: its receipt omits `slot` and adds `thumb` with `before`,
+`press`, `release` and `after`. `before`/`after` are state objects; each edge has
+exactly `state` and `dispatch`. Each state records boolean `closed`, `pressed`,
+`sticky`, `disabled`, `local_player_defeated`, `input_locked` and `left_held`, u16
+`gadget_id`, four i32 `rect` components, nullable string `current_house`, nullable
+u8 `side_index`, and nullable boolean `has_lost`/`exit_ready`. These are passive
+observations of the existing owners, not flags inferred from remaining actors.
+Each nonnull dispatch records u16 `masked_flags`, u8 `modifier`, u16 `key_after`
+and u32 `action_result`. `key_after` is the actual mutable gadget key after
+dispatch; `action_result` records consumption and is not a fired gadget ID.
+Validation preserves the observed bar result, including a pre-fix reopening.
+
+A Thumb may record `left_press_captured:false` only when `before`, press and
+release all record `input_locked:true`, both edge dispatches are `null`, and
+`closed` is unchanged through all four states. The driver does not read a stale
+dispatch when the Scenario guard prevents entry. Physical input still records
+`left_held:true` on press and `false` before, on release and after neutral refresh;
+`neutral_input_restored` remains required. Other gestures keep their existing
+capture requirements. A Thumb adds four state samples and one sample for each
+nonnull dispatch to the existing one-sample command-bar receipt (normally seven
+total, or five for a locked refusal). Legacy command receipts retain their exact
+schema and require no Thumb observations.
 
 The Area Guard [standing discovery](input_oracle/profiles/area-guard-standing-discovery.json)
 and [combat discovery](input_oracle/profiles/area-guard-combat-discovery.json)

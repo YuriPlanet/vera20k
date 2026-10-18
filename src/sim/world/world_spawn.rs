@@ -7,6 +7,7 @@
 
 mod authored_health;
 mod construction;
+mod wall_unlimbo;
 pub(crate) use construction::{CrushableFacts, MoverFacts, TypeFacts};
 
 use crate::sim::world::FrameEffects;
@@ -562,11 +563,13 @@ impl Simulation {
                 sim.attach_object_trigger_tag(ge.stable_id(), map_ent.trigger_tag.as_deref());
                 let (stable_id, outcome) =
                     sim.unlimbo_authored_techno(ge, map_ent.health, rules, overlay_registry);
-                if !matches!(outcome, RevealOutcome::Revealed { .. }) {
+                if !matches!(outcome, RevealOutcome::Revealed { .. } | RevealOutcome::Consumed) {
                     sim.discard_constructed_limbo(stable_id, rules, FrameEffects::default());
                     continue;
                 }
-                if let Some(ruleset) = rules {
+                if matches!(outcome, RevealOutcome::Revealed { .. })
+                    && let Some(ruleset) = rules
+                {
                     sim.initialize_cloak_after_unlimbo(stable_id, ruleset);
                     sim.add_unit_sensor_after_unlimbo(stable_id, ruleset, overlay_registry);
                     sim.add_building_sensor_array_if_powered(stable_id, ruleset, overlay_registry);
@@ -979,6 +982,9 @@ impl Simulation {
                 FrameEffects::default(),
             )
         });
+        if outcome == RevealOutcome::Consumed {
+            return Ok(Some(stable_id));
+        }
         if !matches!(outcome, RevealOutcome::Revealed { .. }) {
             // This convenience path owns its transient constructor result.
             // Held production objects use the separate limbo/retry boundary.
@@ -1204,6 +1210,15 @@ impl Simulation {
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> Option<u64> {
+        if let Some(outcome) = self.unlimbo_constructed_wall(
+            stable_id,
+            requested_position,
+            Some(rules),
+            overlay_registry,
+            frame_effects,
+        ) {
+            return (outcome == RevealOutcome::Consumed).then_some(stable_id);
+        }
         let is_infantry = self
             .substrate
             .entities
@@ -1705,6 +1720,15 @@ impl Simulation {
                     frame_effects,
                 )
             });
+        }
+        if let Some(outcome) = self.unlimbo_constructed_wall(
+            stable_id,
+            position,
+            rules,
+            overlay_registry,
+            frame_effects,
+        ) {
+            return (stable_id, outcome);
         }
         let Some((position, placement)) = self.unlimbo_class_entry(
             stable_id,
@@ -2257,7 +2281,10 @@ impl Simulation {
             registry,
             frame_effects,
         );
-        if !matches!(outcome, RevealOutcome::Revealed { .. }) {
+        if !matches!(
+            outcome,
+            RevealOutcome::Revealed { .. } | RevealOutcome::Consumed
+        ) {
             //739A6E first scalar-deletes the refused constructor-complete
             // Building; only then739A94/+124(1) restore the original Unit.
             self.discard_constructed_limbo(new_sid, Some(rules), frame_effects);
@@ -2560,7 +2587,10 @@ impl Simulation {
             false,
             frame_effects,
         );
-        if !matches!(outcome, RevealOutcome::Revealed { .. }) {
+        if !matches!(
+            outcome,
+            RevealOutcome::Revealed { .. } | RevealOutcome::Consumed
+        ) {
             self.discard_constructed_limbo(new_sid, Some(rules), frame_effects);
             self.uninit_with_context(
                 sid,
