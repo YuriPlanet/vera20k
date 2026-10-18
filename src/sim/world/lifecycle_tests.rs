@@ -9610,6 +9610,7 @@ fn unlimbo_levels_then_aims_the_barrel_elevation() {
             .cell_mut(4, 4)
             .unwrap();
         cell.speed_costs.track = Some(100);
+        cell.speed_costs.wheel = Some(100);
         cell.base_speed_costs = cell.speed_costs;
         let id = sim
             .spawn_object(type_id, "Americans", 4, 4, 0, &rules)

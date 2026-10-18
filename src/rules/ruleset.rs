@@ -4232,6 +4232,15 @@ impl RuleSet {
                 weapon.warhead = warhead.map(str::to_owned);
             }
         }
+        for (name, speed_type) in processed.unit_speed_type_states() {
+            if let Some(object) = rules
+                .object_list
+                .iter_mut()
+                .find(|object| object.category == ObjectCategory::Vehicle && object.id == name)
+            {
+                object.speed_type = speed_type;
+            }
+        }
         for (category, name, airstrike) in processed.airstrike_states() {
             if let Some(object) = rules
                 .object_list

@@ -2929,18 +2929,24 @@ impl ObjectType {
             // InfantryType5236A0 and BuildingType45DD9D pass Foot0 to
             // TechnoType710AF0, stored7110E0. Original Infantry constructor and
             // ENGINEER retail-layer reads: rules_oracle/infantry_speed_type.
-            // Other category defaults remain with this existing owner.
-            speed_type: section.read_speed_type(
-                "SpeedType",
-                if matches!(
-                    category,
-                    ObjectCategory::Building | ObjectCategory::Infantry
-                ) {
-                    SpeedType::Foot
-                } else {
-                    SpeedType::default()
-                },
-            ),
+            // UnitType747620 resolves its -1 constructor seed from Crusher.
+            // The process owner replaces this standalone read with the value
+            // retained across admitted Rules passes (not merged final keys).
+            speed_type: if category == ObjectCategory::Vehicle {
+                SpeedType::Invalid.read_vehicle_pass(section, section.read_bool("Crusher", false))
+            } else {
+                section.read_speed_type(
+                    "SpeedType",
+                    if matches!(
+                        category,
+                        ObjectCategory::Building | ObjectCategory::Infantry
+                    ) {
+                        SpeedType::Foot
+                    } else {
+                        SpeedType::default()
+                    },
+                )
+            },
             movement_zone: section
                 .read_name("MovementZone", 0x20)
                 .map(MovementZone::from_ini)
@@ -3492,6 +3498,10 @@ fn building_bool(section: &IniSection, category: ObjectCategory, key: &str) -> b
 #[cfg(test)]
 #[path = "infantry_speed_type_tests.rs"]
 mod infantry_speed_type_tests;
+
+#[cfg(test)]
+#[path = "vehicle_speed_type_tests.rs"]
+mod vehicle_speed_type_tests;
 
 #[cfg(test)]
 #[path = "infantry_pip_tests.rs"]

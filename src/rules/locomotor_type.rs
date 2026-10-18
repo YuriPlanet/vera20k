@@ -202,6 +202,26 @@ pub enum SpeedType {
 }
 
 impl SpeedType {
+    /// UnitType747620's reached Rules pass. Its constructor passes -1 at
+    /// 7470D7..7470DE (TechnoType stores it at7110E0). The parent first reads
+    /// SpeedType at7121D1..7121E5 and Crusher at714CC8..714CE3; Unit then
+    /// replaces only -1 with Crusher ? Track : Wheel at7476D3..7476EB and
+    /// reads SpeedType again at7476F1..74770B. Both use ReadSpeedType476FC0.
+    /// `crusher` is the retained value after this pass's parent reader.
+    pub(crate) fn read_vehicle_pass(
+        self,
+        section: &crate::rules::ini_parser::IniSection,
+        crusher: bool,
+    ) -> Self {
+        let current = section.read_speed_type("SpeedType", self);
+        let default = if current == Self::Invalid {
+            if crusher { Self::Track } else { Self::Wheel }
+        } else {
+            current
+        };
+        section.read_speed_type("SpeedType", default)
+    }
+
     /// All SpeedTypes with a land row (excludes Winged, which ignores terrain).
     /// Order matches the binary enum table.
     pub const ALL_WITH_LAND_ROWS: &[SpeedType] = &[

@@ -375,10 +375,11 @@ fn test_drive_arrival_clears_navcom_same_tick() {
     assert_eq!(drive.destination(), None);
 }
 
-/// The fixture Drive types: a Unit's Process reads its type.
+/// The fixture Drive types: a Unit's Process reads its type. Match the
+/// explicitly tracked locomotor and terrain supplied by these controls.
 fn drive_type_rules() -> crate::rules::ruleset::RuleSet {
     crate::rules::ruleset::RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
-        "[VehicleTypes]\n0=HTNK\n1=MTNK\n2=DRIVE\n[HTNK]\nSpeed=6\n[MTNK]\nSpeed=6\n[DRIVE]\nSpeed=6\n",
+        "[VehicleTypes]\n0=HTNK\n1=MTNK\n2=DRIVE\n[HTNK]\nSpeed=6\nSpeedType=Track\n[MTNK]\nSpeed=6\nSpeedType=Track\n[DRIVE]\nSpeed=6\nSpeedType=Track\n",
     ))
     .unwrap()
 }

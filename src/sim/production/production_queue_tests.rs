@@ -2255,6 +2255,7 @@ fn failed_vehicle_exit_promotes_a_fresh_identity_that_can_deliver_after_cells_cl
         cell.yr_cell_land_type = crate::rules::terrain_rules::LandType::Clear.as_index();
         cell.terrain_class = crate::rules::terrain_rules::TerrainClass::Clear;
         cell.speed_costs.track = Some(100);
+        cell.speed_costs.wheel = Some(100);
         cell.zone_type = crate::map::resolved_terrain::zone_class::GROUND;
     }
     let clear_grid = PathGrid::from_resolved_terrain(&terrain);
