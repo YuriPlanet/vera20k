@@ -1617,20 +1617,6 @@ impl Simulation {
         true
     }
 
-    /// Whether `id` is a Building (vt+0x2C == 6) whose type has
-    /// `WeaponsFactory=` (BuildingType `+0x16BD`). It is the war factory test
-    /// on a radio contact in the Unit setter's WeaponsFactory arm, in
-    /// Queue_Navigation_List's idle tail (`0x004DA15A..0x004DA1A6`) and in
-    /// Unit Per_Cell_Process's factory clearance.
-    pub(super) fn is_weapons_factory(&self, id: u64, rules: &RuleSet) -> bool {
-        self.substrate.entities.get(id).is_some_and(|building| {
-            building.category() == EntityCategory::Structure
-                && self
-                    .object_type(building.type_ref(), rules)
-                    .is_some_and(|object| object.weapons_factory)
-        })
-    }
-
     /// Unit 0x741970's BalloonHover arm (0x741983..0x741A7D), the first test
     /// of a NULL destination. A `BalloonHover=` type (+0xD6A) holding a
     /// NavCom (+0x5A4) and a Target (+0x2B4) keeps the NavCom when it:

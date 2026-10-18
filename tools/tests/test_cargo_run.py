@@ -229,7 +229,7 @@ class CargoRunTests(unittest.TestCase):
             return child
         return start
 
-    def invoke(self, label='build-a', **options):
+    def invoke(self, label='build-a', *, root=None, **options):
         original = subprocess.check_output
         def output(command, **kwargs):
             if command[0] in {'rustc', 'cargo'}:
@@ -242,7 +242,41 @@ class CargoRunTests(unittest.TestCase):
         with patch.object(cargo_run, 'build_processes', return_value=[]), \
              patch.object(cargo_run.subprocess, 'check_output', side_effect=output), \
              patch.object(cargo_run.subprocess, 'Popen', side_effect=start):
-            return cargo_run.run(self.root, ['build'], label, 0)
+            return cargo_run.run(root or self.root, ['build'], label, 0)
+
+    def test_worktree_builds_into_one_cache_under_the_primary_checkout(self):
+        # Sessions differ in CARGO_TARGET_DIR (Claude sets the primary's target/,
+        # Codex sets nothing); a checkout built from both must share one cache.
+        home = tempfile.TemporaryDirectory()
+        self.addCleanup(home.cleanup)
+        worktree = Path(home.name, 'worktree').resolve()
+        subprocess.run(['git', '-C', str(self.root), 'worktree', 'add', '-q', str(worktree)], check=True)
+        store, namespace = cargo_run.build_store(worktree)
+        self.assertEqual(store, self.root / '.git' / 'owned-builds')
+        self.assertNotEqual(namespace, cargo_run.build_store(self.root)[1])
+        shared = self.root / 'target' / 'owned-worktrees' / namespace
+        self.assertEqual(cargo_run.owned_target(worktree, namespace), shared)
+        os.environ['CARGO_TARGET_DIR'] = str(self.root / 'target')
+        self.assertEqual(cargo_run.owned_target(worktree, namespace), shared)
+        os.environ['CARGO_TARGET_DIR'] = str(Path(home.name, 'elsewhere'))
+        self.assertEqual(cargo_run.owned_target(worktree, namespace),
+                         Path(home.name, 'elsewhere').resolve() / 'owned-worktrees' / namespace)
+        del os.environ['CARGO_TARGET_DIR']
+        with redirect_stderr(io.StringIO()):
+            self.assertEqual(self.invoke(None, root=worktree), 0)
+        self.assertTrue((shared / 'debug').is_dir())
+        self.assertFalse((worktree / 'target').exists())
+        registry = json.loads((store / 'cache-roots.json').read_text())
+        self.assertEqual(registry['roots'][str(shared)]['checkout'], str(worktree))
+        # A cache built under another root (an older runner, or a session whose
+        # environment points elsewhere) is reported, never removed by the build.
+        from tools import _cargo_cache as cache
+        legacy = worktree / 'target' / 'owned-worktrees' / namespace
+        self.assertEqual(cache.register_locked(worktree, store, legacy), [shared])
+        with redirect_stderr(io.StringIO()) as stderr:
+            self.assertEqual(self.invoke(None, root=worktree), 0)
+        self.assertIn(f'also has caches at {legacy}', stderr.getvalue())
+        self.assertTrue(legacy.is_dir())
 
     def test_low_free_space_blocks_before_cargo_or_label_publication(self):
         from tools import _cargo_cache

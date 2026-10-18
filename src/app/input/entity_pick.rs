@@ -1415,7 +1415,7 @@ mod tests {
         assert_eq!(selection.select, [1]);
         assert!(sim.apply_command(
             "Americans",
-            &Command::ForceAttack {
+            &Command::Attack {
                 attacker_id: selection.select[0],
                 target_id: 3,
             },

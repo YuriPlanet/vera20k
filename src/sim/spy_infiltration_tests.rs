@@ -640,9 +640,17 @@ fn retail_rules_name_the_spy_and_what_it_enters() {
     let rules = &retail.rules;
     let spy = rules.object("SPY").unwrap();
     assert!(spy.infiltrate && spy.agent);
-    for kind in ["E1", "ENGINEER", "GHOST", "TANY"] {
+    assert!(!rules.object("E1").unwrap().infiltrate);
+    for kind in [
+        "ENGINEER",
+        "SENGINEER",
+        "YENGINEER",
+        "GHOST",
+        "PTROOP",
+        "TANY",
+    ] {
         let object = rules.object(kind).unwrap();
-        assert!(!object.infiltrate && !object.agent, "{kind}");
+        assert!(object.infiltrate && !object.agent, "{kind}");
     }
     for kind in [
         "GAPOWR", "NAPOWR", "NANRCT", "GAPILE", "NAWEAP", "YATECH", "AMRADR",

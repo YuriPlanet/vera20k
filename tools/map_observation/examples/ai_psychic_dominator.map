@@ -61,16 +61,15 @@ Color=Grey
 1=62062
 
 [Structures]
-0=Computer1,YAPPET,256,46,42,0,None,0,0,1,0,0,None,None,None,0,0
-1=Computer1,GAPOWR,256,40,44,0,None,0,0,1,0,0,None,None,None,0,0
-2=Computer1,GAPOWR,256,43,40,0,None,0,0,1,0,0,None,None,None,0,0
-3=VERA-OBSERVER,GACNST,256,40,62,0,None,0,0,1,0,0,None,None,None,0,0
+0=Computer,YAPPET,256,46,42,0,None,0,0,1,0,0,None,None,None,0,0
+1=Computer,GAPOWR,256,40,44,0,None,0,0,1,0,0,None,None,None,0,0
+2=Computer,GAPOWR,256,43,40,0,None,0,0,1,0,0,None,None,None,0,0
 
 [Units]
-0=VERA-OBSERVER,MTNK,256,43,53,64,Guard,None,0,-1,0,-1,0,0
-1=VERA-OBSERVER,MTNK,256,44,54,64,Guard,None,0,-1,0,-1,0,0
-2=VERA-OBSERVER,MTNK,256,45,55,64,Guard,None,0,-1,0,-1,0,0
-3=VERA-OBSERVER,MTNK,256,52,62,64,Guard,None,0,-1,0,-1,0,0
+0=<human player>,MTNK,256,43,53,64,Guard,None,0,-1,0,-1,0,0
+1=<human player>,MTNK,256,44,54,64,Guard,None,0,-1,0,-1,0,0
+2=<human player>,MTNK,256,45,55,64,Guard,None,0,-1,0,-1,0,0
+3=<human player>,MTNK,256,52,62,64,Guard,None,0,-1,0,-1,0,0
 
 [Infantry]
 

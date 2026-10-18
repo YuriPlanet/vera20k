@@ -37,6 +37,23 @@ use crate::map::entities::EntityCategory;
 /// Infantry's own weapon class bits out (`0x007431BD`, `0x0051E2C7`).
 const QUARRY_BITS: u32 = 0x1B978;
 
+/// `Quarry_To_Threat @ 0x00645BB0` (table `0x00645BF8`): a target
+/// quarry as a `Greatest_Threat` mask; 0 outside `2..=11`.
+pub(crate) const fn quarry_mask(quarry: i32) -> u32 {
+    match quarry {
+        2 => 0x20,
+        3 => 0x40,
+        4 => 0x8,
+        5 => 0x10,
+        6 => 0x1000,
+        7 => 0x2000,
+        9 => 0x800,
+        10 => 0x8000,
+        11 => 0x10000,
+        _ => 0,
+    }
+}
+
 /// Unit `+0x3C4` (`0x00743190`), past its dormant human `DeployToFire=`
 /// return: the weapon class bits join a mask with no quarry bit.
 pub(super) fn unit_override(mask: u32, class_bits: impl FnOnce() -> u32) -> u32 {

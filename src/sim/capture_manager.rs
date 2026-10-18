@@ -254,6 +254,16 @@ pub struct MindControlLink {
     /// `+0x2C4`: set by `PsyDom::MindControlArea` (`0x0053B2A2`); nothing
     /// clears it.
     permanent: bool,
+    /// Techno+2CC: the House controlling a trigger-transferred building.
+    /// Constructor6F2E5D=null; House50D290 writes it after ChangeOwner.
+    /// Independent of both the unit controller and the Dominator bit.
+    #[serde(default)]
+    house_controller: Option<InternedId>,
+    /// Techno+2E0: its pre-transfer House. ChangeOwner7017A0 clears only
+    /// this pointer, so a later ordinary capture can leave +2CC nonnull
+    /// while GetOriginalOwner70F820 returns NULL. Do not merge the pair.
+    #[serde(default)]
+    house_original_owner: Option<InternedId>,
 }
 
 /// The world hash folds the controller and ring as it always has, and the
@@ -264,6 +274,11 @@ impl std::hash::Hash for MindControlLink {
         self.ring_anim.hash(hasher);
         if self.permanent {
             0x2c4_u32.hash(hasher);
+        }
+        if self.house_controller.is_some() || self.house_original_owner.is_some() {
+            b"trigger-house-control-v1".hash(hasher);
+            self.house_controller.hash(hasher);
+            self.house_original_owner.hash(hasher);
         }
     }
 }
@@ -284,6 +299,20 @@ impl MindControlLink {
     /// `+0x2C4` alone, which All_To_Hunt's Dominator arm reads (`0x0050144B`).
     pub(crate) fn permanent(&self) -> bool {
         self.permanent
+    }
+
+    pub(crate) fn house_controller(&self) -> Option<InternedId> {
+        self.house_controller
+    }
+
+    pub(crate) fn house_original_owner(&self) -> Option<InternedId> {
+        self.house_original_owner
+    }
+
+    /// The shared ChangeOwner7017A0 write, after Added_To_Game and before
+    /// the mission tail. +2CC is deliberately preserved.
+    pub(crate) fn clear_house_original_owner_on_owner_change(&mut self) {
+        self.house_original_owner = None;
     }
 
     #[cfg(any(test, feature = "test-support"))]
@@ -317,12 +346,13 @@ impl CaptureVictimFacts {
     /// Shield).
     pub(crate) fn of(target: &GameEntity, target_obj: &ObjectType, frame: u32) -> Self {
         // 3: `ImmuneToPsionics=` (`+0xD35`); 4: a Unit in a tank bunker
-        // (`+0x2E4`); 5: already controlled; 6: a trigger transfer (`+0x2CC`,
-        // no VERA producer); 7: the Iron Curtain; 9: Selling or Construction.
+        // (`+0x2E4`); 5: already controlled; 6: a trigger transfer (+0x2CC,
+        // 471CF0); 7: the Iron Curtain; 9: Selling or Construction.
         let refused = target_obj.immune_to_psionics
             || (target.category() == EntityCategory::Unit
                 && target.bunker.link().installed_in().is_some())
             || target.mind_control.is_mind_controlled()
+            || target.mind_control.house_controller.is_some()
             || crate::sim::superweapon::invulnerability::is_invulnerable(
                 target.invulnerability.as_ref(),
                 frame,
@@ -382,6 +412,54 @@ pub(crate) fn init_capture_manager(
 }
 
 impl Simulation {
+    /// House50D290 /50D2D0, reached by active TAction123/124 through
+    /// 6E0CA0/6E0D00 (Steam gamemd3e81a617..08600). Walk the current House
+    /// building list backwards; ChangeOwner callbacks mutate that same list.
+    /// No health/limbo/type filter and no independent ownership copy.
+    pub(crate) fn control_house_buildings(
+        &mut self,
+        incoming: InternedId,
+        selected: InternedId,
+        restore: bool,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        frame_effects: FrameEffects<'_>,
+    ) {
+        let source = if restore { incoming } else { selected };
+        let destination = if restore { selected } else { incoming };
+        let mut count = self
+            .houses
+            .get(&source)
+            .map_or(0, |house| house.base_projection.buildings().len());
+        while count != 0 {
+            count -= 1;
+            let Some(id) = self
+                .houses
+                .get(&source)
+                .and_then(|house| house.base_projection.buildings().get(count))
+                .copied()
+            else {
+                continue;
+            };
+            if restore
+                && self
+                    .substrate
+                    .entities
+                    .get(id)
+                    .is_none_or(|entity| entity.mind_control.house_original_owner != Some(selected))
+            {
+                continue;
+            }
+            self.change_owner_with_rules(id, destination, rules, registry, frame_effects);
+            if let Some(entity) = self.substrate.entities.get_mut(id) {
+                // Native writes AFTER the entire virtual ChangeOwner. The
+                // shared Techno half has already cleared its old +2E0.
+                entity.mind_control.house_original_owner = (!restore).then_some(selected);
+                entity.mind_control.house_controller = (!restore).then_some(incoming);
+            }
+        }
+    }
+
     /// CanCapture for the live pair.
     pub(crate) fn can_capture(&self, controller_id: u64, target_id: u64, rules: &RuleSet) -> bool {
         let Some(controller) = self

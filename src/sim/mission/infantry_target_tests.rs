@@ -255,7 +255,7 @@ fn compare_original_infantry_target_rows(consumer: TargetConsumer) {
             assert!(
                 sim.apply_command(
                     "Receiver",
-                    &crate::sim::command::Command::ForceAttack {
+                    &crate::sim::command::Command::Attack {
                         attacker_id: 1,
                         target_id: 2,
                     },

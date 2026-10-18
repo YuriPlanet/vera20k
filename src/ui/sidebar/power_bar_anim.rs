@@ -116,9 +116,28 @@ impl PowerBarAnimState {
     }
 
     /// Set the available pixel budget (native strip height plus three).
-    /// Resizing does not clamp the retained counts or start an animation.
+    /// A native geometry write does not clamp the retained counts or start an
+    /// animation; `fit_strip` owns VERA's mid-match resizes.
     pub fn set_max_segments(&mut self, bar_height_px: i32) {
         self.max_segments = bar_height_px / SEGMENT_HEIGHT_PX;
+    }
+
+    /// The app's per-frame strip write. gamemd's only strip-height writer
+    /// (`6A5130`, from Sidebar init and gadget layout) derives it from the
+    /// screen or tactical view, which only VERA changes mid-match (window,
+    /// fullscreen, sidebar scale). When an established strip changes, the
+    /// retained totals take their settled bands for the new budget (`63F960`),
+    /// so nothing draws past the strip. A layout change is not a Power change:
+    /// no flash, slide or AI visit. A fresh or loaded owner's first budget only
+    /// sets capacity, and a fresh clear has no totals (-1) to refit.
+    pub fn fit_strip(&mut self, bar_height_px: i32, theoretical_total: impl FnOnce() -> i32) {
+        let established = self.max_segments;
+        self.set_max_segments(bar_height_px);
+        if established == 0 || established == self.max_segments || self.cached_output < 0 {
+            return;
+        }
+        self.counts =
+            self.compute_targets(self.cached_output, self.cached_drain, theoretical_total());
     }
 
     /// One ordinary visible Sidebar AI visit (`63FEA0..640385`). The caller
@@ -558,5 +577,93 @@ mod native_state_tests {
                 Err(SavedLocalViewError::InvalidPowerState { .. })
             ));
         }
+    }
+}
+
+#[cfg(test)]
+mod strip_resize_tests {
+    use super::*;
+
+    const OUTPUT: i32 = 200;
+    const DRAIN: i32 = 100;
+    const TOTAL: i32 = 300;
+
+    fn settle(anim: &mut PowerBarAnimState, wall_ms: &mut u64) {
+        for _ in 0..10_000 {
+            anim.update(OUTPUT, DRAIN, || TOTAL, *wall_ms);
+            *wall_ms += 16;
+            if !anim.animating && anim.flashes_remaining == 0 {
+                return;
+            }
+        }
+        panic!("power bar did not settle");
+    }
+
+    fn settled_bands(bar_height_px: i32) -> [i32; 3] {
+        let mut fresh = PowerBarAnimState::new();
+        fresh.set_max_segments(bar_height_px);
+        fresh.compute_targets(OUTPUT, DRAIN, TOTAL)
+    }
+
+    #[test]
+    fn window_resize_refits_settled_bands_inside_the_strip() {
+        let mut anim = PowerBarAnimState::new();
+        let mut wall_ms = 0;
+        // The first budget only sets capacity: Power still starts from zero.
+        anim.fit_strip(303, || TOTAL);
+        assert_eq!(anim.counts, [0; 3]);
+        settle(&mut anim, &mut wall_ms);
+        assert_eq!(anim.counts, settled_bands(303));
+
+        for (bar_height_px, label) in [(93, "shrink"), (303, "grow")] {
+            anim.fit_strip(bar_height_px, || TOTAL);
+            assert_eq!(anim.counts, settled_bands(bar_height_px), "{label}");
+            assert!(
+                !anim.animating && anim.flashes_remaining == 0,
+                "{label}: a layout change neither slides nor flashes"
+            );
+            let capacity = anim.max_segments();
+            let mut rows = 0;
+            anim.visit_draw_segments(|_, row| {
+                assert!(row < capacity, "{label}: row {row} past the strip");
+                rows += 1;
+            });
+            assert_eq!(rows, capacity, "{label}");
+            // The next ordinary visit sees settled Power and stays idle.
+            anim.update(
+                OUTPUT,
+                DRAIN,
+                || panic!("idle visit read the rated list"),
+                wall_ms,
+            );
+            assert_eq!(anim.counts, settled_bands(bar_height_px), "{label} idle");
+        }
+    }
+
+    #[test]
+    fn fresh_and_loaded_power_keep_their_bands_on_the_first_budget() {
+        // Fresh-scenario clear: no retained totals to refit, even after a
+        // between-scenario resize.
+        let mut anim = PowerBarAnimState::new();
+        anim.set_max_segments(303);
+        anim.reset(0);
+        anim.fit_strip(93, || TOTAL);
+        assert_eq!(anim.counts, [0; 3]);
+
+        // A load retains its bands past a smaller strip, as native NoInit
+        // does (`settled-resize-load`); restore sets the budget, and the next
+        // frame's write is unchanged.
+        let mut anim = PowerBarAnimState::from_saved(SavedPowerBar {
+            counts_surplus_output_drain: [5, 5, 6],
+            cached_output: OUTPUT,
+            cached_drain: DRAIN,
+            flashes_remaining: 0,
+            flash_timer: [0, 0],
+            animating: false,
+        })
+        .unwrap();
+        anim.set_max_segments(15);
+        anim.fit_strip(15, || TOTAL);
+        assert_eq!(anim.counts, [5, 5, 6]);
     }
 }

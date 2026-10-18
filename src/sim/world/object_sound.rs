@@ -122,6 +122,66 @@ impl Simulation {
         }
     }
 
+    /// Execute98 at6DE7A5..6DE842: scan702 slots in order, retaining at most
+    ///400 nonempty pairs. The signed Scenario range request runs even for no
+    ///candidates; a singleton consumes no draw. Cell642740 uses Z=0, without
+    ///Map/ground/bridge or custom-object lookup. Voc750E20 receives flags0.
+    pub(crate) fn trigger_play_sound_at_random_waypoint(
+        &mut self,
+        sound: Option<&str>,
+        rules: Option<&RuleSet>,
+        effects: FrameEffects<'_>,
+    ) -> bool {
+        let mut candidates = Vec::new();
+        for index in 0..crate::map::waypoints::WAYPOINT_SLOT_COUNT as i32 {
+            if self.session.waypoint_is_valid(index) {
+                candidates.push(self.session.waypoint_cell(index).expect("valid slot"));
+                if candidates.len() == 400 {
+                    break;
+                }
+            }
+        }
+        let selected = self
+            .scenario_rng
+            .next_range_i32_inclusive(0, candidates.len() as i32 - 1);
+        let cell = if candidates.is_empty() && selected == 0 {
+            //4068F0 initializes the original100 CellStruct scratch entries.
+            (0, 0)
+        } else if let Some(cell) = usize::try_from(selected)
+            .ok()
+            .and_then(|index| candidates.get(index))
+        {
+            *cell
+        } else {
+            //RESIDUAL: no-waypoint result-1 reads before native's scratch
+            //array. Keep the real RNG request and Execute's unconditional
+            //AL1 (6DE836), while skipping audio with an undefined coordinate.
+            //A Vec also avoids native stack corruption when its
+            //400-entry admission exceeds that100-entry scratch allocation.
+            return true;
+        };
+        let coordinate = crate::sim::cell_kernel::cell_center(
+            crate::sim::cell_kernel::CellCoordinate {
+                x: i32::from(cell.0),
+                y: i32::from(cell.1),
+            },
+            0,
+        );
+        if let Some(sound_id) = sound {
+            self.sound_events.push(SimSoundEvent::VocAtCoord {
+                sound_id: sound_id.to_owned(),
+                coordinate: DriveCoord {
+                    x: coordinate.x,
+                    y: coordinate.y,
+                    z: 0,
+                },
+                flags: 0,
+            });
+            effects.flush_sound(self, rules);
+        }
+        true
+    }
+
     /// TAction 99's body: see the module doc. `sound` is the action's
     /// resolved `+0x90` (`None` for -1).
     pub(crate) fn trigger_play_sound_at_waypoint(

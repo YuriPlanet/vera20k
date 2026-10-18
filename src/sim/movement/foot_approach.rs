@@ -21,7 +21,7 @@ use crate::sim::combat::veterancy::has_weapon_ability;
 use crate::sim::combat::{self, TargetKind, in_range};
 use crate::sim::components::{DriveCoord, NavTargetRef};
 use crate::sim::mission::MissionType;
-use crate::sim::movement::bump_crush::{CrushAllyGate, CrushTarget, object_is_crushable_by};
+use crate::sim::movement::bump_crush::{CrushTarget, object_is_crushable_by};
 use crate::sim::world::FrameEffects;
 use crate::sim::world::Simulation;
 use crate::util::direction_tables::{cell_delta_unchecked, facing16_between};
@@ -144,8 +144,7 @@ impl Simulation {
     }
 
     /// `ObjectClass::Is_Crushable_By @ 0x005F6CD0` of `target` by Unit `id`,
-    /// alliance question first ([`CrushAllyGate`], with its one-way-alliance
-    /// residual), as the bump crush asks it.
+    /// as the bump crush asks it.
     fn approach_crushable(&self, id: u64, target: u64, rules: &RuleSet) -> bool {
         let (Some(actor), Some(victim)) = (
             self.substrate.entities.get(id),
@@ -153,20 +152,21 @@ impl Simulation {
         ) else {
             return false;
         };
-        let ally = CrushAllyGate::new(
-            self.interner.resolve(actor.owner()),
-            &self.house_alliances,
-            &self.interner,
-        );
-        !ally.spares(victim)
-            && self
-                .object_type(actor.type_ref(), rules)
-                .is_some_and(|object| {
-                    object_is_crushable_by(
-                        object.omni_crusher,
-                        CrushTarget::from_entity(victim, self.session.binary_frame),
-                    )
-                })
+        self.object_type(actor.type_ref(), rules)
+            .is_some_and(|object| {
+                object_is_crushable_by(
+                    object.omni_crusher,
+                    CrushTarget::from_entity(victim, self.session.binary_frame),
+                    |owner| {
+                        crate::sim::combat::combat_weapon::is_ally_by_object(
+                            Some(&self.house_alliances),
+                            &self.interner,
+                            actor.owner(),
+                            owner,
+                        )
+                    },
+                )
+            })
     }
 
     /// The head of `UnitClass::Approach_Target @ 0x007414E0` for Unit `id`:

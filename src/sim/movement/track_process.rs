@@ -301,15 +301,7 @@ fn residual_delta(delta: [i32; 3], residual: i32) -> (NativeF32Bits, [i32; 3]) {
         X87Chop53::store_f32(X87Chop53::mul(X87Chop53::load_i32(residual), reciprocal))
             .expect("signed residual produces a finite f32 factor");
     let factor = X87Chop53::load_f32(factor_bits).expect("stored finite factor");
-    let other = X87Chop53::sub(X87Chop53::load_i32(1), factor);
-    let zero_term = X87Chop53::mul(X87Chop53::load_i32(0), other);
-    let scaled = delta.map(|component| {
-        X87Chop53::ftol_i64(X87Chop53::add(
-            X87Chop53::mul(X87Chop53::load_i32(component), factor),
-            zero_term,
-        ))
-        .expect("signed component and residual product fits i64") as i32
-    });
+    let scaled = crate::util::native_coord::interpolate([0; 3], delta, factor);
     (factor_bits, scaled)
 }
 

@@ -216,7 +216,7 @@
       "issue_after_step": 500,
       "owner": "VERA-OBSERVER",
       "payload": {
-        "ForceAttack": {
+        "Attack": {
           "attacker_id": 1374,
           "target_id": 1375
         }
@@ -253,7 +253,7 @@
       "issue_after_step": 800,
       "owner": "VERA-OBSERVER",
       "payload": {
-        "ForceAttack": {
+        "Attack": {
           "attacker_id": 1374,
           "target_id": 1376
         }
@@ -272,7 +272,7 @@
       "issue_after_step": 1100,
       "owner": "VERA-OBSERVER",
       "payload": {
-        "ForceAttack": {
+        "Attack": {
           "attacker_id": 1374,
           "target_id": 1377
         }

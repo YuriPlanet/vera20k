@@ -179,8 +179,9 @@ fn scripted_rally_preference_and_clear_match_original_targets_and_rng() {
                     .unwrap()
                     .clear_preferred_super_weapon_target(),
                 "preferred_consumer" | "cleared_consumer" if matches!(kind, 0 | 2) => {
-                    let (actual, draws) =
-                        crate::sim::rng::trace_draws(|| rally_target(&mut sim, &rules, computer));
+                    let (actual, draws) = crate::sim::rng::trace_draws(|| {
+                        rally_target(&mut sim, &rules, computer, None)
+                    });
                     assert_eq!(actual, expected, "{} {stage}", control["name"]);
                     let requests = row["rng_calls"].as_array().unwrap();
                     assert_eq!(draws.len(), requests.len());
@@ -190,7 +191,10 @@ fn scripted_rally_preference_and_clear_match_original_targets_and_rng() {
                         assert_eq!(request["bounds"], json!([0, 1]));
                     }
                 }
-                "preferred_consumer" => assert_eq!(ground_rally_point(&sim, computer), expected),
+                "preferred_consumer" => assert_eq!(
+                    ground_rally_point(&mut sim, &rules, computer, None),
+                    expected
+                ),
                 "cleared_consumer" => {
                     // The native fixture has zero cell-array bounds; its real
                     // FNPC fails with (0,0). Compare that existing query seam's

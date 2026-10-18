@@ -7,7 +7,7 @@
     1,
     33621247
   ],
-  "scope": "21 ordinary right-sidebar layouts and 10 shape-gadget header/override cases; original native instructions only.",
+  "scope": "21 ordinary right-sidebar layouts, 10 shape-gadget header/override cases and three four-tab initialization controls; original native instructions only.",
   "assumptions": [
     "Normal sidebar-right; editor flag clear; scenario side0/1/2.",
     "Set_View_Dimensions copies native viewport before InitSurface; rectangle initialization precedes constants.",
@@ -20,7 +20,11 @@
     "options_viewport": "0x0072AD90",
     "constants": "0x006A5090",
     "layout": "0x006A5130",
-    "gadget_shape": "0x0069DE00"
+    "gadget_shape": "0x0069DE00",
+    "tab_init_loop": "0x006A5411",
+    "tab_gadget_ctor": "0x0069DCF0",
+    "gadget_disable": "0x004E1460"
   },
-  "payload_sha256": "0f180b0a4f818692a7abb7f44c5c5fd63950774635991b04c7d9e953de9e800c"
+  "replay_command": "python -m tools.sidebar_oracle.geometry",
+  "payload_sha256": "f695026122f9e88c954b8c5cc0f8963fdb77bd9502fbed8eca2b7437f28b4d3f"
 }

@@ -261,9 +261,29 @@ pub(super) fn scene_with(input: &Value, rules: RuleSet, ini: &IniFile) -> Scene 
     let (x, y) = input.get("miner_cell").map_or((10, 10), cell);
     let relocate = input["unlimbo_at_cell"] != true;
     let (spawn_x, spawn_y) = if relocate { (16, 16) } else { (x, y) };
+    // These native controls begin with an admitted miner. Some supply a
+    // subsequent FNPC miss by making every Wheel row impassable; permit only
+    // the fixture's bootstrap placement, then restore the measured map.
+    let spawn_speed_costs = {
+        let cell = sim
+            .resolved_terrain
+            .as_mut()
+            .unwrap()
+            .cell_mut(spawn_x, spawn_y)
+            .unwrap();
+        let prior = cell.speed_costs;
+        cell.speed_costs.wheel = Some(100);
+        prior
+    };
     let miner = sim
         .spawn_object(miner_type, "Americans", spawn_x, spawn_y, 0, &rules)
         .expect("miner");
+    sim.resolved_terrain
+        .as_mut()
+        .unwrap()
+        .cell_mut(spawn_x, spawn_y)
+        .unwrap()
+        .speed_costs = spawn_speed_costs;
     if relocate {
         let entity = sim.substrate.entities.get_mut(miner).unwrap();
         entity.position.set_rx_for_test(x);

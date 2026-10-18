@@ -272,7 +272,7 @@ impl Fixture {
             );
             assert_eq!(
                 entity.navigation.nav_com(),
-                Some(NavTargetRef::Building { id: building })
+                Some(NavTargetRef::object(building))
             );
             install_mission(entity, &route["before_arrivals"][index]["engineer"]);
             engineers.push(id);
@@ -661,7 +661,7 @@ impl Fixture {
         if int(&expected["destination"]) == self.native_building {
             assert_eq!(
                 entity.navigation.nav_com(),
-                Some(NavTargetRef::Building { id: self.building }),
+                Some(NavTargetRef::Object { id: self.building }),
                 "{boundary}: retained object NavCom"
             );
         } else {

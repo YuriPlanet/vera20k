@@ -58,6 +58,7 @@ mod shrapnel;
 pub mod smudge_dispatch;
 mod techno_death;
 mod threat_mask;
+pub(crate) use threat_mask::quarry_mask;
 mod threat_posed;
 pub(crate) mod threat_range;
 mod unit_damage_response;

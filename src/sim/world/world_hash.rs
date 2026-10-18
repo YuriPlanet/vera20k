@@ -1117,7 +1117,7 @@ impl Simulation {
             house.hash_difficulty_biases(hasher);
             house.hash_scenario_parameters(hasher);
             house.hash_allow_win_tags(hasher);
-            house.hash_super_weapon_cells(hasher);
+            house.hash_super_weapon_targets(hasher);
             house.repair_delay().to_bits().hash(hasher);
             house.repair_start_latch.hash(hasher);
             i64::from(house.repair_latch_timer.start_frame()).hash(hasher);

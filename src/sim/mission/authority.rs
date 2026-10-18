@@ -197,15 +197,6 @@ struct LiveUnitWorld<'a> {
     entity: &'a crate::sim::game_entity::GameEntity,
 }
 
-impl LiveUnitWorld<'_> {
-    fn weapons_factory(&self, entity: &crate::sim::game_entity::GameEntity) -> bool {
-        self.sim
-            .interner
-            .object_type(entity.type_ref(), self.rules)
-            .is_some_and(|obj| obj.weapons_factory)
-    }
-}
-
 impl UnitReadyWorld for LiveUnitWorld<'_> {
     /// `UnitClass::Is_Ready_To_Commence @ 0x00744270`'s contact read:
     /// `GetNthLink(0)` (`0x0065AD40` at `0x0074433C`) and a Building's WeaponsFactory.
@@ -223,7 +214,7 @@ impl UnitReadyWorld for LiveUnitWorld<'_> {
             return Ok(Some(UnitReadyContact::Other));
         }
         Ok(Some(UnitReadyContact::Building {
-            weapons_factory: self.weapons_factory(contact),
+            weapons_factory: self.sim.is_weapons_factory(contact_id, self.rules),
         }))
     }
 
@@ -261,7 +252,7 @@ impl UnitReadyWorld for LiveUnitWorld<'_> {
                 .wrapping_add(128),
         );
         Ok(Some(UnitReadyBuilding::new(
-            self.weapons_factory(entity),
+            self.sim.is_weapons_factory(entity.stable_id(), self.rules),
             anchor,
         )))
     }

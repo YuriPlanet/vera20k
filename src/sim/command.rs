@@ -612,10 +612,9 @@ pub enum Command {
     MoveToObject { entity_id: u64, target_id: u64 },
     /// Stop movement/combat intent on one entity.
     Stop { entity_id: u64 },
-    /// Attack an explicit target.
+    /// The Attack event onto an object: a plain or Ctrl click, and the
+    /// friendly repair, defuse and Ivan actions. Native encodes them alike.
     Attack { attacker_id: u64, target_id: u64 },
-    /// Force-attack a target (ignores friendship — Ctrl+click).
-    ForceAttack { attacker_id: u64, target_id: u64 },
     /// Attack-move: the MEGAMISSION event with mission 29 that ClickedMission
     /// (`0x006FFBE0`) promotes a Move or Attack click to. Its tokens are the
     /// click's: an attack click's object as `target` (`0x004D76B1..0x004D76C1`),
@@ -742,13 +741,10 @@ pub enum Command {
     ///
     /// Silently no-op if the entity's type is not `DeployFire=yes`.
     ToggleInfantryDeploy { entity_id: u64 },
-    /// Force-attack on a ground cell (Ctrl + left-click on empty terrain).
-    ///
-    /// Bypasses friendship check and entity-targeting — fires the attacker's
-    /// weapon at the cell's center. Unarmed units must NOT receive this
-    /// command; the order-resolution layer routes them to `Move` instead.
-    /// Defensive sim-side check in `issue_attack_cell_command` warn-logs and
-    /// no-ops if a stray `ForceAttackCell` reaches an unarmed unit.
+    /// The Attack event with a Cell target (Ctrl + left-click on the
+    /// ground). The input orders it only for a receiver whose What_Action
+    /// answers Attack there, so never for an unarmed unit; the event itself
+    /// does not test the weapon.
     ForceAttackCell {
         attacker_id: u64,
         target_rx: u16,
@@ -794,7 +790,6 @@ impl Command {
             | Self::HarvestCell { entity_id, .. }
             | Self::ToggleInfantryDeploy { entity_id } => Some(*entity_id),
             Self::Attack { attacker_id, .. }
-            | Self::ForceAttack { attacker_id, .. }
             | Self::ForceAttackCell { attacker_id, .. }
             | Self::PlantC4 { attacker_id, .. } => Some(*attacker_id),
             Self::EnterTransport { passenger_id, .. } => Some(*passenger_id),

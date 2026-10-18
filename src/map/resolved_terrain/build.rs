@@ -269,7 +269,7 @@ impl ResolvedTerrainGrid {
                 tile_animations: Vec::new(),
                 destroyable_cliff_catalog: None,
                 bridge_recalc_catalog: None,
-                allocated_cell_order: Default::default(),
+                allocation_caches: Default::default(),
             };
             grid.bind_asset_catalogs(
                 theater_data,
@@ -1002,7 +1002,7 @@ impl ResolvedTerrainGrid {
             tile_animations,
             destroyable_cliff_catalog: None,
             bridge_recalc_catalog: None,
-            allocated_cell_order: Default::default(),
+            allocation_caches: Default::default(),
         };
         grid.bind_asset_catalogs(
             theater_data,

@@ -16,8 +16,6 @@
 //! `lat_fixup` calls; they are RNG-free, so the one that matters observably is
 //! the post-patch pass that produces the sand-LAT tiles the rock pass needs.
 
-use crate::map::theater::TheaterCliffRanges;
-
 use super::grid::RmgGrid;
 use super::phases::adjacency;
 use super::phases::blob::BlobCtx;
@@ -36,8 +34,8 @@ use super::phases::trees::{TreeArgs, TreeCtx};
 use super::phases::water::{PlayableRect, WaterArgs};
 use super::phases::zones::{self, ZoneKind, ZoneParams};
 use super::phases::{
-    green_spread, hills, lat_fixup, lat_patches, regions, rocks, starts, tech_buildings, tiberium,
-    trees, water, water_finalize,
+    cliff_materialization, cliff_variants, green_spread, hills, lat_fixup, lat_patches, regions,
+    rocks, starts, tech_buildings, tiberium, trees, water, water_finalize,
 };
 use super::preview::Playfield;
 use super::rng::RmgRng;
@@ -58,7 +56,6 @@ pub const STANDARD_START_QUOTA: i32 = 4;
 pub struct PipelineInputs<'a> {
     pub ids: &'a TileIds,
     pub blocks: &'a dyn TileBlocks,
-    pub cliff: &'a TheaterCliffRanges,
     /// The `[TileSet] Morphable=` predicate for the corner engine.
     pub morphable: &'a dyn Fn(i32) -> bool,
     /// Per-land-type "wheel speed <= 1%" flags for the zone classifier.
@@ -259,6 +256,20 @@ pub fn run_pipeline(
                 &mut construction_trace,
             );
         }
+        // Original Generate598D6E..598D82: after connectors, jitter the
+        // ridge edges, repair/materialize faces, then restamp registered
+        // cliff variants. Generate ignores the materializer's refusal result
+        // and still performs the variant pass; partial writes remain live.
+        cliff_materialization::jitter(grid, scratch, inputs.ids, rng);
+        let _ =
+            cliff_materialization::materialize(grid, scratch, inputs.ids, inputs.blocks, rng, -1);
+        cliff_variants::run(
+            grid,
+            scratch,
+            inputs.blocks,
+            rng,
+            inputs.ids.cliffs.cliff_set.map_or(-1, i32::from),
+        );
     }
     observe(Stage::IslandPasses, grid, &waypoints);
 
@@ -376,7 +387,7 @@ pub fn run_pipeline(
             gauss: &mut *gauss,
             rng: &mut *rng,
         };
-        hills::run(&mut ctx, &args, inputs.cliff, inputs.morphable);
+        hills::run(&mut ctx, &args, inputs.morphable);
     }
     observe(Stage::Hills, grid, &waypoints);
 
@@ -458,8 +469,8 @@ mod tests {
     use super::*;
     use crate::map::rmg::options::RmgOptions;
     use crate::map::rmg::phases::shore::{SubTile, TileBlock};
-    use crate::map::rmg::tiles::SpecialTerrain;
     use crate::map::rmg::{RmgConstructionOutcome, RmgConstructionPhase};
+    use crate::map::theater::TheaterCliffRanges;
 
     /// A `TileBlocks` provider that returns a 1x1 block for every tile — the
     /// same synthetic the water/shore phase tests use.
@@ -500,14 +511,13 @@ mod tests {
             paved_roads: -1,
             paved_road_ends: -1,
             medians: -1,
-            special: SpecialTerrain::default(),
+            cliffs: TheaterCliffRanges::default(),
         }
     }
 
     fn inputs<'a>(
         identity: &'a TileIds,
         blocks: &'a OneByOne,
-        cliff: &'a TheaterCliffRanges,
         morphable: &'a dyn Fn(i32) -> bool,
         map_type: i32,
         theater: i32,
@@ -516,7 +526,6 @@ mod tests {
         PipelineInputs {
             ids: identity,
             blocks,
-            cliff,
             morphable,
             wheel_impassable: [false; LAND_TYPES],
             tech_types,
@@ -561,10 +570,9 @@ mod tests {
         let mut gauss = Gaussian::default();
         let identity = ids();
         let blocks = one_by_one();
-        let cliff = TheaterCliffRanges::default();
         let morphable = |_tile: i32| false;
         let ins = inputs(
-            &identity, &blocks, &cliff, &morphable, map_type, theater, tech_types,
+            &identity, &blocks, &morphable, map_type, theater, tech_types,
         );
         let output = run_pipeline(
             &mut grid,

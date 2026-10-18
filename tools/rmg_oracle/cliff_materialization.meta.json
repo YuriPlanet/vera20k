@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original post-connector cliff mask/selector/shared stamp, variant/restamp/jitter and complete materialization component controls",
+  "assumptions": [
+    "Explicit complete32x32 native-constructed Cell backing, native MapSize16x16, fixed512 lookup and scratch stride33. Original568300 supplies admitted lookup membership;5657A0 reads back every supplied coordinate. Rejected slots areNULL with backing retained. Allocation history/native Generate/map bootstrap remain unproven.",
+    "Native General/TileSet scalar/string reads and ordinal publication; existing supplied cumulative registration prefix, physical authored XMP03T4 identity and physical TMP descriptors. No Rust tile identity initializes native input.",
+    "Original579320 cliff anchors and49F2F0 direction initialization execute. ABED10 alone owns scratch records, stride0x50 and region+38.",
+    "Cell prior has no actors/occupation. Placement+117C is0, cursor coordinate\u221232768/\u221232768 cannot match this domain; selected temporary88098C startsNULL. Nonnull destructor and cursor/Tactical branches are excluded.",
+    "Explicit RMG FPCW0E7F component prerequisite. All three streams seeded by original65C6D0; optional declared independent early XOR-lane constraints verified by original65C780, not native Generate-produced RNG history.",
+    "No raster/frame/native wholeGenerate equivalence; consumers must compare only recorded controls and separately prove normal pipeline admission."
+  ],
+  "substitutions": [
+    "Existing PaletteReader bump allocation, no-op CRT free and TLS storage; original code bytes unchanged and every hooked return admitted only at those boundaries during controls.",
+    "Existing NativeAudioPlatform immutable physical RawFile transport during TMP preparation only; no Map/Cell/mask/admission/placement/stamp/RNG substitute returns."
+  ],
+  "entry_points": {
+    "mask": "0x00579B70",
+    "select": "0x00579620",
+    "stamp": "0x0057B440",
+    "variant": "0x005A1350",
+    "jitter": "0x005A19E0",
+    "restamp": "0x005A17F0",
+    "sweep": "0x00578E60",
+    "joined": "0x00578E60",
+    "range": "0x00598030",
+    "family_broad": "0x004863D0",
+    "family_narrow": "0x00578D80",
+    "raise_pass": "0x00579010",
+    "anchors": "0x00579320",
+    "unconditional_stamp": "0x005A6C10",
+    "scratch_constructor": "0x0058BDC0",
+    "seed": "0x0065C6D0",
+    "raw": "0x0065C780"
+  },
+  "replay_command": "python -m tools.rmg_oracle.cliff_materialization",
+  "payload_sha256": "db756dc05f94f65d54bc09ee7735e023702ed0221f52d062c78d1b64a4452558"
+}

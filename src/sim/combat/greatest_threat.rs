@@ -2188,23 +2188,12 @@ fn evaluate_candidate(
     // computer house's object (`0x006F85AB..0x006F85B8`): the computer's
     // units shoot power plants, refineries and walls.
     //
-    // RESIDUAL — the reject is unconditional here, where native falls through to
-    // `0x006F860C` when the attacker's `vtable+0x330` byte (stored at
-    // `0x006F7CBA`) is set. That byte also lets an ALLIED candidate past the
-    // ally gate at `0x006F7F43`, and `0x006F860C` only accepts a damaged allied
-    // Building — the engineer-repair scan. Five vtables hold a `return 0` stub
-    // for `+0x330`; only `InfantryClass` overrides it, at `0x005224D0`, reading
-    // `InfantryTypeClass+0xEC3`, whose ReadINI key string at `0x0082596C` is
-    // `Engineer`. Trigger: an Engineer scanning for a damaged allied structure.
-    // Player effect: none, and not merely none *today* —
-    // `CanAcquireTarget @ 0x007091D0` returns 0 outright when that flag is set
-    // for a human-controlled owner, so no human player's engineer ever reaches
-    // this scan. Frequency: n/a. Downstream risk: wiring the AI's engineer
-    // repair in must carry the whole `0x006F860C` arm, not just this
-    // fall-through.
+    // An Engineer (Infantry vt+330,5224D0) instead falls through to its own
+    // building gate below, including from the human reject (6F85F0..85F6).
     if ctx.standing.team.is_none()
         && ctx.standing.human
         && building
+        && !ctx.engineer
         && !candidate_obj.is_1x1_with_undeploy()
         && (!is_armed(candidate, candidate_obj)
             || super::threat_posed::live_threat_posed(
@@ -2216,6 +2205,32 @@ fn evaluate_candidate(
             ) == 0)
     {
         return None;
+    }
+
+    // Engineer arm,6F860C..8667: only buildings. For allies, HealthRatio
+    // must be <= ConditionRed (TEST AH,41 also admits unordered), and
+    // BuildingType::CostOf must be nonzero for the SCANNER's house. The
+    // cell walk instead tests positive cost for the candidate's house;
+    // exhausting its list can still offer a building that did not stop it.
+    // Enemy buildings bypass both repair gates and retain the earlier
+    // Capturable mask gate. Production uses the world's live House factors;
+    // a snapshot-only scan has no House and takes CostOf's raw-cost arm.
+    if ctx.engineer {
+        if !building {
+            return None;
+        }
+        if ctx.is_ally(candidate)
+            && (candidate
+                .health
+                .compare_ratio(candidate_obj.strength, ctx.rules.general.condition_red)
+                == MaskedX87Ordering::Greater
+                || ctx.fire_world.map_or_else(
+                    || ctx.rules.cost_of(candidate_obj, None),
+                    |world| world.cost_of(ctx.scanner.owner(), candidate_obj, ctx.rules),
+                ) == 0)
+        {
+            return None;
+        }
     }
 
     // `0x006F866D..0x006F867C`: mask `0x40` takes only types with
@@ -2590,6 +2605,10 @@ mod tests {
 #[cfg(test)]
 #[path = "greatest_threat_health_tests.rs"]
 mod health_tests;
+
+#[cfg(test)]
+#[path = "greatest_threat_engineer_tests.rs"]
+mod engineer_tests;
 
 #[cfg(test)]
 #[path = "greatest_threat_bridge_tests.rs"]

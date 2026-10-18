@@ -209,10 +209,11 @@ fn outer_cells_are_usable(ctx: &CarveCtx<'_>, a: (i32, i32), b: (i32, i32)) -> b
         x >= 0
             && y >= 0
             && ctx.playfield.contains(x as u16, y as u16)
-            && ctx
-                .grid
-                .get(x, y)
-                .is_some_and(|cell| !ctx.ids.is_special_terrain(cell.tile, cell.sub_tile))
+            && ctx.grid.get(x, y).is_some_and(|cell| {
+                !ctx.ids
+                    .cliffs
+                    .is_special_terrain_tile(cell.tile, cell.sub_tile)
+            })
     })
 }
 
@@ -362,7 +363,7 @@ fn stamp_end(
     // Native passes scratch id -1 and level base -1 to the unconditional
     // block stamper: every present TMP subcell clears its region owner while
     // preserving the existing cell level.
-    stamp_iso_block(ctx, tile, origin, -1, None);
+    stamp_iso_block(ctx.grid, ctx.scratch, ctx.blocks, tile, origin, -1, None);
 }
 
 fn place_hut_in_rect(
@@ -572,7 +573,7 @@ mod tests {
     use crate::map::rmg::phases::carve_driver::{ConnectorRegion, carve_connectors_for_region};
     use crate::map::rmg::phases::shore::{SubTile, TileBlock, TileBlocks};
     use crate::map::rmg::preview::Playfield;
-    use crate::map::rmg::tiles::SpecialTerrain;
+    use crate::map::theater::TheaterCliffRanges;
 
     /// Tile bases the fixtures address families by. Spaced far enough apart
     /// that no span reaches the next.
@@ -604,7 +605,7 @@ mod tests {
             paved_roads: PAVED_ROAD,
             paved_road_ends: PAVED_ROAD_END,
             medians: -1,
-            special: SpecialTerrain::default(),
+            cliffs: TheaterCliffRanges::default(),
         }
     }
 
@@ -1649,7 +1650,7 @@ mod tests {
     fn candidate_outer_cells_stop_at_special_terrain_or_playfield_edge() {
         let (mut grid, mut scratch) = harness();
         let mut identity = ids();
-        identity.special.cliff_set = 900;
+        identity.cliffs.cliff_set = Some(900);
         grid.get_mut(40, 48).unwrap().tile = 900;
         let blocks = OneByOne::new();
         let playfield = playfield();

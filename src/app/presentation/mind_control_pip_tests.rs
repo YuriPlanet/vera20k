@@ -201,14 +201,14 @@ fn stock_captive_force_attack_death_reduces_overload_then_the_controller_settles
     let rings_before = captive_ring_ids(&scene);
     assert_eq!(rings_before.len(), 4);
     eprintln!(
-        "MIND reduction ForceAttack issue_tick={} due_tick={} attacker={attacker} target={victim}",
+        "MIND reduction Attack issue_tick={} due_tick={} attacker={attacker} target={victim}",
         scene.simulation().session.tick,
         scene.simulation().session.tick + 1
     );
     scene.queue_command(CommandEnvelope::new(
         owner,
         scene.simulation().session.tick + 1,
-        Command::ForceAttack {
+        Command::Attack {
             attacker_id: attacker,
             target_id: victim,
         },
@@ -327,7 +327,7 @@ fn stock_captive_force_attack_death_reduces_overload_then_the_controller_settles
     }
     assert!(
         reduced,
-        "real ForceAttack must destroy one captive before the controller overloads fatally:\n{}",
+        "a real Attack must destroy one captive before the controller overloads fatally:\n{}",
         flight.iter().cloned().collect::<Vec<_>>().join("\n")
     );
     let mut retained_health = scene

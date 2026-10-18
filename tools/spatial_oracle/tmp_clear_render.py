@@ -62,7 +62,8 @@ def profile(m, raw=None):
     return dict(zip(keys, (struct.unpack('<i', u.mem_read(scenario + off, 4))[0] for off in offsets)))
 
 
-def load_tmp_files(m, files, *, chain=False, prepared_files=None, variant_families=None):
+def load_tmp_files(m, files, *, chain=False, prepared_files=None, variant_families=None,
+                   tile_ids=None):
     """Shared original TMP constructor/lazy IO owner; no host TMP decoding.
 
     A variant chain constructs all descriptors before loading. Independent
@@ -72,7 +73,16 @@ def load_tmp_files(m, files, *, chain=False, prepared_files=None, variant_famili
     this same transport; they do not register additional TMP descriptors.
     Optional variant_families groups selected physical files on this same
     transport; other files retain independent construction/loading.
+    Optional tile_ids supplies each registration's native constructor first
+    argument (5447D3/D9 -> TileType+294). Raster callers retain historical0;
+    materialization callers use identities from the native theater reader.
     """
+    tile_ids = {} if tile_ids is None else dict(tile_ids)
+    if not set(tile_ids) <= set(files):
+        raise ValueError('TMP identities must name registered physical files')
+    if any(type(value) is not int or not 0 <= value <= 0x7FFFFFFF
+           for value in tile_ids.values()):
+        raise ValueError('TMP registration identities must be nonnegative signed32 integers')
     u = m.u
     platform = NativeAudioPlatform(m, configured_gamemd().parent)
     transport_files = dict(files)
@@ -100,7 +110,8 @@ def load_tmp_files(m, files, *, chain=False, prepared_files=None, variant_famili
         linked = chain or group[0] in variant_families
         for i, name in enumerate(group):
             head = m.alloc(0x400)
-            m.invoke(0x5447C0, head, (0, -65, 0, m.cstring(name[:-4]), linked and i != 0))
+            m.invoke(0x5447C0, head, (tile_ids.get(name, 0), -65, 0,
+                                   m.cstring(name[:-4]), linked and i != 0))
             u.mem_write(head + 0x2F4, b'\1' + name.encode() + b'\0')
             heads[name] = head
             if not linked:

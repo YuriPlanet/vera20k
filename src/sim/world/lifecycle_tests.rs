@@ -7126,7 +7126,7 @@ fn wave_pointer_expiry_target_survives_dying_then_uninit_starts_decay_tail() {
     sim.admit_wave(wave_id, wave);
     sim.active_wave_links.insert(owner_id, wave_id);
 
-    let represented = sim.wave_update_context(wave_id);
+    let represented = sim.wave_update_context(sim.waves.get(wave_id).unwrap(), None);
     assert_eq!(
         represented.target_position,
         Some(ProjectileCoord::new(4 * 256 + 128, 128, 0)),
@@ -7145,7 +7145,7 @@ fn wave_pointer_expiry_target_survives_dying_then_uninit_starts_decay_tail() {
     assert_eq!(wave.owner_id, Some(owner_id));
     assert_eq!(wave.target_ref, None, "UnInit synchronously expires +0xAC");
     assert_eq!(sim.active_wave_links.get(&owner_id), Some(&wave_id));
-    let expired = sim.wave_update_context(wave_id);
+    let expired = sim.wave_update_context(sim.waves.get(wave_id).unwrap(), None);
     assert_eq!(expired.target_position, None);
     let _ = sim
         .waves
@@ -7201,7 +7201,9 @@ fn wave_pointer_expiry_owner_allows_dying_damage_then_uninit_nulls_later_calls()
         wave_z: 0,
     };
     assert!(
-        sim.wave_update_context(wave_id).owner_position.is_some(),
+        sim.wave_update_context(sim.waves.get(wave_id).unwrap(), None)
+            .owner_position
+            .is_some(),
         "the dying-but-represented owner still supplies live Wave coordinates",
     );
     assert_eq!(sim.active_wave_links.get(&owner_id), Some(&wave_id));
@@ -9610,6 +9612,7 @@ fn unlimbo_levels_then_aims_the_barrel_elevation() {
             .cell_mut(4, 4)
             .unwrap();
         cell.speed_costs.track = Some(100);
+        cell.speed_costs.wheel = Some(100);
         cell.base_speed_costs = cell.speed_costs;
         let id = sim
             .spawn_object(type_id, "Americans", 4, 4, 0, &rules)

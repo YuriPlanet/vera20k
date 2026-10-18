@@ -112600,7 +112600,7 @@
           },
           {
             "archive": "supplied unchanged scenario INI",
-            "bytes": 74022,
+            "bytes": 74046,
             "default_spark_is_selected": false,
             "file": "ordinary-ifv-welding.map",
             "gravity": 6,
@@ -112613,7 +112613,7 @@
               }
             ],
             "sections": {},
-            "sha256": "23617439622e35879cf0915dff3bc280ede3d3cd369cc2d5727b6e408ae331b5",
+            "sha256": "22efefc82e53f4fda7ec1e132aad6a60bffc526879b07879e29cfa82b678b365",
             "state": {
               "particle": {
                 "behavior": 3,
@@ -112682,12 +112682,12 @@
           }
         ],
         "map": {
-          "bytes": 74022,
+          "bytes": 74046,
           "entry_id": null,
           "file": "ordinary-ifv-welding.map",
-          "ini_bytes": 74022,
-          "ini_sha256": "23617439622e35879cf0915dff3bc280ede3d3cd369cc2d5727b6e408ae331b5",
-          "sha256": "23617439622e35879cf0915dff3bc280ede3d3cd369cc2d5727b6e408ae331b5"
+          "ini_bytes": 74046,
+          "ini_sha256": "22efefc82e53f4fda7ec1e132aad6a60bffc526879b07879e29cfa82b678b365",
+          "sha256": "22efefc82e53f4fda7ec1e132aad6a60bffc526879b07879e29cfa82b678b365"
         },
         "name": "ordinary-ifv-welding",
         "text_unchanged": true,
@@ -112821,11 +112821,11 @@
             {
               "admitted": false,
               "archive": "supplied unchanged scenario INI",
-              "bytes": 74022,
+              "bytes": 74046,
               "file": "ordinary-ifv-welding.map",
               "reads": [],
               "sections": {},
-              "sha256": "23617439622e35879cf0915dff3bc280ede3d3cd369cc2d5727b6e408ae331b5",
+              "sha256": "22efefc82e53f4fda7ec1e132aad6a60bffc526879b07879e29cfa82b678b365",
               "state": {
                 "attached_particle_system": "WeldingSys",
                 "burst": 1,
@@ -114358,7 +114358,7 @@
           },
           {
             "archive": "supplied unchanged scenario INI",
-            "bytes": 74023,
+            "bytes": 74047,
             "default_spark_is_selected": false,
             "file": "ordinary-ifv-full-health.map",
             "gravity": 6,
@@ -114371,7 +114371,7 @@
               }
             ],
             "sections": {},
-            "sha256": "e9ed190e47e7452efe4588773973d85030d3d7d0309e5b6536678950ec6f09d4",
+            "sha256": "78a1f9e7fff00c7ce40845fc0d8922ffb0dbfa33dcecec0885aa5cb355678db9",
             "state": {
               "particle": {
                 "behavior": 3,
@@ -114440,12 +114440,12 @@
           }
         ],
         "map": {
-          "bytes": 74023,
+          "bytes": 74047,
           "entry_id": null,
           "file": "ordinary-ifv-full-health.map",
-          "ini_bytes": 74023,
-          "ini_sha256": "e9ed190e47e7452efe4588773973d85030d3d7d0309e5b6536678950ec6f09d4",
-          "sha256": "e9ed190e47e7452efe4588773973d85030d3d7d0309e5b6536678950ec6f09d4"
+          "ini_bytes": 74047,
+          "ini_sha256": "78a1f9e7fff00c7ce40845fc0d8922ffb0dbfa33dcecec0885aa5cb355678db9",
+          "sha256": "78a1f9e7fff00c7ce40845fc0d8922ffb0dbfa33dcecec0885aa5cb355678db9"
         },
         "name": "ordinary-ifv-full-health",
         "text_unchanged": true,
@@ -114579,11 +114579,11 @@
             {
               "admitted": false,
               "archive": "supplied unchanged scenario INI",
-              "bytes": 74023,
+              "bytes": 74047,
               "file": "ordinary-ifv-full-health.map",
               "reads": [],
               "sections": {},
-              "sha256": "e9ed190e47e7452efe4588773973d85030d3d7d0309e5b6536678950ec6f09d4",
+              "sha256": "78a1f9e7fff00c7ce40845fc0d8922ffb0dbfa33dcecec0885aa5cb355678db9",
               "state": {
                 "attached_particle_system": "WeldingSys",
                 "burst": 1,

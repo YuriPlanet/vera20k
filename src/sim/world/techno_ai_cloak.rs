@@ -90,14 +90,10 @@ fn stock_cloak_tick_facts(
     // CloakingTick's pre-CanAuto destination exclusion is Contact_With_Whom(0)
     // resolving to a WeaponsFactory building (naval-yard repair contact), not
     // an arbitrary movement destination.
-    let destination_is_weapons_factory = entity.radio_contacts.slot(0).is_some_and(|contact_id| {
-        sim.substrate
-            .entities
-            .get(contact_id)
-            .filter(|contact| contact.category() == EntityCategory::Structure)
-            .and_then(|contact| sim.interner.object_type(contact.type_ref(), rules))
-            .is_some_and(|contact_type| contact_type.weapons_factory)
-    });
+    let destination_is_weapons_factory = entity
+        .radio_contacts
+        .slot(0)
+        .is_some_and(|contact| sim.is_weapons_factory(contact, rules));
     let current_frame = sim.session.binary_frame as i32;
     let cloak_state = entity.cloak.as_ref().map_or(0, |cloak| cloak.state());
     let cloak_progress = entity.cloak.as_ref().map_or(0, |cloak| cloak.depth());

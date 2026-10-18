@@ -14,7 +14,7 @@
 //! the active connector/low-deck owner in `carve_driver`; that separation keeps
 //! this module's only draw in the narrow dissolve case (see [`flood_build`]).
 
-use crate::map::rmg::grid::RmgGrid;
+use crate::map::rmg::grid::{CellRef, RmgGrid};
 use crate::map::rmg::rng::RmgRng;
 use crate::map::rmg::scratch::RmgScratch;
 use crate::map::rmg::tiles::TileIds;
@@ -62,28 +62,31 @@ pub(crate) fn ring_mask(
     x: i32,
     y: i32,
 ) -> u8 {
+    // Original579B70 reads signed Cell+11B, then acquires all eight
+    // neighbor pointers before classifying NW,N,NE,W,E,SW,S,SE. Retain the
+    // shared border identity rather than copying its changing coordinate.
+    let target = i32::from(grid.cell_native(x, y).level as i8) + 4;
     if !scratch.in_diamond(x, y) || !scratch.get(x, y).shore_enable {
         return 0;
     }
-    let Some(here) = grid.get(x, y) else {
-        return 0;
-    };
-    let target = here.level.wrapping_add(LEVEL_STEP);
-
-    let mut mask = 0u8;
-    for dir in 0..8usize {
+    let mut neighbors = [(CellRef::Border, (0, 0)); 8];
+    for dir in [1, 2, 3, 4, 5, 6, 7, 0] {
         let (nx, ny) = RmgGrid::step(x, y, dir);
+        let (nx, ny) = (i32::from(nx as i16), i32::from(ny as i16));
+        neighbors[dir] = (grid.cell_ref(nx, ny), (nx, ny));
+    }
+    let mut mask = 0;
+    for dir in [7, 0, 1, 6, 2, 5, 4, 3] {
+        let (held, (nx, ny)) = neighbors[dir];
         if !scratch.in_diamond(nx, ny) {
             continue;
         }
-        let cell = grid.cell_native(nx, ny);
-        if cell.level != target {
-            continue;
+        let cell = grid.ref_cell(held);
+        if i32::from(cell.level as i8) == target
+            && !ids.cliffs.is_special_terrain_tile(cell.tile, cell.sub_tile)
+        {
+            mask |= 1 << ((dir + 7) % 8);
         }
-        if ids.is_special_terrain(cell.tile, cell.sub_tile) {
-            continue;
-        }
-        mask |= 1u8 << ((dir + 7) % 8);
     }
     mask
 }
@@ -111,9 +114,7 @@ fn is_pinched(
     const W: u8 = 0x20;
     const NW: u8 = 0x40;
 
-    if mask & (N | W) == (N | W) && mask & (NE | SW) == (NE | SW) {
-        return true;
-    }
+    let mut pinched = mask & (N | W) == (N | W) && mask & (NE | SW) == (NE | SW);
     // The four trench tests, each against the opposite bit of the far cell.
     let trench = [
         (W, (x + 1, y), E),
@@ -122,21 +123,30 @@ fn is_pinched(
         (N, (x, y + 1), S),
     ];
     for (near, (fx, fy), far) in trench {
-        if mask & near != 0 && ring_mask(grid, scratch, ids, fx, fy) & far != 0 {
-            return true;
+        if mask & near != 0
+            && ring_mask(
+                grid,
+                scratch,
+                ids,
+                i32::from(fx as i16),
+                i32::from(fy as i16),
+            ) & far
+                != 0
+        {
+            pinched = true;
         }
     }
     if mask & (NE | SW) == (NE | SW)
         && (mask & (E | S) != (E | S) || mask & (N | W | NW) != 0)
         && (mask & (N | W) != (N | W) || mask & (E | SE | S) != 0)
     {
-        return true;
+        pinched = true;
     }
     if mask & (SE | NW) == (SE | NW)
         && (mask & (S | W) != (S | W) || mask & (N | NE | E) != 0)
         && (mask & (N | E) != (N | E) || mask & (S | SW | W) != 0)
     {
-        return true;
+        pinched = true;
     }
     // Eight two-bit corner patterns: a diagonal present with its flanking
     // cardinal absent.
@@ -150,7 +160,7 @@ fn is_pinched(
         (0x86, 0x84),
         (0xB0, 0x90),
     ];
-    PATTERNS.iter().any(|&(m, want)| mask & m == want)
+    pinched || PATTERNS.iter().any(|&(m, want)| mask & m == want)
 }
 
 /// Raise a pinched cell one step and recurse into its neighbours.
@@ -158,31 +168,52 @@ fn is_pinched(
 /// Raising removes the exact-one-step relation that set the bits, so the
 /// recursion terminates on its own. The region tag it writes is what forces
 /// the rebuild that follows.
-fn raise_pinched(ctx: &mut IslandCtx<'_>, x: i32, y: i32, tag: i32, depth: u32) {
-    // The original recurses without a depth limit and relies on the terrain
-    // converging. Ours keeps a ceiling so a malformed fixture cannot blow the
-    // stack; it is far above any reachable chain on a real map.
-    const MAX_DEPTH: u32 = 4096;
-    if depth > MAX_DEPTH || !ctx.scratch.in_diamond(x, y) {
-        return;
-    }
-    let mask = ring_mask(ctx.grid, ctx.scratch, ctx.ids, x, y);
-    const N: u8 = 0x80;
-    const E: u8 = 0x02;
-    const S: u8 = 0x08;
-    const W: u8 = 0x20;
-    let forced = mask & (N | S) == (N | S) || mask & (E | W) == (E | W);
-    if !forced && !is_pinched(ctx.grid, ctx.scratch, ctx.ids, x, y, mask) {
-        return;
-    }
-
-    let cell = ctx.grid.cell_native_mut(x, y);
-    cell.level = cell.level.wrapping_add(LEVEL_STEP);
-    ctx.scratch.get_mut(x, y).region = tag;
-
-    for dir in 0..8usize {
-        let (nx, ny) = RmgGrid::step(x, y, dir);
-        raise_pinched(ctx, nx, ny, tag, depth + 1);
+pub(super) fn raise_pinched(
+    grid: &mut RmgGrid,
+    scratch: &mut RmgScratch,
+    ids: &TileIds,
+    x: i32,
+    y: i32,
+    tag: i32,
+) -> bool {
+    // Original579010 recursively visits directions0..7 and ignores child
+    // refusal. Explicit frames preserve that depth-first order without a
+    // host-stack limit that silently truncates a valid native chain.
+    let mut frames: Vec<(CellRef, usize)> = Vec::new();
+    let mut pending = Some((x, y));
+    loop {
+        if let Some((cx, cy)) = pending.take() {
+            let held = grid.cell_ref(cx, cy);
+            let mask = ring_mask(grid, scratch, ids, cx, cy);
+            // All trench probes precede the final opposite-cardinal test.
+            let pinched = is_pinched(grid, scratch, ids, cx, cy, mask);
+            let forced = mask & 0x88 == 0x88 || mask & 0x22 == 0x22;
+            if forced || pinched {
+                let (tx, ty) = grid.ref_coord(held);
+                let owner = scratch.get(tx, ty).region;
+                if owner > 0 && owner != tag && tag != -1 {
+                    if frames.is_empty() {
+                        return false;
+                    }
+                } else {
+                    let cell = grid.ref_cell_mut(held);
+                    cell.level = cell.level.wrapping_add(LEVEL_STEP);
+                    scratch.get_mut(tx, ty).region = tag;
+                    frames.push((held, 0));
+                }
+            }
+        }
+        let Some((held, next_dir)) = frames.last_mut() else {
+            return true;
+        };
+        if *next_dir == 8 {
+            frames.pop();
+            continue;
+        }
+        let (px, py) = grid.ref_coord(*held);
+        let (nx, ny) = RmgGrid::step(px, py, *next_dir);
+        *next_dir += 1;
+        pending = Some((i32::from(nx as i16), i32::from(ny as i16)));
     }
 }
 
@@ -367,7 +398,7 @@ pub fn run(ctx: &mut IslandCtx<'_>) -> Regions {
     // why its own foreign-zone bail can never fire from here.
     let cells: Vec<(i32, i32)> = ctx.grid.native_cells().collect();
     for &(x, y) in &cells {
-        raise_pinched(ctx, x, y, -1, 0);
+        let _ = raise_pinched(ctx.grid, ctx.scratch, ctx.ids, x, y, -1);
     }
 
     // Step 2: the repair stomped region tags, so throw the partition away.
@@ -399,7 +430,7 @@ pub fn run(ctx: &mut IslandCtx<'_>) -> Regions {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::map::rmg::tiles::SpecialTerrain;
+    use crate::map::theater::TheaterCliffRanges;
 
     fn ids() -> TileIds {
         TileIds {
@@ -422,7 +453,7 @@ mod tests {
             paved_roads: -1,
             paved_road_ends: -1,
             medians: -1,
-            special: SpecialTerrain::default(),
+            cliffs: TheaterCliffRanges::default(),
         }
     }
 
@@ -475,14 +506,14 @@ mod tests {
         let mut rng = RmgRng::new(1);
         grid.get_mut(40, 49).expect("native cell").level = 8;
         grid.get_mut(40, 51).expect("native cell").level = 8;
-        let mut ctx = IslandCtx {
+        let ctx = IslandCtx {
             grid: &mut grid,
             scratch: &mut scratch,
             ids: &ids,
             rng: &mut rng,
             default_level: 4,
         };
-        raise_pinched(&mut ctx, 40, 50, -1, 0);
+        let _ = raise_pinched(ctx.grid, ctx.scratch, ctx.ids, 40, 50, -1);
         assert_eq!(ctx.grid.cell_native(40, 50).level, 8, "raised one step");
         assert_eq!(ctx.scratch.get(40, 50).region, -1, "tag stamped");
     }
@@ -493,14 +524,14 @@ mod tests {
         let ids = ids();
         let mut rng = RmgRng::new(1);
         grid.get_mut(40, 49).expect("native cell").level = 8;
-        let mut ctx = IslandCtx {
+        let ctx = IslandCtx {
             grid: &mut grid,
             scratch: &mut scratch,
             ids: &ids,
             rng: &mut rng,
             default_level: 4,
         };
-        raise_pinched(&mut ctx, 40, 50, -1, 0);
+        let _ = raise_pinched(ctx.grid, ctx.scratch, ctx.ids, 40, 50, -1);
         assert_eq!(ctx.grid.cell_native(40, 50).level, 4, "one high side only");
     }
 

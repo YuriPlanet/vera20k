@@ -356,7 +356,9 @@ fn unit(owner: &str, type_id: &str, cx: u16, cy: u16, cat: EntityCategory) -> Ma
 // the moving E1's existing+538 counter seven times in this fixture. That
 // retained counter already hashes; this Rust replay ratchet moves without
 // a schema or RNG change. It is not a native whole-world golden.
-const SLICE6_BASELINE_HASH: u64 = 0x0BF9_930E_7650_1F0F;
+// The synthetic vehicle's absent Crusher/SpeedType now resolves to Wheel.
+// Its retained locomotor/rules hash changes; mission and RNG pins do not.
+const SLICE6_BASELINE_HASH: u64 = 0xD310_CFBA_7572_D1FA;
 
 #[test]
 fn replay_hash_stable_through_slice6() {
@@ -419,7 +421,7 @@ fn replay_hash_stable_through_slice6() {
         ),
         (
             7,
-            Command::ForceAttack {
+            Command::Attack {
                 attacker_id: 1,
                 target_id: 2,
             },

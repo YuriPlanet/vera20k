@@ -254,16 +254,20 @@ fn materialize_waypoint_index(param_type: Option<&str>, token_8: Option<&str>) -
     read_waypoint_token(token_8)
 }
 
-/// TAction41's numeric AnimType operands resolve through the same retained
-/// native registry as runtime construction (6E2357), after all rules passes.
-/// Bind through the existing scheduler closure before live triggers run.
+/// TAction8 binds the retained Rules.DropZoneAnim; TAction41 resolves its
+/// numeric AnimType through the same native registry as runtime construction
+/// (6E2357). Both use the existing scheduler closure at load and restoration.
 pub fn trigger_anim_class_roots(rules: &RuleSet, actions: &ActionMap) -> Vec<String> {
     actions
         .values()
         .flat_map(|action| &action.entries)
-        .filter(|action| action.kind == 41)
-        .filter_map(|action| action.literal_value())
-        .filter_map(|index| rules.anim_type_name_by_index(index))
+        .filter_map(|action| match action.kind {
+            8 => rules.general.drop_zone_anim.as_deref(),
+            41 => action
+                .literal_value()
+                .and_then(|index| rules.anim_type_name_by_index(index)),
+            _ => None,
+        })
         .map(str::to_owned)
         .collect::<BTreeSet<_>>()
         .into_iter()
@@ -434,6 +438,53 @@ mod tests {
                 .map(|entry| (entry.kind, entry.waypoint_index))
                 .collect::<Vec<_>>(),
             vec![(48, Some(0)), (112, Some(0)), (137, Some(0))]
+        );
+    }
+    #[test]
+    fn waypoint_cue_flare_asset_root_uses_rules_only_when_the_map_authors_action_eight() {
+        let flare = parse_actions(&IniFile::from_str("[Actions]\nCUE=1,8,0,99,0,0,0,0,B\n"));
+        let sound = parse_actions(&IniFile::from_str(
+            "[Actions]\nCUE=1,98,7,Sound,0,0,0,0,B\n",
+        ));
+        let rules =
+            RuleSet::from_ini(&IniFile::from_str("[General]\nDropZoneAnim=FLARE\n")).unwrap();
+        assert_eq!(trigger_anim_class_roots(&rules, &flare), ["FLARE"]);
+        assert!(trigger_anim_class_roots(&rules, &sound).is_empty());
+        let cleared =
+            RuleSet::from_ini(&IniFile::from_str("[General]\nDropZoneAnim=none\n")).unwrap();
+        assert!(trigger_anim_class_roots(&cleared, &flare).is_empty());
+    }
+    #[test]
+    fn waypoint_cue_retail_beacon_binds_and_constructs_through_the_shared_asset_root() {
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let mut rules = retail.rules;
+        let actions = parse_actions(&IniFile::from_str("[Actions]\nCUE=1,8,0,99,0,0,0,0,B\n"));
+        let roots = trigger_anim_class_roots(&rules, &actions);
+        assert_eq!(roots, ["BEACON"]);
+        // Same strict owner used by both app load roots and saved resources.
+        // Native BEACON controls read its physical ten-frame SHP and ART.
+        rules
+            .bind_scheduler_anim_assets(&roots, &assets, "TEM", "TEMPERATE")
+            .unwrap();
+        let mut sim = crate::sim::world::Simulation::with_seed(31);
+        crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+        sim.session
+            .install_waypoints(&std::collections::HashMap::from([(
+                1,
+                crate::map::waypoints::Waypoint {
+                    index: 1,
+                    rx: 10,
+                    ry: 10,
+                },
+            )]));
+        assert!(
+            sim.trigger_drop_zone_flare(&rules, 1),
+            "the retail asset closure admits the production constructor"
         );
     }
 }

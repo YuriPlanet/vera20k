@@ -571,30 +571,6 @@ impl Simulation {
         !self.unit_in_contact_war_factory(target, rules)
     }
 
-    /// A Unit whose radio contact slot 0 (`0x0065AD30(0)`: the slot itself,
-    /// not the first filled one) is a `WeaponsFactory=` building that is also
-    /// the building in the Unit's own cell: one still leaving its factory.
-    /// TemporalClass::CanWarpTarget and the Chrono Warp (`SuperClass::Launch`
-    /// `0x006CC7BC..0x006CC858`) inline the same test.
-    pub(crate) fn unit_in_contact_war_factory(&self, id: u64, rules: &RuleSet) -> bool {
-        let Some(entity) = self.substrate.entities.get(id) else {
-            return false;
-        };
-        entity.category() == EntityCategory::Unit
-            && entity.radio_contacts.slot(0).is_some_and(|contact| {
-                self.substrate.entities.get(contact).is_some_and(|factory| {
-                    factory.category() == EntityCategory::Structure
-                        && self
-                            .object_type(factory.type_ref(), rules)
-                            .is_some_and(|object| object.weapons_factory)
-                }) && self.substrate.occupancy.first_building_on_layer(
-                    entity.position.rx(),
-                    entity.position.ry(),
-                    crate::sim::movement::locomotor::MovementLayer::Ground,
-                ) == Some(contact)
-            })
-    }
-
     /// `TemporalClass::Update @ 0x0071A760`, run for `head` by its target.
     fn temporal_update_head(
         &mut self,

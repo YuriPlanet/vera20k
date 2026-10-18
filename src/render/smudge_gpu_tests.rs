@@ -478,7 +478,7 @@ fn retail_paid_destruction_and_replacement_reach_smudge_rendering() {
                     rx,
                     ry,
                 }),
-                1500 => Some(Command::ForceAttack {
+                1500 => Some(Command::Attack {
                     attacker_id: tank,
                     target_id: held,
                 }),

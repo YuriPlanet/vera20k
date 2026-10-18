@@ -5,11 +5,9 @@
 //! entries are converted to green, each conversion re-feeding the list with
 //! the converted cell's clear cardinal neighbors.
 
-use crate::map::rmg::grid::RmgGrid;
+use crate::map::rmg::grid::{CellRef, RmgGrid};
 use crate::map::rmg::rng::RmgRng;
 use crate::map::rmg::tiles::TileIds;
-
-use super::CellRef;
 
 /// Conversion cap per map.
 const SPREAD_CAP: i32 = 1000;
@@ -41,28 +39,18 @@ pub fn run(grid: &mut RmgGrid, ids: &TileIds, rng: &mut RmgRng) {
 
         // Paint through the held reference: a border entry writes the shared
         // border cell no matter what coordinate it was appended from.
-        match entry {
-            CellRef::Cell(x, y) => {
-                grid.get_mut(i32::from(x), i32::from(y))
-                    .expect("list entries reference existing cells")
-                    .tile = ids.green;
-            }
-            CellRef::Border => grid.border_cell_mut().tile = ids.green,
-        }
+        grid.ref_cell_mut(entry).tile = ids.green;
 
         // Re-scan the converted cell's cardinal neighbors. The base
         // coordinate is re-read from the cell each step — for the border
         // cell that is its live coordinate slot, which an out-of-band step
         // in this very loop can move.
         for dir in EVEN_DIRS {
-            let (bx, by) = match entry {
-                CellRef::Cell(x, y) => (i32::from(x), i32::from(y)),
-                CellRef::Border => grid.border_coord(),
-            };
+            let (bx, by) = grid.ref_coord(entry);
             let (nx, ny) = RmgGrid::step(bx, by, dir);
-            let clear = ids.is_clear(grid.cell_native(nx, ny).tile);
-            if clear {
-                list.push(CellRef::at(grid, nx, ny));
+            let held = grid.cell_ref(nx, ny);
+            if ids.is_clear(grid.ref_cell(held).tile) {
+                list.push(held);
             }
         }
     }
@@ -77,8 +65,9 @@ fn append_clear_neighbors(
 ) {
     for dir in EVEN_DIRS {
         let (nx, ny) = RmgGrid::step(x, y, dir);
-        if ids.is_clear(grid.cell_native(nx, ny).tile) {
-            list.push(CellRef::at(grid, nx, ny));
+        let held = grid.cell_ref(nx, ny);
+        if ids.is_clear(grid.ref_cell(held).tile) {
+            list.push(held);
         }
     }
 }
@@ -87,7 +76,7 @@ fn append_clear_neighbors(
 mod tests {
     use super::*;
 
-    use crate::map::rmg::tiles::SpecialTerrain;
+    use crate::map::theater::TheaterCliffRanges;
 
     /// Minimal identity table: green base 100, green LAT 110, everything else
     /// far away so no accidental range overlaps.
@@ -112,7 +101,7 @@ mod tests {
             paved_roads: -1,
             paved_road_ends: -1,
             medians: -1,
-            special: SpecialTerrain::default(),
+            cliffs: TheaterCliffRanges::default(),
         }
     }
 

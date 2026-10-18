@@ -9,6 +9,7 @@ import io
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import time
@@ -816,6 +817,68 @@ class CacheTests(unittest.TestCase):
         with patch.object(cache.shutil, 'disk_usage', side_effect=OSError('volume unavailable')):
             self.assertTrue(cache.retention_due(self.store, policy, volumes))
 
+    def test_automatic_pass_that_found_nothing_removable_repeats_only_after_a_change(self):
+        policy = cache.CachePolicy(1 << 40, 1 << 40, 1 << 62)  # Every volume is short.
+        binary, _ = self.label()
+        kept = self.write('debug/deps/kept.rcgu.o')
+        receipts = self.store / 'retention'
+        def automatic():
+            with patch.object(cache, '_dependencies', return_value={kept}), \
+                 redirect_stderr(io.StringIO()):
+                cache.automatic_locked(self.root, self.store, policy)
+            return len(list(receipts.glob('*.json')))
+        self.assertEqual(automatic(), 1)
+        self.assertEqual(automatic(), 1)  # Same protected cache: no second inventory.
+        with patch.object(cache, 'AUTOMATIC_INTERVAL_SECONDS', 0):
+            self.assertEqual(automatic(), 2)
+        orphan = self.write('debug/deps/orphan.rcgu.o')  # A build added a removable file.
+        self.assertEqual(automatic(), 3)
+        self.assertFalse(orphan.exists())
+        self.assertEqual(automatic(), 4)  # That pass removed files; it was no evidence.
+        self.assertEqual(automatic(), 4)
+        shutil.rmtree(binary.parents[1])  # Retiring the label unprotects its object.
+        self.assertEqual(automatic(), 5)
+        self.assertFalse(kept.exists())
+
+    def older_executable(self):
+        """An older and a newer core test executable; the newer one shares an object."""
+        objects = {name: self.write(f'debug/deps/{name}.rcgu.o', age=age)
+                   for name, age in (('old', 100), ('shared', 100), ('new', 300))}
+        older = self.write('debug/deps/vera20k_core-0123456789abcdef',
+                           content=b'\xcf\xfa\xed\xfeolder', age=200)
+        newer = self.write('debug/deps/vera20k_core-fedcba9876543210',
+                           content=b'\xcf\xfa\xed\xfenewer', age=400)
+        names = {older: {objects['old'], objects['shared']}, newer: {objects['new'], objects['shared']}}
+        return older, newer, objects, lambda binary: names.get(binary, set())
+
+    def test_older_executable_and_objects_only_it_names_are_removed(self):
+        older, newer, objects, dependencies = self.older_executable()
+        result = self.trim(dependencies=dependencies)
+        self.assertEqual(result['state'], 'trimmed', result)
+        self.assertEqual(result['superseded_executables'], [str(older)])
+        self.assertFalse(older.exists())
+        self.assertFalse(objects['old'].exists())
+        for path in (newer, objects['new'], objects['shared']):
+            self.assertTrue(path.exists(), path)
+
+    def test_executable_object_is_never_removed_ahead_of_it(self):
+        older, _, objects, dependencies = self.older_executable()
+        total = self.trim(dry_run=True, dependencies=dependencies)['cache_allocated_bytes']
+        result = self.trim(cache.CachePolicy(total - 1, 1 << 40, 0), dependencies=dependencies)
+        # The older object sorts after the executable naming it; one removal meets the budget.
+        self.assertEqual(result['removed_files'], [str(older)], result)
+        self.assertTrue(objects['old'].exists())
+
+    def test_running_checkout_keeps_its_older_executables(self):
+        older, _, objects, dependencies = self.older_executable()
+        # Its run may still execute a recorded test executable after Cargo.
+        with cargo_run.file_lock(self.store / 'checkouts' / f'{self.namespace}.lock', time.monotonic() + 5):
+            result = self.trim(dependencies=dependencies)
+        self.assertEqual(result['superseded_executables'], [], result)
+        self.assertEqual(result['removed_files'], [])
+        self.assertTrue(older.exists())
+        self.assertTrue(objects['old'].exists())
+
     def test_under_budget_never_invokes_expensive_dependency_inspection(self):
         self.label()
         orphan = self.write('debug/deps/orphan.rcgu.o')
@@ -897,6 +960,13 @@ class DebugDependencyTests(unittest.TestCase):
 
 
 class PolicyTests(unittest.TestCase):
+    def test_defaults_keep_a_twelve_gib_reserve(self):
+        with patch.dict(os.environ):
+            for key in ('VERA20K_CACHE_GIB', 'VERA20K_INCREMENTAL_GIB', 'VERA20K_MIN_FREE_GIB'):
+                os.environ.pop(key, None)
+            self.assertEqual(cache.CachePolicy.from_env(), cache.CachePolicy())
+            self.assertEqual(cache.CachePolicy().min_free_bytes, 12 * cache.GIB)
+
     def test_decimal_environment_and_cli_overrides_have_exact_integer_byte_values(self):
         with patch.dict(os.environ, {'VERA20K_CACHE_GIB': '1.5',
                                      'VERA20K_INCREMENTAL_GIB': '0',

@@ -127,8 +127,8 @@ pub struct LightningStorm {
     /// `0x00A9FAB4` (`LightningStorm::IsActive @ 0x0053A100`): the storm
     /// rages.
     active: bool,
-    /// `0x00A9FAD0`: the duration is over; the storm ends once no cloud is
-    /// present.
+    /// `0x00A9FAD0`: duration expiry or Stop53A090 requests an end. The
+    /// storm ends once no cloud is present, through the existing Process.
     time_to_end: bool,
     /// `0x00A9FAB8`: frames until a deferred storm starts.
     deferment: i32,
@@ -183,6 +183,15 @@ pub(crate) fn has_deferment(sim: &Simulation) -> bool {
 /// clouds that outlive its duration.
 pub fn raging(sim: &Simulation) -> bool {
     sim.lightning_storm.active
+}
+
+/// `LightningStorm::Stop @ 0x0053A090` (Steam gamemd3e81a617..08600):
+/// only a raging storm sets TimeToEnd. Countdown, clouds, timers, owner and
+/// lighting stay untouched until Process53A6C0 consumes the request.
+pub(crate) fn request_end(sim: &mut Simulation) {
+    if sim.lightning_storm.active {
+        sim.lightning_storm.time_to_end = true;
+    }
 }
 
 /// Launch case 2 for `owner`'s Super of `sw_type` at `cell`: a charged Super

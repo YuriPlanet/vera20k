@@ -2,14 +2,15 @@
 //! runs the generator end-to-end into a populated `MapFile`.
 //!
 //! This is the layer between `run_pipeline` (which takes already-resolved
-//! inputs) and the app: it resolves `TileIds`, the cliff ranges, the wheel-
-//! impassable land table (from rules), and a per-tile `Morphable=` table, then
-//! drives the pipeline and projects the grid through `emit::populate`. Theater
-//! resolution is snapshotted into `ResolvedTheaterInputs` so the run itself
-//! never borrows `TheaterData` — which keeps `generate_map` unit-testable with a
-//! hand-built resolution and a synthetic `TileBlocks`.
+//! inputs) and the app: it resolves `TileIds` (with the theater's cliff
+//! ranges), the wheel-impassable land table (from rules), and a per-tile
+//! `Morphable=` table, then drives the pipeline and projects the grid through
+//! `emit::populate`. Theater resolution is snapshotted into
+//! `ResolvedTheaterInputs` so the run itself never borrows `TheaterData` — which
+//! keeps `generate_map` unit-testable with a hand-built resolution and a
+//! synthetic `TileBlocks`.
 
-use crate::map::theater::{TheaterCliffRanges, TheaterData};
+use crate::map::theater::TheaterData;
 use crate::rules::locomotor_type::SpeedType;
 use crate::rules::terrain_rules::TerrainRules;
 
@@ -64,8 +65,8 @@ pub fn wheel_impassable_from_rules(rules: &TerrainRules) -> [bool; LAND_TYPES] {
 /// `TheaterData`: theater and rules, plus the river's sine table.
 #[derive(Debug, Clone)]
 pub struct ResolvedTheaterInputs {
+    /// Resolved tile ids, including the theater's cliff/waterfall ranges.
     pub ids: TileIds,
-    pub cliff: TheaterCliffRanges,
     pub wheel_impassable: [bool; LAND_TYPES],
     /// Per-tile `Morphable=` flag, indexed by flat tile id.
     pub morphable: Vec<bool>,
@@ -82,7 +83,6 @@ impl ResolvedTheaterInputs {
             .collect();
         Self {
             ids: TileIds::resolve(theater),
-            cliff: theater.cliff_ranges,
             wheel_impassable: wheel_impassable_from_rules(rules),
             morphable,
             trig: Some(TrigTable::embedded()),
@@ -210,7 +210,6 @@ pub fn generate_map_observed(
     let inputs = PipelineInputs {
         ids: &resolved.ids,
         blocks,
-        cliff: &resolved.cliff,
         morphable: &morphable,
         wheel_impassable: resolved.wheel_impassable,
         tech_types,
@@ -286,7 +285,7 @@ mod tests {
     use crate::map::rmg::RmgConstructionOutcome;
     use crate::map::rmg::STAGE_ORDER;
     use crate::map::rmg::phases::shore::{SubTile, TileBlock};
-    use crate::map::rmg::tiles::SpecialTerrain;
+    use crate::map::theater::TheaterCliffRanges;
     use crate::rules::ini_parser::IniFile;
     use crate::rules::terrain_rules::LandType;
 
@@ -351,7 +350,7 @@ mod tests {
             paved_roads: -1,
             paved_road_ends: -1,
             medians: -1,
-            special: SpecialTerrain::default(),
+            cliffs: TheaterCliffRanges::default(),
         }
     }
 
@@ -359,7 +358,6 @@ mod tests {
         ResolvedTheaterInputs {
             trig: None,
             ids: ids(),
-            cliff: TheaterCliffRanges::default(),
             wheel_impassable: {
                 let mut w = [false; LAND_TYPES];
                 w[3] = true; // Rock, as in stock rules

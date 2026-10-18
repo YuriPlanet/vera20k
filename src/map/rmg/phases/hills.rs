@@ -12,7 +12,6 @@ use crate::map::rmg::rng::RmgRng;
 use crate::map::rmg::scratch::RmgScratch;
 use crate::map::rmg::tiles::TileIds;
 use crate::map::rmg::x87::{self, Gaussian, TruncF64};
-use crate::map::theater::TheaterCliffRanges;
 
 use super::hills_corners::{self, CornerGrid, Morphable};
 
@@ -57,16 +56,11 @@ pub struct HillsArgs {
 
 /// Run the whole hills phase: seed, walk, then the deterministic corner morph.
 ///
-/// `cliff` classifies obstacle tiles for the water seed; `morphable` reports a
-/// tile's `Morphable=` flag for the corner engine. Neither the build nor the
-/// morph consumes RNG.
-pub fn run(
-    ctx: &mut HillsCtx<'_>,
-    args: &HillsArgs,
-    cliff: &TheaterCliffRanges,
-    morphable: Morphable<'_>,
-) {
-    water_seed(ctx.grid, ctx.scratch, ctx.ids, cliff);
+/// `ids.cliffs` classifies obstacle tiles for the water seed; `morphable`
+/// reports a tile's `Morphable=` flag for the corner engine. Neither the build
+/// nor the morph consumes RNG.
+pub fn run(ctx: &mut HillsCtx<'_>, args: &HillsArgs, morphable: Morphable<'_>) {
+    water_seed(ctx.grid, ctx.scratch, ctx.ids);
     walk(ctx.scratch, ctx.gauss, ctx.rng, args.ruggedness);
     let span = args.map_w + args.map_h - 1;
     let mut corners = CornerGrid::build(ctx.grid, ctx.scratch, span, ctx.ids, morphable);
@@ -78,17 +72,11 @@ pub fn run(
 /// Water-adjacency seed (`0x005A33F0`): each shore-piece cell marks its first
 /// in-diamond clear neighbour with height 0.5 and the protected flag; each
 /// cliff/obstacle cell marks such a neighbour with the flag only.
-pub fn water_seed(
-    grid: &RmgGrid,
-    scratch: &mut RmgScratch,
-    ids: &TileIds,
-    cliff: &TheaterCliffRanges,
-) {
+pub fn water_seed(grid: &RmgGrid, scratch: &mut RmgScratch, ids: &TileIds) {
     for (x, y) in grid.native_cells().collect::<Vec<_>>() {
         let cell = *grid.get(x, y).expect("native cell");
         let is_shore = ids.is_shore_piece(cell.tile);
-        let is_obstacle =
-            !is_shore && cliff.is_special_terrain_tile(cell.tile as u16, cell.sub_tile);
+        let is_obstacle = !is_shore && ids.cliffs.is_special_terrain_tile(cell.tile, cell.sub_tile);
         if !is_shore && !is_obstacle {
             continue;
         }
@@ -253,7 +241,7 @@ fn draw(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::map::rmg::tiles::SpecialTerrain;
+    use crate::map::theater::TheaterCliffRanges;
 
     fn ids() -> TileIds {
         TileIds {
@@ -276,7 +264,7 @@ mod tests {
             paved_roads: -1,
             paved_road_ends: -1,
             medians: -1,
-            special: SpecialTerrain::default(),
+            cliffs: TheaterCliffRanges::default(),
         }
     }
 
@@ -295,8 +283,8 @@ mod tests {
     #[test]
     fn shore_neighbour_gets_height_and_flag_cliff_neighbour_gets_flag_only() {
         let (mut grid, mut scratch) = world();
-        let identity = ids();
-        let cliff = TheaterCliffRanges {
+        let mut identity = ids();
+        identity.cliffs = TheaterCliffRanges {
             cliff_set: Some(300),
             ..Default::default()
         };
@@ -306,7 +294,7 @@ mod tests {
         grid.get_mut(shore.0, shore.1).unwrap().tile = 400; // shore piece
         grid.get_mut(cliffc.0, cliffc.1).unwrap().tile = 300; // cliff
 
-        water_seed(&grid, &mut scratch, &identity, &cliff);
+        water_seed(&grid, &mut scratch, &identity);
 
         // Each seeded cell flagged at least one clear neighbour.
         let flagged = scratch.cells().iter().filter(|c| c.water_lock).count();

@@ -124,7 +124,12 @@ same checkout waits instead of relinking a running test. A runner configured for
 host target in Cargo configuration takes precedence; the tests then run under the lock.
 
 Each worktree has a separate cache under
-`<CARGO_TARGET_DIR or checkout/target>/owned-worktrees/<checkout-path-hash>`.
+`<cache root>/owned-worktrees/<checkout-path-hash>`, where the cache root is
+`CARGO_TARGET_DIR` when set and otherwise the `target/` of the repository's primary
+checkout (the parent of the common Git directory), never the worktree's own `target/`.
+A checkout therefore has one cache whichever session builds it, as long as every
+session either leaves the variable unset or points it at that same directory; the
+runner notes on stderr when the registry holds another cache for the checkout.
 The first build compiles dependencies into this namespace, costing time and disk;
 subsequent builds reuse it. Existing shared caches are neither deleted nor trusted.
 `--target-dir`, `--manifest-path`, `--config` and `--message-format` are reserved
@@ -160,10 +165,13 @@ worktree, so the runner starts one only when it can matter:
   (`AUTOMATIC_INTERVAL_SECONDS`), or at once when a volume is below the minimum
   or cannot be measured. Any applied pass counts, including one that ended
   blocked or partial; a dry run does not. `--trim-cache` always runs one.
+- **Skipped** while the newest applied pass found nothing removable, finished
+  within that interval and nothing deciding removability has changed since:
+  cache directories, registered roots and profiles, and protected executables.
 
 Between passes the cache can exceed its budgets; the free-space reserve is still
 measured on every invocation. Defaults are **40 GiB total compiler
-cache**, **16 GiB incremental cache**, and **16 GiB minimum free space** per cache
+cache**, **16 GiB incremental cache**, and **12 GiB minimum free space** per cache
 volume. Set `VERA20K_CACHE_GIB`, `VERA20K_INCREMENTAL_GIB`, and
 `VERA20K_MIN_FREE_GIB`, or pass `--cache-gib`, `--incremental-gib`, and
 `--min-free-gib` before `--`; they set the policy the next pass applies. Sizes
@@ -192,8 +200,13 @@ The owner records every new target (including failed, unlabelled, check and cust
 target invocations) in `owned-builds/cache-roots.json`. Historical labelled roots
 are adopted only when their live checkout/common Git directory and namespace
 prove ownership. Unregistered, abandoned or unverifiable caches stay untouched.
-Only orphaned `deps/*.rcgu.o` and complete finalized incremental sessions are eligible;
-paths must belong to exact Cargo profile directories. Cross-target profiles require
+Only orphaned `deps/*.rcgu.o`, complete finalized incremental sessions and older
+Mach-O/ELF executables in `deps` are eligible; paths must belong to exact Cargo
+profile directories. An older executable is a `<name>-<16 hex>` file with a newer
+one of the same name beside it, no other link, and no preserved or latest record
+naming it; a checkout whose `cargo_run` holds its lock keeps all of them, since
+its recorded tests may still run. Objects only older executables name become
+eligible after those executables, never ahead of them. Cross-target profiles require
 an executable path reported by Cargo or retained in a preserved build manifest.
 Older sessions are considered first; newest sessions are eligible if pressure
 remains. Working sessions and sessions containing links or unknown files stay
@@ -202,8 +215,8 @@ is accounted for in registered caches and required debug-reference paths survive
 Unknown external hardlinks remain protected; the cleaner never unlinks a required
 debug path. Cache and reclaimed-space accounting counts each inode once, and
 removing an alias does not claim freed allocation while another alias remains. Source, assets, native evidence,
-executables, libraries, labels and debug sidecars are never deletion candidates.
-Every saved executable remains protected, including library-test binaries.
+libraries, labels, debug sidecars and other executables are never deletion
+candidates. Every saved executable remains protected, including library-test binaries.
 Already absent debug inputs are reported separately as degraded debugging support;
 their absence does not block deletion of independently verified orphan objects.
 Existing dependencies remain protected even when another input of the same binary

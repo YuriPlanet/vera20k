@@ -175,29 +175,74 @@ pub struct TheaterCliffRanges {
 }
 
 impl TheaterCliffRanges {
-    /// Broad special-terrain identity predicate used by terrain-height logic.
-    pub fn is_special_terrain_tile(&self, tile_id: u16, sub_tile: u8) -> bool {
-        in_fixed_range(self.cliff_set, tile_id, 0x28)
-            || in_fixed_range(self.cliff_ramps, tile_id, 0x14)
-            || in_fixed_range(self.water_cliffs, tile_id, 0x1c)
-            || in_fixed_range(self.destroyable_cliffs, tile_id, 2)
+    /// Original CellClass `0x004863D0..0x004865AD`: signed tile identity,
+    /// byte subtile, and an explicit absent-base guard for every family.
+    /// Source: original executable and the theater General reader contract in
+    /// `tools/rules_oracle/theater_general_reader.md`.
+    pub fn is_special_terrain_tile(&self, tile_id: i32, sub_tile: u8) -> bool {
+        if in_fixed_range(self.cliff_set, tile_id, 0x28) {
+            return true;
+        }
+        // A matching waterfall end can return FALSE immediately, even when
+        // a later family overlaps it. An OR over all families loses that exit.
+        if let Some(special) = self.classify_waterfall(tile_id, i32::from(sub_tile), true) {
+            return special;
+        }
+        in_fixed_range(self.cliff_ramps, tile_id, 0x14)
+            || in_fixed_range(self.water_caves, tile_id, 4)
             || in_fixed_range(self.bridge_set, tile_id, 0x10)
             || in_fixed_range(self.wood_bridge_set, tile_id, 0x10)
-            || in_fixed_range(self.water_caves, tile_id, 4)
-            || waterfall_is_special(self.waterfall_east, tile_id, sub_tile, &[0, 4])
-            || waterfall_is_special(self.waterfall_west, tile_id, sub_tile, &[1, 3])
-            || waterfall_is_special(self.waterfall_south, tile_id, sub_tile, &[0, 1])
-            || waterfall_is_special(self.waterfall_north, tile_id, sub_tile, &[2, 3])
+            || in_fixed_range(self.destroyable_cliffs, tile_id, 2)
+            || in_fixed_range(self.water_cliffs, tile_id, 0x1c)
     }
 
-    /// Narrow `IsOnBridgeRamp @ 0x00578d80` predicate.
-    pub fn is_on_bridge_ramp_tile(&self, tile_id: u16, slope_byte: u8) -> bool {
-        in_fixed_range(self.cliff_set, tile_id, 0x28)
-            || in_fixed_range(self.cliff_ramps, tile_id, 0x14)
-            || waterfall_blocks(self.waterfall_east, tile_id, slope_byte, &[0, 4])
-            || waterfall_blocks(self.waterfall_west, tile_id, slope_byte, &[1, 3])
-            || waterfall_blocks(self.waterfall_south, tile_id, slope_byte, &[0, 1])
-            || waterfall_blocks(self.waterfall_north, tile_id, slope_byte, &[2, 3])
+    /// Original `0x00578D80..0x00578E5B`: the second argument is the full
+    /// subtile INDEX, not a slope byte. Unlike Cell4863D0, missing bases still
+    /// participate as -1 in signed windows (same original executable source).
+    pub fn is_on_bridge_ramp_tile(&self, tile_id: i32, sub_tile: i32) -> bool {
+        let cliff_base = self.cliff_set.map_or(-1, i32::from);
+        if in_signed_tile_window(cliff_base, tile_id, 0x28) {
+            return true;
+        }
+        if let Some(special) = self.classify_waterfall(tile_id, sub_tile, false) {
+            return special;
+        }
+        in_signed_tile_window(self.cliff_ramps.map_or(-1, i32::from), tile_id, 0x14)
+    }
+
+    /// Resolved waterfall bases in the generator's N/E/S/W heading order.
+    /// This is a data projection; all cliff-family decisions remain here.
+    pub fn waterfall_bases(&self) -> [i32; 4] {
+        [
+            self.waterfall_north,
+            self.waterfall_east,
+            self.waterfall_south,
+            self.waterfall_west,
+        ]
+        .map(|base| base.map_or(-1, i32::from))
+    }
+
+    /// Shared E/W/S/N waterfall portion of the two original classifiers.
+    /// None means no family matched; Some(false) is a terminal ordinary end.
+    fn classify_waterfall(&self, tile_id: i32, sub_tile: i32, skip_absent: bool) -> Option<bool> {
+        for (base, ordinary) in [
+            (self.waterfall_east, [0, 4]),
+            (self.waterfall_west, [1, 3]),
+            (self.waterfall_south, [0, 1]),
+            (self.waterfall_north, [2, 3]),
+        ] {
+            if skip_absent && base.is_none() {
+                continue;
+            }
+            let base = base.map_or(-1, i32::from);
+            if in_signed_tile_window(base, tile_id, 4) {
+                return Some(
+                    (tile_id != base && tile_id != base.wrapping_add(3))
+                        || !ordinary.contains(&sub_tile),
+                );
+            }
+        }
+        None
     }
 }
 
@@ -230,27 +275,15 @@ pub struct RmgTileKeys {
     pub medians: Option<u16>,
 }
 
-fn in_fixed_range(start: Option<u16>, tile_id: u16, len: u16) -> bool {
+fn in_fixed_range(start: Option<u16>, tile_id: i32, len: i32) -> bool {
     let Some(start) = start else {
         return false;
     };
-    let end = start.saturating_add(len);
-    tile_id >= start && tile_id < end
+    in_signed_tile_window(i32::from(start), tile_id, len)
 }
 
-fn waterfall_blocks(start: Option<u16>, tile_id: u16, slope_byte: u8, passable: &[u8]) -> bool {
-    let Some(start) = start else {
-        return false;
-    };
-    if !in_fixed_range(Some(start), tile_id, 4) {
-        return false;
-    }
-    let offset = tile_id - start;
-    if offset == 0 || offset == 3 {
-        !passable.contains(&slope_byte)
-    } else {
-        true
-    }
+fn in_signed_tile_window(start: i32, tile_id: i32, len: i32) -> bool {
+    tile_id >= start && tile_id < start.wrapping_add(len)
 }
 
 /// A `Tile%02dAnim` block: one terrain-attached animation declared for a single
@@ -738,17 +771,6 @@ pub struct BridgeMiddleTiles {
     pub tile_ids: Vec<u16>,
 }
 
-impl TheaterData {
-    pub fn is_special_terrain_tile(&self, tile_id: u16, sub_tile: u8) -> bool {
-        self.cliff_ranges.is_special_terrain_tile(tile_id, sub_tile)
-    }
-
-    pub fn is_on_bridge_ramp_tile(&self, tile_id: u16, slope_byte: u8) -> bool {
-        self.cliff_ranges
-            .is_on_bridge_ramp_tile(tile_id, slope_byte)
-    }
-}
-
 impl BridgeMiddleTiles {
     /// None without BridgeMiddle1/2 or without either family's tileset.
     /// Variants past the end of the tileset lookup are omitted.
@@ -1061,10 +1083,6 @@ fn apply_lunar_global_zeroing(
     rmg_tiles.water_set = None;
     rmg_tiles.shore_pieces = None;
     rmg_tiles.water_bridge = None;
-}
-
-fn waterfall_is_special(start: Option<u16>, tile_id: u16, sub_tile: u8, ordinary: &[u8]) -> bool {
-    waterfall_blocks(start, tile_id, sub_tile, ordinary)
 }
 
 /// Checked tile-index projection; absent, negative and out-of-range values

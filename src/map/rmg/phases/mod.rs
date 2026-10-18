@@ -11,6 +11,8 @@ pub mod bridge;
 pub mod bridge_deck;
 pub mod carve;
 pub mod carve_driver;
+pub(super) mod cliff_materialization;
+pub(super) mod cliff_variants;
 pub mod connector;
 pub mod green_spread;
 pub mod hills;
@@ -33,25 +35,5 @@ pub mod water;
 pub mod water_finalize;
 pub mod zones;
 
-/// A cell reference held in a phase's work list.
-///
-/// The original keeps raw cell pointers; every out-of-band lookup returns the
-/// one shared border cell, so list entries must distinguish "a real cell" from
-/// "the border cell" to preserve the aliasing (a border entry re-reads the
-/// border's coordinate slot at use time — it does not remember the coordinate
-/// it was created from).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CellRef {
-    Cell(i16, i16),
-    Border,
-}
-
-impl CellRef {
-    pub fn at(grid: &super::grid::RmgGrid, x: i32, y: i32) -> Self {
-        if grid.is_valid(x, y) {
-            Self::Cell(x as i16, y as i16)
-        } else {
-            Self::Border
-        }
-    }
-}
+#[cfg(test)]
+mod cliff_native_tests;

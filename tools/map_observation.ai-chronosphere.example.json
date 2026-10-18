@@ -1,5 +1,5 @@
 {
-  "schema_version": "vera20k.map-observation-profile.v2",
+  "schema_version": "vera20k.map-observation-profile.v3",
   "launch": {
     "mode": {
       "id": 1,
@@ -113,10 +113,46 @@
   "observe_types": [
     "MTNK"
   ],
-  "commands": [],
+  "commands": [
+    {
+      "issue_after_step": 0,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "DeployMcv": {
+          "entity_id": {
+            "type_id": "AMCV",
+            "owner": "VERA-OBSERVER"
+          }
+        }
+      }
+    },
+    {
+      "issue_after_step": 70,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "QueueProduction": {
+          "type_id": "GAPOWR"
+        }
+      }
+    },
+    {
+      "issue_after_step": 620,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "PlaceReadyBuilding": {
+          "type_id": "GAPOWR",
+          "rx": 38,
+          "ry": 31
+        }
+      }
+    }
+  ],
   "camera_cell": [
     39,
     35
   ],
-  "observe_super_weapons": true
+  "cursor_position": [
+    720,
+    556
+  ]
 }

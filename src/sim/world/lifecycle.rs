@@ -835,8 +835,9 @@ pub enum LifecycleTestEvent {
         scenario_rng_state: u64,
     },
     /// The FireAt transaction has committed every receiver/effect owned by
-    /// this shot. Wave registration happens at this boundary, but the new
-    /// Logic tail must not dispatch until all later pre-existing callbacks.
+    /// this shot, including a Wave it registered (Sonic `0x006FF470`, MagBeam
+    /// `0x006FF647`); that Wave's Logic tail must not dispatch until all later
+    /// pre-existing callbacks.
     CombatFireEffectsCommitted {
         attacker_id: u64,
         scenario_rng_state: u64,

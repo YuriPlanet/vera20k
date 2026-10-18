@@ -1115,8 +1115,18 @@ use crate::sim::world::Simulation;
 // 405 -> 406: preserve live Action71/72 ambient Rules inputs across saves.
 // 406 -> 407: FogState no longer saves a copy of the House ally graph; the
 // saved Simulation::house_alliances is the only one.
-// 407 -> 408: retained Super one-time and provider-loss/hold flags.
-const SNAPSHOT_VERSION: u32 = 408;
+// 407 -> 408: a saved Wave's endpoints, corners and direction follow
+// FireAt's constructor order and GetFLH, and its fades keep double precision.
+// 408 -> 409: retain ordered DropZoneAnim/DropZoneRadius in saved Rules resources.
+// 409 -> 410: Command::ForceAttack is gone (it was the Attack event under a
+// second name), which renumbers the later Command variants in pending
+// CommandEnvelope payloads.
+// 410 -> 411: retain House preferred superweapon target kind and independent
+// trigger-controlled Building controller/original-owner House pointers.
+// 411 -> 412: processed UnitTypes retain SpeedType across admitted Rules
+// passes. Older records lack this field and use the wrong vehicle defaults.
+// 412 -> 413: retained Super one-time and provider-loss/hold flags.
+const SNAPSHOT_VERSION: u32 = 413;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -4817,8 +4827,13 @@ mod tests {
         // 404 -> 405: retain AudioVisual ChronoBeamColor in processed rules.
         // 405 -> 406: live ambient Rules writes from Action71/72.
         // 406 -> 407: the fog's copy of the ally graph is gone.
-        // 407 -> 408: retained Super one-time and provider-loss/hold flags.
-        assert_eq!(super::SNAPSHOT_VERSION, 408);
+        // 407 -> 408: Wave geometry follows FireAt's constructor order.
+        // 408 -> 409: ordered DropZone inputs in saved Rules resources.
+        // 409 -> 410: Command::ForceAttack is gone.
+        // 410 -> 411: preferred Super target kind and House-control pointers.
+        // 411 -> 412: retained vehicle SpeedType in processed Rules.
+        // 412 -> 413: retained Super one-time and provider-loss/hold flags.
+        assert_eq!(super::SNAPSHOT_VERSION, 413);
     }
 
     #[test]
@@ -5827,8 +5842,10 @@ mod tests {
         assert!(!active.initialize(
             WaveUpdateContext {
                 owner_position: Some(active_source),
+                owner_fire_coordinate: Some(active_source),
                 owner_current_target: Some(active_target),
                 target_position: Some(active_endpoint),
+                target_is_unit: false,
             },
             None,
         ));
@@ -5837,8 +5854,10 @@ mod tests {
         let _ = active.advance(
             WaveUpdateContext {
                 owner_position: Some(active_source),
+                owner_fire_coordinate: Some(active_source),
                 owner_current_target: Some(active_target),
                 target_position: Some(moved_endpoint),
+                target_is_unit: false,
             },
             None,
         );

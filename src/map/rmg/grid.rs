@@ -46,6 +46,19 @@ impl Default for GridCell {
     }
 }
 
+/// A cell reference a phase holds across later lookups.
+///
+/// The original keeps raw cell pointers; every out-of-band lookup returns the
+/// one shared border cell, so a held reference must distinguish "a real cell"
+/// from "the border cell" to preserve the aliasing (a border reference reads
+/// the border's coordinate slot at use time — it does not remember the
+/// coordinate it was created from).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CellRef {
+    Cell(i16, i16),
+    Border,
+}
+
 /// Working grid, indexed by the same linear (x, y) scheme as the scratch
 /// array. Cells outside the map's valid band read as `None`, which is what
 /// terminates the native iteration.
@@ -59,8 +72,8 @@ pub struct RmgGrid {
     /// cell for every invalid lookup, writing the requested coordinate into
     /// it first — so out-of-band accesses alias each other, and a phase that
     /// paints the fallback affects every later out-of-band read. Its tile
-    /// starts at 0 (zero-initialised static), which the clear-tile test
-    /// accepts.
+    /// starts at FFFF through the original Cell constructor; the clear-tile
+    /// predicate accepts that unassigned identity as well as tile zero.
     border: GridCell,
     border_coord: (i16, i16),
 }
@@ -72,8 +85,12 @@ impl RmgGrid {
             diamond_min,
             diamond_max,
             cells: vec![GridCell::default(); width * width],
+            // Original Cell constructor47BC11 writesFFFF, not zero;
+            // startup565060 and Resize5670F2 construct the shared Dummy.
+            // RMG599E70 resets only allocated iterator cells. Native input
+            // observation: tools/rmg_oracle/cliff_materialization.py.
             border: GridCell {
-                tile: 0,
+                tile: super::tiles::TILE_UNASSIGNED,
                 level: 0,
                 ..GridCell::default()
             },
@@ -114,26 +131,68 @@ impl RmgGrid {
             .then(move || &mut self.cells[y as usize * self.width + x as usize])
     }
 
+    /// The original's cell-pointer lookup, kept as a held reference: an
+    /// invalid coordinate stamps itself into the shared border cell, which
+    /// the reference then names (native lookup `0x5657A0`; the stampers
+    /// inline the same fallback).
+    pub fn cell_ref(&mut self, x: i32, y: i32) -> CellRef {
+        if self.is_valid(x, y) {
+            CellRef::Cell(x as i16, y as i16)
+        } else {
+            self.border_coord = (x as i16, y as i16);
+            CellRef::Border
+        }
+    }
+
+    /// The coordinate read back through a held reference; a border reference
+    /// sees the shared cell's latest stamped coordinate.
+    pub fn ref_coord(&self, held: CellRef) -> (i32, i32) {
+        match held {
+            CellRef::Cell(x, y) => (i32::from(x), i32::from(y)),
+            CellRef::Border => self.border_coord(),
+        }
+    }
+
+    /// The cell behind a held reference, without a fresh (stamping) lookup.
+    pub fn ref_cell(&self, held: CellRef) -> &GridCell {
+        match held {
+            CellRef::Cell(x, y) => &self.cells[self.held_index(x, y)],
+            CellRef::Border => &self.border,
+        }
+    }
+
+    /// Mutable variant of [`Self::ref_cell`].
+    pub fn ref_cell_mut(&mut self, held: CellRef) -> &mut GridCell {
+        match held {
+            CellRef::Cell(x, y) => {
+                let index = self.held_index(x, y);
+                &mut self.cells[index]
+            }
+            CellRef::Border => &mut self.border,
+        }
+    }
+
+    fn held_index(&self, x: i16, y: i16) -> usize {
+        let (x, y) = (i32::from(x), i32::from(y));
+        debug_assert!(
+            self.is_valid(x, y),
+            "a held cell reference names a valid cell"
+        );
+        y as usize * self.width + x as usize
+    }
+
     /// Cell lookup with the original's fallback semantics: an invalid
     /// coordinate yields the shared border cell after stamping the requested
     /// coordinate into it.
     pub fn cell_native(&mut self, x: i32, y: i32) -> &GridCell {
-        if self.is_valid(x, y) {
-            &self.cells[y as usize * self.width + x as usize]
-        } else {
-            self.border_coord = (x as i16, y as i16);
-            &self.border
-        }
+        let held = self.cell_ref(x, y);
+        self.ref_cell(held)
     }
 
     /// Mutable variant of [`Self::cell_native`].
     pub fn cell_native_mut(&mut self, x: i32, y: i32) -> &mut GridCell {
-        if self.is_valid(x, y) {
-            &mut self.cells[y as usize * self.width + x as usize]
-        } else {
-            self.border_coord = (x as i16, y as i16);
-            &mut self.border
-        }
+        let held = self.cell_ref(x, y);
+        self.ref_cell_mut(held)
     }
 
     /// The coordinate most recently stamped into the border cell — what the
@@ -143,12 +202,6 @@ impl RmgGrid {
             i32::from(self.border_coord.0),
             i32::from(self.border_coord.1),
         )
-    }
-
-    /// Direct access to the border cell WITHOUT stamping a coordinate — for
-    /// writes made through a retained pointer rather than a fresh lookup.
-    pub fn border_cell_mut(&mut self) -> &mut GridCell {
-        &mut self.border
     }
 
     /// Neighbor coordinate one step in direction `dir` (0..7, masked like the
@@ -331,7 +384,11 @@ mod tests {
     #[test]
     fn out_of_band_lookups_share_the_border_cell() {
         let mut grid = RmgGrid::new(16, 4, 12);
-        assert_eq!(grid.cell_native(0, 0).tile, 0, "border starts clear");
+        assert_eq!(
+            grid.cell_native(0, 0).tile,
+            0xFFFF,
+            "native constructed border starts unassigned"
+        );
         assert_eq!(grid.border_coord(), (0, 0));
         grid.cell_native_mut(15, 15).tile = 99;
         assert_eq!(grid.border_coord(), (15, 15), "lookup stamps the coord");
@@ -345,6 +402,25 @@ mod tests {
             grid.get(6, 6).unwrap().tile,
             TILE_UNASSIGNED,
             "valid cells are untouched by border writes"
+        );
+    }
+
+    #[test]
+    fn held_border_references_read_the_latest_stamped_coordinate() {
+        let mut grid = RmgGrid::new(16, 4, 12);
+        let held = grid.cell_ref(15, 15);
+        assert_eq!(held, CellRef::Border);
+        assert_eq!(grid.ref_coord(held), (15, 15));
+        grid.cell_native(1, 0);
+        assert_eq!(grid.ref_coord(held), (1, 0), "the shared slot moved");
+        grid.ref_cell_mut(held).tile = 7;
+        assert_eq!(grid.border_coord(), (1, 0), "a held write does not stamp");
+        assert_eq!(grid.cell_native(0, 0).tile, 7, "one shared border cell");
+        assert_eq!(grid.cell_ref(6, 6), CellRef::Cell(6, 6));
+        assert_eq!(
+            grid.border_coord(),
+            (0, 0),
+            "a valid lookup leaves the slot"
         );
     }
 

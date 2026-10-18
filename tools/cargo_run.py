@@ -177,9 +177,27 @@ def core_test_features(command: str, options: list[str]) -> list[str]:
     return ['--features', ','.join(WORKSPACE_CORE_FEATURES)]
 
 
+def common_git_dir(root: Path) -> Path:
+    return Path(git(root, 'rev-parse', '--path-format=absolute', '--git-common-dir'))
+
+
 def build_store(root: Path) -> tuple[Path, str]:
-    common = Path(git(root, 'rev-parse', '--path-format=absolute', '--git-common-dir'))
-    return common / 'owned-builds', hashlib.sha256(os.fsencode(root.resolve())).hexdigest()[:16]
+    return common_git_dir(root) / 'owned-builds', hashlib.sha256(os.fsencode(root.resolve())).hexdigest()[:16]
+
+
+def owned_target(root: Path, namespace: str) -> Path:
+    """The one compiler cache of a checkout, whichever session builds it.
+
+    The cache root is `CARGO_TARGET_DIR` when the caller sets it, otherwise the
+    `target/` of the repository's primary checkout (the parent of the common Git
+    directory, which also holds the store). It is never the worktree's own
+    `target/`: sessions whose environments differ would then give one checkout two
+    complete caches, as Codex worktrees built from Codex (unset) and Claude (set to
+    the primary's `target/`) sessions did. The namespace keeps checkouts apart.
+    """
+    configured = os.environ.get('CARGO_TARGET_DIR')
+    cache_root = Path(configured) if configured else common_git_dir(root).parent / 'target'
+    return cache_root.resolve() / 'owned-worktrees' / namespace
 
 
 # Cargo profiles whose host executables the runner records and resolves. `fast`
@@ -410,8 +428,7 @@ def run(root: Path, args: list[str], label: str | None, timeout: float, *, polic
         validate_label(label)
     store, namespace = build_store(root)
     # A target root may be shared, but never its package fingerprints/artifacts.
-    cache_root = Path(os.environ.get('CARGO_TARGET_DIR', str(root / 'target'))).resolve()
-    target = cache_root / 'owned-worktrees' / namespace
+    target = owned_target(root, namespace)
     output = store / 'artifacts' / label if label else None
     deadline = time.monotonic() + timeout
     options = args[:args.index('--')] if '--' in args else args
@@ -427,7 +444,11 @@ def run(root: Path, args: list[str], label: str | None, timeout: float, *, polic
         shared.enter_context(build_lock(store / 'cargo.lock', deadline - time.monotonic()))
         if output and output.exists():
             raise ValueError(f'Label already exists; choose a new label: {output}')
-        register_locked(root, store, target)
+        if others := register_locked(root, store, target):
+            print('Note: this checkout also has caches at ' + ', '.join(map(str, others))
+                  + '; one cache per checkout is intended (CARGO_TARGET_DIR differs between '
+                  'sessions, or the other cache predates the primary-checkout default)',
+                  file=sys.stderr, flush=True)
         # Check both paths even if platform device identifiers are unavailable
         # or collide; an artifact copy may consume a different volume.
         volumes = [target, store] if output else [target]
@@ -539,7 +560,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument('--dry-run', action='store_true', help='Preview cache or saved/exported build retirement')
     parser.add_argument('--cache-gib', help='Total compiler cache budget (default/env: 32 GiB)')
     parser.add_argument('--incremental-gib', help='Incremental cache budget (default/env: 4 GiB)')
-    parser.add_argument('--min-free-gib', help='Minimum volume free-space target (default/env: 16 GiB)')
+    parser.add_argument('--min-free-gib', help='Minimum volume free-space target (default/env: 12 GiB)')
     parser.add_argument('--from-label', metavar='LABEL', help='Resolve from one preserved build label, not latest')
     parser.add_argument('--profile', choices=HOST_PROFILES, help='Required with --resolve; no fallback')
     parser.add_argument('--wait-seconds', type=float,

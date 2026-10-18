@@ -48,7 +48,7 @@ pub(super) struct WorldInstances {
     /// PixelFX water/ore sparkles — 1-pixel cell dots emitted per frame.
     /// Empty when the live `[Options] DetailLevel` projection is zero.
     pub cell_sparkles: Vec<SpriteInstance>,
-    /// Persistent WaveClass bucket-3 registrations lowered to white-pixel instances.
+    /// Sonic's legacy outline fallback; Magnetic bodies use retained parents.
     pub weapon_waves: Vec<SpriteInstance>,
     /// SpotlightClass type-16 masks with authoritative child-light coordinates.
     pub spotlight_type16: Vec<SpriteInstance>,
@@ -348,6 +348,8 @@ pub(super) fn build_world_instances(
             });
         }
     }
+    let weapon_waves =
+        instances::build_weapon_wave_instances(state, &mut planned_objects, &display_order);
     // Native +99 is set before a Building's body opportunity, independently
     // of successful pixels. Empty body frames still have a retained parent.
     let building_body_opportunities = planned_objects
@@ -381,8 +383,6 @@ pub(super) fn build_world_instances(
                 .sum::<usize>(),
         );
     }
-
-    let weapon_waves = instances::build_weapon_wave_instances(state);
 
     // Named residual: BuildingLightRuntime currently records the parent/target
     // relation but not SpotlightClass's evolving child coordinate and angle.

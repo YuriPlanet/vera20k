@@ -303,3 +303,98 @@ fn generated_connector_uses_native_slope_piece_tileset() {
     // This is source/read/publication and production consumer evidence. Native
     // full-Generate pixels, dialog reroll, and skirmish start remain separate.
 }
+
+#[test]
+fn generated_raised_ridge_materializes_native_cliff_faces() {
+    let options = ordinary_recipe(11, 3);
+    let Some((_assets, prepared, _rules)) = retail_generation_inputs(&options) else {
+        return;
+    };
+    let native = crate::test_fixture::json("tools/rules_oracle/theater_general_reader.json");
+    let physical = native["physical"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row["file"] == "temperatmd.ini")
+        .unwrap();
+    assert_eq!(
+        crate::util::sha256::sha256_hex(&prepared.theater.ini_data),
+        physical["sha256"]
+    );
+    let ordinal = physical["values"]["CliffSet"].as_u64().unwrap() as usize;
+    let registration = &prepared.theater.lookup.bounds()[ordinal];
+    let base = i32::from(
+        prepared
+            .theater
+            .cliff_ranges
+            .cliff_set
+            .expect("physical CliffSet"),
+    );
+    assert_eq!(base, i32::from(registration.start));
+    assert!(
+        registration.count >= 40,
+        "native CliffSet40-tile band is physical"
+    );
+    for tile in base..base + 40 {
+        assert!(
+            prepared.blocks.block(tile).is_some(),
+            "physical cliff block {tile}"
+        );
+    }
+    let mut ordinary_steps = 0;
+    let mut materialized = Vec::new();
+    let generated = generate_map_observed(
+        &options,
+        &prepared.settings,
+        &prepared.resolved_inputs,
+        &prepared.blocks,
+        &prepared.tech_types,
+        &mut |view| {
+            if view.point() == GenerationPoint::After(Stage::Regions) {
+                let cells = view.snapshot().map_file.cells;
+                let coordinates: HashMap<_, _> = cells
+                    .iter()
+                    .map(|cell| ((cell.rx, cell.ry), cell))
+                    .collect();
+                ordinary_steps = cells
+                    .iter()
+                    .filter(|cell| {
+                        prepared.resolved_inputs.ids.is_clear(cell.tile_index)
+                            && coordinates
+                                .get(&(cell.rx, cell.ry + 1))
+                                .is_some_and(|neighbor| {
+                                    prepared.resolved_inputs.ids.is_clear(neighbor.tile_index)
+                                        && cell.z == neighbor.z.saturating_add(4)
+                                })
+                    })
+                    .count();
+            }
+            if view.point() == GenerationPoint::After(Stage::IslandPasses) {
+                materialized = view
+                    .snapshot()
+                    .map_file
+                    .cells
+                    .into_iter()
+                    .filter(|cell| (base..base + 40).contains(&cell.tile_index))
+                    .collect();
+            }
+        },
+    );
+    assert!(
+        ordinary_steps > 0,
+        "ordinary seed11/type3 must admit a four-level raised-ground boundary before the connector/cliff stages"
+    );
+    assert!(
+        !materialized.is_empty(),
+        "native type3/4 gate598D6E/598D7B/598D82 runs cliff materialization after connectors; ordinary raised ground must acquire physical CliffSet faces"
+    );
+    assert!(
+        generated.map_file.cells.iter().any(|cell| {
+            materialized.iter().any(|face| {
+                (cell.rx, cell.ry, cell.tile_index, cell.sub_tile, cell.z)
+                    == (face.rx, face.ry, face.tile_index, face.sub_tile, face.z)
+            })
+        }),
+        "a materialized cliff face must survive later phases into the emitted map"
+    );
+}

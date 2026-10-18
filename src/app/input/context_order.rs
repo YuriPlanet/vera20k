@@ -540,20 +540,13 @@ fn unit_repair_branch_orders(
                 } else {
                     modifier
                 };
-                let payload = object_click_payload(
+                object_click_payload(
                     order_mode,
                     attack_modifier,
                     entity_can_attack_move(sim, Some(rules), id),
                     id,
                     target.stable_id,
-                );
-                match payload {
-                    Command::Attack {
-                        attacker_id,
-                        target_id,
-                    } => object_attack_order(attacker_id, target_id, true),
-                    payload => payload,
-                }
+                )
             }
             UnitRepairAction::Move => {
                 output.consumed = true;
@@ -629,10 +622,6 @@ fn attack_branch_orders(
                         target_rx,
                         target_ry,
                     },
-                    TargetKind::Entity(target_id) if force_fire => Command::ForceAttack {
-                        attacker_id: id,
-                        target_id,
-                    },
                     TargetKind::Entity(target_id) => Command::Attack {
                         attacker_id: id,
                         target_id,
@@ -681,9 +670,7 @@ fn order_voice_key(command: &Command) -> Option<&'static str> {
         Command::Move { .. } | Command::MoveToObject { .. } | Command::AttackMove { .. } => {
             Some("VoiceMove")
         }
-        Command::Attack { .. } | Command::ForceAttack { .. } | Command::ForceAttackCell { .. } => {
-            Some("VoiceAttack")
-        }
+        Command::Attack { .. } | Command::ForceAttackCell { .. } => Some("VoiceAttack"),
         Command::HarvestCell { .. } => Some("VoiceHarvest"),
         Command::CaptureBuilding { .. } => Some("VoiceCapture"),
         Command::MinerReturn { .. }
@@ -714,7 +701,6 @@ fn command_actor_id(command: &Command) -> Option<u64> {
         | Command::UndeployBuilding { entity_id }
         | Command::Stop { entity_id } => Some(*entity_id),
         Command::Attack { attacker_id, .. }
-        | Command::ForceAttack { attacker_id, .. }
         | Command::ForceAttackCell { attacker_id, .. }
         | Command::PlantC4 { attacker_id, .. } => Some(*attacker_id),
         Command::EnterTransport { passenger_id, .. } => Some(*passenger_id),
@@ -773,9 +759,7 @@ fn emit_resolved_order_voice(state: &mut AppState, speaker_id: u64, queued: &[Co
     // before event encoding. A Move destination and the actor's old TarCom
     // are different owners; neither supplies this argument.
     let target = match &envelope.payload {
-        Command::Attack { target_id, .. } | Command::ForceAttack { target_id, .. } => {
-            Some(TargetKind::Entity(*target_id))
-        }
+        Command::Attack { target_id, .. } => Some(TargetKind::Entity(*target_id)),
         Command::ForceAttackCell {
             target_rx,
             target_ry,
@@ -1009,7 +993,7 @@ pub(crate) fn object_click_payload(
     target_id: u64,
 ) -> Command {
     if modifier == OrderModifier::ForceFire {
-        return Command::ForceAttack {
+        return Command::Attack {
             attacker_id,
             target_id,
         };
@@ -1051,7 +1035,7 @@ pub(crate) fn object_click_payload(
 ///
 /// RESIDUAL (#605): force fire orders the payload whatever the receiver.
 /// Trigger: Ctrl over an object with an unarmed receiver. Effect: VERA
-/// queues ForceAttack where native, whose attack rung admits an unarmed
+/// queues an Attack where native, whose attack rung admits an unarmed
 /// receiver under Ctrl too only as an `Infiltrate=` infantryman
 /// (`0x00700444..0x00700474`), selects the object or moves the receiver near
 /// it. Rare.
@@ -1771,7 +1755,10 @@ pub(crate) fn try_queue_context_order_at_screen_point(
                         queued.push(CommandEnvelope::new(
                             owner_id,
                             execute_tick,
-                            object_attack_order(attacker_id, target.stable_id, friendly),
+                            Command::Attack {
+                                attacker_id,
+                                target_id: target.stable_id,
+                            },
                         ));
                     }
                     selected_units.retain(|id| !engineers.contains(id));
@@ -1781,17 +1768,9 @@ pub(crate) fn try_queue_context_order_at_screen_point(
                 }
             }
 
-            // Object51E3B0 Engineer decisions precede CanBeOccupiedBy and C4.
-            // Consume each Engineer's and spy's terminal action while retaining
-            // the other selected actors for their own actions below.
-            //
-            // RESIDUAL: natively the infiltration arm (0x0051EE3B) follows the
-            // garrison (0x0051E668) and C4 (0x0051E9C1) arms; it runs before
-            // them here so that a mixed selection keeps both orders. Trigger: a
-            // modded Infiltrate= type that is also C4=, over a CanC4= building
-            // it may enter. Retail's one infiltrator, SPY, takes none of the
-            // arms between, and an Occupier= one is garrisoned on arrival
-            // either way. Effect: it infiltrates where native may plant C4.
+            // Engineers have the first building action. The infiltrator
+            // producer checks intervening garrison/C4 actions per actor before
+            // consuming a late Capture, keeping mixed selections independent.
             //
             // RESIDUAL: force fire skips these producers, but the infiltration
             // arm reads no modifier. Its one action test is base action Attack
@@ -1834,58 +1813,28 @@ pub(crate) fn try_queue_context_order_at_screen_point(
                 }
             }
 
-            // C4 plant: SEAL / Tanya / Psi-Corp Trooper clicking a CanC4 enemy
-            // structure. Engineers already resolved their higher-priority
-            // native action; the remaining C4 actors take their own action.
-            if context_actions_enabled {
-                let c4_target = hover.as_ref().and_then(|target| {
-                    if !matches!(target.kind, HoverTargetKind::EnemyStructure) {
-                        return None;
+            // C4 precedes the late infiltration action (51E9DA before51EE54).
+            if context_actions_enabled && let Some(target) = hover.as_ref() {
+                let c4_attackers: Vec<_> = selected_units
+                    .iter()
+                    .copied()
+                    .filter(|&id| {
+                        infantry_c4_action(sim, &resources.rules, id, target)
+                            == Some(InfantryC4Action::Sabotage)
+                    })
+                    .collect();
+                if !c4_attackers.is_empty() {
+                    for attacker_id in c4_attackers {
+                        queued.push(CommandEnvelope::new(
+                            owner_id,
+                            execute_tick,
+                            Command::PlantC4 {
+                                attacker_id,
+                                target_building_id: target.stable_id,
+                            },
+                        ));
                     }
-                    let rules = Some(&resources.rules)?;
-                    let building = sim.entities().get(target.stable_id)?;
-                    let obj = sim.interner.object_type(building.type_ref(), rules)?;
-                    if !obj.can_c4 || obj.invisible_in_game {
-                        return None;
-                    }
-                    // Reject IC'd target at issue time (matches gamemd's
-                    // What_Action_OnObject vtable[+0x80] check).
-                    if crate::sim::superweapon::invulnerability::is_invulnerable(
-                        building.invulnerability.as_ref(),
-                        sim.session.tick as u32,
-                    ) {
-                        return None;
-                    }
-                    Some(target.stable_id)
-                });
-                if let Some(building_id) = c4_target {
-                    let c4_attackers: Vec<u64> = selected_units
-                        .iter()
-                        .copied()
-                        .filter(|&sid| {
-                            sim.entities().get(sid).is_some_and(|e| {
-                                e.category() == EntityCategory::Infantry
-                                    && Some(&resources.rules)
-                                        .and_then(|r| sim.interner.object_type(e.type_ref(), r))
-                                        .is_some_and(|o| o.c4)
-                            })
-                        })
-                        .collect();
-                    if !c4_attackers.is_empty() {
-                        for attacker_id in c4_attackers {
-                            queued.push(CommandEnvelope::new(
-                                owner_id,
-                                execute_tick,
-                                Command::PlantC4 {
-                                    attacker_id,
-                                    target_building_id: building_id,
-                                },
-                            ));
-                        }
-                        // Sabotage has no dedicated voice slot in retail, so
-                        // `order_voice_key` routes it to VoiceSpecialAttack.
-                        return finish_order(state, queued, speaker_id);
-                    }
+                    return finish_order(state, queued, speaker_id);
                 }
             }
 
@@ -2006,7 +1955,10 @@ pub(crate) fn try_queue_context_order_at_screen_point(
                         queued.push(CommandEnvelope::new(
                             owner_id,
                             execute_tick,
-                            object_attack_order(attacker_id, target.stable_id, true),
+                            Command::Attack {
+                                attacker_id,
+                                target_id: target.stable_id,
+                            },
                         ));
                     }
                     return finish_order(state, queued, speaker_id);
@@ -2379,6 +2331,47 @@ fn engineer_capture_orders(
     consumed.then_some(orders)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum InfantryC4Action {
+    Attack,
+    Sabotage,
+}
+
+/// The type-C4 arm of Infantry What_Action51E9C1..51EB21, after the
+/// ordinary enemy-building hover admission. A non-vehicle building
+/// terminates this arm even when CanC4/InvisibleInGame leave action Attack;
+/// it must not fall through to the later infiltration arm (51EE54).
+/// Shared by click dispatch and cursor feedback. Rank-granted C4 remains
+/// outside the existing type-C4 input path.
+pub(super) fn infantry_c4_action(
+    sim: &crate::sim::world::Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    actor_id: u64,
+    hover: &HoverTargetKindWithId,
+) -> Option<InfantryC4Action> {
+    if hover.kind != HoverTargetKind::EnemyStructure {
+        return None;
+    }
+    let actor = sim.entities().get(actor_id)?;
+    let target = sim.entities().get(hover.stable_id)?;
+    if actor.category() != EntityCategory::Infantry
+        || target.category() != EntityCategory::Structure
+        || !sim.interner.object_type(actor.type_ref(), rules)?.c4
+    {
+        return None;
+    }
+    let building = sim.interner.object_type(target.type_ref(), rules)?;
+    // Building virtual+80: 457620 -> BuildingType465D40, not invulnerability.
+    if building.is_1x1_with_undeploy() {
+        return None;
+    }
+    Some(if building.can_c4 && !building.invisible_in_game {
+        InfantryC4Action::Sabotage
+    } else {
+        InfantryC4Action::Attack
+    })
+}
+
 /// The selected spies whose action over `hover` is Capture
 /// (`Simulation::infiltrator_building_action`): `ClickedAction_Object`
 /// (0x0051F190) keeps action 9, and `FootClass::ClickedAction_Object`
@@ -2399,7 +2392,10 @@ fn infiltrator_capture_orders(
     let mut consumed = false;
     let mut orders = Vec::new();
     selected.retain(|&id| {
-        if !sim.infiltrator_building_action(id, hover.stable_id, rules) {
+        if infantry_c4_action(sim, rules, id, hover).is_some()
+            || crate::sim::passenger::can_enter_transport(sim, rules, id, hover.stable_id)
+            || !sim.infiltrator_building_action(id, hover.stable_id, rules)
+        {
             return true;
         }
         consumed = true;
@@ -2558,23 +2554,6 @@ fn friendly_bomb_ivans(
                 ) == AttackAction::Attack
         })
         .collect()
-}
-
-/// Native Attack events have no alliance test. Friendly context actions
-/// (repair, defuse and Ivan) use the existing ForceAttack internal alias:
-/// the same mission/target receiver, with no persistent Ctrl/fire modifier.
-fn object_attack_order(attacker_id: u64, target_id: u64, friendly: bool) -> Command {
-    if friendly {
-        Command::ForceAttack {
-            attacker_id,
-            target_id,
-        }
-    } else {
-        Command::Attack {
-            attacker_id,
-            target_id,
-        }
-    }
 }
 
 /// `InfantryClass::What_Action_OnObject`'s Ivan arm
@@ -2781,9 +2760,123 @@ mod tests {
         );
     }
 
-    /// A spy's click on a building its flags admit is Capture: it takes the
-    /// Engineer's capture order and leaves the rest of the selection to their
-    /// own actions. Over a building it may not enter, it takes nothing.
+    /// Role-derived Infiltrate must preserve native C4-before-Capture order,
+    /// including terminal ordinary Attack when the building refuses C4.
+    #[test]
+    fn specialist_infiltration_keeps_c4_click_and_cursor_priority() {
+        let rules = crate::rules::ruleset::RuleSet::from_ini(
+            &crate::rules::ini_parser::IniFile::from_str(
+                "[InfantryTypes]\n0=GHOST\n1=SPY\n[BuildingTypes]\n0=PLANT\n1=BUNK\n2=FOLD\n[VehicleTypes]\n0=TRUCK\n\
+                 [GHOST]\nStrength=100\nC4=yes\nPrimary=Rifle\n\
+                 [SPY]\nStrength=100\nAgent=yes\n\
+                 [PLANT]\nStrength=750\nCapturable=yes\nSpyable=yes\nCanC4=yes\n\
+                 [BUNK]\nStrength=750\nCapturable=yes\nSpyable=yes\nCanC4=no\n\
+                 [FOLD]\nStrength=750\nCapturable=yes\nSpyable=yes\nUndeploysInto=TRUCK\n\
+                 [TRUCK]\nStrength=100\n\
+                 [Rifle]\nDamage=10\nRange=8\nProjectile=Invisible\nWarhead=AP\n\
+                 [Invisible]\nInviso=yes\n\
+                 [AP]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+            ),
+        ).unwrap();
+        let mut sim = Simulation::new();
+        sim.resolve_type_handles(&rules);
+        for (name, human) in [("Americans", true), ("Soviets", false)] {
+            let owner = sim.interner.intern(name);
+            sim.houses.insert(
+                owner,
+                crate::sim::house_state::HouseState::new(owner, 0, None, human, 0, 10),
+            );
+            sim.session.house_order.push(owner);
+        }
+        sim.session.game_mode_nonzero = true;
+        sim.session.current_house = sim.interner.get("Americans");
+        let seal = sim
+            .spawn_object("GHOST", "Americans", 3, 5, 0, &rules)
+            .unwrap();
+        let spy = sim
+            .spawn_object("SPY", "Americans", 4, 5, 0, &rules)
+            .unwrap();
+        let plant = sim
+            .spawn_object("PLANT", "Soviets", 6, 5, 0, &rules)
+            .unwrap();
+        let bunker = sim
+            .spawn_object("BUNK", "Soviets", 8, 5, 0, &rules)
+            .unwrap();
+        let fold = sim
+            .spawn_object("FOLD", "Soviets", 10, 5, 0, &rules)
+            .unwrap();
+        assert!(rules.object("GHOST").unwrap().infiltrate);
+        assert!(rules.object("SPY").unwrap().infiltrate);
+        for (target, expected_action, expected_cursor) in [
+            (
+                plant,
+                InfantryC4Action::Sabotage,
+                crate::app::types::CursorFeedbackKind::Demolish,
+            ),
+            (
+                bunker,
+                InfantryC4Action::Attack,
+                crate::app::types::CursorFeedbackKind::EnemyStructure,
+            ),
+        ] {
+            let hover = HoverTargetKindWithId {
+                kind: HoverTargetKind::EnemyStructure,
+                stable_id: target,
+            };
+            assert!(sim.infiltrator_building_action(seal, target, &rules));
+            let mut selected = vec![seal, spy];
+            assert_eq!(
+                infiltrator_capture_orders(&sim, &rules, &mut selected, &hover),
+                Some(vec![Command::CaptureBuilding {
+                    engineer_id: spy,
+                    target_building_id: target
+                }])
+            );
+            assert_eq!(selected, [seal]);
+            assert_eq!(
+                infantry_c4_action(&sim, &rules, seal, &hover),
+                Some(expected_action)
+            );
+            assert_eq!(
+                crate::app::input::cursor::capability_cursor_for_hover(
+                    &sim,
+                    &[seal],
+                    Some(seal),
+                    &hover,
+                    Some(&rules),
+                    None
+                ),
+                expected_cursor
+            );
+        }
+        let hover = HoverTargetKindWithId {
+            kind: HoverTargetKind::EnemyStructure,
+            stable_id: fold,
+        };
+        assert!(rules.object("FOLD").unwrap().is_1x1_with_undeploy());
+        assert_eq!(infantry_c4_action(&sim, &rules, seal, &hover), None);
+        assert_eq!(
+            infiltrator_capture_orders(&sim, &rules, &mut vec![seal], &hover),
+            Some(vec![Command::CaptureBuilding {
+                engineer_id: seal,
+                target_building_id: fold
+            }])
+        );
+        assert_eq!(
+            crate::app::input::cursor::capability_cursor_for_hover(
+                &sim,
+                &[seal],
+                Some(seal),
+                &hover,
+                Some(&rules),
+                None
+            ),
+            crate::app::types::CursorFeedbackKind::Enter
+        );
+    }
+
+    /// A spy's click takes its Capture order and leaves the other selected
+    /// actors for their own actions. An inadmissible building consumes none.
     #[test]
     fn a_spy_click_on_a_building_it_may_enter_captures() {
         let rules =
@@ -2942,9 +3035,8 @@ mod tests {
     /// (`0x007004A0..0x00700531`): an `Agent=` infantryman over a `Spyable=`
     /// building, another over a `Capturable=` one, and a `C4=` one over a
     /// building that is `CanC4=` (a building's default). Any other building
-    /// takes the tail. Each type names `Infiltrate=`: native also sets it for
-    /// `C4=`, `Engineer=` and `Agent=` types, which VERA's reader does not
-    /// (#1588).
+    /// takes the tail. The reader also enables Infiltrate for C4, Engineer
+    /// and Agent types without an explicit Infiltrate key.
     #[test]
     fn the_infiltrate_arm_keeps_an_illegal_shot_on_the_rung() {
         let rules =
@@ -3697,7 +3789,7 @@ mod tests {
         );
         assert_eq!(
             object_click_payload(OrderMode::AttackMove, OrderModifier::ForceFire, true, 1, 2),
-            Command::ForceAttack {
+            Command::Attack {
                 attacker_id: 1,
                 target_id: 2,
             }
@@ -4156,8 +4248,8 @@ mod tests {
     }
 
     /// The click side of the bomb actions: an Engineer's DisarmBomb and a
-    /// Crazy Ivan's IvanBomb on a friend are Attack orders (ForceAttack past
-    /// VERA's alliance gate). An Ivan never attacks a bombed target, nor a
+    /// Crazy Ivan's IvanBomb on a friend are Attack orders. An Ivan never
+    /// attacks a bombed target, nor a
     /// friend his shot cannot hit (the rung's ILLEGAL test), where the cursor
     /// shows Select too.
     #[test]
@@ -4262,15 +4354,6 @@ mod tests {
         sim.bomb_list_update(&rules);
         sim.bomb_list_update(&rules);
         assert!(disarm_bomb_engineers(&sim, &rules, &[engineer], engineer, americans).is_empty());
-
-        assert!(matches!(
-            object_attack_order(engineer, own_tank, true),
-            Command::ForceAttack { .. }
-        ));
-        assert!(matches!(
-            object_attack_order(engineer, far_tank, false),
-            Command::Attack { .. }
-        ));
     }
     /// Supplies the ordinary object-route prerequisites, through production
     /// object constructors and the existing terrain/type authorities.

@@ -35,7 +35,7 @@ pub(crate) fn fired(
     target: super::TargetKind,
     weapon: &crate::rules::weapon_type::WeaponType,
 ) {
-    if weapon.is_laser || weapon.is_electric_bolt || !weapon.is_rad_beam {
+    if super::world_fire::fire_at_effect(weapon) != super::world_fire::FireAtEffect::RadiationBeam {
         return;
     }
     let mode = if weapon

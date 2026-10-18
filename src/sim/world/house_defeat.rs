@@ -48,8 +48,6 @@
 //! - The IsToDie path (`Flag_To_Die @ 0x004FC980`: DESTRUCT, REMOVEPLAYER, a
 //!   last human's EXIT) has no VERA producer; offline skirmish cannot reach
 //!   it.
-//! - The trigger-held original owner (`+0x2CC`/`+0x2E0`,
-//!   HouseClass::TransferUnitsTo) is not ported.
 //! - MPlayer_Defeated's capture-the-flag cleanup (Flag_Remove `0x004FBE40` at
 //!   `0x004FC112..0x004FC15E`, Scenario flag `0x10`) and the Harvester-Truce
 //!   UnInit loop (`0x004FC163`, Scenario flag `0x800`) are not ported; their
@@ -677,8 +675,8 @@ impl Simulation {
 
     /// TechnoGetOriginalOwner70F820: MindControlledBy's CaptureManager is
     /// read before the current Owner. No manager node means native NULL.
-    /// The trigger-transfer+2CC/+2E0 producer remains an explicit module
-    /// residual; ordinary ChangeOwner/Engineer capture does not set that latch.
+    /// Trigger transfers retain +2CC/+2E0 independently; an ordinary capture
+    /// clears +2E0 without clearing +2CC, so this can legitimately return None.
     pub(crate) fn techno_original_owner(&self, id: u64) -> Option<InternedId> {
         let entity = self.substrate.entities.get(id)?;
         if let Some(controller) = entity.mind_control.controller() {
@@ -688,6 +686,8 @@ impl Simulation {
                 .capture_manager
                 .as_ref()?
                 .original_owner(id)
+        } else if entity.mind_control.house_controller().is_some() {
+            entity.mind_control.house_original_owner()
         } else {
             Some(entity.owner())
         }

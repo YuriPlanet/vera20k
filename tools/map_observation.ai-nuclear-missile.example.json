@@ -1,5 +1,5 @@
 {
-  "schema_version": "vera20k.map-observation-profile.v2",
+  "schema_version": "vera20k.map-observation-profile.v3",
   "launch": {
     "mode": {
       "id": 1,
@@ -113,10 +113,26 @@
   "observe_types": [
     "NACNST"
   ],
-  "commands": [],
+  "commands": [
+    {
+      "issue_after_step": 0,
+      "owner": "VERA-OBSERVER",
+      "payload": {
+        "DeployMcv": {
+          "entity_id": {
+            "type_id": "SMCV",
+            "owner": "VERA-OBSERVER"
+          }
+        }
+      }
+    }
+  ],
   "camera_cell": [
     42,
     64
   ],
-  "observe_super_weapons": true
+  "cursor_position": [
+    720,
+    556
+  ]
 }

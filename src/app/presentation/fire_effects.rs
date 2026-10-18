@@ -12,7 +12,7 @@ use crate::sim::world::{SimFireEvent, Simulation};
 /// One persistent WaveClass draw resolved from simulation-owned registration state.
 #[derive(Debug, Clone)]
 pub(crate) struct WeaponWaveVisual {
-    pub geometry: crate::render::wave_geometry::WaveGeometryInput,
+    pub polygon: [[i32; 2]; 6],
     pub tint: [f32; 3],
 }
 
@@ -47,54 +47,78 @@ pub(crate) fn build_weapon_wave_visuals(
     sim.waves
         .iter()
         .filter_map(|(_, wave)| {
-            let (kind, wave_type) = match wave.wave_type {
-                0 => (
-                    crate::render::wave_geometry::WaveGeometryKind::NonMagnetic,
-                    0,
-                ),
-                3 => (crate::render::wave_geometry::WaveGeometryKind::Magnetic, 3),
-                // Types 1/2 use the fixed laser rasterizer, which the current
-                // white-pixel beam backend does not emulate.
-                _ => return None,
-            };
-            let cell = |point: crate::sim::projectile::ProjectileCoord| {
-                let rx = u16::try_from(point.x.div_euclid(256)).ok()?;
-                let ry = u16::try_from(point.y.div_euclid(256)).ok()?;
-                Some((rx, ry))
-            };
-            if let Some(observer) = observer {
-                let (source_rx, source_ry) = cell(wave.source)?;
-                let (target_rx, target_ry) = cell(wave.target)?;
-                let source_fogged = !sim.fog.is_cell_revealed(observer, source_rx, source_ry);
-                let target_fogged = !sim.fog.is_cell_revealed(observer, target_rx, target_ry);
-                if !wave.visible_through_fog(
-                    sim.session.game_options.fog_of_war,
-                    source_fogged,
-                    target_fogged,
-                ) {
-                    return None;
-                }
+            let polygon = wave.sonic_draw_polygon([0, 0])?;
+            if !weapon_wave_visible(sim, observer, wave) {
+                return None;
             }
             Some(WeaponWaveVisual {
-                geometry: crate::render::wave_geometry::WaveGeometryInput {
-                    kind,
-                    wave_type,
-                    a: crate::render::wave_geometry::WavePoint {
-                        x: wave.source.x,
-                        y: wave.source.y,
-                        z: wave.source.z,
-                    },
-                    b: crate::render::wave_geometry::WavePoint {
-                        x: wave.target.x,
-                        y: wave.target.y,
-                        z: wave.target.z,
-                    },
-                },
-                // Sonic and Magnetron sample the destination framebuffer;
+                polygon,
+                // Sonic samples the destination framebuffer;
                 // they never select a house remap. The current sprite batch
                 // has no framebuffer-distortion input, so it remains neutral.
                 tint: [1.0, 1.0, 1.0],
             })
+        })
+        .collect()
+}
+
+/// DrawIt75F9F0's shared endpoint fog admission. Each raster consumes the
+/// same simulation coordinates and the same native gate.
+fn weapon_wave_visible(
+    sim: &Simulation,
+    observer: Option<crate::sim::intern::InternedId>,
+    wave: &crate::sim::wave::Wave,
+) -> bool {
+    let Some(observer) = observer else {
+        return true;
+    };
+    let cell = |point: crate::sim::projectile::ProjectileCoord| {
+        Some((
+            u16::try_from(point.x.div_euclid(256)).ok()?,
+            u16::try_from(point.y.div_euclid(256)).ok()?,
+        ))
+    };
+    let (Some((sx, sy)), Some((tx, ty))) = (cell(wave.source), cell(wave.target)) else {
+        return false;
+    };
+    wave.visible_through_fog(
+        sim.session.game_options.fog_of_war,
+        !sim.fog.is_cell_revealed(observer, sx, sy),
+        !sim.fog.is_cell_revealed(observer, tx, ty),
+    )
+}
+
+/// Native type3 geometry is owned by WaveClass, including the Unit endpoint
+/// reversal and projected fade. Rendering translates it once and supplies the
+/// current packed destination; it never rebuilds a quad from world endpoints.
+pub(crate) fn build_magnetic_wave_draws(
+    sim: &Simulation,
+    observer: Option<crate::sim::intern::InternedId>,
+    camera: [i32; 2],
+) -> Vec<(u64, crate::render::wave_geometry::MagneticWaveDraw)> {
+    use crate::render::wave_geometry::{MagneticClipPath, MagneticWaveDraw};
+
+    sim.waves
+        .iter()
+        .filter_map(|(&id, wave)| {
+            let geometry = wave.magnetic_draw_geometry(camera)?;
+            if !weapon_wave_visible(sim, observer, wave) {
+                return None;
+            }
+            Some((
+                id,
+                MagneticWaveDraw {
+                    polygon: geometry.polygon,
+                    source_point: geometry.source_point,
+                    source_z: wave.source.z,
+                    phase: wave.lifetime,
+                    direction: u8::try_from(wave.direction_octant).ok()?,
+                    // VERA's existing scene Z is contiguous. Native ring
+                    // fallback can differ by one clipping-edge pixel; C32's
+                    // production footprints remain inside both margins.
+                    clip_path: MagneticClipPath::Fast,
+                },
+            ))
         })
         .collect()
 }
@@ -334,14 +358,6 @@ mod tests {
 
         let waves = build_weapon_wave_visuals(&sim, None);
         assert_eq!(waves.len(), 1);
-        assert_eq!(waves[0].geometry.wave_type, 0);
-        assert_eq!(
-            waves[0].geometry.kind,
-            crate::render::wave_geometry::WaveGeometryKind::NonMagnetic
-        );
-        assert_eq!(
-            crate::render::wave_geometry::draw_order(waves[0].geometry).len(),
-            6
-        );
+        assert_eq!(waves[0].polygon.len(), 6);
     }
 }

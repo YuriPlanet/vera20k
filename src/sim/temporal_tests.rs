@@ -1908,7 +1908,7 @@ fn a_warped_building_cannot_be_captured() {
         .unwrap();
         assert_eq!(
             entity(sim, engineer).navigation.nav_com(),
-            Some(crate::sim::components::NavTargetRef::building(plant)),
+            Some(crate::sim::components::NavTargetRef::object(plant)),
         );
         // The constructor and any Stop_Driver action must leave a Doing
         // that admits the native forced Scatter on refusal.

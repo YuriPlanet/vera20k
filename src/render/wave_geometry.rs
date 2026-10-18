@@ -1,111 +1,11 @@
-//! YR WaveClass beam geometry before tactical projection.
+//! Wave3's packed-surface raster and the separate legacy Sonic outline.
+//!
+//! Magnetic world geometry belongs to `sim::wave`; this module consumes its
+//! projected polygon. Original controls: procedural_drawing_oracle/magnetic_wave.
 
 use crate::render::batch::SpriteInstance;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum WaveGeometryKind {
-    Magnetic,
-    NonMagnetic,
-}
-
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct WavePoint {
-    pub x: i32,
-    pub y: i32,
-    pub z: i32,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct WaveEndpointPair {
-    pub front: WavePoint,
-    pub back: WavePoint,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct WaveGeometryInput {
-    pub kind: WaveGeometryKind,
-    pub wave_type: u8,
-    pub a: WavePoint,
-    pub b: WavePoint,
-}
-
-const ENDPOINT_SCALE: [f64; 4] = [1.0, 1.049_999_952_316_284_2, 1.049_999_952_316_284_2, 1.0];
-const COMMON_OFFSETS: [[(i32, i32); 4]; 3] = [
-    [(-30, -100), (-30, 100), (30, -100), (30, 100)],
-    [(-34, -44), (-34, 44), (34, -44), (34, 44)],
-    [(-27, -34), (-27, 34), (27, -34), (27, 34)],
-];
-
-/// YR `WaveClass::Draw_Magnetic` (0x762070) / `Draw_NonMagnetic` (0x761640).
-pub fn endpoint_pair(input: WaveGeometryInput) -> WaveEndpointPair {
-    let wave_type = usize::from(input.wave_type & 3);
-    let scale = ENDPOINT_SCALE[wave_type];
-    let inverse = 1.0 - scale;
-    let mix = |left: i32, right: i32| (right as f64 * scale + left as f64 * inverse).trunc() as i32;
-    let reverse_mix =
-        |left: i32, right: i32| (left as f64 * scale + right as f64 * inverse).trunc() as i32;
-    let mut front = WavePoint {
-        x: mix(input.a.x, input.b.x),
-        y: mix(input.a.y, input.b.y),
-        z: mix(input.a.z, input.b.z),
-    };
-    let back = WavePoint {
-        x: reverse_mix(input.a.x, input.b.x),
-        y: reverse_mix(input.a.y, input.b.y),
-        z: reverse_mix(input.a.z, input.b.z),
-    };
-    if wave_type == 0 || wave_type == 3 {
-        front.z += 50;
-    }
-    WaveEndpointPair { front, back }
-}
-
-pub fn world_vertices(input: WaveGeometryInput) -> [WavePoint; 4] {
-    let endpoints = endpoint_pair(input);
-    let dx = f64::from(endpoints.front.x - endpoints.back.x);
-    let dy = f64::from(endpoints.front.y - endpoints.back.y);
-    let dz = f64::from(endpoints.front.z - endpoints.back.z);
-    let horizontal_length = dx.hypot(dy);
-    let z_denominator = match input.kind {
-        WaveGeometryKind::Magnetic => horizontal_length.hypot(dz),
-        WaveGeometryKind::NonMagnetic => horizontal_length,
-    };
-    let angle_magnitude = (dx / horizontal_length).clamp(-1.0, 1.0).asin();
-    let angle = if endpoints.back.y > endpoints.front.y {
-        -angle_magnitude
-    } else {
-        angle_magnitude
-    };
-    let (sin, cos) = angle.sin_cos();
-    let offsets = local_offsets(input.kind, input.wave_type);
-
-    offsets.map(|(offset_x, offset_y)| {
-        let local_x = horizontal_length + f64::from(offset_x);
-        let local_y = f64::from(offset_y);
-        let local_z = local_x * dz / z_denominator + f64::from(endpoints.back.z);
-        WavePoint {
-            x: fistp_trunc(f64::from(endpoints.back.x) + local_x * cos - local_y * sin),
-            y: fistp_trunc(f64::from(endpoints.back.y) + local_x * sin + local_y * cos),
-            z: fistp_trunc(local_z),
-        }
-    })
-}
-
-pub fn draw_order(input: WaveGeometryInput) -> Vec<WavePoint> {
-    let vertices = world_vertices(input);
-    let endpoints = endpoint_pair(input);
-    match input.kind {
-        WaveGeometryKind::Magnetic => vec![vertices[0], vertices[1], vertices[3], vertices[2]],
-        WaveGeometryKind::NonMagnetic => vec![
-            vertices[0],
-            endpoints.front,
-            vertices[1],
-            vertices[3],
-            endpoints.back,
-            vertices[2],
-        ],
-    }
-}
+use crate::util::native_x87::{NativeF64Bits, X87Chop53 as X};
+use std::sync::OnceLock;
 
 /// Lower projected WaveClass polygon edges to the existing white-pixel batch primitive.
 pub fn build_wave_instances(
@@ -126,26 +26,6 @@ pub fn build_wave_instances(
         emit_line(&mut instances, *edge.0, *edge.1, tint, alpha, depth);
     }
     instances
-}
-
-fn local_offsets(kind: WaveGeometryKind, wave_type: u8) -> [(i32, i32); 4] {
-    let wave_type = usize::from(wave_type & 3);
-    if wave_type < 3 {
-        COMMON_OFFSETS[wave_type]
-    } else if kind == WaveGeometryKind::Magnetic {
-        [(0, -50), (0, 50), (0, -50), (0, 50)]
-    } else {
-        [(-30, -50), (-30, 50), (30, -50), (30, 50)]
-    }
-}
-
-fn fistp_trunc(value: f64) -> i32 {
-    let nearest = value.round();
-    if (value - nearest).abs() < 1e-9 {
-        nearest as i32
-    } else {
-        value.trunc() as i32
-    }
 }
 
 fn emit_line(
@@ -173,5 +53,411 @@ fn emit_line(
             depth,
             ..Default::default()
         });
+    }
+}
+
+/// Native7602E0 has different clipping at its contiguous and ring-wrapped Z
+/// branches. The screen-texture renderer uses Fast; Fallback is retained for
+/// original component controls, without inventing simulation ring state.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum MagneticClipPath {
+    Fast,
+    Fallback,
+}
+
+/// All XY values are integer, unzoomed screen pixels after the same camera
+/// translation. `source_point` is the projection of native B4/CC, not a corner.
+/// No renderer reconstructs the sim-owned762070 polygon or its direction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct MagneticWaveDraw {
+    pub polygon: [[i32; 2]; 4],
+    pub source_point: [i32; 2],
+    pub source_z: i32,
+    pub phase: i32,
+    pub direction: u8,
+    pub clip_path: MagneticClipPath,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PolygonSpans {
+    pub top: i32,
+    pub rows: Vec<[i32; 2]>,
+}
+
+/// Original polygon63F080 and edge63F2E0. Native Wave3 supplies a convex
+/// four-point polygon. Top-chain orientation, initial skip and the right-side
+/// minus-one are preserved before clipping; GPU triangulation would differ.
+pub(crate) fn polygon_spans(points: &[[i32; 2]; 4]) -> PolygonSpans {
+    let mut minimum = 0;
+    let mut maximum = 0;
+    for i in 1..points.len() {
+        if points[i][1] < points[minimum][1] {
+            minimum = i;
+        } else if points[i][1] > points[maximum][1] {
+            maximum = i;
+        }
+    }
+    let min_y = points[minimum][1];
+    let max_y = points[maximum][1];
+    if min_y == max_y {
+        return PolygonSpans {
+            top: 0,
+            rows: Vec::new(),
+        };
+    }
+    let next = |i: usize| (i + 1) % points.len();
+    let previous = |i: usize| (i + points.len() - 1) % points.len();
+    let mut after_top = minimum;
+    while points[after_top][1] == min_y {
+        after_top = next(after_top);
+    }
+    let mut right = previous(after_top);
+    let mut before_top = minimum;
+    while points[before_top][1] == min_y {
+        before_top = previous(before_top);
+    }
+    let mut left = next(before_top);
+    let include_top = points[left][0] != points[right][0];
+    let mut direction = -1;
+    let swap = if include_top {
+        points[right][0] < points[left][0]
+    } else {
+        let origin = points[left];
+        let a = points[previous(left)];
+        let b = points[next(right)];
+        a[1].wrapping_sub(origin[1])
+            .wrapping_mul(b[0].wrapping_sub(origin[0]))
+            .wrapping_sub(
+                b[1].wrapping_sub(origin[1])
+                    .wrapping_mul(a[0].wrapping_sub(origin[0])),
+            )
+            < 0
+    };
+    if swap {
+        std::mem::swap(&mut left, &mut right);
+        direction = 1;
+    }
+    let count = max_y.wrapping_sub(min_y).wrapping_sub(1) + i32::from(include_top);
+    if count <= 0 {
+        return PolygonSpans {
+            top: 0,
+            rows: Vec::new(),
+        };
+    }
+    let mut spans = PolygonSpans {
+        top: min_y.wrapping_sub(i32::from(include_top)).wrapping_add(1),
+        rows: vec![[0; 2]; count as usize],
+    };
+    for (side, mut index, step) in [(0, left, direction), (1, right, -direction)] {
+        let mut row = 0;
+        let mut skip = !include_top;
+        loop {
+            let following = if step > 0 {
+                next(index)
+            } else {
+                previous(index)
+            };
+            let mut start = points[index];
+            let mut end = points[following];
+            if side == 1 {
+                start[0] = start[0].wrapping_sub(1);
+                end[0] = end[0].wrapping_sub(1);
+            }
+            span_edge(start, end, skip, |x| {
+                spans.rows[row][side] = x;
+                row += 1;
+            });
+            index = following;
+            skip = false;
+            if index == maximum {
+                break;
+            }
+        }
+        assert_eq!(row, spans.rows.len(), "native convex polygon edge coverage");
+    }
+    spans
+}
+
+///63F2E0 uses signed division and sign-dependent initial error. Its endpoint Y
+/// is excluded; only the first edge can skip its first row.
+fn span_edge(start: [i32; 2], end: [i32; 2], skip: bool, mut emit: impl FnMut(i32)) {
+    let dx = end[0].wrapping_sub(start[0]);
+    let dy = end[1].wrapping_sub(start[1]);
+    if dy <= 0 {
+        return;
+    }
+    let width = dx.wrapping_abs();
+    let step = if dx > 0 { 1_i32 } else { -1_i32 };
+    let mut x = start[0];
+    let skip = i32::from(skip);
+    if width == 0 {
+        for _ in 0..dy.wrapping_sub(skip) {
+            emit(x);
+        }
+        return;
+    }
+    if width == dy {
+        if skip != 0 {
+            x = x.wrapping_add(step);
+        }
+        for _ in 0..dy.wrapping_sub(skip) {
+            emit(x);
+            x = x.wrapping_add(step);
+        }
+        return;
+    }
+    let (advance, remainder) = if width < dy {
+        (0, width)
+    } else {
+        ((width / dy).wrapping_mul(step), width % dy)
+    };
+    let mut error = if dx < 0 { 1_i32.wrapping_sub(dy) } else { 0 };
+    if skip != 0 {
+        error = error.wrapping_add(remainder);
+        x = x.wrapping_add(advance);
+        if error > 0 {
+            x = x.wrapping_add(step);
+            error = error.wrapping_sub(dy);
+        }
+    }
+    for _ in 0..dy.wrapping_sub(skip) {
+        emit(x);
+        error = error.wrapping_add(remainder);
+        x = x.wrapping_add(advance);
+        if error > 0 {
+            x = x.wrapping_add(step);
+            error = error.wrapping_sub(dy);
+        }
+    }
+}
+
+/// Immutable75F020 derived tables. Numeric kernels remain owned by the shared
+/// native x87/trig modules; only this Wave-specific initialization lives here.
+pub(crate) struct MagneticTables {
+    pub distance: Vec<u16>,
+    pub magnetic: [i16; 496],
+    pub sonic: [i16; 500],
+    pub brightness: [i32; 13],
+}
+
+impl MagneticTables {
+    ///7601D1 reads a raw linear address. The initialized adjacent window is
+    ///mag496, six zero-coordinate shorts (75E8F0), then Sonic500 (75F020).
+    ///Do not replace an index beyond495 by a clamp or a periodic sine lookup.
+    pub(crate) fn magnetic_sine(&self, index: i32) -> Option<i16> {
+        match index {
+            0..=495 => Some(self.magnetic[index as usize]),
+            496..=501 => Some(0),
+            502..=1001 => Some(self.sonic[index as usize - 502]),
+            _ => None,
+        }
+    }
+}
+
+fn wave_sine_table<const N: usize>(frequency: NativeF64Bits) -> [i16; N] {
+    std::array::from_fn(|i| {
+        let frequency = X::load_f64(frequency).unwrap();
+        let angle = X::store_f64(X::mul(X::load_i32(i as i32), frequency)).unwrap();
+        let sine = crate::map::retail_trig::TrigTable::embedded()
+            .sin_from_table(X::load_f64(angle).unwrap());
+        let amplitude = X::load_f64(NativeF64Bits::from_bits(0x4028_0000_0000_0000)).unwrap();
+        let bias = X::load_f64(NativeF64Bits::from_bits(0x3fdf_5c28_f5c2_8f5c)).unwrap();
+        X::ftol_i32_low_masked(X::add(X::mul(sine, amplitude), bias)) as i16
+    })
+}
+
+pub(crate) fn magnetic_tables() -> &'static MagneticTables {
+    static TABLES: OnceLock<MagneticTables> = OnceLock::new();
+    TABLES.get_or_init(|| {
+        let distance = (0..300_i32)
+            .flat_map(|y| {
+                (0..300_i32).map(move |x| {
+                    let root = crate::util::native_x87::sqrt_approx_f32(X::load_i32(x * x + y * y))
+                        .expect("finite native Wave table squared distance");
+                    X::ftol_i32_low_masked(X::load_f32(root).expect("finite native sqrt table"))
+                        as u16
+                })
+            })
+            .collect();
+        MagneticTables {
+            distance,
+            magnetic: wave_sine_table(NativeF64Bits::from_bits(0x3fb9_9999_9999_999a)),
+            sonic: wave_sine_table(NativeF64Bits::from_bits(0x3fc0_0000_0000_0000)),
+            brightness: std::array::from_fn(|i| 110 + i as i32 * 8),
+        }
+    })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct MagneticPixel {
+    pub point: [i32; 2],
+    pub source: [i32; 2],
+    pub candidate_z: u16,
+    pub brightness: i32,
+    pub distance_index: i32,
+    pub sine_index: i32,
+}
+
+/// These are unsupported native memory domains, never a request to clamp or
+/// substitute an empty pixel. Production must surface the exact offending draw.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum MagneticRasterError {
+    Surface { size: [i32; 2], pitch_words: i32 },
+    Direction(u8),
+    DistanceIndex(i32),
+    SineIndex(i32),
+    Destination([i32; 2]),
+    SourceWord(i32),
+}
+
+impl MagneticWaveDraw {
+    ///7602E0/760190: native traversal order, strict-depth candidates and exact
+    /// displaced reads. The caller alone owns live color/Z; this emits no A
+    /// query and never writes Z. `pitch_words` includes declared native padding.
+    pub(crate) fn rasterize(
+        self,
+        clip: [i32; 4],
+        size: [i32; 2],
+        pitch_words: i32,
+        z_origin_y: i32,
+        mut emit: impl FnMut(MagneticPixel),
+    ) -> Result<(), MagneticRasterError> {
+        if size[0] <= 1 || size[1] <= 0 || pitch_words < size[0] {
+            return Err(MagneticRasterError::Surface { size, pitch_words });
+        }
+        let forward = match self.direction {
+            2..=5 => true,
+            0 | 1 | 6 | 7 => false,
+            other => return Err(MagneticRasterError::Direction(other)),
+        };
+        let spans = polygon_spans(&self.polygon);
+        if spans.rows.is_empty() {
+            return Ok(());
+        }
+        let inset = match self.clip_path {
+            MagneticClipPath::Fast => 3,
+            MagneticClipPath::Fallback => 2,
+        };
+        let last_y = spans
+            .top
+            .wrapping_add(spans.rows.len() as i32)
+            .wrapping_sub(1)
+            .min(clip[1].wrapping_add(clip[3]));
+        if last_y < spans.top {
+            return Ok(());
+        }
+        let adjust_z = crate::util::native_x87::adjust_for_z_standard(self.source_z);
+        let mut row = |y: i32| -> Result<(), MagneticRasterError> {
+            if y < clip[1].wrapping_add(inset)
+                || y > clip[1].wrapping_add(clip[3]).wrapping_sub(inset)
+            {
+                return Ok(());
+            }
+            let candidate_z = crate::render::native_z::DEFAULT_Z
+                .wrapping_add(z_origin_y)
+                .wrapping_sub(adjust_z)
+                .wrapping_sub(y)
+                .wrapping_sub(2) as u16;
+            // Every native stored Z is u16; none can pass >65535. The
+            //original Pixel/table/source reads are unreachable on this row.
+            if candidate_z == u16::MAX {
+                return Ok(());
+            }
+            let [left, right] = spans.rows[y.wrapping_sub(spans.top) as usize];
+            let left = left.max(clip[0].wrapping_add(inset));
+            let right = right.min(clip[0].wrapping_add(clip[2]).wrapping_sub(inset));
+            let mut pixel = |x: i32| -> Result<(), MagneticRasterError> {
+                emit(self.pixel_operation([x, y], size, pitch_words, candidate_z)?);
+                Ok(())
+            };
+            if forward {
+                for x in left..=right {
+                    pixel(x)?;
+                }
+            } else {
+                for x in (left..=right).rev() {
+                    pixel(x)?;
+                }
+            }
+            Ok(())
+        };
+        if forward {
+            for y in spans.top..=last_y {
+                row(y)?;
+            }
+        } else {
+            for y in (spans.top..=last_y).rev() {
+                row(y)?;
+            }
+        }
+        Ok(())
+    }
+    /// Original Pixel760190 lookup/displacement operation, shared with the
+    /// whole7602E0 raster. The supplied depth belongs to its caller; this
+    /// leaf performs no depth/A read or packed-color store on the CPU.
+    pub(crate) fn pixel_operation(
+        self,
+        point: [i32; 2],
+        size: [i32; 2],
+        pitch_words: i32,
+        candidate_z: u16,
+    ) -> Result<MagneticPixel, MagneticRasterError> {
+        let [x, y] = point;
+        let steps = [
+            pitch_words.wrapping_neg(),
+            1_i32.wrapping_sub(pitch_words),
+            1,
+            pitch_words.wrapping_add(1),
+            pitch_words,
+            pitch_words.wrapping_sub(1),
+            -1,
+            pitch_words.wrapping_neg().wrapping_sub(1),
+        ];
+        let step = *steps
+            .get(usize::from(self.direction))
+            .ok_or(MagneticRasterError::Direction(self.direction))?;
+        let tables = magnetic_tables();
+        if x < 0 || y < 0 || x >= size[0] || y >= size[1] {
+            return Err(MagneticRasterError::Destination([x, y]));
+        }
+        let distance_index = y
+            .wrapping_sub(self.source_point[1])
+            .wrapping_abs()
+            .wrapping_mul(300)
+            .wrapping_add(x.wrapping_sub(self.source_point[0]).wrapping_abs());
+        let distance = usize::try_from(distance_index)
+            .ok()
+            .and_then(|i| tables.distance.get(i))
+            .copied()
+            .ok_or(MagneticRasterError::DistanceIndex(distance_index))?;
+        let sine_index = i32::from(distance).wrapping_add(self.phase);
+        let sine = tables
+            .magnetic_sine(sine_index)
+            .ok_or(MagneticRasterError::SineIndex(sine_index))?;
+        let magnitude = i32::from(sine).abs().min(9) as usize;
+        let multiple = match magnitude {
+            0..=1 => 0,
+            2..=6 => 1,
+            _ => 2,
+        };
+        let source_word = y
+            .wrapping_mul(pitch_words)
+            .wrapping_add(x)
+            .wrapping_add(step.wrapping_mul(multiple));
+        if source_word < 0 || source_word >= pitch_words.wrapping_mul(size[1]) {
+            return Err(MagneticRasterError::SourceWord(source_word));
+        }
+        let source = [source_word % pitch_words, source_word / pitch_words];
+        if source[0] >= size[0] {
+            return Err(MagneticRasterError::SourceWord(source_word));
+        }
+        Ok(MagneticPixel {
+            point: [x, y],
+            source,
+            candidate_z,
+            brightness: tables.brightness[magnitude],
+            distance_index,
+            sine_index,
+        })
     }
 }

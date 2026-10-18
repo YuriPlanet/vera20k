@@ -82,6 +82,25 @@ impl RmgRng {
         }
     }
 
+    /// Import an original-executable control through the existing opaque
+    /// continuation boundary. Production generation always starts via `new`;
+    /// this hook lets numerical controls supply native-observed full states
+    /// without exposing mutable RNG words to phase modules.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn from_native_control(continuation: MapGenRngContinuation) -> Self {
+        let (disabled, state, idx_a, idx_b) = continuation.into_native_parts();
+        assert_eq!(
+            disabled, 0,
+            "generation controls require an unlocked MapGen stream"
+        );
+        assert!(idx_a < STATE_LEN && idx_b < STATE_LEN);
+        Self {
+            state,
+            idx_a,
+            idx_b,
+        }
+    }
+
     /// Cursor positions, for tests that assert the seeded starting state.
     #[cfg(any(test, feature = "test-support"))]
     fn cursors(&self) -> (usize, usize) {
