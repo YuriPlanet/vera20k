@@ -138,9 +138,11 @@ fn live126_recreates_all_four_initial_categories_after_real_cleanup_in_record_or
         sim.flush_pending_delete();
         assert!(active(&sim).is_empty());
         if saved_house {
-            let bytes = bincode::serialize(&sim.houses[&houses[0]]).unwrap();
-            sim.houses
-                .insert(houses[0], bincode::deserialize(&bytes).unwrap());
+            let bytes = crate::util::save_codec::serialize(&sim.houses[&houses[0]]).unwrap();
+            sim.houses.insert(
+                houses[0],
+                crate::util::save_codec::deserialize(&bytes).unwrap(),
+            );
         }
         install(&mut sim, &rules, 0);
         sim.session.binary_frame = 16;
