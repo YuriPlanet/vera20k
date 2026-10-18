@@ -105,6 +105,16 @@ impl NativeSurfacePresentationProfile {
         }
     }
 
+    /// Present the bitwise NOT of `rgba`'s packed word, as native inverts a
+    /// pixel word before plotting it (the radar combat flash, `0x00656042`).
+    /// Alpha is kept.
+    pub(crate) fn invert_rgba8(self, rgba: [u8; 4]) -> [u8; 4] {
+        let [r, g, b] = self
+            .format
+            .unpack_rgb8(!self.format.pack_rgb8([rgba[0], rgba[1], rgba[2]]));
+        self.quantize_rgba8([r, g, b, rgba[3]])
+    }
+
     /// Recover the component bytes that native emits after a packed-surface
     /// round trip: discarded low bits are zero-filled, not replicated.
     ///
@@ -163,6 +173,30 @@ mod tests {
     use std::collections::BTreeSet;
 
     use super::*;
+
+    /// Every presented channel value packs back to its own word, so the
+    /// inversion of a presented color is exact and undoes itself.
+    #[test]
+    fn inverting_a_presented_color_inverts_its_packed_word() {
+        let profile = ACTIVE_RETAIL_RGB565_PRESENTATION;
+        assert_eq!(profile.invert_rgba8([0, 0, 0, 255]), [255, 255, 255, 255]);
+        for (five, six) in OBSERVED_FIVE_BIT
+            .iter()
+            .zip(OBSERVED_SIX_BIT.iter().step_by(2))
+        {
+            let color = [*five, *six, *five, 200];
+            let word = profile.format.pack_rgb8([color[0], color[1], color[2]]);
+            let inverted = profile.invert_rgba8(color);
+            assert_eq!(
+                profile
+                    .format
+                    .pack_rgb8([inverted[0], inverted[1], inverted[2]]),
+                !word
+            );
+            assert_eq!(inverted[3], 200);
+            assert_eq!(profile.invert_rgba8(inverted), color);
+        }
+    }
 
     #[test]
     fn encoded_rgb_interpolation_matches_original_executed_controls() {

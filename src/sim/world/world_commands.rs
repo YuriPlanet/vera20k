@@ -307,6 +307,121 @@ impl Simulation {
                 let post = token(target)?;
                 (entity_id, MegaMissionOrder::AreaGuard { post })
             }
+            Command::PlantC4 {
+                attacker_id,
+                target_building_id,
+            } => (
+                attacker_id,
+                MegaMissionOrder::Mission {
+                    target: MegaMissionTarget::Null,
+                    mission: MissionType::Sabotage,
+                    destination: token(Some(combat::TargetKind::Entity(target_building_id)))?,
+                },
+            ),
+            Command::CaptureBuilding {
+                engineer_id,
+                target_building_id,
+            } => (
+                engineer_id,
+                MegaMissionOrder::Mission {
+                    target: MegaMissionTarget::Null,
+                    mission: MissionType::Capture,
+                    destination: token(Some(combat::TargetKind::Entity(target_building_id)))?,
+                },
+            ),
+            Command::EnterTransport {
+                passenger_id,
+                transport_id,
+            } => (
+                passenger_id,
+                MegaMissionOrder::Mission {
+                    target: MegaMissionTarget::Null,
+                    mission: MissionType::Enter,
+                    destination: token(Some(combat::TargetKind::Entity(transport_id)))?,
+                },
+            ),
+            Command::EnterBunker { unit_id, bunker_id } => (
+                unit_id,
+                MegaMissionOrder::Mission {
+                    target: MegaMissionTarget::Null,
+                    mission: MissionType::Enter,
+                    destination: token(Some(combat::TargetKind::Entity(bunker_id)))?,
+                },
+            ),
+            Command::RepairAtDepot {
+                entity_id,
+                depot_id,
+            } => (
+                entity_id,
+                MegaMissionOrder::Mission {
+                    target: MegaMissionTarget::Null,
+                    mission: MissionType::Enter,
+                    destination: token(Some(combat::TargetKind::Entity(depot_id)))?,
+                },
+            ),
+            Command::MinerReturn {
+                entity_id,
+                target_refinery_id: Some(refinery_id),
+            } => (
+                entity_id,
+                MegaMissionOrder::Mission {
+                    target: MegaMissionTarget::Null,
+                    mission: MissionType::Enter,
+                    destination: token(Some(combat::TargetKind::Entity(refinery_id)))?,
+                },
+            ),
+            Command::HarvestCell {
+                entity_id,
+                target_rx,
+                target_ry,
+            } => (
+                entity_id,
+                MegaMissionOrder::Mission {
+                    target: MegaMissionTarget::Null,
+                    mission: MissionType::Harvest,
+                    destination: token(Some(combat::TargetKind::Cell(target_rx, target_ry)))?,
+                },
+            ),
+            Command::UnloadPassengers { transport_id } => (
+                transport_id,
+                MegaMissionOrder::Mission {
+                    target: if self
+                        .substrate
+                        .entities
+                        .get(transport_id)
+                        .is_some_and(|actor| actor.category() == EntityCategory::Structure)
+                    {
+                        MegaMissionTarget::Object {
+                            id: i32::try_from(transport_id).ok()?,
+                        }
+                    } else {
+                        MegaMissionTarget::Null
+                    },
+                    mission: MissionType::Unload,
+                    destination: MegaMissionTarget::Null,
+                },
+            ),
+            Command::ToggleInfantryDeploy { entity_id } | Command::DeployMcv { entity_id } => (
+                entity_id,
+                MegaMissionOrder::Mission {
+                    target: MegaMissionTarget::Null,
+                    mission: MissionType::Unload,
+                    destination: MegaMissionTarget::Null,
+                },
+            ),
+            Command::MegaMission {
+                entity_id,
+                mission,
+                target,
+                destination,
+            } => (
+                entity_id,
+                MegaMissionOrder::Mission {
+                    mission,
+                    target: token(target)?,
+                    destination: token(destination)?,
+                },
+            ),
             _ => return None,
         };
         if !self.houses.contains_key(&command_owner)
@@ -478,6 +593,16 @@ impl Simulation {
                 MegaMissionOrder::AreaGuard { post } => Command::Guard {
                     entity_id,
                     target: target(post)?,
+                },
+                MegaMissionOrder::Mission {
+                    mission,
+                    target: order_target,
+                    destination,
+                } => Command::MegaMission {
+                    entity_id,
+                    mission,
+                    target: target(order_target)?,
+                    destination: target(destination)?,
                 },
             };
             return Some(CommandEnvelope::new(owner, execute_tick, command));
@@ -834,6 +959,22 @@ impl Simulation {
             self.planning_detach_actor(actor);
         }
         match cmd {
+            Command::MegaMission {
+                entity_id,
+                mission,
+                target,
+                destination,
+            } => self
+                .apply_megamission_command(
+                    *entity_id,
+                    *mission,
+                    *target,
+                    *destination,
+                    rules,
+                    overlay_registry,
+                    frame_effects,
+                )
+                .accepted(),
             Command::PlanningRecord { record } => {
                 self.apply_planning_record(command_owner, record, rules)
             }
@@ -1480,7 +1621,7 @@ impl Simulation {
                 {
                     return false;
                 }
-                match self.apply_megamission_command(
+                self.apply_megamission_command(
                     *passenger_id,
                     MissionType::Enter,
                     None,
@@ -1488,19 +1629,8 @@ impl Simulation {
                     Some(rules),
                     overlay_registry,
                     frame_effects,
-                ) {
-                    MegaMissionExecution::Refused => false,
-                    // A building transport (Grinder, bunker) the passenger
-                    // is already linked to: no fresh Boarding role, so the
-                    // unit walks in instead of backing off.
-                    MegaMissionExecution::RepeatedEnter => true,
-                    MegaMissionExecution::Executed => {
-                        if let Some(e) = self.substrate.entities.get_mut(*passenger_id) {
-                            passenger::begin_boarding(e, *transport_id);
-                        }
-                        true
-                    }
-                }
+                )
+                .accepted()
             }
             Command::UnloadPassengers { transport_id } => {
                 if !self.entity_owned_by_id(command_owner, *transport_id) {
@@ -1653,64 +1783,16 @@ impl Simulation {
                 {
                     return false;
                 }
-                if !self.order_actor_admits(*entity_id) {
-                    return false;
-                }
-                // Shared Event prefix ends the refinery handshake. This
-                // legacy Harvest mission path still owns the unload latch.
-                self.begin_megamission_retask(
+                self.apply_megamission_command(
                     *entity_id,
                     MissionType::Harvest,
                     None,
-                    None,
+                    Some(combat::TargetKind::Cell(*target_rx, *target_ry)),
                     rules,
+                    overlay_registry,
                     frame_effects,
-                );
-                crate::sim::miner::clear_unload_latch(self, *entity_id);
-                // Native (EventClass::Execute MEGAMISSION, disassembled
-                // 2026-09-05/-25): the client's mission byte passes through
-                // `FootClass 0x004DF0E0` (vtable `+0x4A4`, unchanged unless
-                // 0x1D) into `Queue_Mission(mission, 0)` at `0x004C73B9`,
-                // clears SuspendedNavCom/SuspendedTarCom, clears the
-                // ArchiveTarget (`0x004C7448`) and hands the clicked cell to
-                // the class setter (`vt+0x480(cell, 1)`, `0x004C747C`).
-                // Queue_Mission (`0x005B35E0`) leaves a miner already on
-                // Harvest alone (`0x005B3601..0x005B3612`): its state, stage
-                // and Unit+0x6D2 carry on, so state 1 waits out the drive as
-                // a hop and cuts where it ends. Any other mission queues
-                // Harvest for the host's next Ready/Commence, and state 0
-                // cuts where the drive ends.
-                // RESIDUAL: the Assign_Target of the event's target is not
-                // represented.
-                let now = self.session.binary_frame;
-                let _ = self.mission_queue_exact(
-                    *entity_id,
-                    crate::sim::mission::MissionId::from_known(MissionType::Harvest),
-                    0,
-                    now,
-                    &crate::sim::mission::authority::EntityReadyInputProvider,
-                );
-                // `0x004C73E1..0x004C73EA`, before the archive clear and the
-                // setter: the order takes a Slave Miner off its hunt; the
-                // Harvest it queued then sends it to the clicked field
-                // (HandleReturnedSlaves, `sim::slave_manager`).
-                if let Some(rules) = rules {
-                    self.reset_slave_manager(*entity_id, rules, frame_effects);
-                }
-                self.megamission_foot_clears(*entity_id, MissionType::Harvest);
-                // The setter's unchanged-NavCom return leaves a miner already
-                // driving to this cell alone.
-                if let Some(rules) = rules {
-                    crate::sim::miner::miner_system::assign_miner_cell_destination(
-                        self,
-                        rules,
-                        *entity_id,
-                        (*target_rx, *target_ry),
-                        overlay_registry,
-                        frame_effects,
-                    );
-                }
-                true
+                )
+                .accepted()
             }
             Command::PlantC4 {
                 attacker_id,
@@ -1890,59 +1972,16 @@ impl Simulation {
                 if !is_bunker || !self.entity_owned_by_id(command_owner, *bunker_id) {
                     return false;
                 }
-                // VERA's bunker adapter runs this order in place of the
-                // MEGAMISSION arm: the Unit setter's `Bunker=` arm that
-                // natively docks the unit (`0x00741D49..0x00741D68`,
-                // `0x00741DCC..0x00741DDA`) is not ported
-                // (`bunker_link::begin_entry`). Native order admission (actor
-                // + Destination token), ahead of any radio traffic.
-                if !self.order_actor_admits(*unit_id) || !self.order_object_token_admits(*bunker_id)
-                {
-                    return false;
-                }
-                // Duplicate Enter onto the bunker this unit is already linked to
-                // is consumed without touching anything — no CanEnter/DockNow
-                // round trip and no re-approach.
-                if self.duplicate_enter_is_noop(*unit_id, *bunker_id) {
-                    return true;
-                }
-                self.flash_order_object(
+                self.apply_megamission_command(
                     *unit_id,
+                    MissionType::Enter,
                     None,
                     Some(combat::TargetKind::Entity(*bunker_id)),
-                );
-                // Rules-gated weapon/Bunkerable check (the bus stays rules-free).
-                if !crate::sim::docking::bunker_link::can_auto_deploy_here(self, *unit_id, rules) {
-                    return false;
-                }
-                let unit_id = *unit_id;
-                crate::sim::docking::bunker_link::begin_entry(
-                    self,
-                    unit_id,
-                    *bunker_id,
-                    rules,
+                    Some(rules),
                     overlay_registry,
                     frame_effects,
-                    |sim| {
-                        // Retask onto Enter (no dock reservation).
-                        sim.queue_megamission(
-                            unit_id,
-                            MissionType::Enter,
-                            None,
-                            None,
-                            Some(rules),
-                            frame_effects,
-                        );
-                        // Event4C7467 dispatches the class target setter before Dest.
-                        let _ = sim.assign_target_represented(
-                            unit_id,
-                            None,
-                            Some(rules),
-                            overlay_registry,
-                            frame_effects,
-                        );
-                    },
                 )
+                .accepted()
             }
             Command::EjectBunker { bunker_id } => {
                 let Some(rules) = rules else { return false };
@@ -2177,17 +2216,11 @@ impl Simulation {
     ///   `EjectBunker` carries only the ownership test. Trigger: issuing it to
     ///   a dying or limboed bunker. Player effect: the order runs where retail
     ///   abandons it. Frequency: low per order.
-    /// * **Mission replacement remains partly per-site.** The shared
-    ///   `begin_megamission_retask` owns radio, +500 and Team removal before
-    ///   Queue4C73B9. The common funnel also clears suspended target2B8 and
-    ///   Foot destination5A8; HarvestCell bypasses those post-Queue archive
-    ///   clears. A later Restore can resume a cancelled
-    ///   target or route. Their complete mission/DTO migration is separate.
-    ///   Aircraft reservation teardown remains a legacy command policy.
+    /// * Aircraft reservation teardown remains a legacy command policy.
     /// * **The manager abandon** at 0x004C73E1-0x004C73EA calls 0x006B0C80 on
     ///   `[actor+0x2D8]`, the SlaveManagerClass (not a spawn manager), whenever
     ///   the queued mission is not Attack; it is not Foot-gated. The funnel
-    ///   below, the HarvestCell arm and Stop's own copy
+    ///   below and Stop's own copy
     ///   (0x004C769C-0x004C76AC) run it (`Simulation::reset_slave_manager`);
     ///   the other orders outside the funnel do not yet.
     /// * **`TeamClass__Remove_Member`** runs in the MEGAMISSION funnel
@@ -2342,12 +2375,11 @@ impl Simulation {
     /// `0x004C71F6..0x004C74BA`) and its one port. Move, Attack (Ctrl and
     /// Cell clicks included), attack-move (mission 29), Area Guard, a vehicle
     /// transport's Unload and Enter, Capture and Sabotage onto their object
-    /// run here. Four orders keep their own route, each with its reason at
-    /// its command: HarvestCell (the legacy miner path clears the unload
-    /// latch that the prefix's radio Break reads), EnterBunker (the Unit
-    /// setter's `Bunker=` arm is unported), a garrison's Unload (one command
+    /// and Harvest run here. EnterBunker uses its existing reservation adapter
+    /// within this owner; the native Unit setter's Bunker arm remains unported.
+    /// A garrison's ordinary Unload (one command
     /// for the self-click and the deploy key's DEPLOY event) and the dormant
-    /// aircraft Unload. In native order:
+    /// aircraft Unload retain their adapters. In native order:
     ///
     /// 1. The actor gate (`0x004C71F6..0x004C721F`,
     ///    [`Self::order_actor_admits`]), then each object token's (target
@@ -2420,6 +2452,55 @@ impl Simulation {
             && self.duplicate_enter_is_noop(entity_id, id)
         {
             return MegaMissionExecution::RepeatedEnter;
+        }
+        // The existing bunker adapter represents the unported Unit741D49
+        // setter arm. Keep it in this event owner so a planned Enter has the
+        // same reservation/approach lifecycle as an ordinary bunker click.
+        if mission == MissionType::Enter
+            && let Some(combat::TargetKind::Entity(bunker)) = self.resolve_event_token(destination)
+            && self
+                .substrate
+                .entities
+                .get(bunker)
+                .is_some_and(|target| target.bunker_runtime.is_some())
+        {
+            let Some(rules) = rules else {
+                return MegaMissionExecution::Refused;
+            };
+            self.flash_order_object(entity_id, target, destination);
+            if !crate::sim::docking::bunker_link::can_auto_deploy_here(self, entity_id, rules) {
+                return MegaMissionExecution::Refused;
+            }
+            let entered = crate::sim::docking::bunker_link::begin_entry(
+                self,
+                entity_id,
+                bunker,
+                rules,
+                overlay_registry,
+                frame_effects,
+                |sim| {
+                    sim.queue_megamission(
+                        entity_id,
+                        MissionType::Enter,
+                        None,
+                        None,
+                        Some(rules),
+                        frame_effects,
+                    );
+                    let _ = sim.assign_target_represented(
+                        entity_id,
+                        None,
+                        Some(rules),
+                        overlay_registry,
+                        frame_effects,
+                    );
+                },
+            );
+            return if entered {
+                MegaMissionExecution::Executed
+            } else {
+                MegaMissionExecution::Refused
+            };
         }
         // Assign_Target_Command reads the event tokens only for mission 29.
         // The destination/radio owners handle any existing dock contact.
@@ -2494,6 +2575,20 @@ impl Simulation {
                 overlay_registry,
                 frame_effects,
             );
+        }
+        // Existing Boarding adapter for carriers/absorbers. Destination
+        // setters and Boarding keep their own admission and arrival logic;
+        // garrisons use Capture and the separate PerCell owner.
+        if mission == MissionType::Enter
+            && let Some(combat::TargetKind::Entity(carrier)) = destination
+            && self
+                .substrate
+                .entities
+                .get(carrier)
+                .is_some_and(|target| target.passenger_role.cargo().is_some())
+            && let Some(actor) = self.substrate.entities.get_mut(entity_id)
+        {
+            passenger::begin_boarding(actor, carrier);
         }
         MegaMissionExecution::Executed
     }

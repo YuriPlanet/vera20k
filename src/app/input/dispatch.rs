@@ -2697,6 +2697,16 @@ fn queue_deploy_undeploy_for_selected(state: &mut AppState) {
     // Collect commands first to avoid borrow conflict with schedule_command.
     let local_owner = sim.interner.get(&owner);
     let commands = deploy_key_commands(sim, state.rules(), &selected_ids, local_owner);
+    // Selection730AF0 sends DEPLOY9 through Techno6FFE00. During
+    // Planning Mode that reaches639FD0 and the NoDeploy refusal at638238,
+    // rather than executing an immediate deployment or adding a mission.
+    if !commands.is_empty() && state.match_state.input.planning.active() {
+        crate::app::input::planning_mode::refuse(
+            state,
+            crate::app::input::planning_mode::PlanningRefusal::Deploy,
+        );
+        return;
+    }
     for cmd in commands {
         schedule_command(state, &owner, cmd);
     }

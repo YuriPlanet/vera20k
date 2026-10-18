@@ -121,6 +121,31 @@ pub(super) fn radar_entity_owner_color(
     owner_dot_color(owner_str, house_colors, ramps)
 }
 
+/// RenderCellPixel's combat flash (`0x00655FEB..0x00656042`): while an
+/// object of the current player has frames `r > 0` left on its radar combat
+/// flash (`TechnoClass+0x174`), its pixel word is inverted whenever
+/// `(r - 1) / FlashFrameTime` is odd. TechnoClass+0x4A0's matching redraw
+/// request at each period boundary (`0x0070DBCC..0x0070DC37`) is subsumed:
+/// every dot is recomputed on each minimap update.
+///
+/// RESIDUAL: `FlashFrameTime=0` divides by zero natively; here it never
+/// flashes.
+pub(super) fn radar_combat_flash_inverts(
+    entity: &crate::sim::game_entity::GameEntity,
+    current_player: Option<InternedId>,
+    binary_frame: u32,
+    rules: Option<&RuleSet>,
+) -> bool {
+    let Some(period) = rules
+        .map(|rules| rules.general.flash_frame_time)
+        .filter(|&period| period != 0)
+    else {
+        return false;
+    };
+    let remaining = entity.radar_combat_flash.remaining(binary_frame as i32);
+    remaining > 0 && (remaining - 1) / period % 2 == 1 && current_player == Some(entity.owner())
+}
+
 pub(super) fn radar_pixel_candidate_eligible(
     entry: RadarTrackerEntry,
     entities: &crate::sim::entity_store::EntityStore,

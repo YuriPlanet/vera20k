@@ -442,6 +442,13 @@ pub struct GameEntity {
     /// [`RearmTimer`]: crate::sim::combat::rof::RearmTimer
     #[serde(default)]
     pub rearm_timer: crate::sim::combat::rof::RearmTimer,
+    /// The radar combat flash countdown (`TechnoClass+0x174`). The
+    /// constructor starts it at the current frame with no duration
+    /// (`0x006F2C1C..0x006F2C28`); ReceiveDamage restarts it with
+    /// `[General] RadarCombatFlashTime=` (`0x00701FA6..0x00701FC8`). Only the
+    /// radar reads it, so the world hash leaves it out.
+    #[serde(default)]
+    pub radar_combat_flash: crate::sim::timer::CdTimer,
     /// Gattling stage, value and report latch (`TechnoClass+0x140`,
     /// `+0x144`, `+0x4B8`), owned by `combat::gattling`.
     #[serde(default)]
@@ -1474,6 +1481,7 @@ impl GameEntity {
             // `TechnoClass` constructor `0x006F2E81..0x006F2E8C`: started
             // at the construction frame with no duration.
             rearm_timer: crate::sim::combat::rof::RearmTimer::new(construction_frame as i32),
+            radar_combat_flash: crate::sim::timer::CdTimer::started(construction_frame as i32, 0),
             gattling: Default::default(),
             turret_anim_frame: Default::default(),
             voxel_recoil: None,

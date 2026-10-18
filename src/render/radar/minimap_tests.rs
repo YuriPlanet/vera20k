@@ -1020,3 +1020,65 @@ fn mirage_radar_house_and_null_pixel_match_original_executable() {
         );
     }
 }
+
+/// RenderCellPixel inverts the current player's pixel while
+/// `(r - 1) / FlashFrameTime` is odd for `r > 0` frames left
+/// (`0x00655FEB..0x00656042`): with retail 49 and 7, the first 7 frames
+/// draw normally, the next 7 inverted, and so on.
+#[test]
+fn the_radar_combat_flash_inverts_on_odd_periods_for_the_current_player() {
+    let mut interner = crate::sim::intern::StringInterner::new();
+    let owner = interner.intern("Americans");
+    let other = interner.intern("Russians");
+    let mut entity = crate::sim::game_entity::GameEntity::new_at_frame_zero_for_test(
+        1,
+        5,
+        5,
+        0,
+        0,
+        owner,
+        crate::sim::combat::Health::new(100),
+        interner.intern("MTNK"),
+        crate::map::entities::EntityCategory::Unit,
+        0,
+        5,
+        false,
+    );
+    let mut rules = crate::rules::ruleset::RuleSet::from_ini(
+        &crate::rules::ini_parser::IniFile::from_str("[General]\nFlashFrameTime=7\n"),
+    )
+    .unwrap();
+    entity.radar_combat_flash = crate::sim::timer::CdTimer::started(100, 49);
+    let inverted = |entity: &crate::sim::game_entity::GameEntity, frame: u32, viewer| {
+        crate::render::radar::tracker::radar_combat_flash_inverts(
+            entity,
+            Some(viewer),
+            frame,
+            Some(&rules),
+        )
+    };
+    let pattern: Vec<bool> = (100..150)
+        .map(|frame| inverted(&entity, frame, owner))
+        .collect();
+    let expected: Vec<bool> = (100..150)
+        .map(|frame| {
+            let remaining = 149 - frame;
+            remaining > 0 && (remaining - 1) / 7 % 2 == 1
+        })
+        .collect();
+    assert_eq!(pattern, expected);
+    assert!(!inverted(&entity, 100, owner), "r = 49 draws normally");
+    assert!(inverted(&entity, 107, owner), "r = 42 is inverted");
+    assert!(
+        !inverted(&entity, 107, other),
+        "another viewer never sees it"
+    );
+    assert!(!inverted(&entity, 149, owner), "the flash is over");
+    rules.general.flash_frame_time = 0;
+    assert!(!crate::render::radar::tracker::radar_combat_flash_inverts(
+        &entity,
+        Some(owner),
+        107,
+        Some(&rules)
+    ));
+}

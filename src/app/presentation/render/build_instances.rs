@@ -670,6 +670,7 @@ pub(super) fn update_minimap(state: &mut AppState, local_owner: &Option<String>)
                     view.houses(),
                     &presentation.house_color_map,
                     view.session().tick,
+                    view.session().binary_frame,
                     local_owner
                         .as_deref()
                         .and_then(|owner| view.interner().get(owner)),

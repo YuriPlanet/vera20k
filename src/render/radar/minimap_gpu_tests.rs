@@ -224,6 +224,7 @@ fn present(
                     view.houses(),
                     &colors,
                     view.session().tick,
+                    view.session().binary_frame,
                     view.session().current_house,
                     view.fog(),
                     view.house_alliances(),

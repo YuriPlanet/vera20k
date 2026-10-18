@@ -442,3 +442,36 @@ fn vehicle_inside_its_war_factory_takes_no_hit() {
     assert_eq!(health_after(false), 0);
     assert!(health_after(true) > 0);
 }
+
+/// ReceiveDamage starts the radar combat flash (`TechnoClass+0x174`) with
+/// retail `[General] RadarCombatFlashTime=49` for any Object result but 0
+/// (`0x00701E6D..0x00701FC8`): a damaging and a killing hit do, a hit that
+/// does no damage does not.
+#[test]
+fn damage_starts_the_radar_combat_flash() {
+    let Some(rules) = retail_unlayered_rules() else {
+        return;
+    };
+    assert_eq!(
+        (
+            rules.general.flash_frame_time,
+            rules.general.radar_combat_flash_time
+        ),
+        (7, 49)
+    );
+    let flash = |damage: i32| {
+        let mut sim = arena(&rules);
+        let rhino = spawn(&mut sim, &rules, "HTNK", "Russians", (10, 10));
+        let gi = spawn(&mut sim, &rules, "E1", "Americans", (11, 10));
+        let frame = sim.session.binary_frame as i32;
+        hit(&mut sim, &rules, rhino, gi, damage);
+        sim.substrate
+            .entities
+            .get(rhino)
+            .map(|rhino| rhino.radar_combat_flash.remaining(frame))
+    };
+    assert_eq!(flash(10), Some(49));
+    assert_eq!(flash(0), Some(0), "a hit that does no damage");
+    assert_eq!(flash(-10), Some(0), "a heal at full health");
+    assert_eq!(flash(10_000), Some(49), "a killing hit");
+}
