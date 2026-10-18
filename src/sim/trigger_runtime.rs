@@ -3030,9 +3030,10 @@ impl Simulation {
                 //Unsigned kind-1 falls through6DFDDD with the Execute
                 //entry's AL1. ALL01 has nine authored no-op tail records.
             }
-            3 => {
-                //6DEA97 ->6E45E0 writes only selected House+1EE. The
-                //retained live selector owns8997 and Country/Player lookup.
+            3 | 13 => {
+                //3:6DEA97 ->6E45E0 writes only selected House+1EE;
+                //13:6DEB18 ->same selector writes only +1EF at6DEB41.
+                //The retained live selector owns8997 and Country/Player lookup.
                 let (Some(live), Some(rules), Some(value)) = (context.live_index, rules, value)
                 else {
                     return false;
@@ -3041,7 +3042,11 @@ impl Simulation {
                     return false;
                 };
                 if let Some(house) = self.houses.get_mut(&owner) {
-                    house.enable_scripted_production();
+                    if action.kind == 13 {
+                        house.enable_scripted_autocreate();
+                    } else {
+                        house.enable_scripted_production();
+                    }
                 }
             }
             10 => {
@@ -3743,9 +3748,11 @@ impl Simulation {
                     frame_effects,
                 );
             }
-            76 => {
-                // 0x006DF34F: a null incoming House returns success without even
-                // reading +0x90. Otherwise only the existing +0x565C owner changes.
+            76..=79 => {
+                // Active76..79 at6DF34F/379/3A3/3CD: a null incoming House
+                // succeeds without reading +90. Each stores that signed dword
+                // in its existing House owner: +565C/5660/5664/5668 respectively.
+                // No immediate selection, timer reset, RNG draw or detach.
                 let Some(owner) = context.incoming_house else {
                     return true;
                 };
@@ -3753,7 +3760,13 @@ impl Simulation {
                 let Some(house) = self.houses.get_mut(&owner) else {
                     return false;
                 };
-                house.team_creation.set_trigger_ratio(value);
+                match action.kind {
+                    76 => house.team_creation.set_trigger_ratio(value),
+                    77 => house.set_aircraft_team_ratio(value),
+                    78 => house.set_infantry_team_ratio(value),
+                    79 => house.set_unit_team_ratio(value),
+                    _ => unreachable!(),
+                }
             }
             41 => {
                 let (Some(rules), Some(index), Some(waypoint)) =

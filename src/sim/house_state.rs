@@ -1035,6 +1035,22 @@ impl HouseState {
         ]
     }
 
+    /// Active Execute77/78/79 stores the full signed Action+90 at
+    /// 6DF38E/6DF3B8/6DF3E2 (Steam gamemd 3e81a617..08600). These are the
+    /// existing ReadScenarioINI500B40 fields +5660/+5664/+5668, independent
+    /// of the live AI-trigger selector's +565C ratio. No timer or RNG write.
+    pub(crate) fn set_aircraft_team_ratio(&mut self, value: i32) {
+        self.scenario_parameters.ratio_team_aircraft = value;
+    }
+
+    pub(crate) fn set_infantry_team_ratio(&mut self, value: i32) {
+        self.scenario_parameters.ratio_team_infantry = value;
+    }
+
+    pub(crate) fn set_unit_team_ratio(&mut self, value: i32) {
+        self.scenario_parameters.ratio_team_units = value;
+    }
+
     pub(crate) fn hash_scenario_parameters(&self, hasher: &mut impl std::hash::Hasher) {
         use std::hash::Hash;
         if self.scenario_parameters != HouseScenarioParameters::default() {
@@ -1599,6 +1615,13 @@ impl HouseState {
     /// AutocreateAllowed/AITriggersActive/AutoBaseBuilding sibling latch.
     pub(crate) fn enable_scripted_production(&mut self) {
         self.ai_activation.production = true;
+    }
+
+    /// Execute13 6DEB18 -> shared House selector6E45E0 ->6DEB41 writes
+    /// only House+1EF=1 (Steam gamemd 3e81a617..08600). This neither
+    /// co-enables the other activation bytes nor immediately creates a team.
+    pub(crate) fn enable_scripted_autocreate(&mut self) {
+        self.ai_activation.autocreate_allowed = true;
     }
 
     /// Run the early `HouseClass__Update` AI-activation transition.
