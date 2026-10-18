@@ -3840,16 +3840,18 @@ impl Simulation {
                     }
                 }
             }
-            135 | 136 => {
-                // Execute1356E43E0/1366E4440 use Spring's incoming House,
-                // ignoring the action's scalar selector. Only135 reads+44;
-                // its packed-zero rejection preserves the previous target.
-                // Identity/controls: tools/spatial_oracle/
-                // trigger_superweapon_state.meta.json.
+            135 | 136 | 140 | 141 => {
+                // Execute1356E43E0/1366E4440 and1406E4460/1416E44C0 use
+                // Spring's incoming House, ignoring scalar+90. Setters135/140
+                // read waypoint+44 and reject the empty cell; clears ignore it.
+                // 140 calls House50DA20: cell+54F4 and current frame+54FC.
+                // 141 calls50DA50: clear cell and restore frame-100.
+                // 135/136 controls: trigger_superweapon_state.meta.json.
+                // 140/141: original Steam gamemd3e81a617..08600 instructions.
                 let Some(owner) = context.incoming_house else {
                     return false;
                 };
-                let preferred = if action.kind == 135 {
+                let target = if matches!(action.kind, 135 | 140) {
                     let Some(cell) = action
                         .waypoint_index
                         .and_then(|index| self.session.waypoint_cell(index as i32))
@@ -3864,10 +3866,16 @@ impl Simulation {
                 let Some(house) = self.houses.get_mut(&owner) else {
                     return false;
                 };
-                if let Some(cell) = preferred {
-                    house.set_preferred_super_weapon_target(cell);
-                } else {
+                if let Some(cell) = target {
+                    if action.kind == 135 {
+                        house.set_preferred_super_weapon_target(cell);
+                    } else {
+                        house.alert_super_weapon_defense(cell, self.session.binary_frame as i32);
+                    }
+                } else if action.kind == 136 {
                     house.clear_preferred_super_weapon_target();
+                } else {
+                    house.clear_super_weapon_defense();
                 }
             }
             90 => {
@@ -4026,6 +4034,10 @@ mod native_tests;
 #[cfg(test)]
 #[path = "trigger_runtime_superweapon_state_tests.rs"]
 mod superweapon_state_tests;
+
+#[cfg(test)]
+#[path = "trigger_runtime_defense_target_tests.rs"]
+mod defense_target_tests;
 
 #[cfg(test)]
 #[path = "trigger_runtime_type_tech_level_tests.rs"]
