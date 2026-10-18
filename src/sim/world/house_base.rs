@@ -333,6 +333,118 @@ impl crate::sim::house_state::HouseState {
 }
 
 impl Simulation {
+    /// Original Execute30 at 0x006DE206..0x006DE2A5. The acquired BuildConst vector
+    /// supplies its first raw Location, then an empty plan asks 0x0050C210 to
+    /// choose again from the reverse general Building list. Those two orders
+    /// can select different yards. Off changes only the existing +0x1F3 latch.
+    pub(crate) fn trigger_auto_base_building(
+        &mut self,
+        owner: InternedId,
+        value: i32,
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) -> bool {
+        let Some(house) = self.houses.get_mut(&owner) else {
+            return false;
+        };
+        if !house.set_auto_base_building_from_trigger(value) {
+            return true;
+        }
+        let first = house.build_const_order.first().copied();
+        if let Some(cell) = first.and_then(|id| self.raw_building_base_cell(id)) {
+            let house = self.houses.get_mut(&owner).expect("retained owner");
+            house.set_base_center(cell);
+            house.base_plan_center = cell;
+        }
+        if self.houses[&owner].base_plan.nodes.is_empty() {
+            return self.initialize_house_base_from_build_const(owner, rules, registry, effects);
+        }
+        true
+    }
+
+    /// House 0x0050C210..0x0050C332: the last non-limbo owned Building whose type
+    /// belongs to Rules.BuildConst becomes the primary and node-zero anchor.
+    /// No Alive/Health gate belongs to this list read. TypeFacts retains the
+    /// existing Rules BuildConst membership used by all lifecycle writers.
+    fn initialize_house_base_from_build_const(
+        &mut self,
+        owner: InternedId,
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) -> bool {
+        let candidate = self.houses[&owner]
+            .base_projection
+            .buildings()
+            .iter()
+            .rev()
+            .find_map(|&id| {
+                let building = self.substrate.entities.get(id)?;
+                (!building.lifecycle.in_limbo() && building.type_facts.build_const_eligible())
+                    .then_some(id)
+            });
+        let Some(cell) = candidate.and_then(|id| self.raw_building_base_cell(id)) else {
+            return true;
+        };
+        self.houses
+            .get_mut(&owner)
+            .expect("retained owner")
+            .set_base_center(cell);
+        if self.session.game_mode_nonzero && !self.houses[&owner].is_controlled_by_human(true) {
+            self.computer_paranoid(rules, registry, effects);
+        }
+        // 0x0050C2F5 rereads the plan after the diplomacy callbacks. Keep Recalc's
+        // existing owner and its Scenario RNG, clearing A8E7AC only around it.
+        if self.houses[&owner].base_plan.nodes.is_empty() {
+            let house = &self.houses[&owner];
+            let Some(country) = house.country.map(|id| self.interner.resolve(id).to_owned()) else {
+                return false;
+            };
+            let (side, difficulty, tech_level) =
+                (house.side_index, house.difficulty, house.tech_level);
+            if crate::sim::base_plan_generation::preflight_recalc(rules, &country, side, difficulty)
+                .is_err()
+            {
+                return false;
+            }
+            self.without_object_placement_scope(|sim| {
+                let house = sim.houses.get_mut(&owner).expect("retained owner");
+                crate::sim::base_plan_generation::recalc_base_plan(
+                    &mut house.base_plan,
+                    rules,
+                    &sim.type_tech_levels,
+                    &country,
+                    side,
+                    difficulty,
+                    tech_level,
+                    sim.session.game_options.super_weapons,
+                    &mut sim.scenario_rng,
+                );
+            });
+        }
+        let house = self.houses.get_mut(&owner).expect("retained owner");
+        if let Some(node) = house.base_plan.nodes.first_mut() {
+            node.packed_cell = crate::sim::base_plan::pack_base_plan_cell(
+                i32::from(cell.0 as i16),
+                i32::from(cell.1 as i16),
+            );
+        }
+        house.base_plan_center = cell;
+        true
+    }
+
+    /// Both native callers read Object+0x9C directly, before signed /256 and
+    /// short packing. Building GetCoords' foundation centre is a different read.
+    fn raw_building_base_cell(&self, id: u64) -> Option<(u16, u16)> {
+        let building = self.substrate.entities.get(id)?;
+        let coord = crate::sim::movement::ground_pose::position_world_coord(&building.position);
+        let (x, y) = crate::sim::movement::coord_cell(coord);
+        Some((x as u16, y as u16))
+    }
+}
+
+impl Simulation {
     /// `HouseClass::Which_Zone @ 0x004FFB20` answering -1 for `owner`: `coord`
     /// is the empty coordinate (`0x00A8EFF8`, all zero) or lies more than four
     /// base radii (`+0x5498`) from the base cell's GetCoords (`0x00486840` on

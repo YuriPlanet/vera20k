@@ -38,8 +38,6 @@
 //!   difficulty gate and refuses such a trigger. Trigger: campaign AI trigger
 //!   selection after startup; effects include missing recruitment and a
 //!   different eligible/weighted trigger set. Required live chain: campaign AI eligibility under issue1508.
-//! - The trigger actions that write RatioAITriggerTeam (`0x006DF364`,
-//!   `0x006E330E`) are not ported; the map reader now initializes this owner.
 //! - Conditions 5 and 6 compare a super weapon's charge against its type's
 //!   `RechargeTime=` ([`super_nearly_ready`]'s residual).
 
@@ -89,6 +87,12 @@ impl Default for HouseTeamCreation {
 }
 
 impl HouseTeamCreation {
+    /// Active Execute76 at 0x006DF364 stores the signed +0x90 dword unchanged.
+    /// The selector 0x006F0AB0 consumes it on its next due pass; no timer reset.
+    pub(crate) fn set_trigger_ratio(&mut self, value: i32) {
+        self.ratio = value;
+    }
+
     /// House ReadScenarioINI500D0D..500D25 uses the existing ratio as default;
     /// its temporary team timer is then overwritten by outer SetDifficulty.
     pub(crate) fn read_scenario_ratio(&mut self, section: &crate::rules::ini_parser::IniSection) {

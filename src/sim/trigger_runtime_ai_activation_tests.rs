@@ -793,3 +793,423 @@ fn retail_all05_elapsed_stop_keeps_explicit_teams_and_saved_activation() {
         );
     }
 }
+
+// Steam 3e81a617..08600: Execute30/50C210's 21 caller controls and 15
+// Execute76 controls, including 14 original due-selector/RNG histories.
+// Recalc 5054B0 and ComputerParanoid are declared sinks in the 30 controls;
+// production planner/retail checks below are Rust integration regressions.
+fn house_control_action(
+    sim: &mut Simulation,
+    rules: &crate::rules::ruleset::RuleSet,
+    owner: Option<crate::sim::intern::InternedId>,
+    kind: i32,
+    raw: &str,
+) -> bool {
+    let ini = crate::rules::ini_parser::IniFile::from_str(&format!(
+        "[Actions]\nCONTROL=1,{kind},0,{raw},0,0,0,0,A\n"
+    ));
+    let entry = crate::map::actions::parse_actions(&ini)
+        .remove("CONTROL")
+        .unwrap()
+        .entries
+        .remove(0);
+    let action = RuntimeDefinitions::default().resolve_action(entry, None, None);
+    sim.apply_live_trigger_action(
+        &action,
+        TriggerActionContext {
+            live_index: None,
+            incoming_house: owner,
+            input: TagEventInput::default(),
+        },
+        &mut Vec::new(),
+        Some(rules),
+        None,
+        FrameEffects::default(),
+    )
+}
+
+fn house_base_control_rules() -> crate::rules::ruleset::RuleSet {
+    use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
+    RuleSet::from_ini(&IniFile::from_str(
+        "[General]\nHarvesterUnit=HARV\nAIExtraRefineries=0,0,0\nAISlaveMinerNumber=1,1,1\nAlliedBaseDefenseCounts=0,0,0\nSovietBaseDefenseCounts=0,0,0\nThirdBaseDefenseCounts=0,0,0\n\
+         [AI]\nBuildConst=CON\nBuildPower=POW\nBuildRefinery=REF\nBuildBarracks=BAR\nBuildWeapons=WEAP\nBuildRadar=RAD\nBuildTech=TECH\n\
+         [Countries]\n0=Americans\n[Sides]\nAllied=Americans\n[Americans]\nSide=Allied\n\
+         [VehicleTypes]\n0=HARV\n[HARV]\nOwner=Americans\nStrength=1\n\
+         [BuildingTypes]\n0=CON\n1=POW\n2=REF\n3=BAR\n4=WEAP\n5=RAD\n6=TECH\n\
+         [CON]\nOwner=Americans\nStrength=500\nConstructionYard=yes\nFactory=BuildingType\nAIBuildThis=yes\nTechLevel=1\n\
+         [POW]\nOwner=Americans\nStrength=100\nAIBuildThis=yes\nTechLevel=1\n\
+         [REF]\nOwner=Americans\nStrength=100\nAIBuildThis=yes\nTechLevel=1\n\
+         [BAR]\nOwner=Americans\nStrength=100\nAIBuildThis=yes\nTechLevel=1\n\
+         [WEAP]\nOwner=Americans\nStrength=100\nAIBuildThis=yes\nTechLevel=1\n\
+         [RAD]\nOwner=Americans\nStrength=100\nAIBuildThis=no\n\
+         [TECH]\nOwner=Americans\nStrength=100\nAIBuildThis=no\n\
+         [Clear]\nBuildable=yes\nFoot=100%\nTrack=100%\nWheel=100%\n"
+    )).unwrap()
+}
+
+fn house_base_control_scene(
+    rules: &crate::rules::ruleset::RuleSet,
+    yard_type: &str,
+    yards: bool,
+) -> (Simulation, crate::sim::intern::InternedId) {
+    let mut sim = Simulation::with_seed(31);
+    crate::sim::arena_fixture::flat_ground(&mut sim, rules);
+    sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(32, 32));
+    let owner = sim.interner.intern("AIHouse");
+    let country = sim.interner.intern("Americans");
+    sim.houses.insert(
+        owner,
+        crate::sim::house_state::HouseState::new(owner, 0, Some(country), false, 10000, 10),
+    );
+    sim.session.house_order.push(owner);
+    if yards {
+        for (x, y) in [(12, 17), (19, 21)] {
+            sim.spawn_object(yard_type, "AIHouse", x, y, 0, rules)
+                .expect("control yard Unlimbo");
+        }
+        assert_eq!(sim.houses[&owner].build_const_order.len(), 2);
+    }
+    let house = sim.houses.get_mut(&owner).unwrap();
+    house.set_base_center((3, 4));
+    house.base_plan_center = (5, 6);
+    house.base_plan.nodes.clear();
+    house.base_plan.percent_built = 37;
+    house.set_ai_activation_for_test(HouseAiActivationLatches {
+        production: true,
+        autocreate_allowed: true,
+        ai_triggers_active: true,
+        auto_base_building: true,
+    });
+    (sim, owner)
+}
+
+#[test]
+fn house_trigger_base_low_byte_controls_keep_other_latches_and_restore_nested_scope() {
+    let rules = house_base_control_rules();
+    for (raw, enabled) in [
+        ("0", false),
+        ("1", true),
+        ("2", true),
+        ("255", true),
+        ("256", false),
+        ("257", true),
+        ("-1", true),
+        ("-256", false),
+        ("-257", true),
+        ("-2147483648", false),
+        ("2147483647", true),
+        (".2", false),
+        ("257suffix", true),
+    ] {
+        let (mut sim, owner) = house_base_control_scene(&rules, "CON", true);
+        let rng = sim.rng_state();
+        let timer = sim.houses[&owner].team_creation.timer();
+        sim.with_object_placement_scope(|sim| {
+            sim.with_object_placement_scope(|sim| {
+                sim.with_object_placement_scope(|sim| {
+                    assert!(
+                        house_control_action(sim, &rules, Some(owner), 30, raw),
+                        "{raw}"
+                    );
+                    assert!(
+                        sim.object_placement_scope_active(),
+                        "50C311 restores its caller's scope"
+                    );
+                })
+            })
+        });
+        assert!(!sim.object_placement_scope_active());
+        let house = &sim.houses[&owner];
+        assert_eq!(
+            house.ai_activation(),
+            HouseAiActivationLatches {
+                production: true,
+                autocreate_allowed: true,
+                ai_triggers_active: true,
+                auto_base_building: enabled,
+            },
+            "{raw}"
+        );
+        assert_eq!(house.team_creation.timer(), timer);
+        assert_eq!(house.base_plan.percent_built, 37);
+        if enabled {
+            // Native caller controls choose first(12,17), then the reverse
+            // general Building list chooses(19,21). The plan generator itself
+            // is a sink there; this checks its existing production integration.
+            assert_eq!(house.base_center, Some((19, 21)));
+            assert_eq!(house.base_plan_center, (19, 21));
+            assert_eq!(
+                crate::sim::base_plan::unpack_base_plan_cell(house.base_plan.nodes[0].packed_cell),
+                (19, 21)
+            );
+        } else {
+            assert_eq!(house.base_center, Some((3, 4)));
+            assert_eq!(house.base_plan_center, (5, 6));
+            assert!(house.base_plan.nodes.is_empty());
+            assert_eq!(sim.rng_state(), rng);
+        }
+    }
+}
+
+#[test]
+fn house_trigger_existing_plan_keeps_node_zero_and_empty_yard_vector_does_not_skip_recalc() {
+    let rules = house_base_control_rules();
+    let (mut sim, owner) = house_base_control_scene(&rules, "CON", true);
+    let node = crate::sim::base_plan::BasePlanNode {
+        type_or_control: rules.building_type_index("CON").unwrap(),
+        packed_cell: crate::sim::base_plan::pack_base_plan_cell(21, 22),
+        filled: true,
+        retry_count: 8,
+    };
+    sim.houses
+        .get_mut(&owner)
+        .unwrap()
+        .base_plan
+        .nodes
+        .push(node);
+    let rng = sim.rng_state();
+    assert!(house_control_action(&mut sim, &rules, Some(owner), 30, "1"));
+    assert_eq!(sim.houses[&owner].base_center, Some((12, 17)));
+    assert_eq!(sim.houses[&owner].base_plan_center, (12, 17));
+    assert_eq!(sim.houses[&owner].base_plan.nodes, vec![node]);
+    assert_eq!(sim.rng_state(), rng);
+    // Declared native negative control: BuildConst vector empty while the
+    // general Building list still contains the two supplied objects.
+    let (mut sim, owner) = house_base_control_scene(&rules, "CON", true);
+    sim.houses
+        .get_mut(&owner)
+        .unwrap()
+        .build_const_order
+        .clear();
+    assert!(house_control_action(&mut sim, &rules, Some(owner), 30, "1"));
+    assert_eq!(sim.houses[&owner].base_center, Some((19, 21)));
+    assert_eq!(sim.houses[&owner].base_plan_center, (19, 21));
+    assert!(!sim.houses[&owner].base_plan.nodes.is_empty());
+    let (mut sim, owner) = house_base_control_scene(&rules, "CON", false);
+    let rng = sim.rng_state();
+    assert!(house_control_action(&mut sim, &rules, Some(owner), 30, "1"));
+    assert_eq!(sim.houses[&owner].base_center, Some((3, 4)));
+    assert_eq!(sim.houses[&owner].base_plan_center, (5, 6));
+    assert!(sim.houses[&owner].base_plan.nodes.is_empty());
+    assert_eq!(sim.rng_state(), rng);
+}
+
+#[test]
+fn house_trigger_retail_base_plan_gate_and_anchor_survive_production_snapshot_restore() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let rules = retail.rules;
+    let registry = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(
+        &retail.processed_rules,
+        Some(&retail.fixed_art),
+    );
+    let (mut sim, owner) = house_base_control_scene(&rules, "GACNST", true);
+    sim.houses
+        .get_mut(&owner)
+        .unwrap()
+        .set_ai_activation_for_test(HouseAiActivationLatches::default());
+    assert!(house_control_action(&mut sim, &rules, Some(owner), 30, "1"));
+    let house = &sim.houses[&owner];
+    assert!(house.ai_activation().auto_base_building);
+    assert!(
+        !house.ai_activation().production
+            && !house.ai_activation().autocreate_allowed
+            && !house.ai_activation().ai_triggers_active
+    );
+    assert_eq!(house.base_center, Some((19, 21)));
+    assert_eq!(house.base_plan_center, (19, 21));
+    assert_eq!(
+        house.base_plan.nodes[0].type_or_control,
+        rules.building_type_index("GACNST").unwrap()
+    );
+    assert_eq!(
+        crate::sim::base_plan::unpack_base_plan_cell(house.base_plan.nodes[0].packed_cell),
+        (19, 21)
+    );
+    // The existing early House update consumes the latch even at low IQ;
+    // TAction30 itself does not co-enable its three sibling activation bytes.
+    sim.houses
+        .get_mut(&owner)
+        .unwrap()
+        .update_ai_activation(false, i32::MAX);
+    assert!(sim.houses[&owner].ai_activation().production);
+    assert!(sim.houses[&owner].ai_activation().autocreate_allowed);
+    assert!(!sim.houses[&owner].ai_activation().ai_triggers_active);
+    let plan = sim.houses[&owner].base_plan.clone();
+    let rng = sim.rng_state();
+    assert!(house_control_action(
+        &mut sim,
+        &rules,
+        Some(owner),
+        30,
+        "256"
+    ));
+    assert!(!sim.houses[&owner].ai_activation().auto_base_building);
+    assert_eq!(sim.houses[&owner].base_plan, plan);
+    assert_eq!(sim.rng_state(), rng);
+    let saved = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "Disabled base", 0);
+    let mut loaded = crate::sim::snapshot::GameSnapshot::load(&saved)
+        .unwrap()
+        .sim;
+    loaded.bind_shared_cell_dummy(crate::map::resolved_terrain::SharedCellDummy::fresh());
+    loaded.reconstruct_cellclass_dummy_for_map_resize();
+    loaded.restore_after_snapshot_load().unwrap();
+    loaded.rebuild_caches_after_load(
+        sim.resolved_terrain.as_ref().unwrap().clone(),
+        crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig::default(),
+        &rules,
+    );
+    loaded
+        .restore_map_authority_after_snapshot_load(&rules, &registry, None)
+        .unwrap();
+    loaded.resolve_type_handles(&rules);
+    assert!(!loaded.houses[&owner].ai_activation().auto_base_building);
+    assert_eq!(loaded.houses[&owner].base_plan, plan);
+    assert_eq!(loaded.houses[&owner].base_center, Some((19, 21)));
+    assert_eq!(loaded.houses[&owner].base_plan_center, (19, 21));
+    let rng = loaded.rng_state();
+    assert!(house_control_action(
+        &mut loaded,
+        &rules,
+        Some(owner),
+        30,
+        "257"
+    ));
+    assert_eq!(loaded.houses[&owner].base_center, Some((12, 17)));
+    assert_eq!(loaded.houses[&owner].base_plan_center, (12, 17));
+    assert_eq!(
+        loaded.houses[&owner].base_plan, plan,
+        "an existing plan is not regenerated or reanchored"
+    );
+    assert_eq!(
+        loaded.rng_state(),
+        rng,
+        "the existing-plan path makes no draw"
+    );
+}
+
+#[test]
+fn house_trigger_ratio_original_writer_and_due_selector_keep_signed_values_timers_and_rng() {
+    use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
+    use crate::sim::house_state::{HouseDifficulty, HouseState};
+    let rules=RuleSet::from_ini(&IniFile::from_str(
+        "[General]\nTeamDelays=300,600,900\nTotalAITeamCap=8,8,8\nMaximumAIDefensiveTeams=2,2,2\nMinimumAIDefensiveTeams=9,2,9\nUseMinDefenseRule=no\n"
+    )).unwrap();
+    for (raw, value, picked) in [
+        ("0", 0, false),
+        ("1", 1, false),
+        ("50", 50, false),
+        ("83", 83, false),
+        ("84", 84, true),
+        ("99", 99, true),
+        ("100", 100, true),
+        ("101", 101, true),
+        ("256", 256, true),
+        ("-1", -1, false),
+        ("-2147483648", i32::MIN, false),
+        ("2147483647", i32::MAX, true),
+        (".2", 0, false),
+        ("257suffix", 257, true),
+    ] {
+        let mut sim = Simulation::new();
+        sim.session.game_mode_nonzero = true;
+        let owner = sim.interner.intern("H0");
+        let enemy = sim.interner.intern("H1");
+        for id in [owner, enemy] {
+            sim.houses
+                .insert(id, HouseState::new(id, 0, None, false, 0, 10));
+            sim.session.house_order.push(id);
+        }
+        let house = sim.houses.get_mut(&owner).unwrap();
+        house.difficulty = HouseDifficulty::Normal;
+        house.enemy_house = Some(enemy);
+        house.set_ai_triggers_active(true);
+        house.team_creation.restart(0, 10);
+        let (old_team, team_types) = install_team_scene(&mut sim, owner);
+        let old_bytes = bincode::serialize(sim.team_script_vm.team(old_team).unwrap()).unwrap();
+        supply_rng(&mut sim, &corpus()["actions"]["rng_full_seed31"]);
+        let other = serde_json::to_value(&sim.houses[&enemy]).unwrap();
+        let before_hash = sim.state_hash();
+        assert!(house_control_action(&mut sim, &rules, Some(owner), 76, raw));
+        assert_eq!(sim.houses[&owner].team_creation.ratio(), value);
+        assert_eq!(
+            sim.houses[&owner].team_creation.timer(),
+            crate::sim::timer::CdTimer::started(0, 10)
+        );
+        assert_eq!(
+            sim.state_hash() == before_hash,
+            value == 100,
+            "{raw}: hash before the queue runs"
+        );
+        assert_eq!(serde_json::to_value(&sim.houses[&enemy]).unwrap(), other);
+        assert_rng(&sim, &corpus()["actions"]["rng_full_seed31"], raw);
+        sim.session.binary_frame = 9;
+        crate::sim::ai_team_creation::update_team_creation(
+            &mut sim,
+            &rules,
+            owner,
+            FrameEffects::default(),
+        );
+        assert_rng(&sim, &corpus()["actions"]["rng_full_seed31"], "not yet due");
+        sim.session.binary_frame = 10;
+        let main = sim.main_rng.native_state_hex();
+        let mapgen = sim.mapgen_rng.native_state_hex();
+        crate::sim::ai_team_creation::update_team_creation(
+            &mut sim,
+            &rules,
+            owner,
+            FrameEffects::default(),
+        );
+        // Original seed31: ratio request(1,100)->84 from raw2026076499;
+        // admitted weight request(1,100)->22 from raw2287577493. The native
+        // Team constructor is an explicit boundary sink in these histories.
+        let expected = if picked {
+            "f04f3ddbbbc963c9ab693cef92909cb4f81582ce4f0d8ecd1f8bc663e4dcbe51"
+        } else {
+            "455190bf327892273204c631e560be21409c1922f7166b2942534865fb3c29af"
+        };
+        assert_eq!(
+            crate::util::sha256::sha256_hex(sim.scenario_rng.native_state_hex().as_bytes()),
+            expected,
+            "{raw}: complete native RNG state"
+        );
+        assert_eq!(sim.main_rng.native_state_hex(), main);
+        assert_eq!(sim.mapgen_rng.native_state_hex(), mapgen);
+        let created: Vec<_> = sim
+            .team_script_vm
+            .teams_in_order()
+            .filter(|team| team.id() != old_team)
+            .map(|team| team.team_type_id())
+            .collect();
+        assert_eq!(
+            created,
+            if picked {
+                vec![Some(team_types[0])]
+            } else {
+                vec![]
+            }
+        );
+        assert_eq!(
+            bincode::serialize(sim.team_script_vm.team(old_team).unwrap()).unwrap(),
+            old_bytes
+        );
+        assert_eq!(
+            sim.houses[&owner].team_creation.timer(),
+            crate::sim::timer::CdTimer::started(10, 600)
+        );
+        let hash = sim.state_hash();
+        assert!(house_control_action(
+            &mut sim,
+            &rules,
+            None,
+            76,
+            "2147483647"
+        ));
+        assert_eq!(
+            sim.state_hash(),
+            hash,
+            "native null-House76 succeeds without a write"
+        );
+    }
+}

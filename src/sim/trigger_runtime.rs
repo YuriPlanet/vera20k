@@ -3729,6 +3729,32 @@ impl Simulation {
                 };
                 return self.trigger_mark_particle_systems_done_at_waypoint(waypoint as i32);
             }
+            30 => {
+                let (Some(owner), Some(value), Some(rules)) =
+                    (context.incoming_house, value, rules)
+                else {
+                    return false;
+                };
+                return self.trigger_auto_base_building(
+                    owner,
+                    value,
+                    rules,
+                    overlay_registry,
+                    frame_effects,
+                );
+            }
+            76 => {
+                // 0x006DF34F: a null incoming House returns success without even
+                // reading +0x90. Otherwise only the existing +0x565C owner changes.
+                let Some(owner) = context.incoming_house else {
+                    return true;
+                };
+                let Some(value) = value else { return false };
+                let Some(house) = self.houses.get_mut(&owner) else {
+                    return false;
+                };
+                house.team_creation.set_trigger_ratio(value);
+            }
             41 => {
                 let (Some(rules), Some(index), Some(waypoint)) =
                     (rules, value, action.waypoint_index)

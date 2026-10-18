@@ -263,3 +263,50 @@ fn make_enemy_angers_before_it_breaks_both_sides() {
     assert_eq!(sim.houses[&first].grudge_scores.get(&second), Some(&2));
     assert_eq!(sim.houses[&first].enemy_house, Some(second));
 }
+
+/// TAction30's 0x0050C210 can call ComputerParanoid before clearing placement
+/// scope. CanAlly 0x005015A1 admits that scope before defeated/count gates, while
+/// MakeAlly 0x004F9C31 skips its live target/Paranoid tail. Initial saved-Allies
+/// metadata and native GameMode 4 remain outside the current model.
+#[test]
+fn initial_scope_allies_keep_targets_and_can_ally_without_a_remaining_enemy() {
+    let rules = rules();
+    let (mut sim, ids) = sim_with(
+        &rules,
+        &[
+            ("Computer1", "Russians", false),
+            ("Computer2", "Russians", false),
+        ],
+    );
+    let first = sim
+        .spawn_object_at_height("TANK", "Computer1", 10, 10, 0, 0, &rules)
+        .unwrap();
+    let second = sim
+        .spawn_object_at_height("TANK", "Computer2", 12, 10, 0, 0, &rules)
+        .unwrap();
+    sim.substrate
+        .entities
+        .get_mut(first)
+        .unwrap()
+        .attack_target
+        .set_for_test(Some(TargetKind::Entity(second)));
+    sim.with_object_placement_scope(|sim| {
+        paranoid(sim, &rules);
+        assert!(sim.object_placement_scope_active());
+    });
+    assert!(!sim.object_placement_scope_active());
+    assert_eq!(allies(&sim, "Computer1"), set(&["Computer2"]));
+    assert_eq!(allies(&sim, "Computer2"), set(&["Computer1"]));
+    assert_eq!(
+        sim.substrate
+            .entities
+            .get(first)
+            .unwrap()
+            .attack_target
+            .target(),
+        Some(TargetKind::Entity(second))
+    );
+    sim.with_object_placement_scope(|sim| sim.make_enemy(ids[0], ids[1], &rules));
+    assert!(allies(&sim, "Computer1").is_empty());
+    assert!(allies(&sim, "Computer2").is_empty());
+}

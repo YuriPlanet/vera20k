@@ -1571,6 +1571,14 @@ impl HouseState {
         self.ai_activation.ai_triggers_active = active;
     }
 
+    /// Execute30 at 0x006DE206 tests Action+0x90's low byte, then writes 1/0 to
+    /// House+0x1F3. Production/autocreate/AI-trigger latches stay independent.
+    pub(crate) fn set_auto_base_building_from_trigger(&mut self, value: i32) -> bool {
+        let enabled = value as u8 != 0;
+        self.ai_activation.auto_base_building = enabled;
+        enabled
+    }
+
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_ai_activation_for_test(&mut self, latches: HouseAiActivationLatches) {
         self.ai_activation = latches;
