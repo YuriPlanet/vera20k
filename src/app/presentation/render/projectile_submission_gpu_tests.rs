@@ -65,7 +65,7 @@ fn many_ordinary_fences_submit_in_order_and_preserve_native_destination_words() 
             for piece in 0..4 {
                 let (target, render_z, mut instance) = match piece {
                     0 => (
-                        ObjectTexture::ProjectileShp(0, TerrainPiece::Body),
+                        ObjectTexture::SpriteAtlasEdit(0, TerrainPiece::Body),
                         RenderZPolicy::ReadOnly,
                         sprite([0., 1.], [8., 2.], 3.),
                     ),
@@ -80,7 +80,7 @@ fn many_ordinary_fences_submit_in_order_and_preserve_native_destination_words() 
                         sprite([2., 1.], [2., 2.], 0.),
                     ),
                     _ => (
-                        ObjectTexture::ProjectileShp(0, TerrainPiece::Shadow),
+                        ObjectTexture::SpriteAtlasEdit(0, TerrainPiece::Shadow),
                         RenderZPolicy::ReadOnly,
                         sprite([0., 1.], [8., 2.], 3.),
                     ),

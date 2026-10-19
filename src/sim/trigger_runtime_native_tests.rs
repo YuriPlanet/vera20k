@@ -2665,7 +2665,7 @@ fn native_trigger_reveal_action_matches_original_controls() {
         };
         compare(&sim.fog, &row["final_cells"]);
         let config = sim.sight_reveal_config(Some(&rules));
-        let heights = sim.path_grid().unwrap().ground_height_grid();
+        let heights = sim.sight_height_grid(&config);
         let mut probe = Simulation::with_seed(31);
         probe.fog = FogState::new(128, 128);
         probe.session.current_house = Some(player);

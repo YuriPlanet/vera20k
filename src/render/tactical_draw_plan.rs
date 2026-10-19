@@ -157,6 +157,7 @@ pub struct ObjectDraw {
 pub enum BuildingPieceKind {
     BuildupOrSpecial,
     Body,
+    Shadow,
     Bib,
     PoweredOrActiveOverlay,
     SplitBack,
@@ -264,11 +265,12 @@ impl TacticalDrawPlan {
 fn building_piece_order(kind: BuildingPieceKind) -> u8 {
     match kind {
         BuildingPieceKind::BuildupOrSpecial => 0,
-        BuildingPieceKind::Bib => 1,
-        BuildingPieceKind::SplitBack => 2,
-        BuildingPieceKind::Body => 3,
-        BuildingPieceKind::PoweredOrActiveOverlay => 4,
-        BuildingPieceKind::SplitFront => 5,
+        BuildingPieceKind::SplitBack => 1,
+        BuildingPieceKind::Body => 2,
+        BuildingPieceKind::Shadow => 3,
+        BuildingPieceKind::Bib => 4,
+        BuildingPieceKind::PoweredOrActiveOverlay => 5,
+        BuildingPieceKind::SplitFront => 6,
     }
 }
 
@@ -385,6 +387,12 @@ mod tests {
                     z_bias: 0,
                     policy: OPAQUE_SHP,
                 },
+                BuildingPiece {
+                    id: 23,
+                    kind: BuildingPieceKind::Shadow,
+                    z_bias: 0,
+                    policy: OPAQUE_SHP,
+                },
             ],
         };
         let plan = TacticalDrawPlan::build([
@@ -410,7 +418,11 @@ mod tests {
                 .iter()
                 .map(|piece| piece.kind)
                 .collect::<Vec<_>>(),
-            [BuildingPieceKind::Bib, BuildingPieceKind::Body]
+            [
+                BuildingPieceKind::Body,
+                BuildingPieceKind::Shadow,
+                BuildingPieceKind::Bib
+            ]
         );
         let LayerEntry::Building(building) = &entries[1] else {
             panic!("building parent must retain its owned draw group");
@@ -421,7 +433,7 @@ mod tests {
                 .iter()
                 .map(|piece| piece.id)
                 .collect::<Vec<_>>(),
-            [21, 22]
+            [22, 23, 21]
         );
     }
 

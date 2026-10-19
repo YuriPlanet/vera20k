@@ -10,14 +10,19 @@ pub(crate) mod test_support;
 use crate::map::bridge_facts::{BRIDGE_FLAG_DESTROYED_OR_RAMP, BRIDGE_FLAG_STRUCTURAL};
 use crate::map::cell_index::NativeCellIdentity;
 use crate::map::entities::EntityCategory;
+use crate::map::overlay_mark::{
+    MarkCrateImages, OverlayCellAnim, OverlayMarkHost, OverlayMarkOutcome, OverlayMarkRequest,
+    mark_overlay,
+};
 use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid};
+use crate::rules::locomotor_type::SpeedType;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::rules::tiberium_type::{TiberiumTypeId, TiberiumTypeRegistry};
 use crate::sim::entity_store::EntityStore;
 use crate::sim::intern::StringInterner;
 use crate::sim::miner::ResourceType;
-use crate::sim::occupancy::OccupancyGrid;
+use crate::sim::occupancy::{OccupancyGrid, RawCellOccupationGrid};
 use crate::sim::ore_growth::OreGrowthState;
 use crate::sim::overlay_grid::OverlayGrid;
 use crate::sim::rng::SimRng;
@@ -93,11 +98,17 @@ pub fn resource_type_for_tiberium_image(image: u8) -> ResourceType {
 }
 
 /// Existing live-object sources needed by the retail visible-building
-/// exclusion in `CellClass::CanPlaceTiberium`.
+/// exclusion in `CellClass::CanPlaceTiberium`, and the raw occupation planes
+/// a new Overlay's Mark tests.
 #[derive(Clone, Copy)]
 pub struct TiberiumPlacementObjectContext<'a> {
     entities: &'a EntityStore,
     occupancy: &'a OccupancyGrid,
+    /// Live `CellClass+0x124`/`+0x128` occupation planes, read by
+    /// `CellClass::CheckCellPassability @ 0x004834A0` when
+    /// `OverlayClass::Mark` admits the new Overlay (called at `0x005FD00C`;
+    /// `0x005FD04F` for TIB01).
+    raw_occupation: &'a RawCellOccupationGrid,
     rules: &'a RuleSet,
     interner: &'a StringInterner,
     /// Live terrain-object cell index (`production.terrain_object_cells`):
@@ -106,9 +117,10 @@ pub struct TiberiumPlacementObjectContext<'a> {
 }
 
 impl<'a> TiberiumPlacementObjectContext<'a> {
-    pub fn new(
+    pub(crate) fn new(
         entities: &'a EntityStore,
         occupancy: &'a OccupancyGrid,
+        raw_occupation: &'a RawCellOccupationGrid,
         rules: &'a RuleSet,
         interner: &'a StringInterner,
         terrain_object_cells: &'a std::collections::BTreeMap<(u16, u16), u64>,
@@ -116,6 +128,7 @@ impl<'a> TiberiumPlacementObjectContext<'a> {
         Self {
             entities,
             occupancy,
+            raw_occupation,
             rules,
             interner,
             terrain_object_cells,
@@ -373,61 +386,12 @@ pub(crate) fn place_tiberium(
         // including an ordinary tree which CanGerminate4838E0 admitted.
         // Place487190 still returns success and writes the requested data.
         // Original execution: tibtre.json ordinary_tree_creation_refused.
-        let terrain_blocks_overlay = ctx.new_cell_admission.is_some_and(|admission| {
-            admission
-                .live_objects
-                .terrain_object_cells
-                .contains_key(&cell)
-        });
+        let terrain_blocks_overlay = admission
+            .live_objects
+            .terrain_object_cells
+            .contains_key(&cell);
         if !terrain_blocks_overlay {
-            ctx.overlay_grid
-                .place_overlay(cell.0, cell.1, overlay_id, 0);
-            // Mark5FD0DB..5FD0F1: Land5 starts at data1, then original
-            // SpreadCellGerminate4818E0 rewrites it before AddGrowth7235A0.
-            // Eight matching neighbors produce 11 and refuse growth admission
-            // without a priority draw, even though Place later stores amount3.
-            // Native executable controls: ore_queue.json interior_hole_*.
-            if ctx
-                .overlay_registry
-                .flags(overlay_id)
-                .is_some_and(|flags| flags.land == crate::rules::terrain_rules::LandType::Tiberium)
-            {
-                ctx.overlay_grid.cell_mut(cell.0, cell.1).overlay_data = 1;
-                let grid: &OverlayGrid = ctx.overlay_grid;
-                let germinated =
-                    crate::map::tiberium_cell::spread_cell_germinate_without_randomization(
-                        ctx.tiberium_types,
-                        ctx.overlay_registry,
-                        Some(overlay_id),
-                        (cell.0 as i16, cell.1 as i16),
-                        |(x, y)| {
-                            let real = crate::map::cell_index::canonical_cell_coord(
-                                i32::from(x),
-                                i32::from(y),
-                            )
-                            .filter(|&(rx, ry)| {
-                                rx < grid.width()
-                                    && ry < grid.height()
-                                    && ctx.resolved_terrain.is_none_or(|terrain| {
-                                        terrain.native_fixed_cell_index(x, y).is_some()
-                                    })
-                            });
-                            if let Some((rx, ry)) = real {
-                                let neighbor = grid.cell(rx, ry);
-                                (neighbor.overlay_id, neighbor.overlay_data)
-                            } else if let Some(terrain) = ctx.resolved_terrain {
-                                let dummy = terrain.shared_cell_dummy();
-                                dummy.stamp_coord(i32::from(x), i32::from(y));
-                                dummy.overlay_fields()
-                            } else {
-                                (None, 0)
-                            }
-                        },
-                    );
-                if let Some(germinated) = germinated {
-                    ctx.overlay_grid.cell_mut(cell.0, cell.1).overlay_data = germinated.density;
-                }
-            }
+            mark_placed_tiberium(ctx, admission, cell, overlay_id);
         }
         ctx.ore_growth_state.add_native_growth_queue_cell(
             ctx.overlay_grid,
@@ -441,9 +405,11 @@ pub(crate) fn place_tiberium(
             ctx.binary_frame,
             ctx.rng,
         );
-        // The overlay stamp already registered the cell mutation. Write the
-        // exact raw byte without creating a second deferred overlay-dirty item.
-        ctx.overlay_grid.cell_mut(cell.0, cell.1).overlay_data = amount;
+        // 4872A0: the identity store already registered the cell mutation.
+        // Write the exact raw byte, even when Mark refused the identity,
+        // without creating a second deferred overlay-dirty item.
+        ctx.overlay_grid
+            .write_cell_data(None, cell.0, cell.1, amount);
         mark_place_tactical_dirty(ctx, cell);
         mark_place_radar_dirty(ctx, cell);
         return Some(TiberiumPlacement {
@@ -491,6 +457,225 @@ pub(crate) fn place_tiberium(
         cell,
         overlay_construction: None,
     })
+}
+
+/// `CellClass::PlaceTiberium @ 0x0048728C`: the new Overlay's constructor
+/// reveals it into the one `OverlayClass::Mark @ 0x005FC570` port. Mark's
+/// ordinary admission (`0x004834A0`, Track, both ignores) refuses a cell a
+/// landed aircraft occupies (bit 0x40); Place still queues growth and stores
+/// the requested data. Variants pass `CanPlaceTiberium`'s flat-cell gate, so
+/// the slope gate admits.
+fn mark_placed_tiberium(
+    ctx: &mut PlaceTiberiumContext<'_>,
+    admission: NewTiberiumAdmission<'_>,
+    cell: (u16, u16),
+    overlay_id: u8,
+) {
+    let Some(flags) = ctx.overlay_registry.flags(overlay_id) else {
+        return;
+    };
+    let request = OverlayMarkRequest {
+        overlay_id,
+        flags,
+        cell: (cell.0 as i16, cell.1 as i16),
+        location: [
+            i32::from(cell.0).wrapping_mul(256).wrapping_add(128),
+            i32::from(cell.1).wrapping_mul(256).wrapping_add(128),
+            0,
+        ],
+        registry: ctx.overlay_registry,
+        tiberium_types: Some(ctx.tiberium_types),
+        crate_images: MarkCrateImages::resolve(
+            &admission.live_objects.rules.crate_rules,
+            ctx.overlay_registry,
+        ),
+    };
+    let mut host = PlaceTiberiumMarkHost {
+        grid: &mut *ctx.overlay_grid,
+        terrain: admission.resolved_terrain,
+        objects: admission.live_objects,
+        registry: ctx.overlay_registry,
+        rng: &mut *ctx.rng,
+    };
+    match mark_overlay(&mut host, &request) {
+        Ok(outcome) => debug_assert_eq!(outcome, OverlayMarkOutcome::Marked),
+        Err(PlaceTiberiumMarkUnsupported(owner)) => log::warn!(
+            "PlaceTiberium Mark of overlay {overlay_id} at {cell:?} reached {owner}, \
+             which the batched ore placement does not own; Mark stopped there"
+        ),
+    }
+}
+
+/// The owner a fixed-identity or CellAnim arm of Mark needs and the batched
+/// ore placement lacks. Retail flat ore variants reach none of them.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct PlaceTiberiumMarkUnsupported(&'static str);
+
+/// [`OverlayMarkHost`] on the batched ore placement's borrows: the
+/// OverlayGrid, the shared CellClass array and the live occupation planes.
+/// Identity and data writes go through the OverlayGrid owner without the
+/// terrain bridge cache, which this batch holds shared (#722). Recalc of the
+/// stamped cells is published by the caller before Logic's next object:
+/// the TiberiumClass drivers after their batch (`publish_tiberium_cells`),
+/// a Terrain AI slot before it returns. Within a batch, admission refuses a
+/// stamped cell on its identity before it reads land, so no admission, RNG
+/// draw or growth decision observes the deferral. ScenarioInit is down: only
+/// Logic places ore.
+struct PlaceTiberiumMarkHost<'c, 'a> {
+    grid: &'c mut OverlayGrid,
+    terrain: &'a ResolvedTerrainGrid,
+    objects: TiberiumPlacementObjectContext<'a>,
+    registry: &'a OverlayTypeRegistry,
+    rng: &'c mut SimRng,
+}
+
+impl PlaceTiberiumMarkHost<'_, '_> {
+    fn real_coord(&self, cell: NativeCellIdentity) -> Option<(u16, u16)> {
+        match cell {
+            NativeCellIdentity::Real(_) => {
+                let (x, y) = self.terrain.native_cell_coord(cell);
+                Some((x as u16, y as u16))
+            }
+            NativeCellIdentity::Dummy => None,
+        }
+    }
+}
+
+impl OverlayMarkHost for PlaceTiberiumMarkHost<'_, '_> {
+    type Error = PlaceTiberiumMarkUnsupported;
+
+    fn cell(&mut self, coord: (i16, i16)) -> NativeCellIdentity {
+        self.terrain.native_cell_identity(coord)
+    }
+
+    fn coord(&self, cell: NativeCellIdentity) -> (i16, i16) {
+        self.terrain.native_cell_coord(cell)
+    }
+
+    fn in_bounds(&mut self, _coord: (i16, i16)) -> Result<bool, Self::Error> {
+        Err(PlaceTiberiumMarkUnsupported(
+            "the low-bridge search's MapClass::In_Bounds @ 0x00568300",
+        ))
+    }
+
+    fn slope(&self, cell: NativeCellIdentity) -> u8 {
+        self.terrain.native_cell_ground_fields(cell).1
+    }
+
+    fn identity(&self, cell: NativeCellIdentity) -> i32 {
+        match self.real_coord(cell) {
+            Some((x, y)) => self
+                .grid
+                .cell(x, y)
+                .overlay_id
+                .map_or(crate::map::overlay_mark::NO_OVERLAY, i32::from),
+            None => self.terrain.shared_cell_dummy().overlay_identity_state().0,
+        }
+    }
+
+    fn data(&self, cell: NativeCellIdentity) -> u8 {
+        match self.real_coord(cell) {
+            Some((x, y)) => self.grid.cell(x, y).overlay_data,
+            None => self.terrain.shared_cell_dummy().overlay_identity_state().1,
+        }
+    }
+
+    fn write_identity(
+        &mut self,
+        cell: NativeCellIdentity,
+        overlay_id: u8,
+    ) -> Result<(), Self::Error> {
+        match self.real_coord(cell) {
+            Some((x, y)) => {
+                self.grid
+                    .write_mark_identity(None, self.registry, x, y, overlay_id);
+            }
+            None => self
+                .terrain
+                .shared_cell_dummy()
+                .write_overlay_identity(i32::from(overlay_id)),
+        }
+        Ok(())
+    }
+
+    fn write_data(&mut self, cell: NativeCellIdentity, data: u8) -> Result<(), Self::Error> {
+        match self.real_coord(cell) {
+            Some((x, y)) => {
+                self.grid.write_cell_data(None, x, y, data);
+            }
+            None => self.terrain.shared_cell_dummy().write_overlay_state(data),
+        }
+        Ok(())
+    }
+
+    fn scenario_init(&self) -> bool {
+        false
+    }
+
+    fn next_scenario_raw(&mut self) -> u32 {
+        self.rng.next_u32()
+    }
+
+    fn passable(
+        &mut self,
+        cell: NativeCellIdentity,
+        speed: SpeedType,
+        ignore_occupants: bool,
+    ) -> Result<bool, Self::Error> {
+        Ok(crate::sim::cell_rect::check_cell_passability(
+            &crate::sim::cell_rect::canonical_cell_ref(self.terrain, cell),
+            crate::sim::overlay_mark_host::mark_passability_args(speed, ignore_occupants),
+            &crate::sim::cell_rect::CellPassabilityMap {
+                terrain: Some(self.terrain),
+                overlays: Some(&*self.grid),
+                zones: None,
+                native_cells: None,
+                raw_occupation: Some(self.objects.raw_occupation),
+                listed_occupancy: None,
+            },
+        )
+        .admits())
+    }
+
+    fn set_bridge_direction(
+        &mut self,
+        _anchor: NativeCellIdentity,
+        _family: crate::map::bridge_facts::BridgeStampFamily,
+        _direction: u8,
+    ) -> Result<(), Self::Error> {
+        Err(PlaceTiberiumMarkUnsupported(
+            "CellClass::SetBridgeDirection @ 0x0047E040/0x0047E470",
+        ))
+    }
+
+    fn wall_clear_to_build(&mut self, _anchor: NativeCellIdentity) -> Result<bool, Self::Error> {
+        Err(PlaceTiberiumMarkUnsupported("the wall arm @ 0x005FC6E6"))
+    }
+
+    fn wall_cleanup(&mut self, _anchor: NativeCellIdentity) -> Result<(), Self::Error> {
+        Err(PlaceTiberiumMarkUnsupported("the wall arm @ 0x005FC6E6"))
+    }
+
+    fn merge_wall_zones(&mut self, _anchor: NativeCellIdentity) -> Result<(), Self::Error> {
+        Err(PlaceTiberiumMarkUnsupported("the wall arm @ 0x005FC6E6"))
+    }
+
+    fn increment_wall_neighbor_count(
+        &mut self,
+        _cell: NativeCellIdentity,
+    ) -> Result<(), Self::Error> {
+        Err(PlaceTiberiumMarkUnsupported("the wall arm @ 0x005FC6E6"))
+    }
+
+    fn spawn_cell_anim(&mut self, _request: OverlayCellAnim<'_>) -> Result<(), Self::Error> {
+        Err(PlaceTiberiumMarkUnsupported(
+            "the CellAnim constructor @ 0x005FD112",
+        ))
+    }
+
+    fn recalc(&mut self, _cell: NativeCellIdentity) -> Result<(), Self::Error> {
+        Ok(())
+    }
 }
 
 /// One port of CellClass::SpreadTiberium483780 for terrain's force1 call
@@ -739,7 +924,7 @@ mod tests {
     use crate::rules::tiberium_type::TiberiumTypeRegistry;
     use crate::sim::entity_store::EntityStore;
     use crate::sim::intern::StringInterner;
-    use crate::sim::occupancy::OccupancyGrid;
+    use crate::sim::occupancy::{OccupancyGrid, RawCellOccupationGrid};
     use crate::sim::rng::SimRng;
     use crate::sim::snapshot::GameSnapshot;
     use crate::sim::world::Simulation;
@@ -880,9 +1065,11 @@ SpreadPercentage=.06
         let occupancy = OccupancyGrid::new();
         let interner = StringInterner::default();
         let terrain_object_cells = BTreeMap::new();
+        let raw_occupation = RawCellOccupationGrid::new();
         let live_objects = TiberiumPlacementObjectContext::new(
             &entities,
             &occupancy,
+            &raw_occupation,
             &rules,
             &interner,
             &terrain_object_cells,
@@ -1131,14 +1318,6 @@ SpreadPercentage=.06
                 overlay_id: tib13,
                 frame: 99,
             },
-            // Registered but unavailable art: pass one rejects identity while
-            // pass two must retain the raw byte.
-            OverlayEntry {
-                rx: 4,
-                ry: 0,
-                overlay_id: 0,
-                frame: 99,
-            },
             // Bytes exist in both packs but the native cell slot is absent.
             OverlayEntry {
                 rx: 5,
@@ -1155,17 +1334,9 @@ SpreadPercentage=.06
                 (1, 0, 11),
                 (2, 0, 7),
                 (3, 0, empty_raw),
-                (4, 0, 0x5A),
                 (5, 0, 0xEE),
             ]);
-            OverlayGrid::from_native_overlay_packs(
-                &entries,
-                &data,
-                &mut terrain,
-                &overlay_registry,
-                &BTreeSet::from([tib01, gem12, tib13]),
-                false,
-            )
+            OverlayGrid::from_generated_overlays(&entries, &data, &mut terrain, &overlay_registry)
         };
 
         let mut grid = build_grid(0xA5);
@@ -1189,11 +1360,6 @@ SpreadPercentage=.06
         assert_eq!(
             (grid.cell(3, 0).overlay_id, grid.cell(3, 0).overlay_data),
             (None, 0xA5)
-        );
-        assert_eq!(
-            (grid.cell(4, 0).overlay_id, grid.cell(4, 0).overlay_data),
-            (None, 0x5A),
-            "rejected pass-one identity does not suppress pass-two data"
         );
         assert_eq!(
             (grid.cell(5, 0).overlay_id, grid.cell(5, 0).overlay_data),

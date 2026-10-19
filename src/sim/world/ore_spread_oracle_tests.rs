@@ -236,3 +236,83 @@ fn app_ore_constructor_terminal_cleanup_matches_original_deferred_drain() {
         );
     }
 }
+
+/// A real aircraft, built and landed by `spawn_object`, keeps the ore rung
+/// from spreading ore under it. Its landed Fly reveal sets the cell's 0x40
+/// occupation bit, which the spreading Overlay's `OverlayClass::Mark`
+/// admission (`CellClass::CheckCellPassability @ 0x004834A0`, Track with both
+/// ignores) still refuses. Without the aircraft the same rung spreads there.
+#[test]
+fn ore_rung_spreads_no_ore_under_a_landed_aircraft() {
+    let Some((rules_ini, art_ini)) = crate::rules::retail_ini_fixture::retail_rules_and_art()
+    else {
+        return;
+    };
+    let rules =
+        crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art().expect("retail rules");
+    let registry =
+        crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&rules_ini, Some(&art_ini));
+    let tib01 = registry.id_for_name("TIB01").expect("TIB01");
+    // Only these two cells take tiberium, so the east neighbour is the
+    // source's one spread target.
+    let (source, target) = ((20, 20), (21, 20));
+    let target_after_rung = |landed: bool| {
+        let mut sim =
+            super::refinery_dock_oracle_tests::world_with(&rules, &rules_ini, |terrain| {
+                for (rx, ry) in [source, target] {
+                    terrain.cell_mut(rx, ry).expect("cell").allows_tiberium = true;
+                }
+            });
+        sim.native_unique_ids =
+            Some(crate::sim::native_identity::NativeUniqueIdCursor::test_at_current_value(0));
+        let grid = sim.overlay_grid.as_mut().expect("overlay grid");
+        grid.place_overlay(source.0, source.1, tib01, 11);
+        let _ = grid.take_dirty_cells();
+        let mut state = crate::sim::ore_growth::OreGrowthState::new(33, 33);
+        state.rebuild_native_tiberium_queues_from_overlays(
+            sim.overlay_grid.as_ref().expect("overlay grid"),
+            &registry,
+            &rules.tiberium_types,
+            sim.resolved_terrain.as_ref(),
+            &std::collections::BTreeSet::new(),
+            true,
+            true,
+            sim.session.binary_frame,
+            (32, 32),
+        );
+        sim.production.ore_growth_state = state;
+        sim.production.ore_growth_config = OreGrowthConfig {
+            grows: true,
+            spreads: true,
+            tiberium_grows_flag: false,
+        };
+        if landed {
+            sim.spawn_object("ORCA", "Americans", target.0, target.1, 0, &rules)
+                .expect("retail ORCA spawns");
+            assert_eq!(
+                sim.substrate
+                    .raw_cell_occupation
+                    .ground_bits(target.0, target.1)
+                    & crate::sim::occupancy::OBJECT_OCCUPATION_BIT,
+                crate::sim::occupancy::OBJECT_OCCUPATION_BIT,
+                "the aircraft stands landed on the cell"
+            );
+        }
+        sim.tick_ore_growth_rungs(&rules, Some(&registry));
+        sim.overlay_grid
+            .as_ref()
+            .expect("overlay grid")
+            .cell(target.0, target.1)
+            .overlay_id
+    };
+
+    assert!(
+        target_after_rung(false).is_some(),
+        "the open control spreads ore onto the cell"
+    );
+    assert_eq!(
+        target_after_rung(true),
+        None,
+        "no ore under the landed aircraft"
+    );
+}

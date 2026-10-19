@@ -41,6 +41,7 @@ fn retail_inactive_high_record_restamp_inventory() {
         let objects = crate::sim::tiberium::TiberiumPlacementObjectContext::new(
             sim.entities(),
             sim.occupancy(),
+            &sim.substrate.raw_cell_occupation,
             &scenario.runtime.resources.rules,
             &sim.interner,
             &sim.production.terrain_object_cells,

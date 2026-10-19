@@ -396,8 +396,8 @@ pub(crate) fn build_shp_instances(
         // atlas if its SHP has fewer than 4 frames. Retry with frame 0 so the
         // building still draws (Approach A in the design doc). Non-garrisonable
         // misses keep their existing skip path.
-        let entry = match atlas.get(&key) {
-            Some(e) => Some(e),
+        let (body_key, entry) = match atlas.get(&key) {
+            Some(e) => (key.clone(), Some(e)),
             None if shp_frame != 0
                 && entity.category() == EntityCategory::Structure
                 && state
@@ -414,7 +414,7 @@ pub(crate) fn build_shp_instances(
                     house_color: hc,
                 };
                 match atlas.get(&fallback_key) {
-                    Some(e) => Some(e),
+                    Some(e) => (fallback_key, Some(e)),
                     None => continue,
                 }
             }
@@ -422,7 +422,7 @@ pub(crate) fn build_shp_instances(
             // frames are all empty and its SuperAnims are the silo. The body
             // draw paints nothing and the building's bib, anims and turret
             // still draw after it.
-            None if entity.category() == EntityCategory::Structure => None,
+            None if entity.category() == EntityCategory::Structure => (key.clone(), None),
             None => continue,
         };
 
@@ -617,6 +617,21 @@ pub(crate) fn build_shp_instances(
                     target,
                     instance,
                 });
+                if !is_building_up
+                    && !is_building_down
+                    && let Some(body_entry) = entry
+                    && let Some(shadow) = building_embedded_shadow_piece(
+                        atlas,
+                        state.rules().and_then(|rules| rules.object(type_str)),
+                        entity,
+                        &body_key,
+                        body_entry,
+                        instance,
+                        draw_decision,
+                    )
+                {
+                    building_pieces.push(shadow);
+                }
             }
         } else if let Some((target, instance)) = body {
             ground_objects.push(PlannedObjectInstance::object(
@@ -707,6 +722,78 @@ pub(crate) fn build_shp_instances(
             ground_objects.push(PlannedObjectInstance::building(parent, building_pieces));
         }
     }
+}
+
+/// The common embedded second-half shadow owner used by BuildingClass's
+/// `TechnoClass_DrawSHP @ 0x00705E00` path. Its caller passes the actual body
+/// frame key/entry/instance and the same admitted native visual-state result;
+/// this function does not infer a second frame, anchor, or visibility decision.
+///
+/// Native draws body frame `n`, then `n + frame_count/2` when its visual state
+/// is 0/1 and `NoShadow=` is false. The darken blitter uses the shadow frame's
+/// non-zero SHP indices as a mask, reads/writes Z, and has no BUILDNGZ input.
+pub(crate) fn building_embedded_shadow_piece(
+    atlas: &crate::render::sprite_atlas::SpriteAtlas,
+    object: Option<&crate::rules::object_type::ObjectType>,
+    entity: &crate::sim::game_entity::GameEntity,
+    body_key: &ShpSpriteKey,
+    body_entry: &crate::render::sprite_atlas::ShpSpriteEntry,
+    body_instance: SpriteInstance,
+    decision: crate::render::draw_state::DrawDecision,
+) -> Option<PlannedBuildingPieceInstance> {
+    if !matches!(decision.native_visual_state, 0 | 1)
+        || object.is_some_and(|object| object.no_shadow)
+    {
+        return None;
+    }
+    let frame_count = atlas.object_shp_frame_count(&body_key.type_id)?;
+    let half = frame_count / 2;
+    if body_key.frame >= half {
+        return None;
+    }
+    let shadow_frame = body_key.frame.checked_add(half)?;
+    if shadow_frame >= frame_count {
+        return None;
+    }
+    let mut shadow_key = body_key.clone();
+    shadow_key.frame = shadow_frame;
+    let shadow_entry = atlas.get(&shadow_key)?;
+
+    // Building43D290's body point is the Location art anchor plus the frame's
+    // canvas offset. Recover that shared anchor before applying the shadow
+    // frame's own offset.
+    let anchor = [
+        body_instance.position[0] - body_entry.offset_x,
+        body_instance.position[1] - body_entry.offset_y,
+    ];
+    let lift_px = crate::render::locomotor_visual::screen_lift_px(entity);
+    let mut instance = body_instance;
+    instance.position = [
+        anchor[0] + shadow_entry.offset_x,
+        anchor[1] + shadow_entry.offset_y,
+    ];
+    instance.size = shadow_entry.pixel_size;
+    instance.uv_origin = shadow_entry.uv_origin;
+    instance.uv_size = shadow_entry.uv_size;
+    instance.source_palette = shadow_entry.source_palette;
+    // Techno70647A/70649E (and70654F/706576 for visual state1) combine
+    // both -2 terms before CC_Draw_Shape: -4 - AdjustForZ(Location.Z).
+    instance.z_adjust = lifted_z_adjust(lift_px, -4);
+    instance.z_gradient = pack_z_gradient(ZGradient::Flat, false);
+    instance.zshape_origin = [0.0, 0.0];
+
+    Some(PlannedBuildingPieceInstance {
+        kind: BuildingPieceKind::Shadow,
+        z_bias: 0,
+        // flags 0x6E01 select the existing opaque, strict-Z read/write shadow
+        // destination edit (0x004990E0 / 0x00497390).
+        policy: BlitPolicy::opaque(SpriteEncoding::Plain),
+        target: ObjectTexture::SpriteAtlasEdit(
+            shadow_entry.page as usize,
+            crate::render::terrain_draw::TerrainPiece::Shadow,
+        ),
+        instance,
+    })
 }
 
 /// Emit a building's native B8 turret and C0 barrel at its TurretAnim anchor.

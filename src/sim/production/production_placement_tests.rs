@@ -10,6 +10,7 @@ use super::{
     publish_production_changes, ready_building_entity_for_owner, ready_buildings_for_owner,
 };
 use crate::map::entities::EntityCategory;
+use crate::map::overlay_mark::OverlayMarkOutcome;
 use crate::map::resolved_terrain::{
     RampDirection, ResolvedTerrainCell, ResolvedTerrainGrid, zone_class,
 };
@@ -3500,9 +3501,10 @@ fn wall_mark_rejects_buildable_ground_that_track_cannot_enter() {
     let mut sim = placement_sim();
     sim.overlay_grid = Some(OverlayGrid::new(64, 64));
     let before = sim.state_hash();
-    assert!(!super::wall_placement::mark_wall(
-        &mut sim, &rules, &registry, 12, 12, 0
-    ));
+    assert_eq!(
+        sim.mark_overlay_for_test(&rules, &registry, (12, 12), 0),
+        OverlayMarkOutcome::WallRefused
+    );
     assert_eq!(
         sim.state_hash(),
         before,
@@ -3524,9 +3526,10 @@ fn retained_wall_plane_runtime_placement_and_damage_update_once() {
     let mut sim = placement_sim();
     sim.resolved_terrain = Some(resolved_clear_grid_with_override(5, 5, |_| {}));
     sim.overlay_grid = Some(OverlayGrid::new(5, 5));
-    assert!(super::wall_placement::mark_wall(
-        &mut sim, &rules, &registry, 2, 2, 0
-    ));
+    assert_eq!(
+        sim.mark_overlay_for_test(&rules, &registry, (2, 2), 0),
+        OverlayMarkOutcome::Marked
+    );
     let mut grid = sim.overlay_grid.take().unwrap();
     let mut terrain = sim.resolved_terrain.take().unwrap();
     let placed = grid.retained_neighbor_counts();
@@ -3596,9 +3599,10 @@ fn retained_wall_plane_placement_reaches_fixed_stride_alias() {
         .as_mut()
         .unwrap()
         .place_overlay(511, 0, 0, 0);
-    assert!(super::wall_placement::mark_wall(
-        &mut sim, &rules, &registry, 0, 1, 0
-    ));
+    assert_eq!(
+        sim.mark_overlay_for_test(&rules, &registry, (0, 1), 0),
+        OverlayMarkOutcome::Marked
+    );
     let alias_grid = sim.overlay_grid.as_ref().unwrap();
     assert_eq!(
         alias_grid.cell(0, 1).overlay_data & 0x0F,

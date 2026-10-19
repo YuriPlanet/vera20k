@@ -34,6 +34,7 @@ pub mod lat;
 pub mod lighting;
 pub mod map_file;
 pub mod overlay;
+pub(crate) mod overlay_mark;
 pub mod playfield;
 pub mod preview;
 pub mod ranking;

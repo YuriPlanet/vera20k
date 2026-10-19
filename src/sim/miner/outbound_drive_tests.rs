@@ -889,9 +889,13 @@ fn gsi_04_07_placement_miner_return_threads_live_wall_neighbor_authority() {
         let overlays = sim.overlay_grid.as_mut().expect("live overlay grid");
         overlays.place_overlay(30, 33, overlay_id, 0);
         if overlay_id == wall_id {
-            // A placed wall's `OverlayClass::Mark` increments
-            // (`0x005FC762..0x005FC775`); a rock contributes none.
-            overlays.add_retained_wall_neighbor_source(sim.resolved_terrain.as_ref(), 30, 33);
+            // A placed wall's `OverlayClass::Mark` increments its eight
+            // neighbours (`0x005FC762..0x005FC775`); a rock contributes none.
+            let terrain = sim.resolved_terrain.as_ref().expect("live terrain");
+            for (dx, dy) in crate::util::direction::DIRECTION_DELTAS {
+                let neighbor = terrain.native_cell_identity((30 + dx as i16, 33 + dy as i16));
+                overlays.increment_retained_wall_neighbor_count(terrain, neighbor);
+            }
         }
 
         // Zone_precheck marks only the start/goal zones (1 and 2). The route

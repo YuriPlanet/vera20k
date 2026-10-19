@@ -601,7 +601,7 @@ fn destination_batching_layer_fences_do_not_plan_ordinary_unit_instances() {
     for (layer_index, read_only) in [(2usize, false), (3usize, true)] {
         let destination = |piece| {
             if read_only {
-                ObjectTexture::ProjectileShp(0, piece)
+                ObjectTexture::SpriteAtlasEdit(0, piece)
             } else {
                 ObjectTexture::TerrainShp(piece)
             }

@@ -334,12 +334,7 @@ impl Simulation {
         let Some(transport) = self.substrate.entities.get_mut(transport_id) else {
             return false;
         };
-        if transport.category() == EntityCategory::Structure
-            && !transport.passenger_role.is_transport()
-        {
-            return false;
-        }
-        // Every native Foot has CargoClass even when Type.Passengers is0.
+        // Every native Techno has CargoClass even when Type.Passengers is0.
         // Make its empty hold at the first raw Cargo attach; ordinary
         // capacity admission remains a caller policy.
         let cargo = transport.passenger_role.ensure_hold();
@@ -354,8 +349,9 @@ impl Simulation {
 /// An entity's passenger relation and, for a type that holds passengers, its
 /// cargo hold. Natively these are separate Techno fields: the CargoClass
 /// `Passengers` (`TechnoClass+0x114`, [`PassengerCargo`]), the Transporter
-/// (`+0x11C`) and InOpenToppedTransport (`+0x82`). VERA keeps a hold only for
-/// a type that can carry passengers, and a transport's own relation to the
+/// (`+0x11C`) and InOpenToppedTransport (`+0x82`). VERA creates a hold for
+/// configured carriers or when native raw Cargo admission first uses it,
+/// and keeps a transport's own relation to the
 /// hull it rides in inside that hold. This module owns all of it: other
 /// modules read it through these methods and change it through its boarding,
 /// unload and teardown methods.
@@ -806,30 +802,9 @@ pub(crate) fn board_passenger(
         return false;
     };
     let (carrier_owner, open_topped, gunner, infantry_absorb, extra_power) = carrier;
-    // RESIDUAL: the Infantry building arm adds him to whatever building
-    // answered DOCK_NOW ROGER (`PassengersClass::AddPassenger`, `0x0051A38A`),
-    // but VERA keeps a hold only for a type that can carry passengers.
-    // Trigger: an infantryman on Enter whose NavCom or Target is a
-    // `UnitRepair=`/`UnitReload=` depot, which answers ROGER after queueing
-    // its Repair and his Sleep (`0x0043C732..0x0043C785`), or a `DockUnload=`
-    // refinery, which answers after queueing his Unload (`0x0043C788..
-    // 0x0043C7B2`), arriving on its foundation. Effect: native hides him in
-    // that building's cargo; VERA returns here, so he stays on the
-    // foundation, visible and selectable, with those missions queued.
-    // Frequency: no retail order is known to send him there; the click's
-    // ENTER needs CAN_LOAD ROGER from a Techno with `Passengers=`
-    // (`0x0051ED10..0x0051EE3B`), which no retail depot or refinery has
-    // (`retail_no_service_building_carries_passengers`). Risk: a map or mod
-    // that sends him would see him stay out.
-    if arm == BoardingArm::InfantryBuilding
-        && sim
-            .substrate
-            .entities
-            .get(carrier_id)
-            .is_some_and(|carrier| !carrier.passenger_role.is_transport())
-    {
-        return false;
-    }
+    // Infantry51A38A adds to every building that admitted DOCK_NOW, including
+    // Hospital=yes with Passengers=0. The shared raw Cargo owner creates the
+    // empty hold lazily; configured capacity remains an admission policy.
     let absorber_entry = arm == BoardingArm::InfantryBuilding && infantry_absorb;
     // `0x0051A2EF..0x0051A30A`: Foot's GetCoords (`+0x48`) before Limbo,
     // played with `VocClass::PlayAt @ 0x007509E0` once the add commits.
@@ -917,7 +892,7 @@ pub(crate) fn board_passenger(
     //4733A0 repeats the head's virtual Limbo before its unconditional
     //prepend.
     let boarded = sim.add_cargo_passenger_chain(carrier_id, &[(pax_id, pax_size)], context);
-    // The hold was there before Limbo; nothing in this transaction removes it.
+    // The admitted carrier survives Limbo; Cargo creates its hold if needed.
     debug_assert!(boarded, "boarding admission changed during one transaction");
     if !boarded {
         // Recover the passenger rather than strand a concealed object if an
@@ -1625,10 +1600,9 @@ ConditionYellow=50%
         );
     }
 
-    /// The Infantry building arm's residual in [`board_passenger`] needs an
-    /// ENTER to a service building, which the click gives only to a Techno
-    /// with `Passengers=` (`0x0051ED10..0x0051EE3B`): no retail depot or
-    /// refinery has one.
+    /// Retail depots and refineries have no configured passenger capacity.
+    /// Their absence of ordinary transport admission does not constrain the
+    /// raw Cargo leaf used by an already-admitted building entry.
     #[test]
     fn retail_no_service_building_carries_passengers() {
         let Some(rules) = crate::rules::retail_ini_fixture::retail_rulesmd_rules() else {

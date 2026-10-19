@@ -15,7 +15,7 @@
 //! NewConstructionOptions.
 //!
 //! `EVA_SelectTarget` (`0x006AAFA7`) is the superweapon cameo click — VERA's
-//! `SidebarAction::ArmSuperWeapon` (`select_target_line`).
+//! `superweapon_cameo` owns its live admission and mode changes.
 
 use crate::sim::intern::InternedId;
 use crate::sim::production::{BuildQueueState, ProductionCategory, QueueItemView};
@@ -178,30 +178,6 @@ pub(crate) fn start_line_for(category: ProductionCategory) -> &'static str {
     } else {
         EVA_BUILDING
     }
-}
-
-/// `SelectClass::Action 0x006AAED5..0x006AAFAC`, the superweapon strip
-/// (`RTTI == 0x1F`) on a left click (`param_2 & 1`) of a cameo below the
-/// house's super count (`[PlayerPtr+0x264]`). `0x006AAEEA CALL 0x006CC360`
-/// is the readiness test: `SuperClass+0x70` (IsSuspended) set → false;
-/// `Type+0xE5` (`UseChargeDrain=`) → `+0x7C != 0`; else `+0x6F` (IsReady).
-/// Not ready → `0x006AAFB1` (a no-op) and nothing is spoken. Then
-/// `0x006AAF08 CMP [Type+0xBC], 0` — `Action=` (`SuperWeaponTypeClass::
-/// ReadINI 0x006CEA20`, `CCINIClass::ReadAction`, `None` = 0): a targeted
-/// weapon arms the pending-super state (`[0x8809A0] = index`),
-/// `Unselect_All`, and speaks `EVA_SelectTarget` (`0x006AAFA7`); an
-/// untargeted one fires at once through event `0x12` (`0x006AAF3C`) and
-/// stays silent. Every stock `[*Special]` carries an `Action=`.
-///
-/// `is_online` is VERA's `!is_suspended`; `is_ready` stands in for both the
-/// charged flag and the charge-drain `+0x7C` state.
-pub(crate) fn select_target_line(
-    is_ready: bool,
-    is_online: bool,
-    action: Option<&str>,
-) -> Option<&'static str> {
-    let targeted = action.is_some_and(|action| !action.eq_ignore_ascii_case("none"));
-    (is_ready && is_online && targeted).then_some(EVA_SELECT_TARGET)
 }
 
 #[cfg(test)]

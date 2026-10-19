@@ -1012,7 +1012,7 @@ fn reveal_on_fire(
                 (origin.0, origin.1),
                 origin.2,
                 3,
-                heights.levels(),
+                Some(&heights),
                 false,
                 &config,
                 context,

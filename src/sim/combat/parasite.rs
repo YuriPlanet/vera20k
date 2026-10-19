@@ -36,17 +36,18 @@
 //! (`0x0062A2F8..0x0062A311`, cleared at `0x0062A372..0x0062A379` and
 //! `0x0062A45C..0x0062A462`), which skips that query.
 //!
+//! A placed owner's sight: its Unlimbo reveals it (`0x006F6D27`), and the
+//! AttachTo refusal then takes it back (ReReveal `0x0062AA51`). The
+//! UpdateReveal that follows ExitUnit's (`0x0062A7A8`) and PointerExpired's
+//! (`0x0062A40B`) Unlimbo finds the latch that Unlimbo set and adds nothing.
+//!
 //! RESIDUALS (each needs a mechanism VERA does not have yet):
-//! - A placed owner's sight: native follows the Unlimbo with ReReveal
-//!   (AttachTo refusal, `0x0062AA51`) or UpdateReveal (ExitUnit `0x0062A7A8`,
-//!   PointerExpired `0x0062A40B`), and the fog border `0x00567DA0`
-//!   (presentation; `0x0062AA91`, `0x0062A44B`). VERA's vision frame pass
-//!   admits the placed owner in their place (the residual in `sim::vision`),
-//!   so after the AttachTo refusal it holds sight where native's ReReveal has
-//!   just released the reveal Unlimbo made (`0x006F6D27`), until its next
-//!   cell arrival. Trigger: a jump whose host is lost in flight. Effect: the
-//!   returned drone sees around its launch cell before it moves again.
-//!   Frequency: rare.
+//! - The fog borders that follow the AttachTo refusal (`0x0062AA91`: from
+//!   the cached radius - 3 out to + 2) and PointerExpired (`0x0062A44B`:
+//!   - 3 out to + 3) are not refreshed. Trigger: a jump whose host is lost
+//!   in flight; a drone's victim dying. Effect: the shroud-edge frames of
+//!   that ring around the drone wait for its next reveal event. Frequency:
+//!   each such release. Risk: edge frames only.
 //! - GetReleaseCoords' PlaceInfantryInCell finding no spot writes the zero
 //!   coordinate (`0x0089E778`), which a Unit owner turns into map cell
 //!   (0,0)'s GetCoords (`0x0062AE09..0x0062AE3E`); that is no longer the
@@ -421,13 +422,15 @@ impl Simulation {
                 .map(NativeCellQuery::canonical)
                 .as_ref(),
         );
+        let context = UninitContext::with_rules(rules).with_effects(effects);
         if !self.parasite_unlimbo_owner(owner, coords, 0, rules, effects) {
-            self.uninit_with_context(
-                owner,
-                UninitContext::with_rules(rules).with_effects(effects),
-            );
+            self.uninit_with_context(owner, context);
             return;
         }
+        // 0x0062AA51: ReReveal(0, 0, 0, 0) takes back the sight the Unlimbo
+        // just opened (`0x006F6D27`): the owner stays blind until its next
+        // reveal event.
+        self.release_object_sight_with_context(owner, context);
         self.parasite_released_owner_orders(owner, false, rules, effects);
     }
 

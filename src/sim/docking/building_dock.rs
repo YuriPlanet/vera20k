@@ -1328,6 +1328,15 @@ pub(crate) fn mission_repair(
     };
     let building = sim.substrate.entities.get(depot)?;
     let object = sim.object_type(building.type_ref(), rules)?;
+    if object.hospital && !object.construction_yard {
+        return Some(super::hospital::mission_repair(
+            sim,
+            rules,
+            depot,
+            registry,
+            frame_effects,
+        ));
+    }
     if !object.unit_repair {
         // The ConstructionYard, Hospital and Armory arms come first.
         let reload =

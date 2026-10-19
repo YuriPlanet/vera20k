@@ -9,7 +9,7 @@ use crate::sim::entity_store::EntityStore;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::intern::StringInterner;
 use crate::sim::movement::locomotor::MovementLayer;
-use crate::sim::occupancy::{CellListInsertion, OccupancyGrid};
+use crate::sim::occupancy::{CellListInsertion, OccupancyGrid, RawCellOccupationGrid};
 use crate::sim::tiberium::{ReduceTiberiumContext, reduce_tiberium};
 use crate::sim::world::Simulation;
 use serde_json::{Value, json};
@@ -290,8 +290,17 @@ pub(crate) fn supplied_fixture(row: &Value) -> SuppliedFixture {
         );
     }
     let mut grid = OverlayGrid::new(33, 33);
+    // The shared native fixture's Ground table (0x89EA40, written by
+    // tools/spatial_oracle/unit_source_scatter.py make_source_fixture) gives
+    // Clear 1.0 for all nine SpeedTypes; the new Overlay's Mark admission
+    // (0x004834A0, called at 0x005FD00C, or 0x005FD04F for TIB01) reads its
+    // Track entry.
     let mut terrain = crate::map::resolved_terrain::test_grid(33, 33, |x, y| {
-        crate::map::resolved_terrain::test_loader_clear_cell(x, y)
+        crate::map::resolved_terrain::ResolvedTerrainCell {
+            speed_costs: crate::map::resolved_terrain::TEST_OPEN_SPEED_COSTS,
+            base_speed_costs: crate::map::resolved_terrain::TEST_OPEN_SPEED_COSTS,
+            ..crate::map::resolved_terrain::test_loader_clear_cell(x, y)
+        }
     });
     let natural = matches!(
         input["entry"].as_str().unwrap(),
@@ -517,8 +526,9 @@ fn compare_case(row: &Value) {
     let cell = at(&input["target"]);
     let frame = input["frame"].as_i64().unwrap() as u32;
     let view = Some(NativeCellObjectView::new(&occupancy, &trees));
+    let raw = RawCellOccupationGrid::new();
     let objects =
-        TiberiumPlacementObjectContext::new(&entities, &occupancy, &rules, &interner, &trees);
+        TiberiumPlacementObjectContext::new(&entities, &occupancy, &raw, &rules, &interner, &trees);
     let frames = input["frames"].as_array().map_or_else(
         || vec![frame],
         |frames| {
@@ -932,6 +942,7 @@ fn compare_authored_natural_phases(
     let objects = TiberiumPlacementObjectContext::new(
         sim.entities(),
         sim.occupancy(),
+        &sim.substrate.raw_cell_occupation,
         rules,
         &sim.interner,
         &sim.production.terrain_object_cells,
@@ -1232,6 +1243,7 @@ fn retail_authored_first_ore_frame_publishes_cells_and_retires_transient_overlay
     let objects = TiberiumPlacementObjectContext::new(
         scene.sim().entities(),
         scene.sim().occupancy(),
+        &scene.sim().substrate.raw_cell_occupation,
         rules,
         &scene.sim().interner,
         &scene.sim().production.terrain_object_cells,
