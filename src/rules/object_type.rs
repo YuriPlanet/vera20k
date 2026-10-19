@@ -1889,19 +1889,9 @@ pub struct ObjectType {
     /// `NumberImpassableRows=` despite the native name.
     pub number_impassable_rows: i32,
 
-    // -- Point light source fields (from rules.ini, primarily buildings) --
-    /// Light emission range in leptons (LightVisibility= in rules.ini). Default 5000.
-    /// 256 leptons = 1 cell. Used by lamp posts (GALITE=5000) and other light-emitting buildings.
-    pub light_visibility: i32,
-    /// Light emission brightness (LightIntensity= in rules.ini). Default 0.0.
-    /// Negative values darken the area. Typical range: 0.0–1.0.
-    pub light_intensity: f32,
-    /// Red channel tint for emitted light (LightRedTint= in rules.ini). Default 1.0.
-    pub light_red_tint: f32,
-    /// Green channel tint for emitted light (LightGreenTint= in rules.ini). Default 1.0.
-    pub light_green_tint: f32,
-    /// Blue channel tint for emitted light (LightBlueTint= in rules.ini). Default 1.0.
-    pub light_blue_tint: f32,
+    /// Immutable projection of the native BuildingType light-field reader.
+    /// The process registry owns retained integer defaults across Rules passes.
+    building_light: crate::rules::building_light::BuildingLightRules,
     /// `HasSpotlight=` — owns a map-presence-bound BuildingLight child.
     pub has_spotlight: bool,
 
@@ -2083,6 +2073,17 @@ impl ObjectType {
     /// Type+C95 also selects Fly's flat shadow-matrix arm (4CFB4B).
     pub const fn is_dropship(&self) -> bool {
         self.is_dropship
+    }
+
+    pub const fn building_light(&self) -> crate::rules::building_light::BuildingLightRules {
+        self.building_light
+    }
+
+    pub(crate) fn project_building_light(
+        &mut self,
+        light: crate::rules::building_light::BuildingLightRules,
+    ) {
+        self.building_light = light;
     }
 
     pub(crate) const fn carries_crate(&self) -> bool {
@@ -3245,14 +3246,9 @@ impl ObjectType {
             naval: section.read_bool("Naval", false),
             number_impassable_rows: section.read_int("NumberImpassableRows", -1),
 
-            // Point light source fields
-            light_visibility: section.read_int("LightVisibility", 5000),
-            // ReadDouble (`0x00460CD3..0x00460DAE`). Native stores
-            // `ftol(value * 1000 + 0.1)` milliunits; VERA keeps the read value.
-            light_intensity: section.read_double("LightIntensity", 0.0) as f32,
-            light_red_tint: section.read_double("LightRedTint", 1.0) as f32,
-            light_green_tint: section.read_double("LightGreenTint", 1.0) as f32,
-            light_blue_tint: section.read_double("LightBlueTint", 1.0) as f32,
+            // Rules' ordered processor publishes the retained reader result.
+            // Merged text cannot reproduce missing-key /1000 truncation.
+            building_light: Default::default(),
             has_spotlight: section.read_bool("HasSpotlight", false),
 
             // TechnoType particle effects. The Type references start null
@@ -4067,34 +4063,29 @@ mod tests {
 
     #[test]
     fn test_light_visibility_defaults_to_5000_without_intensity() {
-        let ini: IniFile = IniFile::from_str("[GALITE]\nFixtureOnly=1\n");
-        let section: &IniSection = ini.section("GALITE").unwrap();
-        let obj: ObjectType =
-            ObjectType::from_ini_section("GALITE", section, ObjectCategory::Building);
-
-        assert_eq!(obj.light_visibility, 5000);
-        assert_eq!(obj.light_intensity, 0.0);
+        let ini = IniFile::from_str("[BuildingTypes]\n0=GALITE\n[GALITE]\nFixtureOnly=1\n");
+        let rules = crate::rules::ruleset::RuleSet::from_ini(&ini).unwrap();
+        let light = rules.object("GALITE").unwrap().building_light();
+        assert_eq!(light.visibility_leptons(), 5000);
+        assert_eq!(light.intensity_units(), 0);
+        assert_eq!(light.tint_units(), [1_000_000; 3]);
     }
 
     #[test]
     fn test_light_fields_use_light_float_parser() {
         let ini: IniFile = IniFile::from_str(
-            "[GALITE]\n\
+            "[BuildingTypes]\n0=GALITE\n[GALITE]\n\
              LightVisibility=4096\n\
              LightIntensity=0.75\n\
              LightRedTint=-0.25\n\
              LightGreenTint=0,01\n\
              LightBlueTint=1.5\n",
         );
-        let section: &IniSection = ini.section("GALITE").unwrap();
-        let obj: ObjectType =
-            ObjectType::from_ini_section("GALITE", section, ObjectCategory::Building);
-
-        assert_eq!(obj.light_visibility, 4096);
-        assert!((obj.light_intensity - 0.75).abs() < 0.001);
-        assert!((obj.light_red_tint + 0.25).abs() < 0.001);
-        assert_eq!(obj.light_green_tint, 0.0);
-        assert!((obj.light_blue_tint - 1.5).abs() < 0.001);
+        let rules = crate::rules::ruleset::RuleSet::from_ini(&ini).unwrap();
+        let light = rules.object("GALITE").unwrap().building_light();
+        assert_eq!(light.visibility_leptons(), 4096);
+        assert_eq!(light.intensity_units(), 750);
+        assert_eq!(light.tint_units(), [-249, 0, 1500]);
     }
 
     #[test]

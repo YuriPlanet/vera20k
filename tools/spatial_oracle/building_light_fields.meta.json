@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original BuildingType radius-light constructor stores, all five reached read/store blocks and complete missing-section reader rejection",
+  "assumptions": [
+    "Constructor literal region45DE12..45DE39 executes with supplied Type storage and the constructor established EBX0; whole Type construction, allocation and numeric identity are excluded.",
+    "Reached sections execute five original contiguous read/store regions in order using existing Fixture single-key cached INI lookup transport; no whole BuildingType reader or native physical map/rules loader is claimed for these admitted sections.",
+    "Native ReadInt5276D0 and ReadDouble5283D0, signed default division, original floating scanner and Math::ftol execute. FPCW0E7F is supplied. Authored empty/whitespace cache entries are omitted as declared inputs, separately checked through the production Rust parser.",
+    "Missing-section control executes whole45FE50, Techno712170, Object5F92D0 and Abstract410A60 rejection with an empty INI cache and supplied TEST identity. It establishes retention independently of the selected scalar cuts.",
+    "stock_green and stock_snow_day lexical values match the installed RULESMD INGRNLMP and SNODAYLAMP fields; the latter has0.005 intensity, rather than the other selected lamps0.01. The sound-only controls use the map key shape. Retail-layer integration is checked separately by the Rust production reader. No source intensity/tint arithmetic is replaced by host results.",
+    "LightSource allocation/activation, distance sampling, palette conversion, rendering, complete Scenario startup and whole-map parity are excluded. No gameplay RNG, timer or detach body is passed by these selected reads."
+  ],
+  "substitutions": [
+    "Existing cached INI section/entry storage and native CRC lookup transport only; no reader, default, quantization or stored-field result is substituted."
+  ],
+  "entry_points": {
+    "constructor": "0x0045DE12",
+    "read_begin": "0x00460C8C",
+    "read_end": "0x00460DCA",
+    "building_reader": "0x0045FE50",
+    "has_section": "0x00526810",
+    "read_int": "0x005276D0",
+    "read_double": "0x005283D0",
+    "ftol": "0x007C5F00"
+  },
+  "replay_command": "python -m tools.spatial_oracle.building_body_rules --lights",
+  "payload_sha256": "abd4cfec2720086d7c9818321535ce1d1ab2223a6739054c4dd7457c8e49bf44"
+}

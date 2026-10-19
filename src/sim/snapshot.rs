@@ -1190,7 +1190,10 @@ use crate::util::save_codec;
 // The positional session/House payload changed.
 // 443 -> 444: retained fixed-ART TechnoType ShadowIndex in the process
 // registry and its runtime ObjectType projection.
-const SNAPSHOT_VERSION: u32 = 444;
+// 444 -> 445: processed BuildingTypes retain the native signed integer light
+// fields across per-layer reads. Their positional rules-state payload replaces
+// the merged-INI float light projection, so v444 cannot use this schema.
+const SNAPSHOT_VERSION: u32 = 445;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -4924,7 +4927,8 @@ mod tests {
         // 442 -> 443: exact session mode, multiplayer launch/observer state,
         // CompEasyBonus and the House Flag_To_Die latch.
         // 443 -> 444: retained TechnoType ShadowIndex.
-        assert_eq!(super::SNAPSHOT_VERSION, 444);
+        // 444 -> 445: retained per-pass BuildingType light integers.
+        assert_eq!(super::SNAPSHOT_VERSION, 445);
     }
 
     #[test]

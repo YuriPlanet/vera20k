@@ -50,8 +50,8 @@ fn stock_lamp_loaded_by_scenario_changes_actual_terrain_pixels() {
     );
     let rules = &scenario.runtime.resources.rules;
     let stock = rules.object("GALITE").expect("stock GALITE rules");
-    assert_eq!(stock.light_visibility, 5000);
-    assert!((stock.light_intensity - 0.2).abs() < 0.00001);
+    assert_eq!(stock.building_light().visibility_leptons(), 5000);
+    assert_eq!(stock.building_light().intensity_units(), 200);
     // Headless construction retains the actual resolved world but omits the
     // app-only immutable template. Snapshot that same terrain for this view.
     let terrain_snapshot = scenario.sim().resolved_terrain.as_ref().unwrap().clone();

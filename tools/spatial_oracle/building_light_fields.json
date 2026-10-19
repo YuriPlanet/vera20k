@@ -1,0 +1,352 @@
+{
+  "constructor": [
+    5000,
+    0,
+    1000000,
+    1000000,
+    1000000
+  ],
+  "rows": [
+    {
+      "after": [
+        4000,
+        10,
+        10,
+        1500,
+        10
+      ],
+      "authored_keys": {
+        "LightBlueTint": ".01",
+        "LightGreenTint": "1.5",
+        "LightIntensity": ".01",
+        "LightRedTint": ".01",
+        "LightVisibility": "4000"
+      },
+      "before": [
+        5000,
+        0,
+        1000000,
+        1000000,
+        1000000
+      ],
+      "name": "stock_green",
+      "section_present": true
+    },
+    {
+      "after": [
+        4000,
+        10,
+        10,
+        1500,
+        10
+      ],
+      "authored_keys": {},
+      "before": [
+        4000,
+        10,
+        10,
+        1500,
+        10
+      ],
+      "name": "missing_section_retains_green",
+      "section_present": false
+    },
+    {
+      "after": [
+        4000,
+        0,
+        0,
+        1000,
+        0
+      ],
+      "authored_keys": {
+        "WorkingSound": "_Amb_BirdsTemperate2"
+      },
+      "before": [
+        4000,
+        10,
+        10,
+        1500,
+        10
+      ],
+      "name": "storm_sound_only",
+      "section_present": true
+    },
+    {
+      "after": [
+        2048,
+        750,
+        -249,
+        0,
+        1500
+      ],
+      "authored_keys": {
+        "LightBlueTint": "1.5",
+        "LightGreenTint": "0,01",
+        "LightIntensity": ".75",
+        "LightRedTint": "-.25",
+        "LightVisibility": "2048"
+      },
+      "before": [
+        4000,
+        0,
+        0,
+        1000,
+        0
+      ],
+      "name": "explicit_light_override",
+      "section_present": true
+    },
+    {
+      "after": [
+        2048,
+        0,
+        0,
+        0,
+        1000
+      ],
+      "authored_keys": {
+        "LightBlueTint": "",
+        "LightGreenTint": "",
+        "LightIntensity": "",
+        "LightRedTint": " \t ",
+        "WorkingSound": "keeps_section_present"
+      },
+      "before": [
+        2048,
+        750,
+        -249,
+        0,
+        1500
+      ],
+      "name": "empty_authored_keys_are_omitted",
+      "section_present": true
+    },
+    {
+      "after": [
+        2048,
+        -499,
+        0,
+        0,
+        1000
+      ],
+      "authored_keys": {
+        "LightIntensity": "-.5"
+      },
+      "before": [
+        2048,
+        0,
+        0,
+        0,
+        1000
+      ],
+      "name": "negative_fractional_intensity",
+      "section_present": true
+    },
+    {
+      "after": [
+        2048,
+        0,
+        0,
+        0,
+        1000
+      ],
+      "authored_keys": {
+        "WorkingSound": "ignored"
+      },
+      "before": [
+        2048,
+        -499,
+        0,
+        0,
+        1000
+      ],
+      "name": "missing_negative_fraction_truncates_to_zero",
+      "section_present": true
+    },
+    {
+      "after": [
+        -25,
+        125,
+        2500,
+        500,
+        -499
+      ],
+      "authored_keys": {
+        "LightBlueTint": "-50%",
+        "LightGreenTint": "50%",
+        "LightIntensity": "12.5%",
+        "LightRedTint": "250%",
+        "LightVisibility": "-25"
+      },
+      "before": [
+        2048,
+        0,
+        0,
+        0,
+        1000
+      ],
+      "name": "percent_and_negative_visibility",
+      "section_present": true
+    },
+    {
+      "after": [
+        -25,
+        0,
+        2000,
+        0,
+        0
+      ],
+      "authored_keys": {
+        "lightbluetint": "999",
+        "lightgreentint": "999",
+        "lightintensity": "999",
+        "lightredtint": "999",
+        "lightvisibility": "999"
+      },
+      "before": [
+        -25,
+        125,
+        2500,
+        500,
+        -499
+      ],
+      "name": "wrong_key_case",
+      "section_present": true
+    },
+    {
+      "after": [
+        -25,
+        -2147483546,
+        2000,
+        0,
+        0
+      ],
+      "authored_keys": {
+        "LightIntensity": "2147483.75"
+      },
+      "before": [
+        -25,
+        0,
+        2000,
+        0,
+        0
+      ],
+      "name": "signed_intensity_low_dword",
+      "section_present": true
+    },
+    {
+      "after": [
+        -25,
+        1,
+        2000,
+        0,
+        0
+      ],
+      "authored_keys": {
+        "LightIntensity": ".000989"
+      },
+      "before": [
+        -25,
+        -2147483546,
+        2000,
+        0,
+        0
+      ],
+      "name": "small_biased_fraction",
+      "section_present": true
+    },
+    {
+      "after": [
+        0,
+        0,
+        2000,
+        0,
+        0
+      ],
+      "authored_keys": {
+        "LightIntensity": "0",
+        "LightVisibility": "0"
+      },
+      "before": [
+        -25,
+        1,
+        2000,
+        0,
+        0
+      ],
+      "name": "explicit_zero",
+      "section_present": true
+    },
+    {
+      "after": [
+        5000,
+        200,
+        1000000,
+        1000000,
+        1000000
+      ],
+      "authored_keys": {
+        "LightIntensity": ".2"
+      },
+      "before": [
+        5000,
+        0,
+        1000000,
+        1000000,
+        1000000
+      ],
+      "name": "constructor_tints_with_explicit_intensity",
+      "reset_constructor": true,
+      "section_present": true
+    },
+    {
+      "after": [
+        3000,
+        5,
+        100,
+        100,
+        0
+      ],
+      "authored_keys": {
+        "LightBlueTint": "0.00",
+        "LightGreenTint": "0.1",
+        "LightIntensity": "0.005",
+        "LightRedTint": "0.1",
+        "LightVisibility": "3000"
+      },
+      "before": [
+        5000,
+        0,
+        1000000,
+        1000000,
+        1000000
+      ],
+      "name": "stock_snow_day",
+      "reset_constructor": true,
+      "section_present": true
+    },
+    {
+      "after": [
+        3000,
+        0,
+        0,
+        0,
+        0
+      ],
+      "authored_keys": {
+        "WorkingSound": "_Amb_BirdsHarbor"
+      },
+      "before": [
+        3000,
+        5,
+        100,
+        100,
+        0
+      ],
+      "name": "snow_day_sound_only",
+      "section_present": true
+    }
+  ],
+  "schema_version": 1
+}

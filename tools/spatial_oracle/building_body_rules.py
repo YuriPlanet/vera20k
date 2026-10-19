@@ -7,6 +7,7 @@ pointer/header; it does not claim filename resolution, theater selection or IO.
 """
 import hashlib
 import struct
+import sys
 from pathlib import Path
 
 from unicorn import Uc, UC_ARCH_X86, UC_MODE_32
@@ -104,6 +105,125 @@ class Fixture:
         run_checked(u,0x45F2AA,0x45F310)
         return list(struct.unpack('<iii',u.mem_read(TYPE+0xF04,12)))
 
+    def light_constructor(self):
+        """Original literal stores; the wider Type constructor is excluded."""
+        u = self.u
+        u.reg_write(UC_X86_REG_ESP, SP)
+        u.reg_write(UC_X86_REG_ESI, TYPE)
+        u.reg_write(UC_X86_REG_EBX, 0)
+        run_checked(u, 0x45DE12, 0x45DE39)
+        return list(struct.unpack('<5i', u.mem_read(TYPE + 0xE30, 20)))
+
+    def light_pass(self, values, *, admitted=True):
+        """Real readers on cached lexical keys; original per-field defaults.
+
+        Each of the five contiguous read/store regions uses the existing
+        single-key cache transport. No parsed value or expected integer is
+        supplied. A missing section instead executes the complete45FE50
+        rejection path, including AbstractType's actual HasSection.
+        """
+        u = self.u
+        before = list(struct.unpack('<5i', u.mem_read(TYPE + 0xE30, 20)))
+        if not admitted:
+            u.mem_write(TYPE + 0x24, b'TEST\0')
+            u.mem_write(INI, bytes(0x40))
+            u.mem_write(SP, dwords(RET_MAGIC, INI))
+            u.reg_write(UC_X86_REG_ESP, SP)
+            u.reg_write(UC_X86_REG_ECX, TYPE)
+            run_checked(u, 0x45FE50, RET_MAGIC, required_addresses=(0x410A60, 0x526810))
+            assert not (u.reg_read(UC_X86_REG_EAX) & 255)
+        else:
+            for key, key_address, begin, end in LIGHT_READS:
+                # The parser drops empty/whitespace authored values. Its
+                # physical input handling is checked by the Rust regression.
+                token = values.get(key)
+                if token is not None and not token.strip():
+                    token = None
+                self.ini(key_address, token)
+                for register, value in (
+                    (UC_X86_REG_ESP, SP), (UC_X86_REG_EBP, TYPE),
+                    (UC_X86_REG_ESI, INI), (UC_X86_REG_EBX, TYPE + 0x1F8),
+                ):
+                    u.reg_write(register, value)
+                run_checked(u, begin, end,
+                    required_addresses=(0x5276D0,) if key == 'LightVisibility'
+                    else (0x5283D0, 0x7C5F00))
+                assert u.reg_read(UC_X86_REG_ESP) == SP
+        return dict(authored_keys=values, section_present=admitted, before=before,
+                    after=list(struct.unpack('<5i', u.mem_read(TYPE + 0xE30, 20))))
+
+
+LIGHT_READS = (
+    ('LightVisibility', 0x81A92C, 0x460C8C, 0x460CA6),
+    ('LightIntensity', 0x81A91C, 0x460CA6, 0x460CEF),
+    ('LightRedTint', 0x81A90C, 0x460CEF, 0x460D38),
+    ('LightGreenTint', 0x81A8FC, 0x460D38, 0x460D81),
+    ('LightBlueTint', 0x81A8EC, 0x460D81, 0x460DCA),
+)
+
+
+def generate_lights():
+    f = Fixture()
+    u = f.u
+    # Native startup installs the floating scanner before ReadDouble.
+    u.mem_write(SP, dwords(RET_MAGIC))
+    u.reg_write(UC_X86_REG_ESP, SP)
+    run_checked(u, 0x7C8F5E, RET_MAGIC)
+    constructor = f.light_constructor()
+    rows = []
+    cases = [
+        ('stock_green', dict(LightVisibility='4000', LightIntensity='.01',
+                            LightRedTint='.01', LightGreenTint='1.5', LightBlueTint='.01'), True),
+        ('missing_section_retains_green', {}, False),
+        ('storm_sound_only', dict(WorkingSound='_Amb_BirdsTemperate2'), True),
+        ('explicit_light_override', dict(LightVisibility='2048', LightIntensity='.75',
+                                        LightRedTint='-.25', LightGreenTint='0,01', LightBlueTint='1.5'), True),
+        ('empty_authored_keys_are_omitted', dict(WorkingSound='keeps_section_present', LightIntensity='', LightRedTint=' \t ',
+                                              LightGreenTint='', LightBlueTint=''), True),
+        ('negative_fractional_intensity', dict(LightIntensity='-.5'), True),
+        ('missing_negative_fraction_truncates_to_zero', dict(WorkingSound='ignored'), True),
+        ('percent_and_negative_visibility', dict(LightVisibility='-25', LightIntensity='12.5%',
+                                               LightRedTint='250%', LightGreenTint='50%', LightBlueTint='-50%'), True),
+        ('wrong_key_case', dict(lightvisibility='999', lightintensity='999',
+                               lightredtint='999', lightgreentint='999', lightbluetint='999'), True),
+        ('signed_intensity_low_dword', dict(LightIntensity='2147483.75'), True),
+        ('small_biased_fraction', dict(LightIntensity='.000989'), True),
+        ('explicit_zero', dict(LightIntensity='0', LightVisibility='0'), True),
+    ]
+    for name, values, admitted in cases:
+        rows.append(dict(name=name, **f.light_pass(values, admitted=admitted)))
+    # The literal constructor tint must also survive an admitted section
+    # whose nonzero intensity is explicit but all three tint keys are absent.
+    assert f.light_constructor() == constructor
+    rows.append(dict(name='constructor_tints_with_explicit_intensity',
+                     reset_constructor=True, **f.light_pass(dict(LightIntensity='.2'))))
+    assert f.light_constructor() == constructor
+    rows.append(dict(name='stock_snow_day', reset_constructor=True,
+                     **f.light_pass(dict(LightVisibility='3000', LightIntensity='0.005',
+                                         LightRedTint='0.1', LightGreenTint='0.1', LightBlueTint='0.00'))))
+    rows.append(dict(name='snow_day_sound_only',
+                     **f.light_pass(dict(WorkingSound='_Amb_BirdsHarbor'))))
+    return dict(schema_version=1, constructor=constructor, rows=rows)
+
+
+def light_metadata():
+    return provenance(
+        scope='Original BuildingType radius-light constructor stores, all five reached read/store blocks and complete missing-section reader rejection',
+        assumptions=[
+            'Constructor literal region45DE12..45DE39 executes with supplied Type storage and the constructor established EBX0; whole Type construction, allocation and numeric identity are excluded.',
+            'Reached sections execute five original contiguous read/store regions in order using existing Fixture single-key cached INI lookup transport; no whole BuildingType reader or native physical map/rules loader is claimed for these admitted sections.',
+            'Native ReadInt5276D0 and ReadDouble5283D0, signed default division, original floating scanner and Math::ftol execute. FPCW0E7F is supplied. Authored empty/whitespace cache entries are omitted as declared inputs, separately checked through the production Rust parser.',
+            'Missing-section control executes whole45FE50, Techno712170, Object5F92D0 and Abstract410A60 rejection with an empty INI cache and supplied TEST identity. It establishes retention independently of the selected scalar cuts.',
+            'stock_green and stock_snow_day lexical values match the installed RULESMD INGRNLMP and SNODAYLAMP fields; the latter has0.005 intensity, rather than the other selected lamps0.01. The sound-only controls use the map key shape. Retail-layer integration is checked separately by the Rust production reader. No source intensity/tint arithmetic is replaced by host results.',
+            'LightSource allocation/activation, distance sampling, palette conversion, rendering, complete Scenario startup and whole-map parity are excluded. No gameplay RNG, timer or detach body is passed by these selected reads.',
+        ],
+        substitutions=[
+            'Existing cached INI section/entry storage and native CRC lookup transport only; no reader, default, quantization or stored-field result is substituted.',
+        ],
+        entry_points=dict(constructor=0x45DE12, read_begin=0x460C8C, read_end=0x460DCA,
+                          building_reader=0x45FE50, has_section=0x526810,
+                          read_int=0x5276D0, read_double=0x5283D0, ftol=0x7C5F00))
+
 
 def generate():
     f=Fixture()
@@ -148,4 +268,9 @@ def metadata():
 
 
 if __name__=='__main__':
-    finish_vectors(generate,Path(__file__).with_suffix('.json'),provenance=metadata)
+    if '--lights' in sys.argv:
+        finish_vectors(generate_lights, Path(__file__).with_name('building_light_fields.json'),
+                       provenance=light_metadata,
+                       argv=[arg for arg in sys.argv[1:] if arg != '--lights'])
+    else:
+        finish_vectors(generate,Path(__file__).with_suffix('.json'),provenance=metadata)

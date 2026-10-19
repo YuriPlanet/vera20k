@@ -607,6 +607,20 @@ impl ProcessedRulesLayers {
             })
     }
 
+    /// BuildingType+E30..E40 after each admitted Rules section, including
+    /// missing-key integer-default conversions460C8C..460DCA.
+    pub(crate) fn building_light_states(
+        &self,
+    ) -> impl Iterator<Item = (&str, crate::rules::building_light::BuildingLightRules)> {
+        self.native_type_construction_trace
+            .registry_state()
+            .families
+            .get(&RulesTypeFamily::Building)
+            .into_iter()
+            .flatten()
+            .map(|member| (member.native_stored_id.as_str(), member.building_light))
+    }
+
     /// BuildingType+EBC after each reached Rules body. Fixed ART never reads it.
     pub(crate) fn building_target_coord_offsets(&self) -> impl Iterator<Item = (&str, [i32; 3])> {
         self.native_type_construction_trace
@@ -2037,6 +2051,7 @@ struct ProcessedType {
     building_target_coord_offset: [i32; 3],
     /// BuildingType ctor45DFDA=false; ReadBool45FEE5..45FF0D, current default.
     building_has_spotlight: bool,
+    building_light: crate::rules::building_light::BuildingLightRules,
     secret_lab: crate::rules::secret_lab::SecretLabRules,
     /// Unit ctor747167..7471B2 and reached fixed-ART reader7477C1..747AAE.
     unit_shp: crate::rules::shp_vehicle_sequence::UnitShpReadState,
@@ -2418,6 +2433,7 @@ impl ProcessedType {
             building_foundation: 0,
             building_target_coord_offset: [0; 3],
             building_has_spotlight: false,
+            building_light: Default::default(),
             secret_lab: Default::default(),
             unit_shp: Default::default(),
             unit_speed_type: SpeedType::Invalid,
@@ -3609,6 +3625,7 @@ impl RulesPassProcessor {
                         // current value as default, no clamp or conversion.
                         member.building_has_spotlight =
                             raw.read_bool("HasSpotlight", member.building_has_spotlight);
+                        member.building_light.read_pass(&raw);
                         member.building_target_coord_offset = raw
                             .read_coord3("TargetCoordOffset", member.building_target_coord_offset);
                         member.building_foundation =

@@ -125,13 +125,9 @@ impl Simulation {
         let Some(source) = point_light_from_object(
             entity.position.rx(),
             entity.position.ry(),
-            object.light_visibility,
-            object.light_intensity,
-            [
-                object.light_red_tint,
-                object.light_green_tint,
-                object.light_blue_tint,
-            ],
+            object.building_light().visibility_leptons(),
+            object.building_light().intensity_units(),
+            object.building_light().tint_units(),
         ) else {
             return;
         };
