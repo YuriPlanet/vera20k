@@ -78,7 +78,8 @@ fn supplied_world(rules: &RuleSet, case: &Value) -> Simulation {
         local_width: 20,
         local_height: 20,
     });
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     sim.session.binary_frame = 173;
     for (id, owner, x) in [
         (1, "Americans", 10),

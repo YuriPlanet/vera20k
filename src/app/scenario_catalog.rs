@@ -10,7 +10,41 @@
 //! two lists cannot drift.
 
 use crate::app::loading::init::MapMenuEntry;
+use crate::app::match_runtime::session::NetworkMapMetadata;
+use crate::assets::asset_manager::AssetManager;
 use crate::map::skirmish_scenarios::SkirmishScenarioRecord;
+use crate::map::source::{LoadedMapSource, load_map_ini_by_name_or_path_with_assets};
+use crate::rules::ini_parser::IniFile;
+use std::path::Path;
+
+/// Qualified local lookup result, borrowed from the one scenario catalog.
+/// No record is fabricated for an unavailable or transferred file.
+pub(crate) struct VerifiedNetworkMap<'a> {
+    pub record: &'a SkirmishScenarioRecord,
+    #[cfg_attr(
+        not(test),
+        expect(
+            dead_code,
+            reason = "tests assert which physical source verification read"
+        )
+    )]
+    pub source: LoadedMapSource,
+}
+
+fn network_map_digest(ini: &IniFile) -> String {
+    // ReadString69536B/5E5339: original literals81BFE0/831898/83189C.
+    ini.section_or_empty("Digest")
+        .read_string("1", "No digest here mate. Nope.", 0x20)
+}
+
+fn physical_map_length(source: &LoadedMapSource) -> i32 {
+    match source {
+        LoadedMapSource::Loose { payload_len, .. } | LoadedMapSource::Mix { payload_len, .. } => {
+            *payload_len as u32 as i32
+        }
+        _ => unreachable!("metadata reader returns only physical source bytes"),
+    }
+}
 
 pub(crate) struct ScenarioCatalog {
     records: Vec<SkirmishScenarioRecord>,
@@ -34,6 +68,68 @@ impl ScenarioCatalog {
 
     pub(crate) fn shell_maps(&self) -> &[MapMenuEntry] {
         &self.shell_maps
+    }
+
+    /// Host options describe the selected local record and its physical file.
+    /// This never adds a chooser record or treats a filename as proof of bytes.
+    pub(crate) fn network_map_metadata(
+        &self,
+        file: &str,
+        root: &Path,
+        assets: &AssetManager,
+    ) -> anyhow::Result<NetworkMapMetadata> {
+        let record = self
+            .records
+            .iter()
+            .find(|record| record.file_name.eq_ignore_ascii_case(file))
+            .ok_or_else(|| {
+                anyhow::anyhow!("selected network map has no local catalog record: {file}")
+            })?;
+        let loaded = load_map_ini_by_name_or_path_with_assets(root, &record.file_name, assets)?;
+        Ok(NetworkMapMetadata {
+            display_name: record.display_name.clone(),
+            player_capacity: record.player_capacity,
+            official: record.official,
+            byte_length: physical_map_length(&loaded.source),
+            digest: network_map_digest(&loaded.ini),
+        })
+    }
+
+    ///6951F0 and ParsePacket5E51F8: registered name, existence, exact physical
+    /// length, then case-sensitive [Digest]1 text. No computed checksum is used.
+    /// CD prompting is a service boundary; unavailable physical sources returnNone.
+    pub(crate) fn verify_network_map(
+        &self,
+        file: &str,
+        metadata: &NetworkMapMetadata,
+        root: &Path,
+        assets: &AssetManager,
+    ) -> Option<VerifiedNetworkMap<'_>> {
+        if file.eq_ignore_ascii_case("RandMap.Sed") {
+            return None;
+        }
+        for record in self
+            .records
+            .iter()
+            .filter(|record| record.file_name.eq_ignore_ascii_case(file))
+        {
+            let Ok(loaded) =
+                load_map_ini_by_name_or_path_with_assets(root, &record.file_name, assets)
+            else {
+                continue;
+            };
+            if physical_map_length(&loaded.source) != metadata.byte_length {
+                continue;
+            }
+            if !metadata.digest.is_empty() && metadata.digest != network_map_digest(&loaded.ini) {
+                continue;
+            }
+            return Some(VerifiedNetworkMap {
+                record,
+                source: loaded.source,
+            });
+        }
+        None
     }
 
     /// Mutable access to the records. The guard re-projects the shell map
@@ -72,5 +168,76 @@ impl std::ops::DerefMut for RecordsMut<'_> {
 impl Drop for RecordsMut<'_> {
     fn drop(&mut self) {
         self.catalog.reproject();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::map::skirmish_scenarios::SkirmishScenarioSource;
+    use crate::map::source::test_support::TestDirectory;
+
+    #[test]
+    fn network_availability_matches_registered_name_size_and_native_digest_reader() {
+        let root = TestDirectory::new("network-map-metadata");
+        let bytes = b"[Basic]\nName=Local title\n[Digest]\n1=CaseSensitive\n";
+        root.write("CONTROLLED.MAP", bytes);
+        let assets = AssetManager::from_loose_root_for_test(root.path());
+        let ini = IniFile::from_bytes(bytes).unwrap();
+        let record = SkirmishScenarioRecord::concrete_from_ini(
+            0,
+            SkirmishScenarioSource::Synthetic,
+            "CONTROLLED.MAP",
+            &ini,
+        );
+        let catalog = ScenarioCatalog::from_records(vec![record]);
+        let metadata = catalog
+            .network_map_metadata("controlled.map", root.path(), &assets)
+            .unwrap();
+        assert_eq!(metadata.display_name, "Local title");
+        assert_eq!(metadata.byte_length, bytes.len() as i32);
+        let found = catalog
+            .verify_network_map("controlled.map", &metadata, root.path(), &assets)
+            .unwrap();
+        assert_eq!(found.record.file_name, "CONTROLLED.MAP");
+        assert!(matches!(found.source, LoadedMapSource::Loose { .. }));
+        let mut wrong = metadata.clone();
+        wrong.byte_length += 1;
+        assert!(
+            catalog
+                .verify_network_map("CONTROLLED.MAP", &wrong, root.path(), &assets)
+                .is_none()
+        );
+        wrong = metadata.clone();
+        wrong.digest.make_ascii_lowercase();
+        assert!(
+            catalog
+                .verify_network_map("CONTROLLED.MAP", &wrong, root.path(), &assets)
+                .is_none()
+        );
+        wrong.digest.clear();
+        assert!(
+            catalog
+                .verify_network_map("CONTROLLED.MAP", &wrong, root.path(), &assets)
+                .is_some()
+        );
+        let empty = ScenarioCatalog::from_records(Vec::new());
+        assert!(
+            empty
+                .verify_network_map("CONTROLLED.MAP", &metadata, root.path(), &assets)
+                .is_none(),
+            "a loose file alone is not6951F0 catalog admission"
+        );
+        assert_eq!(
+            network_map_digest(&IniFile::empty()),
+            "No digest here mate. Nope."
+        );
+        assert_eq!(
+            network_map_digest(&IniFile::from_str(
+                "[Digest]\n1=12345678901234567890123456789012345\n"
+            ))
+            .len(),
+            31
+        );
     }
 }

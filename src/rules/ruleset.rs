@@ -54,6 +54,10 @@ mod building_damage_sound_tests;
 #[path = "command_bar_sound_rules_tests.rs"]
 mod command_bar_sound_rules_tests;
 
+#[cfg(test)]
+#[path = "multiplayer_rules_tests.rs"]
+mod multiplayer_rules_tests;
+
 /// Country-level fields needed by gameplay systems.
 #[derive(Debug, Clone)]
 pub struct CountryRules {
@@ -61,6 +65,10 @@ pub struct CountryRules {
     /// ReadColor474A90 at51193D with the current index as default. The
     /// Process owner supplies the typed value from each actual catalog pass.
     color_scheme: i32,
+    /// HouseType+1A5, ctor511559=false. ReadINI511A5B..511A84 reads
+    /// exact Multiplay with retained ReadBool5295F0, after BuildTime and
+    /// before MultiplayPassive. Setup4E3A00 gates the country catalog on it.
+    multiplay: bool,
     /// `MultiplayPassive=` allows non-owner garrison entry in `BuildingClass::CanBeOccupiedBy`.
     pub multiplay_passive: bool,
     /// `WallOwner=` allows this house type's buildings to claim nearby map walls.
@@ -158,6 +166,7 @@ impl Default for CountryRules {
         // multiplier is `INCOME_PPM_SCALE`, not 0.
         Self {
             color_scheme: 0,
+            multiplay: false,
             multiplay_passive: false,
             wall_owner: true,
             income_ppm: INCOME_PPM_SCALE,
@@ -188,6 +197,7 @@ impl CountryRules {
             // Filled from the typed Process receipt, never by resolving an
             // earlier projected string against the final Colors registry.
             color_scheme: 0,
+            multiplay: section.read_bool("Multiplay", Self::default().multiplay),
             multiplay_passive: section.read_bool("MultiplayPassive", false),
             wall_owner: section.read_bool("WallOwner", true),
             // IncomeMult is a raw multiplier (NOT a percent). Round in f64 to avoid f32
@@ -660,6 +670,12 @@ pub struct GeneralRules {
     /// `sim::house_diplomacy`). Retail RULESMD says no; the Battle mode's
     /// MPBATTLEMD layers yes over it.
     pub allies_allowed: bool,
+    /// `[AI] CompEasyBonus=`: Rules+17E3 starts true in constructor667727.
+    /// ReadAI673CFD..673D1D uses ReadBool5295F0 with the retained byte,
+    /// after AirstripLimit and before Paranoid, independently of General.
+    /// CreateHouses688293..6882B9 decrements positive AI difficulty when
+    /// the admitted human vector contains more than one node, observers included.
+    pub comp_easy_bonus: bool,
     /// `[AI] Paranoid=` (`Rules+0x17E0`, ReadBool at `0x00673D23..0x00673D43`
     /// in ReadAI over the constructor's 1, `0x00667715`): a defeated computer
     /// house at `MaxIQLevels` (`0x004FC0FF`), and a human house's MakeAlly
@@ -1320,10 +1336,35 @@ pub struct GeneralRules {
     /// Rules+6AC, ctor665FB0=-1, reader66A7B3..66A7E9. Fixed SOUNDMD
     /// reference; missing/unknown later names retain the previous valid ID.
     incoming_message_sound: Option<String>,
+    /// Rules+6A8, ctor665FAA=-1, AudioVisual66A763..66A7A8. Exact
+    /// GameClosed ReadString128/VocFind7514D0 precedes IncomingMessage;
+    /// empty/unknown later values retain the prior fixed SOUNDMD reference.
+    /// LAN discovery open→closed5E02C6..5E031E plays this before its chat.
+    game_closed_sound: Option<String>,
     /// Rules+6C4, ctor665FD5=-1, reader66A7EF..66A822. Exact
     /// [AudioVisual] MessageCharTyped via ReadString128/VocFindIndex7514D0;
     /// drawn nonsilent TextLabels request it at72A609, pan2000/volume1.
     message_char_typed_sound: Option<String>,
+    /// Rules+6B0, constructor665FB6=-1. AudioVisual66A828..66A86D
+    /// reads exact SystemError through ReadString128/VocFind7514D0,
+    /// retaining the prior fixed-SOUNDMD ID on missing/empty/unknown text.
+    /// LAN join validation5DF410 and timeout5DC506 play it centered at1.0.
+    system_error_sound: Option<String>,
+    /// Rules+6BC: constructor665FC8=-1; AudioVisual66A8ED..66A932 reads
+    /// exact PlayerLeft after GameForming and before PlayerJoined. ReadString
+    /// capacity128/defaultempty plus fixed SOUNDMD VocFind7514D0 retains the
+    /// previous ID on missing/empty/unknown text across reached Rules layers.
+    /// LAN type10 endpoint removal5E10F2..5E1114 plays it only in admitted
+    /// membership states>=2, independent of remaining participant count.
+    player_left_sound: Option<String>,
+    /// Rules+6B8/+6C0, ctor665FC2/665FCE=-1. AudioVisual readers
+    ///66A8B4..66A8E7 (GameForming) and66A938..66A973 (PlayerJoined)
+    /// use ReadString128/VocFind7514D0 with prior-reference retention.
+    /// Native order: OptionsChanged, GameForming, PlayerLeft, PlayerJoined.
+    /// Forming is received discovery5E0280/5E0483, not own New; Joined is
+    /// admitted type3 at5E0743..0770 or host type6 afteraccept7 at5E1B32.
+    game_forming_sound: Option<String>,
+    player_joined_sound: Option<String>,
     /// `[AudioVisual] MessageDelay=` native ReadDouble in6691E0 retains
     /// Rules+14C0. Constructor665650 initializes binary64 .6. Action11
     /// 6DE0EF..6DE100 converts MessageDelay*900 through the native ftol into
@@ -2283,6 +2324,7 @@ impl Default for GeneralRules {
             reveal_by_height: true,
             ally_reveal: true,
             allies_allowed: false,
+            comp_easy_bonus: true,
             paranoid: true,
             tunnel_speed: SimFixed::from_num(6.0_f32),
             missile_rot_var: 0.25,
@@ -2462,6 +2504,11 @@ impl Default for GeneralRules {
             gui_tab_sound: None,
             incoming_message_sound: None,
             message_char_typed_sound: None,
+            system_error_sound: None,
+            player_left_sound: None,
+            player_joined_sound: None,
+            game_forming_sound: None,
+            game_closed_sound: None,
             message_delay_minutes: crate::util::native_x87::NativeF64Bits::from_bits(
                 0x3FE3_3333_3333_3333,
             ),
@@ -2959,6 +3006,27 @@ impl GeneralRules {
         self.message_char_typed_sound.as_deref()
     }
 
+    /// Centered UI rejection cue resolved by the fixed SOUNDMD owner.
+    pub fn system_error_sound(&self) -> Option<&str> {
+        self.system_error_sound.as_deref()
+    }
+
+    pub fn player_left_sound(&self) -> Option<&str> {
+        self.player_left_sound.as_deref()
+    }
+
+    pub fn player_joined_sound(&self) -> Option<&str> {
+        self.player_joined_sound.as_deref()
+    }
+
+    pub fn game_forming_sound(&self) -> Option<&str> {
+        self.game_forming_sound.as_deref()
+    }
+
+    pub fn game_closed_sound(&self) -> Option<&str> {
+        self.game_closed_sound.as_deref()
+    }
+
     pub fn wind_direction(&self) -> i32 {
         self.wind_direction
     }
@@ -3336,6 +3404,7 @@ impl GeneralRules {
             reveal_by_height: general.read_bool("RevealByHeight", true),
             ally_reveal,
             allies_allowed,
+            comp_easy_bonus: defaults.comp_easy_bonus,
             paranoid,
             tunnel_speed: SimFixed::from_num(general.read_double("TunnelSpeed", 6.0) as f32),
             flight_level: general.read_int("FlightLevel", 500),
@@ -3548,6 +3617,11 @@ impl GeneralRules {
             voice_ifv_repair: None,
             incoming_message_sound: None,
             message_char_typed_sound: None,
+            system_error_sound: None,
+            player_left_sound: None,
+            player_joined_sound: None,
+            game_forming_sound: None,
+            game_closed_sound: None,
             message_delay_minutes,
             speak_delay_minutes: audio_visual.read_double("SpeakDelay", 0.0),
             gui_combo_open_sound: audio_visual
@@ -4131,8 +4205,13 @@ impl RuleSet {
 
     pub fn from_processed_rules(processed: &ProcessedRulesLayers) -> Result<Self, RulesError> {
         processed.validate_saved_state()?;
-        let mut rules =
-            Self::from_projected_ini(processed, project_country_side_registry(processed))?;
+        let mut rules = Self::from_projected_ini(
+            processed,
+            project_country_side_registry(
+                processed.country_projection(),
+                processed.side_registry_names(),
+            ),
+        )?;
         let mut native_identity_counts = HashMap::new();
         for (category, id, _) in processed.techno_type_states() {
             *native_identity_counts
@@ -4253,6 +4332,7 @@ impl RuleSet {
             rules.general.third_survivor_divisor,
         ] = processed.survivor_divisors();
         rules.general.maximum_cheer_rate = processed.maximum_cheer_rate();
+        rules.general.comp_easy_bonus = processed.comp_easy_bonus();
         (
             rules.general.infantry_repair_step,
             rules.general.unit_repair_rate,
@@ -4570,14 +4650,29 @@ impl RuleSet {
         self.general.create_aircraft_sound = ini
             .section("AudioVisual")
             .and_then(|section| sounds.read_rules_reference(section, "CreateAircraftSound"));
-        // Original66A7B3..66A822, in native read order. Use the same fixed
+        // Original66A763..66A973, in native read order for these bound fields. Use the same fixed
         // registry and history-aware reader as every other bound Voc ID.
+        self.general.game_closed_sound = ini
+            .section("AudioVisual")
+            .and_then(|section| sounds.read_rules_reference(section, "GameClosed"));
         self.general.incoming_message_sound = ini
             .section("AudioVisual")
             .and_then(|section| sounds.read_rules_reference(section, "IncomingMessage"));
         self.general.message_char_typed_sound = ini
             .section("AudioVisual")
             .and_then(|section| sounds.read_rules_reference(section, "MessageCharTyped"));
+        self.general.system_error_sound = ini
+            .section("AudioVisual")
+            .and_then(|section| sounds.read_rules_reference(section, "SystemError"));
+        self.general.game_forming_sound = ini
+            .section("AudioVisual")
+            .and_then(|section| sounds.read_rules_reference(section, "GameForming"));
+        self.general.player_left_sound = ini
+            .section("AudioVisual")
+            .and_then(|section| sounds.read_rules_reference(section, "PlayerLeft"));
+        self.general.player_joined_sound = ini
+            .section("AudioVisual")
+            .and_then(|section| sounds.read_rules_reference(section, "PlayerJoined"));
         self.general.airstrike_abort_sound = ini
             .section("AudioVisual")
             .and_then(|section| sounds.read_rules_reference(section, "AirstrikeAbortSound"));
@@ -5360,7 +5455,7 @@ impl RuleSet {
     /// The computer's base defense candidates of a House's side
     /// (`HouseTypeClass+0xBC`): Allied for side 0, Soviet for 1, Third for any
     /// other (`0x00507BCA..0x00507BFA`).
-    pub(crate) fn base_defense_types(&self, side_index: u8) -> &[String] {
+    pub(crate) fn base_defense_types(&self, side_index: i32) -> &[String] {
         match side_index {
             0 => &self.allied_base_defense_types,
             1 => &self.soviet_base_defense_types,
@@ -5666,6 +5761,7 @@ impl RuleSet {
         self.general.soviet_survivor_divisor.hash(&mut hasher);
         self.general.third_survivor_divisor.hash(&mut hasher);
         self.general.maximum_cheer_rate.hash(&mut hasher);
+        self.general.comp_easy_bonus.hash(&mut hasher);
         self.general.patrol_scan_minutes.hash(&mut hasher);
         // Earlier Process passes can retain these despite identical current text.
         if self.general.drop_zone_anim.is_some() || self.general.drop_zone_radius != 1024 {
@@ -6321,6 +6417,28 @@ impl RuleSet {
         ]
     }
 
+    /// HouseType Multiplay eligibility from the same retained Country body
+    /// as gameplay.4E3A00 also requires a supported index and nonempty
+    /// localized UIName; the app catalog owns that presentation check.
+    pub(crate) fn refresh_country_side_projection<'a>(
+        &mut self,
+        countries: impl Iterator<Item = (&'a str, &'a IniSection, i32, i32)>,
+        sides: impl Iterator<Item = &'a str>,
+    ) {
+        let projection = project_country_side_registry(countries, sides);
+        self.countries = projection.rules;
+        self.country_ids = projection.country_ids;
+        self.country_indices = projection.country_indices;
+        self.side_ids = projection.side_ids;
+        self.side_indices = projection.side_indices;
+        self.country_sides = projection.country_sides;
+    }
+
+    pub fn country_multiplay(&self, id: &str) -> bool {
+        self.country_rules(id)
+            .is_some_and(|country| country.multiplay)
+    }
+
     /// Whether a country/house type has `MultiplayPassive=true`.
     pub fn country_multiplay_passive(&self, id: &str) -> bool {
         self.country_rules(id)
@@ -6428,6 +6546,13 @@ impl RuleSet {
         self.country_name(index)
     }
 
+    /// Cooperative5C34F0/5C35F0 draw over the complete retained HouseType
+    /// registry, then49D9F0 matches ID/Name. Passive and non-playable entries
+    /// remain rejection candidates and therefore affect Scenario RNG order.
+    pub fn cooperative_country_candidates(&self) -> impl Iterator<Item = (&str, Option<&str>)> {
+        self.country_lookup_members()
+    }
+
     fn country_lookup_members(&self) -> impl Iterator<Item = (&str, Option<&str>)> {
         self.country_ids.iter().map(|id| {
             (
@@ -6491,6 +6616,16 @@ impl RuleSet {
             .get(country.0 as usize)
             .copied()
             .flatten()
+    }
+
+    /// Country+BC is signed: an allocated constructor retains-1 until a
+    /// reached Sides/Country reader writes it (511416,672597,51208C).
+    /// None means unknown Country; Some(-1) is a known unbound Country.
+    pub fn country_side_index_raw(&self, id: &str) -> Option<i32> {
+        let country = self.country_index(id)?;
+        self.country_sides
+            .get(usize::from(country.0))
+            .map(|side| side.map_or(-1, |index| i32::from(index.0)))
     }
 
     /// The country's `UIName=` string-table key, then its plain `Name=`.
@@ -7229,8 +7364,11 @@ struct ProjectedCountrySideRegistry {
 /// and Country511850 already made every allocation and side assignment in
 /// reached-pass order; reconstructing those decisions from merged text would
 /// invent Countries, lose prior Side vectors and change allocation chronology.
-fn project_country_side_registry(processed: &ProcessedRulesLayers) -> ProjectedCountrySideRegistry {
-    let side_ids: Vec<String> = processed.side_registry_names().map(str::to_owned).collect();
+fn project_country_side_registry<'a>(
+    countries: impl Iterator<Item = (&'a str, &'a IniSection, i32, i32)>,
+    sides: impl Iterator<Item = &'a str>,
+) -> ProjectedCountrySideRegistry {
+    let side_ids: Vec<String> = sides.map(str::to_owned).collect();
     let mut side_indices = HashMap::with_capacity(side_ids.len());
     for (index, id) in side_ids.iter().enumerate() {
         side_indices
@@ -7243,7 +7381,7 @@ fn project_country_side_registry(processed: &ProcessedRulesLayers) -> ProjectedC
     let mut country_indices = HashMap::new();
     let mut country_sides = Vec::new();
     let mut rules = HashMap::new();
-    for (id, color, side) in processed.country_registry_states() {
+    for (id, section, color, side) in countries {
         let index = CountryIdx(
             u16::try_from(country_ids.len()).expect("[Countries] exceeds u16 identity space"),
         );
@@ -7257,10 +7395,6 @@ fn project_country_side_registry(processed: &ProcessedRulesLayers) -> ProjectedC
             SideIdx(u8::try_from(side).expect("[Sides] exceeds u8 identity space"))
         }));
         rules.entry(id.to_owned()).or_insert_with(|| {
-            let section = processed
-                .ini()
-                .section(id)
-                .expect("an allocated Country has a projected retained body");
             let mut fields = CountryRules::from_ini_section(section);
             fields.color_scheme = color;
             fields

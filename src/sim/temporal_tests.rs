@@ -2442,7 +2442,11 @@ fn native_first_head_building_warning_and_release_corpus() {
             remote
         };
         sim.session.current_house = Some(local);
-        sim.session.game_mode_nonzero = input["game_mode"].as_i64().unwrap() != 0;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+                input["game_mode"].as_i64().unwrap() != 0,
+            ),
+        );
         if input["allied"].as_bool() == Some(true) {
             sim.house_alliances
                 .entry("ALLIES2".into())

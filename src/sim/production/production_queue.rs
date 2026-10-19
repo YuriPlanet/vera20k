@@ -808,10 +808,9 @@ impl ExitProducer {
         let object = sim.object_type(producer.type_ref(), rules);
         Some(Self {
             house,
-            computer: sim
-                .houses
-                .get(&house)
-                .is_some_and(|house| !house.is_controlled_by_human(sim.session.game_mode_nonzero)),
+            computer: sim.houses.get(&house).is_some_and(|house| {
+                !house.is_controlled_by_human(sim.session.game_mode_nonzero())
+            }),
             hospital: object.is_some_and(|object| object.hospital),
             factory: object.is_some_and(|object| object.has_factory()),
         })

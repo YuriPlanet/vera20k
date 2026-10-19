@@ -246,7 +246,7 @@ pub struct CampaignScoreScreenModel {
     /// Campaign side index (`Scenario+0x34B8`): 0 allies, 1 Soviet, 2 Yuri.
     /// It selects the `0x72B` art window's 220- or 230-pixel height, the
     /// `0x00608500` x by one pixel, and the small/large asset tables.
-    pub side: u8,
+    pub side: i32,
     pub par_time: String,
     pub your_time: String,
     pub enemies_destroyed: String,
@@ -314,7 +314,7 @@ impl CampaignScoreLayout {
     }
 
     /// Retail window placement for one campaign side.
-    pub fn compute_layout_for_side(screen_w: u32, screen_h: u32, side: u8) -> Self {
+    pub fn compute_layout_for_side(screen_w: u32, screen_h: u32, side: i32) -> Self {
         let page = menu_page::compute_layout(&CAMPAIGN_SCORE_PAGE, screen_w, screen_h);
         let screen_w = screen_w as i32;
         let screen_h = screen_h as i32;
@@ -374,7 +374,7 @@ impl CampaignScoreLayout {
     }
 
     /// Uniformly scale the 800x600 page for one campaign side.
-    pub fn compute_responsive_layout_for_side(screen_w: u32, screen_h: u32, side: u8) -> Self {
+    pub fn compute_responsive_layout_for_side(screen_w: u32, screen_h: u32, side: i32) -> Self {
         let base = Self::compute_layout_for_side(SCORE_PAGE_W as u32, SCORE_PAGE_H as u32, side);
         let scale = ShellScale::from_screen(screen_w as i32, screen_h as i32);
         base.scaled(scale)
@@ -408,7 +408,7 @@ impl CampaignScoreLayout {
 /// campaign side selects x 104/103 at width 800+ and 24/23 below it; the
 /// 230-pixel Soviet/Yuri art starts 12 pixels higher. `0x0060AF50` applies
 /// the rect and keeps the centred dialog origin.
-fn campaign_score_art_rect(screen_w: i32, screen_h: i32, side: u8) -> RectPx {
+fn campaign_score_art_rect(screen_w: i32, screen_h: i32, side: i32) -> RectPx {
     let (origin_x, origin_y) = geom::dialog_origin(screen_w, screen_h);
     // `0x00608500` tests `DAT_007f5be4` (800), not the 640 asset switch.
     let compact = screen_w < 800;
@@ -428,7 +428,7 @@ pub fn compute_layout(screen_w: u32, screen_h: u32) -> CampaignScoreLayout {
 }
 
 /// Module-level retail layout entry point for one campaign side.
-pub fn compute_layout_for_side(screen_w: u32, screen_h: u32, side: u8) -> CampaignScoreLayout {
+pub fn compute_layout_for_side(screen_w: u32, screen_h: u32, side: i32) -> CampaignScoreLayout {
     CampaignScoreLayout::compute_layout_for_side(screen_w, screen_h, side)
 }
 
@@ -441,7 +441,7 @@ pub fn compute_responsive_layout(screen_w: u32, screen_h: u32) -> CampaignScoreL
 pub fn compute_responsive_layout_for_side(
     screen_w: u32,
     screen_h: u32,
-    side: u8,
+    side: i32,
 ) -> CampaignScoreLayout {
     CampaignScoreLayout::compute_responsive_layout_for_side(screen_w, screen_h, side)
 }

@@ -405,14 +405,17 @@ pub(super) fn push_right_panel_button_shp(
     out: &mut Vec<SpriteInstance>,
     atlas: &SkirmishShellChromeAtlas,
     rect: RectPx,
-    pressed: bool,
+    visual: impl Into<crate::ui::shell::button::ButtonVisual>,
     disabled: bool,
     depth: f32,
 ) {
+    let visual = visual.into();
+    let pressed = visual.pressed;
     // Skirmish shell setup classifies Start/Choose/Back as owner-draw type 1.
     // Type 0 PCX pieces are only a missing-asset fallback for this path.
-    let entry = match right_panel_button_sdbtnanm_frame_index(pressed, disabled) {
+    let entry = match right_panel_button_sdbtnanm_frame_index(visual, disabled) {
         4 => atlas.right_panel_button_sdbtnanm_frame4,
+        3 => atlas.right_panel_button_sdbtnanm_frame3,
         _ => atlas.right_panel_button_sdbtnanm_frame2,
     };
     if let Some(entry) = entry {
@@ -432,11 +435,18 @@ pub(super) fn push_right_panel_button_shp(
     }
 }
 
-pub(super) const fn right_panel_button_sdbtnanm_frame_index(
-    pressed: bool,
+pub(super) fn right_panel_button_sdbtnanm_frame_index(
+    visual: impl Into<crate::ui::shell::button::ButtonVisual>,
     disabled: bool,
 ) -> usize {
-    if pressed && !disabled { 4 } else { 2 }
+    let visual = visual.into();
+    if visual.pressed && !disabled {
+        4
+    } else if visual.highlighted {
+        3
+    } else {
+        2
+    }
 }
 
 /// Look up a baked SDBTNANM frame by index for the slide-in wave path.

@@ -133,7 +133,8 @@ fn selector_fixture(row: &Value) -> SelectorFixture {
     rules.general.total_ai_team_cap = dwords(&row["cap"]);
     rules.general.maximum_ai_defensive_teams = dwords(&row["max_defense"]);
     let mut sim = Simulation::new();
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     let owner = sim.interner.intern("H0");
     let enemy = sim.interner.intern("H1");
     for name in [owner, enemy] {
@@ -361,7 +362,11 @@ fn the_team_block_matches_the_original() {
         let mut rules = RuleSet::from_ini(&IniFile::from_str("")).unwrap();
         rules.general.team_delays = dwords(&row["delays"]);
         let mut sim = Simulation::new();
-        sim.session.game_mode_nonzero = dword(&row["game_mode"]) != 0;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+                dword(&row["game_mode"]) != 0,
+            ),
+        );
         sim.session.binary_frame = dword(&row["frame"]) as u32;
         let owner = sim.interner.intern("H0");
         let mut house = HouseState::new(owner, 0, None, flag(&row["human"]), 0, 10);

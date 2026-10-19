@@ -430,6 +430,16 @@ impl App {
                     } else {
                         Self::render_shell_error(state, &mut encoder, &view)?;
                     }
+                } else if state.frontend.shell_route.lan_lobby() {
+                    crate::app::frontend::skirmish_shell_render::render_lan_lobby(state, &mut encoder, &output.texture)?;
+                    presented_shell = PresentedShell::LanLobby;
+                } else if state.frontend.shell_route.lan_setup() {
+                    if state.frontend.skirmish_shell_state.choose_map_modal.is_some() {
+                        crate::app::frontend::skirmish_shell_render::render_skirmish_shell(state, &mut encoder, &output.texture)?;
+                    } else {
+                        crate::app::frontend::skirmish_shell_render::render_multiplayer_setup(state, &mut encoder, &output.texture)?;
+                    }
+                    presented_shell = PresentedShell::LanSetup;
                 } else if Self::wol_welcome_active(state) {
                     if crate::app::frontend::wol_welcome_render::render_wol_welcome_page(
                         state,

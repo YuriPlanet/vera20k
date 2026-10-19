@@ -253,7 +253,8 @@ fn deploy_then_undeploy_returns_the_mcv_to_its_original_cell() {
     // and converts back only in a multiplayer game (`0x00449D08`).
     rules.set_buildup_control_for_test("GACNST", [0, 29, 1]);
     let mut sim = deploy_sim(&rules);
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     add_house(&mut sim, "Americans", true);
 
     let start = (20u16, 22u16);
@@ -327,7 +328,9 @@ fn a_computer_mcv_deploys_into_a_yard_that_follows_the_native_deploy_route() {
         let mut rules = make_recalc_mcv_rules("0,0,0");
         rules.set_buildup_control_for_test("GACNST", native_route::control(row));
         let mut sim = deploy_sim(&rules);
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         // The native rows run at GameSpeed 0.
         sim.session.game_options.game_speed = 0;
         add_house(&mut sim, "Americans", false);
@@ -623,7 +626,8 @@ fn a_computer_mcv_deploy_turns_the_computers_paranoid() {
     let mut rules = make_recalc_mcv_rules("0,0,0");
     rules.general.allies_allowed = true;
     let mut sim = deploy_sim(&rules);
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     // Every house is of the fixture's one country, which `[Sides]` lists as
     // Allied: a type outside every list would answer Find_Index's -1 for a
     // ruleset without a `Civilian` side, and Can_Ally refuses that house.
@@ -678,7 +682,8 @@ fn base_plan_recalc_deploy_generates_and_anchors_nonhuman_conyard() {
     let rules = make_recalc_mcv_rules("0,0,0");
     let mut sim = deploy_sim(&rules);
     add_house(&mut sim, "Americans", false);
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     sim.scenario_rng = crate::sim::rng::SimRng::new(0x1020_3040);
     let mcv = sim
         .spawn_object("AMCV", "Americans", 20, 22, 128, &rules)
@@ -729,7 +734,8 @@ fn a_damaged_computer_yard_starts_its_repair_as_its_build_up_completes() {
     let mut rules = make_recalc_mcv_rules("0,0,0");
     rules.set_buildup_control_for_test("GACNST", [0, 3, 2]);
     let mut sim = deploy_sim(&rules);
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     add_house(&mut sim, "Americans", false);
     let owner = sim.interner.get("Americans").unwrap();
     sim.houses.get_mut(&owner).unwrap().current_iq = 5;
@@ -789,7 +795,9 @@ fn base_plan_recalc_deploy_skips_human_campaign_and_non_conyard_targets() {
             .get_mut(&owner)
             .unwrap()
             .set_ai_activation_for_test(SPLIT_AI_ACTIVATION);
-        sim.session.game_mode_nonzero = game_mode_nonzero;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(game_mode_nonzero),
+        );
         sim.scenario_rng = crate::sim::rng::SimRng::new(0x5566_7788);
         let mcv = sim
             .spawn_object("AMCV", "Americans", 20, 22, 128, &rules)
@@ -830,7 +838,8 @@ fn base_plan_recalc_deploy_skips_human_campaign_and_non_conyard_targets() {
         .get_mut(&owner)
         .unwrap()
         .set_ai_activation_for_test(SPLIT_AI_ACTIVATION);
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     sim.scenario_rng = crate::sim::rng::SimRng::new(0x99AA_BBCC);
     let miner = sim
         .spawn_object("SMIN", "Americans", 20, 22, 128, &rules)
@@ -869,7 +878,8 @@ fn a_human_deploy_empties_the_base_cell_until_the_next_building_counts_the_yard(
     let rules = make_recalc_mcv_rules("0,0,0");
     let mut sim = deploy_sim(&rules);
     add_house(&mut sim, "Americans", true);
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     let owner = sim.interner.get("Americans").unwrap();
     // The launch's start cell; the MCV has since driven to (20,22).
     sim.houses.get_mut(&owner).unwrap().set_base_center((6, 6));
@@ -906,7 +916,8 @@ fn base_plan_recalc_deploy_countryless_nonempty_plan_only_reanchors_node_zero() 
     let rules = make_recalc_mcv_rules("");
     let mut sim = deploy_sim(&rules);
     add_house(&mut sim, "Americans", false);
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     sim.scenario_rng = crate::sim::rng::SimRng::new(0x1357_2468);
     let owner = sim.interner.get("Americans").unwrap();
     let house = sim.houses.get_mut(&owner).unwrap();
@@ -956,7 +967,8 @@ fn base_plan_recalc_deploy_countryless_empty_plan_fails_before_removal() {
     let rules = make_recalc_mcv_rules("0,0,0");
     let mut sim = deploy_sim(&rules);
     add_house(&mut sim, "Americans", false);
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     sim.scenario_rng = crate::sim::rng::SimRng::new(0x2468_1357);
     let owner = sim.interner.get("Americans").unwrap();
     let house = sim.houses.get_mut(&owner).unwrap();
@@ -996,7 +1008,9 @@ fn base_plan_recalc_deploy_failures_preserve_source_rng_plan_and_centers() {
             .get_mut(&owner)
             .unwrap()
             .set_ai_activation_for_test(SPLIT_AI_ACTIVATION);
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         sim.scenario_rng = crate::sim::rng::SimRng::new(0xDEAD_BEEF);
         let mcv = sim
             .spawn_object("AMCV", "Americans", 20, 22, 128, rules)
@@ -1198,7 +1212,11 @@ pub(crate) fn native_deploy_fixture(row: &serde_json::Value) -> (Simulation, Rul
     sim.mapgen_rng = crate::sim::rng::SimRng::new(31);
     sim.session.binary_frame = input["now"].as_i64().unwrap_or(100) as u32;
     sim.session.game_options.game_speed = input["game_speed_index"].as_i64().unwrap_or(0) as i32;
-    sim.session.game_mode_nonzero = input["game_mode_nonzero"].as_bool().unwrap_or(false);
+    sim.session.set_game_mode(
+        crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+            input["game_mode_nonzero"].as_bool().unwrap_or(false),
+        ),
+    );
     let owner = sim.interner.intern("Americans");
     let human = input["human"].as_i64().unwrap_or(0) != 0;
     sim.houses.insert(
@@ -1212,7 +1230,7 @@ pub(crate) fn native_deploy_fixture(row: &serde_json::Value) -> (Simulation, Rul
         .unwrap(),
         &rules.general,
         Default::default(),
-        sim.session.game_mode_nonzero,
+        sim.session.game_mode_nonzero(),
         0,
         0,
     );

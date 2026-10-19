@@ -714,7 +714,8 @@ fn arrival_callbacks_precede_refund_and_playback_precedes_the_next_main_draw() {
     }
 
     let (mut sim, rules) = fixture();
-    sim.session.game_mode_nonzero = false;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false));
     for house in sim.houses.values_mut() {
         house.country = Some(house.name);
     }

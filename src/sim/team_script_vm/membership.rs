@@ -314,7 +314,7 @@ impl Simulation {
             .entities
             .get(entity_id)
             .and_then(|entity| self.houses.get(&entity.owner()))
-            .is_some_and(|house| !house.is_controlled_by_human(self.session.game_mode_nonzero))
+            .is_some_and(|house| !house.is_controlled_by_human(self.session.game_mode_nonzero()))
         {
             self.clear_team_member_trigger_tag(team_id, entity_id);
         }
@@ -517,7 +517,7 @@ impl Simulation {
         rules: &RuleSet,
         frame_effects: FrameEffects<'_>,
     ) {
-        let team_rules = TeamRules::new(&rules.general, self.session.game_mode_nonzero);
+        let team_rules = TeamRules::new(&rules.general, self.session.game_mode_nonzero());
         self.team_script_vm
             .record_trigger_outcome(team_id, &team_rules);
         self.team_remove_all_members(team_id, rules, frame_effects);

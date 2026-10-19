@@ -185,9 +185,11 @@ fn is_structure_strip(category: ProductionCategory) -> bool {
 /// `Begin_Production` never queues a second building; and a held or finished
 /// build, which resumes or places rather than appending.
 ///
-/// `count` is the configured `[VERA] ShiftQueueCount=`, already clamped by the
-/// profile owner. The expansion is deliberately not capped further here: each
-/// copy is an ordinary PRODUCE event, so `FactoryClass::StartProduction`'s own
+/// `shift` is the Shift bit only while the player's `[VERA] ShiftQueue=` is on;
+/// the caller clears it otherwise. `count` is the configured
+/// `[VERA] ShiftQueueCount=`, already clamped by the profile owner. The
+/// expansion is deliberately not capped further here: each copy is an
+/// ordinary PRODUCE event, so `FactoryClass::StartProduction`'s own
 /// `[General] MaximumQueuedObjects=` check still refuses the extras, exactly as
 /// repeated fast clicks would.
 pub(crate) fn shift_queue_repeat(

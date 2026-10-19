@@ -222,7 +222,11 @@ fn toggle_repair_matches_the_original() {
             _ => continue,
         };
         let mut sim = Simulation::new();
-        sim.session.game_mode_nonzero = input["game_mode"].as_i64().unwrap_or(1) != 0;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+                input["game_mode"].as_i64().unwrap_or(1) != 0,
+            ),
+        );
         let owner = sim.interner.intern("AI");
         // Native House50B6F0's nonzero-mode identity input, distinct from
         // its campaign human/control bytes. The flash call is gated here;
@@ -328,7 +332,11 @@ fn update_scene(corpus: &Value, input: &Value) -> (Simulation, RuleSet, Option<u
         constant(corpus, "rate_016")
     );
     let mut sim = Simulation::new();
-    sim.session.game_mode_nonzero = int("game_mode", 1) != 0;
+    sim.session.set_game_mode(
+        crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+            int("game_mode", 1) != 0,
+        ),
+    );
     sim.session.binary_frame = int("frame", 196) as u32;
     let owner = sim.interner.intern("AI");
     let mut house = HouseState::new(

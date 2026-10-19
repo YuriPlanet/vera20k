@@ -29,10 +29,10 @@ pub fn visit_paid_deso_light_lifecycle(
     let launch: crate::skirmish_launch::SkirmishLaunchSession =
         serde_json::from_value(profile["launch"].clone()).unwrap();
     assert_eq!(
-        launch.local.country,
+        launch.local_slot().country,
         crate::skirmish_launch::LaunchCountry::Iraq
     );
-    let local_name = launch.player_name.clone();
+    let local_name = launch.local_player().name.clone();
     let map = launch.selected_map_file.as_deref().unwrap().to_owned();
     let retail =
         std::path::PathBuf::from(std::env::var_os("RA2_DIR").expect("physical retail root"));

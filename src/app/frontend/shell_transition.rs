@@ -68,6 +68,10 @@ pub(crate) enum ShellSlideKind {
     Keyboard,
     /// Dialog D7, Options' Network child.
     NetworkOptions,
+    LanLobby,
+    LanSetup {
+        host: bool,
+    },
     /// Dialog 0x6B — Skirmish's Choose Map, a family page of its own.
     ChooseMap,
     /// Dialog 0x108 — the score screen after a skirmish game.
@@ -95,6 +99,14 @@ impl ShellSlideKind {
             ShellSlideKind::WolWelcome => 0x010E,
             ShellSlideKind::Keyboard => 0x00A3,
             ShellSlideKind::NetworkOptions => 0x00D7,
+            ShellSlideKind::LanLobby => 0xBB,
+            ShellSlideKind::LanSetup { host } => {
+                if host {
+                    0xBC
+                } else {
+                    0xBD
+                }
+            }
             ShellSlideKind::ChooseMap => 0x006B,
             ShellSlideKind::Score => 0x0108,
             ShellSlideKind::CampaignScore => 0x0103,
@@ -162,6 +174,21 @@ pub(crate) enum ShellExitThen {
     /// slide, then the bindings save or reload and a new `0xD5` is built.
     KeyboardClose(crate::app::input::keyboard::KeyboardExit),
     NetworkOptionsClose,
+    LanBack,
+    LanCreate {
+        observe: bool,
+    },
+    LanJoinAccepted(crate::app::shell_lan::LanJoinAcceptance),
+    LanSetupBack {
+        host: bool,
+    },
+    LanSetupChooseMap {
+        host: bool,
+    },
+    LanStart {
+        host: bool,
+        agreed_seed: u32,
+    },
     /// Skirmish Choose Map (`0x5AA`): `0x102` slides out and hides without
     /// packing (`0x006AD931`, `0x006AD93C`), then `0x6B` runs.
     SkirmishChooseMap,
@@ -207,6 +234,12 @@ impl ShellExitThen {
             Self::Options(_) => ShellSlideKind::Options,
             Self::KeyboardClose(_) => ShellSlideKind::Keyboard,
             Self::NetworkOptionsClose => ShellSlideKind::NetworkOptions,
+            Self::LanBack | Self::LanCreate { .. } | Self::LanJoinAccepted(_) => {
+                ShellSlideKind::LanLobby
+            }
+            Self::LanSetupBack { host }
+            | Self::LanSetupChooseMap { host }
+            | Self::LanStart { host, .. } => ShellSlideKind::LanSetup { host: *host },
             Self::SkirmishChooseMap => ShellSlideKind::Skirmish,
             Self::ChooseMapUse(_) | Self::ChooseMapCancel | Self::ChooseMapRandomMap => {
                 ShellSlideKind::ChooseMap
@@ -370,6 +403,7 @@ enum ShellEntryEffect {
 
 #[derive(Debug)]
 enum ShellWaveCompletion {
+    MultiplayerSetup,
     /// Single Player `0x100`, Movies & Credits `0x101` or movie list `0x129`.
     MenuPage,
     Skirmish,
@@ -484,7 +518,9 @@ impl<'a> ShellLifecycleReducer<'a> {
             | ShellSlideKind::Options
             | ShellSlideKind::WolWelcome
             | ShellSlideKind::Keyboard
-            | ShellSlideKind::NetworkOptions => ShellWaveCompletion::MenuPage,
+            | ShellSlideKind::NetworkOptions
+            | ShellSlideKind::LanLobby => ShellWaveCompletion::MenuPage,
+            ShellSlideKind::LanSetup { .. } => ShellWaveCompletion::MultiplayerSetup,
             ShellSlideKind::Skirmish => ShellWaveCompletion::Skirmish,
             ShellSlideKind::ChooseMap => ShellWaveCompletion::ChooseMap,
             ShellSlideKind::RandomMap => ShellWaveCompletion::RandomMap,
@@ -675,6 +711,21 @@ pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideK
     }
     let candidate = if state.frontend.shell_route.skirmish() {
         skirmish_slide_target(&state.frontend.skirmish_shell_state)?
+    } else if state.frontend.shell_route.lan_lobby() {
+        ShellSlideKind::LanLobby
+    } else if state.frontend.shell_route.lan_setup() {
+        if state
+            .frontend
+            .skirmish_shell_state
+            .choose_map_modal
+            .is_some()
+        {
+            skirmish_slide_target(&state.frontend.skirmish_shell_state)?
+        } else {
+            ShellSlideKind::LanSetup {
+                host: state.match_state.session.host(),
+            }
+        }
     } else if state.frontend.shell_route.single_player() {
         ShellSlideKind::SinglePlayer
     } else if state.frontend.shell_route.movies_and_credits() {
@@ -902,6 +953,22 @@ pub(crate) fn render_shell_first_paint_slide(
             )?;
             true
         }
+        ShellSlideKind::LanLobby => {
+            crate::app::frontend::skirmish_shell_render::render_lan_lobby(
+                state,
+                encoder,
+                destination,
+            )?;
+            true
+        }
+        ShellSlideKind::LanSetup { .. } => {
+            crate::app::frontend::skirmish_shell_render::render_multiplayer_setup(
+                state,
+                encoder,
+                destination,
+            )?;
+            true
+        }
         ShellSlideKind::NetworkOptions => {
             crate::app::frontend::skirmish_shell_render::render_network_options(
                 state,
@@ -944,6 +1011,9 @@ pub(crate) fn render_shell_first_paint_slide(
     match completion {
         // `0x102`'s SHOW completion: its own statics start, or repaint when
         // the dialog shows again after Choose Map.
+        Some(ShellWaveCompletion::MultiplayerSetup) => {
+            crate::app::shell_lan_setup::show_statics(state);
+        }
         Some(ShellWaveCompletion::Skirmish) => {
             let now = Instant::now();
             let (title, game_type, map_label) =
@@ -1084,7 +1154,14 @@ mod tests {
             Some(ShellSlideKind::Skirmish)
         );
         let chooser = compute_choose_map_modal_layout(800, 600);
-        shell.choose_map_modal = Some(ChooseMapModalState::open(1, None, &[], &[], &chooser));
+        shell.choose_map_modal = Some(ChooseMapModalState::open(
+            crate::ui::skirmish_shell::ChooseMapContext::Skirmish,
+            1,
+            None,
+            &[],
+            &[],
+            &chooser,
+        ));
         assert_eq!(
             skirmish_slide_target(&shell),
             Some(ShellSlideKind::ChooseMap)

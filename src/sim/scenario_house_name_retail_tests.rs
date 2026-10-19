@@ -35,11 +35,18 @@ fn generated_houses(rules: &RuleSet, native: &Value) -> Simulation {
                 } else {
                     format!("Computer{slot}")
                 },
-                country: LaunchCountry::Russia,
+                country: LaunchCountry::from_country_index(u32::from(
+                    rules
+                        .country_index("Russians")
+                        .expect("fixture declares Russians")
+                        .0,
+                )),
                 color_index: slot as u8,
                 start_position: LaunchStartPosition::Position(slot as u8),
                 team: LaunchTeam::None,
                 is_human: house["generated_kind"] == "human",
+                observer: false,
+                source_human_index: None,
                 difficulty: HouseDifficulty::Normal,
             }
         })
@@ -116,7 +123,11 @@ fn rejected_authored_buildings_match_original_without_constructing() {
             .collect();
         sim.session.current_house =
             Some(registered[row["current_house"].as_u64().unwrap() as usize]);
-        sim.session.game_mode_nonzero = row["game_mode"].as_i64().unwrap() != 0;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+                row["game_mode"].as_i64().unwrap() != 0,
+            ),
+        );
         let ini = IniFile::from_str(&format!(
             "[Basic]\nNewINIFormat={}\n[Structures]\n0={}\n",
             row["basic"]["NewINIFormat"].as_str().unwrap(),
@@ -158,7 +169,8 @@ fn mobile_readers_admit_current_house_and_resolve_first_computer() {
     let human = sim.session.house_order[0];
     let ai = sim.session.house_order[1];
     sim.session.current_house = Some(human);
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     sim.intern_rule_type_ids(&retail.rules);
     sim.resolve_type_handles(&retail.rules);
     crate::sim::arena_fixture::flat_ground(&mut sim, &retail.rules);

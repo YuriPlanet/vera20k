@@ -253,8 +253,8 @@ mod map_wall_owner_candidate_tests {
             map,
             &[(LaunchCountry::America, AiDifficulty::Easy)],
         );
-        launch.player_name = "VERA-OBSERVER".into();
-        launch.local.country = LaunchCountry::America;
+        launch.local_player_mut().name = "VERA-OBSERVER".into();
+        launch.local_slot_mut().country = LaunchCountry::America;
         launch.options.bases = false;
         launch.options.unit_count = 0;
         launch.options.short_game = false;
@@ -1975,8 +1975,9 @@ impl MapLoadInitial {
         // Stage the one Simulation before terrain Fill, as the match load does:
         // the prefix cursors, Fill and every later load constructor mutate the
         // identity that reaches gameplay.
-        let bound_scenario_prefix =
-            scenario_prefix_plan.bind_native_rules_receipt(native_rules_receipt);
+        let bound_scenario_prefix = scenario_prefix_plan
+            .bind_native_rules_receipt(native_rules_receipt, &match_launch_descriptor, &rules)
+            .expect("generated fixture launch Countries");
         let pixel_conversion_bounds =
             crate::util::pixel_conversion::PixelConversionBounds::default();
         let native_start_bounds =
@@ -2771,7 +2772,15 @@ pub(crate) fn load_map_from_initial(
         .as_ref()
         .and_then(|campaign| campaign.game_options());
     let fresh_prefix = if let Some(plan) = scenario_prefix_plan {
-        FreshScenarioPrefix::StockOffline(plan.bind_native_rules_receipt(native_rules_receipt))
+        FreshScenarioPrefix::StockOffline(
+            plan.bind_native_rules_receipt(
+                native_rules_receipt,
+                match_launch_descriptor
+                    .as_ref()
+                    .expect("noncampaign prefix retains launch"),
+                &rules,
+            )?,
+        )
     } else {
         let campaign = campaign
             .as_ref()
@@ -2844,6 +2853,14 @@ pub(crate) fn load_map_from_initial(
     // constructor now mutate the same Simulation identity that reaches gameplay.
     let (mut staged_simulation, scenario_prefix_projection) =
         bootstrap_rng.into_fresh_staged_simulation(&scenario_descriptor, fresh_prefix)?;
+    staged_simulation
+        .session
+        .set_game_mode(startup.session_mode());
+    if let LoadingStartup::Network(accepted) = &startup {
+        staged_simulation
+            .session
+            .install_network_timing(accepted.max_ahead_frames());
+    }
     staged_simulation.bind_shared_cell_dummy(shared_cell_dummy.clone());
     staged_simulation
         .session

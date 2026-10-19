@@ -515,7 +515,7 @@ fn steady_frame_choice(
     }
     if policy.hover_flash && b.hovered {
         let flash = hover_started_at
-            .map(|start| now.duration_since(start).as_millis() / 1000 % 2 == 1)
+            .map(|start| crate::ui::shell::button::flash_phase(start, now))
             .unwrap_or(false);
         if flash {
             return SteadyFrame::Hover;

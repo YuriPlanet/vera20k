@@ -571,7 +571,9 @@ fn native_building_status_labels(fixture: &'static str) {
             sim.resolve_type_handles(rules);
             let owner = sim.interner.intern("Owner");
             let ally = sim.interner.intern("Ally");
-            sim.session.game_mode_nonzero = true;
+            sim.session.set_game_mode(
+                crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+            );
             sim.session.current_house = Some(owner);
             for house in [owner, ally] {
                 sim.houses

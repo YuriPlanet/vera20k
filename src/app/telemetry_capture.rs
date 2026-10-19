@@ -90,10 +90,14 @@ pub fn capture_snapshot(state: &AppState) -> Option<TelemetrySnapshot> {
             .get(&house.name)
             .map(|index| crate::rules::house_colors::house_text_rgb(schemes, *index));
         // The side's own `[Sides]` key — the index is just its position there.
-        house.side_name = runtime
-            .resources
-            .rules
-            .side_name(crate::rules::ruleset::SideIdx(house.side_index))
+        house.side_name = u8::try_from(house.side_index)
+            .ok()
+            .and_then(|index| {
+                runtime
+                    .resources
+                    .rules
+                    .side_name(crate::rules::ruleset::SideIdx(index))
+            })
             .map(|name| bounded_text(name, TELEMETRY_MAX_NAME_BYTES));
     }
     let speed = runtime

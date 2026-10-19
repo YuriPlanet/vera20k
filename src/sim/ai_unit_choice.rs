@@ -203,7 +203,7 @@ fn harvester_choice(sim: &Simulation, rules: &RuleSet, owner: InternedId) -> Opt
         current_iq: house.current_iq,
         iq_harvester: rules.general.iq_harvester,
         no_ore: house.harvester_no_ore,
-        human: house.is_controlled_by_human(sim.session.game_mode_nonzero),
+        human: house.is_controlled_by_human(sim.session.game_mode_nonzero()),
         tech_level: house.tech_level,
     })
 }

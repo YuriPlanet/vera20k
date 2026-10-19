@@ -1028,9 +1028,10 @@ impl<'a> ScannerStanding<'a> {
         let house = world.houses.get(&attacker.owner);
         Self {
             house,
-            human: house
-                .is_none_or(|house| house.is_controlled_by_human(world.session.game_mode_nonzero)),
-            game_mode_nonzero: world.session.game_mode_nonzero,
+            human: house.is_none_or(|house| {
+                house.is_controlled_by_human(world.session.game_mode_nonzero())
+            }),
+            game_mode_nonzero: world.session.game_mode_nonzero(),
             team: (attacker.category != EntityCategory::Structure)
                 .then(|| world.team_script_vm.team_for_member(attacker.stable_id))
                 .flatten()

@@ -463,7 +463,7 @@ pub(super) fn dispatch_sim_sound_events(
                     continue;
                 }
                 GameSoundEvent::Eva {
-                    event: outcome_eva_event(kind, !sim.session.game_mode_nonzero).to_string(),
+                    event: outcome_eva_event(kind, !sim.session.game_mode_nonzero()).to_string(),
                     type_override: None,
                 }
             }
@@ -859,7 +859,7 @@ pub(super) fn dispatch_sim_sound_events(
                     &owner_name,
                     local_name,
                     local_defeated,
-                    sim.session.game_mode_nonzero,
+                    sim.session.game_mode_nonzero(),
                     aux_satisfied,
                 ) {
                     continue;
@@ -1367,7 +1367,11 @@ mod tests {
                 native_radar["event"].as_u64().unwrap() as u8
             );
             let mut sim = Simulation::new();
-            sim.session.game_mode_nonzero = input["game_mode"].as_u64().unwrap() != 0;
+            sim.session.set_game_mode(
+                crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+                    input["game_mode"].as_u64().unwrap() != 0,
+                ),
+            );
             let houses = input["houses"].as_array().unwrap();
             let owner_name = houses[input["current_owner"].as_u64().unwrap() as usize]["name"]
                 .as_str()
@@ -2372,7 +2376,9 @@ mod tests {
         let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 23);
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         let owner = sim.interner.get("Russians").unwrap();
         let sw_type = sim.interner.get("Gate").unwrap();
         let hear = |sim: &Simulation| {

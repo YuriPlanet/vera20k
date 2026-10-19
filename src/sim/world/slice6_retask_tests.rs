@@ -371,7 +371,12 @@ fn unit(owner: &str, type_id: &str, cx: u16, cy: u16, cat: EntityCategory) -> Ma
 // feeding the hasher that absent policy gave the previous value in the same
 // test binary, with every tripwire above green. Control removed.
 // Previous: 0x5788_A215_EFC5_0407.
-const SLICE6_BASELINE_HASH: u64 = 0x000C_DEC1_A4D5_BC42;
+// Snapshot 443 hashes the exact session mode, mode class, network MaxAhead
+// and map start header in place of the mode-nonzero bool. Hash composition
+// only: a temporary control hashing the bool gave the previous value in the
+// same test binary, with every tripwire above green. Control removed.
+// Previous: 0x000C_DEC1_A4D5_BC42.
+const SLICE6_BASELINE_HASH: u64 = 0xDE7B_17EE_FC74_D0AF;
 
 #[test]
 fn replay_hash_stable_through_slice6() {

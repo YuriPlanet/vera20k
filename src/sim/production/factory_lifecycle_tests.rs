@@ -1487,7 +1487,9 @@ fn retail_prerequisite_loss_refunds_after_the_factory_charge_sweep() {
         );
         sim.intern_rule_type_ids(rules);
         sim.resolve_type_handles(rules);
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         sim.set_input_delay_ticks(0);
         let owner = sim.interner.intern("Americans");
         sim.session.current_house = Some(owner);
@@ -1854,7 +1856,9 @@ fn retail_superweapon_construction_survives_revalidation() {
         });
         sim.intern_rule_type_ids(rules);
         sim.resolve_type_handles(rules);
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         let owner = sim.interner.intern(country);
         sim.houses.insert(
             owner,

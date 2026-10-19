@@ -345,7 +345,9 @@ mod tests {
 
     fn natural_terminal_sim(seed: u64) -> Simulation {
         let mut sim = Simulation::with_seed(seed);
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         let human = sim.interner.intern("Human");
         let mut human_house = HouseState::new(human, 0, None, true, 0, 10);
         human_house.is_defeated = true;
@@ -405,7 +407,9 @@ mod tests {
     #[test]
     fn campaign_terminal_does_not_finalize_skirmish_bonus_or_draw_rng() {
         let mut sim = natural_terminal_sim(0x51C0_CAFE);
-        sim.session.game_mode_nonzero = false;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false),
+        );
         let cursor = sim.clone_scenario_rng().state();
 
         let tick = sim.advance_tick(&[], None, None, None, 67);

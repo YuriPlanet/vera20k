@@ -839,7 +839,7 @@ impl Simulation {
         //0x4D4189, and unless that is the zero Cell (0x8B3D88) is sent there:
         //SetDestination(cell, 1) through vt+0x480.
         if !human
-            && self.session.game_mode_nonzero
+            && self.session.game_mode_nonzero()
             && let Some((rx, ry)) = self.house_return_cell(owner, id)
         {
             self.assign_destination_represented(
@@ -1499,7 +1499,9 @@ mod tests {
                     crate::sim::world::entry_test_fixture::fixture_with_rules(
                         "[VehicleTypes]\n0=MTNK\n[MTNK]\nStrength=400\nSpeed=6\nSpeedType=Track\nMovementZone=Normal\nLocomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n",
                     );
-                sim.session.game_mode_nonzero = skirmish;
+                sim.session.set_game_mode(
+                    crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(skirmish),
+                );
                 let owner = sim.intern("Americans");
                 let mut house =
                     crate::sim::house_state::HouseState::new(owner, 0, None, human, 0, 10);

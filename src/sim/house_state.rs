@@ -415,15 +415,17 @@ pub struct HouseState {
     #[serde(default)]
     allow_win_tags: i32,
     /// The sole House+298 result timer. Constructor4F5825/4F582B writes
-    /// (-1,0); AllowWin-tag destruction starts60 at6E50B1, and FlagWin/Lose
-    /// normally replaces it with SavourDelay. Actions67/68 preserve it;
+    /// (-1,0); AllowWin-tag destruction starts60 at6E50B1, Flag_To_Die
+    /// starts0 at4FC9B6, and FlagWin/Lose normally replaces it with SavourDelay. Actions67/68 preserve it;
     /// 69 resumes the same paused timer. Native replay controls:
     /// tools/spatial_oracle/tag_lifecycle (active_cleanup histories).
     #[serde(default)]
     allow_win_timer: CdTimer,
-    /// Stable rules-owned side index. Stock YR uses 0=Allied, 1=Soviet,
+    /// Native signed Country+BC identity (ctor511416=-1), retained by the House.
+    /// House+1E8 selects only0/1/2; its branch consumers treat all others alike.
+    /// Stock YR uses 0=Allied, 1=Soviet,
     /// 2=Yuri, 3=Civilian, and 4=Mutant.
-    pub side_index: u8,
+    pub side_index: i32,
     /// Country interned ID from map INI `Country=` key (e.g., "Americans", "Russians").
     pub country: Option<InternedId>,
     /// Native HouseClass `IsHuman` byte.
@@ -473,6 +475,10 @@ pub struct HouseState {
     country_speed_mults: CountrySpeedMults,
     /// Whether this player has been eliminated.
     pub is_defeated: bool,
+    /// House+1F6, constructor4F5722=false. Flag_To_Die4FC980 arms
+    /// the shared+298 timer; Update4F87F3 clears this before Blowup_All.
+    #[serde(default)]
+    to_die: bool,
     /// Victory flag.
     has_won: bool,
     /// Defeat flag. Note: Flag_To_Lose clears HasWon first.
@@ -1664,6 +1670,31 @@ impl HouseState {
         self.ai_activation.autocreate_allowed = true;
     }
 
+    pub const fn is_to_die(&self) -> bool {
+        self.to_die
+    }
+
+    /// Original4FC980: idempotent current-flag return, no RNG or outcome.
+    /// Repeated calls preserve the existing shared timer's anchor/duration.
+    pub(crate) fn flag_to_die(&mut self, frame: i32) -> bool {
+        if !self.has_won && !self.to_die && !self.has_lost {
+            self.to_die = true;
+            self.allow_win_timer.start(frame, 0);
+        }
+        self.to_die
+    }
+
+    /// Update4F87C2..4F87FA clears the latch before the shared Blowup_All
+    /// receiver. Other+298 writers may have postponed the originally zero timer.
+    pub(crate) fn take_due_to_die(&mut self, frame: i32) -> bool {
+        if self.to_die && self.allow_win_timer.expired(frame) {
+            self.to_die = false;
+            true
+        } else {
+            false
+        }
+    }
+
     pub const fn has_won(&self) -> bool {
         self.has_won
     }
@@ -1683,10 +1714,9 @@ impl HouseState {
 
     /// Numeric state block4FC9EE..4FCA59. The complete Flag_To_Win port
     /// (including input/audio effects) belongs to world::house_defeat.
-    /// +1F6 is Flag_To_Die, not Draw; its unported network/DESTRUCT producer
-    /// is outside this offline campaign/skirmish route.
+    /// Pending Flag_To_Die+1F6 blocks victory at4FCA04.
     pub fn accept_win_result(&mut self, frame: i32, savour_frames: i32, skip_timer: bool) -> bool {
-        if self.has_won || self.has_lost {
+        if self.has_won || self.to_die || self.has_lost {
             return false;
         }
         self.has_won = true;
@@ -1700,7 +1730,7 @@ impl HouseState {
         true
     }
 
-    /// Numeric state block4FCBDE..4FCC42: clear Win before the Lost test,
+    /// Numeric state block4FCBDE..4FCC42: clear Win before ToDie/Lost tests,
     /// then accept/re-arm only once. Actions68 preserve the existing timer.
     pub(crate) fn accept_lose_result(
         &mut self,
@@ -1709,7 +1739,7 @@ impl HouseState {
         skip_timer: bool,
     ) -> bool {
         self.has_won = false;
-        if self.has_lost {
+        if self.to_die || self.has_lost {
             return false;
         }
         self.has_lost = true;
@@ -1760,7 +1790,7 @@ impl HouseState {
 
     pub fn new(
         name: InternedId,
-        side_index: u8,
+        side_index: impl Into<i32>,
         country: Option<InternedId>,
         is_human: bool,
         credits: i32,
@@ -1772,7 +1802,7 @@ impl HouseState {
             native_construction: None,
             scenario_parameters: HouseScenarioParameters::default(),
             initial_techno_records: Vec::new(),
-            side_index,
+            side_index: side_index.into(),
             country,
             is_human,
             player_control: is_human,
@@ -1782,6 +1812,7 @@ impl HouseState {
             country_cost_mults: CountryCostMults::default(),
             country_speed_mults: CountrySpeedMults::default(),
             is_defeated: false,
+            to_die: false,
             has_won: false,
             has_lost: false,
             outcome_state: None,
@@ -2014,11 +2045,11 @@ pub fn income_ppm_for_owner(
 
 /// Map side name string to numeric index.
 /// "Allies"/"GDI" → 0, "Soviet"/"Nod" → 1, "ThirdSide"/"YuriCountry" → 2.
-pub fn side_index_from_name(side: Option<&str>) -> u8 {
+pub fn side_index_from_name(side: Option<&str>) -> i32 {
     side_index_alias(side).unwrap_or(0)
 }
 
-fn side_index_alias(side: Option<&str>) -> Option<u8> {
+fn side_index_alias(side: Option<&str>) -> Option<i32> {
     match side.map(|s| s.to_ascii_lowercase()).as_deref() {
         Some("allied" | "allies" | "gdi") => Some(0),
         Some("soviet" | "nod" | "russia") => Some(1),
@@ -2031,17 +2062,21 @@ fn side_index_alias(side: Option<&str>) -> Option<u8> {
 ///
 /// Rules-owned country membership is authoritative. An explicit side name is
 /// the next-best source for incomplete scenario data, followed by the legacy
-/// stock aliases and finally the caller's bounded fallback.
+/// stock aliases and finally the caller's explicit fallback.
 pub fn resolve_house_side_index(
     rules: &crate::rules::ruleset::RuleSet,
     country: Option<&str>,
     side: Option<&str>,
-    fallback: u8,
-) -> u8 {
+    fallback: i32,
+) -> i32 {
+    // A registered constructor-only Country has Side=-1. It is an actual
+    // native value, not a missing-country invitation to use the fallback.
     country
-        .and_then(|country| rules.country_side_index(country))
-        .or_else(|| side.and_then(|side| rules.side_index(side)))
-        .map(|index| index.0)
+        .and_then(|country| rules.country_side_index_raw(country))
+        .or_else(|| {
+            side.and_then(|side| rules.side_index(side))
+                .map(|index| i32::from(index.0))
+        })
         .or_else(|| side_index_alias(side))
         .unwrap_or(fallback)
 }
@@ -2287,6 +2322,78 @@ mod ai_activation_latch_tests {
 #[cfg(test)]
 mod outcome_tests {
     use super::{HouseOutcomeKind, HouseState};
+
+    #[test]
+    fn flag_to_die_producer_and_update_gate_match_original_execution() {
+        use crate::sim::timer::CdTimer;
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/pending_house_death.json",
+        ))
+        .unwrap();
+        for row in corpus["flags"].as_array().unwrap() {
+            let mut house = HouseState::new(Default::default(), 0, None, true, 0, 10);
+            let frame = row["frame"].as_i64().unwrap() as i32;
+            if row["initial"][0] == 1 {
+                house.flag_to_die(frame);
+            }
+            house.supply_outcome_state_for_test(
+                row["initial"][1] == 1,
+                row["initial"][2] == 1,
+                None,
+                CdTimer::started(
+                    row["initial_timer"][0].as_i64().unwrap() as i32,
+                    row["initial_timer"][1].as_i64().unwrap() as i32,
+                ),
+            );
+            assert_eq!(
+                house.flag_to_die(frame),
+                row["result"] == 1,
+                "{}",
+                row["name"]
+            );
+            let snapshot = |house: &HouseState| {
+                serde_json::json!({
+                "flags":[u8::from(house.is_to_die()),u8::from(house.has_won()),u8::from(house.has_lost())],
+                "timer":[house.outcome_timer().start_frame(),house.outcome_timer().duration()]})
+            };
+            assert_eq!(snapshot(&house), row["produced"]);
+            assert_eq!(house.flag_to_die(frame + 1), row["repeated_result"] == 1);
+            assert_eq!(snapshot(&house), row["produced"]);
+            assert_eq!(
+                house.take_due_to_die(frame + 1),
+                row["blowup"].as_bool().unwrap()
+            );
+            assert_eq!(snapshot(&house), row["consumed"]);
+        }
+    }
+
+    #[test]
+    fn flag_to_die_shares_result_timer_and_blocks_terminal_results_until_consumed() {
+        use crate::sim::timer::CdTimer;
+        let mut house = HouseState::new(Default::default(), 0, None, true, 0, 10);
+        assert!(!house.is_to_die());
+        assert!(house.flag_to_die(20));
+        assert_eq!(house.outcome_timer(), CdTimer::started(20, 0));
+        assert!(house.flag_to_die(40));
+        assert_eq!(house.outcome_timer(), CdTimer::started(20, 0));
+        assert!(!house.accept_win_result(40, 90, false));
+        assert!(!house.accept_lose_result(40, 90, false));
+        assert!(house.outcome().is_none());
+        // AllowWin Tag destruction can replace the same timer after admission.
+        house.supply_allow_win_tag_state(0, CdTimer::started(20, 60));
+        assert!(!house.take_due_to_die(79));
+        assert!(house.take_due_to_die(80));
+        assert!(!house.is_to_die());
+        assert!(!house.take_due_to_die(80));
+        assert!(house.accept_lose_result(80, 90, false));
+        assert!(!house.flag_to_die(81));
+        assert_eq!(house.outcome_timer(), CdTimer::started(80, 90));
+
+        let mut winner = HouseState::new(Default::default(), 0, None, true, 0, 10);
+        assert!(winner.accept_win_result(10, 90, false));
+        assert!(!winner.flag_to_die(11));
+        assert_eq!(winner.outcome_timer(), CdTimer::started(10, 90));
+    }
 
     #[test]
     fn gsi_01_04_savour_gates_exact_frame_and_defeat_restarts_pending_victory() {
@@ -2552,5 +2659,29 @@ mod waypoint_edge_tests {
         };
         assert_eq!(local_to_packed_cell(bounds, 32, 124), (100, 102));
         assert_eq!(determine_waypoint_edge((69, 115), bounds), 2);
+    }
+}
+
+#[cfg(test)]
+mod signed_country_side_tests {
+    use super::*;
+    use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
+
+    #[test]
+    fn registered_country_retains_negative_side_instead_of_declared_fallback() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[Countries]\n0=Bound\n1=Unbound\n[Sides]\nAllied=Bound\n",
+        ))
+        .unwrap();
+        assert_eq!(resolve_house_side_index(&rules, Some("Bound"), None, 9), 0);
+        assert_eq!(
+            resolve_house_side_index(&rules, Some("Unbound"), Some("Allied"), 9),
+            -1
+        );
+        assert_eq!(resolve_house_side_index(&rules, Some("Absent"), None, 9), 9);
+        let house = HouseState::new(Default::default(), -1, None, false, 0, 10);
+        let bytes = crate::util::save_codec::serialize(&house).unwrap();
+        let restored: HouseState = crate::util::save_codec::deserialize(&bytes).unwrap();
+        assert_eq!(restored.side_index, -1);
     }
 }

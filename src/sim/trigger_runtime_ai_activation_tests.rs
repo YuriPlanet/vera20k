@@ -310,7 +310,9 @@ fn ai_activation_actions_match_all_original_selection_and_state_controls() {
     let native = corpus();
     for row in native["actions"]["controls"].as_array().unwrap() {
         let (mut sim, rules, _, houses) = super::tests::event_ingress_fixture();
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         supply_rng(&mut sim, &native["actions"]["rng_full_seed31"]);
         install_team_scene(&mut sim, houses[0]);
         for (index, owner) in houses.iter().enumerate() {
@@ -352,7 +354,11 @@ fn ai_activation_replays_original_action_to_timer_selector_histories() {
         }
         let rules = RuleSet::from_ini(&IniFile::from_str(&ini)).unwrap();
         let mut sim = Simulation::new();
-        sim.session.game_mode_nonzero = input["game_mode"].as_i64() != Some(0);
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+                input["game_mode"].as_i64() != Some(0),
+            ),
+        );
         let houses = [
             sim.interner.intern("H0"),
             sim.interner.intern("H1"),
@@ -560,7 +566,8 @@ fn retail_all05_elapsed_stop_keeps_explicit_teams_and_saved_activation() {
     let roster =
         crate::map::houses::parse_house_roster(&map.ini, &rules.color_schemes, Some(&rules));
     let mut sim = Simulation::with_seed(31);
-    sim.session.game_mode_nonzero = false;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false));
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
     crate::sim::scenario_bootstrap::initialize_map_roster_houses(
@@ -1120,7 +1127,9 @@ fn house_trigger_ratio_original_writer_and_due_selector_keep_signed_values_timer
         ("257suffix", 257, true),
     ] {
         let mut sim = Simulation::new();
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         let owner = sim.interner.intern("H0");
         let enemy = sim.interner.intern("H1");
         for id in [owner, enemy] {
@@ -1230,7 +1239,8 @@ fn house_team_controls_ordered_tag_history_preserves_native_due_selection_and_sa
     rules.general = RuleSet::from_ini(&IniFile::from_str(
         "[General]\nTeamDelays=300,600,900\nTotalAITeamCap=8,8,8\nMaximumAIDefensiveTeams=2,2,2\nMinimumAIDefensiveTeams=9,2,9\nUseMinDefenseRule=no\n",
     )).unwrap().general;
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     for (index, owner) in houses.iter().enumerate() {
         let house = sim.houses.get_mut(owner).unwrap();
         house.set_ai_activation_for_test(

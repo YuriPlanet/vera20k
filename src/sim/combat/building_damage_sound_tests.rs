@@ -176,7 +176,9 @@ fn replay_building_history(corpus: &Value, rules: &RuleSet, history: &Value, typ
         world.session.house_order.push(owner);
     }
     // Inherited make_dock_fixture declares mode1 and source PlayerPtr.
-    world.session.game_mode_nonzero = true;
+    world
+        .session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     world.session.current_house = Some(source_owner);
     crate::sim::arena_fixture::flat_arena(&mut world, rules);
     let location = coordinate(&history["input"]["target_object"]["location"]);

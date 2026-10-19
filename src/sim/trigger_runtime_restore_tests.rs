@@ -417,7 +417,8 @@ fn failed_foot_unlimbo_retires_new_object_and_restores_old_raw_location() {
         ground_pose::position_world_coord(&sim.substrate.entities.get(old).unwrap().position);
     // Aircraft4196B0, already covered by the original class-entry owner:
     // mode0 + owned-by-current-house + unmapped destination refuses +D8.
-    sim.session.game_mode_nonzero = false;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false));
     let created = construct(&mut sim, &rules, houses[0], "HORNET");
     sim.substrate
         .entities

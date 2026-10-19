@@ -14,7 +14,8 @@ fn retail_factories() -> Option<(RuleSet, Simulation, u64, u64)> {
     let mut sim = Simulation::with_seed(0x0044_8160);
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     let owner = sim.intern("Americans");
     let side = rules.country_side_index("Americans").unwrap().0;
     let mut house = HouseState::new(owner, side, Some(owner), true, 50_000, 10);
@@ -407,7 +408,9 @@ fn manual_primary_native_histories_preserve_retained_flags_consumers_and_streams
         let mut sim = Simulation::new();
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
         let owners = [sim.intern("Americans"), sim.intern("Alliance")];
         for owner in owners {

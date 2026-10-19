@@ -341,7 +341,7 @@ fn launch_cases_five_and_six_match_native() {
         if let Some(tile) = tile {
             set_tile(&mut sim, TARGET, tile);
         }
-        sim.houses.get_mut(&americans).unwrap().side_index = int(&row["side"]) as u8;
+        sim.houses.get_mut(&americans).unwrap().side_index = int(&row["side"]) as i32;
         let sw_type = if charged {
             charge_super(&mut sim, americans, name)
         } else {
@@ -1008,7 +1008,11 @@ fn spawn_parachuted_matches_native() {
         let house = sim.houses.get_mut(&americans).unwrap();
         house.is_human = flag(row, "human");
         house.player_control = flag(row, "player_control");
-        sim.session.game_mode_nonzero = int(&row["game_mode"]) != 0;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+                int(&row["game_mode"]) != 0,
+            ),
+        );
         if !flag(row, "paradropped") {
             sim.playfield_bounds = Some(NO_DROP_PLAYFIELD);
         }

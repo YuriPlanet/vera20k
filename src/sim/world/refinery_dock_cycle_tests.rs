@@ -489,7 +489,9 @@ fn a_busy_refinery_leaves_a_second_miners_click_on_select() {
     run_until_unloading(&mut s);
     let second = spawn_returning_miner(&mut s, (15, 15));
     // What_Action admits only a human player's Unit (House `0x0050B6F0`).
-    s.sim.session.game_mode_nonzero = true;
+    s.sim
+        .session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     s.sim.session.current_house = Some(s.sim.substrate.entities.get(s.miner).unwrap().owner());
     assert_eq!(
         s.sim

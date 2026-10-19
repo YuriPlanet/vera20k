@@ -64,7 +64,9 @@ fn rules() -> RuleSet {
 /// Computer houses `H0..` in HouseClass::Array order.
 fn houses(game_mode_nonzero: bool, count: usize) -> (Simulation, Vec<InternedId>) {
     let mut sim = Simulation::new();
-    sim.session.game_mode_nonzero = game_mode_nonzero;
+    sim.session.set_game_mode(
+        crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(game_mode_nonzero),
+    );
     let names: Vec<InternedId> = (0..count)
         .map(|index| sim.interner.intern(&format!("H{index}")))
         .collect();
@@ -542,7 +544,7 @@ fn state(mode: i32, last_attack: i32) -> HouseStrategyEmergencyState {
     }
 }
 
-fn house(name: InternedId, side: u8) -> HouseState {
+fn house(name: InternedId, side: i32) -> HouseState {
     HouseState::new(name, side, None, false, 0, 10)
 }
 

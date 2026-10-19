@@ -29,7 +29,8 @@ fn fixture(rules: &RuleSet, producer: &str, backup: bool) -> (SimRuntime, Intern
     let mut sim = Simulation::with_seed(0x4FA4_3800);
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
-    sim.session.game_mode_nonzero = false;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false));
     sim.input_delay_ticks = 0;
     let owner = sim.interner.intern("Americans");
     let enemy = sim.interner.intern("Russians");

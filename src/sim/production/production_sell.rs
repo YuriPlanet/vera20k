@@ -126,7 +126,7 @@ pub(crate) fn techno_refund(sim: &Simulation, rules: &RuleSet, id: u64) -> Optio
         object,
         sim.houses.get(&owner)?,
         &sim.house_cost_factors(owner)?,
-        sim.session.game_mode_nonzero,
+        sim.session.game_mode_nonzero(),
         false,
     ))
 }
@@ -322,7 +322,7 @@ fn qualifying_undeploy(sim: &Simulation, rules: &RuleSet, id: u64) -> bool {
     if !object.construction_yard {
         return true;
     }
-    sim.session.game_mode_nonzero
+    sim.session.game_mode_nonzero()
         && sale_archive(entity)
         && sim.owner_is_human(entity.owner())
         && sim.session.game_options.mcv_redeploy

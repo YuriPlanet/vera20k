@@ -130,13 +130,10 @@ impl TeamScriptVm {
                         // ReadHouseType475540 uses a case-sensitive physical
                         // <Player @ A>..<Player @ H> table, then the shared
                         // case-insensitive country alias-before-ID lookup.
-                        let bytes = value.as_bytes();
-                        if bytes.len() == 12
-                            && bytes.starts_with(b"<Player @ ")
-                            && bytes[11] == b'>'
-                            && (b'A'..=b'H').contains(&bytes[10])
+                        if let Some(player) =
+                            crate::rules::native_processing::house_type_player_at(value)
                         {
-                            Some(TeamTypeHouse::PlayerAt(bytes[10] - b'A'))
+                            Some(TeamTypeHouse::PlayerAt(player))
                         } else {
                             rules
                                 .scenario_country_name(Some(value))

@@ -9,6 +9,7 @@
 //! in the private `tests` child.
 
 mod render;
+pub(crate) use render::transfer_progress_draws;
 
 #[cfg(test)]
 mod tests;
@@ -54,8 +55,8 @@ const FTOL_EPSILON: f64 = 0.000_001;
 /// Static loading colors used only when rules `[Colors]` are unavailable
 /// (missing assets / headless); replaced by `resolve_player_colors` once rules
 /// load.
-const FALLBACK_BACKING_RGB: [f32; 3] = [0.22, 0.22, 0.22];
-const FALLBACK_PROGRESS_RAMP: [Color; 16] = [Color::rgb(180, 180, 180); 16];
+pub(super) const FALLBACK_BACKING_RGB: [f32; 3] = [0.22, 0.22, 0.22];
+pub(super) const FALLBACK_PROGRESS_RAMP: [Color; 16] = [Color::rgb(180, 180, 180); 16];
 #[derive(Debug, Clone, PartialEq)]
 pub struct LoadingProgressState {
     max_value: f64,
@@ -97,7 +98,7 @@ impl LoadingProgressState {
         self.set_percent(requested)
     }
 
-    fn set_percent(&mut self, percent: f64) -> bool {
+    pub(super) fn set_percent(&mut self, percent: f64) -> bool {
         let mut new_value = self.max_value * PROGRESS_PERCENT_SCALE * percent;
         if new_value > self.max_value {
             new_value = self.max_value;
@@ -110,6 +111,11 @@ impl LoadingProgressState {
     }
 
     pub fn fill_width_gamemd_ftol_positive_domain(&self, frame0_width: u32) -> u32 {
+        // Malformed signed peer progress remains state-visible, but cannot
+        // request a negative GPU fill width.
+        if self.current_value <= 0.0 {
+            return 0;
+        }
         gamemd_ftol_positive_domain(f64::from(frame0_width) * self.current_value / self.max_value)
             .max(0) as u32
     }
@@ -261,6 +267,18 @@ impl LoadingRequest {
     pub(crate) fn campaign(startup: crate::app::match_bootstrap::PreparedCampaignStartup) -> Self {
         Self {
             startup: LoadingStartup::Campaign(startup),
+            accepted_rmg_start_staging: None,
+            random_map_preview: None,
+        }
+    }
+
+    pub(crate) fn network(startup: LoadingStartup) -> Self {
+        assert!(
+            matches!(startup, LoadingStartup::Network(_)),
+            "network request requires an admitted immutable start"
+        );
+        Self {
+            startup,
             accepted_rmg_start_staging: None,
             random_map_preview: None,
         }
@@ -451,26 +469,76 @@ struct PreparedScenarioLoad {
 enum LoadingStage {
     Selected(LoadingRequest),
     Prepared(PreparedScenarioLoad),
+    AwaitingPeers {
+        result: Box<MapLoadResult>,
+        wait: NetworkLoadWait,
+    },
 }
 
 impl LoadingStage {
-    fn request(&self) -> &LoadingRequest {
+    fn startup(&self) -> &LoadingStartup {
         match self {
-            Self::Selected(request) => request,
-            Self::Prepared(prepared) => &prepared.request,
+            Self::Selected(request) => request.startup(),
+            Self::Prepared(prepared) => prepared.request.startup(),
+            Self::AwaitingPeers { result, .. } => &result.scenario.startup,
+        }
+    }
+}
+
+/// Original684370. Wall-clock buckets use the existing signed countdown;
+/// this wait owns no roster or progress copy and never advances simulation.
+struct NetworkLoadWait {
+    timeout: crate::sim::timer::CdTimer,
+    resend: crate::sim::timer::CdTimer,
+    last_fraction: f64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum NetworkLoadPoll {
+    Pending,
+    ReportProgress,
+    Complete,
+    TimedOut,
+}
+
+impl NetworkLoadWait {
+    fn new(now: i32, fraction: f64) -> Self {
+        Self {
+            timeout: crate::sim::timer::CdTimer::started(now, 3600),
+            resend: crate::sim::timer::CdTimer::started(now, 300),
+            last_fraction: fraction,
+        }
+    }
+    fn poll(&mut self, now: i32, fraction: f64) -> NetworkLoadPoll {
+        // Expiry precedes the completion check at68442D..684465.
+        if self.timeout.expired(now) {
+            return NetworkLoadPoll::TimedOut;
+        }
+        if fraction >= 0.9995 {
+            return NetworkLoadPoll::Complete;
+        }
+        if fraction != self.last_fraction {
+            self.timeout.start(now, 7200);
+            self.last_fraction = fraction;
+        }
+        if self.resend.expired(now) {
+            self.resend.start(now, 60);
+            NetworkLoadPoll::ReportProgress
+        } else {
+            NetworkLoadPoll::Pending
         }
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum NativeLoadingArt {
-    StockOffline(LoadingArtVariant),
+    StockOffline(Option<LoadingArtVariant>),
     Campaign,
 }
 
 pub(crate) struct NativeLoadingScreenState {
     pub variant: NativeLoadingArt,
-    local_side_index: u8,
+    local_side_index: i32,
     /// Local player's MP color scheme — source of the progress outline and bar
     /// remap. Derived from the launch session, not the country variant.
     pub color_index: HouseColorIndex,
@@ -496,8 +564,8 @@ pub(crate) struct NativeLoadingScreenState {
 
 impl NativeLoadingScreenState {
     fn standard_skirmish(
-        variant: LoadingArtVariant,
-        local_side_index: u8,
+        variant: Option<LoadingArtVariant>,
+        local_side_index: i32,
         color_index: HouseColorIndex,
         progress_row: LoadingProgressRowSnapshot,
         progress_cadence: NativeLoadingProgressCadence,
@@ -525,16 +593,14 @@ impl NativeLoadingScreenState {
             variant: NativeLoadingArt::Campaign,
             // BeginProgress684620 passes Campaign.CD; color resolver642B30
             // distinguishes exactly zero from all nonzero values.
-            local_side_index: u8::from(cd != 0),
+            local_side_index: cd,
             color_index: HouseColorIndex(0),
             backing_rgb: FALLBACK_BACKING_RGB,
             text_rgb: [1.0; 3],
             progress_ramp: FALLBACK_PROGRESS_RAMP,
             progress: LoadingProgressState::standard_skirmish(),
             // Campaign meter has no participant label, remap or country icon.
-            progress_row: LoadingProgressRowSnapshot {
-                label: String::new(),
-            },
+            progress_row: LoadingProgressRowSnapshot::default(),
             atlas: None,
             composition: None,
             campaign_presentation: None,
@@ -559,11 +625,14 @@ impl NativeLoadingScreenState {
         if let Some(hsv) = scheme_hsv_by_entry(schemes, entry) {
             self.backing_rgb = normalize_rgb(hsv_to_rgb(hsv));
         }
-        let text_scheme = if self.local_side_index == 0 {
-            "AlliedLoad"
-        } else {
-            "SovietLoad"
-        };
+        let text_scheme =
+            if self.variant == NativeLoadingArt::StockOffline(Some(LoadingArtVariant::Observer)) {
+                "LightGrey"
+            } else if self.local_side_index == 0 {
+                "AlliedLoad"
+            } else {
+                "SovietLoad"
+            };
         if let Some(entry) = scheme_entry_by_name(schemes, text_scheme)
             && let Some(hsv) = scheme_hsv_by_entry(schemes, entry)
         {
@@ -572,6 +641,12 @@ impl NativeLoadingScreenState {
             log::warn!("Missing loading text color scheme {text_scheme}; using white");
         }
         self.progress_ramp = *ramps.ramp(self.color_index);
+        for row in &mut self.progress_row.participants {
+            if let Some(hsv) = scheme_hsv_by_entry(schemes, usize::from(row.color_index.0)) {
+                row.backing_rgb = normalize_rgb(hsv_to_rgb(hsv));
+            }
+            row.ramp = *ramps.ramp(row.color_index);
+        }
     }
 }
 
@@ -590,8 +665,10 @@ pub(crate) struct LoadingSession {
 
 impl LoadingSession {
     fn failure_policy(&self) -> LoadingFailurePolicy {
-        if self.stage.request().startup().campaign().is_some() {
+        if self.stage.startup().campaign().is_some() {
             LoadingFailurePolicy::RetryCampaignShell
+        } else if matches!(self.stage.startup(), LoadingStartup::Network(_)) {
+            LoadingFailurePolicy::RetryNetworkShell
         } else if self.native.is_some() {
             LoadingFailurePolicy::ReportNativeFailure
         } else {
@@ -608,19 +685,24 @@ impl LoadingSession {
     fn from_request(request: LoadingRequest) -> Self {
         let native = match request.skirmish_launch_session() {
             Some(skirmish_launch_session) => {
-                let variant =
-                    loading_art_variant_from_launch_country(skirmish_launch_session.local.country);
+                let variant = if skirmish_launch_session.local_player().is_observer() {
+                    Some(LoadingArtVariant::Observer)
+                } else {
+                    loading_art_variant_from_launch_country(
+                        skirmish_launch_session.local_slot().country,
+                    )
+                };
                 // `local.color_index` is the gamemd color priority; resolve to a
                 // `[Colors]` entry index (priority LUT + /2).
                 let color_index = HouseColorIndex(scheme_entry_for_priority(
-                    skirmish_launch_session.local.color_index as i32,
+                    skirmish_launch_session.local_slot().color_index as i32,
                 ) as u8);
                 let progress_cadence = NativeLoadingProgressCadence::for_selected_map_file(
                     request.selected_map_file(),
                 );
                 Some(NativeLoadingScreenState::standard_skirmish(
                     variant,
-                    skirmish_launch_session.local.country.side_index(),
+                    -1, // Bound from the rules-owned HouseType Side before drawing.
                     color_index,
                     LoadingProgressRowSnapshot::from_launch_session(skirmish_launch_session),
                     progress_cadence,
@@ -646,7 +728,10 @@ impl LoadingSession {
 
 enum LoadingPump {
     Pending,
-    Finished(Box<MapLoadResult>),
+    Finished {
+        result: Box<MapLoadResult>,
+        timed_out: Vec<usize>,
+    },
     Failed(anyhow::Error),
 }
 
@@ -670,18 +755,53 @@ impl LoadingJob {
     }
 }
 
+/// Admit a peer's loading milestone into the active immutable source roster.
+/// Transport is outside this owner; controlled service input uses this same seam.
+pub(crate) fn accept_network_loading_progress(
+    state: &mut AppState,
+    source_index: usize,
+    percent: i32,
+) -> bool {
+    if !state.match_state.session.mode().is_network()
+        || !state
+            .match_state
+            .session
+            .network_connected_source_indices()
+            .contains(&source_index)
+    {
+        return false;
+    }
+    state
+        .frontend
+        .loading_session
+        .as_mut()
+        .and_then(|session| session.native.as_mut())
+        .is_some_and(|native| {
+            native
+                .progress_row
+                .update_remote_progress(source_index, percent)
+        })
+}
+
 pub(crate) fn begin_loading(state: &mut AppState, request: LoadingRequest) {
+    state
+        .frontend
+        .multiplayer_shell_runtime
+        .begin_fresh_scenario_load();
     let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
     crate::app::radar_movie::retire(state, wall_ms);
     crate::app::chrono_screen::retire(state, wall_ms);
     // The shell writes GameMode before the loading screen (`0x0052E10F`
     // Skirmish, `0x0052E175` campaign); the session owner is live from here.
-    state.match_state.session.begin_offline(
-        request.startup().session_mode(),
-        request
-            .skirmish_launch_session()
-            .map(|launch| launch.player_name.clone()),
-    );
+    match request.startup() {
+        LoadingStartup::Network(startup) => state.match_state.session.assert_network_start(startup),
+        startup => state.match_state.session.begin_offline(
+            startup.session_mode(),
+            startup
+                .launch_session()
+                .map(|launch| launch.local_player().name.clone()),
+        ),
+    }
     let mut session = LoadingSession::from_request(request);
     session.job.ra2_dir = state
         .platform
@@ -691,6 +811,19 @@ pub(crate) fn begin_loading(state: &mut AppState, request: LoadingRequest) {
     // Resolve the backing fill from the live rules `[Colors]` schemes now that
     // `state.rules` is reachable (the native ctor only sees the launch session).
     if let (Some(native), Some(rules)) = (session.native.as_mut(), state.rules()) {
+        // ReadScenario68479D..6847C9 projects raw HouseType+BC; ctor-only
+        // countries retain -1. Only observer country selection maps to entry0.
+        if let Some(launch) = session.stage.startup().launch_session() {
+            let country = if launch.local_player().is_observer() {
+                LaunchCountry::America
+            } else {
+                launch.local_slot().country
+            };
+            native.local_side_index = rules
+                .country_name(country.index())
+                .and_then(|id| rules.country_side_index(id))
+                .map_or(-1, |side| i32::from(side.0));
+        }
         native.resolve_player_colors(&rules.color_schemes, &rules.house_color_ramps);
     }
     let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
@@ -724,12 +857,7 @@ fn replace_loading_attempt(
     next: LoadingSession,
     now_ms: u64,
 ) {
-    let correlation = next
-        .stage
-        .request()
-        .startup()
-        .accepted()
-        .map(|s| s.correlation);
+    let correlation = next.stage.startup().accepted().map(|s| s.correlation);
     startup.begin(correlation);
     retire_loading_attempt(slot, assets);
     *slot = Some(lease_loading_assets_and_play_loading_theme(
@@ -777,12 +905,56 @@ pub(crate) fn audio_service_asset_manager<'a>(
         .or_else(|| loading_session.and_then(loading_asset_manager))
 }
 
+/// Read-only projection of the loading presentation actually selected by this
+/// owner. Diagnostic callers can compare observer art and source-node order
+/// without reaching mutable launch/progress state or reconstructing its policy.
+#[derive(Debug)]
+pub(crate) struct NetworkLoadingPresentation<'a> {
+    pub local_player_index: usize,
+    pub art: Option<LoadingArtVariant>,
+    pub participants: Vec<NetworkLoadingParticipantPresentation<'a>>,
+    pub atlas_ready: bool,
+}
+
+#[derive(Debug)]
+pub(crate) struct NetworkLoadingParticipantPresentation<'a> {
+    pub label: &'a str,
+    pub art: Option<LoadingArtVariant>,
+}
+
+pub(crate) fn network_loading_presentation(
+    state: &AppState,
+) -> Option<NetworkLoadingPresentation<'_>> {
+    let session = state.frontend.loading_session.as_ref()?;
+    if !matches!(session.stage.startup(), LoadingStartup::Network(_)) {
+        return None;
+    }
+    let native = session.native.as_ref()?;
+    let NativeLoadingArt::StockOffline(art) = native.variant else {
+        return None;
+    };
+    Some(NetworkLoadingPresentation {
+        local_player_index: native.progress_row.local_player_index,
+        art,
+        participants: native
+            .progress_row
+            .participants
+            .iter()
+            .map(|row| NetworkLoadingParticipantPresentation {
+                label: &row.label,
+                art: row.variant,
+            })
+            .collect(),
+        atlas_ready: native.atlas.is_some(),
+    })
+}
+
 pub(crate) fn loading_map_name(state: &AppState) -> Option<&str> {
     state
         .frontend
         .loading_session
         .as_ref()
-        .map(|session| session.stage.request().selected_map_file())
+        .map(|session| session.stage.startup().selected_map_file())
 }
 
 /// Immutable selected campaign for loading diagnostics; the stage retains
@@ -795,7 +967,6 @@ pub(crate) fn loading_campaign_startup(
         .loading_session
         .as_ref()?
         .stage
-        .request()
         .startup()
         .campaign()
 }
@@ -804,6 +975,7 @@ pub(crate) fn loading_map_source(state: &AppState) -> Option<&crate::map::source
     match &state.frontend.loading_session.as_ref()?.stage {
         LoadingStage::Prepared(prepared) => Some(prepared.initial.map_source()),
         LoadingStage::Selected(_) => None,
+        LoadingStage::AwaitingPeers { result, .. } => Some(&result.scenario.map_source),
     }
 }
 
@@ -825,6 +997,12 @@ fn retire_loading_attempt(
     assets: &mut crate::app::process_assets::ProcessAssets,
 ) {
     if let Some(session) = slot.take() {
+        let mut session = session;
+        if let LoadingStage::AwaitingPeers { result, .. } = &mut session.stage
+            && let Some(manager) = result.asset_manager.take()
+        {
+            assets.return_from_loading(manager);
+        }
         session.job.retire(assets);
     }
 }
@@ -833,6 +1011,7 @@ fn retire_loading_attempt(
 enum LoadingFailurePolicy {
     ReportNativeFailure,
     RetryCampaignShell,
+    RetryNetworkShell,
     InstallGenericFallback,
 }
 
@@ -868,6 +1047,9 @@ fn pump_loading_after_present(state: &mut AppState) -> LoadingPump {
     let Some(session) = state.frontend.loading_session.take() else {
         return LoadingPump::Pending;
     };
+    if matches!(session.stage, LoadingStage::AwaitingPeers { .. }) {
+        return poll_network_load_wait(state, session);
+    }
     if session.native_pump_blocked() {
         session.job.retire(&mut state.process_assets);
         return LoadingPump::Failed(anyhow::anyhow!(
@@ -913,6 +1095,10 @@ fn pump_loading_after_present(state: &mut AppState) -> LoadingPump {
         initial,
         context: fresh_scenario_context,
     } = prepared;
+    state
+        .frontend
+        .multiplayer_shell_runtime
+        .observe_loaded_scenario_header(&initial.map_data().ini);
     log::debug!(target: "vera20k::loading_attempt", "remaining_load_begin");
     let result = (|| -> anyhow::Result<MapLoadResult> {
         let native_theater_cache_mismatch = theater_cache_mismatch(
@@ -1054,7 +1240,36 @@ fn pump_loading_after_present(state: &mut AppState) -> LoadingPump {
         }
     })();
     match result {
-        Ok(result) => LoadingPump::Finished(Box::new(result)),
+        Ok(result) => {
+            if matches!(result.scenario.startup, LoadingStartup::Network(_)) {
+                let native = native.expect("network load retains its source progress rows");
+                let now = (crate::app::match_runtime::frame_pacer::wall_clock_ms() >> 4) as i32;
+                let wait =
+                    NetworkLoadWait::new(now, native.progress_row.total_fraction(&native.progress));
+                let raw = native.progress_cadence.terminal_raw_percent() as i32;
+                state
+                    .match_state
+                    .session
+                    .report_network_loading_progress(raw);
+                poll_network_load_wait(
+                    state,
+                    LoadingSession {
+                        stage: LoadingStage::AwaitingPeers {
+                            result: Box::new(result),
+                            wait,
+                        },
+                        native: Some(native),
+                        job,
+                        next_frame: NextLoadingFrame::Later,
+                    },
+                )
+            } else {
+                LoadingPump::Finished {
+                    result: Box::new(result),
+                    timed_out: Vec::new(),
+                }
+            }
+        }
         Err(err) => {
             job.retire(&mut state.process_assets);
             LoadingPump::Failed(err)
@@ -1080,7 +1295,10 @@ fn ensure_job_asset_manager(state: &mut AppState) -> anyhow::Result<()> {
 }
 
 fn loading_asset_manager(session: &LoadingSession) -> Option<&AssetManager> {
-    session.job.asset_manager.as_ref()
+    match &session.stage {
+        LoadingStage::AwaitingPeers { result, .. } => result.asset_manager.as_ref(),
+        _ => session.job.asset_manager.as_ref(),
+    }
 }
 
 fn ensure_session_job_asset_manager(
@@ -1134,6 +1352,38 @@ fn ensure_session_job_asset_manager(
     Ok(())
 }
 
+fn poll_network_load_wait(state: &mut AppState, mut session: LoadingSession) -> LoadingPump {
+    let LoadingStage::AwaitingPeers { wait, .. } = &mut session.stage else {
+        unreachable!()
+    };
+    let native = session.native.as_ref().expect("network source progress");
+    let now = (crate::app::match_runtime::frame_pacer::wall_clock_ms() >> 4) as i32;
+    let poll = wait.poll(now, native.progress_row.total_fraction(&native.progress));
+    if matches!(
+        poll,
+        NetworkLoadPoll::ReportProgress | NetworkLoadPoll::Complete
+    ) {
+        state
+            .match_state
+            .session
+            .report_network_loading_progress(native.progress_cadence.terminal_raw_percent() as i32);
+    }
+    if matches!(poll, NetworkLoadPoll::Complete | NetworkLoadPoll::TimedOut) {
+        let timed_out = if poll == NetworkLoadPoll::TimedOut {
+            native.progress_row.incomplete_remote_indices()
+        } else {
+            Vec::new()
+        };
+        let LoadingStage::AwaitingPeers { result, .. } = session.stage else {
+            unreachable!()
+        };
+        LoadingPump::Finished { result, timed_out }
+    } else {
+        state.frontend.loading_session = Some(session);
+        LoadingPump::Pending
+    }
+}
+
 impl LoadingJob {
     fn retire(self, process_assets: &mut crate::app::process_assets::ProcessAssets) {
         if let Some(manager) = self.asset_manager {
@@ -1165,6 +1415,7 @@ fn prepare_loading_session(
         next_frame,
     } = session;
     let stage = match stage {
+        stage @ LoadingStage::AwaitingPeers { .. } => stage,
         LoadingStage::Prepared(prepared) => LoadingStage::Prepared(prepared),
         LoadingStage::Selected(request) => {
             let ra2_dir = job
@@ -1320,19 +1571,18 @@ pub(crate) fn selected_map_start_assignments(
         .filter_map(|(start_index, participant_index)| {
             let participant_index = (*participant_index)?;
             projection.final_gathered_starts().get(start_index)?;
-            let (participant, color_priority) = if participant_index == 0 {
-                (
-                    LoadingParticipantId::Local,
-                    launch_session.local.color_index,
-                )
-            } else {
-                let opponent_index = participant_index - 1;
-                let opponent = launch_session.opponents.get(opponent_index)?;
-                (
-                    LoadingParticipantId::Opponent(opponent_index),
-                    opponent.color_index,
-                )
+            let slots = crate::sim::scenario_bootstrap::normalized_launch_slots(launch_session);
+            let slot = slots.get(participant_index)?;
+            let participant = match slot.source_human_index {
+                Some(index) if index == launch_session.local_player_index => {
+                    LoadingParticipantId::Local
+                }
+                Some(index) => LoadingParticipantId::Human(index),
+                None => {
+                    LoadingParticipantId::Opponent(participant_index - launch_session.humans.len())
+                }
             };
+            let color_priority = slot.color_index;
             Some(LoadingStartAssignment {
                 start_index: u32::try_from(start_index).ok()?,
                 participant,
@@ -1509,7 +1759,6 @@ pub(crate) fn ensure_native_loading_atlas(state: &mut AppState) -> anyhow::Resul
             );
             let scenario = session
                 .stage
-                .request()
                 .startup()
                 .campaign()
                 .expect("campaign loading owns a campaign startup")
@@ -1553,8 +1802,7 @@ pub(crate) fn ensure_native_loading_atlas(state: &mut AppState) -> anyhow::Resul
         log::info!("Native campaign loading atlas ready");
         return Ok(());
     }
-    let variant = selected_loading_art_variant(state)
-        .ok_or_else(|| anyhow::anyhow!("offline loading lost its art variant"))?;
+    let variant = selected_loading_art_variant(state);
     ensure_loading_composition_snapshot(state);
     let Some(assets) = state
         .frontend
@@ -1625,6 +1873,22 @@ pub(crate) fn ensure_native_loading_atlas(state: &mut AppState) -> anyhow::Resul
                 preview,
                 marker_remaps: &marker_remaps,
             });
+    let participant_art: Vec<_> = state
+        .frontend
+        .loading_session
+        .as_ref()
+        .and_then(|session| session.native.as_ref())
+        .expect("native loading")
+        .progress_row
+        .participants
+        .iter()
+        .map(
+            |row| crate::render::loading_screen_chrome::LoadingParticipantArtInput {
+                variant: row.variant,
+                ramp: row.ramp,
+            },
+        )
+        .collect();
     let atlas = build_loading_screen_atlas_with_composition(
         &state.renderer.gpu,
         &state.renderer.batch_renderer,
@@ -1633,6 +1897,7 @@ pub(crate) fn ensure_native_loading_atlas(state: &mut AppState) -> anyhow::Resul
         width,
         &progress_ramp,
         composition_input,
+        &participant_art,
     );
     if let Some(native) = state
         .frontend
@@ -1743,13 +2008,51 @@ pub(crate) fn after_loading_frame_presented(state: &mut AppState) {
     let policy = loading_failure_policy(state);
     match pump_loading_after_present(state) {
         LoadingPump::Pending => state.platform.window.request_redraw(),
-        LoadingPump::Finished(result) => {
+        LoadingPump::Finished {
+            mut result,
+            timed_out,
+        } => {
+            let disconnected = apply_network_loading_disconnects(
+                &mut state.match_state.session,
+                &mut result,
+                &timed_out,
+            );
             log::debug!(target: "vera20k::loading_attempt", "install_begin");
             super::transitions::finish_fresh_scenario_read(state, *result);
+            for (owner, display) in disconnected {
+                crate::app::input::messages::post_connection_lost(state, &owner, &display);
+            }
             log::debug!(target: "vera20k::loading_attempt", "install_end screen={:?} assets_available={} accepted={}", state.frontend.screen, state.process_assets.is_available(), state.match_state.startup.accepted().is_some());
         }
         LoadingPump::Failed(err) => fail_loading(state, policy, err),
     }
+}
+
+/// Native684536 ->5DA750 at frame0. Source membership changes independently
+/// of the immutable launch and its already constructed House array.
+fn apply_network_loading_disconnects(
+    session: &mut crate::app::match_runtime::session::MatchSession,
+    result: &mut MapLoadResult,
+    indices: &[usize],
+) -> Vec<(String, String)> {
+    let Some(launch) = result.scenario.startup.launch_session() else {
+        return Vec::new();
+    };
+    let slots = crate::sim::scenario_bootstrap::normalized_launch_slots(launch);
+    let mut disconnected = Vec::new();
+    for &index in indices {
+        if session.disconnect_network_loading_participant(index)
+            && let Some(slot) = slots
+                .iter()
+                .find(|slot| slot.source_human_index == Some(index))
+            && let Some(sim) = result.scenario.simulation.as_mut()
+            && let Some(owner) = sim.interner.get(&slot.owner_name)
+        {
+            sim.flag_house_to_die(owner);
+            disconnected.push((slot.owner_name.clone(), launch.humans[index].name.clone()));
+        }
+    }
+    disconnected
 }
 
 fn fail_loading(state: &mut AppState, policy: LoadingFailurePolicy, err: anyhow::Error) {
@@ -1766,9 +2069,14 @@ fn fail_loading(state: &mut AppState, policy: LoadingFailurePolicy, err: anyhow:
         crate::app::App::return_to_main_menu(state);
         return;
     }
-    if policy == LoadingFailurePolicy::RetryCampaignShell {
+    if matches!(
+        policy,
+        LoadingFailurePolicy::RetryCampaignShell | LoadingFailurePolicy::RetryNetworkShell
+    ) {
         // MainPrepareSession52E718 tests StartScenario's AL; a failed normal
-        // campaign start retries the main shell at52E732 ->52D9C9.
+        // campaign start retries the main shell at52E732 ->52D9C9. The
+        // network StartScenario call52E745 follows the same retry at52E75F;
+        // GameMode3 re-enters LAN at52DAEF/52E356, so retain its lobby context.
         crate::app::App::return_to_main_menu(state);
     } else if policy == LoadingFailurePolicy::ReportNativeFailure {
         state.frontend.screen = GameScreen::MissionResult {
@@ -1874,24 +2182,29 @@ fn selected_loading_art_variant(state: &AppState) -> Option<LoadingArtVariant> {
         .as_ref()
         .and_then(|session| session.native.as_ref())
         .and_then(|native| match native.variant {
-            NativeLoadingArt::StockOffline(variant) => Some(variant),
+            NativeLoadingArt::StockOffline(variant) => variant,
             NativeLoadingArt::Campaign => None,
         })
 }
 
-fn loading_art_variant_from_launch_country(country: LaunchCountry) -> LoadingArtVariant {
-    match country {
-        LaunchCountry::America => LoadingArtVariant::Americans,
-        LaunchCountry::Korea => LoadingArtVariant::Alliance,
-        LaunchCountry::France => LoadingArtVariant::French,
-        LaunchCountry::Germany => LoadingArtVariant::Germans,
-        LaunchCountry::GreatBritain => LoadingArtVariant::British,
-        LaunchCountry::Libya => LoadingArtVariant::Africans,
-        LaunchCountry::Iraq => LoadingArtVariant::Arabs,
-        LaunchCountry::Cuba => LoadingArtVariant::Confederation,
-        LaunchCountry::Russia => LoadingArtVariant::Russians,
-        LaunchCountry::Yuri => LoadingArtVariant::Yuri,
-    }
+pub(super) fn loading_art_variant_from_launch_country(
+    country: LaunchCountry,
+) -> Option<LoadingArtVariant> {
+    // DrawLoading553412..5534CE and insignia4E3560 define only this stock
+    // presentation domain. Preserve the wider HouseType registry identity.
+    Some(match country.raw_index() {
+        0 => LoadingArtVariant::Americans,
+        1 => LoadingArtVariant::Alliance,
+        2 => LoadingArtVariant::French,
+        3 => LoadingArtVariant::Germans,
+        4 => LoadingArtVariant::British,
+        5 => LoadingArtVariant::Africans,
+        6 => LoadingArtVariant::Arabs,
+        7 => LoadingArtVariant::Confederation,
+        8 => LoadingArtVariant::Russians,
+        9 => LoadingArtVariant::Yuri,
+        _ => return None,
+    })
 }
 
 /// Normalize an 8-bit RGB triple to 0..1.

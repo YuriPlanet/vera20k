@@ -128,13 +128,48 @@ impl SavedSeedDescriptionEdit {
 
     /// Native 614B30 insertion, retaining the caller's configured EM_LIMITTEXT.
     pub fn insert_text_limited(&mut self, text: &str, limit: usize) {
-        for unit in text.encode_utf16().filter(|unit| *unit > 0x1f) {
-            if limit != 0 && self.units.len() >= limit {
-                break;
-            }
-            self.units.insert(self.caret, unit);
-            self.caret += 1;
+        for unit in text.encode_utf16() {
+            self.insert_unit_filtered(unit, limit, false, &[]);
         }
+    }
+
+    /// NewEdit614B30 at615226..61527A: reject-character table, UTF-16
+    /// limit, control-character gate and optional byte-only input (<0x100).
+    /// One unit lets callers run their native EN_CHANGE handler after each
+    /// admitted WM_CHAR instead of applying that handler after a pasted batch.
+    pub fn insert_unit_filtered(
+        &mut self,
+        unit: u16,
+        limit: usize,
+        byte_only: bool,
+        rejected: &[u16],
+    ) -> bool {
+        if unit <= 0x1f
+            || (byte_only && unit >= 0x100)
+            || rejected.contains(&unit)
+            || (limit != 0 && self.units.len() >= limit)
+        {
+            return false;
+        }
+        self.units.insert(self.caret, unit);
+        self.caret += 1;
+        true
+    }
+
+    /// NewEdit multiline Enter614DEB appends CRLF to the end, independently
+    /// of the caret and EM_LIMITTEXT, before notifying its parent with501.
+    pub fn append_enter_line_end(&mut self) {
+        self.units.extend([13, 10]);
+    }
+
+    /// NewEdit4B3 getter614D49: caller capacity includes its forced final NUL.
+    pub fn wide_text(&self, capacity: usize) -> Vec<u16> {
+        self.units
+            .iter()
+            .copied()
+            .take(capacity.saturating_sub(1))
+            .take_while(|unit| *unit != 0)
+            .collect()
     }
 
     /// NewEdit message 0x4B5 (614D28): narrow each UTF-16 unit to its low byte,

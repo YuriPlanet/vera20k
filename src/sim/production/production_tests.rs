@@ -517,7 +517,8 @@ pub(super) fn install_infantry_delivery_fixture_map(sim: &mut Simulation) {
     sim.playfield_size_height = Some(64);
     sim.session.map_width = 16;
     sim.session.map_height = 64;
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
 }
 
 pub(super) fn spawn_structure(

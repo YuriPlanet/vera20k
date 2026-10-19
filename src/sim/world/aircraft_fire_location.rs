@@ -168,7 +168,7 @@ impl Simulation {
             .unwrap_or_else(|| {
                 ground_pose::object_get_coords(entity, self.resolved_terrain.as_ref())
             });
-        let check_shroud = !self.session.game_mode_nonzero && !entity.is_mission_only();
+        let check_shroud = !self.session.game_mode_nonzero() && !entity.is_mission_only();
         let mut claims = None;
         let mut radius = range.wrapping_sub(256);
         while radius > 256 {

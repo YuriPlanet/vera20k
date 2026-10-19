@@ -160,7 +160,7 @@ pub(crate) fn try_fire(
     if sim
         .houses
         .get(&owner)
-        .is_none_or(|house| house.is_controlled_by_human(sim.session.game_mode_nonzero))
+        .is_none_or(|house| house.is_controlled_by_human(sim.session.game_mode_nonzero()))
     {
         return;
     }

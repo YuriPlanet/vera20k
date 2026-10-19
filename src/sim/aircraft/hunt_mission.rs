@@ -123,7 +123,7 @@ impl Simulation {
         let facts = HuntFacts {
             ammo: entity.ammo().map_or(-1, |ammo| ammo.current()),
             team: self.team_script_vm.team_for_member(id).is_some(),
-            game_mode: self.session.game_mode_nonzero,
+            game_mode: self.session.game_mode_nonzero(),
         };
         hunt_visit(
             &facts,

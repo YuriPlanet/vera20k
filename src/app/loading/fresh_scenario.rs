@@ -41,6 +41,7 @@ pub(crate) enum FreshScenarioFamily {
 pub(crate) enum FreshStartupProvenance {
     Accepted,
     ResolvedLegacy,
+    NetworkAccepted,
     CampaignCatalog,
 }
 
@@ -145,6 +146,11 @@ impl FreshScenarioLoadContextDescriptor {
                 prepared.session.launch_session().clone(),
                 prepared.seed.value,
                 FreshStartupProvenance::Accepted,
+            ),
+            LoadingStartup::Network(prepared) => (
+                prepared.launch_session().clone(),
+                prepared.seed.value,
+                FreshStartupProvenance::NetworkAccepted,
             ),
             LoadingStartup::UnverifiedLegacy { session, seed } => (
                 session.clone(),
@@ -334,6 +340,11 @@ impl FreshScenarioLoadContextDescriptor {
                 FreshStartupProvenance::Accepted,
                 prepared.seed.value,
                 prepared.session.launch_session(),
+            ),
+            LoadingStartup::Network(prepared) => (
+                FreshStartupProvenance::NetworkAccepted,
+                prepared.seed.value,
+                prepared.launch_session(),
             ),
             LoadingStartup::UnverifiedLegacy { session, seed } => {
                 (FreshStartupProvenance::ResolvedLegacy, seed.value, session)

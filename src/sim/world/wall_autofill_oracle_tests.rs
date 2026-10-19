@@ -109,7 +109,11 @@ impl Scene {
         sim.power_states.insert(owner, PowerState::default());
         sim.session.house_order.push(owner);
         sim.session.current_house = Some(owner);
-        sim.session.game_mode_nonzero = int(&control["input"]["game_mode"]) != 0;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+                int(&control["input"]["game_mode"]) != 0,
+            ),
+        );
         sim.fog.width = sim.session.map_width;
         sim.fog.height = sim.session.map_height;
         // Native repair_target_prior supplies each registered Cell+12C=18

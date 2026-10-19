@@ -228,7 +228,7 @@ pub(crate) fn build_super_timer_instances(
         scenario.map(|(left, _)| left),
         &supers,
         blackouts,
-        !sim.session.game_mode_nonzero,
+        !sim.session.game_mode_nonzero(),
     );
     if lines.is_empty() {
         return (Vec::new(), Vec::new());

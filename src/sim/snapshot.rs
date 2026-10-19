@@ -1185,7 +1185,10 @@ use crate::util::save_codec;
 // be decoded under this schema.
 // 441 -> 442: FootSpeedState retains the native Foot+6B5 crush flag shared
 // by Drive/Ship speed prefixes and Techno RockingUpdate.
-const SNAPSHOT_VERSION: u32 = 442;
+// 442 -> 443: exact session mode and multiplayer launch/observer state;
+// retained CompEasyBonus rules scalar and House Flag_To_Die latch.
+// The positional session/House payload changed.
+const SNAPSHOT_VERSION: u32 = 443;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -1454,6 +1457,8 @@ pub enum SnapshotRestoreError {
     InvalidCurrentHouse {
         owner: crate::sim::intern::InternedId,
     },
+    #[error("invalid saved multiplayer session: {reason}")]
+    InvalidMultiplayerSession { reason: &'static str },
     #[error("entity {object_id} is a live infantryman with the dying mark")]
     InvalidInfantryDyingMark { object_id: u64 },
     #[error("house {owner} has invalid serialized outcome state: {reason}")]
@@ -2772,6 +2777,21 @@ impl Simulation {
         {
             return Err(SnapshotRestoreError::InvalidCurrentHouse { owner });
         }
+        if let Some(observer) = self.session.observer_house()
+            && (!self.houses.contains_key(&observer)
+                || !self.session.house_order.contains(&observer))
+        {
+            return Err(SnapshotRestoreError::InvalidMultiplayerSession {
+                reason: "observer House is absent",
+            });
+        }
+        if self.session.game_mode().is_network()
+            && self.session.network_max_ahead_frames().is_none()
+        {
+            return Err(SnapshotRestoreError::InvalidMultiplayerSession {
+                reason: "network timing is absent",
+            });
+        }
         let scenario_names_admitted = self
             .houses
             .values()
@@ -2813,8 +2833,18 @@ impl Simulation {
             house.validate_production_history().map_err(|reason| {
                 SnapshotRestoreError::InvalidHouseProductionHistory { owner, reason }
             })?;
+            if house.is_to_die()
+                && (house.has_won() || house.has_lost() || house.outcome().is_some())
+            {
+                return Err(SnapshotRestoreError::InvalidHouseOutcomeState {
+                    owner,
+                    reason: "Flag_To_Die conflicts with a terminal result",
+                });
+            }
+            // MPlayer_Defeated flags only PlayerPtr (4FC5AA..6B7); every other
+            // defeated House, and a local one still watching, has no result.
             let Some(outcome) = house.outcome() else {
-                if house.is_defeated || house.has_won() || house.has_lost() {
+                if house.has_won() || house.has_lost() {
                     return Err(SnapshotRestoreError::InvalidHouseOutcomeState {
                         owner,
                         reason: "terminal flags require serialized outcome authority",
@@ -4427,8 +4457,8 @@ mod tests {
             GameSnapshot::load(&preamble_only),
             Err(SnapshotError::VersionMismatch {
                 expected: SNAPSHOT_VERSION,
-                found: 441,
-            })
+                found,
+            }) if found == SNAPSHOT_VERSION - 1
         ));
     }
 
@@ -4889,7 +4919,9 @@ mod tests {
         // 439 -> 440: UnitDelivery state and instance base policy.
         // 440 -> 441: binary64 passenger Size/SizeLimit and signed CargoTotalSize.
         // 441 -> 442: the Foot-owned crush slowdown / rocking flag.
-        assert_eq!(super::SNAPSHOT_VERSION, 442);
+        // 442 -> 443: exact session mode, multiplayer launch/observer state,
+        // CompEasyBonus and the House Flag_To_Die latch.
+        assert_eq!(super::SNAPSHOT_VERSION, 443);
     }
 
     #[test]
@@ -5062,6 +5094,46 @@ mod tests {
                 GameSnapshot::load(&bytes),
                 Err(SnapshotError::VersionMismatch { expected: SNAPSHOT_VERSION, found }) if found == version
             ));
+        }
+    }
+
+    #[test]
+    fn exact_network_mode_timing_and_observer_identity_survive_snapshot() {
+        use crate::sim::scenario_session::ScenarioGameMode;
+        for mode in [ScenarioGameMode::Lan, ScenarioGameMode::Wol] {
+            // Native Scenario load reseeds the RNG to zero. Isolate the
+            // persisted session fields from that intentional load-time change.
+            let mut sim = Simulation::with_seed(0);
+            let owner = sim.intern("Observer");
+            sim.houses.insert(
+                owner,
+                crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 1),
+            );
+            sim.session.house_order.push(owner);
+            sim.session.current_house = Some(owner);
+            sim.session.set_game_mode(mode);
+            sim.session.install_network_timing(73);
+            sim.session.install_multiplayer_house_identity(
+                crate::skirmish_modes::MpModeClass::Battle,
+                Some(owner),
+            );
+            let mut header = crate::map::preview::ScenarioStartHeader::default();
+            header.read_ini(&crate::rules::ini_parser::IniFile::from_str(
+                "[Header]\nNumCoopHumanStartSpots=2\n",
+            ));
+            sim.session.install_start_header(header);
+            let bytes = GameSnapshot::save(&sim, 0, 0, "network-mode", 0);
+            let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
+            restored.restore_after_snapshot_load().unwrap();
+            assert_eq!(restored.session.game_mode(), mode);
+            assert_eq!(restored.session.start_header().coop_human_start_spots(), 2);
+            assert_eq!(restored.session.network_max_ahead_frames(), Some(73));
+            assert_eq!(restored.session.observer_house(), Some(owner));
+            assert_eq!(
+                restored.session.multiplayer_mode_class(),
+                Some(crate::skirmish_modes::MpModeClass::Battle)
+            );
+            assert_eq!(restored.state_hash(), sim.state_hash());
         }
     }
 
@@ -6528,6 +6600,40 @@ mod tests {
     }
 
     #[test]
+    fn pending_flag_to_die_snapshot_preserves_latch_shared_timer_and_hash() {
+        use crate::sim::house_state::HouseState;
+        let mut original = Simulation::with_seed(0);
+        let owner = original.interner.intern("Americans");
+        original
+            .houses
+            .insert(owner, HouseState::new(owner, 0, None, true, 0, 10));
+        let before = original.state_hash();
+        assert!(original.flag_house_to_die(owner));
+        assert_ne!(original.state_hash(), before);
+        let saved_hash = original.state_hash();
+        let bytes = GameSnapshot::save(&original, 11, 22, "", 33);
+        let mut restored = GameSnapshot::load(&bytes).expect("current snapshot").sim;
+        restored
+            .restore_after_snapshot_load()
+            .expect("pending destruction is valid");
+        assert_eq!(restored.state_hash(), saved_hash);
+        let house = restored.houses.get_mut(&owner).unwrap();
+        assert!(house.is_to_die());
+        assert_eq!(
+            house.outcome_timer(),
+            crate::sim::timer::CdTimer::started(0, 0)
+        );
+        assert!(house.outcome().is_none());
+        assert!(house.take_due_to_die(0));
+        assert!(!house.take_due_to_die(0));
+        assert_ne!(
+            restored.state_hash(),
+            saved_hash,
+            "latch itself is hash-relevant"
+        );
+    }
+
+    #[test]
     fn gsi_01_04_mid_savour_snapshot_preserves_remaining_frames_without_replaying_eva() {
         use crate::sim::house_state::{HouseOutcomeKind, HouseState};
         use crate::sim::world::SimSoundEvent;
@@ -6608,12 +6714,11 @@ mod tests {
     fn gsi_01_04_malformed_current_snapshot_naked_terminal_flags_are_rejected() {
         use crate::sim::house_state::HouseState;
 
-        for terminal_flag in ["is_defeated", "has_won", "has_lost"] {
+        for terminal_flag in ["has_won", "has_lost"] {
             let mut malformed = Simulation::new();
             let owner = malformed.interner.intern("Americans");
             let mut house = HouseState::new(owner, 0, None, true, 10_000, 10);
             match terminal_flag {
-                "is_defeated" => house.is_defeated = true,
                 "has_won" => house.supply_outcome_state_for_test(
                     true,
                     false,
@@ -6641,6 +6746,22 @@ mod tests {
                 "naked {terminal_flag} must not enter a world whose app bridge can only consume outcome_state"
             );
         }
+    }
+
+    #[test]
+    fn defeated_house_without_a_result_restores() {
+        use crate::sim::house_state::HouseState;
+
+        let mut sim = Simulation::new();
+        let owner = sim.interner.intern("Americans");
+        let mut house = HouseState::new(owner, 0, None, false, 10_000, 10);
+        house.is_defeated = true;
+        sim.houses.insert(owner, house);
+        let bytes = GameSnapshot::save(&sim, 11, 22, "", 33);
+        let mut restored = GameSnapshot::load(&bytes).expect("current snapshot").sim;
+        assert_eq!(restored.restore_after_snapshot_load(), Ok(()));
+        assert!(restored.houses[&owner].is_defeated);
+        assert!(restored.houses[&owner].outcome().is_none());
     }
 
     #[test]
@@ -6857,7 +6978,9 @@ mod tests {
         house.player_control = true;
         sim.houses.insert(owner, house);
         sim.session.house_order.push(owner);
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         sim.queue_command(crate::sim::command::CommandEnvelope::new(
             owner,
             17,
@@ -6870,9 +6993,13 @@ mod tests {
         sim.houses.get_mut(&owner).unwrap().player_control = false;
         assert_ne!(sim.state_hash(), expected_hash);
         sim.houses.get_mut(&owner).unwrap().player_control = true;
-        sim.session.game_mode_nonzero = false;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false),
+        );
         assert_ne!(sim.state_hash(), expected_hash);
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
 
         let bytes = GameSnapshot::save(&sim, 1, 2, "wall.map", 0);
         let restored = GameSnapshot::load(&bytes)
@@ -6883,7 +7010,7 @@ mod tests {
             sim.pending_command_snapshot()
         );
         assert!(restored.houses.get(&owner).unwrap().player_control);
-        assert!(restored.session.game_mode_nonzero);
+        assert!(restored.session.game_mode_nonzero());
         assert_eq!(restored.state_hash(), expected_hash);
     }
 

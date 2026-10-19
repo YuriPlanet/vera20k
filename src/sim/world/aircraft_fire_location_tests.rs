@@ -125,7 +125,11 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
     let mut sim = Simulation::with_seed(input["seed"].as_u64().unwrap_or(31));
     sim.session.map_width = 128;
     sim.session.map_height = 128;
-    sim.session.game_mode_nonzero = input["game_mode"].as_u64().unwrap_or(1) != 0;
+    sim.session.set_game_mode(
+        crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+            input["game_mode"].as_u64().unwrap_or(1) != 0,
+        ),
+    );
     let local = input["local"]
         .as_array()
         .cloned()

@@ -64,6 +64,8 @@ pub(crate) mod scenario_catalog;
 mod shell_campaign;
 mod shell_load_saved_game;
 mod shell_main_menu;
+pub(crate) mod shell_lan;
+pub(crate) mod shell_lan_setup;
 mod shell_movies_credits;
 mod shell_random_map;
 pub(crate) mod shell_route;

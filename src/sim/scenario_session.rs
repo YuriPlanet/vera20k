@@ -485,6 +485,54 @@ impl Default for ScenarioLightingState {
     }
 }
 
+/// SessionClass GameMode A8B238. The exact active mode survives startup and
+/// save/restore; zero/nonzero tests are projections of this single value.
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
+)]
+pub enum ScenarioGameMode {
+    #[default]
+    Campaign,
+    Lan,
+    Wol,
+    Skirmish,
+    Other,
+}
+
+impl ScenarioGameMode {
+    pub const fn from_game_mode(raw: i32) -> Self {
+        match raw {
+            0 => Self::Campaign,
+            3 => Self::Lan,
+            4 => Self::Wol,
+            5 => Self::Skirmish,
+            _ => Self::Other,
+        }
+    }
+    /// Compatibility input for callers that only described offline sessions.
+    pub const fn from_legacy_nonzero(nonzero: bool) -> Self {
+        if nonzero {
+            Self::Skirmish
+        } else {
+            Self::Campaign
+        }
+    }
+    pub const fn is_network(self) -> bool {
+        matches!(self, Self::Lan | Self::Wol)
+    }
+    pub const fn is_nonzero(self) -> bool {
+        !matches!(self, Self::Campaign)
+    }
+    /// Queue_AI647260 routes the active LAN/WOL values to its multiplayer body.
+    pub const fn command_queue_route(self) -> crate::sim::world::CommandQueueRoute {
+        if self.is_network() {
+            crate::sim::world::CommandQueueRoute::Multiplayer
+        } else {
+            crate::sim::world::CommandQueueRoute::SinglePlayer
+        }
+    }
+}
+
 /// Everything the app layer decides about a session before the sim exists.
 /// Built from the lobby/launch flow and the selected map file — never
 /// hardcoded inside sim/.
@@ -614,9 +662,22 @@ pub struct ScenarioSession {
     pub map_name: String,
     /// Theater name from the map header.
     pub theater: String,
-    /// Persisted native zero/nonzero GameMode classification.
+    /// Exact native GameMode; the former boolean is now a derived query.
     #[serde(default)]
-    pub game_mode_nonzero: bool,
+    game_mode: ScenarioGameMode,
+    /// Accepted MPMode factory class. Runtime completion queries its virtual
+    /// policy directly; no independent cooperative-win flag is retained.
+    multiplayer_mode_class: Option<crate::skirmish_modes::MpModeClass>,
+    /// NativeAC1198, assigned by each observer's CreateHouses688116. The last
+    /// observer in House creation order owns this native presentation identity.
+    observer_house: Option<InternedId>,
+    /// Native Session+318/A8B550, admitted from the start/timing service.
+    /// It is independent of local command scheduling preferences.
+    network_max_ahead_frames: Option<i32>,
+    /// Scenario+11E4 is included in Save689372's complete Scenario block and
+    /// retained by Load6894A8/NoInit683560. Fresh Clear_Scene starts at4.
+    #[serde(default)]
+    start_header: crate::map::preview::ScenarioStartHeader,
     #[serde(default)]
     campaign: Option<CampaignScenarioState>,
     /// Scenario+35A2. Trigger actions46/47 own this retained input lock;
@@ -723,6 +784,56 @@ pub struct ScenarioSession {
 }
 
 impl ScenarioSession {
+    pub const fn game_mode(&self) -> ScenarioGameMode {
+        self.game_mode
+    }
+    pub const fn game_mode_nonzero(&self) -> bool {
+        self.game_mode.is_nonzero()
+    }
+    /// Fresh accepted startup or admitted saved-session mode, never a frame-local
+    /// UI projection. Descriptor compatibility callers are converted at construction.
+    pub fn set_game_mode(&mut self, mode: ScenarioGameMode) {
+        self.game_mode = mode;
+        if !mode.is_network() {
+            self.network_max_ahead_frames = None;
+        }
+    }
+    pub fn install_network_timing(&mut self, max_ahead_frames: i32) {
+        assert!(
+            self.game_mode.is_network(),
+            "network timing needs an admitted network mode"
+        );
+        self.network_max_ahead_frames = Some(max_ahead_frames);
+    }
+    pub const fn start_header(&self) -> crate::map::preview::ScenarioStartHeader {
+        self.start_header
+    }
+
+    pub(crate) fn install_start_header(
+        &mut self,
+        header: crate::map::preview::ScenarioStartHeader,
+    ) {
+        self.start_header = header;
+    }
+
+    pub const fn network_max_ahead_frames(&self) -> Option<i32> {
+        self.network_max_ahead_frames
+    }
+    pub const fn multiplayer_mode_class(&self) -> Option<crate::skirmish_modes::MpModeClass> {
+        self.multiplayer_mode_class
+    }
+    pub const fn observer_house(&self) -> Option<InternedId> {
+        self.observer_house
+    }
+    pub(crate) fn install_multiplayer_house_identity(
+        &mut self,
+        class: crate::skirmish_modes::MpModeClass,
+        observer: Option<InternedId>,
+    ) {
+        self.multiplayer_mode_class = Some(class);
+        self.observer_house = observer;
+    }
+
     pub fn install_waypoints(
         &mut self,
         waypoints: &std::collections::HashMap<u32, crate::map::waypoints::Waypoint>,
@@ -817,7 +928,7 @@ impl ScenarioSession {
         mission_counter: i32,
         game_options: Option<&GameOptions>,
     ) -> Result<(), CampaignScenarioStartupError> {
-        if self.game_mode_nonzero {
+        if self.game_mode_nonzero() {
             return Err(CampaignScenarioStartupError::NonCampaignMode);
         }
         if self.campaign.is_some() {
@@ -874,7 +985,12 @@ impl ScenarioSession {
         s.seed.hash(hasher);
         s.map_name.hash(hasher);
         s.theater.hash(hasher);
-        s.game_mode_nonzero.hash(hasher);
+        s.game_mode.hash(hasher);
+        s.multiplayer_mode_class.hash(hasher);
+        s.network_max_ahead_frames.hash(hasher);
+        s.start_header.hash(hasher);
+        // observer_house, like current_house, selects process-local presentation
+        // and accepted outcome. It is saved and reference-validated, not shared CRC input.
         if let Some(campaign) = s.campaign {
             b"scenario-campaign-startup-v1".hash(hasher);
             campaign.hash(hasher);
@@ -1074,7 +1190,11 @@ impl ScenarioSession {
             seed: u64::from(desc.seed),
             map_name: desc.map_name.clone(),
             theater: desc.theater.clone(),
-            game_mode_nonzero: desc.game_mode_nonzero,
+            game_mode: ScenarioGameMode::from_legacy_nonzero(desc.game_mode_nonzero),
+            multiplayer_mode_class: None,
+            observer_house: None,
+            network_max_ahead_frames: None,
+            start_header: crate::map::preview::ScenarioStartHeader::default(),
             campaign: None,
             input_locked: false,
             chrono_screen: crate::sim::superweapon::chrono_screen::ChronoScreenState::default(),

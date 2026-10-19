@@ -57,6 +57,17 @@ pub(crate) fn house_type_index_of_name<'a>(
         .unwrap_or(-1)
 }
 
+/// HouseClassGetPlayerAtFromString510FB0's exact physical token table.
+/// Shared by ReadHouseType475540 and TeamType House decoding.
+pub(crate) fn house_type_player_at(incoming: &str) -> Option<u8> {
+    let bytes = incoming.as_bytes();
+    (bytes.len() == 12
+        && bytes.starts_with(b"<Player @ ")
+        && bytes[11] == b'>'
+        && (b'A'..=b'H').contains(&bytes[10]))
+    .then(|| bytes[10] - b'A')
+}
+
 /// One native `RulesClass::Process` source in its runtime position.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RulesLayerKind {
@@ -369,6 +380,49 @@ fn process_native_noncampaign_rules_prepass_inner(
     (trace, [after_countries, after_general, after_house_bodies])
 }
 
+/// Session ReadMultiPlayer6980C0 calls Countries6722F0 before its Side475540
+/// read. It does not read Country bodies; PrepareSession52E123 does that later.
+/// Executed controls: tools/rules_oracle/session_country.{py,json,meta.json}.
+pub(crate) fn read_native_multiplayer_country(
+    registry: NativeRulesRegistryState,
+    root: &IniFile,
+    settings: &IniFile,
+    current: i32,
+) -> (i32, NativeTypeConstructionTrace) {
+    let mut processor = RulesPassProcessor::with_registry_state(registry);
+    processor.allocate_explicit_family(root, "Countries", RulesTypeFamily::Country);
+    let name = settings
+        .section_or_empty("MultiPlayer")
+        .read_string("Side", "", 0x80);
+    let index = if name.is_empty() {
+        current
+    } else if let Some(player) = house_type_player_at(&name) {
+        0x117b + i32::from(player)
+    } else {
+        let found = processor.country_index_of_name(&name);
+        if found != -1 {
+            found
+        } else {
+            // Unlike generic FindOrAllocate, this reader constructs none
+            // spellings too (4755A0..4755F5).
+            i32::try_from(processor.find_or_construct(RulesTypeFamily::Country, &name))
+                .expect("native Country index exceeds i32")
+        }
+    };
+    (index, processor.finish().1)
+}
+
+/// PrepareSession52E123..52E14B reads each live Country against the selected
+/// root after Session settings. D7/55FD31 omits this separate body pass.
+pub(crate) fn refresh_native_multiplayer_country_bodies(
+    registry: NativeRulesRegistryState,
+    root: &IniFile,
+) -> NativeTypeConstructionTrace {
+    let mut processor = RulesPassProcessor::with_registry_state(registry);
+    processor.process_house_family(root);
+    processor.finish().1
+}
+
 /// Retained RulesClass type vectors, distinct from the process-resident type
 /// registries. The constructor @ 0x00665827 initializes them empty; ReadGeneral
 /// @ 0x0066DA90/0x0066DB93 replaces MetallicDebris/BridgeExplosions only after
@@ -424,6 +478,10 @@ pub struct ProcessedRulesLayers {
 }
 
 impl ProcessedRulesLayers {
+    pub(crate) fn native_registry_state(&self) -> &NativeRulesRegistryState {
+        self.native_type_construction_trace.registry_state()
+    }
+
     pub fn ini(&self) -> &IniFile {
         &self.ini
     }
@@ -1059,20 +1117,10 @@ impl ProcessedRulesLayers {
     /// Ordered live Country identities, Color+C0 and Side+BC. Side672440
     /// writes BC before HouseType511850 can override it in ReadTypeData.
     /// A constructor-only Country retains BC=-1, not an invented side.
-    pub(crate) fn country_registry_states(&self) -> impl Iterator<Item = (&str, i32, i32)> {
+    pub(crate) fn country_projection(&self) -> impl Iterator<Item = (&str, &IniSection, i32, i32)> {
         self.native_type_construction_trace
             .registry_state()
-            .families
-            .get(&RulesTypeFamily::Country)
-            .into_iter()
-            .flatten()
-            .map(|member| {
-                (
-                    member.native_stored_id.as_str(),
-                    member.country_color_scheme,
-                    member.country_side_index,
-                )
-            })
+            .country_projection()
     }
 
     pub(crate) fn side_registry_names(&self) -> impl Iterator<Item = &str> {
@@ -1223,6 +1271,13 @@ impl ProcessedRulesLayers {
         self.native_type_construction_trace
             .registry_state()
             .rules_survivor_divisors
+    }
+
+    /// Retained AI.CompEasyBonus at Rules+17E3 (ReadAI673D18).
+    pub(crate) fn comp_easy_bonus(&self) -> bool {
+        self.native_type_construction_trace
+            .registry_state()
+            .rules_comp_easy_bonus
     }
 
     /// Retained General.MaximumCheerRate at Rules+580 (ReadGeneral66EBD4).
@@ -1421,6 +1476,11 @@ impl NativeTypeConstructionTrace {
         self.allocated_super_weapon_type_count
     }
 
+    pub(crate) fn prepend_events(&mut self, mut earlier: Vec<NativeTypeConstructionEvent>) {
+        earlier.append(&mut self.events);
+        self.events = earlier;
+    }
+
     pub(crate) fn registry_state(&self) -> &NativeRulesRegistryState {
         &self.registry_state
     }
@@ -1498,6 +1558,7 @@ pub(crate) struct NativeRulesRegistryState {
     rules_chrono_beam_color: [u8; 3],
     rules_prism_support: PrismSupportRules,
     rules_patrol_scan_minutes: NativeF64Bits,
+    rules_comp_easy_bonus: bool,
     rules_prism_type: Option<String>,
     rules_drop_zone_anim: Option<String>,
     rules_drop_zone_radius: i32,
@@ -1564,6 +1625,7 @@ impl Default for NativeRulesRegistryState {
             rules_chrono_beam_color: general.chrono_beam_color,
             rules_prism_support: PrismSupportRules::default(),
             rules_patrol_scan_minutes: general.patrol_scan_minutes,
+            rules_comp_easy_bonus: general.comp_easy_bonus,
             rules_prism_type: None,
             rules_drop_zone_anim: None,
             rules_drop_zone_radius: general.drop_zone_radius,
@@ -1582,6 +1644,29 @@ impl Default for NativeRulesRegistryState {
 }
 
 impl NativeRulesRegistryState {
+    pub(crate) fn country_projection(&self) -> impl Iterator<Item = (&str, &IniSection, i32, i32)> {
+        self.families
+            .get(&RulesTypeFamily::Country)
+            .into_iter()
+            .flatten()
+            .map(|member| {
+                (
+                    member.native_stored_id.as_str(),
+                    &member.body,
+                    member.country_color_scheme,
+                    member.country_side_index,
+                )
+            })
+    }
+
+    pub(crate) fn side_projection_names(&self) -> impl Iterator<Item = &str> {
+        self.families
+            .get(&RulesTypeFamily::Side)
+            .into_iter()
+            .flatten()
+            .map(|member| member.native_stored_id.as_str())
+    }
+
     fn validate_techno_type_order(&self) -> Result<(), RulesError> {
         let expected = self
             .families
@@ -1760,6 +1845,7 @@ impl NativeRulesRegistryState {
             rules_chrono_beam_color: self.rules_chrono_beam_color,
             rules_prism_support: self.rules_prism_support,
             rules_patrol_scan_minutes: self.rules_patrol_scan_minutes,
+            rules_comp_easy_bonus: self.rules_comp_easy_bonus,
             // Plain index vectors, so RulesClass keeps them; the next pass
             // reads them as its default.
             rules_prerequisite_lists: self.rules_prerequisite_lists,
@@ -2377,6 +2463,7 @@ struct RulesPassProcessor {
     rules_chrono_beam_color: [u8; 3],
     rules_prism_support: PrismSupportRules,
     rules_patrol_scan_minutes: NativeF64Bits,
+    rules_comp_easy_bonus: bool,
     rules_prism_type: Option<String>,
     rules_drop_zone_anim: Option<String>,
     rules_drop_zone_radius: i32,
@@ -2433,6 +2520,7 @@ impl RulesPassProcessor {
             rules_chrono_beam_color: registry_state.rules_chrono_beam_color,
             rules_prism_support: registry_state.rules_prism_support,
             rules_patrol_scan_minutes: registry_state.rules_patrol_scan_minutes,
+            rules_comp_easy_bonus: registry_state.rules_comp_easy_bonus,
             rules_prism_type: registry_state.rules_prism_type,
             rules_drop_zone_anim: registry_state.rules_drop_zone_anim,
             rules_drop_zone_radius: registry_state.rules_drop_zone_radius,
@@ -2818,6 +2906,10 @@ impl RulesPassProcessor {
         // in the same process-resident authority as the other retained rules.
         self.rules_patrol_scan_minutes =
             section.read_double_bits("PatrolScan", self.rules_patrol_scan_minutes);
+        // ReadAI672AE0 reaches673CFD..673D1D after AirstripLimit and
+        // before Paranoid. Rules+17E3 survives the6686C0 Type reset;
+        // ReadBool5295F0 retains its current byte on absent/invalid input.
+        self.rules_comp_easy_bonus = section.read_bool("CompEasyBonus", self.rules_comp_easy_bonus);
     }
 
     fn allocate_general_references(&mut self, pass: &IniFile) {
@@ -4381,6 +4473,7 @@ impl RulesPassProcessor {
                     rules_chrono_beam_color: self.rules_chrono_beam_color,
                     rules_prism_support: self.rules_prism_support,
                     rules_patrol_scan_minutes: self.rules_patrol_scan_minutes,
+                    rules_comp_easy_bonus: self.rules_comp_easy_bonus,
                     rules_prism_type: self.rules_prism_type,
                     rules_drop_zone_anim: self.rules_drop_zone_anim,
                     rules_drop_zone_radius: self.rules_drop_zone_radius,

@@ -24,6 +24,8 @@ pub mod skirmish_shell;
 pub mod tooltips;
 pub mod wol_shell;
 pub mod network_options;
+pub(crate) mod lan_shell;
+pub(crate) mod multiplayer_setup;
 // pub mod skirmish;
 // pub mod dialog;
 // pub mod settings;

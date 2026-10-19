@@ -1038,6 +1038,9 @@ impl Simulation {
             (house.difficulty as i32).hash(hasher);
             house.rof_bias().bits().hash(hasher);
             house.is_defeated.hash(hasher);
+            if house.is_to_die() {
+                b"house-flag-to-die-v1".hash(hasher);
+            }
             house.has_won().hash(hasher);
             house.has_lost().hash(hasher);
             house.outcome().hash(hasher);

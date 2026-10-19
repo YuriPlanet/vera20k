@@ -96,7 +96,8 @@ Temporal=yes
 /// frame zero.
 fn sim_with_houses(sides: &[u8]) -> (Simulation, Vec<InternedId>) {
     let mut sim = Simulation::with_seed(5);
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     sim.session.binary_frame = 100;
     let houses = sides
         .iter()
@@ -111,6 +112,89 @@ fn sim_with_houses(sides: &[u8]) -> (Simulation, Vec<InternedId>) {
         })
         .collect();
     (sim, houses)
+}
+
+#[test]
+fn observer_defeat_waits_for_hostile_players_then_finishes_without_loss_voice() {
+    use crate::sim::scenario_session::ScenarioGameMode;
+    use crate::sim::world::SimSoundEvent;
+    let (mut sim, owners) = sim_with_houses(&[0, 1, 2]);
+    sim.session.set_game_mode(ScenarioGameMode::Lan);
+    sim.session.install_network_timing(10);
+    sim.session.current_house = Some(owners[0]);
+    sim.session.install_multiplayer_house_identity(
+        crate::skirmish_modes::MpModeClass::Battle,
+        Some(owners[0]),
+    );
+    for (index, owner) in owners.iter().enumerate() {
+        let house = sim.houses.get_mut(owner).unwrap();
+        house.is_human = true;
+        house
+            .tracking
+            .set_for_test(i32::from(index != 0), &[], (0, 0, 0), &[]);
+    }
+    sim.check_defeat(None, None);
+    assert!(sim.houses[&owners[0]].is_defeated);
+    assert!(
+        !sim.houses[&owners[0]].has_lost(),
+        "observer watches the two hostile human players"
+    );
+    assert!(sim.houses[&owners[0]].map_is_clear);
+    assert!(!sim.sound_events.iter().any(|event| matches!(event,
+        SimSoundEvent::PlayerDefeated { house } if *house == owners[0])));
+    sim.houses
+        .get_mut(&owners[1])
+        .unwrap()
+        .tracking
+        .set_for_test(0, &[], (0, 0, 0), &[]);
+    sim.check_defeat(None, None);
+    assert!(sim.houses[&owners[0]].has_lost());
+    assert_eq!(
+        sim.houses[&owners[0]].outcome_timer(),
+        crate::sim::timer::CdTimer::started(100, 30)
+    );
+    assert!(
+        !sim.houses[&owners[1]].has_lost(),
+        "only PlayerPtr gets the result"
+    );
+    assert!(
+        !sim.houses[&owners[2]].has_won(),
+        "remote survivor does not acquire this client's result"
+    );
+    assert!(
+        !sim.sound_events
+            .iter()
+            .any(|event| matches!(event, SimSoundEvent::MatchOutcome { .. }))
+    );
+}
+
+#[test]
+fn cooperative_defeated_local_waits_for_partner_and_shares_completed_victory() {
+    use crate::sim::scenario_session::ScenarioGameMode;
+    let (mut sim, owners) = sim_with_houses(&[0, 1, 2]);
+    sim.session.set_game_mode(ScenarioGameMode::Lan);
+    sim.session.install_network_timing(10);
+    sim.session.current_house = Some(owners[0]);
+    sim.session
+        .install_multiplayer_house_identity(crate::skirmish_modes::MpModeClass::Cooperative, None);
+    for (index, owner) in owners.iter().enumerate() {
+        let house = sim.houses.get_mut(owner).unwrap();
+        house.is_human = index < 2;
+        house
+            .tracking
+            .set_for_test(i32::from(index != 0), &[], (0, 0, 0), &[]);
+    }
+    sim.check_defeat(None, None);
+    assert!(sim.houses[&owners[0]].is_defeated);
+    assert!(!sim.houses[&owners[0]].has_lost());
+    sim.houses
+        .get_mut(&owners[2])
+        .unwrap()
+        .tracking
+        .set_for_test(0, &[], (0, 0, 0), &[]);
+    sim.check_defeat(None, None);
+    assert!(sim.houses[&owners[0]].has_won());
+    assert!(!sim.houses[&owners[1]].has_won());
 }
 
 /// Added selected mode in the existing House oracle. These rows execute the
@@ -144,8 +228,15 @@ fn native_flag_result_and_savour_controls() {
             "{name}: reader input"
         );
         let mut sim = Simulation::new();
-        sim.session.binary_frame = input["frame"].as_u64().unwrap_or(100) as u32;
-        sim.session.game_mode_nonzero = input["game_mode"].as_i64().unwrap_or(0) != 0;
+        sim.session.binary_frame = input["frame"].as_i64().unwrap_or(100) as u32;
+        let mode = crate::sim::scenario_session::ScenarioGameMode::from_game_mode(
+            input["game_mode"].as_i64().unwrap_or(0) as i32,
+        );
+        sim.session.set_game_mode(mode);
+        if mode.is_network() {
+            sim.session
+                .install_network_timing(input["max_ahead"].as_i64().unwrap_or(0) as i32);
+        }
         let owner = sim.interner.intern("Player");
         let country = sim.interner.intern("Country0");
         let mut house = HouseState::new(owner, 0, Some(country), true, 0, 10);
@@ -162,6 +253,12 @@ fn native_flag_result_and_savour_controls() {
         );
         sim.houses.insert(owner, house);
         sim.session.current_house = Some(owner);
+        if input["observer"].as_bool().unwrap_or(false) {
+            sim.session.install_multiplayer_house_identity(
+                crate::skirmish_modes::MpModeClass::Battle,
+                Some(owner),
+            );
+        }
         let skip = input["skip_timer"].as_bool().unwrap_or(false);
         let returned = match input["operation"].as_str().unwrap() {
             "win" => sim.flag_house_to_win(owner, Some(&rules), skip, Default::default()),
@@ -284,7 +381,11 @@ fn native_defeat_gate_corpus() {
         }
         let (mut sim, houses) = sim_with_houses(&[0]);
         let house = houses[0];
-        sim.session.game_mode_nonzero = input["game_mode"].as_i64().unwrap_or(1) != 0;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+                input["game_mode"].as_i64().unwrap_or(1) != 0,
+            ),
+        );
         sim.session.binary_frame = input["frame"].as_i64().unwrap_or(100) as u32;
         sim.session.game_options.short_game = input["short_game"].as_i64().unwrap_or(1) != 0;
         let types = ["AMCV", "SMCV", "PCV"].map(|name| sim.interner.intern(name));
@@ -678,6 +779,8 @@ fn native_blowup_all_corpus() {
 fn losing_the_last_building_blows_up_the_army_next_frame() {
     let rules = rules(3);
     let (mut sim, houses) = sim_with_houses(&[0, 1]);
+    // MPlayer_Defeated flags only PlayerPtr (4FC5AA..6B7): the survivor is local.
+    sim.session.current_house = Some(houses[1]);
     sim.session.game_options.short_game = true;
     let refinery = sim
         .spawn_object_at_height("GAREFN", "house0", 10, 10, 0, 0, &rules)
@@ -901,8 +1004,8 @@ fn reveal_entire_map_reveals_once_and_only_to_the_current_house() {
 /// The Civilian-side house is asked of each house's HouseType side
 /// (`[house+0x34]+0xBC` against `Find_Index("Civilian")`, every `0x006A46D0`
 /// caller). A map country outside `[Sides]` keeps the constructor's -1 even
-/// where the scenario's side resolver stores Civilian for its house through
-/// the declared side name, so it is passed over for the Neutral house. With
+/// when the scenario also supplies a declared Civilian side name, so it is
+/// passed over for the Neutral house. With
 /// no `Civilian` side, Find_Index's -1 matches that sideless type instead.
 #[test]
 fn the_civilian_house_is_asked_of_its_house_type() {
@@ -932,9 +1035,10 @@ fn the_civilian_house_is_asked_of_its_house_type() {
             })
             .collect();
         assert_eq!(
-            sim.houses[&houses[0]].side_index, sim.houses[&houses[1]].side_index,
-            "{civilian_side}: the resolver stores the declared side for the sideless country"
+            sim.houses[&houses[0]].side_index, -1,
+            "a registered sideless Country must not adopt the declared fallback"
         );
+        assert_eq!(sim.houses[&houses[1]].side_index, 1);
         assert_eq!(
             sim.civilian_side_house(&rules),
             Some(houses[expected]),

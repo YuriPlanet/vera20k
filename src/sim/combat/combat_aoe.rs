@@ -3841,7 +3841,9 @@ mod tests {
             world.main_rng = SimRng::new(7).into();
             world.scenario_rng = SimRng::new(1);
             // Some(false) models campaign PlayerControl without IsHuman.
-            world.session.game_mode_nonzero = false;
+            world.session.set_game_mode(
+                crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false),
+            );
             let mut house =
                 HouseState::new(victim_house, 0, None, human_control == Some(true), 0, 10);
             house.player_control = human_control.is_some();

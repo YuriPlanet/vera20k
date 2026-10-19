@@ -101,7 +101,7 @@ impl Simulation {
                     "ScenarioInit diplomacy precedes map objects"
                 );
                 assert!(
-                    !self.session.game_mode_nonzero,
+                    !self.session.game_mode_nonzero(),
                     "this ScenarioInit admission is the campaign map-read family"
                 );
                 assert_eq!(
@@ -186,7 +186,7 @@ impl Simulation {
         if self.session.computer_slot_has_team() {
             return;
         }
-        let game_mode_nonzero = self.session.game_mode_nonzero;
+        let game_mode_nonzero = self.session.game_mode_nonzero();
         // Both walks reload the House count after each call (0x005016DB,
         // 0x00501736).
         let mut index = 0;
@@ -267,7 +267,7 @@ impl Simulation {
             }
             // 0x004F9C37..0x004F9C7A: a human house allying with a house type
             // that is not MultiplayPassive turns the computers paranoid.
-            let game_mode_nonzero = self.session.game_mode_nonzero;
+            let game_mode_nonzero = self.session.game_mode_nonzero();
             if game_mode_nonzero
                 && rules.general.paranoid
                 && self
@@ -327,7 +327,7 @@ impl Simulation {
             return;
         };
         // 0x004F9FA9..0x004F9FC9.
-        if self.session.game_mode_nonzero
+        if self.session.game_mode_nonzero()
             && (other_house.multiplay_passive || house.multiplay_passive)
         {
             return;
@@ -388,7 +388,7 @@ impl Simulation {
         };
         // 0x0050157C..0x0050159E: a house type of the `Civilian` side, in a
         // nonzero game mode.
-        if self.session.game_mode_nonzero && self.house_type_is_civilian(other, rules) {
+        if self.session.game_mode_nonzero() && self.house_type_is_civilian(other, rules) {
             return false;
         }
         if self.object_placement_scope_active() {

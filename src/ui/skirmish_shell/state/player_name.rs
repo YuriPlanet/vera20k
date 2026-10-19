@@ -233,8 +233,26 @@ impl PlayerNameEditState {
     }
 }
 
+/// Derived country-menu projection, refreshed from the canonical Rules
+/// registry at shell entry. It never owns a participant's selected Country.
+#[derive(Debug, Clone)]
+pub(crate) struct CountryMenuCatalog(Vec<super::SkirmishComboItem>);
+impl Default for CountryMenuCatalog {
+    fn default() -> Self {
+        Self(vec![super::SkirmishComboItem::Country(
+            super::SkirmishCountryChoice::Random,
+        )])
+    }
+}
+impl CountryMenuCatalog {
+    pub(super) fn items(&self) -> &[super::SkirmishComboItem] {
+        &self.0
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct SkirmishShellState {
+    pub(crate) country_catalog: CountryMenuCatalog,
     pub selected_map_idx: usize,
     pub selected_mode_id: i32,
     pub player_name_edit: PlayerNameEditState,
@@ -296,6 +314,11 @@ pub enum SkirmishShellDialog {
 }
 
 impl SkirmishShellState {
+    pub fn refresh_country_catalog(&mut self, rules: &crate::rules::ruleset::RuleSet) {
+        self.country_catalog = CountryMenuCatalog(super::combos::country_choices(rules));
+        self.open_combo_dropdown = None;
+    }
+
     /// The dialog that shows on top of the Skirmish stack: the one decision
     /// for the slide target, the renderer and input. `None` while the
     /// chooser stays hidden after the random-map run, behind its Use Map's
@@ -320,6 +343,7 @@ impl Default for SkirmishShellState {
     fn default() -> Self {
         let options = SkirmishLaunchOptions::default();
         Self {
+            country_catalog: CountryMenuCatalog::default(),
             selected_map_idx: 0,
             selected_mode_id: 1,
             player_name_edit: PlayerNameEditState::default(),

@@ -316,16 +316,23 @@ mod tests {
         SkirmishLaunchSession {
             mode: test_battle_mode(),
             selected_map_file: Some("test.mmx".to_string()),
-            player_name: "Player".to_string(),
-            local: SkirmishLocalSlot {
-                country: LaunchCountry::America,
-                country_random: false,
-                color_index: 1,
-                color_random: false,
-                start_position: LaunchStartPosition::Position(3),
-                team: LaunchTeam::None,
-            },
+            humans: vec![crate::skirmish_launch::SkirmishHumanSlot {
+                raw_slot_index: Some(0),
+                name: "Player".to_string(),
+                slot: SkirmishLocalSlot {
+                    country: LaunchCountry::America,
+                    country_random: false,
+                    color_index: 1,
+                    color_random: false,
+                    start_position: LaunchStartPosition::Position(3),
+                    team: LaunchTeam::None,
+                },
+                role: crate::skirmish_launch::LaunchHumanRole::from_observer(false),
+            }],
+            local_player_index: 0,
+            ai_player_count: 1,
             opponents: vec![SkirmishAiSlot {
+                raw_slot_index: 1,
                 country: LaunchCountry::Russia,
                 country_random: false,
                 color_index: 2,
@@ -437,6 +444,7 @@ mod tests {
 
     fn test_battle_mode() -> SkirmishLaunchMode {
         SkirmishLaunchMode {
+            class: crate::skirmish_modes::MpModeClass::Battle,
             id: 1,
             ui_name_key: "GUI:Battle".to_string(),
             tooltip_key: "STT:ModeBattle".to_string(),
@@ -450,6 +458,7 @@ mod tests {
 
     fn test_cooperative_mode() -> SkirmishLaunchMode {
         SkirmishLaunchMode {
+            class: crate::skirmish_modes::MpModeClass::Cooperative,
             id: 3,
             ui_name_key: "GUI:Cooperative".to_string(),
             tooltip_key: "STT:ModeCooperative".to_string(),
@@ -478,7 +487,7 @@ mod tests {
                 text.push_str(&format!("ForbiddenHouses={forbidden}\n"));
             }
         }
-        let ini = IniFile::from_str(&text);
+        let ini = launch_fixture_ini(&text);
         RuleSet::from_ini(&ini).expect("test rules parse")
     }
 
@@ -498,22 +507,25 @@ mod tests {
         )
     }
 
-    fn ordered_country_side_rules() -> RuleSet {
-        let ini = IniFile::from_str(
-            "[Countries]\n\
+    const ORDERED_COUNTRY_SIDE_INI: &str = "[Countries]\n\
              0=Americans\n1=Alliance\n2=French\n3=Germans\n4=British\n\
              5=Africans\n6=Arabs\n7=Confederation\n8=Russians\n9=YuriCountry\n\
              10=GDI\n11=Nod\n12=Neutral\n13=Special\n\
              [Sides]\n\
              GDI=British,French,Germans,Americans,Alliance\n\
              Nod=Russians,Africans,Confederation,Arabs\n\
-             ThirdSide=YuriCountry\nCivilian=Neutral\nMutant=Special\n",
-        );
-        RuleSet::from_ini(&ini).expect("ordered country/side rules parse")
+             ThirdSide=YuriCountry\nCivilian=Neutral\nMutant=Special\n";
+
+    fn launch_fixture_ini(source: &str) -> IniFile {
+        IniFile::from_str(&format!("{ORDERED_COUNTRY_SIDE_INI}{source}"))
+    }
+
+    fn ordered_country_side_rules() -> RuleSet {
+        RuleSet::from_ini(&launch_fixture_ini("")).expect("ordered country/side rules parse")
     }
 
     fn test_starting_unit_rules() -> RuleSet {
-        let ini = IniFile::from_str(
+        let ini = launch_fixture_ini(
             "[General]\nBaseUnit=AMCV,SMCV,PCV\n\
              [VehicleTypes]\n1=AMCV\n2=SMCV\n3=MTNK\n4=HTNK\n5=HARV\n6=YTNK\n\
              [InfantryTypes]\n1=E1\n2=SHK\n\
@@ -797,7 +809,7 @@ mod tests {
     #[test]
     fn launch_session_uses_player_name_for_local_owner() {
         let mut session = test_session();
-        session.player_name = "Commander".to_string();
+        session.local_player_mut().name = "Commander".to_string();
 
         let slots = normalized_launch_slots(&session);
 
@@ -824,7 +836,7 @@ mod tests {
             (" Commander ", " Commander "),
         ] {
             let mut session = test_session();
-            session.player_name = handle.to_string();
+            session.local_player_mut().name = handle.to_string();
             let original = session.clone();
             let slots = normalized_launch_slots(&session);
             assert_eq!(slots[0].owner_name, expected_key);
@@ -842,14 +854,14 @@ mod tests {
                 crate::app::loading::progress_row::LoadingProgressRowSnapshot::from_launch_session(
                     &session,
                 );
-            assert_eq!(row.label, handle);
+            assert_eq!(row.local_label(), handle);
             assert_eq!(
                 session, original,
                 "normalization cannot rewrite display or launch inputs"
             );
         }
         let mut without_ai = test_session();
-        without_ai.player_name = "Computer1".to_string();
+        without_ai.local_player_mut().name = "Computer1".to_string();
         without_ai.opponents.clear();
         assert_eq!(
             normalized_launch_slots(&without_ai)[0].owner_name,
@@ -858,7 +870,7 @@ mod tests {
         let mut two_ai = test_session();
         two_ai.opponents.push(two_ai.opponents[0].clone());
         for handle in ["cOmPuTeR2", " Computer2 "] {
-            two_ai.player_name = handle.to_owned();
+            two_ai.local_player_mut().name = handle.to_owned();
             assert_eq!(normalized_launch_slots(&two_ai)[0].owner_name, "Player");
         }
     }
@@ -1130,7 +1142,7 @@ mod tests {
         let map = test_map_with_starts(&[authored]);
         let terrain = test_terrain(64, 64);
         let mut session = test_session();
-        session.local.start_position = LaunchStartPosition::Position(0);
+        session.local_slot_mut().start_position = LaunchStartPosition::Position(0);
         session.opponents[0].start_position = LaunchStartPosition::Position(1);
         session.options.bases = false;
         session.options.unit_count = 0;
@@ -1233,7 +1245,7 @@ mod tests {
         // that list, so a House without it never receives a superweapon.
         let session = test_session();
         let mut sim = Simulation::new();
-        let rules = RuleSet::from_ini(&IniFile::from_str(
+        let rules = RuleSet::from_ini(&launch_fixture_ini(
             "[SuperWeaponTypes]\n0=ParaDropSpecial\n1=NukeSpecial\n\
              [ParaDropSpecial]\n[NukeSpecial]\n",
         ))
@@ -1281,7 +1293,13 @@ mod tests {
             Some(2)
         );
 
-        let session = test_session();
+        let mut session = test_session();
+        session.local_slot_mut().country = LaunchCountry::from_country_index(u32::from(
+            rules.country_index("Americans").unwrap().0,
+        ));
+        session.opponents[0].country = LaunchCountry::from_country_index(u32::from(
+            rules.country_index("Russians").unwrap().0,
+        ));
         let mut sim = Simulation::new();
         initialize_skirmish_launch_houses(
             &mut sim,
@@ -1344,6 +1362,7 @@ mod tests {
             (5, AiDifficulty::Easy),
         ] {
             session.opponents.push(SkirmishAiSlot {
+                raw_slot_index: (session.opponents.len() + 1) as u8,
                 color_index,
                 difficulty,
                 ..session.opponents[0].clone()
@@ -1431,6 +1450,7 @@ mod tests {
     fn ordered_country_side_stock_identities_reach_skirmish_house_state() {
         let mut session = test_session();
         session.opponents.push(SkirmishAiSlot {
+            raw_slot_index: (session.opponents.len() + 1) as u8,
             country: LaunchCountry::Yuri,
             country_random: false,
             color_index: 3,
@@ -1467,9 +1487,10 @@ mod tests {
     #[test]
     fn skirmish_launch_same_explicit_team_creates_mutual_alliance() {
         let mut session = test_session();
-        session.local.team = LaunchTeam::Team(0);
+        session.local_slot_mut().team = LaunchTeam::Team(0);
         session.opponents[0].team = LaunchTeam::Team(0);
         session.opponents.push(SkirmishAiSlot {
+            raw_slot_index: (session.opponents.len() + 1) as u8,
             country: LaunchCountry::Cuba,
             country_random: false,
             color_index: 3,
@@ -1523,6 +1544,7 @@ mod tests {
         let mut session = test_session();
         session.mode = test_cooperative_mode();
         session.opponents.push(SkirmishAiSlot {
+            raw_slot_index: (session.opponents.len() + 1) as u8,
             country: LaunchCountry::Cuba,
             country_random: false,
             color_index: 3,
@@ -1580,7 +1602,7 @@ mod tests {
     #[test]
     fn cooperative_start_uses_human_prefix_then_ai_suffix() {
         let mut session = test_session();
-        session.local.start_position = LaunchStartPosition::Auto;
+        session.local_slot_mut().start_position = LaunchStartPosition::Auto;
         let starts = test_launch_starts();
         let mut expected_rng = SimRng::new(17);
         let expected_human = expected_rng.next_range_u32_inclusive(0, 1) as usize;
@@ -1596,7 +1618,7 @@ mod tests {
     #[test]
     fn cooperative_explicit_table_is_reserved_before_house_iteration() {
         let mut session = test_session();
-        session.local.start_position = LaunchStartPosition::Auto;
+        session.local_slot_mut().start_position = LaunchStartPosition::Auto;
         session.opponents[0].start_position = LaunchStartPosition::Position(0);
         let starts = test_launch_starts();
         let mut rng = SimRng::new(17);
@@ -1614,7 +1636,7 @@ mod tests {
         let mut sim = Simulation::new();
         sim.scenario_rng = SimRng::new(8);
         let mut session = test_session();
-        session.local.start_position = LaunchStartPosition::Auto;
+        session.local_slot_mut().start_position = LaunchStartPosition::Auto;
         session.opponents[0].start_position = LaunchStartPosition::Position(0);
         session.options.bases = false;
         session.options.unit_count = 0;
@@ -1679,7 +1701,7 @@ mod tests {
 
         let launch_seed = 8;
         let mut session = test_session();
-        session.local.start_position = LaunchStartPosition::Auto;
+        session.local_slot_mut().start_position = LaunchStartPosition::Auto;
         session.opponents[0].start_position = LaunchStartPosition::Position(0);
         session.options.bases = false;
         session.options.unit_count = 0;
@@ -1710,7 +1732,7 @@ mod tests {
                 LoadingStartAssignment {
                     start_index: 3,
                     participant: LoadingParticipantId::Local,
-                    color_priority: session.local.color_index,
+                    color_priority: session.local_slot().color_index,
                 },
             ]
         );
@@ -1757,6 +1779,9 @@ mod tests {
         for assignment in &loading_assignments {
             let expected_owner = match assignment.participant {
                 LoadingParticipantId::Local => "Player",
+                LoadingParticipantId::Human(index) => {
+                    panic!("unexpected remote human marker {index}")
+                }
                 LoadingParticipantId::Opponent(0) => "Computer1",
                 LoadingParticipantId::Opponent(index) => {
                     panic!("unexpected opponent marker {index}")
@@ -1781,7 +1806,7 @@ mod tests {
     #[test]
     fn gsi_04_16_standard_all_auto_randomizes_first_then_chooses_farthest() {
         let mut session = test_session();
-        session.local.start_position = LaunchStartPosition::Auto;
+        session.local_slot_mut().start_position = LaunchStartPosition::Auto;
         session.opponents[0].start_position = LaunchStartPosition::Auto;
         let starts = [
             Waypoint {
@@ -1814,7 +1839,7 @@ mod tests {
     #[test]
     fn gsi_04_16_standard_duplicate_explicit_start_is_last_writer_wins() {
         let mut session = test_session();
-        session.local.start_position = LaunchStartPosition::Position(0);
+        session.local_slot_mut().start_position = LaunchStartPosition::Position(0);
         session.opponents[0].start_position = LaunchStartPosition::Position(0);
         let all_starts = test_launch_starts();
         let starts = &all_starts[..3];
@@ -1831,9 +1856,10 @@ mod tests {
     #[test]
     fn gsi_04_16_standard_three_auto_houses_consume_only_first_draw() {
         let mut session = test_session();
-        session.local.start_position = LaunchStartPosition::Auto;
+        session.local_slot_mut().start_position = LaunchStartPosition::Auto;
         session.opponents[0].start_position = LaunchStartPosition::Auto;
         session.opponents.push(SkirmishAiSlot {
+            raw_slot_index: (session.opponents.len() + 1) as u8,
             country: LaunchCountry::Cuba,
             country_random: false,
             color_index: 3,
@@ -1863,8 +1889,8 @@ mod tests {
     #[test]
     fn skirmish_launch_start_position_and_team_are_independent() {
         let mut session = test_session();
-        session.local.start_position = LaunchStartPosition::Position(3);
-        session.local.team = LaunchTeam::Team(0);
+        session.local_slot_mut().start_position = LaunchStartPosition::Position(3);
+        session.local_slot_mut().team = LaunchTeam::Team(0);
         session.opponents[0].start_position = LaunchStartPosition::Auto;
         session.opponents[0].team = LaunchTeam::Team(0);
         let slots = normalized_launch_slots(&session);
@@ -1937,8 +1963,8 @@ mod tests {
         ] {
             let mut sim = Simulation::new();
             let mut session = test_session();
-            session.player_name = "Commander".to_string();
-            session.local.country = country;
+            session.local_player_mut().name = "Commander".to_string();
+            session.local_slot_mut().country = country;
             session.options.bases = false;
             session.options.unit_count = 0;
 
@@ -2071,7 +2097,7 @@ mod tests {
     #[test]
     fn unresolved_shell_random_flag_cannot_cross_into_sim() {
         let mut poisoned = test_session();
-        poisoned.local.country_random = true;
+        poisoned.local_slot_mut().country_random = true;
         assert_eq!(
             MatchLaunchDescriptor::from_resolved(poisoned),
             Err(UnresolvedShellChoice {
@@ -2130,6 +2156,7 @@ mod tests {
             .into_iter()
             .enumerate()
             .map(|(index, difficulty)| SkirmishAiSlot {
+                raw_slot_index: (index + 1) as u8,
                 color_index: (index + 2) as u8,
                 difficulty,
                 ..template.clone()
@@ -2318,7 +2345,7 @@ mod tests {
     fn nearoref_blocked_start_fallback_uses_full_cell_array_clamp() {
         let mut sim = Simulation::with_seed(0);
         let mut session = test_session();
-        session.local.start_position = LaunchStartPosition::Position(0);
+        session.local_slot_mut().start_position = LaunchStartPosition::Position(0);
         session.opponents.clear();
         session.options.bases = true;
         session.options.unit_count = 0;
@@ -2554,7 +2581,7 @@ mod tests {
         let terrain = test_terrain(64, 64);
         let starts = test_launch_starts();
         let map = test_map_with_starts(&starts);
-        let ini = IniFile::from_str(
+        let ini = launch_fixture_ini(
             "[General]\nBaseUnit=AMCV,SMCV,PCV\n\
              [VehicleTypes]\n1=AMCV\n2=SMCV\n3=MTNK\n4=HTNK\n\
              [InfantryTypes]\n1=E1\n\
@@ -2638,12 +2665,13 @@ mod tests {
         configure_nearoref_geometry(&mut sim, &mut map);
         let terrain = test_terrain(138, 138);
         let mut session = test_session();
-        session.local.start_position = LaunchStartPosition::Position(0);
+        session.local_slot_mut().start_position = LaunchStartPosition::Position(0);
         session.options.bases = true;
         session.options.unit_count = 0;
         let ai_template = session.opponents[0].clone();
         session.opponents = (1..8)
             .map(|index| SkirmishAiSlot {
+                raw_slot_index: index as u8,
                 color_index: (index + 1) as u8,
                 start_position: LaunchStartPosition::Position(index as u8),
                 ..ai_template.clone()
@@ -2712,6 +2740,71 @@ mod tests {
     }
 
     #[test]
+    fn missing_owner_compatible_baseunit_skips_constructor_rng_like_native() {
+        let corpus: serde_json::Value =
+            crate::test_fixture::json("tools/storage_oracle/lan_lobby.json").clone();
+        for row in corpus["starting_mcv_no_match"].as_array().unwrap() {
+            let mut ini = String::from("[General]\nBaseUnit=");
+            let masks = row["owner_masks"].as_array().unwrap();
+            ini.push_str(
+                &(0..masks.len())
+                    .map(|i| format!("MCV{i}"))
+                    .collect::<Vec<_>>()
+                    .join(","),
+            );
+            ini.push_str("\n[VehicleTypes]\n");
+            for i in 0..masks.len() {
+                ini.push_str(&format!("{i}=MCV{i}\n"));
+            }
+            for (i, mask) in masks.iter().enumerate() {
+                let owner = match mask.as_u64().unwrap() {
+                    0 => "",
+                    2 => "Alliance",
+                    4 => "French",
+                    _ => panic!("native control mask"),
+                };
+                ini.push_str(&format!("[MCV{i}]\nOwner={owner}\nStrength=100\n"));
+            }
+            let rules = RuleSet::from_ini(&launch_fixture_ini(&ini)).unwrap();
+            assert_eq!(
+                launch_mcv_type_for_country(LaunchCountry::America, &rules),
+                None
+            );
+            assert_eq!(row["callback_result"], 0);
+            assert_eq!(row["initial_rng_hex"], row["callback_rng_hex"]);
+            assert!(row["callback_draws"].as_array().unwrap().is_empty());
+            let mut session = test_session();
+            session.opponents.clear();
+            session.ai_player_count = 0;
+            session.rebuild_house_roster();
+            session.local_slot_mut().start_position = LaunchStartPosition::Position(0);
+            session.options.bases = true;
+            session.options.unit_count = 0;
+            let mut sim = Simulation::new();
+            sim.scenario_rng = crate::sim::rng::SimRng::from_native_state_hex_for_test(
+                row["initial_rng_hex"].as_str().unwrap(),
+            );
+            let terrain = test_terrain(64, 64);
+            let map = test_map_with_starts(&test_launch_starts());
+            let result = apply_explicit_skirmish_launch_session(
+                &mut sim,
+                &map,
+                &roster_with_neutral_and_playable(),
+                &rules,
+                &terrain,
+                &launch_descriptor(&session),
+            );
+            assert_eq!(result.spawned_mcvs, 0);
+            assert!(sim.entities().is_empty());
+            assert_eq!(result.local_owner.as_deref(), Some("Player"));
+            assert_eq!(
+                sim.scenario_rng.native_state_hex(),
+                row["force_tail_rng_hex"].as_str().unwrap()
+            );
+        }
+    }
+
+    #[test]
     fn skirmish_baseunit_vector_selects_side_matching_mcv() {
         let rules = test_rules_with_base_units(
             "SMCV,AMCV,PCV",
@@ -2729,15 +2822,15 @@ mod tests {
 
         assert_eq!(
             launch_mcv_type_for_country(LaunchCountry::America, &rules),
-            "AMCV"
+            Some("AMCV")
         );
         assert_eq!(
             launch_mcv_type_for_country(LaunchCountry::Russia, &rules),
-            "SMCV"
+            Some("SMCV")
         );
         assert_eq!(
             launch_mcv_type_for_country(LaunchCountry::Yuri, &rules),
-            "PCV"
+            Some("PCV")
         );
     }
 
@@ -2753,12 +2846,12 @@ mod tests {
 
         assert_eq!(
             launch_mcv_type_for_country(LaunchCountry::America, &rules),
-            "ALTMCV"
+            Some("ALTMCV")
         );
     }
 
     #[test]
-    fn skirmish_baseunit_selection_respects_required_and_forbidden_houses() {
+    fn skirmish_baseunit_selection_ignores_production_required_and_forbidden_houses() {
         let rules = test_rules_with_base_units(
             "BLOCKED,REQUIRED,FORBIDDEN,AMCV",
             &[
@@ -2771,7 +2864,7 @@ mod tests {
 
         assert_eq!(
             launch_mcv_type_for_country(LaunchCountry::America, &rules),
-            "REQUIRED"
+            Some("BLOCKED")
         );
     }
 
@@ -2782,7 +2875,7 @@ mod tests {
 
         assert_eq!(
             launch_mcv_type_for_country(LaunchCountry::America, &rules),
-            "CUSTOMMCV"
+            Some("CUSTOMMCV")
         );
     }
 }

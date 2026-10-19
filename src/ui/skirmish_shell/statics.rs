@@ -70,6 +70,12 @@ impl SkirmishStatics {
         self.map_label.show(now);
     }
 
+    /// Shared setup pages replace map/mode strings without replaying SHOW.
+    pub(crate) fn set_map_labels(&mut self, game_type: &str, map_label: &str, now: Instant) {
+        self.game_type.set_text(game_type, now);
+        self.map_label.set_text(map_label, now);
+    }
+
     /// A hover message to the status line ([`DialogStatics::hover`]).
     pub(crate) fn hover(&mut self, help: &str, now: Instant) -> bool {
         self.dialog.hover(help, now)

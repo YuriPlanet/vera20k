@@ -122,11 +122,15 @@ pub(crate) struct RetailOptionsProfile {
     /// Whether the startup splash and the menu movie use Red Alert 2's art
     /// instead of Yuri's Revenge's: the Options page's RA2 Loading & Menu Movie.
     pub(crate) ra2_look: bool,
+    /// `[VERA] ShiftQueue=`: whether a Shift-click on a mobile strip queues
+    /// [`Self::shift_queue_count`] builds: the Options page's Shift-Click
+    /// Batch Queue. Off by default, so Shift + left click queues one copy as
+    /// in gamemd, whose left-click ignores Shift (`0x006AAD66` reads the
+    /// modifier for the right button only).
+    pub(crate) shift_queue: bool,
     /// `[VERA] ShiftQueueCount=`: how many builds one Shift-click queues on a
-    /// mobile strip. VERA's own convenience; gamemd never reads this section,
-    /// and the native left-click ignores Shift entirely (`0x006AAD66` reads
-    /// the modifier for the right button only). Clamped by
-    /// [`SHIFT_QUEUE_COUNT_RANGE`].
+    /// mobile strip while [`Self::shift_queue`] is on. VERA's own convenience;
+    /// gamemd never reads this section. Clamped by [`SHIFT_QUEUE_COUNT_RANGE`].
     pub(crate) shift_queue_count: u32,
 }
 
@@ -185,6 +189,7 @@ impl Default for RetailOptionsProfile {
             original_shape: false,
             sidebar: crate::ui::main_menu_dialogs::options::SidebarSize::Normal,
             ra2_look: false,
+            shift_queue: false,
             shift_queue_count: DEFAULT_SHIFT_QUEUE_COUNT,
         }
     }
@@ -202,7 +207,7 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) audio: [(&'static str, String); 7],
     pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 6],
+    pub(crate) vera: [(&'static str, String); 7],
 }
 
 impl RetailOptionsLoad {
@@ -401,6 +406,7 @@ impl RetailOptionsProfile {
                 vera.read_int("Sidebar", self.sidebar.ini_value()),
             );
             self.ra2_look = vera.read_bool("RA2Look", self.ra2_look);
+            self.shift_queue = vera.read_bool("ShiftQueue", self.shift_queue);
             // Absent keeps the current value; present-but-nonnumeric answers 0,
             // which the range lifts to 1 rather than a click that queues nothing.
             self.shift_queue_count = clamp_shift_queue_count(
@@ -488,6 +494,7 @@ impl RetailOptionsProfile {
                 ),
                 ("Sidebar", self.sidebar.ini_value().to_string()),
                 ("RA2Look", format_bool(self.ra2_look).to_string()),
+                ("ShiftQueue", format_bool(self.shift_queue).to_string()),
                 ("ShiftQueueCount", self.shift_queue_count.to_string()),
             ],
         }
@@ -1208,6 +1215,8 @@ mod tests {
         assert!(!defaults.retained_profile.original_shape);
         assert_eq!(defaults.retained_profile.sidebar, SidebarSize::Normal);
         assert!(!defaults.retained_profile.ra2_look);
+        // Shift + left click queues one copy, as in gamemd, until it is ticked.
+        assert!(!defaults.retained_profile.shift_queue);
         assert_eq!(
             defaults.retained_profile.shift_queue_count,
             DEFAULT_SHIFT_QUEUE_COUNT
@@ -1215,7 +1224,7 @@ mod tests {
 
         let load = load_snapshot(
             &RetailStartupOptions::default(),
-            b"[VERA]\nFullScreen=yes\nZoom=2\nOriginalShape=yes\nSidebar=150\nRA2Look=yes\nShiftQueueCount=8\n",
+            b"[VERA]\nFullScreen=yes\nZoom=2\nOriginalShape=yes\nSidebar=150\nRA2Look=yes\nShiftQueue=yes\nShiftQueueCount=8\n",
         );
         assert!(load.retained_profile.full_screen);
         // The first release saved the whole factor.
@@ -1223,6 +1232,7 @@ mod tests {
         assert!(load.retained_profile.original_shape);
         assert_eq!(load.retained_profile.sidebar, SidebarSize::Large);
         assert!(load.retained_profile.ra2_look);
+        assert!(load.retained_profile.shift_queue);
         assert_eq!(load.retained_profile.shift_queue_count, 8);
         // A value this build doesn't know reads as Auto.
         let unknown = load_snapshot(&RetailStartupOptions::default(), b"[VERA]\nZoom=9\n");
@@ -1234,6 +1244,7 @@ mod tests {
             original_shape: true,
             sidebar: SidebarSize::ExtraLarge,
             ra2_look: true,
+            shift_queue: true,
             shift_queue_count: 7,
             ..RetailOptionsProfile::default()
         };
@@ -1241,7 +1252,7 @@ mod tests {
             String::from_utf8(profile.transform_ra2md(b"[Video]\r\nScreenWidth=800\r\n")).unwrap();
         assert!(
             output.contains(
-                "[VERA]\r\nFullScreen=yes\r\nZoom=150\r\nOriginalShape=yes\r\nSidebar=200\r\nRA2Look=yes\r\nShiftQueueCount=7\r\n"
+                "[VERA]\r\nFullScreen=yes\r\nZoom=150\r\nOriginalShape=yes\r\nSidebar=200\r\nRA2Look=yes\r\nShiftQueue=yes\r\nShiftQueueCount=7\r\n"
             ),
             "{output}"
         );
@@ -1251,6 +1262,7 @@ mod tests {
         assert!(reread.retained_profile.original_shape);
         assert_eq!(reread.retained_profile.sidebar, SidebarSize::ExtraLarge);
         assert!(reread.retained_profile.ra2_look);
+        assert!(reread.retained_profile.shift_queue);
         assert_eq!(reread.retained_profile.shift_queue_count, 7);
     }
 

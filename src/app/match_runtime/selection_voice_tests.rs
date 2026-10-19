@@ -244,7 +244,8 @@ fn simulation(
     let mut house = HouseState::new(owner, 0, None, owner == local, 0, 10);
     house.multiplay_passive = passive;
     sim.houses.insert(owner, house);
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     sim.session.current_house = Some(local);
     sim.entities_mut()
         .insert(GameEntity::new_at_frame_zero_for_test(

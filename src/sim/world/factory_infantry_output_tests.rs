@@ -222,9 +222,13 @@ fn ground_command_fixture(
     // The complete original no_rally bootstrap records mode1 -> Skirmish5
     // at52E10F..52E119, before these continuations. New contrast snapshots
     // carry the exact mode input; VERA stores its native zero/nonzero decision.
-    sim.session.game_mode_nonzero = context
-        .map(|context| context["game_mode"] != 0)
-        .unwrap_or(true);
+    sim.session.set_game_mode(
+        crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+            context
+                .map(|context| context["game_mode"] != 0)
+                .unwrap_or(true),
+        ),
+    );
     sim.session.binary_frame = state["frame"].as_u64().unwrap().try_into().unwrap();
     sim.fog.width = sim.session.map_width;
     sim.fog.height = sim.session.map_height;
@@ -1914,7 +1918,8 @@ fn joined_two_paid_gi(route: OutputRoute) {
     sim.houses.insert(owner, house);
     sim.session.house_order.push(owner);
     sim.session.current_house = Some(owner);
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     sim.session.game_options.game_speed = 3;
     let producer = sim
         .spawn_object_at_height_with_overlay_registry(

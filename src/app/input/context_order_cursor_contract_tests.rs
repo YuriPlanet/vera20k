@@ -10,7 +10,8 @@ fn arena(rules: &RuleSet) -> Simulation {
     crate::sim::arena_fixture::flat_arena(&mut sim, rules);
     let owner = sim.interner.intern("Americans");
     sim.session.current_house = Some(owner);
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
     sim

@@ -95,7 +95,9 @@ fn rules(advanced_prerequisite: &str) -> RuleSet {
 
 fn computer_house(game_mode_nonzero: bool) -> (Simulation, InternedId) {
     let mut sim = Simulation::new();
-    sim.session.game_mode_nonzero = game_mode_nonzero;
+    sim.session.set_game_mode(
+        crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(game_mode_nonzero),
+    );
     let owner = sim.interner.intern("AIHouse");
     let country = sim.interner.intern("Americans");
     sim.houses.insert(
@@ -212,7 +214,7 @@ fn the_building_choice_handles_nodes_as_native() {
             flag(&row["naval_allowed"]),
         );
         house.build_const_order = (0..int(&row["yards"]) as u64).map(|id| 1000 + id).collect();
-        house.side_index = int(&row["side"]) as u8;
+        house.side_index = int(&row["side"]) as i32;
         house.difficulty =
             crate::sim::house_state::HouseDifficulty::from_native(int(&row["difficulty"]) as i32)
                 .unwrap();
@@ -341,7 +343,7 @@ fn the_walls_match_native() {
             .collect();
         let rules = rules_with(&walls);
         // A HouseType side of -1 matches only a -1 type, as no u8 side does.
-        let wall = wall_type(&rules, int(&row["side"]) as u8);
+        let wall = wall_type(&rules, int(&row["side"]) as i32);
 
         let node = |value: &Value| BasePlanNode {
             type_or_control: int(&value[0]) as i32,
@@ -465,7 +467,8 @@ fn exit_fixture() -> (Simulation, RuleSet, InternedId, u64, u64) {
     .unwrap();
     let mut sim = Simulation::new();
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     let owner = sim.interner.intern("AIHouse");
     let country = sim.interner.intern("Americans");
     sim.houses.insert(

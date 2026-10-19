@@ -253,7 +253,7 @@ fn refund_free_unit(sim: &mut Simulation, rules: &RuleSet, owner: &str, unit_typ
             object,
             house,
             &factors,
-            sim.session.game_mode_nonzero,
+            sim.session.game_mode_nonzero(),
             true,
         ),
         _ => return 0,

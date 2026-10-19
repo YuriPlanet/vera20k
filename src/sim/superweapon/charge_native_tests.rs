@@ -348,7 +348,8 @@ fn house_power_edge_holds_after_reactor_sample_in_the_same_frame() {
     ))
     .unwrap();
     let mut sim = Simulation::with_seed(0);
-    sim.session.game_mode_nonzero = false;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false));
     let owner = sim.interner.intern("Confederation");
     let type_id = sim.interner.intern("PsychicDominatorSpecial");
     sim.houses

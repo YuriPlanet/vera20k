@@ -1126,7 +1126,11 @@ impl Fixture {
         // this retained suffix's native Mode before its actual constructor:
         // Mode1 CellPUT47E9E2 discovers PlayerPtr before Techno idle/Commence.
         // No Fog reset/mapping or manual GrandOpening substitutes for it.
-        self.sim.session.game_mode_nonzero = int(&client["game_mode"]) != 0;
+        self.sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+                int(&client["game_mode"]) != 0,
+            ),
+        );
         let owner = self
             .sim
             .interner

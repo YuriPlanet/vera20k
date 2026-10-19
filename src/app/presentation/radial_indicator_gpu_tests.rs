@@ -38,7 +38,8 @@ fn sim(rules: &crate::rules::ruleset::RuleSet) -> Simulation {
         );
         sim.session.house_order.push(owner);
     }
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     sim.session.current_house = sim.interner.get("Americans");
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);

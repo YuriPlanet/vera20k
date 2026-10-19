@@ -290,6 +290,7 @@ fn status_help_key_for_side_item(country: SkirmishCountryChoice) -> Option<&'sta
             LaunchCountry::Cuba => Some("STT:PlayerSideCuba"),
             LaunchCountry::Russia => Some("STT:PlayerSideRussia"),
             LaunchCountry::Yuri => Some("STT:PlayerSideYuriCountry"),
+            _ => None,
         },
     }
 }

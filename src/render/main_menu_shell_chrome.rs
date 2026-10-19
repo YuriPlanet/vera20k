@@ -430,7 +430,7 @@ pub struct CampaignScoreArt {
 /// branch (`0x72D300`/`0x72D460`): width exactly 640 chooses small; every
 /// other width chooses medium. `Scenario+0x34B8` supplies side.
 pub fn campaign_score_art_names(
-    side: u8,
+    side: i32,
     screen_w: u32,
 ) -> (&'static str, &'static str, &'static str, &'static str) {
     let small = screen_w == 640;
@@ -448,7 +448,7 @@ pub fn build_campaign_score_art(
     gpu: &GpuContext,
     batch: &BatchRenderer,
     assets: &AssetManager,
-    side: u8,
+    side: i32,
     screen_w: u32,
 ) -> Option<CampaignScoreArt> {
     let (background_name, scrt_name, scra_name, palette_name) =
@@ -486,7 +486,7 @@ fn build_campaign_score_frame_strip(
 
 /// Background shape and palette by side (`0x0072D830`, `0x0072D730`): the
 /// small shape only at exactly 640 wide, and Yuri's small shape is Soviet's.
-pub fn score_art_names(side: u8, screen_w: u32) -> (&'static str, &'static str) {
+pub fn score_art_names(side: i32, screen_w: u32) -> (&'static str, &'static str) {
     let (small, large, palette) = match side {
         0 => ("MPASCRNS.SHP", "MPASCRNL.SHP", "MPASCRN.PAL"),
         1 => ("MPSSCRNS.SHP", "MPSSCRNL.SHP", "MPSSCRN.PAL"),
@@ -497,7 +497,7 @@ pub fn score_art_names(side: u8, screen_w: u32) -> (&'static str, &'static str) 
 
 /// Band `band`'s bar by side (`0x005CA110`, tables `0x00844B24`,
 /// `0x00844B4C`, `0x00844B74`); any other side has none.
-pub fn score_bar_name(side: u8, band: usize) -> Option<String> {
+pub fn score_bar_name(side: i32, band: usize) -> Option<String> {
     let side = match side {
         0 => 'a',
         1 => 's',
@@ -511,7 +511,7 @@ pub fn build_score_art(
     gpu: &GpuContext,
     batch: &BatchRenderer,
     assets: &AssetManager,
-    side: u8,
+    side: i32,
     screen_w: u32,
 ) -> Option<ScoreArt> {
     let (shape, palette) = score_art_names(side, screen_w);

@@ -92,7 +92,7 @@ pub(crate) fn enqueue(state: &mut AppState, index: i32, pause_simulation: bool) 
         .match_state
         .sim_runtime
         .as_ref()
-        .is_none_or(|rt| rt.simulation.session.game_mode_nonzero)
+        .is_none_or(|rt| rt.simulation.session.game_mode_nonzero())
     {
         return;
     }

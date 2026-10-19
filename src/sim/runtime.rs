@@ -362,7 +362,9 @@ mod tests {
         use crate::sim::crates::tests::{crate_registry, crate_ruleset, sim_with_grid};
 
         let mut simulation = sim_with_grid(0x62);
-        simulation.session.game_mode_nonzero = true;
+        simulation.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         simulation.session.game_options.crates = true;
         let due = CrateSlot {
             start_frame: -1,
@@ -1211,7 +1213,7 @@ pub fn finalize_constructed_scenario(
     let campaign_new_game_map = sim
         .session
         .campaign_mission_counter()
-        .filter(|_| !sim.session.game_mode_nonzero)
+        .filter(|_| !sim.session.game_mode_nonzero())
         .map(|_| map_data);
     let output =
         sim.finalize_scenario_post_map(crate::sim::scenario_post_map::ScenarioPostMapInput {

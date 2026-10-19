@@ -155,6 +155,10 @@ pub(super) fn combo_face_entry(
         207 => chrome.combo_face_207,
         180 => chrome.combo_face_180,
         150 => chrome.combo_face_150,
+        151 => chrome.combo_face_151,
+        118 => chrome.combo_face_118,
+        42 => chrome.combo_face_42,
+        39 => chrome.combo_face_39,
         117 => chrome.combo_face_117,
         44 => chrome.combo_face_44,
         38 => chrome.combo_face_38,
@@ -812,70 +816,48 @@ pub(super) fn push_dropdown_instances(
     };
     let content = combo_dropdown_content_rect(shell, layout, maps, open.id).unwrap_or(dropdown);
     let needs_scrollbar = combo_dropdown_needs_scrollbar(shell, maps, open.id);
-    push_solid_rect(
-        out,
-        atlas,
-        dropdown,
-        SHELL_DROPDOWN_BG_RGB_PENDING_COMBODROPWIN_SOURCE_CAPTURE,
-        SHELL_DROPDOWN_DEPTH,
-    );
     let visible_rows = combo_dropdown_visible_row_count(shell, maps, open.id);
-    if let Some(selected_rect) =
-        dropdown_selected_row_rect(shell, maps, open.id, open.top_index, content, layout.scale)
-    {
-        push_solid_rect(
-            out,
-            atlas,
-            selected_rect,
-            OWNERDRAW_SELECTED_RGB_FROM_DAT_00AC4604_PACKED_000000FF,
-            SHELL_DROPDOWN_DEPTH - 0.00001,
-        );
-    }
-    for (idx, item) in combo_items(shell, maps, open.id)
+    let selected =
+        dropdown_selected_row_rect(shell, maps, open.id, open.top_index, content, layout.scale);
+    let swatches = combo_items(shell, maps, open.id)
         .into_iter()
         .skip(open.top_index)
         .take(visible_rows)
         .enumerate()
-    {
-        if let SkirmishComboItem::Color(color_index) = item {
-            // The row sits on the grid the item text and the pointer hit tests
-            // use; its swatch keeps the authored 2-pixel inset, grown with it.
-            let row = combo_dropdown_row_rect(content, layout.scale, idx);
-            let swatch = layout
-                .scale
-                .derive_rect(row, |row| RectPx::new(row.x + 2, row.y + 2, row.w - 4, 19));
-            push_solid_rect(
-                out,
-                atlas,
-                swatch,
-                house_color_tint(color_schemes, color_index),
-                SHELL_DROPDOWN_DEPTH - 0.00002,
-            );
-        }
-    }
-    if needs_scrollbar
-        && let (Some(scrollbar), Some(thumb)) = (
-            combo_dropdown_scrollbar_rect(shell, layout, maps, open.id),
-            combo_dropdown_scroll_thumb_rect(shell, layout, maps, open.id),
-        )
-    {
-        let pressed_part = shell
-            .dropdown_scroll_press
-            .filter(|pressed| pressed.id == open.id)
-            .map(|pressed| pressed.part);
-        let chrome = atlas.control_chrome();
-        paint_control(
-            out,
-            &chrome,
-            ControlPaint::ScrollBar {
-                scrollbar,
-                thumb,
-                pressed_part,
-            },
-            layout.scale,
-        );
-    }
-    push_ownerdraw_two_pixel_bevel_frame(out, atlas, dropdown, SHELL_DROPDOWN_DEPTH - 0.00003);
+        .filter_map(|(index, item)| {
+            let SkirmishComboItem::Color(color) = item else {
+                return None;
+            };
+            let row = combo_dropdown_row_rect(content, layout.scale, index);
+            Some((
+                layout
+                    .scale
+                    .derive_rect(row, |row| RectPx::new(row.x + 2, row.y + 2, row.w - 4, 19)),
+                house_color_tint(color_schemes, color),
+            ))
+        });
+    let scrollbar = needs_scrollbar
+        .then(|| {
+            combo_dropdown_scrollbar_rect(shell, layout, maps, open.id).zip(
+                combo_dropdown_scroll_thumb_rect(shell, layout, maps, open.id),
+            )
+        })
+        .flatten();
+    let pressed = shell
+        .dropdown_scroll_press
+        .filter(|pressed| pressed.id == open.id)
+        .map(|pressed| pressed.part);
+    push_popup_instances(
+        out,
+        atlas,
+        dropdown,
+        selected,
+        swatches,
+        scrollbar,
+        pressed,
+        layout.scale,
+        SHELL_DROPDOWN_DEPTH - 0.00003,
+    );
 }
 
 pub(super) fn dropdown_selected_row_rect(
@@ -1133,6 +1115,61 @@ mod tests {
                     trackbar_frame_slot(plaque, rect.w, rect.h).is_some(),
                     "{rect:?} at {width}x{height}"
                 );
+            }
+        }
+    }
+
+    #[test]
+    fn lan_setup_layouts_resolve_and_paint_every_combo_face() {
+        use crate::ui::multiplayer_setup::MultiplayerSetupLayout;
+
+        let face = |width| SkirmishShellChromeEntry {
+            uv_origin: [width as f32 / 1000.0, 0.2],
+            uv_size: [0.1, 0.1],
+            pixel_size: [width as f32, 24.0],
+        };
+        let chrome = ControlChrome {
+            combo_face_151: Some(face(151)),
+            combo_face_118: Some(face(118)),
+            combo_face_42: Some(face(42)),
+            combo_face_39: Some(face(39)),
+            ..Default::default()
+        };
+        for host in [false, true] {
+            for (width, height, responsive) in [
+                (640, 480, false),
+                (800, 600, false),
+                (1024, 768, false),
+                (1280, 960, true),
+            ] {
+                let layout = MultiplayerSetupLayout::new(host, width, height, responsive);
+                for rect in layout.combos.into_iter().flatten() {
+                    let entry = combo_face_entry(&chrome, rect, layout.page.scale)
+                        .expect("every BC/BD combo window must resolve an atlas face");
+                    assert_eq!(
+                        entry.pixel_size[0] as i32,
+                        layout.page.scale.base_rect(rect).w
+                    );
+                    for disabled in [false, true] {
+                        let mut out = Vec::new();
+                        paint_control(
+                            &mut out,
+                            &chrome,
+                            ControlPaint::Combo {
+                                rect,
+                                swatch: None,
+                                open: false,
+                                disabled,
+                            },
+                            layout.page.scale,
+                        );
+                        assert_eq!(out.len(), 1, "missing BC/BD face at {rect:?}");
+                        assert_eq!(out[0].uv_origin, entry.uv_origin);
+                        let target = combo_face_rect(rect, layout.page.scale);
+                        assert_eq!(out[0].position, [target.x as f32, target.y as f32]);
+                        assert_eq!(out[0].size, [target.w as f32, target.h as f32]);
+                    }
+                }
             }
         }
     }
@@ -1530,5 +1567,119 @@ mod tests {
             !icon.contains(icon.x + icon.w, icon.y),
             "right edge (x+18) misses"
         );
+    }
+}
+
+pub(super) fn list_controls(
+    out: &mut Vec<SpriteInstance>,
+    atlas: &SkirmishShellChromeAtlas,
+    geometry: crate::ui::shell::list::ShellListGeometry,
+    list: &crate::ui::lan_shell::LanListState,
+    selectable: bool,
+    scale: ShellScale,
+) {
+    // Frame lines and scrollbar geometry are shared with all native lists.
+    // Their backing remains the composed parent. Its one-RGB565-unit darkening
+    // is a small presentation residual until the common atlas carries it.
+    for (line, tone) in crate::ui::shell::list::list_frame_lines(scale.base_rect(geometry.outer)) {
+        push_solid_rect(
+            out,
+            atlas,
+            scale.scale_rect(line),
+            tone.rgb().map(|c| f32::from(c) / 255.0),
+            SHELL_CONTROL_DEPTH,
+        );
+    }
+    if selectable
+        && let Some(index) = list.selected
+        && let Some(visible) = index.checked_sub(list.top_index)
+        && visible < geometry.visible_rows
+    {
+        push_solid_rect(
+            out,
+            atlas,
+            geometry.row(visible),
+            OWNERDRAW_SELECTED_RGB_FROM_DAT_00AC4604_PACKED_000000FF,
+            SHELL_CONTROL_DEPTH - 0.00001,
+        );
+    }
+    if let (Some(scrollbar), Some(thumb)) = (geometry.scrollbar, geometry.thumb) {
+        paint_control(
+            out,
+            &atlas.control_chrome(),
+            ControlPaint::ScrollBar {
+                scrollbar,
+                thumb,
+                pressed_part: list.scroll.pressed_part().map(|part| {
+                    use crate::ui::shell::list::ListScrollPart;
+                    use crate::ui::skirmish_shell::DropdownScrollbarPart;
+                    match part {
+                        ListScrollPart::Up => DropdownScrollbarPart::UpArrow,
+                        ListScrollPart::Down => DropdownScrollbarPart::DownArrow,
+                        ListScrollPart::Thumb => DropdownScrollbarPart::Thumb,
+                        ListScrollPart::Track => DropdownScrollbarPart::Track,
+                    }
+                }),
+            },
+            scale,
+        );
+    }
+}
+
+/// Shared ComboDropWin paint60E0C0: background, hot row, optional swatches,
+/// scrollbar and two bevel rings. Callers supply their control's row model.
+pub(super) fn push_popup_instances(
+    out: &mut Vec<SpriteInstance>,
+    atlas: &SkirmishShellChromeAtlas,
+    rect: RectPx,
+    selected: Option<RectPx>,
+    swatches: impl IntoIterator<Item = (RectPx, [f32; 3])>,
+    scrollbar: Option<(RectPx, RectPx)>,
+    pressed: Option<DropdownScrollbarPart>,
+    scale: ShellScale,
+    frame_depth: f32,
+) {
+    push_solid_rect(
+        out,
+        atlas,
+        rect,
+        SHELL_DROPDOWN_BG_RGB_PENDING_COMBODROPWIN_SOURCE_CAPTURE,
+        SHELL_DROPDOWN_DEPTH,
+    );
+    if let Some(row) = selected {
+        push_solid_rect(
+            out,
+            atlas,
+            row,
+            OWNERDRAW_SELECTED_RGB_FROM_DAT_00AC4604_PACKED_000000FF,
+            SHELL_DROPDOWN_DEPTH - 0.00001,
+        );
+    }
+    for (rect, rgb) in swatches {
+        push_solid_rect(out, atlas, rect, rgb, SHELL_DROPDOWN_DEPTH - 0.00002);
+    }
+    if let Some((scrollbar, thumb)) = scrollbar {
+        paint_control(
+            out,
+            &atlas.control_chrome(),
+            ControlPaint::ScrollBar {
+                scrollbar,
+                thumb,
+                pressed_part: pressed,
+            },
+            scale,
+        );
+    }
+    push_ownerdraw_two_pixel_bevel_frame(out, atlas, rect, frame_depth);
+}
+pub(super) fn dropdown_scroll_part(
+    part: crate::ui::shell::list::ListScrollPart,
+) -> DropdownScrollbarPart {
+    use crate::ui::shell::list::ListScrollPart;
+    match part {
+        ListScrollPart::Up => DropdownScrollbarPart::UpArrow,
+        ListScrollPart::Down => DropdownScrollbarPart::DownArrow,
+        ListScrollPart::Thumb => DropdownScrollbarPart::Thumb,
+        ListScrollPart::Track => DropdownScrollbarPart::Track,
     }
 }

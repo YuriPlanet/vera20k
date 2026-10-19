@@ -395,7 +395,7 @@ fn low_credit_sale(
     let Some(house) = sim.houses.get(&entity.owner()) else {
         return;
     };
-    if !((sim.session.game_mode_nonzero || entity.ai_sell_repair.ai_sellable())
+    if !((sim.session.game_mode_nonzero() || entity.ai_sell_repair.ai_sellable())
         && entity.ai_sell_repair.was_attacked_by_enemy()
         && house.authored_iq as u32 >= rules.general.iq_sell_back as u32)
     {
@@ -440,7 +440,7 @@ fn auto_repair_start(sim: &mut Simulation, rules: &RuleSet, id: u64) {
     if house.repair_start_latch || entity.repairing.on {
         return;
     }
-    let controlled = house.is_controlled_by_human(sim.session.game_mode_nonzero);
+    let controlled = house.is_controlled_by_human(sim.session.game_mode_nonzero());
     if !(entity.has_been_captured.is_set() || entity.ai_sell_repair.ai_repairable() || controlled) {
         return;
     }

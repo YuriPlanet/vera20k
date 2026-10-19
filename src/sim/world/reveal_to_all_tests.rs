@@ -41,7 +41,8 @@ fn world() -> Option<(RuleSet, Simulation, InternedId)> {
     );
     sim.session.house_order.push(confederation);
     sim.session.current_house = Some(americans);
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     sim.fog = vision::FogState::new(128, 128);
     let allocated: std::collections::BTreeSet<_> = sim
         .resolved_terrain

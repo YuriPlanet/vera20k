@@ -240,7 +240,7 @@ fn build_campaign_score_screen_model_from_sources(
     difficulty: i32,
     ranking: &crate::map::ranking::RankingSection,
     houses: impl IntoIterator<Item = (bool, u32)>,
-    side: u8,
+    side: i32,
     mut resolve_label: impl FnMut(&str) -> String,
 ) -> crate::ui::campaign_score_shell::CampaignScoreScreenModel {
     let mut model = crate::ui::campaign_score_shell::CampaignScoreScreenModel {
@@ -1404,7 +1404,7 @@ fn advance_one_simulation_frame(
                         let name = runtime.simulation.interner.resolve(owner);
                         // CreateHouses initializes the two literal special
                         // houses without ComputeRemap; their +56FC stays0.
-                        if runtime.simulation.session.game_mode_nonzero
+                        if runtime.simulation.session.game_mode_nonzero()
                             && (name.eq_ignore_ascii_case("Neutral")
                                 || name.eq_ignore_ascii_case("Special"))
                         {

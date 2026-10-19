@@ -32,7 +32,9 @@ fn fly_and_jumpjet_planned_move_legs_progress_through_native_arrival() {
         sim.session.current_house = Some(owner);
         // Ordinary skirmish paths: Aircraft4196B0's campaign shroud gate
         // must not reject this fixture's initially unexplored spawn cell.
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         // This route fixture has no base; keep its house alive while its
         // aircraft execute the path instead of triggering ShortGame defeat.
         sim.session.game_options.short_game = false;

@@ -36,7 +36,9 @@ fn retail_mcvs_repack_and_follow_the_ground_click_after_deployment() {
         sim.resolve_type_handles(&rules);
         let owner = sim.interner.get("Americans").unwrap();
         sim.session.current_house = Some(owner);
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         sim.session.game_options.mcv_redeploy = true;
         sim.session.game_options.short_game = false;
         sim.input_delay_ticks = 0;
@@ -160,7 +162,9 @@ fn construction_yard_ground_orders_match_native_redeploy_admission() {
         sim.resolve_type_handles(&rules);
         let owner = sim.interner.get("Americans").unwrap();
         sim.houses.get_mut(&owner).unwrap().is_human = human;
-        sim.session.game_mode_nonzero = skirmish;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(skirmish),
+        );
         sim.session.game_options.mcv_redeploy = enabled;
         let yard = sim
             .spawn_object("GACNST", "Americans", 12, 12, 0, &rules)

@@ -3,21 +3,26 @@
 use super::{App, AppState, GameScreen, Instant, ModifiersState};
 
 impl App {
-    /// Hand the scenario RNG cursor back to the offline shell when a match ends.
-    pub(super) fn capture_returned_skirmish_rng(state: &mut AppState) {
+    /// Return the live Scenario cursor and header to the multiplayer shell.
+    pub(super) fn capture_returned_multiplayer_scenario(state: &mut AppState) {
         let gameplay_rng = state
             .match_state
             .sim_runtime
             .as_ref()
             .map(|rt| &rt.simulation)
-            .map(crate::sim::world::Simulation::clone_scenario_rng);
-        if let Some(gameplay_rng) = gameplay_rng
+            .map(|simulation| {
+                (
+                    simulation.clone_scenario_rng(),
+                    simulation.session.start_header(),
+                )
+            });
+        if let Some((gameplay_rng, start_header)) = gameplay_rng
             && state
                 .frontend
-                .offline_skirmish_runtime
-                .capture_returned_gameplay_rng(gameplay_rng)
+                .multiplayer_shell_runtime
+                .capture_returned_gameplay_scenario(gameplay_rng, start_header)
         {
-            log::info!("Returned gameplay Scenario cursor to the offline shell");
+            log::info!("Returned gameplay Scenario cursor and header to the multiplayer shell");
         }
     }
 
@@ -50,7 +55,7 @@ impl App {
         // Persist the deterministic diagnostic log before leaving the scenario.
         // Runtime and presentation resources remain retained in the shell.
         crate::app::match_runtime::sim_tick::flush_replay_log(state);
-        Self::capture_returned_skirmish_rng(state);
+        Self::capture_returned_multiplayer_scenario(state);
         state.match_state.startup.clear();
         state.match_state.scenario_elapsed_clock.reset();
         state.audio.stop_theme();

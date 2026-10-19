@@ -1794,7 +1794,9 @@ fn fixture(inputs: &Inputs, selected: &[u64]) -> (Simulation, RuleSet) {
     let local = sim.interner.intern("local");
     let other = sim.interner.intern("other");
     sim.session.current_house = Some(local);
-    sim.session.game_mode_nonzero = !inputs.house.campaign;
+    sim.session.set_game_mode(
+        crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(!inputs.house.campaign),
+    );
     sim.session.house_order = vec![local, other];
     sim.houses
         .insert(local, HouseState::new(local, 0, None, true, 0, 10));

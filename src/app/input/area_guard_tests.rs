@@ -128,7 +128,11 @@ pub(super) fn fixture(corpus: &Value, row: &Value, retail: RetailBattleRules) ->
         }
         owners.insert(pointer, name);
     }
-    sim.session.game_mode_nonzero = before["game_mode"].as_u64().unwrap() != 0;
+    sim.session.set_game_mode(
+        crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+            before["game_mode"].as_u64().unwrap() != 0,
+        ),
+    );
     sim.session.binary_frame = before["frame"].as_u64().unwrap() as u32;
     sim.session.tick = before["frame"].as_u64().unwrap();
     let mut ids = BTreeMap::new();

@@ -59,7 +59,8 @@ fn world(rules: &RuleSet) -> Simulation {
         sim.session.house_order.push(id);
         construct_house_supers(&mut sim, rules, id, false);
     }
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     sim.session.game_options.super_weapons = true;
     crate::sim::arena_fixture::flat_ground(&mut sim, rules);
     sim

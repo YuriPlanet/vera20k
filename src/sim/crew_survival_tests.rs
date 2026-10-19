@@ -473,6 +473,58 @@ fn a_captured_yard_rolls_one_in_nine_without_the_engineer_draw() {
     assert_eq!(marks, expected_marks);
 }
 
+/// Original44307A..443080 suppresses each survivor roll while House1F6
+/// is pending, but the443292 suffix still visits every foundation cell.
+#[test]
+fn pending_house_death_skips_crew_rolls_but_retains_every_cell_mark() {
+    let rules = rules();
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/pending_house_death.json",
+    ))
+    .unwrap();
+    for row in corpus["crew"].as_array().unwrap() {
+        let pending = row["pending"].as_bool().unwrap();
+        let mut sim = sim_with_houses(5);
+        let yard = spawn(&mut sim, &rules, "GACNST", "Americans", 10, 10);
+        let owner = sim.interner.get("Americans").unwrap();
+        let before_ids = sim.substrate.entities.keys_sorted();
+        if pending {
+            assert!(sim.flag_house_to_die(owner));
+        }
+        sim.scenario_rng =
+            SimRng::from_native_state_hex_for_test(row["rng_before"].as_str().unwrap());
+        let expected = SimRng::from_native_state_hex_for_test(row["rng_after"].as_str().unwrap())
+            .logical_state();
+        let mut marks = Vec::new();
+        sim.spawn_building_survivors(
+            &rules,
+            None,
+            yard,
+            false,
+            |world, cell| {
+                if pending || marks.is_empty() {
+                    // The native unflagged first roll is2, so it reaches the mark
+                    // without a crew constructor; the pending case skips every roll.
+                    assert_eq!(world.scenario_rng.logical_state(), expected);
+                }
+                marks.push(cell);
+            },
+            FrameEffects::default(),
+        );
+        assert_eq!(marks, foundation_cells(10, 10, "3x3"));
+        if pending {
+            assert_eq!(sim.substrate.entities.keys_sorted(), before_ids);
+            assert_eq!(sim.scenario_rng.logical_state(), expected);
+            assert!(
+                sim.houses[&owner].is_to_die(),
+                "crew reader does not consume House latch"
+            );
+        } else {
+            assert_ne!(row["rng_before"], row["rng_after"]);
+        }
+    }
+}
+
 /// No survivor owed means no Phase B at all: no roll and no per-cell mark.
 #[test]
 fn a_building_owing_no_survivor_draws_and_marks_nothing() {
@@ -1802,4 +1854,31 @@ fn a_selected_mcvs_crewman_speaks_his_select_voice() {
         }
     }
     assert!(crewmen > 0);
+}
+
+#[test]
+fn signed_country_crew_type_and_rng_match_original() {
+    let rows: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/crew_type.json",
+    ))
+    .unwrap();
+    let rules = RuleSet::from_ini(&IniFile::from_str(RULES)).unwrap();
+    for row in rows.as_array().unwrap() {
+        let mut sim = Simulation::with_seed(1);
+        sim.scenario_rng =
+            SimRng::from_native_state_hex_for_test(row["rng_before"].as_str().unwrap());
+        assert_eq!(
+            sim.techno_crew_type(
+                &rules,
+                row["country_side"].as_i64().unwrap() as i32,
+                row["armed"].as_bool().unwrap()
+            )
+            .as_deref(),
+            row["result"].as_str()
+        );
+        assert_eq!(
+            sim.scenario_rng.native_state_hex(),
+            row["rng_after"].as_str().unwrap()
+        );
+    }
 }

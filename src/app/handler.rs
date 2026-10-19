@@ -443,7 +443,7 @@ impl ApplicationHandler for App {
                     // Pump/quit exits write the last durable snapshot after
                     // teardown, without a fresh control pack or RNG draw.
                     Self::teardown_skirmish_shell_for_start(state);
-                    state.frontend.offline_skirmish_runtime.persist_snapshot();
+                    state.frontend.multiplayer_shell_runtime.persist_snapshot();
                 }
                 event_loop.exit();
             }
@@ -489,6 +489,12 @@ impl ApplicationHandler for App {
                     }
                     if let Some(dialog) = state.frontend.network_options.as_mut() {
                         dialog.cancel_pointer();
+                    }
+                    if let Some(lan) = state.frontend.lan.as_mut() {
+                        lan.lobby.cancel_pointer();
+                    }
+                    if let Some(setup) = state.frontend.multiplayer_setup.as_mut() {
+                        setup.cancel_pointer();
                     }
                     if let Some(dialog) = state.frontend.options_dialog.as_mut() {
                         dialog.shell_cancel_pointer_gesture();
@@ -554,6 +560,41 @@ impl ApplicationHandler for App {
                 }
                 if state.frontend.network_options.is_some() {
                     crate::app::input::network_options::key(state, &event);
+                    return;
+                }
+                if state.frontend.screen == GameScreen::MainMenu
+                    && state.frontend.shell_route.lan_lobby()
+                {
+                    crate::app::shell_lan::key(state, &event);
+                    return;
+                }
+                if state.frontend.screen == GameScreen::MainMenu
+                    && state.frontend.shell_route.lan_setup()
+                {
+                    if state
+                        .frontend
+                        .skirmish_shell_state
+                        .choose_map_modal
+                        .is_none()
+                    {
+                        crate::app::input::multiplayer_setup::key(state, &event);
+                    } else if event.state.is_pressed() && !event.repeat {
+                        // ChooseMap's loop has no IsDialogMessage. Only the
+                        // existing eject prompt consumes its default keys.
+                        if let PhysicalKey::Code(code) = event.physical_key {
+                            if Self::shell_key_for_code(code)
+                                .is_some_and(|key| Self::route_validation_modal_key(state, key))
+                            {
+                                return;
+                            }
+                            if matches!(
+                                code,
+                                KeyCode::Escape | KeyCode::Enter | KeyCode::NumpadEnter
+                            ) {
+                                Self::cancel_choose_map_eject_prompt(state);
+                            }
+                        }
+                    }
                     return;
                 }
                 if Self::native_skirmish_shell_active(state)
@@ -805,6 +846,27 @@ impl ApplicationHandler for App {
                     crate::app::input::network_options::cursor_moved(state);
                     return;
                 }
+                if state.frontend.screen == GameScreen::MainMenu
+                    && state.frontend.shell_route.lan_lobby()
+                {
+                    crate::app::shell_lan::cursor_moved(state);
+                    return;
+                }
+                if state.frontend.screen == GameScreen::MainMenu
+                    && state.frontend.shell_route.lan_setup()
+                {
+                    if state
+                        .frontend
+                        .skirmish_shell_state
+                        .choose_map_modal
+                        .is_some()
+                    {
+                        Self::handle_skirmish_shell_mouse_move(state);
+                    } else {
+                        crate::app::input::multiplayer_setup::cursor_moved(state);
+                    }
+                    return;
+                }
                 if Self::native_launcher_options_active(state) {
                     Self::handle_launcher_options_mouse(state, None);
                     return;
@@ -931,6 +993,37 @@ impl ApplicationHandler for App {
                     );
                     return;
                 }
+                if state.frontend.screen == GameScreen::MainMenu
+                    && state.frontend.shell_route.lan_lobby()
+                {
+                    crate::app::shell_lan::mouse(state, button, btn_state.is_pressed());
+                    return;
+                }
+                if state.frontend.screen == GameScreen::MainMenu
+                    && state.frontend.shell_route.lan_setup()
+                {
+                    if state
+                        .frontend
+                        .skirmish_shell_state
+                        .choose_map_modal
+                        .is_some()
+                    {
+                        if button == MouseButton::Left {
+                            if btn_state.is_pressed() {
+                                Self::handle_skirmish_shell_mouse_down(state);
+                            } else {
+                                Self::handle_skirmish_shell_mouse_up(state);
+                            }
+                        }
+                    } else {
+                        crate::app::input::multiplayer_setup::mouse(
+                            state,
+                            button,
+                            btn_state.is_pressed(),
+                        );
+                    }
+                    return;
+                }
                 if Self::main_menu_dialog_open(state) {
                     if Self::native_launcher_options_active(state) && button == MouseButton::Left {
                         Self::handle_launcher_options_mouse(state, Some(btn_state.is_pressed()));
@@ -1048,6 +1141,9 @@ impl ApplicationHandler for App {
             [
                 crate::app::input::keyboard::poll_scroll_repeat(state),
                 crate::app::input::network_options::poll_scroll_repeat(state),
+                crate::app::shell_lan::poll(state),
+                crate::app::shell_lan_setup::poll(state),
+                crate::app::input::multiplayer_setup::poll(state),
                 crate::app::input::sound::poll_scroll_repeat(state),
                 Self::poll_movie_list_scroll(state),
                 Self::poll_choose_map_scroll(state),

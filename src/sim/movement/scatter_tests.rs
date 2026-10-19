@@ -704,7 +704,11 @@ fn receive_damage_scatter_gates_match_original_execution() {
         let mut house = HouseState::new(owner, 0, None, flag("human"), 0, 10);
         house.player_control = flag("player_control");
         sim.houses.insert(owner, house);
-        sim.session.game_mode_nonzero = input["game_mode_nonzero"].as_bool().unwrap_or(true);
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+                input["game_mode_nonzero"].as_bool().unwrap_or(true),
+            ),
+        );
         sim.substrate.entities.insert(actor);
         let retaliation = match input["retaliation"].as_str().unwrap() {
             "accepted" => DamageRetaliation::Accepted,

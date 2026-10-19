@@ -2416,8 +2416,8 @@ impl ObjectType {
     /// -1 or the house's side (`HouseTypeClass+0xBC`), as
     /// `FirstBuildableFromArray @ 0x005051E0` and `AI_BuildWalls @ 0x0050C340`
     /// test it.
-    pub fn planned_for_side(&self, side_index: u8) -> bool {
-        self.ai_base_planning_side == -1 || self.ai_base_planning_side == i32::from(side_index)
+    pub fn planned_for_side(&self, side_index: i32) -> bool {
+        self.ai_base_planning_side == -1 || self.ai_base_planning_side == side_index
     }
 
     /// Building43BCBD..43BCD0 allocates at least one radio contact even when

@@ -39,7 +39,8 @@ fn arena(rules: &RuleSet) -> Simulation {
     let mut sim = crate::sim::arena_fixture::rival_arena(rules, 0x4DA670);
     sim.playfield_bounds = Some(PLAYFIELD);
     sim.session.game_options.short_game = false;
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     sim.intern_rule_type_ids(rules);
     for house in sim.houses.values_mut() {
         house.country = Some(house.name);

@@ -20,7 +20,7 @@ fn actual_computer_yard_retasks_existing_starting_force_through_move() {
         "XMP03T4.MAP",
         &[(LaunchCountry::Russia, AiDifficulty::Easy)],
     );
-    launch.local.start_position = LaunchStartPosition::Position(1);
+    launch.local_slot_mut().start_position = LaunchStartPosition::Position(1);
     launch.opponents[0].start_position = LaunchStartPosition::Position(2);
     launch.options.starting_credits = 5000;
     launch.options.unit_count = 10;

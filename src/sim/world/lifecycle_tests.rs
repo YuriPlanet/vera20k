@@ -57,7 +57,9 @@ fn native_trigger_reveal_cell_put_discovers_unshrouded_campaign_resident() {
         let player = sim.interner.intern("Player");
         let owner = sim.interner.intern("Other");
         sim.session.current_house = Some(player);
-        sim.session.game_mode_nonzero = game_mode_nonzero;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(game_mode_nonzero),
+        );
         for house in [player, owner] {
             sim.houses
                 .insert(house, HouseState::new(house, 0, None, true, 0, 10));
@@ -145,7 +147,9 @@ fn constructor_complete_foot_destructors_match_native_team_gate_and_rng() {
             },
         ));
         sim.session.binary_frame = 1;
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         sim.session
             .set_started(input["scenario_started_byte"].as_i64().unwrap() != 0);
         let owner = sim.interner.intern("Americans");

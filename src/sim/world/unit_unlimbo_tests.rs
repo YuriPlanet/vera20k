@@ -139,7 +139,11 @@ fn apply_cell_inputs(sim: &mut Simulation, cell: (u16, u16), input: &Value) {
         cell.1,
         input["deck_bits"].as_u64().unwrap() as u8,
     );
-    sim.session.game_mode_nonzero = int(&input["actual_game_mode"]) != 0;
+    sim.session.set_game_mode(
+        crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+            int(&input["actual_game_mode"]) != 0,
+        ),
+    );
 }
 
 fn assert_actor(sim: &Simulation, id: u64, native: &Value, name: &str) {
@@ -1536,7 +1540,11 @@ fn unit_entry_scope_and_actual_game_mode_match_independent_original_controls() {
                 .unwrap()
                 .place_overlay(11, 10, 0, 0);
         }
-        sim.session.game_mode_nonzero = int(&input["actual_game_mode"]) != 0;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+                int(&input["actual_game_mode"]) != 0,
+            ),
+        );
         assert_rng(&sim, &row["rng"], "before_hex", &name);
         let before = sim.rng_state();
         let result = in_scopes(

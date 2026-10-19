@@ -350,7 +350,7 @@ fn mind_control_area(
         }
     }
 
-    let game_mode_nonzero = sim.session.game_mode_nonzero;
+    let game_mode_nonzero = sim.session.game_mode_nonzero();
     let human = sim
         .houses
         .get(&owner)

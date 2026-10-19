@@ -361,7 +361,8 @@ fn no_factories_retail_sov02_delay_reaches_existing_sale_and_hunt_after_restore(
     let (mut sim, _, _) = crate::sim::world::entry_test_fixture::fixture();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.session.game_mode_nonzero = false;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false));
     sim.session.set_started(true);
     crate::sim::scenario_bootstrap::initialize_map_roster_houses(
         &mut sim,

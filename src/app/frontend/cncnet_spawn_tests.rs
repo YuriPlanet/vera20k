@@ -171,12 +171,12 @@ fn client_skirmish_preserves_roster_options_and_native_indices() {
     let SpawnGame::Skirmish(session) = request.game else {
         panic!("expected skirmish")
     };
-    assert_eq!(session.player_name, "玩家 zzh");
+    assert_eq!(session.humans[session.local_player_index].name, "玩家 zzh");
     assert_eq!(session.selected_map_file.as_deref(), Some("spawnmap.ini"));
-    assert_eq!(session.local.country, LaunchCountry::America);
-    assert_eq!(session.local.color_index, 2);
+    assert_eq!(session.local_slot().country, LaunchCountry::America);
+    assert_eq!(session.local_slot().color_index, 2);
     assert_eq!(
-        session.local.start_position,
+        session.local_slot().start_position,
         LaunchStartPosition::Position(3)
     );
     assert_eq!(session.opponents[0].country, LaunchCountry::Russia);
@@ -191,11 +191,12 @@ fn client_skirmish_preserves_roster_options_and_native_indices() {
         session.opponents[1].start_position,
         LaunchStartPosition::Auto
     );
-    assert_eq!(session.local.team, session.opponents[0].team);
-    assert_eq!(session.local.team, LaunchTeam::Team(0));
+    assert_eq!(session.local_slot().team, session.opponents[0].team);
+    assert_eq!(session.local_slot().team, LaunchTeam::Team(0));
     assert_eq!(session.opponents[1].team, LaunchTeam::None);
-    assert_eq!(session.pre_fill_house_roster.required_start_count(), 3);
+    assert_eq!(session.required_start_count(), 3);
     assert_eq!(session.pre_fill_house_roster.created_house_count(), 5);
+    assert!(session.house_roster_is_consistent());
     assert_eq!(session.options.starting_credits, 5000);
     assert!(!session.options.super_weapons);
     assert!(session.options.ally_change_allowed);

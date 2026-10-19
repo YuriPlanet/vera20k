@@ -7,7 +7,7 @@ use super::*;
 use crate::app::diagnostics::state::{MAP_PRESENTATION_CLOCK_POLICY, MAP_PRESENTATION_INTERVAL_MS};
 use crate::app::presentation::render::GameRenderTimes;
 use crate::audio::sfx::{PcmObservationConfig, PcmObservationContext, PcmObservationReport};
-use crate::skirmish_launch::{LaunchStartPosition, PreFillHouseRoster, SkirmishLaunchSession};
+use crate::skirmish_launch::{LaunchStartPosition, SkirmishLaunchSession};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -837,15 +837,25 @@ impl MapCaptureProfile {
             "map observation requires an explicit fixed Battle launch"
         );
         ensure!(
-            self.launch.pre_fill_house_roster
-                == PreFillHouseRoster::from_compact_skirmish(self.launch.opponents.len()),
+            self.launch.humans.len() == 1
+                && self.launch.local_player_index == 0
+                && self.launch.humans[0].raw_slot_index == Some(0)
+                && !self.launch.humans[0].is_observer()
+                && self.launch.ai_player_count == self.launch.opponents.len() as i32
+                && self
+                    .launch
+                    .opponents
+                    .iter()
+                    .enumerate()
+                    .all(|(index, opponent)| usize::from(opponent.raw_slot_index) == index + 1)
+                && self.launch.house_roster_is_consistent(),
             "map observation requires the ordinary one-human compact skirmish roster"
         );
         let mut starts = std::collections::BTreeSet::new();
         let mut colors = std::collections::BTreeSet::new();
         for (start, color) in std::iter::once((
-            self.launch.local.start_position,
-            self.launch.local.color_index,
+            self.launch.local_slot().start_position,
+            self.launch.local_slot().color_index,
         ))
         .chain(
             self.launch
@@ -1626,7 +1636,7 @@ struct MapCommandBarThumbState {
     rect: [i32; 4],
     disabled: bool,
     current_house: Option<String>,
-    side_index: Option<u8>,
+    side_index: Option<i32>,
     local_player_defeated: bool,
     input_locked: bool,
     has_lost: Option<bool>,
@@ -3049,7 +3059,7 @@ impl TacticalCaptureSession {
                     "human": house.map(|h| h.is_human), "difficulty": house.map(|h| h.difficulty)})
                 })
                 .collect();
-            for start in std::iter::once(profile.launch.local.start_position).chain(
+            for start in std::iter::once(profile.launch.local_slot().start_position).chain(
                 profile
                     .launch
                     .opponents
@@ -4758,13 +4768,39 @@ mod tests {
     #[test]
     fn unresolved_launch_duplicate_slots_and_inconsistent_roster_fail() {
         let mut profile = example();
-        profile.launch.local.start_position = LaunchStartPosition::Auto;
+        profile.launch.local_slot_mut().start_position = LaunchStartPosition::Auto;
         assert!(profile.validate().is_err());
         let mut profile = example();
-        profile.launch.opponents[0].color_index = profile.launch.local.color_index;
+        profile.launch.opponents[0].color_index = profile.launch.local_slot().color_index;
         assert!(profile.validate().is_err());
         let mut profile = example();
         profile.launch.opponents.clear();
+        assert!(profile.validate().is_err());
+    }
+
+    #[test]
+    fn ordinary_capture_admission_uses_canonical_color_and_source_roster() {
+        let mut profile = example();
+        profile.launch.local_slot_mut().color_index = 6;
+        profile.launch.rebuild_house_roster();
+        profile.validate().unwrap();
+        let baseline = profile;
+        let mut profile = baseline.clone();
+        profile.launch.humans[0].raw_slot_index = Some(2);
+        assert!(profile.validate().is_err());
+        let mut profile = baseline.clone();
+        profile.launch.humans[0].role = crate::skirmish_launch::LaunchHumanRole::Observer;
+        profile.launch.rebuild_house_roster();
+        assert!(profile.validate().is_err());
+        let mut profile = baseline.clone();
+        profile.launch.opponents[0].raw_slot_index = 3;
+        profile.launch.rebuild_house_roster();
+        assert!(profile.validate().is_err());
+        let mut profile = baseline;
+        let mut remote = profile.launch.humans[0].clone();
+        remote.raw_slot_index = Some(2);
+        profile.launch.humans.push(remote);
+        profile.launch.rebuild_house_roster();
         assert!(profile.validate().is_err());
     }
 
@@ -6721,9 +6757,17 @@ mod tests {
         walk(&tools.unwrap(), &mut profiles);
         assert!(!profiles.is_empty());
         for path in profiles {
-            if let Err(error) = MapCaptureProfile::load(&path) {
-                panic!("{}: {error:#}", path.display());
-            }
+            let profile = MapCaptureProfile::load(&path)
+                .unwrap_or_else(|error| panic!("{}: {error:#}", path.display()));
+            let source: Value = serde_json::from_slice(&profile.bytes).unwrap();
+            // These maintained examples use the canonical serializer shape;
+            // legacy inputs remain supported only at the decoder boundary.
+            assert_eq!(
+                source["launch"],
+                serde_json::to_value(&profile.value.launch).unwrap(),
+                "{}",
+                path.display()
+            );
         }
     }
 

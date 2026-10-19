@@ -48,10 +48,10 @@ fn fresh_fill_silos_credits_reach_a_real_spy_entry() {
         std::fs::write(&path, map).unwrap();
         let name = path.to_str().unwrap();
         let mut launch = battle_session(name, &[(LaunchCountry::Russia, AiDifficulty::Easy)]);
-        launch.player_name = "Player".to_string();
-        launch.local.country = LaunchCountry::America;
-        launch.local.start_position = LaunchStartPosition::Position(0);
-        launch.local.team = LaunchTeam::None;
+        launch.local_player_mut().name = "Player".to_string();
+        launch.local_slot_mut().country = LaunchCountry::America;
+        launch.local_slot_mut().start_position = LaunchStartPosition::Position(0);
+        launch.local_slot_mut().team = LaunchTeam::None;
         launch.opponents[0].start_position = LaunchStartPosition::Position(1);
         launch.opponents[0].team = LaunchTeam::None;
         launch.options.starting_credits = 5000;

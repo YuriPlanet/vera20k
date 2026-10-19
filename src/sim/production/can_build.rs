@@ -145,7 +145,7 @@ pub(crate) fn can_build(
     if exceeds_tech_level {
         return CanBuild::No;
     }
-    if !house.is_controlled_by_human(sim.session.game_mode_nonzero) {
+    if !house.is_controlled_by_human(sim.session.game_mode_nonzero()) {
         return CanBuild::Yes;
     }
     if !obj
@@ -376,7 +376,7 @@ pub fn find_factory(
 ) -> Option<u64> {
     let house = sim.houses.get(&owner)?;
     let factory_type = FactoryType::for_category(obj.category);
-    let game_mode_nonzero = sim.session.game_mode_nonzero;
+    let game_mode_nonzero = sim.session.game_mode_nonzero();
     let ownable = get_ownable(obj, rules, game_mode_nonzero);
     let selling = MissionId::from_known(MissionType::Selling);
     let naval_unit = obj.category == ObjectCategory::Vehicle && obj.naval;

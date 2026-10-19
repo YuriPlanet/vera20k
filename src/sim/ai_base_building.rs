@@ -150,7 +150,7 @@ pub(crate) fn economy_state_machine(
     owner: InternedId,
     building_exit: bool,
 ) {
-    let game_mode_nonzero = sim.session.game_mode_nonzero;
+    let game_mode_nonzero = sim.session.game_mode_nonzero();
     let Some(house) = sim.houses.get(&owner) else {
         return;
     };
@@ -222,7 +222,7 @@ pub(crate) fn update_production_choices(
     owner: InternedId,
     registry: Option<&OverlayTypeRegistry>,
 ) {
-    let game_mode_nonzero = sim.session.game_mode_nonzero;
+    let game_mode_nonzero = sim.session.game_mode_nonzero();
     let Some(house) = sim.houses.get(&owner) else {
         return;
     };
@@ -492,7 +492,7 @@ pub(crate) fn exit_building(
     let Some(owner) = sim.substrate.entities.get(factory).map(|yard| yard.owner()) else {
         return BuildingExit::Failed;
     };
-    let game_mode_nonzero = sim.session.game_mode_nonzero;
+    let game_mode_nonzero = sim.session.game_mode_nonzero();
     // `0x00444F19..0x00444F2A` (`0x0050B730`).
     if sim
         .houses
@@ -774,7 +774,7 @@ pub(crate) fn find_node(
     wanted: i32,
     registry: Option<&OverlayTypeRegistry>,
 ) -> Option<usize> {
-    let game_mode_nonzero = sim.session.game_mode_nonzero;
+    let game_mode_nonzero = sim.session.game_mode_nonzero();
     let mut index = 0;
     // The count is re-read every step (`0x0042EBAE`).
     while index < sim.houses.get(&owner)?.base_plan.nodes.len() {
@@ -891,7 +891,7 @@ fn node_may_replan(
             .get(house.difficulty.table_index())
             .is_some_and(|&allowed| house.tracking.resource_gatherers() < allowed);
     }
-    if !sim.session.game_mode_nonzero {
+    if !sim.session.game_mode_nonzero() {
         return true;
     }
     // `TechnoTypeClass::GetWeapon(0) @ 0x007177C0`: the Primary slot.
@@ -970,7 +970,7 @@ fn build_walls(sim: &mut Simulation, rules: &RuleSet, owner: InternedId, index: 
 /// `0x0050C346..0x0050C39D`: the first `[AI] ConcreteWalls=` type planned
 /// for the side, as its array index; -1 without one, which then inserts `-1`
 /// nodes as native does.
-fn wall_type(rules: &RuleSet, side_index: u8) -> i32 {
+fn wall_type(rules: &RuleSet, side_index: i32) -> i32 {
     rules
         .concrete_wall_types
         .iter()

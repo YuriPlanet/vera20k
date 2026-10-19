@@ -69,9 +69,9 @@ fn stock_spy_blackout_preserves_paid_building_timers_through_recovery() {
     let mut histories = Vec::new();
     for infiltrate in [false, true] {
         let mut launch = battle_session(name, &[(LaunchCountry::Russia, AiDifficulty::Easy)]);
-        launch.local.country = LaunchCountry::America;
-        launch.local.start_position = LaunchStartPosition::Position(0);
-        launch.local.team = LaunchTeam::None;
+        launch.local_slot_mut().country = LaunchCountry::America;
+        launch.local_slot_mut().start_position = LaunchStartPosition::Position(0);
+        launch.local_slot_mut().team = LaunchTeam::None;
         launch.opponents[0].start_position = LaunchStartPosition::Position(1);
         launch.opponents[0].team = LaunchTeam::None;
         launch.options.starting_credits = 5000;

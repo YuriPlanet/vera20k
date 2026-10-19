@@ -1,9 +1,7 @@
 //! Skirmish shell chrome atlas.
 //!
-//! Loads verified offline Skirmish dialog `0x102` shell art, then packs it
-//! into a GPU texture for batched drawing. Assets without direct active
-//! Skirmish evidence are research candidates and must not be rendered by the
-//! default shell path.
+//! Packs the shared native shell art into one GPU texture. Screen-specific
+//! entries require active caller evidence and are selected by that screen.
 //! Skirmish setup intentionally uses RA2's MNSCRNS/MNSCRNL backgrounds
 //! through SHELL.PAL as a presentation preference.
 //! User-requested YR parity exception: preserve this RA2 background during
@@ -60,6 +58,11 @@ const SKIRMISH_FLAG_PCX_NAMES: [&str; 12] = [
     "usai.pcx", "japi.pcx", "frai.pcx", "geri.pcx", "gbri.pcx", "djbi.pcx", "arbi.pcx", "lati.pcx",
     "rusi.pcx", "yrii.pcx", "obsi.pcx", "rani.pcx",
 ];
+/// Owner-draw preload 61F7FD..61F857 -> PCX cache 6B9D00 (embedded palette).
+/// BB 5EE200 selects observer art; 5DAFE0 selects host/accepted glyphs.
+const LAN_PCX_NAMES: [&str; 4] = ["wolnob.pcx", "wolob.pcx", "wolhost.pcx", "wolacpt.pcx"];
+const LAN_SETUP_SHAPE: &str = "MnScrnLCoopGameSetup.shp";
+const LAN_SETUP_PALETTE: &str = "MnScrnLCoopGameSetup.PAL";
 
 #[derive(Debug, Clone, Copy)]
 pub struct SkirmishShellChromeEntry {
@@ -97,6 +100,8 @@ pub struct SkirmishShellChromeAtlas {
     pub generic_background_640_mnscrns_shell: Option<SkirmishShellChromeEntry>,
     /// Generic common-shell large background, decoded through SHELL.PAL.
     pub generic_background_large_mnscrnl_shell: Option<SkirmishShellChromeEntry>,
+    lan_setup_backgrounds: [Option<SkirmishShellChromeEntry>; 2],
+    lan_icons: [Option<SkirmishShellChromeEntry>; 4],
     pub lower_side_640_lwscrns: Option<SkirmishShellChromeEntry>,
     pub lower_side_large_lwscrnl: Option<SkirmishShellChromeEntry>,
     mode_two_dialog_backgrounds: [Option<SkirmishShellChromeEntry>; 4],
@@ -134,6 +139,11 @@ pub struct SkirmishShellChromeAtlas {
     pub combo_face_207: Option<SkirmishShellChromeEntry>,
     pub combo_face_180: Option<SkirmishShellChromeEntry>,
     pub combo_face_150: Option<SkirmishShellChromeEntry>,
+    /// BC/BD resource windows after60C4A0:151/118/42/39px, faceheight24.
+    pub combo_face_151: Option<SkirmishShellChromeEntry>,
+    pub combo_face_118: Option<SkirmishShellChromeEntry>,
+    pub combo_face_42: Option<SkirmishShellChromeEntry>,
+    pub combo_face_39: Option<SkirmishShellChromeEntry>,
     pub combo_face_117: Option<SkirmishShellChromeEntry>,
     pub combo_face_44: Option<SkirmishShellChromeEntry>,
     pub combo_face_38: Option<SkirmishShellChromeEntry>,
@@ -165,6 +175,10 @@ pub struct ControlChrome {
     pub trackbar_thumb_trakgrip: Option<SkirmishShellChromeEntry>,
     pub white_pixel: Option<SkirmishShellChromeEntry>,
     pub combo_face_150: Option<SkirmishShellChromeEntry>,
+    pub combo_face_151: Option<SkirmishShellChromeEntry>,
+    pub combo_face_118: Option<SkirmishShellChromeEntry>,
+    pub combo_face_42: Option<SkirmishShellChromeEntry>,
+    pub combo_face_39: Option<SkirmishShellChromeEntry>,
     pub combo_face_117: Option<SkirmishShellChromeEntry>,
     pub combo_face_44: Option<SkirmishShellChromeEntry>,
     pub combo_face_38: Option<SkirmishShellChromeEntry>,
@@ -182,6 +196,50 @@ pub struct ControlChrome {
 }
 
 impl SkirmishShellChromeAtlas {
+    /// Original 60CF00 assigns BB the generic shell art, BC/BD the setup art.
+    /// Loader72CF40 (called by LAN5DCE93/5E0963) loads the large shape only
+    /// at800; small MNSCRNS uses that same setup palette. Native72CF90 frees
+    /// the setup pair on return. This retained atlas shares app-owned assets
+    /// and does not change the intentional RA2 offline-skirmish selection.
+    pub fn lan_background(&self, dialog_id: u16, width: u32) -> Option<SkirmishShellChromeEntry> {
+        match (dialog_id, width) {
+            (0xBB, 640) => self.generic_background_640_mnscrns_shell,
+            (0xBB, _) => self.generic_background_large_mnscrnl_shell,
+            (0xBC | 0xBD, 640) => self.lan_setup_backgrounds[0],
+            (0xBC | 0xBD, 800) => self.lan_setup_backgrounds[1],
+            _ => None,
+        }
+    }
+
+    /// BB5EE200 ->603D30 kind-2 image static, RGB565 magenta keyed.
+    pub fn lan_observer_toggle(&self, observer: bool) -> Option<SkirmishShellChromeEntry> {
+        self.lan_icons[usize::from(observer)]
+    }
+
+    /// BB5DAFE0 -> country insignia owner4E3560. Reuse the flags already
+    /// loaded for country selectors; unsupported names have no substitute.
+    pub fn lan_player_side(&self, name: &str) -> Option<SkirmishShellChromeEntry> {
+        self.flags
+            .iter()
+            .find(|(file, _)| file.eq_ignore_ascii_case(name))
+            .map(|(_, entry)| *entry)
+    }
+
+    /// BB5DAFE0 gives the host glyph precedence, then accepted, else no icon.
+    pub fn lan_player_status(
+        &self,
+        host: bool,
+        accepted: bool,
+    ) -> Option<SkirmishShellChromeEntry> {
+        if host {
+            self.lan_icons[2]
+        } else if accepted {
+            self.lan_icons[3]
+        } else {
+            None
+        }
+    }
+
     /// Original mode-2 paint (`621E90`, branch `6221D1`) selects neutral art
     /// outside a session, otherwise the scenario's side. Missing selected art or
     /// palette skips the SHP; it does not borrow another side's background.
@@ -208,6 +266,10 @@ impl SkirmishShellChromeAtlas {
             trackbar_thumb_trakgrip: self.trackbar_thumb_trakgrip,
             white_pixel: self.white_pixel,
             combo_face_150: self.combo_face_150,
+            combo_face_151: self.combo_face_151,
+            combo_face_118: self.combo_face_118,
+            combo_face_42: self.combo_face_42,
+            combo_face_39: self.combo_face_39,
             combo_face_117: self.combo_face_117,
             combo_face_44: self.combo_face_44,
             combo_face_38: self.combo_face_38,
@@ -251,6 +313,8 @@ impl ControlChrome {
 enum ShellAssetRole {
     VerifiedParentBackground,
     VerifiedChooseMapBackground,
+    VerifiedLanSetupBackground,
+    VerifiedLanIcon,
     VerifiedOfflineStartMarker,
     AssignedPlayerMarker,
     RightPanelChrome,
@@ -436,6 +500,21 @@ pub fn build_skirmish_shell_chrome_atlas(
         );
     }
 
+    // 72CF40/72D030 and 60CF00: native BC/BD use the setup palette for
+    // both sizes. BB reuses the generic entries above, without another atlas.
+    if let Some(palette) = load_named_palette(assets, LAN_SETUP_PALETTE) {
+        for (name, label) in [
+            ("MNSCRNS.SHP", "mnscrns.shp#lansetup"),
+            (LAN_SETUP_SHAPE, "mnscrnlcoopgamesetup.shp"),
+        ] {
+            push_optional(
+                &mut rendered,
+                render_shp_entry_labeled(assets, name, label, &palette, 0),
+                name,
+            );
+        }
+    }
+
     if let Some(choose_map_background_palette) = choose_map_background_palette.as_ref() {
         push_optional(
             &mut rendered,
@@ -516,6 +595,12 @@ pub fn build_skirmish_shell_chrome_atlas(
         ("skirmish_combo_face_117", 117),
         ("skirmish_combo_face_44", 44),
         ("skirmish_combo_face_38", 38),
+        // BC/BD use the same617250 face painter:61745C height24,
+        // 617893->6208F0 thickness2. Keep their actual child-window widths.
+        ("lan_combo_face_151", 151),
+        ("lan_combo_face_118", 118),
+        ("lan_combo_face_42", 42),
+        ("lan_combo_face_39", 39),
     ] {
         rendered.push(render_primitive_bevel_entry(
             label,
@@ -533,6 +618,11 @@ pub fn build_skirmish_shell_chrome_atlas(
     ));
 
     for name in SKIRMISH_FLAG_PCX_NAMES {
+        push_optional(&mut rendered, render_flag_pcx_entry(assets, name), name);
+    }
+    for name in LAN_PCX_NAMES {
+        // 6B9D00 packs embedded PCX palette to display RGB565; list images
+        // and kind-2 statics compare the same packed magenta key as flags.
         push_optional(&mut rendered, render_flag_pcx_entry(assets, name), name);
     }
 
@@ -584,6 +674,11 @@ pub fn build_skirmish_shell_chrome_atlas(
             .copied(),
         generic_background_640_mnscrns_shell: by_label.get("mnscrns.shp#shell").copied(),
         generic_background_large_mnscrnl_shell: by_label.get("mnscrnl.shp#shell").copied(),
+        lan_setup_backgrounds: [
+            by_label.get("mnscrns.shp#lansetup").copied(),
+            by_label.get("mnscrnlcoopgamesetup.shp").copied(),
+        ],
+        lan_icons: LAN_PCX_NAMES.map(|name| by_label.get(name).copied()),
         lower_side_640_lwscrns: by_label.get("lwscrns.shp").copied(),
         lower_side_large_lwscrnl: by_label.get("lwscrnl.shp").copied(),
         mode_two_dialog_backgrounds: MODE_TWO_DIALOG_ART.map(|(name, _)| {
@@ -626,6 +721,10 @@ pub fn build_skirmish_shell_chrome_atlas(
         combo_face_207: by_label.get("keyboard_combo_face_207").copied(),
         combo_face_180: by_label.get("launcher_combo_face_180").copied(),
         combo_face_150: by_label.get("skirmish_combo_face_150").copied(),
+        combo_face_151: by_label.get("lan_combo_face_151").copied(),
+        combo_face_118: by_label.get("lan_combo_face_118").copied(),
+        combo_face_42: by_label.get("lan_combo_face_42").copied(),
+        combo_face_39: by_label.get("lan_combo_face_39").copied(),
         combo_face_117: by_label.get("skirmish_combo_face_117").copied(),
         combo_face_44: by_label.get("skirmish_combo_face_44").copied(),
         combo_face_38: by_label.get("skirmish_combo_face_38").copied(),
@@ -675,6 +774,10 @@ fn classify_shell_asset(name: &str) -> ShellAssetRole {
     match name.to_ascii_lowercase().as_str() {
         "mnscrns.shp" | "mnscrnl.shp" => ShellAssetRole::VerifiedParentBackground,
         "mnscrnlcustomizebattle.shp" => ShellAssetRole::VerifiedChooseMapBackground,
+        "mnscrnlcoopgamesetup.shp" => ShellAssetRole::VerifiedLanSetupBackground,
+        "wolnob.pcx" | "wolob.pcx" | "wolhost.pcx" | "wolacpt.pcx" => {
+            ShellAssetRole::VerifiedLanIcon
+        }
         "startbut.shp" => ShellAssetRole::VerifiedOfflineStartMarker,
         "mmpb.shp" => ShellAssetRole::AssignedPlayerMarker,
         "sdtp.shp" | "sdbtnbkgd.shp" | "sdbtm.shp" | "sdbtnanm.shp" | "sdmpbtn.shp"
@@ -1190,7 +1293,7 @@ mod tests {
         );
         assert_eq!(
             classify_shell_asset("MnScrnLCoopGameSetup.shp"),
-            ShellAssetRole::Other
+            ShellAssetRole::VerifiedLanSetupBackground
         );
         assert_eq!(
             classify_shell_asset("STARTBUT.SHP"),
@@ -1481,5 +1584,36 @@ mod tests {
 
         assert_eq!((small.width, small.height), (472, 448));
         assert_eq!((large.width, large.height), (632, 568));
+    }
+
+    #[test]
+    #[ignore = "requires the configured stock retail RA2/YR install"]
+    fn retail_lan_art_uses_native_setup_shape_and_player_glyphs() {
+        let assets = retail_assets();
+        let palette = load_named_palette(&assets, super::LAN_SETUP_PALETTE)
+            .expect("native72CF40 setup palette in NTRLMD.MIX");
+        let setup = render_shp_entry(&assets, super::LAN_SETUP_SHAPE, &palette, 0)
+            .expect("native BC/BD setup shape");
+        // Original retail SHP header, NTRLMD.MIX. BB's generic background
+        // retains its independently loaded SHELL.PAL entry.
+        assert_eq!((setup.width, setup.height), (632, 568));
+        let generic = render_shp_entry(
+            &assets,
+            "MNSCRNL.SHP",
+            &load_named_palette(&assets, "SHELL.PAL").unwrap(),
+            0,
+        )
+        .unwrap();
+        assert_ne!(setup.rgba, generic.rgba);
+        for (name, width) in [
+            ("wolnob.pcx", 14),
+            ("wolob.pcx", 14),
+            ("wolhost.pcx", 15),
+            ("wolacpt.pcx", 15),
+        ] {
+            let icon = super::render_flag_pcx_entry(&assets, name).expect(name);
+            // Dimensions from original retail PCX xmin/ymin/xmax/ymax bytes.
+            assert_eq!((icon.width, icon.height), (width, 14), "{name}");
+        }
     }
 }

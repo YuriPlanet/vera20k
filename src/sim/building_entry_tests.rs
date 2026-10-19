@@ -1496,7 +1496,8 @@ fn a_player_control_only_bio_reactor_owner_does_not_clear_the_seek_latch() {
     let house = sim.houses.get_mut(&owner).unwrap();
     house.is_human = false;
     house.player_control = true;
-    sim.session.game_mode_nonzero = false;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false));
     assert!(sim.owner_is_human(owner));
     assert!(!sim.houses[&owner].is_human);
 

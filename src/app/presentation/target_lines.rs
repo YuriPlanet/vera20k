@@ -794,7 +794,9 @@ mod tests {
         unit.set_owner_for_test(sim.interner.intern("Americans"));
         unit.set_type_ref_for_test(sim.interner.intern("MTNK"));
         unit.selection.set_selected_for_test(true);
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         sim.session.current_house = Some(unit.owner());
         unit.navigation
             .set_nav_com_for_test(Some(NavTargetRef::cell(25, 25)));

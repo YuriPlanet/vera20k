@@ -34,6 +34,7 @@ pub(crate) fn launcher_values_from_profile(
         full_screen: false,
         original_shape: profile.original_shape,
         ra2_look: profile.ra2_look,
+        shift_queue: profile.shift_queue,
         sidebar: profile.sidebar,
         score_position: admitted_volume_position(profile.score_volume),
         sound_position: admitted_volume_position(profile.sound_volume),
@@ -69,11 +70,12 @@ pub(crate) trait LauncherPreviewOperations: AudioVolumeOperations {
     fn set_full_screen(&mut self, full_screen: bool);
     fn store_original_shape(&mut self, original_shape: bool);
     fn store_ra2_look(&mut self, ra2_look: bool);
+    fn store_shift_queue(&mut self, shift_queue: bool);
 }
 
 /// Dispatch one already-ordered UI event without an INI write. The three audio
 /// paths preserve native profile -> output -> cue order; the five display
-/// choices take effect at once.
+/// choices and Shift-Click Batch Queue take effect at once.
 pub(crate) fn dispatch_launcher_preview_event(
     operations: &mut impl LauncherPreviewOperations,
     event: LauncherOptionsEvent,
@@ -89,6 +91,9 @@ pub(crate) fn dispatch_launcher_preview_event(
             operations.store_original_shape(original_shape);
         }
         LauncherOptionsEvent::Ra2LookChanged(ra2_look) => operations.store_ra2_look(ra2_look),
+        LauncherOptionsEvent::ShiftQueueChanged(shift_queue) => {
+            operations.store_shift_queue(shift_queue);
+        }
         LauncherOptionsEvent::ScorePreview(volume) => {
             apply_volume(operations, AudioVolume::Score, volume, true)
         }
@@ -268,11 +273,13 @@ mod tests {
             unit_action_lines: false,
             show_hidden: true,
             ra2_look: true,
+            shift_queue: true,
             ..RetailOptionsProfile::default()
         });
         assert!(!booleans.tooltips);
         assert!(!booleans.target_lines);
         assert!(booleans.show_hidden);
         assert!(booleans.ra2_look);
+        assert!(booleans.shift_queue);
     }
 }

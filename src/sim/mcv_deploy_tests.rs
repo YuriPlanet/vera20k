@@ -733,7 +733,8 @@ fn house_fixture(human: bool, land: &str) -> (Simulation, RuleSet, u64) {
 
 /// [`house_fixture`]'s `Americans`, in a multiplayer game.
 fn install_base_building_house(sim: &mut Simulation, human: bool) {
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     let owner = sim.interner.intern("Americans");
     let mut house = crate::sim::house_state::HouseState::new(owner, 0, None, human, 5000, 10);
     house.set_ai_activation_for_test(crate::sim::house_state::HouseAiActivationLatches {
@@ -1027,7 +1028,8 @@ fn retail_dustbowl_computer_mcv() -> (
         resources,
     } = &mut scenario.runtime;
     let rules = &resources.rules;
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     let owner = sim.interner.intern("Russians");
     let mut house =
         crate::sim::house_state::HouseState::new(owner, 1, Some(owner), false, 10_000, 10);

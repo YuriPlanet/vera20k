@@ -150,6 +150,33 @@ impl SlideDialogSpec {
 /// (campaign StandaloneScore): only Continue (`0x423`), and its compositor
 /// draws SCRT then SCRBK (`+0xD7`, `0x006229CE`).
 pub(crate) const RENDERED_SHELL_SLIDES: &[SlideDialogSpec] = &[
+    // LAN: visible ownerdraw children classified by60A180/60A250. BB's
+    // Observe6CE is hidden. Record flags6228E4..62298A give BC/BD both
+    // D5(top panel) and D6(map button), and BB neither.
+    SlideDialogSpec {
+        dialog_id: 0x00BB,
+        top_buttons: 2,
+        bottom_button: true,
+        map_button: false,
+        top_panel: false,
+        campaign_score: false,
+    },
+    SlideDialogSpec {
+        dialog_id: 0x00BC,
+        top_buttons: 2,
+        bottom_button: true,
+        map_button: true,
+        top_panel: true,
+        campaign_score: false,
+    },
+    SlideDialogSpec {
+        dialog_id: 0x00BD,
+        top_buttons: 1,
+        bottom_button: true,
+        map_button: true,
+        top_panel: true,
+        campaign_score: false,
+    },
     SlideDialogSpec {
         dialog_id: 0x00D7,
         top_buttons: 1,
@@ -281,7 +308,7 @@ pub(crate) const RENDERED_SHELL_SLIDES: &[SlideDialogSpec] = &[
 /// front-end shell with a `RENDERED_SHELL_SLIDES` column. The original's full
 /// list (`0x0060C540`, 55 ids) also marks the
 /// in-game menu dialogs (`0xB5`, `0xB6`, `0xB8`, `0xBBA`, `0xBBB`)
-/// and the LAN/WOL setup dialogs; none of them slides here yet. `0xB7` slides
+/// and the remaining WOL setup dialogs. `0xB7` slides
 /// only outside a suspended game (`0x00612690`), which is the only place it is
 /// rendered as a family page. Message boxes (`0x120` confirm, `0xCE` body-ok)
 /// are not in it.
@@ -902,7 +929,7 @@ mod tests {
         ))
         .unwrap();
         let cases = fixture["cases"].as_array().unwrap();
-        assert_eq!(cases.len(), 78);
+        assert_eq!(cases.len(), 96);
         for case in cases {
             let dialog = case["dialog"].as_str().unwrap();
             let dialog_id = u16::from_str_radix(dialog.trim_start_matches("0x"), 16).unwrap();

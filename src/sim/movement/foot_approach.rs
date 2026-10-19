@@ -509,7 +509,7 @@ impl Simulation {
         let human = self
             .houses
             .get(&actor.owner())
-            .is_none_or(|h| h.is_controlled_by_human(self.session.game_mode_nonzero));
+            .is_none_or(|h| h.is_controlled_by_human(self.session.game_mode_nonzero()));
         let may_approach = object.can_approach_target
             && actor.drain.target().is_none()
             && actor.bunker.link().installed_in().is_none()

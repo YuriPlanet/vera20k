@@ -339,7 +339,7 @@ impl crate::sim::world::Simulation {
                         .houses
                         .get(&actor.owner())
                         .ok_or("Infantry fear requires its native House")?
-                        .is_controlled_by_human(self.session.game_mode_nonzero);
+                        .is_controlled_by_human(self.session.game_mode_nonzero());
                     //52018E..1BA: only a human owner tests these separate
                     // inputs. A movement order is not IsMoving+10.
                     let under_way = human
@@ -892,7 +892,11 @@ mod tests {
         );
         let mut sim = Simulation::with_seed(31);
         sim.session.binary_frame = 100;
-        sim.session.game_mode_nonzero = input["game_mode_nonzero"].as_bool().unwrap_or(true);
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+                input["game_mode_nonzero"].as_bool().unwrap_or(true),
+            ),
+        );
         sim.scenario_rng = SimRng::new(31);
         sim.main_rng = SimRng::new(31).into();
         sim.mapgen_rng = SimRng::new(31);

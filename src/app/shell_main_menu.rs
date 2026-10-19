@@ -1,5 +1,11 @@
 use super::*;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum MultiplayerSettingsContext {
+    Options,
+    Shell,
+}
+
 /// Private operation seam for the retail shell's confirmed quit transaction.
 /// Keeping the ordering here lets unit tests observe persistence dispatch
 /// without constructing the window, renderer, or audio-backed `AppState`.
@@ -56,6 +62,10 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         // The menu movie's session identity carries the choice, so its next
         // paint loads the other game's copy; the splash follows next launch.
         self.persistence.options_profile.ra2_look = ra2_look;
+    }
+    fn store_shift_queue(&mut self, shift_queue: bool) {
+        // The next cameo press reads it; Options' accept writes it out.
+        self.persistence.options_profile.shift_queue = shift_queue;
     }
 }
 
@@ -196,7 +206,7 @@ impl crate::app::persistence::options::launcher::LauncherParentOperations
     }
 
     fn prepare_network_settings(&mut self) {
-        App::prepare_multiplayer_settings(self.state);
+        App::prepare_multiplayer_settings(self.state, MultiplayerSettingsContext::Options);
     }
 
     fn route_network(&mut self) {
@@ -225,7 +235,16 @@ impl App {
     /// Shared pre-dialog Session read: D7 at55FD31, Skirmish at52E11E,
     /// and LAN (including failed IPX admission) at52E37D. Preferences stay
     /// in their process caches; the original reads INI8870C0, not disk.
-    pub(crate) fn prepare_multiplayer_settings(state: &mut AppState) {
+    pub(crate) fn prepare_multiplayer_settings(
+        state: &mut AppState,
+        context: MultiplayerSettingsContext,
+    ) {
+        //6980D6→6722F0 and475540 read the same process INI each visit and
+        // may allocate a Country before the optional52E123 body pass.
+        state
+            .frontend
+            .multiplayer_shell_runtime
+            .read_multiplayer_settings(&mut state.process_assets);
         let main = crate::app::state::process_main_draws(
             state.match_state.sim_runtime.as_mut(),
             &mut state.frontend.frontend_main_rng,
@@ -234,6 +253,35 @@ impl App {
             .match_state
             .session
             .prepare_multiplayer_settings(&main);
+        if context == MultiplayerSettingsContext::Shell {
+            state.process_assets.refresh_multiplayer_country_bodies();
+        }
+        // These are compatibility projections of the one process registry.
+        // A finished world can remain resident behind the shell, and rules()
+        // reads its resource projection, so refresh both consumers together.
+        if let Some(rules) = state.frontend.frontend_rules.as_mut() {
+            state.process_assets.project_multiplayer_countries(rules);
+        }
+        if let Some(runtime) = state.match_state.sim_runtime.as_mut() {
+            state
+                .process_assets
+                .project_multiplayer_countries(&mut runtime.resources.rules);
+        }
+        if let Some(rules) = state.frontend.frontend_rules.as_ref() {
+            state
+                .frontend
+                .skirmish_shell_state
+                .refresh_country_catalog(rules);
+        } else if let Some(runtime) = state.match_state.sim_runtime.as_ref() {
+            state
+                .frontend
+                .skirmish_shell_state
+                .refresh_country_catalog(&runtime.resources.rules);
+        }
+        state
+            .frontend
+            .multiplayer_shell_runtime
+            .refresh_multiplayer_country_catalog(&state.process_assets);
     }
 
     /// A right-panel menu page (Single Player `0x100` or Movies & Credits
@@ -529,7 +577,7 @@ impl App {
             runtime.simulation.session.set_started(false);
         }
         crate::app::match_runtime::sim_tick::flush_replay_log(state);
-        Self::capture_returned_skirmish_rng(state);
+        Self::capture_returned_multiplayer_scenario(state);
         state.match_state.startup.clear();
         state.match_state.scenario_elapsed_clock.reset();
         state.frontend.score_page = None;
@@ -546,11 +594,17 @@ impl App {
         }
     }
 
-    /// Where the shell resumes after a match: a Skirmish game re-enters a new
-    /// `0x102` (PrepareSession with GameMode 5), anything else the main menu.
+    /// PrepareSession re-enters the active mode's shell: LAN starts a new BB,
+    /// Skirmish a new0x102. The session keeps the admitted network return owner.
     pub(super) fn resume_shell_after_match(state: &mut AppState) {
         if state.frontend.external_launch {
             Self::start_quit_cascade(state);
+            return;
+        }
+        if state.match_state.session.network_return_context()
+            == Some(crate::app::match_runtime::session::NetworkReturnContext::LanLobby)
+        {
+            crate::app::shell_lan_setup::commit_back(state);
             return;
         }
         if state.frontend.shell_route.skirmish() {
@@ -599,7 +653,7 @@ impl App {
     /// `0x0052E119`, `0x0052E168` -> `0x006AE2C0`). Its Back returns to
     /// Single Player either way (GameMode 0, state 1, `0x0052E175`).
     pub(super) fn enter_native_skirmish_from_single_player(state: &mut AppState) {
-        Self::prepare_multiplayer_settings(state);
+        Self::prepare_multiplayer_settings(state, MultiplayerSettingsContext::Shell);
         // Prepare dialog 0x102 from the process-lifetime MIX list before
         // destroying its 0x100 source. Active YR's FUN_00534E50 registers the
         // neutral pair on that shared list before the shell SHPs are loaded.
@@ -1203,7 +1257,23 @@ impl App {
             ShellExitThen::NetworkOptionsClose => {
                 crate::app::input::network_options::commit_close(state)
             }
-            ShellExitThen::SkirmishChooseMap => Self::open_choose_map_modal(state),
+            ShellExitThen::LanBack => Self::commit_lan_back(state),
+            ShellExitThen::LanCreate { observe } => Self::commit_lan_create(state, observe),
+            ShellExitThen::LanJoinAccepted(accepted) => {
+                Self::open_lan_joined_setup(state, accepted)
+            }
+            ShellExitThen::LanSetupBack { .. } => crate::app::shell_lan_setup::commit_back(state),
+            ShellExitThen::LanSetupChooseMap { .. } => {
+                crate::app::shell_lan_setup::open_choose_map(state)
+            }
+            ShellExitThen::LanStart { agreed_seed, .. } => {
+                crate::app::shell_lan_setup::commit_start(state, agreed_seed)
+            }
+            ShellExitThen::SkirmishChooseMap => {
+                let mode_id = state.frontend.skirmish_shell_state.selected_mode_id;
+                let record_index = Self::current_choose_map_record_index(state);
+                Self::open_choose_map_modal(state, mode_id, record_index);
+            }
             ShellExitThen::ChooseMapUse(selection) => Self::commit_choose_map_use(state, selection),
             ShellExitThen::ChooseMapCancel => Self::close_choose_map_modal(state),
             ShellExitThen::ChooseMapRandomMap => Self::commit_choose_map_random_map(state),
@@ -1338,20 +1408,9 @@ impl App {
             MainMenuShellAction::MoviesAndCredits => {
                 Self::open_movies_credits_page(state);
             }
-            MainMenuShellAction::Network => Self::bounce_network_to_main_menu(state),
+            MainMenuShellAction::Network => Self::open_lan_lobby(state),
             MainMenuShellAction::WwOnline => Self::open_wol_welcome_page(state),
         }
-    }
-
-    /// Network (result 3, state 3 `0x0052DD75`): state 0x10 creates the IPX
-    /// interface and opens its socket (`0x007B10C0`, `AF_IPX`). Without IPX
-    /// the socket fails and the game returns to state 0x12 without a message
-    /// (`0x0052E425`), which builds a new `0xE2` with its entry slide. VERA20k
-    /// has no IPX transport, so it always takes that branch.
-    fn bounce_network_to_main_menu(state: &mut AppState) {
-        Self::prepare_multiplayer_settings(state);
-        crate::app::frontend::main_menu_shell_render::clear_ra2ts_movie_session(state);
-        crate::app::frontend::shell_transition::invalidate_main_menu_dialog_instance(state);
     }
 
     /// Open the Exit-Game confirm message box, resolving its labels from CSF.

@@ -60,7 +60,7 @@ impl Simulation {
         let id = self.team_script_vm.construct_team(
             team_type,
             owner,
-            self.session.game_mode_nonzero,
+            self.session.game_mode_nonzero(),
             self.session.binary_frame as i32,
             placement_scope_active,
             zone,

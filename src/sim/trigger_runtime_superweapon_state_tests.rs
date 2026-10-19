@@ -165,7 +165,9 @@ fn all03_authored_nuke_order_preserves_current_timer_and_recharges_at_override()
         // it does not execute the whole ALL03 power puzzle/House scheduler.
         sim.houses.get_mut(&owner).unwrap().enemy_house = Some(enemy);
         sim.houses.get_mut(&owner).unwrap().player_control = false;
-        sim.session.game_mode_nonzero = false;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false),
+        );
         let silo = sim
             .spawn_object("NAMISL", "YuriCountry", 48, 89, 0, &rules)
             .unwrap();

@@ -262,7 +262,8 @@ fn building_discovery_updates_last_type_only_after_admission_outside_init() {
     let owner = sim.interner.intern("Owner");
     let player = sim.interner.intern("Player");
     sim.session.current_house = Some(player);
-    sim.session.game_mode_nonzero = false;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false));
     sim.houses
         .insert(owner, HouseState::new(owner, 0, None, false, 0, 10));
     sim.houses
@@ -368,7 +369,8 @@ fn build_type_retail_all07_placement_reaches_house_poll_and_eva_once() {
     sim.resolve_type_handles(&rules);
     let house = sim.interner.get("Americans").unwrap();
     sim.session.current_house = Some(house);
-    sim.session.game_mode_nonzero = false;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false));
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
     // The selected retail trigger/rules/roster are retained; geometry and a
     // preplaced yard plus completed factory product are explicit prerequisites.

@@ -141,7 +141,8 @@ fn eva_events(sim: &Simulation) -> Vec<(InternedId, &'static str)> {
 /// holding `slot`, one Speed-style actor standing on it.
 fn multiplayer_fixture(slot: u8) -> (Simulation, RuleSet, OverlayTypeRegistry, InternedId, u64) {
     let mut sim = sim_with_grid(31);
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     sim.session.game_options.crates = false;
     // Bases off: a house with no building and the credits of one Money crate
     // would otherwise be pre-empted onto the Unit slot (`0x00481BB8`).
@@ -190,7 +191,11 @@ fn original_pickup_rows_match_through_the_dispatcher() {
         });
         let seed = input["seed"].as_u64().unwrap_or(31);
         let mut sim = sim_with_grid(seed);
-        sim.session.game_mode_nonzero = input["mode"].as_i64() != Some(0);
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+                input["mode"].as_i64() != Some(0),
+            ),
+        );
         // `0x00A8B261` is zero in the fixture: no replacement placer.
         sim.session.game_options.crates = false;
         sim.session.binary_frame = 100;
@@ -623,7 +628,8 @@ fn arena() -> (Simulation, RuleSet, OverlayTypeRegistry, InternedId, u64) {
     let mut sim = Simulation::new();
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
     sim.overlay_grid = Some(OverlayGrid::new(32, 32));
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     sim.session.game_options.crates = false;
     // Bases off: no MCV pre-empt, and the random Unit draw refuses `BaseUnit=`.
     sim.session.game_options.bases = false;
@@ -1114,7 +1120,11 @@ fn retail_cash_crate_matches_native_replacement_reward_anim_and_cleanup() {
             input["geometry"]["map_rect"],
             "{name} initialized MapRect"
         );
-        sim.session.game_mode_nonzero = input["mode"].as_i64().unwrap() != 0;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+                input["mode"].as_i64().unwrap() != 0,
+            ),
+        );
         // The joined native Anim fixture supplies its stored speed explicitly;
         // normalized MONEY timing must use the same input through its owner.
         sim.session.game_options.game_speed = input["game_speed"].as_i64().unwrap() as i32;

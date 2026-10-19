@@ -336,7 +336,7 @@ fn place(
     }
     let mission = if payload.category == ObjectCategory::Building {
         MissionType::Guard
-    } else if sim.houses[&request.owner].is_controlled_by_human(sim.session.game_mode_nonzero) {
+    } else if sim.houses[&request.owner].is_controlled_by_human(sim.session.game_mode_nonzero()) {
         MissionType::AreaGuard
     } else {
         MissionType::Hunt

@@ -120,7 +120,11 @@ fn fixture(row: &Value) -> (Simulation, TargetLineState, TacticalViewport) {
         }
         sim.entities_mut().insert(actor);
     }
-    sim.session.game_mode_nonzero = input["mode"].as_u64().unwrap_or(1) != 0;
+    sim.session.set_game_mode(
+        crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+            input["mode"].as_u64().unwrap_or(1) != 0,
+        ),
+    );
     sim.session.current_house = input["local"].as_bool().unwrap_or(true).then_some(owner);
     let mut house = crate::sim::house_state::HouseState::new(owner, 0, None, false, 0, 0);
     if let Some(flags) = input["campaign_flags"].as_array() {

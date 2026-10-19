@@ -30,7 +30,7 @@ mod preview;
 mod text;
 
 pub(crate) use preview::SkirmishPreviewTexture;
-pub(crate) use text::skirmish_right_panel_label_strings;
+pub(crate) use text::{combo_item_label, skirmish_right_panel_label_strings};
 
 use crate::app::AppState;
 use crate::app::frontend::shell_transition::ShellFrameWave;
@@ -140,22 +140,11 @@ fn shell_text_origin(
     (x, y)
 }
 
-fn side_item_data_for_country(country: LaunchCountry) -> i32 {
-    match country {
-        LaunchCountry::America => 0,
-        LaunchCountry::Korea => 1,
-        LaunchCountry::France => 2,
-        LaunchCountry::Germany => 3,
-        LaunchCountry::GreatBritain => 4,
-        LaunchCountry::Libya => 5,
-        LaunchCountry::Iraq => 6,
-        LaunchCountry::Cuba => 7,
-        LaunchCountry::Russia => 8,
-        LaunchCountry::Yuri => 9,
-    }
+pub(crate) fn side_item_data_for_country(country: LaunchCountry) -> i32 {
+    i32::from(country.raw_index())
 }
 
-fn flag_pcx_for_side_item_data(item_data: i32) -> Option<&'static str> {
+pub(crate) fn flag_pcx_for_side_item_data(item_data: i32) -> Option<&'static str> {
     match item_data {
         -3 => Some("obsi.pcx"),
         -2 => Some("rani.pcx"),
@@ -791,6 +780,12 @@ fn render_skirmish_shell_with_atlas(
         push_validation_modal_text_draws(
             &mut shell_draws,
             state,
+            state
+                .frontend
+                .skirmish_shell_state
+                .validation_modal
+                .as_ref()
+                .expect("validation layout has state"),
             validation_layout,
             validation_ok_pressed,
         );
@@ -1913,6 +1908,10 @@ pub(crate) use sound::render_sound_shell;
 pub(crate) use chrome::type3_button_frames;
 
 mod keyboard;
+mod lan_lobby;
 mod network_options;
-pub(crate) use network_options::render_network_options;
+pub(crate) use lan_lobby::render_lan_lobby;
+mod multiplayer_setup;
 pub(crate) use keyboard::render_keyboard_shell;
+pub(crate) use multiplayer_setup::render_multiplayer_setup;
+pub(crate) use network_options::render_network_options;

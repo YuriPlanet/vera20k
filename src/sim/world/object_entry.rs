@@ -533,7 +533,7 @@ impl Simulation {
         let Some(terrain) = self.resolved_terrain.as_ref() else {
             return 0;
         };
-        if self.session.game_mode_nonzero
+        if self.session.game_mode_nonzero()
             || !e.discovery.owned_by_current_house()
             || e.is_mission_only()
         {
@@ -1046,7 +1046,7 @@ fn full_foot_entry<'a>(
             .and_then(|r| r.flags(overlay))
             .ok_or("repair overlay receiver lacks registered type")?;
         if flags.crate_type
-            && (infantry || !live.sim.session.game_mode_nonzero)
+            && (infantry || !live.sim.session.game_mode_nonzero())
             && !live.sim.owner_is_human(e.owner())
         {
             return Ok(7);
@@ -1768,12 +1768,16 @@ mod tests {
                     Cell::Dummy,
                 )
             };
-            sim.session.game_mode_nonzero = false;
+            sim.session.set_game_mode(
+                crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false),
+            );
             assert_eq!(
                 probe(&mut sim),
                 Ok(sim.aircraft_can_enter_cell(id, Cell::Dummy))
             );
-            sim.session.game_mode_nonzero = true;
+            sim.session.set_game_mode(
+                crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+            );
             assert_eq!(probe(&mut sim), Ok(0));
             let script_id = sim.intern("REPAIR_WAYPOINT_EFFECT");
             sim.team_script_vm
@@ -1803,7 +1807,9 @@ mod tests {
     #[test]
     fn aircraft_quotient_requires_one_of_the_four_proved_interfaces() {
         let (mut sim, rules, _) = crate::sim::world::entry_test_fixture::fixture();
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         for kind in [
             None,
             Some(LocomotorKind::Walk),
@@ -1854,7 +1860,9 @@ mod tests {
             .unwrap()
             .native_cell_identity((16, 15));
         for mode in [false, true] {
-            sim.session.game_mode_nonzero = mode;
+            sim.session.set_game_mode(
+                crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(mode),
+            );
             assert_eq!(
                 sim.foot_entry_receiver(90, &rules, None, None)
                     .unwrap()

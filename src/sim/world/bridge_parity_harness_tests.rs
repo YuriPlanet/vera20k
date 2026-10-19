@@ -381,7 +381,12 @@ const MIN_DISTINCT_DECK_CELLS: usize = 6;
 // feeding the hasher that absent policy gave the previous value in the same
 // test binary, with every tripwire above green. Control removed.
 // Previous: 0x2FA1_7717_C31C_CF39.
-const BRIDGE_HARNESS_FINAL_HASH: u64 = 0xED02_4584_1661_7711;
+// Snapshot 443 hashes the exact session mode, mode class, network MaxAhead
+// and map start header in place of the mode-nonzero bool. Hash composition
+// only: a temporary control hashing the bool gave the previous value in the
+// same test binary, with every tripwire above green. Control removed.
+// Previous: 0xED02_4584_1661_7711.
+const BRIDGE_HARNESS_FINAL_HASH: u64 = 0x427A_48D7_ED16_244B;
 
 fn bridge_ini() -> IniFile {
     // One armed ground vehicle and one distant infantryman on a second house, so

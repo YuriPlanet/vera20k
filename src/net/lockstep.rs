@@ -51,6 +51,25 @@ const fn queue_consumes_without_execute(opcode: u8) -> bool {
     )
 }
 
+/// Initial LAN host5DD48D / guest5DD2CD MaxAhead calculation. Native
+/// IPX response getter5424C0 is observed twice only when the first calculation
+/// exceeds its protocol floor; a changed second result is not clamped again.
+/// Original gamemd.exe controls: tools/storage_oracle/lan_lobby.py, timing.
+pub fn initial_multiplayer_max_ahead(protocol: i32, mut response_time: impl FnMut() -> u32) -> i32 {
+    if protocol == 2 {
+        let round = |response: u32| ((response >> 3) + 4) / 5 * 5;
+        if round(response_time()) <= 10 {
+            10
+        } else {
+            round(response_time()) as i32
+        }
+    } else if (response_time() as i32) / 8 <= 2 {
+        2
+    } else {
+        (response_time() as i32) / 8
+    }
+}
+
 /// The two verified network send-frame policies.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NetworkSendPolicy {
@@ -776,6 +795,41 @@ mod tests {
     };
     use crate::sim::command::{COMMAND_RECORD_LEN, CommandRecord};
     use crate::sim::intern::InternedId;
+
+    #[test]
+    fn initial_network_timing_matches_original_host_and_guest_blocks() {
+        let corpus = crate::test_fixture::json("tools/storage_oracle/lan_lobby.json");
+        let cases = corpus["timing"].as_array().unwrap();
+        assert!(!cases.is_empty());
+        for case in cases {
+            let responses = case["responses"].as_array().unwrap();
+            let connected = case["connected"].as_bool().unwrap();
+            let mut reads = 0;
+            let result = super::initial_multiplayer_max_ahead(
+                case["protocol"].as_u64().unwrap() as i32,
+                || {
+                    let response =
+                        responses[reads.min(responses.len() - 1)].as_u64().unwrap() as u32;
+                    reads += 1;
+                    if connected { response } else { 0 }
+                },
+            );
+            assert_eq!(
+                result,
+                case["max_ahead"].as_u64().unwrap() as i32,
+                "{} {}",
+                case["name"],
+                case["role"]
+            );
+            assert_eq!(
+                reads,
+                case["calls"].as_array().unwrap().len(),
+                "{} {}",
+                case["name"],
+                case["role"]
+            );
+        }
+    }
 
     fn opaque(opcode: u8, house: i32, frame: i32, payload: &[u8]) -> SynchronizedCommand {
         SynchronizedCommand::opaque(CommandRecord::encode(opcode, house, frame, payload).unwrap())

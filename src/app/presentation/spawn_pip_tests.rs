@@ -224,8 +224,8 @@ fn stock_carrier_spawner_fire_reveals_to_its_human_victim() {
         map,
         &[(LaunchCountry::Russia, AiDifficulty::Easy)],
     );
-    launch.player_name = "VERA-OBSERVER".into();
-    launch.local.country = LaunchCountry::America;
+    launch.local_player_mut().name = "VERA-OBSERVER".into();
+    launch.local_slot_mut().country = LaunchCountry::America;
     launch.options.bases = false;
     launch.options.unit_count = 0;
     launch.options.short_game = false;

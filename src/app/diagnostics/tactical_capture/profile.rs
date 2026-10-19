@@ -578,6 +578,7 @@ impl TacticalCaptureProfile {
         let mode = &self.launch.mode;
         SkirmishLaunchSession {
             mode: SkirmishLaunchMode {
+                class: crate::skirmish_modes::MpModeClass::Battle,
                 id: mode.id,
                 ui_name_key: mode.ui_name_key.clone(),
                 tooltip_key: mode.tooltip_key.clone(),
@@ -588,20 +589,28 @@ impl TacticalCaptureProfile {
                 must_ally: mode.must_ally,
             },
             selected_map_file: Some(self.fixture.logical_map_name.clone()),
-            player_name: self.launch.player_name.clone(),
-            local: SkirmishLocalSlot {
-                country: self.launch.local.country.launch_country(),
-                country_random: self.launch.local.country_random,
-                color_index: self.launch.local.color_index,
-                color_random: self.launch.local.color_random,
-                start_position: LaunchStartPosition::Position(self.launch.local.start_position),
-                team: launch_team(self.launch.local.team),
-            },
+            humans: vec![crate::skirmish_launch::SkirmishHumanSlot {
+                raw_slot_index: Some(0),
+                name: self.launch.player_name.clone(),
+                slot: SkirmishLocalSlot {
+                    country: self.launch.local.country.launch_country(),
+                    country_random: self.launch.local.country_random,
+                    color_index: self.launch.local.color_index,
+                    color_random: self.launch.local.color_random,
+                    start_position: LaunchStartPosition::Position(self.launch.local.start_position),
+                    team: launch_team(self.launch.local.team),
+                },
+                role: crate::skirmish_launch::LaunchHumanRole::from_observer(false),
+            }],
+            local_player_index: 0,
+            ai_player_count: self.launch.opponents.len() as i32,
             opponents: self
                 .launch
                 .opponents
                 .iter()
-                .map(|slot| SkirmishAiSlot {
+                .enumerate()
+                .map(|(index, slot)| SkirmishAiSlot {
+                    raw_slot_index: (index + 1) as u8,
                     country: slot.country.launch_country(),
                     country_random: slot.country_random,
                     color_index: slot.color_index,
@@ -809,7 +818,7 @@ mod tests {
                 .join(file_name);
             let sealed = TacticalCaptureProfile::load_strict(&path).expect("profile");
             let session = sealed.value.launch_session();
-            assert_eq!(session.local.country, expected_country);
+            assert_eq!(session.local_slot().country, expected_country);
             assert_eq!(session.options.unit_count, 0);
             assert_eq!(session.options.starting_credits, 10_000);
             assert_eq!(session.opponents.len(), 1);

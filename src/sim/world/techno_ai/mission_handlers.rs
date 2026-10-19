@@ -39,6 +39,10 @@ mod hover_attack_tests;
 #[path = "guard_sabotage_tests.rs"]
 mod guard_sabotage_tests;
 
+#[cfg(test)]
+#[path = "hunt_idle_tests.rs"]
+mod hunt_idle_tests;
+
 /// Whether [`dispatch_foot_mission`] runs `id`'s handler at `now`: a Unit or
 /// Infantry that passes `MissionClass::AI`'s gate
 /// ([`GameEntity::mission_handler_due`]; harvest_attack_return.json
@@ -931,7 +935,7 @@ fn infantry_automatic_guard_delay(
     let Some(object) = sim.object_type(actor.type_ref(), rules) else {
         return -1;
     };
-    if house.is_controlled_by_human(sim.session.game_mode_nonzero)
+    if house.is_controlled_by_human(sim.session.game_mode_nonzero())
         || !object.deployer
         || !object.deploy_fire
         || object.undeploy_delay > -1
@@ -1036,7 +1040,7 @@ fn infantry_idle_guard_pick(sim: &Simulation, id: u64, rules: &RuleSet) -> Missi
     };
     let house = sim.houses.get(&entity.owner());
     let human =
-        house.is_none_or(|house| house.is_controlled_by_human(sim.session.game_mode_nonzero));
+        house.is_none_or(|house| house.is_controlled_by_human(sim.session.game_mode_nonzero()));
     let teamed = sim.team_script_vm.team_for_member(id).is_some();
     let object = sim.object_type(entity.type_ref(), rules);
     let area_guard = if !human && !teamed {
@@ -1317,8 +1321,10 @@ pub(crate) fn foot_enter_idle_mode_selection(
 ///    `0x004D53A0..0x004D53B4`) whose scan came back with a target: the
 ///    engineer's, the C4 one, the VehicleThief's and the no-flag arm are
 ///    [`hunt_infantry_arm`].
-/// 4. **No target**: a human-owned object runs the idle-action virtual
-///    (`vt+0x478`, `0x004D557C`); an AI-owned one walks home to its base cell.
+/// 4. **No target**: an object whose owner is controlled by a human, or any
+///    object when `g_GameMode` is nonzero (every non-campaign match), runs
+///    the idle-action virtual (`vt+0x478`, `0x004D557C`); a campaign
+///    computer's marches on the player's base (RESIDUAL below).
 /// 5. **The tail** at `0x004D5582`, reached from every arm:
 ///    `ftol(MissionControl[current].Rate * 900.0) + RandomRanged(0, 2)`;
 ///    `0x005B3A00` indexes the current mission, Capture or Sabotage once a
@@ -1337,12 +1343,19 @@ pub(crate) fn foot_enter_idle_mode_selection(
 /// (`vt+0x480`); VERA runs it ([`Simulation::approach_target`]) for every
 /// mover the Foot body represents.
 ///
-/// RESIDUAL — **the AI return-to-base arm** (`0x004D54EE`-`0x004D5576`) is
-/// gated on `!HouseClass::IsControlledByHuman(this->Owner)` and
-/// `g_GameMode (0x00A8B238) == 0`, a campaign computer house; skirmish runs
-/// with a nonzero game mode, so it is dormant there. The human arm's
-/// `UpdateIdleAction` now uses its one Infantry receiver synchronously, before
-/// the cadence draw in that human no-target arm.
+/// RESIDUAL — **the campaign computer's march on the player**
+/// (`0x004D5506`-`0x004D5576`), taken when `!IsControlledByHuman(Owner)` and
+/// `g_GameMode (0x00A8B238) == 0`; every non-campaign match has a nonzero
+/// game mode, so it is dormant there. It asks the player's House
+/// (`[0x00A83D4C]`) for its base or starting cell
+/// (`HouseClass::Get_Base_Or_Starting_Cell @ 0x0050DEF0`); unless that is the
+/// empty cell, a Slave Miner abandons its hunt
+/// (`SlaveManagerClass::AbandonHunt @ 0x006B0C80`), then `Set_Destination`
+/// (`vt+0x480`) takes that cell and `vt+0x1E8(2, 1)` queues Move. Trigger: a
+/// campaign computer's hunter with no target. Effect: VERA's stays on Hunt
+/// where it stands, repeating the scan and cadence draws, instead of moving
+/// on the player's base. The idle arm's `UpdateIdleAction` uses its one
+/// Infantry receiver synchronously, before the cadence draw.
 ///
 /// Infantry reach this body past `InfantryClass::Mission_Hunt @ 0x0051F540`
 /// (slot `+0x228`, single DATA xref `0x007EB280`), whose two computer arms
@@ -1387,16 +1400,18 @@ fn evaluate_foot_hunt(
         }
         no_target_arm = !acquired;
     }
-    //4D54EE..4D5576: the human no-target arm invokes the class idle
-    //receiver before the mission-rate jitter, whatever Target an arm's
-    //Approach left. Campaign AI return-to-base still belongs to its
-    //documented House/mission continuation below.
+    // 0x004D54EE..0x004D557C: IsControlledByHuman (0x0050B730) or a nonzero
+    // g_GameMode (0x00A8B238) takes the class idle receiver before the
+    // mission-rate jitter, so every owner in a non-campaign match idles. Only
+    // a campaign computer house reaches the march on the player (RESIDUAL
+    // above).
     if no_target_arm
-        && sim
-            .substrate
-            .entities
-            .get(id)
-            .is_some_and(|entity| sim.owner_is_human(entity.owner()))
+        && (sim.session.game_mode_nonzero()
+            || sim
+                .substrate
+                .entities
+                .get(id)
+                .is_some_and(|entity| sim.owner_is_human(entity.owner())))
     {
         let _ = sim.infantry_idle_action(id, rules, ctx.effects);
     }
@@ -2341,7 +2356,7 @@ fn harvester_guard_override_requeues_harvest(sim: &Simulation, id: u64, rules: &
     if let Some(house) = sim
         .houses
         .get(&entity.owner())
-        .filter(|house| !house.is_controlled_by_human(sim.session.game_mode_nonzero))
+        .filter(|house| !house.is_controlled_by_human(sim.session.game_mode_nonzero()))
     {
         // Arm (ii), `0x00740880..0x0074092C`.
         return house.tracking.owns_any_building(

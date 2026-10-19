@@ -1881,7 +1881,9 @@ mod tests {
             .spawn_object("NAPOWR", "Soviets", 10, 10, 0, &rules)
             .expect("Power Plant spawned");
 
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         sim.session.current_house = sim.interner.get("Americans");
         // 4. Mark the SEAL as selected (mirrors clicking it in-game).
         if let Some(e) = sim.entities_mut().get_mut(seal_id) {
@@ -1947,7 +1949,9 @@ mod tests {
             e.selection.set_selected_for_test(true);
         }
         // What_Action's Enter is a human player's (House `0x0050B6F0`).
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         sim.session.current_house = Some(sim.entities().get(miner_id).unwrap().owner());
 
         let hover = HoverTargetKindWithId {
@@ -2123,7 +2127,9 @@ mod tests {
         use crate::sim::docking::bunker_link::BunkerLink;
 
         let (mut sim, rules, tank) = sim_with_track_tank();
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         sim.session.current_house = Some(sim.entities().get(tank).unwrap().owner());
         sim.install_resolved_terrain_for_new_map(ResolvedTerrainGrid::from_cells(
             32,
@@ -2219,7 +2225,9 @@ mod tests {
             .spawn_object("LTNK", "Americans", 3, 3, 0, &rules)
             .expect("saw tank spawned");
         let owner = sim.entities().get(tank).unwrap().owner();
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         sim.session.current_house = Some(owner);
         sim.install_resolved_terrain_for_new_map(ResolvedTerrainGrid::from_cells(
             32,
@@ -2340,7 +2348,9 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
         let tank = sim
             .spawn_object("TANK", "Americans", 2, 2, 0, &rules)
             .unwrap();
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         sim.session.current_house = Some(sim.entities().get(tank).unwrap().owner());
         // Later objects use ordinary Unlimbo: supply clear rules, playfield,
         // terrain and navigation through the shared component-arena owner.
@@ -2807,7 +2817,9 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
             .spawn_object("MTNK", "Americans", 2, 2, 0, &rules)
             .expect("tank spawned");
         // The attack rung is a human player's (`0x007003ED`).
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         sim.session.current_house = Some(sim.entities().get(actor_id).unwrap().owner());
         let target_id = sim
             .spawn_object("MTNK", "Soviets", 3, 2, 0, &rules)
@@ -3154,7 +3166,9 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
             for collapsed in [false, true] {
                 let mut sim = Simulation::with_seed(0x587410);
                 sim.resolve_type_handles(&rules);
-                sim.session.game_mode_nonzero = true;
+                sim.session.set_game_mode(
+                    crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+                );
                 sim.session.current_house = Some(sim.interner.intern("Americans"));
                 // The ordinary Infantry Unlimbo query reads the native
                 // Clear/Foot speed row before this cursor-only observation.
@@ -3353,7 +3367,9 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
         }
         // This is a local player's selected actor. Techno700C40's virtual
         // +A0 reaches House50B6F0; a house_order entry alone is not LocalPlayer.
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         sim.session.current_house = sim.interner.get("Americans");
         let mut spawn = |kind: &str, owner: &str, rx: u16| {
             sim.spawn_object(kind, owner, rx, 5, 0, &rules)

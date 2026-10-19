@@ -8,10 +8,23 @@ use crate::app::App;
 use crate::ui::campaign_shell::CampaignSide;
 use serde_json::{Value, json};
 
+mod abort_return;
+mod lan;
+pub(crate) use lan::{LAN_CHECKPOINTS, LanTarget};
 mod network_options;
 mod opening;
 pub(crate) use network_options::NetworkOptionsTarget;
 pub(super) use opening::OpeningTarget;
+
+/// Native control corpus read from this checkout's `tools/` at capture time.
+/// Diagnostics run from a development checkout, so the release binary does
+/// not embed the corpus (`architecture_guards` keeps fixtures out of builds).
+fn native_corpus(path: &str) -> Result<Value> {
+    let full = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(path);
+    let text = std::fs::read_to_string(&full)
+        .with_context(|| format!("cannot read native corpus {}", full.display()))?;
+    Ok(serde_json::from_str(&text)?)
+}
 
 /// Row-0 press point for the selected-list checkpoint (inside `0x744`).
 const LIST_ROW0_POINT: (f32, f32) = (150.0, 137.0);
@@ -80,6 +93,7 @@ pub(super) enum MoviesTarget {
     /// own entry slide, captured once settled.
     NetworkBounce,
     NetworkOptions(NetworkOptionsTarget),
+    Lan(LanTarget),
     /// Main Menu -> Internet: `0x10E` settled (pointer at `hover` or
     /// neutral), held at `entry_tick`, or after one of its buttons.
     WolWelcome {
@@ -128,9 +142,6 @@ enum Phase {
     CampaignStarting,
     CampaignReturning,
     CampaignAbortMenu,
-    CampaignAbortPressed,
-    CampaignAbortModal,
-    CampaignLeavePressed,
     CampaignLeaving,
     LoadSavedGame,
     Options,
@@ -162,18 +173,26 @@ pub(super) struct MoviesCapture {
     /// Abort-return observes the installed owners once before opening B5.
     observed_campaign_runtime: Option<Value>,
     observed_exit_cascade: bool,
+    abort_input: Option<abort_return::AbortReturnInput>,
     opening: Option<opening::OpeningCapture>,
+    lan: Option<lan::LanCapture>,
 }
 
 impl MoviesCapture {
     pub(super) fn new(target: MoviesTarget, output: &Path) -> Self {
         Self {
             target,
+            lan: if let MoviesTarget::Lan(target) = target {
+                Some(lan::LanCapture::new(target))
+            } else {
+                None
+            },
             phase: Phase::MainMenu,
             route: Vec::new(),
             observed_campaign_startup: None,
             observed_campaign_runtime: None,
             observed_exit_cascade: false,
+            abort_input: None,
             opening: match target {
                 MoviesTarget::CampaignStart {
                     target: CampaignStartTarget::Opening(target),
@@ -188,6 +207,9 @@ impl MoviesCapture {
     }
 
     pub(super) fn timeout(&self) -> Duration {
+        if let Some(lan) = &self.lan {
+            return lan.timeout();
+        }
         self.opening
             .as_ref()
             .map_or(Duration::from_secs(60), opening::OpeningCapture::timeout)
@@ -209,6 +231,9 @@ impl MoviesCapture {
         rendered: PresentedShell,
         frame: u32,
     ) -> Result<()> {
+        if let Some(lan) = self.lan.as_mut() {
+            return lan.after_present(state, rendered, frame);
+        }
         let starting_campaign = matches!(self.target, MoviesTarget::CampaignStart { .. })
             && self.phase == Phase::CampaignStarting;
         let aborting_campaign = matches!(
@@ -219,11 +244,7 @@ impl MoviesCapture {
             }
         ) && matches!(
             self.phase,
-            Phase::CampaignAbortMenu
-                | Phase::CampaignAbortPressed
-                | Phase::CampaignAbortModal
-                | Phase::CampaignLeavePressed
-                | Phase::CampaignLeaving
+            Phase::CampaignAbortMenu | Phase::CampaignLeaving
         );
         ensure!(
             state.frontend.screen == GameScreen::MainMenu
@@ -286,32 +307,11 @@ impl MoviesCapture {
                 self.observed_campaign_runtime = Some(campaign_runtime_receipt(state)?);
                 self.route
                     .push(json!({"frame": frame, "action": "first live observed", "tick": 0}));
-                // Ordinary world Escape resolves the actual binding before
-                // Options enters B5, exactly as the window handler does.
-                ensure!(
-                    state.platform.live_modifiers.is_empty(),
-                    "pause menu requires bare Escape"
-                );
-                let escape = winit::keyboard::Key::Named(winit::keyboard::NamedKey::Escape);
-                crate::app::input::keyboard::in_game_key_edge(
+                self.abort_input = Some(abort_return::AbortReturnInput::begin(
                     state,
-                    crate::app::input::keyboard::InGameKeyEdge {
-                        physical: winit::keyboard::KeyCode::Escape,
-                        logical: &escape,
-                        unmodified: &escape,
-                        location: winit::keyboard::KeyLocation::Standard,
-                        state: winit::event::ElementState::Pressed,
-                        repeat: false,
-                    },
-                    false,
-                );
-                ensure!(
-                    state.match_state.match_presentation.in_game_menu
-                        == crate::ui::pause_menu::InGameMenuState::Menu,
-                    "ordinary Escape did not open B5"
-                );
-                self.route
-                    .push(json!({"frame": frame, "action": "Escape press", "dialog": 0xb5}));
+                    &mut self.route,
+                    frame,
+                )?);
                 self.phase = Phase::CampaignAbortMenu;
             }
             if state.frontend.screen == GameScreen::InGame
@@ -466,6 +466,7 @@ impl MoviesCapture {
                         | MoviesTarget::LoadSavedGame0xB7 { .. }
                         | MoviesTarget::Options0xD5 { .. }
                         | MoviesTarget::NetworkOptions(_)
+                        | MoviesTarget::Lan(_)
                         | MoviesTarget::NetworkBounce
                         | MoviesTarget::WolWelcome { .. } => {
                             bail!("{:?} capture reached the 0x101 page", self.target)
@@ -990,211 +991,18 @@ impl MoviesCapture {
     }
 
     fn campaign_abort_after_present(&mut self, state: &mut AppState, frame: u32) -> Result<()> {
-        use crate::ui::pause_menu::InGameMenuState;
-        use crate::ui::shell::abort::AbortButton;
-        use crate::ui::shell::pause_menu::PauseMenuButton;
-        use winit::event::{ElementState, MouseButton};
-        match self.phase {
-            Phase::CampaignAbortMenu => {
-                ensure!(
-                    state.match_state.match_presentation.in_game_menu == InGameMenuState::Menu
-                        && crate::app::frontend::skirmish_shell_render::native_in_game_shell_active(
-                            state
-                        ),
-                    "campaign B5 did not present with its required loaded artwork"
-                );
-                // The window handler's modal branch consumes the press. Its
-                // paused Escape release reaches this existing KeyEdge owner.
-                let escape = winit::keyboard::Key::Named(winit::keyboard::NamedKey::Escape);
-                let paused_at_event = state.match_state.paused();
-                crate::app::input::keyboard::in_game_key_edge(
-                    state,
-                    crate::app::input::keyboard::InGameKeyEdge {
-                        physical: winit::keyboard::KeyCode::Escape,
-                        logical: &escape,
-                        unmodified: &escape,
-                        location: winit::keyboard::KeyLocation::Standard,
-                        state: ElementState::Released,
-                        repeat: false,
-                    },
-                    paused_at_event,
-                );
-                self.route
-                    .push(json!({"frame": frame, "action": "Escape release", "dialog": 0xb5}));
-                self.route.push(
-                    json!({"frame": frame, "action": "pause menu presented", "dialog": 0xb5}),
-                );
-                let shell =
-                    crate::app::frontend::skirmish_shell_render::current_in_game_shell_layout(
-                        state,
-                    )
-                    .context("campaign B5 has no loaded hit geometry")?;
-                let layout = crate::ui::shell::pause_menu::pause_menu_layout(
-                    shell.width,
-                    shell.height,
-                    shell.layout,
-                    shell.button_size,
-                );
-                let rect = layout.buttons[PauseMenuButton::Abort as usize];
-                let point = set_window_pointer_to_rect_center(state, rect);
-                crate::app::input::dispatch::handle_cursor_moved_in_game(state);
-                crate::app::input::dispatch::handle_mouse_input(
-                    state,
-                    MouseButton::Left,
-                    ElementState::Pressed,
-                );
-                ensure!(
-                    state
-                        .match_state
-                        .match_presentation
-                        .pause_menu_interaction
-                        .is_pressed(PauseMenuButton::Abort),
-                    "physical B5 Abort press missed its loaded control"
-                );
-                self.route.push(
-                    json!({"frame": frame, "action": "Abort press", "dialog": 0xb5,
-                    "point": point, "rect": [rect.x, rect.y, rect.w, rect.h]}),
-                );
-                self.phase = Phase::CampaignAbortPressed;
-            }
-            Phase::CampaignAbortPressed => {
-                ensure!(
-                    state.match_state.match_presentation.in_game_menu == InGameMenuState::Menu
-                        && state
-                            .match_state
-                            .match_presentation
-                            .pause_menu_interaction
-                            .is_pressed(PauseMenuButton::Abort),
-                    "B5 Abort capture changed before its presented press/release"
-                );
-                crate::app::input::dispatch::handle_mouse_input(
-                    state,
-                    MouseButton::Left,
-                    ElementState::Released,
-                );
-                ensure!(
-                    state.match_state.match_presentation.in_game_menu
-                        == InGameMenuState::AbortConfirm,
-                    "physical B5 Abort release did not open B6"
-                );
-                self.route
-                    .push(json!({"frame": frame, "action": "Abort release", "dialog": 0xb5}));
-                self.phase = Phase::CampaignAbortModal;
-            }
-            Phase::CampaignAbortModal => {
-                ensure!(
-                    state.match_state.match_presentation.in_game_menu
-                        == InGameMenuState::AbortConfirm
-                        && crate::app::frontend::skirmish_shell_render::native_in_game_shell_active(
-                            state
-                        ),
-                    "campaign B6 did not present with its required loaded artwork"
-                );
-                self.route.push(
-                    json!({"frame": frame, "action": "abort modal presented", "dialog": 0xb6}),
-                );
-                let shell =
-                    crate::app::frontend::skirmish_shell_render::current_in_game_shell_layout(
-                        state,
-                    )
-                    .context("campaign B6 has no loaded hit geometry")?;
-                let layout = crate::ui::shell::abort::abort_layout(
-                    shell.width,
-                    shell.height,
-                    shell.layout,
-                    shell.button_size,
-                );
-                let rect = layout.button(AbortButton::Leave);
-                let point = set_window_pointer_to_rect_center(state, rect);
-                crate::app::input::dispatch::handle_cursor_moved_in_game(state);
-                crate::app::input::dispatch::handle_mouse_input(
-                    state,
-                    MouseButton::Left,
-                    ElementState::Pressed,
-                );
-                ensure!(
-                    state
-                        .match_state
-                        .match_presentation
-                        .abort_buttons
-                        .is_pressed(AbortButton::Leave),
-                    "physical B6 Leave press missed its loaded control"
-                );
-                self.route.push(
-                    json!({"frame": frame, "action": "Leave press", "dialog": 0xb6,
-                    "point": point, "rect": [rect.x, rect.y, rect.w, rect.h]}),
-                );
-                self.phase = Phase::CampaignLeavePressed;
-            }
-            Phase::CampaignLeavePressed => {
-                ensure!(
-                    state.match_state.match_presentation.in_game_menu
-                        == InGameMenuState::AbortConfirm
-                        && state
-                            .match_state
-                            .match_presentation
-                            .abort_buttons
-                            .is_pressed(AbortButton::Leave),
-                    "B6 Leave capture changed before its presented press/release"
-                );
-                let runtime = state
-                    .match_state
-                    .sim_runtime
-                    .as_ref()
-                    .context("B6 lost its installed runtime")?;
-                ensure!(
-                    !runtime
-                        .simulation
-                        .pending_command_snapshot()
-                        .iter()
-                        .any(|command| matches!(
-                            command.payload,
-                            crate::sim::command::Command::ExitMatch
-                        )),
-                    "an EXIT was already queued before physical Leave release"
-                );
-                crate::app::input::dispatch::handle_mouse_input(
-                    state,
-                    MouseButton::Left,
-                    ElementState::Released,
-                );
-                ensure!(
-                    state.match_state.match_presentation.in_game_menu == InGameMenuState::Closed
-                        && !state.match_state.paused(),
-                    "physical Leave did not release the ordinary modal pause"
-                );
-                let sim = &state
-                    .match_state
-                    .sim_runtime
-                    .as_ref()
-                    .context("Leave lost its installed runtime")?
-                    .simulation;
-                let exits = sim
-                    .pending_command_snapshot()
-                    .into_iter()
-                    .filter(|command| {
-                        matches!(command.payload, crate::sim::command::Command::ExitMatch)
-                    })
-                    .collect::<Vec<_>>();
-                ensure!(
-                    exits.len() == 1 && Some(exits[0].owner) == sim.session.current_house(),
-                    "physical Leave did not queue exactly the current House's EXIT"
-                );
-                let exit = &exits[0];
-                ensure!(
-                    !sim.quit_requested,
-                    "Leave confirmation executed EXIT instead of only queueing it"
-                );
-                self.route
-                    .push(json!({"frame": frame, "action": "Leave release", "dialog": 0xb6}));
-                self.route.push(json!({"frame": frame, "action": "EXIT queued", "queued_at_tick": sim.session.tick,
-                    "execute_tick": exit.execute_tick, "owner": sim.interner.resolve(exit.owner),
-                    "owner_native_unique_id": sim.houses.get(&exit.owner).and_then(|house| house.native_unique_id()),
-                    "modal_closed": !state.match_state.paused(), "diagnostic_simulation_freeze": false,
-                    "quit_requested": sim.quit_requested}));
-                Self::restore_neutral_pointer(state);
+        if self.phase == Phase::CampaignAbortMenu {
+            if self
+                .abort_input
+                .as_mut()
+                .context("abort input owner")?
+                .after_present(state, &mut self.route, frame)?
+            {
                 self.phase = Phase::CampaignLeaving;
             }
+            return Ok(());
+        }
+        match self.phase {
             Phase::CampaignLeaving => {
                 if state.match_state.scenario_exit.is_some() && !self.observed_exit_cascade {
                     ensure!(
@@ -1245,6 +1053,9 @@ impl MoviesCapture {
     }
 
     pub(super) fn ready(&self, state: &AppState) -> Result<bool> {
+        if let Some(lan) = self.lan.as_ref() {
+            return lan.ready(state);
+        }
         if matches!(
             self.target,
             MoviesTarget::CampaignStart {
@@ -1380,6 +1191,7 @@ impl MoviesCapture {
                 press: WolPress::MyInformation | WolPress::MainMenu,
                 ..
             } => true,
+            MoviesTarget::Lan(_) => unreachable!("LAN driver handled above"),
             MoviesTarget::NetworkOptions(target) => {
                 target.is_message()
                     || target == NetworkOptionsTarget::SaveReturn
@@ -1461,6 +1273,7 @@ impl MoviesCapture {
                             == Some(target)
                     })
             }
+            MoviesTarget::Lan(_) => unreachable!("LAN driver handled above"),
             MoviesTarget::NetworkOptions(target) => self.network_options_ready(state, target)?,
             MoviesTarget::Options0xD5 { entry_tick, .. } => {
                 state.frontend.options_dialog.is_some()
@@ -1589,10 +1402,24 @@ impl MoviesCapture {
         if let MoviesTarget::NetworkOptions(target) = self.target {
             manifest["network_options"] = self.network_options_receipt(state, target)?;
         }
+        if let Some(lan) = self.lan.as_ref() {
+            manifest["lan"] = lan.receipt(state)?;
+        }
         Ok(manifest)
     }
 
+    pub(super) fn cleanup(&mut self) -> Result<()> {
+        if let Some(lan) = self.lan.as_mut() {
+            lan.cleanup()?;
+        }
+        Ok(())
+    }
+
     pub(super) fn owns_simulation_steps(&self, state: &AppState) -> bool {
+        if let Some(lan) = self.lan.as_ref() {
+            return lan.owns_simulation_steps(state);
+        }
+
         matches!(
             self.target,
             MoviesTarget::CampaignStart {
@@ -1733,7 +1560,7 @@ fn installed_campaign_runtime_receipt(state: &AppState) -> Result<Value> {
         .context("first live frame has no runtime")?;
     let sim = &runtime.simulation;
     ensure!(
-        !sim.session.game_mode_nonzero,
+        !sim.session.game_mode_nonzero(),
         "campaign capture admitted a multiplayer session"
     );
     let mission_counter = sim
@@ -1791,7 +1618,7 @@ fn installed_campaign_runtime_receipt(state: &AppState) -> Result<Value> {
             "campaign_installation": state.match_state.startup.campaign_installed(),
             "saved_world_restored": state.match_state.startup.restored()},
         "seed": sim.session.seed, "map_name": sim.session.map_name, "theater": sim.session.theater,
-        "game_mode_nonzero": sim.session.game_mode_nonzero, "campaign_mission_counter": mission_counter,
+        "game_mode_nonzero": sim.session.game_mode_nonzero(), "campaign_mission_counter": mission_counter,
         "campaign_difficulty_rows": {"player": player_difficulty as i32, "computer": computer_difficulty as i32},
         "current_house": {"name": sim.interner.resolve(current), "native_unique_id": current_native_id},
         "flags": {"inert": flags.inert, "tiberium_grows": flags.tiberium_grows,

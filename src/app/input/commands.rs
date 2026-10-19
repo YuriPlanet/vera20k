@@ -260,7 +260,7 @@ fn sell_wall_command_for_cell(
     }
     let wall_owner = cell.wall_owner?;
     let wall_owner_house = sim.houses.get(&wall_owner)?;
-    let owner_is_human_player = if sim.session.game_mode_nonzero {
+    let owner_is_human_player = if sim.session.game_mode_nonzero() {
         wall_owner == local_owner_id
     } else {
         wall_owner_house.is_human || wall_owner_house.player_control
@@ -1595,7 +1595,9 @@ mod tests {
         );
         assert_eq!(sim.take_due_commands().len(), 1);
 
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         sim.overlay_grid
             .as_mut()
             .unwrap()

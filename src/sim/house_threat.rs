@@ -347,7 +347,7 @@ impl Simulation {
         let Some(house) = self.houses.get(&owner) else {
             return;
         };
-        let controlled = house.is_controlled_by_human(self.session.game_mode_nonzero);
+        let controlled = house.is_controlled_by_human(self.session.game_mode_nonzero());
         let contributions = self.spatial_threat_contributions(owner, controlled, rules);
         let house = self.houses.get_mut(&owner).unwrap();
         house.clear_spatial_threat();

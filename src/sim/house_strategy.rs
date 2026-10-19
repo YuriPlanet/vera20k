@@ -89,7 +89,7 @@ pub(crate) fn update_strategy(
         return;
     };
     if !house.strategy_timer.expired(frame)
-        || house.is_controlled_by_human(sim.session.game_mode_nonzero)
+        || house.is_controlled_by_human(sim.session.game_mode_nonzero())
         || house.multiplay_passive
     {
         return;
@@ -112,7 +112,7 @@ fn building_strategy(
     pick_enemy(sim, owner);
     forget_defeated_enemy(sim, owner);
     // `0x004FD77C..0x004FD79B`: a signed IQ (`+0x24C`) compare.
-    if sim.session.game_mode_nonzero
+    if sim.session.game_mode_nonzero()
         || sim
             .houses
             .get(&owner)
@@ -136,7 +136,7 @@ fn building_strategy(
     // slot 1 Check_Build_Need's answer (0 or 1), both asked before either
     // acts; from level 4 down, slot 0's sells off and hunts and slot 1's
     // runs Manage_Build_Queue.
-    if sim.session.game_mode_nonzero {
+    if sim.session.game_mode_nonzero() {
         let suppressed = sim
             .houses
             .get(&owner)
@@ -182,7 +182,7 @@ fn sell_off_and_hunt(
 /// `0x004FD538..0x004FD71E`: see the module doc.
 fn pick_enemy(sim: &mut Simulation, owner: InternedId) {
     if !ENEMY_SEARCH_TIMER.expired(sim.session.binary_frame as i32)
-        || !sim.session.game_mode_nonzero
+        || !sim.session.game_mode_nonzero()
     {
         return;
     }

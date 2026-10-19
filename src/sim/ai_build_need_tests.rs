@@ -45,7 +45,8 @@ fn fixture(credits: i32) -> (Simulation, RuleSet, InternedId) {
 fn fixture_with(rules: RuleSet, credits: i32) -> (Simulation, RuleSet, InternedId) {
     let mut sim = Simulation::new();
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     let owner = sim.interner.intern("AIHouse");
     let country = sim.interner.intern("Americans");
     let mut house = HouseState::new(owner, 0, Some(country), false, credits, 10);
@@ -573,7 +574,7 @@ fn retail_countries_have_their_economy_types() {
         "YuriCountry",
     ];
     for country in countries {
-        let side = rules.country_side_index(country).unwrap().0;
+        let side = rules.country_side_index_raw(country).unwrap();
         let bit = house_country_bit(&rules, country);
         for super_weapons in [false, true] {
             for list in [&rules.build_refinery_types, &rules.build_weapons_types] {

@@ -41,7 +41,8 @@ fn retail_attack_acknowledgement_spends_the_original_singleton_main_draw() {
     let mut sim = Simulation::with_seed(row["input"]["seed"].as_u64().unwrap());
     let local = sim.interner.intern("Local");
     sim.session.current_house = Some(local);
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     sim.houses
         .insert(local, HouseState::new(local, 0, None, true, 0, 10));
     let type_ref = sim.interner.intern("MTNK");
@@ -132,7 +133,11 @@ fn scene_for_rules(
     };
     let type_ref = sim.interner.intern(type_name);
     sim.session.current_house = Some(local);
-    sim.session.game_mode_nonzero = input["mode"].as_u64().unwrap_or(1) != 0;
+    sim.session.set_game_mode(
+        crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+            input["mode"].as_u64().unwrap_or(1) != 0,
+        ),
+    );
     sim.houses
         .insert(local, HouseState::new(local, 0, None, true, 0, 10));
     let mut other_house = HouseState::new(

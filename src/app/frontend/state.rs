@@ -24,8 +24,8 @@ pub(crate) struct FrontendState {
     pub(crate) choose_map_last_mode_row: Option<usize>,
     /// Process-lifetime offline shell snapshot, Scenario cursor, and
     /// Cooperative progress authority.
-    pub(crate) offline_skirmish_runtime:
-        crate::app::frontend::skirmish_session::OfflineSkirmishRuntime,
+    pub(crate) multiplayer_shell_runtime:
+        crate::app::frontend::skirmish_session::MultiplayerShellRuntime,
     /// Last owner-draw Skirmish button state observed by the native render path.
     /// Used for the retail GenericClick paint-transition sound.
     pub(crate) skirmish_shell_last_painted_pressed_button:
@@ -111,6 +111,11 @@ pub(crate) struct FrontendState {
     pub(crate) campaign_art: Option<crate::render::main_menu_shell_chrome::CampaignShellArt>,
     /// Westwood Online welcome `0x10E` (and its box) while its route shows.
     pub(crate) wol_welcome: Option<crate::ui::wol_shell::WolWelcomeState>,
+    /// LAN lobby interaction/discovery; admitted participants belong to MatchSession.
+    pub(crate) lan: Option<crate::app::shell_lan::LanShellRuntime>,
+    pub(crate) lan_setup_protocol: Option<crate::app::shell_lan_setup::LanSetupProtocol>,
+    /// BC/BD control interaction; values are projected from MatchSession.
+    pub(crate) multiplayer_setup: Option<crate::ui::multiplayer_setup::MultiplayerSetupState>,
     /// Options' Network child D7, retained until its teardown completes.
     pub(crate) network_options: Option<crate::ui::network_options::NetworkOptionsState>,
     /// Its background and icon art (`0x0072C7E0`).

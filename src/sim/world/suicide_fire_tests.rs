@@ -37,7 +37,7 @@ fn retail_scene() -> Option<TerrorScene> {
     crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
     for (name, human) in [("Confederation", true), ("Americans", false)] {
         let id = sim.interner.intern(name);
-        let side = rules.country_side_index(name).unwrap().0 as u8;
+        let side = rules.country_side_index_raw(name).unwrap();
         sim.houses.insert(
             id,
             crate::sim::house_state::HouseState::new(id, side, Some(id), human, 10_000, 10),

@@ -62,7 +62,11 @@ fn escape_counter_matches_native_cell_list_and_raw_owner_gates() {
                 .insert(house, HouseState::new(house, 0, None, false, 0, 10));
             sim.session.house_order.push(house);
         }
-        sim.session.game_mode_nonzero = input["mode"].as_u64().unwrap() != 0;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+                input["mode"].as_u64().unwrap() != 0,
+            ),
+        );
         sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
             base: 16,
             off_fc: if input["rim"].as_bool().unwrap() {

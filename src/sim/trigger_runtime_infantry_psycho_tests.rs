@@ -72,7 +72,8 @@ fn fixture(
         if attack_friendlies { "yes" } else { "no" }
     ));
     sim.session.current_house = Some(houses[0]);
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     tests::install_event_ingress_map(
         &mut sim,
         &rules,

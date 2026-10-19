@@ -94,7 +94,7 @@ impl MatchStartup {
             return Err("campaign map load lost its loading admission".to_string());
         }
         if !session.started()
-            || session.game_mode_nonzero
+            || session.game_mode_nonzero()
             || session.tick != 0
             || session.binary_frame != 0
             || session.seed != u64::from(startup.seed.value)

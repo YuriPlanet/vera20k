@@ -30,7 +30,8 @@ fn fixture() -> (Simulation, RuleSet, OverlayTypeRegistry, [InternedId; 2]) {
         name
     });
     sim.session.current_house = Some(houses[0]);
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     (sim, rules, registry, houses)
 }
 
@@ -153,9 +154,11 @@ fn home_base_units_use_retained_count_rule_membership_and_existing_human_player_
     );
     assert_ne!(coord(&sim, misleading), coord(&sim, first));
     sim.houses.get_mut(&houses[1]).unwrap().player_control = true;
-    sim.session.game_mode_nonzero = false;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false));
     assert_eq!(query(&sim, &rules), Some(coord(&sim, other)));
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     assert_eq!(query(&sim, &rules), Some(coord(&sim, first)));
     let building = spawn(&mut sim, &rules, "OTHER", "Local", 16, 15);
     clear_base(&mut sim, houses[0]);
@@ -167,7 +170,9 @@ fn home_base_units_use_retained_count_rule_membership_and_existing_human_player_
 
     let (mut empty_owner, rules, _, houses) = fixture();
     spawn(&mut empty_owner, &rules, "BASEUNIT", "Other", 16, 17);
-    empty_owner.session.game_mode_nonzero = false;
+    empty_owner
+        .session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false));
     empty_owner
         .houses
         .get_mut(&houses[1])

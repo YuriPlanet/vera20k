@@ -147,7 +147,7 @@ pub(crate) fn instances(state: &AppState) -> (Vec<SpriteInstance>, Vec<SpriteIns
     else {
         return Default::default();
     };
-    let (frame, label) = result_view(outcome.kind, !sim.session.game_mode_nonzero);
+    let (frame, label) = result_view(outcome.kind, !sim.session.game_mode_nonzero());
     let (width, height) = crate::app::input::camera::tactical_viewport_size(state);
     let view = [width as i32, height as i32];
     let camera = [

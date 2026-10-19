@@ -66,6 +66,7 @@ fn forced_defaults_and_makeup_kit_copy_use_the_same_retained_type_owner() {
         (Some(1), "E2"),
         (Some(2), "INIT"),
         (Some(9), "INIT"),
+        (Some(-1), "INIT"),
         (None, "INIT"),
     ] {
         sim.session.current_house = side.map(|side| {
@@ -282,7 +283,8 @@ fn grow_action_uses_current_map_then_known_objects_without_resetting_house_flags
     let (mut sim, rules, registry, houses) = fixture();
     sim.fog = crate::sim::vision::FogState::new(33, 33);
     sim.session.current_house = Some(houses[0]);
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     let known = sim
         .spawn_object("TAGUNIT", "House0", 14, 15, 0, &rules)
         .unwrap();

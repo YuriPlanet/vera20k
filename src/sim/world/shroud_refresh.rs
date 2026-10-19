@@ -1561,7 +1561,7 @@ impl Simulation {
             return;
         };
         if (config.require_playfield_membership() && !entity.in_playfield())
-            || (self.session.game_mode_nonzero && config.passive_owner(entity.owner()))
+            || (self.session.game_mode_nonzero() && config.passive_owner(entity.owner()))
         {
             return;
         }

@@ -8,7 +8,20 @@ use crate::rules::error::RulesError;
 use crate::rules::ini_parser::{IniFile, IniSection};
 use crate::rules::ini_value::crt_atoi;
 
-pub const SKIRMISH_INI_SECTION: &str = "Skirmish";
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SetupProfile {
+    Skirmish,
+    Lan,
+}
+impl SetupProfile {
+    const fn section(self) -> &'static str {
+        match self {
+            Self::Skirmish => "Skirmish",
+            Self::Lan => "LAN",
+        }
+    }
+}
+
 pub const SKIRMISH_PERSISTED_SLOT_COUNT: usize = 7;
 
 const RANDOM_COMBO_ITEM_DATA: i32 = -2;
@@ -60,7 +73,8 @@ impl SkirmishPersistedSlot {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct SkirmishPersistedSnapshot {
+pub struct MultiplayerSetupSnapshot {
+    profile: SetupProfile,
     pub game_mode: i32,
     pub scenario_index: i32,
     pub game_speed: i32,
@@ -74,9 +88,10 @@ pub struct SkirmishPersistedSnapshot {
     pub slots: [SkirmishPersistedSlot; SKIRMISH_PERSISTED_SLOT_COUNT],
 }
 
-impl SkirmishPersistedSnapshot {
-    pub fn from_global_defaults(defaults: SkirmishGlobalDefaults) -> Self {
+impl MultiplayerSetupSnapshot {
+    pub fn from_global_defaults(defaults: SkirmishGlobalDefaults, profile: SetupProfile) -> Self {
         Self {
+            profile,
             game_mode: defaults.game_mode,
             scenario_index: defaults.scenario_index,
             game_speed: defaults.game_speed,
@@ -87,7 +102,13 @@ impl SkirmishPersistedSnapshot {
             build_off_ally: defaults.build_off_ally,
             mcv_repacks: defaults.mcv_repacks,
             crates_appear: defaults.crates_appear,
-            slots: std::array::from_fn(SkirmishPersistedSlot::native_default),
+            slots: std::array::from_fn(|index| {
+                let mut slot = SkirmishPersistedSlot::native_default(index);
+                if profile == SetupProfile::Lan {
+                    slot.row_type = 2;
+                }
+                slot
+            }),
         }
     }
 
@@ -133,18 +154,19 @@ impl SkirmishPersistedSnapshot {
             .iter()
             .map(|(key, value)| (key.as_str(), value.as_str()))
             .collect();
-        crate::util::ini_writer::set_ini_values(content, SKIRMISH_INI_SECTION, &borrowed)
+        crate::util::ini_writer::set_ini_values(content, self.profile.section(), &borrowed)
     }
 }
 
 /// Read a raw `RA2MD.INI` buffer using native Skirmish key order and defaults.
-pub fn read_skirmish_snapshot(
+pub fn read_setup_snapshot(
     content: &[u8],
     defaults: SkirmishGlobalDefaults,
-) -> Result<SkirmishPersistedSnapshot, RulesError> {
-    let mut snapshot = SkirmishPersistedSnapshot::from_global_defaults(defaults);
+    profile: SetupProfile,
+) -> Result<MultiplayerSetupSnapshot, RulesError> {
+    let mut snapshot = MultiplayerSetupSnapshot::from_global_defaults(defaults, profile);
     let ini = IniFile::from_bytes(content)?;
-    let section = ini.section_or_empty(SKIRMISH_INI_SECTION);
+    let section = ini.section_or_empty(profile.section());
 
     snapshot.game_mode = section.read_int("GameMode", snapshot.game_mode);
     snapshot.scenario_index = section.read_int("ScenIndex", snapshot.scenario_index);
@@ -204,8 +226,47 @@ mod tests {
     }
 
     #[test]
+    fn lan_profile_has_distinct_open_defaults_and_preserves_skirmish_bytes() {
+        let input = b"[Skirmish]\nSlot01=6,2,3\nCredits=7500\n[LAN]\nSlot02=3,8,7\n";
+        let snapshot = read_setup_snapshot(input, defaults(), SetupProfile::Lan).unwrap();
+        assert_eq!(
+            snapshot.slots[0],
+            SkirmishPersistedSlot {
+                row_type: 2,
+                country: -2,
+                colour: -2
+            }
+        );
+        assert_eq!(
+            snapshot.slots[1],
+            SkirmishPersistedSlot {
+                row_type: 3,
+                country: 8,
+                colour: 7
+            }
+        );
+        let updated = snapshot.update_ini_bytes(input);
+        let offline = read_setup_snapshot(&updated, defaults(), SetupProfile::Skirmish).unwrap();
+        assert_eq!(offline.credits, 7500);
+        assert_eq!(
+            offline.slots[0],
+            SkirmishPersistedSlot {
+                row_type: 6,
+                country: 2,
+                colour: 3
+            }
+        );
+        assert_eq!(
+            read_setup_snapshot(&updated, defaults(), SetupProfile::Lan).unwrap(),
+            snapshot
+        );
+    }
+
+    #[test]
     fn absent_section_uses_caller_globals_and_native_slot_defaults() {
-        let snapshot = read_skirmish_snapshot(b"[Options]\nFoo=bar\n", defaults()).unwrap();
+        let snapshot =
+            read_setup_snapshot(b"[Options]\nFoo=bar\n", defaults(), SetupProfile::Skirmish)
+                .unwrap();
         assert_eq!(snapshot.game_speed, 1);
         assert_eq!(snapshot.slots[0], SkirmishPersistedSlot::native_default(0));
         for slot in &snapshot.slots[1..] {
@@ -229,7 +290,7 @@ CratesAppear=?
 Slot01=4,8,1
 Slot02=5,-2,-2
 "#;
-        let snapshot = read_skirmish_snapshot(input, defaults()).unwrap();
+        let snapshot = read_setup_snapshot(input, defaults(), SetupProfile::Skirmish).unwrap();
         assert_eq!(snapshot.game_mode, 3);
         assert_eq!(snapshot.scenario_index, 0xa2);
         assert_eq!(snapshot.game_speed, 4);
@@ -261,7 +322,7 @@ Slot02=5,-2,-2
     #[test]
     fn slot_tokenizer_leaves_missing_outputs_at_native_defaults() {
         let input = b"[Skirmish]\nSlot01=4,,8\nSlot02=\nSlot03=junk,7\n";
-        let snapshot = read_skirmish_snapshot(input, defaults()).unwrap();
+        let snapshot = read_setup_snapshot(input, defaults(), SetupProfile::Skirmish).unwrap();
         assert_eq!(snapshot.slots[0].row_type, 4);
         assert_eq!(
             snapshot.slots[0].country, 8,
@@ -276,7 +337,8 @@ Slot02=5,-2,-2
 
     #[test]
     fn writes_native_key_order_boolean_spelling_and_slot_format() {
-        let mut snapshot = SkirmishPersistedSnapshot::from_global_defaults(defaults());
+        let mut snapshot =
+            MultiplayerSetupSnapshot::from_global_defaults(defaults(), SetupProfile::Skirmish);
         snapshot.game_mode = 3;
         snapshot.scenario_index = 162;
         snapshot.short_game = false;
@@ -296,7 +358,8 @@ Slot05=1,-2,-2\r\nSlot06=1,-2,-2\r\nSlot07=1,-2,-2\r\n";
 
     #[test]
     fn batched_snapshot_update_preserves_unrelated_bytes() {
-        let mut snapshot = SkirmishPersistedSnapshot::from_global_defaults(defaults());
+        let mut snapshot =
+            MultiplayerSetupSnapshot::from_global_defaults(defaults(), SetupProfile::Skirmish);
         snapshot.game_mode = 9;
         let input = b"; preface\n[Skirmish]\nGameMode=1\n; keep\n[Other]\n\xff=value\n";
         let output = snapshot.update_ini_bytes(input);
@@ -307,12 +370,14 @@ Slot05=1,-2,-2\r\nSlot06=1,-2,-2\r\nSlot07=1,-2,-2\r\n";
 
     #[test]
     fn batched_update_and_reader_agree_on_duplicate_key_value() {
-        let mut snapshot = SkirmishPersistedSnapshot::from_global_defaults(defaults());
+        let mut snapshot =
+            MultiplayerSetupSnapshot::from_global_defaults(defaults(), SetupProfile::Skirmish);
         snapshot.game_mode = 3;
         let updated = snapshot
             .update_ini_bytes(b"[Skirmish]\r\nGameMode=1\r\nGameMode=8\r\n[Other]\r\nValue=1\r\n");
 
-        let reloaded = read_skirmish_snapshot(&updated, defaults()).expect("re-read snapshot");
+        let reloaded = read_setup_snapshot(&updated, defaults(), SetupProfile::Skirmish)
+            .expect("re-read snapshot");
 
         assert_eq!(reloaded.game_mode, 3);
         assert!(
@@ -326,7 +391,7 @@ Slot05=1,-2,-2\r\nSlot06=1,-2,-2\r\nSlot07=1,-2,-2\r\n";
     fn reader_widens_non_utf8_bytes_outside_target_section() {
         let input = b"[MultiPlayer]\r\nHandle=Jos\xe9\r\n[Skirmish]\r\nGameMode=3\r\n\
 Slot01=4,8,1\r\n";
-        let snapshot = read_skirmish_snapshot(input, defaults()).unwrap();
+        let snapshot = read_setup_snapshot(input, defaults(), SetupProfile::Skirmish).unwrap();
         assert_eq!(snapshot.game_mode, 3);
         assert_eq!(snapshot.slots[0].row_type, 4);
         assert_eq!(snapshot.slots[0].country, 8);
