@@ -58,16 +58,15 @@ fn retail_runtime() -> Option<(SimRuntime, [u64; 2])> {
     sim.resolve_type_handles(rules);
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
-    sim.session.game_options.short_game = true;
+    sim.session.game_options_mut_for_test().short_game = true;
     for (country, human) in [("Americans", true), ("British", false)] {
         let owner = sim.intern(country);
         let side = rules.country_side_index(country).unwrap().0;
         let mut house = HouseState::new(owner, side, Some(owner), human, 50_000, 10);
         house.project_country_mults(rules, &sim.interner);
-        sim.houses.insert(owner, house);
-        sim.session.house_order.push(owner);
+        sim.houses.register(house);
         if human {
-            sim.session.current_house = Some(owner);
+            sim.session.set_current_house_for_test(Some(owner));
         }
     }
     crate::sim::arena_fixture::flat_ground(&mut sim, rules);
@@ -96,10 +95,10 @@ fn retail_local_defeat_leaves_planning_in_the_same_house_frame() {
     let mut recorded = ReplayLog::new(ReplayHeader {
         version: 1,
         tick_hz: 15,
-        seed: rt.simulation.session.seed,
+        seed: rt.simulation.session.seed(),
         map_name: "retail-local-defeat".into(),
         rules_hash: rt.resources.rules.simulation_config_hash(),
-        pixel_conversion_bounds: rt.simulation.session.pixel_conversion_bounds,
+        pixel_conversion_bounds: rt.simulation.session.pixel_conversion_bounds(),
     });
     let mut planning = PlanningInputState::default();
     let mut selection = SelectionState::new();
@@ -133,7 +132,7 @@ fn retail_local_defeat_leaves_planning_in_the_same_house_frame() {
     let mut defeat_tick = None;
     let mut outcome_cues = Vec::new();
     for _ in 0..5 {
-        let tick = rt.simulation.session.tick;
+        let tick = rt.simulation.session.tick();
         let was_defeated = rt.simulation.local_player_defeated();
         let mut admit_radar = |_, _, _: &crate::rules::ruleset::RuleSet| false;
         let mut output = {
@@ -283,7 +282,7 @@ fn retail_inactive_and_nonlocal_defeat_do_not_leave_the_local_planner() {
             };
             admitted.extend(output.take_admitted_commands());
         }
-        let loser = rt.simulation.session.house_order[losing_house];
+        let loser = rt.simulation.houses.order()[losing_house];
         assert!(rt.simulation.houses[&loser].is_defeated);
         assert_eq!(planning.active(), active);
         assert_eq!(

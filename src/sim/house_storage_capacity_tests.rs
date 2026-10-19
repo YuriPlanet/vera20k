@@ -31,9 +31,9 @@ fn world(base: i32, payload: i32) -> (Simulation, RuleSet, InternedId, InternedI
     let first = sim.interner.intern("Americans");
     let second = sim.interner.intern("Russians");
     sim.houses
-        .insert(first, HouseState::new(first, 0, None, true, 0, 10));
+        .register(HouseState::new(first, 0, None, true, 0, 10));
     sim.houses
-        .insert(second, HouseState::new(second, 1, None, false, 0, 10));
+        .register(HouseState::new(second, 1, None, false, 0, 10));
     (sim, rules, first, second)
 }
 

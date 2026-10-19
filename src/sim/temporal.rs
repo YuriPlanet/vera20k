@@ -558,7 +558,7 @@ impl Simulation {
         }
         if crate::sim::superweapon::invulnerability::is_invulnerable(
             entity.invulnerability.as_ref(),
-            self.session.binary_frame,
+            self.session.binary_frame(),
         ) {
             return false;
         }
@@ -1218,7 +1218,7 @@ impl Simulation {
             return;
         };
         if !(entity.is_warped_out() || entity.is_warping_in())
-            || !sparkle_frame(self.session.binary_frame, 0)
+            || !sparkle_frame(self.session.binary_frame(), 0)
         {
             return;
         }
@@ -1249,7 +1249,7 @@ impl Simulation {
         let Some(object) = self.object_type(entity.type_ref(), rules) else {
             return;
         };
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         let location = location_coord(entity);
         let name = rules.general.chrono_sparkle1.name.clone();
         let ports = object.max_number_occupants;

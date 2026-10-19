@@ -229,7 +229,7 @@ impl Simulation {
         else {
             return Ok(false);
         };
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         let Some(target) = self.substrate.entities.get(building) else {
             return Ok(false);
         };
@@ -304,7 +304,7 @@ impl Simulation {
             live,
             burst_index,
         );
-        let frame = self.session.binary_frame as i32;
+        let frame = self.session.binary_frame() as i32;
         if let Some(planter) = self.substrate.entities.get_mut(id) {
             planter.rearm_timer.start(frame, rof);
         }

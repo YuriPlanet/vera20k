@@ -278,7 +278,7 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
-        let current_frame = self.session.binary_frame as i32;
+        let current_frame = self.session.binary_frame() as i32;
         match action.action_id {
             0 => self.team_action_attack_quarry(
                 team_id,
@@ -789,7 +789,7 @@ impl Simulation {
         };
         let members: Vec<_> = team.members().collect();
         let desired = argument.wrapping_shl(13) as u16;
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         let mut finished = true;
         for member in members {
             let Some(entity) = self.substrate.entities.get_mut(member) else {
@@ -866,7 +866,7 @@ impl Simulation {
                 effects,
             );
         }
-        let frame = self.session.binary_frame as i32;
+        let frame = self.session.binary_frame() as i32;
         match frame.checked_rem(rules.general.patrol_scan_frames()) {
             Some(0) => {
                 if let Some(leader) = self.team_leader(team_id, rules) {
@@ -2399,7 +2399,7 @@ impl Simulation {
         }
         // `0x006EB59A..0x006EB5D2`. Without a target the action finishes
         // below, and a restart after the step's advance changes nothing.
-        if attack_check_frame(self.session.binary_frame as i32)
+        if attack_check_frame(self.session.binary_frame() as i32)
             && let (Some(leader), Some(target)) = (leader, focus)
             && self.selected_weapon_fire_error(rules, leader, target.target_kind(), true, registry)
                 == FireError::Illegal

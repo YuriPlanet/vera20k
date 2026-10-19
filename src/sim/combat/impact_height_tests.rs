@@ -3,6 +3,7 @@ use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid};
 use crate::rules::ini_parser::IniFile;
 use crate::sim::intern::test_interner;
 use crate::sim::world::Simulation;
+use std::collections::BTreeMap;
 
 const TEST_GRID: u16 = 16;
 /// Terrain floor used by every raised-ground case here. Chosen because two

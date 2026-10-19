@@ -61,7 +61,7 @@ fn speed_crate_reaches_the_next_moving_query() {
     let mut entity = driving_mtnk();
     let rules = mtnk_rules();
     let interner = crate::sim::intern::test_interner();
-    let houses = std::collections::BTreeMap::new();
+    let houses = crate::sim::houses::Houses::default();
     let speed = SpeedRules::new(&rules, &interner, &houses);
 
     let full = speed.owner_current_speed(&entity);

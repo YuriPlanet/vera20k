@@ -72,7 +72,7 @@ pub(super) fn navigation_snapshot(
     }).collect();
     json!({
         "name": name,
-        "origin": {"boundary":name,"tick":sim.session.tick,"binary_frame":sim.session.binary_frame},
+        "origin": {"boundary":name,"tick":sim.session.tick(),"binary_frame":sim.session.binary_frame()},
         "width": zones.width, "height": zones.height,
         "native_size": base.native_bridge_source_size,
         "classes": base.movement_classes, "levels": base.levels, "records": records,
@@ -103,7 +103,7 @@ pub(super) fn restored_retail(
         bytes,
         scenario.map.ini.content_hash(),
         resources.rules.simulation_config_hash(),
-        &live.session.map_name,
+        &live.session.map_name(),
     )
     .unwrap()
     .sim;
@@ -191,7 +191,7 @@ pub fn visit_starting_mtnk_concrete_attack(
         .runtime
         .simulation
         .hash_state_every(crate::sim::replay::PLAY_HASH_INTERVAL);
-    let owner = scene.sim().session.current_house.unwrap();
+    let owner = scene.sim().session.current_house().unwrap();
     let orders: Vec<_> = profile["commands"]
         .as_array()
         .unwrap()
@@ -616,7 +616,7 @@ fn ordinary_repair_orders(
 ) -> Vec<CommandEnvelope> {
     vec![CommandEnvelope::new(
         sim.entities().get(engineer).unwrap().owner(),
-        sim.session.tick + 1,
+        sim.session.tick() + 1,
         Command::CaptureBuilding {
             engineer_id: engineer,
             target_building_id: hut,
@@ -635,7 +635,7 @@ fn repair_ordinary_bridge(
         u64,
     ) -> Vec<CommandEnvelope>,
 ) {
-    let owner = scene.sim().session.current_house.unwrap();
+    let owner = scene.sim().session.current_house().unwrap();
     let owner_name = scene.sim().resolve(owner).to_owned();
     assert!(crate::sim::world::bridge_orchestrator::bridge_hut_can_repair(scene.sim(), hut_coord));
     let runtime = &mut scene.runtime;
@@ -692,7 +692,7 @@ fn repair_ordinary_bridge(
             consumed = true;
             eprintln!(
                 "BRIDGE_ENGINEER hut{hut_coord:?} consumed frame{}",
-                scene.sim().session.binary_frame - 1
+                scene.sim().session.binary_frame() - 1
             );
             break;
         }

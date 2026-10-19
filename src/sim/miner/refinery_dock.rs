@@ -96,7 +96,7 @@ pub(crate) fn mission_unload(
     id: u64,
     effects: FrameEffects<'_>,
 ) -> i32 {
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     let Some(entity) = sim.substrate.entities.get(id) else {
         return 1;
     };
@@ -150,7 +150,7 @@ fn unload_dumping(
     id: u64,
     effects: FrameEffects<'_>,
 ) -> i32 {
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     let Some(building) = unload_building(sim, id) else {
         // 0x0073E311..0x0073E350: no building → OVER_OUT, Queue(Harvest, 1).
         radio::transmit_to_contact(sim, id, RadioMessage::Break, Some(rules), effects);
@@ -186,7 +186,7 @@ fn unload_dumping(
             }
             sim.bale_events.push(BaleDepositEvent {
                 building_id: building,
-                tick: sim.session.tick,
+                tick: sim.session.tick(),
                 drained: true,
                 empty: false,
             });
@@ -197,7 +197,7 @@ fn unload_dumping(
             set_status(sim, id, UNLOAD_FINISHING);
             sim.bale_events.push(BaleDepositEvent {
                 building_id: building,
-                tick: sim.session.tick,
+                tick: sim.session.tick(),
                 drained: false,
                 empty: true,
             });
@@ -220,7 +220,7 @@ fn unload_finishing(
     id: u64,
     effects: FrameEffects<'_>,
 ) -> i32 {
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     if let Some(building) = unload_building(sim, id)
         && let Some(building) = sim.substrate.entities.get(building)
         && sim
@@ -412,7 +412,7 @@ fn stop_if_moving(sim: &mut Simulation, id: u64) {
 
 /// `Ready_To_Commence` (`vt+0x200`) then `Commence` (`vt+0x1EC`).
 fn commence_if_ready(sim: &mut Simulation, rules: &RuleSet, id: u64) {
-    sim.mission_host_promote(id, sim.session.binary_frame, rules);
+    sim.mission_host_promote(id, sim.session.binary_frame(), rules);
 }
 
 /// Mission+0xBC: the harvester branch stores 3 at `0x0073E093` and 4 at

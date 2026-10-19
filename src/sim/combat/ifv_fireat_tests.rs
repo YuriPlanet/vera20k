@@ -56,11 +56,11 @@ fn empty_fv_two_shot_fireat_matches_native_muzzles_ids_rearm_and_rng() {
 
     let mut world = Simulation::new();
     let owner = world.interner.intern("Americans");
-    world.houses.insert(
-        owner,
-        crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10),
-    );
-    world.session.house_order.push(owner);
+    world
+        .houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, true, 0, 10,
+        ));
     crate::sim::arena_fixture::flat_arena(&mut world, &rules);
     // guided_step.create supplies flat level6 cells and no bridge flags.
     let terrain = world.resolved_terrain.as_mut().unwrap();
@@ -120,7 +120,7 @@ fn empty_fv_two_shot_fireat_matches_native_muzzles_ids_rearm_and_rng() {
 
     for row in rows {
         let frame = row["supplied"]["binary_frame"].as_u64().unwrap() as u32;
-        world.session.binary_frame = frame;
+        world.session.set_binary_frame_for_test(frame);
         let firer = world.substrate.entities.get(firer_id).unwrap();
         assert_eq!(
             firer.weapon_burst.index(),

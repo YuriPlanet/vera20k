@@ -233,7 +233,7 @@ fn stock_carrier_spawner_fire_reveals_to_its_human_victim() {
     launch.options.fog_of_war = false;
     let mut scene =
         crate::headless_scenario::load_session(&retail, map, 0x1234_5678, launch).unwrap();
-    let current = scene.sim().session.current_house.unwrap();
+    let current = scene.sim().session.current_house().unwrap();
     let carrier = scene
         .sim()
         .entities()
@@ -305,7 +305,7 @@ fn stock_carrier_spawner_fire_reveals_to_its_human_victim() {
         let commands = if frame == 0 {
             vec![CommandEnvelope::new(
                 owner,
-                scene.sim().session.tick,
+                scene.sim().session.tick(),
                 Command::Attack {
                     attacker_id: carrier,
                     target_id: target,

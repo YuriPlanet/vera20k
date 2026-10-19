@@ -125,6 +125,7 @@ pub(crate) fn enqueue(state: &mut AppState, index: i32, pause_simulation: bool) 
         bytes,
         source,
         false,
+        wgpu::FilterMode::Nearest,
     ) {
         Ok(surface) => {
             log::info!(

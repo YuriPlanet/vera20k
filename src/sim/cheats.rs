@@ -139,7 +139,7 @@ impl Simulation {
     }
 
     fn debug_local_owner(&self) -> Option<InternedId> {
-        self.session.current_house.filter(|owner| {
+        self.session.current_house().filter(|owner| {
             self.houses.get(owner).is_some_and(|house| {
                 !house.is_defeated && house.is_controlled_by_human(self.session.game_mode_nonzero())
             })
@@ -286,7 +286,7 @@ impl Simulation {
             && let Some(rules) = rules
             && let Some(weapons) = self.super_weapons.get_mut(&owner)
         {
-            let frame = self.session.binary_frame;
+            let frame = self.session.binary_frame();
             for (type_id, instance) in weapons {
                 if !instance.is_active || instance.is_suspended {
                     continue;
@@ -388,9 +388,8 @@ mod tests {
         let mut sim = Simulation::new();
         let owner = sim.interner.intern("Allies");
         sim.houses
-            .insert(owner, HouseState::new(owner, 0, None, true, 500, 10));
+            .register(HouseState::new(owner, 0, None, true, 500, 10));
         sim.session.current_house = Some(owner);
-        sim.session.house_order.push(owner);
         (sim, owner)
     }
 
@@ -596,7 +595,7 @@ mod tests {
         let (mut sim, owner) = offline();
         let other = sim.interner.intern("Enemy");
         sim.houses
-            .insert(other, HouseState::new(other, 1, None, false, 0, 10));
+            .register(HouseState::new(other, 1, None, false, 0, 10));
         let ty = sim.interner.intern("E1");
         let warhead = sim.interner.intern("SA");
         for (id, house) in [(1, owner), (2, other)] {

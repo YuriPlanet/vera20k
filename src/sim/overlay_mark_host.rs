@@ -505,7 +505,7 @@ impl Simulation {
         };
         let lighting = self
             .session
-            .lighting
+            .lighting()
             .profile(crate::sim::scenario_session::ScenarioLightingProfile::Normal)
             .into();
         match mark_overlay(

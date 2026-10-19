@@ -19,7 +19,7 @@ fn marked_probe_survives_modern_foot_search_and_mark_restoration() {
         let id = sim
             .spawn_object("MTNK", "Americans", start.0, start.1, 0, &rules)
             .unwrap();
-        let frame = sim.session.binary_frame;
+        let frame = sim.session.binary_frame();
         let actor = sim.substrate.entities.get_mut(id).unwrap();
         actor.body_facing.snap(0x4000, frame);
         let goal = DriveCoord::cell(goal_cell.0, goal_cell.1, 0);

@@ -51,8 +51,7 @@ fn fixture_with(rules: RuleSet, credits: i32) -> (Simulation, RuleSet, InternedI
     let country = sim.interner.intern("Americans");
     let mut house = HouseState::new(owner, 0, Some(country), false, credits, 10);
     house.enable_scripted_production();
-    sim.houses.insert(owner, house);
-    sim.session.house_order.push(owner);
+    sim.houses.register(house);
     (sim, rules, owner)
 }
 
@@ -258,14 +257,13 @@ fn another_houses_refinery_building_up_first_holds_the_need() {
             sim.interner.intern("Americans"),
         );
         sim.houses
-            .insert(name, HouseState::new(name, 0, Some(country), false, 0, 10));
-        sim.session.house_order.push(name);
+            .register(HouseState::new(name, 0, Some(country), false, 0, 10));
         let other = |sim: &mut Simulation| {
             let id = spawn(sim, &rules, "REFN", "Other", (30, 30));
             sim.mission_assign_exact(
                 id,
                 MissionId::from_known(MissionType::Construction),
-                sim.session.binary_frame,
+                sim.session.binary_frame(),
             )
             .unwrap();
         };
@@ -537,7 +535,7 @@ fn the_strategy_rebuilds_after_the_missing_factorys_sell_off() {
     assert!(check_build_need(&sim, &rules, owner));
     // Past the emergency block's 900 frames after the (constructor's) last
     // attack at frame 0, which would hold the house in state three.
-    sim.session.binary_frame = 1000;
+    sim.session.set_binary_frame_for_test(1000);
 
     crate::sim::house_strategy::update_strategy(
         &mut sim,

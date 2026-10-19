@@ -676,7 +676,7 @@ mod tests {
         sim.fog.height = 6;
         let local = sim.interner.intern("Player");
         let other = sim.interner.intern("Computer");
-        sim.session.current_house = Some(local);
+        sim.session.set_current_house_for_test(Some(local));
         assert_eq!(
             cell_fill(&sim.fog, local, 3, 2, &SHROUD_EDGE_LUT),
             CellFill::Frame(15)

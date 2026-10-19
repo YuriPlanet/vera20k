@@ -268,9 +268,9 @@ fn assert_retained_roles(sim: &Simulation, parent_id: u64, upgrade_id: u64, held
 fn held_factory_and_attached_upgrade_stay_off_navigation_through_frame_and_restore() {
     let (rules, overlays) = rules_and_overlays();
     let mut sim = Simulation::with_seed(0x4D41_524B);
-    sim.session.map_width = 16;
-    sim.session.map_height = 16;
-    sim.session.game_options.crates = false;
+    sim.session.set_map_width_for_test(16);
+    sim.session.set_map_height_for_test(16);
+    sim.session.game_options_mut_for_test().crates = false;
     sim.production.ore_growth_config.grows = false;
     sim.production.ore_growth_config.spreads = false;
     let terrain = gsi_04_10_clear_terrain(16, 16);
@@ -279,10 +279,10 @@ fn held_factory_and_attached_upgrade_stay_off_navigation_through_frame_and_resto
     sim.overlay_grid = Some(overlay_grid);
     sim.intern_rule_type_ids(&rules);
     let owner = sim.interner.intern("Americans");
-    sim.houses.insert(
-        owner,
-        crate::sim::house_state::HouseState::new(owner, 0, None, true, 50_000, 10),
-    );
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, true, 50_000, 10,
+        ));
     let mut yard = make_test_entity("YARD", EntityCategory::Structure);
     yard.cell_x = 6;
     yard.cell_y = 6;

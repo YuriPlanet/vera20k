@@ -30,7 +30,7 @@ const MAX_FRAMES: u64 = 48_000;
 fn advance(scene: &mut HeadlessScenario, command: Option<Command>) {
     let sim = scene.sim();
     assert!(
-        sim.session.tick < MAX_FRAMES,
+        sim.session.tick() < MAX_FRAMES,
         "paid Moon history exceeded frame bound"
     );
     let commands: Vec<_> = command
@@ -54,8 +54,12 @@ fn advance(scene: &mut HeadlessScenario, command: Option<Command>) {
                 }
                 _ => {}
             }
-            eprintln!("MOON_INPUT tick={} payload={payload}", sim.session.tick);
-            CommandEnvelope::new(sim.interner.get(OWNER).unwrap(), sim.session.tick, command)
+            eprintln!("MOON_INPUT tick={} payload={payload}", sim.session.tick());
+            CommandEnvelope::new(
+                sim.interner.get(OWNER).unwrap(),
+                sim.session.tick(),
+                command,
+            )
         })
         .collect();
     scene
@@ -110,7 +114,7 @@ fn wait_for(
         .collect();
     panic!(
         "{stage}: tick={} credits={} spent={} power={:?} queue={:?} options={options:?} movers={movers:?}",
-        sim.session.tick,
+        sim.session.tick(),
         sim.houses[&owner].economy.credits(),
         sim.houses[&owner].economy.spent_credits(),
         power_balance_for_owner(sim, &scene.runtime.resources.rules, OWNER),
@@ -179,7 +183,7 @@ fn placement(scene: &HeadlessScenario, name: &str, anchor: (u16, u16)) -> (u16, 
         .unwrap_or_else(|| {
             panic!(
                 "no ordinary legal {name} placement at tick {}",
-                sim.session.tick
+                sim.session.tick()
             )
         })
 }
@@ -417,7 +421,7 @@ fn paid_moon_amcv_on_concrete_wall_sinks_alive_then_cleans_up() {
         .expect("ordinary empty AMCV source choice");
     eprintln!(
         "MOON_STAGING tick={} mover={mover} from={from:?} source={source:?} moving={:?} mission={:?} queued={:?} nav={:?}",
-        sim.session.tick,
+        sim.session.tick(),
         motion_query::is_moving(sim.entities().get(mover).unwrap()),
         sim.entities().get(mover).unwrap().mission.current(),
         sim.entities().get(mover).unwrap().mission.queued(),
@@ -559,7 +563,7 @@ fn paid_moon_amcv_on_concrete_wall_sinks_alive_then_cleans_up() {
     let sink_z = position_world_coord(&entity.position).z;
     eprintln!(
         "MOON_SINK tick={} mover={mover} source={source:?} wall={wall:?} health={health} raw_z={sink_z} losses={losses}",
-        sim.session.tick
+        sim.session.tick()
     );
     advance(&mut scene, None);
     assert!(position_world_coord(&scene.sim().entities().get(mover).unwrap().position).z < sink_z);

@@ -118,7 +118,7 @@ impl EnterHost for WorldEnter<'_> {
     }
 
     fn queue(&mut self, mission: MissionType, start: bool) {
-        let now = self.sim.session.binary_frame;
+        let now = self.sim.session.binary_frame();
         let _ = self.sim.mission_queue_exact(
             self.id,
             MissionId::from_known(mission),

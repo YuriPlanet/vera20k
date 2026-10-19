@@ -156,7 +156,7 @@ fn ordinary_repair_children_reach_the_actual_effect_builder_and_gpu_without_muta
                 house_colors: &house_colors,
                 hidden_super_anims: &hidden,
                 show_hidden: false,
-                local_owner: sim.session.current_house,
+                local_owner: sim.session.current_house(),
                 observe_particles: false,
             },
             &mut parents,

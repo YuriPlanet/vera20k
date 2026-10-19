@@ -67,8 +67,7 @@ fn nuke_maker_matches_native() {
         sim.resolve_type_handles(&rules);
         let owner = sim.interner.intern("Russians");
         sim.houses
-            .insert(owner, HouseState::new(owner, 1, None, true, 0, 10));
-        sim.session.house_order.push(owner);
+            .register(HouseState::new(owner, 1, None, true, 0, 10));
         sim.resolved_terrain = Some(test_grid(80, 80, |x, y| ResolvedTerrainCell {
             level: if (x, y) == cell { level } else { 0 },
             ..test_flat_cell(x, y)

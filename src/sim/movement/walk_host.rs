@@ -184,8 +184,8 @@ impl Simulation {
         //bits and marking the Foot's own.
         self.walk_find_sub_cell_dest(id, None, rules, registry, effects)
             .map_err(|cause| crate::sim::world::FrameAdvanceError {
-                tick: self.session.tick,
-                binary_frame: self.session.binary_frame,
+                tick: self.session.tick(),
+                binary_frame: self.session.binary_frame(),
                 entity_id: id,
                 cause,
             })?;
@@ -213,8 +213,8 @@ impl Simulation {
         }
         self.finish_walk_navigation(id, rules, effects)
             .map_err(|cause| crate::sim::world::FrameAdvanceError {
-                tick: self.session.tick,
-                binary_frame: self.session.binary_frame,
+                tick: self.session.tick(),
+                binary_frame: self.session.binary_frame(),
                 entity_id: id,
                 cause,
             })?;

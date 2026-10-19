@@ -58,18 +58,18 @@ fn fixture(row: &Value, rules: &RuleSet) -> (Simulation, Vec<u64>, [u64; 2], Opt
     sim.install_resolved_terrain_for_new_map(
         crate::map::resolved_terrain::ResolvedTerrainGrid::from_cells(128, 128, cells),
     );
-    sim.session.map_width = 128;
-    sim.session.map_height = 128;
+    sim.session.set_map_width_for_test(128);
+    sim.session.set_map_height_for_test(128);
     assert!(sim.rebuild_dynamic_navigation(rules));
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
     let owner = sim.interner.intern("Americans");
-    sim.houses.insert(
-        owner,
-        crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10),
-    );
-    sim.session.house_order = vec![owner];
-    sim.session.binary_frame = integer(&row["supplied"]["frame"]) as u32;
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, true, 0, 10,
+        ));
+    sim.session
+        .set_binary_frame_for_test(integer(&row["supplied"]["frame"]) as u32);
     let targets = [(20, 20), (22, 20)].map(|(rx, ry)| {
         sim.spawn_object_at_height("HTNK", "Americans", rx, ry, 0, 0, rules)
             .unwrap()

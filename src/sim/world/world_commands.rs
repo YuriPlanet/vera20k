@@ -154,15 +154,15 @@ impl Simulation {
             return None;
         }
         let index = self
-            .session
-            .house_order
+            .houses
+            .order()
             .iter()
             .position(|&registered| registered == owner)?;
         let index = i8::try_from(index).ok()?;
         CommandRecord::encode(
             crate::sim::command::CHEER_OPCODE,
             i32::from(index),
-            self.session.binary_frame as i32,
+            self.session.binary_frame() as i32,
             &[],
         )
         .ok()
@@ -188,14 +188,14 @@ impl Simulation {
             return None;
         }
         let house_id = self
-            .session
-            .house_order
+            .houses
+            .order()
             .iter()
             .position(|&owner| owner == command_owner)
             .and_then(|index| i8::try_from(index).ok())?;
         let typed = ScatterRecord {
             house_id,
-            frame: self.session.binary_frame as i32,
+            frame: self.session.binary_frame() as i32,
             entity_id: i32::try_from(entity_id).ok()?,
         };
         let mut record = CommandRecord::decode_exact(&[0; COMMAND_RECORD_LEN]).ok()?;
@@ -430,14 +430,14 @@ impl Simulation {
             return None;
         }
         let house_id = self
-            .session
-            .house_order
+            .houses
+            .order()
             .iter()
             .position(|&owner| owner == command_owner)
             .and_then(|index| i8::try_from(index).ok())?;
         let typed = MegaMissionRecord {
             house_id,
-            frame: self.session.binary_frame as i32,
+            frame: self.session.binary_frame() as i32,
             source_id: i32::try_from(source_id).ok()?,
             order,
         };
@@ -458,14 +458,14 @@ impl Simulation {
             return None;
         }
         let house_id = self
-            .session
-            .house_order
+            .houses
+            .order()
             .iter()
             .position(|&owner| owner == command_owner)
             .and_then(|index| i8::try_from(index).ok())?;
         SellWallAtCellRecord {
             house_id,
-            frame: self.session.binary_frame,
+            frame: self.session.binary_frame(),
             x,
             y,
         }
@@ -483,14 +483,14 @@ impl Simulation {
             return None;
         }
         let house_id = self
-            .session
-            .house_order
+            .houses
+            .order()
             .iter()
             .position(|&owner| owner == command_owner)
             .and_then(|index| i8::try_from(index).ok())?;
         ExitRecord {
             house_id,
-            frame: self.session.binary_frame,
+            frame: self.session.binary_frame(),
         }
         .encode()
         .ok()
@@ -511,7 +511,7 @@ impl Simulation {
                 && matches!(record.payload()[22], 1 | 2))
         {
             let house_index = usize::try_from(record.house_id()).ok()?;
-            let owner = *self.session.house_order.get(house_index)?;
+            let owner = *self.houses.order().get(house_index)?;
             return self.houses.contains_key(&owner).then(|| {
                 CommandEnvelope::new(
                     owner,
@@ -524,7 +524,7 @@ impl Simulation {
         }
         if let Some(typed) = ScatterRecord::decode(record) {
             let house_index = usize::try_from(typed.house_id).ok()?;
-            let owner = *self.session.house_order.get(house_index)?;
+            let owner = *self.houses.order().get(house_index)?;
             if !self.houses.contains_key(&owner) {
                 return None;
             }
@@ -538,7 +538,7 @@ impl Simulation {
         }
         if let Some(typed) = MegaMissionRecord::decode(record) {
             let house_index = usize::try_from(typed.house_id).ok()?;
-            let owner = *self.session.house_order.get(house_index)?;
+            let owner = *self.houses.order().get(house_index)?;
             if !self.houses.contains_key(&owner) {
                 return None;
             }
@@ -612,7 +612,7 @@ impl Simulation {
         //lock, cooldown, selection or product admission being repeated.
         if record.opcode() == crate::sim::command::CHEER_OPCODE {
             let index = usize::try_from(record.house_id()).ok()?;
-            let owner = *self.session.house_order.get(index)?;
+            let owner = *self.houses.order().get(index)?;
             return self
                 .houses
                 .contains_key(&owner)
@@ -621,7 +621,7 @@ impl Simulation {
 
         if let Some(typed) = ExitRecord::decode(record) {
             let house_index = usize::try_from(typed.house_id).ok()?;
-            let owner = *self.session.house_order.get(house_index)?;
+            let owner = *self.houses.order().get(house_index)?;
             return self
                 .houses
                 .contains_key(&owner)
@@ -630,7 +630,7 @@ impl Simulation {
 
         let typed = SellWallAtCellRecord::decode(record)?;
         let house_index = usize::try_from(typed.house_id).ok()?;
-        let owner = *self.session.house_order.get(house_index)?;
+        let owner = *self.houses.order().get(house_index)?;
         self.houses.contains_key(&owner).then(|| {
             CommandEnvelope::new(
                 owner,
@@ -937,7 +937,7 @@ impl Simulation {
             let Some(typed) = MegaMissionRecord::decode(&ordinary) else {
                 return false;
             };
-            let Some(envelope) = self.decode_native_command_record(&ordinary, self.session.tick)
+            let Some(envelope) = self.decode_native_command_record(&ordinary, self.session.tick())
             else {
                 return false;
             };
@@ -1715,7 +1715,7 @@ impl Simulation {
                             // destination setters this arm does not run.
                             // Dormant: no retail `[AircraftTypes]` entry has
                             // `Passengers=`.
-                            let now = self.session.binary_frame;
+                            let now = self.session.binary_frame();
                             let _ = self.mission_assign_exact(
                                 *transport_id,
                                 crate::sim::mission::MissionId::from_known(MissionType::Unload),
@@ -1838,7 +1838,7 @@ impl Simulation {
                         }
                         if crate::sim::superweapon::invulnerability::is_invulnerable(
                             b.invulnerability.as_ref(),
-                            self.session.binary_frame,
+                            self.session.binary_frame(),
                         ) {
                             return None;
                         }
@@ -2112,7 +2112,7 @@ impl Simulation {
                 .disguise
                 .as_ref()
                 .is_some_and(|d| d.house().is_none())
-            && self.session.current_house.is_some_and(|house| {
+            && self.session.current_house().is_some_and(|house| {
                 entity.is_disguised_to(
                     house,
                     Some(&self.fog),
@@ -2394,7 +2394,7 @@ impl Simulation {
         let Some(combat::TargetKind::Entity(flashed)) = destination.or(target) else {
             return;
         };
-        let Some(player) = self.session.current_house else {
+        let Some(player) = self.session.current_house() else {
             return;
         };
         if self.substrate.entities.get(actor_id).is_some_and(|actor| {
@@ -2668,7 +2668,7 @@ mod tests {
         );
         entity.locomotor = Some(LocomotorState::from_object_type(
             obj,
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
         ));
         entity.mover_facts.set_regular_crusher_for_test(obj.crusher);
         entity
@@ -3078,7 +3078,8 @@ mod tests {
                 .unwrap()
                 .state();
             saw_track_step |= state == BunkerState::TrackStep;
-            sim.session.binary_frame += 1;
+            sim.session
+                .set_binary_frame_for_test(sim.session.binary_frame() + 1);
             if state == BunkerState::Occupied {
                 break;
             }
@@ -3190,7 +3191,8 @@ mod tests {
                 None,
                 crate::sim::world::FrameEffects::default(),
             );
-            sim.session.binary_frame += 1;
+            sim.session
+                .set_binary_frame_for_test(sim.session.binary_frame() + 1);
             let unit = sim.substrate.entities.get(1).unwrap();
             if (unit.position.rx(), unit.position.ry()) == exit
                 && crate::sim::movement::track_head::committed_track_head(unit).is_none()

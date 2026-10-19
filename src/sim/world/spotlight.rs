@@ -286,7 +286,7 @@ impl Simulation {
             return;
         };
         let p = raw(parent);
-        let facing = parent.body_facing_current(self.session.binary_frame);
+        let facing = parent.body_facing_current(self.session.binary_frame());
         let params = rules.map_or_else(SpotlightRules::default, |r| r.general.spotlight);
         let coord = initial_endpoint(p, facing, params.location_radius);
         // ObjectUnlimbo5F4F34 queries the coordinate before entry1AC. This

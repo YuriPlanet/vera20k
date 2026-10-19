@@ -82,7 +82,7 @@ impl OrdinaryDamageHost for Observed<'_, '_> {
 
 fn spawn(scene: &mut HeadlessScenario, point: (u16, u16)) -> u64 {
     let runtime = &mut scene.runtime;
-    let owner = runtime.simulation.session.current_house.unwrap();
+    let owner = runtime.simulation.session.current_house().unwrap();
     let owner_name = runtime.simulation.resolve(owner).to_owned();
     runtime
         .simulation
@@ -190,8 +190,12 @@ fn prime(scene: &mut HeadlessScenario, input: &Value, initial: &Value, rng: &Val
     }
     // The joined native constructors receive frame 1000 and GameSpeed 4 at
     // their supplied boundary (0x00A8EB60); normalized Anim rates depend on it.
-    sim.session.binary_frame = 1000;
-    assert!(sim.session.game_options.apply_in_game_speed(4));
+    sim.session.set_binary_frame_for_test(1000);
+    assert!(
+        sim.session
+            .game_options_mut_for_test()
+            .apply_in_game_speed(4)
+    );
     sim.main_rng = serde_json::from_value(rng.clone()).unwrap();
     sim.scenario_rng = serde_json::from_value(rng.clone()).unwrap();
     sim.mapgen_rng = serde_json::from_value(rng.clone()).unwrap();

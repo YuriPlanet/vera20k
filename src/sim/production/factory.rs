@@ -1315,11 +1315,7 @@ impl FactoryRegistry {
     /// Borrow the house's sole economy directly, charging cash and accumulating
     /// spent credits together. Rate changes belong to the build-start and
     /// reached House power-assessment receivers, after this global sweep.
-    pub(super) fn step_all(
-        &mut self,
-        houses: &mut BTreeMap<InternedId, crate::sim::house_state::HouseState>,
-        frame: u32,
-    ) {
+    pub(super) fn step_all(&mut self, houses: &mut crate::sim::houses::Houses, frame: u32) {
         // Sweep order = construction order (a strictly monotonic enqueue stamp at each
         // creation -> no ties -> total order -> deterministic).
         let order: Vec<FactoryHolder> = self
@@ -1372,7 +1368,7 @@ impl FactoryRegistry {
     #[cfg(feature = "debug-tools")]
     pub(super) fn debug_complete(
         &mut self,
-        houses: &mut BTreeMap<InternedId, crate::sim::house_state::HouseState>,
+        houses: &mut crate::sim::houses::Houses,
         frame: u32,
         owner: InternedId,
     ) {
@@ -1519,7 +1515,7 @@ pub(super) fn native_factory_cadence() -> &'static serde_json::Value {
 #[cfg(test)]
 fn native_e2_head(
     reg: &FactoryRegistry,
-    houses: &BTreeMap<InternedId, crate::sim::house_state::HouseState>,
+    houses: &crate::sim::houses::Houses,
     owner: InternedId,
     type_id: InternedId,
 ) -> serde_json::Value {
@@ -1626,7 +1622,7 @@ mod tests {
                 10,
             );
             house.economy.spend_money(int(initial, "spent"));
-            let mut houses = BTreeMap::from([(owner, house)]);
+            let mut houses = [house].into_iter().collect::<crate::sim::houses::Houses>();
             assert_eq!(native_e2_head(&reg, &houses, owner, type_id), *initial);
             for phase in row["phases"].as_array().unwrap() {
                 let name = phase["name"].as_str().unwrap();
@@ -1824,10 +1820,8 @@ mod tests {
             let mut sim = Simulation::with_seed(31);
             let owner = sim.interner.intern("Americans");
             let foreign = sim.interner.intern("Foreign");
-            sim.houses.insert(
-                owner,
-                HouseState::new(owner, 0, Some(owner), true, 5000, 10),
-            );
+            sim.houses
+                .register(HouseState::new(owner, 0, Some(owner), true, 5000, 10));
             let producer_type = sim.interner.intern("PRODUCER");
             let mut producer = GameEntity::new_at_frame_zero_for_test(
                 1,
@@ -2009,8 +2003,8 @@ mod tests {
                 10,
             );
             house.economy.spend_money(int(initial, "spent"));
-            let mut houses = BTreeMap::from([(owner, house)]);
-            let project = |reg: &FactoryRegistry, houses: &BTreeMap<InternedId, HouseState>| {
+            let mut houses = [house].into_iter().collect::<crate::sim::houses::Houses>();
+            let project = |reg: &FactoryRegistry, houses: &crate::sim::houses::Houses| {
                 native_e2_head(reg, houses, owner, type_id)
             };
             let normalized = |state: &serde_json::Value| state["factory"].clone();
@@ -2102,17 +2096,16 @@ mod tests {
                 false,
                 int(&row["credits"]),
             );
-            let mut houses = BTreeMap::from([(
+            let mut houses = [crate::sim::house_state::HouseState::new(
                 owner,
-                crate::sim::house_state::HouseState::new(
-                    owner,
-                    0,
-                    None,
-                    true,
-                    int(&row["credits"]),
-                    10,
-                ),
-            )]);
+                0,
+                None,
+                true,
+                int(&row["credits"]),
+                10,
+            )]
+            .into_iter()
+            .collect::<crate::sim::houses::Houses>();
             let deposits: BTreeMap<u32, i32> = row["deposits"]
                 .as_array()
                 .unwrap()
@@ -3010,10 +3003,11 @@ mod tests {
         reg.resume(FactoryHolder::House(owner, vehicle), 540, 100, false, 13);
         reg.resume(FactoryHolder::House(owner, infantry), 540, 100, false, 13);
         // The first steps charge 700 / 53 = 13 and 200 / 53 = 3; the house has 13.
-        let mut houses = BTreeMap::from([(
-            owner,
-            crate::sim::house_state::HouseState::new(owner, 0, None, true, 13, 10),
-        )]);
+        let mut houses = [crate::sim::house_state::HouseState::new(
+            owner, 0, None, true, 13, 10,
+        )]
+        .into_iter()
+        .collect::<crate::sim::houses::Houses>();
         reg.step_all(&mut houses, 110);
         let (tank_factory, soldier_factory) = (
             &reg.factories[&FactoryHolder::House(owner, vehicle)],
@@ -3120,10 +3114,9 @@ mod tests {
         let owner = InternedId::from_index(1);
         let mut reg = reg_with(owner, ProductionCategory::Infantry, armed_factory(540));
         let mut houses = BTreeMap::new();
-        houses.insert(
-            owner,
-            crate::sim::house_state::HouseState::new(owner, 0, None, true, 540, 10),
-        );
+        houses.register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, true, 540, 10,
+        ));
         reg.factories
             .get_mut(&FactoryHolder::House(owner, ProductionCategory::Infantry))
             .unwrap()

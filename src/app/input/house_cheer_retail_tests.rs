@@ -108,7 +108,7 @@ fn actual_local_loss_refuses_eligible_cheer_without_consuming_the_input_clock() 
                 .unwrap();
         }
         if scenes[0].sim().local_player_defeated() {
-            loss_frame = Some(scenes[0].sim().session.binary_frame);
+            loss_frame = Some(scenes[0].sim().session.binary_frame());
             break;
         }
     }
@@ -117,7 +117,7 @@ fn actual_local_loss_refuses_eligible_cheer_without_consuming_the_input_clock() 
     let local = &scenes[0].sim().houses[&owners[0].0];
     assert!(local.has_lost() && !local.outcome().unwrap().exit_ready);
     for (scene, input) in scenes.iter().zip(&inputs) {
-        assert_eq!(scene.sim().session.binary_frame, loss_frame);
+        assert_eq!(scene.sim().session.binary_frame(), loss_frame);
         assert!(
             !scene.sim().session.input_locked(),
             "offline loss does not cinematic-lock"

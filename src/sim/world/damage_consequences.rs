@@ -178,8 +178,8 @@ impl DamageConsequences {
         for detonation in effects.rad_detonations.drain(..) {
             world.radiation.apply_detonation(
                 detonation,
-                world.session.binary_frame,
-                &world.session.theater,
+                world.session.binary_frame(),
+                &world.session.theater(),
                 &rules.radiation,
                 world.resolved_terrain.as_ref(),
                 &mut world.lighting_sources.pending,

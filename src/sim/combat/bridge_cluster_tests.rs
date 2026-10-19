@@ -76,7 +76,8 @@ fn world(rules: &RuleSet, input: &Value) -> Simulation {
     sim.resolve_type_handles(rules);
     sim.install_resolved_terrain_for_new_map(terrain);
     sim.bridge_state = Some(bridges);
-    sim.session.no_damage = input["no_damage"].as_bool().unwrap();
+    sim.session
+        .set_no_damage_for_test(input["no_damage"].as_bool().unwrap());
     sim
 }
 

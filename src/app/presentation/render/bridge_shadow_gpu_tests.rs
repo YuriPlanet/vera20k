@@ -1401,7 +1401,7 @@ fn retail_high_bridge_damage_and_repair_reach_shadow_pixels() {
                 "flags":c.bridge_facts.raw_flags})
                 })
                 .collect();
-            let receipt = serde_json::json!({"scene":label,"phase":phase,"frame":sim.session.binary_frame,
+            let receipt = serde_json::json!({"scene":label,"phase":phase,"frame":sim.session.binary_frame(),
             "state_hash":format!("{before:016x}"),"cells":cells,"instances":instances.len(),
             "instance_sha256":sha256_hex(bytemuck::cast_slice(&instances)),
             "changed_pixels":changed,"color_sha256":sha256_hex(&output[0]),

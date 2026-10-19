@@ -222,7 +222,8 @@ fn original_can_auto_cloak_matches_retail_inputs_and_retained_target_controls() 
         };
         let source = spawn(&mut sim, "SUB", "Americans", &input["source_xyz"]);
         let target = spawn(&mut sim, "DEST", "Russians", &input["target_xyz"]);
-        sim.session.binary_frame = u32::try_from(signed(&input["frame"])).unwrap();
+        sim.session
+            .set_binary_frame_for_test(u32::try_from(signed(&input["frame"])).unwrap());
         let actor = sim.substrate.entities.get_mut(source).unwrap();
         // Deserialize explicit native component inputs through the cloak
         // owner's existing persistence boundary; no new mutation API/state.

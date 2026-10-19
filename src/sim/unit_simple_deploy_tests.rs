@@ -64,8 +64,8 @@ fn fixture(input: &Value) -> (Simulation, RuleSet, u64) {
 
 fn native_fixture(input: &Value, before: &Value) -> (Simulation, RuleSet, u64) {
     let (mut sim, mut rules, id) = fixture(input);
-    sim.session.binary_frame = 200;
-    sim.session.tick = 200;
+    sim.session.set_binary_frame_for_test(200);
+    sim.session.set_tick_for_test(200);
     sim.mission_assign_exact(
         id,
         MissionId::from_raw(before["mission"].as_i64().unwrap() as i32),
@@ -237,7 +237,7 @@ fn mission_then_shared_stage_matches_original_frame_timelines() {
             let (mut sim, rules, id) = native_fixture(&json!({}), &frames[0]["before"]);
             for frame in frames {
                 let now = frame["frame"].as_u64().unwrap() as u32;
-                sim.session.binary_frame = now;
+                sim.session.set_binary_frame_for_test(now);
                 let context = format!("{} frame {now}", row["name"]);
                 assert_native_state(&sim, id, &frame["before"], &context);
                 let rng = sim.rng_state();
@@ -401,7 +401,8 @@ fn stock_animation_constructor_matches_native_forward_reverse_and_rng() {
         let (mut sim, rules, id) = fixture(&json!({}));
         let expected = &row["state"];
         let timer = &expected["runtime"]["frame_timer"];
-        sim.session.binary_frame = timer[0].as_u64().unwrap() as u32;
+        sim.session
+            .set_binary_frame_for_test(timer[0].as_u64().unwrap() as u32);
         let rng = sim.rng_state();
         let reverse = row["reverse"].as_bool().unwrap();
         let anim_id = sim

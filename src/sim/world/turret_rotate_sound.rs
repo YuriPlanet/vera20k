@@ -152,7 +152,7 @@ impl Simulation {
         let Some(object) = self.object_type(entity.type_ref(), rules) else {
             return false;
         };
-        object.has_turret && entity.body_facing.is_rotating(self.session.binary_frame)
+        object.has_turret && entity.body_facing.is_rotating(self.session.binary_frame())
     }
 
     /// `TechnoClass::AI_Update`'s turret block (`0x006F9FA9..0x006FA04F`) for

@@ -217,7 +217,7 @@ pub(crate) fn sell_back(
 /// (`ToggleRepair(0)`, `0x00449C41`): the computer's order at `0x0045080D`
 /// falls through to that frame's repair step (`0x00450813`).
 pub(crate) fn begin_selling(sim: &mut Simulation, rules: &RuleSet, id: u64, undeploy_order: bool) {
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     let selling = MissionId::from_known(MissionType::Selling);
     let readiness = crate::sim::mission::authority::LiveReadyInputProvider { rules };
     if sim
@@ -325,7 +325,7 @@ fn qualifying_undeploy(sim: &Simulation, rules: &RuleSet, id: u64) -> bool {
     sim.session.game_mode_nonzero()
         && sale_archive(entity)
         && sim.owner_is_human(entity.owner())
-        && sim.session.game_options.mcv_redeploy
+        && sim.session.game_options().mcv_redeploy
         && entity.mind_control.controller().is_none()
 }
 
@@ -446,7 +446,7 @@ pub(crate) fn sell_stage_one(
         sale_sounds(sim, rules, id);
         spawned
     });
-    let now = sim.session.binary_frame as i32;
+    let now = sim.session.binary_frame() as i32;
     if let Some(building) = sim.substrate.entities.get_mut(id) {
         let mut status = building.mission.handler_state();
         if building.building_down() {

@@ -14,7 +14,7 @@ fn a_psychic_sensor_senses_an_enemy_target_or_destination_in_range() {
     assert_eq!(rules.object("NAPSIS").unwrap().psychic_detection_radius, 15);
     let (mut sim, tank, americans) = super::psychic_sensor_watch_fixture(&rules);
     let detected = |sim: &Simulation| {
-        let Some(viewer) = sim.session.current_house else {
+        let Some(viewer) = sim.session.current_house() else {
             return false;
         };
         let sites: Vec<_> = sim.psychic_detection_sites(viewer, &rules).collect();
@@ -32,9 +32,9 @@ fn a_psychic_sensor_senses_an_enemy_target_or_destination_in_range() {
     let near = Some(TargetKind::Cell(18, 18));
     let far = Some(TargetKind::Cell(30, 30));
     assert!(detected(&sim));
-    sim.session.current_house = None;
+    sim.session.set_current_house_for_test(None);
     assert!(!detected(&sim), "no local player");
-    sim.session.current_house = Some(americans);
+    sim.session.set_current_house_for_test(Some(americans));
     set(&mut sim, far, None);
     assert!(!detected(&sim));
     set(&mut sim, far, Some(NavTargetRef::cell(19, 16)));

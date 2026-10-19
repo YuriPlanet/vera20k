@@ -100,12 +100,7 @@ impl<'a> SimView<'a> {
         &self.simulation.house_alliances
     }
 
-    pub fn houses(
-        &self,
-    ) -> &'a std::collections::BTreeMap<
-        crate::sim::intern::InternedId,
-        crate::sim::house_state::HouseState,
-    > {
+    pub fn houses(&self) -> &'a crate::sim::houses::Houses {
         &self.simulation.houses
     }
 
@@ -300,10 +295,10 @@ mod tests {
         )
         .expect("staged map-roster construction");
         let selected = sim.interner.get("Alpha").unwrap();
-        assert_eq!(sim.session.current_house, Some(selected));
+        assert_eq!(sim.session.current_house(), Some(selected));
         assert!(sim.houses[&selected].is_human && sim.houses[&selected].player_control);
         let first = sim.interner.get("Zulu").unwrap();
-        assert_eq!(sim.session.house_order, [first, selected]);
+        assert_eq!(sim.houses.order(), [first, selected]);
         assert!(!sim.houses[&first].is_human && !sim.houses[&first].player_control);
     }
 
@@ -365,7 +360,7 @@ mod tests {
         simulation.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
-        simulation.session.game_options.crates = true;
+        simulation.session.game_options_mut_for_test().crates = true;
         let due = CrateSlot {
             start_frame: -1,
             aux: 0,
@@ -440,10 +435,10 @@ mod tests {
         .expect("one exact generated binding");
         let mut sim = Simulation::with_seed(0xC701_0412);
         let owner = sim.interner.intern("Americans");
-        sim.houses.insert(
-            owner,
-            crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10),
-        );
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                owner, 0, None, true, 0, 10,
+            ));
         let before = sim.scenario_rng.logical_state();
 
         assert_eq!(
@@ -853,7 +848,7 @@ pub fn initialize_native_tiberium_queues(
         // so a later snapshot restore rebuilds from it, not the storage dims.
         sim.production
             .ore_growth_state
-            .reset_native_tiberium_classes_for_rect(native_rect, 0, sim.session.binary_frame);
+            .reset_native_tiberium_classes_for_rect(native_rect, 0, sim.session.binary_frame());
         return None;
     };
     Some(
@@ -867,7 +862,7 @@ pub fn initialize_native_tiberium_queues(
                 &source_object_cells,
                 sim.production.ore_growth_config.grows,
                 sim.production.ore_growth_config.spreads,
-                sim.session.binary_frame,
+                sim.session.binary_frame(),
                 native_rect,
             ),
     )
@@ -941,7 +936,7 @@ where
         lat_enabled,
         cliff_back_impassability,
         terrain.cells().len(),
-        sim.session.pixel_conversion_bounds,
+        sim.session.pixel_conversion_bounds(),
     );
     let shape = crate::map::authored_overlay::NativeOverlayMapShape::new(
         i32::try_from(map_data.header.width).unwrap_or(i32::MAX),

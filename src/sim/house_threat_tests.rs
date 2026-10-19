@@ -90,11 +90,11 @@ fn fixture_with_additions(
         .map(|name| {
             let owner = sim.interner.intern(name);
             sim.houses
-                .insert(owner, HouseState::new(owner, 0, None, true, 0, 10));
+                .register(HouseState::new(owner, 0, None, true, 0, 10));
             owner
         })
         .collect();
-    sim.session.house_order = owners;
+    sim.houses.reorder_for_test(&owners);
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     (sim, rules, registry)

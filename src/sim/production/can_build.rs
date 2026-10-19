@@ -128,7 +128,7 @@ pub(crate) fn can_build(
     if !obj.forbidden_houses.is_empty() && house_mask(&obj.forbidden_houses) & house_bit != 0 {
         return CanBuild::No;
     }
-    if !sim.session.game_options.super_weapons
+    if !sim.session.game_options().super_weapons
         && obj.category == ObjectCategory::Building
         && let Some(super_weapon) = obj.super_weapon.as_deref()
         && !rules.is_build_tech(&obj.id)

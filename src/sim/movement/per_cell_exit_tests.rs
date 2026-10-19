@@ -18,7 +18,7 @@ fn arena(rules: &RuleSet) -> Simulation {
     let mut sim = crate::sim::arena_fixture::rival_arena(rules, 0x4DC790);
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
-    sim.session.game_options.short_game = false;
+    sim.session.game_options_mut_for_test().short_game = false;
     sim
 }
 
@@ -39,7 +39,7 @@ fn team(sim: &mut Simulation, id: u64, action: TeamScriptAction) -> u64 {
         actions: vec![action],
     });
     sim.team_script_vm
-        .create_team(owner, script, vec![id], sim.session.binary_frame as i32)
+        .create_team(owner, script, vec![id], sim.session.binary_frame() as i32)
 }
 
 /// The stored membership is the earlier promotion, not a fresh geometry test.
@@ -82,7 +82,7 @@ fn a_promoted_grizzly_leaving_the_playfield_uninitializes_and_expires_targets() 
     // Native PointerExpired7079D1..707A0D shortens a targeter's still-long
     // passive scan timer with the same Scenario(4,8) semantics as70F770.
     // Rust shares that timer owner. An elapsed timer here avoids that draw.
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     sim.substrate
         .entities
         .get_mut(observer)

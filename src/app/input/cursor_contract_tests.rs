@@ -11,10 +11,10 @@ fn arena(rules: &RuleSet) -> Simulation {
     for (name, side) in [("Americans", 0), ("Russians", 1)] {
         let owner = sim.interner.intern(name);
         sim.houses
-            .insert(owner, HouseState::new(owner, side, None, true, 0, 10));
-        sim.session.house_order.push(owner);
+            .register(HouseState::new(owner, side, None, true, 0, 10));
     }
-    sim.session.current_house = sim.interner.get("Americans");
+    sim.session
+        .set_current_house_for_test(sim.interner.get("Americans"));
     crate::sim::arena_fixture::flat_arena(&mut sim, rules);
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
@@ -103,7 +103,7 @@ fn retail_cell_chords_have_their_native_cursors() {
             &sim,
             Some(&retail.rules),
             None,
-            sim.session.current_house,
+            sim.session.current_house(),
             Some(actor),
             (30, 30),
             modifier,
@@ -222,7 +222,7 @@ fn native_modifier_controls_match_production_cursor_queries() {
                         &sim,
                         Some(&retail.rules),
                         None,
-                        sim.session.current_house,
+                        sim.session.current_house(),
                         Some(actor),
                         (17, 16),
                         modifier,
@@ -418,7 +418,7 @@ fn deployed_infantry_self_hover_refuses_a_second_deploy_click() {
         super::super::context_order::self_click_command(
             &sim,
             &retail.rules,
-            sim.session.current_house.unwrap(),
+            sim.session.current_house().unwrap(),
             &[actor],
             Some(&hover)
         ),

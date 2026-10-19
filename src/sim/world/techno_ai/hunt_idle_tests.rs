@@ -31,8 +31,7 @@ fn a_hunter_without_a_target_idles_unless_a_campaign_computer_owns_it() {
         for (name, side, human) in [("Americans", 0, true), ("Russians", 1, false)] {
             let id = sim.interner.intern(name);
             sim.houses
-                .insert(id, HouseState::new(id, side, None, human, 0, 10));
-            sim.session.house_order.push(id);
+                .register(HouseState::new(id, side, None, human, 0, 10));
         }
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(game_mode_nonzero),
@@ -53,7 +52,7 @@ fn a_hunter_without_a_target_idles_unless_a_campaign_computer_owns_it() {
             )
             .unwrap()
         );
-        let now = sim.session.binary_frame;
+        let now = sim.session.binary_frame();
         let entity = sim.substrate.entities.get_mut(hunter).unwrap();
         entity.mission.apply_test_fixture(MissionTestFixture {
             current: MissionId::from_known(MissionType::Hunt),

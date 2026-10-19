@@ -161,7 +161,7 @@ fn retail_gapowr_embedded_shadow_uses_real_atlas_mask_and_native_leaf() {
         &sim.fog,
         &sim.house_alliances,
         false,
-        sim.session.binary_frame,
+        sim.session.binary_frame(),
         u32::from(house_color.0) + 1,
         observer,
     )

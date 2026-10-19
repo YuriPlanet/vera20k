@@ -50,8 +50,8 @@ fn fixture(threshold: i32, target_action: bool) -> Simulation {
     );
     sim.classify_map_triggers(None);
     sim.session.set_started(true);
-    sim.session.map_width = 32;
-    sim.session.map_height = 32;
+    sim.session.set_map_width_for_test(32);
+    sim.session.set_map_height_for_test(32);
     sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(
         32,
         32,
@@ -75,10 +75,15 @@ fn ambient_events_poll_current_signed_scalar_and_include_equality() {
     ] {
         let mut sim = fixture(threshold, false);
         // Different normal and target values expose accidental profile reads.
-        sim.session.lighting.normal.ambient_percent = 777;
-        sim.session.lighting.target_ambient = -888;
-        sim.session.lighting.current_ambient = current;
-        let prior = sim.session.lighting;
+        sim.session
+            .lighting_mut()
+            .normal_mut_for_test()
+            .ambient_percent = 777;
+        sim.session.lighting_mut().set_target_ambient_for_test(-888);
+        sim.session
+            .lighting_mut()
+            .set_current_ambient_for_test(current);
+        let prior = *sim.session.lighting();
         let rng = (
             sim.main_rng.native_state_hex(),
             sim.scenario_rng.native_state_hex(),
@@ -95,7 +100,7 @@ fn ambient_events_poll_current_signed_scalar_and_include_equality() {
             above,
             "46: {current}, {threshold}"
         );
-        assert_eq!(sim.session.lighting, prior);
+        assert_eq!(*sim.session.lighting(), prior);
         assert_eq!(
             (
                 sim.main_rng.native_state_hex(),
@@ -125,8 +130,8 @@ fn saved_pending_ambient_event_fires_after_the_production_frame_fade() {
     // Logic polls before this frame's fade. The target action changes 100
     // to 80, then the fade reaches 90; Below waits for the next Logic poll.
     assert!(!original.trigger_local_is_set_for_test(0));
-    assert_eq!(original.session.lighting.current_ambient, 90);
-    assert_eq!(original.session.lighting.target_ambient, 80);
+    assert_eq!(original.session.lighting().current_ambient(), 90);
+    assert_eq!(original.session.lighting().target_ambient(), 80);
     let saved_hash = original.state_hash();
     let bytes = GameSnapshot::save(&original, 0, 0, "Ambient events", 0);
     let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
@@ -148,7 +153,7 @@ fn saved_pending_ambient_event_fires_after_the_production_frame_fade() {
             )
             .unwrap();
         assert!(frame.tick.frame_committed);
-        assert_eq!(sim.session.lighting.current_ambient, 90);
+        assert_eq!(sim.session.lighting().current_ambient(), 90);
         assert!(
             sim.trigger_local_is_set_for_test(0),
             "Logic sees the preceding frame's fade value"

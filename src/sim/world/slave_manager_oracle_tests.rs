@@ -221,7 +221,7 @@ pub(super) fn row_scene_edited(
     scene.rules.replace_animation_sequences_for_test(catalog);
     let rules = &scene.rules;
     let sim = &mut scene.sim;
-    let frame = sim.session.binary_frame;
+    let frame = sim.session.binary_frame();
     let refinery = sim
         .spawn_object("YAREFN", "Americans", YAREFN_NW.0, YAREFN_NW.1, 0, rules)
         .expect("slave refinery");
@@ -329,7 +329,7 @@ fn place_slave(
     node: &Value,
     master: u64,
 ) -> u64 {
-    let frame = sim.session.binary_frame;
+    let frame = sim.session.binary_frame();
     let (x, y) = node.get("cell").map_or((15, 15), cell);
     let id = sim
         .construct_object_limbo_at_height(
@@ -472,7 +472,7 @@ fn compare_state(s: &SlaveScene, row: &Value, context: &str) {
         .slave_manager
         .as_ref()
         .unwrap();
-    let frame = sim.session.binary_frame as i64;
+    let frame = sim.session.binary_frame() as i64;
     let nodes: Vec<Value> = manager
         .nodes()
         .iter()
@@ -808,7 +808,7 @@ fn slave_mission_harvest_matches_the_original_dig() {
             crate::sim::world::FrameEffects::default(),
         );
         if guard {
-            let frame = s.scene.sim.session.binary_frame;
+            let frame = s.scene.sim.session.binary_frame();
             s.scene
                 .sim
                 .mission_queue_exact(

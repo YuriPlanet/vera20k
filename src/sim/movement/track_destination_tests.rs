@@ -42,7 +42,8 @@ fn shared_null_destination_matches_original_gate_and_timer_boundaries() {
     for row in rows {
         let input = &row["input"];
         let mut sim = crate::sim::world::Simulation::with_seed(1);
-        sim.session.binary_frame = input["frame"].as_u64().unwrap() as u32;
+        sim.session
+            .set_binary_frame_for_test(input["frame"].as_u64().unwrap() as u32);
         let mut rules = crate::rules::ruleset::RuleSet::from_ini(
             &crate::rules::ini_parser::IniFile::from_str(""),
         )
@@ -268,7 +269,7 @@ fn destination_fixture(
     entity.lifecycle.set_in_limbo_for_test(false);
     let mut sim = crate::sim::world::Simulation::new();
     sim.interner = crate::sim::intern::test_interner();
-    sim.session.binary_frame = 100;
+    sim.session.set_binary_frame_for_test(100);
     sim.install_resolved_terrain_for_new_map(terrain(input["bridge"] == true));
     sim.install_fixture_path_grid(Some(&crate::sim::pathfinding::PathGrid::new(32, 32)));
     sim.substrate.entities.insert(entity);
@@ -922,7 +923,7 @@ fn destination_receipt_actor(
     actor.set_on_bridge(before["on_bridge"].as_u64().unwrap() != 0);
     actor.locomotor = Some(LocomotorState::from_object_type(
         object,
-        sim.session.binary_frame,
+        sim.session.binary_frame(),
     ));
     let destination = coord(&before["locomotor"]["destination"]);
     let head = coord(&before["locomotor"]["head"]);
@@ -990,7 +991,8 @@ fn noncell_foot_destinations_match_original_anytown_class_calls() {
         let input = &row["input"];
         let family = input["family"].as_str().unwrap();
         let readback = &row["destination_input_readback"];
-        sim.session.binary_frame = readback["frame"].as_u64().unwrap() as u32;
+        sim.session
+            .set_binary_frame_for_test(readback["frame"].as_u64().unwrap() as u32);
         assert_eq!(
             rules.general.blockage_path_delay_ticks,
             readback["rules_repath_delay"].as_i64().unwrap() as i32

@@ -454,8 +454,7 @@ fn sov03_authored_trigger80_teams_walk_and_recycle_all_four_civilian_types() {
         let country = sim.interner.intern("Civie3Country");
         let mut state = HouseState::new(house, 2, Some(country), false, 0, 1);
         state.project_country_mults(&rules, &sim.interner);
-        sim.houses.insert(house, state);
-        sim.session.house_order.push(house);
+        sim.houses.register(state);
         sim.install_team_ai_registry(&teams, &rules).unwrap();
         sim.session.install_waypoints(&cropped.waypoints);
         spawn(&mut sim, &rules, "YAGRND", "Civie3", 18, 10);
@@ -476,8 +475,8 @@ fn sov03_authored_trigger80_teams_walk_and_recycle_all_four_civilian_types() {
         assert_eq!(sim.team_script_vm.teams_in_order().count(), 0);
         // Reach the authored elapsed-time threshold without simulating an
         //unrelated campaign. The real Event13 timer and Action80 run here.
-        sim.session.tick = 1600;
-        sim.session.binary_frame = 1600;
+        sim.session.set_tick_for_test(1600);
+        sim.session.set_binary_frame_for_test(1600);
         frame(&mut sim);
         let members: Vec<_> = sim
             .substrate

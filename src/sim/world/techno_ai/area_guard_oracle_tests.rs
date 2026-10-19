@@ -99,8 +99,12 @@ fn fixture(row: &Value, state: &Value, rules: &RuleSet) -> SuppliedFootFixture {
         );
     }
     f.sim.install_resolved_terrain_for_new_map(terrain);
-    f.sim.session.binary_frame = state["frame"].as_u64().unwrap() as u32;
-    f.sim.session.tick = state["frame"].as_u64().unwrap();
+    f.sim
+        .session
+        .set_binary_frame_for_test(state["frame"].as_u64().unwrap() as u32);
+    f.sim
+        .session
+        .set_tick_for_test(state["frame"].as_u64().unwrap());
     f.sim.session.set_game_mode(
         crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
             state["game_mode"] != 0,
@@ -117,8 +121,8 @@ fn fixture(row: &Value, state: &Value, rules: &RuleSet) -> SuppliedFootFixture {
         )
         .unwrap()
         .owner();
-    f.sim.session.current_house = Some(friendly);
-    f.sim.session.house_order = vec![friendly, enemy];
+    f.sim.session.set_current_house_for_test(Some(friendly));
+    f.sim.houses.reorder_for_test(&[friendly, enemy]);
     for (name, _) in roles {
         let before = &state["actors"][name];
         let id = f
@@ -405,8 +409,12 @@ fn area_guard_events_commence_and_in_range_dispatch_match_original_histories() {
             if label == "original_Move_retask" {
                 continue;
             }
-            f.sim.session.binary_frame = boundary["before"]["frame"].as_u64().unwrap() as u32;
-            f.sim.session.tick = boundary["before"]["frame"].as_u64().unwrap();
+            f.sim
+                .session
+                .set_binary_frame_for_test(boundary["before"]["frame"].as_u64().unwrap() as u32);
+            f.sim
+                .session
+                .set_tick_for_test(boundary["before"]["frame"].as_u64().unwrap());
             assert_state(&mut f, row, &boundary["before"]);
             if label.starts_with("delivered_original_") {
                 let command = delivered_command(&f, row, boundary);
@@ -427,7 +435,7 @@ fn area_guard_events_commence_and_in_range_dispatch_match_original_histories() {
                     .unwrap();
                 assert_eq!(
                     f.sim
-                        .mission_commence_exact(actor, f.sim.session.binary_frame)
+                        .mission_commence_exact(actor, f.sim.session.binary_frame())
                         .unwrap(),
                     boundary["returned_eax"] != 0
                 );
@@ -480,7 +488,7 @@ fn area_guard_snapshot_retains_pending_order_post_and_retask_references() {
     f.sim
         .queue_command(crate::sim::command::CommandEnvelope::new(
             owner,
-            f.sim.session.tick + 1,
+            f.sim.session.tick() + 1,
             command,
         ));
     let saved = GameSnapshot::save(&f.sim, 0, 0, "Area Guard pending retask", 0);

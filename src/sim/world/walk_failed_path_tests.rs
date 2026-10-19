@@ -15,7 +15,7 @@ fn human_house(sim: &mut Simulation) {
     let owner = sim.interner.intern("Americans");
     let mut house = crate::sim::house_state::HouseState::new(owner, 0, None, false, 0, 0);
     house.player_control = true;
-    sim.houses.insert(owner, house);
+    sim.houses.register(house);
 }
 
 fn engineer_at(sim: &mut Simulation, rules: &RuleSet, cell: (u16, u16)) -> u64 {
@@ -25,7 +25,7 @@ fn engineer_at(sim: &mut Simulation, rules: &RuleSet, cell: (u16, u16)) -> u64 {
     sim.mission_assign_exact(
         id,
         MissionId::from_known(MissionType::Move),
-        sim.session.binary_frame,
+        sim.session.binary_frame(),
     )
     .unwrap();
     id
@@ -48,7 +48,16 @@ fn order_walk(sim: &mut Simulation, rules: &RuleSet, id: u64, target: (u16, u16)
 /// Eight Buildings around `centre`: the zone labels stay connected while the
 /// cell search cannot reach the centre, which is the supplied-NULL core result
 /// of the oracle's astar_null rows.
+/// The huts' computer owner.
+fn hut_house(sim: &mut Simulation) {
+    let soviets = sim.interner.intern("Soviets");
+    sim.houses.get_or_register_for_test(soviets, || {
+        crate::sim::house_state::HouseState::new(soviets, 1, None, false, 0, 0)
+    });
+}
+
 pub(super) fn enclose(sim: &mut Simulation, rules: &RuleSet, centre: (u16, u16)) {
+    hut_house(sim);
     for dx in -1i32..=1 {
         for dy in -1i32..=1 {
             if dx == 0 && dy == 0 {
@@ -125,6 +134,7 @@ fn far_failure_stops_walk_clears_target_and_queues_guard_for_a_human_house() {
 fn building_target_redirects_to_a_nearby_cell_and_the_walk_completes_there() {
     let (mut sim, rules, registry) = fixture();
     human_house(&mut sim);
+    hut_house(&mut sim);
     sim.spawn_object("CABHUT", "Soviets", 13, 10, 0, &rules)
         .unwrap();
     let id = engineer_at(&mut sim, &rules, (10, 10));
@@ -170,6 +180,7 @@ fn obstructed_target_beyond_close_enough_redirects_only_when_the_nearby_cell_is_
     // actor's House); FNPC's raw-occupation admission then skips the seed
     // itself. The supplied answer stands in for that occupant, and a Building
     // keeps FNPC off the seed cell the same way.
+    hut_house(&mut sim);
     sim.spawn_object("CABHUT", "Soviets", 13, 10, 0, &rules)
         .unwrap();
     // 0x4D3A9B: 768 leptons > CloseEnough 576 enters the code-6 arm. FNPC from
@@ -361,7 +372,7 @@ fn jumpjet_infantry_damage_scatter_takes_the_infantry_setter() {
     sim.mission_assign_exact(
         victim,
         MissionId::from_known(MissionType::Guard),
-        sim.session.binary_frame,
+        sim.session.binary_frame(),
     )
     .unwrap();
     sim.substrate
@@ -412,16 +423,16 @@ fn infantry_damage_scatter_reaches_the_ordinary_walk_process() {
         "human Scatter input was parsed"
     );
     let owner = sim.interner.intern("Americans");
-    sim.houses.insert(
-        owner,
-        crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10),
-    );
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, true, 0, 10,
+        ));
     let victim = engineer_at(&mut sim, &rules, (10, 10));
     let attacker = engineer_at(&mut sim, &rules, (8, 10));
     sim.mission_assign_exact(
         victim,
         MissionId::from_known(MissionType::Guard),
-        sim.session.binary_frame,
+        sim.session.binary_frame(),
     )
     .unwrap();
     let e = sim.substrate.entities.get_mut(victim).unwrap();

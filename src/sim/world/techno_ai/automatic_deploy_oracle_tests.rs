@@ -30,7 +30,7 @@ fn native_automatic_guard_admission_stop_order_and_signed_caller_returns() {
     assert_eq!(rows.len(), 90);
     for row in rows {
         let (mut sim, rules, id) = native_deploy_fixture(row);
-        let now = sim.session.binary_frame;
+        let now = sim.session.binary_frame();
         // The original receipt starts at the class handler, after MissionAI's
         // due gate. Supply that admission through the timer's owning fixture.
         let actor = sim.substrate.entities.get_mut(id).unwrap();
@@ -177,18 +177,22 @@ fn retail_gi_and_guardian_gi_deploy_then_team_move_in_bound_runtime() {
     let mut sim = Simulation::with_seed(31);
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
+    // A normal game: its unit totals keep the buildingless Houses undefeated.
+    sim.session.game_options_mut_for_test().short_game = false;
     // Supply the Clear/Foot row that ordinary Infantry Unlimbo reads before
     // these retail automatic-deploy frames begin.
     let terrain = test_flat_ground_grid(64);
-    sim.session.map_width = 64;
-    sim.session.map_height = 64;
+    sim.session.set_map_width_for_test(64);
+    sim.session.set_map_height_for_test(64);
     sim.install_resolved_terrain_for_new_map(terrain.clone());
     sim.playfield_bounds = Some(crate::sim::arena_fixture::OPEN_PLAYFIELD);
     sim.playfield_size_height = Some(20);
     assert!(sim.rebuild_dynamic_navigation(&rules));
+    // Funds and a factory keep the computer's Building strategy from selling
+    // off and sending every unit to Hunt.
     for (name, human) in [("Americans", false), ("French", true)] {
         let owner = sim.interner.intern(name);
-        let mut house = HouseState::new(owner, 0, None, human, 0, 10);
+        let mut house = HouseState::new(owner, 0, None, human, 10_000, 10);
         house.set_difficulty(
             HouseDifficulty::Normal,
             &rules.general,
@@ -197,7 +201,7 @@ fn retail_gi_and_guardian_gi_deploy_then_team_move_in_bound_runtime() {
             0,
             0,
         );
-        sim.houses.insert(owner, house);
+        sim.houses.register(house);
     }
     let gi = sim
         .spawn_object("E1", "Americans", 10, 10, 0, &rules)
@@ -209,6 +213,8 @@ fn retail_gi_and_guardian_gi_deploy_then_team_move_in_bound_runtime() {
         .spawn_object("E2", "Americans", 20, 20, 0, &rules)
         .unwrap();
     let human = sim.spawn_object("E1", "French", 40, 40, 0, &rules).unwrap();
+    sim.spawn_object("GAPILE", "Americans", 50, 50, 0, &rules)
+        .unwrap();
     sim.resolve_type_handles(&rules);
     let mut resources = SimResources::empty();
     resources.rules = rules;
@@ -302,7 +308,7 @@ fn retail_gi_and_guardian_gi_deploy_then_team_move_in_bound_runtime() {
             owner,
             script,
             vec![id],
-            sim.session.binary_frame as i32,
+            sim.session.binary_frame() as i32,
         );
         sim.team_script_vm.seek_line_for_test(team, 0);
     }
@@ -384,7 +390,7 @@ fn retail_gi_and_guardian_gi_deploy_then_team_move_in_bound_runtime() {
                 .map(|team| (team.id(), team.cursor(), team.advance_pending(), team.formed(), team.refusal()));
             format!(
                 "id={id} frame={} position={:?} Doing={} current={:?} queued={:?} NavCom={:?} destination={:?} head={:?} moving={:?} immunity={} team={team:?}",
-                sim.session.binary_frame,
+                sim.session.binary_frame(),
                 crate::sim::movement::ground_pose::position_world_coord(&actor.position),
                 actor.mission_leaf.as_infantry().unwrap().doing(),
                 actor.mission.current(),

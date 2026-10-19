@@ -133,7 +133,8 @@ fn scene(row: &Value, terminal: bool, rules: &RuleSet) -> (Simulation, u64) {
     let mut sim = Simulation::with_seed(31);
     sim.main_rng = SimRng::new(31).into();
     sim.scenario_rng = SimRng::new(31);
-    sim.session.binary_frame = row["supplied"]["frame"].as_i64().unwrap() as u32;
+    sim.session
+        .set_binary_frame_for_test(row["supplied"]["frame"].as_i64().unwrap() as u32);
     sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
         row["before_native_id"].as_u64().unwrap() as u32,
     ));
@@ -280,7 +281,7 @@ fn scalable_unit_shots_emit_a_real_trailer_on_the_shared_eighth_member_cadence()
     assert_eq!(sim.projectiles.scaled_spawn_delay(kind), 4);
     let (&bullet, projectile) = sim.projectiles.iter().next().unwrap();
     let origin = projectile.position;
-    sim.session.binary_frame = 4;
+    sim.session.set_binary_frame_for_test(4);
     sim.object_ai_visit_one_with_effects(bullet, Some(&rules), ObjectAiCtx::default());
     let bubble = only_bubble(&sim);
     let position = sim.anim(bubble).unwrap().world_coord;
@@ -341,7 +342,8 @@ fn projectile_trailer_retail_constructor_rng_and_complete_lifetime_match_native(
             row["after_bullet_drain"]["anim"]
         );
         for frame in row["anim_frames"].as_array().unwrap() {
-            sim.session.binary_frame = frame["frame"].as_u64().unwrap() as u32;
+            sim.session
+                .set_binary_frame_for_test(frame["frame"].as_u64().unwrap() as u32);
             sim.visit_anim(
                 bubble,
                 &rules,
@@ -478,7 +480,9 @@ fn projectile_trailer_save_load_preserves_live_and_pending_cleanup_boundaries() 
         }
         for frame in row["anim_frames"].as_array().unwrap() {
             for loaded in [&mut first, &mut second] {
-                loaded.session.binary_frame = frame["frame"].as_u64().unwrap() as u32;
+                loaded
+                    .session
+                    .set_binary_frame_for_test(frame["frame"].as_u64().unwrap() as u32);
                 loaded.visit_anim(
                     bubble,
                     &rules,
@@ -648,7 +652,7 @@ fn scalable_snapshot_mechanical_state_and_native_load_have_distinct_membership()
     // until another Unit shot overwrites it, through the same AI/Anim owner.
     let bullet = *loaded.projectiles.iter().next().unwrap().0;
     for world in [&mut loaded, &mut control] {
-        world.session.binary_frame = 4;
+        world.session.set_binary_frame_for_test(4);
         world.object_ai_visit_one_with_effects(bullet, Some(&rules), ObjectAiCtx::default());
         only_bubble(world);
     }

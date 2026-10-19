@@ -991,7 +991,7 @@ mod tests {
                     "Previous empty-opponent control: victory on production frame {frame}; 19 authored entities retained"
                 );
             } else {
-                assert_eq!(loaded.sim().session.tick, 300);
+                assert_eq!(loaded.sim().session.tick(), 300);
                 assert_eq!(victory_edges, 0, "no phantom victory EVA");
                 let exit = crate::sim::command::CommandEnvelope::new(
                     owner,

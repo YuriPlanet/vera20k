@@ -816,10 +816,10 @@ impl Simulation {
 
         TelemetrySnapshot {
             version: TELEMETRY_SCHEMA_VERSION,
-            tick: self.session.tick,
-            binary_frame: self.session.binary_frame,
-            map_width: self.session.map_width,
-            map_height: self.session.map_height,
+            tick: self.session.tick(),
+            binary_frame: self.session.binary_frame(),
+            map_width: self.session.map_width(),
+            map_height: self.session.map_height(),
             entities_total,
             houses,
             spots,
@@ -896,10 +896,10 @@ impl Simulation {
             }
         }
         ReportPoint {
-            tick: self.session.tick,
+            tick: self.session.tick(),
             entities_total,
-            map_width: self.session.map_width,
-            map_height: self.session.map_height,
+            map_width: self.session.map_width(),
+            map_height: self.session.map_height(),
             houses: rows,
             timing: None,
             profile: self.frame_profile().report(),

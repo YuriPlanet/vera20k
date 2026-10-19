@@ -719,7 +719,7 @@ mod tests {
             1,
         );
         let mut sim = Simulation::new();
-        sim.session.no_damage = true;
+        sim.session.set_no_damage_for_test(true);
         seed_one_at(&mut sim, &rules, "TREE01", (0, 0));
         let stable_id = sim.production.terrain_object_cells[&(0, 0)];
         let health = sim.production.terrain_objects[&stable_id].health;

@@ -63,12 +63,9 @@ pub(super) fn retail_dustbowl_rocketeer()
     } = &mut scenario.runtime;
     for (name, side, human) in [("Americans", 0, true), ("Russians", 1, false)] {
         let house = sim.interner.intern(name);
-        sim.houses
-            .entry(house)
-            .or_insert_with(|| HouseState::new(house, side, None, human, 10_000, 10));
-        if !sim.session.house_order.contains(&house) {
-            sim.session.house_order.push(house);
-        }
+        sim.houses.get_or_register_for_test(house, || {
+            HouseState::new(house, side, None, human, 10_000, 10)
+        });
     }
     let (rocketeer, x, y) = (40..100_u16)
         .flat_map(|y| (40..100_u16).map(move |x| (x, y)))
@@ -177,7 +174,7 @@ fn retail_dustbowl_rocketeer_flies_hovers_and_fires_in_its_airborne_poses() {
     let americans = sim.interner.intern("Americans");
     let order = CommandEnvelope::new(
         americans,
-        sim.session.tick + 1,
+        sim.session.tick() + 1,
         Command::Move {
             entity_id: rocketeer,
             target_rx: x + 8,
@@ -237,7 +234,7 @@ fn retail_dustbowl_rocketeer_flies_hovers_and_fires_in_its_airborne_poses() {
     sim.resolve_type_handles(&resources.rules);
     let attack = CommandEnvelope::new(
         americans,
-        sim.session.tick + 1,
+        sim.session.tick() + 1,
         Command::Attack {
             attacker_id: rocketeer,
             target_id: conscript,
@@ -340,7 +337,7 @@ fn retail_dustbowl_parked_rocketeer_engages_nearby_enemies() {
     let americans = sim.interner.intern("Americans");
     let park = CommandEnvelope::new(
         americans,
-        sim.session.tick + 1,
+        sim.session.tick() + 1,
         Command::Move {
             entity_id: rocketeer,
             target_rx: x + 8,
@@ -440,7 +437,7 @@ fn a_parked_rocketeer_scans_and_fires_on_move() {
     let americans = sim.interner.intern("Americans");
     let order = CommandEnvelope::new(
         americans,
-        sim.session.tick + 1,
+        sim.session.tick() + 1,
         Command::Move {
             entity_id: 1,
             target_rx: 56,
@@ -556,7 +553,7 @@ fn a_grounded_rocketeer_fidgets_and_turns_to_the_fidgets_facing() {
             (Some(action), DO_READY) => {
                 fidgets.push((
                     action,
-                    entity.body_facing_byte(sim.session.binary_frame - 1),
+                    entity.body_facing_byte(sim.session.binary_frame() - 1),
                 ));
                 playing = None;
             }
@@ -603,7 +600,7 @@ fn retail_dustbowl_shot_down_rocketeer_falls_and_leaves_no_body() {
     let americans = sim.interner.intern("Americans");
     let hold = CommandEnvelope::new(
         americans,
-        sim.session.tick + 1,
+        sim.session.tick() + 1,
         Command::Move {
             entity_id: rocketeer,
             target_rx: x + 8,
@@ -628,7 +625,7 @@ fn retail_dustbowl_shot_down_rocketeer_falls_and_leaves_no_body() {
     let russians = sim.interner.intern("Russians");
     let attack = CommandEnvelope::new(
         russians,
-        sim.session.tick + 1,
+        sim.session.tick() + 1,
         Command::Attack {
             attacker_id: flak,
             target_id: rocketeer,
@@ -823,11 +820,13 @@ fn rocketeer_crash_fixture(
         off_108: 64,
     });
     sim.playfield_size_height = Some(64);
-    sim.session.binary_frame = 1000;
-    for (name, human) in [("Americans", true), ("Soviets", false)] {
+    sim.session.set_binary_frame_for_test(1000);
+    // Both Houses human: the native harness steps objects alone, so no
+    // computer House update draws from the Scenario stream.
+    for name in ["Americans", "Soviets"] {
         let house = sim.interner.intern(name);
         sim.houses
-            .insert(house, HouseState::new(house, 0, None, human, 0, 10));
+            .register(HouseState::new(house, 0, None, true, 0, 10));
     }
     let reveal = |sim: &mut super::Simulation, id: u64, rx: u16, ry: u16| {
         assert!(matches!(
@@ -1077,12 +1076,12 @@ fn a_shot_down_rocketeer_falls_like_the_native_crash() {
             // The native harness kills between visits, then increments its
             // absolute frame before frame_step. advance_tick commits its
             // frame after the visit; align inputs rather than retiming Stage.
-            sim.session.binary_frame = 1000 + index as u32;
+            sim.session.set_binary_frame_for_test(1000 + index as u32);
             if second == Some(index) {
                 kill(&mut sim, &output["kills"][1], "second kill");
                 native_before = index_after(&output["kills"][1]);
             }
-            sim.session.binary_frame = 1001 + index as u32;
+            sim.session.set_binary_frame_for_test(1001 + index as u32);
             let before = sim.scenario_rng.logical_view().index_a;
             sim.advance_tick(&[], Some(&rules), Some(&grid), None, 67);
             let native_after = expected["scenario_rng"][0].as_i64().unwrap() as i32;
@@ -1621,7 +1620,7 @@ fn a_grounded_rocketeers_move_order_survives_its_first_mission_visit() {
     let americans = sim.interner.intern("Americans");
     let order = CommandEnvelope::new(
         americans,
-        sim.session.tick + 1,
+        sim.session.tick() + 1,
         Command::Move {
             entity_id: 1,
             target_rx: 60,

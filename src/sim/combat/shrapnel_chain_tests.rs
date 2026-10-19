@@ -101,7 +101,7 @@ impl PrismScene {
     }
 
     fn launch_from(&mut self, source: u64, target: TargetKind) -> u64 {
-        self.world.session.binary_frame = 100;
+        self.world.session.set_binary_frame_for_test(100);
         let (target_coords, target_type_ref) = match target {
             TargetKind::Entity(id) => {
                 let target = self.world.substrate.entities.get(id).unwrap();
@@ -309,7 +309,10 @@ fn retail_comet_terrain_child_keeps_construction_height_through_first_logic() {
         ),
         Some(tree_coord)
     );
-    scene.world.session.binary_frame += 1;
+    scene
+        .world
+        .session
+        .set_binary_frame_for_test(scene.world.session.binary_frame() + 1);
     scene
         .world
         .visit_combat_tail(child.0, &scene.rules, None, FrameEffects::default());
@@ -362,7 +365,10 @@ fn retail_elite_comet_terrain_child_recurses_from_its_tree_on_first_logic() {
         })
         .unwrap();
     scene.world.lifecycle_outputs.clear();
-    scene.world.session.binary_frame += 1;
+    scene
+        .world
+        .session
+        .set_binary_frame_for_test(scene.world.session.binary_frame() + 1);
     scene
         .world
         .visit_combat_tail(child, &scene.rules, None, FrameEffects::default());
@@ -471,7 +477,10 @@ fn stock_shock_repairs_the_live_prism_terrain_child_before_limbo() {
     };
     assert!(position(parent) < position(spacer) && position(spacer) < position(shock));
     scene.world.clear_lifecycle_test_events_for_test();
-    scene.world.session.binary_frame += 1;
+    scene
+        .world
+        .session
+        .set_binary_frame_for_test(scene.world.session.binary_frame() + 1);
     scene
         .world
         .visit_combat_tail(parent, &scene.rules, None, FrameEffects::default());
@@ -582,7 +591,7 @@ fn terrain_bullet_expiry_matches_original_live_observer() {
             return;
         };
         let expected = &row["observer"];
-        scene.world.session.binary_frame = 1000;
+        scene.world.session.set_binary_frame_for_test(1000);
         scene.world.scenario_rng = crate::sim::rng::SimRng::new(1);
         scene
             .world
@@ -1350,7 +1359,10 @@ fn elite_bounces_recurse_only_when_children_get_their_logic_visits() {
         5
     );
     for _ in 0..20 {
-        scene.world.session.binary_frame += 1;
+        scene
+            .world
+            .session
+            .set_binary_frame_for_test(scene.world.session.binary_frame() + 1);
         scene
             .world
             .visit_combat_tail(first_child, &scene.rules, None, FrameEffects::default());

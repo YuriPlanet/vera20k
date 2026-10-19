@@ -80,7 +80,7 @@ fn supplied_world(rules: &RuleSet, case: &Value) -> Simulation {
     });
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
-    sim.session.binary_frame = 173;
+    sim.session.set_binary_frame_for_test(173);
     for (id, owner, x) in [
         (1, "Americans", 10),
         (2, "Russians", 12),
@@ -88,8 +88,7 @@ fn supplied_world(rules: &RuleSet, case: &Value) -> Simulation {
     ] {
         let owner = sim.intern(owner);
         sim.houses
-            .entry(owner)
-            .or_insert_with(|| HouseState::new(owner, 0, None, true, 0, 10));
+            .get_or_register_for_test(owner, || HouseState::new(owner, 0, None, true, 0, 10));
         let mut entity = GameEntity::new_at_frame_zero_for_test(
             id,
             x,
@@ -123,7 +122,8 @@ fn supplied_world(rules: &RuleSet, case: &Value) -> Simulation {
 
 fn supply_step(sim: &mut Simulation, rules: &RuleSet, input: &Value) {
     use crate::sim::combat::TargetKind;
-    sim.session.binary_frame = input["frame"].as_u64().unwrap_or(173) as u32;
+    sim.session
+        .set_binary_frame_for_test(input["frame"].as_u64().unwrap_or(173) as u32);
     sim.substrate.occupancy = OccupancyGrid::new();
     for (index, id, x) in [(0, 1, 10), (1, 2, 12)] {
         let deck = input["on_bridge"][index].as_i64().unwrap_or(0) != 0;
@@ -383,12 +383,12 @@ fn move_retail_fv(
         .unwrap()
         .passive_scan
         .set_passive_scan_timer_for_test(MissionTimer::armed(
-            runtime.simulation.session.binary_frame,
+            runtime.simulation.session.binary_frame(),
             1_000_000,
         ));
     let command = CommandEnvelope::new(
         owner,
-        runtime.simulation.session.tick + 1,
+        runtime.simulation.session.tick() + 1,
         Command::Move {
             entity_id: id,
             target_rx: destination.0,
@@ -412,7 +412,7 @@ fn move_retail_fv(
             stop_sent = true;
             CommandEnvelope::new(
                 owner,
-                runtime.simulation.session.tick + 1,
+                runtime.simulation.session.tick() + 1,
                 Command::Stop { entity_id: id },
             )
         });
@@ -548,7 +548,7 @@ pub(super) fn retail_hills_collapsed_scene(
         assert!(!cell.base_ground_walk_blocked);
         assert_ne!(cell.bridge_facts.raw_flags & 0x100, 0);
     }
-    let owner = scenario.sim().session.current_house.unwrap();
+    let owner = scenario.sim().session.current_house().unwrap();
     let source = move_retail_fv(&mut scenario, owner, (64, 72), (64, 69), (64, 69), true);
     // Initially same owner so movement preparation cannot cause combat. The
     // hostile House link is a supplied acquisition-entry boundary below.
@@ -564,21 +564,12 @@ pub(super) fn retail_hills_collapsed_scene(
         .runtime
         .simulation
         .houses
-        .entry(enemy)
-        .or_insert_with(|| {
+        .get_or_register_for_test(enemy, || {
             let mut house = HouseState::new(enemy, 0, None, true, 0, 10);
             house.initialize_scenario_name("Russians");
             house
         });
-    if !scenario
-        .runtime
-        .simulation
-        .session
-        .house_order
-        .contains(&enemy)
-    {
-        scenario.runtime.simulation.session.house_order.push(enemy);
-    }
+    if !scenario.runtime.simulation.houses.order().contains(&enemy) {}
     scenario
         .runtime
         .simulation
@@ -592,7 +583,7 @@ pub(super) fn retail_hills_collapsed_scene(
             .mission_assign_exact(
                 source,
                 MissionId::from_known(MissionType::Guard),
-                runtime.simulation.session.binary_frame,
+                runtime.simulation.session.binary_frame(),
             )
             .unwrap();
         let entity = runtime
@@ -606,7 +597,7 @@ pub(super) fn retail_hills_collapsed_scene(
         // reject earlier in T58; the busy deck source reaches Evaluate's G27.
         // The reverse direction rejects in InRange before G27.
         entity.rearm_timer.set_for_test(CdTimer::started(
-            runtime.simulation.session.binary_frame as i32,
+            runtime.simulation.session.binary_frame() as i32,
             10,
         ));
         passive_acquire_step(

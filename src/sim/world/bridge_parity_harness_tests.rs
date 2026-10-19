@@ -717,7 +717,7 @@ fn bridge_crossing_replay_is_deterministic_and_baseline_stable() {
     );
     let mut log = ReplayLog::new(ReplayHeader {
         version: 1,
-        pixel_conversion_bounds: rec.session.pixel_conversion_bounds,
+        pixel_conversion_bounds: rec.session.pixel_conversion_bounds(),
         tick_hz: 15,
         seed: BRIDGE_HARNESS_SEED,
         map_name: "bridge_parity_harness".to_string(),

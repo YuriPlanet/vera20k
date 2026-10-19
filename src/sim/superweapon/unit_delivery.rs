@@ -136,7 +136,7 @@ pub(crate) fn launch(
     let Some(delivery_owner) = delivery_owner(sim, rules, owner, config.owner) else {
         return;
     };
-    let frame = sim.session.binary_frame;
+    let frame = sim.session.binary_frame();
     let request = PendingDelivery {
         sw_type,
         owner: delivery_owner,
@@ -174,7 +174,7 @@ pub(crate) fn tick(
     let mut retained = Vec::new();
     // ra2-mono's support scheduler visits pending entries last-to-first.
     for request in pending.into_iter().rev() {
-        if sim.session.binary_frame.wrapping_sub(request.due_frame) as i32 >= 0 {
+        if sim.session.binary_frame().wrapping_sub(request.due_frame) as i32 >= 0 {
             apply(sim, rules, request, registry, effects);
         } else {
             retained.push(request);
@@ -345,7 +345,7 @@ fn place(
         id,
         MissionId::from_known(mission),
         1,
-        sim.session.binary_frame,
+        sim.session.binary_frame(),
         &crate::sim::mission::authority::LiveReadyInputProvider { rules },
     );
     // Ares PlaceUnits explicitly scatters flying Foot types after Put. Their

@@ -24,11 +24,14 @@ fn fixture() -> (Simulation, RuleSet, InternedId, InternedId, InternedId) {
     let b = sim.interner.intern("Soviet");
     let c = sim.interner.intern("Third");
     for owner in [a, b, c] {
-        sim.houses.insert(
+        sim.houses.register(HouseState::new(
             owner,
-            HouseState::new(owner, owner.index() as u8, None, true, 10_000, 10),
-        );
-        sim.session.house_order.push(owner);
+            owner.index() as u8,
+            None,
+            true,
+            10_000,
+            10,
+        ));
     }
     (sim, rules, a, b, c)
 }
@@ -83,7 +86,7 @@ fn power(sim: &mut Simulation, rules: &RuleSet) {
         &mut sim.substrate.entities,
         rules,
         &sim.interner,
-        sim.session.binary_frame,
+        sim.session.binary_frame(),
     );
 }
 
@@ -245,7 +248,7 @@ pub fn gap_operational_power_loss_views() -> Vec<(
 
     // Actual nonlethal ReceiveDamage followed by aggregate power assessment.
     // House reconciliation must retain the deposit until its Building turn.
-    sim.session.binary_frame = 238;
+    sim.session.set_binary_frame_for_test(238);
     damage(&mut sim, &rules, 50, 75);
     power(&mut sim, &rules);
     assert!(sim.power_states[&last].is_low_power);
@@ -281,7 +284,7 @@ pub fn gap_operational_power_loss_views() -> Vec<(
         live.restore_after_snapshot_load().unwrap();
         assert_eq!(live.state_hash(), before);
         live.reconcile_active_vision_structures(&rules);
-        live.session.binary_frame = 239;
+        live.session.set_binary_frame_for_test(239);
         let runtime = live
             .substrate
             .entities
@@ -312,7 +315,7 @@ pub fn gap_operational_power_loss_views() -> Vec<(
             crate::sim::timer::CdTimer::started(239, 15)
         );
         live.reconcile_active_vision_structures(&rules);
-        live.session.binary_frame = 240;
+        live.session.set_binary_frame_for_test(240);
         live.advance_tick(&[], Some(&rules), None, None, 67);
         let shrouded = case["observations"].as_array().unwrap().last().unwrap()["shrouded"] == 1;
         assert_eq!(
@@ -464,8 +467,8 @@ fn gap_operational_owner_change_reveals_sight_before_new_gap_and_death_removes()
 #[test]
 fn gap_operational_events_invalidate_map_reveal_latch_including_friendly_reentry() {
     let (mut sim, rules, viewer, owner, _) = fixture();
-    sim.session.game_options.shroud = false;
-    sim.session.current_house = Some(viewer);
+    sim.session.game_options_mut_for_test().shroud = false;
+    sim.session.set_current_house_for_test(Some(viewer));
     crate::sim::scenario_bootstrap::apply_launch_shroud_option(
         &mut sim,
         crate::sim::world::UninitContext::with_rules(&rules),
@@ -494,8 +497,8 @@ fn gap_operational_events_invalidate_map_reveal_latch_including_friendly_reentry
     );
 
     let (mut sim, rules, viewer, _, _) = fixture();
-    sim.session.game_options.shroud = false;
-    sim.session.current_house = Some(viewer);
+    sim.session.game_options_mut_for_test().shroud = false;
+    sim.session.set_current_house_for_test(Some(viewer));
     crate::sim::scenario_bootstrap::apply_launch_shroud_option(
         &mut sim,
         crate::sim::world::UninitContext::with_rules(&rules),
@@ -530,7 +533,7 @@ pub fn sustained_source_gap_limbo_views() -> Vec<(vision::FogState, InternedId, 
     let (mut sim, rules, viewer, gapper, _) = fixture();
     crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
     sim.fog = vision::FogState::new(32, 32);
-    sim.session.current_house = Some(viewer);
+    sim.session.set_current_house_for_test(Some(viewer));
     let source = sim
         .spawn_object("SIGHT", "Americans", 16, 16, 0, &rules)
         .expect("source Unlimbo");
@@ -558,7 +561,7 @@ pub fn sustained_source_gap_limbo_views() -> Vec<(vision::FogState, InternedId, 
     assert!(!sim.fog.sight_is_latched(source, viewer));
     views.push((sim.fog.clone(), viewer, true));
     for (frame, open) in [(119, true), (120, false)] {
-        sim.session.binary_frame = frame;
+        sim.session.set_binary_frame_for_test(frame);
         sim.tick_pending_shroud_conceal(UninitContext::with_rules(&rules));
         assert_eq!(sim.fog.is_cell_revealed(viewer, 16, 16), open);
         views.push((sim.fog.clone(), viewer, open));
@@ -573,11 +576,8 @@ pub fn nontransitive_source_gap_views() -> Vec<(vision::FogState, InternedId, In
     crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
     sim.fog = vision::FogState::new(32, 32);
     let hostile = sim.intern("Neutral");
-    sim.houses.insert(
-        hostile,
-        HouseState::new(hostile, 3, None, false, 10_000, 10),
-    );
-    sim.session.house_order.push(hostile);
+    sim.houses
+        .register(HouseState::new(hostile, 3, None, false, 10_000, 10));
     let graph = HouseAllianceMap::from([
         ("AMERICANS".into(), ["SOVIET".into()].into()),
         ("SOVIET".into(), ["AMERICANS".into(), "THIRD".into()].into()),

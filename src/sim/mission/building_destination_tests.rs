@@ -60,7 +60,7 @@ fn target(label: &str, shape: u8) -> Option<NavTargetRef> {
 
 fn fixture(input: &Value, shape: u8) -> Simulation {
     let mut sim = Simulation::new();
-    sim.session.binary_frame = 100;
+    sim.session.set_binary_frame_for_test(100);
     let owner = sim.interner.intern("Americans");
     let type_ref = sim
         .interner

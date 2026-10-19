@@ -70,7 +70,7 @@ fn war_miner_without_a_target_leaves_attack_through_its_idle_hook() {
         (serde_json::json!([]), MissionType::Guard),
     ] {
         let mut s = field((15, 15), ore);
-        let now = s.sim.session.binary_frame;
+        let now = s.sim.session.binary_frame();
         s.sim
             .mission_assign_exact(s.miner, MissionId::from_known(MissionType::Attack), now)
             .unwrap();
@@ -359,8 +359,8 @@ fn retail_war_miner_area_guard_returns_to_harvesting() {
         );
         s.sim.production.ore_growth_config = OreGrowthConfig::disabled();
         let owner = s.sim.entities().get(s.miner).unwrap().owner();
-        s.sim.session.current_house = Some(owner);
-        s.sim.session.house_order = vec![owner];
+        s.sim.session.set_current_house_for_test(Some(owner));
+        s.sim.houses.reorder_for_test(&[owner]);
         let ore_cell = if on_ore { (15, 15) } else { (16, 15) };
         let ore = registry.id_for_name("TIB01").unwrap();
         let grid = s.sim.overlay_grid.as_mut().unwrap();
@@ -498,7 +498,7 @@ fn retail_war_miner_attacks_without_cutting_ore_and_resumes_its_idle_mission() {
         let enemy = s.sim.interner.intern("Russians");
         s.sim
             .houses
-            .insert(enemy, HouseState::new(enemy, 1, None, true, 0, 10));
+            .register(HouseState::new(enemy, 1, None, true, 0, 10));
         let victim = s
             .sim
             .spawn_object("E1", "Russians", 20, 15, 0, &s.rules)
@@ -507,7 +507,7 @@ fn retail_war_miner_attacks_without_cutting_ore_and_resumes_its_idle_mission() {
             .mission_assign_exact(
                 victim,
                 MissionId::from_known(MissionType::Sleep),
-                s.sim.session.binary_frame,
+                s.sim.session.binary_frame(),
             )
             .unwrap();
         let initial_health = s

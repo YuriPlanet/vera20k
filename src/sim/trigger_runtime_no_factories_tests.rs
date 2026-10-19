@@ -40,11 +40,14 @@ fn fixture(countries: &[i32]) -> (Simulation, RuleSet, [InternedId; 3]) {
     let houses = std::array::from_fn(|index| {
         let owner = sim.interner.intern(&format!("House{index}"));
         let country = sim.interner.intern(&format!("Country{}", countries[index]));
-        sim.houses.insert(
+        sim.houses.register(HouseState::new(
             owner,
-            HouseState::new(owner, index as u8, Some(country), false, 0, 10),
-        );
-        sim.session.house_order.push(owner);
+            index as u8,
+            Some(country),
+            false,
+            0,
+            10,
+        ));
         owner
     });
     (sim, rules, houses)
@@ -157,12 +160,14 @@ fn no_factories_event_matches_original_incoming_house_list_and_raw_class() {
                 .tracking
                 .set_buildings_for_test(int(&house["tracked_buildings"]));
         }
-        sim.session.house_order = case["house_order"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|slot| houses[slot.as_u64().unwrap() as usize])
-            .collect();
+        sim.houses.reorder_for_test(
+            &case["house_order"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|slot| houses[slot.as_u64().unwrap() as usize])
+                .collect::<Vec<_>>(),
+        );
         super::tests::install_event_ingress_map(
             &mut sim,
             &rules,
@@ -246,12 +251,14 @@ fn fire_sale_action_matches_original_selector_state_and_unchanged_timer() {
     assert_eq!(controls.len(), 12);
     for case in controls {
         let (mut sim, rules, houses) = fixture(&[19, 7, 19]);
-        sim.session.house_order = case["house_order"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|slot| houses[slot.as_u64().unwrap() as usize])
-            .collect();
+        sim.houses.reorder_for_test(
+            &case["house_order"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|slot| houses[slot.as_u64().unwrap() as usize])
+                .collect::<Vec<_>>(),
+        );
         for (slot, house) in case["player_at_slots"]
             .as_array()
             .unwrap()
@@ -260,7 +267,7 @@ fn fire_sale_action_matches_original_selector_state_and_unchanged_timer() {
         {
             if let Some(index) = house.as_u64() {
                 sim.session
-                    .start_slot_houses
+                    .start_slot_houses_mut_for_test()
                     .insert(slot as u32, houses[index as usize]);
             }
         }
@@ -377,8 +384,8 @@ fn no_factories_retail_sov02_delay_reaches_existing_sale_and_hunt_after_restore(
         Some(house)
     );
     let other = sim
-        .session
-        .house_order
+        .houses
+        .order()
         .iter()
         .copied()
         .find(|&id| id != house)
@@ -440,7 +447,7 @@ fn no_factories_retail_sov02_delay_reaches_existing_sale_and_hunt_after_restore(
         .find(|&&live| sim.trigger_runtime.trigger(live).unwrap().type_index == delayed_type)
         .unwrap();
     assert!(!sim.trigger_runtime.trigger(delayed).unwrap().enabled);
-    sim.session.binary_frame = 8;
+    sim.session.set_binary_frame_for_test(8);
     sim.raise_house_tags(house, Some(&rules), None, FrameEffects::default());
     assert!(!sim.trigger_runtime.trigger(delayed).unwrap().enabled);
     // Both list and accounting move through the real ChangeOwner owner.
@@ -458,12 +465,12 @@ fn no_factories_retail_sov02_delay_reaches_existing_sale_and_hunt_after_restore(
             .buildings()
             .contains(&factory)
     );
-    sim.session.binary_frame = 16;
+    sim.session.set_binary_frame_for_test(16);
     sim.raise_house_tags(house, Some(&rules), None, FrameEffects::default());
     assert!(!sim.trigger_runtime.trigger(delayed).unwrap().enabled);
     sim.techno_limbo_with_context(factory, UninitContext::new(Some(&rules), None));
     assert_eq!(sim.houses[&house].tracking.buildings(), 3);
-    sim.session.binary_frame = 24;
+    sim.session.set_binary_frame_for_test(24);
     sim.raise_house_tags(house, Some(&rules), None, FrameEffects::default());
     assert!(sim.trigger_runtime.trigger(delayed).unwrap().enabled);
     assert_eq!(sim.houses[&house].strategy_emergency.mode(), 0);
@@ -474,7 +481,7 @@ fn no_factories_retail_sov02_delay_reaches_existing_sale_and_hunt_after_restore(
     sim.resolve_type_handles(&rules);
     let timer = sim.houses[&house].strategy_timer;
     for (frame, mode) in [(698, 0), (700, 4)] {
-        sim.session.binary_frame = frame;
+        sim.session.set_binary_frame_for_test(frame);
         sim.advance_triggers(Some(&rules), None, FrameEffects::default());
         assert_eq!(sim.houses[&house].strategy_emergency.mode(), mode);
         assert_eq!(sim.houses[&house].strategy_timer, timer);
@@ -486,7 +493,7 @@ fn no_factories_retail_sov02_delay_reaches_existing_sale_and_hunt_after_restore(
     }
     let native = &corpus["strategy"]["genuine_rng_strategy"];
     seed_native(&mut sim, &native["native_rng"]["before"]);
-    sim.session.binary_frame = 1108;
+    sim.session.set_binary_frame_for_test(1108);
     crate::sim::house_strategy::update_strategy(
         &mut sim,
         &rules,
@@ -496,7 +503,7 @@ fn no_factories_retail_sov02_delay_reaches_existing_sale_and_hunt_after_restore(
     );
     assert_rng_state(&sim, &native["native_rng"]["before"]);
     assert!(!sim.houses[&house].strategy_emergency.all_to_hunt_bias());
-    sim.session.binary_frame = 1109;
+    sim.session.set_binary_frame_for_test(1109);
     let (_, draws) = crate::sim::rng::trace_draws(|| {
         crate::sim::house_strategy::update_strategy(
             &mut sim,

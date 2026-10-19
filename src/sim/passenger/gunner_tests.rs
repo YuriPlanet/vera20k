@@ -26,8 +26,7 @@ fn arena(rules: &RuleSet) -> (Simulation, PathGrid) {
     for (name, side) in [(OWNER, 0), ("Russians", 1)] {
         let id = sim.interner.intern(name);
         sim.houses
-            .insert(id, HouseState::new(id, side, None, true, 0, 10));
-        sim.session.house_order.push(id);
+            .register(HouseState::new(id, side, None, true, 0, 10));
     }
     let grid = crate::sim::arena_fixture::flat_arena(&mut sim, rules);
     sim.intern_rule_type_ids(rules);
@@ -697,7 +696,7 @@ fn retail_temporal_gunner_unload_rearms_before_exit_and_retry() {
     };
     let rules = &retail.rules;
     let (mut sim, _, ifv, passenger, target) = temporal_attack_arena(rules);
-    let frame = sim.session.binary_frame as i32;
+    let frame = sim.session.binary_frame() as i32;
     let cargo_before =
         serde_json::to_value(entity(&sim, ifv).passenger_role.cargo().unwrap()).unwrap();
     assert_eq!(
@@ -770,7 +769,7 @@ fn temporal_attack_arena(rules: &RuleSet) -> (Simulation, PathGrid, u64, u64, u6
         fired,
         "the boarded CLEG IFV must fire through ordinary Attack"
     );
-    let frame = sim.session.binary_frame as i32;
+    let frame = sim.session.binary_frame() as i32;
     assert!(entity(&sim, ifv).rearm_timer.remaining(frame) > 0);
     assert!(entity(&sim, target).temporal.is_warped());
     (sim, grid, ifv, passenger, target)

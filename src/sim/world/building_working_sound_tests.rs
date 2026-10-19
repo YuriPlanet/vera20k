@@ -45,8 +45,7 @@ fn world(size: u16) -> Simulation {
     crate::sim::arena_fixture::supply_native_map(&mut sim);
     let owner = sim.interner.intern("Americans");
     sim.houses
-        .insert(owner, HouseState::new(owner, 0, None, true, 10_000, 10));
-    sim.session.house_order.push(owner);
+        .register(HouseState::new(owner, 0, None, true, 10_000, 10));
     sim
 }
 

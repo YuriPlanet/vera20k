@@ -342,10 +342,10 @@ fn production_pair(rules: &RuleSet) -> (Simulation, u64, u64) {
     // turn. Supply both live House owners instead of a null-house fixture.
     for name in ["Americans", "Russians"] {
         let owner = sim.interner.intern(name);
-        sim.houses.insert(
-            owner,
-            crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10),
-        );
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                owner, 0, None, true, 0, 10,
+            ));
     }
     let firer = sim.spawn_object("E1", "Americans", 5, 5, 0, rules).unwrap();
     let target = sim.spawn_object("E2", "Russians", 8, 5, 0, rules).unwrap();
@@ -401,7 +401,7 @@ fn production_zero_delay_shot_and_restore_use_new_heading() {
     sim.advance_tick(&[], Some(&rules), None, None, 67);
     let entity = sim.substrate.entities.get(firer).unwrap();
     assert!(sim.fog.is_cell_visible(entity.owner(), 8, 5));
-    let facing = entity.body_facing.current(sim.session.binary_frame);
+    let facing = entity.body_facing.current(sim.session.binary_frame());
     assert_eq!(facing, 0x3FFF, "native eastward direction");
     let event = sim
         .fire_events
@@ -661,7 +661,7 @@ fn production_attack_during_paid_walk_step_case(boosted: bool) {
             }
             assert!(!fired, "a retained paid step cannot fire");
             assert_eq!(
-                entity.body_facing.current(sim.session.binary_frame),
+                entity.body_facing.current(sim.session.binary_frame()),
                 step_heading,
                 "movement may correct toward its head; fire must not turn toward the enemy"
             );

@@ -648,7 +648,7 @@ impl TacticalCaptureSession {
         let construction_ticks = |type_id: &str| -> Result<u64> {
             let frames = crate::sim::building_construction::player_placement_frames_to_complete(
                 rules.buildup_control(type_id),
-                &sim.session.game_options,
+                &sim.session.game_options(),
             )
             .with_context(|| format!("{type_id} build-up never completes"))?;
             Ok(result_delay + u64::try_from(frames)?)
@@ -766,22 +766,22 @@ impl TacticalCaptureSession {
             .map(|rt| &rt.simulation)
             .context("Rust L0 simulation is absent")?;
         ensure!(
-            sim.session.tick == 0
-                && sim.session.total_sim_ms == 0
-                && sim.session.binary_frame == 0
-                && sim.session.seed == u64::from(profile.launch.seed)
+            sim.session.tick() == 0
+                && sim.session.total_sim_ms() == 0
+                && sim.session.binary_frame() == 0
+                && sim.session.seed() == u64::from(profile.launch.seed)
                 && sim.input_delay_ticks == u64::from(profile.launch.input_delay_ticks),
             "live simulation is not the sealed tick-zero session"
         );
         ensure!(
             sim.session
-                .map_name
+                .map_name()
                 .eq_ignore_ascii_case(&profile.fixture.logical_map_name)
                 && sim
                     .session
-                    .theater
+                    .theater()
                     .eq_ignore_ascii_case(&profile.fixture.theater)
-                && sim.session.mp_start_waypoints.len()
+                && sim.session.mp_start_waypoints().len()
                     == profile.fixture.start_waypoint_count as usize,
             "live map/session identity differs from the sealed fixture"
         );
@@ -885,7 +885,7 @@ impl TacticalCaptureSession {
                 owner: sim.interner.resolve(entity.owner()).to_owned(),
                 type_id: sim.interner.resolve(entity.type_ref()).to_owned(),
                 cell: (entity.position.rx(), entity.position.ry()),
-                facing: entity.body_facing_byte(sim.session.binary_frame),
+                facing: entity.body_facing_byte(sim.session.binary_frame()),
                 active: entity.is_active(),
                 dying: entity.death.is_dying(),
                 building_up: entity.building_up(),
@@ -955,7 +955,7 @@ impl TacticalCaptureSession {
         let power_state = sim.power_states.get(&owner_id);
         let power_authority_sufficient = power_output >= power_drain
             && power_state.is_some_and(|power| {
-                !power.is_low_power && power.blackout_remaining(sim.session.binary_frame) == 0
+                !power.is_low_power && power.blackout_remaining(sim.session.binary_frame()) == 0
             });
         let radar_authority_active = crate::sim::radar::has_radar_for_owner(sim, rules, &owner);
         let radar_online = state
@@ -977,9 +977,9 @@ impl TacticalCaptureSession {
             .unwrap_or(u64::MAX);
 
         Ok(TacticalObservation {
-            tick: sim.session.tick,
-            total_sim_ms: sim.session.total_sim_ms,
-            binary_frame: sim.session.binary_frame,
+            tick: sim.session.tick(),
+            total_sim_ms: sim.session.total_sim_ms(),
+            binary_frame: sim.session.binary_frame(),
             wall_elapsed_ms,
             accepted_rust_l0: crate::app::match_bootstrap::accepted_tick_is_admitted(
                 state.match_state.startup.startup(),
@@ -1108,7 +1108,7 @@ impl TacticalCaptureSession {
         let power_ready = power.is_some_and(|power| {
             power.total_output >= power.total_drain
                 && !power.is_low_power
-                && power.blackout_remaining(sim.session.binary_frame) == 0
+                && power.blackout_remaining(sim.session.binary_frame()) == 0
         });
         let radar_authority = state
             .rules()
@@ -1312,9 +1312,9 @@ impl TacticalCaptureSession {
             .clone()
             .context("fingerprint render evidence is absent")?;
         let core = FinalFingerprint {
-            simulation_tick: sim.session.tick,
-            total_simulation_ms: sim.session.total_sim_ms,
-            binary_frame: sim.session.binary_frame,
+            simulation_tick: sim.session.tick(),
+            total_simulation_ms: sim.session.total_sim_ms(),
+            binary_frame: sim.session.binary_frame(),
             deterministic_state_hash: sim.state_hash(),
         };
         Ok(json!({
@@ -1328,7 +1328,7 @@ impl TacticalCaptureSession {
                 "output": power.total_output,
                 "drain": power.total_drain,
                 "is_low_power": power.is_low_power,
-                "blackout_remaining": power.blackout_remaining(sim.session.binary_frame),
+                "blackout_remaining": power.blackout_remaining(sim.session.binary_frame()),
             },
             "radar": {
                 "authority_active": state.rules().is_some_and(|rules| {
@@ -1697,9 +1697,10 @@ fn validate_game_options(
     launch: &crate::skirmish_launch::SkirmishLaunchSession,
 ) -> Result<()> {
     ensure!(
-        crate::skirmish_launch::SkirmishLaunchOptions::from_game_options(&sim.session.game_options)
-            == launch.options
-            && sim.session.game_options.ai_players == launch.ai_player_count,
+        crate::skirmish_launch::SkirmishLaunchOptions::from_game_options(
+            &sim.session.game_options()
+        ) == launch.options
+            && sim.session.game_options().ai_players == launch.ai_player_count,
         "live GameOptions differ from the requested tactical launch"
     );
     Ok(())
@@ -1772,15 +1773,15 @@ fn validate_houses_and_slots(
         ai.difficulty
     );
     ensure!(
-        sim.session.start_slot_houses.len() == 2
+        sim.session.start_slot_houses().len() == 2
             && sim
                 .session
-                .start_slot_houses
+                .start_slot_houses()
                 .get(&u32::from(profile.launch.local.start_position))
                 == Some(&local_id)
             && sim
                 .session
-                .start_slot_houses
+                .start_slot_houses()
                 .get(&u32::from(profile.launch.opponents[0].start_position))
                 == Some(&ai_id),
         "start-slot house table differs from sealed positions"

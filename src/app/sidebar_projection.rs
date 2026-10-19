@@ -629,7 +629,7 @@ impl SidebarProjectionState {
         {
             return;
         }
-        let frame = sim.session.binary_frame as i32;
+        let frame = sim.session.binary_frame() as i32;
         // The synchronized-command owner retains negotiated ahead timing.
         // Native A8B550 producer equivalence outside this current input
         // domain remains bounded by the pending-production evidence.
@@ -753,7 +753,7 @@ impl SidebarProjectionState {
             .collect();
         let strips = &mut self.cameos.as_mut().unwrap().1;
         for (id, stopped) in states {
-            strips.advance_request(id, sim.session.binary_frame as i32, stopped);
+            strips.advance_request(id, sim.session.binary_frame() as i32, stopped);
         }
     }
 
@@ -1009,7 +1009,7 @@ pub(crate) fn prepare_saved_order(
         return Err("saved sidebar has duplicate prediction categories".into());
     }
     let (owner, saved_strips, scroll_rows) = saved.into_parts();
-    if sim.session.current_house != Some(owner) || !sim.houses.contains_key(&owner) {
+    if sim.session.current_house() != Some(owner) || !sim.houses.contains_key(&owner) {
         return Err("saved sidebar owner differs from the loaded current house".into());
     }
     let mut seen = std::collections::HashSet::new();
@@ -1076,7 +1076,7 @@ pub(crate) fn prepare_saved_order(
     }
     let mut strips = CameoStrips::from_retained(strips, scroll_rows);
     strips.restore_flash(flash_deadlines, redraw_until);
-    strips.restore_requests(request_states, sim.session.binary_frame as i32);
+    strips.restore_requests(request_states, sim.session.binary_frame() as i32);
     Ok(Some(PreparedSidebarOrder {
         owner,
         strips,
@@ -1114,11 +1114,11 @@ mod tests {
         sim.resolve_type_handles(&rules);
         let owner = sim.intern("Russians");
         let other_owner = sim.intern("Americans");
-        sim.houses.insert(
-            owner,
-            crate::sim::house_state::HouseState::new(owner, 1, None, true, 50_000, 10),
-        );
-        sim.session.current_house = Some(owner);
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                owner, 1, None, true, 50_000, 10,
+            ));
+        sim.session.set_current_house_for_test(Some(owner));
         let e2 = sim.interner.get("E2").unwrap();
         let mut projection = SidebarProjectionState::default();
         let cameo = Cameo {

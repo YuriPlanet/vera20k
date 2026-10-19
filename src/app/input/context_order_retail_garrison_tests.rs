@@ -58,8 +58,11 @@ fn advance_garrison_frame(runtime: &mut crate::sim::runtime::SimRuntime) {
 
 fn queue_ordinary_order(runtime: &mut crate::sim::runtime::SimRuntime, order: Command) {
     let sim = &runtime.simulation;
-    let envelope =
-        CommandEnvelope::new(sim.session.current_house.unwrap(), sim.session.tick, order);
+    let envelope = CommandEnvelope::new(
+        sim.session.current_house().unwrap(),
+        sim.session.tick(),
+        order,
+    );
     let envelope =
         crate::app::input::commands::roundtrip_ordinary_local_megamission(sim, envelope).unwrap();
     runtime.simulation.queue_commands(vec![envelope]);
@@ -78,7 +81,7 @@ fn retail_gi_group_boards_a_4x4_garrison_from_its_far_side() {
         return;
     };
     let runtime = &mut scene.runtime;
-    let owner = runtime.simulation.session.current_house.unwrap();
+    let owner = runtime.simulation.session.current_house().unwrap();
     let owner_name = runtime.simulation.resolve(owner).to_owned();
     let rules = &runtime.resources.rules;
     let position = &runtime.simulation.entities().get(castle).unwrap().position;
@@ -142,7 +145,7 @@ fn retail_gi_group_boards_a_4x4_garrison_from_its_far_side() {
     let envelopes: Vec<_> = orders
         .into_iter()
         .map(|order| {
-            let envelope = CommandEnvelope::new(owner, runtime.simulation.session.tick, order);
+            let envelope = CommandEnvelope::new(owner, runtime.simulation.session.tick(), order);
             crate::app::input::commands::roundtrip_ordinary_local_megamission(
                 &runtime.simulation,
                 envelope,
@@ -222,7 +225,7 @@ fn retail_capture_walk_rechecks_admission_and_respects_a_replacement_order() {
             return;
         };
         let runtime = &mut scene.runtime;
-        let owner = runtime.simulation.session.current_house.unwrap();
+        let owner = runtime.simulation.session.current_house().unwrap();
         let owner_name = runtime.simulation.resolve(owner).to_owned();
         let gi = runtime
             .simulation
@@ -351,7 +354,7 @@ fn retail_gi_ifv_click_keeps_enter() {
         return;
     };
     let runtime = &mut scene.runtime;
-    let owner = runtime.simulation.session.current_house.unwrap();
+    let owner = runtime.simulation.session.current_house().unwrap();
     let owner_name = runtime.simulation.resolve(owner).to_owned();
     let rules = &runtime.resources.rules;
     let gi = runtime

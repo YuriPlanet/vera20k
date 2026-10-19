@@ -22,14 +22,17 @@ fn fixture() -> (Simulation, RuleSet, OverlayTypeRegistry, [InternedId; 2]) {
         } else {
             "OtherCountry"
         });
-        sim.houses.insert(
+        sim.houses.register(HouseState::new(
             name,
-            HouseState::new(name, i as u8, Some(country), i == 0, 10000, 10),
-        );
-        sim.session.house_order.push(name);
+            i as u8,
+            Some(country),
+            i == 0,
+            10000,
+            10,
+        ));
         name
     });
-    sim.session.current_house = Some(houses[0]);
+    sim.session.set_current_house_for_test(Some(houses[0]));
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     (sim, rules, registry, houses)
@@ -275,6 +278,6 @@ fn home_primary_and_base_geometry_survive_real_snapshot_restore() {
     restored.restore_after_snapshot_load().unwrap();
     restored.resolve_type_handles(&rules);
     assert_eq!(query(&restored, &rules), expected);
-    restored.session.current_house = None;
+    restored.session.set_current_house_for_test(None);
     assert_eq!(query(&restored, &rules), None, "headless boundary");
 }

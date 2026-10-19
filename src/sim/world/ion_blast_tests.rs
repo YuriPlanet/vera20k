@@ -262,7 +262,7 @@ fn retail_loaded_tank_uses_the_shared_numeric_kernel_and_frame_table() {
         sim.entities()
             .get(id)
             .unwrap()
-            .body_facing_current(sim.session.binary_frame),
+            .body_facing_current(sim.session.binary_frame()),
         0
     );
     sim.apply_ion_blast_forces(

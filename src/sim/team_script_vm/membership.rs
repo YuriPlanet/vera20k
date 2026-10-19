@@ -567,7 +567,7 @@ impl Simulation {
         rules: &RuleSet,
         frame_effects: FrameEffects<'_>,
     ) {
-        let current_frame = self.session.binary_frame as i32;
+        let current_frame = self.session.binary_frame() as i32;
         let vm = &self.team_script_vm;
         let suspended: Vec<u64> = vm
             .teams

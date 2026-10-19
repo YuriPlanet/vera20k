@@ -160,8 +160,7 @@ fn sim_with_houses(seed: u64) -> Simulation {
     ] {
         let id = sim.interner.intern(name);
         sim.houses
-            .insert(id, HouseState::new(id, side, None, human, 0, 10));
-        sim.session.house_order.push(id);
+            .register(HouseState::new(id, side, None, human, 0, 10));
     }
     sim
 }
@@ -1327,7 +1326,7 @@ fn a_selected_vehicle_selects_its_escapees_and_crewman() {
         for selected in [true, false] {
             let mut sim = sim_on_arena(seed, &rules);
             let owner = sim.interner.intern("AlliedHuman");
-            sim.session.current_house = Some(owner);
+            sim.session.set_current_house_for_test(Some(owner));
             let apc = spawn(&mut sim, &rules, "APC", "AlliedHuman", 10, 10);
             let mcv = spawn(&mut sim, &rules, "AMCV", "AlliedHuman", 20, 10);
             let passengers = load_passengers(&mut sim, &rules, apc, "AlliedHuman", 2);
@@ -1367,7 +1366,7 @@ fn a_selected_foreign_vehicle_selects_nothing() {
     let rules = rules();
     let mut sim = sim_on_arena(1, &rules);
     let player = sim.interner.intern("AlliedHuman");
-    sim.session.current_house = Some(player);
+    sim.session.set_current_house_for_test(Some(player));
     let apc = spawn(&mut sim, &rules, "APC", "Americans", 10, 10);
     let passengers = load_passengers(&mut sim, &rules, apc, "Americans", 2);
     sim.substrate
@@ -1503,11 +1502,7 @@ fn retail_dustbowl_crews_scatter_off_their_wrecks() {
         } = &mut scenario.runtime;
         let owner = sim.interner.intern("Americans");
         sim.houses
-            .entry(owner)
-            .or_insert_with(|| HouseState::new(owner, 0, None, false, 10_000, 10));
-        if !sim.session.house_order.contains(&owner) {
-            sim.session.house_order.push(owner);
-        }
+            .get_or_register_for_test(owner, || HouseState::new(owner, 0, None, false, 10_000, 10));
         // The first central cell that admits the MCV, with level walkable
         // ground under and around it and a power plant three cells west, as a
         // player's base would stand on.
@@ -1624,11 +1619,7 @@ fn retail_dustbowl_passengers_leave_their_destroyed_transports() {
     let rules = &resources.rules;
     let owner = sim.interner.intern("Americans");
     sim.houses
-        .entry(owner)
-        .or_insert_with(|| HouseState::new(owner, 0, None, false, 10_000, 10));
-    if !sim.session.house_order.contains(&owner) {
-        sim.session.house_order.push(owner);
-    }
+        .get_or_register_for_test(owner, || HouseState::new(owner, 0, None, false, 10_000, 10));
     // Each transport on the first central cell that admits it, with level
     // walkable ground around it for its GIs (the row south) and their
     // Scatter, four or more cells from the others. Check the shared playfield
@@ -1822,7 +1813,7 @@ fn a_selected_mcvs_crewman_speaks_his_select_voice() {
     for seed in 1..=8 {
         let mut sim = sim_on_arena(seed, &rules);
         let owner = sim.interner.intern("AlliedHuman");
-        sim.session.current_house = Some(owner);
+        sim.session.set_current_house_for_test(Some(owner));
         let mcv = spawn(&mut sim, &rules, "AMCV", "AlliedHuman", 20, 10);
         sim.substrate
             .entities

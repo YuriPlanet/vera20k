@@ -50,8 +50,7 @@ fn retail_harrier_team_strikes_the_enemy_miner_and_goes_home() {
         let id = sim.interner.intern(name);
         let mut house = HouseState::new(id, index as u8, None, human, 0, 10);
         house.multiplay_passive = !human;
-        sim.houses.insert(id, house);
-        sim.session.house_order.push(id);
+        sim.houses.register(house);
         owners.push(id);
     }
     let mut cells: Vec<(u16, u16)> = sim
@@ -111,7 +110,7 @@ fn retail_harrier_team_strikes_the_enemy_miner_and_goes_home() {
             member_type: member_type_identity(sim.substrate.entities.get(entity_id).unwrap()),
         })
         .collect();
-    let frame = sim.session.binary_frame as i32;
+    let frame = sim.session.binary_frame() as i32;
     let team = sim
         .team_script_vm
         .create_team_from_type(owners[0], team_type, &candidates, frame);

@@ -3,9 +3,7 @@
 //! Split from the monolithic HouseClass into purpose-specific systems. This module
 //! holds the lightweight core: identity, economy scalars, and defeat/victory flags.
 //!
-//! Stored in `Simulation.houses: BTreeMap<InternedId, HouseState>` keyed by
-//! interned owner name for deterministic iteration (BTreeMap + InternedId give
-//! sorted order natively; all peers intern in the same order).
+//! Each House's state lives in the House array, [`crate::sim::houses::Houses`].
 
 use std::collections::BTreeMap;
 
@@ -587,9 +585,9 @@ pub struct HouseState {
     /// Native `AngerStruct` scores keyed by the other house's stable identity.
     ///
     /// gamemd stores an O(N^2) vector in global HouseClass creation order. The
-    /// Rust house registry already owns that exact order in
-    /// `ScenarioSession::house_order`, so only touched scores live here; enemy
-    /// selection still scans session order, never this map's key order.
+    /// Rust House array already owns that exact order in
+    /// `Houses::order`, so only touched scores live here; enemy selection
+    /// still scans that order, never this map's key order.
     #[serde(default)]
     pub grudge_scores: BTreeMap<InternedId, i32>,
     /// House selected by `HouseClass::UpdateAngerNodes`, or native `-1` as None.
@@ -1870,7 +1868,7 @@ impl crate::sim::world::Simulation {
     /// their explicit internal-key projection in the map constructor owner.
     pub(crate) fn scenario_house_named(&self, requested: &str) -> Option<InternedId> {
         let index = crate::map::houses::find_house_index(
-            self.session.house_order.iter().map(|owner| {
+            self.houses.order().iter().map(|owner| {
                 self.houses
                     .get(owner)
                     .expect("registered House array entry")
@@ -1879,7 +1877,7 @@ impl crate::sim::world::Simulation {
             }),
             requested,
         )?;
-        Some(self.session.house_order[index])
+        Some(self.houses.order()[index])
     }
 }
 
@@ -1998,7 +1996,7 @@ impl MatchStatistics {
 
 /// Look up a HouseState by interned owner ID (O(1) BTreeMap lookup).
 pub fn house_state_for_owner_id(
-    houses: &std::collections::BTreeMap<InternedId, HouseState>,
+    houses: &crate::sim::houses::Houses,
     owner_id: InternedId,
 ) -> Option<&HouseState> {
     houses.get(&owner_id)
@@ -2008,7 +2006,7 @@ pub fn house_state_for_owner_id(
 /// Requires the interner to convert the name to an InternedId first.
 /// Returns None if the name is not interned or no house matches.
 pub fn house_state_for_owner<'a>(
-    houses: &'a std::collections::BTreeMap<InternedId, HouseState>,
+    houses: &'a crate::sim::houses::Houses,
     owner: &str,
     interner: &crate::sim::intern::StringInterner,
 ) -> Option<&'a HouseState> {
@@ -2018,7 +2016,7 @@ pub fn house_state_for_owner<'a>(
 
 /// Mutable version of `house_state_for_owner`.
 pub fn house_state_for_owner_mut<'a>(
-    houses: &'a mut std::collections::BTreeMap<InternedId, HouseState>,
+    houses: &'a mut crate::sim::houses::Houses,
     owner: &str,
     interner: &crate::sim::intern::StringInterner,
 ) -> Option<&'a mut HouseState> {
@@ -2032,7 +2030,7 @@ pub fn house_state_for_owner_mut<'a>(
 /// country resolves to the neutral 1.0 (no income change) — so stock YR (all countries
 /// 1.0, the key commented out) is the identity.
 pub fn income_ppm_for_owner(
-    houses: &std::collections::BTreeMap<InternedId, HouseState>,
+    houses: &crate::sim::houses::Houses,
     interner: &crate::sim::intern::StringInterner,
     rules: &crate::rules::ruleset::RuleSet,
     owner: &str,

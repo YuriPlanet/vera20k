@@ -271,6 +271,9 @@ impl App {
             bytes,
             source,
             false,
+            // Fitted windows scale the frame (fullscreen_movie::movie_rect);
+            // at the native 1:1 size linear sampling returns exact texels.
+            wgpu::FilterMode::Linear,
         ) {
             Ok(surface) => surface,
             Err(err) => {

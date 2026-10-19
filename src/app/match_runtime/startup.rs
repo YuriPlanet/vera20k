@@ -95,10 +95,10 @@ impl MatchStartup {
         }
         if !session.started()
             || session.game_mode_nonzero()
-            || session.tick != 0
-            || session.binary_frame != 0
-            || session.seed != u64::from(startup.seed.value)
-            || !session.map_name.eq_ignore_ascii_case(startup.scenario())
+            || session.tick() != 0
+            || session.binary_frame() != 0
+            || session.seed() != u64::from(startup.seed.value)
+            || !session.map_name().eq_ignore_ascii_case(startup.scenario())
             || session.campaign_mission_counter() != Some(startup.mission_counter())
             || session
                 .campaign_house_difficulties()

@@ -72,9 +72,9 @@ fn houses(game_mode_nonzero: bool, count: usize) -> (Simulation, Vec<InternedId>
         .collect();
     for &name in &names {
         sim.houses
-            .insert(name, HouseState::new(name, 0, None, false, 0, 10));
+            .register(HouseState::new(name, 0, None, false, 0, 10));
     }
-    sim.session.house_order = names.clone();
+    sim.houses.reorder_for_test(&names);
     (sim, names)
 }
 
@@ -147,7 +147,8 @@ fn the_strategy_timer_and_its_gates_match_native() {
         // A live factory and cash keep Strategy to its draw.
         house.economy.set_credits_for_test(1000);
         spawn_building(&mut sim, owner, "FACTORY", 1000, false);
-        sim.session.binary_frame = int(&row["frame"]) as u32;
+        sim.session
+            .set_binary_frame_for_test(int(&row["frame"]) as u32);
         sim.scenario_rng = SimRng::answering(1, 7, int(&row["answer"]) - 105);
         let mut expected = sim.scenario_rng.clone();
         if flag(&row["called"]) {
@@ -255,7 +256,8 @@ fn the_strategy_matches_native() {
         if !(1..=4).contains(&int(&row["need"])) {
             house.tracking.set_economy_for_test(1, 1, 0);
         }
-        sim.session.binary_frame = int(&row["frame"]) as u32;
+        sim.session
+            .set_binary_frame_for_test(int(&row["frame"]) as u32);
         let draws = events(row, "draw");
         assert_eq!(draws.len(), 1, "{label}");
         assert_eq!(
@@ -558,20 +560,21 @@ fn gsi_04_05_update_anger_nodes_wraps_and_selects_first_positive_eligible_peer()
     let second = interner.intern("SECOND");
     let first = interner.intern("FIRST");
     let unregistered = interner.intern("UNREGISTERED");
-    let house_order = [owner, allied, defeated, missing, first, second];
     assert!(
         second < first,
         "fixture intern order must oppose the equal-score House order"
     );
     let mut defeated_house = house(defeated, 2);
     defeated_house.is_defeated = true;
-    let mut houses = BTreeMap::from([
-        (owner, house(owner, 0)),
-        (allied, house(allied, 1)),
-        (defeated, defeated_house),
-        (first, house(first, 3)),
-        (second, house(second, 4)),
-    ]);
+    let mut houses = [
+        house(owner, 0),
+        house(allied, 1),
+        defeated_house,
+        house(first, 3),
+        house(second, 4),
+    ]
+    .into_iter()
+    .collect::<crate::sim::houses::Houses>();
     let mut alliances = HouseAllianceMap::new();
     alliances.insert("OWNER".to_string(), BTreeSet::from(["ALLIED".to_string()]));
     {
@@ -583,28 +586,12 @@ fn gsi_04_05_update_anger_nodes_wraps_and_selects_first_positive_eligible_peer()
         anger.insert(second, 7);
     }
 
-    update_anger_nodes(
-        &mut houses,
-        &house_order,
-        &alliances,
-        &interner,
-        owner,
-        first,
-        0,
-    );
+    update_anger_nodes(&mut houses, &alliances, &interner, owner, first, 0);
     assert_eq!(houses[&owner].enemy_house, Some(first));
 
     houses.get_mut(&owner).unwrap().enemy_house = None;
     let missing_score = houses[&owner].grudge_scores[&missing];
-    update_anger_nodes(
-        &mut houses,
-        &house_order,
-        &alliances,
-        &interner,
-        owner,
-        missing,
-        5,
-    );
+    update_anger_nodes(&mut houses, &alliances, &interner, owner, missing, 5);
     assert_eq!(houses[&owner].grudge_scores[&missing], missing_score);
     assert_eq!(
         houses[&owner].enemy_house,
@@ -622,27 +609,11 @@ fn gsi_04_05_update_anger_nodes_wraps_and_selects_first_positive_eligible_peer()
         .unwrap()
         .grudge_scores
         .insert(second, 1);
-    update_anger_nodes(
-        &mut houses,
-        &house_order,
-        &alliances,
-        &interner,
-        owner,
-        first,
-        1,
-    );
+    update_anger_nodes(&mut houses, &alliances, &interner, owner, first, 1);
     assert_eq!(houses[&owner].grudge_scores[&first], i32::MIN);
     assert_eq!(houses[&owner].enemy_house, Some(second));
 
-    update_anger_nodes(
-        &mut houses,
-        &house_order,
-        &alliances,
-        &interner,
-        owner,
-        unregistered,
-        5,
-    );
+    update_anger_nodes(&mut houses, &alliances, &interner, owner, unregistered, 5);
     assert!(!houses[&owner].grudge_scores.contains_key(&unregistered));
     assert_eq!(houses[&owner].enemy_house, Some(second));
     houses
@@ -650,15 +621,7 @@ fn gsi_04_05_update_anger_nodes_wraps_and_selects_first_positive_eligible_peer()
         .unwrap()
         .grudge_scores
         .insert(second, 0);
-    update_anger_nodes(
-        &mut houses,
-        &house_order,
-        &alliances,
-        &interner,
-        owner,
-        owner,
-        5,
-    );
+    update_anger_nodes(&mut houses, &alliances, &interner, owner, owner, 5);
     assert!(!houses[&owner].grudge_scores.contains_key(&owner));
     assert_eq!(houses[&owner].enemy_house, None);
 }
@@ -669,12 +632,9 @@ fn gsi_04_05_sparse_zero_updates_preserve_representation_and_rescan() {
     let owner = interner.intern("OWNER");
     let first = interner.intern("FIRST");
     let second = interner.intern("SECOND");
-    let house_order = [owner, first, second];
-    let mut houses = BTreeMap::from([
-        (owner, house(owner, 0)),
-        (first, house(first, 1)),
-        (second, house(second, 2)),
-    ]);
+    let mut houses = [house(owner, 0), house(first, 1), house(second, 2)]
+        .into_iter()
+        .collect::<crate::sim::houses::Houses>();
     houses
         .get_mut(&owner)
         .unwrap()
@@ -684,7 +644,6 @@ fn gsi_04_05_sparse_zero_updates_preserve_representation_and_rescan() {
 
     update_anger_nodes(
         &mut houses,
-        &house_order,
         &HouseAllianceMap::new(),
         &interner,
         owner,
@@ -702,7 +661,6 @@ fn gsi_04_05_sparse_zero_updates_preserve_representation_and_rescan() {
     houses.get_mut(&owner).unwrap().enemy_house = None;
     update_anger_nodes(
         &mut houses,
-        &house_order,
         &HouseAllianceMap::new(),
         &interner,
         owner,

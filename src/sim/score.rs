@@ -53,28 +53,15 @@ impl Simulation {
             return false;
         }
 
-        // The sim's canonical HouseClass registration order owns deterministic
-        // house traversal; the keyed house store is only a lookup table. Append
-        // unregistered fixture houses deterministically so standalone tests and
-        // malformed inputs retain a bounded compatibility path. Whether the
-        // native score dialog uses this exact traversal remains UNCHECKED.
-        let mut contenders = Vec::new();
-        for owner in self
-            .session
-            .house_order
-            .iter()
-            .copied()
-            .chain(self.houses.keys().copied())
-        {
-            if self
-                .houses
-                .get(&owner)
-                .is_some_and(|house| !house.multiplay_passive)
-                && !contenders.contains(&owner)
-            {
-                contenders.push(owner);
-            }
-        }
+        // The House array's registration order owns deterministic traversal.
+        // Whether the native score dialog uses this exact traversal remains
+        // UNCHECKED.
+        let contenders: Vec<InternedId> = self
+            .houses
+            .in_order()
+            .filter(|house| !house.multiplay_passive)
+            .map(|house| house.name)
+            .collect();
         let mut rows = Vec::with_capacity(contenders.len());
         for owner in contenders {
             let Some((country, survived, stats, raw_score)) =
@@ -151,7 +138,7 @@ mod tests {
             fixture.buildings_lost,
             fixture.built,
         );
-        sim.houses.insert(owner, house);
+        sim.houses.register(house);
         owner
     }
 
@@ -200,7 +187,7 @@ mod tests {
                 built: 0,
             },
         );
-        insert_house(
+        let passive = insert_house(
             &mut sim,
             HouseFixture {
                 name: "Passive",
@@ -229,7 +216,8 @@ mod tests {
             },
         );
 
-        sim.session.house_order = vec![omega, alpha, defeated, zero];
+        sim.houses
+            .reorder_for_test(&[omega, passive, alpha, defeated, zero]);
         let mut expected_rng = sim.clone_scenario_rng();
         let omega_score = 50 + 25 + expected_rng.next_range_u32_inclusive(25, 50) as i32;
         let alpha_score = 100 + 50 + expected_rng.next_range_u32_inclusive(50, 100) as i32;
@@ -294,7 +282,7 @@ mod tests {
                 },
             ));
         }
-        sim.session.house_order = owners;
+        sim.houses.reorder_for_test(&owners);
         let cursor = sim.clone_scenario_rng().state();
 
         assert!(sim.finalize_terminal_score_snapshot());
@@ -309,7 +297,7 @@ mod tests {
     #[test]
     fn terminal_score_snapshot_is_latched_without_repeating_rng_draws() {
         let mut sim = Simulation::with_seed(0x51C0_5678);
-        let owner = insert_house(
+        insert_house(
             &mut sim,
             HouseFixture {
                 name: "Alpha",
@@ -323,7 +311,6 @@ mod tests {
                 built: 0,
             },
         );
-        sim.session.house_order.push(owner);
 
         assert!(sim.finalize_terminal_score_snapshot());
         let first = sim
@@ -361,14 +348,13 @@ mod tests {
             }),
             crate::sim::timer::CdTimer::default(),
         );
-        sim.houses.insert(human, human_house);
-        sim.session.current_house = Some(human);
+        sim.houses.register(human_house);
+        sim.session.set_current_house_for_test(Some(human));
 
         let opponent = sim.interner.intern("Opponent");
         let mut opponent_house = HouseState::new(opponent, 1, None, false, 0, 10);
         opponent_house.economy.set_score_for_test(100);
-        sim.houses.insert(opponent, opponent_house);
-        sim.session.house_order = vec![human, opponent];
+        sim.houses.register(opponent_house);
         sim
     }
 
@@ -378,7 +364,7 @@ mod tests {
         // At normal play's cadence the ending frame hashes off the interval.
         // It does not commit, so its tick stays the last committed one.
         sim.hash_state_every(crate::sim::replay::PLAY_HASH_INTERVAL);
-        sim.session.tick = 7;
+        sim.session.set_tick_for_test(7);
 
         let first = sim.advance_tick(&[], None, None, None, 67);
 
@@ -422,7 +408,8 @@ mod tests {
     #[test]
     fn another_humans_ready_result_does_not_finalize_the_current_players_score() {
         let mut sim = natural_terminal_sim(0x51C0_9ABD);
-        sim.session.current_house = sim.interner.get("Opponent");
+        sim.session
+            .set_current_house_for_test(sim.interner.get("Opponent"));
         let cursor = sim.clone_scenario_rng().state();
         let tick = sim.advance_tick(&[], None, None, None, 67);
         assert!(tick.frame_committed);

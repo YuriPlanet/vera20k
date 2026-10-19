@@ -82,7 +82,7 @@ fn weapon_wave_visible(
         return false;
     };
     wave.visible_through_fog(
-        sim.session.game_options.fog_of_war,
+        sim.session.game_options().fog_of_war,
         !sim.fog.is_cell_revealed(observer, sx, sy),
         !sim.fog.is_cell_revealed(observer, tx, ty),
     )
@@ -280,7 +280,7 @@ mod tests {
                     .find(|(id, projectile)| projectile.source_id == gun && !before.contains(id))
                     .unwrap_or_else(|| panic!(
                         "a real Grand Cannon shell: frame={} shot={event:?} live_bullets={:?} target_health={:?}",
-                        sim.session.binary_frame,
+                        sim.session.binary_frame(),
                         sim.projectiles.iter().collect::<Vec<_>>(),
                         sim.substrate.entities.get(target).map(|entity| entity.health)
                     ))

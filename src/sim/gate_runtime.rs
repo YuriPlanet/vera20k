@@ -86,7 +86,7 @@ pub(crate) fn request_gate_open_for_cell(
                     DoorPhase::Closing | DoorPhase::ClosedStable
                 )
             {
-                let now = sim.session.binary_frame;
+                let now = sim.session.binary_frame();
                 let readiness = LiveReadyInputProvider { rules };
                 let _ = sim.mission_assign_exact(candidate_id, MissionId::NONE, now);
                 let _ = sim.mission_queue_exact(
@@ -138,7 +138,7 @@ pub(crate) fn mission_open(sim: &mut Simulation, id: u64, rules: &RuleSet) -> i3
     let Some(object) = sim.interner.object_type(entity.type_ref(), rules) else {
         return 0;
     };
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     if !object.gate {
         //44E77C..44E794: non-Gate Open queues Guard without commencing.
         let readiness = LiveReadyInputProvider { rules };
@@ -282,7 +282,7 @@ mod tests {
         .unwrap();
         let mut sim = Simulation::with_seed(seed);
         sim.install_resolved_terrain_for_new_map(test_flat_ground_grid(24));
-        sim.session.binary_frame = frame;
+        sim.session.set_binary_frame_for_test(frame);
         let owner = sim.interner.intern("Americans");
         let ty = sim.interner.intern("GATE");
         let mut gate = GameEntity::new_at_frame_for_test(
@@ -536,12 +536,16 @@ mod tests {
             row["admission"].as_u64().unwrap()
         );
         assert_native_rng(&sim, &row["rng_before"], "cadence admission");
-        sim.session.binary_frame = 101;
+        sim.session.set_binary_frame_for_test(101);
         let frames = row["frames"].as_array().unwrap();
         assert_eq!(frames.len(), 350);
         for native in frames {
             let frame = native["frame"].as_u64().unwrap() as u32;
-            assert_eq!(sim.session.binary_frame, frame, "frame owner before visit");
+            assert_eq!(
+                sim.session.binary_frame(),
+                frame,
+                "frame owner before visit"
+            );
             sim.advance_tick(&[], Some(&rules), None, None, 67);
             let context = format!("Gate object turn{frame}");
             assert_native_state(&sim, native, &context);
@@ -615,7 +619,7 @@ mod tests {
             assert_ne!(sim.state_hash(), hash, "{name}: hold anchor in world hash");
             sim.substrate.entities.get_mut(GATE).unwrap().building_gate = initial_hold;
             assert_eq!(sim.state_hash(), hash, "{name}: restored hold");
-            let frame = sim.session.binary_frame;
+            let frame = sim.session.binary_frame();
             sim.substrate
                 .entities
                 .get_mut(GATE)
@@ -676,7 +680,7 @@ mod tests {
         assert_eq!(gate.mission.handler_state(), 1);
         assert_eq!(gate.door_phase(), DoorPhase::Opening);
         assert_eq!(sim.scenario_rng.logical_state(), rng);
-        sim.session.binary_frame = 39;
+        sim.session.set_binary_frame_for_test(39);
         sim.substrate
             .entities
             .get_mut(100)
@@ -720,7 +724,7 @@ mod tests {
             None,
             CellListInsertion::PrependNonBuilding,
         );
-        sim.session.binary_frame = 179;
+        sim.session.set_binary_frame_for_test(179);
         mission_open(&mut sim, 100, &rules);
         let gate = sim.substrate.entities.get(100).unwrap();
         assert_eq!(gate.mission.handler_state(), 2);
@@ -728,7 +732,7 @@ mod tests {
             gate.building_gate.unwrap().hold_timer,
             MissionTimer::armed(0, 180)
         );
-        sim.session.binary_frame = 180;
+        sim.session.set_binary_frame_for_test(180);
         mission_open(&mut sim, 100, &rules);
         let gate = sim.substrate.entities.get(100).unwrap();
         assert_eq!(gate.mission.handler_state(), 3);

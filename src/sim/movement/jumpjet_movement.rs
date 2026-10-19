@@ -678,7 +678,7 @@ impl Simulation {
         if !unloading {
             return;
         }
-        let now = self.session.binary_frame;
+        let now = self.session.binary_frame();
         let _ = match rules {
             Some(rules) => self.mission_jumpjet_move_to_completion_exact(
                 id,
@@ -806,7 +806,7 @@ impl Simulation {
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             // Infantry51B1D2 returns through Foot4D96C2 after the locomotor's
             // Move_To; the Move_To inside Stop cannot own this.
-            super::DestinationTiming::from_rules(self.session.binary_frame, Some(rules))
+            super::DestinationTiming::from_rules(self.session.binary_frame(), Some(rules))
                 .accept(entity);
         }
         true

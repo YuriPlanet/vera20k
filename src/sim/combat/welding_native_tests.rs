@@ -54,9 +54,9 @@ fn target_role(roles: &Roles, target: Option<TargetKind>) -> Value {
 
 fn scene(rules: &RuleSet, cursor: &Value) -> (Simulation, Roles) {
     let mut sim = Simulation::new();
-    sim.session.binary_frame = 36;
-    sim.session.map_width = 64;
-    sim.session.map_height = 64;
+    sim.session.set_binary_frame_for_test(36);
+    sim.session.set_map_width_for_test(64);
+    sim.session.set_map_height_for_test(64);
     sim.install_resolved_terrain_for_new_map(crate::map::resolved_terrain::test_grid(
         64,
         64,
@@ -65,8 +65,7 @@ fn scene(rules: &RuleSet, cursor: &Value) -> (Simulation, Roles) {
     sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(64, 64));
     let owner = sim.interner.intern("Americans");
     sim.houses
-        .insert(owner, HouseState::new(owner, 0, None, true, 0, 10));
-    sim.session.house_order.push(owner);
+        .register(HouseState::new(owner, 0, None, true, 0, 10));
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
     let mut roles = Roles::new();
@@ -630,7 +629,8 @@ fn original_welding_live_logic_boundaries_match_rng_ids_children_and_same_pass_l
     let retirement = &row["retirement_before_drain"];
     let mut compared_produced_child = false;
     for tick in 1..=last {
-        sim.session.binary_frame = int(&row["input"]["first_frame"]) as u32 + tick as u32 - 1;
+        sim.session
+            .set_binary_frame_for_test(int(&row["input"]["first_frame"]) as u32 + tick as u32 - 1);
         sim.object_ai_stage(Some(&retail.rules));
         if !compared_produced_child
             && let Some(particle) = sim
@@ -746,7 +746,9 @@ fn detached_particle_snapshot_keeps_bodies_and_queue_until_the_common_drain() {
     );
     let last = int(&native["retirement_before_drain"]["tick"]);
     for tick in 1..=last {
-        sim.session.binary_frame = int(&native["input"]["first_frame"]) as u32 + tick as u32 - 1;
+        sim.session.set_binary_frame_for_test(
+            int(&native["input"]["first_frame"]) as u32 + tick as u32 - 1,
+        );
         sim.object_ai_stage(Some(&retail.rules));
         if tick != last {
             sim.process_pending_delete();

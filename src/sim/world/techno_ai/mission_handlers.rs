@@ -78,7 +78,7 @@ pub(crate) fn dispatch_foot_mission(
     ctx: super::ObjectAiCtx<'_>,
 ) -> bool {
     let mut bridge_changed = false;
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     if !foot_mission_handler_due(sim, id, now) {
         return bridge_changed;
     }
@@ -947,7 +947,7 @@ fn infantry_automatic_guard_delay(
     // of unsigned elapsed frames changes admission across the sign boundary.
     let deadline = (actor.mission.mission_start_frame() as i32)
         .wrapping_add(house.difficulty_value(&rules.general.ai_auto_deploy_frame_delay));
-    if deadline >= sim.session.binary_frame as i32 {
+    if deadline >= sim.session.binary_frame() as i32 {
         return -1;
     }
     if let Some(archive) = actor.archive_target() {
@@ -1116,7 +1116,7 @@ impl Simulation {
                     id,
                     MissionId::from_known(mission),
                     0,
-                    self.session.binary_frame,
+                    self.session.binary_frame(),
                     &EntityReadyInputProvider,
                 );
             }
@@ -1206,7 +1206,7 @@ pub(crate) fn techno_unlimbo_idle_mode(
         }
         None => return,
     }
-    sim.mission_host_promote(id, sim.session.binary_frame, rules);
+    sim.mission_host_promote(id, sim.session.binary_frame(), rules);
 }
 
 /// One ordered selector shared by the live class receivers and scalar
@@ -1444,7 +1444,7 @@ pub(super) fn foot_hunt_scans_ahead(sim: &Simulation, id: u64, rules: &RuleSet) 
     entity.mission.current().known() == Some(MissionType::Hunt)
         && entity.attack_target.target().is_none()
         && !entity.infantry_deploy_doing()
-        && foot_mission_handler_due(sim, id, sim.session.binary_frame)
+        && foot_mission_handler_due(sim, id, sim.session.binary_frame())
         && hunt_scans(sim, id, rules)
         && !(entity.category() == EntityCategory::Unit
             && crate::sim::mcv_deploy::hunt_deploys(sim, id, rules))
@@ -1517,7 +1517,7 @@ fn hunt_infantry_arm(sim: &mut Simulation, id: u64, rules: &RuleSet, ctx: super:
         ctx.overlay_registry,
         ctx.effects,
     );
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     let _ = sim.mission_queue_exact(
         id,
         MissionId::from_known(mission),
@@ -1601,7 +1601,7 @@ fn infantry_computer_capture(
             ctx.overlay_registry,
             ctx.effects,
         );
-        let now = sim.session.binary_frame;
+        let now = sim.session.binary_frame();
         let _ = sim.mission_assign_exact(id, MissionId::from_known(MissionType::Capture), now);
     }
     MissionHandlerEvaluation::cadence(1)
@@ -1720,10 +1720,10 @@ fn evaluate_foot_rescue(
             id,
             MissionId::from_known(MissionType::AreaGuard),
             0,
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
             &EntityReadyInputProvider,
         );
-        let _ = sim.mission_commence_exact(id, sim.session.binary_frame);
+        let _ = sim.mission_commence_exact(id, sim.session.binary_frame());
     } else if state == 0 && actor.attack_target.target().is_none() {
         if actor.archive_target().is_none() {
             let post = foot_physical_cell_target(sim, id);
@@ -1846,7 +1846,7 @@ fn area_guard_scan_point(
         .substrate
         .entities
         .get(id)
-        .is_some_and(|entity| entity.passive_scan.timer().due(sim.session.binary_frame));
+        .is_some_and(|entity| entity.passive_scan.timer().due(sim.session.binary_frame()));
     if !(can_acquire_target(sim, id, rules) && timer_due) {
         return None;
     }
@@ -1879,7 +1879,7 @@ pub(super) fn foot_area_guard_scan_ahead(
         || entity.attack_target.target().is_some()
         || entity.infantry_deploy_doing()
         || entity.is_harvester()
-        || !foot_mission_handler_due(sim, id, sim.session.binary_frame)
+        || !foot_mission_handler_due(sim, id, sim.session.binary_frame())
     {
         return None;
     }
@@ -1925,7 +1925,7 @@ pub(super) fn evaluate_foot_area_guard(
         .get(id)
         .is_some_and(|entity| entity.bunker.link().installed_in().is_some())
     {
-        let now = sim.session.binary_frame;
+        let now = sim.session.binary_frame();
         let _ = sim.mission_queue_exact(
             id,
             MissionId::from_known(MissionType::Guard),
@@ -1949,7 +1949,7 @@ pub(super) fn evaluate_foot_area_guard(
         // then Scenario RandomRanged(1,10)+1. Commence is deliberately not
         // gated by ReadyToCommence; the shared dispatcher writes this delay
         // AFTER the mission change. No idle/target/destination setter runs.
-        let now = sim.session.binary_frame;
+        let now = sim.session.binary_frame();
         let _ = sim.mission_queue_exact(
             id,
             MissionId::from_known(MissionType::Harvest),
@@ -2193,7 +2193,7 @@ pub(super) fn evaluate_foot_guard_cadence(
     let rearm = sim.substrate.entities.get(id).map_or(0, |entity| {
         entity
             .rearm_timer
-            .remaining(sim.session.binary_frame as i32)
+            .remaining(sim.session.binary_frame() as i32)
     });
     if rearm != 0 {
         return MissionHandlerEvaluation {
@@ -2746,7 +2746,7 @@ mod guard_rearm_tests {
                 field("base_cadence")
             );
             let mut sim = Simulation::with_seed(1);
-            sim.session.binary_frame = field("frame") as u32;
+            sim.session.set_binary_frame_for_test(field("frame") as u32);
             let mut entity = GameEntity::test_default(1, "TEST", "Americans", 5, 5);
             entity.set_type_ref_for_test(sim.interner.intern("TEST"));
             entity.set_owner_for_test(sim.interner.intern("Americans"));
@@ -2811,7 +2811,7 @@ mod guard_rearm_tests {
         for row in rows {
             let field = |name: &str| row["input"][name].as_i64().unwrap() as i32;
             let mut sim = Simulation::with_seed(1);
-            sim.session.binary_frame = field("frame") as u32;
+            sim.session.set_binary_frame_for_test(field("frame") as u32);
             let mut entity = GameEntity::test_default(1, "TEST", "Americans", 5, 5);
             // Guard now reaches the native GetWeapon(1) query before its
             // timer tail. Keep the fixture's null weapon, with valid identities.

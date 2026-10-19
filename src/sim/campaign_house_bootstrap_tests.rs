@@ -131,9 +131,9 @@ fn assert_houses(
     id_offset: i32,
 ) {
     let rows = rows.as_array().unwrap();
-    assert_eq!(rows.len(), sim.session.house_order.len());
+    assert_eq!(rows.len(), sim.houses.order().len());
     for (index, expected) in rows.iter().enumerate() {
-        let owner = sim.session.house_order[index];
+        let owner = sim.houses.order()[index];
         let actual = &sim.houses[&owner];
         assert_eq!(
             sim.interner.resolve(owner),
@@ -401,7 +401,7 @@ fn campaign_house_segment_matches_six_stock_rows_and_nine_startup_controls() {
                 projection.is_none(),
                 "campaigns do not synthesize an offline start plan"
             );
-            let first = fresh.session.house_order[0];
+            let first = fresh.houses.order()[0];
             // Rebase the bounded native House segment against the actual
             // Rules receipt. This validates House allocation order without
             // asserting that the native fixture established full Pcount.

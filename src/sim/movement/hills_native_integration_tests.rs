@@ -332,7 +332,7 @@ fn await_stopped_deck_pose(
             "accepted Stop clears NavCom"
         );
         if actor.passive_acquire_mission() == crate::sim::mission::MissionType::Guard
-            && !actor.body_facing.is_rotating(sim.session.binary_frame)
+            && !actor.body_facing.is_rotating(sim.session.binary_frame())
             && crate::sim::movement::motion_query::is_moving(actor) == Some(false)
         {
             return;
@@ -506,7 +506,7 @@ fn hills_stationary_friendly_deck_blocker_matches_original_repath() {
         assert_eq!(entity.position.z(), 6);
         assert!(entity.navigation.nav_com().is_none());
     }
-    assert!(!parked.body_facing.is_rotating(sim.session.binary_frame));
+    assert!(!parked.body_facing.is_rotating(sim.session.binary_frame()));
     assert_eq!(
         crate::sim::movement::motion_query::is_moving(parked),
         Some(false)
@@ -683,7 +683,7 @@ fn hills_same_type_marker_downgrade_reaches_live_foot_search_and_cleanup() {
             simulation: sim,
             resources,
         } = &mut scenario.runtime;
-        let frame = sim.session.binary_frame;
+        let frame = sim.session.binary_frame();
         for id in [peer, mover] {
             sim.mission_assign_exact(id, MissionId::from_known(MissionType::Move), frame)
                 .unwrap();

@@ -102,7 +102,7 @@ fn arena(rules: &RuleSet) -> (Simulation, PathGrid) {
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
     sim.input_delay_ticks = 0;
-    sim.session.binary_frame = 1;
+    sim.session.set_binary_frame_for_test(1);
     let grid = sim
         .path_grid_snapshot()
         .map(|grid| (*grid).clone())
@@ -122,7 +122,7 @@ fn step(sim: &mut Simulation, rules: &RuleSet, grid: &PathGrid) {
 
 fn order_plant(sim: &mut Simulation, owner: &str, attacker_id: u64, target_building_id: u64) {
     let owner = sim.interner.intern(owner);
-    let tick = sim.session.tick + 1;
+    let tick = sim.session.tick() + 1;
     sim.queue_command(CommandEnvelope::new(
         owner,
         tick,
@@ -142,7 +142,7 @@ fn step_until_planted(
     building: u64,
 ) -> u32 {
     for _ in 0..300 {
-        let frame = sim.session.binary_frame;
+        let frame = sim.session.binary_frame();
         step(sim, rules, grid);
         if sim
             .substrate
@@ -167,7 +167,7 @@ fn stand_in(sim: &mut Simulation, id: u64, building: u64) {
         .get(building)
         .map(|building| (building.position.rx(), building.position.ry()))
         .unwrap();
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     sim.mission_assign_exact(id, SABOTAGE, now).unwrap();
     let planter = sim.substrate.entities.get_mut(id).unwrap();
     {
@@ -219,7 +219,7 @@ fn mission_attacks_c4_arm_sends_a_demolition_man_to_sabotage() {
             .unwrap()
             .attack_target
             .set_for_test(Some(TargetKind::Entity(target)));
-        let now = sim.session.binary_frame;
+        let now = sim.session.binary_frame();
         sim.mission_assign_exact(actor, MissionId::from_known(MissionType::Attack), now)
             .unwrap();
 
@@ -249,7 +249,7 @@ fn a_hunting_demolition_man_whose_scan_finds_a_building_sabotages_it() {
     let (mut sim, _) = arena(&rules);
     let target = spawn(&mut sim, &rules, "GAPILE", "Americans", 26, 26);
     let actor = spawn(&mut sim, &rules, "TANY", "Russians", 4, 4);
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     sim.mission_assign_exact(actor, MissionId::from_known(MissionType::Hunt), now)
         .unwrap();
 
@@ -343,7 +343,7 @@ fn a_tanya_ordered_to_sabotage_walks_in_and_plants_the_charge() {
     let attack = MissionId::from_known(MissionType::Attack);
     let (mut overridden, mut sent_back) = (false, false);
     loop {
-        let frame = sim.session.binary_frame;
+        let frame = sim.session.binary_frame();
         step(&mut sim, &rules, &grid);
         let planter = sim.substrate.entities.get(tanya).unwrap();
         let on_building = planter
@@ -387,10 +387,10 @@ fn a_retail_area_guard_tanya_with_a_building_target_plants_c4() {
     let rules = retail.rules;
     assert!(rules.object("TANY").unwrap().c4);
     let (mut sim, grid) = arena(&rules);
-    sim.session.game_options.short_game = false;
+    sim.session.game_options_mut_for_test().short_game = false;
     let building = spawn(&mut sim, &rules, "GAPOWR", "Americans", 14, 10);
     let tanya = spawn(&mut sim, &rules, "TANY", "Russians", 10, 10);
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     sim.mission_assign_exact(tanya, MissionId::from_known(MissionType::AreaGuard), now)
         .unwrap();
     sim.assign_target_represented(
@@ -421,7 +421,7 @@ fn a_retail_area_guard_tanya_with_a_building_target_plants_c4() {
     assert_eq!(pending.timer.start_frame(), planted as i32);
     let detonates = planted + pending.timer.duration() as u32;
     loop {
-        let frame = sim.session.binary_frame;
+        let frame = sim.session.binary_frame();
         step(&mut sim, &rules, &grid);
         if sim
             .substrate
@@ -535,7 +535,8 @@ fn a_second_planter_leaves_the_first_charge_alone() {
         .get(building)
         .unwrap()
         .pending_c4_detonation;
-    sim.session.binary_frame += 5;
+    sim.session
+        .set_binary_frame_for_test(sim.session.binary_frame() + 5);
     sim.substrate
         .entities
         .get_mut(building)
@@ -559,7 +560,7 @@ fn a_second_planter_leaves_the_first_charge_alone() {
             planter.rearm_timer.start_frame(),
             planter.rearm_timer.duration()
         ),
-        (sim.session.binary_frame as i32, rof)
+        (sim.session.binary_frame() as i32, rof)
     );
     assert_ne!(
         planter.navigation.nav_com(),
@@ -578,7 +579,7 @@ fn a_sold_or_curtained_building_takes_no_charge() {
         let (mut sim, _) = arena(&rules);
         let building = spawn(&mut sim, &rules, "GAPILE", "Russians", 16, 10);
         let tanya = spawn(&mut sim, &rules, "TANY", "Americans", 15, 10);
-        let now = sim.session.binary_frame;
+        let now = sim.session.binary_frame();
         if curtained {
             crate::sim::superweapon::invulnerability::apply_invulnerability(
                 sim.substrate.entities.get_mut(building).unwrap(),
@@ -625,7 +626,7 @@ fn the_arm_plants_only_from_a_sabotage_c4_arrival_at_its_navcom() {
         stand_in(&mut sim, actor, building);
         match case {
             "not sabotage" => {
-                let now = sim.session.binary_frame;
+                let now = sim.session.binary_frame();
                 sim.mission_assign_exact(actor, MissionId::from_known(MissionType::Capture), now)
                     .unwrap();
             }

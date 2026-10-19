@@ -62,7 +62,7 @@ fn original_selfheal_tail_and_192_height_rows_retain_art_and_mark_smoke() {
             sim.resolved_terrain = Some(ResolvedTerrainGrid::from_cells(8, 8, vec![cell]));
         }
         sim.substrate.entities.insert(entity);
-        sim.session.binary_frame = 900;
+        sim.session.set_binary_frame_for_test(900);
         let smoke_id = sim
             .spawn_particle_system(
                 ParticleSystemTypeId(0),
@@ -141,7 +141,8 @@ fn fixture(row: &serde_json::Value) -> (Simulation, RuleSet) {
     });
     entity.lifecycle.set_in_limbo_for_test(false);
     sim.substrate.entities.insert(entity);
-    sim.session.binary_frame = input["frame"].as_u64().unwrap() as u32;
+    sim.session
+        .set_binary_frame_for_test(input["frame"].as_u64().unwrap() as u32);
     sim.set_logic_order_for_test(vec![1]);
     (sim, rules)
 }
@@ -243,7 +244,7 @@ fn building_damage_fire_runs_before_yellow_crossing_selfheal() {
     building.health.set_for_test(50);
     sim.substrate.entities.insert(building);
     sim.reveal(id);
-    sim.session.binary_frame = 900;
+    sim.session.set_binary_frame_for_test(900);
     sim.object_ai_stage(Some(&rules));
     let building = sim.entities().get(id).unwrap();
     assert_eq!(building.health.current(), 51);
@@ -251,7 +252,7 @@ fn building_damage_fire_runs_before_yellow_crossing_selfheal() {
         building.damage_fires.is_active(),
         "43FC39 precedes6FA756 INC"
     );
-    sim.session.binary_frame = 901;
+    sim.session.set_binary_frame_for_test(901);
     sim.object_ai_stage(Some(&rules));
     assert!(!sim.entities().get(id).unwrap().damage_fires.is_active());
 }

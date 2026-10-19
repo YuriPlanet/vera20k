@@ -35,12 +35,9 @@ fn world() -> Option<(RuleSet, Simulation, InternedId)> {
     });
     assert!(sim.rebuild_dynamic_navigation(&rules));
     let confederation = sim.interner.intern("Confederation");
-    sim.houses.insert(
-        confederation,
-        HouseState::new(confederation, 1, None, false, 0, 10),
-    );
-    sim.session.house_order.push(confederation);
-    sim.session.current_house = Some(americans);
+    sim.houses
+        .register(HouseState::new(confederation, 1, None, false, 0, 10));
+    sim.session.set_current_house_for_test(Some(americans));
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     sim.fog = vision::FogState::new(128, 128);

@@ -214,7 +214,7 @@ fn native_tracking_corpus() {
         let mut sim = Simulation::with_seed(3);
         let house = sim.interner.intern("Americans");
         sim.houses
-            .insert(house, HouseState::new(house, 0, None, true, 0, 10));
+            .register(HouseState::new(house, 0, None, true, 0, 10));
         let counts = |sim: &Simulation| {
             let tracking = &sim.houses[&house].tracking;
             (
@@ -259,7 +259,7 @@ fn one_house() -> (Simulation, RuleSet, InternedId) {
     let mut sim = Simulation::with_seed(3);
     let house = sim.interner.intern("Americans");
     sim.houses
-        .insert(house, HouseState::new(house, 0, None, true, 0, 10));
+        .register(HouseState::new(house, 0, None, true, 0, 10));
     (sim, rules, house)
 }
 
@@ -308,7 +308,7 @@ fn change_owner_moves_the_counts() {
     let (mut sim, rules, first) = one_house();
     let second = sim.interner.intern("Russians");
     sim.houses
-        .insert(second, HouseState::new(second, 1, None, false, 0, 10));
+        .register(HouseState::new(second, 1, None, false, 0, 10));
     let on_map = sim
         .spawn_object_at_height("TANK", "Americans", 10, 10, 0, 0, &rules)
         .unwrap();
@@ -342,7 +342,7 @@ fn a_helipads_docks_follow_its_opening_capture_and_limbo() {
     let (mut sim, rules, first) = one_house();
     let second = sim.interner.intern("Russians");
     sim.houses
-        .insert(second, HouseState::new(second, 1, None, false, 0, 10));
+        .register(HouseState::new(second, 1, None, false, 0, 10));
     let docks = |sim: &Simulation| {
         (
             sim.houses[&first].tracking.airport_docks(),
@@ -474,7 +474,7 @@ fn force_values_follow_the_objects_on_the_map() {
         let house = sim.interner.intern(name);
         let mut state = HouseState::new(house, 0, None, false, 0, 10);
         state.project_country_mults(&rules, &sim.interner);
-        sim.houses.insert(house, state);
+        sim.houses.register(state);
         house
     });
     let ids: Vec<u64> = [
@@ -551,7 +551,7 @@ fn naval_tracking_uses_unit_naval_and_exact_zero_passengers() {
     let mut sim = Simulation::new();
     let owner = sim.interner.intern("Americans");
     sim.houses
-        .insert(owner, HouseState::new(owner, 0, None, true, 0, 10));
+        .register(HouseState::new(owner, 0, None, true, 0, 10));
     let ids: Vec<_> = [
         "BOAT",
         "TRANSPORT",
@@ -589,7 +589,7 @@ fn naval_tracking_retains_limbo_capture_and_reload_deletion_authority() {
     let (mut sim, rules, first) = one_house();
     let second = sim.interner.intern("Russians");
     sim.houses
-        .insert(second, HouseState::new(second, 1, None, false, 0, 10));
+        .register(HouseState::new(second, 1, None, false, 0, 10));
     let boat = sim
         .spawn_object_at_height("BOAT", "Americans", 10, 10, 0, 0, &rules)
         .unwrap();

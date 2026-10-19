@@ -3,6 +3,7 @@
 
 use super::*;
 use crate::sim::world::Simulation;
+use std::collections::BTreeMap;
 
 thread_local! {
     static FIRE_VISIT_TRACE: std::cell::RefCell<Option<Vec<serde_json::Value>>> = const { std::cell::RefCell::new(None) };
@@ -40,7 +41,7 @@ pub(crate) fn observe_area_visit(
     AREA_VISIT_TRACE.with_borrow_mut(|trace| {
         if let Some(observations) = trace {
             observations.push(serde_json::json!({
-                "frame": world.session.binary_frame,
+                "frame": world.session.binary_frame(),
                 "coord": [impact.x, impact.y, impact.z],
                 "damage": damage,
                 "warhead": warhead.id,
@@ -114,7 +115,7 @@ pub(crate) fn substitute_building_fire(
                 .get_mut(id)
                 .unwrap()
                 .rearm_timer
-                .start(world.session.binary_frame as i32, rof);
+                .start(world.session.binary_frame() as i32, rof);
         }
         stub.calls.push((id, shot, multiplier));
         true
@@ -223,7 +224,7 @@ fn with_world<R>(
     entities: &mut EntityStore,
     occupancy: &mut OccupancyGrid,
     interner: &mut StringInterner,
-    mut houses: Option<&mut BTreeMap<InternedId, HouseState>>,
+    mut houses: Option<&mut crate::sim::houses::Houses>,
     main_rng: Option<&mut SimRng>,
     scenario_rng: &mut SimRng,
     overlay_grid: Option<&mut OverlayGrid>,
@@ -430,7 +431,7 @@ pub(crate) fn tick_combat_with_fog(
         rules, interner,
     ));
     let mut unused_main_rng = SimRng::new(0);
-    let mut empty_houses = BTreeMap::new();
+    let mut empty_houses = crate::sim::houses::Houses::default();
     tick_combat_with_fog_and_main_rng(
         entities,
         occupancy,
@@ -440,7 +441,6 @@ pub(crate) fn tick_combat_with_fog(
         fog,
         power_states,
         &mut empty_houses,
-        &[],
         &HouseAllianceMap::new(),
         sound_sink,
         overlay_grid,
@@ -466,8 +466,7 @@ pub(crate) fn tick_combat_with_fog_and_main_rng(
     handles: Option<crate::sim::type_handle_table::ResolvedRuleHandles>,
     fog: Option<&FogState>,
     power_states: &BTreeMap<InternedId, PowerState>,
-    houses: &mut BTreeMap<InternedId, HouseState>,
-    house_order: &[InternedId],
+    houses: &mut crate::sim::houses::Houses,
     alliances: &HouseAllianceMap,
     sound_sink: Option<&mut Vec<SimSoundEvent>>,
     overlay_grid: Option<&mut OverlayGrid>,
@@ -492,7 +491,6 @@ pub(crate) fn tick_combat_with_fog_and_main_rng(
         fog,
         power_states,
         houses,
-        house_order,
         alliances,
         sound_sink,
         overlay_grid,
@@ -522,8 +520,7 @@ pub(crate) fn commit_damage_events(
     occupancy: &mut OccupancyGrid,
     rules: &RuleSet,
     interner: &mut StringInterner,
-    houses: &mut BTreeMap<InternedId, HouseState>,
-    house_order: &[InternedId],
+    houses: &mut crate::sim::houses::Houses,
     alliances: &HouseAllianceMap,
     main_rng: &mut SimRng,
     scenario_rng: &mut SimRng,
@@ -553,10 +550,9 @@ pub(crate) fn commit_damage_events(
         inline_hooks.as_deref_mut(),
         |world, run| {
             world.rule_handles = handles;
-            world.session.house_order = house_order.to_vec();
             world.house_alliances = alliances.clone();
             world.receiver_fixture.as_mut().unwrap().current_tick = current_tick;
-            world.session.binary_frame = current_tick as u32;
+            world.session.set_binary_frame_for_test(current_tick as u32);
             world_receiver::commit_entities(
                 world,
                 run,
@@ -575,8 +571,7 @@ pub(crate) fn commit_area_damage_receivers(
     occupancy: &mut OccupancyGrid,
     rules: &RuleSet,
     interner: &mut StringInterner,
-    houses: &mut BTreeMap<InternedId, HouseState>,
-    house_order: &[InternedId],
+    houses: &mut crate::sim::houses::Houses,
     alliances: &HouseAllianceMap,
     main_rng: &mut SimRng,
     scenario_rng: &mut SimRng,
@@ -607,10 +602,9 @@ pub(crate) fn commit_area_damage_receivers(
         inline_hooks.as_deref_mut(),
         |world, run| {
             world.rule_handles = handles;
-            world.session.house_order = house_order.to_vec();
             world.house_alliances = alliances.clone();
             world.receiver_fixture.as_mut().unwrap().current_tick = current_tick;
-            world.session.binary_frame = current_tick as u32;
+            world.session.set_binary_frame_for_test(current_tick as u32);
             world_receiver::commit_area(world, run, receivers, rules, overlay_registry)
         },
     )
@@ -622,8 +616,7 @@ pub(crate) fn handle_entity_deaths(
     rules: &RuleSet,
     interner: &mut StringInterner,
     handles: Option<crate::sim::type_handle_table::ResolvedRuleHandles>,
-    houses: &mut BTreeMap<InternedId, HouseState>,
-    house_order: &[InternedId],
+    houses: &mut crate::sim::houses::Houses,
     alliances: &HouseAllianceMap,
     main_rng: &mut SimRng,
     scenario_rng: &mut SimRng,
@@ -654,11 +647,10 @@ pub(crate) fn handle_entity_deaths(
         inline_hooks.as_deref_mut(),
         |world, run| {
             world.rule_handles = handles;
-            world.session.house_order = house_order.to_vec();
             world.house_alliances = alliances.clone();
             world.receiver_fixture.as_mut().unwrap().current_tick = current_tick;
-            world.session.no_damage = scenario_no_damage;
-            world.session.binary_frame = current_tick as u32;
+            world.session.set_no_damage_for_test(scenario_no_damage);
+            world.session.set_binary_frame_for_test(current_tick as u32);
             world_receiver::handle_death(
                 world,
                 run,
@@ -708,7 +700,7 @@ pub(crate) fn emit_projectile_detonations(
         inline_hooks.as_deref_mut(),
         |world, run| {
             world.rule_handles = handles;
-            world.session.no_damage = scenario_no_damage;
+            world.session.set_no_damage_for_test(scenario_no_damage);
             world.receiver_fixture.as_mut().unwrap().terrain_collection = terrain_objects.is_some();
             if let Some(view) = terrain_objects {
                 world.production.terrain_objects = view.objects.clone();
@@ -768,13 +760,13 @@ pub(crate) fn resolve_attacker_fire(
         inline_hooks.as_deref_mut(),
         |world, _run| {
             world.rule_handles = handles;
-            world.session.no_damage = scenario_no_damage;
+            world.session.set_no_damage_for_test(scenario_no_damage);
             world.receiver_fixture.as_mut().unwrap().terrain_collection = terrain_objects.is_some();
             if let Some(view) = terrain_objects {
                 world.production.terrain_objects = view.objects.clone();
                 world.production.terrain_object_cells = view.cells.clone();
             }
-            world.session.binary_frame = binary_frame;
+            world.session.set_binary_frame_for_test(binary_frame);
             world.receiver_fixture.as_mut().unwrap().current_tick = u64::from(binary_frame);
             if let Some(fog) = fog {
                 world.fog = fog.clone();
@@ -802,8 +794,7 @@ pub(crate) fn tick_combat_with_fog_and_main_rng_with_terrain_area(
     handles: Option<crate::sim::type_handle_table::ResolvedRuleHandles>,
     fog: Option<&FogState>,
     power_states: &BTreeMap<InternedId, PowerState>,
-    houses: &mut BTreeMap<InternedId, HouseState>,
-    house_order: &[InternedId],
+    houses: &mut crate::sim::houses::Houses,
     alliances: &HouseAllianceMap,
     sound_sink: Option<&mut Vec<SimSoundEvent>>,
     overlay_grid: Option<&mut OverlayGrid>,
@@ -840,11 +831,10 @@ pub(crate) fn tick_combat_with_fog_and_main_rng_with_terrain_area(
         inline_hooks,
         |world, run| {
             world.rule_handles = handles;
-            world.session.house_order = house_order.to_vec();
             world.house_alliances = alliances.clone();
             world.receiver_fixture.as_mut().unwrap().current_tick = current_tick;
-            world.session.no_damage = scenario_no_damage;
-            world.session.binary_frame = binary_frame;
+            world.session.set_no_damage_for_test(scenario_no_damage);
+            world.session.set_binary_frame_for_test(binary_frame);
             world.power_states = power_states.clone();
             world.bridge_state = bridge_state.cloned();
             if let Some(fog) = fog {
@@ -931,7 +921,7 @@ pub(crate) fn tick_combat_with_fog_and_main_rng_with_terrain_area(
                         world.radiation.apply_detonation(
                             detonation,
                             binary_frame,
-                            &world.session.theater,
+                            &world.session.theater(),
                             &rules.radiation,
                             world.resolved_terrain.as_ref(),
                             &mut world.lighting_sources.pending,

@@ -132,7 +132,7 @@ fn brute_smash_emits_debris(elite: bool, expected: SmashDebrisExpectation) {
     // raw target/mission/timer edit: the tank keeps its AreaGuard/counterfire.
     sim.fog.mark_visible_for_owner(owner, 11, 10);
     sim.fog.mark_visible_for_owner(target_owner, 10, 10);
-    sim.session.current_house = Some(owner);
+    sim.session.set_current_house_for_test(Some(owner));
     sim.queue_command(CommandEnvelope::new(
         owner,
         1,
@@ -266,7 +266,7 @@ fn brute_smash_emits_debris(elite: bool, expected: SmashDebrisExpectation) {
             // rewrite missions/targets, or visit a deleted Anim manually.
             sim.queue_command(CommandEnvelope::new(
                 owner,
-                sim.session.tick + 1,
+                sim.session.tick() + 1,
                 Command::Move {
                     entity_id: brute,
                     target_rx: 3,
@@ -583,7 +583,9 @@ fn compare_native_smashing_tail(retired: bool, typed: bool) {
         world.intern_rule_type_ids(&rules);
         world.resolve_type_handles(&rules);
         world.resolve_rule_animation_lists(&rules);
-        world.session.binary_frame = input["binary_frame"].as_u64().unwrap() as u32;
+        world
+            .session
+            .set_binary_frame_for_test(input["binary_frame"].as_u64().unwrap() as u32);
         let live = coord(&input["live"]);
         let placement = coord(&input["placement"]);
         let receiver = if input["receiver"] != "empty" {
@@ -1047,7 +1049,9 @@ fn original_fatal_mtnk_tires_precede_the_concrete_death_anim_identity() {
             prior["logic_registered"]
         );
         assert!(world.voxel_anims().iter().next().is_none() && world.anims().next().is_none());
-        world.session.binary_frame = input["binary_frame"].as_u64().unwrap() as u32;
+        world
+            .session
+            .set_binary_frame_for_test(input["binary_frame"].as_u64().unwrap() as u32);
         world.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
                 prior["session_mode"].as_u64().unwrap() != 0,

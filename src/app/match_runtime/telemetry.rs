@@ -303,7 +303,7 @@ mod tests {
         assert!(observer.synchronize(Some(&mut simulation), true));
         simulation.advance_tick(&[], None, None, None, 67);
         assert_eq!(simulation.frame_profile().frames(), 1);
-        let paused_tick = simulation.session.tick;
+        let paused_tick = simulation.session.tick();
         let saved = crate::util::save_codec::serialize(&simulation).unwrap();
         // A dashboard leaving must not stop or reset the ledger: report points
         // are captured without a client.
@@ -319,7 +319,7 @@ mod tests {
             1,
             "re-attaching does not reset the ledger"
         );
-        assert_eq!(simulation.session.tick, paused_tick);
+        assert_eq!(simulation.session.tick(), paused_tick);
         assert_eq!(
             crate::util::save_codec::serialize(&simulation).unwrap(),
             saved

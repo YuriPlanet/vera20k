@@ -584,8 +584,7 @@ fn the_make_infantry_end_matches_native() {
 
         let cell = ((x.max(0) / 256) as u16, (y / 256) as u16);
         let (rules, mut sim, _) = world_with(rules, 64, &[(cell, 2)]);
-        sim.houses.clear();
-        sim.session.house_order.clear();
+        sim.houses.clear_for_test();
         let houses: Vec<InternedId> = rows(row, "houses")
             .iter()
             .enumerate()
@@ -597,8 +596,7 @@ fn the_make_infantry_end_matches_native() {
                 let country = sim.interner.intern(country);
                 let mut state = HouseState::new(id, side, Some(country), house[2] == true, 0, 10);
                 state.is_defeated = house[1] == true;
-                sim.houses.insert(id, state);
-                sim.session.house_order.push(id);
+                sim.houses.register(state);
                 id
             })
             .collect();

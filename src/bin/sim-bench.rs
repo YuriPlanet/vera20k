@@ -306,8 +306,7 @@ fn march(
             // No house owns a building, so exempt every house from the defeat
             // scan; objects still fight because only same-house pairs are allied.
             house.multiplay_passive = true;
-            sim.houses.insert(id, house);
-            sim.session.house_order.push(id);
+            sim.houses.register(house);
             id
         })
         .collect();
@@ -319,7 +318,7 @@ fn march(
 
     // Each army marches in formation to the opposite house's home, and with
     // --return-at later marches back to its own.
-    let first_tick = runtime.simulation.session.tick + 1;
+    let first_tick = runtime.simulation.session.tick() + 1;
     let mut orders: Vec<Vec<CommandEnvelope>> = Vec::new();
     let clamp = |base: u16, delta: i32| (i32::from(base) + delta).clamp(0, 511) as u16;
     let waves = [(0, houses / 2)]

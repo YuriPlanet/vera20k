@@ -56,13 +56,13 @@ fn native_trigger_reveal_cell_put_discovers_unshrouded_campaign_resident() {
         let mut sim = Simulation::with_seed(31);
         let player = sim.interner.intern("Player");
         let owner = sim.interner.intern("Other");
-        sim.session.current_house = Some(player);
+        sim.session.set_current_house_for_test(Some(player));
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(game_mode_nonzero),
         );
         for house in [player, owner] {
             sim.houses
-                .insert(house, HouseState::new(house, 0, None, true, 0, 10));
+                .register(HouseState::new(house, 0, None, true, 0, 10));
         }
         sim.install_resolved_terrain_for_new_map(crate::map::resolved_terrain::test_grid(
             24,
@@ -146,7 +146,7 @@ fn constructor_complete_foot_destructors_match_native_team_gate_and_rng() {
                 cell
             },
         ));
-        sim.session.binary_frame = 1;
+        sim.session.set_binary_frame_for_test(1);
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
@@ -154,8 +154,7 @@ fn constructor_complete_foot_destructors_match_native_team_gate_and_rng() {
             .set_started(input["scenario_started_byte"].as_i64().unwrap() != 0);
         let owner = sim.interner.intern("Americans");
         sim.houses
-            .insert(owner, HouseState::new(owner, 0, Some(owner), true, 0, 10));
-        sim.session.house_order = vec![owner];
+            .register(HouseState::new(owner, 0, Some(owner), true, 0, 10));
         let definitions = IniFile::from_str(&format!(
             "[TeamTypes]\n0=TT\n[TT]\nHouse=Americans\nScript=S\nTaskForce=F\nWaypoint=E\nMax=-1\n[ScriptTypes]\n0=S\n[S]\n0=3,4\n[TaskForces]\n0=F\n[F]\n0=1,{typ}\n"
         ));
@@ -354,7 +353,7 @@ fn insert_reservation_building(
     spacing: i32,
 ) -> crate::sim::intern::InternedId {
     let owner = sim.interner.intern(owner_name);
-    sim.houses.entry(owner).or_insert_with(|| {
+    sim.houses.get_or_register_for_test(owner, || {
         HouseState::new(
             owner,
             0,
@@ -503,8 +502,7 @@ fn receiver_fatal_limbo_clears_sparse_map_dummy_reservation() {
         .as_mut()
         .unwrap()
         .test_set_native_allocated_cells(&allocated);
-    let owner = insert_reservation_building(&mut sim, 41, "Americans", 10, 10, "1x1", 1);
-    sim.session.house_order.push(owner);
+    insert_reservation_building(&mut sim, 41, "Americans", 10, 10, "1x1", 1);
     assert!(matches!(
         sim.try_reveal_entity(41, common_raw_request(10, 10, 0, 128, 128)),
         RevealOutcome::Revealed { .. }
@@ -535,8 +533,8 @@ fn receiver_garrison_survivor_keeps_height_aware_playfield_membership() {
     )
     .expect("garrison survivor rules");
     let mut sim = Simulation::new();
-    sim.session.map_width = 16;
-    sim.session.map_height = 16;
+    sim.session.set_map_width_for_test(16);
+    sim.session.set_map_height_for_test(16);
     sim.playfield_bounds =
         Some(crate::sim::cell_rect::PlayfieldBounds::from_normalized_local_size(16, 2, 2, 12, 3));
     install_common_raw_terrain(&mut sim, 16, 16, 4, None);
@@ -1059,7 +1057,7 @@ fn drive_ship_slope_production_spawn_unlimbo_snaps_without_manual_rocking_state(
         ("TTRAIN", (6, 2), 12, 104),
     ] {
         let mut sim = Simulation::with_seed(0x510fe);
-        sim.session.binary_frame = 37;
+        sim.session.set_binary_frame_for_test(37);
         sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
             base: 0,
             off_fc: -100,
@@ -1118,7 +1116,7 @@ fn drive_ship_slope_production_spawn_unlimbo_snaps_without_manual_rocking_state(
 fn zero_speed_foot_drive_ship_payloads_survive_all_world_spawn_paths() {
     let rules = zero_speed_drive_ship_slope_rules();
     let mut sim = Simulation::with_seed(0x510fe);
-    sim.session.binary_frame = 71;
+    sim.session.set_binary_frame_for_test(71);
     sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
         base: 0,
         off_fc: -100,
@@ -1236,7 +1234,7 @@ fn zero_speed_foot_drive_ship_payloads_survive_all_world_spawn_paths() {
 #[test]
 fn drive_ship_slope_failed_reveal_does_not_snap_or_consume_rng() {
     let mut sim = Simulation::with_seed(0x510fe);
-    sim.session.binary_frame = 40;
+    sim.session.set_binary_frame_for_test(40);
     install_common_raw_terrain(&mut sim, 8, 8, 0, None);
     sim.resolved_terrain
         .as_mut()
@@ -1782,8 +1780,8 @@ fn gsi_04_12_common_raw_occupation_building_foundation_is_ground_only() {
 #[test]
 fn gsi_04_05_hidden_lifecycle_follows_base_lists_without_expanding_them() {
     let mut sim = Simulation::new();
-    sim.session.map_width = 16;
-    sim.session.map_height = 16;
+    sim.session.set_map_width_for_test(16);
+    sim.session.set_map_height_for_test(16);
     insert_entity(&mut sim, 1, EntityCategory::Structure);
     {
         let building = sim.substrate.entities.get_mut(1).expect("building");
@@ -2249,8 +2247,8 @@ fn gsi_05_05_mapless_fly_uses_dummy_ground_then_bridge_height() {
 #[test]
 fn gsi_04_07_damage_air_spatial_entry_crossing_and_exit_keep_vector_order() {
     let mut sim = Simulation::new();
-    sim.session.map_width = 40;
-    sim.session.map_height = 40;
+    sim.session.set_map_width_for_test(40);
+    sim.session.set_map_height_for_test(40);
     install_common_raw_terrain(&mut sim, 40, 40, 0, None);
     // Foot Unlimbo4D72B2 adds ConsideredAircraft only above the native
     // high-flight threshold (208 leptons); a Reveal without rules commits no
@@ -2348,8 +2346,8 @@ fn unlimbo_adds_a_high_flying_considered_aircraft_to_the_air_tracker() {
         )
         .expect("Jumpjet VehicleType rules");
         let mut sim = Simulation::new();
-        sim.session.map_width = 40;
-        sim.session.map_height = 40;
+        sim.session.set_map_width_for_test(40);
+        sim.session.set_map_height_for_test(40);
         install_common_raw_terrain(&mut sim, 40, 40, 0, None);
         insert_entity(&mut sim, 30, EntityCategory::Unit);
         let type_ref = sim.interner.intern("JJET");
@@ -3626,7 +3624,7 @@ fn occupier_capture_retains_live_non_selling_nav_target() {
     sim.mission_assign_exact(
         1,
         MissionId::from_known(MissionType::Capture),
-        sim.session.binary_frame,
+        sim.session.binary_frame(),
     )
     .unwrap();
 
@@ -3669,13 +3667,13 @@ fn selling_target_disables_occupier_capture_nav_retention() {
     sim.mission_assign_exact(
         1,
         MissionId::from_known(MissionType::Capture),
-        sim.session.binary_frame,
+        sim.session.binary_frame(),
     )
     .unwrap();
     sim.mission_assign_exact(
         2,
         MissionId::from_known(MissionType::Selling),
-        sim.session.binary_frame,
+        sim.session.binary_frame(),
     )
     .unwrap();
 
@@ -3702,7 +3700,7 @@ fn target_expiry_rearms_passive_scan_and_restores_suspended_mission() {
     insert_entity(&mut sim, 2, EntityCategory::Unit);
     insert_entity(&mut sim, 3, EntityCategory::Unit);
     let _ = sim.try_reveal_entity(2, request(9, 11, PlacementEvidence::MarkSucceeded));
-    sim.session.binary_frame = 105;
+    sim.session.set_binary_frame_for_test(105);
 
     let listener = sim.substrate.entities.get_mut(1).unwrap();
     listener
@@ -3819,7 +3817,7 @@ fn detach_sensor_guard_applies_to_techno_but_not_constructed_terrain() {
         );
         let sensor_counts = sim.fog.sensors_by_house.clone();
         let registered = sim.live_object_order_snapshot();
-        sim.session.binary_frame = 105;
+        sim.session.set_binary_frame_for_test(105);
         {
             let actor = sim.substrate.entities.get_mut(listener).unwrap();
             actor
@@ -4500,7 +4498,7 @@ fn gsi_05_03_duplicate_uninit_repeats_direct_expiry_and_queue_but_finalizes_once
     let mut sim = Simulation::new();
     let owner = sim.interner.intern("Americans");
     sim.houses
-        .insert(owner, HouseState::new(owner, 0, None, true, 0, 10));
+        .register(HouseState::new(owner, 0, None, true, 0, 10));
     insert_entity(&mut sim, 1, EntityCategory::Unit);
     // As its construction would: Add_Tracking.
     sim.update_house_tracking(1, crate::sim::house_tracking::HouseTracking::add_tracking);
@@ -4641,7 +4639,7 @@ fn lifecycle_authority_uninit_records_once_and_the_drain_removes_the_tracking() 
     let mut sim = Simulation::new();
     let owner = sim.interner.intern("Americans");
     sim.houses
-        .insert(owner, HouseState::new(owner, 0, None, true, 0, 10));
+        .register(HouseState::new(owner, 0, None, true, 0, 10));
     insert_entity(&mut sim, 1, EntityCategory::Unit);
     sim.update_house_tracking(1, crate::sim::house_tracking::HouseTracking::add_tracking);
 
@@ -4664,7 +4662,6 @@ fn lifecycle_authority_uninit_records_once_and_the_drain_removes_the_tracking() 
 fn gsi_04_05_reservation_successful_reveal_marks_expanded_rect_after_lists() {
     let mut sim = Simulation::new();
     let owner = insert_reservation_building(&mut sim, 101, "Americans", 10, 20, "2x3", 1);
-    sim.session.house_order.push(owner);
 
     assert!(matches!(
         sim.try_reveal_entity(101, request(10, 20, PlacementEvidence::MarkSucceeded)),
@@ -4725,7 +4722,7 @@ fn gsi_04_16_dustbowl_conyard_unlimbo_uses_local_size_edge() {
     let owner = sim.interner.intern("Americans");
     let mut house = HouseState::new(owner, 0, None, true, 0, 10);
     house.base_center = Some((70, 116));
-    sim.houses.insert(owner, house);
+    sim.houses.register(house);
 
     let conyard = sim
         .spawn_object("GACNST", "Americans", 69, 115, 0, &rules)
@@ -4752,10 +4749,10 @@ fn gsi_04_16_committed_structure_owner_change_refreshes_new_house_edge() {
     let old_owner = sim.interner.intern("Americans");
     let new_owner = sim.interner.intern("Soviets");
     sim.houses
-        .insert(old_owner, HouseState::new(old_owner, 0, None, true, 0, 10));
+        .register(HouseState::new(old_owner, 0, None, true, 0, 10));
     let mut new_house = HouseState::new(new_owner, 1, None, false, 0, 10);
     new_house.base_center = Some((68, 114));
-    sim.houses.insert(new_owner, new_house);
+    sim.houses.register(new_house);
     let conyard = sim
         .spawn_object("GACNST", "Americans", 69, 115, 0, &rules)
         .expect("GACNST reveals");
@@ -4776,10 +4773,10 @@ fn gsi_04_16_caoild_reveal_and_owner_change_preserve_waypoint_edges() {
     let new_owner = sim.interner.intern("Soviets");
     let mut old_house = HouseState::new(old_owner, 0, None, true, 0, 10);
     old_house.waypoint_edge = 1;
-    sim.houses.insert(old_owner, old_house);
+    sim.houses.register(old_house);
     let mut new_house = HouseState::new(new_owner, 1, None, false, 0, 10);
     new_house.waypoint_edge = 3;
-    sim.houses.insert(new_owner, new_house);
+    sim.houses.register(new_house);
 
     let oil = sim
         .spawn_object("CAOILD", "Americans", 69, 115, 0, &rules)
@@ -4803,8 +4800,7 @@ fn gsi_04_16_caoild_reveal_and_owner_change_preserve_waypoint_edges() {
 #[test]
 fn gsi_04_05_reservation_failed_reveal_never_writes() {
     let mut sim = Simulation::new();
-    let owner = insert_reservation_building(&mut sim, 102, "Americans", 10, 20, "2x2", 1);
-    sim.session.house_order.push(owner);
+    insert_reservation_building(&mut sim, 102, "Americans", 10, 20, "2x2", 1);
 
     assert_eq!(
         sim.try_reveal_entity(102, request(10, 20, PlacementEvidence::MarkFailed)),
@@ -4822,7 +4818,6 @@ fn gsi_04_05_reservation_failed_reveal_never_writes() {
 fn gsi_04_05_reservation_clear_removes_perimeter_but_retains_bounds() {
     let mut sim = Simulation::new();
     let owner = insert_reservation_building(&mut sim, 111, "Americans", 10, 10, "1x1", 1);
-    sim.session.house_order.push(owner);
     let _ = sim.try_reveal_entity(111, request(10, 10, PlacementEvidence::MarkSucceeded));
     assert_eq!(
         sim.houses
@@ -4844,9 +4839,11 @@ fn gsi_04_05_reservation_clear_removes_perimeter_but_retains_bounds() {
 #[test]
 fn gsi_04_05_reservation_limbo_clears_before_unlink_repairs_overlap_and_preserves_other_house() {
     let mut sim = Simulation::new();
-    let owner = insert_reservation_building(&mut sim, 103, "Americans", 10, 10, "1x1", 1);
+    insert_reservation_building(&mut sim, 103, "Americans", 10, 10, "1x1", 1);
     let other = sim.interner.intern("Russians");
-    sim.session.house_order.extend([owner, other]);
+    sim.houses.get_or_register_for_test(other, || {
+        crate::sim::house_state::HouseState::new(other, 1, None, false, 0, 10)
+    });
     insert_reservation_building(&mut sim, 104, "Americans", 12, 10, "1x1", 1);
     let _ = sim.try_reveal_entity(103, request(10, 10, PlacementEvidence::MarkSucceeded));
     let _ = sim.try_reveal_entity(104, request(12, 10, PlacementEvidence::MarkSucceeded));
@@ -4892,8 +4889,7 @@ fn gsi_04_05_reservation_repair_scan_reaches_asymmetric_high_edge() {
     );
 
     let mut sim = Simulation::new();
-    let owner = insert_reservation_building(&mut sim, 107, "Americans", 10, 20, "4x4", 1);
-    sim.session.house_order.push(owner);
+    insert_reservation_building(&mut sim, 107, "Americans", 10, 20, "4x4", 1);
     insert_reservation_building(&mut sim, 108, "Americans", 16, 20, "1x1", 2);
     let _ = sim.try_reveal_entity(107, request(10, 20, PlacementEvidence::MarkSucceeded));
     let _ = sim.try_reveal_entity(108, request(16, 20, PlacementEvidence::MarkSucceeded));
@@ -4923,8 +4919,7 @@ fn gsi_04_05_reservation_origins_truncate_after_first_spacing_subtraction() {
 #[test]
 fn gsi_04_05_reservation_repair_replays_multicell_neighbor_for_every_hit() {
     let mut sim = Simulation::new();
-    let owner = insert_reservation_building(&mut sim, 109, "Americans", 10, 10, "1x1", 1);
-    sim.session.house_order.push(owner);
+    insert_reservation_building(&mut sim, 109, "Americans", 10, 10, "1x1", 1);
     insert_reservation_building(&mut sim, 110, "Americans", 12, 10, "2x2", 1);
     let _ = sim.try_reveal_entity(109, request(10, 10, PlacementEvidence::MarkSucceeded));
     let _ = sim.try_reveal_entity(110, request(12, 10, PlacementEvidence::MarkSucceeded));
@@ -4983,9 +4978,7 @@ fn gsi_04_05_reservation_processed_foundation_precedes_metadata_and_lifecycle_ma
     let spacing = gacnst.base_reservation_spacing.unwrap();
 
     let mut sim = Simulation::new();
-    let owner =
-        insert_reservation_building(&mut sim, 106, "Americans", 30, 40, &foundation, spacing);
-    sim.session.house_order.push(owner);
+    insert_reservation_building(&mut sim, 106, "Americans", 30, 40, &foundation, spacing);
     assert!(matches!(
         sim.try_reveal_entity(106, request(30, 40, PlacementEvidence::MarkSucceeded)),
         RevealOutcome::Revealed { .. }
@@ -5004,14 +4997,10 @@ fn score_stats_credit_the_killer_and_charge_the_victim_once() {
     let mut sim = Simulation::new();
     let victim_owner = sim.interner.intern("Americans");
     let killer_owner = sim.interner.intern("Russians");
-    sim.houses.insert(
-        victim_owner,
-        HouseState::new(victim_owner, 0, None, true, 0, 10),
-    );
-    sim.houses.insert(
-        killer_owner,
-        HouseState::new(killer_owner, 1, None, false, 0, 10),
-    );
+    sim.houses
+        .register(HouseState::new(victim_owner, 0, None, true, 0, 10));
+    sim.houses
+        .register(HouseState::new(killer_owner, 1, None, false, 0, 10));
     insert_entity(&mut sim, 1, EntityCategory::Unit);
     let victim = sim.substrate.entities.get_mut(1).unwrap();
     victim.health.set_for_test(0);
@@ -5052,14 +5041,10 @@ fn score_stats_come_from_the_kill_record_captured_at_destruction() {
     let mut sim = Simulation::new();
     let victim_owner = sim.interner.intern("Americans");
     let killer_owner = sim.interner.intern("Russians");
-    sim.houses.insert(
-        victim_owner,
-        HouseState::new(victim_owner, 0, None, true, 0, 10),
-    );
-    sim.houses.insert(
-        killer_owner,
-        HouseState::new(killer_owner, 1, None, false, 0, 10),
-    );
+    sim.houses
+        .register(HouseState::new(victim_owner, 0, None, true, 0, 10));
+    sim.houses
+        .register(HouseState::new(killer_owner, 1, None, false, 0, 10));
     insert_entity(&mut sim, 1, EntityCategory::Infantry);
     let victim = sim.substrate.entities.get_mut(1).unwrap();
     victim.health.set_for_test(0);
@@ -5083,7 +5068,7 @@ fn score_stats_ignore_a_removal_that_was_not_a_destruction() {
     let mut sim = Simulation::new();
     let owner = sim.interner.intern("Americans");
     sim.houses
-        .insert(owner, HouseState::new(owner, 0, None, true, 0, 10));
+        .register(HouseState::new(owner, 0, None, true, 0, 10));
     insert_entity(&mut sim, 1, EntityCategory::Structure);
     sim.substrate
         .entities
@@ -5109,7 +5094,7 @@ fn score_stats_count_a_self_inflicted_kill_but_award_no_points() {
     let mut sim = Simulation::new();
     let owner = sim.interner.intern("Americans");
     sim.houses
-        .insert(owner, HouseState::new(owner, 0, None, true, 0, 10));
+        .register(HouseState::new(owner, 0, None, true, 0, 10));
     insert_entity(&mut sim, 1, EntityCategory::Structure);
     sim.substrate
         .entities
@@ -5145,14 +5130,10 @@ fn dont_score_victims_book_no_kill_no_loss_and_no_points() {
     let mut sim = Simulation::new();
     let victim_owner = sim.interner.intern("Americans");
     let killer_owner = sim.interner.intern("Russians");
-    sim.houses.insert(
-        victim_owner,
-        HouseState::new(victim_owner, 0, None, true, 0, 10),
-    );
-    sim.houses.insert(
-        killer_owner,
-        HouseState::new(killer_owner, 1, None, false, 0, 10),
-    );
+    sim.houses
+        .register(HouseState::new(victim_owner, 0, None, true, 0, 10));
+    sim.houses
+        .register(HouseState::new(killer_owner, 1, None, false, 0, 10));
     insert_entity(&mut sim, 1, EntityCategory::Infantry);
     let victim = sim.substrate.entities.get_mut(1).unwrap();
     victim.health.set_for_test(0);
@@ -5216,7 +5197,7 @@ fn lifecycle_authority_animated_death_stays_represented_until_uninit() {
     let mut sim = Simulation::new();
     let owner = sim.interner.intern("Americans");
     sim.houses
-        .insert(owner, HouseState::new(owner, 0, None, true, 0, 10));
+        .register(HouseState::new(owner, 0, None, true, 0, 10));
     insert_entity(&mut sim, 1, EntityCategory::Unit);
     sim.update_house_tracking(1, crate::sim::house_tracking::HouseTracking::add_tracking);
     let _ = sim.reveal(1);
@@ -5351,7 +5332,7 @@ fn lifecycle_authority_late_tail_commits_frame_before_drain() {
             LifecycleTestEvent::FinalizedCommon { stable_id: 1 },
         ]
     );
-    assert_eq!(sim.session.binary_frame, 1);
+    assert_eq!(sim.session.binary_frame(), 1);
     assert!(!sim.substrate.entities.contains(1));
 }
 
@@ -6261,8 +6242,8 @@ fn gsi_05_03_terminal_non_entities_remain_resolvable_until_common_drain() {
 #[test]
 fn gsi_05_04_ground_source_and_target_retarget_before_removal_without_expiry() {
     let mut sim = Simulation::new();
-    sim.session.map_width = 16;
-    sim.session.map_height = 16;
+    sim.session.set_map_width_for_test(16);
+    sim.session.set_map_height_for_test(16);
     install_common_raw_terrain(&mut sim, 16, 16, 2, None);
 
     let target_id = sim.allocate_stable_id();
@@ -6333,8 +6314,8 @@ fn gsi_05_04_ground_source_and_target_retarget_before_removal_without_expiry() {
 #[test]
 fn gsi_05_04_building_get_coords_uses_foundation_center_cell() {
     let mut sim = Simulation::new();
-    sim.session.map_width = 20;
-    sim.session.map_height = 20;
+    sim.session.set_map_width_for_test(20);
+    sim.session.set_map_height_for_test(20);
     install_common_raw_terrain(&mut sim, 20, 20, 0, None);
 
     let target_id = sim.allocate_stable_id();
@@ -6371,8 +6352,8 @@ fn gsi_05_04_building_get_coords_uses_foundation_center_cell() {
 #[test]
 fn gsi_04_01_cell_target_uses_live_structural_bit() {
     let mut sim = Simulation::new();
-    sim.session.map_width = 16;
-    sim.session.map_height = 16;
+    sim.session.set_map_width_for_test(16);
+    sim.session.set_map_height_for_test(16);
     install_common_raw_terrain(&mut sim, 16, 16, 0, Some((6, 7)));
     {
         let cell = sim
@@ -6440,8 +6421,8 @@ fn gsi_05_04_combat_fatal_expiry_keeps_authoritative_cell_target() {
         ))
         .expect("combat-fatal expiry rules");
     let mut sim = Simulation::new();
-    sim.session.map_width = 16;
-    sim.session.map_height = 16;
+    sim.session.set_map_width_for_test(16);
+    sim.session.set_map_height_for_test(16);
     install_common_raw_terrain(&mut sim, 16, 16, 0, None);
 
     let victim_id = sim.allocate_stable_id();
@@ -6520,8 +6501,8 @@ fn gsi_05_04_combat_fatal_garrison_recursion_keeps_cell_target() {
     )
     .expect("fatal garrison recursion rules");
     let mut sim = Simulation::new();
-    sim.session.map_width = 16;
-    sim.session.map_height = 16;
+    sim.session.set_map_width_for_test(16);
+    sim.session.set_map_height_for_test(16);
     install_common_raw_terrain(&mut sim, 16, 16, 0, None);
 
     let building_id = sim.allocate_stable_id();
@@ -6648,8 +6629,8 @@ fn receiver_fatal_expiry_retains_live_dummy_identity_for_bullet_ai() {
 
 fn assert_unallocated_expiry_retains_live_dummy_identity(through_receiver: bool) {
     let mut sim = Simulation::new();
-    sim.session.map_width = 16;
-    sim.session.map_height = 16;
+    sim.session.set_map_width_for_test(16);
+    sim.session.set_map_height_for_test(16);
     install_common_raw_terrain(&mut sim, 16, 16, 0, None);
 
     let target_id = sim.allocate_stable_id();
@@ -6729,8 +6710,8 @@ fn assert_unallocated_expiry_retains_live_dummy_identity(through_receiver: bool)
 #[test]
 fn gsi_05_04_sentinel_origin_cell_target_becomes_explicit_null() {
     let mut sim = Simulation::new();
-    sim.session.map_width = 16;
-    sim.session.map_height = 16;
+    sim.session.set_map_width_for_test(16);
+    sim.session.set_map_height_for_test(16);
     install_common_raw_terrain(&mut sim, 16, 16, 0, None);
 
     let target_id = sim.allocate_stable_id();
@@ -6770,8 +6751,8 @@ fn gsi_05_04_high_flying_source_and_target_become_explicit_null() {
     let control = &native["rows"][2];
     assert_eq!(control["input"]["name"], "expired_null_below_safety");
     let mut sim = Simulation::new();
-    sim.session.map_width = 32;
-    sim.session.map_height = 32;
+    sim.session.set_map_width_for_test(32);
+    sim.session.set_map_height_for_test(32);
     // Installed so the case is production-shaped rather than a bare store; the
     // replacement no longer reads terrain either way.
     // `ObjectClass::IsHighFlying @ 0x005F6B90` is the only thing keeping this
@@ -6809,7 +6790,8 @@ fn gsi_05_04_high_flying_source_and_target_become_explicit_null() {
     // translating native floor624 to0 keeps the same400-lepton height.
     spawn.origin = ProjectileCoord::new(1024, 1024, 400);
     spawn.native_unique_id = control["prepared"]["unique_id"].as_i64().unwrap() as i32;
-    sim.session.binary_frame = control["prepared"]["binary_frame"].as_u64().unwrap() as u32;
+    sim.session
+        .set_binary_frame_for_test(control["prepared"]["binary_frame"].as_u64().unwrap() as u32);
     sim.admit_projectile(projectile_id, spawn);
     sim.lifecycle_test_events.clear();
 
@@ -6864,8 +6846,8 @@ fn gsi_05_04_high_flying_source_and_target_become_explicit_null() {
 #[test]
 fn gsi_05_04_cell_target_cleanup_is_idempotent_across_duplicate_uninit() {
     let mut sim = Simulation::new();
-    sim.session.map_width = 8;
-    sim.session.map_height = 8;
+    sim.session.set_map_width_for_test(8);
+    sim.session.set_map_height_for_test(8);
 
     let target_id = sim.allocate_stable_id();
     insert_entity(&mut sim, target_id, EntityCategory::Unit);
@@ -6917,8 +6899,8 @@ fn gsi_05_04_cell_target_cleanup_is_idempotent_across_duplicate_uninit() {
 #[test]
 fn gsi_05_04_projectile_listener_keeps_mixed_object_construction_order() {
     let mut sim = Simulation::new();
-    sim.session.map_width = 16;
-    sim.session.map_height = 16;
+    sim.session.set_map_width_for_test(16);
+    sim.session.set_map_height_for_test(16);
 
     let entity_id = sim.allocate_stable_id();
     insert_entity(&mut sim, entity_id, EntityCategory::Unit);
@@ -8356,8 +8338,8 @@ fn wave_cliff_collapse_consumes_exact_body_rng_and_spawns_row_major_anims() {
 fn gsi_01_05_wave_reselects_live_cell_list_after_fatal_receiver_unmark() {
     let rules = gsi_01_05_damage_rules();
     let mut sim = Simulation::new();
-    sim.session.map_width = 16;
-    sim.session.map_height = 16;
+    sim.session.set_map_width_for_test(16);
+    sim.session.set_map_height_for_test(16);
 
     let building_id = sim.allocate_stable_id();
     insert_entity(&mut sim, building_id, EntityCategory::Structure);
@@ -8744,7 +8726,7 @@ fn naval_build_const_reveal_conceal_and_reentry_preserve_acquisition_order() {
     let mut sim = Simulation::new();
     let owner = sim.interner.intern("Americans");
     sim.houses
-        .insert(owner, HouseState::new(owner, 0, None, true, 0, 10));
+        .register(HouseState::new(owner, 0, None, true, 0, 10));
     insert_naval_build_const_fixture(&mut sim, 20, owner, 2, 2);
     insert_naval_build_const_fixture(&mut sim, 10, owner, 4, 2);
     insert_naval_build_const_fixture(&mut sim, 30, owner, 6, 2);
@@ -8823,9 +8805,9 @@ fn naval_build_const_capture_moves_old_entry_to_new_owner_tail() {
     let old_owner = sim.interner.intern("Americans");
     let new_owner = sim.interner.intern("Russians");
     sim.houses
-        .insert(old_owner, HouseState::new(old_owner, 0, None, true, 0, 10));
+        .register(HouseState::new(old_owner, 0, None, true, 0, 10));
     sim.houses
-        .insert(new_owner, HouseState::new(new_owner, 1, None, false, 0, 10));
+        .register(HouseState::new(new_owner, 1, None, false, 0, 10));
     insert_naval_build_const_fixture(&mut sim, 50, new_owner, 8, 8);
     insert_naval_build_const_fixture(&mut sim, 40, old_owner, 2, 2);
     insert_naval_build_const_fixture(&mut sim, 12, old_owner, 4, 2);
@@ -9133,8 +9115,8 @@ fn fly_cross_level_move_lands_on_destination_surface_after_restore() {
         let mut landed = false;
         for frame in 1..80 {
             for instance in [&mut sim, &mut restored] {
-                instance.session.tick = frame;
-                instance.session.binary_frame = frame as u32;
+                instance.session.set_tick_for_test(frame);
+                instance.session.set_binary_frame_for_test(frame as u32);
                 instance
                     .tick_air_movement_with_cell_lists_one(
                         1,
@@ -9514,7 +9496,7 @@ fn unlimbo_levels_then_aims_the_barrel_elevation() {
         ("RAISED", [(40, 0x3FFE), (45, 0x2FFF), (50, 0x2000)]),
     ] {
         let mut sim = Simulation::with_seed(7);
-        sim.session.binary_frame = 40;
+        sim.session.set_binary_frame_for_test(40);
         sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
             base: 0,
             off_fc: -100,
@@ -9613,8 +9595,8 @@ fn a_missile_is_tracked_in_the_cell_its_flight_step_reached() {
         crate::sim::occupancy::air_spatial_bucket_index(
             cell.0,
             cell.1,
-            sim.session.map_width,
-            sim.session.map_height,
+            sim.session.map_width(),
+            sim.session.map_height(),
         )
     };
     assert_eq!(

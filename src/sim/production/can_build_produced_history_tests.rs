@@ -108,7 +108,7 @@ fn record_and_both_lifetime_limit_queries_match_original_retained_histories() {
         let other = sim.interner.intern("H1");
         for owner in [owner, other] {
             sim.houses
-                .insert(owner, HouseState::new(owner, 0, Some(country), true, 0, 10));
+                .register(HouseState::new(owner, 0, Some(country), true, 0, 10));
         }
         if let Some(prior) = spec["produced_prior"].as_i64() {
             sim.houses

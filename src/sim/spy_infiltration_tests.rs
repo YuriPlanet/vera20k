@@ -112,8 +112,7 @@ pub fn replay(row: &Value) -> Replay {
             _ => 0,
         };
         sim.houses
-            .insert(id, HouseState::new(id, 0, None, role == local, credits, 10));
-        sim.session.house_order.push(id);
+            .register(HouseState::new(id, 0, None, role == local, credits, 10));
     }
     let owner = sim.interner.intern("H0");
     let infiltrator = sim.interner.intern("H1");
@@ -135,7 +134,8 @@ pub fn replay(row: &Value) -> Replay {
             .or_default()
             .insert(sw, instance);
     }
-    sim.session.binary_frame = int(&row["frame"]) as u32;
+    sim.session
+        .set_binary_frame_for_test(int(&row["frame"]) as u32);
     sim.sound_events.clear();
     let spy = if flag(&row["own"]) {
         owner
@@ -299,7 +299,7 @@ fn spy_gains_are_hashed() {
     let mut sim = Simulation::new();
     let house = sim.interner.intern("H1");
     sim.houses
-        .insert(house, HouseState::new(house, 0, None, true, 0, 10));
+        .register(HouseState::new(house, 0, None, true, 0, 10));
     let mut seen = vec![sim.state_hash()];
     for gain in [
         |house: &mut HouseState| house.steal_tech(0),
@@ -354,7 +354,8 @@ fn arena(rules: &RuleSet) -> (Simulation, crate::sim::pathfinding::PathGrid) {
     sim.input_delay_ticks = 0;
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
-    sim.session.current_house = sim.interner.get("Americans");
+    sim.session
+        .set_current_house_for_test(sim.interner.get("Americans"));
     let grid = sim
         .path_grid_snapshot()
         .map(|grid| (*grid).clone())
@@ -434,7 +435,7 @@ fn run_until(
 
 fn capture(sim: &mut Simulation, actor: u64, building: u64) {
     let owner = sim.interner.get("Americans").unwrap();
-    let tick = sim.session.tick;
+    let tick = sim.session.tick();
     sim.queue_command(CommandEnvelope::new(
         owner,
         tick + 1,
@@ -490,7 +491,7 @@ fn a_spy_sent_into_an_enemy_power_plant_blacks_it_out() {
         infiltrations,
         [(russians, americans, InfiltrationEffect::Power, plant_cell)]
     );
-    let frame = sim.session.binary_frame;
+    let frame = sim.session.binary_frame();
     let blackout = sim.power_states[&russians].blackout_timer_for_test();
     assert_eq!(blackout.duration(), 1000);
     assert!(blackout.remaining(frame as i32) > 0);
@@ -508,14 +509,14 @@ fn a_computer_spy_attacking_a_power_plant_goes_in() {
     // Off the sixteenth frame, whose AI would let go of a target the
     // unarmed spy cannot fire at before its mission runs
     // (`0x006FA472..0x006FA4CB`); a team's next update hands it back.
-    sim.session.binary_frame = 1;
+    sim.session.set_binary_frame_for_test(1);
     let spy = spawn(&mut sim, &rules, "SPY", "Russians", 6, 10);
     let plant = spawn(&mut sim, &rules, "PLANT", "Americans", 10, 10);
     let (americans, russians) = (
         sim.interner.get("Americans").unwrap(),
         sim.interner.get("Russians").unwrap(),
     );
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     sim.mission_assign_exact(spy, MissionId::from_known(MissionType::Attack), now)
         .unwrap();
     sim.assign_target_represented(
@@ -555,7 +556,7 @@ fn a_computer_spy_attacking_a_power_plant_goes_in() {
         infiltrations,
         [(americans, russians, InfiltrationEffect::Power)]
     );
-    let frame = sim.session.binary_frame;
+    let frame = sim.session.binary_frame();
     assert!(sim.power_states[&americans].blackout_remaining(frame) > 0);
 }
 

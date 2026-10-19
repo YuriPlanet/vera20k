@@ -126,7 +126,7 @@ impl Simulation {
                 entity,
                 coord,
                 terrain,
-                self.session.binary_frame,
+                self.session.binary_frame(),
             );
         }
         Ok(())

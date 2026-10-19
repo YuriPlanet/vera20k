@@ -114,7 +114,7 @@ impl Simulation {
             }
             InfiltrationEffect::Radar { owner_spy_sat }
         } else if object.power > 0 {
-            let frame = self.session.binary_frame;
+            let frame = self.session.binary_frame();
             self.power_states
                 .entry(owner)
                 .or_default()

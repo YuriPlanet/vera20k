@@ -112,7 +112,7 @@ fn retail_landing_child_reports_release_instead_of_cutting_samples() {
         // Exercise natural expiry; this test does not certify the native
         // child's entire timer/Middle/Scenario RNG trajectory.
         for frame in 0..100 {
-            sim.session.binary_frame = frame;
+            sim.session.set_binary_frame_for_test(frame);
             sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default());
             if sim.substrate.pending_delete.contains_object(&id) {
                 break;

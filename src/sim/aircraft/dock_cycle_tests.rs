@@ -74,10 +74,10 @@ fn run_cycle(sim: &mut Simulation, rules: &RuleSet, orca: u64, airfield: u64) ->
 fn spent_orca(rules: &RuleSet, human: bool) -> (Simulation, u64, u64) {
     let mut sim = Simulation::new();
     let owner = sim.interner.intern("Americans");
-    sim.houses.insert(
-        owner,
-        crate::sim::house_state::HouseState::new(owner, 0, None, human, 0, 10),
-    );
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, human, 0, 10,
+        ));
     let airfield = sim
         .spawn_object_at_height("GAAIRC", "Americans", 10, 10, 0, 0, rules)
         .expect("airfield");
@@ -420,10 +420,10 @@ fn a_guarding_aircraft_scans_passively_unless_its_type_may_not_and_takes_nothing
         let rules = RuleSet::from_ini(&IniFile::from_str(&text)).expect("rules");
         let (mut sim, orca, airfield) = spent_orca(&rules, true);
         let enemy = sim.interner.intern("Russians");
-        sim.houses.insert(
-            enemy,
-            crate::sim::house_state::HouseState::new(enemy, 1, None, true, 0, 10),
-        );
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                enemy, 1, None, true, 0, 10,
+            ));
         let seen = run_cycle(&mut sim, &rules, orca, airfield);
         assert_eq!(seen.guarding_frames, 300, "the aircraft reloads and guards");
         sim.spawn_object("VICTIM", "Russians", 13, 12, 0, &rules)
@@ -465,7 +465,7 @@ fn retail_harriers_strike_return_reload_and_guard_at_their_airfield() {
         harriers,
         target: rhino,
     } = crate::sim::arena_fixture::retail_harrier_dock_scene(&retail).expect("retail scene");
-    let tick = runtime.simulation.session.tick + 1;
+    let tick = runtime.simulation.session.tick() + 1;
     let orders: Vec<CommandEnvelope> = harriers
         .iter()
         .map(|&attacker_id| {

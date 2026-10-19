@@ -612,7 +612,7 @@ pub(super) fn capability_cursor_for_hover(
         best_id,
         hover,
         rules,
-        sim.session.current_house,
+        sim.session.current_house(),
     ) {
         return kind;
     }
@@ -638,7 +638,7 @@ pub(super) fn capability_cursor_for_hover(
     // admission with click/deploy-key, including loaded mobile transports.
     if selected == [hover.stable_id]
         && let (Some(rules), Some(entity)) = (rules, hovered_entity)
-        && sim.session.current_house == Some(entity.owner())
+        && sim.session.current_house() == Some(entity.owner())
         && !entity.berserk.is_active()
     {
         if super::context_order::self_click_command(
@@ -1884,7 +1884,8 @@ mod tests {
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
-        sim.session.current_house = sim.interner.get("Americans");
+        sim.session
+            .set_current_house_for_test(sim.interner.get("Americans"));
         // 4. Mark the SEAL as selected (mirrors clicking it in-game).
         if let Some(e) = sim.entities_mut().get_mut(seal_id) {
             e.selection.set_selected_for_test(true);
@@ -1952,7 +1953,8 @@ mod tests {
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
-        sim.session.current_house = Some(sim.entities().get(miner_id).unwrap().owner());
+        sim.session
+            .set_current_house_for_test(Some(sim.entities().get(miner_id).unwrap().owner()));
 
         let hover = HoverTargetKindWithId {
             kind: HoverTargetKind::FriendlyStructure,
@@ -2130,7 +2132,8 @@ mod tests {
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
-        sim.session.current_house = Some(sim.entities().get(tank).unwrap().owner());
+        sim.session
+            .set_current_house_for_test(Some(sim.entities().get(tank).unwrap().owner()));
         sim.install_resolved_terrain_for_new_map(ResolvedTerrainGrid::from_cells(
             32,
             32,
@@ -2228,7 +2231,7 @@ mod tests {
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
-        sim.session.current_house = Some(owner);
+        sim.session.set_current_house_for_test(Some(owner));
         sim.install_resolved_terrain_for_new_map(ResolvedTerrainGrid::from_cells(
             32,
             32,
@@ -2351,7 +2354,8 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
-        sim.session.current_house = Some(sim.entities().get(tank).unwrap().owner());
+        sim.session
+            .set_current_house_for_test(Some(sim.entities().get(tank).unwrap().owner()));
         // Later objects use ordinary Unlimbo: supply clear rules, playfield,
         // terrain and navigation through the shared component-arena owner.
         crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
@@ -2641,10 +2645,10 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
             // is human (House50B730). current_house alone is UI identity;
             // register the real house before spawning its counted objects.
             let owner = sim.entities().get(seed_tank).unwrap().owner();
-            sim.houses.insert(
-                owner,
-                crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10),
-            );
+            sim.houses
+                .register(crate::sim::house_state::HouseState::new(
+                    owner, 0, None, true, 0, 10,
+                ));
             assert!(sim.owner_is_human(owner));
             let house = sim
                 .spawn_object("HOUSE", "Americans", 2, 10, 0, &rules)
@@ -2698,7 +2702,7 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
                 }
             };
             assert_eq!(sim.entities().get(house).unwrap().owner(), owner);
-            sim.queue_command(CommandEnvelope::new(owner, sim.session.tick + 1, command));
+            sim.queue_command(CommandEnvelope::new(owner, sim.session.tick() + 1, command));
             let grid = crate::sim::pathfinding::PathGrid::test_all_passable(32, 32);
             let state = |sim: &Simulation| {
                 let actor = sim.entities().get(house).unwrap();
@@ -2706,7 +2710,7 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
                     "frame={} mission={:?} target={:?} leaf={:?} body={:?}/{:?} \
                      cargo={:?} rearm={:?} passive_timer={:?} passive={} \
                      frozen={} alive={} limbo={} logic={} health={} operational={:?}",
-                    sim.session.binary_frame,
+                    sim.session.binary_frame(),
                     actor.mission,
                     actor.attack_target,
                     actor.mission_leaf,
@@ -2820,7 +2824,8 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
-        sim.session.current_house = Some(sim.entities().get(actor_id).unwrap().owner());
+        sim.session
+            .set_current_house_for_test(Some(sim.entities().get(actor_id).unwrap().owner()));
         let target_id = sim
             .spawn_object("MTNK", "Soviets", 3, 2, 0, &rules)
             .expect("enemy target");
@@ -3169,7 +3174,8 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
                 sim.session.set_game_mode(
                     crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
                 );
-                sim.session.current_house = Some(sim.interner.intern("Americans"));
+                sim.session
+                    .set_current_house_for_test(Some(sim.interner.intern("Americans")));
                 // The ordinary Infantry Unlimbo query reads the native
                 // Clear/Foot speed row before this cursor-only observation.
                 let mut terrain = crate::map::resolved_terrain::test_flat_ground_grid(20);
@@ -3363,14 +3369,18 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
         sim.resolve_type_handles(&rules);
         for house in ["Americans", "Soviets"] {
             let id = sim.interner.intern(house);
-            sim.session.house_order.push(id);
+            sim.houses
+                .register(crate::sim::house_state::HouseState::new(
+                    id, 0, None, false, 0, 10,
+                ));
         }
         // This is a local player's selected actor. Techno700C40's virtual
         // +A0 reaches House50B6F0; a house_order entry alone is not LocalPlayer.
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
-        sim.session.current_house = sim.interner.get("Americans");
+        sim.session
+            .set_current_house_for_test(sim.interner.get("Americans"));
         let mut spawn = |kind: &str, owner: &str, rx: u16| {
             sim.spawn_object(kind, owner, rx, 5, 0, &rules)
                 .expect("spawned")

@@ -138,7 +138,7 @@ fn area_guard_default_voice_matches_native_pre_gate_post_gate_and_main_continuat
         let current = sim
             .interner
             .intern(&format!("NativeHouse{current_pointer}"));
-        sim.session.current_house = Some(current);
+        sim.session.set_current_house_for_test(Some(current));
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
                 first["game_mode"].as_u64().unwrap() != 0,
@@ -169,7 +169,7 @@ fn area_guard_default_voice_matches_native_pre_gate_post_gate_and_main_continuat
                 != 0;
             let mut house = HouseState::new(owner, 0, None, human, 0, 10);
             house.player_control = control;
-            sim.houses.insert(owner, house);
+            sim.houses.insert_for_test(house);
             let type_name = actor["type_name"].as_str().unwrap();
             let type_ref = sim.interner.intern(type_name);
             let id = actor["id"].as_u64().unwrap();

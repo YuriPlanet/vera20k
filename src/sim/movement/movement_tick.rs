@@ -332,10 +332,7 @@ fn advance_ordinary_mover(
     native_frame: u32,
     interner: &mut crate::sim::intern::StringInterner,
     rules: Option<&crate::rules::ruleset::RuleSet>,
-    houses: &std::collections::BTreeMap<
-        crate::sim::intern::InternedId,
-        crate::sim::house_state::HouseState,
-    >,
+    houses: &crate::sim::houses::Houses,
     effects: &mut MovementPassEffects,
     entry: VisitEntry,
 ) {
@@ -816,8 +813,8 @@ pub(crate) fn tick_movement_with_grids(
     sim.substrate.raw_cell_occupation = std::mem::take(raw_cell_occupation);
     sim.interner = std::mem::take(interner);
     sim.scenario_rng = rng.clone();
-    sim.session.tick = sim_tick;
-    sim.session.binary_frame = native_frame;
+    sim.session.set_tick_for_test(sim_tick);
+    sim.session.set_binary_frame_for_test(native_frame);
     sim.house_alliances = alliances.clone();
     sim.path_grid = path_grid.cloned().map(std::sync::Arc::new);
     sim.zone_grid = zone_grid.cloned();
@@ -919,7 +916,7 @@ impl PendingMovementPass {
             &mut sim.substrate.entities,
             entity_id,
             grids,
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
             &mut sim.interner,
             rules,
             &sim.houses,
@@ -958,10 +955,7 @@ pub(crate) fn begin_movement(
     playfield_bounds: Option<PlayfieldBounds>,
     interner: &mut crate::sim::intern::StringInterner,
     rules: Option<&crate::rules::ruleset::RuleSet>,
-    houses: &std::collections::BTreeMap<
-        crate::sim::intern::InternedId,
-        crate::sim::house_state::HouseState,
-    >,
+    houses: &crate::sim::houses::Houses,
 ) -> PendingMovementPass {
     let grids = PassGrids {
         path_grid,

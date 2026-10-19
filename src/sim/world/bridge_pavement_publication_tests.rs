@@ -78,7 +78,7 @@ fn retail_plain_pavement_native_entry_draw_selection_and_snapshot() {
     }
     assert_eq!(plain, 11);
     let bytes = GameSnapshot::save_validated(live.sim, 1, 2, "Pavement", 3);
-    let mut restored = GameSnapshot::load_validated(&bytes, 1, 2, &live.sim.session.map_name)
+    let mut restored = GameSnapshot::load_validated(&bytes, 1, 2, &live.sim.session.map_name())
         .unwrap()
         .sim;
     assert_eq!(

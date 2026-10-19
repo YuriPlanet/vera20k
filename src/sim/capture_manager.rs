@@ -283,7 +283,10 @@ impl Simulation {
                     let victim = self.substrate.entities.get(node.victim)?;
                     if !selected
                         && !victim.selection.is_selected()
-                        && node.line_timer.remaining(self.session.binary_frame as i32) <= 0
+                        && node
+                            .line_timer
+                            .remaining(self.session.binary_frame() as i32)
+                            <= 0
                     {
                         return None;
                     }
@@ -549,7 +552,7 @@ impl Simulation {
         };
         can_capture(
             controller,
-            CaptureVictimFacts::of(target, target_obj, self.session.binary_frame),
+            CaptureVictimFacts::of(target, target_obj, self.session.binary_frame()),
         )
     }
 
@@ -602,7 +605,7 @@ impl Simulation {
                 victim: target_id,
                 original_owner,
                 line_timer: crate::sim::timer::CdTimer::started(
-                    self.session.binary_frame as i32,
+                    self.session.binary_frame() as i32,
                     rules.mind_control.attack_line_frames,
                 ),
             });
@@ -637,7 +640,7 @@ impl Simulation {
         !object_type.immune_to_psionics
             && !crate::sim::superweapon::invulnerability::is_invulnerable(
                 object.invulnerability.as_ref(),
-                self.session.binary_frame,
+                self.session.binary_frame(),
             )
             && !object_type.balloon_hover
             && !crate::sim::movement::air_movement::is_high_flying(
@@ -1027,7 +1030,7 @@ impl Simulation {
         {
             return;
         }
-        let now = self.session.binary_frame;
+        let now = self.session.binary_frame();
         let readiness = crate::sim::mission::authority::LiveReadyInputProvider { rules };
         let _ = self.mission_queue_exact(
             unit_id,

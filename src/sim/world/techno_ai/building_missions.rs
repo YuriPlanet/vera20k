@@ -229,8 +229,8 @@ pub(super) fn update_animation(sim: &mut Simulation, id: u64, rules: Option<&Rul
     let has_turret = object.has_turret;
     let archive_less_sale =
         crate::sim::production::archive_less_sale(rules.into(), &object.id, entity);
-    let now = sim.session.binary_frame as i32;
-    let options = &sim.session.game_options;
+    let now = sim.session.binary_frame() as i32;
+    let options = &sim.session.game_options();
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         entity.advance_building_body(now, archive_less_sale, has_turret, options);
     }
@@ -250,13 +250,15 @@ pub(super) fn ready_commence(sim: &mut Simulation, id: u64, before_techno: bool)
     {
         return;
     }
-    let _ = sim.mission_building_ready_commence(id, sim.session.binary_frame);
+    let _ = sim.mission_building_ready_commence(id, sim.session.binary_frame());
 }
 
 pub(super) fn apply_queued_body(sim: &mut Simulation, id: u64) {
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
-        entity
-            .apply_queued_building_body(sim.session.binary_frame as i32, &sim.session.game_options);
+        entity.apply_queued_building_body(
+            sim.session.binary_frame() as i32,
+            &sim.session.game_options(),
+        );
     }
 }
 
@@ -272,7 +274,7 @@ pub(super) fn dispatch(
         return;
     };
     let current = entity.mission.current().known();
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     if !entity.mission_handler_due(now) {
         return;
     }
@@ -332,7 +334,7 @@ fn mission_construction(
         return 1;
     };
     let status = entity.mission.handler_state();
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     if status == 0 {
         sim.substrate
             .entities
@@ -456,7 +458,7 @@ fn mission_unload(
     if object.weapons_factory {
         return Some(mission_factory_unload(sim, id, rules, ctx));
     }
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     let readiness = LiveReadyInputProvider { rules };
     let _ = sim.mission_queue_exact(
         id,
@@ -486,7 +488,7 @@ fn mission_factory_unload(
         return 0;
     };
     let status = entity.mission.handler_state();
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     let ticks = object.deploy_time_ticks;
     let naval = object.naval;
     let phase = entity.door_phase();
@@ -671,7 +673,7 @@ pub(crate) fn queue_and_commence(
     mission: MissionType,
     rules: &RuleSet,
 ) {
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     let readiness = LiveReadyInputProvider { rules };
     let _ = sim.mission_queue_exact(id, MissionId::from_known(mission), 0, now, &readiness);
     let _ = sim.mission_commence_exact(id, now);
@@ -732,7 +734,7 @@ fn mission_guard(sim: &mut Simulation, id: u64, rules: &RuleSet, ctx: ObjectAiCt
         // `0x0044995D..0x00449966`: the idle body, then status 1.
         entity.begin_building_body(
             crate::sim::building_construction::BuildingBodyMode::Idle,
-            sim.session.binary_frame as i32,
+            sim.session.binary_frame() as i32,
         );
         entity.mission.set_handler_state(1);
     }
@@ -783,7 +785,7 @@ fn mission_guard(sim: &mut Simulation, id: u64, rules: &RuleSet, ctx: ObjectAiCt
                     id,
                     MissionId::from_known(MissionType::Repair),
                     0,
-                    sim.session.binary_frame,
+                    sim.session.binary_frame(),
                     &LiveReadyInputProvider { rules },
                 );
                 return 1;
@@ -1077,7 +1079,7 @@ pub(super) fn gattling_idle(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     else {
         return;
     };
-    let now = sim.session.binary_frame as i32;
+    let now = sim.session.binary_frame() as i32;
     let Some(entity) = sim.substrate.entities.get_mut(id) else {
         return;
     };
@@ -1272,7 +1274,7 @@ fn prism_supporter(
 ) -> Option<u64> {
     let master = sim.substrate.entities.get(id)?;
     let house = sim.houses.get(&master.owner())?;
-    let now = sim.session.binary_frame as i32;
+    let now = sim.session.binary_frame() as i32;
     let location = |entity: &crate::sim::game_entity::GameEntity| {
         let coord = crate::sim::movement::ground_pose::position_world_coord(&entity.position);
         [coord.x, coord.y, coord.z]
@@ -1335,7 +1337,7 @@ pub(super) fn process_delayed_fire(
     ctx: ObjectAiCtx<'_>,
     bridge_state_changed: &mut bool,
 ) {
-    let now = sim.session.binary_frame as i32;
+    let now = sim.session.binary_frame() as i32;
     let Some(entity) = sim.substrate.entities.get_mut(id) else {
         return;
     };
@@ -1423,7 +1425,7 @@ pub(super) fn building_weapon0_aims(sim: &Simulation, rules: &RuleSet, id: u64) 
 /// SetROT's clamp; any miss at ROT 0), snaps its turret (`0x0044B0AC`) and
 /// asks GetFireError again. Original decisions: building_fire_turn.json.
 fn voxel_turret_snaps(sim: &mut Simulation, id: u64, rules: &RuleSet, target: TargetKind) -> bool {
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     let Some(entity) = sim.substrate.entities.get(id) else {
         return false;
     };
@@ -1452,7 +1454,7 @@ fn voxel_turret_snaps(sim: &mut Simulation, id: u64, rules: &RuleSet, target: Ta
 /// `BuildingClass::Init` gave it: the turret of a `Turret=yes` type, the body
 /// of any other.
 fn aim_turret(sim: &mut Simulation, id: u64, rules: &RuleSet, target: TargetKind) {
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;
     };

@@ -106,15 +106,15 @@ impl Simulation {
                 );
                 assert_eq!(
                     roster.houses.len(),
-                    self.session.house_order.len(),
+                    self.houses.order().len(),
                     "House ReadScenarioINI follows complete House construction"
                 );
                 roster.alliance_map()
             }
         };
         let changed: Vec<_> = self
-            .session
-            .house_order
+            .houses
+            .order()
             .iter()
             .copied()
             .filter(|owner| {
@@ -153,7 +153,7 @@ impl Simulation {
         &self,
         alliances: &HouseAllianceMap,
     ) -> std::collections::BTreeSet<(InternedId, InternedId)> {
-        let houses = &self.session.house_order;
+        let houses = &self.houses.order();
         houses
             .iter()
             .flat_map(|&owner| houses.iter().map(move |&ally| (owner, ally)))
@@ -190,8 +190,8 @@ impl Simulation {
         // Both walks reload the House count after each call (0x005016DB,
         // 0x00501736).
         let mut index = 0;
-        while index < self.session.house_order.len() {
-            let owner = self.session.house_order[index];
+        while index < self.houses.order().len() {
+            let owner = self.houses.order()[index];
             index += 1;
             if !self.houses.get(&owner).is_some_and(|house| {
                 !house.is_defeated && !house.is_controlled_by_human(game_mode_nonzero)
@@ -199,8 +199,8 @@ impl Simulation {
                 continue;
             }
             let mut peer_index = 0;
-            while peer_index < self.session.house_order.len() {
-                let other = self.session.house_order[peer_index];
+            while peer_index < self.houses.order().len() {
+                let other = self.houses.order()[peer_index];
                 peer_index += 1;
                 let Some(peer) = self.houses.get(&other).filter(|peer| !peer.is_defeated) else {
                     continue;
@@ -241,7 +241,6 @@ impl Simulation {
             .unwrap_or(0);
         update_anger_nodes(
             &mut self.houses,
-            &self.session.house_order,
             &self.house_alliances,
             &self.interner,
             owner,
@@ -346,7 +345,6 @@ impl Simulation {
         // 0x004F9FDD..0x004F9FE2.
         update_anger_nodes(
             &mut self.houses,
-            &self.session.house_order,
             &self.house_alliances,
             &self.interner,
             owner,
@@ -367,7 +365,6 @@ impl Simulation {
             self.rebuild_house_spatial_threat(other, rules);
             update_anger_nodes(
                 &mut self.houses,
-                &self.session.house_order,
                 &self.house_alliances,
                 &self.interner,
                 other,
@@ -405,7 +402,7 @@ impl Simulation {
         // ally counts whatever its type (0x0050162F).
         let mut live = 0;
         let mut friends = 1;
-        for &peer in &self.session.house_order {
+        for &peer in self.houses.order() {
             if !self
                 .houses
                 .get(&peer)

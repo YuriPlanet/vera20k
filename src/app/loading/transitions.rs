@@ -646,8 +646,7 @@ mod game_speed_tests {
         let mut sim = Simulation::new();
         let owner = sim.interner.intern("Local");
         sim.houses
-            .insert(owner, HouseState::new(owner, 0, None, true, 0, 10));
-        sim.session.house_order.push(owner);
+            .register(HouseState::new(owner, 0, None, true, 0, 10));
         sim.queue_command(CommandEnvelope::new(
             owner,
             1,

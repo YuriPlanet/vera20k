@@ -21,16 +21,13 @@ fn object_pair(rules: &RuleSet, actor_kind: &str, relation: &str) -> (Simulation
         .enumerate()
     {
         let owner = sim.interner.intern(name);
-        sim.houses.insert(
-            owner,
-            HouseState::new(owner, index as u8, None, human, 10_000, 10),
-        );
-        sim.session.house_order.push(owner);
+        sim.houses
+            .register(HouseState::new(owner, index as u8, None, human, 10_000, 10));
     }
     let owner = sim.interner.get("Americans").unwrap();
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
-    sim.session.current_house = Some(owner);
+    sim.session.set_current_house_for_test(Some(owner));
     if relation == "ally" || relation == "reverse-ally" {
         let (asker, other) = if relation == "ally" {
             ("AMERICANS", "RUSSIANS")

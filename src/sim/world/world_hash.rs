@@ -541,7 +541,7 @@ impl Simulation {
                 "team_script_vm",
                 digest(|h| {
                     self.team_script_vm
-                        .hash_state(self.session.binary_frame as i32, h)
+                        .hash_state(self.session.binary_frame() as i32, h)
                 }),
             ),
             (
@@ -596,15 +596,15 @@ impl Simulation {
         self.hash_voxel_anims(hasher);
         self.substrate.spotlights.hash_state(hasher);
         self.hash_particle_systems(hasher);
-        self.session.fold_identity(hasher);
-        self.session.pixel_conversion_bounds.hash(hasher);
+        self.session.fold_identity(self.houses.order(), hasher);
+        self.session.pixel_conversion_bounds().hash(hasher);
     }
 
     /// The fold before the fog digests: clocks, RNG, identities, scripts,
     /// object order, occupation, Houses, production and power.
     fn fold_before_fog(&self, hasher: &mut impl Hasher) {
-        self.session.tick.hash(hasher);
-        self.session.binary_frame.hash(hasher);
+        self.session.tick().hash(hasher);
+        self.session.binary_frame().hash(hasher);
         self.planning.hash_state(hasher);
         self.hash_ion_blasts(hasher);
         // ScenarioClass owns the sole saved/synchronized RNG. Main and MapGen
@@ -626,7 +626,7 @@ impl Simulation {
             self.object_custom_sounds.hash(hasher);
         }
         self.team_script_vm
-            .hash_state(self.session.binary_frame as i32, hasher);
+            .hash_state(self.session.binary_frame() as i32, hasher);
         self.hash_playfield_authority(hasher);
 
         // LogicClass active-object order — authoritative (drives reconciliation order).
@@ -1435,7 +1435,7 @@ impl Simulation {
     /// order (the store iterates in that order, so no sort is needed),
     /// spread over threads in large worlds.
     fn entity_digests(&self, entities: &[&GameEntity]) -> Vec<u64> {
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         state_hasher::digests(entities, entities.len() >= 4096, |entity, hasher| {
             hash_entity(entity, frame, hasher)
         })
@@ -3137,10 +3137,10 @@ mod state_hash_field_tests {
         assert_eq!(owner_a, owner_b);
         sim_a
             .houses
-            .insert(owner_a, HouseState::new(owner_a, 0, None, false, 0, 10));
+            .register(HouseState::new(owner_a, 0, None, false, 0, 10));
         let mut hard_house = HouseState::new(owner_b, 0, None, false, 0, 10);
         hard_house.difficulty = HouseDifficulty::Hard;
-        sim_b.houses.insert(owner_b, hard_house);
+        sim_b.houses.register(hard_house);
 
         assert_ne!(sim_a.state_hash(), sim_b.state_hash());
     }
@@ -3174,7 +3174,7 @@ mod state_hash_field_tests {
                     0,
                     0,
                 );
-                sim.houses.insert(owner, house);
+                sim.houses.register(house);
                 sim.state_hash()
             })
             .collect();
@@ -3194,8 +3194,8 @@ mod state_hash_field_tests {
         house.base_center = Some((41, 52));
         let mut changed_house = house.clone();
         changed_house.alternate_base_center = (93, 106);
-        baseline.houses.insert(owner, house);
-        changed.houses.insert(changed_owner, changed_house);
+        baseline.houses.register(house);
+        changed.houses.register(changed_house);
 
         assert_ne!(baseline.state_hash(), changed.state_hash());
         assert_eq!(
@@ -3215,13 +3215,13 @@ mod state_hash_field_tests {
         assert_eq!(owner_a, owner_b);
         sim_a
             .houses
-            .insert(owner_a, HouseState::new(owner_a, 0, None, false, 0, 10));
+            .register(HouseState::new(owner_a, 0, None, false, 0, 10));
         let mut changed = HouseState::new(owner_b, 0, None, false, 0, 10);
         changed.base_reservation.update_bounds(3, 4, 5, 6);
         changed
             .base_reservation
             .append_perimeter_cell_if_absent(u32::from(3u16) | (u32::from(4u16) << 16));
-        sim_b.houses.insert(owner_b, changed);
+        sim_b.houses.register(changed);
 
         assert_ne!(sim_a.state_hash(), sim_b.state_hash());
     }
@@ -3237,7 +3237,7 @@ mod state_hash_field_tests {
             let mut house = HouseState::new(owner, 0, None, false, 0, 10);
             house.base_plan.percent_built = percent_built;
             house.base_plan.nodes = nodes;
-            sim.houses.insert(owner, house);
+            sim.houses.register(house);
             sim
         }
 
@@ -3326,7 +3326,7 @@ mod state_hash_field_tests {
             let owner = sim.interner.intern("Computer1");
             let mut house = HouseState::new(owner, 0, None, false, 0, 10);
             house.set_ai_activation_for_test(latches);
-            sim.houses.insert(owner, house);
+            sim.houses.register(house);
             sim
         }
 
@@ -3370,7 +3370,7 @@ mod state_hash_field_tests {
             let mut sim = Simulation::new();
             let owner = sim.interner.intern("Computer1");
             sim.houses
-                .insert(owner, HouseState::new(owner, 0, None, false, 0, 10));
+                .register(HouseState::new(owner, 0, None, false, 0, 10));
             (sim, owner)
         }
 
@@ -3461,11 +3461,11 @@ mod state_hash_field_tests {
 
         let mut north_house = HouseState::new(north_owner, 0, None, true, 0, 10);
         north_house.waypoint_edge = 0;
-        north.houses.insert(north_owner, north_house);
+        north.houses.register(north_house);
 
         let mut south_house = HouseState::new(south_owner, 0, None, true, 0, 10);
         south_house.waypoint_edge = 2;
-        south.houses.insert(south_owner, south_house);
+        south.houses.register(south_house);
 
         assert_ne!(north.state_hash(), south.state_hash());
     }
@@ -4223,18 +4223,18 @@ mod native_frame_tests {
         let host_durations = [0, 1, 22, 67, 1_000, u32::MAX];
         for (index, tick_ms) in host_durations.into_iter().enumerate() {
             sim.advance_tick(&[], None, None, None, tick_ms);
-            assert_eq!(sim.session.binary_frame, index as u32 + 1);
+            assert_eq!(sim.session.binary_frame(), index as u32 + 1);
         }
     }
 
     #[test]
     fn native_frame_wraps_after_u32_max() {
         let mut sim = Simulation::new();
-        sim.session.binary_frame = u32::MAX;
+        sim.session.set_binary_frame_for_test(u32::MAX);
 
         sim.advance_tick(&[], None, None, None, 22);
 
-        assert_eq!(sim.session.binary_frame, 0);
+        assert_eq!(sim.session.binary_frame(), 0);
     }
 
     #[test]
@@ -4249,7 +4249,7 @@ mod native_frame_tests {
     fn diagnostic_total_sim_ms_does_not_change_state_hash() {
         let mut sim_a = Simulation::new();
         let sim_b = Simulation::new();
-        sim_a.session.total_sim_ms = 123_456;
+        sim_a.session.set_total_sim_ms_for_test(123_456);
 
         assert_eq!(sim_a.state_hash(), sim_b.state_hash());
     }

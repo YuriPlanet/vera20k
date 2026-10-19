@@ -108,7 +108,7 @@ impl Fixture {
     }
 
     fn dispatch(&mut self, source: u64, mission: MissionType) {
-        let now = self.sim.session.binary_frame;
+        let now = self.sim.session.binary_frame();
         self.sim
             .substrate
             .entities
@@ -604,7 +604,7 @@ fn guard_and_area_guard_queue_charging_before_their_normal_cadence() {
     for mission in [MissionType::Guard, MissionType::AreaGuard] {
         let Some(mut f) = Fixture::new() else { return };
         let source = f.troopers[0];
-        let now = f.sim.session.binary_frame;
+        let now = f.sim.session.binary_frame();
         f.sim
             .substrate
             .entities

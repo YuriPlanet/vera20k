@@ -318,7 +318,7 @@ fn assert_retail_wall_fire_profile(
         .simulation
         .hash_state_every(crate::sim::replay::PLAY_HASH_INTERVAL);
     let initial_hash = scene.sim().state_hash();
-    let owner = scene.sim().session.current_house.unwrap();
+    let owner = scene.sim().session.current_house().unwrap();
     let mut orders: Vec<_> = profile["commands"]
         .as_array()
         .unwrap()
@@ -1272,7 +1272,7 @@ fn retail_mtnk_move_crushes_fences_through_per_cell_with_body_rocking() {
         .runtime
         .simulation
         .hash_state_every(crate::sim::replay::PLAY_HASH_INTERVAL);
-    let owner = scene.sim().session.current_house.unwrap();
+    let owner = scene.sim().session.current_house().unwrap();
     let command: Command =
         serde_json::from_value(profile["commands"][0]["payload"].clone()).unwrap();
     let order = CommandEnvelope::new(owner, 0, command);

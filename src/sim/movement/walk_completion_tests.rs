@@ -218,7 +218,8 @@ fn post_percell_completion_matches_original_setter_refusal_and_stop_order() {
         ))
         .unwrap();
         rules.general.blockage_path_delay_ticks = i32_value(&input["blockage"]);
-        sim.session.binary_frame = input["frame"].as_u64().unwrap() as u32;
+        sim.session
+            .set_binary_frame_for_test(input["frame"].as_u64().unwrap() as u32);
         let mut actor = GameEntity::test_default(1, "E1", "Americans", 16, 15);
         actor.set_category_for_test(EntityCategory::Infantry);
         actor.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Walk));
@@ -289,10 +290,8 @@ fn post_percell_completion_matches_original_setter_refusal_and_stop_order() {
         actor.navigation.path_runtime.set_scold_latch_for_test(255);
         actor.foot_speed.set_speed_fraction(SimFixed::lit("0.75"));
         let owner = actor.owner();
-        sim.houses.insert(
-            owner,
-            HouseState::new(owner, 0, None, input["human"] == 1, 0, 0),
-        );
+        sim.houses
+            .register(HouseState::new(owner, 0, None, input["human"] == 1, 0, 0));
         sim.substrate.entities.insert(actor);
 
         sim.finish_walk_navigation(1, Some(&rules), crate::sim::world::FrameEffects::default())

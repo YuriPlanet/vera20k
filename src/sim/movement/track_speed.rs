@@ -8,8 +8,6 @@ use crate::rules::locomotor_type::LocomotorKind;
 use crate::rules::object_type::ObjectType;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::game_entity::GameEntity;
-use crate::sim::house_state::HouseState;
-use crate::sim::intern::InternedId;
 use crate::sim::pathfinding::PathGrid;
 use crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig;
 use crate::util::fixed_math::{SIM_ONE, SIM_ZERO, SimFixed};
@@ -135,7 +133,7 @@ pub(super) fn advance(
     entity: &mut GameEntity,
     object: Option<&ObjectType>,
     rules: Option<&RuleSet>,
-    houses: &std::collections::BTreeMap<InternedId, HouseState>,
+    houses: &crate::sim::houses::Houses,
     terrain: Option<&ResolvedTerrainGrid>,
     grid: Option<&PathGrid>,
 ) -> i32 {

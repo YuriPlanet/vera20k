@@ -322,7 +322,10 @@ fn constructed_infantry_commits_raw_z_and_facing_before_idle() {
             entity.position.exact_z_leptons(),
             Some(row["type_clamped_coordinate"][2].as_i64().unwrap() as i32)
         );
-        assert_eq!(entity.body_facing.current(sim.session.binary_frame), 0x8000);
+        assert_eq!(
+            entity.body_facing.current(sim.session.binary_frame()),
+            0x8000
+        );
         let events = sim.lifecycle_test_events_for_test();
         let mark = events
             .iter()
@@ -367,7 +370,7 @@ fn constructed_infantry_commits_raw_z_and_facing_before_idle() {
                 .get(failed)
                 .unwrap()
                 .body_facing
-                .current(sim.session.binary_frame),
+                .current(sim.session.binary_frame()),
             0
         );
         assert!(
@@ -406,10 +409,10 @@ fn map_entity(type_id: &str, category: EntityCategory, cell: (u16, u16)) -> MapE
 
 fn install_american_house(sim: &mut Simulation) {
     let owner = sim.interner.intern("Americans");
-    sim.houses.insert(
-        owner,
-        crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10),
-    );
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, true, 0, 10,
+        ));
 }
 
 /// Original Unit743495, Infantry51FD54 and Aircraft41B308 execute the
@@ -777,12 +780,12 @@ fn discovery_owner_entry_and_lifetime_match_original_history_blocks() {
         install_american_house(&mut sim);
         let owner = sim.interner.get("Americans").unwrap();
         let other = sim.interner.intern("Other");
-        sim.houses.insert(
-            other,
-            crate::sim::house_state::HouseState::new(other, 0, None, false, 0, 10),
-        );
-        sim.session.house_order = vec![owner, other];
-        sim.session.current_house = Some(owner);
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                other, 0, None, false, 0, 10,
+            ));
+        sim.houses.reorder_for_test(&[owner, other]);
+        sim.session.set_current_house_for_test(Some(owner));
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
@@ -909,12 +912,12 @@ fn outside_reentry_clears_current_discovery_only_after_successful_alive_mark() {
         install_american_house(&mut sim);
         let owner = sim.interner.get("Americans").unwrap();
         let other = sim.interner.intern("OtherHuman");
-        sim.houses.insert(
-            other,
-            crate::sim::house_state::HouseState::new(other, 0, None, true, 0, 10),
-        );
-        sim.session.house_order = vec![owner, other];
-        sim.session.current_house = Some(owner);
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                other, 0, None, true, 0, 10,
+            ));
+        sim.houses.reorder_for_test(&[owner, other]);
+        sim.session.set_current_house_for_test(Some(owner));
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
@@ -991,12 +994,12 @@ fn first_nonhuman_owner_entry_queues_hunt_from_ambush_but_repeat_does_not() {
     install_american_house(&mut sim);
     let current = sim.interner.get("Americans").unwrap();
     let other = sim.interner.intern("Computer1");
-    sim.houses.insert(
-        other,
-        crate::sim::house_state::HouseState::new(other, 0, None, false, 0, 10),
-    );
-    sim.session.house_order = vec![current, other];
-    sim.session.current_house = Some(current);
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            other, 0, None, false, 0, 10,
+        ));
+    sim.houses.reorder_for_test(&[current, other]);
+    sim.session.set_current_house_for_test(Some(current));
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     let id = sim
@@ -1085,8 +1088,8 @@ fn exact_sight_zero_survives_save_and_rules_less_reentry() {
         install_constructor_flat_terrain(&mut sim);
         install_american_house(&mut sim);
         let owner = sim.interner.get("Americans").unwrap();
-        sim.session.house_order = vec![owner];
-        sim.session.current_house = Some(owner);
+        sim.houses.reorder_for_test(&[owner]);
+        sim.session.set_current_house_for_test(Some(owner));
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
@@ -1174,8 +1177,8 @@ fn infantry_owner_discovery_leaves_building_power_radar_and_spysat_inputs_unchan
     install_constructor_flat_terrain(&mut sim);
     install_american_house(&mut sim);
     let owner = sim.interner.get("Americans").unwrap();
-    sim.session.house_order = vec![owner];
-    sim.session.current_house = Some(owner);
+    sim.houses.reorder_for_test(&[owner]);
+    sim.session.set_current_house_for_test(Some(owner));
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     assert_eq!(
@@ -1310,8 +1313,8 @@ fn building_light_allocates_only_after_authored_or_held_placement_succeeds() {
 }
 
 fn install_constructor_test_playfield(sim: &mut Simulation) {
-    sim.session.map_width = 10;
-    sim.session.map_height = 10;
+    sim.session.set_map_width_for_test(10);
+    sim.session.set_map_height_for_test(10);
     sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
         base: 10,
         off_fc: 0,
@@ -2589,7 +2592,7 @@ fn aircraft_spawn_initializes_both_facings_without_a_turret_flag() {
         .unwrap();
         for direction in [0, 64, 255] {
             let mut sim = Simulation::with_seed(7);
-            sim.session.binary_frame = 100;
+            sim.session.set_binary_frame_for_test(100);
             let runtime = sim
                 .construct_runtime_techno(
                     "AIR",
@@ -2857,7 +2860,7 @@ fn a_building_s_ai_repair_byte_follows_its_map_line_or_its_computer_owner() {
             let mut house = crate::sim::house_state::HouseState::new(id, 0, None, human, 0, 10);
             house.player_control = human;
             house.multiplay_passive = passive;
-            sim.houses.insert(id, house);
+            sim.houses.register(house);
         }
         let mut line = map_entity("UP1", EntityCategory::Structure, (6, 5));
         line.owner = owner.to_string();

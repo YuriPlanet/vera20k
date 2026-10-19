@@ -165,7 +165,7 @@ impl Simulation {
         };
         let lighting = self
             .session
-            .lighting
+            .lighting()
             .profile(crate::sim::scenario_session::ScenarioLightingProfile::Normal)
             .into();
         let outcome = match mark_overlay(
@@ -245,7 +245,7 @@ impl Simulation {
                 &config,
                 context,
                 crate::sim::vision::MapRevealProjection::Transient,
-                self.session.current_house,
+                self.session.current_house(),
             );
         }
         self.uninit_with_context(id, context);

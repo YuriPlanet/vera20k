@@ -45,8 +45,8 @@ fn fixture_rules() -> RuleSet {
 
 fn world(cell: (i16, i16), level: u8, flags: u32) -> Simulation {
     let mut sim = Simulation::with_seed(0);
-    sim.session.map_width = 32;
-    sim.session.map_height = 32;
+    sim.session.set_map_width_for_test(32);
+    sim.session.set_map_height_for_test(32);
     let mut terrain = test_grid(32, 32, test_flat_cell);
     let at = terrain.native_cell_identity(cell);
     terrain.write_native_cell_level(at, level);
@@ -101,7 +101,7 @@ fn original_creation_controls_preserve_signed_center_registry_index_and_ground_o
         // Ground call stays at208; camera/animation bridge adjustment is separate.
         let mut sim = world((12, 17), 2, 0x500);
         let before = rng(&sim);
-        let frame = sim.session.binary_frame;
+        let frame = sim.session.binary_frame();
         assert!(run(&mut sim, &action(88, index), Some(&rules)));
         let systems: Vec<_> = sim
             .particle_systems()
@@ -121,7 +121,7 @@ fn original_creation_controls_preserve_signed_center_registry_index_and_ground_o
         assert!(system.alive() && !system.done_spawning);
         assert!(system.particles.is_empty());
         assert_eq!(rng(&sim), before);
-        assert_eq!(sim.session.binary_frame, frame);
+        assert_eq!(sim.session.binary_frame(), frame);
     }
     let mut sim = world((12, 17), 0, 0);
     assert!(!run(&mut sim, &action(88, -1), Some(&rules)));
@@ -190,7 +190,7 @@ fn all_five_original_stop_controls_only_mark_alive_same_cell_systems() {
             assert_eq!(system.coords, IVec3::from_array(priors[index].1));
         }
         assert_eq!(rng(&sim), before);
-        assert_eq!(sim.session.binary_frame, 0);
+        assert_eq!(sim.session.binary_frame(), 0);
     }
 }
 
@@ -274,7 +274,7 @@ fn retail_smoke_stop_keeps_existing_children_and_saved_flag_until_their_shared_r
     let mut retired = false;
     for frame in 1..=1024 {
         for world in [&mut sim, &mut restored] {
-            world.session.binary_frame = frame;
+            world.session.set_binary_frame_for_test(frame);
             tick_particle_system(
                 world,
                 &rules,

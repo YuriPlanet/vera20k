@@ -13,7 +13,7 @@ use crate::rules::house_colors::{HouseColorIndex, HouseColorRamps};
 use crate::sim::components::Position;
 use crate::sim::intern::test_intern;
 use crate::sim::vision::FogState;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap};
 
 fn overlay_datum(
     rx: u16,
@@ -688,7 +688,7 @@ fn radar_gate_fixture(
 ) -> (
     crate::sim::entity_store::EntityStore,
     crate::sim::intern::StringInterner,
-    BTreeMap<crate::sim::intern::InternedId, crate::sim::house_state::HouseState>,
+    crate::sim::houses::Houses,
 ) {
     let mut entity = crate::sim::game_entity::GameEntity::test_default(1, "DOT", owner, 0, 0);
     entity.set_in_playfield(true);
@@ -697,11 +697,10 @@ fn radar_gate_fixture(
     entities.insert(entity);
     let interner = crate::sim::intern::test_interner();
     let owner_id = interner.get(owner).expect("fixture owner interned");
-    let mut houses = BTreeMap::new();
-    houses.insert(
-        owner_id,
-        crate::sim::house_state::HouseState::new(owner_id, 0, None, false, 0, 10),
-    );
+    let mut houses = crate::sim::houses::Houses::default();
+    houses.register(crate::sim::house_state::HouseState::new(
+        owner_id, 0, None, false, 0, 10,
+    ));
     (entities, interner, houses)
 }
 

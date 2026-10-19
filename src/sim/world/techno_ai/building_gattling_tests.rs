@@ -654,7 +654,7 @@ fn gattling_cadence_matches_the_original() {
         let mut scenario_draws = 0;
         // The object pass of the frame `advance_tick` commits as `start + k`
         // runs at `base + k`, the frame its timers record.
-        let start = sim.session.binary_frame;
+        let start = sim.session.binary_frame();
         let base = i64::from(start) - 1;
         let mut stage_before = 0;
         for frame in row["frames"].as_array().unwrap() {
@@ -706,7 +706,7 @@ fn gattling_cadence_matches_the_original() {
             sim.fire_events.clear();
             sim.sound_events.clear();
             sim.advance_tick(&[], Some(&rules), None, None, 67);
-            assert_eq!(u64::from(sim.session.binary_frame - start), k, "{name}");
+            assert_eq!(u64::from(sim.session.binary_frame() - start), k, "{name}");
 
             let entity = sim.substrate.entities.get(building).unwrap();
             assert_eq!(
@@ -933,7 +933,7 @@ fn retail_dustbowl_gattling_cannon_spins_up_and_winds_down() {
     );
 
     let enemy_house = scenario.sim().interner.get("Americans").unwrap();
-    let tick = scenario.sim().session.tick;
+    let tick = scenario.sim().session.tick();
     let order = retail_frame(
         &mut scenario,
         vec![CommandEnvelope::new(

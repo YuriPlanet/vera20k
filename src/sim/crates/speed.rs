@@ -166,10 +166,9 @@ mod tests {
                 let owner = sim
                     .interner
                     .intern(&format!("H{}", actor["house"].as_u64().unwrap_or(0)));
-                let house = sim
-                    .houses
-                    .entry(owner)
-                    .or_insert_with(|| HouseState::new(owner, 0, None, false, 0, 10));
+                let house = sim.houses.get_or_register_for_test(owner, || {
+                    HouseState::new(owner, 0, None, false, 0, 10)
+                });
                 house.player_control = actor["player_controlled"].as_u64().unwrap_or(0) != 0;
                 let category = if actor["flags"].as_u64().unwrap_or(4) & 4 == 0 {
                     EntityCategory::Structure

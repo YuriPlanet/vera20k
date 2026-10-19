@@ -108,8 +108,7 @@ fn add_house(scene: &mut Replay, name: &str) -> crate::sim::intern::InternedId {
     scene
         .sim
         .houses
-        .insert(id, HouseState::new(id, 2, None, false, 0, 10));
-    scene.sim.session.house_order.push(id);
+        .register(HouseState::new(id, 2, None, false, 0, 10));
     id
 }
 

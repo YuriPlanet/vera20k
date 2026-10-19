@@ -39,12 +39,12 @@ fn retail_guard_retreat(ramp: bool) {
     );
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 1302);
     let owner = sim.interner.intern("Americans");
-    sim.houses.insert(
-        owner,
-        crate::sim::house_state::HouseState::new(owner, 0, None, false, 0, 10),
-    );
+    sim.houses
+        .insert_for_test(crate::sim::house_state::HouseState::new(
+            owner, 0, None, false, 0, 10,
+        ));
     sim.install_team_ai_registry(&registry, &rules).unwrap();
-    sim.session.binary_frame = 100;
+    sim.session.set_binary_frame_for_test(100);
     sim.spawn_object("GAPOWR", "Americans", 5, 5, 0, &rules)
         .unwrap();
     // A nearer armed building must not become the retreat anchor.
@@ -142,7 +142,9 @@ fn retail_guard_retreat(ramp: bool) {
     let mut restored = snapshot_copy(&sim, &rules, &overlays);
     assert_same_hash(&sim, &restored);
     for world in [&mut sim, &mut restored] {
-        world.session.binary_frame += 1;
+        world
+            .session
+            .set_binary_frame_for_test(world.session.binary_frame() + 1);
         world.run_team_ai_pass(&rules, None, FrameEffects::default());
     }
     assert_same_hash(&sim, &restored);
@@ -260,7 +262,7 @@ fn retreat_building_selection_matches_original_controls() {
     let corpus = crate::test_fixture::json("tools/team_retreat.json");
     for row in corpus["selections"].as_array().unwrap() {
         let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 1302);
-        sim.session.binary_frame = 100;
+        sim.session.set_binary_frame_for_test(100);
         let owner = sim.interner.intern("Russians");
         let mut members = Vec::new();
         for i in 0..2 {

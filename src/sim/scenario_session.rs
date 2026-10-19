@@ -180,19 +180,19 @@ impl NukeFlash {
 /// belong to lockstep.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct ScenarioLightingState {
-    pub normal: ScenarioLightProfileUnits,
-    pub ion: ScenarioLightProfileUnits,
+    normal: ScenarioLightProfileUnits,
+    ion: ScenarioLightProfileUnits,
     /// `Dominator*=` (`ScenarioClass+0x357C..+0x3590`).
-    pub dominator: ScenarioLightProfileUnits,
+    dominator: ScenarioLightProfileUnits,
     /// `DominatorAmbientChangeRate=` (`+0x3594`): the fade interval while
     /// the Psychic Dominator is active.
-    pub dominator_change_rate: i32,
-    pub current_ambient: i32,
-    pub target_ambient: i32,
+    dominator_change_rate: i32,
+    current_ambient: i32,
+    target_ambient: i32,
     /// The profile the last `UpdateLighting` selected: its ambient is the
     /// target and its RGB the alternate tint.
-    pub selected_profile: ScenarioLightingProfile,
-    pub transition_timer: CdTimer,
+    selected_profile: ScenarioLightingProfile,
+    transition_timer: CdTimer,
     /// `NukeAmbientChangeRate=` (`+0x3578`): the fade interval while the
     /// nuke flash runs.
     nuke_change_rate: i32,
@@ -204,6 +204,73 @@ pub struct ScenarioLightingState {
 }
 
 impl ScenarioLightingState {
+    pub const fn normal(&self) -> ScenarioLightProfileUnits {
+        self.normal
+    }
+
+    pub const fn ion(&self) -> ScenarioLightProfileUnits {
+        self.ion
+    }
+
+    pub const fn dominator(&self) -> ScenarioLightProfileUnits {
+        self.dominator
+    }
+
+    pub const fn dominator_change_rate(&self) -> i32 {
+        self.dominator_change_rate
+    }
+
+    pub const fn current_ambient(&self) -> i32 {
+        self.current_ambient
+    }
+
+    pub const fn target_ambient(&self) -> i32 {
+        self.target_ambient
+    }
+
+    pub const fn selected_profile(&self) -> ScenarioLightingProfile {
+        self.selected_profile
+    }
+
+    pub const fn transition_timer(&self) -> &CdTimer {
+        &self.transition_timer
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_current_ambient_for_test(&mut self, value: i32) {
+        self.current_ambient = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_target_ambient_for_test(&mut self, value: i32) {
+        self.target_ambient = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_selected_profile_for_test(&mut self, value: ScenarioLightingProfile) {
+        self.selected_profile = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_transition_timer_for_test(&mut self, value: CdTimer) {
+        self.transition_timer = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_normal_for_test(&mut self, value: ScenarioLightProfileUnits) {
+        self.normal = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn normal_mut_for_test(&mut self) -> &mut ScenarioLightProfileUnits {
+        &mut self.normal
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn ion_mut_for_test(&mut self) -> &mut ScenarioLightProfileUnits {
+        &mut self.ion
+    }
+
     /// Construct a tick-zero scenario from its map-authored profiles.
     pub const fn new(
         normal: ScenarioLightProfileUnits,
@@ -657,11 +724,11 @@ pub enum CampaignScenarioStartupError {
 pub struct ScenarioSession {
     /// Construction seed — the negotiated per-match value; the replay header
     /// records it. Stored widened (the negotiated value is 32-bit).
-    pub seed: u64,
+    seed: u64,
     /// Scenario identity: map file name (with `[Basic]` Name fallback).
-    pub map_name: String,
+    map_name: String,
     /// Theater name from the map header.
-    pub theater: String,
+    theater: String,
     /// Exact native GameMode; the former boolean is now a derived query.
     #[serde(default)]
     game_mode: ScenarioGameMode,
@@ -699,10 +766,10 @@ pub struct ScenarioSession {
     started: bool,
     /// Persisted native `ScenarioClass` flags bit `0x20`.
     #[serde(default)]
-    pub no_damage: bool,
+    no_damage: bool,
     /// Persistent native Scenario+34A4, included by original CRC at 0068BC16.
     #[serde(default)]
-    pub free_radar: bool,
+    free_radar: bool,
     /// Persistent native Scenario+34B4 (`[Basic] IgnoreGlobalAITriggers`).
     #[serde(default)]
     ignore_global_ai_triggers: bool,
@@ -721,14 +788,14 @@ pub struct ScenarioSession {
     /// Persisted native `ScenarioClass` flags bit `0x40` (`TiberiumGrows`);
     /// see the descriptor field of the same name.
     #[serde(default)]
-    pub tiberium_grows_flag: bool,
+    tiberium_grows_flag: bool,
     /// Persisted native `ScenarioClass` flags bit `0x80` (`TiberiumSpreads`).
     #[serde(default)]
-    pub tiberium_spreads_flag: bool,
+    tiberium_spreads_flag: bool,
     /// Persisted native `ScenarioClass` flags bit `0x800` (HarvesterImmune /
     /// Harvester Truce); see the descriptor field of the same name.
     #[serde(default)]
-    pub harvester_immune: bool,
+    harvester_immune: bool,
     /// Scenario+11E0: a computer slot has a team. Cleared at `0x00683A3A`;
     /// `Create_Houses` sets it for a computer slot whose team (`+0x60`) is
     /// not -1 (`0x006881F5..0x00688209`). Computer_Paranoid is its only
@@ -736,16 +803,16 @@ pub struct ScenarioSession {
     #[serde(default)]
     computer_slot_has_team: bool,
     /// Persistent fixed-integer global-light configuration and transition state.
-    pub lighting: ScenarioLightingState,
+    lighting: ScenarioLightingState,
     /// Saved match authority for Building and Tile animation coordinates.
-    pub pixel_conversion_bounds: crate::util::pixel_conversion::PixelConversionBounds,
+    pixel_conversion_bounds: crate::util::pixel_conversion::PixelConversionBounds,
     /// Authoritative map bounds in the canonical cell-array frame (max cell
     /// rx/ry + 1); see the descriptor field of the same name. Seeds the fog
     /// grid dimensions at construction.
-    pub map_width: u16,
-    pub map_height: u16,
+    map_width: u16,
+    map_height: u16,
     /// MP start waypoints (index -> cell) from the map `[Waypoints]` list.
-    pub mp_start_waypoints: BTreeMap<u32, (u16, u16)>,
+    mp_start_waypoints: BTreeMap<u32, (u16, u16)>,
     /// Scenario68BDC0's complete waypoint authority. The map parser is the
     /// source transaction; Team movement and trigger callbacks read this one
     /// private, saved table rather than maintaining subsystem copies. Omitted
@@ -754,36 +821,260 @@ pub struct ScenarioSession {
     waypoints: BTreeMap<u32, (i16, i16)>,
     /// Start waypoint index -> owning house, filled during launch application
     /// (after the random-assignment draws), before tick 0.
-    pub start_slot_houses: BTreeMap<u32, InternedId>,
-    /// HouseClass array registration order. Native house ids are indices into
-    /// this vector; map ordering by name/id is not an equivalent substitute.
-    pub house_order: Vec<InternedId>,
+    start_slot_houses: BTreeMap<u32, InternedId>,
     /// Native A83D4C: this process's current HouseClass identity. Campaign
     /// Basic.Player and multiplayer participant index0 choose it at creation;
     /// 67F802/67F9F3 save/load the pointer and 67FA0E swizzles it. It is not
     /// the presentation viewer and cannot be rebound from selection each frame.
     /// Evidence: docs/research/PHASE3_CURRENT_HOUSE_IDENTITY_GHIDRA_REPORT.md.
-    pub current_house: Option<InternedId>,
+    current_house: Option<InternedId>,
     /// Per-match game settings (the lobby options card). Set once at game
     /// start, read-only during gameplay.
-    pub game_options: GameOptions,
+    game_options: GameOptions,
     /// Monotonic Rust-side simulation ordinal. This is kept separately from
     /// the wrapping native frame so long-running diagnostics and command
     /// bookkeeping do not lose their ordering at the 32-bit wrap.
-    pub tick: u64,
+    tick: u64,
     /// Diagnostic accumulation of the nominal milliseconds supplied by the
     /// host for each admitted frame. Gameplay must not derive timer state,
     /// cadence, or the native frame from this value.
-    pub total_sim_ms: u64,
+    total_sim_ms: u64,
     /// Wrapping native gameplay-frame counter. One admitted `advance_tick`
     /// executes entirely under frame N, then commits N+1 at the late tail.
     ///
     /// The field keeps its historical name until all persistence and app
     /// surfaces can be renamed together; it is not a synthetic 15 Hz clock.
-    pub binary_frame: u32,
+    binary_frame: u32,
 }
 
 impl ScenarioSession {
+    // ---- Reads -----------------------------------------------------------
+
+    /// Construction seed — the negotiated per-match value.
+    pub const fn seed(&self) -> u64 {
+        self.seed
+    }
+
+    pub fn map_name(&self) -> &str {
+        &self.map_name
+    }
+
+    pub fn theater(&self) -> &str {
+        &self.theater
+    }
+
+    pub const fn no_damage(&self) -> bool {
+        self.no_damage
+    }
+
+    pub const fn free_radar(&self) -> bool {
+        self.free_radar
+    }
+
+    pub const fn tiberium_grows_flag(&self) -> bool {
+        self.tiberium_grows_flag
+    }
+
+    pub const fn tiberium_spreads_flag(&self) -> bool {
+        self.tiberium_spreads_flag
+    }
+
+    pub const fn harvester_immune(&self) -> bool {
+        self.harvester_immune
+    }
+
+    pub const fn lighting(&self) -> &ScenarioLightingState {
+        &self.lighting
+    }
+
+    /// The lighting owner; its operations carry the transition rules.
+    pub fn lighting_mut(&mut self) -> &mut ScenarioLightingState {
+        &mut self.lighting
+    }
+
+    pub const fn pixel_conversion_bounds(
+        &self,
+    ) -> crate::util::pixel_conversion::PixelConversionBounds {
+        self.pixel_conversion_bounds
+    }
+
+    pub const fn map_width(&self) -> u16 {
+        self.map_width
+    }
+
+    pub const fn map_height(&self) -> u16 {
+        self.map_height
+    }
+
+    pub const fn mp_start_waypoints(&self) -> &BTreeMap<u32, (u16, u16)> {
+        &self.mp_start_waypoints
+    }
+
+    pub const fn start_slot_houses(&self) -> &BTreeMap<u32, InternedId> {
+        &self.start_slot_houses
+    }
+
+    pub const fn game_options(&self) -> &GameOptions {
+        &self.game_options
+    }
+
+    pub const fn tick(&self) -> u64 {
+        self.tick
+    }
+
+    pub const fn total_sim_ms(&self) -> u64 {
+        self.total_sim_ms
+    }
+
+    pub const fn binary_frame(&self) -> u32 {
+        self.binary_frame
+    }
+
+    // ---- Operations ------------------------------------------------------
+
+    /// The late frame commit (Main_Tick's tail): the wrapping native frame
+    /// advances after every phase observed frame N; host milliseconds are
+    /// diagnostic only.
+    pub(crate) fn commit_native_frame(&mut self, tick_ms: u32) {
+        self.total_sim_ms = self.total_sim_ms.saturating_add(u64::from(tick_ms));
+        self.binary_frame = self.binary_frame.wrapping_add(1);
+    }
+
+    /// The Rust tick ordinal reaches the executed tick after the drain.
+    pub(crate) fn complete_tick(&mut self, execute_tick: u64) {
+        self.tick = execute_tick;
+    }
+
+    /// Init_Random_Number_System and load retention record the seed the
+    /// Scenario stream was seeded from.
+    pub(crate) fn record_random_seed(&mut self, seed: u64) {
+        self.seed = seed;
+    }
+
+    /// Per-match options from the accepted launch, before House creation.
+    pub(crate) fn install_game_options(&mut self, options: GameOptions) {
+        self.game_options = options;
+    }
+
+    /// In-game Options speed transition (accepted only within range).
+    pub(crate) fn apply_in_game_speed(&mut self, speed: u8) -> bool {
+        self.game_options.apply_in_game_speed(speed)
+    }
+
+    /// A83D4C at House creation: the launch participant index0 or the
+    /// campaign's Basic.Player. Never rebound from selection.
+    pub(crate) fn install_current_house(&mut self, owner: Option<InternedId>) {
+        self.current_house = owner;
+    }
+
+    /// The start-slot -> House table filled after the random assignment.
+    pub(crate) fn install_start_slot_houses(
+        &mut self,
+        table: impl IntoIterator<Item = (u32, InternedId)>,
+    ) {
+        self.start_slot_houses = table.into_iter().collect();
+    }
+
+    // ---- Fixture operations ----------------------------------------------
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_seed_for_test(&mut self, value: u64) {
+        self.seed = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_no_damage_for_test(&mut self, value: bool) {
+        self.no_damage = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_free_radar_for_test(&mut self, value: bool) {
+        self.free_radar = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_tiberium_grows_flag_for_test(&mut self, value: bool) {
+        self.tiberium_grows_flag = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_tiberium_spreads_flag_for_test(&mut self, value: bool) {
+        self.tiberium_spreads_flag = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_harvester_immune_for_test(&mut self, value: bool) {
+        self.harvester_immune = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_pixel_conversion_bounds_for_test(
+        &mut self,
+        value: crate::util::pixel_conversion::PixelConversionBounds,
+    ) {
+        self.pixel_conversion_bounds = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_map_width_for_test(&mut self, value: u16) {
+        self.map_width = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_map_height_for_test(&mut self, value: u16) {
+        self.map_height = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_current_house_for_test(&mut self, value: Option<InternedId>) {
+        self.current_house = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_tick_for_test(&mut self, value: u64) {
+        self.tick = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_total_sim_ms_for_test(&mut self, value: u64) {
+        self.total_sim_ms = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_binary_frame_for_test(&mut self, value: u32) {
+        self.binary_frame = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_lighting_for_test(&mut self, value: ScenarioLightingState) {
+        self.lighting = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_map_name_for_test(&mut self, value: String) {
+        self.map_name = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_theater_for_test(&mut self, value: String) {
+        self.theater = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_game_options_for_test(&mut self, value: GameOptions) {
+        self.game_options = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn game_options_mut_for_test(&mut self) -> &mut GameOptions {
+        &mut self.game_options
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn start_slot_houses_mut_for_test(&mut self) -> &mut BTreeMap<u32, InternedId> {
+        &mut self.start_slot_houses
+    }
+
     pub const fn game_mode(&self) -> ScenarioGameMode {
         self.game_mode
     }
@@ -980,7 +1271,14 @@ impl ScenarioSession {
     /// game options keep their original fold positions above; this fold adds
     /// only the fields new to the session aggregate. Order is part of the
     /// hash contract and must never change.
-    pub(crate) fn fold_identity(&self, hasher: &mut impl std::hash::Hasher) {
+    /// `house_order` is the House array's registration order, which keeps
+    /// its place in this stream although [`crate::sim::houses::Houses`]
+    /// owns it.
+    pub(crate) fn fold_identity(
+        &self,
+        house_order: &[InternedId],
+        hasher: &mut impl std::hash::Hasher,
+    ) {
         let s = self;
         s.seed.hash(hasher);
         s.map_name.hash(hasher);
@@ -1072,7 +1370,7 @@ impl ScenarioSession {
             idx.hash(hasher);
             owner.hash(hasher);
         }
-        s.house_order.hash(hasher);
+        house_order.hash(hasher);
 
         let lighting = &s.lighting;
         lighting.normal.ambient_percent.hash(hasher);
@@ -1219,7 +1517,6 @@ impl ScenarioSession {
             mp_start_waypoints: desc.mp_start_waypoints.clone(),
             waypoints: BTreeMap::new(),
             start_slot_houses: BTreeMap::new(),
-            house_order: Vec::new(),
             current_house: None,
             game_options: GameOptions::default(),
             tick: 0,

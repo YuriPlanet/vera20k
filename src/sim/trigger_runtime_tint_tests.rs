@@ -38,9 +38,9 @@ fn run(sim: &mut Simulation, action: &RuntimeAction) -> bool {
 
 fn normal_rgb(state: &ScenarioLightingState) -> [i32; 3] {
     [
-        state.normal.red_percent,
-        state.normal.green_percent,
-        state.normal.blue_percent,
+        state.normal().red_percent,
+        state.normal().green_percent,
+        state.normal().blue_percent,
     ]
 }
 
@@ -63,18 +63,18 @@ fn tint_actions_match_all_thirty_original_reader_and_wrapping_call_controls() {
     for kind in 142..=144 {
         for (operand, value, milli) in controls {
             let mut sim = Simulation::with_seed(0);
-            let light = &mut sim.session.lighting;
-            light.normal.ambient_percent = 60;
-            light.current_ambient = 70;
-            light.target_ambient = 80;
-            light.normal.red_percent = 123;
-            light.normal.green_percent = 87;
-            light.normal.blue_percent = 65;
-            light.normal.ground_units = 10;
-            light.normal.level_units = 20;
-            light.transition_timer = CdTimer::from_raw(12, 8);
+            let light = sim.session.lighting_mut();
+            light.normal_mut_for_test().ambient_percent = 60;
+            light.set_current_ambient_for_test(70);
+            light.set_target_ambient_for_test(80);
+            light.normal_mut_for_test().red_percent = 123;
+            light.normal_mut_for_test().green_percent = 87;
+            light.normal_mut_for_test().blue_percent = 65;
+            light.normal_mut_for_test().ground_units = 10;
+            light.normal_mut_for_test().level_units = 20;
+            light.set_transition_timer_for_test(CdTimer::from_raw(12, 8));
             // The native leaf ignores the selected alternate profile.
-            light.selected_profile = ScenarioLightingProfile::Ion;
+            light.set_selected_profile_for_test(ScenarioLightingProfile::Ion);
             let previous = *light;
             let rng = [
                 sim.main_rng.native_state_hex(),
@@ -87,7 +87,7 @@ fn tint_actions_match_all_thirty_original_reader_and_wrapping_call_controls() {
             let mut expected = [123, 87, 65];
             expected[(kind - 142) as usize] = value;
             assert_eq!(
-                normal_rgb(&sim.session.lighting),
+                normal_rgb(&sim.session.lighting()),
                 expected,
                 "{kind}: {operand}"
             );
@@ -96,10 +96,10 @@ fn tint_actions_match_all_thirty_original_reader_and_wrapping_call_controls() {
             assert!(
                 matches!(sim.lighting_sources.pending.as_slice(), [LightingEvent::Global { palette: PaletteUpdate::Normal(rgb), .. }] if *rgb == expected_call)
             );
-            let mut unchanged = sim.session.lighting;
-            unchanged.normal.red_percent = previous.normal.red_percent;
-            unchanged.normal.green_percent = previous.normal.green_percent;
-            unchanged.normal.blue_percent = previous.normal.blue_percent;
+            let mut unchanged = *sim.session.lighting();
+            unchanged.normal_mut_for_test().red_percent = previous.normal().red_percent;
+            unchanged.normal_mut_for_test().green_percent = previous.normal().green_percent;
+            unchanged.normal_mut_for_test().blue_percent = previous.normal().blue_percent;
             assert_eq!(unchanged, previous);
             assert_eq!(
                 [
@@ -126,14 +126,14 @@ fn ordered_tag_rgb_actions_then_the_production_fade_keep_distinct_palette_operat
     );
     sim.classify_map_triggers(None);
     sim.session.set_started(true);
-    sim.session.map_width = 32;
-    sim.session.map_height = 32;
+    sim.session.set_map_width_for_test(32);
+    sim.session.set_map_height_for_test(32);
     sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(
         32,
         32,
         crate::map::resolved_terrain::test_flat_cell,
     ));
-    sim.session.lighting.target_ambient = 80;
+    sim.session.lighting_mut().set_target_ambient_for_test(80);
     let frame = sim
         .advance_app_frame(
             &[],
@@ -162,8 +162,8 @@ fn ordered_tag_rgb_actions_then_the_production_fade_keep_distinct_palette_operat
             PaletteUpdate::Preserve
         ]
     );
-    assert_eq!(sim.session.lighting.current_ambient, 90);
-    assert_eq!(normal_rgb(&sim.session.lighting), [120, 80, 60]);
+    assert_eq!(sim.session.lighting().current_ambient(), 90);
+    assert_eq!(normal_rgb(&sim.session.lighting()), [120, 80, 60]);
     assert!(sim.trigger_runtime.logic_tags.is_empty());
 }
 
@@ -178,7 +178,7 @@ fn raw_tint_fields_roundtrip_without_serializing_palette_caches() {
     let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
     restored.restore_after_snapshot_load().unwrap();
     assert_eq!(
-        normal_rgb(&restored.session.lighting),
+        normal_rgb(&restored.session.lighting()),
         [i32::MIN, i32::MAX, 89]
     );
     assert_eq!(restored.state_hash(), hash);
@@ -207,7 +207,9 @@ fn palette_constructor_priority_matches_eight_original_suffix_controls() {
                     (0, 0),
                 );
         }
-        sim.session.lighting.set_nuke_flash_for_test(nuke, 0, 30);
+        sim.session
+            .lighting_mut()
+            .set_nuke_flash_for_test(nuke, 0, 30);
         if chrono {
             sim.session.start_chrono_screen_state(10);
         }

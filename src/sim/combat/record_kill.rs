@@ -147,7 +147,7 @@ impl KillSource {
 /// ejected by a sell. Those victims book a Loss with no matching Kill.
 fn record_the_kill(
     entities: &mut EntityStore,
-    houses: &mut BTreeMap<InternedId, HouseState>,
+    houses: &mut crate::sim::houses::Houses,
     interner: &StringInterner,
     alliances: &HouseAllianceMap,
     victim_id: u64,
@@ -429,7 +429,7 @@ impl KillRecord {
 /// radar redraw remains a separate presentation residual.
 fn record_kill_credit(
     victim: &mut crate::sim::game_entity::GameEntity,
-    houses: &mut BTreeMap<InternedId, HouseState>,
+    houses: &mut crate::sim::houses::Houses,
     killer_owner: Option<InternedId>,
     points: i32,
     insignificant_building: bool,

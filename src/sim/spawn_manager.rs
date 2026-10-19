@@ -1143,7 +1143,7 @@ impl<'a, 'c> WorldSpawn<'a, 'c> {
 
 impl SpawnHost for WorldSpawn<'_, '_> {
     fn frame(&self) -> i32 {
-        self.sim.session.binary_frame as i32
+        self.sim.session.binary_frame() as i32
     }
 
     fn manager(&mut self) -> &mut SpawnManagerState {
@@ -1198,7 +1198,7 @@ impl SpawnHost for WorldSpawn<'_, '_> {
                         &sim.interner,
                         &sim.houses,
                     )),
-                    sim.session.binary_frame,
+                    sim.session.binary_frame(),
                 )
             })
     }
@@ -1342,7 +1342,7 @@ impl SpawnHost for WorldSpawn<'_, '_> {
         let Some(rules) = self.context.rules() else {
             return;
         };
-        let frame = self.sim.session.binary_frame;
+        let frame = self.sim.session.binary_frame();
         let Some(owner) = self.sim.substrate.entities.get(self.owner_id) else {
             return;
         };
@@ -1431,7 +1431,7 @@ impl SpawnHost for WorldSpawn<'_, '_> {
             child,
             crate::sim::mission::MissionId::from_known(mission),
             0,
-            self.sim.session.binary_frame,
+            self.sim.session.binary_frame(),
             &crate::sim::mission::authority::EntityReadyInputProvider,
         );
     }
@@ -1481,7 +1481,7 @@ impl SpawnHost for WorldSpawn<'_, '_> {
         let owner = self.sim.substrate.entities.get(self.owner_id)?;
         let house = self.sim.interner.resolve(owner.owner()).to_string();
         let (rx, ry, z) = (owner.position.rx(), owner.position.ry(), owner.position.z());
-        let facing = owner.body_facing_byte(self.sim.session.binary_frame);
+        let facing = owner.body_facing_byte(self.sim.session.binary_frame());
         let type_name = self.sim.interner.resolve(spawn_type).to_string();
         self.sim.construct_object_limbo_at_height(
             &type_name,

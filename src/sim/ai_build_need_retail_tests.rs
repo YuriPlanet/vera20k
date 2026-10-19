@@ -136,7 +136,7 @@ fn stock_soviet_miner_loss_admits_recovery_and_returns_to_income() {
                     |(&entity_id, (target_rx, target_ry))| {
                         CommandEnvelope::new(
                             local,
-                            sim.session.tick,
+                            sim.session.tick(),
                             Command::Move {
                                 entity_id,
                                 target_rx,
@@ -203,7 +203,7 @@ fn stock_soviet_miner_loss_admits_recovery_and_returns_to_income() {
                     commands.extend(tanks.iter().map(|&attacker_id| {
                         CommandEnvelope::new(
                             local,
-                            sim.session.tick,
+                            sim.session.tick(),
                             Command::Attack {
                                 attacker_id,
                                 target_id: original,
@@ -217,7 +217,7 @@ fn stock_soviet_miner_loss_admits_recovery_and_returns_to_income() {
             let admission = lost && !first_recovery && check_build_need(sim, rules, owner);
             let due = sim.houses[&owner]
                 .strategy_timer
-                .expired(sim.session.binary_frame as i32);
+                .expired(sim.session.binary_frame() as i32);
             let before_income = i64::from(sim.houses[&owner].economy.credits())
                 + i64::from(sim.houses[&owner].economy.spent_credits());
             let carrying_before = recovered

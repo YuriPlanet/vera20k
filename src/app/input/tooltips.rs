@@ -871,14 +871,12 @@ mod tests {
         let owner = sim.intern(owner_name);
         let viewer = sim.intern(viewer_name);
         sim.houses
-            .insert(viewer, HouseState::new(viewer, 0, None, true, 50_000, 10));
-        sim.session.house_order.push(viewer);
+            .register(HouseState::new(viewer, 0, None, true, 50_000, 10));
         if owner != viewer {
             sim.houses
-                .insert(owner, HouseState::new(owner, 1, None, false, 50_000, 10));
-            sim.session.house_order.push(owner);
+                .register(HouseState::new(owner, 1, None, false, 50_000, 10));
         }
-        sim.session.current_house = Some(viewer);
+        sim.session.set_current_house_for_test(Some(viewer));
         crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
         sim.fog = crate::sim::vision::FogState::new(32, 32);
         sim.fog

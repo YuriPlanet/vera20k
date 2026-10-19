@@ -78,13 +78,10 @@ pub use departure::{
     DepartureRoute, depart_cargo_head, exit_cell_position, reveal_unloaded_passenger,
 };
 
-use std::collections::BTreeMap;
-
 use crate::map::entities::EntityCategory;
 use crate::rules::object_type::ObjectType;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::game_entity::GameEntity;
-use crate::sim::house_state::HouseState;
 use crate::sim::intern::{InternedId, StringInterner};
 use crate::sim::world::{ConcealOutcome, FrameEffects, SimSoundEvent, Simulation, UninitContext};
 
@@ -739,10 +736,7 @@ pub(crate) fn building_can_be_occupied_by(
 /// house creation, and stored on the house — see
 /// `house_state::resolve_multiplay_passive`. An owner with no `HouseState` is
 /// not passive.
-fn owner_is_multiplay_passive(
-    owner: InternedId,
-    houses: &BTreeMap<InternedId, HouseState>,
-) -> bool {
+fn owner_is_multiplay_passive(owner: InternedId, houses: &crate::sim::houses::Houses) -> bool {
     houses
         .get(&owner)
         .is_some_and(|house| house.multiplay_passive)
@@ -1132,7 +1126,7 @@ fn receive_gunner(sim: &mut Simulation, rules: &RuleSet, transport_id: u64, pax_
     // tests nonzero, including a paused signed duration, rather than >0.
     let donor_rearming = passenger
         .rearm_timer
-        .remaining(sim.session.binary_frame as i32)
+        .remaining(sim.session.binary_frame() as i32)
         != 0;
     if sim.temporal_receive_gunner(transport_id, pax_id) {
         if let Some(transport) = sim.substrate.entities.get_mut(transport_id) {
@@ -1170,7 +1164,7 @@ fn remove_gunner(sim: &mut Simulation, rules: &RuleSet, transport_id: u64, pax_i
     // passenger's current burst/rank/House are read after LetGo below.
     let donor_rearming = transport
         .rearm_timer
-        .remaining(sim.session.binary_frame as i32)
+        .remaining(sim.session.binary_frame() as i32)
         != 0;
     if let Some(pax_id) = pax_id
         && sim.temporal_remove_gunner(transport_id, pax_id)
@@ -1231,7 +1225,7 @@ fn rearm_transferred_gunner(sim: &mut Simulation, rules: &RuleSet, receiver: u64
         live,
         burst_index,
     );
-    let frame = sim.session.binary_frame as i32;
+    let frame = sim.session.binary_frame() as i32;
     if let Some(actor) = sim.substrate.entities.get_mut(receiver) {
         actor.rearm_timer.start(frame, rof);
     }

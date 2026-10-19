@@ -19,7 +19,7 @@ fn produce_move(
         .expect("original input emits an ordinary Move");
     let issued = CommandEnvelope::new(
         owner,
-        sim.session.tick,
+        sim.session.tick(),
         Command::Move {
             entity_id: id,
             target_rx: resolved.0,

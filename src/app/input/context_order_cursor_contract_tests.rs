@@ -9,7 +9,7 @@ fn arena(rules: &RuleSet) -> Simulation {
     let mut sim = Simulation::new();
     crate::sim::arena_fixture::flat_arena(&mut sim, rules);
     let owner = sim.interner.intern("Americans");
-    sim.session.current_house = Some(owner);
+    sim.session.set_current_house_for_test(Some(owner));
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     sim.intern_rule_type_ids(rules);
@@ -74,7 +74,7 @@ fn retail_guard_cursor_and_click_share_alliance_admission() {
             &sim,
             &retail.rules,
             &registry,
-            sim.session.current_house.unwrap(),
+            sim.session.current_house().unwrap(),
             OrderMode::Move,
             OrderModifier::GuardArea,
             true,

@@ -293,7 +293,7 @@ pub(super) fn passive_acquire_step(
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;
     };
-    match targeting_slot(entity, sim.session.binary_frame) {
+    match targeting_slot(entity, sim.session.binary_frame()) {
         TargetingSlot::Skip => {}
         TargetingSlot::ArrivalHandler => sim.foot_arrival_target_handler(id, rules, ctx),
         TargetingSlot::PassiveAcquire(_) => {
@@ -358,7 +358,7 @@ pub(crate) fn passive_target_acquire(
     if !passive_acquire_gate(sim, id, rules, mission) {
         return false;
     }
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     let Some(entity) = sim.substrate.entities.get_mut(id) else {
         return false;
     };
@@ -693,7 +693,7 @@ impl<'r> ScanHost for WorldScan<'_, 'r> {
     type Weapon = &'r WeaponType;
 
     fn frame(&self) -> i32 {
-        self.sim.session.binary_frame as i32
+        self.sim.session.binary_frame() as i32
     }
 
     fn set_last_scan_frame(&mut self, frame: i32) {
@@ -993,7 +993,7 @@ mod tests {
                 .unwrap();
             let owner = sim.substrate.entities.get(scanner).unwrap().owner();
             sim.fog.mark_visible_for_owner(owner, 15, 12);
-            sim.session.binary_frame = 100;
+            sim.session.set_binary_frame_for_test(100);
             sim.substrate
                 .entities
                 .get_mut(scanner)
@@ -1106,8 +1106,7 @@ mod tests {
         {
             let id = sim.interner.intern(name);
             let house = HouseState::new(id, index as u8, None, human, 0, 10);
-            sim.houses.insert(id, house);
-            sim.session.house_order.push(id);
+            sim.houses.register(house);
         }
         let plane = sim
             .spawn_object_at_height("PLANE", "Americans", 10, 10, 0, 0, &rules)
@@ -1513,7 +1512,7 @@ mod tests {
             let owner = sim.interner.intern("Americans");
             let human = input["human"].as_bool().unwrap_or(true);
             sim.houses
-                .insert(owner, HouseState::new(owner, 0, None, human, 0, 10));
+                .register(HouseState::new(owner, 0, None, human, 0, 10));
             let mut entity = GameEntity::test_default(1, "X", "Americans", 10, 10);
             entity.set_owner_for_test(owner);
             entity.set_type_ref_for_test(sim.interner.intern(&type_name(input)));

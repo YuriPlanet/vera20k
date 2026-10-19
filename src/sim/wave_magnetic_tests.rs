@@ -23,7 +23,7 @@ fn retail_magnetic_wave_tracks_the_lifted_unit_then_the_live_firer_flh() {
     let owner = sim.interner.get("Americans").unwrap();
     sim.queue_command(CommandEnvelope::new(
         owner,
-        sim.session.tick + 1,
+        sim.session.tick() + 1,
         Command::Attack {
             attacker_id: source,
             target_id: target,
@@ -95,7 +95,7 @@ fn retail_magnetic_wave_tracks_the_lifted_unit_then_the_live_firer_flh() {
     );
     sim.queue_command(CommandEnvelope::new(
         owner,
-        sim.session.tick + 1,
+        sim.session.tick() + 1,
         Command::Move {
             entity_id: source,
             target_rx: 10,

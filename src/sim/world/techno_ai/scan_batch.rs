@@ -297,7 +297,7 @@ impl Simulation {
             return Some((ScanMission::Hunt, None));
         }
         let unheld = entity.attack_target.target().is_none();
-        let scans = match super::target_scan::targeting_slot(entity, self.session.binary_frame) {
+        let scans = match super::target_scan::targeting_slot(entity, self.session.binary_frame()) {
             TargetingSlot::Skip => false,
             TargetingSlot::ArrivalHandler => matches!(
                 self.foot_arrival_step(id, rules, overlay_registry),

@@ -207,11 +207,10 @@ impl Fixture {
                 sim.interner.intern("Second")
             };
             sim.houses
-                .insert(id, HouseState::new(id, 0, None, index == 0, 5000, 10));
-            sim.session.house_order.push(id);
+                .insert_for_test(HouseState::new(id, 0, None, index == 0, 5000, 10));
             houses.push((int(&house["pointer"]), id));
         }
-        sim.session.current_house = Some(owner);
+        sim.session.set_current_house_for_test(Some(owner));
         // The reused native fixture supplies its game mode explicitly;
         // this is a caller prior, not a retail startup-default assertion.
         sim.session.set_game_mode(
@@ -302,7 +301,7 @@ impl Fixture {
             entity.has_been_captured.set_for_test(false);
             // The preceding fixture transfer is supplied setup, not this
             // arrival. Consume its identical idle request through the owner.
-            entity.apply_queued_building_body(0, &sim.session.game_options);
+            entity.apply_queued_building_body(0, &sim.session.game_options());
         }
         if name == "enemy_selling_refusal" {
             let entity = sim.substrate.entities.get_mut(building).unwrap();
@@ -382,7 +381,7 @@ impl Fixture {
             house["discovered_by_current_house"] =
                 json!(prior["first_current_viewer_discovery_1f4"] == 1);
             sim.houses
-                .insert(*id, serde_json::from_value(house).unwrap());
+                .replace_for_test(serde_json::from_value(house).unwrap());
             let mut state = serde_json::to_value(PowerState::default()).unwrap();
             state["total_output"] = prior["power"].clone();
             state["total_drain"] = prior["drain"].clone();
@@ -738,7 +737,7 @@ fn original_half_threshold_and_friendly_repair_object_actions() {
     fixture
         .sim
         .houses
-        .insert(enemy, HouseState::new(enemy, 0, None, false, 5000, 10));
+        .register(HouseState::new(enemy, 0, None, false, 5000, 10));
     fixture.sim.change_owner_with_rules(
         fixture.building,
         enemy,

@@ -86,12 +86,10 @@ fn snapshot_tallies_entities_per_house() {
     let mut sim = Simulation::with_seed(31);
     let americans = sim.interner.intern("Americans");
     let soviets = sim.interner.intern("Soviets");
-    sim.houses.insert(
-        americans,
-        HouseState::new(americans, 0, None, true, 1000, 10),
-    );
     sim.houses
-        .insert(soviets, HouseState::new(soviets, 1, None, false, 1000, 10));
+        .register(HouseState::new(americans, 0, None, true, 1000, 10));
+    sim.houses
+        .register(HouseState::new(soviets, 1, None, false, 1000, 10));
 
     for _ in 0..2 {
         sim.spawn_object_limbo_at_height("ACTOR", "Americans", 3, 3, 0, 0, &rules)
@@ -128,10 +126,8 @@ fn house_rows_carry_economy_and_roster() {
     let rules = vehicle_rules();
     let mut sim = Simulation::with_seed(37);
     let americans = sim.interner.intern("Americans");
-    sim.houses.insert(
-        americans,
-        HouseState::new(americans, 0, None, true, 1000, 10),
-    );
+    sim.houses
+        .register(HouseState::new(americans, 0, None, true, 1000, 10));
     for _ in 0..3 {
         sim.spawn_object_limbo_at_height("ACTOR", "Americans", 3, 3, 0, 0, &rules)
             .expect("vehicle spawn");
@@ -162,12 +158,10 @@ fn production_rows_report_the_active_build_its_queue_and_ready_stock() {
     let mut sim = Simulation::with_seed(53);
     let americans = sim.interner.intern("Americans");
     let soviets = sim.interner.intern("Soviets");
-    sim.houses.insert(
-        americans,
-        HouseState::new(americans, 0, None, true, 1000, 10),
-    );
     sim.houses
-        .insert(soviets, HouseState::new(soviets, 1, None, false, 1000, 10));
+        .register(HouseState::new(americans, 0, None, true, 1000, 10));
+    sim.houses
+        .register(HouseState::new(soviets, 1, None, false, 1000, 10));
     sim.spawn_object_limbo_at_height("ACTOR", "Americans", 3, 3, 0, 0, &rules)
         .expect("vehicle spawn");
 
@@ -244,10 +238,8 @@ fn production_rows_report_the_active_build_its_queue_and_ready_stock() {
 fn a_house_with_no_factory_reports_no_production() {
     let mut sim = Simulation::with_seed(59);
     let americans = sim.interner.intern("Americans");
-    sim.houses.insert(
-        americans,
-        HouseState::new(americans, 0, None, true, 1000, 10),
-    );
+    sim.houses
+        .register(HouseState::new(americans, 0, None, true, 1000, 10));
     let snapshot = sim.telemetry_snapshot();
     let row = house_row(&snapshot, "Americans");
     assert!(row.production.is_empty());
@@ -261,10 +253,8 @@ fn spots_carry_world_positions_and_owner_indices() {
     // spawn, whose native CoordStruct default is (0,0) off-map).
     let mut sim = Simulation::with_seed(31);
     let americans = sim.interner.intern("Americans");
-    sim.houses.insert(
-        americans,
-        HouseState::new(americans, 0, None, true, 1000, 10),
-    );
+    sim.houses
+        .register(HouseState::new(americans, 0, None, true, 1000, 10));
     let french = sim.interner.intern("French");
     let type_ref = sim.interner.intern("ACTOR");
     for (owner, cell) in [(americans, 3u16), (french, 60u16)] {
@@ -322,7 +312,7 @@ fn snapshot_round_trips_through_save_codec() {
     let mut sim = Simulation::with_seed(31);
     let owner = sim.interner.intern("Americans");
     sim.houses
-        .insert(owner, HouseState::new(owner, 0, None, true, 1000, 10));
+        .register(HouseState::new(owner, 0, None, true, 1000, 10));
     sim.spawn_object_limbo_at_height("ACTOR", "Americans", 3, 3, 0, 0, &rules)
         .expect("vehicle spawn");
 
@@ -341,12 +331,12 @@ fn houses_carry_their_difficulty() {
     let tough = sim.interner.intern("Computer1");
     let mut tough_house = HouseState::new(tough, 1, None, false, 1000, 10);
     tough_house.difficulty = HouseDifficulty::Hard;
-    sim.houses.insert(tough, tough_house);
+    sim.houses.register(tough_house);
 
     let easy = sim.interner.intern("Computer2");
     let mut easy_house = HouseState::new(easy, 1, None, false, 1000, 10);
     easy_house.difficulty = HouseDifficulty::Easy;
-    sim.houses.insert(easy, easy_house);
+    sim.houses.register(easy_house);
 
     let snapshot = sim.telemetry_snapshot();
     assert_eq!(snapshot.houses[0].difficulty, "hard");
@@ -361,7 +351,7 @@ fn repeated_captures_are_equal() {
     let mut sim = Simulation::with_seed(31);
     let owner = sim.interner.intern("Americans");
     sim.houses
-        .insert(owner, HouseState::new(owner, 0, None, true, 1000, 10));
+        .register(HouseState::new(owner, 0, None, true, 1000, 10));
     sim.spawn_object_limbo_at_height("ACTOR", "Americans", 3, 3, 0, 0, &rules)
         .expect("vehicle spawn");
 
@@ -374,7 +364,7 @@ fn snapshot_and_profiling_switches_leave_hash_and_saved_bytes_unchanged() {
     let mut sim = Simulation::with_seed(71);
     let owner = sim.interner.intern("Americans");
     sim.houses
-        .insert(owner, HouseState::new(owner, 0, None, true, 1000, 10));
+        .register(HouseState::new(owner, 0, None, true, 1000, 10));
     sim.spawn_object_limbo_at_height("ACTOR", "Americans", 3, 3, 0, 0, &rules)
         .unwrap();
     let hash = sim.state_hash();
@@ -443,7 +433,7 @@ fn roster_keeps_identical_names_in_distinct_categories_and_reads_team_flags() {
     let kind = sim.interner.intern("SharedName");
     let script = sim.interner.intern("Script");
     sim.houses
-        .insert(owner, HouseState::new(owner, 0, None, false, 0, 10));
+        .register(HouseState::new(owner, 0, None, false, 0, 10));
     let mut members = Vec::new();
     for category in [EntityCategory::Unit, EntityCategory::Infantry] {
         members.push(sim.insert_synthetic_techno_for_diagnostics(
@@ -486,7 +476,7 @@ fn snapshot_bounds_long_names_house_rows_and_production_queues() {
         let owner = sim.interner.intern(&format!("House{index}"));
         first.get_or_insert(owner);
         sim.houses
-            .insert(owner, HouseState::new(owner, 0, None, false, 0, 10));
+            .register(HouseState::new(owner, 0, None, false, 0, 10));
     }
     let owner = first.unwrap();
     sim.production
@@ -532,7 +522,7 @@ fn capped_core_payload_leaves_room_in_the_eight_mib_transport_budget() {
     let mut sim = Simulation::new();
     let owner = sim.interner.intern("Owner");
     sim.houses
-        .insert(owner, HouseState::new(owner, 0, None, false, 0, 10));
+        .register(HouseState::new(owner, 0, None, false, 0, 10));
     let mut snapshot = sim.telemetry_snapshot();
     let mut house = snapshot.houses[0].clone();
     house.name = name.clone();
@@ -598,7 +588,7 @@ fn project_scale_capture_counts_thirty_houses_and_caps_twenty_thousand_spots() {
         .map(|index| {
             let owner = sim.interner.intern(&format!("Player{index}"));
             sim.houses
-                .insert(owner, HouseState::new(owner, 0, None, false, 1000, 10));
+                .register(HouseState::new(owner, 0, None, false, 1000, 10));
             owner
         })
         .collect();

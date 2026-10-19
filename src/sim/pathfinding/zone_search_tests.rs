@@ -398,7 +398,7 @@ fn gsi_04_12_interaction_order_entry_threads_exact_blocker_counts() {
     // The direct Process seam omits Object/Techno AI. Run the production
     // Ready -> Commence checkpoint first: Infantry51C300 reads CURRENT
     // mission when admitting the Building NavCom, not its queued Capture.
-    sim.mission_host_promote(engineer_id, sim.session.binary_frame, &rules);
+    sim.mission_host_promote(engineer_id, sim.session.binary_frame(), &rules);
     assert_eq!(
         sim.substrate
             .entities

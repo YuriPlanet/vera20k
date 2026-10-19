@@ -168,8 +168,7 @@ fn sim(seed: u64) -> Simulation {
     let mut sim = Simulation::with_seed(seed);
     let owner = sim.interner.intern("Americans");
     sim.houses
-        .insert(owner, HouseState::new(owner, 0, None, false, 0, 10));
-    sim.session.house_order.push(owner);
+        .register(HouseState::new(owner, 0, None, false, 0, 10));
     sim
 }
 
@@ -590,8 +589,7 @@ fn infantry_death_anims_are_built_inline_and_the_virus_takes_the_killers_house()
         let mut sim = sim(5);
         let russians = sim.interner.intern("Russians");
         sim.houses
-            .insert(russians, HouseState::new(russians, 1, None, false, 0, 10));
-        sim.session.house_order.push(russians);
+            .register(HouseState::new(russians, 1, None, false, 0, 10));
         (sim, russians)
     };
 
@@ -1029,11 +1027,7 @@ fn retail_dustbowl_death_anims_use_the_types_lists() {
         let rules = &resources.rules;
         let owner = sim.interner.intern("Americans");
         sim.houses
-            .entry(owner)
-            .or_insert_with(|| HouseState::new(owner, 0, None, false, 10_000, 10));
-        if !sim.session.house_order.contains(&owner) {
-            sim.session.house_order.push(owner);
-        }
+            .get_or_register_for_test(owner, || HouseState::new(owner, 0, None, false, 10_000, 10));
         let location_input = ints(&input["location"]);
         let (cell_x, cell_y) = (
             (location_input[0] / 256) as u16,

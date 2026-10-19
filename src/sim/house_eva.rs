@@ -64,9 +64,9 @@ fn owns_construction_yard(sim: &Simulation, rules: &RuleSet, owner: InternedId) 
 /// Advice inside the reached House body, after team creation and before
 /// defeat. The deterministic per-human projection is documented above.
 pub(crate) fn update_house_eva(sim: &mut Simulation, rules: &RuleSet, owner: InternedId) {
-    let now = sim.session.binary_frame as i32;
+    let now = sim.session.binary_frame() as i32;
     let game_mode_nonzero = sim.session.game_mode_nonzero();
-    let delay = speak_delay_frames(rules, &sim.session.game_options);
+    let delay = speak_delay_frames(rules, &sim.session.game_options());
     let Some(house) = sim.houses.get(&owner) else {
         return;
     };
@@ -132,7 +132,7 @@ pub(crate) fn update_house_eva(sim: &mut Simulation, rules: &RuleSet, owner: Int
 
 #[cfg(any(test, feature = "test-support"))]
 fn tick_house_eva(sim: &mut Simulation, rules: &RuleSet) {
-    for owner in sim.session.house_order.clone() {
+    for owner in sim.houses.order().to_vec() {
         update_house_eva(sim, rules, owner);
     }
 }
@@ -182,11 +182,8 @@ mod tests {
     fn sim_with_house(credits: i32, human: bool) -> (Simulation, InternedId) {
         let mut sim = Simulation::new();
         let owner = sim.interner.intern("Americans");
-        sim.houses.insert(
-            owner,
-            HouseState::new(owner, 0, Some(owner), human, credits, 10),
-        );
-        sim.session.house_order.push(owner);
+        sim.houses
+            .register(HouseState::new(owner, 0, Some(owner), human, credits, 10));
         (sim, owner)
     }
 
@@ -208,14 +205,15 @@ mod tests {
                 &mut sim.substrate.entities,
                 rules,
                 &sim.interner,
-                sim.session.binary_frame,
+                sim.session.binary_frame(),
             );
             tick_house_eva(sim, rules);
-            let frame = sim.session.binary_frame;
+            let frame = sim.session.binary_frame();
             for line in house_lines(sim) {
                 lines.push((frame, line));
             }
-            sim.session.binary_frame += 1;
+            sim.session
+                .set_binary_frame_for_test(sim.session.binary_frame() + 1);
         }
         lines
     }
@@ -243,7 +241,7 @@ mod tests {
     fn funds_nag_repeats_every_speak_delay_while_broke_with_a_factory() {
         let rules = rules();
         let (mut sim, owner) = sim_with_house(50, true);
-        sim.session.game_options.game_speed = 4;
+        sim.session.game_options_mut_for_test().game_speed = 4;
         structure(&mut sim, &rules, "GAPILE", 3);
         let lines = run_frames(&mut sim, &rules, 2880 * 2 + 2);
         let nags: Vec<u32> = lines
@@ -288,11 +286,8 @@ mod tests {
         let rules = rules();
         let (mut sim, owner) = sim_with_house(0, true);
         let soviet = sim.interner.intern("Russians");
-        sim.houses.insert(
-            soviet,
-            HouseState::new(soviet, 1, Some(soviet), false, 0, 10),
-        );
-        sim.session.house_order.push(soviet);
+        sim.houses
+            .register(HouseState::new(soviet, 1, Some(soviet), false, 0, 10));
         let barracks = structure(&mut sim, &rules, "GAPILE", 3);
         structure(&mut sim, &rules, "GAPILE", 4);
         let yard = structure(&mut sim, &rules, "GAYARD", 6);

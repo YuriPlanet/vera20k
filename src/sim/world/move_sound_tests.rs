@@ -53,8 +53,7 @@ fn scene(input: &Value, before: &Value, rules: &RuleSet) -> (Simulation, u64) {
     sim.resolve_type_handles(rules);
     let owner = sim.interner.intern("Americans");
     sim.houses
-        .insert(owner, HouseState::new(owner, 0, None, true, 0, 10));
-    sim.session.house_order.push(owner);
+        .register(HouseState::new(owner, 0, None, true, 0, 10));
     let id = sim.allocate_stable_id();
     let xyz: Vec<_> = before["xyz"]
         .as_array()
@@ -161,7 +160,8 @@ fn visit(sim: &mut Simulation, rules: &RuleSet, id: u64, step: &Value, context: 
         "{context}: entry"
     );
     assert_rng(sim, &step["before"], context);
-    sim.session.binary_frame = step["frame"].as_u64().unwrap() as u32;
+    sim.session
+        .set_binary_frame_for_test(step["frame"].as_u64().unwrap() as u32);
     sim.sound_events.clear();
     let body_before = sim
         .substrate
@@ -186,7 +186,7 @@ fn visit(sim: &mut Simulation, rules: &RuleSet, id: u64, step: &Value, context: 
             object.hover_attack,
             object.deploy_to_land,
             None,
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
         );
         sim.tick_move_sound_after_process(id, body_before, Some(rules));
     });
@@ -312,7 +312,8 @@ fn native_foot_load_reset_runs_through_snapshot_restore_then_the_next_visit() {
     for row in rows {
         let name = row["name"].as_str().unwrap();
         let (mut sim, id) = scene(&json!({"seed":31}), &row["before"], &rules);
-        sim.session.map_name = "MOVE_SOUND_TEST.MAP".to_owned();
+        sim.session
+            .set_map_name_for_test("MOVE_SOUND_TEST.MAP".to_owned());
         let bytes = GameSnapshot::save_validated(&sim, 17, 18, name, 0);
         let mut loaded = GameSnapshot::load_validated(&bytes, 17, 18, "MOVE_SOUND_TEST.MAP")
             .unwrap()
@@ -416,7 +417,7 @@ fn assert_retail_idle_timeline(retail_dir: &std::path::Path, row: &Value) {
         "paid Hills/Battle",
     );
     let runtime = &mut scene.runtime;
-    let owner = runtime.simulation.session.current_house.unwrap();
+    let owner = runtime.simulation.session.current_house().unwrap();
     let owner_name = runtime.simulation.resolve(owner).to_owned();
     let water: Vec<_> = runtime
         .simulation
@@ -450,14 +451,16 @@ fn assert_retail_idle_timeline(retail_dir: &std::path::Path, row: &Value) {
     // The oracle starts from an already-live actor after setup. Align only
     // its declared frame/Main boundary; leave production movement and frame
     // dispatch intact. This is not a whole-map startup RNG comparison.
-    sim.session.binary_frame = steps[0]["frame"].as_u64().unwrap() as u32;
+    sim.session
+        .set_binary_frame_for_test(steps[0]["frame"].as_u64().unwrap() as u32);
     sim.main_rng =
         SimRng::from_native_state_hex_for_test(steps[0]["before"]["rng"]["main"].as_str().unwrap())
             .into();
     for step in steps {
         let native_frame = step["frame"].as_u64().unwrap() as u32;
         assert_eq!(
-            runtime.simulation.session.binary_frame, native_frame,
+            runtime.simulation.session.binary_frame(),
+            native_frame,
             "{name}: original entry frame"
         );
         let output = runtime
@@ -474,7 +477,7 @@ fn assert_retail_idle_timeline(retail_dir: &std::path::Path, row: &Value) {
         // Native slice frame 0 therefore supplies completed boundary 1; the
         // event/state assertions below compare the same pre-commit visit.
         assert_eq!(
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
             native_frame.wrapping_add(1),
             "{name}: completed boundary after original frame {native_frame}"
         );

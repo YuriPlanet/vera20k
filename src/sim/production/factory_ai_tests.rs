@@ -49,8 +49,7 @@ fn fixture_from_sources(ini: &IniFile, art: &IniFile) -> Fixture {
         filled: false,
         retry_count: 0,
     }];
-    sim.houses.insert(owner, house);
-    sim.session.house_order.push(owner);
+    sim.houses.register(house);
     let yard = sim
         .spawn_object("YARD", "AIHouse", 12, 12, 0, &rules)
         .unwrap();
@@ -262,8 +261,7 @@ fn a_failed_exit_abandons_the_object_and_refunds_it() {
     let enemy = f.sim.interner.intern("Enemy");
     f.sim
         .houses
-        .insert(enemy, HouseState::new(enemy, 1, None, false, 0, 10));
-    f.sim.session.house_order.push(enemy);
+        .register(HouseState::new(enemy, 1, None, false, 0, 10));
     f.sim
         .spawn_object("TANK", "Enemy", 16, 16, 0, &f.rules)
         .unwrap();

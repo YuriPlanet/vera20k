@@ -550,7 +550,7 @@ impl Simulation {
             movement::slope_transition::sample_process_entry(
                 entity,
                 slope,
-                sim.session.binary_frame,
+                sim.session.binary_frame(),
             );
         }
         match sim.process_track_turn(stable_id, rules, overlay_registry, effects) {
@@ -567,7 +567,7 @@ impl Simulation {
                 &mut sim.substrate.entities,
                 stable_id,
                 current_grid.as_deref(),
-                sim.session.binary_frame,
+                sim.session.binary_frame(),
                 sim.resolved_terrain.as_ref(),
                 sim.playfield_bounds,
                 &mut sim.interner,
@@ -581,8 +581,8 @@ impl Simulation {
         // (Drive 0x4B0583..0x4B0667 / Ship 0x69FC93..0x69FD0E;
         // `movement::track_continuation`).
         let frame_error = |sim: &Simulation, cause| super::FrameAdvanceError {
-            tick: sim.session.tick,
-            binary_frame: sim.session.binary_frame,
+            tick: sim.session.tick(),
+            binary_frame: sim.session.binary_frame(),
             entity_id: stable_id,
             cause,
         };
@@ -744,7 +744,7 @@ impl Simulation {
         // and apply map by map in parallel (`vision::Planes`). Without a
         // current house the app's sound boundary reads the map of whichever
         // house it falls back to, so none waits.
-        if let Some(current) = self.session.current_house {
+        if let Some(current) = self.session.current_house() {
             let kept = self
                 .houses
                 .keys()
@@ -769,7 +769,7 @@ impl Simulation {
             if let Some(before) = debug_before
                 && let Some(entity) = sim.substrate.entities.get_mut(stable_id)
             {
-                before.record(entity, sim.session.binary_frame);
+                before.record(entity, sim.session.binary_frame());
             }
             outcome.destroyed_structure |= turn.destroyed_structure;
             outcome.bridge_state_changed |= turn.bridge_state_changed;
@@ -985,7 +985,7 @@ impl Simulation {
                     hover_attack,
                     deploy_to_land,
                     sim.resolved_terrain.as_ref(),
-                    sim.session.binary_frame,
+                    sim.session.binary_frame(),
                 );
             }
         }
@@ -1046,8 +1046,8 @@ impl Simulation {
         if let Some(rules) = rules {
             sim.update_unit_disguise(stable_id, rules)
                 .map_err(|cause| super::FrameAdvanceError {
-                    tick: sim.session.tick,
-                    binary_frame: sim.session.binary_frame,
+                    tick: sim.session.tick(),
+                    binary_frame: sim.session.binary_frame(),
                     entity_id: stable_id,
                     cause,
                 })?;
@@ -1129,16 +1129,16 @@ impl Simulation {
                     object_ctx.effects,
                 )
                 .map_err(|cause| super::FrameAdvanceError {
-                    tick: sim.session.tick,
-                    binary_frame: sim.session.binary_frame,
+                    tick: sim.session.tick(),
+                    binary_frame: sim.session.binary_frame(),
                     entity_id: stable_id,
                     cause,
                 })?;
             let receipt = sim
                 .infantry_action_turn(stable_id, rules, overlay_registry, object_ctx.effects)
                 .map_err(|cause| super::FrameAdvanceError {
-                    tick: sim.session.tick,
-                    binary_frame: sim.session.binary_frame,
+                    tick: sim.session.tick(),
+                    binary_frame: sim.session.binary_frame(),
                     entity_id: stable_id,
                     cause,
                 })?;

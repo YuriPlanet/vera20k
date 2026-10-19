@@ -219,7 +219,7 @@ pub(crate) fn refresh_sidebar_projection(state: &mut AppState) {
         .match_state
         .match_presentation
         .sidebar_projection
-        .set_cameo_frame(sim.session.binary_frame as i32);
+        .set_cameo_frame(sim.session.binary_frame() as i32);
     state
         .match_state
         .match_presentation
@@ -398,7 +398,7 @@ pub(crate) fn refresh_sidebar_cameo_draw_state(state: &mut AppState) {
         .match_state
         .sim_runtime
         .as_ref()
-        .is_none_or(|runtime| runtime.simulation.session.current_house.is_none())
+        .is_none_or(|runtime| runtime.simulation.session.current_house().is_none())
     {
         return;
     }
@@ -902,8 +902,8 @@ mod tests {
         sim.resolve_type_handles(&rules);
         let owner = sim.intern("Americans");
         sim.houses
-            .insert(owner, HouseState::new(owner, 0, None, true, 1000, 10));
-        sim.session.current_house = Some(owner);
+            .register(HouseState::new(owner, 0, None, true, 1000, 10));
+        sim.session.set_current_house_for_test(Some(owner));
         let infantry = sim.interner.get("E1").unwrap();
         let cameo = Cameo {
             id: CameoId::Object(infantry),

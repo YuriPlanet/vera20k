@@ -274,7 +274,7 @@ impl Simulation {
                     .is_some_and(|miner| miner.unload_active())
             });
         if let Some(rules) = rules.filter(|_| promote) {
-            self.mission_host_promote(id, self.session.binary_frame, rules);
+            self.mission_host_promote(id, self.session.binary_frame(), rules);
         }
         // 0x0073ACD7..0x0073ADC4: a harvester (or weeder) off Enter/Unload
         // drops a refinery (weeder) contact at every track end.
@@ -328,7 +328,7 @@ impl Simulation {
                 &self.interner,
                 (coord.x, coord.y),
                 capability,
-                self.session.binary_frame,
+                self.session.binary_frame(),
             );
             if !kills.contains(&victim) {
                 continue;
@@ -563,7 +563,7 @@ impl Simulation {
                 id,
                 MissionId::from_known(MissionType::Harvest),
                 1,
-                self.session.binary_frame,
+                self.session.binary_frame(),
                 &LiveReadyInputProvider { rules },
             );
         } else if unit.slave_manager.is_some() {
@@ -687,7 +687,7 @@ impl Simulation {
             }
             return;
         };
-        let now = self.session.binary_frame;
+        let now = self.session.binary_frame();
         let readiness = LiveReadyInputProvider { rules };
         let _ = self.mission_queue_exact(
             id,
@@ -965,8 +965,8 @@ impl Simulation {
                 effects,
             )
             .map_err(|cause| FrameAdvanceError {
-                tick: self.session.tick,
-                binary_frame: self.session.binary_frame,
+                tick: self.session.tick(),
+                binary_frame: self.session.binary_frame(),
                 entity_id: id,
                 cause,
             })?;
@@ -1365,7 +1365,7 @@ impl Simulation {
         (rx, ry): (u16, u16),
         context: UninitContext<'_>,
     ) {
-        let Some(viewer) = self.session.current_house else {
+        let Some(viewer) = self.session.current_house() else {
             return;
         };
         let Some(entity) = self.substrate.entities.get(id) else {
@@ -1444,9 +1444,9 @@ mod discovery_tests {
         let player = sim.interner.intern("Americans");
         let enemy = sim.interner.intern("Russians");
         sim.houses
-            .insert(player, HouseState::new(player, 0, None, true, 0, 10));
+            .register(HouseState::new(player, 0, None, true, 0, 10));
         sim.houses
-            .insert(enemy, HouseState::new(enemy, 1, None, false, 0, 10));
+            .register(HouseState::new(enemy, 1, None, false, 0, 10));
         sim.fog = crate::sim::vision::FogState::new(32, 32);
         let type_ref = sim.interner.intern("TEST");
         sim.substrate
@@ -1482,7 +1482,7 @@ mod discovery_tests {
         };
         sim.fog.set_ground_bits_for_test(player, 5, 5, 0x18);
         assert!(!arrive(&mut sim), "no current house");
-        sim.session.current_house = Some(player);
+        sim.session.set_current_house_for_test(Some(player));
         sim.fog.set_ground_bits_for_test(player, 5, 5, 0x08);
         assert!(!arrive(&mut sim), "visible but not open");
         sim.fog.set_ground_bits_for_test(player, 5, 5, 0x18);

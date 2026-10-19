@@ -136,7 +136,7 @@ impl OpeningCapture {
                 OpeningTarget::LoadUnlockedWhileLocked => {
                     self.load_while_locked.is_some() && self.steps_after_load >= STEPS_AFTER_LOAD
                 }
-                OpeningTarget::AlliedTick(tick) => sim.session.tick == tick,
+                OpeningTarget::AlliedTick(tick) => sim.session.tick() == tick,
             })
     }
 
@@ -391,7 +391,7 @@ fn installed_frame(state: &AppState) -> Result<(u64, u32)> {
         .context("load left no installed runtime")?
         .simulation
         .session;
-    Ok((session.tick, session.binary_frame))
+    Ok((session.tick(), session.binary_frame()))
 }
 
 fn mid_pan(view: &crate::sim::snapshot::SavedTacticalView) -> bool {
@@ -504,7 +504,7 @@ fn opening_observation(state: &AppState) -> Result<Value> {
         .map(|message| json!({"text": message.text, "rgb": message.rgb, "deadline_ms": message.deadline_ms}))
         .collect::<Vec<_>>();
     Ok(json!({
-        "tick": sim.session.tick, "binary_frame": sim.session.binary_frame,
+        "tick": sim.session.tick(), "binary_frame": sim.session.binary_frame(),
         "input_locked": sim.session.input_locked(),
         "cursor_depth": state.match_state.input.cursor_visibility.level(),
         "camera": camera::saved_tactical_view(state),

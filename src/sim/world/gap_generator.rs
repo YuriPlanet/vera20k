@@ -121,7 +121,7 @@ impl Simulation {
             .get(id)
             .and_then(|entity| self.power_states.get(&entity.owner()))
             .is_some_and(|state| {
-                state.blackout_remaining(self.session.binary_frame) > 0
+                state.blackout_remaining(self.session.binary_frame()) > 0
                     || state.has_drained_power_source
             })
     }

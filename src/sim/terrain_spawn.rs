@@ -377,7 +377,7 @@ pub(crate) fn tick_terrain_object_ai(
         TerrainSpawnContext::new(sim.overlay_grid.as_mut(), &mut sim.scenario_rng)
             .with_growth_queue(
                 &mut production.ore_growth_state,
-                sim.session.binary_frame,
+                sim.session.binary_frame(),
                 production.ore_growth_config.grows,
                 production.ore_growth_config.spreads,
             )
@@ -649,7 +649,7 @@ pub fn seed_terrain_spawner_animation(
                 t.animation_probability,
                 t.animation_rate,
                 frame_count,
-                sim.session.binary_frame,
+                sim.session.binary_frame(),
             ),
         );
         seeded += 1;
@@ -995,7 +995,7 @@ mod tests {
         let grid = PathGrid::test_all_passable(64, 64);
         sim.queue_command(CommandEnvelope::new(
             owner_id,
-            sim.session.tick + 1,
+            sim.session.tick() + 1,
             Command::ForceAttackCell {
                 attacker_id,
                 target_rx: 10,

@@ -31,9 +31,6 @@
 //! mismatch that means nothing.
 
 use crate::sim::entity_store::EntityStore;
-use crate::sim::house_state::HouseState;
-use crate::sim::intern::InternedId;
-use std::collections::BTreeMap;
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
@@ -96,7 +93,7 @@ impl ParityDigest {
     pub fn capture(
         tick: u64,
         entities: &EntityStore,
-        houses: &BTreeMap<InternedId, HouseState>,
+        houses: &crate::sim::houses::Houses,
         rng_index_a: i32,
         rng_index_b: i32,
         scenario_rng_index_a: i32,
@@ -211,7 +208,15 @@ mod tests {
     use super::*;
 
     fn empty_digest() -> ParityDigest {
-        ParityDigest::capture(0, &EntityStore::new(), &BTreeMap::new(), 0, 0, 0, 0)
+        ParityDigest::capture(
+            0,
+            &EntityStore::new(),
+            &crate::sim::houses::Houses::default(),
+            0,
+            0,
+            0,
+            0,
+        )
     }
 
     #[test]

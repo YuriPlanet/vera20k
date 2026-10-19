@@ -48,7 +48,7 @@ fn retail_guard_scan_skips_a_harvester_while_scenario_bit_800_is_set() {
         Some(harv),
         "bit clear: the harvester is an ordinary candidate"
     );
-    sim.session.harvester_immune = true;
+    sim.session.set_harvester_immune_for_test(true);
     assert_eq!(
         pick(&mut sim),
         None,
@@ -57,7 +57,7 @@ fn retail_guard_scan_skips_a_harvester_while_scenario_bit_800_is_set() {
 
     // A candidate outside the list stays admissible while the bit is set.
     let (mut sim, tank, rhino) = guard_scene(rules, "HTNK");
-    sim.session.harvester_immune = true;
+    sim.session.set_harvester_immune_for_test(true);
     assert_eq!(
         sim.greatest_threat_represented(rules, None, tank, ScanMission::Guard, None),
         Some(rhino),

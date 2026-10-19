@@ -601,7 +601,7 @@ impl crate::sim::world::Simulation {
             controlled_by_human,
             rules.general.idle_action_frequency,
             &mut self.scenario_rng,
-            self.session.binary_frame,
+            self.session.binary_frame(),
         )?;
         match turn {
             IdleTurn::Refused => return Ok(false),
@@ -630,10 +630,7 @@ impl crate::sim::world::Simulation {
 pub(crate) fn tick_idle_actions(
     entities: &mut crate::sim::entity_store::EntityStore,
     order: &[u64],
-    houses: &std::collections::BTreeMap<
-        crate::sim::intern::InternedId,
-        crate::sim::house_state::HouseState,
-    >,
+    houses: &crate::sim::houses::Houses,
     rules: &crate::rules::ruleset::RuleSet,
     interner: &crate::sim::intern::StringInterner,
     rng: &mut crate::sim::rng::SimRng,
@@ -891,7 +888,7 @@ mod tests {
             &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
         );
         let mut sim = Simulation::with_seed(31);
-        sim.session.binary_frame = 100;
+        sim.session.set_binary_frame_for_test(100);
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
                 input["game_mode_nonzero"].as_bool().unwrap_or(true),
@@ -910,7 +907,7 @@ mod tests {
             10,
         );
         house.player_control = input["player_control"].as_bool().unwrap_or(false);
-        sim.houses.insert(owner, house);
+        sim.houses.register(house);
         let mut actor = GameEntity::new_at_frame_zero_for_test(
             1,
             0,
@@ -1267,13 +1264,13 @@ mod tests {
             let after = &row["after"];
             let name = input["name"].as_str().unwrap();
             let mut sim = Simulation::new();
-            sim.session.binary_frame = 1;
+            sim.session.set_binary_frame_for_test(1);
             // The historical native idle VM retains GameOptions+A8EB60=0
             // through bootstrap, companion and the physical Rules read.
             // Original5FB2E0 maps action-delay3 to5 at this supplied index;
             // an Options constructor/settings load is outside this receipt.
             // Reproduction: foot_missions.md's idle Options input proof.
-            sim.session.game_options.game_speed = 0;
+            sim.session.game_options_mut_for_test().game_speed = 0;
             sim.scenario_rng = SimRng::new(input["scenario_seed"].as_u64().unwrap());
             assert_eq!(
                 native_rng_state(&sim.scenario_rng),

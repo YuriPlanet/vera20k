@@ -22,11 +22,14 @@ fn scene() -> (Simulation, RuleSet, OverlayTypeRegistry, [InternedId; 3]) {
     let houses = std::array::from_fn(|i| {
         let name = sim.interner.intern(&format!("H{i}"));
         let country = sim.interner.intern(&format!("Country{i}"));
-        sim.houses.insert(
+        sim.houses.register(HouseState::new(
             name,
-            HouseState::new(name, i as u8, Some(country), false, 10000, 10),
-        );
-        sim.session.house_order.push(name);
+            i as u8,
+            Some(country),
+            false,
+            10000,
+            10,
+        ));
         name
     });
     super::tests::install_event_ingress_map(

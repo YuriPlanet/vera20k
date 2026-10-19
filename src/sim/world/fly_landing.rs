@@ -32,7 +32,7 @@ impl Simulation {
         if air_movement::current_fly_height(e, self.resolved_terrain.as_ref()) == 0 {
             e.body_facing.snap(
                 e.barrel_facing.unwrap().destination(),
-                self.session.binary_frame,
+                self.session.binary_frame(),
             );
         }
         let sound = rules
@@ -543,8 +543,8 @@ mod tests {
         let mut rules = rules;
         rules.general.blockage_path_delay_ticks = 11;
         let mut sim = Simulation::with_seed(31);
-        sim.session.map_width = 128;
-        sim.session.map_height = 128;
+        sim.session.set_map_width_for_test(128);
+        sim.session.set_map_height_for_test(128);
         sim.playfield_bounds = Some(
             crate::map::playfield::PlayfieldBounds::from_normalized_local_size(64, 0, 0, 64, 64),
         );
@@ -640,7 +640,7 @@ mod tests {
                 sim.add_entity_occupancy(id);
             }
         }
-        sim.session.binary_frame = 100;
+        sim.session.set_binary_frame_for_test(100);
         (sim, rules)
     }
 
@@ -1121,7 +1121,7 @@ mod tests {
         assert_eq!(sim.state_hash(), restored.state_hash());
         for frame in 101..126 {
             for s in [&mut sim, &mut restored] {
-                s.session.binary_frame = frame;
+                s.session.set_binary_frame_for_test(frame);
                 s.tick_air_movement_with_cell_lists_one(
                     1,
                     Some(&rules),

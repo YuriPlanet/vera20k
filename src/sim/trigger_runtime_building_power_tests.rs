@@ -12,7 +12,7 @@ fn fixture() -> (Simulation, RuleSet, OverlayTypeRegistry, [InternedId; 3]) {
          [POWERED]\nStrength=500\nFoundation=1x1\nPowered=yes\n\
          [TECH]\nStrength=500\nFoundation=1x1\nPower=-10\nNeedsEngineer=yes\n",
     );
-    sim.session.current_house = Some(houses[0]);
+    sim.session.set_current_house_for_test(Some(houses[0]));
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     tests::install_event_ingress_map(
@@ -51,7 +51,7 @@ fn run(
         &action,
         TriggerActionContext {
             live_index,
-            incoming_house: Some(sim.session.house_order[2]),
+            incoming_house: Some(sim.houses.order()[2]),
             input: TagEventInput::default(),
         },
         &mut Vec::new(),
@@ -150,7 +150,7 @@ fn counted_tag_runs_off_and_on_in_order_without_a_second_state_or_rng_draws() {
     sim.attach_object_trigger_tag(load, Some("CONTROLTAG"));
     let rng = sim.rng_state();
     sim.sound_events.clear();
-    sim.session.binary_frame = 8;
+    sim.session.set_binary_frame_for_test(8);
     sim.raise_house_tags(
         houses[0],
         Some(&rules),

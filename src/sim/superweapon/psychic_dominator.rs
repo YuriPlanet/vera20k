@@ -186,9 +186,9 @@ fn start(sim: &mut Simulation, rules: &RuleSet, owner: InternedId, cell: (i16, i
     );
     sim.psychic_dominator.anim = anim;
     sim.psychic_dominator.status = Status::Started;
-    let frame = sim.session.binary_frame as i32;
+    let frame = sim.session.binary_frame() as i32;
     sim.session
-        .lighting
+        .lighting_mut()
         .restart_transition_timer(frame, START_FADE_FRAMES);
     sim.update_lighting();
 }
@@ -229,8 +229,8 @@ pub(super) fn process(
         }
         Status::FadingBack => {
             // `ScenarioClass+0x3530 == +0x352C` (`0x0053B03F..0x0053B054`).
-            let lighting = &sim.session.lighting;
-            if lighting.current_ambient == lighting.target_ambient {
+            let lighting = &sim.session.lighting();
+            if lighting.current_ambient() == lighting.target_ambient() {
                 sim.psychic_dominator.status = Status::Idle;
                 // Later relights leave PsyDom::Active's arm; no cell refreshes.
                 sim.publish_relight_profile();
@@ -356,7 +356,7 @@ fn mind_control_area(
         .get(&owner)
         .is_some_and(|house| house.is_controlled_by_human(game_mode_nonzero));
     if !human {
-        let frame = sim.session.binary_frame;
+        let frame = sim.session.binary_frame();
         let readiness = crate::sim::mission::authority::LiveReadyInputProvider { rules };
         for id in captured.into_iter().rev() {
             let _ = sim.mission_queue_exact(

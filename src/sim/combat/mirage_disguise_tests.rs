@@ -201,9 +201,9 @@ fn damage_receiver_matches_original_packet_result_and_disguise_consequence() {
         let mut world = crate::sim::world::Simulation::new();
         world
             .houses
-            .insert(owner, HouseState::new(owner, 0, Some(owner), false, 0, 0));
+            .register(HouseState::new(owner, 0, Some(owner), false, 0, 0));
         world.substrate.entities.insert(target);
-        world.session.binary_frame = frame;
+        world.session.set_binary_frame_for_test(frame);
         let warhead = interner.intern(input["warhead"].as_str().unwrap());
         // The original receiver controls have no attacker or sourceHouse.
         // Preserve that ABI instead of introducing a retaliation source.

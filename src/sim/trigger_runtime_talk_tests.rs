@@ -124,7 +124,7 @@ fn dispatch(
 fn talk_dispatch_uses_first_team_head_and_current_player_reveal_without_rng() {
     let (mut sim, rules, _, houses) = tests::event_ingress_fixture_with_rules("");
     sim.fog = crate::sim::vision::FogState::new(33, 33);
-    sim.session.current_house = Some(houses[0]);
+    sim.session.set_current_house_for_test(Some(houses[0]));
     let first = tests::spawn_event_ingress_unit(&mut sim, &rules, houses[1], (15, 15));
     let second = tests::spawn_event_ingress_unit(&mut sim, &rules, houses[1], (16, 15));
     let third = tests::spawn_event_ingress_unit(&mut sim, &rules, houses[2], (17, 15));
@@ -259,7 +259,7 @@ fn talk_reveal_passes_native_s28_height_gate_to_the_shared_visibility_owner() {
             if by_height { "yes" } else { "no" }
         ));
         sim.fog = crate::sim::vision::FogState::new(33, 33);
-        sim.session.current_house = Some(houses[0]);
+        sim.session.set_current_house_for_test(Some(houses[0]));
         let actor = tests::spawn_event_ingress_unit(&mut sim, &rules, houses[1], (15, 15));
         assert_eq!(
             crate::sim::movement::ground_pose::object_get_coords(
@@ -294,7 +294,7 @@ fn talk_reveal_passes_native_s28_height_gate_to_the_shared_visibility_owner() {
 fn nested_discovery_speech_overrides_outer_request_in_native_write_order() {
     let (mut sim, rules, _, houses) = tests::event_ingress_fixture_with_rules("");
     sim.fog = crate::sim::vision::FogState::new(33, 33);
-    sim.session.current_house = Some(houses[0]);
+    sim.session.set_current_house_for_test(Some(houses[0]));
     let actor = tests::spawn_event_ingress_unit(&mut sim, &rules, houses[1], (15, 15));
     crate::sim::team_script_vm::join_team_for_test(&mut sim, &[actor], false, false);
     tests::install_event_ingress_map(

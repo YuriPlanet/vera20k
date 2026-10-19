@@ -36,7 +36,7 @@ fn pause_action_preserves_ordered_raw_duration_and_owns_input_lock() {
     }
     assert_ne!(sim.state_hash(), hash);
     assert_eq!(sim.scenario_rng.native_state_hex(), draws);
-    assert_eq!(sim.session.tick, 0);
+    assert_eq!(sim.session.tick(), 0);
 }
 
 #[test]
@@ -104,8 +104,8 @@ fn paused_chrono_clock_finishes_without_a_world_frame_or_rng_draw() {
     let mut start = Vec::new();
     sim.start_chrono_screen_effect(3, &mut start);
     let initial = (
-        sim.session.tick,
-        sim.session.binary_frame,
+        sim.session.tick(),
+        sim.session.binary_frame(),
         sim.scenario_rng.native_state_hex(),
     );
     let mut saw_pause = false;
@@ -123,8 +123,8 @@ fn paused_chrono_clock_finishes_without_a_world_frame_or_rng_draw() {
     assert!(saw_pause && saw_finish);
     assert_eq!(
         (
-            sim.session.tick,
-            sim.session.binary_frame,
+            sim.session.tick(),
+            sim.session.binary_frame(),
             sim.scenario_rng.native_state_hex()
         ),
         initial
@@ -235,7 +235,7 @@ fn scenario_services_replay_between_production_frames() {
         };
         let mut live = runtime();
         let mut replay = ReplayLog::new(ReplayHeader {
-            pixel_conversion_bounds: live.simulation.session.pixel_conversion_bounds,
+            pixel_conversion_bounds: live.simulation.session.pixel_conversion_bounds(),
             version: 2,
             tick_hz: 15,
             seed: 0,
@@ -255,7 +255,7 @@ fn scenario_services_replay_between_production_frames() {
             }
         }
         assert!(live.simulation.session.scenario_paused(), "action {kind}");
-        let paused_tick = live.simulation.session.tick;
+        let paused_tick = live.simulation.session.tick();
         if kind == 110 {
             replay.apply_scenario_service(
                 &mut live.simulation,
@@ -273,7 +273,7 @@ fn scenario_services_replay_between_production_frames() {
             }
         }
         assert!(!live.simulation.session.scenario_paused());
-        assert_eq!(live.simulation.session.tick, paused_tick);
+        assert_eq!(live.simulation.session.tick(), paused_tick);
         let resumed = live
             .advance_frame(&[], 67, TickLane::Ordinary, FrameEffects::default())
             .unwrap();

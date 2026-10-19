@@ -250,8 +250,8 @@ fn simulation() -> (Simulation, RuleSet, u64) {
     let grid = PathGrid::from_resolved_terrain(&terrain);
     let zones = ZoneGrid::build_with_terrain(&grid, &terrain, &[], WIDTH, WIDTH);
     let mut sim = Simulation::new();
-    sim.session.map_width = WIDTH;
-    sim.session.map_height = WIDTH;
+    sim.session.set_map_width_for_test(WIDTH);
+    sim.session.set_map_height_for_test(WIDTH);
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
     sim.zone_grid = Some(zones);

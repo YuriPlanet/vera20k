@@ -80,8 +80,8 @@ fn fixture(selector: i32) -> Simulation {
 }
 
 fn tick(sim: &mut Simulation, rules: &RuleSet, frame: u32) -> movement::MovementTickStats {
-    sim.session.tick = u64::from(frame);
-    sim.session.binary_frame = frame;
+    sim.session.set_tick_for_test(u64::from(frame));
+    sim.session.set_binary_frame_for_test(frame);
     // The track end's own-cell request searches; a reloaded save carries no
     // map inputs.
     crate::sim::arena_fixture::supply_native_map(sim);

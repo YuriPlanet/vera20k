@@ -319,7 +319,7 @@ fn compare(s: &Scene, native: &Value, context: &str) {
     let house = s.sim.houses.get(&e.owner()).unwrap();
     let view = s.sim.scenario_rng.logical_view();
     let fields = json!({
-        "frame":s.sim.session.binary_frame, "cell":[at.x,at.y,at.z],
+        "frame":s.sim.session.binary_frame(), "cell":[at.x,at.y,at.z],
         "miner_mission":e.mission.current().raw(),"miner_queued":e.mission.queued().raw(),
         "miner_status":e.mission.handler_state(),
         "dispatch_timer":[e.mission.dispatch_timer().start_frame(),e.mission.dispatch_timer().delay()],
@@ -398,9 +398,9 @@ fn compare(s: &Scene, native: &Value, context: &str) {
 fn step(s: &mut Scene, step: &Value, context: &str) {
     let op = &step["input"];
     if let Some(frame) = op["frame"].as_u64() {
-        s.sim.session.binary_frame = frame as u32;
+        s.sim.session.set_binary_frame_for_test(frame as u32);
     }
-    let now = s.sim.session.binary_frame;
+    let now = s.sim.session.binary_frame();
     radio::take_transmit_log();
     match op["op"].as_str().unwrap() {
         "has_free_or_own" => assert_eq!(

@@ -17,30 +17,27 @@ mod chronosphere;
 pub use chronosphere::CHRONO_WARP_SELECTION_INDEX;
 pub mod airstrike_tint;
 #[cfg(test)]
-mod can_fire_tests;
+mod building_requirements_tests;
 #[cfg(test)]
-mod view_admission_tests;
+mod can_fire_tests;
 #[cfg(any(test, feature = "test-support"))]
 mod cell_receiver_tests;
 #[cfg(test)]
 mod charge_native_tests;
-#[cfg(test)]
-mod building_requirements_tests;
 #[cfg(any(test, feature = "test-support"))]
 mod chronosphere_lunar_retail_tests;
 #[cfg(any(test, feature = "test-support"))]
 pub mod chronosphere_tests;
 mod fire;
-mod money;
 pub mod force_shield;
 mod generic_warhead;
-mod targeting;
 pub mod genetic_converter;
 pub mod invulnerability;
 pub mod iron_curtain;
 pub mod lightning_storm;
 #[cfg(test)]
 pub(crate) mod lightning_storm_tests;
+mod money;
 pub(crate) mod nuke;
 #[cfg(test)]
 mod nuke_tests;
@@ -50,9 +47,12 @@ pub mod psychic_dominator;
 mod psychic_dominator_tests;
 pub mod psychic_reveal;
 mod spy_plane;
-pub(crate) mod unit_delivery;
 #[cfg(test)]
 mod spy_plane_tests;
+mod targeting;
+pub(crate) mod unit_delivery;
+#[cfg(test)]
+mod view_admission_tests;
 
 use crate::rules::ruleset::RuleSet;
 use crate::rules::superweapon_type::SuperWeaponType;
@@ -654,7 +654,7 @@ pub(crate) fn reset_super(sim: &mut Simulation, rules: &RuleSet, owner: Interned
         return;
     };
     sim.release_super_anim(owner, type_id);
-    let frame = sim.session.binary_frame;
+    let frame = sim.session.binary_frame();
     if let Some(instance) = sim
         .super_weapons
         .get_mut(&owner)
@@ -716,7 +716,7 @@ pub(crate) fn super_nearly_ready(
     if !instance.is_active {
         return false;
     }
-    let remaining = instance.charge_remaining(sim.session.binary_frame as i32);
+    let remaining = instance.charge_remaining(sim.session.binary_frame() as i32);
     let recharge = rules
         .super_weapon(type_name)
         .map_or(0, |sw| instance.recharge_time(sw));
@@ -758,7 +758,7 @@ pub(crate) fn supers_of_kind_remaining(
     owner: InternedId,
     kind_index: i32,
 ) -> Vec<i32> {
-    let frame = sim.session.binary_frame as i32;
+    let frame = sim.session.binary_frame() as i32;
     let weapons = sim.super_weapons.get(&owner);
     super_types_with_type(rules, kind_index)
         .map(|name| {
@@ -844,7 +844,7 @@ impl SuperTimerView {
 
 /// The timer list, in its order.
 pub fn super_timer_views(sim: &Simulation, rules: &RuleSet) -> Vec<SuperTimerView> {
-    let frame = sim.session.binary_frame as i32;
+    let frame = sim.session.binary_frame() as i32;
     let mut views: Vec<SuperTimerView> = sim
         .super_weapons
         .iter()
@@ -906,7 +906,7 @@ pub fn superweapon_views_for_owner(
         views.push(SuperWeaponView {
             type_id: inst.type_id,
             display_name: type_id_str.to_string(),
-            progress: inst.charge_progress(sim.session.binary_frame, inst.recharge_time(sw_type)),
+            progress: inst.charge_progress(sim.session.binary_frame(), inst.recharge_time(sw_type)),
             is_ready: inst.is_ready,
             is_online: !inst.is_suspended,
             can_fire: inst.can_fire(sw_type),
@@ -925,7 +925,7 @@ pub(crate) fn tick_house_superweapon_instances(
     rules: &RuleSet,
     owner: InternedId,
 ) {
-    let current_frame = sim.session.binary_frame;
+    let current_frame = sim.session.binary_frame();
     for type_id in house_super_order(sim, rules, owner) {
         let (fade, ready) = {
             let instance = sim
@@ -984,7 +984,7 @@ pub(crate) fn construct_house_supers(
     owner: InternedId,
     bind_native_ids: bool,
 ) {
-    let frame = sim.session.binary_frame as i32;
+    let frame = sim.session.binary_frame() as i32;
     let mut supers = std::collections::BTreeMap::new();
     for name in &rules.super_weapon_order {
         let type_id = sim.interner.intern(name);
@@ -1033,11 +1033,8 @@ pub(crate) fn tick_active_superweapon_effects(
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     frame_effects: FrameEffects<'_>,
 ) -> bool {
-    if sim
-        .session
-        .lighting
-        .step_nuke_flash(sim.session.binary_frame as i32)
-    {
+    let frame = sim.session.binary_frame() as i32;
+    if sim.session.lighting_mut().step_nuke_flash(frame) {
         // `0x0053A705`; the screen redraw (`0x0053A711`) is presentation.
         sim.update_lighting();
     }
@@ -1194,7 +1191,7 @@ pub(crate) fn update_owned_supers(sim: &mut Simulation, rules: &RuleSet, owner: 
         let Some(sw) = rules.super_weapon(sim.interner.resolve(type_id)) else {
             continue;
         };
-        let allowed = sim.session.game_options.super_weapons || !sw.disableable_from_shell;
+        let allowed = sim.session.game_options().super_weapons || !sw.disableable_from_shell;
         let changed = {
             let instance = sim
                 .super_weapons
@@ -1211,9 +1208,9 @@ pub(crate) fn update_owned_supers(sim: &mut Simulation, rules: &RuleSet, owner: 
                 instance.deactivate();
                 true
             } else if !low_power && online.contains(&type_id) {
-                instance.suspend(false, sw.manual_control, sim.session.binary_frame)
+                instance.suspend(false, sw.manual_control, sim.session.binary_frame())
             } else if sw.is_powered {
-                instance.suspend(true, sw.manual_control, sim.session.binary_frame)
+                instance.suspend(true, sw.manual_control, sim.session.binary_frame())
             } else {
                 false
             }
@@ -1253,7 +1250,7 @@ pub(crate) fn grant_provided_supers(sim: &mut Simulation, rules: &RuleSet, owner
         let Some(sw) = rules.super_weapon(sim.interner.resolve(type_id)) else {
             continue;
         };
-        if !sim.session.game_options.super_weapons && sw.disableable_from_shell {
+        if !sim.session.game_options().super_weapons && sw.disableable_from_shell {
             continue;
         }
         grant_super(sim, rules, owner, type_id, false, low_power);
@@ -1287,7 +1284,7 @@ fn grant_super(
     else {
         return false;
     };
-    if !instance.apply_grant_state(sw, sim.session.binary_frame, one_time, on_hold) {
+    if !instance.apply_grant_state(sw, sim.session.binary_frame(), one_time, on_hold) {
         return false;
     }
     instance.timer_place = (sw.show_timer && !passive).then_some(place);

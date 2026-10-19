@@ -19,9 +19,11 @@ fn saved_current_house_drives_app_fog_and_command_owner_after_load() {
     ))
     .unwrap();
     let mut saved = Simulation::new();
-    saved.session.map_name = "LOCAL-OWNER.MAP".into();
-    saved.session.map_width = 8;
-    saved.session.map_height = 8;
+    saved
+        .session
+        .set_map_name_for_test("LOCAL-OWNER.MAP".into());
+    saved.session.set_map_width_for_test(8);
+    saved.session.set_map_height_for_test(8);
     saved.overlay_grid = Some(OverlayGrid::new(8, 8));
     saved.install_resolved_terrain_for_new_map(ResolvedTerrainGrid::from_cells(8, 8, Vec::new()));
     let outgoing = saved.interner.intern("New Player");
@@ -29,13 +31,11 @@ fn saved_current_house_drives_app_fog_and_command_owner_after_load() {
     for (index, owner) in [outgoing, player].into_iter().enumerate() {
         // Both human, with the outgoing owner registered first: neither
         // is_human nor House registration order identifies the saved viewer.
-        saved.houses.insert(
-            owner,
-            HouseState::new(owner, index as u8, None, true, 0, 10),
-        );
-        saved.session.house_order.push(owner);
+        saved
+            .houses
+            .register(HouseState::new(owner, index as u8, None, true, 0, 10));
     }
-    saved.session.current_house = Some(player);
+    saved.session.set_current_house_for_test(Some(player));
     saved.fog.width = 8;
     saved.fog.height = 8;
     saved.fog.reveal_cells_for_owner(player, [(3, 4)]);
@@ -51,7 +51,10 @@ fn saved_current_house_drives_app_fog_and_command_owner_after_load() {
         )
         .unwrap();
     let mut runtime = SimRuntime::from_simulation(saved);
-    runtime.simulation.session.current_house = Some(outgoing);
+    runtime
+        .simulation
+        .session
+        .set_current_house_for_test(Some(outgoing));
     runtime.resources.rules = rules;
     runtime.resources.overlay_registry = OverlayTypeRegistry::empty();
     runtime.resources.terrain_template = Some(ResolvedTerrainGrid::from_cells(8, 8, Vec::new()));
@@ -75,7 +78,7 @@ fn saved_current_house_drives_app_fog_and_command_owner_after_load() {
     .unwrap();
     prepared.commit_into(&mut runtime);
     std::fs::remove_dir_all(directory).unwrap();
-    assert_eq!(runtime.simulation.session.current_house, Some(player));
+    assert_eq!(runtime.simulation.session.current_house(), Some(player));
     let owner = preferred_local_owner_for_sim(
         &runtime.simulation,
         Some(&runtime.resources.rules),
@@ -108,8 +111,7 @@ fn current_house_excludes_selection_and_debug_override_but_sandbox_keeps_both() 
     let selected = sim.interner.intern("SelectedHouse");
     let type_ref = sim.interner.intern("TESTUNIT");
     sim.houses
-        .insert(player, HouseState::new(player, 0, None, true, 0, 10));
-    sim.session.house_order.push(player);
+        .register(HouseState::new(player, 0, None, true, 0, 10));
     assert_eq!(
         preferred_local_owner_for_sim(&sim, None, &roster, Some("SandboxHouse")).as_deref(),
         Some("SandboxHouse"),
@@ -136,7 +138,7 @@ fn current_house_excludes_selection_and_debug_override_but_sandbox_keeps_both() 
         Some("SelectedHouse"),
         "sandbox selection preserves the existing precedence over its override"
     );
-    sim.session.current_house = Some(player);
+    sim.session.set_current_house_for_test(Some(player));
     assert_eq!(
         preferred_local_owner_for_sim(&sim, None, &roster, Some("SandboxHouse")).as_deref(),
         Some("Player"),

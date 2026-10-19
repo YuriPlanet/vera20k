@@ -481,10 +481,10 @@ fn an_empty_fighter_lets_go_heads_for_its_edge_and_idles() {
         // After `test_default` interned the names.
         sim.interner = crate::sim::intern::test_interner();
         let owner = sim.interner.intern("Americans");
-        sim.houses.insert(
-            owner,
-            crate::sim::house_state::HouseState::new(owner, 0, None, human, 0, 1),
-        );
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                owner, 0, None, human, 0, 1,
+            ));
         sim.playfield_bounds = Some(bounds);
         if airfield {
             // Find_Docking_Bay walks the house's buildings and its tracked

@@ -14,12 +14,11 @@ fn retail_arena() -> Option<(Simulation, RuleSet, PathGrid)> {
     let mut sim = Simulation::new();
     let grid = crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
     let owner = sim.intern("Americans");
-    sim.houses.insert(
-        owner,
-        crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10),
-    );
-    sim.session.house_order.push(owner);
-    sim.session.current_house = Some(owner);
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, true, 0, 10,
+        ));
+    sim.session.set_current_house_for_test(Some(owner));
     Some((sim, rules, grid))
 }
 
@@ -40,12 +39,12 @@ fn successful_unlimbo_reveals_its_cells_before_returning() {
     };
     sim.fog = vision::FogState::new(32, 32);
     let owner = sim.intern("Americans");
-    sim.session.current_house = Some(owner);
+    sim.session.set_current_house_for_test(Some(owner));
     assert!(!sim.fog.is_cell_revealed(owner, 16, 16));
     let id = sim
         .spawn_object("AMCV", "Americans", 16, 16, 0, &rules)
         .expect("ordinary successful Unlimbo");
-    assert_eq!(sim.session.tick, 0, "no frame pass supplies the reveal");
+    assert_eq!(sim.session.tick(), 0, "no frame pass supplies the reveal");
     assert!(sim.entities().get(id).unwrap().in_playfield());
     assert!(
         sim.fog.is_cell_revealed(owner, 16, 16),
@@ -71,7 +70,7 @@ fn a_movers_sight_moves_at_each_cell_arrival() {
         let owner = sim.substrate.entities.get(id).unwrap().owner();
         let order = CommandEnvelope::new(
             owner,
-            sim.session.tick + 1,
+            sim.session.tick() + 1,
             Command::Move {
                 entity_id: id,
                 target_rx: 13,
@@ -197,11 +196,10 @@ fn exact_zero_sight_gate_differs_from_empty_walk_and_override() {
     crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
     sim.fog = vision::FogState::new(32, 32);
     let owner = sim.intern("Americans");
-    sim.houses.insert(
-        owner,
-        crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10),
-    );
-    sim.session.house_order.push(owner);
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, true, 0, 10,
+        ));
     let zero = sim
         .spawn_object("ZERO", "Americans", 16, 16, 0, &rules)
         .unwrap();
@@ -335,7 +333,7 @@ fn unlimbo_keeps_its_single_alive_admission_across_sight_callbacks() {
         "6F6D8F Added_To_Game follows the pre-callback alive admission"
     );
     assert_eq!(
-        source.body_facing_current(sim.session.binary_frame),
+        source.body_facing_current(sim.session.binary_frame()),
         u16::from(37_u8) << 8,
         "6F6DAA facing belongs to the same admitted suffix"
     );
@@ -408,12 +406,13 @@ fn assert_retail_goldst_initial_amcv(sim: &Simulation) -> (u64, Vec<(u16, u16)>)
     let history = &corpus["histories"][0];
     assert_eq!(history["name"], "initial_amcv");
     assert_eq!(
-        sim.session.tick, 0,
+        sim.session.tick(),
+        0,
         "no Logic frame supplies initial knowledge"
     );
-    assert!(sim.session.game_options.shroud);
-    assert!(!sim.session.game_options.fog_of_war);
-    let owner = sim.session.current_house.expect("normal local player");
+    assert!(sim.session.game_options().shroud);
+    assert!(!sim.session.game_options().fog_of_war);
+    let owner = sim.session.current_house().expect("normal local player");
     assert_eq!(sim.interner.resolve(owner), "VERA-OBSERVER");
     let amcv = sim.interner.get("AMCV").expect("retail AMCV type");
     let sources: Vec<_> = sim
@@ -607,7 +606,7 @@ fn retail_goldst_amcv_sight_follows_arrivals_then_survives_stop() {
                     state.local_sources,
                     u32::from(admission.cells.contains(&cell)),
                     "tick{}: retained source index at{cell:?}",
-                    sim.session.tick,
+                    sim.session.tick(),
                 );
                 assert_eq!(state.allied_sources, 0, "no allied source at{cell:?}");
                 if state.local_sources == 1 {
@@ -630,7 +629,7 @@ fn retail_goldst_amcv_sight_follows_arrivals_then_survives_stop() {
             .collect();
         let loco = source.locomotor.as_ref().expect("retail AMCV Drive");
         Observation {
-            tick: sim.session.tick,
+            tick: sim.session.tick(),
             xyz: object_location(source, sim.resolved_terrain.as_ref()),
             physical_cell: (source.position.rx(), source.position.ry()),
             admission,
@@ -644,7 +643,7 @@ fn retail_goldst_amcv_sight_follows_arrivals_then_survives_stop() {
 
     let mut scene = retail_goldst_initial_scenario();
     let (id, mut selected) = assert_retail_goldst_initial_amcv(scene.sim());
-    let owner = scene.sim().session.current_house.unwrap();
+    let owner = scene.sim().session.current_house().unwrap();
     let cache = &scene.sim().fog.sight_admissions_for_test()[&(id, owner)];
     let left = *cache.cells.iter().min().unwrap();
     let right = *cache.cells.iter().max().unwrap();
@@ -670,7 +669,7 @@ fn retail_goldst_amcv_sight_follows_arrivals_then_survives_stop() {
     let z = initial.xyz.z;
     let order = CommandEnvelope::new(
         owner,
-        scene.sim().session.tick + 1,
+        scene.sim().session.tick() + 1,
         Command::Move {
             entity_id: id,
             target_rx: 111,
@@ -936,14 +935,14 @@ fn retail_goldst_amcv_sight_follows_arrivals_then_survives_stop() {
     );
     let stop = CommandEnvelope::new(
         owner,
-        scene.sim().session.tick + 1,
+        scene.sim().session.tick() + 1,
         Command::Stop { entity_id: id },
     );
-    let until_boundary = (120 - scene.sim().session.binary_frame % 120) % 120;
+    let until_boundary = (120 - scene.sim().session.binary_frame() % 120) % 120;
     let idle_frames = (until_boundary + 2).max(8);
     let mut crossed_boundary = false;
     for idle in 0..idle_frames {
-        let binary_frame = scene.sim().session.binary_frame;
+        let binary_frame = scene.sim().session.binary_frame();
         crossed_boundary |= binary_frame % 120 == 0;
         let commands = if idle == 0 {
             std::slice::from_ref(&stop)
@@ -998,10 +997,10 @@ fn a_source_event_keeps_one_notification_admission_across_logical_planes() {
         owner < ally,
         "the fixture visits the original player plane first"
     );
-    sim.houses.insert(
-        ally,
-        crate::sim::house_state::HouseState::new(ally, 0, None, false, 0, 10),
-    );
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            ally, 0, None, false, 0, 10,
+        ));
     // Supplied direct alliance prestate; the test exercises source event
     // admission, not the separate diplomacy producer.
     sim.house_alliances
@@ -1016,13 +1015,13 @@ fn a_source_event_keeps_one_notification_admission_across_logical_planes() {
     sim.fog = vision::FogState::new(32, 32);
     let ((), calls) = trace_reveal_calls(|| {
         with_first_cell_receiver(
-            move |sim| sim.session.current_house = Some(ally),
+            move |sim| sim.session.set_current_house_for_test(Some(ally)),
             || {
                 sim.reveal_entity_with_context(id, UninitContext::with_rules(&rules));
             },
         );
     });
-    assert_eq!(sim.session.current_house, Some(ally), "the callback ran");
+    assert_eq!(sim.session.current_house(), Some(ally), "the callback ran");
     let source = &sim.fog.sight_admissions_for_test()[&(id, owner)];
     assert!(source.cells.len() > 1);
     assert_eq!(
@@ -1059,7 +1058,7 @@ fn retail_goldst_uncached_reveal_border_matches_native_admission_and_transport()
         let runtime = &mut scenario.runtime;
         let rules = &runtime.resources.rules;
         let sim = &mut runtime.simulation;
-        let local = sim.session.current_house.unwrap();
+        let local = sim.session.current_house().unwrap();
         let amcv = sim.interner.get("AMCV").unwrap();
         let id = sim
             .entities()
@@ -1069,8 +1068,8 @@ fn retail_goldst_uncached_reveal_border_matches_native_admission_and_transport()
             })
             .unwrap();
         let foreign = sim
-            .session
-            .house_order
+            .houses
+            .order()
             .iter()
             .copied()
             .find(|owner| *owner != local)
@@ -1271,7 +1270,7 @@ fn retail_goldst_cold_fire_borders_and_conceal_notifications_match_native() {
         let mut scenario = retail_goldst_initial_scenario();
         let rules = &scenario.runtime.resources.rules;
         let sim = &mut scenario.runtime.simulation;
-        let viewer = sim.session.current_house.unwrap();
+        let viewer = sim.session.current_house().unwrap();
         let coord = |v: &Value| (v[0].as_i64().unwrap() as u16, v[1].as_i64().unwrap() as u16);
         let row = |v: &Value| {
             json!({
@@ -1478,7 +1477,7 @@ fn retail_goldst_cold_fire_borders_and_conceal_notifications_match_native() {
             }
         }
         for frame in [119, 120, 240] {
-            sim.session.binary_frame = frame;
+            sim.session.set_binary_frame_for_test(frame);
             let (_, trace) = trace_reveal_calls(|| sim.tick_pending_shroud_conceal(context));
             if frame == 120 {
                 if indexed {
@@ -1549,11 +1548,10 @@ fn an_infantry_corpse_keeps_its_sight_until_its_uninit() {
     crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
     sim.fog = vision::FogState::new(32, 32);
     let owner = sim.intern("Americans");
-    sim.houses.insert(
-        owner,
-        crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10),
-    );
-    sim.session.house_order.push(owner);
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, true, 0, 10,
+        ));
     let id = sim
         .spawn_object("E1", "Americans", 16, 16, 0, &rules)
         .unwrap();
@@ -1592,12 +1590,11 @@ fn an_infantry_corpse_keeps_its_sight_until_its_uninit() {
 /// A computer House added to the arena's House array.
 fn add_computer_house(sim: &mut Simulation, name: &str) -> crate::sim::intern::InternedId {
     let id = sim.intern(name);
-    let side = sim.session.house_order.len() as u8;
-    sim.houses.insert(
-        id,
-        crate::sim::house_state::HouseState::new(id, side, None, false, 0, 10),
-    );
-    sim.session.house_order.push(id);
+    let side = sim.houses.order().len() as u8;
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            id, side, None, false, 0, 10,
+        ));
     id
 }
 
@@ -1819,7 +1816,7 @@ fn a_tank_promoted_into_the_playfield_reveals_at_its_next_arrival() {
         .set_in_playfield(false);
     let order = CommandEnvelope::new(
         owner,
-        sim.session.tick + 1,
+        sim.session.tick() + 1,
         Command::Move {
             entity_id: id,
             target_rx: 13,
@@ -1861,11 +1858,10 @@ fn an_shp_aircraft_releases_its_sight_when_its_death_sequence_starts() {
     crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
     sim.fog = vision::FogState::new(32, 32);
     let owner = sim.intern("Americans");
-    sim.houses.insert(
-        owner,
-        crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10),
-    );
-    sim.session.house_order.push(owner);
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, true, 0, 10,
+        ));
     let id = sim
         .spawn_object("SHPA", "Americans", 16, 16, 0, &rules)
         .unwrap();

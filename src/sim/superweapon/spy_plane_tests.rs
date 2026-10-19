@@ -387,7 +387,7 @@ fn send_spy_planes_matches_native() {
             (plane.position.sub_x(), plane.position.sub_y()),
             (SimFixed::from_num(128), SimFixed::from_num(128))
         );
-        assert_eq!(plane.body_facing_current(sim.session.binary_frame), 0);
+        assert_eq!(plane.body_facing_current(sim.session.binary_frame()), 0);
     }
     assert_eq!(authored_replayed, 1);
 }
@@ -555,7 +555,7 @@ fn spyplane_missions_match_native() {
             expected_pick(&sim, opposite, 0)
         });
         sim.sound_events.clear();
-        let now = sim.session.binary_frame;
+        let now = sim.session.binary_frame();
 
         crate::sim::aircraft::dispatch_mission(&mut sim, id, &rules, Default::default());
 
@@ -688,7 +688,7 @@ fn retail_spy_plane_flies_with_super_weapons_off() {
     };
     let (rules, mut sim, americans) = world(rules);
     let russians: InternedId = sim.interner.intern("Russians");
-    sim.session.game_options.super_weapons = false;
+    sim.session.game_options_mut_for_test().super_weapons = false;
     for (kind, owner, at) in [
         // Native Grant pauses a fresh Super in low power even when its
         // type is not IsPowered. This option test supplies working power.

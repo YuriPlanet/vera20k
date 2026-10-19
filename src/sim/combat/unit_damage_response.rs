@@ -140,7 +140,7 @@ impl Simulation {
         // A8B261 is the existing session Crates option. Native checks it
         // AFTER FNPC, whose Dummy writes must survive even when disabled.
         if let Some((x, y)) = cell.filter(|&cell| cell != (0, 0))
-            && self.session.game_options.crates
+            && self.session.game_options().crates
             && let Some(registry) = registry
         {
             crate::sim::crates::place_crate(self, rules, registry, (x as i16, y as i16), Some(20));
@@ -197,7 +197,7 @@ impl Simulation {
         {
             return;
         }
-        let now = self.session.binary_frame;
+        let now = self.session.binary_frame();
         if self.unit_should_crush(id, source, rules) {
             self.set_unit_destination(id, NavTargetRef::object(source), rules, true, effects);
             let _ = self.mission_queue_exact(
@@ -282,7 +282,7 @@ impl Simulation {
             // `0x00743927`: Is_Crushable_By, its ally test included.
             crushable: object_is_crushable_by(
                 object.omni_crusher,
-                CrushTarget::from_entity(victim, self.session.binary_frame),
+                CrushTarget::from_entity(victim, self.session.binary_frame()),
                 |owner| {
                     crate::sim::combat::combat_weapon::is_ally_by_object(
                         Some(&self.house_alliances),

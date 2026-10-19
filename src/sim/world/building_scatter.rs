@@ -14,7 +14,7 @@ use crate::sim::world::FrameEffects;
 
 impl Simulation {
     fn building_scatter_error(&self, id: u64, cause: String) -> FrameAdvanceError {
-        FrameAdvanceError::new(self.session.tick, self.session.binary_frame, id, cause)
+        FrameAdvanceError::new(self.session.tick(), self.session.binary_frame(), id, cause)
     }
 
     pub(super) fn scatter_building_infantry(

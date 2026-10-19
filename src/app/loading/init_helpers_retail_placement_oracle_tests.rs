@@ -315,11 +315,10 @@ fn retail_dustbowl_gapowr_blocked_then_valid_placement_oracle() {
     ));
     let owner_id = sim.interner.intern(OWNER);
     // `HouseClass::CanBuild @ 0x004F7870` runs for a real house only.
-    sim.houses.insert(
-        owner_id,
-        crate::sim::house_state::HouseState::new(owner_id, 0, None, true, 10_000, 10),
-    );
-    sim.session.house_order.push(owner_id);
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner_id, 0, None, true, 10_000, 10,
+        ));
     let provider_id = sim
         .spawn_object(
             CONYARD,
@@ -422,7 +421,7 @@ fn retail_dustbowl_gapowr_blocked_then_valid_placement_oracle() {
     let occupancy_generation_before = sim.substrate.occupancy.generation();
     let rejected = CommandEnvelope::new(
         owner_id,
-        sim.session.tick + 1,
+        sim.session.tick() + 1,
         Command::PlaceReadyBuilding {
             type_id: gapowr_id,
             rx: fixture.blocked.0,
@@ -487,7 +486,7 @@ fn retail_dustbowl_gapowr_blocked_then_valid_placement_oracle() {
     let generation_before_valid = sim.substrate.occupancy.generation();
     let accepted = CommandEnvelope::new(
         owner_id,
-        sim.session.tick + 1,
+        sim.session.tick() + 1,
         Command::PlaceReadyBuilding {
             type_id: gapowr_id,
             rx: fixture.valid.0,
@@ -544,7 +543,7 @@ fn retail_dustbowl_gapowr_blocked_then_valid_placement_oracle() {
         &mut sim.substrate.entities,
         &rules,
         &sim.interner,
-        sim.session.binary_frame,
+        sim.session.binary_frame(),
     );
     let power = sim
         .power_states

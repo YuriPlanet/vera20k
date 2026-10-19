@@ -54,9 +54,8 @@ fn world(rules: &RuleSet, factories: &[&str]) -> (Simulation, InternedId) {
     let owner = sim.intern("Americans");
     let mut house = HouseState::new(owner, 0, None, true, 50_000, 10);
     house.project_country_mults(rules, &sim.interner);
-    sim.houses.insert(owner, house);
-    sim.session.house_order.push(owner);
-    sim.session.current_house = Some(owner);
+    sim.houses.register(house);
+    sim.session.set_current_house_for_test(Some(owner));
     crate::sim::arena_fixture::flat_ground(&mut sim, rules);
     for (index, name) in factories.iter().enumerate() {
         let x = 4 + (index % 4) as u16 * 7;
@@ -979,7 +978,7 @@ fn busy_strip_draw_matches_native_pending_and_linked_controls() {
             // scheduler admits the next ordinary frame, not every queued tick.
             sim.queue_command(CommandEnvelope::new(
                 owner,
-                sim.session.tick + 100,
+                sim.session.tick() + 100,
                 Command::QueueProduction {
                     type_id: sim.interner.get(source).unwrap(),
                 },
@@ -989,14 +988,14 @@ fn busy_strip_draw_matches_native_pending_and_linked_controls() {
             sim.queue_commands([
                 CommandEnvelope::new(
                     foreign,
-                    sim.session.tick + 1,
+                    sim.session.tick() + 1,
                     Command::QueueProduction {
                         type_id: sim.interner.get(source).unwrap(),
                     },
                 ),
                 CommandEnvelope::new(
                     foreign,
-                    sim.session.tick + 1,
+                    sim.session.tick() + 1,
                     Command::SuspendProduction {
                         category: crate::sim::production::category_for_object(
                             rules.object(source).unwrap(),
@@ -1305,8 +1304,7 @@ fn superweapon_retained_cameo_keeps_identity_through_hold_and_recovery() {
     let mut sim = Simulation::with_seed(0);
     let owner = sim.interner.intern("Americans");
     sim.houses
-        .insert(owner, HouseState::new(owner, 0, None, true, 0, 10));
-    sim.session.house_order.push(owner);
+        .register(HouseState::new(owner, 0, None, true, 0, 10));
     let sw_type = sim.interner.intern("NukeSpecial");
     let mut instance = SuperWeaponInstance::new(sw_type, owner, 0);
     instance.is_active = true;

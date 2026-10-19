@@ -66,7 +66,7 @@ fn production_authoritative_hash_includes_factory_fields() {
         let rules = vehicle_rules();
         let owner = sim.interner.intern("Americans");
         sim.houses
-            .insert(owner, HouseState::new(owner, 0, None, true, 1_000_000, 10));
+            .register(HouseState::new(owner, 0, None, true, 1_000_000, 10));
         let ty = sim.interner.intern("GRIZZLY");
         arm(&mut sim, &rules, owner, ProductionCategory::Vehicle, ty, 1);
         sim
@@ -119,7 +119,7 @@ fn snapshot_roundtrip_factory_registry() {
     let rules = vehicle_rules();
     let owner = sim.interner.intern("Americans");
     sim.houses
-        .insert(owner, HouseState::new(owner, 0, None, true, 1_000_000, 10));
+        .register(HouseState::new(owner, 0, None, true, 1_000_000, 10));
     let ty = sim.interner.intern("GRIZZLY");
     let next = sim.interner.intern("FV");
     arm(&mut sim, &rules, owner, ProductionCategory::Vehicle, ty, 1); // SEED arm: balance = full cost
@@ -191,7 +191,7 @@ fn queue_advances_only_after_delivery() {
     let rules = empty_rules();
     let owner = sim.interner.intern("Americans");
     sim.houses
-        .insert(owner, HouseState::new(owner, 0, None, true, 1_000_000, 10));
+        .register(HouseState::new(owner, 0, None, true, 1_000_000, 10));
     let active = sim.interner.intern("GRIZZLY");
     let next = sim.interner.intern("FV"); // the queued tail item
     // Front Building (active object) with a tail item behind it.
@@ -292,9 +292,9 @@ fn factory_flip_determinism_over_scripted_commands() {
         let a = sim.interner.intern("Americans");
         let b = sim.interner.intern("Russians");
         sim.houses
-            .insert(a, HouseState::new(a, 0, None, true, 1_000_000, 10));
+            .register(HouseState::new(a, 0, None, true, 1_000_000, 10));
         sim.houses
-            .insert(b, HouseState::new(b, 1, None, true, 1_000_000, 10));
+            .register(HouseState::new(b, 1, None, true, 1_000_000, 10));
         let griz = sim.interner.intern("GRIZZLY");
         let beag = sim.interner.intern("BEAG");
         // Owner A: a Vehicle build (order 1) + an Aircraft build (order 2).

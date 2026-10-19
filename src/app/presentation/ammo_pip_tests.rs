@@ -79,7 +79,7 @@ fn stock_harrier_ammo_pips_follow_real_strike_return_reload_and_selection() {
         .map(|attacker_id| {
             CommandEnvelope::new(
                 player,
-                runtime.simulation.session.tick + 1,
+                runtime.simulation.session.tick() + 1,
                 Command::Attack {
                     attacker_id,
                     target_id: target,

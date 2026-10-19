@@ -99,7 +99,7 @@ impl Simulation {
             entity
                 .building_art
                 .storage
-                .tier(object.storage, self.session.binary_frame, "445FE4");
+                .tier(object.storage, self.session.binary_frame(), "445FE4");
         self.substrate
             .entities
             .get_mut(id)
@@ -140,7 +140,7 @@ impl Simulation {
                     .unwrap_or_else(|| {
                         panic!(
                             "native SiloDamage null Anim write450D81: building={id} frame={}",
-                            self.session.binary_frame
+                            self.session.binary_frame()
                         )
                     });
                 self.substrate
@@ -155,7 +155,7 @@ impl Simulation {
             return;
         }
         let storage = self.entities().get(id).unwrap().building_art.storage;
-        let tier = storage.tier(capacity, self.session.binary_frame, "450DAA");
+        let tier = storage.tier(capacity, self.session.binary_frame(), "450DAA");
         if tier == storage.refinery_tier {
             return;
         }
@@ -165,7 +165,7 @@ impl Simulation {
         //450E12 re-reads storage after the synchronous old Anim destructor.
         let tier = self.entities().get(id).unwrap().building_art.storage.tier(
             capacity,
-            self.session.binary_frame,
+            self.session.binary_frame(),
             "450E12",
         );
         self.substrate

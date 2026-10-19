@@ -139,9 +139,9 @@ fn selector_fixture(row: &Value) -> SelectorFixture {
     let enemy = sim.interner.intern("H1");
     for name in [owner, enemy] {
         sim.houses
-            .insert(name, HouseState::new(name, 0, None, false, 0, 10));
+            .register(HouseState::new(name, 0, None, false, 0, 10));
     }
-    sim.session.house_order = vec![owner, enemy];
+    sim.houses.reorder_for_test(&[owner, enemy]);
     let house = sim.houses.get_mut(&owner).unwrap();
     house.difficulty = HouseDifficulty::from_native(dword(&row["difficulty"])).unwrap();
     house.team_creation.ratio = dword(&row["ratio"]);
@@ -367,7 +367,8 @@ fn the_team_block_matches_the_original() {
                 dword(&row["game_mode"]) != 0,
             ),
         );
-        sim.session.binary_frame = dword(&row["frame"]) as u32;
+        sim.session
+            .set_binary_frame_for_test(dword(&row["frame"]) as u32);
         let owner = sim.interner.intern("H0");
         let mut house = HouseState::new(owner, 0, None, flag(&row["human"]), 0, 10);
         house.player_control = flag(&row["control"]);
@@ -375,8 +376,7 @@ fn the_team_block_matches_the_original() {
         house.difficulty = HouseDifficulty::from_native(dword(&row["difficulty"])).unwrap();
         house.team_creation.timer =
             CdTimer::from_raw(dword(&row["start"]), dword(&row["duration"]));
-        sim.houses.insert(owner, house);
-        sim.session.house_order = vec![owner];
+        sim.houses.register(house);
         let before = rng_digest(&sim.scenario_rng);
         update_team_creation(
             &mut sim,

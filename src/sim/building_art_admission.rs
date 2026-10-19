@@ -163,10 +163,10 @@ mod tests {
         // Authored Fill establishes Houses before its concrete buildings.
         // The AI owner is required by the shared Unlimbo discovery callback.
         let neutral = sim.interner.intern("Neutral");
-        sim.houses.insert(
-            neutral,
-            crate::sim::house_state::HouseState::new(neutral, 0, None, false, 0, 10),
-        );
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                neutral, 0, None, false, 0, 10,
+            ));
         assert_eq!(
             sim.spawn_from_map(
                 &[MapEntity {

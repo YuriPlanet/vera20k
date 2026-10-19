@@ -203,7 +203,7 @@ impl Simulation {
     ) -> Result<FootPathOutcome, String> {
         let rules = rules.ok_or("Drive/Ship path request requires rules")?;
         let id = request.entity_id;
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         //4B284B..4B286D / 6A1EA0..6A1EBD arm the caller timer first.
         self.substrate
             .entities
@@ -332,7 +332,7 @@ impl Simulation {
             return self.finish_track_path_tail(id, rules, registry, frame_effects);
         }
         //4B2A47..4B2B17 / 6A2097..: the cell ahead of the body facing.
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         let octant = facing_octant(actor, frame);
         let current = super::foot_path::coord_cell(location);
         let (dx, dy) = DIRECTION_DELTAS[usize::from(octant)];
@@ -1143,7 +1143,7 @@ impl Simulation {
             }
             return false;
         }
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         let timing = super::DestinationTiming::from_rules(frame, Some(rules));
         let coord = (!skip_move_to).then(|| {
             super::navcom::nav_target_coordinate(
@@ -1297,7 +1297,7 @@ impl Simulation {
             ) != crate::sim::radio::RadioResponse::Roger
             || mission_is_enter_or_harvest(self);
         if !queue_near {
-            let now = self.session.binary_frame;
+            let now = self.session.binary_frame();
             let _ = self.mission_queue_exact(
                 id,
                 crate::sim::mission::MissionId::from_known(MissionType::Enter),
@@ -1479,7 +1479,7 @@ impl Simulation {
                     )
                     .is_none()
             });
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         if pad {
             if active == LocomotorKind::Teleport {
                 return false;
@@ -1684,7 +1684,7 @@ impl Simulation {
         {
             return false;
         }
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         let leads_to_target = match (nav_com, target) {
             (_, crate::sim::combat::TargetKind::Cell(rx, ry)) => {
                 nav_com == NavTargetRef::cell(rx, ry)

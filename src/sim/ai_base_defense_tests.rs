@@ -385,19 +385,13 @@ fn production_state_feeds_the_choice_as_native() {
     );
     house.difficulty = HouseDifficulty::from_native(int(&row["difficulty"]) as i32).unwrap();
     house.base_plan_center = ((x - SHIFT) as u16, (y - SHIFT) as u16);
-    house.base_reservation.update_bounds(
-        left - i32::from(SHIFT),
-        top - i32::from(SHIFT),
-        width,
-        height,
-    );
     house.base_plan.nodes = row_nodes(row);
     house.enemy_house = Some(enemy);
     house.project_country_mults(&rules, &sim.interner);
-    sim.houses.insert(owner, house);
+    sim.houses.register(house);
     let mut enemy_house = HouseState::new(enemy, 1, None, false, 0, 10);
     enemy_house.project_country_mults(&rules, &sim.interner);
-    sim.houses.insert(enemy, enemy_house);
+    sim.houses.register(enemy_house);
     for building in row["buildings"].as_array().unwrap() {
         let (x, y) = cell(&building[1]);
         let name = building[0].as_str().unwrap();
@@ -415,6 +409,16 @@ fn production_state_feeds_the_choice_as_native() {
         sim.spawn_object(kind, "C0", 14 + 2 * index as u16, 14, 0, &rules)
             .unwrap_or_else(|| panic!("{kind} spawns"));
     }
+    // The row's bounds are the reservation the native call read; the spawns
+    // above marked the arena's own.
+    let reservation = &mut sim.houses.get_mut(&owner).unwrap().base_reservation;
+    *reservation = Default::default();
+    reservation.update_bounds(
+        left - i32::from(SHIFT),
+        top - i32::from(SHIFT),
+        width,
+        height,
+    );
 
     let choice = DefenseChoice::of_house(&sim, &rules, owner, int(&row["index"]) as usize)
         .expect("the house's choice");

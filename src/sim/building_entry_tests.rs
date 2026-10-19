@@ -124,8 +124,7 @@ fn arena(rules: &RuleSet) -> (Simulation, PathGrid) {
     for (name, side, human) in [("YuriCountry", 2, false), ("Americans", 0, true)] {
         let id = sim.interner.intern(name);
         sim.houses
-            .insert(id, HouseState::new(id, side, None, human, 0, 10));
-        sim.session.house_order.push(id);
+            .register(HouseState::new(id, side, None, human, 0, 10));
     }
     let grid = crate::sim::arena_fixture::flat_arena(&mut sim, rules);
     (sim, grid)
@@ -802,7 +801,7 @@ fn a_bio_reactor_unload_command_reveals_its_passenger() {
 
     let order = CommandEnvelope::new(
         owner,
-        sim.session.tick,
+        sim.session.tick(),
         Command::UnloadPassengers {
             transport_id: reactor,
         },
@@ -955,7 +954,7 @@ fn a_blocked_bio_reactor_restores_and_retries_its_cargo_head() {
     sim.mission_assign_exact(
         reactor,
         MissionId::from_known(MissionType::Unload),
-        sim.session.binary_frame,
+        sim.session.binary_frame(),
     )
     .unwrap();
 
@@ -1024,7 +1023,7 @@ fn a_blocked_bio_reactor_restores_and_retries_its_cargo_head() {
     // The scan starts behind the facing; a foundation cell refuses the Foot
     // (its NavCom went with its entry, `0x004DF0D0`), so the first exit is
     // the first octant off the foundation.
-    let facing = entity(&sim, reactor).body_facing_current(sim.session.binary_frame);
+    let facing = entity(&sim, reactor).body_facing_current(sim.session.binary_frame());
     let start = usize::from(crate::util::direction_tables::dir_from_facing16(
         facing.wrapping_add(0x7FFF),
     ));
@@ -1146,7 +1145,7 @@ fn a_bio_reactor_unlimbo_failure_keeps_the_placement_draw_and_restores_cargo() {
         .get_mut(reactor)
         .unwrap()
         .body_facing
-        .set(0, sim.session.binary_frame);
+        .set(0, sim.session.binary_frame());
 
     // The first strict pair is north: Location (16,10), exit (16,9),
     // beyond (16,8). MarkSucceeded reaches reveal, whose lifecycle authority
@@ -1272,7 +1271,7 @@ fn a_bio_reactor_scan_uses_location_cell_on_a_multi_cell_foundation() {
         .get_mut(reactor)
         .unwrap()
         .body_facing
-        .set(0x7000, sim.session.binary_frame);
+        .set(0x7000, sim.session.binary_frame());
     crate::sim::transport_unload::building_mission_unload_absorber(
         &mut sim,
         &rules,
@@ -1317,7 +1316,7 @@ fn a_bio_reactor_scan_uses_infantry_cell_entry_with_building_height() {
         .get_mut(reactor)
         .unwrap()
         .body_facing
-        .set(0, sim.session.binary_frame);
+        .set(0, sim.session.binary_frame());
     for cell in [(16, 11), (16, 12)] {
         sim.resolved_terrain
             .as_mut()
@@ -1389,7 +1388,7 @@ fn a_bio_reactor_relaxed_scan_wraps_from_octant_seven() {
         .get_mut(reactor)
         .unwrap()
         .body_facing
-        .set(0x7000, sim.session.binary_frame);
+        .set(0x7000, sim.session.binary_frame());
     let mut expected_rng = sim.scenario_rng.clone();
     assert!(
         crate::sim::movement::bump_crush::pick_infantry_sublocation(
@@ -1455,7 +1454,7 @@ fn a_computer_bio_reactor_passenger_keeps_its_seek_latch_after_unload() {
     sim.mission_assign_exact(
         reactor,
         MissionId::from_known(MissionType::Unload),
-        sim.session.binary_frame,
+        sim.session.binary_frame(),
     )
     .unwrap();
 
@@ -2227,7 +2226,7 @@ fn the_guard_head_garrison_seek_answers_captures_rate() {
     let _bunker = spawn(&mut sim, &rules, "NABNKR", "YuriCountry", 16, 10);
     let infantry = spawn(&mut sim, &rules, "E1", "YuriCountry", 10, 10);
     set_should_enter_occupiable_for_test(sim.substrate.entities.get_mut(infantry).unwrap(), true);
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     sim.mission_assign_exact(infantry, MissionId::from_known(MissionType::Guard), now)
         .unwrap();
     let before_rng = sim.scenario_rng.logical_state();
@@ -2787,7 +2786,7 @@ fn nearest_occupiable_production_matches_native_controls() {
                 building
             })
             .collect();
-        let now = sim.session.binary_frame;
+        let now = sim.session.binary_frame();
         sim.mission_assign_exact(
             foot,
             MissionId::from_raw(row["mission"].as_i64().unwrap() as i32),
@@ -2852,8 +2851,7 @@ fn script64_enters_a_neutral_civilian_building_outside_the_own_house_list() {
     house.multiplay_passive =
         crate::sim::house_state::resolve_multiplay_passive(Some(&rules), Some("Neutral"));
     assert!(house.multiplay_passive, "production Country reader");
-    sim.houses.insert(neutral, house);
-    sim.session.house_order.push(neutral);
+    sim.houses.register(house);
     let own = spawn(&mut sim, &rules, "NABNKR", "YuriCountry", 24, 10);
     let civilian = spawn(&mut sim, &rules, "CAGAS01", "Neutral", 16, 10);
     let occupier = spawn(&mut sim, &rules, "E1", "YuriCountry", 10, 10);
@@ -2920,7 +2918,7 @@ fn guard_and_area_guard_retry_script64_without_a_scenario_draw() {
             sim.substrate.entities.get_mut(occupier).unwrap(),
             true,
         );
-        let now = sim.session.binary_frame;
+        let now = sim.session.binary_frame();
         sim.mission_assign_exact(occupier, MissionId::from_known(mission), now)
             .unwrap();
         let rng = sim.scenario_rng.logical_state();
@@ -2990,8 +2988,7 @@ fn retail_all01_script64_conscript_admits_a_map_civilian_garrison() {
     house.multiplay_passive =
         crate::sim::house_state::resolve_multiplay_passive(Some(&rules), Some("Neutral"));
     assert!(house.multiplay_passive, "retained campaign Country reader");
-    sim.houses.insert(neutral, house);
-    sim.session.house_order.push(neutral);
+    sim.houses.register(house);
     let building = spawn(&mut sim, &rules, &civilian.type_id, "Neutral", 16, 10);
     let conscript = spawn(&mut sim, &rules, "E2", "YuriCountry", 10, 10);
 

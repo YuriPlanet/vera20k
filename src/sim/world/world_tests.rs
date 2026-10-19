@@ -79,11 +79,10 @@ fn game_speed_command_sim() -> (Simulation, crate::sim::intern::InternedId) {
     let mut sim = Simulation::with_seed(0x5EED_0001);
     sim.hash_state_every(std::num::NonZeroU64::MIN);
     let owner = sim.interner.intern("Local");
-    sim.houses.insert(
-        owner,
-        crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10),
-    );
-    sim.session.house_order.push(owner);
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, true, 0, 10,
+        ));
     (sim, owner)
 }
 
@@ -183,9 +182,9 @@ fn game_speed_transition_applies_at_ingress_before_triggers_and_hash() {
     assert!(result.frame_committed);
     assert_eq!(result.executed_commands, 1);
     assert_eq!(result.tick, control_result.tick);
-    assert_eq!(sim.session.binary_frame, control.session.binary_frame);
-    assert_eq!(sim.session.game_options.game_speed, 4);
-    assert_eq!(control.session.game_options.game_speed, 1);
+    assert_eq!(sim.session.binary_frame(), control.session.binary_frame());
+    assert_eq!(sim.session.game_options().game_speed, 4);
+    assert_eq!(control.session.game_options().game_speed, 1);
     assert_ne!(result.state_hash, control_result.state_hash);
     assert_eq!(result.state_hash, Some(sim.state_hash()));
     assert!(sim.take_master_frame_test_trace().starts_with(&[
@@ -206,11 +205,10 @@ fn a_state_hash_interval_selects_frames_by_tick() {
     let mut test_world = Simulation::with_seed(0x5EED_0001);
     for sim in [&mut launched, &mut test_world] {
         let owner = sim.interner.intern("Local");
-        sim.houses.insert(
-            owner,
-            crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10),
-        );
-        sim.session.house_order.push(owner);
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                owner, 0, None, true, 0, 10,
+            ));
     }
     let launched_first = launched.advance_tick(&[], None, None, None, 67);
     assert!(launched_first.frame_committed);
@@ -273,7 +271,7 @@ fn invalid_or_unknown_game_speed_transition_is_consumed_without_state_effect() {
     );
     let invalid_control_result = invalid_control.advance_tick(&[], None, None, None, 67);
     assert_eq!(invalid_result.executed_commands, 1);
-    assert_eq!(invalid.session.game_options.game_speed, 1);
+    assert_eq!(invalid.session.game_options().game_speed, 1);
     assert_eq!(invalid_result.state_hash, invalid_control_result.state_hash);
 
     let (mut unknown, _) = game_speed_command_sim();
@@ -294,7 +292,7 @@ fn invalid_or_unknown_game_speed_transition_is_consumed_without_state_effect() {
     );
     let unknown_control_result = unknown_control.advance_tick(&[], None, None, None, 67);
     assert_eq!(unknown_result.executed_commands, 1);
-    assert_eq!(unknown.session.game_options.game_speed, 1);
+    assert_eq!(unknown.session.game_options().game_speed, 1);
     assert_eq!(unknown_result.state_hash, unknown_control_result.state_hash);
 }
 
@@ -302,11 +300,10 @@ fn invalid_or_unknown_game_speed_transition_is_consumed_without_state_effect() {
 fn game_speed_ingress_uses_house_order_and_survives_same_frame_exit() {
     let (mut sim, local) = game_speed_command_sim();
     let remote = sim.interner.intern("Remote");
-    sim.houses.insert(
-        remote,
-        crate::sim::house_state::HouseState::new(remote, 1, None, false, 0, 10),
-    );
-    sim.session.house_order.push(remote);
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            remote, 1, None, false, 0, 10,
+        ));
     let commands = [
         CommandEnvelope::new(remote, 1, Command::SetGameSpeed { speed: 2 }),
         CommandEnvelope::new(local, 1, Command::SetGameSpeed { speed: 4 }),
@@ -317,7 +314,7 @@ fn game_speed_ingress_uses_house_order_and_survives_same_frame_exit() {
 
     assert!(!result.frame_committed);
     assert_eq!(result.executed_commands, 3);
-    assert_eq!(sim.session.game_options.game_speed, 2);
+    assert_eq!(sim.session.game_options().game_speed, 2);
     assert!(sim.quit_requested);
     assert_eq!(result.state_hash, Some(sim.state_hash()));
 }
@@ -341,7 +338,7 @@ fn network_modal_does_not_execute_game_speed_ingress() {
         .into_tick();
 
     assert_eq!(result.executed_commands, 0);
-    assert_eq!(sim.session.game_options.game_speed, 1);
+    assert_eq!(sim.session.game_options().game_speed, 1);
 }
 
 fn animation_boundary_fixture() -> (Simulation, RuleSet) {
@@ -631,10 +628,10 @@ fn a_ship_wakes_every_eighth_frame_unless_it_is_underwater() {
             .count()
     };
 
-    sim.session.binary_frame = 10;
+    sim.session.set_binary_frame_for_test(10);
     sim.spawn_wakes_for_frame(&rules);
     assert_eq!(wakes(&sim), 0, "a ship ignores Drive's 10th frame");
-    sim.session.binary_frame = 8;
+    sim.session.set_binary_frame_for_test(8);
     sim.spawn_wakes_for_frame(&rules);
     assert_eq!(wakes(&sim), 1, "only the surface ship wakes on the 8th");
 }
@@ -722,7 +719,7 @@ Rate=120
     // The movement step of a full tick would rewrite the drive runtime from
     // the fixture's (non-)motion, so exercise the spawn owner directly at a
     // frame the native cadence accepts.
-    assert_eq!(sim.session.binary_frame % 10, 0);
+    assert_eq!(sim.session.binary_frame() % 10, 0);
     sim.spawn_wakes_for_frame(&rules);
 
     let wake_anims: Vec<u64> = sim
@@ -752,9 +749,9 @@ Rate=120
     assert_eq!(wake.draw_flags, 0x600);
 
     // Off-cadence frames and a unit that is not moving now spawn nothing.
-    sim.session.binary_frame = 5;
+    sim.session.set_binary_frame_for_test(5);
     sim.spawn_wakes_for_frame(&rules);
-    sim.session.binary_frame = 10;
+    sim.session.set_binary_frame_for_test(10);
     sim.substrate
         .entities
         .get_mut(boat_id)
@@ -889,8 +886,8 @@ fn terminal_master_frame_visits_class_sequence_before_exit_without_frame_commit(
     // on successful frame commit.
     assert!(!result.frame_committed);
     assert_eq!(result.executed_commands, 1);
-    assert_eq!(sim.session.tick, 0);
-    assert_eq!(sim.session.binary_frame, 0);
+    assert_eq!(sim.session.tick(), 0);
+    assert_eq!(sim.session.binary_frame(), 0);
     let entity = sim.substrate.entities.get(1).expect("living infantry");
     assert_eq!(entity.mission_leaf.as_infantry().unwrap().doing(), 0);
     assert_eq!(entity.infantry_sprite_pose(), Some((0, 0)));
@@ -1393,12 +1390,11 @@ pub(crate) fn gsi_04_07_wall_sell_seed_houses(
     let mut owner_house =
         crate::sim::house_state::HouseState::new(wall_owner, 0, None, false, 0, 10);
     owner_house.player_control = true;
-    sim.houses.insert(wall_owner, owner_house);
-    sim.houses.insert(
-        receiver,
-        crate::sim::house_state::HouseState::new(receiver, 1, None, false, 0, 10),
-    );
-    sim.session.house_order = vec![wall_owner, receiver];
+    sim.houses.register(owner_house);
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            receiver, 1, None, false, 0, 10,
+        ));
     (wall_owner, receiver)
 }
 
@@ -2611,8 +2607,7 @@ fn insert_house_with_counts(
     let mut house = crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10);
     house.tracking.set_buildings_for_test(buildings);
     house.tracking.set_active_units_for_test(units);
-    sim.houses.insert(owner, house);
-    sim.session.house_order.push(owner);
+    sim.houses.register(house);
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     owner
@@ -2620,7 +2615,8 @@ fn insert_house_with_counts(
 
 /// The house rung's defeat pass, past frame zero as the gate requires.
 fn check_defeat_now(sim: &mut Simulation, rules: Option<&RuleSet>) {
-    sim.session.binary_frame = sim.session.binary_frame.max(1);
+    sim.session
+        .set_binary_frame_for_test(sim.session.binary_frame().max(1));
     sim.check_defeat(rules, None);
 }
 
@@ -3692,10 +3688,10 @@ fn guard_infantry_acquire_return_fire_and_finish_a_duel() {
     // owner after taking damage. A live map actor has its real House.
     for name in ["Americans", "Russians"] {
         let owner = sim.interner.intern(name);
-        sim.houses.insert(
-            owner,
-            crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10),
-        );
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                owner, 0, None, true, 0, 10,
+            ));
     }
     let gi = sim
         .spawn_object("E1", "Americans", 2, 1, 64, &rules)
@@ -4193,13 +4189,14 @@ fn native_frame_committed_late_gate_captures_pre_increment_frame() {
     )
     .unwrap();
     sim.mission_commence_exact(gate_id, 0).unwrap();
-    assert_eq!(sim.session.binary_frame, 0, "fresh sim starts at frame 0");
+    assert_eq!(sim.session.binary_frame(), 0, "fresh sim starts at frame 0");
 
     let _ = sim.advance_tick(&[], Some(&rules), None, None, 1);
 
     // Committed late: post-tick frame advanced to 1.
     assert_eq!(
-        sim.session.binary_frame, 1,
+        sim.session.binary_frame(),
+        1,
         "native frame committed late to 1"
     );
     // The consumer captured the PRE-increment frame 0 during the tick.
@@ -4243,7 +4240,7 @@ fn mission_host_counter_changes_state_hash() {
 fn short_game_counts_a_dying_base_unit_until_it_is_deleted() {
     let rules = short_game_defeat_test_rules();
     let mut sim = Simulation::new();
-    sim.session.game_options.short_game = true;
+    sim.session.game_options_mut_for_test().short_game = true;
     let owner = insert_house_with_counts(&mut sim, "Americans", 0, 0);
     insert_test_entity_for_owner(&mut sim, 1, owner, "AMCV", EntityCategory::Unit);
     sim.substrate
@@ -4266,7 +4263,7 @@ fn short_game_counts_a_dying_base_unit_until_it_is_deleted() {
 fn long_game_keeps_house_alive_when_units_remain() {
     let rules = short_game_defeat_test_rules();
     let mut sim = Simulation::new();
-    sim.session.game_options.short_game = false;
+    sim.session.game_options_mut_for_test().short_game = false;
     let owner = insert_house_with_counts(&mut sim, "Americans", 0, 1);
 
     check_defeat_now(&mut sim, Some(&rules));
@@ -4320,10 +4317,11 @@ fn defeated_house_is_flagged_has_lost_and_its_stragglers_die() {
     for local_loser in [false, true] {
         let rules = short_game_defeat_test_rules();
         let mut sim = Simulation::new();
-        sim.session.game_options.short_game = true;
+        sim.session.game_options_mut_for_test().short_game = true;
         let defeated = insert_house_with_counts(&mut sim, "Americans", 0, 1);
         let survivor = insert_house_with_counts(&mut sim, "Russians", 1, 0);
-        sim.session.current_house = Some(if local_loser { defeated } else { survivor });
+        sim.session
+            .set_current_house_for_test(Some(if local_loser { defeated } else { survivor }));
         // A straggler vehicle owned by the losing house.
         insert_test_entity_for_owner(&mut sim, 1, defeated, "MTNK", EntityCategory::Unit);
 
@@ -4361,12 +4359,12 @@ fn gsi_01_04_house_rung_owns_savour_deadline_and_emits_one_transition_edge() {
 
     let rules = short_game_defeat_test_rules();
     let mut sim = Simulation::new();
-    sim.session.game_options.short_game = false;
-    sim.session.tick = 10;
-    sim.session.binary_frame = 10;
+    sim.session.game_options_mut_for_test().short_game = false;
+    sim.session.set_tick_for_test(10);
+    sim.session.set_binary_frame_for_test(10);
     let winner = insert_house_with_counts(&mut sim, "Americans", 1, 0);
     let loser = insert_house_with_counts(&mut sim, "Russians", 0, 0);
-    sim.session.current_house = Some(winner);
+    sim.session.set_current_house_for_test(Some(winner));
 
     check_defeat_now(&mut sim, Some(&rules));
 
@@ -4389,15 +4387,15 @@ fn gsi_01_04_house_rung_owns_savour_deadline_and_emits_one_transition_edge() {
     );
 
     sim.sound_events.clear();
-    sim.session.tick = 35;
-    sim.session.binary_frame = 35;
+    sim.session.set_tick_for_test(35);
+    sim.session.set_binary_frame_for_test(35);
     check_defeat_now(&mut sim, Some(&rules));
     assert!(!sim.houses[&winner].outcome().unwrap().exit_ready);
     assert!(!sim.termination_frame_requested());
     assert!(sim.sound_events.is_empty(), "accepted edges never replay");
 
-    sim.session.tick = 36;
-    sim.session.binary_frame = 36;
+    sim.session.set_tick_for_test(36);
+    sim.session.set_binary_frame_for_test(36);
     check_defeat_now(&mut sim, Some(&rules));
     assert!(sim.houses[&winner].outcome().unwrap().exit_ready);
     assert!(sim.houses[&loser].is_defeated);
@@ -4413,10 +4411,10 @@ fn gsi_01_04_house_rung_owns_savour_deadline_and_emits_one_transition_edge() {
 fn short_game_base_unit_survivor_prevents_enemy_victory() {
     let rules = short_game_defeat_test_rules();
     let mut sim = Simulation::new();
-    sim.session.game_options.short_game = true;
+    sim.session.game_options_mut_for_test().short_game = true;
     let mcv_owner = insert_house_with_counts(&mut sim, "Americans", 0, 1);
     let enemy = insert_house_with_counts(&mut sim, "Russians", 1, 0);
-    sim.session.current_house = Some(enemy);
+    sim.session.set_current_house_for_test(Some(enemy));
     insert_test_entity_for_owner(&mut sim, 1, mcv_owner, "AMCV", EntityCategory::Unit);
 
     check_defeat_now(&mut sim, Some(&rules));
@@ -4433,11 +4431,11 @@ fn short_game_base_unit_survivor_prevents_enemy_victory() {
 fn gsi_05_16_a_captured_insignificant_garrison_does_not_keep_its_house_alive() {
     let rules = short_game_defeat_test_rules();
     let mut sim = Simulation::new();
-    sim.session.game_options.short_game = true;
+    sim.session.game_options_mut_for_test().short_game = true;
     let civilian = insert_passive_house_with_counts(&mut sim, "Neutral", 0, 0);
     let player = insert_house_with_counts(&mut sim, "Americans", 0, 1);
     let enemy = insert_house_with_counts(&mut sim, "Russians", 1, 0);
-    sim.session.current_house = Some(enemy);
+    sim.session.set_current_house_for_test(Some(enemy));
     let mut garrison = GameEntity::test_default_of_category(
         1,
         "CAGAS01",
@@ -4500,10 +4498,10 @@ fn passive_house_owning_buildings_does_not_block_last_player_victory() {
     // the victory screen never appeared after the last opponent died.
     let rules = short_game_defeat_test_rules();
     let mut sim = Simulation::new();
-    sim.session.game_options.short_game = false;
+    sim.session.game_options_mut_for_test().short_game = false;
     let survivor = insert_house_with_counts(&mut sim, "Americans", 3, 4);
     let loser = insert_house_with_counts(&mut sim, "Russians", 0, 0);
-    sim.session.current_house = Some(survivor);
+    sim.session.set_current_house_for_test(Some(survivor));
     insert_passive_house_with_counts(&mut sim, "Neutral", 7, 0);
 
     check_defeat_now(&mut sim, Some(&rules));
@@ -4521,11 +4519,11 @@ fn passive_house_is_never_defeated_even_with_nothing_left() {
     // never flagged defeated no matter how empty it gets.
     let rules = short_game_defeat_test_rules();
     let mut sim = Simulation::new();
-    sim.session.game_options.short_game = true;
+    sim.session.game_options_mut_for_test().short_game = true;
     let passive = insert_passive_house_with_counts(&mut sim, "Neutral", 0, 0);
     let player = insert_house_with_counts(&mut sim, "Americans", 2, 1);
     let opponent = insert_house_with_counts(&mut sim, "Russians", 0, 0);
-    sim.session.current_house = Some(player);
+    sim.session.set_current_house_for_test(Some(player));
 
     check_defeat_now(&mut sim, Some(&rules));
 
@@ -4568,11 +4566,11 @@ fn passive_houses_do_not_make_a_solo_board_look_contested() {
 fn solo_developer_board_creates_no_automatic_victory_state_or_eva() {
     let mut sim = Simulation::new();
     let player = insert_house_with_counts(&mut sim, "Americans", 1, 1);
-    sim.session.current_house = Some(player);
+    sim.session.set_current_house_for_test(Some(player));
     insert_passive_house_with_counts(&mut sim, "Neutral", 4, 0);
     insert_passive_house_with_counts(&mut sim, "Special", 2, 0);
     for tick in 0..300 {
-        sim.session.tick = tick;
+        sim.session.set_tick_for_test(tick);
         check_defeat_now(&mut sim, None);
         assert!(!sim.houses[&player].has_won());
         assert!(sim.houses[&player].outcome().is_none());
@@ -4594,7 +4592,7 @@ fn explicit_solo_outcomes_advance_and_reach_the_shared_ready_query() {
         let player = insert_house_with_counts(&mut sim, "Americans", 1, 1);
         insert_passive_house_with_counts(&mut sim, "Neutral", 4, 0);
         insert_passive_house_with_counts(&mut sim, "Special", 2, 0);
-        sim.session.current_house = Some(player);
+        sim.session.set_current_house_for_test(Some(player));
         let house = sim.houses.get_mut(&player).unwrap();
         assert!(match kind {
             HouseOutcomeKind::Victory => house.accept_win_result(0, 3, false),
@@ -4603,8 +4601,8 @@ fn explicit_solo_outcomes_advance_and_reach_the_shared_ready_query() {
         // Accepted outcomes carry no automatic/explicit origin discriminator.
         // Their timer and app-visible readiness must not depend on opponents.
         for tick in 0..=3 {
-            sim.session.tick = tick;
-            sim.session.binary_frame = tick as u32;
+            sim.session.set_tick_for_test(tick);
+            sim.session.set_binary_frame_for_test(tick as u32);
             check_defeat_now(&mut sim, None);
             assert_eq!(sim.termination_frame_requested(), tick == 3);
             assert_eq!(sim.ready_outcome_for_owner(player).is_some(), tick == 3);
@@ -4624,11 +4622,11 @@ fn one_way_alliance_does_not_end_the_game() {
     let rules = short_game_defeat_test_rules();
     for mutual in [false, true] {
         let mut sim = Simulation::new();
-        sim.session.game_options.short_game = false;
+        sim.session.game_options_mut_for_test().short_game = false;
         let a = insert_house_with_counts(&mut sim, "Americans", 1, 1);
         let b = insert_house_with_counts(&mut sim, "Russians", 1, 1);
         let opponent = insert_house_with_counts(&mut sim, "YuriCountry", 1, 0);
-        sim.session.current_house = Some(a);
+        sim.session.set_current_house_for_test(Some(a));
         sim.house_alliances = if mutual {
             directed_alliances(&[("Americans", "Russians"), ("Russians", "Americans")])
         } else {
@@ -6202,10 +6200,10 @@ fn test_select_command_rejects_selectable_no_type() {
 fn declare_selection_gate_houses(sim: &mut Simulation) {
     for (name, is_human) in [("Americans", true), ("Soviet", false)] {
         let id = sim.interner.intern(name);
-        sim.houses.insert(
-            id,
-            crate::sim::house_state::HouseState::new(id, 0, None, is_human, 0, 10),
-        );
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                id, 0, None, is_human, 0, 10,
+            ));
     }
 }
 
@@ -7176,7 +7174,7 @@ fn a_paralyzed_or_warping_in_teleport_infantryman_refuses_a_move_order() {
     // A paralyzed one never warps.
     let mut sim: Simulation = Simulation::new();
     let id = spawn(&mut sim);
-    let frame = sim.session.binary_frame as i32;
+    let frame = sim.session.binary_frame() as i32;
     sim.substrate
         .entities
         .get_mut(id)
@@ -7367,7 +7365,10 @@ fn test_attack_move_auto_acquires_enemy() {
         if attacker.attack_target.target().is_some() {
             break;
         }
-        let scan_due = attacker.passive_scan.timer().due(sim.session.binary_frame);
+        let scan_due = attacker
+            .passive_scan
+            .timer()
+            .due(sim.session.binary_frame());
         let _ = sim.advance_tick(&[], Some(&rules), Some(&grid), None, 100);
         let attacker = sim.substrate.entities.get(1).unwrap();
         assert!(
@@ -7630,10 +7631,10 @@ fn test_infantry_attack_move_kills_on_the_way_and_walks_on() {
     // Infantry fear asks the owner's House whether a human controls it.
     for (owner, side_index, is_human) in [("Americans", 0, true), ("Russians", 1, false)] {
         let name = sim.interner.intern(owner);
-        sim.houses.insert(
-            name,
-            crate::sim::house_state::HouseState::new(name, side_index, None, is_human, 0, 10),
-        );
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                name, side_index, None, is_human, 0, 10,
+            ));
     }
     assert!(sim.rebuild_dynamic_navigation(&rules));
     // This spawn leaves IsInPlayfield (`+0x3D5`) clear; the scan reads it.
@@ -7987,10 +7988,10 @@ fn test_undeploy_conyard_spawns_mcv() {
     let undeploy_cmd = cmd_envelope(
         &sim,
         "Americans",
-        sim.session.tick + 1,
+        sim.session.tick() + 1,
         Command::UndeployBuilding { entity_id: yard_id },
     );
-    let undeploy_frame = sim.session.binary_frame;
+    let undeploy_frame = sim.session.binary_frame();
     let _ = sim.advance_tick(&[undeploy_cmd], Some(&rules), None, None, 33);
 
     // ConYard should still exist but have building_down set.
@@ -8008,7 +8009,7 @@ fn test_undeploy_conyard_spawns_mcv() {
     // visit two frames plus 28 steps after the command frame converts it.
     let mut converted = None;
     for _ in 0..40 {
-        let frame = sim.session.binary_frame;
+        let frame = sim.session.binary_frame();
         let _ = sim.advance_tick(&[], Some(&rules), None, None, 33);
         if sim.substrate.entities.get(yard_id).is_none() {
             converted = Some(frame);
@@ -8313,11 +8314,10 @@ fn sale_death_is_ignored_before_ordinary_tail_drain() {
     );
     sim.interner = crate::sim::intern::test_interner();
     let owner_id = sim.interner.intern("Americans");
-    sim.houses.insert(
-        owner_id,
-        crate::sim::house_state::HouseState::new(owner_id, 0, None, true, 0, 10),
-    );
-    sim.session.house_order.push(owner_id);
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner_id, 0, None, true, 0, 10,
+        ));
     for (id, rx, ry) in [(1u64, 10u16, 10u16), (2u64, 20u16, 20u16)] {
         let mut bld = GameEntity::test_default_of_category(
             id,
@@ -8345,7 +8345,7 @@ fn sale_death_is_ignored_before_ordinary_tail_drain() {
     // command tail and packs it up; power still counts it.
     let sell = CommandEnvelope::new(
         owner_id,
-        sim.session.tick + 1,
+        sim.session.tick() + 1,
         Command::SellBuilding { entity_id: 1 },
     );
     sim.advance_tick(&[sell], Some(&rules), Some(&grid), None, 100);
@@ -8421,7 +8421,7 @@ fn combat_death_after_its_repair_visit_is_freed_at_end_of_tick() {
     sim.interner = crate::sim::intern::test_interner();
     let russia = sim.interner.intern("Russia");
     sim.houses
-        .insert(russia, HouseState::new(russia, 0, None, false, 1000, 10));
+        .register(HouseState::new(russia, 0, None, false, 1000, 10));
     sim.substrate.entities.insert(atk);
     sim.substrate.entities.insert(bld);
     sim.reveal(1);
@@ -10332,7 +10332,7 @@ fn current_rust_frame_call_order_is_preserved() {
     let select = cmd_envelope(
         &sim,
         "Americans",
-        sim.session.tick + 2,
+        sim.session.tick() + 2,
         Command::Select {
             entity_ids: vec![1],
             additive: false,
@@ -10357,7 +10357,7 @@ fn current_rust_frame_call_order_is_preserved() {
     // Step to the due tick with the exact app-shaped call: drained commands
     // in, bound resources, Ordinary lane. The command must execute within
     // THIS frame (drain-before-advance), not the next.
-    let tick_before = sim.session.tick;
+    let tick_before = sim.session.tick();
     let due = sim.take_due_commands();
     assert_eq!(due.len(), 1, "the queued command is due exactly once");
     let output = sim
@@ -10371,7 +10371,7 @@ fn current_rust_frame_call_order_is_preserved() {
         )
         .expect("fixture frame must complete");
     assert!(output.tick.frame_committed);
-    assert_eq!(sim.session.tick, tick_before + 1);
+    assert_eq!(sim.session.tick(), tick_before + 1);
     assert!(
         sim.substrate
             .entities
@@ -10396,7 +10396,7 @@ fn runtime_frame_call_order_matches_the_app_seam() {
     let select = cmd_envelope(
         &sim,
         "Americans",
-        sim.session.tick + 2,
+        sim.session.tick() + 2,
         Command::Select {
             entity_ids: vec![1],
             additive: false,
@@ -10930,11 +10930,10 @@ fn a_captured_war_factory_takes_its_contact_along() {
     let mut sim = Simulation::new();
     for (name, side) in [("Americans", 0), ("Russians", 1)] {
         let id = sim.interner.intern(name);
-        sim.houses.insert(
-            id,
-            crate::sim::house_state::HouseState::new(id, side, None, false, 0, 10),
-        );
-        sim.session.house_order.push(id);
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                id, side, None, false, 0, 10,
+            ));
     }
     let factory = sim
         .spawn_object_at_height("WEAP", "Americans", 10, 10, 0, 0, &rules)

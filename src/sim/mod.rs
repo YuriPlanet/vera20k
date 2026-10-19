@@ -179,6 +179,7 @@ pub mod tiberium_germinate;
 pub mod game_options;
 pub(crate) mod house_diplomacy; // ally graph: install, MakeAlly/MakeEnemy, Computer_Paranoid
 pub mod house_state;
+pub mod houses;
 pub(crate) mod house_strategy;
 pub mod house_tracking;
 

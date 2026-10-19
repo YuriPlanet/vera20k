@@ -24,8 +24,8 @@ fn refused_begin_still_publishes_the_local_prediction_gate_transition() {
     sim.resolve_type_handles(&rules);
     let owner = sim.interner.intern("Americans");
     sim.houses
-        .insert(owner, HouseState::new(owner, 0, None, true, 1000, 10));
-    sim.session.current_house = Some(owner);
+        .register(HouseState::new(owner, 0, None, true, 1000, 10));
+    sim.session.set_current_house_for_test(Some(owner));
     let before_wallet = sim.houses[&owner].economy.clone();
     assert!(!enqueue_by_type(
         &mut sim,
@@ -45,7 +45,7 @@ fn refused_begin_still_publishes_the_local_prediction_gate_transition() {
     assert_eq!(sim.houses[&owner].economy, before_wallet);
 
     sim.lifecycle_outputs.clear();
-    sim.session.current_house = None;
+    sim.session.set_current_house_for_test(None);
     assert!(!enqueue_by_type(
         &mut sim,
         &rules,
@@ -101,8 +101,8 @@ fn paid_destroyer_runs_shipyard_production_animation_through_idle_recovery() {
     let owner = sim.interner.intern("Americans");
     let mut house = HouseState::new(owner, 0, Some(owner), true, 10_000, 10);
     house.project_country_mults(&rules, &sim.interner);
-    sim.houses.insert(owner, house);
-    sim.session.current_house = Some(owner);
+    sim.houses.register(house);
+    sim.session.set_current_house_for_test(Some(owner));
     let yard = 3;
     for (id, name, x, y) in [
         (1, "GACNST", 5, 10),
@@ -282,10 +282,10 @@ fn world_with(rules: RuleSet, seed: u64) -> (Simulation, RuleSet, InternedId) {
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
     let owner = sim.interner.intern("Americans");
-    sim.houses.insert(
-        owner,
-        crate::sim::house_state::HouseState::new(owner, 0, None, true, 50_000, 10),
-    );
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, true, 50_000, 10,
+        ));
     spawn_structure(&mut sim, &rules, 1, "Americans", "GAWEAP", 10, 10);
     spawn_structure(&mut sim, &rules, 2, "Americans", "GAPILE", 14, 10);
     spawn_structure(&mut sim, &rules, 3, "Americans", "GACNST", 18, 10);
@@ -375,7 +375,7 @@ fn record_last_built_matches_native_class_slots_score_gate_and_rng() {
             sim.resolve_type_handles(rules);
             let owner = sim.interner.intern("Americans");
             sim.houses
-                .insert(owner, HouseState::new(owner, 0, None, true, 0, 10));
+                .register(HouseState::new(owner, 0, None, true, 0, 10));
             let product = sim
                 .construct_object_limbo_at_height(
                     type_name,
@@ -460,7 +460,7 @@ fn record_last_built_enforces_map_authored_negative_limit() {
     sim.resolve_type_handles(rules);
     let owner = sim.interner.intern("Russians");
     sim.houses
-        .insert(owner, HouseState::new(owner, 1, None, true, 1000, 10));
+        .register(HouseState::new(owner, 1, None, true, 1000, 10));
     assert_eq!(
         super::can_build::can_build(&sim, rules, owner, e2, true, true),
         super::can_build::CanBuild::Yes
@@ -494,7 +494,7 @@ fn record_last_built_enforces_map_authored_negative_limit() {
     // recipient's owned E2 does not consume its own negative lifetime limit.
     let other = sim.interner.intern("Americans");
     sim.houses
-        .insert(other, HouseState::new(other, 0, None, true, 1000, 10));
+        .register(HouseState::new(other, 0, None, true, 1000, 10));
     sim.change_owner_with_rules(
         product,
         other,
@@ -555,7 +555,7 @@ fn record_last_built_uses_class_fallbacks_type_overrides_and_the_existing_tech_o
     ] {
         let (mut sim, _, owner) = world_with(rules.clone(), 0x4FB7_FF00);
         sim.houses.get_mut(&owner).unwrap().is_human = false;
-        assert!(sim.session.current_house.is_none());
+        assert!(sim.session.current_house().is_none());
         let product = sim
             .construct_object_limbo_at_height(
                 name,
@@ -631,8 +631,8 @@ pub(super) fn retail_barracks_sale_runtime(
     let owner = sim.interner.intern("Russians");
     let mut house = HouseState::new(owner, 0, Some(owner), true, initial_credits, 10);
     house.project_country_mults(&rules, &sim.interner);
-    sim.houses.insert(owner, house);
-    sim.session.current_house = Some(owner);
+    sim.houses.register(house);
+    sim.session.set_current_house_for_test(Some(owner));
     let mut buildings = vec![("NACNST", 5, 10), ("NAHAND", 14, 10), ("NAPOWR", 23, 10)];
     if radar {
         buildings.push(("NARADR", 30, 10));
@@ -746,7 +746,7 @@ fn offline_backup_preserves_paid_infantry_with_system_hold() {
         let sim = &mut runtime.simulation;
         sim.production
             .factories
-            .step_all(&mut sim.houses, sim.session.binary_frame + offset);
+            .step_all(&mut sim.houses, sim.session.binary_frame() + offset);
     }
     let sim = &runtime.simulation;
     let held = sim.production.factories.view(owner, category).unwrap();
@@ -775,10 +775,8 @@ fn offline_backup_recovery_distinguishes_saved_system_and_user_holds() {
         let other = sim.interner.intern("Opponent");
         let mut house = HouseState::new(other, 1, Some(owner), false, 50_000, 10);
         house.project_country_mults(rules, &sim.interner);
-        sim.houses.insert(other, house);
-        assert!(sim.session.house_order.contains(&owner));
-        assert!(!sim.session.house_order.contains(&other));
-        sim.session.house_order.push(other);
+        sim.houses.register(house);
+        assert!(sim.houses.order().contains(&owner));
         let attacker = sim
             .spawn_object("CLEG", "Opponent", 12, 20, 0, rules)
             .unwrap();
@@ -909,7 +907,7 @@ fn selling_last_retail_barracks_keeps_paid_head_before_map_exit() {
             .iter()
             .any(|option| option.type_id == conscript && option.enabled)
         );
-        let frame = u64::from(runtime.simulation.session.binary_frame) + 1;
+        let frame = u64::from(runtime.simulation.session.binary_frame()) + 1;
         let successor = runtime.simulation.interner.get(successor).unwrap();
         assert!(
             super::build_options_for_owner(
@@ -950,7 +948,7 @@ fn selling_last_retail_barracks_keeps_paid_head_before_map_exit() {
             &runtime.resources.rules,
             barracks,
         ));
-        let frame = u64::from(runtime.simulation.session.binary_frame) + 1;
+        let frame = u64::from(runtime.simulation.session.binary_frame()) + 1;
         runtime
             .advance_frame(
                 &[CommandEnvelope::new(
@@ -1315,8 +1313,8 @@ fn paid_boris_delivery_requests_its_creation_cue_once_at_the_delivered_location(
     let owner = sim.interner.intern("Russians");
     let mut house = HouseState::new(owner, 0, Some(owner), true, 50_000, 10);
     house.project_country_mults(&rules, &sim.interner);
-    sim.houses.insert(owner, house);
-    sim.session.current_house = Some(owner);
+    sim.houses.register(house);
+    sim.session.set_current_house_for_test(Some(owner));
     for (index, (name, x)) in [
         ("NACNST", 5),
         ("NAHAND", 14),
@@ -1492,11 +1490,11 @@ fn retail_prerequisite_loss_refunds_after_the_factory_charge_sweep() {
         );
         sim.set_input_delay_ticks(0);
         let owner = sim.interner.intern("Americans");
-        sim.session.current_house = Some(owner);
-        sim.houses.insert(
-            owner,
-            crate::sim::house_state::HouseState::new(owner, 0, None, true, 50_000, 10),
-        );
+        sim.session.set_current_house_for_test(Some(owner));
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                owner, 0, None, true, 50_000, 10,
+            ));
         for (index, name) in ["GAWEAP", "GAPILE", "GACNST", "GATECH", "GAPOWR", "GAPOWR"]
             .into_iter()
             .enumerate()
@@ -1587,7 +1585,7 @@ fn retail_prerequisite_loss_refunds_after_the_factory_charge_sweep() {
             sim.houses[&owner].tech_recheck_pending(),
             row["before"]["dirty"].as_bool().unwrap()
         );
-        let frame = sim.session.binary_frame as i32;
+        let frame = sim.session.binary_frame() as i32;
         for category in [ProductionCategory::Vehicle, ProductionCategory::Infantry] {
             sim.production
                 .factories
@@ -1739,8 +1737,8 @@ fn prerequisite_loss_events_preserve_player_copies_cleanup_and_snapshot_replay()
     let header = ReplayHeader {
         version: 1,
         tick_hz: 15,
-        seed: sim.session.seed,
-        pixel_conversion_bounds: sim.session.pixel_conversion_bounds,
+        seed: sim.session.seed(),
+        pixel_conversion_bounds: sim.session.pixel_conversion_bounds(),
         map_name: "factory-loss".into(),
         rules_hash: rules.simulation_config_hash(),
     };
@@ -1759,7 +1757,7 @@ fn prerequisite_loss_events_preserve_player_copies_cleanup_and_snapshot_replay()
     let type_id = live.simulation.interner.get("SMIN").unwrap();
     let input = CommandEnvelope::new(
         owner,
-        live.simulation.session.tick + 1,
+        live.simulation.session.tick() + 1,
         Command::CancelProductionByType {
             type_id,
             all: false,
@@ -1860,10 +1858,10 @@ fn retail_superweapon_construction_survives_revalidation() {
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
         let owner = sim.interner.intern(country);
-        sim.houses.insert(
-            owner,
-            crate::sim::house_state::HouseState::new(owner, 0, None, true, 50_000, 10),
-        );
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                owner, 0, None, true, 50_000, 10,
+            ));
         for (index, name) in [yard, tech, plant, plant, plant].into_iter().enumerate() {
             let id = index as u64 + 1;
             spawn_structure(
@@ -1967,7 +1965,7 @@ fn retail_superweapon_construction_survives_revalidation() {
         );
         let place = crate::sim::command::CommandEnvelope::new(
             owner,
-            sim.session.tick + 1,
+            sim.session.tick() + 1,
             crate::sim::command::Command::PlaceReadyBuilding {
                 type_id,
                 rx: 10,
@@ -2021,10 +2019,10 @@ fn limited_heads_survive_revalidation_without_bypassing_limits_or_cleanup() {
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
         let owner = sim.interner.intern("Americans");
-        sim.houses.insert(
-            owner,
-            crate::sim::house_state::HouseState::new(owner, 0, None, true, 50_000, 10),
-        );
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                owner, 0, None, true, 50_000, 10,
+            ));
         spawn_structure(&mut sim, &rules, 1, "Americans", producer, 10, 10);
         let category = super::category_for_object(rules.object(name).unwrap());
         assert!(enqueue_by_type(
@@ -2560,7 +2558,7 @@ fn prerequisite_revalidation_disposes_manager_and_promoted_build_steps_a_rate_la
     // The producing factory remains; only the active type loses its
     // prerequisite, which its house stops counting on the map.
     sim.uninit_with_rules(4, &rules);
-    let promotion_frame = sim.session.binary_frame;
+    let promotion_frame = sim.session.binary_frame();
     sim.advance_tick(&[], Some(&rules), None, None, 67);
     assert_gone(&sim, parent, &child_ids);
     assert_eq!(sim.houses[&owner].economy.credits(), before + spent);
@@ -2695,7 +2693,7 @@ fn active_cancel_without_house_does_not_create_refund_account() {
         ));
         let parent = held_id(&sim, owner, ProductionCategory::Vehicle);
         let child_ids = children(&sim, parent);
-        sim.houses.remove(&owner);
+        sim.houses.remove_for_test(&owner);
         let rng = sim.scenario_rng.logical_state();
         let cancelled = cancel_production_for_owner(
             &mut sim,
@@ -2782,7 +2780,7 @@ fn revalidation_without_house_disposes_held_graph_without_creating_account() {
     let parent = held_id(&sim, owner, ProductionCategory::Vehicle);
     let child_ids = children(&sim, parent);
     sim.substrate.entities.remove(1);
-    sim.houses.remove(&owner);
+    sim.houses.remove_for_test(&owner);
     let rng = sim.scenario_rng.logical_state();
     super::update_factory_queue(
         &mut sim,
@@ -2967,10 +2965,10 @@ fn plant_world() -> (Simulation, RuleSet, InternedId) {
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
     let owner = sim.interner.intern("Russians");
-    sim.houses.insert(
-        owner,
-        crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10),
-    );
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, true, 0, 10,
+        ));
     spawn_structure(&mut sim, &rules, 1, "Russians", "NAWEAP", 10, 10);
     (sim, rules, owner)
 }
@@ -3274,8 +3272,7 @@ fn secret_lab_fallback_capture_paid_queue_snapshot_and_loss_share_the_existing_o
     let (mut sim, rules, owner) = world_with(RuleSet::from_ini(&ini).unwrap(), 0x68c0_5001);
     let other = sim.interner.intern("Russians");
     sim.houses
-        .insert(other, HouseState::new(other, 1, Some(other), false, 0, 10));
-    sim.session.house_order.push(other);
+        .register(HouseState::new(other, 1, Some(other), false, 0, 10));
     // Ordinary building Unlimbo needs buildable Clear and a cell inside
     // the supplied Size diamond. This also publishes its native threat cache.
     super::tests::install_infantry_delivery_fixture_map(&mut sim);

@@ -30,8 +30,7 @@ fn native_cheer_record_resolves_registered_house_and_runs_the_shared_receiver() 
     let owner = sim.intern("Americans");
     for house in [foreign, owner] {
         sim.houses
-            .insert(house, HouseState::new(house, 0, None, true, 0, 10));
-        sim.session.house_order.push(house);
+            .register(HouseState::new(house, 0, None, true, 0, 10));
     }
     let mut ids = Vec::new();
     for house in [owner, foreign, owner] {
@@ -65,7 +64,7 @@ fn native_cheer_record_resolves_registered_house_and_runs_the_shared_receiver() 
         ids.push(id);
     }
     sim.sound_events.clear();
-    sim.session.binary_frame = 0xffff_fffe;
+    sim.session.set_binary_frame_for_test(0xffff_fffe);
     let record = sim.encode_cheer_record(owner).unwrap();
     assert_eq!(
         (record.opcode(), record.house_id(), record.frame_stamp()),
@@ -103,7 +102,7 @@ fn house_cheer_requests_its_centered_cue_even_without_members() {
     let mut sim = Simulation::new();
     let owner = sim.intern("Americans");
     sim.houses
-        .insert(owner, HouseState::new(owner, 0, None, true, 0, 10));
+        .register(HouseState::new(owner, 0, None, true, 0, 10));
     assert!(sim.apply_command("Americans", &Command::Cheer, Some(&rules)));
     assert!(
         matches!(sim.sound_events.as_slice(), [SimSoundEvent::VocCentered { sound_id }] if sound_id == "Cheer")

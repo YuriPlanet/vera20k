@@ -10,7 +10,6 @@ points; the exhaustive oracle/tool inventory remains tracked in issue #746.
 | Observe match data or explicitly enable offline trainer/event tools | [Telemetry dashboard and debug build](telemetry-dashboard/README.md) |
 | Give a new worktree its ignored `ini/` and `config.toml`, or a clone its `config.toml`; report what the game, retail tests and oracles still need | `python -m tools.prepare_checkout` |
 | Run all Python tool and source-skill tests | `python -m tools.run_tests` (below) |
-| Inspect scenario ART ownership, native checks and retail load validation | [ART registry owner](art_registry_owner.md) |
 | Inspect process audio definitions, sample sources and retention evidence | [Process audio catalog owner](audio_catalog_owner.md), `asset sound` |
 | Wait for builds; test, check, lint or build the current checkout; preserve A/B binaries | `python -m tools.cargo_run` (below) |
 | Find a built or preserved host executable for shell use | `python -m tools.cargo_run --resolve asset --profile release` (below) |
@@ -232,7 +231,8 @@ changing the binary, inspector or readelf identity retries immediately. These ca
 never authorize deletion without fresh inventory and dependency checks. Automatic
 cleanup failure reports its reason; Cargo can proceed only when a fresh
 measurement meets the configured free-space reserve. Explicit trimming returns
-nonzero on inspection/deletion errors. See [retention validation](cargo_cache_validation.md).
+nonzero on inspection/deletion errors. The opt-in compiled checks run with
+`VERA20K_CACHE_NATIVE_TEST=1 python -m unittest tools.tests.test_cargo_macho tools.tests.test_cargo_cache_native`.
 
 Saved builds have a separate, explicit lifecycle. Default to unlabelled iteration;
 preserve only binaries needed for active comparisons, captures or debugging.
@@ -240,6 +240,8 @@ Prefer `fast` binaries for ordinary captures and label debug tests selectively.
 Evidence should reference the shared label, manifest, source/binary hashes and
 results instead of creating additional executable copies.
 
+Run retirement, including its dry run, only to retire owned labels or to investigate
+disk pressure; preserve required binaries, dependencies and evidence.
 After a validated chain merges, review its exact owned labels. Keep the final
 build and relevant control/debug binaries still required; archive manifests,
 checksums, results and native inputs through their evidence owners. Preview

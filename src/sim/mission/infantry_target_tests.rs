@@ -240,7 +240,8 @@ fn compare_original_infantry_target_rows(consumer: TargetConsumer) {
             "clear" | "same_null" => None,
             other => panic!("undeclared setter input {other}"),
         };
-        sim.session.binary_frame = input["frame"].as_u64().unwrap() as u32;
+        sim.session
+            .set_binary_frame_for_test(input["frame"].as_u64().unwrap() as u32);
         sim.scenario_rng = SimRng::new(input["seed"].as_u64().unwrap());
         assert_eq!(
             sim.scenario_rng.native_state_hex(),
@@ -284,7 +285,7 @@ fn compare_original_infantry_target_rows(consumer: TargetConsumer) {
                     sim.mission_assign_exact(
                         1,
                         MissionId::from_known(MissionType::Attack),
-                        sim.session.binary_frame,
+                        sim.session.binary_frame(),
                     )
                     .unwrap();
                     sim.reset_orders_to_guard(1, rules, crate::sim::world::FrameEffects::default());
@@ -330,7 +331,7 @@ fn compare_original_infantry_target_rows(consumer: TargetConsumer) {
                     let new_owner = sim.interner.intern("NewOwner");
                     for owner in [house, new_owner] {
                         sim.houses
-                            .insert(owner, HouseState::new(owner, 0, None, true, 0, 10));
+                            .register(HouseState::new(owner, 0, None, true, 0, 10));
                     }
                     sim.change_owner_with_rules(
                         1,

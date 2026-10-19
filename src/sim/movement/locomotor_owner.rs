@@ -188,7 +188,7 @@ impl crate::sim::world::Simulation {
                 .and_then(|rules| self.object_type(entity.type_ref(), rules))
                 .is_some_and(|object| object.resource_gatherer);
             if computer && gatherer {
-                let now = self.session.binary_frame;
+                let now = self.session.binary_frame();
                 let _ = self.mission_queue_exact(
                     id,
                     crate::sim::mission::MissionId::from_known(

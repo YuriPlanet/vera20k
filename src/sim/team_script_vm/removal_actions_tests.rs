@@ -26,8 +26,7 @@ fn script37_caches_native_next_and_uses_ordered_limbo_uninit_before_drain() {
         let mut sim = Simulation::with_seed(37);
         let owner = sim.interner.intern("Owner");
         sim.houses
-            .insert(owner, HouseState::new(owner, 0, None, true, 0, 10));
-        sim.session.house_order.push(owner);
+            .register(HouseState::new(owner, 0, None, true, 0, 10));
         crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
         let order = row["order"].as_array().unwrap();
         let members: Vec<_> = order
@@ -146,7 +145,7 @@ fn first_unit_limbo_uses_shared_stop_driver_before_hiding_the_actor() {
     let mut sim = Simulation::new();
     let owner = sim.interner.intern("Owner");
     sim.houses
-        .insert(owner, HouseState::new(owner, 0, None, true, 0, 10));
+        .register(HouseState::new(owner, 0, None, true, 0, 10));
     crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
     let member = sim
         .spawn_object_at_height("VEHICLE", "Owner", 10, 10, 0, 0, &rules)
@@ -213,7 +212,7 @@ fn first_hover_limbo_enters_the_existing_native_hover_stop_receiver() {
     let mut sim = Simulation::new();
     let owner = sim.interner.intern("Owner");
     sim.houses
-        .insert(owner, HouseState::new(owner, 0, None, true, 0, 10));
+        .register(HouseState::new(owner, 0, None, true, 0, 10));
     crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
     let member = sim
         .spawn_object_at_height("HOVER", "Owner", 10, 10, 0, 0, &rules)

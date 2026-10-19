@@ -32,15 +32,15 @@ fn sim(rules: &crate::rules::ruleset::RuleSet) -> Simulation {
     crate::sim::arena_fixture::flat_arena(&mut sim, rules);
     for name in ["Americans", "British"] {
         let owner = sim.interner.intern(name);
-        sim.houses.insert(
-            owner,
-            crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10),
-        );
-        sim.session.house_order.push(owner);
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                owner, 0, None, true, 0, 10,
+            ));
     }
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
-    sim.session.current_house = sim.interner.get("Americans");
+    sim.session
+        .set_current_house_for_test(sim.interner.get("Americans"));
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
     sim

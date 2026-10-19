@@ -40,14 +40,11 @@ fn world(rules: &RuleSet) -> Simulation {
     sim.resolve_type_handles(rules);
     for (index, name) in [OWNER, OTHER].into_iter().enumerate() {
         let owner = sim.interner.intern(name);
-        sim.houses.insert(
-            owner,
-            HouseState::new(owner, index as u8, None, true, 2000, 10),
-        );
-        sim.session.house_order.push(owner);
+        sim.houses
+            .register(HouseState::new(owner, index as u8, None, true, 2000, 10));
         construct_house_supers(&mut sim, rules, owner, false);
     }
-    sim.session.game_options.super_weapons = true;
+    sim.session.game_options_mut_for_test().super_weapons = true;
     sim.resolved_terrain = Some(crate::map::resolved_terrain::test_grid(32, 32, |x, y| {
         super::cell_receiver_tests::test_terrain_cell(x, y)
     }));
@@ -94,7 +91,7 @@ fn ready(sim: &mut Simulation, name: &str) -> InternedId {
         .unwrap();
     instance.is_active = true;
     instance.is_ready = true;
-    instance.charge_start_tick = sim.session.binary_frame as i32;
+    instance.charge_start_tick = sim.session.binary_frame() as i32;
     instance.charge_duration = 1;
     id
 }

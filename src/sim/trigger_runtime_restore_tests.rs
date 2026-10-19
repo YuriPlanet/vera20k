@@ -139,13 +139,11 @@ fn live126_recreates_all_four_initial_categories_after_real_cleanup_in_record_or
         assert!(active(&sim).is_empty());
         if saved_house {
             let bytes = crate::util::save_codec::serialize(&sim.houses[&houses[0]]).unwrap();
-            sim.houses.insert(
-                houses[0],
-                crate::util::save_codec::deserialize(&bytes).unwrap(),
-            );
+            sim.houses
+                .replace_for_test(crate::util::save_codec::deserialize(&bytes).unwrap());
         }
         install(&mut sim, &rules, 0);
-        sim.session.binary_frame = 16;
+        sim.session.set_binary_frame_for_test(16);
         sim.raise_house_tags(
             houses[0],
             Some(&rules),
@@ -220,7 +218,7 @@ fn refused_placement_continues_with_next_record_and_following_trigger_action() {
     record(&mut sim, houses[0], "ENGINEER", (16, 15));
     record(&mut sim, houses[0], "TAGUNIT", (15, 15));
     install(&mut sim, &rules, 0);
-    sim.session.binary_frame = 8;
+    sim.session.set_binary_frame_for_test(8);
     sim.raise_house_tags(
         houses[0],
         Some(&rules),
@@ -260,7 +258,7 @@ fn restore126_always_constructs_a_new_unit_even_when_the_original_is_present() {
         .set_for_test(7);
     sim.retain_initial_house_technos();
     install(&mut sim, &rules, 0);
-    sim.session.binary_frame = 8;
+    sim.session.set_binary_frame_for_test(8);
     sim.raise_house_tags(
         houses[0],
         Some(&rules),

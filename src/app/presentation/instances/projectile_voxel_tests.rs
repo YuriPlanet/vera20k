@@ -120,7 +120,7 @@ pub(crate) fn launched_stock_submarine_torpedo(
     // Supplied scene visibility; no target, mission, timer or cloak override.
     sim.fog.mark_visible_for_owner(owner, 16, 10);
     sim.fog.mark_visible_for_owner(target_owner, 10, 10);
-    sim.session.current_house = Some(owner);
+    sim.session.set_current_house_for_test(Some(owner));
     sim.queue_command(CommandEnvelope::new(
         owner,
         1,
@@ -374,7 +374,7 @@ fn admitted_stock_kirov_bomb_has_a_visible_voxel_body() {
             .find(|shot| shot["weapon"] == weapon_name)
             .unwrap();
         for frame in 1..=8 {
-            sim.session.binary_frame = frame;
+            sim.session.set_binary_frame_for_test(frame);
             sim.visit_combat_tail(id, rules, None, crate::sim::world::FrameEffects::default());
             if let Some(expected) = shot["frames"]
                 .as_array()

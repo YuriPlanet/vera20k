@@ -327,7 +327,7 @@ fn queue(sim: &mut Simulation, id: u64, mission: MissionType) {
         id,
         MissionId::from_known(mission),
         0,
-        sim.session.binary_frame,
+        sim.session.binary_frame(),
         &EntityReadyInputProvider,
     );
 }
@@ -368,7 +368,7 @@ pub(crate) fn mission_unload(
         }
         // Native state 0 falls through to state 1 in this same invocation.
     }
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     match state {
         Some(0 | 1) => {
             // The locomotor's Is_Moving (vt+0x10 at `0x0073DDBD`).

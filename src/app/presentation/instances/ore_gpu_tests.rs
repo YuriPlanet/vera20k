@@ -558,7 +558,7 @@ fn assert_retail_wall_profile_reaches_native_raster(
     .unwrap();
     scene.runtime.simulation.batch_path_searches();
     scene.runtime.simulation.batch_target_scans();
-    let owner = scene.sim().session.current_house.unwrap();
+    let owner = scene.sim().session.current_house().unwrap();
     let mut orders: Vec<_> = profile["commands"]
         .as_array()
         .unwrap()
@@ -853,7 +853,7 @@ fn retail_natural_ore_growth_reaches_index_a_and_native_cell_raster() {
             .simulation
             .prepare_fog_view_for("VERA-OBSERVER")
     );
-    let owner = scene.sim().session.current_house.unwrap();
+    let owner = scene.sim().session.current_house().unwrap();
     let hash = scene.sim().state_hash();
     let mut probe = Probe::new(&scene, native, Some(source), Some(owner));
     assert_eq!(
@@ -931,7 +931,7 @@ fn retail_ore_harvest_publication_matches_original_cell_raster() {
     );
     // Use the existing player's starting-base owner. An added house with
     // only a miner is correctly defeated by the ordinary short-game gate.
-    let owner = scene.sim().session.current_house.unwrap();
+    let owner = scene.sim().session.current_house().unwrap();
     let owner_name = scene.sim().interner.resolve(owner).to_owned();
     let dock = scene
         .runtime
@@ -998,7 +998,7 @@ fn retail_ore_harvest_publication_matches_original_cell_raster() {
         .expect("retail War Miner Unlimbo on the ore cell");
     let order = CommandEnvelope::new(
         owner,
-        scene.sim().session.tick,
+        scene.sim().session.tick(),
         Command::HarvestCell {
             entity_id: miner,
             target_rx: 123,
@@ -1113,8 +1113,8 @@ fn retail_ore_harvest_publication_matches_original_cell_raster() {
             && seen.contains("density_0")
             && seen.contains("empty"),
         "native-backed states {seen:?}; tick {} nativeframe {} current {:?} queued {:?} pos ({},{}) nav {:?} miner {:?} cargo {}",
-        scene.sim().session.tick,
-        scene.sim().session.binary_frame,
+        scene.sim().session.tick(),
+        scene.sim().session.binary_frame(),
         last.mission.current(),
         last.mission.queued(),
         last.position.rx(),

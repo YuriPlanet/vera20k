@@ -454,7 +454,7 @@ impl IdleHost for WorldIdle<'_> {
     }
 
     fn commence(&mut self) {
-        let now = self.sim.session.binary_frame;
+        let now = self.sim.session.binary_frame();
         self.sim
             .mission_commence_exact(self.id, now)
             .expect("idle-mode aircraft");

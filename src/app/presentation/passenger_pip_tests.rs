@@ -67,11 +67,10 @@ fn stock_passenger_pips_follow_real_boarding_departure_and_selection() {
         let empty = vec![0; rules.object(transport_type).unwrap().pip_max(rules) as usize];
         let mut sim = Simulation::new();
         let owner = sim.interner.intern(OWNER);
-        sim.houses.insert(
-            owner,
-            crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10),
-        );
-        sim.session.house_order.push(owner);
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                owner, 0, None, true, 0, 10,
+            ));
         crate::sim::arena_fixture::flat_arena(&mut sim, rules);
         sim.intern_rule_type_ids(rules);
         sim.resolve_type_handles(rules);

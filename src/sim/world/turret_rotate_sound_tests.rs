@@ -108,7 +108,7 @@ fn tick(sim: &mut Simulation, rules: &RuleSet) {
 /// The frame this pass ran at: `advance_tick` commits `binary_frame + 1`, so
 /// the pass frame is the committed one minus one.
 fn pass_frame(sim: &Simulation) -> u32 {
-    sim.session.binary_frame - 1
+    sim.session.binary_frame() - 1
 }
 
 fn aim(sim: &mut Simulation, id: u64, target: u16) {
@@ -158,7 +158,7 @@ fn a_turning_grand_cannon_starts_then_releases_its_rotate_loop() {
         .get(id)
         .unwrap()
         .body_facing
-        .is_rotating(sim.session.binary_frame)
+        .is_rotating(sim.session.binary_frame())
     {
         tick(&mut sim, &rules);
         assert!(
@@ -200,7 +200,7 @@ fn a_second_turn_after_the_first_releases_starts_a_new_loop() {
         .get(id)
         .unwrap()
         .body_facing
-        .is_rotating(sim.session.binary_frame)
+        .is_rotating(sim.session.binary_frame())
     {
         tick(&mut sim, &rules);
     }
@@ -377,7 +377,7 @@ fn the_latch_is_hashed_state_and_load_rebuilds_the_handle() {
         .get(id)
         .unwrap()
         .body_facing
-        .is_rotating(restored.session.binary_frame)
+        .is_rotating(restored.session.binary_frame())
     {
         tick(&mut restored, &rules);
         assert!(turret_events(&restored, id).is_empty());
@@ -495,7 +495,7 @@ fn idle_release_reaches_audio_before_rearming_the_latch() {
         .get(id)
         .unwrap()
         .body_facing
-        .is_rotating(sim.session.binary_frame)
+        .is_rotating(sim.session.binary_frame())
     {
         tick(&mut sim, &rules);
     }
@@ -537,7 +537,8 @@ fn turret_rotate_sound_matches_native_control_corpus() {
         let mut facing = crate::sim::movement::FacingClass::new(0, 1);
         facing.set(0x4000, 100);
         sim.substrate.entities.get_mut(id).unwrap().body_facing = facing;
-        sim.session.binary_frame = row["frame"].as_u64().unwrap() as u32;
+        sim.session
+            .set_binary_frame_for_test(row["frame"].as_u64().unwrap() as u32);
         assert_eq!(
             sim.sample_building_turret_rotation(id, &rules),
             row["sample"].as_u64().unwrap() != 0,
@@ -706,7 +707,7 @@ fn retail_grand_cannon_starts_and_releases_its_retail_cue() {
         .get(id)
         .unwrap()
         .body_facing
-        .is_rotating(sim.session.binary_frame)
+        .is_rotating(sim.session.binary_frame())
     {
         tick(&mut sim, &rules);
         assert!(turret_events(&sim, id).is_empty());
@@ -739,7 +740,7 @@ fn a_retail_grand_cannons_mission_aim_starts_and_releases_the_retail_cue() {
     let enemy = sim
         .spawn_object("NAPOWR", "Russians", 12, 10, 0, &rules)
         .expect("retail Soviet power plant");
-    let frame = sim.session.binary_frame;
+    let frame = sim.session.binary_frame();
     sim.substrate
         .entities
         .get_mut(id)
@@ -779,7 +780,7 @@ fn a_retail_grand_cannons_mission_aim_starts_and_releases_the_retail_cue() {
             .get(id)
             .unwrap()
             .body_facing
-            .is_rotating(sim.session.binary_frame),
+            .is_rotating(sim.session.binary_frame()),
         "the spawn faces away from the target"
     );
 

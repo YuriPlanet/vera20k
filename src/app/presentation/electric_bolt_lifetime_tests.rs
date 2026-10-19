@@ -166,11 +166,8 @@ fn accepted_bolt_composites_preserve_the_next_actual_bullet_identity() {
         crate::sim::arena_fixture::flat_arena(&mut sim, rules);
         for (index, name) in ["Americans", "Russians"].into_iter().enumerate() {
             let owner = sim.intern(name);
-            sim.houses.insert(
-                owner,
-                HouseState::new(owner, index as u8, None, true, 0, 10),
-            );
-            sim.session.house_order.push(owner);
+            sim.houses
+                .register(HouseState::new(owner, index as u8, None, true, 0, 10));
         }
         let source = sim
             .spawn_object("MTNK", "Americans", 10, 10, 0, rules)
@@ -190,7 +187,7 @@ fn accepted_bolt_composites_preserve_the_next_actual_bullet_identity() {
         let before = sim.rng_state();
         let mut bolts = ElectricBolts::default();
         bolts.create(ElectricBoltBirth {
-            frame: sim.session.binary_frame as i32,
+            frame: sim.session.binary_frame() as i32,
             from: coord(&birth["source"]),
             to: coord(&birth["target"]),
             z_adjust: int(&birth["z_adjust"]),

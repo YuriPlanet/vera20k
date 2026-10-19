@@ -54,7 +54,7 @@ impl Simulation {
             self.overlay_grid.as_ref(),
             bounds,
             size,
-            self.session.binary_frame,
+            self.session.binary_frame(),
             &RallyCellClick {
                 clicked: (clicked.0 as i16, clicked.1 as i16),
                 location: crate::sim::movement::ground_pose::position_world_coord(&entity.position),
@@ -191,7 +191,7 @@ mod tests {
             sim.substrate.raw_cell_occupation = raw;
             sim.playfield_bounds = Some(bounds());
             sim.playfield_size_height = Some(8);
-            sim.session.binary_frame = 100;
+            sim.session.set_binary_frame_for_test(100);
             let rng = sim.scenario_rng.state();
             let prepared = sim.factory_rally_cell_input(1, (11, 5), &rules).unwrap();
             let expected = pair(&row["nearby"][0]["result"]);

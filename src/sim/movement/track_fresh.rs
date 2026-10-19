@@ -191,7 +191,7 @@ impl Simulation {
         //parasite arms), return with the out byte clear. Ship's vt+380 gate
         //is6A1DA9. The consumed track_fresh_response controls cover both
         //families with active and expired timers through this shared owner.
-        if actor.parasite.is_paralyzed(self.session.binary_frame) {
+        if actor.parasite.is_paralyzed(self.session.binary_frame()) {
             return Ok(false);
         }
         let head = if head.is_some() {
@@ -257,7 +257,7 @@ impl Simulation {
     /// route resumes head selection in the same call (0x4B3282..0x4B3298).
     fn track_no_queue_arm(&mut self, call: &FreshCall<'_>) -> Result<bool, String> {
         let id = call.id;
-        let frame = self.session.binary_frame as i32;
+        let frame = self.session.binary_frame() as i32;
         let actor = self
             .substrate
             .entities
@@ -328,7 +328,7 @@ impl Simulation {
         if direction == TUBE_STEP_DIRECTION {
             return Ok(false);
         }
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         let terrain = self
             .resolved_terrain
             .as_ref()
@@ -525,7 +525,7 @@ impl Simulation {
     fn track_blocked_delay(&mut self, call: &FreshCall<'_>) -> Result<bool, String> {
         let id = call.id;
         let rules = call.rules;
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         self.clear_track_head_of(id);
         let actor = self
             .substrate
@@ -1079,7 +1079,7 @@ impl Simulation {
 
     /// Foot+640 = (Frame, 0) before a retry recursion (0x4B4541..0x4B4548).
     fn expire_movement_timer(&mut self, id: u64) {
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         if let Some(actor) = self.substrate.entities.get_mut(id) {
             actor.navigation.path_runtime.start_movement(frame, 0);
         }
@@ -1102,7 +1102,7 @@ impl Simulation {
 
     /// Do_Turn 0x4B0EF0: FacingClass::Set 0x4C9220 on the body facing.
     fn track_do_turn(&mut self, id: u64, desired: u16) {
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         let Some(actor) = self.substrate.entities.get_mut(id) else {
             return;
         };

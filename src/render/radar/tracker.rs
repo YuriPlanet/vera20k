@@ -149,7 +149,7 @@ pub(super) fn radar_combat_flash_inverts(
 pub(super) fn radar_pixel_candidate_eligible(
     entry: RadarTrackerEntry,
     entities: &crate::sim::entity_store::EntityStore,
-    houses: &BTreeMap<InternedId, crate::sim::house_state::HouseState>,
+    houses: &crate::sim::houses::Houses,
     local_owner: Option<InternedId>,
     fog: &FogState,
     alliances: &crate::map::houses::HouseAllianceMap,

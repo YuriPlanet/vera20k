@@ -172,7 +172,7 @@ fn assert_paid_deso_light_lifecycle(packet_path: &'static str, profile_path: &'s
     visit_paid_deso_light_lifecycle(profile_path, |phase, scene, output| {
         if output.is_none() {
             assert_eq!(phase, Some("loaded"));
-            assert_eq!(scene.sim().session.theater, theater_name);
+            assert_eq!(scene.sim().session.theater(), theater_name);
             assert!(scene.sim().radiation.is_empty());
             lighting.install(
                 crate::map::lighting::CellLightGrid::new(),
@@ -240,7 +240,10 @@ fn assert_paid_deso_light_lifecycle(packet_path: &'static str, profile_path: &'s
                 .eq_ignore_ascii_case(row["material"]["filename"].as_str().unwrap()),
             "{phase}: production/native selected physical material"
         );
-        assert_eq!(profile(input), scene.sim().session.lighting.normal.into());
+        assert_eq!(
+            profile(input),
+            scene.sim().session.lighting().normal().into()
+        );
         let light = lighting
             .grid()
             .cell_light_at((coords[0], coords[1]))
@@ -277,7 +280,7 @@ fn assert_paid_deso_light_lifecycle(packet_path: &'static str, profile_path: &'s
             &gpu.device,
             &gpu.queue,
             &scene.sim().fog,
-            scene.sim().session.current_house.unwrap(),
+            scene.sim().session.current_house().unwrap(),
             camera.camera_pos[0],
             camera.camera_pos[1],
             size[0],
@@ -387,8 +390,8 @@ fn assert_retail_amcv_sight_raster(moving: bool) {
     launch.options.fog_of_war = false;
     let mut scene =
         crate::headless_scenario::load_session(&root, "GoldSt.mmx", 0x1234_5678, launch).unwrap();
-    assert_eq!(scene.sim().session.tick, 0);
-    let owner = scene.sim().session.current_house.unwrap();
+    assert_eq!(scene.sim().session.tick(), 0);
+    let owner = scene.sim().session.current_house().unwrap();
     let sources: Vec<_> = scene
         .sim()
         .entities()
@@ -508,7 +511,7 @@ fn assert_retail_amcv_sight_raster(moving: bool) {
                 }),
                 _ => None,
             }
-            .map(|command| CommandEnvelope::new(owner, scene.sim().session.tick + 1, command));
+            .map(|command| CommandEnvelope::new(owner, scene.sim().session.tick() + 1, command));
             let mut reached = false;
             for frame in 0..if step >= 3 { 8 } else { 160 } {
                 let commands = if frame == 0 { command.as_slice() } else { &[] };
@@ -575,7 +578,7 @@ fn assert_retail_amcv_sight_raster(moving: bool) {
                     .unwrap()
                     .in_playfield()
             );
-            assert_eq!(runtime.simulation.session.tick, 2);
+            assert_eq!(runtime.simulation.session.tick(), 2);
         }
         let entity = scene.sim().entities().get(source_id).unwrap();
         assert!(entity.lifecycle.object_alive() && !entity.lifecycle.in_limbo());
@@ -633,7 +636,10 @@ fn assert_retail_amcv_sight_raster(moving: bool) {
             })
             .unwrap();
         let input = &row["input"];
-        assert_eq!(profile(input), scene.sim().session.lighting.normal.into());
+        assert_eq!(
+            profile(input),
+            scene.sim().session.lighting().normal().into()
+        );
         let mut camera = camera(size);
         camera.camera_pos = [
             input["full_view"]["view_origin"][0].as_i64().unwrap() as f32,
@@ -1075,7 +1081,10 @@ fn assert_retail_tmp_rasters(packet: &Value, filename: &str, sub_tile: u8) {
             });
             let terrain = if actual_map {
                 assert_eq!(scene.map.header.theater, "TEMPERATE");
-                assert_eq!(profile(input), scene.sim().session.lighting.normal.into());
+                assert_eq!(
+                    profile(input),
+                    scene.sim().session.lighting().normal().into()
+                );
                 scene.sim().resolved_terrain.as_ref().unwrap()
             } else {
                 component_terrain.as_ref().unwrap()

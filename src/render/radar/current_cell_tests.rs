@@ -247,7 +247,8 @@ fn snapshot_restored_collapsed_high_runtime(
     live_overlay: u8,
 ) -> SimRuntime {
     let mut sim = Simulation::new();
-    sim.session.map_name = "RADARLOAD.MAP".to_string();
+    sim.session
+        .set_map_name_for_test("RADARLOAD.MAP".to_string());
     sim.install_resolved_terrain_for_new_map(terrain_template.clone());
     sim.bridge_state = Some(BridgeRuntimeState::from_resolved_terrain(
         terrain_template,

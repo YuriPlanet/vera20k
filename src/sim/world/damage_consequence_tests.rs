@@ -99,7 +99,7 @@ fn advance_lethal_shot(sim: &mut Simulation, rules: &RuleSet, attacker: u64, vic
     let grid = PathGrid::test_all_passable(64, 64);
     sim.queue_command(CommandEnvelope::new(
         owner,
-        sim.session.tick + 1,
+        sim.session.tick() + 1,
         Command::Attack {
             attacker_id: attacker,
             target_id: victim,

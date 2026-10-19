@@ -210,7 +210,7 @@ fn tactical_bounded_entity_encounter_order(
         local_owner_id,
         &sim.fog,
         state.match_state.sandbox_full_visibility,
-        sim.session.binary_frame,
+        sim.session.binary_frame(),
         bulk_register_live_buildings,
         state.rules(),
     )

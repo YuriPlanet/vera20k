@@ -623,7 +623,7 @@ fn send_paradrop_planes_matches_native() {
             (entity.position.sub_x(), entity.position.sub_y()),
             (SimFixed::from_num(128), SimFixed::from_num(128))
         );
-        assert_eq!(entity.body_facing_current(sim.session.binary_frame), 0);
+        assert_eq!(entity.body_facing_current(sim.session.binary_frame()), 0);
         let mut infantry: Vec<u64> = sim
             .substrate
             .entities
@@ -747,7 +747,7 @@ fn paradrop_missions_match_native() {
         };
         let (rules, mut sim, _) = paradrop_world(retail_list_rules(int(&row["radius"])));
         let id = mission_plane(&mut sim, &rules, row, target);
-        let now = sim.session.binary_frame;
+        let now = sim.session.binary_frame();
 
         let (observed, records) = observe(7, || {
             crate::sim::aircraft::dispatch_mission(&mut sim, id, &rules, Default::default());
@@ -853,7 +853,7 @@ fn drop_payload_matches_native() {
                     .cell()
             })
             .collect();
-        sim.session.binary_frame = 4321;
+        sim.session.set_binary_frame_for_test(4321);
         sim.sound_events.clear();
 
         let can_enter = int(&row["can_enter"]) as u8;

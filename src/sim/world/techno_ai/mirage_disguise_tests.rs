@@ -52,12 +52,12 @@ fn an_idle_retail_mirage_retains_its_disguise_without_another_scenario_draw() {
     };
     assert!(retail.rules.general.default_mirage_disguises.len() > 1);
     let (mut sim, _) = mirage(None);
-    sim.session.binary_frame = 100;
+    sim.session.set_binary_frame_for_test(100);
     sim.update_unit_disguise(1, &retail.rules).unwrap();
     assert!(disguised(&sim));
     let initial = sim.substrate.entities.get(1).unwrap().disguise.clone();
     let scenario = sim.scenario_rng.logical_state();
-    sim.session.binary_frame = 101;
+    sim.session.set_binary_frame_for_test(101);
     sim.update_unit_disguise(1, &retail.rules).unwrap();
     assert_eq!(
         sim.scenario_rng.logical_state(),
@@ -360,7 +360,10 @@ fn whole_unit_fixture(
             "{role}: Logic registration"
         );
     }
-    fixture.sim.session.binary_frame = first["frame"].as_u64().unwrap() as u32;
+    fixture
+        .sim
+        .session
+        .set_binary_frame_for_test(first["frame"].as_u64().unwrap() as u32);
     // Setup is a supplied-state boundary. Restore the recorded complete streams
     // after constructor/registration transport; none of their draws is modeled.
     fixture.sim.scenario_rng = crate::sim::rng::SimRng::from_native_state_hex_for_test(
@@ -438,7 +441,7 @@ fn assert_whole_unit_state(
         );
     }
     assert_eq!(
-        actor.body_facing_current(fixture.sim.session.binary_frame),
+        actor.body_facing_current(fixture.sim.session.binary_frame()),
         signed(&foot["body_facing_words"][0]) as u16,
         "{name}: standing facing"
     );
@@ -507,7 +510,10 @@ fn native_whole_unit_ai_preserves_foot_then_mirage_rng_order_and_retention() {
     assert_eq!(first["foot_after"], retained["foot_before"]);
     let mut fixture = whole_unit_fixture(&native, first, &rules);
     for row in [first, retained] {
-        fixture.sim.session.binary_frame = row["frame"].as_u64().unwrap() as u32;
+        fixture
+            .sim
+            .session
+            .set_binary_frame_for_test(row["frame"].as_u64().unwrap() as u32);
         assert_whole_unit_state(&fixture, row, "before");
         fixture
             .sim

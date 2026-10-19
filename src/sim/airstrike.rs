@@ -180,7 +180,7 @@ impl Simulation {
         };
         let ready = !m.busy
             && m.returned_at
-                .is_some_and(|at| at.wrapping_add(recharge) <= self.session.binary_frame as i32);
+                .is_some_and(|at| at.wrapping_add(recharge) <= self.session.binary_frame() as i32);
         if !ready && m.target == Some(target) {
             return;
         }
@@ -239,7 +239,7 @@ impl Simulation {
     }
 
     fn airstrike_mark_target(&mut self, owner: u64, target: u64) {
-        let frame = self.session.binary_frame as i32;
+        let frame = self.session.binary_frame() as i32;
         if let Some(e) = self
             .substrate
             .entities
@@ -281,7 +281,7 @@ impl Simulation {
             .filter(|e| e.category() == EntityCategory::Structure)
         {
             old.airstrike.link = None;
-            old.airstrike_tint.stop(self.session.binary_frame as i32);
+            old.airstrike_tint.stop(self.session.binary_frame() as i32);
         }
         self.airstrike_manager_mut(owner).unwrap().target = None;
         self.airstrike_mark_target(owner, target);
@@ -305,7 +305,7 @@ impl Simulation {
                     aircraft,
                     MissionId::from_known(MissionType::Attack),
                     0,
-                    self.session.binary_frame,
+                    self.session.binary_frame(),
                     &crate::sim::mission::authority::EntityReadyInputProvider,
                 );
                 self.airstrike_manager_mut(owner).unwrap().active = true;
@@ -349,7 +349,7 @@ impl Simulation {
                 id,
                 MissionId::from_known(MissionType::Retreat),
                 0,
-                self.session.binary_frame,
+                self.session.binary_frame(),
                 &crate::sim::mission::authority::EntityReadyInputProvider,
             );
             let _ = self.assign_target_represented(id, None, rules, None, effects);
@@ -406,7 +406,7 @@ impl Simulation {
 
     /// Remove41DC80 clears only this aircraft link; last removal starts recharge.
     fn airstrike_remove_aircraft(&mut self, owner: u64, aircraft: u64) {
-        let frame = self.session.binary_frame as i32;
+        let frame = self.session.binary_frame() as i32;
         let Some(m) = self.airstrike_manager_mut(owner) else {
             return;
         };

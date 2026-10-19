@@ -240,7 +240,7 @@ impl crate::app::AppState {
             .match_state
             .sim_runtime
             .as_ref()
-            .map_or(0, |runtime| runtime.simulation.session.tick);
+            .map_or(0, |runtime| runtime.simulation.session.tick());
         self.diag.presentation_ms(tick)
     }
 

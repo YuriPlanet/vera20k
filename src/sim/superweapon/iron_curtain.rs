@@ -278,7 +278,7 @@ fn curtain_object(
             foot_iron_curtain(sim, rules, overlay_registry, id, duration, frame_effects)
         }
         _ => {
-            let frame = sim.session.binary_frame;
+            let frame = sim.session.binary_frame();
             if let Some(entity) = sim.substrate.entities.get_mut(id) {
                 apply_invulnerability(entity, frame, duration, InvulnKind::IronCurtain);
             }
@@ -331,7 +331,7 @@ fn foot_iron_curtain(
             frame_effects,
         );
     }
-    let frame = sim.session.binary_frame;
+    let frame = sim.session.binary_frame();
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         entity.parasite.end_paralysis(frame);
         apply_invulnerability(entity, frame, duration, InvulnKind::IronCurtain);

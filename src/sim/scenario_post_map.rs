@@ -73,7 +73,7 @@ impl Simulation {
             }
             let normal_lighting = self
                 .session
-                .lighting
+                .lighting()
                 .profile(crate::sim::scenario_session::ScenarioLightingProfile::Normal)
                 .into();
             let placement = crate::sim::crates::place_scenario_start_crates_with_lighting(
@@ -122,7 +122,7 @@ impl Simulation {
         // and the particle/OreTwinkle tail. Every nonnull House participates;
         // restore never enters this fresh-only owner or repeats its credits.
         if input.fill_silos {
-            for &owner in &self.session.house_order {
+            for owner in self.houses.order().to_vec() {
                 let income = crate::sim::house_state::income_ppm_for_owner(
                     &self.houses,
                     &self.interner,
@@ -449,7 +449,7 @@ mod tests {
             "A"
         ));
         let alliances = sim.house_alliances.clone();
-        let order = sim.session.house_order.clone();
+        let order = sim.houses.order().to_vec();
         let house_ids: Vec<_> = order
             .iter()
             .map(|owner| sim.houses[owner].native_unique_id())
@@ -463,7 +463,7 @@ mod tests {
             &absent_late_roster,
         ));
         assert_eq!(sim.house_alliances, alliances);
-        assert_eq!(sim.session.house_order, order);
+        assert_eq!(sim.houses.order(), order);
         assert_eq!(
             order
                 .iter()
@@ -500,8 +500,8 @@ mod tests {
         let (rules, overlays) = twinkle_rules_and_overlays();
         let seed = 0x0037_7EA5;
         let mut sim = Simulation::with_seed(seed);
-        sim.session.map_width = MAP_SIZE;
-        sim.session.map_height = MAP_SIZE;
+        sim.session.set_map_width_for_test(MAP_SIZE);
+        sim.session.set_map_height_for_test(MAP_SIZE);
         sim.resolved_terrain = Some(flat_terrain());
         let mut overlay_grid = OverlayGrid::new(MAP_SIZE, MAP_SIZE);
         // The (8,8) fixed-grid diamond admits only x+y > 8 here; the cells are

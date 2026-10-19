@@ -188,7 +188,7 @@ fn harvester_choice(sim: &Simulation, rules: &RuleSet, owner: InternedId) -> Opt
         &rules.build_refinery_types,
         country_name,
         house.side_index,
-        sim.session.game_options.super_weapons,
+        sim.session.game_options().super_weapons,
     );
     let harvester = crate::sim::ai_buildable::first_owner_compatible_harvester(rules, country_bit);
     harvester_decision(&HarvesterFacts {

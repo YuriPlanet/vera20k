@@ -74,7 +74,7 @@ fn first_buildable_shipyard<'a>(
         &rules.shipyard_types,
         country_name,
         house.side_index,
-        sim.session.game_options.super_weapons,
+        sim.session.game_options().super_weapons,
     )
 }
 
@@ -163,7 +163,7 @@ mod tests {
         sim.substrate.raw_cell_occupation.mark_ground(19, 18, 0x40);
         // Ring 1's first cell, whose rect (15..=18, 15..=17) misses (19, 18),
         // is the frame-0 pick.
-        assert_eq!(sim.session.binary_frame, 0);
+        assert_eq!(sim.session.binary_frame(), 0);
         assert_eq!(
             find_naval_base_placement(&sim, &rules, owner),
             Some((15, 15))

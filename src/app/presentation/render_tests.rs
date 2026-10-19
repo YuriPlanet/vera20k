@@ -226,14 +226,12 @@ fn test_box_over_only_ineligible_objects_still_clears_the_selection() {
     spawn_mobile(&mut store, 1, 10, 10, "Americans", true);
     spawn_mobile(&mut store, 2, 30, 30, "Soviet", false);
 
-    let mut houses: BTreeMap<crate::sim::intern::InternedId, crate::sim::house_state::HouseState> =
-        BTreeMap::new();
+    let mut houses = crate::sim::houses::Houses::default();
     for (name, is_human) in [("Americans", true), ("Soviet", false)] {
         let id = test_intern(name);
-        houses.insert(
-            id,
-            crate::sim::house_state::HouseState::new(id, 0, None, is_human, 0, 10),
-        );
+        houses.register(crate::sim::house_state::HouseState::new(
+            id, 0, None, is_human, 0, 10,
+        ));
     }
 
     // The rectangle holds one AI-owned tank and nothing else. The native
@@ -476,14 +474,12 @@ fn item83_band_selection_is_exact_local_even_for_a_discovered_nonlocal_unit() {
     spawn_mobile(&mut store, 1, 10, 10, "Americans", false);
     spawn_mobile(&mut store, 2, 11, 10, "Soviet", false);
 
-    let mut houses: BTreeMap<crate::sim::intern::InternedId, crate::sim::house_state::HouseState> =
-        BTreeMap::new();
+    let mut houses = crate::sim::houses::Houses::default();
     for (name, is_human) in [("Americans", true), ("Soviet", false)] {
         let id = test_intern(name);
-        houses.insert(
-            id,
-            crate::sim::house_state::HouseState::new(id, 0, None, is_human, 0, 10),
-        );
+        houses.register(crate::sim::house_state::HouseState::new(
+            id, 0, None, is_human, 0, 10,
+        ));
     }
 
     // A box over both admits only the exact local owner. House human/AI flags

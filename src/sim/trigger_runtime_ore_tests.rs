@@ -56,10 +56,10 @@ fn rng(sim: &Simulation) -> [String; 3] {
 
 fn scene(rules: &RuleSet) -> Simulation {
     let mut sim = Simulation::with_seed(0x59_86);
-    sim.session.map_width = 16;
-    sim.session.map_height = 16;
-    sim.session.tiberium_grows_flag = true;
-    sim.session.tiberium_spreads_flag = false;
+    sim.session.set_map_width_for_test(16);
+    sim.session.set_map_height_for_test(16);
+    sim.session.set_tiberium_grows_flag_for_test(true);
+    sim.session.set_tiberium_spreads_flag_for_test(false);
     sim.install_resolved_terrain_for_new_map(test_grid(16, 16, test_flat_cell));
     sim.overlay_grid = Some(OverlayGrid::new(16, 16));
     sim.production.ore_growth_config = OreGrowthConfig {
@@ -132,7 +132,7 @@ fn seed_growth(
                 type_id,
                 cell.0,
                 cell.1,
-                sim.session.binary_frame,
+                sim.session.binary_frame(),
                 &mut sim.scenario_rng,
             )
             .is_some()
@@ -157,7 +157,7 @@ fn thirteen_original_growth_byte_controls_preserve_queues_timers_rng_and_other_f
         ("257suffix", 257, true),
     ] {
         let (mut sim, rules, registry) = fixture();
-        sim.session.binary_frame = 73;
+        sim.session.set_binary_frame_for_test(73);
         ore(&mut sim, registry, (8, 8), 5);
         seed_growth(&mut sim, &rules, registry, (8, 8));
         let queues = serde_json::to_value(&sim.production.ore_growth_state).unwrap();
@@ -170,13 +170,13 @@ fn thirteen_original_growth_byte_controls_preserve_queues_timers_rng_and_other_f
         assert_eq!(sim.production.ore_growth_config.grows, expected, "{raw}");
         assert!(!sim.production.ore_growth_config.spreads);
         assert!(sim.production.ore_growth_config.tiberium_grows_flag);
-        assert!(sim.session.tiberium_grows_flag && !sim.session.tiberium_spreads_flag);
+        assert!(sim.session.tiberium_grows_flag() && !sim.session.tiberium_spreads_flag());
         assert_eq!(
             serde_json::to_value(&sim.production.ore_growth_state).unwrap(),
             queues
         );
         assert_eq!(rng(&sim), previous_rng);
-        assert_eq!(sim.session.binary_frame, 73);
+        assert_eq!(sim.session.binary_frame(), 73);
         assert_eq!(
             sim.state_hash() == hash,
             expected,
@@ -225,7 +225,7 @@ fn retail_layered_centre_removal_keeps_neighbors_and_uses_existing_spread_radar_
     let mut sim = scene(&rules);
     sim.production.ore_growth_config.grows = false;
     sim.production.ore_growth_config.spreads = true;
-    sim.session.tiberium_spreads_flag = true;
+    sim.session.set_tiberium_spreads_flag_for_test(true);
     let center = (8, 8);
     ore(&mut sim, &registry, center, 11);
     let neighbors: Vec<_> = crate::sim::tiberium::ADJACENT_OFFSETS
@@ -376,7 +376,7 @@ fn counted_tag_pauses_drivers_preserves_saved_gate_and_reenables_due_timers() {
     assert!(restored.production.ore_growth_config.tiberium_grows_flag);
     restored.session.set_started(true);
     assert!(run(&mut restored, &action(86, "257", "A"), None, None));
-    let current_frame = restored.session.binary_frame as i32;
+    let current_frame = restored.session.binary_frame() as i32;
     let frame = restored
         .advance_app_frame(
             &[],

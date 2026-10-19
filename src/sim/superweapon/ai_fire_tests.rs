@@ -117,8 +117,7 @@ fn scripted_rally_preference_and_clear_match_original_targets_and_rng() {
         let enemy = sim.interner.intern(ENEMY);
         for owner in [computer, enemy] {
             sim.houses
-                .insert(owner, HouseState::new(owner, 0, None, false, 0, 10));
-            sim.session.house_order.push(owner);
+                .register(HouseState::new(owner, 0, None, false, 0, 10));
         }
         let input = &control["input"];
         sim.houses.get_mut(&computer).unwrap().difficulty =
@@ -129,7 +128,8 @@ fn scripted_rally_preference_and_clear_match_original_targets_and_rng() {
             .get_mut(&enemy)
             .unwrap()
             .set_preferred_super_weapon_target(wide(cell(&input["initial_other_preferred"])));
-        sim.session.binary_frame = int(&control["frame"]) as u32;
+        sim.session
+            .set_binary_frame_for_test(int(&control["frame"]) as u32);
         sim.resolved_terrain = Some(test_grid(64, 64, test_terrain_cell));
         // These are the five admitted MapClass predicate inputs in the
         // generator, not a terrain-height fit to a captured target.
@@ -467,8 +467,7 @@ fn the_try_fire_arms_match_native() {
         let enemy = sim.interner.intern(ENEMY);
         for (id, human) in [(computer, flag(&row["human"])), (enemy, true)] {
             sim.houses
-                .insert(id, HouseState::new(id, 0, None, human, 0, 10));
-            sim.session.house_order.push(id);
+                .register(HouseState::new(id, 0, None, human, 0, 10));
         }
         let house = sim.houses.get_mut(&computer).unwrap();
         house.player_control = flag(&row["control"]);
@@ -479,7 +478,8 @@ fn the_try_fire_arms_match_native() {
                 int(&row["game_mode"]) != 0,
             ),
         );
-        sim.session.binary_frame = int(&row["frame"]) as u32;
+        sim.session
+            .set_binary_frame_for_test(int(&row["frame"]) as u32);
         sim.resolved_terrain = Some(test_grid(64, 64, test_terrain_cell));
         sim.playfield_bounds = Some(test_playfield_bounds());
         crate::sim::arena_fixture::supply_native_map_keyed(&mut sim, "ai fire flat 64");
@@ -560,7 +560,7 @@ fn the_ground_rally_point_matches_native() {
     let computer = interner.intern(COMPUTER);
     let enemy = interner.intern(ENEMY);
     for row in rows {
-        let mut houses = std::collections::BTreeMap::new();
+        let mut houses = crate::sim::houses::Houses::default();
         for (id, base, alternate) in [
             (computer, &row["own_base"], &row["own_alternate"]),
             (enemy, &row["enemy_base"], &row["enemy_alternate"]),
@@ -569,7 +569,7 @@ fn the_ground_rally_point_matches_native() {
             let base = wide(cell(base));
             house.base_center = (base != (0, 0)).then_some(base);
             house.alternate_base_center = wide(cell(alternate));
-            houses.insert(id, house);
+            houses.register(house);
         }
         houses.get_mut(&computer).unwrap().enemy_house =
             (int(&row["enemy_index"]) != -1).then_some(enemy);
@@ -615,8 +615,7 @@ fn the_genetic_mutator_target_matches_native() {
         for name in [COMPUTER, ENEMY, ALLY] {
             let id = sim.interner.intern(name);
             sim.houses
-                .insert(id, HouseState::new(id, 0, None, false, 0, 10));
-            sim.session.house_order.push(id);
+                .register(HouseState::new(id, 0, None, false, 0, 10));
         }
         // `+0x5788` bit 2: the computer counts the third house an ally.
         sim.house_alliances
@@ -841,15 +840,14 @@ fn retail_skirmish() -> Option<(RuleSet, Simulation, InternedId, InternedId)> {
     let russians = sim.interner.intern("Russians");
     for (id, side, human) in [(russians, 1, true), (americans, 0, false)] {
         sim.houses
-            .insert(id, HouseState::new(id, side, None, human, 0, 10));
-        sim.session.house_order.push(id);
+            .register(HouseState::new(id, side, None, human, 0, 10));
     }
     let house = sim.houses.get_mut(&americans).unwrap();
     house.difficulty = HouseDifficulty::Hard;
     house.enemy_house = Some(russians);
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
-    sim.session.game_options.super_weapons = true;
+    sim.session.game_options_mut_for_test().super_weapons = true;
     sim.resolved_terrain = Some(test_grid(64, 64, test_terrain_cell));
     sim.playfield_bounds = Some(test_playfield_bounds());
     crate::sim::arena_fixture::supply_native_map_keyed(&mut sim, "ai fire flat 64");
@@ -975,8 +973,8 @@ fn retail_computer_house_nukes_the_enemy_construction_yard() {
     // NukeCarrier's ordinary projectile path reads the native Size diamond.
     // A width0 fixture becomes empty when its map height is supplied; place
     // this launch scene inside a coherent Size/normalized LocalSize instead.
-    sim.session.map_width = 64;
-    sim.session.map_height = 64;
+    sim.session.set_map_width_for_test(64);
+    sim.session.set_map_height_for_test(64);
     sim.install_playfield_from_map_header(&crate::map::map_file::MapHeader {
         theater: "TEMPERATE".into(),
         fill: "Clear".into(),
@@ -1023,7 +1021,7 @@ fn retail_computer_house_nukes_the_enemy_construction_yard() {
     let sw_type = sim.interner.intern("NukeSpecial");
     let mut instance = SuperWeaponInstance::new(sw_type, americans, 0);
     instance.is_active = true;
-    instance.charge_start_tick = (sim.session.binary_frame) as i32;
+    instance.charge_start_tick = (sim.session.binary_frame()) as i32;
     instance.charge_duration = 9000;
     instance.is_ready = true;
     sim.super_weapons
@@ -1117,8 +1115,7 @@ fn the_psychic_dominator_target_matches_native() {
         for name in [COMPUTER, ENEMY, ALLY, NO_HOUSE] {
             let id = sim.interner.intern(name);
             sim.houses
-                .insert(id, HouseState::new(id, 0, None, false, 0, 10));
-            sim.session.house_order.push(id);
+                .register(HouseState::new(id, 0, None, false, 0, 10));
         }
         sim.houses.get_mut(&computer).unwrap().enemy_house =
             (int(&row["enemy_index"]) != -1).then_some(enemy);
@@ -1204,7 +1201,7 @@ fn the_psychic_dominator_target_matches_native() {
                 rebuilt.push((x, y));
             }
             if fact("curtain") {
-                let frame = sim.session.binary_frame;
+                let frame = sim.session.binary_frame();
                 apply_invulnerability(
                     sim.substrate.entities.get_mut(id).unwrap(),
                     frame,

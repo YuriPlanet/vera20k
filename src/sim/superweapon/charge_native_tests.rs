@@ -141,11 +141,11 @@ fn grant_percentage_hold_release_and_ai_match_original_histories() {
         let grant_frame = int(sequence, "grant_frame");
         let low_power = sequence["input_low_power_at_grant"].as_bool().unwrap();
         let mut sim = Simulation::with_seed(0);
-        sim.session.binary_frame = grant_frame as u32;
+        sim.session.set_binary_frame_for_test(grant_frame as u32);
         let owner = sim.interner.intern("Confederation");
         let type_id = sim.interner.intern("PsychicDominatorSpecial");
         sim.houses
-            .insert(owner, HouseState::new(owner, 2, None, false, 0, 10));
+            .register(HouseState::new(owner, 2, None, false, 0, 10));
         sim.super_weapons.entry(owner).or_default().insert(
             type_id,
             SuperWeaponInstance::new(type_id, owner, grant_frame),
@@ -167,7 +167,8 @@ fn grant_percentage_hold_release_and_ai_match_original_histories() {
             sim.mapgen_rng.native_state_hex(),
         );
         for row in sequence["rows"].as_array().unwrap() {
-            sim.session.binary_frame = int(row, "frame") as u32;
+            sim.session
+                .set_binary_frame_for_test(int(row, "frame") as u32);
             let stage = row["stage"].as_str().unwrap();
             match stage {
                 "concrete_constructor" => {}
@@ -179,7 +180,7 @@ fn grant_percentage_hold_release_and_ai_match_original_histories() {
                         .unwrap()
                         .get_mut(&type_id)
                         .unwrap()
-                        .set_charge_percentage(90, sw, sim.session.binary_frame);
+                        .set_charge_percentage(90, sw, sim.session.binary_frame());
                     assert_eq!(i32::from(changed), int(row, "returned"));
                 }
                 "first_hold" | "repeat_hold" | "release_hold" => {
@@ -192,7 +193,7 @@ fn grant_percentage_hold_release_and_ai_match_original_histories() {
                         .suspend(
                             stage != "release_hold",
                             sw.manual_control,
-                            sim.session.binary_frame,
+                            sim.session.binary_frame(),
                         );
                     assert_eq!(i32::from(changed), int(row, "returned"));
                 }
@@ -242,7 +243,7 @@ fn house_hold_pass_matches_original_retained_power_histories() {
         let owner = sim.interner.intern("Confederation");
         let type_id = sim.interner.intern("PsychicDominatorSpecial");
         sim.houses
-            .insert(owner, HouseState::new(owner, 2, None, false, 0, 10));
+            .register(HouseState::new(owner, 2, None, false, 0, 10));
         sim.spawn_object("YAPPET", "Confederation", 10, 10, 0, &rules)
             .unwrap();
         let first = &sequence["rows"][0]["input"];
@@ -273,7 +274,8 @@ fn house_hold_pass_matches_original_retained_power_histories() {
                 sequence["power_drop_frame"], sequence["input_low_power_at_grant"], row["frame"]
             );
             assert_state(&sim.super_weapons[&owner][&type_id], &row["input"], &label);
-            sim.session.binary_frame = int(row, "frame") as u32;
+            sim.session
+                .set_binary_frame_for_test(int(row, "frame") as u32);
             // The original pass reads retained House output/drain. Its
             // low branch is observed in native control flow, not recomputed
             // by a second ratio implementation in this comparison fixture.
@@ -308,7 +310,7 @@ fn pending_house_tech_tree_tail_is_hashed_and_saved() {
     let mut sim = Simulation::with_seed(0);
     let owner = sim.interner.intern("Confederation");
     sim.houses
-        .insert(owner, HouseState::new(owner, 2, None, false, 0, 10));
+        .register(HouseState::new(owner, 2, None, false, 0, 10));
     assert!(sim.houses.get_mut(&owner).unwrap().take_tech_recheck());
     let clean_hash = sim.state_hash();
     sim.request_house_tech_tree_recheck(owner);
@@ -353,8 +355,7 @@ fn house_power_edge_holds_after_reactor_sample_in_the_same_frame() {
     let owner = sim.interner.intern("Confederation");
     let type_id = sim.interner.intern("PsychicDominatorSpecial");
     sim.houses
-        .insert(owner, HouseState::new(owner, 2, None, false, 0, 10));
-    sim.session.house_order.push(owner);
+        .register(HouseState::new(owner, 2, None, false, 0, 10));
     sim.super_weapons
         .entry(owner)
         .or_default()
@@ -379,14 +380,15 @@ fn house_power_edge_holds_after_reactor_sample_in_the_same_frame() {
     assert!(sim.super_weapons[&owner][&type_id].is_active);
     assert!(!sim.super_weapons[&owner][&type_id].is_suspended);
 
-    sim.session.binary_frame = int(receiver, "frame") as u32;
+    sim.session
+        .set_binary_frame_for_test(int(receiver, "frame") as u32);
     let sw = rules.super_weapon("PsychicDominatorSpecial").unwrap();
     sim.super_weapons
         .get_mut(&owner)
         .unwrap()
         .get_mut(&type_id)
         .unwrap()
-        .set_charge_percentage(90, sw, sim.session.binary_frame);
+        .set_charge_percentage(90, sw, sim.session.binary_frame());
     // The Action63 receiver is tested by its owner. Here its executed final
     // health is an admitted input to the live Building sample -> House rung.
     sim.substrate

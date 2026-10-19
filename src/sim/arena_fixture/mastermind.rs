@@ -91,7 +91,7 @@ impl MindScene {
         let enemy = sim.entities().get(targets[0]).unwrap().owner();
         assert_ne!(owner, enemy);
         assert!(sim.houses.get(&owner).unwrap().is_human);
-        sim.session.current_house = Some(owner);
+        sim.session.set_current_house_for_test(Some(owner));
         // Supplied map knowledge admits the real commands/scanner for both
         // houses; counterfire is not avoided by hiding the controller.
         sim.fog.mark_visible_for_owner(enemy, 32, 32);
@@ -126,7 +126,8 @@ impl MindScene {
         ));
         eprintln!(
             "MIND ordinary initial Attack issue_tick={} due_tick=1 target={}",
-            sim.session.tick, targets[0]
+            sim.session.tick(),
+            targets[0]
         );
         Some(Self {
             rules: rules.into(),
@@ -169,7 +170,7 @@ impl MindScene {
         {
             eprintln!(
                 "MIND actual terminal visited_frame={} before={before:?} houses={:?} shots={:?} lifecycle={:?}",
-                self.sim.session.binary_frame - 1,
+                self.sim.session.binary_frame() - 1,
                 self.sim
                     .houses
                     .iter()
@@ -234,8 +235,8 @@ impl MindScene {
                 fired_at.insert(target);
                 eprintln!(
                     "MIND ordinary Fire visited_frame={} tick={} target={} fire={:?}",
-                    self.sim.session.binary_frame - 1,
-                    self.sim.session.tick,
+                    self.sim.session.binary_frame() - 1,
+                    self.sim.session.tick(),
                     target,
                     shot.fire_coord
                 );
@@ -263,8 +264,8 @@ impl MindScene {
             if victims.contains(&requested) {
                 eprintln!(
                     "MIND ordinary capture visited_frame={} tick={} requested={} nodes={victims:?}",
-                    self.sim.session.binary_frame - 1,
-                    self.sim.session.tick,
+                    self.sim.session.binary_frame() - 1,
+                    self.sim.session.tick(),
                     requested
                 );
             }
@@ -273,7 +274,7 @@ impl MindScene {
                 assert!(self.targets.iter().all(|id| victims.contains(id)));
                 self.sim.queue_command(CommandEnvelope::new(
                     owner,
-                    self.sim.session.tick + 1,
+                    self.sim.session.tick() + 1,
                     Command::Stop {
                         entity_id: self.mind,
                     },
@@ -288,12 +289,12 @@ impl MindScene {
                     .unwrap();
                 eprintln!(
                     "MIND ordinary next Attack issue_tick={} due_tick={} target={requested}",
-                    self.sim.session.tick,
-                    self.sim.session.tick + 1
+                    self.sim.session.tick(),
+                    self.sim.session.tick() + 1
                 );
                 self.sim.queue_command(CommandEnvelope::new(
                     owner,
-                    self.sim.session.tick + 1,
+                    self.sim.session.tick() + 1,
                     Command::Attack {
                         attacker_id: self.mind,
                         target_id: requested,
@@ -311,7 +312,7 @@ impl MindScene {
         let owner = self.sim.entities().get(self.mind).unwrap().owner();
         self.sim.queue_command(CommandEnvelope::new(
             owner,
-            self.sim.session.tick + 1,
+            self.sim.session.tick() + 1,
             Command::Select {
                 entity_ids: vec![self.mind],
                 additive: false,
@@ -415,10 +416,10 @@ impl MindScene {
                 assert!(born.iter().all(|(_, system)| system.alive()
                     && !system.in_limbo()
                     && system.in_logic_vector));
-                let pulse_frame = self.sim.session.binary_frame - 1;
+                let pulse_frame = self.sim.session.binary_frame() - 1;
                 eprintln!(
                     "MIND ordinary overload visited_frame={pulse_frame} tick={} health={} new_sparks={}",
-                    self.sim.session.tick,
+                    self.sim.session.tick(),
                     controller.health.current(),
                     born.len()
                 );
@@ -427,7 +428,7 @@ impl MindScene {
                     words[2] & 0x7fff_ffff,
                     0x3c75_c28f,
                     "native471C78 must assign row1's signed sideways RATE after the real pulse; visited_frame={}",
-                    self.sim.session.binary_frame - 1
+                    self.sim.session.binary_frame() - 1
                 );
                 assert_eq!(
                     [words[0], words[1], words[3]],

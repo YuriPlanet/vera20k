@@ -242,10 +242,10 @@ fn superweapon_money_cameo_refuses_before_target_or_direct_launch_but_allows_rig
         let mut sim = Simulation::new();
         let owner = sim.interner.intern("Americans");
         let id = sim.interner.intern("Paid");
-        sim.houses.insert(
-            owner,
-            crate::sim::house_state::HouseState::new(owner, 0, None, true, 499, 10),
-        );
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                owner, 0, None, true, 499, 10,
+            ));
         let mut instance = SuperWeaponInstance::new(id, owner, 0);
         instance.is_active = true;
         instance.is_ready = true;

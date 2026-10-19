@@ -59,8 +59,7 @@ fn escape_counter_matches_native_cell_list_and_raw_owner_gates() {
         let enemy = sim.intern("Russians");
         for house in [ours, enemy] {
             sim.houses
-                .insert(house, HouseState::new(house, 0, None, false, 0, 10));
-            sim.session.house_order.push(house);
+                .register(HouseState::new(house, 0, None, false, 0, 10));
         }
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(

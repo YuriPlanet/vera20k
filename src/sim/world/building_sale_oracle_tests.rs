@@ -450,7 +450,7 @@ fn sales_through_the_frame_visit_on_the_original_frames() {
         };
         let sale_order = crate::sim::command::CommandEnvelope::new(
             s.sim.substrate.entities.get(building).unwrap().owner(),
-            s.sim.session.tick + 1,
+            s.sim.session.tick() + 1,
             crate::sim::command::Command::SellBuilding {
                 entity_id: building,
             },
@@ -582,7 +582,7 @@ fn the_computers_low_credit_sale_matches_the_original_admission() {
         let mut house = HouseState::new(owner, 0, None, false, int("balance"), int("tech_level"));
         house.current_iq = int("current_iq");
         house.authored_iq = int("authored_iq");
-        sim.houses.insert(owner, house);
+        sim.houses.register(house);
         let kind = sim.interner.intern("YAREFN");
         let mut building = GameEntity::new_at_frame_zero_for_test(
             1,
@@ -610,9 +610,9 @@ fn the_computers_low_credit_sale_matches_the_original_admission() {
             building.install_building_up(
                 crate::sim::components::BuildingUp::completing_in_ticks(
                     2,
-                    sim.session.binary_frame as i32,
+                    sim.session.binary_frame() as i32,
                 ),
-                sim.session.binary_frame as i32,
+                sim.session.binary_frame() as i32,
             );
         }
         building.mission.apply_test_fixture(MissionTestFixture {

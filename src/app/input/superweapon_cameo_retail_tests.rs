@@ -21,7 +21,7 @@ fn frame(sim: &mut Simulation, rules: &RuleSet) -> SimFrameOutput {
 }
 
 fn command(sim: &mut Simulation, owner: InternedId, payload: Command) {
-    sim.queue_command(CommandEnvelope::new(owner, sim.session.tick + 1, payload));
+    sim.queue_command(CommandEnvelope::new(owner, sim.session.tick() + 1, payload));
 }
 
 fn click(
@@ -92,9 +92,8 @@ fn retail_supers_recheck_live_admission_after_power_loss_and_recovery() {
         let owner = sim.interner.intern("Americans");
         let id = sim.interner.intern(name);
         sim.houses
-            .insert(owner, HouseState::new(owner, 0, Some(owner), true, 0, 10));
-        sim.session.house_order.push(owner);
-        sim.session.current_house = Some(owner);
+            .register(HouseState::new(owner, 0, Some(owner), true, 0, 10));
+        sim.session.set_current_house_for_test(Some(owner));
         crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
         sim.fog = crate::sim::vision::FogState::new(32, 32);
         sim.fog.reveal_all_for_owner(owner);
@@ -158,8 +157,9 @@ fn retail_supers_recheck_live_admission_after_power_loss_and_recovery() {
         // Advance the supplied frame clock past the real recharge deadline;
         // the production Super AI, rather than a fixture flag, makes it ready.
         let instance = &sim.super_weapons[&owner][&id];
-        sim.session.binary_frame =
-            (instance.charge_start_tick + instance.charge_duration + 1) as u32;
+        sim.session.set_binary_frame_for_test(
+            (instance.charge_start_tick + instance.charge_duration + 1) as u32,
+        );
         frame(&mut sim, &rules);
         assert!(
             sim.super_weapons[&owner][&id].is_ready,

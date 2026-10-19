@@ -112,11 +112,10 @@ fn stock_bio_reactor_pips_follow_boarding_cargo_head_departure_and_selection() {
     crate::sim::arena_fixture::flat_arena(&mut sim, rules);
     for (name, human) in [(OWNER, true), ("Americans", false)] {
         let owner = sim.interner.intern(name);
-        sim.houses.insert(
-            owner,
-            crate::sim::house_state::HouseState::new(owner, 0, None, human, 0, 10),
-        );
-        sim.session.house_order.push(owner);
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                owner, 0, None, human, 0, 10,
+            ));
     }
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);

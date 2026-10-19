@@ -256,7 +256,7 @@ fn place_garrison_passenger_at_cell(
             passenger_id,
             crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Hunt),
             0,
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
             &crate::sim::mission::authority::EntityReadyInputProvider,
         )
         .expect("a revealed garrison occupant can queue Hunt");
@@ -629,10 +629,10 @@ pub(crate) mod tests {
     ) {
         let americans = sim.interner.intern("Americans");
         // The refund (`0x0070ADA0`) reads the owner house.
-        sim.houses.insert(
-            americans,
-            crate::sim::house_state::HouseState::new(americans, 0, None, true, 0, 10),
-        );
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                americans, 0, None, true, 0, 10,
+            ));
 
         let mut building = GameEntity::test_default_of_category(
             building_id,
@@ -867,7 +867,7 @@ pub(crate) mod tests {
             let owner = sim.interner.get("Americans").unwrap();
             let other = sim.interner.intern("Neutral");
             sim.houses
-                .insert(other, HouseState::new(other, 1, None, false, 0, 10));
+                .register(HouseState::new(other, 1, None, false, 0, 10));
             insert_hidden_passenger(&mut sim, 22, 20, "Neutral");
             {
                 let cargo = sim

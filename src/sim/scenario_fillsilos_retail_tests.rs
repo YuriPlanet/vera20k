@@ -65,7 +65,7 @@ fn fresh_fill_silos_credits_reach_a_real_spy_entry() {
         assert_eq!(rules.object("NAHAND").unwrap().storage, 1);
         assert_eq!(rules.tiberium_types.types()[0].value, 25);
         let sim = scene.sim();
-        let player = sim.session.current_house.unwrap();
+        let player = sim.session.current_house().unwrap();
         let computer = sim.scenario_house_named("Computer").unwrap();
         assert_eq!(sim.houses[&computer].tracking.storage_capacity(), 1);
         assert_eq!(sim.houses[&player].tracking.storage_capacity(), 0);
@@ -121,7 +121,7 @@ fn fresh_fill_silos_credits_reach_a_real_spy_entry() {
         );
         assert_eq!(sim.houses[&player].economy.credits(), 5000);
         let health = sim.entities().get(target).unwrap().health;
-        let execute_tick = sim.session.tick + 1;
+        let execute_tick = sim.session.tick() + 1;
         scene.runtime.simulation.queue_command(CommandEnvelope::new(
             player,
             execute_tick,

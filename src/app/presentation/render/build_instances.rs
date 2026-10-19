@@ -477,7 +477,7 @@ fn build_pixel_fx_sparkle_instances(state: &AppState, sw: f32, sh: f32) -> Vec<S
     };
 
     let input = SparkleInput {
-        clock_ms: sim.session.total_sim_ms,
+        clock_ms: sim.session.total_sim_ms(),
         enable_extra_animations,
         local_owner_id,
         sandbox_full_visibility: state.match_state.sandbox_full_visibility,
@@ -663,8 +663,8 @@ pub(super) fn update_minimap(state: &mut AppState, local_owner: &Option<String>)
                     view.logic_order(),
                     view.houses(),
                     &presentation.house_color_map,
-                    view.session().tick,
-                    view.session().binary_frame,
+                    view.session().tick(),
+                    view.session().binary_frame(),
                     local_owner
                         .as_deref()
                         .and_then(|owner| view.interner().get(owner)),

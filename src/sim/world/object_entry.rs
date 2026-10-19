@@ -96,7 +96,7 @@ impl<'a> EntryReadContext<'a> {
     /// out.
     fn blocker(&self, id: u64) -> Option<(BlockerFacts, &'a GameEntity)> {
         let (slot, entity) = self.sim.substrate.entities.get_in_slot(id)?;
-        let read = || BlockerFacts::of(entity, self.sim.session.binary_frame);
+        let read = || BlockerFacts::of(entity, self.sim.session.binary_frame());
         let facts = match self.facts {
             Some(facts) => *facts.blocker(slot, read),
             None => read(),
@@ -1352,7 +1352,7 @@ fn full_foot_entry<'a>(
         } else if !infantry {
             //73F865..8C0: Foot NavCom, body turn, then active IsMoving.
             if b.nav_com || b.rotating || b.moving == Some(true) {
-                if head_on(e, &b, live.sim.session.binary_frame) {
+                if head_on(e, &b, live.sim.session.binary_frame()) {
                     return Ok(7);
                 }
                 if (b.foot_occupation && b.category() != EntityCategory::Infantry)
@@ -1793,7 +1793,7 @@ mod tests {
                 entity.owner(),
                 script_id,
                 vec![id],
-                sim.session.binary_frame as i32,
+                sim.session.binary_frame() as i32,
             );
             assert!(sim.member_team_is_moving_outside_playfield(id));
             assert_eq!(
@@ -1974,7 +1974,7 @@ mod tests {
         sim.mission_assign_exact(
             infantry,
             crate::sim::mission::MissionId::from_known(MissionType::Move),
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
         )
         .unwrap();
         assert!(!probe(&mut sim));
@@ -1988,7 +1988,7 @@ mod tests {
         sim.mission_assign_exact(
             infantry,
             crate::sim::mission::MissionId::from_known(MissionType::Capture),
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
         )
         .unwrap();
         sim.substrate

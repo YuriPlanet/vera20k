@@ -41,8 +41,7 @@ fn a_landed_rocketeer_holding_a_target_re_anchors_on_guard_and_attack() {
     for (name, side) in [("Americans", 0), ("Russians", 1)] {
         let id = sim.interner.intern(name);
         sim.houses
-            .insert(id, HouseState::new(id, side, None, false, 0, 10));
-        sim.session.house_order.push(id);
+            .register(HouseState::new(id, side, None, false, 0, 10));
     }
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
     let spawn = |sim: &mut Simulation, kind, owner, x, y| {

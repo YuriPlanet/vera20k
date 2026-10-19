@@ -33,7 +33,7 @@ fn arena(rules: &RuleSet) -> Simulation {
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
     sim.input_delay_ticks = 0;
-    sim.session.binary_frame = 1;
+    sim.session.set_binary_frame_for_test(1);
     sim
 }
 
@@ -43,7 +43,7 @@ fn spawn(sim: &mut Simulation, rules: &RuleSet, kind: &str, owner: &str, cell: (
 }
 
 fn start_mission(sim: &mut Simulation, id: u64, mission: MissionType) {
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     sim.mission_assign_exact(id, MissionId::from_known(mission), now)
         .unwrap();
     let _ = sim.mission_commence_exact(id, now);
@@ -60,7 +60,7 @@ fn target(sim: &mut Simulation, id: u64, target: u64) {
 
 fn order(sim: &mut Simulation, owner: &str, command: Command) {
     let owner = sim.interner.intern(owner);
-    let tick = sim.session.tick + 1;
+    let tick = sim.session.tick() + 1;
     sim.queue_command(CommandEnvelope::new(owner, tick, command));
 }
 

@@ -100,8 +100,7 @@ fn world_with_cells(
     let russians = sim.interner.intern("Russians");
     for (id, side, human) in [(americans, 0, true), (russians, 1, false)] {
         sim.houses
-            .insert(id, HouseState::new(id, side, None, human, 0, 10));
-        sim.session.house_order.push(id);
+            .register(HouseState::new(id, side, None, human, 0, 10));
         // The native scenario constructs every stock Super for each House
         // before its map objects; provider passes never construct lazily.
         for name in &rules.super_weapon_order {
@@ -112,9 +111,9 @@ fn world_with_cells(
                 .insert(type_id, super::SuperWeaponInstance::new(type_id, id, 0));
         }
     }
-    sim.session.game_options.super_weapons = true;
-    sim.session.map_width = size;
-    sim.session.map_height = size;
+    sim.session.game_options_mut_for_test().super_weapons = true;
+    sim.session.set_map_width_for_test(size);
+    sim.session.set_map_height_for_test(size);
     sim.install_resolved_terrain_for_new_map(test_grid(size, size, cell));
     crate::sim::arena_fixture::supply_native_map_keyed(
         &mut sim,
@@ -189,7 +188,7 @@ pub(crate) fn place(
             crate::sim::world::FrameEffects::default(),
         )
         .unwrap_or_else(|| panic!("{kind} constructs at {x},{y}"));
-    let frame = sim.session.binary_frame;
+    let frame = sim.session.binary_frame();
     let entity = sim.substrate.entities.get_mut(id).unwrap();
     entity.position.put_location(DriveCoord {
         x: i32::from(x) * 256 + 128,
@@ -232,9 +231,9 @@ pub(crate) fn charge_super(sim: &mut Simulation, owner: InternedId, name: &str) 
     // Sparse launch-only controls still supply a native Super owner House.
     // Do not append it to House AI order: these cases do not test provider
     // grants, Strategy, natural defeat, or an additional House update.
-    sim.houses
-        .entry(owner)
-        .or_insert_with(|| crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10));
+    sim.houses.get_or_register_for_test(owner, || {
+        crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10)
+    });
     sim.houses
         .get_mut(&owner)
         .expect("supplied launcher's House")
@@ -242,7 +241,7 @@ pub(crate) fn charge_super(sim: &mut Simulation, owner: InternedId, name: &str) 
     let sw_type = sim.interner.intern(name);
     let mut instance = SuperWeaponInstance::new(sw_type, owner, 0);
     instance.is_active = true;
-    instance.charge_start_tick = (sim.session.binary_frame) as i32;
+    instance.charge_start_tick = (sim.session.binary_frame()) as i32;
     instance.charge_duration = 6300;
     instance.charge_start_tick -= 6300;
     instance.is_ready = true;
@@ -258,7 +257,7 @@ pub fn click(sim: &mut Simulation, rules: &RuleSet, owner: InternedId, name: &st
     let sw_type_id = sim.interner.intern(name);
     sim.queue_command(CommandEnvelope::new(
         owner,
-        sim.session.tick + 1,
+        sim.session.tick() + 1,
         Command::LaunchSuperWeapon {
             sw_type_id,
             target_rx: at.0,
@@ -758,7 +757,7 @@ fn retail_chrono_warp_onto_the_iron_curtain_kills_the_warper() {
     };
     let tank = spawn(&mut sim, &rules, "MTNK", "Americans", SOURCE);
     let curtained = spawn(&mut sim, &rules, "HTNK", "Russians", TARGET);
-    let frame = sim.session.binary_frame;
+    let frame = sim.session.binary_frame();
     crate::sim::superweapon::invulnerability::apply_invulnerability(
         sim.substrate.entities.get_mut(curtained).unwrap(),
         frame,
@@ -844,7 +843,7 @@ fn retail_chrono_warp_frames_match_native_process() {
         charge_chronosphere(&mut sim, americans);
         click(&mut sim, &rules, americans, "ChronoSphereSpecial", SOURCE);
         click(&mut sim, &rules, americans, "ChronoWarpSpecial", TARGET);
-        let origin = sim.session.binary_frame as i64;
+        let origin = sim.session.binary_frame() as i64;
         let frames = row["frames"].as_array().unwrap();
         let landing = frames
             .iter()
@@ -980,7 +979,7 @@ fn retail_chrono_update_position_matches_native_rows() {
                 );
             }
             if object[5].as_bool().unwrap() {
-                let frame = sim.session.binary_frame;
+                let frame = sim.session.binary_frame();
                 crate::sim::superweapon::invulnerability::apply_invulnerability(
                     sim.substrate.entities.get_mut(id).unwrap(),
                     frame,

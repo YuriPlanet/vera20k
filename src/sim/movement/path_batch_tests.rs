@@ -133,7 +133,7 @@ fn a_batched_answer_is_the_serial_search() {
                 let (mut sim, movers) = jam(&rules);
                 let id = movers[mover];
                 if kind != WaitingRequest::NoQueue {
-                    let frame = sim.session.binary_frame;
+                    let frame = sim.session.binary_frame();
                     let runtime = &mut sim
                         .substrate
                         .entities
@@ -302,7 +302,7 @@ fn a_ladder_left_out_past_its_blockage_timer_takes_its_first_urgency() {
                 .unwrap()
                 .navigation
                 .path_runtime
-                .code2_urgency(sim.session.binary_frame)
+                .code2_urgency(sim.session.binary_frame())
         };
         // It routes, rolls up to the stuck tank and registers a re-path.
         for _ in 0..300 {
@@ -542,7 +542,7 @@ fn a_waiting_ladder_uses_its_answer_the_next_frame() {
             sim.advance_tick(&[], Some(&rules), Some(&grid), None, 67);
             let batch = sim.path_batch.as_ref().unwrap();
             assert_eq!(batch.answered, registered, "{follower}");
-            let frame = sim.session.binary_frame as i32;
+            let frame = sim.session.binary_frame() as i32;
             for &(id, kind) in &batch.pending {
                 let runtime = &sim
                     .substrate
@@ -750,7 +750,7 @@ fn a_drive_retry_recursion_waits_after_the_frames_answer() {
     process(&mut sim, ProcessMovementArgs::OUTER);
     assert_eq!(sim.path_batch.as_ref().unwrap().used, [1, 0]);
     // The retry's own preparation: no path left and the timer run out.
-    let frame = sim.session.binary_frame;
+    let frame = sim.session.binary_frame();
     let foot = sim.substrate.entities.get_mut(tank).unwrap();
     foot.navigation.path_replay.clear_directions();
     foot.navigation.path_runtime.start_movement(frame, 0);
@@ -1056,7 +1056,7 @@ fn an_order_to_more_foots_than_a_pass_answers_routes_over_two_passes() {
     sim.advance_tick(&[], Some(&rules), Some(&grid), None, 67);
     let (answered, left_out) = foots.split_at(SEARCHES_PER_PASS);
     assert_eq!(sim.path_batch.as_ref().unwrap().answered, answered);
-    let frame = sim.session.binary_frame as i32;
+    let frame = sim.session.binary_frame() as i32;
     for &id in left_out {
         assert!(pending(&sim).contains(&id), "{id} asks again");
         let foot = sim.substrate.entities.get(id).unwrap();

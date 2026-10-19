@@ -1163,7 +1163,7 @@ fn pump_loading_after_present(state: &mut AppState) -> LoadingPump {
                 runtime
                     .simulation
                     .session
-                    .lighting
+                    .lighting_mut()
                     .retire_ambient_change_inputs(),
             )?;
         }

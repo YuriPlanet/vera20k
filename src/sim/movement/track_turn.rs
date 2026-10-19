@@ -63,7 +63,7 @@ impl Simulation {
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> TrackProcessEntry {
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return TrackProcessEntry::Return;
         };
@@ -232,7 +232,12 @@ impl Simulation {
             {
                 let terrain = self.resolved_terrain.as_ref();
                 if let Some(entity) = self.substrate.entities.get_mut(id) {
-                    super::navcom::track_move_to(entity, coord, terrain, self.session.binary_frame);
+                    super::navcom::track_move_to(
+                        entity,
+                        coord,
+                        terrain,
+                        self.session.binary_frame(),
+                    );
                 }
             }
             return false;

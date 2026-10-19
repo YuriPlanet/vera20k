@@ -26,8 +26,7 @@ fn infantry_fatal_frame_exit_preserves_delivered_cleanup_through_load() {
     let owner = saved.interner.intern("Americans");
     saved
         .houses
-        .insert(owner, HouseState::new(owner, 0, None, true, 1000, 10));
-    saved.session.house_order.push(owner);
+        .register(HouseState::new(owner, 0, None, true, 1000, 10));
     let shooter = saved
         .spawn_object_at_height(
             "SHOOTER",

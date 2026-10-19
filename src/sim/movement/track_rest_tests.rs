@@ -11,7 +11,7 @@ fn drive_stop_retains_speed_until_an_eligible_process_rest_tail() {
     };
     let rules = retail.rules;
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 1097);
-    sim.session.binary_frame = 100;
+    sim.session.set_binary_frame_for_test(100);
     let id = sim
         .spawn_object("MTNK", "Americans", 10, 10, 0, &rules)
         .unwrap();
@@ -92,7 +92,7 @@ fn scene_rules() -> crate::rules::ruleset::RuleSet {
 
 fn scene(rules: &crate::rules::ruleset::RuleSet) -> (crate::sim::world::Simulation, u64) {
     let mut sim = crate::sim::arena_fixture::rival_arena(rules, 1097);
-    sim.session.binary_frame = 100;
+    sim.session.set_binary_frame_for_test(100);
     let id = sim
         .spawn_object("TANK", "Americans", 10, 10, 0, rules)
         .unwrap();
@@ -157,7 +157,7 @@ fn drive_rest_admission_matches_original_whole_process_controls() {
                 "duration_frames":4, "rot_per_frame":16,
             }))
             .unwrap();
-            sim.session.binary_frame = 101;
+            sim.session.set_binary_frame_for_test(101);
         }
         let rng = rng_streams(&sim);
         sim.process_ground_locomotor_stats_for_test(id, Some(&rules), None)
@@ -213,7 +213,8 @@ fn drive_stop_rest_and_immediate_reorder_match_native_departure_frames() {
             .mission
             .set_current_for_test(MissionId::from_known(MissionType::Move), 0);
         for state in row["states"].as_array().unwrap() {
-            sim.session.binary_frame = state["frame"].as_u64().unwrap() as u32;
+            sim.session
+                .set_binary_frame_for_test(state["frame"].as_u64().unwrap() as u32);
             sim.process_ground_locomotor_stats_for_test(id, Some(&rules), None)
                 .unwrap();
             let entity = sim.substrate.entities.get(id).unwrap();
@@ -286,7 +287,7 @@ fn native_stop_and_null_destination_histories_preserve_frame_order() {
         for state in row["states"].as_array().unwrap().iter().skip(1) {
             match state["stage"].as_str().unwrap() {
                 "rest" => {
-                    sim.session.binary_frame = 101;
+                    sim.session.set_binary_frame_for_test(101);
                     sim.process_ground_locomotor_stats_for_test(id, Some(&rules), None)
                         .unwrap();
                 }
@@ -410,7 +411,7 @@ fn drive_stop_rest_and_departure_survive_production_snapshot_restore() {
         }
         for frame in 101..107 {
             for sim in [&mut original, &mut restored] {
-                sim.session.binary_frame = frame;
+                sim.session.set_binary_frame_for_test(frame);
                 sim.process_ground_locomotor_stats_for_test(id, Some(&rules), None)
                     .unwrap();
             }

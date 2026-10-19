@@ -81,8 +81,8 @@ fn attack_aim_duel(corpus: &serde_json::Value) -> Option<(Duel, u64, u64)> {
     let initial = attack_aim_row(corpus, "aim_cases", "stationary_target_aim");
     let source = attack_aim_coord(&initial["input"]["source_xyz"]);
     let target = attack_aim_coord(&initial["input"]["target_xyz"]);
-    duel.sim.session.map_width = 128;
-    duel.sim.session.map_height = 128;
+    duel.sim.session.set_map_width_for_test(128);
+    duel.sim.session.set_map_height_for_test(128);
     duel.sim
         .install_resolved_terrain_for_new_map(crate::map::resolved_terrain::test_grid(
             128,
@@ -205,7 +205,7 @@ fn original_aim_query_reads_live_motion_rank_and_facing_without_mutation() {
             .get_mut(target)
             .unwrap()
             .body_facing
-            .snap(facing, duel.sim.session.binary_frame);
+            .snap(facing, duel.sim.session.binary_frame());
         assert_read_only_native_aim(&duel, source, attack_aim_row(&corpus, "aim_cases", name));
     }
     duel.sim
@@ -249,7 +249,7 @@ fn original_direct_fireat_keeps_argument_speed_separate_from_live_tarcom_aim() {
     let actor = duel.sim.substrate.entities.get_mut(target).unwrap();
     actor
         .body_facing
-        .snap(0xc000, duel.sim.session.binary_frame);
+        .snap(0xc000, duel.sim.session.binary_frame());
     actor.veterancy.set_veteran();
     let row = attack_aim_row(
         &corpus,
@@ -391,7 +391,9 @@ fn target_uninit_clears_tarcom_before_aim_query_and_physical_removal() {
         assert_eq!(u64::from(timer.start_frame()), native[0].as_u64().unwrap());
         assert_eq!(u64::from(timer.duration()), native[2].as_u64().unwrap());
     };
-    duel.sim.session.binary_frame = expiry["before"]["source"]["frame"].as_u64().unwrap() as u32;
+    duel.sim
+        .session
+        .set_binary_frame_for_test(expiry["before"]["source"]["frame"].as_u64().unwrap() as u32);
     let before_timer = &expiry["before"]["targeting_timer"];
     duel.sim
         .substrate
@@ -495,11 +497,10 @@ impl Duel {
         let mut sim = Simulation::new();
         for (name, side, human) in [("Americans", 0, true), ("Russians", 1, true)] {
             let id = sim.interner.intern(name);
-            sim.houses.insert(
-                id,
-                crate::sim::house_state::HouseState::new(id, side, None, human, 0, 10),
-            );
-            sim.session.house_order.push(id);
+            sim.houses
+                .register(crate::sim::house_state::HouseState::new(
+                    id, side, None, human, 0, 10,
+                ));
         }
         let grid = crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
         // Production binds every rule identity before building the derived
@@ -533,7 +534,7 @@ impl Duel {
         let owner = self.sim.interner.intern(owner);
         self.sim.queue_command(CommandEnvelope::new(
             owner,
-            self.sim.session.tick + 1,
+            self.sim.session.tick() + 1,
             command,
         ));
     }

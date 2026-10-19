@@ -42,7 +42,7 @@ fn entity(sim: &Simulation, id: u64) -> &GameEntity {
 
 fn order(sim: &mut Simulation, house: &str, command: Command) {
     let owner = sim.interner.get(house).unwrap();
-    let tick = sim.session.tick;
+    let tick = sim.session.tick();
     sim.queue_command(CommandEnvelope::new(owner, tick + 1, command));
 }
 
@@ -654,11 +654,10 @@ fn lift_links_and_drop_credit_are_saved_and_hashed() {
     let mut sim = Simulation::with_seed(0x1269);
     for (name, human) in [("Russians", false), ("Americans", true)] {
         let id = sim.interner.intern(name);
-        sim.houses.insert(
-            id,
-            crate::sim::house_state::HouseState::new(id, 0, None, human, 0, 10),
-        );
-        sim.session.house_order.push(id);
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                id, 0, None, human, 0, 10,
+            ));
     }
     let magnetron = sim
         .spawn_object_at_height("TANK", "Americans", 10, 16, 0, 0, &rules)

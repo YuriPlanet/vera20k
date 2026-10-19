@@ -187,7 +187,7 @@ impl Simulation {
             && !in_phase
             && rules.is_some_and(|rules| self.mission_ready_to_commence(id, rules))
         {
-            let _ = self.mission_commence_exact(id, self.session.binary_frame);
+            let _ = self.mission_commence_exact(id, self.session.binary_frame());
         }
         if self.fly_update_flight_motion(id, rules, registry, frame_effects) {
             stats.impact = true;
@@ -331,7 +331,7 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         self.foot_mark_remove(id, rules, registry, frame_effects);
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
@@ -593,7 +593,7 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> i32 {
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         let Some(entity) = self.substrate.entities.get(id) else {
             return 0;
         };

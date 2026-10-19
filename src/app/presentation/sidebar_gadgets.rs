@@ -38,7 +38,7 @@ pub(crate) fn update_sidebar_gadget_state(state: &mut AppState) {
         false,
         false,
     ];
-    let (tick, frame) = (sim.session.tick, sim.session.binary_frame as i32);
+    let (tick, frame) = (sim.session.tick(), sim.session.binary_frame() as i32);
     state
         .match_state
         .match_presentation

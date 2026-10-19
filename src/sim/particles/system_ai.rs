@@ -83,7 +83,7 @@ where
     let pt = rules.particle_type(p.type_id);
     match pt.behaves_like {
         ParticleBehavesLike::Smoke => {
-            super::smoke::tick_particle(p, pt, sim.session.binary_frame, sim.particle_rng())
+            super::smoke::tick_particle(p, pt, sim.session.binary_frame(), sim.particle_rng())
         }
         ParticleBehavesLike::Gas => super::gas::tick_particle(
             p,

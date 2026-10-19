@@ -253,7 +253,7 @@ impl Simulation {
                         let radius = ion_blast::projected_radius(blast.coord, position);
                         if radius < 256 {
                             let sample = RippleFrames::shared().force_sample(blast.frame, radius);
-                            let facing = entity.body_facing_current(self.session.binary_frame);
+                            let facing = entity.body_facing_current(self.session.binary_frame());
                             let loaded = self
                                 .interner
                                 .type_handle(entity.type_ref(), rules)

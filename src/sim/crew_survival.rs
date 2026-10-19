@@ -578,7 +578,7 @@ impl Simulation {
             let on_bridge = building.on_bridge();
             // `0x00442F3C..0x00442F63`: the building's `+0x388` Current() as a
             // rounded DirType is the Unlimbo direction.
-            let frame = sim.session.binary_frame;
+            let frame = sim.session.binary_frame();
             let facing = building.body_facing_dir(frame);
             let requested = building.position;
             let positioned = if infantry && !no_survivor {
@@ -832,7 +832,7 @@ impl Simulation {
         let Some(unit) = self.substrate.entities.get(unit_id) else {
             return;
         };
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         let unit_owner = unit.owner();
         let on_bridge = unit.on_bridge();
         let dropped_as_bomb = unit.was_dropped_as_bomb();
@@ -1099,7 +1099,7 @@ impl Simulation {
             self.substrate
                 .entities
                 .get(id)
-                .map(|entity| entity.body_facing_dir(self.session.binary_frame))
+                .map(|entity| entity.body_facing_dir(self.session.binary_frame()))
         });
         let outcome = self.try_reveal_entity_with_context(
             id,

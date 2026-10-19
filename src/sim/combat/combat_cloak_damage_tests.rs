@@ -20,8 +20,6 @@
 //! the ordinary trigger for (1); a multi-record blast on an already-killed
 //! Dolphin is the trigger for (2).
 
-use std::collections::BTreeMap;
-
 use super::*;
 use crate::rules::ini_parser::IniFile;
 use crate::sim::cloak_disguise::CloakRuntime;
@@ -107,11 +105,12 @@ fn hit_records(
     let warhead_ref = interner.intern(warhead);
     let attacker_owner = entities.get(1).map(|attacker| attacker.owner());
 
-    let mut houses = BTreeMap::from([
-        (soviet, HouseState::new(soviet, 0, None, false, 0, 10)),
-        (allies, HouseState::new(allies, 1, None, false, 0, 10)),
-    ]);
-    let house_order = [soviet, allies];
+    let mut houses = [
+        HouseState::new(soviet, 0, None, false, 0, 10),
+        HouseState::new(allies, 1, None, false, 0, 10),
+    ]
+    .into_iter()
+    .collect::<crate::sim::houses::Houses>();
     let mut occupancy = OccupancyGrid::new();
     let mut main_rng = SimRng::new(11);
     let mut scenario_rng = SimRng::new(13);
@@ -132,7 +131,6 @@ fn hit_records(
         rules,
         &mut interner,
         &mut houses,
-        &house_order,
         alliances,
         &mut main_rng,
         &mut scenario_rng,

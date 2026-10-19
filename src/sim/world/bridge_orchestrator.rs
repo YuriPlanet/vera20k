@@ -1858,14 +1858,10 @@ mod tests {
         let mut sim = Simulation::new();
         let human = sim.interner.intern("Americans");
         let ai = sim.interner.intern("Russians");
-        sim.houses.insert(
-            human,
-            HouseState::new(human, 0, Some(human), true, 5_000, 10),
-        );
         sim.houses
-            .insert(ai, HouseState::new(ai, 0, Some(ai), false, 5_000, 10));
-        sim.session.house_order.push(human);
-        sim.session.house_order.push(ai);
+            .register(HouseState::new(human, 0, Some(human), true, 5_000, 10));
+        sim.houses
+            .register(HouseState::new(ai, 0, Some(ai), false, 5_000, 10));
 
         let mtnk = sim.interner.intern("MTNK");
         for (id, owner) in [(1u64, human), (2, human), (3, ai)] {

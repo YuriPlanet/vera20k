@@ -21,7 +21,7 @@ use crate::sim::vision::FogState;
 /// Max horizontal reach: sqrt(200) ≈ 14px, max vertical reach: sqrt(400) = 20px.
 const PICK_DISTANCE_THRESHOLD: f32 = 200.0;
 /// The simulation's house table, as the picker needs it: owner → player state.
-type HouseStates = std::collections::BTreeMap<InternedId, crate::sim::house_state::HouseState>;
+type HouseStates = crate::sim::houses::Houses;
 
 /// Ordered calls into the native selection vector. `clear` runs first,
 /// `deselect` removes exact members without disturbing survivors, and `select`
@@ -1262,7 +1262,7 @@ mod tests {
             let viewer = sim.interner.intern("viewer");
             let other = sim.interner.intern("other");
             let typ = sim.interner.intern("HTNK");
-            sim.session.current_house = Some(viewer);
+            sim.session.set_current_house_for_test(Some(viewer));
             sim.fog = FogState::new(32, 32);
             sim.fog.reveal_cells_for_owner(viewer, [(10, 10)]);
             if sensed {

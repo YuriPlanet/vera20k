@@ -245,7 +245,7 @@ impl Simulation {
             crate::sim::movement::ground_pose::building_render_order_parts(location, false, false);
         let (dx, dy) = self
             .session
-            .pixel_conversion_bounds
+            .pixel_conversion_bounds()
             .offset_to_leptons(config.x, config.y);
         Some(crate::sim::anim_class::AnimWorldCoord {
             x: base.x.wrapping_add(dx),
@@ -1161,11 +1161,12 @@ mod slot_tests {
             PlacementEvidence, RevealOutcome, RevealPosition, RevealRequest, UninitContext,
         };
         let (mut sim, mut rules, id) = slot_test_fixture();
-        sim.session.pixel_conversion_bounds =
+        sim.session.set_pixel_conversion_bounds_for_test(
             crate::util::pixel_conversion::PixelConversionBounds {
                 width: 640,
                 height: 480,
-            };
+            },
+        );
         let config = &mut rules.art_entry_mut_for_test("B").unwrap().building_anims[0];
         config.x = 640;
         config.y = 0;
@@ -1212,8 +1213,8 @@ mod slot_tests {
             .unwrap()
             .sim;
         assert_eq!(
-            restored.session.pixel_conversion_bounds,
-            sim.session.pixel_conversion_bounds
+            restored.session.pixel_conversion_bounds(),
+            sim.session.pixel_conversion_bounds()
         );
         assert_eq!(
             restored.anim(replaced).unwrap().world_coord,
@@ -1340,7 +1341,8 @@ mod slot_tests {
             );
             assert!(!sim.anim(missing).unwrap().runtime.first_ai_guard);
             assert!(!sim.anim(missing).unwrap().runtime.inactive);
-            sim.session.binary_frame += 1;
+            sim.session
+                .set_binary_frame_for_test(sim.session.binary_frame() + 1);
             sim.visit_anim(
                 missing,
                 &rules,
@@ -1380,7 +1382,7 @@ mod slot_tests {
             .runtime
             .loop_remaining = 8;
         sim.substrate.anims.get_mut(old).unwrap().start_sound_active = true;
-        sim.session.binary_frame = 91;
+        sim.session.set_binary_frame_for_test(91);
         let before_rng = sim.scenario_rng.logical_state();
         sim.set_building_damage_state(id, true, &rules);
         let new = sim.entities().get(id).unwrap().building_art.anim_slots[3].unwrap();
@@ -1564,7 +1566,7 @@ mod native_slot_tests {
             } else {
                 None
             };
-            sim.session.binary_frame = 91;
+            sim.session.set_binary_frame_for_test(91);
             let new = sim
                 .set_building_anim_slot(id, slot, false, false, 0, &rules)
                 .unwrap();

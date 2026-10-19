@@ -17,7 +17,7 @@ fn fixture() -> (Simulation, RuleSet) {
     let mut sim = Simulation::new();
     sim.fog.width = 32;
     sim.fog.height = 32;
-    sim.session.binary_frame = 10;
+    sim.session.set_binary_frame_for_test(10);
     let mut entity = GameEntity::test_default(1, "MTNK", "Americans", 10, 10);
     entity.set_category_for_test(EntityCategory::Unit);
     entity.lifecycle.set_object_alive_for_test(true);
@@ -236,7 +236,7 @@ fn accepted_chain_runs_sensor_callback_and_consumes_more_paid_points_in_same_obj
             .navigation
             .path_runtime
             .blocked_timer()
-            .remaining(sim.session.binary_frame as i32),
+            .remaining(sim.session.binary_frame() as i32),
         9
     );
     assert_eq!(

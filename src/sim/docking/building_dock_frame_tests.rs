@@ -52,10 +52,8 @@ fn constructed_depot_waiters_take_the_freed_slot_in_live_logic_order() {
         let mut sim = Simulation::with_seed(31);
         crate::sim::arena_fixture::flat_arena(&mut sim, rules);
         let owner = sim.interner.intern("Americans");
-        sim.houses.insert(
-            owner,
-            HouseState::new(owner, 0, Some(owner), true, 20_000, 10),
-        );
+        sim.houses
+            .register(HouseState::new(owner, 0, Some(owner), true, 20_000, 10));
         let tanks = std::array::from_fn::<_, 3, _>(|i| {
             sim.spawn_object("MTNK", "Americans", 14 + i as u16, 11, 0, rules)
                 .expect("constructed tank Reveal")

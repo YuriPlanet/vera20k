@@ -160,7 +160,7 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
-        let current_frame = self.session.binary_frame as i32;
+        let current_frame = self.session.binary_frame() as i32;
         let Some(team) = self.team_script_vm.teams.get_mut(&team_id) else {
             return;
         };

@@ -320,7 +320,7 @@ fn mcv_preempt(sim: &Simulation, rules: &RuleSet, owner: InternedId) -> bool {
     .map_or(0, |type_id| {
         house.tracking.owned_count(EntityCategory::Unit, type_id)
     });
-    mcv_tracked == 0 && sim.session.game_options.bases
+    mcv_tracked == 0 && sim.session.game_options().bases
 }
 
 /// `CellClass::PickupCrate @ 0x00481A00` for `actor_id` committing to
@@ -420,10 +420,10 @@ pub(crate) fn pickup_crate(
     }
     // `0x00481D86`: removal, then the replacement crate.
     let _ = remove_pickup_crate(sim, rules, registry, cell);
-    if multiplayer && sim.session.game_options.crates {
+    if multiplayer && sim.session.game_options().crates {
         let lighting = sim
             .session
-            .lighting
+            .lighting()
             .profile(crate::sim::scenario_session::ScenarioLightingProfile::Normal)
             .into();
         let _ = place_one_random_crate(

@@ -42,13 +42,12 @@ fn world(rules: &RuleSet, credits: i32, human: bool) -> (Simulation, InternedId)
     let mut sim = Simulation::with_seed(0x4D4F_4E45);
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
-    sim.session.binary_frame = 100;
+    sim.session.set_binary_frame_for_test(100);
     let owner = sim.interner.intern("Americans");
     sim.houses
-        .insert(owner, HouseState::new(owner, 0, None, human, credits, 10));
-    sim.session.house_order.push(owner);
-    sim.session.current_house = Some(owner);
-    sim.session.game_options.super_weapons = true;
+        .register(HouseState::new(owner, 0, None, human, credits, 10));
+    sim.session.set_current_house_for_test(Some(owner));
+    sim.session.game_options_mut_for_test().super_weapons = true;
     crate::sim::arena_fixture::flat_ground(&mut sim, rules);
     superweapon::construct_house_supers(&mut sim, rules, owner, false);
     (sim, owner)
@@ -70,7 +69,10 @@ fn ready(
         .unwrap()
         .get_mut(&id)
         .unwrap()
-        .set_charged(rules.super_weapon(name).unwrap(), sim.session.binary_frame);
+        .set_charged(
+            rules.super_weapon(name).unwrap(),
+            sim.session.binary_frame(),
+        );
     sim.sound_events.clear();
     id
 }
@@ -415,7 +417,7 @@ fn superweapon_money_missing_owner_cannot_create_or_grant_a_wallet() {
     let rules = rules("[Reveal]\nMoney.Amount=500\n");
     let (mut sim, owner) = world(&rules, 1000, true);
     let id = ready(&mut sim, &rules, owner, "Reveal", false);
-    sim.houses.remove(&owner);
+    sim.houses.remove_for_test(&owner);
     assert!(!fire(&mut sim, &rules, owner, id, (10, 10)));
     assert!(!sim.houses.contains_key(&owner));
     assert!(sim.super_weapons[&owner][&id].is_ready);
@@ -513,7 +515,8 @@ fn superweapon_money_two_stage_source_never_changes_wallet_across_ticks() {
                 sim.sound_events.is_empty(),
                 "refusal has no activation effects"
             );
-            sim.session.binary_frame += 1;
+            sim.session
+                .set_binary_frame_for_test(sim.session.binary_frame() + 1);
             superweapon::tick_house_superweapon_instances(&mut sim, &rules, owner);
         }
         assert_eq!(

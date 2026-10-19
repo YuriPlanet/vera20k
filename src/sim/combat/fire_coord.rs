@@ -422,7 +422,7 @@ fn fire_coordinate_base<'r>(
     snap: &FireSource,
     obj: &ObjectType,
 ) -> FireBase<'r> {
-    let binary_frame = world.session.binary_frame;
+    let binary_frame = world.session.binary_frame();
     let source_z = world
         .substrate
         .entities
@@ -900,7 +900,7 @@ mod tests {
         shooter.hull_facing = crate::sim::movement::FacingClass::new(0, 0);
         shooter.barrel_facing = Some(crate::sim::movement::FacingClass::new(0x3fff, 0));
         for row in native["cases"].as_array().unwrap() {
-            world.session.binary_frame = row["supplied"]["binary_frame"].as_u64().unwrap() as u32;
+            world.session.set_binary_frame_for_test(row["supplied"]["binary_frame"].as_u64().unwrap() as u32);
             let shot = fire_coordinate(
                 &world,
                 &rules,
@@ -1017,7 +1017,7 @@ mod tests {
                 ids.push(id);
             }
             let frame = input["frame"].as_u64().unwrap() as u32;
-            world.session.binary_frame = frame;
+            world.session.set_binary_frame_for_test(frame);
             let source = world.substrate.entities.get_mut(ids[0]).unwrap();
             source.body_facing = crate::sim::movement::FacingClass::new(
                 input["primary_facing"].as_u64().unwrap() as u16,

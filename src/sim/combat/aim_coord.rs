@@ -111,7 +111,7 @@ pub fn led_target_coordinate(
         });
     lead_aim(
         target_coord,
-        target.body_facing_current(world.session.binary_frame),
+        target.body_facing_current(world.session.binary_frame()),
         distance,
         weapon_launch_speed(
             current_weapon.speed,

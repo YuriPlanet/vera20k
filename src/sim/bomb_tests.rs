@@ -122,8 +122,7 @@ fn sim(seed: u64) -> Simulation {
     for (name, side, human) in [("Americans", 0, true), ("Russians", 1, false)] {
         let id = sim.interner.intern(name);
         sim.houses
-            .insert(id, HouseState::new(id, side, None, human, 0, 10));
-        sim.session.house_order.push(id);
+            .register(HouseState::new(id, side, None, human, 0, 10));
     }
     sim
 }
@@ -212,7 +211,7 @@ fn attack(sim: &mut Simulation, attacker: u64, target: u64) {
     let owner = entity(sim, attacker).owner();
     sim.queue_command(CommandEnvelope::new(
         owner,
-        sim.session.tick + 1,
+        sim.session.tick() + 1,
         Command::Attack {
             attacker_id: attacker,
             target_id: target,
@@ -222,7 +221,7 @@ fn attack(sim: &mut Simulation, attacker: u64, target: u64) {
 
 /// One frame; returns the native frame it ran as.
 fn step(sim: &mut Simulation, rules: &RuleSet, grid: &crate::sim::pathfinding::PathGrid) -> i32 {
-    let frame = sim.session.binary_frame as i32;
+    let frame = sim.session.binary_frame() as i32;
     let commands = sim.take_due_commands();
     sim.advance_tick(&commands, Some(rules), Some(grid), None, 33);
     frame
@@ -413,12 +412,12 @@ fn native_world(input: &serde_json::Value, rules: &RuleSet) -> NativeWorld {
         .map(|n| {
             let id = sim.interner.intern(&format!("house{n}"));
             sim.houses
-                .insert(id, HouseState::new(id, 0, None, false, 0, 10));
-            sim.session.house_order.push(id);
+                .register(HouseState::new(id, 0, None, false, 0, 10));
             id
         })
         .collect();
-    sim.session.binary_frame = input["frame"].as_i64().unwrap_or(1000) as u32;
+    sim.session
+        .set_binary_frame_for_test(input["frame"].as_i64().unwrap_or(1000) as u32);
     let technos = input["technos"].as_array().unwrap();
     let ids: Vec<u64> = technos
         .iter()
@@ -474,7 +473,7 @@ fn native_world(input: &serde_json::Value, rules: &RuleSet) -> NativeWorld {
         bomb.planter = fields["planter"].as_u64().map(|n| ids[n as usize]);
         bomb.planter_house = houses[fields["house"].as_u64().unwrap_or(0) as usize];
         if technos[slot]["visible"].as_u64() == Some(1) {
-            bomb.seen_by = house_bit(&sim.session.house_order, local);
+            bomb.seen_by = house_bit(&sim.houses.order(), local);
         }
         sim.substrate.entities.get_mut(ids[slot]).unwrap().bomb = Some(bomb);
         sim.bombs.carriers.insert(ids[slot]);
@@ -831,7 +830,7 @@ fn retail_fire_once_defuse_releases_target_and_carrier() {
     // admission without Command::Attack's enemy-only convenience gate.
     sim.queue_command(CommandEnvelope::new(
         entity(&sim, engineer).owner(),
-        sim.session.tick + 1,
+        sim.session.tick() + 1,
         Command::Attack {
             attacker_id: engineer,
             target_id: tank,
@@ -876,9 +875,9 @@ fn the_fuse_waits_while_the_carrier_is_in_limbo() {
     let mut sim = sim(22);
     let tank = spawn(&mut sim, &rules, "HTNK", "Americans", 12, 10);
     let ivan = spawn(&mut sim, &rules, "IVAN", "Russians", 11, 10);
-    sim.session.binary_frame = 100;
+    sim.session.set_binary_frame_for_test(100);
     sim.bomb_attach(ivan, Some(tank), &rules);
-    sim.session.binary_frame = 100 + 451;
+    sim.session.set_binary_frame_for_test(100 + 451);
     sim.substrate
         .entities
         .get_mut(tank)
@@ -916,13 +915,13 @@ fn a_bomb_outlives_its_planter_and_credits_no_one() {
     let mut sim = sim(23);
     let tank = spawn(&mut sim, &rules, "LTNK", "Americans", 12, 10);
     let ivan = spawn(&mut sim, &rules, "IVAN", "Russians", 11, 10);
-    sim.session.binary_frame = 100;
+    sim.session.set_binary_frame_for_test(100);
     sim.bomb_attach(ivan, Some(tank), &rules);
     sim.uninit_with_rules(ivan, &rules);
     sim.flush_pending_delete();
     assert_eq!(bomb(&sim, tank).unwrap().planter, None);
 
-    sim.session.binary_frame = 100 + 451;
+    sim.session.set_binary_frame_for_test(100 + 451);
     sim.bomb_fuse_step(
         tank,
         &rules,
@@ -1054,9 +1053,9 @@ fn the_blast_is_centred_on_the_carrier() {
     for id in [tank, engineer] {
         place(&mut sim, &rules, id, (3000, 3100));
     }
-    sim.session.binary_frame = 100;
+    sim.session.set_binary_frame_for_test(100);
     sim.bomb_attach(ivan, Some(tank), &rules);
-    sim.session.binary_frame = 100 + 451;
+    sim.session.set_binary_frame_for_test(100 + 451);
     sim.bomb_fuse_step(
         tank,
         &rules,
@@ -1082,11 +1081,11 @@ fn a_blast_sets_off_the_bombs_it_kills() {
     for id in [first, second] {
         place(&mut sim, &rules, id, (3000, 3100));
     }
-    sim.session.binary_frame = 100;
+    sim.session.set_binary_frame_for_test(100);
     sim.bomb_attach(ivan, Some(first), &rules);
-    sim.session.binary_frame = 200;
+    sim.session.set_binary_frame_for_test(200);
     sim.bomb_attach(ivan, Some(second), &rules);
-    sim.session.binary_frame = 100 + 451;
+    sim.session.set_binary_frame_for_test(100 + 451);
     sim.bomb_fuse_step(
         first,
         &rules,

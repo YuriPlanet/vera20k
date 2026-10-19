@@ -162,6 +162,20 @@ opt-level = 1
 [profile.test]
 opt-level = 0
 
+# Test builds of the client crate carry no debug info. On macOS a test
+# executable with line tables keeps every compiler object it was linked from
+# (split-debuginfo "unpacked"), and the cache retention in tools/ must protect
+# them: on 2026-10-20 client test builds kept about 220 MiB each, 2.8 GiB across
+# the live caches. Without debug info rustc deletes them after linking; in the
+# same trial on the core test build, one-line edits rebuilt in 21.7-25.5 s
+# against 22.7-29.6 s with line tables. Symbol tables remain, so backtraces
+# still name client functions (MSVC still writes a PDB), without file and line.
+# The core crate keeps its line tables: its RNG draw traces name `src/...rs:line`
+# frames (sim::rng tests), and its test builds keep about 1 GiB of objects for it.
+# Dependencies keep the dev settings, so test and dev builds share them.
+[profile.test.package.vera20k]
+debug = false
+
 # Play-tests and captures after an edit: release optimization, but the
 # workspace crates compile incrementally, so rustc splits each into 256 codegen
 # units and reuses those an edit leaves unchanged. Measured on an M4 Mac mini on

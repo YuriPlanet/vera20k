@@ -30,12 +30,11 @@ fn simulation(rules: &RuleSet) -> (Simulation, InternedId) {
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
     let owner = sim.interner.intern("Americans");
-    sim.houses.insert(
-        owner,
-        crate::sim::house_state::HouseState::new(owner, 0, None, true, 50_000, 10),
-    );
-    sim.session.house_order.push(owner);
-    sim.session.current_house = Some(owner);
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, true, 50_000, 10,
+        ));
+    sim.session.set_current_house_for_test(Some(owner));
     sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     (sim, owner)
 }

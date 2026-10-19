@@ -62,8 +62,7 @@ impl Fixture {
         let mut sim = Simulation::with_seed(0x6ED200);
         let owner = sim.interner.intern("Russians");
         sim.houses
-            .insert(owner, HouseState::new(owner, 1, None, false, 0, 10));
-        sim.session.house_order.push(owner);
+            .register(HouseState::new(owner, 1, None, false, 0, 10));
         let grid = crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
         let lines: String = script
             .iter()
@@ -764,8 +763,7 @@ impl OracleTeam {
         let mut sim = Simulation::with_seed(0x6EF110);
         let owner = sim.interner.intern("Russians");
         sim.houses
-            .insert(owner, HouseState::new(owner, 1, None, false, 0, 10));
-        sim.session.house_order.push(owner);
+            .register(HouseState::new(owner, 1, None, false, 0, 10));
         crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
         let aimd = IniFile::from_str(&format!(
             "[TeamTypes]\n0=ROW\n\

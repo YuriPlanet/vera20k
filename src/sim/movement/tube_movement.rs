@@ -542,7 +542,7 @@ impl Simulation {
         };
         turn.movement.movers_total = 1;
         turn.bridge_state_changed = exit.map_err(|cause| {
-            FrameAdvanceError::new(self.session.tick, self.session.binary_frame, id, cause)
+            FrameAdvanceError::new(self.session.tick(), self.session.binary_frame(), id, cause)
         })?;
         // Only a completed exit leaves the tube, and each runs its
         // Per_Cell_Process(2).
@@ -686,7 +686,7 @@ impl Simulation {
                 &mut self.substrate.entities,
                 id,
                 terrain,
-                self.session.binary_frame,
+                self.session.binary_frame(),
             );
         }
         Ok(bridge_state_changed)

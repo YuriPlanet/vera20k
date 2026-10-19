@@ -50,7 +50,6 @@
 //!   (`0x004FD5B9..0x004FD5E5`) is dormant: no cell's coordinate is zero.
 
 use crate::sim::world::FrameEffects;
-use std::collections::BTreeMap;
 
 use crate::map::entities::EntityCategory;
 use crate::map::houses::HouseAllianceMap;
@@ -84,7 +83,7 @@ pub(crate) fn update_strategy(
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     frame_effects: FrameEffects<'_>,
 ) {
-    let frame = sim.session.binary_frame as i32;
+    let frame = sim.session.binary_frame() as i32;
     let Some(house) = sim.houses.get(&owner) else {
         return;
     };
@@ -124,7 +123,7 @@ fn building_strategy(
     // Available_Money (IHouse vt+0x18) is a pure read; the block's second
     // query sees the same value.
     let money = crate::sim::credit_income::available_money(sim, owner);
-    let frame = sim.session.binary_frame as i32;
+    let frame = sim.session.binary_frame() as i32;
     let emergency = sim.houses.get_mut(&owner).is_some_and(|house| {
         advance_emergency_state(&mut house.strategy_emergency, frame, || money)
     });
@@ -181,7 +180,7 @@ fn sell_off_and_hunt(
 
 /// `0x004FD538..0x004FD71E`: see the module doc.
 fn pick_enemy(sim: &mut Simulation, owner: InternedId) {
-    if !ENEMY_SEARCH_TIMER.expired(sim.session.binary_frame as i32)
+    if !ENEMY_SEARCH_TIMER.expired(sim.session.binary_frame() as i32)
         || !sim.session.game_mode_nonzero()
     {
         return;
@@ -192,7 +191,7 @@ fn pick_enemy(sim: &mut Simulation, owner: InternedId) {
     if house.enemy_house.is_some() || house.multiplay_passive || house.base_origin() == (0, 0) {
         return;
     }
-    let first = sim.session.house_order.iter().copied().find(|&peer| {
+    let first = sim.houses.order().iter().copied().find(|&peer| {
         peer != owner
             && sim
                 .houses
@@ -202,7 +201,6 @@ fn pick_enemy(sim: &mut Simulation, owner: InternedId) {
     if let Some(peer) = first {
         update_anger_nodes(
             &mut sim.houses,
-            &sim.session.house_order,
             &sim.house_alliances,
             &sim.interner,
             owner,
@@ -232,7 +230,6 @@ fn forget_defeated_enemy(sim: &mut Simulation, owner: InternedId) {
         .unwrap_or(0);
     update_anger_nodes(
         &mut sim.houses,
-        &sim.session.house_order,
         &sim.house_alliances,
         &sim.interner,
         owner,
@@ -375,7 +372,7 @@ pub(crate) fn all_to_hunt(
             id,
             hunt,
             0,
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
             &EntityReadyInputProvider,
         );
     }
@@ -392,16 +389,14 @@ pub(crate) fn all_to_hunt(
 /// untouched constructor-zero nodes without materializing serialized state.
 /// With no winner the enemy is cleared (`0x0050484F`).
 pub(crate) fn update_anger_nodes(
-    houses: &mut BTreeMap<InternedId, HouseState>,
-    house_order: &[InternedId],
+    houses: &mut crate::sim::houses::Houses,
     alliances: &HouseAllianceMap,
     interner: &StringInterner,
     owner: InternedId,
     peer: InternedId,
     delta: i32,
 ) {
-    let peer_is_registered =
-        peer != owner && house_order.contains(&peer) && houses.contains_key(&peer);
+    let peer_is_registered = peer != owner && houses.contains_key(&peer);
     if peer_is_registered
         && let Some(house) = houses.get_mut(&owner)
         && (delta != 0 || house.grudge_scores.contains_key(&peer))
@@ -415,7 +410,7 @@ pub(crate) fn update_anger_nodes(
     };
     let mut best_score = 0;
     let mut best_house = None;
-    for &candidate_id in house_order {
+    for &candidate_id in houses.order() {
         if candidate_id == owner {
             continue;
         }

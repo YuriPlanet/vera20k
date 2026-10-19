@@ -103,12 +103,7 @@ impl PaidHead {
         let other = sim.interner.intern("Opponent");
         let mut house = HouseState::new(other, 1, Some(owner), false, 0, 10);
         house.project_country_mults(rules, &sim.interner);
-        sim.houses.insert(other, house);
-        for house in [owner, other] {
-            if !sim.session.house_order.contains(&house) {
-                sim.session.house_order.push(house);
-            }
-        }
+        sim.houses.register(house);
         let attacker = sim
             .spawn_object("CLEG", "Opponent", 12, 20, 0, rules)
             .expect("the stock CLEG prior constructs before the comparison");
@@ -153,7 +148,8 @@ impl PaidHead {
             {
                 break;
             }
-            sim.session.binary_frame = sim.session.binary_frame.wrapping_add(1);
+            sim.session
+                .set_binary_frame_for_test(sim.session.binary_frame().wrapping_add(1));
             production::step_factories(sim);
         }
         let factory = sim.production.factories.view(owner, CATEGORY).unwrap();
@@ -162,7 +158,7 @@ impl PaidHead {
         let factory_order = factory.construction_order();
         let frame_offset = sim
             .session
-            .binary_frame
+            .binary_frame()
             .wrapping_sub(row["initial"]["frame"].as_u64().unwrap() as u32);
         let native_original = row["initial"]["factory"]["held_id"].as_u64().unwrap();
         let type_id = sim.interner.get("E2").unwrap();
@@ -247,8 +243,11 @@ impl PaidHead {
                 };
                 // Core starts at the native event boundary. Actual Select and
                 // cameo hit testing remain with the app's separate input test.
-                self.pending
-                    .push(CommandEnvelope::new(self.owner, sim.session.tick, payload));
+                self.pending.push(CommandEnvelope::new(
+                    self.owner,
+                    sim.session.tick(),
+                    payload,
+                ));
             }
             "prior_user_suspend_receive" | "same_head_resume_receive" => {
                 assert_eq!(self.pending.len(), 1);
@@ -256,7 +255,7 @@ impl PaidHead {
                 let (executed, spawned) = sim.apply_due_commands(
                     &commands,
                     Some(rules),
-                    sim.session.tick,
+                    sim.session.tick(),
                     None,
                     FrameEffects::default(),
                 );
@@ -308,7 +307,7 @@ impl PaidHead {
                 assert!(sim.production.factories.complete_production(
                     self.owner,
                     CATEGORY,
-                    sim.session.binary_frame,
+                    sim.session.binary_frame(),
                 ))
             }
             "original_start_next_queued" => {
@@ -355,8 +354,9 @@ impl PaidHead {
         let mut phases = 0;
         for phase in row["phases"].as_array().unwrap() {
             let label = format!("{} {}", row["name"], phase["name"]);
-            self.runtime.simulation.session.binary_frame =
-                (phase["before"]["frame"].as_u64().unwrap() as u32).wrapping_add(self.frame_offset);
+            self.runtime.simulation.session.set_binary_frame_for_test(
+                (phase["before"]["frame"].as_u64().unwrap() as u32).wrapping_add(self.frame_offset),
+            );
             assert_eq!(self.head(), phase["before"]["factory"], "{label} before");
             let before_rng = self.rng();
             let before_id = self.runtime.simulation.substrate.next_stable_object_id;

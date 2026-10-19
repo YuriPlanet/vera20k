@@ -117,7 +117,7 @@ fn sov01_transport_crosses_water_below_golden_gate() {
         }
     }
     let owner = scenario.sim().interner.get(&owner_name).unwrap();
-    let tick = scenario.sim().session.tick + 1;
+    let tick = scenario.sim().session.tick() + 1;
     scenario
         .runtime
         .advance_frame(

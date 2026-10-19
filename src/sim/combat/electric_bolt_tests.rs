@@ -122,11 +122,8 @@ fn scene(rules: &RuleSet, input: &Value) -> (Simulation, u64, u64) {
     let mut sim = Simulation::new();
     for (index, name) in ["Russians", "Americans"].into_iter().enumerate() {
         let owner = sim.intern(name);
-        sim.houses.insert(
-            owner,
-            HouseState::new(owner, index as u8, None, true, 0, 10),
-        );
-        sim.session.house_order.push(owner);
+        sim.houses
+            .register(HouseState::new(owner, index as u8, None, true, 0, 10));
     }
     sim.install_resolved_terrain_for_new_map(crate::map::resolved_terrain::test_flat_ground_grid(
         64,
@@ -145,7 +142,8 @@ fn scene(rules: &RuleSet, input: &Value) -> (Simulation, u64, u64) {
     let source = place("TESLA", "Russians", &input["location"]);
     let target = place("GAPOWR", "Americans", &input["target_building"]["location"]);
     sim.resolve_type_handles(rules);
-    sim.session.binary_frame = int(&input["birth_frame"]) as u32;
+    sim.session
+        .set_binary_frame_for_test(int(&input["birth_frame"]) as u32);
     sim.power_states.clear();
     if input["retained_target"].as_bool().unwrap() {
         assert!(super::install_entity_attack_target_for_test(
@@ -558,7 +556,7 @@ fn delayed_building_fire_skips_spark_after_bullet_compaction_until_the_next_pass
     let row = ordinary_birth();
     let (mut sim, source, target) = scene(rules, &row["input"]);
     restore_rng(&mut sim, &row["rng_before"]);
-    let now = sim.session.binary_frame as i32;
+    let now = sim.session.binary_frame() as i32;
     let entity = sim.substrate.entities.get_mut(source).unwrap();
     entity
         .pending_building_fire
@@ -683,7 +681,7 @@ fn delayed_building_fire_skips_spark_after_bullet_compaction_until_the_next_pass
             .is_none()
     );
 
-    let firing_frame = sim.session.binary_frame;
+    let firing_frame = sim.session.binary_frame();
     let identity_before_ai = sim.native_identity_cursor().unwrap();
     sim.clear_lifecycle_test_events_for_test();
     let next = sim
@@ -705,7 +703,7 @@ fn delayed_building_fire_skips_spark_after_bullet_compaction_until_the_next_pass
     let native_frame_step = int(&schedule["second_logic_visit"]["binary_frame"])
         - int(&schedule["first_logic_visit"]["binary_frame"]);
     assert_eq!(
-        sim.session.binary_frame - firing_frame,
+        sim.session.binary_frame() - firing_frame,
         native_frame_step as u32
     );
     let first_ai = &schedule["second_logic_visit"]["state"];
@@ -787,7 +785,7 @@ fn natural_charge_expiry_preserves_native_bullet_and_spark_visit_order() {
         let name = case["input"]["name"].as_str().unwrap();
         let (mut sim, source, target) = scene(rules, &birth["input"]);
         let start = int(&case["input"]["charge_birth_frame"]);
-        sim.session.binary_frame = 0;
+        sim.session.set_binary_frame_for_test(0);
         // The native component supplies an already operational Building.
         // Reach that state through the ordinary House/Building owners before
         // creating its charge, including the damaged-slot transition.
@@ -831,7 +829,7 @@ fn natural_charge_expiry_preserves_native_bullet_and_spark_visit_order() {
             .expect("physical Tesla charge animation is bound");
         for visit in case["charge_warmup"].as_array().unwrap() {
             assert_eq!(
-                sim.session.binary_frame,
+                sim.session.binary_frame(),
                 int(&visit["frame"]) as u32,
                 "{name}"
             );
@@ -870,7 +868,7 @@ fn natural_charge_expiry_preserves_native_bullet_and_spark_visit_order() {
             );
         }
         assert_eq!(
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
             int(&case["input"]["frame"]) as u32,
             "{name}"
         );
@@ -883,7 +881,7 @@ fn natural_charge_expiry_preserves_native_bullet_and_spark_visit_order() {
             )));
         entity
             .rearm_timer
-            .set_for_test(CdTimer::started(sim.session.binary_frame as i32, 0));
+            .set_for_test(CdTimer::started(sim.session.binary_frame() as i32, 0));
         let health_before = sim.substrate.entities.get(target).unwrap().health.current();
         let mut previous_light_count = 0;
         for (visit_index, key) in ["first_logic_visit", "second_logic_visit"]

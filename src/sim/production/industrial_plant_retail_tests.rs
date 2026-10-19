@@ -228,7 +228,7 @@ fn stock_plant_gain_and_sale_preserve_tank_debt_and_settle_current_price() {
             });
             let commands: Vec<_> = command
                 .into_iter()
-                .map(|command| CommandEnvelope::new(owner, sim.session.tick, command))
+                .map(|command| CommandEnvelope::new(owner, sim.session.tick(), command))
                 .collect();
             scene
                 .runtime

@@ -47,7 +47,7 @@ fn attack_friendlies_uses_native_boolean_defaults_layers_and_retail_inputs() {
 #[test]
 fn unmatched_go_berzerk_does_not_abort_the_following_trigger_action() {
     let (mut sim, rules, registry, houses) = fixture(false);
-    sim.session.binary_frame = 8;
+    sim.session.set_binary_frame_for_test(8);
     sim.raise_house_tags(
         houses[1],
         Some(&rules),
@@ -71,7 +71,7 @@ fn fixture(
          [Projectiles]\n0=INVIS\n[INVIS]\nInviso=yes\nAA=yes\nAG=yes\n",
         if attack_friendlies { "yes" } else { "no" }
     ));
-    sim.session.current_house = Some(houses[0]);
+    sim.session.set_current_house_for_test(Some(houses[0]));
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     tests::install_event_ingress_map(
@@ -237,7 +237,7 @@ fn ordered_go_berzerk_survives_snapshot_tag_removal_and_reconstruction_starts_cl
     let actor = spawn(&mut sim, &rules, "SHOOTER", "House0", 15);
     sim.attach_object_trigger_tag(actor, Some("CONTROLTAG"));
     let before = rng(&sim);
-    sim.session.binary_frame = 8;
+    sim.session.set_binary_frame_for_test(8);
     sim.raise_house_tags(
         houses[1],
         Some(&rules),

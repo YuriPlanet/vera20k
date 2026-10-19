@@ -542,7 +542,7 @@ mod tests {
             let sw_type_id = sim.interner.intern(name);
             sim.queue_command(CommandEnvelope::new(
                 americans,
-                sim.session.tick + 3,
+                sim.session.tick() + 3,
                 Command::LaunchSuperWeapon {
                     sw_type_id,
                     target_rx: rx,

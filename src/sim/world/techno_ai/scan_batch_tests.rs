@@ -29,7 +29,7 @@ fn scene_with(rules: &RuleSet, cells: &[(u16, u16)]) -> (Simulation, u64, Vec<u6
     for &(rx, ry) in cells {
         sim.fog.mark_visible_for_owner(owner, rx, ry);
     }
-    sim.session.binary_frame = 100;
+    sim.session.set_binary_frame_for_test(100);
     sim.substrate
         .entities
         .get_mut(scanner)

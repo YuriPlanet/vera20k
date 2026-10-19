@@ -437,7 +437,7 @@ fn tick_detonations(
     occupancy: &mut OccupancyGrid,
     rules: &RuleSet,
     interner: &mut StringInterner,
-    houses: &mut BTreeMap<InternedId, HouseState>,
+    houses: &mut crate::sim::houses::Houses,
     alliances: &HouseAllianceMap,
     frame: u32,
     live_order: &[u64],
@@ -455,7 +455,6 @@ fn tick_detonations(
         None,
         &BTreeMap::new(),
         houses,
-        &[],
         alliances,
         None,
         None,
@@ -516,8 +515,7 @@ fn commit_hits(
     entities: &mut EntityStore,
     rules: &RuleSet,
     interner: &mut StringInterner,
-    houses: &mut BTreeMap<InternedId, HouseState>,
-    house_order: &[InternedId],
+    houses: &mut crate::sim::houses::Houses,
     current_tick: u64,
     mut hooks: Option<&mut FixtureTrace>,
 ) {
@@ -528,7 +526,6 @@ fn commit_hits(
         rules,
         interner,
         houses,
-        house_order,
         &HouseAllianceMap::new(),
         &mut SimRng::new(5),
         &mut SimRng::new(7),
@@ -559,17 +556,17 @@ fn set_mission(entity: &mut GameEntity, current: MissionType, suspended: Mission
 
 /// Computer houses with no country or credits at tech level 10, each on the
 /// side its position in `owners` gives.
-fn computer_houses(owners: &[InternedId]) -> BTreeMap<InternedId, HouseState> {
-    owners
-        .iter()
-        .enumerate()
-        .map(|(side, &owner)| {
-            (
-                owner,
-                HouseState::new(owner, side as u8, None, false, 0, 10),
-            )
-        })
-        .collect()
+fn computer_houses(owners: &[InternedId]) -> crate::sim::houses::Houses {
+    let mut houses = crate::sim::houses::Houses::default();
+    register_computer_houses(&mut houses, owners);
+    houses
+}
+
+/// Register [`computer_houses`] in `owners` order.
+fn register_computer_houses(houses: &mut crate::sim::houses::Houses, owners: &[InternedId]) {
+    for (side, &owner) in owners.iter().enumerate() {
+        houses.register(HouseState::new(owner, side as u8, None, false, 0, 10));
+    }
 }
 
 fn gsi_04_05_attack_frame_rules() -> RuleSet {
@@ -629,7 +626,7 @@ fn gsi_04_05_building_attack_frame_prelude_obeys_object_and_type_gates() {
     let source_owner = interner.intern("Enemy");
     let wh = interner.intern("HITWH");
     let mut houses = computer_houses(&[victim_owner]);
-    let frame = |houses: &BTreeMap<InternedId, HouseState>| {
+    let frame = |houses: &crate::sim::houses::Houses| {
         houses[&victim_owner]
             .strategy_emergency
             .last_building_attack_frame()
@@ -777,7 +774,6 @@ fn gsi_04_05_building_attack_frame_precedes_immune_receiver_exit() {
         &rules,
         &mut interner,
         &mut houses,
-        &[victim_owner, source_owner],
         77,
         Some(&mut trace_hook),
     );
@@ -830,7 +826,6 @@ fn gsi_04_05_protected_techno_response_runs_after_object_health_commit() {
         &rules,
         &mut interner,
         &mut houses,
-        &[victim_owner, source_owner],
         91,
         Some(&mut trace_hook),
     );
@@ -892,17 +887,13 @@ fn gsi_04_05_protected_techno_response_runs_only_on_result_one() {
     let wh = interner.intern("HITWH");
     let mut ally = HouseState::new(ally_owner, 0, None, false, 0, 10);
     ally.player_control = true;
-    let mut houses = BTreeMap::from([
-        (
-            victim_owner,
-            HouseState::new(victim_owner, 0, None, false, 0, 10),
-        ),
-        (ally_owner, ally),
-        (
-            source_owner,
-            HouseState::new(source_owner, 1, None, false, 0, 10),
-        ),
-    ]);
+    let mut houses = [
+        HouseState::new(victim_owner, 0, None, false, 0, 10),
+        ally,
+        HouseState::new(source_owner, 1, None, false, 0, 10),
+    ]
+    .into_iter()
+    .collect::<crate::sim::houses::Houses>();
     let mut trace_hook = FixtureTrace::default();
 
     // Result 1, a yellow crossing, a red crossing, a kill, and result 1 on
@@ -919,7 +910,6 @@ fn gsi_04_05_protected_techno_response_runs_only_on_result_one() {
         &rules,
         &mut interner,
         &mut houses,
-        &[victim_owner, ally_owner, source_owner],
         91,
         Some(&mut trace_hook),
     );
@@ -968,7 +958,9 @@ fn sourceless_infantry_hit_takes_the_refused_scatter_arm_and_the_fear_ladder() {
         let mut interner = test_interner();
         let owner = interner.intern("Test");
         let wh = interner.intern("HITWH");
-        let mut houses = BTreeMap::from([(owner, HouseState::new(owner, 0, None, human, 0, 10))]);
+        let mut houses = [HouseState::new(owner, 0, None, human, 0, 10)]
+            .into_iter()
+            .collect::<crate::sim::houses::Houses>();
         let mut main_rng = SimRng::new(5);
         let mut scenario_rng = SimRng::new(7);
         let scenario_before = scenario_rng.state();
@@ -980,7 +972,6 @@ fn sourceless_infantry_hit_takes_the_refused_scatter_arm_and_the_fear_ladder() {
             &rules,
             &mut interner,
             &mut houses,
-            &[owner],
             &HouseAllianceMap::new(),
             &mut main_rng,
             &mut scenario_rng,
@@ -1026,7 +1017,7 @@ fn retail_damage_scatter_tail_admits_by_rank_ability_and_ownership() {
         crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
         let owner = sim.interner.intern("Americans");
         sim.houses
-            .insert(owner, HouseState::new(owner, 0, None, human, 0, 10));
+            .register(HouseState::new(owner, 0, None, human, 0, 10));
         let id = sim
             .spawn_object(type_id, "Americans", 10, 10, 0, &rules)
             .unwrap();
@@ -1107,8 +1098,7 @@ fn retail_arena_hit_by(
     for &(type_id, house, human, rx) in actors {
         let owner = sim.interner.intern(house);
         sim.houses
-            .entry(owner)
-            .or_insert_with(|| HouseState::new(owner, 0, None, human, 0, 10));
+            .get_or_register_for_test(owner, || HouseState::new(owner, 0, None, human, 0, 10));
         ids.push(sim.spawn_object(type_id, house, rx, 10, 0, rules).unwrap());
     }
     setup(&mut sim, &ids);
@@ -1397,7 +1387,7 @@ fn retail_berserk_gi_calms_down_in_the_frame_its_time_ends() {
     let mut sim = Simulation::with_seed(0x5CA7);
     let grid = crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
     let owner = sim.interner.intern("Russians");
-    sim.houses.extend(computer_houses(&[owner]));
+    register_computer_houses(&mut sim.houses, &[owner]);
     let gi = sim
         .spawn_object("E1", "Russians", 10, 10, 0, &rules)
         .unwrap();
@@ -1434,7 +1424,7 @@ fn retail_berserk_gi_targets_its_own_house() {
     let mut sim = Simulation::with_seed(0x5CA7);
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
     let owner = sim.interner.intern("Russians");
-    sim.houses.extend(computer_houses(&[owner]));
+    register_computer_houses(&mut sim.houses, &[owner]);
     let gi = sim
         .spawn_object("E1", "Russians", 10, 10, 0, &rules)
         .unwrap();
@@ -1472,8 +1462,7 @@ fn retail_gi_scan_asks_only_its_own_house_about_allies() {
     for name in ["Russians", "Americans"] {
         let id = sim.interner.intern(name);
         sim.houses
-            .insert(id, HouseState::new(id, 0, None, false, 0, 10));
-        sim.session.house_order.push(id);
+            .register(HouseState::new(id, 0, None, false, 0, 10));
     }
     let gi = sim
         .spawn_object("E1", "Russians", 10, 10, 0, &rules)
@@ -1520,7 +1509,7 @@ fn retail_berserk_gi_shoots_its_own_house() {
     let mut sim = Simulation::with_seed(0x5CA7);
     let grid = crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
     let owner = sim.interner.intern("Russians");
-    sim.houses.extend(computer_houses(&[owner]));
+    register_computer_houses(&mut sim.houses, &[owner]);
     let gi = sim
         .spawn_object("E1", "Russians", 10, 10, 0, &rules)
         .unwrap();
@@ -1538,7 +1527,7 @@ fn retail_berserk_gi_shoots_its_own_house() {
         gi,
         MissionId::from_known(MissionType::Hunt),
         0,
-        sim.session.binary_frame,
+        sim.session.binary_frame(),
         &crate::sim::mission::authority::EntityReadyInputProvider,
     );
     let shot = |sim: &Simulation| {
@@ -1584,7 +1573,6 @@ fn gsi_04_05_building_self_damage_return_zero_stops_receiver_commit() {
         &rules,
         &mut interner,
         &mut houses,
-        &[victim_owner],
         88,
         None,
     );
@@ -1610,10 +1598,8 @@ fn gsi_04_05_building_attack_frame_remains_live_after_world_receiver_dispatch() 
         .expect("Building target spawns");
     let source_owner = sim.substrate.entities.get(source_id).unwrap().owner();
     let victim_owner = sim.substrate.entities.get(target_id).unwrap().owner();
-    sim.houses
-        .extend(computer_houses(&[source_owner, victim_owner]));
-    sim.session.house_order = vec![source_owner, victim_owner];
-    sim.session.binary_frame = 77;
+    register_computer_houses(&mut sim.houses, &[source_owner, victim_owner]);
+    sim.session.set_binary_frame_for_test(77);
     let warhead = sim.interner.intern("HITWH");
 
     let event = EntityDamageEvent::area(target_id, 10, 0, source_id, Some(source_owner), warhead);
@@ -1683,7 +1669,7 @@ fn run_combat_death_handoff(
     dead_entities: &[u64],
 ) -> DeathEffects {
     let mut occupancy = OccupancyGrid::new();
-    let mut houses = BTreeMap::new();
+    let mut houses = crate::sim::houses::Houses::default();
     let mut main_rng = SimRng::new(0);
     let mut scenario_rng = SimRng::new(0);
     let mut handled_deaths = Vec::new();
@@ -1695,7 +1681,6 @@ fn run_combat_death_handoff(
         interner,
         Some(handles),
         &mut houses,
-        &[],
         &HouseAllianceMap::new(),
         &mut main_rng,
         &mut scenario_rng,
@@ -2445,7 +2430,7 @@ fn gsi_04_07_damage_prior_projectile_fatal_death_weapon_is_inline() {
         };
         let mut scenario_rng = SimRng::new(1);
         let mut main_rng = SimRng::new(41);
-        let mut houses = BTreeMap::new();
+        let mut houses = crate::sim::houses::Houses::default();
         let handles =
             crate::sim::type_handle_table::ResolvedRuleHandles::resolve(&rules, &mut interner);
         align_attackers_to_targets(&mut entities);
@@ -2468,7 +2453,6 @@ fn gsi_04_07_damage_prior_projectile_fatal_death_weapon_is_inline() {
             None,
             &BTreeMap::new(),
             &mut houses,
-            &[],
             &HouseAllianceMap::new(),
             None,
             Some(&mut overlays),
@@ -2767,15 +2751,9 @@ fn retaliates(case: RetaliationCase) -> bool {
         payload: payload_from_weapon(10, incoming_wh, incoming_weapon, &rules, &mut interner),
         reason: ProjectileDetonationReason::ReachedTarget,
     };
-    let mut houses = BTreeMap::new();
-    houses.insert(
-        victim_owner,
-        HouseState::new(victim_owner, 0, None, case.human, 0, 10),
-    );
-    houses.insert(
-        source_owner,
-        HouseState::new(source_owner, 1, None, false, 0, 10),
-    );
+    let mut houses = crate::sim::houses::Houses::default();
+    houses.register(HouseState::new(victim_owner, 0, None, case.human, 0, 10));
+    houses.register(HouseState::new(source_owner, 1, None, false, 0, 10));
     tick_detonations(
         &mut entities,
         &mut occupancy,
@@ -2958,14 +2936,10 @@ fn retaliation_gate_world(
     let mut sim = crate::sim::world::Simulation::new();
     let victim_owner = sim.interner.intern("Victim");
     let source_owner = sim.interner.intern("Source");
-    sim.houses.insert(
-        victim_owner,
-        HouseState::new(victim_owner, 0, None, human, 0, 10),
-    );
-    sim.houses.insert(
-        source_owner,
-        HouseState::new(source_owner, 1, None, false, 0, 10),
-    );
+    sim.houses
+        .register(HouseState::new(victim_owner, 0, None, human, 0, 10));
+    sim.houses
+        .register(HouseState::new(source_owner, 1, None, false, 0, 10));
     for (id, type_name, category, owner, rx, health) in [
         (
             GATE_SOURCE,
@@ -3254,7 +3228,7 @@ fn gsi_04_07_damage_retaliation_is_receiver_synchronous_and_uses_mission_overrid
             &mut occupancy,
             &rules,
             &mut interner,
-            &mut BTreeMap::new(),
+            &mut crate::sim::houses::Houses::default(),
             &alliances,
             0,
             &[2],
@@ -3367,8 +3341,7 @@ fn gsi_04_07_damage_retaliation_peek_rejects_limbo_attacker() {
             &mut entities,
             &rules,
             &mut interner,
-            &mut BTreeMap::new(),
-            &[],
+            &mut crate::sim::houses::Houses::default(),
             0,
             None,
         );
@@ -3570,8 +3543,7 @@ fn gsi_04_07_damage_receiver_smoke_creation_precedes_retaliation() {
         .expect("Grizzly spawns");
     let source_owner = sim.substrate.entities.get(source_id).unwrap().owner();
     let victim_owner = sim.substrate.entities.get(victim_id).unwrap().owner();
-    sim.houses
-        .extend(computer_houses(&[source_owner, victim_owner]));
+    register_computer_houses(&mut sim.houses, &[source_owner, victim_owner]);
     {
         let victim = sim.substrate.entities.get_mut(victim_id).unwrap();
         victim.health = Health::new(180);
@@ -3644,7 +3616,7 @@ fn gsi_04_07_damage_receiver_smoke_creation_precedes_retaliation() {
         .unwrap()
         .position
         .put_location(moved);
-    sim.session.binary_frame = 1;
+    sim.session.set_binary_frame_for_test(1);
     assert!(crate::sim::particles::system_ai::tick_particle_system(
         &mut sim,
         &rules,
@@ -3832,7 +3804,6 @@ fn gsi_04_07_damage_ai_retaliation_keeps_higher_scored_current_target() {
             &rules,
             &mut interner,
             &mut houses,
-            &[],
             0,
             None,
         );
@@ -3962,8 +3933,7 @@ fn gsi_04_07_damage_spawn_and_slave_managers_block_retaliation() {
             &mut entities,
             &rules,
             &mut interner,
-            &mut BTreeMap::new(),
-            &[],
+            &mut crate::sim::houses::Houses::default(),
             0,
             None,
         );
@@ -4062,8 +4032,7 @@ fn gsi_04_07_damage_full_capture_manager_blocks_retaliation() {
             &mut entities,
             &rules,
             &mut interner,
-            &mut BTreeMap::new(),
-            &[],
+            &mut crate::sim::houses::Houses::default(),
             0,
             None,
         );
@@ -4196,7 +4165,7 @@ fn gsi_04_07_area_dispatch_skips_an_invisible_in_game_building() {
     let mut main_rng = SimRng::new(3);
     let mut scenario_rng = SimRng::new(4);
     let mut handled_deaths = Vec::new();
-    let mut houses = BTreeMap::new();
+    let mut houses = crate::sim::houses::Houses::default();
     let mut fatal_lifecycle = None;
     let mut sound_sink = None;
     commit_area_damage_receivers(
@@ -4206,7 +4175,6 @@ fn gsi_04_07_area_dispatch_skips_an_invisible_in_game_building() {
         &rules,
         &mut interner,
         &mut houses,
-        &[],
         &HouseAllianceMap::new(),
         &mut main_rng,
         &mut scenario_rng,
@@ -4260,8 +4228,7 @@ fn gsi_04_07_damage_receiver_updates_grudge_before_retaliation() {
     let zero_wh = interner.intern("ZeroWH");
 
     let mut houses = computer_houses(&[victim_house, source_house]);
-    let house_order = [victim_house, source_house];
-    let threat_persistence = |houses: &BTreeMap<InternedId, HouseState>| {
+    let threat_persistence = |houses: &crate::sim::houses::Houses| {
         let victim = &houses[&victim_house];
         let snapshot = save_codec::serialize(&(victim.grudge_scores.clone(), victim.enemy_house))
             .expect("threat state serializes");
@@ -4295,7 +4262,6 @@ fn gsi_04_07_damage_receiver_updates_grudge_before_retaliation() {
         &rules,
         &mut interner,
         &mut houses,
-        &house_order,
         &HouseAllianceMap::new(),
         &mut main_rng,
         &mut scenario_rng,
@@ -4338,7 +4304,6 @@ fn gsi_04_07_damage_receiver_updates_grudge_before_retaliation() {
         &rules,
         &mut interner,
         &mut houses,
-        &house_order,
         &HouseAllianceMap::new(),
         &mut main_rng,
         &mut scenario_rng,
@@ -4469,7 +4434,7 @@ fn gsi_04_07_damage_postmortem_stock_barrel_delay_and_nested_order() {
             .is_none()
     );
 
-    sim.session.binary_frame = 4;
+    sim.session.set_binary_frame_for_test(4);
     sim.tick_pending_building_detonation(
         center,
         &rules,
@@ -4482,7 +4447,7 @@ fn gsi_04_07_damage_postmortem_stock_barrel_delay_and_nested_order() {
         Some(0)
     );
 
-    sim.session.binary_frame = 5;
+    sim.session.set_binary_frame_for_test(5);
     sim.tick_pending_building_detonation(
         center,
         &rules,
@@ -4535,9 +4500,7 @@ fn gsi_04_07_damage_postmortem_exact_zero_callbacks_precede_restore() {
         .expect("eligible target spawns");
     let source_owner = sim.substrate.entities.get(source_id).unwrap().owner();
     let victim_owner = sim.substrate.entities.get(target_id).unwrap().owner();
-    sim.houses
-        .extend(computer_houses(&[source_owner, victim_owner]));
-    sim.session.house_order.extend([source_owner, victim_owner]);
+    register_computer_houses(&mut sim.houses, &[source_owner, victim_owner]);
     let arm_source_target = |sim: &mut crate::sim::world::Simulation| {
         let source = sim.substrate.entities.get_mut(source_id).unwrap();
         set_mission(
@@ -4678,7 +4641,7 @@ fn gsi_04_07_damage_postmortem_exact_zero_callbacks_precede_restore() {
     // A later equal candidate is longer than the four frames remaining. Native
     // keeps the original timer bytes, but reruns Object's exact-zero callbacks.
     let original_pending = pending;
-    sim.session.binary_frame = 1;
+    sim.session.set_binary_frame_for_test(1);
     arm_source_target(&mut sim);
     sim.clear_lifecycle_test_events_for_test();
     hit(&mut sim);
@@ -4751,8 +4714,7 @@ fn gsi_04_07_damage_postmortem_fresh_null_expiry_does_not_recredit_initial_kille
     let owner_b = sim.substrate.entities.get(source_b).unwrap().owner();
     let victim_owner = sim.substrate.entities.get(expiry_target).unwrap().owner();
     let owners = [owner_a, owner_b, victim_owner];
-    sim.houses.extend(computer_houses(&owners));
-    sim.session.house_order.extend(owners);
+    register_computer_houses(&mut sim.houses, &owners);
     let delay_wh = sim.interner.intern("DelayWH");
     let ordinary_wh = sim.interner.intern("OrdinaryWH");
 
@@ -4775,7 +4737,7 @@ fn gsi_04_07_damage_postmortem_fresh_null_expiry_does_not_recredit_initial_kille
 
     // A different ordinary fatal transaction after restoration must not be
     // blocked by the consumed initial callback attribution.
-    sim.session.binary_frame = 1;
+    sim.session.set_binary_frame_for_test(1);
     sim.commit_noncombat_aoe_hits(
         &rules,
         None,
@@ -4799,7 +4761,7 @@ fn gsi_04_07_damage_postmortem_fresh_null_expiry_does_not_recredit_initial_kille
         sim.houses[&owner_a].stats.buildings_killed(),
         sim.houses[&owner_a].economy.score(),
     );
-    sim.session.binary_frame = 5;
+    sim.session.set_binary_frame_for_test(5);
     sim.tick_pending_building_detonation(
         expiry_target,
         &rules,
@@ -5026,10 +4988,16 @@ fn selected_death_sounds_for(
     entities.insert(make_entity_owned(2, "E1", 8, 5, 1, "Americans"));
     let mut interner = test_interner();
     let owner = test_intern("Americans");
-    let mut houses = BTreeMap::from([(
+    let mut houses = [HouseState::new(
         owner,
-        HouseState::new(owner, 0, Some(owner), owner_is_human, 5_000, 10),
-    )]);
+        0,
+        Some(owner),
+        owner_is_human,
+        5_000,
+        10,
+    )]
+    .into_iter()
+    .collect::<crate::sim::houses::Houses>();
     let mut scenario_rng = SimRng::new(0);
     let mut handled_deaths = Vec::new();
     let handles = crate::sim::type_handle_table::ResolvedRuleHandles::resolve(rules, &mut interner);
@@ -5040,7 +5008,6 @@ fn selected_death_sounds_for(
         &mut interner,
         Some(handles),
         &mut houses,
-        &[owner],
         &HouseAllianceMap::new(),
         main_rng,
         &mut scenario_rng,
@@ -5229,7 +5196,6 @@ fn a_struck_building_sounds_the_global_damage_cue_only_on_a_state_crossing() {
         let warhead_ref = interner.intern("PlainWH");
 
         let mut houses = computer_houses(&[soviet, allies]);
-        let house_order = [soviet, allies];
         let mut occupancy = OccupancyGrid::new();
         let mut main_rng = SimRng::new(11);
         let mut scenario_rng = SimRng::new(13);
@@ -5257,7 +5223,6 @@ fn a_struck_building_sounds_the_global_damage_cue_only_on_a_state_crossing() {
             &rules,
             &mut interner,
             &mut houses,
-            &house_order,
             &HouseAllianceMap::new(),
             &mut main_rng,
             &mut scenario_rng,
@@ -5414,11 +5379,12 @@ fn a_techno_speaks_its_voice_feedback_only_on_the_half_strength_crossing() {
         let soviet = interner.intern("Soviet");
         let warhead_ref = interner.intern("PlainWH");
 
-        let mut houses = BTreeMap::from([
-            (soviet, HouseState::new(soviet, 0, None, true, 0, 10)),
-            (allies, HouseState::new(allies, 1, None, false, 0, 10)),
-        ]);
-        let house_order = [soviet, allies];
+        let mut houses = [
+            HouseState::new(soviet, 0, None, true, 0, 10),
+            HouseState::new(allies, 1, None, false, 0, 10),
+        ]
+        .into_iter()
+        .collect::<crate::sim::houses::Houses>();
         let mut occupancy = OccupancyGrid::new();
         // Original Random65C7E0 seed2 returns 18 for (0,99), so the
         // result-2 arm reaches its one-entry raw list draw. Native feedback
@@ -5447,7 +5413,6 @@ fn a_techno_speaks_its_voice_feedback_only_on_the_half_strength_crossing() {
             &rules,
             &mut interner,
             &mut houses,
-            &house_order,
             &HouseAllianceMap::new(),
             &mut main_rng,
             &mut scenario_rng,
@@ -5566,10 +5531,9 @@ fn fatal_sound_selection_uses_human_voice_then_die_sound_main_draws() {
     let mut interner = test_interner();
     install_entity_attack_target_for_test(&mut entities, 1, 2);
     let owner = test_intern("Americans");
-    let mut houses = BTreeMap::from([(
-        owner,
-        HouseState::new(owner, 0, Some(owner), true, 5_000, 10),
-    )]);
+    let mut houses = [HouseState::new(owner, 0, Some(owner), true, 5_000, 10)]
+        .into_iter()
+        .collect::<crate::sim::houses::Houses>();
     let mut sounds = Vec::new();
     let mut scenario_rng = SimRng::new(73);
     // The one attacker fires this tick, so the scenario stream advances by its
@@ -5594,7 +5558,6 @@ fn fatal_sound_selection_uses_human_voice_then_die_sound_main_draws() {
         None,
         &BTreeMap::new(),
         &mut houses,
-        &[owner],
         &HouseAllianceMap::new(),
         Some(&mut sounds),
         None,
@@ -7374,8 +7337,7 @@ fn a_death_weapon_over_water_picks_its_anim_at_the_zero_location() {
         Some(handles),
         None,
         &BTreeMap::new(),
-        &mut BTreeMap::new(),
-        &[],
+        &mut crate::sim::houses::Houses::default(),
         &crate::map::houses::HouseAllianceMap::default(),
         None,
         None,
@@ -7680,7 +7642,7 @@ fn persistent_projectile_delays_damage_across_save_load_continuation() {
         &mut OccupancyGrid::new(),
         &rules,
         &mut interner,
-        &mut BTreeMap::new(),
+        &mut crate::sim::houses::Houses::default(),
         &HouseAllianceMap::new(),
         1,
         &[2],
@@ -8226,7 +8188,7 @@ fn radiation_scene(rules: &RuleSet) -> crate::sim::world::Simulation {
 /// Advance the real object visits, including Foot4DA530's radiation prefix
 /// before movement. The combat tail alone does not apply periodic radiation.
 fn rad_frame(sim: &mut crate::sim::world::Simulation, rules: &RuleSet, binary_frame: u32) {
-    sim.session.binary_frame = binary_frame;
+    sim.session.set_binary_frame_for_test(binary_frame);
     assert!(
         sim.advance_tick(&[], Some(rules), None, None, 100)
             .frame_committed
@@ -8250,7 +8212,7 @@ fn irradiate(
             spread,
         },
         0,
-        &sim.session.theater,
+        &sim.session.theater(),
         &rules.radiation,
         sim.resolved_terrain.as_ref(),
         &mut sim.lighting_sources.pending,
@@ -8477,7 +8439,7 @@ fn gsi_04_07_damage_hostile_building_hit_latches_was_attacked_for_ai_repair() {
     ai_house.current_iq =
         scenario_houses.houses[0].scenario_current_iq(rules.general.max_iq_levels);
     ai_house.authored_iq = ai_house.current_iq;
-    sim.houses.insert(ai_owner, ai_house);
+    sim.houses.register(ai_house);
     let hostile_target = sim
         .spawn_object("GAPOWR", "AI", 5, 5, 0, &rules)
         .expect("hostile target");
@@ -8537,7 +8499,6 @@ fn gsi_04_07_damage_hostile_building_hit_latches_was_attacked_for_ai_repair() {
         &rules,
         &mut sim.interner,
         &mut sim.houses,
-        &sim.session.house_order,
         &alliances,
         &mut main_rng,
         &mut sim.scenario_rng,
@@ -8718,7 +8679,7 @@ fn deployed_desolator_self_irradiates_and_refires_below_third() {
     // did before. FireAt now belongs to that native mission, not a late
     // global target synthesizer. Its new Bullet takes the ordinary tail.
     let guard_visit = |sim: &mut crate::sim::world::Simulation, frame| {
-        sim.session.binary_frame = frame;
+        sim.session.set_binary_frame_for_test(frame);
         let mission = &mut sim.substrate.entities.get_mut(deso).unwrap().mission;
         mission.apply_test_fixture(MissionTestFixture {
             current: MissionId::from_known(MissionType::Guard),
@@ -9118,7 +9079,7 @@ fn campaign_reverse_only_alliance_keeps_shrapnel_hostile_head_before_random_cell
         &mut occupancy,
         &rules,
         &mut interner,
-        &mut BTreeMap::new(),
+        &mut crate::sim::houses::Houses::default(),
         &alliances,
         1,
         &[1, 2],
@@ -9186,7 +9147,7 @@ fn projectile_shrapnel_count_measures_to_the_firers_get_coords() {
         &mut occupancy,
         &rules,
         &mut interner,
-        &mut BTreeMap::new(),
+        &mut crate::sim::houses::Houses::default(),
         &HouseAllianceMap::new(),
         1,
         &[1, 2],
@@ -9243,7 +9204,7 @@ fn projectile_shrapnel_aims_at_a_building_foundation_center() {
         &mut occupancy,
         &rules,
         &mut interner,
-        &mut BTreeMap::new(),
+        &mut crate::sim::houses::Houses::default(),
         &HouseAllianceMap::new(),
         1,
         &[1, 2],
@@ -9409,7 +9370,7 @@ fn shrapnel_at_cell_5_5(
         &mut occupancy,
         rules,
         &mut interner,
-        &mut BTreeMap::new(),
+        &mut crate::sim::houses::Houses::default(),
         &HouseAllianceMap::new(),
         1,
         &ids,

@@ -332,12 +332,12 @@ fn a_computer_mcv_deploys_into_a_yard_that_follows_the_native_deploy_route() {
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
         // The native rows run at GameSpeed 0.
-        sim.session.game_options.game_speed = 0;
+        sim.session.game_options_mut_for_test().game_speed = 0;
         add_house(&mut sim, "Americans", false);
         let mcv = sim
             .spawn_object("AMCV", "Americans", 20, 22, 128, &rules)
             .expect("spawn MCV");
-        let deployed_at = sim.session.binary_frame;
+        let deployed_at = sim.session.binary_frame();
         assert!(sim.deploy_mcv(
             mcv,
             &rules,
@@ -359,7 +359,7 @@ fn a_computer_mcv_deploys_into_a_yard_that_follows_the_native_deploy_route() {
         assert_eq!(yard.building_ready_latch(), 1, "{name}");
         for frame in row["frames"].as_array().unwrap() {
             let now = deployed_at + frame["frame"].as_u64().unwrap() as u32;
-            sim.session.binary_frame = now;
+            sim.session.set_binary_frame_for_test(now);
             sim.object_ai_visit_one(id, Some(&rules), crate::sim::world::ObjectAiCtx::default());
             let yard = sim.substrate.entities.get(id).unwrap();
             if native_route::assert_frame(yard, frame, &format!("{name} frame {now}")) {
@@ -634,11 +634,15 @@ fn a_computer_mcv_deploy_turns_the_computers_paranoid() {
     let americans = sim.interner.intern("Americans");
     for (owner, human) in [("Player", true), ("Americans", false), ("Computer2", false)] {
         let id = sim.interner.intern(owner);
-        sim.houses.insert(
-            id,
-            crate::sim::house_state::HouseState::new(id, 0, Some(americans), human, 5000, 10),
-        );
-        sim.session.house_order.push(id);
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                id,
+                0,
+                Some(americans),
+                human,
+                5000,
+                10,
+            ));
     }
     let mcv = sim
         .spawn_object("AMCV", "Americans", 20, 22, 128, &rules)
@@ -662,10 +666,15 @@ fn a_computer_mcv_deploy_turns_the_computers_paranoid() {
 
 fn add_house(sim: &mut Simulation, owner: &str, is_human: bool) {
     let owner_id = sim.interner.intern(owner);
-    sim.houses.insert(
-        owner_id,
-        crate::sim::house_state::HouseState::new(owner_id, 0, Some(owner_id), is_human, 5000, 10),
-    );
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner_id,
+            0,
+            Some(owner_id),
+            is_human,
+            5000,
+            10,
+        ));
 }
 
 fn deployed_type<'a>(sim: &'a Simulation, type_name: &str) -> &'a GameEntity {
@@ -738,7 +747,19 @@ fn a_damaged_computer_yard_starts_its_repair_as_its_build_up_completes() {
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     add_house(&mut sim, "Americans", false);
     let owner = sim.interner.get("Americans").unwrap();
-    sim.houses.get_mut(&owner).unwrap().current_iq = 5;
+    let game_mode_nonzero = sim.session.game_mode_nonzero();
+    let house = sim.houses.get_mut(&owner).unwrap();
+    house.current_iq = 5;
+    // Scenario setup's SetDifficulty supplies the RepairDelay the latch timer
+    // draws from; the House update releases the latch once that expires.
+    house.set_difficulty(
+        crate::sim::house_state::HouseDifficulty::Normal,
+        &rules.general,
+        Default::default(),
+        game_mode_nonzero,
+        0,
+        0,
+    );
     let mcv = sim
         .spawn_object("AMCV", "Americans", 20, 22, 128, &rules)
         .expect("spawn MCV");
@@ -748,7 +769,7 @@ fn a_damaged_computer_yard_starts_its_repair_as_its_build_up_completes() {
         .unwrap()
         .health
         .set_for_test(225);
-    let deployed_at = sim.session.binary_frame;
+    let deployed_at = sim.session.binary_frame();
     assert!(sim.deploy_mcv(
         mcv,
         &rules,
@@ -759,7 +780,7 @@ fn a_damaged_computer_yard_starts_its_repair_as_its_build_up_completes() {
     let yard = deployed_type(&sim, "GACNST").stable_id();
     let mut frames = Vec::new();
     for _ in 0..7 {
-        let frame = sim.session.binary_frame - deployed_at;
+        let frame = sim.session.binary_frame() - deployed_at;
         tick_n(&mut sim, &rules, 1);
         let entity = sim.substrate.entities.get(yard).unwrap();
         let house = &sim.houses[&owner];
@@ -1016,6 +1037,7 @@ fn base_plan_recalc_deploy_failures_preserve_source_rng_plan_and_centers() {
             .spawn_object("AMCV", "Americans", 20, 22, 128, rules)
             .expect("spawn MCV");
         if add_blocker {
+            add_house(&mut sim, "Blocker", false);
             sim.spawn_object("GAPOWR", "Blocker", 21, 22, 0, rules)
                 .expect("spawn footprint blocker");
         }
@@ -1040,7 +1062,7 @@ fn conyard_redeploy_runtime_rejects_when_mcv_redeploy_disabled() {
     let yard = sim
         .spawn_object("GACNST", "Americans", 19, 21, 0, &rules)
         .expect("spawn ConYard");
-    sim.session.game_options.mcv_redeploy = false;
+    sim.session.game_options_mut_for_test().mcv_redeploy = false;
 
     let applied = sim.apply_command(
         "Americans",
@@ -1096,7 +1118,7 @@ UndeploysInto=SMIN
     let refinery = sim
         .spawn_object("YAREFN", "Americans", 19, 21, 0, &rules)
         .expect("spawn refinery");
-    sim.session.game_options.mcv_redeploy = false;
+    sim.session.game_options_mut_for_test().mcv_redeploy = false;
 
     assert!(sim.can_undeploy_building_runtime(refinery, &rules));
 }
@@ -1210,8 +1232,10 @@ pub(crate) fn native_deploy_fixture(row: &serde_json::Value) -> (Simulation, Rul
     let rules = native_deploy_rules(input);
     let mut sim = Simulation::with_seed(31);
     sim.mapgen_rng = crate::sim::rng::SimRng::new(31);
-    sim.session.binary_frame = input["now"].as_i64().unwrap_or(100) as u32;
-    sim.session.game_options.game_speed = input["game_speed_index"].as_i64().unwrap_or(0) as i32;
+    sim.session
+        .set_binary_frame_for_test(input["now"].as_i64().unwrap_or(100) as u32);
+    sim.session.game_options_mut_for_test().game_speed =
+        input["game_speed_index"].as_i64().unwrap_or(0) as i32;
     sim.session.set_game_mode(
         crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
             input["game_mode_nonzero"].as_bool().unwrap_or(false),
@@ -1219,10 +1243,10 @@ pub(crate) fn native_deploy_fixture(row: &serde_json::Value) -> (Simulation, Rul
     );
     let owner = sim.interner.intern("Americans");
     let human = input["human"].as_i64().unwrap_or(0) != 0;
-    sim.houses.insert(
-        owner,
-        crate::sim::house_state::HouseState::new(owner, 0, None, human, 0, 10),
-    );
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, human, 0, 10,
+        ));
     sim.houses.get_mut(&owner).unwrap().set_difficulty(
         crate::sim::house_state::HouseDifficulty::from_native(
             input["difficulty"].as_i64().unwrap_or(1) as i32,
@@ -1733,7 +1757,7 @@ fn synchronized_deploy_queues_unload_before_handler_action_and_sound() {
     assert!(sim.sound_events.is_empty());
     // InfantryAI51BF03's Ready/Commence position promotes the stopped
     // actor's queue before dispatch may visit Mission_Unload51F6E0.
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     sim.mission_host_promote(id, now, &rules);
     let actor = sim.substrate.entities.get(id).unwrap();
     assert_eq!(actor.mission.current().known(), Some(MissionType::Unload));
@@ -1779,10 +1803,10 @@ fn transport_may_unload(
     .expect("transport rules");
     let mut sim = Simulation::new();
     let owner = sim.interner.intern("Americans");
-    sim.houses.insert(
-        owner,
-        crate::sim::house_state::HouseState::new(owner, 0, None, human, 0, 10),
-    );
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, human, 0, 10,
+        ));
     if let Some(building) = building {
         sim.spawn_object(building, "Americans", 20, 22, 0, &rules)
             .expect("the building builds");
@@ -1889,7 +1913,7 @@ fn can_deploy_slash_unload_follows_each_class_arm() {
     assert!(can(&sim, refiner));
 
     // `UndeployDelay=` refuses while deployed, in Doing 31, or rearming.
-    let frame = sim.session.binary_frame as i32;
+    let frame = sim.session.binary_frame() as i32;
     for doing in [28, 31] {
         for id in [yuri, gi] {
             entity(&mut sim, id)

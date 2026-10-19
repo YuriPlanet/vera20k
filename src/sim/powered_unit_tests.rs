@@ -56,7 +56,8 @@ fn offline_sparks_match_original_execution() {
             .set_for_test(row["deactivated"].as_bool().unwrap());
         let mut sim = Simulation::new();
         sim.substrate.entities.insert(entity);
-        sim.session.binary_frame = row["frame"].as_u64().unwrap() as u32;
+        sim.session
+            .set_binary_frame_for_test(row["frame"].as_u64().unwrap() as u32);
         let seed = row["seed"].as_u64().unwrap();
         sim.scenario_rng = SimRng::new(seed);
         sim.deactivated_unit_sparks(1, &rules);
@@ -167,7 +168,8 @@ fn arena(rules: &RuleSet) -> (Simulation, PathGrid) {
     sim.resolve_type_handles(rules);
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
-    sim.session.current_house = sim.interner.get("Americans");
+    sim.session
+        .set_current_house_for_test(sim.interner.get("Americans"));
     let grid = sim
         .path_grid_snapshot()
         .map(|grid| (*grid).clone())
@@ -270,7 +272,7 @@ fn order_move(sim: &mut Simulation, id: u64, target: (u16, u16)) {
     let americans = sim.interner.get("Americans").unwrap();
     sim.queue_command(CommandEnvelope::new(
         americans,
-        sim.session.tick + 1,
+        sim.session.tick() + 1,
         Command::Move {
             entity_id: id,
             target_rx: target.0,
@@ -706,7 +708,7 @@ fn robot_tank_state_is_saved_and_hashed() {
     sim.scenario_rng = SimRng::new(0);
     let house = sim.interner.intern("Americans");
     sim.houses
-        .insert(house, HouseState::new(house, 0, None, true, 0, 10));
+        .register(HouseState::new(house, 0, None, true, 0, 10));
     let tank = sim.allocate_stable_id();
     sim.substrate
         .entities

@@ -463,7 +463,7 @@ fn damage_starts_the_radar_combat_flash() {
         let mut sim = arena(&rules);
         let rhino = spawn(&mut sim, &rules, "HTNK", "Russians", (10, 10));
         let gi = spawn(&mut sim, &rules, "E1", "Americans", (11, 10));
-        let frame = sim.session.binary_frame as i32;
+        let frame = sim.session.binary_frame() as i32;
         hit(&mut sim, &rules, rhino, gi, damage);
         sim.substrate
             .entities

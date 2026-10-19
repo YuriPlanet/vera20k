@@ -310,7 +310,7 @@ pub(super) fn send_planes(
             frame_effects,
         );
     }
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     if let Some(entity) = sim.substrate.entities.get_mut(plane) {
         crate::sim::mission::authority::commence_entity_mission(entity, now);
     }

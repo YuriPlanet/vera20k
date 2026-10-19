@@ -30,10 +30,11 @@ fn factory_fixture(
     saved.intern_rule_type_ids(&rules);
     saved.resolve_type_handles(&rules);
     let owner = saved.interner.intern("Americans");
-    saved.houses.insert(
-        owner,
-        crate::sim::house_state::HouseState::new(owner, 0, None, true, 50_000, 10),
-    );
+    saved
+        .houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, true, 50_000, 10,
+        ));
     let parent = saved
         .construct_object_limbo_at_height(
             type_name,
@@ -107,11 +108,11 @@ fn wallet_survives_prepared_load_and_active_cancellation() {
     saved.intern_rule_type_ids(&rules);
     saved.resolve_type_handles(&rules);
     let owner = saved.interner.intern("Americans");
-    saved.houses.insert(
-        owner,
-        crate::sim::house_state::HouseState::new(owner, 0, None, true, 50_000, 10),
-    );
-    saved.session.house_order.push(owner);
+    saved
+        .houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, true, 50_000, 10,
+        ));
     // An on-map factory keeps the held build eligible after restore. Its
     // placement uses the same raw fixture boundary as production replay tests.
     let producer_id = saved.allocate_stable_id();
@@ -323,7 +324,7 @@ fn factory_restore_preserves_supported_held_states_and_constructor_graphs() {
                     .set_in_playfield(true);
             }
             "absent-house" => {
-                saved.houses.remove(&owner);
+                saved.houses.remove_for_test(&owner);
             }
             "unrelated-limbo" => {
                 saved

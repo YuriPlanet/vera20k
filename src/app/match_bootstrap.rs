@@ -579,16 +579,16 @@ impl RustL0Observation<'_> {
         if self.startup.correlation != self.active_correlation {
             return Err(RustL0Error::CorrelationMismatch);
         }
-        if self.simulation.session.seed != u64::from(self.startup.seed.value) {
+        if self.simulation.session.seed() != u64::from(self.startup.seed.value) {
             return Err(RustL0Error::SeedMismatch);
         }
-        if self.simulation.session.tick != 0 {
+        if self.simulation.session.tick() != 0 {
             return Err(RustL0Error::NonzeroTick);
         }
-        if self.simulation.session.total_sim_ms != 0 {
+        if self.simulation.session.total_sim_ms() != 0 {
             return Err(RustL0Error::NonzeroSimulationTime);
         }
-        if self.simulation.session.binary_frame != 0 {
+        if self.simulation.session.binary_frame() != 0 {
             return Err(RustL0Error::NonzeroBinaryFrame);
         }
         if !self.screen_is_loading {
@@ -601,9 +601,9 @@ impl RustL0Observation<'_> {
             seed_source: self.startup.seed.source,
             seed_authority_certifying: self.startup.seed.seed_authority_certifying,
             session: self.startup.session.clone(),
-            tick: self.simulation.session.tick,
-            total_sim_ms: self.simulation.session.total_sim_ms,
-            binary_frame: self.simulation.session.binary_frame,
+            tick: self.simulation.session.tick(),
+            total_sim_ms: self.simulation.session.total_sim_ms(),
+            binary_frame: self.simulation.session.binary_frame(),
             rngs: self.simulation.rng_state(),
         })
     }
@@ -977,7 +977,7 @@ mod tests {
 
             assert_eq!(fallback_calls, 0);
             assert_eq!(descriptor.seed, value);
-            assert_eq!(simulation.session.seed, u64::from(value));
+            assert_eq!(simulation.session.seed(), u64::from(value));
             assert_eq!(simulation.rng_state().scenario, expected_rng);
             assert_eq!(simulation.rng_state().main, expected_rng);
             assert_eq!(simulation.rng_state().mapgen, expected_mapgen);
@@ -1116,7 +1116,7 @@ mod tests {
     fn rust_l0_rejects_nonzero_tick() {
         let startup = prepared(12);
         let mut simulation = Simulation::with_seed(12);
-        simulation.session.tick = 1;
+        simulation.session.set_tick_for_test(1);
         assert_eq!(
             acknowledge(&startup, &simulation),
             Err(RustL0Error::NonzeroTick)
@@ -1127,7 +1127,7 @@ mod tests {
     fn rust_l0_rejects_nonzero_sim_time() {
         let startup = prepared(13);
         let mut simulation = Simulation::with_seed(13);
-        simulation.session.total_sim_ms = 1;
+        simulation.session.set_total_sim_ms_for_test(1);
         assert_eq!(
             acknowledge(&startup, &simulation),
             Err(RustL0Error::NonzeroSimulationTime)
@@ -1138,7 +1138,7 @@ mod tests {
     fn rust_l0_rejects_nonzero_binary_frame() {
         let startup = prepared(14);
         let mut simulation = Simulation::with_seed(14);
-        simulation.session.binary_frame = 1;
+        simulation.session.set_binary_frame_for_test(1);
         assert_eq!(
             acknowledge(&startup, &simulation),
             Err(RustL0Error::NonzeroBinaryFrame)

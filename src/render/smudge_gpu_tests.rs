@@ -347,7 +347,7 @@ fn retail_paid_destruction_and_replacement_reach_smudge_rendering() {
     launch.options.short_game = false;
     let mut scene =
         crate::headless_scenario::load_session(&root, "Hills.mmx", 0x1234_5678, launch).unwrap();
-    let owner = scene.sim().session.current_house.unwrap();
+    let owner = scene.sim().session.current_house().unwrap();
     let actor = |scene: &crate::headless_scenario::HeadlessScenario, name| {
         scene
             .sim()
@@ -365,7 +365,7 @@ fn retail_paid_destruction_and_replacement_reach_smudge_rendering() {
                    command: Option<Command>| {
         let commands: Vec<_> = command
             .into_iter()
-            .map(|payload| CommandEnvelope::new(owner, scene.sim().session.tick, payload))
+            .map(|payload| CommandEnvelope::new(owner, scene.sim().session.tick(), payload))
             .collect();
         scene
             .runtime
