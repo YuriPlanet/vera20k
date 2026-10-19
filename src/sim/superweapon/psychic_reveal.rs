@@ -116,7 +116,7 @@ pub fn launch(
             &config,
             crate::sim::world::UninitContext::with_rules(rules),
             crate::sim::vision::MapRevealProjection::Transient,
-            sim.session.current_house,
+            sim.session.current_house(),
         );
     }
     sim.sound_events.push(SimSoundEvent::SuperWeaponLaunched {

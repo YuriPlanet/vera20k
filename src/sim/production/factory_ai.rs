@@ -156,7 +156,7 @@ fn exit_finished_object(
             sim.production.factories.remove_building_factory(building);
         }
         BuildingExit::TryLater => {
-            let frame = sim.session.binary_frame as i32;
+            let frame = sim.session.binary_frame() as i32;
             let delay = rules.general.placement_delay_frames();
             if let Some(entity) = sim.substrate.entities.get_mut(building) {
                 entity.ai_placement_timer.restart(frame, delay);
@@ -267,7 +267,7 @@ fn start_factory(
 
 /// `CDTimerClass` at `+0x550` has run out (`0x00450115..0x00450136`).
 fn placement_wait_over(sim: &Simulation, building: u64) -> bool {
-    let frame = sim.session.binary_frame as i32;
+    let frame = sim.session.binary_frame() as i32;
     sim.substrate
         .entities
         .get(building)
@@ -334,7 +334,7 @@ pub(crate) fn detach_all(
                 .and_then(|abandoned| abandoned.entity_id);
             sim.production
                 .factories
-                .reset_for_abandon(holder, sim.session.binary_frame);
+                .reset_for_abandon(holder, sim.session.binary_frame());
             sim.with_object_placement_scope(|sim| {
                 if let Some(object) = object {
                     let _ = sim.discard_constructed_limbo(object, rules, effects);

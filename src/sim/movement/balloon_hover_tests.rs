@@ -110,7 +110,7 @@ fn world(input: &Value, facing: u16) -> (Simulation, RuleSet) {
         .entities
         .insert(unit(OTHER, "TANK", (6, 12), (252, 16)));
     sim.interner = crate::sim::intern::test_interner();
-    sim.session.binary_frame = 100;
+    sim.session.set_binary_frame_for_test(100);
     let first = match input["nav"].as_str().unwrap_or("none") {
         "cell_target" => Some(TARGET),
         "cell_other" => Some(OTHER),

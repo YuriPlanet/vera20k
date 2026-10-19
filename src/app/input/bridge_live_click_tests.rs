@@ -16,9 +16,9 @@ fn vectors() -> &'static serde_json::Value {
 
 fn runtime(direction: u8) -> SimRuntime {
     let mut sim = Simulation::new();
-    sim.session.map_name = "BRIDGE-CLICK.MAP".into();
-    sim.session.map_width = 32;
-    sim.session.map_height = 32;
+    sim.session.set_map_name_for_test("BRIDGE-CLICK.MAP".into());
+    sim.session.set_map_width_for_test(32);
+    sim.session.set_map_height_for_test(32);
     let cells = (0..32)
         .flat_map(|y| {
             (0..32).map(move |x| {

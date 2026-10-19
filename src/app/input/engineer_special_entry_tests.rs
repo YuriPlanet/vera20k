@@ -34,11 +34,11 @@ fn scene_with_repair_step(
     let owner = sim.interner.intern("Americans");
     sim.houses
         .register(HouseState::new(owner, 0, None, true, 10_000, 10));
-    sim.session.current_house = Some(owner);
+    sim.session.set_current_house_for_test(Some(owner));
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     sim.input_delay_ticks = 0;
-    sim.session.game_options.short_game = false;
+    sim.session.game_options_mut_for_test().short_game = false;
     let actor = sim
         .spawn_object("ENGINEER", "Americans", 10, 12, 0, &rules)
         .unwrap();
@@ -94,13 +94,13 @@ fn click(
     }
     .unwrap();
     let command = sim
-        .decode_native_command_record(&record, sim.session.tick)
+        .decode_native_command_record(&record, sim.session.tick())
         .unwrap();
     assert!(sim.apply_command("Americans", &command.payload, Some(rules)));
     if planning {
         let record = sim.encode_plan_commit_record(owner).unwrap();
         let command = sim
-            .decode_native_command_record(&record, sim.session.tick)
+            .decode_native_command_record(&record, sim.session.tick())
             .unwrap();
         assert!(sim.apply_command("Americans", &command.payload, Some(rules)));
     }
@@ -261,7 +261,7 @@ fn hospital_completion_uses_the_native_player_house_voice_gate() {
             // A House holding nothing is defeated on its first House update.
             sim.spawn_object("ENGINEER", "OtherHuman", 2, 2, 0, &rules)
                 .unwrap();
-            sim.session.current_house = Some(other);
+            sim.session.set_current_house_for_test(Some(other));
         }
         let mut heard_completion = false;
         for _ in 0..500 {
@@ -446,11 +446,11 @@ fn retail_engineer_grinder_clicks_reach_yagrnd_in_both_input_modes() {
         let owner = sim.interner.intern("Americans");
         sim.houses
             .register(HouseState::new(owner, 0, None, true, 10_000, 10));
-        sim.session.current_house = Some(owner);
+        sim.session.set_current_house_for_test(Some(owner));
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
-        sim.session.game_options.short_game = false;
+        sim.session.game_options_mut_for_test().short_game = false;
         sim.input_delay_ticks = 0;
         let actor = sim
             .spawn_object("ENGINEER", "Americans", 10, 12, 0, &rules)

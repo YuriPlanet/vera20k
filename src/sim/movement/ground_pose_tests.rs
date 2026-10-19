@@ -209,8 +209,8 @@ fn walk_tick(sim: &mut Simulation, terrain: &ResolvedTerrainGrid, grid: &PathGri
     );
     crate::sim::arena_fixture::supply_native_map(sim);
     sim.install_fixture_path_grid(Some(grid));
-    sim.session.tick = u64::from(frame);
-    sim.session.binary_frame = frame;
+    sim.session.set_tick_for_test(u64::from(frame));
+    sim.session.set_binary_frame_for_test(frame);
     sim.process_ground_locomotor_stats_for_test(1, Some(&rules), None)
         .expect("Walk fixture reaches the production object turn");
 }
@@ -228,8 +228,8 @@ fn tick_with_rules(
 ) {
     sim.resolved_terrain = Some(terrain.clone());
     sim.install_fixture_path_grid(Some(grid));
-    sim.session.tick = u64::from(frame);
-    sim.session.binary_frame = frame;
+    sim.session.set_tick_for_test(u64::from(frame));
+    sim.session.set_binary_frame_for_test(frame);
     sim.process_ground_locomotor_stats_for_test(1, rules, None)
         .expect("fixture reached an unsupported production movement receiver");
 }
@@ -431,8 +431,8 @@ fn moving_ramp_snapshot_continues_residual_bridge_crossing_through_paid_points()
         seed_track(&mut entity, kind, 11, DriveCoord::cell(3, 2, 731));
         insert(&mut sim, entity);
         tick(&mut sim, &terrain, &grid, 0);
-        sim.session.tick = 1;
-        sim.session.binary_frame = 1;
+        sim.session.set_tick_for_test(1);
+        sim.session.set_binary_frame_for_test(1);
         let entity = sim.substrate.entities.get(1).unwrap();
         assert_eq!(
             (entity.position.rx(), entity.position.ry()),
@@ -498,10 +498,12 @@ fn moving_ramp_snapshot_continues_residual_bridge_crossing_through_paid_points()
         for frame in 1..=3 {
             tick(&mut sim, &terrain, &grid, frame);
             tick(&mut restored, &restored_terrain, &grid, frame);
-            sim.session.tick = u64::from(frame) + 1;
-            sim.session.binary_frame = frame + 1;
-            restored.session.tick = sim.session.tick;
-            restored.session.binary_frame = sim.session.binary_frame;
+            sim.session.set_tick_for_test(u64::from(frame) + 1);
+            sim.session.set_binary_frame_for_test(frame + 1);
+            restored.session.set_tick_for_test(sim.session.tick());
+            restored
+                .session
+                .set_binary_frame_for_test(sim.session.binary_frame());
             let original = sim.substrate.entities.get(1).unwrap();
             let loaded = restored.substrate.entities.get(1).unwrap();
             let pose = |entity: &GameEntity| {
@@ -919,7 +921,7 @@ fn forced_track_terminal_samples_full_head_xy_before_relink() {
         sim.path_grid = Some(std::sync::Arc::new(grid.clone()));
     }
     for frame in 0..64 {
-        sim.session.binary_frame = frame;
+        sim.session.set_binary_frame_for_test(frame);
         sim.run_track_points(
             super::track_process::TrackInvocation {
                 entity_id: 1,
@@ -977,7 +979,7 @@ fn ordinary_drive_ship_command_keeps_subcell_origin_through_terminal_cleanup() {
                 crate::sim::world::FrameEffects::default(),
             ));
             for frame in 0..128 {
-                sim.session.binary_frame = frame;
+                sim.session.set_binary_frame_for_test(frame);
                 sim.process_ground_locomotor_for_test(1, Some(&rules), Some(&grid), None)
                     .unwrap();
                 if crate::sim::movement::motion_query::is_moving(

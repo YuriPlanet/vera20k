@@ -107,8 +107,10 @@ impl Scene {
         assert!(!input["on_bridge"].as_bool().unwrap());
         assert_eq!(entity.weapon_burst.index(), int(&input["burst"]));
         sim.resolve_type_handles(rules);
-        sim.session.binary_frame = int(&input["frame"]) as u32;
-        sim.session.tick = u64::from(sim.session.binary_frame);
+        sim.session
+            .set_binary_frame_for_test(int(&input["frame"]) as u32);
+        sim.session
+            .set_tick_for_test(u64::from(sim.session.binary_frame()));
         install_rng(&mut sim, &row["rng_before"]);
         let cursor = sim.native_identity_cursor().unwrap();
         Self {
@@ -364,8 +366,8 @@ fn native_disk_constructor_fire_ai_expiry_and_common_drain_histories() {
         let mut selected = Vec::new();
         for expected in row["states"].as_array().unwrap() {
             let frame = int(&expected["frame"]) as u32;
-            scene.sim.session.binary_frame = frame;
-            scene.sim.session.tick = u64::from(frame);
+            scene.sim.session.set_binary_frame_for_test(frame);
+            scene.sim.session.set_tick_for_test(u64::from(frame));
             let context = format!("{} frame{frame}", row["input"]["name"]);
             match expected["phase"].as_str().unwrap() {
                 "constructor" => {
@@ -604,8 +606,8 @@ fn disk_snapshot_resumes_active_and_duplicate_pending_shots() {
         let id = scene.construct(spec);
         scene.fire(spec, id);
         for frame in 201..=205 {
-            scene.sim.session.binary_frame = frame;
-            scene.sim.session.tick = u64::from(frame);
+            scene.sim.session.set_binary_frame_for_test(frame);
+            scene.sim.session.set_tick_for_test(u64::from(frame));
             scene
                 .sim
                 .tick_disk_lasers(rules, Some(&registry), FrameEffects::default());
@@ -671,8 +673,8 @@ fn disk_snapshot_resumes_active_and_duplicate_pending_shots() {
             let observations: Vec<_> = [&mut scene.sim, &mut resumed]
                 .into_iter()
                 .map(|sim| {
-                    sim.session.binary_frame = frame;
-                    sim.session.tick = u64::from(frame);
+                    sim.session.set_binary_frame_for_test(frame);
+                    sim.session.set_tick_for_test(u64::from(frame));
                     let output_start = sim.lifecycle_outputs.len();
                     let sound_start = sim.sound_events.len();
                     let (_, area) = trace_area_visits(|| {
@@ -869,7 +871,7 @@ fn retail_disk_attack_delivers_without_ordinary_bullet_fire() {
     assert_eq!(health, rules.object("MTNK").unwrap().strength);
     let command = CommandEnvelope::new(
         sim.substrate.entities.get(source).unwrap().owner(),
-        sim.session.tick + 1,
+        sim.session.tick() + 1,
         Command::Attack {
             attacker_id: source,
             target_id: target,

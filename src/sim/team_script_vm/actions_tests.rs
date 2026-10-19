@@ -303,7 +303,7 @@ fn patrol_team_fixture(armed: bool) -> (Simulation, RuleSet, u64, Vec<u64>) {
 #[test]
 fn patrol_dispatch_moves_to_its_waypoint_without_finishing_immediately() {
     let (mut sim, rules, team, members) = patrol_team_fixture(false);
-    sim.session.binary_frame = 1;
+    sim.session.set_binary_frame_for_test(1);
     let rng_before = sim.scenario_rng.native_state_hex();
     sim.team_step_script(team, &rules, None, FrameEffects::default());
     assert_eq!(sim.scenario_rng.native_state_hex(), rng_before);
@@ -360,7 +360,8 @@ fn patrol_clears_a_lost_target_then_returns_to_the_waypoint_on_the_next_visit() 
             FrameEffects::default(),
         );
     }
-    sim.session.binary_frame = rules.general.patrol_scan_frames() as u32;
+    sim.session
+        .set_binary_frame_for_test(rules.general.patrol_scan_frames() as u32);
     sim.team_step_script(team, &rules, None, FrameEffects::default());
     let state = sim.team_script_vm.team(team).unwrap();
     assert_eq!(state.mission_target, None);
@@ -372,7 +373,8 @@ fn patrol_clears_a_lost_target_then_returns_to_the_waypoint_on_the_next_visit() 
         let entity = sim.substrate.entities.get(member).unwrap();
         entity.attack_target.target().is_none() && entity.navigation.nav_com().is_none()
     }));
-    sim.session.binary_frame += 1;
+    sim.session
+        .set_binary_frame_for_test(sim.session.binary_frame() + 1);
     sim.team_step_script(team, &rules, None, FrameEffects::default());
     assert_eq!(
         sim.team_script_vm.team(team).unwrap().mission_target,
@@ -388,13 +390,15 @@ fn patrol_scans_on_the_global_period_and_orders_members_to_attack() {
         .unwrap();
     let owner = sim.interner.get("Russians").unwrap();
     crate::sim::vision::reveal_radius(&mut sim.fog, owner, 14, 10, 8);
-    sim.session.binary_frame = (rules.general.patrol_scan_frames() - 1) as u32;
+    sim.session
+        .set_binary_frame_for_test((rules.general.patrol_scan_frames() - 1) as u32);
     sim.team_step_script(team, &rules, None, FrameEffects::default());
     assert_eq!(
         sim.team_script_vm.team(team).unwrap().mission_target,
         Some(TeamTarget::Cell { x: 30, y: 20 })
     );
-    sim.session.binary_frame += 1;
+    sim.session
+        .set_binary_frame_for_test(sim.session.binary_frame() + 1);
     sim.team_step_script(team, &rules, None, FrameEffects::default());
     assert_eq!(
         sim.team_script_vm.team(team).unwrap().mission_target,
@@ -810,7 +814,7 @@ fn script59_building_gate_and_retained_ammo_route_match_original_controls() {
             "{input}: supplied native type ammo"
         );
         let mut sim = Simulation::new();
-        sim.session.binary_frame = 1;
+        sim.session.set_binary_frame_for_test(1);
         crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
         let first = input["first"].as_bool().unwrap();
         let has_building = input["blocker"] == "building" || !first;

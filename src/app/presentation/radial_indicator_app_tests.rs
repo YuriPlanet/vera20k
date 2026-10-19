@@ -39,7 +39,8 @@ fn state(rules: &RuleSet) -> Simulation {
     }
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
-    sim.session.current_house = sim.interner.get("Americans");
+    sim.session
+        .set_current_house_for_test(sim.interner.get("Americans"));
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
     sim
@@ -639,7 +640,8 @@ fn stock_selected_gap_uses_current_house_ledger_order_and_online_not_power() {
         query(&sim, rules, &[pillbox], 0).is_empty(),
         "weapon range alone does not grant HasRadialIndicator"
     );
-    sim.session.current_house = sim.interner.get("British");
+    sim.session
+        .set_current_house_for_test(sim.interner.get("British"));
     assert!(query(&sim, rules, &[a], 0).is_empty());
     assert_eq!(query(&sim, rules, &[rival], 0).len(), 1);
 }

@@ -162,7 +162,7 @@ impl Simulation {
         CommandRecord::encode(
             crate::sim::command::CHEER_OPCODE,
             i32::from(index),
-            self.session.binary_frame as i32,
+            self.session.binary_frame() as i32,
             &[],
         )
         .ok()
@@ -195,7 +195,7 @@ impl Simulation {
             .and_then(|index| i8::try_from(index).ok())?;
         let typed = ScatterRecord {
             house_id,
-            frame: self.session.binary_frame as i32,
+            frame: self.session.binary_frame() as i32,
             entity_id: i32::try_from(entity_id).ok()?,
         };
         let mut record = CommandRecord::decode_exact(&[0; COMMAND_RECORD_LEN]).ok()?;
@@ -437,7 +437,7 @@ impl Simulation {
             .and_then(|index| i8::try_from(index).ok())?;
         let typed = MegaMissionRecord {
             house_id,
-            frame: self.session.binary_frame as i32,
+            frame: self.session.binary_frame() as i32,
             source_id: i32::try_from(source_id).ok()?,
             order,
         };
@@ -465,7 +465,7 @@ impl Simulation {
             .and_then(|index| i8::try_from(index).ok())?;
         SellWallAtCellRecord {
             house_id,
-            frame: self.session.binary_frame,
+            frame: self.session.binary_frame(),
             x,
             y,
         }
@@ -490,7 +490,7 @@ impl Simulation {
             .and_then(|index| i8::try_from(index).ok())?;
         ExitRecord {
             house_id,
-            frame: self.session.binary_frame,
+            frame: self.session.binary_frame(),
         }
         .encode()
         .ok()
@@ -937,7 +937,7 @@ impl Simulation {
             let Some(typed) = MegaMissionRecord::decode(&ordinary) else {
                 return false;
             };
-            let Some(envelope) = self.decode_native_command_record(&ordinary, self.session.tick)
+            let Some(envelope) = self.decode_native_command_record(&ordinary, self.session.tick())
             else {
                 return false;
             };
@@ -1715,7 +1715,7 @@ impl Simulation {
                             // destination setters this arm does not run.
                             // Dormant: no retail `[AircraftTypes]` entry has
                             // `Passengers=`.
-                            let now = self.session.binary_frame;
+                            let now = self.session.binary_frame();
                             let _ = self.mission_assign_exact(
                                 *transport_id,
                                 crate::sim::mission::MissionId::from_known(MissionType::Unload),
@@ -1838,7 +1838,7 @@ impl Simulation {
                         }
                         if crate::sim::superweapon::invulnerability::is_invulnerable(
                             b.invulnerability.as_ref(),
-                            self.session.binary_frame,
+                            self.session.binary_frame(),
                         ) {
                             return None;
                         }
@@ -2112,7 +2112,7 @@ impl Simulation {
                 .disguise
                 .as_ref()
                 .is_some_and(|d| d.house().is_none())
-            && self.session.current_house.is_some_and(|house| {
+            && self.session.current_house().is_some_and(|house| {
                 entity.is_disguised_to(
                     house,
                     Some(&self.fog),
@@ -2394,7 +2394,7 @@ impl Simulation {
         let Some(combat::TargetKind::Entity(flashed)) = destination.or(target) else {
             return;
         };
-        let Some(player) = self.session.current_house else {
+        let Some(player) = self.session.current_house() else {
             return;
         };
         if self.substrate.entities.get(actor_id).is_some_and(|actor| {
@@ -2668,7 +2668,7 @@ mod tests {
         );
         entity.locomotor = Some(LocomotorState::from_object_type(
             obj,
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
         ));
         entity.mover_facts.set_regular_crusher_for_test(obj.crusher);
         entity
@@ -3078,7 +3078,8 @@ mod tests {
                 .unwrap()
                 .state();
             saw_track_step |= state == BunkerState::TrackStep;
-            sim.session.binary_frame += 1;
+            sim.session
+                .set_binary_frame_for_test(sim.session.binary_frame() + 1);
             if state == BunkerState::Occupied {
                 break;
             }
@@ -3190,7 +3191,8 @@ mod tests {
                 None,
                 crate::sim::world::FrameEffects::default(),
             );
-            sim.session.binary_frame += 1;
+            sim.session
+                .set_binary_frame_for_test(sim.session.binary_frame() + 1);
             let unit = sim.substrate.entities.get(1).unwrap();
             if (unit.position.rx(), unit.position.ry()) == exit
                 && crate::sim::movement::track_head::committed_track_head(unit).is_none()

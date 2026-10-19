@@ -81,7 +81,7 @@ fn stock_base_fixture_from_retail(
     let mut house = HouseState::new(owner, 0, Some(owner), true, 50_000, 10);
     house.project_country_mults(&rules, &sim.interner);
     sim.houses.register(house);
-    sim.session.current_house = Some(owner);
+    sim.session.set_current_house_for_test(Some(owner));
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
     // Like the supplied flat terrain/base, mapped ground is an explicit
     // fixture prerequisite. This fixture does not execute map reveal startup.
@@ -570,7 +570,7 @@ fn submit_current_building(fixture: &mut Fixture, cell: (u16, u16)) -> CommandEn
     );
     let command = CommandEnvelope::new(
         fixture.input.building_placement_issuer().unwrap(),
-        fixture.sim.session.tick + 1,
+        fixture.sim.session.tick() + 1,
         Command::PlaceReadyBuilding {
             type_id: fixture.sim.interner.get(&name).unwrap(),
             rx: cell.0,
@@ -587,7 +587,7 @@ fn submit_current_building(fixture: &mut Fixture, cell: (u16, u16)) -> CommandEn
 fn cancel_envelope(fixture: &Fixture, name: &str) -> CommandEnvelope {
     CommandEnvelope::new(
         fixture.owner,
-        fixture.sim.session.tick + 1,
+        fixture.sim.session.tick() + 1,
         Command::CancelProductionByType {
             type_id: fixture.sim.interner.get(name).unwrap(),
             all: false,
@@ -720,7 +720,7 @@ fn pending_produce_right_click_suspends_on_arrival_without_duplicate_orders() {
         assert_eq!(resume.order, Some(CameoOrder::Produce));
         let command = CommandEnvelope::new(
             owner,
-            fixture.sim.session.tick + 1,
+            fixture.sim.session.tick() + 1,
             Command::QueueProduction { type_id },
         );
         let frame = advance_commands(&mut fixture, &[command]);
@@ -923,7 +923,7 @@ fn start_mixed_infantry_queue(fixture: &mut Fixture) -> (u64, u64) {
         .map(|name| {
             CommandEnvelope::new(
                 fixture.owner,
-                fixture.sim.session.tick + 1,
+                fixture.sim.session.tick() + 1,
                 Command::QueueProduction {
                     type_id: fixture.sim.interner.get(name).unwrap(),
                 },
@@ -1055,7 +1055,7 @@ fn retail_spy_stolen_soviet_tech_admits_and_delivers_chrono_ivan() {
 
     let capture = CommandEnvelope::new(
         owner,
-        fixture.sim.session.tick + 1,
+        fixture.sim.session.tick() + 1,
         Command::CaptureBuilding {
             engineer_id: spy,
             target_building_id: laboratory,
@@ -1151,7 +1151,7 @@ fn retail_spy_stolen_soviet_tech_admits_and_delivers_chrono_ivan() {
     );
     let produce = CommandEnvelope::new(
         owner,
-        fixture.sim.session.tick + 1,
+        fixture.sim.session.tick() + 1,
         Command::QueueProduction { type_id: ivan },
     );
     let mut held = None;
@@ -1253,7 +1253,7 @@ fn selling_barracks_retains_paid_clock_and_queued_dark_cameo_until_house_recheck
     let commands = ["E2", "E2", "FLAKT"].map(|name| {
         CommandEnvelope::new(
             owner,
-            fixture.sim.session.tick + 1,
+            fixture.sim.session.tick() + 1,
             Command::QueueProduction {
                 type_id: fixture.sim.interner.get(name).unwrap(),
             },
@@ -1277,7 +1277,7 @@ fn selling_barracks_retains_paid_clock_and_queued_dark_cameo_until_house_recheck
     let identities = fixture.projection.cameo_strips().saved_identities();
     let sale = CommandEnvelope::new(
         owner,
-        fixture.sim.session.tick + 1,
+        fixture.sim.session.tick() + 1,
         Command::SellBuilding {
             entity_id: barracks,
         },
@@ -1422,8 +1422,8 @@ fn paid_user_hold_stays_stopped_after_a_power_building_sale_refresh() {
     // The clear arena has no overlays. Saved-world preparation still requires
     // that empty map authority, as the ordinary map loader supplies it.
     fixture.sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(
-        fixture.sim.session.map_width,
-        fixture.sim.session.map_height,
+        fixture.sim.session.map_width(),
+        fixture.sim.session.map_height(),
     ));
     let owner = fixture.owner;
     for _ in 0..8 {
@@ -1435,7 +1435,7 @@ fn paid_user_hold_stays_stopped_after_a_power_building_sale_refresh() {
     let commands = [0, 1].map(|_| {
         CommandEnvelope::new(
             owner,
-            fixture.sim.session.tick + 1,
+            fixture.sim.session.tick() + 1,
             Command::QueueProduction { type_id: e2 },
         )
     });
@@ -1464,7 +1464,7 @@ fn paid_user_hold_stays_stopped_after_a_power_building_sale_refresh() {
     assert_eq!(press.eva, Some(sidebar_eva::EVA_ON_HOLD));
     let suspend = CommandEnvelope::new(
         owner,
-        fixture.sim.session.tick + 1,
+        fixture.sim.session.tick() + 1,
         Command::SuspendProduction {
             category: ProductionCategory::Infantry,
         },
@@ -1489,7 +1489,7 @@ fn paid_user_hold_stays_stopped_after_a_power_building_sale_refresh() {
         .stable_id();
     let sale = CommandEnvelope::new(
         owner,
-        fixture.sim.session.tick + 1,
+        fixture.sim.session.tick() + 1,
         Command::SellBuilding { entity_id: power },
     );
     let mut frame = advance_commands(&mut fixture, &[sale]);
@@ -1523,7 +1523,10 @@ fn paid_user_hold_stays_stopped_after_a_power_building_sale_refresh() {
         assert!(step < 1023, "real power-building sale must finish");
         frame = advance_commands(&mut fixture, &[]);
     }
-    fixture.sim.session.map_name = "HOLD-RESUME.MAP".into();
+    fixture
+        .sim
+        .session
+        .set_map_name_for_test("HOLD-RESUME.MAP".into());
     fixture.sim.session.set_started(true);
     let before_factories = fixture.sim.production.factories.clone();
     let before_wallet = fixture.sim.houses[&owner].economy.clone();
@@ -1564,7 +1567,7 @@ fn paid_user_hold_stays_stopped_after_a_power_building_sale_refresh() {
     assert_eq!(resume.eva, Some(sidebar_eva::EVA_TRAINING));
     let command = CommandEnvelope::new(
         owner,
-        fixture.sim.session.tick + 1,
+        fixture.sim.session.tick() + 1,
         Command::QueueProduction { type_id: e2 },
     );
     let frame = advance_commands(&mut fixture, &[command]);
@@ -1675,14 +1678,14 @@ fn mixed_infantry_cancel_clears_old_cameo_before_same_factory_promotion() {
     );
     let enqueue = CommandEnvelope::new(
         owner,
-        fixture.sim.session.tick + 1,
+        fixture.sim.session.tick() + 1,
         Command::QueueProduction {
             type_id: fixture.sim.interner.get("ENGINEER").unwrap(),
         },
     );
     let suspend = CommandEnvelope::new(
         owner,
-        fixture.sim.session.tick + 1,
+        fixture.sim.session.tick() + 1,
         Command::SuspendProduction {
             category: ProductionCategory::Infantry,
         },
@@ -3379,7 +3382,7 @@ fn saved_product_expiry_clears_backup_without_clearing_another_current_product()
     install_late_stationary_blocker(&mut fixture, (8, 4));
     let failed = CommandEnvelope::new(
         fixture.owner,
-        fixture.sim.session.tick + 1,
+        fixture.sim.session.tick() + 1,
         Command::PlaceReadyBuilding {
             type_id: fixture.sim.interner.get("GAPILL").unwrap(),
             rx: 8,
@@ -3452,7 +3455,7 @@ fn sentinel_placement_keeps_human_factories_and_current_without_retry_or_eva() {
     for (occurrence, cell) in [(0, 0), (u16::MAX, u16::MAX)].into_iter().enumerate() {
         let command = CommandEnvelope::new(
             fixture.owner,
-            fixture.sim.session.tick + 1,
+            fixture.sim.session.tick() + 1,
             Command::PlaceReadyBuilding {
                 type_id: fixture.sim.interner.get("GAPOWR").unwrap(),
                 rx: cell.0,

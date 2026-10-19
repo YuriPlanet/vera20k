@@ -196,7 +196,7 @@ fn sov01_trigger_revealed_hill_bunkers_can_be_targeted_without_tank_sight() {
             .expect("authored bunker cell"),
         );
     }
-    let viewer = sim.session.current_house.unwrap();
+    let viewer = sim.session.current_house().unwrap();
     let viewer_name = sim.resolve(viewer).to_owned();
     // SP4.4b_Reveal Allied, 0885994C: the actual eight Action17 waypoints.
     for waypoint in [63, 66, 71, 99, 100, 114, 437, 647] {

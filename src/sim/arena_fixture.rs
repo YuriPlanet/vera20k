@@ -116,8 +116,8 @@ pub fn flat_ground(sim: &mut Simulation, rules: &RuleSet) -> PathGrid {
 }
 
 fn flat_ground_with_size(sim: &mut Simulation, rules: &RuleSet, size: u16) -> PathGrid {
-    sim.session.map_width = size;
-    sim.session.map_height = size;
+    sim.session.set_map_width_for_test(size);
+    sim.session.set_map_height_for_test(size);
     sim.install_resolved_terrain_for_new_map(clear_ground(size));
     sim.playfield_bounds = Some(OPEN_PLAYFIELD);
     sim.playfield_size_height = Some(20);

@@ -37,7 +37,7 @@ fn world() -> Option<(RuleSet, Simulation, InternedId)> {
     let confederation = sim.interner.intern("Confederation");
     sim.houses
         .register(HouseState::new(confederation, 1, None, false, 0, 10));
-    sim.session.current_house = Some(americans);
+    sim.session.set_current_house_for_test(Some(americans));
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     sim.fog = vision::FogState::new(128, 128);

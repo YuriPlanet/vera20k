@@ -147,7 +147,7 @@ pub fn psychic_sensor_watch_fixture(rules: &RuleSet) -> (Simulation, u64, Intern
         .unwrap()
         .attack_target
         .set_for_test(Some(TargetKind::Cell(18, 18)));
-    sim.session.current_house = Some(americans);
+    sim.session.set_current_house_for_test(Some(americans));
     (sim, tank, americans)
 }
 

@@ -16,11 +16,11 @@ fn ordinary_frame(
     scene: &mut crate::headless_scenario::HeadlessScenario,
     payload: Option<crate::sim::command::Command>,
 ) {
-    let owner = scene.sim().session.current_house.unwrap();
+    let owner = scene.sim().session.current_house().unwrap();
     let commands: Vec<_> = payload
         .into_iter()
         .map(|payload| {
-            crate::sim::command::CommandEnvelope::new(owner, scene.sim().session.tick, payload)
+            crate::sim::command::CommandEnvelope::new(owner, scene.sim().session.tick(), payload)
         })
         .collect();
     scene
@@ -55,7 +55,7 @@ fn paid_goldst(root: &std::path::Path) -> crate::headless_scenario::HeadlessScen
     launch.options.fog_of_war = false;
     let mut scene =
         crate::headless_scenario::load_session(root, "GoldSt.mmx", 305419896, launch).unwrap();
-    let owner = scene.sim().session.current_house.unwrap();
+    let owner = scene.sim().session.current_house().unwrap();
     let mcv = scene
         .sim()
         .entities()
@@ -173,7 +173,7 @@ fn retail_placement_matches_original_cell_and_foundation_raster() {
         }
     }
     let rules = &scene.runtime.resources.rules;
-    let owner = sim.session.current_house.unwrap();
+    let owner = sim.session.current_house().unwrap();
     let preview = production::placement_preview_for_owner_with_overlays(
         sim,
         rules,
@@ -361,7 +361,7 @@ fn paid_refinery_centering_and_free_unit(
 ) {
     use crate::rules::foundation::placement_origin_at_cursor;
     use crate::sim::command::Command;
-    let owner = scene.sim().session.current_house.unwrap();
+    let owner = scene.sim().session.current_house().unwrap();
     let power = scene.sim().interner.get("GAPOWR").unwrap();
     let power_origin = placement_origin_at_cursor("2x2", (110, 33));
     ordinary_frame(

@@ -622,9 +622,10 @@ fn busy_factory_exit_original_rows_compare_receiver_archive_restoration_and_rng(
             off_104: 256,
             off_108: 256,
         });
-        sim.session.map_width = 128;
-        sim.session.map_height = 128;
-        sim.session.binary_frame = before["product"]["frame"].as_u64().unwrap() as u32;
+        sim.session.set_map_width_for_test(128);
+        sim.session.set_map_height_for_test(128);
+        sim.session
+            .set_binary_frame_for_test(before["product"]["frame"].as_u64().unwrap() as u32);
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
                 int(&before["actual_game_mode"]) != 0,
@@ -675,7 +676,7 @@ fn busy_factory_exit_original_rows_compare_receiver_archive_restoration_and_rng(
                 handler_state: native["status"].as_u64().unwrap() as u32,
                 mission_start_frame: 0,
                 ai_counter: 0,
-                dispatch_timer: MissionDispatchTimer::at_frame(sim.session.binary_frame),
+                dispatch_timer: MissionDispatchTimer::at_frame(sim.session.binary_frame()),
             });
         }
         assert_eq!(
@@ -931,8 +932,8 @@ fn human_mobile_completion_retains_identity_until_next_frame_place() {
 
     let completed_frame = (0..10_000)
         .find(|&frame| {
-            sim.session.binary_frame = frame;
-            sim.session.tick = u64::from(frame);
+            sim.session.set_binary_frame_for_test(frame);
+            sim.session.set_tick_for_test(u64::from(frame));
             super::publish_production_changes(&mut sim, &rules);
             super::step_factories(&mut sim);
 
@@ -943,8 +944,9 @@ fn human_mobile_completion_retains_identity_until_next_frame_place() {
         })
         .expect("the paid native step ladder completes");
     assert!(sim.pending_command_snapshot().is_empty());
-    sim.session.tick += 1;
-    sim.session.binary_frame = sim.session.binary_frame.wrapping_add(1);
+    sim.session.set_tick_for_test(sim.session.tick() + 1);
+    sim.session
+        .set_binary_frame_for_test(sim.session.binary_frame().wrapping_add(1));
     super::publish_production_changes(&mut sim, &rules);
     let entity = sim.substrate.entities.get(held).unwrap();
     assert!(
@@ -1367,7 +1369,8 @@ fn cancelled_constructor_building_runs_shared_destructor_without_uninit() {
             SimRng::from_native_state_hex_for_test(before["rng"]["main"].as_str().unwrap()).into();
         sim.mapgen_rng =
             SimRng::from_native_state_hex_for_test(before["rng"]["mapgen"].as_str().unwrap());
-        sim.session.binary_frame = before["frame"].as_u64().unwrap() as u32;
+        sim.session
+            .set_binary_frame_for_test(before["frame"].as_u64().unwrap() as u32);
 
         assert!(cancel_production_for_owner(
             &mut sim,
@@ -1666,7 +1669,7 @@ fn build_time_inputs_read_owner_power_and_matching_factories() {
         &mut sim.substrate.entities,
         &rules,
         &sim.interner,
-        sim.session.binary_frame,
+        sim.session.binary_frame(),
     );
 
     let americans = sim.interner.intern("Americans");
@@ -2558,7 +2561,7 @@ fn completed_same_type_produce_preserves_the_factory_at_build_limit() {
     let next_order = sim.production.next_enqueue_order;
     let wallet = sim.houses[&owner].economy.clone();
     let rng = sim.rng_state();
-    sim.session.binary_frame = 300;
+    sim.session.set_binary_frame_for_test(300);
     assert!(enqueue_by_type(
         &mut sim,
         &rules,
@@ -2620,7 +2623,7 @@ fn a_held_build_at_its_build_limit_resumes_on_produce() {
         Some(super::BuildDisabledReason::AtBuildLimit)
     );
 
-    sim.session.binary_frame = 300;
+    sim.session.set_binary_frame_for_test(300);
     assert!(enqueue_by_type(
         &mut sim,
         &rules,

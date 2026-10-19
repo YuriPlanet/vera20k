@@ -60,7 +60,7 @@ impl Simulation {
                     // (Techno703850, a plain `StartUncloaking(0)` wrapper),
                     // then loads its next link. Walk75BBAE and Drive/Ship
                     // code1 share this owner.
-                    let now = self.session.binary_frame as i32;
+                    let now = self.session.binary_frame() as i32;
                     let result = self
                         .substrate
                         .entities

@@ -149,7 +149,7 @@ fn actual_computer_yard_retasks_existing_starting_force_through_move() {
             {
                 completed
                     .entry(id)
-                    .or_insert((sim.session.binary_frame, cell));
+                    .or_insert((sim.session.binary_frame(), cell));
             }
         }
         if completed.len() == army.len() {

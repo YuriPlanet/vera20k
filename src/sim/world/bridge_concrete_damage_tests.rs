@@ -18,7 +18,7 @@ fn export(scene: &HeadlessScenario, phase: &str) {
     };
     let sim = scene.sim();
     let result = json!({
-        "phase": phase, "frame": sim.session.binary_frame,
+        "phase": phase, "frame": sim.session.binary_frame(),
         "navigation": crate::sim::world::bridge_test_evidence::navigation_snapshot(
             sim, phase, (49..=59).flat_map(|y| (84..=90).map(move |x| (x,y))),
         ),
@@ -155,7 +155,7 @@ fn retail_concrete_hut_damage_matches_native_both_huts_and_three_states() {
         sim.scenario_rng =
             serde_json::from_value(expected["rng_before"]["scenario"].clone()).unwrap();
         sim.mapgen_rng = serde_json::from_value(expected["rng_before"]["mapgen"].clone()).unwrap();
-        sim.session.binary_frame = 1000;
+        sim.session.set_binary_frame_for_test(1000);
         let before_anims: std::collections::BTreeSet<_> =
             sim.substrate.anims.iter().map(|(id, _)| *id).collect();
         let hut = (
@@ -220,7 +220,7 @@ fn retail_concrete_collapse_rechecks_an_incoming_drive_head() {
     let runtime = &mut scene.runtime;
     let sim = &mut runtime.simulation;
     let rules = &runtime.resources.rules;
-    let owner = sim.session.current_house.unwrap();
+    let owner = sim.session.current_house().unwrap();
     let owner_name = sim.resolve(owner).to_owned();
     let tank = sim
         .spawn_object_with_overlay_registry(
@@ -322,7 +322,7 @@ fn retail_concrete_collapse_rechecks_an_incoming_drive_head() {
 fn force_fire_scene() -> (HeadlessScenario, u64, String) {
     let mut scene = loaded();
     let runtime = &mut scene.runtime;
-    let owner = runtime.simulation.session.current_house.unwrap();
+    let owner = runtime.simulation.session.current_house().unwrap();
     let owner_name = runtime.simulation.resolve(owner).to_owned();
     let tank = runtime
         .simulation
@@ -339,7 +339,7 @@ fn force_fire_scene() -> (HeadlessScenario, u64, String) {
     export(&scene, "attack_before_command");
     let command = CommandEnvelope::new(
         owner,
-        scene.sim().session.tick + 1,
+        scene.sim().session.tick() + 1,
         Command::ForceAttackCell {
             attacker_id: tank,
             target_rx: 87,
@@ -391,7 +391,7 @@ fn retail_force_fire_emits_native_muzzle_from_real_command() {
         (shot.fire_coord.x, shot.fire_coord.y, shot.fire_coord.z),
         (22400, 13077, 516)
     );
-    assert_eq!(scene.sim().session.binary_frame, 2);
+    assert_eq!(scene.sim().session.binary_frame(), 2);
     assert_eq!(
         scene
             .sim()
@@ -405,7 +405,7 @@ fn retail_force_fire_emits_native_muzzle_from_real_command() {
     export(&scene, "attack_first_tick");
     let mut following = Vec::new();
     for _ in 0..10 {
-        let frame = scene.sim().session.binary_frame;
+        let frame = scene.sim().session.binary_frame();
         let before = json!({"main":scene.sim().main_rng,"scenario":scene.sim().scenario_rng,"mapgen":scene.sim().mapgen_rng});
         let (_, draws) = crate::sim::rng::trace_draws(|| {
             scene
@@ -435,7 +435,7 @@ fn retail_force_fire_collapses_concrete_then_engineer_rebuilds_it() {
     // allows the fixed loaded-world stream to reach both admitted hits; the
     // isolated MTNK native packet has a different global caller history.
     for _ in 0..18_000 {
-        let logic_frame = scene.sim().session.binary_frame;
+        let logic_frame = scene.sim().session.binary_frame();
         let output = scene
             .runtime
             .advance_frame(

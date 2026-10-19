@@ -107,9 +107,11 @@ fn fixture(input: &Value) -> (Simulation, RuleSet, u64, Vec<InternedId>) {
             integer(&input["game_mode"]) != 0,
         ),
     );
-    sim.session.current_house = input["local_house"]
-        .as_u64()
-        .map(|index| houses[index as usize]);
+    sim.session.set_current_house_for_test(
+        input["local_house"]
+            .as_u64()
+            .map(|index| houses[index as usize]),
+    );
     let id = sim.allocate_stable_id();
     let mut building =
         GameEntity::test_default_of_category(id, "B", "", 10, 11, EntityCategory::Structure);
@@ -379,7 +381,7 @@ fn zero_capacity_map_garrison_abandons_without_allocated_cargo() {
         sim.houses
             .register(HouseState::new(owner, side, None, human, 0, 10));
         if human {
-            sim.session.current_house = Some(owner);
+            sim.session.set_current_house_for_test(Some(owner));
         }
     }
     // Use the production constructor: unlike the corpus fixture, it represents

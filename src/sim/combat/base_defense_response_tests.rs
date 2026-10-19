@@ -53,7 +53,7 @@ fn gsi_04_05_response_delay_is_the_native_ftol() {
 /// hands the world a copy of it.
 fn response_world(frame: u32, attacker_at: (u16, u16)) -> Simulation {
     let mut sim = Simulation::new();
-    sim.session.binary_frame = frame;
+    sim.session.set_binary_frame_for_test(frame);
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     for (name, side) in [("Victim", 0), ("Enemy", 1)] {
@@ -90,8 +90,8 @@ fn with_clear_map(sim: &mut Simulation) {
         8,
     ));
     sim.resolved_terrain = Some(terrain);
-    sim.session.map_width = 8;
-    sim.session.map_height = 8;
+    sim.session.set_map_width_for_test(8);
+    sim.session.set_map_height_for_test(8);
     sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
         base: 8,
         off_fc: 0,
@@ -695,7 +695,7 @@ fn retail_bridge_base_response_runs_through_the_protected_damage_receiver() {
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
-        sim.session.binary_frame = 41;
+        sim.session.set_binary_frame_for_test(41);
         for (name, side) in [("Americans", 0), ("Russians", 1)] {
             let owner = sim.interner.intern(name);
             sim.houses

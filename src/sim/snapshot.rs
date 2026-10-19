@@ -1663,7 +1663,7 @@ impl GameSnapshot {
             description: description.to_string(),
             map_hash,
             rules_hash,
-            tick: sim.session.tick,
+            tick: sim.session.tick(),
             save_timestamp,
             map_name: map_name.to_string(),
             sim,
@@ -1722,7 +1722,7 @@ impl GameSnapshot {
             sim,
             map_hash,
             rules_hash,
-            &sim.session.map_name,
+            &sim.session.map_name(),
             description,
             save_timestamp,
             (
@@ -1853,16 +1853,16 @@ impl GameSnapshot {
 
     fn deserialize_admitted(bytes: &[u8]) -> Result<GameSnapshot, SnapshotError> {
         let snapshot: GameSnapshot = save_codec::deserialize(bytes)?;
-        if snapshot.tick != snapshot.sim.session.tick {
+        if snapshot.tick != snapshot.sim.session.tick() {
             return Err(SnapshotError::TickMetadataMismatch {
                 header_tick: snapshot.tick,
-                simulation_tick: snapshot.sim.session.tick,
+                simulation_tick: snapshot.sim.session.tick(),
             });
         }
-        if snapshot.map_name != snapshot.sim.session.map_name {
+        if snapshot.map_name != snapshot.sim.session.map_name() {
             return Err(SnapshotError::MapNameMetadataMismatch {
                 header_map_name: snapshot.map_name,
-                simulation_map_name: snapshot.sim.session.map_name,
+                simulation_map_name: snapshot.sim.session.map_name().to_owned(),
             });
         }
         Ok(snapshot)
@@ -2779,7 +2779,7 @@ impl Simulation {
             .map_err(SnapshotRestoreError::InvalidRadiationSiteOrder)?;
         self.validate_planning_references()
             .map_err(|reason| SnapshotRestoreError::InvalidPlanningReferences { reason })?;
-        if let Some(owner) = self.session.current_house
+        if let Some(owner) = self.session.current_house()
             && !self.houses.contains_key(&owner)
         {
             return Err(SnapshotRestoreError::InvalidCurrentHouse { owner });
@@ -2866,7 +2866,7 @@ impl Simulation {
             if outcome.exit_ready
                 && !house
                     .outcome_timer()
-                    .expired(self.session.binary_frame as i32)
+                    .expired(self.session.binary_frame() as i32)
             {
                 return Err(SnapshotRestoreError::InvalidHouseOutcomeState {
                     owner,
@@ -3038,12 +3038,12 @@ impl Simulation {
         for (_, projectile) in self.projectiles.iter_mut() {
             projectile
                 .arm_timer
-                .start(self.session.binary_frame as i32, 0);
+                .start(self.session.binary_frame() as i32, 0);
         }
         self.projectiles.restore_scalable_after_load();
         // ParasiteClass Load 6295DB..6295F3 does the same for its suppression
         // and bite timers: a bite is due at once and suppression is dropped.
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         for id in self.substrate.entities.keys_sorted() {
             self.restore_move_sound_state_after_load(id);
             if let Some(entity) = self.substrate.entities.get_mut(id) {
@@ -3054,7 +3054,8 @@ impl Simulation {
         self.rebuild_building_anim_slot_indices();
         self.rebuild_bomb_carriers();
         // The kamikaze tracker's Load (`0x0054E7B0`) follows its Clear.
-        self.kamikaze.restart_after_load(self.session.binary_frame);
+        self.kamikaze
+            .restart_after_load(self.session.binary_frame());
         self.substrate
             .occupancy
             .restore_memberships(&self.substrate.entities)
@@ -3280,7 +3281,7 @@ impl Simulation {
 
         let grows = self.production.ore_growth_config.grows;
         let spreads = self.production.ore_growth_config.spreads;
-        let current_frame = self.session.binary_frame;
+        let current_frame = self.session.binary_frame();
         // The stores are sized and walked from the native `MapRect` (`[Map]
         // Size`), never the cell-array extent in `session.map_*`. The rect the
         // fresh load rebuilt with is serialized; a zero rect (no rebuild ever
@@ -3389,9 +3390,9 @@ mod tests {
 
         fn base_sim_sized(ore_id: u8, size: u16, cells: &[(u16, u16)]) -> Simulation {
             let mut sim = Simulation::with_seed(0x17_04);
-            sim.session.binary_frame = 91;
-            sim.session.map_width = size;
-            sim.session.map_height = size;
+            sim.session.set_binary_frame_for_test(91);
+            sim.session.set_map_width_for_test(size);
+            sim.session.set_map_height_for_test(size);
             sim.production.ore_growth_config = OreGrowthConfig {
                 grows: true,
                 spreads: true,
@@ -3677,7 +3678,7 @@ mod tests {
                 (8, 8),
                 "the rect survives the snapshot"
             );
-            assert_eq!(restored.session.map_width, 12);
+            assert_eq!(restored.session.map_width(), 12);
             let output = restored
                 .restore_map_authority_after_snapshot_load(&rules, &registry, None)
                 .expect("all map-authority rebuild dependencies");
@@ -3801,7 +3802,7 @@ mod tests {
                 ),
                 (91, 23)
             );
-            assert_eq!(restored.session.binary_frame, 92);
+            assert_eq!(restored.session.binary_frame(), 92);
         }
 
         #[test]
@@ -4396,7 +4397,8 @@ mod tests {
     #[test]
     fn gsi_17_02_header_roundtrip_carries_identity_versions_and_description() {
         let mut sim = Simulation::new();
-        sim.session.map_name = "OFFICIAL.MAP".to_string();
+        sim.session
+            .set_map_name_for_test("OFFICIAL.MAP".to_string());
         let bytes =
             GameSnapshot::save_validated(&sim, 0x1234, 0x5678, "Hold the northern ridge", 0x9abc);
 
@@ -5105,7 +5107,7 @@ mod tests {
                 .register(crate::sim::house_state::HouseState::new(
                     owner, 0, None, true, 0, 1,
                 ));
-            sim.session.current_house = Some(owner);
+            sim.session.set_current_house_for_test(Some(owner));
             sim.session.set_game_mode(mode);
             sim.session.install_network_timing(73);
             sim.session.install_multiplayer_house_identity(
@@ -5148,7 +5150,7 @@ mod tests {
         let rng = sim.rng_state();
         let mut saved_identities = Vec::new();
         for owner in owners.iter().copied() {
-            sim.session.current_house = Some(owner);
+            sim.session.set_current_house_for_test(Some(owner));
             assert_eq!(sim.state_hash(), shared_hash);
             assert_eq!(sim.rng_state(), rng);
             let bytes = GameSnapshot::save(&sim, 0, 0, "current-house", 0);
@@ -5156,17 +5158,17 @@ mod tests {
             restored
                 .restore_after_snapshot_load()
                 .expect("valid House input");
-            assert_eq!(restored.session.current_house, Some(owner));
+            assert_eq!(restored.session.current_house(), Some(owner));
             assert_eq!(restored.state_hash(), shared_hash);
-            saved_identities.push(restored.session.current_house);
-            assert_eq!(restored.session.current_house, Some(owner));
+            saved_identities.push(restored.session.current_house());
+            assert_eq!(restored.session.current_house(), Some(owner));
             assert_eq!(restored.state_hash(), shared_hash);
             assert_eq!(restored.rng_state(), rng);
         }
         assert_ne!(saved_identities[0], saved_identities[1]);
 
         let missing = sim.intern("Missing");
-        sim.session.current_house = Some(missing);
+        sim.session.set_current_house_for_test(Some(missing));
         assert_eq!(
             sim.restore_after_snapshot_load(),
             Err(SnapshotRestoreError::InvalidCurrentHouse { owner: missing })
@@ -5280,7 +5282,7 @@ mod tests {
         // Full snapshot load restarts Scenario RNG from Seed0. Start on that
         // canonical cursor so the slope-only round trip can prove no draw.
         let mut sim = Simulation::with_seed(0);
-        sim.session.binary_frame = 51;
+        sim.session.set_binary_frame_for_test(51);
         let mut entity = GameEntity::test_default(1, "SLOPE", "Americans", 0, 0);
         entity.set_owner_for_test(sim.intern("Americans"));
         entity.set_type_ref_for_test(sim.intern("SLOPE"));
@@ -5323,7 +5325,7 @@ mod tests {
             .unwrap();
         assert_eq!(*loaded.runtime_payload(), active_before);
         assert_eq!(*loaded.piggyback(), stashed_before);
-        assert_eq!(restored.session.binary_frame, 51);
+        assert_eq!(restored.session.binary_frame(), 51);
         assert_eq!(restored.state_hash(), before_hash);
         assert_eq!(restored.scenario_rng.logical_state(), before_rng);
         assert_eq!(
@@ -5843,7 +5845,7 @@ mod tests {
                 entity_id: 1,
                 member_type: member_identity,
             }],
-            sim.session.binary_frame as i32,
+            sim.session.binary_frame() as i32,
         );
         let resources = crate::sim::runtime::SimResources::empty();
         sim.suspend_teams_for_base_defense(
@@ -6565,19 +6567,19 @@ mod tests {
             restored.pending_command_snapshot(),
             sim.pending_command_snapshot()
         );
-        assert_eq!(restored.session.game_options.game_speed, 1);
+        assert_eq!(restored.session.game_options().game_speed, 1);
         assert_eq!(restored.projected_in_game_options_speed(), Some(4));
 
         let due = restored.take_due_commands();
         let result = restored.advance_tick(&due, None, None, None, 67);
         assert_eq!(result.executed_commands, 1);
-        assert_eq!(restored.session.game_options.game_speed, 4);
+        assert_eq!(restored.session.game_options().game_speed, 4);
         assert!(restored.pending_command_snapshot().is_empty());
         assert_eq!(result.state_hash, Some(restored.state_hash()));
 
         let second = restored.advance_tick(&[], None, None, None, 67);
         assert_eq!(second.executed_commands, 0);
-        assert_eq!(restored.session.game_options.game_speed, 4);
+        assert_eq!(restored.session.game_options().game_speed, 4);
     }
 
     #[test]
@@ -6620,8 +6622,8 @@ mod tests {
         use crate::sim::world::SimSoundEvent;
 
         let mut original = Simulation::with_seed(0x104);
-        original.session.tick = 145;
-        original.session.binary_frame = 145;
+        original.session.set_tick_for_test(145);
+        original.session.set_binary_frame_for_test(145);
         let owner = original.interner.intern("Americans");
         original
             .houses
@@ -6682,7 +6684,7 @@ mod tests {
         assert_eq!(
             restored_house
                 .outcome_timer()
-                .remaining(restored.session.binary_frame as i32),
+                .remaining(restored.session.binary_frame() as i32),
             45
         );
 
@@ -6748,14 +6750,35 @@ mod tests {
     #[test]
     fn gsi_04_20_mid_fade_lighting_roundtrip_preserves_hash_and_next_rung() {
         let mut original = Simulation::with_seed(0x420);
-        original.session.binary_frame = 20;
-        original.session.lighting.normal.red_percent = 93;
-        original.session.lighting.ion.blue_percent = 71;
-        original.session.lighting.current_ambient = 95;
-        original.session.lighting.target_ambient = 87;
-        original.session.lighting.selected_profile =
-            crate::sim::scenario_session::ScenarioLightingProfile::Ion;
-        original.session.lighting.transition_timer = crate::sim::timer::CdTimer::from_raw(17, 3);
+        original.session.set_binary_frame_for_test(20);
+        original
+            .session
+            .lighting_mut()
+            .normal_mut_for_test()
+            .red_percent = 93;
+        original
+            .session
+            .lighting_mut()
+            .ion_mut_for_test()
+            .blue_percent = 71;
+        original
+            .session
+            .lighting_mut()
+            .set_current_ambient_for_test(95);
+        original
+            .session
+            .lighting_mut()
+            .set_target_ambient_for_test(87);
+        original
+            .session
+            .lighting_mut()
+            .set_selected_profile_for_test(
+                crate::sim::scenario_session::ScenarioLightingProfile::Ion,
+            );
+        original
+            .session
+            .lighting_mut()
+            .set_transition_timer_for_test(crate::sim::timer::CdTimer::from_raw(17, 3));
 
         // Native in-scenario load restarts Scenario RNG from Seed0; isolate
         // lighting persistence on that same post-load cursor.
@@ -6766,19 +6789,19 @@ mod tests {
             .expect("v65 lighting snapshot")
             .sim;
 
-        assert_eq!(restored.session.lighting, original.session.lighting);
+        assert_eq!(restored.session.lighting(), original.session.lighting());
         assert_eq!(restored.state_hash(), saved_hash);
 
         let original_due = original
             .session
-            .lighting
+            .lighting_mut()
             .advance_transition_if_due(20, true, 180, 20);
         let restored_due = restored
             .session
-            .lighting
+            .lighting_mut()
             .advance_transition_if_due(20, true, 180, 20);
         assert_eq!(restored_due, original_due);
-        assert_eq!(restored.session.lighting, original.session.lighting);
+        assert_eq!(restored.session.lighting(), original.session.lighting());
         assert_eq!(restored.state_hash(), original.state_hash());
     }
 
@@ -7378,8 +7401,8 @@ mod tests {
         use crate::sim::game_entity::GameEntity;
 
         let mut sim = Simulation::with_seed(0);
-        sim.session.map_width = 40;
-        sim.session.map_height = 40;
+        sim.session.set_map_width_for_test(40);
+        sim.session.set_map_height_for_test(40);
         let id = sim.allocate_stable_id();
         let owner = sim.intern("Americans");
         let type_ref = sim.intern("SHAD");
@@ -7488,8 +7511,8 @@ mod tests {
         use crate::sim::game_entity::GameEntity;
 
         let mut sim = Simulation::with_seed(0);
-        sim.session.map_width = 40;
-        sim.session.map_height = 40;
+        sim.session.set_map_width_for_test(40);
+        sim.session.set_map_height_for_test(40);
         let owner = sim.intern("Americans");
         let type_ref = sim.intern("SHAD");
         for rx in [10, 12] {
@@ -7636,8 +7659,8 @@ mod tests {
         use crate::sim::game_entity::GameEntity;
 
         let mut sim = Simulation::new();
-        sim.session.map_width = 32;
-        sim.session.map_height = 32;
+        sim.session.set_map_width_for_test(32);
+        sim.session.set_map_height_for_test(32);
         let entity_id = sim.allocate_stable_id();
         let mut building = GameEntity::test_default_of_category(
             entity_id,
@@ -8003,17 +8026,17 @@ mod tests {
 
         let mut sim = Simulation::new();
         let owner = sim.interner.intern("AMERICANS");
-        sim.session.map_name = "MAP01.MAP".to_string();
-        sim.session.tick = 0x1_0000_0007;
-        sim.session.binary_frame = u32::MAX - 2;
-        sim.session.total_sim_ms = 12_345;
+        sim.session.set_map_name_for_test("MAP01.MAP".to_string());
+        sim.session.set_tick_for_test(0x1_0000_0007);
+        sim.session.set_binary_frame_for_test(u32::MAX - 2);
+        sim.session.set_total_sim_ms_for_test(12_345);
         sim.houses
             .register(crate::sim::house_state::HouseState::new(
                 owner, 0, None, false, 0, 10,
             ));
         sim.queue_command(CommandEnvelope::new(
             owner,
-            sim.session.tick + 3,
+            sim.session.tick() + 3,
             Command::Stop { entity_id: 71 },
         ));
         sim.scenario_rng.next_u32();
@@ -8025,10 +8048,10 @@ mod tests {
         let bytes = GameSnapshot::save_validated(&sim, 0x11, 0x22, "Campaign foothold", 0x33);
         let restored =
             GameSnapshot::load_validated(&bytes, 0x11, 0x22, "MAP01.MAP").expect("exact metadata");
-        assert_eq!(restored.tick, sim.session.tick);
-        assert_eq!(restored.map_name, sim.session.map_name);
-        assert_eq!(restored.sim.session.binary_frame, u32::MAX - 2);
-        assert_eq!(restored.sim.session.total_sim_ms, 12_345);
+        assert_eq!(restored.tick, sim.session.tick());
+        assert_eq!(restored.map_name, sim.session.map_name());
+        assert_eq!(restored.sim.session.binary_frame(), u32::MAX - 2);
+        assert_eq!(restored.sim.session.total_sim_ms(), 12_345);
         assert_eq!(restored.sim.houses.order(), vec![owner]);
         assert_eq!(
             restored.sim.pending_command_snapshot(),
@@ -8064,8 +8087,11 @@ mod tests {
             Err(SnapshotError::TickMetadataMismatch { .. })
         ));
 
-        inconsistent.tick = inconsistent.sim.session.tick;
-        inconsistent.sim.session.map_name = "OTHER.MAP".to_string();
+        inconsistent.tick = inconsistent.sim.session.tick();
+        inconsistent
+            .sim
+            .session
+            .set_map_name_for_test("OTHER.MAP".to_string());
         let inconsistent_bytes =
             save_codec::serialize(&inconsistent).expect("corrupt map metadata");
         assert!(matches!(
@@ -8082,7 +8108,7 @@ mod tests {
         use glam::IVec3;
 
         let mut sim = Simulation::new();
-        sim.session.map_name = "RESTORE.MAP".to_string();
+        sim.session.set_map_name_for_test("RESTORE.MAP".to_string());
         let owner = sim.interner.intern("AMERICANS");
         let type_ref = sim.interner.intern("MTNK");
 
@@ -8300,8 +8326,8 @@ mod tests {
         ))
         .unwrap();
         let mut sim = Simulation::new();
-        sim.session.map_width = 4;
-        sim.session.map_height = 4;
+        sim.session.set_map_width_for_test(4);
+        sim.session.set_map_height_for_test(4);
         let mut terrain = flat_terrain(4, 4);
         terrain.cell_mut(1, 1).unwrap().level = 2;
         let tree_id = sim.allocate_stable_id();
@@ -9230,7 +9256,8 @@ mod tests {
         )
         .expect("move-sound rules");
         let mut sim = Simulation::new();
-        sim.session.map_name = "MOVESOUND.MAP".to_string();
+        sim.session
+            .set_map_name_for_test("MOVESOUND.MAP".to_string());
         let owner = sim.interner.intern("AMERICANS");
         let type_ref = sim.interner.intern("TEST");
         sim.interner.intern("VMove");
@@ -9424,7 +9451,7 @@ mod tests {
         let mut launch_house = HouseState::new(launch, 0, None, true, 10_000, 10);
         launch_house.initialize_scenario_name("<human player>");
         sim.houses.register(launch_house);
-        sim.session.current_house = Some(launch);
+        sim.session.set_current_house_for_test(Some(launch));
         let hostile = sim.interner.intern("Russians");
         let mut hostile_house = HouseState::new(hostile, 1, None, true, 0, 10);
         hostile_house.initialize_scenario_name("Russians");
@@ -9839,7 +9866,7 @@ mod tests {
                 crate::util::native_x87::NativeF32Bits::from_bits(0x3b44_9ba6),
                 3,
                 22,
-                sim.session.binary_frame,
+                sim.session.binary_frame(),
             ),
         );
         sim.production

@@ -83,7 +83,7 @@ pub(crate) fn update_strategy(
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     frame_effects: FrameEffects<'_>,
 ) {
-    let frame = sim.session.binary_frame as i32;
+    let frame = sim.session.binary_frame() as i32;
     let Some(house) = sim.houses.get(&owner) else {
         return;
     };
@@ -123,7 +123,7 @@ fn building_strategy(
     // Available_Money (IHouse vt+0x18) is a pure read; the block's second
     // query sees the same value.
     let money = crate::sim::credit_income::available_money(sim, owner);
-    let frame = sim.session.binary_frame as i32;
+    let frame = sim.session.binary_frame() as i32;
     let emergency = sim.houses.get_mut(&owner).is_some_and(|house| {
         advance_emergency_state(&mut house.strategy_emergency, frame, || money)
     });
@@ -180,7 +180,7 @@ fn sell_off_and_hunt(
 
 /// `0x004FD538..0x004FD71E`: see the module doc.
 fn pick_enemy(sim: &mut Simulation, owner: InternedId) {
-    if !ENEMY_SEARCH_TIMER.expired(sim.session.binary_frame as i32)
+    if !ENEMY_SEARCH_TIMER.expired(sim.session.binary_frame() as i32)
         || !sim.session.game_mode_nonzero()
     {
         return;
@@ -372,7 +372,7 @@ pub(crate) fn all_to_hunt(
             id,
             hunt,
             0,
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
             &EntityReadyInputProvider,
         );
     }

@@ -88,7 +88,7 @@ fn stock_spy_blackout_preserves_paid_building_timers_through_recovery() {
         let plant_cost = plant_type.cost;
         let sim = scene.sim();
         let initial_hash = sim.state_hash();
-        let local = sim.session.current_house.unwrap();
+        let local = sim.session.current_house().unwrap();
         let computer = sim.scenario_house_named("Computer").unwrap();
         let actor = |kind: &str, owner, cell| {
             sim.entities()
@@ -114,7 +114,7 @@ fn stock_spy_blackout_preserves_paid_building_timers_through_recovery() {
         let mut power_events = 0;
         for _ in 0..1600 {
             let sim = scene.sim();
-            let native_frame = sim.session.binary_frame;
+            let native_frame = sim.session.binary_frame();
             let before = paid_building_head(sim, computer);
             let before_power = sim.power_states[&computer].blackout_remaining(native_frame);
             if first_product.is_none()
@@ -133,7 +133,7 @@ fn stock_spy_blackout_preserves_paid_building_timers_through_recovery() {
                 assert!(factory.balance > 0 && factory.balance < plant_cost);
                 first_product = Some(id);
                 if infiltrate {
-                    let execute_tick = sim.session.tick + 1;
+                    let execute_tick = sim.session.tick() + 1;
                     scene.runtime.simulation.queue_command(CommandEnvelope::new(
                         local,
                         execute_tick,
@@ -160,7 +160,7 @@ fn stock_spy_blackout_preserves_paid_building_timers_through_recovery() {
             )).count();
             let sim = scene.sim();
             let power = &sim.power_states[&computer];
-            let remaining = power.blackout_remaining(sim.session.binary_frame);
+            let remaining = power.blackout_remaining(sim.session.binary_frame());
             let after = paid_building_head(sim, computer);
             if entry.is_none() && remaining > 0 {
                 assert!(infiltrate);
@@ -175,7 +175,7 @@ fn stock_spy_blackout_preserves_paid_building_timers_through_recovery() {
                 assert_eq!(timer.start_frame(), native_frame as i32);
                 assert_eq!(timer.duration(), 1000);
                 assert!(sim.entities().get(spy).is_none());
-                entry = Some(sim.session.binary_frame);
+                entry = Some(sim.session.binary_frame());
             }
             if entry.is_some() && recovery.is_none() {
                 if remaining > 0 {
@@ -196,7 +196,7 @@ fn stock_spy_blackout_preserves_paid_building_timers_through_recovery() {
                     );
                     recovery_product = after.object.as_ref().unwrap().entity_id;
                     assert!(recovery_product.is_some());
-                    recovery = Some(sim.session.binary_frame);
+                    recovery = Some(sim.session.binary_frame());
                 }
             }
             for (product, delivered) in [
@@ -213,7 +213,7 @@ fn stock_spy_blackout_preserves_paid_building_timers_through_recovery() {
                         })
                     })
                 {
-                    *delivered = Some(sim.session.binary_frame);
+                    *delivered = Some(sim.session.binary_frame());
                 }
             }
         }

@@ -27,7 +27,7 @@ fn hills_battle() -> Option<crate::headless_scenario::HeadlessScenario> {
 }
 
 fn spawn_mtnk(scene: &mut crate::headless_scenario::HeadlessScenario, p: (u16, u16)) -> u64 {
-    let owner = scene.sim().session.current_house.unwrap();
+    let owner = scene.sim().session.current_house().unwrap();
     let owner_name = scene.sim().resolve(owner).to_owned();
     let runtime = &mut scene.runtime;
     let id = runtime
@@ -45,7 +45,7 @@ fn retail_hills_ordinary_move_reserves_a_collapsing_deck_cell() {
     let Some(mut scene) = hills_battle() else {
         return;
     };
-    let owner = scene.sim().session.current_house.unwrap();
+    let owner = scene.sim().session.current_house().unwrap();
     let id = spawn_mtnk(&mut scene, (75, 75));
     let runtime = &mut scene.runtime;
     let target = (76, 75);
@@ -70,7 +70,7 @@ fn retail_hills_ordinary_move_reserves_a_collapsing_deck_cell() {
         let commands = if step == 0 {
             vec![CommandEnvelope::new(
                 owner,
-                scene.sim().session.tick,
+                scene.sim().session.tick(),
                 Command::Move {
                     entity_id: id,
                     target_rx: 80,
@@ -206,10 +206,10 @@ fn retail_hills_empty_claim_nonmatching_head_and_stale_pending_controls() {
 
     // The public spawn helper uses ground-height admission, which cannot
     //place this tank directly on the deck. Reach it through ordinary Move.
-    let owner = scene.sim().session.current_house.unwrap();
+    let owner = scene.sim().session.current_house().unwrap();
     let command = CommandEnvelope::new(
         owner,
-        scene.sim().session.tick,
+        scene.sim().session.tick(),
         Command::Move {
             entity_id: deck,
             target_rx: 76,
@@ -317,7 +317,7 @@ fn retail_hills_tanya_charge_collapses_under_an_ordinary_incoming_tank() {
     let Some(mut scene) = hills_battle() else {
         return;
     };
-    let owner = scene.sim().session.current_house.unwrap();
+    let owner = scene.sim().session.current_house().unwrap();
     let owner_name = scene.sim().resolve(owner).to_owned();
     let victim = spawn_mtnk(&mut scene, (75, 75));
     let runtime = &mut scene.runtime;
@@ -371,7 +371,7 @@ fn retail_hills_tanya_charge_collapses_under_an_ordinary_incoming_tank() {
     let mut observed_claim = None;
     for step in 0..512 {
         let mut commands = Vec::new();
-        let tick = scene.sim().session.tick;
+        let tick = scene.sim().session.tick();
         if step == 0 {
             commands.push(CommandEnvelope::new(
                 owner,
@@ -392,7 +392,7 @@ fn retail_hills_tanya_charge_collapses_under_an_ordinary_incoming_tank() {
         if let Some(charge) = pending {
             let remaining = charge
                 .timer()
-                .remaining(scene.sim().session.binary_frame as i32);
+                .remaining(scene.sim().session.binary_frame() as i32);
             if !stopped {
                 eprintln!("TANY actual plant atstep{step}, remaining{remaining}");
                 commands.push(CommandEnvelope::new(

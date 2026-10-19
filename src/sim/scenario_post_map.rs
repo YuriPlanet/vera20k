@@ -73,7 +73,7 @@ impl Simulation {
             }
             let normal_lighting = self
                 .session
-                .lighting
+                .lighting()
                 .profile(crate::sim::scenario_session::ScenarioLightingProfile::Normal)
                 .into();
             let placement = crate::sim::crates::place_scenario_start_crates_with_lighting(
@@ -500,8 +500,8 @@ mod tests {
         let (rules, overlays) = twinkle_rules_and_overlays();
         let seed = 0x0037_7EA5;
         let mut sim = Simulation::with_seed(seed);
-        sim.session.map_width = MAP_SIZE;
-        sim.session.map_height = MAP_SIZE;
+        sim.session.set_map_width_for_test(MAP_SIZE);
+        sim.session.set_map_height_for_test(MAP_SIZE);
         sim.resolved_terrain = Some(flat_terrain());
         let mut overlay_grid = OverlayGrid::new(MAP_SIZE, MAP_SIZE);
         // The (8,8) fixed-grid diamond admits only x+y > 8 here; the cells are

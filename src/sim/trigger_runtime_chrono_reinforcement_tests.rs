@@ -312,7 +312,8 @@ fn chrono_reinforcement_reader_dispatch_placement_and_process_match_original() {
             sim.native_identity_cursor(),
             Some(number(&row["id_before"]) as u32)
         );
-        sim.session.binary_frame = input["frame"].as_u64().unwrap() as u32;
+        sim.session
+            .set_binary_frame_for_test(input["frame"].as_u64().unwrap() as u32);
         let mut waypoints = std::collections::HashMap::new();
         for (index, key) in [(4, "origin"), (6, "override_cell")] {
             let point = &input[key];
@@ -440,7 +441,7 @@ fn chrono_reinforcement_reader_dispatch_placement_and_process_match_original() {
                 })
                 .unwrap();
             if let Some(frame) = step["frame"].as_u64() {
-                sim.session.binary_frame = frame as u32;
+                sim.session.set_binary_frame_for_test(frame as u32);
             }
             assert_member(&sim, id, &step["before"]);
             sim.process_chrono_warp(

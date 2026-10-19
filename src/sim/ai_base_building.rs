@@ -229,7 +229,7 @@ pub(crate) fn update_production_choices(
     if house.is_controlled_by_human(game_mode_nonzero) || house.multiplay_passive {
         return;
     }
-    if (sim.session.binary_frame as i32) % 8 != 0 {
+    if (sim.session.binary_frame() as i32) % 8 != 0 {
         return;
     }
     let choose_units = |sim: &mut Simulation, kinds: &[UnitChoiceKind]| {
@@ -429,7 +429,7 @@ fn power_plant_to_splice(
     if !short
         || ty.build_const_eligible
         || drain <= 0
-        || power.blackout_remaining(sim.session.binary_frame) > 0
+        || power.blackout_remaining(sim.session.binary_frame()) > 0
         || power.has_drained_power_source
     {
         return None;
@@ -661,7 +661,7 @@ fn place_building(
     sim.slave_manager_hand_off(product, rules, effects);
     // The choice clear at `0x0044531F` compares the product with the choice
     // the exit cleared at its start; nothing in between sets it.
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     if let Some(building) = sim.substrate.entities.get_mut(product)
         && building.mission.current() == MissionId::NONE
         && building.mission.queued() == MissionId::from_known(MissionType::Construction)
@@ -926,7 +926,7 @@ fn node_may_replan(
         .strategy_emergency
         .last_building_attack_frame
         .wrapping_add(rules.general.ai_restrict_replace_time)
-        <= sim.session.binary_frame as i32
+        <= sim.session.binary_frame() as i32
 }
 
 fn plan_node(sim: &Simulation, owner: InternedId, index: usize) -> BasePlanNode {

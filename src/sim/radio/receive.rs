@@ -104,7 +104,7 @@ fn building_receive(
             if let Some(entity) = sim.substrate.entities.get_mut(building) {
                 entity.begin_building_body(
                     crate::sim::building_construction::BuildingBodyMode::Idle,
-                    sim.session.binary_frame as i32,
+                    sim.session.binary_frame() as i32,
                 );
             }
             let _ = techno_receive(sim, building, sender, msg, payload, rules, effects);
@@ -749,7 +749,7 @@ fn building_dock_now(
         if let Some(building) = sim.substrate.entities.get_mut(building_id) {
             building.mission_leaf.set_building_ready_latch(1);
         }
-        let now = sim.session.binary_frame;
+        let now = sim.session.binary_frame();
         let _ = sim.mission_queue_exact(
             building_id,
             MissionId::from_known(MissionType::Repair),
@@ -775,7 +775,7 @@ fn building_dock_now(
             from,
             MissionId::from_known(MissionType::Unload),
             0,
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
             &EntityReadyInputProvider,
         );
         return RadioResponse::Roger;
@@ -812,7 +812,7 @@ fn unit_receive(
                     unit,
                     MissionId::from_known(MissionType::Guard),
                     0,
-                    sim.session.binary_frame,
+                    sim.session.binary_frame(),
                     &EntityReadyInputProvider,
                 );
             }
@@ -1135,7 +1135,7 @@ fn unit_prepare_to_dock(
         rules,
         effects,
     );
-    let frame = sim.session.binary_frame;
+    let frame = sim.session.binary_frame();
     let Some(entity) = sim.substrate.entities.get_mut(unit) else {
         return RadioResponse::Roger;
     };
@@ -1207,7 +1207,7 @@ fn unit_run_away(
     ) {
         log::debug!("RUN_AWAY unit {unit} did not scatter: {cause}");
     }
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     let _ = sim.mission_queue_exact(
         unit,
         MissionId::from_known(MissionType::Harvest),
@@ -1317,7 +1317,7 @@ fn aircraft_receive(
                     aircraft,
                     MissionId::from_known(MissionType::Move),
                     0,
-                    sim.session.binary_frame,
+                    sim.session.binary_frame(),
                     &EntityReadyInputProvider,
                 );
                 let airfield = sim.aircraft_nearest_friendly_airfield_cell(aircraft, rules);
@@ -1398,7 +1398,7 @@ fn aircraft_move_here(
         }
         None => MissionType::Move,
     };
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     let _ = sim.mission_queue_exact(
         aircraft,
         MissionId::from_known(mission),
@@ -1517,7 +1517,7 @@ fn foot_move_here(
     let Some(rules) = rules else {
         return RadioResponse::None;
     };
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     // 0x004D919A..0x004D91BA.
     if entity.mission.effective() == MissionId::from_known(MissionType::Guard)
         && entity.mission.queued() == MissionId::NONE
@@ -1570,7 +1570,7 @@ fn foot_run_away(
     let Some(rules) = rules else {
         return;
     };
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     let Some(entity) = sim.substrate.entities.get(foot) else {
         return;
     };

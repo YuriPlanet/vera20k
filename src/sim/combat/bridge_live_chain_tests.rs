@@ -78,7 +78,7 @@ fn restore_saved_scenario(
     let map_hash = scenario.map.ini.content_hash();
     let rules_hash = resources.rules.simulation_config_hash();
     let mut restored =
-        GameSnapshot::load_validated(bytes, map_hash, rules_hash, &live.session.map_name)
+        GameSnapshot::load_validated(bytes, map_hash, rules_hash, &live.session.map_name())
             .expect("saved retail scenario validates")
             .sim;
     assert_eq!(
@@ -253,7 +253,7 @@ fn assert_live_projectile_restore_continuation(
         // must remain identical after the complete production restore.
         assert_eq!(
             retained.arm_timer,
-            crate::sim::timer::CdTimer::started(restored.session.binary_frame as i32, 0)
+            crate::sim::timer::CdTimer::started(restored.session.binary_frame() as i32, 0)
         );
         retained.arm_timer = saved_shell.arm_timer;
         assert_eq!(retained, saved_shell);
@@ -532,7 +532,7 @@ fn retail_bridge_forcefire_chain(vehicle_name: &str, weapon_name: &str, projecti
             issued = true;
             vec![CommandEnvelope::new(
                 owner,
-                scenario.sim().session.tick + 1,
+                scenario.sim().session.tick() + 1,
                 Command::ForceAttackCell {
                     attacker_id: attacker,
                     target_rx: target.0,

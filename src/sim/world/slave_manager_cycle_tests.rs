@@ -293,7 +293,7 @@ fn a_slave_miner_sets_out_deploys_at_a_field_and_lets_its_slaves_out() {
     s.scene.sim.production.ore_growth_config = OreGrowthConfig::disabled();
     let smin = s.master;
     let slaves: Vec<u64> = s.slaves.values().copied().collect();
-    let started = s.scene.sim.session.binary_frame;
+    let started = s.scene.sim.session.binary_frame();
     let mut set_out = None;
     let mut refinery = None;
     for _ in 0..1500 {
@@ -307,7 +307,7 @@ fn a_slave_miner_sets_out_deploys_at_a_field_and_lets_its_slaves_out() {
                     .is_some_and(|manager| manager.state() != ManagerState::Ready)
             })
         {
-            set_out = Some(sim.session.binary_frame - started);
+            set_out = Some(sim.session.binary_frame() - started);
         }
         refinery = sim
             .substrate
@@ -392,7 +392,7 @@ fn a_harvest_order_sends_the_slave_miner_to_deploy_beside_the_field() {
     }));
     s.scene.sim.production.ore_growth_config = OreGrowthConfig::disabled();
     let owner = s.scene.sim.interner.get("Americans").unwrap();
-    let tick = s.scene.sim.session.tick;
+    let tick = s.scene.sim.session.tick();
     s.scene.sim.queue_command(CommandEnvelope::new(
         owner,
         tick + 1,
@@ -459,7 +459,7 @@ fn a_move_order_takes_the_slave_miner_off_its_hunt() {
         "slave_ranges": [8, 14, 12, 3],
     }));
     let owner = s.scene.sim.interner.get("Americans").unwrap();
-    let tick = s.scene.sim.session.tick;
+    let tick = s.scene.sim.session.tick();
     s.scene.sim.queue_command(CommandEnvelope::new(
         owner,
         tick + 1,
@@ -614,7 +614,7 @@ fn a_destroyed_refinery_frees_its_slaves_to_the_killer() {
     // default arm, forces Ready on a standing slave or Walk on a moving one;
     // the queued Move then commences.
     let ordered = s.slaves[&1];
-    let tick = s.scene.sim.session.tick;
+    let tick = s.scene.sim.session.tick();
     s.scene.sim.queue_command(CommandEnvelope::new(
         russians,
         tick + 1,
@@ -689,7 +689,7 @@ fn a_dead_slave_is_regrown_after_the_regen_rate_and_goes_out_again() {
     }));
     s.scene.sim.production.ore_growth_config = OreGrowthConfig::disabled();
     let slave = s.slaves[&0];
-    let died_at = s.scene.sim.session.binary_frame as i32;
+    let died_at = s.scene.sim.session.binary_frame() as i32;
     kill(&mut s, slave, None);
     let node = |s: &SlaveScene| {
         s.scene
@@ -1078,7 +1078,7 @@ fn an_attacker_of_a_packing_refinery_takes_the_slave_miner() {
     let tank = sim
         .spawn_object_at_height("TANK", "Americans", 16, 10, 0, 0, &rules)
         .expect("TANK");
-    let frame = sim.session.binary_frame;
+    let frame = sim.session.binary_frame();
     let attacker = sim.substrate.entities.get_mut(tank).unwrap();
     attacker
         .attack_target
@@ -1173,7 +1173,7 @@ fn a_player_cell_order_relocates_a_refinery_with_its_existing_slave_manager() {
             .unwrap()
             .unwrap();
         assert_eq!(goal, (24, 13));
-        let execute = s.scene.sim.session.tick + 1;
+        let execute = s.scene.sim.session.tick() + 1;
         for command in [
             Command::SetRally {
                 rx: goal.0,

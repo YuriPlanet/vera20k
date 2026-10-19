@@ -7,7 +7,9 @@
 //! Otherwise the mouse is hidden, the screen cleared to black, the theme and
 //! other stream players paused (not stopped) and the Bink soundtrack played
 //! at `VoiceVolume`. Frames are copied unscaled, centered in the client area
-//! with the origin clamped at zero (`0x004328BD..0x00432A32`). Only a bare
+//! with the origin clamped at zero (`0x004328BD..0x00432A32`). VERA keeps
+//! that copy at gamemd's own window sizes and scales the movie to fit any
+//! other window, like the fitted shell ([`movie_rect`]). Only a bare
 //! Escape release (`Keyboard::Get() == 0x081B`) aborts; other keys and mouse
 //! buttons are consumed and ignored. Afterwards the screen is cleared again,
 //! paused audio resumes, and the caller's dialog is recreated.
@@ -54,6 +56,29 @@ pub(crate) fn movie_origin(screen_w: i32, screen_h: i32, movie_w: i32, movie_h: 
     )
 }
 
+/// Where a full-screen movie is drawn, as window-pixel `[x, y, w, h]`.
+///
+/// At gamemd's own shell sizes this is the native unscaled copy
+/// ([`movie_origin`]). Any other window gets the fitted shell
+/// (`shell_layout::window_takes_fitted_shell`), and the movie follows it: one
+/// uniform factor, the largest at which the movie still fits the window,
+/// centred, with black bars on the spare sides. gamemd has no counterpart at
+/// those sizes: its `StretchMovies` option only reaches the VQA branch of
+/// Play_Movie `0x005BED40`, and every retail movie is a Bink file.
+pub(crate) fn movie_rect(screen_w: i32, screen_h: i32, movie_w: i32, movie_h: i32) -> [i32; 4] {
+    if !crate::app::frontend::shell_layout::window_takes_fitted_shell((
+        screen_w as u32,
+        screen_h as u32,
+    )) {
+        let (x, y) = movie_origin(screen_w, screen_h, movie_w, movie_h);
+        return [x, y, movie_w, movie_h];
+    }
+    let factor = (screen_w as f32 / movie_w as f32).min(screen_h as f32 / movie_h as f32);
+    let w = (movie_w as f32 * factor).round() as i32;
+    let h = (movie_h as f32 * factor).round() as i32;
+    [(screen_w - w) / 2, (screen_h - h) / 2, w, h]
+}
+
 pub(crate) struct FullscreenMovie {
     playback: crate::app::movie_playback::MoviePlayback,
     return_to: MovieReturn,
@@ -97,11 +122,12 @@ impl FullscreenMovie {
         self.playback.surface()
     }
     pub(crate) fn instance(&self, screen_w: i32, screen_h: i32) -> SpriteInstance {
-        let (w, h) = (
+        let [x, y, w, h] = movie_rect(
+            screen_w,
+            screen_h,
             self.surface().width() as i32,
             self.surface().height() as i32,
         );
-        let (x, y) = movie_origin(screen_w, screen_h, w, h);
         SpriteInstance {
             position: [x as f32, y as f32],
             size: [w as f32, h as f32],
@@ -134,5 +160,27 @@ mod tests {
         assert_eq!(movie_origin(1024, 768, 800, 600), (112, 84));
         assert_eq!(movie_origin(640, 480, 800, 600), (0, 0));
         assert_eq!(movie_origin(1280, 1024, 800, 600), (240, 212));
+    }
+
+    #[test]
+    fn retail_windows_keep_the_native_unscaled_copy() {
+        // YR 800x600 and RA2 640x480 movies at gamemd's two shell sizes.
+        assert_eq!(movie_rect(800, 600, 800, 600), [0, 0, 800, 600]);
+        assert_eq!(movie_rect(800, 600, 640, 480), [80, 60, 640, 480]);
+        assert_eq!(movie_rect(640, 480, 640, 480), [0, 0, 640, 480]);
+        assert_eq!(movie_rect(640, 480, 800, 600), [0, 0, 800, 600]);
+    }
+
+    #[test]
+    fn other_windows_fit_the_movie_at_its_own_shape() {
+        // Widescreen: full height, black bars left and right.
+        assert_eq!(movie_rect(1920, 1080, 800, 600), [240, 0, 1440, 1080]);
+        assert_eq!(movie_rect(1920, 1080, 640, 480), [240, 0, 1440, 1080]);
+        assert_eq!(movie_rect(2880, 1800, 800, 600), [240, 0, 2400, 1800]);
+        // Taller than 4:3: full width, bars above and below.
+        assert_eq!(movie_rect(1280, 1024, 800, 600), [0, 32, 1280, 960]);
+        // Exactly 4:3 fills the window; smaller windows shrink the movie.
+        assert_eq!(movie_rect(1024, 768, 800, 600), [0, 0, 1024, 768]);
+        assert_eq!(movie_rect(400, 300, 800, 600), [0, 0, 400, 300]);
     }
 }

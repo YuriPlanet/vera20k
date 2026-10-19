@@ -90,7 +90,8 @@ fn loss_threshold_events_poll_recorded_losses_and_create_real_reinforcements() {
             );
             assert!(!sim.trigger_runtime.globals_set.contains(&7));
             sim.uninit_with_rules(victim, &rules);
-            sim.session.binary_frame = if index == 0 { 8 } else { 16 };
+            sim.session
+                .set_binary_frame_for_test(if index == 0 { 8 } else { 16 });
             frame(&mut sim);
             assert_eq!(sim.trigger_runtime.globals_set.contains(&7), index == 1);
         }
@@ -107,7 +108,7 @@ fn loss_threshold_events_poll_recorded_losses_and_create_real_reinforcements() {
         assert!(!reinforcement.lifecycle.in_limbo());
         assert!(reinforcement.lifecycle.object_alive());
         assert!(sim.trigger_runtime.tag_order.is_empty());
-        sim.session.binary_frame = 24;
+        sim.session.set_binary_frame_for_test(24);
         frame(&mut sim);
         assert_eq!(
             sim.trigger_runtime
@@ -138,9 +139,9 @@ fn funds_event_runs_from_house_rung_after_a_spend() {
          [Tags]\nFUNDS_TAG=0,Funds,FUNDS\n",
     );
     crate::sim::credit_income::add_credits(&mut sim, houses[0], 70000);
-    sim.session.binary_frame = 0;
+    sim.session.set_binary_frame_for_test(0);
     for frame in 0..=8 {
-        assert_eq!(sim.session.binary_frame, frame);
+        assert_eq!(sim.session.binary_frame(), frame);
         if frame == 7 {
             crate::sim::credit_income::spend_money(&mut sim, houses[0], 60000);
         }
@@ -185,7 +186,7 @@ fn building_loss_event_waits_for_the_real_destructor_and_house_poll() {
     };
     frame(&mut sim);
     assert!(!sim.trigger_runtime.locals_set.contains(&10));
-    sim.session.binary_frame = 8;
+    sim.session.set_binary_frame_for_test(8);
     sim.uninit_with_rules(building, &rules);
     assert!(
         sim.substrate
@@ -202,7 +203,7 @@ fn building_loss_event_waits_for_the_real_destructor_and_house_poll() {
     assert!(!sim.trigger_runtime.locals_set.contains(&10));
     assert!(sim.substrate.entities.get(building).is_none());
     assert_eq!(sim.houses[&houses[0]].tracking.buildings(), 0);
-    sim.session.binary_frame = 16;
+    sim.session.set_binary_frame_for_test(16);
     frame(&mut sim);
     assert!(sim.trigger_runtime.locals_set.contains(&10));
     assert!(!sim.trigger_runtime.globals_set.contains(&7));
@@ -248,7 +249,7 @@ fn naval_land_events_poll_final_tracking_removal_from_the_master_house_rung() {
          [Tags]\nNAVY_TAG=0,Navy,NAVY\nLAND_TAG=0,Land,LAND\n",
     );
     for frame in 0..=24 {
-        assert_eq!(sim.session.binary_frame, frame);
+        assert_eq!(sim.session.binary_frame(), frame);
         if frame == 7 {
             sim.uninit_with_rules(navy, &rules);
             assert_eq!(sim.houses[&owner].tracking.navy(), 1);
@@ -517,7 +518,7 @@ fn retail_sov01_make_enemy_reaches_the_shared_diplomacy_owner() {
     let Some((mut sim, rules, overlay, _)) = retail_sov01_script_context() else {
         return;
     };
-    let russians = sim.session.current_house.unwrap();
+    let russians = sim.session.current_house().unwrap();
     let arabs = sim.interner.intern("Arabs");
     sim.houses
         .register(crate::sim::house_state::HouseState::new(
@@ -582,7 +583,7 @@ fn retail_sov01_make_enemy_reaches_the_shared_diplomacy_owner() {
     ));
     assert!(!sim.house_alliances["RUSSIANS"].contains("ARABS"));
     assert!(!sim.house_alliances["ARABS"].contains("RUSSIANS"));
-    assert_eq!(sim.session.current_house, Some(russians));
+    assert_eq!(sim.session.current_house(), Some(russians));
 }
 
 #[test]
@@ -598,7 +599,7 @@ fn retail_sov01_transport_hint_emits_the_named_cameo_on_the_native_clock() {
     let actions = sim.trigger_runtime.definitions.trigger_types[source]
         .actions
         .clone();
-    sim.session.binary_frame = 0x7FFF_FFF0;
+    sim.session.set_binary_frame_for_test(0x7FFF_FFF0);
     let mut effects = Vec::new();
     for action in actions
         .iter()
@@ -635,7 +636,7 @@ fn scenario_timer_retail_sov01_actions_reach_the_expiry_predicate() {
     let actions = sim.trigger_runtime.definitions.trigger_types[source]
         .actions
         .clone();
-    sim.session.binary_frame = 123;
+    sim.session.set_binary_frame_for_test(123);
     for action in actions
         .iter()
         .filter(|action| matches!(action.entry.kind, 23..=27 | 103))
@@ -656,7 +657,7 @@ fn scenario_timer_retail_sov01_actions_reach_the_expiry_predicate() {
     sim.classify_map_triggers(Some(&rules));
     let live = live_trigger_of_type(&sim, trigger_type_index(&sim, "0BDE333C"));
     for (frame, elapsed) in [(1922, false), (1923, true)] {
-        sim.session.binary_frame = frame;
+        sim.session.set_binary_frame_for_test(frame);
         assert_eq!(
             sim.has_occurred(
                 0,
@@ -703,7 +704,7 @@ fn all_change_house_dispatch_matches_original_selector_controls() {
         );
         for (slot, house_index) in [(0, 1), (1, 0)] {
             sim.session
-                .start_slot_houses
+                .start_slot_houses_mut_for_test()
                 .insert(slot, sim.houses.order()[house_index]);
         }
         let actor = spawn_event_ingress_unit(&mut sim, &rules, houses[0], (15, 15));
@@ -1042,8 +1043,8 @@ fn retail_sov01_script_context() -> Option<(
             cell
         },
     ));
-    sim.session.map_width = 198;
-    sim.session.map_height = 198;
+    sim.session.set_map_width_for_test(198);
+    sim.session.set_map_height_for_test(198);
     sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds::from_map_header(
         &map.header,
     ));
@@ -1059,7 +1060,7 @@ fn retail_sov01_script_context() -> Option<(
             0,
             10,
         ));
-    sim.session.current_house = Some(owner);
+    sim.session.set_current_house_for_test(Some(owner));
     sim.install_team_ai_registry(&registry, &rules).unwrap();
     sim.initialize_trigger_definitions(&map, &registry, None, None);
     Some((sim, rules, overlay, map))
@@ -1141,7 +1142,7 @@ fn script20_uses_country_order_and_survives_members_unlinked_by_owner_callbacks(
     use crate::sim::team_script_vm::{TeamScriptAction, TeamScriptDefinition};
     let (mut sim, rules, overlay, houses) = event_ingress_fixture();
     sim.houses.get_mut(&houses[2]).unwrap().is_human = true;
-    sim.session.current_house = Some(houses[2]);
+    sim.session.set_current_house_for_test(Some(houses[2]));
     sim.houses
         .reorder_for_test(&[houses[1], houses[2], houses[0]]);
     // Houses 0 and 2 share Country0. Registration selects House2, while
@@ -1376,8 +1377,8 @@ pub(super) fn sparse_line_ingress_fixture() -> (
         None,
         FrameEffects::default(),
     );
-    sim.session.map_width = 5;
-    sim.session.map_height = 5;
+    sim.session.set_map_width_for_test(5);
+    sim.session.set_map_height_for_test(5);
     (sim, rules, houses, actor)
 }
 
@@ -1812,7 +1813,7 @@ fn advance_trigger_frame(
     rules: Option<&crate::rules::ruleset::RuleSet>,
     waypoints: &HashMap<u32, Waypoint>,
 ) -> Vec<TriggerEffect> {
-    sim.session.binary_frame = current_frame;
+    sim.session.set_binary_frame_for_test(current_frame);
     sim.session.install_waypoints(waypoints);
     if sim.resolved_terrain.is_none()
         && sim
@@ -2057,7 +2058,7 @@ fn destroyed_house_predicates_match_original_independent_signed_counters() {
             Some(houses[1]);
         let timer_before = sim.trigger_runtime.trigger(live).unwrap().timer;
         let mut persistence = false;
-        sim.session.binary_frame = 123;
+        sim.session.set_binary_frame_for_test(123);
         let mut evaluate = |sim: &mut Simulation| {
             sim.has_occurred(
                 0,
@@ -2211,7 +2212,7 @@ fn parsed_event_records_match_native_list_and_production_predicates() {
         }
         for (n, frame) in row.frames.iter().enumerate() {
             let mut sim = Simulation::new();
-            sim.session.binary_frame = *frame;
+            sim.session.set_binary_frame_for_test(*frame);
             install_map_triggers(&mut sim, &map);
             sim.classify_map_triggers(None);
             sim.resolved_terrain = Some(flat_trigger_playfield_terrain(32, 32));
@@ -2770,8 +2771,8 @@ fn master_frame_save_load_continues_trigger_projectile_and_delete_state() {
         pixel_conversion_bounds: Default::default(),
         version: 1,
         tick_hz: 15,
-        seed: original.session.seed,
-        map_name: original.session.map_name.clone(),
+        seed: original.session.seed(),
+        map_name: original.session.map_name().to_owned(),
         rules_hash: 0,
     });
     replay_log.record_tick(original_tick.tick, Vec::new(), original_tick.state_hash);
@@ -2981,7 +2982,7 @@ fn mission_announce_then_end_uses_the_player_house_and_shared_timer() {
     ));
     sim.houses
         .register(HouseState::new(other, 0, Some(other_country), false, 0, 10));
-    sim.session.current_house = Some(player);
+    sim.session.set_current_house_for_test(Some(player));
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false));
     let map = trigger_fixture_map(
@@ -3400,7 +3401,7 @@ fn house_tag_raise_matches_original_cadence_and_order() {
         sim.trigger_runtime
             .house_tags
             .insert(house, (0..count).collect());
-        sim.session.binary_frame = frame as u32;
+        sim.session.set_binary_frame_for_test(frame as u32);
         sim.raise_house_tags(house, None, None, FrameEffects::default());
         let expected: Vec<(usize, i32)> = case["raises"]
             .as_array()

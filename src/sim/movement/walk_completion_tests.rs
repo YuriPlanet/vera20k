@@ -218,7 +218,8 @@ fn post_percell_completion_matches_original_setter_refusal_and_stop_order() {
         ))
         .unwrap();
         rules.general.blockage_path_delay_ticks = i32_value(&input["blockage"]);
-        sim.session.binary_frame = input["frame"].as_u64().unwrap() as u32;
+        sim.session
+            .set_binary_frame_for_test(input["frame"].as_u64().unwrap() as u32);
         let mut actor = GameEntity::test_default(1, "E1", "Americans", 16, 15);
         actor.set_category_for_test(EntityCategory::Infantry);
         actor.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Walk));

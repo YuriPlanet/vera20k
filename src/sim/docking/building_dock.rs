@@ -1086,7 +1086,7 @@ pub(crate) fn try_pending_entry(
             id,
             MissionId::from_known(MissionType::Enter),
             1,
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
             &LiveReadyInputProvider { rules },
         );
         // vt+0x480 of whichever Foot waits: an aircraft's pending entry is
@@ -1106,7 +1106,7 @@ pub(crate) fn try_pending_entry(
             id,
             MissionId::NONE,
             0,
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
             &LiveReadyInputProvider { rules },
         );
         sim.assign_null_destination(id, Some(rules), None, frame_effects);
@@ -1181,7 +1181,7 @@ pub(crate) fn park_pending_entry(
         id,
         MissionId::from_known(MissionType::Move),
         0,
-        sim.session.binary_frame,
+        sim.session.binary_frame(),
         &LiveReadyInputProvider { rules },
     );
     true
@@ -1280,7 +1280,7 @@ fn release_contact(
         unit,
         MissionId::from_known(MissionType::Move),
         0,
-        sim.session.binary_frame,
+        sim.session.binary_frame(),
         &LiveReadyInputProvider { rules },
     );
     let _ = sim.assign_destination_represented(
@@ -1353,7 +1353,7 @@ pub(crate) fn mission_repair(
         .unwrap_or(MissionType::Repair);
     let rate = rules.mission_control.rate_frames(current);
     let contact = building.radio_contacts.slot(0);
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     let Some(unit) = contact else {
         // State1's no-contact arm44C0BD retains the current idle animations
         // when neither service slot exists. Recreating them would reset their
@@ -2487,11 +2487,12 @@ mod tests {
     /// Component fixture for unit-only Enter/RNG observations. Depot visits
     /// are explicit so its independent Guard cadence is outside those checks.
     fn tick_units(sim: &mut Simulation, rules: &RuleSet) {
-        sim.session.binary_frame = sim.session.binary_frame.wrapping_add(1);
+        sim.session
+            .set_binary_frame_for_test(sim.session.binary_frame().wrapping_add(1));
         visit_units(sim, rules);
         process_units(sim, rules);
         pending_entries(sim, rules);
-        sim.session.tick += 1;
+        sim.session.set_tick_for_test(sim.session.tick() + 1);
     }
 
     fn visit_depot(sim: &mut Simulation, rules: &RuleSet) {
@@ -2650,7 +2651,7 @@ mod tests {
                 .unwrap()
                 .mission
                 .dispatch_timer();
-            assert_eq!(timer.start_frame(), sim.session.binary_frame as i32);
+            assert_eq!(timer.start_frame(), sim.session.binary_frame() as i32);
             assert!((14..=16).contains(&timer.delay()));
         }
     }
@@ -2694,7 +2695,7 @@ mod tests {
             (timer.start_frame() + timer.delay()) as u32
         };
         for _ in 0..64 {
-            if sim.session.binary_frame + 1 >= due {
+            if sim.session.binary_frame() + 1 >= due {
                 break;
             }
             tick_units(&mut sim, &rules);
@@ -2718,10 +2719,11 @@ mod tests {
         assert!(order_repair(&mut sim, &rules, 1));
         assert!(order_repair(&mut sim, &rules, 3));
         // Tank 2 idles on Guard with a due dispatch timer.
-        let now = sim.session.binary_frame;
+        let now = sim.session.binary_frame();
         sim.mission_assign_exact(2, MissionId::from_known(MissionType::Guard), now)
             .expect("assign Guard");
-        sim.session.binary_frame += 1;
+        sim.session
+            .set_binary_frame_for_test(sim.session.binary_frame() + 1);
         let ctx = crate::sim::world::ObjectAiCtx::default;
 
         let mut shadow = sim.clone_scenario_rng();
@@ -2907,7 +2909,7 @@ mod tests {
             (timer.start_frame() + timer.delay()) as u32
         };
         for _ in 0..64 {
-            if sim.session.binary_frame >= due {
+            if sim.session.binary_frame() >= due {
                 break;
             }
             tick(&mut sim, &rules);
@@ -2960,7 +2962,7 @@ mod tests {
             (timer.start_frame() + timer.delay()) as u32
         };
         for _ in 0..64 {
-            if sim.session.binary_frame >= due {
+            if sim.session.binary_frame() >= due {
                 break;
             }
             tick(&mut sim, &rules);
@@ -2993,7 +2995,7 @@ mod tests {
             (timer.start_frame() + timer.delay()) as u32
         };
         for _ in 0..64 {
-            if sim.session.binary_frame >= due2 {
+            if sim.session.binary_frame() >= due2 {
                 break;
             }
             tick(&mut sim, &rules);
@@ -3122,8 +3124,9 @@ mod tests {
         let mut writes = 0u32;
         let mut prev_timer = dispatch_timer(&sim, MINER);
         for _ in 0..2000 {
-            sim.session.binary_frame = sim.session.binary_frame.wrapping_add(1);
-            let now = sim.session.binary_frame;
+            sim.session
+                .set_binary_frame_for_test(sim.session.binary_frame().wrapping_add(1));
+            let now = sim.session.binary_frame();
             let due_at_entry = sim
                 .substrate
                 .entities
@@ -3170,7 +3173,7 @@ mod tests {
             prev_timer = timer;
             visit_depot(&mut sim, &rules);
             process_units(&mut sim, &rules);
-            sim.session.tick += 1;
+            sim.session.set_tick_for_test(sim.session.tick() + 1);
             if servicing(&sim, MINER) {
                 reached_pad = true;
                 assert!(linked(&sim, MINER));
@@ -3199,7 +3202,8 @@ mod tests {
         const MINER: u64 = 7;
         spawn_damaged_miner(&mut sim, MINER, 14, 11);
         assert!(order_repair(&mut sim, &rules, MINER));
-        sim.session.binary_frame += 1;
+        sim.session
+            .set_binary_frame_for_test(sim.session.binary_frame() + 1);
         visit_units_with_harvest(&mut sim, &rules);
         assert!(linked(&sim, MINER));
         assert_eq!(
@@ -3215,8 +3219,9 @@ mod tests {
         let (start, delay) = dispatch_timer(&sim, MINER);
         assert!((14..=16).contains(&delay));
         // Jump to the due frame.
-        sim.session.binary_frame = (start + delay) as u32;
-        let now = sim.session.binary_frame;
+        sim.session
+            .set_binary_frame_for_test((start + delay) as u32);
+        let now = sim.session.binary_frame();
         let mut shadow = sim.clone_scenario_rng();
         visit_units_with_harvest(&mut sim, &rules);
         shadow.next_range_u32_inclusive(0, 2);

@@ -599,7 +599,7 @@ mod retail_construction_tests {
                 },
             )
             .unwrap();
-            assert_eq!(playback.state.session.free_radar, expected);
+            assert_eq!(playback.state.session.free_radar(), expected);
             // House 0x00508DF0 reads Scenario FreeRadar when the House's
             // first update rechecks radar.
             let mut sim = playback.state;
@@ -608,7 +608,7 @@ mod retail_construction_tests {
                 crate::sim::radar::has_radar_for_owner(&sim, &rules, "Americans"),
                 expected
             );
-            assert_eq!(sim.session.map_name, "radar.map");
+            assert_eq!(sim.session.map_name(), "radar.map");
         }
     }
 
@@ -1264,7 +1264,7 @@ mod retail_construction_tests {
                 .expect("the local MCV");
             let deploy = CommandEnvelope::new(
                 human,
-                sim.session.tick + 1,
+                sim.session.tick() + 1,
                 Command::DeployMcv { entity_id: mcv },
             );
             scenario
@@ -1469,7 +1469,7 @@ mod retail_construction_tests {
                 .expect("the local MCV");
             let deploy = CommandEnvelope::new(
                 human,
-                sim.session.tick + 1,
+                sim.session.tick() + 1,
                 Command::DeployMcv { entity_id: mcv },
             );
             scenario
@@ -2246,7 +2246,7 @@ mod retail_construction_tests {
             cells_nearest((i32::from(start.0), i32::from(start.1))),
             &["E1"],
         )[0];
-        let tick = sim.session.tick;
+        let tick = sim.session.tick();
         sim.queue_command(CommandEnvelope::new(
             america,
             tick + 1,
@@ -2357,7 +2357,7 @@ mod retail_construction_tests {
             crate::sim::world::FrameEffects::default(),
         )
         .expect("the Rhino takes the GI as its target");
-        let now = sim.session.binary_frame;
+        let now = sim.session.binary_frame();
         sim.mission_assign_exact(rhino, MissionId::from_known(MissionType::Attack), now)
             .expect("the Rhino takes Attack");
         let _ = sim.mission_commence_exact(rhino, now);
@@ -2446,7 +2446,7 @@ mod retail_construction_tests {
             .into_iter()
             .filter(|&(rx, ry)| (rx - at.0).abs().max((ry - at.1).abs()) >= 3);
         let spy = spawn_on_free_cells(sim, rules, america, cells, &["SPY"])[0];
-        let tick = sim.session.tick;
+        let tick = sim.session.tick();
         sim.queue_command(CommandEnvelope::new(
             america,
             tick + 1,
@@ -2478,7 +2478,7 @@ mod retail_construction_tests {
             "the spy never went in"
         );
         assert!(sim.entities().get(spy).is_none(), "the spy stayed");
-        let frame = sim.session.binary_frame;
+        let frame = sim.session.binary_frame();
         assert!(sim.power_states[&soviet].blackout_remaining(frame) > 0);
     }
 
@@ -2616,7 +2616,7 @@ mod retail_construction_tests {
             "the spy never went in"
         );
         let sim = scenario.sim();
-        assert!(sim.power_states[&soviet].blackout_remaining(sim.session.binary_frame) > 0);
+        assert!(sim.power_states[&soviet].blackout_remaining(sim.session.binary_frame()) > 0);
     }
 
     /// A Normal American house's Tanya (retail `[TANY]`: `C4=yes`,
@@ -2677,7 +2677,7 @@ mod retail_construction_tests {
             .into_iter()
             .filter(|&(x, y)| (x - rx).abs().max((y - ry).abs()) >= 6);
         let tanya = spawn_on_free_cells(sim, rules, america, cells, &["TANY"])[0];
-        let now = sim.session.binary_frame;
+        let now = sim.session.binary_frame();
         sim.mission_assign_exact(tanya, MissionId::from_known(MissionType::Attack), now)
             .unwrap();
         sim.assign_target_represented(
@@ -2786,7 +2786,7 @@ mod retail_construction_tests {
             .into_iter()
             .filter(|&(rx, ry)| (rx - at.0).abs().max((ry - at.1).abs()) >= 2);
         let tank = spawn_on_free_cells(sim, rules, america, cells, &["MTNK"])[0];
-        let tick = sim.session.tick;
+        let tick = sim.session.tick();
         sim.queue_command(CommandEnvelope::new(
             america,
             tick + 1,
@@ -2999,7 +2999,7 @@ mod launch_special_flags_tests {
         let scene = load_session(&root, "XMP03T4.MAP", 0x1234_5678, truce)
             .expect("launch with Harvester Truce on");
         assert!(
-            scene.sim().session.harvester_immune,
+            scene.sim().session.harvester_immune(),
             "the session's truce byte replaces the map's bit"
         );
 
@@ -3017,7 +3017,7 @@ mod launch_special_flags_tests {
         )
         .expect("launch with the default options");
         assert!(
-            !plain.sim().session.harvester_immune,
+            !plain.sim().session.harvester_immune(),
             "the default skirmish session leaves the bit clear"
         );
     }

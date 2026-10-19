@@ -120,7 +120,7 @@ fn empty_fv_two_shot_fireat_matches_native_muzzles_ids_rearm_and_rng() {
 
     for row in rows {
         let frame = row["supplied"]["binary_frame"].as_u64().unwrap() as u32;
-        world.session.binary_frame = frame;
+        world.session.set_binary_frame_for_test(frame);
         let firer = world.substrate.entities.get(firer_id).unwrap();
         assert_eq!(
             firer.weapon_burst.index(),

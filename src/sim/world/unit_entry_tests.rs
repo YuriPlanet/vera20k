@@ -66,7 +66,7 @@ fn a_closed_gate_asks_its_own_house_about_the_mover() {
         "[VehicleTypes]\n0=MOVER\n[BuildingTypes]\n1=GATE\n\
          [MOVER]\nSpeedType=Track\n[GATE]\nFoundation=1x1\nGate=yes\n",
     );
-    sim.session.binary_frame = 100;
+    sim.session.set_binary_frame_for_test(100);
     let mut mover = GameEntity::test_default(90, "MOVER", "Americans", 10, 10);
     mover.set_owner_for_test(sim.intern("Americans"));
     mover.set_type_ref_for_test(sim.intern("MOVER"));
@@ -151,7 +151,7 @@ fn unit_post_walk_tail_matches_original_crush_controls() {
                     "no"
                 }
             ));
-        sim.session.binary_frame = 100;
+        sim.session.set_binary_frame_for_test(100);
         let nodes = |layer: &str| input[layer].as_array().unwrap().clone();
         // The oracle's houses: the mover's allies the third, and a
         // `reverse_allied` target's House allies the mover's one way.
@@ -281,7 +281,7 @@ fn an_unarmed_train_answers_five_where_an_unarmed_unit_answers_seven() {
                 crate::sim::world::entry_test_fixture::fixture_with_rules(&format!(
                     "[VehicleTypes]\n0=MOVER\n[MOVER]\nSpeedType=Track\nIsTrain={train}\n"
                 ));
-            sim.session.binary_frame = 100;
+            sim.session.set_binary_frame_for_test(100);
             let mut mover = GameEntity::test_default(90, "MOVER", "Americans", 10, 10);
             mover.set_owner_for_test(sim.intern("Americans"));
             mover.set_type_ref_for_test(sim.intern("MOVER"));
@@ -352,7 +352,7 @@ fn a_crusher_meets_a_terrain_object_with_its_weapon() {
                  [SAW]\nDamage=10\nROF=20\nRange=5\nProjectile=SAWBULLET\nWarhead=CHOP\n\
                  [SAWBULLET]\nAG=yes\n[CHOP]\nWood=yes\n"
             ));
-        sim.session.binary_frame = 100;
+        sim.session.set_binary_frame_for_test(100);
         let mut unit = GameEntity::test_default(90, "MOVER", "Americans", 10, 10);
         unit.set_owner_for_test(sim.intern("Americans"));
         unit.set_type_ref_for_test(sim.intern("MOVER"));
@@ -503,7 +503,7 @@ fn compare_rows(json: &str, expected_count: usize, repair_projection: bool) {
                 .bridge_facts
                 .overlay_id = Some(overlay as u8);
         }
-        sim.session.binary_frame = 100;
+        sim.session.set_binary_frame_for_test(100);
         // The legacy corpus name seeds A8E7AC, not A8B238.
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(flag(

@@ -918,7 +918,7 @@ fn gsi_04_12_generated_prefix_uses_accepted_staging_once() {
     assert_eq!(
         staged_sim
             .session
-            .mp_start_waypoints
+            .mp_start_waypoints()
             .iter()
             .map(|(&index, &(rx, ry))| (index as u8, rx, ry))
             .collect::<Vec<_>>(),
@@ -2135,6 +2135,6 @@ fn loading_timeout_retires_only_live_peer_and_flags_existing_house_before_instal
     let sim = result.scenario.simulation.as_ref().unwrap();
     assert!(sim.houses[&peer].is_to_die());
     assert!(!sim.houses[&local].is_to_die());
-    assert_eq!(sim.session.current_house, Some(local));
+    assert_eq!(sim.session.current_house(), Some(local));
     assert!(apply_network_loading_disconnects(&mut session, &mut result, &[1]).is_empty());
 }

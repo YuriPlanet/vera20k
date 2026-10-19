@@ -256,7 +256,7 @@ fn place_garrison_passenger_at_cell(
             passenger_id,
             crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Hunt),
             0,
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
             &crate::sim::mission::authority::EntityReadyInputProvider,
         )
         .expect("a revealed garrison occupant can queue Hunt");

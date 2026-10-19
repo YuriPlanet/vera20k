@@ -220,7 +220,7 @@ impl Simulation {
         let Some(rules) = rules else {
             return;
         };
-        let now = self.session.binary_frame;
+        let now = self.session.binary_frame();
         self.for_each_live_object(|sim, id| {
             if sim.substrate.anims.contains_key(id) {
                 return;
@@ -260,7 +260,7 @@ impl Simulation {
         {
             return;
         }
-        self.mission_host_promote(id, self.session.binary_frame, rules);
+        self.mission_host_promote(id, self.session.binary_frame(), rules);
         self.aircraft_ammo_after_commence(id);
     }
 
@@ -420,7 +420,7 @@ impl Simulation {
                     .and_then(|type_id| rules.projectile(self.interner.resolve(type_id)))
                     .and_then(|kind| {
                         self.projectiles
-                            .trailer(&head, kind, self.session.binary_frame)
+                            .trailer(&head, kind, self.session.binary_frame())
                     });
                 if let Some((name, position)) = trailer {
                     self.spawn_named_anim(
@@ -464,7 +464,7 @@ impl Simulation {
                 }
                 _ => false,
             };
-            let binary_frame = self.session.binary_frame;
+            let binary_frame = self.session.binary_frame();
             let shared_cell_dummy = self.effective_shared_cell_dummy();
             let terrain = self.resolved_terrain.as_ref();
             let overlay_grid = self.overlay_grid.as_ref();
@@ -606,8 +606,8 @@ impl Simulation {
                     .get_mut(id)
                     .expect("dying object remained present"),
                 sequence_set,
-                &self.session.game_options,
-                self.session.binary_frame,
+                &self.session.game_options(),
+                self.session.binary_frame(),
             );
             if finished {
                 self.uninit_with_context(
@@ -741,7 +741,7 @@ fn techno_ai_shell(
         if category == EntityCategory::Unit {
             crate::sim::mcv_deploy::ai_queue_hunt(sim, id, rules);
         }
-        sim.mission_host_promote(id, sim.session.binary_frame, rules);
+        sim.mission_host_promote(id, sim.session.binary_frame(), rules);
     }
     // `InfantryClass::AI`'s Health reset (`0x0051BC57`) precedes
     // `FootClass::AI`, and with it the Techno body below.
@@ -754,7 +754,7 @@ fn techno_ai_shell(
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         entity
             .estimated_health
-            .recover(entity.health.current(), sim.session.binary_frame);
+            .recover(entity.health.current(), sim.session.binary_frame());
     }
     match category {
         EntityCategory::Unit => {
@@ -808,7 +808,7 @@ fn techno_ai_shell(
             let airstrike_active = sim.airstrike_tint_active(id);
             if let Some(entity) = sim.substrate.entities.get_mut(id) {
                 entity.building_art.capture_tint_sample(
-                    sim.session.binary_frame,
+                    sim.session.binary_frame(),
                     entity.flashing.flashed(),
                     entity.invulnerability.as_ref(),
                     &entity.airstrike_tint,
@@ -887,7 +887,7 @@ fn techno_ai_shell(
                         .pending_c4_detonation
                         .pending()
                         .is_none_or(|pending| {
-                            pending.timer().remaining(sim.session.binary_frame as i32) == 0
+                            pending.timer().remaining(sim.session.binary_frame() as i32) == 0
                         })
                 });
                 if ready && let Some(rules) = rules {
@@ -1167,7 +1167,7 @@ fn house_heal_arm(sim: &mut Simulation, id: u64, rules: &RuleSet, infantry: bool
     // Original6FA7EE/6FA8E2 divides before testing the House count. Missing
     // keys retain constructor1000; an explicitly invalid IDIV is a fault,
     // including period0 with no grant and signed MIN/-1 overflow.
-    let frame = sim.session.binary_frame as i32;
+    let frame = sim.session.binary_frame() as i32;
     let remainder = frame.checked_rem(interval).unwrap_or_else(|| {
         panic!("native House self-heal IDIV fault at 006FA7EE/006FA8E2: frame={frame} period={interval}")
     });
@@ -1229,7 +1229,7 @@ fn self_heal_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     if !crate::sim::combat::veterancy::self_heal_eligible(
         entity,
         object,
-        sim.session.binary_frame,
+        sim.session.binary_frame(),
         interval,
     ) {
         return;
@@ -1400,7 +1400,7 @@ fn techno_common_steps(
                 entity,
                 object,
                 rules.general.fallback_coefficient,
-                sim.session.binary_frame,
+                sim.session.binary_frame(),
             )
         });
         if needs_self_damage {
@@ -1437,7 +1437,7 @@ fn techno_common_steps(
     //due Door transition here. Gate/Factory mission work observes this change
     //inside the same LogicVector visit; no global phase advances Door clocks.
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
-        entity.advance_door(sim.session.binary_frame);
+        entity.advance_door(sim.session.binary_frame());
     }
     true
 }
@@ -1473,7 +1473,7 @@ fn berserk_step(
         id,
         crate::sim::mission::MissionId::from_known(mission),
         0,
-        sim.session.binary_frame,
+        sim.session.binary_frame(),
         &crate::sim::mission::authority::EntityReadyInputProvider,
     );
 }
@@ -1488,7 +1488,7 @@ fn berserk_step(
 ///
 /// [`InvulnerabilityState::update_tint`]: crate::sim::superweapon::invulnerability::InvulnerabilityState::update_tint
 fn iron_tint_step(sim: &mut Simulation, id: u64) {
-    let frame = sim.session.binary_frame as i32;
+    let frame = sim.session.binary_frame() as i32;
     let airstrike_active = sim.airstrike_tint_active(id);
     if let Some(curtain) = sim
         .substrate
@@ -1514,7 +1514,7 @@ fn charge_turret_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     let Some(object) = sim.interner.object_type(entity.type_ref(), rules) else {
         return;
     };
-    entity.update_charge_turret(sim.session.binary_frame as i32, object);
+    entity.update_charge_turret(sim.session.binary_frame() as i32, object);
 }
 
 /// `TechnoClass::AI_Update @ 0x006FA472..0x006FA4CB`, after the drain
@@ -1525,7 +1525,7 @@ fn charge_turret_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
 /// illegal target; this is where they let go of it.
 fn illegal_target_drop_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     use crate::sim::combat::{TargetKind, fire_error::FireError};
-    if !sim.session.binary_frame.is_multiple_of(16) {
+    if !sim.session.binary_frame().is_multiple_of(16) {
         return;
     }
     let Some(entity) = sim.substrate.entities.get(id) else {
@@ -1872,7 +1872,7 @@ fn screen_visual_character(
     rules: &RuleSet,
 ) -> u8 {
     use crate::sim::combat::combat_weapon::is_ally_by_object;
-    let viewer = sim.session.current_house;
+    let viewer = sim.session.current_house();
     let owner = entity.owner();
     let allied = |a, b| is_ally_by_object(Some(&sim.house_alliances), &sim.interner, a, b);
     let invisible = sim
@@ -2030,7 +2030,7 @@ fn techno_common_post(sim: &mut Simulation, id: u64, rules: Option<&RuleSet>) {
     // clocks and completion effects to the native early slot remains the
     // separate Building Update scheduling mechanism.
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
-        entity.tick_native_stage(sim.session.binary_frame as i32);
+        entity.tick_native_stage(sim.session.binary_frame() as i32);
     }
     flash_step(sim, id);
     let Some(rules) = rules else {
@@ -2206,8 +2206,8 @@ mod tests {
                 .is_some_and(|object| object.can_be_hidden)
         );
         let mut sim = Simulation::new();
-        sim.session.map_width = 32;
-        sim.session.map_height = 32;
+        sim.session.set_map_width_for_test(32);
+        sim.session.set_map_height_for_test(32);
         sim.resolve_type_handles(&rules);
         let tank = sim
             .spawn_object("MTNK", "Americans", 10, 10, 0, &rules)
@@ -2303,7 +2303,7 @@ mod tests {
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
-        sim.session.current_house = Some(ours);
+        sim.session.set_current_house_for_test(Some(ours));
         sim.resolve_type_handles(&rules);
         let spawn = |sim: &mut Simulation, name: &str, owner: &str, x: u16| {
             sim.spawn_object(name, owner, x, 10, 0, &rules)
@@ -2436,8 +2436,8 @@ mod tests {
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
-        sim.session.current_house = Some(ours);
-        sim.session.binary_frame = 1;
+        sim.session.set_current_house_for_test(Some(ours));
+        sim.session.set_binary_frame_for_test(1);
         sim.resolve_type_handles(&rules);
         let enemy = sim
             .spawn_object("TANK", "Russians", 16, 10, 0, &rules)
@@ -2671,7 +2671,8 @@ mod tests {
                 expected,
                 "earlier={earlier}: never retroactively visit the new crash"
             );
-            sim.session.binary_frame += 1;
+            sim.session
+                .set_binary_frame_for_test(sim.session.binary_frame() + 1);
             sim.object_ai_stage_with(Some(&rules), ObjectAiCtx::default());
             let rocking = sim.substrate.entities.get(victim).unwrap().rocking.unwrap();
             assert_eq!(
@@ -3639,7 +3640,7 @@ mod tests {
             Some(&rules),
         );
         let _ = sim.advance_tick(&[], Some(&rules), Some(&grid), None, 67);
-        let rearm = crate::sim::timer::CdTimer::started(sim.session.binary_frame as i32, 40);
+        let rearm = crate::sim::timer::CdTimer::started(sim.session.binary_frame() as i32, 40);
         {
             let e = sim.substrate.entities.get_mut(1).unwrap();
             e.attack_target.set_for_test(Some(TargetKind::Entity(2)));
@@ -3675,7 +3676,7 @@ mod tests {
             Some(&rules),
         );
         let _ = sim.advance_tick(&[], Some(&rules), Some(&grid), None, 67);
-        let rearm = crate::sim::timer::CdTimer::started(sim.session.binary_frame as i32, 40);
+        let rearm = crate::sim::timer::CdTimer::started(sim.session.binary_frame() as i32, 40);
         {
             let e = sim.substrate.entities.get_mut(1).unwrap();
             e.attack_target.set_for_test(Some(TargetKind::Entity(2)));
@@ -4003,7 +4004,7 @@ mod tests {
         let rules = passive_rules();
         let mut sim = Simulation::new();
         insert_scannable(&mut sim, 1, "Americans", "MTNK", EntityCategory::Unit);
-        sim.session.binary_frame = 45;
+        sim.session.set_binary_frame_for_test(45);
         sim.mission_assign_exact(1, MissionId::from_known(MissionType::Attack), 45)
             .unwrap();
         sim.mission_queue_exact(
@@ -4024,7 +4025,7 @@ mod tests {
         );
 
         sim.mission_commence_exact(1, 45).unwrap();
-        sim.session.binary_frame = 46;
+        sim.session.set_binary_frame_for_test(46);
         passive_acquire_step(&mut sim, 1, Some(&rules), ObjectAiCtx::default());
         assert_ne!(sim.scenario_rng.logical_state(), before);
         assert_eq!(
@@ -4208,7 +4209,7 @@ mod tests {
         passive_acquire_step(&mut sim, 1, Some(&rules), ObjectAiCtx::default());
 
         let timer = sim.substrate.entities.get(1).unwrap().passive_scan.timer();
-        assert_eq!(timer.start_frame(), sim.session.binary_frame);
+        assert_eq!(timer.start_frame(), sim.session.binary_frame());
         assert_eq!(
             timer.duration(),
             rules.general.normal_targeting_delay as u32 + expected_jitter,
@@ -4221,7 +4222,7 @@ mod tests {
                 .unwrap()
                 .passive_scan
                 .last_scan_frame(),
-            sim.session.binary_frame
+            sim.session.binary_frame()
         );
     }
 
@@ -4445,7 +4446,7 @@ mod tests {
         let rules = passive_rules();
         for allied in [true, false] {
             let mut sim = Simulation::new();
-            sim.session.binary_frame = 16;
+            sim.session.set_binary_frame_for_test(16);
             insert_scannable(&mut sim, 1, "Soviet", "GI", EntityCategory::Infantry);
             insert_scannable(
                 &mut sim,
@@ -4685,7 +4686,7 @@ mod tests {
     fn off_mission_clear_drops_a_scanner_target_but_not_an_ordered_one() {
         let mut sim = Simulation::new();
         insert_scannable(&mut sim, 1, "Americans", "MTNK", EntityCategory::Unit);
-        let now = sim.session.binary_frame;
+        let now = sim.session.binary_frame();
         // Unload is one of the twelve missions that drop a scanner target. The
         // job has to be LIVE for the committed selector to be read — a mission
         // whose machinery has gone quiet defers to the derived reading, which is
@@ -5173,7 +5174,7 @@ mod tests {
         .expect("dog rules");
         let held = |attacker: &str, frame: u32, cloaked: bool| {
             let mut sim = Simulation::with_seed(0x6FA4);
-            sim.session.binary_frame = frame;
+            sim.session.set_binary_frame_for_test(frame);
             for (id, type_name, owner, rx) in
                 [(1, attacker, "Russians", 5), (2, "BRUTE", "YuriCountry", 6)]
             {
@@ -5984,7 +5985,7 @@ MinLowPowerProductionSpeed=0.4\nMaxLowPowerProductionSpeed=0.85\n\n\
             assert_eq!(e.mission.current(), MissionId::NONE);
             assert_eq!(e.mission.queued().known(), Some(MissionType::Move));
 
-            sim.session.binary_frame = 7;
+            sim.session.set_binary_frame_for_test(7);
             sim.object_ai_visit_one(1, Some(&rules), ObjectAiCtx::default());
 
             let e = sim.substrate.entities.get(1).unwrap();
@@ -6560,7 +6561,7 @@ ConditionRedSparkingProbability={red_prob}\nConditionYellowSparkingProbability={
         let first = spark_system(&sim, 1).unwrap();
         let frozen = sim.scenario_rng.state();
         // Advancing the session clock alone must never expire a live link.
-        sim.session.tick = 1_000_000;
+        sim.session.set_tick_for_test(1_000_000);
         techno_common_post(&mut sim, 1, Some(&rules));
         assert_eq!(sim.scenario_rng.state(), frozen);
         assert_eq!(spark_system(&sim, 1), Some(first));

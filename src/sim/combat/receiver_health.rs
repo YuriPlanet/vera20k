@@ -141,7 +141,7 @@ pub(super) fn commit_receiver_health(
     let target_id = event.target_id;
     let attacker_id = event.attacker_id;
     let receive_outcome = receiver_outcome?.outcome;
-    let binary_frame = world.session.binary_frame;
+    let binary_frame = world.session.binary_frame();
     let mut building_entry_frame = None;
     let mut fatal_category = EntityCategory::Unit;
     let live_source_owner = (attacker_id != RAD_NO_ATTACKER)

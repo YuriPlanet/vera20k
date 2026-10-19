@@ -28,7 +28,7 @@ fn infantry_fixture() -> Option<Fixture> {
 }
 
 fn next_command(fixture: &Fixture, command: Command) -> CommandEnvelope {
-    CommandEnvelope::new(fixture.owner, fixture.sim.session.tick + 1, command)
+    CommandEnvelope::new(fixture.owner, fixture.sim.session.tick() + 1, command)
 }
 
 fn native_e2_category_gates(phase_name: &str) -> Vec<ProductionCategory> {

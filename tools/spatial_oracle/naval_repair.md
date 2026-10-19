@@ -101,19 +101,13 @@ the old presentation. The shader preserves geometry, UVs, palette conversion and
 depth while discarding below the world row. Sinking suppresses shadows and
 DrawExtras, and the radar tracker consumes the authoritative sinking state.
 
-The single critic found that the former 120px viewport cull delayed the first
-waterline capture. Original Unit73B0B0→Object5F4B10→CoordsToClient2 6D2140 admits
-X[-360,width+360], Y[-180,height+180], including the endpoints. Its dimensions
-come from the tactical rectangle: Set_View_Dimensions4A89B8 and Scenario687620
-pass886FA0 into the writer6D5F60. Unit and Bullet drawing now share this admission
-owner and use the tactical dimensions. Aircraft retain their existing admission.
-The original AEGIS sequence first admits client(840,200) in a640×480 view and
-captures world row2593. At supplied later Z8, then after panning X, the native
-cache still clips at client row228. Delayed capture would instead retain2622.
-Both Rust regressions failed before the fix; they compare all15 boundary cases
-and the production projection/parent-bound/cache adapters, shader inputs and
-neutral snapshot round-trips. These tests do not construct an AppState window;
-the visible application and GPU comparisons provide separate output evidence.
+The first waterline capture depends on the native draw admission: original
+Unit73B0B0→Object5F4B10→CoordsToClient2 6D2140 admits X[-360,width+360],
+Y[-180,height+180] of the tactical rectangle. Unit and Bullet drawing share that
+admission owner in `src/app/presentation/instances/helpers.rs`; Aircraft retain
+their existing admission. The original AEGIS sequence first admits client(840,200)
+in a640×480 view and captures world row2593; at supplied later Z8, then after
+panning X, the native cache still clips at client row228.
 
 ### RNG, timers, detach and loading
 
@@ -151,15 +145,7 @@ area exclusion, firing/target legality, statistics and app cache persistence.
 The ignored physical AEGIS test compares all four native bounds and complete
 palette-byte hashes. The ignored GPU test sends all 16 Unit clip visits through
 real batch lowering, upload and Metal shader, checking every 640×480 pixel and
-unchanged depth. The chain validation record (`tools/spatial_oracle/naval_repair_validation.json`, in git at 1b1a8b43e)
-retains the actual suite/focused results, binary and log hashes, navigation
-comparison, Ghidra readbacks and ordinary visible save/load/sinking captures.
-The final candidate9a176561, including the critic correction and main772808f1,
-passes9,582 retail lib tests with zero failures and181 ignored; clippy exits0.
-The two earlier stale score assertions were corrected and are included in that
-clean full run. Both physical-map tests, the four-facing raster comparison and
-the16-visit Metal comparison also pass again. These bounded passes do not close
-the whole-bridge goal.
+unchanged depth. These checks do not close the whole-bridge goal.
 
 ### Reproduce the additional packets
 

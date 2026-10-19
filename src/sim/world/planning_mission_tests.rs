@@ -9,14 +9,14 @@ fn scene() -> Option<(Simulation, crate::rules::ruleset::RuleSet, InternedId)> {
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
     sim.input_delay_ticks = 0;
-    sim.session.game_options.short_game = false;
-    sim.session.game_options.multi_engineer = false;
+    sim.session.game_options_mut_for_test().short_game = false;
+    sim.session.game_options_mut_for_test().multi_engineer = false;
     let owner = sim.interner.get("Americans").unwrap();
     sim.houses
         .insert_for_test(crate::sim::house_state::HouseState::new(
             owner, 0, None, true, 50_000, 10,
         ));
-    sim.session.current_house = Some(owner);
+    sim.session.set_current_house_for_test(Some(owner));
     Some((sim, rules, owner))
 }
 
@@ -30,7 +30,7 @@ fn planned(
         .encode_planning_order_record(owner, &command)
         .expect("resolved click is representable");
     let command = sim
-        .decode_native_command_record(&record, sim.session.tick)
+        .decode_native_command_record(&record, sim.session.tick())
         .unwrap();
     assert!(
         sim.apply_command("Americans", &command.payload, Some(rules)),
@@ -41,7 +41,7 @@ fn planned(
 fn commit(sim: &mut Simulation, rules: &crate::rules::ruleset::RuleSet, owner: InternedId) {
     let record = sim.encode_plan_commit_record(owner).unwrap();
     let command = sim
-        .decode_native_command_record(&record, sim.session.tick)
+        .decode_native_command_record(&record, sim.session.tick())
         .unwrap();
     assert!(sim.apply_command("Americans", &command.payload, Some(rules)));
 }

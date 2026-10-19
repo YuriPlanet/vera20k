@@ -160,7 +160,7 @@ fn admitted_laser_births_match_original_building_and_unit_callers() {
         }
         let rules = fixture_rules(input);
         let mut sim = Simulation::new();
-        sim.session.binary_frame = 200;
+        sim.session.set_binary_frame_for_test(200);
         let unit = input["unit_boundary"].is_array();
         let source_kind = if unit {
             "UNIT"
@@ -278,7 +278,7 @@ fn direct_laser_keeps_explicit_source_and_native_constructor_defaults() {
     let input = &row["input"];
     let rules = fixture_rules(input);
     let mut sim = Simulation::new();
-    sim.session.binary_frame = 200;
+    sim.session.set_binary_frame_for_test(200);
     place(
         &mut sim,
         1,
@@ -349,7 +349,7 @@ fn production_frame_orders_laser_update_before_delayed_support_birth() {
         .spawn_object("ATESLA", "Americans", 12, 12, 0, &rules)
         .unwrap();
     sim.resolve_type_handles(&rules);
-    sim.session.binary_frame = 200;
+    sim.session.set_binary_frame_for_test(200);
     let to = ProjectileCoord::new(3600, 2700, 0);
     let source = sim.substrate.entities.get_mut(tower).unwrap();
     source
@@ -451,7 +451,7 @@ fn retail_delayed_main_uses_preclear_count_and_failed_admission_emits_no_laser()
             .unwrap();
         sim.resolve_type_handles(rules);
         sim.power_states.clear();
-        sim.session.binary_frame = 200;
+        sim.session.set_binary_frame_for_test(200);
         let source = sim.substrate.entities.get_mut(tower).unwrap();
         source
             .attack_target

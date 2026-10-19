@@ -412,7 +412,7 @@ impl Simulation {
         CommandRecord::encode(
             opcode,
             i32::from(house),
-            self.session.binary_frame as i32,
+            self.session.binary_frame() as i32,
             &[],
         )
         .ok()
@@ -982,7 +982,7 @@ impl Simulation {
     fn planning_actor_house(&self, actor: u64) -> Option<InternedId> {
         let owner = self.substrate.entities.get(actor)?.owner();
         if self.house_is_human_player(owner) {
-            self.session.current_house
+            self.session.current_house()
         } else {
             Some(owner)
         }
@@ -1472,7 +1472,7 @@ impl Simulation {
         record.set_issue_header(
             4,
             i32::from(record.house_id()),
-            self.session.binary_frame.wrapping_add(1) as i32,
+            self.session.binary_frame().wrapping_add(1) as i32,
         );
         let path = self.planning.paths.get_mut(&actor).unwrap();
         let keep_member = path.loop_start == Some(0);
@@ -1492,14 +1492,14 @@ impl Simulation {
                 crate::sim::mission::MissionType::Deliberate,
             ),
             0,
-            self.session.binary_frame,
+            self.session.binary_frame(),
             &crate::sim::mission::authority::EntityReadyInputProvider,
         );
         // 637550 ->652230: deferred publication stamps frame+1. Reverse
         // pending traversal plus ring prepend restores generation order.
         self.queue_command(CommandEnvelope::new(
             owner,
-            self.session.tick.saturating_add(2),
+            self.session.tick().saturating_add(2),
             Command::PlanningRecord { record },
         ));
         true

@@ -167,7 +167,7 @@ fn the_launch_matches_native() {
         }
         let russians = sim.interner.intern("Russians");
         let sw_type = charge_super(&mut sim, russians, FORCE_SHIELD);
-        let frame = sim.session.binary_frame;
+        let frame = sim.session.binary_frame();
         assert!(launch(&mut sim, &rules, russians, cell.0, cell.1, sw_type));
 
         let native_anim = events(row, "anim").next().unwrap();
@@ -247,7 +247,7 @@ fn retail_force_shield_shields_allied_buildings_and_fades() {
         let american = spawn(&mut sim, "GAPOWR", "Americans", (40, 43));
         let far = spawn(&mut sim, "GAPOWR", "Russians", (44, 40));
         charge_super(&mut sim, russians, FORCE_SHIELD);
-        let launch_frame = sim.session.binary_frame;
+        let launch_frame = sim.session.binary_frame();
         click(&mut sim, &rules, russians, FORCE_SHIELD, (40, 40));
 
         let shield = |sim: &Simulation, id: u64| {
@@ -276,9 +276,9 @@ fn retail_force_shield_shields_allied_buildings_and_fades() {
                 .count()
         };
         let mut heard = Vec::new();
-        while sim.session.binary_frame < launch_frame + 430 {
+        while sim.session.binary_frame() < launch_frame + 430 {
             sim.sound_events.clear();
-            let frame = sim.session.binary_frame;
+            let frame = sim.session.binary_frame();
             step(&mut sim, &rules);
             if fading(&sim) > 0 {
                 heard.push((frame - launch_frame, fading(&sim)));

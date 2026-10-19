@@ -52,7 +52,7 @@ fn a_hunter_without_a_target_idles_unless_a_campaign_computer_owns_it() {
             )
             .unwrap()
         );
-        let now = sim.session.binary_frame;
+        let now = sim.session.binary_frame();
         let entity = sim.substrate.entities.get_mut(hunter).unwrap();
         entity.mission.apply_test_fixture(MissionTestFixture {
             current: MissionId::from_known(MissionType::Hunt),

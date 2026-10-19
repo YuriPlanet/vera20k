@@ -520,7 +520,7 @@ fn naval_event_retail_all05_removal_enables_black_eagle_support_once() {
         (8, false, true),
         (16, false, true),
     ] {
-        sim.session.binary_frame = frame;
+        sim.session.set_binary_frame_for_test(frame);
         if remove {
             sim.uninit_with_rules(id, &rules);
             assert_eq!(sim.houses[&owner].tracking.navy(), 1);
@@ -682,7 +682,8 @@ fn funds_events_match_original_house_logic_and_cleanup_histories() {
             sim.mapgen_rng.logical_state(),
         );
         for step in case["steps"].as_array().unwrap() {
-            sim.session.binary_frame = integer(&step["frame"]) as u32;
+            sim.session
+                .set_binary_frame_for_test(integer(&step["frame"]) as u32);
             if let Some(mutation) = step["mutation"].as_array() {
                 let amount = integer(&mutation[1]);
                 match mutation[0].as_str().unwrap() {
@@ -737,7 +738,7 @@ fn funds_events_match_original_house_logic_and_cleanup_histories() {
                 0,
                 false,
             );
-            sim.session.binary_frame = 40;
+            sim.session.set_binary_frame_for_test(40);
             sim.raise_house_tags(
                 houses[0],
                 Some(&rules),
@@ -1076,7 +1077,7 @@ fn damage_source_event44_matches_original_registered_house_index() {
     for case in corpus["predicate_controls"].as_array().unwrap() {
         let (mut sim, rules, _, houses) = event_ingress_fixture();
         assert_eq!(sim.houses.order(), houses);
-        sim.session.binary_frame = 123;
+        sim.session.set_binary_frame_for_test(123);
         let actor = case["inputs"]["actor_owner"].as_u64().map(|index| {
             spawn_event_ingress_unit(&mut sim, &rules, houses[index as usize], (15, 15))
         });
@@ -1748,7 +1749,7 @@ fn all01_due_charge_and_damage_share_the_production_house_power_phase() {
         )
         .unwrap();
     }
-    assert_eq!(sim.session.binary_frame, 15);
+    assert_eq!(sim.session.binary_frame(), 15);
     assert_eq!(sim.entities().get(reactor).unwrap().health.current(), 769);
     assert_eq!(
         (
@@ -1940,7 +1941,8 @@ fn native_all01_super_charge_dispatch_uses_retail_type_and_retained_operands() {
         let input = &row["input"];
         let mut sim = Simulation::with_seed(31);
         sim.intern_rule_type_ids(&rules);
-        sim.session.binary_frame = integer(&input["frame"]) as u32;
+        sim.session
+            .set_binary_frame_for_test(integer(&input["frame"]) as u32);
         let owner = sim.interner.intern("RetainedHouse");
         let country = sim.interner.intern("Confederation");
         if input["owner_present"].as_bool().unwrap() {
@@ -1951,7 +1953,7 @@ fn native_all01_super_charge_dispatch_uses_retail_type_and_retained_operands() {
             let id = sim.interner.intern(name);
             sim.super_weapons.entry(owner).or_default().insert(
                 id,
-                SuperWeaponInstance::new(id, owner, sim.session.binary_frame as i32),
+                SuperWeaponInstance::new(id, owner, sim.session.binary_frame() as i32),
             );
         }
         let id = sim.interner.get(dominator_name).unwrap();
@@ -2251,7 +2253,8 @@ fn native_all01_reactor_damage_uses_retail_rules_and_shared_power_owner() {
         32,
         crate::map::resolved_terrain::test_clear_cell,
     ));
-    sim.session.binary_frame = integer(&native["frame"]) as u32;
+    sim.session
+        .set_binary_frame_for_test(integer(&native["frame"]) as u32);
     let owner = sim.interner.intern(&authored.owner);
     sim.houses
         .register(HouseState::new(owner, 0, None, false, 0, 10));
@@ -2285,7 +2288,7 @@ fn native_all01_reactor_damage_uses_retail_rules_and_shared_power_owner() {
         &rules,
         owner,
         &sim.interner,
-        sim.session.binary_frame,
+        sim.session.binary_frame(),
     );
     assert_eq!(
         json!(sim.power_states[&owner].total_output),
@@ -2380,7 +2383,7 @@ fn native_all01_reactor_damage_uses_retail_rules_and_shared_power_owner() {
         &rules,
         owner,
         &sim.interner,
-        sim.session.binary_frame,
+        sim.session.binary_frame(),
     );
     assert_eq!(
         json!(sim.power_states[&owner].total_output),
@@ -2489,7 +2492,7 @@ fn native_trigger_reveal_action_matches_original_controls() {
         });
         let player = sim.interner.intern("Player");
         let other = sim.interner.intern("Other");
-        sim.session.current_house = Some(player);
+        sim.session.set_current_house_for_test(Some(player));
         sim.fog.width = 128;
         sim.fog.height = 128;
         for (owner, latch) in [(player, &input["latch"]), (other, &input["other_latch"])] {
@@ -2569,7 +2572,7 @@ fn native_trigger_reveal_action_matches_original_controls() {
             row["rng_before"],
             "{name}: original seeded priors"
         );
-        let frame = sim.session.binary_frame;
+        let frame = sim.session.binary_frame();
         let mut effects = Vec::new();
         let (returned, draws) = crate::sim::rng::trace_draws(|| {
             sim.apply_live_trigger_action(
@@ -2596,7 +2599,8 @@ fn native_trigger_reveal_action_matches_original_controls() {
             "{name}: all retained RNG words"
         );
         assert_eq!(
-            sim.session.binary_frame, frame,
+            sim.session.binary_frame(),
+            frame,
             "{name}: no frame advancement"
         );
         assert_eq!(
@@ -2670,7 +2674,7 @@ fn native_trigger_reveal_action_matches_original_controls() {
         let heights = sim.sight_height_grid(&config);
         let mut probe = Simulation::with_seed(31);
         probe.fog = FogState::new(128, 128);
-        probe.session.current_house = Some(player);
+        probe.session.set_current_house_for_test(Some(player));
         probe.install_resolved_terrain_for_new_map(sim.resolved_terrain.as_ref().unwrap().clone());
         probe
             .fog
@@ -2697,7 +2701,7 @@ fn native_trigger_reveal_action_matches_original_controls() {
                 &config,
                 crate::sim::world::UninitContext::with_rules(&rules),
                 crate::sim::vision::MapRevealProjection::Transient,
-                probe.session.current_house,
+                probe.session.current_house(),
             );
             compare(&probe.fog, &pass["states"]);
         }
@@ -3426,7 +3430,7 @@ fn stock_state(sim: &Simulation, draws: usize) -> Value {
             (sim.interner.resolve(*house).to_string(), json!(tags))
         })
         .collect();
-    json!({ "frame": sim.session.binary_frame, "live_tags": live_tags,
+    json!({ "frame": sim.session.binary_frame(), "live_tags": live_tags,
         "logic_tags": runtime.logic_tags.iter().map(|&tag| tag_name(tag)).collect::<Vec<_>>(),
         "map_tags": runtime.map_tags.iter().map(|&tag| tag_name(tag)).collect::<Vec<_>>(),
         "house_tags": houses, "rng_draws": draws, "logic_cursor": runtime.logic_cursor,
@@ -3496,7 +3500,7 @@ fn physical_retail_sov01_registration_and_enable_timers_match_original_at_all_di
         sim.scenario_rng = crate::sim::rng::SimRng::from_native_state_hex_for_test(
             row["rng_before"]["scenario"].as_str().unwrap(),
         );
-        sim.session.binary_frame = 0;
+        sim.session.set_binary_frame_for_test(0);
         // The original comparison supplies sparse initialized Cells and
         // minimal House/Country bindings. Full terrain and House construction
         // RNG are explicitly outside this native prefix's coverage.
@@ -3633,7 +3637,8 @@ fn physical_retail_sov01_registration_and_enable_timers_match_original_at_all_di
             .unwrap()
             .clone();
         for (step, observation) in row["observations"].as_array().unwrap().iter().enumerate() {
-            sim.session.binary_frame = observation["frame"].as_u64().unwrap() as u32;
+            sim.session
+                .set_binary_frame_for_test(observation["frame"].as_u64().unwrap() as u32);
             let (returned, draws) = crate::sim::rng::trace_draws(|| {
                 if observation["phase"] == "resolved53_enable" {
                     sim.apply_live_trigger_action(
@@ -4007,7 +4012,8 @@ pub(super) fn replay_native_histories(rows: impl Iterator<Item = Value>) -> usiz
             64,
             crate::map::resolved_terrain::test_clear_cell,
         ));
-        sim.session.binary_frame = input["frame"].as_u64().unwrap_or(123) as u32;
+        sim.session
+            .set_binary_frame_for_test(input["frame"].as_u64().unwrap_or(123) as u32);
         sim.trigger_runtime.definitions = supplied_definitions(input);
         sim.trigger_runtime.fixture_difficulty = Some(input.get("difficulty").map_or(1, integer));
         sim.trigger_runtime.logic_cursor = input.get("logic_cursor").map_or(0, integer);
@@ -4043,7 +4049,9 @@ pub(super) fn replay_native_histories(rows: impl Iterator<Item = Value>) -> usiz
                         returned =
                             Some(identities.iter().position(|id| *id == index).unwrap() as i32);
                     }
-                    "frame" => sim.session.binary_frame = args[1].as_u64().unwrap() as u32,
+                    "frame" => sim
+                        .session
+                        .set_binary_frame_for_test(args[1].as_u64().unwrap() as u32),
                     "attach_cell" => {
                         let cell = sim.trigger_cell_identity((
                             integer(&args[2]) as i16,
@@ -4333,7 +4341,7 @@ fn native_trigger_reveal_initial_event48_tags_receive_neutral_discovery_dispatch
         let mut sim = Simulation::with_seed(31);
         let player = sim.interner.intern("Player");
         let owner = sim.interner.intern(lead["owner"].as_str().unwrap());
-        sim.session.current_house = Some(player);
+        sim.session.set_current_house_for_test(Some(player));
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false),
         );

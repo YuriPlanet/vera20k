@@ -352,7 +352,7 @@ mod tests {
         let mut sim = Simulation::with_seed(0x418);
         sim.fog.width = 8;
         sim.fog.height = 6;
-        sim.session.game_options.shroud = false;
+        sim.session.game_options_mut_for_test().shroud = false;
         let local = sim.interner.intern("Player");
         let ai = sim.interner.intern("Computer");
         sim.houses
@@ -363,7 +363,7 @@ mod tests {
             ai,
             crate::sim::vision::OwnerVisibility::new(sim.fog.width, sim.fog.height),
         );
-        sim.session.current_house = Some(local);
+        sim.session.set_current_house_for_test(Some(local));
         let scenario_rng_before = sim.scenario_rng.state();
         let main_rng_before = sim.main_rng.state();
 
@@ -394,7 +394,7 @@ mod tests {
         assert!(!shrouded.fog.is_cell_revealed(human, 7, 5));
 
         // RevealEntireMap(NULL) reveals to PlayerPtr alone.
-        shrouded.session.game_options.shroud = false;
+        shrouded.session.game_options_mut_for_test().shroud = false;
         apply_launch_shroud_option(&mut shrouded, context);
         assert!(!shrouded.fog.is_cell_revealed(human, 7, 5));
         assert!(!shrouded.fog.whole_map_revealed_for_owner(human));
@@ -632,8 +632,8 @@ mod tests {
         map.header.local_width = 76;
         map.header.local_height = 48;
         sim.install_playfield_from_map_header(&map.header);
-        sim.session.map_width = 138;
-        sim.session.map_height = 138;
+        sim.session.set_map_width_for_test(138);
+        sim.session.set_map_height_for_test(138);
     }
 
     fn test_launch_starts() -> [Waypoint; 4] {
@@ -1051,7 +1051,7 @@ mod tests {
         let gather = |frame| {
             let mut sim = Simulation::new();
             sim.install_playfield_from_map_header(&map.header);
-            sim.session.binary_frame = frame;
+            sim.session.set_binary_frame_for_test(frame);
             sim.scenario_rng = SimRng::new(9);
             sim.gather_native_start_positions(&map.waypoints, 2, &terrain, bounds)[1]
         };
@@ -1369,9 +1369,11 @@ mod tests {
             });
         }
         let mut sim = Simulation::new();
-        sim.session.game_options = session
-            .options
-            .to_game_options(session.opponents.len() as i32);
+        sim.session.set_game_options_for_test(
+            session
+                .options
+                .to_game_options(session.opponents.len() as i32),
+        );
         let mut rules = test_standard_launch_rules();
         rules.general.multiplayer_ai_cm = vec![400, 0, 0];
         populate_launch_houses(&mut sim, &normalized_launch_slots(&session), &rules);
@@ -1422,9 +1424,11 @@ mod tests {
         let mut session = test_session();
         session.opponents[0].difficulty = AiDifficulty::Hard;
         let mut sim = Simulation::new();
-        sim.session.game_options = session
-            .options
-            .to_game_options(session.opponents.len() as i32);
+        sim.session.set_game_options_for_test(
+            session
+                .options
+                .to_game_options(session.opponents.len() as i32),
+        );
         let mut rules = test_standard_launch_rules();
         populate_launch_houses(&mut sim, &normalized_launch_slots(&session), &rules);
         let ai = sim.interner.get("Computer1").expect("AI house");
@@ -1679,14 +1683,14 @@ mod tests {
         );
         let table_owner = |start_idx| {
             sim.session
-                .start_slot_houses
+                .start_slot_houses()
                 .get(&start_idx)
                 .map(|owner| sim.interner.resolve(*owner))
         };
         assert_eq!(table_owner(0), Some("Computer1"));
         assert_eq!(table_owner(1), Some("Player"));
         assert_eq!(table_owner(2), None);
-        assert_eq!(sim.session.start_slot_houses.len(), 2);
+        assert_eq!(sim.session.start_slot_houses().len(), 2);
         assert_eq!(
             sim.scenario_rng.logical_state(),
             expected_rng.logical_state()
@@ -1770,7 +1774,7 @@ mod tests {
         assert_eq!(result.active_slots, 2);
         let table_owner = |start_idx| {
             sim.session
-                .start_slot_houses
+                .start_slot_houses()
                 .get(&start_idx)
                 .map(|owner| sim.interner.resolve(*owner))
         };
@@ -1789,7 +1793,7 @@ mod tests {
         }
         assert_eq!(table_owner(0), Some("Computer1"));
         assert_eq!(table_owner(3), Some("Player"));
-        assert_eq!(sim.session.start_slot_houses.len(), 2);
+        assert_eq!(sim.session.start_slot_houses().len(), 2);
 
         // Auto local with an explicit AI reservation uses the farthest selector
         // without an assignment draw. Applying the stored plan must not replay
@@ -2250,7 +2254,7 @@ mod tests {
             Some(PlayfieldBounds::from_map_header(&map.header)),
             "direct pre-funnel launch must install normalized MapClass fields"
         );
-        assert_eq!(sim.session.game_options.unit_count, 0);
+        assert_eq!(sim.session.game_options().unit_count, 0);
         assert_eq!(sim.entities().len(), 2);
     }
 
@@ -2465,7 +2469,8 @@ mod tests {
     fn skirmish_start_unit_blocked_placement_stops_after_twenty_failures() {
         let mut sim = Simulation::new();
         let session = test_session();
-        sim.session.game_options = session.options.to_game_options(0);
+        sim.session
+            .set_game_options_for_test(session.options.to_game_options(0));
         let all_slots = normalized_launch_slots(&session);
         let slots = &all_slots[..1];
         let rules = test_starting_unit_rules();

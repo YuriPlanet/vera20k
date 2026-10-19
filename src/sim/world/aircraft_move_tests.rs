@@ -28,7 +28,7 @@ fn fly_and_jumpjet_planned_move_legs_progress_through_native_arrival() {
             .register(crate::sim::house_state::HouseState::new(
                 owner, 0, None, true, 0, 10,
             ));
-        sim.session.current_house = Some(owner);
+        sim.session.set_current_house_for_test(Some(owner));
         // Ordinary skirmish paths: Aircraft4196B0's campaign shroud gate
         // must not reject this fixture's initially unexplored spawn cell.
         sim.session.set_game_mode(
@@ -36,7 +36,7 @@ fn fly_and_jumpjet_planned_move_legs_progress_through_native_arrival() {
         );
         // This route fixture has no base; keep its house alive while its
         // aircraft execute the path instead of triggering ShortGame defeat.
-        sim.session.game_options.short_game = false;
+        sim.session.game_options_mut_for_test().short_game = false;
         let actor = sim
             .spawn_object_with_overlay_registry(name, "Americans", 15, 15, 0, &rules, &registry)
             .unwrap();
@@ -52,14 +52,14 @@ fn fly_and_jumpjet_planned_move_legs_progress_through_native_arrival() {
                 )
                 .unwrap();
             let envelope = sim
-                .decode_native_command_record(&record, sim.session.tick)
+                .decode_native_command_record(&record, sim.session.tick())
                 .unwrap();
             assert!(sim.apply_command("Americans", &envelope.payload, Some(&rules)));
         }
         let record = sim.encode_plan_commit_record(owner).unwrap();
         let commit = CommandEnvelope::new(
             owner,
-            sim.session.tick + 1,
+            sim.session.tick() + 1,
             Command::PlanningRecord { record },
         );
         let grid = sim.path_grid.clone();
@@ -174,8 +174,8 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
             input["rate"].as_f64().unwrap_or(0.016)
         )));
     let mut sim = Simulation::with_seed(input["seed"].as_u64().unwrap_or(31));
-    sim.session.map_width = 128;
-    sim.session.map_height = 128;
+    sim.session.set_map_width_for_test(128);
+    sim.session.set_map_height_for_test(128);
     let local = input["local"]
         .as_array()
         .cloned()
@@ -474,7 +474,7 @@ fn retail_harrier_sent_onto_a_tank_stops_beside_it_and_crashes_without_an_airfie
     let mut scenario = crate::headless_scenario::load(&retail, "Hills.mmx", 0x0B21_D6E5)
         .expect("load retail Hills through the production loader");
     let candidates = super::super::rocket_flight::retail_tests::sites(&scenario);
-    let owner = scenario.sim().session.current_house.expect("order house");
+    let owner = scenario.sim().session.current_house().expect("order house");
     let owner_name = scenario.sim().interner.resolve(owner).to_owned();
     let runtime = &mut scenario.runtime;
     let rules = &runtime.resources.rules;
@@ -500,7 +500,7 @@ fn retail_harrier_sent_onto_a_tank_stops_beside_it_and_crashes_without_an_airfie
         let commands = if frame == 0 {
             vec![CommandEnvelope::new(
                 owner,
-                runtime.simulation.session.tick + 1,
+                runtime.simulation.session.tick() + 1,
                 Command::Move {
                     entity_id: harrier,
                     target_rx: target_cell.0,

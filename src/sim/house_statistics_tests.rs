@@ -258,7 +258,8 @@ fn produced_history_distinguishes_equal_built_totals_and_last_types() {
 fn saved_produced_history_rejects_inconsistent_cache_or_sparse_items() {
     for corruption in 0..3 {
         let mut sim = Simulation::new();
-        sim.session.map_name = "PRODUCED-HISTORY.MAP".into();
+        sim.session
+            .set_map_name_for_test("PRODUCED-HISTORY.MAP".into());
         let owner = sim.interner.intern("Americans");
         let mut house = HouseState::new(owner, 0, None, true, 0, 10);
         house.record_scored_production(ObjectCategory::Infantry, 0);
@@ -380,7 +381,8 @@ fn native_house_statistics_survive_snapshot_and_retained_ship_terminal_record() 
     assert_eq!(rows.len(), 2);
     for row in rows {
         let mut sim = Simulation::new();
-        sim.session.map_name = "HOUSE-STATS.MAP".to_owned();
+        sim.session
+            .set_map_name_for_test("HOUSE-STATS.MAP".to_owned());
         // Whole Scenario load has its own seed-zero contract. The native
         // comparison here establishes the House fields across its Save/Load.
         sim.scenario_rng = SimRng::new(0);
@@ -458,7 +460,7 @@ fn native_house_statistics_survive_snapshot_and_retained_ship_terminal_record() 
 #[test]
 fn saved_live_statistics_preserve_terminal_score_and_rng_continuation() {
     let mut sim = Simulation::new();
-    sim.session.map_name = "SCORE.MAP".to_owned();
+    sim.session.set_map_name_for_test("SCORE.MAP".to_owned());
     sim.scenario_rng = SimRng::new(0);
     let owner = sim.interner.intern("Americans");
     let mut house = HouseState::new(owner, 0, None, false, 0, 10);

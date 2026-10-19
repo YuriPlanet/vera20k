@@ -97,7 +97,7 @@ fn native_base_response_dispatch_matches_14_represented_original_tails() {
                 f64::from_bits(u64::from_str_radix(bits, 16).unwrap());
         }
         let mut sim = Simulation::new();
-        sim.session.binary_frame = 41;
+        sim.session.set_binary_frame_for_test(41);
         let owner = sim.interner.intern("Receiver");
         let enemy = sim.interner.intern("Enemy");
         let mut ids = std::collections::BTreeMap::new();

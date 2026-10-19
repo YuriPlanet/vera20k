@@ -147,7 +147,8 @@ fn the_strategy_timer_and_its_gates_match_native() {
         // A live factory and cash keep Strategy to its draw.
         house.economy.set_credits_for_test(1000);
         spawn_building(&mut sim, owner, "FACTORY", 1000, false);
-        sim.session.binary_frame = int(&row["frame"]) as u32;
+        sim.session
+            .set_binary_frame_for_test(int(&row["frame"]) as u32);
         sim.scenario_rng = SimRng::answering(1, 7, int(&row["answer"]) - 105);
         let mut expected = sim.scenario_rng.clone();
         if flag(&row["called"]) {
@@ -255,7 +256,8 @@ fn the_strategy_matches_native() {
         if !(1..=4).contains(&int(&row["need"])) {
             house.tracking.set_economy_for_test(1, 1, 0);
         }
-        sim.session.binary_frame = int(&row["frame"]) as u32;
+        sim.session
+            .set_binary_frame_for_test(int(&row["frame"]) as u32);
         let draws = events(row, "draw");
         assert_eq!(draws.len(), 1, "{label}");
         assert_eq!(

@@ -862,7 +862,7 @@ impl Simulation {
             location: (location.x, location.y, location.z),
             start: (actor.position.rx(), actor.position.ry()),
             on_bridge: actor.on_bridge(),
-            facing: actor.body_facing.current(self.session.binary_frame),
+            facing: actor.body_facing.current(self.session.binary_frame()),
             goal: (goal.x, goal.y, goal.z),
             urgency: request.urgency,
             category: snap.category,

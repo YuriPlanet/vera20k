@@ -367,7 +367,8 @@ fn the_team_block_matches_the_original() {
                 dword(&row["game_mode"]) != 0,
             ),
         );
-        sim.session.binary_frame = dword(&row["frame"]) as u32;
+        sim.session
+            .set_binary_frame_for_test(dword(&row["frame"]) as u32);
         let owner = sim.interner.intern("H0");
         let mut house = HouseState::new(owner, 0, None, flag(&row["human"]), 0, 10);
         house.player_control = flag(&row["control"]);

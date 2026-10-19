@@ -192,9 +192,11 @@ fn native_ifv_bridge_impact_orders_live_selection_debris_ids_and_rng() {
         world.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
             row["launch"]["unique_id"].as_u64().unwrap() as u32,
         ));
-        world.session.binary_frame = row["frames"].as_array().unwrap().last().unwrap()["frame"]
-            .as_u64()
-            .unwrap() as u32;
+        world.session.set_binary_frame_for_test(
+            row["frames"].as_array().unwrap().last().unwrap()["frame"]
+                .as_u64()
+                .unwrap() as u32,
+        );
         let selector = row["events"]
             .as_array()
             .unwrap()

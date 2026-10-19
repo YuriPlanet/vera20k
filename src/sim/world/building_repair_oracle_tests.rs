@@ -231,7 +231,8 @@ fn toggle_repair_matches_the_original() {
         // Native House50B6F0's nonzero-mode identity input, distinct from
         // its campaign human/control bytes. The flash call is gated here;
         // the sound events retain their app-side audibility admission.
-        sim.session.current_house = (input["player"] == true).then_some(owner);
+        sim.session
+            .set_current_house_for_test((input["player"] == true).then_some(owner));
         let mut house = HouseState::new(owner, 0, None, input["human"] == true, 0, 10);
         house.player_control = input["player_control"] == true;
         sim.houses.register(house);
@@ -337,7 +338,8 @@ fn update_scene(corpus: &Value, input: &Value) -> (Simulation, RuleSet, Option<u
             int("game_mode", 1) != 0,
         ),
     );
-    sim.session.binary_frame = int("frame", 196) as u32;
+    sim.session
+        .set_binary_frame_for_test(int("frame", 196) as u32);
     let owner = sim.interner.intern("AI");
     let mut house = HouseState::new(
         owner,
@@ -562,7 +564,7 @@ fn a_build_up_holds_the_repair_until_its_completion_frame() {
         let name = input["name"].as_str().unwrap();
         let (mut sim, rules, _smoke) = update_scene(&corpus, input);
         // Original build() calls prepare_update with mission=none before entry.
-        sim.mission_assign_exact(1, MissionId::NONE, sim.session.binary_frame)
+        sim.mission_assign_exact(1, MissionId::NONE, sim.session.binary_frame())
             .unwrap();
         let owner = sim.interner.get("AI").unwrap();
         let control: [i32; 3] = serde_json::from_value(input["control"].clone()).unwrap();
@@ -593,7 +595,7 @@ fn a_build_up_holds_the_repair_until_its_completion_frame() {
         }
         for frame in row["frames"].as_array().unwrap() {
             let now = frame["frame"].as_u64().unwrap();
-            sim.session.binary_frame = now as u32;
+            sim.session.set_binary_frame_for_test(now as u32);
             sim.sound_events.clear();
             let placed_before = sim
                 .substrate
@@ -849,7 +851,7 @@ fn a_sale_s_first_visit_stops_the_repair() {
         entity.repairing.set_for_test(repairing);
         let sale_order = crate::sim::command::CommandEnvelope::new(
             s.sim.substrate.entities.get(building).unwrap().owner(),
-            s.sim.session.tick + 1,
+            s.sim.session.tick() + 1,
             crate::sim::command::Command::SellBuilding {
                 entity_id: building,
             },

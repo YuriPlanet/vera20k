@@ -813,8 +813,8 @@ pub(crate) fn tick_movement_with_grids(
     sim.substrate.raw_cell_occupation = std::mem::take(raw_cell_occupation);
     sim.interner = std::mem::take(interner);
     sim.scenario_rng = rng.clone();
-    sim.session.tick = sim_tick;
-    sim.session.binary_frame = native_frame;
+    sim.session.set_tick_for_test(sim_tick);
+    sim.session.set_binary_frame_for_test(native_frame);
     sim.house_alliances = alliances.clone();
     sim.path_grid = path_grid.cloned().map(std::sync::Arc::new);
     sim.zone_grid = zone_grid.cloned();
@@ -916,7 +916,7 @@ impl PendingMovementPass {
             &mut sim.substrate.entities,
             entity_id,
             grids,
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
             &mut sim.interner,
             rules,
             &sim.houses,

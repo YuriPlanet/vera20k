@@ -347,7 +347,7 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> Result<bool, String> {
-        if self.session.binary_frame & 0x3F != 0x3F {
+        if self.session.binary_frame() & 0x3F != 0x3F {
             return Ok(false);
         }
         let (Some(entity), Some(terrain)) = (
@@ -456,7 +456,7 @@ impl Simulation {
         let Some(unit) = self.substrate.entities.get(id) else {
             return;
         };
-        if !unit_scatter_admitted(unit, flags, rules, self.session.binary_frame) {
+        if !unit_scatter_admitted(unit, flags, rules, self.session.binary_frame()) {
             return;
         }
         if let Some(cell) = self.scatter_nearby_cell(id, rules) {
@@ -501,7 +501,7 @@ impl Simulation {
         let Some(unit) = self.substrate.entities.get(id) else {
             return Ok(());
         };
-        if !unit_scatter_admitted(unit, flags, rules, self.session.binary_frame)
+        if !unit_scatter_admitted(unit, flags, rules, self.session.binary_frame())
             || crate::sim::mission::control::current_control(rules, &unit.mission)
                 .is_some_and(|entry| entry.paralyzed)
             || unit

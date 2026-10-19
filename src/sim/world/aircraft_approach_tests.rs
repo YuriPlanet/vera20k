@@ -188,7 +188,7 @@ fn aircraft_initial_attack_reaches_live_search_on_the_next_due_visit() {
         let before = world.state_hash();
         crate::sim::aircraft::tick_aircraft_missions(world, &rules);
         assert_eq!(world.state_hash(), before);
-        world.session.binary_frame = 101;
+        world.session.set_binary_frame_for_test(101);
         crate::sim::aircraft::tick_aircraft_missions(world, &rules);
         let entity = world.substrate.entities.get(1).unwrap();
         assert_eq!(crate::sim::aircraft::attack_state(entity), Some(3));

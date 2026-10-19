@@ -125,16 +125,18 @@ fn fixture(row: &Value) -> (Simulation, TargetLineState, TacticalViewport) {
             input["mode"].as_u64().unwrap_or(1) != 0,
         ),
     );
-    sim.session.current_house = input["local"].as_bool().unwrap_or(true).then_some(owner);
+    sim.session
+        .set_current_house_for_test(input["local"].as_bool().unwrap_or(true).then_some(owner));
     let mut house = crate::sim::house_state::HouseState::new(owner, 0, None, false, 0, 0);
     if let Some(flags) = input["campaign_flags"].as_array() {
         house.is_human = flags[0].as_bool().unwrap();
         house.player_control = flags[1].as_bool().unwrap();
     }
     sim.houses.register(house);
-    sim.session.binary_frame = input["frame"].as_u64().unwrap_or(100) as u32;
+    sim.session
+        .set_binary_frame_for_test(input["frame"].as_u64().unwrap_or(100) as u32);
     // The timer must consume the binary frame, independently of VERA's tick.
-    sim.session.tick = 999_999;
+    sim.session.set_tick_for_test(999_999);
     sim.resolved_terrain =
         Some(ResolvedTerrainGrid::from_cells(32, 32, cells).test_mark_decks_structural());
     {
@@ -254,7 +256,7 @@ fn drawing_fixture(
     for house in sim.houses.values_mut() {
         house.project_country_mults(&rules, &sim.interner);
     }
-    let frame = sim.session.binary_frame;
+    let frame = sim.session.binary_frame();
     let actor = sim.entities_mut().get_mut(1).unwrap();
     actor.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
     actor

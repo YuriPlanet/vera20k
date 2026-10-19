@@ -32,7 +32,7 @@ fn retail_paid_two_gap_wall_retains_constructor_identities_until_deferred_drain(
         .runtime
         .simulation
         .hash_state_every(crate::sim::replay::PLAY_HASH_INTERVAL);
-    let owner = scene.sim().session.current_house.unwrap();
+    let owner = scene.sim().session.current_house().unwrap();
     let owner_name = scene.sim().resolve(owner).to_owned();
     let wall_type = scene.sim().interner.get("GAWALL").unwrap();
     let orders: Vec<_> = profile["commands"]
@@ -193,7 +193,7 @@ fn retail_paid_owned_wall_replacement_clears_the_old_cell_attack_target() {
         .runtime
         .simulation
         .hash_state_every(crate::sim::replay::PLAY_HASH_INTERVAL);
-    let owner = scene.sim().session.current_house.unwrap();
+    let owner = scene.sim().session.current_house().unwrap();
     let owner_name = scene.sim().resolve(owner).to_owned();
     assert_eq!(owner_name, "VERA-OBSERVER");
     assert!(scene.sim().houses[&owner].is_human);
@@ -281,7 +281,7 @@ fn retail_paid_owned_wall_replacement_clears_the_old_cell_attack_target() {
         if step == 2210 {
             due.push(CommandEnvelope::new(
                 owner,
-                scene.sim().session.tick,
+                scene.sim().session.tick(),
                 Command::QueueProduction { type_id: wall_type },
             ));
         }
@@ -328,7 +328,7 @@ fn retail_paid_owned_wall_replacement_clears_the_old_cell_attack_target() {
             );
             due.push(CommandEnvelope::new(
                 owner,
-                sim.session.tick,
+                sim.session.tick(),
                 Command::PlaceReadyBuilding {
                     type_id: wall_type,
                     rx: source.0,
@@ -399,7 +399,7 @@ fn retail_paid_owned_wall_replacement_clears_the_old_cell_attack_target() {
             assert_eq!(wall_after_wait.overlay_data >> 4, 0);
             let attack = CommandEnvelope::new(
                 owner,
-                scene.sim().session.tick,
+                scene.sim().session.tick(),
                 Command::ForceAttackCell {
                     attacker_id: attacker,
                     target_rx: source.0,
@@ -433,7 +433,7 @@ fn retail_paid_owned_wall_replacement_clears_the_old_cell_attack_target() {
             let before_sell = scene.sim().houses[&owner].economy.credits();
             let sell = CommandEnvelope::new(
                 owner,
-                scene.sim().session.tick,
+                scene.sim().session.tick(),
                 Command::SellWallAtCell {
                     x: source.0 as i16,
                     y: source.1 as i16,

@@ -27,8 +27,8 @@ Push back briefly with evidence; respect informed decisions.
 
 Complete authorized work without routine approval. Resolve discoverable questions;
 ask only for missing authority or consequential, undiscoverable preferences.
-Research/review alone does not authorize implementation. Preserve scope amendments
-and stop instructions across continuations.
+Research/review alone does not authorize implementation. Preserve scope amendments,
+explicit exclusions and stop instructions across continuations.
 
 Be brief, plain and result-first.
 
@@ -102,7 +102,8 @@ retail INIs. Details: [retail INI reference](src/rules/mod.rs).
 
 Use the simplest implementation that fully satisfies the required behavior. Avoid
 unnecessary abstractions, duplicated logic and speculative features; prefer clarity
-over minimizing line count.
+over minimizing line count. Choose boundaries and abstractions by responsibility and
+consumers, not line/type counts or C++ structure.
 
 Prefer data-oriented design for simulation hot loops. Match gamemd's results, not its
 execution strategy: batch, vectorize or parallelize freely. Update order may differ
@@ -110,11 +111,10 @@ from gamemd's when it stays deterministic and causes no noticeable gameplay chan
 within one object's update, only for a profiled hot spot. Record each order change in
 its PR for side-by-side play.
 
-Choose boundaries and abstractions by responsibility and consumers, not line/type
-counts or C++ structure. Preserve state authority, lifecycle, tick phase order, timers,
-same-tick effects, persistence and numeric semantics under the policy below.
-Document and validate floating-point use where native behavior requires it.
-Storage order and active-object order are distinct.
+Preserve state authority, lifecycle, tick phase order, timers, same-tick effects,
+persistence and numeric semantics under the policy below. Document and validate
+floating-point use where native behavior requires it. Storage order and active-object
+order are distinct.
 
 All math must preserve simulation determinism across supported platforms and CPU
 architectures for identical state, inputs and RNG. Prefer `SimFixed` for simulation
@@ -133,11 +133,47 @@ tests reach it; only test modules and the hooks into them stay `#[cfg(test)]`.
 App code orchestrates without owning duplicate gameplay. Current module contracts
 and `advance_tick` phases describe the architecture. Name coordinate frames/units.
 
-Trace affected state and call chains. Keep refactoring within the selected chain;
-fix affected ownership, duplication and maintainability issues without unrelated
-redesign. Finish migrations, update consumers and remove duplicate/superseded code
-and state in the same change. Preserve intentional differences, validate affected
-paths and retain existing owners for shared dependencies still used elsewhere.
+Simulation state and shared decisions have one authoritative owner. Before adding
+state or decision logic, find existing writers and name the owner in the PR. Keep
+authoritative state private to its owning module and expose mutations through the
+owner. Extend or fix that owner instead of introducing competing state or duplicated
+decision logic, or widening visibility to reach its state or raw data.
+
+Before porting a native function, search the code for its address (e.g. `703850`) and
+native name. Each native function has one Rust port, and new callers call it. Never
+fork an owner: when an existing one is wrong for your chain, correct it for every
+caller (a change toward native is in scope, with evidence for each affected path) or
+use it as it is and record the residual. A change that adds a copy, a re-inlined body,
+a caller-specific wrapper or a competing owner is a defect to remove before merge; the
+critic checks for them.
+
+Derived caches and indexes are allowed when their source of truth, update or
+invalidation rules, and consistency validation are explicit.
+
+One owner completes one player-visible gameplay chain at a time through native
+evidence, implementation, production integration and review. Bound each chain to one
+common unit, weapon or screen path; other paths follow later. Prioritize by
+visibility and frequency. One chain is one PR: don't split a chain into several PRs
+or open one per gap, and don't stack unmerged implementation branches. Plans are
+optional; implementation authority includes design choices.
+
+Trace affected state, call chains and native dependencies across classes and
+subsystems wherever the selected behavior requires them: trigger, prerequisites,
+admission, effects, consumers and cleanup. Consider the surrounding architecture.
+Newly discovered prerequisite state, lifecycle transitions and call chains are in
+scope. Establish their initialization, updates, ordering and cleanup through the
+proper owners, fix missing or wrong prerequisites in the same change, and revise the
+implementation plan when evidence demands it. Leave a residual only for a large
+separate mechanism, and tell the user.
+
+Research may range wider and run ahead; implementation and refactoring stay on the
+current chain. Within it, fix affected ownership, duplication and maintainability
+issues without unrelated redesign. Finish migrations, update consumers and remove
+duplicate/superseded code and state in the same change. Preserve intentional
+differences, validate affected paths and retain existing owners for shared
+dependencies still used elsewhere. An outside contribution is bounded by its issue's
+stated done-criteria; prerequisites found beyond it become issues, not commits.
+Record unrelated findings as follow-ups.
 
 File `refactor` issues only for work outside the chain or too large for it; add
 `tooling` for tools, tests, CI or workflow. Search open issues for a match first.
@@ -145,52 +181,10 @@ Describe location, impact and work delayed, not a proposed fix. Comment only wit
 meaningful new evidence. Verify claims; correct or close false ones. Prioritize by
 recorded cost, and close or correct affected issues in the PR that changes them.
 
-Simulation state and shared decisions have one authoritative owner. Before adding
-state or decision logic, find existing writers and name the owner in the PR. Extend
-or fix that owner instead of introducing competing state or duplicated decision
-logic. Keep authoritative state private to its owning module and expose mutations
-through the owner. Never widen visibility to reach another owner's state or raw data;
-extend the owner instead.
-
-Before porting a native function, search the code for its address (e.g. `703850`) and
-native name. Each native function has one Rust port; new callers call it instead of
-adding a wrapper or re-inlining its body. Never fork an owner: when an existing one is
-wrong for your chain, correct it for every caller (a change toward native is in scope,
-with evidence for each affected path) or use it as it is and record the residual. A
-change that adds a copy, a caller-specific wrapper or a competing owner is a defect to
-remove before merge; the critic checks for them.
-
-Derived caches and indexes are allowed when their source of truth, update or
-invalidation rules, and consistency validation are explicit.
-
-One owner completes one player-visible gameplay chain at a time through native
-evidence, implementation, production integration and review. Trace trigger,
-prerequisites, admission, effects, consumers and cleanup across classes/subsystems.
-Bound each chain to one common unit, weapon or screen path; other paths follow
-later. Prioritize by visibility and frequency. Research may range wider;
-implementation stays on the current chain.
-
-Consider the surrounding architecture and consumers. Use integration evidence
-appropriate to the change, including runtime reproduction when needed. Reassess
-worsening fixes. Plans are optional; implementation authority includes design choices.
-
-Record the RNG draws, timer writes and detach calls the chain passes in its residuals
-or ledger row, even when they are not ported. Behavior invented where a native body
-exists is a recorded residual with a reason, never a silent default.
-
-Follow native dependencies across subsystem and class boundaries wherever the selected
-behavior requires them. Newly discovered prerequisite state, lifecycle transitions and
-call chains are in scope. Establish their initialization, updates, ordering and cleanup
-through the proper owners, and revise the implementation plan when evidence demands it.
-Fix missing or wrong prerequisites in the same change; leave a residual only for a large
-separate mechanism, and tell the user. An outside contribution is bounded by its issue's
-stated done-criteria; prerequisites found beyond it become issues, not commits.
-Preserve explicit user exclusions and stop instructions; record unrelated findings as
-follow-ups.
-
-One chain is one PR: don't split a chain into several PRs or open one per gap, and
-don't stack unmerged implementation branches (researching ahead is fine).
-Residuals name trigger, effect, frequency and downstream risk; deferring required loop or
+Residuals name trigger, effect, frequency and downstream risk. Record the RNG draws,
+timer writes and detach calls the chain passes in its residuals or ledger row, even
+when they are not ported. Behavior invented where a native body exists is a recorded
+residual with a reason, never a silent default. Deferring required loop or
 determinism/authority/lifecycle work cannot close that loop.
 
 Delegate independent work with clear ownership. Changes to gameplay behavior get one
@@ -220,7 +214,8 @@ After each fetch, fast-forward `<main-checkout>` (`merge --ff-only origin/main`)
 `main` without tracked changes or a Cargo run; sessions load this contract from it.
 
 Choose validation appropriate to the change, considering native fidelity, connected
-production behavior and protection against regressions.
+production behavior (with runtime reproduction when needed) and protection against
+regressions. Reassess worsening fixes.
 
 Avoid tests that merely mirror the implementation or require maintaining a second implementation of the same logic.
 Before fixing a bug whose expected behavior is established, first make a focused test fail on it where practical.
@@ -229,8 +224,8 @@ Before fixing a bug whose expected behavior is established, first make a focused
 Skip `cargo check` when a planned test answers the same question.
 
 - Working Rust: start with focused
-  `cargo test -p <crate> --lib <module_path>::`, where `<crate>` is `vera20k-core`
-  for engine modules and `vera20k` for `app`, `render`, `ui`, `audio` and `asset_tools`.
+  `cargo test -p <crate> --lib <module_path>::`, where `<crate>` is the module's crate
+  from the split above (`vera20k-core` or `vera20k`).
 - Rust PR readiness: after any critic fixes, focused tests for the modules the change
   touches and their direct consumers, with retail `ini/` and
   `VERA20K_REQUIRE_RETAIL_INI=1`; no baseline runs. The full
@@ -252,19 +247,15 @@ Run Cargo through `python -m tools.cargo_run -- <cargo arguments>` from the chec
 It waits for other builds and serializes cooperating worktrees; do not compete with or
 kill a compile. Each compile blocks every other session's Cargo until it finishes, so
 batch edits and run the narrowest command that answers your question.
-Default to unlabelled builds; label only active comparison, capture or debugging binaries.
 Build captures and play-tests with `--profile fast`, timing and performance numbers with
-`--release`; retain debug tests selectively. Reference hashes, manifests and results
-without extra executable copies. Dry-run retirement only when retiring owned labels
-or investigating disk pressure; preserve required binaries, dependencies and evidence.
-Resolve unmet minimum free space before another large build; follow the
-[retention procedure](tools/README.md#cargo-ownership-and-labeled-builds). Run
-`python -m tools.prepare_checkout` in a new worktree or clone.
+`--release`. Default to unlabelled builds; saved builds, their retirement and low free
+space follow the [Cargo ownership procedure](tools/README.md#cargo-ownership-and-labeled-builds).
+Run `python -m tools.prepare_checkout` in a new worktree or clone.
 Format edited leaf files only (`rustfmt --edition 2024 <file>`), never crate-wide
 or recursive `mod.rs`. Coordinate snapshot versions/rebaselines; exclude others' WIP.
 
-Don't poll: each check re-reads the whole session context. `cargo_run` already waits
-for other builds, so run no separate process checks. Wait for a long command or CI
+Don't poll: each check re-reads the whole session context. Run no separate build
+process checks. Wait for a long command or CI
 through one blocking call or the host's completion notice, not `sleep`/`until` loops
 or repeated status queries. When merging is authorized, enable auto-merge on the
 validated PR (`gh pr merge <number> --auto --merge`) and move on; GitHub merges it

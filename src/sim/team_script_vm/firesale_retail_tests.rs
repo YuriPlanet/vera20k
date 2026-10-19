@@ -107,7 +107,7 @@ fn authored_team_fire_sale_waits_for_strategy_then_sells_and_hunts() {
         assert!(rules.has_buildup("NAHAND") && rules.has_buildup("NAPOWR"));
         let sim = scene.sim();
         let computer = sim.scenario_house_named("Computer").unwrap();
-        let local = sim.session.current_house.unwrap();
+        let local = sim.session.current_house().unwrap();
         let team_type = sim.interner.get("F0520001").unwrap();
         let script = sim.interner.get("F0520002").unwrap();
         assert_eq!(
@@ -142,7 +142,7 @@ fn authored_team_fire_sale_waits_for_strategy_then_sells_and_hunts() {
         let mut sold_events = 0;
         for _ in 0..400 {
             let sim = scene.sim();
-            let native_frame = sim.session.binary_frame as i32;
+            let native_frame = sim.session.binary_frame() as i32;
             let before = sim.houses[&computer].strategy_emergency;
             let before_timer = sim.houses[&computer].strategy_timer;
             let before_economy_mode = sim.houses[&computer].ai_production.mode();
@@ -206,7 +206,7 @@ fn authored_team_fire_sale_waits_for_strategy_then_sells_and_hunts() {
                     );
                     assert_eq!(team.advance_pending(), action == 30);
                     assert!(team.refusal().is_none());
-                    dispatch = Some((sim.session.binary_frame, team.id()));
+                    dispatch = Some((sim.session.binary_frame(), team.id()));
                 }
                 next_line |= team.cursor() == 1;
             }
@@ -215,7 +215,7 @@ fn authored_team_fire_sale_waits_for_strategy_then_sells_and_hunts() {
             }
             if response.is_none() && house.strategy_emergency.all_to_hunt_bias() {
                 assert_eq!(action, 30);
-                assert!(sim.session.binary_frame > dispatch.unwrap().0);
+                assert!(sim.session.binary_frame() > dispatch.unwrap().0);
                 assert!(before_timer.expired(native_frame));
                 assert_eq!(house.strategy_timer.start_frame(), native_frame);
                 assert!(house.strategy_timer.duration() > 0);
@@ -230,7 +230,7 @@ fn authored_team_fire_sale_waits_for_strategy_then_sells_and_hunts() {
                     Some(MissionType::Hunt)
                 );
                 assert_eq!(sim.team_script_vm.team_for_member(rifle), None);
-                response = Some(sim.session.binary_frame);
+                response = Some(sim.session.binary_frame());
             }
         }
         assert!(

@@ -34,7 +34,7 @@ fn simulation(rules: &RuleSet) -> (Simulation, InternedId) {
         .register(crate::sim::house_state::HouseState::new(
             owner, 0, None, true, 50_000, 10,
         ));
-    sim.session.current_house = Some(owner);
+    sim.session.set_current_house_for_test(Some(owner));
     sim.scenario_rng = crate::sim::rng::SimRng::new(0);
     (sim, owner)
 }

@@ -103,7 +103,8 @@ fn edit_append_commit_preserves_missions_and_shares_same_frame_nodes() {
     let commit = sim.encode_plan_commit_record(owner).unwrap();
     apply(&mut sim, &rules, commit);
     assert!(sim.planning_paths(owner).iter().all(|view| !view.editing));
-    sim.session.binary_frame += 1;
+    sim.session
+        .set_binary_frame_for_test(sim.session.binary_frame() + 1);
     append(&mut sim, &rules, owner, 1, (16, 15));
     assert_eq!(sim.planning.paths[&1].pending, 1);
     assert_eq!(sim.planning_paths(owner)[0].cells, vec![(12, 15), (16, 15)]);
@@ -121,7 +122,7 @@ fn fixture() -> (Simulation, RuleSet, InternedId) {
         .register(crate::sim::house_state::HouseState::new(
             owner, 0, None, true, 0, 10,
         ));
-    sim.session.current_house = Some(owner);
+    sim.session.set_current_house_for_test(Some(owner));
     for actor in 1..=3 {
         assert_eq!(sim.allocate_stable_id(), actor);
         crate::sim::world::lifecycle_tests::insert_entity(
@@ -145,7 +146,7 @@ fn fixture() -> (Simulation, RuleSet, InternedId) {
 
 fn apply(sim: &mut Simulation, rules: &RuleSet, record: CommandRecord) {
     let envelope = sim
-        .decode_native_command_record(&record, sim.session.tick)
+        .decode_native_command_record(&record, sim.session.tick())
         .unwrap();
     assert!(sim.apply_command("Americans", &envelope.payload, Some(rules)));
 }
@@ -246,7 +247,7 @@ fn special_ordinary_retask_cancels_shared_route(kind: &str) {
         .register(crate::sim::house_state::HouseState::new(
             owner, 0, None, true, 0, 10,
         ));
-    sim.session.current_house = Some(owner);
+    sim.session.set_current_house_for_test(Some(owner));
     let actor = sim
         .spawn_object("PLANNER", "Americans", 15, 15, 0, &rules)
         .unwrap();
@@ -457,12 +458,12 @@ fn guard_commit_consumes_first_node_stages_deliberate_and_retains_next_node() {
         Some(crate::sim::mission::MissionType::Deliberate)
     );
     assert!(sim.take_due_commands().is_empty());
-    sim.session.tick += 1;
+    sim.session.set_tick_for_test(sim.session.tick() + 1);
     let due = sim.take_due_commands();
     assert_eq!(due.len(), 1);
-    assert_eq!(due[0].execute_tick, sim.session.tick + 1);
+    assert_eq!(due[0].execute_tick, sim.session.tick() + 1);
     assert!(matches!(&due[0].payload, Command::PlanningRecord { record }
-        if record.payload()[22] == 2 && record.frame_stamp() == sim.session.binary_frame as i32 + 1));
+        if record.payload()[22] == 2 && record.frame_stamp() == sim.session.binary_frame() as i32 + 1));
 }
 
 #[test]
@@ -545,13 +546,13 @@ fn ownership_transfer_detaches_path_preserves_generated_event_and_restores_snaps
     assert_eq!(restored.state_hash(), hash);
     assert!(!restored.planning.paths.contains_key(&1));
     assert_eq!(restored.planning_paths(owner)[0].cells, vec![(20, 15)]);
-    sim.session.tick += 1;
+    sim.session.set_tick_for_test(sim.session.tick() + 1);
     let due = sim.take_due_commands();
     assert_eq!(due, generated);
     sim.apply_due_commands(
         &due,
         Some(&rules),
-        sim.session.tick + 1,
+        sim.session.tick() + 1,
         None,
         crate::sim::world::FrameEffects::default(),
     );
@@ -604,12 +605,12 @@ fn same_batch_commit_precedes_staged_edit_and_next_batch_commit_starts_path() {
         2,
         Command::PlanningRecord { record: commit },
     )];
-    sim.session.tick = 1;
+    sim.session.set_tick_for_test(1);
     sim.apply_due_commands(&batch, Some(&rules), 2, None, FrameEffects::default());
     assert_eq!(sim.planning.paths[&1].pending, -1);
     assert!(sim.planning.paths[&1].executing);
     assert!(sim.take_due_commands().is_empty());
-    sim.session.tick += 1;
+    sim.session.set_tick_for_test(sim.session.tick() + 1);
     let due = sim.take_due_commands();
     assert_eq!(due.len(), 1);
     assert!(
@@ -697,7 +698,7 @@ fn two_planned_move_legs_progress_through_spawn_and_master_frame_lifecycle() {
         .register(crate::sim::house_state::HouseState::new(
             owner, 0, None, true, 0, 10,
         ));
-    sim.session.current_house = Some(owner);
+    sim.session.set_current_house_for_test(Some(owner));
     let actor = sim
         .spawn_object_with_overlay_registry("PLANNER", "Americans", 15, 15, 0, &rules, &registry)
         .unwrap();
@@ -708,7 +709,7 @@ fn two_planned_move_legs_progress_through_spawn_and_master_frame_lifecycle() {
     let record = sim.encode_plan_commit_record(owner).unwrap();
     let commit = CommandEnvelope::new(
         owner,
-        sim.session.tick + 1,
+        sim.session.tick() + 1,
         Command::PlanningRecord { record },
     );
     let grid = sim.path_grid.clone();
@@ -1089,7 +1090,7 @@ fn planned_force_attack_preserves_admitted_friendly_target_through_native_dispat
     append(&mut sim, &rules, owner, 1, (16, 15));
     let commit = sim.encode_plan_commit_record(owner).unwrap();
     apply(&mut sim, &rules, commit);
-    sim.session.tick += 1;
+    sim.session.set_tick_for_test(sim.session.tick() + 1);
     let due = sim.take_due_commands();
     assert_eq!(due.len(), 1);
     assert!(
@@ -1154,7 +1155,7 @@ fn captured_actor_path_commits_for_current_house_and_preserves_original_issuer()
         );
     let record = sim.encode_plan_commit_record(new_owner).unwrap();
     let envelope = sim
-        .decode_native_command_record(&record, sim.session.tick)
+        .decode_native_command_record(&record, sim.session.tick())
         .unwrap();
     assert!(sim.apply_command("Russians", &envelope.payload, Some(&rules)));
     let generated = sim.pending_command_snapshot();
@@ -1166,7 +1167,7 @@ fn captured_actor_path_commits_for_current_house_and_preserves_original_issuer()
     let bytes = save_codec::serialize(&sim.planning).unwrap();
     sim.planning = save_codec::deserialize(&bytes).unwrap();
     sim.validate_planning_references().unwrap();
-    sim.session.tick += 1;
+    sim.session.set_tick_for_test(sim.session.tick() + 1);
     let due = sim.take_due_commands();
     assert!(sim.apply_command("Americans", &due[0].payload, Some(&rules)));
     assert_eq!(
@@ -1739,14 +1740,14 @@ fn retained_highlight_keeps_hidden_node_coordinates_and_full_membership() {
         )
         .unwrap();
     let envelope = sim
-        .decode_native_command_record(&record, sim.session.tick)
+        .decode_native_command_record(&record, sim.session.tick())
         .unwrap();
     assert!(sim.apply_command("Russians", &envelope.payload, Some(&rules)));
     // Connect receiver639800 resolves actors without an owner gate. The node
     // remains hidden by its FIRST member while containing a visible actor.
     let connect = sim.encode_plan_connect_record(enemy, 1, (12, 15)).unwrap();
     let envelope = sim
-        .decode_native_command_record(&connect, sim.session.tick)
+        .decode_native_command_record(&connect, sim.session.tick())
         .unwrap();
     assert!(sim.apply_command("Russians", &envelope.payload, Some(&rules)));
     let coord = sim.planning_node_coords(0).unwrap();

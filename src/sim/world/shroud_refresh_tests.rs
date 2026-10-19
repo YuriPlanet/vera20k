@@ -24,7 +24,7 @@ fn fixture(topology: &Value) -> (Simulation, InternedId, InternedId) {
     sim.mapgen_rng = crate::sim::rng::SimRng::new(31);
     let player = sim.interner.intern("Player");
     let other = sim.interner.intern("Other");
-    sim.session.current_house = Some(player);
+    sim.session.set_current_house_for_test(Some(player));
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false));
     for (owner, human) in [(player, true), (other, false)] {
@@ -80,7 +80,7 @@ fn actor(
     // This is its declared constructor prestate, not an alternative producer.
     entity
         .discovery
-        .set_owned_by_current_house_for_test(Some(owner) == sim.session.current_house);
+        .set_owned_by_current_house_for_test(Some(owner) == sim.session.current_house());
     sim.substrate.entities.insert(entity)
 }
 
@@ -207,7 +207,7 @@ fn native_trigger_conceal_circle_and_immediate_two_pass_sweep_match_original() {
         let input = &row["input"];
         let topology = conceal_topology(&corpus, input);
         let (mut sim, player, _) = fixture(&topology);
-        sim.session.binary_frame = 119; // Action101 must not wait for the120 rung.
+        sim.session.set_binary_frame_for_test(119); // Action101 must not wait for the120 rung.
         sim.install_playfield_from_map_header(&crate::map::map_file::MapHeader {
             theater: "TEMPERATE".into(),
             fill: "Clear".into(),
@@ -335,10 +335,10 @@ fn periodic_conceal_shares_the_full_sweep_and_preserves_viewer_planes() {
     sim.fog
         .by_owner
         .insert(other, other_fog.by_owner[&other].clone());
-    sim.session.binary_frame = 119;
+    sim.session.set_binary_frame_for_test(119);
     sim.tick_pending_shroud_conceal(UninitContext::default());
     assert!(sim.fog.is_ground_unshrouded(player, 1, 4));
-    sim.session.binary_frame = 120;
+    sim.session.set_binary_frame_for_test(120);
     let (_, calls) =
         trace_reveal_calls(|| sim.tick_pending_shroud_conceal(UninitContext::default()));
     assert!(!sim.fog.is_ground_unshrouded(player, 1, 4));
@@ -621,7 +621,7 @@ fn native_trigger_reveal_whole_area_histories_match_original_cache_and_residents
                 &config,
                 UninitContext::default(),
                 crate::sim::vision::MapRevealProjection::Transient,
-                sim.session.current_house,
+                sim.session.current_house(),
             );
             for state in history["states"].as_array().unwrap() {
                 assert_native_cell_history(
@@ -719,7 +719,7 @@ fn native_trigger_reveal_building_owner_entry_and_virtual_override_match_origina
         let input = &row["input"];
         let (mut sim, _, owner) = fixture(&input["topology"]);
         if input["player_null"] == true {
-            sim.session.current_house = None;
+            sim.session.set_current_house_for_test(None);
         }
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
@@ -897,7 +897,7 @@ fn reveal_entire_map_walks_the_size_diamond_and_notifies_each_cell() {
     let mut sim = Simulation::with_seed(31);
     let player = sim.interner.intern("Player");
     let other = sim.interner.intern("Other");
-    sim.session.current_house = Some(player);
+    sim.session.set_current_house_for_test(Some(player));
     // A campaign CellPUT discovers only on unshrouded ground, so the resident
     // stays undiscovered until the walk reaches its cell.
     sim.session
@@ -1021,7 +1021,7 @@ impl EdgeScript {
             .into_iter()
             .map(|name| sim.interner.intern(name))
             .collect();
-        sim.session.current_house = Some(viewers[0]);
+        sim.session.set_current_house_for_test(Some(viewers[0]));
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false),
         );
@@ -1175,7 +1175,10 @@ fn scripted_edge_updates() -> Vec<Value> {
                 save_codec::deserialize(&save_codec::serialize(&script.sim.fog).unwrap()).unwrap();
         }
         script.write(round);
-        script.sim.session.binary_frame = 120 * (round + 1);
+        script
+            .sim
+            .session
+            .set_binary_frame_for_test(120 * (round + 1));
         let ((), calls) = trace_reveal_calls(|| {
             script
                 .sim

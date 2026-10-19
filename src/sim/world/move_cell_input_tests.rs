@@ -519,7 +519,7 @@ fn a_move_onto_a_tank_walks_the_gi_beside_it() {
     let start = distance(&sim);
     sim.queue_command(crate::sim::command::CommandEnvelope::new(
         owner,
-        sim.session.tick,
+        sim.session.tick(),
         crate::sim::command::Command::MoveToObject {
             entity_id: gi,
             target_id: target,
@@ -571,13 +571,13 @@ impl Simulation {
             .register(crate::sim::house_state::HouseState::new(
                 owner, 0, None, true, 0, 10,
             ));
-        sim.session.current_house = Some(owner);
-        sim.session.binary_frame = 100;
+        sim.session.set_current_house_for_test(Some(owner));
+        sim.session.set_binary_frame_for_test(100);
         // Infantry-only contenders need Long Game: Short Game correctly
         // defeats both Houses without a building or BaseUnit.
-        sim.session.game_options.short_game = false;
-        sim.session.map_width = 16;
-        sim.session.map_height = 16;
+        sim.session.game_options_mut_for_test().short_game = false;
+        sim.session.set_map_width_for_test(16);
+        sim.session.set_map_height_for_test(16);
         // Native Unlimbo now publishes sight synchronously. Allocate the map
         // domain before either source can create a viewer plane/cache.
         sim.fog = crate::sim::vision::FogState::new(16, 16);

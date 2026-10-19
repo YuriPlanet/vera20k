@@ -178,9 +178,13 @@ fn run_native_action(
         ));
     // Original Scenario+1180 storage supplied by the native fixture: slot0
     // resolves registered House1, slot1 House0, and slots2..7 are absent.
-    sim.session.start_slot_houses.clear();
-    sim.session.start_slot_houses.insert(0, houses[1]);
-    sim.session.start_slot_houses.insert(1, houses[0]);
+    sim.session.start_slot_houses_mut_for_test().clear();
+    sim.session
+        .start_slot_houses_mut_for_test()
+        .insert(0, houses[1]);
+    sim.session
+        .start_slot_houses_mut_for_test()
+        .insert(1, houses[0]);
     super::tests::install_event_ingress_map(
         sim,
         rules,
@@ -410,7 +414,8 @@ fn ai_activation_replays_original_action_to_timer_selector_histories() {
             let update = &step["update"];
             let owner = houses[update["house"].as_u64().unwrap() as usize];
             assert_house_summary(&sim, owner, &update["before"], &context);
-            sim.session.binary_frame = number(&update["frame"]) as u32;
+            sim.session
+                .set_binary_frame_for_test(number(&update["frame"]) as u32);
             let before_ids: Vec<_> = sim
                 .team_script_vm
                 .teams_in_order()
@@ -675,7 +680,8 @@ fn retail_all05_elapsed_stop_keeps_explicit_teams_and_saved_activation() {
     assert!(timer.duration() > 0);
     // This is a Rust integration deadline from the already ported timer,
     // not a new native240-second timer golden or whole-map scheduling claim.
-    sim.session.binary_frame = timer.start_frame().wrapping_add(timer.duration()) as u32;
+    sim.session
+        .set_binary_frame_for_test(timer.start_frame().wrapping_add(timer.duration()) as u32);
     let before = GameSnapshot::save(&sim, 0, 0, "ALL05UMD.MAP", 0);
     let mut restored = GameSnapshot::load(&before).unwrap().sim;
     restored.restore_after_snapshot_load().unwrap();
@@ -760,7 +766,7 @@ fn retail_all05_elapsed_stop_keeps_explicit_teams_and_saved_activation() {
             FrameEffects::default()
         ));
         assert!(candidate.team_script_vm.teams_in_order().count() > count);
-        let frame = candidate.session.binary_frame as i32;
+        let frame = candidate.session.binary_frame() as i32;
         let mut rng_check = candidate.scenario_rng.clone();
         for id in &targets {
             let house = candidate.houses.get_mut(id).unwrap();
@@ -1166,7 +1172,7 @@ fn house_trigger_ratio_original_writer_and_due_selector_keep_signed_values_timer
         );
         assert_eq!(serde_json::to_value(&sim.houses[&enemy]).unwrap(), other);
         assert_rng(&sim, &corpus()["actions"]["rng_full_seed31"], raw);
-        sim.session.binary_frame = 9;
+        sim.session.set_binary_frame_for_test(9);
         crate::sim::ai_team_creation::update_team_creation(
             &mut sim,
             &rules,
@@ -1174,7 +1180,7 @@ fn house_trigger_ratio_original_writer_and_due_selector_keep_signed_values_timer
             FrameEffects::default(),
         );
         assert_rng(&sim, &corpus()["actions"]["rng_full_seed31"], "not yet due");
-        sim.session.binary_frame = 10;
+        sim.session.set_binary_frame_for_test(10);
         let main = sim.main_rng.native_state_hex();
         let mapgen = sim.mapgen_rng.native_state_hex();
         crate::sim::ai_team_creation::update_team_creation(
@@ -1329,7 +1335,7 @@ fn house_team_controls_ordered_tag_history_preserves_native_due_selection_and_sa
         );
     }
 
-    sim.session.binary_frame = 10;
+    sim.session.set_binary_frame_for_test(10);
     crate::sim::ai_team_creation::update_team_creation(
         &mut sim,
         &rules,

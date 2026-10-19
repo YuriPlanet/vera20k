@@ -122,7 +122,7 @@ impl Simulation {
         if source_entity.category() == EntityCategory::Aircraft
             || (human && !rules.general.player_return_fire)
         {
-            let frame = self.session.binary_frame;
+            let frame = self.session.binary_frame();
             let rotating = building.body_facing.is_rotating(frame);
             if !rotating && self.building_operational_state(id, rules) == Some(true) {
                 let direction = ((self.scenario_rng.next_u32() & 0xFF) as u16) << 8;

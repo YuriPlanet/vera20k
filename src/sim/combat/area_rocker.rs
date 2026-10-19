@@ -151,7 +151,7 @@ pub(super) fn apply(
                     Some(RockerImpulse {
                         position,
                         origin,
-                        body_facing: entity.body_facing_current(world.session.binary_frame),
+                        body_facing: entity.body_facing_current(world.session.binary_frame()),
                         force,
                         weight: object.weight,
                         no_dampen: false,
@@ -301,7 +301,7 @@ mod tests {
                 let p = ground_pose::object_location(entity, world.resolved_terrain.as_ref());
                 assert_eq!([p.x, p.y, p.z], xyz(&resident["position"]));
                 assert_eq!(
-                    u64::from(entity.body_facing_current(world.session.binary_frame)),
+                    u64::from(entity.body_facing_current(world.session.binary_frame())),
                     resident["facing"].as_u64().unwrap()
                 );
                 targets.push((resident["name"].as_str().unwrap(), id));

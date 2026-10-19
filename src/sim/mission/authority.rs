@@ -325,7 +325,7 @@ fn evaluate_ready(
             rules.map(|rules| {
                 crate::sim::movement::SpeedRules::new(rules, &sim.interner, &sim.houses)
             }),
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
         )
         .or(if degraded_moving_gate {
             Some(DEGRADED_NOT_MOVING)
@@ -1590,7 +1590,8 @@ mod tests {
                         0,
                         true,
                     ));
-                sim.session.binary_frame = row["input"]["frame"].as_u64().unwrap() as u32;
+                sim.session
+                    .set_binary_frame_for_test(row["input"]["frame"].as_u64().unwrap() as u32);
                 sim.scenario_rng = SimRng::new(row["input"]["seed"].as_u64().unwrap());
                 assert_eq!(sim.scenario_rng.native_state_hex(), row["rng_before"]);
 

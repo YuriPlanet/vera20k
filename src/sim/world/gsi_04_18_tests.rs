@@ -139,7 +139,7 @@ fn take_centered_cues(sim: &mut Simulation) -> Vec<String> {
 #[test]
 fn gsi_04_18_local_uplink_edges_emit_registered_centered_cues() {
     let (mut sim, mut rules, owner) = fixture();
-    sim.session.current_house = Some(owner);
+    sim.session.set_current_house_for_test(Some(owner));
     let references = IniFile::from_str(
         "[AudioVisual]\nSpySatActivationSound=Online\nSpySatDeactivationSound=Offline\n",
     );
@@ -195,14 +195,14 @@ fn gsi_04_18_remote_unbound_and_retained_active_uplinks_are_silent() {
     let viewer = sim.interner.intern("OtherHuman");
     sim.houses
         .register(HouseState::new(viewer, 1, None, true, 10_000, 10));
-    sim.session.current_house = Some(viewer);
+    sim.session.set_current_house_for_test(Some(viewer));
     sim.reconcile_active_vision_structures(&rules);
     assert!(sim.houses[&owner].spy_sat_active);
     assert!(
         take_centered_cues(&mut sim).is_empty(),
         "human remote House is not PlayerPtr"
     );
-    sim.session.current_house = Some(owner);
+    sim.session.set_current_house_for_test(Some(owner));
     sim.reconcile_active_vision_structures(&rules);
     assert!(
         take_centered_cues(&mut sim).is_empty(),
@@ -281,7 +281,7 @@ fn gsi_04_18_spy_sat_candidate_is_independent_of_low_or_offline_power() {
     insert_structure(&mut sim, 1, owner, "GASPYSAT", 6);
     let power = sim.power_states.entry(owner).or_default();
     power.is_low_power = true;
-    power.start_blackout(sim.session.binary_frame, 30);
+    power.start_blackout(sim.session.binary_frame(), 30);
 
     sim.reconcile_active_vision_structures(&rules);
 
@@ -427,7 +427,7 @@ fn shroud_current_sight_world_collector_and_native_frame_restore() {
     assert!(!sim.fog.is_cell_gap_covered(owner, 12, 12));
     // Actual entity-source departure occurs after an early frame120 sweep:
     // the frame's object work Limbos the source, whose ReReveal leaves.
-    sim.session.binary_frame = 120;
+    sim.session.set_binary_frame_for_test(120);
     sim.advance_tick(&[], None, None, None, 67);
     sim.release_object_sight_with_context(2, UninitContext::default());
     sim.substrate
@@ -450,7 +450,7 @@ fn shroud_current_sight_world_collector_and_native_frame_restore() {
     let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
     assert_eq!(restored.state_hash(), hash);
     restored.restore_after_snapshot_load().unwrap();
-    restored.session.binary_frame = 239;
+    restored.session.set_binary_frame_for_test(239);
     restored.advance_tick(&[], None, None, None, 67);
     assert!(restored.fog.is_cell_revealed(owner, 12, 12));
     restored.advance_tick(&[], None, None, None, 67);
@@ -536,7 +536,7 @@ fn shroud_current_sight_psychic_under_existing_gap_waits_for_native_boundary() {
     sim.reconcile_active_vision_structures(&rules);
     assert!(sim.fog.is_cell_revealed(owner, 12, 12));
     assert!(!sim.fog.is_cell_gap_covered(owner, 12, 12));
-    sim.session.binary_frame = 119;
+    sim.session.set_binary_frame_for_test(119);
     sim.advance_tick(&[], None, None, None, 67);
     assert!(sim.fog.is_cell_revealed(owner, 12, 12));
     sim.advance_tick(&[], None, None, None, 67);
@@ -776,7 +776,7 @@ fn shroud_current_sight_live_foot_timer_keeps_viewer_histories_and_snapshot() {
             .timer(a),
         CdTimer::started(104, 15)
     );
-    sim.session.binary_frame = 119;
+    sim.session.set_binary_frame_for_test(119);
     sim.set_logic_order_for_test(vec![2]);
     sim.advance_live_object_pass(None, None, crate::sim::world::FrameEffects::default())
         .expect("fixture frame must complete");
@@ -855,7 +855,7 @@ fn shroud_current_sight_live_refresh_gates_preserve_or_reload_native_timer() {
         .set_current_speed(SimFixed::from_num(1));
     sim.substrate.entities.get_mut(2).unwrap().locomotor = Some(loco);
     sim.set_object_height_unmarked(2, 207);
-    sim.session.binary_frame = 119;
+    sim.session.set_binary_frame_for_test(119);
     sim.refresh_high_flying_sight_before_process(2, None);
     assert_eq!(
         sim.substrate
@@ -921,7 +921,7 @@ fn shroud_current_sight_live_refresh_gates_preserve_or_reload_native_timer() {
         .unwrap()
         .lifecycle
         .set_in_limbo_for_test(true);
-    sim.session.binary_frame = 134;
+    sim.session.set_binary_frame_for_test(134);
     sim.refresh_high_flying_sight_before_process(2, None);
     assert_eq!(
         sim.substrate

@@ -876,7 +876,7 @@ mod tests {
             sim.houses
                 .register(HouseState::new(owner, 1, None, false, 50_000, 10));
         }
-        sim.session.current_house = Some(viewer);
+        sim.session.set_current_house_for_test(Some(viewer));
         crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
         sim.fog = crate::sim::vision::FogState::new(32, 32);
         sim.fog

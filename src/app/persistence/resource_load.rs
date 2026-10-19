@@ -98,11 +98,9 @@ impl PreparedSavedGame {
         let mut saved_view = snapshot
             .take_local_view()
             .ok_or(SnapshotError::MissingLocalView)?;
-        let power_bar_anim = PowerBarAnimState::from_saved(
-            saved_view.take_power_bar().ok_or(
-                crate::sim::snapshot::saved_local_view::SavedLocalViewError::MissingPowerBar,
-            )?,
-        )?;
+        let power_bar_anim = PowerBarAnimState::from_saved(saved_view.take_power_bar().ok_or(
+            crate::sim::snapshot::saved_local_view::SavedLocalViewError::MissingPowerBar,
+        )?)?;
         if saved.fixed_art_hash() != view.rules_owner.fixed_art().content_hash() {
             return Err(PreparedLoadError::Resources(
                 "fixed ARTMD differs from the saved game".into(),
@@ -111,15 +109,15 @@ impl PreparedSavedGame {
         saved.terrain().validate()?;
         if saved.terrain().dimensions()
             != (
-                snapshot.sim.session.map_width,
-                snapshot.sim.session.map_height,
+                snapshot.sim.session.map_width(),
+                snapshot.sim.session.map_height(),
             )
         {
             return Err(PreparedLoadError::Resources(
                 "saved terrain and scenario dimensions disagree".into(),
             ));
         }
-        let theater_name = snapshot.sim.session.theater.clone();
+        let theater_name = snapshot.sim.session.theater().to_owned();
         let theater = theater::load_theater(assets, &theater_name).ok_or_else(|| {
             PreparedLoadError::Resources(format!("cannot load theater {theater_name}"))
         })?;
@@ -256,7 +254,7 @@ impl PreparedSavedGame {
             ..
         } = &candidate;
         let rules = &resources.rules;
-        let theater_name = &world.simulation.session.theater;
+        let theater_name = &world.simulation.session.theater();
         let terrain = world
             .simulation
             .resolved_terrain

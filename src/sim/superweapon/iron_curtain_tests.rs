@@ -384,7 +384,7 @@ fn the_launch_matches_native() {
                 .is_ready = false;
         }
         sim.sound_events.clear();
-        let frame = sim.session.binary_frame as i32;
+        let frame = sim.session.binary_frame() as i32;
         let cell = (target.0 as u16, target.1 as u16);
         let paralysis_before: Vec<Option<(i32, i32)>> = ids
             .iter()
@@ -530,7 +530,7 @@ fn the_overrides_match_native() {
         rules.general.iron_curtain_duration = int(&row["duration"]);
         let (rules, mut sim, owner) = world_with(rules, 64, &[]);
         let frame = int(&row["frame"]);
-        sim.session.binary_frame = frame as u32;
+        sim.session.set_binary_frame_for_test(frame as u32);
         let victim = sim
             .spawn_object_at_height(kind, "Americans", 40, 40, 0, 0, &rules)
             .unwrap_or_else(|| panic!("{kind} stands for {row}"));
@@ -781,7 +781,7 @@ fn retail_iron_curtain_through_production_frames() {
         .spawn_object_at_height("E2", "Russians", 41, 40, 0, 0, &rules)
         .unwrap();
     let sw_type = charge_super(&mut sim, russians, IRON_CURTAIN);
-    let launch_frame = sim.session.binary_frame as i32;
+    let launch_frame = sim.session.binary_frame() as i32;
     click(&mut sim, &rules, russians, IRON_CURTAIN, (40, 40));
 
     let launch: Vec<&SimSoundEvent> = sim

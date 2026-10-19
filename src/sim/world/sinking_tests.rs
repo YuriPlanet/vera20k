@@ -59,7 +59,8 @@ fn native_sink_suffix_preserves_cadence_coordinates_and_complete_rng_states() {
         let expected = &row["output"];
         let name = input["name"].as_str().unwrap();
         let (mut sim, rules, id) = fixture(input["relative_z"].as_i64().unwrap_or(0) as i32);
-        sim.session.binary_frame = input["frame"].as_u64().unwrap() as u32;
+        sim.session
+            .set_binary_frame_for_test(input["frame"].as_u64().unwrap() as u32);
         let seed = input["seed"].as_u64().unwrap_or(1);
         sim.main_rng = SimRng::new(seed).into();
         sim.scenario_rng = SimRng::new(seed);
@@ -128,7 +129,7 @@ fn sinking_state_is_hashed_and_survives_snapshot() {
     use crate::sim::snapshot::GameSnapshot;
 
     let (mut sim, rules, id) = fixture(-125);
-    sim.session.map_name = "SINK.MAP".to_owned();
+    sim.session.set_map_name_for_test("SINK.MAP".to_owned());
     // Both futures begin with the production rule handles initialized. Their
     // warhead names must already be interned when the first wake is allocated.
     sim.intern_rule_type_ids(&rules);
@@ -165,8 +166,8 @@ fn sinking_state_is_hashed_and_survives_snapshot() {
             .sound_edge_seen()
     );
     for frame in 1..=60 {
-        sim.session.binary_frame = frame;
-        loaded.session.binary_frame = frame;
+        sim.session.set_binary_frame_for_test(frame);
+        loaded.session.set_binary_frame_for_test(frame);
         let terminal =
             sim.tick_ship_sinking(id, &rules, None, crate::sim::world::FrameEffects::default());
         assert_eq!(
@@ -366,7 +367,7 @@ fn load_preserves_sinking_edge_and_resets_shared_foot_sound_bytes() {
             &IniFile::from_str("[TEST]\nSinkingSound=GenLargeWaterDie\n"),
             &sounds,
         );
-        sim.session.map_name = "SINK.MAP".to_owned();
+        sim.session.set_map_name_for_test("SINK.MAP".to_owned());
         let hull = sim.substrate.entities.get_mut(id).unwrap();
         hull.sinking.sound_edge_seen = seen;
         hull.move_sound = crate::sim::world::MoveSoundState::from_raw_for_test(
@@ -489,7 +490,7 @@ fn retained_ship_skips_process_but_keeps_its_head_and_runs_sinking_ai() {
     use crate::sim::world::techno_ai::ObjectAiCtx;
 
     let (mut sim, rules, id) = fixture(0);
-    sim.session.binary_frame = 1;
+    sim.session.set_binary_frame_for_test(1);
     let head = DriveCoord::cell(114, 59, 208);
     let hull = sim.substrate.entities.get_mut(id).unwrap();
     hull.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Ship));

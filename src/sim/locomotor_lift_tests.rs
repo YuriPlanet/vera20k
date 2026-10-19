@@ -42,7 +42,7 @@ fn entity(sim: &Simulation, id: u64) -> &GameEntity {
 
 fn order(sim: &mut Simulation, house: &str, command: Command) {
     let owner = sim.interner.get(house).unwrap();
-    let tick = sim.session.tick;
+    let tick = sim.session.tick();
     sim.queue_command(CommandEnvelope::new(owner, tick + 1, command));
 }
 

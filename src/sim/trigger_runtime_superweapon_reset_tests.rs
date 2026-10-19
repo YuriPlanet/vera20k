@@ -32,7 +32,8 @@ fn reset_world(
     let mut sim = Simulation::with_seed(0);
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
-    sim.session.binary_frame = int(&input["frame"]) as u32;
+    sim.session
+        .set_binary_frame_for_test(int(&input["frame"]) as u32);
     let owner = sim.interner.intern("IncomingHouse");
     let other = sim.interner.intern("UnrelatedHouse");
     for house in [owner, other] {
@@ -121,7 +122,8 @@ fn replay_row(
 ) {
     let input = &row["input"];
     let label = row["name"].as_str().unwrap();
-    sim.session.binary_frame = int(&input["frame"]) as u32;
+    sim.session
+        .set_binary_frame_for_test(int(&input["frame"]) as u32);
     assert_runtime_state(&runtime_state(sim, rules, owner, id), input, label);
     let unrelated = serde_json::to_value(&sim.super_weapons[&other][&id]).unwrap();
     let other_target = sim.houses[&other].preferred_super_weapon_target();
@@ -225,8 +227,8 @@ fn superweapon_reset_releases_a_production_chrono_placement_without_destroying_i
     rules.bind_anim_frame_count_for_test(&placement, i32::from(frames));
     let data = reset_corpus();
     let (mut sim, owner, _, _) = reset_world(&rules, &data["dispatch_controls"][0]["input"], data);
-    sim.session.map_width = 32;
-    sim.session.map_height = 32;
+    sim.session.set_map_width_for_test(32);
+    sim.session.set_map_height_for_test(32);
     sim.install_resolved_terrain_for_new_map(crate::map::resolved_terrain::test_grid(
         32,
         32,

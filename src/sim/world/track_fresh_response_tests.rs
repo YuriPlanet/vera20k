@@ -161,7 +161,7 @@ fn unit(
         (false, v) => format!("SH{v}"),
     };
     let kind = kind.as_str();
-    sim.session.binary_frame = 100;
+    sim.session.set_binary_frame_for_test(100);
     let id = sim
         .spawn_object(kind, "Americans", 10, 10, 0, &rules)
         .unwrap_or_else(|| panic!("spawn {kind}: {input}"));
@@ -475,7 +475,7 @@ fn fresh_arm_rows_match_the_original_responses() {
                 };
             }
         }
-        sim.session.binary_frame = 101;
+        sim.session.set_binary_frame_for_test(101);
         let (codes, paths) = supplied(input);
         fresh_oracle_seam::install(codes, paths);
         let out = sim.run_track_process_movement(
@@ -532,7 +532,7 @@ fn crusher_all_non_wall_overlay_uses_ground_unit_for_straight_latch() {
         actor.body_facing = FacingClass::with_rate_of(2 << 13, &actor.body_facing);
         actor.navigation.path_runtime.start_movement(100, 0);
         actor.navigation.path_runtime.start_blocked(100, 22);
-        sim.session.binary_frame = 101;
+        sim.session.set_binary_frame_for_test(101);
         fresh_oracle_seam::install(vec![0], vec![]);
         let result = sim.run_track_process_movement(
             id,
@@ -586,7 +586,7 @@ fn first_code7_scold_request_retains_the_native_byte() {
         e.navigation
             .path_runtime
             .set_scold_latch_for_test(row["supplied_byte"].as_u64().unwrap() as u8);
-        sim.session.binary_frame = 101;
+        sim.session.set_binary_frame_for_test(101);
         fresh_oracle_seam::install(vec![7], vec![]);
         // The native sound fragment stops at the code7 retry ladder. This
         // production call takes its nonrecursive Stop path; the byte remains

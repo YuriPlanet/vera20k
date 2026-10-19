@@ -187,7 +187,7 @@ fn accepted_bolt_composites_preserve_the_next_actual_bullet_identity() {
         let before = sim.rng_state();
         let mut bolts = ElectricBolts::default();
         bolts.create(ElectricBoltBirth {
-            frame: sim.session.binary_frame as i32,
+            frame: sim.session.binary_frame() as i32,
             from: coord(&birth["source"]),
             to: coord(&birth["target"]),
             z_adjust: int(&birth["z_adjust"]),

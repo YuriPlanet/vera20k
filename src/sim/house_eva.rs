@@ -64,9 +64,9 @@ fn owns_construction_yard(sim: &Simulation, rules: &RuleSet, owner: InternedId) 
 /// Advice inside the reached House body, after team creation and before
 /// defeat. The deterministic per-human projection is documented above.
 pub(crate) fn update_house_eva(sim: &mut Simulation, rules: &RuleSet, owner: InternedId) {
-    let now = sim.session.binary_frame as i32;
+    let now = sim.session.binary_frame() as i32;
     let game_mode_nonzero = sim.session.game_mode_nonzero();
-    let delay = speak_delay_frames(rules, &sim.session.game_options);
+    let delay = speak_delay_frames(rules, &sim.session.game_options());
     let Some(house) = sim.houses.get(&owner) else {
         return;
     };
@@ -205,14 +205,15 @@ mod tests {
                 &mut sim.substrate.entities,
                 rules,
                 &sim.interner,
-                sim.session.binary_frame,
+                sim.session.binary_frame(),
             );
             tick_house_eva(sim, rules);
-            let frame = sim.session.binary_frame;
+            let frame = sim.session.binary_frame();
             for line in house_lines(sim) {
                 lines.push((frame, line));
             }
-            sim.session.binary_frame += 1;
+            sim.session
+                .set_binary_frame_for_test(sim.session.binary_frame() + 1);
         }
         lines
     }
@@ -240,7 +241,7 @@ mod tests {
     fn funds_nag_repeats_every_speak_delay_while_broke_with_a_factory() {
         let rules = rules();
         let (mut sim, owner) = sim_with_house(50, true);
-        sim.session.game_options.game_speed = 4;
+        sim.session.game_options_mut_for_test().game_speed = 4;
         structure(&mut sim, &rules, "GAPILE", 3);
         let lines = run_frames(&mut sim, &rules, 2880 * 2 + 2);
         let nags: Vec<u32> = lines

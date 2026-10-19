@@ -12,7 +12,7 @@ use crate::sim::world::{FrameEffects, Simulation, TickLane};
 
 fn frame(runtime: &mut SimRuntime, owner: InternedId, commands: &[Command]) {
     let sim = &mut runtime.simulation;
-    let next = sim.session.tick + 1;
+    let next = sim.session.tick() + 1;
     sim.queue_commands(
         commands
             .iter()
@@ -39,7 +39,7 @@ fn fixture(rules: &RuleSet, producer: &str, backup: bool) -> (SimRuntime, Intern
         house.project_country_mults(rules, &sim.interner);
         sim.houses.register(house);
     }
-    sim.session.current_house = Some(owner);
+    sim.session.set_current_house_for_test(Some(owner));
     crate::sim::arena_fixture::flat_ground(&mut sim, rules);
     if rules.object(producer).unwrap().naval {
         crate::sim::arena_fixture::flood(

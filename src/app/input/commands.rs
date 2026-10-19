@@ -872,7 +872,7 @@ pub(super) fn schedule_command_in_sim(
     {
         return None;
     }
-    let execute_tick = sim.session.tick;
+    let execute_tick = sim.session.tick();
     let owner_id = match &payload {
         Command::SetGameSpeed { speed } => {
             if *speed > crate::sim::game_options::IN_GAME_OPTIONS_MAX_SPEED {
@@ -885,7 +885,7 @@ pub(super) fn schedule_command_in_sim(
             let requested_speed = sim
                 .projected_in_game_options_speed()
                 .map(i32::from)
-                .unwrap_or(sim.session.game_options.game_speed);
+                .unwrap_or(sim.session.game_options().game_speed);
             if requested_speed == i32::from(*speed) {
                 return Some(execute_tick);
             }
@@ -1040,7 +1040,7 @@ pub(super) fn queue_house_cheer_in_sim(
     if sim.session.input_locked() {
         return None;
     }
-    let current_frame = sim.session.binary_frame as i32;
+    let current_frame = sim.session.binary_frame() as i32;
     let local_defeated = sim.local_player_defeated();
     input.try_issue_cheer(
         current_frame,
@@ -1167,7 +1167,7 @@ mod tests {
             schedule_command_in_sim(&mut sim, "Local", Command::SetGameSpeed { speed: 4 }),
             Some(0)
         );
-        assert_eq!(sim.session.game_options.game_speed, 1);
+        assert_eq!(sim.session.game_options().game_speed, 1);
         assert_eq!(sim.state_hash(), before_hash);
         assert_eq!(sim.pending_command_snapshot().len(), 1);
 
@@ -1201,8 +1201,8 @@ mod tests {
         let local = sim.interner.intern("Local");
         sim.houses
             .register(HouseState::new(local, 0, None, true, 0, 10));
-        sim.session.tick = 41;
-        sim.session.binary_frame = 73;
+        sim.session.set_tick_for_test(41);
+        sim.session.set_binary_frame_for_test(73);
 
         assert_eq!(
             schedule_command_in_sim(&mut sim, "Local", Command::ExitMatch),
@@ -1257,10 +1257,10 @@ mod tests {
         enemy_house.tracking.set_buildings_for_test(1);
         sim.houses.register(local_house);
         sim.houses.register(enemy_house);
-        sim.session.game_options.short_game = false;
-        sim.session.tick = 41;
-        sim.session.binary_frame = 42;
-        sim.session.current_house = Some(local);
+        sim.session.game_options_mut_for_test().short_game = false;
+        sim.session.set_tick_for_test(41);
+        sim.session.set_binary_frame_for_test(42);
+        sim.session.set_current_house_for_test(Some(local));
         assert!(
             sim.houses
                 .get_mut(&local)
@@ -1305,7 +1305,7 @@ mod tests {
             let mut sim = Simulation::new();
             let local = sim.interner.intern("Local");
             let remote = sim.interner.intern("Remote");
-            sim.session.tick = 40;
+            sim.session.set_tick_for_test(40);
             sim.input_delay_ticks = 9;
             (sim, local, remote)
         }
@@ -1368,8 +1368,8 @@ mod tests {
         let type_ref = sim.interner.intern("TESTUNIT");
         sim.houses
             .register(HouseState::new(local, 0, None, false, 0, 10));
-        sim.session.tick = 123;
-        sim.session.binary_frame = 77;
+        sim.session.set_tick_for_test(123);
+        sim.session.set_binary_frame_for_test(77);
         let mut entity = GameEntity::new_at_frame_zero_for_test(
             42,
             1,
@@ -1451,7 +1451,7 @@ mod tests {
     #[test]
     fn recorded_scheduler_stamps_the_current_raw_issue_ordinal() {
         let mut sim = Simulation::new();
-        sim.session.tick = 41;
+        sim.session.set_tick_for_test(41);
         sim.input_delay_ticks = 7;
 
         let execute_tick =
@@ -1475,7 +1475,7 @@ mod tests {
     #[test]
     fn recorded_scheduler_does_not_apply_offline_input_delay() {
         let mut sim = Simulation::new();
-        sim.session.tick = u64::MAX - 1;
+        sim.session.set_tick_for_test(u64::MAX - 1);
         sim.input_delay_ticks = 8;
 
         let execute_tick =
@@ -1489,7 +1489,7 @@ mod tests {
     #[test]
     fn gsi_04_07_wall_sell_scheduler_uses_current_tick_and_signed_cell_payload() {
         let mut sim = Simulation::new();
-        sim.session.tick = 23;
+        sim.session.set_tick_for_test(23);
         let local = sim.interner.intern("Local");
         let remote = sim.interner.intern("Remote");
         let ai = sim.interner.intern("AI");
@@ -1501,7 +1501,7 @@ mod tests {
             .register(HouseState::new(remote, 1, None, true, 0, 10));
         sim.houses
             .register(HouseState::new(ai, 2, None, false, 0, 10));
-        sim.session.binary_frame = 23;
+        sim.session.set_binary_frame_for_test(23);
 
         let issued = sim
             .encode_sell_wall_at_cell_record(local, 0, 1)

@@ -36,7 +36,7 @@ fn ordinary_move(
 ) -> CommandEnvelope {
     let issued = CommandEnvelope::new(
         owner,
-        sim.session.tick,
+        sim.session.tick(),
         Command::Move {
             entity_id,
             target_rx: goal.0,
@@ -81,7 +81,7 @@ fn commandable_movers() -> (Simulation, crate::sim::intern::InternedId, [u64; 2]
     let owner = sim.interner.intern("Americans");
     sim.houses
         .register(HouseState::new(owner, 0, None, false, 0, 10));
-    sim.session.tick = 123;
+    sim.session.set_tick_for_test(123);
     for (id, type_name, category) in [
         (42, "MTNK", EntityCategory::Unit),
         (43, "E1", EntityCategory::Infantry),
@@ -250,7 +250,7 @@ fn spawn_retail_mover(
     // controller prior read by House50B6F0/50B730 before spawning the mover.
     house.is_human = true;
     house.player_control = true;
-    sim.session.current_house = Some(owner);
+    sim.session.set_current_house_for_test(Some(owner));
     for house in sim.houses.values_mut() {
         house.multiplay_passive = true;
     }
@@ -471,7 +471,7 @@ fn shift_walk_cell_input_uses_ordinary_resolver_and_move_record() {
     assert_ne!(shifted, clicked, "the resolver must choose the near bank");
     let issued = CommandEnvelope::new(
         owner,
-        sim.session.tick,
+        sim.session.tick(),
         Command::Move {
             entity_id: actor,
             target_rx: shifted.0,
@@ -553,7 +553,7 @@ fn encoded_walk_destination_survives_topology_change_before_due_frame() {
     let mut order = ordinary_move(&sim, owner, actor, chosen);
     // The scheduler drains commands for the NEXT frame. Leave one full
     // object turn before this already-encoded destination becomes due.
-    order.execute_tick = sim.session.tick + 2;
+    order.execute_tick = sim.session.tick() + 2;
     sim.queue_command(order.clone());
     sim.close_walk_input_test_bridge(&rules);
     assert_ne!(
@@ -588,7 +588,7 @@ fn direct_simulation_walk_move_is_an_already_resolved_destination() {
     );
     sim.queue_command(CommandEnvelope::new(
         owner,
-        sim.session.tick,
+        sim.session.tick(),
         Command::Move {
             entity_id: actor,
             target_rx: 9,

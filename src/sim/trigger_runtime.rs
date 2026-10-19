@@ -1074,7 +1074,7 @@ impl Simulation {
             let index = self.trigger_runtime.triggers.len();
             self.trigger_runtime.triggers.push(Some(LiveTrigger {
                 type_index,
-                timer: CdTimer::started(self.session.binary_frame as i32, 0),
+                timer: CdTimer::started(self.session.binary_frame() as i32, 0),
                 completed: 0,
                 retained_house: None,
                 enabled: true,
@@ -1123,7 +1123,7 @@ impl Simulation {
             let trigger = self.trigger_runtime.triggers[index].as_mut().unwrap();
             trigger
                 .timer
-                .start(self.session.binary_frame as i32, duration);
+                .start(self.session.binary_frame() as i32, duration);
             trigger.completed &= !(1u32.wrapping_shl(ordinal as u32));
         }
     }
@@ -1516,7 +1516,7 @@ impl Simulation {
             if let Some(house) = resolve_trigger_house(self, owner, rules)
                 && let Some(house) = self.houses.get_mut(&house)
             {
-                house.removed_allow_win_tag(self.session.binary_frame as i32);
+                house.removed_allow_win_tag(self.session.binary_frame() as i32);
             }
         }
         for trigger in triggers {
@@ -1651,8 +1651,8 @@ impl Simulation {
             // Event+34. Both return directly, without House/raised-kind or
             // A8ED6B admission, persistence, timer, RNG or detach writes.
             // Original Steam gamemd3e81a617..08600, instruction reading.
-            45 => self.session.lighting.current_ambient <= condition.value,
-            46 => self.session.lighting.current_ambient >= condition.value,
+            45 => self.session.lighting().current_ambient() <= condition.value,
+            46 => self.session.lighting().current_ambient() >= condition.value,
             17 => {
                 // Steam3e81a617..08600:71EE82 takes the incoming House;
                 // 71EF3F..71EF89 reads tracked+2F0, then its ordered+68 list.
@@ -1902,7 +1902,7 @@ impl Simulation {
                 .trigger(live_index)
                 .unwrap()
                 .timer
-                .expired(self.session.binary_frame as i32),
+                .expired(self.session.binary_frame() as i32),
             //71EC83/71F284 routes these discrete events through71EC9A:
             //matching raised kind and clear A8ED6B, then71F1B1 AL1.
             //All secondary switch entries are the generic true tail; no
@@ -1925,7 +1925,7 @@ impl Simulation {
             EVENT_ANY => true,
             _ => self
                 .trigger_runtime
-                .evaluate_event(&condition, self.session.binary_frame, self),
+                .evaluate_event(&condition, self.session.binary_frame(), self),
         }
     }
 
@@ -2049,7 +2049,7 @@ impl Simulation {
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
-        if (self.session.binary_frame as i32) % 8 != 0 {
+        if (self.session.binary_frame() as i32) % 8 != 0 {
             return;
         }
         let count = self
@@ -3791,7 +3791,7 @@ impl Simulation {
                 effects.push(TriggerEffect::FlashSidebarCameo {
                     type_id,
                     duration: value.unwrap_or(0),
-                    frame: self.session.binary_frame as i32,
+                    frame: self.session.binary_frame() as i32,
                 });
             }
             139 => {
@@ -3806,7 +3806,7 @@ impl Simulation {
                 self.power_states
                     .entry(owner)
                     .or_default()
-                    .start_radar_outage(self.session.binary_frame, value.unwrap_or(0));
+                    .start_radar_outage(self.session.binary_frame(), value.unwrap_or(0));
             }
             128 => {
                 //Execute6DFAD9 ->6E1A40 ->House50D6D0. Only +44 waypoint
@@ -4118,7 +4118,7 @@ impl Simulation {
                 // not RGB, and the explicit palette operation preserves order.
                 let rgb = self
                     .session
-                    .lighting
+                    .lighting_mut()
                     .retint_normal_component((action.kind - 142) as usize, value);
                 self.publish_global_lighting(crate::sim::light_sources::PaletteUpdate::Normal(rgb));
             }
@@ -4127,7 +4127,7 @@ impl Simulation {
                     return false;
                 };
                 let storm = crate::sim::superweapon::lightning_storm::raging(self);
-                self.session.lighting.set_ambient_light(value, storm);
+                self.session.lighting_mut().set_ambient_light(value, storm);
             }
             64..=66 => {
                 let (Some(rules), Some(waypoint)) = (rules, value) else {
@@ -4162,7 +4162,7 @@ impl Simulation {
                     return false;
                 };
                 self.session
-                    .lighting
+                    .lighting_mut()
                     .set_ambient_change_input(action.kind == 72, bits);
             }
             ACTION_DAMAGE_AT_WAYPOINT => {
@@ -4336,7 +4336,7 @@ impl Simulation {
                         return instance.set_charge_percentage(
                             action.auxiliary_value(),
                             sw,
-                            self.session.binary_frame,
+                            self.session.binary_frame(),
                         );
                     }
                 }
@@ -4371,7 +4371,7 @@ impl Simulation {
                     if action.kind == 135 {
                         house.set_preferred_super_weapon_target(cell);
                     } else {
-                        house.alert_super_weapon_defense(cell, self.session.binary_frame as i32);
+                        house.alert_super_weapon_defense(cell, self.session.binary_frame() as i32);
                     }
                 } else if action.kind == 136 {
                     house.clear_preferred_super_weapon_target();

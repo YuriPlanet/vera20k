@@ -86,7 +86,7 @@ fn stock_cloak_producer_healthy_trace_uses_type_speed_and_no_rng() {
         "the transient entering-cloak cue must not mutate serialized interner state"
     );
     for frame in 1..=5 {
-        sim.session.binary_frame = frame;
+        sim.session.set_binary_frame_for_test(frame);
         tick_stock_cloak_producer(
             &mut sim,
             id,
@@ -606,7 +606,7 @@ fn the_weapon_rearm_countdown_blocks_the_next_auto_cloak() {
         .set_for_test(crate::sim::timer::CdTimer::started(0, 20));
 
     for frame in 0..20 {
-        sim.session.binary_frame = frame;
+        sim.session.set_binary_frame_for_test(frame);
         tick_stock_cloak_producer(
             &mut sim,
             id,
@@ -627,7 +627,7 @@ fn the_weapon_rearm_countdown_blocks_the_next_auto_cloak() {
             "frame {frame} is still inside the ROF window"
         );
     }
-    sim.session.binary_frame = 20;
+    sim.session.set_binary_frame_for_test(20);
     tick_stock_cloak_producer(
         &mut sim,
         id,
@@ -866,7 +866,7 @@ fn start_cloaking_drops_every_targeter_whose_house_cannot_sense_the_cell() {
         "the same-owner exemption also skips the re-arm"
     );
     assert_ne!(timers_after[1], timers_before[1]);
-    assert_eq!(timers_after[1].start_frame(), sim.session.binary_frame);
+    assert_eq!(timers_after[1].start_frame(), sim.session.binary_frame());
     assert_eq!(
         timers_after[1].duration(),
         drawn,

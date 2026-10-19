@@ -396,7 +396,7 @@ impl Simulation {
                     side,
                     difficulty,
                     tech_level,
-                    sim.session.game_options.super_weapons,
+                    sim.session.game_options().super_weapons,
                     &mut sim.scenario_rng,
                 );
             });
@@ -510,7 +510,7 @@ impl Simulation {
                 id,
                 move_mission,
                 0,
-                self.session.binary_frame,
+                self.session.binary_frame(),
                 &EntityReadyInputProvider,
             );
         }
@@ -980,9 +980,9 @@ mod tests {
             off_108: 8,
         });
         sim.playfield_size_height = Some(8);
-        sim.session.map_width = 17;
-        sim.session.map_height = 17;
-        sim.session.binary_frame = 100;
+        sim.session.set_map_width_for_test(17);
+        sim.session.set_map_height_for_test(17);
+        sim.session.set_binary_frame_for_test(100);
         crate::sim::arena_fixture::supply_native_map(&mut sim);
         sim
     }

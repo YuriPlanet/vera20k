@@ -88,7 +88,7 @@ fn stock_kirov_bomb_impact_rocks_its_live_neighbor_then_rolls_it() {
     let owner = sim.substrate.entities.get(kirov).unwrap().owner();
     let enemy = sim.substrate.entities.get(target).unwrap().owner();
     assert_ne!(owner, enemy);
-    sim.session.current_house = Some(owner);
+    sim.session.set_current_house_for_test(Some(owner));
     for (x, y) in [(25, 24), (25, 23)] {
         sim.fog.mark_visible_for_owner(owner, x, y);
     }
@@ -137,7 +137,7 @@ fn stock_kirov_bomb_impact_rocks_its_live_neighbor_then_rolls_it() {
         ascended,
         "ground-admitted Kirov must naturally reach its retail hover height"
     );
-    let tick = sim.session.tick + 1;
+    let tick = sim.session.tick() + 1;
     sim.queue_command(CommandEnvelope::new(
         owner,
         tick,
@@ -188,7 +188,7 @@ fn stock_kirov_bomb_impact_rocks_its_live_neighbor_then_rolls_it() {
         if actual_shot {
             timeline.push_back(format!(
                 "frame={} kirov={:?} target={:?} neighbor={:?} shots={:?} bombs={:?}",
-                sim.session.binary_frame - 1,
+                sim.session.binary_frame() - 1,
                 sim.substrate.entities.get(kirov).map(|actor| (
                     position_world_coord(&actor.position),
                     actor.mission.current()
@@ -248,13 +248,13 @@ fn stock_kirov_bomb_impact_rocks_its_live_neighbor_then_rolls_it() {
             assert!(
                 rates.iter().any(|word| word & 0x7fff_ffff != 0),
                 "ordinary BlimpHE impact must assign its live neighbor an area rocker impulse; frame={} direct_hp={} neighbor_hp={}",
-                sim.session.binary_frame - 1,
+                sim.session.binary_frame() - 1,
                 direct.health.current(),
                 adjacent.health.current()
             );
             sim.queue_command(CommandEnvelope::new(
                 owner,
-                sim.session.tick + 1,
+                sim.session.tick() + 1,
                 Command::Stop { entity_id: kirov },
             ));
             // Move away through the real command owner after Stop has cleared
@@ -262,7 +262,7 @@ fn stock_kirov_bomb_impact_rocks_its_live_neighbor_then_rolls_it() {
             // the tanks while this impulse naturally decays.
             sim.queue_command(CommandEnvelope::new(
                 owner,
-                sim.session.tick + 1,
+                sim.session.tick() + 1,
                 Command::Move {
                     entity_id: kirov,
                     target_rx: 4,
@@ -510,7 +510,7 @@ fn zero_and_scenario_no_damage_stop_before_receivers_and_area_rocking() {
         let Some(mut scene) = AreaScene::retail("") else {
             return;
         };
-        scene.sim.session.no_damage = no_damage;
+        scene.sim.session.set_no_damage_for_test(no_damage);
         let rng = (
             scene.sim.main_rng.native_state_hex(),
             scene.sim.scenario_rng.native_state_hex(),
@@ -567,7 +567,7 @@ fn central_iron_curtain_receipt_suppresses_the_area_continuation_only_when_isola
         // claim about the IronCurtain superweapon's area/cell producer.
         apply_invulnerability(
             scene.sim.substrate.entities.get_mut(protected).unwrap(),
-            scene.sim.session.binary_frame,
+            scene.sim.session.binary_frame(),
             scene.rules.general.iron_curtain_duration,
             InvulnKind::IronCurtain,
         );
@@ -882,7 +882,7 @@ fn area_entry_zero_and_no_damage_leave_the_live_dummy_coordinate_untouched() {
             return;
         };
         scene.sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(64, 64));
-        scene.sim.session.no_damage = no_damage;
+        scene.sim.session.set_no_damage_for_test(no_damage);
         let terrain = scene.sim.resolved_terrain.as_ref().unwrap();
         // Establish a live fallback coordinate through its actual Map lookup.
         assert_eq!(

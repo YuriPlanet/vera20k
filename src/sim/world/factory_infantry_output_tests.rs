@@ -216,8 +216,9 @@ fn ground_command_fixture(
     house.difficulty = HouseDifficulty::Hard;
     house.project_country_mults(&rules, &sim.interner);
     sim.houses.register(house);
-    sim.session.current_house =
-        (state["house"]["current"] == state["house"]["pointer"]).then_some(owner);
+    sim.session.set_current_house_for_test(
+        (state["house"]["current"] == state["house"]["pointer"]).then_some(owner),
+    );
     // The complete original no_rally bootstrap records mode1 -> Skirmish5
     // at52E10F..52E119, before these continuations. New contrast snapshots
     // carry the exact mode input; VERA stores its native zero/nonzero decision.
@@ -228,9 +229,10 @@ fn ground_command_fixture(
                 .unwrap_or(true),
         ),
     );
-    sim.session.binary_frame = state["frame"].as_u64().unwrap().try_into().unwrap();
-    sim.fog.width = sim.session.map_width;
-    sim.fog.height = sim.session.map_height;
+    sim.session
+        .set_binary_frame_for_test(state["frame"].as_u64().unwrap().try_into().unwrap());
+    sim.fog.width = sim.session.map_width();
+    sim.fog.height = sim.session.map_height();
     sim.fog.reveal_all_for_owner(owner);
     let location = ground_command_coordinate(&state["location"]);
     let id = sim
@@ -291,7 +293,7 @@ fn ground_command_fixture(
                 &registry,
             )
             .expect("observed original target enters the supplied ground");
-        sim.mission_commence_exact(target, sim.session.binary_frame)
+        sim.mission_commence_exact(target, sim.session.binary_frame())
             .unwrap();
         let target_actor = sim.substrate.entities.get(target).unwrap();
         assert_ne!(target_actor.owner(), owner);
@@ -537,7 +539,7 @@ fn ground_command_fixture(
         // Building placement leaves that mission queued; finish it through
         // the mission owner before this component-boundary comparison. This
         // does not compare the target's whole initialization or AI history.
-        sim.mission_commence_exact(target, sim.session.binary_frame)
+        sim.mission_commence_exact(target, sim.session.binary_frame())
             .unwrap();
         let target_actor = sim.substrate.entities.get(target).unwrap();
         let ambient = occupant
@@ -616,8 +618,8 @@ fn ground_command_fixture(
         let navigation = &map["navigation"];
         let mut zones: crate::sim::pathfinding::zone_map::ZoneGrid =
             serde_json::from_value(json!({
-                "width": sim.session.map_width,
-                "height": sim.session.map_height,
+                "width": sim.session.map_width(),
+                "height": sim.session.map_height(),
                 "base_topology": {
                     "native_bridge_source_size": map["map_size"],
                     "movement_classes": navigation["classes"],
@@ -982,7 +984,7 @@ fn simulation_ground_command(
         .unwrap();
     CommandEnvelope::new(
         owner,
-        sim.session.tick,
+        sim.session.tick(),
         Command::Move {
             entity_id: id,
             target_rx: cell.0,
@@ -1056,7 +1058,7 @@ pub fn check_initialized_ground_reissues(names: &[&str], produce: GroundCommandP
                     id,
                     MissionId::from_raw(producer["args"][0].as_i64().unwrap().try_into().unwrap()),
                     producer["args"][1].as_i64().unwrap().try_into().unwrap(),
-                    sim.session.binary_frame,
+                    sim.session.binary_frame(),
                     &EntityReadyInputProvider,
                 )
                 .unwrap();
@@ -1081,11 +1083,13 @@ pub fn check_initialized_ground_reissues(names: &[&str], produce: GroundCommandP
                     .unwrap();
                 assert_ground_command_fields(&sim, id, row, &down["after"]);
             }
-            sim.session.binary_frame = dispatch["before"]["frame"]
-                .as_u64()
-                .unwrap()
-                .try_into()
-                .unwrap();
+            sim.session.set_binary_frame_for_test(
+                dispatch["before"]["frame"]
+                    .as_u64()
+                    .unwrap()
+                    .try_into()
+                    .unwrap(),
+            );
             let clicked = fixture_cell(&input["clicked"]);
             let shift = input["keys"]
                 .as_array()
@@ -1780,8 +1784,8 @@ pub(super) fn install_ground(
         ),
     );
     sim.playfield_size_height = Some(size.1);
-    sim.session.map_width = side;
-    sim.session.map_height = side;
+    sim.session.set_map_width_for_test(side);
+    sim.session.set_map_height_for_test(side);
     sim.overlay_grid = Some(OverlayGrid::new(side, side));
     sim.bridge_state = Some(BridgeRuntimeState::from_resolved_terrain_with_map_size(
         &terrain,
@@ -1912,10 +1916,10 @@ fn joined_two_paid_gi(route: OutputRoute) {
     house.difficulty = HouseDifficulty::Hard;
     house.project_country_mults(&rules, &sim.interner);
     sim.houses.register(house);
-    sim.session.current_house = Some(owner);
+    sim.session.set_current_house_for_test(Some(owner));
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
-    sim.session.game_options.game_speed = 3;
+    sim.session.game_options_mut_for_test().game_speed = 3;
     let producer = sim
         .spawn_object_at_height_with_overlay_registry(
             "GAPILE",
@@ -1956,7 +1960,7 @@ fn joined_two_paid_gi(route: OutputRoute) {
     {
         let command = CommandEnvelope::new(
             owner,
-            sim.session.tick + 1,
+            sim.session.tick() + 1,
             Command::SetRally {
                 rx,
                 ry,
@@ -1974,12 +1978,12 @@ fn joined_two_paid_gi(route: OutputRoute) {
     let commands = [
         CommandEnvelope::new(
             owner,
-            sim.session.tick + 1,
+            sim.session.tick() + 1,
             Command::QueueProduction { type_id: e1 },
         ),
         CommandEnvelope::new(
             owner,
-            sim.session.tick + 1,
+            sim.session.tick() + 1,
             Command::QueueProduction { type_id: e1 },
         ),
     ];
@@ -2003,7 +2007,7 @@ fn joined_two_paid_gi(route: OutputRoute) {
     }];
 
     for _ in 0..10_000 {
-        let frame = sim.session.binary_frame;
+        let frame = sim.session.binary_frame();
         if route == OutputRoute::RallyBetweenCompletionAndPlace
             && products[0].completed_frame.is_some()
             && products[0].placed_frame.is_none()
@@ -2011,7 +2015,7 @@ fn joined_two_paid_gi(route: OutputRoute) {
             let (rx, ry) = rally_cell.unwrap();
             sim.queue_command(CommandEnvelope::new(
                 owner,
-                sim.session.tick + 1,
+                sim.session.tick() + 1,
                 Command::SetRally {
                     rx,
                     ry,

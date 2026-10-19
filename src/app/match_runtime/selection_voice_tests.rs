@@ -246,7 +246,7 @@ fn simulation(
     sim.houses.register(house);
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
-    sim.session.current_house = Some(local);
+    sim.session.set_current_house_for_test(Some(local));
     sim.entities_mut()
         .insert(GameEntity::new_at_frame_zero_for_test(
             1,
@@ -450,7 +450,7 @@ fn selection_main_continuation_survives_in_scenario_snapshot_handoff() {
     }
     let live_rng = sim.rng_state();
     let live_hash = sim.state_hash();
-    let mut restored = GameSnapshot::load_validated(&bytes, 0, rules_hash, &sim.session.map_name)
+    let mut restored = GameSnapshot::load_validated(&bytes, 0, rules_hash, &sim.session.map_name())
         .unwrap()
         .sim;
     assert_ne!(

@@ -519,7 +519,7 @@ mod tests {
         let mut scene =
             crate::headless_scenario::load_session(&root, "GoldSt.mmx", 0x1234_5678, launch)
                 .unwrap();
-        let owner = scene.sim().session.current_house.unwrap();
+        let owner = scene.sim().session.current_house().unwrap();
         let id = scene
             .sim()
             .entities()
@@ -531,7 +531,7 @@ mod tests {
             .unwrap();
         let command = CommandEnvelope::new(
             owner,
-            scene.sim().session.tick + 1,
+            scene.sim().session.tick() + 1,
             Command::Move {
                 entity_id: id,
                 target_rx: 111,
@@ -587,7 +587,7 @@ mod tests {
         );
         let stop = CommandEnvelope::new(
             owner,
-            scene.sim().session.tick + 1,
+            scene.sim().session.tick() + 1,
             Command::Stop { entity_id: id },
         );
         scene

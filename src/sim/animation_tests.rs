@@ -1010,7 +1010,7 @@ fn infantry_walk_stage_uses_absolute_frames_and_presentation_leaves_it_alone() {
         let dead = tick_animations(
             &mut sim.substrate.entities,
             rules.animation_sequences(),
-            &sim.session.game_options,
+            &sim.session.game_options(),
             &sim.interner,
             now,
         );
@@ -1042,7 +1042,7 @@ fn presentation_preserves_infantry_fire_action_latch_and_signed_stage() {
     let dead = tick_animations(
         &mut sim.substrate.entities,
         rules.animation_sequences(),
-        &sim.session.game_options,
+        &sim.session.game_options(),
         &sim.interner,
         100,
     );
@@ -1060,7 +1060,7 @@ fn presentation_preserves_infantry_fire_action_latch_and_signed_stage() {
 #[test]
 fn gsi_05_07_idle_completion_snaps_current_hint_before_ready_dispatch() {
     let (mut sim, rules, id) = infantry_action_fixture(Some("S"));
-    sim.session.binary_frame = 77;
+    sim.session.set_binary_frame_for_test(77);
     sim.substrate.entities.get_mut(id).unwrap().body_facing = FacingClass::new(0, 4);
     assert!(
         sim.infantry_do_action(
@@ -1089,7 +1089,7 @@ fn gsi_05_07_idle_completion_snaps_current_hint_before_ready_dispatch() {
 #[test]
 fn gsi_05_07_unhinted_completion_preserves_body_facing() {
     let (mut sim, rules, id) = infantry_action_fixture(None);
-    sim.session.binary_frame = 91;
+    sim.session.set_binary_frame_for_test(91);
     sim.substrate.entities.get_mut(id).unwrap().body_facing = FacingClass::new(0x2000, 4);
     assert!(
         sim.infantry_do_action(
@@ -1278,7 +1278,7 @@ fn presentation_skips_dying_infantry_without_changing_its_stage_or_action() {
     let dead = tick_animations(
         &mut sim.substrate.entities,
         rules.animation_sequences(),
-        &sim.session.game_options,
+        &sim.session.game_options(),
         &sim.interner,
         100,
     );
@@ -1492,7 +1492,7 @@ fn mirage_voxel_unit_shp_layout_does_not_create_a_second_stand_walk_clock() {
                 tick_animations(
                     &mut sim.substrate.entities,
                     rules.animation_sequences(),
-                    &sim.session.game_options,
+                    &sim.session.game_options(),
                     &sim.interner,
                     now,
                 )

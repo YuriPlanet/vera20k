@@ -242,7 +242,7 @@ impl Simulation {
             id,
             MissionId::from_known(MissionType::Eaten),
             0,
-            self.session.binary_frame,
+            self.session.binary_frame(),
             &LiveReadyInputProvider { rules },
         );
         true
@@ -500,7 +500,7 @@ impl Simulation {
         if !reissue {
             return true;
         }
-        let now = self.session.binary_frame;
+        let now = self.session.binary_frame();
         let _ = self.mission_queue_exact(
             id,
             MissionId::from_known(MissionType::Enter),
@@ -559,7 +559,7 @@ impl Simulation {
             registry,
             effects,
         );
-        let now = self.session.binary_frame;
+        let now = self.session.binary_frame();
         let _ = self.mission_queue_exact(
             id,
             MissionId::from_known(MissionType::Capture),
@@ -621,7 +621,7 @@ impl Simulation {
             registry,
             effects,
         );
-        let now = self.session.binary_frame;
+        let now = self.session.binary_frame();
         let _ = self.mission_queue_exact(
             id,
             MissionId::from_known(MissionType::Capture),
@@ -671,7 +671,7 @@ impl Simulation {
         let Some(best) = best else {
             return false;
         };
-        let now = self.session.binary_frame;
+        let now = self.session.binary_frame();
         let _ = bunker_link::begin_entry(self, id, best, rules, registry, effects, |sim| {
             let _ = sim.mission_queue_exact(
                 id,

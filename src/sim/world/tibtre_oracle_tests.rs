@@ -99,7 +99,7 @@ fn fixture(input: &Value, stock: &Value) -> (Scene, Vec<(u16, u16)>) {
             NativeF32Bits::from_bits(typ["probability_bits"].as_u64().unwrap() as u32),
             typ["rate"].as_i64().unwrap() as i32,
             22,
-            s.sim.session.binary_frame,
+            s.sim.session.binary_frame(),
         );
         if let Some(stage) = input.get("stage") {
             let mut retained = serde_json::to_value(&animation).unwrap();
@@ -263,7 +263,9 @@ fn terrain_ai_timelines_match_native_stage_timers_ore_queues_and_rng() {
     for case in corpus["timelines"].as_array().unwrap() {
         let (mut s, coords) = fixture(&case["input"], stock);
         for row in case["rows"].as_array().unwrap() {
-            s.sim.session.binary_frame = row["frame"].as_u64().unwrap() as u32;
+            s.sim
+                .session
+                .set_binary_frame_for_test(row["frame"].as_u64().unwrap() as u32);
             let at = coords[row["actor"].as_u64().unwrap() as usize];
             let id = s.sim.production.terrain_object_cells[&at];
             crate::sim::terrain_spawn::tick_terrain_object_ai(

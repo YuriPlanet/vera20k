@@ -515,8 +515,8 @@ pub(super) fn install_infantry_delivery_fixture_map(sim: &mut Simulation) {
         off_108: 128,
     });
     sim.playfield_size_height = Some(64);
-    sim.session.map_width = 16;
-    sim.session.map_height = 64;
+    sim.session.set_map_width_for_test(16);
+    sim.session.set_map_height_for_test(64);
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
 }
@@ -744,7 +744,7 @@ fn naval_factory_spawn_uses_water_exit_and_defers_unload_only_without_contacts()
             off_108: 200,
         });
         sim.playfield_size_height = Some(32);
-        sim.session.binary_frame = 37;
+        sim.session.set_binary_frame_for_test(37);
 
         spawn_structure(&mut sim, &rules, 1, "Americans", "GAYARD", 20, 20);
         stamp_type_foundation(&mut sim, &rules, 1);
@@ -871,8 +871,8 @@ fn mixed_land_and_naval_factories_bind_independent_vehicle_and_ship_slots() {
         off_108: 200,
     });
     sim.playfield_size_height = Some(40);
-    sim.session.map_width = 40;
-    sim.session.map_height = 40;
+    sim.session.set_map_width_for_test(40);
+    sim.session.set_map_height_for_test(40);
 
     // The older/lower stable-id land factory must never win the Ship slot.
     spawn_structure(&mut sim, &rules, 1, "Americans", "GAWEAP", 4, 4);
@@ -1061,7 +1061,7 @@ fn naval_delivery_nonzero_canenter_refunds_without_trying_second_producer() {
         off_108: 200,
     });
     sim.playfield_size_height = Some(40);
-    sim.session.binary_frame = 37;
+    sim.session.set_binary_frame_for_test(37);
 
     spawn_structure(&mut sim, &rules, 1, "Americans", "GAYARD", 10, 10);
     spawn_structure(&mut sim, &rules, 2, "Americans", "GAYARD", 20, 20);
@@ -1198,8 +1198,8 @@ fn naval_empty_fnpc_refunds_then_a_fresh_successor_records_delivery_once() {
         off_108: 200,
     });
     sim.playfield_size_height = Some(40);
-    sim.session.map_width = 40;
-    sim.session.map_height = 40;
+    sim.session.set_map_width_for_test(40);
+    sim.session.set_map_height_for_test(40);
     let americans = sim.interner.intern("Americans");
     sim.houses
         .register(crate::sim::house_state::HouseState::new(
@@ -1342,8 +1342,8 @@ fn naval_yard_with_rally(rules: &RuleSet) -> Simulation {
         off_108: 200,
     });
     sim.playfield_size_height = Some(40);
-    sim.session.map_width = 40;
-    sim.session.map_height = 40;
+    sim.session.set_map_width_for_test(40);
+    sim.session.set_map_height_for_test(40);
 
     spawn_structure(&mut sim, rules, 1, "Americans", "GAYARD", 10, 10);
     sim.remove_entity_occupancy(1);
@@ -1556,8 +1556,8 @@ fn naval_rally_destination_and_move_survive_without_path_grid() {
         off_108: 200,
     });
     sim.playfield_size_height = Some(40);
-    sim.session.map_width = 40;
-    sim.session.map_height = 40;
+    sim.session.set_map_width_for_test(40);
+    sim.session.set_map_height_for_test(40);
 
     spawn_structure(&mut sim, &rules, 1, "Americans", "GAYARD", 10, 10);
     sim.remove_entity_occupancy(1);
@@ -1636,8 +1636,8 @@ fn naval_rally_destination_and_move_survive_beyond_the_path_grid() {
         off_108: 200,
     });
     sim.playfield_size_height = Some(40);
-    sim.session.map_width = 40;
-    sim.session.map_height = 40;
+    sim.session.set_map_width_for_test(40);
+    sim.session.set_map_height_for_test(40);
 
     spawn_structure(&mut sim, &rules, 1, "Americans", "GAYARD", 10, 10);
     sim.remove_entity_occupancy(1);

@@ -29,7 +29,7 @@ fn draw_state_world() -> (Simulation, RuleSet, InternedId, u64) {
     let owner = sim.interner.intern("H");
     sim.houses
         .register(HouseState::new(owner, 0, Some(country), true, 1000, 10));
-    sim.session.current_house = Some(owner);
+    sim.session.set_current_house_for_test(Some(owner));
     let yard = sim.spawn_object("Yard", "H", 8, 8, 0, &rules).unwrap();
     (sim, rules, owner, yard)
 }
@@ -113,7 +113,7 @@ fn house_pass_carries_stored_building_order_before_recalculation() {
         sim.houses
             .register(HouseState::new(id, 0, Some(country), true, 1000, 10));
     }
-    sim.session.current_house = Some(owner);
+    sim.session.set_current_house_for_test(Some(owner));
     let earlier = sim
         .spawn_object("InfFactory", "H", 8, 8, 0, &rules)
         .unwrap();
@@ -226,7 +226,7 @@ fn construction_options_match_original_gates_type_order_limit_and_warp_grant() {
             sim.houses
                 .register(HouseState::new(id, 0, Some(country), human, 1000, 10));
         }
-        sim.session.current_house = Some(owner);
+        sim.session.set_current_house_for_test(Some(owner));
         let factory_owner = if row["owner"] == "other" {
             "Other"
         } else {

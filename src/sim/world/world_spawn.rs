@@ -261,7 +261,7 @@ impl Simulation {
             veterancy,
             vision_range,
             is_voxel,
-            self.session.binary_frame,
+            self.session.binary_frame(),
             techno_ctor_random_word,
         );
         self.substrate.entities.insert(entity);
@@ -497,7 +497,7 @@ impl Simulation {
                     0,
                     sight_range,
                     uses_voxel,
-                    sim.session.binary_frame,
+                    sim.session.binary_frame(),
                     techno_ctor_random_word,
                 );
                 if map_ent.category == EntityCategory::Unit {
@@ -654,7 +654,7 @@ impl Simulation {
             let owner = self.scenario_house_named(&map_ent.owner)?;
             if map_ent.category == EntityCategory::Structure
                 && self.session.game_mode_nonzero()
-                && self.session.current_house == Some(owner)
+                && self.session.current_house() == Some(owner)
             {
                 return None;
             }
@@ -760,7 +760,7 @@ impl Simulation {
         let Some(mission) = authored else {
             return;
         };
-        let now = self.session.binary_frame;
+        let now = self.session.binary_frame();
         let _ = self.mission_assign_exact(
             stable_id,
             crate::sim::mission::MissionId::from_known(mission),
@@ -824,7 +824,7 @@ impl Simulation {
             } else {
                 (BuildingBodyMode::Idle, MissionType::Guard)
             };
-        let now = self.session.binary_frame;
+        let now = self.session.binary_frame();
         if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
             entity.begin_building_body(body, now as i32);
         }
@@ -1920,7 +1920,7 @@ impl Simulation {
             .substrate
             .entities
             .get(stable_id)
-            .map(|entity| entity.body_facing_dir(self.session.binary_frame));
+            .map(|entity| entity.body_facing_dir(self.session.binary_frame()));
         let outcome = self.try_reveal_entity_with_context(
             stable_id,
             RevealRequest {
@@ -1953,7 +1953,7 @@ impl Simulation {
                 // it. Trigger: every map building and convenience spawn.
                 // Effect on the body: none (same mode, same frame).
                 if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
-                    entity.initialize_building_idle_body(self.session.binary_frame as i32);
+                    entity.initialize_building_idle_body(self.session.binary_frame() as i32);
                 }
                 // AI buildings reached virtual DiscoveredBy(owner) in the
                 // shared Unlimbo owner. Do not replace its radio/mission
@@ -2154,7 +2154,7 @@ impl Simulation {
         if !object.cloakable && !rank_cloak {
             return;
         }
-        let frame = self.session.binary_frame as i32;
+        let frame = self.session.binary_frame() as i32;
         // Only UnitClass owns the direct Unlimbo state write, and it tests the
         // copied runtime Cloakable byte rather than rank-granted CLOAK.
         let fully_cloaked = category == EntityCategory::Unit && object.cloakable && !in_playfield;
@@ -2229,7 +2229,7 @@ impl Simulation {
                     entity.attack_target.target(),
                 ),
                 // Native rounds FacingClass::Current, including wrap at 0xff80.
-                entity.body_facing_dir(self.session.binary_frame),
+                entity.body_facing_dir(self.session.binary_frame()),
                 yard_obj.construction_yard,
                 rules
                     .object(type_str)
@@ -2316,7 +2316,7 @@ impl Simulation {
         if source_facing != deploy_facing {
             // `0x007395EF..0x0073965F`: Do_Turn unless already turning, OVER_OUT
             // to radio contact 0, then +0x68C.
-            let now = self.session.binary_frame;
+            let now = self.session.binary_frame();
             if let Some(entity) = self.substrate.entities.get_mut(stable_id)
                 && !crate::sim::movement::motion_query::is_moving_now(
                     entity,
@@ -2582,7 +2582,7 @@ impl Simulation {
                     side_index,
                     difficulty,
                     tech_level,
-                    self.session.game_options.super_weapons,
+                    self.session.game_options().super_weapons,
                     &mut self.scenario_rng,
                 );
             }
@@ -2858,7 +2858,7 @@ impl Simulation {
     fn construction_yard_redeploy_core_gate(&self, entity: &GameEntity) -> bool {
         // Building44374F..443778 /44F5F3..44F61C admit existing radio
         // contacts. Selling44AB68/44A2EE notifies and breaks them later.
-        if !self.session.game_options.mcv_redeploy {
+        if !self.session.game_options().mcv_redeploy {
             return false;
         }
         // `BuildingClass::CanUndeployMCV @ 0x00449C15` and

@@ -142,7 +142,7 @@ impl Simulation {
                 .get_mut(id)
                 .ok_or("retired Walk head owner")?;
             if selected {
-                super::walk_head::finish_fresh_head(actor, self.session.binary_frame);
+                super::walk_head::finish_fresh_head(actor, self.session.binary_frame());
             } else {
                 //75BCC0..75BCD5: failed subcell selection only zeros speed.
                 actor.foot_speed.set_speed_fraction(SIM_ZERO);
@@ -329,7 +329,7 @@ impl Simulation {
         actor
             .navigation
             .path_runtime
-            .start_movement(self.session.binary_frame, 0);
+            .start_movement(self.session.binary_frame(), 0);
         Ok(Some(request.into_path_request(destination, 0)))
     }
 
@@ -343,7 +343,7 @@ impl Simulation {
         frame_effects: FrameEffects<'_>,
     ) -> Result<(), String> {
         let id = request.entity_id;
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         let actor = self
             .substrate
             .entities

@@ -77,7 +77,7 @@ pub(super) fn mission_missile(sim: &mut Simulation, id: u64, rules: &RuleSet) ->
         // `0x0044D584`: the mission rate.
         return rules.mission_control.rate_frames(MissionType::Missile);
     }
-    let now = sim.session.binary_frame as i32;
+    let now = sim.session.binary_frame() as i32;
     let mut warning = None;
     if status == 0 {
         if let Some(entity) = sim.substrate.entities.get_mut(id) {
@@ -109,7 +109,7 @@ pub(super) fn mission_missile(sim: &mut Simulation, id: u64, rules: &RuleSet) ->
             if let Some(entity) = sim.substrate.entities.get_mut(id) {
                 entity.begin_building_body(BuildingBodyMode::Idle, now);
             }
-            let frame = sim.session.binary_frame;
+            let frame = sim.session.binary_frame();
             let _ = sim.mission_queue_exact(
                 id,
                 MissionId::from_known(MissionType::Guard),

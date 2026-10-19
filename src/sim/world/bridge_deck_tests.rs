@@ -359,7 +359,7 @@ fn a_bombed_bridge_hut_drops_its_bridge() {
         let ivan = sim
             .spawn_object_at_height("IVAN", "Russians", 12, 15, 0, 0, &rules)
             .unwrap();
-        sim.session.binary_frame = 100;
+        sim.session.set_binary_frame_for_test(100);
         if bombed {
             sim.bomb_attach(ivan, Some(hut), &rules);
         }
@@ -384,7 +384,7 @@ fn a_bombed_bridge_hut_drops_its_bridge() {
                 crate::sim::world::FrameEffects::default(),
             );
         } else {
-            sim.session.binary_frame = 100 + 451;
+            sim.session.set_binary_frame_for_test(100 + 451);
             sim.bomb_fuse_step(
                 hut,
                 &rules,

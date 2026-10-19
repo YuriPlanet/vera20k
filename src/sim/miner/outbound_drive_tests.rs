@@ -492,7 +492,7 @@ fn scenario_after_one_epilogue_draw(sim: &mut Simulation) -> SimRngLogicalState 
 /// not its frame number, which `state_four_exit_draws_and_applies_resume_jitter`
 /// already pins.
 fn arm_dispatch_now(sim: &mut Simulation, entity_id: u64) {
-    let now = sim.session.binary_frame as i32;
+    let now = sim.session.binary_frame() as i32;
     sim.substrate
         .entities
         .get_mut(entity_id)
@@ -798,7 +798,7 @@ fn production_stock_harv_far_return_drive_uses_rule_profile() {
     assert_eq!(entity.foot_speed.applied_fraction(), SIM_ZERO);
     // Do_Turn 0x4B0EF0 sets the body FacingClass (0x4C9220).
     assert!(
-        entity.body_facing.is_rotating(sim.session.binary_frame),
+        entity.body_facing.is_rotating(sim.session.binary_frame()),
         "the hull is commanded onto the head path node's octant first"
     );
 

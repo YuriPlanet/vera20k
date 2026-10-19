@@ -64,7 +64,7 @@ fn native_cheer_record_resolves_registered_house_and_runs_the_shared_receiver() 
         ids.push(id);
     }
     sim.sound_events.clear();
-    sim.session.binary_frame = 0xffff_fffe;
+    sim.session.set_binary_frame_for_test(0xffff_fffe);
     let record = sim.encode_cheer_record(owner).unwrap();
     assert_eq!(
         (record.opcode(), record.house_id(), record.frame_stamp()),

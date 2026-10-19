@@ -21,7 +21,7 @@ fn authority(sim: &Simulation, source: u64, expected_load: bool) -> Value {
             if expected_load {
                 // Original Bullet Load46AE9C..46AEB0 restarts the timer;
                 // the remaining saved guidance, launch and fuse state survives.
-                bullet.arm_timer.start(sim.session.binary_frame as i32, 0);
+                bullet.arm_timer.start(sim.session.binary_frame() as i32, 0);
             }
             json!({"state":bullet,"in_logic":bullet.in_logic_vector})
         })
@@ -37,7 +37,7 @@ fn authority(sim: &Simulation, source: u64, expected_load: bool) -> Value {
         "pending_delete":sim.substrate.pending_delete.object_ids(),
         "native_id_cursor":sim.native_unique_ids.as_ref().unwrap().current_raw(),
         "next_stable_id":sim.substrate.next_stable_object_id,
-        "clock":[sim.session.tick, u64::from(sim.session.binary_frame)],
+        "clock":[sim.session.tick(), u64::from(sim.session.binary_frame())],
         "bridge_authority":crate::util::sha256::sha256_hex(
             &save_codec::serialize(&sim.bridge_state).unwrap()),
         "cell_memberships":crate::util::sha256::sha256_hex(
@@ -93,7 +93,7 @@ fn checkpoint(
     let sim = scene.sim();
     eprintln!(
         "FV restore checkpoint {name} before frame{}",
-        sim.session.binary_frame
+        sim.session.binary_frame()
     );
     Checkpoint {
         name,

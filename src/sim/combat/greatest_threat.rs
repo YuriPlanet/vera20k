@@ -1257,7 +1257,7 @@ pub(crate) fn greatest_threat(
 
     // Scenario+0 bit `0x800`, read once per scan; the HarvesterImmune gate's
     // Rules list resolves with it so the ordinary bit-off scan builds nothing.
-    let harvester_immune = fire_world.is_some_and(|world| world.session.harvester_immune);
+    let harvester_immune = fire_world.is_some_and(|world| world.session.harvester_immune());
     let ctx = ScanContext {
         entities,
         scanner,
@@ -1359,7 +1359,9 @@ pub(crate) fn greatest_threat(
     };
     let air_extent = terrain
         .map(|terrain| (terrain.width(), terrain.height()))
-        .or_else(|| fire_world.map(|world| (world.session.map_width, world.session.map_height)));
+        .or_else(|| {
+            fire_world.map(|world| (world.session.map_width(), world.session.map_height()))
+        });
     let airborne = if scan_air {
         air_extent
             .map(|extent| {

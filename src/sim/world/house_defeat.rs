@@ -100,7 +100,7 @@ impl Simulation {
     pub fn flag_house_to_die(&mut self, owner: InternedId) -> bool {
         self.houses
             .get_mut(&owner)
-            .is_some_and(|house| house.flag_to_die(self.session.binary_frame as i32))
+            .is_some_and(|house| house.flag_to_die(self.session.binary_frame() as i32))
     }
 
     /// The house rung with its defeat pass: see [`Self::house_rung`].
@@ -136,7 +136,7 @@ impl Simulation {
             .get_mut(&owner)
             .is_some_and(|house| house.take_tech_recheck())
         {
-            if self.session.current_house == Some(owner) {
+            if self.session.current_house() == Some(owner) {
                 for type_id in
                     crate::sim::production::construction_options_for_owner(self, rules, owner)
                 {
@@ -180,7 +180,7 @@ impl Simulation {
         // 0x004F8E86..0x004F8EB7: not a campaign, past frame zero.
         let defeat_gate = defeat_pass
             && self.session.game_mode_nonzero()
-            && (self.session.binary_frame as i32) > 0;
+            && (self.session.binary_frame() as i32) > 0;
         // The interner resolves names case-insensitively, as native type
         // lookups do.
         let base_units = rules.map_or([None; 3], |rules| {
@@ -210,7 +210,7 @@ impl Simulation {
             // the sole private +298 CdTimer; use NativeFrame, not Rust tick+1.
             if let Some(house) = self.houses.get_mut(&owner) {
                 house.advance_outcome_savour(
-                    self.session.binary_frame as i32,
+                    self.session.binary_frame() as i32,
                     self.session.game_mode_nonzero(),
                 );
             }
@@ -219,7 +219,7 @@ impl Simulation {
             let to_die = self
                 .houses
                 .get_mut(&owner)
-                .is_some_and(|house| house.take_due_to_die(self.session.binary_frame as i32));
+                .is_some_and(|house| house.take_due_to_die(self.session.binary_frame() as i32));
             if to_die && let Some(rules) = rules {
                 self.house_blowup(
                     owner,
@@ -272,7 +272,7 @@ impl Simulation {
                 generated.extend(self.recheck_house_tech_tree(owner, rules));
             }
             if let Some(house) = self.houses.get_mut(&owner) {
-                house.release_repair_latch(self.session.binary_frame);
+                house.release_repair_latch(self.session.binary_frame());
             }
             index += 1;
         }
@@ -292,7 +292,7 @@ impl Simulation {
         if house.is_defeated || house.multiplay_passive {
             return false;
         }
-        if self.session.game_options.short_game {
+        if self.session.game_options().short_game {
             !house.tracking.short_game_alive(base_units)
         } else {
             !house.tracking.normal_game_alive(build_refinery_2)
@@ -337,7 +337,7 @@ impl Simulation {
         {
             self.computer_paranoid(rules, context.registry(), context.effects());
         }
-        let planning_commit = if self.session.current_house == Some(owner) {
+        let planning_commit = if self.session.current_house() == Some(owner) {
             // Original1cdd:4FC1EE ->637A10, before Session+300/reveal
             // and the loss announcement. Input owns the exit and2B event;
             // House returns it to MainTick's existing post-Logic dispatcher.
@@ -409,7 +409,7 @@ impl Simulation {
         }
         let Some(local) = self
             .session
-            .current_house
+            .current_house()
             .filter(|owner| self.houses.contains_key(owner))
         else {
             return;
@@ -444,7 +444,7 @@ impl Simulation {
         if !self.session.game_mode().is_network() {
             return duration;
         }
-        let frame = self.session.binary_frame as i32;
+        let frame = self.session.binary_frame() as i32;
         let remaining = crate::sim::timer::CdTimer::started(frame, duration).remaining(frame);
         let ahead = self
             .session
@@ -473,7 +473,7 @@ impl Simulation {
     ) -> bool {
         let savour = self.outcome_savour_frames(rules);
         let accepted = self.houses.get_mut(&owner).is_some_and(|house| {
-            house.accept_win_result(self.session.binary_frame as i32, savour, skip_timer)
+            house.accept_win_result(self.session.binary_frame() as i32, savour, skip_timer)
         });
         if accepted {
             self.publish_accepted_house_outcome(
@@ -498,7 +498,7 @@ impl Simulation {
     ) -> bool {
         let savour = self.outcome_savour_frames(rules);
         let accepted = self.houses.get_mut(&owner).is_some_and(|house| {
-            house.accept_lose_result(self.session.binary_frame as i32, savour, skip_timer)
+            house.accept_lose_result(self.session.binary_frame() as i32, savour, skip_timer)
         });
         if accepted {
             self.publish_accepted_house_outcome(
@@ -529,7 +529,7 @@ impl Simulation {
                 .get(&owner)
                 .is_some_and(|house| house.is_controlled_by_human(false))
         } else {
-            self.session.current_house == Some(owner)
+            self.session.current_house() == Some(owner)
         };
         if !announce {
             return;
@@ -567,7 +567,7 @@ impl Simulation {
     ) -> bool {
         let Some(owner) = self
             .session
-            .current_house
+            .current_house()
             .filter(|owner| self.houses.contains_key(owner))
         else {
             return false;
@@ -604,7 +604,7 @@ impl Simulation {
                     self.houses
                         .get_mut(&owner)
                         .unwrap()
-                        .resume_result_timer(self.session.binary_frame as i32);
+                        .resume_result_timer(self.session.binary_frame() as i32);
                 } else {
                     self.flag_house_to_win(owner, rules, false, effects);
                 }
@@ -626,7 +626,7 @@ impl Simulation {
     /// and local planning admission (`0x00731A50`).
     pub fn local_player_defeated(&self) -> bool {
         self.session
-            .current_house
+            .current_house()
             .and_then(|house| self.houses.get(&house))
             .is_some_and(|house| house.is_defeated)
     }

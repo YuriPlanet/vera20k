@@ -285,7 +285,8 @@ fn settled_repair_native_health_sample_factory_cadence_radar_and_later_advice() 
         );
         let (mut sim, rules, owner) = fixture(true);
         let prior = &row["trace"][1];
-        sim.session.binary_frame = int(&prior["frame"]) as u32;
+        sim.session
+            .set_binary_frame_for_test(int(&prior["frame"]) as u32);
         let timer = &prior["blackout_timer"];
         sim.power_states
             .get_mut(&owner)
@@ -333,7 +334,8 @@ fn settled_repair_native_health_sample_factory_cadence_radar_and_later_advice() 
         compared += 1;
 
         for native in row["trace"].as_array().unwrap().iter().skip(2) {
-            sim.session.binary_frame = int(&native["frame"]) as u32;
+            sim.session
+                .set_binary_frame_for_test(int(&native["frame"]) as u32);
             match native["phase"].as_str().unwrap() {
                 "plant_sample" => sim.sample_building_health_for_house_update(PLANT),
                 "paid_repair" => {
@@ -377,7 +379,7 @@ fn native_blackout_setter_replaces_shorter_longer_and_zero_durations() {
         let input = &row["input"];
         let prior = &input["prior_timer"];
         let start = int(&prior[0]) as u32;
-        sim.session.binary_frame = start;
+        sim.session.set_binary_frame_for_test(start);
         sim.power_states
             .get_mut(&owner)
             .unwrap()
@@ -389,13 +391,14 @@ fn native_blackout_setter_replaces_shorter_longer_and_zero_durations() {
         if input["prior_dirty"] == true {
             sim.invalidate_house_power(owner, input["prior_radar_dirty"] == true);
         }
-        sim.session.binary_frame = int(&input["frame"]) as u32;
+        sim.session
+            .set_binary_frame_for_test(int(&input["frame"]) as u32);
         assert_power(&sim, owner, &row["before"], "native setter prior");
         assert_rng(&sim, &row["receipt"]["rng_before"], "setter prior");
         sim.power_states
             .get_mut(&owner)
             .unwrap()
-            .start_blackout(sim.session.binary_frame, int(&input["duration"]));
+            .start_blackout(sim.session.binary_frame(), int(&input["duration"]));
         assert_power(&sim, owner, &row["output"], "whole50BC90 setter");
         assert_rng(&sim, &row["receipt"]["rng_after"], "whole50BC90 setter");
         assert_eq!(row["setter_execution"]["unique_instructions"], 13);
@@ -414,7 +417,7 @@ fn native_blackout_zero_one_and_two_remaining_with_clean_or_dirty_house() {
         let (mut sim, rules, owner) = fixture(true);
         let input = &row["input"];
         let start = int(&input["start"]) as u32;
-        sim.session.binary_frame = start;
+        sim.session.set_binary_frame_for_test(start);
         sim.power_states
             .get_mut(&owner)
             .unwrap()
@@ -422,7 +425,8 @@ fn native_blackout_zero_one_and_two_remaining_with_clean_or_dirty_house() {
         // Reach a clean power assessment while the timer still has2 frames.
         // Local radar's separately supplied prior bool is not compared here.
         sim.assess_house_derived_state(owner, &rules);
-        sim.session.binary_frame = int(&input["frame"]) as u32;
+        sim.session
+            .set_binary_frame_for_test(int(&input["frame"]) as u32);
         if input["prior_dirty"] == true {
             sim.invalidate_house_power(owner, false);
         }
@@ -450,7 +454,8 @@ fn native_local_radar_projection_uses_represented_provider_predicates_and_house_
             continue;
         }
         let (mut sim, rules, owner) = fixture(flag(input, "radar_type", true));
-        sim.session.free_radar = flag(input, "free", false);
+        sim.session
+            .set_free_radar_for_test(flag(input, "free", false));
         if flag(input, "second", false) {
             building(&mut sim, SECOND_RADAR, owner, "RADAR", 500);
             assert_eq!(
@@ -481,7 +486,8 @@ fn native_local_radar_projection_uses_represented_provider_predicates_and_house_
         state.is_low_power = state.total_output < state.total_drain;
         // House+2B0's timer (start, an unused dword, duration) at the row's
         // frame.
-        sim.session.binary_frame = int(&row["output"]["frame"]) as u32;
+        sim.session
+            .set_binary_frame_for_test(int(&row["output"]["frame"]) as u32);
         if let Some(outage) = input["outage"].as_array() {
             state.set_radar_outage_for_test(crate::sim::timer::CdTimer::from_raw(
                 int(&outage[0]),
@@ -496,8 +502,8 @@ fn native_local_radar_projection_uses_represented_provider_predicates_and_house_
             &rules,
             owner,
             &sim.interner,
-            sim.session.free_radar,
-            sim.session.binary_frame,
+            sim.session.free_radar(),
+            sim.session.binary_frame(),
         );
         sim.power_states.insert(owner, state);
         assert_eq!(
@@ -527,8 +533,9 @@ fn native_local_low_power_advice_guard_and_eight_speed_delay_values() {
             continue;
         }
         let (mut sim, rules, owner) = fixture(true);
-        sim.session.binary_frame = 196;
-        sim.session.game_options.game_speed = input["speed"].as_i64().unwrap_or(1) as i32;
+        sim.session.set_binary_frame_for_test(196);
+        sim.session.game_options_mut_for_test().game_speed =
+            input["speed"].as_i64().unwrap_or(1) as i32;
         sim.houses.get_mut(&owner).unwrap().eva_low_power_guard = int(&input["guard"]) != 0;
         // The supplied `+0x5550` GAPOWR count, independent of the retained
         // House power totals.
@@ -574,7 +581,7 @@ fn native_local_low_power_advice_guard_and_eight_speed_delay_values() {
         assert_eq!(lines, native_lines, "{input}: local EVA requests");
         if native_lines.contains(&EVA_LOW_POWER) {
             assert_eq!(
-                house_eva::speak_delay_frames(&rules, &sim.session.game_options),
+                house_eva::speak_delay_frames(&rules, &sim.session.game_options()),
                 int(&row["output"]["low_power_timer"][2]),
                 "{input}: original advice's delay input"
             );

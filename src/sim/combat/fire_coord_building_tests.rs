@@ -114,7 +114,7 @@ fn building_aim_directions_match_the_original() {
                     );
             }
         }
-        let frame = sim.session.binary_frame;
+        let frame = sim.session.binary_frame();
         let facing = input["facing"].as_u64().unwrap() as u16;
         let building = sim.substrate.entities.get_mut(1).unwrap();
         building.body_facing = FacingClass::new(facing, 10);

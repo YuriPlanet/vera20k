@@ -408,7 +408,7 @@ impl Simulation {
             carrier,
             self.resolved_terrain.as_ref(),
         );
-        let start_frame = self.session.binary_frame as i32;
+        let start_frame = self.session.binary_frame() as i32;
         let bomb = Bomb {
             planter: Some(planter),
             planter_house,
@@ -481,7 +481,7 @@ impl Simulation {
         }
         log::info!(
             "BOMB {carrier} goes off at frame {} (source {:?})",
-            self.session.binary_frame,
+            self.session.binary_frame(),
             bomb.planter,
         );
         let bridge_hut = entity.category() == EntityCategory::Structure
@@ -512,7 +512,7 @@ impl Simulation {
         };
         let expired = entity
             .bomb
-            .is_some_and(|bomb| bomb.expired(self.session.binary_frame as i32));
+            .is_some_and(|bomb| bomb.expired(self.session.binary_frame() as i32));
         if !expired || entity.lifecycle.in_limbo() {
             return false;
         }

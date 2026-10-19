@@ -108,8 +108,8 @@ fn retail_world(rules: &RuleSet, terrain_rules: &TerrainRules) -> Simulation {
         off_104: 256,
         off_108: 256,
     });
-    sim.session.map_width = 128;
-    sim.session.map_height = 128;
+    sim.session.set_map_width_for_test(128);
+    sim.session.set_map_height_for_test(128);
     sim.install_resolved_terrain_for_new_map(terrain);
     let owner = sim.interner.intern("Americans");
     sim.houses
@@ -965,7 +965,8 @@ fn retail_reused_unit_unlimbo_matches_original_stage_and_rng_tail() {
                 int(&poisoned["rate"]),
                 int(&poisoned["increment"]),
             ));
-        sim.session.binary_frame = input["frame"].as_u64().unwrap() as u32;
+        sim.session
+            .set_binary_frame_for_test(input["frame"].as_u64().unwrap() as u32);
         sim.main_rng = serde_json::from_value::<SimRng>(row["rng_before"]["main"].clone())
             .unwrap()
             .into();
@@ -1202,8 +1203,8 @@ fn retail_land_factory_delivery_matches_original_unit_unlimbo_suffix() {
                 .test_arm_ready(owner, ProductionCategory::Vehicle)
         );
         let prior_rng = sim.rng_state();
-        let prior_tick = sim.session.tick;
-        let prior_frame = sim.session.binary_frame;
+        let prior_tick = sim.session.tick();
+        let prior_frame = sim.session.binary_frame();
         assert_eq!(
             json!(prior_frame),
             row["before"]["frame"],
@@ -1233,7 +1234,7 @@ fn retail_land_factory_delivery_matches_original_unit_unlimbo_suffix() {
         );
         assert_eq!(row["eax"], 2, "{name}: native ExitObject success");
         assert_eq!(
-            json!(sim.session.binary_frame),
+            json!(sim.session.binary_frame()),
             row["after"]["frame"],
             "{name}: direct ExitObject preserves its native frame"
         );
@@ -1334,7 +1335,7 @@ fn retail_land_factory_delivery_matches_original_unit_unlimbo_suffix() {
             "{name}: successful caller releases its held identity"
         );
         assert_eq!(
-            (sim.session.tick, sim.session.binary_frame),
+            (sim.session.tick(), sim.session.binary_frame()),
             (prior_tick, prior_frame),
             "{name}: ExitObject and caller release do not advance a frame"
         );

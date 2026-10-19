@@ -34,7 +34,7 @@ fn scene_with_rules(
     sim.install_playfield_from_map_header(&map.header);
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.session.binary_frame = 1000;
+    sim.session.set_binary_frame_for_test(1000);
     let owner = sim.interner.intern("Americans");
     let other = sim.interner.intern("Russians");
     for id in [owner, other] {
@@ -42,8 +42,8 @@ fn scene_with_rules(
             .register(HouseState::new(id, 0, Some(id), id == owner, 0, 10));
         superweapon::construct_house_supers(&mut sim, &rules, id, false);
     }
-    sim.session.current_house = Some(owner);
-    sim.session.game_options.super_weapons = true;
+    sim.session.set_current_house_for_test(Some(owner));
+    sim.session.game_options_mut_for_test().super_weapons = true;
     sim.initialize_trigger_definitions(
         &map,
         &crate::rules::team_ai_ini::TeamAiIniRegistry::default(),
@@ -93,7 +93,7 @@ fn super_grant_actions_survive_provider_loss_power_and_shell_until_house_defeat(
     for kind in [33, 34] {
         let (mut sim, rules, _, owner, id) = scene(kind);
         spring(&mut sim, &rules);
-        sim.session.game_options.super_weapons = false;
+        sim.session.game_options_mut_for_test().super_weapons = false;
         sim.power_states.entry(owner).or_default().is_low_power = true;
         let before = serde_json::to_value(&sim.super_weapons[&owner][&id]).unwrap();
         superweapon::update_owned_supers(&mut sim, &rules, owner);
@@ -116,7 +116,7 @@ fn super_grant_one_time_click_consumes_and_repeating_click_recharges() {
         let (mut sim, rules, _, owner, id) = scene(kind);
         spring(&mut sim, &rules);
         if kind == 34 {
-            sim.session.binary_frame = 1900;
+            sim.session.set_binary_frame_for_test(1900);
             superweapon::tick_house_superweapon_instances(&mut sim, &rules, owner);
         }
         assert!(sim.super_weapons[&owner][&id].is_ready);

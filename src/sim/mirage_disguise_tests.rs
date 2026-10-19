@@ -116,7 +116,8 @@ fn fixture(row: &Value) -> Simulation {
     let base = row["input"]["bridge_base"].as_i64().unwrap_or(-1);
     grid.test_set_high_bridge_set_starts(u16::try_from(base).ok(), None);
     sim.resolved_terrain = Some(grid);
-    sim.session.binary_frame = signed(&row["frame"]) as u32;
+    sim.session
+        .set_binary_frame_for_test(signed(&row["frame"]) as u32);
     sim.scenario_rng =
         SimRng::from_native_state_hex_for_test(row["rng_before"]["scenario"].as_str().unwrap());
     sim.main_rng =
@@ -166,7 +167,8 @@ fn assert_visit(sim: &mut Simulation, rules: &RuleSet, row: &Value) {
         row["rng_before"]["main"],
         "{context}: Main input"
     );
-    sim.session.binary_frame = signed(&row["frame"]) as u32;
+    sim.session
+        .set_binary_frame_for_test(signed(&row["frame"]) as u32);
     sim.update_unit_disguise(1, rules).expect("live Unit visit");
     assert_state(sim, &row["after"], context);
     assert_eq!(
@@ -415,7 +417,7 @@ fn mirage_full_snapshot_preserves_wait_and_uses_the_restored_scenario_owner() {
         .unwrap();
     let first = &row["continuation"][0];
     let mut sim = fixture(first);
-    sim.session.map_name = "MIRAGE.MAP".into();
+    sim.session.set_map_name_for_test("MIRAGE.MAP".into());
     let config_hash = retail.rules.simulation_config_hash();
     let bytes = GameSnapshot::save_validated(&sim, config_hash, 0, "Mirage timer", 0);
     let mut loaded = GameSnapshot::load_validated(&bytes, config_hash, 0, "MIRAGE.MAP")

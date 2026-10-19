@@ -211,7 +211,8 @@ fn build_type_event_latches_before_elapsed_time_as_in_native_register_history() 
         CdTimer::from_raw(integer(&prior[0]), integer(&prior[2]));
     supply_rng(&mut sim, &native["predicate_rng"]["full_seed31"]);
     for row in histories {
-        sim.session.binary_frame = integer(&row["frame"]) as u32;
+        sim.session
+            .set_binary_frame_for_test(integer(&row["frame"]) as u32);
         sim.houses
             .get_mut(&houses[0])
             .unwrap()
@@ -260,7 +261,7 @@ fn building_discovery_updates_last_type_only_after_admission_outside_init() {
     sim.intern_rule_type_ids(&rules);
     let owner = sim.interner.intern("Owner");
     let player = sim.interner.intern("Player");
-    sim.session.current_house = Some(player);
+    sim.session.set_current_house_for_test(Some(player));
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false));
     sim.houses
@@ -367,7 +368,7 @@ fn build_type_retail_all07_placement_reaches_house_poll_and_eva_once() {
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
     let house = sim.interner.get("Americans").unwrap();
-    sim.session.current_house = Some(house);
+    sim.session.set_current_house_for_test(Some(house));
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false));
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
@@ -435,7 +436,7 @@ fn build_type_retail_all07_placement_reaches_house_poll_and_eva_once() {
         expected_index
     );
     for (frame, heard) in [(8, false), (149, false), (152, true), (160, true)] {
-        sim.session.binary_frame = frame;
+        sim.session.set_binary_frame_for_test(frame);
         sim.raise_house_tags(house, Some(&rules), None, FrameEffects::default());
         sim.flush_pending_delete();
         assert_eq!(

@@ -1102,7 +1102,7 @@ impl Simulation {
         else {
             return;
         };
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
             entity.unlimbo_barrel_elevation(fire_angle, frame);
         }
@@ -1237,7 +1237,7 @@ impl Simulation {
         {
             entity
                 .body_facing
-                .snap(u16::from(facing) << 8, self.session.binary_frame);
+                .snap(u16::from(facing) << 8, self.session.binary_frame());
             #[cfg(any(test, feature = "test-support"))]
             self.trace_lifecycle_for_test(LifecycleTestEvent::UnlimboBodyFacingSnapped);
         }
@@ -1304,7 +1304,7 @@ impl Simulation {
             crate::sim::movement::slope_transition::snap_after_successful_unlimbo(
                 entity,
                 sampled_slope,
-                self.session.binary_frame,
+                self.session.binary_frame(),
             );
         }
         // ObjectUnlimbo5F4FB4 Mark/CellPUT has already run. Foot4D722F calls
@@ -1359,7 +1359,7 @@ impl Simulation {
             )
             && let Some(barrel) = entity.barrel_facing.as_mut()
         {
-            barrel.snap(u16::from(facing) << 8, self.session.binary_frame);
+            barrel.snap(u16::from(facing) << 8, self.session.binary_frame());
         }
         // Unit737BF5..737C75 resets the SAME +F8 StageClass after Foot
         // success. E18/E19 are Unit-section booleans, not General references.
@@ -1388,7 +1388,7 @@ impl Simulation {
             if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
                 entity.restart_native_stage(
                     value,
-                    self.session.binary_frame as i32,
+                    self.session.binary_frame() as i32,
                     i32::from(visceroid),
                 );
             }
@@ -1420,7 +1420,7 @@ impl Simulation {
                 entity.finish_aircraft_unlimbo(
                     height,
                     object.flight_level(rules.general.flight_level),
-                    self.session.binary_frame as i32,
+                    self.session.binary_frame() as i32,
                 );
             }
         }
@@ -1631,7 +1631,7 @@ impl Simulation {
         //6F4960..6F4972 compares the nonnull viewer against PlayerPtr;
         //there is no null-Player guard. A headless owner callback therefore
         //takes the ordinary other-house arm when no local player is bound.
-        let current = Some(viewer) == self.session.current_house;
+        let current = Some(viewer) == self.session.current_house();
         let history = entity.discovery;
         if (current && history.discovered_by_current_house)
             || (!current && history.discovered_by_other_house)
@@ -1781,7 +1781,7 @@ impl Simulation {
         cell: (u16, u16),
         context: UninitContext<'_>,
     ) {
-        let Some(viewer) = self.session.current_house else {
+        let Some(viewer) = self.session.current_house() else {
             return;
         };
         if !self.session.game_mode_nonzero() {
@@ -1955,7 +1955,7 @@ impl Simulation {
                         current_cell,
                         &foundation,
                         profile,
-                        Some((self.session.map_width, self.session.map_height)),
+                        Some((self.session.map_width(), self.session.map_height())),
                     )
                 })
             {
@@ -2282,7 +2282,7 @@ impl Simulation {
                         current_cell,
                         &foundation,
                         profile,
-                        Some((self.session.map_width, self.session.map_height)),
+                        Some((self.session.map_width(), self.session.map_height())),
                     )
                 })
             {
@@ -2659,7 +2659,7 @@ impl Simulation {
                     .barrel_facing
                     .as_mut()
                     .unwrap()
-                    .set(desired, self.session.binary_frame);
+                    .set(desired, self.session.binary_frame());
             }
             TakeoffFacing::PrimaryToDestination => {
                 // Original also evaluates the zero delta; do not special-case
@@ -2668,7 +2668,7 @@ impl Simulation {
                     destination.x.wrapping_sub(xy[0]),
                     destination.y.wrapping_sub(xy[1]),
                 );
-                entity.body_facing.set(desired, self.session.binary_frame);
+                entity.body_facing.set(desired, self.session.binary_frame());
                 entity
                     .locomotor
                     .as_mut()
@@ -3523,7 +3523,7 @@ impl Simulation {
             // keeps an alternate admission it holds. Every production Limbo
             // passes rules.
             let reveal_to_all = context.rules().filter(|&rules| {
-                self.session.current_house.is_some()
+                self.session.current_house().is_some()
                     && self
                         .substrate
                         .entities
@@ -4398,7 +4398,7 @@ impl Simulation {
     /// The native priority bracket A8E7AC suppresses both the draw and write.
     /// Original controls: infantry_deploy_action.json's reload rows.
     pub(crate) fn shorten_passive_scan_timer(&mut self, id: u64) -> bool {
-        let now = self.session.binary_frame;
+        let now = self.session.binary_frame();
         if self.object_placement_scope_active()
             || self
                 .substrate

@@ -171,7 +171,7 @@ pub(crate) fn build_shp_instances(
         // ask vt+0x440 (0x0070EE30) before taking the disguise.
         let active_disguise = entity.disguise.as_ref().filter(|disguise| {
             disguise.is_disguised()
-                && DrawState::draws_disguise(entity, sim.session.binary_frame, observer)
+                && DrawState::draws_disguise(entity, sim.session.binary_frame(), observer)
         });
         let type_name = if entity.category() == EntityCategory::Unit {
             if entity.unit_deploying() {
@@ -181,7 +181,7 @@ pub(crate) fn build_shp_instances(
                 entity,
                 &sim.interner,
                 state.rules(),
-                sim.session.binary_frame,
+                sim.session.binary_frame(),
                 observer,
             )
         } else {
@@ -231,7 +231,7 @@ pub(crate) fn build_shp_instances(
             &sim.fog,
             &sim.house_alliances,
             ignore_visibility,
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
             super::units::house_color_to_remap_row(hc),
             observer,
         ) else {
@@ -255,7 +255,7 @@ pub(crate) fn build_shp_instances(
                 state,
                 sim.interner.resolve(entity.type_ref()),
                 entity,
-                sim.session.binary_frame,
+                sim.session.binary_frame(),
                 cells.as_ref(),
             ) {
                 emit_unit_terrain_body(
@@ -376,7 +376,7 @@ pub(crate) fn build_shp_instances(
                         state,
                         type_str,
                         entity,
-                        sim.session.binary_frame,
+                        sim.session.binary_frame(),
                         cells.as_ref(),
                     ) else {
                         continue;
@@ -695,8 +695,10 @@ pub(crate) fn build_shp_instances(
                         .barrel_image_pitches
                         .borrow_mut(),
                     type_str,
-                    entity.body_facing_current(sim.session.binary_frame),
-                    entity.barrel_elevation().current(sim.session.binary_frame),
+                    entity.body_facing_current(sim.session.binary_frame()),
+                    entity
+                        .barrel_elevation()
+                        .current(sim.session.binary_frame()),
                     entity.turret_anim_frame.frame(),
                     entity.voxel_recoil(),
                     turret_offset,
@@ -1102,7 +1104,7 @@ pub(crate) fn build_building_anim_instances(
         // its own retained Display member and hidden byte decide that.
         let material = DrawState::for_entity(
             building,
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
             super::units::house_color_to_remap_row(house_color),
             observer,
         );

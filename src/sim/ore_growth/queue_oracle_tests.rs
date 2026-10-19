@@ -1174,7 +1174,7 @@ fn retail_authored_first_ore_frame_publishes_cells_and_retires_transient_overlay
     )
     .unwrap();
     let witnesses = [(71, 24), (72, 24), (73, 24), (71, 25), (71, 26)];
-    let initial_frame = scene.sim().session.binary_frame;
+    let initial_frame = scene.sim().session.binary_frame();
     assert_eq!(initial_frame, 0);
     let rules = &scene.runtime.resources.rules;
     assert_eq!(
@@ -1367,7 +1367,7 @@ fn retail_authored_first_ore_frame_publishes_cells_and_retires_transient_overlay
             .unwrap()
     });
     assert!(output.tick.frame_committed);
-    assert_eq!(scene.sim().session.binary_frame, initial_frame + 1);
+    assert_eq!(scene.sim().session.binary_frame(), initial_frame + 1);
     assert_ne!(scene.sim().scenario_rng.native_state_hex(), rng_before);
     assert!(!draws.is_empty());
 

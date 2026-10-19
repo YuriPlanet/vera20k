@@ -208,7 +208,7 @@ impl Simulation {
                 .push(SimSoundEvent::ObjectSoundReleased { owner: id });
             return true;
         }
-        if self.session.binary_frame & 3 == 0 {
+        if self.session.binary_frame() & 3 == 0 {
             // Scenario RandomRanged65C7E0 draws Y then X. Its rejection loop
             // is observable (seed zero spends three raw draws for this pair).
             let y = self.scenario_rng.next_range_i32_inclusive(-170, 170);

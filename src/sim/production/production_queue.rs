@@ -59,7 +59,7 @@ pub fn build_options_for_owner(sim: &Simulation, rules: &RuleSet, owner: &str) -
 
     // Diagnostic: log reason breakdown when nothing is buildable.
     let enabled_count = options.iter().filter(|o| o.enabled).count();
-    if enabled_count == 0 && sim.session.tick.is_multiple_of(90) {
+    if enabled_count == 0 && sim.session.tick().is_multiple_of(90) {
         let mut reason_counts: BTreeMap<&str, usize> = BTreeMap::new();
         for opt in &options {
             let key = match &opt.reason {
@@ -74,7 +74,7 @@ pub fn build_options_for_owner(sim: &Simulation, rules: &RuleSet, owner: &str) -
         log::warn!(
             "[BUILD-DIAG] owner='{}' tick={} total_items={} reasons={:?}",
             owner,
-            sim.session.tick,
+            sim.session.tick(),
             options.len(),
             reason_counts
         );
@@ -150,7 +150,7 @@ pub fn publish_production_changes(sim: &mut Simulation, rules: &RuleSet) {
         }) {
             sim.queue_command(crate::sim::command::CommandEnvelope::new(
                 owner,
-                sim.session.tick.saturating_add(1),
+                sim.session.tick().saturating_add(1),
                 crate::sim::command::Command::PlaceProducedMobile { category },
             ));
         }
@@ -166,14 +166,16 @@ pub fn dispatch_production_changes_for_tests(
     rules: &RuleSet,
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
 ) -> bool {
-    sim.session.tick = sim.session.tick.saturating_add(1);
-    sim.session.binary_frame = sim.session.binary_frame.wrapping_add(1);
+    sim.session
+        .set_tick_for_test(sim.session.tick().saturating_add(1));
+    sim.session
+        .set_binary_frame_for_test(sim.session.binary_frame().wrapping_add(1));
     publish_production_changes(sim, rules);
     let due = sim.take_due_commands();
     let (_, spawned) = sim.apply_due_commands(
         &due,
         Some(rules),
-        sim.session.tick.saturating_add(1),
+        sim.session.tick().saturating_add(1),
         overlay_registry,
         crate::sim::world::FrameEffects::default(),
     );
@@ -329,7 +331,7 @@ fn exit_naval(
             producer_id,
             crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Unload),
             0,
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
             &crate::sim::mission::authority::LiveReadyInputProvider { rules },
         );
     }
@@ -363,7 +365,7 @@ fn exit_naval(
             spawned,
             crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Move),
             0,
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
             &crate::sim::mission::authority::LiveReadyInputProvider { rules },
         );
     }
@@ -525,7 +527,7 @@ fn exit_land(
             producer_id,
             crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Unload),
             0,
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
             &crate::sim::mission::authority::LiveReadyInputProvider { rules },
         );
         Some(spawned)
@@ -729,7 +731,7 @@ fn infantry_exit_tail(
             spawned,
             crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Move),
             0,
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
             &crate::sim::mission::authority::LiveReadyInputProvider { rules },
         );
         if let Err(cause) = sim.assign_destination_represented(
@@ -835,7 +837,7 @@ fn exit_post(
         spawned,
         MissionId::from_known(MissionType::AreaGuard),
         0,
-        sim.session.binary_frame,
+        sim.session.binary_frame(),
         &LiveReadyInputProvider { rules },
     );
     let post = sim
@@ -867,7 +869,7 @@ fn generic_exit_tail(
         spawned,
         MissionId::from_known(MissionType::Move),
         0,
-        sim.session.binary_frame,
+        sim.session.binary_frame(),
         &LiveReadyInputProvider { rules },
     );
     if let Err(cause) = sim.assign_destination_represented(
@@ -974,7 +976,7 @@ fn exit_aircraft(
                 spawned,
                 crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Move),
                 0,
-                sim.session.binary_frame,
+                sim.session.binary_frame(),
                 &crate::sim::mission::authority::LiveReadyInputProvider { rules },
             );
         }

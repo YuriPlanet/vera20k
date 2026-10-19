@@ -48,7 +48,7 @@ fn stock_cloak_tick_facts(
                     &sim.interner,
                     &sim.houses,
                 )),
-                sim.session.binary_frame,
+                sim.session.binary_frame(),
             ));
 
     // The gate the state-0 head of `CloakingTick @ 0x006FB757..0x006FB7F7`
@@ -83,7 +83,7 @@ fn stock_cloak_tick_facts(
     // vt+0x380 is FootClass::IsParalyzed `0x004DE770` (Foot+6A0), armed by
     // ParasiteClass: a released owner for 3x its ROF, and bitten victims.
     let emp_active = false;
-    let paralyzed = entity.parasite.is_paralyzed(sim.session.binary_frame);
+    let paralyzed = entity.parasite.is_paralyzed(sim.session.binary_frame());
     let state_zero_head_allows =
         is_cloakable && !emp_active && !paralyzed && !chrono_active || rank_cloak;
 
@@ -94,7 +94,7 @@ fn stock_cloak_tick_facts(
         .radio_contacts
         .slot(0)
         .is_some_and(|contact| sim.is_weapons_factory(contact, rules));
-    let current_frame = sim.session.binary_frame as i32;
+    let current_frame = sim.session.binary_frame() as i32;
     let cloak_state = entity.cloak.as_ref().map_or(0, |cloak| cloak.state());
     let cloak_progress = entity.cloak.as_ref().map_or(0, |cloak| cloak.depth());
 
@@ -496,7 +496,7 @@ pub(crate) fn uncloak_on_sensor_neighbour_after_cell_entry(
         .get(id)
         .and_then(|entity| sim.interner.object_type(entity.type_ref(), rules))
         .map_or(1, |object| object.cloaking_speed);
-    let now = sim.session.binary_frame as i32;
+    let now = sim.session.binary_frame() as i32;
     let surfaced = sim
         .substrate
         .entities
@@ -613,7 +613,7 @@ pub(super) fn tick_stock_cloak_producer(
         return;
     }
 
-    let frame = sim.session.binary_frame as i32;
+    let frame = sim.session.binary_frame() as i32;
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
         crate::sim::cloak_disguise::CloakRuntime::install_if_absent(&mut entity.cloak, frame);
     }

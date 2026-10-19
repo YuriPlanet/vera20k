@@ -330,11 +330,12 @@ fn active_dispatch_matches_all_48_native_gate_rows_without_requiring_head() {
 }
 
 fn setup_turn(sim: &mut Simulation, kind: LocomotorKind, live: bool, latch: bool, active: bool) {
-    sim.session.binary_frame = if live { 101 } else { 132 };
+    sim.session
+        .set_binary_frame_for_test(if live { 101 } else { 132 });
     let entity = sim.substrate.entities.get_mut(1).unwrap();
     let mut facing = FacingClass::new(0, 1);
     facing.set(0x2000, 100);
-    assert_eq!(facing.is_rotating(sim.session.binary_frame), live);
+    assert_eq!(facing.is_rotating(sim.session.binary_frame()), live);
     entity.body_facing = facing;
     set_retained(
         entity,
@@ -875,7 +876,7 @@ fn live_rotation_returns_before_fresh_selection_with_a_queued_path_and_no_displa
             (2, 5, 101, 3),
             "{kind:?}: slope prelude must run before the live-turn return"
         );
-        sim.session.binary_frame = 102;
+        sim.session.set_binary_frame_for_test(102);
         sim.process_ground_locomotor_for_test(1, Some(&rules), Some(&grid), None)
             .unwrap();
         let slope = super::super::slope_transition::state_for_entity(
@@ -904,8 +905,8 @@ fn actual_turn_and_arrival_crush_use_binary_frame_for_both_shield_kinds() {
             for shield in [InvulnKind::IronCurtain, InvulnKind::ForceShield] {
                 for (tick, frame) in [(0, 100), (100, 130)] {
                     let mut sim = fixture(kind);
-                    sim.session.tick = tick;
-                    sim.session.binary_frame = frame;
+                    sim.session.set_tick_for_test(tick);
+                    sim.session.set_binary_frame_for_test(frame);
                     let crusher = sim.substrate.entities.get_mut(1).unwrap();
                     crusher.mover_facts.set_regular_crusher_for_test(true);
                     crusher.mover_facts.set_drive_accelerates_for_test(false);

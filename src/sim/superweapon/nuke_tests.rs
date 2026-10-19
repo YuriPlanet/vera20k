@@ -219,8 +219,9 @@ fn impact_effects_match_native() {
             rules.weapon("NukePayload"),
         );
         sim.projectiles.spawn(id, spawn);
-        sim.session.binary_frame = 4000;
-        sim.session.lighting = ScenarioLightingState::default();
+        sim.session.set_binary_frame_for_test(4000);
+        sim.session
+            .set_lighting_for_test(ScenarioLightingState::default());
         sim.lighting_sources.pending.clear();
         sim.sound_events.clear();
         let anims_before: Vec<AnimId> = sim.substrate.anims.iter().map(|(&id, _)| id).collect();
@@ -240,9 +241,9 @@ fn impact_effects_match_native() {
 
         super::nuke::impact(&mut sim, &rules, impact);
 
-        let lighting = sim.session.lighting;
+        let lighting = sim.session.lighting();
         assert_eq!(flash_state(&lighting), vec![1, 4000, 30]);
-        assert_eq!(lighting.selected_profile, ScenarioLightingProfile::Nuke);
+        assert_eq!(lighting.selected_profile(), ScenarioLightingProfile::Nuke);
         assert!(
             sim.lighting_sources
                 .pending
@@ -418,19 +419,19 @@ fn flash_matches_native() {
         let frame = int(&run["frame"]);
         let mut lighting = ScenarioLightingState::default();
         let timer = ints(&run["timer"]);
-        lighting.transition_timer = CdTimer::from_raw(timer[0], timer[1]);
-        lighting.target_ambient = int(&run["target_before"]);
+        lighting.set_transition_timer_for_test(CdTimer::from_raw(timer[0], timer[1]));
+        lighting.set_target_ambient_for_test(int(&run["target_before"]));
 
         lighting.start_nuke_flash(frame);
 
         let start = &run["start"];
         assert_eq!(flash_state(&lighting), ints(&start["flash"]));
-        let timer = lighting.transition_timer;
+        let timer = lighting.transition_timer();
         assert_eq!(
             vec![timer.start_frame(), timer.duration()],
             ints(&start["timer"])
         );
-        assert_eq!(lighting.target_ambient, int(&start["target"]));
+        assert_eq!(lighting.target_ambient(), int(&start["target"]));
         let recalc = &start["events"][0];
         assert_eq!(recalc[0], "recalc");
         assert_eq!(int(&recalc[4]), 1);
@@ -765,7 +766,7 @@ fn retail_nuclear_missile_rises_falls_and_strikes_its_target() {
         house.base_center = Some((42, 42));
         house.difficulty = crate::sim::house_state::HouseDifficulty::Hard;
     }
-    sim.session.game_options.super_weapons = true;
+    sim.session.game_options_mut_for_test().super_weapons = true;
     sim.resolved_terrain = Some(test_grid(
         64,
         64,
@@ -786,7 +787,7 @@ fn retail_nuclear_missile_rises_falls_and_strikes_its_target() {
     let sw_type: InternedId = sim.interner.intern("NukeSpecial");
     let mut instance = SuperWeaponInstance::new(sw_type, russians, 0);
     instance.is_active = true;
-    instance.charge_start_tick = (sim.session.binary_frame) as i32;
+    instance.charge_start_tick = (sim.session.binary_frame()) as i32;
     instance.charge_duration = 9000;
     instance.is_ready = true;
     sim.super_weapons
@@ -796,14 +797,14 @@ fn retail_nuclear_missile_rises_falls_and_strikes_its_target() {
 
     sim.queue_command(CommandEnvelope::new(
         russians,
-        sim.session.tick + 1,
+        sim.session.tick() + 1,
         Command::LaunchSuperWeapon {
             sw_type_id: sw_type,
             target_rx: TARGET.0,
             target_ry: TARGET.1,
         },
     ));
-    let launch_frame = sim.session.binary_frame as i32;
+    let launch_frame = sim.session.binary_frame() as i32;
     run_until(&mut sim, &rules, 3, |sim| {
         !bullets_of(sim, "NukeCarrier").is_empty()
     });
@@ -893,7 +894,7 @@ fn retail_nuclear_missile_rises_falls_and_strikes_its_target() {
             .is_some_and(|bullet| bullet.awaiting_anim())
     });
     // The tick's AI ran at the frame before the one it advanced to.
-    let impact_frame = sim.session.binary_frame as i32 - 1;
+    let impact_frame = sim.session.binary_frame() as i32 - 1;
     let ball = sim
         .projectiles
         .get(warhead)
@@ -904,11 +905,11 @@ fn retail_nuclear_missile_rises_falls_and_strikes_its_target() {
         sim.interner.resolve(sim.anim(ball).unwrap().type_id),
         "NUKEBALL"
     );
-    let lighting = sim.session.lighting;
+    let lighting = sim.session.lighting();
     assert!(lighting.nuke_flash_fading_in());
     assert_eq!(lighting.nuke_flash_for_test(), (1, impact_frame, 30));
-    assert_eq!(lighting.selected_profile, ScenarioLightingProfile::Nuke);
-    assert_eq!(lighting.target_ambient, 200, "the nuke's ambient");
+    assert_eq!(lighting.selected_profile(), ScenarioLightingProfile::Nuke);
+    assert_eq!(lighting.target_ambient(), 200, "the nuke's ambient");
     assert!(sim.sound_events.iter().any(|event| matches!(
         event,
         SimSoundEvent::RadarEvent { radar }
@@ -934,7 +935,7 @@ fn retail_nuclear_missile_rises_falls_and_strikes_its_target() {
     let (mut ball_ended_after, mut detonated_after) = (None, None);
     for frames in 1..=600 {
         step(&mut sim, &rules);
-        let status = sim.session.lighting.nuke_flash_for_test().0;
+        let status = sim.session.lighting().nuke_flash_for_test().0;
         if status != last {
             flash_changes.push((frames, status));
             last = status;
@@ -972,7 +973,7 @@ fn retail_nuclear_missile_rises_falls_and_strikes_its_target() {
     }
     assert_eq!(flash_changes, vec![(31, 2), (47, 0)]);
     assert_eq!(
-        sim.session.lighting.selected_profile,
+        sim.session.lighting().selected_profile(),
         ScenarioLightingProfile::Normal
     );
     assert_eq!((ball_ended_after, detonated_after), (Some(20), Some(21)));
@@ -1418,7 +1419,7 @@ fn nuke_natural_retirement_boundary_snapshot_continues_once() {
     crate::sim::arena_fixture::flat_ground(&mut restored, &rules);
     // Same native load normalization as the live-wait save test below.
     sim.scenario_rng = crate::sim::rng::SimRng::new(0);
-    let frame = sim.session.binary_frame as i32;
+    let frame = sim.session.binary_frame() as i32;
     for (_, bullet) in sim.projectiles.iter_mut() {
         bullet.arm_timer.start(frame, 0);
     }
@@ -1464,7 +1465,7 @@ fn retail_nuke_wait_and_flash_survive_save_and_load() {
         step(&mut sim, &rules);
     }
     assert!(sim.projectiles.get(id).unwrap().awaiting_anim());
-    assert!(sim.session.lighting.nuke_flash_fading_in());
+    assert!(sim.session.lighting().nuke_flash_fading_in());
 
     let bytes = crate::sim::snapshot::GameSnapshot::save_validated(&sim, 1, 2, "nuke wait", 0);
     let mut restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
@@ -1477,7 +1478,7 @@ fn retail_nuke_wait_and_flash_survive_save_and_load() {
     // reinitializes the Scenario RNG, and Bullet Load restarts each bullet's
     // arm timer at the load frame (`0x0046AE9C..0x0046AEB0`).
     sim.scenario_rng = crate::sim::rng::SimRng::new(0);
-    let frame = sim.session.binary_frame as i32;
+    let frame = sim.session.binary_frame() as i32;
     for (_, bullet) in sim.projectiles.iter_mut() {
         bullet.arm_timer.start(frame, 0);
     }
@@ -1490,7 +1491,7 @@ fn retail_nuke_wait_and_flash_survive_save_and_load() {
         )
     };
     assert_eq!(wait(&restored), wait(&sim));
-    assert_eq!(restored.session.lighting, sim.session.lighting);
+    assert_eq!(restored.session.lighting(), sim.session.lighting());
     assert_eq!(restored.state_hash(), sim.state_hash());
     for frame in 1..=60 {
         step(&mut sim, &rules);
@@ -1498,5 +1499,5 @@ fn retail_nuke_wait_and_flash_survive_save_and_load() {
         assert_eq!(restored.state_hash(), sim.state_hash(), "frame {frame}");
     }
     assert!(sim.projectiles.get(id).is_none(), "detonated");
-    assert_eq!(sim.session.lighting.nuke_flash_for_test().0, 0);
+    assert_eq!(sim.session.lighting().nuke_flash_for_test().0, 0);
 }

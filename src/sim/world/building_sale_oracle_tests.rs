@@ -450,7 +450,7 @@ fn sales_through_the_frame_visit_on_the_original_frames() {
         };
         let sale_order = crate::sim::command::CommandEnvelope::new(
             s.sim.substrate.entities.get(building).unwrap().owner(),
-            s.sim.session.tick + 1,
+            s.sim.session.tick() + 1,
             crate::sim::command::Command::SellBuilding {
                 entity_id: building,
             },
@@ -610,9 +610,9 @@ fn the_computers_low_credit_sale_matches_the_original_admission() {
             building.install_building_up(
                 crate::sim::components::BuildingUp::completing_in_ticks(
                     2,
-                    sim.session.binary_frame as i32,
+                    sim.session.binary_frame() as i32,
                 ),
-                sim.session.binary_frame as i32,
+                sim.session.binary_frame() as i32,
             );
         }
         building.mission.apply_test_fixture(MissionTestFixture {

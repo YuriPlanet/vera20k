@@ -978,7 +978,7 @@ fn per_cell_promotes_queued_mission_before_tail_without_dispatching_handler() {
     .unwrap();
     for unload_active in [false, true] {
         let (mut sim, _, _) = fixture(TrackFamily::Drive, 8);
-        sim.session.binary_frame = 57;
+        sim.session.set_binary_frame_for_test(57);
         let entity = sim.substrate.entities.get_mut(1).unwrap();
         assert!(entity.locomotor.as_mut().unwrap().store_track_head(
             crate::sim::movement::track_process::TrackFamily::Drive,
@@ -1031,7 +1031,7 @@ fn factory_per_cell_fixture(
     use crate::sim::radio::{RadioMessage, RadioPayload, RadioResponse, transmit};
 
     let (mut sim, _, _) = fixture(TrackFamily::Drive, 0);
-    sim.session.binary_frame = 57;
+    sim.session.set_binary_frame_for_test(57);
     let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
         "[VehicleTypes]\n0=MTNK\n[MTNK]\nStrength=300\nSpeed=6\n{unit_reader_lines}\n\
          [BuildingTypes]\n0=GAWEAP\n[GAWEAP]\nWeaponsFactory=yes\n",
@@ -1853,7 +1853,7 @@ fn native_depot_arrival_uses_the_original_terminal_handoff() {
         let raw_stage = serde_json::to_value(stage).unwrap();
         let rng = sim.scenario_rng.logical_view();
         json!({
-            "frame": sim.session.binary_frame,
+            "frame": sim.session.binary_frame(),
             "unit_coordinate": [at.x,at.y,at.z],
             "health": unit.health.current(),
             "estimate": unit.estimated_health.get(),
@@ -1968,7 +1968,8 @@ fn native_depot_arrival_uses_the_original_terminal_handoff() {
             RuleSet::from_processed_rules(&stack.process_with_fixed_art(&art).unwrap()).unwrap();
         rules.install_art_data(ArtRegistry::from_ini(&art));
         let mut sim = Simulation::new();
-        sim.session.binary_frame = integer(&before["frame"]) as u32;
+        sim.session
+            .set_binary_frame_for_test(integer(&before["frame"]) as u32);
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
         // Same declared clear-map membership as the native joined fixture.
@@ -1977,8 +1978,8 @@ fn native_depot_arrival_uses_the_original_terminal_handoff() {
         );
         sim.playfield_bounds = Some(bounds);
         sim.playfield_size_height = Some(16);
-        sim.session.map_width = 16;
-        sim.session.map_height = 16;
+        sim.session.set_map_width_for_test(16);
+        sim.session.set_map_height_for_test(16);
         let terrain = test_flat_ground_grid(32);
         sim.path_grid = Some(Arc::new(PathGrid::from_resolved_terrain(&terrain)));
         sim.install_resolved_terrain_for_new_map(terrain);

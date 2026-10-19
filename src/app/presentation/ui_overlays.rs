@@ -136,7 +136,7 @@ fn admitted_techno_observer(
         &sim.fog,
         &sim.house_alliances,
         false,
-        sim.session.binary_frame,
+        sim.session.binary_frame(),
         0,
         observer,
     )?;
@@ -901,7 +901,7 @@ pub(crate) fn techno_extras_for_parent(
             && let (Some(bomb), Some(rules), Some(shape)) =
                 (entity.bomb, rules, overlay.bomb_clock())
             && let Some(frame) = bomb.clock_frame(
-                sim.session.binary_frame as i32,
+                sim.session.binary_frame() as i32,
                 rules.combat_damage.ivan_timed_delay,
                 rules.combat_damage.ivan_icon_flicker_rate,
             )
@@ -912,8 +912,8 @@ pub(crate) fn techno_extras_for_parent(
         if repairing
             && let Some(shape) = overlay.repair_wrench()
             && let Ok(frame) = usize::try_from(repair_wrench_frame(
-                sim.session.binary_frame as i32,
-                &sim.session.game_options,
+                sim.session.binary_frame() as i32,
+                &sim.session.game_options(),
             ))
         {
             strip.wrench = prefix(shape, frame);
@@ -1160,7 +1160,7 @@ pub(crate) fn techno_extras_for_parent(
                 SelfHealPip::Organic => rules.general.self_heal_infantry_frames,
                 SelfHealPip::Units => rules.general.self_heal_unit_frames,
             };
-            let frame = sim.session.binary_frame as i32;
+            let frame = sim.session.binary_frame() as i32;
             let remainder = frame.checked_rem(period).unwrap_or_else(|| {
                 panic!("native self-heal marker IDIV fault at 0070A549/0070A5B5: frame={frame} period={period}")
             });
@@ -1746,7 +1746,7 @@ mod tests {
             .expect("authored Neutral time machine")
             .stable_id();
         assert_eq!(rules.object("CATIME01").unwrap().strength, 2500);
-        let viewer = sim.session.current_house.unwrap();
+        let viewer = sim.session.current_house().unwrap();
         let viewer_name = sim.resolve(viewer).to_owned();
         for waypoint in [63, 66, 71, 99, 100, 114, 437, 647] {
             assert!(sim.trigger_reveal_at_waypoint(

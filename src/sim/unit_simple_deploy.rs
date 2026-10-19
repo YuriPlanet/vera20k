@@ -54,11 +54,11 @@ impl Simulation {
             id,
             MissionId::from_known(MissionType::Guard),
             0,
-            self.session.binary_frame,
+            self.session.binary_frame(),
             &EntityReadyInputProvider,
         )
         .map_err(|error| error.to_string())?;
-        self.mission_commence_exact(id, self.session.binary_frame)
+        self.mission_commence_exact(id, self.session.binary_frame())
             .map_err(|error| error.to_string())?;
         Ok(450)
     }
@@ -174,7 +174,7 @@ impl Simulation {
                     .ok_or("deployment animation type is unbound")?;
                 let (start, rate) = (config.start, i32::from(config.rate_logic_frames));
                 let entity = self.substrate.entities.get_mut(id).expect("same Unit");
-                entity.restart_native_stage(start, self.session.binary_frame as i32, rate);
+                entity.restart_native_stage(start, self.session.binary_frame() as i32, rate);
                 if deploying {
                     entity.mission_leaf.set_unit_deploy_begin_active(1);
                 } else {

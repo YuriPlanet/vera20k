@@ -322,7 +322,10 @@ fn constructed_infantry_commits_raw_z_and_facing_before_idle() {
             entity.position.exact_z_leptons(),
             Some(row["type_clamped_coordinate"][2].as_i64().unwrap() as i32)
         );
-        assert_eq!(entity.body_facing.current(sim.session.binary_frame), 0x8000);
+        assert_eq!(
+            entity.body_facing.current(sim.session.binary_frame()),
+            0x8000
+        );
         let events = sim.lifecycle_test_events_for_test();
         let mark = events
             .iter()
@@ -367,7 +370,7 @@ fn constructed_infantry_commits_raw_z_and_facing_before_idle() {
                 .get(failed)
                 .unwrap()
                 .body_facing
-                .current(sim.session.binary_frame),
+                .current(sim.session.binary_frame()),
             0
         );
         assert!(
@@ -782,7 +785,7 @@ fn discovery_owner_entry_and_lifetime_match_original_history_blocks() {
                 other, 0, None, false, 0, 10,
             ));
         sim.houses.reorder_for_test(&[owner, other]);
-        sim.session.current_house = Some(owner);
+        sim.session.set_current_house_for_test(Some(owner));
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
@@ -914,7 +917,7 @@ fn outside_reentry_clears_current_discovery_only_after_successful_alive_mark() {
                 other, 0, None, true, 0, 10,
             ));
         sim.houses.reorder_for_test(&[owner, other]);
-        sim.session.current_house = Some(owner);
+        sim.session.set_current_house_for_test(Some(owner));
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
@@ -996,7 +999,7 @@ fn first_nonhuman_owner_entry_queues_hunt_from_ambush_but_repeat_does_not() {
             other, 0, None, false, 0, 10,
         ));
     sim.houses.reorder_for_test(&[current, other]);
-    sim.session.current_house = Some(current);
+    sim.session.set_current_house_for_test(Some(current));
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     let id = sim
@@ -1086,7 +1089,7 @@ fn exact_sight_zero_survives_save_and_rules_less_reentry() {
         install_american_house(&mut sim);
         let owner = sim.interner.get("Americans").unwrap();
         sim.houses.reorder_for_test(&[owner]);
-        sim.session.current_house = Some(owner);
+        sim.session.set_current_house_for_test(Some(owner));
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
@@ -1175,7 +1178,7 @@ fn infantry_owner_discovery_leaves_building_power_radar_and_spysat_inputs_unchan
     install_american_house(&mut sim);
     let owner = sim.interner.get("Americans").unwrap();
     sim.houses.reorder_for_test(&[owner]);
-    sim.session.current_house = Some(owner);
+    sim.session.set_current_house_for_test(Some(owner));
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     assert_eq!(
@@ -1310,8 +1313,8 @@ fn building_light_allocates_only_after_authored_or_held_placement_succeeds() {
 }
 
 fn install_constructor_test_playfield(sim: &mut Simulation) {
-    sim.session.map_width = 10;
-    sim.session.map_height = 10;
+    sim.session.set_map_width_for_test(10);
+    sim.session.set_map_height_for_test(10);
     sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
         base: 10,
         off_fc: 0,
@@ -2589,7 +2592,7 @@ fn aircraft_spawn_initializes_both_facings_without_a_turret_flag() {
         .unwrap();
         for direction in [0, 64, 255] {
             let mut sim = Simulation::with_seed(7);
-            sim.session.binary_frame = 100;
+            sim.session.set_binary_frame_for_test(100);
             let runtime = sim
                 .construct_runtime_techno(
                     "AIR",

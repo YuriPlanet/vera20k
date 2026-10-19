@@ -41,7 +41,8 @@ fn walk_attack_scene() -> (Simulation, RuleSet, u64, u64) {
                 10,
             ));
     }
-    sim.session.current_house = sim.interner.get("Local");
+    sim.session
+        .set_current_house_for_test(sim.interner.get("Local"));
     let costs = rules
         .terrain_rules
         .semantics_for_land_type(crate::rules::terrain_rules::LandType::Clear.as_index())
@@ -711,12 +712,12 @@ fn walk_null_setter_matches_original_caller_rows() {
         assert!(!path.path_blocked());
         assert_eq!(
             path.movement_timer()
-                .remaining(sim.session.binary_frame as i32),
+                .remaining(sim.session.binary_frame() as i32),
             0
         );
         assert_eq!(
             path.blocked_timer()
-                .remaining(sim.session.binary_frame as i32),
+                .remaining(sim.session.binary_frame() as i32),
             22
         );
     }

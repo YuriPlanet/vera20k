@@ -85,7 +85,7 @@ fn stock_selected_mastermind_submits_real_capture_count_and_overload_pips() {
 
     scene.queue_command(CommandEnvelope::new(
         owner,
-        scene.simulation().session.tick + 1,
+        scene.simulation().session.tick() + 1,
         Command::Select {
             entity_ids: Vec::new(),
             additive: false,
@@ -202,12 +202,12 @@ fn stock_captive_force_attack_death_reduces_overload_then_the_controller_settles
     assert_eq!(rings_before.len(), 4);
     eprintln!(
         "MIND reduction Attack issue_tick={} due_tick={} attacker={attacker} target={victim}",
-        scene.simulation().session.tick,
-        scene.simulation().session.tick + 1
+        scene.simulation().session.tick(),
+        scene.simulation().session.tick() + 1
     );
     scene.queue_command(CommandEnvelope::new(
         owner,
-        scene.simulation().session.tick + 1,
+        scene.simulation().session.tick() + 1,
         Command::Attack {
             attacker_id: attacker,
             target_id: victim,
@@ -250,7 +250,7 @@ fn stock_captive_force_attack_death_reduces_overload_then_the_controller_settles
             ));
             eprintln!(
                 "MIND reduction105mm visited_frame={} fire={:?} target_hp={:?} controller_hp={}",
-                scene.simulation().session.binary_frame - 1,
+                scene.simulation().session.binary_frame() - 1,
                 shot.fire_coord,
                 scene
                     .simulation()
@@ -263,7 +263,7 @@ fn stock_captive_force_attack_death_reduces_overload_then_the_controller_settles
         if genuine_fire {
             flight.push_back(format!(
                 "frame={} target={:?} shooter={:?} bullets={:?}",
-                scene.simulation().session.binary_frame - 1,
+                scene.simulation().session.binary_frame() - 1,
                 scene.simulation().entities().get(victim).map(|actor| (
                     actor.health.current(),
                     crate::sim::movement::ground_pose::position_world_coord(&actor.position)
@@ -309,14 +309,14 @@ fn stock_captive_force_attack_death_reduces_overload_then_the_controller_settles
             assert!(!scene.victims().contains(&victim));
             eprintln!(
                 "MIND reduction completed visited_frame={} Stop issue_tick={} due_tick={} controller_hp={}",
-                scene.simulation().session.binary_frame - 1,
-                scene.simulation().session.tick,
-                scene.simulation().session.tick + 1,
+                scene.simulation().session.binary_frame() - 1,
+                scene.simulation().session.tick(),
+                scene.simulation().session.tick() + 1,
                 controller.health.current()
             );
             scene.queue_command(CommandEnvelope::new(
                 owner,
-                scene.simulation().session.tick + 1,
+                scene.simulation().session.tick() + 1,
                 Command::Stop {
                     entity_id: attacker,
                 },
@@ -391,7 +391,7 @@ fn stock_fatal_overload_releases_real_captives_and_retires_rings_and_sparks() {
             let after = spark_ids(&scene);
             eprintln!(
                 "MIND actual HPdrop visited_frame={} previous={} health={} words_before={before_words:?} words_after={:?} new_sparks={} shots={:?}",
-                scene.simulation().session.binary_frame - 1,
+                scene.simulation().session.binary_frame() - 1,
                 previous_health,
                 health,
                 scene
@@ -429,7 +429,7 @@ fn stock_fatal_overload_releases_real_captives_and_retires_rings_and_sparks() {
             pulses += 1;
             eprintln!(
                 "MIND natural overload visited_frame={} pulse={pulses} health={health}",
-                scene.simulation().session.binary_frame - 1
+                scene.simulation().session.binary_frame() - 1
             );
         }
         if health == 0 {
@@ -478,7 +478,7 @@ fn stock_fatal_overload_releases_real_captives_and_retires_rings_and_sparks() {
     for &id in &scene.targets() {
         scene.queue_command(CommandEnvelope::new(
             original,
-            scene.simulation().session.tick + 1,
+            scene.simulation().session.tick() + 1,
             Command::Stop { entity_id: id },
         ));
     }

@@ -98,7 +98,7 @@ fn sim_with_houses(sides: &[u8]) -> (Simulation, Vec<InternedId>) {
     let mut sim = Simulation::with_seed(5);
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
-    sim.session.binary_frame = 100;
+    sim.session.set_binary_frame_for_test(100);
     let houses = sides
         .iter()
         .enumerate()
@@ -120,7 +120,7 @@ fn observer_defeat_waits_for_hostile_players_then_finishes_without_loss_voice() 
     let (mut sim, owners) = sim_with_houses(&[0, 1, 2]);
     sim.session.set_game_mode(ScenarioGameMode::Lan);
     sim.session.install_network_timing(10);
-    sim.session.current_house = Some(owners[0]);
+    sim.session.set_current_house_for_test(Some(owners[0]));
     sim.session.install_multiplayer_house_identity(
         crate::skirmish_modes::MpModeClass::Battle,
         Some(owners[0]),
@@ -173,7 +173,7 @@ fn cooperative_defeated_local_waits_for_partner_and_shares_completed_victory() {
     let (mut sim, owners) = sim_with_houses(&[0, 1, 2]);
     sim.session.set_game_mode(ScenarioGameMode::Lan);
     sim.session.install_network_timing(10);
-    sim.session.current_house = Some(owners[0]);
+    sim.session.set_current_house_for_test(Some(owners[0]));
     sim.session
         .install_multiplayer_house_identity(crate::skirmish_modes::MpModeClass::Cooperative, None);
     for (index, owner) in owners.iter().enumerate() {
@@ -227,7 +227,8 @@ fn native_flag_result_and_savour_controls() {
             "{name}: reader input"
         );
         let mut sim = Simulation::new();
-        sim.session.binary_frame = input["frame"].as_i64().unwrap_or(100) as u32;
+        sim.session
+            .set_binary_frame_for_test(input["frame"].as_i64().unwrap_or(100) as u32);
         let mode = crate::sim::scenario_session::ScenarioGameMode::from_game_mode(
             input["game_mode"].as_i64().unwrap_or(0) as i32,
         );
@@ -251,7 +252,7 @@ fn native_flag_result_and_savour_controls() {
             timer,
         );
         sim.houses.register(house);
-        sim.session.current_house = Some(owner);
+        sim.session.set_current_house_for_test(Some(owner));
         if input["observer"].as_bool().unwrap_or(false) {
             sim.session.install_multiplayer_house_identity(
                 crate::skirmish_modes::MpModeClass::Battle,
@@ -385,8 +386,10 @@ fn native_defeat_gate_corpus() {
                 input["game_mode"].as_i64().unwrap_or(1) != 0,
             ),
         );
-        sim.session.binary_frame = input["frame"].as_i64().unwrap_or(100) as u32;
-        sim.session.game_options.short_game = input["short_game"].as_i64().unwrap_or(1) != 0;
+        sim.session
+            .set_binary_frame_for_test(input["frame"].as_i64().unwrap_or(100) as u32);
+        sim.session.game_options_mut_for_test().short_game =
+            input["short_game"].as_i64().unwrap_or(1) != 0;
         let types = ["AMCV", "SMCV", "PCV"].map(|name| sim.interner.intern(name));
         let yarefn = sim.interner.intern("YAREFN");
         let base_units: Vec<(InternedId, i32)> = input["base_units"]
@@ -779,8 +782,8 @@ fn losing_the_last_building_blows_up_the_army_next_frame() {
     let rules = rules(3);
     let (mut sim, houses) = sim_with_houses(&[0, 1]);
     // MPlayer_Defeated flags only PlayerPtr (4FC5AA..6B7): the survivor is local.
-    sim.session.current_house = Some(houses[1]);
-    sim.session.game_options.short_game = true;
+    sim.session.set_current_house_for_test(Some(houses[1]));
+    sim.session.game_options_mut_for_test().short_game = true;
     let refinery = sim
         .spawn_object_at_height("GAREFN", "house0", 10, 10, 0, 0, &rules)
         .unwrap();
@@ -832,7 +835,7 @@ fn a_computer_defeat_turns_the_computers_left_paranoid() {
     let mut rules = rules(3);
     rules.general.allies_allowed = true;
     let (mut sim, houses) = sim_with_houses(&[0, 1, 1, 1]);
-    sim.session.game_options.short_game = true;
+    sim.session.game_options_mut_for_test().short_game = true;
     sim.houses.get_mut(&houses[0]).unwrap().is_human = true;
     for computer in &houses[1..] {
         sim.houses.get_mut(computer).unwrap().current_iq = rules.general.max_iq_levels;
@@ -881,8 +884,8 @@ fn two_house_plane(rules: &RuleSet) -> (Simulation, Vec<InternedId>, [u64; 2]) {
     let (mut sim, houses) = sim_with_houses(&[0, 1]);
     sim.fog.width = 40;
     sim.fog.height = 40;
-    sim.session.game_options.short_game = true;
-    sim.session.current_house = Some(houses[0]);
+    sim.session.game_options_mut_for_test().short_game = true;
+    sim.session.set_current_house_for_test(Some(houses[0]));
     let own = sim
         .spawn_object_at_height("GAREFN", "house0", 10, 10, 0, 0, rules)
         .unwrap();
@@ -980,7 +983,7 @@ fn reveal_entire_map_reveals_once_and_only_to_the_current_house() {
         "no current house, no PlayerPtr"
     );
 
-    sim.session.current_house = Some(houses[0]);
+    sim.session.set_current_house_for_test(Some(houses[0]));
     sim.reveal_entire_map(None, context);
     assert!(!sim.houses[&houses[0]].map_is_clear);
     assert!(sim.fog.whole_map_revealed_for_owner(houses[0]));

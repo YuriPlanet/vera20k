@@ -465,7 +465,7 @@ fn retail_harriers_strike_return_reload_and_guard_at_their_airfield() {
         harriers,
         target: rhino,
     } = crate::sim::arena_fixture::retail_harrier_dock_scene(&retail).expect("retail scene");
-    let tick = runtime.simulation.session.tick + 1;
+    let tick = runtime.simulation.session.tick() + 1;
     let orders: Vec<CommandEnvelope> = harriers
         .iter()
         .map(|&attacker_id| {

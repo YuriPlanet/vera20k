@@ -346,7 +346,7 @@ impl Simulation {
         rules: &RuleSet,
         effects: FrameEffects<'_>,
     ) {
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         // AttachTo629A989..629A9D4 clears old grapple progress and its
         // dedicated animation before the damage timer and CanInfect query.
         self.reset_parasite_grapple(owner, Some(rules));
@@ -507,7 +507,7 @@ impl Simulation {
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) {
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         let Some(owner) = self
             .substrate
             .entities
@@ -677,7 +677,7 @@ impl Simulation {
         rules: &RuleSet,
         effects: FrameEffects<'_>,
     ) {
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         let Some(owner_entity) = self.substrate.entities.get(owner) else {
             return;
         };
@@ -812,7 +812,7 @@ impl Simulation {
         rules: Option<&RuleSet>,
         effects: FrameEffects<'_>,
     ) {
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         let Some(state) = self
             .substrate
             .entities
@@ -936,7 +936,7 @@ impl Simulation {
                 .store(victim_on_bridge);
             return Some(coords);
         }
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         let raw = victim_entity.body_facing_current(frame);
         let victim_cell = (
             victim_entity.position.rx() as i16,
@@ -1196,7 +1196,7 @@ impl Simulation {
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) {
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         let Some(entity) = self.substrate.entities.get(firer) else {
             return;
         };
@@ -1337,7 +1337,7 @@ impl Simulation {
         rules: &RuleSet,
         effects: FrameEffects<'_>,
     ) {
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         let Some(eater) = self
             .substrate
             .entities
@@ -1386,7 +1386,7 @@ impl Simulation {
         rules: &RuleSet,
         effects: FrameEffects<'_>,
     ) {
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         if let Some(state) = self
             .substrate
             .entities

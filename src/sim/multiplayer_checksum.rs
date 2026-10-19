@@ -241,7 +241,7 @@ impl Simulation {
 
     /// Every fold before the Scenario sample, in native order.
     fn fold_checksum_objects(&self) -> Result<RetailChecksumAccumulator, MultiplayerChecksumError> {
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         let mut checksum = RetailChecksumAccumulator::new();
 
         // Native class-array order is constructor/registration order. Stable
@@ -686,7 +686,7 @@ mod tests {
         let mut single = Simulation::with_seed(0x6476);
         let mut multi = Simulation::with_seed(0x6476);
         multi.set_command_queue_route(CommandQueueRoute::Multiplayer);
-        let frame = multi.session.binary_frame;
+        let frame = multi.session.binary_frame();
         let mut expected_rng = single.scenario_rng.clone();
 
         let advance = |sim: &mut Simulation| {

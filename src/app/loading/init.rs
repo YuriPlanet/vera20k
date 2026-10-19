@@ -264,7 +264,7 @@ mod map_wall_owner_candidate_tests {
         let mut scene =
             crate::headless_scenario::load_session(&retail, map, 0x1234_5678, launch).unwrap();
         let sim = scene.sim();
-        let current = sim.session.current_house.unwrap();
+        let current = sim.session.current_house().unwrap();
         let computer = sim.interner.get("Computer1").unwrap();
         let neutral = sim.interner.get("Neutral").unwrap();
         assert!(sim.owner_is_human(current));
@@ -362,7 +362,7 @@ mod map_wall_owner_candidate_tests {
             let commands = if step == 0 {
                 vec![CommandEnvelope::new(
                     computer,
-                    scene.sim().session.tick,
+                    scene.sim().session.tick(),
                     Command::QueueProduction { type_id: wall_type },
                 )]
             } else {
@@ -402,7 +402,7 @@ mod map_wall_owner_candidate_tests {
         );
         let command = CommandEnvelope::new(
             computer,
-            scene.sim().session.tick,
+            scene.sim().session.tick(),
             Command::PlaceReadyBuilding {
                 type_id: wall_type,
                 rx: 90,
@@ -439,7 +439,7 @@ mod map_wall_owner_candidate_tests {
         );
         let command = CommandEnvelope::new(
             computer,
-            scene.sim().session.tick,
+            scene.sim().session.tick(),
             Command::CancelProductionByType {
                 type_id: wall_type,
                 all: false,
@@ -622,7 +622,7 @@ mod map_wall_owner_candidate_tests {
         ))
         .unwrap();
         let mut sim = Simulation::with_seed(0x420);
-        sim.session.lighting.current_ambient = 30;
+        sim.session.lighting_mut().set_current_ambient_for_test(30);
         let owner = sim.interner.intern("Neutral");
         let kind = sim.interner.intern("GALITE");
         let mut id = 100;
@@ -722,7 +722,7 @@ mod map_wall_owner_candidate_tests {
         use crate::app::presentation::lighting::MatchLighting;
         let terrain = flat_terrain(128, 128);
         let mut sim = Simulation::with_seed(0x1a);
-        sim.session.lighting.current_ambient = 30;
+        sim.session.lighting_mut().set_current_ambient_for_test(30);
         let mut lights = MatchLighting::default();
         lights.install(
             CellLightGrid::new(),
@@ -733,7 +733,7 @@ mod map_wall_owner_candidate_tests {
         let tint_a = lights.grid().terrain_tile_tint_at((1, 1));
         lights.refresh(&terrain, &sim, 2);
         assert_eq!(lights.grid().terrain_tile_tint_at((1, 1)), tint_a);
-        sim.session.lighting.current_ambient = 60;
+        sim.session.lighting_mut().set_current_ambient_for_test(60);
         let grid_b =
             rebuild_lighting_grid_from_sim(&terrain, &LightingConfig::default(), Some(&sim), 2);
         lights.refresh(&terrain, &sim, 2);
@@ -743,7 +743,7 @@ mod map_wall_owner_candidate_tests {
                 grid_b.terrain_tile_tint_at(cell)
             );
         }
-        sim.session.lighting.current_ambient = 90;
+        sim.session.lighting_mut().set_current_ambient_for_test(90);
         let grid_c =
             rebuild_lighting_grid_from_sim(&terrain, &LightingConfig::default(), Some(&sim), 2);
         lights.refresh(&terrain, &sim, 2);
@@ -776,7 +776,7 @@ mod map_wall_owner_candidate_tests {
         let rules = lighting_rules();
         let mut sim = Simulation::with_seed(0x1b);
         seed_live_lamp(&mut sim, &rules);
-        sim.session.lighting.current_ambient = 30;
+        sim.session.lighting_mut().set_current_ambient_for_test(30);
         let mut lights = MatchLighting::default();
         lights.install(
             CellLightGrid::new(),
@@ -785,11 +785,11 @@ mod map_wall_owner_candidate_tests {
             Some((&terrain, &sim)),
         );
         let restored_tint = lights.grid().terrain_tile_tint_at((1, 1));
-        sim.session.lighting.current_ambient = 90;
+        sim.session.lighting_mut().set_current_ambient_for_test(90);
         lights.refresh(&terrain, &sim, 2);
         sim.set_building_light_active(41, false);
         sim.publish_global_lighting(crate::sim::light_sources::PaletteUpdate::from_scenario(
-            &sim.session.lighting,
+            &sim.session.lighting(),
         ));
         assert!(!sim.lighting_sources.pending.is_empty());
         sim.radiation.apply_detonation(
@@ -800,7 +800,7 @@ mod map_wall_owner_candidate_tests {
                 spread: 1,
             },
             0,
-            &sim.session.theater,
+            &sim.session.theater(),
             &rules.radiation,
             None,
             &mut sim.lighting_sources.pending,
@@ -809,7 +809,7 @@ mod map_wall_owner_candidate_tests {
             sim.lighting_sources.pending.last(),
             Some(LightingEvent::Radiation { .. })
         ));
-        sim.session.lighting.current_ambient = 30;
+        sim.session.lighting_mut().set_current_ambient_for_test(30);
         sim.rebuild_lighting_sources_after_load(&rules);
         assert!(sim.lighting_sources.pending.is_empty());
         assert!(sim.lighting_sources.buildings[&41].active);
@@ -916,29 +916,32 @@ mod map_wall_owner_candidate_tests {
             seed_live_lamp(&mut sim, &rules);
             let owner = sim.interner.intern("House");
             // The oracle's Ground/Level stand-ins (RELIGHT_GROUND_LEVEL).
-            sim.session.lighting = ScenarioLightingState::new(
-                ScenarioLightProfileUnits {
-                    ground_units: 21,
-                    level_units: 13,
-                    ..ScenarioLightProfileUnits::normal_default()
-                },
-                ScenarioLightProfileUnits {
-                    ground_units: 30,
-                    level_units: 40,
-                    ..ScenarioLightProfileUnits::ion_default()
-                },
-                ScenarioLightProfileUnits {
-                    ground_units: 3,
-                    level_units: 7,
-                    ..ScenarioLightProfileUnits::dominator_default()
-                },
-                1,
-                1,
-            );
             sim.session
-                .lighting
+                .set_lighting_for_test(ScenarioLightingState::new(
+                    ScenarioLightProfileUnits {
+                        ground_units: 21,
+                        level_units: 13,
+                        ..ScenarioLightProfileUnits::normal_default()
+                    },
+                    ScenarioLightProfileUnits {
+                        ground_units: 30,
+                        level_units: 40,
+                        ..ScenarioLightProfileUnits::ion_default()
+                    },
+                    ScenarioLightProfileUnits {
+                        ground_units: 3,
+                        level_units: 7,
+                        ..ScenarioLightProfileUnits::dominator_default()
+                    },
+                    1,
+                    1,
+                ));
+            sim.session
+                .lighting_mut()
                 .set_nuke_flash_for_test(int(&row["nuke"]), 0, 30);
-            sim.session.lighting.current_ambient = int(&row["ambient"]) / 10;
+            sim.session
+                .lighting_mut()
+                .set_current_ambient_for_test(int(&row["ambient"]) / 10);
             sim.lightning_storm = if row["storm"].as_bool().unwrap() {
                 LightningStorm::raging_for_test(owner, (10, 10))
             } else {
@@ -1012,11 +1015,20 @@ mod map_wall_owner_candidate_tests {
         let rules = lighting_rules();
         let terrain = flat_terrain(16, 16);
         let mut sim = Simulation::with_seed(0x1d);
-        sim.session.lighting.normal.red_percent = 0;
-        sim.session.lighting.normal.green_percent = 0;
-        sim.session.lighting.normal.blue_percent = 0;
-        sim.session.lighting.normal.ground_units = 0;
-        sim.session.lighting.normal.level_units = 0;
+        sim.session.lighting_mut().normal_mut_for_test().red_percent = 0;
+        sim.session
+            .lighting_mut()
+            .normal_mut_for_test()
+            .green_percent = 0;
+        sim.session
+            .lighting_mut()
+            .normal_mut_for_test()
+            .blue_percent = 0;
+        sim.session
+            .lighting_mut()
+            .normal_mut_for_test()
+            .ground_units = 0;
+        sim.session.lighting_mut().normal_mut_for_test().level_units = 0;
         seed_live_lamp(&mut sim, &rules);
         let mut lights = MatchLighting::default();
         lights.install(
@@ -1030,10 +1042,10 @@ mod map_wall_owner_candidate_tests {
         // Actual BeforeDeathEffects callback must publish disable before a
         // later global operation; the frame transaction must retain both.
         fatal_lamp_stage(&mut sim, &rules, 41);
-        sim.session.lighting.current_ambient = 30;
-        sim.session.lighting.target_ambient = 30;
+        sim.session.lighting_mut().set_current_ambient_for_test(30);
+        sim.session.lighting_mut().set_target_ambient_for_test(30);
         sim.publish_global_lighting(crate::sim::light_sources::PaletteUpdate::from_scenario(
-            &sim.session.lighting,
+            &sim.session.lighting(),
         ));
         let mut rt = crate::sim::runtime::SimRuntime::from_simulation(sim);
         rt.resources.rules = rules;
@@ -1101,11 +1113,17 @@ mod map_wall_owner_candidate_tests {
         let rules = lighting_rules();
         let terrain = flat_terrain(16, 16);
         let mut sim = Simulation::with_seed(0x1e);
-        sim.session.lighting.normal.red_percent = 20;
-        sim.session.lighting.normal.green_percent = 20;
-        sim.session.lighting.normal.blue_percent = 20;
+        sim.session.lighting_mut().normal_mut_for_test().red_percent = 20;
+        sim.session
+            .lighting_mut()
+            .normal_mut_for_test()
+            .green_percent = 20;
+        sim.session
+            .lighting_mut()
+            .normal_mut_for_test()
+            .blue_percent = 20;
         seed_live_lamp(&mut sim, &rules);
-        sim.session.lighting.current_ambient = 30;
+        sim.session.lighting_mut().set_current_ambient_for_test(30);
         let mut lights = MatchLighting::default();
         lights.install(
             CellLightGrid::new(),
@@ -1124,20 +1142,20 @@ mod map_wall_owner_candidate_tests {
         sim.radiation.apply_detonation(
             radiation,
             0,
-            &sim.session.theater,
+            &sim.session.theater(),
             &rules.radiation,
             None,
             &mut sim.lighting_sources.pending,
         );
-        sim.session.lighting.current_ambient = 250;
+        sim.session.lighting_mut().set_current_ambient_for_test(250);
         sim.publish_global_lighting(crate::sim::light_sources::PaletteUpdate::from_scenario(
-            &sim.session.lighting,
+            &sim.session.lighting(),
         ));
         sim.set_building_light_active(41, true);
         sim.radiation.apply_detonation(
             radiation,
             0,
-            &sim.session.theater,
+            &sim.session.theater(),
             &rules.radiation,
             None,
             &mut sim.lighting_sources.pending,
@@ -1187,10 +1205,10 @@ mod map_wall_owner_candidate_tests {
         let rules = lighting_rules();
         let terrain = flat_terrain(16, 16);
         let mut sim = Simulation::with_seed(0x1f);
-        sim.session.lighting.current_ambient = 30;
-        sim.session.lighting.ion.red_percent = 20;
-        sim.session.lighting.ion.green_percent = 90;
-        sim.session.lighting.ion.blue_percent = 40;
+        sim.session.lighting_mut().set_current_ambient_for_test(30);
+        sim.session.lighting_mut().ion_mut_for_test().red_percent = 20;
+        sim.session.lighting_mut().ion_mut_for_test().green_percent = 90;
+        sim.session.lighting_mut().ion_mut_for_test().blue_percent = 40;
         let mut lights = MatchLighting::default();
         lights.install(
             CellLightGrid::new(),
@@ -1207,9 +1225,11 @@ mod map_wall_owner_candidate_tests {
                 owner,
                 (0, 0),
             );
-        sim.session.lighting.select(ScenarioLightingProfile::Ion);
+        sim.session
+            .lighting_mut()
+            .select(ScenarioLightingProfile::Ion);
         sim.publish_global_lighting(crate::sim::light_sources::PaletteUpdate::from_scenario(
-            &sim.session.lighting,
+            &sim.session.lighting(),
         ));
         seed_live_lamp(&mut sim, &rules);
         apply_lighting_events(&mut lights, &terrain, &mut sim);
@@ -1234,9 +1254,11 @@ mod map_wall_owner_candidate_tests {
         );
         let ion_tint = lights.grid().body_tint_at((4, 5), 0);
         sim.lightning_storm = Default::default();
-        sim.session.lighting.select(ScenarioLightingProfile::Normal);
+        sim.session
+            .lighting_mut()
+            .select(ScenarioLightingProfile::Normal);
         sim.publish_global_lighting(crate::sim::light_sources::PaletteUpdate::from_scenario(
-            &sim.session.lighting,
+            &sim.session.lighting(),
         ));
         apply_lighting_events(&mut lights, &terrain, &mut sim);
         let restored = lights.grid().cell_light_at((4, 5)).unwrap();
@@ -1418,10 +1440,14 @@ mod map_wall_owner_candidate_tests {
         let rules = lighting_rules();
         let mut sim = Simulation::with_seed(0x4202);
         seed_live_lamp(&mut sim, &rules);
-        sim.session.lighting.current_ambient = 80;
-        sim.session.lighting.target_ambient = sim.session.lighting.ion.ambient_percent;
-        sim.session.lighting.selected_profile =
-            crate::sim::scenario_session::ScenarioLightingProfile::Ion;
+        sim.session.lighting_mut().set_current_ambient_for_test(80);
+        let ion_ambient = sim.session.lighting().ion().ambient_percent;
+        sim.session
+            .lighting_mut()
+            .set_target_ambient_for_test(ion_ambient);
+        sim.session.lighting_mut().set_selected_profile_for_test(
+            crate::sim::scenario_session::ScenarioLightingProfile::Ion,
+        );
         sim.radiation.apply_detonation(
             RadDetonation {
                 rx: 4,
@@ -1430,7 +1456,7 @@ mod map_wall_owner_candidate_tests {
                 spread: 10,
             },
             0,
-            &sim.session.theater,
+            &sim.session.theater(),
             &rules.radiation,
             None,
             &mut sim.lighting_sources.pending,
@@ -1480,7 +1506,7 @@ mod map_wall_owner_candidate_tests {
         sim.radiation.apply_detonation(
             detonation,
             0,
-            &sim.session.theater,
+            &sim.session.theater(),
             &rules.radiation,
             None,
             &mut sim.lighting_sources.pending,
@@ -1491,7 +1517,7 @@ mod map_wall_owner_candidate_tests {
         sim.radiation.apply_detonation(
             detonation,
             0,
-            &sim.session.theater,
+            &sim.session.theater(),
             &rules.radiation,
             None,
             &mut sim.lighting_sources.pending,
@@ -2233,7 +2259,7 @@ impl MapLoadInitial {
         let mut presented = Vec::new();
         connect_startup_crate_overlays(&mut presented, &simulation);
         let startup_crate = RandomMapStartupCrateProjection {
-            crates_enabled: simulation.session.game_options.crates,
+            crates_enabled: simulation.session.game_options().crates,
             minimum: rules.crate_rules.minimum,
             maximum: rules.crate_rules.maximum,
             regen_bits: rules.crate_rules.regen.bits(),

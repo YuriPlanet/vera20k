@@ -161,8 +161,8 @@ pub(super) fn world_with(
     sim.resolve_type_handles(rules);
     sim.playfield_bounds = Some(bounds);
     sim.playfield_size_height = Some(32);
-    sim.session.map_width = 33;
-    sim.session.map_height = 33;
+    sim.session.set_map_width_for_test(33);
+    sim.session.set_map_height_for_test(33);
     sim.overlay_grid = Some(OverlayGrid::new(33, 33));
     sim.bridge_state = Some(bridges);
     sim.zone_grid = Some(zones);
@@ -240,7 +240,8 @@ pub(super) fn scene_with(input: &Value, rules: RuleSet, ini: &IniFile) -> Scene 
             input["game_mode"].as_u64().unwrap_or(1) != 0,
         ),
     );
-    sim.session.binary_frame = input["frame"].as_u64().unwrap_or(200) as u32;
+    sim.session
+        .set_binary_frame_for_test(input["frame"].as_u64().unwrap_or(200) as u32);
     let dock_type = if input["dock_unload"] == false {
         "GAREFX"
     } else {
@@ -320,7 +321,7 @@ pub(super) fn scene_with(input: &Value, rules: RuleSet, ini: &IniFile) -> Scene 
 
 /// Apply the row's prestate to the spawned objects.
 fn dress(mut s: Scene, input: &Value) -> Scene {
-    let frame = s.sim.session.binary_frame;
+    let frame = s.sim.session.binary_frame();
     let (miner, refinery, other) = (s.miner, s.refinery, s.other);
     // Missions, as the oracle writes +AC/+B4.
     let current = mission(input["mission"].as_str().unwrap_or("enter"));
@@ -855,7 +856,7 @@ fn mission_harvest_states_two_and_three_match_the_original_dispatch() {
         radio::take_transmit_log();
         let mut stream = s.sim.scenario_rng.clone();
         let config = crate::sim::miner::MinerConfig::from_rules(&s.rules);
-        let frame = s.sim.session.binary_frame;
+        let frame = s.sim.session.binary_frame();
         crate::sim::world::dispatch_foot_mission(
             &mut s.sim,
             s.miner,
@@ -966,7 +967,7 @@ fn per_cell_release_matches_the_original_track_end_arm() {
             .is_some_and(|miner| miner.unload_active())
         {
             s.sim
-                .mission_host_promote(s.miner, s.sim.session.binary_frame, &s.rules);
+                .mission_host_promote(s.miner, s.sim.session.binary_frame(), &s.rules);
         }
         crate::sim::miner::per_cell_release_dock_contact(
             &mut s.sim,
@@ -993,13 +994,15 @@ fn stage_tick_matches_the_original_stageclass_step() {
         let context = input["name"].as_str().unwrap().to_string();
         let mut s = scene(input);
         for sample in row["values"].as_array().unwrap() {
-            s.sim.session.binary_frame = sample[0].as_u64().unwrap() as u32;
+            s.sim
+                .session
+                .set_binary_frame_for_test(sample[0].as_u64().unwrap() as u32);
             s.sim
                 .substrate
                 .entities
                 .get_mut(s.miner)
                 .unwrap()
-                .tick_native_stage(s.sim.session.binary_frame as i32);
+                .tick_native_stage(s.sim.session.binary_frame() as i32);
             let value = s
                 .sim
                 .substrate

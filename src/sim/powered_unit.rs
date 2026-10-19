@@ -425,7 +425,7 @@ impl Simulation {
         let location = object_location(entity, self.resolved_terrain.as_ref());
         let phase = (location.x / 10)
             .wrapping_add((location.y / 10) << 16)
-            .wrapping_add(self.session.binary_frame as i32)
+            .wrapping_add(self.session.binary_frame() as i32)
             .wrapping_add(entity.native_unique_id());
         if phase % 30 != 0 {
             return;

@@ -43,9 +43,9 @@ pub(in crate::sim) fn formed_sim(seed: u64, level: u8) -> Simulation {
     terrain.shared_cell_dummy().set_level_slope(level as i8, 0);
     sim.install_resolved_terrain_for_new_map(terrain);
     sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(128, 128));
-    sim.session.map_width = 128;
-    sim.session.map_height = 128;
-    sim.session.binary_frame = 1000;
+    sim.session.set_map_width_for_test(128);
+    sim.session.set_map_height_for_test(128);
+    sim.session.set_binary_frame_for_test(1000);
     sim
 }
 
@@ -353,7 +353,9 @@ fn meteor_flight_restores_native_rng_prior_and_cleans_up() {
     ];
     for _ in 0..100 {
         for world in [&mut sim, &mut restored] {
-            world.session.binary_frame = world.session.binary_frame.wrapping_add(1);
+            world
+                .session
+                .set_binary_frame_for_test(world.session.binary_frame().wrapping_add(1));
             for &id in &ids {
                 world.visit_anim(id, &rules, None, FrameEffects::empty());
             }

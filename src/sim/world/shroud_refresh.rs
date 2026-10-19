@@ -129,7 +129,7 @@ impl Simulation {
         index: i32,
         context: UninitContext<'_>,
     ) -> bool {
-        let Some(viewer) = self.session.current_house else {
+        let Some(viewer) = self.session.current_house() else {
             return false;
         };
         if self.fog.whole_map_revealed_for_owner(viewer) {
@@ -183,7 +183,7 @@ impl Simulation {
     /// represented viewer has its own native map plane and notification
     /// history; another viewer's pending state never supplies this one.
     pub(super) fn tick_pending_shroud_conceal(&mut self, context: UninitContext<'_>) {
-        if (self.session.binary_frame as i32) % 120 != 0 {
+        if (self.session.binary_frame() as i32) % 120 != 0 {
             return;
         }
         // These scans can synchronously raise discovery Tags. HashMap order
@@ -427,7 +427,7 @@ impl Simulation {
         let Some(rules) = context.rules() else {
             return false;
         };
-        let Some(viewer) = self.session.current_house else {
+        let Some(viewer) = self.session.current_house() else {
             return false;
         };
         if self.fog.whole_map_revealed_for_owner(viewer) {
@@ -468,7 +468,7 @@ impl Simulation {
                 &config,
                 context,
                 crate::sim::vision::MapRevealProjection::Transient,
-                self.session.current_house,
+                self.session.current_house(),
             );
         }
         true
@@ -490,7 +490,7 @@ impl Simulation {
         use crate::map::resolved_terrain::{NativeCellQuery, NativeLocalCellCursor};
         use crate::rules::locomotor_type::MovementZone;
 
-        let Some(viewer) = self.session.current_house else {
+        let Some(viewer) = self.session.current_house() else {
             return false;
         };
         if self.fog.whole_map_revealed_for_owner(viewer) {
@@ -579,7 +579,7 @@ impl Simulation {
                         coord.1.wrapping_sub(quarter_level) as u16,
                     )
                 };
-                let Some(viewer) = self.session.current_house else {
+                let Some(viewer) = self.session.current_house() else {
                     return false;
                 };
                 let config = self.sight_reveal_config(Some(rules));
@@ -606,7 +606,7 @@ impl Simulation {
                     &config,
                     context,
                     crate::sim::vision::MapRevealProjection::Transient,
-                    self.session.current_house,
+                    self.session.current_house(),
                 );
             }
         }
@@ -626,7 +626,7 @@ impl Simulation {
         //70F15B passesS28=true:56772E..5677AF also gates the existing
         //signed terrain-height query on General.RevealByHeight.
         let heights = self.sight_height_grid(&config);
-        let viewer = self.session.current_house;
+        let viewer = self.session.current_house();
         let viewers = viewer.into_iter().collect::<Vec<_>>();
         let cell = ((coord.x / 256) as u16, (coord.y / 256) as u16);
         if let Some(origin) = self.reveal_area(
@@ -827,7 +827,7 @@ impl Simulation {
         if let Some(state) = house.and_then(|house| self.houses.get_mut(&house)) {
             state.map_is_clear = true;
         }
-        let Some(player) = self.session.current_house else {
+        let Some(player) = self.session.current_house() else {
             return;
         };
         if house.is_some_and(|house| house != player) || !self.fog.admit_whole_map_reveal(player) {
@@ -841,7 +841,7 @@ impl Simulation {
     /// sight/gap counters and sustained sources are untouched. Current
     /// PlayerPtr is reread for every receiver after synchronous callbacks.
     pub(crate) fn trigger_reveal_entire_map(&mut self, context: UninitContext<'_>) -> bool {
-        let Some(player) = self.session.current_house else {
+        let Some(player) = self.session.current_house() else {
             return false;
         };
         if self.fog.whole_map_revealed_for_owner(player) {
@@ -922,7 +922,7 @@ impl Simulation {
         forced: bool,
         context: UninitContext<'_>,
     ) {
-        let Some(player) = self.session.current_house else {
+        let Some(player) = self.session.current_house() else {
             return;
         };
         let notify = {
@@ -979,10 +979,10 @@ impl Simulation {
         if let Some(owner) = incoming.and_then(|owner| self.houses.get_mut(&owner)) {
             owner.map_is_clear = false;
         }
-        if incoming.is_some() && incoming != self.session.current_house {
+        if incoming.is_some() && incoming != self.session.current_house() {
             return;
         }
-        if let Some(player) = self.session.current_house {
+        if let Some(player) = self.session.current_house() {
             self.transition_house_map(player, vision::MapTransition::Reshroud, rules);
         }
     }
@@ -992,7 +992,8 @@ impl Simulation {
     /// 8A0394 is re-read after each70ADC0 callback, whose discovery can raise
     /// Tags. AbstractFlags14/1 admits every GameEntity, with no Alive90 gate.
     pub(crate) fn trigger_grow_shroud(&mut self, context: UninitContext<'_>) {
-        if let (Some(viewer), Some(size)) = (self.session.current_house, self.map_size_diamond()) {
+        if let (Some(viewer), Some(size)) = (self.session.current_house(), self.map_size_diamond())
+        {
             let cells = context
                 .terrain()
                 .or(self.resolved_terrain.as_ref())
@@ -1015,7 +1016,7 @@ impl Simulation {
                         && context
                             .rules()
                             .is_some_and(|rules| rules.general.ally_reveal)
-                        && self.session.current_house.is_some_and(|viewer| {
+                        && self.session.current_house().is_some_and(|viewer| {
                             crate::map::houses::is_allied_with(
                                 &self.house_alliances,
                                 self.interner.resolve(entity.owner()),
@@ -1229,7 +1230,7 @@ impl Simulation {
                             config,
                             Some(&heights),
                             context,
-                            self.session.current_house,
+                            self.session.current_house(),
                         );
                     }
                 }
@@ -1247,7 +1248,7 @@ impl Simulation {
                     config,
                     Some(&heights),
                     context,
-                    self.session.current_house,
+                    self.session.current_house(),
                 );
             }
             for &gap in plan.reentry.get(&id).into_iter().flatten() {
@@ -1284,7 +1285,7 @@ impl Simulation {
         heights: Option<&SightHeights>,
         context: UninitContext<'_>,
     ) {
-        let notification_viewer = self.session.current_house;
+        let notification_viewer = self.session.current_house();
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
@@ -1361,7 +1362,7 @@ impl Simulation {
         id: u64,
         context: UninitContext<'_>,
     ) {
-        let notification_viewer = self.session.current_house;
+        let notification_viewer = self.session.current_house();
         let config = self.sight_reveal_config(context.rules());
         if self.substrate.entities.get(id).is_some_and(|entity| {
             (config.require_playfield_membership() && !entity.in_playfield())
@@ -1418,7 +1419,7 @@ impl Simulation {
                 config,
                 Some(&heights),
                 context,
-                self.session.current_house,
+                self.session.current_house(),
             );
         }
     }
@@ -1555,7 +1556,7 @@ impl Simulation {
     ///250/254/260 admission.70AF13/15 push literal1,1;567886/893 selects
     ///653830 leaf mode0. Active original Unit slot7F5D90=70ADC0.
     pub(crate) fn reveal_uncached_object_sight(&mut self, id: u64, context: UninitContext<'_>) {
-        let notification_viewer = self.session.current_house;
+        let notification_viewer = self.session.current_house();
         let config = self.sight_reveal_config(context.rules());
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
@@ -1942,7 +1943,7 @@ impl Simulation {
     ///   `0x00440E76`), and the re-admission callback's branch needs a placed
     ///   building in the playfield.
     pub(crate) fn reveal_sight_to_current_house(&mut self, stable_id: u64, rules: &RuleSet) {
-        let Some(current) = self.session.current_house else {
+        let Some(current) = self.session.current_house() else {
             return;
         };
         let Some(entity) = self.substrate.entities.get(stable_id) else {
@@ -1998,7 +1999,7 @@ impl Simulation {
     /// coordinate and radius (`+0x254`, `+0x260`), and a building has not
     /// moved.
     pub(crate) fn rereveal_sight_to_current_house(&mut self, stable_id: u64, rules: &RuleSet) {
-        let Some(current) = self.session.current_house else {
+        let Some(current) = self.session.current_house() else {
             return;
         };
         let config = self.sight_reveal_config(Some(rules));
@@ -2079,7 +2080,7 @@ impl Simulation {
         rules: &RuleSet,
     ) -> std::collections::BTreeMap<u64, vision::SightAdmission> {
         let mut footprints = std::collections::BTreeMap::new();
-        let Some(current) = self.session.current_house else {
+        let Some(current) = self.session.current_house() else {
             return footprints;
         };
         let config = self.sight_reveal_config(Some(rules));
@@ -2135,7 +2136,7 @@ impl Simulation {
         stable_id: u64,
         rules: Option<&RuleSet>,
     ) {
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         let Some(entity) = self.substrate.entities.get(stable_id) else {
             return;
         };

@@ -89,7 +89,7 @@ pub(super) fn record_replay_diagnostic(
         // owners, including private power state; they never mutate the replay.
         "engineer_house_attribution":{
             "house_order":sim.houses.order().iter().map(|owner|sim.resolve(*owner)).collect::<Vec<_>>(),
-            "current_house":sim.session.current_house.map(|owner|sim.resolve(owner)),
+            "current_house":sim.session.current_house().map(|owner|sim.resolve(owner)),
             "houses":sim.houses.iter().map(|(owner,house)|serde_json::json!({
                 "owner":sim.resolve(*owner),"stats":house.stats,"economy":house.economy,
                 "capture_notified":house.building_capture_notified(),
@@ -120,7 +120,7 @@ pub(super) fn record_replay_diagnostic(
     serde_json::to_writer(
         &mut *writer,
         &serde_json::json!({
-            "next_frame":sim.session.binary_frame,
+            "next_frame":sim.session.binary_frame(),
             "tick_result":result.map(|r| serde_json::json!({"tick":r.tick,
                 "committed":r.frame_committed,"executed_commands":r.executed_commands,
                 "state_hash":r.state_hash,"terminal_score_finalized":r.terminal_score_finalized})),
@@ -174,7 +174,7 @@ pub(super) fn print_replay_summary(name: &str, sim: &Simulation) {
     println!(
         "[replay observation {name}] {}",
         serde_json::json!({
-            "next_frame":sim.session.binary_frame,"hash":sim.state_hash(),
+            "next_frame":sim.session.binary_frame(),"hash":sim.state_hash(),
             "streams":[sim.scenario_rng.state(),sim.main_rng.state(),sim.mapgen_rng.state()],
             "actors":actors,"fire_count":sim.fire_events.len(),
             "hash_owners":sim.hash_owner_diagnostics_for_test(),
@@ -943,7 +943,7 @@ fn cross_house_move_executes_and_replays_without_changing_actor_owner() {
     );
     let mut replay = ReplayLog::new(ReplayHeader {
         version: 1,
-        pixel_conversion_bounds: recorded.session.pixel_conversion_bounds,
+        pixel_conversion_bounds: recorded.session.pixel_conversion_bounds(),
         tick_hz: 15,
         seed: HARNESS_SEED,
         map_name: "cross_house_move".into(),
@@ -1015,7 +1015,7 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
     record_replay_diagnostic(&mut diagnostic, &rec, None, &[], &seed_draws);
     let mut log = ReplayLog::new(ReplayHeader {
         version: 1,
-        pixel_conversion_bounds: rec.session.pixel_conversion_bounds,
+        pixel_conversion_bounds: rec.session.pixel_conversion_bounds(),
         tick_hz: 15,
         seed: HARNESS_SEED,
         map_name: "global_parity_harness".to_string(),
@@ -1558,7 +1558,7 @@ fn fresh_drive_turn_publishes_on_request_frame_and_restores_before_admission() {
         let entity = sim.substrate.entities.get(1).unwrap();
         let call = &native["calls"][0];
         assert_eq!(
-            u64::from(entity.body_facing_byte(sim.session.binary_frame - 1)),
+            u64::from(entity.body_facing_byte(sim.session.binary_frame() - 1)),
             call["sampled_after"].as_u64().unwrap() >> 8,
             "ROT={rot}: same-frame native sample"
         );
@@ -1576,7 +1576,7 @@ fn fresh_drive_turn_publishes_on_request_frame_and_restores_before_admission() {
         assert!(drive.head_to().is_none());
         if rot > 0 {
             assert_eq!(
-                u64::from(entity.body_facing.current(sim.session.binary_frame - 1)),
+                u64::from(entity.body_facing.current(sim.session.binary_frame() - 1)),
                 call["sampled_after"].as_u64().unwrap(),
                 "full16-bit native sample, before the next binary frame"
             );

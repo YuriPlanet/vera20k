@@ -180,7 +180,7 @@ fn order(fortress: &Fortress, payload: Command) -> CommandEnvelope {
     let sim = fortress.scenario.sim();
     CommandEnvelope::new(
         sim.interner.get("Americans").expect("Americans house"),
-        sim.session.tick + 1,
+        sim.session.tick() + 1,
         payload,
     )
 }

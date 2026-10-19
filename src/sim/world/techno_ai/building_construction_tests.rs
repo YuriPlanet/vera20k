@@ -20,8 +20,8 @@ fn constructed(control: [i32; 3], origin: i32) -> (Simulation, RuleSet, u64) {
     .unwrap();
     rules.set_buildup_control_for_test("B", control);
     let mut sim = Simulation::new();
-    sim.session.binary_frame = origin as u32;
-    sim.session.game_options.game_speed = 0;
+    sim.session.set_binary_frame_for_test(origin as u32);
+    sim.session.game_options_mut_for_test().game_speed = 0;
     sim.install_resolved_terrain_for_new_map(test_flat_ground_grid(16));
     crate::sim::arena_fixture::supply_native_map(&mut sim);
     let id = sim
@@ -81,7 +81,7 @@ fn construction_completes_within_its_native_object_visit() {
         let mut completed_at = None;
         for frame in row["frames"].as_array().unwrap() {
             let now = frame["frame"].as_u64().unwrap() as u32;
-            sim.session.binary_frame = now;
+            sim.session.set_binary_frame_for_test(now);
             sim.object_ai_visit_one(id, Some(&rules), ObjectAiCtx::default());
             let entity = sim.substrate.entities.get(id).unwrap();
             let context = format!("{} frame{now}", input["name"]);
@@ -96,7 +96,7 @@ fn construction_completes_within_its_native_object_visit() {
             assert_eq!(
                 crate::sim::building_construction::player_placement_frames_to_complete(
                     control,
-                    &sim.session.game_options,
+                    &sim.session.game_options(),
                 ),
                 completed_at,
                 "{}: presentation estimate",
@@ -128,7 +128,7 @@ fn construction_matches_the_original_mission_visits() {
             .install_building_up(BuildingUp::placed_by_computer(control, origin), origin);
         for frame in frames {
             let now = origin + frame["frame"].as_i64().unwrap() as i32;
-            sim.session.binary_frame = now as u32;
+            sim.session.set_binary_frame_for_test(now as u32);
             update_animation(&mut sim, id, Some(&rules));
             dispatch(
                 &mut sim,

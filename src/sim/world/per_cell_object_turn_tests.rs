@@ -245,7 +245,7 @@ fn a_jumpjet_touchdown_without_a_target_runs_the_class_null_setter() {
     .unwrap();
     let mut sim = Simulation::with_seed(0);
     super::super::lifecycle_tests::install_common_raw_terrain(&mut sim, 32, 32, 0, None);
-    sim.session.binary_frame = 1000;
+    sim.session.set_binary_frame_for_test(1000);
     let id = sim
         .construct_object_limbo_at_height(
             "NIGHTHAWK",

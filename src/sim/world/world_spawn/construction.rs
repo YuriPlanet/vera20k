@@ -70,7 +70,7 @@ impl Simulation {
             0, // veterancy = rookie for production spawns
             sight_range,
             uses_voxel,
-            self.session.binary_frame,
+            self.session.binary_frame(),
             techno_ctor_random_word,
         );
 
@@ -92,7 +92,7 @@ impl Simulation {
         // not manufacture either discovery-history byte. The launch-owned
         // current house is distinct from the notification/viewer binding.
         ge.discovery
-            .classify_owner(self.session.current_house == Some(ge.owner()));
+            .classify_owner(self.session.current_house() == Some(ge.owner()));
 
         stamp_scoring_flags(ge, obj, rules);
         if let Some(object) = obj {
@@ -117,7 +117,7 @@ impl Simulation {
                 // Aircraft413FD2..414015 supplies ROT to BOTH controllers;
                 // Unlimbo414310 -> Foot4D7170 -> Techno6F6DAA snaps Primary;
                 // Aircraft414417 snaps Secondary. Both timers retain this frame.
-                let frame = self.session.binary_frame;
+                let frame = self.session.binary_frame();
                 ge.body_facing.snap(initial, frame);
                 secondary.snap(initial, frame);
             }
@@ -167,7 +167,7 @@ impl Simulation {
         ge.removal_facts.stamp_occupier(obj.occupier);
         if category == EntityCategory::Structure && obj.gate {
             ge.building_gate = Some(crate::sim::game_entity::BuildingGateRuntime::at_frame(
-                self.session.binary_frame,
+                self.session.binary_frame(),
             ));
         }
         if category == EntityCategory::Structure && obj.bunker {
@@ -180,7 +180,7 @@ impl Simulation {
         {
             ge.bind_building_construction_control(rules.buildup_control(&obj.id));
             if matches!(origin, ComponentOrigin::Authored { .. }) {
-                ge.initialize_building_idle_body(self.session.binary_frame as i32);
+                ge.initialize_building_idle_body(self.session.binary_frame() as i32);
             }
         }
         ge.ai_sell_repair.construct(
@@ -190,7 +190,7 @@ impl Simulation {
         if should_construct_locomotor(category, obj) {
             ge.locomotor = Some(LocomotorState::from_object_type(
                 obj,
-                self.session.binary_frame,
+                self.session.binary_frame(),
             ));
             if matches!(origin, ComponentOrigin::Runtime)
                 && ge.locomotor.as_ref().is_some_and(|locomotor| {
@@ -222,7 +222,7 @@ impl Simulation {
                 ge.veterancy.rank(),
             )
         {
-            ge.parasite.allocate_class(self.session.binary_frame);
+            ge.parasite.allocate_class(self.session.binary_frame());
         }
         install_authored_bridge(ge, origin);
 
@@ -255,7 +255,7 @@ impl Simulation {
                 obj,
                 rules,
                 &mut self.interner,
-                self.session.binary_frame,
+                self.session.binary_frame(),
             );
             // 0x006F41FE..0x006F4271: a CanDisguise=/PermaDisguise= type (stock
             // SPY) starts disguised as its owner, wearing the Rules disguise
@@ -275,7 +275,7 @@ impl Simulation {
                 .as_deref()
                 .map(|name| self.interner.intern(name));
                 let owner = ge.owner();
-                let frame = self.session.binary_frame;
+                let frame = self.session.binary_frame();
                 ge.disguise
                     .get_or_insert_with(|| crate::sim::cloak_disguise::DisguiseRuntime::new(frame))
                     .wear_from_construction(worn, owner);

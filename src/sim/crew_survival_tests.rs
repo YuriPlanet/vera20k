@@ -1326,7 +1326,7 @@ fn a_selected_vehicle_selects_its_escapees_and_crewman() {
         for selected in [true, false] {
             let mut sim = sim_on_arena(seed, &rules);
             let owner = sim.interner.intern("AlliedHuman");
-            sim.session.current_house = Some(owner);
+            sim.session.set_current_house_for_test(Some(owner));
             let apc = spawn(&mut sim, &rules, "APC", "AlliedHuman", 10, 10);
             let mcv = spawn(&mut sim, &rules, "AMCV", "AlliedHuman", 20, 10);
             let passengers = load_passengers(&mut sim, &rules, apc, "AlliedHuman", 2);
@@ -1366,7 +1366,7 @@ fn a_selected_foreign_vehicle_selects_nothing() {
     let rules = rules();
     let mut sim = sim_on_arena(1, &rules);
     let player = sim.interner.intern("AlliedHuman");
-    sim.session.current_house = Some(player);
+    sim.session.set_current_house_for_test(Some(player));
     let apc = spawn(&mut sim, &rules, "APC", "Americans", 10, 10);
     let passengers = load_passengers(&mut sim, &rules, apc, "Americans", 2);
     sim.substrate
@@ -1813,7 +1813,7 @@ fn a_selected_mcvs_crewman_speaks_his_select_voice() {
     for seed in 1..=8 {
         let mut sim = sim_on_arena(seed, &rules);
         let owner = sim.interner.intern("AlliedHuman");
-        sim.session.current_house = Some(owner);
+        sim.session.set_current_house_for_test(Some(owner));
         let mcv = spawn(&mut sim, &rules, "AMCV", "AlliedHuman", 20, 10);
         sim.substrate
             .entities

@@ -18,7 +18,7 @@ fn fixture() -> (Simulation, RuleSet, OverlayTypeRegistry, InternedId, u64) {
     );
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false));
-    sim.session.game_options.crates = false;
+    sim.session.game_options_mut_for_test().crates = false;
     let owner = sim.interner.intern("Americans");
     sim.houses
         .register(crate::sim::house_state::HouseState::new(
@@ -217,7 +217,7 @@ fn authored_placement_matches_eight_original_controls_and_all_rng_streams() {
         rules.crate_rules.regen = crate::util::native_x87::NativeF64Bits::from_bits(
             input["regen_minutes"].as_f64().unwrap_or(3.0).to_bits(),
         );
-        sim.session.binary_frame = 100;
+        sim.session.set_binary_frame_for_test(100);
         sim.native_unique_ids =
             Some(crate::sim::native_identity::NativeUniqueIdCursor::test_at_current_value(1000));
         zero_slot_priors(&mut sim);
@@ -497,7 +497,7 @@ fn money_pickup_matches_original_reentrant_owner_alive_and_notification_controls
             0,
             integer(&input["selection"]) as u8,
         );
-        sim.session.binary_frame = 100;
+        sim.session.set_binary_frame_for_test(100);
         supply_rng(&mut sim, &case["rng_full_before"]);
         let result = sim.pickup_crate_at(
             actor,
@@ -707,8 +707,8 @@ fn retail_all07_elapsed_crates_and_money_survive_save_and_notify_logic() {
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false));
     sim.session.initialize_campaign_startup(1, 7, None).unwrap();
-    sim.session.game_options.crates = false;
-    sim.session.binary_frame = 0;
+    sim.session.game_options_mut_for_test().crates = false;
+    sim.session.set_binary_frame_for_test(0);
     crate::sim::scenario_bootstrap::initialize_map_roster_houses(
         &mut sim,
         &roster,
@@ -860,7 +860,7 @@ fn retail_all07_elapsed_crates_and_money_survive_save_and_notify_logic() {
         .find(|&&live| sim.trigger_runtime.trigger(live).unwrap().type_index == typ)
         .unwrap();
     let deadline = sim.trigger_runtime.trigger(live).unwrap().timer.duration() as u32;
-    sim.session.binary_frame = deadline - 1;
+    sim.session.set_binary_frame_for_test(deadline - 1);
     poll(&mut sim, &rules, &registry);
     assert_eq!(
         sim.crate_authority
@@ -881,7 +881,7 @@ fn retail_all07_elapsed_crates_and_money_survive_save_and_notify_logic() {
     sim.restore_map_authority_after_snapshot_load(&rules, &registry, None)
         .unwrap();
     sim.resolve_type_handles(&rules);
-    sim.session.binary_frame = deadline;
+    sim.session.set_binary_frame_for_test(deadline);
     poll(&mut sim, &rules, &registry);
     assert_eq!(
         sim.crate_authority

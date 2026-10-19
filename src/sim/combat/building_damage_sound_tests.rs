@@ -178,7 +178,7 @@ fn replay_building_history(corpus: &Value, rules: &RuleSet, history: &Value, typ
     world
         .session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
-    world.session.current_house = Some(source_owner);
+    world.session.set_current_house_for_test(Some(source_owner));
     crate::sim::arena_fixture::flat_arena(&mut world, rules);
     let location = coordinate(&history["input"]["target_object"]["location"]);
     assert_eq!(
@@ -242,7 +242,9 @@ fn replay_building_history(corpus: &Value, rules: &RuleSet, history: &Value, typ
 
     for row in steps {
         let label = row["label"].as_str().unwrap();
-        world.session.binary_frame = row["before"]["frame"].as_u64().unwrap() as u32;
+        world
+            .session
+            .set_binary_frame_for_test(row["before"]["frame"].as_u64().unwrap() as u32);
         let target = world.entities().get(target_id).unwrap();
         assert_eq!(
             target.health.current(),
@@ -286,8 +288,8 @@ fn replay_building_history(corpus: &Value, rules: &RuleSet, history: &Value, typ
             &world.interner,
             &world.houses,
             &world.house_alliances,
-            world.session.no_damage,
-            u64::from(world.session.binary_frame),
+            world.session.no_damage(),
+            u64::from(world.session.binary_frame()),
             world.resolved_terrain.as_ref(),
         )
         .unwrap();
@@ -302,7 +304,9 @@ fn replay_building_history(corpus: &Value, rules: &RuleSet, history: &Value, typ
         local_world.substrate.entities = world.substrate.entities.clone();
         local_world.interner = world.interner.clone();
         local_world.house_alliances = world.house_alliances.clone();
-        local_world.session.binary_frame = world.session.binary_frame;
+        local_world
+            .session
+            .set_binary_frame_for_test(world.session.binary_frame());
         let state = receiver_health::commit_receiver_health(
             &event,
             &mut local_world,

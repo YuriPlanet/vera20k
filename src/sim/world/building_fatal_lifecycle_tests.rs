@@ -157,7 +157,7 @@ impl Fixture {
         // The original joined fixture explicitly writes GameOptions+A8EB60
         // to 3 before any Anim ctor (building_construction::JoinedFixture).
         // Use the same supplied prior through the existing cadence owner.
-        sim.session.game_options.game_speed = prior.get("game_speed").map_or(3, int);
+        sim.session.game_options_mut_for_test().game_speed = prior.get("game_speed").map_or(3, int);
         // Original DestructionEffects441819 rolls the center mark even
         // with no loaded SmudgeType candidates. Keep the admitted map
         // owner's empty cells; None is the mapless dispatch boundary.
@@ -253,7 +253,7 @@ impl Fixture {
             sim.houses
                 .register(HouseState::new(house, 0, None, true, 5000, 10));
         }
-        sim.session.current_house = Some(houses[0]);
+        sim.session.set_current_house_for_test(Some(houses[0]));
         sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
             base: 16,
             off_fc: 0,
@@ -409,7 +409,8 @@ impl Fixture {
             &prior["unique_id_cursor"],
         )
             as u32));
-        sim.session.binary_frame = int(&prior["frame"]) as u32;
+        sim.session
+            .set_binary_frame_for_test(int(&prior["frame"]) as u32);
         for (house, native) in houses.iter().zip(prior["houses"].as_array().unwrap()) {
             let state = sim.houses.get_mut(house).unwrap();
             state.stats = MatchStatistics::from_totals_for_test(0, 0, 0, 0, 0);
@@ -470,7 +471,7 @@ impl Fixture {
                 &self.rules,
                 house,
                 &self.sim.interner,
-                self.sim.session.binary_frame,
+                self.sim.session.binary_frame(),
             );
         }
     }
@@ -1118,7 +1119,7 @@ impl Fixture {
         let client = &native["client_priors"];
         assert_eq!(client["player_ptr"], native["input"]["owner"]["pointer"]);
         assert_eq!(
-            self.sim.session.current_house,
+            self.sim.session.current_house(),
             Some(self.houses[owner_index])
         );
         // The inherited ready-shot fixture has no session bootstrap. Transport
@@ -1334,7 +1335,7 @@ impl Fixture {
         // using a surviving actor so deferred cleanup must retain its Door.
         let actor = self.sim.substrate.entities.get_mut(self.unit).unwrap();
         let original_actor = actor.clone();
-        actor.open_door(7, self.sim.session.binary_frame);
+        actor.open_door(7, self.sim.session.binary_frame());
         let door_phase = actor.door_phase();
         assert_eq!(door_phase, crate::sim::door::DoorPhase::Opening);
         let door_timer = actor.door_timer_fields();
@@ -1633,7 +1634,10 @@ fn assert_ready_fatal_routes(corpus: &Value) {
             if frame["after_objects"]["alive"] == 0 {
                 break;
             }
-            fixture.sim.session.binary_frame = fixture.sim.session.binary_frame.wrapping_add(1);
+            fixture
+                .sim
+                .session
+                .set_binary_frame_for_test(fixture.sim.session.binary_frame().wrapping_add(1));
             fixture.sim.process_pending_delete_with(
                 Some(&fixture.rules),
                 Some(&fixture.registry),
@@ -1653,7 +1657,10 @@ fn assert_ready_fatal_routes(corpus: &Value) {
             .unwrap();
         fixture.assert_stock_pending_snapshot(route);
         let identities = fixture.identities();
-        fixture.sim.session.binary_frame = int(&route["after_frame_increment"]["frame"]) as u32;
+        fixture
+            .sim
+            .session
+            .set_binary_frame_for_test(int(&route["after_frame_increment"]["frame"]) as u32);
         fixture.sim.process_pending_delete_with(
             Some(&fixture.rules),
             Some(&fixture.registry),
@@ -1753,7 +1760,10 @@ fn original_direct_ap_receivers_join_debris_crew_uninit_power_and_deferred_destr
         .building_art
         .anim_slots();
     assert!(slots[3].is_some(), "UnInit retains ordinary attached ART");
-    fixture.sim.session.binary_frame = int(&route["after_frame_increment"]["frame"]) as u32;
+    fixture
+        .sim
+        .session
+        .set_binary_frame_for_test(int(&route["after_frame_increment"]["frame"]) as u32);
     fixture.sim.process_pending_delete_with(
         Some(&fixture.rules),
         Some(&fixture.registry),

@@ -55,13 +55,13 @@ fn scene(extra: &str) -> Option<(RuleSet, Simulation, u64, u64)> {
     );
     let rules = retail.rules;
     let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x521C40);
-    sim.session.game_options.short_game = false;
+    sim.session.game_options_mut_for_test().short_game = false;
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     sim.intern_rule_type_ids(&rules);
     sim.install_team_ai_registry(&registry, &rules).unwrap();
     let owner = sim.interner.get("Americans").unwrap();
-    sim.session.current_house = Some(owner);
+    sim.session.set_current_house_for_test(Some(owner));
     let actor = sim
         .spawn_object("E1", "Americans", 12, 12, 0, &rules)
         .unwrap();
@@ -75,7 +75,7 @@ fn scene(extra: &str) -> Option<(RuleSet, Simulation, u64, u64)> {
         owner,
         kind,
         &[member],
-        sim.session.binary_frame as i32,
+        sim.session.binary_frame() as i32,
     );
     assert!(sim.team_script_vm.team(team).unwrap().formed());
     Some((rules, sim, team, actor))

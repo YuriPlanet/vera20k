@@ -253,7 +253,7 @@ fn native_mirage_ring_tail_uses_current_house_or_campaign_control_flags() {
         } else {
             sim.interner.get("Russians").unwrap()
         };
-        sim.session.current_house = Some(viewer);
+        sim.session.set_current_house_for_test(Some(viewer));
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(input["mode"] != 0),
         );
@@ -393,7 +393,7 @@ fn a_captured_buildings_ring_sits_height_levels_above_its_centre() {
     let yuri = spawn(&mut sim, &rules, "YURI", "YuriCountry", 10, 10);
     let plant = spawn(&mut sim, &rules, "GAPOWR", "Americans", 14, 10);
     // Built: CanCapture refuses a building still in Construction.
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     let _ = sim.mission_assign_exact(plant, MissionId::from_known(MissionType::Guard), now);
     assert!(sim.capture_unit(
         yuri,
@@ -495,7 +495,7 @@ fn can_capture_gates() {
 
     crate::sim::superweapon::invulnerability::apply_invulnerability(
         sim.substrate.entities.get_mut(tank).unwrap(),
-        sim.session.binary_frame,
+        sim.session.binary_frame(),
         100,
         crate::sim::superweapon::invulnerability::InvulnKind::IronCurtain,
     );
@@ -544,7 +544,7 @@ fn can_capture_gates() {
     assert!(!sim.can_capture(tower, third, &rules), "full");
 
     let seller = spawn(&mut sim, &rules, "E1", "Americans", 19, 12);
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     let _ = sim.mission_assign_exact(seller, MissionId::from_known(MissionType::Selling), now);
     assert!(!sim.can_capture(yuri, seller, &rules), "Selling");
 }
@@ -1375,7 +1375,9 @@ fn native_joined_overload_preserves_constructor_rng_ids_and_rate_words() {
             .collect();
         if through_techno {
             manager.overload_countdown = input["countdown"].as_i64().unwrap() as i32;
-            world.session.binary_frame = input["frame"].as_u64().unwrap() as u32;
+            world
+                .session
+                .set_binary_frame_for_test(input["frame"].as_u64().unwrap() as u32);
             let actor = world.substrate.entities.get(mind).unwrap();
             assert_eq!(
                 json!(actor.mission.current().raw()),
@@ -1412,7 +1414,7 @@ fn native_joined_overload_preserves_constructor_rng_ids_and_rate_words() {
                 );
             } else {
                 for frame in 0..input["visits"].as_u64().unwrap() as u32 {
-                    world.session.binary_frame = frame;
+                    world.session.set_binary_frame_for_test(frame);
                     world.capture_manager_update(mind, &rules, None, FrameEffects::default());
                 }
             }
@@ -1885,7 +1887,7 @@ fn an_attack_order_captures_without_damage() {
     let owner_id = sim.interner.intern("YuriCountry");
     sim.queue_command(CommandEnvelope::new(
         owner_id,
-        sim.session.tick + 1,
+        sim.session.tick() + 1,
         Command::Attack {
             attacker_id: mind,
             target_id: gi,
@@ -1978,7 +1980,7 @@ fn a_controlled_mcv_cannot_deploy_and_a_controlled_yard_cannot_repack() {
     let rules = rules();
     let mut sim = sim(27);
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
-    sim.session.game_options.mcv_redeploy = true;
+    sim.session.game_options_mut_for_test().mcv_redeploy = true;
     let yuri = spawn(&mut sim, &rules, "YURI", "YuriCountry", 10, 10);
     let mcv = spawn(&mut sim, &rules, "AMCV", "Americans", 12, 10);
     let free = spawn(&mut sim, &rules, "AMCV", "Americans", 12, 30);
@@ -2033,7 +2035,7 @@ fn a_controlled_mcv_cannot_deploy_and_a_controlled_yard_cannot_repack() {
     let stolen = spawn(&mut sim, &rules, "GACNST", "Russians", 22, 20);
     let own = spawn(&mut sim, &rules, "GACNST", "Americans", 22, 26);
     for yard in [stolen, own] {
-        let now = sim.session.binary_frame;
+        let now = sim.session.binary_frame();
         let _ = sim.mission_assign_exact(yard, MissionId::from_known(MissionType::Guard), now);
     }
     assert!(sim.capture_unit(
@@ -2113,7 +2115,7 @@ fn a_building_mid_construction_cannot_be_captured() {
     let mut sim = sim(31);
     let yuri = spawn(&mut sim, &rules, "YURI", "YuriCountry", 10, 10);
     let plant = spawn(&mut sim, &rules, "GAPOWR", "Americans", 14, 10);
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     let _ = sim.mission_assign_exact(plant, MissionId::from_known(MissionType::Guard), now);
     sim.substrate
         .entities
@@ -2225,7 +2227,7 @@ fn a_captive_boarding_an_absorber_is_freed_first() {
     sim.sound_events.clear();
     // PerCellProcess boards from the absorber's own foundation cell once
     // the queued Enter is current.
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     let gi_entity = sim.substrate.entities.get_mut(gi).unwrap();
     assert!(crate::sim::mission::authority::commence_entity_mission(
         gi_entity, now
@@ -2287,7 +2289,7 @@ fn an_iron_curtained_target_refuses_the_capture_at_fire_time() {
     let gi = spawn(&mut sim, &rules, "E1", "Americans", 12, 10);
     crate::sim::superweapon::invulnerability::apply_invulnerability(
         sim.substrate.entities.get_mut(gi).unwrap(),
-        sim.session.binary_frame,
+        sim.session.binary_frame(),
         1000,
         crate::sim::superweapon::invulnerability::InvulnKind::IronCurtain,
     );
@@ -2295,7 +2297,7 @@ fn an_iron_curtained_target_refuses_the_capture_at_fire_time() {
     let owner_id = sim.interner.intern("YuriCountry");
     sim.queue_command(CommandEnvelope::new(
         owner_id,
-        sim.session.tick + 1,
+        sim.session.tick() + 1,
         Command::Attack {
             attacker_id: yuri,
             target_id: gi,
@@ -2451,7 +2453,7 @@ fn a_due_ivan_bomb_precedes_the_same_turn_mastermind_overload() {
         let expired = controller
             .bomb
             .unwrap()
-            .expired(sim.session.binary_frame as i32);
+            .expired(sim.session.binary_frame() as i32);
         if expired {
             assert_eq!(
                 controller
@@ -2531,7 +2533,7 @@ fn control_link_timer_selection_ports_cleanup_and_snapshot_share_the_manager() {
     let mut sim = sim(31);
     let house = sim.interner.get("YuriCountry").unwrap();
     sim.houses.get_mut(&house).unwrap().is_human = true;
-    sim.session.binary_frame = 100;
+    sim.session.set_binary_frame_for_test(100);
     let controller = spawn(&mut sim, &rules, "MIND", "YuriCountry", 10, 10);
     let first = spawn(&mut sim, &rules, "E1", "Americans", 12, 10);
     let second = spawn(&mut sim, &rules, "HTNK", "Russians", 14, 10);
@@ -2555,7 +2557,7 @@ fn control_link_timer_selection_ports_cleanup_and_snapshot_share_the_manager() {
         rng,
         "read-only coordinates do not draw RNG"
     );
-    sim.session.binary_frame = 119;
+    sim.session.set_binary_frame_for_test(119);
     assert_eq!(sim.capture_link_coordinates(controller, &rules).len(), 2);
     let bytes = crate::sim::snapshot::GameSnapshot::save_validated(&sim, 0, 0, "control links", 0);
     let restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
@@ -2565,7 +2567,7 @@ fn control_link_timer_selection_ports_cleanup_and_snapshot_share_the_manager() {
         restored.capture_link_coordinates(controller, &rules),
         sim.capture_link_coordinates(controller, &rules)
     );
-    sim.session.binary_frame = 120;
+    sim.session.set_binary_frame_for_test(120);
     assert!(sim.capture_link_coordinates(controller, &rules).is_empty());
     sim.substrate
         .entities

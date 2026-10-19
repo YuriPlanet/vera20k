@@ -284,7 +284,7 @@ fn aircraft_request_preserves_rearm_and_state3_does_not_fire_early() {
             3,
         );
     assert!(dispatch(&mut sim, &rules).is_empty());
-    let frame = sim.session.binary_frame as i32;
+    let frame = sim.session.binary_frame() as i32;
     sim.substrate
         .entities
         .get_mut(1)
@@ -322,7 +322,7 @@ fn aircraft_release_uses_raw_burst_above_byte_width_and_one_ammo_charge() {
     assert_eq!(entity.ammo().unwrap().current(), 2);
     assert_eq!(entity.weapon_burst.index(), 0);
     // The Mission return owns cadence, independent of the final rearm jitter.
-    sim.session.binary_frame = 19;
+    sim.session.set_binary_frame_for_test(19);
     assert!(crate::sim::aircraft::tick_aircraft_missions(&mut sim, &rules).is_empty());
     assert_eq!(
         sim.substrate
@@ -334,7 +334,7 @@ fn aircraft_release_uses_raw_burst_above_byte_width_and_one_ammo_charge() {
             .current(),
         2
     );
-    sim.session.binary_frame = 20;
+    sim.session.set_binary_frame_for_test(20);
     crate::sim::aircraft::tick_aircraft_missions(&mut sim, &rules);
     let entity = sim.substrate.entities.get(1).unwrap();
     assert_eq!(entity.ammo().unwrap().current(), 1);
@@ -366,7 +366,7 @@ fn aircraft_release_snapshot_retains_burst_pending_and_mission_delay() {
     restored.scenario_rng = sim.scenario_rng.clone();
     assert_eq!(restored.state_hash(), sim.state_hash());
     for world in [&mut sim, &mut restored] {
-        world.session.binary_frame = 20;
+        world.session.set_binary_frame_for_test(20);
         crate::sim::aircraft::tick_aircraft_missions(world, &rules);
         let entity = world.substrate.entities.get(1).unwrap();
         assert_eq!(entity.weapon_burst.index(), 1);
@@ -457,7 +457,7 @@ fn a_strafer_drops_five_bombs_on_one_pass() {
     let mut bombs = Vec::new();
     let mut states = vec![4u8];
     for frame in 0..400u32 {
-        sim.session.binary_frame = frame;
+        sim.session.set_binary_frame_for_test(frame);
         let fired = dispatch(&mut sim, &rules).len();
         if fired > 0 {
             bombs.push((frame, fired));
@@ -511,7 +511,7 @@ fn a_fighter_out_of_range_cycles_back_to_its_search() {
     assert_eq!(entity.mission.dispatch_timer().delay(), 1);
 
     let before = sim.scenario_rng.clone();
-    sim.session.binary_frame = 1;
+    sim.session.set_binary_frame_for_test(1);
     assert!(dispatch(&mut sim, &rules).is_empty());
     let entity = sim.substrate.entities.get(1).unwrap();
     assert_eq!(crate::sim::aircraft::attack_state(entity), Some(1));
@@ -529,7 +529,7 @@ fn a_fighter_out_of_range_cycles_back_to_its_search() {
 /// The first bullet a strike releases.
 fn first_bullet(sim: &mut Simulation, rules: &RuleSet) -> crate::sim::projectile::Projectile {
     for frame in 0..60u32 {
-        sim.session.binary_frame = frame;
+        sim.session.set_binary_frame_for_test(frame);
         dispatch(sim, rules);
         if let Some((_, bullet)) = sim.projectiles.iter().next() {
             return bullet.clone();

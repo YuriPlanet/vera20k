@@ -157,7 +157,7 @@ mod tests {
                 &rules,
                 owner,
                 &sim.interner,
-                sim.session.free_radar,
+                sim.session.free_radar(),
                 timer[2] as u32,
             );
             sim.power_states.insert(owner, state);

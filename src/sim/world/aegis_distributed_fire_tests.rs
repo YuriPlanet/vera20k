@@ -58,7 +58,8 @@ impl GuardScene {
         // The arena supplies terrain/navigation; establish this visibility
         // domain before Unlimbo can create source and border viewer planes.
         sim.fog = crate::sim::vision::FogState::new(64, 64);
-        sim.session.current_house = Some(sim.interner.intern("Americans"));
+        sim.session
+            .set_current_house_for_test(Some(sim.interner.intern("Americans")));
         let aegis = sim
             .spawn_object("AEGIS", "Americans", 24, 24, 0, &rules)
             .expect("retail Aegis Unlimbo on Water");

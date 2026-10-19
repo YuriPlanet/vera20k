@@ -191,7 +191,7 @@ fn retail_legionnaire_attacks_distant_object_after_teleport_recovery() {
                 if stop_after_freeze && !stop_issued {
                     stop = Some(CommandEnvelope::new(
                         owner,
-                        sim.session.tick + 1,
+                        sim.session.tick() + 1,
                         Command::Stop { entity_id: cleg },
                     ));
                     stop_issued = true;

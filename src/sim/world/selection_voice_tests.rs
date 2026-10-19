@@ -138,7 +138,7 @@ fn area_guard_default_voice_matches_native_pre_gate_post_gate_and_main_continuat
         let current = sim
             .interner
             .intern(&format!("NativeHouse{current_pointer}"));
-        sim.session.current_house = Some(current);
+        sim.session.set_current_house_for_test(Some(current));
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
                 first["game_mode"].as_u64().unwrap() != 0,

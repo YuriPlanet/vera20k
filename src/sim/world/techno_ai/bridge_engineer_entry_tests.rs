@@ -79,7 +79,7 @@ impl Simulation {
         }
         let bounds = self.playfield_bounds.unwrap();
         let output = json!({"boundary":boundary, "actor":id,
-            "tick":self.session.tick,"binary_frame":self.session.binary_frame,
+            "tick":self.session.tick(),"binary_frame":self.session.binary_frame(),
             "native_size":[bounds.base,self.playfield_size_height.unwrap()],
             "local_size":[bounds.off_fc,bounds.off_100,bounds.off_104,bounds.off_108],
             "entities":entities,"cells":cells,"dummy":format!("{:?}",terrain.shared_cell_dummy().snapshot()),
@@ -87,7 +87,7 @@ impl Simulation {
         serde_json::to_writer(
             std::fs::File::create(
                 std::path::PathBuf::from(path)
-                    .with_extension(format!("{boundary}-{}.json", self.session.binary_frame)),
+                    .with_extension(format!("{boundary}-{}.json", self.session.binary_frame())),
             )
             .unwrap(),
             &output,
@@ -182,7 +182,7 @@ fn retail_hills_engineer_cliff_start_is_rejected() {
                 .then_some(e.stable_id())
         })
         .unwrap();
-    let owner = runtime.simulation.session.current_house.unwrap();
+    let owner = runtime.simulation.session.current_house().unwrap();
     let owner_name = runtime.simulation.interner.resolve(owner).to_owned();
     // This zone/restore negative control supplies an already-resident actor
     // on Rock, whose native Foot speed is zero. Object5F4F1B..5F4F4A
@@ -319,7 +319,7 @@ fn retail_hills_engineer_enters_hut_and_repairs() {
             ),
         None
     );
-    let owner = runtime.simulation.session.current_house.unwrap();
+    let owner = runtime.simulation.session.current_house().unwrap();
     let owner_name = runtime.simulation.interner.resolve(owner).to_owned();
     let engineer = runtime
         .simulation
@@ -335,7 +335,7 @@ fn retail_hills_engineer_enters_hut_and_repairs() {
         .unwrap();
     let command = CommandEnvelope::new(
         owner,
-        runtime.simulation.session.tick + 1,
+        runtime.simulation.session.tick() + 1,
         Command::CaptureBuilding {
             engineer_id: engineer,
             target_building_id: hut,

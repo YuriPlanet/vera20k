@@ -222,7 +222,7 @@ impl Fixture {
     }
 
     fn frame(&self) -> u32 {
-        self.sim.session.binary_frame
+        self.sim.session.binary_frame()
     }
 
     fn revealed(&self, id: u64) -> bool {
@@ -271,7 +271,7 @@ impl Fixture {
             .entities
             .get(id)
             .expect("entity")
-            .body_facing_byte(self.sim.session.binary_frame)
+            .body_facing_byte(self.sim.session.binary_frame())
     }
 
     fn cell(&self, id: u64) -> (u16, u16) {
@@ -914,7 +914,9 @@ fn nighthawk_unloads_only_when_landed() {
     for _ in 0..30 {
         fx.sim.set_object_height_unmarked(shad, 600);
         crate::sim::aircraft::dispatch_mission(&mut fx.sim, shad, &fx.rules, Default::default());
-        fx.sim.session.binary_frame += 1;
+        fx.sim
+            .session
+            .set_binary_frame_for_test(fx.sim.session.binary_frame() + 1);
     }
     assert_eq!(fx.cargo_ids(shad).len(), 2, "airborne: nothing leaves");
 
@@ -931,7 +933,9 @@ fn nighthawk_unloads_only_when_landed() {
     pitch(&mut fx, SimFixed::from_num(1));
     for _ in 0..30 {
         crate::sim::aircraft::dispatch_mission(&mut fx.sim, shad, &fx.rules, Default::default());
-        fx.sim.session.binary_frame += 1;
+        fx.sim
+            .session
+            .set_binary_frame_for_test(fx.sim.session.binary_frame() + 1);
     }
     assert_eq!(fx.cargo_ids(shad).len(), 2, "pitched: nothing leaves");
 
@@ -939,7 +943,9 @@ fn nighthawk_unloads_only_when_landed() {
     let mut frames = Vec::new();
     for _ in 0..80 {
         crate::sim::aircraft::dispatch_mission(&mut fx.sim, shad, &fx.rules, Default::default());
-        fx.sim.session.binary_frame += 1;
+        fx.sim
+            .session
+            .set_binary_frame_for_test(fx.sim.session.binary_frame() + 1);
         for &id in &pax {
             if fx.revealed(id) && !frames.iter().any(|(seen, _)| *seen == id) {
                 frames.push((id, fx.frame()));
@@ -1256,7 +1262,7 @@ fn vehicle_passenger_leaves_with_its_turret_on_the_exit_direction() {
     assert_eq!(order.len(), 1, "the vehicle left: {order:?}");
     assert_eq!(fx.cell(bggy), (19, 20));
     assert_eq!(fx.facing(bggy), 0xC0, "octant 6 * 32");
-    let frame = fx.sim.session.binary_frame;
+    let frame = fx.sim.session.binary_frame();
     let turret = fx
         .sim
         .substrate
@@ -1427,7 +1433,9 @@ fn descending_nighthawk_draws_no_scenario_rng_until_it_ejects() {
     // First dispatch: state 0 → 2 with exactly one epilogue draw.
     let before = fx.sim.scenario_rng.state();
     crate::sim::aircraft::dispatch_mission(&mut fx.sim, shad, &fx.rules, Default::default());
-    fx.sim.session.binary_frame += 1;
+    fx.sim
+        .session
+        .set_binary_frame_for_test(fx.sim.session.binary_frame() + 1);
     assert_eq!(handler_state(&fx, shad), super::AIR_STATE_WAIT_STOP);
     assert_ne!(
         fx.sim.scenario_rng.state(),
@@ -1443,7 +1451,9 @@ fn descending_nighthawk_draws_no_scenario_rng_until_it_ejects() {
         set_altitude(&mut fx, shad, altitude);
         let before = fx.sim.scenario_rng.state();
         crate::sim::aircraft::dispatch_mission(&mut fx.sim, shad, &fx.rules, Default::default());
-        fx.sim.session.binary_frame += 1;
+        fx.sim
+            .session
+            .set_binary_frame_for_test(fx.sim.session.binary_frame() + 1);
         if fx.sim.scenario_rng.state() != before {
             airborne_draws += 1;
         }
@@ -1639,7 +1649,9 @@ fn landed_aircraft_transport_unload_asks_the_locomotor() {
         set_altitude(&mut fx, shad, 600);
         assert!(fx.apply(Command::UnloadPassengers { transport_id: shad }));
         crate::sim::aircraft::dispatch_mission(&mut fx.sim, shad, &fx.rules, Default::default());
-        fx.sim.session.binary_frame += 1;
+        fx.sim
+            .session
+            .set_binary_frame_for_test(fx.sim.session.binary_frame() + 1);
         assert_eq!(handler_state(&fx, shad), super::AIR_STATE_WAIT_STOP);
         set_altitude(&mut fx, shad, 0);
         setup(fx.sim.substrate.entities.get_mut(shad).expect("aircraft"));
@@ -1651,7 +1663,9 @@ fn landed_aircraft_transport_unload_asks_the_locomotor() {
                 &fx.rules,
                 Default::default(),
             );
-            fx.sim.session.binary_frame += 1;
+            fx.sim
+                .session
+                .set_binary_frame_for_test(fx.sim.session.binary_frame() + 1);
             if handler_state(&fx, shad) != super::AIR_STATE_WAIT_STOP {
                 break;
             }
@@ -1716,7 +1730,9 @@ fn nighthawk_failed_ejection_keeps_cargo_and_leaves_for_guard() {
     // Advance to the state-3 dispatch: the ejection is refused, and the idle
     // mode's tail queues Guard and commences it when ready (`0x00417B44`).
     for _ in 0..20 {
-        fx.sim.session.binary_frame += 1;
+        fx.sim
+            .session
+            .set_binary_frame_for_test(fx.sim.session.binary_frame() + 1);
         crate::sim::aircraft::dispatch_mission(&mut fx.sim, shad, &fx.rules, Default::default());
         if fx.mission(shad) == MissionId::from_known(MissionType::Guard) {
             break;
@@ -1741,7 +1757,9 @@ fn nighthawk_failed_ejection_keeps_cargo_and_leaves_for_guard() {
     // The handler stays silent.
     let before = fx.sim.scenario_rng.state();
     for _ in 0..60 {
-        fx.sim.session.binary_frame += 1;
+        fx.sim
+            .session
+            .set_binary_frame_for_test(fx.sim.session.binary_frame() + 1);
         crate::sim::aircraft::dispatch_mission(&mut fx.sim, shad, &fx.rules, Default::default());
     }
     assert_eq!(
@@ -1787,7 +1805,9 @@ fn nighthawk_passenger_is_refused_by_an_enemy_in_the_aircraft_cell() {
     assert!(fx.apply(Command::UnloadPassengers { transport_id: shad }));
 
     for _ in 0..40 {
-        fx.sim.session.binary_frame += 1;
+        fx.sim
+            .session
+            .set_binary_frame_for_test(fx.sim.session.binary_frame() + 1);
         crate::sim::aircraft::dispatch_mission(&mut fx.sim, shad, &fx.rules, Default::default());
         if fx.mission(shad) == MissionId::from_known(MissionType::Guard) {
             break;
@@ -1940,7 +1960,7 @@ fn turning_unload_uses_the_turret_latch_and_native_cadence() {
         let mut fx = Fixture::new(|_, _| false);
         let carrier = fx.spawn(kind, 20, 20, 0);
         fx.board(carrier, 2);
-        fx.sim.session.binary_frame = 100;
+        fx.sim.session.set_binary_frame_for_test(100);
         fx.sim
             .mission_assign_exact(carrier, MissionId::from_known(MissionType::Unload), 100)
             .unwrap();
@@ -1951,7 +1971,7 @@ fn turning_unload_uses_the_turret_latch_and_native_cadence() {
         }
         entity.turret_rotation_latch.set_for_test(turret_latch);
         entity.mission.set_handler_state(super::STATE_TURNING);
-        fx.sim.session.binary_frame = 101;
+        fx.sim.session.set_binary_frame_for_test(101);
         assert_eq!(
             fx.sim
                 .substrate
@@ -2010,7 +2030,7 @@ fn retail_bfrt_ejects_while_turning_and_resumes_after_save() {
     };
     let mut fx = Fixture::new(|_, _| false);
     fx.rules = retail.rules;
-    fx.sim.session.binary_frame = 100;
+    fx.sim.session.set_binary_frame_for_test(100);
     fx.sim.scenario_rng = crate::sim::rng::SimRng::new(1);
     let carrier = fx.spawn("BFRT", 20, 20, 0);
     let passengers = fx.board(carrier, 5);
@@ -2167,7 +2187,7 @@ fn retail_aligned_transports_wait_only_for_their_turrets() {
         });
         let mut fx = Fixture::new(|_, _| false);
         fx.rules = retail.rules.clone();
-        fx.sim.session.binary_frame = 100;
+        fx.sim.session.set_binary_frame_for_test(100);
         let carrier = fx.spawn(
             kind,
             20,

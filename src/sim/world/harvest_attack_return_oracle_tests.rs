@@ -180,7 +180,7 @@ impl Replay {
         let s = &self.scene;
         let e = s.sim.substrate.entities.get(s.miner).unwrap();
         assert_eq!(
-            s.sim.session.binary_frame as i32,
+            s.sim.session.binary_frame() as i32,
             int(&native["frame"]),
             "{context}: frame"
         );
@@ -329,7 +329,7 @@ impl Replay {
     fn step(&mut self, step: &Value, context: &str) {
         let input = &step["input"];
         let s = &mut self.scene;
-        let now = s.sim.session.binary_frame;
+        let now = s.sim.session.binary_frame();
         match input["op"].as_str().unwrap() {
             "command" | "stop" => {
                 let command = match input["op"].as_str().unwrap() {
@@ -469,8 +469,9 @@ impl Replay {
             "deadline" => {
                 // Transport the ORIGINAL previous timer's deadline supplied
                 // by this corpus step; never calculate a Rust golden frame.
-                s.sim.session.binary_frame =
-                    int(&step["returned"]["supplied_frame_from_previous_native_timer"]) as u32;
+                s.sim.session.set_binary_frame_for_test(int(
+                    &step["returned"]["supplied_frame_from_previous_native_timer"],
+                ) as u32);
             }
             other => panic!("{context}: operation {other}"),
         }

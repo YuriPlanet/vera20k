@@ -85,7 +85,7 @@ fn replay_flush_facts(state: &AppState) -> (u64, u64) {
         .match_state
         .sim_runtime
         .as_ref()
-        .map_or(0, |rt| rt.simulation.session.tick);
+        .map_or(0, |rt| rt.simulation.session.tick());
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
@@ -220,7 +220,7 @@ fn build_campaign_score_screen_model(
             runtime
                 .simulation
                 .session
-                .current_house
+                .current_house()
                 .and_then(|owner| runtime.simulation.houses.get(&owner))
                 .map(|house| house.side_index)
         })
@@ -762,7 +762,7 @@ pub(crate) fn advance_in_game_runtime_exact_step(
         .sim_runtime
         .as_ref()
         .map(|rt| &rt.simulation)
-        .map(|sim| (sim.session.tick, sim.session.binary_frame))
+        .map(|sim| (sim.session.tick(), sim.session.binary_frame()))
         .ok_or(ExactStepError::SimulationMissing)?;
 
     advance_in_game_runtime_mode(state, RuntimeAdvanceMode::ExactOneStep, admitted);
@@ -774,7 +774,7 @@ pub(crate) fn advance_in_game_runtime_exact_step(
         .sim_runtime
         .as_ref()
         .map(|rt| &rt.simulation)
-        .map(|sim| (sim.session.tick, sim.session.binary_frame))
+        .map(|sim| (sim.session.tick(), sim.session.binary_frame()))
         .ok_or(ExactStepError::SimulationMissing)?;
     let receipt = ExactStepReceipt {
         tick_before,
@@ -825,7 +825,7 @@ fn advance_in_game_runtime_mode(
                             .game_speed
                             .min(6) as u8
                     },
-                    |sim| sim.session.game_options.game_speed.clamp(0, 6) as u8,
+                    |sim| sim.session.game_options().game_speed.clamp(0, 6) as u8,
                 );
             // Pure timing consult; pause/menu blocking belongs to the decision.
             state
@@ -920,7 +920,7 @@ fn advance_in_game_runtime_mode(
                         .match_state
                         .match_presentation
                         .sidebar_projection
-                        .cameo_redraw_requested(runtime.simulation.session.binary_frame as i32)
+                        .cameo_redraw_requested(runtime.simulation.session.binary_frame() as i32)
                 });
             // StripDraw6A9540 asks each entry's availability and reads its
             // Factory while drawing, so the drawn state follows the simulation
@@ -1043,7 +1043,7 @@ fn advance_one_simulation_frame(
         let command_queue_route = state.match_state.session.mode().command_queue_route();
         if let Some(rt) = state.match_state.sim_runtime.as_mut() {
             let sim = &mut rt.simulation;
-            let native_frame = sim.session.binary_frame;
+            let native_frame = sim.session.binary_frame();
             sim.prepare_unit_voice_visits(unit_voice_owners);
             sim.set_command_queue_route(command_queue_route);
             // Normal play hashes its state once every PLAY_HASH_INTERVAL
@@ -1111,7 +1111,7 @@ fn advance_one_simulation_frame(
             #[cfg(feature = "telemetry-dashboard")]
             {
                 let tick_ms = telemetry_advance_started.elapsed().as_secs_f32() * 1000.0;
-                let tick = rt.simulation.session.tick;
+                let tick = rt.simulation.session.tick();
                 let entities = rt.simulation.entities().len();
                 let houses = rt.simulation.houses.len();
                 let batch = rt.simulation.path_batch_stats();
@@ -1124,7 +1124,7 @@ fn advance_one_simulation_frame(
                 // five seconds since the previous point rather than the whole
                 // match.
                 if crate::app::match_runtime::telemetry::ReportHistory::due(tick) {
-                    let speed = rt.simulation.session.game_options.game_speed.clamp(0, 6) as u8;
+                    let speed = rt.simulation.session.game_options().game_speed.clamp(0, 6) as u8;
                     let mut timing = state
                         .match_state
                         .telemetry_timing
@@ -1221,7 +1221,7 @@ fn advance_one_simulation_frame(
             // generation.
             // F10: sim owns the write; the app only names the owner.
             if let Some(owner) = &local_owner_for_fog {
-                if sim.session.tick == 1 {
+                if sim.session.tick() == 1 {
                     log::info!("Fog view prepared for local owner: '{}'", owner);
                 }
                 sim.prepare_fog_view_for(owner);
@@ -1231,7 +1231,7 @@ fn advance_one_simulation_frame(
             // The radar event array is the local client's (RadarClass). A
             // match without a minimap renderer has no such client, so nothing
             // is admitted and the radar-gated EVA lines stay silent.
-            let radar_frame = sim.session.tick;
+            let radar_frame = sim.session.tick();
             super::super_selection::follow_selection_writes(
                 &mut state.match_state.input.targeting_mode,
                 &frame_sound_events,
@@ -2416,7 +2416,7 @@ mod modal_pump_tests {
         const FRAMES: u64 = 7;
         let pumped_world_delta = |mode: SessionMode| -> u64 {
             let mut sim = Simulation::new();
-            let start = sim.session.tick;
+            let start = sim.session.tick();
             for _ in 0..FRAMES {
                 if modal_pump_should_advance_sim(mode, false, false) {
                     // `tick_ms` does not affect the asserted tick delta; a literal
@@ -2424,7 +2424,7 @@ mod modal_pump_tests {
                     sim.advance_tick(&[], None, None, None, 33);
                 }
             }
-            sim.session.tick - start
+            sim.session.tick() - start
         };
 
         // Offline modes freeze the world behind the modal: zero tick advance.

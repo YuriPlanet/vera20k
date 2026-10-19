@@ -1682,8 +1682,8 @@ mod tests {
                 EntityCategory::Unit,
             );
             assert!(matches!(sim.reveal(source), RevealOutcome::Revealed { .. }));
-            sim.session.binary_frame = 100;
-            sim.session.map_name = "TIMER.MAP".into();
+            sim.session.set_binary_frame_for_test(100);
+            sim.session.set_map_name_for_test("TIMER.MAP".into());
             let mut shot = gsi_05_02_projectile(source, None);
             shot.target = ProjectileTarget::Cell { rx: 12, ry: 12 };
             let origin_z = if dropping { 100 } else { 20 };
@@ -1721,7 +1721,7 @@ mod tests {
             assert_eq!(
                 saved
                     .arm_timer
-                    .remaining(runtime.simulation.session.binary_frame as i32),
+                    .remaining(runtime.simulation.session.binary_frame() as i32),
                 9
             );
             assert_eq!(
@@ -1739,7 +1739,7 @@ mod tests {
             let mut expected = saved.clone();
             expected
                 .arm_timer
-                .start(restored.session.binary_frame as i32, 0);
+                .start(restored.session.binary_frame() as i32, 0);
             assert_eq!(restored.projectiles.get(id), Some(&expected));
             let hash = restored.state_hash();
             restored
@@ -1747,7 +1747,7 @@ mod tests {
                 .get_mut(id)
                 .unwrap()
                 .arm_timer
-                .start(restored.session.binary_frame as i32, 1);
+                .start(restored.session.binary_frame() as i32, 1);
             assert_ne!(
                 restored.state_hash(),
                 hash,
@@ -1912,7 +1912,7 @@ mod tests {
                 firer
                     .attack_target
                     .set_for_test(Some(TargetKind::Entity(target)));
-                sim.session.binary_frame = 100;
+                sim.session.set_binary_frame_for_test(100);
                 let mut runtime = SimRuntime::from_simulation(sim);
                 runtime.resources.rules = RuleSet::from_ini(&ini).unwrap();
                 let output = runtime
@@ -2101,7 +2101,7 @@ mod tests {
             let mut expected_loaded = runtime.simulation.projectiles.get(id).unwrap().clone();
             expected_loaded
                 .arm_timer
-                .start(restored.session.binary_frame as i32, 0);
+                .start(restored.session.binary_frame() as i32, 0);
             assert_eq!(restored.projectiles.get(id), Some(&expected_loaded));
             let hash = restored.state_hash();
             let velocity = restored.projectiles.get(id).unwrap().velocity;

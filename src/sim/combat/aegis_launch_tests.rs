@@ -69,7 +69,7 @@ impl AegisScene {
                 crate::sim::mission::MissionId::from_known(
                     crate::sim::mission::MissionType::Attack,
                 ),
-                world.session.binary_frame,
+                world.session.binary_frame(),
             )
             .unwrap();
         Some(Self {
@@ -101,7 +101,7 @@ impl AegisScene {
     }
 
     fn fire(&mut self, frame: u32) -> Projectile {
-        self.world.session.binary_frame = frame;
+        self.world.session.set_binary_frame_for_test(frame);
         let actor = self.world.substrate.entities.get(self.aegis).unwrap();
         let object = self.rules.object("AEGIS").unwrap();
         let selected = combat_weapon::resolve_weapon_index(
@@ -289,7 +289,7 @@ fn mid_fan_snapshot_retains_counter_hash_and_continued_shots() {
     // BulletLoad46AE9C..46AEB0 restarts both timers at the loaded frame;
     // C4/CC is represented by arm_timer. Compare against that native load
     // result, then apply the same documented reset to the reference history.
-    let loaded_frame = scene.world.session.binary_frame as i32;
+    let loaded_frame = scene.world.session.binary_frame() as i32;
     for (id, before) in scene.world.projectiles.iter_mut() {
         let after = restored.world.projectiles.get(*id).unwrap();
         assert_eq!(after.arm_timer.start_frame(), loaded_frame);

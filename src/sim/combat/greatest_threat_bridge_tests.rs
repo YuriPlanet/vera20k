@@ -259,7 +259,7 @@ fn original_dead_missing_cell_candidate_runs_fire_probe_before_health_rejection(
         .unwrap()["steps"][0];
     let mut world = Simulation::with_seed(31);
     world.intern_rule_type_ids(&rules);
-    world.session.binary_frame = 173;
+    world.session.set_binary_frame_for_test(173);
     let obj = rules.object("FV").unwrap();
     for (id, owner, x, y, hp) in [(1, "Americans", 10, 20, 200), (2, "Russians", 41, 41, 0)] {
         let owner = world.intern(owner);

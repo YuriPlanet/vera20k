@@ -215,8 +215,8 @@ fn fly_integer_target_flags_and_cargo_survive_save_and_continuation() {
         );
         for frame in 1..=8 {
             for instance in [&mut sim, &mut restored] {
-                instance.session.tick = frame;
-                instance.session.binary_frame = frame as u32;
+                instance.session.set_tick_for_test(frame);
+                instance.session.set_binary_frame_for_test(frame as u32);
                 instance
                     .tick_air_movement_with_cell_lists_one(
                         1,
@@ -573,7 +573,7 @@ fn issue_coordinate(sim: &mut Simulation, rules: &RuleSet, xyz: [i32; 3]) -> boo
             z: xyz[2],
         },
         Some(crate::sim::movement::DestinationTiming::from_rules(
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
             Some(rules),
         )),
         Some(rules),
@@ -794,7 +794,7 @@ fn takeoff_fixture(row: &serde_json::Value) -> (Simulation, RuleSet) {
     loco.fly_runtime_mut()
         .unwrap()
         .set_target_speed(SimFixed::lit("0.25"));
-    sim.session.binary_frame = 100;
+    sim.session.set_binary_frame_for_test(100);
     (sim, rules)
 }
 
@@ -1036,7 +1036,7 @@ fn fly_nonlandable_production_tick_replaces_landing_target_and_restores() {
     assert_eq!(restored.state_hash(), sim.state_hash());
     for frame in 101..105 {
         for instance in [&mut sim, &mut restored] {
-            instance.session.binary_frame = frame;
+            instance.session.set_binary_frame_for_test(frame);
             instance
                 .tick_air_movement_with_cell_lists_one(
                     1,
@@ -1263,7 +1263,7 @@ fn fly_production_tick_uses_primary_current_and_continues_after_restore() {
     restored.restore_after_snapshot_load().unwrap();
     for frame in 100..104 {
         for instance in [&mut sim, &mut restored] {
-            instance.session.binary_frame = frame;
+            instance.session.set_binary_frame_for_test(frame);
             instance
                 .tick_air_movement_with_cell_lists_one(
                     1,
@@ -1382,7 +1382,7 @@ fn fly_paid_step_matches_native_math_and_production_type_speed() {
             .fly_runtime_mut()
             .unwrap()
             .set_current_speed(fraction);
-        sim.session.binary_frame = frame;
+        sim.session.set_binary_frame_for_test(frame);
         let mut restored = if input["name"] == "turn_5_100" {
             sim.scenario_rng = crate::sim::rng::SimRng::new(0);
             let bytes = GameSnapshot::save(&sim, 0, 0, "Fly paid movement", 0);
@@ -1423,7 +1423,7 @@ fn fly_paid_step_matches_native_math_and_production_type_speed() {
             assert_eq!(restored.state_hash(), sim.state_hash());
             for next_frame in frame + 1..frame + 5 {
                 for instance in [&mut sim, &mut *restored] {
-                    instance.session.binary_frame = next_frame;
+                    instance.session.set_binary_frame_for_test(next_frame);
                     instance
                         .tick_air_movement_with_cell_lists_one(
                             1,

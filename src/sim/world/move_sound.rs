@@ -71,7 +71,7 @@ impl Simulation {
                 rules.map(|rules| {
                     crate::sim::movement::SpeedRules::new(rules, &self.interner, &self.houses)
                 }),
-                self.session.binary_frame,
+                self.session.binary_frame(),
             );
         // Native +8D/+425. A retained parachute object alone is not this gate.
         let falling_or_crashing = entity.is_falling_down() || entity.crash.is_crashing();

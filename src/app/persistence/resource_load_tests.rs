@@ -114,15 +114,19 @@ fn bound_saved_world(
     // One video-owned and one ordinary trigger-owned untimed hold.
     simulation.pause_scenario(0);
     simulation.pause_scenario(0);
-    simulation.session.map_name = name.into();
+    simulation.session.set_map_name_for_test(name.into());
     simulation.session.install_waypoints(&map.waypoints);
-    simulation.session.theater = map.header.theater.clone();
-    simulation.session.map_width = terrain.width();
-    simulation.session.map_height = terrain.height();
-    simulation.session.tick = 91;
-    simulation.session.binary_frame = 92;
-    simulation.session.lighting = crate::sim::scenario_session::ScenarioLightingState::from_map(
-        &crate::map::lighting::parse_lighting_profiles(&map.ini),
+    simulation
+        .session
+        .set_theater_for_test(map.header.theater.clone());
+    simulation.session.set_map_width_for_test(terrain.width());
+    simulation.session.set_map_height_for_test(terrain.height());
+    simulation.session.set_tick_for_test(91);
+    simulation.session.set_binary_frame_for_test(92);
+    simulation.session.set_lighting_for_test(
+        crate::sim::scenario_session::ScenarioLightingState::from_map(
+            &crate::map::lighting::parse_lighting_profiles(&map.ini),
+        ),
     );
     simulation.install_playfield_from_map_header(&map.header);
     simulation.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(
@@ -238,12 +242,15 @@ fn assert_incoming_resources(
         "incoming retained Power wins on warm and cold preparation"
     );
     let sim = &prepared.world.simulation;
-    assert_eq!(sim.session.map_name, incoming.simulation.session.map_name);
-    assert_eq!(sim.session.theater, "TEMPERATE");
-    assert_eq!(sim.session.tick, incoming.simulation.session.tick);
     assert_eq!(
-        sim.session.binary_frame,
-        incoming.simulation.session.binary_frame
+        sim.session.map_name(),
+        incoming.simulation.session.map_name()
+    );
+    assert_eq!(sim.session.theater(), "TEMPERATE");
+    assert_eq!(sim.session.tick(), incoming.simulation.session.tick());
+    assert_eq!(
+        sim.session.binary_frame(),
+        incoming.simulation.session.binary_frame()
     );
     assert_eq!(
         sim.map_size_diamond(),
@@ -697,8 +704,8 @@ fn retail_saved_resources_prepare_cross_map_and_roll_back_late_failure() {
         SimRng::new(0).logical_state()
     );
     assert_eq!(
-        prepared.world.simulation.session.seed,
-        outgoing.simulation.session.seed
+        prepared.world.simulation.session.seed(),
+        outgoing.simulation.session.seed()
     );
     assert_eq!(
         prepared.tile_cache.selector().initialized_table(),

@@ -61,13 +61,14 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
     );
     house.player_control = input["player_control"].as_bool().unwrap_or(false);
     sim.houses.register(house);
-    sim.session.current_house = Some(owner);
+    sim.session.set_current_house_for_test(Some(owner));
     sim.session.set_game_mode(
         crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
             input["session_mode"].as_u64().unwrap_or(0) != 0,
         ),
     );
-    sim.session.game_options.mcv_redeploy = input["mcv_redeploy"].as_bool().unwrap_or(false);
+    sim.session.game_options_mut_for_test().mcv_redeploy =
+        input["mcv_redeploy"].as_bool().unwrap_or(false);
     let mut actor = GameEntity::test_default_of_category(
         ACTOR,
         "BUILDING",

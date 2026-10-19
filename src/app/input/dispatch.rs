@@ -2421,7 +2421,7 @@ mod item83_selection_order_tests {
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
-        sim.session.current_house = Some(owner);
+        sim.session.set_current_house_for_test(Some(owner));
         for (id, type_name) in [(1, "E1"), (2, "E2")] {
             let type_ref = sim.interner.intern(type_name);
             sim.entities_mut()
@@ -2744,7 +2744,7 @@ fn queue_scatter_orders(
     if selected.is_empty() {
         return Vec::new();
     }
-    let Some(owner) = sim.session.current_house else {
+    let Some(owner) = sim.session.current_house() else {
         return Vec::new();
     };
     let owner = sim.interner.resolve(owner).to_owned();
@@ -2789,7 +2789,7 @@ fn queue_area_guard_orders(
     if selected.is_empty() {
         return sounds;
     }
-    let Some(owner) = sim.session.current_house else {
+    let Some(owner) = sim.session.current_house() else {
         return sounds;
     };
     let owner = sim.interner.resolve(owner).to_owned();
@@ -3302,7 +3302,7 @@ fn apply_selection_action_line_policy(state: &mut AppState, policy: SelectionAct
         .sim_runtime
         .as_ref()
         .map(|rt| &rt.simulation)
-        .map(|sim| sim.session.binary_frame)
+        .map(|sim| sim.session.binary_frame())
     else {
         return;
     };
@@ -3372,7 +3372,8 @@ mod deploy_key_tests {
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
-        sim.session.current_house = Some(sim.interner.intern("Americans"));
+        sim.session
+            .set_current_house_for_test(Some(sim.interner.intern("Americans")));
         sim
     }
 
@@ -3407,33 +3408,33 @@ mod deploy_key_tests {
             .passenger_role = PassengerRole::transport(cargo);
 
         assert_eq!(
-            deploy_key_command(&sim, Some(&rules), heli, sim.session.current_house),
+            deploy_key_command(&sim, Some(&rules), heli, sim.session.current_house()),
             Some(Command::DeployMcv { entity_id: heli })
         );
         assert_eq!(
-            deploy_key_command(&sim, Some(&rules), transport, sim.session.current_house),
+            deploy_key_command(&sim, Some(&rules), transport, sim.session.current_house()),
             Some(Command::UnloadPassengers {
                 transport_id: transport
             })
         );
         assert_eq!(
-            deploy_key_command(&sim, Some(&rules), infantry, sim.session.current_house),
+            deploy_key_command(&sim, Some(&rules), infantry, sim.session.current_house()),
             Some(Command::ToggleInfantryDeploy {
                 entity_id: infantry
             })
         );
         assert_eq!(
-            deploy_key_command(&sim, Some(&rules), aircraft, sim.session.current_house),
+            deploy_key_command(&sim, Some(&rules), aircraft, sim.session.current_house()),
             None
         );
         assert_eq!(
-            deploy_key_command(&sim, Some(&rules), plain, sim.session.current_house),
+            deploy_key_command(&sim, Some(&rules), plain, sim.session.current_house()),
             None
         );
         // A `DeployFire=` Unit takes the DEPLOY event (Mission_Unload's
         // deploy-fire arm, `0x0073DCD3`).
         assert_eq!(
-            deploy_key_command(&sim, Some(&rules), firer, sim.session.current_house),
+            deploy_key_command(&sim, Some(&rules), firer, sim.session.current_house()),
             Some(Command::DeployMcv { entity_id: firer })
         );
         sim.entities_mut()
@@ -3448,7 +3449,8 @@ mod deploy_key_tests {
         );
         // CanDeploySlashUnload refuses a unit in a tube (`0x00700E59`).
         assert!(
-            deploy_key_commands(&sim, Some(&rules), &[heli], sim.session.current_house).is_empty()
+            deploy_key_commands(&sim, Some(&rules), &[heli], sim.session.current_house())
+                .is_empty()
         );
     }
 
@@ -3467,7 +3469,8 @@ mod deploy_key_tests {
             .spawn_object("YARD", "Americans", 10, 10, 0, &rules)
             .expect("the yard builds");
         assert!(
-            deploy_key_commands(&sim, Some(&rules), &[yard], sim.session.current_house).is_empty()
+            deploy_key_commands(&sim, Some(&rules), &[yard], sim.session.current_house())
+                .is_empty()
         );
     }
 
@@ -3488,7 +3491,7 @@ mod deploy_key_tests {
             PassengerRole::transport(cargo);
 
         assert_eq!(
-            deploy_key_commands(&sim, Some(&rules), &[reactor], sim.session.current_house),
+            deploy_key_commands(&sim, Some(&rules), &[reactor], sim.session.current_house()),
             [Command::UnloadPassengers {
                 transport_id: reactor
             }]
@@ -3508,7 +3511,7 @@ mod deploy_key_tests {
             .spawn_object_limbo_at_height("HELI", "Americans", 10, 10, 0, 0, &rules)
             .expect("the deploy key fixture builds");
         assert_eq!(
-            deploy_key_commands(&sim, Some(&rules), &[heli], sim.session.current_house),
+            deploy_key_commands(&sim, Some(&rules), &[heli], sim.session.current_house()),
             [Command::DeployMcv { entity_id: heli }]
         );
         sim.entities_mut()
@@ -3517,7 +3520,8 @@ mod deploy_key_tests {
             .berserk
             .set_active_for_test(true);
         assert!(
-            deploy_key_commands(&sim, Some(&rules), &[heli], sim.session.current_house).is_empty()
+            deploy_key_commands(&sim, Some(&rules), &[heli], sim.session.current_house())
+                .is_empty()
         );
     }
 
@@ -3541,7 +3545,7 @@ mod deploy_key_tests {
                 &sim,
                 Some(&rules),
                 &[heli, theirs],
-                sim.session.current_house
+                sim.session.current_house()
             ),
             [Command::DeployMcv { entity_id: heli }]
         );
@@ -3551,7 +3555,8 @@ mod deploy_key_tests {
             .deactivated
             .set_for_test(true);
         assert!(
-            deploy_key_commands(&sim, Some(&rules), &[heli], sim.session.current_house).is_empty()
+            deploy_key_commands(&sim, Some(&rules), &[heli], sim.session.current_house())
+                .is_empty()
         );
     }
 
@@ -3583,7 +3588,7 @@ mod deploy_key_tests {
             .set_active_for_test(true);
         let toggle = |entity_id| Command::ToggleInfantryDeploy { entity_id };
         let commands = |selection: &[u64]| {
-            deploy_key_commands(&sim, Some(&rules), selection, sim.session.current_house)
+            deploy_key_commands(&sim, Some(&rules), selection, sim.session.current_house())
         };
         assert_eq!(commands(&[deployed]), [toggle(deployed)]);
         assert_eq!(commands(&[deployed, standing]), [toggle(standing)]);
@@ -3612,7 +3617,7 @@ mod deploy_key_tests {
                 .unwrap()
                 .set_unit_simple_deploy_for_test(deployed, begin, reverse);
             assert_eq!(
-                deploy_key_command(&sim, Some(rules), id, sim.session.current_house),
+                deploy_key_command(&sim, Some(rules), id, sim.session.current_house()),
                 Some(Command::DeployMcv { entity_id: id }),
             );
         }
@@ -3920,7 +3925,7 @@ mod control_group_tests {
             sim.session.set_game_mode(
                 crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(multiplayer),
             );
-            sim.session.current_house = Some(local);
+            sim.session.set_current_house_for_test(Some(local));
             let mut groups = vec![Vec::new(); 10];
             groups[1] = vec![1, 2, 3, 99];
             groups[2] = vec![4];
@@ -3969,7 +3974,7 @@ mod control_group_tests {
                     input["mode"].as_u64().unwrap() != 0,
                 ),
             );
-            sim.session.current_house = Some(owners[0]);
+            sim.session.set_current_house_for_test(Some(owners[0]));
             let actors = input["actors"].as_array().unwrap();
             let mut groups = vec![Vec::new(); 10];
             let mut selected = Vec::new();
@@ -4068,7 +4073,7 @@ mod control_group_tests {
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
-        sim.session.current_house = Some(local);
+        sim.session.set_current_house_for_test(Some(local));
 
         assert_eq!(
             live_group_members(Some(&sim), &[10, 11]),

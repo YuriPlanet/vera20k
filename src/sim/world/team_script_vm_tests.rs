@@ -661,7 +661,7 @@ fn super_team_fixture(script: &str) -> (Simulation, RuleSet, u64, [u64; 2], [u64
                 crate::sim::superweapon::SuperWeaponInstance::new(
                     id,
                     owner,
-                    sim.session.binary_frame as i32,
+                    sim.session.binary_frame() as i32,
                 ),
             );
         }
@@ -677,7 +677,7 @@ fn super_team_fixture(script: &str) -> (Simulation, RuleSet, u64, [u64; 2], [u64
         let id = sim.interner.intern(name);
         let mut instance = crate::sim::superweapon::SuperWeaponInstance::new(id, owner, 0);
         instance.is_active = true;
-        instance.charge_start_tick = sim.session.binary_frame as i32;
+        instance.charge_start_tick = sim.session.binary_frame() as i32;
         instance.charge_duration = rules.super_weapon(name).unwrap().recharge_time_frames;
         instance.is_ready = true;
         sim.super_weapons
@@ -732,7 +732,7 @@ fn a_computer_team_iron_curtains_itself() {
         assert!(
             crate::sim::superweapon::invulnerability::is_invulnerable(
                 entity.invulnerability.as_ref(),
-                sim.session.binary_frame
+                sim.session.binary_frame()
             ),
             "member {member}'s curtain is still running"
         );
@@ -755,7 +755,7 @@ fn a_computer_team_waits_on_its_charging_iron_curtain() {
     let (mut sim, rules, team_id, _, _) = super_team_fixture("0=55,0\n1=49,0");
     let owner = sim.interner.get("Computer").unwrap();
     let curtain = sim.interner.get("IronCurtainSpecial").unwrap();
-    let frame = sim.session.binary_frame as i32;
+    let frame = sim.session.binary_frame() as i32;
     let instance = sim
         .super_weapons
         .get_mut(&owner)

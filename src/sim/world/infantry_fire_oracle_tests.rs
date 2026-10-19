@@ -266,7 +266,7 @@ fn assert_source(fixture: &SuppliedFootFixture, expected: &Value, name: &str) {
         "{name}: NavCom"
     );
     assert_eq!(
-        actor.body_facing_current(fixture.sim.session.binary_frame),
+        actor.body_facing_current(fixture.sim.session.binary_frame()),
         signed(&expected["body_facing_words"][0]) as u16,
         "{name}: primary facing"
     );
@@ -338,7 +338,7 @@ fn command_attack(fixture: &mut SuppliedFootFixture, case: &Value, rules: &RuleS
             fixture.actor,
             MissionId::from_raw(signed(&queue[0])),
             signed(&queue[1]),
-            fixture.sim.session.binary_frame,
+            fixture.sim.session.binary_frame(),
             &EntityReadyInputProvider,
         )
         .unwrap();
@@ -490,7 +490,7 @@ fn emission_fixture(case: &Value, rules: &RuleSet) -> SuppliedFootFixture {
         fixture
             .sim
             .session
-            .game_options
+            .game_options_mut_for_test()
             .apply_in_game_speed(case["input"]["game_speed_index"].as_u64().unwrap() as u8)
     );
     for pose in case["poses"].as_array().unwrap() {
@@ -877,7 +877,10 @@ fn original_completed_prelaunch_ai_visits_match_doing_clock_latch_and_full_rng()
                 assert_eq!(frame["base_fire_entry"]["unexecuted"], true);
                 break;
             }
-            fixture.sim.session.binary_frame = frame["native_frame"].as_u64().unwrap() as u32;
+            fixture
+                .sim
+                .session
+                .set_binary_frame_for_test(frame["native_frame"].as_u64().unwrap() as u32);
             assert_source(&fixture, &frame["before"], name);
             assert_rng(&fixture.sim, &frame["rng_before"], name);
             source_ai_visit(&mut fixture.sim, fixture.actor, &rules);
@@ -909,8 +912,9 @@ fn original_single_listener_expiry_clears_pending_shot_and_shortens_passive_time
         for (calls, frame) in case["frames"].as_array().unwrap().iter().enumerate() {
             if calls == expiry_after {
                 let expiry = &case["expiry"];
-                fixture.sim.session.binary_frame =
-                    expiry["callback_events"][0]["frame"].as_u64().unwrap() as u32;
+                fixture.sim.session.set_binary_frame_for_test(
+                    expiry["callback_events"][0]["frame"].as_u64().unwrap() as u32,
+                );
                 assert_source(&fixture, &expiry["before"], name);
                 assert_rng(&fixture.sim, &expiry["rng_before"], name);
                 let target_id = fixture.id(&case["input"]["target"]).unwrap();
@@ -951,7 +955,10 @@ fn original_single_listener_expiry_clears_pending_shot_and_shortens_passive_time
                 assert!(fixture.sim.logic_order().contains(&target_id));
                 compared += 1;
             }
-            fixture.sim.session.binary_frame = frame["native_frame"].as_u64().unwrap() as u32;
+            fixture
+                .sim
+                .session
+                .set_binary_frame_for_test(frame["native_frame"].as_u64().unwrap() as u32);
             assert!(frame["returned"].as_bool().unwrap());
             assert_source(&fixture, &frame["before"], name);
             assert_rng(&fixture.sim, &frame["rng_before"], name);
@@ -997,7 +1004,10 @@ fn original_whole_ai_shot_dynamic_logic_damage_and_deferred_lifetimes_match_nati
         assert_emission_boundary(&fixture, &case["command"]["after"], &ids, name);
         assert_rng(&fixture.sim, &case["command"]["rng_after"], name);
         for visit in case["ai_visits"].as_array().unwrap() {
-            fixture.sim.session.binary_frame = visit["frame"].as_u64().unwrap() as u32;
+            fixture
+                .sim
+                .session
+                .set_binary_frame_for_test(visit["frame"].as_u64().unwrap() as u32);
             assert_emission_boundary(&fixture, &visit["before"], &ids, name);
             assert_rng(&fixture.sim, &visit["rng_before"], name);
             source_ai_visit(&mut fixture.sim, fixture.actor, &rules);
@@ -1058,7 +1068,10 @@ fn original_whole_ai_shot_dynamic_logic_damage_and_deferred_lifetimes_match_nati
             );
             // The original caller increments A8ED84 before725C70. Object AI
             // and both clocks saw the previous absolute frame throughout.
-            fixture.sim.session.binary_frame += 1;
+            fixture
+                .sim
+                .session
+                .set_binary_frame_for_test(fixture.sim.session.binary_frame() + 1);
             fixture.sim.process_pending_delete_with(
                 Some(&rules),
                 None,

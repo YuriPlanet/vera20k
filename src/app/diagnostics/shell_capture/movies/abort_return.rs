@@ -243,7 +243,7 @@ impl AbortReturnInput {
                     "Leave confirmation executed EXIT instead of only queueing it"
                 );
                 route.push(json!({"frame": frame, "action": "Leave release", "dialog": 0xb6}));
-                route.push(json!({"frame": frame, "action": "EXIT queued", "queued_at_tick": sim.session.tick,
+                route.push(json!({"frame": frame, "action": "EXIT queued", "queued_at_tick": sim.session.tick(),
                     "execute_tick": exit.execute_tick, "owner": sim.interner.resolve(exit.owner),
                     "owner_native_unique_id": sim.houses.get(&exit.owner).and_then(|house| house.native_unique_id()),
                     "modal_closed": !state.match_state.paused(), "diagnostic_simulation_freeze": false,

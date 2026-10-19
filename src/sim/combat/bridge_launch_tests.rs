@@ -85,7 +85,7 @@ fn retail_grizzly_forcefire_freezes_the_native_cell_aim() {
         sim.resolve_type_handles(&rules);
         sim.queue_command(CommandEnvelope::new(
             owner,
-            sim.session.tick + 1,
+            sim.session.tick() + 1,
             Command::ForceAttackCell {
                 attacker_id: grizzly,
                 target_rx: 10,

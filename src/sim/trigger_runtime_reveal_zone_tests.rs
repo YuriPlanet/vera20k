@@ -137,7 +137,7 @@ fn native_reveal_zone_dispatch_uses_literal_waypoint_raw_zone_and_radius_two() {
         sim.playfield_size_height = Some(number(&row["size"][1]));
         let player = sim.interner.intern("Player");
         let other = sim.interner.intern("Other");
-        sim.session.current_house = Some(player);
+        sim.session.set_current_house_for_test(Some(player));
         sim.fog = FogState::new(128, 128);
         if row["input"]["latch"] == 1 {
             sim.fog.reveal_all_for_owner(player);
@@ -230,7 +230,7 @@ fn native_reveal_zone_dispatch_uses_literal_waypoint_raw_zone_and_radius_two() {
             "{name}: retained original stream words"
         );
         assert_eq!(
-            json!(sim.session.binary_frame),
+            json!(sim.session.binary_frame()),
             row["frame_after"],
             "{name}"
         );

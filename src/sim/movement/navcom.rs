@@ -875,7 +875,7 @@ impl crate::sim::world::Simulation {
                 entity.navigation.store_nav_com(None);
             }
         }
-        let timing = super::DestinationTiming::from_rules(self.session.binary_frame, rules);
+        let timing = super::DestinationTiming::from_rules(self.session.binary_frame(), rules);
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             timing.accept(entity);
         }

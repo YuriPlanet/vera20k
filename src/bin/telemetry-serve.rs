@@ -122,13 +122,16 @@ fn parse_args() -> Result<Args, String> {
 /// set here — the dashboard frames its ground plane from it, and wander
 /// orders target cells inside it.
 fn build_world(seed: u32, per_category: u16, structures: u16) -> Simulation {
-    let mut sim = Simulation::with_seed(u64::from(seed));
-    if sim.session.map_width == 0 || sim.session.map_height == 0 {
-        sim.session.map_width = DEFAULT_MAP_SIDE;
-        sim.session.map_height = DEFAULT_MAP_SIDE;
-    }
-    let width = sim.session.map_width;
-    let height = sim.session.map_height;
+    let mut sim = Simulation::synthetic(
+        u64::from(seed),
+        &vera20k_core::sim::scenario_session::ScenarioDescriptor {
+            map_width: DEFAULT_MAP_SIDE,
+            map_height: DEFAULT_MAP_SIDE,
+            ..Default::default()
+        },
+    );
+    let width = sim.session.map_width();
+    let height = sim.session.map_height();
     let homes = [
         (10u16, 10u16),
         (width.saturating_sub(30), height.saturating_sub(30)),
@@ -212,8 +215,8 @@ fn build_world(seed: u32, per_category: u16, structures: u16) -> Simulation {
 /// through the locomotor and command path, and the dashboard renders whatever
 /// the sim says either way.
 fn stroll(sim: &mut Simulation, tick: u64, targets: &mut HashMap<u64, (f32, f32)>) {
-    let width = u32::from(sim.session.map_width);
-    let height = u32::from(sim.session.map_height);
+    let width = u32::from(sim.session.map_width());
+    let height = u32::from(sim.session.map_height());
     if width == 0 || height == 0 {
         return;
     }

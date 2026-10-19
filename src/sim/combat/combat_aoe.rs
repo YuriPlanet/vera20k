@@ -3835,7 +3835,7 @@ mod tests {
                     ),
                 );
             }
-            world.session.binary_frame = 100;
+            world.session.set_binary_frame_for_test(100);
             world.main_rng = SimRng::new(7).into();
             world.scenario_rng = SimRng::new(1);
             // Some(false) models campaign PlayerControl without IsHuman.
@@ -4528,7 +4528,7 @@ mod tests {
         sim.production
             .tiberium_spawning_terrain_cells
             .insert((5, 5));
-        sim.session.no_damage = true;
+        sim.session.set_no_damage_for_test(true);
         let outer_ref = sim.interner.intern("OUTERWH");
         let before_hash = sim.state_hash();
         let before_rng = sim.scenario_rng.state();

@@ -56,8 +56,8 @@ pub(crate) fn fixture_with_rules_and_fixed_art(
     // Map Size height, which map load installs with the bounds
     // (`install_playfield_from_map_header`).
     sim.playfield_size_height = Some(16);
-    sim.session.map_width = 33;
-    sim.session.map_height = 33;
+    sim.session.set_map_width_for_test(33);
+    sim.session.set_map_height_for_test(33);
     sim.overlay_grid = Some(OverlayGrid::new(33, 33));
     sim.bridge_state = Some(parts.bridges.clone());
     sim.zone_grid = Some(parts.zones.clone());
@@ -65,7 +65,7 @@ pub(crate) fn fixture_with_rules_and_fixed_art(
     sim.install_resolved_terrain_for_new_map(terrain);
     // Map load also sizes the ore queue stores from the same `[Map] Size`
     // rect (`initialize_native_tiberium_queues`); this map holds no ore.
-    let frame = sim.session.binary_frame;
+    let frame = sim.session.binary_frame();
     sim.production
         .ore_growth_state
         .reset_native_tiberium_classes_for_rect((16, 16), rules.tiberium_types.len(), frame);

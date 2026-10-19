@@ -113,8 +113,8 @@ fn smudge_state_hash_stable_across_advance_tick() {
             sim_b.state_hash(),
             "state_hash diverged at tick {} (sim_a.tick={}, sim_b.tick={})",
             tick,
-            sim_a.session.tick,
-            sim_b.session.tick,
+            sim_a.session.tick(),
+            sim_b.session.tick(),
         );
     }
 

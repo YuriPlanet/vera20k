@@ -53,8 +53,8 @@ fn rules() -> RuleSet {
 
 fn scene(rules: &RuleSet) -> (Simulation, [u64; 2], u64, u64) {
     let mut sim = Simulation::with_seed(1);
-    sim.session.map_width = 64;
-    sim.session.map_height = 64;
+    sim.session.set_map_width_for_test(64);
+    sim.session.set_map_height_for_test(64);
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
     for (index, name) in ["Local", "Enemy"].into_iter().enumerate() {

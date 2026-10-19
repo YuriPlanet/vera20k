@@ -120,8 +120,8 @@ fn fixture(input: &serde_json::Value) -> (Simulation, RuleSet) {
     let rules = rules_for(input);
     let frame = int(input, "frame", 1000) as u32;
     let mut sim = Simulation::with_seed(0);
-    sim.session.map_width = 128;
-    sim.session.map_height = 128;
+    sim.session.set_map_width_for_test(128);
+    sim.session.set_map_height_for_test(128);
     let [left, top, local_width, local_height] = ints(&input["local"], [0, 0, 64, 64]);
     sim.playfield_bounds = Some(PlayfieldBounds::from_normalized_local_size(
         64,
@@ -134,7 +134,7 @@ fn fixture(input: &serde_json::Value) -> (Simulation, RuleSet) {
     install_common_raw_terrain(&mut sim, 128, 128, 0, None);
     sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(128, 128));
     sim.scenario_rng = SimRng::new(31);
-    sim.session.binary_frame = frame;
+    sim.session.set_binary_frame_for_test(frame);
     let [x, y] = ints(&input["cell"], [60, 64]);
     assert_eq!(sim.allocate_stable_id(), AIRCRAFT);
     insert_entity(&mut sim, AIRCRAFT, EntityCategory::Aircraft);
@@ -487,12 +487,12 @@ fn fly_process_matches_native_frames() {
         let input = &row["input"];
         let name = input["name"].as_str().unwrap();
         let (mut sim, rules) = fixture(input);
-        let start = sim.session.binary_frame;
+        let start = sim.session.binary_frame();
         let frames = row["frames"].as_array().unwrap();
         let mut failed = false;
         for (n, expected) in frames.iter().enumerate() {
             let frame = start + n as u32;
-            sim.session.binary_frame = frame;
+            sim.session.set_binary_frame_for_test(frame);
             let ((), idle_calls) = crate::sim::aircraft::record_idle_calls_for_test(|| {
                 sim.tick_air_movement_with_cell_lists_one(
                     AIRCRAFT,

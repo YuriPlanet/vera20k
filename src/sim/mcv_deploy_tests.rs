@@ -40,7 +40,7 @@ fn tick(sim: &mut Simulation, rules: &RuleSet, command: Option<Command>) -> Tick
         .map(|cmd| {
             CommandEnvelope::new(
                 sim.interner.get("Americans").unwrap(),
-                sim.session.tick + 1,
+                sim.session.tick() + 1,
                 cmd,
             )
         })
@@ -147,7 +147,7 @@ fn a_deployed_yard_completes_its_buildup_after_the_conversion_frame() {
     let mut converted = None;
     let mut completed = None;
     for _ in 0..200 {
-        let frame = sim.session.binary_frame;
+        let frame = sim.session.binary_frame();
         tick(&mut sim, &rules, None);
         let yard = sim
             .substrate
@@ -191,10 +191,10 @@ fn turn_completion_converts_before_the_next_mission_retry() {
     assert!(e.mcv_deploy_pending.is_pending());
     // Still turning toward DeployFacing=4 (0x8000) at ROT 10.
     assert_eq!(e.body_facing.destination(), 0x8000);
-    assert!(e.body_facing.is_rotating(sim.session.binary_frame));
+    assert!(e.body_facing.is_rotating(sim.session.binary_frame()));
     let due = e.mission.dispatch_timer();
     for _ in 0..10 {
-        let before = sim.session.binary_frame;
+        let before = sim.session.binary_frame();
         let out = tick(&mut sim, &rules, None);
         if out.spawned_entities {
             assert!(!due.due(before), "conversion is the Drive edge callback");
@@ -917,13 +917,13 @@ fn a_computer_yard_deploy_sends_its_ground_force_to_the_base() {
     for human in [false, true] {
         let (mut sim, rules, mcv, [tank, infantry, enemy]) = ground_force_fixture(human);
         let command = human.then_some(Command::DeployMcv { entity_id: mcv });
-        let mut deploy_frame = sim.session.binary_frame;
+        let mut deploy_frame = sim.session.binary_frame();
         tick(&mut sim, &rules, command);
         for _ in 0..140 {
             if !yard_cells(&sim).is_empty() {
                 break;
             }
-            deploy_frame = sim.session.binary_frame;
+            deploy_frame = sim.session.binary_frame();
             tick(&mut sim, &rules, None);
         }
         let yard = yard_cells(&sim);
@@ -933,7 +933,8 @@ fn a_computer_yard_deploy_sends_its_ground_force_to_the_base() {
         // arguments and filters are pinned by its own test in house_base.
         let owner = sim.interner.get("Americans").unwrap();
         let origin = sim.houses[&owner].base_origin();
-        let frame = std::mem::replace(&mut sim.session.binary_frame, deploy_frame);
+        let frame = sim.session.binary_frame();
+        sim.session.set_binary_frame_for_test(deploy_frame);
         let destination = sim
             .nearby_passable_cell(
                 (i32::from(origin.0), i32::from(origin.1)),
@@ -948,7 +949,7 @@ fn a_computer_yard_deploy_sends_its_ground_force_to_the_base() {
                 ),
             )
             .map(|(x, y)| NavTargetRef::cell(x + 1, y + 1));
-        sim.session.binary_frame = frame;
+        sim.session.set_binary_frame_for_test(frame);
         let entity = |id| sim.substrate.entities.get(id).unwrap();
         let ordered = |id| {
             let mission = &entity(id).mission;
@@ -1398,7 +1399,7 @@ fn retail_dustbowl_a_computer_without_its_yard_sells_off_and_hunts() {
     let mut ticks = Vec::new();
     let mut frames = 0;
     let mut step = |scenario: &mut crate::headless_scenario::HeadlessScenario| {
-        let frame = scenario.sim().session.binary_frame as i32;
+        let frame = scenario.sim().session.binary_frame() as i32;
         let before = timer(scenario);
         retail_frame(scenario);
         let after = timer(scenario);
@@ -1465,7 +1466,7 @@ fn retail_dustbowl_a_computer_without_its_yard_sells_off_and_hunts() {
             crate::sim::world::FrameEffects::default(),
         );
     }
-    let lost = scenario.sim().session.binary_frame as i32;
+    let lost = scenario.sim().session.binary_frame() as i32;
     let start = frames;
     while !scenario.sim().houses[&owner]
         .strategy_emergency

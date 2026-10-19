@@ -28,7 +28,7 @@ pub(crate) fn apply_foot_radiation(
     if !radiation_enabled(world)
         || !world
             .session
-            .binary_frame
+            .binary_frame()
             .is_multiple_of(rules.radiation.application_delay as u32)
     {
         return None;
@@ -149,11 +149,11 @@ pub(crate) fn collect_area(
         warhead,
         damage,
         true,
-        world.session.no_damage,
+        world.session.no_damage(),
         &mut world.production.ore_growth_state,
         &world.production.tiberium_spawning_terrain_cells,
         &world.production.terrain_object_cells,
-        world.session.binary_frame,
+        world.session.binary_frame(),
         world.production.ore_growth_config.spreads,
         &mut world.radar_terrain_dirty_cells,
         &mut world.radar_terrain_dirty_generation,
@@ -166,7 +166,7 @@ pub(crate) fn collect_area(
     #[cfg(test)]
     let mut deferred_prelude = world.receiver_fixture.as_mut().map(|fixture| {
         super::receiver_fixture::DeferredCellPrelude {
-            amount: (!world.session.no_damage)
+            amount: (!world.session.no_damage())
                 .then(|| tiberium_reduction_amount(damage, true, warhead))
                 .flatten(),
             deferred: &mut fixture.deferred_tiberium,
@@ -203,7 +203,7 @@ pub(crate) fn collect_area(
             objects: &world.production.terrain_objects,
             cells: &world.production.terrain_object_cells,
         }),
-        world.session.no_damage,
+        world.session.no_damage(),
         Some(prelude),
     )
 }
@@ -328,7 +328,7 @@ fn collect_area_at<'r>(
     origin: (u64, Option<InternedId>, InternedId),
 ) -> AreaAtImpact<'r> {
     let (rx, ry, sub_x, sub_y, z_leptons) = projectile_impact_cell(impact);
-    let entered = damage != 0 && !world.session.no_damage;
+    let entered = damage != 0 && !world.session.no_damage();
     let routed_wall = entered && area_routes_to_wall(world, overlay_registry, (rx, ry), warhead);
     let aoe = collect_area(
         world,
@@ -578,7 +578,7 @@ pub(crate) fn commit_terrain(
         &warhead,
         rules,
         &world.interner,
-        world.session.no_damage,
+        world.session.no_damage(),
         ignore_defenses,
     );
     let TerrainAreaReceiveResult::Lethal(lethal) = receive else {
@@ -634,7 +634,7 @@ pub(crate) fn commit_entities(
     let sound_enabled = sound_enabled(world);
 
     let current_tick = receiver_tick(world);
-    let scenario_no_damage = world.session.no_damage;
+    let scenario_no_damage = world.session.no_damage();
 
     let mut death = DeathEffects::default();
     let mut under_attack_events = Vec::new();
@@ -667,7 +667,7 @@ pub(crate) fn commit_entities(
             .is_some_and(|target| {
                 target.category() == EntityCategory::Unit
                     && target.selection.is_selected()
-                    && world.session.current_house == Some(target.owner())
+                    && world.session.current_house() == Some(target.owner())
             })
         {
             run.selected_units.push(target_id);
@@ -858,7 +858,7 @@ pub(crate) fn commit_entities(
                 target_id,
                 MissionId::from_known(MissionType::Hunt),
                 0,
-                world.session.binary_frame,
+                world.session.binary_frame(),
                 &crate::sim::mission::authority::EntityReadyInputProvider,
             );
         }
@@ -2783,7 +2783,7 @@ fn receiver_tick(world: &Simulation) -> u64 {
     if let Some(fixture) = world.receiver_fixture.as_ref() {
         return fixture.current_tick;
     }
-    u64::from(world.session.binary_frame)
+    u64::from(world.session.binary_frame())
 }
 
 #[inline]

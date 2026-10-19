@@ -168,7 +168,7 @@ fn cmin_scene(input: &Value) -> Scene {
 
 /// [`cmin_scene`]'s prestate on a built scene.
 pub(super) fn dress_cmin(s: &mut Scene, input: &Value) {
-    let frame = s.sim.session.binary_frame;
+    let frame = s.sim.session.binary_frame();
     // The occupy bit 0x20 the oracle writes on its reserved cells (+0x124).
     for reserved in input["reserved"].as_array().into_iter().flatten() {
         let (x, y) = cell(reserved);
@@ -739,7 +739,7 @@ fn teleport_warp_matches_the_original_process() {
         let context = input["name"].as_str().unwrap().to_string();
         let mut s = cmin_scene(input);
         let harvester = input["harvester"] != false;
-        let frame = s.sim.session.binary_frame;
+        let frame = s.sim.session.binary_frame();
         let dest = cell(&input["dest"]);
         assert!(
             s.sim
@@ -769,7 +769,7 @@ fn teleport_warp_matches_the_original_process() {
         let last = ticks.last().unwrap()["frame"].as_u64().unwrap() as u32;
         let mut checked = ticks.iter().peekable();
         for now in frame..=last {
-            s.sim.session.binary_frame = now;
+            s.sim.session.set_binary_frame_for_test(now);
             let sounds_before = s.sim.sound_events.len();
             s.sim
                 .advance_live_object_turn(s.miner, Some(&s.rules), ObjectAiCtx::default())
@@ -915,7 +915,7 @@ fn mission_harvest_teleporter_arms_match_the_original_dispatch() {
         let before = active(&s);
         let mut stream = s.sim.scenario_rng.clone();
         let config = crate::sim::miner::MinerConfig::from_rules(&s.rules);
-        let frame = s.sim.session.binary_frame;
+        let frame = s.sim.session.binary_frame();
         crate::sim::world::dispatch_foot_mission(
             &mut s.sim,
             s.miner,

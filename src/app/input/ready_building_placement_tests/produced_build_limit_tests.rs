@@ -30,10 +30,13 @@ fn paid_e2_negative_build_limit_prunes_and_refuses_stale_produce_after_load() {
     // The empty overlay authority is supplied just as in the parent's saved
     // HOLD arena. Loading reconstructs it through the shared map owner.
     fixture.sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(
-        fixture.sim.session.map_width,
-        fixture.sim.session.map_height,
+        fixture.sim.session.map_width(),
+        fixture.sim.session.map_height(),
     ));
-    fixture.sim.session.map_name = "PRODUCED-LIMIT.MAP".into();
+    fixture
+        .sim
+        .session
+        .set_map_name_for_test("PRODUCED-LIMIT.MAP".into());
     let owner = fixture.owner;
     let e2 = fixture.sim.interner.get("E2").unwrap();
     for _ in 0..8 {
@@ -131,7 +134,7 @@ fn paid_e2_negative_build_limit_prunes_and_refuses_stale_produce_after_load() {
         // passes through the existing command queue and real House receiver;
         // no app-side BuildLimit check or direct factory mutation is supplied.
         assert!(fixture.sim.pending_command_snapshot().is_empty());
-        let issue_tick = fixture.sim.session.tick;
+        let issue_tick = fixture.sim.session.tick();
         assert_eq!(
             crate::app::input::commands::schedule_command_in_sim(
                 &mut fixture.sim,

@@ -1100,7 +1100,7 @@ fn a_tracked_pass_after_a_sweep_marks_the_swept_cells_a_footprint_covers() {
         &cfg,
         crate::sim::world::UninitContext::default(),
         crate::sim::vision::MapRevealProjection::Transient,
-        sight_world.session.current_house,
+        sight_world.session.current_house(),
     );
     fog = std::mem::take(&mut sight_world.fog);
     let (covered, alternate) = ((9, 8), (18, 18));
@@ -2537,7 +2537,7 @@ fn shroud_current_sight_first_fire_and_psychic_have_distinct_pending_history() {
             &config,
             crate::sim::world::UninitContext::default(),
             crate::sim::vision::MapRevealProjection::Transient,
-            sim.session.current_house,
+            sim.session.current_house(),
         );
     }
     let mut psychic = sim.fog;

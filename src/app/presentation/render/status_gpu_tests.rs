@@ -149,7 +149,8 @@ fn native_self_heal_draw_fault_order() {
             if infantry { 0 } else { count },
         );
         sim.houses.register(house);
-        sim.session.binary_frame = row["binary_frame"].as_i64().unwrap() as u32;
+        sim.session
+            .set_binary_frame_for_test(row["binary_frame"].as_i64().unwrap() as u32);
         let object = rules.object(name).unwrap();
         let type_ref = sim.interner.intern(name);
         let mut entity = GameEntity::new_at_frame_zero_for_test(
@@ -271,7 +272,7 @@ fn production_self_heal_status_workload_timing() {
             }
             let display = NativeDisplayOrder::new(&ids);
             for (phase, frame, selector) in [("ordinary", 6, 0), ("pulse", 5, 1)] {
-                sim.session.binary_frame = frame;
+                sim.session.set_binary_frame_for_test(frame);
                 let parents = ids
                     .iter()
                     .map(|&id| {
@@ -574,7 +575,7 @@ fn native_building_status_labels(fixture: &'static str) {
             sim.session.set_game_mode(
                 crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
             );
-            sim.session.current_house = Some(owner);
+            sim.session.set_current_house_for_test(Some(owner));
             for house in [owner, ally] {
                 sim.houses
                     .register(HouseState::new(house, 0, None, true, 0, 10));
@@ -935,15 +936,18 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                     + crate::util::lepton::absolute_leptons_to_screen(0, 0, 0).1,
             ];
             let mut sim = Simulation::new();
-            sim.session.binary_frame = input["binary_frame"]
-                .as_i64()
-                .or(input["frame"].as_i64())
-                .or(row["frame"].as_i64())
-                .unwrap_or(0) as u32;
-            sim.session.game_options.game_speed = input["speed"]
+            sim.session.set_binary_frame_for_test(
+                input["binary_frame"]
+                    .as_i64()
+                    .or(input["frame"].as_i64())
+                    .or(row["frame"].as_i64())
+                    .unwrap_or(0) as u32,
+            );
+            sim.session.game_options_mut_for_test().game_speed = input["speed"]
                 .as_i64()
                 .or(row["speed"].as_i64())
-                .unwrap_or(1) as i32;
+                .unwrap_or(1)
+                as i32;
             if native.get("health_palette").is_some() {
                 crate::sim::arena_fixture::flat_ground(&mut sim, rules);
             }
@@ -1331,14 +1335,14 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                                 owner, 0, None, false, 0, 10,
                             ));
                     }
-                    let frame = sim.session.binary_frame;
-                    sim.session.binary_frame = start as u32;
+                    let frame = sim.session.binary_frame();
+                    sim.session.set_binary_frame_for_test(start as u32);
                     sim.bomb_attach(planter, Some(id), rules);
                     sim.bomb_list_update(rules);
                     if actor["bomb_visible"].as_bool().unwrap_or(true) {
                         sim.bomb_list_update(rules);
                     }
-                    sim.session.binary_frame = frame;
+                    sim.session.set_binary_frame_for_test(frame);
                     let record = sim
                         .bomb_observation(usize::MAX)
                         .records

@@ -69,16 +69,16 @@ fn forced_defaults_and_makeup_kit_copy_use_the_same_retained_type_owner() {
         (Some(-1), "INIT"),
         (None, "INIT"),
     ] {
-        sim.session.current_house = side.map(|side| {
+        sim.session.set_current_house_for_test(side.map(|side| {
             sim.houses.get_mut(&houses[2]).unwrap().side_index = side;
             houses[2]
-        });
+        }));
         assert_eq!(
             sim.forced_disguise_type(actor, &rules),
             sim.interner.get(name)
         );
     }
-    sim.session.current_house = Some(houses[1]);
+    sim.session.set_current_house_for_test(Some(houses[1]));
     let target = sim
         .spawn_object("SPY", "House0", 16, 15, 0, &rules)
         .unwrap();
@@ -106,7 +106,7 @@ fn forced_defaults_and_makeup_kit_copy_use_the_same_retained_type_owner() {
 #[test]
 fn non_agent_arrival_does_not_raise_the_spy_cell_event() {
     let (mut sim, rules, registry, houses) = fixture();
-    sim.session.current_house = Some(houses[0]);
+    sim.session.set_current_house_for_test(Some(houses[0]));
     let actor = sim
         .spawn_object("ENGINEER", "House0", 15, 15, 0, &rules)
         .unwrap();
@@ -141,10 +141,10 @@ fn spy_type_event_uses_forced_identity_side_fallback_and_native_persistence_gate
         (Some(0), Some("E1"), 54, true, false, false),
     ] {
         let (mut sim, rules, _, houses) = fixture();
-        sim.session.current_house = side.map(|side| {
+        sim.session.set_current_house_for_test(side.map(|side| {
             sim.houses.get_mut(&houses[2]).unwrap().side_index = side;
             houses[2]
-        });
+        }));
         let actor = sim
             .spawn_object("SPY", "House0", 15, 15, 0, &rules)
             .unwrap();
@@ -227,7 +227,7 @@ fn agent_arrival_delivers_cell_spy_event_after_snapshot_and_cleans_up_one_shot()
     let (mut sim, rules, registry, houses) = fixture();
     // The current player is side 1, but the spy wears its owner's side-0
     // disguise (E1) from construction, and GetDisguise(1) answers that.
-    sim.session.current_house = Some(houses[1]);
+    sim.session.set_current_house_for_test(Some(houses[1]));
     let actor = sim
         .spawn_object("SPY", "House0", 15, 15, 0, &rules)
         .unwrap();
@@ -282,7 +282,7 @@ fn agent_arrival_delivers_cell_spy_event_after_snapshot_and_cleans_up_one_shot()
 fn grow_action_uses_current_map_then_known_objects_without_resetting_house_flags() {
     let (mut sim, rules, registry, houses) = fixture();
     sim.fog = crate::sim::vision::FogState::new(33, 33);
-    sim.session.current_house = Some(houses[0]);
+    sim.session.set_current_house_for_test(Some(houses[0]));
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     let known = sim
@@ -340,7 +340,7 @@ fn grow_action_uses_current_map_then_known_objects_without_resetting_house_flags
         "[Triggers]\nGROW=Country7,<none>,Grow,0,1,1,1,0\n[Events]\nGROW=1,8,0,0\n[Actions]\nGROW=2,31,0,0,0,0,0,0,A,28,0,7,0,0,0,0,A\n[Tags]\nGROWTAG=2,Grow,GROW\n",
     );
     sim.fog.set_ground_bits_for_test(houses[0], 8, 11, 8);
-    sim.session.binary_frame = 8;
+    sim.session.set_binary_frame_for_test(8);
     sim.raise_house_tags(
         houses[1],
         Some(&rules),

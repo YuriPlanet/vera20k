@@ -86,7 +86,7 @@ impl crate::sim::world::Simulation {
                     .disguise
                     .as_ref()
                     .is_some_and(|disguise| disguise.house().is_none())
-                    && self.session.current_house.is_some_and(|player| {
+                    && self.session.current_house().is_some_and(|player| {
                         entity.is_disguised_to(
                             player,
                             Some(&self.fog),

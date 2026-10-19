@@ -156,7 +156,7 @@ fn record(
         tick_hz: 15,
         // Record the sim's actual construction seed — playback fidelity is
         // header-seed-driven and ReplayRunner asserts the two agree.
-        seed: sim.session.seed,
+        seed: sim.session.seed(),
         map_name: "p5c_factory_replay".to_string(),
         rules_hash: 0,
     });
@@ -270,7 +270,7 @@ fn retail_builds_step_at_the_native_frames() {
         let mut held = None;
         let mut step_frames = Vec::new();
         for tick in 1..=3000u64 {
-            let frame = sim.session.binary_frame;
+            let frame = sim.session.binary_frame();
             let commands = if tick == 1 {
                 vec![queue(owner, type_id, 1)]
             } else {

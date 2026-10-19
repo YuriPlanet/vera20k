@@ -56,7 +56,7 @@ fn neutral_refinery_spy_entry_cannot_steal_the_participants_starting_cash() {
     let mut scene = load_session(&root, name, 0x1234_5678, launch)
         .expect("ordinary authored retail Battle startup");
     let sim = scene.sim();
-    let player = sim.session.current_house.unwrap();
+    let player = sim.session.current_house().unwrap();
     let neutral = sim.interner.get("Neutral").unwrap();
     let special = sim.interner.get("Special").unwrap();
     let computer = sim.interner.get("Computer1").unwrap();
@@ -105,7 +105,7 @@ fn neutral_refinery_spy_entry_cannot_steal_the_participants_starting_cash() {
     assert_eq!(gain, 0);
     let command = CommandEnvelope::new(
         player,
-        sim.session.tick + 1,
+        sim.session.tick() + 1,
         Command::CaptureBuilding {
             engineer_id: spy,
             target_building_id: refinery,

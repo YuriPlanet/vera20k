@@ -112,7 +112,7 @@ fn ordinary_drive_retires_selector_before_entering_an_explicit_tube() {
 
     let mut entry_frame = None;
     for frame in 1..160 {
-        sim.session.binary_frame = frame;
+        sim.session.set_binary_frame_for_test(frame);
         sim.process_ground_locomotor_for_test(1, Some(&rules), Some(&grid), None)
             .unwrap();
         let entity = sim.substrate.entities.get(1).unwrap();
@@ -205,7 +205,7 @@ fn ordinary_drive_retires_selector_before_entering_an_explicit_tube() {
     };
 
     for frame in entry_frame + 1..entry_frame + 400 {
-        sim.session.binary_frame = frame;
+        sim.session.set_binary_frame_for_test(frame);
         sim.process_ground_locomotor_for_test(1, Some(&rules), Some(&grid), None)
             .unwrap();
         if sim
@@ -250,9 +250,9 @@ fn ordinary_drive_retires_selector_before_entering_an_explicit_tube() {
         true,
         crate::sim::world::FrameEffects::default(),
     );
-    let exit_frame = sim.session.binary_frame;
+    let exit_frame = sim.session.binary_frame();
     let arrived = (exit_frame + 1..exit_frame + 300).any(|frame| {
-        sim.session.binary_frame = frame;
+        sim.session.set_binary_frame_for_test(frame);
         sim.process_ground_locomotor_for_test(1, Some(&rules), Some(&grid), None)
             .unwrap();
         let entity = sim.substrate.entities.get(1).unwrap();
@@ -344,8 +344,8 @@ fn gsi_04_05_tick_production_movement(
     path_grid: Option<&PathGrid>,
     native_frame: u32,
 ) {
-    sim.session.tick = u64::from(native_frame);
-    sim.session.binary_frame = native_frame;
+    sim.session.set_tick_for_test(u64::from(native_frame));
+    sim.session.set_binary_frame_for_test(native_frame);
     sim.process_ground_locomotor_for_test(1, Some(&drive_type_rules()), path_grid, None)
         .unwrap();
 }
@@ -426,7 +426,7 @@ fn walk_path_timer_waits_without_double_aging_or_losing_owner_state() {
 
         // Native null setter writes persistent timers; the next accepted order
         // must not recreate or truncate the dword count.
-        sim.session.binary_frame = 200;
+        sim.session.set_binary_frame_for_test(200);
         assert!(sim.set_infantry_null_destination(
             1,
             None,
@@ -622,7 +622,7 @@ fn drive_slope_boundary_is_detected_on_process_after_forced_track_crossing() {
 
     let crossing_frame = (40..120)
         .find(|frame| {
-            sim.session.binary_frame = *frame;
+            sim.session.set_binary_frame_for_test(*frame);
             sim.process_ground_locomotor_for_test(1, Some(&rules), None, None)
                 .unwrap();
             sim.substrate.entities.get(1).unwrap().position.ry() == 1
@@ -637,7 +637,7 @@ fn drive_slope_boundary_is_detected_on_process_after_forced_track_crossing() {
         (4, 4, 0, 0),
         "the crossing frame samples before the forced track advances"
     );
-    sim.session.binary_frame = crossing_frame + 1;
+    sim.session.set_binary_frame_for_test(crossing_frame + 1);
     sim.process_ground_locomotor_for_test(1, Some(&rules), None, None)
         .unwrap();
     assert_eq!(
@@ -795,8 +795,8 @@ fn walk_arrival_keeps_list_order_and_snapshot_continuation() {
         Ok(true)
     );
     let walk_tick = |sim: &mut Simulation, frame: u32| {
-        sim.session.tick = u64::from(frame);
-        sim.session.binary_frame = frame;
+        sim.session.set_tick_for_test(u64::from(frame));
+        sim.session.set_binary_frame_for_test(frame);
         sim.process_ground_locomotor_for_test(walker, Some(&rules), Some(&grid), None)
             .unwrap();
     };
@@ -1023,7 +1023,7 @@ fn forced_track_object_turn_relinks_each_committed_cell() {
     let mut previous_cell = (13, 11);
     let mut crossed = false;
     for frame in 0..128 {
-        sim.session.binary_frame = frame;
+        sim.session.set_binary_frame_for_test(frame);
         sim.process_ground_locomotor_for_test(1, Some(&rules), None, None)
             .unwrap();
         let entity = sim.substrate.entities.get(1).unwrap();

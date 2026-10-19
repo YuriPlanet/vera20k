@@ -98,8 +98,9 @@ impl NativeStartBounds {
         // (~SizeW+SizeH), so the native rect side is that extent minus one.
         // Sessions without header data (headless fixtures) fall back to the
         // terrain grid extent — VERA-internal, same shape.
-        let (extent_x, extent_y) = if sim.session.map_width != 0 && sim.session.map_height != 0 {
-            (sim.session.map_width, sim.session.map_height)
+        let (extent_x, extent_y) = if sim.session.map_width() != 0 && sim.session.map_height() != 0
+        {
+            (sim.session.map_width(), sim.session.map_height())
         } else {
             (terrain.width(), terrain.height())
         };
@@ -1220,12 +1221,13 @@ pub fn initialize_skirmish_launch_houses(
         "skirmish houses must be initialized before map objects"
     );
     let slots = normalized_launch_slots(session);
-    sim.session.game_options = session.options.to_game_options(session.ai_player_count);
+    sim.session
+        .install_game_options(session.options.to_game_options(session.ai_player_count));
     populate_launch_houses(sim, &slots, rules);
     // 688109 installs the original participant-array index0. These normalized
     // slots retain that launch identity; later MCV placement/viewer choice
     // cannot clear or replace the current house.
-    sim.session.current_house = slots
+    let current_house = slots
         .iter()
         .find(|slot| slot.source_human_index == Some(session.local_player_index))
         .map(|slot| {
@@ -1236,6 +1238,7 @@ pub fn initialize_skirmish_launch_houses(
             assert!(sim.houses.contains_key(&id));
             id
         });
+    sim.session.install_current_house(current_house);
     let observer = slots
         .iter()
         .rev()
@@ -1538,7 +1541,7 @@ fn project_pre_fill_start_assignment(
 ) {
     // Session start-slot -> house table: filled after the random-assignment
     // draws, before tick 0 — lockstep state (hashed + serialized).
-    sim.session.start_slot_houses.clear();
+    let mut table = Vec::new();
     for (start_idx, slot_idx) in start_assignment.start_table.iter().enumerate() {
         let Some(slot_idx) = *slot_idx else {
             continue;
@@ -1546,11 +1549,9 @@ fn project_pre_fill_start_assignment(
         let Some(slot) = slots.get(slot_idx) else {
             continue;
         };
-        let owner = sim.interner.intern(&slot.owner_name);
-        sim.session
-            .start_slot_houses
-            .insert(start_idx as u32, owner);
+        table.push((start_idx as u32, sim.interner.intern(&slot.owner_name)));
     }
+    sim.session.install_start_slot_houses(table);
     assign_launch_base_centers(sim, slots, &start_assignment.placements);
 }
 
@@ -1568,7 +1569,7 @@ pub fn apply_launch_shroud_option(
     sim: &mut Simulation,
     context: crate::sim::world::UninitContext<'_>,
 ) {
-    if sim.session.game_options.shroud {
+    if sim.session.game_options().shroud {
         return;
     }
     sim.reveal_entire_map(None, context);
@@ -1688,7 +1689,7 @@ pub fn populate_special_houses(sim: &mut Simulation, house_roster: &HouseRoster,
             country_id,
             false,
             0,
-            sim.session.game_options.tech_level,
+            sim.session.game_options().tech_level,
         );
         // The House constructor builds its whole Supers vector.
         crate::sim::superweapon::construct_house_supers(sim, rules, name_id, false);
@@ -1730,8 +1731,8 @@ pub fn populate_launch_houses(
             side_index,
             Some(country_id),
             slot.is_human,
-            sim.session.game_options.starting_credits,
-            sim.session.game_options.tech_level,
+            sim.session.game_options().starting_credits,
+            sim.session.game_options().tech_level,
         );
         // The House constructor builds its whole Supers vector.
         crate::sim::superweapon::construct_house_supers(sim, rules, name_id, false);
@@ -1763,7 +1764,7 @@ pub fn populate_launch_houses(
             rules.country_difficulty_biases(country_name),
             sim.session.game_mode_nonzero(),
             sim.houses.order().len() as i32,
-            sim.session.binary_frame as i32,
+            sim.session.binary_frame() as i32,
         );
         // ScenarioClass::Create_Houses leaves generated human CurrentIQ at
         // the constructor value zero and stamps generated computer slots with
@@ -2077,7 +2078,7 @@ fn seed_starting_extra_units_with_overlay_registry(
     let budget = starting_unit_budget(
         rules,
         slots,
-        sim.session.game_options.tech_level,
+        sim.session.game_options().tech_level,
         unit_count,
     );
     if budget <= 0 {
@@ -2101,7 +2102,7 @@ fn seed_starting_extra_units_with_overlay_registry(
         let candidates = starting_unit_candidates_for_country(
             rules,
             slot.country,
-            sim.session.game_options.tech_level,
+            sim.session.game_options().tech_level,
         );
         if candidates.vehicles.is_empty() && candidates.infantry.is_empty() {
             continue;
@@ -2162,7 +2163,7 @@ fn seed_starting_extra_units_with_overlay_registry(
             let _ = sim.mission_assign_exact(
                 stable_id,
                 MissionId::from_known(mission),
-                sim.session.binary_frame,
+                sim.session.binary_frame(),
             );
             spawned += 1;
             spent = spent.wrapping_add(candidate.cost);
@@ -2679,7 +2680,7 @@ impl Simulation {
         bounds: NativeStartBounds,
     ) -> Vec<Waypoint> {
         let map_size_height = self.playfield_size_height;
-        let binary_frame = self.session.binary_frame;
+        let binary_frame = self.session.binary_frame();
         native_gather_start_positions(
             waypoints,
             participant_count,
@@ -2733,10 +2734,11 @@ pub fn initialize_campaign_current_house(
         .unwrap_or_default();
     // Interning folds lookup case and preserves the first spelling it saw.
     // The native strcmp reads the retained raw House name instead.
-    sim.session.current_house = sim
+    let current_house = sim
         .scenario_house_named(&requested)
         .or_else(|| sim.houses.order().first().copied());
-    if let Some(owner) = sim.session.current_house {
+    sim.session.install_current_house(current_house);
+    if let Some(owner) = sim.session.current_house() {
         // Original 68AD0C/68AD18 set the selected House's +1EC/+1ED.
         // This is scenario construction, never a snapshot/viewer rebind.
         let house = sim
@@ -2774,7 +2776,7 @@ pub fn initialize_map_roster_houses(
             "campaign House Supers are constructed once"
         );
     }
-    let frame = sim.session.binary_frame as i32;
+    let frame = sim.session.binary_frame() as i32;
     let mission_counter = sim.session.campaign_mission_counter().unwrap_or(1);
     for house in &house_roster.houses {
         let country_name = rules
@@ -2796,8 +2798,8 @@ pub fn initialize_map_roster_houses(
             side_idx,
             country_id,
             false,
-            sim.session.game_options.starting_credits,
-            sim.session.game_options.tech_level,
+            sim.session.game_options().starting_credits,
+            sim.session.game_options().tech_level,
         );
         let campaign_house_id = campaign_difficulties.map(|_| {
             sim.next_native_load_id()
@@ -2938,7 +2940,7 @@ mod tests {
         let launch = MatchLaunchDescriptor::from_resolved(session).unwrap();
         let mut sim = Simulation::new();
         initialize_skirmish_launch_houses(&mut sim, &HouseRoster::default(), &rules, &launch);
-        let local = sim.session.current_house.unwrap();
+        let local = sim.session.current_house().unwrap();
         let house = &sim.houses[&local];
         assert_eq!(sim.interner.resolve(house.country.unwrap()), "Allocated");
         assert_eq!(
@@ -3096,7 +3098,7 @@ mod tests {
         initialize_skirmish_launch_houses(&mut sim, &HouseRoster::default(), &rules, &descriptor);
         let guest = sim.interner.get("Guest").unwrap();
         let host = sim.interner.get("Host").unwrap();
-        assert_eq!(sim.session.current_house, Some(guest));
+        assert_eq!(sim.session.current_house(), Some(guest));
         assert_eq!(sim.houses.order()[0], guest);
         assert!(sim.houses[&guest].is_human && sim.houses[&guest].player_control);
         assert!(sim.houses[&host].is_human && !sim.houses[&host].player_control);
@@ -3164,7 +3166,7 @@ mod tests {
                 &mut sim,
                 &IniFile::from_str(&format!("[Basic]\n{input}\n")),
             );
-            assert_eq!(sim.session.current_house, Some(expected));
+            assert_eq!(sim.session.current_house(), Some(expected));
             assert!(sim.houses[&expected].is_human);
             assert!(sim.houses[&expected].player_control);
         }
@@ -3355,7 +3357,10 @@ mod tests {
                 )
                 .unwrap();
             initialize_skirmish_launch_houses(&mut sim, &HouseRoster::default(), &rules, &launch);
-            let house = sim.houses.get(&sim.session.current_house.unwrap()).unwrap();
+            let house = sim
+                .houses
+                .get(&sim.session.current_house().unwrap())
+                .unwrap();
             assert_eq!(
                 house.country.map(|id| sim.interner.resolve(id)),
                 Some("Replacement")
@@ -3485,7 +3490,7 @@ mod tests {
                             "binding precedes every map object"
                         );
                         let player = sim.interner.get(owner_key).unwrap();
-                        assert_eq!(sim.session.current_house, Some(player));
+                        assert_eq!(sim.session.current_house(), Some(player));
                         assert_eq!(sim.houses.order()[0], player);
                         assert!(sim.houses[&player].is_human && sim.houses[&player].player_control);
                     },
@@ -3498,7 +3503,7 @@ mod tests {
                     "production admission retains its concrete native constructor ID",
                 );
                 let player = sim.interner.get(owner_key).unwrap();
-                assert_eq!(sim.session.current_house, Some(player));
+                assert_eq!(sim.session.current_house(), Some(player));
                 if block_placement {
                     let mut cells = terrain.cells().to_vec();
                     for cell in &mut cells {
@@ -3537,7 +3542,7 @@ mod tests {
                         2 + usize::from(with_ai)
                     }
                 );
-                assert_eq!(sim.session.current_house, Some(player));
+                assert_eq!(sim.session.current_house(), Some(player));
                 assert!(sim.houses[&player].is_human && sim.houses[&player].player_control);
                 assert_eq!(launch.session.local_player().name, handle);
                 let mut distinct = sim.houses.order().to_vec();
@@ -3595,7 +3600,7 @@ mod tests {
                 restored
                     .restore_after_snapshot_load()
                     .expect("valid distinct House registry");
-                assert_eq!(restored.session.current_house, Some(player));
+                assert_eq!(restored.session.current_house(), Some(player));
                 assert_eq!(restored.houses.order(), sim.houses.order());
                 assert!(
                     restored.houses[&player].is_human && restored.houses[&player].player_control
@@ -3627,8 +3632,8 @@ mod tests {
 
     fn techno_constructor_start_sim(seed: u64, size: u16) -> Simulation {
         let mut sim = Simulation::with_seed(seed);
-        sim.session.map_width = size;
-        sim.session.map_height = size;
+        sim.session.set_map_width_for_test(size);
+        sim.session.set_map_height_for_test(size);
         sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
             base: i32::from(size),
             off_fc: 0,
@@ -3827,7 +3832,7 @@ mod tests {
             height: 9,
         };
         let mut sim = techno_constructor_start_sim(seed, 10);
-        sim.session.game_options.tech_level = 10;
+        sim.session.game_options_mut_for_test().tech_level = 10;
         let owner = sim.interner.intern("Americans");
         let mut house = HouseState::new(owner, 0, None, true, 0, 10);
         house.base_center = Some((6, 5));
@@ -3875,8 +3880,8 @@ mod tests {
     #[test]
     fn nearoref_native_start_bounds_use_inclusive_full_cell_array_endpoints() {
         let mut sim = Simulation::new();
-        sim.session.map_width = 138;
-        sim.session.map_height = 138;
+        sim.session.set_map_width_for_test(138);
+        sim.session.set_map_height_for_test(138);
         let terrain = ResolvedTerrainGrid::from_cells(138, 138, Vec::new());
 
         let bounds = NativeStartBounds::from_session(&sim, &terrain);
@@ -4452,7 +4457,7 @@ mod tests {
         let mut sim = owner.into_simulation(&descriptor(seed));
         let rules = techno_constructor_start_rules();
         initialize_skirmish_launch_houses(&mut sim, &HouseRoster::default(), &rules, &launch);
-        assert_eq!(sim.session.current_house, Some(sim.houses.order()[0]));
+        assert_eq!(sim.session.current_house(), Some(sim.houses.order()[0]));
         let before = sim.scenario_rng.logical_state();
         let slots = normalized_launch_slots(launch.session());
         project_pre_fill_start_assignment(&mut sim, &slots, projection.assignment());
@@ -4603,7 +4608,7 @@ mod tests {
         // This isolated RNG fixture omits the full native Rules prefix.
         sim.native_unique_ids =
             Some(crate::sim::native_identity::NativeUniqueIdCursor::for_synthetic_simulation());
-        sim.session.binary_frame = 77;
+        sim.session.set_binary_frame_for_test(77);
         let retained_handle = sim.allocate_stable_id();
 
         {
@@ -4635,7 +4640,7 @@ mod tests {
             expected_word,
         );
         assert_eq!(sim.rng_state().scenario, reference.logical_state());
-        assert_eq!(sim.session.binary_frame, 77);
+        assert_eq!(sim.session.binary_frame(), 77);
         assert_eq!(retained_handle, 1);
         assert_eq!(sim.allocate_stable_id(), 2);
     }

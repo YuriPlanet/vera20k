@@ -475,8 +475,8 @@ fn sov03_authored_trigger80_teams_walk_and_recycle_all_four_civilian_types() {
         assert_eq!(sim.team_script_vm.teams_in_order().count(), 0);
         // Reach the authored elapsed-time threshold without simulating an
         //unrelated campaign. The real Event13 timer and Action80 run here.
-        sim.session.tick = 1600;
-        sim.session.binary_frame = 1600;
+        sim.session.set_tick_for_test(1600);
+        sim.session.set_binary_frame_for_test(1600);
         frame(&mut sim);
         let members: Vec<_> = sim
             .substrate

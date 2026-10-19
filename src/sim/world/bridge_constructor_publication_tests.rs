@@ -338,7 +338,8 @@ fn constructor_side_admission_matches_original_foot_receiver() {
             crate::map::playfield::PlayfieldBounds::from_normalized_local_size(16, 0, 0, 16, 16),
         );
         sim.playfield_size_height = Some(16);
-        sim.session.binary_frame = input["frame"].as_u64().unwrap() as u32;
+        sim.session
+            .set_binary_frame_for_test(input["frame"].as_u64().unwrap() as u32);
         // These native controls retain constructor25 topology, then supply
         // raw occupation / the candidate raw100-clear discriminator. The
         // original and Rust both execute the complete Infantry +1AC body.
@@ -408,7 +409,7 @@ fn constructor_side_admission_matches_original_foot_receiver() {
             crate::sim::mission::MissionId::from_raw(
                 native["current_mission"].as_i64().unwrap() as i32
             ),
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
         )
         .unwrap();
         assert_eq!(native["queued_mission"], -1);
@@ -452,7 +453,7 @@ fn live_bridge_constructor_queue_respects_terminal_admission_and_other_objects()
     // Isolate the constructor/deferred-drain chain from Logic55B29A's
     // independently tested120-frame578100 sweep, whose map queries may
     // legitimately restamp the shared Dummy's coordinate.
-    sim.session.binary_frame = 1;
+    sim.session.set_binary_frame_for_test(1);
     for (index, requested) in [(16, 16), (17, 16)].into_iter().enumerate() {
         let mut host = LivePublication {
             frame_effects: crate::sim::world::FrameEffects::default(),
@@ -502,7 +503,7 @@ fn live_bridge_constructor_queue_respects_terminal_admission_and_other_objects()
 #[test]
 fn sparse_native_sight_indexes_real_cells_and_keeps_diagnostics_read_only() {
     let (mut sim, _, _) = fixture();
-    sim.session.binary_frame = 1;
+    sim.session.set_binary_frame_for_test(1);
     sim.fog = crate::sim::vision::FogState::new(33, 33);
     let owner = sim.interner.intern("Americans");
     let type_ref = sim.interner.intern("E1");

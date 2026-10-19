@@ -532,7 +532,7 @@ impl SuppliedFootFixture {
         }];
         let actor = pointers[actor_pointer.as_str().unwrap()];
         let mut sim = Simulation::with_seed(input["scenario_seed"].as_u64().unwrap());
-        sim.session.binary_frame = 1;
+        sim.session.set_binary_frame_for_test(1);
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
@@ -1313,8 +1313,14 @@ fn install_recorded_anytown_query_state(
     let source = scene.sim();
     fixture.sim.playfield_bounds = source.playfield_bounds;
     fixture.sim.playfield_size_height = source.playfield_size_height;
-    fixture.sim.session.map_width = source.session.map_width;
-    fixture.sim.session.map_height = source.session.map_height;
+    fixture
+        .sim
+        .session
+        .set_map_width_for_test(source.session.map_width());
+    fixture
+        .sim
+        .session
+        .set_map_height_for_test(source.session.map_height());
     fixture.sim.overlay_grid = source.overlay_grid.clone();
     let mut terrain = source.resolved_terrain.as_ref().unwrap().clone();
     terrain.test_set_native_allocated_cells(&fixture.cells.values().copied().collect::<Vec<_>>());
@@ -2095,7 +2101,10 @@ fn original_ground_fireup_stage_uses_absolute_native_frames() {
         row["before"]["doing"] = json!(0);
         row["before"]["frame_f8"] = json!(0);
         let mut fixture = SuppliedFootFixture::new(&row, &rules);
-        fixture.sim.session.binary_frame = frames[0]["native_frame"].as_u64().unwrap() as u32;
+        fixture
+            .sim
+            .session
+            .set_binary_frame_for_test(frames[0]["native_frame"].as_u64().unwrap() as u32);
         fixture
             .sim
             .substrate
@@ -2125,7 +2134,10 @@ fn original_ground_fireup_stage_uses_absolute_native_frames() {
                 .unwrap()
         );
         for (index, frame) in frames.iter().enumerate() {
-            fixture.sim.session.binary_frame = frame["native_frame"].as_u64().unwrap() as u32;
+            fixture
+                .sim
+                .session
+                .set_binary_frame_for_test(frame["native_frame"].as_u64().unwrap() as u32);
             if index != 0 {
                 fixture
                     .sim
@@ -2133,14 +2145,14 @@ fn original_ground_fireup_stage_uses_absolute_native_frames() {
                     .entities
                     .get_mut(fixture.actor)
                     .unwrap()
-                    .tick_native_stage(fixture.sim.session.binary_frame as i32);
+                    .tick_native_stage(fixture.sim.session.binary_frame() as i32);
             }
             let actor = fixture.sim.substrate.entities.get(fixture.actor).unwrap();
             assert_eq!(
                 actor.native_stage().value(),
                 signed(&frame["after"]["frame_f8"]),
                 "{name}: native absolute frame {}",
-                fixture.sim.session.binary_frame
+                fixture.sim.session.binary_frame()
             );
         }
         assert_eq!(
@@ -2269,7 +2281,10 @@ fn dying_infantry_visits_shared_native_clock() {
         .unwrap();
     let frame = &clock["frames"][0];
     let mut fixture = SuppliedFootFixture::new(base, &rules);
-    fixture.sim.session.binary_frame = signed(&frame["native_frame"]) as u32;
+    fixture
+        .sim
+        .session
+        .set_binary_frame_for_test(signed(&frame["native_frame"]) as u32);
     fixture.sim.begin_infantry_death_sequence(
         fixture.actor,
         crate::sim::world::InfantryDeathSequence::Die1,
@@ -2328,7 +2343,7 @@ fn saved_native_stage_resumes_original_clock_and_changes_world_hash() {
             let after = native_clock_fixture(&frame["after"]);
             let before_hash = sim.state_hash();
             let bytes = GameSnapshot::save_validated(&sim, 0, 0, &at, 0);
-            sim = GameSnapshot::load_validated(&bytes, 0, 0, &sim.session.map_name)
+            sim = GameSnapshot::load_validated(&bytes, 0, 0, &sim.session.map_name())
                 .unwrap()
                 .sim;
             assert_eq!(
@@ -2377,7 +2392,10 @@ fn original_do_action_restart_preserves_independent_stage_fields() {
         let mut row = base.clone();
         row["before"]["doing"] = native["doing_before"].clone();
         let mut fixture = SuppliedFootFixture::new(&row, &rules);
-        fixture.sim.session.binary_frame = signed(&native["input"]["native_frame"]) as u32;
+        fixture
+            .sim
+            .session
+            .set_binary_frame_for_test(signed(&native["input"]["native_frame"]) as u32);
         fixture
             .sim
             .substrate

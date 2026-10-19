@@ -57,7 +57,7 @@ fn fixture(extra: &str, owner_name: &str) -> (Simulation, RuleSet, InternedId, I
     let mut instance = SuperWeaponInstance::new(sw_type, owner, 0);
     instance.is_active = true;
     instance.is_ready = true;
-    instance.charge_start_tick = sim.session.binary_frame as i32;
+    instance.charge_start_tick = sim.session.binary_frame() as i32;
     instance.charge_duration = 900;
     sim.super_weapons
         .entry(owner)
@@ -244,7 +244,7 @@ fn ares_generic_warhead_queued_command_runs_through_bound_frame() {
     sim.input_delay_ticks = 0;
     let command = CommandEnvelope::new(
         owner,
-        sim.session.tick + 1,
+        sim.session.tick() + 1,
         Command::LaunchSuperWeapon {
             sw_type_id: sw_type,
             target_rx: 15,

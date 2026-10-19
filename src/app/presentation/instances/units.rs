@@ -221,7 +221,8 @@ pub(crate) fn build_unit_instances(
     let z = state.match_state.input.zoom_level;
     // Presentation runs after the just-completed simulation frame; snapshot
     // the one binary frame used by every Drive/Ship Draw_Matrix in this pass.
-    let display_binary_frame = display_binary_frame_for_committed_session(sim.session.binary_frame);
+    let display_binary_frame =
+        display_binary_frame_for_committed_session(sim.session.binary_frame());
     let (cam_x, cam_y, sw, sh) = (
         state.match_state.input.camera_x,
         state.match_state.input.camera_y,
@@ -291,7 +292,7 @@ pub(crate) fn build_unit_instances(
             &sim.interner,
             state.rules(),
             band,
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
             observer,
         ) else {
             continue;
@@ -305,7 +306,7 @@ pub(crate) fn build_unit_instances(
         let remap_owner = entity
             .disguise
             .as_ref()
-            .filter(|_| DrawState::draws_disguise(entity, sim.session.binary_frame, observer))
+            .filter(|_| DrawState::draws_disguise(entity, sim.session.binary_frame(), observer))
             .and_then(|state| state.house())
             .map(|id| sim.interner.resolve(id))
             .unwrap_or(owner_str);
@@ -325,7 +326,7 @@ pub(crate) fn build_unit_instances(
             &sim.fog,
             &sim.house_alliances,
             ignore_visibility,
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
             house_color_to_remap_row(hc),
             observer,
         ) else {
@@ -375,7 +376,7 @@ pub(crate) fn build_unit_instances(
             body_tint,
             body_light,
             state.rules(),
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
         );
         let center_x: f32 = sx;
         let center_y: f32 = sy;
@@ -435,8 +436,8 @@ pub(crate) fn build_unit_instances(
         }
 
         // Sampled at the turret's frame, so the two sprites cannot disagree.
-        let body_facing = body_draw_facing(entity, sim.session.binary_frame);
-        let ground_pose = ground_pose(entity, slope_state, sim.session.binary_frame);
+        let body_facing = body_draw_facing(entity, sim.session.binary_frame());
+        let ground_pose = ground_pose(entity, slope_state, sim.session.binary_frame());
         if let BodyDraw::Pose(tilt) = body {
             let key = UnitSpriteKey {
                 type_id: type_str.to_string(),
@@ -466,8 +467,10 @@ pub(crate) fn build_unit_instances(
                     barrel_elevation,
                 } => (turret, barrel_elevation),
                 _ => (
-                    entity.body_facing_current(sim.session.binary_frame),
-                    entity.barrel_elevation().current(sim.session.binary_frame),
+                    entity.body_facing_current(sim.session.binary_frame()),
+                    entity
+                        .barrel_elevation()
+                        .current(sim.session.binary_frame()),
                 ),
             };
             // Turret unit: emit body, turret, and barrel as separate sprites.
@@ -598,7 +601,7 @@ pub(crate) fn build_unit_instances(
                 state,
                 entity,
                 frame,
-                harvest_arm_screen_position(entity, sim.session.binary_frame),
+                harvest_arm_screen_position(entity, sim.session.binary_frame()),
                 pos.z(),
                 tint,
                 palette_light.brightness(),
@@ -1253,7 +1256,7 @@ fn aircraft_shadow_pose(
     }
     let terrain = view.resolved_terrain()?;
     let xy = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
-    let frame = view.session().binary_frame;
+    let frame = view.session().binary_frame();
     let primary = entity.body_facing_current(frame);
     crate::render::aircraft_shadow::pose(
         crate::render::aircraft_shadow::AircraftShadowContext {
@@ -1755,7 +1758,7 @@ fn harvest_overlay_frame(
     {
         return None;
     }
-    let frame = sim.session.binary_frame;
+    let frame = sim.session.binary_frame();
     oregath_frame(
         entity.body_frame_counter.get(),
         frame,
@@ -1935,7 +1938,7 @@ mod tests {
         let id = sim
             .spawn_object_at_height("HARV", "Americans", 10, 10, 0x10, 0, &rules)
             .expect("harvester");
-        let frame = sim.session.binary_frame;
+        let frame = sim.session.binary_frame();
         let display = display_binary_frame_for_committed_session(frame);
         let entity = sim.entities().get(id).unwrap();
         assert_eq!(
@@ -2010,7 +2013,8 @@ mod tests {
             let light =
                 crate::render::palette_light::PaletteLight::color_scheme([1000; 3], intensity)
                     .with_colour_word(int(&row["word"]) as u16);
-            sim.session.binary_frame = int(&row["frame"]) as u32;
+            sim.session
+                .set_binary_frame_for_test(int(&row["frame"]) as u32);
             let (lit_tint, lit) =
                 crate::app::presentation::lighting::techno_effect_light(&unit, tint, light, &sim);
             let (lit_tint, lit) = crate::app::presentation::lighting::unit_voxel_effect_light(
@@ -2018,7 +2022,7 @@ mod tests {
                 lit_tint,
                 lit,
                 Some(&rules_by_iron_index[&int(&row["iron_color"])]),
-                sim.session.binary_frame,
+                sim.session.binary_frame(),
             );
             let out = int(&row["out_intensity"]);
             assert_eq!(lit.brightness(), out, "{row}");
@@ -2466,10 +2470,11 @@ mod tests {
             ),
             (44, UnitRenderSlopeState::Stable(8)),
         ] {
-            sim.session.binary_frame = committed_binary_frame;
+            sim.session
+                .set_binary_frame_for_test(committed_binary_frame);
             let before_hash = sim.state_hash();
             let display_binary_frame =
-                display_binary_frame_for_committed_session(sim.session.binary_frame);
+                display_binary_frame_for_committed_session(sim.session.binary_frame());
             assert_eq!(display_binary_frame, committed_binary_frame.wrapping_sub(1));
             let entity = sim.substrate.entities.get(1).unwrap();
             assert_eq!(
@@ -2482,7 +2487,7 @@ mod tests {
                 "repeated presentation extraction for one committed frame is stable"
             );
             assert_eq!(
-                display_binary_frame_for_committed_session(sim.session.binary_frame),
+                display_binary_frame_for_committed_session(sim.session.binary_frame()),
                 display_binary_frame,
                 "a paused presentation pass retains the same committed-frame selector"
             );
@@ -2493,7 +2498,7 @@ mod tests {
     #[test]
     fn drive_ship_slope_snapshot_uses_production_display_frame_selector() {
         let mut sim = Simulation::with_seed(0);
-        sim.session.binary_frame = 51;
+        sim.session.set_binary_frame_for_test(51);
         let mut entity = GameEntity::test_default(1, "SHIP", "Americans", 0, 0);
         entity.set_owner_for_test(sim.intern("Americans"));
         entity.set_type_ref_for_test(sim.intern("SHIP"));
@@ -2516,7 +2521,7 @@ mod tests {
             .expect("current slope snapshot")
             .sim;
         let display_binary_frame =
-            display_binary_frame_for_committed_session(restored.session.binary_frame);
+            display_binary_frame_for_committed_session(restored.session.binary_frame());
         assert_eq!(display_binary_frame, 50);
         assert_eq!(
             locomotor_render_slope_state(

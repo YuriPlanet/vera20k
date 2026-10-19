@@ -164,7 +164,8 @@ fn supplied_world(
     let mut sim = Simulation::with_seed(input["seed"].as_u64().unwrap());
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
-    sim.session.binary_frame = initial["frame"].as_u64().unwrap() as u32;
+    sim.session
+        .set_binary_frame_for_test(initial["frame"].as_u64().unwrap() as u32);
     let allocation = cell(&world["cell_allocation"]);
     super::super::lifecycle_tests::install_common_raw_terrain(
         &mut sim,
@@ -229,8 +230,8 @@ fn supplied_world(
     // The oracle's tracker allocation is an independent supplied extent;
     // Map+F4/+F8 above remains the In_Bounds authority.
     let tracker_extent = cell(&world["tracker_extent"]);
-    sim.session.map_width = tracker_extent.0;
-    sim.session.map_height = tracker_extent.1;
+    sim.session.set_map_width_for_test(tracker_extent.0);
+    sim.session.set_map_height_for_test(tracker_extent.1);
     let owner = sim.interner.intern("Americans");
     let mut house = HouseState::new(owner, 0, None, true, 0, 10);
     house.player_control = true;
@@ -309,7 +310,7 @@ fn supplied_world(
             .set_retries_left(state["retries"].as_u64().unwrap() as u32);
         actor.body_facing.snap(
             signed(&state["body_facing"]["destination_word"]) as u16,
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
         );
         let runtime = actor
             .locomotor
@@ -320,7 +321,7 @@ fn supplied_world(
         let mut flight = runtime.flight();
         flight.facing_mut().snap(
             signed(&state["loco_facing"]["destination_word"]) as u16,
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
         );
         *runtime = runtime.clone().with_flight_for_test(flight);
     }
@@ -794,7 +795,7 @@ fn execute_step(
         }
         "register_air" => sim.aircraft_tracker_add(actor),
         "state1_decision" | "state3_decision" | "state4_decision" => {
-            let frame = sim.session.binary_frame;
+            let frame = sim.session.binary_frame();
             let trig = TrigTable::embedded();
             sim.with_jumpjet_process(actor, |runtime, sim| {
                 let mut host = super::CruiseHost {
@@ -848,7 +849,8 @@ fn replay_steps(
     for step in steps {
         let before = &boundaries[step["before"].as_u64().unwrap() as usize];
         let after = &boundaries[step["after"].as_u64().unwrap() as usize];
-        sim.session.binary_frame = before["frame"].as_u64().unwrap() as u32;
+        sim.session
+            .set_binary_frame_for_test(before["frame"].as_u64().unwrap() as u32);
         assert_motion_boundary(sim, actor, control, before);
         assert_world_boundary(sim, actor, foreign, control, before);
         execute_step(sim, actor, foreign, control, step, rules, registry);
@@ -879,7 +881,8 @@ fn stock_shad_state1_scatter_publishes_before_following_translate() {
     for (index, step) in steps.iter().take(53).enumerate() {
         let before = &boundaries[step["before"].as_u64().unwrap() as usize];
         let after = &boundaries[step["after"].as_u64().unwrap() as usize];
-        sim.session.binary_frame = before["frame"].as_u64().unwrap() as u32;
+        sim.session
+            .set_binary_frame_for_test(before["frame"].as_u64().unwrap() as u32);
         assert_motion_boundary(&sim, id, control, before);
         if index == 0 {
             assert_eq!(step["label"], "cell_order");

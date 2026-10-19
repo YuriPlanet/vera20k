@@ -35,12 +35,12 @@ fn retail_mcvs_repack_and_follow_the_ground_click_after_deployment() {
         let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x4436F0);
         sim.resolve_type_handles(&rules);
         let owner = sim.interner.get("Americans").unwrap();
-        sim.session.current_house = Some(owner);
+        sim.session.set_current_house_for_test(Some(owner));
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
-        sim.session.game_options.mcv_redeploy = true;
-        sim.session.game_options.short_game = false;
+        sim.session.game_options_mut_for_test().mcv_redeploy = true;
+        sim.session.game_options_mut_for_test().short_game = false;
         sim.input_delay_ticks = 0;
         sim.spawn_object("GAPOWR", "Russians", 3, 3, 0, &rules)
             .unwrap();
@@ -97,7 +97,7 @@ fn retail_mcvs_repack_and_follow_the_ground_click_after_deployment() {
         };
         let envelopes: Vec<_> = orders
             .into_iter()
-            .map(|payload| CommandEnvelope::new(owner, sim.session.tick, payload))
+            .map(|payload| CommandEnvelope::new(owner, sim.session.tick(), payload))
             .collect();
         sim.queue_commands(envelopes);
         let mut converted = None;
@@ -165,7 +165,7 @@ fn construction_yard_ground_orders_match_native_redeploy_admission() {
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(skirmish),
         );
-        sim.session.game_options.mcv_redeploy = enabled;
+        sim.session.game_options_mut_for_test().mcv_redeploy = enabled;
         let yard = sim
             .spawn_object("GACNST", "Americans", 12, 12, 0, &rules)
             .unwrap();

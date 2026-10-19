@@ -236,7 +236,7 @@ impl ResponseSelection {
         victim_id: u64,
         attacker_id: u64,
     ) -> i32 {
-        let current_frame = world.session.binary_frame as i32;
+        let current_frame = world.session.binary_frame() as i32;
         let (budget, responders) = self.into_ranked();
         if budget <= 0 {
             return 0;
@@ -444,7 +444,7 @@ pub(crate) fn respond_to_base_attack(
     let attacker_owner = attacker.owner();
     let budget = live_threat_posed(attacker, Some(attacker_object), entities, rules, interner)
         .wrapping_mul(rules.general.computer_base_defense_response);
-    let current_frame = world.session.binary_frame as i32;
+    let current_frame = world.session.binary_frame() as i32;
 
     if is_allied_with(
         &world.house_alliances,

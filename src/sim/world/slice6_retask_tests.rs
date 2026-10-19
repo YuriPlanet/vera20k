@@ -456,9 +456,9 @@ fn replay_hash_stable_through_slice6() {
 
     let mut log = ReplayLog::new(ReplayHeader {
         version: 1,
-        pixel_conversion_bounds: sim.session.pixel_conversion_bounds,
+        pixel_conversion_bounds: sim.session.pixel_conversion_bounds(),
         tick_hz: 15,
-        seed: sim.session.seed,
+        seed: sim.session.seed(),
         map_name: "slice6_retask".to_string(),
         rules_hash: rules.simulation_config_hash(),
     });

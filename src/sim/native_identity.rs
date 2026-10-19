@@ -446,7 +446,8 @@ mod tests {
             let input = case["input"].as_u64().unwrap() as u32;
             let mut sim =
                 simulation_with_saved_prefix(input.wrapping_sub(MAP_READ_NATIVE_ID_RESERVATION));
-            sim.session.map_name = "native-id-continuation".into();
+            sim.session
+                .set_map_name_for_test("native-id-continuation".into());
             let cursor = sim.native_unique_ids.as_mut().unwrap();
             cursor.reserve_map_read_from_saved().unwrap();
             assert_eq!(cursor.current_raw(), case["saved"].as_u64().unwrap() as u32);

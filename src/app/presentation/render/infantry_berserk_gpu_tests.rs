@@ -314,7 +314,7 @@ fn compare_original_body_pixels(join_viewport: bool) {
                 .unwrap();
             let frame = u16::try_from(animation::resolve_shp_frame(
                 record,
-                gi.body_facing_byte(sim.session.binary_frame),
+                gi.body_facing_byte(sim.session.binary_frame()),
                 int(&actor["stage"]),
             ))
             .unwrap();

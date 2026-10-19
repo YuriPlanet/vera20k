@@ -114,7 +114,8 @@ fn script42_and_class_turns_match_original_controls() {
         {
             member.initiated = input["initiated"].as_bool().unwrap();
         }
-        sim.session.binary_frame = row["frame"].as_u64().unwrap() as u32;
+        sim.session
+            .set_binary_frame_for_test(row["frame"].as_u64().unwrap() as u32);
         let rng = [
             sim.scenario_rng.native_state_hex(),
             sim.main_rng.native_state_hex(),

@@ -59,16 +59,17 @@ impl Encounter {
         if let Some(initial) = native {
             // Original GameOptions speed (A8EB60) is an input to the
             // normalized splash constructor's existing rate calculation.
-            sim.session.game_options.game_speed = initial["game_speed"]
+            sim.session.game_options_mut_for_test().game_speed = initial["game_speed"]
                 .as_i64()
                 .expect("original game-speed readback")
                 as i32;
             // Supplied original component input: the native harness has not
             // run map lighting/recalculation. Import its measured profile,
             // retaining the production Cell ground-Z-adjust calculation.
-            sim.session.lighting.normal =
+            sim.session.lighting_mut().set_normal_for_test(
                 serde_json::from_value(initial["lighting"]["normal_profile"].clone())
-                    .expect("original Scenario lighting profile readback");
+                    .expect("original Scenario lighting profile readback"),
+            );
             // Explicit native-recorded component map input, before Unlimbo.
             // This is not a renderer/theater-loader parity assertion.
             let tile = initial["water"]["tile"].as_i64().unwrap() as i32;
@@ -120,7 +121,7 @@ impl Encounter {
                 );
                 assert_eq!(serde_json::json!(entity.health.current()), prior["health"]);
                 assert_eq!(
-                    serde_json::json!(entity.body_facing_current(sim.session.binary_frame)),
+                    serde_json::json!(entity.body_facing_current(sim.session.binary_frame())),
                     prior["primary_current_raw"]
                 );
                 let coord = position_world_coord(&entity.position);
@@ -143,7 +144,7 @@ impl Encounter {
         }
         let owner = sim.substrate.entities.get(squid).unwrap().owner();
         let target_owner = sim.substrate.entities.get(ship).unwrap().owner();
-        sim.session.current_house = Some(owner);
+        sim.session.set_current_house_for_test(Some(owner));
         sim.fog.mark_visible_for_owner(owner, 25, 24);
         sim.fog.mark_visible_for_owner(target_owner, 24, 24);
         assert!(
@@ -278,7 +279,7 @@ impl Encounter {
                     source.parasite.class().unwrap().victim(),
                     Some(self.ship),
                     "after actual shot and native Arm visits: frame={} logic={:?} projectiles={:?} source_lifecycle={:?} source_parasite={:?} target_lifecycle={:?} target_parasite={:?} can_infect={} water_base={:?} target_tile={:?}",
-                    self.sim.session.binary_frame,
+                    self.sim.session.binary_frame(),
                     self.sim.substrate.logic.snapshot(),
                     self.sim.projectiles.iter().collect::<Vec<_>>(),
                     source.lifecycle,
@@ -315,7 +316,11 @@ impl Encounter {
                 assert_eq!(anim.owner_entity, Some(self.ship));
                 assert!((0..240).contains(&anim.runtime.current_frame));
                 let target = self.sim.substrate.entities.get(self.ship).unwrap();
-                assert!(target.parasite.is_paralyzed(self.sim.session.binary_frame));
+                assert!(
+                    target
+                        .parasite
+                        .is_paralyzed(self.sim.session.binary_frame())
+                );
                 if target
                     .rocking
                     .as_ref()
@@ -394,7 +399,7 @@ fn stock_squid_attack_refuses_an_already_iron_curtained_destroyer() {
     // Attack is delivered. This control does not claim a superweapon launch.
     apply_invulnerability(
         scene.sim.substrate.entities.get_mut(scene.ship).unwrap(),
-        scene.sim.session.binary_frame,
+        scene.sim.session.binary_frame(),
         duration,
         InvulnKind::IronCurtain,
     );
@@ -417,7 +422,7 @@ fn stock_squid_attack_refuses_an_already_iron_curtained_destroyer() {
         assert_eq!(target.parasite.eater(), None);
         assert!(crate::sim::superweapon::invulnerability::is_invulnerable(
             target.invulnerability.as_ref(),
-            scene.sim.session.binary_frame,
+            scene.sim.session.binary_frame(),
         ));
     }
     assert!(
@@ -499,7 +504,7 @@ fn entire_grapple(elite: bool) {
                     .get(scene.squid)
                     .unwrap()
                     .parasite
-                    .is_paralyzed(scene.sim.session.binary_frame)
+                    .is_paralyzed(scene.sim.session.binary_frame())
             );
             culled = true;
             break;
@@ -509,7 +514,7 @@ fn entire_grapple(elite: bool) {
             previous_health = ship.health.current();
         }
         assert_eq!(ship.parasite.eater(), Some(scene.squid));
-        assert!(ship.parasite.is_paralyzed(scene.sim.session.binary_frame));
+        assert!(ship.parasite.is_paralyzed(scene.sim.session.binary_frame()));
     }
     assert!(culled, "whole grapple must reach culling, not only attach");
     assert!(
@@ -561,7 +566,7 @@ fn stock_squid_sonic_receiver_releases_live_roll_without_stale_animation() {
             .get(scene.squid)
             .unwrap()
             .parasite
-            .is_paralyzed(scene.sim.session.binary_frame),
+            .is_paralyzed(scene.sim.session.binary_frame()),
         "ordinary ExitUnit retains release paralysis"
     );
     scene.step();
@@ -640,7 +645,7 @@ fn stock_squid_iron_curtain_releases_host_then_kills_revealed_organic_owner() {
             .unwrap()
             .invulnerability
             .as_ref(),
-        scene.sim.session.binary_frame
+        scene.sim.session.binary_frame()
     ));
     scene.step();
     assert!(scene.sim.anim(anim).is_none());
@@ -681,7 +686,7 @@ fn stock_squid_third_party_victim_death_uninits_suppressed_owner_and_owned_anim(
             .class()
             .unwrap()
             .suppression()
-            .remaining(scene.sim.session.binary_frame as i32)
+            .remaining(scene.sim.session.binary_frame() as i32)
             > 0,
         "third-party fatal hit must establish suppression: source={source:?}"
     );
@@ -911,7 +916,7 @@ fn stock_squid_paralysis_refuses_an_ordinary_ship_move_command() {
     let initial = position_world_coord(&ship.position);
     scene.sim.queue_command(CommandEnvelope::new(
         ship.owner(),
-        scene.sim.session.tick + 1,
+        scene.sim.session.tick() + 1,
         Command::Move {
             entity_id: scene.ship,
             target_rx: 30,
@@ -923,7 +928,7 @@ fn stock_squid_paralysis_refuses_an_ordinary_ship_move_command() {
         let ship = scene.sim.substrate.entities.get(scene.ship).unwrap();
         let actual = position_world_coord(&ship.position);
         assert_eq!((actual.x, actual.y), (initial.x, initial.y));
-        assert!(ship.parasite.is_paralyzed(scene.sim.session.binary_frame));
+        assert!(ship.parasite.is_paralyzed(scene.sim.session.binary_frame()));
         assert_eq!(ship.parasite.eater(), Some(scene.squid));
     }
 }
@@ -1092,7 +1097,7 @@ fn compare_native_grapple_state(scene: &Encounter, expected: &serde_json::Value)
         assert_eq!(json!([coord.x, coord.y, coord.z]), native["location"]);
         if let Some(facing) = native.get("primary_current_raw") {
             assert_eq!(
-                json!(entity.body_facing_current(scene.sim.session.binary_frame)),
+                json!(entity.body_facing_current(scene.sim.session.binary_frame())),
                 *facing
             );
         }
@@ -1118,7 +1123,7 @@ fn compare_native_grapple_state(scene: &Encounter, expected: &serde_json::Value)
     assert!(
         (actual_roll - f64::from(expected_roll)).abs() <= 1.0 / 65536.0,
         "frame {}: fixed roll {actual_roll} versus native {expected_roll}",
-        scene.sim.session.binary_frame
+        scene.sim.session.binary_frame()
     );
 }
 
@@ -1188,7 +1193,10 @@ fn stock_squid_grapple_monotonic_visits_match_native_rng_state_and_anim_construc
             .unwrap()
             .owner()
     );
-    scene.sim.session.binary_frame = initial["frame"].as_u64().unwrap() as u32;
+    scene
+        .sim
+        .session
+        .set_binary_frame_for_test(initial["frame"].as_u64().unwrap() as u32);
     scene.sim.techno_limbo_with_context(
         scene.squid,
         super::UninitContext::with_rules(&scene.rules).with_effects(FrameEffects::default()),
@@ -1231,7 +1239,7 @@ fn stock_squid_grapple_monotonic_visits_match_native_rng_state_and_anim_construc
         SimRng::from_native_state_hex_for_test(rows[0]["rng_before"]["mapgen"].as_str().unwrap());
     let mut compared = 0;
     for frame in 0..=corpus["visits_end"].as_u64().unwrap() as u32 {
-        scene.sim.session.binary_frame = frame;
+        scene.sim.session.set_binary_frame_for_test(frame);
         let row = rows.iter().find(|row| row["input"]["frame"] == frame);
         if let Some(row) = row {
             compare_native_grapple_state(&scene, &row["before"]);

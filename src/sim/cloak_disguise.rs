@@ -769,7 +769,7 @@ impl crate::sim::world::Simulation {
         }
         let side = self
             .session
-            .current_house
+            .current_house()
             .and_then(|id| self.houses.get(&id))
             .map_or(2, |house| match house.side_index {
                 0 => 0,
@@ -829,7 +829,7 @@ impl crate::sim::world::Simulation {
                     match target.disguise.as_ref().filter(|d| d.is_disguised()) {
                         Some(disguise) => (
                             self.forced_disguise_type(target.stable_id(), rules),
-                            disguise.house().or(self.session.current_house),
+                            disguise.house().or(self.session.current_house()),
                         ),
                         None => (Some(target.type_ref()), Some(target.owner())),
                     },
@@ -842,7 +842,7 @@ impl crate::sim::world::Simulation {
                 return;
             }
         };
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         let disguise = self
             .substrate
             .entities
@@ -881,7 +881,7 @@ impl crate::sim::world::Simulation {
         {
             return Ok(());
         }
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         // Both original calls ask ILoco+10, not the queued Move/NavCom. The
         // predicate has no intervening simulation writer on this route.
         let moving = crate::sim::movement::motion_query::is_moving(entity)

@@ -77,7 +77,8 @@ fn ore_rung_publishes_native_cell_attributes_before_live_object_turns() {
         .unwrap();
     let (mut sim, rules, registry) = world(row);
     let name = row["input"]["name"].as_str().unwrap();
-    sim.session.binary_frame = row["input"]["frame"].as_i64().unwrap() as u32;
+    sim.session
+        .set_binary_frame_for_test(row["input"]["frame"].as_i64().unwrap() as u32);
     sim.tick_ore_growth_rungs(&rules, Some(&registry));
     compare_overlay_state(&sim, &row["steps"][0]["state"], name);
     compare_dummy(
@@ -139,7 +140,7 @@ fn app_frames_match_original_ore_driver_histories_and_rng_continuation() {
             // Native frame N is consumed before MainTick increments it. Gaps
             // in supplied histories are fixture inputs, not simulated frames.
             let frame = step["frame"].as_i64().unwrap() as u32;
-            sim.session.binary_frame = frame;
+            sim.session.set_binary_frame_for_test(frame);
             let (output, draws) = crate::sim::rng::trace_draws(|| {
                 sim.advance_app_frame(
                     &[],
@@ -152,7 +153,7 @@ fn app_frames_match_original_ore_driver_histories_and_rng_continuation() {
                 .unwrap()
             });
             assert!(output.tick.frame_committed, "{name}: app frame {index}");
-            assert_eq!(sim.session.binary_frame, frame.wrapping_add(1));
+            assert_eq!(sim.session.binary_frame(), frame.wrapping_add(1));
             total_draws += draws.len();
             assert_eq!(
                 json!(draws.len()),
@@ -203,7 +204,8 @@ fn app_ore_constructor_terminal_cleanup_matches_original_deferred_drain() {
     for row in rows {
         let name = row["input"]["name"].as_str().unwrap();
         let (mut sim, rules, registry) = world(row);
-        sim.session.binary_frame = row["input"]["frame"].as_i64().unwrap() as u32;
+        sim.session
+            .set_binary_frame_for_test(row["input"]["frame"].as_i64().unwrap() as u32);
         let (output, draws) = crate::sim::rng::trace_draws(|| {
             sim.advance_app_frame(
                 &[],
@@ -277,7 +279,7 @@ fn ore_rung_spreads_no_ore_under_a_landed_aircraft() {
             &std::collections::BTreeSet::new(),
             true,
             true,
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
             (32, 32),
         );
         sim.production.ore_growth_state = state;

@@ -29,7 +29,7 @@ fn sample(s: &Scene, id: u64) -> Sample {
         contact: miner.radio_contacts.slot(0),
         tethered: miner.tether.partner().is_some(),
         unloading: state.unload_active(),
-        facing: miner.body_facing_current(s.sim.session.binary_frame),
+        facing: miner.body_facing_current(s.sim.session.binary_frame()),
         ore: state
             .cargo()
             .iter()
@@ -69,7 +69,7 @@ fn spawn_returning_miner(s: &mut Scene, cell: (u16, u16)) -> u64 {
         .sim
         .spawn_object("HARV", "Americans", cell.0, cell.1, 0, &s.rules)
         .expect("second miner");
-    let now = s.sim.session.binary_frame;
+    let now = s.sim.session.binary_frame();
     s.sim
         .mission_assign_exact(id, MissionId::from_known(MissionType::Harvest), now)
         .unwrap();
@@ -297,7 +297,7 @@ fn retail_ore_deposit_funds_the_retained_cash_stalled_build() {
         let mut deposited = false;
         for _ in 0..1500 {
             let before = factory(&s);
-            let now = s.sim.session.binary_frame;
+            let now = s.sim.session.binary_frame();
             let spent_before = s.sim.houses[&owner].economy.spent_credits();
             let cash_before = credits(&s);
             let cargo_before = sample(&s, s.miner).ore;
@@ -492,7 +492,9 @@ fn a_busy_refinery_leaves_a_second_miners_click_on_select() {
     s.sim
         .session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
-    s.sim.session.current_house = Some(s.sim.substrate.entities.get(s.miner).unwrap().owner());
+    s.sim
+        .session
+        .set_current_house_for_test(Some(s.sim.substrate.entities.get(s.miner).unwrap().owner()));
     assert_eq!(
         s.sim
             .unit_building_click_action(second, s.refinery, &s.rules),
@@ -517,7 +519,7 @@ fn an_order_to_a_busy_refinery_waits_nearby_and_docks_on_enter_after_it_frees() 
     run_until_unloading(&mut s);
     let second = spawn_returning_miner(&mut s, (15, 15));
     // Idle, so Harvest's own return cannot be what brings it home.
-    let now = s.sim.session.binary_frame;
+    let now = s.sim.session.binary_frame();
     s.sim
         .mission_assign_exact(second, MissionId::from_known(MissionType::Guard), now)
         .unwrap();
@@ -577,7 +579,7 @@ fn an_order_to_a_busy_refinery_waits_nearby_and_docks_on_enter_after_it_frees() 
 #[test]
 fn a_guarding_miner_sent_to_a_free_refinery_queues_enter_without_a_destination() {
     let mut s = returning_scene();
-    let now = s.sim.session.binary_frame;
+    let now = s.sim.session.binary_frame();
     s.sim
         .mission_assign_exact(s.miner, MissionId::from_known(MissionType::Guard), now)
         .unwrap();
@@ -612,7 +614,7 @@ fn selling_the_refinery_mid_unload_hands_the_miner_to_harvest() {
     s.rules.set_buildup_control_for_test(&type_id, [0, 25, 2]);
     let sale_order = crate::sim::command::CommandEnvelope::new(
         s.sim.substrate.entities.get(refinery).unwrap().owner(),
-        s.sim.session.tick + 1,
+        s.sim.session.tick() + 1,
         crate::sim::command::Command::SellBuilding {
             entity_id: refinery,
         },

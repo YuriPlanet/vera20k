@@ -507,7 +507,7 @@ impl MatchScenario {
             .collect();
         let sim = &mut scenario.runtime.simulation;
         let mut taken = Vec::new();
-        if let Some(local) = sim.session.current_house
+        if let Some(local) = sim.session.current_house()
             && let Some(house) = sim.houses.get_mut(&local)
         {
             house.multiplay_passive = true;
@@ -577,7 +577,7 @@ impl MatchScenario {
         let ore_offsets = spiral(ORE_REACH);
 
         let homes: Vec<(u16, u16)> = players.iter().map(|&(_, home, _)| home).collect();
-        let super_weapons = runtime.simulation.session.game_options.super_weapons;
+        let super_weapons = runtime.simulation.session.game_options().super_weapons;
         let mut houses = Vec::with_capacity(players.len());
         for (index, &(id, home, computer)) in players.iter().enumerate() {
             let sim = &mut runtime.simulation;
@@ -880,7 +880,7 @@ impl MatchScenario {
 
     /// The commands every human house gives before frame `tick` (0-based) runs.
     pub(crate) fn orders(&mut self, runtime: &SimRuntime, tick: u64) -> Vec<CommandEnvelope> {
-        let at = runtime.simulation.session.tick + 1;
+        let at = runtime.simulation.session.tick() + 1;
         let mut orders = Vec::new();
         for index in 0..self.houses.len() {
             let (id, stagger) = (self.houses[index].id, index as u64);

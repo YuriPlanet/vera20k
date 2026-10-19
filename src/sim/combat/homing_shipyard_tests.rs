@@ -56,7 +56,7 @@ impl Scene {
     }
 
     fn launch(&mut self) -> u64 {
-        self.world.session.binary_frame = 100;
+        self.world.session.set_binary_frame_for_test(100);
         let actor = self.world.substrate.entities.get(self.source).unwrap();
         let object = self.rules.object("FV").unwrap();
         let selected = combat_weapon::resolve_weapon_index(
@@ -98,7 +98,9 @@ impl Scene {
     }
 
     fn visit(&mut self, id: u64) {
-        self.world.session.binary_frame += 1;
+        self.world
+            .session
+            .set_binary_frame_for_test(self.world.session.binary_frame() + 1);
         self.world
             .visit_combat_tail(id, &self.rules, None, FrameEffects::default());
     }

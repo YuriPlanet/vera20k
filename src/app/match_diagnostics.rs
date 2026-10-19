@@ -55,11 +55,11 @@ impl MatchDiagnosticsState {
         Some(self.replay_log.get_or_insert_with(|| {
             let sim = &runtime.simulation;
             ReplayLog::new(crate::sim::replay::ReplayHeader {
-                pixel_conversion_bounds: sim.session.pixel_conversion_bounds,
+                pixel_conversion_bounds: sim.session.pixel_conversion_bounds(),
                 version: 2,
                 tick_hz: crate::app::types::SIM_TICK_HZ,
-                seed: sim.session.seed,
-                map_name: sim.session.map_name.clone(),
+                seed: sim.session.seed(),
+                map_name: sim.session.map_name().to_owned(),
                 rules_hash: runtime.resources.rules.simulation_config_hash(),
             })
         }))
@@ -205,7 +205,7 @@ mod tests {
         let owner = sim.interner.intern("Allies");
         sim.houses
             .register(HouseState::new(owner, 0, None, true, 500, 10));
-        sim.session.current_house = Some(owner);
+        sim.session.set_current_house_for_test(Some(owner));
         let mut runtime = crate::sim::runtime::SimRuntime::from_simulation(sim);
         let mut diagnostics = MatchDiagnosticsState::default();
         assert!(diagnostics.get_or_begin_replay(&runtime).is_some());

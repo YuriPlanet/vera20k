@@ -68,7 +68,7 @@ impl Simulation {
     ) -> Result<bool, String> {
         let rules = rules.ok_or("Walk path request requires rules")?;
         let id = request.entity_id;
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         //75AF69..8F arms the caller timer before Foot4D3920.
         self.substrate
             .entities
@@ -158,7 +158,7 @@ impl Simulation {
         //0x51DB68..0x51DB7A: the 16-bit facing (+388) becomes an octant through
         //`((facing >> 12) + 1) >> 1 & 7`.
         let direction = i32::from(crate::util::direction_tables::dir_from_facing16(
-            actor.body_facing_current(self.session.binary_frame),
+            actor.body_facing_current(self.session.binary_frame()),
         ));
         let requested = failed_path_requested_action(doing, prone);
         self.apply_infantry_do_action(id, requested, false, &facts, rules, frame_effects)?;

@@ -128,7 +128,8 @@ fn scripted_rally_preference_and_clear_match_original_targets_and_rng() {
             .get_mut(&enemy)
             .unwrap()
             .set_preferred_super_weapon_target(wide(cell(&input["initial_other_preferred"])));
-        sim.session.binary_frame = int(&control["frame"]) as u32;
+        sim.session
+            .set_binary_frame_for_test(int(&control["frame"]) as u32);
         sim.resolved_terrain = Some(test_grid(64, 64, test_terrain_cell));
         // These are the five admitted MapClass predicate inputs in the
         // generator, not a terrain-height fit to a captured target.
@@ -477,7 +478,8 @@ fn the_try_fire_arms_match_native() {
                 int(&row["game_mode"]) != 0,
             ),
         );
-        sim.session.binary_frame = int(&row["frame"]) as u32;
+        sim.session
+            .set_binary_frame_for_test(int(&row["frame"]) as u32);
         sim.resolved_terrain = Some(test_grid(64, 64, test_terrain_cell));
         sim.playfield_bounds = Some(test_playfield_bounds());
         crate::sim::arena_fixture::supply_native_map_keyed(&mut sim, "ai fire flat 64");
@@ -845,7 +847,7 @@ fn retail_skirmish() -> Option<(RuleSet, Simulation, InternedId, InternedId)> {
     house.enemy_house = Some(russians);
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
-    sim.session.game_options.super_weapons = true;
+    sim.session.game_options_mut_for_test().super_weapons = true;
     sim.resolved_terrain = Some(test_grid(64, 64, test_terrain_cell));
     sim.playfield_bounds = Some(test_playfield_bounds());
     crate::sim::arena_fixture::supply_native_map_keyed(&mut sim, "ai fire flat 64");
@@ -971,8 +973,8 @@ fn retail_computer_house_nukes_the_enemy_construction_yard() {
     // NukeCarrier's ordinary projectile path reads the native Size diamond.
     // A width0 fixture becomes empty when its map height is supplied; place
     // this launch scene inside a coherent Size/normalized LocalSize instead.
-    sim.session.map_width = 64;
-    sim.session.map_height = 64;
+    sim.session.set_map_width_for_test(64);
+    sim.session.set_map_height_for_test(64);
     sim.install_playfield_from_map_header(&crate::map::map_file::MapHeader {
         theater: "TEMPERATE".into(),
         fill: "Clear".into(),
@@ -1019,7 +1021,7 @@ fn retail_computer_house_nukes_the_enemy_construction_yard() {
     let sw_type = sim.interner.intern("NukeSpecial");
     let mut instance = SuperWeaponInstance::new(sw_type, americans, 0);
     instance.is_active = true;
-    instance.charge_start_tick = (sim.session.binary_frame) as i32;
+    instance.charge_start_tick = (sim.session.binary_frame()) as i32;
     instance.charge_duration = 9000;
     instance.is_ready = true;
     sim.super_weapons
@@ -1199,7 +1201,7 @@ fn the_psychic_dominator_target_matches_native() {
                 rebuilt.push((x, y));
             }
             if fact("curtain") {
-                let frame = sim.session.binary_frame;
+                let frame = sim.session.binary_frame();
                 apply_invulnerability(
                     sim.substrate.entities.get_mut(id).unwrap(),
                     frame,

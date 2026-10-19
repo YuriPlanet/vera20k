@@ -107,14 +107,14 @@ impl Scene {
         sim.houses
             .register(HouseState::new(owner, 0, Some(owner), true, 0, 10));
         sim.power_states.insert(owner, PowerState::default());
-        sim.session.current_house = Some(owner);
+        sim.session.set_current_house_for_test(Some(owner));
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
                 int(&control["input"]["game_mode"]) != 0,
             ),
         );
-        sim.fog.width = sim.session.map_width;
-        sim.fog.height = sim.session.map_height;
+        sim.fog.width = sim.session.map_width();
+        sim.fog.height = sim.session.map_height();
         // Native repair_target_prior supplies each registered Cell+12C=18
         // and +E4=0. Map5656D0 reads bit8 as visible. Exploration-only
         // reveal_all_for_owner does not publish current sight; this existing

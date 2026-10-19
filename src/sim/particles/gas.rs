@@ -172,7 +172,7 @@ pub(super) fn tick_particle(
     owner_house: Option<InternedId>,
     context: UninitContext<'_>,
 ) {
-    if sim.session.binary_frame & 1 == 0 {
+    if sim.session.binary_frame() & 1 == 0 {
         if sim.particle_rng().next_raw_abs_modulo(8) == 0 {
             let x_axis = sim.particle_rng().next_raw_abs_modulo(2) == 0;
             let delta = sim.particle_rng().next_raw_abs_modulo(3) as i32 - 1;
@@ -341,7 +341,7 @@ fn ground(sim: &Simulation, coords: IVec3) -> i32 {
 
 fn move_gas(p: &mut Particle, sim: &Simulation, rules: &RuleSet) {
     let pt = rules.particle_type(p.type_id);
-    let frame = sim.session.binary_frame as i32;
+    let frame = sim.session.binary_frame() as i32;
     let mut coords = p.coords;
     if pt.wind_effect > 0
         && frame

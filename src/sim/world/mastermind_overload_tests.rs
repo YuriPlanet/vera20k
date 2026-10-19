@@ -61,7 +61,11 @@ fn a_due_overload_component_replaces_its_rate_without_erasing_natural_roll() {
             return;
         }
         assert_eq!(scene.words(), before);
-        scene.simulation_mut().session.binary_frame += 1;
+        let frame = scene.simulation_mut().session.binary_frame() + 1;
+        scene
+            .simulation_mut()
+            .session
+            .set_binary_frame_for_test(frame);
     }
     panic!("the actual retained countdown never reached its next component pulse");
 }

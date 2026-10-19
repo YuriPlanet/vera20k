@@ -189,7 +189,7 @@ impl Simulation {
             .resolved_terrain
             .as_ref()
             .ok_or("the code-2 chain requires map cells")?;
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         let mut list = Some((cell, layer));
         for _ in 0..CODE2_CHAIN_MAX_HOPS {
             let Some(object) = list.and_then(|(cell, layer)| {
@@ -423,7 +423,7 @@ impl Simulation {
         frame_effects: FrameEffects<'_>,
     ) -> Result<FindPathResult, String> {
         let id = request.entity_id;
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         #[cfg(test)]
         if let Some(path) = super::fresh_oracle_seam::supplied_path(
             (request.destination.x / 256, request.destination.y / 256),
@@ -544,7 +544,7 @@ impl Simulation {
         frame_effects: FrameEffects<'_>,
     ) -> Result<Result<(), CoreRefusal>, String> {
         let id = request.entity_id;
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         if self.path_grid.is_none() {
             return Err("Find_Path core requires PathGrid; no native failure inferred".into());
         }
@@ -654,7 +654,7 @@ impl Simulation {
         bool,
     ) {
         let id = request.entity_id;
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         // Original42ACF0 runs at429C1A after FootMark0 (4D3E11), before
         // reconstruction and both finishing passes. Reuse its one marker
         // owner against the live ordered peer lists/raw bytes here; the
@@ -824,7 +824,7 @@ impl Simulation {
         } else {
             MissionType::AreaGuard
         };
-        let now = self.session.binary_frame;
+        let now = self.session.binary_frame();
         // Queue's own guards decide; with commence 0 only a missing receiver
         // fails, and that receiver was just resolved.
         let _ = self.mission_queue_exact(

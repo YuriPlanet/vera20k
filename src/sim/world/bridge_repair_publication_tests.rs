@@ -49,7 +49,7 @@ fn slave_master_admission_reaches_head_selection_in_the_same_object_turn() {
             crate::sim::mission::MissionId::from_known(
                 crate::rules::mission_data::MissionType::Move,
             ),
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
         )
         .unwrap();
         let e = sim.substrate.entities.get_mut(slave).unwrap();
@@ -177,7 +177,9 @@ fn player_house(sim: &mut Simulation) {
     // The hut's computer owner.
     let soviets = sim.interner.intern("Soviets");
     sim.houses
-        .register(crate::sim::house_state::HouseState::new(soviets, 1, None, false, 0, 0));
+        .register(crate::sim::house_state::HouseState::new(
+            soviets, 1, None, false, 0, 0,
+        ));
 }
 
 fn command_repair_fixture(with_aircraft: bool, with_team: bool) {
@@ -262,7 +264,7 @@ fn command_repair_fixture(with_aircraft: bool, with_team: bool) {
                     owner,
                     script_id,
                     vec![id],
-                    sim.session.binary_frame as i32,
+                    sim.session.binary_frame() as i32,
                 );
                 assert!(sim.team_script_vm.team_for_member(id).is_some());
             }
@@ -274,7 +276,7 @@ fn command_repair_fixture(with_aircraft: bool, with_team: bool) {
         if let Some(e) = sim.substrate.entities.get(engineer) {
             trace.push(format!(
                 "frame{} cell{},{} sub{},{} head{:?} nav{:?} mission{:?} alive{}",
-                sim.session.binary_frame,
+                sim.session.binary_frame(),
                 e.position.rx(),
                 e.position.ry(),
                 e.position.sub_x(),
@@ -735,7 +737,7 @@ pub(in crate::sim::world) fn ready_engineer(
         crate::sim::mission::MissionId::from_known(
             crate::rules::mission_data::MissionType::Capture,
         ),
-        sim.session.binary_frame,
+        sim.session.binary_frame(),
     )
     .unwrap();
     let e = sim.substrate.entities.get_mut(id).unwrap();
@@ -936,7 +938,7 @@ fn later_repair_scatters_stationary_hut_occupant_and_processes_it_synchronously(
     let before = ground_pose::position_world_coord(&e.position);
     let mission = e.mission.current();
     let ai_counter = e.mission.ai_counter();
-    let frames = (sim.session.tick, sim.session.binary_frame);
+    let frames = (sim.session.tick(), sim.session.binary_frame());
     let rng = sim.scenario_rng.state();
     let last = ready_engineer(&mut sim, &rules, &registry, hut);
     sim.run_completed_walk_step(
@@ -968,7 +970,7 @@ fn later_repair_scatters_stationary_hut_occupant_and_processes_it_synchronously(
         "FNPC success does not queue Move"
     );
     assert_eq!(e.mission.ai_counter(), ai_counter, "no second Object AI");
-    assert_eq!((sim.session.tick, sim.session.binary_frame), frames);
+    assert_eq!((sim.session.tick(), sim.session.binary_frame()), frames);
     assert_ne!(
         sim.scenario_rng.state(),
         rng,
@@ -1080,7 +1082,7 @@ fn repair_pointer_expiry_uses_descending_infantry_registry_and_preserves_paid_he
             .set_for_test(Some(crate::sim::combat::TargetKind::Entity(hut)));
         e.passive_scan
             .timer_mut_for_test()
-            .arm(sim.session.binary_frame, 30);
+            .arm(sim.session.binary_frame(), 30);
         e.navigation
             .set_nav_com_aux_for_test(Some(NavTargetRef::Cell { rx: 19, ry: 19 }));
         e.navigation
@@ -1301,7 +1303,7 @@ fn walk_stop_and_retarget_finish_a_same_cell_committed_head() {
                 sim.state_hash(),
                 replay.state_hash(),
                 "stop={stop}, tick={}, original={:?}, restored={:?}",
-                sim.session.tick,
+                sim.session.tick(),
                 sim.substrate.entities.get(id),
                 replay.substrate.entities.get(id)
             );
@@ -1359,7 +1361,7 @@ fn walk_completion_uses_retained_destination_and_exact_height_tolerance() {
     ] {
         let (mut sim, mut rules, registry) = fixture();
         rules.general.blockage_path_delay_ticks = 65536;
-        sim.session.binary_frame = 123;
+        sim.session.set_binary_frame_for_test(123);
         let id = sim
             .spawn_object("ENGINEER", "Americans", 15, 15, 0, &rules)
             .unwrap();
@@ -1448,7 +1450,7 @@ fn repair_receiver_failure_stops_runtime_before_consumption_or_frame_commit() {
         .get_mut(victim)
         .unwrap()
         .set_type_ref_for_test(missing);
-    let frame = (sim.session.tick, sim.session.binary_frame);
+    let frame = (sim.session.tick(), sim.session.binary_frame());
     let later_counter = sim
         .substrate
         .entities
@@ -1484,7 +1486,7 @@ fn repair_receiver_failure_stops_runtime_before_consumption_or_frame_commit() {
     assert!(error.cause.contains("missing ObjectType"), "{error}");
     assert!(error.to_string().contains("prior world mutations remain"));
     let sim = &runtime.simulation;
-    assert_eq!((sim.session.tick, sim.session.binary_frame), frame);
+    assert_eq!((sim.session.tick(), sim.session.binary_frame()), frame);
     let e = sim.substrate.entities.get(engineer).unwrap();
     assert!(e.lifecycle.object_alive() && !e.lifecycle.in_limbo() && !e.death.is_dying());
     assert_eq!(
@@ -1635,9 +1637,9 @@ fn repair_queries_unrelated_rocketeer_after_move_and_snapshot_restore() {
             ));
             drop(grid);
             let mut expected_runtime =
-                crate::sim::components::FootPathRuntime::at_frame(sim.session.binary_frame);
+                crate::sim::components::FootPathRuntime::at_frame(sim.session.binary_frame());
             expected_runtime.set_blocked_timer_for_test(crate::sim::timer::CdTimer::started(
-                sim.session.binary_frame as i32,
+                sim.session.binary_frame() as i32,
                 60,
             ));
             expected_runtime.set_retries_left(256);
@@ -2060,8 +2062,10 @@ fn failed_jumpjet_stop_stock_fatal_receiver_precedes_cache_retirement() {
 /// The accepted setter's timer tail (Foot 0x4D96C2..0x4D9707); callers
 /// supply the Walk destination and head.
 fn accept_destination(sim: &mut Simulation, id: u64, rules: &RuleSet) {
-    let timing =
-        crate::sim::movement::DestinationTiming::from_rules(sim.session.binary_frame, Some(rules));
+    let timing = crate::sim::movement::DestinationTiming::from_rules(
+        sim.session.binary_frame(),
+        Some(rules),
+    );
     let e = sim.substrate.entities.get_mut(id).unwrap();
     timing.accept(e);
 }

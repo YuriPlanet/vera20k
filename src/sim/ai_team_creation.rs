@@ -136,7 +136,7 @@ pub(crate) fn update_team_creation(
     owner: InternedId,
     frame_effects: FrameEffects<'_>,
 ) {
-    let frame = sim.session.binary_frame as i32;
+    let frame = sim.session.binary_frame() as i32;
     let game_mode_nonzero = sim.session.game_mode_nonzero();
     let Some(house) = sim.houses.get(&owner) else {
         return;

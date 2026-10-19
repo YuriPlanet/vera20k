@@ -337,7 +337,7 @@ fn c4_order_from_a_distance_reaches_the_building_while_moving_or_idle() {
             let owner = sim.interner.intern("Americans");
             sim.queue_command(crate::sim::command::CommandEnvelope::new(
                 owner,
-                sim.session.tick + 1,
+                sim.session.tick() + 1,
                 Command::PlantC4 {
                     attacker_id: seal,
                     target_building_id: cabhut,
@@ -457,14 +457,15 @@ fn ordinary_friendly_repair_uses_capture_event_without_hut_exception() {
         let (mut sim, rules, registry) = super::entry_test_fixture::fixture_with_rules(&ini);
         for (side, name) in ["Americans", "Soviets"].into_iter().enumerate() {
             let owner = sim.interner.intern(name);
-            sim.houses.register(crate::sim::house_state::HouseState::new(
-                owner,
-                side as i32,
-                None,
-                side == 0,
-                0,
-                10,
-            ));
+            sim.houses
+                .register(crate::sim::house_state::HouseState::new(
+                    owner,
+                    side as i32,
+                    None,
+                    side == 0,
+                    0,
+                    10,
+                ));
         }
         let target = sim
             .spawn_object_at_height("CABHUT", target_owner, 9, 10, 0, 0, &rules)
@@ -583,7 +584,7 @@ fn queued_hut_capture_survives_repair_before_event_execution() {
         let actor_owner = sim.interner.intern("Americans");
         sim.queue_command(crate::sim::command::CommandEnvelope::new(
             actor_owner,
-            sim.session.tick + 1,
+            sim.session.tick() + 1,
             Command::CaptureBuilding {
                 engineer_id: engineer,
                 target_building_id: hut,
@@ -660,7 +661,7 @@ fn c4_on_cabhut_collapses_bridge_and_hut_survives() {
     let owner = sim.interner.intern("Americans");
     sim.queue_command(crate::sim::command::CommandEnvelope::new(
         owner,
-        sim.session.tick + 1,
+        sim.session.tick() + 1,
         Command::PlantC4 {
             attacker_id: seal,
             target_building_id: cabhut,
@@ -686,7 +687,7 @@ fn c4_on_cabhut_collapses_bridge_and_hut_survives() {
     let delay = rules.c4_delay_frames() as u64;
     let mut bridge_state_changed_seen = false;
     for _ in 0..(delay + 1) {
-        if (sim.session.binary_frame as u64) < plant_start + delay {
+        if (sim.session.binary_frame() as u64) < plant_start + delay {
             for y in [14, 15, 16] {
                 assert_eq!(
                     sim.resolved_terrain
@@ -706,9 +707,10 @@ fn c4_on_cabhut_collapses_bridge_and_hut_survives() {
         // Hut HP invariant — hold across every tick of the window.
         let cur = sim.substrate.entities.get(cabhut).unwrap().health.current();
         assert_eq!(
-            cur, cabhut_max_hp,
+            cur,
+            cabhut_max_hp,
             "hut HP must stay at max during C4Delay (plant_start={plant_start}, sim.session.tick={})",
-            sim.session.tick
+            sim.session.tick()
         );
     }
 
@@ -805,7 +807,7 @@ fn a_fused_bomb_on_a_cabhut_collapses_the_bridge_and_reports_it() {
 
 /// `seal`'s C4 charge on `target`, planted this frame.
 fn plant_c4(sim: &mut Simulation, rules: &RuleSet, target: u64, seal: u64) {
-    let frame = sim.session.binary_frame as i32;
+    let frame = sim.session.binary_frame() as i32;
     sim.substrate
         .entities
         .get_mut(target)
@@ -857,7 +859,10 @@ fn c4_on_invulnerable_cabhut_still_dispatches_bridge_and_clears_pending() {
         .get_mut(cabhut)
         .unwrap()
         .invulnerability = Some(InvulnerabilityState::new(
-        crate::sim::timer::CdTimer::started(sim.session.tick as i32, rules.c4_delay_frames() + 20),
+        crate::sim::timer::CdTimer::started(
+            sim.session.tick() as i32,
+            rules.c4_delay_frames() + 20,
+        ),
         InvulnKind::IronCurtain,
     ));
 

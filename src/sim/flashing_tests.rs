@@ -61,7 +61,8 @@ fn arena(rules: &RuleSet, player: &str) -> (Simulation, crate::sim::pathfinding:
         sim.houses
             .register(HouseState::new(id, side, None, human, 0, 10));
     }
-    sim.session.current_house = Some(sim.interner.intern(player));
+    sim.session
+        .set_current_house_for_test(Some(sim.interner.intern(player)));
     let grid = crate::sim::arena_fixture::flat_arena(&mut sim, rules);
     (sim, grid)
 }
@@ -83,7 +84,7 @@ fn order(
     owner: &str,
 ) {
     let owner = sim.interner.intern(owner);
-    sim.queue_command(CommandEnvelope::new(owner, sim.session.tick + 1, command));
+    sim.queue_command(CommandEnvelope::new(owner, sim.session.tick() + 1, command));
     let commands = sim.take_due_commands();
     sim.advance_tick(&commands, Some(rules), Some(grid), None, 33);
 }
@@ -201,7 +202,8 @@ fn a_unit_disguised_without_a_house_stays_dark_to_the_enemy_player() {
     // Infantry's GetDisguiseHouse(1) falls back on the player's house.
     assert_eq!(flash(&sim, spy), 7);
 
-    sim.session.current_house = Some(sim.interner.intern("Russians"));
+    sim.session
+        .set_current_house_for_test(Some(sim.interner.intern("Russians")));
     sim.flash_object(mirage, 5);
     assert_eq!(flash(&sim, mirage), 5, "its owner sees through it");
 }
@@ -240,7 +242,7 @@ fn a_building_flashes_unless_its_raw_disguise_flag_is_up() {
     let americans = sim.interner.intern("Americans");
     sim.houses
         .register(HouseState::new(americans, 0, None, true, 0, 10));
-    sim.session.current_house = Some(americans);
+    sim.session.set_current_house_for_test(Some(americans));
     let power = spawn(&mut sim, &rules, "GAPOWR", "Americans", 10, 10);
     sim.flash_object(power, 7);
     assert_eq!(flash(&sim, power), 7);

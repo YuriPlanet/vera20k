@@ -221,8 +221,8 @@ fn retail_production_world(history: &Value) -> Option<(SimRuntime, InternedId)> 
     sim.install_resolved_terrain_for_new_map(crate::map::resolved_terrain::test_flat_ground_grid(
         extent_x.checked_add(1).unwrap(),
     ));
-    sim.session.map_width = width;
-    sim.session.map_height = height;
+    sim.session.set_map_width_for_test(width);
+    sim.session.set_map_height_for_test(height);
     sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
         base: i32::from(width),
         off_fc: number(&bounds[0]),
@@ -247,7 +247,7 @@ fn retail_production_world(history: &Value) -> Option<(SimRuntime, InternedId)> 
     );
     house.project_country_mults(&rules, &sim.interner);
     sim.houses.register(house);
-    sim.session.current_house = Some(owner);
+    sim.session.set_current_house_for_test(Some(owner));
     for building in geometry["owned_buildings"].as_array().unwrap() {
         sim.spawn_object(
             building["type"].as_str().unwrap(),
@@ -268,7 +268,7 @@ fn retail_production_world(history: &Value) -> Option<(SimRuntime, InternedId)> 
         &mut sim.substrate.entities,
         &rules,
         &sim.interner,
-        sim.session.binary_frame,
+        sim.session.binary_frame(),
     );
     let power = &sim.power_states[&owner];
     assert_eq!(
@@ -282,7 +282,8 @@ fn retail_production_world(history: &Value) -> Option<(SimRuntime, InternedId)> 
     if !history["initial_state"]["dirty"].as_bool().unwrap() {
         assert!(sim.houses.get_mut(&owner).unwrap().take_tech_recheck());
     }
-    sim.session.binary_frame = u32::try_from(number(&input["initial_frame"])).unwrap();
+    sim.session
+        .set_binary_frame_for_test(u32::try_from(number(&input["initial_frame"])).unwrap());
     // These are complete observed Random2 objects at the production boundary,
     // after original setup. Importing them does not assert constructor parity.
     let random = &history["rng_seed_states"];
@@ -312,7 +313,7 @@ fn retail_all05_type_tech_level_recheck_cancels_paid_harrier_and_unlocks_black_e
         &runtime.resources.rules,
         owner,
         &history["initial_state"],
-        runtime.simulation.session.binary_frame,
+        runtime.simulation.session.binary_frame(),
     );
     assert_eq!(
         rng_hashes(&runtime.simulation),
@@ -348,9 +349,12 @@ fn retail_all05_type_tech_level_recheck_cancels_paid_harrier_and_unlocks_black_e
     );
     let paid = production_stage(history, "paid_orca");
     let paid_frame = u32::try_from(number(&paid["frame"])).unwrap();
-    assert!(paid_frame >= runtime.simulation.session.binary_frame);
-    while runtime.simulation.session.binary_frame < paid_frame {
-        runtime.simulation.session.binary_frame += 1;
+    assert!(paid_frame >= runtime.simulation.session.binary_frame());
+    while runtime.simulation.session.binary_frame() < paid_frame {
+        runtime
+            .simulation
+            .session
+            .set_binary_frame_for_test(runtime.simulation.session.binary_frame() + 1);
         production::step_factories(&mut runtime.simulation);
     }
     assert_production_state(
@@ -358,7 +362,7 @@ fn retail_all05_type_tech_level_recheck_cancels_paid_harrier_and_unlocks_black_e
         &runtime.resources.rules,
         owner,
         paid,
-        runtime.simulation.session.binary_frame,
+        runtime.simulation.session.binary_frame(),
     );
     assert_eq!(rng_hashes(&runtime.simulation), paid["rng"]);
     let actions = input["raw_actions"].as_array().unwrap();
@@ -375,7 +379,7 @@ fn retail_all05_type_tech_level_recheck_cancels_paid_harrier_and_unlocks_black_e
             &runtime.resources.rules,
             owner,
             original,
-            runtime.simulation.session.binary_frame,
+            runtime.simulation.session.binary_frame(),
         );
         assert_eq!(rng_hashes(&runtime.simulation), original["rng"]);
     }
@@ -384,7 +388,7 @@ fn retail_all05_type_tech_level_recheck_cancels_paid_harrier_and_unlocks_black_e
     // its generated ABANDON events and their same-frame command dispatcher.
     // The native receipt stops before MainTick's frame increment. Rust's API
     // additionally commits that frame; observe the tail's pre-commit frame.
-    let native_tail_frame = runtime.simulation.session.binary_frame;
+    let native_tail_frame = runtime.simulation.session.binary_frame();
     let mut output = runtime
         .advance_frame(&[], 67, TickLane::Ordinary, FrameEffects::default())
         .unwrap();
@@ -433,7 +437,7 @@ fn retail_all05_type_tech_level_recheck_cancels_paid_harrier_and_unlocks_black_e
         native_tail_frame,
     );
     assert_eq!(
-        runtime.simulation.session.binary_frame,
+        runtime.simulation.session.binary_frame(),
         native_tail_frame.wrapping_add(1)
     );
     assert!(

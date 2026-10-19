@@ -132,7 +132,7 @@ pub(crate) fn issue_order(
         id,
         MissionId::from_known(MissionType::Unload),
         0,
-        sim.session.binary_frame,
+        sim.session.binary_frame(),
         &crate::sim::mission::authority::EntityReadyInputProvider,
     )
     .is_ok()
@@ -349,7 +349,7 @@ impl Simulation {
                             .is_some_and(|leaf| leaf.doing() == 31)
                         || entity
                             .rearm_timer
-                            .remaining(self.session.binary_frame as i32)
+                            .remaining(self.session.binary_frame() as i32)
                             != 0)
                 {
                     return false;
@@ -558,7 +558,7 @@ impl Simulation {
         self.mission_assign_exact(
             id,
             MissionId::from_known(MissionType::Guard),
-            self.session.binary_frame,
+            self.session.binary_frame(),
         )
         .map_err(|cause| format!("Infantry Unload Guard: {cause}"))?;
         self.assign_destination_represented(id, None, Some(rules), None, effects)

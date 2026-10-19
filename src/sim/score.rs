@@ -349,7 +349,7 @@ mod tests {
             crate::sim::timer::CdTimer::default(),
         );
         sim.houses.register(human_house);
-        sim.session.current_house = Some(human);
+        sim.session.set_current_house_for_test(Some(human));
 
         let opponent = sim.interner.intern("Opponent");
         let mut opponent_house = HouseState::new(opponent, 1, None, false, 0, 10);
@@ -364,7 +364,7 @@ mod tests {
         // At normal play's cadence the ending frame hashes off the interval.
         // It does not commit, so its tick stays the last committed one.
         sim.hash_state_every(crate::sim::replay::PLAY_HASH_INTERVAL);
-        sim.session.tick = 7;
+        sim.session.set_tick_for_test(7);
 
         let first = sim.advance_tick(&[], None, None, None, 67);
 
@@ -408,7 +408,8 @@ mod tests {
     #[test]
     fn another_humans_ready_result_does_not_finalize_the_current_players_score() {
         let mut sim = natural_terminal_sim(0x51C0_9ABD);
-        sim.session.current_house = sim.interner.get("Opponent");
+        sim.session
+            .set_current_house_for_test(sim.interner.get("Opponent"));
         let cursor = sim.clone_scenario_rng().state();
         let tick = sim.advance_tick(&[], None, None, None, 67);
         assert!(tick.frame_committed);

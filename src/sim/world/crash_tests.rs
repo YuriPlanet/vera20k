@@ -58,7 +58,8 @@ fn magnetron_temporary_bullet_state_matches_original_construction() {
             } else {
                 credit
             };
-            sim.session.binary_frame = row["input"]["frame"].as_u64().unwrap() as u32;
+            sim.session
+                .set_binary_frame_for_test(row["input"]["frame"].as_u64().unwrap() as u32);
             sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(
                 state["native_id"].as_u64().unwrap() as u32 - 1,
             ));
@@ -184,7 +185,8 @@ fn magnetron_temporary_bullet_tails_match_original_rng_lights_and_ids() {
     for cell in &mut sim.resolved_terrain.as_mut().unwrap().cells {
         cell.level = 6;
     }
-    sim.session.binary_frame = row["input"]["frame"].as_u64().unwrap() as u32;
+    sim.session
+        .set_binary_frame_for_test(row["input"]["frame"].as_u64().unwrap() as u32);
     sim.main_rng =
         SimRng::from_native_state_hex_for_test(row["rng_before"]["main"].as_str().unwrap()).into();
     sim.scenario_rng =
@@ -394,7 +396,8 @@ fn fixture(input: &serde_json::Value) -> (Simulation, RuleSet) {
         off_108: 64,
     });
     sim.playfield_size_height = Some(64);
-    sim.session.binary_frame = int(input, "frame", 1000) as u32;
+    sim.session
+        .set_binary_frame_for_test(int(input, "frame", 1000) as u32);
     sim.scenario_rng = SimRng::new(int(input, "seed", 1) as u64);
     assert_eq!(sim.allocate_stable_id(), 1);
     insert_entity(&mut sim, 1, EntityCategory::Aircraft);
@@ -425,7 +428,7 @@ fn fixture(input: &serde_json::Value) -> (Simulation, RuleSet) {
         [0, 1, 2].map(|i| a[i].as_i64().unwrap() as i32)
     });
     assert_eq!((xyz[0], xyz[1]), (START, START));
-    let frame = sim.session.binary_frame;
+    let frame = sim.session.binary_frame();
     let entity = sim.substrate.entities.get_mut(1).unwrap();
     entity.position.set_exact_z_leptons_for_test(Some(xyz[2]));
     entity.health.set_for_test(int(input, "health", 0) as i32);
@@ -575,7 +578,8 @@ fn live_null_crash_books_one_loss_through_impact_and_retirement() {
 
     let mut reached_impact = false;
     for _ in 0..128 {
-        sim.session.binary_frame += 1;
+        sim.session
+            .set_binary_frame_for_test(sim.session.binary_frame() + 1);
         if sim
             .tick_air_movement_with_cell_lists_one(
                 1,
@@ -626,9 +630,9 @@ fn crash_fall_matches_native_frames_to_the_impact() {
         let name = input["name"].as_str().unwrap();
         let (mut sim, rules) = fixture(input);
         let frames = row["frames"].as_array().unwrap();
-        let start = sim.session.binary_frame;
+        let start = sim.session.binary_frame();
         for (n, frame) in frames.iter().enumerate() {
-            sim.session.binary_frame = start + n as u32;
+            sim.session.set_binary_frame_for_test(start + n as u32);
             sim.sound_events.clear();
             let impact = n + 1 == frames.len();
             let expected: Vec<i32> = frame["xyz"]
@@ -792,9 +796,9 @@ fn a_crash_fall_lists_the_wreck_in_its_impact_cell() {
         ),
         RevealOutcome::Revealed { .. }
     ));
-    let start = sim.session.binary_frame;
+    let start = sim.session.binary_frame();
     for n in 0..frames.len() {
-        sim.session.binary_frame = start + n as u32;
+        sim.session.set_binary_frame_for_test(start + n as u32);
         let stats = sim
             .tick_air_movement_with_cell_lists_one(
                 1,
@@ -1134,7 +1138,7 @@ fn jumpjet_fixture(balloon: bool) -> (Simulation, RuleSet, u64, u64) {
         off_108: 64,
     });
     sim.playfield_size_height = Some(64);
-    sim.session.binary_frame = 1000;
+    sim.session.set_binary_frame_for_test(1000);
     for (name, human) in [("Americans", true), ("Soviets", false)] {
         let house = sim.interner.intern(name);
         sim.houses
@@ -1565,7 +1569,7 @@ fn a_jumpjet_shot_down_after_its_null_destination_reaches_the_ground() {
         .is_some_and(|entity| (entity.position.rx(), entity.position.ry()) == (52, 52))
     {
         assert!(frame < 1200, "the cruise never left the hover cell");
-        sim.session.binary_frame = frame;
+        sim.session.set_binary_frame_for_test(frame);
         sim.tick_air_movement_with_cell_lists_one(
             1,
             Some(&rules),
@@ -1596,7 +1600,7 @@ fn a_jumpjet_shot_down_after_its_null_destination_reaches_the_ground() {
         None,
         crate::sim::world::FrameEffects::default(),
     );
-    sim.session.binary_frame = frame;
+    sim.session.set_binary_frame_for_test(frame);
     sim.tick_air_movement_with_cell_lists_one(
         1,
         Some(&rules),
@@ -1681,7 +1685,7 @@ fn a_jumpjet_wreck_scans_only_on_its_committed_guard() {
     use crate::sim::mission::{MissionId, MissionType};
     for (mission, scans) in [(MissionType::Guard, true), (MissionType::Attack, false)] {
         let (mut sim, rules, _, shooter) = jumpjet_fixture(false);
-        let frame = sim.session.binary_frame;
+        let frame = sim.session.binary_frame();
         sim.mission_assign_exact(1, MissionId::from_known(mission), frame)
             .unwrap();
         // An enemy two cells east, inside `CrashGun`'s range.
@@ -1873,7 +1877,7 @@ fn retail_dustbowl_flak_shoots_a_harrier_down() {
         .collect();
     let order = CommandEnvelope::new(
         americans,
-        sim.session.tick + 1,
+        sim.session.tick() + 1,
         Command::Attack {
             attacker_id: harrier,
             target_id: flak[0],
@@ -2177,7 +2181,7 @@ fn retail_dustbowl_flak_shoots_down_a_nighthawk_and_a_kirov() {
         .map(|entity_id| {
             CommandEnvelope::new(
                 americans,
-                sim.session.tick + 1,
+                sim.session.tick() + 1,
                 Command::Move {
                     entity_id,
                     target_rx: destination.0,

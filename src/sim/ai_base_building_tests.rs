@@ -558,7 +558,7 @@ fn a_computer_yards_building_follows_the_native_computer_route() {
         let name = row["input"]["name"].as_str().unwrap();
         let (mut sim, rules, owner, yard, product) = exit_fixture();
         // The native rows run at GameSpeed 0.
-        sim.session.game_options.game_speed = 0;
+        sim.session.game_options_mut_for_test().game_speed = 0;
         let plain = rules.building_type_index("PLAIN").unwrap();
         let house = sim.houses.get_mut(&owner).unwrap();
         house.economy.set_credits_for_test(100);
@@ -590,10 +590,10 @@ fn a_computer_yards_building_follows_the_native_computer_route() {
             "{name}"
         );
         assert_eq!(building.mission.queued(), MissionId::NONE, "{name}");
-        let placed_at = sim.session.binary_frame;
+        let placed_at = sim.session.binary_frame();
         for frame in row["frames"].as_array().unwrap() {
             let now = placed_at + frame["frame"].as_u64().unwrap() as u32;
-            sim.session.binary_frame = now;
+            sim.session.set_binary_frame_for_test(now);
             sim.object_ai_visit_one(
                 product,
                 Some(&rules),

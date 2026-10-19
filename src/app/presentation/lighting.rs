@@ -53,7 +53,7 @@ pub(crate) fn body_extra_light(
             rules.general.extra_aircraft_light,
             crate::sim::movement::air_movement::current_fly_height(entity, terrain),
             crate::sim::superweapon::lightning_storm::raging(sim),
-            &sim.session.lighting,
+            &sim.session.lighting(),
         ),
         _ => 0,
     }
@@ -76,9 +76,9 @@ pub(crate) fn aircraft_extra_light(
     scenario: &crate::sim::scenario_session::ScenarioLightingState,
 ) -> i32 {
     let level = if storm {
-        scenario.ion.level_units
+        scenario.ion().level_units
     } else {
-        scenario.normal.level_units
+        scenario.normal().level_units
     };
     let levels = height / (2 * crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS);
     extra_aircraft_light.wrapping_add(levels.wrapping_mul(level))
@@ -173,7 +173,7 @@ pub(crate) fn techno_effect_light(
         entity,
         tint,
         light,
-        sim.session.binary_frame,
+        sim.session.binary_frame(),
         sim.airstrike_tint_active(entity.stable_id()),
     )
 }
@@ -212,7 +212,7 @@ pub(crate) fn building_anim_light(
             building,
             tint,
             light,
-            sim.session.binary_frame.wrapping_sub(1),
+            sim.session.binary_frame().wrapping_sub(1),
             sim.airstrike_tint_active(building.stable_id()),
         )
     };
@@ -389,7 +389,7 @@ pub(crate) fn shp_colour_word(
         curtain.kind() == crate::sim::superweapon::invulnerability::InvulnKind::ForceShield
             && crate::sim::superweapon::invulnerability::is_invulnerable(
                 Some(curtain),
-                sim.session.binary_frame,
+                sim.session.binary_frame(),
             )
     });
     let marked = entity.has_airstrike_marker();
@@ -468,7 +468,7 @@ impl MatchLighting {
             let view = derive_lighting_view(&self.config, Some(sim), detail_level);
             self.grid = build_lighting_grid_from_view(terrain, &view);
             self.profile = view.profile;
-            self.scenario = Some(sim.session.lighting);
+            self.scenario = Some(*sim.session.lighting());
             (self.buildings, self.radiation) = source_maps(sim);
         }
     }
@@ -613,24 +613,24 @@ impl MatchLighting {
             }
         }
         let cell_profile = sim.lighting_cell_profile();
-        if self.scenario != Some(sim.session.lighting) {
+        if self.scenario != Some(*sim.session.lighting()) {
             events.push(LightingEvent::Global {
-                state: sim.session.lighting,
+                state: *sim.session.lighting(),
                 cell_profile,
                 // Target/timer/normal-ambient writes do not retint palettes.
                 // An explicit profile selection's ordered event owns that
                 // operation; retain the compatibility fallback for a newly
                 // installed or externally supplied profile.
                 palette: if self.scenario.as_ref().is_some_and(|previous| {
-                    previous.selected_profile == sim.session.lighting.selected_profile
+                    previous.selected_profile() == sim.session.lighting().selected_profile()
                 }) {
                     PaletteUpdate::Preserve
                 } else {
-                    PaletteUpdate::from_scenario(&sim.session.lighting)
+                    PaletteUpdate::from_scenario(&sim.session.lighting())
                 },
                 constructor_rgb: sim.palette_constructor_rgb(),
             });
-        } else if self.profile != scenario_profile(&sim.session.lighting, cell_profile)
+        } else if self.profile != scenario_profile(&sim.session.lighting(), cell_profile)
             || self.grid.constructor_alternate_rgb() != sim.palette_constructor_rgb()
         {
             events.push(LightingEvent::RelightProfile {
@@ -680,10 +680,10 @@ fn scenario_profile(
     let cell = state.profile(cell_profile);
     CellRelightProfile {
         units: LightingProfileUnits {
-            ambient_percent: state.current_ambient,
-            red_percent: state.normal.red_percent,
-            green_percent: state.normal.green_percent,
-            blue_percent: state.normal.blue_percent,
+            ambient_percent: state.current_ambient(),
+            red_percent: state.normal().red_percent,
+            green_percent: state.normal().green_percent,
+            blue_percent: state.normal().blue_percent,
             ground_units: cell.ground_units,
             level_units: cell.level_units,
         },
@@ -710,9 +710,9 @@ pub(crate) fn derive_lighting_view(
 ) -> DerivedLightingView {
     let profile = simulation.map_or_else(
         || lighting::normal_profile_units(lighting_config).into(),
-        |sim| scenario_profile(&sim.session.lighting, sim.lighting_cell_profile()),
+        |sim| scenario_profile(&sim.session.lighting(), sim.lighting_cell_profile()),
     );
-    let alternate_rgb = simulation.and_then(|sim| sim.session.lighting.alternate_rgb());
+    let alternate_rgb = simulation.and_then(|sim| sim.session.lighting().alternate_rgb());
 
     let building_lights = collect_live_building_lights(simulation, detail_level);
     let radiation_lights = simulation
@@ -924,8 +924,8 @@ mod palette_producer_tests {
         ))
         .unwrap();
         let mut sim = Simulation::new();
-        sim.session.lighting.normal.level_units = 32;
-        sim.session.lighting.ion.level_units = 20;
+        sim.session.lighting_mut().normal_mut_for_test().level_units = 32;
+        sim.session.lighting_mut().ion_mut_for_test().level_units = 20;
         let extra = |sim: &Simulation, category| {
             let mut entity = crate::sim::game_entity::GameEntity::test_default_of_category(
                 1,
@@ -976,8 +976,8 @@ mod palette_producer_tests {
         let int = |value: &serde_json::Value| value.as_i64().unwrap() as i32;
         let mut scenario = ScenarioLightingState::default();
         for row in rows {
-            scenario.normal.level_units = int(&row["level"]);
-            scenario.ion.level_units = int(&row["ion_level"]);
+            scenario.normal_mut_for_test().level_units = int(&row["level"]);
+            scenario.ion_mut_for_test().level_units = int(&row["ion_level"]);
             let extra = aircraft_extra_light(
                 int(&row["extra"]),
                 int(&row["height"]),

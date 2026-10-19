@@ -325,6 +325,7 @@ pub(crate) fn ensure_movie_for_current_layout(
         Arc::<[u8]>::from(bytes),
         source.to_string(),
         true,
+        wgpu::FilterMode::Nearest,
     ) {
         Ok(movie) => movie,
         Err(err) => {

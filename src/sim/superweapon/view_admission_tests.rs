@@ -58,7 +58,7 @@ fn charged_super_held_by_low_power_stays_charged_but_cannot_fire() {
 
     // The House Super AI visit completes the charge (RechargeTime=10 is
     // minutes -> 9000 native frames).
-    sim.session.binary_frame = 9000;
+    sim.session.set_binary_frame_for_test(9000);
     tick_house_superweapon_instances(&mut sim, &rules, owner);
     let view = nuke_view(&sim, &rules, owner);
     assert!(view.is_ready);

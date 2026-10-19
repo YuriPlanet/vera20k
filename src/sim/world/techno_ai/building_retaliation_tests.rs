@@ -142,7 +142,7 @@ fn fixture(rules: &RuleSet, input: &Value) -> (Simulation, u64, Option<u64>) {
         _ => Some(("TANK", EntityCategory::Unit)),
     }
     .map(|(kind, category)| enemy(&mut sim, kind, category, cell));
-    sim.session.binary_frame = FRAME;
+    sim.session.set_binary_frame_for_test(FRAME);
     if input["operational"] == false {
         let owner = sim.interner.intern("Americans");
         let mut power_state = crate::sim::power_system::PowerState::default();
@@ -175,7 +175,8 @@ fn fixture(rules: &RuleSet, input: &Value) -> (Simulation, u64, Option<u64>) {
     }
     if input["rotating"].as_bool().unwrap_or(false) {
         facing.set(0x4000, FRAME);
-        sim.session.binary_frame = FRAME + input["advance"].as_u64().unwrap_or(0) as u32;
+        sim.session
+            .set_binary_frame_for_test(FRAME + input["advance"].as_u64().unwrap_or(0) as u32);
     }
     (sim, building, source)
 }
@@ -212,7 +213,7 @@ fn the_block_matches_the_original() {
         let rules = rules(input);
         let (mut sim, building, source) = fixture(&rules, input);
         assert_eq!(
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
             row["frame"].as_u64().unwrap() as u32
         );
         let before = sim.substrate.entities.get(building).unwrap().clone();
@@ -343,7 +344,7 @@ fn production_fixture(
     let source = sim
         .spawn_object("GUN", "Russians", cell.0, cell.1, 0, rules)
         .unwrap();
-    sim.session.binary_frame = FRAME;
+    sim.session.set_binary_frame_for_test(FRAME);
     sim.scenario_rng = SimRng::new(1);
     (sim, building, source)
 }

@@ -57,7 +57,7 @@ fn joined_fixture(rules: &RuleSet, row: &Value) -> (Simulation, u64) {
     let route = input["route"].as_str().unwrap();
     let mut sim = Simulation::new();
     // The joined original fixture stores3 at GameOptionsClass0xA8EB60.
-    sim.session.game_options.game_speed = 3;
+    sim.session.game_options_mut_for_test().game_speed = 3;
     sim.install_resolved_terrain_for_new_map(test_flat_ground_grid(24));
     crate::sim::arena_fixture::supply_native_map(&mut sim);
     let owner = sim.interner.intern("Americans");
@@ -449,7 +449,7 @@ fn stock_opening_matches_original_building_and_same_pass_anim_visits() {
         assert_joined_frame(&sim, id, &row["creation"], &format!("{context} creation"));
         for frame in row["frames"].as_array().unwrap() {
             let now = frame["frame"].as_u64().unwrap() as u32;
-            sim.session.binary_frame = now;
+            sim.session.set_binary_frame_for_test(now);
             sim.sound_events.clear();
             let (_, draws) = trace_draws(|| {
                 sim.for_each_live_object(|sim, stable_id| {

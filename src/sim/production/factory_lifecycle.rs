@@ -46,7 +46,7 @@ impl HouseFactoryAbandonment {
     }
 
     fn begin(&self, sim: &mut Simulation) {
-        if sim.session.current_house == Some(self.owner) {
+        if sim.session.current_house() == Some(self.owner) {
             sim.lifecycle_outputs.push(
                 crate::sim::world::LifecycleOutput::ProductionFactoryAbandoning {
                     owner: self.owner,
@@ -58,7 +58,7 @@ impl HouseFactoryAbandonment {
     }
 
     fn finish(self, sim: &mut Simulation) {
-        if sim.session.current_house == Some(self.owner) {
+        if sim.session.current_house() == Some(self.owner) {
             sim.lifecycle_outputs.push(
                 crate::sim::world::LifecycleOutput::ProductionFactoryUnlinked {
                     owner: self.owner,
@@ -117,7 +117,7 @@ pub fn enqueue_by_type(
     // HouseBegin4FA41C clears the local prediction gate before FindFactory
     // can refuse. This fact leaves the cameo request itself with its strip
     // owner. Native: tools/sidebar_oracle/pending_production.md.
-    if sim.session.current_house == Some(owner_id) {
+    if sim.session.current_house() == Some(owner_id) {
         sim.lifecycle_outputs.push(
             crate::sim::world::LifecycleOutput::ProductionBeginAttempted {
                 owner: owner_id,
@@ -143,7 +143,7 @@ pub fn enqueue_by_type(
         // then refuses a complete product, but House ignores its AL and
         // still links/returns0. Source: factory_hold_resume.md.
         let time_to_build = time_to_build(&time_to_build_inputs(sim, rules, owner_id, obj));
-        let frame = sim.session.binary_frame;
+        let frame = sim.session.binary_frame();
         let money = crate::sim::credit_income::available_money(sim, owner_id);
         sim.production.factories.resume(
             FactoryHolder::House(owner_id, category),
@@ -193,7 +193,7 @@ pub fn suspend_production(sim: &mut Simulation, owner: &str, category: Productio
     let Some(owner_id) = sim.interner.get(owner) else {
         return false;
     };
-    let frame = sim.session.binary_frame;
+    let frame = sim.session.binary_frame();
     sim.production
         .factories
         .suspend(owner_id, category, frame, true)
@@ -251,7 +251,7 @@ pub(super) fn start_active_production(
         return None;
     }
     let time_to_build = time_to_build(&time_to_build_inputs(sim, rules, owner_id, obj));
-    let frame = sim.session.binary_frame;
+    let frame = sim.session.binary_frame();
     let money = crate::sim::credit_income::available_money(sim, owner_id);
     sim.production
         .factories
@@ -271,7 +271,7 @@ fn publish_cameo_factory_link(
     category: ProductionCategory,
     type_id: InternedId,
 ) {
-    if sim.session.current_house != Some(owner) {
+    if sim.session.current_house() != Some(owner) {
         return;
     }
     if let Some(factory) = sim.production.factories.view(owner, category) {
@@ -306,7 +306,7 @@ pub(super) fn settle_abandoned(
     refund_abandoned(sim, rules, owner_id, abandoned.type_id, abandoned.balance);
     sim.production
         .factories
-        .reset_for_abandon(holder, sim.session.binary_frame);
+        .reset_for_abandon(holder, sim.session.binary_frame());
     let game_mode_nonzero = sim.session.game_mode_nonzero();
     if let Some(category) = category
         && let Some(house) = sim.houses.get_mut(&owner_id)
@@ -568,7 +568,7 @@ pub(in crate::sim) fn release_delivered_mobile(
         });
     sim.production
         .factories
-        .complete_production(owner, category, sim.session.binary_frame);
+        .complete_production(owner, category, sim.session.binary_frame());
     let owner_name = sim.interner.resolve(owner).to_owned();
     let _ = cancel_production_for_owner(
         sim,
@@ -709,7 +709,7 @@ impl ReadyFactoryObject {
         sim.production.factories.complete_production(
             self.owner,
             self.category,
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
         );
         // HousePlace4FB2C7 retains its original nonnegative index. Let
         // HouseAbandon's shared BuildCat0/NULL-held admission decide retention,
@@ -927,7 +927,7 @@ pub(in crate::sim) fn update_factory_queue(
         //50922A..509287 only visits the ORIGINAL retained head. The loss
         //branch above jumps past this even if StartNext constructs a successor.
         if find_factory(sim, rules, owner, object, true, true, true).is_none() {
-            let frame = sim.session.binary_frame;
+            let frame = sim.session.binary_frame();
             sim.production
                 .factories
                 .suspend(owner, category, frame, false);
@@ -940,7 +940,7 @@ pub(in crate::sim) fn update_factory_queue(
             .automatic_resume_pending(owner, category)
         {
             let time_to_build = time_to_build(&time_to_build_inputs(sim, rules, owner, object));
-            let frame = sim.session.binary_frame;
+            let frame = sim.session.binary_frame();
             let money = crate::sim::credit_income::available_money(sim, owner);
             sim.production.factories.resume(
                 FactoryHolder::House(owner, category),
@@ -1030,12 +1030,12 @@ pub(in crate::sim) fn detach_building_production(
 /// callbacks and before the late House strip recheck/command tail.
 pub(in crate::sim) fn step_factories(sim: &mut Simulation) {
     let mut registry = std::mem::take(&mut sim.production.factories);
-    registry.step_all(&mut sim.houses, sim.session.binary_frame);
+    registry.step_all(&mut sim.houses, sim.session.binary_frame());
     #[cfg(feature = "debug-tools")]
     if let Some(owner) = sim.trainer_owner()
         && sim.debug_flags_for(owner).instant_build
     {
-        registry.debug_complete(&mut sim.houses, sim.session.binary_frame, owner);
+        registry.debug_complete(&mut sim.houses, sim.session.binary_frame(), owner);
     }
     sim.production.factories = registry;
 }
@@ -1097,7 +1097,7 @@ pub(in crate::sim) fn recalculate_strips(
         }
     }
     let mut events = Vec::new();
-    let execute_tick = sim.session.tick.saturating_add(1);
+    let execute_tick = sim.session.tick().saturating_add(1);
     for (type_id, own_factory, kind_factory) in abandons {
         if own_factory {
             events.push(CommandEnvelope::new(

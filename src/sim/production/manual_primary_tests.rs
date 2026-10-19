@@ -21,7 +21,7 @@ fn retail_factories() -> Option<(RuleSet, Simulation, u64, u64)> {
     let mut house = HouseState::new(owner, side, Some(owner), true, 50_000, 10);
     house.project_country_mults(&rules, &sim.interner);
     sim.houses.register(house);
-    sim.session.current_house = Some(owner);
+    sim.session.set_current_house_for_test(Some(owner));
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
     let first = sim.spawn_object("GAWEAP", "Americans", 6, 6, 0, &rules)?;
     let second = sim.spawn_object("GAWEAP", "Americans", 20, 6, 0, &rules)?;
@@ -422,7 +422,7 @@ fn manual_primary_native_histories_preserve_retained_flags_consumers_and_streams
             house.take_tech_recheck();
             sim.houses.register(house);
         }
-        sim.session.current_house = Some(owners[0]);
+        sim.session.set_current_house_for_test(Some(owners[0]));
         let mut ids = Vec::new();
         for (index, (actor, kind)) in case["input"]["actors"]
             .as_array()
@@ -494,7 +494,8 @@ fn manual_primary_native_histories_preserve_retained_flags_consumers_and_streams
         let (_, draws) = trace_draws(|| {
             for phase in case["phases"].as_array().unwrap() {
                 let input = &phase["input"];
-                sim.session.binary_frame = phase["frame"].as_u64().unwrap() as u32;
+                sim.session
+                    .set_binary_frame_for_test(phase["frame"].as_u64().unwrap() as u32);
                 let actor_index = input["actor"].as_u64().map(|id| id as usize - 1);
                 let id = actor_index.map_or(0x1234_5678, |index| ids[index]);
                 if let Some(changes) = input.get("changes") {

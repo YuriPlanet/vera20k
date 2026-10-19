@@ -25,7 +25,7 @@ fn refused_begin_still_publishes_the_local_prediction_gate_transition() {
     let owner = sim.interner.intern("Americans");
     sim.houses
         .register(HouseState::new(owner, 0, None, true, 1000, 10));
-    sim.session.current_house = Some(owner);
+    sim.session.set_current_house_for_test(Some(owner));
     let before_wallet = sim.houses[&owner].economy.clone();
     assert!(!enqueue_by_type(
         &mut sim,
@@ -45,7 +45,7 @@ fn refused_begin_still_publishes_the_local_prediction_gate_transition() {
     assert_eq!(sim.houses[&owner].economy, before_wallet);
 
     sim.lifecycle_outputs.clear();
-    sim.session.current_house = None;
+    sim.session.set_current_house_for_test(None);
     assert!(!enqueue_by_type(
         &mut sim,
         &rules,
@@ -102,7 +102,7 @@ fn paid_destroyer_runs_shipyard_production_animation_through_idle_recovery() {
     let mut house = HouseState::new(owner, 0, Some(owner), true, 10_000, 10);
     house.project_country_mults(&rules, &sim.interner);
     sim.houses.register(house);
-    sim.session.current_house = Some(owner);
+    sim.session.set_current_house_for_test(Some(owner));
     let yard = 3;
     for (id, name, x, y) in [
         (1, "GACNST", 5, 10),
@@ -555,7 +555,7 @@ fn record_last_built_uses_class_fallbacks_type_overrides_and_the_existing_tech_o
     ] {
         let (mut sim, _, owner) = world_with(rules.clone(), 0x4FB7_FF00);
         sim.houses.get_mut(&owner).unwrap().is_human = false;
-        assert!(sim.session.current_house.is_none());
+        assert!(sim.session.current_house().is_none());
         let product = sim
             .construct_object_limbo_at_height(
                 name,
@@ -632,7 +632,7 @@ pub(super) fn retail_barracks_sale_runtime(
     let mut house = HouseState::new(owner, 0, Some(owner), true, initial_credits, 10);
     house.project_country_mults(&rules, &sim.interner);
     sim.houses.register(house);
-    sim.session.current_house = Some(owner);
+    sim.session.set_current_house_for_test(Some(owner));
     let mut buildings = vec![("NACNST", 5, 10), ("NAHAND", 14, 10), ("NAPOWR", 23, 10)];
     if radar {
         buildings.push(("NARADR", 30, 10));
@@ -746,7 +746,7 @@ fn offline_backup_preserves_paid_infantry_with_system_hold() {
         let sim = &mut runtime.simulation;
         sim.production
             .factories
-            .step_all(&mut sim.houses, sim.session.binary_frame + offset);
+            .step_all(&mut sim.houses, sim.session.binary_frame() + offset);
     }
     let sim = &runtime.simulation;
     let held = sim.production.factories.view(owner, category).unwrap();
@@ -907,7 +907,7 @@ fn selling_last_retail_barracks_keeps_paid_head_before_map_exit() {
             .iter()
             .any(|option| option.type_id == conscript && option.enabled)
         );
-        let frame = u64::from(runtime.simulation.session.binary_frame) + 1;
+        let frame = u64::from(runtime.simulation.session.binary_frame()) + 1;
         let successor = runtime.simulation.interner.get(successor).unwrap();
         assert!(
             super::build_options_for_owner(
@@ -948,7 +948,7 @@ fn selling_last_retail_barracks_keeps_paid_head_before_map_exit() {
             &runtime.resources.rules,
             barracks,
         ));
-        let frame = u64::from(runtime.simulation.session.binary_frame) + 1;
+        let frame = u64::from(runtime.simulation.session.binary_frame()) + 1;
         runtime
             .advance_frame(
                 &[CommandEnvelope::new(
@@ -1314,7 +1314,7 @@ fn paid_boris_delivery_requests_its_creation_cue_once_at_the_delivered_location(
     let mut house = HouseState::new(owner, 0, Some(owner), true, 50_000, 10);
     house.project_country_mults(&rules, &sim.interner);
     sim.houses.register(house);
-    sim.session.current_house = Some(owner);
+    sim.session.set_current_house_for_test(Some(owner));
     for (index, (name, x)) in [
         ("NACNST", 5),
         ("NAHAND", 14),
@@ -1490,7 +1490,7 @@ fn retail_prerequisite_loss_refunds_after_the_factory_charge_sweep() {
         );
         sim.set_input_delay_ticks(0);
         let owner = sim.interner.intern("Americans");
-        sim.session.current_house = Some(owner);
+        sim.session.set_current_house_for_test(Some(owner));
         sim.houses
             .register(crate::sim::house_state::HouseState::new(
                 owner, 0, None, true, 50_000, 10,
@@ -1585,7 +1585,7 @@ fn retail_prerequisite_loss_refunds_after_the_factory_charge_sweep() {
             sim.houses[&owner].tech_recheck_pending(),
             row["before"]["dirty"].as_bool().unwrap()
         );
-        let frame = sim.session.binary_frame as i32;
+        let frame = sim.session.binary_frame() as i32;
         for category in [ProductionCategory::Vehicle, ProductionCategory::Infantry] {
             sim.production
                 .factories
@@ -1737,8 +1737,8 @@ fn prerequisite_loss_events_preserve_player_copies_cleanup_and_snapshot_replay()
     let header = ReplayHeader {
         version: 1,
         tick_hz: 15,
-        seed: sim.session.seed,
-        pixel_conversion_bounds: sim.session.pixel_conversion_bounds,
+        seed: sim.session.seed(),
+        pixel_conversion_bounds: sim.session.pixel_conversion_bounds(),
         map_name: "factory-loss".into(),
         rules_hash: rules.simulation_config_hash(),
     };
@@ -1757,7 +1757,7 @@ fn prerequisite_loss_events_preserve_player_copies_cleanup_and_snapshot_replay()
     let type_id = live.simulation.interner.get("SMIN").unwrap();
     let input = CommandEnvelope::new(
         owner,
-        live.simulation.session.tick + 1,
+        live.simulation.session.tick() + 1,
         Command::CancelProductionByType {
             type_id,
             all: false,
@@ -1965,7 +1965,7 @@ fn retail_superweapon_construction_survives_revalidation() {
         );
         let place = crate::sim::command::CommandEnvelope::new(
             owner,
-            sim.session.tick + 1,
+            sim.session.tick() + 1,
             crate::sim::command::Command::PlaceReadyBuilding {
                 type_id,
                 rx: 10,
@@ -2558,7 +2558,7 @@ fn prerequisite_revalidation_disposes_manager_and_promoted_build_steps_a_rate_la
     // The producing factory remains; only the active type loses its
     // prerequisite, which its house stops counting on the map.
     sim.uninit_with_rules(4, &rules);
-    let promotion_frame = sim.session.binary_frame;
+    let promotion_frame = sim.session.binary_frame();
     sim.advance_tick(&[], Some(&rules), None, None, 67);
     assert_gone(&sim, parent, &child_ids);
     assert_eq!(sim.houses[&owner].economy.credits(), before + spent);

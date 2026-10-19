@@ -114,7 +114,10 @@ impl OreGrowthConfig {
     ) -> Self {
         let grows = basic.tiberium_growth_enabled.unwrap_or(true);
         let (tiberium_grows_flag, spreads) = if session.game_mode_nonzero() {
-            (session.tiberium_grows_flag, session.tiberium_spreads_flag)
+            (
+                session.tiberium_grows_flag(),
+                session.tiberium_spreads_flag(),
+            )
         } else {
             (
                 special_flags.tiberium_grows.unwrap_or(true),

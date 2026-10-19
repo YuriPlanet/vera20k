@@ -552,8 +552,8 @@ fn drive_across_high_bridge_with_order(
     };
     println!(
         "loaded {map_file} ({}x{}, theater {})",
-        scenario.sim().session.map_width,
-        scenario.sim().session.map_height,
+        scenario.sim().session.map_width(),
+        scenario.sim().session.map_height(),
         scenario.map.header.theater,
     );
 
@@ -643,7 +643,7 @@ fn drive_across_high_bridge_with_order(
         .interner
         .get(&owner_name)
         .expect("owner interned");
-    let execute_tick = scenario.sim().session.tick + 1;
+    let execute_tick = scenario.sim().session.tick() + 1;
     println!("order source: {order_source:?} -> {:?}", span.approach_b);
     let order = CommandEnvelope::new(
         owner_id,
@@ -714,7 +714,7 @@ fn drive_across_high_bridge_with_order(
         };
         let loco_layer = entity.movement_layer_or_ground();
         rows.push(TickRow {
-            tick: sim.session.tick,
+            tick: sim.session.tick(),
             cell,
             z: entity.position.z(),
             on_bridge: entity.on_bridge(),
@@ -1279,8 +1279,8 @@ fn drive_across_low_bridge(map_file: &str, unit_type: &str) {
     };
     println!(
         "loaded {map_file} ({}x{}, theater {})",
-        scenario.sim().session.map_width,
-        scenario.sim().session.map_height,
+        scenario.sim().session.map_width(),
+        scenario.sim().session.map_height(),
         scenario.map.header.theater,
     );
 
@@ -1381,7 +1381,7 @@ fn drive_across_low_bridge(map_file: &str, unit_type: &str) {
         .interner
         .get(&owner_name)
         .expect("owner interned");
-    let execute_tick = scenario.sim().session.tick + 1;
+    let execute_tick = scenario.sim().session.tick() + 1;
     let order = CommandEnvelope::new(
         owner_id,
         execute_tick,
@@ -1444,7 +1444,7 @@ fn drive_across_low_bridge(map_file: &str, unit_type: &str) {
         };
         let loco_layer = entity.movement_layer_or_ground();
         rows.push(TickRow {
-            tick: sim.session.tick,
+            tick: sim.session.tick(),
             cell,
             z: entity.position.z(),
             on_bridge: entity.on_bridge(),
@@ -2092,7 +2092,7 @@ fn tank_repathing_around_a_deck_blocker_stays_on_the_bridge_layer() {
         };
         let loco_layer = entity.movement_layer_or_ground();
         let row = TickRow {
-            tick: sim.session.tick,
+            tick: sim.session.tick(),
             cell,
             z: entity.position.z(),
             on_bridge: entity.on_bridge(),
@@ -2118,7 +2118,7 @@ fn tank_repathing_around_a_deck_blocker_stays_on_the_bridge_layer() {
                 .copied()
                 .expect("the park cell is on the path grid");
             blocker_parked = Some((
-                sim.session.tick,
+                sim.session.tick(),
                 parked.position.z(),
                 parked.on_bridge(),
                 deck.bridge_structural,
@@ -2529,7 +2529,7 @@ fn tank_ordered_across_the_deadman_collapse_gap_never_drives_into_it() {
         .interner
         .get(&owner_name)
         .expect("owner interned");
-    let execute_tick = scenario.sim().session.tick + 1;
+    let execute_tick = scenario.sim().session.tick() + 1;
     scenario
         .runtime
         .advance_frame(
@@ -2737,7 +2737,7 @@ fn tank_cannot_cross_a_destroyed_shrapnel_low_bridge() {
         .interner
         .get(&owner_name)
         .expect("owner interned");
-    let execute_tick = scenario.sim().session.tick + 1;
+    let execute_tick = scenario.sim().session.tick() + 1;
     scenario
         .runtime
         .advance_frame(
@@ -3235,7 +3235,7 @@ fn record_until(
             );
         }
         rows.push(TickRow {
-            tick: sim.session.tick,
+            tick: sim.session.tick(),
             cell,
             z: entity.position.z(),
             on_bridge: entity.on_bridge(),
@@ -3369,7 +3369,7 @@ fn order_under_high_span(map_file: &str, unit_type: &str) -> Option<UnderSpanRun
         .interner
         .get(&owner_name)
         .expect("owner interned");
-    let execute_tick = scenario.sim().session.tick + 1;
+    let execute_tick = scenario.sim().session.tick() + 1;
     scenario
         .runtime
         .advance_frame(
@@ -4002,7 +4002,7 @@ fn scale_benchmark_many_movers_on_hills() {
         .interner
         .get(&owner_name)
         .expect("owner interned");
-    let execute_tick = scenario.sim().session.tick + 1;
+    let execute_tick = scenario.sim().session.tick() + 1;
     let commands: Vec<CommandEnvelope> = ids
         .iter()
         .map(|&(id, rx, ry)| {

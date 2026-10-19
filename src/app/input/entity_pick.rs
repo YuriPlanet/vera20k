@@ -1262,7 +1262,7 @@ mod tests {
             let viewer = sim.interner.intern("viewer");
             let other = sim.interner.intern("other");
             let typ = sim.interner.intern("HTNK");
-            sim.session.current_house = Some(viewer);
+            sim.session.set_current_house_for_test(Some(viewer));
             sim.fog = FogState::new(32, 32);
             sim.fog.reveal_cells_for_owner(viewer, [(10, 10)]);
             if sensed {

@@ -541,7 +541,7 @@ impl Simulation {
                 "team_script_vm",
                 digest(|h| {
                     self.team_script_vm
-                        .hash_state(self.session.binary_frame as i32, h)
+                        .hash_state(self.session.binary_frame() as i32, h)
                 }),
             ),
             (
@@ -597,14 +597,14 @@ impl Simulation {
         self.substrate.spotlights.hash_state(hasher);
         self.hash_particle_systems(hasher);
         self.session.fold_identity(self.houses.order(), hasher);
-        self.session.pixel_conversion_bounds.hash(hasher);
+        self.session.pixel_conversion_bounds().hash(hasher);
     }
 
     /// The fold before the fog digests: clocks, RNG, identities, scripts,
     /// object order, occupation, Houses, production and power.
     fn fold_before_fog(&self, hasher: &mut impl Hasher) {
-        self.session.tick.hash(hasher);
-        self.session.binary_frame.hash(hasher);
+        self.session.tick().hash(hasher);
+        self.session.binary_frame().hash(hasher);
         self.planning.hash_state(hasher);
         self.hash_ion_blasts(hasher);
         // ScenarioClass owns the sole saved/synchronized RNG. Main and MapGen
@@ -626,7 +626,7 @@ impl Simulation {
             self.object_custom_sounds.hash(hasher);
         }
         self.team_script_vm
-            .hash_state(self.session.binary_frame as i32, hasher);
+            .hash_state(self.session.binary_frame() as i32, hasher);
         self.hash_playfield_authority(hasher);
 
         // LogicClass active-object order — authoritative (drives reconciliation order).
@@ -1435,7 +1435,7 @@ impl Simulation {
     /// order (the store iterates in that order, so no sort is needed),
     /// spread over threads in large worlds.
     fn entity_digests(&self, entities: &[&GameEntity]) -> Vec<u64> {
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         state_hasher::digests(entities, entities.len() >= 4096, |entity, hasher| {
             hash_entity(entity, frame, hasher)
         })
@@ -4223,18 +4223,18 @@ mod native_frame_tests {
         let host_durations = [0, 1, 22, 67, 1_000, u32::MAX];
         for (index, tick_ms) in host_durations.into_iter().enumerate() {
             sim.advance_tick(&[], None, None, None, tick_ms);
-            assert_eq!(sim.session.binary_frame, index as u32 + 1);
+            assert_eq!(sim.session.binary_frame(), index as u32 + 1);
         }
     }
 
     #[test]
     fn native_frame_wraps_after_u32_max() {
         let mut sim = Simulation::new();
-        sim.session.binary_frame = u32::MAX;
+        sim.session.set_binary_frame_for_test(u32::MAX);
 
         sim.advance_tick(&[], None, None, None, 22);
 
-        assert_eq!(sim.session.binary_frame, 0);
+        assert_eq!(sim.session.binary_frame(), 0);
     }
 
     #[test]
@@ -4249,7 +4249,7 @@ mod native_frame_tests {
     fn diagnostic_total_sim_ms_does_not_change_state_hash() {
         let mut sim_a = Simulation::new();
         let sim_b = Simulation::new();
-        sim_a.session.total_sim_ms = 123_456;
+        sim_a.session.set_total_sim_ms_for_test(123_456);
 
         assert_eq!(sim_a.state_hash(), sim_b.state_hash());
     }

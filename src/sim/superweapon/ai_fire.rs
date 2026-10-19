@@ -216,7 +216,7 @@ pub(crate) fn try_fire(
                     .and_then(|_| offensive_target(sim, rules, owner, sw))
             }
             AiFireArm::ForceShield => sim.houses.get(&owner).and_then(|house| {
-                force_shield_target(house, rules, sim.session.binary_frame as i32)
+                force_shield_target(house, rules, sim.session.binary_frame() as i32)
             }),
             AiFireArm::LightningStorm | AiFireArm::None => None,
         };

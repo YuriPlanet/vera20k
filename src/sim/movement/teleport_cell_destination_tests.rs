@@ -83,16 +83,18 @@ fn fixture(row: &Value, rules: &RuleSet) -> (Simulation, u64, InternedId) {
     let mut sim = Simulation::with_seed(input["seed"].as_u64().unwrap());
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
-    sim.session.binary_frame = input["frame"].as_u64().unwrap() as u32;
-    sim.session.game_options.game_speed = signed(&input["game_speed"]);
+    sim.session
+        .set_binary_frame_for_test(input["frame"].as_u64().unwrap() as u32);
+    sim.session.game_options_mut_for_test().game_speed = signed(&input["game_speed"]);
     sim.session.set_game_mode(
         crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
             row["human_input"]["game_mode"].as_u64().unwrap() != 0,
         ),
     );
-    sim.session.map_width = 32;
-    sim.session.map_height = 32;
-    sim.session.map_name = "CLEG supplied command cells".into();
+    sim.session.set_map_width_for_test(32);
+    sim.session.set_map_height_for_test(32);
+    sim.session
+        .set_map_name_for_test("CLEG supplied command cells".into());
     sim.playfield_bounds = Some(PlayfieldBounds {
         base: 16,
         off_fc: -16,
@@ -561,7 +563,7 @@ fn execute(
                 id,
                 MissionId::from_raw(signed(&command["mission"])),
                 signed(&command["start"]),
-                sim.session.binary_frame,
+                sim.session.binary_frame(),
                 &EntityReadyInputProvider,
             )
             .unwrap();
@@ -892,7 +894,7 @@ fn stop_does_not_touch_a_stashed_native_cleg_request() {
     let entity = sim.substrate.entities.get_mut(id).unwrap();
     let loco = entity.locomotor.as_mut().unwrap();
     let retained = loco.teleport_runtime().unwrap().clone();
-    assert!(loco.begin_piggyback(LocomotorKind::Walk, sim.session.binary_frame));
+    assert!(loco.begin_piggyback(LocomotorKind::Walk, sim.session.binary_frame()));
     assert_eq!(
         super::super::motion_query::is_moving(sim.substrate.entities.get(id).unwrap()),
         Some(false)
@@ -967,7 +969,7 @@ fn native_cleg_reservation_survives_snapshot_and_is_hashed() {
                     .locomotor
                     .as_mut()
                     .unwrap()
-                    .begin_piggyback(LocomotorKind::Walk, sim.session.binary_frame)
+                    .begin_piggyback(LocomotorKind::Walk, sim.session.binary_frame())
             );
         }
         sim.scenario_rng = SimRng::new(0);

@@ -115,7 +115,7 @@ pub(crate) fn build(
             rgb,
             fade: true,
             rays: true,
-            frame: sim.session.binary_frame as i32,
+            frame: sim.session.binary_frame() as i32,
         };
         if !object.concentric_radial_indicator() {
             draws.push(draw);
@@ -195,7 +195,7 @@ pub(crate) fn build(
             // current house's existing map/ramp projection owns that same color.
             let color_index = sim
                 .session
-                .current_house
+                .current_house()
                 .and_then(|house| colors.get(sim.interner.resolve(house)).copied())
                 .unwrap_or(crate::rules::house_colors::NO_REMAP);
             let house_rgb = crate::render::palette_light::house_color_rgb(
@@ -210,7 +210,7 @@ pub(crate) fn build(
                 rgb: house_rgb,
                 fade: true,
                 rays: false,
-                frame: sim.session.binary_frame as i32,
+                frame: sim.session.binary_frame() as i32,
             };
             if super_weapon.line_multiplier < 1 {
                 // Native +0x20 pre-ftol flag is enabled for the single-ring path.

@@ -583,7 +583,7 @@ mod tests {
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
-        sim.session.game_options.short_game = false;
+        sim.session.game_options_mut_for_test().short_game = false;
         let local = sim.intern("YuriCountry");
         let enemy = sim.intern("Americans");
         for owner in [local, enemy] {
@@ -595,7 +595,7 @@ mod tests {
             house.project_country_mults(&rules, &sim.interner);
             sim.houses.register(house);
         }
-        sim.session.current_house = Some(local);
+        sim.session.set_current_house_for_test(Some(local));
         crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
         // A stock deployed Slave Miner packs up when its short scan finds
         // no ore (SlaveManager6B0062). Supply map-like ore east of the
@@ -706,7 +706,7 @@ mod tests {
             );
             let attack = CommandEnvelope::new(
                 enemy,
-                runtime.simulation.session.tick + 1,
+                runtime.simulation.session.tick() + 1,
                 Command::Attack {
                     attacker_id: attacker,
                     target_id: target,
@@ -824,7 +824,7 @@ mod tests {
             }
             runtime.simulation.queue_command(CommandEnvelope::new(
                 enemy,
-                runtime.simulation.session.tick + 1,
+                runtime.simulation.session.tick() + 1,
                 Command::Stop {
                     entity_id: attacker,
                 },

@@ -170,7 +170,7 @@ fn sim_for(row: &Value, rules: &RuleSet) -> (Simulation, InternedId) {
             house["game_mode"].as_i64().unwrap_or(1) != 0,
         ),
     );
-    sim.session.game_options.super_weapons = flag("super_weapons", true);
+    sim.session.game_options_mut_for_test().super_weapons = flag("super_weapons", true);
     let owner = sim.interner.intern("H0");
     let other = sim.interner.intern("H1");
     let country = sim

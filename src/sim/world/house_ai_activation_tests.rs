@@ -37,8 +37,8 @@ fn advance(sim: &mut Simulation, rules: Option<&RuleSet>, lane: TickLane) {
 fn house_anger_decay_uses_binary_frame_not_rust_tick() {
     fn fixture(tick: u64, binary_frame: u32) -> (Simulation, crate::sim::intern::InternedId) {
         let mut sim = Simulation::new();
-        sim.session.tick = tick;
-        sim.session.binary_frame = binary_frame;
+        sim.session.set_tick_for_test(tick);
+        sim.session.set_binary_frame_for_test(binary_frame);
         let owner = insert_house(&mut sim, "Computer1", false, 5);
         let peer = insert_house(&mut sim, "Computer2", false, 5);
         sim.houses

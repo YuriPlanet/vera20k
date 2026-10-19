@@ -173,6 +173,6 @@ mod tests {
 pub(crate) fn scenario_local_owner(simulation: &crate::sim::world::Simulation) -> Option<&str> {
     simulation
         .session
-        .current_house
+        .current_house()
         .map(|owner| simulation.interner.resolve(owner))
 }

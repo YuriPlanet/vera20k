@@ -138,7 +138,7 @@ fn save(
         sim,
         map_hash,
         runtime.resources.rules.simulation_config_hash(),
-        name.unwrap_or(&sim.session.map_name),
+        name.unwrap_or(&sim.session.map_name()),
         now,
         &sinking_waterlines,
         sidebar_order.as_ref(),
@@ -146,7 +146,7 @@ fn save(
         Some(&local_view),
         Some(&resources),
     );
-    let tick = sim.session.tick;
+    let tick = sim.session.tick();
     let result = if let Some(path) = overwrite {
         state
             .persistence
@@ -395,7 +395,8 @@ mod save_name_tests {
         assert_eq!(filename_part.chars().count(), 64);
 
         let mut sim = Simulation::new();
-        sim.session.map_name = "OFFICIAL.MAP".to_string();
+        sim.session
+            .set_map_name_for_test("OFFICIAL.MAP".to_string());
         let bytes = GameSnapshot::save_validated(&sim, 1, 2, &raw_description, 3);
         let header = GameSnapshot::read_header(&bytes).expect("current VERA header");
         assert_eq!(header.description, raw_description);

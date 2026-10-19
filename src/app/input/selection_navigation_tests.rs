@@ -582,10 +582,10 @@ fn replay_category_history(
         health_category: native_last_category(&before["health_category"]),
         veterancy_category: native_last_category(&before["veterancy_category"]),
     };
-    let current_house = sim.session.current_house.unwrap();
+    let current_house = sim.session.current_house().unwrap();
     sim.houses.get_mut(&current_house).unwrap().is_defeated = history.command_guard != 0;
     // SelectionFixture supplies original A8ED84=1000 for these histories.
-    sim.session.binary_frame = 1000;
+    sim.session.set_binary_frame_for_test(1000);
     let rank_cache: BTreeMap<_, _> = sim
         .entities()
         .values()
@@ -598,7 +598,7 @@ fn replay_category_history(
         .collect();
     let mut target_lines = crate::app::presentation::target_lines::TargetLineState::default();
     target_lines.start_timer(before["action_timer"][0].as_u64().unwrap() as u32);
-    let timer_before = target_lines.remaining_frames(sim.session.binary_frame);
+    let timer_before = target_lines.remaining_frames(sim.session.binary_frame());
     let mut category_steps = 0;
     // This records outputs returned by the real shared voice owner. It is an
     // observer of native queued-byte continuation, not a second admission or
@@ -712,11 +712,11 @@ fn replay_category_history(
                 }
                 super::super::apply_selection_action_line_policy_at_frame(
                     &mut target_lines,
-                    sim.session.binary_frame,
+                    sim.session.binary_frame(),
                     super::super::SelectionActionLinePolicy::Preserve,
                 );
                 assert_eq!(
-                    target_lines.remaining_frames(sim.session.binary_frame),
+                    target_lines.remaining_frames(sim.session.binary_frame()),
                     timer_before,
                     "{label}: actual Preserve timer owner"
                 );
@@ -1251,7 +1251,7 @@ fn combatant_pending_transport_uses_selection_queue_and_keeps_native_cleanup_sco
         input.selection_order_pending = true;
         let actor = sim.entities_mut().get_mut(20).unwrap();
         actor.lifecycle.set_in_limbo_for_test(true);
-        let owner = sim.session.current_house.unwrap();
+        let owner = sim.session.current_house().unwrap();
         let command = if queued_selection {
             Command::Select {
                 entity_ids: vec![20],
@@ -1278,7 +1278,7 @@ fn combatant_pending_transport_uses_selection_queue_and_keeps_native_cleanup_sco
         // Future selection retains the provisional ledger until its existing
         // queue owner drains it. A refused Select after Conceal then closes
         // pending state instead of waiting for impossible bit equality.
-        sim.session.tick = 1;
+        sim.session.set_tick_for_test(1);
         let due = sim.take_due_commands();
         for command in due {
             let _ = sim.apply_command("local", &command.payload, Some(&rules));
@@ -1640,7 +1640,7 @@ fn combatant_defeat_admission_matches_original_early_guard() {
         .unwrap();
     let (mut sim, _) = fixture(&row.inputs, &row.selected);
     assert!(selection_navigation_allowed(&sim));
-    let local = sim.session.current_house.unwrap();
+    let local = sim.session.current_house().unwrap();
     sim.houses.get_mut(&local).unwrap().is_defeated = true;
     assert!(!selection_navigation_allowed(&sim));
     let step = &row.steps[0];
@@ -1793,7 +1793,7 @@ fn fixture(inputs: &Inputs, selected: &[u64]) -> (Simulation, RuleSet) {
     let mut sim = Simulation::with_seed(inputs.seed);
     let local = sim.interner.intern("local");
     let other = sim.interner.intern("other");
-    sim.session.current_house = Some(local);
+    sim.session.set_current_house_for_test(Some(local));
     sim.session.set_game_mode(
         crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(!inputs.house.campaign),
     );
@@ -2215,7 +2215,7 @@ fn snapshot_restores_singleton_anchor_and_retained_layer_order_for_next_key() {
     for actor in &row.inputs.actors {
         sim.register_live_object(actor.id);
     }
-    sim.session.map_name = row.id.clone();
+    sim.session.set_map_name_for_test(row.id.clone());
     let current = selected_stable_ids_in_order(Some(&sim), Some(&rules), &row.selected, false);
     let candidate = next_object(
         &sim,

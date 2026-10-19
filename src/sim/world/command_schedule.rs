@@ -63,10 +63,10 @@ impl Simulation {
     /// This read-only projection lets fresh-map and snapshot replacement sync
     /// client UI without consuming or applying a pending authoritative command.
     pub fn projected_in_game_options_speed(&self) -> Option<u8> {
-        let mut projected = u8::try_from(self.session.game_options.game_speed)
+        let mut projected = u8::try_from(self.session.game_options().game_speed)
             .ok()
             .filter(|speed| *speed <= crate::sim::game_options::IN_GAME_OPTIONS_MAX_SPEED);
-        let execute_tick = self.session.tick.saturating_add(1);
+        let execute_tick = self.session.tick().saturating_add(1);
         for owner in self.due_command_house_order(&self.pending_commands, execute_tick) {
             for command in self
                 .pending_commands
@@ -95,7 +95,7 @@ impl Simulation {
     /// Drain commands that are due for the next tick from `pending_commands`.
     /// Returns owned commands; remaining commands stay queued.
     pub fn take_due_commands(&mut self) -> Vec<CommandEnvelope> {
-        let execute_tick = self.session.tick.saturating_add(1);
+        let execute_tick = self.session.tick().saturating_add(1);
         let mut due = Vec::new();
         let mut kept = Vec::new();
         for cmd in std::mem::take(&mut self.pending_commands) {
@@ -144,7 +144,7 @@ impl Simulation {
         mut generated: Vec<CommandEnvelope>,
         commands_include_generated: bool,
     ) {
-        let execute_tick = self.session.tick.saturating_add(1);
+        let execute_tick = self.session.tick().saturating_add(1);
         if commands_include_generated {
             for command in admitted.iter() {
                 if command.execute_tick <= execute_tick
@@ -184,7 +184,7 @@ impl Simulation {
         self.set_debug_session_context(crate::sim::cheats::DebugSessionContext::Replay);
         self.replaying_recorded_commands = true;
         let commands: Vec<_> = commands.into_iter().collect();
-        let execute_tick = self.session.tick.saturating_add(1);
+        let execute_tick = self.session.tick().saturating_add(1);
         for recorded in &commands {
             if recorded.execute_tick <= execute_tick
                 && let Some(index) = self.pending_commands.iter().position(|cmd| cmd == recorded)
@@ -591,7 +591,7 @@ impl Simulation {
                 match &command.payload {
                     Command::SetGameSpeed { speed } => {
                         if self.houses.contains_key(&owner) {
-                            let _ = self.session.game_options.apply_in_game_speed(*speed);
+                            let _ = self.session.apply_in_game_speed(*speed);
                         }
                     }
                     Command::Select { .. } => {

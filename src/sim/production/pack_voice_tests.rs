@@ -20,7 +20,7 @@ fn retail_slave_miner_selling_stage_queues_its_pack_voice_before_deploy_sound() 
     for row in controls {
         let mut sim = Simulation::new();
         let owner = sim.interner.intern("YuriCountry");
-        sim.session.current_house = Some(owner);
+        sim.session.set_current_house_for_test(Some(owner));
         sim.houses
             .register(HouseState::new(owner, 0, None, true, 0, 10));
         let type_ref = sim.interner.intern("YAREFN");

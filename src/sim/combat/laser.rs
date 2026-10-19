@@ -181,7 +181,7 @@ pub(crate) fn construct(
     world
         .lifecycle_outputs
         .push(LifecycleOutput::LaserCreated(LaserBirth {
-            frame: world.session.binary_frame as i32,
+            frame: world.session.binary_frame() as i32,
             from,
             to,
             z_adjust,

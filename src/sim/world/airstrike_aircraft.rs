@@ -121,7 +121,7 @@ impl Simulation {
             }
             crate::sim::mission::authority::commence_entity_mission(
                 self.substrate.entities.get_mut(plane).unwrap(),
-                self.session.binary_frame,
+                self.session.binary_frame(),
             );
             result.aircraft.push(plane);
             result.count += 1;

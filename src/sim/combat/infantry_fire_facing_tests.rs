@@ -401,7 +401,7 @@ fn production_zero_delay_shot_and_restore_use_new_heading() {
     sim.advance_tick(&[], Some(&rules), None, None, 67);
     let entity = sim.substrate.entities.get(firer).unwrap();
     assert!(sim.fog.is_cell_visible(entity.owner(), 8, 5));
-    let facing = entity.body_facing.current(sim.session.binary_frame);
+    let facing = entity.body_facing.current(sim.session.binary_frame());
     assert_eq!(facing, 0x3FFF, "native eastward direction");
     let event = sim
         .fire_events
@@ -661,7 +661,7 @@ fn production_attack_during_paid_walk_step_case(boosted: bool) {
             }
             assert!(!fired, "a retained paid step cannot fire");
             assert_eq!(
-                entity.body_facing.current(sim.session.binary_frame),
+                entity.body_facing.current(sim.session.binary_frame()),
                 step_heading,
                 "movement may correct toward its head; fire must not turn toward the enemy"
             );

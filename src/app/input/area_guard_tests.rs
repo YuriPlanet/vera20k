@@ -75,8 +75,8 @@ pub(super) fn fixture(corpus: &Value, row: &Value, retail: RetailBattleRules) ->
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.session.map_width = stride;
-    sim.session.map_height = stride;
+    sim.session.set_map_width_for_test(stride);
+    sim.session.set_map_height_for_test(stride);
     // Navigation Cell5F6A10 reads the current admitted coordinate here. A
     // flat surrounding arena is sufficient for this ingress-only comparison;
     // no path search, Process, terrain asset loading or held movement runs.
@@ -123,7 +123,7 @@ pub(super) fn fixture(corpus: &Value, row: &Value, retail: RetailBattleRules) ->
         house.player_control = actor["player_control"].as_u64().unwrap() != 0;
         sim.houses.register(house);
         if pointer == current_house {
-            sim.session.current_house = Some(owner);
+            sim.session.set_current_house_for_test(Some(owner));
         }
         owners.insert(pointer, name);
     }
@@ -132,8 +132,10 @@ pub(super) fn fixture(corpus: &Value, row: &Value, retail: RetailBattleRules) ->
             before["game_mode"].as_u64().unwrap() != 0,
         ),
     );
-    sim.session.binary_frame = before["frame"].as_u64().unwrap() as u32;
-    sim.session.tick = before["frame"].as_u64().unwrap();
+    sim.session
+        .set_binary_frame_for_test(before["frame"].as_u64().unwrap() as u32);
+    sim.session
+        .set_tick_for_test(before["frame"].as_u64().unwrap());
     let mut ids = BTreeMap::new();
     let mut native_ids = BTreeMap::new();
     let mut actors: Vec<_> = before["actors"].as_object().unwrap().iter().collect();
@@ -326,8 +328,8 @@ fn area_guard_ingress_matches_native_order_current_cells_voices_and_rng() {
             let actual: Vec<_> = pending[prior_count..]
                 .iter()
                 .map(|envelope| {
-                    assert_eq!(envelope.owner, f.sim.session.current_house.unwrap());
-                    assert_eq!(envelope.execute_tick, f.sim.session.tick);
+                    assert_eq!(envelope.owner, f.sim.session.current_house().unwrap());
+                    assert_eq!(envelope.execute_tick, f.sim.session.tick());
                     MegaMissionRecord::decode(
                         &f.sim
                             .encode_megamission_record(envelope.owner, &envelope.payload)
@@ -393,10 +395,10 @@ fn area_guard_uses_pending_selection_array_before_simulation_membership_commits(
     );
     let selected = selected_stable_ids_in_order(Some(&f.sim), Some(&f.rules), &pending_order, true);
     assert_eq!(selected, pending_order);
-    let owner = f.sim.session.current_house.unwrap();
+    let owner = f.sim.session.current_house().unwrap();
     f.sim.queue_command(CommandEnvelope::new(
         owner,
-        f.sim.session.tick,
+        f.sim.session.tick(),
         Command::Select {
             entity_ids: selected.clone(),
             additive: false,

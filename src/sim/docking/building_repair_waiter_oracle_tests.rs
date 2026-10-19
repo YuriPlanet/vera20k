@@ -142,7 +142,7 @@ fn native_marked_foundation_entry_parking_and_retry_match_shared_owners() {
                             scene.tank,
                             MissionId::from_known(MissionType::Enter),
                             1,
-                            scene.sim.session.binary_frame,
+                            scene.sim.session.binary_frame(),
                             &LiveReadyInputProvider {
                                 rules: &scene.rules,
                             },

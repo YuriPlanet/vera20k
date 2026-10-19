@@ -131,7 +131,7 @@ fn accepted_direct_and_regular_orders_keep_signed_rules_delays_and_retry_word() 
                     match command {
                         0 => timing.accept(sim.substrate.entities.get_mut(1).unwrap()),
                         1 => {
-                            sim.session.binary_frame = frame;
+                            sim.session.set_binary_frame_for_test(frame);
                             sim.assign_destination_represented(
                                 1,
                                 Some(crate::sim::components::NavTargetRef::cell(10, 8)),
@@ -215,8 +215,8 @@ fn ordinary_drive_and_ship_process_do_not_age_native_waiting_timer_fields() {
             path_runtime.set_path_blocked(true);
             path_runtime.set_retries_left(0x8000_0001);
             assert!(!expected_movement.expired(frame), "native wait branch");
-            sim.session.binary_frame = frame as u32;
-            sim.session.tick = u64::from(frame as u32);
+            sim.session.set_binary_frame_for_test(frame as u32);
+            sim.session.set_tick_for_test(u64::from(frame as u32));
             // Speed0 isolates timer ownership from paid coordinates. The live
             // Process corridor still sees an ordinary path request. This does
             // not claim execution of the corpus's supplied code2 callbacks.
@@ -256,8 +256,8 @@ fn rules_driven_sentinel_timers_survive_snapshot_and_same_frame_process() {
     for kind in [LocomotorKind::Drive, LocomotorKind::Ship] {
         let mut sim = fixture(kind);
         install_stationary_path_request(&mut sim);
-        sim.session.binary_frame = u32::MAX;
-        sim.session.tick = u64::from(u32::MAX);
+        sim.session.set_binary_frame_for_test(u32::MAX);
+        sim.session.set_tick_for_test(u64::from(u32::MAX));
         assert_eq!(rules.general.path_delay_ticks(), expected_path);
         let entity = sim.substrate.entities.get_mut(1).unwrap();
         DestinationTiming::from_rules(u32::MAX, Some(&rules)).accept(entity);
@@ -277,7 +277,7 @@ fn rules_driven_sentinel_timers_survive_snapshot_and_same_frame_process() {
         assert_eq!(restored.state_hash(), sim.state_hash());
         for frame in [u32::MAX, u32::MAX, 0, 0] {
             for instance in [&mut sim, &mut restored] {
-                instance.session.binary_frame = frame;
+                instance.session.set_binary_frame_for_test(frame);
                 instance
                     .process_ground_locomotor_for_test(1, Some(&rules), Some(&grid), None)
                     .unwrap();
@@ -310,8 +310,8 @@ fn paid_walk_progress_clears_only_blocked_latch_and_retains_timer_words() {
     let rules = rules("0.01", "65536", true);
     let grid = PathGrid::new(20, 20);
     let mut sim = fixture(LocomotorKind::Walk);
-    sim.session.binary_frame = 107;
-    sim.session.tick = 107;
+    sim.session.set_binary_frame_for_test(107);
+    sim.session.set_tick_for_test(107);
     let entity = sim.substrate.entities.get_mut(1).unwrap();
     entity.body_facing.snap(0x4000, 0);
     entity

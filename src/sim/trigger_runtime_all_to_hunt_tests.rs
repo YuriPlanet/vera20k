@@ -397,7 +397,7 @@ fn all_to_hunt_retail_all06_elapsed_enable_chain_releases_existing_gattling_team
     ));
     assert!(enabled(&sim, chain[0]));
     for frame in [0, 3599, 3600, 4049, 4050] {
-        sim.session.binary_frame = frame;
+        sim.session.set_binary_frame_for_test(frame);
         sim.advance_triggers(Some(&rules), None, FrameEffects::default());
         for &id in &actors {
             assert_eq!(
@@ -424,12 +424,12 @@ fn all_to_hunt_retail_all06_elapsed_enable_chain_releases_existing_gattling_team
     // ordinary armed route. This is Rust integration, not a native full map.
     for &id in &actors {
         assert!(
-            sim.mission_commence_exact(id, sim.session.binary_frame)
+            sim.mission_commence_exact(id, sim.session.binary_frame())
                 .unwrap()
         );
     }
     for frame in 4051..4091 {
-        sim.session.binary_frame = frame;
+        sim.session.set_binary_frame_for_test(frame);
         for &id in &actors {
             sim.object_ai_visit_one(id, Some(&rules), crate::sim::world::ObjectAiCtx::default());
         }

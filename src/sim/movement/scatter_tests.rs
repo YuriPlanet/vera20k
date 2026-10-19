@@ -90,7 +90,7 @@ fn unit_refusals_match_native_and_leave_orders_and_rng_untouched() {
             // precedes the search, the setter and every write.
             let before = serde_json::to_value(&actor).unwrap();
             let mut sim = Simulation::new();
-            sim.session.binary_frame = now;
+            sim.session.set_binary_frame_for_test(now);
             sim.substrate.entities.insert(actor);
             let rng = sim.scenario_rng.state();
             assert!(
@@ -952,7 +952,7 @@ fn an_idle_tank_behind_a_cliff_scatters_every_sixty_four_frames() {
         .spawn_object("MTNK", "Americans", 10, 10, 0, &rules)
         .unwrap();
     let idle_scatter = |sim: &mut Simulation, frame: u32| {
-        sim.session.binary_frame = frame;
+        sim.session.set_binary_frame_for_test(frame);
         sim.foot_idle_scatter(
             tank,
             &rules,
@@ -991,7 +991,7 @@ fn an_idle_tank_behind_a_cliff_scatters_every_sixty_four_frames() {
         .navigation
         .set_nav_com_for_test(None);
     let rng = sim.scenario_rng.state();
-    sim.session.binary_frame = 127;
+    sim.session.set_binary_frame_for_test(127);
     let cell = sim.scatter_nearby_cell(tank, &rules).unwrap();
     assert_eq!(
         idle_scatter(&mut sim, 127),

@@ -172,7 +172,10 @@ fn prepare(row: &Value) -> Scene {
         RuleSet::from_ini(&IniFile::from_str("[AI]\nBlockagePathDelay=22\n")).unwrap();
     scene.rules.general.blockage_path_delay_ticks =
         supplied_rules.general.blockage_path_delay_ticks;
-    scene.sim.session.binary_frame = u32::try_from(first["frame"].as_u64().unwrap()).unwrap();
+    scene
+        .sim
+        .session
+        .set_binary_frame_for_test(u32::try_from(first["frame"].as_u64().unwrap()).unwrap());
     let entity = scene.sim.substrate.entities.get_mut(scene.miner).unwrap();
     // dress_cmin already owns list placement and XY. Publish the measured Z too.
     entity.position.put_location(coord(&native["physical"]));
@@ -427,7 +430,10 @@ fn replay(row: &Value) {
         let label = step["label"].as_str().unwrap();
         let before = boundary(row, step, "before");
         let after = boundary(row, step, "after");
-        scene.sim.session.binary_frame = u32::try_from(before["frame"].as_u64().unwrap()).unwrap();
+        scene
+            .sim
+            .session
+            .set_binary_frame_for_test(u32::try_from(before["frame"].as_u64().unwrap()).unwrap());
         let entity = scene.sim.substrate.entities.get_mut(scene.miner).unwrap();
         // Only the recipe's declared inputs are supplied between operations.
         // No after-state is fed back into the production controller.

@@ -152,7 +152,8 @@ fn zero_health_building_ai_matches_original_terminal_gate() {
     for row in corpus.as_array().unwrap() {
         let input = &row["input"];
         let mut sim = sim();
-        sim.session.binary_frame = input["constructor_frame"].as_i64().unwrap() as u32;
+        sim.session
+            .set_binary_frame_for_test(input["constructor_frame"].as_i64().unwrap() as u32);
         let id = sim
             .spawn_object_at_height("PLAIN", "Americans", 10, 12, 0, 0, &rules)
             .unwrap();
@@ -171,7 +172,8 @@ fn zero_health_building_ai_matches_original_terminal_gate() {
                 ),
             ));
         }
-        sim.session.binary_frame = input["frame"].as_i64().unwrap() as u32;
+        sim.session
+            .set_binary_frame_for_test(input["frame"].as_i64().unwrap() as u32);
         sim.object_ai_visit_one(
             id,
             Some(&rules),

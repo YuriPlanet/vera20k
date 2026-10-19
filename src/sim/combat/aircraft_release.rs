@@ -92,7 +92,7 @@ pub(super) fn visit(
     let Some(obj) = world.interner.object_type(entity.type_ref(), rules) else {
         return;
     };
-    let binary_frame = world.session.binary_frame;
+    let binary_frame = world.session.binary_frame();
     let weapon0 = combat_weapon::primary_for_tier(obj, entity.veterancy.rank())
         .and_then(|name| rules.weapon(name));
     let facts = StrikeFacts {
@@ -428,7 +428,7 @@ impl FireAtHost for AircraftFireAt<'_, '_, '_, '_> {
             crate::sim::world::UninitContext::new(Some(strike.rules), strike.overlay_registry)
                 .with_effects(strike.run.effects()),
             crate::sim::vision::MapRevealProjection::Transient,
-            world.session.current_house,
+            world.session.current_house(),
         );
     }
 

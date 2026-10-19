@@ -278,7 +278,8 @@ mod tests {
                 .unwrap()
                 .insert(type_id, instance);
         }
-        sim.session.binary_frame = u32::try_from(int(&row["frame"])).unwrap();
+        sim.session
+            .set_binary_frame_for_test(u32::try_from(int(&row["frame"])).unwrap());
         sim.substrate
             .entities
             .get_mut(id)

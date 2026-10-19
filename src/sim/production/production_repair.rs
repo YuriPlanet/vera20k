@@ -461,7 +461,7 @@ fn auto_repair_start(sim: &mut Simulation, rules: &RuleSet, id: u64) {
     };
     let (longest, shortest) = (scaled(1800), scaled(225));
     let time_left = sim.scenario_rng.next_range_i32_inclusive(shortest, longest);
-    let now = sim.session.binary_frame as i32;
+    let now = sim.session.binary_frame() as i32;
     if let Some(house) = sim.houses.get_mut(&owner) {
         house.repair_latch_timer.start(now, time_left);
     }
@@ -485,7 +485,7 @@ fn repair_step(sim: &mut Simulation, rules: &RuleSet, id: u64) {
     }
     let period =
         crate::sim::combat::veterancy::self_heal_interval_frames(rules.general.repair_rate_minutes);
-    let frame = sim.session.binary_frame as i32;
+    let frame = sim.session.binary_frame() as i32;
     let remainder = frame.checked_rem(period).unwrap_or_else(|| {
         panic!("native repair step IDIV fault at 0045083F: frame={frame} period={period}")
     });

@@ -181,6 +181,7 @@ impl MinimapRenderer {
             &projection.base_rgba,
             MINIMAP_WIDTH,
             MINIMAP_HEIGHT,
+            wgpu::FilterMode::Nearest,
         );
         let white_texture: BatchTexture = create_white_texture(device, queue, batch);
         let rgba_scratch: Vec<u8> = vec![0u8; pixel_count];

@@ -64,7 +64,7 @@ fn waypoint_ground_bridge_and_dummy_coordinates_match_original_actions48_and112(
             },
         )]));
         let before_rng = sim.scenario_rng.logical_state();
-        let before_frame = sim.session.binary_frame;
+        let before_frame = sim.session.binary_frame();
         let calls = row["calls"].as_array().unwrap();
         let sink = calls.last().unwrap();
         let kind = row["read"]["kind"].as_i64().unwrap();
@@ -72,7 +72,7 @@ fn waypoint_ground_bridge_and_dummy_coordinates_match_original_actions48_and112(
         let actual = sim.trigger_waypoint_coord(index as i32).unwrap();
         assert_eq!(json!(actual), sink["coord"], "{input} action{kind}");
         assert_eq!(sim.scenario_rng.logical_state(), before_rng);
-        assert_eq!(sim.session.binary_frame, before_frame);
+        assert_eq!(sim.session.binary_frame(), before_frame);
         if missing {
             // Ground's world lookup and the later packed lookup stamp the
             // same retained Dummy. Compare the final native observation,

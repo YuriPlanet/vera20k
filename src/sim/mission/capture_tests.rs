@@ -73,7 +73,7 @@ fn spawn(sim: &mut Simulation, rules: &RuleSet, kind: &str, owner: &str, rx: u16
 /// `kind` of `owner` on Capture at (10, `ry`).
 fn capturer(sim: &mut Simulation, rules: &RuleSet, kind: &str, owner: &str, ry: u16) -> u64 {
     let id = spawn(sim, rules, kind, owner, 10, ry);
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     sim.mission_assign_exact(id, MissionId::from_known(MissionType::Capture), now)
         .unwrap();
     id
@@ -120,7 +120,7 @@ fn a_capturer_on_its_way_takes_captures_cadence() {
     head_for(&mut sim, &rules, engineer, plant);
     let mut rng = sim.scenario_rng.clone();
     let delay = 14 + rng.next_range_u32_inclusive(0, 2) as i32;
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
 
     sim.object_ai_visit_one(engineer, Some(&rules), ObjectAiCtx::default());
 
@@ -162,7 +162,8 @@ fn retail_occupier_capture_dispatch_matches_native_rng_and_timer() {
         let (mut sim, building) = arena(rules);
         let gi = capturer(&mut sim, rules, "E1", "Americans", 10);
         head_for(&mut sim, rules, gi, building);
-        sim.session.binary_frame = control["frame"].as_u64().unwrap() as u32;
+        sim.session
+            .set_binary_frame_for_test(control["frame"].as_u64().unwrap() as u32);
         let timer_before = control["timer_before"].as_array().unwrap();
         sim.substrate
             .entities

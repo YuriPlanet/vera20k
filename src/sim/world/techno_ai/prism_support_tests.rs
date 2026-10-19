@@ -209,7 +209,7 @@ impl Fixture {
             .unwrap();
         // No power state: every tower is operational until `unpower`.
         sim.power_states.clear();
-        sim.session.binary_frame = FRAME as u32;
+        sim.session.set_binary_frame_for_test(FRAME as u32);
         for &id in &spawned {
             let entity = sim.substrate.entities.get_mut(id).unwrap();
             assert!(
@@ -899,7 +899,7 @@ fn prism_cadence_matches_the_original() {
         for frame in row["frames"].as_array().unwrap() {
             let k = frame["frame"].as_i64().unwrap();
             let now = FRAME + k as i32;
-            fixture.sim.session.binary_frame = now as u32;
+            fixture.sim.session.set_binary_frame_for_test(now as u32);
             for event in events.iter().filter(|event| event[0] == k) {
                 let building = fixture.id(event[2].as_str().unwrap());
                 apply_event(&mut fixture, event[1].as_str().unwrap(), building);

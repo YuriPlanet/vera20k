@@ -214,7 +214,7 @@ pub(crate) fn build_super_timer_instances(
         return (Vec::new(), Vec::new());
     };
     let sim = &runtime.simulation;
-    let frame = sim.session.binary_frame;
+    let frame = sim.session.binary_frame();
     let supers = crate::sim::superweapon::super_timer_views(sim, rules);
     let blackouts = sim.houses.order().iter().map(|&house| {
         let left = sim
@@ -254,7 +254,7 @@ pub(crate) fn build_super_timer_instances(
         .map(|line| {
             let (house, label) = match line.source {
                 TimerSource::Scenario => (
-                    sim.session.current_house,
+                    sim.session.current_house(),
                     scenario
                         .filter(|(_, caption)| !caption.is_empty())
                         .map_or_else(String::new, |(_, caption)| localized(csf, caption)),

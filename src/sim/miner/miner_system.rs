@@ -342,7 +342,7 @@ fn harvest_looking(
         frame_effects,
     ) {
         snap.miner.harvesting = true;
-        arm_stage(sim, snap.entity_id, sim.session.binary_frame, 2);
+        arm_stage(sim, snap.entity_id, sim.session.binary_frame(), 2);
         snap.state = MinerState::Harvest;
         return;
     }
@@ -434,7 +434,7 @@ fn harvest_cutting(
     snap: &mut MinerSnapshot,
     frame_effects: FrameEffects<'_>,
 ) {
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     if sim
         .substrate
         .entities
@@ -532,7 +532,7 @@ fn harvest_ore_tick(
     snap: &mut MinerSnapshot,
 ) -> bool {
     let id = snap.entity_id;
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     if sim
         .substrate
         .entities
@@ -712,7 +712,7 @@ fn refinery_staging_cell(sim: &Simulation, rules: &RuleSet, bay: u64) -> Option<
 /// Mission_Harvest state 3 (`0x0073EE8A`): `Queue_Mission(Enter, 0); return
 /// 1`. UnitClass::AI's Ready/Commence step promotes it.
 fn handle_handoff(sim: &mut Simulation, snap: &MinerSnapshot) {
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     let _ = sim.mission_queue_exact(
         snap.entity_id,
         MissionId::from_known(MissionType::Enter),
@@ -825,7 +825,7 @@ fn handle_going_to_idle(
 /// `Queue_Mission(Guard, 0)` from inside the Harvest handler (preamble and
 /// state 4). No Commence: the host's Ready-to-Commence step promotes it.
 fn queue_guard_from_harvest(sim: &mut Simulation, snap: &MinerSnapshot) {
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     let _ = sim.mission_queue_exact(
         snap.entity_id,
         MissionId::from_known(MissionType::Guard),

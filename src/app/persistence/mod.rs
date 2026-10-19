@@ -206,7 +206,7 @@ impl PreparedLoad {
             bytes,
             expected_map_hash,
             rules.simulation_config_hash(),
-            &current_simulation.session.map_name,
+            &current_simulation.session.map_name(),
         )?;
         let terrain_template = terrain_template
             .cloned()
@@ -687,8 +687,8 @@ mod tests {
                 pixel_conversion_bounds: Default::default(),
                 version: 1,
                 tick_hz: 15,
-                seed: simulation.session.seed,
-                map_name: simulation.session.map_name.clone(),
+                seed: simulation.session.seed(),
+                map_name: simulation.session.map_name().to_owned(),
                 rules_hash: rules.simulation_config_hash(),
             });
             replay.record_tick(1, Vec::new(), Some(simulation.state_hash()));
@@ -794,7 +794,9 @@ mod tests {
 
     pub(super) fn load_fixture_simulation(with_overlay_grid: bool) -> Simulation {
         let mut simulation = Simulation::with_seed(u64::from(LOAD_FIXTURE_SEED));
-        simulation.session.map_name = LOAD_FIXTURE_MAP_NAME.to_string();
+        simulation
+            .session
+            .set_map_name_for_test(LOAD_FIXTURE_MAP_NAME.to_string());
         simulation.overlay_grid = with_overlay_grid.then(|| OverlayGrid::new(0, 0));
         simulation
     }
@@ -857,7 +859,9 @@ mod tests {
 
     fn snapshot(description: &str, save_timestamp: u64) -> Vec<u8> {
         let mut simulation = Simulation::new();
-        simulation.session.map_name = "POLICY.MAP".to_string();
+        simulation
+            .session
+            .set_map_name_for_test("POLICY.MAP".to_string());
         GameSnapshot::save_validated(&simulation, 1, 2, description, save_timestamp)
     }
 
@@ -1104,7 +1108,7 @@ mod tests {
             accepted_hash,
             "with the shared dummy already zero, reconstruction removes only the hashed stale mask"
         );
-        let tick_before = runtime.simulation.session.tick;
+        let tick_before = runtime.simulation.session.tick();
         runtime
             .advance_frame(
                 &[],
@@ -1113,7 +1117,7 @@ mod tests {
                 crate::sim::world::FrameEffects::default(),
             )
             .expect("fixture frame must complete");
-        assert_eq!(runtime.simulation.session.tick, tick_before + 1);
+        assert_eq!(runtime.simulation.session.tick(), tick_before + 1);
         assert_eq!(state.startup, startup_before);
         assert!(state.startup.admits_exact_step());
         std::fs::remove_dir_all(directory).expect("remove startup fixture directory");
@@ -1154,7 +1158,7 @@ mod tests {
             &mut current,
             &IniFile::from_str("[Basic]\nPlayer=OutgoingPlayer\n"),
         );
-        assert_eq!(current.session.current_house, Some(outgoing_owner));
+        assert_eq!(current.session.current_house(), Some(outgoing_owner));
         assert!(!current.houses[&saved_owner].is_human);
         let mut runtime = crate::sim::runtime::SimRuntime::from_simulation(current);
         runtime.resources.rules = rules;
@@ -1172,19 +1176,25 @@ mod tests {
         )
         .expect("repository transaction prepares saved House identity");
         assert_eq!(
-            runtime.simulation.session.current_house,
+            runtime.simulation.session.current_house(),
             Some(outgoing_owner)
         );
         assert_eq!(runtime.simulation.state_hash(), outgoing_hash);
         assert_eq!(runtime.simulation.rng_state(), outgoing_rng);
-        assert_eq!(prepared.simulation.session.current_house, Some(saved_owner));
+        assert_eq!(
+            prepared.simulation.session.current_house(),
+            Some(saved_owner)
+        );
         let _ = prepared.commit_into(&mut runtime);
-        assert_eq!(runtime.simulation.session.current_house, Some(saved_owner));
+        assert_eq!(
+            runtime.simulation.session.current_house(),
+            Some(saved_owner)
+        );
         assert!(runtime.simulation.houses[&saved_owner].is_human);
         assert!(runtime.simulation.houses[&saved_owner].player_control);
         assert!(!runtime.simulation.houses[&outgoing_owner].is_human);
         assert!(!runtime.simulation.houses[&outgoing_owner].player_control);
-        let tick = runtime.simulation.session.tick;
+        let tick = runtime.simulation.session.tick();
         runtime
             .advance_frame(
                 &[],
@@ -1193,8 +1203,11 @@ mod tests {
                 crate::sim::world::FrameEffects::default(),
             )
             .expect("restored current-house frame");
-        assert_eq!(runtime.simulation.session.tick, tick + 1);
-        assert_eq!(runtime.simulation.session.current_house, Some(saved_owner));
+        assert_eq!(runtime.simulation.session.tick(), tick + 1);
+        assert_eq!(
+            runtime.simulation.session.current_house(),
+            Some(saved_owner)
+        );
         std::fs::remove_dir_all(directory).expect("remove House load fixture");
     }
 
@@ -1219,7 +1232,7 @@ mod tests {
             let selected = saved.interner.get("Player").unwrap();
             let neutral = saved.interner.get("Neutral").unwrap();
             let ai = saved.interner.get("Computer1").unwrap();
-            assert_eq!(saved.session.current_house, Some(selected));
+            assert_eq!(saved.session.current_house(), Some(selected));
             assert_ne!(selected, neutral);
             assert_ne!(selected, ai);
             let bytes = snapshot_bytes(&saved, &rules);
@@ -1227,7 +1240,7 @@ mod tests {
                 .write_named(&format!("collision-{case_index}.bin"), &bytes)
                 .unwrap();
             let mut outgoing = GameSnapshot::load(&bytes).unwrap().sim;
-            outgoing.session.current_house = Some(ai);
+            outgoing.session.set_current_house_for_test(Some(ai));
             let mut runtime = crate::sim::runtime::SimRuntime::from_simulation(outgoing);
             runtime.resources.rules = load_fixture_rules();
             runtime.resources.overlay_registry = OverlayTypeRegistry::empty();
@@ -1241,16 +1254,16 @@ mod tests {
                 &path,
             )
             .expect("collision-free saved House identity prepares");
-            assert_eq!(runtime.simulation.session.current_house, Some(ai));
+            assert_eq!(runtime.simulation.session.current_house(), Some(ai));
             let _ = prepared.commit_into(&mut runtime);
-            assert_eq!(runtime.simulation.session.current_house, Some(selected));
+            assert_eq!(runtime.simulation.session.current_house(), Some(selected));
             assert!(
                 runtime.simulation.houses[&selected].is_human
                     && runtime.simulation.houses[&selected].player_control
             );
             assert!(!runtime.simulation.houses[&neutral].is_human);
             assert!(!runtime.simulation.houses[&ai].is_human);
-            let tick = runtime.simulation.session.tick;
+            let tick = runtime.simulation.session.tick();
             runtime
                 .advance_frame(
                     &[],
@@ -1259,8 +1272,8 @@ mod tests {
                     crate::sim::world::FrameEffects::default(),
                 )
                 .expect("restored collision-safe current-house frame");
-            assert_eq!(runtime.simulation.session.tick, tick + 1);
-            assert_eq!(runtime.simulation.session.current_house, Some(selected));
+            assert_eq!(runtime.simulation.session.tick(), tick + 1);
+            assert_eq!(runtime.simulation.session.current_house(), Some(selected));
             assert_eq!(launch.session().local_player().name, handle);
         }
         std::fs::remove_dir_all(directory).expect("remove collision load fixture");
@@ -1388,7 +1401,9 @@ mod tests {
         let directory = isolated_directory("save-repository");
         let repository = SaveRepository::at(&directory);
         let mut simulation = Simulation::new();
-        simulation.session.map_name = "OFFICIAL.MAP".to_string();
+        simulation
+            .session
+            .set_map_name_for_test("OFFICIAL.MAP".to_string());
         let bytes = GameSnapshot::save_validated(&simulation, 1, 2, "Northern ridge", 3);
 
         let path = repository

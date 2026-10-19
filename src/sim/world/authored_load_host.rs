@@ -248,7 +248,7 @@ impl AuthoredOverlayLoadHost for SimulationAuthoredLoadHost<'_> {
         let lighting = self
             .sim
             .session
-            .lighting
+            .lighting()
             .profile(crate::sim::scenario_session::ScenarioLightingProfile::Normal)
             .into();
         self.sim.construct_overlay_cell_anim(
@@ -341,7 +341,8 @@ mod tests {
         // consumes no Scenario draws, so use that seed to compare the full
         // world across the ordinary in-scenario restore handoff.
         let mut sim = Simulation::with_seed(0);
-        sim.session.map_name = "authored ART owner".into();
+        sim.session
+            .set_map_name_for_test("authored ART owner".into());
         sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(700));
         let before_rng = sim.rng_state();
         SimulationAuthoredLoadHost::new(&mut sim, &mut rules, &assets, "TEM", "TEMPERATE")
@@ -421,7 +422,9 @@ mod tests {
         // A fresh staged load does not inherit the previous match's bound set.
         let mut reload_rules = load_rules();
         let mut reload = Simulation::with_seed(0);
-        reload.session.map_name = "authored ART owner".into();
+        reload
+            .session
+            .set_map_name_for_test("authored ART owner".into());
         reload.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(700));
         SimulationAuthoredLoadHost::new(
             &mut reload,

@@ -59,7 +59,9 @@ fn original_area_receipt_selects_nullify_after_em_effect_rng_and_before_return()
         );
         assert_eq!(rules.general.weapon_nullify_anim, "IRONFX");
         let mut world = Simulation::with_seed(31);
-        world.session.binary_frame = input["binary_frame"].as_u64().unwrap() as u32;
+        world
+            .session
+            .set_binary_frame_for_test(input["binary_frame"].as_u64().unwrap() as u32);
         crate::sim::arena_fixture::flat_arena(&mut world, &rules);
         for cell in &mut world.resolved_terrain.as_mut().unwrap().cells {
             cell.level = 6;
@@ -294,8 +296,10 @@ fn native_area_receipt_tracks_dispatch_and_strict_iron_curtain_boundary() {
         let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
         rules.install_art_data(crate::rules::retail_ini_fixture::art_registry(&art));
         let mut world = Simulation::with_seed(31);
-        world.session.binary_frame = 100;
-        world.session.no_damage = input["scenario_flags"].as_u64().unwrap() & 0x20 != 0;
+        world.session.set_binary_frame_for_test(100);
+        world
+            .session
+            .set_no_damage_for_test(input["scenario_flags"].as_u64().unwrap() & 0x20 != 0);
         let owner = world.interner.intern("Americans");
         world
             .houses

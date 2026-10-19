@@ -51,7 +51,7 @@ fn frame(s: &mut Scene) -> Sample {
         contact: miner.radio_contacts.slot(0),
         tethered: miner.tether.partner().is_some(),
         unloading: state.unload_active(),
-        facing: miner.body_facing_current(s.sim.session.binary_frame),
+        facing: miner.body_facing_current(s.sim.session.binary_frame()),
         ore: state
             .cargo()
             .iter()
@@ -197,7 +197,7 @@ fn spawn_returning_cmin(s: &mut Scene, cell: (u16, u16)) -> u64 {
         .sim
         .spawn_object("CMIN", "Americans", cell.0, cell.1, 0, &s.rules)
         .expect("second miner");
-    let now = s.sim.session.binary_frame;
+    let now = s.sim.session.binary_frame();
     s.sim
         .mission_assign_exact(id, MissionId::from_known(MissionType::Harvest), now)
         .unwrap();
@@ -455,7 +455,7 @@ fn selling_the_refinery_mid_unload_hands_the_chrono_miner_to_harvest() {
     s.rules.set_buildup_control_for_test(&type_id, [0, 25, 2]);
     let sale_order = crate::sim::command::CommandEnvelope::new(
         s.sim.substrate.entities.get(refinery).unwrap().owner(),
-        s.sim.session.tick + 1,
+        s.sim.session.tick() + 1,
         crate::sim::command::Command::SellBuilding {
             entity_id: refinery,
         },

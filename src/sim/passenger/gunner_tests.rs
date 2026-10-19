@@ -696,7 +696,7 @@ fn retail_temporal_gunner_unload_rearms_before_exit_and_retry() {
     };
     let rules = &retail.rules;
     let (mut sim, _, ifv, passenger, target) = temporal_attack_arena(rules);
-    let frame = sim.session.binary_frame as i32;
+    let frame = sim.session.binary_frame() as i32;
     let cargo_before =
         serde_json::to_value(entity(&sim, ifv).passenger_role.cargo().unwrap()).unwrap();
     assert_eq!(
@@ -769,7 +769,7 @@ fn temporal_attack_arena(rules: &RuleSet) -> (Simulation, PathGrid, u64, u64, u6
         fired,
         "the boarded CLEG IFV must fire through ordinary Attack"
     );
-    let frame = sim.session.binary_frame as i32;
+    let frame = sim.session.binary_frame() as i32;
     assert!(entity(&sim, ifv).rearm_timer.remaining(frame) > 0);
     assert!(entity(&sim, target).temporal.is_warped());
     (sim, grid, ifv, passenger, target)

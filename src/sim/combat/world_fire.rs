@@ -638,7 +638,7 @@ fn uncloak_to_fire(
     id: u64,
     sound_enabled: bool,
 ) {
-    let binary_frame = world.session.binary_frame;
+    let binary_frame = world.session.binary_frame();
     // `UnitClass::Fire_At_Target @ 0x00736DF0` case 9 invokes virtual
     // `StartUncloaking +0x45C @ 0x007036C0` after rechecking CanFireAt.
     let start = world
@@ -969,7 +969,7 @@ fn reveal_on_fire(
         );
         let owned = firer.owner() == house;
         let discovered = world.session.game_mode_nonzero()
-            || (world.session.current_house == Some(house)
+            || (world.session.current_house() == Some(house)
                 && firer.discovery.discovered_by_current_house());
         if owned || discovered {
             if owned && firer.category() == EntityCategory::Aircraft {
@@ -2261,7 +2261,7 @@ pub(crate) fn visit_fire(
                     overlay_registry,
                     &snapshot,
                     fog_enabled,
-                    world.session.binary_frame,
+                    world.session.binary_frame(),
                     world.active_wave_links.contains_key(&id),
                     emit,
                     run.effects(),
@@ -2291,7 +2291,7 @@ pub(crate) fn visit_fire(
                         overlay_registry,
                         &snap,
                         fog_enabled,
-                        world.session.binary_frame,
+                        world.session.binary_frame(),
                         world.active_wave_links.contains_key(&id),
                         emit,
                         run.effects(),
@@ -2312,7 +2312,7 @@ pub(crate) fn visit_fire(
                     overlay_registry,
                     &snap,
                     fog_enabled,
-                    world.session.binary_frame,
+                    world.session.binary_frame(),
                     world.active_wave_links.contains_key(&id),
                     emit,
                     run.effects(),
@@ -2370,7 +2370,7 @@ pub(crate) fn visit_fire(
                     world,
                     rules,
                     shot,
-                    world.session.binary_frame,
+                    world.session.binary_frame(),
                     emit,
                     overlay_registry,
                     run.effects(),
@@ -2413,7 +2413,7 @@ pub(crate) fn visit_fire(
             );
         }
         if let Some(entity) = world.substrate.entities.get(id) {
-            let binary_frame = world.session.binary_frame;
+            let binary_frame = world.session.binary_frame();
             let mut facing = UnitFacingUpdate::from_facing_update(
                 id,
                 crate::sim::movement::turret::facing_update(
@@ -2453,7 +2453,7 @@ pub(crate) fn tick_combat(
     projectile_detonations: &[ProjectileDetonation],
 ) -> CombatTickResult {
     let sound_enabled = sound_enabled(world);
-    let binary_frame = world.session.binary_frame;
+    let binary_frame = world.session.binary_frame();
 
     if tick_ms == 0 {
         return CombatTickResult {
@@ -2552,7 +2552,7 @@ pub(crate) fn tick_combat(
             world.radiation.apply_detonation(
                 det,
                 binary_frame,
-                &world.session.theater,
+                &world.session.theater(),
                 &rules.radiation,
                 world.resolved_terrain.as_ref(),
                 &mut Vec::new(),
@@ -2971,7 +2971,7 @@ pub(crate) fn estimated_damage_on(
             verses: &warhead.verses_f64,
         }),
         armor: damage::ArmorClass(target_obj.map_or(0, |object| armor_index(&object.armor) as u8)),
-        scenario_no_damage: sim.session.no_damage,
+        scenario_no_damage: sim.session.no_damage(),
         max_damage: rules.combat_damage.max_damage,
     })
 }

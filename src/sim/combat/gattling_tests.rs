@@ -536,7 +536,7 @@ impl Spin {
         self.sim
             .queue_command(crate::sim::command::CommandEnvelope::new(
                 owner,
-                self.sim.session.tick + 1,
+                self.sim.session.tick() + 1,
                 command,
             ));
         self.tick();

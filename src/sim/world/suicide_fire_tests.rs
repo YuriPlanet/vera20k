@@ -75,7 +75,7 @@ fn retail_scene() -> Option<TerrorScene> {
         )
         .unwrap();
     let owner = sim.substrate.entities.get(source).unwrap().owner();
-    sim.session.current_house = Some(owner);
+    sim.session.set_current_house_for_test(Some(owner));
     for y in 10..12 {
         for x in 10..12 {
             sim.fog.mark_visible_for_owner(owner, x, y);
@@ -132,7 +132,7 @@ fn compare_native_phase(scene: &TerrorScene, phase: &serde_json::Value) {
     let location = crate::sim::movement::ground_pose::position_world_coord(&source.position);
     let stage = source.native_stage();
     let actual = json!({
-        "frame": sim.session.binary_frame,
+        "frame": sim.session.binary_frame(),
         "health": source.health.current(),
         "alive": u8::from(source.lifecycle.object_alive()),
         "limbo": u8::from(source.lifecycle.in_limbo()),
@@ -249,13 +249,13 @@ fn stock_terror_suicide_short_circuits_normal_fire() {
                         scene.source,
                         MissionId::from_known(MissionType::Attack),
                         0,
-                        scene.sim.session.binary_frame,
+                        scene.sim.session.binary_frame(),
                         &crate::sim::mission::authority::EntityReadyInputProvider,
                     )
                     .unwrap();
                 scene
                     .sim
-                    .mission_commence_exact(scene.source, scene.sim.session.binary_frame)
+                    .mission_commence_exact(scene.source, scene.sim.session.binary_frame())
                     .unwrap();
             }
             compare_native_phase(&scene, native_phase(row, "before_fire"));
@@ -285,7 +285,7 @@ fn stock_terror_suicide_short_circuits_normal_fire() {
                     .as_u64()
                     .unwrap() as u32
                 {
-                    scene.sim.session.binary_frame = frame;
+                    scene.sim.session.set_binary_frame_for_test(frame);
                     scene
                         .sim
                         .advance_live_object_turn(scene.source, Some(&scene.rules), ai)
@@ -306,7 +306,10 @@ fn stock_terror_suicide_short_circuits_normal_fire() {
                 "the nested DeathWeapon finishes synchronously; no ordinary outgoing shot remains"
             );
             for visit in row["death_visits"].as_array().unwrap() {
-                scene.sim.session.binary_frame = visit["frame"].as_u64().unwrap() as u32;
+                scene
+                    .sim
+                    .session
+                    .set_binary_frame_for_test(visit["frame"].as_u64().unwrap() as u32);
                 scene
                     .sim
                     .advance_live_object_turn(scene.source, Some(&scene.rules), ai)

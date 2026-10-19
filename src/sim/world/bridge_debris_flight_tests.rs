@@ -316,7 +316,7 @@ fn flight_fixture(rules: &RuleSet, input: &Value) -> (Simulation, BTreeSet<(u16,
         ),
     );
     sim.install_resolved_terrain_for_new_map(terrain);
-    sim.session.binary_frame = 1000;
+    sim.session.set_binary_frame_for_test(1000);
     (sim, source)
 }
 
@@ -428,7 +428,7 @@ fn native_bridge_producer_primary_flight_landing_and_rng_continuation() {
         for tick in row["ticks"].as_array().unwrap() {
             let number = tick["tick"].as_u64().unwrap();
             let context = format!("{input}, tick {number}");
-            sim.session.binary_frame = 1000 + number as u32;
+            sim.session.set_binary_frame_for_test(1000 + number as u32);
             assert!(
                 !sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default()),
                 "false bridge-driver fixture: {context}"

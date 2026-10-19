@@ -562,7 +562,7 @@ impl Simulation {
             overlays: self.overlay_grid.as_ref(),
             bounds,
             size,
-            frame: self.session.binary_frame,
+            frame: self.session.binary_frame(),
         })
     }
 

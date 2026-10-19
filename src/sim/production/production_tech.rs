@@ -73,7 +73,7 @@ fn append_construction_options(
     let Some(building) = sim.entities().get(building_id) else {
         return;
     };
-    if sim.session.current_house != Some(building.owner())
+    if sim.session.current_house() != Some(building.owner())
         || building.lifecycle.in_limbo()
         || !building.discovery.discovered_by_current_house()
         || !building.building_online()

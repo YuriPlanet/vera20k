@@ -820,12 +820,13 @@ impl ReplayRunner {
             .simulation
             .set_debug_session_context(crate::sim::cheats::DebugSessionContext::Replay);
         anyhow::ensure!(
-            runtime.simulation.session.pixel_conversion_bounds
+            runtime.simulation.session.pixel_conversion_bounds()
                 == replay.header.pixel_conversion_bounds,
             "replay pixel conversion bounds differ from the initialized match"
         );
         debug_assert_eq!(
-            runtime.simulation.session.seed, replay.header.seed,
+            runtime.simulation.session.seed(),
+            replay.header.seed,
             "replay playback sim must be constructed from header.seed"
         );
         let current = runtime.resources.rules.simulation_config_hash();
@@ -915,14 +916,16 @@ impl ReplayRunner {
         sim.set_debug_session_context(crate::sim::cheats::DebugSessionContext::Replay);
         // The diagnostic playback must be constructed from the recorded seed.
         assert_eq!(
-            sim.session.pixel_conversion_bounds, replay.header.pixel_conversion_bounds,
+            sim.session.pixel_conversion_bounds(),
+            replay.header.pixel_conversion_bounds,
             "replay pixel conversion bounds differ from the initialized match"
         );
         // A sim seeded
         // differently than the header it replays is a guaranteed silent
         // divergence.
         debug_assert_eq!(
-            sim.session.seed, replay.header.seed,
+            sim.session.seed(),
+            replay.header.seed,
             "replay playback sim must be constructed from header.seed"
         );
         // A replay recorded under different processed rules or resolved ART
@@ -1484,7 +1487,7 @@ mod tests {
             .register(crate::sim::house_state::HouseState::new(
                 owner, 0, None, true, 0, 10,
             ));
-        sim.session.tick = 3;
+        sim.session.set_tick_for_test(3);
         let mut log = ReplayLog::new(ReplayHeader {
             pixel_conversion_bounds: Default::default(),
             version: 1,
@@ -1528,7 +1531,7 @@ mod tests {
         let (mut recorded, owner) = make_sim();
         let command = CommandEnvelope::new(owner, 1, Command::SetGameSpeed { speed: 4 });
         let tick = recorded.advance_tick(std::slice::from_ref(&command), None, None, None, 67);
-        assert_eq!(recorded.session.game_options.game_speed, 4);
+        assert_eq!(recorded.session.game_options().game_speed, 4);
 
         let mut log = ReplayLog::new(ReplayHeader {
             pixel_conversion_bounds: Default::default(),
@@ -1545,7 +1548,7 @@ mod tests {
         let (mut replayed, _) = make_sim();
         let hashes = ReplayRunner::run_fixture(&mut replayed, &decoded, None, None, 67);
         assert_eq!(hashes, vec![tick.state_hash]);
-        assert_eq!(replayed.session.game_options.game_speed, 4);
+        assert_eq!(replayed.session.game_options().game_speed, 4);
         assert_eq!(replayed.state_hash(), recorded.state_hash());
         assert_eq!(NATIVE_REPLAY_VERSION, 10);
     }
@@ -1610,7 +1613,7 @@ mod tests {
         let hashes = ReplayRunner::run_fixture(&mut sim, &log, None, None, 33);
 
         assert_eq!(hashes.len(), 1);
-        assert_eq!(sim.session.game_options.game_speed, 4);
+        assert_eq!(sim.session.game_options().game_speed, 4);
         assert_eq!(
             sim.pending_command_snapshot(),
             &[],

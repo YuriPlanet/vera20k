@@ -71,7 +71,7 @@ impl PlanningInputState {
             sim.and_then(|sim| {
                 let owner = sim.session.current_house()?;
                 let record = sim.encode_plan_commit_record(owner)?;
-                SynchronizedCommand::opaque(record).decode_for_simulation(sim, sim.session.tick)
+                SynchronizedCommand::opaque(record).decode_for_simulation(sim, sim.session.tick())
             })
         };
         if !active {
@@ -185,7 +185,7 @@ pub(crate) fn refuse(state: &mut AppState, action: PlanningRefusal) {
         .match_state
         .sim_runtime
         .as_ref()
-        .map(|rt| rt.simulation.session.tick)
+        .map(|rt| rt.simulation.session.tick())
     else {
         return;
     };
@@ -400,7 +400,7 @@ pub(crate) fn connect_at_cursor(state: &mut AppState) -> bool {
                 .simulation
                 .encode_plan_connect_record_at_screen(owner, actor, point)
                 && let Some(command) = SynchronizedCommand::opaque(record)
-                    .decode_for_simulation(&rt.simulation, rt.simulation.session.tick)
+                    .decode_for_simulation(&rt.simulation, rt.simulation.session.tick())
             {
                 rt.simulation.queue_command(command);
             }
@@ -422,7 +422,7 @@ pub(crate) fn delete_at_cursor(state: &mut AppState) {
             .simulation
             .encode_plan_node_delete_record_at_screen(owner, point)
         && let Some(command) = SynchronizedCommand::opaque(record)
-            .decode_for_simulation(&rt.simulation, rt.simulation.session.tick)
+            .decode_for_simulation(&rt.simulation, rt.simulation.session.tick())
     {
         rt.simulation.queue_command(command);
     }
@@ -713,13 +713,13 @@ mod tests {
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
-        sim.session.game_options.short_game = false;
+        sim.session.game_options_mut_for_test().short_game = false;
         let owner = sim.intern("Americans");
         let side = rules.country_side_index("Americans").unwrap().0;
         let mut house = HouseState::new(owner, side, Some(owner), true, 50_000, 10);
         house.project_country_mults(rules, &sim.interner);
         sim.houses.register(house);
-        sim.session.current_house = Some(owner);
+        sim.session.set_current_house_for_test(Some(owner));
         crate::sim::arena_fixture::flat_ground(&mut sim, rules);
         let first = sim
             .spawn_object("GAWEAP", "Americans", 6, 6, 0, rules)
@@ -969,7 +969,7 @@ mod tests {
                 sim.houses
                     .register(HouseState::new(owner, 0, None, slot == index, 0, 10));
             }
-            sim.session.current_house = Some(local);
+            sim.session.set_current_house_for_test(Some(local));
             sim.houses.get_mut(&local).unwrap().is_defeated = case["initial"]["session300"] != 0;
             let before_rng = sim.rng_state();
             let mut input = PlanningInputState::default();
@@ -983,8 +983,8 @@ mod tests {
             assert_eq!(case["detach"], serde_json::json!([]));
             for phase in case["phases"].as_array().unwrap() {
                 let frame = phase["frame"].as_u64().unwrap();
-                sim.session.tick = frame;
-                sim.session.binary_frame = frame as u32;
+                sim.session.set_tick_for_test(frame);
+                sim.session.set_binary_frame_for_test(frame as u32);
                 let requested = match phase["input"].as_str().unwrap() {
                     "house_defeat_tail" => {
                         // The native component starts after the House flag

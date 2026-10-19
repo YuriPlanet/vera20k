@@ -210,7 +210,7 @@ impl Fixture {
                 .insert_for_test(HouseState::new(id, 0, None, index == 0, 5000, 10));
             houses.push((int(&house["pointer"]), id));
         }
-        sim.session.current_house = Some(owner);
+        sim.session.set_current_house_for_test(Some(owner));
         // The reused native fixture supplies its game mode explicitly;
         // this is a caller prior, not a retail startup-default assertion.
         sim.session.set_game_mode(
@@ -301,7 +301,7 @@ impl Fixture {
             entity.has_been_captured.set_for_test(false);
             // The preceding fixture transfer is supplied setup, not this
             // arrival. Consume its identical idle request through the owner.
-            entity.apply_queued_building_body(0, &sim.session.game_options);
+            entity.apply_queued_building_body(0, &sim.session.game_options());
         }
         if name == "enemy_selling_refusal" {
             let entity = sim.substrate.entities.get_mut(building).unwrap();

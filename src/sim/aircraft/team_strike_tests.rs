@@ -110,7 +110,7 @@ fn retail_harrier_team_strikes_the_enemy_miner_and_goes_home() {
             member_type: member_type_identity(sim.substrate.entities.get(entity_id).unwrap()),
         })
         .collect();
-    let frame = sim.session.binary_frame as i32;
+    let frame = sim.session.binary_frame() as i32;
     let team = sim
         .team_script_vm
         .create_team_from_type(owners[0], team_type, &candidates, frame);

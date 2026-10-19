@@ -313,7 +313,8 @@ fn simulation_fixture_for_type(
     target.has_bridge_deck = input["flags"].as_u64().unwrap_or(0) & 256 != 0;
     sim.resolved_terrain =
         Some(ResolvedTerrainGrid::from_cells(width, height, cells).test_mark_decks_structural());
-    sim.session.binary_frame = input["frame"].as_u64().unwrap_or(0) as u32;
+    sim.session
+        .set_binary_frame_for_test(input["frame"].as_u64().unwrap_or(0) as u32);
     sim
 }
 
@@ -811,7 +812,7 @@ fn production_rally_workload_timing() {
         }
         let mut samples = Vec::new();
         for sample in 0..22 {
-            sim.session.binary_frame = sample;
+            sim.session.set_binary_frame_for_test(sample);
             let begin = Instant::now();
             let selected = crate::app::input::dispatch::selected_stable_ids_in_order(
                 Some(&sim),
@@ -898,7 +899,7 @@ fn production_rally_workload_timing() {
         let mut samples = Vec::new();
         for sample in 0..22 {
             let frame = 100 + sample;
-            sim.session.binary_frame = frame;
+            sim.session.set_binary_frame_for_test(frame);
             line_state.start_timer(if active {
                 frame
             } else {

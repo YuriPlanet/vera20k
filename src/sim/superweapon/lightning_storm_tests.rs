@@ -153,9 +153,9 @@ fn fixture_world(
     sim.resolve_type_handles(rules);
     sim.resolve_rule_animation_lists(rules);
     sim.scenario_rng = SimRng::new(seed as u64);
-    sim.session.binary_frame = frame as u32;
-    sim.session.map_width = FIXTURE_MAP;
-    sim.session.map_height = FIXTURE_MAP;
+    sim.session.set_binary_frame_for_test(frame as u32);
+    sim.session.set_map_width_for_test(FIXTURE_MAP);
+    sim.session.set_map_height_for_test(FIXTURE_MAP);
     sim.resolved_terrain = Some(test_grid(FIXTURE_MAP, FIXTURE_MAP, |x, y| {
         fixture_cell(
             x,
@@ -195,7 +195,8 @@ fn fixture_world(
         }
         ids.push(id);
     }
-    sim.session.current_house = player.map(|index| ids[index]);
+    sim.session
+        .set_current_house_for_test(player.map(|index| ids[index]));
     (sim, ids)
 }
 
@@ -461,7 +462,7 @@ fn storm_start_matches_native_rows() {
             row["player"].as_u64().map(|player| player as usize),
         );
         if int(&row["mute"]) != 0 {
-            let player = sim.session.current_house.expect("a muted row's player");
+            let player = sim.session.current_house().expect("a muted row's player");
             sim.houses.get_mut(&player).unwrap().is_defeated = true;
         }
         sim.lightning_storm = LightningStorm::for_test(
@@ -858,7 +859,7 @@ fn a_storm_starts_and_ends_after_the_frames_ambient_rung() {
     let rng_before = sim.scenario_rng.state();
     launch(&mut sim, &rules);
     assert_eq!(
-        sim.session.lighting.selected_profile,
+        sim.session.lighting().selected_profile(),
         ScenarioLightingProfile::Normal,
         "a deferred launch selects nothing"
     );
@@ -870,41 +871,43 @@ fn a_storm_starts_and_ends_after_the_frames_ambient_rung() {
     sim.advance_tick(&[], Some(&rules), None, None, 67);
     assert_eq!(globals(&sim), (true, false));
     assert_eq!(
-        sim.session.lighting.selected_profile,
+        sim.session.lighting().selected_profile(),
         ScenarioLightingProfile::Ion
     );
-    assert_eq!(sim.session.lighting.target_ambient, 87);
+    assert_eq!(sim.session.lighting().target_ambient(), 87);
     assert_eq!(
-        sim.session.lighting.current_ambient, 100,
+        sim.session.lighting().current_ambient(),
+        100,
         "the frame's ambient rung ran before the start"
     );
 
     sim.advance_tick(&[], Some(&rules), None, None, 67);
     assert_eq!(globals(&sim), (true, false));
-    assert_eq!(sim.session.lighting.current_ambient, 87);
+    assert_eq!(sim.session.lighting().current_ambient(), 87);
     sim.advance_tick(&[], Some(&rules), None, None, 67);
     assert_eq!(globals(&sim), (true, false), "start + duration still rages");
     sim.advance_tick(&[], Some(&rules), None, None, 67);
     assert_eq!(globals(&sim), (true, true));
     assert_eq!(
-        sim.session.lighting.selected_profile,
+        sim.session.lighting().selected_profile(),
         ScenarioLightingProfile::Ion
     );
 
     sim.advance_tick(&[], Some(&rules), None, None, 67);
     assert_eq!(globals(&sim), (false, false));
     assert_eq!(
-        sim.session.lighting.selected_profile,
+        sim.session.lighting().selected_profile(),
         ScenarioLightingProfile::Normal
     );
-    assert_eq!(sim.session.lighting.target_ambient, 100);
+    assert_eq!(sim.session.lighting().target_ambient(), 100);
     assert_eq!(
-        sim.session.lighting.current_ambient, 87,
+        sim.session.lighting().current_ambient(),
+        87,
         "the end selects Normal after this frame's ambient rung"
     );
 
     sim.advance_tick(&[], Some(&rules), None, None, 67);
-    assert_eq!(sim.session.lighting.current_ambient, 100);
+    assert_eq!(sim.session.lighting().current_ambient(), 100);
     assert_eq!(sim.scenario_rng.state(), rng_before);
 }
 
@@ -937,7 +940,7 @@ fn the_storm_cue_lands_on_the_countdowns_end_not_on_the_launch() {
     );
     assert_eq!(count(&sim, began), 1);
     assert_eq!(
-        sim.session.lighting.selected_profile,
+        sim.session.lighting().selected_profile(),
         ScenarioLightingProfile::Ion
     );
     lightning_storm::process(
@@ -977,7 +980,7 @@ fn a_storm_of_duration_minus_one_rages_on() {
         let (active, time_to_end, _, duration, ..) = sim.lightning_storm.globals_for_test();
         assert_eq!((active, time_to_end, duration), (true, false, -1));
         assert_eq!(
-            sim.session.lighting.selected_profile,
+            sim.session.lighting().selected_profile(),
             ScenarioLightingProfile::Ion
         );
     }
@@ -988,12 +991,12 @@ fn a_storm_of_duration_minus_one_rages_on() {
 fn a_map_without_a_storm_keeps_its_lighting_and_stream() {
     let rules = lighting_timing_rules(250, 180, ".2");
     let mut sim = Simulation::with_seed(0x42);
-    let lighting_before = sim.session.lighting;
+    let lighting_before = *sim.session.lighting();
     let rng_before = sim.scenario_rng.state();
     for _ in 0..400 {
         sim.advance_tick(&[], Some(&rules), None, None, 67);
     }
-    assert_eq!(sim.session.lighting, lighting_before);
+    assert_eq!(*sim.session.lighting(), lighting_before);
     assert_eq!(sim.scenario_rng.state(), rng_before);
 }
 
@@ -1552,7 +1555,7 @@ fn retail_storm_strikes_through_production_frames() {
     assert_eq!((frames, warnings), (250, vec![25]));
     assert!(sim.sound_events.iter().any(began));
     assert_eq!(
-        sim.session.lighting.selected_profile,
+        sim.session.lighting().selected_profile(),
         ScenarioLightingProfile::Ion
     );
     let (_, _, _, duration, start, ..) = sim.lightning_storm.globals_for_test();
@@ -1594,7 +1597,7 @@ fn retail_storm_strikes_through_production_frames() {
         (false, false, (0, 0), None)
     );
     assert_eq!(
-        sim.session.lighting.selected_profile,
+        sim.session.lighting().selected_profile(),
         ScenarioLightingProfile::Normal
     );
 }

@@ -54,7 +54,7 @@ fn damage_event_predicates_match_original_discrete_controls() {
     for case in cases {
         let name = case["name"].as_str().unwrap();
         let (mut sim, rules, _, houses) = event_ingress_fixture();
-        sim.session.binary_frame = 123;
+        sim.session.set_binary_frame_for_test(123);
         let actor = case["actor_owner"].as_u64().map(|index| {
             spawn_event_ingress_unit(&mut sim, &rules, houses[index as usize], (15, 15))
         });
@@ -152,7 +152,7 @@ fn damage_event_predicates_match_original_discrete_controls() {
 fn damage_event_single_register_history_matches_original() {
     let corpus = corpus();
     let (mut sim, rules, _, _) = event_ingress_fixture();
-    sim.session.binary_frame = 123;
+    sim.session.set_binary_frame_for_test(123);
     install_event_ingress_map(
         &mut sim,
         &rules,
@@ -379,8 +379,8 @@ fn retail_damage_scene(route: &Value) -> Option<RetailDamageScene> {
     sim.install_resolved_terrain_for_new_map(terrain);
     sim.playfield_bounds = Some(bounds);
     sim.playfield_size_height = Some(32);
-    sim.session.map_width = 64;
-    sim.session.map_height = 64;
+    sim.session.set_map_width_for_test(64);
+    sim.session.set_map_height_for_test(64);
     Some(RetailDamageScene {
         sim,
         rules,
@@ -624,7 +624,7 @@ fn retail_all06_red_damage_runs_parliament_destroy_attached_synchronously() {
     let next = find_live(&sim, "048BB6BC");
     assert!(sim.trigger_runtime.trigger(quarter).unwrap().enabled);
     assert!(!sim.trigger_runtime.trigger(next).unwrap().enabled);
-    sim.session.binary_frame = 123;
+    sim.session.set_binary_frame_for_test(123);
     // The original action retains encoded waypoint X (23); its coordinate
     // is supplied inside the declared clear arena, rather than the full map.
     sim.session
@@ -758,7 +758,8 @@ fn retail_all06_red_damage_runs_parliament_destroy_attached_synchronously() {
     // program disables this chain and announces the loss after its timer.
     // This bounded Logic poll stops before the later campaign failure route.
     let timer = sim.trigger_runtime.trigger(next).unwrap().timer;
-    sim.session.binary_frame = timer.start_frame().wrapping_add(timer.duration()) as u32;
+    sim.session
+        .set_binary_frame_for_test(timer.start_frame().wrapping_add(timer.duration()) as u32);
     let previous_actions = sim.trigger_runtime.action_trace.len();
     let effects = sim.advance_triggers(Some(&rules), Some(&overlays), FrameEffects::default());
     assert!(!sim.trigger_runtime.trigger(next).unwrap().enabled);

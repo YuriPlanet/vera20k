@@ -195,7 +195,7 @@ impl Scene {
             .and_then(|drive| drive.destination())
             .map_or_else(|| json!([0, 0, 0]), |at| json!([at.x, at.y, at.z]));
         json!({
-            "frame": self.sim.session.binary_frame,
+            "frame": self.sim.session.binary_frame(),
             "unit_coordinate": [at.x,at.y,at.z],
             "health": unit.health.current(),
             "estimate": unit.estimated_health.get(),
@@ -298,7 +298,8 @@ fn scene(golden: &Value, row: &Value) -> Scene {
         "the bounded native scene supplies a stopped Drive"
     );
     let mut sim = Simulation::new();
-    sim.session.binary_frame = int(&before["frame"]) as u32;
+    sim.session
+        .set_binary_frame_for_test(int(&before["frame"]) as u32);
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
     // The shared native source fixture supplies Map+F4/F8=16 and final
@@ -312,8 +313,8 @@ fn scene(golden: &Value, row: &Value) -> Scene {
     );
     sim.playfield_bounds = Some(bounds);
     sim.playfield_size_height = Some(16);
-    sim.session.map_width = 16;
-    sim.session.map_height = 16;
+    sim.session.set_map_width_for_test(16);
+    sim.session.set_map_height_for_test(16);
     let mut terrain = test_flat_ground_grid(32);
     if let Some(level) = case["terrain_level"].as_u64() {
         for y in 0..32 {
@@ -1131,7 +1132,7 @@ fn native_paid_retry_full_release_histories_run_mission_dispatch_every_frame() {
             scene.compare(&native["after"], name);
         }
         for frame in int(&row["before"]["frame"]) as u32..=int(&row["input"]["to_frame"]) as u32 {
-            scene.sim.session.binary_frame = frame;
+            scene.sim.session.set_binary_frame_for_test(frame);
             if let Some(step) = steps.peek()
                 && step["entry"] == "0x65c6d0"
                 && int(&step["after"]["frame"]) as u32 == frame
@@ -1186,7 +1187,7 @@ fn independent_repair_progress_contributes_to_state_hash() {
         .unwrap();
     let mut scene = scene(&golden, row);
     for frame in 200..=279 {
-        scene.sim.session.binary_frame = frame;
+        scene.sim.session.set_binary_frame_for_test(frame);
         scene.visit_depot();
     }
     let progress = *scene

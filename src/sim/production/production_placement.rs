@@ -73,7 +73,7 @@ pub fn placement_preview_for_owner_with_overlays(
                 // vision owner handles odd levels and the retained Dummy.
                 // A headless evaluation with no current viewer enrolls no
                 // client visibility; active local gameplay always has one.
-                let unshrouded = sim.session.current_house.is_none_or(|viewer| {
+                let unshrouded = sim.session.current_house().is_none_or(|viewer| {
                     !crate::sim::vision::cell_is_shrouded(&sim.fog, query, viewer, (cx, cy))
                 });
                 all_unshrouded &= unshrouded;
@@ -100,7 +100,8 @@ pub fn placement_preview_for_owner_with_overlays(
     // Display4A9070/4A94DA publishes visibility independently of proximity;
     // local LeftUp4ABAB2 refuses a shrouded ordinary foundation. ToTile's
     // resolved pointer (+E58) alone bypasses that visibility refusal.
-    let local_owner = sim.session.current_house.is_some() && sim.session.current_house == owner_id;
+    let local_owner =
+        sim.session.current_house().is_some() && sim.session.current_house() == owner_id;
     let replaces_tile = sim
         .resolved_terrain
         .as_ref()
@@ -705,7 +706,7 @@ pub fn is_within_build_area(
             if !existing.base_normal {
                 continue;
             }
-        } else if !(sim.session.game_options.build_off_ally
+        } else if !(sim.session.game_options().build_off_ally
             && existing.eligibile_for_ally_building
             && are_houses_friendly(&sim.house_alliances, provider_owner, owner))
         {

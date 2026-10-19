@@ -826,7 +826,7 @@ impl crate::sim::world::Simulation {
             args.options,
             // The frame counter is committed late, so during an advance it
             // still holds the current frame, the value the pick aliases.
-            self.session.binary_frame,
+            self.session.binary_frame(),
         )
     }
 

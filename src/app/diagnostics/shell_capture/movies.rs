@@ -1027,7 +1027,7 @@ impl MoviesCapture {
                         "exit cascade began before the queued EXIT was consumed"
                     );
                     self.route.push(
-                        json!({"frame": frame, "action": "EXIT consumed", "tick": sim.session.tick,
+                        json!({"frame": frame, "action": "EXIT consumed", "tick": sim.session.tick(),
                         "scenario_exit_present": true, "scenario_outcome_present": false,
                         "quit_requested": sim.quit_requested}),
                     );
@@ -1531,7 +1531,7 @@ fn campaign_abort_cleanup_receipt(state: &AppState) -> Result<Value> {
         "campaign_page_present": state.frontend.campaign.is_some(), "fullscreen_movie_present": state.frontend.fullscreen_movie.is_some(),
         "scenario_exit_present": state.match_state.scenario_exit.is_some(), "scenario_outcome_present": state.match_state.scenario_outcome.is_some(),
         "in_game_menu": format!("{:?}", state.match_state.match_presentation.in_game_menu),
-        "retained_runtime_present": state.match_state.sim_runtime.is_some(), "retained_tick": sim.session.tick,
+        "retained_runtime_present": state.match_state.sim_runtime.is_some(), "retained_tick": sim.session.tick(),
         "retained_quit_requested": sim.quit_requested,
         "retained_scenario_started": sim.session.started(),
         "campaign_mission_counter": mission_counter, "pending_exit_commands": pending_exit_commands,
@@ -1546,7 +1546,7 @@ fn campaign_runtime_receipt(state: &AppState) -> Result<Value> {
             .match_state
             .sim_runtime
             .as_ref()
-            .is_some_and(|runtime| runtime.simulation.session.tick == 0),
+            .is_some_and(|runtime| runtime.simulation.session.tick() == 0),
         "first live capture passed simulation tick zero"
     );
     installed_campaign_runtime_receipt(state)
@@ -1612,18 +1612,18 @@ fn installed_campaign_runtime_receipt(state: &AppState) -> Result<Value> {
     };
     let rules = &runtime.resources.rules;
     Ok(json!({
-        "tick": sim.session.tick, "binary_frame": sim.session.binary_frame,
+        "tick": sim.session.tick(), "binary_frame": sim.session.binary_frame(),
         "scenario_started": sim.session.started(),
         "startup_admission": {"accepted_rust_l0": state.match_state.startup.accepted().is_some(),
             "campaign_installation": state.match_state.startup.campaign_installed(),
             "saved_world_restored": state.match_state.startup.restored()},
-        "seed": sim.session.seed, "map_name": sim.session.map_name, "theater": sim.session.theater,
+        "seed": sim.session.seed(), "map_name": sim.session.map_name(), "theater": sim.session.theater(),
         "game_mode_nonzero": sim.session.game_mode_nonzero(), "campaign_mission_counter": mission_counter,
         "campaign_difficulty_rows": {"player": player_difficulty as i32, "computer": computer_difficulty as i32},
         "current_house": {"name": sim.interner.resolve(current), "native_unique_id": current_native_id},
         "flags": {"inert": flags.inert, "tiberium_grows": flags.tiberium_grows,
             "tiberium_spreads": flags.tiberium_spreads, "destroyable_bridges": flags.destroyable_bridges,
-            "free_radar": sim.session.free_radar, "ignore_global_ai_triggers": sim.session.ignore_global_ai_triggers()},
+            "free_radar": sim.session.free_radar(), "ignore_global_ai_triggers": sim.session.ignore_global_ai_triggers()},
         "active_rules": {"source_ini_hash": format!("{:016x}", rules.source_ini_hash()),
             "simulation_config_hash": format!("{:016x}", rules.simulation_config_hash()),
             "domain": "parsed Rules projection and semantic config; not retail byte SHA256"},

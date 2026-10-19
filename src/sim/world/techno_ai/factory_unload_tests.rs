@@ -348,8 +348,8 @@ fn fixture(rules: &RuleSet, ini: &IniFile) -> Fixture {
         off_104: 256,
         off_108: 256,
     });
-    sim.session.map_width = 128;
-    sim.session.map_height = 128;
+    sim.session.set_map_width_for_test(128);
+    sim.session.set_map_height_for_test(128);
     let owner = sim.interner.intern("Americans");
     sim.houses
         .register(HouseState::new(owner, 0, None, true, 50_000, 10));
@@ -444,7 +444,8 @@ fn fixture_input(fixture: &mut Fixture, rules: &RuleSet, native: &Value) {
         product,
         producer,
     } = fixture;
-    sim.session.binary_frame = native["product"]["frame"].as_u64().unwrap() as u32;
+    sim.session
+        .set_binary_frame_for_test(native["product"]["frame"].as_u64().unwrap() as u32);
     actor_input(
         sim.substrate.entities.get_mut(*product).unwrap(),
         &native["product"],
@@ -706,7 +707,7 @@ fn retail_factory_unload_leaves_match_original_door_track_and_cadence() {
         match operation {
             "producer_commence_queued_unload" => {
                 commence += 1;
-                let now = fixture.sim.session.binary_frame;
+                let now = fixture.sim.session.binary_frame();
                 let result = fixture
                     .sim
                     .mission_commence_exact(fixture.producer, now)
@@ -730,7 +731,7 @@ fn retail_factory_unload_leaves_match_original_door_track_and_cadence() {
             }
             "original_techno_door_caller" => {
                 door_calls += 1;
-                let now = fixture.sim.session.binary_frame;
+                let now = fixture.sim.session.binary_frame();
                 fixture
                     .sim
                     .substrate
@@ -900,7 +901,7 @@ fn stock_naval_unload_leaves_match_original_mission_door_slots_and_rng() {
         // consume the value actually read at this native boundary.
         assert!(
             sim.session
-                .game_options
+                .game_options_mut_for_test()
                 .apply_in_game_speed(int(&before["game_speed"]) as u8)
         );
         sim.intern_rule_type_ids(&rules);
@@ -1027,7 +1028,7 @@ fn stock_naval_unload_leaves_match_original_mission_door_slots_and_rng() {
             anim.runtime.inactive = runtime["inactive"] == 1;
             anim.runtime.paused = runtime["paused"] == 1;
         }
-        sim.session.binary_frame = now;
+        sim.session.set_binary_frame_for_test(now);
         sim.main_rng =
             SimRng::from_native_state_hex_for_test(before["rng"]["main"].as_str().unwrap()).into();
         sim.scenario_rng =
@@ -1207,7 +1208,7 @@ fn unit_move_deployment_guard_preserves_door_navigation_and_rng() {
             let id = sim
                 .spawn_object("MTNK", "Americans", 10, 10, 64, &rules)
                 .unwrap();
-            sim.session.binary_frame = 200;
+            sim.session.set_binary_frame_for_test(200);
             sim.mission_assign_exact(
                 id,
                 MissionId::from_known(crate::sim::mission::MissionType::Move),
@@ -1277,7 +1278,7 @@ fn original_unit_move_deployment_guards_match_mission_dispatch() {
         let id = sim
             .spawn_object("MTNK", "Americans", 10, 10, 64, &rules)
             .unwrap();
-        sim.session.binary_frame = now;
+        sim.session.set_binary_frame_for_test(now);
         let nav = |value: &Value| {
             value.as_array().map(|pair| {
                 NavTargetRef::cell(

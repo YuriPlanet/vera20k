@@ -14,9 +14,9 @@ fn scene(rules: &RuleSet, selected_target: bool) -> (Simulation, u64, u64) {
     let mut sim = crate::sim::arena_fixture::rival_arena(rules, 0x700474);
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
-    sim.session.game_options.short_game = false;
+    sim.session.game_options_mut_for_test().short_game = false;
     let owner = sim.interner.get("Americans").unwrap();
-    sim.session.current_house = Some(owner);
+    sim.session.set_current_house_for_test(Some(owner));
     sim.fog.reveal_all_for_owner(owner);
     let miner = sim
         .spawn_object("CMIN", "Americans", 10, 10, 0, rules)
@@ -53,7 +53,7 @@ fn click(
         sim,
         rules,
         overlays,
-        sim.session.current_house.unwrap(),
+        sim.session.current_house().unwrap(),
         OrderMode::Move,
         modifier,
         false,
@@ -156,8 +156,8 @@ fn retail_unarmed_ctrl_selected_target_moves_through_the_command_and_tick_owners
     let envelope = crate::app::input::commands::roundtrip_ordinary_local_megamission(
         &sim,
         CommandEnvelope::new(
-            sim.session.current_house.unwrap(),
-            sim.session.tick,
+            sim.session.current_house().unwrap(),
+            sim.session.tick(),
             command,
         ),
     )

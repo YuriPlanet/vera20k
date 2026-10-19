@@ -74,7 +74,7 @@ fn stock_e1_feedback_matches_whole_native_receiver_before_audio_service() {
         let mut house = HouseState::new(owner, 0, None, true, 0, 10);
         house.player_control = true;
         sim.houses.register(house);
-        sim.session.current_house = Some(owner);
+        sim.session.set_current_house_for_test(Some(owner));
         let source = sim
             .spawn_object_at_height("MTNK", "Americans", cell[0] - 1, cell[1], 0, 0, rules)
             .expect("ordinary stock source");
@@ -288,11 +288,13 @@ fn damage_feedback_matches_original_draws_house_admission_coordinates_and_contin
                 input["game_mode"].as_u64().unwrap() != 0,
             ),
         );
-        sim.session.current_house = Some(if input["current_house_equal"].as_bool().unwrap() {
-            owner
-        } else {
-            other
-        });
+        sim.session.set_current_house_for_test(Some(
+            if input["current_house_equal"].as_bool().unwrap() {
+                owner
+            } else {
+                other
+            },
+        ));
         sim.substrate.entities.insert(target);
         let warhead = sim.interner.intern("FeedbackWH");
         sim.main_rng =

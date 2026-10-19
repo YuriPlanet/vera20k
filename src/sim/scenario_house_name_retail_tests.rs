@@ -123,8 +123,9 @@ fn rejected_authored_buildings_match_original_without_constructing() {
                 .map(|slot| registered[slot.as_u64().unwrap() as usize])
                 .collect::<Vec<_>>(),
         );
-        sim.session.current_house =
-            Some(registered[row["current_house"].as_u64().unwrap() as usize]);
+        sim.session.set_current_house_for_test(Some(
+            registered[row["current_house"].as_u64().unwrap() as usize],
+        ));
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
                 row["game_mode"].as_i64().unwrap() != 0,
@@ -170,7 +171,7 @@ fn mobile_readers_admit_current_house_and_resolve_first_computer() {
     let mut sim = generated_houses(&retail.rules, &corpus());
     let human = sim.houses.order()[0];
     let ai = sim.houses.order()[1];
-    sim.session.current_house = Some(human);
+    sim.session.set_current_house_for_test(Some(human));
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     sim.intern_rule_type_ids(&retail.rules);
@@ -207,7 +208,8 @@ fn native_names_survive_load_and_hash_independently_of_runtime_keys() {
     let mut sim = generated_houses(&rules, &native);
     let first_ai = sim.houses.order()[1];
     let second_ai = sim.houses.order()[2];
-    sim.session.current_house = Some(sim.houses.order()[0]);
+    sim.session
+        .set_current_house_for_test(Some(sim.houses.order()[0]));
     sim.houses.get_mut(&first_ai).unwrap().is_human = true;
     let bytes = GameSnapshot::save(&sim, 0, 0, "native-house-name", 0);
     let mut loaded = GameSnapshot::load(&bytes).unwrap().sim;

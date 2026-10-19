@@ -103,7 +103,7 @@ pub fn capture_snapshot(state: &AppState) -> Option<TelemetrySnapshot> {
     let speed = runtime
         .simulation
         .session
-        .game_options
+        .game_options()
         .game_speed
         .clamp(0, 6) as u8;
     let mut timing = state

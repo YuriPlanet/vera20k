@@ -244,7 +244,7 @@ impl Probe {
                     [width, height],
                     crate::render::shroud_buffer::SHROUD_EDGE_LUT,
                 ),
-                scene.sim().session.current_house.unwrap(),
+                scene.sim().session.current_house().unwrap(),
             )
         });
         let shadow = native.then(|| {
@@ -499,7 +499,7 @@ impl Probe {
         }
 
         if phase == "loaded" {
-            let owner = sim.session.current_house.unwrap();
+            let owner = sim.session.current_house().unwrap();
             assert!(
                 !sim.fog.is_cell_revealed(owner, center.0, row),
                 "the physical bridge witness must begin with an unexplored anchor"
@@ -604,7 +604,7 @@ impl Probe {
             "rendering cannot mutate simulation"
         );
         let light = self.lighting.grid().cell_light_at((center.0, row)).unwrap();
-        let receipt = json!({"phase":phase,"row":row,"frame":sim.session.binary_frame,
+        let receipt = json!({"phase":phase,"row":row,"frame":sim.session.binary_frame(),
             "overlay":id,"overlay_data":[0,1,2],"source":source,
             "source_bounds":[bounds.0,bounds.1,bounds.2,bounds.3],"cells":cells,
             "cell_light":{"rgb_key":light.rgb_key,"common_scalar":light.common_scalar},

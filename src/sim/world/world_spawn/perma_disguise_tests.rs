@@ -52,7 +52,7 @@ fn a_perma_disguised_spy_starts_wearing_its_sides_rules_disguise() {
         sim.houses
             .register(HouseState::new(id, side, None, false, 0, 10));
     }
-    sim.session.binary_frame = 40;
+    sim.session.set_binary_frame_for_test(40);
     for (i, ((owner, _), worn)) in houses
         .into_iter()
         .zip(["E1", "E2", "INIT", "INIT"])

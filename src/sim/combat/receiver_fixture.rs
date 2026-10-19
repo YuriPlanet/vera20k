@@ -41,7 +41,7 @@ pub(crate) fn observe_area_visit(
     AREA_VISIT_TRACE.with_borrow_mut(|trace| {
         if let Some(observations) = trace {
             observations.push(serde_json::json!({
-                "frame": world.session.binary_frame,
+                "frame": world.session.binary_frame(),
                 "coord": [impact.x, impact.y, impact.z],
                 "damage": damage,
                 "warhead": warhead.id,
@@ -115,7 +115,7 @@ pub(crate) fn substitute_building_fire(
                 .get_mut(id)
                 .unwrap()
                 .rearm_timer
-                .start(world.session.binary_frame as i32, rof);
+                .start(world.session.binary_frame() as i32, rof);
         }
         stub.calls.push((id, shot, multiplier));
         true
@@ -552,7 +552,7 @@ pub(crate) fn commit_damage_events(
             world.rule_handles = handles;
             world.house_alliances = alliances.clone();
             world.receiver_fixture.as_mut().unwrap().current_tick = current_tick;
-            world.session.binary_frame = current_tick as u32;
+            world.session.set_binary_frame_for_test(current_tick as u32);
             world_receiver::commit_entities(
                 world,
                 run,
@@ -604,7 +604,7 @@ pub(crate) fn commit_area_damage_receivers(
             world.rule_handles = handles;
             world.house_alliances = alliances.clone();
             world.receiver_fixture.as_mut().unwrap().current_tick = current_tick;
-            world.session.binary_frame = current_tick as u32;
+            world.session.set_binary_frame_for_test(current_tick as u32);
             world_receiver::commit_area(world, run, receivers, rules, overlay_registry)
         },
     )
@@ -649,8 +649,8 @@ pub(crate) fn handle_entity_deaths(
             world.rule_handles = handles;
             world.house_alliances = alliances.clone();
             world.receiver_fixture.as_mut().unwrap().current_tick = current_tick;
-            world.session.no_damage = scenario_no_damage;
-            world.session.binary_frame = current_tick as u32;
+            world.session.set_no_damage_for_test(scenario_no_damage);
+            world.session.set_binary_frame_for_test(current_tick as u32);
             world_receiver::handle_death(
                 world,
                 run,
@@ -700,7 +700,7 @@ pub(crate) fn emit_projectile_detonations(
         inline_hooks.as_deref_mut(),
         |world, run| {
             world.rule_handles = handles;
-            world.session.no_damage = scenario_no_damage;
+            world.session.set_no_damage_for_test(scenario_no_damage);
             world.receiver_fixture.as_mut().unwrap().terrain_collection = terrain_objects.is_some();
             if let Some(view) = terrain_objects {
                 world.production.terrain_objects = view.objects.clone();
@@ -760,13 +760,13 @@ pub(crate) fn resolve_attacker_fire(
         inline_hooks.as_deref_mut(),
         |world, _run| {
             world.rule_handles = handles;
-            world.session.no_damage = scenario_no_damage;
+            world.session.set_no_damage_for_test(scenario_no_damage);
             world.receiver_fixture.as_mut().unwrap().terrain_collection = terrain_objects.is_some();
             if let Some(view) = terrain_objects {
                 world.production.terrain_objects = view.objects.clone();
                 world.production.terrain_object_cells = view.cells.clone();
             }
-            world.session.binary_frame = binary_frame;
+            world.session.set_binary_frame_for_test(binary_frame);
             world.receiver_fixture.as_mut().unwrap().current_tick = u64::from(binary_frame);
             if let Some(fog) = fog {
                 world.fog = fog.clone();
@@ -833,8 +833,8 @@ pub(crate) fn tick_combat_with_fog_and_main_rng_with_terrain_area(
             world.rule_handles = handles;
             world.house_alliances = alliances.clone();
             world.receiver_fixture.as_mut().unwrap().current_tick = current_tick;
-            world.session.no_damage = scenario_no_damage;
-            world.session.binary_frame = binary_frame;
+            world.session.set_no_damage_for_test(scenario_no_damage);
+            world.session.set_binary_frame_for_test(binary_frame);
             world.power_states = power_states.clone();
             world.bridge_state = bridge_state.cloned();
             if let Some(fog) = fog {
@@ -921,7 +921,7 @@ pub(crate) fn tick_combat_with_fog_and_main_rng_with_terrain_area(
                         world.radiation.apply_detonation(
                             detonation,
                             binary_frame,
-                            &world.session.theater,
+                            &world.session.theater(),
                             &rules.radiation,
                             world.resolved_terrain.as_ref(),
                             &mut world.lighting_sources.pending,

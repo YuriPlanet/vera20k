@@ -514,7 +514,7 @@ fn retail_all02_prisoner_damage_enable_elapsed_wakeup_survives_restore() {
         assert!(!candidate.trigger_runtime.has_live_tag(wake_tag));
         assert!(candidate.trigger_runtime.trigger(source_live).is_none());
         assert!(candidate.trigger_runtime.trigger(wake_live).is_none());
-        candidate.session.binary_frame = 1;
+        candidate.session.set_binary_frame_for_test(1);
         for &id in &prisoners {
             candidate.mission_host_promote(id, 1, &rules);
             let mission = candidate.substrate.entities.get(id).unwrap().mission;

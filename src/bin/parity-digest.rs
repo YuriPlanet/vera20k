@@ -138,8 +138,8 @@ fn main() -> Result<(), String> {
             let mut scenario = headless_scenario::load(ra2_dir, map, args.seed)?;
             println!(
                 "loaded {map} ({}x{}, theater {}) seed 0x{:08X}",
-                scenario.sim().session.map_width,
-                scenario.sim().session.map_height,
+                scenario.sim().session.map_width(),
+                scenario.sim().session.map_height(),
                 scenario.map.header.theater,
                 args.seed
             );

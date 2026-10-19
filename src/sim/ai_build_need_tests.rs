@@ -263,7 +263,7 @@ fn another_houses_refinery_building_up_first_holds_the_need() {
             sim.mission_assign_exact(
                 id,
                 MissionId::from_known(MissionType::Construction),
-                sim.session.binary_frame,
+                sim.session.binary_frame(),
             )
             .unwrap();
         };
@@ -535,7 +535,7 @@ fn the_strategy_rebuilds_after_the_missing_factorys_sell_off() {
     assert!(check_build_need(&sim, &rules, owner));
     // Past the emergency block's 900 frames after the (constructor's) last
     // attack at frame 0, which would hold the house in state three.
-    sim.session.binary_frame = 1000;
+    sim.session.set_binary_frame_for_test(1000);
 
     crate::sim::house_strategy::update_strategy(
         &mut sim,

@@ -126,7 +126,13 @@ pub(super) fn remove_pickup_crate(
         else {
             return false;
         };
-        return clear_crate_slot(sim, rules, registry, index, sim.session.binary_frame as i32);
+        return clear_crate_slot(
+            sim,
+            rules,
+            registry,
+            index,
+            sim.session.binary_frame() as i32,
+        );
     }
     let cell_ref = resolve_crate_mark_cell(sim, cell);
     let overlay_id = match &cell_ref {
@@ -206,10 +212,10 @@ pub(crate) fn tick_crate_regeneration(
     lighting_profile: LightingProfileUnits,
 ) -> CrateRegeneration {
     let mut result = CrateRegeneration::default();
-    if !sim.session.game_mode_nonzero() || !sim.session.game_options.crates {
+    if !sim.session.game_mode_nonzero() || !sim.session.game_options().crates {
         return result;
     }
-    let current_frame = sim.session.binary_frame as i32;
+    let current_frame = sim.session.binary_frame() as i32;
     for index in 0..CRATE_SLOT_CAPACITY {
         // Reload the live slot: an earlier expiry in this same pass may have
         // reinstalled a crate at or below this index.
@@ -281,7 +287,7 @@ mod tests {
                     input["mode"].as_i64() != Some(0),
                 ),
             );
-            sim.session.binary_frame = 100;
+            sim.session.set_binary_frame_for_test(100);
             sim.playfield_bounds.as_mut().unwrap().base = 10;
             sim.playfield_size_height = Some(10);
             let mut rules = crate_ruleset("");
@@ -576,7 +582,7 @@ mod tests {
                     game_mode_nonzero,
                 ),
             );
-            sim.session.game_options.crates = crates;
+            sim.session.game_options_mut_for_test().crates = crates;
             *sim.crate_authority.slot_mut(0) = CrateSlot {
                 start_frame: -1,
                 aux: 0,
@@ -606,8 +612,8 @@ mod tests {
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
-        sim.session.game_options.crates = true;
-        sim.session.binary_frame = 1_000;
+        sim.session.game_options_mut_for_test().crates = true;
+        sim.session.set_binary_frame_for_test(1_000);
         let rules = crate_ruleset("");
         let registry = crate_registry();
 
@@ -655,8 +661,8 @@ mod tests {
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
-        sim.session.game_options.crates = true;
-        sim.session.binary_frame = 4_000;
+        sim.session.game_options_mut_for_test().crates = true;
+        sim.session.set_binary_frame_for_test(4_000);
         let rules = crate_ruleset("");
         let registry = crate_registry();
 
@@ -697,8 +703,8 @@ mod tests {
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
-        sim.session.game_options.crates = true;
-        sim.session.binary_frame = 500;
+        sim.session.game_options_mut_for_test().crates = true;
+        sim.session.set_binary_frame_for_test(500);
         let rules = crate_ruleset("");
         let registry = crate_registry();
         let wood = registry.id_for_name("WOOD").expect("WOOD overlay");
@@ -828,7 +834,7 @@ mod tests {
         on.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
-        on.session.game_options.crates = true;
+        on.session.game_options_mut_for_test().crates = true;
         *on.crate_authority.slot_mut(0) = due_slot;
         on.advance_tick(&[], Some(&rules), None, Some(&registry), 33);
         let regenerated = on.crate_authority.slots()[0];
@@ -841,7 +847,8 @@ mod tests {
             "the rung runs on the pre-increment frame this tick observed"
         );
         assert_eq!(
-            on.session.binary_frame, 1,
+            on.session.binary_frame(),
+            1,
             "the frame counter still commits after every phase"
         );
         assert!(
@@ -859,7 +866,7 @@ mod tests {
         off.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
-        off.session.game_options.crates = false;
+        off.session.game_options_mut_for_test().crates = false;
         *off.crate_authority.slot_mut(0) = due_slot;
         off.advance_tick(&[], Some(&rules), None, Some(&registry), 33);
         assert_eq!(
@@ -877,7 +884,7 @@ mod tests {
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
-        sim.session.game_options.crates = true;
+        sim.session.game_options_mut_for_test().crates = true;
         let rules = crate_ruleset("");
         let registry = crate_registry();
 

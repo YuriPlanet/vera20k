@@ -152,8 +152,8 @@ fn scene(golden: &Value, row: &Value) -> (Simulation, RuleSet, u64, u64) {
     let case = &row["input"];
     let rules = stock_rules(golden, case);
     let mut sim = Simulation::new();
-    sim.session.binary_frame = 200;
-    sim.session.game_options.game_speed = integer(&row["game_speed"]);
+    sim.session.set_binary_frame_for_test(200);
+    sim.session.game_options_mut_for_test().game_speed = integer(&row["game_speed"]);
     sim.native_unique_ids =
         Some(crate::sim::native_identity::NativeUniqueIdCursor::test_at_current_value(0));
     sim.main_rng =
@@ -357,7 +357,8 @@ fn original_64_slot_expiry_controls_and_actual_sprite_frame_histories() {
                     .inactive = true;
             }
             for frame in row["frames"].as_array().unwrap() {
-                sim.session.binary_frame = integer(&frame["frame"]) as u32;
+                sim.session
+                    .set_binary_frame_for_test(integer(&frame["frame"]) as u32);
                 sim.visit_anim(
                     expired,
                     &rules,
@@ -455,7 +456,7 @@ fn original_stock_idle_body_publishes_ready_without_waiting_for_slot_completion(
                 .object(row["building"].as_str().unwrap())
                 .unwrap()
                 .has_turret,
-            &sim.session.game_options,
+            &sim.session.game_options(),
         );
         assert_eq!(
             entity.building_ready_latch(),

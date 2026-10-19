@@ -224,7 +224,7 @@ fn production_update_materializes_zero_state_for_a_newly_sinking_ship_only() {
         .spawn_object("DEST", "Americans", 10, 10, 0, &rules)
         .expect("ordinary stock ship admission");
     let object = rules.object("DEST").unwrap();
-    let frame = sim.session.binary_frame;
+    let frame = sim.session.binary_frame();
     let entity = sim.substrate.entities.get_mut(ship).unwrap();
     assert!(entity.rocking.is_none());
     assert!(!super::update(

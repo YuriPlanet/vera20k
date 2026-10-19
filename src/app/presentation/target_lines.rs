@@ -136,7 +136,7 @@ pub(crate) fn build_target_line_instances(
     // per-Techno 43B150 walk when the player has no operational detector.
     // Collect the player's detectors once for the frame's Techno walk.
     let psychic = rules.and_then(|rules| {
-        let viewer = sim.session.current_house?;
+        let viewer = sim.session.current_house()?;
         let sites: Vec<_> = sim.psychic_detection_sites(viewer, rules).collect();
         (!sites.is_empty()).then_some((rules, viewer, sites))
     });
@@ -194,7 +194,7 @@ pub(crate) fn build_target_line_instances(
         return instances;
     }
     let colors = line_state
-        .is_selected_action_active(sim.session.binary_frame)
+        .is_selected_action_active(sim.session.binary_frame())
         .then(|| {
             palette_bytes.and_then(|bytes| crate::assets::pal_file::Palette::from_bytes(bytes).ok())
         })
@@ -508,7 +508,7 @@ pub(crate) fn build_factory_rally_line_instances(
             start,
             end,
             tint,
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
             viewport,
             &mut alpha_at,
         );
@@ -797,7 +797,7 @@ mod tests {
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
-        sim.session.current_house = Some(unit.owner());
+        sim.session.set_current_house_for_test(Some(unit.owner()));
         unit.navigation
             .set_nav_com_for_test(Some(NavTargetRef::cell(25, 25)));
         unit.attack_target.set_for_test(Some(TargetKind::Entity(2)));

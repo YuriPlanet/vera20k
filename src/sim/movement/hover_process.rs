@@ -171,8 +171,8 @@ fn hover_is_powered(entity: &GameEntity, terrain: Option<&ResolvedTerrainGrid>) 
 impl Simulation {
     fn hover_error(&self, id: u64, cause: impl Into<String>) -> FrameAdvanceError {
         FrameAdvanceError {
-            tick: self.session.tick,
-            binary_frame: self.session.binary_frame,
+            tick: self.session.tick(),
+            binary_frame: self.session.binary_frame(),
             entity_id: id,
             cause: cause.into(),
         }
@@ -349,7 +349,7 @@ impl Simulation {
         out: &mut HoverProcessOutcome,
         effects: FrameEffects<'_>,
     ) -> Result<bool, FrameAdvanceError> {
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         self.hover_speed_update(id, rules, registry, out, effects)?;
         //514349..514358: a dead Foot returns before the tail.
         if !self.hover_alive(id) {
@@ -511,7 +511,7 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) {
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         let Some(location) = self.hover_location(id) else {
             return;
         };
@@ -633,7 +633,7 @@ impl Simulation {
     }
 
     fn hover_shove(&mut self, id: u64) {
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         let powered = self
             .substrate
             .entities
@@ -669,7 +669,7 @@ impl Simulation {
     /// 0x00513D20 on the Foot: GetHeight, the controller, SetHeight with the
     /// mark byte cleared.
     fn hover_altitude(&mut self, id: u64, rules: &RuleSet) {
-        let frame = self.session.binary_frame as i32;
+        let frame = self.session.binary_frame() as i32;
         let terrain = self.resolved_terrain.as_ref();
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return;
@@ -707,7 +707,7 @@ impl Simulation {
         out: &mut HoverProcessOutcome,
         effects: FrameEffects<'_>,
     ) -> Result<(), FrameAdvanceError> {
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         let terrain = self.resolved_terrain.as_ref();
         let Some(entity) = self.substrate.entities.get(id) else {
             return Ok(());
@@ -796,7 +796,7 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> Result<(), FrameAdvanceError> {
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         self.hover_trim_path(id, rules, registry);
         let Some(entity) = self.substrate.entities.get(id) else {
             return Ok(());
@@ -1089,7 +1089,7 @@ impl Simulation {
         out: &mut HoverProcessOutcome,
         effects: FrameEffects<'_>,
     ) -> Result<u8, FrameAdvanceError> {
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         //514F83..514FCA: the old head's claim goes first.
         self.hover_release_head(id);
         let Some(entity) = self.substrate.entities.get(id) else {
@@ -1320,7 +1320,7 @@ impl Simulation {
 
     /// The retry preamble: +640 = (Frame, 0) and the path head dropped.
     fn hover_restart_path(&mut self, id: u64) {
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             entity.navigation.path_runtime.start_movement(frame, 0);
             entity.navigation.path_replay.clear_live_head();

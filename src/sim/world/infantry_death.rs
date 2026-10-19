@@ -440,7 +440,7 @@ impl Simulation {
                 crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Guard),
             );
         }
-        let now = self.session.binary_frame;
+        let now = self.session.binary_frame();
         let _ = self.mission_commence_exact(id, now);
         let entity = self
             .substrate
@@ -658,7 +658,7 @@ mod corpse_tests {
     #[test]
     fn a_corpse_in_radiation_dies_again_at_the_next_application() {
         let (mut sim, rules, id) = corpse_scene();
-        sim.session.binary_frame = 10;
+        sim.session.set_binary_frame_for_test(10);
         kill_with_die1(&mut sim, &rules, id);
         sim.radiation.apply_detonation(
             crate::sim::radiation::RadDetonation {
@@ -668,7 +668,7 @@ mod corpse_tests {
                 spread: 2,
             },
             10,
-            &sim.session.theater,
+            &sim.session.theater(),
             &rules.radiation,
             sim.resolved_terrain.as_ref(),
             &mut sim.lighting_sources.pending,
@@ -679,7 +679,7 @@ mod corpse_tests {
                 .count()
         };
         for frame in 10..16 {
-            sim.session.binary_frame = frame;
+            sim.session.set_binary_frame_for_test(frame);
             sim.advance_tick(&[], Some(&rules), None, None, 100);
             assert!(
                 sim.substrate
@@ -690,7 +690,7 @@ mod corpse_tests {
             );
         }
         assert_eq!(nukedie(&sim), 0);
-        sim.session.binary_frame = 16;
+        sim.session.set_binary_frame_for_test(16);
         sim.advance_tick(&[], Some(&rules), None, None, 100);
         assert!(
             sim.substrate

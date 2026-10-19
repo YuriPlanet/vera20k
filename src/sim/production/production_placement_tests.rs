@@ -123,7 +123,7 @@ fn ready_and_place(
 }
 
 fn set_ticks_until_completion(sim: &mut Simulation, stable_id: u64, ticks: u16) {
-    let now = sim.session.binary_frame as i32;
+    let now = sim.session.binary_frame() as i32;
     let building = sim
         .substrate
         .entities
@@ -281,7 +281,7 @@ fn complete_stock_allied_refinery_on(
     override_cell: impl FnMut(&mut ResolvedTerrainCell),
 ) -> (Simulation, u64, bool) {
     let mut sim = placement_sim();
-    sim.session.binary_frame = start_frame;
+    sim.session.set_binary_frame_for_test(start_frame);
     let rules = stock_refinery_completion_rules();
     let mut grid = PathGrid::new(64, 64);
     spawn_structure(&mut sim, &rules, 1, "Americans", "GACNST", 14, 20);
@@ -799,7 +799,7 @@ fn a_place_executing_in_the_completion_frame_is_admitted() {
     );
     let held = super::lifecycle_tests::held_id(&sim, americans, ProductionCategory::Building);
     // The last step, paid off, is due in the next frame.
-    let frame = sim.session.binary_frame as i32;
+    let frame = sim.session.binary_frame() as i32;
     let factory = sim
         .production
         .factories
@@ -811,7 +811,7 @@ fn a_place_executing_in_the_completion_frame_is_admitted() {
     factory.step_timer = crate::sim::timer::CdTimer::started(frame, 0);
     assert!(ready_buildings_for_owner(&sim, &rules, "Americans").is_empty());
 
-    let place = place_event(americans, gapowr, (12, 10), sim.session.tick + 1);
+    let place = place_event(americans, gapowr, (12, 10), sim.session.tick() + 1);
     let tick = sim.advance_tick(&[place], Some(&rules), Some(&grid), None, 67);
 
     assert_eq!(tick.executed_commands, 1);
@@ -926,8 +926,8 @@ fn placed_gapowr_completion(human: bool) -> (u32, Option<u32>) {
     sim.advance_tick(&[], Some(&rules), Some(&grid), None, 67);
 
     ready_building(&mut sim, &rules, "Americans", "GAPOWR");
-    let place = place_event(americans, gapowr, (12, 10), sim.session.tick + 1);
-    let placed_frame = sim.session.binary_frame;
+    let place = place_event(americans, gapowr, (12, 10), sim.session.tick() + 1);
+    let placed_frame = sim.session.binary_frame();
     let tick = sim.advance_tick(&[place], Some(&rules), Some(&grid), None, 67);
     assert_eq!(tick.executed_commands, 1);
     let placed = sim
@@ -940,7 +940,7 @@ fn placed_gapowr_completion(human: bool) -> (u32, Option<u32>) {
 
     let mut completed = None;
     for _ in 0..80 {
-        let frame = sim.session.binary_frame;
+        let frame = sim.session.binary_frame();
         sim.advance_tick(&[], Some(&rules), Some(&grid), None, 67);
         if !sim.substrate.entities.get(placed).unwrap().building_up() {
             completed = Some(frame);
@@ -990,7 +990,7 @@ fn stock_gapowr_placement_restores_power_and_radar_during_buildup() {
     );
 
     ready_building(&mut sim, &rules, "Americans", "GAPOWR");
-    let place = place_event(americans, gapowr, (12, 10), sim.session.tick + 1);
+    let place = place_event(americans, gapowr, (12, 10), sim.session.tick() + 1);
 
     let tick = sim.advance_tick(&[place], Some(&rules), Some(&grid), None, 67);
     assert_eq!(tick.executed_commands, 1);
@@ -1133,7 +1133,7 @@ fn stock_refinery_free_unit_spawns_on_building_up_completion_once() {
     assert!(
         completion.spawned_entities,
         "completion frame{}: mission={:?}/{:?}, status={}, ready={}, body={:?}, stage={:?}, placed={}, free_units={:?}",
-        sim.session.binary_frame - 1,
+        sim.session.binary_frame() - 1,
         building.mission.current(),
         building.mission.queued(),
         building.mission.handler_state(),
@@ -1643,7 +1643,7 @@ fn placement_command_rejects_marked_ground_mobiles_until_they_are_unmarked() {
         let entities_before = sim.substrate.entities.len();
         let next_id_before = sim.substrate.next_stable_object_id;
         let occupancy_generation_before = sim.substrate.occupancy.generation();
-        let rejected = place_event(americans, gapowr, (12, 10), sim.session.tick + 1);
+        let rejected = place_event(americans, gapowr, (12, 10), sim.session.tick() + 1);
         let tick = sim.advance_tick(&[rejected], Some(&rules), Some(&grid), None, 67);
 
         assert_eq!(tick.executed_commands, 1);
@@ -1687,7 +1687,7 @@ fn placement_command_rejects_marked_ground_mobiles_until_they_are_unmarked() {
             "the same foundation must become legal after {blocker_type} is unmarked"
         );
 
-        let accepted = place_event(americans, gapowr, (12, 10), sim.session.tick + 1);
+        let accepted = place_event(americans, gapowr, (12, 10), sim.session.tick() + 1);
         let tick = sim.advance_tick(&[accepted], Some(&rules), Some(&grid), None, 67);
         assert!(tick.spawned_entities);
         assert!(ready_buildings_for_owner(&sim, &rules, "Americans").is_empty());
@@ -1728,7 +1728,7 @@ fn placement_command_rejects_nonblocking_overlay_and_preserves_ready_building() 
     let entities_before = sim.substrate.entities.len();
     let next_id_before = sim.substrate.next_stable_object_id;
     let occupancy_generation_before = sim.substrate.occupancy.generation();
-    let rejected = place_event(americans, gapowr, (12, 10), sim.session.tick + 1);
+    let rejected = place_event(americans, gapowr, (12, 10), sim.session.tick() + 1);
     let tick = sim.advance_tick(&[rejected], Some(&rules), Some(&grid), None, 67);
 
     assert_eq!(tick.executed_commands, 1);
@@ -1761,7 +1761,7 @@ fn placement_command_rejects_nonblocking_overlay_and_preserves_ready_building() 
         "the same foundation must become legal after the overlay is cleared"
     );
 
-    let accepted = place_event(americans, gapowr, (12, 10), sim.session.tick + 1);
+    let accepted = place_event(americans, gapowr, (12, 10), sim.session.tick() + 1);
     let tick = sim.advance_tick(&[accepted], Some(&rules), Some(&grid), None, 67);
     assert!(tick.spawned_entities);
     assert!(ready_buildings_for_owner(&sim, &rules, "Americans").is_empty());
@@ -1972,7 +1972,12 @@ fn gsi_04_07_command_places_authoritative_owned_wall_without_entity() {
     let entities_before = sim.substrate.entities.len();
 
     let tick = sim.advance_tick(
-        &[place_event(owner, type_id, (12, 10), sim.session.tick + 1)],
+        &[place_event(
+            owner,
+            type_id,
+            (12, 10),
+            sim.session.tick() + 1,
+        )],
         Some(&rules),
         Some(&path_grid),
         Some(&registry),
@@ -2506,7 +2511,7 @@ fn gsi_04_07_placement_command_places_only_its_own_houses_production() {
             event_owner,
             wall_type,
             (12, 10),
-            sim.session.tick + 1,
+            sim.session.tick() + 1,
         )],
         Some(&rules),
         Some(&path_grid),
@@ -2727,7 +2732,7 @@ fn build_off_ally_lends_an_eligible_allied_provider_only_while_enabled() {
         (true, "GAPOWR", false),
     ] {
         let mut sim = placement_sim();
-        sim.session.game_options.build_off_ally = build_off_ally;
+        sim.session.game_options_mut_for_test().build_off_ally = build_off_ally;
         spawn_structure(&mut sim, &rules, 1, "Alliance", provider, 10, 10);
         // PLACE still needs this house's producer; only its radius comes from
         // the nearby ally. Keep the own yard outside this placement's build area.
@@ -2748,7 +2753,7 @@ fn build_off_ally_off_keeps_own_base_provider() {
     let mut sim = placement_sim();
     let rules = build_off_ally_rules();
 
-    sim.session.game_options.build_off_ally = false;
+    sim.session.game_options_mut_for_test().build_off_ally = false;
     spawn_structure(&mut sim, &rules, 1, "Americans", "GACNST", 10, 10);
     ready_building(&mut sim, &rules, "Americans", "GAPOWR");
 
@@ -3699,7 +3704,7 @@ fn stock_infantry_fallback_unit_ready_uses_producer_getcoords() {
     house.difficulty = crate::sim::house_state::HouseDifficulty::Hard;
     house.project_country_mults(&rules, &sim.interner);
     sim.houses.register(house);
-    sim.session.current_house = Some(owner);
+    sim.session.set_current_house_for_test(Some(owner));
     let producer = sim
         .spawn_object_at_height_with_overlay_registry(
             "GAPILE",
@@ -3750,16 +3755,16 @@ fn stock_infantry_fallback_unit_ready_uses_producer_getcoords() {
     // The focused publisher helper increments both clocks before applying
     // due PLACE, so159 ->160 reaches the measured native fallback call frame.
     // No actor/House turns or native completion cadence are asserted here.
-    sim.session.binary_frame = 159;
-    sim.session.tick = 159;
+    sim.session.set_binary_frame_for_test(159);
+    sim.session.set_tick_for_test(159);
     let event_start = sim.sound_events.len();
     assert!(super::dispatch_production_changes_for_tests(
         &mut sim,
         &rules,
         Some(&registry),
     ));
-    assert_eq!(sim.session.binary_frame, 160);
-    assert_eq!(sim.session.tick, 160);
+    assert_eq!(sim.session.binary_frame(), 160);
+    assert_eq!(sim.session.tick(), 160);
     assert!(sim.pending_command_snapshot().is_empty());
     let product = sim.substrate.entities.get(held).unwrap();
     let position = ground_pose::position_world_coord(&product.position);
@@ -3856,10 +3861,10 @@ fn stock_yuri_cloning_world_with_scenario(
     house.difficulty = crate::sim::house_state::HouseDifficulty::Hard;
     house.project_country_mults(&rules, &sim.interner);
     sim.houses.register(house);
-    sim.session.current_house = Some(owner);
+    sim.session.set_current_house_for_test(Some(owner));
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
-    sim.session.game_options.game_speed = 3;
+    sim.session.game_options_mut_for_test().game_speed = 3;
     Some((sim, rules, registry, owner))
 }
 

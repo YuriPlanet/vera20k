@@ -64,7 +64,7 @@ fn scene_with(
         .unwrap()
         .health
         .set_for_test(1);
-    let frame = sim.session.binary_frame;
+    let frame = sim.session.binary_frame();
     sim.mission_assign_exact(
         engineer,
         MissionId::from_known(MissionType::AreaGuard),
@@ -243,7 +243,7 @@ fn retail_ai_engineer_hunt_acquires_enters_repairs_and_is_consumed() {
     sim.mission_assign_exact(
         engineer,
         MissionId::from_known(MissionType::Hunt),
-        sim.session.binary_frame,
+        sim.session.binary_frame(),
     )
     .unwrap();
     for _ in 0..600 {

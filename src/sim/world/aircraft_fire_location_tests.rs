@@ -123,8 +123,8 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
     );
     let rules = RuleSet::from_ini(&IniFile::from_str(&ini)).unwrap();
     let mut sim = Simulation::with_seed(input["seed"].as_u64().unwrap_or(31));
-    sim.session.map_width = 128;
-    sim.session.map_height = 128;
+    sim.session.set_map_width_for_test(128);
+    sim.session.set_map_height_for_test(128);
     sim.session.set_game_mode(
         crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
             input["game_mode"].as_u64().unwrap_or(1) != 0,
@@ -262,7 +262,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
     // The original global Cell flags belong to CurrentHouse, even when the
     // searching aircraft belongs to a different house. No UI cache is built.
     let viewer = sim.interner.intern("CURRENT_HOUSE");
-    sim.session.current_house = Some(viewer);
+    sim.session.set_current_house_for_test(Some(viewer));
     sim.houses
         .register(crate::sim::house_state::HouseState::new(
             viewer, 0, None, true, 0, 1,
@@ -306,7 +306,7 @@ pub(super) fn reengagement_fixture(input: &Value) -> (Simulation, RuleSet) {
             "[Attack]\nRate={}\n",
             input["rate"].as_f64().unwrap_or(0.016)
         )));
-    sim.session.binary_frame = 100;
+    sim.session.set_binary_frame_for_test(100);
     if input["open_transport"].as_bool().unwrap_or(false) {
         insert(
             &mut sim,

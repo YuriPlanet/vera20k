@@ -406,7 +406,7 @@ mod tests {
             .runtime
             .frame_timer = CdTimer::started(0, 3);
         sim.power_states.entry(owner).or_default().total_drain = 100;
-        sim.session.binary_frame = 20;
+        sim.session.set_binary_frame_for_test(20);
         sim.visit_building_operational(
             id,
             &rules,
@@ -498,7 +498,7 @@ mod tests {
             state.total_drain = 100;
             state.is_low_power = state.total_output < 100;
             state.start_blackout(
-                sim.session.binary_frame,
+                sim.session.binary_frame(),
                 i["outage"].as_u64().unwrap() as i32,
             );
             sim.visit_building_operational(

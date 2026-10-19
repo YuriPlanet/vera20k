@@ -69,10 +69,10 @@ fn two_paid_rocketeers(rally: Option<(u16, u16)>) {
     house.difficulty = HouseDifficulty::Hard;
     house.project_country_mults(&rules, &sim.interner);
     sim.houses.register(house);
-    sim.session.current_house = Some(owner);
+    sim.session.set_current_house_for_test(Some(owner));
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
-    sim.session.game_options.game_speed = 3;
+    sim.session.game_options_mut_for_test().game_speed = 3;
     let spawn = |sim: &mut Simulation, name: &str, rx: u16, ry: u16| {
         sim.spawn_object_at_height_with_overlay_registry(
             name,
@@ -94,7 +94,7 @@ fn two_paid_rocketeers(rally: Option<(u16, u16)>) {
     if let Some((rx, ry)) = rally {
         let command = CommandEnvelope::new(
             owner,
-            sim.session.tick + 1,
+            sim.session.tick() + 1,
             Command::SetRally {
                 rx,
                 ry,
@@ -107,12 +107,12 @@ fn two_paid_rocketeers(rally: Option<(u16, u16)>) {
     let commands = [
         CommandEnvelope::new(
             owner,
-            sim.session.tick + 1,
+            sim.session.tick() + 1,
             Command::QueueProduction { type_id: jumpjet },
         ),
         CommandEnvelope::new(
             owner,
-            sim.session.tick + 1,
+            sim.session.tick() + 1,
             Command::QueueProduction { type_id: jumpjet },
         ),
     ];
@@ -143,7 +143,7 @@ fn two_paid_rocketeers(rally: Option<(u16, u16)>) {
                 crate::sim::world::FrameEffects::default(),
             )
             .expect("the ordinary app frame completes");
-        let frame = sim.session.binary_frame;
+        let frame = sim.session.binary_frame();
         let log = radio::take_transmit_log();
         if let Some(held) = sim
             .production

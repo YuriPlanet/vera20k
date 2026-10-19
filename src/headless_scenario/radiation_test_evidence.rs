@@ -47,7 +47,7 @@ pub fn visit_paid_deso_light_lifecycle(
     // deliberately not used: the accepted capture advances ordinary22ms.
     scene.runtime.simulation.batch_path_searches();
     scene.runtime.simulation.batch_target_scans();
-    let owner = scene.sim().session.current_house.unwrap();
+    let owner = scene.sim().session.current_house().unwrap();
     assert_eq!(scene.sim().resolve(owner), local_name);
     assert_eq!(
         scene
@@ -362,7 +362,7 @@ fn assert_paid_deso_lifecycle(profile_path: &'static str) {
         if let Some(output) = output {
             frames += 1;
             assert!(output.tick.frame_committed);
-            assert_eq!(scene.sim().session.total_sim_ms, frames * 22);
+            assert_eq!(scene.sim().session.total_sim_ms(), frames * 22);
         }
         if let Some(phase) = phase {
             phases.push(phase.to_owned());

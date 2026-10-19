@@ -25,7 +25,7 @@ impl Simulation {
         rules: &RuleSet,
         cells: Option<&NativeCellQuery<'_>>,
     ) -> Option<[i32; 3]> {
-        let owner = self.session.current_house?;
+        let owner = self.session.current_house()?;
         let house = self.houses.get(&owner)?;
         let mut preferred = NO_COORD;
         let mut fallback = NO_COORD;

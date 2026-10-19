@@ -281,7 +281,7 @@ impl Simulation {
         if self.session.game_mode_nonzero() {
             //50B716 loads A83D4C, the persisted native current-house input.
             //Presentation viewer binding cannot change this receiver's result.
-            self.session.current_house == Some(owner)
+            self.session.current_house() == Some(owner)
         } else {
             self.houses
                 .get(&owner)
@@ -334,7 +334,7 @@ impl Simulation {
             if object.construction_yard
                 && !(self.owner_is_human(actor.owner())
                     && self.session.game_mode_nonzero()
-                    && self.session.game_options.mcv_redeploy
+                    && self.session.game_options().mcv_redeploy
                     && actor.mind_control.controller().is_none())
             {
                 return false;
@@ -347,7 +347,7 @@ impl Simulation {
             return false;
         }
         if object.spawned
-            || actor.parasite.is_paralyzed(self.session.binary_frame)
+            || actor.parasite.is_paralyzed(self.session.binary_frame())
             || actor.is_warped_out()
             || actor.is_warping_in()
             || actor.slave.owner().is_some()
@@ -836,8 +836,8 @@ impl Simulation {
         )
         .map_err(|cause| {
             super::FrameAdvanceError::new(
-                self.session.tick,
-                self.session.binary_frame,
+                self.session.tick(),
+                self.session.binary_frame(),
                 engineer_id,
                 cause,
             )
@@ -956,8 +956,8 @@ impl Simulation {
         )
         .map_err(|cause| {
             super::FrameAdvanceError::new(
-                self.session.tick,
-                self.session.binary_frame,
+                self.session.tick(),
+                self.session.binary_frame(),
                 infantry_id,
                 cause,
             )
@@ -1002,7 +1002,7 @@ impl Simulation {
         else {
             return false;
         };
-        if !pending.timer().expired(self.session.binary_frame as i32) || health <= 0 {
+        if !pending.timer().expired(self.session.binary_frame() as i32) || health <= 0 {
             return false;
         }
 
@@ -1054,7 +1054,7 @@ mod repair_notification_tests {
                     id, 0, None, true, 0, 1,
                 ));
         }
-        sim.session.current_house = Some(owner);
+        sim.session.set_current_house_for_test(Some(owner));
         sim.session.set_game_mode(
             crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
@@ -1066,7 +1066,7 @@ mod repair_notification_tests {
                 .sim
         };
         let mut restored = restore();
-        assert_eq!(restored.session.current_house, Some(owner));
+        assert_eq!(restored.session.current_house(), Some(owner));
         restored.announce_bridge_repair(owner, (7, 8), (8, 8));
         assert!(
             matches!(
@@ -1084,7 +1084,9 @@ mod repair_notification_tests {
         );
 
         let mut other_current = restore();
-        other_current.session.current_house = Some(other);
+        other_current
+            .session
+            .set_current_house_for_test(Some(other));
         other_current.announce_bridge_repair(owner, (7, 8), (8, 8));
         assert!(
             matches!(

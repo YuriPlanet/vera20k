@@ -324,7 +324,7 @@ fn sidebar_tab_name(tab: crate::ui::sidebar::SidebarTab) -> &'static str {
 /// The observed House's Supers in interned-id order: the id a profile's
 /// `LaunchSuperWeapon` names and the state the sidebar reads.
 fn super_weapon_rows(sim: &crate::sim::world::Simulation, owner: &str) -> Value {
-    let frame = sim.session.binary_frame as i32;
+    let frame = sim.session.binary_frame() as i32;
     sim.interner
         .get(owner)
         .and_then(|id| sim.super_weapons.get(&id))
@@ -1006,9 +1006,9 @@ impl MapClock {
             .simulation
             .session;
         Ok(Self {
-            simulation_tick: session.tick,
-            binary_frame: session.binary_frame,
-            total_simulation_ms: session.total_sim_ms,
+            simulation_tick: session.tick(),
+            binary_frame: session.binary_frame(),
+            total_simulation_ms: session.total_sim_ms(),
         })
     }
 }
@@ -1357,8 +1357,8 @@ impl MapInputObservation {
                 state.match_state.input.selection_order_pending,
             ),
             selection_pending: state.match_state.input.selection_order_pending,
-            target_line_remaining: lines.remaining_frames(sim.session.binary_frame),
-            target_line_active: lines.is_selected_action_active(sim.session.binary_frame),
+            target_line_remaining: lines.remaining_frames(sim.session.binary_frame()),
+            target_line_active: lines.is_selected_action_active(sim.session.binary_frame()),
             planning_active: state.match_state.input.planning.active(),
             planning_paths: sim.session.current_house().map_or_else(Vec::new, |owner| {
                 sim.planning_paths(owner)
@@ -2040,7 +2040,7 @@ fn disguise_inputs(
             entity,
             &sim.interner,
             state.rules(),
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
             observer,
         );
         let voxel = instances::drawn_type_uses_voxel(entity, &chosen, &sim.interner, state.rules());
@@ -2051,7 +2051,7 @@ fn disguise_inputs(
                     state,
                     &chosen,
                     entity,
-                    sim.session.binary_frame,
+                    sim.session.binary_frame(),
                     None,
                 )
             })
@@ -2069,7 +2069,7 @@ fn disguise_inputs(
             });
         let decision = crate::render::draw_state::DrawState::for_entity(
             entity,
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
             0,
             observer,
         );
@@ -3101,22 +3101,22 @@ impl TacticalCaptureSession {
                 .context("simulation absent")?
                 .simulation;
             ensure!(
-                sim.session.tick == 0
-                    && sim.session.total_sim_ms == 0
-                    && sim.session.binary_frame == 0
-                    && sim.session.seed == u64::from(profile.seed)
+                sim.session.tick() == 0
+                    && sim.session.total_sim_ms() == 0
+                    && sim.session.binary_frame() == 0
+                    && sim.session.seed() == u64::from(profile.seed)
                     && sim.input_delay_ticks == u64::from(profile.input_delay_ticks),
                 "live simulation is not the requested tick-zero state"
             );
             validate_game_options(sim, &profile.launch)?;
             let slots: Vec<_> = sim
                 .session
-                .start_slot_houses
+                .start_slot_houses()
                 .iter()
                 .map(|(slot, house_id)| {
                     let house = sim.houses.get(house_id);
                     json!({"slot": slot, "house": sim.interner.resolve(*house_id),
-                    "waypoint": sim.session.mp_start_waypoints.get(slot),
+                    "waypoint": sim.session.mp_start_waypoints().get(slot),
                     "country": house.and_then(|h| h.country).map(|c| sim.interner.resolve(c)),
                     "human": house.map(|h| h.is_human), "difficulty": house.map(|h| h.difficulty)})
                 })
@@ -3133,17 +3133,17 @@ impl TacticalCaptureSession {
                 };
                 ensure!(
                     sim.session
-                        .mp_start_waypoints
+                        .mp_start_waypoints()
                         .contains_key(&u32::from(index))
                         && sim
                             .session
-                            .start_slot_houses
+                            .start_slot_houses()
                             .contains_key(&u32::from(index)),
                     "requested start {index} was not installed in the loaded map"
                 );
             }
-            let loaded_session = json!({"map_name": sim.session.map_name, "theater": sim.session.theater,
-                "options": sim.session.game_options, "start_slots": slots, "map_waypoints": sim.session.mp_start_waypoints});
+            let loaded_session = json!({"map_name": sim.session.map_name(), "theater": sim.session.theater(),
+                "options": sim.session.game_options(), "start_slots": slots, "map_waypoints": sim.session.mp_start_waypoints()});
             // Simulation::intern_rule_type_ids owns these handles. Observation
             // reads the rules-owned names and installed handles without adding
             // an interner entry or translating a production command.
@@ -3344,7 +3344,7 @@ impl TacticalCaptureSession {
                 .context("command simulation absent")?
                 .simulation
                 .session
-                .tick;
+                .tick();
             ensure!(
                 issued_tick == self.map_state()?.expected_clock(completed_steps, true).0,
                 "command issue is outside exact-step boundary"
@@ -3433,8 +3433,8 @@ impl TacticalCaptureSession {
                 .as_ref()
                 .context("gesture simulation absent")?
                 .simulation;
-            let issued_simulation_tick = sim.session.tick;
-            let issued_binary_frame = sim.session.binary_frame;
+            let issued_simulation_tick = sim.session.tick();
+            let issued_binary_frame = sim.session.binary_frame();
             let clock_before = MapClock::capture(state)?;
             let expected_clock = self.map_state()?.expected_clock(completed_steps, true);
             ensure!(
@@ -3707,8 +3707,8 @@ impl TacticalCaptureSession {
                 .simulation;
             ensure!(
                 scheduled.gesture.is_quickload()
-                    || (sim.session.tick == issued_simulation_tick
-                        && sim.session.binary_frame == issued_binary_frame),
+                    || (sim.session.tick() == issued_simulation_tick
+                        && sim.session.binary_frame() == issued_binary_frame),
                 "gesture advanced simulation outside the exact-step owner"
             );
             let pending_after = sim.pending_command_snapshot();
@@ -3947,8 +3947,8 @@ impl TacticalCaptureSession {
                     "last_operational": entity.building_last_operational,
                     "animation_slots": slots,
                     "voxel_gun": {
-                        "facing": entity.body_facing_current(sim.session.binary_frame),
-                        "elevation": entity.barrel_elevation().current(sim.session.binary_frame),
+                        "facing": entity.body_facing_current(sim.session.binary_frame()),
+                        "elevation": entity.barrel_elevation().current(sim.session.binary_frame()),
                         "hva_counter": entity.turret_anim_frame.frame(),
                         "recoil": entity.voxel_recoil().0,
                         "recoil_active": entity.voxel_recoil().1
@@ -3986,7 +3986,7 @@ impl TacticalCaptureSession {
                         snapshot["runtime"] = cloak_runtime_observation(
                             cloak,
                             entity.in_playfield(),
-                            sim.session.binary_frame as i32,
+                            sim.session.binary_frame() as i32,
                         );
                     }
                     Some(snapshot)
@@ -4030,7 +4030,7 @@ impl TacticalCaptureSession {
                     || profile.observe_electric_bolts == Some(true)
                 {
                     observation["prism"] =
-                        prism_observation(entity, sim.session.binary_frame as i32);
+                        prism_observation(entity, sim.session.binary_frame() as i32);
                 }
                 if profile.observe_electric_bolts == Some(true) {
                     observation["damage_smoke_system_id"] = json!(entity.damage_smoke_system_id);
@@ -4039,7 +4039,8 @@ impl TacticalCaptureSession {
                     || profile.observe_temporal == Some(true)
                     || profile.observe_cloak == Some(true)
                 {
-                    observation["fire"] = fire_observation(entity, sim.session.binary_frame as i32);
+                    observation["fire"] =
+                        fire_observation(entity, sim.session.binary_frame() as i32);
                 }
                 if profile.observe_temporal == Some(true) {
                     observation["temporal"] = temporal_observation(entity);
@@ -4066,9 +4067,9 @@ impl TacticalCaptureSession {
                         // off as native doubles. Native comparisons establish
                         // each getter before consuming these prepared inputs.
                         json!({
-                            "body_facing": entity.body_facing_current(sim.session.binary_frame),
+                            "body_facing": entity.body_facing_current(sim.session.binary_frame()),
                             "turret_facing": entity.barrel_facing.as_ref()
-                                .map(|facing| facing.current(sim.session.binary_frame)),
+                                .map(|facing| facing.current(sim.session.binary_frame())),
                             "locomotor": entity.locomotor.as_ref().map(|loco| loco.active_kind()),
                             "is_moving": crate::sim::movement::motion_query::is_moving(entity),
                             "applied_speed_fraction_fixed_bits": entity.foot_speed.applied_fraction().to_bits(),
@@ -4172,9 +4173,9 @@ impl TacticalCaptureSession {
         }).collect();
         let frame = MapFrameObservation {
             completed_steps: self.exact_step_receipts.len() as u64,
-            simulation_tick: sim.session.tick,
-            binary_frame: sim.session.binary_frame,
-            total_simulation_ms: sim.session.total_sim_ms,
+            simulation_tick: sim.session.tick(),
+            binary_frame: sim.session.binary_frame(),
+            total_simulation_ms: sim.session.total_sim_ms(),
             audio_state: profile
                 .observe_audio
                 .as_ref()
@@ -4259,7 +4260,7 @@ impl TacticalCaptureSession {
             .simulation;
         let step = self.exact_step_receipts.len() as u64;
         ensure!(
-            (sim.session.tick, sim.session.binary_frame)
+            (sim.session.tick(), sim.session.binary_frame())
                 == self.map_state()?.expected_clock(step, false),
             "map draw differs from committed exact-step receipts"
         );
@@ -4303,8 +4304,8 @@ impl TacticalCaptureSession {
                 .push(MapElectricBoltDrawObservation {
                     ordinal: map.electric_bolt_draws.len(),
                     completed_steps: step,
-                    simulation_tick: sim.session.tick,
-                    binary_frame: sim.session.binary_frame,
+                    simulation_tick: sim.session.tick(),
+                    binary_frame: sim.session.binary_frame(),
                     effects,
                     particle_draws: output.particle_draws.clone(),
                 });
@@ -4322,8 +4323,8 @@ impl TacticalCaptureSession {
                 .push(MapRadiationBeamDrawObservation {
                     ordinal: map.radiation_beam_draws.len(),
                     completed_steps: step,
-                    simulation_tick: sim.session.tick,
-                    binary_frame: sim.session.binary_frame,
+                    simulation_tick: sim.session.tick(),
+                    binary_frame: sim.session.binary_frame(),
                     beams,
                 });
         }
@@ -4331,7 +4332,7 @@ impl TacticalCaptureSession {
             // The existing render/audio service keeps running during the tail.
             // These repeat draws do not manufacture extra exact-step receipts.
             ensure!(
-                output.times.radar_ms == sim.session.tick * MAP_PRESENTATION_INTERVAL_MS,
+                output.times.radar_ms == sim.session.tick() * MAP_PRESENTATION_INTERVAL_MS,
                 "audio-tail draw changed the diagnostic simulation clock"
             );
             map.audio_tail_draws = map.audio_tail_draws.saturating_add(1);
@@ -4376,9 +4377,9 @@ impl TacticalCaptureSession {
             .context("simulation absent")?
             .simulation;
         Ok(json!(FinalFingerprint {
-            simulation_tick: sim.session.tick,
-            total_simulation_ms: sim.session.total_sim_ms,
-            binary_frame: sim.session.binary_frame,
+            simulation_tick: sim.session.tick(),
+            total_simulation_ms: sim.session.total_sim_ms(),
+            binary_frame: sim.session.binary_frame(),
             deterministic_state_hash: sim.state_hash()
         }))
     }
@@ -4936,7 +4937,7 @@ mod tests {
         let carrier = sim
             .spawn_object_at_height("HTNK", "Computer1", 11, 10, 0, 0, &rules)
             .unwrap();
-        sim.session.binary_frame = 17;
+        sim.session.set_binary_frame_for_test(17);
         sim.bomb_attach(planter, Some(carrier), &rules);
         let entity = sim.substrate.entities.get_mut(planter).unwrap();
         entity.last_fire_frame.set_for_test(16);

@@ -442,9 +442,9 @@ pub(crate) fn reinforcement_world(
     let path = crate::sim::pathfinding::PathGrid::from_resolved_terrain(&terrain);
     sim.install_fixture_path_grid(Some(&path));
     sim.install_resolved_terrain_for_new_map(terrain);
-    sim.session.map_width = 80;
-    sim.session.map_height = 85;
-    sim.session.binary_frame = 1;
+    sim.session.set_map_width_for_test(80);
+    sim.session.set_map_height_for_test(85);
+    sim.session.set_binary_frame_for_test(1);
     sim.session
         .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     sim.playfield_bounds = Some(PlayfieldBounds::from_normalized_local_size(
@@ -470,11 +470,12 @@ pub(crate) fn reinforcement_world(
     sim.houses.register(house);
     sim.houses
         .register(HouseState::new(enemy, 0, Some(country), true, 0, 10));
-    sim.session.current_house = Some(if input["allied"].as_bool().unwrap_or(true) {
-        owner
-    } else {
-        enemy
-    });
+    sim.session
+        .set_current_house_for_test(Some(if input["allied"].as_bool().unwrap_or(true) {
+            owner
+        } else {
+            enemy
+        }));
     let definitions_inputs = input["definitions"]
         .as_array()
         .map(Vec::as_slice)

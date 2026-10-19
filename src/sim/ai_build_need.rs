@@ -91,7 +91,7 @@ struct EconomyTypes<'r> {
 impl<'r> EconomyTypes<'r> {
     fn of(sim: &Simulation, rules: &'r RuleSet, house: &HouseState) -> Self {
         let country = sim.interner.resolve(house.house_type_id());
-        let super_weapons = sim.session.game_options.super_weapons;
+        let super_weapons = sim.session.game_options().super_weapons;
         Self {
             refinery: first_buildable_from_array(
                 rules,

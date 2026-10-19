@@ -21,7 +21,7 @@ fn export(scene: &HeadlessScenario, phase: &str) {
     };
     let sim = scene.sim();
     let result = json!({
-        "phase":phase, "frame":sim.session.binary_frame,
+        "phase":phase, "frame":sim.session.binary_frame(),
         "navigation":navigation_snapshot(sim, phase, points()),
         "entities":sim.entities().values().filter(|e|
             (111..=120).contains(&e.position.rx()) && (51..=67).contains(&e.position.ry())
@@ -184,7 +184,7 @@ fn retail_wood_force_fire_collapses_then_engineer_rebuilds() {
     repair_shrapnel_wood(&mut scene);
     export(&scene, "attack_healthy");
     let runtime = &mut scene.runtime;
-    let owner = runtime.simulation.session.current_house.unwrap();
+    let owner = runtime.simulation.session.current_house().unwrap();
     let owner_name = runtime.simulation.resolve(owner).to_owned();
     let tank = runtime
         .simulation
@@ -201,7 +201,7 @@ fn retail_wood_force_fire_collapses_then_engineer_rebuilds() {
     export(&scene, "attack_before_command");
     let command = CommandEnvelope::new(
         owner,
-        scene.sim().session.tick + 1,
+        scene.sim().session.tick() + 1,
         Command::ForceAttackCell {
             attacker_id: tank,
             target_rx: 115,
@@ -231,7 +231,7 @@ fn retail_wood_force_fire_collapses_then_engineer_rebuilds() {
     let mut transitions = Vec::new();
     let mut collapsed = false;
     for _ in 0..18_000 {
-        let logic_frame = scene.sim().session.binary_frame;
+        let logic_frame = scene.sim().session.binary_frame();
         let output = scene
             .runtime
             .advance_frame(

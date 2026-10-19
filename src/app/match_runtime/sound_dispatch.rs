@@ -2022,7 +2022,7 @@ mod tests {
                         crate::sim::house_state::HouseState::new(local, 0, None, true, 0, 10);
                     house.is_defeated = true;
                     sim.houses.register(house);
-                    sim.session.current_house = Some(local);
+                    sim.session.set_current_house_for_test(Some(local));
                 }
                 let owner = sim.interner.intern(if row["player"] == true {
                     "Local"
@@ -2469,7 +2469,7 @@ mod tests {
         let mut house = HouseState::new(owner, 0, Some(owner), true, 50_000, 10);
         house.project_country_mults(&rules, &sim.interner);
         sim.houses.register(house);
-        sim.session.current_house = Some(owner);
+        sim.session.set_current_house_for_test(Some(owner));
         crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
         for (name, x) in [("GACNST", 4), ("GAPILE", 11)] {
             sim.spawn_object(name, "Americans", x, 4, 0, &rules)
@@ -2537,7 +2537,7 @@ mod tests {
         assert_eq!((0..4).map(|_| frame(&mut runtime, &[])).sum::<usize>(), 0);
         let sell = CommandEnvelope::new(
             owner,
-            runtime.simulation.session.tick,
+            runtime.simulation.session.tick(),
             Command::SellBuilding { entity_id: plant },
         );
         let mut second = frame(&mut runtime, &[sell]);

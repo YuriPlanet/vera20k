@@ -88,12 +88,11 @@ pub(crate) fn impact(sim: &mut Simulation, rules: &RuleSet, impact: ProjectileNu
     else {
         return;
     };
-    sim.session
-        .lighting
-        .start_nuke_flash(sim.session.binary_frame as i32);
+    let frame = sim.session.binary_frame() as i32;
+    sim.session.lighting_mut().start_nuke_flash(frame);
     // ScreenNukeFlash53AC39 calls RecalcLighting with alternate flag1.
     sim.publish_global_lighting(crate::sim::light_sources::PaletteUpdate::from_scenario(
-        &sim.session.lighting,
+        &sim.session.lighting(),
     ));
     let cell = |leptons: i32| (leptons / 256) as i16 as u16;
     sim.sound_events.push(SimSoundEvent::RadarEvent {

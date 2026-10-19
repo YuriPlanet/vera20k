@@ -125,7 +125,7 @@ impl Simulation {
                 .expect("retained paired Super")
                 .is_ready = false;
             self.release_super_anim(owner, pre_type);
-            let frame = self.session.binary_frame;
+            let frame = self.session.binary_frame();
             super_instance(self, owner, pre_type)
                 .expect("retained paired Super")
                 .stop_preclick(pre_sw, frame);
@@ -186,7 +186,7 @@ fn click_fire(
     if !one_time && !sw.manual_control && !sw.pre_click && !sw.post_click {
         sim.release_super_anim(owner, sw_type_id);
     }
-    let frame = sim.session.binary_frame;
+    let frame = sim.session.binary_frame();
     if let Some(instance) = sim
         .super_weapons
         .get_mut(&owner)
@@ -432,7 +432,7 @@ fn alert_super_weapon_defense(
             ((coords.x / 256) as u16, (coords.y / 256) as u16)
         })
         .unwrap_or(base);
-    let frame = sim.session.binary_frame as i32;
+    let frame = sim.session.binary_frame() as i32;
     if let Some(house) = sim.houses.get_mut(&house_id) {
         house.alert_super_weapon_defense(defended, frame);
     }

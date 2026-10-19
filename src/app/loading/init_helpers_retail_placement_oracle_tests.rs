@@ -421,7 +421,7 @@ fn retail_dustbowl_gapowr_blocked_then_valid_placement_oracle() {
     let occupancy_generation_before = sim.substrate.occupancy.generation();
     let rejected = CommandEnvelope::new(
         owner_id,
-        sim.session.tick + 1,
+        sim.session.tick() + 1,
         Command::PlaceReadyBuilding {
             type_id: gapowr_id,
             rx: fixture.blocked.0,
@@ -486,7 +486,7 @@ fn retail_dustbowl_gapowr_blocked_then_valid_placement_oracle() {
     let generation_before_valid = sim.substrate.occupancy.generation();
     let accepted = CommandEnvelope::new(
         owner_id,
-        sim.session.tick + 1,
+        sim.session.tick() + 1,
         Command::PlaceReadyBuilding {
             type_id: gapowr_id,
             rx: fixture.valid.0,
@@ -543,7 +543,7 @@ fn retail_dustbowl_gapowr_blocked_then_valid_placement_oracle() {
         &mut sim.substrate.entities,
         &rules,
         &sim.interner,
-        sim.session.binary_frame,
+        sim.session.binary_frame(),
     );
     let power = sim
         .power_states

@@ -103,7 +103,7 @@ pub(super) fn fixture(
     let target = sim
         .spawn_object("SHED", "Russians", target_cell.0, target_cell.1, 0, rules)
         .unwrap();
-    sim.session.binary_frame = FRAME;
+    sim.session.set_binary_frame_for_test(FRAME);
     (sim, building, target)
 }
 
@@ -555,13 +555,14 @@ fn enter_idle_mode_matches_the_unlimbo_rows() {
     assert_eq!(entity.mission.queued(), mission_of("guard"));
     assert_eq!(entity.building_body_state(), Some(1));
     assert_eq!(ready_latch(&sim, building), 1);
-    sim.session.binary_frame += 1;
+    sim.session
+        .set_binary_frame_for_test(sim.session.binary_frame() + 1);
     object_ai_visit(&mut sim, building, &rules);
     let entity = sim.substrate.entities.get(building).unwrap();
     assert_eq!(entity.mission.current(), mission_of("guard"));
     assert_eq!(entity.mission.queued(), MissionId::NONE);
     let timer = entity.mission.dispatch_timer();
-    assert_eq!(timer.start_frame(), sim.session.binary_frame as i32);
+    assert_eq!(timer.start_frame(), sim.session.binary_frame() as i32);
     assert!((14..=16).contains(&timer.delay()), "Guard's AARate delay");
 }
 
@@ -660,7 +661,7 @@ fn building_dispatch_cadence_matches_the_original() {
         sim.scenario_rng = SimRng::new(1);
         // The object pass of the frame `advance_tick` commits as `start + k`
         // runs at `base + k`, the frame its timers record.
-        let start = sim.session.binary_frame;
+        let start = sim.session.binary_frame();
         let base = i64::from(start) - 1;
         let mut guard_draws = 0;
         // A timer an unpinned Guard delay wrote: its start, and the frame it
@@ -710,7 +711,7 @@ fn building_dispatch_cadence_matches_the_original() {
             if matches!(events.get(&(k + 1)), Some(Event::Order)) {
                 commands.push(CommandEnvelope::new(
                     owner,
-                    sim.session.tick + 1,
+                    sim.session.tick() + 1,
                     Command::Attack {
                         attacker_id: building,
                         target_id: target,
@@ -719,7 +720,7 @@ fn building_dispatch_cadence_matches_the_original() {
             }
             sim.fire_events.clear();
             sim.advance_tick(&commands, Some(&rules), None, None, 67);
-            assert_eq!(u64::from(sim.session.binary_frame - start), k, "{name}");
+            assert_eq!(u64::from(sim.session.binary_frame() - start), k, "{name}");
 
             let at = format!("{name} frame {k}");
             let entity = sim.substrate.entities.get(building).unwrap();
@@ -1079,7 +1080,7 @@ fn retail_defence_guards_attacks_and_returns(
     );
 
     let enemy_house = scenario.sim().interner.get(enemy).unwrap();
-    let tick = scenario.sim().session.tick;
+    let tick = scenario.sim().session.tick();
     retail_frame(
         &mut scenario,
         vec![CommandEnvelope::new(
@@ -1310,7 +1311,7 @@ fn retail_dustbowl_prism_towers_forward_their_charge() {
             .unwrap()
             .health
             .current();
-        let binary_frame = scenario.sim().session.binary_frame as i32;
+        let binary_frame = scenario.sim().session.binary_frame() as i32;
         let output = retail_frame(&mut scenario, Vec::new());
         let after = [master, near, far].map(|id| fire(&scenario, id));
         for (index, id) in [master, near, far].into_iter().enumerate() {

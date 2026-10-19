@@ -1527,7 +1527,7 @@ fn retail_berserk_gi_shoots_its_own_house() {
         gi,
         MissionId::from_known(MissionType::Hunt),
         0,
-        sim.session.binary_frame,
+        sim.session.binary_frame(),
         &crate::sim::mission::authority::EntityReadyInputProvider,
     );
     let shot = |sim: &Simulation| {
@@ -1599,7 +1599,7 @@ fn gsi_04_05_building_attack_frame_remains_live_after_world_receiver_dispatch() 
     let source_owner = sim.substrate.entities.get(source_id).unwrap().owner();
     let victim_owner = sim.substrate.entities.get(target_id).unwrap().owner();
     register_computer_houses(&mut sim.houses, &[source_owner, victim_owner]);
-    sim.session.binary_frame = 77;
+    sim.session.set_binary_frame_for_test(77);
     let warhead = sim.interner.intern("HITWH");
 
     let event = EntityDamageEvent::area(target_id, 10, 0, source_id, Some(source_owner), warhead);
@@ -3616,7 +3616,7 @@ fn gsi_04_07_damage_receiver_smoke_creation_precedes_retaliation() {
         .unwrap()
         .position
         .put_location(moved);
-    sim.session.binary_frame = 1;
+    sim.session.set_binary_frame_for_test(1);
     assert!(crate::sim::particles::system_ai::tick_particle_system(
         &mut sim,
         &rules,
@@ -4434,7 +4434,7 @@ fn gsi_04_07_damage_postmortem_stock_barrel_delay_and_nested_order() {
             .is_none()
     );
 
-    sim.session.binary_frame = 4;
+    sim.session.set_binary_frame_for_test(4);
     sim.tick_pending_building_detonation(
         center,
         &rules,
@@ -4447,7 +4447,7 @@ fn gsi_04_07_damage_postmortem_stock_barrel_delay_and_nested_order() {
         Some(0)
     );
 
-    sim.session.binary_frame = 5;
+    sim.session.set_binary_frame_for_test(5);
     sim.tick_pending_building_detonation(
         center,
         &rules,
@@ -4641,7 +4641,7 @@ fn gsi_04_07_damage_postmortem_exact_zero_callbacks_precede_restore() {
     // A later equal candidate is longer than the four frames remaining. Native
     // keeps the original timer bytes, but reruns Object's exact-zero callbacks.
     let original_pending = pending;
-    sim.session.binary_frame = 1;
+    sim.session.set_binary_frame_for_test(1);
     arm_source_target(&mut sim);
     sim.clear_lifecycle_test_events_for_test();
     hit(&mut sim);
@@ -4737,7 +4737,7 @@ fn gsi_04_07_damage_postmortem_fresh_null_expiry_does_not_recredit_initial_kille
 
     // A different ordinary fatal transaction after restoration must not be
     // blocked by the consumed initial callback attribution.
-    sim.session.binary_frame = 1;
+    sim.session.set_binary_frame_for_test(1);
     sim.commit_noncombat_aoe_hits(
         &rules,
         None,
@@ -4761,7 +4761,7 @@ fn gsi_04_07_damage_postmortem_fresh_null_expiry_does_not_recredit_initial_kille
         sim.houses[&owner_a].stats.buildings_killed(),
         sim.houses[&owner_a].economy.score(),
     );
-    sim.session.binary_frame = 5;
+    sim.session.set_binary_frame_for_test(5);
     sim.tick_pending_building_detonation(
         expiry_target,
         &rules,
@@ -8188,7 +8188,7 @@ fn radiation_scene(rules: &RuleSet) -> crate::sim::world::Simulation {
 /// Advance the real object visits, including Foot4DA530's radiation prefix
 /// before movement. The combat tail alone does not apply periodic radiation.
 fn rad_frame(sim: &mut crate::sim::world::Simulation, rules: &RuleSet, binary_frame: u32) {
-    sim.session.binary_frame = binary_frame;
+    sim.session.set_binary_frame_for_test(binary_frame);
     assert!(
         sim.advance_tick(&[], Some(rules), None, None, 100)
             .frame_committed
@@ -8212,7 +8212,7 @@ fn irradiate(
             spread,
         },
         0,
-        &sim.session.theater,
+        &sim.session.theater(),
         &rules.radiation,
         sim.resolved_terrain.as_ref(),
         &mut sim.lighting_sources.pending,
@@ -8679,7 +8679,7 @@ fn deployed_desolator_self_irradiates_and_refires_below_third() {
     // did before. FireAt now belongs to that native mission, not a late
     // global target synthesizer. Its new Bullet takes the ordinary tail.
     let guard_visit = |sim: &mut crate::sim::world::Simulation, frame| {
-        sim.session.binary_frame = frame;
+        sim.session.set_binary_frame_for_test(frame);
         let mission = &mut sim.substrate.entities.get_mut(deso).unwrap().mission;
         mission.apply_test_fixture(MissionTestFixture {
             current: MissionId::from_known(MissionType::Guard),

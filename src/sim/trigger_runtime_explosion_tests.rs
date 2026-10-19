@@ -56,8 +56,10 @@ fn authored_waypoint_explosions_detonate_the_selected_weapon_at_the_waypoint() {
         let mut sim = Simulation::with_seed(0);
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
-        sim.session.map_width = map.header.width.try_into().unwrap();
-        sim.session.map_height = map.header.height.try_into().unwrap();
+        sim.session
+            .set_map_width_for_test(map.header.width.try_into().unwrap());
+        sim.session
+            .set_map_height_for_test(map.header.height.try_into().unwrap());
         // Declared actor-free prior: flat clear cells, no overlays, terrain
         // objects or receivers. Not ALL06/SOV03 topography or casualties.
         sim.install_resolved_terrain_for_new_map(crate::map::resolved_terrain::test_grid(
