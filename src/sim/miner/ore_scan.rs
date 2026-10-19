@@ -273,12 +273,8 @@ pub(crate) fn harvest_reach(sim: &Simulation, rules: &RuleSet, id: u64) -> Optio
 /// [`Simulation::foot_can_enter`]). Answers the cell.
 ///
 /// The zone and ground queries may stamp shared Dummy. Preserve native
-/// order: candidate playfield, source coordinate/layer, zone reach, LandType,
-/// then the class entry receiver.
-///
-/// RESIDUAL: a campaign (GameMode 0) player-owned mover (`Techno+0x41A`)
-/// skips a shrouded cell (`0x004DCEA0..0x004DCF20`); not represented, so a
-/// campaign miner may head for ore under the shroud. Skirmish never reads it.
+/// order: candidate playfield, campaign/current-player ground/shroud gate,
+/// source coordinate/layer, zone reach, LandType, then the class entry receiver.
 fn is_cell_harvestable(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -293,6 +289,37 @@ fn is_cell_harvestable(
         terrain,
     ) {
         return None;
+    }
+    // Original4DCEA0..4DCF20: only GameMode0 and the retained Techno+41A
+    // owner byte query the current client's shroud. The caller constructs
+    // its packed candidate's centre, samples Map578080's floor (no bridge
+    // rise), then calls Map586360 before even asking for the source zone.
+    if !sim.session.game_mode_nonzero()
+        && sim
+            .substrate
+            .entities
+            .get(id)?
+            .discovery
+            .owned_by_current_house()
+        && let Some(viewer) = sim.session.current_house()
+    {
+        let cells = NativeCellQuery::canonical(terrain?);
+        let centre = crate::sim::cell_kernel::cell_center(
+            crate::sim::cell_kernel::CellCoordinate {
+                x: i32::from(candidate.0 as i16),
+                y: i32::from(candidate.1 as i16),
+            },
+            0,
+        );
+        let mut point = crate::sim::components::DriveCoord {
+            x: centre.x,
+            y: centre.y,
+            z: 0,
+        };
+        point.z = ground_pose::query_ground_height(&cells, point).ok()?;
+        if crate::sim::vision::point_is_shrouded(&sim.fog, &cells, viewer, point) {
+            return None;
+        }
     }
     let reach = harvest_reach(sim, rules, id)?;
     let cells = NativeCellQuery::canonical(sim.resolved_terrain.as_ref()?);

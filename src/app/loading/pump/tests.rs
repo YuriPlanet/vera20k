@@ -2138,3 +2138,7 @@ fn loading_timeout_retires_only_live_peer_and_flags_existing_house_before_instal
     assert_eq!(sim.session.current_house, Some(local));
     assert!(apply_network_loading_disconnects(&mut session, &mut result, &[1]).is_empty());
 }
+
+#[cfg(target_os = "linux")]
+#[path = "campaign_miner_tests.rs"]
+mod campaign_miner;
