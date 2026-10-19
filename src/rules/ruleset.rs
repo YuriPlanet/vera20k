@@ -4397,6 +4397,15 @@ impl RuleSet {
                 super_weapon.aux_building = aux_building.map(str::to_owned);
             }
         }
+        for (name, delivery) in processed.unit_delivery_states() {
+            if let Some(sw) = rules
+                .super_weapons
+                .values_mut()
+                .find(|sw| sw.id.eq_ignore_ascii_case(name))
+            {
+                sw.unit_delivery = delivery.cloned();
+            }
+        }
         // Equal truncated stored IDs share one projected type, which the last
         // such member's state is written to last.
         for (name, warhead) in processed.particle_warhead_states() {
@@ -5649,6 +5658,19 @@ impl RuleSet {
             })
             .collect::<BTreeMap<_, _>>()
             .hash(&mut hasher);
+        let deliveries = self
+            .super_weapons
+            .iter()
+            .filter_map(|(id, sw)| {
+                sw.unit_delivery
+                    .as_ref()
+                    .map(|delivery| (id.to_ascii_uppercase(), delivery))
+            })
+            .collect::<BTreeMap<_, _>>();
+        if !deliveries.is_empty() {
+            "Ares.UnitDelivery".hash(&mut hasher);
+            deliveries.hash(&mut hasher);
+        }
         self.weapons
             .iter()
             .map(|(id, weapon)| {

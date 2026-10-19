@@ -141,7 +141,7 @@ pub(crate) fn current_cursor_feedback_kind(state: &AppState) -> Option<CursorFee
         let cursor_id = state
             .rules()
             .and_then(|r| r.super_weapon(section))
-            .and_then(|sw| sw.action.as_deref())
+            .and_then(|sw| sw.targeting_action())
             .and_then(super_weapon_cursor_id)
             .unwrap_or(CursorId::Default);
         return Some(CursorFeedbackKind::SuperWeaponTarget(cursor_id));
@@ -1535,7 +1535,7 @@ fn minimap_cursor_feedback(state: &AppState) -> CursorFeedbackKind {
         let id = state
             .rules()
             .and_then(|r| r.super_weapon(section))
-            .and_then(|sw| sw.action.as_deref())
+            .and_then(|sw| sw.targeting_action())
             .and_then(super_weapon_cursor_id)
             .unwrap_or(CursorId::Default);
         return CursorFeedbackKind::Minimap(minimap_cursor_id_for_super_weapon(id));
@@ -1994,6 +1994,23 @@ mod tests {
             super_weapon_cursor_id("PsychicReveal"),
             Some(CursorId::PsychicReveal)
         );
+    }
+
+    #[test]
+    fn unit_delivery_superweapon_custom_action_uses_existing_paradrop_cursor() {
+        let rules = crate::rules::ruleset::RuleSet::from_ini_with_fixed_art_for_test(
+            &crate::rules::ini_parser::IniFile::from_str(
+                "[SuperWeaponTypes]\n0=Delivery\n[Delivery]\nType=UnitDelivery\nAction=Custom\n",
+            ),
+            &crate::rules::ini_parser::IniFile::empty(),
+        )
+        .unwrap();
+        let action = rules
+            .super_weapon("Delivery")
+            .unwrap()
+            .targeting_action()
+            .unwrap();
+        assert_eq!(super_weapon_cursor_id(action), Some(CursorId::Paradrop));
     }
 
     #[test]

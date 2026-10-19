@@ -1171,7 +1171,9 @@ use crate::util::save_codec;
 // [Triggers], [Events] and [Actions] records and the always-empty trigger
 // graph. The trigger runtime saved with the Simulation is the only owner of
 // those definitions.
-const SNAPSHOT_VERSION: u32 = 434;
+// 434 -> 435: UnitDelivery's resolved rule records, pending effect queue and
+// the per-building Deliver.BaseNormal override change positional save layouts.
+const SNAPSHOT_VERSION: u32 = 435;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -1386,6 +1388,8 @@ pub enum SnapshotError {
 /// Structural failures found before a deserialized simulation is admitted.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SnapshotRestoreError {
+    #[error("invalid UnitDelivery snapshot state: {0}")]
+    InvalidUnitDelivery(&'static str),
     #[error("invalid detached Particle {object_id}: {reason}")]
     InvalidDetachedParticleState {
         object_id: u64,
@@ -2723,6 +2727,9 @@ impl Simulation {
     /// weak/derived identities, and reconstructs skipped indexes in dependency
     /// order.
     pub fn restore_after_snapshot_load(&mut self) -> Result<(), SnapshotRestoreError> {
+        self.unit_deliveries
+            .validate(self)
+            .map_err(SnapshotRestoreError::InvalidUnitDelivery)?;
         self.projectiles
             .validate_scalable_runtime(&self.interner)
             .map_err(SnapshotRestoreError::InvalidScalableProjectileRuntime)?;

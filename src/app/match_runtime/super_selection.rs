@@ -94,6 +94,7 @@ pub(super) fn follow_selection_writes(
                 | SuperWeaponKind::SpyPlane
                 | SuperWeaponKind::GeneticConverter
                 | SuperWeaponKind::ForceShield
+                | SuperWeaponKind::UnitDelivery
                 | SuperWeaponKind::PsychicReveal,
             ) if selected.is_some() => {
                 *targeting = None;

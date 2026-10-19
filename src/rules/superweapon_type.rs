@@ -26,7 +26,8 @@ const CTOR_RECHARGE_FRAMES: i32 = 4500;
 
 /// Maps the INI `Type=` string to an enum for launch dispatch.
 ///
-/// Index values match gamemd.exe's SuperWeaponType enum (0x006CEA20).
+/// Stock values match gamemd.exe's SuperWeaponType enum (0x006CEA20).
+/// Extensions use explicit tags outside its twelve dispatch slots.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SuperWeaponKind {
     /// Type=MultiMissile (index 0) — Nuclear missile.
@@ -53,10 +54,12 @@ pub enum SuperWeaponKind {
     ForceShield,
     /// Type=PsychicReveal (index 11) — Shroud reveal.
     PsychicReveal,
+    /// Ares extension, deliberately outside the twelve native dispatch slots.
+    UnitDelivery,
 }
 
 impl SuperWeaponKind {
-    /// The native `Type=` value (`SuperWeaponTypeClass+0xB4`).
+    /// Native `Type=` (`+0xB4`) for stock kinds; an extension-only tag otherwise.
     pub const fn native_index(self) -> i32 {
         match self {
             Self::MultiMissile => 0,
@@ -71,6 +74,7 @@ impl SuperWeaponKind {
             Self::GeneticConverter => 9,
             Self::ForceShield => 10,
             Self::PsychicReveal => 11,
+            Self::UnitDelivery => 0x101,
         }
     }
 
@@ -89,6 +93,7 @@ impl SuperWeaponKind {
             "geneticconverter" => Some(Self::GeneticConverter),
             "forceshield" => Some(Self::ForceShield),
             "psychicreveal" => Some(Self::PsychicReveal),
+            "unitdelivery" => Some(Self::UnitDelivery),
             _ => None,
         }
     }
@@ -140,6 +145,8 @@ pub struct SuperWeaponType {
     /// `AuxBuilding=` (+C8), the BuildingType the ordered Rules processor
     /// resolved: a required secondary building (e.g., NukeSilo for nuke).
     pub aux_building: Option<String>,
+    /// Resolved optional extension state; ordered Process owns its reads.
+    pub unit_delivery: Option<UnitDeliveryRules>,
     /// `SpecialSound=` (`+0xC0`, `0x006CEB74`): the cue SuperClass::AI
     /// plays when a Force Shield's countdown runs out (`0x006CBCCF`). A read
     /// stores VocClass::FindIndex (`0x007514D0`) of the name; an absent key
@@ -205,15 +212,74 @@ impl SuperWeaponType {
             pre_dependent: section
                 .read_name("PreDependent", 0x28)
                 .and_then(SuperWeaponKind::from_ini_str)
+                .filter(|kind| kind.native_index() < 12)
                 .map_or(-1, SuperWeaponKind::native_index),
             // Constructor nulls; only the ordered Process owner reads them.
             weapon_type: None,
             aux_building: None,
+            unit_delivery: None,
             special_sound: section.read_name("SpecialSound", 0x80).map(str::to_string),
             start_sound: section.read_name("StartSound", 0x80).map(str::to_string),
             ai_defend_against: section.read_bool("AIDefendAgainst", false),
             manual_control: section.read_bool("ManualControl", false),
         })
+    }
+}
+
+/// Canonical, category-distinct TechnoType identity for a delivery payload.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct DeliveryType {
+    pub category: crate::rules::object_type::ObjectCategory,
+    pub id: String,
+}
+
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
+)]
+pub enum DeliveryOwner {
+    #[default]
+    Invoker,
+    Neutral,
+    Special,
+    Civilian,
+}
+
+/// UnitDelivery settings. No setting changes stock superweapon behavior.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct UnitDeliveryRules {
+    pub types: Vec<DeliveryType>,
+    pub deferment: i32,
+    pub owner: DeliveryOwner,
+    pub base_normal: bool,
+    pub activation_sound: Option<String>,
+}
+
+impl Default for UnitDeliveryRules {
+    fn default() -> Self {
+        Self {
+            types: Vec::new(),
+            deferment: 20,
+            owner: DeliveryOwner::Invoker,
+            base_normal: true,
+            activation_sound: None,
+        }
+    }
+}
+
+impl SuperWeaponType {
+    /// Custom extensions have no native Action entry. Use the delivery cursor
+    /// without changing the stored authored Action or any stock cursor.
+    pub fn targeting_action(&self) -> Option<&str> {
+        if self.kind == SuperWeaponKind::UnitDelivery
+            && self
+                .action
+                .as_deref()
+                .is_none_or(|action| action.eq_ignore_ascii_case("Custom"))
+        {
+            Some("ParaDrop")
+        } else {
+            self.action.as_deref()
+        }
     }
 }
 

@@ -153,6 +153,7 @@ pub(crate) fn super_weapon_ready_event(kind: SuperWeaponKind) -> Option<&'static
         SuperWeaponKind::LightningStorm => "EVA_LightningStormReady",
         SuperWeaponKind::ChronoSphere => "EVA_ChronosphereReady",
         SuperWeaponKind::ChronoWarp => return None,
+        SuperWeaponKind::UnitDelivery => return None,
         SuperWeaponKind::ParaDrop | SuperWeaponKind::AmerParaDrop => "EVA_ReinforcementsReady",
         SuperWeaponKind::PsychicDominator => "EVA_PsychicDominatorReady",
         SuperWeaponKind::SpyPlane => "EVA_SpyPlaneReady",
@@ -172,7 +173,15 @@ pub(crate) fn super_weapon_ready_event(kind: SuperWeaponKind) -> Option<&'static
 /// `[SuperWeaponTypes]` order puts NukeSpecial, IronCurtainSpecial,
 /// LightningStormSpecial, ChronoSphereSpecial, ..., PsychicDominatorSpecial
 /// (7), ..., GeneticConverterSpecial (9) on exactly those slots.
-pub(crate) fn super_weapon_detected_event(list_index: usize) -> Option<&'static str> {
+pub(crate) fn super_weapon_detected_event(
+    list_index: usize,
+    kind: SuperWeaponKind,
+) -> Option<&'static str> {
+    // An extension has no native detection cue, even when a mod places it in
+    // an early list slot. Keep the original list-index quirk for stock kinds.
+    if kind.native_index() >= 12 {
+        return None;
+    }
     match list_index {
         0 => Some("EVA_NuclearSiloDetected"),
         1 => Some("EVA_IronCurtainDetected"),
@@ -370,30 +379,34 @@ mod tests {
     #[test]
     fn detected_table_follows_the_list_index_jump_table() {
         assert_eq!(
-            super_weapon_detected_event(0),
+            super_weapon_detected_event(0, SuperWeaponKind::MultiMissile),
             Some("EVA_NuclearSiloDetected")
         );
         assert_eq!(
-            super_weapon_detected_event(1),
+            super_weapon_detected_event(1, SuperWeaponKind::MultiMissile),
             Some("EVA_IronCurtainDetected")
         );
         assert_eq!(
-            super_weapon_detected_event(2),
+            super_weapon_detected_event(2, SuperWeaponKind::MultiMissile),
             Some("EVA_WeatherDeviceReady")
         );
         assert_eq!(
-            super_weapon_detected_event(3),
+            super_weapon_detected_event(3, SuperWeaponKind::MultiMissile),
             Some("EVA_ChronosphereDetected")
         );
         for silent in [4, 5, 6, 8, 10, 11, 12] {
-            assert_eq!(super_weapon_detected_event(silent), None, "index {silent}");
+            assert_eq!(
+                super_weapon_detected_event(silent, SuperWeaponKind::MultiMissile),
+                None,
+                "index {silent}"
+            );
         }
         assert_eq!(
-            super_weapon_detected_event(7),
+            super_weapon_detected_event(7, SuperWeaponKind::MultiMissile),
             Some("EVA_PsychicDominatorDetected")
         );
         assert_eq!(
-            super_weapon_detected_event(9),
+            super_weapon_detected_event(9, SuperWeaponKind::MultiMissile),
             Some("EVA_GeneticMutatorDetected")
         );
     }
@@ -462,6 +475,20 @@ mod tests {
             true,
             true
         ));
+    }
+
+    #[test]
+    fn unit_delivery_superweapon_has_no_native_eva_even_in_a_stock_list_slot() {
+        for index in 0..12 {
+            assert_eq!(
+                super_weapon_detected_event(index, SuperWeaponKind::UnitDelivery),
+                None
+            );
+        }
+        assert_eq!(
+            super_weapon_ready_event(SuperWeaponKind::UnitDelivery),
+            None
+        );
     }
 
     #[test]

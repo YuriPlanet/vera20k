@@ -98,6 +98,7 @@ impl AiFireArm {
             SuperWeaponKind::ParaDrop
             | SuperWeaponKind::AmerParaDrop
             | SuperWeaponKind::SpyPlane
+            | SuperWeaponKind::UnitDelivery
             | SuperWeaponKind::PsychicReveal => Self::GroundRallyPoint,
             SuperWeaponKind::PsychicDominator => Self::PsychicDominator,
             SuperWeaponKind::GeneticConverter => Self::GeneticMutator,
@@ -168,6 +169,11 @@ pub(crate) fn try_fire(
             continue;
         };
         if !super::is_charged(sim, owner, sw_type_id) {
+            continue;
+        }
+        if sw.kind == SuperWeaponKind::UnitDelivery
+            && !super::unit_delivery::configured(sim, rules, owner, sw)
+        {
             continue;
         }
         let arm = AiFireArm::of(sw.kind);

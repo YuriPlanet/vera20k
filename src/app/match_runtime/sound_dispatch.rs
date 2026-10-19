@@ -850,7 +850,11 @@ pub(super) fn dispatch_sim_sound_events(
                     .super_weapon_order
                     .iter()
                     .position(|section| section.eq_ignore_ascii_case(&type_name))
-                    .and_then(eva_producers::super_weapon_detected_event)
+                    .and_then(|index| {
+                        rules.super_weapon(&type_name).and_then(|sw| {
+                            eva_producers::super_weapon_detected_event(index, sw.kind)
+                        })
+                    })
                 else {
                     continue;
                 };
@@ -1091,7 +1095,7 @@ pub(crate) fn superweapon_launch_cue(
             ..positional
         },
         // Cases 3, 5, 6 and 8 reach neither a `VocClass` nor a `VoxClass` call.
-        K::ChronoSphere | K::ParaDrop | K::AmerParaDrop | K::SpyPlane => {
+        K::ChronoSphere | K::ParaDrop | K::AmerParaDrop | K::SpyPlane | K::UnitDelivery => {
             SuperWeaponLaunchCue::default()
         }
     }

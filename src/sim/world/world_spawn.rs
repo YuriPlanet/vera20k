@@ -1195,6 +1195,57 @@ impl Simulation {
         )
     }
 
+    /// Read-only entry query for an already-constructed object's placement
+    /// search. Share the existing class query rather than a second terrain or
+    /// occupancy model; the final Unlimbo still performs fresh admission.
+    pub(crate) fn constructed_object_can_enter_at(
+        &self,
+        stable_id: u64,
+        cell: (u16, u16),
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+    ) -> bool {
+        let position = RevealPosition::new(
+            cell.0,
+            cell.1,
+            self.terrain_cell_level(cell.0, cell.1).unwrap_or(0),
+            None,
+            SimFixed::from_num(128),
+            SimFixed::from_num(128),
+        );
+        self.constructor_unlimbo_placement(stable_id, position, rules, registry)
+            != PlacementEvidence::RejectedEarly
+    }
+
+    /// Place a delivered object standing complete, retaining the normal entry,
+    /// Unlimbo, sensor, tracking and discovery owners. A delivery is not paid
+    /// construction and must not leave a building waiting on a buildup.
+    pub(crate) fn reveal_finished_object_at_height(
+        &mut self,
+        stable_id: u64,
+        cell: (u16, u16),
+        z: u8,
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+    ) -> Option<u64> {
+        let result = self.with_buildup_bypass(|sim| {
+            sim.reveal_constructed_object_at_height_with_overlay_context(
+                stable_id,
+                cell.0,
+                cell.1,
+                0,
+                z,
+                PlacementEvidence::EvaluateMark,
+                rules,
+                registry,
+                effects,
+            )
+        })?;
+        self.ready_placed_building(result);
+        Some(result)
+    }
+
     /// Infantry51DFF0 places its requested floor coordinate before the common
     /// Object5F4F1B class query. Rejection retains the constructor-held pose
     /// and facing; a successful Techno snaps facing before its idle callback.

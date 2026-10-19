@@ -493,6 +493,9 @@ pub struct GameEntity {
     /// Independent Building+660, owned by sim::building_power.
     #[serde(default)]
     pub(crate) building_online: crate::sim::building_power::BuildingOnline,
+    /// Per-instance Deliver.BaseNormal override, not a mutation of its type.
+    #[serde(default)]
+    unit_delivery_no_base: bool,
     /// Building+66C charger pointers and +661 weapon latch, owned by
     /// `sim::tesla_charging` independently of House power accounting.
     #[serde(default)]
@@ -831,6 +834,14 @@ mod simple_deploy;
 mod voxel_recoil;
 
 impl GameEntity {
+    pub(crate) fn set_unit_delivery_base_normal(&mut self, base_normal: bool) {
+        self.unit_delivery_no_base = self.category() == EntityCategory::Structure && !base_normal;
+    }
+
+    pub(crate) fn unit_delivery_provides_base_space(&self) -> bool {
+        !self.unit_delivery_no_base
+    }
+
     /// Infantry519524/51958A and Unit73CEF3 subtract Foot+6B4 in DrawIt.
     pub fn ion_blast_lift_pixels(&self) -> i8 {
         self.ion_blast_lift
@@ -1504,6 +1515,7 @@ impl GameEntity {
             ai_placement_timer: Default::default(),
             building_art: Default::default(),
             building_online: Default::default(),
+            unit_delivery_no_base: false,
             tesla_charge: Default::default(),
             tesla_charger: Default::default(),
             building_last_operational: Default::default(),

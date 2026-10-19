@@ -1374,6 +1374,9 @@ pub struct Simulation {
     pub lightning_storm: crate::sim::superweapon::lightning_storm::LightningStorm,
     /// The Psychic Dominator's globals (one at a time).
     pub psychic_dominator: crate::sim::superweapon::psychic_dominator::PsychicDominatorState,
+    /// Pending UnitDelivery effects; simulation-owned, saved and hashed.
+    #[serde(default)]
+    pub(crate) unit_deliveries: crate::sim::superweapon::unit_delivery::UnitDeliveryState,
     /// IonBlastClass's vector (`0x00AA0118`), owned by `ion_blast`. Native
     /// saves no blast; Rust retains pending damaging effects for match restore.
     #[serde(
@@ -3427,6 +3430,7 @@ impl Simulation {
             super_weapons: BTreeMap::new(),
             lightning_storm: Default::default(),
             psychic_dominator: Default::default(),
+            unit_deliveries: Default::default(),
             ion_blasts: Vec::new(),
             terrain_speed_config: terrain_speed::TerrainSpeedConfig::default(),
             input_delay_ticks: u64::from(crate::util::config::default_input_delay_ticks()),
