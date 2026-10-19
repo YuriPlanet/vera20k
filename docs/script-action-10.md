@@ -81,6 +81,12 @@ membership; centre, focus, orders and tube state use their current save owners.
 Candidate scans use the existing category-column iterator, not a new world
 copy or per-team candidate cache. This is not a 20,000-unit performance claim.
 
+The handler itself adds no RNG draw, timer write or detach call. Movement,
+mission changes, destination updates and target cleanup run through their
+existing owners and retain those owners' documented limitations. In particular,
+the shared target setter's incomplete linked-effect, C4 and Ivan cleanup is
+not resolved or newly proven by this action.
+
 ## Evidence boundary
 
 Instruction-level references: `Calc_Center` action-10 arm
