@@ -8,7 +8,7 @@ use crate::net::lockstep::SynchronizedCommand;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::command::CommandEnvelope;
 use crate::sim::selection::SelectionState;
-use crate::sim::world::Simulation;
+use crate::sim::world::{PlanningPressRefusal, Simulation};
 use winit::event::ElementState;
 use winit::keyboard::KeyCode;
 
@@ -158,6 +158,7 @@ pub(crate) enum PlanningRefusal {
     Scatter,
     Deploy,
     Capacity,
+    Press(PlanningPressRefusal),
 }
 
 impl PlanningRefusal {
@@ -168,6 +169,11 @@ impl PlanningRefusal {
             Self::Scatter => "MSG:PlanningModeNoScatter",
             Self::Deploy => "MSG:PlanningModeNoDeploy",
             Self::Capacity => "MSG:PlannerMaximum",
+            // 0x0063A5A0 loads these literals; "X" is part of the key.
+            Self::Press(PlanningPressRefusal::InvalidNode) => "MSG:PlanningModeInvalidNodeX",
+            Self::Press(PlanningPressRefusal::NoAircraft) => "MSG:PlanningModeNoAircraft",
+            Self::Press(PlanningPressRefusal::NoBuildings) => "MSG:PlanningModeNoBuildings",
+            Self::Press(PlanningPressRefusal::NoUnknowns) => "MSG:PlanningModeNoUnknowns",
         }
     }
 }
@@ -291,11 +297,47 @@ fn queue_orders_in_sim(
     Ok(added)
 }
 
+/// The hover node AC4CCC that the cursor 63AB60 and the release connect
+/// 63A8E0 read: an own node under the cursor the selection may connect to.
 pub(crate) fn node_at_cursor(state: &AppState) -> Option<(u16, u16)> {
     let point = hover_native_screen(state)?;
     let sim = &state.match_state.sim_runtime.as_ref()?.simulation;
     let owner = sim.session.current_house()?;
-    sim.planning_node_at_screen(owner, point)
+    sim.planning_node_at_screen(owner, &selected_in_order(state), point)
+}
+
+pub(crate) fn selected_in_order(state: &AppState) -> Vec<u64> {
+    crate::app::input::dispatch::selected_stable_ids_in_order(
+        state
+            .match_state
+            .sim_runtime
+            .as_ref()
+            .map(|rt| &rt.simulation),
+        state.rules(),
+        &state.match_state.input.selection_order,
+        state.match_state.input.selection_order_pending,
+    )
+}
+
+/// ScrollClass's left press runs PlanMgr 0x0063A5A0 (0x00693187) before it
+/// takes the capture. A refusal consumes the press, even while the AC4C08
+/// latch keeps its message and ScoldSound back, so the press arms nothing
+/// and its release finds no capture (0x00693232).
+pub(crate) fn refuse_press_at_cursor(state: &mut AppState) -> bool {
+    let Some(point) = hover_native_screen(state) else {
+        return false;
+    };
+    let selected = selected_in_order(state);
+    let Some(refusal) = state
+        .match_state
+        .sim_runtime
+        .as_ref()
+        .and_then(|rt| rt.simulation.planning_press_refusal(&selected, point))
+    else {
+        return false;
+    };
+    refuse(state, PlanningRefusal::Press(refusal));
+    true
 }
 
 /// The drawing projection and input hit test share the native tactical point.
@@ -336,20 +378,19 @@ fn input_native_screen(
     ]
 }
 
+/// PlanMgr 0x0063A8E0 on the left release: connect at an admitted hover
+/// node, or swallow a release over a node the selection may not connect to.
 pub(crate) fn connect_at_cursor(state: &mut AppState) -> bool {
-    let Some(_) = node_at_cursor(state) else {
-        return false;
-    };
-    let selected = crate::app::input::dispatch::selected_stable_ids_in_order(
-        state
-            .match_state
-            .sim_runtime
-            .as_ref()
-            .map(|rt| &rt.simulation),
-        state.rules(),
-        &state.match_state.input.selection_order,
-        state.match_state.input.selection_order_pending,
-    );
+    let selected = selected_in_order(state);
+    if node_at_cursor(state).is_none() {
+        return hover_native_screen(state).is_some_and(|point| {
+            state
+                .match_state
+                .sim_runtime
+                .as_ref()
+                .is_some_and(|rt| rt.simulation.planning_release_refused(&selected, point))
+        });
+    }
     let point = cursor_native_screen(state);
     if let Some(rt) = state.match_state.sim_runtime.as_mut()
         && let Some(owner) = rt.simulation.session.current_house()
@@ -368,10 +409,12 @@ pub(crate) fn connect_at_cursor(state: &mut AppState) -> bool {
     true
 }
 
+/// Residual: native Delete (0x00731A10) deletes the retained highlight
+/// AC4BF0 (0x0063AC60), not the node under the cursor.
 pub(crate) fn delete_at_cursor(state: &mut AppState) {
-    let Some(_) = node_at_cursor(state) else {
+    if hover_native_screen(state).is_none() {
         return;
-    };
+    }
     let point = cursor_native_screen(state);
     if let Some(rt) = state.match_state.sim_runtime.as_mut()
         && let Some(owner) = rt.simulation.session.current_house()
@@ -411,7 +454,7 @@ mod tests {
                 .unwrap();
             let command = sim.decode_native_command_record(&record, 0).unwrap();
             assert!(sim.apply_command("Local", &command.payload, None));
-            let coord = sim.planning_draw_graph(local, None, None).nodes[0].coord;
+            let coord = sim.planning_draw_graph(local, &[], None, None).nodes[0].coord;
             let (x, y) = crate::util::lepton::absolute_leptons_to_screen(coord.x, coord.y, coord.z);
             let mut input = crate::app::input::state::MatchInputState::new(Default::default());
             input.camera_x = x - 100.25;
@@ -424,7 +467,7 @@ mod tests {
             input.cursor_y = (y as i32 - input.camera_y.round() as i32 + origin[1]) as f32 * zoom;
             let point = input_native_screen(&input, origin);
             assert_eq!(
-                sim.planning_node_at_screen(local, point),
+                sim.planning_node_at_screen(local, &[], point),
                 Some((5, 7)),
                 "zoom {zoom}"
             );

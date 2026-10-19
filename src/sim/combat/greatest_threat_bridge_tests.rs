@@ -171,7 +171,7 @@ fn pick(
     terrain: &ResolvedTerrainGrid,
     mission: super::super::ScanMission,
 ) -> Option<u64> {
-    super::super::acquire_best_target_for_entity(
+    super::super::combat_targeting::greatest_threat_for_entity(
         entities,
         occupancy,
         rules,

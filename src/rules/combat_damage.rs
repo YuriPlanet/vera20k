@@ -53,8 +53,9 @@ pub struct CombatDamageDefaults {
     /// `0x0066C79C`; constructor default 5 at `0x00666AB1`/`0x00666AE5`;
     /// stock 7). `TemporalClass::Update` multiplies it by 256 at its use.
     pub open_topped_warp_distance: i32,
-    /// Global `DeathWeapon=` used only when a dying type has neither an
-    /// explicit death weapon nor a live current-weapon fallback.
+    /// Global `DeathWeapon=` (Rules+FDC) used only when a dying type has
+    /// neither an explicit death weapon nor a live current-weapon fallback,
+    /// as the ordered Rules processor resolved it.
     pub death_weapon: Option<String>,
     /// `DrainAnimationType=` (`RulesClass+0x31C`): the AnimType a drain link
     /// attaches to its drainer (`TechnoClass::Install_Drain_Link @
@@ -118,7 +119,8 @@ impl CombatDamageDefaults {
             crush: section.read_range("Crush", 0x180),
             incoming: section.read_speed("Incoming", 0),
             open_topped_warp_distance: section.read_int("OpenToppedWarpDistance", 5),
-            death_weapon: section.read_name("DeathWeapon", 0x80).map(str::to_string),
+            // Constructor null; only the ordered Process owner reads it.
+            death_weapon: None,
             drain_animation_type: section
                 .read_type_name("DrainAnimationType", 0x80)
                 .map(str::to_string),

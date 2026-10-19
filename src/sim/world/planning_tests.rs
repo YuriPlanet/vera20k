@@ -849,11 +849,11 @@ fn object_node_sharing_compares_z_and_screen_hit_box_is_half_open() {
     let (x, y) = crate::util::lepton::absolute_leptons_to_screen(coord.x, coord.y, coord.z);
     let point = [x as i32, y as i32];
     assert!(
-        sim.planning_node_at_screen(owner, [point[0] - 8, point[1] - 8])
+        sim.planning_node_at_screen(owner, &[], [point[0] - 8, point[1] - 8])
             .is_some()
     );
     assert!(
-        sim.planning_node_at_screen(owner, [point[0] + 8, point[1]])
+        sim.planning_node_at_screen(owner, &[], [point[0] + 8, point[1]])
             .is_none()
     );
     let delete = sim
@@ -1349,7 +1349,7 @@ fn draw_graph_merges_equal_predecessor_coords_and_tracks_commit_boundary() {
         append(&mut sim, &rules, owner, actor, (12, 15));
         append(&mut sim, &rules, owner, actor, (16, 15));
     }
-    let graph = sim.planning_draw_graph(owner, None, None);
+    let graph = sim.planning_draw_graph(owner, &[], None, None);
     assert_eq!(
         graph.nodes.iter().map(|node| node.id).collect::<Vec<_>>(),
         vec![0, 1]
@@ -1369,7 +1369,7 @@ fn draw_graph_merges_equal_predecessor_coords_and_tracks_commit_boundary() {
     let commit = sim.encode_plan_commit_record(owner).unwrap();
     apply(&mut sim, &rules, commit);
     append(&mut sim, &rules, owner, 1, (20, 15));
-    let graph = sim.planning_draw_graph(owner, None, None);
+    let graph = sim.planning_draw_graph(owner, &[], None, None);
     assert!(!graph.nodes[0].marker_bright);
     assert!(!graph.nodes[1].incoming[0].bright);
     assert!(graph.nodes[2].incoming[0].bright);
@@ -1391,7 +1391,7 @@ fn draw_graph_has_one_loop_backlink_and_hover_tracks_shared_node_identity() {
     apply(&mut sim, &rules, connect);
     let coord = sim.planning_node_coords(0).unwrap();
     let (x, y) = crate::util::lepton::absolute_leptons_to_screen(coord.x, coord.y, coord.z);
-    let graph = sim.planning_draw_graph(owner, Some([x as i32, y as i32]), Some(1));
+    let graph = sim.planning_draw_graph(owner, &[], Some([x as i32, y as i32]), Some(1));
     assert_eq!(graph.hovered_node, Some(0));
     assert_eq!(graph.highlighted_node, Some(1));
     assert_eq!(
@@ -1409,7 +1409,7 @@ fn draw_graph_has_one_loop_backlink_and_hover_tracks_shared_node_identity() {
     let commit = sim.encode_plan_commit_record(owner).unwrap();
     apply(&mut sim, &rules, commit);
     assert!(
-        !sim.planning_draw_graph(owner, None, None).nodes[0]
+        !sim.planning_draw_graph(owner, &[], None, None).nodes[0]
             .loop_segment
             .as_ref()
             .unwrap()
@@ -1435,7 +1435,7 @@ fn closing_move_route_promotes_patrol_tasks_and_badges() {
         }
         let connect = sim.encode_plan_connect_record(owner, 1, (12, 15)).unwrap();
         apply(&mut sim, &rules, connect);
-        let graph = sim.planning_draw_graph(owner, None, None);
+        let graph = sim.planning_draw_graph(owner, &[], None, None);
         assert!(graph.nodes[0].badge.is_none(), "entry prefix stays Move");
         for node in &graph.nodes[1..] {
             assert_eq!(
@@ -1584,7 +1584,7 @@ fn attack_move_loop_keeps_task_badges_on_entry_and_closing_legs() {
             let commit = sim.encode_plan_commit_record(owner).unwrap();
             apply(&mut sim, &rules, commit);
         }
-        let graph = sim.planning_draw_graph(owner, None, None);
+        let graph = sim.planning_draw_graph(owner, &[], None, None);
         assert_eq!(graph.nodes.len(), 3);
         assert!(
             graph
@@ -1633,7 +1633,7 @@ fn draw_graph_current_destination_uses_attack_target_and_mega_resume_latch() {
             .navigation
             .set_nav_com_aux_for_test(Some(NavTargetRef::cell(12, 15)));
     }
-    let graph = sim.planning_draw_graph(owner, None, None);
+    let graph = sim.planning_draw_graph(owner, &[], None, None);
     let actor = &graph.actors[0];
     assert_eq!(
         actor.current_leg.as_ref().unwrap().target,
@@ -1654,7 +1654,7 @@ fn draw_graph_current_destination_uses_attack_target_and_mega_resume_latch() {
         entity.mega_mission =
             MegaMission::for_test(true, Some(TargetKind::Cell(16, 15)), None, true);
     }
-    let graph = sim.planning_draw_graph(owner, None, None);
+    let graph = sim.planning_draw_graph(owner, &[], None, None);
     let actor = &graph.actors[0];
     assert_eq!(
         actor.current_leg.as_ref().unwrap().target,
@@ -1679,7 +1679,7 @@ fn draw_graph_current_destination_uses_attack_target_and_mega_resume_latch() {
         .unwrap()
         .mission
         .set_current_for_test(MissionId::from_known(MissionType::Guard), 0);
-    let graph = sim.planning_draw_graph(owner, None, None);
+    let graph = sim.planning_draw_graph(owner, &[], None, None);
     assert!(graph.actors[0].current_leg.is_none());
     assert!(graph.actors[0].connection.is_some());
 }
@@ -1703,11 +1703,11 @@ fn delete_handoff_uses_first_member_successor_and_invalidates_retained_node() {
             next_node: Some(1),
         }]
     );
-    let graph = sim.planning_draw_graph(owner, None, Some(0));
+    let graph = sim.planning_draw_graph(owner, &[], None, Some(0));
     assert_eq!(graph.highlighted_node, None);
     assert_eq!(graph.hovered_node, None);
     assert_eq!(
-        sim.planning_draw_graph(owner, None, Some(1))
+        sim.planning_draw_graph(owner, &[], None, Some(1))
             .highlighted_node,
         Some(1)
     );
@@ -1756,7 +1756,7 @@ fn retained_highlight_keeps_hidden_node_coordinates_and_full_membership() {
         .unwrap();
     assert!(sim.apply_command("Russians", &envelope.payload, Some(&rules)));
     let coord = sim.planning_node_coords(0).unwrap();
-    let graph = sim.planning_draw_graph(owner, None, Some(0));
+    let graph = sim.planning_draw_graph(owner, &[], None, Some(0));
     assert!(graph.nodes.is_empty());
     assert_eq!(graph.actors.len(), 1);
     assert_eq!(graph.actors[0].actor_id, 1);
@@ -1764,4 +1764,88 @@ fn retained_highlight_keeps_hidden_node_coordinates_and_full_membership() {
     assert_eq!(graph.highlighted_coord, Some(coord));
     assert_eq!(graph.highlighted_members, vec![2, 1]);
     assert_eq!(graph.hovered_coord, None);
+}
+
+#[test]
+fn press_refusals_and_hover_follow_the_selected_paths() {
+    use super::PlanningPressRefusal::{InvalidNode, NoAircraft, NoBuildings, NoUnknowns};
+    use crate::map::entities::EntityCategory;
+    let (mut sim, rules, owner) = fixture();
+    for (id, category) in [
+        (4, EntityCategory::Aircraft),
+        (5, EntityCategory::Structure),
+    ] {
+        assert_eq!(sim.allocate_stable_id(), id);
+        crate::sim::world::lifecycle_tests::insert_entity(&mut sim, id, category);
+    }
+    for cell in [(12, 15), (16, 15), (20, 15), (24, 15)] {
+        append(&mut sim, &rules, owner, 1, cell);
+    }
+    append(&mut sim, &rules, owner, 2, (30, 15));
+    let point = |sim: &Simulation, node: u64| {
+        let coord = sim.planning_node_coords(node).unwrap();
+        let (x, y) = crate::util::lepton::absolute_leptons_to_screen(coord.x, coord.y, coord.z);
+        [x as i32, y as i32]
+    };
+    // 63AC70: the first selected token decides; objects without one pass.
+    assert_eq!(sim.planning_invalid_node_reason(&[1], 3), Some(2));
+    assert_eq!(sim.planning_invalid_node_reason(&[1], 2), Some(3));
+    assert_eq!(sim.planning_invalid_node_reason(&[1], 1), None);
+    assert_eq!(sim.planning_invalid_node_reason(&[2], 1), Some(5));
+    assert_eq!(sim.planning_invalid_node_reason(&[3, 4, 1], 3), Some(2));
+    assert_eq!(sim.planning_invalid_node_reason(&[3], 3), None);
+
+    let last = point(&sim, 3);
+    assert_eq!(sim.planning_press_refusal(&[1], last), Some(InvalidNode));
+    assert_eq!(sim.planning_node_at_screen(owner, &[1], last), None);
+    assert_eq!(
+        sim.planning_draw_graph(owner, &[1], Some(last), None)
+            .hovered_node,
+        None
+    );
+    assert!(sim.planning_release_refused(&[1], last));
+    let first = point(&sim, 1);
+    assert_eq!(sim.planning_press_refusal(&[1], first), None);
+    assert_eq!(
+        sim.planning_node_at_screen(owner, &[1], first),
+        Some((16, 15))
+    );
+    assert_eq!(
+        sim.planning_draw_graph(owner, &[1], Some(first), None)
+            .hovered_node,
+        Some(1)
+    );
+    assert!(!sim.planning_release_refused(&[1], first));
+    // A node hit skips 639DA0, so an aircraft without a token passes.
+    assert_eq!(sim.planning_press_refusal(&[4, 5], first), None);
+
+    // 639DA0 with no node hit: the first object that cannot use waypoints.
+    let open = [first[0] + 200, first[1] + 200];
+    assert_eq!(sim.planning_press_refusal(&[1, 3], open), None);
+    assert_eq!(
+        sim.planning_press_refusal(&[1, 5, 4], open),
+        Some(NoBuildings)
+    );
+    assert_eq!(sim.planning_press_refusal(&[4, 5], open), Some(NoAircraft));
+    assert_eq!(sim.planning_press_refusal(&[1, 99], open), Some(NoUnknowns));
+
+    // The press and release loops hit every house's nodes; the hover keeps
+    // only own ones.
+    let rival = sim.interner.intern("Russians");
+    sim.substrate
+        .entities
+        .get_mut(2)
+        .unwrap()
+        .set_owner_for_test(rival);
+    let foreign = point(&sim, 4);
+    assert_eq!(sim.planning_node_at_screen(owner, &[], foreign), None);
+    assert_eq!(sim.planning_press_refusal(&[1], foreign), Some(InvalidNode));
+    assert_eq!(sim.planning_press_refusal(&[4], foreign), None);
+
+    // A loop (token+0x94) refuses every node until the plan is cleared.
+    let connect = sim.encode_plan_connect_record(owner, 1, (12, 15)).unwrap();
+    apply(&mut sim, &rules, connect);
+    assert_eq!(sim.planning.paths[&1].loop_start, Some(0));
+    assert_eq!(sim.planning_invalid_node_reason(&[1], 1), Some(1));
+    assert_eq!(sim.planning_press_refusal(&[1], first), Some(InvalidNode));
 }

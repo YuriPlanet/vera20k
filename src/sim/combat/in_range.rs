@@ -962,15 +962,9 @@ pub fn lepton_distance_sq_raw(
     dx * dx + dy * dy
 }
 
-/// Check if a squared lepton distance is within weapon range.
-///
-/// Converts weapon range from cells to leptons (×256) before squaring.
-/// Uses i64 to match `lepton_distance_sq_raw()` output.
-///
-/// The scale runs on the fixed-point bits, not through `to_num`, because
-/// `CCINIClass::ReadRange` 0x00474620 multiplies BEFORE truncating: a
-/// `Range=1.5` weapon reaches 384 leptons, and truncating to whole cells first
-/// cost it a third of its reach.
+/// Check if a squared lepton distance is within a weapon's range: its +B4
+/// leptons (`WeaponType::range_leptons`), squared in i64 to match
+/// `lepton_distance_sq_raw()` output.
 ///
 /// RESIDUAL — this 2-D twin does NOT honour the `-512` always-in-range
 /// sentinel that `compute_in_range` does. `TechnoClass::InRange`
@@ -1001,10 +995,9 @@ pub fn lepton_distance_sq_raw(
 /// fixtures, pre-map bring-up): the fire gate, the threat scan and the
 /// cursor. None of them can run a walk, so they agree with each other rather
 /// than diverging.
-pub fn is_within_range_leptons(dist_sq_leptons: i64, range_cells: SimFixed) -> bool {
-    let range_leptons: i64 = (i64::from(range_cells.to_bits()) * 256) >> 16;
-    let range_sq: i64 = range_leptons * range_leptons;
-    dist_sq_leptons <= range_sq
+pub fn is_within_range_leptons(dist_sq_leptons: i64, range_leptons: i32) -> bool {
+    let range_leptons = i64::from(range_leptons);
+    dist_sq_leptons <= range_leptons * range_leptons
 }
 
 #[cfg(test)]

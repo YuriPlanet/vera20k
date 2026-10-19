@@ -1920,7 +1920,6 @@ impl MapKeyboardGestureReceipt {
                     repeat,
                 },
                 false,
-                false,
             )
         };
         if key_edge != Some(MapKeyEdge::Released) {
@@ -4315,10 +4314,8 @@ impl TacticalCaptureSession {
             && !state.match_state.paused()
             && !state.main_menu_dialog_open()
             && !state.diag.debug_show_pathgrid
-            && !state.diag.debug_unit_inspector
             && !state.diag.debug_show_cell_grid
             && !state.diag.debug_show_heightmap
-            && !state.diagnostic_gui_visible()
             && self.focus_violations == 0
             && self.input_violations == 0;
         let static_default_cursor =

@@ -4,6 +4,7 @@
 //! The obsolete TS House path slots and Foot Formation+520 are unrelated.
 
 use super::Simulation;
+use crate::map::entities::EntityCategory;
 use crate::sim::command::{
     Command, CommandEnvelope, CommandRecord, MegaMissionOrder, MegaMissionRecord, MegaMissionTarget,
 };
@@ -73,6 +74,16 @@ struct PlanningPath {
     loop_changed: bool,
     executing: bool,
     current: Option<CommandRecord>,
+}
+
+/// The refusals PlanMgr 0x0063A5A0 posts on a left press, each as its
+/// literal CSF key with ScoldSound.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlanningPressRefusal {
+    InvalidNode,
+    NoAircraft,
+    NoBuildings,
+    NoUnknowns,
 }
 
 #[derive(Debug, Clone)]
@@ -482,7 +493,7 @@ impl Simulation {
         actor_id: u64,
         point: [i32; 2],
     ) -> Option<CommandRecord> {
-        let node = self.planning_node_id_at_screen(owner, point)?;
+        let node = self.planning_node_id_at_screen(Some(owner), point)?;
         self.planning_connect_record_to_node(owner, actor_id, node)
     }
 
@@ -522,7 +533,7 @@ impl Simulation {
         owner: InternedId,
         point: [i32; 2],
     ) -> Option<CommandRecord> {
-        let node = self.planning_node_id_at_screen(owner, point)?;
+        let node = self.planning_node_id_at_screen(Some(owner), point)?;
         self.planning_delete_record_for_node(owner, node)
     }
 
@@ -568,6 +579,7 @@ impl Simulation {
     pub fn planning_draw_graph(
         &self,
         viewer: InternedId,
+        selected: &[u64],
         hover_point: Option<[i32; 2]>,
         retained_highlighted_node: Option<u64>,
     ) -> PlanningDrawGraph {
@@ -778,7 +790,7 @@ impl Simulation {
         //63B2F0 draws retained/hover rectangles independently of the allied
         // node drawing pass.63D650 likewise checks full node membership.
         let hovered_node =
-            hover_point.and_then(|point| self.planning_node_id_at_screen(viewer, point));
+            hover_point.and_then(|point| self.planning_hover_node_id(viewer, selected, point));
         let highlighted_node =
             retained_highlighted_node.filter(|id| self.planning.nodes.contains_key(id));
         PlanningDrawGraph {
@@ -801,21 +813,114 @@ impl Simulation {
         self.planning_node_id_at_cell(owner, cell).is_some()
     }
 
-    /// Node634220 projects634550's live XYZ; its half-open hit box is16x16.
+    /// PlanMgr 0x00638E60's hover AC4CCC: the node under `point` (Node634220
+    /// projects634550's live XYZ; its half-open hit box is16x16), kept only
+    /// when Planning__GetInvalidNodeReason admits it for `selected`. A refused
+    /// node goes to AC4C3C, which nothing reads. Residuals: the press-held
+    /// node AC4C38 gate is not kept (it only holds between an admitted press
+    /// and its release); 638E60 re-runs the gate only when the node under the
+    /// mouse changes, while this re-checks it each frame against the current
+    /// selection; and it hit-tests the first node in AC4C18 before its owner
+    /// test, while this finds the first own node (allied plans only).
     pub fn planning_node_at_screen(
         &self,
         owner: InternedId,
+        selected: &[u64],
         point: [i32; 2],
     ) -> Option<(u16, u16)> {
-        self.planning_node_coords(self.planning_node_id_at_screen(owner, point)?)
+        self.planning_node_coords(self.planning_hover_node_id(owner, selected, point)?)
             .and_then(coord_cell)
     }
 
-    fn planning_node_id_at_screen(&self, owner: InternedId, point: [i32; 2]) -> Option<u64> {
+    fn planning_hover_node_id(
+        &self,
+        owner: InternedId,
+        selected: &[u64],
+        point: [i32; 2],
+    ) -> Option<u64> {
+        self.planning_node_id_at_screen(Some(owner), point)
+            .filter(|&node| self.planning_invalid_node_reason(selected, node).is_none())
+    }
+
+    /// Planning__GetInvalidNodeReason 0x0063AC70 over the selection in order.
+    /// The first object holding a token (Techno+0x514, whatever its owner)
+    /// refuses with 1 when its loop is set (token+0x94), 5 when its path lacks
+    /// the node, and 2 or 3 when the node is its last or second-to-last.
+    /// FindItemIndex (vt+0x10) answers the first occurrence.
+    fn planning_invalid_node_reason(&self, selected: &[u64], node: u64) -> Option<u8> {
+        for path in selected
+            .iter()
+            .filter_map(|actor| self.planning.paths.get(actor))
+        {
+            if path.loop_start.is_some() {
+                return Some(1);
+            }
+            let Some(index) = path.nodes.iter().position(|id| *id == node) else {
+                return Some(5);
+            };
+            if index + 1 == path.nodes.len() {
+                return Some(2);
+            }
+            if index + 2 == path.nodes.len() {
+                return Some(3);
+            }
+        }
+        None
+    }
+
+    /// PlanMgr 0x0063A8E0 on the left release: a node under it that 63AC70
+    /// refuses consumes the release (0x0063AA65..0x0063AA7E), which then
+    /// neither connects nor orders.
+    pub fn planning_release_refused(&self, selected: &[u64], point: [i32; 2]) -> bool {
+        self.planning_node_id_at_screen(None, point)
+            .is_some_and(|node| self.planning_invalid_node_reason(selected, node).is_some())
+    }
+
+    /// PlanMgr 0x0063A5A0, which ScrollClass's left press (0x00693187) runs
+    /// ahead of the capture. A node under the press that 63AC70 refuses
+    /// answers InvalidNode; an admitted node passes. With no node hit,
+    /// 0x00639DA0 walks the selection in order: the first object that is not
+    /// a Techno answers NoUnknowns, the first Techno that cannot use waypoints
+    /// answers by WhatAmI (Aircraft, Building, else NoUnknowns).
+    /// TechnoClass::CanUseWaypoint 0x0070F070 asks the type (vt+0xA0):
+    /// AircraftType 0x0041CB50 and BuildingType 0x00465910 answer false, and
+    /// Infantry and Unit types jump to the base 0x00711E80, true.
+    pub fn planning_press_refusal(
+        &self,
+        selected: &[u64],
+        point: [i32; 2],
+    ) -> Option<PlanningPressRefusal> {
+        if let Some(node) = self.planning_node_id_at_screen(None, point) {
+            return self
+                .planning_invalid_node_reason(selected, node)
+                .map(|_| PlanningPressRefusal::InvalidNode);
+        }
+        selected.iter().find_map(|&id| {
+            match self
+                .substrate
+                .entities
+                .get(id)
+                .map(|entity| entity.category())
+            {
+                Some(EntityCategory::Aircraft) => Some(PlanningPressRefusal::NoAircraft),
+                Some(EntityCategory::Structure) => Some(PlanningPressRefusal::NoBuildings),
+                Some(EntityCategory::Unit | EntityCategory::Infantry) => None,
+                _ => Some(PlanningPressRefusal::NoUnknowns),
+            }
+        })
+    }
+
+    /// `None` hit-tests every house's nodes, as the press and release
+    /// loops over AC4B34 do (0x0063A5A0, 0x0063A8E0).
+    fn planning_node_id_at_screen(
+        &self,
+        owner: Option<InternedId>,
+        point: [i32; 2],
+    ) -> Option<u64> {
         self.planning
             .nodes
             .values()
-            .filter(|node| self.planning_node_house(node.id) == Some(owner))
+            .filter(|node| owner.is_none() || self.planning_node_house(node.id) == owner)
             .find_map(|node| {
                 let coord = self.planning_node_coords(node.id)?;
                 let (x, y) =
@@ -826,24 +931,35 @@ impl Simulation {
             })
     }
 
+    /// The last node of `actor`'s remaining path: its token's node vector at
+    /// count-1 (`+0x8`, `+0x14`), with no loop wrap.
+    fn planning_tail_node(&self, actor: u64) -> Option<&PlanningNode> {
+        let id = self.planning.paths.get(&actor)?.nodes.last()?;
+        self.planning.nodes.get(id)
+    }
+
+    /// The members that 0x00637840 (Ghidra's "PlayPlanningSelectionVoices")
+    /// Selects after `actor`'s Select (`0x006FC020`): its tail node's members
+    /// in encounter order (node `+0x4`, `+0x10`), whatever their owner. The
+    /// voices come from those members' own Selects.
+    pub fn planning_tail_members(&self, actor: u64) -> Vec<u64> {
+        self.planning_tail_node(actor)
+            .map(|node| node.live_members.values().copied().collect())
+            .unwrap_or_default()
+    }
+
     /// Connect639740 expands each selected actor's tail group in encounter
     /// order. A selected actor without a path contributes only itself.
     pub fn planning_connect_actors(&self, owner: InternedId, selected: &[u64]) -> Vec<u64> {
         let mut actors = Vec::new();
         let mut seen = BTreeSet::new();
         for &actor in selected {
-            let tail = self
-                .planning
-                .paths
-                .get(&actor)
-                .filter(|_| {
-                    self.substrate
-                        .entities
-                        .get(actor)
-                        .is_some_and(|entity| entity.owner() == owner)
-                })
-                .and_then(|path| path.nodes.last())
-                .and_then(|id| self.planning.nodes.get(id));
+            let tail = self.planning_tail_node(actor).filter(|_| {
+                self.substrate
+                    .entities
+                    .get(actor)
+                    .is_some_and(|entity| entity.owner() == owner)
+            });
             if let Some(node) = tail {
                 for &member in node.live_members.values() {
                     if seen.insert(member) {

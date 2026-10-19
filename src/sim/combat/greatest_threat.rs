@@ -523,7 +523,10 @@ fn threat_score(
                 .guard_range
                 .map_or(0, |range| range.to_num::<i32>())
         },
-        |selected| selected.weapon.range.to_num::<i32>(),
+        // Weapon+B4 leptons (`0x0070CF6F`), which `CDQ ; AND EDX,0xff ;
+        // ADD EAX,EDX ; SAR EAX,8` (`0x0070CF90..0x0070CF99`) divides by 256
+        // toward zero.
+        |selected| selected.weapon.range_leptons / 256,
     );
     let beyond_range = distance.wrapping_sub(range_cells).max(0);
     score = ScoreX87::add(
@@ -2065,7 +2068,7 @@ fn evaluate_candidate(
                     candidate.position.sub_x(),
                     candidate.position.sub_y(),
                 ),
-                selected.weapon.range,
+                selected.weapon.range_leptons,
             ),
         },
     };

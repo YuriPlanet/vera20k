@@ -1119,8 +1119,6 @@ impl TacticalCaptureSession {
             && !state.diag.debug_show_pathgrid
             && !state.diag.debug_show_cell_grid
             && !state.diag.debug_show_heightmap
-            && !state.diag.debug_unit_inspector
-            && !state.diagnostic_gui_visible()
             && state.match_state.input.targeting_mode.is_none()
             && state.match_state.input.building_placement_preview.is_none()
             && state

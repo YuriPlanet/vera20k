@@ -36,6 +36,7 @@ pub(super) fn build(
     };
     let graph = sim.planning_draw_graph(
         viewer,
+        &crate::app::input::planning_mode::selected_in_order(state),
         crate::app::input::planning_mode::hover_native_screen(state),
         state.match_state.input.planning.highlighted_node(),
     );

@@ -170,7 +170,6 @@ pub(crate) fn commit_prepared_load(
 
     // Reset pacing, not saved simulation input delay or elapsed score time.
     state.platform.frame_pacer.reset_for_immediate_frame();
-    state.persistence.last_loaded_save_path = Some(path.to_path_buf());
     crate::app::presentation::sidebar_render::refresh_sidebar_projection(state);
     // The incoming chrome owns the footer allowance; refresh its layout
     // before initializing derived geometry, including on a cold/different-side

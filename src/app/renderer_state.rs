@@ -7,8 +7,6 @@
 
 use crate::render::batch::BatchRenderer;
 use crate::render::bit_font::BitFont;
-#[cfg(feature = "dev-ui")]
-use crate::render::egui_integration::EguiIntegration;
 use crate::render::gpu::GpuContext;
 
 pub(crate) struct RendererState {
@@ -31,9 +29,6 @@ pub(crate) struct RendererState {
     /// The active-game shells' own surface, made by the first one painted and
     /// following the frame (`in_game_shell::render_shell_frame`).
     pub(crate) in_game_shell_surface: Option<crate::render::scaled_copy::ScaledSurface>,
-    /// Optional diagnostic GUI; absent from the normal game build.
-    #[cfg(feature = "dev-ui")]
-    pub(super) debug_ui: EguiIntegration,
     /// Immutable one-pixel fill shared by the asset-independent status cards.
     pub(super) status_screen_fill: crate::render::batch::BatchTexture,
     /// GAME.FNT bitmap font (falls back to the built-in 5x7 face).

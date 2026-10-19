@@ -167,24 +167,6 @@ impl AppState {
             && !self.main_menu_dialog_open()
     }
 
-    /// Optional GUI visibility, shared by input routing and capture admission.
-    /// Native/world debug overlays remain owned by their existing toggles.
-    pub(crate) fn diagnostic_gui_visible(&self) -> bool {
-        #[cfg(feature = "dev-ui")]
-        {
-            self.frontend.screen == crate::ui::game_screen::GameScreen::InGame
-                && !crate::app::frontend::skirmish_shell_render::native_in_game_shell_active(self)
-                && (self.match_state.debug_pause
-                    || self.diag.debug_show_pathgrid
-                    || self.diag.debug_unit_inspector
-                    || self.match_state.match_presentation.show_hotkey_help)
-        }
-        #[cfg(not(feature = "dev-ui"))]
-        {
-            false
-        }
-    }
-
     /// Whether any main-menu modal dialog (exit confirm, options, keyboard)
     /// is currently open.
     pub(crate) fn main_menu_dialog_open(&self) -> bool {

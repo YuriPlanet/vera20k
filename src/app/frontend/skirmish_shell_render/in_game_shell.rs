@@ -329,11 +329,6 @@ pub(super) fn render_shell_frame(
     overlay: ShellFrameOverlay,
     cursor_policy: ShellFrameCursor,
 ) -> anyhow::Result<()> {
-    #[cfg(feature = "dev-ui")]
-    state
-        .renderer
-        .debug_ui
-        .discard_pending_input(&state.platform.window);
     let width = state.render_width();
     let height = state.render_height();
     let sidebar_frame = matches!(art, ShellFrameArt::Sidebar).then(|| state.sidebar_frame());

@@ -263,7 +263,6 @@ fn find_team_target(
             only_target_house_enemy: true,
         },
         Some([origin.x, origin.y, origin.z]),
-        crate::sim::combat::combat_targeting::greatest_threat_for_entity,
     ) else {
         return NO_CELL;
     };

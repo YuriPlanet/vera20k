@@ -87,7 +87,6 @@ fn retail_ai_engineer_takes_a_critically_damaged_own_building() {
         engineer,
         super::super::ScanMission::AreaGuard,
         None,
-        super::super::combat_targeting::greatest_threat_for_entity,
     );
     assert_eq!(pick, Some(building));
 }
@@ -111,7 +110,6 @@ fn retail_ai_engineer_refuses_a_friendly_building_above_condition_red() {
         engineer,
         super::super::ScanMission::AreaGuard,
         None,
-        super::super::combat_targeting::greatest_threat_for_entity,
     );
     assert_eq!(pick, None);
 }
@@ -139,7 +137,6 @@ fn all_retail_engineers_obey_the_condition_red_boundary() {
                     engineer,
                     super::super::ScanMission::AreaGuard,
                     None,
-                    super::super::combat_targeting::greatest_threat_for_entity,
                 ),
                 (health <= 100).then_some(building),
                 "{engineer_type}: health {health}"
@@ -170,7 +167,6 @@ fn engineer_allied_cost_gate_is_nonzero_not_positive() {
                 engineer,
                 super::super::ScanMission::AreaGuard,
                 None,
-                super::super::combat_targeting::greatest_threat_for_entity,
             ),
             (cost != 0).then_some(building),
             "cost {cost}"
@@ -198,7 +194,6 @@ fn enemy_buildings_bypass_engineer_allied_health_and_cost_gates() {
             engineer,
             super::super::ScanMission::AreaGuard,
             None,
-            super::super::combat_targeting::greatest_threat_for_entity,
         ),
         Some(building)
     );
@@ -229,7 +224,6 @@ fn engineer_gate_applies_to_other_allied_houses_too() {
                 engineer,
                 super::super::ScanMission::AreaGuard,
                 None,
-                super::super::combat_targeting::greatest_threat_for_entity,
             ),
             (health <= 100).then_some(building)
         );

@@ -2,9 +2,6 @@
 
 use std::path::Path;
 
-#[cfg(feature = "dev-ui")]
-use crate::render::egui_integration::EguiIntegration;
-
 use anyhow::Context;
 
 use crate::app::frontend::startup_options::{RetailStartupOptions, ScreenSize};
@@ -188,8 +185,6 @@ impl App {
             icon.set_dock_icon();
         }
         let gpu: GpuContext = GpuContext::new(window.clone())?;
-        #[cfg(feature = "dev-ui")]
-        let debug_ui = EguiIntegration::new(&gpu, &window);
         let batch_renderer: BatchRenderer = BatchRenderer::new(&gpu);
         let status_screen_fill = batch_renderer.create_texture(&gpu, &[255; 4], 1, 1);
         let mut terrain_draw_renderer = crate::render::terrain_draw::TerrainDrawRenderer::new(
@@ -537,8 +532,6 @@ impl App {
                     saved_game_browser: None,
                     in_game_options: startup_in_game_options,
                     in_game_options_anchor: None,
-                    #[cfg(feature = "dev-ui")]
-                    show_hotkey_help: false,
                     combat_lights: Default::default(),
                     line_trails: Default::default(),
                     lasers: Default::default(),
@@ -600,8 +593,7 @@ impl App {
                 // (in the presentation owner) is the single source of truth; seed it
                 // from the skirmish-setup speed (internal 1) and derive
                 // `sim_speed_tps` from the same value, so the Options slider
-                // reflects the current pace. The resulting tps is unchanged from
-                // the prior `default_yr_skirmish_tps()` (= GS1 -> 63).
+                // reflects the current pace (GS1 -> 63 tps).
                 sim_speed_tps: crate::app::types::tps_for_game_speed(
                     crate::app::types::DEFAULT_YR_SKIRMISH_GAME_SPEED,
                 ),
@@ -681,8 +673,6 @@ impl App {
                 upscale_pass: None,
                 sidebar_surface: None,
                 in_game_shell_surface: None,
-                #[cfg(feature = "dev-ui")]
-                debug_ui,
                 status_screen_fill,
                 bit_font,
                 outcome_banner_art,

@@ -31,8 +31,6 @@ pub mod cursor_atlas;
 #[cfg(test)]
 pub(crate) mod depth_gpu_tests;
 pub mod draw_state;
-#[cfg(feature = "dev-ui")]
-pub mod egui_integration;
 pub(crate) mod electric_bolt;
 pub(crate) mod foot_depth;
 pub mod frame_readback;

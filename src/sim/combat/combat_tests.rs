@@ -1441,16 +1441,8 @@ fn retail_berserk_gi_targets_its_own_house() {
     let ally = sim
         .spawn_object("E1", "Russians", 11, 10, 0, &rules)
         .unwrap();
-    let scan = |sim: &mut Simulation, mask| {
-        sim.greatest_threat_represented(
-            &rules,
-            None,
-            gi,
-            mask,
-            None,
-            crate::sim::combat::combat_targeting::greatest_threat_for_entity,
-        )
-    };
+    let scan =
+        |sim: &mut Simulation, mask| sim.greatest_threat_represented(&rules, None, gi, mask, None);
     let masks = [ScanMission::Guard, ScanMission::Hunt];
     for mask in masks {
         assert_eq!(scan(&mut sim, mask), None, "calm, {mask:?}");
@@ -1499,16 +1491,8 @@ fn retail_gi_scan_asks_only_its_own_house_about_allies() {
             &rules,
         );
     };
-    let scan = |sim: &mut Simulation, mask| {
-        sim.greatest_threat_represented(
-            &rules,
-            None,
-            gi,
-            mask,
-            None,
-            crate::sim::combat::combat_targeting::greatest_threat_for_entity,
-        )
-    };
+    let scan =
+        |sim: &mut Simulation, mask| sim.greatest_threat_represented(&rules, None, gi, mask, None);
     let masks = [ScanMission::Guard, ScanMission::Hunt];
     one_way(&mut sim, "Americans", "Russians");
     for mask in masks {
@@ -6296,7 +6280,7 @@ fn gsi_08_01_a_shared_cell_offers_only_its_list_head() {
     fog.mark_visible_for_owner(test_intern("Americans"), 7, 5);
     let occupancy = mark_fixture_entities(&mut store);
     // `TechnoClass::Greatest_Threat @ 0x006F8DF0` with the passive mask.
-    let pick = acquire_best_target_for_entity(
+    let pick = crate::sim::combat::combat_targeting::greatest_threat_for_entity(
         &store,
         &occupancy,
         &rules,
@@ -6338,7 +6322,7 @@ fn gsi_08_01_unarmed_building_loses_to_a_tank_at_equal_distance() {
     fog.mark_visible_for_owner(test_intern("Americans"), 7, 5);
     let occupancy = mark_fixture_entities(&mut store);
     // `TechnoClass::Greatest_Threat @ 0x006F8DF0` with the passive mask.
-    let pick = acquire_best_target_for_entity(
+    let pick = crate::sim::combat::combat_targeting::greatest_threat_for_entity(
         &store,
         &occupancy,
         &rules,
@@ -6977,9 +6961,9 @@ fn wall_damage_deterministic_across_replays() {
     );
 }
 
-/// The range of the weapon SelectWeapon picks against `target`, as Approach
-/// reads it ([`combat_weapon::select_weapon_against`]); None for an empty
-/// slot.
+/// The range in leptons of the weapon SelectWeapon picks against `target`, as
+/// Approach reads it ([`combat_weapon::select_weapon_against`]); None for an
+/// empty slot.
 fn selected_weapon_range(
     attacker: &GameEntity,
     target: &TargetKind,
@@ -6987,7 +6971,7 @@ fn selected_weapon_range(
     rules: &RuleSet,
     interner: &StringInterner,
     terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
-) -> Option<crate::util::fixed_math::SimFixed> {
+) -> Option<i32> {
     let obj = interner.object_type(attacker.type_ref(), rules)?;
     combat_weapon::select_weapon_against(
         rules,
@@ -7001,7 +6985,7 @@ fn selected_weapon_range(
         None,
     )
     .and_then(|(_, selected)| selected)
-    .map(|selected| selected.weapon.range)
+    .map(|selected| selected.weapon.range_leptons)
 }
 
 /// An Entity and a Cell target take different arms of the selection's target
@@ -7023,11 +7007,7 @@ fn selected_weapon_range_for_entity_and_cell_targets() {
     for target in [TargetKind::Entity(2), TargetKind::Cell(50, 50)] {
         let range = selected_weapon_range(attacker, &target, &sim, &rules, &sim.interner, None);
         // 105mm Range=6; a Cell target's ladder returns slot 0.
-        assert_eq!(
-            range,
-            Some(crate::util::fixed_math::SimFixed::from_num(6)),
-            "{target:?}"
-        );
+        assert_eq!(range, Some(6 * 256), "{target:?}");
     }
 }
 
@@ -7099,7 +7079,7 @@ fn an_illegal_shot_is_still_in_range() {
         &sim.interner,
         sim.resolved_terrain.as_ref(),
     );
-    assert_eq!(range, Some(crate::util::fixed_math::SimFixed::from_num(6)));
+    assert_eq!(range, Some(6 * 256));
 }
 
 #[test]

@@ -462,7 +462,7 @@ pub(crate) fn resolved_unit_in_range(
         sub_x,
         sub_y,
     );
-    crate::sim::combat::is_within_range_leptons(distance, weapon.range)
+    crate::sim::combat::is_within_range_leptons(distance, weapon.range_leptons)
 }
 
 /// Resolved attack receiver batch. These are ephemeral input decisions;

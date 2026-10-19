@@ -163,7 +163,7 @@ class CargoRunTests(unittest.TestCase):
             (['test', '-p', 'vera20k', '--lib'], []),
             (['test', '--workspace', '--lib'], []),
             (['test', '-p', 'vera20k-core', '-p', 'vera20k', '--lib'], []),
-            (['test', '-p', 'vera20k-core', '--features', 'dev-ui', '--lib'], []),
+            (['test', '-p', 'vera20k-core', '--features', 'dev-overlays', '--lib'], []),
             (['test', '-p', 'vera20k-core', '--no-default-features', '--lib'], []),
             (['test', '-p', 'vera20k-core', '--features', 'dev-overlays,test-support',
               '--lib', '--', '--ignored', '--nocapture'], []),

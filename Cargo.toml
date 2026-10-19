@@ -22,11 +22,6 @@ default-members = [".", "src"]
 name = "vera20k"
 path = "src/main.rs"
 
-[[bin]]
-name = "mix-browser"
-path = "src/bin/mix-browser.rs"
-required-features = ["tools-ui"]
-
 # Headless, JSON-emitting asset browser for automated callers.
 [[bin]]
 name = "asset"
@@ -36,31 +31,20 @@ path = "src/bin/asset.rs"
 name = "extract-ini"
 path = "src/bin/extract-ini.rs"
 
-[[bin]]
-name = "bik-player"
-path = "src/bin/bik-player.rs"
-required-features = ["tools-ui"]
-
 [features]
 # Development builds carry the Ctrl+Shift dev chord. The release workflow builds
 # with `--no-default-features`, so shipped binaries do not.
 default = ["dev-overlays"]
 # The Ctrl+Shift dev chord: renderer-native diagnostic overlays (grid, heightmap,
-# pathgrid, inspector, fog), the debug pause and quicksave/quickload. Captures
-# rely on it (literal Ctrl+Shift+M/N quicksave/quickload). It needs no egui.
+# pathgrid, foot path, fog), the debug pause and quicksave/quickload. Captures
+# rely on it (literal Ctrl+Shift+M/N quicksave/quickload).
 dev-overlays = ["vera20k-core/dev-overlays"]
-# Optional in-engine diagnostic overlay (egui panels). Player UI uses the retail
-# UI owners. Implies `dev-overlays` so a dev build keeps its world overlays.
-dev-ui = ["dep:egui", "dep:egui-wgpu", "dep:egui-winit", "dev-overlays", "vera20k-core/dev-ui"]
-# Standalone asset/video tools; this does not enable the engine overlay.
-tools-ui = ["dep:eframe"]
 
 [dependencies]
 # The GPU-free engine. Its dev features follow this package's.
 vera20k-core = { path = "src" }
 
 # --- GPU rendering ---
-# Retain wgpu 27 for the optional diagnostic renderer's egui-wgpu 0.33.
 wgpu = "27"
 # winit 0.30 is the latest stable. 0.31 is still in beta.
 # Uses the ApplicationHandler trait pattern (deferred window creation).
@@ -75,15 +59,6 @@ raw-window-handle = "0.6"
 windows-sys = { version = "0.61", features = ["Win32_UI_WindowsAndMessaging", "Win32_Graphics_Gdi"] }
 # bytemuck enables safe transmutation of structs to GPU-friendly byte slices.
 bytemuck = { version = "1", features = ["derive"] }
-
-# --- Optional development and standalone tool UI ---
-egui = { version = "0.33", optional = true }
-egui-wgpu = { version = "0.33", optional = true }
-# default-features=false drops the `links` feature which pulls in webbrowser → url → icu crates
-# that are currently incompatible with Rust 1.93+. We don't need egui hyperlink-opening.
-egui-winit = { version = "0.33", default-features = false, optional = true }
-# eframe is egui's standalone app framework — used by tool binaries (mix-browser GUI).
-eframe = { version = "0.33", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"], optional = true }
 
 # --- Shared with vera20k-core ([workspace.dependencies]) ---
 glam = { workspace = true }
@@ -114,9 +89,9 @@ libc = "0.2"
 
 # --- macOS application icon ---
 # macOS has no per-window icon; the Dock shows NSApplication's icon image, which
-# `app::window_icon` sets at startup. These are the objc2 0.6 / AppKit 0.3 versions
-# already in the lock (via arboard/glutin); default features are off because they
-# enable every AppKit framework class.
+# `app::window_icon` sets at startup. objc2 0.6 and Foundation 0.3 are the
+# versions already in the lock (via cpal), and AppKit 0.3 matches them; default
+# features are off because they enable every AppKit framework class.
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSApplication", "NSImage", "NSResponder"] }

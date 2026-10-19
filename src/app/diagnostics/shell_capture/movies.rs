@@ -993,7 +993,6 @@ impl MoviesCapture {
                         state: ElementState::Released,
                         repeat: false,
                     },
-                    false,
                     paused_at_event,
                 );
                 self.route

@@ -1,10 +1,5 @@
-//! Headless asset browsing for automated callers.
-//!
-//! The `mix-browser` binary is an eframe GUI: a person clicks through archives
-//! and looks at sprites. Everything underneath it is already CPU-only and
-//! `pub`, but the useful half is trapped in bin-local modules. This module is
-//! that half, in the library, behind a machine-readable interface — see the
-//! `asset` binary in `src/bin/asset.rs`.
+//! Headless asset browsing for automated callers, behind a machine-readable
+//! interface — see the `asset` binary in `src/bin/asset.rs`.
 //!
 //! Archives are read-only. Explicit export verbs write separate files, including
 //! candidate corpus baselines for review. What it reports about retail *file contents*

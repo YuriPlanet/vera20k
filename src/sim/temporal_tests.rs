@@ -1660,7 +1660,7 @@ fn only_a_temporal_scanner_acquires_a_warped_enemy() {
     let gi = spawn(&mut sim, &rules, "E1", "Americans", 10, 10);
     let second = spawn(&mut sim, &rules, "CLEG", "Americans", 10, 11);
     let acquire = |sim: &Simulation, scanner: u64| {
-        crate::sim::combat::acquire_best_target_for_entity(
+        crate::sim::combat::combat_targeting::greatest_threat_for_entity(
             &sim.substrate.entities,
             &sim.substrate.occupancy,
             &rules,
