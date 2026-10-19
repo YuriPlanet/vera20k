@@ -69,6 +69,8 @@ pub(crate) fn commit_prepared_load(
         .session
         .restore_from_save(game_mode_nonzero, committed.map.local_player_name());
     state.match_state.scenario_elapsed_clock = committed.elapsed_clock;
+    #[cfg(feature = "telemetry-dashboard")]
+    crate::app::telemetry_capture::reset_observation(state);
     super::scenario_pause::load_clock(state, wall_ms);
     let pause_effects = state
         .match_state

@@ -1050,6 +1050,17 @@ pub struct Simulation {
     /// from the app-layer descriptor; serialized + hashed except for that
     /// diagnostic accumulator. See `sim::scenario_session`.
     pub session: ScenarioSession,
+    /// Opt-in trainer state. No save, checksum, or normal-build representation.
+    #[cfg(feature = "debug-tools")]
+    #[serde(skip)]
+    pub(crate) debug_tools: crate::sim::cheats::DebugToolsState,
+    /// Opt-in wall-clock observations. Never part of saves, hashes, or gameplay.
+    #[cfg(feature = "telemetry")]
+    #[serde(skip)]
+    frame_profiling: bool,
+    #[cfg(feature = "telemetry")]
+    #[serde(skip)]
+    frame_profile: crate::sim::frame_profile::FrameProfile,
     /// Native A8E7AC is a synchronous, wrapping placement/destruction scope,
     /// independent of GameMode. Balanced at frame boundaries; not saved/hash
     /// state. Only lifecycle's nested scope API mutates it.
@@ -3363,6 +3374,12 @@ impl Simulation {
             rule_handles: None,
             production: ProductionState::default(),
             session,
+            #[cfg(feature = "debug-tools")]
+            debug_tools: Default::default(),
+            #[cfg(feature = "telemetry")]
+            frame_profiling: false,
+            #[cfg(feature = "telemetry")]
+            frame_profile: Default::default(),
             object_placement_scope_depth: 0,
             buildup_bypass: false,
             scenario_rng: SimRng::new(seed),
@@ -4915,8 +4932,14 @@ impl Simulation {
         if !self.houses.contains_key(&owner) {
             return;
         }
+        #[cfg(feature = "debug-tools")]
+        let debug_full_power = self.debug_flags_for(owner).infinite_power;
         let state = self.power_states.entry(owner).or_default();
-        let was_low_power = state.is_low_power;
+        #[cfg(feature = "debug-tools")]
+        state.set_debug_full_power(debug_full_power);
+        #[cfg(feature = "debug-tools")]
+        let debug_power_changed = state.take_debug_power_changed();
+        let was_low_power = state.low_power();
         let assessed = power_system::assess_house_power(
             state,
             &self.substrate.entities,
@@ -4929,7 +4952,10 @@ impl Simulation {
             production::refresh_factory_rates_for_house(self, rules, owner);
             // Power508DD5 compares the old/current ratio;508DDB invokes the
             // shared hold/revoke before the radar tail, only on that edge.
-            if self.power_states[&owner].is_low_power != was_low_power {
+            let power_changed = self.power_states[&owner].low_power() != was_low_power;
+            #[cfg(feature = "debug-tools")]
+            let power_changed = power_changed || debug_power_changed;
+            if power_changed {
                 crate::sim::superweapon::update_owned_supers(self, rules, owner);
             }
         }
@@ -6807,6 +6833,22 @@ impl Simulation {
         self.state_hash_interval = Some(frames);
     }
 
+    /// Start or stop diagnostic wall-clock measurement. A transition starts a
+    /// fresh sample window; repeated requests preserve the accumulated profile.
+    /// New and deserialized simulations start disabled with an empty profile.
+    #[cfg(feature = "telemetry")]
+    pub fn set_frame_profiling(&mut self, enabled: bool) {
+        if self.frame_profiling != enabled {
+            self.frame_profile.reset();
+            self.frame_profiling = enabled;
+        }
+    }
+
+    #[cfg(feature = "telemetry")]
+    pub fn frame_profile(&self) -> &crate::sim::frame_profile::FrameProfile {
+        &self.frame_profile
+    }
+
     /// Install the sole audio owner's read-only pending-interest projection
     /// immediately before an admitted frame. No voice names/state live here.
     pub fn prepare_unit_voice_visits(&mut self, owners: std::collections::BTreeSet<u64>) {
@@ -6883,6 +6925,21 @@ impl Simulation {
         poll_triggers: bool,
         effects: FrameEffects<'_>,
     ) -> Result<MasterFrameOutput, FrameAdvanceError> {
+        #[cfg(feature = "telemetry")]
+        let mut frame_clock = self
+            .frame_profiling
+            .then(crate::sim::frame_profile::FrameClock::start);
+        // The disabled path reads no clock and does not construct a ledger.
+        macro_rules! profile_phase {
+            ($phase:ident) => {
+                #[cfg(feature = "telemetry")]
+                if let Some(clock) = frame_clock.as_mut() {
+                    clock.stamp(crate::sim::frame_profile::phase::$phase);
+                }
+            };
+        }
+        #[cfg(feature = "debug-tools")]
+        self.apply_debug_tools(rules);
         let effects = effects
             .with_rules(rules)
             .with_overlay_registry(overlay_registry);
@@ -6914,6 +6971,7 @@ impl Simulation {
         }
         #[cfg(any(test, feature = "test-support"))]
         self.trace_master_frame_rung(MasterFrameTestRung::SessionCommands);
+        profile_phase!(COMMANDS_INGRESS);
 
         let mut commands = if lane == TickLane::Ordinary {
             self.admit_frame_commands(commands, rules)
@@ -6925,6 +6983,7 @@ impl Simulation {
         self.sort_display_ground(rules);
 
         self.lifecycle_outputs.push(LifecycleOutput::LogicVisit);
+        profile_phase!(COMMANDS_ADMIT);
 
         // YR LogicClass::Update establishes trigger state before visiting the
         // live LogicVector, so object work in this frame observes its actions.
@@ -6933,12 +6992,14 @@ impl Simulation {
         if poll_triggers {
             self.poll_triggers_for_master_frame(rules, overlay_registry, effects);
         }
+        profile_phase!(TRIGGERS);
 
         // Logic55B29A/55B2AD: consume prior pending conceal at the signed
         // pre-increment native frame boundary, before ore, Teams and live objects.
         self.tick_pending_shroud_conceal(
             UninitContext::new(rules, overlay_registry).with_effects(effects),
         );
+        profile_phase!(SHROUD);
 
         // Interleaved object-AI pass: each object's mission precedes its own
         // locomotion. Unit/Infantry firing and their class-specific tails run
@@ -6956,7 +7017,9 @@ impl Simulation {
         // Harvest dispatches run.
         if let Some(rules) = rules {
             self.tick_scenario_lighting_transition(rules);
+            profile_phase!(LIGHTING);
             self.tick_ore_growth_rungs(rules, overlay_registry);
+            profile_phase!(ORE_GROWTH);
             // `BombListClass::UpdateAll` follows growth and spread (0x0055B4E1).
             self.bomb_list_update(rules);
             // `Kamikaze__Update` follows it (0x0055B4F0). `LightningStorm::
@@ -6969,23 +7032,27 @@ impl Simulation {
             self.lifecycle_outputs.push(LifecycleOutput::LaserUpdate {
                 frame: self.session.binary_frame as i32,
             });
+            profile_phase!(BOMBS);
             bridge_state_changed |= crate::sim::superweapon::tick_active_superweapon_effects(
                 self,
                 rules,
                 overlay_registry,
                 effects,
             );
+            profile_phase!(SUPERWEAPONS);
             self.radiation.tick_decay(
                 self.session.binary_frame,
                 &rules.radiation,
                 self.resolved_terrain.as_ref(),
                 &mut self.lighting_sources.pending,
             );
+            profile_phase!(RADIATION);
         }
         // Native TeamClass AI precedes the main LogicClass object vector. In
         // particular, ordinary object ReceiveDamage paths that arm a Team's
         // base-defense suspension occur only after this frame's Team visit.
         self.run_team_script_pass(rules, overlay_registry, effects);
+        profile_phase!(TEAM_AI);
         // The live pass commits each object's AI, movement and lifecycle effects
         // before advancing its cursor; later phases need only these outcomes.
         #[cfg(any(test, feature = "test-support"))]
@@ -6995,6 +7062,7 @@ impl Simulation {
         spawned_entities |= std::mem::take(&mut self.mission_spawned_entities);
         destroyed_structure |= object_pass.destroyed_structure;
         bridge_state_changed |= object_pass.bridge_state_changed;
+        profile_phase!(OBJECTS);
         //Gate Open runs in Building Mission AI; factory clearance runs in
         //the arriving Unit's Per_Cell_Process before Ready/Commence.
 
@@ -7003,6 +7071,7 @@ impl Simulation {
         if let Some(rules) = rules {
             self.spawn_wakes_for_frame(rules);
         }
+        profile_phase!(WAKES);
 
         // --- Phase 3: Vision refresh ---
         // The frame's sight projection and Gap Generator cover. Sources open,
@@ -7010,6 +7079,7 @@ impl Simulation {
         // Limbo), so an object spawned after this pass holds its sight already.
         let vision_config = self.sight_reveal_config(rules);
         self.refresh_fog(&vision_config, rules);
+        profile_phase!(VISION);
 
         if let Some(rules) = rules {
             // Every class fired in its own live Logic slot (an aircraft in its
@@ -7036,12 +7106,14 @@ impl Simulation {
             // turn or a damage commit.
             self.finish_terrain_navigation_changes(rules, &[]);
             self.flush_smudge_dirty();
+            profile_phase!(COMBAT);
             // Retaliation is not a phase: every receiver issues its Mission
             // Override inline (`TechnoClass::ReceiveDamage 0x00702A43`), and
             // passengers board in their class PerCellProcess.
             // `IonBlastClass::UpdateAll @ 0x0053D310` follows the object loop
             // (`0x0055B64B`).
             bridge_state_changed |= self.update_ion_blasts(rules, overlay_registry, effects);
+            profile_phase!(ION_BLASTS);
             // `LogicClass__PerTickUpdate @ 0x0055AFB0` calls
             // `MapClass__UpdateCrateRegenTimers @ 0x0056BBE0` at `0x0055B65A`,
             // between `AlphaShapeClass::PurgeDisabled` and the Tactical,
@@ -7081,6 +7153,7 @@ impl Simulation {
                     bridge_state_changed |= self.refresh_bridge_runtime_after_crate_mark();
                 }
             }
+            profile_phase!(CRATES);
 
             // --- Phase 7: Production + Docks + Ore ---
             // DEPENDS ON: completed live-object visits, including depot spending.
@@ -7100,12 +7173,14 @@ impl Simulation {
             self.trace_house_ai_activation_order(
                 HouseAiActivationOrderTestEvent::ProductionCompleted,
             );
+            profile_phase!(PRODUCTION);
             crate::sim::docking::bunker_install::tick_bunker_install(
                 self,
                 rules,
                 overlay_registry,
                 effects,
             );
+            profile_phase!(DOCKS);
         }
 
         // ===== SPINE REGION: LATE — AI, defeat, anims, frame commit =====
@@ -7123,6 +7198,7 @@ impl Simulation {
             &mut spawned_entities,
             effects,
         );
+        profile_phase!(LATE_AI);
         spawned_entities |= std::mem::take(&mut self.mission_spawned_entities);
         bridge_state_changed |= self
             .trigger_effects
@@ -7134,12 +7210,14 @@ impl Simulation {
             bridge_state_changed,
             destroyed_structure || spawned_entities,
         );
+        profile_phase!(OVERLAYS);
         #[cfg(debug_assertions)]
         self.debug_assert_logic_membership_consistent();
         #[cfg(debug_assertions)]
         self.debug_assert_lifecycle_consistent();
         #[cfg(debug_assertions)]
         self.debug_assert_factory_invariants();
+        profile_phase!(DEBUG_ASSERTS);
 
         // Living sprite animation state belongs to the committed simulation
         // frame. Keep it inside the authoritative frame transaction so hashed
@@ -7160,10 +7238,12 @@ impl Simulation {
             );
         }
         building_anim::finalize(self);
+        profile_phase!(ANIMS);
         #[cfg(debug_assertions)]
         self.debug_assert_logic_membership_consistent();
         #[cfg(debug_assertions)]
         self.debug_assert_lifecycle_consistent();
+        profile_phase!(DEBUG_ASSERTS);
         // Native GameExit mode-0 victory/defeat branches skip both
         // ScoreDialog__FillEntries `0x5C9700` and `ScoreDialog__Run `0x5C9720`.
         // Keep their survivor bonus and Scenario RNG draws out of campaigns;
@@ -7171,6 +7251,7 @@ impl Simulation {
         let terminal_score_finalized = self.session.game_mode_nonzero
             && self.natural_outcome_exit_ready()
             && self.finalize_terminal_score_snapshot();
+        profile_phase!(SCORE);
         // A frame that ends the match hashes whatever its tick: the replay
         // log records it as its last frame.
         let state_hash = (!frame_committed
@@ -7178,6 +7259,12 @@ impl Simulation {
                 .state_hash_interval
                 .is_some_and(|frames| self.session.tick.is_multiple_of(frames.get())))
         .then(|| self.state_hash());
+        profile_phase!(HASH);
+        #[cfg(feature = "telemetry")]
+        if let Some(clock) = frame_clock {
+            let (phases, total) = clock.finish();
+            self.frame_profile.record(phases, total);
+        }
         Ok(MasterFrameOutput {
             admitted_commands: commands,
             tick: TickResult {

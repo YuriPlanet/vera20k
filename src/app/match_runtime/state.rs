@@ -25,6 +25,11 @@ pub(crate) struct MatchState {
     /// App-owned diagnostic recording (F10) — never inside the simulation, so
     /// no load/install path can silently drop an unflushed segment.
     pub(crate) match_diagnostics: crate::app::match_diagnostics::MatchDiagnosticsState,
+    /// Read-only process measurements; never inputs to the simulation.
+    #[cfg(feature = "telemetry-dashboard")]
+    pub(crate) telemetry_timing: super::telemetry::TickTimingRing,
+    #[cfg(feature = "telemetry-dashboard")]
+    pub(crate) telemetry_tick_rate: super::telemetry::TickRateMeter,
     pub(crate) map_basic: BasicSection,
     /// Parsed `[Ranking]` values used by the campaign victory page.
     pub(crate) map_ranking: crate::map::ranking::RankingSection,

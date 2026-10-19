@@ -31,6 +31,12 @@ path = "src/bin/asset.rs"
 name = "extract-ini"
 path = "src/bin/extract-ini.rs"
 
+# Synthetic telemetry fixture; normal game integration is the vera20k binary.
+[[bin]]
+name = "telemetry-serve"
+path = "src/bin/telemetry-serve.rs"
+required-features = ["telemetry-dashboard"]
+
 [features]
 # Development builds carry the Ctrl+Shift dev chord. The release workflow builds
 # with `--no-default-features`, so shipped binaries do not.
@@ -39,10 +45,19 @@ default = ["dev-overlays"]
 # pathgrid, foot path, fog), the debug pause and quicksave/quickload. Captures
 # rely on it (literal Ctrl+Shift+M/N quicksave/quickload).
 dev-overlays = ["vera20k-core/dev-overlays"]
+# Optional read-only local browser dashboard, absent from default/shipping builds.
+telemetry-dashboard = ["vera20k-core/telemetry", "dep:getrandom", "dep:sha1"]
+# Explicit offline trainer and per-unit event hooks. Never enabled by the
+# dashboard alone or the default/shipping feature set.
+debug-tools = ["telemetry-dashboard", "dev-overlays", "vera20k-core/debug-tools"]
 
 [dependencies]
 # The GPU-free engine. Its dev features follow this package's.
 vera20k-core = { path = "src" }
+
+# OS session credentials and RFC6455 handshake; no simulation RNG or command intake.
+getrandom = { version = "=0.3.4", optional = true }
+sha1 = { version = "=0.10.6", optional = true }
 
 # --- GPU rendering ---
 wgpu = "27"

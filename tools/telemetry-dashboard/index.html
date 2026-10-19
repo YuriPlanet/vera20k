@@ -1,0 +1,419 @@
+<!doctype html>
+<html lang="en" translate="no">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="referrer" content="no-referrer">
+<!-- Suppress Chrome's built-in "translate this page?" bubble: it reaches for
+     translate.googleapis.com (unreachable here) and floods the console with net
+     errors. A developer dashboard does not need machine translation. -->
+<meta name="google" content="notranslate">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23030a14'/%3E%3Crect x='3' y='3' width='4' height='4' fill='%2328f0ff'/%3E%3Crect x='9' y='9' width='4' height='4' fill='%230a86ff'/%3E%3C/svg%3E">
+<title>VERA20K 调试控制台</title>
+<!-- The tab title is re-applied from the locale table on load. -->
+<link rel="stylesheet" href="./dashboard.css">
+</head>
+<body data-view="wall">
+<!-- Backdrop: a live star field the panels fly through, plus the band of sky it
+     crosses. Both take no input and sit behind every panel. -->
+<canvas id="starfield" aria-hidden="true"></canvas>
+<div class="nebula" aria-hidden="true"></div>
+
+<header>
+  <!-- Brand block: mark, title, and the small Latin subtitle that sits beside
+       it on the reference wall. The title keeps its h1 for semantics. -->
+  <div class="brand">
+    <svg class="logo" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M12 2.2 20.8 7v10L12 21.8 3.2 17V7z"/>
+      <path d="M12 7 16.8 9.6v4.8L12 17 7.2 14.4V9.6z"/>
+    </svg>
+    <div class="brand-text">
+      <h1 data-i18n="hdr.brand">VERA20K</h1>
+      <span class="brand-sub" data-i18n="hdr.sub">调试控制台</span>
+    </div>
+  </div>
+
+  <!-- Primary navigation: the live walls. Icons are inline so the bar needs
+       no extra requests. -->
+  <nav id="nav">
+    <button id="view-wall" class="nav-item on" data-view="wall">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 2h5v5H2zM9 2h5v5H9zM2 9h5v5H2zM9 9h5v5H9z"/></svg>
+      <span data-i18n="dp.back">main screen</span>
+    </button>
+    <button id="view-detail" class="nav-item" data-view="detail">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="5" r="3"/><path d="M2.5 14c0-3 2.5-4.6 5.5-4.6s5.5 1.6 5.5 4.6"/></svg>
+      <span data-i18n="dp.open">player detail</span>
+    </button>
+    <button id="view-report" class="nav-item" data-view="report">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 1.5h5.2L13 5.3V14.5H4z"/><path d="M9 1.8V5.5h3.4"/><path d="M6 9h5M6 11.5h5"/></svg>
+      <span data-i18n="nav.report">current match</span>
+    </button>
+    <button id="view-logs" class="nav-item" data-view="logs">
+      <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3.5h12M2 8h12M2 12.5h8"/></svg>
+      <span data-i18n="nav.logs">logs</span>
+    </button>
+  </nav>
+
+  <div class="head-meta">
+    <span class="meta"><span data-i18n="hdr.schema">schema</span> <b id="version">-</b></span>
+    <span class="meta"><span data-i18n="hdr.tick">tick</span> <b id="tick">-</b></span>
+    <span class="meta"><span data-i18n="hdr.entities">entities</span> <b id="entities">-</b></span>
+    <span class="meta"><span data-i18n="hdr.map">map</span> <b id="mapsize">-</b></span>
+  </div>
+  <button id="debug-tools-open" class="switch" type="button" hidden data-i18n="tools.open">Offline debug tools</button>
+  <span id="status"><i id="dot"></i><span id="statustext">connecting</span></span>
+  <span id="lang">
+    <button data-locale="en">EN</button>
+    <button data-locale="zh">中文</button>
+    <button data-locale="de">DE</button>
+    <button data-locale="fr">FR</button>
+  </span>
+</header>
+
+<main id="wall">
+  <section class="panel" id="cost" data-page="cost">
+    <h2 data-i18n="sec.cost">tick cost</h2>
+    <div class="pager">
+      <button class="pager-tab on" data-page="cost" data-i18n="page.cost">tick cost</button>
+      <button class="pager-tab" data-page="process" data-i18n="page.process">process</button>
+    </div>
+    <div class="page" id="page-cost">
+      <div class="stats">
+      <div class="stat"><div class="value" id="last">-</div><div class="label" data-i18n="cost.last">last ms</div></div>
+      <div class="stat"><div class="value" id="p50">-</div><div class="label" data-i18n="cost.p50">p50 ms</div></div>
+      <div class="stat"><div class="value" id="p99">-</div><div class="label" data-i18n="cost.p99">p99 ms</div></div>
+      <div class="stat"><div class="value" id="budget">-</div><div class="label" data-i18n="cost.budget">budget %</div></div>
+      <div class="stat"><div class="value" id="fps">-</div><div class="label" data-i18n="cost.fps">fps</div></div>
+      <div class="stat"><div class="value" id="tickhz">-</div><div class="label" data-i18n="cost.tickhz">tick hz</div></div>
+    </div>
+      <canvas id="chart"></canvas>
+    </div>
+
+    <div class="page" id="page-process">
+      <div class="proc-grid">
+        <div class="proc-item">
+          <div class="proc-label" data-i18n="proc.cpu">cpu</div>
+          <div class="proc-value" id="proc-cpu">-</div>
+          <div class="proc-bar"><i id="proc-cpu-bar"></i></div>
+          <div class="proc-sub" id="proc-cores">-</div>
+        </div>
+        <div class="proc-item">
+          <div class="proc-label" data-i18n="proc.memory">memory</div>
+          <div class="proc-value" id="proc-mem">-</div>
+          <div class="proc-bar"><i id="proc-mem-bar"></i></div>
+          <div class="proc-sub" id="proc-peak">-</div>
+        </div>
+        <div class="proc-item">
+          <div class="proc-label" data-i18n="proc.threads">threads</div>
+          <div class="proc-value" id="proc-threads">-</div>
+        </div>
+        <div class="proc-item">
+          <div class="proc-label" data-i18n="proc.gpu">gpu</div>
+          <div class="proc-value small" id="proc-gpu">-</div>
+          <div class="proc-sub" id="proc-texture">-</div>
+        </div>
+      </div>
+      <div class="note" data-i18n="proc.note">adapter + this process's resident atlas textures; hardware GPU utilization needs vendor driver counters</div>
+    </div>
+  </section>
+
+  <section class="panel" id="battlefield">
+    <h2 data-i18n="sec.map">battlefield</h2>
+    <!-- The stage wraps the canvas so the callout overlay shares its exact box:
+         the chips are positioned from a projection into the canvas' own
+         client rectangle, so any offset here would misplace every one of them. -->
+    <div id="map-stage">
+      <canvas id="map3d"></canvas>
+      <div id="map-callouts" aria-hidden="true"></div>
+      <!-- The house colour key and the drag hint float over the scene, so they
+           live inside the stage: it is the box the canvas actually occupies, and
+           absolute offsets from the panel would land them on the heading. -->
+      <div id="map-legend" class="legend"></div>
+      <div class="hint" data-i18n="map.hint">drag rotate · wheel zoom · pink marker = cursor cell</div>
+      <div class="map-zoom">
+        <button id="map-zoom-in" class="map-zoom-btn" type="button" aria-label="zoom in">+</button>
+        <button id="map-zoom-out" class="map-zoom-btn" type="button" aria-label="zoom out">−</button>
+        <button id="map-zoom-reset" class="map-zoom-btn" type="button" aria-label="reset view">⟲</button>
+      </div>
+    </div>
+  </section>
+
+  <section class="panel" id="terrain-panel">
+    <h2 data-i18n="sec.terrain">terrain debug</h2>
+    <div id="terrain"></div>
+  </section>
+
+  <section class="panel" id="pop-panel">
+    <h2 data-i18n="sec.pop">population</h2>
+    <div id="population" class="scroll"></div>
+    <div class="legend">
+      <span><i style="background:#3f8f6f"></i><span data-i18n="cat.infantry">infantry</span></span>
+      <span><i style="background:#2f6fb0"></i><span data-i18n="cat.vehicles">vehicles</span></span>
+      <span><i style="background:#8a5fc0"></i><span data-i18n="cat.aircraft">aircraft</span></span>
+      <span><i style="background:#b0763a"></i><span data-i18n="cat.structures">structures</span></span>
+    </div>
+  </section>
+
+  <!-- Independent measured-cost views share the full bottom row. -->
+  <div class="bottom-row">
+    <section class="panel" id="profile-panel" data-page="frame">
+      <h2 data-i18n="sec.report">measured costs</h2>
+      <div class="pager">
+        <button class="pager-tab on" data-page="frame" data-i18n="rep.renderSample">measured render / frame</button>
+        <button class="pager-tab" data-page="sim" data-i18n="rep.simTick">simulation / tick</button>
+      </div>
+      <div class="page" id="page-frame">
+        <figure class="pie">
+          <figcaption><span data-i18n="rep.renderSample">measured render / frame</span> <b id="pie-frame-total">-</b></figcaption>
+          <div class="pie-canvas" id="pie-frame"></div>
+          <ul class="pie-legend" id="pie-frame-legend"></ul>
+        </figure>
+      </div>
+      <div class="page" id="page-sim">
+        <figure class="pie">
+          <figcaption><span data-i18n="rep.simTick">simulation / tick</span> <b id="pie-sim-total">-</b></figcaption>
+          <div class="pie-canvas" id="pie-sim"></div>
+          <ul class="pie-legend" id="pie-sim-legend"></ul>
+        </figure>
+      </div>
+      <div id="frame-summary" class="split-summary"></div>
+    </section>
+
+  </div>
+</main>
+
+<main id="detail" class="detail">
+  <section class="panel" id="economy-panel">
+    <h2 data-i18n="dp.economy">economy over time</h2>
+    <canvas id="economy"></canvas>
+    <div id="economy-legend" class="legend"></div>
+  </section>
+  <div id="cards" class="cards"></div>
+</main>
+
+<!-- Current-match wall: independent simulation and render measurements,
+     drawn at report size in the wall's own palette. It reads the live snapshot
+     stream, so it has numbers as soon as a match is running. -->
+<main id="report" class="report">
+  <section class="panel">
+    <h2><span data-i18n="nav.report">当前对局</span>
+      <button id="make-report" class="panel-btn" type="button" data-i18n="rep.makeReport">生成报告</button>
+    </h2>
+    <div id="report-head" class="report-head"></div>
+    <div class="report-grid">
+      <figure class="pie report-pie">
+        <div class="pie-canvas" id="rep-pie-frame"></div>
+        <ul class="pie-legend" id="rep-frame-legend"></ul>
+        <figcaption class="pie-title">
+          <span data-i18n="rep.renderSample">实测渲染 / 帧</span> <b id="rep-frame-total">-</b>
+        </figcaption>
+      </figure>
+      <figure class="pie report-pie">
+        <div class="pie-canvas" id="rep-pie-sim"></div>
+        <ul class="pie-legend" id="rep-sim-legend"></ul>
+        <figcaption class="pie-title">
+          <span data-i18n="rep.simTick">模拟 / tick</span> <b id="rep-sim-total">-</b>
+        </figcaption>
+      </figure>
+    </div>
+    <div id="report-facts" class="split-summary"></div>
+    <p id="report-note" class="report-note"></p>
+  </section>
+
+  <section class="panel">
+    <h2><span data-i18n="rep.phases">耗时明细</span>
+      <button id="export-phases" class="panel-btn" type="button" data-i18n="rep.export">导出 PNG</button>
+    </h2>
+    <p class="hint" data-i18n="rep.phaseHint">模拟与渲染分别统计，按耗时降序</p>
+    <div class="table-wrap">
+      <table id="report-phases" class="phase-table"></table>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2 data-i18n="rep.houses">对局阵营</h2>
+    <div class="table-wrap">
+      <table id="report-houses"></table>
+    </div>
+    <p class="hint" id="report-foot"></p>
+  </section>
+</main>
+
+<main id="logs" class="logs">
+  <section class="panel">
+    <h2><span data-i18n="nav.logs">日志</span>
+      <span id="log-count" class="log-count"></span>
+      <button id="log-clear" class="panel-btn" type="button" data-i18n="log.clear">清空</button>
+      <button id="log-pause" class="panel-btn" type="button" data-i18n="log.pause">暂停</button>
+    </h2>
+    <div class="log-tools">
+      <select id="log-level" class="log-select">
+        <option value="1" data-i18n="log.error">error</option>
+        <option value="2" data-i18n="log.warn">warn+</option>
+        <option value="3" selected data-i18n="log.info">info+</option>
+        <option value="4" data-i18n="log.debug">debug+</option>
+        <option value="5" data-i18n="log.trace">trace</option>
+      </select>
+      <input id="log-search" class="log-search" type="search" placeholder="filter target or text">
+      <label class="log-follow"><input id="log-follow" type="checkbox" checked>
+        <span data-i18n="log.follow">auto-scroll</span></label>
+      <span id="log-dropped" class="log-dropped"></span>
+    </div>
+    <div class="log-list" id="log-list"></div>
+  </section>
+</main>
+
+
+
+<div id="shot-modal" class="shot-modal" hidden>
+  <div class="shot-card" role="dialog" aria-modal="true" aria-label="phase ledger snapshot">
+    <header>
+      <h3 id="shot-title" data-i18n="rep.shotTitle">耗时明细截图</h3>
+      <button id="shot-close" class="shot-x" type="button" aria-label="close">✕</button>
+    </header>
+    <div class="shot-body"><img id="shot-img" alt="phase ledger"></div>
+    <footer>
+      <span id="shot-note" class="shot-note"></span>
+      <button id="shot-html" class="shot-btn" type="button" hidden data-i18n="rep.downloadHtml">下载 HTML</button>
+      <button id="shot-copy" class="shot-btn" type="button" data-i18n="rep.copy">复制图片</button>
+      <button id="shot-save" class="shot-btn primary" type="button" data-i18n="rep.download">下载图片</button>
+    </footer>
+  </div>
+</div>
+
+<div id="house-modal" class="shot-modal house-modal" hidden>
+  <div class="shot-card house-modal-card" role="dialog" aria-modal="true" aria-label="house detail">
+    <header>
+      <i id="house-modal-dot" class="house-dot"></i>
+      <h3 id="house-modal-title">house</h3>
+      <span id="house-modal-tags" class="tags"></span>
+      <button id="house-modal-close" class="shot-x" type="button" aria-label="close">✕</button>
+    </header>
+    <div class="shot-body house-modal-body">
+      <div class="hm-col hm-main">
+        <div class="house-modal-econ">
+          <canvas id="house-modal-spark" class="spark"></canvas>
+          <div id="house-modal-stats" class="stat-grid"></div>
+        </div>
+        <div id="house-modal-bar" class="comp-bar"></div>
+        <p id="house-modal-power" class="note house-modal-power"></p>
+        <div class="sub" data-i18n="dp.producing">正在生产</div>
+        <div id="house-modal-production" class="prod-list"></div>
+        <div class="sub" data-i18n="dp.basePlan">基地计划</div>
+        <div id="house-modal-baseplan" class="baseplan"></div>
+        <div class="sub" data-i18n="dp.roster">单位清单</div>
+        <ul id="house-modal-roster" class="roster"></ul>
+        <p id="house-modal-note" class="note"></p>
+      </div>
+      <div class="hm-col hm-squads">
+        <div class="sub" data-i18n="dp.squads">AI 小队</div>
+        <ul id="house-modal-squads" class="roster"></ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<dialog id="debug-tools-dialog" aria-labelledby="debug-tools-title">
+  <div class="debug-tools-head">
+    <h2 id="debug-tools-title" data-i18n="tools.title">Offline debug tools</h2>
+    <button id="debug-tools-close" class="switch" type="button" data-i18n="tools.close">Close</button>
+  </div>
+  <p class="debug-tools-warning" data-i18n="tools.warning">These tools change offline gameplay. They are unavailable in replay and network sessions.</p>
+  <p id="debug-tools-status" class="note" role="status"></p>
+  <fieldset id="debug-switch-fields" class="debug-tools-fields" disabled>
+    <legend data-i18n="sec.switches">Debug switches</legend>
+    <div id="switches"></div>
+  </fieldset>
+  <fieldset id="debug-trainer-fields" class="debug-tools-fields" disabled>
+    <legend data-i18n="cheat.title">Trainer</legend>
+    <div class="cheat-head">
+      <p class="note" id="cheat-owner"></p>
+      <button id="cheat-reset" class="switch" type="button" data-i18n="cheat.reset">全部关闭</button>
+    </div>
+    <div class="cheat-grid">
+      <section class="cheat-card">
+        <h3 data-i18n="cheat.economy">经济</h3>
+        <label class="cheat-row">
+          <span class="cheat-label" data-i18n="cheat.infiniteMoney">无限金钱</span>
+          <input type="checkbox" class="cheat-switch" data-cheat="infinite_money">
+        </label>
+        <label class="cheat-row">
+          <span class="cheat-label" data-i18n="cheat.moneyTarget">金钱下限</span>
+          <input id="cheat-money" class="cheat-num" type="number" min="0" max="1000000000" step="1000" value="999999">
+        </label>
+        <label class="cheat-row">
+          <span class="cheat-label" data-i18n="cheat.infinitePower">无限电力</span>
+          <input type="checkbox" class="cheat-switch" data-cheat="infinite_power">
+        </label>
+        <p class="cheat-note" id="cheat-power"></p>
+      </section>
+
+      <section class="cheat-card">
+        <h3 data-i18n="cheat.build">建造</h3>
+        <label class="cheat-row">
+          <span class="cheat-label" data-i18n="cheat.instantBuild">瞬间建造</span>
+          <input type="checkbox" class="cheat-switch" data-cheat="instant_build">
+        </label>
+        <p class="cheat-note" data-i18n="cheat.instantBuildNote">进度直接拉满，仍按造价扣钱</p>
+        <label class="cheat-row">
+          <span class="cheat-label" data-i18n="cheat.buildAnywhere">随处建造</span>
+          <input type="checkbox" class="cheat-switch" data-cheat="build_anywhere">
+        </label>
+        <p class="cheat-note" data-i18n="cheat.buildAnywhereNote">无视建造距离和地形限制，哪儿都能放；仍然不能叠在已有建筑上</p>
+        <label class="cheat-row">
+          <span class="cheat-label" data-i18n="cheat.techAll">科技全开</span>
+          <input type="checkbox" class="cheat-switch" data-cheat="tech_all">
+        </label>
+        <p class="cheat-note" data-i18n="cheat.techAllNote">不需要任何前置建筑；0–10 全部等级直接可造</p>
+        <label class="cheat-row">
+          <span class="cheat-label" data-i18n="cheat.techBoost">科技加强</span>
+          <input type="checkbox" class="cheat-switch" data-cheat="tech_boost">
+        </label>
+        <p class="cheat-note" data-i18n="cheat.techBoostNote">同时解锁正常可建造科技等级范围之外的类型。</p>
+        <div class="cheat-actions">
+          <button id="cheat-supers" class="cheat-btn" type="button" data-i18n="cheat.supers">超级武器就绪</button>
+        </div>
+      </section>
+
+      <section class="cheat-card">
+        <h3 data-i18n="cheat.combat">战斗</h3>
+        <label class="cheat-row">
+          <span class="cheat-label" data-i18n="cheat.invincible">无敌</span>
+          <input type="checkbox" class="cheat-switch" data-cheat="invincible">
+        </label>
+        <label class="cheat-row">
+          <span class="cheat-label" data-i18n="cheat.damageScale">伤害倍率</span>
+          <input id="cheat-damage" class="cheat-num" type="number" min="1" max="100" step="1" value="1">
+        </label>
+        <div class="cheat-presets">
+          <button class="cheat-chip" type="button" data-scale="1">×1</button>
+          <button class="cheat-chip" type="button" data-scale="10">×10</button>
+          <button class="cheat-chip" type="button" data-scale="100">×100</button>
+        </div>
+        <div class="cheat-actions">
+          <button id="cheat-heal" class="cheat-btn" type="button" data-i18n="cheat.heal">治疗全部</button>
+          <button id="cheat-veteran" class="cheat-btn" type="button" data-i18n="cheat.veteran">全体升级</button>
+        </div>
+      </section>
+
+      <section class="cheat-card">
+        <h3 data-i18n="cheat.map">地图</h3>
+        <label class="cheat-row">
+          <span class="cheat-label" data-i18n="cheat.reveal">全图视野</span>
+          <input type="checkbox" class="cheat-switch" data-cheat="reveal_map">
+        </label>
+        <p class="cheat-note" data-i18n="cheat.revealNote">关掉迷雾绘制，也能点选雾里的目标</p>
+      </section>
+    </div>
+    <p class="note" data-i18n="cheat.hint">开关状态是临时的，但使用后保存的游戏可能保留其效果。</p>
+  </fieldset>
+  <section class="debug-tools-events">
+    <h3 data-i18n="sec.events">Event history</h3>
+    <div id="debug-events"></div>
+  </section>
+</dialog>
+
+<script type="module" src="./starfield.js"></script>
+<script type="module" src="./dashboard.js"></script>
+</body>
+</html>

@@ -213,6 +213,15 @@ impl LocalFramePacer {
         }
     }
 
+    /// Read the same bucket interval used by `should_admit`, for diagnostics.
+    #[cfg(feature = "telemetry-dashboard")]
+    pub(crate) fn budget_ms(&self, game_speed: u8) -> Option<f32> {
+        (game_speed != 0).then(|| {
+            f32::from(game_speed.clamp(MIN_TIMED_GAME_SPEED, MAX_TIMED_GAME_SPEED))
+                * FRAME_BUCKET_MS as f32
+        })
+    }
+
     pub(crate) fn should_admit(&self, now_ms: u64, game_speed: u8, paused: bool) -> bool {
         if paused {
             return false;
@@ -269,6 +278,19 @@ const fn frame_bucket(now_ms: u64) -> u32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(feature = "telemetry-dashboard")]
+    #[test]
+    fn dashboard_budget_matches_admission_at_each_speed() {
+        let mut pacer = LocalFramePacer::new();
+        pacer.record_admitted_frame(0);
+        assert_eq!(pacer.budget_ms(0), None);
+        for speed in 1..=6 {
+            let budget = pacer.budget_ms(speed).unwrap() as u64;
+            assert!(!pacer.should_admit(budget - 1, speed, false));
+            assert!(pacer.should_admit(budget, speed, false));
+        }
+    }
 
     #[test]
     fn wall_clock_process_probe() {

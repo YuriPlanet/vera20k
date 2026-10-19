@@ -1314,6 +1314,53 @@ pub(crate) fn toggle_foot_path_overlay(state: &mut AppState) {
     );
 }
 
+#[cfg(feature = "dev-overlays")]
+pub(crate) fn toggle_cell_grid_overlay(state: &mut AppState) {
+    state.diag.debug_show_cell_grid = !state.diag.debug_show_cell_grid;
+    log::info!(
+        "Debug cell grid overlay: {}",
+        if state.diag.debug_show_cell_grid {
+            "ON (blue=terrain, yellow=overlay)"
+        } else {
+            "OFF"
+        }
+    );
+}
+
+#[cfg(feature = "dev-overlays")]
+pub(crate) fn toggle_heightmap_overlay(state: &mut AppState) {
+    state.diag.debug_show_heightmap = !state.diag.debug_show_heightmap;
+    log::info!(
+        "Debug height map overlay: {}",
+        if state.diag.debug_show_heightmap {
+            "ON (brighter = higher elevation, blue = bridge deck)"
+        } else {
+            "OFF"
+        }
+    );
+}
+
+#[cfg(feature = "dev-overlays")]
+pub(crate) fn cycle_terrain_cost_speed_type(state: &mut AppState, forward: bool) {
+    if state.diag.debug_show_pathgrid {
+        let current = crate::app::diagnostics::debug_overlays::resolve_debug_speed_type(state);
+        let next = if forward {
+            current.cycle_next()
+        } else {
+            current.cycle_prev()
+        };
+        state.diag.debug_terrain_cost_speed_type = Some(next);
+        log::info!("Terrain cost overlay: {}", next.name());
+    }
+}
+
+#[cfg(feature = "dev-overlays")]
+pub(crate) fn request_debug_frame_step(state: &mut AppState) {
+    if state.match_state.paused() {
+        state.diag.debug_frame_step_requested = true;
+    }
+}
+
 /// Toggle debug pause (J hotkey).
 ///
 /// On resume, local frame admission is re-anchored so elapsed modal time
@@ -1757,26 +1804,10 @@ fn handle_dev_hotkey_pressed(state: &mut AppState, code: winit::keyboard::KeyCod
             state.match_state.input.queued_order_mode = OrderMode::Move;
         }
         KeyCode::KeyL => {
-            state.diag.debug_show_cell_grid = !state.diag.debug_show_cell_grid;
-            log::info!(
-                "Debug cell grid overlay: {}",
-                if state.diag.debug_show_cell_grid {
-                    "ON (blue=terrain, yellow=overlay)"
-                } else {
-                    "OFF"
-                }
-            );
+            toggle_cell_grid_overlay(state);
         }
         KeyCode::KeyK => {
-            state.diag.debug_show_heightmap = !state.diag.debug_show_heightmap;
-            log::info!(
-                "Debug height map overlay: {}",
-                if state.diag.debug_show_heightmap {
-                    "ON (brighter = higher elevation, blue = bridge deck)"
-                } else {
-                    "OFF"
-                }
-            );
+            toggle_heightmap_overlay(state);
         }
         KeyCode::F9 | KeyCode::KeyP => {
             toggle_pathgrid_overlay(state);
@@ -1785,34 +1816,30 @@ fn handle_dev_hotkey_pressed(state: &mut AppState, code: winit::keyboard::KeyCod
             toggle_foot_path_overlay(state);
         }
         KeyCode::BracketRight => {
-            if state.diag.debug_show_pathgrid {
-                let current =
-                    crate::app::diagnostics::debug_overlays::resolve_debug_speed_type(state);
-                let next = current.cycle_next();
-                state.diag.debug_terrain_cost_speed_type = Some(next);
-                log::info!("Terrain cost overlay: {}", next.name());
-            }
+            cycle_terrain_cost_speed_type(state, true);
         }
         KeyCode::BracketLeft => {
-            if state.diag.debug_show_pathgrid {
-                let current =
-                    crate::app::diagnostics::debug_overlays::resolve_debug_speed_type(state);
-                let prev = current.cycle_prev();
-                state.diag.debug_terrain_cost_speed_type = Some(prev);
-                log::info!("Terrain cost overlay: {}", prev.name());
-            }
+            cycle_terrain_cost_speed_type(state, false);
         }
         KeyCode::F10 | KeyCode::KeyV => {
-            state.match_state.sandbox_full_visibility = !state.match_state.sandbox_full_visibility;
-            log::info!(
-                "Fog of war: {}",
-                if state.match_state.sandbox_full_visibility {
-                    "OFF (full visibility)"
-                } else {
-                    "ON"
-                }
-            );
+            #[cfg(feature = "debug-tools")]
+            crate::app::debug_tools::toggle_reveal(state);
+            #[cfg(not(feature = "debug-tools"))]
+            {
+                state.match_state.sandbox_full_visibility =
+                    !state.match_state.sandbox_full_visibility;
+                log::info!(
+                    "Fog of war: {}",
+                    if state.match_state.sandbox_full_visibility {
+                        "OFF (full visibility)"
+                    } else {
+                        "ON"
+                    }
+                );
+            }
         }
+        #[cfg(feature = "debug-tools")]
+        KeyCode::KeyX => crate::app::debug_tools::toggle_inspector(state),
         KeyCode::F8 => {
             report_black_cell_causes(state);
         }
@@ -1820,7 +1847,7 @@ fn handle_dev_hotkey_pressed(state: &mut AppState, code: winit::keyboard::KeyCod
             toggle_debug_pause(state);
         }
         KeyCode::Period if state.match_state.paused() => {
-            state.diag.debug_frame_step_requested = true;
+            request_debug_frame_step(state);
         }
         _ => {}
     }

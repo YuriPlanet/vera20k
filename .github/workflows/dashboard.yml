@@ -1,0 +1,41 @@
+name: Dashboard
+
+# The browser dashboard ships its compiled JavaScript in the repository, because a
+# fresh clone has to be able to open it without installing Node. So a `.ts` edit
+# that skips `npm run build` pushes a stale `.js` that nothing else ever compiles:
+# the server reads only the `.js`, and no Cargo or Python job touches this
+# directory. This job recompiles and fails on any difference, which is also what
+# tells you the committed output came from the committed source.
+#
+# No `setup-node`: the TypeScript compiler that decides the output is pinned by
+# `package-lock.json`, so the runner's Node is only a host. Pin a version here if
+# the build ever becomes host-sensitive.
+#
+# Manual only, like the other maintainer-run checks: `gh workflow run
+# dashboard.yml --ref <branch>`.
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    name: build output matches source
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v6
+      - name: Install and compile
+        working-directory: tools/telemetry-dashboard
+        run: npm ci --ignore-scripts --no-audit --no-fund && npm run build
+      # Stage what the build left behind, then require the staged tree to equal
+      # the committed one. `git add -A` also picks up a new `.js` with no
+      # committed twin and a deletion, neither of which a plain `git diff`
+      # against the working tree would report.
+      - name: Fail on any difference
+        run: |
+          git add -A -- tools/telemetry-dashboard
+          git diff --cached --exit-code -- tools/telemetry-dashboard || {
+            echo "::error::The committed .js does not match the committed .ts. Run" \
+              "'npm run build' in tools/telemetry-dashboard and commit the result."
+            exit 1
+          }

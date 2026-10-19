@@ -9,6 +9,57 @@ use std::time::{Duration, Instant};
 
 const FRAME_TIMER_WINDOW: usize = 60;
 
+/// Means of in-game render phase spans during one observation window.
+///
+/// The spans are wall time from `presentation::render::render_game`; this meter
+/// only averages them, so a single slow frame cannot mislead the report.
+#[cfg(feature = "telemetry-dashboard")]
+#[derive(Clone, Copy, Default)]
+pub(crate) struct RenderTimingMeter {
+    frames: u32,
+    sums: [Duration; 7],
+}
+
+#[cfg(feature = "telemetry-dashboard")]
+impl RenderTimingMeter {
+    /// Fold one finished render into the totals.
+    pub(crate) fn record(&mut self, phases: crate::app::presentation::render::RenderPhases) {
+        self.frames = self.frames.saturating_add(1);
+        for (sum, span) in self.sums.iter_mut().zip(phases.spans()) {
+            *sum += span;
+        }
+    }
+
+    /// Mean span of each phase in milliseconds, or `None` before the first
+    /// render. Order matches `RenderPhases::spans`.
+    pub(crate) fn mean_ms(&self) -> Option<[f32; 7]> {
+        if self.frames == 0 {
+            return None;
+        }
+        let frames = self.frames as f32;
+        let mut means = [0.0f32; 7];
+        for (mean, sum) in means.iter_mut().zip(self.sums) {
+            *mean = sum.as_secs_f32() * 1000.0 / frames;
+        }
+        Some(means)
+    }
+
+    /// The wire form: per-render means, or `None` before the first render.
+    pub(crate) fn report(&self) -> Option<crate::sim::telemetry::RenderTimingReport> {
+        let means = self.mean_ms()?;
+        Some(crate::sim::telemetry::RenderTimingReport {
+            frames: self.frames,
+            world_ms: means[0],
+            debug_ms: means[1],
+            shroud_ms: means[2],
+            ui_ms: means[3],
+            sidebar_ms: means[4],
+            upload_ms: means[5],
+            other_ms: means[6],
+        })
+    }
+}
+
 /// Rolling frame-time tracker. Sampled once per `render_frame`.
 pub(crate) struct FrameTimer {
     samples: VecDeque<Duration>,
@@ -33,6 +84,12 @@ impl FrameTimer {
             self.samples.push_back(dt);
         }
         self.last_tick = Some(now);
+    }
+
+    #[cfg(feature = "telemetry-dashboard")]
+    pub(crate) fn fps(&self) -> f32 {
+        let ms = self.frame_ms_mean();
+        if ms > 0.0 { 1000.0 / ms } else { 0.0 }
     }
 
     /// Mean frame time in milliseconds over the current window, or 0
@@ -75,6 +132,18 @@ pub(crate) struct DiagnosticsState {
     pub(crate) parity_digest_sink: Option<crate::sim::parity_digest::ParityDigestSink>,
     /// Rolling frame-time statistics for map observation metadata.
     pub(crate) frame_timer: FrameTimer,
+    #[cfg(feature = "telemetry-dashboard")]
+    pub(crate) render_timing: RenderTimingMeter,
+    #[cfg(feature = "telemetry-dashboard")]
+    pub(crate) process_stats: crate::app::process_stats::ProcessStatsSampler,
+    #[cfg(feature = "telemetry-dashboard")]
+    pub(crate) telemetry_server: Option<crate::app::telemetry_server::TelemetryServer>,
+    #[cfg(feature = "telemetry-dashboard")]
+    pub(crate) telemetry_last_publish: Option<Instant>,
+    #[cfg(feature = "telemetry-dashboard")]
+    pub(crate) telemetry_observer: crate::app::match_runtime::telemetry::ObserverSession,
+    #[cfg(feature = "debug-tools")]
+    pub(crate) debug_session_epoch: u64,
 }
 
 /// A diagnostic input policy, never a second simulation clock. The map route
@@ -102,7 +171,26 @@ impl DiagnosticsState {
             debug_show_foot_path: false,
             parity_digest_sink,
             frame_timer: FrameTimer::new(),
+            #[cfg(feature = "telemetry-dashboard")]
+            render_timing: Default::default(),
+            #[cfg(feature = "telemetry-dashboard")]
+            process_stats: Default::default(),
+            #[cfg(feature = "telemetry-dashboard")]
+            telemetry_server: None,
+            #[cfg(feature = "telemetry-dashboard")]
+            telemetry_last_publish: None,
+            #[cfg(feature = "telemetry-dashboard")]
+            telemetry_observer: Default::default(),
+            #[cfg(feature = "debug-tools")]
+            debug_session_epoch: 1,
         }
+    }
+
+    #[cfg(feature = "telemetry-dashboard")]
+    pub(crate) fn telemetry_active(&self) -> bool {
+        self.telemetry_server
+            .as_ref()
+            .is_some_and(|server| server.has_clients())
     }
 
     pub(crate) fn use_map_presentation_clock(&mut self) -> anyhow::Result<()> {

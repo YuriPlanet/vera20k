@@ -21,6 +21,12 @@ use log::{LevelFilter, Log, Metadata, Record};
 
 static EXCEPTION_DUMP_ACTIVE: AtomicBool = AtomicBool::new(false);
 
+#[cfg(feature = "telemetry")]
+#[path = "logging_telemetry.rs"]
+mod telemetry;
+#[cfg(feature = "telemetry")]
+pub use telemetry::{enable_telemetry_capture, ring};
+
 /// Install a logger that appends to `logs/<name>.log`.
 ///
 /// Honors `RUST_LOG` and defaults to `info` when the variable is unset.
@@ -89,6 +95,8 @@ impl Log for Logger {
         {
             return;
         }
+        #[cfg(feature = "telemetry")]
+        telemetry::record(record.level(), record.target(), &message);
         let line = format!(
             "[{} {:<5} {}] {message}\n",
             utc_timestamp(SystemTime::now()),

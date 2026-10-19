@@ -579,6 +579,10 @@ impl App {
                 },
                 match_audio: Default::default(),
                 match_diagnostics: Default::default(),
+                #[cfg(feature = "telemetry-dashboard")]
+                telemetry_timing: Default::default(),
+                #[cfg(feature = "telemetry-dashboard")]
+                telemetry_tick_rate: Default::default(),
                 map_basic: BasicSection::default(),
                 map_ranking: crate::map::ranking::RankingSection::default(),
                 loaded_map_source: None,
@@ -706,6 +710,8 @@ impl App {
         // for round-trip; physical output owners provide the safe gain clamp.
         apply_startup_audio_profile(&state.persistence.options_profile, &mut state.audio);
         Self::sync_zoom_pass(&mut state);
+        #[cfg(feature = "telemetry-dashboard")]
+        attach_dashboard(&mut state);
 
         if let Ok(quickplay) = std::env::var("RA2_QUICKPLAY") {
             // The developer shortcut carries an authored-map sandbox through
@@ -1105,4 +1111,25 @@ mod tests {
         assert!(options_projection.unit_action_lines);
         assert!(options_projection.tooltips);
     }
+}
+
+/// The credential is printed only to the local terminal, outside captured logs.
+#[cfg(feature = "telemetry-dashboard")]
+fn attach_dashboard(state: &mut crate::app::AppState) {
+    state.diag.telemetry_server = match crate::app::telemetry_server::start_from_env() {
+        Some(Ok(server)) => {
+            crate::util::logging::enable_telemetry_capture();
+            #[cfg(feature = "debug-tools")]
+            let description = "Telemetry dashboard (offline debug tools enabled)";
+            #[cfg(not(feature = "debug-tools"))]
+            let description = "Read-only telemetry dashboard";
+            eprintln!("{description}: {}", server.bootstrap_url());
+            Some(server)
+        }
+        Some(Err(error)) => {
+            log::error!("Telemetry dashboard could not start: {error}");
+            None
+        }
+        None => None,
+    };
 }

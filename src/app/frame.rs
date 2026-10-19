@@ -38,6 +38,10 @@ impl App {
         event_loop: &ActiveEventLoop,
         simulation_allowed: bool,
     ) -> bool {
+        #[cfg(feature = "telemetry-dashboard")]
+        crate::app::telemetry_capture::synchronize_observer(state);
+        #[cfg(feature = "debug-tools")]
+        crate::app::debug_tools::service(state);
         // HouseClass keeps simulating for SavourDelay, then blocks on the
         // current outcome Vox before it raises the victory/defeat exit global.
         // Drive that gate before deciding whether another sim frame is legal.
@@ -120,6 +124,8 @@ impl App {
             );
             Self::drive_scenario_exit(state, now_ms);
         }
+        #[cfg(feature = "telemetry-dashboard")]
+        crate::app::telemetry_capture::publish_if_due(state);
         false
     }
 
@@ -189,6 +195,8 @@ impl App {
             shell_capture.is_none() || tactical_capture.is_none(),
             "shell and tactical capture cannot share a render"
         );
+        #[cfg(feature = "telemetry-dashboard")]
+        crate::app::telemetry_capture::synchronize_observer(state);
         if let Some(session) = tactical_capture.as_deref_mut() {
             session.drive_before_render(state)?;
         }
@@ -580,6 +588,10 @@ impl App {
                         .copy_to(&mut encoder, &output.texture);
                     render_output
                 };
+                #[cfg(feature = "telemetry-dashboard")]
+                if let Some(phases) = game_output.phases {
+                    state.diag.render_timing.record(phases);
+                }
                 game_render_output = Some(game_output);
             }
             GameScreen::MissionResult { title, detail } => {
@@ -811,6 +823,8 @@ impl App {
         }
 
         crate::app::loading::pump::after_loading_frame_presented(state);
+        #[cfg(feature = "telemetry-dashboard")]
+        crate::app::telemetry_capture::publish_if_due(state);
 
         Ok(())
     }

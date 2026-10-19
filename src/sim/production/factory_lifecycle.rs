@@ -1031,6 +1031,12 @@ pub(in crate::sim) fn detach_building_production(
 pub(in crate::sim) fn step_factories(sim: &mut Simulation) {
     let mut registry = std::mem::take(&mut sim.production.factories);
     registry.step_all(&mut sim.houses, sim.session.binary_frame);
+    #[cfg(feature = "debug-tools")]
+    if let Some(owner) = sim.trainer_owner()
+        && sim.debug_flags_for(owner).instant_build
+    {
+        registry.debug_complete(&mut sim.houses, sim.session.binary_frame, owner);
+    }
     sim.production.factories = registry;
 }
 

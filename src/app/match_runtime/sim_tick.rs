@@ -8,6 +8,8 @@
 
 use std::collections::HashSet;
 use std::path::Path;
+#[cfg(feature = "telemetry-dashboard")]
+use std::time::Instant;
 
 use crate::app::AppState;
 use crate::app::input::commands::{preferred_local_owner, preferred_local_owner_name};
@@ -889,6 +891,10 @@ fn advance_in_game_runtime_mode(
     if decision.run_sim {
         let tick_lane = decision.tick_lane;
         let frame_committed = advance_one_simulation_frame(state, tick_lane, mouse_scroll);
+        #[cfg(feature = "telemetry-dashboard")]
+        if frame_committed && state.diag.telemetry_active() {
+            state.match_state.telemetry_tick_rate.record(Instant::now());
+        }
         crate::app::presentation::sidebar_render::advance_sidebar_credits_after_frame(
             state,
             frame_committed,
@@ -995,6 +1001,8 @@ fn advance_one_simulation_frame(
     mouse_scroll: Option<(f32, f32)>,
 ) -> bool {
     let mut refresh_atlases_after_tick = false;
+    #[cfg(feature = "telemetry-dashboard")]
+    let telemetry_active = state.diag.telemetry_observer.active();
     // Trigger definitions are runtime-bound (F07), so a live runtime is the
     // only activity source; the old trigger-only fixture mode is unrepresentable.
     let runtime_active = state.match_state.sim_runtime.is_some();
@@ -1008,7 +1016,7 @@ fn advance_one_simulation_frame(
     let mut frame_committed = state.match_state.sim_runtime.is_none();
 
     if let Some(rt) = state.match_state.sim_runtime.as_ref() {
-        state.match_state.match_diagnostics.get_or_begin_replay(rt);
+        let _ = state.match_state.match_diagnostics.get_or_begin_replay(rt);
     }
 
     for _ in 0..1 {
@@ -1051,6 +1059,8 @@ fn advance_one_simulation_frame(
             } else {
                 Vec::new()
             };
+            #[cfg(feature = "telemetry-dashboard")]
+            let telemetry_advance_started = telemetry_active.then(Instant::now);
             // F07: the runtime is the one production frame API — bound
             // resources, no caller-substitutable inputs.
             let mut output = {
@@ -1094,6 +1104,13 @@ fn advance_one_simulation_frame(
                 )
                 .expect("simulation frame failed; prior world mutations remain")
             };
+            #[cfg(feature = "telemetry-dashboard")]
+            if let Some(started) = telemetry_advance_started {
+                state
+                    .match_state
+                    .telemetry_timing
+                    .push(started.elapsed().as_secs_f32() * 1000.0);
+            }
             let admitted_commands = output.take_admitted_commands();
             let SimFrameOutput {
                 tick: tick_result,

@@ -14,3 +14,6 @@ mod super_selection;
 
 pub(crate) mod restore;
 pub(crate) mod startup;
+
+#[cfg(feature = "telemetry-dashboard")]
+pub mod telemetry;

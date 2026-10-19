@@ -17,6 +17,7 @@ Thumbs.db
 *.log
 *.txt
 !tools/requirements-test.txt
+!tools/telemetry-dashboard/vendor/THREE-LICENSE.txt
 *.tmp
 *.map
 *_todo.md
@@ -78,3 +79,6 @@ tools/vendor-eval/
 
 # throwaway verification build dir (parallel-session exe lock workaround)
 /target-verify/
+
+# Dashboard build dependencies; compiled JS is intentionally tracked.
+/tools/telemetry-dashboard/node_modules/

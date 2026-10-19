@@ -343,6 +343,8 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
     let returns_scenario_rng_to_offline_shell = startup.launch_session().is_some();
     // A loaded world is not timed until the launch handoff reaches InGame.
     state.match_state.scenario_elapsed_clock.reset();
+    #[cfg(feature = "telemetry-dashboard")]
+    crate::app::telemetry_capture::reset_observation(state);
     crate::app::loading::pump::clear_loading_state(state);
 
     // Close the outgoing diagnostic timeline before replacing its runtime.

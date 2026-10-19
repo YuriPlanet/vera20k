@@ -48,6 +48,14 @@ pub mod credit_income; // oil-derrick ProduceCash + Floating Disc money drain (o
 pub(crate) mod conversion_health;
 pub(crate) mod crew_survival; // building SpawnSurvivors and vehicle crew escape
 pub mod economy; // per-house wallet/storage/statistics value-type (production+economy substrate)
+#[cfg(feature = "telemetry")]
+pub mod frame_profile;
+#[cfg(feature = "telemetry")]
+pub mod telemetry;
+#[cfg(feature = "debug-tools")]
+pub mod cheats;
+#[cfg(feature = "debug-tools")]
+pub mod debug_event_log;
 pub mod entity_store;
 pub(crate) mod estimated_health;
 pub(crate) mod flashing;

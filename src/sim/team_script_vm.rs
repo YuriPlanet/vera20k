@@ -623,6 +623,21 @@ impl TeamScriptState {
         self.team_type_id
     }
 
+    #[cfg(feature = "telemetry")]
+    pub(crate) fn task_force_id(&self) -> Option<InternedId> {
+        self.task_force_id
+    }
+
+    #[cfg(feature = "telemetry")]
+    pub(crate) fn under_strength(&self) -> bool {
+        self.under_strength
+    }
+
+    #[cfg(feature = "telemetry")]
+    pub(crate) fn is_suspended(&self) -> bool {
+        self.suspended
+    }
+
     pub fn script_id(&self) -> InternedId {
         self.script_id
     }
@@ -684,7 +699,7 @@ impl TeamScriptState {
         self.refusal
     }
 
-    #[cfg(test)]
+    #[cfg(any(test, feature = "telemetry"))]
     pub fn formed(&self) -> bool {
         self.formed
     }

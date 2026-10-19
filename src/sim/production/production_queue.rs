@@ -47,7 +47,7 @@ pub fn power_balance_for_owner(sim: &Simulation, _rules: &RuleSet, owner: &str) 
     };
     sim.power_states
         .get(&owner_id)
-        .map(|state| (state.total_output, state.total_drain))
+        .map(|state| state.effective_totals())
         .unwrap_or((0, 0))
 }
 

@@ -1,0 +1,1470 @@
+  /* Design tokens. Every panel is a translucent glass surface over a live
+     starfield, so the palette is cool blue-violet with one accent per semantic
+     state. `--gb` is the frost radius and stays small on purpose: past about
+     10px the backdrop stops reading as stars and collapses into a wash. */
+  :root {
+    /* Nothing here tells the browser this is a dark page, so every native part
+       — the log level's option list, scrollbars, text selection — came up in
+       light colours over our near-white ink. */
+    color-scheme: dark;
+    --bg: #070b18;
+    /* The lit top of the backdrop gradient, and the two heading inks. The export
+       canvases read these same tokens (see `exportPalette` in dashboard.ts), so
+       a restyle cannot leave a generated PNG behind in the old palette. */
+    --bg-hi: #101d3e;
+    --title: #9fd8ff;
+    --strong: #f0f6ff;
+    --cyan: #6fb7ff;
+    --blue: #a884ff;
+    --green: #54e8b0;
+    --amber: #ffca74;
+    --red: #ff7a8a;
+    --text: #dce7f8;
+    --dim: #8ea6c6;
+    --line: rgba(160, 196, 255, 0.15);
+    --line-strong: rgba(186, 214, 255, 0.38);
+    --glass-edge: rgba(255, 255, 255, 0.13);
+    --glass-top: rgba(255, 255, 255, 0.26);
+    /* The whole frosted surface as one value: panels that add their own scene
+       layer (the battlefield) stack on top of this instead of restating it. */
+    --glass-base:
+      radial-gradient(78% 52% at 10% -14%, rgba(255, 255, 255, 0.15), transparent 62%),
+      linear-gradient(158deg, rgba(255, 255, 255, 0.115),
+        rgba(255, 255, 255, 0.035) 44%, rgba(120, 165, 255, 0.075));
+    --gb: 5px;
+    --gs: 145%;
+    --radius: 14px;
+    --radius-s: 8px;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  html, body { height: 100%; }
+  body {
+    color: var(--text);
+    font: 13px/1.45 "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+    background: radial-gradient(140% 110% at 50% 118%, var(--bg-hi) 0%, #080e22 46%, #04060d 100%);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  /* Backdrop: the starfield canvas paints the sky, `.nebula` lays the band it
+     flies through. Both sit behind every panel and take no input. */
+  #starfield, .nebula { position: fixed; inset: 0; pointer-events: none; z-index: 0; }
+  #starfield { display: block; width: 100%; height: 100%; }
+  .nebula {
+    background: linear-gradient(180deg, transparent, rgba(96, 132, 220, 0.15) 34%,
+      rgba(154, 112, 232, 0.20) 50%, rgba(96, 132, 220, 0.12) 66%, transparent);
+    transform: rotate(-9deg) scale(1.4);
+    filter: blur(28px);
+    opacity: 0.55;
+  }
+
+  /* ---------------------------------------------------------------- header */
+  header {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 14px;
+    flex: none;
+    background: linear-gradient(158deg, rgba(255, 255, 255, 0.10),
+      rgba(255, 255, 255, 0.03) 46%, rgba(120, 165, 255, 0.07));
+    border-bottom: 1px solid var(--glass-edge);
+    -webkit-backdrop-filter: blur(var(--gb)) saturate(var(--gs));
+    backdrop-filter: blur(var(--gb)) saturate(var(--gs));
+    box-shadow: inset 0 1px 0 var(--glass-top), 0 10px 30px -18px rgba(2, 6, 20, 0.9);
+  }
+  header::after {
+    content: "";
+    position: absolute;
+    left: 8%; right: 8%; bottom: -1px; height: 1px;
+    background: linear-gradient(90deg, transparent, var(--cyan), transparent);
+    opacity: 0.4;
+  }
+  /* Brand: mark + title, with the small letterspaced Latin subtitle beside it —
+     the arrangement the reference wall uses, rather than a lone glowing word. */
+  .brand {
+    display: flex; align-items: center; gap: 9px;
+    flex: none; padding-right: 6px;
+  }
+  .brand .logo {
+    width: 24px; height: 24px;
+    fill: none; stroke: var(--cyan); stroke-width: 1.2;
+    filter: drop-shadow(0 0 8px rgba(111, 183, 255, 0.7));
+    flex: none;
+  }
+  .brand-text { display: flex; align-items: baseline; gap: 9px; }
+  .brand h1 {
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    color: #eaf2ff;
+    text-shadow: 0 0 14px rgba(111, 183, 255, 0.45);
+    white-space: nowrap;
+  }
+  /* Subtitle carries the tool's name in the active language, so it keeps a
+     moderate tracking instead of the wide Latin caps spacing. */
+  .brand-sub {
+    font-size: 10.5px;
+    letter-spacing: 0.14em;
+    color: #6f9bb5;
+    white-space: nowrap;
+  }
+
+  /* Primary nav: icon + label per item, the active one carrying cyan and a
+     dark pill — the reference's selected-tab treatment. */
+  #nav {
+    display: flex; align-items: center; gap: 4px;
+    min-width: 0; overflow: hidden;
+    margin-left: 10px;
+    align-self: stretch;
+  }
+  .nav-item {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: transparent; border: 1px solid transparent;
+    border-radius: var(--radius-s);
+    color: #9db3cf;
+    font: inherit; font-size: 12px; letter-spacing: 0.04em;
+    padding: 4px 12px; cursor: pointer; text-decoration: none;
+    white-space: nowrap;
+    transition: color 120ms ease, background 120ms ease, border-color 120ms ease;
+  }
+  .nav-item svg {
+    width: 13px; height: 13px; flex: none;
+    fill: none; stroke: currentColor; stroke-width: 1.3;
+    stroke-linecap: round; stroke-linejoin: round;
+  }
+  .nav-item:hover { color: var(--text); background: rgba(255, 255, 255, 0.06); border-color: var(--glass-edge); }
+  .nav-item.on {
+    color: #ffffff;
+    background: linear-gradient(160deg, rgba(120, 180, 255, 0.30), rgba(130, 120, 255, 0.14));
+    border-color: rgba(180, 210, 255, 0.28);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.32), 0 6px 18px -10px rgba(90, 150, 255, 0.9);
+  }
+  .nav-item.on svg { filter: drop-shadow(0 0 5px rgba(111, 183, 255, 0.7)); }
+
+  /* Right cluster: readings, link state and language. */
+  .head-meta {
+    display: flex; align-items: center; gap: 14px;
+    margin-left: auto; padding-left: 12px;
+    min-width: 0; overflow: hidden;
+  }
+  header .meta {
+    color: var(--dim); font-variant-numeric: tabular-nums; letter-spacing: 0.06em;
+    white-space: nowrap;
+    padding-left: 10px; border-left: 1px solid var(--line);
+  }
+  .head-meta .meta:first-child { padding-left: 0; border-left: 0; }
+  header .meta b {
+    color: #eaf2ff; font-weight: 600;
+    text-shadow: 0 0 12px rgba(111, 183, 255, 0.4);
+    margin-left: 2px;
+  }
+  /* The connection pill. The green tint is the live state, so it has to come
+     and go with it — a permanently green pill would read "streaming" while the
+     socket was down. */
+  #status {
+    display: flex; align-items: center; gap: 6px; white-space: nowrap;
+    padding: 4px 10px; border-radius: 999px; font-size: 11.5px;
+    color: var(--dim); background: rgba(255, 255, 255, 0.05);
+    border: 1px solid var(--line);
+  }
+  #status.open {
+    color: #9df0cd;
+    background: rgba(84, 232, 176, 0.10);
+    border-color: rgba(84, 232, 176, 0.32);
+  }
+  #dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    color: var(--red); background: currentColor;
+    box-shadow: 0 0 9px currentColor;
+  }
+  #dot.open { color: var(--green); animation: pulse 2.4s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: 0.45; } }
+  #lang { display: flex; gap: 3px; margin-left: 12px; }
+  #lang button {
+    background: rgba(255, 255, 255, 0.05); color: var(--dim);
+    border: 1px solid var(--line); border-radius: 6px;
+    padding: 2px 8px; font: inherit; font-size: 11px; cursor: pointer;
+    letter-spacing: 0.06em;
+  }
+  #lang button:hover { color: var(--text); border-color: var(--line-strong); }
+  #lang button.active {
+    color: #ffffff; border-color: rgba(180, 210, 255, 0.34);
+    background: linear-gradient(160deg, rgba(120, 180, 255, 0.28), rgba(130, 120, 255, 0.12));
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  }
+
+  /* ------------------------------------------------------------------ wall */
+  main {
+    position: relative;
+    z-index: 1;
+    flex: 1;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 300px minmax(0, 1fr) 360px;
+    /* The bottom row is sized to the frame panel's own content — a wedge, its
+       legend and one strip of totals — not to whatever is left over, so the
+       panel stays as tight as the reference instead of holding dead space. */
+    grid-template-rows: minmax(230px, 1fr) minmax(230px, 1fr) minmax(230px, 0.78fr);
+    overflow-y: auto;
+    grid-template-areas:
+      "cost    map     terrain"
+      "pop     map     terrain"
+      "report  report  report";
+    gap: 10px;
+    padding: 10px 12px 12px;
+  }
+  .panel {
+    position: relative;
+    min-width: 0;
+    min-height: 0;
+    padding: 11px 14px 12px;
+    background: var(--glass-base);
+    border: 1px solid var(--glass-edge);
+    border-radius: var(--radius);
+    -webkit-backdrop-filter: blur(var(--gb)) saturate(var(--gs));
+    backdrop-filter: blur(var(--gb)) saturate(var(--gs));
+    box-shadow: inset 0 1px 0 var(--glass-top), 0 20px 44px -22px rgba(2, 6, 20, 0.9);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  /* Glass edge: a 1px gradient ring masked to the border box. It replaces the
+     corner brackets, which read as scaffolding once the surface itself carries
+     a reflective rim. */
+  .panel::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    padding: 1px;
+    border-radius: inherit;
+    pointer-events: none;
+    background: linear-gradient(152deg, rgba(255, 255, 255, 0.55),
+      rgba(255, 255, 255, 0.04) 38%, rgba(130, 185, 255, 0.30));
+    -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+    mask-composite: exclude;
+  }
+  .panel > h2 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: var(--title);
+    margin-bottom: 10px;
+    flex: none;
+  }
+  .panel > h2::before {
+    content: "";
+    width: 3px; height: 12px;
+    border-radius: 2px;
+    background: linear-gradient(180deg, var(--cyan), var(--blue));
+    box-shadow: 0 0 9px rgba(111, 183, 255, 0.8);
+    flex: none;
+  }
+  /* Action button inside a panel heading. Inherits the heading's font but not
+     its uppercase tracking, which would smear the label. */
+  .panel-btn {
+    margin-left: auto;
+    background: rgba(255, 255, 255, 0.07);
+    color: #b9d4f2;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    padding: 2px 10px;
+    font: inherit;
+    font-size: 10.5px;
+    font-weight: 500;
+    letter-spacing: 0.06em;
+    text-transform: none;
+    text-shadow: none;
+    cursor: pointer;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  }
+  .panel-btn:hover { color: #ffffff; border-color: var(--line-strong); background: rgba(255, 255, 255, 0.12); }
+  .panel-btn:active { background: rgba(120, 180, 255, 0.24); }
+
+  /* Screenshot preview. The ledger is taller than its panel, so the export is
+     shown on its own before the user decides to copy or save it. */
+  .shot-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 60;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(3, 6, 14, 0.72);
+    backdrop-filter: blur(7px);
+    -webkit-backdrop-filter: blur(7px);
+  }
+  .shot-modal[hidden] { display: none; }
+  .shot-card {
+    display: flex;
+    flex-direction: column;
+    max-width: min(94vw, 1000px);
+    max-height: 90vh;
+    background: linear-gradient(180deg, #121c38, #090e20);
+    border: 1px solid var(--glass-edge);
+    border-radius: var(--radius);
+    box-shadow: inset 0 1px 0 var(--glass-top), 0 34px 84px -22px rgba(0, 0, 0, 0.85);
+    overflow: hidden;
+  }
+  .shot-card header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 14px;
+    border-bottom: 1px solid var(--line);
+    flex: none;
+  }
+  .shot-card h3 {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--title);
+  }
+  .shot-x {
+    margin-left: auto;
+    background: none;
+    border: 0;
+    color: var(--dim);
+    font-size: 13px;
+    line-height: 1;
+    padding: 4px;
+    cursor: pointer;
+  }
+  .shot-x:hover { color: var(--text); }
+  .shot-body { overflow: auto; padding: 12px 14px; min-height: 0; }
+  .shot-body img { display: block; width: 100%; height: auto; }
+  .shot-card footer {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border-top: 1px solid var(--line);
+    flex: none;
+  }
+  .shot-note { margin-right: auto; font-size: 11px; color: var(--dim); }
+  .shot-btn[hidden] { display: none; }
+  .shot-btn {
+    background: rgba(255, 255, 255, 0.07);
+    color: #b9d4f2;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 5px 14px;
+    font: inherit;
+    font-size: 11.5px;
+    cursor: pointer;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14);
+  }
+  .shot-btn:hover { color: #ffffff; border-color: var(--line-strong); background: rgba(255, 255, 255, 0.12); }
+  .shot-btn.primary {
+    background: linear-gradient(160deg, rgba(120, 180, 255, 0.32), rgba(130, 120, 255, 0.16));
+    color: #eaf2ff;
+    border-color: rgba(180, 210, 255, 0.34);
+  }
+  #cost { grid-area: cost; }
+  #battlefield { grid-area: map; }
+  #terrain-panel { grid-area: terrain; }
+  #pop-panel { grid-area: pop; }
+  .bottom-row {
+    grid-area: report;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    min-height: 0;
+  }
+
+  /* ------------------------------------------------------------- tick cost */
+  .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px 4px; margin-bottom: 10px; }
+  .stat { text-align: center; padding: 2px 0; }
+  .stat .value {
+    font-size: 21px; font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--strong);
+    text-shadow: 0 0 16px rgba(111, 183, 255, 0.4);
+    letter-spacing: 0.02em;
+  }
+  .stat .value.good { color: var(--green); text-shadow: 0 0 16px rgba(84, 232, 176, 0.4); }
+  .stat .value.warn { color: var(--amber); text-shadow: 0 0 16px rgba(255, 202, 116, 0.4); }
+  .stat .value.bad { color: var(--red); text-shadow: 0 0 16px rgba(255, 122, 138, 0.45); }
+  .stat .label { font-size: 10px; color: var(--dim); margin-top: 1px; letter-spacing: 0.06em; }
+  #chart { width: 100%; flex: 1; min-height: 90px; display: block; }
+
+  /* ------------------------------------------------------------ battlefield */
+  /* No background of its own: the map panel is glass like every other panel, so
+     the starfield shows through around the diamond. The scene's own plate is
+     opaque, which is what separates the map from that backdrop. */
+  #map-stage { position: relative; flex: 1; min-height: 0; }
+  #map3d { width: 100%; height: 100%; display: block; border-radius: var(--radius-s); }
+
+  /* World-anchored chips. Each one is positioned with its own origin at the cell
+     it names, so the box · stem · foot stack grows upward from that point and the
+     leader line is the stem — nothing has to be measured after layout. */
+  #map-callouts { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+  .map-callout {
+    --tint: var(--cyan);
+    position: absolute;
+    display: flex; flex-direction: column; align-items: center;
+    transform: translate(-50%, -100%);
+  }
+  .map-callout-box {
+    display: flex; align-items: baseline; gap: 7px; white-space: nowrap;
+    padding: 4px 9px; border-radius: 9px;
+    background: rgba(10, 16, 38, 0.72);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    -webkit-backdrop-filter: blur(14px) saturate(160%);
+    backdrop-filter: blur(14px) saturate(160%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.22), 0 8px 20px -10px rgba(0, 0, 0, 0.9);
+  }
+  .map-callout-box b { font-size: 11.5px; font-weight: 500; color: #eaf2ff; }
+  .map-callout-box em {
+    font-style: normal; font-size: 10.5px; color: var(--dim);
+    font-variant-numeric: tabular-nums;
+  }
+  .map-callout-stem {
+    width: 1px; height: var(--stem, 34px);
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.26), var(--tint));
+  }
+  .map-callout-foot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--tint); box-shadow: 0 0 9px var(--tint);
+  }
+  .map-zoom {
+    position: absolute; right: 10px; top: 50%; translate: 0 -50%;
+    display: flex; flex-direction: column; border-radius: 11px; overflow: hidden;
+    background: rgba(10, 16, 38, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.13);
+    -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18);
+  }
+  .map-zoom-btn {
+    width: 28px; height: 28px; display: grid; place-items: center;
+    background: transparent; border: 0; border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    color: #c9d8f0; font: inherit; font-size: 14px; cursor: pointer;
+  }
+  .map-zoom-btn:last-child { border-bottom: 0; }
+  .map-zoom-btn:hover { color: #ffffff; background: rgba(255, 255, 255, 0.1); }
+  /* The house colour key floats on the scene's near corner rather than taking a
+     row under it. It stays a key of houses — the reference art's pill tallies
+     categories, which is a different fact and is already on the population panel. */
+  #map-legend {
+    position: absolute; left: 10px; bottom: 10px; z-index: 3;
+    display: flex; gap: 14px; flex-wrap: wrap;
+    max-width: calc(100% - 72px);
+    padding: 7px 12px; border-radius: 11px;
+    color: var(--dim); font-size: 11px;
+    background: rgba(10, 16, 38, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    -webkit-backdrop-filter: blur(14px) saturate(160%);
+    backdrop-filter: blur(14px) saturate(160%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 10px 24px -14px rgba(0, 0, 0, 0.9);
+  }
+  #map-legend:empty { display: none; }
+  #map-legend span { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+  #map-legend i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  /* WebGL absent (headless preview, blocklisted or disabled driver): the scene
+     silently draws nothing, which reads as a broken dashboard. The data panels
+     still work, so say what fell back instead of leaving a blank stage. */
+  .map-fallback {
+    position: absolute; inset: 0; z-index: 2;
+    display: grid; place-items: center;
+    color: var(--dim); font-size: 11.5px; letter-spacing: 0.04em; text-align: center;
+    padding: 0 20px;
+  }
+  /* The hint goes to the far corner: with 30 houses the key wraps to a second
+     line, and stacked in one corner the two would collide. */
+  #battlefield .hint {
+    position: absolute; left: 10px; top: 8px; z-index: 3;
+    margin-top: 0;
+    padding: 5px 10px; border-radius: 9px;
+    background: rgba(10, 16, 38, 0.42);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+  }
+  .hint { color: var(--dim); font-size: 10.5px; margin-top: 4px; letter-spacing: 0.04em; flex: none; }
+
+  /* ---------------------------------------------------------------- kv rows */
+  .kv { display: flex; gap: 8px; margin: 3px 0; align-items: baseline; }
+  .kv .k { flex: none; width: 84px; color: var(--dim); font-size: 11px; text-align: right; }
+  .kv .v { flex: 1; min-width: 0; overflow-wrap: break-word; }
+  .kv .v.good { color: var(--green); }
+  .kv .v.warn { color: var(--amber); }
+  .kv .v.bad { color: var(--red); }
+  .kv .v.dim { color: var(--dim); }
+  .kv .v.mono { font-family: ui-monospace, Consolas, monospace; font-size: 12px; color: #bcd6f5; }
+  .sub {
+    font-size: 10.5px; color: #8fb0d6;
+    margin: 9px 0 4px; padding-top: 7px;
+    border-top: 1px dashed var(--line);
+    letter-spacing: 0.08em;
+  }
+  .sub:first-child { margin-top: 0; padding-top: 0; border-top: none; }
+  #terrain { overflow-y: auto; min-height: 0; flex: 1; }
+  /* Panels whose content can outgrow the fixed wall cell scroll inside it;
+     without this the table is simply clipped (overflow: hidden) and the wheel
+     does nothing. */
+  .scroll { overflow-y: auto; min-height: 0; flex: 1; }
+  .empty { color: var(--dim); font-style: italic; padding: 8px 0; }
+
+  /* ------------------------------------------------------------- population */
+  .pop-row { display: flex; align-items: center; gap: 10px; margin: 7px 0; }
+  .house-dot {
+    width: 8px; height: 8px; flex: none;
+    display: inline-block; border-radius: 50%;
+    margin-right: 6px; vertical-align: middle;
+    box-shadow: 0 0 7px currentColor;
+  }
+  .pop-row .name { width: 96px; flex: none; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pop-row .bar {
+    flex: 1; display: flex; height: 12px;
+    background: rgba(255, 255, 255, 0.07);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    overflow: hidden;
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.35);
+  }
+  .pop-row .seg { height: 100%; }
+  .pop-row .total { width: 42px; flex: none; text-align: right; color: var(--dim); font-variant-numeric: tabular-nums; }
+  .legend { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; color: var(--dim); font-size: 10.5px; flex: none; }
+  .legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .legend i { width: 8px; height: 8px; display: inline-block; }
+
+  /* --------------------------------------------------------- measured costs */
+  /* Independent render and simulation distributions share the visual layout.
+     The wedge sits left, its legend beside it, with each sample count below. */
+  .pie {
+    margin: 0;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-areas: "caption caption" "canvas legend";
+    align-items: center;
+    gap: 2px 14px;
+    min-width: 0;
+    max-width: 520px;
+  }
+  .pie figcaption {
+    grid-area: caption;
+    display: flex; align-items: baseline; gap: 8px;
+    font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--dim); margin-bottom: 2px;
+  }
+  .pie figcaption b {
+    color: var(--strong); letter-spacing: 0; text-transform: none;
+    font-size: 12px; font-variant-numeric: tabular-nums;
+  }
+  .pie-canvas { grid-area: canvas; line-height: 0; }
+  .pie-canvas svg {
+    width: 132px; height: 132px; display: block;
+  }
+  /* The ring's headline: the share that dominates this frame. Sized in viewBox
+     units so the report wall's larger copy scales with it. */
+  .pie-canvas svg text.pie-dominant {
+    font-size: 20px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    fill: var(--strong);
+    font-variant-numeric: tabular-nums;
+  }
+  .pie-legend { grid-area: legend; list-style: none; margin: 0; min-width: 0; }
+  .pie-legend li {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 10.5px; margin: 2px 0;
+  }
+  .pie-legend .sw {
+    width: 8px; height: 8px; border-radius: 2px; flex: none;
+    box-shadow: 0 0 6px currentColor;
+  }
+  .pie-legend .lb {
+    flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .pie-legend .ms {
+    flex: none; color: var(--dim); font-variant-numeric: tabular-nums;
+  }
+  .split-summary {
+    display: flex; flex-direction: column; gap: 2px;
+    color: var(--dim); font-size: 11px; font-variant-numeric: tabular-nums;
+  }
+  /* On the frame panel the totals read as one strip along the bottom edge,
+     pinned there so the empty part of the panel stays above it. */
+  #frame-summary {
+    flex-direction: row; flex-wrap: wrap;
+    gap: 1px 14px; align-items: baseline;
+    font-size: 10.5px;
+    margin-top: auto; padding-top: 7px;
+    border-top: 1px solid rgba(160, 196, 255, 0.14);
+    flex: none;
+  }
+  #frame-summary .row {
+    display: inline-flex; gap: 6px; align-items: baseline;
+    border-bottom: 0; padding: 0;
+  }
+
+  .split-summary .row {
+    display: flex; justify-content: space-between; gap: 10px;
+    padding: 1px 0; border-bottom: 1px dashed rgba(160, 196, 255, 0.12);
+  }
+  .split-summary b {
+    color: var(--strong); font-weight: 600; font-variant-numeric: tabular-nums;
+  }
+  .split-summary .row.hot b { color: var(--amber); }
+  .empty { color: var(--dim); font-style: italic; padding: 8px 0; }
+
+  /* ----------------------------------------------------------------- houses */
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th, td { text-align: right; padding: 5px 8px; border-bottom: 1px solid var(--line); }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: #8fb0d6; font-weight: 500; font-size: 10.5px; letter-spacing: 0.12em; text-transform: uppercase; }
+  tbody tr:nth-child(odd) { background: rgba(255, 255, 255, 0.035); }
+  .tag { font-size: 10px; padding: 1px 7px; border: 1px solid; border-radius: 6px; }
+  .tag.human { color: var(--green); border-color: rgba(84, 232, 176, 0.42); background: rgba(84, 232, 176, 0.08); }
+  .tag.ai { color: var(--dim); border-color: var(--line); }
+  .tag.ai.easy { color: var(--green); border-color: rgba(84, 232, 176, 0.42); }
+  .tag.ai.normal { color: #b6cdea; border-color: var(--line); }
+  .tag.ai.hard {
+    color: var(--amber); border-color: rgba(255, 202, 116, 0.45);
+    background: rgba(255, 202, 116, 0.08);
+  }
+
+  /* Thin glass scrollbars: the OS default is a white slab on a dark wall. */
+  * { scrollbar-width: thin; scrollbar-color: rgba(150, 185, 235, 0.32) transparent; }
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(150, 185, 235, 0.26);
+    border: 2px solid transparent;
+    border-radius: 8px;
+    background-clip: padding-box;
+  }
+  ::-webkit-scrollbar-thumb:hover { background: rgba(180, 210, 255, 0.42); background-clip: padding-box; }
+  ::-webkit-scrollbar-corner { background: transparent; }
+
+  /* Narrow fallback lives at the end of the file on purpose: the per-view grid
+     rules (`main.detail`, `main.report`, `main.logs`) are plain `main.*`
+     selectors, so a fallback placed above them is overridden by them at equal
+     specificity and never takes effect. */
+  /* ------------------------------------------------- view switching */
+  /* One document, two walls: the data wall and the player-detail wall.
+     body[data-view] picks the visible one; hidden views keep their DOM so a
+     switch back is a redraw, not a rebuild. */
+  /* One document, three walls now: the data wall, the player-detail wall and
+     the match report. body[data-view] picks the visible one; hidden views keep
+     their DOM so a switch back is a redraw, not a rebuild. */
+  main { display: grid; }
+  body[data-view="wall"] main#detail,
+  body[data-view="wall"] main:not(#wall),
+  body[data-view="detail"] main:not(#detail),
+  body[data-view="report"] main:not(#report),
+  body[data-view="logs"] main:not(#logs) { display: none; }
+
+  /* ===================================================== player detail wall */
+  main.detail {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 210px minmax(0, 1fr);
+    grid-template-areas: none;
+    gap: 10px;
+    overflow-y: auto;
+    align-content: start;
+  }
+  main.detail .panel { grid-area: auto !important; }
+  #economy-panel { min-height: 0; }
+  #economy { width: 100%; flex: 1; min-height: 120px; display: block; }
+
+  /* ======================================================== match report wall
+     Same two pies as the standalone page, but drawn with the wall's palette
+     and the wall's own pie renderer, so there is only one styling to keep. */
+  main.report {
+    display: grid;
+    /* Left: the per-subsystem ledger, right: the house table. The pies span
+       both columns — the ledger is the evidence for the pies, not a third
+       view of the match. */
+    grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+    grid-template-areas: none;
+    gap: 10px;
+    padding: 10px 12px 12px;
+    overflow-y: auto;
+    align-content: start;
+  }
+  main.report .panel { grid-area: auto !important; }
+  /* The pies span both columns. `!important` because the reset above is
+     `grid-area` with it, which would otherwise erase this span. */
+  main.report > .panel:first-of-type { grid-column: 1 / -1 !important; }
+  /* Two halves, one pie each: side by side they fill the panel instead of
+     bunching against the left edge and leaving a dead column on the right. */
+  .report-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 12px 26px;
+    align-items: start;
+  }
+  /* No report yet: one row only, so the empty table track does not stretch.
+     `[hidden]` needs the rule below because `.panel` sets `display: flex`. */
+  main.report.only-pies { grid-template-rows: auto; }
+  main.report .panel[hidden] { display: none; }
+  main.report .pie { max-width: none; }
+  main.report .pie-canvas svg { width: 220px; height: 220px; }
+  /* Cap the legend: stretched across the whole half it strands each value far
+     from its own label. */
+  main.report .pie-legend { min-width: 0; flex: 0 1 210px; }
+
+  /* Phase ledger: one row per stamped subsystem — the densest table on the
+     wall. The bar behind the milliseconds is that phase's share of the whole
+     frame, so the expensive row is visible before its number is read. */
+  /* Fixed columns: with auto layout the percentage column grows and shrinks as
+     `9.2%` becomes `100.0%`, which shifts every cell to its left on refresh. */
+  .phase-table { font-size: 11.5px; table-layout: fixed; }
+  /* Wide enough for the longest label (French runs to ~28 characters); the bar
+     takes whatever is left, so the numbers keep fixed columns. */
+  .phase-table th:nth-child(1) { width: 250px; }
+  .phase-table th:nth-child(2) { width: auto; }
+  .phase-table th:nth-child(3) { width: 84px; }
+  .phase-table th:nth-child(4) { width: 72px; }
+  .phase-table th:nth-child(5) { width: 78px; }
+  /* Headings must never wrap: the French "de la sim" folded into two lines and
+     pushed the header row taller than its own data. */
+  .phase-table th { white-space: nowrap; }
+  .phase-table th, .phase-table td { padding: 2px 8px; }
+  .phase-table td { border-bottom: 1px solid rgba(160, 196, 255, 0.09); }
+  .phase-table td.ph-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  /* The bar owns the column between the name and the numbers, so the empty
+     space that used to sit there now carries the comparison. */
+  .phase-table td.ph-bar { position: relative; padding-left: 0; }
+  .phase-table td.ph-bar .ph-fill {
+    position: absolute;
+    inset: 3px auto 3px 0;
+    width: var(--share, 0%);
+    background: linear-gradient(90deg, rgba(111, 183, 255, 0.5), rgba(168, 132, 255, 0.22));
+    border-radius: 4px;
+  }
+  .phase-table td.ph-ms { font-weight: 600; }
+  .phase-table td.ph-pct { color: var(--dim); }
+  .phase-table .ph-total td {
+    border-bottom: none;
+    color: var(--text);
+    font-weight: 600;
+  }
+  .phase-table .ph-total td { border-top: 1px solid var(--line); }
+  .phase-table .ph-empty { color: var(--amber); font-style: italic; text-align: left; }
+  /* Group header between the simulation ledger and the render ledger. */
+  .phase-table tr.ph-group td {
+    padding-top: 12px;
+    color: #8fb0d6;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    border-bottom: 1px solid var(--line);
+  }
+
+  /* Report head: one line of whole-match numbers above the pies, the way the
+     standalone page opens. `tick / length / tick rate / frame mean / sim`. */
+  .report-head {
+    flex: none;
+    font-size: 11.5px;
+    color: var(--dim);
+    letter-spacing: 0.04em;
+    font-variant-numeric: tabular-nums;
+    padding: 0 0 8px;
+    margin-bottom: 10px;
+    border-bottom: 1px solid rgba(160, 196, 255, 0.12);
+  }
+  .report-head b { color: var(--strong); font-weight: 600; }
+  .report-head .sep { opacity: 0.45; margin: 0 7px; }
+
+  /* The report's pies carry their title underneath, like the reference page;
+     the main wall's pies keep theirs on top. */
+  .report-pie {
+    grid-template-areas: "canvas legend" "caption caption";
+    align-items: start;
+  }
+  .report-pie .pie-title {
+    grid-area: caption;
+    width: 100%;
+    text-align: center;
+    padding-top: 6px;
+    font-size: 11.5px;
+    letter-spacing: 0.06em;
+    color: #bcd6f5;
+  }
+  .report-pie .pie-title b { color: var(--strong); font-weight: 600; margin-left: 4px; }
+
+  /* What the render wedge actually is: the difference the two pies show. */
+  .report-note {
+    flex: none;
+    margin: 8px 0 0;
+    font-size: 10.5px;
+    color: var(--dim);
+    letter-spacing: 0.04em;
+  }
+  .report-note b { color: #dce7f8; font-weight: 600; }
+  #report-facts {
+    flex-direction: row; flex-wrap: wrap;
+    gap: 2px 20px; align-items: baseline;
+    margin-top: 12px; padding-top: 9px;
+    border-top: 1px solid rgba(160, 196, 255, 0.14);
+    flex: none;
+  }
+  #report-facts .row {
+    display: inline-flex; gap: 6px; align-items: baseline;
+    border-bottom: 0; padding: 0;
+  }
+  .table-wrap { overflow-y: auto; min-height: 0; flex: 1; }
+
+  /* ======================================================== log console */
+  main.logs {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: minmax(0, 1fr);
+    padding: 10px 12px 12px;
+    min-height: 0;
+    overflow: hidden;
+  }
+  main.logs .panel { min-height: 0; }
+  .log-tools {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: none;
+    margin-bottom: 8px;
+  }
+  .log-select, .log-search {
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text);
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    padding: 3px 8px;
+    font: inherit;
+    font-size: 11.5px;
+  }
+  .log-search { flex: 1; min-width: 120px; }
+  .log-search::placeholder { color: #6f88a8; }
+  /* The option list is drawn by the browser, not by us. `color-scheme: dark`
+     gets it out of white-on-white; these carry the panel's own navy so the
+     open list reads as part of the card. */
+  .log-select option {
+    background: #0e1730;
+    color: var(--text);
+  }
+  .log-select option:checked {
+    background: rgba(111, 183, 255, 0.28);
+    color: var(--strong);
+  }
+  .log-follow {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11.5px;
+    color: var(--dim);
+    white-space: nowrap;
+  }
+  .log-count {
+    font-size: 10.5px;
+    font-weight: 400;
+    letter-spacing: 0;
+    color: var(--dim);
+    text-transform: none;
+  }
+  .log-dropped { font-size: 11px; color: var(--amber); white-space: nowrap; }
+  .log-list {
+    flex: 1;
+    min-height: 0;
+    overflow: auto;
+    border-top: 1px solid var(--line);
+    font: 11.5px/1.5 ui-monospace, "Cascadia Mono", Consolas, "Courier New", monospace;
+  }
+  .log-row {
+    display: grid;
+    grid-template-columns: 66px 44px 210px minmax(0, 1fr);
+    gap: 10px;
+    padding: 1px 8px;
+    border-bottom: 1px solid rgba(160, 196, 255, 0.05);
+    white-space: nowrap;
+  }
+  .log-row > span { overflow: hidden; text-overflow: ellipsis; }
+  .log-row .t { color: var(--dim); text-align: right; }
+  .log-row .lv { font-weight: 600; }
+  .log-row .tg { color: #8fb0d6; }
+  .log-row .msg { color: var(--text); }
+  .log-row.lv1 .lv, .log-row.lv1 .msg { color: var(--red); }
+  .log-row.lv1 { background: rgba(255, 90, 110, 0.06); }
+  .log-row.lv2 .lv { color: var(--amber); }
+  .log-row.lv2 { background: rgba(255, 182, 72, 0.04); }
+  .log-row.lv4 .lv, .log-row.lv4 .msg { color: #8ea6c6; }
+  .log-row.lv5 .lv, .log-row.lv5 .msg { color: #6d849c; }
+
+  /* ------------------------------------------------ cost-panel pagination */
+  /* The cost panel carries two readings that share a column but not a shape:
+     the tick-cost numbers with their chart, and the host's own resources.
+     One panel, two pages, so neither gets squeezed. */
+  .pager { display: flex; gap: 2px; margin-bottom: 6px; flex: none; }
+  .pager-tab {
+    background: rgba(255, 255, 255, 0.05); color: var(--dim);
+    border: 1px solid var(--line); border-radius: 7px;
+    padding: 1px 9px; font: inherit; font-size: 10px; cursor: pointer;
+    letter-spacing: 0.1em; text-transform: uppercase;
+  }
+  .pager-tab:hover { color: var(--text); border-color: var(--line-strong); }
+  .pager-tab.on {
+    color: #ffffff; border-color: rgba(180, 210, 255, 0.34);
+    background: linear-gradient(160deg, rgba(120, 180, 255, 0.30), rgba(130, 120, 255, 0.14));
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.32);
+  }
+  .page { display: none; flex-direction: column; min-height: 0; flex: 1; }
+  #cost[data-page="cost"] #page-cost,
+  #cost[data-page="process"] #page-process { display: flex; }
+  #profile-panel[data-page="frame"] #page-frame,
+  #profile-panel[data-page="sim"] #page-sim { display: flex; overflow: auto; }
+
+  /* The frame panel's page switch belongs on the title line, as in the
+     reference: title left, tabs right. The panel is the positioning context,
+     so the pager can float without disturbing the panel's column flow. */
+  #profile-panel > h2 { padding-right: 360px; }
+  #profile-panel > .pager {
+    position: absolute;
+    top: 9px; right: 14px;
+    margin-bottom: 0;
+    z-index: 2;
+  }
+
+  /* Process resources: CPU, memory, threads, GPU identity — what the host is
+     spending on this match, next to the frame cost it produces. */
+  .proc-grid {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 10px 12px; align-content: start;
+  }
+  .proc-item { min-width: 0; }
+  .proc-label {
+    font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase;
+    color: var(--dim); margin-bottom: 1px;
+  }
+  .proc-value {
+    font-size: 19px; font-weight: 600; line-height: 1.15;
+    font-variant-numeric: tabular-nums;
+    color: var(--strong); text-shadow: 0 0 12px rgba(111, 183, 255, 0.5);
+  }
+  .proc-value.hot { color: var(--amber); text-shadow: 0 0 12px rgba(255, 182, 72, 0.55); }
+  .proc-value.small {
+    font-size: 12.5px; font-weight: 500;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .proc-bar {
+    border-radius: 2px;
+    height: 4px; margin: 4px 0 3px;
+    background: rgba(255, 255, 255, 0.08); border: 1px solid var(--line);
+  }
+  .proc-bar i {
+    display: block; height: 100%; width: 0%;
+    background: linear-gradient(90deg, var(--blue), var(--cyan));
+    box-shadow: 0 0 8px rgba(111, 183, 255, 0.5);
+    transition: width 0.25s ease-out;
+  }
+  .proc-bar i.hot { background: linear-gradient(90deg, var(--cyan), var(--amber)); }
+  .proc-sub {
+    font-size: 10.5px; color: var(--dim);
+    font-variant-numeric: tabular-nums;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .note {
+    color: var(--dim); font-size: 10px; margin-top: 10px; line-height: 1.4;
+    letter-spacing: 0.03em;
+  }
+
+  .cards {
+    display: grid;
+    /* `min(300px, 100%)` rather than a bare 300px: on a viewport narrower
+       than the track's floor, auto-fit would still emit one 300px column and
+       overflow the page sideways. */
+    grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
+    /* Size every row to its tallest card's content, not to a share of the
+       grid's own height. A card is a flex column with `min-height: 0`, so its
+       automatic minimum is 0; without this, an `auto` row divides the capped
+       viewport remainder evenly (e.g. 176px per row in a short window) and
+       `.panel`'s `overflow: hidden` silently clips the roster button — while
+       `scrollHeight == clientHeight` means the scroller never offers the
+       clipped content. With `max-content`, rows keep their full height and
+       this stack's `overflow-y: auto` scrolls to them instead. */
+    grid-auto-rows: max-content;
+    gap: 10px;
+    align-content: start;
+    /* The card stack is the scroller: the detail grid caps this row to the
+       viewport remainder, so without overflow here the cards below the fold
+       (and their rosters) are simply unreachable. */
+    overflow-y: auto;
+    min-height: 0;
+  }
+  .house-card { padding: 12px 14px 14px; }
+  .house-card.passive { opacity: 0.72; }
+  .house-card.defeated { border-color: rgba(255, 90, 110, 0.45); }
+  .card-head { display: flex; align-items: center; gap: 8px; flex: none; margin-bottom: 10px; }
+  .card-name {
+    color: var(--strong); font-size: 15px; font-weight: 600; letter-spacing: 0.04em;
+    text-shadow: 0 0 12px rgba(111, 183, 255, 0.45);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .card-head .spacer { flex: 1; }
+  .tag.passive { color: var(--dim); border-color: var(--line); }
+  .tag.dead { color: var(--red); border-color: rgba(255, 90, 110, 0.5); }
+
+  .card-econ { display: flex; align-items: flex-end; gap: 12px; margin-bottom: 10px; min-width: 0; }
+  .card-econ .big { flex: none; min-width: 0; }
+  .card-econ .big .value {
+    font-size: 26px; font-weight: 600; line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+    /* A five-figure balance must not widen the card: it ellipsizes. */
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    color: var(--strong); text-shadow: 0 0 14px rgba(111, 183, 255, 0.55);
+  }
+  .card-econ .big .label { font-size: 10px; color: var(--dim); letter-spacing: 0.14em; text-transform: uppercase; }
+  .card-econ .delta {
+    font-size: 11px; font-variant-numeric: tabular-nums;
+    /* Reserved height: an empty delta must not collapse the line, or the
+       card — and the whole cards grid — jitters at snapshot rate. */
+    height: 15px; margin-top: 2px;
+  }
+  .card-econ .delta.up { color: var(--green); }
+  .card-econ .delta.down { color: var(--red); }
+  .spark { flex: 1; min-width: 0; height: 44px; display: block; }
+
+  .stat-grid {
+    display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 2px 14px; margin-bottom: 6px; flex: none;
+  }
+  .stat-grid > div { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+  .stat-grid .k {
+    color: var(--dim); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase;
+    flex: none;
+  }
+  /* The value keeps the column's floor: a long figure ellipsizes instead of
+     widening the cell, which is what used to push the last card off-screen. */
+  .stat-grid b {
+    color: #dce7f8; font-weight: 600; font-variant-numeric: tabular-nums;
+    min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+
+  .comp-bar { display: flex; height: 10px; background: rgba(255, 255, 255, 0.07); border: 1px solid var(--line); border-radius: 5px; overflow: hidden; flex: none; }
+  .comp-bar .seg { height: 100%; }
+  .comp-legend { display: flex; gap: 10px; flex-wrap: wrap; min-width: 0; margin: 5px 0 0; color: var(--dim); font-size: 10.5px; }
+  .comp-legend span { display: inline-flex; align-items: center; gap: 5px; min-width: 0; }
+  .comp-legend i { width: 7px; height: 7px; display: inline-block; }
+
+  /* The roster list moved into the house modal. What the card keeps is one
+     clickable line: the top types and a "open" affordance. It may wrap to a
+     second line; the cards grid sizes rows to max-content (see `.cards`), so
+     a short viewport scrolls the card stack instead of clipping that line. */
+  .roster-peek {
+    border-radius: 9px;
+    display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+    /* `width: 100%` is load-bearing: a <button> is shrink-to-fit by default,
+       so `auto` would size it to one unwrapped row of chips and overflow the
+       card instead of wrapping. Fill the card and let `flex-wrap` do its job;
+       `min-width: 0` lets this box shrink below its content's min-content. */
+    width: 100%; min-width: 0; text-align: left;
+    margin-top: 2px; padding: 6px 8px;
+    background: rgba(255, 255, 255, 0.06);
+    border: 1px solid var(--line);
+    color: inherit; font: inherit; cursor: pointer;
+  }
+  .roster-peek:hover { border-color: var(--line-strong); background: rgba(255, 255, 255, 0.12); }
+  .roster-peek .peek-chip {
+    display: inline-flex; align-items: baseline; gap: 4px;
+    font-size: 11px; color: #bcd6f5;
+    /* A chip is allowed to be squeezed before it wraps away entirely. */
+    min-width: 0;
+  }
+  .roster-peek .peek-chip i { width: 6px; height: 6px; display: inline-block; align-self: center; flex: none; }
+  .roster-peek .peek-chip b {
+    font-family: ui-monospace, Consolas, monospace; font-weight: 500;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    max-width: 92px; min-width: 0;
+  }
+  .roster-peek .peek-chip em {
+    font-style: normal; font-variant-numeric: tabular-nums; color: var(--cyan); flex: none;
+  }
+  .roster-peek .peek-more {
+    font-size: 10px; color: var(--dim);
+    /* `flex: none` keeps this label at its full text width: a shrinkable
+       label could be squeezed (or, in the flex line-breaking edge case where
+       a row measures as fitting but the font metrics come out wider, left
+       outside the button for `.panel` to clip). Being non-shrinkable makes
+       its min-content equal its full width, so when the row runs short the
+       whole label wraps to the next line intact instead of being cut. The
+       chips stay shrinkable and take the squeeze. `margin-left` is dropped
+       because on a wrapped row an auto margin would shove this label to the
+       far edge of its own line and read as detached. */
+    flex: none; white-space: normal; text-align: right;
+  }
+  .roster-peek .peek-empty { font-size: 11.5px; color: var(--dim); }
+
+  .house-card {
+    /* Grid items default to `min-width: auto`, so a card whose content
+       refuses to shrink (a nowrap chip row, a long type name) pushes its
+       column wider than the track and the whole row overflows the viewport —
+       the last column is simply cut off. `min-width: 0` lets the card be the
+       track's width again, and its own children ellipsis or wrap inside it. */
+    min-width: 0;
+    cursor: pointer;
+  }
+  .house-card:hover { border-color: var(--line-strong); }
+  .house-card:focus-visible { outline: 1px solid var(--cyan); outline-offset: 2px; }
+
+  /* The card has to state its own width: `.shot-card` only caps it, so an
+     empty house — no squads, no base plan, no roster — used to shrink the
+     dialog to its 463px of content while the viewport still said "wide
+     enough for two columns", and the squad track then took all of it.
+     `max-width: none` drops the shared 1000px cap; the `min()` keeps it on
+     screen. */
+  .house-modal-card { width: min(94vw, 1240px); max-width: none; }
+  .house-modal-card header { align-items: center; }
+  .house-modal-card .tags { display: flex; gap: 6px; }
+  /* The squads are a second table, not another block in the house's story, so
+     they get their own column once the card is wide enough to keep the main
+     one readable. One column is the default on purpose: the split is what has
+     to earn its room, so a stylesheet that only half applies degrades to the
+     tall single column instead of squeezing every heading to one character. */
+  .house-modal-body { display: flex; flex-direction: column; gap: 10px; }
+  .hm-col { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+  .hm-main { flex: 1 1 auto; }
+  @media (min-width: 960px) {
+    .house-modal-body { flex-direction: row; align-items: stretch; gap: 20px; }
+    .hm-squads {
+      flex: 0 0 clamp(300px, 30vw, 460px);
+      padding-left: 20px; border-left: 1px solid var(--line);
+    }
+    /* Three classes: the shared list rule below caps the roster at 46vh, and
+       the squad column has to lift that cap from further up the file. */
+    .house-modal .hm-squads .roster { flex: 1 1 auto; min-height: 0; max-height: none; }
+  }
+  .house-modal-econ { display: flex; align-items: center; gap: 14px; }
+  .house-modal-econ .spark { flex: none; width: 200px; height: 46px; }
+  .house-modal-econ .stat-grid { flex: 1; }
+  .house-modal-power { margin: 0; }
+
+  /* The modal's list is the one place the full roster is readable: it scrolls
+     on its own, with the card's height no longer in the way. */
+  .house-modal .roster {
+    list-style: none; margin: 0; padding: 0;
+    max-height: min(46vh, 420px); overflow-y: auto;
+  }
+  .house-modal .roster li {
+    display: flex; align-items: baseline; gap: 8px;
+    padding: 2px 0; font-size: 11.5px;
+    border-bottom: 1px dashed rgba(160, 196, 255, 0.10);
+  }
+  .house-modal .roster .roster-group {
+    position: sticky; top: 0; z-index: 1;
+    background: linear-gradient(180deg, #16203c, #101830);
+    border-bottom: 1px solid var(--line); gap: 6px;
+    padding: 5px 0 4px;
+  }
+  .house-modal .roster .roster-group .cat-dot { width: 7px; height: 7px; display: inline-block; }
+  .house-modal .roster .roster-group span {
+    color: var(--title); font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase;
+  }
+  .house-modal .roster .roster-group em {
+    margin-left: 12px; font-style: normal; font-variant-numeric: tabular-nums;
+    color: var(--dim); font-size: 10.5px;
+  }
+  /* The team's forming/suspended flag rides at the right of its own header, so
+     the member count stays with the team name. It is an `<i>` like the category
+     swatch, so it needs its own size: inheriting the swatch's 7px square turned
+     "组建中" into one character per line. */
+  .house-modal .roster .roster-group .squad-flag {
+    margin-left: auto; font-style: normal;
+    flex: none; width: auto; height: auto; white-space: nowrap;
+    color: var(--amber); font-size: 11.5px;
+  }
+  .house-modal .roster .cnt {
+    flex: none; width: 34px; text-align: right;
+    font-variant-numeric: tabular-nums; color: var(--cyan);
+    text-shadow: 0 0 8px rgba(111, 183, 255, 0.4);
+  }
+  .house-modal .roster .tname {
+    flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-family: ui-monospace, Consolas, monospace; color: #bcd6f5;
+  }
+  .house-modal .roster .empty { color: var(--dim); border-bottom: 0; }
+
+  /* Production lines: category, what is being built, a 54-step gauge and the
+     state. A factory holding a finished building is highlighted, because a
+     completed-but-unplaced building is the one the player can act on. */
+  .prod-list { display: flex; flex-direction: column; gap: 4px; }
+  .prod-row {
+    border-radius: 8px;
+    display: grid;
+    grid-template-columns: 68px minmax(90px, 150px) 1fr auto;
+    align-items: center; gap: 8px;
+    padding: 4px 6px; font-size: 11.5px;
+    background: rgba(255, 255, 255, 0.055); border: 1px solid var(--line);
+  }
+  .prod-row.ready { border-color: rgba(111, 183, 255, 0.4); background: rgba(120, 180, 255, 0.16); }
+  .prod-cat {
+    color: var(--dim); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .prod-name {
+    color: #bcd6f5; font-family: ui-monospace, Consolas, monospace;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .prod-gauge {
+    height: 6px; background: rgba(255, 255, 255, 0.08); border: 1px solid var(--line);
+    overflow: hidden;
+  }
+  .prod-gauge i { display: block; height: 100%; }
+  .prod-state { color: var(--dim); font-size: 10.5px; white-space: nowrap; }
+  .prod-pending {
+    grid-column: 2 / -1; font-style: normal; font-size: 10.5px; color: var(--cyan);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .empty-row { margin: 0; color: var(--dim); font-size: 11px; }
+
+  .house-modal .roster .cat { flex: none; font-size: 10px; color: var(--dim); }
+
+  .baseplan { display: flex; flex-direction: column; gap: 6px; }
+  .baseplan-note { margin: 0; }
+  .baseplan-cells { display: flex; flex-wrap: wrap; gap: 4px; }
+  .baseplan-cells .cell {
+    border-radius: 6px;
+    padding: 2px 6px; font-size: 10px; font-variant-numeric: tabular-nums;
+    color: var(--dim); border: 1px solid var(--line); background: rgba(255, 255, 255, 0.06);
+  }
+  .baseplan-cells .cell.pending {
+    color: #bcd6f5; border-color: rgba(111, 183, 255, 0.3);
+  }
+
+  /* ==================================================== narrow fallback ==== */
+  /* The wall's 300px + flexible + 360px columns cannot keep their shapes below
+     this, so every panel takes a full track and the wall itself scrolls. */
+  @media (max-width: 1180px) {
+    header { flex-wrap: wrap; row-gap: 6px; }
+    #nav { align-self: center; order: 3; }
+    .head-meta { margin-left: 0; flex-wrap: wrap; row-gap: 4px; }
+    .panel-btn, #lang button { white-space: nowrap; }
+
+    main, main.detail, main.report, main.logs {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-rows: none;
+      grid-template-areas: none;
+      align-content: start;
+      overflow-y: auto;
+    }
+    /* `.bottom-row` is not a `.panel`, so it needs its own reset: with the named
+       areas removed, its leftover `grid-area: report` is what squeezed the whole
+       row above it into slivers. */
+    main > .panel, .bottom-row { grid-area: auto !important; }
+    .bottom-row { grid-template-columns: minmax(0, 1fr); }
+    .panel { min-height: 300px; }
+    #battlefield { min-height: 460px; }
+    /* The report and log walls are already content-sized; a floor here would
+       just add dead space under their tables. */
+    main.report .panel, main.logs .panel { min-height: 0; }
+    /* The frame panel floats its page tabs over the heading, and the heading
+       reserves room for them with padding. On one column that reservation is
+       what made the title and the tabs overlap. */
+    #profile-panel > h2 { padding-right: 0; }
+    #profile-panel > .pager { position: static; margin-bottom: 8px; }
+  }
+
+  /* ---------------------------------------------------------------- switches */
+  .switches { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .switches + .switches { margin-top: 8px; }
+  .switch {
+    display: inline-block;
+    text-decoration: none;
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--dim);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 4px 11px;
+    font: inherit; font-size: 11.5px; cursor: pointer;
+    letter-spacing: 0.06em;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.10);
+    transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
+  }
+  .switch:hover:not(:disabled) { color: var(--text); border-color: var(--line-strong); }
+  .switch.on {
+    color: #ffffff; border-color: rgba(180, 210, 255, 0.36);
+    background: linear-gradient(160deg, rgba(120, 180, 255, 0.30), rgba(130, 120, 255, 0.14));
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.34), 0 4px 14px -6px rgba(90, 150, 255, 0.85);
+  }
+  .switch:disabled { opacity: 0.32; cursor: default; }
+  .switch.step { padding: 4px 8px; }
+  .switch-value { color: var(--dim); font-size: 11px; padding: 0 2px; font-variant-numeric: tabular-nums; }
+
+
+  /* ====================================================== trainer panel */
+  /* The trainer has its own drawer: compact cards, two per row. */
+  .cheat-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin: -4px 0 8px;
+  }
+  .cheat-head .note { margin: 0; }
+  .cheat-owner {
+    font-size: 10.5px;
+    font-weight: 400;
+    letter-spacing: 0.04em;
+    color: var(--cyan);
+    text-transform: none;
+    opacity: 0.8;
+  }
+  .cheat-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin: 4px 0 8px;
+  }
+  .cheat-card {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 8px 10px 10px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(8, 12, 28, 0.34));
+  }
+  .cheat-card h3 {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--dim);
+  }
+  .cheat-card h3::before {
+    content: "";
+    width: 3px; height: 9px;
+    background: var(--cyan);
+    box-shadow: 0 0 6px var(--cyan);
+    transform: skewX(-18deg);
+  }
+  .cheat-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    font-size: 12px;
+    color: var(--text);
+  }
+  .cheat-label { white-space: nowrap; }
+  .cheat-note {
+    margin: -2px 0 2px;
+    font-size: 10.5px;
+    line-height: 1.35;
+    color: var(--dim);
+  }
+  .cheat-num {
+    width: 78px;
+    padding: 2px 6px;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    background: rgba(6, 10, 24, 0.55);
+    color: var(--text);
+    font: inherit;
+    font-size: 11.5px;
+    text-align: right;
+  }
+  .cheat-num:focus { outline: none; border-color: var(--line-strong); }
+  /* A switch, not a checkbox: the track carries the state, the knob slides. */
+  .cheat-switch {
+    appearance: none;
+    position: relative;
+    width: 34px; height: 16px;
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    background: rgba(6, 10, 24, 0.6);
+    cursor: pointer;
+    transition: background 120ms ease, border-color 120ms ease;
+    flex: none;
+  }
+  .cheat-switch::after {
+    content: "";
+    position: absolute;
+    top: 2px; left: 2px;
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    background: #5d7794;
+    transition: transform 120ms ease, background 120ms ease;
+  }
+  .cheat-switch:checked {
+    border-color: var(--cyan);
+    background: rgba(111, 183, 255, 0.32);
+  }
+  .cheat-switch:checked::after {
+    transform: translateX(18px);
+    /* The track is already cyan: the knob has to be the light one or the
+       switch reads as a solid pill. */
+    background: var(--strong);
+    box-shadow: 0 0 6px rgba(111, 183, 255, 0.8);
+  }
+  .cheat-actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 2px; }
+  .cheat-btn {
+    flex: 1 1 auto;
+    padding: 4px 10px;
+    border: 1px solid var(--line);
+    border-radius: 7px;
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--dim);
+    font: inherit;
+    font-size: 11.5px;
+    cursor: pointer;
+    transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
+  }
+  .cheat-btn:hover { color: var(--text); border-color: var(--line-strong); }
+  .cheat-btn:active { background: rgba(111, 183, 255, 0.25); }
+  .cheat-presets { display: flex; gap: 5px; flex-wrap: wrap; }
+  .cheat-chip {
+    flex: 1 1 auto;
+    padding: 2px 6px;
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    background: transparent;
+    color: var(--dim);
+    font: inherit;
+    font-size: 10.5px;
+    cursor: pointer;
+  }
+  .cheat-chip:hover { color: var(--cyan); border-color: var(--line-strong); }
+  .cheat-chip.on { color: #0a1024; background: var(--cyan); border-color: var(--cyan); }
+
+
+  /* Optional debug tools live outside the read-only dashboard's layout. */
+  #debug-tools-open[hidden] { display: none !important; }
+  #debug-tools-dialog {
+    width: min(760px, calc(100vw - 24px));
+    max-height: calc(100dvh - 24px);
+    overflow-y: auto;
+    margin: auto;
+    padding: 18px;
+    border: 1px solid var(--glass-edge);
+    border-radius: var(--radius);
+    color: var(--text);
+    background: linear-gradient(180deg, #141d3a, #090d1c);
+    box-shadow: 0 20px 80px #0009;
+  }
+  #debug-tools-dialog::backdrop { background: #03060dbb; }
+  .debug-tools-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .debug-tools-head h2 { color: var(--title); font-size: 16px; }
+  .debug-tools-warning { margin: 12px 0 6px; color: var(--amber); font-size: 12px; }
+  .debug-tools-fields { border: 0; min-inline-size: 0; margin: 16px 0; padding: 0; }
+  .debug-tools-fields legend, .debug-tools-events h3 {
+    color: var(--title); font-size: 12px; margin-bottom: 8px;
+  }
+  .debug-tools-fields:disabled { opacity: 0.55; }
+  .debug-tools-fields:disabled input, .debug-tools-fields:disabled button { cursor: default; }
+  .cheat-label { white-space: normal; }
+  .cheat-num { flex: none; }
+  .debug-tools-events { border-top: 1px solid var(--line); padding-top: 12px; }
+  #debug-events { max-height: 340px; overflow-y: auto; }
+  .event-list { padding: 2px 0 10px; }
+  .event { font-size: 11px; font-family: monospace; overflow-wrap: anywhere; color: var(--dim); }
+  @media (max-width: 520px) {
+    .cheat-grid { grid-template-columns: minmax(0, 1fr); }
+  }

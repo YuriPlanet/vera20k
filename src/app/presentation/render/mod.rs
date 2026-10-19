@@ -30,9 +30,9 @@ mod building_shadow_gpu_tests;
 mod draw_passes;
 #[cfg(test)]
 mod magnetic_wave_gpu_tests;
+mod object_extras;
 #[cfg(test)]
 mod parachute_owner_color_gpu_tests;
-mod object_extras;
 #[cfg(test)]
 mod placement_gpu_tests;
 #[cfg(test)]
@@ -44,6 +44,8 @@ mod merge_passes;
 pub(crate) mod minimap_transaction;
 
 use anyhow::Result;
+#[cfg(feature = "telemetry-dashboard")]
+use std::time::{Duration, Instant};
 
 // Re-export shared types so any remaining `use crate::app::presentation::render::Foo` imports still compile.
 // New code should import from `crate::app::types` directly.
@@ -81,6 +83,46 @@ impl GameRenderInstanceCounts {
     }
 }
 
+/// Wall-clock spans of one in-game render, in `render_game`'s phase order.
+///
+/// Sampled by the frame owner into the diagnostics meter; readers only ever see
+/// the rolling means, never an individual frame's spans.
+#[cfg(feature = "telemetry-dashboard")]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct RenderPhases {
+    /// Phase 1 — terrain, overlays, entities.
+    pub world: Duration,
+    /// Phase 2 — pathgrid / cell grid / heightmap overlays.
+    pub debug: Duration,
+    /// Phase 3 — shroud ABuffer rebuild (CPU blit + upload).
+    pub shroud: Duration,
+    /// Phase 4 — minimap update + UI instances.
+    pub ui: Duration,
+    /// Phase 5 — sidebar instances.
+    pub sidebar: Duration,
+    /// Phase 6 — instance upload to the GPU buffer pool.
+    pub upload: Duration,
+    /// Prep before phase 1 and everything after phase 6 (combat lights, terrain
+    /// prep, draw records) — the part no single phase owns.
+    pub other: Duration,
+}
+
+#[cfg(feature = "telemetry-dashboard")]
+impl RenderPhases {
+    /// The seven spans in declaration order, for the meter and the wire.
+    pub(crate) fn spans(&self) -> [Duration; 7] {
+        [
+            self.world,
+            self.debug,
+            self.shroud,
+            self.ui,
+            self.sidebar,
+            self.upload,
+            self.other,
+        ]
+    }
+}
+
 /// Output retained from one production game render.
 ///
 /// `sidebar_view` is the existing UI handoff. The counts are observation-only
@@ -90,6 +132,9 @@ pub(crate) struct GameRenderOutput {
     pub instance_counts: GameRenderInstanceCounts,
     pub times: GameRenderTimes,
     pub particle_draws: Option<Vec<crate::app::presentation::instances::ParticleDrawObservation>>,
+    /// Phase spans of this render, for the diagnostics meter.
+    #[cfg(feature = "telemetry-dashboard")]
+    pub phases: Option<RenderPhases>,
 }
 
 /// Actual HUD update inputs observed by the frame owner, and the radar draw
@@ -110,6 +155,11 @@ pub(crate) fn render_game(
     encoder: &mut wgpu::CommandEncoder,
     times: GameRenderTimes,
 ) -> Result<GameRenderOutput> {
+    // Phase accounting for the dashboard's render breakdown. One clock read per
+    // phase boundary; the spans are handed back on `GameRenderOutput` and never
+    // written into the world here.
+    #[cfg(feature = "telemetry-dashboard")]
+    let render_started = state.diag.telemetry_observer.active().then(Instant::now);
     // RadarClass::Draw 653100 consumes timeGetTime buckets. The frame owner
     // supplies wall time normally, or the map diagnostic's recorded OS input.
     if let Some(radar) = state.match_state.match_presentation.radar_anim.as_mut() {
@@ -176,10 +226,16 @@ pub(crate) fn render_game(
         })
     });
     // Phase 1: Build game-world instances (terrain, overlays, entities).
+    #[cfg(feature = "telemetry-dashboard")]
+    let phase1_started = render_started.map(|_| Instant::now());
     let mut world = build_instances::build_world_instances(state, vsw, vsh, bracket_palette);
+    #[cfg(feature = "telemetry-dashboard")]
+    let after_world = render_started.map(|_| Instant::now());
 
     // Phase 2: Build debug overlay instances (pathgrid, cell grid, heightmap).
     let debug = build_instances::build_debug_instances(state, vsw, vsh);
+    #[cfg(feature = "telemetry-dashboard")]
+    let after_debug = render_started.map(|_| Instant::now());
 
     // Phase 3: Rebuild shroud ABuffer (CPU blit + GPU upload). The final
     // shared surface lines sample this CPU buffer during upload preparation.
@@ -217,16 +273,24 @@ pub(crate) fn render_game(
         .renderer
         .batch_renderer
         .bind_shroud(&state.renderer.gpu.device, shroud);
+    #[cfg(feature = "telemetry-dashboard")]
+    let after_shroud = render_started.map(|_| Instant::now());
 
     // Phase 4: Update minimap + build UI instances (selection, health, placement).
     build_instances::update_minimap(state, &local_owner);
     let ui = build_instances::build_ui_instances(state, times.radar_ms as u32);
+    #[cfg(feature = "telemetry-dashboard")]
+    let after_ui = render_started.map(|_| Instant::now());
 
     // Phase 5: Build sidebar instances.
     let sidebar = build_instances::build_sidebar_instances(state);
+    #[cfg(feature = "telemetry-dashboard")]
+    let after_sidebar = render_started.map(|_| Instant::now());
 
     // Phase 6: Upload all instances to GPU buffer pool.
     upload_to_gpu(state, &world, &debug, &ui, &sidebar);
+    #[cfg(feature = "telemetry-dashboard")]
+    let after_upload = render_started.map(|_| Instant::now());
     state
         .match_state
         .match_presentation
@@ -525,11 +589,28 @@ pub(crate) fn render_game(
             sidebar_gclock: &sidebar.gclock,
         },
     );
+    // Prep before phase 1 plus everything after phase 6 is the `other` row:
+    // combat lights and terrain prep are real work, just not a named phase.
+    #[cfg(feature = "telemetry-dashboard")]
+    let finished = render_started.map(|_| Instant::now());
+    #[cfg(feature = "telemetry-dashboard")]
+    let phases = render_started.map(|render_started| RenderPhases {
+        world: after_world.unwrap().duration_since(phase1_started.unwrap()),
+        debug: after_debug.unwrap().duration_since(after_world.unwrap()),
+        shroud: after_shroud.unwrap().duration_since(after_debug.unwrap()),
+        ui: after_ui.unwrap().duration_since(after_shroud.unwrap()),
+        sidebar: after_sidebar.unwrap().duration_since(after_ui.unwrap()),
+        upload: after_upload.unwrap().duration_since(after_sidebar.unwrap()),
+        other: phase1_started.unwrap().duration_since(render_started)
+            + finished.unwrap().duration_since(after_upload.unwrap()),
+    });
     Ok(GameRenderOutput {
         instance_counts: sidebar.emitted_instance_counts(),
         sidebar_view: sidebar.view,
         times,
         particle_draws: world.particle_draws,
+        #[cfg(feature = "telemetry-dashboard")]
+        phases,
     })
 }
 
