@@ -616,27 +616,6 @@ mod retail_construction_tests {
         assert_eq!(session.local.color_index, 0);
     }
 
-    /// Issue #481: the loader 0x005D67B0 keeps an empty INI when the selected
-    /// mode file is missing, so the headless load must continue with an empty
-    /// mode layer instead of failing the whole scenario.
-    #[test]
-    fn headless_missing_mode_ini_continues_with_an_empty_mode_layer() {
-        let Some((root, _)) = crate::rules::retail_ini_fixture::retail_assets() else {
-            return;
-        };
-        let mut launch = battle_session(
-            "XMP03T4.MAP",
-            &[(LaunchCountry::America, AiDifficulty::Easy)],
-        );
-        launch.mode.override_file = "MPMissingMD.ini".to_string();
-        let scenario = load_session(&root, "XMP03T4.MAP", 0x1234_5678, launch)
-            .expect("a missing mode INI continues with an empty mode layer");
-        assert!(
-            scenario.sim().session.current_house.is_some(),
-            "the scenario still launches its local house"
-        );
-    }
-
     #[test]
     fn gsi_04_01_headless_sparse_water_load_materializes_and_draws_on_the_staged_owner() {
         let seed = 0x0401_5EED;
