@@ -20,6 +20,8 @@ pub mod airstrike_tint;
 mod cell_receiver_tests;
 #[cfg(test)]
 mod charge_native_tests;
+#[cfg(test)]
+mod building_requirements_tests;
 #[cfg(any(test, feature = "test-support"))]
 mod chronosphere_lunar_retail_tests;
 #[cfg(any(test, feature = "test-support"))]
@@ -1053,23 +1055,48 @@ pub fn aux_building_present(
     owner: InternedId,
     sw: &SuperWeaponType,
 ) -> bool {
+    sw.aux_building
+        .as_deref()
+        .is_none_or(|aux| owned_building_present(sim, rules, owner, aux))
+}
+
+fn owned_building_present(sim: &Simulation, rules: &RuleSet, owner: InternedId, id: &str) -> bool {
     use crate::map::entities::EntityCategory;
     use crate::rules::object_type::ObjectCategory;
-    sw.aux_building.as_deref().is_none_or(|aux| {
-        rules
-            .object_in_category(ObjectCategory::Building, aux)
-            .and_then(|aux| sim.interner.get(&aux.id))
-            .zip(sim.houses.get(&owner))
-            .is_some_and(|(aux, house)| {
-                house.tracking.active_count(EntityCategory::Structure, aux) > 0
+    rules
+        .object_in_category(ObjectCategory::Building, id)
+        .and_then(|building| sim.interner.get(&building.id))
+        .zip(sim.houses.get(&owner))
+        .is_some_and(|(building, house)| {
+            house
+                .tracking
+                .active_count(EntityCategory::Structure, building)
+                > 0
+        })
+}
+
+/// Shared grant/hold, detection and command availability decision. The Ares
+/// lists supplement (never replace) native AuxBuilding. Like Ares's
+/// SWTypeExt::ExtData::IsAvailable, presence is owned-and-on-map, not power.
+pub fn building_requirements_met(
+    sim: &Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    sw: &SuperWeaponType,
+) -> bool {
+    aux_building_present(sim, rules, owner, sw)
+        && sw
+            .building_requirements
+            .as_ref()
+            .is_none_or(|requirements| {
+                requirements.allows(|id| owned_building_present(sim, rules, owner, id))
             })
-    })
 }
 
 /// The Supers `building` provides: its type's `SuperWeapon=` and
 /// `SuperWeapon2=` (`BuildingClass @ 0x00457630`, `0x00457690`), each only
-/// while its owner meets the Super's `AuxBuilding=`
-/// ([`aux_building_present`]). The grant pass, the hold pass and the
+/// while its owner meets the Super's native and optional Ares building gates
+/// ([`building_requirements_met`]). The grant pass, the hold pass and the
 /// building destructor (`0x0043BE47..0x0043BEEA`) share it.
 ///
 /// RESIDUAL: the passes also count the `SuperWeapon=`/`SuperWeapon2=` of a
@@ -1085,7 +1112,7 @@ pub(crate) fn provided_supers<'r>(
     let provides = |sw_id: &str| {
         rules
             .super_weapon(sw_id)
-            .is_some_and(|sw| aux_building_present(sim, rules, building.owner(), sw))
+            .is_some_and(|sw| building_requirements_met(sim, rules, building.owner(), sw))
     };
     [
         object.and_then(|object| object.super_weapon.as_deref()),

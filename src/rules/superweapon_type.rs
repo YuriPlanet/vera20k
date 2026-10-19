@@ -140,6 +140,9 @@ pub struct SuperWeaponType {
     /// `AuxBuilding=` (+C8), the BuildingType the ordered Rules processor
     /// resolved: a required secondary building (e.g., NukeSilo for nuke).
     pub aux_building: Option<String>,
+    /// Optional Ares building gates, bound by ordered rules processing.
+    /// `None` leaves all stock grant/fire paths unchanged.
+    pub building_requirements: Option<SuperWeaponBuildingRequirements>,
     /// `SpecialSound=` (`+0xC0`, `0x006CEB74`): the cue SuperClass::AI
     /// plays when a Force Shield's countdown runs out (`0x006CBCCF`). A read
     /// stores VocClass::FindIndex (`0x007514D0`) of the name; an absent key
@@ -209,11 +212,31 @@ impl SuperWeaponType {
             // Constructor nulls; only the ordered Process owner reads them.
             weapon_type: None,
             aux_building: None,
+            building_requirements: None,
             special_sound: section.read_name("SpecialSound", 0x80).map(str::to_string),
             start_sound: section.read_name("StartSound", 0x80).map(str::to_string),
             ai_defend_against: section.read_bool("AIDefendAgainst", false),
             manual_control: section.read_bool("ManualControl", false),
         })
+    }
+}
+
+/// Ares `SW.AuxBuildings` (any present) and `SW.NegBuildings` (none present).
+///
+/// Ported from ra2-mono's GameLogicManager.SuperweaponAvailability.cs,
+/// IsSuperweaponBlockedByMissingAuxBuildings / IsSuperweaponBlockedByNegativeBuildings.
+/// Copyright (c) 2026 ra2-mono contributors; see superweapon_building_requirements.LICENSE.
+/// Presence is supplied by the host engine, not cached in a second world model.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct SuperWeaponBuildingRequirements {
+    pub auxiliary: Vec<String>,
+    pub negative: Vec<String>,
+}
+
+impl SuperWeaponBuildingRequirements {
+    pub fn allows(&self, mut present: impl FnMut(&str) -> bool) -> bool {
+        (self.auxiliary.is_empty() || self.auxiliary.iter().any(|id| present(id)))
+            && !self.negative.iter().any(|id| present(id))
     }
 }
 

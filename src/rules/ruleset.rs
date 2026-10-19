@@ -4397,6 +4397,15 @@ impl RuleSet {
                 super_weapon.aux_building = aux_building.map(str::to_owned);
             }
         }
+        for (name, requirements) in processed.super_weapon_building_requirements() {
+            if let Some(super_weapon) = rules
+                .super_weapons
+                .values_mut()
+                .find(|super_weapon| super_weapon.id.eq_ignore_ascii_case(name))
+            {
+                super_weapon.building_requirements = requirements.cloned();
+            }
+        }
         // Equal truncated stored IDs share one projected type, which the last
         // such member's state is written to last.
         for (name, warhead) in processed.particle_warhead_states() {
@@ -5649,6 +5658,20 @@ impl RuleSet {
             })
             .collect::<BTreeMap<_, _>>()
             .hash(&mut hasher);
+        // No extension tags means no extra hash input: preserve stock hashes.
+        let building_requirements = self
+            .super_weapons
+            .iter()
+            .filter_map(|(id, sw)| {
+                sw.building_requirements
+                    .as_ref()
+                    .map(|requirements| (id.to_ascii_uppercase(), requirements))
+            })
+            .collect::<BTreeMap<_, _>>();
+        if !building_requirements.is_empty() {
+            "Ares.SuperWeaponBuildingRequirements".hash(&mut hasher);
+            building_requirements.hash(&mut hasher);
+        }
         self.weapons
             .iter()
             .map(|(id, weapon)| {

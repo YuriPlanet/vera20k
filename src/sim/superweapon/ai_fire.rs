@@ -170,6 +170,12 @@ pub(crate) fn try_fire(
         if !super::is_charged(sim, owner, sw_type_id) {
             continue;
         }
+        // Reject extension-gated types before target search can consume RNG.
+        if sw.building_requirements.is_some()
+            && !super::building_requirements_met(sim, rules, owner, sw)
+        {
+            continue;
+        }
         let arm = AiFireArm::of(sw.kind);
         #[cfg(any(test, feature = "test-support"))]
         if matches!(

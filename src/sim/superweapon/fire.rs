@@ -59,6 +59,14 @@ impl Simulation {
         if super_instance(self, owner, sw_type_id).is_none() {
             return false;
         }
+        // Optional extension preflight precedes paired-Super writes, effects,
+        // defense alerts and charge consumption. Stock-only commands retain
+        // their native behavior, including native refused-click side effects.
+        if sw.building_requirements.is_some()
+            && !super::building_requirements_met(self, rules, owner, sw)
+        {
+            return false;
+        }
         let paired = sw
             .post_click
             .then(|| pre_dependent(self, rules, sw))

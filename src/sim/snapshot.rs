@@ -1171,7 +1171,10 @@ use crate::util::save_codec;
 // [Triggers], [Events] and [Actions] records and the always-empty trigger
 // graph. The trigger runtime saved with the Simulation is the only owner of
 // those definitions.
-const SNAPSHOT_VERSION: u32 = 434;
+// 434 -> 435: processed SuperWeaponTypes retain optional Ares auxiliary and
+// negative building lists inside saved scenario resources. The positional
+// type-record layout changes even when those lists are absent.
+const SNAPSHOT_VERSION: u32 = 435;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;

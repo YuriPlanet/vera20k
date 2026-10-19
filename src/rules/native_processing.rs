@@ -21,6 +21,7 @@ use crate::rules::prerequisite::{Prerequisite, PrerequisiteGroup, parse_prerequi
 use crate::rules::projectile_type::ProjectileArtState;
 use crate::rules::rules_type_references::{DEFAULT_PARTICLE_SYSTEMS, RulesTypeReferences};
 use crate::rules::ruleset::{DetailRules, GeneralBuildingTypes, PrismSupportRules};
+use crate::rules::superweapon_type::SuperWeaponBuildingRequirements;
 use crate::util::native_x87::NativeF64Bits;
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
@@ -843,6 +844,14 @@ impl ProcessedRulesLayers {
                 member.super_weapon_weapon.as_deref(),
                 member.super_weapon_aux_building.as_deref(),
             )
+        })
+    }
+
+    pub(crate) fn super_weapon_building_requirements(
+        &self,
+    ) -> impl Iterator<Item = (&str, Option<&SuperWeaponBuildingRequirements>)> {
+        self.member_states(RulesTypeFamily::SuperWeapon, |member| {
+            member.super_weapon_building_requirements.as_ref()
         })
     }
 
@@ -1890,6 +1899,8 @@ struct ProcessedType {
     /// SuperWeaponType+C8 `AuxBuilding=` (`0x006CED07..0x006CED2E`), read the
     /// same way through BuildingType's factory (`0x004653C0`).
     super_weapon_aux_building: Option<String>,
+    #[serde(default)]
+    super_weapon_building_requirements: Option<SuperWeaponBuildingRequirements>,
     /// ParticleType `Warhead=` (`0x00645043..0x00645067`): ReadString128,
     /// then WarheadType's factory (`0x0075E3B0`); an empty read keeps it.
     particle_warhead: Option<String>,
@@ -2243,6 +2254,7 @@ impl ProcessedType {
             holds_what: None,
             super_weapon_weapon: None,
             super_weapon_aux_building: None,
+            super_weapon_building_requirements: None,
             particle_warhead: None,
             voxel_anim_references: VoxelAnimTypeReferences::default(),
             anim_references: AnimTypeReferences::default(),
@@ -3138,6 +3150,33 @@ impl RulesPassProcessor {
                 {
                     self.family_mut(RulesTypeFamily::SuperWeapon)[index]
                         .super_weapon_aux_building = building;
+                }
+                // Extension references share AuxBuilding's registry chronology,
+                // including list-only allocations. Omission retains a layer;
+                // `none` clears the list. Ares::readLength is 2048 and its
+                // readDelims is comma-only (src/Ares.h, src/Ares.cpp).
+                let auxiliary = self.resolve_list_from(
+                    &raw,
+                    "SW.AuxBuildings",
+                    RulesTypeFamily::Building,
+                    0x800,
+                );
+                let negative = self.resolve_list_from(
+                    &raw,
+                    "SW.NegBuildings",
+                    RulesTypeFamily::Building,
+                    0x800,
+                );
+                if auxiliary.is_some() || negative.is_some() {
+                    let requirements = self.family_mut(RulesTypeFamily::SuperWeapon)[index]
+                        .super_weapon_building_requirements
+                        .get_or_insert_default();
+                    if let Some(auxiliary) = auxiliary {
+                        requirements.auxiliary = auxiliary;
+                    }
+                    if let Some(negative) = negative {
+                        requirements.negative = negative;
+                    }
                 }
             }
             index += 1;

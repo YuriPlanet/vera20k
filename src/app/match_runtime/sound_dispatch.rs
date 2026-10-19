@@ -833,8 +833,9 @@ pub(super) fn dispatch_sim_sound_events(
                 // `0x004468FA..0x00446935`: `AuxBuilding=` absent, or
                 // the building's own house owns one
                 // (`CountOwnedInstances` on `Owner+0x5550`).
+                // Optional Ares lists use the same grant availability owner.
                 let aux_satisfied = rules.super_weapon(&type_name).is_none_or(|sw| {
-                    crate::sim::superweapon::aux_building_present(sim, rules, owner, sw)
+                    crate::sim::superweapon::building_requirements_met(sim, rules, owner, sw)
                 });
                 if !eva_producers::super_weapon_detected_allowed(
                     &sim.house_alliances,
