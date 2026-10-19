@@ -1,0 +1,19 @@
+{
+  "reference": "FFmpeg n4.4.2, Ubuntu 4.4.2-0ubuntu0.22.04.1 amd64",
+  "decoder_source": "https://github.com/FFmpeg/FFmpeg/blob/n4.4.2/libavcodec/binkaudio.c",
+  "executable_sha256": "36d94a605d612e4090d1b8aec889d0c0801c6eafb1593c90f5c0dfd2e2966a45",
+  "libavcodec_sha256": "8b5d96665b9f0ec93bc45c6832f869fcd7701f7223801444d1da6cab13c001fb",
+  "version": "ffmpeg version 4.4.2-0ubuntu0.22.04.1 Copyright (c) 2000-2021 the FFmpeg developers",
+  "command": "RA2_DIR=/path/to/retail python -m tools.bink_audio_oracle --ffmpeg /path/to/ffmpeg --ffprobe /path/to/ffprobe --reference-dir /outside/repo/bink-reference --check",
+  "pcm_command": "ffmpeg -v error -i INPUT.bik -map 0:a:0 -vn [-af atrim=end_sample=FRAME_COUNT] -c:a pcm_f32le -f f32le -y OUTPUT.f32le",
+  "coverage": [
+    "Three generated blocks per control: mono/stereo RDFT and DCT at 11025Hz; boundary-crossing zero runs followed by nonzero AC coefficients, nonzero DC/Nyquist, signs, overlap-add and reset.",
+    "First three audio packets of SHA-identified retail stereo A00_F00E.BIK and mono MOVIES01.MIX entry 0x68a2121c.",
+    "Full generated PCM is committed; only sparse retail scalars are committed. BINK_AUDIO_REFERENCE_DIR points at the externally decoded full retail PCM for complete packet comparisons."
+  ],
+  "limits": [
+    "FFmpeg reference, not original BINKW32 execution.",
+    "No sound-device audibility, complete movie, or all installed Bink revision equivalence claim."
+  ],
+  "transform_source": "https://github.com/FFmpeg/FFmpeg/blob/n4.4.2/libavcodec/dct.c#L97-L125"
+}

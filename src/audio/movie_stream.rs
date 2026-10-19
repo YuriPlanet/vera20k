@@ -149,9 +149,13 @@ impl MovieAudioStream {
     pub fn connect(mixer: &Mixer, sample_rate: u32, channels: u16, volume: f32) -> Option<Self> {
         let ring = SpscRing::new(RING_TARGET_SAMPLES_PER_CHANNEL * channels as usize);
         let source = BinkAudioSource::new(ring.clone(), sample_rate, channels)?;
-        let player = Player::connect_new(mixer);
+        // Queue the source before the mixer inspects its format. Connecting
+        // an empty Player first lets rodio 0.22.2's UniformSourceIterator
+        // cache the empty queue's mono/default rate for the initial span.
+        let (player, output) = Player::new();
         player.set_volume(volume.clamp(0.0, 1.0));
         player.append(source);
+        mixer.add(output);
         Some(Self {
             player,
             ring,
