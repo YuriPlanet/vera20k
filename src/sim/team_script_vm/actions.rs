@@ -18,17 +18,13 @@
 //!
 //! RESIDUALS:
 //! - Actions other than 0, 1, 2, 3, 5, 6, 8, 9, 11, 14, 16, 17, 19, 20, 21, 24, 30, 37, 39, 40, 42, 43,
-//!   46, 47, 49, 50, 53, 54, 55, 57, 58, 59, 60, 61, 62, 63 and 64 are not ported. A team
+//!   46, 47, 49, 50, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63 and 64 are not ported. A team
 //!   that reaches one stays on it, as a native handler that has not
 //!   finished does, and records the first as its refusal; the rest of its
 //!   update runs. Trigger: none of the 163 retail AIMD TeamTypes reaches
 //!   one. Effect: the team idles on that action for good, keeping its
 //!   members and its TeamType's `Max=` slot, and nothing else sends those
-//!   units out. Action 56
-//!   (`0x006EFE60`), the Chronosphere's other script action, picks its
-//!   building with [`target_building_pick`] too; no AIMD script names it,
-//!   but four scripts of the retail campaign map SOV02SMD.MAP do, whose
-//!   teams idle on it.
+//!   units out.
 //! - `Coordinate_Attack` keeps a cell target that only a terrain object
 //!   blocks: a team target holds no terrain object. Trigger: a cell target,
 //!   which no ported caller gives (`Greatest_Threat`'s wall fallback is not
@@ -68,6 +64,7 @@ use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::world::FrameEffects;
 use crate::sim::world::Simulation;
 
+use super::super_actions::ChronoshiftTarget;
 use super::team_ai::member_is_live_joined;
 use super::{TeamScriptAction, TeamScriptRefusal, TeamScriptState, TeamTarget, script_action_at};
 use crate::sim::find_nearby_cell::{NearbyArgs, NearbyFootprint, PassabilityArgs};
@@ -133,6 +130,7 @@ pub(super) const fn action_is_ported(action_id: i32) -> bool {
             | 53
             | 54
             | 55
+            | 56
             | 57
             | 58
             | 59
@@ -600,9 +598,16 @@ impl Simulation {
             ),
             54 => self.team_action_regroup_at_base(team_id, first, rules, registry, frame_effects),
             55 => self.team_action_iron_curtain(team_id, rules, registry, frame_effects),
+            56 => self.team_action_chronoshift(
+                team_id,
+                ChronoshiftTarget::Building(action.argument),
+                rules,
+                registry,
+                frame_effects,
+            ),
             57 => self.team_action_chronoshift(
                 team_id,
-                action.argument,
+                ChronoshiftTarget::Quarry(action.argument),
                 rules,
                 registry,
                 frame_effects,
@@ -2256,13 +2261,19 @@ impl Simulation {
         self.team_coordinate_move(team_id, rules, registry, frame_effects);
     }
 
-    /// `Find_Best_Target_Building @ 0x006EEBD0` as actions 46 and 47 call it
-    /// (`0x006EE32B..0x006EE376`, `0x006EE411..0x006EE45D`) for the team's
-    /// first member `unit`: BuildingType index `argument & 0xFFFF`, mode
+    /// `Find_Best_Target_Building @ 0x006EEBD0` as actions 46, 47 and 56 call it
+    /// (`0x006EE32B..0x006EE376`, `0x006EE411..0x006EE45D`, `0x006EFF5D..0x006EFFAF`):
+    /// `unit` is the first member for 46/47, the selected leader for 56.
+    /// BuildingType index `argument & 0xFFFF`, mode
     /// `(argument >> 16) & 0xFFFF`, the unit's house's enemy (`+0x5600`) and
     /// the TeamType's `OnlyTargetHouseEnemy=` (`+0xF7`), over every building
     /// in construction order (BuildingClass::Array, [`target_building_pick`]).
-    fn team_find_target_building(&self, team_id: u64, unit: u64, argument: i32) -> Option<u64> {
+    pub(super) fn team_find_target_building(
+        &self,
+        team_id: u64,
+        unit: u64,
+        argument: i32,
+    ) -> Option<u64> {
         let index = argument & 0xFFFF;
         let mode = (argument as u32) >> 16;
         let unit_entity = self.substrate.entities.get(unit)?;
