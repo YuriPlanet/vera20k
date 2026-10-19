@@ -1830,23 +1830,55 @@ mod tests {
         }
     }
 
-    /// A computer's Kirov on Hunt on retail Dustbowl flies at what its scan
-    /// picks: Mission_Hunt approaches what the scan holds (`0x004D54DD`), and
-    /// the BalloonHover arm makes the target the destination, so the Kirov
-    /// closes past its bomb's range instead of stopping there, and stays on
-    /// Hunt. A production witness, not a native comparison.
+    /// A computer's Kirov on Hunt on retail Dustbowl approaches a fixed
+    /// ground target and drops real bombs, without another combatant changing
+    /// its target or mission. A production witness, not a native comparison.
     #[test]
     #[ignore = "requires a retail RA2/YR install (RA2_DIR or config.toml)"]
     fn retail_dustbowl_hunting_kirov_flies_at_its_target_and_stays_on_hunt() {
         use super::super::jumpjet_infantry_tests::{retail_dustbowl_rocketeer, retail_frame};
         use crate::sim::mission::{MissionId, MissionType};
 
-        let (mut scenario, _, x, y) = retail_dustbowl_rocketeer();
-        let kirov = {
+        let (mut scenario, rocketeer, x, y) = retail_dustbowl_rocketeer();
+        let (kirov, plant) = {
             let crate::sim::runtime::SimRuntime {
                 simulation: sim,
                 resources,
             } = &mut scenario.runtime;
+            // The shared flight fixture supplies an armed enemy Rocketeer.
+            // Leaving it active lets Hunt pick it while grounded, then drop
+            // it when airborne; its return fire can also replace Hunt with
+            // Attack. Keep it off-map for this stationary-target witness.
+            assert_eq!(
+                sim.techno_limbo_with_rules(
+                    rocketeer,
+                    &resources.rules,
+                    Some(&resources.overlay_registry),
+                ),
+                crate::sim::world::ConcealOutcome::Concealed,
+            );
+            let owner = sim.interner.intern("Americans");
+            let plant_type = resources.rules.object("GAPOWR").unwrap();
+            // Both fixture houses already have plants far from the flight.
+            // Supply a nearer target inside the same checked level corridor,
+            // so 900 frames bounds an approach rather than an arbitrary trek
+            // across the whole map after a target change.
+            let plant = (x + 1..=x + 7)
+                .flat_map(|px| (y - 1..=y).map(move |py| (px, py)))
+                .find_map(|(px, py)| {
+                    crate::sim::build_site::can_place_building_at(
+                        sim,
+                        &resources.rules,
+                        Some(&resources.overlay_registry),
+                        plant_type,
+                        (px as i16, py as i16),
+                        Some(owner),
+                        None,
+                    )
+                    .then(|| sim.spawn_object("GAPOWR", "Americans", px, py, 0, &resources.rules))
+                    .flatten()
+                })
+                .expect("a nearby power plant fits the flight corridor");
             let kirov = sim
                 .spawn_object_with_overlay_registry(
                     "ZEP",
@@ -1862,7 +1894,7 @@ mod tests {
             let now = sim.session.binary_frame;
             sim.mission_assign_exact(kirov, MissionId::from_known(MissionType::Hunt), now)
                 .unwrap();
-            kirov
+            (kirov, plant)
         };
         let center = |sim: &crate::sim::world::Simulation, id: u64| {
             let entity = sim.substrate.entities.get(id).unwrap();
@@ -1871,9 +1903,20 @@ mod tests {
                 sim.resolved_terrain.as_ref(),
             )
         };
-        // Each target whose cell the Kirov takes as its NavCom, and how close
-        // it comes to that target while holding it.
-        let mut approached = std::collections::BTreeMap::new();
+        let goal = center(&scenario.runtime.simulation, plant);
+        let initial_health = scenario
+            .runtime
+            .simulation
+            .substrate
+            .entities
+            .get(plant)
+            .unwrap()
+            .health
+            .current();
+        let mut closest = i32::MAX;
+        let mut held_target = false;
+        let mut fired = false;
+        let mut damaged = false;
         for frame in 0..900u32 {
             retail_frame(&mut scenario, Vec::new());
             let sim = &scenario.runtime.simulation;
@@ -1883,30 +1926,22 @@ mod tests {
                 MissionId::from_known(MissionType::Hunt),
                 "frame {frame}"
             );
-            let Some(crate::sim::combat::TargetKind::Entity(target)) =
-                entity.attack_target.target()
-            else {
-                continue;
-            };
-            let goal = center(sim, target);
-            let goal_cell = crate::sim::components::NavTargetRef::cell(
-                (goal.x / 256) as u16,
-                (goal.y / 256) as u16,
-            );
-            if entity.navigation.nav_com() == Some(goal_cell) {
-                approached.entry(target).or_insert(i32::MAX);
-            }
-            if let Some(closest) = approached.get_mut(&target) {
-                let at = center(sim, kirov);
-                let off = ((at.x - goal.x) as f64).hypot((at.y - goal.y) as f64) as i32;
-                *closest = (*closest).min(off);
+            held_target |= entity.attack_target.target()
+                == Some(crate::sim::combat::TargetKind::Entity(plant));
+            fired |= entity.rearm_timer.duration() > 0;
+            let at = center(sim, kirov);
+            closest = closest.min(((at.x - goal.x) as f64).hypot((at.y - goal.y) as f64) as i32);
+            damaged |= sim
+                .substrate
+                .entities
+                .get(plant)
+                .is_none_or(|target| target.health.current() < initial_health);
+            if held_target && fired && damaged && closest < 256 {
+                return;
             }
         }
-        // BlimpBomb's range is 1.5 cells (384 leptons): the Kirov closes past
-        // it.
-        assert!(
-            approached.values().any(|&closest| closest < 256),
-            "{approached:?}"
+        panic!(
+            "Hunt did not finish its fixed-target bombing approach: closest={closest}, held_target={held_target}, fired={fired}, damaged={damaged}"
         );
     }
 
