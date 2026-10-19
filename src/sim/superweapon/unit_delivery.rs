@@ -1,7 +1,8 @@
 //! UnitDelivery port from ra2-mono: TryQueueUnitDeliverySuperweapon,
 //! ApplyPendingSupportDelivery, and GameLogicManager.SpawnPlacement.cs's
-//! nearest-ring search. Copyright (c) 2026 ra2-mono contributors; see
-//! unit_delivery.LICENSE. VERA owns admission, constructors and missions.
+//! nearest-ring search. The implementation follows the author's earlier
+//! ra2-mono work and is contributed under VERA's GPLv3. VERA owns admission,
+//! constructors and missions.
 //!
 //! Adaptations: category-distinct type references, ground-level aircraft,
 //! existing Object entry/Unlimbo transactions, and VERA frame/identity-based

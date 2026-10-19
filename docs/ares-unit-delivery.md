@@ -23,24 +23,11 @@ does not grant a superweapon just because its section exists.
 
 ## Provenance
 
-This is a port from the MIT-licensed ra2-mono code, with the notice retained in
-`src/sim/superweapon/unit_delivery.LICENSE`:
-
-- `GameLogicManager.Cmd.Superweapon.Custom.cs`:
-  `TryQueueUnitDeliverySuperweapon`, `ApplyPendingSupportDelivery`,
-  `ResolveSupportSuperweaponDeferment`, `ApplyUnitDeliveryMission`, owner
-  resolution, and the nearest-valid-building-anchor decision.
-- `GameLogicManager.SpawnPlacement.cs`: `ResolveSupportSpawnRingOffset` and
-  nearest-ring valid-candidate selection with the wrapping `seed * 397 ^ radius`
-  selection rule.
-- `Domains/SupportSuperweapons/SuperweaponStateTypes.cs`,
-  `SuperweaponDomainService.cs` and its `RuntimeSnapshot` partial: pending
-  delivery state, reverse-order due-effect processing, persistence and hashing.
-- `GameLogicManagerTriggerSuperweaponTests.cs`: vehicle deferment, human
-  AreaGuard, AI Hunt, blocked-site fallback and building delivery scenarios.
-
-The code is adapted to VERA's owners, not a second C#/ECS simulation or an
-imported Ares C++ implementation. The tag contract was checked against the
+The implementation follows the author's earlier ra2-mono work (C# UnitDelivery
+support-superweapon pipeline, spawn-ring placement and its test scenarios) and
+is contributed to VERA under this repository's GPLv3. It is adapted to VERA's
+owners, not a second C#/ECS simulation or an imported Ares C++ implementation.
+The tag contract was checked against the
 [Ares UnitDelivery documentation](https://ares-developers.github.io/Ares-docs/new/superweapons/types/unitdelivery.html).
 
 ## Supported behavior

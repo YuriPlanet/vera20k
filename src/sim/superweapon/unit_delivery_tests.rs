@@ -1,5 +1,5 @@
 //! Adapted ra2-mono UnitDelivery scenarios, through VERA's production owners.
-//! Copyright (c) 2026 ra2-mono contributors; see unit_delivery.LICENSE.
+//! Contributed under VERA's GPLv3, from the author's earlier ra2-mono work.
 //! These are synthetic Rust regressions, not native executable comparisons.
 use super::*;
 use crate::rules::ini_parser::IniFile;
