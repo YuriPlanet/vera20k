@@ -200,9 +200,10 @@ pub fn load_with_launch(
             seed,
         )
         .map_err(|error| format!("prepare stock-offline scenario prefix: {error}"))?;
-    let override_file = launch.session().mode.override_file.trim();
-    let mode_override = crate::rules::retail_sources::select_optional_ini(&assets, override_file)?
-        .map(|selected| selected.ini);
+    let mode_override = crate::rules::retail_sources::select_mode_ini(
+        &assets,
+        Some(&launch.session().mode.override_file),
+    )?;
     let (mut rules, rules_ini, art_ini, native_rules_receipt) = native_rules_owner
         .load_scenario(
             crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(
