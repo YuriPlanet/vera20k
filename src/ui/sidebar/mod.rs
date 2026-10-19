@@ -124,11 +124,11 @@ pub enum SidebarAction {
         shift: bool,
         at_build_limit: bool,
     },
-    /// Arm the targeting cursor for a charged superweapon.
-    /// Payload: SW INI section name (e.g., "LightningStormSpecial").
-    ArmSuperWeapon(String),
-    /// Clear the SW targeting cursor (toggle off / second click on cameo).
-    ClearSuperWeaponMode,
+    /// Forward the press to the live SuperClass::CanFire/click owner.
+    SuperWeaponPress {
+        section: String,
+        right: bool,
+    },
     CycleProducer(ProductionCategory),
     CycleOwner,
     PlaceStarterBase,
@@ -334,9 +334,8 @@ pub fn scroll_button_rects(
      Rect { x: x + spec.scroll_pitch, y, w: uw, h: uh })
 }
 
-/// The action a press on one cameo asks for. A superweapon cameo arms or
-/// clears its targeting here; a build cameo's press goes to the native click
-/// decision with the live queue (`SidebarAction::CameoPress`).
+/// Forward cameo presses to the live Super or Factory click decision.
+/// Draw flags and the currently armed mode do not decide admission here.
 pub(crate) fn hit_test_item(item: &SidebarItem, right_click: bool, shift: bool) -> SidebarAction {
     if !item.is_superweapon {
         return SidebarAction::CameoPress {
@@ -346,20 +345,14 @@ pub(crate) fn hit_test_item(item: &SidebarItem, right_click: bool, shift: bool) 
             at_build_limit: item.at_build_limit,
         };
     }
-    // SW cameos have no queue → right-click does nothing.
-    if right_click || !item.is_ready {
-        return SidebarAction::None;
-    }
-    if item.is_armed {
-        SidebarAction::ClearSuperWeaponMode
-    } else {
-        // Section name is unique; fall back to display_name (which
-        // matches today for SW views) if for some reason it's not set.
-        let section = item
+    // Draw flags are not input admission. The app resolves a fresh sim view;
+    // right presses also reach the owner while the Super is held/charging.
+    SidebarAction::SuperWeaponPress {
+        section: item
             .super_weapon_section
             .clone()
-            .unwrap_or_else(|| item.display_name.clone());
-        SidebarAction::ArmSuperWeapon(section)
+            .unwrap_or_else(|| item.display_name.clone()),
+        right: right_click,
     }
 }
 

@@ -543,9 +543,16 @@ fn virtual_key_name(vk: u16) -> String {
             16 => "Shift".into(),
             17 => "Ctrl".into(),
             18 => "Alt".into(),
+            0x13 => "Pause".into(),
+            0x14 => "CapsLock".into(),
+            0x1b => "Esc".into(),
+            0x20 => "Space".into(),
+            0x2c => "PrintScreen".into(),
+            0x90 => "NumLock".into(),
             0x30..=0x5a => char::from_u32(u32::from(vk)).unwrap().to_string(),
             0x70..=0x87 => format!("F{}", vk - 0x6f),
-            _ => format!("{vk}"),
+            _ => hotkeys::portable_oem_key_name(vk)
+                .map_or_else(|| format!("{vk}"), |text| text.to_string()),
         }
     }
 }
@@ -566,6 +573,44 @@ pub(crate) fn key_name(encoded: u16) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(not(windows))]
+    #[test]
+    fn a3_punctuation_capture_assignment_and_reload_use_the_same_virtual_key() {
+        use winit::keyboard::{KeyLocation, ModifiersState};
+        for (plain, shifted, vk) in [
+            (";", ":", 0xba),
+            ("=", "+", 0xbb),
+            (",", "<", 0xbc),
+            ("-", "_", 0xbd),
+            (".", ">", 0xbe),
+            ("/", "?", 0xbf),
+            ("`", "~", 0xc0),
+            ("[", "{", 0xdb),
+            ("\\", "|", 0xdc),
+            ("]", "}", 0xdd),
+            ("'", "\"", 0xde),
+        ] {
+            let raw = Key::Character(shifted.into());
+            let unmodified = Key::Character(plain.into());
+            let key = hotkeys::binding_logical_key(&raw, &unmodified, KeyLocation::Standard);
+            let mapped = hotkeys::logical_virtual_key(key, KeyLocation::Standard).unwrap();
+            assert_eq!(mapped, vk);
+            let captured = capture_key(0, mapped, 0x100, true, false).unwrap();
+            assert_eq!(capture_key(captured, mapped, 0x100, false, false), None);
+            assert_eq!(key_name(captured), format!("Shift+{plain}"));
+            let mut bindings = hotkeys::HotkeyBindings::default();
+            bindings
+                .assign(hotkeys::HotkeyCommand::StopObject, captured)
+                .unwrap();
+            let encoded = bindings.to_ini_string();
+            let restored = hotkeys::HotkeyBindings::reload_from_ini_bytes(Some(encoded.as_bytes()));
+            assert_eq!(
+                restored.resolve_event(key, KeyLocation::Standard, ModifiersState::SHIFT),
+                hotkeys::HotkeyResolution::Command(hotkeys::HotkeyCommand::StopObject)
+            );
+        }
+    }
+
     #[test]
     fn terminal_child_exit_preserves_binding_io_distinction_and_parent_final_write() {
         // 5FB900 save,5FB6D4 reload,5FBF37 retain.55FD1E->55FCA0 resumesD5;

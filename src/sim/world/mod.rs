@@ -53,7 +53,9 @@ mod house_cheer_tests;
 mod house_defeat;
 pub(crate) use house_defeat::HouseBlowupSubset;
 mod ion_blast;
+mod spotlight;
 pub(crate) use house_base::HouseBaseState;
+pub use spotlight::BuildingSpotlight;
 mod infantry_death;
 mod jumpjet_cruise;
 pub use infantry_death::InfantryDeathPostlude;
@@ -1374,6 +1376,9 @@ pub struct Simulation {
     pub lightning_storm: crate::sim::superweapon::lightning_storm::LightningStorm,
     /// The Psychic Dominator's globals (one at a time).
     pub psychic_dominator: crate::sim::superweapon::psychic_dominator::PsychicDominatorState,
+    /// Pending UnitDelivery effects; simulation-owned, saved and hashed.
+    #[serde(default)]
+    pub(crate) unit_deliveries: crate::sim::superweapon::unit_delivery::UnitDeliveryState,
     /// IonBlastClass's vector (`0x00AA0118`), owned by `ion_blast`. Native
     /// saves no blast; Rust retains pending damaging effects for match restore.
     #[serde(
@@ -3427,6 +3432,7 @@ impl Simulation {
             super_weapons: BTreeMap::new(),
             lightning_storm: Default::default(),
             psychic_dominator: Default::default(),
+            unit_deliveries: Default::default(),
             ion_blasts: Vec::new(),
             terrain_speed_config: terrain_speed::TerrainSpeedConfig::default(),
             input_delay_ticks: u64::from(crate::util::config::default_input_delay_ticks()),
@@ -4337,7 +4343,12 @@ impl Simulation {
                         .projectiles
                         .get(id)
                         .is_some_and(|projectile| projectile.in_logic_vector)
-                    || self.waves.get(id).is_some_and(|wave| wave.in_logic_vector),
+                    || self.waves.get(id).is_some_and(|wave| wave.in_logic_vector)
+                    || self
+                        .substrate
+                        .spotlights
+                        .get(id)
+                        .is_some_and(|light| light.in_logic_vector),
                 "logic order id {id} is missing or not membership-flagged",
             );
         }
@@ -4381,7 +4392,14 @@ impl Simulation {
             .iter()
             .filter(|(_, wave)| wave.in_logic_vector)
             .count();
-        let flagged = flagged_entities
+        let flagged_spotlights = self
+            .substrate
+            .spotlights
+            .iter()
+            .filter(|(_, l)| l.in_logic_vector)
+            .count();
+        let flagged = flagged_spotlights
+            + flagged_entities
             + flagged_anims
             + flagged_voxel_anims
             + flagged_particle_systems
@@ -4597,6 +4615,9 @@ impl Simulation {
         for anim in self.substrate.anims.values_mut() {
             anim.in_logic_vector = false;
         }
+        for light in self.substrate.spotlights.values_mut() {
+            light.in_logic_vector = false;
+        }
         for debris in self.substrate.voxel_anims.values_mut() {
             debris.in_logic_vector = false;
         }
@@ -4617,6 +4638,8 @@ impl Simulation {
                 e.in_logic_vector.mark(true);
             } else if let Some(anim) = self.substrate.anims.get_mut(id) {
                 anim.in_logic_vector = true;
+            } else if let Some(light) = self.substrate.spotlights.get_mut(id) {
+                light.in_logic_vector = true;
             } else if let Some(debris) = self.substrate.voxel_anims.get_mut(id) {
                 debris.in_logic_vector = true;
             } else if let Some(system) = self.substrate.particle_systems.get_mut(id) {
@@ -5807,6 +5830,9 @@ impl Simulation {
         for anim in self.substrate.anims.values_mut() {
             anim.in_logic_vector = false;
         }
+        for light in self.substrate.spotlights.values_mut() {
+            light.in_logic_vector = false;
+        }
         for debris in self.substrate.voxel_anims.values_mut() {
             debris.in_logic_vector = false;
         }
@@ -5827,6 +5853,8 @@ impl Simulation {
                 entity.in_logic_vector.mark(true);
             } else if let Some(anim) = self.substrate.anims.get_mut(id) {
                 anim.in_logic_vector = true;
+            } else if let Some(light) = self.substrate.spotlights.get_mut(id) {
+                light.in_logic_vector = true;
             } else if let Some(debris) = self.substrate.voxel_anims.get_mut(id) {
                 debris.in_logic_vector = true;
             } else if let Some(system) = self.substrate.particle_systems.get_mut(id) {

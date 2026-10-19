@@ -110,12 +110,10 @@ impl InGameMenuState {
 
 /// Does an Escape press belong to the in-scenario modal machine?
 ///
-/// Escape opens native Options through the command route5372D0→647040.
-/// It only reaches the machine when no in-world mode is armed:
-/// while a placement/targeting cursor or a repair/sell mode is live and no
-/// modal is open, Escape cancels that instead.
-pub fn escape_belongs_to_modal_machine(state: InGameMenuState, in_world_mode_armed: bool) -> bool {
-    state.is_open() || !in_world_mode_armed
+/// Existing dialogs own Escape. Ordinary world input must first resolve the
+/// reloaded binding; Options is only ProcessCommand55E079's fallback.
+pub fn escape_belongs_to_modal_machine(state: InGameMenuState) -> bool {
+    state.is_open()
 }
 
 /// What the player picked on the abort-mission confirmation.
@@ -212,24 +210,16 @@ mod tests {
         assert_eq!(InGameMenuState::Menu.on_escape(), InGameMenuState::Menu);
     }
 
-    /// An armed in-world mode takes Escape ahead of opening the menu, but never
-    /// ahead of a modal that is already up.
+    /// The handler must not intercept world Escape before the command lookup.
     #[test]
-    fn in_world_cancel_outranks_opening_the_menu_only_while_closed() {
-        assert!(!escape_belongs_to_modal_machine(
-            InGameMenuState::Closed,
-            true
-        ));
-        assert!(escape_belongs_to_modal_machine(
-            InGameMenuState::Closed,
-            false
-        ));
+    fn closed_world_resolves_escape_bindings_before_opening_the_menu() {
+        assert!(!escape_belongs_to_modal_machine(InGameMenuState::Closed,));
         for open in [
             InGameMenuState::Menu,
             InGameMenuState::AbortConfirm,
             InGameMenuState::Options,
         ] {
-            assert!(escape_belongs_to_modal_machine(open, true));
+            assert!(escape_belongs_to_modal_machine(open));
         }
     }
 }

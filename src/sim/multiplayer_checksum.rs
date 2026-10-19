@@ -321,6 +321,11 @@ impl Simulation {
                     anim.native_unique_id,
                 )
             }
+            ObjectKind::Spotlight => {
+                let [x, y, _] = self.spotlight_object_coord(stable_id).ok_or(missing)?;
+                //64DAB0 folds raw XY and RTTI19 (original4370B0).
+                ChecksumObject::new(x, y, 19, 0)
+            }
             ObjectKind::VoxelAnim => {
                 // `VoxelAnimClass::AI` refreshes ObjectClass +0x9c from the
                 // bounce body every visit; `world_coord` is that conversion.

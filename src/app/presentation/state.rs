@@ -68,6 +68,10 @@ pub(crate) struct MatchPresentationState {
     pub(crate) electric_bolts: super::electric_bolts::ElectricBolts,
     /// Process registry B04A60; ordinary kind1 beams copy their endpoints.
     pub(crate) radiation_beams: super::radiation_beams::RadiationBeams,
+    /// Process-lived native Tactical superweapon ring fade state. Map loads
+    /// replace map resources but keep this presentation owner alive.
+    pub(crate) superweapon_range_pulse:
+        crate::app::presentation::radial_indicators::SuperweaponRangePulse,
     /// Native process-lived FPS counter and detail hysteresis, never sim state.
     pub(crate) detail: std::cell::RefCell<super::detail::DetailState>,
     /// The client's AnimClass `+0x19D` for Supers' ChronoPlacement anims

@@ -510,3 +510,6 @@ fn forced_offline_successor_matches_original_constructor_and_resume() {
     }
     assert_eq!(phases, 13);
 }
+
+#[path = "factory_temporal_promotion_tests.rs"]
+mod temporal_promotion_tests;

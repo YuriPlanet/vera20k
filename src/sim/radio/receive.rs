@@ -316,6 +316,22 @@ pub(crate) fn can_load(
         }
         return CanLoad::AskOccupied;
     }
+    //Hospital43C58F..C61D: Infantry only, no captives or mind control;
+    //building Ammo must be nonzero. Techno's constructor starts it at0,
+    //and Building43FE98 explicitly excludes hospitals from auto-refill.
+    if building_type.hospital && unit.category() == EntityCategory::Infantry {
+        let refused = unit
+            .capture_manager
+            .as_ref()
+            .is_some_and(|manager| manager.has_any())
+            || unit.mind_control.is_mind_controlled()
+            || building.ammo().map_or(0, |ammo| ammo.current()) == 0;
+        return CanLoad::Answer(if refused {
+            RadioResponse::Negatory
+        } else {
+            RadioResponse::Roger
+        });
+    }
     // 0x0043C620: a Helipad takes an Aircraft and nothing else.
     if building_type.helipad {
         return CanLoad::Answer(if unit.category() == EntityCategory::Aircraft {
@@ -493,6 +509,64 @@ fn building_docking(
     let pad_dock = object.dock_unload || object.weeder;
     let helipad = object.helipad;
     let (rx, ry) = (building.position.rx(), building.position.ry());
+    // Building43C882/43CB0C..CBC0: Hospital bypasses the general dock's
+    // HELLO/NeedToMove arm. Full contacts may release a finished patient.
+    if object.hospital {
+        if !building.radio_contacts.has_free_or(from) {
+            let capacity = building.radio_contacts.capacity();
+            for slot in 0..capacity {
+                let contact = sim
+                    .substrate
+                    .entities
+                    .get(building_id)
+                    .and_then(|building| building.radio_contacts.slot(slot));
+                if let Some(contact) = contact
+                    && transmit(
+                        sim,
+                        building_id,
+                        contact,
+                        RadioMessage::IsRepairing,
+                        RadioPayload::default(),
+                        Some(rules),
+                        effects,
+                    ) == RadioResponse::Negatory
+                {
+                    transmit(
+                        sim,
+                        building_id,
+                        contact,
+                        RadioMessage::RunAway,
+                        RadioPayload::default(),
+                        Some(rules),
+                        effects,
+                    );
+                }
+            }
+            return if sim
+                .substrate
+                .entities
+                .get(building_id)
+                .is_some_and(|building| building.radio_contacts.has_free_or(from))
+            {
+                RadioResponse::Roger
+            } else {
+                RadioResponse::Negatory
+            };
+        }
+        transmit(
+            sim,
+            building_id,
+            from,
+            RadioMessage::MoveToCell,
+            RadioPayload {
+                target: Some(NavTargetRef::cell(rx, ry)),
+                ..Default::default()
+            },
+            Some(rules),
+            effects,
+        );
+        return RadioResponse::Roger;
+    }
     // 0x0043C8A4..0x0043C8CC: a sender that is not a contact is HELLOed back
     // when a slot is free or already its own.
     if !building.radio_contacts.contains(from) && building.radio_contacts.has_free_or(from) {
@@ -665,11 +739,14 @@ fn building_dock_now(
     }
     // 0x0043C732..0x0043C785: the repair and reload docks and Bunker queue
     // their own mission; VERA's depot and bunker flows own those links.
-    // RESIDUAL: Hospital= and Armory= share this arm natively; neither has a
-    // represented DOCK_NOW sender.
-    if object.unit_repair || object.unit_reload {
+    // Hospital43C746 also queues Repair/Sleep; cargo arrival is owned by
+    // Infantry PerCell51A21F. Armory remains a separate training mechanism.
+    if object.unit_repair || object.unit_reload || object.hospital {
         // Building43C7B5..C7DC: service request and the occupant's Sleep
         // queue. The Building mission owns the admitted pad contact.
+        if let Some(building) = sim.substrate.entities.get_mut(building_id) {
+            building.mission_leaf.set_building_ready_latch(1);
+        }
         let now = sim.session.binary_frame;
         let _ = sim.mission_queue_exact(
             building_id,
@@ -685,9 +762,6 @@ fn building_dock_now(
             now,
             &EntityReadyInputProvider,
         );
-        if let Some(building) = sim.substrate.entities.get_mut(building_id) {
-            building.mission_leaf.set_building_ready_latch(1);
-        }
         return RadioResponse::Roger;
     }
     if object.bunker {
@@ -1714,15 +1788,19 @@ fn techno_repair_tick(
     if entity.health.is_full(object.strength) {
         return RadioResponse::Negatory;
     }
-    // InfantryType5247A0/524790 overrides cost0 and Rules+16D8 IRepairStep.
-    // That Hospital-family dependency is outside the selected Unit service
-    // chain; do not give it the inherited Unit/default getters.
-    if entity.category() == EntityCategory::Infantry {
-        return RadioResponse::None;
-    }
     let strength = object.strength;
-    let cost = crate::sim::production::repair_step_cost(rules, object);
-    let heal = rules.general.repair_step.max(1);
+    // InfantryType5247A0/524790 override the shared Techno6F4CD7 getters:
+    // zero cost and signed Rules+16D8 IRepairStep. Techno6F4D1C clamps the
+    // virtual heal result to at least1 for every category.
+    let (cost, heal) = if entity.category() == EntityCategory::Infantry {
+        (0, rules.general.infantry_repair_step)
+    } else {
+        (
+            crate::sim::production::repair_step_cost(rules, object),
+            rules.general.repair_step,
+        )
+    };
+    let heal = heal.max(1);
     let owner = entity.owner();
     if crate::sim::credit_income::available_money(sim, owner) < cost {
         return RadioResponse::InsufficientFunds;

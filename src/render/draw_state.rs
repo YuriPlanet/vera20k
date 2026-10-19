@@ -131,6 +131,11 @@ pub struct DrawDecision {
     /// A fully cloaked object that is hidden from the observer emits no base draw.
     pub visible: bool,
     pub state: DrawState,
+    /// The unmodified `TechnoClass::GetVisualState` result supplied by the
+    /// existing GameEntity visual-character owner. Building4544A0 delegates
+    /// to that owner for its ordinary stage-zero path; callers that need the
+    /// native enum must not infer it from the GPU-ready `state` fields.
+    pub(crate) native_visual_state: u8,
 }
 
 /// GPU-ready visual state resolved from one tactical object.
@@ -199,11 +204,13 @@ impl DrawState {
             remap_row,
             ..Self::default()
         };
+        let native_visual_state = input.cloak.map_or(0, |cloak| cloak.character);
 
         let Some((cloak_selector, cloak_flag)) = cloak_selector(input.cloak) else {
             return DrawDecision {
                 visible: false,
                 state,
+                native_visual_state,
             };
         };
 
@@ -234,6 +241,7 @@ impl DrawState {
         DrawDecision {
             visible: true,
             state,
+            native_visual_state,
         }
     }
 

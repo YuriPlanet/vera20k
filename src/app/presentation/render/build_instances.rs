@@ -50,8 +50,6 @@ pub(super) struct WorldInstances {
     pub cell_sparkles: Vec<SpriteInstance>,
     /// Sonic's legacy outline fallback; Magnetic bodies use retained parents.
     pub weapon_waves: Vec<SpriteInstance>,
-    /// SpotlightClass type-16 masks with authoritative child-light coordinates.
-    pub spotlight_type16: Vec<SpriteInstance>,
 }
 
 /// Debug visualization overlays (toggled by hotkeys at runtime).
@@ -413,12 +411,6 @@ pub(super) fn build_world_instances(
         );
     }
 
-    // Named residual: BuildingLightRuntime currently records the parent/target
-    // relation but not SpotlightClass's evolving child coordinate and angle.
-    // Drawing at the parent would invent visible semantics, so the exact live
-    // destination-factor path stays empty until that authoritative input exists.
-    let spotlight_type16 = Vec::new();
-
     WorldInstances {
         terrain,
         overlay,
@@ -431,7 +423,6 @@ pub(super) fn build_world_instances(
         particle_draws,
         cell_sparkles,
         weapon_waves,
-        spotlight_type16,
     }
 }
 

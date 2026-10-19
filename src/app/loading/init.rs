@@ -60,6 +60,7 @@ use crate::render::unit_atlas::UnitAtlas;
 #[cfg(test)]
 use crate::rules::art_data::ArtRegistry;
 use crate::rules::effect_asset_catalog::resolved_overlay_shp_ids;
+#[cfg(test)]
 use crate::rules::ini_parser::IniFile;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
@@ -1955,9 +1956,11 @@ impl MapLoadInitial {
         // standard Battle launch application, and the shared Post_Map_Init
         // finalizer.
         let theater_result = theater::load_theater(asset_manager, &map_data.header.theater);
-        let mode_override_ini = asset_manager
-            .get_ref(&match_launch_descriptor.session().mode.override_file)
-            .and_then(|bytes| IniFile::from_bytes(bytes).ok());
+        let mode_override_ini = crate::rules::retail_sources::select_mode_ini(
+            asset_manager,
+            Some(&match_launch_descriptor.session().mode.override_file),
+        )
+        .expect("select the generated-map mode INI layer");
         let (mut rules, rules_ini, art_ini, native_rules_receipt) = load_rules_with_merged_ini(
             asset_manager,
             mode_override_ini.as_ref(),
@@ -2677,21 +2680,13 @@ pub(crate) fn load_map_from_initial(
     // semantics and art-foundation data are available to the pipeline.
     // The selected game mode's override INI (MPModes roster row) applies its
     // rules payload between rulesmd and the map overrides — without it every
-    // non-Battle mode silently plays with Battle rules.
-    let mode_override_ini: Option<IniFile> = {
-        let override_file = skirmish_launch_session
-            .map(|launch| launch.mode.override_file.trim())
-            .unwrap_or("");
-        if override_file.is_empty() {
-            None
-        } else {
-            Some(
-                crate::rules::retail_sources::select_ini(asset_manager, override_file)
-                    .map_err(anyhow::Error::msg)?
-                    .ini,
-            )
-        }
-    };
+    // non-Battle mode silently plays with Battle rules. A selected file that
+    // is missing keeps an empty layer (0x005D67B0) instead of aborting.
+    let mode_override_ini = crate::rules::retail_sources::select_mode_ini(
+        asset_manager,
+        skirmish_launch_session.map(|launch| launch.mode.override_file.as_str()),
+    )
+    .map_err(anyhow::Error::msg)?;
     // Full_Init686D35 processes the campaign's scenario-basename INI before
     // resetting Rules. It is optional and distinct from MISSIONMD loading art.
     let campaign_named_ini = if let Some(campaign) = campaign.as_ref() {

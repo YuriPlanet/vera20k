@@ -1324,6 +1324,13 @@ impl Simulation {
             .remove(&TagAttachment::Object(object));
     }
 
+    /// Object+34 nonnull gate; dispatch itself owns Tag liveness.
+    pub(crate) fn object_has_trigger_tag(&self, object: u64) -> bool {
+        self.trigger_runtime
+            .attachments
+            .contains_key(&TagAttachment::Object(object))
+    }
+
     /// Object5F5B50 attachment funnel. An absent/null authored reference clears
     /// the current attachment without destroying a zero-reference Tag.
     pub(crate) fn attach_object_trigger_tag(&mut self, object: u64, name: Option<&str>) {
@@ -1910,6 +1917,7 @@ impl Simulation {
             //31: bridge575EE0 raises it on each tagged span cell. After this
             //gate,71EE91 routes it to71F069, whose Country502D30 lookup
             //selects only the71F1B1 true tail either way.
+            35 => input.kind == 35 && !self.buildup_bypass_active(),
             2 | 4 | 6 | 7 | 29 | 31 | 33 | 38 | 39 | 40 | 41 | 42 | 43 | 48 | 49 | 50 => {
                 input.kind == condition.kind && !self.buildup_bypass_active()
             }
@@ -3087,6 +3095,44 @@ impl Simulation {
                     return false;
                 };
                 self.house_cheer(owner, rules, frame_effects);
+            }
+            52 => {
+                //Execute6DEFBC..6DF04E: forward live Building array; no House filter.
+                let (Some(live), Some(rules)) = (context.live_index, rules) else {
+                    return false;
+                };
+                let mut matched = false;
+                let mut ordinal = 0;
+                while ordinal < self.substrate.entities.building_registry_len() {
+                    let id = self
+                        .substrate
+                        .entities
+                        .building_registry_at(ordinal)
+                        .unwrap();
+                    let light = self
+                        .substrate
+                        .entities
+                        .get(id)
+                        .filter(|e| {
+                            e.health.current() > 0
+                                && e.lifecycle.object_alive()
+                                && e.lifecycle.cell_marked()
+                                && !e.lifecycle.in_limbo()
+                        })
+                        .filter(|e| {
+                            self.object_type(e.type_ref(), rules)
+                                .is_some_and(|o| o.has_spotlight)
+                        })
+                        .and_then(|e| e.building_light.light());
+                    if let Some(light) = light
+                        && self.tag_contains_live_trigger(TagAttachment::Object(id), live)
+                    {
+                        self.set_spotlight_behavior(light, value.unwrap_or(0));
+                        matched = true;
+                    }
+                    ordinal += 1;
+                }
+                return matched;
             }
             60 => {
                 //6DDEF5 scans the live Building registry forward and calls
