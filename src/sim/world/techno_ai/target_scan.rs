@@ -778,7 +778,7 @@ impl<'r> ScanHost for WorldScan<'_, 'r> {
         );
     }
 
-    /// Through the gated entry, or this pass's batched answer
+    /// Through the object's `+0x3C4` override, or this pass's batched answer
     /// ([`super::scan_batch`]).
     fn greatest_threat(&mut self, mask: ScanMission) -> Option<TargetKind> {
         let (rules, registry) = (self.rules, self.ctx.overlay_registry);
@@ -788,14 +788,9 @@ impl<'r> ScanHost for WorldScan<'_, 'r> {
                 .take_batched_scan(rules, registry, self.id, mask, self.scan_coord)
             {
                 Some(outcome) => outcome,
-                None => self.sim.threat_scan(
-                    rules,
-                    registry,
-                    self.id,
-                    mask,
-                    self.scan_coord,
-                    crate::sim::combat::acquire_best_target_for_entity,
-                ),
+                None => self
+                    .sim
+                    .threat_scan(rules, registry, self.id, mask, self.scan_coord),
             };
         self.sim
             .commit_threat_scan(self.id, outcome)
@@ -857,24 +852,6 @@ impl<'r> ScanHost for WorldScan<'_, 'r> {
     }
 }
 
-/// The scan entries the world adapter takes: the passive block's
-/// gated one or the direct `+0x3C4` call.
-type ScanEntry = fn(
-    &crate::sim::entity_store::EntityStore,
-    &crate::sim::occupancy::OccupancyGrid,
-    &RuleSet,
-    &crate::sim::intern::StringInterner,
-    u64,
-    Option<&crate::sim::vision::FogState>,
-    Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
-    bool,
-    ScanMission,
-    Option<&crate::sim::pathfinding::zone_map::ZoneGrid>,
-    crate::sim::combat::line_of_fire::LineOfFireInputs<'_>,
-    Option<&Simulation>,
-    Option<[i32; 3]>,
-) -> crate::sim::combat::greatest_threat::ThreatScanOutcome;
-
 impl Simulation {
     /// `id`'s concrete Greatest_Threat against the live world. The immutable
     /// selector reports whether Foot was reached; this adapter commits its empty
@@ -888,13 +865,14 @@ impl Simulation {
         id: u64,
         mask: ScanMission,
         scan_coord: Option<[i32; 3]>,
-        entry: ScanEntry,
     ) -> Option<u64> {
-        let result = self.threat_scan(rules, overlay_registry, id, mask, scan_coord, entry);
+        let result = self.threat_scan(rules, overlay_registry, id, mask, scan_coord);
         self.commit_threat_scan(id, result)
     }
 
-    /// `id`'s Greatest_Threat through `entry` against the world as it stands.
+    /// `id`'s Greatest_Threat
+    /// ([`crate::sim::combat::combat_targeting::greatest_threat_for_entity`])
+    /// against the world as it stands.
     pub(super) fn threat_scan(
         &self,
         rules: &RuleSet,
@@ -902,9 +880,8 @@ impl Simulation {
         id: u64,
         mask: ScanMission,
         scan_coord: Option<[i32; 3]>,
-        entry: ScanEntry,
     ) -> crate::sim::combat::greatest_threat::ThreatScanOutcome {
-        entry(
+        crate::sim::combat::combat_targeting::greatest_threat_for_entity(
             &self.substrate.entities,
             &self.substrate.occupancy,
             rules,
@@ -973,7 +950,6 @@ pub(crate) fn direct_greatest_threat(
         scanner,
         mask,
         Some([coord.x, coord.y, coord.z]),
-        crate::sim::combat::combat_targeting::greatest_threat_for_entity,
     )
 }
 
@@ -1095,6 +1071,75 @@ mod tests {
                 sim.scenario_rng.state(),
                 after_scan,
                 "the rearmed timer gates another scan"
+            );
+        }
+    }
+
+    /// Neither `Retaliate_And_Scan` (`0x00709820`, vt+0x39C for every class)
+    /// nor `Greatest_Threat` tests ammo or `Is_Armed`. A docked aircraft with
+    /// no ammo left still passes Foot Mission_AreaGuard's CanAcquireTarget
+    /// (`0x004D6ED9`; `Is_Armed` has no ammo term), and Foot Mission_Hunt
+    /// scans an unarmed unit (`0x004D5392`). Both run
+    /// `FootClass::Greatest_Threat` (`0x004D9920`), whose empty scan clears the
+    /// `+0x688` latch (`0x004D9951..0x004D9955`). Neither picks the enemy in
+    /// reach: their flags word holds no class bit (`0x006F821A`).
+    #[test]
+    fn an_empty_scan_clears_the_foot_latch_without_ammo_or_a_weapon() {
+        use crate::rules::ini_parser::IniFile;
+        use crate::sim::house_state::HouseState;
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[VehicleTypes]\n0=TANK\n[AircraftTypes]\n0=PLANE\n\
+             [InfantryTypes]\n[BuildingTypes]\n\
+             [PLANE]\nStrength=150\nSpeed=14\nAmmo=1\nLandable=yes\nFighter=yes\n\
+             Primary=TestGun\nLocomotor={4A582746-9839-11D1-B709-00A024DDAFD1}\n\
+             [TestGun]\nDamage=10\nRange=6\nROF=60\nProjectile=TestShot\nWarhead=TestWH\n\
+             [TestShot]\nROT=0\n[TestWH]\nVerses=100%\n\
+             [TANK]\nStrength=1000\nLocomotor={4A582741-9839-11D1-B709-00A024DDAFD1}\n",
+        ))
+        .expect("rules");
+        let mut sim = Simulation::new();
+        // The enemy is human and not passive, so its objects stay in the
+        // scans (`0x006F826E`).
+        for (index, (name, human)) in [("Americans", false), ("Russians", true)]
+            .into_iter()
+            .enumerate()
+        {
+            let id = sim.interner.intern(name);
+            let house = HouseState::new(id, index as u8, None, human, 0, 10);
+            sim.houses.insert(id, house);
+            sim.session.house_order.push(id);
+        }
+        let plane = sim
+            .spawn_object_at_height("PLANE", "Americans", 10, 10, 0, 0, &rules)
+            .expect("aircraft");
+        let tank = sim
+            .spawn_object("TANK", "Americans", 20, 10, 0, &rules)
+            .expect("unarmed tank");
+        sim.spawn_object("TANK", "Russians", 15, 10, 0, &rules)
+            .expect("enemy in reach");
+        let entity = sim.substrate.entities.get_mut(plane).unwrap();
+        entity.ammo_mut().unwrap().set_current_for_test(0);
+        for (scanner, mask) in [(plane, ScanMission::AreaGuard), (tank, ScanMission::Hunt)] {
+            sim.substrate
+                .entities
+                .get_mut(scanner)
+                .unwrap()
+                .foot_retarget_after_stop
+                .mark_stopped_cannot_fire();
+            let held = scan(
+                &mut sim,
+                scanner,
+                &rules,
+                mask,
+                ObjectAiCtx::default(),
+                None,
+            );
+            let entity = sim.substrate.entities.get(scanner).unwrap();
+            assert!(!held, "{scanner}: no class bit, no pick");
+            assert_eq!(entity.attack_target.target(), None, "{scanner}");
+            assert!(
+                !entity.foot_retarget_after_stop(),
+                "{scanner}: the Foot scan ran and cleared +0x688"
             );
         }
     }

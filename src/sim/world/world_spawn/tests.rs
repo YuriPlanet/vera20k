@@ -1670,7 +1670,6 @@ fn techno_constructor_routes_preserve_components_and_authored_overrides() {
     ] {
         for route in 0..3 {
             let mut sim = Simulation::with_seed(0xC701_0021);
-            sim.debug_event_logging = true;
             install_american_house(&mut sim);
             if type_id == "CREW" && route != 0 {
                 sim.spawn_object_at_height(type_id, "Americans", 4, 4, 64, 0, &rules)
@@ -1696,7 +1695,6 @@ fn techno_constructor_routes_preserve_components_and_authored_overrides() {
                     .unwrap(),
             };
             let entity = sim.substrate.entities.get(id).unwrap();
-            assert!(entity.debug_log().is_some(), "{type_id} route {route}");
             assert!(entity.tracking_facts.dont_score());
             assert_eq!(entity.health.current(), if route == 0 { 100 } else { 200 });
             assert_eq!(entity.veterancy.rank(), if route == 0 { 100 } else { 0 });

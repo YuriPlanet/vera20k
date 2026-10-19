@@ -20,7 +20,6 @@
 //! - Part of rules/ — no dependencies on sim/, render/, ui/, etc.
 
 use crate::rules::ini_parser::IniSection;
-use crate::util::fixed_math::{SimFixed, sim_from_f32};
 
 /// A weapon definition parsed from a rules.ini section.
 ///
@@ -36,22 +35,15 @@ pub struct WeaponType {
     pub id: String,
     /// Base damage per hit (`+0xA4`).
     pub damage: i32,
-    /// Maximum range in cells (fixed-point for deterministic range checks).
-    pub range: SimFixed,
     /// Maximum range in LEPTONS — the value gamemd actually stores.
     ///
     /// `WeaponTypeClass::ReadINI` 0x00772080 fills `+0xB4` through
     /// `CCINIClass::ReadRange` 0x00474620 at 0x00772336, and that reader
     /// multiplies the INI cell count by `256.0` (`FMUL double ptr
-    /// [0x007E1710]` at 0x0047464C) before `Math__ftol` chops it. Every native
-    /// consumer — `TechnoClass::InRange` 0x006F7220 included — reads leptons.
-    ///
-    /// `range` above is the cell-valued form the older call sites still read;
-    /// scaling it with `to_num::<i64>() * 256` throws the fraction away, which
-    /// is what stranded 60 of the 256 stock weapons that carry a `Range=` key
-    /// (21 of them at `Range=1.5`) short of their authored reach — up to 212
-    /// leptons, and a third of it at `1.5`. Use this field for any range
-    /// compare.
+    /// [0x007E1710]` at 0x0047464C) before `Math__ftol` chops it, so a
+    /// fractional `Range=` keeps its fraction. Every native consumer —
+    /// `TechnoClass::InRange` 0x006F7220 included — reads leptons. The ordered
+    /// Rules processor reads it on each reached pass; `Range=-1` keeps it.
     ///
     /// The `-2` "infinite" sentinel survives the conversion as `-512`, which
     /// is the constant 0x006F724E tests.
@@ -205,19 +197,19 @@ impl WeaponType {
 
     /// Parse a WeaponType from a rules.ini section.
     ///
-    /// Damage, Speed, Projectile and Warhead keep the constructor's zero and
-    /// null (`0x00771C70`): the ordered Rules processor owns those reads
-    /// (Damage `0x007722E3`, Speed `0x007722FD`, Warhead `0x0077295F`,
-    /// Projectile `0x00772998`) and the speed postpass (`0x007729F0`), and
-    /// `RuleSet` builds each weapon with its retained values.
+    /// Damage, Speed, Range, Projectile and Warhead keep the constructor's
+    /// zero and null (`0x00771C70`): the ordered Rules processor owns those
+    /// reads (Damage `0x007722E3`, Speed `0x007722FD`, Range `0x00772336`,
+    /// Warhead `0x0077295F`, Projectile `0x00772998`) and the speed postpass
+    /// (`0x007729F0`), and `RuleSet` builds each weapon with its retained
+    /// values.
     pub fn from_ini_section(id: &str, section: &IniSection) -> Self {
         Self {
             id: id.to_string(),
             damage: 0,
-            range: sim_from_f32(section.read_double("Range", 0.0) as f32),
             // `WeaponTypeClass::Constructor` 0x00771C70 zeroes +0xB4 at
-            // 0x00771CB6, so an absent (or literal `-1`) key leaves 0.
-            range_leptons: section.read_range("Range", 0),
+            // 0x00771CB6.
+            range_leptons: 0,
             rof: section.read_int("ROF", 0),
             speed: 0,
             projectile: None,
@@ -341,7 +333,6 @@ mod tests {
 
     use super::*;
     use crate::rules::ini_parser::IniFile;
-    use crate::util::fixed_math::SIM_ZERO;
 
     fn laser_corpus() -> &'static serde_json::Value {
         crate::test_fixture::json("tools/rules_oracle/weapon_laser.json")
@@ -523,9 +514,9 @@ mod tests {
 
     #[test]
     fn test_parse_weapon() {
-        // Damage, Speed, Projectile and Warhead come from the ordered Rules
-        // owner. A nonzero ROT keeps the ballistic postpass off ReadSpeed's
-        // value.
+        // Damage, Speed, Range, Projectile and Warhead come from the ordered
+        // Rules owner. A nonzero ROT keeps the ballistic postpass off
+        // ReadSpeed's value.
         let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
             "[VehicleTypes]\n0=MTNK\n[MTNK]\nPrimary=105mm\n\
              [105mm]\nDamage=65\nROF=50\nRange=5.75\nSpeed=40\n\
@@ -537,7 +528,6 @@ mod tests {
 
         assert_eq!(weapon.id, "105mm");
         assert_eq!(weapon.damage, 65);
-        assert_eq!(weapon.range, sim_from_f32(5.75));
         assert_eq!(weapon.range_leptons, 1472, "5.75 cells * 256");
         assert_eq!(weapon.rof, 50);
         assert_eq!(weapon.speed, 102);
@@ -552,7 +542,7 @@ mod tests {
         let weapon: WeaponType = WeaponType::from_ini_section("Empty", section);
 
         assert_eq!(weapon.damage, 0);
-        assert_eq!(weapon.range, SIM_ZERO);
+        assert_eq!(weapon.range_leptons, 0);
         assert_eq!(weapon.rof, 0);
         assert_eq!(weapon.projectile, None);
         assert_eq!(weapon.warhead, None);
@@ -636,37 +626,44 @@ mod tests {
     /// `CCINIClass::ReadRange` 0x00474620 multiplies by `256.0` and THEN chops,
     /// so a fractional `Range=` keeps its fraction. 60 of the 256 stock
     /// `Range=` weapons carry one and 21 sit at exactly `1.5`, the stock
-    /// `[BlimpBomb]` among them.
+    /// `[BlimpBomb]` among them. Its `-1` sentinel (`0x0047463E`) returns the
+    /// default, the field's current value: the 0x00771CB6 constructor zero, or
+    /// what an earlier reached pass read.
     #[test]
     fn fractional_range_keeps_its_fraction_in_leptons() {
-        let ini = IniFile::from_str(
-            "[BlimpBomb]\nDamage=250\nROF=50\nRange=1.5\nCellRangefinding=yes\n\
+        use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+        use crate::rules::ruleset::RuleSet;
+
+        let mut layers = RulesLayerStack::new(IniFile::from_str(
+            "[VehicleTypes]\n0=A\n1=B\n2=C\n3=D\n4=E\n5=F\n\
+             [A]\nPrimary=BlimpBomb\n[B]\nPrimary=Nuke\n[C]\nPrimary=Quarter\n\
+             [D]\nPrimary=NoKey\n[E]\nPrimary=Unset\n[F]\nPrimary=Kept\n\
+             [BlimpBomb]\nDamage=250\nROF=50\nRange=1.5\nCellRangefinding=yes\n\
              [Nuke]\nRange=-2\n\
              [Quarter]\nRange=0.25\n\
-             [NoKey]\nDamage=1\n",
+             [NoKey]\nDamage=1\n\
+             [Unset]\nRange=-1\n\
+             [Kept]\nRange=3\n",
+        ));
+        layers.push(
+            RulesLayerKind::Scenario,
+            IniFile::from_str("[Kept]\nRange=-1\n"),
         );
-        let blimp = WeaponType::from_ini_section("BlimpBomb", ini.section("BlimpBomb").unwrap());
-        assert_eq!(
-            blimp.range_leptons, 384,
-            "1.5 cells is 384 leptons, not 256"
-        );
-        assert!(blimp.cell_rangefinding);
+        let rules = RuleSet::from_rules_layers(&layers).unwrap();
+        let range = |id: &str| rules.weapon(id).unwrap().range_leptons;
 
-        let nuke = WeaponType::from_ini_section("Nuke", ini.section("Nuke").unwrap());
+        assert_eq!(range("BlimpBomb"), 384, "1.5 cells is 384 leptons, not 256");
+        assert!(rules.weapon("BlimpBomb").unwrap().cell_rangefinding);
         assert_eq!(
-            nuke.range_leptons, -512,
+            range("Nuke"),
+            -512,
             "the -2 'infinite' sentinel scales to the -512 that 0x006F724E tests"
         );
-
-        let quarter = WeaponType::from_ini_section("Quarter", ini.section("Quarter").unwrap());
-        assert_eq!(quarter.range_leptons, 64);
-
-        let none = WeaponType::from_ini_section("NoKey", ini.section("NoKey").unwrap());
-        assert_eq!(
-            none.range_leptons, 0,
-            "absent key keeps the 0x00771CB6 constructor zero"
-        );
-        assert_eq!(none.minimum_range_leptons, 0);
+        assert_eq!(range("Quarter"), 64);
+        assert_eq!(range("NoKey"), 0, "absent key keeps the constructor zero");
+        assert_eq!(rules.weapon("NoKey").unwrap().minimum_range_leptons, 0);
+        assert_eq!(range("Unset"), 0, "-1 keeps the constructor zero");
+        assert_eq!(range("Kept"), 3 * 256, "-1 keeps the earlier pass's range");
     }
 
     #[test]

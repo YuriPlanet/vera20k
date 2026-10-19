@@ -535,8 +535,9 @@ pub struct ObjectType {
     pub requires_stolen_soviet_tech: bool,
     /// Requires spy infiltration of a Yuri Battle Lab to unlock.
     pub requires_stolen_third_tech: bool,
-    /// Art.ini image reference. Defaults to the object's ID if not specified.
-    /// Used to look up sprite/voxel filenames in art.ini.
+    /// ObjectType+1F8 `Image=`, the type's ID unless a reached pass names
+    /// another; it names the art.ini section of the type's sprite or voxel.
+    /// The ordered Rules processor reads it (`TechnoTypeReferences`).
     pub image: String,
     /// Signed Power read result for Buildings. Constructor45DEF6/45DEFC
     /// starts output/drain at0;461060..4610A0 passes their reconstructed
@@ -875,8 +876,8 @@ pub struct ObjectType {
     /// A type with this set heals at every rank; otherwise the `SELF_HEAL`
     /// ability gates the same pulse (`FUN_0070BE80`).
     pub self_healing: bool,
-    /// Specific weapon fired on death (overrides default explosion behavior).
-    /// References a [WeaponName] section in rules.ini.
+    /// `DeathWeapon=` (+D18), the WeaponType fired on death (overrides the
+    /// default explosion), as the ordered Rules processor resolved it.
     pub death_weapon: Option<String>,
     /// `DeathWeaponDamageModifier=` applied to explicit/current death weapons.
     /// The native TechnoType constructor seeds this to 1.0.
@@ -931,6 +932,10 @@ pub struct ObjectType {
     /// clears it (`0x007470D0`). `CellClass::PickupCrate @ 0x00481A00` rejects
     /// every drawn type without it (`0x004821BD`).
     pub crate_goodie: bool,
+    /// UnitType+E1A, CarriesCrate (845DE0): ctor74715B clears it;
+    /// ReadINI74771F..74773F uses ReadBool5295F0 with the current value.
+    /// UnitReceiveDamage73838A also requires the appropriate Scenario flag.
+    carries_crate: bool,
     /// `Spawned=` (`TechnoTypeClass+0xD54`): this type is a carrier/launcher
     /// child (Hornet, V3/Dreadnought missile). `TechnoTypeClass::ReadINI`
     /// reads key `"Spawned"` (`0x008437D8`) at `0x00714E7D..0x00714E91`.
@@ -1167,8 +1172,8 @@ pub struct ObjectType {
     pub jumpjet_params: JumpjetParams,
 
     // -- Deploy / undeploy fields --
-    /// What this unit deploys into (e.g., AMCV DeploysInto=GACNST).
-    /// Parsed from rules.ini `DeploysInto=`. Used for MCV→ConYard and similar transforms.
+    /// `DeploysInto=` (+404), the BuildingType this unit deploys into (AMCV
+    /// into GACNST), as the ordered Rules processor resolved it.
     pub deploys_into: Option<String>,
     /// Resolved non-null `UndeploysInto=` UnitType identity (e.g. GACNST→AMCV).
     /// `TechnoTypeClass__ReadINI @ 0x00712170`, block
@@ -1532,14 +1537,13 @@ pub struct ObjectType {
     /// branches on it and a map or mod INI can set it.
     pub vehicle_thief: bool,
 
-    /// Weapon used when this infantry fires from inside a garrisoned building.
-    /// Parsed from `OccupyWeapon=WeaponName` in rules.ini. Falls back to
-    /// primary weapon if not specified.
+    /// Weapon used when this infantry fires from inside a garrisoned building:
+    /// InfantryType `OccupyWeapon=` (+E04), as the ordered Rules processor
+    /// resolved it. Falls back to the primary weapon when unset.
     pub occupy_weapon: Option<String>,
 
-    /// Elite-level weapon used when garrisoned. Falls back to `OccupyWeapon`
-    /// or primary weapon if not specified.
-    /// Parsed from `EliteOccupyWeapon=WeaponName` in rules.ini.
+    /// Elite-level weapon used when garrisoned (`EliteOccupyWeapon=`, +E20).
+    /// Falls back to `OccupyWeapon` or the primary weapon when unset.
     pub elite_occupy_weapon: Option<String>,
 
     /// Immutable projection of the retained InfantryType Pip/OccupyPip state.
@@ -2053,6 +2057,10 @@ fn native_minutes_to_ticks(value: f64) -> u32 {
 }
 
 impl ObjectType {
+    pub(crate) const fn carries_crate(&self) -> bool {
+        self.carries_crate
+    }
+
     pub const fn has_radial_indicator(&self) -> bool {
         self.has_radial_indicator
     }
@@ -2678,7 +2686,8 @@ impl ObjectType {
             requires_stolen_allied_tech: section.read_bool("RequiresStolenAlliedTech", false),
             requires_stolen_soviet_tech: section.read_bool("RequiresStolenSovietTech", false),
             requires_stolen_third_tech: section.read_bool("RequiresStolenThirdTech", false),
-            image: section.read_string("Image", id, 0x19),
+            // Constructor value; only the ordered Process owner reads it.
+            image: id.to_owned(),
             power: section.read_int("Power", 0),
             extra_power: section.read_int("ExtraPower", 0),
             // Building ctor45DF13 initializes +EF0=0 (1x1). ReadINI461225
@@ -2809,7 +2818,8 @@ impl ObjectType {
             veteran_abilities,
             elite_abilities,
             self_healing: section.read_bool("SelfHealing", false),
-            death_weapon: section.read_name("DeathWeapon", 0x80).map(str::to_owned),
+            // Constructor null; only the ordered Process owner reads it.
+            death_weapon: None,
             // A float field (`FSTP dword` at `0x0071232B`).
             death_weapon_damage_modifier: section.read_float("DeathWeaponDamageModifier", 1.0),
             super_weapon: section.read_name("SuperWeapon", 0x20).map(str::to_owned),
@@ -2825,6 +2835,8 @@ impl ObjectType {
             to_protect: section.read_bool("ToProtect", false),
             harvester: section.read_bool("Harvester", false),
             crate_goodie: section.read_bool("CrateGoodie", false),
+            carries_crate: category == ObjectCategory::Vehicle
+                && section.read_bool("CarriesCrate", false),
             spawned: section.read_bool("Spawned", false),
             refinery: section.read_bool("Refinery", false),
             weeder: section.read_bool("Weeder", false),
@@ -3007,7 +3019,8 @@ impl ObjectType {
             ),
             immune_to_poison: section.read_bool("ImmuneToPoison", false),
 
-            deploys_into: section.read_name("DeploysInto", 0x80).map(str::to_owned),
+            // Constructor null; only the ordered Process owner reads it.
+            deploys_into: None,
             undeploys_into: section
                 .read_type_name("UndeploysInto", 0x80)
                 .map(str::to_owned),
@@ -3104,10 +3117,9 @@ impl ObjectType {
             occupier: section.read_bool("Occupier", false),
             assaulter: section.read_bool("Assaulter", false),
             vehicle_thief: section.read_bool("VehicleThief", false),
-            occupy_weapon: section.read_name("OccupyWeapon", 0x80).map(str::to_owned),
-            elite_occupy_weapon: section
-                .read_name("EliteOccupyWeapon", 0x80)
-                .map(str::to_owned),
+            // Constructor nulls; only the ordered Process owner reads them.
+            occupy_weapon: None,
+            elite_occupy_weapon: None,
             // Constructor values; only the ordered Process owner reads them.
             infantry_pips: InfantryPips::default(),
             pip_scale: section
@@ -4284,16 +4296,6 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_deploys_into() {
-        let ini: IniFile = IniFile::from_str("[AMCV]\nDeploysInto=GACNST\nSpeed=4\n");
-        let section: &IniSection = ini.section("AMCV").unwrap();
-        let obj: ObjectType =
-            ObjectType::from_ini_section("AMCV", section, ObjectCategory::Vehicle);
-        assert_eq!(obj.deploys_into, Some("GACNST".to_string()));
-        assert_eq!(obj.undeploys_into, None);
-    }
-
-    #[test]
     fn test_parse_undeploys_into() {
         let ini: IniFile = IniFile::from_str("[GACNST]\nUndeploysInto=AMCV\nFoundation=4x4\n");
         let section: &IniSection = ini.section("GACNST").unwrap();
@@ -4355,7 +4357,7 @@ mod tests {
         let ini: IniFile = IniFile::from_str(
             "[SMIN]\nEnslaves=SLAV\nSlavesNumber=5\nSlaveRegenRate=500\n\
              SlaveReloadRate=25\nResourceGatherer=yes\nResourceDestination=yes\n\
-             DeploysInto=YAREFN\nStorage=20\nSpeed=3\n",
+             Storage=20\nSpeed=3\n",
         );
         let section: &IniSection = ini.section("SMIN").unwrap();
         let obj: ObjectType =
@@ -4366,7 +4368,6 @@ mod tests {
         assert_eq!(obj.slave_reload_rate, 25);
         assert!(obj.resource_gatherer);
         assert!(obj.resource_destination);
-        assert_eq!(obj.deploys_into, Some("YAREFN".to_string()));
         assert!(!obj.slaved); // SMIN is master, not slave
     }
 

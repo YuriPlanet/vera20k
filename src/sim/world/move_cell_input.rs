@@ -97,9 +97,9 @@ impl Simulation {
     ///
     /// Not modelled, each answering another action where native reaches it:
     /// the planning rung (Ctrl+Alt or +0x43A, `0x00700815..0x007008A3`); the
-    /// attack rungs (`0x007008A6..0x00700AB4`: Ctrl, an enemy wall, a
-    /// destroyable cliff, a veinhole, a fogged building, a TerrainFire weapon
-    /// over a tree); a Unit harvester over ore or weeds
+    /// attack rungs (`0x007008A6..0x00700AB4`), which callers ask first
+    /// (Ctrl's forced shot, and [`Self::cell_attack_rung_admits`]); a Unit
+    /// harvester over ore or weeds
     /// (`0x007405F5..0x007406C3`, app-side in the cursor and the click); a
     /// tube entrance (Unit `0x007406CF`, Infantry `0x0051F9AC`); a JumpJet
     /// soldier over a tube's neighbourhood, which answers 0
@@ -188,6 +188,95 @@ impl Simulation {
             _ => {}
         }
         Ok(action)
+    }
+
+    /// Whether Techno What_Action on a Cell (`0x00700600`) reaches its
+    /// unforced Attack rung for `id` (`0x007008A6..0x007009F1`). The caller
+    /// then resolves that rung's tail (vt+0xA0 or InRange, answering 5) the
+    /// way it resolves a forced shot at the Cell. In order:
+    /// - 0 for a berserk or warped object (`0x00700609`, `0x00700731`,
+    ///   `0x00700743`), and the rung needs a human player's object
+    ///   (`0x007008AC`) holding a current weapon (vt+0x3F4, `0x007008BD`);
+    /// - the Cell must hold a LegalTarget overlay (`0x0070092E..0x0070093E`)
+    ///   or be a destroyable cliff (`0x00486900`) for a warhead without
+    ///   `Fire=` (`0x00700908..0x00700924`);
+    /// - then it attacks with no overlay (the cliff), a live veinhole monster,
+    ///   or a Wall overlay its owner (`CellClass+0x50`) is not allied with
+    ///   (`0x0070097E`), when the warhead has `Wall=`, or `Wood=` against an
+    ///   `Armor=wood` overlay (`0x007009C8..0x007009F1`).
+    ///
+    /// Residuals: the planning rung before it answers for an object whose
+    /// +0x43A is set (`0x00700840`; FootClass::ActivatePlanningWaypoint sets
+    /// it at `0x004DC8D3`), which VERA does not model; the fogged-object scan
+    /// behind the scenario's FogOfWar flag
+    /// (`0x00700761..0x0070080F`: a fogged overlay replaces the live one and
+    /// a fogged enemy building admits the rung) and the veinhole monster
+    /// (`0x00700990`, no VERA owner) are not modelled; the later TerrainFire
+    /// rung (vt+0x398, `0x00700A46`) is not either.
+    pub fn cell_attack_rung_admits(
+        &self,
+        id: u64,
+        cell: (u16, u16),
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+    ) -> bool {
+        let Some(entity) = self.substrate.entities.get(id) else {
+            return false;
+        };
+        if entity.berserk.is_active()
+            || entity.is_warped_out()
+            || entity.is_warping_in()
+            || !self.house_is_human_player(entity.owner())
+        {
+            return false;
+        }
+        let Some(object) = self.interner.object_type(entity.type_ref(), rules) else {
+            return false;
+        };
+        let Some(weapon) = crate::sim::combat::combat_weapon::current_weapon(
+            entity,
+            object,
+            &self.substrate.entities,
+            rules,
+            &self.interner,
+        ) else {
+            return false;
+        };
+        let warhead = weapon
+            .warhead
+            .as_deref()
+            .and_then(|name| rules.warhead(name));
+        let overlay_cell = self
+            .overlay_grid
+            .as_ref()
+            .map(|grid| grid.cell(cell.0, cell.1));
+        let overlay = overlay_cell
+            .and_then(|cell| cell.overlay_id)
+            .and_then(|overlay_id| registry?.flags(overlay_id));
+        let cliff = self
+            .resolved_terrain
+            .as_ref()
+            .is_some_and(|terrain| terrain.is_destroyable_cliff(cell.0, cell.1))
+            && !warhead.is_some_and(|warhead| warhead.fire);
+        if !(overlay.is_some_and(|overlay| overlay.legal_target) || cliff) {
+            return false;
+        }
+        let Some(overlay) = overlay else {
+            return true;
+        };
+        let enemy_owned = overlay_cell
+            .and_then(|cell| cell.wall_owner)
+            .is_some_and(|owner| {
+                !crate::map::houses::is_allied_with(
+                    &self.house_alliances,
+                    self.interner.resolve(owner),
+                    self.interner.resolve(entity.owner()),
+                )
+            });
+        enemy_owned
+            && overlay.wall
+            && warhead
+                .is_some_and(|warhead| warhead.wall || (warhead.wood && overlay.armor_is_wood))
     }
 
     /// `MapClass::IsShrouded @ 0x00586360` for `viewer` at a clicked Cell's

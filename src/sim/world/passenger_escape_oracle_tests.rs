@@ -163,6 +163,12 @@ fn scene(input: &Value) -> Scene {
         }
     }
     sim.session.game_mode_nonzero = true;
+    // A selected human transport is the local player's (IsHumanPlayer
+    // `0x0050B6F0` in a nonzero mode); its escapees pass Select's
+    // ownership gate (`0x006FBFA0`).
+    if human {
+        sim.session.current_house = Some(americans);
+    }
     sim.session.binary_frame = input["frame"].as_u64().unwrap_or(200) as u32;
     let frame = sim.session.binary_frame;
 

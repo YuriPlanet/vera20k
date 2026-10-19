@@ -27,8 +27,6 @@ path = "bin/sim-bench.rs"
 [features]
 # The client's Ctrl+Shift dev chord reaches simulation and utility hooks.
 dev-overlays = []
-# The client's egui diagnostic panels; implies `dev-overlays` as there.
-dev-ui = ["dev-overlays"]
 # Test fixtures and helpers that client tests share; the client enables it
 # through its dev-dependency.
 test-support = []

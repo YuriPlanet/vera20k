@@ -1143,7 +1143,11 @@ use crate::util::save_codec;
 // 421 -> 422: the drain link retains the drainer's DrainAnim (Techno+0x1D4).
 // 422 -> 423: processed TechnoTypes retain their per-pass weapon block and
 // ParticleSystemTypes their HoldsWhat binding in saved Rules resources.
-const SNAPSHOT_VERSION: u32 = 423;
+// 423 -> 424: processed Types retain their Image, DeathWeapon, DeploysInto,
+// occupy weapons, SuperWeapon WeaponType and ShrapnelWeapon, and process
+// Rules state its [CombatDamage] DeathWeapon.
+// 424 -> 425: Scenario retains TrainCrate, TruckCrate and the raw ice-growth byte.
+const SNAPSHOT_VERSION: u32 = 425;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -4867,7 +4871,9 @@ mod tests {
         // 420 -> 421: process Rules retain TalkBubbleTime.
         // 421 -> 422: the drain link retains the drainer's DrainAnim.
         // 422 -> 423: retained weapon blocks and HoldsWhat bindings.
-        assert_eq!(super::SNAPSHOT_VERSION, 423);
+        // 423 -> 424: retained Type references and Rules DeathWeapon.
+        // 424 -> 425: Scenario cargo flags and the ice-growth byte.
+        assert_eq!(super::SNAPSHOT_VERSION, 425);
     }
 
     #[test]

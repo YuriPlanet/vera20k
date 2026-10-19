@@ -1,9 +1,9 @@
 {
   "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
   "commands": [
-    "RA2_DIR=/home/vera/ra2 PYTHONPATH=. /home/vera/venv/bin/python /home/vera/scratch/trigger-meteor-effects/constructors.py",
-    "RA2_DIR=/home/vera/ra2 PYTHONPATH=. /home/vera/venv/bin/python /home/vera/scratch/trigger-meteor-effects/flight_controls.py",
-    "PYTHONPATH=. /home/vera/venv/bin/python /home/vera/scratch/trigger-meteor-effects/pin_numeric.py"
+    "RA2_DIR=~/ra2 PYTHONPATH=. ~/venv/bin/python ~/scratch/trigger-meteor-effects/constructors.py",
+    "RA2_DIR=~/ra2 PYTHONPATH=. ~/venv/bin/python ~/scratch/trigger-meteor-effects/flight_controls.py",
+    "PYTHONPATH=. ~/venv/bin/python ~/scratch/trigger-meteor-effects/pin_numeric.py"
   ],
   "scope": "Original Anim meteor constructor numeric path and compensation of Bounce.Update. Consumed by world/meteor_numeric_tests.rs. No source hash pins.",
   "assumptions": [

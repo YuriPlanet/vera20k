@@ -29,7 +29,6 @@ fn browser_admission_keeps_empty_descriptions_and_uses_file_time() {
     repository
         .write_named("incompatible.bin", &save_codec::serialize(&header).unwrap())
         .unwrap();
-    assert_eq!(repository.panel_entries_by_embedded_time().len(), 1);
     let entries = repository.browser_entries();
     // Native559ED0 reads metadata and records internal-version mismatch;
     // 5596A0 sorts every readable row before5599DF hides incompatible rows.

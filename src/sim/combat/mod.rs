@@ -119,7 +119,7 @@ mod walk_attack_tests;
 
 pub use attack_target::{TarCom, TargetKind};
 pub(crate) use attack_target::{object_distance_to, resolve_target_coords, target_present};
-pub(crate) use combat_targeting::{acquire_best_target_for_entity, build_attacker_snapshot};
+pub(crate) use combat_targeting::build_attacker_snapshot;
 pub(crate) use detonation_anim::projectile_impact_cell;
 pub(crate) use effects::DeathEffects;
 pub use effects::{

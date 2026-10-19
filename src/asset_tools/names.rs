@@ -8,9 +8,6 @@
 //! Lookups are by `HashMap`, not a linear scan — `ls` resolves one name per entry
 //! and archives run to hundreds of entries.
 //!
-//! Moved here from the mix-browser binary so the library owns it; that binary now
-//! delegates to these functions.
-//!
 //! ## Dependency rules
 //! - Depends on `assets/` only.
 

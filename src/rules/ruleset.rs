@@ -4198,6 +4198,8 @@ impl RuleSet {
         rules.general.weather_con_bolt_explosion = weather_anim.to_owned();
         rules.general.weapon_nullify_anim = nullify_anim.to_owned();
         rules.combat_damage.splash_list = splash.to_vec();
+        rules.combat_damage.death_weapon =
+            processed.combat_damage_death_weapon().map(str::to_owned);
         for (name, conventional, em_effect, anim_list) in processed.warhead_anim_states() {
             if let Some(warhead) = rules
                 .warheads
@@ -4226,9 +4228,9 @@ impl RuleSet {
         ] = processed.survivor_divisors();
         rules.general.maximum_cheer_rate = processed.maximum_cheer_rate();
         let mut weapon_name_counts = HashMap::<String, usize>::new();
-        for (name, ..) in processed.weapon_states() {
+        for weapon in processed.weapon_states() {
             *weapon_name_counts
-                .entry(name.to_ascii_uppercase())
+                .entry(weapon.id.to_ascii_uppercase())
                 .or_default() += 1;
         }
         let mut warhead_name_counts = HashMap::<String, usize>::new();
@@ -4237,17 +4239,17 @@ impl RuleSet {
                 .entry(name.to_ascii_uppercase())
                 .or_default() += 1;
         }
-        for (name, _, _, _, warhead) in processed.weapon_states() {
+        for weapon in processed.weapon_states() {
             // Abstract410800 truncates stored IDs to24 bytes, but native
             // FindOrAllocate compares the full incoming name. Do not alias two
             // such Types through Action42's ordinal lookup. The wider existing
             // name-projection limitation remains issue1784, without rejecting
             // unrelated custom scenarios at load.
-            let unambiguous = weapon_name_counts[&name.to_ascii_uppercase()] == 1
-                && warhead.is_none_or(|name| {
+            let unambiguous = weapon_name_counts[&weapon.id.to_ascii_uppercase()] == 1
+                && weapon.warhead.is_none_or(|name| {
                     warhead_name_counts.get(&name.to_ascii_uppercase()) == Some(&1)
                 });
-            rules.weapon_array.push((name.to_owned(), unambiguous));
+            rules.weapon_array.push((weapon.id.to_owned(), unambiguous));
         }
         for (name, speed_type) in processed.unit_speed_type_states() {
             if let Some(object) = rules
@@ -4312,6 +4314,19 @@ impl RuleSet {
                 .find(|object| object.category == category && object.id == name)
             {
                 object.gunner_turrets = *gunner_turrets;
+            }
+        }
+        for (category, name, references) in processed.techno_reference_states() {
+            if let Some(object) = rules
+                .object_list
+                .iter_mut()
+                .find(|object| object.category == category && object.id == name)
+            {
+                object.image = references.image().to_owned();
+                object.death_weapon = references.death_weapon().map(str::to_owned);
+                object.deploys_into = references.deploys_into().map(str::to_owned);
+                object.occupy_weapon = references.occupy_weapon().map(str::to_owned);
+                object.elite_occupy_weapon = references.elite_occupy_weapon().map(str::to_owned);
             }
         }
         for (name, pips) in processed.infantry_pip_states() {
@@ -4385,6 +4400,24 @@ impl RuleSet {
                 .find(|projectile| projectile.id.eq_ignore_ascii_case(name))
             {
                 art.apply_to(projectile);
+            }
+        }
+        for (name, weapon) in processed.shrapnel_weapon_states() {
+            if let Some(projectile) = rules
+                .projectiles
+                .values_mut()
+                .find(|projectile| projectile.id.eq_ignore_ascii_case(name))
+            {
+                projectile.shrapnel_weapon = weapon.map(str::to_owned);
+            }
+        }
+        for (name, weapon) in processed.super_weapon_weapon_states() {
+            if let Some(super_weapon) = rules
+                .super_weapons
+                .values_mut()
+                .find(|super_weapon| super_weapon.id.eq_ignore_ascii_case(name))
+            {
+                super_weapon.weapon_type = weapon.map(str::to_owned);
             }
         }
         Ok(rules)
@@ -4834,19 +4867,20 @@ impl RuleSet {
         // OccupyWeapon, SuperWeapon WeaponType, [CombatDamage] DeathWeapon,
         // Projectile AirburstWeapon/ShrapnelWeapon, ...) and keeps each one
         // even when nothing current references it: Action42 indexes this
-        // family directly (6E2390). Its retained Damage, Speed, Projectile and
-        // Warhead are the only reads of those keys.
+        // family directly (6E2390). Its retained Damage, Speed, Range,
+        // Projectile and Warhead are the only reads of those keys.
         let mut weapons: LookupMap<String, WeaponType> = LookupMap::default();
-        for (weapon_id, speed, projectile, damage, warhead) in processed.weapon_states() {
-            let Some(section) = ini.section(weapon_id) else {
-                log::trace!("Weapon '{}' allocated but has no section", weapon_id);
+        for state in processed.weapon_states() {
+            let Some(section) = ini.section(state.id) else {
+                log::trace!("Weapon '{}' allocated but has no section", state.id);
                 continue;
             };
             let mut weapon = WeaponType::from_ini_section(&section.name, section);
-            weapon.speed = speed;
-            weapon.projectile = projectile.map(str::to_owned);
-            weapon.damage = damage;
-            weapon.warhead = warhead.map(str::to_owned);
+            weapon.speed = state.speed;
+            weapon.range_leptons = state.range_leptons;
+            weapon.projectile = state.projectile.map(str::to_owned);
+            weapon.damage = state.damage;
+            weapon.warhead = state.warhead.map(str::to_owned);
             weapons.insert(section.name.clone(), weapon);
         }
 
@@ -5490,8 +5524,16 @@ impl RuleSet {
     /// slices and are not claimed by this hash yet.
     pub fn simulation_config_hash(&self) -> u64 {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        b"rules-simulation-config-v21".hash(&mut hasher);
+        b"rules-simulation-config-v23".hash(&mut hasher);
         self.source_ini_hash.hash(&mut hasher);
+        // UnitType747734 retains CarriesCrate across later absent/invalid
+        // keys; equal current source text can still mean different cargo.
+        self.object_list
+            .iter()
+            .filter(|object| object.category == ObjectCategory::Vehicle)
+            .map(|object| (object.id.to_ascii_uppercase(), object.carries_crate()))
+            .collect::<BTreeMap<_, _>>()
+            .hash(&mut hasher);
         // Global construction order changes which category106 mutates when
         // IDs coincide. Current TechLevels can also differ after retained
         // default reads even when the compatibility INI is identical.
@@ -5580,6 +5622,37 @@ impl RuleSet {
             })
             .collect::<BTreeMap<_, _>>()
             .hash(&mut hasher);
+        // The ordered Rules processor retains these references through
+        // missing keys and later passes (Image +1F8, DeathWeapon +D18,
+        // DeploysInto +404, OccupyWeapon +E04, EliteOccupyWeapon +E20,
+        // ShrapnelWeapon +2B4, SuperWeapon WeaponType +9C).
+        b"retained-type-references-v1".hash(&mut hasher);
+        self.object_list
+            .iter()
+            .map(|object| {
+                (
+                    (object.category, object.id.to_ascii_uppercase()),
+                    (
+                        &object.image,
+                        &object.death_weapon,
+                        &object.deploys_into,
+                        &object.occupy_weapon,
+                        &object.elite_occupy_weapon,
+                    ),
+                )
+            })
+            .collect::<BTreeMap<_, _>>()
+            .hash(&mut hasher);
+        self.projectiles
+            .iter()
+            .map(|(id, projectile)| (id.to_ascii_uppercase(), &projectile.shrapnel_weapon))
+            .collect::<BTreeMap<_, _>>()
+            .hash(&mut hasher);
+        self.super_weapons
+            .iter()
+            .map(|(id, super_weapon)| (id.to_ascii_uppercase(), &super_weapon.weapon_type))
+            .collect::<BTreeMap<_, _>>()
+            .hash(&mut hasher);
         self.general.missile_rot_var.to_bits().hash(&mut hasher);
         self.general.safety_altitude.hash(&mut hasher);
         self.general.line_trail_color_override.hash(&mut hasher);
@@ -5588,6 +5661,7 @@ impl RuleSet {
         self.general.weather_con_bolt_explosion.hash(&mut hasher);
         self.general.weapon_nullify_anim.hash(&mut hasher);
         self.combat_damage.splash_list.hash(&mut hasher);
+        self.combat_damage.death_weapon.hash(&mut hasher);
         // The live family order is independent of HashMap iteration and may
         // survive earlier passes absent from the current source stack.
         self.weapon_array.hash(&mut hasher);
@@ -5612,6 +5686,7 @@ impl RuleSet {
                             &weapon.projectile,
                             weapon.damage,
                             &weapon.warhead,
+                            weapon.range_leptons,
                         ),
                         (
                             weapon.is_laser,
@@ -10722,6 +10797,56 @@ Projectile=Invisible
             first.simulation_config_hash(),
             second.simulation_config_hash()
         );
+    }
+
+    /// The ordered processor retains each reference and the weapon range
+    /// through missing keys and later passes, so equal current text can carry
+    /// different values. Each one is part of the identity.
+    #[test]
+    fn simulation_config_hash_covers_retained_references_and_range() {
+        fn unit(rules: &mut RuleSet) -> &mut ObjectType {
+            rules
+                .object_list
+                .iter_mut()
+                .find(|object| object.id == "UNIT")
+                .unwrap()
+        }
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[VehicleTypes]\n0=UNIT\n[UNIT]\nPrimary=GUN\n\
+             [GUN]\nRange=5\nProjectile=SHOT\n[SHOT]\n\
+             [SuperWeaponTypes]\n0=NUKE\n[NUKE]\nType=MultiMissile\n",
+        ))
+        .unwrap();
+        let base = rules.simulation_config_hash();
+        let edits: [(&str, fn(&mut RuleSet)); 8] = [
+            ("Image", |rules| unit(rules).image = "OTHER".into()),
+            ("DeathWeapon", |rules| {
+                unit(rules).death_weapon = Some("GUN".into());
+            }),
+            ("DeploysInto", |rules| {
+                unit(rules).deploys_into = Some("GUN".into());
+            }),
+            ("OccupyWeapon", |rules| {
+                unit(rules).occupy_weapon = Some("GUN".into());
+            }),
+            ("EliteOccupyWeapon", |rules| {
+                unit(rules).elite_occupy_weapon = Some("GUN".into());
+            }),
+            ("Range", |rules| {
+                rules.weapons.get_mut("GUN").unwrap().range_leptons = 1;
+            }),
+            ("ShrapnelWeapon", |rules| {
+                rules.projectiles.get_mut("SHOT").unwrap().shrapnel_weapon = Some("GUN".into());
+            }),
+            ("WeaponType", |rules| {
+                rules.super_weapons.get_mut("NUKE").unwrap().weapon_type = Some("GUN".into());
+            }),
+        ];
+        for (key, edit) in edits {
+            let mut changed = rules.clone();
+            edit(&mut changed);
+            assert_ne!(changed.simulation_config_hash(), base, "{key}");
+        }
     }
 
     #[test]

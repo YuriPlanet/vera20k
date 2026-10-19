@@ -26,7 +26,6 @@ use crate::sim::world::FrameEffects;
 use crate::sim::world::Simulation;
 use crate::util::direction_tables::CELL_DELTAS;
 
-use crate::sim::debug_event_log::DebugEventKind;
 use crate::sim::intern::InternedId;
 
 use crate::sim::movement::ground_pose::{object_get_coords, object_world_z_leptons};
@@ -129,8 +128,6 @@ pub(super) struct MinerSnapshot {
     /// Handler return value: frames until the next dispatch, written into the
     /// common mission dispatcher after the handler effects are committed.
     pub(super) dispatch_delay: i32,
-    /// Buffered miner state change events — flushed to entity at commit.
-    pub(super) debug_events: Vec<(String, String)>,
 }
 
 /// Build the dispatch snapshot for one live, non-dying, non-slave miner.
@@ -164,29 +161,19 @@ pub(super) fn build_miner_snapshot(sim: &Simulation, id: u64) -> Option<MinerSna
         miner: miner.clone(),
         state: cursor.unwrap_or(MinerState::SearchOre),
         dispatch_delay: DISPATCH_NEXT_FRAME,
-        debug_events: Vec::new(),
     })
 }
 
-/// Commit one dispatched snapshot back to the entity: miner mutations, the
+/// Commit one dispatched snapshot back to the entity: miner mutations and the
 /// FSM cursor of record (`MissionCom::handler_state`, which
 /// `UnitClass::Mission_Harvest @ 0x0073E5E0` stores at
-/// `0x0073E714..0x0073EE68`) and buffered debug events.
+/// `0x0073E714..0x0073EE68`).
 pub(super) fn commit_miner_snapshot(sim: &mut Simulation, snap: &MinerSnapshot) {
     let Some(entity) = sim.substrate.entities.get_mut(snap.entity_id) else {
         return;
     };
     entity.miner = Some(snap.miner.clone());
     entity.mission.set_handler_state(snap.state.cursor());
-    for (from, to) in &snap.debug_events {
-        entity.push_debug_event(
-            sim.session.tick as u32,
-            DebugEventKind::MinerStateChange {
-                from: from.clone(),
-                to: to.clone(),
-            },
-        );
-    }
 }
 
 /// Whether the unit's mission is Harvest, as `UnitClass::AI` asks it at
@@ -282,7 +269,6 @@ pub(super) fn process_miner(
                 .get(snap.entity_id)
                 .map_or(0, |entity| entity.native_stage().value()),
         );
-        snap.debug_events.push((state_before, state_after));
     }
 }
 

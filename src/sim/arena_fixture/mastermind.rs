@@ -34,8 +34,8 @@ impl MindScene {
         assert_eq!(weapon.warhead.as_deref(), Some("Controller"));
         assert!(rules.projectile("PsychicControl").unwrap().inviso);
         assert!(rules.warhead("Controller").unwrap().mind_control);
-        assert_eq!(weapon.range, SimFixed::from_num(6));
-        assert!(rules.weapon("105mm").unwrap().range < weapon.range);
+        assert_eq!(weapon.range_leptons, 6 * 256);
+        assert!(rules.weapon("105mm").unwrap().range_leptons < weapon.range_leptons);
         assert_eq!(rules.mind_control.overload_count, [3, 6, 10, 50]);
         assert_eq!(rules.mind_control.overload_damage, [0, 50, 100, 500]);
         assert_eq!(rules.bridge_warheads.c4_name, "Super");

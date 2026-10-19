@@ -18,7 +18,6 @@
 //! - Part of sim/ — depends on sim/game_entity, sim/entity_store, sim/locomotor.
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.
 
-use crate::sim::debug_event_log::DebugEventKind;
 use crate::sim::entity_store::EntityStore;
 use crate::sim::world::FrameEffects;
 
@@ -38,13 +37,6 @@ pub fn begin_parachute_descent(entities: &mut EntityStore, entity_id: u64, drop_
     };
 
     entity.begin_parachute_fall(drop_z);
-
-    entity.push_debug_event(
-        0,
-        DebugEventKind::SpecialMovementStart {
-            kind: "Parachute".into(),
-        },
-    );
     true
 }
 
@@ -308,7 +300,6 @@ impl crate::sim::world::Simulation {
             return true;
         };
         entity.finish_fall();
-        entity.push_debug_event(self.session.tick as u32, DebugEventKind::SpecialMovementEnd);
         true
     }
 }

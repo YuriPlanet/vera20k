@@ -128,10 +128,8 @@ pub struct ProjectileType {
     color_scheme: i32,
 
     // --- String/reference fields ---
-    /// Weapon fired on airburst detonation (weapon type name).
-    #[cfg(test)]
-    pub airburst_weapon: Option<String>,
-    /// Weapon fired for each shrapnel fragment (weapon type name).
+    /// `ShrapnelWeapon=` (+2B4), the WeaponType fired for each shrapnel
+    /// fragment, as the ordered Rules processor resolved it.
     pub shrapnel_weapon: Option<String>,
     /// Current native Image25 text; SHP admission is separately retained below.
     pub image: Option<String>,
@@ -419,15 +417,8 @@ impl ProjectileType {
             // Constructor46BCA4. Resolution requires the pass-local Colors
             // registry and is supplied by the retained rules processor.
             color_scheme: 0,
-            // ReadString 0x80 ahead of each weapon lookup (`0x0046C2B9`,
-            // `0x0046C2F8`).
-            #[cfg(test)]
-            airburst_weapon: section
-                .read_name("AirburstWeapon", 0x80)
-                .map(str::to_string),
-            shrapnel_weapon: section
-                .read_name("ShrapnelWeapon", 0x80)
-                .map(str::to_string),
+            // Constructor null; only the ordered Process owner reads it.
+            shrapnel_weapon: None,
             image: None,
             image_load: None,
             voxel_image_load: None,
@@ -552,7 +543,6 @@ mod tests {
         // Color defaults
         assert_eq!(proj.color_scheme(), 0);
         // String fields default to None
-        assert!(proj.airburst_weapon.is_none());
         assert!(proj.shrapnel_weapon.is_none());
         assert!(proj.trailer.is_none());
     }
@@ -613,14 +603,12 @@ mod tests {
     #[test]
     fn test_string_fields() {
         let ini: IniFile = IniFile::from_str(
-            "[V3Rocket]\nImage=V3RocketImage\nAirburstWeapon=V3Warhead\nShrapnelWeapon=ShrapWep\n[V3RocketImage]\nTrailer=V3TRAIL\n",
+            "[V3Rocket]\nImage=V3RocketImage\n[V3RocketImage]\nTrailer=V3TRAIL\n",
         );
         let section = ini.section("V3Rocket").unwrap();
         let image_section = ini.section("V3RocketImage").unwrap();
         let proj = ProjectileType::from_ini_section("V3Rocket", section, Some(image_section));
 
-        assert_eq!(proj.airburst_weapon.as_deref(), Some("V3Warhead"));
-        assert_eq!(proj.shrapnel_weapon.as_deref(), Some("ShrapWep"));
         assert_eq!(proj.trailer.as_deref(), Some("V3TRAIL"));
     }
 

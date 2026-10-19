@@ -41,10 +41,6 @@ pub(crate) fn tps_for_game_speed(stored_speed: u32) -> u32 {
     ((1000 + bucket_ms / 2) / bucket_ms).max(1)
 }
 
-#[cfg(any(feature = "dev-ui", test))]
-pub(crate) fn default_yr_skirmish_tps() -> u32 {
-    tps_for_game_speed(DEFAULT_YR_SKIRMISH_GAME_SPEED)
-}
 /// Next right-click order mode selected via hotkey.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum OrderMode {
@@ -262,12 +258,12 @@ mod tests {
     #[test]
     fn default_skirmish_speed_uses_verified_yr_stored_speed_one() {
         assert_eq!(DEFAULT_YR_SKIRMISH_GAME_SPEED, 1);
-        assert_eq!(default_yr_skirmish_tps(), 63);
+        assert_eq!(tps_for_game_speed(DEFAULT_YR_SKIRMISH_GAME_SPEED), 63);
     }
 
     #[test]
     fn game_speed_one_is_not_the_old_speed_two_or_options_three_calibration() {
-        let default = default_yr_skirmish_tps();
+        let default = tps_for_game_speed(DEFAULT_YR_SKIRMISH_GAME_SPEED);
         assert_ne!(default, tps_for_game_speed(2));
         assert_ne!(default, tps_for_game_speed(3));
     }

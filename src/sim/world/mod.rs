@@ -131,7 +131,7 @@ pub use techno_ai::{BuildingDelayedFire, DelayedFire};
 pub(crate) use techno_ai::{can_fire_at, weapon_at_index};
 mod command_schedule;
 mod planning;
-pub use planning::{PlanningBadgeKind, PlanningDrawSegment};
+pub use planning::{PlanningBadgeKind, PlanningDrawSegment, PlanningPressRefusal};
 mod selection_voice;
 pub(crate) mod techno_ai_cloak;
 pub(crate) mod unit_post;
@@ -1401,10 +1401,6 @@ pub struct Simulation {
     /// Built from [General] rules at map load.
     #[serde(skip)]
     pub terrain_speed_config: terrain_speed::TerrainSpeedConfig,
-    /// When true, newly spawned entities get a `DebugEventLog` allocated.
-    /// Toggled by the debug inspector hotkey (X). Debug-only — not included in state hashing.
-    #[serde(skip)]
-    pub debug_event_logging: bool,
     /// Negotiated lockstep ahead window. Offline producers stamp the current
     /// raw issue ordinal; a network transfer owner overwrites that stamp with
     /// `send_current + MaxAhead` before synchronized dispatch.
@@ -3446,7 +3442,6 @@ impl Simulation {
             psychic_dominator: Default::default(),
             ion_blasts: Vec::new(),
             terrain_speed_config: terrain_speed::TerrainSpeedConfig::default(),
-            debug_event_logging: false,
             input_delay_ticks: u64::from(crate::util::config::default_input_delay_ticks()),
             quit_requested: false,
             executed_exit_owner: None,
@@ -4126,19 +4121,6 @@ impl Simulation {
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn drain_trigger_effects(&mut self) -> Vec<TriggerEffect> {
         std::mem::take(&mut self.trigger_effects)
-    }
-
-    /// Enable or disable per-entity debug event logging (F10 boundary method:
-    /// the app toggles, sim owns the write). Flips the spawn-time flag and
-    /// reconciles every existing entity, so existing and future entities
-    /// always agree with the toggle. Enabling preserves logs an entity
-    /// already accumulated; disabling drops them all.
-    #[cfg(any(feature = "dev-overlays", test))]
-    pub fn set_debug_event_logging(&mut self, enabled: bool) {
-        self.debug_event_logging = enabled;
-        for entity in self.substrate.entities.values_mut() {
-            entity.set_debug_logging(enabled);
-        }
     }
 
     /// Tell the fog that presentation prepared a view for the named owner

@@ -1019,6 +1019,8 @@ fn the_reselect_memo_stays_out_of_the_peer_hash() {
         let mut arena = Arena::new(&rules);
         let dog = arena.spawn(&rules, "DOG", "Russians", (10, 10));
         let gi = arena.spawn(&rules, "E1", "Americans", (11, 10));
+        // Skirmish: IsHumanPlayer (`0x0050B6F0`) is the local player.
+        arena.sim.session.game_mode_nonzero = true;
         arena.sim.session.current_house = Some(arena.sim.interner.intern(local));
         arena
             .sim

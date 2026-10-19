@@ -334,6 +334,18 @@ pub(crate) fn current_cursor_feedback_kind(state: &AppState) -> Option<CursorFee
             return feedback;
         }
     }
+    if let Some(feedback) = unforced_cell_attack_feedback(
+        sim,
+        owner_id,
+        best_id,
+        (hover_rx, hover_ry),
+        modifier,
+        selected.len(),
+        state.rules(),
+        state.overlay_registry(),
+    ) {
+        return Some(feedback);
+    }
     Some(empty_cell_feedback(
         state,
         sim,
@@ -342,6 +354,50 @@ pub(crate) fn current_cursor_feedback_kind(state: &AppState) -> Option<CursorFee
         (hover_rx, hover_ry),
         modifier,
     ))
+}
+
+/// Techno What_Action on a Cell's unforced Attack rung
+/// ([`Simulation::cell_attack_rung_admits`]) precedes its Shift and Move
+/// rungs, so it answers under every chord but Ctrl (the forced rung above)
+/// and Ctrl+Alt. Its tail is the forced shot's; an answer other than Attack
+/// falls through to the Move rungs. Foot's shroud wrapper turns it back into
+/// Move or NoMove over a shrouded Cell (`0x004DDE64..0x004DDEBE`); the
+/// Building wrapper (`0x00447540`) keeps a building's Attack there.
+///
+/// [`Simulation::cell_attack_rung_admits`]: crate::sim::world::Simulation::cell_attack_rung_admits
+#[allow(clippy::too_many_arguments)]
+fn unforced_cell_attack_feedback(
+    sim: &crate::sim::world::Simulation,
+    viewer: Option<crate::sim::intern::InternedId>,
+    best_id: Option<u64>,
+    cell: (u16, u16),
+    modifier: crate::app::input::context_order::OrderModifier,
+    selected_count: usize,
+    rules: Option<&crate::rules::ruleset::RuleSet>,
+    overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+) -> Option<CursorFeedbackKind> {
+    use crate::app::input::context_order::OrderModifier;
+    let id = best_id?;
+    let foot = sim
+        .entities()
+        .get(id)
+        .is_some_and(|entity| entity.category() != crate::map::entities::EntityCategory::Structure);
+    if matches!(
+        modifier,
+        OrderModifier::ForceFire | OrderModifier::GuardArea
+    ) || (foot
+        && viewer.is_some_and(|viewer| sim.clicked_cell_is_shrouded(viewer, cell) == Ok(true)))
+        || !sim.cell_attack_rung_admits(id, cell, rules?, overlay_registry)
+    {
+        return None;
+    }
+    let target = combat::TargetKind::Cell(cell.0, cell.1);
+    match force_fire_feedback(sim, id, &target, selected_count, rules, overlay_registry)? {
+        Some(feedback @ (CursorFeedbackKind::EnemyUnit | CursorFeedbackKind::EnemyOutOfRange)) => {
+            Some(feedback)
+        }
+        _ => None,
+    }
 }
 
 /// The cursor over a Cell with no object offered: the resolved object's
@@ -2050,6 +2106,129 @@ mod tests {
             Some(None),
             "native Action0 must preserve the default arrow, not attack or NoMove"
         );
+    }
+
+    // Techno700600's unforced Attack rung (0x007008A6..0x007009F1): an
+    // enemy-owned Wall overlay under a Wall= warhead answers Attack under a
+    // plain chord, through the forced shot's tail; an own wall, Ctrl+Alt and
+    // a warhead without Wall= stay on the Move rungs.
+    #[test]
+    fn an_enemy_wall_takes_the_unforced_attack_cursor() {
+        use crate::app::input::context_order::OrderModifier;
+        use crate::map::resolved_terrain::ResolvedTerrainGrid;
+        let ini = IniFile::from_str(
+            "[InfantryTypes]
+             [VehicleTypes]
+             0=MTNK
+             1=LTNK
+             [AircraftTypes]
+             [BuildingTypes]
+             [MTNK]
+             Strength=300
+             Primary=105mm
+             Speed=6
+             SpeedType=Track
+             MovementZone=Normal
+             Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}
+             [LTNK]
+             Strength=300
+             Primary=Saw
+             Speed=6
+             SpeedType=Track
+             MovementZone=Normal
+             Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}
+             [WeaponTypes]
+             0=105mm
+             1=Saw
+             [105mm]
+             Damage=60
+             Range=5
+             Warhead=AP
+             [Saw]
+             Damage=60
+             Range=5
+             Warhead=Wd
+             [Warheads]
+             0=AP
+             1=Wd
+             [AP]
+             Wall=yes
+             [Wd]
+             Wood=yes
+             [OverlayTypes]
+             0=GAWALL
+             1=FENCE
+             2=BARRIER
+             [GAWALL]
+             Wall=yes
+             [FENCE]
+             Wall=yes
+             Armor=wood
+             [BARRIER]
+             Wall=yes
+             LegalTarget=no
+",
+        );
+        let rules = RuleSet::from_ini(&ini).expect("wall rules");
+        let registry = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(&ini, None);
+        let wall = registry.id_for_name("GAWALL").expect("GAWALL registered");
+        let mut sim = Simulation::new();
+        sim.resolve_type_handles(&rules);
+        let tank = sim
+            .spawn_object("MTNK", "Americans", 2, 2, 0, &rules)
+            .expect("tank spawned");
+        let saw = sim
+            .spawn_object("LTNK", "Americans", 3, 3, 0, &rules)
+            .expect("saw tank spawned");
+        let owner = sim.entities().get(tank).unwrap().owner();
+        sim.session.game_mode_nonzero = true;
+        sim.session.current_house = Some(owner);
+        sim.install_resolved_terrain_for_new_map(ResolvedTerrainGrid::from_cells(
+            32,
+            32,
+            (0..32)
+                .flat_map(|y| {
+                    (0..32).map(move |x| crate::map::resolved_terrain::test_flat_cell(x, y))
+                })
+                .collect(),
+        ));
+        let enemy = sim.interner.intern("Russians");
+        let mut grid = crate::sim::overlay_grid::OverlayGrid::new(32, 32);
+        grid.place_owned_wall(4, 2, wall, 0, enemy);
+        grid.place_owned_wall(2, 4, wall, 0, owner);
+        sim.fog = crate::sim::vision::FogState::new(32, 32);
+        sim.fog
+            .reveal_cells_for_owner(owner, (0..32).flat_map(|y| (0..32).map(move |x| (x, y))));
+        sim.overlay_grid = Some(grid);
+        let feedback = |cell, modifier| {
+            super::unforced_cell_attack_feedback(
+                &sim,
+                Some(owner),
+                Some(tank),
+                cell,
+                modifier,
+                1,
+                Some(&rules),
+                Some(&registry),
+            )
+        };
+        assert_eq!(
+            feedback((4, 2), OrderModifier::Normal),
+            Some(CursorFeedbackKind::EnemyUnit)
+        );
+        assert_eq!(feedback((2, 4), OrderModifier::Normal), None);
+        assert_eq!(feedback((4, 2), OrderModifier::GuardArea), None);
+        assert_eq!(feedback((5, 5), OrderModifier::Normal), None);
+        // Wood= reaches only an Armor=wood wall; LegalTarget=no bars the rung.
+        let fence = registry.id_for_name("FENCE").expect("FENCE registered");
+        let barrier = registry.id_for_name("BARRIER").expect("BARRIER registered");
+        let grid = sim.overlay_grid.as_mut().unwrap();
+        grid.place_owned_wall(8, 2, fence, 0, enemy);
+        grid.place_owned_wall(10, 2, barrier, 0, enemy);
+        let admits = |id, cell| sim.cell_attack_rung_admits(id, cell, &rules, Some(&registry));
+        assert!(admits(saw, (8, 2)));
+        assert!(!admits(saw, (4, 2)), "GAWALL is not Armor=wood");
+        assert!(!admits(tank, (10, 2)), "LegalTarget=no");
     }
 
     fn stationary_attack_fixture() -> (Simulation, RuleSet, u64) {

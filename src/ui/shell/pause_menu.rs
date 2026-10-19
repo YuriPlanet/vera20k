@@ -109,7 +109,7 @@ pub struct PauseMenuLayout {
 }
 
 /// Layout uses the same loaded-art geometry as the parent compositor. Control
-/// rectangles are physical pixels; no egui scale or battlefield camera applies.
+/// rectangles are physical pixels; no battlefield camera applies.
 pub fn pause_menu_layout(
     width: i32,
     height: i32,

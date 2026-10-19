@@ -22,7 +22,6 @@ use crate::sim::cloak_disguise::{CloakRuntime, DisguiseRuntime};
 use crate::sim::combat::base_defense_response::BaseDefenseResponseState;
 use crate::sim::combat::{Health, TarCom};
 use crate::sim::components::{NavigationState, Position};
-use crate::sim::debug_event_log::{DebugEventKind, DebugEventLog};
 use crate::sim::intern::InternedId;
 use crate::sim::miner::Miner;
 use crate::sim::mission::{MissionCom, MissionLeafState, MissionType};
@@ -812,10 +811,6 @@ pub struct GameEntity {
     /// attached to a victim, paralysis ([`parasite`](crate::sim::combat::parasite)).
     #[serde(default)]
     pub parasite: crate::sim::combat::parasite::FootParasite,
-    /// Debug event log — records movement/state transitions for the inspector panel.
-    /// Only allocated when debug inspector is active (X hotkey). Not included in state hashing.
-    #[serde(skip)]
-    debug_log: Option<DebugEventLog>,
     /// Techno `+0x508`, a [`SpatialThreat`] that `sim::house_threat` owns.
     ///
     /// [`SpatialThreat`]: crate::sim::house_threat::SpatialThreat
@@ -1569,7 +1564,6 @@ impl GameEntity {
             produce_cash: crate::sim::credit_income::ProduceCash::new(construction_frame),
             drain: Default::default(),
             parasite: crate::sim::combat::parasite::FootParasite::new(construction_frame),
-            debug_log: None,
         }
     }
 
@@ -1708,30 +1702,6 @@ impl GameEntity {
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_fall_rate_for_test(&mut self, rate: i32) {
         self.fall.rate = rate;
-    }
-
-    /// The debug event log, while debug event logging is on. The `dev-ui`
-    /// debug panel reads it.
-    #[cfg(any(test, feature = "dev-ui"))]
-    pub fn debug_log(&self) -> Option<&DebugEventLog> {
-        self.debug_log.as_ref()
-    }
-
-    /// Turn the debug event log on (keeping one the object has) or off
-    /// (dropping it).
-    pub(crate) fn set_debug_logging(&mut self, enabled: bool) {
-        if !enabled {
-            self.debug_log = None;
-        } else if self.debug_log.is_none() {
-            self.debug_log = Some(DebugEventLog::new());
-        }
-    }
-
-    /// Record a debug event if the event log is active. No-op when `debug_log` is `None`.
-    pub fn push_debug_event(&mut self, tick: u32, kind: DebugEventKind) {
-        if let Some(log) = &mut self.debug_log {
-            log.push(tick, kind);
-        }
     }
 
     /// Mark a live RadioClass-style contact with another entity.

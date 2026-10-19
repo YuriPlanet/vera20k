@@ -26,7 +26,6 @@ use crate::rules::locomotor_type::LocomotorKind;
 use crate::rules::ruleset::GeneralRules;
 use crate::sim::components::AnimClassSpawnDescriptor;
 use crate::sim::components::DriveCoord;
-use crate::sim::debug_event_log::DebugEventKind;
 
 const TELEPORT_WARP_DRAW_FLAGS: u32 = 0x600;
 
@@ -1045,12 +1044,6 @@ fn arm_teleport(
     runtime.resolved = Some(destination);
     runtime.requested = true;
     runtime.warp = Some(teleport_state);
-    entity.push_debug_event(
-        0,
-        DebugEventKind::SpecialMovementStart {
-            kind: "Teleport".into(),
-        },
-    );
 
     true
 }
@@ -1102,17 +1095,14 @@ impl crate::sim::world::Simulation {
                 {
                     warp.set_warping_in(false);
                 }
-            } else {
-                if let Some(runtime) = entity
-                    .locomotor
-                    .as_mut()
-                    .and_then(|locomotor| locomotor.teleport_runtime_mut())
-                {
-                    // The ordinary adapter's lifetime ends when its native
-                    // warp-in flag clears. Resolved +28/request stay owned.
-                    runtime.warp = None;
-                }
-                entity.push_debug_event(frame as u32, DebugEventKind::SpecialMovementEnd);
+            } else if let Some(runtime) = entity
+                .locomotor
+                .as_mut()
+                .and_then(|locomotor| locomotor.teleport_runtime_mut())
+            {
+                // The ordinary adapter's lifetime ends when its native
+                // warp-in flag clears. Resolved +28/request stay owned.
+                runtime.warp = None;
             }
         }
         if let Some(rules) = rules
@@ -1252,18 +1242,6 @@ impl crate::sim::world::Simulation {
             TeleportPhase::ChronoDelay => unreachable!("delay handled by the shared TimerCheck"),
         }
 
-        // Log phase transition if it changed.
-        let phase_after = teleport.phase;
-        if phase_after != phase_before {
-            let phase_name = format!("{:?}", phase_after);
-            entity.push_debug_event(
-                frame as u32,
-                DebugEventKind::SpecialMovementPhase { phase: phase_name },
-            );
-        }
-        if finished {
-            entity.push_debug_event(frame as u32, DebugEventKind::SpecialMovementEnd);
-        }
         let runtime = entity.locomotor.as_mut()?.teleport_runtime_mut()?;
         if phase_before == TeleportPhase::Relocate {
             // The represented relocation's Stop/request retirement; full native
