@@ -42,6 +42,8 @@ impl Simulation {
     /// `HouseClass::Fire_SW @ 0x004FAE50` for `owner`'s Super of type
     /// `sw_type_id` at `cell`. Returns whether ClickFire called Launch, a
     /// VERA answer: native Fire_SW returns 1 either way.
+    /// Manual commands and AI share this transaction; `automatic` selects
+    /// the extension target requirements before any charge is consumed.
     pub(crate) fn fire_super_weapon(
         &mut self,
         rules: &RuleSet,
@@ -50,6 +52,7 @@ impl Simulation {
         cell: (u16, u16),
         overlay_registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
+        automatic: bool,
     ) -> bool {
         #[cfg(any(test, feature = "test-support"))]
         super::ai_fire::observe(super::ai_fire::AiFireEvent::Fire(sw_type_id, cell));
@@ -57,6 +60,17 @@ impl Simulation {
             return false;
         };
         if super_instance(self, owner, sw_type_id).is_none() {
+            return false;
+        }
+        // Optional extension preflight precedes paired-Super writes, effects,
+        // defense alerts and charge consumption. Stock-only commands retain
+        // their native behavior, including native refused-click side effects.
+        if sw.building_requirements.is_some()
+            && !super::building_requirements_met(self, rules, owner, sw)
+        {
+            return false;
+        }
+        if super::targeting::check(self, rules, owner, sw, cell, automatic).is_err() {
             return false;
         }
         if sw.kind == SuperWeaponKind::UnitDelivery
@@ -127,6 +141,11 @@ fn click_fire(
     frame_effects: FrameEffects<'_>,
 ) -> bool {
     if sw.use_charge_drain {
+        return false;
+    }
+    if sw.kind == SuperWeaponKind::GenericWarhead
+        && !super::generic_warhead::can_launch(sim, rules, sw, cell)
+    {
         return false;
     }
     let Some(instance) = super_instance(sim, owner, sw_type_id) else {
@@ -278,6 +297,18 @@ fn launch(
         }
         SuperWeaponKind::SpyPlane => {
             super::spy_plane::launch(sim, rules, owner, sw_type_id, (rx, ry), frame_effects);
+        }
+        SuperWeaponKind::GenericWarhead => {
+            super::generic_warhead::launch(
+                sim,
+                rules,
+                owner,
+                sw_type_id,
+                sw,
+                (rx, ry),
+                overlay_registry,
+                frame_effects,
+            );
         }
     }
 }

@@ -97,7 +97,7 @@ fn bound_saved_world(
     let roster =
         crate::map::houses::parse_house_roster(&map.ini, &rules.color_schemes, Some(&rules));
     let lighting = crate::map::lighting::parse_lighting(&map.ini);
-    let metadata = SavedMapMetadata::capture(
+    let mut metadata = SavedMapMetadata::capture(
         map.ini.content_hash(),
         &loaded.source,
         &map.basic,
@@ -110,6 +110,10 @@ fn bound_saved_world(
         Some("Saved player"),
         [6, -2],
     );
+    metadata.set_radar_pause_credit(true);
+    // One video-owned and one ordinary trigger-owned untimed hold.
+    simulation.pause_scenario(0);
+    simulation.pause_scenario(0);
     simulation.session.map_name = name.into();
     simulation.session.install_waypoints(&map.waypoints);
     simulation.session.theater = map.header.theater.clone();
@@ -299,6 +303,24 @@ fn assert_incoming_resources(
             .is_some(),
         "saved live terrain has actual retail TMP catalogs"
     );
+    assert!(prepared.map.radar_pause_credit());
+    let mut restored_session = Simulation::with_seed(0);
+    restored_session.session = sim.session.clone();
+    let release = crate::app::radar_movie::release_saved_scenario_hold(
+        &mut restored_session,
+        prepared.map.radar_pause_credit(),
+    );
+    assert!(release.is_empty());
+    assert!(
+        restored_session.session.scenario_paused(),
+        "unrelated trigger hold survives missing video retirement"
+    );
+    assert!(
+        restored_session
+            .resume_scenario()
+            .contains(&crate::sim::trigger_runtime::TriggerEffect::ScenarioResume)
+    );
+    assert!(!restored_session.session.scenario_paused());
     assert_eq!(prepared.elapsed_clock.elapsed_seconds(LOAD_CLOCK_MS), 3);
     assert_eq!(
         prepared.elapsed_clock.elapsed_seconds(LOAD_CLOCK_MS + 960),

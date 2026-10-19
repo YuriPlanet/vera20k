@@ -1,4 +1,4 @@
-# UnitDelivery: ra2-mono port and host integration
+# Optional Ares UnitDelivery
 
 ```ini
 [SuperWeaponTypes]
@@ -16,95 +16,80 @@ Deliver.BaseNormal=yes
 ; SW.ActivationSound=SomeSound
 ```
 
-Register the payloads in their usual InfantryTypes, VehicleTypes, AircraftTypes
-or BuildingTypes lists. A building providing this superweapon, or an ordinary
-trigger grant, still supplies its retained House/Super instance. This extension
-does not grant a superweapon just because its section exists.
+Register payloads in the normal InfantryTypes, VehicleTypes, AircraftTypes or
+BuildingTypes lists. A provider building or a normal trigger grant must supply
+the retained superweapon instance. This extension does not grant itself.
 
 ## Provenance
 
-The implementation follows the author's earlier ra2-mono work (C# UnitDelivery
-support-superweapon pipeline, spawn-ring placement and its test scenarios) and
-is contributed to VERA under this repository's GPLv3. It is adapted to VERA's
-owners, not a second C#/ECS simulation or an imported Ares C++ implementation.
-The tag contract was checked against the
-[Ares UnitDelivery documentation](https://ares-developers.github.io/Ares-docs/new/superweapons/types/unitdelivery.html).
+Original implementation by **baixiong443**, who attributes the delivery queue,
+placement selector and scenarios to their earlier ra2-mono work and contributes
+this change under VERA's GPLv3. The donor repository was unavailable during
+review; its source and history have not been independently verified.
+
+The implementation uses VERA's existing state and lifecycle owners. The
+[Ares UnitDelivery documentation](https://ares-developers.github.io/Ares-docs/new/superweapons/types/unitdelivery.html)
+and [Ares activation source](https://github.com/Ares-Developers/Ares/blob/4f1d929920aca31924c6cd4d3dfa849daa65252a/src/Misc/SWTypes/UnitDelivery.cpp)
+provide compatibility references. No Ares DLL or C# simulation is loaded.
 
 ## Supported behavior
 
-- `Deliver.Types` retains duplicates and resolves registered, category-distinct
-  payload identities during ordered rules processing. Missing layer members
-  retain prior values; `none` clears the list. Unknown or cross-category
-  ambiguous tokens are omitted rather than bound to a different object type.
-- `SW.Deferment` defaults to 20 frames; zero places immediately. Negative values
-  clamp to zero. Delayed entries freeze their payloads, resolved owner, target,
-  placement settings and deadline. They use the simulation's wrapping binary
-  frame clock, never wall time. Due entries are visited newest-first, as in
-  ra2-mono's support queue, before the ordinary object visits in VERA's existing
-  global superweapon effect phase.
-- `Deliver.Owner` supports invoker, Neutral, Special, and the first country of
-  the Civilian side. It resolves to an existing House, never constructs an
-  invented owner. An absent required owner rejects the command.
-- Infantry, vehicles, aircraft and buildings go through the existing constructor,
-  class entry and Unlimbo owners. Placement tries the target, then legal nearby
-  rings bounded by the resident map dimensions. Mobiles select among valid
-  candidates in the nearest ring; buildings select the closest legal anchor,
-  with perimeter order breaking ties. One payload's failure does not prevent
-  later payloads from being attempted. Exhausted placement discards the held
-  constructor and its tracking through the existing cleanup owner.
-- Constructors, tracking, occupancy, sensors, power, building discovery and
-  dirty House tails remain VERA-owned. Units receive the existing AreaGuard
-  mission for human owners and Hunt for AI owners; buildings stand finished on
-  Guard. Missions use the rules-aware queue/readiness owner.
-- Aircraft start at ground height, unlike the original C# altitude-based
-  aircraft spawn. VERA's existing flight/jumpjet behavior owns any later takeoff.
-  Infantry use VERA's existing three functional spots, not ra2-mono's five-slot
-  model. Naval/land placement uses the host's normal terrain restrictions.
-- `Deliver.BaseNormal=no` is a per-building override checked by the common
-  preview/command build-area query, including ally build-off. It does not mutate
-  the shared BuildingType. It survives save/load and capture.
-- `SW.ActivationSound` emits the existing positional Voc event once when the
-  pending delivery is processed. The ordinary launch event is emitted at
-  acceptance, so selection and charge do not wait for the delivery.
+- `Deliver.Types` preserves duplicates and resolves existing, category-distinct
+  types at the ordered rules read. Omitted or empty reads retain prior values;
+  `none` clears the list. Unknown or ambiguous names are skipped.
+- `SW.Deferment` defaults to 20 frames. Negative values use the same 20-frame
+  fallback; zero delivers immediately. Pending requests freeze the payload,
+  resolved owner, target, settings and deadline. They use the wrapping simulation
+  frame clock and run newest-first in the global superweapon-effect phase.
+- `Deliver.Owner` accepts invoker, Neutral, Special and Civilian. These resolve
+  existing Houses through the shared House owner; Civilian selects the first
+  matching House in House order. A missing required House refuses admission.
+- Infantry, vehicles, aircraft and buildings use normal constructor, entry and
+  Unlimbo owners. Nearby placement is bounded by map dimensions; each payload
+  gets an attempt, and an exhausted search disposes its held constructor through
+  the normal cleanup owner. Building searches center the footprint on the target.
+- Ground aircraft candidates also pass the shared ground terrain/occupation
+  check. Foot placement retains the chosen bridge plane, deck coordinate and
+  occupancy. Existing class-specific placement rules still apply.
+- Human-owned mobiles receive AreaGuard; AI-owned mobiles receive Hunt. This
+  follows the published Ares 3.0/donor behavior; current Ares source uses Guard
+  for humans. Buildings finish on Guard. BalloonHover/JumpJet types receive the
+  shared post-placement Scatter, allowing their normal flight owner to lift off.
+- `Deliver.BaseNormal=no` is an instance flag read by the common build-area
+  query, including ally build-off. It survives capture and save/load and does
+  not change the shared BuildingType.
+- `SW.ActivationSound` resolves against the fixed SOUNDMD catalog. Unknown names
+  retain a prior valid cue; an explicit `none` clears it. The positional cue is
+  emitted once before payload placement when the request becomes due. The normal
+  launch event occurs at acceptance, so charge and selection cleanup do not wait.
 
-## Persistence, safety and differences
+## Persistence and compatibility limits
 
-The queue, every future-affecting pending field, and the per-building override
-are serialized and hashed. Empty queues and default building flags add no stock
-hash input. Resolved extension settings participate in the rules configuration
-hash. Snapshot version 434 advances to 435 because all three positional record
-layouts change; old-version saves are rejected.
+The private pending queue and per-building flag are saved and hashed. Empty
+queues/default flags add no stock hash input. Resolved extension settings enter
+the rules hash. Snapshot version 440 accounts for the changed positional rules,
+simulation and entity records; older versions are rejected.
 
-Malformed/empty payloads, invalid target cells, missing delivery owners, and
-unsupported pre-click/post-click/charge-drain settings are refused before
-paired-Super mutation, charge or effects. AI rejects malformed settings before
-target-search RNG. A valid launch with no legal site still consumes its charge;
-it has no retry-after-completion queue. One-time grants are consumed at accepted
-launch, and their already-queued effect still completes once.
+Empty payloads, invalid targets, missing owners and unsupported charge drain
+refuse before charge or effects. The type remains one-click even if PreClick or
+PostClick is authored. Missing/Custom Action is normalized once to ParaDrop for
+both cameo admission and cursor display. Explicit other actions retain their
+normal meaning. Extension identifiers cannot enter the stock EVA table or serve
+as a native PreDependent type.
 
-Placement uses VERA's pinned portable hasher over owner/Super identity, target,
-issue frame, constructor ID and payload index for the C# ring selector's seed.
-It is deterministic in this engine, not a claim of Ares's random stream, exact
-draw count or exact placement order. Normal constructors and infantry placement
-retain their existing RNG draws. This extension adds no independent mutable RNG.
-Candidate checks and final placement share the host's entry owner; final
-admission is rechecked rather than trusted from a cached search result.
+Availability composes with the shared native/Ares building gates. An accepted
+request remains frozen if a provider is later lost. A valid launch with no legal
+placement consumes its charge and has no retry queue. One-time grants are consumed
+at acceptance; their queued effect still completes once.
 
-The generic native Action table has no `Custom` entry: only UnitDelivery's
-missing/Custom action falls back to the existing ParaDrop target cursor. The
-extension-only dispatch tag 0x101 is outside the 12 stock slots; it is not a
-gamemd Type index or a valid native PreDependent. No hardcoded EVA cue or stock
-payload change is introduced. Extension types are excluded from the stock
-list-slot detection EVA table even when authored in an early list position.
+Placement retains the contribution's deterministic ring selector, using VERA's
+portable hasher over stable simulation inputs. This is a VERA adaptation, not a
+claim of Ares's exact placement order or RNG stream. Existing constructors,
+infantry placement and Scatter retain their own simulation RNG draws. Full-map
+search cost for large blocked payloads has not been profiled; no 20,000-unit
+performance claim is made for this extension.
 
-Not included: the other unmerged Ares contributions, `Money.Amount`, country or
-building-availability extensions, custom `SW.AITargeting` modes, designators,
-inhibitors, `SW.Animation` or other generic Ares presentation settings. AI uses
-the existing ParaDrop-style target arm. No complete MO skill or mod is certified
-by this payload mechanism; for example PaladinAidSpecial also requires other
-common Ares settings.
-
-Tests in `sim::superweapon::unit_delivery::tests` exercise production rules,
-command dispatch, effect-phase timing, placement, missions and binary state
-round trips with synthetic maps. They are not a live playtest, a retail loader
-smoke test, an Ares executable comparison, or a full-suite result.
+Money.Amount, custom AI modes, designators/inhibitors, Deliver.Buildups and generic
+Ares animation/visual settings remain outside this feature. AI uses the existing
+ParaDrop-style target arm. The implementation and synthetic regression scenes do
+not establish full Mental Omega compatibility or executable Ares parity.

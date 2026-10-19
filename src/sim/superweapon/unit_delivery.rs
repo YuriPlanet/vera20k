@@ -1,8 +1,8 @@
 //! UnitDelivery port from ra2-mono: TryQueueUnitDeliverySuperweapon,
 //! ApplyPendingSupportDelivery, and GameLogicManager.SpawnPlacement.cs's
-//! nearest-ring search. The implementation follows the author's earlier
-//! ra2-mono work and is contributed under VERA's GPLv3. VERA owns admission,
-//! constructors and missions.
+//! nearest-ring search, as identified by the contributor. The donor revision
+//! is unavailable for independent comparison. Contributed under VERA's GPLv3;
+//! VERA owns admission, constructors and missions.
 //!
 //! Adaptations: category-distinct type references, ground-level aircraft,
 //! existing Object entry/Unlimbo transactions, and VERA frame/identity-based
@@ -10,8 +10,9 @@
 
 use crate::rules::object_type::ObjectCategory;
 use crate::rules::overlay_types::OverlayTypeRegistry;
-use crate::rules::ruleset::{CountryIdx, RuleSet};
+use crate::rules::ruleset::RuleSet;
 use crate::rules::superweapon_type::{DeliveryOwner, DeliveryType, SuperWeaponType};
+use crate::sim::components::DriveCoord;
 use crate::sim::intern::InternedId;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::state_hasher::StateHasher;
@@ -81,35 +82,21 @@ fn delivery_owner(
     invoker: InternedId,
     owner: DeliveryOwner,
 ) -> Option<InternedId> {
-    if owner == DeliveryOwner::Invoker {
-        return sim.houses.contains_key(&invoker).then_some(invoker);
-    }
-    let country = match owner {
-        DeliveryOwner::Neutral => "Neutral",
-        DeliveryOwner::Special => "Special",
-        DeliveryOwner::Civilian => {
-            let mut index = 0;
-            loop {
-                let country = rules.country_name(CountryIdx(index))?;
-                if rules
-                    .country_side_index(country)
-                    .and_then(|side| rules.side_name(side))
-                    .is_some_and(|side| side.eq_ignore_ascii_case("Civilian"))
-                {
-                    break country;
-                }
-                index = index.checked_add(1)?;
-            }
+    // Ares HouseExt::GetHouseKind delegates to the existing House finders.
+    // FindCivilianSide scans House registration order, not country order.
+    // Source: Ares 4f1d9299, src/Ext/House/Body.cpp, GetHouseKind.
+    match owner {
+        DeliveryOwner::Invoker => sim.houses.contains_key(&invoker).then_some(invoker),
+        DeliveryOwner::Civilian => sim.civilian_side_house(rules),
+        DeliveryOwner::Neutral | DeliveryOwner::Special => {
+            let name = if owner == DeliveryOwner::Neutral {
+                "Neutral"
+            } else {
+                "Special"
+            };
+            sim.house_by_country_index(rules.country_index(name)?, rules)
         }
-        DeliveryOwner::Invoker => unreachable!(),
-    };
-    sim.session.house_order.iter().copied().find(|id| {
-        sim.houses.get(id).is_some_and(|house| {
-            sim.interner
-                .resolve(house.country.unwrap_or(*id))
-                .eq_ignore_ascii_case(country)
-        })
-    })
+    }
 }
 
 /// Reject malformed extension requests before the common Fire_SW transaction.
@@ -136,6 +123,7 @@ pub(crate) fn configured(
         && !sw.use_charge_drain
         && sw.unit_delivery.as_ref().is_some_and(|delivery| {
             !delivery.types.is_empty()
+                && delivery.deferment >= 0
                 && delivery_owner(sim, rules, owner, delivery.owner).is_some()
                 && delivery
                     .types
@@ -166,7 +154,9 @@ pub(crate) fn launch(
         owner: delivery_owner,
         cell,
         issued_frame: frame,
-        due_frame: frame.wrapping_add(config.deferment.max(0) as u32),
+        // The rules owner resolves the negative sentinel to the 20-frame
+        // fallback. Admission rejects an invalid unnormalized saved value.
+        due_frame: frame.wrapping_add(config.deferment as u32),
         types: config.types.clone(),
         base_normal: config.base_normal,
         activation_sound: config.activation_sound.clone(),
@@ -179,7 +169,7 @@ pub(crate) fn launch(
         rx: cell.0,
         ry: cell.1,
     });
-    if config.deferment <= 0 {
+    if config.deferment == 0 {
         apply(sim, rules, request, registry, effects);
     } else {
         sim.unit_deliveries.pending.push(request);
@@ -217,23 +207,26 @@ fn apply(
     if !sim.houses.contains_key(&request.owner) {
         return;
     }
-    for (index, payload) in request.types.iter().enumerate() {
-        place(sim, rules, &request, payload, index, registry, effects);
-    }
-    if let Some(sound) = request.activation_sound {
+    // Ares UnitDeliveryStateMachine::Update plays this before PlaceUnits,
+    // so discovery/creation events from the payload follow the activation.
+    // Source: Ares 4f1d9299, src/Misc/SWTypes/UnitDelivery.cpp.
+    if let Some(sound) = request.activation_sound.as_ref() {
         let ground = crate::sim::projectile::cell_ground_coord(
             sim.resolved_terrain.as_ref(),
             request.cell.0,
             request.cell.1,
         );
         sim.sound_events.push(SimSoundEvent::voc_at_world_coord(
-            sound,
+            sound.clone(),
             crate::sim::anim_class::AnimWorldCoord {
                 x: ground.x,
                 y: ground.y,
                 z: ground.z,
             },
         ));
+    }
+    for (index, payload) in request.types.iter().enumerate() {
+        place(sim, rules, &request, payload, index, registry, effects);
     }
 }
 
@@ -277,6 +270,17 @@ fn place(
     id.hash(&mut hash);
     index.hash(&mut hash);
     let seed = hash.finish() as i32;
+    // Ares PlaceUnits centers the foundation on the target before searching.
+    // Keep VERA's declared ring order, but use the same anchor coordinate.
+    let (width, height) = if payload.category == ObjectCategory::Building {
+        crate::rules::foundation::foundation_dimensions(&ty.foundation)
+    } else {
+        (1, 1)
+    };
+    let anchor = (
+        i32::from(request.cell.0) - i32::from(width / 2),
+        i32::from(request.cell.1) - i32::from(height / 2),
+    );
     let radius_cap = sim.resolved_terrain.as_ref().map_or(32, |terrain| {
         i32::from(terrain.width().max(terrain.height()))
     });
@@ -286,10 +290,8 @@ fn place(
         let mut candidates = Vec::with_capacity(count as usize);
         for step in 0..count {
             let (dx, dy) = ring_offset(step, radius);
-            let (Ok(x), Ok(y)) = (
-                u16::try_from(i32::from(request.cell.0) + dx),
-                u16::try_from(i32::from(request.cell.1) + dy),
-            ) else {
+            let (Ok(x), Ok(y)) = (u16::try_from(anchor.0 + dx), u16::try_from(anchor.1 + dy))
+            else {
                 continue;
             };
             let cell = (x, y);
@@ -315,9 +317,18 @@ fn place(
         };
         for offset in 0..candidates.len() {
             let cell = candidates[(start + offset) % candidates.len()].0;
-            let z = sim.terrain_cell_level(cell.0, cell.1).unwrap_or(0);
+            let [x, y, z] = super::deck_coords(sim, cell);
+            let on_bridge =
+                super::cell_grid::cell_has_bridge_flag(sim, cell.0 as i16, cell.1 as i16);
             if sim
-                .reveal_finished_object_at_height(id, cell, z, rules, registry, effects)
+                .reveal_finished_object_at_coord(
+                    id,
+                    DriveCoord { x, y, z },
+                    on_bridge,
+                    rules,
+                    registry,
+                    effects,
+                )
                 .is_some()
             {
                 placed = true;
@@ -349,9 +360,27 @@ fn place(
         sim.session.binary_frame,
         &crate::sim::mission::authority::LiveReadyInputProvider { rules },
     );
+    // Ares PlaceUnits explicitly scatters flying Foot types after Put. Their
+    // ground-idle locomotor does not start moving merely from AreaGuard/Hunt.
+    // Reuse the class Scatter owner, including its existing Scenario draws
+    // and Infantry's immediate Process; never set flight state directly.
+    if payload.category != ObjectCategory::Building
+        && (ty.balloon_hover || ty.jumpjet)
+        && let Err(error) = sim.scatter(
+            id,
+            None,
+            crate::sim::movement::ScatterFlags::new(true, false),
+            rules,
+            registry,
+            effects,
+        )
+    {
+        log::debug!("UnitDelivery {id} post-placement Scatter failed: {error}");
+    }
 }
 
-/// Exact perimeter enumeration from ra2-mono's ResolveSupportSpawnRingOffset.
+/// Contributor-reported ResolveSupportSpawnRingOffset order, retained as
+/// VERA's deterministic placement policy; not an executed donor/Ares oracle.
 fn ring_offset(step: i32, radius: i32) -> (i32, i32) {
     if radius == 0 {
         return (0, 0);

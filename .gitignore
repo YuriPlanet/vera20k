@@ -28,10 +28,12 @@ Thumbs.db
 /infodocs/
 
 /docs/*
+!/docs/ares-generic-warhead.md
 !/docs/_config.yml
 !/docs/index.md
 !/docs/Networking.md
 !/docs/ares-unit-delivery.md
+!/docs/ares-superweapon-building-gates.md
 !/docs/ar/
 !/docs/de/
 !/docs/ru/

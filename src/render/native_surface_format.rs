@@ -6,7 +6,8 @@
 
 /// RGBClass::Adjust6612C0 interpolates each encoded channel using the low
 /// byte of the argument and signed division toward zero, not an arithmetic
-/// shift. Shared by Laser550C21 and PlanNode635830/635A40/635C10.
+/// shift. Shared by Laser550C21, PlanNode635830/635A40/635C10 and the
+/// Tactical superweapon targeting ring caller at 0x006DC329.
 pub(crate) fn interpolate_rgb8(source: [u8; 3], target: [u8; 3], amount: u32) -> [u8; 3] {
     let amount = i32::from(amount as u8);
     std::array::from_fn(|channel| {

@@ -1198,6 +1198,11 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
         let chunk = ReplayLog {
             header: log.header.clone(),
             ticks: log.ticks[chunk_start..chunk_end].to_vec(),
+            initial_scenario_services: if chunk_start == 0 {
+                log.initial_scenario_services.clone()
+            } else {
+                Vec::new()
+            },
         };
         replayed.extend(ReplayRunner::run_fixture_with_overlay_registry(
             &mut rep,
@@ -1219,6 +1224,7 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
         let tail = ReplayLog {
             header: log.header.clone(),
             ticks: log.ticks[chunk_start..].to_vec(),
+            initial_scenario_services: Vec::new(),
         };
         replayed.extend(ReplayRunner::run_fixture_with_overlay_registry(
             &mut rep,

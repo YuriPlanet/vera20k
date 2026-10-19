@@ -1195,9 +1195,11 @@ impl Simulation {
         )
     }
 
-    /// Read-only entry query for an already-constructed object's placement
-    /// search. Share the existing class query rather than a second terrain or
-    /// occupancy model; the final Unlimbo still performs fresh admission.
+    /// Ground-delivery search for an already-constructed object. Aircraft
+    /// first need ground suitability; their own +1AC only checks shroud.
+    /// Ares 4f1d9299, UnitDeliveryStateMachine::PlaceUnits uses Track/Normal
+    /// for this search, then the usual class admission at Put. Final Unlimbo
+    /// still performs fresh admission.
     pub(crate) fn constructed_object_can_enter_at(
         &self,
         stable_id: u64,
@@ -1205,6 +1207,40 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     ) -> bool {
+        if self
+            .substrate
+            .entities
+            .get(stable_id)
+            .is_some_and(|entity| entity.category() == EntityCategory::Aircraft)
+        {
+            use crate::rules::locomotor_type::{MovementZone, SpeedType};
+            use crate::sim::cell_rect::{CellPassabilityArgs, CellRef, check_cell_passability};
+
+            let Some(target) = self
+                .resolved_terrain
+                .as_ref()
+                .and_then(|terrain| terrain.cell(cell.0, cell.1))
+            else {
+                return false;
+            };
+            if !check_cell_passability(
+                &CellRef::Real(target),
+                CellPassabilityArgs {
+                    speed_type: SpeedType::Track,
+                    ignore_infantry: false,
+                    ignore_vehicles: false,
+                    zone: None,
+                    movement_zone: MovementZone::Normal,
+                    level: None,
+                    is_bridge: false,
+                },
+                &self.cell_passability_map(),
+            )
+            .admits()
+            {
+                return false;
+            }
+        }
         let position = RevealPosition::new(
             cell.0,
             cell.1,
@@ -1220,22 +1256,27 @@ impl Simulation {
     /// Place a delivered object standing complete, retaining the normal entry,
     /// Unlimbo, sensor, tracking and discovery owners. A delivery is not paid
     /// construction and must not leave a building waiting on a buildup.
-    pub(crate) fn reveal_finished_object_at_height(
+    /// Ares PlaceUnits supplies GetCoordsWithBridge and explicitly sets
+    /// OnBridge before Put; the class query's local plane is not that store.
+    pub(crate) fn reveal_finished_object_at_coord(
         &mut self,
         stable_id: u64,
-        cell: (u16, u16),
-        z: u8,
+        coord: crate::sim::components::DriveCoord,
+        on_bridge: bool,
         rules: &RuleSet,
         registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         effects: FrameEffects<'_>,
     ) -> Option<u64> {
+        let entity = self.substrate.entities.get_mut(stable_id)?;
+        entity.on_bridge.store(on_bridge);
+        if let Some(locomotor) = entity.locomotor.as_mut() {
+            locomotor.store_ground_layer(on_bridge);
+        }
         let result = self.with_buildup_bypass(|sim| {
-            sim.reveal_constructed_object_at_height_with_overlay_context(
+            sim.reveal_constructed_object_at_coord_with_overlay_context(
                 stable_id,
-                cell.0,
-                cell.1,
+                coord,
                 0,
-                z,
                 PlacementEvidence::EvaluateMark,
                 rules,
                 registry,
@@ -2815,7 +2856,9 @@ impl Simulation {
     }
 
     fn construction_yard_redeploy_core_gate(&self, entity: &GameEntity) -> bool {
-        if !self.session.game_options.mcv_redeploy || !entity.radio_contacts.is_empty() {
+        // Building44374F..443778 /44F5F3..44F61C admit existing radio
+        // contacts. Selling44AB68/44A2EE notifies and breaks them later.
+        if !self.session.game_options.mcv_redeploy {
             return false;
         }
         // `BuildingClass::CanUndeployMCV @ 0x00449C15` and

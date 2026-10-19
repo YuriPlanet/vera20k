@@ -412,91 +412,128 @@ fn planned_special_order_keeps_shared_nodes_after_stop_and_expired_target() {
 }
 
 #[test]
-fn retail_planned_and_ordinary_harvest_dispatch_and_reach_the_clicked_field() {
+fn retail_planned_and_ordinary_harvest_extracts_ore_after_walking() {
     for planning in [false, true] {
-        let Some((mut sim, rules, owner)) = scene() else {
-            return;
-        };
-        let retail =
-            crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP").unwrap();
-        let overlays = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(
-            &retail.processed_rules,
-            Some(&retail.fixed_art),
-        );
-        let ore = overlays.id_for_name("TIB01").unwrap();
-        let mut grid = crate::sim::overlay_grid::OverlayGrid::new(64, 64);
-        grid.place_overlay(17, 12, ore, 11);
-        grid.recalculate_runtime_cell(sim.resolved_terrain.as_mut().unwrap(), &overlays, (17, 12));
-        sim.overlay_grid = Some(grid);
-        assert!(sim.rebuild_dynamic_navigation(&rules));
-        let actor = sim
-            .spawn_object("HARV", "Americans", 12, 12, 0, &rules)
-            .unwrap();
-        // Unlimbo starts a miner on Harvest. Native PlanMgr638C70 does not
-        // interrupt that mission at commit; begin this route from idle Guard,
-        // as for the depot/refinery scenario above.
-        assert!(sim.apply_command(
-            "Americans",
-            &Command::Stop { entity_id: actor },
-            Some(&rules)
-        ));
-        for _ in 0..3 {
-            step_with_overlays(&mut sim, &rules, Some(&overlays));
+        for dock_owner in [None, Some("Americans"), Some("Russians")] {
+            let Some((mut sim, rules, owner)) = scene() else {
+                return;
+            };
+            let retail =
+                crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+                    .unwrap();
+            let overlays = crate::rules::overlay_types::OverlayTypeRegistry::from_ini(
+                &retail.processed_rules,
+                Some(&retail.fixed_art),
+            );
+            let ore = overlays.id_for_name("TIB01").unwrap();
+            let mut grid = crate::sim::overlay_grid::OverlayGrid::new(64, 64);
+            grid.place_overlay(17, 12, ore, 11);
+            grid.recalculate_runtime_cell(
+                sim.resolved_terrain.as_mut().unwrap(),
+                &overlays,
+                (17, 12),
+            );
+            sim.overlay_grid = Some(grid);
+            assert!(sim.rebuild_dynamic_navigation(&rules));
+            // Native Harvest73E67F..73E6C2 requires an owned instance of a
+            // type in Dock=. An enemy refinery must not satisfy that gate.
+            if let Some(dock_owner) = dock_owner {
+                sim.spawn_object("NAREFN", dock_owner, 40, 40, 0, &rules)
+                    .unwrap();
+            }
+            let actor = sim
+                .spawn_object("HARV", "Americans", 12, 12, 0, &rules)
+                .unwrap();
+            // Unlimbo starts a miner on Harvest. Native PlanMgr638C70 does not
+            // interrupt that mission at commit; begin this route from idle Guard,
+            // as for the depot/refinery scenario above.
+            assert!(sim.apply_command(
+                "Americans",
+                &Command::Stop { entity_id: actor },
+                Some(&rules)
+            ));
+            for _ in 0..3 {
+                step_with_overlays(&mut sim, &rules, Some(&overlays));
+            }
+            assert_eq!(
+                sim.entities()
+                    .get(actor)
+                    .unwrap()
+                    .mission
+                    .effective()
+                    .known(),
+                Some(crate::sim::mission::MissionType::Guard)
+            );
+            let order = Command::HarvestCell {
+                entity_id: actor,
+                target_rx: 17,
+                target_ry: 12,
+            };
+            assert_eq!(
+                sim.resolved_terrain
+                    .as_ref()
+                    .unwrap()
+                    .cell(17, 12)
+                    .unwrap()
+                    .land_type,
+                crate::sim::pathfinding::passability::LandType::Tiberium.as_index()
+            );
+            if planning {
+                planned(&mut sim, &rules, owner, order);
+                commit(&mut sim, &rules, owner);
+            } else {
+                assert!(sim.apply_command("Americans", &order, Some(&rules)));
+            }
+            let mut harvest_dispatched = false;
+            let mut guard_after_harvest = false;
+            for _ in 0..1000 {
+                harvest_dispatched |= sim
+                    .entities()
+                    .get(actor)
+                    .unwrap()
+                    .mission
+                    .effective()
+                    .known()
+                    == Some(crate::sim::mission::MissionType::Harvest);
+                step_with_overlays(&mut sim, &rules, Some(&overlays));
+                let mission = &sim.entities().get(actor).unwrap().mission;
+                guard_after_harvest |= harvest_dispatched
+                    && (mission.current().known() == Some(crate::sim::mission::MissionType::Guard)
+                        || mission.queued().known()
+                            == Some(crate::sim::mission::MissionType::Guard));
+                if !sim
+                    .entities()
+                    .get(actor)
+                    .unwrap()
+                    .miner
+                    .as_ref()
+                    .unwrap()
+                    .cargo()
+                    .is_empty()
+                {
+                    break;
+                }
+            }
+            let actor = sim.entities().get(actor).unwrap();
+            assert!(
+                harvest_dispatched,
+                "Harvest must reach the mission owner, planning={planning}"
+            );
+            let owns_dock = dock_owner == Some("Americans");
+            assert_eq!(
+                !actor.miner.as_ref().unwrap().cargo().is_empty(),
+                owns_dock,
+                "planning={planning}, dock_owner={dock_owner:?}, mission={:?}",
+                actor.mission
+            );
+            if owns_dock {
+                assert_eq!((actor.position.rx(), actor.position.ry()), (17, 12));
+            } else {
+                // An armed miner may subsequently acquire the other house's
+                // units. Check the Harvest exit, not its later Guard AI.
+                assert!(guard_after_harvest);
+            }
         }
-        assert_eq!(
-            sim.entities()
-                .get(actor)
-                .unwrap()
-                .mission
-                .effective()
-                .known(),
-            Some(crate::sim::mission::MissionType::Guard)
-        );
-        let order = Command::HarvestCell {
-            entity_id: actor,
-            target_rx: 17,
-            target_ry: 12,
-        };
-        assert_eq!(
-            sim.resolved_terrain
-                .as_ref()
-                .unwrap()
-                .cell(17, 12)
-                .unwrap()
-                .land_type,
-            crate::sim::pathfinding::passability::LandType::Tiberium.as_index()
-        );
-        if planning {
-            planned(&mut sim, &rules, owner, order);
-            commit(&mut sim, &rules, owner);
-        } else {
-            assert!(sim.apply_command("Americans", &order, Some(&rules)));
-        }
-        let mut harvest_dispatched = false;
-        for _ in 0..1000 {
-            harvest_dispatched |= sim
-                .entities()
-                .get(actor)
-                .unwrap()
-                .mission
-                .effective()
-                .known()
-                == Some(crate::sim::mission::MissionType::Harvest);
-            step_with_overlays(&mut sim, &rules, Some(&overlays));
-        }
-        let actor = sim.entities().get(actor).unwrap();
-        assert!(
-            harvest_dispatched,
-            "Harvest must reach the mission owner, planning={planning}"
-        );
-        assert_eq!(
-            (actor.position.rx(), actor.position.ry()),
-            (17, 12),
-            "planning={planning}"
-        );
-        // Full ore extraction after field arrival is a pre-existing ordinary
-        // route gap, reproduced with HEAD's unchanged HarvestCell arm too.
-        // This check covers dispatch and movement, not that separate loop.
     }
 }
 

@@ -69,6 +69,19 @@ pub(crate) fn commit_prepared_load(
         .session
         .restore_from_save(game_mode_nonzero, committed.map.local_player_name());
     state.match_state.scenario_elapsed_clock = committed.elapsed_clock;
+    super::scenario_pause::load_clock(state, wall_ms);
+    let pause_effects = state
+        .match_state
+        .sim_runtime
+        .as_mut()
+        .map_or_else(Vec::new, |rt| {
+            crate::app::radar_movie::release_saved_scenario_hold(
+                &mut rt.simulation,
+                committed.map.radar_pause_credit(),
+            )
+        });
+    // Load rearms614; reapply physical audio without a new pause acquisition.
+    super::scenario_pause::resume(state, wall_ms);
     state.match_state.sandbox_full_visibility = false;
     let runtime = state
         .match_state
@@ -184,5 +197,8 @@ pub(crate) fn commit_prepared_load(
         "Load: restored Power at {power_ms}ms: {:?}",
         state.match_state.match_presentation.power_bar_anim,
     );
+    // Apply after the incoming local view, so lock cleanup cannot be undone
+    // by the saved targeting/cursor projection.
+    super::sim_tick::apply_trigger_effects(state, &pause_effects);
     log::info!("Load: restored simulation from {}", path.display());
 }

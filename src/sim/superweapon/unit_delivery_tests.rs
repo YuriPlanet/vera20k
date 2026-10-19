@@ -24,9 +24,21 @@ const RULES: &str = "[Countries]\n0=Americans\n1=Russians\n2=Neutral\n3=Special\
 const ART: &str = "[GAPOWR]\nFoundation=1x1\n";
 
 fn rules(extra: &str) -> RuleSet {
+    rules_with_art(extra, ART)
+}
+
+fn rules_with_art(extra: &str, art: &str) -> RuleSet {
     let mut ini = crate::sim::arena_fixture::clear_ground_ini(RULES);
     ini.merge(&IniFile::from_str(extra));
-    RuleSet::from_ini_with_fixed_art_for_test(&ini, &IniFile::from_str(ART)).unwrap()
+    let processed = RulesLayerStack::new(ini)
+        .process_with_fixed_art(&IniFile::from_str(art))
+        .unwrap();
+    let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
+    let sounds = crate::rules::sound_ini::SoundRegistry::from_ini(&IniFile::from_str(
+        "[SoundList]\n0=DeliveryCue\n[DeliveryCue]\nSounds=delivery\n",
+    ));
+    rules.bind_type_sound_references(processed.ini(), &sounds);
+    rules
 }
 
 fn world(rules: &RuleSet) -> Simulation {
@@ -116,8 +128,7 @@ fn unit_delivery_defaults_and_custom_target_cursor() {
             id: "MTNK".into()
         }]
     );
-    assert_eq!(sw.action.as_deref(), Some("Custom"));
-    assert_eq!(sw.targeting_action(), Some("ParaDrop"));
+    assert_eq!(sw.action.as_deref(), Some("ParaDrop"));
 }
 
 #[test]
@@ -232,7 +243,15 @@ fn unit_delivery_missing_payload_or_invalid_target_preserves_command_state() {
         let mut sim = world(&rules);
         let (owner, sw) = charge(&mut sim, &rules, "Americans");
         let before = sim.state_hash();
-        assert!(!sim.fire_super_weapon(&rules, owner, sw, cell, None, FrameEffects::default()));
+        assert!(!sim.fire_super_weapon(
+            &rules,
+            owner,
+            sw,
+            cell,
+            None,
+            FrameEffects::default(),
+            false
+        ));
         assert_eq!(sim.state_hash(), before);
         assert!(sim.unit_deliveries.pending.is_empty());
     }
@@ -546,16 +565,22 @@ fn unit_delivery_frame_wrap_and_snapshot_owner_validation() {
 }
 
 #[test]
-fn unit_delivery_unsupported_two_phase_or_drain_flags_refuse_before_effects() {
-    for setting in ["PreClick=yes", "PostClick=yes", "UseChargeDrain=yes"] {
-        let rules = rules(&format!("[Delivery]\nSW.Deferment=0\n{setting}\n"));
-        let mut sim = world(&rules);
-        let (owner, sw) = charge(&mut sim, &rules, "Americans");
-        let hash = sim.state_hash();
-        assert!(!sim.fire_super_weapon(&rules, owner, sw, (12, 10), None, FrameEffects::default()));
-        assert_eq!(sim.state_hash(), hash, "{setting}");
-        assert!(payloads(&sim, "MTNK").is_empty());
-    }
+fn unit_delivery_unsupported_drain_refuses_before_effects() {
+    let rules = rules("[Delivery]\nSW.Deferment=0\nUseChargeDrain=yes\n");
+    let mut sim = world(&rules);
+    let (owner, sw) = charge(&mut sim, &rules, "Americans");
+    let hash = sim.state_hash();
+    assert!(!sim.fire_super_weapon(
+        &rules,
+        owner,
+        sw,
+        (12, 10),
+        None,
+        FrameEffects::default(),
+        false
+    ));
+    assert_eq!(sim.state_hash(), hash);
+    assert!(payloads(&sim, "MTNK").is_empty());
 }
 
 #[test]
@@ -588,11 +613,387 @@ fn unit_delivery_one_time_grant_is_consumed_at_acceptance_but_delivers_once_late
     let owner = sim.interner.get("Americans").unwrap();
     let sw = sim.interner.get("Delivery").unwrap();
     assert!(trigger_grant_super(&mut sim, &rules, owner, sw, true));
-    assert!(sim.fire_super_weapon(&rules, owner, sw, (12, 10), None, FrameEffects::default()));
+    assert!(sim.fire_super_weapon(
+        &rules,
+        owner,
+        sw,
+        (12, 10),
+        None,
+        FrameEffects::default(),
+        false
+    ));
     assert!(!sim.super_weapons[&owner][&sw].is_active);
-    assert!(!sim.fire_super_weapon(&rules, owner, sw, (12, 10), None, FrameEffects::default()));
+    assert!(!sim.fire_super_weapon(
+        &rules,
+        owner,
+        sw,
+        (12, 10),
+        None,
+        FrameEffects::default(),
+        false
+    ));
     assert_eq!(sim.unit_deliveries.pending.len(), 1);
     sim.session.binary_frame = 2;
     tick(&mut sim, &rules, None, FrameEffects::default());
     assert_eq!(payloads(&sim, "MTNK").len(), 1);
+}
+
+#[test]
+fn unit_delivery_civilian_uses_first_existing_house_not_first_country() {
+    let rules = rules("[Delivery]\nSW.Deferment=0\nDeliver.Owner=civilian\n");
+    for remove_first in [true, false] {
+        let mut sim = world(&rules);
+        let first = sim.interner.get("CIVONE").unwrap();
+        let second = sim.interner.get("CIVTWO").unwrap();
+        if remove_first {
+            sim.houses.remove(&first);
+            sim.super_weapons.remove(&first);
+            sim.session.house_order.retain(|owner| *owner != first);
+        } else {
+            let first_index = sim
+                .session
+                .house_order
+                .iter()
+                .position(|id| *id == first)
+                .unwrap();
+            let second_index = sim
+                .session
+                .house_order
+                .iter()
+                .position(|id| *id == second)
+                .unwrap();
+            sim.session.house_order.swap(first_index, second_index);
+        }
+        fire(&mut sim, &rules, "Americans", (12, 10));
+        let ids = payloads(&sim, "MTNK");
+        assert_eq!(ids.len(), 1, "remove_first={remove_first}");
+        assert_eq!(sim.substrate.entities.get(ids[0]).unwrap().owner(), second);
+    }
+}
+
+#[test]
+fn unit_delivery_negative_deferment_waits_twenty_frames() {
+    let rules = rules("[Delivery]\nSW.Deferment=-1\n");
+    let mut sim = world(&rules);
+    fire(&mut sim, &rules, "Americans", (12, 10));
+    assert!(payloads(&sim, "MTNK").is_empty());
+    sim.session.binary_frame = 19;
+    tick(&mut sim, &rules, None, FrameEffects::default());
+    assert!(payloads(&sim, "MTNK").is_empty());
+    sim.session.binary_frame = 20;
+    tick(&mut sim, &rules, None, FrameEffects::default());
+    assert_eq!(payloads(&sim, "MTNK").len(), 1);
+    assert!(sim.unit_deliveries.pending.is_empty());
+}
+
+#[test]
+fn unit_delivery_two_phase_flags_do_not_change_its_one_click_type() {
+    for setting in ["PreClick=yes", "PostClick=yes"] {
+        let rules = rules(&format!("[Delivery]\nSW.Deferment=0\n{setting}\n"));
+        let sw = rules.super_weapon("Delivery").unwrap();
+        assert!(!sw.pre_click && !sw.post_click, "{setting}");
+        let mut sim = world(&rules);
+        fire(&mut sim, &rules, "Americans", (12, 10));
+        assert_eq!(payloads(&sim, "MTNK").len(), 1, "{setting}");
+    }
+}
+
+#[test]
+fn unit_delivery_ground_aircraft_avoids_an_occupied_target() {
+    let rules = rules("[Delivery]\nSW.Deferment=0\nDeliver.Types=ORCA\n");
+    let mut sim = world(&rules);
+    sim.spawn_object("GAPOWR", "Americans", 12, 10, 0, &rules)
+        .unwrap();
+    fire(&mut sim, &rules, "Americans", (12, 10));
+    let ids = payloads(&sim, "ORCA");
+    assert_eq!(ids.len(), 1);
+    let plane = sim.substrate.entities.get(ids[0]).unwrap();
+    let cell = (plane.position.rx(), plane.position.ry());
+    assert_ne!(cell, (12, 10));
+    assert!(cell.0.abs_diff(12) <= 1 && cell.1.abs_diff(10) <= 1);
+    assert_eq!(plane.position.exact_z_leptons(), Some(0));
+}
+
+#[test]
+fn unit_delivery_ground_aircraft_cannot_land_on_an_all_water_map() {
+    let rules =
+        rules("[Water]\nTrack=0%\nBuildable=no\n[Delivery]\nSW.Deferment=0\nDeliver.Types=ORCA\n");
+    let mut sim = world(&rules);
+    crate::sim::arena_fixture::flood(
+        &mut sim,
+        &rules,
+        32,
+        (0..32).flat_map(|x| (0..32).map(move |y| (x, y))),
+    );
+    fire(&mut sim, &rules, "Americans", (12, 10));
+    assert!(payloads(&sim, "ORCA").is_empty());
+    let owner = sim.interner.get("Americans").unwrap();
+    let ty = sim.interner.get("ORCA").unwrap();
+    assert_eq!(
+        sim.houses[&owner]
+            .tracking
+            .owned_count(crate::map::entities::EntityCategory::Aircraft, ty),
+        0
+    );
+    assert_eq!(
+        sim.houses[&owner]
+            .tracking
+            .active_count(crate::map::entities::EntityCategory::Aircraft, ty),
+        0
+    );
+    assert!(!sim.super_weapons[&owner][&sim.interner.get("Delivery").unwrap()].is_ready);
+}
+
+#[test]
+fn unit_delivery_foot_placement_commits_the_selected_bridge_plane() {
+    use crate::sim::movement::locomotor::MovementLayer;
+
+    for name in ["MTNK", "E1"] {
+        let rules = rules(&format!(
+            "[Water]\nTrack=0%\nFoot=0%\nBuildable=no\n[Delivery]\nSW.Deferment=0\nDeliver.Types={name}\n"
+        ));
+        let mut sim = world(&rules);
+        crate::sim::arena_fixture::flood(&mut sim, &rules, 32, [(12, 10)]);
+        sim.resolved_terrain
+            .as_mut()
+            .unwrap()
+            .cell_mut(12, 10)
+            .unwrap()
+            .bridge_facts
+            .raw_flags |= 0x100;
+        assert!(sim.rebuild_dynamic_navigation(&rules));
+        fire(&mut sim, &rules, "Americans", (12, 10));
+        let ids = payloads(&sim, name);
+        assert_eq!(ids.len(), 1, "{name}");
+        let entity = sim.substrate.entities.get(ids[0]).unwrap();
+        assert_eq!(
+            (entity.position.rx(), entity.position.ry()),
+            (12, 10),
+            "{name}"
+        );
+        assert!(entity.on_bridge(), "{name}");
+        assert_eq!(
+            entity.position.exact_z_leptons(),
+            Some(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS),
+            "{name}"
+        );
+        assert_eq!(
+            entity.locomotor.as_ref().unwrap().layer(),
+            MovementLayer::Bridge,
+            "{name}"
+        );
+        let occupancy = sim.substrate.occupancy.get(12, 10).unwrap();
+        assert!(
+            occupancy
+                .snapshot_layer(MovementLayer::Bridge)
+                .contains(&ids[0]),
+            "{name}"
+        );
+        assert!(
+            !occupancy
+                .snapshot_layer(MovementLayer::Ground)
+                .contains(&ids[0]),
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn unit_delivery_building_is_centered_on_the_target_cell() {
+    let rules = rules_with_art(
+        "[Delivery]\nSW.Deferment=0\nDeliver.Types=GAPOWR\n",
+        "[GAPOWR]\nFoundation=2x2\n",
+    );
+    let mut sim = world(&rules);
+    fire(&mut sim, &rules, "Americans", (12, 10));
+    let ids = payloads(&sim, "GAPOWR");
+    assert_eq!(ids.len(), 1);
+    let building = sim.substrate.entities.get(ids[0]).unwrap();
+    assert_eq!((building.position.rx(), building.position.ry()), (11, 9));
+}
+
+#[test]
+fn unit_delivery_activation_cue_precedes_building_discovery() {
+    let rules = rules(
+        "[Delivery]\nSW.Deferment=0\nDeliver.Types=GAPOWR\nSW.ActivationSound=DeliveryCue\n[GAPOWR]\nSuperWeapon=Delivery\n",
+    );
+    let mut sim = world(&rules);
+    sim.session.current_house = sim.interner.get("Americans");
+    fire(&mut sim, &rules, "Americans", (12, 10));
+    let cue = sim.sound_events.iter().position(|event| matches!(event, SimSoundEvent::VocAt { sound_id, .. } if sound_id == "DeliveryCue")).expect("activation cue");
+    let discovery = sim
+        .sound_events
+        .iter()
+        .position(|event| matches!(event, SimSoundEvent::SuperWeaponDetected { .. }))
+        .expect("placed provider discovery");
+    assert!(cue < discovery);
+}
+
+#[test]
+fn unit_delivery_retail_flying_foot_lifts_off_without_a_later_order() {
+    for name in ["JUMPJET", "ZEP"] {
+        let patch = IniFile::from_str(&format!(
+            "[SuperWeaponTypes]\n99=Delivery\n[Delivery]\nType=UnitDelivery\nAction=Custom\nIsPowered=no\nSW.Deferment=0\nDeliver.Types={name}\n"
+        ));
+        let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+            "XMP03T4.MAP",
+            &patch,
+        ) else {
+            return;
+        };
+        let rules = retail.rules;
+        let mut sim = world(&rules);
+        // This test advances a real match, whose short-game defeat owner
+        // destroys a house with no counted building or BaseUnit. Keep two
+        // opposing bases alive; a dying Rocketeer can still be airborne and
+        // would otherwise hide the same fixture error that removes a Kirov.
+        sim.session.game_options.short_game = true;
+        for (owner, cell) in [("Americans", (4, 4)), ("Russians", (24, 24))] {
+            sim.spawn_object("GAPOWR", owner, cell.0, cell.1, 0, &rules)
+                .expect("retail base building on the clear arena");
+        }
+        fire(&mut sim, &rules, "Americans", (12, 10));
+        let ids = payloads(&sim, name);
+        assert_eq!(ids.len(), 1, "{name}");
+        let runtime = sim
+            .substrate
+            .entities
+            .get(ids[0])
+            .unwrap()
+            .locomotor
+            .as_ref()
+            .unwrap()
+            .jumpjet_runtime()
+            .unwrap();
+        assert!(
+            runtime.moving(),
+            "{name}: post-placement Scatter starts flight"
+        );
+        for _ in 0..3 {
+            sim.advance_tick(&[], Some(&rules), None, None, 67);
+        }
+        let owner = sim.interner.get("Americans").unwrap();
+        assert!(
+            !sim.houses[&owner].is_defeated,
+            "{name}: live short-game base"
+        );
+        let entity = sim
+            .substrate
+            .entities
+            .get(ids[0])
+            .expect("delivery remains in the running match");
+        assert!(entity.is_ai_alive(), "{name}: a living flying Foot");
+        assert!(
+            crate::sim::movement::air_movement::current_fly_height(
+                entity,
+                sim.resolved_terrain.as_ref()
+            ) > 0,
+            "{name}: normal flight owner lifts the delivered object"
+        );
+    }
+}
+
+#[test]
+fn unit_delivery_accepted_request_survives_later_auxiliary_and_provider_loss() {
+    let rules = rules(
+        "[Delivery]\nSW.Deferment=2\nSW.AuxBuildings=GAPOWR\n[GAPOWR]\nSuperWeapon=Delivery\n",
+    );
+    let mut sim = world(&rules);
+    let (owner, sw) = charge(&mut sim, &rules, "Americans");
+    let before = sim.state_hash();
+    assert!(!sim.fire_super_weapon(
+        &rules,
+        owner,
+        sw,
+        (12, 10),
+        None,
+        FrameEffects::default(),
+        false
+    ));
+    assert_eq!(sim.state_hash(), before);
+    assert!(sim.unit_deliveries.pending.is_empty());
+
+    let provider = sim
+        .spawn_object("GAPOWR", "Americans", 8, 8, 0, &rules)
+        .unwrap();
+    assert!(sim.fire_super_weapon(
+        &rules,
+        owner,
+        sw,
+        (12, 10),
+        None,
+        FrameEffects::default(),
+        false
+    ));
+    assert_eq!(sim.unit_deliveries.pending.len(), 1);
+    sim.uninit_with_rules(provider, &rules);
+    assert!(!crate::sim::superweapon::building_requirements_met(
+        &sim,
+        &rules,
+        owner,
+        rules.super_weapon("Delivery").unwrap()
+    ));
+    sim.session.binary_frame = 2;
+    tick(&mut sim, &rules, None, FrameEffects::default());
+    let ids = payloads(&sim, "MTNK");
+    assert_eq!(ids.len(), 1);
+    assert_eq!(sim.substrate.entities.get(ids[0]).unwrap().owner(), owner);
+    assert!(sim.unit_deliveries.pending.is_empty());
+}
+
+#[test]
+fn unit_delivery_ai_ground_rally_arm_completes_a_delivery() {
+    use crate::sim::superweapon::ai_fire::{self, AiFireArm, AiFireEvent};
+
+    let rules = rules("[Delivery]\nSW.Deferment=0\n");
+    let mut sim = world(&rules);
+    let (owner, sw) = charge(&mut sim, &rules, "Russians");
+    sim.houses
+        .get_mut(&owner)
+        .unwrap()
+        .set_preferred_super_weapon_target((12, 10));
+    ai_fire::AI_FIRE_LOG.set(Some(Vec::new()));
+    ai_fire::try_fire(&mut sim, &rules, owner, None, FrameEffects::default());
+    let log = ai_fire::AI_FIRE_LOG.take().unwrap();
+    assert_eq!(
+        log,
+        vec![
+            AiFireEvent::TryFire,
+            AiFireEvent::TailArm(AiFireArm::GroundRallyPoint, sw),
+            AiFireEvent::Fire(sw, (12, 10))
+        ]
+    );
+    let ids = payloads(&sim, "MTNK");
+    assert_eq!(ids.len(), 1);
+    let unit = sim.substrate.entities.get(ids[0]).unwrap();
+    assert_eq!(unit.owner(), owner);
+    assert_eq!((unit.position.rx(), unit.position.ry()), (12, 10));
+    assert_eq!(unit.mission.effective().known(), Some(MissionType::Hunt));
+    assert!(!sim.super_weapons[&owner][&sw].is_ready);
+}
+
+#[test]
+fn unit_delivery_same_due_requests_complete_newest_first_and_only_once() {
+    let rules = rules("[Delivery]\nSW.Deferment=2\nSW.ActivationSound=DeliveryCue\n");
+    let mut sim = world(&rules);
+    fire(&mut sim, &rules, "Americans", (12, 10));
+    fire(&mut sim, &rules, "Russians", (20, 20));
+    assert_eq!(sim.unit_deliveries.pending.len(), 2);
+    sim.session.binary_frame = 2;
+    tick(&mut sim, &rules, None, FrameEffects::default());
+    let mut ids = payloads(&sim, "MTNK");
+    ids.sort_unstable();
+    assert_eq!(ids.len(), 2);
+    let owners: Vec<_> = ids
+        .iter()
+        .map(|&id| {
+            sim.interner
+                .resolve(sim.substrate.entities.get(id).unwrap().owner())
+        })
+        .collect();
+    assert_eq!(owners, ["Russians", "Americans"]);
+    assert!(sim.unit_deliveries.pending.is_empty());
+    tick(&mut sim, &rules, None, FrameEffects::default());
+    assert_eq!(payloads(&sim, "MTNK").len(), 2);
+    assert_eq!(sim.sound_events.iter().filter(|event| matches!(event, SimSoundEvent::VocAt { sound_id, .. } if sound_id == "DeliveryCue")).count(), 2);
 }

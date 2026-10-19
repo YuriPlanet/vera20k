@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original ScenarioPause enter/exit and Main_Tick timer/admission slice; signed duration multiplication, rearm, nesting and modes; Radar FIFO tail and pause reconciliation across queued clips.",
+  "assumptions": [
+    "Fresh Scenario62C/630=0 and620=-1; supplied16ms bucket clock; preexisting35A2=1 keeps sidebar/media outside scope.",
+    "Radar clip pause flags and whether another FIFO entry remains are supplied at the original657BFA/657C7D slice inputs.",
+    "No full Main_Tick, game, Bink playback, audio or save/load execution is claimed."
+  ],
+  "substitutions": [
+    "6C8C40 returns each declared clock;406F00/406F40 record audio boundaries;55D830/55D878 terminate the unchanged55D7C2 timer/branch slice.",
+    "Radar housing/audio/detail calls4068E0,656CB0,5BF530,406060,750920,4060F0,55AF40 are sinks;657CAC/657CD4 stop before epilogues."
+  ],
+  "entry_points": {
+    "enter": "0x00684060",
+    "exit": "0x00684180",
+    "timer_branch": "0x0055D7C2",
+    "radar_fifo_tail": "0x00657BFA",
+    "radar_pause": "0x00657C7D"
+  },
+  "replay_command": "python -m tools.superweapon_oracle --scenario-pause",
+  "payload_sha256": "fd4f3e54b456bc668dd439c6cc87c8a4a625661b0f3975fa99e9d33765484632"
+}
