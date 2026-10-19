@@ -1632,6 +1632,9 @@ pub struct GeneralRules {
     /// progress against this retained value times900, without truncating it
     /// to a timer first (`0x0044BD32`, `0x0044BD44`).
     pub unit_repair_rate: f64,
+    /// Hospital repair: Rules+16D8/16F0, ReadGeneral670DE9/670E57.
+    pub infantry_repair_step: i32,
+    pub infantry_repair_rate: f64,
     /// `[General] RepairStep=` — `RulesClass+0x16CC`, ReadInt over the
     /// constructor's 5 with no clamp (retail 8). TechnoTypeClass vt+0xB4
     /// (`0x00712120`) returns it: the health a repair tick adds, and the
@@ -2508,6 +2511,9 @@ impl Default for GeneralRules {
             guard_mode_stray: 0,
             // Rules constructor667530/53A retains the double, not frame ticks.
             unit_repair_rate: U_REPAIR_RATE_MINUTES,
+            // Constructor66751A and667540: 1 and double0.016.
+            infantry_repair_step: 1,
+            infantry_repair_rate: 0.016,
             repair_step: 5,
             repair_percent: 0.25,
             // RulesClass constructor 0x0066738F.
@@ -3702,6 +3708,8 @@ impl GeneralRules {
             repair_percent: general.read_double("RepairPercent", defaults.repair_percent),
             repair_step: general.read_int("RepairStep", defaults.repair_step),
             unit_repair_rate: general.read_double("URepairRate", defaults.unit_repair_rate),
+            infantry_repair_step: general.read_int("IRepairStep", defaults.infantry_repair_step),
+            infantry_repair_rate: general.read_double("IRepairRate", defaults.infantry_repair_rate),
             reload_rate: general.read_double("ReloadRate", defaults.reload_rate),
             path_delay,
             blockage_path_delay_ticks,

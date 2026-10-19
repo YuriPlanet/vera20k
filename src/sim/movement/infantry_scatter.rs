@@ -512,15 +512,8 @@ impl Simulation {
     /// Rocketeer. Risk: RNG drift against native, not a visible movement
     /// difference.
     ///
-    /// RESIDUAL: the Enter radio arm is not ported. With a Techno destination
-    /// (`0x0040DD70`) it queues him on a transport already in radio contact
-    /// (QueueUpToEnter `+0x500`, ArchiveTarget cleared, NULL destination) or
-    /// sends RADIO_HELLO and, on ROGER, message 0xE, returning before Foot's
-    /// setter when that answers 0xE. VERA writes the object through Foot's
-    /// setter either way. Trigger: an infantryman's boarding order
-    /// (EnterTransport, Enter 7) or an Enter re-target. Frequency: every
-    /// infantry boarding. Risk: boarding a busy transport or one that turns
-    /// him away differs from native.
+    /// Enter's51AC25..51AD17 handshake shares Radio contacts and Foot+500
+    /// with the existing pending-entry owner; it creates no second queue.
     ///
     /// RESIDUAL: a `JumpJet=` infantryman's Walk piggyback is not modelled.
     /// The setter swaps the Jumpjet of one that is not moving for a Walk
@@ -615,6 +608,66 @@ impl Simulation {
                 .get_mut(id)
                 .ok_or("destination lost infantry after DoAction")?,
         );
+        // Infantry51AC25..51AD17, Steam gamemd3e81a617: current OR
+        // queued Enter, only while the infantry has no radio contact.
+        let actor = self.substrate.entities.get(id).unwrap();
+        if (actor.mission.current().known() == Some(MissionType::Enter)
+            || actor.mission.queued().known() == Some(MissionType::Enter))
+            && actor.radio_contacts.is_empty()
+            && let NavTargetRef::Entity { id: target }
+            | NavTargetRef::Object { id: target }
+            | NavTargetRef::Building { id: target } = requested
+            && let Some(receiver) = self.substrate.entities.get(target)
+        {
+            use crate::sim::radio::{self, RadioMessage, RadioPayload, RadioResponse};
+            if !receiver.radio_contacts.is_empty() {
+                if matches!(
+                    receiver.category(),
+                    crate::map::entities::EntityCategory::Structure
+                        | crate::map::entities::EntityCategory::Aircraft
+                ) {
+                    let actor = self.substrate.entities.get_mut(id).unwrap();
+                    actor.set_pending_entry(Some(target));
+                    actor.set_archive_target(None);
+                    self.foot_null_destination(id, Some(rules), registry, frame_effects);
+                    return Ok(true);
+                }
+                self.substrate
+                    .entities
+                    .get_mut(id)
+                    .unwrap()
+                    .set_archive_target(Some(requested.into()));
+            } else if radio::transmit(
+                self,
+                id,
+                target,
+                RadioMessage::Hello,
+                RadioPayload::default(),
+                Some(rules),
+                frame_effects,
+            ) == RadioResponse::Roger
+            {
+                let response = radio::transmit_to_contact(
+                    self,
+                    id,
+                    RadioMessage::CanDock,
+                    Some(rules),
+                    frame_effects,
+                );
+                if response.code() == 0x0e {
+                    return Ok(true);
+                }
+                if response != RadioResponse::Roger {
+                    radio::transmit_to_contact(
+                        self,
+                        id,
+                        RadioMessage::Break,
+                        Some(rules),
+                        frame_effects,
+                    );
+                }
+            }
+        }
         if !self.begin_foot_destination(id, true, Some(rules), registry, frame_effects) {
             return Ok(true);
         }

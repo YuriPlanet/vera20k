@@ -774,6 +774,23 @@ impl Simulation {
             _ => Default::default(),
         };
         if !entry.return_before_foot {
+            // Infantry51A21F..51A39D precedes the mobile Enter arm. A
+            // Hospital's patient has no Passengers-configured adapter.
+            if reason == PerCellReason::Arrival
+                && let Some(rules) = rules
+                && crate::sim::passenger::infantry_hospital_at_destination(self, rules, id)
+                    .is_some()
+                && crate::sim::passenger::process_boarding_passenger(
+                    self,
+                    rules,
+                    id,
+                    crate::sim::passenger::BoardingVisit::CellArrival,
+                    registry,
+                    effects,
+                ) == crate::sim::passenger::BoardingOutcome::Boarded
+            {
+                return Ok(entry.bridge_state_changed);
+            }
             // Steam gamemd3e81a617,51A3A0..51A485: a mobile transport
             // arrival boards before Foot's tail. Teleport71971C calls here
             // after setting warp-in; waiting for the late passenger phase

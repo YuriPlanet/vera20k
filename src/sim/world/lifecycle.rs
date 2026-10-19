@@ -3601,7 +3601,17 @@ impl Simulation {
         // TechnoClass::Limbo releases the gattling loop and clears the report
         // latch (`0x006F6C6B`, `0x006F6C76`) ahead of its radio pass.
         self.gattling_limbo(stable_id, context);
-        crate::sim::radio::broadcast_break(self, stable_id, None, context.effects());
+        // RadioLimbo65AA80..65AA99 tests InLimbo before Broadcast(3).
+        // CargoAdd4733B0 repeats virtual Limbo after Hospital51A35F's
+        // post-conceal HELLO; breaking again loses the repair contact.
+        if self
+            .substrate
+            .entities
+            .get(stable_id)
+            .is_some_and(|entity| !entity.lifecycle.in_limbo)
+        {
+            crate::sim::radio::broadcast_break(self, stable_id, None, context.effects());
+        }
         let outcome = self.object_conceal_with_context(stable_id, context);
         // Building445DF4..445E14 follows the base Limbo, including the
         // already-limbo branch4458CE. This is one House/category callback,

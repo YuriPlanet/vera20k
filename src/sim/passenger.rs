@@ -283,12 +283,8 @@ impl Simulation {
         let Some(transport) = self.substrate.entities.get_mut(transport_id) else {
             return false;
         };
-        if transport.category() == EntityCategory::Structure
-            && !transport.passenger_role.is_transport()
-        {
-            return false;
-        }
-        // Every native Foot has CargoClass even when Type.Passengers is0.
+        // Every native Techno has CargoClass even when Type.Passengers is0
+        // (Hospital51A36A also calls this raw leaf).
         // Make its empty hold at the first raw Cargo attach; ordinary
         // capacity admission remains a caller policy.
         let cargo = transport.passenger_role.ensure_hold();
@@ -844,6 +840,50 @@ pub(crate) enum BoardingOutcome {
     Refused,
 }
 
+/// Infantry51A21F..51A27F's Enter building arm. Hospital admission follows
+/// the same physical ground-building identity as capture, without requiring
+/// configured Passengers or the legacy Boarding adapter.
+pub(crate) fn infantry_hospital_at_destination(
+    sim: &Simulation,
+    rules: &RuleSet,
+    pax_id: u64,
+) -> Option<u64> {
+    let passenger = sim.substrate.entities.get(pax_id)?;
+    if passenger.category() != EntityCategory::Infantry
+        || passenger.mission.effective().known() != Some(crate::sim::mission::MissionType::Enter)
+    {
+        return None;
+    }
+    let building_id = sim.substrate.occupancy.first_building_on_layer(
+        passenger.position.rx(),
+        passenger.position.ry(),
+        crate::sim::movement::locomotor::MovementLayer::Ground,
+    )?;
+    let building = sim.substrate.entities.get(building_id)?;
+    let object = sim.object_type(building.type_ref(), rules)?;
+    //51A22E..51A25D also resolves a Cell NavCom's first building. The
+    //hospital's MOVE_HERE12 changes NavCom from the object to its Cell.
+    let nav_cell_matches = match passenger.navigation.nav_com() {
+        Some(crate::sim::components::NavTargetRef::Cell { rx, ry }) => {
+            sim.substrate.occupancy.first_building_on_layer(
+                rx,
+                ry,
+                crate::sim::movement::locomotor::MovementLayer::Ground,
+            ) == Some(building_id)
+        }
+        _ => false,
+    };
+    (object.hospital
+        && (nav_cell_matches
+            || crate::sim::movement::nav_targets_same_receiver(
+                passenger.navigation.nav_com(),
+                crate::sim::components::NavTargetRef::object(building_id),
+            )
+            || passenger.attack_target.target()
+                == Some(crate::sim::combat::TargetKind::Entity(building_id))))
+    .then_some(building_id)
+}
+
 pub(crate) fn process_boarding_passenger(
     sim: &mut Simulation,
     rules: &RuleSet,
@@ -857,9 +897,20 @@ pub(crate) fn process_boarding_passenger(
         .entities
         .get(pax_id)
         .and_then(|entity| entity.passenger_role.boarding_transport_id())
+        .or_else(|| infantry_hospital_at_destination(sim, rules, pax_id))
     else {
         return BoardingOutcome::Waiting;
     };
+
+    let hospital_entry = sim
+        .substrate
+        .entities
+        .get(transport_id)
+        .and_then(|transport| sim.object_type(transport.type_ref(), rules))
+        .is_some_and(|object| object.hospital);
+    if hospital_entry && visit != BoardingVisit::CellArrival {
+        return BoardingOutcome::Waiting;
+    }
 
     let transport_alive = sim
         .substrate
@@ -893,42 +944,54 @@ pub(crate) fn process_boarding_passenger(
         return BoardingOutcome::Refused;
     }
 
-    // The mobile PerCellProcess branch enters only its live NavCom, on Enter
-    // (Infantry519630, 51A21F..51A252 and 51A3DA). The Boarding role is an
-    // adapter, not a second authority after a replacement Move/Stop order.
-    if sim
+    // PerCellProcess enters only its live NavCom/Target, on Enter (Infantry
+    //51A21F..51A252 and51A3DA). Boarding cannot outlive the authoritative
+    //destination/pending token, including a refused building waiter70D7E0.
+    let building_arm = sim
         .substrate
         .entities
         .get(transport_id)
-        .is_some_and(|transport| transport.category() != EntityCategory::Structure)
-    {
-        let passenger = sim.substrate.entities.get(pax_id).unwrap();
-        let matches_destination = crate::sim::movement::nav_targets_same_receiver(
+        .is_some_and(|transport| transport.category() == EntityCategory::Structure);
+    let passenger = sim.substrate.entities.get(pax_id).unwrap();
+    let matches_cell_destination = building_arm
+        && match passenger.navigation.nav_com() {
+            Some(crate::sim::components::NavTargetRef::Cell { rx, ry }) => {
+                sim.substrate.occupancy.first_building_on_layer(
+                    rx,
+                    ry,
+                    crate::sim::movement::locomotor::MovementLayer::Ground,
+                ) == Some(transport_id)
+            }
+            _ => false,
+        };
+    let matches_destination = matches_cell_destination
+        || (building_arm
+            && passenger.attack_target.target()
+                == Some(crate::sim::combat::TargetKind::Entity(transport_id)))
+        || crate::sim::movement::nav_targets_same_receiver(
             passenger.navigation.nav_com(),
             crate::sim::components::NavTargetRef::object(transport_id),
         );
-        // Unit741CB8 parks a mobile destination in Foot+500 until the
-        // shared pending-entry owner70D7E0 establishes its radio contact.
-        let pending_destination = passenger.pending_entry() == Some(transport_id);
-        let entering =
-            passenger.mission.effective().known() == Some(crate::sim::mission::MissionType::Enter);
-        let enter_pending =
-            passenger.mission.queued().known() == Some(crate::sim::mission::MissionType::Enter);
-        // Foot70D8F0 parks a busy waiter on Move while retaining +500.
-        // Only the canonical pending owner/retask can cancel that wait;
-        // the temporary mission does not retire its boarding adapter.
-        if !pending_destination && (!matches_destination || (!entering && !enter_pending)) {
-            sim.substrate
-                .entities
-                .get_mut(pax_id)
-                .unwrap()
-                .passenger_role
-                .clear_carrier_relation();
-            return BoardingOutcome::Waiting;
-        }
-        if !entering || !matches_destination {
-            return BoardingOutcome::Waiting;
-        }
+    let pending_destination = passenger.pending_entry() == Some(transport_id);
+    let entering =
+        passenger.mission.effective().known() == Some(crate::sim::mission::MissionType::Enter);
+    let enter_pending =
+        passenger.mission.queued().known() == Some(crate::sim::mission::MissionType::Enter);
+    // Foot70D8F0 parks a busy waiter on Move while retaining+500. Keep
+    //that wait; retire the adapter only after pending/retask cancels it.
+    if !pending_destination && (!matches_destination || (!entering && !enter_pending)) {
+        sim.substrate
+            .entities
+            .get_mut(pax_id)
+            .unwrap()
+            .passenger_role
+            .clear_carrier_relation();
+        return BoardingOutcome::Waiting;
+    }
+    if !entering || !matches_destination {
+        return BoardingOutcome::Waiting;
+    }
+    if !building_arm {
         if visit == BoardingVisit::LegacyPhase {
             return BoardingOutcome::Waiting;
         }
@@ -975,8 +1038,10 @@ pub(crate) fn process_boarding_passenger(
 
     let pax_size = rules.object(&pax_type_str).map(|obj| obj.size).unwrap_or(1);
     let transport_obj = rules.object(&transport_type_str);
-    let transport_gunner = transport_obj.map(|obj| obj.gunner).unwrap_or(false);
-    let transport_open_topped = transport_obj.map(|obj| obj.open_topped).unwrap_or(false);
+    //51A27F..51A39D adds building cargo directly. Only the mobile arm
+    //51A3FC..51A47E sets open-topped/gunner roles through Techno AddPassenger.
+    let transport_gunner = !building_arm && transport_obj.is_some_and(|obj| obj.gunner);
+    let transport_open_topped = !building_arm && transport_obj.is_some_and(|obj| obj.open_topped);
     let infantry_absorber_entry =
         sim.substrate
             .entities
@@ -991,7 +1056,24 @@ pub(crate) fn process_boarding_passenger(
                     && transport_obj.is_some_and(|object| object.infantry_absorb)
             });
 
-    let can_board = if sim
+    let can_board = if hospital_entry {
+        //51A287 raises the building's tag before asking the radio contact
+        //DOCK_NOW15. Neither Cargo capacity nor the earlier cursor admits it.
+        sim.dispatch_object_tag_event(
+            transport_id,
+            1,
+            Some(pax_id),
+            None,
+            UninitContext::new(Some(rules), registry).with_effects(effects),
+        );
+        crate::sim::radio::transmit_to_contact(
+            sim,
+            pax_id,
+            crate::sim::radio::RadioMessage::DockNow,
+            Some(rules),
+            effects,
+        ) == crate::sim::radio::RadioResponse::Roger
+    } else if sim
         .substrate
         .entities
         .get(transport_id)
@@ -1049,8 +1131,11 @@ pub(crate) fn process_boarding_passenger(
         // `0x0073A6FC..0x0073A70F` and `0x0073A29E..0x0073A2B1`, Infantry
         // `0x0051A40E..0x0051A41C` and `0x0051A2B0..0x0051A2BE`).
         if let Some(pax) = sim.substrate.entities.get_mut(pax_id) {
-            // `Set_ArchiveTarget(0)` opens both (`0x0051A3FF`, `0x0073A6EC`).
-            pax.set_archive_target(None);
+            // The mobile arms51A3FF/73A6EC clear ArchiveTarget. The
+            //building arm51A27F..51A39D preserves it.
+            if !building_arm {
+                pax.set_archive_target(None);
+            }
             pax.mission.clear_ai_counter();
             pax.gattling.set_value(0);
             pax.gattling.set_stage(0);
@@ -1107,6 +1192,19 @@ pub(crate) fn process_boarding_passenger(
         if infantry_absorber_entry {
             sim.account_infantry_absorber_entry(pax_id);
         }
+        if hospital_entry && !infantry_absorber_entry {
+            //51A35F: non-absorbing buildings restore HELLO after Limbo's
+            //BREAK, retaining the patient as the building's repair contact.
+            crate::sim::radio::transmit(
+                sim,
+                pax_id,
+                transport_id,
+                crate::sim::radio::RadioMessage::Hello,
+                crate::sim::radio::RadioPayload::default(),
+                Some(rules),
+                effects,
+            );
+        }
         // PerCellProcess clears OnBridge in both Unit arms (`0x0073A297`,
         // `0x0073A6F5`) and the Infantry transport arm (`0x0051A407`), not the
         // Infantry building arm (`0x0051A27F..`), so a transport's passenger
@@ -1120,11 +1218,6 @@ pub(crate) fn process_boarding_passenger(
         // or as a trooper Paradrop refused over a bridge. Effect: native
         // leaves the passenger in that cell's bridge list. Frequency: rare.
         // Risk: a later pass over that list meets the passenger.
-        let building_arm = sim
-            .substrate
-            .entities
-            .get(transport_id)
-            .is_some_and(|transport| transport.category() == EntityCategory::Structure);
         if let Some(pax) = sim.substrate.entities.get_mut(pax_id)
             && !(building_arm && pax.category() == EntityCategory::Infantry)
         {
@@ -1157,6 +1250,10 @@ pub(crate) fn process_boarding_passenger(
             // turn to act on it; an open-topped one reaches the setter below.
             pax.passenger_role
                 .set_inside_transport(transport_id, transport_open_topped);
+            if hospital_entry {
+                //51A399 -> FootStopMoving4DF0D0; no locomotor Stop.
+                pax.navigation.stop_moving();
+            }
         }
         // The transport arms reach vt+0x394 `TechnoClass::AddPassenger @
         // 0x00710670` (Infantry `0x0051A46E`, Unit `0x0073A740`): after

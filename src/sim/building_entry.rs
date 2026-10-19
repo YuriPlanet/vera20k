@@ -57,10 +57,10 @@
 //! RESIDUALS:
 //! - An absorber entry runs through VERA's Boarding adapter
 //!   (`passenger::tick_passenger_system`), as a player's Enter order does:
-//!   the class setter's Enter arm (radio HELLO and DOCKING,
-//!   `0x0051AC25..0x0051AD17`) and InfantryClass::PerCellProcess's DOCK_NOW
-//!   to that contact (`0x0051A298..0x0051A2A7`) are not represented. The
-//!   reissue test below never finds the absorber as a radio contact; while
+//!   Infantry's class setter now supplies HELLO and DOCKING
+//!   (`0x0051AC25..0x0051AD17`), but the adapter still bypasses
+//!   InfantryClass::PerCellProcess's DOCK_NOW to that contact
+//!   (`0x0051A298..0x0051A2A7`). While
 //!   the adapter walks the Foot, Mission_Enter (`0x004D9290`) is not run, so
 //!   its DOCKING probe and its Rate epilogue draw (RandomRanged(0, 2) on the
 //!   Scenario stream) are skipped each dispatch; and a Foot that arrives at
