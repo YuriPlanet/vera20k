@@ -38,9 +38,6 @@ pub const LIGHT_SCALE16_IDENTITY: i32 = 0x10000;
 /// correction in LIGHTCONVERT_ROW_RGB565_ORACLE_2026_09_09.md.
 pub const GROUND_LEVEL_UNIT_SCALE: i32 = LIGHT_UNIT;
 
-/// Binary light unit scale for point-light intensity/tint values.
-pub const POINT_LIGHT_UNIT_SCALE: i32 = LIGHT_UNIT;
-
 /// Leptons per cell in RA2's coordinate system.
 pub const LEPTONS_PER_CELL: i32 = crate::util::lepton::LEPTONS_PER_CELL_I32;
 
@@ -1071,13 +1068,9 @@ pub fn collect_building_lights(entities: &[MapEntity], rules: Option<&RuleSet>) 
         if let Some(light) = point_light_from_object(
             ent.cell_x,
             ent.cell_y,
-            obj.light_visibility,
-            obj.light_intensity,
-            [
-                obj.light_red_tint,
-                obj.light_green_tint,
-                obj.light_blue_tint,
-            ],
+            obj.building_light().visibility_leptons(),
+            obj.building_light().intensity_units(),
+            obj.building_light().tint_units(),
         ) {
             lights.push(light);
         }
@@ -1085,15 +1078,16 @@ pub fn collect_building_lights(entities: &[MapEntity], rules: Option<&RuleSet>) 
     lights
 }
 
-/// Build a point light from object light fields at a cell origin.
+/// Build a point light from the retained BuildingType integer light fields.
+/// Their Rules reader already converted them; LightSource554760 receives the
+/// stored words directly from Building440D9A..440DE6/446703..446750.
 pub fn point_light_from_object(
     rx: u16,
     ry: u16,
     visibility_leptons: i32,
-    intensity: f32,
-    tint: [f32; 3],
+    intensity: i32,
+    tint: [i32; 3],
 ) -> Option<PointLight> {
-    let intensity = light_value_to_units(intensity);
     if intensity == 0 {
         return None;
     }
@@ -1108,11 +1102,7 @@ pub fn point_light_from_object(
         center_y: i32::from(ry) * LEPTONS_PER_CELL + HALF_CELL_LEPTONS,
         radius_leptons,
         intensity,
-        tint: [
-            light_value_to_units(tint[0]),
-            light_value_to_units(tint[1]),
-            light_value_to_units(tint[2]),
-        ],
+        tint,
         active: true,
         detail: true,
     })
@@ -1273,11 +1263,6 @@ fn accumulate_light_sample(
             *raw += signed_div_1000(i64::from(light.tint[channel]) * factor);
         }
     }
-}
-
-/// Convert INI light values using the verified `value * 1000 + 0.1` shape.
-pub fn light_value_to_units(value: f32) -> i32 {
-    (value * POINT_LIGHT_UNIT_SCALE as f32 + 0.1) as i32
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -2097,8 +2082,8 @@ mod tests {
         rx: u16,
         ry: u16,
         radius_leptons: i32,
-        intensity: f32,
-        tint: [f32; 3],
+        intensity: i32,
+        tint: [i32; 3],
     ) -> PointLight {
         PointLight {
             rx,
@@ -2106,12 +2091,8 @@ mod tests {
             center_x: i32::from(rx) * LEPTONS_PER_CELL + HALF_CELL_LEPTONS,
             center_y: i32::from(ry) * LEPTONS_PER_CELL + HALF_CELL_LEPTONS,
             radius_leptons,
-            intensity: light_value_to_units(intensity),
-            tint: [
-                light_value_to_units(tint[0]),
-                light_value_to_units(tint[1]),
-                light_value_to_units(tint[2]),
-            ],
+            intensity,
+            tint,
             active: true,
             detail: true,
         }
@@ -2122,7 +2103,7 @@ mod tests {
         let mut grid = test_grid(20, [0.5, 0.5, 0.5]);
         // Zero RGB contribution isolates intensity falloff from the separately
         // tested native common-scalar color normalization.
-        let light = test_point_light(10, 10, 5 * LEPTONS_PER_CELL, 1.0, [0.0; 3]);
+        let light = test_point_light(10, 10, 5 * LEPTONS_PER_CELL, 1000, [0; 3]);
         accumulate_point_lights(&mut grid, &[light]);
 
         // Center cell gets full intensity: 0.5 + 1.0 = 1.5
@@ -2148,7 +2129,7 @@ mod tests {
     #[test]
     fn test_point_light_boundary_is_inclusive_with_zero_edge_contribution() {
         let mut grid = test_grid(8, [0.5, 0.5, 0.5]);
-        let light = test_point_light(2, 2, 2 * LEPTONS_PER_CELL, 1.0, [0.0; 3]);
+        let light = test_point_light(2, 2, 2 * LEPTONS_PER_CELL, 1000, [0; 3]);
         accumulate_point_lights(&mut grid, &[light]);
 
         let edge = grid.tint_or_default((4, 2));
@@ -2160,7 +2141,8 @@ mod tests {
     #[test]
     fn test_negative_point_light_darkens_cell() {
         let mut grid = test_grid(5, [0.8, 0.8, 0.8]);
-        let light = test_point_light(2, 2, 2 * LEPTONS_PER_CELL, -0.2, [0.0; 3]);
+        // Retain the original fixture's post-reader -.2 value (-199 after bias).
+        let light = test_point_light(2, 2, 2 * LEPTONS_PER_CELL, -199, [0; 3]);
         accumulate_point_lights(&mut grid, &[light]);
 
         let center = grid.tint_or_default((2, 2));
@@ -2172,8 +2154,8 @@ mod tests {
     #[test]
     fn test_point_lights_sum_before_clamp() {
         let mut grid = test_grid(5, [1.9, 1.9, 1.9]);
-        let brighten = test_point_light(2, 2, 2 * LEPTONS_PER_CELL, 0.3, [0.0; 3]);
-        let darken = test_point_light(2, 2, 2 * LEPTONS_PER_CELL, -0.3002, [0.0; 3]);
+        let brighten = test_point_light(2, 2, 2 * LEPTONS_PER_CELL, 300, [0; 3]);
+        let darken = test_point_light(2, 2, 2 * LEPTONS_PER_CELL, -300, [0; 3]);
         accumulate_point_lights(&mut grid, &[brighten, darken]);
 
         let center = grid.tint_or_default((2, 2));
@@ -2183,7 +2165,7 @@ mod tests {
     #[test]
     fn test_point_light_division_truncates_toward_zero() {
         let mut grid = test_grid(1, [0.0, 0.0, 0.0]);
-        let mut light = test_point_light(0, 0, 3, 1.0, [0.0; 3]);
+        let mut light = test_point_light(0, 0, 3, 1000, [0; 3]);
         light.center_x -= 1;
         accumulate_point_lights(&mut grid, &[light]);
 
@@ -2194,7 +2176,7 @@ mod tests {
     #[test]
     fn test_point_light_colored_tint() {
         let mut grid = test_grid(10, [0.3, 0.3, 0.3]);
-        let light = test_point_light(5, 5, 3 * LEPTONS_PER_CELL, 0.6, [1.0, 0.0, 0.5]);
+        let light = test_point_light(5, 5, 3 * LEPTONS_PER_CELL, 600, [1000, 0, 500]);
         accumulate_point_lights(&mut grid, &[light]);
 
         let light = grid.cell_light_at((5, 5)).expect("light");
@@ -2209,20 +2191,12 @@ mod tests {
     #[test]
     fn test_accumulation_clamps_at_cap() {
         let mut grid = test_grid(5, [1.8, 1.8, 1.8]);
-        let light = test_point_light(2, 2, 3 * LEPTONS_PER_CELL, 1.0, [0.0; 3]);
+        let light = test_point_light(2, 2, 3 * LEPTONS_PER_CELL, 1000, [0; 3]);
         accumulate_point_lights(&mut grid, &[light]);
 
         let center = grid.tint_or_default((2, 2));
         // 1.8 + 1.0 = 2.8 → clamped to 2.0
         assert!((center[0] - LIGHT_CLAMP_MAX as f32 / LIGHT_UNIT as f32).abs() < 0.001);
-    }
-
-    #[test]
-    fn test_light_value_to_units_uses_verified_bias() {
-        assert_eq!(light_value_to_units(0.0), 0);
-        assert_eq!(light_value_to_units(0.01), 10);
-        assert_eq!(light_value_to_units(0.5), 500);
-        assert_eq!(light_value_to_units(-0.5), -499);
     }
 
     #[test]
@@ -2276,7 +2250,7 @@ mod tests {
 
     #[test]
     fn galite_source_fields_match_rulesmd_units() {
-        let light = point_light_from_object(10, 10, 5000, 0.2, [0.05, 0.05, 0.01]).expect("light");
+        let light = point_light_from_object(10, 10, 5000, 200, [50, 50, 10]).expect("light");
 
         assert_eq!(light.radius_leptons, 5000);
         assert_eq!(light.intensity, 200);
@@ -2287,7 +2261,7 @@ mod tests {
     fn galite_point_light_contribution_separates_intensity_and_rgb() {
         let mut grid =
             build_cell_light_grid_from_heights([((10, 10), 0)], &LightingConfig::default());
-        let light = point_light_from_object(10, 10, 5000, 0.2, [0.05, 0.05, 0.01]).expect("light");
+        let light = point_light_from_object(10, 10, 5000, 200, [50, 50, 10]).expect("light");
         accumulate_point_lights(&mut grid, &[light]);
 
         let center = grid.cell_light_at((10, 10)).expect("light");
@@ -2299,7 +2273,7 @@ mod tests {
 
     #[test]
     fn light_intensity_zero_allocates_no_static_source() {
-        assert!(point_light_from_object(1, 2, 4096, 0.0, [1.0, 1.0, 1.0]).is_none());
+        assert!(point_light_from_object(1, 2, 4096, 0, [1000; 3]).is_none());
     }
 
     #[test]
@@ -2362,7 +2336,7 @@ mod tests {
     fn deferred_refresh_commits_only_after_reverse_gather() {
         let config = LightingConfig::default();
         let heights = [((4, 4), 0), ((5, 4), 2), ((6, 4), 4)];
-        let light = point_light_from_object(5, 4, 512, 0.2, [0.1, 0.0, 0.0]).expect("light");
+        let light = point_light_from_object(5, 4, 512, 200, [100, 0, 0]).expect("light");
         let immediate = {
             let mut grid = build_cell_light_grid_from_heights(heights, &config);
             accumulate_point_lights(&mut grid, std::slice::from_ref(&light));
@@ -2388,7 +2362,7 @@ mod tests {
                 .map(|light| light.raw_additive_intensity),
         );
 
-        let light = point_light_from_object(5, 4, 512, 0.2, [0.1, 0.0, 0.0]).expect("light");
+        let light = point_light_from_object(5, 4, 512, 200, [100, 0, 0]).expect("light");
         let mut pending = DeferredCellLightRefresh::new(heights, &config, vec![light]);
         assert!(pending.gather(heights.len()));
         let deferred = pending.commit().expect("complete gather commits");
@@ -2411,7 +2385,7 @@ mod tests {
 
     #[test]
     fn point_light_area_walk_is_outer_y_inner_x_and_radius_gated() {
-        let light = point_light_from_object(2, 2, 256, 0.2, [0.1, 0.0, 0.0]).expect("light");
+        let light = point_light_from_object(2, 2, 256, 200, [100, 0, 0]).expect("light");
         let cells = point_light_area_cells(&light, 5, 5, |_, _| Some(0));
 
         assert_eq!(
@@ -2431,7 +2405,7 @@ mod tests {
         let config = LightingConfig::default();
         let mut grid = build_cell_light_grid_from_heights([((1, 1), 0), ((9, 9), 4)], &config);
         let unaffected = grid.cell_light_at((9, 9)).cloned();
-        let light = point_light_from_object(1, 1, 256, 0.2, [0.1, 0.0, 0.0]).expect("light");
+        let light = point_light_from_object(1, 1, 256, 200, [100, 0, 0]).expect("light");
         let mut pending = DeferredCellLightRefresh::new([((1, 1), 0)], &config, vec![light]);
 
         pending.gather_all();

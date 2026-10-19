@@ -1183,7 +1183,10 @@ use crate::util::save_codec;
 // CargoTotalSize is the signed low-32-bit result of native's ordered per-entry
 // FTOL. The positional passenger-size payload widened, so a v440 body cannot
 // be decoded under this schema.
-const SNAPSHOT_VERSION: u32 = 441;
+// 441 -> 442: processed BuildingTypes retain the native signed integer light
+// fields across per-layer reads. Their positional rules-state payload replaces
+// the merged-INI float light projection, so v441 cannot use this schema.
+const SNAPSHOT_VERSION: u32 = 442;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -4425,7 +4428,7 @@ mod tests {
             GameSnapshot::load(&preamble_only),
             Err(SnapshotError::VersionMismatch {
                 expected: SNAPSHOT_VERSION,
-                found: 440,
+                found: 441,
             })
         ));
     }
@@ -4886,7 +4889,8 @@ mod tests {
         // 438 -> 439: retained Ares building requirement lists.
         // 439 -> 440: UnitDelivery state and instance base policy.
         // 440 -> 441: binary64 passenger Size/SizeLimit and signed CargoTotalSize.
-        assert_eq!(super::SNAPSHOT_VERSION, 441);
+        // 441 -> 442: retained per-pass BuildingType light integers.
+        assert_eq!(super::SNAPSHOT_VERSION, 442);
     }
 
     #[test]

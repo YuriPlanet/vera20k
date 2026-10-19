@@ -4422,6 +4422,15 @@ impl RuleSet {
                 building.has_spotlight = flag;
             }
         }
+        for (name, light) in processed.building_light_states() {
+            if let Some(building) = rules
+                .object_list
+                .iter_mut()
+                .find(|o| o.category == ObjectCategory::Building && o.id == name)
+            {
+                building.project_building_light(light);
+            }
+        }
         for (name, offset) in processed.building_target_coord_offsets() {
             if let Some(building) = rules
                 .object_list

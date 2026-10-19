@@ -106,6 +106,7 @@ pub mod airstrike;
 pub mod animation_sequence;
 pub mod art_data;
 pub mod bridge_warheads;
+pub mod building_light;
 pub mod building_rubble;
 pub mod buildup_asset_catalog;
 pub mod campaign_loading;
