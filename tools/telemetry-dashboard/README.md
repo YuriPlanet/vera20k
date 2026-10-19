@@ -107,10 +107,11 @@ PNG and HTML exports are generated locally in the browser. No external services
 are used. The dashboard-only feature includes no trainer, remote pause/step
 controls or gameplay mutations.
 
-The original trainer and additional hooks are preserved on
-[codex/pr-2083-original](https://github.com/YuriPlanet/vera20k/tree/codex/pr-2083-original)
-as an unchanged reference. The optional debug build adapts that work to current
-state owners and the session, replay and transport rules above.
+The full original contribution from
+[PR #2083](https://github.com/YuriPlanet/vera20k/pull/2083) is preserved unchanged
+in a local maintainer Git archive for future integration. The optional debug
+build adapts that work to current state owners and the session, replay and
+transport rules above.
 
 ## Frontend changes
 
