@@ -12,7 +12,6 @@ fn step(sim: &mut Simulation, rules: &RuleSet) {
         None,
         33,
         crate::sim::world::TickLane::Ordinary,
-        None,
         Default::default(),
     )
     .unwrap();
