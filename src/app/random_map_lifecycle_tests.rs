@@ -121,11 +121,11 @@ fn gsi_04_12_random_map_ui_to_sed_launch_lifecycle_converges() {
         crate::assets::asset_manager::MediaArchiveMode::STOCK_DIGITAL,
     )
     .expect("active-retail AssetManager");
+    let audio = crate::rules::audio_sources::AudioDefinitions::select(&assets);
     let (_, _, native_rules) = crate::rules::retail_sources::load_startup_rules(
         &assets,
-        std::sync::Arc::clone(
-            crate::rules::audio_sources::AudioDefinitions::select(&assets).sounds(),
-        ),
+        std::sync::Arc::clone(audio.sounds()),
+        std::sync::Arc::clone(audio.eva()),
     )
     .expect("retail startup Rules")
     .into_parts();

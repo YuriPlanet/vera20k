@@ -52,7 +52,7 @@ fn planning_sounds_and_limit_follow_root_lang_mode_map_reader_history() {
         Some(ini("[General]\nMaxWaypointPathLength=29\n[AudioVisual]\nStartPlanningModeSound=unknown\nEndPlanningModeSound=\n")),
         ini(""),
         Arc::clone(&sounds),
-    )
+     Default::default())
     .unwrap();
     let mode = ini(
         "[General]\nMaxWaypointPathLength=$20\n[AudioVisual]\nEndPlanningModeSound= rEpLaCeMeNt \n",
@@ -92,6 +92,7 @@ fn planning_sound_missing_catalog_or_wrong_section_keeps_constructor_silence() {
             None,
             ini(""),
             Arc::new(SoundRegistry::from_ini(&catalog)),
+            Default::default(),
         )
         .unwrap();
         let (rules, _, _, _) = owner
@@ -118,6 +119,7 @@ fn retail_planning_rules_use_production_reader_and_fixed_soundmd_catalog() {
         None,
         IniFile::empty(),
         Arc::new(SoundRegistry::from_ini(&soundmd)),
+        Default::default(),
     )
     .unwrap();
     let (rules, _, _, _) = owner

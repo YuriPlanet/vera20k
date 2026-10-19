@@ -1376,6 +1376,7 @@ impl Simulation {
 
     /// Hash per-house superweapon state and active lightning storm.
     fn hash_super_weapons(&self, hasher: &mut impl Hasher) {
+        self.unit_deliveries.hash_state(hasher);
         for (owner, weapons) in &self.super_weapons {
             owner.hash(hasher);
             for (type_id, inst) in weapons {
@@ -1718,6 +1719,9 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
     }
     if entity.building_has_engineer.is_set() {
         b"building-has-engineer-v1".hash(hasher);
+    }
+    if !entity.unit_delivery_provides_base_space() {
+        b"unit-delivery-no-base-v1".hash(hasher);
     }
     // Building+662 and Techno+1C8 (`sim::powered_unit`), folded only
     // while set.

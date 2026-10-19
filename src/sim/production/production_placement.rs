@@ -686,6 +686,9 @@ pub fn is_within_build_area(
         if e.category() != EntityCategory::Structure {
             continue;
         }
+        if !e.unit_delivery_provides_base_space() {
+            continue;
+        }
         let provider_owner = sim.interner.resolve(e.owner());
         let Some(existing) = sim.object_type(e.type_ref(), rules) else {
             continue;

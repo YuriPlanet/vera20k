@@ -283,6 +283,29 @@ impl IniSection {
         self.fold_rules_values(key, default, parse_read_int)
     }
 
+    /// Ares Valueable<int>: ReadString(2048), then Parser<int>::TryParse.
+    /// Absent, empty or failed conversions keep the current value. The `$`
+    /// branch scans decimal (`$%d`), while a final `h`/`H` scans hex (`%xh`).
+    /// Source: Ares 4f1d9299, Utilities/{TemplateDef.h,Parser.h,INIParser.h}.
+    /// Scanner overflow keeps VERA's deterministic low-32-bit convention;
+    /// out-of-range Ares CRT behavior is not claimed equivalent.
+    pub fn read_ares_int(&self, key: &str, default: i32) -> i32 {
+        self.read_string_with(key, 2048, default, |current, value| {
+            let parsed = if let Some(decimal) = value.strip_prefix('$') {
+                scan_decimal_i32(&mut decimal.as_bytes())
+            } else if value
+                .as_bytes()
+                .last()
+                .is_some_and(|last| last.eq_ignore_ascii_case(&b'h'))
+            {
+                scan_hex_u32(value.as_bytes()).map(|value| value as i32)
+            } else {
+                scan_decimal_i32(&mut value.as_bytes())
+            };
+            parsed.unwrap_or(current)
+        })
+    }
+
     /// Campaign `Read_Time @ 0x0052A760`: the stored map text is parsed with
     /// `sscanf("%02d:%02d:%02d")` into three zero-initialized ints, then
     /// converted to Scenario clock ticks. A missing key keeps its current
@@ -1213,6 +1236,40 @@ fn leading_float_token(s: &str) -> Option<&str> {
 mod tests {
     use super::{crt_atoi, parse_leading_f32, strtok, truncate_native_bytes};
     use crate::rules::ini_parser::{IniFile, IniSection};
+
+    #[test]
+    fn ares_integer_reader_retains_failed_values_and_uses_ares_dollar_decimal() {
+        use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+
+        for (value, expected) in [
+            ("", -500),
+            ("garbage", -500),
+            ("$bad", -500),
+            ("0", 0),
+            ("$100", 100),
+            ("100h", 256),
+            ("-700tail", -700),
+            ("$-100", -100),
+            ("$10h", 10),
+            ("0x10", 0),
+            ("-2147483648", i32::MIN),
+        ] {
+            let mut layers = RulesLayerStack::new(IniFile::from_str(
+                "[SuperWeaponTypes]\n0=Paid\n[Paid]\nType=PsychicReveal\nMoney.Amount=-500\n",
+            ));
+            layers.push(
+                RulesLayerKind::Scenario,
+                IniFile::from_str(&format!("[Paid]\nMoney.Amount={value}\n")),
+            );
+            let processed = layers.process_with_fixed_art(&IniFile::empty()).unwrap();
+            let rules = crate::rules::ruleset::RuleSet::from_processed_rules(&processed).unwrap();
+            assert_eq!(
+                rules.super_weapon("Paid").unwrap().money_amount,
+                expected,
+                "{value}"
+            );
+        }
+    }
 
     fn sec(body: &str) -> IniFile {
         IniFile::from_str(body)

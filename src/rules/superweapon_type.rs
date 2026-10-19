@@ -26,7 +26,8 @@ const CTOR_RECHARGE_FRAMES: i32 = 4500;
 
 /// Maps the INI `Type=` string to an enum for launch dispatch.
 ///
-/// Index values match gamemd.exe's SuperWeaponType enum (0x006CEA20).
+/// Stock values match gamemd.exe's SuperWeaponType enum (0x006CEA20).
+/// Extensions use explicit tags outside its twelve dispatch slots.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum SuperWeaponKind {
     /// Type=MultiMissile (index 0) — Nuclear missile.
@@ -55,11 +56,12 @@ pub enum SuperWeaponKind {
     PsychicReveal,
     /// Ares extension: detonate `SW.Warhead` at the selected cell.
     GenericWarhead,
+    /// Ares reinforcement delivery extension.
+    UnitDelivery,
 }
 
 impl SuperWeaponKind {
-    /// The retail `Type=` value (`SuperWeaponTypeClass+0xB4`), or -1 for an
-    /// extension. Extensions must never alias one of the twelve retail types.
+    /// Retail Type value; extensions use identifiers outside 0..12.
     pub const fn native_index(self) -> i32 {
         match self {
             Self::MultiMissile => 0,
@@ -74,6 +76,7 @@ impl SuperWeaponKind {
             Self::GeneticConverter => 9,
             Self::ForceShield => 10,
             Self::PsychicReveal => 11,
+            Self::UnitDelivery => 0x101,
             Self::GenericWarhead => -1,
         }
     }
@@ -93,6 +96,7 @@ impl SuperWeaponKind {
             "geneticconverter" => Some(Self::GeneticConverter),
             "forceshield" => Some(Self::ForceShield),
             "psychicreveal" => Some(Self::PsychicReveal),
+            "unitdelivery" => Some(Self::UnitDelivery),
             "genericwarhead" => Some(Self::GenericWarhead),
             _ => None,
         }
@@ -174,13 +178,16 @@ pub struct SuperWeaponType {
     /// `AuxBuilding=` (+C8), the BuildingType the ordered Rules processor
     /// resolved: a required secondary building (e.g., NukeSilo for nuke).
     pub aux_building: Option<String>,
+    /// Resolved optional extension state; ordered Process owns its reads.
+    pub unit_delivery: Option<UnitDeliveryRules>,
     /// Optional Ares building gates, bound by ordered rules processing.
     /// `None` leaves all stock grant/fire paths unchanged.
     pub building_requirements: Option<SuperWeaponBuildingRequirements>,
     /// Ares `Money.Amount`: signed credits settled once at accepted launch.
     /// Negative amounts are costs; zero leaves the stock path unchanged.
     pub money_amount: i32,
-    /// Owner-local refusal cue. `none` explicitly disables this extension cue.
+    /// Owner-local refusal cue resolved against the fixed EVAMD catalog.
+    /// The process audio binder owns defaults and ordered unknown retention.
     pub insufficient_funds_eva: Option<String>,
     /// `SpecialSound=` (`+0xC0`, `0x006CEB74`): the cue SuperClass::AI
     /// plays when a Force Shield's countdown runs out (`0x006CBCCF`). A read
@@ -243,10 +250,16 @@ impl SuperWeaponType {
             // Ares LoadFromRulesFile installs its custom action for new SWs;
             // InitializeConstants supplies an Attack cursor. Stock ReadAction
             // keeps its 0x20-byte ReadString (`0x00474EE0`).
-            action: if kind == SuperWeaponKind::GenericWarhead {
-                Some("Attack".to_string())
-            } else {
-                section.read_name("Action", 0x20).map(str::to_string)
+            action: match kind {
+                SuperWeaponKind::GenericWarhead => Some("Attack".to_string()),
+                SuperWeaponKind::UnitDelivery => Some(
+                    section
+                        .read_name("Action", 0x20)
+                        .filter(|action| !action.eq_ignore_ascii_case("Custom"))
+                        .unwrap_or("ParaDrop")
+                        .to_string(),
+                ),
+                _ => section.read_name("Action", 0x20).map(str::to_string),
             },
             // ReadString 0x100, then a 24-byte copy (`0x006CEDB1`,
             // `0x006CEDD6`) that names the cameo.
@@ -258,29 +271,34 @@ impl SuperWeaponType {
             use_charge_drain: section.read_bool("UseChargeDrain", false),
             // Ares LoadFromINIFile derives these from the new type's Flags,
             // not user tags. GenericWarhead is an ordinary one-click type.
-            pre_click: kind != SuperWeaponKind::GenericWarhead
-                && section.read_bool("PreClick", false),
-            post_click: kind != SuperWeaponKind::GenericWarhead
-                && section.read_bool("PostClick", false),
+            pre_click: !matches!(
+                kind,
+                SuperWeaponKind::GenericWarhead | SuperWeaponKind::UnitDelivery
+            ) && section.read_bool("PreClick", false),
+            post_click: !matches!(
+                kind,
+                SuperWeaponKind::GenericWarhead | SuperWeaponKind::UnitDelivery
+            ) && section.read_bool("PostClick", false),
             // ReadString 0x28 (`0x006CEC98`).
-            pre_dependent: if kind == SuperWeaponKind::GenericWarhead {
+            pre_dependent: if matches!(
+                kind,
+                SuperWeaponKind::GenericWarhead | SuperWeaponKind::UnitDelivery
+            ) {
                 -1
             } else {
                 section
                     .read_name("PreDependent", 0x28)
                     .and_then(SuperWeaponKind::from_ini_str)
+                    .filter(|kind| (0..12).contains(&kind.native_index()))
                     .map_or(-1, SuperWeaponKind::native_index)
             },
             // Constructor nulls; only the ordered Process owner reads them.
             weapon_type: None,
             aux_building: None,
             building_requirements: None,
-            money_amount: section.read_int("Money.Amount", 0),
-            insufficient_funds_eva: match section.read_name("EVA.InsufficientFunds", 0x80) {
-                Some(name) if name.eq_ignore_ascii_case("none") => None,
-                Some(name) => Some(name.to_owned()),
-                None => Some("EVA_InsufficientFunds".to_owned()),
-            },
+            money_amount: section.read_ares_int("Money.Amount", 0),
+            insufficient_funds_eva: None,
+            unit_delivery: None,
             special_sound: section.read_name("SpecialSound", 0x80).map(str::to_string),
             start_sound: section.read_name("StartSound", 0x80).map(str::to_string),
             ai_defend_against: section.read_bool("AIDefendAgainst", false),
@@ -308,6 +326,47 @@ impl SuperWeaponType {
                 }
             }),
         })
+    }
+}
+
+/// Canonical, category-distinct TechnoType identity for a delivery payload.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct DeliveryType {
+    pub category: crate::rules::object_type::ObjectCategory,
+    pub id: String,
+}
+
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
+)]
+pub enum DeliveryOwner {
+    #[default]
+    Invoker,
+    Neutral,
+    Special,
+    Civilian,
+}
+
+/// UnitDelivery settings. No setting changes stock superweapon behavior.
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct UnitDeliveryRules {
+    pub types: Vec<DeliveryType>,
+    /// Effective frame delay; the Ares negative sentinel is normalized to 20.
+    pub deferment: i32,
+    pub owner: DeliveryOwner,
+    pub base_normal: bool,
+    pub activation_sound: Option<String>,
+}
+
+impl Default for UnitDeliveryRules {
+    fn default() -> Self {
+        Self {
+            types: Vec::new(),
+            deferment: 20,
+            owner: DeliveryOwner::Invoker,
+            base_normal: true,
+            activation_sound: None,
+        }
     }
 }
 

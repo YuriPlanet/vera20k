@@ -619,6 +619,7 @@ fn ambient_action_values_survive_save_and_transfer_to_retained_rules_at_retireme
         None,
         IniFile::empty(),
         std::sync::Arc::default(),
+        Default::default(),
     )
     .unwrap();
     let rules = owner

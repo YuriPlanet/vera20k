@@ -350,6 +350,7 @@ fn zero_capacity_map_garrison_abandons_without_allocated_cargo() {
         None,
         art_ini.clone(),
         Arc::new(sounds),
+        Default::default(),
     )
     .unwrap();
     let (mut rules, _, _, _) = process

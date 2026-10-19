@@ -23,7 +23,19 @@ const SOURCE: &str = "[Countries]\n0=Americans\n1=Russians\n\
 fn rules(extra: &str) -> RuleSet {
     let mut ini = crate::sim::arena_fixture::clear_ground_ini(SOURCE);
     ini.merge(&IniFile::from_str(extra));
-    RuleSet::from_ini_with_fixed_art_for_test(&ini, &IniFile::empty()).unwrap()
+    let processed = RulesLayerStack::new(ini)
+        .process_with_fixed_art(&IniFile::empty())
+        .unwrap();
+    bound_rules(&processed)
+}
+
+fn bound_rules(processed: &ProcessedRulesLayers) -> RuleSet {
+    let mut rules = RuleSet::from_processed_rules(processed).unwrap();
+    let eva = crate::rules::sound_ini::EvaRegistry::from_ini(&IniFile::from_str(
+        "[DialogList]\n0=EVA_InsufficientFunds\n1=CustomFunds\n",
+    ));
+    rules.bind_type_eva_references(processed.ini(), &eva);
+    rules
 }
 
 fn world(rules: &RuleSet, credits: i32, human: bool) -> (Simulation, InternedId) {
@@ -119,8 +131,8 @@ fn superweapon_money_ordered_layers_and_saved_rules_keep_the_effective_value() {
     let processed = layers.process_with_fixed_art(&IniFile::empty()).unwrap();
     let bytes = save_codec::serialize(&processed).unwrap();
     let restored: ProcessedRulesLayers = save_codec::deserialize(&bytes).unwrap();
-    let before = RuleSet::from_processed_rules(&processed).unwrap();
-    let after = RuleSet::from_processed_rules(&restored).unwrap();
+    let before = bound_rules(&processed);
+    let after = bound_rules(&restored);
     assert_eq!(after.super_weapon("Reveal").unwrap().money_amount, -500);
     assert_eq!(
         after
@@ -138,9 +150,7 @@ fn superweapon_money_ordered_layers_and_saved_rules_keep_the_effective_value() {
         RulesLayerKind::Scenario,
         IniFile::from_str("[Reveal]\nMoney.Amount=0\nEVA.InsufficientFunds=none\n"),
     );
-    let cleared =
-        RuleSet::from_processed_rules(&layers.process_with_fixed_art(&IniFile::empty()).unwrap())
-            .unwrap();
+    let cleared = bound_rules(&layers.process_with_fixed_art(&IniFile::empty()).unwrap());
     assert_eq!(cleared.super_weapon("Reveal").unwrap().money_amount, 0);
     assert_eq!(
         cleared
@@ -338,17 +348,16 @@ fn superweapon_money_explicit_paid_postclick_refuses_before_touching_the_pair() 
 }
 
 #[test]
-fn superweapon_money_paid_chronosphere_source_and_free_warp_pay_only_on_source() {
-    let rules = rules("[Sphere]\nMoney.Amount=-500\n");
+fn superweapon_money_zero_cost_chronosphere_keeps_native_source_and_warp() {
+    let rules = rules("");
     let (mut sim, owner) = world(&rules, 1000, true);
     let sphere = ready(&mut sim, &rules, owner, "Sphere", false);
     let warp = sim.interner.get("Warp").unwrap();
     assert!(fire(&mut sim, &rules, owner, sphere, (10, 10)));
-    assert_eq!(sim.houses[&owner].economy.credits(), 500);
     assert!(!fire(&mut sim, &rules, owner, sphere, (10, 10)));
     assert!(fire(&mut sim, &rules, owner, warp, (15, 15)));
-    assert_eq!(sim.houses[&owner].economy.credits(), 500);
-    assert_eq!(sim.houses[&owner].economy.spent_credits(), 500);
+    assert_eq!(sim.houses[&owner].economy.credits(), 1000);
+    assert_eq!(sim.houses[&owner].economy.spent_credits(), 0);
 }
 
 #[test]
@@ -480,5 +489,66 @@ fn superweapon_money_generic_payload_and_target_preflight_precede_settlement() {
             assert_eq!(sim.state_hash(), before);
             assert!(sim.sound_events.is_empty());
         }
+    }
+}
+
+#[test]
+fn superweapon_money_two_stage_source_never_changes_wallet_across_ticks() {
+    for amount in [-500, 500] {
+        let rules = rules(&format!("[Sphere]\nMoney.Amount={amount}\n"));
+        let (mut sim, owner) = world(&rules, 10_000, true);
+        let source = ready(&mut sim, &rules, owner, "Sphere", false);
+        let mut admitted = Vec::new();
+        for _ in 0..3 {
+            let before = sim.state_hash();
+            sim.sound_events.clear();
+            admitted.push(fire(&mut sim, &rules, owner, source, (10, 10)));
+            assert_eq!(
+                sim.state_hash(),
+                before,
+                "refusal preserves source and pair"
+            );
+            assert!(
+                sim.sound_events.is_empty(),
+                "refusal has no activation effects"
+            );
+            sim.session.binary_frame += 1;
+            superweapon::tick_house_superweapon_instances(&mut sim, &rules, owner);
+        }
+        assert_eq!(
+            sim.houses[&owner].economy.credits(),
+            10_000,
+            "unsupported paid source must not settle on a repeatable selection"
+        );
+        assert_eq!(admitted, vec![false; 3]);
+        assert!(sim.super_weapons[&owner][&source].is_ready);
+    }
+}
+
+#[test]
+fn superweapon_money_two_stage_destination_cannot_bypass_paid_predecessor() {
+    for amount in [-500, 500] {
+        let rules = rules(&format!("[Sphere]\nMoney.Amount={amount}\n"));
+        let (mut sim, owner) = world(&rules, 10_000, true);
+        ready(&mut sim, &rules, owner, "Sphere", false);
+        let destination = ready(&mut sim, &rules, owner, "Warp", false);
+        let before = sim.state_hash();
+        assert!(!fire(&mut sim, &rules, owner, destination, (15, 15)));
+        assert_eq!(sim.state_hash(), before);
+        assert_eq!(sim.houses[&owner].economy.credits(), 10_000);
+        assert!(sim.sound_events.is_empty());
+    }
+}
+
+#[test]
+fn superweapon_money_two_stage_kinds_cannot_bypass_exclusion_by_clearing_flags() {
+    for (name, flags) in [("Sphere", "PreClick=no"), ("Warp", "PostClick=no")] {
+        let rules = rules(&format!("[{name}]\n{flags}\nMoney.Amount=500\n"));
+        let (mut sim, owner) = world(&rules, 1000, true);
+        let id = ready(&mut sim, &rules, owner, name, false);
+        let before = sim.state_hash();
+        assert!(!fire(&mut sim, &rules, owner, id, (10, 10)));
+        assert_eq!(sim.state_hash(), before);
+        assert!(sim.sound_events.is_empty());
     }
 }

@@ -311,6 +311,11 @@ impl HotkeyBindings {
         {
             return HotkeyResolution::Command(command);
         }
+        // ProcessCommand55E079 opens Options only after both binding lookups
+        // fail, including when A3 reload533D20 has removed the startup binding.
+        if virtual_key == VK_ESCAPE {
+            return HotkeyResolution::Command(HotkeyCommand::Options);
+        }
         fallback_for_virtual_key(virtual_key)
             .map(HotkeyResolution::Fallback)
             .unwrap_or(HotkeyResolution::Unhandled)
@@ -510,8 +515,37 @@ fn printable_virtual_key(character: char) -> Option<u16> {
 }
 
 #[cfg(not(windows))]
-fn printable_virtual_key(_character: char) -> Option<u16> {
-    None
+const PORTABLE_OEM_KEYS: [(char, u16); 11] = [
+    (';', 0xba),
+    ('=', 0xbb),
+    (',', 0xbc),
+    ('-', 0xbd),
+    ('.', 0xbe),
+    ('/', 0xbf),
+    ('`', 0xc0),
+    ('[', 0xdb),
+    ('\\', 0xdc),
+    (']', 0xdd),
+    ('\'', 0xde),
+];
+
+/// Non-Windows keyboards have no Win32 layout lookup. Use the conventional
+/// US OEM identities for portable punctuation bindings; Windows retains its
+/// layout-specific VkKeyScanW above. Imported non-US Windows OEM bindings may
+/// need rebinding on these hosts. See Win32's layout-dependent OEM definitions:
+/// https://learn.microsoft.com/en-us/windows/win32/inputdev/virtual-key-codes
+#[cfg(not(windows))]
+fn printable_virtual_key(character: char) -> Option<u16> {
+    PORTABLE_OEM_KEYS
+        .iter()
+        .find_map(|&(text, vk)| (text == character).then_some(vk))
+}
+
+#[cfg(not(windows))]
+pub(crate) fn portable_oem_key_name(vk: u16) -> Option<char> {
+    PORTABLE_OEM_KEYS
+        .iter()
+        .find_map(|&(text, key)| (key == vk).then_some(text))
 }
 
 fn named_virtual_key(key: NamedKey) -> Option<u16> {
@@ -523,6 +557,8 @@ fn named_virtual_key(key: NamedKey) -> Option<u16> {
         NamedKey::Shift => 0x10,
         NamedKey::Control => 0x11,
         NamedKey::Alt => 0x12,
+        NamedKey::Pause => 0x13,
+        NamedKey::CapsLock => 0x14,
         NamedKey::Escape => VK_ESCAPE,
         NamedKey::Space => VK_SPACE,
         NamedKey::PageUp => 0x21,
@@ -533,6 +569,7 @@ fn named_virtual_key(key: NamedKey) -> Option<u16> {
         NamedKey::ArrowUp => 0x26,
         NamedKey::ArrowRight => 0x27,
         NamedKey::ArrowDown => 0x28,
+        NamedKey::PrintScreen => 0x2c,
         NamedKey::Insert => 0x2d,
         NamedKey::Delete => VK_DELETE,
         NamedKey::F1 => 0x70,
@@ -547,6 +584,19 @@ fn named_virtual_key(key: NamedKey) -> Option<u16> {
         NamedKey::F10 => 0x79,
         NamedKey::F11 => 0x7a,
         NamedKey::F12 => 0x7b,
+        NamedKey::F13 => 0x7c,
+        NamedKey::F14 => 0x7d,
+        NamedKey::F15 => 0x7e,
+        NamedKey::F16 => 0x7f,
+        NamedKey::F17 => 0x80,
+        NamedKey::F18 => 0x81,
+        NamedKey::F19 => 0x82,
+        NamedKey::F20 => 0x83,
+        NamedKey::F21 => 0x84,
+        NamedKey::F22 => 0x85,
+        NamedKey::F23 => 0x86,
+        NamedKey::F24 => 0x87,
+        NamedKey::NumLock => 0x90,
         _ => return None,
     })
 }
@@ -1339,6 +1389,97 @@ mod tests {
             ),
             HotkeyResolution::Command(HotkeyCommand::DeployObject)
         );
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn portable_oem_shortcuts_roundtrip_saved_bindings() {
+        // Win32's US OEM identities. Windows keeps its real layout lookup;
+        // non-Windows hosts must at least be able to bind ordinary punctuation.
+        for (text, vk) in [
+            (";", 0xba),
+            ("=", 0xbb),
+            (",", 0xbc),
+            ("-", 0xbd),
+            (".", 0xbe),
+            ("/", 0xbf),
+            ("`", 0xc0),
+            ("[", 0xdb),
+            ("\\", 0xdc),
+            ("]", 0xdd),
+            ("'", 0xde),
+        ] {
+            let key = character(text);
+            assert_eq!(logical_virtual_key(&key, KeyLocation::Standard), Some(vk));
+            let mut bindings = HotkeyBindings::default();
+            bindings
+                .assign(HotkeyCommand::StopObject, vk | CTRL_BIT)
+                .unwrap();
+            let saved = bindings.to_ini_string();
+            let bindings = HotkeyBindings::reload_from_ini_bytes(Some(saved.as_bytes()));
+            assert_eq!(
+                bindings.resolve_event(&key, KeyLocation::Standard, ModifiersState::CONTROL),
+                HotkeyResolution::Command(HotkeyCommand::StopObject),
+                "{text}"
+            );
+        }
+    }
+
+    #[test]
+    fn named_key_shortcuts_reach_their_reloaded_command() {
+        for (named, vk) in [
+            (NamedKey::CapsLock, 0x14),
+            (NamedKey::NumLock, 0x90),
+            (NamedKey::Pause, 0x13),
+            (NamedKey::PrintScreen, 0x2c),
+            (NamedKey::F13, 0x7c),
+            (NamedKey::F14, 0x7d),
+            (NamedKey::F15, 0x7e),
+            (NamedKey::F16, 0x7f),
+            (NamedKey::F17, 0x80),
+            (NamedKey::F18, 0x81),
+            (NamedKey::F19, 0x82),
+            (NamedKey::F20, 0x83),
+            (NamedKey::F21, 0x84),
+            (NamedKey::F22, 0x85),
+            (NamedKey::F23, 0x86),
+            (NamedKey::F24, 0x87),
+        ] {
+            let ini = format!("[Hotkey]\nStopObject={vk}\n");
+            let bindings = HotkeyBindings::reload_from_ini_bytes(Some(ini.as_bytes()));
+            assert_eq!(
+                bindings.resolve_event(
+                    &Key::Named(named),
+                    KeyLocation::Standard,
+                    ModifiersState::empty()
+                ),
+                HotkeyResolution::Command(HotkeyCommand::StopObject),
+                "{named:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn reloaded_escape_binding_precedes_the_native_options_fallback() {
+        let custom = HotkeyBindings::reload_from_ini_bytes(Some(b"[Hotkey]\nStopObject=27\n"));
+        assert_eq!(
+            custom.resolve_event(
+                &Key::Named(NamedKey::Escape),
+                KeyLocation::Standard,
+                ModifiersState::empty()
+            ),
+            HotkeyResolution::Command(HotkeyCommand::StopObject)
+        );
+        for bindings in [custom, HotkeyBindings::default()] {
+            assert_eq!(
+                bindings.resolve_event(
+                    &Key::Named(NamedKey::Escape),
+                    KeyLocation::Standard,
+                    ModifiersState::SHIFT
+                ),
+                HotkeyResolution::Command(HotkeyCommand::Options)
+            );
+        }
     }
 }
 

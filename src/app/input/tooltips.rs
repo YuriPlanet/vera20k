@@ -347,11 +347,7 @@ fn with_disabled_suffix(state: &AppState, tip: String, disabled: bool) -> String
 /// between the name and the price, so a Grizzly Battle Tank cameo tip is four
 /// stacked lines — `Grizzly` / `Battle` / `Tank` / `$700` — not one line and
 /// not a name/price pair.
-fn cameo_tip_text(money_format: Option<&str>, name: &str, cost: Option<i32>) -> String {
-    cameo_tip_text_wide(money_format, name, cost.map(i64::from))
-}
-
-fn cameo_tip_text_wide(money_format: Option<&str>, name: &str, cost: Option<i64>) -> String {
+fn cameo_tip_text(money_format: Option<&str>, name: &str, cost: Option<i64>) -> String {
     let formatted = match (money_format, cost) {
         (Some(fmt), Some(cost)) => format_csf(fmt, &[CsfArg::Str(name), CsfArg::Int(cost)]),
         // VERA-internal: gamemd has neither case — a failed CSF load is fatal
@@ -364,7 +360,7 @@ fn cameo_tip_text_wide(money_format: Option<&str>, name: &str, cost: Option<i64>
 
 fn superweapon_money_tip(money_format: Option<&str>, name: &str, amount: i32) -> String {
     if amount < 0 {
-        cameo_tip_text_wide(money_format, name, Some(-i64::from(amount)))
+        cameo_tip_text(money_format, name, Some(-i64::from(amount)))
     } else {
         // Keep stock zero-cost Super tooltips verbatim, including spaces.
         name.to_owned()
@@ -484,7 +480,11 @@ fn sync_in_game_regions(state: &mut AppState) {
                     .csf
                     .as_ref()
                     .map(|csf| csf.text(CAMEO_TIP_MONEY_FORMAT));
-                cameo_tip_text(money_format.as_deref(), &item.display_name, item.cost)
+                cameo_tip_text(
+                    money_format.as_deref(),
+                    &item.display_name,
+                    item.cost.map(i64::from),
+                )
             }
         });
         regions.push(TipRegion {

@@ -152,7 +152,9 @@ pub(crate) fn super_weapon_ready_event(kind: SuperWeaponKind) -> Option<&'static
         SuperWeaponKind::IronCurtain => "EVA_IronCurtainReady",
         SuperWeaponKind::LightningStorm => "EVA_LightningStormReady",
         SuperWeaponKind::ChronoSphere => "EVA_ChronosphereReady",
-        SuperWeaponKind::ChronoWarp | SuperWeaponKind::GenericWarhead => return None,
+        SuperWeaponKind::ChronoWarp
+        | SuperWeaponKind::GenericWarhead
+        | SuperWeaponKind::UnitDelivery => return None,
         SuperWeaponKind::ParaDrop | SuperWeaponKind::AmerParaDrop => "EVA_ReinforcementsReady",
         SuperWeaponKind::PsychicDominator => "EVA_PsychicDominatorReady",
         SuperWeaponKind::SpyPlane => "EVA_SpyPlaneReady",
@@ -486,6 +488,20 @@ mod tests {
             true,
             true
         ));
+    }
+
+    #[test]
+    fn unit_delivery_superweapon_has_no_native_eva_even_in_a_stock_list_slot() {
+        for index in 0..12 {
+            assert_eq!(
+                super_weapon_detected_event(SuperWeaponKind::UnitDelivery, index),
+                None
+            );
+        }
+        assert_eq!(
+            super_weapon_ready_event(SuperWeaponKind::UnitDelivery),
+            None
+        );
     }
 
     #[test]

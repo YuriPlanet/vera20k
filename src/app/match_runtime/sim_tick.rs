@@ -36,7 +36,9 @@ const REPLAYS_DIR: &str = "replays";
 /// stream in `sim::replay`. No-op when nothing was recorded. A successful
 /// write consumes the log so repeated teardown hooks do not duplicate it; any
 /// failure restores it for a later retry. Writes
-/// `replays/replay_tick{tick}_{unix_secs}.json`.
+/// `replays/replay_tick{tick}_{unix_secs}.json`, taking an incrementing
+/// `_n` suffix instead of replacing a segment already published under the
+/// same `(tick, unix second)`.
 pub(crate) fn flush_replay_log(state: &mut AppState) {
     let (session_tick, now) = replay_flush_facts(state);
     match state

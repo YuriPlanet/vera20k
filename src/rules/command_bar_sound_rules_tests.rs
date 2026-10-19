@@ -217,6 +217,7 @@ fn command_bar_sound_history_survives_saved_rules_and_normal_restore_rebinding()
         Some(IniFile::from_str("[AudioVisual]\nGUICloseSound=MapClose\n")),
         IniFile::empty(),
         Arc::clone(&sounds),
+        Default::default(),
     )
     .unwrap();
     let mode = IniFile::from_str("[AudioVisual]\nGUIOpenSound=\n");

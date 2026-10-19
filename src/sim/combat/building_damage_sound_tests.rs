@@ -66,6 +66,7 @@ fn production_rules(corpus: &Value, map_control: Option<&IniFile>) -> Option<Rul
         recorded_layer(corpus, "LANGRULE.INI"),
         art,
         Arc::new(SoundRegistry::from_ini(&sound)),
+        Default::default(),
     )
     .unwrap();
     let mode = recorded_layer(corpus, "MPBattleMD.ini");

@@ -394,7 +394,10 @@ fn run_inner(
     let fixed_art_source = json!(sources.artmd.source);
     let fixed_sound_source = audio_definitions.sound_source().map(|source| json!(source));
     let (_, _, mut owner) = sources
-        .into_startup(std::sync::Arc::clone(audio_definitions.sounds()))?
+        .into_startup(
+            std::sync::Arc::clone(audio_definitions.sounds()),
+            std::sync::Arc::clone(audio_definitions.eva()),
+        )?
         .into_parts();
     let (rules, processed, _, _) = owner
         .load_scenario(
@@ -482,6 +485,7 @@ mod tests {
             None,
             IniFile::empty(),
             std::sync::Arc::default(),
+            Default::default(),
         )
         .unwrap();
         let (_, processed, _, _) = owner
@@ -514,6 +518,7 @@ mod tests {
             None,
             IniFile::empty(),
             std::sync::Arc::default(),
+            Default::default(),
         )
         .unwrap();
         let (rules, processed, _, _) = owner
@@ -557,6 +562,7 @@ mod tests {
             None,
             IniFile::empty(),
             std::sync::Arc::default(),
+            Default::default(),
         )
         .unwrap();
         let (rules, processed, _, _) = owner
@@ -625,6 +631,7 @@ mod tests {
             None,
             IniFile::empty(),
             std::sync::Arc::default(),
+            Default::default(),
         )
         .unwrap();
         let (rules, processed, _, _) = owner

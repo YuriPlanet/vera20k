@@ -67,6 +67,7 @@ fn damage_sound_global_reference_retention_matches_whole_native_reader_passes() 
             layers.first().cloned(),
             art.clone(),
             Arc::clone(&sounds),
+            Default::default(),
         )
         .unwrap();
         let rules = owner

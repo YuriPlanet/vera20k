@@ -261,6 +261,7 @@ mod tests {
                 lang,
                 IniFile::empty(),
                 std::sync::Arc::default(),
+                Default::default(),
             )
             .unwrap();
             let (first, _, _, _) = owner

@@ -1349,11 +1349,11 @@ mod tests {
             crate::assets::asset_manager::MediaArchiveMode::STOCK_DIGITAL,
         )
         .expect("retail preview assets");
+        let audio = crate::rules::audio_sources::AudioDefinitions::select(&assets);
         let (_, _, rules) = crate::rules::retail_sources::load_startup_rules(
             &assets,
-            std::sync::Arc::clone(
-                crate::rules::audio_sources::AudioDefinitions::select(&assets).sounds(),
-            ),
+            std::sync::Arc::clone(audio.sounds()),
+            std::sync::Arc::clone(audio.eva()),
         )
         .expect("retail preview Rules")
         .into_parts();

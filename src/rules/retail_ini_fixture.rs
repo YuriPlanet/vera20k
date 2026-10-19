@@ -390,7 +390,7 @@ pub fn retail_rules_owner(
         })
     })
     .collect();
-    let (sources, sounds) = once_per_process(entries, || {
+    let (sources, sounds, eva) = once_per_process(entries, || {
         let audio_definitions = crate::rules::audio_sources::AudioDefinitions::select(assets);
         let sources = RetailRulesSources::select(assets).expect("select active-YR startup sources");
         for (name, selected) in [
@@ -410,12 +410,16 @@ pub fn retail_rules_owner(
             "retail root {:?}; fixed ART {:?}",
             sources.rulesmd.source, sources.artmd.source
         );
-        Some((sources, std::sync::Arc::clone(audio_definitions.sounds())))
+        Some((
+            sources,
+            std::sync::Arc::clone(audio_definitions.sounds()),
+            std::sync::Arc::clone(audio_definitions.eva()),
+        ))
     })
     .expect("selected retail startup sources");
     // No fixture reads the shell compatibility projection `into_startup` also
     // derives.
-    sources.into_owner(sounds).expect("cold startup")
+    sources.into_owner(sounds, eva).expect("cold startup")
 }
 
 /// Bounded stock Hills/Battle fixture through the app's source-selection order.

@@ -3561,12 +3561,11 @@ mod random_map_retail_tests {
 
                 let mut asset_manager = AssetManager::new(&ra2, MediaArchiveMode::STOCK_DIGITAL)
                     .expect("AssetManager::new");
+                let audio = crate::rules::audio_sources::AudioDefinitions::select(&asset_manager);
                 let (_, _, native_rules) = crate::rules::retail_sources::load_startup_rules(
                     &asset_manager,
-                    std::sync::Arc::clone(
-                        crate::rules::audio_sources::AudioDefinitions::select(&asset_manager)
-                            .sounds(),
-                    ),
+                    std::sync::Arc::clone(audio.sounds()),
+                    std::sync::Arc::clone(audio.eva()),
                 )
                 .expect("retail startup Rules")
                 .into_parts();

@@ -120,6 +120,7 @@ fn production_root_langrule_mode_map_order_matches_native_reader_history() {
         Some(cached_ini(&history[1]["sections"])),
         IniFile::empty(),
         std::sync::Arc::default(),
+        Default::default(),
     )
     .unwrap();
     for index in [3, 4] {
@@ -188,6 +189,7 @@ fn retail_root_ifv_and_passengers_match_original_readers() {
         None,
         art,
         std::sync::Arc::default(),
+        Default::default(),
     )
     .unwrap();
     let (rules, _, _, _) = owner

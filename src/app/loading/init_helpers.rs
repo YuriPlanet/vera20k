@@ -195,11 +195,11 @@ pub(crate) fn load_rules_with_merged_ini(
     IniFile,
     crate::rules::process_owner::NativeScenarioRulesReceipt,
 )> {
+    let audio = crate::rules::audio_sources::AudioDefinitions::select(asset_manager);
     let (_, _, mut native_owner) = load_startup_rules(
         asset_manager,
-        std::sync::Arc::clone(
-            crate::rules::audio_sources::AudioDefinitions::select(asset_manager).sounds(),
-        ),
+        std::sync::Arc::clone(audio.sounds()),
+        std::sync::Arc::clone(audio.eva()),
     )?
     .into_parts();
     let no_map = IniFile::from_str("");
@@ -949,6 +949,7 @@ mod tests {
             rulesmd,
             Some(langrule),
             IniFile::from_str(""),
+            Default::default(),
             Default::default(),
         )
         .expect("cold startup");

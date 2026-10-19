@@ -3045,6 +3045,7 @@ mod tests {
                         None,
                         IniFile::from_str(""),
                         std::sync::Arc::default(),
+                        Default::default(),
                     )
                     .expect("cold process Rules authority");
                 let (rules, _, _, rules_receipt) = rules_owner
@@ -3707,6 +3708,7 @@ mod tests {
                 None,
                 IniFile::from_bytes(b"").unwrap(),
                 std::sync::Arc::default(),
+                Default::default(),
             )
             .unwrap();
         let native_load = native_rules

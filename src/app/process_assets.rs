@@ -133,8 +133,9 @@ impl ProcessAssets {
         }
         let sounds =
             std::sync::Arc::clone(self.audio_catalog.as_ref().unwrap().definitions.sounds());
+        let eva = std::sync::Arc::clone(self.audio_catalog.as_ref().unwrap().definitions.eva());
         let startup = crate::rules::retail_sources::RetailRulesSources::select(assets)?
-            .into_startup(sounds)?;
+            .into_startup(sounds, eva)?;
         let (rules, projection, owner) = startup.into_parts();
         self.native_rules = Some(owner);
         Ok((rules, projection))

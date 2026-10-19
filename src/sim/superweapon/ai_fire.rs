@@ -100,6 +100,7 @@ impl AiFireArm {
             SuperWeaponKind::ParaDrop
             | SuperWeaponKind::AmerParaDrop
             | SuperWeaponKind::SpyPlane
+            | SuperWeaponKind::UnitDelivery
             | SuperWeaponKind::PsychicReveal => Self::GroundRallyPoint,
             SuperWeaponKind::PsychicDominator => Self::PsychicDominator,
             SuperWeaponKind::GeneticConverter => Self::GeneticMutator,
@@ -179,9 +180,14 @@ pub(crate) fn try_fire(
         {
             continue;
         }
+        if sw.kind == SuperWeaponKind::UnitDelivery
+            && !super::unit_delivery::configured(sim, rules, owner, sw)
+        {
+            continue;
+        }
         // Do not spend targeting RNG or attempt an unaffordable paid launch.
         // The Fire_SW transaction checks the current wallet again.
-        if !super::money::can_afford(sim, owner, sw) {
+        if !super::money::configuration_supported(sw) || !super::money::can_afford(sim, owner, sw) {
             continue;
         }
         let arm = AiFireArm::of(sw.kind);

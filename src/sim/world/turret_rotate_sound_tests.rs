@@ -665,6 +665,7 @@ fn retail_rules() -> Option<RuleSet> {
         None,
         art_ini,
         Arc::new(SoundRegistry::from_ini(&sound_ini)),
+        Default::default(),
     )
     .expect("retail cold start");
     let (mut rules, _, fixed_art, _) = owner

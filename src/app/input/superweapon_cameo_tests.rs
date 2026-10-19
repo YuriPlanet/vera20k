@@ -195,6 +195,43 @@ fn native_superweapon_cameo_controls_match_modes_and_requests() {
 mod retail_tests;
 
 #[test]
+fn delivery_missing_or_custom_action_arms_the_real_cameo_targeting_path() {
+    for action in ["", "Action=Custom\n"] {
+        let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[SuperWeaponTypes]\n0=Delivery\n[Delivery]\nType=UnitDelivery\n{action}"
+        )))
+        .unwrap();
+        let mut sim = Simulation::new();
+        let owner = sim.interner.intern("Americans");
+        let id = sim.interner.intern("Delivery");
+        let mut instance = SuperWeaponInstance::new(id, owner, 0);
+        instance.is_active = true;
+        instance.is_ready = true;
+        sim.super_weapons
+            .entry(owner)
+            .or_default()
+            .insert(id, instance);
+        let views = superweapon_views_for_owner(&sim, &rules, &owner);
+        let mut input = MatchInputState::new(Default::default());
+        let result = press(
+            &mut input,
+            &mut SidebarGadgetState::default(),
+            views.first(),
+            rules.super_weapon("Delivery").unwrap().action.as_deref(),
+            false,
+        );
+        assert_eq!(result, SuperWeaponClick::Target, "{action}");
+        assert_eq!(
+            input
+                .targeting_mode
+                .as_ref()
+                .and_then(TargetingMode::as_super_weapon),
+            Some("Delivery")
+        );
+    }
+}
+
+#[test]
 fn superweapon_money_cameo_refuses_before_target_or_direct_launch_but_allows_right_cancel() {
     for action in ["PsychicReveal", "None"] {
         let rules = RuleSet::from_ini_with_fixed_art_for_test(

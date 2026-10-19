@@ -249,6 +249,7 @@ fn retail_hills_layered_bridge_landing_inputs_match_original_readers() {
         None,
         art,
         std::sync::Arc::clone(audio_definitions.sounds()),
+        Default::default(),
     )
     .unwrap();
     let (mut rules, _, art, _) = owner

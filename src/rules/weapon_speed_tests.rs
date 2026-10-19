@@ -166,6 +166,7 @@ fn retail_ifv_speed_passes_production_cold_start_and_scenario_rules_owner() {
         None,
         art,
         std::sync::Arc::default(),
+        Default::default(),
     )
     .unwrap();
     let (rules, _, _, _) = owner

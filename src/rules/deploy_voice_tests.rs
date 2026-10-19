@@ -80,6 +80,7 @@ pub fn control_rules(corpus: &Value, input: &Value) -> RuleSet {
         None,
         IniFile::from_str(""),
         Arc::new(sounds(corpus)),
+        Default::default(),
     )
     .unwrap();
     owner

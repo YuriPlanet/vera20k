@@ -115,6 +115,7 @@ fn audio_visual_binding_retains_valid_references_across_all_rules_layers() {
         )),
         IniFile::empty(),
         sounds,
+        Default::default(),
     )
     .unwrap();
     let (rules, _, _, _) = owner

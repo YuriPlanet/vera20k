@@ -15,6 +15,20 @@ use crate::sim::intern::InternedId;
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::world::Simulation;
 
+/// Shared optional-SW target/placement bound, using the terrain owner.
+pub(super) fn on_map(sim: &Simulation, cell: (u16, u16)) -> bool {
+    sim.resolved_terrain
+        .as_ref()
+        .and_then(|terrain| terrain.cell(cell.0, cell.1))
+        .is_some()
+        && crate::sim::cell_rect::cell_is_in_playfield_height_aware_in_query(
+            (i32::from(cell.0), i32::from(cell.1)),
+            sim.playfield_bounds,
+            sim.resolved_terrain.as_ref(),
+            None,
+        )
+}
+
 impl Simulation {
     /// Shared extension target gate, suitable for cursor preview and the final
     /// command transaction. Stock types retain their existing dispatch gates.

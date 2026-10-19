@@ -185,9 +185,14 @@ fn attack_voice_orphan_body_does_not_precede_type_allocation() {
     let native = attack_voice_native();
     let sounds = order_voice_catalog(attack_voice_native());
     let root = ini_sections(&native["readers"]["retained_controls"][0]["input"]["sections"]);
-    let mut owner =
-        NativeRulesProcessOwner::from_cold_start_sources(root, None, IniFile::empty(), sounds)
-            .unwrap();
+    let mut owner = NativeRulesProcessOwner::from_cold_start_sources(
+        root,
+        None,
+        IniFile::empty(),
+        sounds,
+        Default::default(),
+    )
+    .unwrap();
     let mode = IniFile::from_str("[VehicleTypes]\n0=MTNK\n");
     let rules = owner
         .load_scenario(
@@ -280,6 +285,7 @@ fn move_voice_orphan_body_does_not_precede_type_allocation() {
         None,
         IniFile::empty(),
         order_voice_catalog(native),
+        Default::default(),
     )
     .unwrap();
     let mode = IniFile::from_str("[VehicleTypes]\n0=MTNK\n");
@@ -392,6 +398,7 @@ fn voice_select_keeps_the_full_ordered_resolved_list_across_reached_passes() {
         Some(lang),
         ini(""),
         Arc::clone(&sounds),
+        Default::default(),
     )
     .unwrap();
     let (rules, _, _, _) = owner
@@ -431,6 +438,7 @@ fn voice_select_readstring128_and_untrimmed_tokens_precede_sound_lookup() {
         None,
         IniFile::from_str(""),
         sounds,
+        Default::default(),
     )
     .unwrap();
     let (rules, _, _, _) = owner
@@ -632,6 +640,7 @@ fn enslaved_selection_voice_constructor_vectors_match_original_type_constructors
         None,
         IniFile::empty(),
         selection_voice_catalog(&native),
+        Default::default(),
     )
     .unwrap();
     let rules = owner
@@ -671,13 +680,14 @@ fn enslaved_selection_voice_readers_match_original_retained_passes_and_fixed_loo
         None,
         IniFile::empty(),
         Arc::clone(&sounds),
+        Default::default(),
     )
     .unwrap();
     let mut layers = RulesLayerStack::new(root);
     let project = |layers: &RulesLayerStack| {
         let processed = layers.process().unwrap();
         let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
-        owner.bind_type_sound_references(&mut rules, &processed);
+        owner.bind_type_audio_references(&mut rules, &processed);
         rules
     };
     let rows = native["authored"].as_array().unwrap();
@@ -733,6 +743,7 @@ fn enslaved_selection_voice_reaches_registered_types_and_retains_process_catalog
         Some(lang),
         IniFile::empty(),
         Arc::clone(&sounds),
+        Default::default(),
     )
     .unwrap();
     let first = owner
@@ -800,6 +811,7 @@ fn resolved_enslaved_selection_voice_changes_configuration_under_identical_rules
             None,
             IniFile::empty(),
             sounds,
+            Default::default(),
         )
         .unwrap()
         .load_scenario(

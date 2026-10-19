@@ -907,6 +907,31 @@ impl EvaRegistry {
         self.entries.get(usize::try_from(index).ok()?)
     }
 
+    /// Ares ValueableIdx<VoxClass>::Read resolves each nonempty ReadString
+    /// against the fixed catalog. Unknown names retain the prior index;
+    /// explicit none clears it. Source: Ares 4f1d9299,
+    /// Utilities/TemplateDef.h:444 and Ext/SWType/Body.cpp:78,132.
+    pub(crate) fn read_rules_reference(
+        &self,
+        section: Option<&IniSection>,
+        key: &str,
+        default_event: &str,
+    ) -> Option<String> {
+        let default = self.entry(default_event).map(|entry| entry.name.clone());
+        let Some(section) = section else {
+            return default;
+        };
+        section.read_string_with(key, 2048, default, |current, name| {
+            if let Some(entry) = self.entry(name) {
+                Some(entry.name.clone())
+            } else if crate::rules::ini_parser::is_native_none_type_name(name) {
+                None
+            } else {
+                current
+            }
+        })
+    }
+
     /// Look up an EVA sample name by event name and side column.
     #[cfg(any(test, feature = "test-support"))]
     pub fn get(&self, event_name: &str, side: EvaSide) -> Option<&str> {

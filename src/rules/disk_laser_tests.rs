@@ -21,6 +21,7 @@ fn charge_up_uses_fixed_catalog_and_reached_rules_history() {
         )),
         IniFile::empty(),
         sounds,
+        Default::default(),
     )
     .unwrap();
     let (rules, _, _, _) = owner

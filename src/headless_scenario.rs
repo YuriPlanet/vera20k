@@ -189,6 +189,7 @@ pub fn load_with_launch(
     let (_, _, mut native_rules_owner) = crate::rules::retail_sources::load_startup_rules(
         &assets,
         std::sync::Arc::clone(audio_definitions.sounds()),
+        std::sync::Arc::clone(audio_definitions.eva()),
     )
     .ok_or_else(|| "load native startup rules".to_string())?
     .into_parts();

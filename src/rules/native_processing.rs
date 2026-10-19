@@ -22,6 +22,7 @@ use crate::rules::projectile_type::ProjectileArtState;
 use crate::rules::rules_type_references::{DEFAULT_PARTICLE_SYSTEMS, RulesTypeReferences};
 use crate::rules::ruleset::{DetailRules, GeneralBuildingTypes, PrismSupportRules};
 use crate::rules::superweapon_type::SuperWeaponBuildingRequirements;
+use crate::rules::superweapon_type::{DeliveryOwner, DeliveryType, UnitDeliveryRules};
 use crate::util::native_x87::NativeF64Bits;
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
@@ -878,6 +879,14 @@ impl ProcessedRulesLayers {
     ) -> impl Iterator<Item = (&str, Option<&str>)> {
         self.member_states(RulesTypeFamily::SuperWeapon, |member| {
             member.generic_super_weapon_warhead.as_deref()
+        })
+    }
+
+    pub(crate) fn unit_delivery_states(
+        &self,
+    ) -> impl Iterator<Item = (&str, Option<&UnitDeliveryRules>)> {
+        self.member_states(RulesTypeFamily::SuperWeapon, |member| {
+            member.unit_delivery.as_ref()
         })
     }
 
@@ -1962,6 +1971,7 @@ struct ProcessedType {
     super_weapon_building_requirements: Option<SuperWeaponBuildingRequirements>,
     /// Ares `SW.Warhead=`, read only for Type=GenericWarhead.
     generic_super_weapon_warhead: Option<String>,
+    unit_delivery: Option<UnitDeliveryRules>,
     /// ParticleType `Warhead=` (`0x00645043..0x00645067`): ReadString128,
     /// then WarheadType's factory (`0x0075E3B0`); an empty read keeps it.
     particle_warhead: Option<String>,
@@ -2316,6 +2326,7 @@ impl ProcessedType {
             holds_what: None,
             super_weapon_weapon: None,
             super_weapon_aux_building: None,
+            unit_delivery: None,
             super_weapon_building_requirements: None,
             generic_super_weapon_warhead: None,
             particle_warhead: None,
@@ -3288,6 +3299,59 @@ impl RulesPassProcessor {
                 {
                     self.family_mut(RulesTypeFamily::SuperWeapon)[index]
                         .generic_super_weapon_warhead = warhead;
+                }
+                if raw
+                    .read_name("Type", 0x28)
+                    .is_some_and(|kind| kind.eq_ignore_ascii_case("UnitDelivery"))
+                    || self.families[&RulesTypeFamily::SuperWeapon][index]
+                        .unit_delivery
+                        .is_some()
+                {
+                    let types = raw.read_list("Deliver.Types", 2048).map(|tokens| {
+                        tokens
+                            .into_iter()
+                            .filter_map(|token| {
+                                let matches: Vec<_> = [
+                                    (RulesTypeFamily::Infantry, ObjectCategory::Infantry),
+                                    (RulesTypeFamily::Vehicle, ObjectCategory::Vehicle),
+                                    (RulesTypeFamily::Aircraft, ObjectCategory::Aircraft),
+                                    (RulesTypeFamily::Building, ObjectCategory::Building),
+                                ]
+                                .into_iter()
+                                .filter_map(|(family, category)| {
+                                    self.find_existing(family, token).map(|index| DeliveryType {
+                                        category,
+                                        id: self.families[&family][index].native_stored_id.clone(),
+                                    })
+                                })
+                                .collect();
+                                // Do not silently bind an ambiguous cross-category ID
+                                // to an unrelated type. Unknown/none tokens add none.
+                                (matches.len() == 1).then(|| matches.into_iter().next().unwrap())
+                            })
+                            .collect()
+                    });
+                    let state = self.family_mut(RulesTypeFamily::SuperWeapon)[index]
+                        .unit_delivery
+                        .get_or_insert_default();
+                    if let Some(types) = types {
+                        state.types = types;
+                    }
+                    let delay = raw.read_int("SW.Deferment", state.deferment);
+                    state.deferment = if delay < 0 { 20 } else { delay };
+                    state.base_normal = raw.read_bool("Deliver.BaseNormal", state.base_normal);
+                    if let Some(owner) = raw.read_name("Deliver.Owner", 2048) {
+                        state.owner = match owner.to_ascii_lowercase().as_str() {
+                            "invoker" => DeliveryOwner::Invoker,
+                            "neutral" => DeliveryOwner::Neutral,
+                            "special" => DeliveryOwner::Special,
+                            "civilian" => DeliveryOwner::Civilian,
+                            _ => state.owner,
+                        };
+                    }
+                    // Activation sound resolves against the fixed SOUNDMD catalog
+                    // in RuleSet::bind_type_sound_references, using this type's
+                    // retained INI read history rather than an unresolved name.
                 }
             }
             index += 1;

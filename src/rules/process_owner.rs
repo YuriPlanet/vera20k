@@ -30,7 +30,7 @@ use crate::rules::native_processing::{
 };
 use crate::rules::object_type::ObjectCategory;
 use crate::rules::ruleset::RuleSet;
-use crate::rules::sound_ini::SoundRegistry;
+use crate::rules::sound_ini::{EvaRegistry, SoundRegistry};
 
 /// The startup-selected INI objects reused by every later native Process call.
 ///
@@ -48,6 +48,8 @@ struct NativeRulesSourceSnapshot {
     /// Immutable Voc catalog selected once by Init_Game52C763..52C796.
     /// It is not a Rules layer and survives scenario Rules reconstruction.
     fixed_sounds: Arc<SoundRegistry>,
+    /// The same immutable EVAMD catalog used by process playback.
+    fixed_eva: Arc<EvaRegistry>,
 }
 
 #[derive(Debug)]
@@ -172,6 +174,7 @@ impl NativeRulesProcessOwner {
         langrule: Option<IniFile>,
         fixed_art: IniFile,
         fixed_sounds: Arc<SoundRegistry>,
+        fixed_eva: Arc<EvaRegistry>,
     ) -> Result<Self, RulesError> {
         let movies = crate::rules::movies::MovieRegistry::from_art(&fixed_art);
         let cold_trace = process_native_rules_cold_start(
@@ -187,6 +190,7 @@ impl NativeRulesProcessOwner {
                 fixed_art,
                 movies,
                 fixed_sounds,
+                fixed_eva,
             },
             registry: Some(NativeRulesRegistryOwner::ColdStartup(cold_trace)),
         })
@@ -199,12 +203,13 @@ impl NativeRulesProcessOwner {
         &self.sources.fixed_sounds
     }
 
-    pub(crate) fn bind_type_sound_references(
+    pub(crate) fn bind_type_audio_references(
         &self,
         rules: &mut RuleSet,
         processed: &ProcessedRulesLayers,
     ) {
         rules.bind_type_sound_references(processed.ini(), &self.sources.fixed_sounds);
+        rules.bind_type_eva_references(processed.ini(), &self.sources.fixed_eva);
     }
 
     /// Immutable startup-selected root for consumers with a root-only native read.
@@ -255,7 +260,7 @@ impl NativeRulesProcessOwner {
     ) -> Result<RuleSet, RulesError> {
         processed.validate_saved_state()?;
         let mut rules = RuleSet::from_processed_rules(processed)?;
-        self.bind_type_sound_references(&mut rules, processed);
+        self.bind_type_audio_references(&mut rules, processed);
         Ok(rules)
     }
 
@@ -372,7 +377,7 @@ impl NativeRulesProcessOwner {
                 return Err(error);
             }
         };
-        self.bind_type_sound_references(&mut rules, &processed);
+        self.bind_type_audio_references(&mut rules, &processed);
         debug_assert_eq!(rules.source_ini_hash(), processed.content_hash());
         let processed_ini = processed.ini().clone();
         let (post_reset_events, post_reset_super_count) = processed.take_constructor_events();

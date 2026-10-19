@@ -285,6 +285,7 @@ fn campaign_house_segment_matches_six_stock_rows_and_nine_startup_controls() {
             None,
             art.clone(),
             std::sync::Arc::default(),
+            Default::default(),
         )
         .unwrap();
         let (rules, _, _, receipt) = process
@@ -439,6 +440,7 @@ fn fresh_campaign_rejects_an_absent_stock_roster_instead_of_fabricating_offline_
         None,
         IniFile::empty(),
         std::sync::Arc::default(),
+        Default::default(),
     )
     .unwrap();
     let map =
@@ -477,6 +479,7 @@ fn fresh_campaign_rejects_unknown_country_factory_before_house_construction() {
         None,
         IniFile::empty(),
         std::sync::Arc::default(),
+        Default::default(),
     )
     .unwrap();
     let map = MapFile::from_bytes(

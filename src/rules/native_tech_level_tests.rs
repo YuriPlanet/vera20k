@@ -359,6 +359,7 @@ fn process_owner_accepts_retired_values_before_its_existing_full_init_reset() {
         None,
         IniFile::empty(),
         std::sync::Arc::default(),
+        Default::default(),
     )
     .unwrap();
     owner
@@ -418,7 +419,9 @@ fn retail_tech_levels_read_all_reached_layers_through_the_production_owner() {
     }
     let sources = crate::rules::retail_sources::RetailRulesSources::select(&assets).unwrap();
     let root_rules = RuleSet::from_ini(&sources.rulesmd.ini).unwrap();
-    let mut owner = sources.into_owner(std::sync::Arc::default()).unwrap();
+    let mut owner = sources
+        .into_owner(std::sync::Arc::default(), Default::default())
+        .unwrap();
     for route in native["retail"]["routes"].as_array().unwrap() {
         let map_name = route["map"].as_str().unwrap();
         let raw = assets.get_ref(map_name).unwrap();

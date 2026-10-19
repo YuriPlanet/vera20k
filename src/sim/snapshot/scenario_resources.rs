@@ -242,6 +242,7 @@ mod tests {
             None,
             IniFile::from_str(""),
             std::sync::Arc::default(),
+            Default::default(),
         )
         .unwrap();
         let loaded = owner

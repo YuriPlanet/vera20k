@@ -49,6 +49,7 @@ fn rules_with_fixed_sounds(root: IniFile, sounds: IniFile) -> RuleSet {
         None,
         IniFile::empty(),
         std::sync::Arc::new(crate::rules::sound_ini::SoundRegistry::from_ini(&sounds)),
+        Default::default(),
     )
     .unwrap();
     owner

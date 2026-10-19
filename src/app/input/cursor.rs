@@ -2017,6 +2017,24 @@ mod tests {
     }
 
     #[test]
+    fn unit_delivery_superweapon_custom_action_uses_existing_paradrop_cursor() {
+        let rules = crate::rules::ruleset::RuleSet::from_ini_with_fixed_art_for_test(
+            &crate::rules::ini_parser::IniFile::from_str(
+                "[SuperWeaponTypes]\n0=Delivery\n[Delivery]\nType=UnitDelivery\nAction=Custom\n",
+            ),
+            &crate::rules::ini_parser::IniFile::empty(),
+        )
+        .unwrap();
+        let action = rules
+            .super_weapon("Delivery")
+            .unwrap()
+            .action
+            .as_deref()
+            .unwrap();
+        assert_eq!(super_weapon_cursor_id(action), Some(CursorId::Paradrop));
+    }
+
+    #[test]
     fn returns_none_for_ts_legacy_and_unknown() {
         assert_eq!(super_weapon_cursor_id("IonCannon"), None);
         assert_eq!(super_weapon_cursor_id(""), None);

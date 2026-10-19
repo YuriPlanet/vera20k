@@ -803,7 +803,10 @@ fn primary_label_rules_with_fixed_art_override(
         .merge(&IniFile::from_str("[GAWEAP]\nFoundation=1x1\n"));
     let audio = crate::rules::audio_sources::AudioDefinitions::select(assets);
     let mut owner = sources
-        .into_owner(std::sync::Arc::clone(audio.sounds()))
+        .into_owner(
+            std::sync::Arc::clone(audio.sounds()),
+            std::sync::Arc::clone(audio.eva()),
+        )
         .unwrap();
     let mut scenario_assets = assets.clone();
     scenario_assets.register_neutral_archives().unwrap();

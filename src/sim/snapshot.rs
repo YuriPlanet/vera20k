@@ -1178,7 +1178,8 @@ use crate::util::save_codec;
 // 436 -> 437: independent BuildingLight objects and retained Spotlight rules.
 // 437 -> 438: retain the GenericWarhead payload reference in processed rules.
 // 438 -> 439: retain optional Ares auxiliary and negative building lists.
-const SNAPSHOT_VERSION: u32 = 439;
+// 439 -> 440: UnitDelivery rules, pending effects and per-building base override.
+const SNAPSHOT_VERSION: u32 = 440;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -1393,6 +1394,8 @@ pub enum SnapshotError {
 /// Structural failures found before a deserialized simulation is admitted.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum SnapshotRestoreError {
+    #[error("invalid UnitDelivery snapshot state: {0}")]
+    InvalidUnitDelivery(&'static str),
     #[error("invalid detached Particle {object_id}: {reason}")]
     InvalidDetachedParticleState {
         object_id: u64,
@@ -2744,6 +2747,9 @@ impl Simulation {
     /// weak/derived identities, and reconstructs skipped indexes in dependency
     /// order.
     pub fn restore_after_snapshot_load(&mut self) -> Result<(), SnapshotRestoreError> {
+        self.unit_deliveries
+            .validate(self)
+            .map_err(SnapshotRestoreError::InvalidUnitDelivery)?;
         self.validate_restored_spotlights()
             .map_err(
                 |(object_id, reason)| SnapshotRestoreError::InvalidSpotlightState {
@@ -4878,7 +4884,8 @@ mod tests {
         // 436 -> 437: independent BuildingLight and retained Spotlight rules.
         // 437 -> 438: the retained GenericWarhead payload binding.
         // 438 -> 439: retained Ares building requirement lists.
-        assert_eq!(super::SNAPSHOT_VERSION, 439);
+        // 439 -> 440: UnitDelivery state and instance base policy.
+        assert_eq!(super::SNAPSHOT_VERSION, 440);
     }
 
     #[test]

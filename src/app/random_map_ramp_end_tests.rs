@@ -43,11 +43,11 @@ fn retail_generation_inputs(
         crate::assets::asset_manager::MediaArchiveMode::STOCK_DIGITAL,
     )
     .expect("retail Generate assets");
+    let audio = crate::rules::audio_sources::AudioDefinitions::select(&assets);
     let (_, _, rules) = crate::rules::retail_sources::load_startup_rules(
         &assets,
-        std::sync::Arc::clone(
-            crate::rules::audio_sources::AudioDefinitions::select(&assets).sounds(),
-        ),
+        std::sync::Arc::clone(audio.sounds()),
+        std::sync::Arc::clone(audio.eva()),
     )
     .expect("retail Generate rules")
     .into_parts();

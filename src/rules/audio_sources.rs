@@ -18,7 +18,7 @@ use crate::rules::sound_ini::{EvaRegistry, SoundRegistry};
 #[derive(Debug)]
 pub struct AudioDefinitions {
     sounds: Arc<SoundRegistry>,
-    eva: EvaRegistry,
+    eva: Arc<EvaRegistry>,
     sound_source: Option<IniSourceIdentity>,
     eva_source: Option<IniSourceIdentity>,
 }
@@ -43,7 +43,7 @@ impl AudioDefinitions {
         });
         Self {
             sounds,
-            eva: eva_registry,
+            eva: Arc::new(eva_registry),
             sound_source: sound.map(|selected| selected.source),
             eva_source: eva.map(|selected| selected.source),
         }
@@ -53,7 +53,7 @@ impl AudioDefinitions {
         &self.sounds
     }
 
-    pub fn eva(&self) -> &EvaRegistry {
+    pub fn eva(&self) -> &Arc<EvaRegistry> {
         &self.eva
     }
 
@@ -175,6 +175,7 @@ mod tests {
             None,
             IniFile::empty(),
             Arc::clone(definitions.sounds()),
+            Arc::clone(definitions.eva()),
         )
         .unwrap();
         directory.write(
@@ -213,5 +214,144 @@ mod tests {
             definitions.eva().get("EVA_Test", EvaSide::Allied),
             Some("old")
         );
+    }
+
+    #[test]
+    fn superweapon_money_eva_reads_retain_catalog_matches_through_layers_and_save() {
+        use crate::rules::native_processing::ProcessedRulesLayers;
+        use crate::rules::process_owner::NativeScenarioRulesPrefix;
+
+        let long_name = "E".repeat(160);
+        let catalog = Arc::new(EvaRegistry::from_ini(&IniFile::from_str(&format!(
+            "[DialogList]\n0=EVA_InsufficientFunds\n1=Known\n2={long_name}\n"
+        ))));
+        for (root_cue, mode_cue, map_cue, expected) in [
+            ("", "", "", Some("EVA_InsufficientFunds")),
+            ("Known", "Missing", "", Some("Known")),
+            ("Known", "", "Missing", Some("Known")),
+            ("Known", "none", "Missing", None),
+            ("Known", "<none>", "", None),
+            ("Known", "none", "Known", Some("Known")),
+            ("Known", "", long_name.as_str(), Some(long_name.as_str())),
+        ] {
+            let root = IniFile::from_str(&format!(
+                "[SuperWeaponTypes]\n0=Paid\n[Paid]\nType=PsychicReveal\nMoney.Amount=-500\nEVA.InsufficientFunds={root_cue}\n"
+            ));
+            let mode = IniFile::from_str(&format!("[Paid]\nEVA.InsufficientFunds={mode_cue}\n"));
+            let map = IniFile::from_str(&format!("[Paid]\nEVA.InsufficientFunds={map_cue}\n"));
+            let mut owner = NativeRulesProcessOwner::from_cold_start_sources(
+                root,
+                None,
+                IniFile::empty(),
+                Arc::default(),
+                Arc::clone(&catalog),
+            )
+            .unwrap();
+            let (rules, _, _, _) = owner
+                .load_scenario(NativeScenarioRulesPrefix::NonCampaign(Some(&mode)), &map)
+                .unwrap()
+                .into_parts();
+            assert_eq!(
+                rules
+                    .super_weapon("Paid")
+                    .unwrap()
+                    .insufficient_funds_eva
+                    .as_deref(),
+                expected,
+                "root={root_cue}, mode={mode_cue}, map={map_cue}"
+            );
+            let saved =
+                crate::util::save_codec::serialize(owner.saved_scenario_rules().unwrap()).unwrap();
+            let restored: ProcessedRulesLayers =
+                crate::util::save_codec::deserialize(&saved).unwrap();
+            let loaded = owner.project_saved_scenario_rules(&restored).unwrap();
+            assert_eq!(
+                loaded
+                    .super_weapon("Paid")
+                    .unwrap()
+                    .insufficient_funds_eva
+                    .as_deref(),
+                expected
+            );
+            assert_eq!(
+                loaded.simulation_config_hash(),
+                rules.simulation_config_hash()
+            );
+        }
+        let root = IniFile::from_str(
+            "[SuperWeaponTypes]\n0=Paid\n[Paid]\nType=PsychicReveal\nMoney.Amount=-500\nEVA.InsufficientFunds=Missing\n",
+        );
+        let mut owner = NativeRulesProcessOwner::from_cold_start_sources(
+            root,
+            None,
+            IniFile::empty(),
+            Arc::default(),
+            Arc::default(),
+        )
+        .unwrap();
+        let (rules, _, _, _) = owner
+            .load_scenario(
+                NativeScenarioRulesPrefix::NonCampaign(None),
+                &IniFile::empty(),
+            )
+            .unwrap()
+            .into_parts();
+        assert!(
+            rules
+                .super_weapon("Paid")
+                .unwrap()
+                .insufficient_funds_eva
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn superweapon_money_eva_keeps_startup_catalog_after_files_change() {
+        use crate::rules::process_owner::NativeScenarioRulesPrefix;
+        use crate::rules::retail_sources::RetailRulesSources;
+
+        let directory = TestDirectory::new("money-fixed-eva");
+        directory.write("rulesmd.ini", b"[SuperWeaponTypes]\n0=Paid\n[Paid]\nType=PsychicReveal\nMoney.Amount=-500\nEVA.InsufficientFunds=Known\n");
+        directory.write("artmd.ini", b"; fixed art\n");
+        directory.write(
+            "evamd.ini",
+            b"[DialogList]\n0=EVA_InsufficientFunds\n1=Known\n",
+        );
+        let assets = AssetManager::from_loose_root_for_test(directory.path());
+        let definitions = AudioDefinitions::select(&assets);
+        let (startup, _, mut owner) = RetailRulesSources::select(&assets)
+            .unwrap()
+            .into_startup(
+                Arc::clone(definitions.sounds()),
+                Arc::clone(definitions.eva()),
+            )
+            .unwrap()
+            .into_parts();
+        assert_eq!(
+            startup
+                .unwrap()
+                .super_weapon("Paid")
+                .unwrap()
+                .insufficient_funds_eva
+                .as_deref(),
+            Some("Known")
+        );
+        directory.write("evamd.ini", b"[DialogList]\n0=Missing\n");
+        let (rules, _, _, _) = owner
+            .load_scenario(
+                NativeScenarioRulesPrefix::NonCampaign(None),
+                &IniFile::from_str("[Paid]\nEVA.InsufficientFunds=Missing\n"),
+            )
+            .unwrap()
+            .into_parts();
+        assert_eq!(
+            rules
+                .super_weapon("Paid")
+                .unwrap()
+                .insufficient_funds_eva
+                .as_deref(),
+            Some("Known")
+        );
+        assert!(definitions.eva().entry("Missing").is_none());
     }
 }

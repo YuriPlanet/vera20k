@@ -78,6 +78,7 @@ fn physical_rules() -> RuleSet {
         None,
         sections_ini(&receipt["art"]),
         sounds,
+        Default::default(),
     )
     .unwrap();
     let (mut rules, _, fixed_art, _) = owner
@@ -136,8 +137,14 @@ fn supplied_rules(input: &Value) -> RuleSet {
     let sounds = Arc::new(SoundRegistry::from_ini(&IniFile::from_str(
         "[SoundList]\n0=WaterEnter\n1=WaterLeave\n",
     )));
-    let mut owner =
-        NativeRulesProcessOwner::from_cold_start_sources(root, None, art, sounds).unwrap();
+    let mut owner = NativeRulesProcessOwner::from_cold_start_sources(
+        root,
+        None,
+        art,
+        sounds,
+        Default::default(),
+    )
+    .unwrap();
     let (mut rules, _, fixed_art, _) = owner
         .load_scenario(
             crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(None),

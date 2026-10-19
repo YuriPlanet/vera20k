@@ -9,7 +9,7 @@ use crate::assets::asset_manager::AssetManager;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::process_owner::NativeRulesProcessOwner;
 use crate::rules::ruleset::RuleSet;
-use crate::rules::sound_ini::SoundRegistry;
+use crate::rules::sound_ini::{EvaRegistry, SoundRegistry};
 use crate::util::sha256::sha256_hex;
 
 #[derive(Clone, Debug, serde::Serialize)]
@@ -100,18 +100,27 @@ impl RetailRulesSources {
 
     /// The cold-started native Rules authority alone, without the shell
     /// compatibility projection [`Self::into_startup`] also derives.
-    pub fn into_owner(self, sounds: Arc<SoundRegistry>) -> Result<NativeRulesProcessOwner, String> {
+    pub fn into_owner(
+        self,
+        sounds: Arc<SoundRegistry>,
+        eva: Arc<EvaRegistry>,
+    ) -> Result<NativeRulesProcessOwner, String> {
         NativeRulesProcessOwner::from_cold_start_sources(
             self.rulesmd.ini,
             self.langrule.map(|source| source.ini),
             self.artmd.ini,
             sounds,
+            eva,
         )
         .map_err(|error| format!("Native rules cold startup failed: {error}"))
     }
 
-    pub fn into_startup(self, sounds: Arc<SoundRegistry>) -> Result<StartupRulesLoad, String> {
-        let native_owner = self.into_owner(sounds)?;
+    pub fn into_startup(
+        self,
+        sounds: Arc<SoundRegistry>,
+        eva: Arc<EvaRegistry>,
+    ) -> Result<StartupRulesLoad, String> {
+        let native_owner = self.into_owner(sounds, eva)?;
         let (compatibility_rules, compatibility_projection) =
             match native_owner.startup_compatibility_projection() {
                 Ok(processed) => {
@@ -121,7 +130,7 @@ impl RetailRulesSources {
                         })
                         .ok();
                     if let Some(rules) = compatibility_rules.as_mut() {
-                        native_owner.bind_type_sound_references(rules, &processed);
+                        native_owner.bind_type_audio_references(rules, &processed);
                     }
                     let compatibility_projection =
                         processed.into_projection_discarding_native_receipt();
@@ -164,9 +173,10 @@ impl StartupRulesLoad {
 pub fn load_startup_rules(
     assets: &AssetManager,
     sounds: Arc<SoundRegistry>,
+    eva: Arc<EvaRegistry>,
 ) -> Option<StartupRulesLoad> {
     RetailRulesSources::select(assets)
-        .and_then(|sources| sources.into_startup(sounds))
+        .and_then(|sources| sources.into_startup(sounds, eva))
         .map_err(|error| log::warn!("{error}"))
         .ok()
 }
@@ -190,7 +200,7 @@ mod tests {
         directory.write("rulesmd.ini", b"[General]\nBuildSpeed=9\n");
         directory.write("artmd.ini", b"[TECH]\nFoundation=8x8\n");
         let (_, _, mut owner) = selected
-            .into_startup(Arc::default())
+            .into_startup(Arc::default(), Default::default())
             .expect("cold startup")
             .into_parts();
         let (rules, projection, art, _) = owner
@@ -244,7 +254,7 @@ mod tests {
         );
         let load = |name| {
             let selected = select_mode_ini(&assets, Some(name)).expect("select mode");
-            let (_, _, mut owner) = load_startup_rules(&assets, Arc::default())
+            let (_, _, mut owner) = load_startup_rules(&assets, Arc::default(), Default::default())
                 .expect("startup")
                 .into_parts();
             let (rules, ini, _, receipt) = owner
@@ -318,7 +328,7 @@ mod tests {
                 .get_for_test("FlightLevel"),
             Some("1200")
         );
-        let (_, _, mut owner) = load_startup_rules(&assets, Arc::default())
+        let (_, _, mut owner) = load_startup_rules(&assets, Arc::default(), Default::default())
             .expect("startup")
             .into_parts();
         let (_, ini, _, _) = owner
@@ -351,6 +361,7 @@ mod tests {
             Some(IniFile::from_str("[General]\nBuildSpeed=.58\n")),
             IniFile::empty(),
             Arc::default(),
+            Default::default(),
         )
         .expect("cold startup");
         let processed = owner
@@ -379,7 +390,7 @@ mod tests {
         directory.write("langrule.ini", b"[AI]\nNeutralTechBuildings=TECH2\n");
         directory.write("artmd.ini", b"[TECH2]\nFoundation=2x3\n");
         let assets = AssetManager::from_loose_root_for_test(directory.path());
-        let (_, _, owner) = load_startup_rules(&assets, Arc::default())
+        let (_, _, owner) = load_startup_rules(&assets, Arc::default(), Default::default())
             .expect("startup")
             .into_parts();
         directory.write("langrule.ini", b"[AI]\nNeutralTechBuildings=WRONG\n");

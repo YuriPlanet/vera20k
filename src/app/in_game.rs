@@ -139,26 +139,12 @@ impl App {
 
     /// Does the in-scenario modal machine own this Escape press?
     ///
-    /// Native Escape reaches Options through5372D0→647040→4C7939. B5 and B6
-    /// ignore IDCANCEL, while Game Controls returns to B5. Escape keeps its
-    /// in-world cancel duties: while no modal is
-    /// open and a placement/targeting or repair/sell mode is armed, Escape
-    /// cancels that instead and the machine stays out of it.
+    /// Existing modals handle their own Escape. In the world, ProcessCommand
+    /// 55DEE0 resolves bindings first; Options is its55E079 fallback. Opening
+    /// B5 before that lookup would consume a reloaded custom Escape binding.
     pub(super) fn in_game_menu_owns_escape(state: &AppState) -> bool {
-        let in_world_mode_armed = state.match_state.input.targeting_mode.is_some()
-            || state
-                .match_state
-                .match_presentation
-                .sidebar_gadget_state
-                .repair_mode_on
-            || state
-                .match_state
-                .match_presentation
-                .sidebar_gadget_state
-                .sell_mode_on;
         crate::ui::pause_menu::escape_belongs_to_modal_machine(
             state.match_state.match_presentation.in_game_menu,
-            in_world_mode_armed,
         )
     }
 

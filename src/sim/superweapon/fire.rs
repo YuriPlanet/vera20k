@@ -73,19 +73,8 @@ impl Simulation {
         if super::targeting::check(self, rules, owner, sw, cell, automatic).is_err() {
             return false;
         }
-        if sw.money_amount != 0
-            && sw.kind == SuperWeaponKind::GenericWarhead
-            && !super::generic_warhead::can_launch(self, rules, sw, cell)
-        {
-            return false;
-        }
-        // Explicit extension only: refuse before the post-click source/cell
-        // writes. Stock zero-cost Fire_SW keeps its native unconditional tail.
-        if sw.money_amount != 0
-            && (sw.post_click
-                || !super::money::valid_target(self, sw, cell)
-                || !click_fire_admission(self, owner, sw_type_id, sw)
-                || !super::money::admit(self, owner, sw_type_id, sw))
+        if sw.kind == SuperWeaponKind::UnitDelivery
+            && !super::unit_delivery::admits(self, rules, owner, sw, cell)
         {
             return false;
         }
@@ -93,6 +82,24 @@ impl Simulation {
             .post_click
             .then(|| pre_dependent(self, rules, sw))
             .flatten();
+        // Paid two-stage powers need an authoritative, saved one-use selection
+        // transaction. Native readiness alone is not such a token: PreClick
+        // becomes ready again on its next House update. Keep those optional
+        // configurations inert, including a free destination of a paid source.
+        if !super::money::configuration_supported(sw)
+            || paired.is_some_and(|(_, source)| !super::money::configuration_supported(source))
+        {
+            return false;
+        }
+        // Explicit extension only: all admission precedes paired-Super writes.
+        // Stock zero-cost Fire_SW retains its native refused-click tail.
+        if sw.money_amount != 0
+            && (!super::money::valid_target(self, sw, cell)
+                || !click_fire_admission(self, owner, sw_type_id, sw)
+                || !super::money::admit(self, owner, sw_type_id, sw))
+        {
+            return false;
+        }
         if let Some((pre_type, _)) = paired {
             let Some(pre) = super_instance(self, owner, pre_type) else {
                 return false;
@@ -151,7 +158,8 @@ fn click_fire(
     overlay_registry: Option<&OverlayTypeRegistry>,
     frame_effects: FrameEffects<'_>,
 ) -> bool {
-    if !click_fire_admission(sim, owner, sw_type_id, sw) {
+    // Paid launches passed this same owner before the outer transaction writes.
+    if sw.money_amount == 0 && !click_fire_admission(sim, owner, sw_type_id, sw) {
         return false;
     }
     if sw.kind == SuperWeaponKind::GenericWarhead
@@ -159,11 +167,7 @@ fn click_fire(
     {
         return false;
     }
-    if sw.money_amount != 0
-        && (sw.post_click
-            || !super::money::valid_target(sim, sw, cell)
-            || !super::money::transact(sim, owner, sw_type_id, sw))
-    {
+    if sw.money_amount != 0 && !super::money::transact(sim, owner, sw_type_id, sw) {
         return false;
     }
     launch(
@@ -238,6 +242,18 @@ fn launch(
 ) {
     use super::paradrop::ParaDropKind;
     match sw.kind {
+        SuperWeaponKind::UnitDelivery => {
+            super::unit_delivery::launch(
+                sim,
+                rules,
+                owner,
+                sw_type_id,
+                sw,
+                (rx, ry),
+                overlay_registry,
+                frame_effects,
+            );
+        }
         SuperWeaponKind::MultiMissile => {
             super::nuke::launch(sim, rules, owner, sw_type_id, sw, (rx, ry));
         }
@@ -347,14 +363,14 @@ fn super_instance(
 /// entry at its `PreDependent=` index (`HouseClass+0x258` indexed by
 /// `Type+0xF0`, `0x004FAE6C..0x004FAE7E`).
 fn pre_dependent<'r>(
-    sim: &mut Simulation,
+    sim: &Simulation,
     rules: &'r RuleSet,
     sw: &SuperWeaponType,
 ) -> Option<(InternedId, &'r SuperWeaponType)> {
     let name = rules
         .super_weapon_order
         .get(usize::try_from(sw.pre_dependent).ok()?)?;
-    Some((sim.interner.intern(name), rules.super_weapon(name)?))
+    Some((sim.interner.get(name)?, rules.super_weapon(name)?))
 }
 
 /// `HouseClass @ 0x004FAF00` for `house`, given the fired Super's type and

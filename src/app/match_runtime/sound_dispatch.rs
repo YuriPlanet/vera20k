@@ -1114,9 +1114,12 @@ pub(crate) fn superweapon_launch_cue(
         // Cases 3, 5, 6 and 8 reach neither a `VocClass` nor a `VoxClass` call.
         // GenericWarhead has no default Ares launch sound/EVA; custom Ares
         // audio overrides are outside this initial payload implementation.
-        K::ChronoSphere | K::ParaDrop | K::AmerParaDrop | K::SpyPlane | K::GenericWarhead => {
-            SuperWeaponLaunchCue::default()
-        }
+        K::ChronoSphere
+        | K::ParaDrop
+        | K::AmerParaDrop
+        | K::SpyPlane
+        | K::GenericWarhead
+        | K::UnitDelivery => SuperWeaponLaunchCue::default(),
     }
 }
 
@@ -1209,11 +1212,19 @@ mod tests {
             ("EVA.InsufficientFunds=CustomFunds\n", Some("CustomFunds")),
             ("EVA.InsufficientFunds=none\n", None),
         ] {
-            let rules = RuleSet::from_ini_with_fixed_art_for_test(
-                &crate::rules::ini_parser::IniFile::from_str(&format!(
-                    "[SuperWeaponTypes]\n0=Paid\n[Paid]\nType=PsychicReveal\nMoney.Amount=-500\n{setting}"
-                )), &crate::rules::ini_parser::IniFile::empty(),
-            ).unwrap();
+            let ini = crate::rules::ini_parser::IniFile::from_str(&format!(
+                "[SuperWeaponTypes]\n0=Paid\n[Paid]\nType=PsychicReveal\nMoney.Amount=-500\n{setting}"
+            ));
+            let processed = crate::rules::native_processing::RulesLayerStack::new(ini)
+                .process_with_fixed_art(&crate::rules::ini_parser::IniFile::empty())
+                .unwrap();
+            let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
+            let eva = crate::rules::sound_ini::EvaRegistry::from_ini(
+                &crate::rules::ini_parser::IniFile::from_str(
+                    "[DialogList]\n0=EVA_InsufficientFunds\n1=CustomFunds\n",
+                ),
+            );
+            rules.bind_type_eva_references(processed.ini(), &eva);
             let mut sim = Simulation::new();
             let local = sim.interner.intern("Americans");
             let other = sim.interner.intern("Russians");

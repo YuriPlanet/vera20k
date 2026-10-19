@@ -50,6 +50,7 @@ pub mod psychic_dominator;
 mod psychic_dominator_tests;
 pub mod psychic_reveal;
 mod spy_plane;
+pub(crate) mod unit_delivery;
 #[cfg(test)]
 mod spy_plane_tests;
 
@@ -1044,6 +1045,7 @@ pub(crate) fn tick_active_superweapon_effects(
     let chrono = sim.process_chrono_screen_effect();
     sim.publish_trigger_effects(chrono);
     let storm = lightning_storm::process(sim, rules, overlay_registry, frame_effects);
+    unit_delivery::tick(sim, rules, overlay_registry, frame_effects);
     dominator || storm
 }
 

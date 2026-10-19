@@ -252,6 +252,7 @@ fn authored_rules(root: &IniFile, sounds: SoundRegistry) -> RuleSet {
         None,
         IniFile::empty(),
         Arc::new(sounds),
+        Default::default(),
     )
     .unwrap();
     owner
