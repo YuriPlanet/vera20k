@@ -54,7 +54,7 @@ fn a_shot_before_an_unarmed_occupant_rearms_without_an_rng_draw() {
             10,
             EntityCategory::Structure,
         );
-        let mut cargo = PassengerCargo::new(5, 0);
+        let mut cargo = PassengerCargo::new(5, 0.0);
         // Occupants in admission order: armed, then unarmed.
         for (id, kind) in [(2, "ARMED"), (3, "UNARMED")] {
             let mut occupant = GameEntity::test_default_of_category(
@@ -67,7 +67,7 @@ fn a_shot_before_an_unarmed_occupant_rearms_without_an_rng_draw() {
             );
             occupant.veterancy.set_rank_for_test(rank);
             occupant.passenger_role = PassengerRole::inside_for_test(1, false);
-            cargo.add_occupant(id, 1);
+            cargo.add_occupant(id, 1.0);
             world.substrate.entities.insert(occupant);
         }
         assert_eq!(cargo.passengers(), [2, 3]);
@@ -236,7 +236,7 @@ pub(super) fn for_each_native_case(
             input["current_weapon_number"].as_i64().unwrap() as i32,
             0,
         );
-        let mut cargo = PassengerCargo::new(5, 0);
+        let mut cargo = PassengerCargo::new(5, 0.0);
         let mut entities = EntityStore::new();
         for (index, occupant) in occupants.iter().enumerate() {
             let id = index as u64 + 2;
@@ -251,7 +251,7 @@ pub(super) fn for_each_native_case(
             entity
                 .veterancy
                 .set_rank_for_test((occupant["veterancy"].as_f64().unwrap() * 100.0) as u16);
-            cargo.add_occupant(id, 1);
+            cargo.add_occupant(id, 1.0);
             entities.insert(entity);
         }
         cargo.set_garrison_fire_index_for_test(input["fire_index"].as_u64().unwrap() as u8);

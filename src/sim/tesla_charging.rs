@@ -167,11 +167,9 @@ impl Simulation {
                     .power_states
                     .get(&building.owner())
                     .is_none_or(|power| {
+                        let (output, drain) = power.effective_totals();
                         X87::compare(
-                            crate::sim::power_system::native_power_ratio(
-                                power.total_output,
-                                power.total_drain,
-                            ),
+                            crate::sim::power_system::native_power_ratio(output, drain),
                             X87::load_f64(NativeF64Bits::ONE),
                         ) == MaskedX87Ordering::Equal
                     }));

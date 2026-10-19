@@ -26,6 +26,16 @@ fn frames(sim: &Simulation, rules: &RuleSet, transport: u64, hover: Option<u64>)
     result
 }
 
+pub(super) fn apply_native_size_override_for_test(
+    rules: &mut RuleSet,
+    size_override: &serde_json::Value,
+) {
+    let type_name = size_override["type_name"].as_str().unwrap();
+    let bits = u64::from_str_radix(size_override["f64_bits"].as_str().unwrap(), 16).unwrap();
+    rules.set_object_size_for_test(type_name, f64::from_bits(bits));
+    assert_eq!(rules.object(type_name).unwrap().size.to_bits(), bits);
+}
+
 #[test]
 fn stock_passenger_pips_follow_real_boarding_departure_and_selection() {
     let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
@@ -34,10 +44,10 @@ fn stock_passenger_pips_follow_real_boarding_departure_and_selection() {
     };
     let rules = &retail.rules;
     let native = crate::test_fixture::json("tools/procedural_drawing_oracle/passenger_pips.json");
-    for (transport_type, passenger_type, control) in [
-        ("FV", "E1", "loaded_a127"),
-        ("FV", "ENGINEER", "engineer"),
-        ("LCRF", "MTNK", "integer_size_passenger"),
+    for (transport_type, passenger_type, control, total_size) in [
+        ("FV", "E1", "loaded_a127", 1),
+        ("FV", "ENGINEER", "engineer", 1),
+        ("LCRF", "MTNK", "integer_size_passenger", 3),
     ] {
         let row = native["raster_controls"]
             .as_array()
@@ -116,10 +126,7 @@ fn stock_passenger_pips_follow_real_boarding_departure_and_selection() {
             .cargo()
             .unwrap();
         assert_eq!(hold.passengers(), [passenger]);
-        assert_eq!(
-            hold.total_size(),
-            rules.object(passenger_type).unwrap().size
-        );
+        assert_eq!(hold.total_size(), total_size);
         assert_eq!(frames(&sim, rules, transport, None), loaded, "{control}");
 
         assert!(sim.apply_command(
@@ -163,6 +170,84 @@ fn stock_passenger_pips_follow_real_boarding_departure_and_selection() {
         ));
         assert!(frames(&sim, rules, transport, None).is_empty());
         assert_eq!(frames(&sim, rules, transport, Some(transport)), empty);
+    }
+}
+
+/// Replays the native two-passenger fractional Size controls through the
+/// production cargo and PIPS2 owners. The native rows patch the passenger's
+/// current Type Size after reading; this fixture applies the same binary64
+/// field override after Rules construction, then boards two live typed units.
+#[test]
+fn fractional_passenger_pips_match_original_cargo_and_draw_controls() {
+    use crate::rules::ini_parser::IniFile;
+    use crate::rules::ruleset::RuleSet;
+    use crate::sim::passenger::{PassengerCargo, PassengerRole};
+
+    let native = crate::test_fixture::json("tools/procedural_drawing_oracle/passenger_pips.json");
+    for control in [
+        "fractional_size_1_5_two_passengers",
+        "fractional_size_2_8_two_passengers",
+    ] {
+        let row = native["raster_controls"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["name"] == control)
+            .unwrap_or_else(|| panic!("missing native control {control}"));
+        let size_patch = &row["input"]["current_type_size_override_after_read"];
+        let passenger_type = size_patch["type_name"].as_str().unwrap();
+        let carrier_type = row["input"]["actors"][0]["type_name"].as_str().unwrap();
+        let size_bits = u64::from_str_radix(size_patch["f64_bits"].as_str().unwrap(), 16).unwrap();
+        let passenger_size = f64::from_bits(size_bits);
+        let mut rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[VehicleTypes]\n0={carrier_type}\n1={passenger_type}\n\
+             [{carrier_type}]\nStrength=100\nArmor=heavy\nSpeed=4\nPassengers=12\n\
+             PipScale=Passengers\nSizeLimit=2\n\
+             [{passenger_type}]\nStrength=100\nArmor=heavy\nSpeed=4\n"
+        )))
+        .expect("fractional carrier and passenger rules");
+        apply_native_size_override_for_test(&mut rules, size_patch);
+
+        let mut sim = Simulation::new();
+        crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
+        sim.intern_rule_type_ids(&rules);
+        sim.resolve_type_handles(&rules);
+        let carrier = sim
+            .spawn_object(carrier_type, OWNER, 16, 16, 64, &rules)
+            .expect("carrier fixture");
+        let first = sim
+            .spawn_object(passenger_type, OWNER, 16, 15, 64, &rules)
+            .expect("first passenger fixture");
+        let second = sim
+            .spawn_object(passenger_type, OWNER, 17, 15, 64, &rules)
+            .expect("second passenger fixture");
+        let mut cargo = PassengerCargo::new(12, 2.0);
+        cargo.board_forced_chain(&[(first, passenger_size), (second, passenger_size)]);
+        assert_eq!(
+            cargo.total_size(),
+            row["actor_results"][0]["cargo_size"].as_i64().unwrap() as i32,
+            "{}",
+            control
+        );
+        sim.entities_mut().get_mut(carrier).unwrap().passenger_role =
+            PassengerRole::transport(cargo);
+        assert!(sim.apply_command(
+            OWNER,
+            &Command::Select {
+                entity_ids: vec![carrier],
+                additive: false,
+            },
+            Some(&rules)
+        ));
+
+        let expected: Vec<_> = row["draws"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|draw| draw["asset"] == "PIPS2.SHP")
+            .map(|draw| draw["frame"].as_u64().unwrap() as usize)
+            .collect();
+        assert_eq!(frames(&sim, &rules, carrier, None), expected, "{control}");
     }
 }
 

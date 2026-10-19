@@ -604,7 +604,7 @@ GuardRange=9\n\n\
             .unwrap_or_else(|error| panic!("{name}: {error:?}"));
 
             let mut entities = EntityStore::new();
-            let mut cargo = PassengerCargo::new(5, 100);
+            let mut cargo = PassengerCargo::new(5, 100.0);
             for (index, rider) in riders.iter().enumerate().rev() {
                 let id = 10 + index as u64;
                 let mut passenger =
@@ -620,7 +620,7 @@ GuardRange=9\n\n\
                 passenger.set_gunner_selection_for_test(current as i32, -1);
                 passenger.passenger_role = PassengerRole::inside_for_test(1, open_topped);
                 entities.insert(passenger);
-                cargo.board_forced_chain(&[(id, 1)]);
+                cargo.board_forced_chain(&[(id, 1.0)]);
             }
             let mut transport = GameEntity::test_default(1, "TRN", "Test", 0, 0);
             transport

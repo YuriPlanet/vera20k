@@ -83,7 +83,12 @@ fn rules_for(row: &Value) -> RuleSet {
     }
     for (index, member) in members.iter().enumerate() {
         let rating = int(&member["rating"]);
-        ini += &format!("[M{index}]\n{armed}LeadershipRating={rating}\n");
+        let loadout = if member["unarmed"].as_bool() == Some(true) {
+            "Strength=100\nSpeed=4\nLocomotor={4A582744-9839-11D1-B709-00A024DDAFD1}\n"
+        } else {
+            armed
+        };
+        ini += &format!("[M{index}]\n{loadout}LeadershipRating={rating}\n");
     }
     ini += "[SuperWeaponTypes]\n";
     for index in 0..supers.len() {
@@ -91,6 +96,15 @@ fn rules_for(row: &Value) -> RuleSet {
     }
     for (index, sw) in supers.iter().enumerate() {
         ini += &format!("[SW{index}]\nType={:?}\n", KINDS[int(&sw["kind"]) as usize]);
+        // Authored action-56 scenes exercise the real two-click transaction;
+        // the existing native-oracle rows retain their original type inputs.
+        if row["paired_chrono"].as_bool() == Some(true) {
+            match int(&sw["kind"]) {
+                3 => ini += "PreClick=yes\n",
+                4 => ini += "PostClick=yes\nPreDependent=ChronoSphere\n",
+                _ => {}
+            }
+        }
     }
     let mut rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(&ini))
         .expect("fixture rules");
@@ -306,7 +320,7 @@ fn the_superweapon_script_actions_match_native() {
             ),
             57 => sim.team_action_chronoshift(
                 team,
-                int(&row["argument"]),
+                super::ChronoshiftTarget::Quarry(int(&row["argument"])),
                 &rules,
                 None,
                 crate::sim::world::FrameEffects::default(),
@@ -457,3 +471,6 @@ fn retail_superweapon_scripts_run_ported_actions() {
         .count();
     assert_eq!(running, 9);
 }
+
+#[path = "chronoshift_building_tests.rs"]
+mod chronoshift_building_tests;

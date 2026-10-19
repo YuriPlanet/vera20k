@@ -29,6 +29,8 @@ path = "bin/sim-bench.rs"
 dev-overlays = []
 # Read-only snapshots and opt-in frame timing for the browser dashboard.
 telemetry = []
+# Offline trainer state and diagnostic event hooks, absent from normal builds.
+debug-tools = ["telemetry"]
 # Test fixtures and helpers that client tests share; the client enables it
 # through its dev-dependency.
 test-support = []

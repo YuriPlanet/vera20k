@@ -6902,6 +6902,17 @@ impl RuleSet {
         object.voice_select_enslaved = enslaved;
     }
 
+    /// Apply a native post-reader TechnoType Size override to a test fixture.
+    /// The fixture owns the exact binary64 value written to `Type+0x380`;
+    /// this does not model INI parsing or change the production Rules reader.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_object_size_for_test(&mut self, type_id: &str, size: f64) {
+        let handle = self
+            .type_handle(type_id)
+            .expect("native fixture type exists");
+        self.object_list[handle.0 as usize].size = size;
+    }
+
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn art_entry_mut_for_test(
         &mut self,

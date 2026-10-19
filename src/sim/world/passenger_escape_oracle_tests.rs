@@ -224,7 +224,7 @@ fn scene(input: &Value) -> Scene {
             unit.set_gunner_selection_for_test(0, -1);
         }
         if unit.passenger_role.cargo().is_none() {
-            unit.passenger_role = PassengerRole::transport(PassengerCargo::new(5, 0));
+            unit.passenger_role = PassengerRole::transport(PassengerCargo::new(5, 0.0));
         }
     }
     let attacker = sim
@@ -262,7 +262,7 @@ fn scene(input: &Value) -> Scene {
             .passenger_role
             .cargo_mut()
             .unwrap()
-            .board_forced_chain(&[(id, 1)]);
+            .board_forced_chain(&[(id, 1.0)]);
         if input["open_topped"] == true {
             assert!(sim.register_open_topped_passenger(id));
             // A target to drop: Assign_Target(NULL) is the only writer here.

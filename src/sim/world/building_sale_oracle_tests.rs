@@ -160,7 +160,7 @@ fn crew_scene(input: &Value) -> (SlaveScene, Vec<u64>) {
         .set_selected_for_test(input["selected"] == true);
     let mut passengers = Vec::new();
     if let Some(names) = input["passengers"].as_array() {
-        building.passenger_role = PassengerRole::transport(PassengerCargo::new(5, 0));
+        building.passenger_role = PassengerRole::transport(PassengerCargo::new(5, 0.0));
         for name in names {
             let id = sim
                 .construct_object_limbo_at_height(
@@ -187,7 +187,7 @@ fn crew_scene(input: &Value) -> (SlaveScene, Vec<u64>) {
                 .passenger_role
                 .cargo_mut()
                 .unwrap()
-                .board_forced_chain(&[(id, 1)]);
+                .board_forced_chain(&[(id, 1.0)]);
         }
     }
     production::begin_selling(sim, rules, refinery, false);

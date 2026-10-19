@@ -52,6 +52,10 @@ pub mod economy; // per-house wallet/storage/statistics value-type (production+e
 pub mod frame_profile;
 #[cfg(feature = "telemetry")]
 pub mod telemetry;
+#[cfg(feature = "debug-tools")]
+pub mod cheats;
+#[cfg(feature = "debug-tools")]
+pub mod debug_event_log;
 pub mod entity_store;
 pub(crate) mod estimated_health;
 pub(crate) mod flashing;

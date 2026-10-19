@@ -142,6 +142,8 @@ pub(crate) struct DiagnosticsState {
     pub(crate) telemetry_last_publish: Option<Instant>,
     #[cfg(feature = "telemetry-dashboard")]
     pub(crate) telemetry_observer: crate::app::match_runtime::telemetry::ObserverSession,
+    #[cfg(feature = "debug-tools")]
+    pub(crate) debug_session_epoch: u64,
 }
 
 /// A diagnostic input policy, never a second simulation clock. The map route
@@ -179,6 +181,8 @@ impl DiagnosticsState {
             telemetry_last_publish: None,
             #[cfg(feature = "telemetry-dashboard")]
             telemetry_observer: Default::default(),
+            #[cfg(feature = "debug-tools")]
+            debug_session_epoch: 1,
         }
     }
 

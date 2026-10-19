@@ -37,6 +37,9 @@ use crate::sim::timer::CdTimer;
 use crate::util::native_x87::{NativeF64Bits, X87Chop53, X87Ordering};
 
 mod actions;
+mod follow_friendlies;
+#[cfg(test)]
+mod follow_friendlies_tests;
 mod membership;
 mod orders;
 mod registry_install;

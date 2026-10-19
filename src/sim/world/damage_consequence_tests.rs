@@ -179,8 +179,8 @@ fn ordinary_fatal_transport_finishes_cargo_lifecycle_before_consequence_admissio
     let mut entity = GameEntity::test_default(passenger, "TARGET", "Soviet", 8, 5);
     entity.passenger_role = PassengerRole::inside_for_test(carrier, false);
     sim.substrate.entities.insert(entity);
-    let mut cargo = PassengerCargo::new(1, 1);
-    cargo.board_forced_chain(&[(passenger, 1)]);
+    let mut cargo = PassengerCargo::new(1, 1.0);
+    cargo.board_forced_chain(&[(passenger, 1.0)]);
     sim.substrate
         .entities
         .get_mut(carrier)

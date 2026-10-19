@@ -1294,8 +1294,8 @@ mod tests {
                 );
                 inside.veterancy.set_rank_for_test(veterancy);
                 entities.insert(inside);
-                let mut cargo = crate::sim::passenger::PassengerCargo::new(5, 0);
-                cargo.board_forced_chain(&[(2, 1)]);
+                let mut cargo = crate::sim::passenger::PassengerCargo::new(5, 0.0);
+                cargo.board_forced_chain(&[(2, 1.0)]);
                 building.passenger_role = PassengerRole::transport(cargo);
             }
             entities.insert(building);

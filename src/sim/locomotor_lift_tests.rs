@@ -541,7 +541,7 @@ fn retail_locomotor_arm_admission() {
     let Some(rules) = retail_rules() else {
         return;
     };
-    assert_eq!(rules.object("MTNK").unwrap().size, 3);
+    assert_eq!(rules.object("MTNK").unwrap().size, 3.0);
     for (strength, lifted) in [(3, false), (4, true)] {
         let (mut sim, _) = arena(&rules);
         let magnetron = spawn(&mut sim, &rules, "TELE", "Americans", 10, 16);
@@ -604,6 +604,41 @@ fn retail_locomotor_arm_admission() {
         "a grounded release lets the lift end"
     );
     assert!(!released.crash.is_crashing() && !released.drop_credit.being_manipulated());
+}
+
+/// The actual detonation arm reads the fractional MTNK Size through the
+/// retail Battle layers and the current Type getter before applying FCOMP.
+#[test]
+fn retail_magnetron_admission_reads_fractional_type_size() {
+    let patch = crate::rules::ini_parser::IniFile::from_str("[MTNK]\nSize=1.5\n");
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map_with_patch(
+        "XMP03T4.MAP",
+        &patch,
+    ) else {
+        return;
+    };
+    let rules = &retail.rules;
+    assert_eq!(rules.object("MTNK").unwrap().size, 1.5);
+
+    let (mut sim, _) = arena(rules);
+    let magnetron = spawn(&mut sim, rules, "TELE", "Americans", 10, 16);
+    let tank = spawn(&mut sim, rules, "MTNK", "Russians", 16, 16);
+    for (strength, lifted) in [(1, false), (2, true)] {
+        sim.locomotor_detonation(
+            magnetron,
+            LocomotorShotTarget::Object(tank),
+            strength,
+            LocomotorKind::Jumpjet,
+            rules,
+            None,
+            FrameEffects::default(),
+        );
+        assert_eq!(
+            entity(&sim, tank).lift.swap_active(),
+            lifted,
+            "strength {strength}"
+        );
+    }
 }
 
 /// The links and the drop's credit are saved, and each one moves the world

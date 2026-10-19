@@ -1439,13 +1439,15 @@ pub struct ObjectType {
     /// derivation distinguishes exact zero from every signed nonzero value.
     pub passengers: i32,
 
-    /// Maximum Size= of individual passenger allowed (SizeLimit= in rules.ini).
-    /// 0 means no size restriction. SizeLimit=2 means only Size<=2 can enter.
-    pub size_limit: u32,
+    /// `SizeLimit=` at `TechnoTypeClass+0x388`, stored as binary64. The
+    /// constructor `0x00710AF0` seeds 0.0 (`0x00710C93`, `0x00710C99`); the
+    /// native type reader reads this field with `ReadDouble` (`0x005283D0`).
+    pub size_limit: f64,
 
-    /// How much transport space this unit occupies (Size= in rules.ini).
-    /// Infantry default 1, vehicles default 3.
-    pub size: u32,
+    /// `Size=` at `TechnoTypeClass+0x380`, stored as binary64. The constructor
+    /// `0x00710AF0` seeds 1.0 for every category (`0x00710C66`, `0x00710C87`,
+    /// `0x00710C8D`); the native type reader uses `ReadDouble` (`0x005283D0`).
+    pub size: f64,
 
     /// Whether this transport is open-topped — passengers can fire from inside.
     /// Parsed from `OpenTopped=yes` in rules.ini.
@@ -3082,17 +3084,12 @@ impl ObjectType {
             laser_fence_post: section.read_bool("LaserFencePost", false),
             firestorm_wall: section.read_bool("FirestormWall", false),
             passengers: section.read_int("Passengers", 0),
-            size_limit: section.read_int("SizeLimit", 0).max(0) as u32,
-            size: section
-                .read_int(
-                    "Size",
-                    if category == ObjectCategory::Infantry {
-                        1
-                    } else {
-                        3
-                    },
-                )
-                .max(0) as u32,
+            // `TechnoTypeClass::ReadINI @ 0x00712170` reads Size first from
+            // key `0x00820178`, then SizeLimit from `0x008443BC`; both use the
+            // current qword as `ReadDouble @ 0x005283D0`'s default and retain
+            // the returned binary64 without clamping.
+            size: section.read_double("Size", 1.0),
+            size_limit: section.read_double("SizeLimit", 0.0),
             open_topped: section.read_bool("OpenTopped", false),
             gunner: section.read_bool("Gunner", false),
             ifv_mode: section.read_int("IFVMode", 0),
@@ -4723,8 +4720,8 @@ mod tests {
         let section: &IniSection = ini.section("HTK").unwrap();
         let obj = ObjectType::from_ini_section("HTK", section, ObjectCategory::Vehicle);
         assert_eq!(obj.passengers, 5);
-        assert_eq!(obj.size_limit, 2);
-        assert_eq!(obj.size, 3);
+        assert_eq!(obj.size_limit, 2.0);
+        assert_eq!(obj.size, 3.0);
         assert!(!obj.open_topped);
         assert!(!obj.gunner);
         assert_eq!(obj.weapon_list.len(), WEAPON_SLOT_COUNT);
@@ -4773,7 +4770,7 @@ mod tests {
         .unwrap();
         let obj = rules.object("FV").unwrap();
         assert_eq!(obj.passengers, 1);
-        assert_eq!(obj.size_limit, 1);
+        assert_eq!(obj.size_limit, 1.0);
         assert!(obj.gunner);
         assert_eq!(obj.weapon_list.len(), WEAPON_SLOT_COUNT);
         assert_eq!(obj.weapon_list[0].as_deref(), Some("Missiles"));
@@ -4915,7 +4912,7 @@ mod tests {
         let section: &IniSection = ini.section("E1").unwrap();
         let obj = ObjectType::from_ini_section("E1", section, ObjectCategory::Infantry);
         assert_eq!(obj.ifv_mode, 0);
-        assert_eq!(obj.size, 1);
+        assert_eq!(obj.size, 1.0);
     }
 
     #[test]
@@ -5020,17 +5017,62 @@ mod tests {
 
     #[test]
     fn test_size_defaults_by_category() {
-        // Infantry defaults to Size=1
-        let ini: IniFile = IniFile::from_str("[INF]\nFixtureOnly=1\n");
-        let section: &IniSection = ini.section("INF").unwrap();
-        let obj = ObjectType::from_ini_section("INF", section, ObjectCategory::Infantry);
-        assert_eq!(obj.size, 1);
+        let ini = IniFile::from_str(
+            "[INF]\nFixtureOnly=1\n[VEH]\nFixtureOnly=1\n\
+             [AIR]\nFixtureOnly=1\n[BUILDING]\nFixtureOnly=1\n",
+        );
+        for (id, category) in [
+            ("INF", ObjectCategory::Infantry),
+            ("VEH", ObjectCategory::Vehicle),
+            ("AIR", ObjectCategory::Aircraft),
+            ("BUILDING", ObjectCategory::Building),
+        ] {
+            let section = ini.section(id).expect("fixture section");
+            let object = ObjectType::from_ini_section(id, section, category);
+            assert_eq!(
+                object.size, 1.0,
+                "[{id}] missing Size= must retain the native constructor's 1.0",
+            );
+            assert_eq!(
+                object.size_limit, 0.0,
+                "[{id}] missing SizeLimit= must retain the native constructor's 0.0",
+            );
+        }
+    }
 
-        // Vehicle defaults to Size=3
-        let ini2: IniFile = IniFile::from_str("[VEH]\nFixtureOnly=1\n");
-        let section2: &IniSection = ini2.section("VEH").unwrap();
-        let obj2 = ObjectType::from_ini_section("VEH", section2, ObjectCategory::Vehicle);
-        assert_eq!(obj2.size, 3);
+    #[test]
+    fn test_size_and_size_limit_preserve_read_double_values() {
+        let ini = IniFile::from_str(
+            "[FRACTIONAL]\nSize=1.25\nSizeLimit=1.5\n\
+             [NEGATIVE]\nSize=-0.5\nSizeLimit=-1.25\n",
+        );
+        let fractional = ObjectType::from_ini_section(
+            "FRACTIONAL",
+            ini.section("FRACTIONAL").unwrap(),
+            ObjectCategory::Vehicle,
+        );
+        assert_eq!(fractional.size, 1.25);
+        assert_eq!(fractional.size_limit, 1.5);
+
+        let negative = ObjectType::from_ini_section(
+            "NEGATIVE",
+            ini.section("NEGATIVE").unwrap(),
+            ObjectCategory::Vehicle,
+        );
+        assert_eq!(negative.size, -0.5);
+        assert_eq!(negative.size_limit, -1.25);
+    }
+
+    #[test]
+    fn retail_mtnk_and_e1_sizes_read_through_battle_layers() {
+        let Some(retail) =
+            crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+        else {
+            return;
+        };
+
+        assert_eq!(retail.rules.object("MTNK").unwrap().size, 3.0);
+        assert_eq!(retail.rules.object("E1").unwrap().size, 1.0);
     }
 
     /// `AbilityClass::FindAbilityByName @ 0x0074FEFF` resolves every one of

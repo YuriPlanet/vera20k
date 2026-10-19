@@ -1119,7 +1119,11 @@ fn attach_dashboard(state: &mut crate::app::AppState) {
     state.diag.telemetry_server = match crate::app::telemetry_server::start_from_env() {
         Some(Ok(server)) => {
             crate::util::logging::enable_telemetry_capture();
-            eprintln!("Read-only telemetry dashboard: {}", server.bootstrap_url());
+            #[cfg(feature = "debug-tools")]
+            let description = "Telemetry dashboard (offline debug tools enabled)";
+            #[cfg(not(feature = "debug-tools"))]
+            let description = "Read-only telemetry dashboard";
+            eprintln!("{description}: {}", server.bootstrap_url());
             Some(server)
         }
         Some(Err(error)) => {

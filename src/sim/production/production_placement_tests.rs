@@ -3456,7 +3456,7 @@ fn sell_player_built_garrisoned_building_demolishes_and_ejects_alive() {
     let amer_id = sim.interner.intern("Americans");
     let e1_id = sim.interner.intern("E1");
     if let Some(t) = sim.substrate.entities.get_mut(30) {
-        t.passenger_role = PassengerRole::transport(PassengerCargo::new(5, 1));
+        t.passenger_role = PassengerRole::transport(PassengerCargo::new(5, 1.0));
     }
     let mut pax = crate::sim::game_entity::GameEntity::test_default(31, "E1", "Americans", 39, 40);
     pax.set_owner_for_test(amer_id);
@@ -3466,7 +3466,7 @@ fn sell_player_built_garrisoned_building_demolishes_and_ejects_alive() {
     if let Some(t) = sim.substrate.entities.get_mut(30)
         && let Some(c) = t.passenger_role.cargo_mut()
     {
-        c.board_forced_chain(&[(31, 1)]);
+        c.board_forced_chain(&[(31, 1.0)]);
     }
     // Accepted Building AddOccupant52298D refreshes after the append.
     sim.refresh_spatial_threat(30, &rules, None);

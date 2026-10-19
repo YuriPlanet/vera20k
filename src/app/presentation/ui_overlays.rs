@@ -1186,6 +1186,18 @@ pub(crate) struct ScalePipDraw {
     pub offset_pixels: [i32; 2],
 }
 
+/// PIPS2's infantry/unit filler count: the draw owner loads current Type+380
+/// Size, subtracts 1.0 in x87, then calls FTOL and consumes positive results.
+pub(super) fn passenger_pip_filler_count(size: f64) -> i32 {
+    use crate::util::native_x87::{MaskedX87Chop53 as X87, NativeF64Bits};
+
+    let size_minus_one = X87::sub(
+        X87::load_f64(NativeF64Bits::from_bits(size.to_bits())),
+        X87::load_i32(1),
+    );
+    X87::ftol_i32_low_masked(size_minus_one)
+}
+
 /// Building6F682C/mobile6F6A58 ->709A90 after shared health/tail admission.
 /// This one owner emits spawn, garrison and passenger/PipScale rows.
 /// Rendering only reads retained state; it never advances timers or RNG.
@@ -1286,11 +1298,17 @@ pub(crate) fn scale_pip_draws(
             }
             return pips;
         }
-        //473460 normally rereads current binary64 Size and truncates each sum.
-        //The existing cargo owner retains integer admission-time sizes. Stock
-        //FV+size-one infantry are equivalent; fractional/mixed sizes and type
-        //reloads remain an explicit transport-owner residual, not a new cache.
-        let total = cargo.total_size() as usize;
+        //473460 rereads current binary64 Size and truncates after each entry;
+        //PassengerCargo retains that signed native result. Negative totals
+        //produce no passenger frames in the native drawing path.
+        let total = cargo.total_size();
+        if total < 0 {
+            return pips;
+        }
+        let Ok(total) = usize::try_from(total) else {
+            pips.truncate(row_start);
+            return pips;
+        };
         if total > slots {
             pips.truncate(row_start);
             return pips;
@@ -1308,15 +1326,14 @@ pub(crate) fn scale_pip_draws(
                 EntityCategory::Unit => 5,
                 _ => 1,
             };
-            //709EB5..ECA/709F0A..F23 consume high slots with Size-1 fillers
-            //BEFORE the passenger's own lower slot. Cargo head comes first.
-            //The other-RTTI arm709F2C writes only frame1. Malformed links/
-            //sizes cannot address outside this frame-local vector in Rust.
+            //709EB5..ECA/709F0A..F23 use FTOL(Size - 1) for high-slot
+            //fillers before the passenger's own lower slot. Cargo head comes
+            //first. The other-RTTI arm709F2C writes only frame1.
             if matches!(
                 passenger.category(),
                 EntityCategory::Infantry | EntityCategory::Unit
             ) {
-                for _ in 1..kind.size {
+                for _ in 0..passenger_pip_filler_count(kind.size).max(0) {
                     let Some(index) = next.checked_sub(1) else {
                         break;
                     };

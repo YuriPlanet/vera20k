@@ -737,7 +737,19 @@ impl Simulation {
         // graph changes (`vision::RevealViewers`).
         self.reveal_viewers.begin();
         let walked = self.try_for_each_live_object::<super::FrameAdvanceError>(|sim, stable_id| {
+            #[cfg(feature = "debug-tools")]
+            let debug_before = sim
+                .substrate
+                .entities
+                .get(stable_id)
+                .and_then(crate::sim::debug_event_log::DebugObservation::capture);
             let turn = sim.advance_live_object_turn(stable_id, rules, object_ctx)?;
+            #[cfg(feature = "debug-tools")]
+            if let Some(before) = debug_before
+                && let Some(entity) = sim.substrate.entities.get_mut(stable_id)
+            {
+                before.record(entity, sim.session.binary_frame);
+            }
             outcome.destroyed_structure |= turn.destroyed_structure;
             outcome.bridge_state_changed |= turn.bridge_state_changed;
             outcome.ownership_changed |= turn.ownership_changed;

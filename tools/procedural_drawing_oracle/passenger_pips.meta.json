@@ -1,13 +1,13 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
     1,
     33621247
   ],
-  "scope": "Stock FV passenger status through whole Extras, shared ReadPip passes and affected PIPS2/PIPS consumers",
+  "scope": "Stock FV passenger status and bounded fractional LCRF Size controls through whole Extras and PIPS2 consumers",
   "assumptions": [
     "The existing selected-health generator and _HealthRecorder have one additive passenger mode. Existing Building-health PaletteReader, native allocator/cache/physical transports and shape Surface/A/Z owners are reused in the same VM; no copied VM, INI/parser, cargo/manager/storage owner, palette, SHP decoder or rasterizer generates outputs.",
     "The existing Building type/runtime has an optional NABNKR health-only mode: complete BuildingType45DD90/45FE50 consumes physical RULESMD, absent LANGRULE, MPBattleMD and XMP03T4, with fixed ART. Actual Building43B740/44D6A0, GetCoords447AC0 and Dimension2464AF0 supply the affected garrison health consumer. Its body/ground drawing is disabled; no NABNKR body, placement or garrison-entry lifecycle is claimed.",
@@ -16,6 +16,8 @@
     "Existing Unit7353C0->Foot4D31E0 prefix stops7354CE before typed COM activation, followed by real Drive4AF540. Infantry517A50 prefix stops517AE6 before ID/COM, followed by real Walk75AA90. Supplied interface owner/link/active priors expose their original virtuals. Original constructor Limbo1 permits whole Cargo4733A0->51DF10->4DB260->6F6AC0 and473430 without gameplay sinks. Whole typed construction, Unlimbo, boarding and unloading missions remain separate production tests. Selected mobile prefix RNG requests/passive timers are recorded separately from drawing; inherited Building/type/palette startup is outside that recorded initialization interval.",
     "Every mobile row executes complete6F5190, original rank/observer gates,6F64A0 and actual709A90/70AA60 tails. Native716290/473460/473450 and passenger array fill choose physical PIPS2 frames, centered origins and flags600. Garrison rows enter full6F64A0 directly with explicit prepared occupant vector/count, then actual709C27..709D17 uses raw OccupyPip11 or reader-evolved1 and emptyframe6. These direct-health rows do not establish whole Building Extras admission.",
     "One affected shared frame-consumer row uses stock LCRF Passengers12/SizeLimit6/Size16 and MTNK Size3 through the same constructors/read blocks. LCRF consumes real Hover513C20 with supplied interface linkage, matching physical Locomotor742; MTNK uses the existing Unit/Drive prefix with native Limbo1. Whole Cargo4733A0 reaches Unit4DB260/Techno6F6AC0 and retains one size3 passenger. Original709F0A..709F23 fills higher slots with frame3 before placing Unitframe5 in the lower slot, producing5,3,3 then nine empty0 frames. This is a render-consumer/whole-Cargo dependency control, not LCRF boarding, movement, placement or whole construction evidence.",
+    "Two named fractional rows use one LCRF carrying two distinct prepared MTNK objects. Each row patches the current MTNK TechnoType+0x380 qword after the selected native stock type readers, using explicit binary64 Size bits3FF8000000000000 or4006666666666666; the patch is restored after that row. These are controlled consumer inputs, not retail or parser outputs. Whole CargoTotalSize473460, FTOL7C5F00, and the actual709EF0 passenger filler execute; PIPS2 frames and sparse pixels are recorded.",
+    "Before current type reader blocks and PIPS consumers, the original WinMain controlfp/cache fragment6BBFB7..6BBFCE runs from initial word027F. Live and cached FPCW are both checked as0E3F; existing PaletteReader/Building fixture initialization before this bounded fragment remains a supplied setup boundary.",
     "MIND uses the original4717D0 manager constructor with retained count/vector and overload-counter priors, not captures/Update; original4722D0/4726C0 and708C30 execute. HARV receives explicit four native float storage slots; original6C9650/6C9680 and independent ore/gem rounding execute. Stock positive Storage40 and size-one infantry match the existing gameplay state owners. Fractional size/reload behavior, manager lifecycle, harvest lifecycle and other PipScales remain open.",
     "PIPS/PIPBRD/PALETTE retain established normal STOCK_DIGITAL winners. Original5F76B0 pushes literal PIPS2.SHP at5F7758 through CCFile65CA80/loader4A3890, retainsAC1480 at5F7776 and709AEF consumes that same asset. Independent normal STOCK_DIGITAL AssetManager lookup selects ra2md.mix/conqmd.mix PIPS2,1384bytes/19frames, no loose override or catalog-only hit; ra2.mix/conquer.mix1280bytes/18frames is shadowed. The oracle pins the selected physical bytes while archive/cache transport remains supplied. Native palette/Convert constructors,4AED70/pickers/rowwalkers/leaves execute unchanged. A127/63/2/0, oldZ0, clip, sinking and ordered overlapping parents are render-consumer controls. Sparse pixels/draws and counts are native stores; no VERA scalar or host palette/raster/count formula supplies expected output.",
     "Original code/vtables, prepared actor bytes and A/Z remain unchanged across measured draws; no drawing RNG, timer write or detach occurs. The component does not run mobile bodies, whole Display/Scenario/Map, selection generation, damage/promotion or a whole native frame."
@@ -35,6 +37,7 @@
     "unit_ctor_stop": "0x007354CE",
     "drive_ctor": "0x004AF540",
     "hover_ctor": "0x00513C20",
+    "winmain_fpcw": "0x006BBFB7",
     "pip_ctor": "0x005236BD",
     "occupy_pip_ctor": "0x005236C7",
     "read_pip": "0x004748A0",
@@ -60,5 +63,5 @@
     "rank_border_leaf": "0x00493DF0"
   },
   "replay_command": "python -m tools.procedural_drawing_oracle.shroud --passenger-pips",
-  "payload_sha256": "d95b73e9fb78afdecc825b04ac0c329dd0d880abfabac237f252e799052287a1"
+  "payload_sha256": "8fbf07514a8cd7799e81f889461a4beda49616ccdcbb3d2073bdb967a0a83c4d"
 }

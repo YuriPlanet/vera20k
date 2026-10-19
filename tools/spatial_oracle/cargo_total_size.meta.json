@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Seven original CargoTotalSize 0x473460 controls with per-passenger double-to-int FTOL at 0x7C5F00",
+  "assumptions": [
+    "Each passenger current-type Size qword at TechnoType+0x380 is supplied by exact binary64 bits; these are consumer controls, not retail INI parser outputs.",
+    "The original WinMain controlfp/cache fragment 0x006BBFB7..0x006BBFCE runs from initial 0x027F; live and cached FPCW are checked as 0x0E3F before CargoTotalSize.",
+    "The original linked-list owner and current-type vtable dispatch execute; only object links/type Size fields are supplied. Constructor, ReadINI, boarding lifecycle and transport admission are excluded."
+  ],
+  "substitutions": [],
+  "entry_points": {
+    "winmain_fpcw": "0x006BBFB7",
+    "cargo_total_size": "0x00473460",
+    "ftol": "0x007C5F00"
+  },
+  "replay_command": "python -m tools.spatial_oracle.unit_transport_can_enter --cargo-total-size",
+  "payload_sha256": "a033108eddd9d70bcecdc44463cab6b0138632cef9da098188012c826f261945"
+}

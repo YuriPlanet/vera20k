@@ -236,6 +236,57 @@ fn all_data_including_old_commands_is_closed_by_policy() {
     assert_eq!(parse_client_frame(&[0x81, 0xff]), Err(1008));
 }
 
+#[cfg(feature = "debug-tools")]
+#[test]
+fn debug_commands_require_enabled_epoch_and_keep_control_protocol() {
+    use crate::app::debug_tools::DebugCommand;
+    let fixture = Fixture::new();
+    fixture.server.set_debug_session(Some(7));
+    let mut stream = websocket(&fixture.server);
+    let command = br#"{"session":7,"command":{"cmd":"frame_step"}}"#;
+    stream.write_all(&masked(1, command)).unwrap();
+    stream.write_all(&masked(9, b"barrier")).unwrap();
+    assert_eq!(frame(&mut stream), (10, b"barrier".to_vec()));
+    assert_eq!(
+        fixture.server.drain_debug_commands(7),
+        vec![DebugCommand::FrameStep {}]
+    );
+
+    fixture.server.set_debug_session(Some(8));
+    stream.write_all(&masked(1, command)).unwrap();
+    assert_eq!(frame(&mut stream), (8, 1008_u16.to_be_bytes().to_vec()));
+    assert!(fixture.server.drain_debug_commands(8).is_empty());
+}
+
+#[cfg(feature = "debug-tools")]
+#[test]
+fn debug_data_frames_reject_fragmentation_binary_and_oversize() {
+    let text = masked(1, b"{}");
+    assert!(matches!(
+        parse_client_frame_with_debug(&text, true),
+        Ok(Some((ControlFrame::Command(_), _)))
+    ));
+    let mut fragment = text.clone();
+    fragment[0] &= 0x7f;
+    assert_eq!(parse_client_frame_with_debug(&fragment, true), Err(1002));
+    assert_eq!(
+        parse_client_frame_with_debug(&masked(2, b"{}"), true),
+        Err(1008)
+    );
+    assert_eq!(
+        parse_client_frame_with_debug(&[0x81, 0xff], true),
+        Err(1009)
+    );
+    assert_eq!(
+        parse_client_frame_with_debug(&[0x81, 0xfe, 4, 1], true),
+        Err(1009)
+    );
+    assert_eq!(
+        parse_client_frame_with_debug(&masked(1, &[0xff]), true),
+        Err(1007)
+    );
+}
+
 #[test]
 fn controls_validate_mask_bits_lengths_codes_and_utf8() {
     let ping = masked(9, b"hello");

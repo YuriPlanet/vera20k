@@ -2101,7 +2101,7 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
             }
             debug_assert_eq!(cargo.passenger_sizes().len(), cargo.passengers().len());
             for &passenger_size in cargo.passenger_sizes() {
-                passenger_size.hash(hasher);
+                passenger_size.to_bits().hash(hasher);
             }
             cargo.total_size().hash(hasher);
             // A Foot can own cargo while riding another transport (Unit
@@ -4384,10 +4384,10 @@ mod passenger_cargo_hash_tests {
     use crate::sim::game_entity::GameEntity;
     use crate::sim::passenger::{PassengerCargo, PassengerRole};
 
-    fn sim_with_sizes(first_size: u32, second_size: u32) -> Simulation {
+    fn sim_with_sizes(first_size: f64, second_size: f64) -> Simulation {
         let mut sim = Simulation::new();
         let mut carrier = GameEntity::test_default(1, "BFRT", "Allied", 5, 5);
-        let mut cargo = PassengerCargo::new(5, 0);
+        let mut cargo = PassengerCargo::new(5, 0.0);
         cargo.board_forced_chain(&[(10, first_size)]);
         cargo.board_forced_chain(&[(11, second_size)]);
         carrier.passenger_role = PassengerRole::transport(cargo);
@@ -4397,15 +4397,15 @@ mod passenger_cargo_hash_tests {
 
     #[test]
     fn per_entry_size_mapping_changes_hash_even_when_total_matches() {
-        let a = sim_with_sizes(1, 3);
-        let b = sim_with_sizes(3, 1);
+        let a = sim_with_sizes(1.0, 3.0);
+        let b = sim_with_sizes(3.0, 1.0);
 
         assert_ne!(a.state_hash(), b.state_hash());
     }
 
     #[test]
     fn cargo_owner_parent_relation_changes_hash_without_erasing_cargo() {
-        let mut sim = sim_with_sizes(1, 3);
+        let mut sim = sim_with_sizes(1.0, 3.0);
         let outside = sim.state_hash();
         sim.substrate
             .entities

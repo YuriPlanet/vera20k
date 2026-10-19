@@ -1300,9 +1300,9 @@ mod tests {
                 actor
                     .type_facts
                     .set_foundation_for_test(rules.object("ATKR").unwrap().foundation.clone());
-                let mut cargo = crate::sim::passenger::PassengerCargo::new(5, 0);
+                let mut cargo = crate::sim::passenger::PassengerCargo::new(5, 0.0);
                 for id in 2..2 + building["occupants"].as_u64().unwrap_or(1) {
-                    cargo.board_forced_chain(&[(id, 1)]);
+                    cargo.board_forced_chain(&[(id, 1.0)]);
                 }
                 actor.passenger_role = crate::sim::passenger::PassengerRole::transport(cargo);
                 EntityCategory::Structure

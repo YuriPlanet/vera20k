@@ -11,10 +11,6 @@
 //! `distance` rows replay in `recruit_oracle_tests`.
 //!
 //! RESIDUALS:
-//! - `Calc_Center`'s branch for a team whose current action is 10 (follow a
-//!   friendly unit, `0x006EAF1C..0x006EB1B0`) is not ported; action 10 is
-//!   not, so such a team is stopped on it, and its centre is the mean as for
-//!   any other action.
 //! - `+0x75` (NeedsRegrouping, written by Regroup and the damage report)
 //!   and `+0x76` (written by Recalc under `GuardSlower=`) are not kept: no
 //!   TeamClass code reads either. The private forced-active `+0x77` is
@@ -370,6 +366,17 @@ impl Simulation {
         let Some(team) = vm.teams.get(&team_id) else {
             return;
         };
+        // Calc_Center6EAF13 branches before the ordinary member mean. This
+        // also applies to callers outside the action handler (formation,
+        // regroup and the team's ordinary AI pass).
+        if team.current_action(vm) == 10 {
+            let (zone, closest) = self.team_follow_friendly_center(team_id);
+            if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
+                team.zone = zone;
+                team.closest_member = closest;
+            }
+            return;
+        }
         let guard_slower = team
             .team_type_id
             .and_then(|id| vm.team_type_ini.get(&id))

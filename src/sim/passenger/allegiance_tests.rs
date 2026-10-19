@@ -115,7 +115,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet, u64, Vec<InternedId>) {
     building.building_art.set_actually_placed_for_test(true);
     building.mission_leaf =
         crate::sim::mission::leaf::MissionLeafState::for_entity_category(EntityCategory::Structure);
-    let mut cargo = PassengerCargo::new(10, 1);
+    let mut cargo = PassengerCargo::new(10, 1.0);
     cargo.garrison_fire_index = integer(&input["fire_index"]) as u8;
     for owner in input["occupant_owners"].as_array().unwrap() {
         let passenger_id = sim.allocate_stable_id();
@@ -136,7 +136,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet, u64, Vec<InternedId>) {
                 crate::rules::locomotor_type::LocomotorKind::Walk,
             ),
         );
-        cargo.add_occupant(passenger_id, 1);
+        cargo.add_occupant(passenger_id, 1.0);
         sim.substrate.entities.insert(passenger);
     }
     building.passenger_role = PassengerRole::transport(cargo);
