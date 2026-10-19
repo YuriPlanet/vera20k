@@ -421,7 +421,7 @@ impl FootPathQueue {
     }
 }
 
-/// Foot-owned applied speed, shared by every installed locomotor instance.
+/// Foot-owned speed and retained crush flag, shared by every locomotor instance.
 ///
 /// SetSpeedFraction4D3710 writes Foot+578/+57C; GetCurrentSpeed4DB1A0 reads
 /// that fraction live (`movement::owner_current_speed`); nothing caches its
@@ -443,6 +443,11 @@ pub struct FootSpeedState {
     /// `CellClass::PickupCrate` (`crates::pickup`) when a Foot commits to a
     /// crate cell; saved and hashed (v181).
     crate_multiplier: crate::util::native_x87::NativeF64Bits,
+    /// Foot+6B5, constructor0 at4D3444. Drive's straight/CrusherAll
+    /// pre-entry arm4B1A2F sets it; Unit's admitted overlay tail73B067
+    /// clears it. Both the Track speed prefix and RockingUpdate read it.
+    /// It survives class replacement and ordinary movement/Stop calls.
+    crush_slowdown: bool,
 }
 
 impl Default for FootSpeedState {
@@ -450,11 +455,20 @@ impl Default for FootSpeedState {
         Self {
             applied_fraction: crate::util::fixed_math::SIM_ZERO,
             crate_multiplier: crate::util::native_x87::NativeF64Bits::ONE,
+            crush_slowdown: false,
         }
     }
 }
 
 impl FootSpeedState {
+    pub fn crush_slowdown(&self) -> bool {
+        self.crush_slowdown
+    }
+
+    pub(crate) fn set_crush_slowdown(&mut self, active: bool) {
+        self.crush_slowdown = active;
+    }
+
     pub fn crate_multiplier(&self) -> crate::util::native_x87::NativeF64Bits {
         self.crate_multiplier
     }

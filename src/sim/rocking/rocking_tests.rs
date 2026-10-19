@@ -28,7 +28,7 @@ fn normal_inputs() -> RockingUpdateInputs {
     RockingUpdateInputs {
         direct_rocker_linked: false,
         is_foot: true,
-        crushing_building: false,
+        crush_slowdown: false,
         sinking: false,
         crashing: false,
         balloon_hover: false,
@@ -56,7 +56,7 @@ fn complete_rocking_update_matches_native_normal_sinking_and_crash_controls() {
         let inputs = RockingUpdateInputs {
             direct_rocker_linked: input["direct_rocker_link"].as_bool().unwrap(),
             is_foot: input["abstract_flags"].as_u64().unwrap() & 4 != 0,
-            crushing_building: input["crush_flag"].as_i64().unwrap() != 0,
+            crush_slowdown: input["crush_flag"].as_i64().unwrap() != 0,
             sinking: input["sinking"].as_i64().unwrap() != 0,
             crashing: input["crash"].as_i64().unwrap() != 0,
             balloon_hover: input["balloon_hover"].as_i64().unwrap() != 0,

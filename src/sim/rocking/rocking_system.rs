@@ -15,13 +15,12 @@ const PI10: NativeF32Bits = NativeF32Bits::from_bits(0x3ea0_d97c);
 const BASE: NativeF32Bits = NativeF32Bits::from_bits(0x3b03_126f); //7F4E70
 
 /// Pure caller inputs, not competing per-entity state. Production has no
-/// DirectRocker-link or building-crush writer yet; native controls supply
-/// those branches explicitly through this same numerical owner.
+/// DirectRocker-link writer yet; native controls supply that branch.
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct RockingUpdateInputs {
     pub direct_rocker_linked: bool,
     pub is_foot: bool,
-    pub crushing_building: bool,
+    pub crush_slowdown: bool,
     pub sinking: bool,
     pub crashing: bool,
     pub balloon_hover: bool,
@@ -128,7 +127,7 @@ pub(crate) fn advance_state(state: &mut RockingState, inputs: RockingUpdateInput
         inputs.direct_rocker_linked,
         inputs.fallback,
     );
-    let cap = if inputs.is_foot && inputs.crushing_building {
+    let cap = if inputs.is_foot && inputs.crush_slowdown {
         PI10
     } else {
         PI4
@@ -183,7 +182,7 @@ pub(crate) fn update(
             entity.category(),
             EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
         ),
-        crushing_building: false,
+        crush_slowdown: entity.foot_speed.crush_slowdown(),
         sinking: entity.sinking.is_active(),
         crashing: entity.crash.is_crashing(),
         balloon_hover: object_type.balloon_hover,

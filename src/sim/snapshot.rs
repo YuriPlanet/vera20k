@@ -1183,7 +1183,9 @@ use crate::util::save_codec;
 // CargoTotalSize is the signed low-32-bit result of native's ordered per-entry
 // FTOL. The positional passenger-size payload widened, so a v440 body cannot
 // be decoded under this schema.
-const SNAPSHOT_VERSION: u32 = 441;
+// 441 -> 442: FootSpeedState retains the native Foot+6B5 crush flag shared
+// by Drive/Ship speed prefixes and Techno RockingUpdate.
+const SNAPSHOT_VERSION: u32 = 442;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -4425,7 +4427,7 @@ mod tests {
             GameSnapshot::load(&preamble_only),
             Err(SnapshotError::VersionMismatch {
                 expected: SNAPSHOT_VERSION,
-                found: 440,
+                found: 441,
             })
         ));
     }
@@ -4579,7 +4581,7 @@ mod tests {
     /// 132 -> 133 persists the `HouseClass+0x57D4` funds-nag timer and the
     /// `[0xA8F040]` low-power guard.
     #[test]
-    fn current_snapshot_version_includes_fractional_passenger_sizes() {
+    fn current_snapshot_version_includes_foot_crush_slowdown() {
         // 133 -> 134: repair-depot docking layout (see the constant's comment).
         // 134 -> 135: GameEntity ProduceCash timer + drain link pair (GSI-09.01).
         // 135 -> 136: explicit retained Infantry terminal lifetime policy.
@@ -4886,7 +4888,8 @@ mod tests {
         // 438 -> 439: retained Ares building requirement lists.
         // 439 -> 440: UnitDelivery state and instance base policy.
         // 440 -> 441: binary64 passenger Size/SizeLimit and signed CargoTotalSize.
-        assert_eq!(super::SNAPSHOT_VERSION, 441);
+        // 441 -> 442: the Foot-owned crush slowdown / rocking flag.
+        assert_eq!(super::SNAPSHOT_VERSION, 442);
     }
 
     #[test]

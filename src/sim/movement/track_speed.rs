@@ -168,9 +168,7 @@ pub(super) fn advance(
         decel: object.map_or(SIM_ZERO, |o| o.decel_factor),
         slowdown_distance: object.map_or(0, |o| o.slowdown_distance),
         sinking: entity.sinking.is_active(),
-        // RESIDUAL: Foot+0x6B5's producers are not ported, so the crush
-        // slowdown never caps the target.
-        crush_slowdown: false,
+        crush_slowdown: entity.foot_speed.crush_slowdown(),
     };
     if let Some(target) = retained_target {
         let step = super::drive_locomotion::track_speed_prefix(
