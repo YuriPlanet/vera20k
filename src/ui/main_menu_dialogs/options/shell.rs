@@ -8,8 +8,8 @@
 use super::{
     FULL_SCREEN_HELP, FULL_SCREEN_LABEL, LauncherCheckboxId, LauncherComboId, LauncherCue,
     LauncherOptionsEvent, LauncherParentResult, LauncherTrackbarId, ORIGINAL_SHAPE_HELP,
-    ORIGINAL_SHAPE_LABEL, OptionsDialogState, PhysicalControlFrame, SIDEBAR_HELP, SIDEBAR_LABEL,
-    SidebarSize, ZOOM_HELP, ZOOM_LABEL, Zoom,
+    ORIGINAL_SHAPE_LABEL, OptionsDialogState, PhysicalControlFrame, RA2_LOOK_HELP, RA2_LOOK_LABEL,
+    SIDEBAR_HELP, SIDEBAR_LABEL, SidebarSize, ZOOM_HELP, ZOOM_LABEL, Zoom,
 };
 use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::{RectPx, ShellScale, center_offset, child_window, dlu_rect};
@@ -82,7 +82,7 @@ pub(crate) struct LauncherOptionsLayout {
     /// The Sidebar combo, beside Difficulty as Zoom is beside Visual Details.
     pub(crate) sidebar: RectPx,
     pub(crate) trackbars: [(LauncherTrackbarId, RectPx); 6],
-    pub(crate) checkboxes: [(LauncherCheckboxId, RectPx); 5],
+    pub(crate) checkboxes: [(LauncherCheckboxId, RectPx); 6],
     pub(crate) buttons: [(LauncherParentResult, RectPx); 3],
     /// The mapping the rects are in: [`ShellScale::RETAIL`] centres the
     /// authored dialog in the window, otherwise the authored dialog is
@@ -159,6 +159,9 @@ impl LauncherOptionsLayout {
                 // And this one on the same row, under the Visual Details
                 // slider, where the band is empty too.
                 (LauncherCheckboxId::OriginalShape, dlu(89, 75, 130, 10)),
+                // The RA2 Loading & Menu Movie box continues the UI Options column
+                // under Show Hidden, where the band is empty above Audio.
+                (LauncherCheckboxId::Ra2Look, dlu(93, 233, 130, 10)),
             ],
             buttons: [
                 (LauncherParentResult::Keyboard, button(KEYBOARD_BUTTON)),
@@ -322,6 +325,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::ShowHidden => &self.labels.show_hidden,
             LauncherCheckboxId::FullScreen => FULL_SCREEN_LABEL,
             LauncherCheckboxId::OriginalShape => ORIGINAL_SHAPE_LABEL,
+            LauncherCheckboxId::Ra2Look => RA2_LOOK_LABEL,
         }
     }
 
@@ -360,6 +364,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::ShowHidden => self.values.show_hidden,
             LauncherCheckboxId::FullScreen => self.values.full_screen,
             LauncherCheckboxId::OriginalShape => self.values.original_shape,
+            LauncherCheckboxId::Ra2Look => self.values.ra2_look,
         }
     }
 
@@ -483,6 +488,7 @@ impl OptionsDialogState {
                 LauncherCheckboxId::ShowHidden => LauncherStatusHelp::Csf("STT:MainOptCBoxHidden"),
                 LauncherCheckboxId::FullScreen => LauncherStatusHelp::Text(FULL_SCREEN_HELP),
                 LauncherCheckboxId::OriginalShape => LauncherStatusHelp::Text(ORIGINAL_SHAPE_HELP),
+                LauncherCheckboxId::Ra2Look => LauncherStatusHelp::Text(RA2_LOOK_HELP),
             });
         }
         if layout.sidebar.contains(x, y) {
@@ -737,6 +743,10 @@ mod tests {
         assert_eq!(
             at(layout.checkboxes[4].1),
             Some(LauncherStatusHelp::Text(ORIGINAL_SHAPE_HELP))
+        );
+        assert_eq!(
+            at(layout.checkboxes[5].1),
+            Some(LauncherStatusHelp::Text(RA2_LOOK_HELP))
         );
         assert_eq!(state.shell_status_help_key(5, 5, &layout), None);
     }
@@ -1029,6 +1039,39 @@ mod tests {
             [
                 LauncherOptionsEvent::Cue(LauncherCue::Checkbox),
                 LauncherOptionsEvent::OriginalShapeChanged(true)
+            ]
+        );
+    }
+
+    #[test]
+    fn ra2_look_box_continues_the_ui_options_column_and_applies_at_once() {
+        let mut state = state();
+        let layout = LauncherOptionsLayout::new(800, 600);
+        let (id, rect) = layout.checkboxes[5];
+        let show_hidden = layout.checkboxes[2].1;
+        assert_eq!(id, LauncherCheckboxId::Ra2Look);
+        // One more row of the column under Show Hidden, clear of it and of
+        // the Audio Options heading.
+        assert_eq!(
+            (rect.x, rect.w, rect.h),
+            (show_hidden.x, show_hidden.w, show_hidden.h)
+        );
+        assert!(rect.y >= show_hidden.y + show_hidden.h);
+        let heading = state
+            .shell_labels(&layout)
+            .into_iter()
+            .find(|label| label.text == "Audio Options")
+            .expect("Audio Options heading")
+            .rect;
+        assert!(rect.y + rect.h <= heading.y);
+        assert_eq!(state.shell_checkbox_label(id), RA2_LOOK_LABEL);
+        state.shell_mouse_down(rect.x + 5, rect.y + 5, &layout);
+        assert!(state.shell_checkbox_checked(id));
+        assert_eq!(
+            state.drain_output().events,
+            [
+                LauncherOptionsEvent::Cue(LauncherCue::Checkbox),
+                LauncherOptionsEvent::Ra2LookChanged(true)
             ]
         );
     }

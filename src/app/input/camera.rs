@@ -510,7 +510,7 @@ fn edge_scroll_octant(x: i32, y: i32, view_w: i32, view_h: i32) -> usize {
     let dir16 = ((angle - std::f64::consts::FRAC_PI_2) * DIR16_PER_RADIAN).trunc() as i32 as u16;
     // 16-bit direction word to direction byte, then byte to octant. Both are the
     // native "add half a step, then shift" rounding, and both wrap to north.
-    let dir8 = (((dir16 >> 7) + 1) >> 1) as u8;
+    let dir8 = crate::util::direction_tables::round_facing16_to_8(dir16);
     usize::from(crate::util::direction::direction_from_facing(dir8))
 }
 

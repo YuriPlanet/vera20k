@@ -1794,6 +1794,11 @@ impl FogState {
 /// byte `+0x3D5`, and an owner that is not `MultiplayPassive=`
 /// (`0x0070AF66..0x0070AF77`, `0x0070B1DF..0x0070B1F0`). Lifetime filters
 /// belong to callers; they are not extra gates inside either native function.
+///
+/// Native releases sight only at Limbo (`TechnoClass::Limbo`, `0x006F6B06`,
+/// `0x006F6B16`), so an infantry corpse keeps its sight until its death
+/// sequence UnInits it. The dying mark is VERA's SHP death sequence of a
+/// non-Infantry object, which native lacks.
 pub(crate) fn holds_sight(
     entity: &crate::sim::game_entity::GameEntity,
     config: &VisionConfig,

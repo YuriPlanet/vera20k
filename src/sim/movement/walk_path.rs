@@ -157,8 +157,9 @@ impl Simulation {
         let coord = ground_pose::position_world_coord(&actor.position);
         //0x51DB68..0x51DB7A: the 16-bit facing (+388) becomes an octant through
         //`((facing >> 12) + 1) >> 1 & 7`.
-        let facing = i32::from(actor.body_facing_current(self.session.binary_frame));
-        let direction = (((facing >> 12) + 1) >> 1) & 7;
+        let direction = i32::from(crate::util::direction_tables::dir_from_facing16(
+            actor.body_facing_current(self.session.binary_frame),
+        ));
         let requested = failed_path_requested_action(doing, prone);
         self.apply_infantry_do_action(id, requested, false, &facts, rules, frame_effects)?;
 

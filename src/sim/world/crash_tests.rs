@@ -379,7 +379,7 @@ fn fixture(input: &serde_json::Value) -> (Simulation, RuleSet) {
         for ry in 44..68 {
             for rx in 44..68 {
                 let cell = terrain.cell_mut(rx, ry).unwrap();
-                cell.yr_cell_land_type = int(input, "land_type", 0) as u8;
+                cell.land_type = int(input, "land_type", 0) as u8;
                 if input["bridge"].as_bool() == Some(true) {
                     cell.bridge_facts.raw_flags |= 0x100;
                 }

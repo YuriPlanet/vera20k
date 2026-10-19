@@ -63,8 +63,10 @@ const VEHICLE_FACING_SLOTS: u8 = 8;
 /// the byte carries every bit the native expression can see — matching it needs
 /// no 16-bit plumbing. The `+ 1` before the final shift is a round-half-up, which
 /// is why this is not the same as truncating the facing into eight buckets.
-const fn infantry_facing_step32(facing: u8) -> usize {
-    (((facing as u16 >> 2) + 1) >> 1) as usize & 0x1F
+fn infantry_facing_step32(facing: u8) -> usize {
+    usize::from(crate::util::direction_tables::step32_from_facing16(
+        u16::from(facing) << 8,
+    ))
 }
 
 /// Facing byte to SHP vehicle frame-block slot.
@@ -73,8 +75,8 @@ const fn infantry_facing_step32(facing: u8) -> usize {
 /// shift keeps only bits 12..=15 of the 16-bit facing, which are bits 4..=7 of
 /// the byte. The inner `+ 1` rounds to the nearest octant; the outer `+ 1` is
 /// what puts NW — not N — at frame 0 of every block.
-const fn vehicle_facing_slot(facing: u8) -> u16 {
-    ((((facing as u16 >> 4) + 1) >> 1) + 1) & 7
+fn vehicle_facing_slot(facing: u8) -> u16 {
+    u16::from((crate::util::direction::direction_from_facing(facing) + 1) & 7)
 }
 
 /// Facing byte to infantry frame-block slot (0..=7), counter-clockwise from
@@ -673,7 +675,7 @@ pub(crate) fn tick_dying_animation(
 /// ReadINI, `0x00460AA9`), which retail `rulesmd.ini` sets nowhere, so that
 /// arm is dormant. Trigger: the `DeathAnims=` and `NotHuman=` types. Player
 /// effect: such a type plays a death it does not own. The paradropping
-/// infantryman's arm ahead of them is `world::infantry_terminal`'s
+/// infantryman's arm ahead of them is `world::infantry_death`'s
 /// `PARADROP_INF_DEATH`.
 pub fn death_sequence_for_inf_death(inf_death: u8) -> Option<SequenceKind> {
     match inf_death {

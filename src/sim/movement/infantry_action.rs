@@ -421,9 +421,10 @@ impl Simulation {
 
     /// `InfantryClass::AI`'s Health reset (`0x0051BC57..0x0051BC96`), before
     /// `FootClass::AI`: an infantryman at Health 0 or below whose action is
-    /// not a death sequence ([`in_death_sequence`]) is set to Health 1. Only
-    /// a crashing Jumpjet infantryman reaches its own AI at Health 0: every
-    /// other death removes it or turns it to a dying sequence first.
+    /// not a death sequence ([`in_death_sequence`]) is set to Health 1. A
+    /// corpse on its death sequence and a crashing Jumpjet infantryman keep
+    /// Health 0; a death whose `Do_Action` was refused (a sequence with no
+    /// frames, `0x0051D70F`) left the previous action, and is raised here.
     pub(crate) fn infantry_health_reset(&mut self, id: u64) {
         let Some(actor) = self.substrate.entities.get_mut(id) else {
             return;
@@ -715,6 +716,10 @@ impl Simulation {
     /// after Walk has released the barracks contact. The remaining recovery
     /// branches520FB0..521144 are separate residuals, not approximated here.
     ///
+    /// Nothing here tests Health: a corpse reaches the tail, and Do_Action
+    /// refuses its unforced requests for the death action
+    /// (`0x0051D90B..0x0051D934`).
+    ///
     /// Original comparison: the 20 consumer rows of
     /// `tools/spatial_oracle/infantry_movement_action.json`.
     pub(crate) fn infantry_movement_actions(
@@ -726,7 +731,6 @@ impl Simulation {
     ) {
         let stopped_move = self.substrate.entities.get(id).is_some_and(|actor| {
             actor.category() == EntityCategory::Infantry
-                && actor.is_ai_alive()
                 && actor.mission.effective().known() == Some(crate::sim::mission::MissionType::Move)
                 && super::motion_query::is_moving(actor) == Some(false)
         });
@@ -754,7 +758,7 @@ impl Simulation {
         let Some(actor) = self.substrate.entities.get(id) else {
             return;
         };
-        if !doing_owns_sequence(actor) || !actor.is_ai_alive() {
+        if !doing_owns_sequence(actor) {
             return;
         }
         let Some(doing) = actor.mission_leaf.as_infantry().map(|leaf| leaf.doing()) else {

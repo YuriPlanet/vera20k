@@ -1129,7 +1129,7 @@ mod tests {
                     target.bridge_facts.raw_flags = flags as u32;
                 }
                 if let Some(land) = cell["land"].as_i64() {
-                    target.yr_cell_land_type = land as u8;
+                    target.land_type = land as u8;
                 }
             }
         }

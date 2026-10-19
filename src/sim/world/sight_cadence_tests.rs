@@ -1512,3 +1512,64 @@ fn retail_goldst_cold_fire_borders_and_conceal_notifications_match_native() {
         assert_eq!(native["rng"]["requests"], json!([]));
     }
 }
+
+/// Native releases a Techno's sight only at its Limbo (`TechnoClass::Limbo`,
+/// `0x006F6B06`, `0x006F6B16`): an infantry corpse keeps its sight through
+/// its death sequence until the sequencer's UnInit.
+#[test]
+fn an_infantry_corpse_keeps_its_sight_until_its_uninit() {
+    let art = crate::rules::ini_parser::IniFile::from_str(
+        &crate::rules::retail_ini_fixture::GI_ART_EXCERPT.replace("Die1=134,15,0", "Die1=134,3,0"),
+    );
+    let ini = crate::sim::arena_fixture::clear_ground_ini(
+        "[InfantryTypes]\n0=E1\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
+         [E1]\nImage=GI\nStrength=100\nSpeed=4\nSight=5\n",
+    );
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
+    rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
+    rules.bind_animation_sequences(
+        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
+    );
+    let mut sim = Simulation::new();
+    crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
+    sim.fog = vision::FogState::new(32, 32);
+    let owner = sim.intern("Americans");
+    sim.houses.insert(
+        owner,
+        crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10),
+    );
+    sim.session.house_order.push(owner);
+    let id = sim
+        .spawn_object("E1", "Americans", 16, 16, 0, &rules)
+        .unwrap();
+    assert!(sim.fog.sight_is_latched(id, owner));
+    sim.substrate
+        .entities
+        .get_mut(id)
+        .unwrap()
+        .health
+        .set_for_test(0);
+    sim.begin_infantry_death_sequence(
+        id,
+        crate::sim::world::InfantryDeathSequence::Die1,
+        &rules,
+        FrameEffects::default(),
+    );
+    let mut visits = 0;
+    while sim
+        .substrate
+        .entities
+        .get(id)
+        .is_some_and(|corpse| corpse.lifecycle.object_alive())
+    {
+        assert!(
+            sim.fog.sight_is_latched(id, owner),
+            "visit {visits}: the corpse holds its sight"
+        );
+        sim.advance_tick(&[], Some(&rules), None, None, 100);
+        visits += 1;
+        assert!(visits < 10, "the three-frame Die1 ends");
+    }
+    assert!(visits > 1, "the corpse took visits");
+    assert!(!sim.fog.sight_is_latched(id, owner));
+}

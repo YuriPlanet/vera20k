@@ -666,8 +666,7 @@ pub struct GameEntity {
     ///
     /// [`MoverFacts`]: crate::sim::world::MoverFacts
     pub(crate) mover_facts: crate::sim::world::MoverFacts,
-    /// The terminal lifetime (the dying mark and the Infantry terminal
-    /// policy), a [`TerminalLifetime`] that `world::infantry_terminal` owns.
+    /// The dying mark, a [`TerminalLifetime`] that `world::lifecycle` owns.
     /// Products derived from the entities (the movement pass's blocker plane
     /// and block sets) follow it through the store's touch log, like any
     /// other field.
@@ -1295,7 +1294,7 @@ impl GameEntity {
     /// comparison's), wrapping 0xFF80.. to 0.
     /// `+0x388` (PrimaryFacing) through `FacingClass::Current @ 0x004C93D0`.
     pub(crate) fn body_facing_dir(&self, frame: u32) -> u8 {
-        (((u32::from(self.body_facing.current(frame)) >> 7) + 1) >> 1) as u8
+        crate::util::direction_tables::round_facing16_to_8(self.body_facing.current(frame))
     }
 
     /// The barrel elevation (`+0x370`); its readers sample `current(frame)`
@@ -1813,12 +1812,11 @@ impl GameEntity {
         self.lifecycle.in_limbo()
     }
 
-    /// Transitional Rust system gate until ordinary Infantry lifecycle authority
-    /// migrates. Distinct from both health-based `is_alive()` and native-alive
-    /// `is_object_alive()`; death-sequence state still suppresses current raw-store
-    /// consumers even while ObjectClass native-alive remains set.
-    /// VERA-only: checks IsAlive (`Object+0x90`) and the `TerminalLifetime`
-    /// dying mark, which native lacks; those records are its source of truth.
+    /// IsAlive (`Object+0x90`) without the `TerminalLifetime` dying mark.
+    /// VERA-only: the mark, which native lacks, adds the SHP death sequence
+    /// of a non-Infantry object; those records are its source of truth. An
+    /// infantry corpse answers true: it keeps IsAlive at Health 0 until its
+    /// death sequence UnInits it (`world::infantry_death`).
     pub fn is_active(&self) -> bool {
         self.lifecycle.object_alive() && !self.death.is_dying()
     }
@@ -1827,7 +1825,8 @@ impl GameEntity {
     /// update read it. Native clears it when an ordinary death UnInits the
     /// object inside ReceiveDamage; VERA defers that UnInit, so Health 0 counts
     /// as dead here unless the object is crashing, and a wreck keeps IsAlive
-    /// until its impact. A death sequence (`dying`) runs through its own path.
+    /// until its impact. An infantry corpse on its death sequence answers
+    /// false here, though it keeps IsAlive and its visit.
     pub fn is_ai_alive(&self) -> bool {
         self.is_active() && (self.health.current() > 0 || self.crash.is_crashing())
     }

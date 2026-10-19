@@ -105,7 +105,7 @@ pub(crate) fn advance_state(state: &mut RockingState, inputs: RockingUpdateInput
     //70B5AE: retained ship sinking precedes crash and ordinary branches.
     if inputs.sinking {
         if lt(absolute(load(state.angle_forwards)), load(PI4)) {
-            let sector = ((u32::from(inputs.body_facing) >> 12) + 1) >> 1 & 7;
+            let sector = crate::util::direction_tables::dir_from_facing16(inputs.body_facing);
             let previous = load(state.angle_forwards);
             let delta = double(0x3f84_7ae1_47ae_147b); //7E3808, double0.01
             state.angle_forwards = store(if sector == 0 || sector > 5 {

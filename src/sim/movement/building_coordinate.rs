@@ -97,7 +97,7 @@ pub(crate) fn dock_coordinate(
         );
         //447C44 rounds the full DirStruct to a byte before quadrant selection.
         // A high-byte truncation or sign-only quadrant differs near the axes.
-        let direction = ((u32::from(facing) >> 7) + 1) >> 1 & 0xFF;
+        let direction = crate::util::direction_tables::round_facing16_to_8(facing);
         return Ok(DriveCoord {
             x: center
                 .x

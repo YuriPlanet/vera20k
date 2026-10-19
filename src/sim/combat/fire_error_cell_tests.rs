@@ -62,7 +62,7 @@ fn terrain(input: &Input) -> ResolvedTerrainGrid {
         .collect();
     for cell in &input.mapped_cells {
         let index = cell.xy[1] as usize * usize::from(width) + cell.xy[0] as usize;
-        cells[index].yr_cell_land_type = cell.land as u8;
+        cells[index].land_type = cell.land as u8;
         cells[index].bridge_facts.raw_flags = cell.flags;
     }
     let mut terrain = ResolvedTerrainGrid::from_cells(width, height, cells);

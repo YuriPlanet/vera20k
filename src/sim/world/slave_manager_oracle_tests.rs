@@ -97,8 +97,10 @@ fn slave_rules(input: &Value) -> String {
 }
 
 /// The Do_Action sequences the slave machine requests; any non-zero count.
+/// Die1/Die2 are retail `[SlaveSequence]`'s, so a killed slave plays a death
+/// (a death without frames revives at Health 1, `0x0051D70F`).
 const SLAVE_SEQUENCE: &str = "[SlavSequence]\nReady=0,1,1\nGuard=0,1,1\nWalk=8,6,6\n\
-    Shovel=56,4,4\nCarry=228,6,6\nCheer=100,8,0,E\n";
+    Shovel=56,4,4\nCarry=228,6,6\nCheer=100,8,0,E\nDie1=86,15,0\nDie2=101,15,0\n";
 
 const YAREFN_NW: (u16, u16) = (12, 12);
 /// The oracle's regen spare (`slave_address(7)`).

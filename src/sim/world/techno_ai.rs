@@ -252,7 +252,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return;
         };
-        if (entity.death.is_dying() && entity.category() != EntityCategory::Infantry)
+        if entity.death.is_dying()
             || !matches!(
                 entity.category(),
                 EntityCategory::Unit | EntityCategory::Infantry | EntityCategory::Aircraft
@@ -591,9 +591,8 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(id) else {
             return ObjectAiOutcome::default();
         };
-        if entity.death.infantry_terminal().is_some() {
-            return self.visit_infantry_terminal(id, rules, ctx);
-        }
+        // An infantry corpse is no dying object: it keeps IsAlive at Health 0
+        // and takes the ordinary visit below (`world::infantry_death`).
         if entity.death.is_dying() {
             let Some(rules) = rules else {
                 return outcome;
@@ -671,8 +670,9 @@ impl Simulation {
     }
 
     /// The walk: visit every live, present object slot once in live order.
-    /// Dying objects retain their slot while their death sequence runs but do
-    /// not enter the ordinary per-category shell. When `record`, return the
+    /// Objects on the SHP death sequence (the dying mark) retain their slot
+    /// while it runs but do not enter the ordinary per-category shell; an
+    /// infantry corpse does. When `record`, return the
     /// visited ids in order (debug/test observation); otherwise the returned
     /// `Vec` is empty and unallocated.
     #[cfg(any(test, feature = "test-support"))]
@@ -1340,8 +1340,9 @@ fn mission_counter_step(
 /// `TechnoClass::AI_Update` tests after the rocking update when `vt+0x298`
 /// answers true (`0x006FA23C`) and again after the bomb and the managers
 /// (`0x006FA735`), and `UnitClass::AI` before its fire update (`0x007365BB`).
-/// A crashing wreck and an authored zero-HP building keep it at Health 0:
-/// neither may skip its terminal AI by deriving this flag from Health.
+/// A crashing wreck, an infantry corpse on its death sequence and an authored
+/// zero-HP building keep it at Health 0: none may skip its terminal AI by
+/// deriving this flag from Health.
 /// `MissionClass::AI`'s gate ([`GameEntity::mission_handler_due`]) still
 /// requires positive Health.
 ///
@@ -1583,8 +1584,8 @@ fn illegal_target_drop_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
 /// The block draws nothing itself. Approach draws through PlaceInfantryInCell
 /// (`0x00481180`): a `CloseRange=` infantryman's spot requests, and the
 /// destination setter of a Teleport or Jumpjet infantryman, which picks his
-/// spot in the cell it is given. A Die1/Die2 corpse does not run the block
-/// here (residual on [`dying_infantry_techno_ai`]).
+/// spot in the cell it is given. The block has no Health gate: a Die1/Die2
+/// corpse, still IsAlive, runs it too.
 ///
 /// RESIDUAL: a unit rider runs the head of `UnitClass::Approach_Target @
 /// 0x007414E0` ([`Simulation::unit_approach_head`]), whose crush and
@@ -1727,64 +1728,6 @@ fn allied_target_drop_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     // Preserve class refusal and synchronous action/path effects.
     sim.assign_target_represented(id, None, Some(rules), None, FrameEffects::default())
         .expect("the queried allied-target receiver remains present");
-}
-
-/// The Techno AI a Die1/Die2 corpse still runs. `InfantryClass::AI` keeps
-/// calling `FootClass::AI` (`0x0051BC9F`) until the sequence completes, and
-/// `TechnoClass::AI_Update` has no health gate on these steps: the berserk
-/// countdown (`0x006F9F0D`), the estimate
-/// recovery (`0x006F9F6E`), the Behind indicator (`0x006FA24A`), the allied
-/// and illegal target drops
-/// (`0x006FA30C`, `0x006FA472`), the passive block (`0x006FA65A`), whose
-/// scan draws and can acquire, and the healer drops (`0x006FA9D8`). Mission dispatch alone skips a Health-0
-/// object (`0x005B30A7`). The corpse's own fire routine is refused CANT for
-/// its death Doing (`0x0051C8B8`).
-///
-/// RESIDUAL: the rest of the subset (veterancy, drains, CaptureManager,
-/// self-heal, cloak, bomb) does nothing for a GI corpse and is not run.
-///
-/// RESIDUAL: the reach block (`0x006FAAEF..0x006FABB8`, [`target_reach_step`])
-/// runs for a corpse before its Stage clock, and is not run here. Trigger: a
-/// man killed while he holds a target in another zone. Effect: native runs
-/// Approach on the corpse, which can set it a destination and draw for a
-/// spot (PlaceInfantryInCell); how the class setters treat a Die1/Die2
-/// infantryman is not traced. Frequency: a man killed while his target lies
-/// across water or a cliff. Risk: a Scenario draw native makes and VERA
-/// does not. In the frame a carried bomb kills him, the Infantry dispatch
-/// still runs the block (it has no IsAlive gate, `0x006FA735`), as native
-/// does for a Die1/Die2 man, who stays IsAlive (the corpse reaches
-/// `0x006FABC4`); a death native UnInits at once ends at that gate instead.
-pub(super) fn dying_infantry_techno_ai(
-    sim: &mut Simulation,
-    id: u64,
-    rules: &RuleSet,
-    ctx: ObjectAiCtx<'_>,
-) {
-    // Infantry51BC9F -> Foot4DA539 still reaches Techno6F9EBB for ordinary
-    // Die1/Die2, before Foot's later alive test. This existing death-body
-    // owner must not add a health-zero voice filter.
-    sim.record_unit_voice_visit(id);
-    berserk_step(sim, id, rules, ctx.overlay_registry, ctx.effects);
-    if let Some(entity) = sim.substrate.entities.get_mut(id) {
-        entity
-            .estimated_health
-            .recover(entity.health.current(), sim.session.binary_frame);
-    }
-    behind_indicator_step(sim, id, rules);
-    allied_target_drop_step(sim, id, rules);
-    illegal_target_drop_step(sim, id, rules);
-    if let Some(entity) = sim.substrate.entities.get_mut(id) {
-        entity.update_voxel_recoil();
-    }
-    charge_turret_step(sim, id, rules);
-    passive_acquire_step(sim, id, Some(rules), ctx);
-    healer_target_drop_step(sim, id, rules);
-    //51BC9F still reaches Techno6FABC4 for Die1/Die2. A retained death
-    // sequence uses the same absolute Stage clock as every other Infantry;
-    // its sequencer runs only after this visit, never a second clock.
-    if let Some(entity) = sim.substrate.entities.get_mut(id) {
-        entity.tick_native_stage(sim.session.binary_frame as i32);
-    }
 }
 
 /// The shared post-acquisition sequence of `TechnoClass::AI_Update`:
@@ -2448,6 +2391,76 @@ mod tests {
         assert_eq!(run(&mut sim, medic, enemy), Some(TargetKind::Entity(enemy)));
     }
 
+    /// A Die1 corpse takes the healer drops (`0x006FA9D8..0x006FAAEF`) on its
+    /// one ordinary visit: IsAlive gates them (`0x006FA735`), Health does
+    /// not. A human house's dead medic lets go of the enemy it held; a dead
+    /// rifleman beside it, no healer, keeps his on a frame the sixteenth-frame
+    /// CANT drop (`0x006FA472`) skips.
+    ///
+    /// The test sets the held target directly to isolate that gate. In play
+    /// the killing hit's Stun (`0x006FCD40`) clears it; a corpse holds an
+    /// enemy again only after a passive re-acquire (`0x007091D0`, no Health
+    /// gate) followed by an owner change.
+    #[test]
+    fn a_dead_medic_lets_go_of_an_enemy_on_its_corpse_visit() {
+        let art = IniFile::from_str(crate::rules::retail_ini_fixture::GI_ART_EXCERPT);
+        let mut rules = RuleSet::from_ini(&IniFile::from_str(
+            "[InfantryTypes]\n0=MEDIC\n1=E1\n[VehicleTypes]\n0=TANK\n\
+             [AircraftTypes]\n[BuildingTypes]\n\
+             [MEDIC]\nImage=GI\nStrength=100\nPrimary=Heal\n\
+             [E1]\nImage=GI\nStrength=100\nPrimary=Gun\n\
+             [TANK]\nStrength=300\nPrimary=Gun\n\
+             [WeaponTypes]\n0=Heal\n1=Gun\n\
+             [Heal]\nDamage=-50\nRange=2\n[Gun]\nDamage=60\nRange=5\n",
+        ))
+        .unwrap();
+        rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
+        rules.bind_animation_sequences(
+            &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
+        );
+        let mut sim = Simulation::new();
+        let ours = sim.interner.intern("Americans");
+        let theirs = sim.interner.intern("Russians");
+        sim.houses.insert(
+            ours,
+            crate::sim::house_state::HouseState::new(ours, 0, None, true, 0, 10),
+        );
+        sim.houses.insert(
+            theirs,
+            crate::sim::house_state::HouseState::new(theirs, 1, None, false, 0, 10),
+        );
+        sim.session.game_mode_nonzero = true;
+        sim.session.current_house = Some(ours);
+        sim.session.binary_frame = 1;
+        sim.resolve_type_handles(&rules);
+        let enemy = sim
+            .spawn_object("TANK", "Russians", 16, 10, 0, &rules)
+            .unwrap();
+        let mut corpse_target = |name: &str, x: u16| {
+            let id = sim
+                .spawn_object(name, "Americans", x, 10, 0, &rules)
+                .unwrap();
+            let entity = sim.substrate.entities.get_mut(id).unwrap();
+            entity
+                .attack_target
+                .set_for_test(Some(TargetKind::Entity(enemy)));
+            entity.health.set_for_test(0);
+            sim.begin_infantry_death_sequence(
+                id,
+                crate::sim::world::InfantryDeathSequence::Die1,
+                &rules,
+                crate::sim::world::FrameEffects::default(),
+            );
+            sim.object_ai_visit_one(id, Some(&rules), ObjectAiCtx::default());
+            let corpse = sim.substrate.entities.get(id).unwrap();
+            assert_eq!(corpse.mission_leaf.as_infantry().unwrap().doing(), 11);
+            assert!(corpse.is_object_alive() && corpse.health.current() == 0);
+            corpse.attack_target.target()
+        };
+        assert_eq!(corpse_target("MEDIC", 10), None);
+        assert_eq!(corpse_target("E1", 12), Some(TargetKind::Entity(enemy)));
+    }
+
     #[test]
     fn wave_context_keeps_terrain_object_coordinates_until_pointer_expiry() {
         use crate::sim::projectile::ProjectileCoord;
@@ -2833,7 +2846,7 @@ mod tests {
             .set_for_test(0);
         sim.begin_infantry_death_sequence(
             9,
-            super::super::infantry_terminal::InfantryDeathSequence::Die1,
+            crate::sim::world::InfantryDeathSequence::Die1,
             &rules,
             crate::sim::world::FrameEffects::default(),
         );
@@ -4505,25 +4518,35 @@ mod tests {
 
     /// A Die1 corpse keeps running `TechnoClass::AI_Update` through
     /// `FootClass::AI` (`0x0051BC9F`): its passive block scans (one Scenario
-    /// `RandomRanged(0, 2)`) on the visit that removes it.
+    /// `RandomRanged(0, 2)`), and nothing else on its visit draws. The GI's
+    /// ART sequences are bound so its Die1 request plays.
     #[test]
     fn a_dying_infantryman_still_takes_its_passive_scan() {
-        let rules = passive_rules();
+        let mut rules = passive_rules();
+        let art = IniFile::from_str(crate::rules::retail_ini_fixture::GI_ART_EXCERPT);
+        rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
+        rules.bind_animation_sequences(
+            &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
+        );
         let mut sim = Simulation::new();
         insert_scannable(&mut sim, 1, "Americans", "GI", EntityCategory::Infantry);
-        sim.substrate.entities.get_mut(1).unwrap().mission_leaf =
-            crate::sim::mission::leaf::MissionLeafState::for_entity_category(
-                EntityCategory::Infantry,
-            );
+        let corpse = sim.substrate.entities.get_mut(1).unwrap();
+        corpse.mission_leaf = crate::sim::mission::leaf::MissionLeafState::for_entity_category(
+            EntityCategory::Infantry,
+        );
+        corpse.health.set_for_test(0);
         sim.begin_infantry_death_sequence(
             1,
-            super::super::infantry_terminal::InfantryDeathSequence::Die1,
+            crate::sim::world::InfantryDeathSequence::Die1,
             &rules,
             crate::sim::world::FrameEffects::default(),
         );
         let mut expected = sim.clone_scenario_rng();
         let _ = expected.next_range_u32_inclusive(0, 2);
         sim.object_ai_visit_one(1, Some(&rules), ObjectAiCtx::default());
+        let corpse = sim.substrate.entities.get(1).unwrap();
+        assert_eq!(corpse.mission_leaf.as_infantry().unwrap().doing(), 11);
+        assert_eq!(corpse.health.current(), 0);
         assert_eq!(
             sim.scenario_rng.logical_state(),
             expected.logical_state(),

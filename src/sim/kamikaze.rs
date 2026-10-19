@@ -189,8 +189,8 @@ pub(crate) fn push(host: &mut impl KamikazeHost, child: u64, target_xy: Option<[
         Some([x, y]) => (lepton_to_cell_packed(x), lepton_to_cell_packed(y)),
         None => {
             let [x, y] = host.location_xy(child);
-            let direction = ((u32::from(host.facing(child)) >> 12) + 1) >> 1;
-            let (dx, dy) = crate::util::direction::DIRECTION_DELTAS[(direction & 7) as usize];
+            let direction = crate::util::direction_tables::dir_from_facing16(host.facing(child));
+            let (dx, dy) = crate::util::direction::cell_delta_unchecked(direction);
             // Adjacent_Cell adds the step to the occupied cell's 16-bit coordinate.
             (
                 lepton_to_cell_packed(x).wrapping_add(dx as i16),

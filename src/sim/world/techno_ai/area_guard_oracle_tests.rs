@@ -82,8 +82,7 @@ fn fixture(row: &Value, state: &Value, rules: &RuleSet) -> SuppliedFootFixture {
                 u8::try_from(signed(&before["level"])).unwrap(),
                 false,
             );
-        terrain.cell_mut(x, y).unwrap().yr_cell_land_type =
-            u8::try_from(signed(&before["land"])).unwrap();
+        terrain.cell_mut(x, y).unwrap().land_type = u8::try_from(signed(&before["land"])).unwrap();
         let identity = terrain.native_cell_identity((x as i16, y as i16));
         terrain.write_native_cell_flags(identity, before["flags"].as_u64().unwrap() as u32);
         let coordinate = crate::sim::movement::nav_target_coordinate(

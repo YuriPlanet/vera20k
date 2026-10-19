@@ -32,6 +32,7 @@ use crate::sim::passenger::{
 use crate::sim::pathfinding::passability::LandType;
 use crate::sim::world::{FrameEffects, PlacementEvidence, SimSoundEvent, Simulation};
 use crate::util::direction::DIRECTION_DELTAS;
+use crate::util::direction_tables::{dir_from_facing16, round_facing16_to_8};
 
 /// `UnitClass+0x6E4`: the passengers a transport's Unload keeps aboard.
 /// `UnitClass::Mission_Unload @ 0x0073D630` state 0 writes it
@@ -197,7 +198,7 @@ fn pick_exit_octant(sim: &Simulation, entity: &GameEntity) -> Option<((u16, u16)
     // `0x00740B9F..BAD`: the body's `Current()` (`+0x388`), full 16 bits.
     let facing16 = entity.body_facing_current(sim.session.binary_frame);
     let rear16 = facing16.wrapping_add(0x7FFF);
-    let rear8 = i32::from((((u32::from(rear16) >> 7) + 1) >> 1) as u8 as i8);
+    let rear8 = i32::from(round_facing16_to_8(rear16) as i8);
 
     let mut best_score: i32 = -1;
     let mut best_octant: usize = 0;
@@ -357,8 +358,7 @@ fn eject_head_passenger(
             };
             let passenger_is_infantry = passenger_snapshot.category() == EntityCategory::Infantry;
 
-            let start =
-                ((((u32::from(facing16.wrapping_add(0x7FFF))) >> 12) + 1) >> 1) as usize & 7;
+            let start = usize::from(dir_from_facing16(facing16.wrapping_add(0x7FFF)));
             let mut strict_pass = true;
             let mut i: usize = 0;
             // `(exit cell, beyond cell on the strict pass, octant)`.
@@ -622,8 +622,7 @@ pub(crate) fn building_mission_unload_absorber(
             if passenger_category != EntityCategory::Infantry {
                 return Err(DepartureFailure::Placement);
             }
-            let start =
-                ((((u32::from(facing16.wrapping_add(0x7FFF)) >> 12) + 1) >> 1) as usize) & 7;
+            let start = usize::from(dir_from_facing16(facing16.wrapping_add(0x7FFF)));
             let mut strict_pass = true;
             let mut index = 0usize;
             let mut placement = None;
@@ -796,7 +795,7 @@ pub(crate) fn unit_mission_unload(
                 .resolved_terrain
                 .as_ref()
                 .and_then(|terrain| terrain.cell(entity.position.rx(), entity.position.ry()))
-                .is_some_and(|cell| cell.yr_cell_land_type == LandType::Water.as_index());
+                .is_some_and(|cell| cell.land_type == LandType::Water.as_index());
             if entity.navigation.nav_com().is_none() && on_water {
                 // `PUSH 0x2` at `0x0073D790`: the search runs for speed-type
                 // index 2 — Wheel in the native `SpeedType` order (Foot 0,

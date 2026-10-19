@@ -803,7 +803,7 @@ fn bridge_redirect_for_structural_cell(
         }
         return Some(
             if terrain.high_bridge_tile_offset(cell).is_some()
-                && cell.yr_cell_land_type != LandType::Rock.as_index()
+                && cell.land_type != LandType::Rock.as_index()
             {
                 record.endpoint_b
             } else {
@@ -873,10 +873,8 @@ mod tests {
                 let mut cell = ResolvedTerrainCell {
                     tileset_index: None,
                     land_type: LandType::Clear.as_index(),
-                    yr_cell_land_type: LandType::Clear.as_index(),
                     zone_type: zone_class::GROUND,
                     base_land_type: LandType::Clear.as_index(),
-                    base_yr_cell_land_type: LandType::Clear.as_index(),
                     base_terrain_class: TerrainClass::Clear,
                     ..crate::map::resolved_terrain::test_flat_cell(rx, ry)
                 };
@@ -1090,13 +1088,13 @@ mod tests {
         let redirect = build_bridge_redirect(&path_grid, Some(&terrain), &records, 7, 1).unwrap();
         assert_eq!(redirect[1], Some((5, 0)));
 
-        terrain.cell_mut(3, 0).unwrap().yr_cell_land_type = LandType::Rock.as_index();
+        terrain.cell_mut(3, 0).unwrap().land_type = LandType::Rock.as_index();
         let path_grid = PathGrid::from_resolved_terrain(&terrain);
         let redirect = build_bridge_redirect(&path_grid, Some(&terrain), &records, 7, 1).unwrap();
         assert_eq!(redirect[1], Some((0, 0)));
 
         let exit = terrain.cell_mut(3, 0).unwrap();
-        exit.yr_cell_land_type = LandType::Clear.as_index();
+        exit.land_type = LandType::Clear.as_index();
         exit.final_tile_index = 50;
         let path_grid = PathGrid::from_resolved_terrain(&terrain);
         let redirect = build_bridge_redirect(&path_grid, Some(&terrain), &records, 7, 1).unwrap();
@@ -1211,7 +1209,7 @@ mod tests {
             project_live_cell_for_test(&terrain, &records, (2, 2), true),
             (6, 2)
         );
-        terrain.cell_mut(4, 2).unwrap().yr_cell_land_type = LandType::Rock.as_index();
+        terrain.cell_mut(4, 2).unwrap().land_type = LandType::Rock.as_index();
         assert_eq!(
             project_live_cell_for_test(&terrain, &records, (2, 2), true),
             (1, 2)

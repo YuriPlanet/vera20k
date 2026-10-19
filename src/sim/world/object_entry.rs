@@ -933,7 +933,7 @@ fn full_foot_entry<'a>(
             return Ok(7);
         };
         let c = &live.terrain().cells()[index];
-        if c.yr_cell_land_type == 10 {
+        if c.land_type == crate::rules::terrain_rules::LandType::Tunnel.as_index() {
             //73F12E..73F1D9: passing the Tube shape gate bypasses only
             //required-land equality; later list/speed/raw predicates still run.
             let required_subtile =
@@ -945,7 +945,7 @@ fn full_foot_entry<'a>(
             if required_subtile.is_some_and(|sub| c.final_sub_tile != sub) {
                 return Ok(7);
             }
-        } else if c.yr_cell_land_type != required.as_index()
+        } else if c.land_type != required.as_index()
             && !(matches!(c.bridge_facts.overlay_id, Some(237 | 238))
                 && args.height != i32::from(initial_level))
         {

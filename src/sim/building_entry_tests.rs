@@ -1024,7 +1024,9 @@ fn a_blocked_bio_reactor_restores_and_retries_its_cargo_head() {
     )));
 
     let facing = entity(&sim, reactor).body_facing_current(sim.session.binary_frame);
-    let start = ((((u32::from(facing.wrapping_add(0x7FFF)) >> 12) + 1) >> 1) & 7) as usize;
+    let start = usize::from(crate::util::direction_tables::dir_from_facing16(
+        facing.wrapping_add(0x7FFF),
+    ));
     let exit = adjacent[start];
     let beyond = neighbor(exit, directions[start]);
     block_foot(&mut sim, exit, false);

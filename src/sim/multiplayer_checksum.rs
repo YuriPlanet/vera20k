@@ -9,6 +9,7 @@
 use crate::map::entities::EntityCategory;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::world::Simulation;
+use crate::util::direction_tables::round_facing16_to_8;
 use crate::util::native_x87::{NativeF32Bits, X87Chop53};
 
 const RTTI_UNIT: i32 = 1;
@@ -108,7 +109,7 @@ impl RetailChecksumAccumulator {
     #[inline]
     pub fn fold_infantry(&mut self, world_x: i32, world_y: i32, primary_facing: u16) {
         let term = coordinate_term(world_x, world_y)
-            .wrapping_add(u32::from(facing_checksum_byte(primary_facing)));
+            .wrapping_add(u32::from(round_facing16_to_8(primary_facing)));
         self.fold_value(term);
     }
 
@@ -121,15 +122,15 @@ impl RetailChecksumAccumulator {
         secondary_facing: u16,
     ) {
         let term = coordinate_term(world_x, world_y)
-            .wrapping_add(u32::from(facing_checksum_byte(primary_facing)))
-            .wrapping_add(u32::from(facing_checksum_byte(secondary_facing)));
+            .wrapping_add(u32::from(round_facing16_to_8(primary_facing)))
+            .wrapping_add(u32::from(round_facing16_to_8(secondary_facing)));
         self.fold_value(term);
     }
 
     #[inline]
     pub fn fold_building(&mut self, world_x: i32, world_y: i32, primary_facing: u16) {
         let term = coordinate_term(world_x, world_y)
-            .wrapping_add(u32::from(facing_checksum_byte(primary_facing)));
+            .wrapping_add(u32::from(round_facing16_to_8(primary_facing)));
         self.fold_value(term);
     }
 
@@ -149,29 +150,11 @@ impl RetailChecksumAccumulator {
     }
 }
 
-/// Convert one live 16-bit FacingClass value to the byte mixed by the checksum.
-#[inline]
-pub fn facing_checksum_byte(facing: u16) -> u8 {
-    ((((u32::from(facing) >> 7).wrapping_add(1)) >> 1) & 0xff) as u8
-}
-
 #[inline]
 fn coordinate_term(world_x: i32, world_y: i32) -> u32 {
     let x = world_x / 10;
     let y = world_y / 10;
     (x as u32).wrapping_add((y as u32).wrapping_mul(0x1_0000))
-}
-
-#[inline]
-fn entity_world_xy(entity: &GameEntity) -> (i32, i32) {
-    (
-        i32::from(entity.position.rx())
-            .wrapping_mul(LEPTONS_PER_CELL)
-            .wrapping_add(entity.position.sub_x().to_num::<i32>()),
-        i32::from(entity.position.ry())
-            .wrapping_mul(LEPTONS_PER_CELL)
-            .wrapping_add(entity.position.sub_y().to_num::<i32>()),
-    )
 }
 
 #[inline]
@@ -266,13 +249,13 @@ impl Simulation {
         // store preserves each class array's order without a second registry.
         for entity in self.substrate.entities.values_sorted() {
             if entity.category() == EntityCategory::Infantry {
-                let (x, y) = entity_world_xy(entity);
+                let [x, y] = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
                 checksum.fold_infantry(x, y, entity.body_facing_current(frame));
             }
         }
         for entity in self.substrate.entities.values_sorted() {
             if entity.category() == EntityCategory::Unit {
-                let (x, y) = entity_world_xy(entity);
+                let [x, y] = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
                 checksum.fold_unit(
                     x,
                     y,
@@ -283,7 +266,7 @@ impl Simulation {
         }
         for entity in self.substrate.entities.values_sorted() {
             if entity.category() == EntityCategory::Structure {
-                let (x, y) = entity_world_xy(entity);
+                let [x, y] = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
                 checksum.fold_building(x, y, entity.body_facing_current(frame));
             }
         }
@@ -325,7 +308,8 @@ impl Simulation {
         let object = match self.classify_object(stable_id).ok_or(missing)? {
             ObjectKind::Entity => {
                 let entity = self.substrate.entities.get(stable_id).ok_or(missing)?;
-                let (world_x, world_y) = entity_world_xy(entity);
+                let [world_x, world_y] =
+                    crate::sim::movement::ground_pose::position_world_xy(&entity.position);
                 ChecksumObject::new(world_x, world_y, entity_rtti(entity.category()), 0)
             }
             ObjectKind::Anim => {
@@ -391,7 +375,7 @@ impl Simulation {
 mod tests {
     use super::{
         ChecksumObject, MultiplayerChecksumError, RetailChecksumAccumulator, SYNC_EXEMPT_ANIM_ID,
-        facing_checksum_byte,
+        round_facing16_to_8,
     };
     use crate::map::entities::EntityCategory;
     use crate::rules::particle_system_type::ParticleSystemTypeId;
@@ -571,9 +555,9 @@ mod tests {
             "signed division truncates toward zero before wrapping"
         );
 
-        assert_eq!(facing_checksum_byte(0x007f), 0);
-        assert_eq!(facing_checksum_byte(0x0080), 1);
-        assert_eq!(facing_checksum_byte(0xffff), 0);
+        assert_eq!(round_facing16_to_8(0x007f), 0);
+        assert_eq!(round_facing16_to_8(0x0080), 1);
+        assert_eq!(round_facing16_to_8(0xffff), 0);
     }
 
     #[test]

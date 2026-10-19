@@ -21,7 +21,9 @@ pub mod quantize;
 
 pub use dragon::DRAGON_FRAME_TABLE;
 pub use lepton::LEPTON_DELTAS;
-pub use native_angle::{facing16_between, facing16_from_angle};
+pub use native_angle::{facing16_between, facing16_from_angle, radians_from_facing16};
 pub use native_angle::{facing8_from_delta, facing16_from_delta};
 pub use native_angle::{native_atan_from_table, native_atan2_f32};
-pub use quantize::{dir_from_facing16, muzzle_anim_index_8way, step32_from_facing16};
+pub use quantize::{
+    dir_from_facing16, muzzle_anim_index_8way, round_facing16_to_8, step32_from_facing16,
+};

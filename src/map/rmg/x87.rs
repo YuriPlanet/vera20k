@@ -95,6 +95,20 @@ impl TruncF64 {
     }
 }
 
+/// A value on the FPU stack: the table lookups return one and take one
+/// (`Math::SinFromTable @ 0x004CACB0` / `CosFromTable @ 0x004CAD00`).
+impl From<X87Value> for TruncF64 {
+    fn from(value: X87Value) -> Self {
+        Self(value)
+    }
+}
+
+impl From<TruncF64> for crate::util::native_x87::MaskedX87Value {
+    fn from(value: TruncF64) -> Self {
+        value.0.into()
+    }
+}
+
 /// Narrow to single precision (truncating) and widen back, as a value.
 ///
 /// Models a store to a 4-byte float slot followed by a reload — the pattern

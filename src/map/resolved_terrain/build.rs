@@ -554,7 +554,6 @@ impl ResolvedTerrainGrid {
                 // The registered pristine TMP owns the base snapshot. Overlay
                 // land never feeds back into these restoration fields.
                 let base_land_type = metadata.land_type;
-                let base_yr_cell_land_type = metadata.yr_cell_land_type;
                 let base_terrain_class = metadata.terrain_class;
                 let base_speed_costs = metadata.speed_costs;
                 let base_ground_walk_blocked = canonical_ramp.is_none() && metadata.ground_blocked;
@@ -658,7 +657,6 @@ impl ResolvedTerrainGrid {
                     filled_clear: raw.is_none(),
                     tileset_index: metadata.tileset_index,
                     land_type: metadata.land_type,
-                    yr_cell_land_type: metadata.yr_cell_land_type,
                     slope_type: metadata.slope_type,
                     template_height: metadata.template_height,
                     height_in_pixels: metadata.height_in_pixels,
@@ -685,7 +683,6 @@ impl ResolvedTerrainGrid {
                     base_ground_walk_blocked,
                     base_build_blocked,
                     base_land_type,
-                    base_yr_cell_land_type,
                     base_terrain_class,
                     base_speed_costs,
                     has_bridge_deck: overlay_effects.has_bridge_deck,
@@ -921,7 +918,6 @@ impl ResolvedTerrainGrid {
                     let cell = &mut cells[idx];
                     if eligibility.current {
                         cell.land_type = rock_lt;
-                        cell.yr_cell_land_type = rock_lt;
                         cell.terrain_class = rock_terrain_class;
                         cell.speed_costs = rock_speed_costs;
                         cell.is_water = rock_is_water;
@@ -946,7 +942,6 @@ impl ResolvedTerrainGrid {
                     // that overlay is removed.
                     if eligibility.base {
                         cell.base_land_type = rock_lt;
-                        cell.base_yr_cell_land_type = rock_lt;
                         cell.base_terrain_class = rock_terrain_class;
                         cell.base_speed_costs = rock_speed_costs;
                         cell.base_ground_walk_blocked = rock_ground_blocked;
@@ -1060,9 +1055,6 @@ pub(super) struct TileMetadata {
     /// Canonical YR LandType used for terrain semantics and CellClass Land
     /// derivation. Reduced `zone_type` selects the movement matrix column.
     pub(super) land_type: u8,
-    /// Retained CellClass LandType mirror for binary-derived predicates and
-    /// compatibility consumers. This is not the raw TMP terrain_type byte.
-    pub(super) yr_cell_land_type: u8,
     /// Raw TMP terrain_type byte (0-15) for rules.ini semantic lookups.
     pub(super) raw_land_type: u8,
     pub(super) slope_type: u8,
@@ -1098,7 +1090,6 @@ impl Default for TileMetadata {
             template_width_cells: 0,
             template_height_cells: 0,
             land_type: 0,
-            yr_cell_land_type: 0,
             raw_land_type: 0,
             slope_type: 0,
             template_height: 0,
@@ -1132,7 +1123,6 @@ impl TileMetadata {
             template_width_cells: 1,
             template_height_cells: 1,
             land_type: cell.base_land_type,
-            yr_cell_land_type: cell.base_yr_cell_land_type,
             raw_land_type: cell.base_land_type,
             slope_type: cell.slope_type,
             template_height: cell.template_height,
@@ -1244,7 +1234,6 @@ pub(super) fn apply_load_land_to_cell(
     ground_blocked: bool,
 ) {
     cell.land_type = land.as_index();
-    cell.yr_cell_land_type = land.as_index();
     cell.terrain_class = land.terrain_class();
     cell.speed_costs = speed_costs.unwrap_or_default();
     cell.is_water = land.is_water();
@@ -1256,7 +1245,6 @@ pub(super) fn apply_load_land_to_cell(
 
 pub(super) fn restore_load_base_land(cell: &mut ResolvedTerrainCell) {
     cell.land_type = cell.base_land_type;
-    cell.yr_cell_land_type = cell.base_yr_cell_land_type;
     cell.terrain_class = cell.base_terrain_class;
     cell.speed_costs = cell.base_speed_costs;
     cell.is_water = cell.base_land_type == LandType::Water.as_index();
@@ -1291,7 +1279,6 @@ pub(super) fn apply_pristine_load_metadata(
 ) {
     cell.tileset_index = metadata.tileset_index;
     cell.land_type = metadata.land_type;
-    cell.yr_cell_land_type = metadata.yr_cell_land_type;
     cell.slope_type = metadata.slope_type;
     cell.template_height = metadata.template_height;
     cell.height_in_pixels = metadata.height_in_pixels;
@@ -1306,7 +1293,6 @@ pub(super) fn apply_pristine_load_metadata(
     cell.has_ramp = metadata.has_ramp;
     cell.canonical_ramp = canonical_ramp_from_slope_type(metadata.slope_type);
     cell.base_land_type = metadata.land_type;
-    cell.base_yr_cell_land_type = metadata.yr_cell_land_type;
     cell.base_terrain_class = metadata.terrain_class;
     cell.base_speed_costs = metadata.speed_costs;
     cell.base_ground_walk_blocked = cell.canonical_ramp.is_none() && metadata.ground_blocked;
@@ -1626,7 +1612,6 @@ pub(super) fn metadata_from_set_name(
     TileMetadata {
         tileset_index,
         land_type,
-        yr_cell_land_type: land_type,
         terrain_class,
         is_water,
         is_cliff_like,
@@ -1641,7 +1626,6 @@ pub(super) fn metadata_from_set_name(
 pub(super) fn merge_tmp_metadata(metadata: &mut TileMetadata, tile: &TmpTile) {
     metadata.subtile_entry_valid = Some(true);
     metadata.raw_land_type = tile.terrain_type;
-    metadata.yr_cell_land_type = yr_cell_land_type_from_tmp(tile.terrain_type);
     metadata.land_type =
         crate::rules::terrain_rules::tmp_terrain_to_land_type(tile.terrain_type).as_index();
     metadata.slope_type = tile.ramp_type;
@@ -1653,14 +1637,6 @@ pub(super) fn merge_tmp_metadata(metadata: &mut TileMetadata, tile: &TmpTile) {
     metadata.radar_left = tile.radar_left;
     metadata.radar_right = tile.radar_right;
     metadata.has_damaged_data = tile.has_damaged_data;
-}
-
-pub(super) fn yr_cell_land_type_from_tmp(tmp_terrain_type: u8) -> u8 {
-    if tmp_terrain_type == 5 {
-        YR_CELL_LAND_TUNNEL
-    } else {
-        crate::rules::terrain_rules::tmp_terrain_to_land_type(tmp_terrain_type).as_index()
-    }
 }
 
 /// Maps TMP ramp_type byte to canonical direction.
@@ -1732,7 +1708,6 @@ pub(super) fn apply_canonical_land_to_metadata(
     ground_blocked: bool,
 ) {
     metadata.land_type = land.as_index();
-    metadata.yr_cell_land_type = land.as_index();
     metadata.terrain_class = land.terrain_class();
     metadata.speed_costs = speed_costs.unwrap_or_default();
     metadata.is_water = land.is_water();

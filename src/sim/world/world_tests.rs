@@ -541,7 +541,7 @@ fn a_jumpjet_cruising_over_water_leaves_no_wake() {
         .expect("spawn Jumpjet");
     let mut terrain = water_terrain(2, 1);
     for cell in &mut terrain.cells {
-        cell.yr_cell_land_type = crate::rules::terrain_rules::LandType::Water.as_index();
+        cell.land_type = crate::rules::terrain_rules::LandType::Water.as_index();
     }
     sim.resolved_terrain = Some(terrain);
     let runtime = sim
@@ -619,7 +619,7 @@ fn a_ship_wakes_every_eighth_frame_unless_it_is_underwater() {
     // The gate reads the `CellClass+0xEC` mirror; stamp Water on the fixture.
     let mut terrain = water_terrain(4, 1);
     for cell in &mut terrain.cells {
-        cell.yr_cell_land_type = crate::rules::terrain_rules::LandType::Water.as_index();
+        cell.land_type = crate::rules::terrain_rules::LandType::Water.as_index();
     }
     sim.resolved_terrain = Some(terrain);
     let wakes = |sim: &Simulation| {
@@ -686,7 +686,7 @@ Rate=120
     // grid carries land type 4 for movement, so stamp the binary's mirror.
     let mut terrain = water_terrain(2, 1);
     for cell in &mut terrain.cells {
-        cell.yr_cell_land_type = crate::rules::terrain_rules::LandType::Water.as_index();
+        cell.land_type = crate::rules::terrain_rules::LandType::Water.as_index();
     }
     sim.resolved_terrain = Some(terrain);
     {
@@ -806,7 +806,7 @@ fn advance_tick_finishes_dying_infantry_from_rules_catalog() {
         .set_for_test(0);
     sim.begin_infantry_death_sequence(
         id,
-        super::infantry_terminal::InfantryDeathSequence::Die1,
+        crate::sim::world::InfantryDeathSequence::Die1,
         &rules,
         crate::sim::world::FrameEffects::default(),
     );
@@ -2766,7 +2766,6 @@ fn gsi_04_10_clear_terrain(width: u16, height: u16) -> ResolvedTerrainGrid {
     let mut terrain = water_terrain(width, height);
     for cell in &mut terrain.cells {
         cell.land_type = LandType::Clear.as_index();
-        cell.yr_cell_land_type = LandType::Clear.as_index();
         cell.terrain_class = TerrainClass::Clear;
         cell.speed_costs = OPEN_SPEED_COSTS;
         cell.is_water = false;
@@ -2775,7 +2774,6 @@ fn gsi_04_10_clear_terrain(width: u16, height: u16) -> ResolvedTerrainGrid {
         cell.base_ground_walk_blocked = false;
         cell.base_build_blocked = false;
         cell.base_land_type = LandType::Clear.as_index();
-        cell.base_yr_cell_land_type = LandType::Clear.as_index();
         cell.base_terrain_class = TerrainClass::Clear;
         cell.base_speed_costs = OPEN_SPEED_COSTS;
     }
@@ -3116,7 +3114,6 @@ fn water_terrain_with_land_type(
         for x in 0..width {
             cells.push(crate::map::resolved_terrain::ResolvedTerrainCell {
                 land_type,
-                yr_cell_land_type: land_type,
                 speed_costs: OPEN_SPEED_COSTS,
                 is_water: true,
                 is_cliff_like,
@@ -3205,7 +3202,6 @@ fn water_under_structural_bridge() -> (ResolvedTerrainGrid, BridgeRuntimeState) 
     let water = water_terrain(1, 1).cells[0].clone();
     for cell in &mut terrain.cells {
         cell.land_type = water.land_type;
-        cell.yr_cell_land_type = water.yr_cell_land_type;
         cell.terrain_class = water.terrain_class;
         cell.speed_costs = water.speed_costs;
         cell.is_water = water.is_water;
@@ -3214,7 +3210,6 @@ fn water_under_structural_bridge() -> (ResolvedTerrainGrid, BridgeRuntimeState) 
         cell.base_ground_walk_blocked = water.base_ground_walk_blocked;
         cell.base_build_blocked = water.base_build_blocked;
         cell.base_land_type = water.base_land_type;
-        cell.base_yr_cell_land_type = water.base_yr_cell_land_type;
         cell.base_terrain_class = water.base_terrain_class;
         cell.base_speed_costs = water.base_speed_costs;
     }
@@ -3240,7 +3235,6 @@ fn structural_bridge_for_fallout(
                 ..Default::default()
             };
             cell.land_type = LandType::Water.as_index();
-            cell.yr_cell_land_type = LandType::Water.as_index();
             cell.terrain_class = TerrainClass::Water;
             cell.speed_costs = costs;
             cell.is_water = true;
@@ -3249,7 +3243,6 @@ fn structural_bridge_for_fallout(
             cell.base_ground_walk_blocked = true;
             cell.base_build_blocked = true;
             cell.base_land_type = LandType::Water.as_index();
-            cell.base_yr_cell_land_type = LandType::Water.as_index();
             cell.base_terrain_class = TerrainClass::Water;
             cell.base_speed_costs = costs;
         }
@@ -3756,8 +3749,9 @@ fn guard_infantry_acquire_return_fire_and_finish_a_duel() {
                 .iter()
                 .filter(|event| event.attacker_id == id)
                 .count();
+            // A killed guard stays stored as a corpse at Health 0.
             if let Some(target) = sim.substrate.entities.get(id)
-                && !target.death.is_dying()
+                && target.is_ai_alive()
             {
                 health_history[index].push(target.health.current());
                 alive.push(index);
@@ -3991,11 +3985,9 @@ fn sonic_cell_fire_wave_damage_selects_level_two_bridge_plane() {
         cell.level = 2;
         cell.template_height = 2;
         cell.land_type = 4;
-        cell.yr_cell_land_type = 4;
         cell.is_water = true;
         cell.zone_type = 4;
         cell.base_land_type = 4;
-        cell.base_yr_cell_land_type = 4;
         cell.has_bridge_deck = true;
         cell.bridge_walkable = true;
         cell.bridge_deck_level = 6;
@@ -5239,8 +5231,8 @@ fn concrete_damage_fixture(
         let cell = terrain.cell(x, y).unwrap();
         assert_eq!(cell.final_tile_index, 0);
         assert_eq!(cell.final_sub_tile, 0);
-        assert_eq!(cell.base_yr_cell_land_type, pristine_land);
-        assert_eq!(cell.yr_cell_land_type, pristine_land);
+        assert_eq!(cell.base_land_type, pristine_land);
+        assert_eq!(cell.land_type, pristine_land);
         sim.overlay_grid
             .as_mut()
             .unwrap()
@@ -5302,8 +5294,8 @@ fn assert_concrete_damage_result(sim: &Simulation, native: &serde_json::Value) {
         assert!(!cell.bridge_walkable);
         // Destroyed232 uses the pristine TMP, which is also Road in this
         // synthetic catalog. It does not imply Water or Clear after collapse.
-        assert_eq!(cell.base_yr_cell_land_type, LandType::Road.as_index());
-        assert_eq!(cell.yr_cell_land_type, LandType::Road.as_index());
+        assert_eq!(cell.base_land_type, LandType::Road.as_index());
+        assert_eq!(cell.land_type, LandType::Road.as_index());
         assert!(
             !sim.path_grid()
                 .unwrap()
@@ -5850,9 +5842,7 @@ fn a_ship_order_routes_around_an_island_through_the_live_search() {
         for x in 3..=5 {
             let cell = terrain.cell_mut(x, y).expect("island cell");
             cell.land_type = LandType::Clear.as_index();
-            cell.yr_cell_land_type = LandType::Clear.as_index();
             cell.base_land_type = LandType::Clear.as_index();
-            cell.base_yr_cell_land_type = LandType::Clear.as_index();
             cell.is_water = false;
             cell.zone_type = zone_class::GROUND;
             cell.speed_costs = land_costs;
@@ -7330,9 +7320,12 @@ fn test_attack_move_auto_acquires_enemy() {
     );
 }
 
+/// The victim plays a Die1 sequence: a zero-count death request is refused
+/// (`0x0051D70F`) and the next visit's Health reset (`0x0051BC57`) would
+/// revive it at Health 1 for the attack-move to acquire again.
 #[test]
 fn test_attack_move_lethal_hit_expires_the_target_at_the_kill() {
-    let rules = driving_combat_test_rules();
+    let rules = walking_combat_test_rules();
     let mut sim = attack_move_fight(&rules);
     if let Some(e) = sim.substrate.entities.get_mut(2) {
         e.health.set_for_test(50);
@@ -7365,7 +7358,7 @@ fn test_attack_move_lethal_hit_expires_the_target_at_the_kill() {
         .get(2)
         .expect("animated victim remains stored through its death sequence");
     assert_eq!(victim.health.current(), 0);
-    assert!(victim.death.is_dying());
+    assert!(!victim.death.is_dying());
     assert!(victim.lifecycle.object_alive());
 
     let attacker = sim.substrate.entities.get(1).expect("attacker exists");
@@ -8038,7 +8031,6 @@ fn make_realistic_bridgehead_terrain() -> ResolvedTerrainGrid {
             ground_walk_blocked: true,
             base_build_blocked: true,
             base_land_type: 0,
-            base_yr_cell_land_type: 0,
             base_terrain_class: Default::default(),
             base_speed_costs: Default::default(),
             bridge_walkable: true,
@@ -8708,7 +8700,6 @@ fn parked_friendly_on_the_route_is_scattered_out_of_the_way() {
         for ry in (0..24).filter(|&ry| ry != PARKED_AT.1) {
             let cell = terrain.cell_mut(PARKED_AT.0, ry).expect("wall cell");
             cell.land_type = LandType::Rock.as_index();
-            cell.yr_cell_land_type = LandType::Rock.as_index();
             cell.terrain_class = TerrainClass::Rock;
             cell.speed_costs = rock;
             cell.zone_type = zone_class::IMPASSABLE;
@@ -8716,7 +8707,6 @@ fn parked_friendly_on_the_route_is_scattered_out_of_the_way() {
             cell.base_ground_walk_blocked = true;
             cell.base_build_blocked = true;
             cell.base_land_type = LandType::Rock.as_index();
-            cell.base_yr_cell_land_type = LandType::Rock.as_index();
             cell.base_terrain_class = TerrainClass::Rock;
             cell.base_speed_costs = rock;
         }

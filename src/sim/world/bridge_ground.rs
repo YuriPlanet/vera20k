@@ -244,32 +244,29 @@ mod tests {
         );
         assert!(!sim.live_object_order_snapshot().contains(&gi));
         let head = sim.substrate.entities.get(terror).unwrap();
-        assert!(head.death.infantry_terminal().is_some());
+        assert!(!head.death.is_dying() && head.lifecycle.object_alive());
+        assert_eq!(head.health.current(), 0);
         assert!(head.kill_record.is_recorded());
         assert!(sim.live_object_order_snapshot().contains(&terror));
-        // Drive its actual Die2 clock through terminal visits and confirm
+        // Drive its actual Die2 clock through its ordinary turns and confirm
         // UnInit does not count either fatal callback again. This test does
         // not assert animation duration (completion calls UnInit520CAD).
         for frame in 1..=120 {
-            if sim
+            if !sim
                 .substrate
                 .entities
                 .get(terror)
                 .unwrap()
-                .death
-                .infantry_terminal()
-                .is_none()
+                .lifecycle
+                .object_alive()
             {
                 break;
             }
             sim.session.binary_frame = frame;
-            assert!(
-                sim.visit_infantry_terminal(terror, Some(&rules), Default::default())
-                    .visited
-            );
+            sim.advance_live_object_turn(terror, Some(&rules), Default::default())
+                .expect("the corpse's ordinary turn completes");
         }
         let head = sim.substrate.entities.get(terror).unwrap();
-        assert!(head.death.infantry_terminal().is_none());
         assert!(!head.lifecycle.object_alive());
         assert!(head.kill_record.is_recorded());
         assert!(!sim.live_object_order_snapshot().contains(&terror));
@@ -392,7 +389,6 @@ mod tests {
         let object = sim.substrate.entities.get(gi).unwrap();
         assert_eq!(object.mission_leaf.as_infantry().unwrap().doing(), 11);
         assert_eq!(object.native_stage().value(), 0);
-        assert!(object.death.infantry_terminal().is_none());
         assert!(!object.lifecycle.object_alive());
         assert!(!sim.live_object_order_snapshot().contains(&gi));
         assert_eq!(sim.substrate.pending_delete, pending);

@@ -671,7 +671,12 @@ const FINAL_STREAM_STATES: (u64, u64, u64) = (
 // feeding the hasher the two empty fields each surviving Drive held gave
 // 0x08FA_C33A_C7FF_04FD in the same test binary, with every tripwire above
 // green. Control removed.
-const GLOBAL_HARNESS_FINAL_HASH: u64 = 0x3ACD_D234_DA53_AEE6;
+// Snapshot 428 drops the Infantry terminal policy, which every entity's fold
+// hashed (absent for each here). Hash composition only: a temporary control
+// feeding the hasher that absent policy gave the previous value in the same
+// test binary, with every tripwire above green. Control removed.
+// Previous: 0x3ACD_D234_DA53_AEE6.
+const GLOBAL_HARNESS_FINAL_HASH: u64 = 0x5714_B259_DD03_BE9D;
 
 fn harness_ini() -> IniFile {
     // Multi-faction vehicles + infantry + buildings (war factory, refinery) plus a

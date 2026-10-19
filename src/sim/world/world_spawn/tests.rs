@@ -74,11 +74,10 @@ fn infantry_unlimbo_placement_matches_original_coordinate_and_rng_controls() {
         );
         if let (Some(position), Some(foot)) = (result, foot) {
             assert_eq!(
-                serde_json::json!([
-                    i32::from(position.rx()) * 256 + position.sub_x().to_num::<i32>(),
-                    i32::from(position.ry()) * 256 + position.sub_y().to_num::<i32>(),
-                    raw_z,
-                ]),
+                {
+                    let [x, y] = crate::sim::movement::ground_pose::position_world_xy(&position);
+                    serde_json::json!([x, y, raw_z])
+                },
                 foot[2],
                 "{input}"
             );

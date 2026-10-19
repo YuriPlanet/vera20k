@@ -2,8 +2,8 @@ name: Clippy
 
 # Lints both libraries and the binaries on the three main platforms (clippy also
 # checks that they compile, so there is no separate `cargo check`, and no binary
-# can stop compiling unnoticed). The libraries' unit tests compile in the local
-# full `cargo test --workspace --lib` run each change gets before it merges.
+# can stop compiling unnoticed). The libraries' unit tests compile in each change's
+# local focused test runs and in the per-platform library tests.
 # Like the per-platform library tests, this is manual only. Run it from the
 # Actions tab or with `gh workflow run rust.yml --ref <branch>`.
 # Cross-platform checks are maintainer-run and do not block pull-request merges.

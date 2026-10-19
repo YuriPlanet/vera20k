@@ -580,7 +580,6 @@ fn busy_factory_exit_original_rows_compare_receiver_archive_restoration_and_rng(
                     let mut cell =
                         crate::sim::world::common_raw_test_terrain_cell(rx, ry, 4, false);
                     cell.land_type = 1;
-                    cell.yr_cell_land_type = 1;
                     cell.terrain_class = road.terrain_class;
                     cell.base_terrain_class = road.terrain_class;
                     cell.speed_costs = road.speed_costs;
@@ -606,7 +605,6 @@ fn busy_factory_exit_original_rows_compare_receiver_archive_restoration_and_rng(
             target.level = native["level"].as_u64().unwrap() as u8;
             target.slope_type = native["slope"].as_u64().unwrap() as u8;
             target.land_type = land;
-            target.yr_cell_land_type = land;
             target.zone_type = native["zone_type"].as_u64().unwrap() as u8;
             target.terrain_class = semantics.terrain_class;
             target.base_terrain_class = semantics.terrain_class;
@@ -2252,7 +2250,6 @@ fn failed_vehicle_exit_promotes_a_fresh_identity_that_can_deliver_after_cells_cl
     for cell in &mut terrain.cells {
         cell.is_water = false;
         cell.land_type = crate::rules::terrain_rules::LandType::Clear.as_index();
-        cell.yr_cell_land_type = crate::rules::terrain_rules::LandType::Clear.as_index();
         cell.terrain_class = crate::rules::terrain_rules::TerrainClass::Clear;
         cell.speed_costs.track = Some(100);
         cell.speed_costs.wheel = Some(100);

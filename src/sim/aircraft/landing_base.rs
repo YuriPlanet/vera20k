@@ -72,7 +72,7 @@ pub(crate) fn landing_direction(
     frame: u32,
     pose_dir: i32,
 ) -> i32 {
-    let dir8 = |facing: u16| ((i32::from(facing) >> 12) + 1) >> 1 & 7;
+    let dir8 = |facing: u16| i32::from(crate::util::direction_tables::dir_from_facing16(facing));
     if !entity.radio_contacts.is_empty()
         && let Some(contact) = entity
             .radio_contacts

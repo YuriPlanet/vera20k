@@ -11,11 +11,12 @@ pub fn dir_from_facing16(f: u16) -> u8 {
     ((((f >> 12) + 1) >> 1) & 7) as u8
 }
 
-/// Native nearest256-way direction, e.g. ExitObject444AC5..AD8.
-/// This rounds the16-bit word; facing8_from_delta exposes its truncated byte.
-/// Original execution: factory-exit geometry controls include word32767→128,
-/// 38934→152,16383→64 and49153→192, preserving full RNG state.
-pub(crate) fn round_facing16_to_8(f: u16) -> u8 {
+/// gamemd 16-bit facing → nearest 256-way DirType byte: `((f>>7)+1)>>1`,
+/// wrapping 0xFF80.. to 0 (e.g. ExitObject 0x00444AC5..AD8).
+/// This rounds the 16-bit word; facing8_from_delta exposes its truncated byte.
+/// Original execution: factory-exit geometry controls include word 32767→128,
+/// 38934→152, 16383→64 and 49153→192, preserving full RNG state.
+pub fn round_facing16_to_8(f: u16) -> u8 {
     (((u32::from(f) >> 7) + 1) >> 1) as u8
 }
 

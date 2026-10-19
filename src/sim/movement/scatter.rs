@@ -1,8 +1,9 @@
 //! `TechnoClass::Scatter` (vtable `+0x174`): the one dispatcher over the
-//! class receivers ([`Simulation::scatter`]), the Unit receiver, and two
+//! class receivers ([`Simulation::scatter`]), the Unit receiver, and three
 //! callers' gates: the cell dispatcher `CellClass::Scatter_Objects @
-//! 0x00481670` and `TechnoClass::ReceiveDamage`'s scatter tail
-//! (`0x00702B47..0x00702D0B`).
+//! 0x00481670`, `TechnoClass::ReceiveDamage`'s scatter tail
+//! (`0x00702B47..0x00702D0B`) and `FootClass::AI`'s idle scatter
+//! (`0x004DADF5..0x004DAE59`).
 //!
 //! Receivers:
 //! - Unit `0x00743A50`: [`Simulation::unit_scatter_null`] and
@@ -326,6 +327,56 @@ impl Simulation {
             id,
             None,
             RECEIVE_DAMAGE_SCATTER_FLAGS,
+            rules,
+            registry,
+            frame_effects,
+        )
+    }
+
+    /// `FootClass::AI`'s idle scatter (`0x004DADF5..0x004DAE59`), after the
+    /// move sound and before the piggyback end: on every frame whose low six
+    /// bits are all set, a Foot with no NavCom (`+0x5A4`), off a bridge
+    /// (`+0x8C`), on a flat cell (GetCell `0x005F6960`, slope `+0x11C`),
+    /// whose terrain projection names another cell (vt+0x2B0 `0x0070C620`)
+    /// and with GetHeight (`0x005F5F40`) zero takes `Scatter(null, true,
+    /// false)`. A unit left at the foot of a cliff, drawn over the higher
+    /// cell, moves off. Answers whether an Infantry receiver's immediate
+    /// Process changed bridge state.
+    pub(crate) fn foot_idle_scatter(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+        frame_effects: FrameEffects<'_>,
+    ) -> Result<bool, String> {
+        if self.session.binary_frame & 0x3F != 0x3F {
+            return Ok(false);
+        }
+        let (Some(entity), Some(terrain)) = (
+            self.substrate.entities.get(id),
+            self.resolved_terrain.as_ref(),
+        ) else {
+            return Ok(false);
+        };
+        if !entity.category().is_foot()
+            || entity.navigation.nav_com().is_some()
+            || entity.on_bridge()
+        {
+            return Ok(false);
+        }
+        let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+        let location = super::ground_pose::position_world_coord(&entity.position);
+        let cell = super::ground_pose::query_object_cell(&cells, location);
+        if cells.ground_fields(cell).1 != 0
+            || !super::ground_pose::terrain_projection_differs(&cells, [location.x, location.y])
+            || super::air_movement::current_fly_height(entity, Some(terrain)) != 0
+        {
+            return Ok(false);
+        }
+        self.scatter(
+            id,
+            None,
+            ScatterFlags::new(true, false),
             rules,
             registry,
             frame_effects,

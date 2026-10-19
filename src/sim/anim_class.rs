@@ -2270,10 +2270,7 @@ impl Simulation {
     /// `0x00A83D4C`) detect the anim? Not when it is allied with the anim's
     /// House (`HouseClass::IsAlliedWith @ 0x004F9A50`, null not allied).
     /// Otherwise, when one of its PsychicDetection buildings
-    /// (`HouseClass+0x128`: placed buildings whose type's
-    /// `PsychicDetectionRadius=` (`+0x170C`) is positive, added by
-    /// `BuildingClass::Unlimbo` at `0x004414A0` and moved by
-    /// `BuildingClass::ChangeOwner`) is operational (vt+0x350) and its
+    /// ([`Simulation::psychic_detection_sites`]) is operational and its
     /// GetCoords lies within the radius in leptons (`<< 8`, `jle` at
     /// `0x0043B5A9`) of the centre of the anim's cell (`MapClass::operator[]
     /// @ 0x00565730`, `CellClass::Get_Center_Coords @ 0x00480A30`), measured
@@ -2304,29 +2301,13 @@ impl Simulation {
             (at.x / 256) as u16,
             (at.y / 256) as u16,
         );
-        self.substrate.entities.values().any(|entity| {
-            if entity.owner() != viewer
-                || entity.category() != crate::map::entities::EntityCategory::Structure
-                || !entity.lifecycle.object_alive()
-                || entity.lifecycle.in_limbo()
-            {
-                return false;
-            }
-            let radius = self
-                .interner
-                .object_type(entity.type_ref(), rules)
-                .map_or(0, |object| i32::from(object.psychic_detection_radius));
-            if radius <= 0
-                || self.building_operational_state(entity.stable_id(), rules) != Some(true)
-            {
-                return false;
-            }
-            let coords = crate::sim::movement::ground_pose::object_get_coords(entity, terrain);
-            crate::util::native_x87::distance_3d_leptons(
-                [coords.x, coords.y, coords.z],
-                [cell.x, cell.y, cell.z],
-            ) <= radius << 8
-        })
+        self.psychic_detection_sites(viewer, rules)
+            .any(|(site, radius)| {
+                crate::util::native_x87::distance_3d_leptons(
+                    [site.x, site.y, site.z],
+                    [cell.x, cell.y, cell.z],
+                ) <= radius
+            })
     }
 
     pub(crate) fn update_building_damage_fire(&mut self, building_id: u64, rules: &RuleSet) {

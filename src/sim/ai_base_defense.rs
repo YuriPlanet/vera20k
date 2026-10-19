@@ -67,7 +67,7 @@ use crate::sim::base_plan_generation::prerequisites_satisfied;
 use crate::sim::house_tracking::ForceValues;
 use crate::sim::intern::InternedId;
 use crate::sim::world::Simulation;
-use crate::util::direction_tables::facing16_from_delta;
+use crate::util::direction_tables::{facing16_from_delta, round_facing16_to_8};
 use crate::util::native_x87::{
     MaskedX87Chop53 as X87, MaskedX87Ordering, MaskedX87Value, NativeF32Bits, NativeF64Bits,
     X87Chop53, sqrt_approx_f32,
@@ -199,8 +199,7 @@ impl CoverageGrid {
         } else {
             let dx = i32::from(cell.0) - i32::from(center.0);
             let dy = i32::from(cell.1) - i32::from(center.1);
-            let facing = u32::from(facing16_from_delta(dx, dy));
-            let direction = ((((facing >> 7) + 1) >> 1) & 0xFF) as i32;
+            let direction = i32::from(round_facing16_to_8(facing16_from_delta(dx, dy)));
             let turn = argument
                 .wrapping_shl(5)
                 .wrapping_sub(direction)

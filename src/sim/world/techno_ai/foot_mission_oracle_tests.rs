@@ -1349,7 +1349,7 @@ fn install_recorded_anytown_query_state(
             signed(&receipt["slope"]),
             "{name}: physical slope"
         );
-        cell.yr_cell_land_type = signed(&receipt["land"]) as u8;
+        cell.land_type = signed(&receipt["land"]) as u8;
         let identity = terrain.native_cell_identity((x as i16, y as i16));
         terrain.write_native_cell_flags(identity, receipt["flags"].as_u64().unwrap() as u32);
     }
@@ -2272,7 +2272,7 @@ fn dying_infantry_visits_shared_native_clock() {
     fixture.sim.session.binary_frame = signed(&frame["native_frame"]) as u32;
     fixture.sim.begin_infantry_death_sequence(
         fixture.actor,
-        crate::sim::world::infantry_terminal::InfantryDeathSequence::Die1,
+        crate::sim::world::InfantryDeathSequence::Die1,
         &rules,
         crate::sim::world::FrameEffects::default(),
     );

@@ -17,6 +17,8 @@ const PI_OVER_TWO_F32: NativeF32Bits = NativeF32Bits::from_bits(0x3fc9_0fdb);
 const PI_F64: NativeF64Bits = NativeF64Bits::from_bits(0x4009_21fb_5444_2d18);
 const PI_OVER_TWO_F64: NativeF64Bits = NativeF64Bits::from_bits(0x3ff9_21fb_5444_2d18);
 const FACING_SCALE_F64: NativeF64Bits = NativeF64Bits::from_bits(0xc0c4_5f07_af68_ecef);
+/// `0x007E2810`: -2pi/65534, the radians of one DirStruct unit.
+const RADIANS_PER_FACING_UNIT_F64: NativeF64Bits = NativeF64Bits::from_bits(0xbf19_222d_989f_5e57);
 
 static ATAN_BITS: OnceLock<[u32; ATAN_TABLE_LEN]> = OnceLock::new();
 
@@ -147,6 +149,17 @@ pub fn facing16_from_angle(angle: X87Value) -> u16 {
     let scaled = X87Chop53::mul(centered, load_f64(FACING_SCALE_F64));
     X87Chop53::ftol_i64(scaled)
         .expect("the bounded angle conversion fits the native integer domain") as u16
+}
+
+/// A DirStruct word as the radians its readers form before `SinFromTable` /
+/// `CosFromTable`: the signed word less 0x3FFF times the double at
+/// `0x007E2810`, stored as a double. The inverse of [`facing16_from_angle`].
+pub fn radians_from_facing16(word: u16) -> NativeF64Bits {
+    X87Chop53::store_f64(X87Chop53::mul(
+        X87Chop53::load_i32(i32::from(word as i16) - 0x3fff),
+        load_f64(RADIANS_PER_FACING_UNIT_F64),
+    ))
+    .expect("a facing word's radians are finite")
 }
 
 /// Returns the high facing byte exposed by the simulation's byte-facing fields.

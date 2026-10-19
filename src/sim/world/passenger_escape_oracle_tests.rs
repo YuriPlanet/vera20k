@@ -126,8 +126,8 @@ fn edit_cells(input: &Value, terrain: &mut ResolvedTerrainGrid) {
         };
         for (wx, wy) in water {
             let c = terrain.cell_mut(wx, wy).unwrap();
-            c.yr_cell_land_type = 2;
-            c.base_yr_cell_land_type = 2;
+            c.land_type = 2;
+            c.base_land_type = 2;
             c.is_water = true;
             c.speed_costs = none;
             c.base_speed_costs = none;

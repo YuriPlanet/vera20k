@@ -624,7 +624,6 @@ fn accepted_chain_preserves_call_budget_and_reloads_callback_queue_once() {
                             cell.ground_walk_blocked = true;
                             cell.land_type =
                                 crate::rules::terrain_rules::LandType::Water.as_index();
-                            cell.yr_cell_land_type = cell.land_type;
                         }
                         cell
                     })

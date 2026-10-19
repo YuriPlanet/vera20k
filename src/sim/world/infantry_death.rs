@@ -1,10 +1,24 @@
-//! An object's terminal lifetime ([`TerminalLifetime`]): the dying mark and
-//! the Infantry terminal policy, separate from sprite animation progress.
+//! An infantryman's death: the arm of `InfantryClass::ReceiveDamage`'s death
+//! ladder (`0x00517FA0`) that takes him, its effects
+//! ([`InfantryDeathPostlude`]), and the dead body his death sequence leaves
+//! ([`Simulation::leave_dead_body`]).
 //!
-//! VERA-internal compatibility policy, gamemd equivalent UNCHECKED. Preserve
-//! the existing effect recipe and delivery order while correcting indefinite
-//! retention of effect-only corpses. Native InfantryClass::ReceiveDamage
-//! (0x00517FA0) has additional selectors/particle operations not implemented here.
+//! The Die1/Die2 arms, NotHuman and a refused InfDeath 9 call
+//! `Do_Action(11/12, 1, 0)` and return at `0x005185E5` without UnInit. The
+//! corpse keeps IsAlive (`+0x90`) at Health 0 and has no state of its own:
+//! `InfantryClass::AI` (`0x0051BAB0`) visits it like any infantryman, the
+//! Health reset (`0x0051BC57`) and the mission handlers (`MissionClass::AI`,
+//! `0x005B30A7`) passing it by, until `DoType_Sequencer` (`0x00520AE0`)
+//! leaves its body (`0x00520CA4`) and UnInits it (`0x00520CAD`). The other
+//! arms build their anim and UnInit him at once (`0x00518B9A`).
+//!
+//! RNG on a corpse's visits: the Iron Curtain or airstrike tint draw on the
+//! Scenario stream (`0x006F9EAF`), and PlaceInfantryInCell's draw (`0x00481180`)
+//! in the target-reach step of a CloseRange=, Teleport or Jumpjet corpse
+//! holding a re-acquired target. Both are the ordinary visit's own draws.
+//!
+//! Native InfantryClass::ReceiveDamage has additional selectors/particle
+//! operations not implemented here.
 
 use super::Simulation;
 use crate::map::entities::EntityCategory;
@@ -34,91 +48,6 @@ impl InfantryDeathSequence {
             Self::Die2 => SequenceKind::Die2,
         }
     }
-}
-
-/// An object past its killing hit, or its UnInit, that is still in the
-/// store. VERA-only: native has no such field. Natively the object is at
-/// Health 0 running its death sequence (Infantry `Do_Action(11/12)` from
-/// `InfantryClass::ReceiveDamage` `0x0051850F`/`0x005185DF`/`0x0051863F`, or
-/// a Building's or Unit's death anim), or IsAlive (`+0x90`) is cleared by
-/// `ObjectClass::UnInit @ 0x005F65F0` until the pending delete drains it.
-///
-/// Writers: the death recipes (`begin` from the receiver's non-Infantry SHP
-/// death and from UnInit, `begin_infantry` from the Infantry death arm),
-/// PostMortem's restore (`restore`, `0x00701F60`) and a Crash that keeps a
-/// dying infantryman (`keep_crashing`, `0x005185F1`). Dying objects are
-/// excluded from targeting, pathfinding and selection, and stay cell-marked
-/// until their terminal UnInit.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct TerminalLifetime {
-    dying: bool,
-    /// The Infantry policy for the remaining Logic visits.
-    infantry: Option<InfantryTerminal>,
-}
-
-impl TerminalLifetime {
-    /// The object is dying or dead.
-    pub const fn is_dying(self) -> bool {
-        self.dying
-    }
-
-    /// The Infantry terminal policy, while one is retained.
-    pub const fn infantry_terminal(self) -> Option<InfantryTerminal> {
-        self.infantry
-    }
-
-    /// Mark the object dying: a non-Infantry SHP death sequence, or UnInit.
-    pub(crate) fn begin(&mut self) {
-        self.dying = true;
-    }
-
-    /// Mark an infantryman dying, with the policy for its remaining visits
-    /// when it has one.
-    pub(crate) fn begin_infantry(&mut self, terminal: Option<InfantryTerminal>) {
-        self.dying = true;
-        if terminal.is_some() {
-            self.infantry = terminal;
-        }
-    }
-
-    /// PostMortem's restore (`0x00701F60`): alive again at Health 1.
-    pub(crate) fn restore(&mut self) {
-        self.dying = false;
-    }
-
-    /// A Crash kept the dying infantryman (`0x005185F1`): alive at Health 0,
-    /// falling, with no terminal policy.
-    pub(crate) fn keep_crashing(&mut self) {
-        self.dying = false;
-        self.infantry = None;
-    }
-
-    /// UnInit consumes the Infantry policy before its pointer expiry.
-    pub(crate) fn end_infantry_policy(&mut self) {
-        self.infantry = None;
-    }
-
-    /// Install a fixture's dying mark.
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn set_dying_for_test(&mut self, dying: bool) {
-        self.dying = dying;
-    }
-
-    /// Install a fixture's Infantry policy.
-    #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn set_infantry_terminal_for_test(&mut self, terminal: Option<InfantryTerminal>) {
-        self.infantry = terminal;
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub enum InfantryTerminal {
-    RetireNextVisit,
-    Sequence(InfantryDeathSequence),
-    /// From the arm's choice to its UnInit in
-    /// [`InfantryDeathPostlude::commit`], or to DamageConsequences for a
-    /// callback-disabled receiver fixture.
-    AwaitingConsequences,
 }
 
 enum ReceiverDeathRecipe {
@@ -198,7 +127,8 @@ impl InfantryDeathPostlude {
             // Native5185F1 tests Crashable after both constructors, even
             // when the selected anim arm preceded the JumpJet type gate.
             // A grounded object's Crash refuses; at height1..10 it can retain
-            // the object instead of UnInit. Reuse FootClass's one Crash owner.
+            // the object instead of UnInit, alive at Health 0 and falling.
+            // Reuse FootClass's one Crash owner.
             if let Some(context) = uninit
                 && world
                     .substrate
@@ -208,8 +138,6 @@ impl InfantryDeathPostlude {
                     .is_some_and(|object| object.crashable)
                 && world.foot_crash(self.id, None, rules, context.registry(), context.effects())
             {
-                let entity = world.substrate.entities.get_mut(self.id).unwrap();
-                entity.death.keep_crashing();
                 return;
             }
         }
@@ -578,15 +506,6 @@ impl Simulation {
                 }
             }
         };
-        if !matches!(
-            recipe,
-            ReceiverDeathRecipe::Sequence | ReceiverDeathRecipe::CrashExplode
-        ) {
-            let entity = self.substrate.entities.get_mut(id).unwrap();
-            entity
-                .death
-                .begin_infantry(Some(InfantryTerminal::AwaitingConsequences));
-        }
         InfantryDeathPostlude {
             id,
             location,
@@ -595,33 +514,16 @@ impl Simulation {
         }
     }
 
-    /// Complete the represented raw-kill handoff. Aircraft retirement
-    /// supplies no class action. Bridge fallout uses ReceiveDamage.
-    /// No ReceiveDamage effects are introduced on these compatibility paths.
-    /// Returns false for other categories, whose existing lifetime stays local.
-    #[cfg(any(test, feature = "test-support"))]
-    pub fn begin_raw_infantry_death(&mut self, id: u64) -> bool {
-        let Some(entity) = self.substrate.entities.get_mut(id) else {
-            return false;
-        };
-        if entity.category() != EntityCategory::Infantry {
-            return false;
-        }
-        entity.health.set_for_test(0);
-        // Legacy raw coordinate scans can revisit an UnInit'd object before
-        // pending deletion drains it. Preserve their HP write, but never give
-        // a completed lifetime another scheduled terminal action.
-        let terminal = entity
-            .lifecycle
-            .object_alive()
-            .then_some(InfantryTerminal::RetireNextVisit);
-        entity.death.begin_infantry(terminal);
-        true
-    }
-
-    /// Native Do_Action51D6F0 retains progress for an unchanged action. A
-    /// captured receiver can write a different action after UnInit, without
-    /// restoring Logic membership or canceling its pending deletion.
+    /// The Die1/Die2 arms' `Do_Action(11/12, 1, 0)` (`0x0051850F`,
+    /// `0x005185DF`, `0x0051863F`), whose answer the arm ignores
+    /// (`0x005185E5`). Accepted, it leaves the corpse its ordinary visit runs
+    /// to completion (module docs). Refused, an unchanged action keeps its
+    /// whole Stage, and a sequence with no frames (`0x0051D70F`) keeps the
+    /// previous action: the next visit's Health reset (`0x0051BC57`) then
+    /// raises the infantryman to Health 1, alive.
+    ///
+    /// A captured receiver can write a different action after UnInit,
+    /// without restoring Logic membership or canceling its pending deletion.
     pub fn begin_infantry_death_sequence(
         &mut self,
         id: u64,
@@ -629,75 +531,12 @@ impl Simulation {
         rules: &RuleSet,
         effects: FrameEffects<'_>,
     ) {
-        //ReceiveDamage51850F/5185DF/51863F dispatches DoAction(11/12,1,0).
-        // Its unchanged/absent-sequence refusal retains the whole Stage;
-        // otherwise the one class action owner performs every restart.
         let action = i32::from(crate::rules::infantry_sequence::action_id(
             sequence.animation(),
         ));
         if let Err(cause) = self.infantry_do_action(id, action, true, rules, effects) {
             log::debug!("infantry {id} death Do_Action: {cause}");
         }
-        let Some(entity) = self.substrate.entities.get_mut(id) else {
-            return;
-        };
-        debug_assert_eq!(entity.category(), EntityCategory::Infantry);
-        let terminal = entity
-            .lifecycle
-            .object_alive()
-            .then_some(InfantryTerminal::Sequence(sequence));
-        entity.death.begin_infantry(terminal);
-    }
-
-    /// Consume this object's terminal Logic visit, including eventual UnInit.
-    /// The ordinary sequencer owns every completed class action, including
-    /// corpse creation and UnInit; this host never advances a second clock.
-    ///
-    /// A Die1/Die2 corpse still runs its Techno AI subset each visit (see
-    /// `techno_ai::dying_infantry_techno_ai`); when its sequence completes,
-    /// `InfantryClass 0x00520BC6` leaves a corpse anim, then UnInit.
-    pub(super) fn visit_infantry_terminal(
-        &mut self,
-        id: u64,
-        rules: Option<&RuleSet>,
-        ctx: super::techno_ai::ObjectAiCtx<'_>,
-    ) -> super::techno_ai::ObjectAiOutcome {
-        let Some(entity) = self.substrate.entities.get(id) else {
-            return Default::default();
-        };
-        let Some(terminal) = entity.death.infantry_terminal() else {
-            return Default::default();
-        };
-        debug_assert!(entity.death.is_dying() && entity.category() == EntityCategory::Infantry);
-        let mut outcome = super::techno_ai::ObjectAiOutcome::visited();
-        match terminal {
-            InfantryTerminal::AwaitingConsequences => return outcome,
-            InfantryTerminal::Sequence(_) => {
-                let Some(rules) = rules else {
-                    return outcome;
-                };
-                super::techno_ai::dying_infantry_techno_ai(self, id, rules, ctx);
-                match self.infantry_action_turn(id, rules, ctx.overlay_registry, ctx.effects) {
-                    Ok(receipt) => {
-                        outcome.bridge_state_changed |= receipt.bridge_state_changed;
-                        outcome.destroyed_structure |= receipt.structure_destroyed;
-                    }
-                    Err(cause) => log::debug!("infantry {id} terminal action turn: {cause}"),
-                }
-                return outcome;
-            }
-            InfantryTerminal::RetireNextVisit => {}
-        }
-        if let Some(rules) = rules {
-            self.uninit_with_context(
-                id,
-                super::UninitContext::new(Some(rules), ctx.overlay_registry)
-                    .with_effects(ctx.effects),
-            );
-        } else {
-            self.uninit(id);
-        }
-        outcome
     }
 
     /// `InfantryClass 0x00520BC6..0x00520CA4`, a Die1..Die5 sequence's
@@ -742,6 +581,158 @@ impl Simulation {
             ),
         );
         Some(body)
+    }
+}
+
+#[cfg(test)]
+mod corpse_tests {
+    use super::*;
+    use crate::rules::ini_parser::IniFile;
+
+    /// A GI-drawn E1 on the flat arena, with RadSite radiation (InfDeath 7,
+    /// the `[General] InfantryNuked=` NUKEDIE anim).
+    fn corpse_scene() -> (Simulation, RuleSet, u64) {
+        let ini = crate::sim::arena_fixture::clear_ground_ini(
+            "[InfantryTypes]\n0=E1\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
+             [E1]\nImage=GI\nStrength=100\nSpeed=4\n\
+             [Warheads]\n0=RadSite\n\
+             [RadSite]\nVerses=100%,100%,100%,50%,10%,10%,0%,0%,0%,100%,100%\n\
+             InfDeath=7\nRadiation=yes\n\
+             [Radiation]\nRadDurationMultiple=1\nRadApplicationDelay=16\nRadLevelMax=500\n\
+             RadLevelDelay=90\nRadLevelFactor=.2\nRadSiteWarhead=RadSite\n",
+        );
+        let art = IniFile::from_str(&format!(
+            "{}\n[NUKEDIE]\nEnd=20\n",
+            crate::rules::retail_ini_fixture::GI_ART_EXCERPT
+        ));
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
+        let mut registry = crate::rules::art_data::ArtRegistry::from_ini(&art);
+        registry.bind_anim_frame_count_for_test("NUKEDIE", 20);
+        rules.install_art_data(registry);
+        rules.bind_animation_sequences(
+            &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
+        );
+        let mut sim = Simulation::new();
+        crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
+        let id = sim
+            .spawn_object("E1", "Americans", 5, 5, 0, &rules)
+            .unwrap();
+        (sim, rules, id)
+    }
+
+    /// The killing hit's Die1 arm: Health 0, then `Do_Action(11, 1, 0)`.
+    fn kill_with_die1(sim: &mut Simulation, rules: &RuleSet, id: u64) {
+        let entity = sim.substrate.entities.get_mut(id).unwrap();
+        entity.health.set_for_test(0);
+        sim.begin_infantry_death_sequence(
+            id,
+            InfantryDeathSequence::Die1,
+            rules,
+            FrameEffects::default(),
+        );
+    }
+
+    /// The corpse keeps IsAlive and takes `InfantryClass::AI`'s ordinary
+    /// visit: `MissionClass::AI`'s `+0xC4` count (`0x006FA646`) runs for it
+    /// as for any infantryman.
+    #[test]
+    fn a_corpse_takes_its_ordinary_visit() {
+        let (mut sim, rules, id) = corpse_scene();
+        sim.advance_tick(&[], Some(&rules), None, None, 100);
+        kill_with_die1(&mut sim, &rules, id);
+        let counter = sim.substrate.entities.get(id).unwrap().mission.ai_counter();
+        sim.advance_tick(&[], Some(&rules), None, None, 100);
+        let corpse = sim.substrate.entities.get(id).unwrap();
+        assert!(!corpse.death.is_dying() && corpse.is_active());
+        assert_eq!(corpse.health.current(), 0);
+        assert_eq!(corpse.mission_leaf.as_infantry().unwrap().doing(), 11);
+        assert_eq!(corpse.mission.ai_counter(), counter + 1);
+    }
+
+    /// FootClass::AI's radiation (`0x004DA554..0x004DA635`) has no Health
+    /// gate, and TechnoClass::ReceiveDamage takes a Health-0 receiver to its
+    /// death branch again (`0x0070202E`): a Die1 corpse standing in
+    /// radiation dies anew at the next application, by RadSite's InfDeath 7,
+    /// whose arm builds NUKEDIE and UnInits it before its sequence ends.
+    #[test]
+    fn a_corpse_in_radiation_dies_again_at_the_next_application() {
+        let (mut sim, rules, id) = corpse_scene();
+        sim.session.binary_frame = 10;
+        kill_with_die1(&mut sim, &rules, id);
+        sim.radiation.apply_detonation(
+            crate::sim::radiation::RadDetonation {
+                rx: 5,
+                ry: 5,
+                rad_level: 500,
+                spread: 2,
+            },
+            10,
+            &sim.session.theater,
+            &rules.radiation,
+            sim.resolved_terrain.as_ref(),
+            &mut sim.lighting_sources.pending,
+        );
+        let nukedie = |sim: &Simulation| {
+            sim.anims()
+                .filter(|(_, anim)| sim.interner.resolve(anim.type_id) == "NUKEDIE")
+                .count()
+        };
+        for frame in 10..16 {
+            sim.session.binary_frame = frame;
+            sim.advance_tick(&[], Some(&rules), None, None, 100);
+            assert!(
+                sim.substrate
+                    .entities
+                    .get(id)
+                    .is_some_and(|corpse| corpse.lifecycle.object_alive()),
+                "frame {frame}: no application yet"
+            );
+        }
+        assert_eq!(nukedie(&sim), 0);
+        sim.session.binary_frame = 16;
+        sim.advance_tick(&[], Some(&rules), None, None, 100);
+        assert!(
+            sim.substrate
+                .entities
+                .get(id)
+                .is_none_or(|corpse| !corpse.lifecycle.object_alive())
+        );
+        assert_eq!(nukedie(&sim), 1);
+    }
+
+    /// The zero-count refusal (`0x0051D70F`) that leaves a killed
+    /// infantryman to the Health reset (`0x0051BC57`) meets one retail type:
+    /// every other `[InfantryTypes]` entry has Die1 and Die2 frames once
+    /// `artmd.ini`'s sequences are bound. WEEDGUY has no ART and
+    /// `TechLevel=-1` (rulesmd.ini keeps it to instantiate weapons), so only
+    /// a map that places one can kill it into that revival.
+    #[test]
+    fn retail_infantry_without_die_frames_are_the_weedguy() {
+        let Some(mut rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art()
+        else {
+            return;
+        };
+        let Some(art) = crate::rules::retail_ini_fixture::retail_ini("artmd.ini") else {
+            return;
+        };
+        rules.bind_animation_sequences(
+            &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
+        );
+        assert!(!rules.infantry_ids.is_empty());
+        let without: Vec<&String> = rules
+            .infantry_ids
+            .iter()
+            .filter(|id| {
+                [11, 12].into_iter().any(|action| {
+                    rules
+                        .animation_sequence(id)
+                        .and_then(|set| set.infantry_action(action))
+                        .is_none_or(|record| record.frames_per_facing == 0)
+                })
+            })
+            .collect();
+        assert_eq!(without, ["WEEDGUY"]);
+        assert_eq!(rules.object("WEEDGUY").unwrap().tech_level, -1);
     }
 }
 

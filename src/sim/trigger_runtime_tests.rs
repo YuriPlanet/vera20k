@@ -1041,9 +1041,7 @@ fn retail_sov01_script_context() -> Option<(
         |x, y| {
             let mut cell = crate::map::resolved_terrain::test_flat_cell(x, y);
             cell.land_type = 2;
-            cell.yr_cell_land_type = 2;
             cell.base_land_type = 2;
-            cell.base_yr_cell_land_type = 2;
             cell.terrain_class = water.terrain_class;
             cell.base_terrain_class = water.terrain_class;
             cell.speed_costs = water.speed_costs;

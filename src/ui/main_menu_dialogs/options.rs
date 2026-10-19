@@ -52,8 +52,8 @@ pub(crate) const LAUNCHER_LABEL_SPECS: [(&str, &str); 30] = [
 ];
 
 /// VERA's own captions and status help on this page. The retail string table
-/// has nothing for full screen, zoom or the battle shape, so these are English
-/// everywhere.
+/// has nothing for full screen, zoom, the battle shape or the Red Alert 2
+/// loading screen and menu movie, so these are English everywhere.
 pub(crate) const ZOOM_LABEL: &str = "Zoom";
 pub(crate) const ZOOM_HELP: &str =
     "How big battles look. Auto picks the best size for your screen.";
@@ -64,6 +64,8 @@ pub(crate) const FULL_SCREEN_HELP: &str = "Fill the whole screen. Untick it to p
 pub(crate) const ORIGINAL_SHAPE_LABEL: &str = "Original 4:3 Shape";
 pub(crate) const ORIGINAL_SHAPE_HELP: &str =
     "Battles keep the original 4:3 shape, with bars on wide screens.";
+pub(crate) const RA2_LOOK_LABEL: &str = "RA2 Loading & Menu Movie";
+pub(crate) const RA2_LOOK_HELP: &str = "Show the Red Alert 2 loading screen and menu movie.";
 
 /// VERA's battle zoom: the Options combo that took the place of gamemd's
 /// resolution list (`0x005601A0..0x00560270`). The window keeps the size the
@@ -332,6 +334,10 @@ pub(crate) enum LauncherCheckboxId {
     /// VERA's own box: battles keep gamemd's 4:3 screen shape instead of the
     /// window's. Like Full Screen, it applies at once.
     OriginalShape,
+    /// VERA's own box: the startup splash and the menu movie use Red Alert 2's
+    /// art instead of Yuri's Revenge's. The movie changes at once; the splash,
+    /// drawn before any menu, at the next launch.
+    Ra2Look,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -353,6 +359,7 @@ pub(crate) enum LauncherOptionsEvent {
     SidebarSelected(SidebarSize),
     FullScreenChanged(bool),
     OriginalShapeChanged(bool),
+    Ra2LookChanged(bool),
     ScorePreview(f32),
     SoundPreview(f32),
     VoicePreview(f32),
@@ -386,6 +393,7 @@ pub(crate) struct LauncherOptionsValues {
     /// The window's state when the page opened, then each toggle.
     pub(crate) full_screen: bool,
     pub(crate) original_shape: bool,
+    pub(crate) ra2_look: bool,
     /// The Sidebar list's choice; like Zoom, it applies at once.
     pub(crate) sidebar: SidebarSize,
     pub(crate) score_position: u8,
@@ -404,6 +412,7 @@ impl Default for LauncherOptionsValues {
             show_hidden: false,
             full_screen: false,
             original_shape: false,
+            ra2_look: false,
             sidebar: SidebarSize::Normal,
             score_position: 4,
             sound_position: 7,
@@ -688,6 +697,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::ShowHidden => &mut self.values.show_hidden,
             LauncherCheckboxId::FullScreen => &mut self.values.full_screen,
             LauncherCheckboxId::OriginalShape => &mut self.values.original_shape,
+            LauncherCheckboxId::Ra2Look => &mut self.values.ra2_look,
         };
         *slot = !*slot;
         let checked = *slot;
@@ -700,6 +710,9 @@ impl OptionsDialogState {
             LauncherCheckboxId::OriginalShape => self
                 .pending_events
                 .push(LauncherOptionsEvent::OriginalShapeChanged(checked)),
+            LauncherCheckboxId::Ra2Look => self
+                .pending_events
+                .push(LauncherOptionsEvent::Ra2LookChanged(checked)),
             LauncherCheckboxId::Tooltips
             | LauncherCheckboxId::TargetLines
             | LauncherCheckboxId::ShowHidden => {}
@@ -1150,6 +1163,25 @@ mod tests {
         }
         // Applied at once, so the accepted pack never carries it.
         state.checkbox_mouse_down(LauncherCheckboxId::OriginalShape, frame(5, 5, 195, 16));
+        assert_eq!(state.pack(), self::state(true).pack());
+    }
+
+    #[test]
+    fn ra2_look_box_reports_each_toggle_after_its_cue() {
+        let mut state = state(true);
+        for checked in [true, false] {
+            state.checkbox_mouse_down(LauncherCheckboxId::Ra2Look, frame(5, 5, 195, 16));
+            assert_eq!(state.values.ra2_look, checked);
+            assert_eq!(
+                state.drain_output().events,
+                [
+                    LauncherOptionsEvent::Cue(LauncherCue::Checkbox),
+                    LauncherOptionsEvent::Ra2LookChanged(checked),
+                ]
+            );
+        }
+        // Applied at once, so the accepted pack never carries it.
+        state.checkbox_mouse_down(LauncherCheckboxId::Ra2Look, frame(5, 5, 195, 16));
         assert_eq!(state.pack(), self::state(true).pack());
     }
 

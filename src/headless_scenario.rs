@@ -2717,7 +2717,7 @@ mod retail_construction_tests {
                 .sim()
                 .entities()
                 .get(tanya)
-                .is_some_and(|tanya| !tanya.death.is_dying()),
+                .is_some_and(|tanya| !tanya.death.is_dying() && tanya.health.current() > 0),
             "Tanya died"
         );
     }

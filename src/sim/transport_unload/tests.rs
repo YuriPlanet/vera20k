@@ -79,9 +79,7 @@ fn water_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
     let mut cell = clear_cell(rx, ry);
     let water = LandType::Water.as_index();
     cell.land_type = water;
-    cell.yr_cell_land_type = water;
     cell.base_land_type = water;
-    cell.base_yr_cell_land_type = water;
     cell.is_water = true;
     cell.terrain_class = TerrainClass::Water;
     cell.base_terrain_class = TerrainClass::Water;

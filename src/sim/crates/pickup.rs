@@ -183,7 +183,7 @@ fn crate_land_type(sim: &Simulation, cell: (i16, i16)) -> u8 {
         .as_ref()
         .and_then(|terrain| terrain.cell(rx, ry))
         .map_or(LandType::Clear.as_index(), |terrain_cell| {
-            terrain_cell.yr_cell_land_type
+            terrain_cell.land_type
         })
 }
 

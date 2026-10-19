@@ -128,9 +128,7 @@ fn put_on_deck(sim: &mut Simulation, rules: &RuleSet, id: u64, water: bool) {
     if water {
         cell.is_water = true;
         cell.land_type = LandType::Water.as_index();
-        cell.yr_cell_land_type = cell.land_type;
         cell.base_land_type = cell.land_type;
-        cell.base_yr_cell_land_type = cell.land_type;
     }
     let entity = sim.substrate.entities.get_mut(id).unwrap();
     let at = ground_pose::position_world_coord(&entity.position);

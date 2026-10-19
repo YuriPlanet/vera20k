@@ -846,7 +846,7 @@ impl Simulation {
             } else {
                 heading
             };
-            let facing = (((u32::from(heading) >> 7) + 1) >> 1) as u8;
+            let facing = crate::util::direction_tables::round_facing16_to_8(heading);
             loop {
                 let target = self.canonical_team_cell(cell);
                 let coord = self

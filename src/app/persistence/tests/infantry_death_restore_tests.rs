@@ -1,132 +1,9 @@
-//! Terminal policy and progress through the production load preparation route.
+//! Infantry death progress through the production load preparation route.
 use super::*;
-use crate::sim::world::{InfantryDeathSequence, InfantryTerminal};
+use crate::sim::world::InfantryDeathSequence;
 
 #[test]
-fn infantry_terminal_held_factory_restore_waits_for_release_before_retiring() {
-    use crate::sim::house_state::HouseState;
-    use crate::sim::production::{
-        ProductionCategory, dispatch_production_changes_for_tests, enqueue_by_type,
-    };
-    let rules = RuleSet::from_ini(&crate::sim::arena_fixture::clear_ground_ini(
-        "[Countries]\n0=Americans\n[InfantryTypes]\n0=E1\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n0=BARR\n\
-         [E1]\nStrength=100\nSpeed=4\nCost=200\nTechLevel=1\nOwner=Americans\nLocomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n\
-         [BARR]\nOwner=Americans\nStrength=1000\nFoundation=1x1\nFactory=InfantryType\nExitCoord=256,0,0\n",
-    ))
-    .unwrap();
-    let (mut saved, terrain) = terminal_load_world(&rules);
-    // The generic retained-policy load fixture supplies LocalSize, but the
-    // real barracks GetDock consumer also needs Map::Size for InBounds.
-    saved.playfield_bounds.as_mut().unwrap().base = 2;
-    saved.playfield_size_height = Some(4);
-    let owner = saved.interner.intern("Americans");
-    saved
-        .houses
-        .insert(owner, HouseState::new(owner, 0, None, true, 50_000, 10));
-    saved.session.house_order.push(owner);
-    let barracks = saved
-        .spawn_object_at_height("BARR", "Americans", 1, 1, 0, 0, &rules)
-        .unwrap();
-    // Supply a completed, online producer; this test isolates terminal policy
-    // persistence from the separate building-construction lifecycle.
-    let building = saved.substrate.entities.get_mut(barracks).unwrap();
-    building.finish_building_construction_for_test();
-    building.building_art.set_actually_placed_for_test(true);
-    saved.append_house_base_building_for_test(barracks);
-    assert!(enqueue_by_type(
-        &mut saved,
-        &rules,
-        "Americans",
-        "E1",
-        crate::sim::world::FrameEffects::default(),
-        false,
-    ));
-    let held = saved
-        .production
-        .factories
-        .view(owner, ProductionCategory::Infantry)
-        .unwrap()
-        .object
-        .unwrap()
-        .entity_id
-        .unwrap();
-    // Characterize retained-limbo raw policy and its release owner. This uses
-    // the raw handoff directly, not a bridge-dispatch reachability fixture.
-    assert!(saved.begin_raw_infantry_death(held));
-    let object = saved.substrate.entities.get(held).unwrap();
-    assert!(object.lifecycle.in_limbo() && !object.in_logic_vector.is_member());
-    saved.scenario_rng = crate::sim::rng::SimRng::new(0);
-    let bytes = snapshot_bytes(&saved, &rules);
-    let registry = OverlayTypeRegistry::empty();
-    let mut restored = PreparedLoad::prepare_candidate(
-        &bytes,
-        Some(&saved),
-        Some(LOAD_FIXTURE_MAP_HASH),
-        Some(&rules),
-        Some(&terrain),
-        Some(&registry),
-    )
-    .expect("retained terminal policy has a factory release owner")
-    .simulation;
-    let object = restored.substrate.entities.get(held).unwrap();
-    assert!(object.lifecycle.in_limbo() && !object.in_logic_vector.is_member());
-    assert_eq!(
-        object.death.infantry_terminal(),
-        Some(InfantryTerminal::RetireNextVisit)
-    );
-    restored.advance_tick(&[], Some(&rules), None, None, 100);
-    let object = restored
-        .substrate
-        .entities
-        .get(held)
-        .expect("held lifetime waits for release");
-    assert!(object.lifecycle.in_limbo() && !object.in_logic_vector.is_member());
-    assert_eq!(
-        object.death.infantry_terminal(),
-        Some(InfantryTerminal::RetireNextVisit)
-    );
-    assert_eq!(
-        restored
-            .production
-            .factories
-            .view(owner, ProductionCategory::Infantry)
-            .unwrap()
-            .object
-            .unwrap()
-            .entity_id,
-        Some(held)
-    );
-    assert!(
-        restored
-            .production
-            .factories
-            .test_arm_ready(owner, ProductionCategory::Infantry)
-    );
-    dispatch_production_changes_for_tests(&mut restored, &rules, Some(&registry));
-    let object = restored
-        .substrate
-        .entities
-        .get(held)
-        .expect("release retains the identity");
-    assert!(!object.lifecycle.in_limbo() && object.in_logic_vector.is_member());
-    assert_eq!(
-        object.death.infantry_terminal(),
-        Some(InfantryTerminal::RetireNextVisit)
-    );
-    assert!(
-        restored
-            .production
-            .factories
-            .view(owner, ProductionCategory::Infantry)
-            .is_none_or(|view| view.object.is_none())
-    );
-    restored.advance_tick(&[], Some(&rules), None, None, 100);
-    assert!(!restored.substrate.entities.contains(held));
-    assert!(!restored.live_object_order_snapshot().contains(&held));
-}
-
-#[test]
-fn infantry_terminal_fatal_frame_exit_preserves_delivered_cleanup_through_load() {
+fn infantry_fatal_frame_exit_preserves_delivered_cleanup_through_load() {
     use crate::sim::command::{Command, CommandEnvelope};
     use crate::sim::house_state::HouseState;
     use crate::sim::world::{LifecycleTestEvent, SimSoundEvent, TickLane};
@@ -144,7 +21,7 @@ fn infantry_terminal_fatal_frame_exit_preserves_delivered_cleanup_through_load()
     ));
     art.bind_anim_frame_count_for_test("DEATHTEST", 80);
     rules.replace_art_registry_for_test(art);
-    let (mut saved, terrain) = terminal_load_world(&rules);
+    let (mut saved, terrain) = death_load_world(&rules);
     saved.input_delay_ticks = 0;
     let owner = saved.interner.intern("Americans");
     saved
@@ -188,7 +65,7 @@ fn infantry_terminal_fatal_frame_exit_preserves_delivered_cleanup_through_load()
     assert!(
         object.death.is_dying() && object.lifecycle.in_limbo() && !object.lifecycle.object_alive()
     );
-    assert!(object.death.infantry_terminal().is_none() && !object.in_logic_vector.is_member());
+    assert!(!object.in_logic_vector.is_member());
     assert!(!saved.substrate.occupancy.contains_entity(2, 1, victim));
     assert_eq!(
         saved
@@ -266,13 +143,11 @@ fn infantry_terminal_fatal_frame_exit_preserves_delivered_cleanup_through_load()
         SimSoundEvent::AnimationStarted { sound_id, .. } if sound_id == "DEATHREPORT")));
 }
 
+/// A corpse saved mid-sequence keeps its action and Stage through the load
+/// and reaches its sequencer's UnInit on the same visit as the saved world.
 #[test]
-fn infantry_terminal_prepared_load_preserves_policy_progress_and_cleanup_visit() {
-    for terminal in [
-        InfantryTerminal::RetireNextVisit,
-        InfantryTerminal::Sequence(InfantryDeathSequence::Die1),
-        InfantryTerminal::Sequence(InfantryDeathSequence::Die2),
-    ] {
+fn infantry_prepared_load_preserves_death_sequence_progress_and_cleanup_visit() {
+    for sequence in [InfantryDeathSequence::Die1, InfantryDeathSequence::Die2] {
         // An authored three-frame death goes through the same native ART
         // reader as the physical GI records, rather than a sprite-only edit.
         let art = IniFile::from_str(
@@ -292,59 +167,42 @@ fn infantry_terminal_prepared_load_preserves_policy_progress_and_cleanup_visit()
         rules.bind_animation_sequences(
             &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
         );
-        let (mut saved, terrain) = terminal_load_world(&rules);
+        let (mut saved, terrain) = death_load_world(&rules);
         let victim = saved
             .spawn_object_at_height("E1", "Americans", 1, 1, 0, 0, &rules)
             .unwrap();
-        let remaining_visits = match terminal {
-            InfantryTerminal::AwaitingConsequences => unreachable!("not a save boundary"),
-            InfantryTerminal::RetireNextVisit => {
-                assert!(saved.begin_raw_infantry_death(victim));
-                1
-            }
-            InfantryTerminal::Sequence(sequence) => {
-                saved
-                    .substrate
-                    .entities
-                    .get_mut(victim)
-                    .unwrap()
-                    .health
-                    .set_for_test(0);
-                saved.begin_infantry_death_sequence(
-                    victim,
-                    sequence,
-                    &rules,
-                    crate::sim::world::FrameEffects::default(),
-                );
-                // DoAction starts the native one-frame countdown at frame0.
-                // Its frame0 Logic visit holds; frame1 performs the first step.
-                saved.advance_tick(&[], Some(&rules), None, None, 100);
-                assert_eq!(
-                    saved
-                        .substrate
-                        .entities
-                        .get(victim)
-                        .unwrap()
-                        .native_stage()
-                        .value(),
-                    0
-                );
-                saved.advance_tick(&[], Some(&rules), None, None, 100);
-                assert_eq!(
-                    saved
-                        .substrate
-                        .entities
-                        .get(victim)
-                        .unwrap()
-                        .native_stage()
-                        .value(),
-                    1
-                );
-                2
-            }
-        };
+        saved
+            .substrate
+            .entities
+            .get_mut(victim)
+            .unwrap()
+            .health
+            .set_for_test(0);
+        saved.begin_infantry_death_sequence(
+            victim,
+            sequence,
+            &rules,
+            crate::sim::world::FrameEffects::default(),
+        );
+        // DoAction starts the native one-frame countdown at frame0.
+        // Its frame0 Logic visit holds; frame1 performs the first step.
+        saved.advance_tick(&[], Some(&rules), None, None, 100);
+        assert_eq!(
+            saved
+                .substrate
+                .entities
+                .get(victim)
+                .unwrap()
+                .native_stage()
+                .value(),
+            0
+        );
+        saved.advance_tick(&[], Some(&rules), None, None, 100);
+        let corpse = saved.substrate.entities.get(victim).unwrap();
+        assert_eq!(corpse.native_stage().value(), 1);
+        let doing = corpse.mission_leaf.as_infantry().unwrap().doing();
         // Native in-scenario load restarts Scenario RNG at zero. Compare the
-        // terminal continuation from that same cursor rather than hide reset.
+        // death's continuation from that same cursor rather than hide reset.
         saved.scenario_rng = crate::sim::rng::SimRng::new(0);
         let bytes = snapshot_bytes(&saved, &rules);
         let registry = OverlayTypeRegistry::empty();
@@ -358,23 +216,18 @@ fn infantry_terminal_prepared_load_preserves_policy_progress_and_cleanup_visit()
         )
         .expect("actual validate/deserialize/restore/rebuild preparation")
         .simulation;
-        assert_eq!(
-            restored
-                .substrate
-                .entities
-                .get(victim)
-                .unwrap()
-                .death
-                .infantry_terminal(),
-            Some(terminal)
-        );
-        for visit in 1..=remaining_visits {
+        let corpse = restored.substrate.entities.get(victim).unwrap();
+        assert_eq!(corpse.mission_leaf.as_infantry().unwrap().doing(), doing);
+        assert_eq!(corpse.native_stage().value(), 1);
+        assert_eq!(corpse.health.current(), 0);
+        assert!(!corpse.death.is_dying() && corpse.lifecycle.object_alive());
+        for visit in 1..=2 {
             saved.advance_tick(&[], Some(&rules), None, None, 100);
             restored.advance_tick(&[], Some(&rules), None, None, 100);
             assert_eq!(
                 restored.substrate.entities.contains(victim),
-                visit < remaining_visits,
-                "{terminal:?}, visit {visit}"
+                visit < 2,
+                "{sequence:?}, visit {visit}"
             );
             assert_eq!(
                 saved.substrate.entities.contains(victim),
@@ -384,7 +237,7 @@ fn infantry_terminal_prepared_load_preserves_policy_progress_and_cleanup_visit()
             assert_eq!(
                 saved.state_hash(),
                 restored.state_hash(),
-                "{terminal:?}, visit {visit}"
+                "{sequence:?}, visit {visit}"
             );
         }
         assert!(!restored.substrate.occupancy.contains_entity(1, 1, victim));
@@ -392,7 +245,7 @@ fn infantry_terminal_prepared_load_preserves_policy_progress_and_cleanup_visit()
     }
 }
 
-fn terminal_load_world(rules: &RuleSet) -> (Simulation, ResolvedTerrainGrid) {
+fn death_load_world(rules: &RuleSet) -> (Simulation, ResolvedTerrainGrid) {
     let terrain = ResolvedTerrainGrid::from_cells(
         4,
         4,

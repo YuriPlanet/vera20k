@@ -763,7 +763,7 @@ mod tests {
     }
 
     mod factory_restore_tests;
-    mod infantry_terminal_restore_tests;
+    mod infantry_death_restore_tests;
     mod rule_cache_restore_tests;
     mod sidebar_order_restore_tests;
     mod sinking_waterline_restore_tests;

@@ -115,7 +115,9 @@ impl<'a> BounceTerrain for ResolvedBounceTerrain<'a> {
 
     fn is_water(&self, coord: IVec3) -> bool {
         match self.select_cell(coord) {
-            CellRef::Real(cell) => cell.yr_cell_land_type == 2,
+            CellRef::Real(cell) => {
+                cell.land_type == crate::rules::terrain_rules::LandType::Water.as_index()
+            }
             // Constructor dummy land is Clear; no modelled live writer changes it.
             CellRef::Dummy { .. } => false,
         }

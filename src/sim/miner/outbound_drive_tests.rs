@@ -129,12 +129,10 @@ fn resolved_cell(
 ) -> ResolvedTerrainCell {
     ResolvedTerrainCell {
         land_type,
-        yr_cell_land_type: land_type,
         terrain_class,
         speed_costs,
         zone_type: zone_class::GROUND,
         base_land_type: LandType::Clear.as_index(),
-        base_yr_cell_land_type: LandType::Clear.as_index(),
         base_terrain_class: TerrainClass::Clear,
         base_speed_costs: speed_costs,
         ..crate::map::resolved_terrain::test_flat_cell(rx, ry)
@@ -167,7 +165,6 @@ fn staged_terrain(
         let cell = terrain.cell_mut(rx, ry).expect("staged ore cell");
         let tiberium_land_type = LandType::Tiberium.as_index();
         cell.land_type = tiberium_land_type;
-        cell.yr_cell_land_type = tiberium_land_type;
         cell.terrain_class = TerrainClass::Tiberium;
         cell.speed_costs = oracle.tiberium_speed_costs;
         cell.allows_tiberium = true;
@@ -251,12 +248,10 @@ fn rock_where_grid_blocks(sim: &mut Simulation, grid: &PathGrid) {
                 .and_then(|terrain| terrain.cell_mut(rx, ry))
                 .expect("staged cell");
             cell.land_type = LandType::Rock.as_index();
-            cell.yr_cell_land_type = LandType::Rock.as_index();
             cell.terrain_class = TerrainClass::Rock;
             cell.speed_costs = rock;
             cell.zone_type = zone_class::IMPASSABLE;
             cell.base_land_type = LandType::Rock.as_index();
-            cell.base_yr_cell_land_type = LandType::Rock.as_index();
             cell.base_terrain_class = TerrainClass::Rock;
             cell.base_speed_costs = rock;
         }

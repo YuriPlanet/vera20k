@@ -260,7 +260,7 @@ impl Simulation {
 
     fn command_uses_megamission(command: &Command) -> bool {
         if let Command::PlanningRecord { record } = command {
-            return record.opcode() == 4;
+            return record.opcode() == crate::sim::command::MEGAMISSION_OPCODE;
         }
         command.megamission_actor().is_some()
     }
@@ -467,22 +467,12 @@ impl Simulation {
                     {
                         continue;
                     }
-                    let coord_z = crate::sim::movement::ground_pose::object_world_z_leptons(
-                        entity,
-                        Some(terrain),
-                    );
+                    let location =
+                        crate::sim::movement::ground_pose::object_location(entity, Some(terrain));
                     members.push(group_destination::GroupDestinationMember {
                         command_index,
                         entity_id,
-                        coord: [
-                            i32::from(entity.position.rx())
-                                .wrapping_mul(256)
-                                .wrapping_add(entity.position.sub_x().to_num::<i32>()),
-                            i32::from(entity.position.ry())
-                                .wrapping_mul(256)
-                                .wrapping_add(entity.position.sub_y().to_num::<i32>()),
-                            coord_z,
-                        ],
+                        coord: [location.x, location.y, location.z],
                         source_cell: (entity.position.rx() as i16, entity.position.ry() as i16),
                     });
                 }

@@ -97,6 +97,7 @@ pub mod radio; // RadioMessage / RadioResponse / RadioPayload
 //     special locomotors, drive tracks, turret rotation ---
 pub mod movement;
 pub mod pathfinding; // A* search, zone connectivity, terrain speed, path smoothing
+pub mod psychic_detection;
 pub mod projectile; // serialized BulletClass-style flight state and detonation handoff
 pub mod wave; // serialized WaveClass-style display registrations and lifetime
 

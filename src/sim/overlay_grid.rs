@@ -2449,7 +2449,6 @@ mod tests {
                 filled_clear: true,
                 tileset_index: None,
                 land_type: base_land_type,
-                yr_cell_land_type: base_land_type,
                 terrain_class,
                 speed_costs,
                 is_water,
@@ -2459,7 +2458,6 @@ mod tests {
                 zone_type: zone_class::GROUND,
                 base_ground_walk_blocked,
                 base_land_type,
-                base_yr_cell_land_type: base_land_type,
                 base_terrain_class: terrain_class,
                 base_speed_costs: speed_costs,
                 ..crate::map::resolved_terrain::test_flat_cell(0, 0)
@@ -3643,7 +3641,7 @@ NoUseTileLandType=yes
                 }
                 let cell = terrain.cell(0, 0).unwrap();
                 assert_eq!(cell.land_type, land.as_index());
-                assert_eq!(cell.yr_cell_land_type, land.as_index());
+                assert_eq!(cell.land_type, land.as_index());
                 assert_eq!(cell.terrain_class, land.terrain_class());
                 assert_eq!(cell.speed_costs, expected_speed);
                 assert_eq!(cell.is_water, land.is_water());
@@ -3686,12 +3684,10 @@ NoUseTileLandType=yes
                 filled_clear: true,
                 tileset_index: None,
                 land_type: clear_lt,
-                yr_cell_land_type: clear_lt,
                 speed_costs: base_speed,
                 accepts_smudge: true,
                 zone_type: zone_class::GROUND,
                 base_land_type: clear_lt,
-                base_yr_cell_land_type: clear_lt,
                 base_terrain_class: TerrainClass::Clear,
                 base_speed_costs: base_speed,
                 ..crate::map::resolved_terrain::test_flat_cell(rx, ry)
@@ -3718,7 +3714,7 @@ NoUseTileLandType=yes
         let idx = 5 * 10 + 5;
         let cell = &terrain.cells[idx];
         assert_eq!(cell.land_type, tib_lt, "land_type → Tiberium");
-        assert_eq!(cell.yr_cell_land_type, tib_lt, "yr_cell_land_type → 5");
+        assert_eq!(cell.land_type, tib_lt, "land_type → 5");
         assert_eq!(cell.terrain_class, TerrainClass::Tiberium);
         assert_eq!(
             cell.speed_costs, tib_speed,
@@ -3733,7 +3729,7 @@ NoUseTileLandType=yes
         assert!(changed, "tiberium removal must report a change");
         let cell = &terrain.cells[idx];
         assert_eq!(cell.land_type, clear_lt, "land_type → underlying Clear");
-        assert_eq!(cell.yr_cell_land_type, clear_lt);
+        assert_eq!(cell.land_type, clear_lt);
         assert_eq!(cell.terrain_class, TerrainClass::Clear);
         assert_eq!(
             cell.speed_costs, base_speed,

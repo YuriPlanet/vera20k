@@ -9,6 +9,12 @@
 //! player removal are session-owner boundaries: due `0x13` records reach the
 //! generic execute callback, but this module does not claim that callback alone
 //! reproduces the native EXIT path.
+//!
+//! Production does not run this queue yet. Matches schedule commands through
+//! `Simulation::queue_command` (`sim/world/command_schedule.rs`) and share only
+//! [`SynchronizedCommand::decode_for_simulation`] with it. The queue, the
+//! scheduler, the send policy and the dispatch house are kept for the native
+//! multiplayer transport.
 
 use std::collections::VecDeque;
 use std::mem::size_of;
@@ -21,7 +27,6 @@ use serde::{Deserialize, Serialize};
 use crate::sim::command::{CommandRecord, CommandRecordError};
 use crate::sim::intern::InternedId;
 
-pub const MEGAMISSION_EVENT_OPCODE: u8 = 0x04;
 pub const FRAMEINFO_EVENT_OPCODE: u8 = 0x1c;
 pub const CHECKSUM_HISTORY_LEN: usize = 0x100;
 pub const OUT_LIST_CAPACITY: usize = 0x80;
@@ -314,7 +319,7 @@ impl SynchronizedCommand {
 
     #[cfg(any(test, feature = "test-support"))]
     fn stages_as_megamission(&self) -> bool {
-        self.record.opcode() == MEGAMISSION_EVENT_OPCODE
+        self.record.opcode() == crate::sim::command::MEGAMISSION_OPCODE
     }
 
     #[cfg(any(test, feature = "test-support"))]

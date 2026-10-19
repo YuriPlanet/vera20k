@@ -376,7 +376,12 @@ const MIN_DISTINCT_DECK_CELLS: usize = 6;
 // temporary control feeding the hasher the two empty fields the arrived tank
 // held gave the previous value in the same test binary, with every tripwire
 // above green. Control removed. Previous: 0x9817_453A_929A_AC66.
-const BRIDGE_HARNESS_FINAL_HASH: u64 = 0x2FA1_7717_C31C_CF39;
+// Snapshot 428 drops the Infantry terminal policy, which every entity's fold
+// hashed (absent for each here). Hash composition only: a temporary control
+// feeding the hasher that absent policy gave the previous value in the same
+// test binary, with every tripwire above green. Control removed.
+// Previous: 0x2FA1_7717_C31C_CF39.
+const BRIDGE_HARNESS_FINAL_HASH: u64 = 0xED02_4584_1661_7711;
 
 fn bridge_ini() -> IniFile {
     // One armed ground vehicle and one distant infantryman on a second house, so

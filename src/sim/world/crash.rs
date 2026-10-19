@@ -17,7 +17,7 @@
 //! (`movement::jumpjet_movement::jumpjet_flight`) and its impact notice finishes it
 //! ([`Simulation::jumpjet_crash_impact`]). A `Crashable=` `JumpJet=`
 //! infantryman crashes from `InfantryClass::ReceiveDamage` (`0x005185F1`,
-//! `world::infantry_terminal`) and falls and lands in its AirDeath actions
+//! `world::infantry_death`) and falls and lands in its AirDeath actions
 //! (`movement::infantry_action`).
 //!
 //! While it falls a wreck keeps the AI its native IsAlive (`+0x90`) gates: the
@@ -537,7 +537,7 @@ impl Simulation {
             .as_ref()
             .and_then(|terrain| terrain.cell(entity.position.rx(), entity.position.ry()))
             .is_some_and(|cell| {
-                cell.yr_cell_land_type == crate::rules::terrain_rules::LandType::Water.as_index()
+                cell.land_type == crate::rules::terrain_rules::LandType::Water.as_index()
             });
         let object = self.object_type(entity.type_ref(), rules);
         let sound = if water {

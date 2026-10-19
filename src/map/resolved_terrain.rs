@@ -94,8 +94,6 @@ pub use tests::{
 };
 pub(crate) use tubes::NativeTubeRegistryBindError;
 
-pub const YR_CELL_LAND_TUNNEL: u8 = 10;
-
 /// Exact overlay portion of RecalcZoneType. `Some(GROUND)` is the terminal
 /// IsRubble result and is intentionally distinct from no overlay result.
 pub(crate) fn overlay_reduced_zone_type(flags: Option<&OverlayTypeFlags>) -> Option<u8> {
@@ -194,12 +192,9 @@ pub struct ResolvedTerrainCell {
     pub level: u8,
     pub filled_clear: bool,
     pub tileset_index: Option<u16>,
-    /// Canonical effective LandType after TMP and overlay derivation.
+    /// CellClass+0xEC LandType after TMP and overlay derivation. Reduced
+    /// `zone_type`, not this field, selects the movement matrix column.
     pub land_type: u8,
-    /// Retained CellClass LandType mirror for binary-derived predicates and
-    /// compatibility consumers. Reduced `zone_type`, not either Land field,
-    /// selects the movement matrix column.
-    pub yr_cell_land_type: u8,
     pub slope_type: u8,
     /// Registered pristine TMP +0x28 height field (CellClass-owned).
     pub template_height: u8,
@@ -259,9 +254,6 @@ pub struct ResolvedTerrainCell {
     /// when an ore overlay is fully harvested (or any other overlay removed).
     /// Same pattern as `base_ground_walk_blocked`.
     pub base_land_type: u8,
-    /// Underlying `yr_cell_land_type` (binary CellClass+0xEC) before overlay
-    /// overrides.
-    pub base_yr_cell_land_type: u8,
     /// Underlying terrain classification before overlay overrides.
     pub base_terrain_class: TerrainClass,
     /// Underlying terrain speed-cost profile before overlay overrides. Restored
@@ -323,7 +315,7 @@ impl ResolvedTerrainCell {
     }
 
     pub fn is_low_bridge_tube_cell(&self) -> bool {
-        self.tube_index.is_some() && self.yr_cell_land_type == YR_CELL_LAND_TUNNEL
+        self.tube_index.is_some() && self.land_type == LandType::Tunnel.as_index()
     }
 }
 
@@ -433,7 +425,6 @@ pub struct DynamicTerrainCellState {
     pub filled_clear: bool,
     pub tileset_index: Option<u16>,
     pub land_type: u8,
-    pub yr_cell_land_type: u8,
     pub slope_type: u8,
     pub template_height: u8,
     pub height_in_pixels: i8,
@@ -457,7 +448,6 @@ pub struct DynamicTerrainCellState {
     pub base_ground_walk_blocked: bool,
     pub base_build_blocked: bool,
     pub base_land_type: u8,
-    pub base_yr_cell_land_type: u8,
     pub base_terrain_class: TerrainClass,
     pub base_speed_costs: SpeedCostProfile,
     pub has_bridge_deck: bool,
@@ -481,7 +471,6 @@ impl DynamicTerrainCellState {
             filled_clear: cell.filled_clear,
             tileset_index: cell.tileset_index,
             land_type: cell.land_type,
-            yr_cell_land_type: cell.yr_cell_land_type,
             slope_type: cell.slope_type,
             template_height: cell.template_height,
             height_in_pixels: cell.height_in_pixels,
@@ -505,7 +494,6 @@ impl DynamicTerrainCellState {
             base_ground_walk_blocked: cell.base_ground_walk_blocked,
             base_build_blocked: cell.base_build_blocked,
             base_land_type: cell.base_land_type,
-            base_yr_cell_land_type: cell.base_yr_cell_land_type,
             base_terrain_class: cell.base_terrain_class,
             base_speed_costs: cell.base_speed_costs,
             has_bridge_deck: cell.has_bridge_deck,
@@ -528,7 +516,6 @@ impl DynamicTerrainCellState {
         cell.filled_clear = self.filled_clear;
         cell.tileset_index = self.tileset_index;
         cell.land_type = self.land_type;
-        cell.yr_cell_land_type = self.yr_cell_land_type;
         cell.slope_type = self.slope_type;
         cell.template_height = self.template_height;
         cell.height_in_pixels = self.height_in_pixels;
@@ -552,7 +539,6 @@ impl DynamicTerrainCellState {
         cell.base_ground_walk_blocked = self.base_ground_walk_blocked;
         cell.base_build_blocked = self.base_build_blocked;
         cell.base_land_type = self.base_land_type;
-        cell.base_yr_cell_land_type = self.base_yr_cell_land_type;
         cell.base_terrain_class = self.base_terrain_class;
         cell.base_speed_costs = self.base_speed_costs;
         cell.has_bridge_deck = self.has_bridge_deck;
@@ -825,7 +811,6 @@ pub fn test_flat_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
         filled_clear: false,
         tileset_index: Some(0),
         land_type: 0,
-        yr_cell_land_type: 0,
         slope_type: 0,
         template_height: 0,
         render_offset_x: 0,
@@ -852,7 +837,6 @@ pub fn test_flat_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
         base_ground_walk_blocked: false,
         base_build_blocked: false,
         base_land_type: 0,
-        base_yr_cell_land_type: 0,
         base_terrain_class: Default::default(),
         base_speed_costs: Default::default(),
         has_bridge_deck: false,

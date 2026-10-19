@@ -56,11 +56,11 @@ mod ion_blast;
 mod spotlight;
 pub(crate) use house_base::HouseBaseState;
 pub use spotlight::BuildingSpotlight;
-mod infantry_terminal;
+mod infantry_death;
 mod jumpjet_cruise;
+pub use infantry_death::InfantryDeathPostlude;
 #[cfg(any(test, feature = "test-support"))]
-pub use infantry_terminal::InfantryDeathSequence;
-pub use infantry_terminal::{InfantryDeathPostlude, InfantryTerminal, TerminalLifetime};
+pub use infantry_death::InfantryDeathSequence;
 mod aircraft_attack;
 mod aircraft_enter;
 mod aircraft_fire_location;
@@ -194,7 +194,7 @@ pub(crate) use display_registry::entity_layer;
 pub use lifecycle::LifecycleOutput;
 pub use lifecycle::{
     BuildingLight, ConcealOutcome, ObjectLifecycle, PlacementEvidence, RemovalFacts, RevealOutcome,
-    RevealPosition, RevealRequest, TechnoDiscoveryHistory, UninitContext,
+    RevealPosition, RevealRequest, TechnoDiscoveryHistory, TerminalLifetime, UninitContext,
 };
 #[cfg(any(test, feature = "test-support"))]
 pub use lifecycle::{LifecycleTestEvent, RevealFailure};
@@ -7310,7 +7310,7 @@ pub(crate) fn wake_anchor_for(
         return None;
     }
     let cell = terrain?.cell(entity.position.rx(), entity.position.ry())?;
-    if cell.yr_cell_land_type != crate::rules::terrain_rules::LandType::Water.as_index() {
+    if cell.land_type != crate::rules::terrain_rules::LandType::Water.as_index() {
         return None;
     }
     Some((

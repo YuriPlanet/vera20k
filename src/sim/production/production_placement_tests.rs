@@ -1081,7 +1081,7 @@ fn place_ready_building_rejects_blocked_cell_inside_mixed_height_footprint() {
     let rules = placement_radius_rules();
     sim.resolved_terrain = Some(resolved_clear_grid_with_override(64, 64, |cell| {
         if (cell.rx, cell.ry) == (13, 11) {
-            cell.yr_cell_land_type = LandType::Rock.as_index();
+            cell.land_type = LandType::Rock.as_index();
         }
     }));
     spawn_structure(&mut sim, &rules, 1, "Americans", "GACNST", 10, 10);
@@ -1565,7 +1565,7 @@ fn place_ready_building_rejects_blocked_or_overlapping_cells() {
     let rules = build_catalog_rules();
     sim.resolved_terrain = Some(resolved_clear_grid_with_override(64, 64, |cell| {
         if (cell.rx, cell.ry) == (31, 31) {
-            cell.yr_cell_land_type = LandType::Rock.as_index();
+            cell.land_type = LandType::Rock.as_index();
         }
     }));
     spawn_structure(&mut sim, &rules, 1, "Americans", "GACNST", 30, 30);
@@ -2819,7 +2819,7 @@ fn placement_preview_reports_blocked_terrain() {
     let rules = placement_radius_rules();
     sim.resolved_terrain = Some(resolved_clear_grid_with_override(64, 64, |cell| {
         if (cell.rx, cell.ry) == (12, 10) {
-            cell.yr_cell_land_type = LandType::Rock.as_index();
+            cell.land_type = LandType::Rock.as_index();
         }
     }));
 
@@ -2994,7 +2994,6 @@ fn gsi_04_04_water_bound_building_accepts_water_but_not_beach_zone() {
             if cell.rx == 20 && cell.ry == 20 {
                 cell.is_water = true;
                 cell.land_type = land_type.as_index();
-                cell.yr_cell_land_type = cell.land_type;
                 cell.zone_type = zone_type;
                 cell.terrain_class = TerrainClass::Water;
                 cell.base_build_blocked = true;

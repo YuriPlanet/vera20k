@@ -4,7 +4,6 @@ use super::build::{
     canonical_ramp_from_slope_type, classify_overlay_effects, cliff_back_normal_reclass_applies,
     height_in_pixels_from_tmp, materialize_map_load_cells, merge_tmp_file_metadata,
     merge_tmp_metadata, metadata_from_set_name, ordinary_variant_selection_enabled,
-    yr_cell_land_type_from_tmp,
 };
 use super::cliffs::DestroyableCliffFamily;
 use super::tubes::{
@@ -2126,7 +2125,7 @@ fn deploy_tube_neighborhood_matches_original_cell_body() {
             let x = coord[0].as_u64().unwrap() as usize;
             let y = coord[1].as_u64().unwrap() as usize;
             cells[y * 16 + x].tube_index = Some(TubeId(0));
-            cells[y * 16 + x].yr_cell_land_type = YR_CELL_LAND_TUNNEL;
+            cells[y * 16 + x].land_type = LandType::Tunnel.as_index();
         }
         let tube = TubeFact {
             entry: (10, 10),
@@ -2155,7 +2154,7 @@ fn deploy_tube_neighborhood_matches_original_cell_body() {
 fn tube_at_cell_ignores_land_type_while_is_tube_cell_requires_it() {
     let mut cells = vec![make_test_cell(0, 0), make_test_cell(1, 0)];
     cells[0].tube_index = Some(TubeId(0));
-    cells[0].yr_cell_land_type = YR_CELL_LAND_TUNNEL;
+    cells[0].land_type = LandType::Tunnel.as_index();
     cells[1].tube_index = Some(TubeId(0));
     // Land type deliberately NOT tunnel.
     let tube = TubeFact {
@@ -2186,7 +2185,7 @@ fn automatic_shell_directions_are_indexed_by_tile_offset_for_every_family() {
         for offset in 0..4i32 {
             let mut cell = make_test_cell((rx * 4 + offset as usize) as u16, 0);
             cell.final_tile_index = set_start + offset;
-            cell.yr_cell_land_type = YR_CELL_LAND_TUNNEL;
+            cell.land_type = LandType::Tunnel.as_index();
             cells.push(cell);
         }
     }
@@ -2210,8 +2209,6 @@ fn automatic_shell_directions_are_indexed_by_tile_offset_for_every_family() {
 #[test]
 fn automatic_shell_predicate_rejects_each_native_boundary_failure() {
     let theater = synthetic_automatic_shell_theater();
-    assert_eq!(yr_cell_land_type_from_tmp(5), YR_CELL_LAND_TUNNEL);
-    assert_ne!(yr_cell_land_type_from_tmp(4), YR_CELL_LAND_TUNNEL);
     assert_eq!(auto_tube_direction_for_tile(0, Some(&theater)), Some(2));
     assert_eq!(auto_tube_direction_for_tile(3, Some(&theater)), Some(0));
     assert_eq!(
@@ -2250,14 +2247,14 @@ fn automatic_shell_predicate_rejects_each_native_boundary_failure() {
 
     let mut wrong_land = make_test_cell(0, 0);
     wrong_land.final_tile_index = 0;
-    wrong_land.yr_cell_land_type = LandType::Road.as_index();
+    wrong_land.land_type = LandType::Road.as_index();
     let mut existing = make_test_cell(1, 0);
     existing.final_tile_index = 0;
-    existing.yr_cell_land_type = YR_CELL_LAND_TUNNEL;
+    existing.land_type = LandType::Tunnel.as_index();
     existing.tube_index = Some(TubeId(0));
     let mut fifth_tile = make_test_cell(2, 0);
     fifth_tile.final_tile_index = 4;
-    fifth_tile.yr_cell_land_type = YR_CELL_LAND_TUNNEL;
+    fifth_tile.land_type = LandType::Tunnel.as_index();
     let mut cells = vec![wrong_land, existing, fifth_tile];
     let mut tubes = vec![TubeFact::explicit((1, 0), (1, 0), 2, Vec::new())];
 
@@ -2358,7 +2355,7 @@ fn direction_8_steps_through_cell_tube() {
         make_test_cell(1, 0),
         make_test_cell(2, 0),
     ];
-    cells[1].yr_cell_land_type = YR_CELL_LAND_TUNNEL;
+    cells[1].land_type = LandType::Tunnel.as_index();
     cells[1].tube_index = Some(TubeId(0));
     let tube = TubeFact {
         entry: (1, 0),
@@ -2806,7 +2803,7 @@ fn gsi_04_04_sparse_and_positive_oob_subtiles_clear_cell_land_and_slope() {
 
         assert_eq!(metadata.subtile_entry_valid, Some(false));
         assert_eq!(metadata.land_type, LandType::Clear.as_index());
-        assert_eq!(metadata.yr_cell_land_type, LandType::Clear.as_index());
+        assert_eq!(metadata.land_type, LandType::Clear.as_index());
         assert_eq!(metadata.slope_type, 0);
         assert!(!metadata.has_ramp);
         assert_eq!(
@@ -2879,7 +2876,7 @@ fn gsi_04_04_valid_tile_sparse_and_oob_entries_materialize_no_tile_cells() {
         assert_eq!(cell.final_tile_index, 0xFFFF);
         assert_eq!(cell.final_sub_tile, 0);
         assert_eq!(cell.land_type, LandType::Clear.as_index());
-        assert_eq!(cell.yr_cell_land_type, LandType::Clear.as_index());
+        assert_eq!(cell.land_type, LandType::Clear.as_index());
         assert_eq!(cell.slope_type, 0);
         assert!(!cell.has_ramp);
         assert_eq!(cell.template_height, 0);
@@ -3554,7 +3551,6 @@ NoUseTileLandType=yes
     let mut metadata = TileMetadata {
         has_tmp_metadata: true,
         land_type: LandType::Water.as_index(),
-        yr_cell_land_type: LandType::Water.as_index(),
         terrain_class: TerrainClass::Water,
         is_water: true,
         ground_blocked: true,
@@ -3583,7 +3579,7 @@ NoUseTileLandType=yes
     );
 
     assert_eq!(metadata.land_type, LandType::Road.as_index());
-    assert_eq!(metadata.yr_cell_land_type, LandType::Road.as_index());
+    assert_eq!(metadata.land_type, LandType::Road.as_index());
     assert!(!metadata.is_water);
     // The regression: `ground_blocked` was the one land-derived field the
     // override skipped, so the deck stayed impassable while every other
@@ -3598,7 +3594,7 @@ NoUseTileLandType=yes
     let theater = synthetic_automatic_shell_theater();
     let mut cell = make_test_cell(0, 0);
     cell.final_tile_index = 0;
-    cell.yr_cell_land_type = metadata.yr_cell_land_type;
+    cell.land_type = metadata.land_type;
     let mut cells = vec![cell];
     let mut tubes = Vec::new();
     build_auto_low_bridge_tubes(&mut cells, 1, 1, Some(&theater), &mut tubes);
@@ -3678,7 +3674,7 @@ NoUseTileLandType=no
                 LandType::Clear
             };
             assert_eq!(current.land_type, expected_land.as_index());
-            assert_eq!(current.yr_cell_land_type, expected_land.as_index());
+            assert_eq!(current.land_type, expected_land.as_index());
             assert_eq!(current.terrain_class, expected_land.terrain_class());
             assert_eq!(current.is_water, expected_land.is_water());
             assert_eq!(current.is_cliff_like, expected_land.is_cliff_like());
@@ -3820,7 +3816,6 @@ fn test_canonical_ramp_is_ground_passable_but_stays_non_buildable() {
         1,
         vec![ResolvedTerrainCell {
             land_type: metadata.land_type,
-            yr_cell_land_type: metadata.yr_cell_land_type,
             slope_type: metadata.slope_type,
             terrain_class: metadata.terrain_class,
             speed_costs: metadata.speed_costs,
@@ -4128,11 +4123,9 @@ fn authored_load_recalc_keeps_three_cliff_back_writer_gates_distinct() {
             .collect::<Vec<_>>();
         let center = &mut cells[4];
         center.land_type = land.as_index();
-        center.yr_cell_land_type = land.as_index();
         center.terrain_class = land.terrain_class();
         center.is_road = land == LandType::Road;
         center.base_land_type = land.as_index();
-        center.base_yr_cell_land_type = land.as_index();
         center.base_terrain_class = land.terrain_class();
         cells[1].level = 4;
         ResolvedTerrainGrid::from_cells(3, 3, cells)
@@ -4430,7 +4423,7 @@ fn gsi_04_04_invalid_clear_cliff_back_writer_bakes_base() {
     assert!(cell.base_ground_walk_blocked);
     assert!(cell.base_build_blocked);
     assert_eq!(
-        cell.yr_cell_land_type,
+        cell.land_type,
         crate::rules::terrain_rules::LandType::Rock.as_index()
     );
 }

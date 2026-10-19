@@ -1653,7 +1653,6 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
     entity.death.is_dying().hash(hasher);
     entity.removal_facts.dirty_rect_eligible().hash(hasher);
     entity.kill_record.is_recorded().hash(hasher);
-    entity.death.infantry_terminal().hash(hasher);
     // TechnoClass+0x3D5 is mutable admission state, not a derived
     // position query: ordinary movement is promote-only while
     // teleport and Set_Clipped_LocalSize own exact demotions.

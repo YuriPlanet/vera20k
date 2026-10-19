@@ -279,7 +279,7 @@ fn recalc_pristine_metadata_and_level_override_match_original_instructions() {
             ("level", i64::from(cell.level)),
             ("slope", i64::from(cell.slope_type)),
             ("height", i64::from(cell.height_in_pixels)),
-            ("land", i64::from(cell.yr_cell_land_type)),
+            ("land", i64::from(cell.land_type)),
             ("zone", i64::from(cell.zone_type)),
         ] {
             assert_eq!(actual, number(field), "{name}: {field}");
@@ -540,7 +540,7 @@ fn run_bridge_catalog_native_group(group: &serde_json::Value, files: &[Vec<u8>])
                 ("level", i64::from(cell.level)),
                 ("slope", i64::from(cell.slope_type)),
                 ("pixel_height", i64::from(cell.height_in_pixels)),
-                ("land", i64::from(cell.yr_cell_land_type)),
+                ("land", i64::from(cell.land_type)),
                 ("zone", i64::from(cell.zone_type)),
             ] {
                 assert_eq!(
@@ -554,7 +554,7 @@ fn run_bridge_catalog_native_group(group: &serde_json::Value, files: &[Vec<u8>])
         let pristine = catalog.metadata(100, sub).unwrap().unwrap();
         assert_eq!(pristine.has_damaged_data, case["gate"].as_bool().unwrap());
         let before = (
-            grid.cells[index].yr_cell_land_type,
+            grid.cells[index].land_type,
             grid.cells[index].slope_type,
             grid.cells[index].height_in_pixels,
         );
@@ -565,7 +565,7 @@ fn run_bridge_catalog_native_group(group: &serde_json::Value, files: &[Vec<u8>])
         assert_eq!(
             before,
             (
-                grid.cells[index].yr_cell_land_type,
+                grid.cells[index].land_type,
                 grid.cells[index].slope_type,
                 grid.cells[index].height_in_pixels
             )

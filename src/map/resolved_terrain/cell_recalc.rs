@@ -225,7 +225,6 @@ impl<'a> LoadCellRecalcState<'a> {
             .and_then(|rules| rules.semantics_for_land_type(LandType::Clear.as_index()))
         {
             metadata.land_type = LandType::Clear.as_index();
-            metadata.yr_cell_land_type = LandType::Clear.as_index();
             metadata.terrain_class = semantics.terrain_class;
             metadata.speed_costs = semantics.speed_costs;
             metadata.is_water = semantics.water;
@@ -527,7 +526,7 @@ impl ResolvedTerrainGrid {
 
             if valid_entry {
                 let cell = &self.cells[index];
-                if cell.yr_cell_land_type == YR_CELL_LAND_TUNNEL
+                if cell.land_type == LandType::Tunnel.as_index()
                     && self.native_tube_indices[index]
                         .admits_automatic_construction(self.tube_facts.len())
                     && let Some(direction) = state.automatic_tube_direction(cell.final_tile_index)
@@ -739,7 +738,6 @@ impl ResolvedTerrainGrid {
         let build_blocked = rock.is_none_or(|row| !row.buildable);
         if apply_base {
             cell.base_land_type = LandType::Rock.as_index();
-            cell.base_yr_cell_land_type = LandType::Rock.as_index();
             cell.base_terrain_class = terrain_class;
             cell.base_speed_costs = speed_costs;
             cell.base_ground_walk_blocked = ground_blocked;
@@ -747,7 +745,6 @@ impl ResolvedTerrainGrid {
         }
         if apply_current {
             cell.land_type = LandType::Rock.as_index();
-            cell.yr_cell_land_type = LandType::Rock.as_index();
             cell.terrain_class = terrain_class;
             cell.speed_costs = speed_costs;
             cell.is_water = false;

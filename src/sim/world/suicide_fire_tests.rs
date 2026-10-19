@@ -289,16 +289,10 @@ fn stock_terror_suicide_short_circuits_normal_fire() {
                 }
             }
             compare_native_phase(&scene, native_phase(row, "after_fire"));
-            assert!(
-                scene
-                    .sim
-                    .substrate
-                    .entities
-                    .get(scene.source)
-                    .unwrap()
-                    .death
-                    .is_dying()
-            );
+            // The suicide leaves a corpse that keeps IsAlive at Health 0.
+            let source = scene.sim.substrate.entities.get(scene.source).unwrap();
+            assert!(source.lifecycle.object_alive() && !source.death.is_dying());
+            assert_eq!(source.health.current(), 0);
             assert!(
                 scene
                     .sim
@@ -434,15 +428,10 @@ fn ordinary_terror_attack_finishes_die2_and_retires_its_source() {
             "Suicide has no ordinary outgoing shot"
         );
         match scene.sim.substrate.entities.get(scene.source) {
-            Some(source) if source.death.is_dying() => {
+            Some(source) if source.health.current() == 0 => {
                 saw_die2 = true;
-                assert_eq!(source.health.current(), 0);
-                assert_eq!(
-                    source.death.infantry_terminal(),
-                    Some(super::infantry_terminal::InfantryTerminal::Sequence(
-                        super::infantry_terminal::InfantryDeathSequence::Die2,
-                    ))
-                );
+                assert!(!source.death.is_dying() && source.lifecycle.object_alive());
+                assert_eq!(source.mission_leaf.as_infantry().unwrap().doing(), 12);
                 assert_eq!(source.rearm_timer, rearm);
                 assert_eq!(source.last_fire_frame.frame(), last_fire.frame());
                 assert!(source.attack_target.target().is_none());

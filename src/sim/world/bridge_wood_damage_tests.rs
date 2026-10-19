@@ -43,7 +43,7 @@ fn assert_ground_surface(scene: &HeadlessScenario, collapsed: bool) {
             } else {
                 LandType::Road
             };
-            assert_eq!(cell.yr_cell_land_type, expected_land.as_index(), "{x},{y}");
+            assert_eq!(cell.land_type, expected_land.as_index(), "{x},{y}");
             assert_eq!(cell.level, 2);
             assert_eq!(cell.bridge_facts.raw_flags, 0);
             assert!(!cell.bridge_facts.has_structural_bridge());

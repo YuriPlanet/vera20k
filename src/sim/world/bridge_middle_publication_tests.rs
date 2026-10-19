@@ -107,7 +107,7 @@ fn retail_middle_perpendicular_live_tiles_match_original_sequences() {
                         "{context}"
                     );
                     assert_eq!(
-                        cell.yr_cell_land_type,
+                        cell.land_type,
                         after["land"].as_u64().unwrap() as u8,
                         "{context}"
                     );

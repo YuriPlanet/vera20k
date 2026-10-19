@@ -15,9 +15,9 @@ use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::occupancy::CellListInsertion;
 use crate::sim::superweapon::chronosphere_tests::{
-    charge_super, click, place, retail_rules_binding, step, world_with,
+    charge_super, click, place, retail_rules_with_sequences, step, world_with,
 };
-use crate::sim::world::{InfantryDeathSequence, InfantryTerminal, SimSoundEvent, Simulation};
+use crate::sim::world::{SimSoundEvent, Simulation};
 use serde_json::Value;
 use std::collections::BTreeSet;
 
@@ -495,11 +495,10 @@ fn the_mutation_arm_matches_native() {
             assert_eq!(row["action"], serde_json::json!([12, 1, 0]));
             let entity = entity.expect("the dying infantryman stays");
             assert!(entity.lifecycle.object_alive(), "{row}");
-            assert_eq!(
-                entity.death.infantry_terminal(),
-                Some(InfantryTerminal::Sequence(InfantryDeathSequence::Die2)),
-                "{row}"
-            );
+            // A corpse at Health 0 (the fixture binds no Die2 frames, so
+            // the zero-count refusal at 0x0051D70F leaves its Doing).
+            assert!(!entity.death.is_dying(), "{row}");
+            assert_eq!(entity.health.current(), 0, "{row}");
             assert!(mutants.is_empty(), "{row}");
             assert!(
                 sim.substrate
@@ -689,7 +688,8 @@ fn the_make_infantry_end_matches_native() {
 
 /// `InfantryClass::ReceiveDamage`'s NotHuman rung (`0x005184F7`): a dog
 /// dies with Die1 whatever the warhead's InfDeath, so the mutator leaves no
-/// InfantryMutate anim over it.
+/// InfantryMutate anim over it, only a corpse at Health 0. The fixture binds
+/// no Die1 frames; the retail test below sees the Die1 Doing.
 #[test]
 fn a_dog_dies_with_die1_instead_of_mutating() {
     let mut rules = rules("");
@@ -708,17 +708,14 @@ fn a_dog_dies_with_die1_instead_of_mutating() {
         crate::sim::world::FrameEffects::default()
     ));
     let dog = sim.substrate.entities.get(dog).unwrap();
-    assert!(dog.death.is_dying() && dog.lifecycle.object_alive());
-    assert_eq!(
-        dog.death.infantry_terminal(),
-        Some(InfantryTerminal::Sequence(InfantryDeathSequence::Die1))
-    );
+    assert!(!dog.death.is_dying() && dog.lifecycle.object_alive());
+    assert_eq!(dog.health.current(), 0);
     assert!(anims_of(&sim, "GENDEATH").is_empty());
 }
 
-/// Retail rules with the launch's anims bound.
+/// Retail rules with the launch's anims and the infantry sequences bound.
 fn retail_rules() -> Option<RuleSet> {
-    retail_rules_binding(&[("RING1", 15), ("GENDEATH", 20)])
+    retail_rules_with_sequences(&[("RING1", 15), ("GENDEATH", 20)])
 }
 
 /// Steps until no GENDEATH anim is left, at most `frames` frames.
@@ -808,10 +805,8 @@ fn retail_mutator_turns_conscripts_into_the_players_brutes() {
             .all(|anim| anim.owner_house() == Some(americans))
     );
     let dog = sim.substrate.entities.get(dog).unwrap();
-    assert_eq!(
-        dog.death.infantry_terminal(),
-        Some(InfantryTerminal::Sequence(InfantryDeathSequence::Die1))
-    );
+    assert_eq!(dog.health.current(), 0);
+    assert_eq!(dog.mission_leaf.as_infantry().unwrap().doing(), 11);
 
     until_mutants_end(&mut sim, &rules, 600);
     let brutes = brutes(&sim);
@@ -1002,12 +997,13 @@ fn a_fourth_infantryman_at_a_full_cells_centre_mutates() {
         crate::sim::world::FrameEffects::default()
     ));
 
-    let terminal = sim
+    let doing = sim
         .substrate
         .entities
         .get(fourth)
-        .and_then(|entity| entity.death.infantry_terminal());
-    assert_eq!(anims_of(&sim, "GENDEATH").len(), 4, "fourth: {terminal:?}");
+        .and_then(|entity| entity.mission_leaf.as_infantry())
+        .map(|leaf| leaf.doing());
+    assert_eq!(anims_of(&sim, "GENDEATH").len(), 4, "fourth: {doing:?}");
     for &id in three.iter().chain([&fourth]) {
         assert!(
             sim.substrate

@@ -90,7 +90,6 @@ fn retail_world(rules: &RuleSet, terrain_rules: &TerrainRules) -> Simulation {
             (0..128).map(move |rx| {
                 let mut cell = super::lifecycle_tests::common_raw_terrain_cell(rx, ry, 4, false);
                 cell.land_type = 1;
-                cell.yr_cell_land_type = 1;
                 cell.terrain_class = road.terrain_class;
                 cell.base_terrain_class = road.terrain_class;
                 cell.speed_costs = road.speed_costs;
@@ -1188,7 +1187,6 @@ fn retail_land_factory_delivery_matches_original_unit_unlimbo_suffix() {
             target.level = native["level"].as_u64().unwrap() as u8;
             target.slope_type = native["slope"].as_u64().unwrap() as u8;
             target.land_type = land;
-            target.yr_cell_land_type = land;
             target.zone_type = native["zone_type"].as_u64().unwrap() as u8;
             target.terrain_class = semantics.terrain_class;
             target.base_terrain_class = semantics.terrain_class;

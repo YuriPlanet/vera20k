@@ -31,6 +31,10 @@ mod infantry_move_oracle_tests;
 #[path = "../infantry_fire_oracle_tests.rs"]
 mod infantry_fire_oracle_tests;
 
+#[cfg(test)]
+#[path = "hover_attack_tests.rs"]
+mod hover_attack_tests;
+
 /// Whether [`dispatch_foot_mission`] runs `id`'s handler at `now`: a Unit or
 /// Infantry that passes `MissionClass::AI`'s gate
 /// ([`GameEntity::mission_handler_due`]; harvest_attack_return.json
@@ -280,16 +284,6 @@ pub(crate) fn dispatch_foot_mission(
         // Doing is the instance+6C4 action index; Type+6C4 is the separate
         // UndeployDelay. Shared522510 establishes Doing27..30 exactly.
         //
-        // RESIDUAL (GSI-07.06) — the preceding HoverAttack step is absent:
-        // - Step 1, the `HoverAttack` re-anchor. When `TechnoType+0x390`
-        //   (`HoverAttack`, NOT `DefaultToGuardArea` — the research corpus has
-        //   those crossed) is set and `GetHeight() == 0`, native finds a nearby
-        //   passable cell and takes it as a destination every dispatch. Live
-        //   FootClass carriers in stock: `JUMPJET` (Rocketeer) and
-        //   `SCHP`/`SCHD` (Siege Chopper). Trigger: a landed Rocketeer or a
-        //   grounded Siege Chopper on Attack. Player effect: retail nudges them
-        //   off the spot; VERA's stay put. Frequency: routine in Allied and
-        //   Soviet mid-game. The key IS parsed, for locomotor selection only.
         // `InfantryClass::Mission_Attack @ 0x0051F3E0` opens with its C4 arm,
         // for every house.
         (EntityCategory::Infantry, Some(MissionType::Attack))
@@ -327,6 +321,7 @@ pub(crate) fn dispatch_foot_mission(
             MissionHandlerEvaluation { delay, queue }
         }
         (EntityCategory::Unit | EntityCategory::Infantry, Some(MissionType::Attack)) => {
+            hover_attack_reanchor(sim, rules, id, ctx);
             // Foot4D4E0D..4D4E53 asks Greatest_Threat(mask1) while charging,
             // without passive scan gates or timer writes. A failed scan keeps
             // its coil; a successful scan clears the flag even on setter refusal.
@@ -2130,19 +2125,6 @@ fn foot_building_entry_head(
 /// (0x004D532F).
 ///
 /// Deliberately NOT represented, recorded:
-/// - **the whole target-present arm** (0x004D51E0-0x004D5225). With `[this+0x2B4]`
-///   holding a target the handler skips both the bunker scan and the idle action
-///   and instead does `if (GetTechnoType()->[+0x390] && ObjectClass::GetHeight()
-///   0x005F5F40 == 0) TechnoClass::Set_Destination 0x00741970
-///   (FootClass::Find_Nearby_Passable_Cell(...), 1)`. That is a **destination
-///   write**, not a cadence value, so it is a behaviour contract rather than a
-///   timing detail. Trigger: every Guard dispatch of a grounded object that
-///   already holds a target and whose type carries `+0x390`. Player effect:
-///   retail shuffles such a guard onto a nearby passable cell while it engages;
-///   VERA's stands still. `+0x390` is HoverAttack: stock Rocketeer and Siege
-///   Chopper use it. Frequency: grounded engagement on those types. Downstream risk:
-///   a destination write from the mission handler crosses into movement's
-///   ownership, so closing it needs the movement owner in the loop.
 /// - **the AI-only Sabotage queue** (0x004D523A-0x004D52A9): for an
 ///   `InfantryClass` (`What_Am_I()` 0xF) whose house is not human-controlled
 ///   (0x0050B730 on `[this+0x21C]`), that either carries type byte `+0xEC2` or
@@ -2164,16 +2146,19 @@ pub(super) fn evaluate_foot_guard_cadence(
         return head;
     }
     let effects = ctx.effects;
-    let charging = sim.acquire_adjacent_tesla_coil(id, rules, ctx.overlay_registry, effects);
-    //4D51A6 /4D51D8 precede even the rearm-timer early return. Unit's
-    //receiver is a false stub; Infantry's owner decides actual admission.
-    if !charging
-        && sim
-            .substrate
-            .entities
-            .get(id)
-            .is_some_and(|entity| entity.attack_target.target().is_none())
+    // FootGuard4D50DB: a held Target takes the HoverAttack arm (4D51E0);
+    // none, the adjacency scan and idle action. Both precede the rearm-timer
+    // early return.
+    if sim
+        .substrate
+        .entities
+        .get(id)
+        .is_some_and(|entity| entity.attack_target.target().is_some())
     {
+        hover_attack_reanchor(sim, rules, id, ctx);
+    } else if !sim.acquire_adjacent_tesla_coil(id, rules, ctx.overlay_registry, effects) {
+        //4D51A6 /4D51D8: Unit's receiver is a false stub; Infantry's owner
+        //decides actual admission.
         let _ = sim.infantry_idle_action(id, rules, effects);
     }
     let rearm = sim.substrate.entities.get(id).map_or(0, |entity| {
@@ -2197,6 +2182,59 @@ pub(super) fn evaluate_foot_guard_cadence(
         return MissionHandlerEvaluation::cadence(0);
     }
     MissionHandlerEvaluation::cadence(jittered_mission_cadence(sim, rules, mission))
+}
+
+/// The HoverAttack re-anchor `FootClass::Mission_Attack` opens with
+/// (`0x004D4DC0..0x004D4E07`) and `FootClass::Mission_Guard`'s held-Target
+/// arm runs (`0x004D51E0..0x004D521F`): a `HoverAttack=` type
+/// (`TechnoType+0x390`) at GetHeight (`0x005F5F40`) zero takes NearbyLocation
+/// anchored on itself (`0x00703590`) as its destination, vt+0x480(cell, 1).
+/// Retail carriers (a plain scan of rulesmd.ini) are all Jumpjets: JUMPJET
+/// and LUNR infantry, SCHP/SCHD, SHAD and HIND. `BalloonHover=` keeps the
+/// Rocketeer aloft, so the gate passes only while one stands on the ground.
+/// This step draws nothing; the receiver's Jumpjet Move_To may (its
+/// placement draw, `infantry_scatter.rs`). No retail aircraft carries the
+/// key, so `AircraftClass`'s Guard path through `0x004D5070` leaves it
+/// dormant.
+///
+/// RESIDUAL: when the search finds no cell, native assigns `Map[(0, 0)]`,
+/// the shared Dummy cell when (0, 0) is outside the map; VERA assigns
+/// nothing. Trigger: no passable cell in reach. Effect: the native object
+/// takes that cell as its destination. Rare (a boxed-in carrier).
+fn hover_attack_reanchor(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    id: u64,
+    ctx: super::ObjectAiCtx<'_>,
+) {
+    let Some(entity) = sim.substrate.entities.get(id) else {
+        return;
+    };
+    if !sim
+        .interner
+        .object_type(entity.type_ref(), rules)
+        .is_some_and(|object| object.hover_attack)
+        || crate::sim::movement::air_movement::current_fly_height(
+            entity,
+            sim.resolved_terrain.as_ref(),
+        ) != 0
+    {
+        return;
+    }
+    let Some((rx, ry)) = sim.techno_nearby_location(id, Some(id), rules) else {
+        return;
+    };
+    if let Err(error) = sim.assign_destination_represented(
+        id,
+        Some(crate::sim::components::NavTargetRef::cell(
+            rx as u16, ry as u16,
+        )),
+        Some(rules),
+        ctx.overlay_registry,
+        ctx.effects,
+    ) {
+        log::debug!("HoverAttack {id} kept its destination: {error}");
+    }
 }
 
 /// The harvester arms of `UnitClass::Mission_Guard @ 0x00740810` (decompiled

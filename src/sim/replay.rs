@@ -7,7 +7,9 @@
 //! original scheduler rungs.
 //!
 //! [`ReplayLog`] remains the richer Rust-only command/hash diagnostic used by
-//! parity tests. It is deliberately separate from [`NativeReplay`].
+//! parity tests. It is deliberately separate from [`NativeReplay`]. Production
+//! does not record or play native streams yet; only tests build
+//! [`NativeReplay`], which is kept for native recording playback.
 
 use std::num::NonZeroI32;
 use std::path::Path;

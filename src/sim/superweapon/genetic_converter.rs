@@ -20,7 +20,7 @@
 //!
 //! The mutation belongs to the receiver. InfantryClass::ReceiveDamage's
 //! InfDeath 9 arm builds `[General] InfantryMutate=` owned by the house
-//! (`world::infantry_terminal`), and that anim's end creates the
+//! (`world::infantry_death`), and that anim's end creates the
 //! `AnimToInfantry=` infantryman (AnimClass::AI's MakeInfantry block,
 //! `anim_class`). On retail rules both warheads have InfDeath 9, the anim is
 //! GENDEATH and the infantryman a BRUTE.

@@ -383,6 +383,7 @@ fn built(row: &Value, zoom: f32) -> (Vec<SpriteInstance>, TacticalViewport) {
         0,
         view,
         None,
+        &mut |_| 127,
     );
     (instances, view)
 }
@@ -549,6 +550,7 @@ fn original_unit_attack_line_pixels_and_read_only_coordinate_queries() {
             0,
             view,
             None,
+            &mut |_| 127,
         );
         assert_native_pixels(&raster(&instances, view), &words(row), [160, 120], 0, row);
         assert_eq!(sim.state_hash(), hash, "{}", row["input"]);
@@ -821,6 +823,7 @@ fn move_line_query_leaves_the_simulation_dummy_unchanged() {
         0,
         view,
         None,
+        &mut |_| 127,
     );
     assert_eq!(query.dummy().snapshot().coord, before);
 }

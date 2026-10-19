@@ -607,8 +607,6 @@ impl Simulation {
                         cell.is_water = true;
                         cell.terrain_class = TerrainClass::Water;
                         cell.base_terrain_class = TerrainClass::Water;
-                        cell.yr_cell_land_type = 2;
-                        cell.base_yr_cell_land_type = 2;
                         cell.land_type = 2;
                         cell.base_land_type = 2;
                         cell.zone_type = crate::map::resolved_terrain::zone_class::WATER;

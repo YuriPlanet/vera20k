@@ -99,6 +99,9 @@ pub(crate) struct RetailOptionsProfile {
     pub(crate) original_shape: bool,
     /// The Options page's battle sidebar size.
     pub(crate) sidebar: crate::ui::main_menu_dialogs::options::SidebarSize,
+    /// Whether the startup splash and the menu movie use Red Alert 2's art
+    /// instead of Yuri's Revenge's: the Options page's RA2 Loading & Menu Movie.
+    pub(crate) ra2_look: bool,
 }
 
 /// The two process-start products obtained from one physical `RA2MD.INI`
@@ -150,6 +153,7 @@ impl Default for RetailOptionsProfile {
             zoom: crate::ui::main_menu_dialogs::options::Zoom::Auto,
             original_shape: false,
             sidebar: crate::ui::main_menu_dialogs::options::SidebarSize::Normal,
+            ra2_look: false,
         }
     }
 }
@@ -168,7 +172,7 @@ pub(crate) struct FormattedProfileSections {
     /// network fields this profile does not model; their bytes are preserved.
     pub(crate) network: [(&'static str, String); 1],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 4],
+    pub(crate) vera: [(&'static str, String); 5],
 }
 
 impl RetailOptionsLoad {
@@ -359,6 +363,7 @@ impl RetailOptionsProfile {
             self.sidebar = crate::ui::main_menu_dialogs::options::SidebarSize::from_ini_value(
                 vera.read_int("Sidebar", self.sidebar.ini_value()),
             );
+            self.ra2_look = vera.read_bool("RA2Look", self.ra2_look);
         }
     }
 
@@ -435,6 +440,7 @@ impl RetailOptionsProfile {
                     format_bool(self.original_shape).to_string(),
                 ),
                 ("Sidebar", self.sidebar.ini_value().to_string()),
+                ("RA2Look", format_bool(self.ra2_look).to_string()),
             ],
         }
     }
@@ -999,16 +1005,18 @@ mod tests {
         assert_eq!(defaults.retained_profile.zoom, Zoom::Auto);
         assert!(!defaults.retained_profile.original_shape);
         assert_eq!(defaults.retained_profile.sidebar, SidebarSize::Normal);
+        assert!(!defaults.retained_profile.ra2_look);
 
         let load = load_snapshot(
             &RetailStartupOptions::default(),
-            b"[VERA]\nFullScreen=yes\nZoom=2\nOriginalShape=yes\nSidebar=150\n",
+            b"[VERA]\nFullScreen=yes\nZoom=2\nOriginalShape=yes\nSidebar=150\nRA2Look=yes\n",
         );
         assert!(load.retained_profile.full_screen);
         // The first release saved the whole factor.
         assert_eq!(load.retained_profile.zoom, Zoom::Percent(200));
         assert!(load.retained_profile.original_shape);
         assert_eq!(load.retained_profile.sidebar, SidebarSize::Large);
+        assert!(load.retained_profile.ra2_look);
         // A value this build doesn't know reads as Auto.
         let unknown = load_snapshot(&RetailStartupOptions::default(), b"[VERA]\nZoom=9\n");
         assert_eq!(unknown.retained_profile.zoom, Zoom::Auto);
@@ -1018,13 +1026,14 @@ mod tests {
             zoom: Zoom::Percent(150),
             original_shape: true,
             sidebar: SidebarSize::ExtraLarge,
+            ra2_look: true,
             ..RetailOptionsProfile::default()
         };
         let output =
             String::from_utf8(profile.transform_ra2md(b"[Video]\r\nScreenWidth=800\r\n")).unwrap();
         assert!(
             output.contains(
-                "[VERA]\r\nFullScreen=yes\r\nZoom=150\r\nOriginalShape=yes\r\nSidebar=200\r\n"
+                "[VERA]\r\nFullScreen=yes\r\nZoom=150\r\nOriginalShape=yes\r\nSidebar=200\r\nRA2Look=yes\r\n"
             ),
             "{output}"
         );
@@ -1033,6 +1042,7 @@ mod tests {
         assert_eq!(reread.retained_profile.zoom, Zoom::Percent(150));
         assert!(reread.retained_profile.original_shape);
         assert_eq!(reread.retained_profile.sidebar, SidebarSize::ExtraLarge);
+        assert!(reread.retained_profile.ra2_look);
     }
 
     #[test]

@@ -47,6 +47,20 @@ pub(crate) fn retail_rules_binding(anims: &[(&str, i32)]) -> Option<RuleSet> {
     Some(rules)
 }
 
+/// [`retail_rules_binding`] with `artmd.ini`'s infantry sequences bound, as
+/// the app binds them: a killed infantryman plays its Die sequence instead of
+/// having a zero-count request refused (`0x0051D70F`) and reviving at
+/// Health 1 on its next visit (`0x0051BC57`).
+pub(crate) fn retail_rules_with_sequences(anims: &[(&str, i32)]) -> Option<RuleSet> {
+    let mut rules = retail_rules_binding(anims)?;
+    rules.bind_animation_sequences(
+        &crate::rules::infantry_sequence::parse_infantry_sequence_registry(
+            &crate::rules::retail_ini_fixture::retail_ini("artmd.ini")?,
+        ),
+    );
+    Some(rules)
+}
+
 /// Retail rules and a flat 64x64 map ([`world_with`]).
 pub fn retail_world() -> Option<(RuleSet, Simulation, InternedId)> {
     Some(world_with(retail_rules()?, 64, &[]))
@@ -123,9 +137,7 @@ fn retail_water_world() -> Option<(RuleSet, Simulation, InternedId)> {
         ("water", Vec::new()),
         |x, y| crate::map::resolved_terrain::ResolvedTerrainCell {
             land_type: water,
-            yr_cell_land_type: water,
             base_land_type: water,
-            base_yr_cell_land_type: water,
             terrain_class: TerrainClass::Water,
             base_terrain_class: TerrainClass::Water,
             speed_costs: float,

@@ -961,6 +961,18 @@ impl Simulation {
             return Ok(outcome);
         }
 
+        // FootClass::AI 0x004DADF5..0x004DAE59: the 64-frame idle scatter.
+        // RESIDUAL: native runs the MoveSound tail (0x004DAA01..0x004DAB3C)
+        // before it; VERA's runs later in this turn. Trigger: an Infantry
+        // whose null Scatter finds a cell runs its Walk Process at once.
+        // Effect: a MoveSound= infantry (YURIPR, JUMPJET) starts its sound,
+        // and spends its draw, one frame early. Units run no Process here.
+        if let Some(rules) = rules {
+            match sim.foot_idle_scatter(stable_id, rules, overlay_registry, object_ctx.effects) {
+                Ok(changed) => outcome.bridge_state_changed |= changed,
+                Err(cause) => log::debug!("Foot {stable_id} did not idle-scatter: {cause}"),
+            }
+        }
         // FootClass::AI 0x004DAE5F..0x004DAEC3: the active IPiggyback ends
         // when its Is_Ok_To_End allows.
         sim.try_end_piggyback(stable_id, rules);

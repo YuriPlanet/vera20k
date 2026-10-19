@@ -166,7 +166,7 @@ fn water_selects_last_splash_and_only_raw100_adds_a_deck_area() {
         let (rules, mut sim, _) = world_with(rules(), 64, &[]);
         waypoint(&mut sim, (20, 20));
         let terrain = sim.resolved_terrain.as_mut().unwrap();
-        terrain.cell_mut(20, 20).unwrap().yr_cell_land_type = land;
+        terrain.cell_mut(20, 20).unwrap().land_type = land;
         let cell = terrain.native_cell_identity((20, 20));
         terrain.write_native_cell_flags(cell, flags);
         assert!(sim.trigger_ion_blast(1));

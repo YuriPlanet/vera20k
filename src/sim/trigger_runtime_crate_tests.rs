@@ -272,9 +272,7 @@ fn authored_placement_matches_eight_original_controls_and_all_rng_streams() {
                 for x in 0..33 {
                     let c = terrain.cell_mut(x, y).unwrap();
                     c.land_type = 2;
-                    c.yr_cell_land_type = 2;
                     c.base_land_type = 2;
-                    c.base_yr_cell_land_type = 2;
                     c.is_water = true;
                     c.speed_costs = costs;
                     c.base_speed_costs = costs;

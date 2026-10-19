@@ -793,7 +793,7 @@ fn assert_retail_wall_history(native_path: &'static str, wall_name: &str, direct
         json!({"cell":[at.0,at.1], "overlay":overlay.overlay_id.map_or(-1,i32::from),
             "data":overlay.overlay_data,
             "neighbors":grid.retained_neighbor_counts()[usize::from(at.1)*usize::from(grid.width())+usize::from(at.0)],
-            "land":ground.yr_cell_land_type,"zone":ground.zone_type,
+            "land":ground.land_type,"zone":ground.zone_type,
             "tile":ground.final_tile_index,"subtile":ground.final_sub_tile,
             "level":ground.level,"slope":ground.slope_type})
     }

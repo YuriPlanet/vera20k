@@ -53,7 +53,7 @@ pub(crate) fn hierarchy_native_fixture(
         cell.level = base.levels[i];
         cell.zone_type = base.movement_classes[i];
         cell.final_tile_index = 2;
-        cell.yr_cell_land_type = 3;
+        cell.land_type = 3;
     });
     let mut allocated = Vec::new();
     for y in 0..i32::from(width) {

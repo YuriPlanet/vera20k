@@ -161,14 +161,8 @@ fn receiver_effect_coord(
     target: &GameEntity,
     terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
 ) -> ProjectileCoord {
-    let x = i32::from(target.position.rx())
-        .wrapping_mul(256)
-        .wrapping_add(target.position.sub_x().to_num::<i32>());
-    let y = i32::from(target.position.ry())
-        .wrapping_mul(256)
-        .wrapping_add(target.position.sub_y().to_num::<i32>());
-    let z = object_world_z_leptons(target, terrain);
-    ProjectileCoord::new(x, y, z)
+    let location = crate::sim::movement::ground_pose::object_location(target, terrain);
+    ProjectileCoord::new(location.x, location.y, location.z)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

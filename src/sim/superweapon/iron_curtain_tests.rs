@@ -10,7 +10,7 @@ use crate::sim::combat::{EntityDamageEvent, RAD_NO_ATTACKER, ReceiverCallFlags};
 use crate::sim::intern::InternedId;
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::superweapon::chronosphere_tests::{
-    charge_super, click, place, retail_rules_binding, world_with,
+    charge_super, click, place, retail_rules_with_sequences, world_with,
 };
 use crate::sim::superweapon::invulnerability::InvulnKind;
 use crate::sim::world::{SimSoundEvent, Simulation};
@@ -192,9 +192,14 @@ fn waypoint_curtain_calls_existing_infantry_and_organic_receivers_with_null_hous
         assert_eq!(event.source_house, None);
         assert_eq!(event.receiver_flags.ignore_defenses, ignore_defenses);
         let entity = sim.entities().get(id).unwrap();
-        assert!(entity.death.is_dying());
+        assert_eq!(entity.health.current(), 0);
         assert!(entity.invulnerability.is_none());
     }
+    // The infantryman is a corpse that keeps IsAlive; the dolphin's VERA-only
+    // SHP death carries the dying mark.
+    let corpse = sim.entities().get(infantry).unwrap();
+    assert!(corpse.lifecycle.object_alive() && !corpse.death.is_dying());
+    assert!(sim.entities().get(organic).unwrap().death.is_dying());
     assert_eq!(curtain(&sim, building).unwrap().1, 750);
 }
 
@@ -747,7 +752,7 @@ fn curtained_infantry_die_and_announce_each_loss() {
     assert!(launched < radar && radar < first_loss);
     for id in [first, second] {
         let infantry = sim.substrate.entities.get(id).unwrap();
-        assert!(infantry.death.is_dying() && infantry.health.current() == 0);
+        assert!(infantry.lifecycle.object_alive() && infantry.health.current() == 0);
         assert!(infantry.invulnerability.is_none());
     }
     assert!(!sim.substrate.entities.get(tank).unwrap().death.is_dying());
@@ -761,7 +766,7 @@ fn curtained_infantry_die_and_announce_each_loss() {
 /// 750 frames; the conscript beside it killed by its Strength.
 #[test]
 fn retail_iron_curtain_through_production_frames() {
-    let Some(rules) = retail_rules_binding(&[]) else {
+    let Some(rules) = retail_rules_with_sequences(&[]) else {
         return;
     };
     assert_eq!(rules.general.iron_curtain_duration, 750);
@@ -804,5 +809,6 @@ fn retail_iron_curtain_through_production_frames() {
         Some((launch_frame, 750, InvulnKind::IronCurtain))
     );
     let conscript = sim.substrate.entities.get(conscript).unwrap();
-    assert!(conscript.death.is_dying() && conscript.health.current() == 0);
+    assert!(conscript.lifecycle.object_alive() && conscript.health.current() == 0);
+    assert!(!conscript.death.is_dying());
 }

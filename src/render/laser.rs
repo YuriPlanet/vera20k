@@ -120,7 +120,7 @@ impl LaserDraw {
             [self.from.x, self.from.y],
             [self.to.x, self.to.y],
         );
-        let octant = (((facing >> 12) + 1) >> 1) & 7;
+        let octant = crate::util::direction_tables::dir_from_facing16(facing);
         let shift = |p: [i32; 2], d: [i32; 2]| [p[0].wrapping_add(d[0]), p[1].wrapping_add(d[1])];
         if let LaserDrawColor::Explicit { inner, outer } = self.color {
             // Original lazy initializer550295..5503A6, ABC738/128B.

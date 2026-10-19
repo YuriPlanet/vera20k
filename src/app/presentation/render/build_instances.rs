@@ -738,6 +738,26 @@ pub(super) fn build_ui_instances(state: &AppState, wall_ms: u32) -> UiInstances 
         zoom: if interleave_enabled { 1. } else { view.zoom },
         ..view
     };
+    // The shroud A-buffer sample DSurface4C0750's dashed lines read.
+    let mut shroud_alpha = |point: [i32; 2]| -> u8 {
+        if state.match_state.sandbox_full_visibility {
+            return 127;
+        }
+        state
+            .match_state
+            .match_presentation
+            .shroud_buffer
+            .as_ref()
+            .and_then(|buffer| {
+                buffer.sample_world(
+                    (point[0] + camera[0] - view.clip[0]) as f32,
+                    (point[1] + camera[1] - view.clip[1]) as f32,
+                    input.camera_x,
+                    input.camera_y,
+                )
+            })
+            .unwrap_or(127)
+    };
     let mut tactical_line_calls = Vec::new();
     let mut after_entity = |id, instances: &mut Vec<SpriteInstance>| {
         use crate::app::presentation::airstrike_lines::{TacticalLineCall, drain_opaque};
@@ -769,6 +789,7 @@ pub(super) fn build_ui_instances(state: &AppState, wall_ms: u32) -> UiInstances 
             } else {
                 None
             },
+            &mut shroud_alpha,
         ),
     );
     target_line.extend(planning_highlights);
@@ -794,25 +815,7 @@ pub(super) fn build_ui_instances(state: &AppState, wall_ms: u32) -> UiInstances 
             &state.match_state.match_presentation.house_color_map,
             preferred_local_owner(state).as_deref(),
             view,
-            |point| {
-                if state.match_state.sandbox_full_visibility {
-                    return 127;
-                }
-                state
-                    .match_state
-                    .match_presentation
-                    .shroud_buffer
-                    .as_ref()
-                    .and_then(|buffer| {
-                        buffer.sample_world(
-                            (point[0] + camera[0] - view.clip[0]) as f32,
-                            (point[1] + camera[1] - view.clip[1]) as f32,
-                            input.camera_x,
-                            input.camera_y,
-                        )
-                    })
-                    .unwrap_or(127)
-            },
+            &mut shroud_alpha,
         );
 
     UiInstances {

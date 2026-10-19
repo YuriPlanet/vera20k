@@ -63,7 +63,7 @@ pub(super) fn null_start_direction(
 
 fn octant_start(heading: u16, jitter: OctantJitter, rng: &mut crate::sim::rng::SimRng) -> i32 {
     let jitter = jitter as i32;
-    let octant = (((u32::from(heading) >> 12) + 1) >> 1) as i32 & 7;
+    let octant = i32::from(crate::util::direction_tables::dir_from_facing16(heading));
     rng.next_range_u32_inclusive(0, 2 * jitter as u32) as i32 - jitter + octant
 }
 

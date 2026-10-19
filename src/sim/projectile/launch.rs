@@ -9,11 +9,11 @@ use crate::util::native_x87::{NativeF64Bits, X87Chop53 as X, X87Ordering, X87Val
 use crate::util::retail_trig::{AcosTable, TrigTable};
 
 use super::native_math::{
-    PI_HALF, angle_word, apply_pitch, atan, cos, d, f, int, less, radians, round, sin, sqrt,
-    square, store, turn_xy,
+    PI_HALF, apply_pitch, atan, d, f, int, less, round, sqrt, square, store, turn_xy,
 };
 use super::{ProjectileCoord, ProjectileVelocity};
 use crate::sim::rng::SimRng;
+use crate::util::direction_tables::{facing16_from_angle, radians_from_facing16};
 
 const POSITIVE_HEIGHT_ANGLE: NativeF64Bits = NativeF64Bits::from_bits(0x3fe9_21d9_f4d3_7c12);
 /// `[0x007E3570]` = 1/0x7FFFFFFE, the scatter angle draw's bound.
@@ -103,7 +103,11 @@ fn fireat_arc_pitch(
     let invert = !high_root
         && arc_angle(table, range.wrapping_add(1), height, speed, gravity, false)
             .is_none_or(|second| less(d(second), first));
-    Some(angle_word(if invert { X::neg(first) } else { first }))
+    Some(facing16_from_angle(if invert {
+        X::neg(first)
+    } else {
+        first
+    }))
 }
 
 /// World receiver results are resolved by the firing owner, before this scalar
@@ -226,7 +230,7 @@ fn lead_aim_with_table(
     );
     // 0x0070BDC5..0x0070BE20: the facing word to radians, then the same
     // offset shape as the launch scatter.
-    offset_along(aim, radians(target_facing), lead, trig)
+    offset_along(aim, radians_from_facing16(target_facing), lead, trig)
 }
 
 /// `(ftol(cos(angle) * magnitude + x), ftol(y - sin(angle) * magnitude))`,
@@ -241,10 +245,10 @@ fn offset_along(
     let magnitude = X::load_i32(magnitude);
     let y = int(X::sub(
         X::load_i32(point.y),
-        X::mul(sin(trig, angle), magnitude),
+        X::mul(trig.sin_from_table(d(angle)), magnitude),
     ));
     let x = int(X::add(
-        X::mul(cos(trig, angle), magnitude),
+        X::mul(trig.cos_from_table(d(angle)), magnitude),
         X::load_i32(point.x),
     ));
     ProjectileCoord::new(x, y, point.z)
@@ -410,7 +414,7 @@ fn scatter_delta(
     raw: i32,
     trig: &TrigTable,
 ) -> ProjectileCoord {
-    let angle = radians(angle_word(X::mul(
+    let angle = radians_from_facing16(facing16_from_angle(X::mul(
         X::mul(X::load_i32(raw), d(INVERSE_DRAW_SPAN)),
         d(TWO_PI),
     )));
@@ -430,7 +434,10 @@ const MISSILE_PITCH: NativeF64Bits = NativeF64Bits::from_bits(0x3ff9_21c9_0fe8_f
 /// Y = cos·sin, Z = sin, each times `scale` and stored as a double.
 pub(crate) fn missile_launch_velocity(scale: NativeF64Bits) -> ProjectileVelocity {
     let trig = TrigTable::embedded();
-    let (sine, cosine) = (sin(trig, MISSILE_PITCH), cos(trig, MISSILE_PITCH));
+    let (sine, cosine) = (
+        trig.sin_from_table(d(MISSILE_PITCH)),
+        trig.cos_from_table(d(MISSILE_PITCH)),
+    );
     let scale = d(scale);
     ProjectileVelocity::from_native([
         store(X::mul(X::mul(cosine, cosine), scale)),
@@ -464,7 +471,7 @@ fn shrapnel_launch_with_table(
 ) -> ProjectileVelocity {
     let zero = X::load_i32(0);
     // 0x0046A623..0x0046A653: the heading toward the target.
-    let heading = radians(angle_word(atan(
+    let heading = radians_from_facing16(facing16_from_angle(atan(
         round(X::sub(X::load_i32(origin.y), X::load_i32(target.y))),
         round(X::sub(X::load_i32(target.x), X::load_i32(origin.x))),
     )));
@@ -473,8 +480,8 @@ fn shrapnel_launch_with_table(
     let seed = X::load_i32(100);
     let length = round(sqrt(X::add(square(seed), square(zero))));
     let mut v = [
-        round(X::mul(cos(trig, heading), length)),
-        round(X::neg(X::mul(sin(trig, heading), length))),
+        round(X::mul(trig.cos_from_table(d(heading)), length)),
+        round(X::neg(X::mul(trig.sin_from_table(d(heading)), length))),
         zero,
     ];
     if random_cell {
@@ -487,22 +494,25 @@ fn shrapnel_launch_with_table(
     // (0x0041C350), then the 3-D length: 0x0041C3C0's (x·x + y·y) + z·z, or
     // inline (y·y + z·z) + x·x for a random cell (0x0046AC4F..0x0046AC73).
     let [x, y, z] = v;
-    let pitch = radians(angle_word(atan(z, sqrt(X::add(square(x), square(y))))));
+    let pitch = radians_from_facing16(facing16_from_angle(atan(
+        z,
+        sqrt(X::add(square(x), square(y))),
+    )));
     let magnitude = round(sqrt(if random_cell {
         X::add(X::add(square(y), square(z)), square(x))
     } else {
         X::add(X::add(square(x), square(y)), square(z))
     }));
     if X::compare(d(pitch), zero) != X87Ordering::Equal {
-        let cosine = cos(trig, pitch);
+        let cosine = trig.cos_from_table(d(pitch));
         v[0] = round(X::div(v[0], cosine).expect("nonzero existing pitch cosine"));
         v[1] = round(X::div(v[1], cosine).expect("nonzero existing pitch cosine"));
     }
     // 0x0046A787..0x0046A7CE: the fixed pitch.
     v = [
-        round(X::mul(cos(trig, SHRAPNEL_PITCH), v[0])),
-        round(X::mul(cos(trig, SHRAPNEL_PITCH), v[1])),
-        round(X::mul(sin(trig, SHRAPNEL_PITCH), magnitude)),
+        round(X::mul(trig.cos_from_table(d(SHRAPNEL_PITCH)), v[0])),
+        round(X::mul(trig.cos_from_table(d(SHRAPNEL_PITCH)), v[1])),
+        round(X::mul(trig.sin_from_table(d(SHRAPNEL_PITCH)), magnitude)),
     ];
     if !random_cell {
         // 0x0046A7DC..0x0046A86D, with 0x0041C3C0's length.
@@ -603,9 +613,9 @@ fn aircraft_bullet_velocity_with_table(
                 to.z.wrapping_sub(from.z),
             ]
             .map(X::load_i32);
-            let heading = angle_word(atan(X::neg(dy), dx));
+            let heading = facing16_from_angle(atan(X::neg(dy), dx));
             let v = turn_xy(velocity, heading, trig);
-            let pitch = angle_word(atan(dz, round(sqrt(X::add(square(dx), square(dy))))));
+            let pitch = facing16_from_angle(atan(dz, round(sqrt(X::add(square(dx), square(dy))))));
             let v = apply_pitch(v, pitch, [0, 1, 2], trig);
             scaled(v, speed)
         }
@@ -642,11 +652,11 @@ pub fn fireat_launch(input: FireAtLaunch) -> Option<FireAtLaunchResult> {
             X::mul(step, X::load_i32(input.radial_index)),
             d(PI_HALF),
         ));
-        angle_word(X::add(d(radians(input.body_heading)), offset))
+        facing16_from_angle(X::add(d(radians_from_facing16(input.body_heading)), offset))
     } else {
-        input
-            .heading
-            .unwrap_or_else(|| angle_word(atan(X::load_i32(input.delta.y.wrapping_neg()), x)))
+        input.heading.unwrap_or_else(|| {
+            facing16_from_angle(atan(X::load_i32(input.delta.y.wrapping_neg()), x))
+        })
     };
 
     // Scale the native (100,0,0) seed, retaining both normalization lookups.
@@ -660,9 +670,15 @@ pub fn fireat_launch(input: FireAtLaunch) -> Option<FireAtLaunchResult> {
         seed_x = X::load_i32(100);
     }
     let horizontal_seed = round(sqrt(X::add(X::mul(seed_x, seed_x), X::mul(seed_y, seed_y))));
-    let heading_radians = radians(heading);
-    let mut vx = round(X::mul(cos(trig, heading_radians), horizontal_seed));
-    let mut vy = round(X::neg(X::mul(sin(trig, heading_radians), horizontal_seed)));
+    let heading_radians = radians_from_facing16(heading);
+    let mut vx = round(X::mul(
+        trig.cos_from_table(d(heading_radians)),
+        horizontal_seed,
+    ));
+    let mut vy = round(X::neg(X::mul(
+        trig.sin_from_table(d(heading_radians)),
+        horizontal_seed,
+    )));
     let vz = X::load_i32(0);
     let horizontal_range = || int(sqrt(X::add(X::mul(y, y), x2)));
     let pitch = if input.arcing {
@@ -691,12 +707,12 @@ pub fn fireat_launch(input: FireAtLaunch) -> Option<FireAtLaunchResult> {
             X::sub(X::load_i32(absolute_height), X::load_i32(bias)),
             denominator,
         );
-        angle_word(if height < 0 { X::neg(angle) } else { angle })
+        facing16_from_angle(if height < 0 { X::neg(angle) } else { angle })
     } else {
         0x3fff
     };
 
-    let existing_pitch = radians(angle_word(atan(
+    let existing_pitch = radians_from_facing16(facing16_from_angle(atan(
         vz,
         sqrt(X::add(X::mul(vx, vx), X::mul(vy, vy))),
     )));
@@ -705,14 +721,20 @@ pub fn fireat_launch(input: FireAtLaunch) -> Option<FireAtLaunchResult> {
         X::mul(vz, vz),
     )));
     if X::compare(d(existing_pitch), X::load_i32(0)) != X87Ordering::Equal {
-        vx = round(X::div(vx, cos(trig, existing_pitch)).expect("nonzero initial pitch cosine"));
-        vy = round(X::div(vy, cos(trig, existing_pitch)).expect("nonzero initial pitch cosine"));
+        vx = round(
+            X::div(vx, trig.cos_from_table(d(existing_pitch)))
+                .expect("nonzero initial pitch cosine"),
+        );
+        vy = round(
+            X::div(vy, trig.cos_from_table(d(existing_pitch)))
+                .expect("nonzero initial pitch cosine"),
+        );
     }
-    let pitch_radians = radians(pitch);
+    let pitch_radians = radians_from_facing16(pitch);
     let velocity = [
-        round(X::mul(cos(trig, pitch_radians), vx)),
-        round(X::mul(cos(trig, pitch_radians), vy)),
-        round(X::mul(sin(trig, pitch_radians), magnitude)),
+        round(X::mul(trig.cos_from_table(d(pitch_radians)), vx)),
+        round(X::mul(trig.cos_from_table(d(pitch_radians)), vy)),
+        round(X::mul(trig.sin_from_table(d(pitch_radians)), magnitude)),
     ];
     #[cfg(any(test, feature = "test-support"))]
     let before_fire = ProjectileVelocity::from_native(velocity.map(store));

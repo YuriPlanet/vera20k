@@ -640,7 +640,7 @@ fn ground_command_fixture(
         for cell in map["cells"].as_array().unwrap() {
             let (rx, ry) = fixture_cell(&cell["xy"]);
             let actual = terrain.cell(rx, ry).unwrap();
-            assert_eq!(json!(actual.yr_cell_land_type), cell["land"]);
+            assert_eq!(json!(actual.land_type), cell["land"]);
             assert_eq!(json!(actual.level), cell["level"]);
             assert_eq!(json!(actual.slope_type), cell["slope"]);
             for (layer, field) in [

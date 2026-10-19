@@ -369,8 +369,11 @@ pub fn carve(
             break;
         }
 
-        let sin = f64::from(trig.sin_radians(heading));
-        let cos = f64::from(trig.cos_radians(heading));
+        // `RandomMapGenerator__CarveRiver` pushes the stored heading to
+        // `CosFromTable` (`0x0059DA1B`) and `SinFromTable` (`0x0059DA29`).
+        let stored = TruncF64::from_f64(heading);
+        let sin = TruncF64::from(trig.sin_from_table(stored)).to_f64();
+        let cos = TruncF64::from(trig.cos_from_table(stored)).to_f64();
 
         let span = X87Chop53::ftol_f64_low_masked(width_walk + HALF);
         let section = carve_section(ctx, &mut walk, fx, fy, span, sin, cos);

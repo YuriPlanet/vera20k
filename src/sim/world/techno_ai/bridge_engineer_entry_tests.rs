@@ -66,7 +66,7 @@ impl Simulation {
                     .map(|o| format!("{o:?}"))
                     .collect();
                 cells.push(json!({"coord":[x,y],"level":c.level,"slope":c.slope_type,
-                    "land":c.yr_cell_land_type,"tile":c.final_tile_index,"subtile":c.final_sub_tile,
+                    "land":c.land_type,"tile":c.final_tile_index,"subtile":c.final_sub_tile,
                     "zone_type":c.zone_type,"bridge_facts":c.bridge_facts,
                     "ground_list":ground,"deck_list":deck,
                     "ground_bits":self.substrate.raw_cell_occupation.ground_bits(x,y),

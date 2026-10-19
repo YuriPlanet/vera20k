@@ -1197,14 +1197,9 @@ pub(crate) fn commit_entities(
                 .then(|| world.substrate.entities.get(attacker_id))
                 .flatten()
                 .map(|attacker| {
-                    (
-                        i32::from(attacker.position.rx())
-                            .wrapping_mul(256)
-                            .wrapping_add(attacker.position.sub_x().to_num::<i32>()),
-                        i32::from(attacker.position.ry())
-                            .wrapping_mul(256)
-                            .wrapping_add(attacker.position.sub_y().to_num::<i32>()),
-                    )
+                    let [x, y] =
+                        crate::sim::movement::ground_pose::position_world_xy(&attacker.position);
+                    (x, y)
                 });
             // FootClass (`0x004D746D..0x004D74C7`): a teamless Foot hit by a
             // source, whose current mission's MissionControl sets `NoThreat=`

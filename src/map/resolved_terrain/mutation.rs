@@ -57,7 +57,7 @@ impl ResolvedTerrainGrid {
             terrain_cell.overlay_blocks,
             terrain_cell.zone_type,
             terrain_cell.land_type,
-            terrain_cell.yr_cell_land_type,
+            terrain_cell.land_type,
             terrain_cell.terrain_class,
             terrain_cell.speed_costs,
             terrain_cell.is_water,
@@ -102,7 +102,7 @@ impl ResolvedTerrainGrid {
             terrain_cell.overlay_blocks,
             terrain_cell.zone_type,
             terrain_cell.land_type,
-            terrain_cell.yr_cell_land_type,
+            terrain_cell.land_type,
             terrain_cell.terrain_class,
             terrain_cell.speed_costs,
             terrain_cell.is_water,
@@ -142,7 +142,6 @@ impl ResolvedTerrainGrid {
 
 fn restore_pristine_land(cell: &mut crate::map::resolved_terrain::ResolvedTerrainCell) {
     cell.land_type = cell.base_land_type;
-    cell.yr_cell_land_type = cell.base_yr_cell_land_type;
     cell.terrain_class = cell.base_terrain_class;
     cell.speed_costs = cell.base_speed_costs;
     let base_land = LandType::from_index(cell.base_land_type);
@@ -159,7 +158,6 @@ fn apply_overlay_land(
     speed_costs: Option<SpeedCostProfile>,
 ) {
     cell.land_type = land.as_index();
-    cell.yr_cell_land_type = land.as_index();
     cell.terrain_class = land.terrain_class();
     cell.speed_costs = speed_costs.unwrap_or_default();
     cell.is_water = land.is_water();

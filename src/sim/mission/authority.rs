@@ -340,14 +340,8 @@ fn evaluate_ready(
                     .mission_leaf
                     .as_unit()
                     .ok_or(ReadyUnavailable::WorldLookup)?;
-                let position = ReadyLeptonPoint::new(
-                    i32::from(entity.position.rx())
-                        .wrapping_mul(256)
-                        .wrapping_add(entity.position.sub_x().to_num::<i32>()),
-                    i32::from(entity.position.ry())
-                        .wrapping_mul(256)
-                        .wrapping_add(entity.position.sub_y().to_num::<i32>()),
-                );
+                let [x, y] = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
+                let position = ReadyLeptonPoint::new(x, y);
                 let unload_active = entity
                     .miner
                     .as_ref()

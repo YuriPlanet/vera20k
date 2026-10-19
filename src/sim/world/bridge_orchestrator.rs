@@ -1766,7 +1766,7 @@ mod tests {
 
         // Consumed Engineers can retain positive HP after UnInit until the
         // deferred drain. The legacy coordinate scan must not restart their
-        // Infantry terminal lifetime when it visits this stored identity.
+        // death when it visits this stored identity.
         let retired = GameEntity::new_at_frame_zero_for_test(
             3,
             5,
@@ -1815,7 +1815,6 @@ mod tests {
             "unlinked retired object is not a ground receiver"
         );
         assert!(!retired.lifecycle.object_alive());
-        assert!(retired.death.infantry_terminal().is_none());
         assert_eq!(sim.substrate.pending_delete.object_ids(), vec![3, 1]);
 
         let g = sim.substrate.entities.get(1).expect("ground unit present");

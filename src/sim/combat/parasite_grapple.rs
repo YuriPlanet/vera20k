@@ -108,7 +108,7 @@ impl Simulation {
         if state.grapple.stage >= 10 {
             return true;
         }
-        let frame = base + dir8(facing) as i32 * 10 + state.grapple.stage;
+        let frame = base + i32::from(dir_from_facing16(facing)) * 10 + state.grapple.stage;
         if let Some(anim) = state.grapple.anim {
             self.set_anim_manual_frame(anim, frame, 128);
         }
@@ -511,7 +511,8 @@ fn grapple_roll(stage: i32, negative: bool) -> SimFixed {
 ///629E90 and629A73 share the facing and final truncation. Use the existing
 /// native word-to-radians owner, then FCHS, and the shared table lookup owner.
 fn rotate_grapple_offset(facing: u16, [x, y]: [i32; 2]) -> [i32; 2] {
-    let angle = X::neg(X::load_f64(crate::sim::projectile::native_math::radians(facing)).unwrap());
+    let angle =
+        X::neg(X::load_f64(crate::util::direction_tables::radians_from_facing16(facing)).unwrap());
     let table = TrigTable::embedded();
     let sin = table.sin_from_table(angle);
     let cos = table.cos_from_table(angle);

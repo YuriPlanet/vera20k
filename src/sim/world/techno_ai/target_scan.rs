@@ -279,8 +279,8 @@ pub(crate) fn scan(
 /// - otherwise only on Move (2), Harvest (10) or Guard (5);
 /// - then [`passive_target_acquire`]'s body, which the block inlines.
 ///
-/// RESIDUAL: the block has no health gate: a dying infantryman reaches it
-/// from its corpse visit (`techno_ai::dying_infantry_techno_ai`).
+/// The block has no Health gate: an infantry corpse, still IsAlive, scans
+/// too.
 pub(super) fn passive_acquire_step(
     sim: &mut Simulation,
     id: u64,

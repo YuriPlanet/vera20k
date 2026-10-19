@@ -206,7 +206,6 @@ fn supplied_fixture(row: &Value) -> (Simulation, RuleSet, u64) {
     let mut terrain = crate::map::resolved_terrain::test_grid(32, 32, |x, y| {
         let mut cell = crate::map::resolved_terrain::test_flat_cell(x, y);
         cell.land_type = input["land"].as_u64().unwrap() as u8;
-        cell.yr_cell_land_type = cell.land_type;
         cell
     });
     let current = terrain.native_cell_identity((10, 10));

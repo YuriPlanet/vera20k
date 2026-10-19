@@ -304,11 +304,16 @@ fn naval_rally_fast_path_cell(
     );
 
     let terrain = resolved_terrain?;
-    if terrain.cell(candidate.0, candidate.1)?.yr_cell_land_type
+    if terrain.cell(candidate.0, candidate.1)?.land_type
         != crate::rules::terrain_rules::LandType::Water.as_index()
     {
         return None;
     }
+    // `CellClass::Find_Nearest_Object @ 0x0047C3D0` (`0x00444329`) takes
+    // any Techno in the cell, with no alive or Health test: an infantry
+    // corpse refuses the candidate too. `is_active` still skips a vehicle or
+    // aircraft on VERA's SHP death animation (the dying mark), a VERA-only
+    // chain native does not have.
     let has_eligible_active_object = occupancy
         .get(candidate.0, candidate.1)
         .into_iter()
@@ -588,7 +593,6 @@ mod tests {
             .unwrap()
             .cell_mut(cell.0, cell.1)
             .unwrap();
-        water.yr_cell_land_type = crate::rules::terrain_rules::LandType::Water.as_index();
         water.land_type = crate::rules::terrain_rules::LandType::Water.as_index();
         water.terrain_class = TerrainClass::Water;
         water.speed_costs.float = Some(100);

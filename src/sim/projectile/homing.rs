@@ -8,6 +8,7 @@ use super::{
     ProjectileCollisionPolicy, ProjectileCoord as Coord, ProjectileGuidance,
     ProjectileVelocity as Velocity,
 };
+use crate::util::direction_tables::{facing16_from_angle, round_facing16_to_8};
 use crate::util::native_x87::{NativeF64Bits as D, X87Chop53 as X, X87Ordering};
 use crate::util::retail_trig::TrigTable;
 
@@ -98,7 +99,7 @@ pub(super) fn turn_word(
     ));
     let variation = d(g.missile_rot_var);
     let varied = X::add(
-        X::mul(sin(trig, angle), variation),
+        X::mul(trig.sin_from_table(d(angle)), variation),
         X::add(variation, X::load_i32(1)),
     );
     let mut rate = int(X::mul(varied, X::load_i32(g.rot)));
@@ -163,15 +164,15 @@ pub(super) fn track(
         square(X::load_i32(difference.x)),
         square(X::load_i32(difference.y)),
     )));
-    let current_yaw = angle_word(atan(X::neg(d(velocity.y)), d(velocity.x)));
-    let desired_yaw = angle_word(atan(
+    let current_yaw = facing16_from_angle(atan(X::neg(d(velocity.y)), d(velocity.x)));
+    let desired_yaw = facing16_from_angle(atan(
         X::neg(X::load_i32(difference.y)),
         X::load_i32(difference.x),
     ));
     velocity = turn_xy(velocity, clamp(current_yaw, desired_yaw, turn), trig);
     let current_pitch = pitch(velocity);
     let mut new_pitch = current_pitch;
-    let quantum = (((u32::from(turn) >> 7) + 1) >> 1) & 0xff;
+    let quantum = round_facing16_to_8(turn);
     if !target_is_aircraft
         && (kind.airburst || horizontal > if g.very_high { 1536 } else { 768 })
         && quantum > 1

@@ -30,8 +30,9 @@ pub(crate) fn fills_window(state: &AppState) -> bool {
 
 /// Only the two sizes gamemd's shell runs at keep the retail layout: 800x600,
 /// and 640x480 with its own 640-wide art (`AllowModeToggle`). Any other window
-/// gets the 800x600 dialog scaled to fit at its own shape, centred.
-fn window_takes_fitted_shell(size: (u32, u32)) -> bool {
+/// gets the 800x600 dialog scaled to fit at its own shape, centred. The startup
+/// splash asks by surface size, before the app state exists.
+pub(crate) fn window_takes_fitted_shell(size: (u32, u32)) -> bool {
     !matches!(size, (800, 600) | (640, 480))
 }
 

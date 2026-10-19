@@ -9,8 +9,7 @@ use super::zone_incremental::{
 };
 use super::zone_map::*;
 use crate::map::resolved_terrain::{
-    BridgeDirection, BridgeLayer, ResolvedTerrainCell, ResolvedTerrainGrid, YR_CELL_LAND_TUNNEL,
-    zone_class,
+    BridgeDirection, BridgeLayer, ResolvedTerrainCell, ResolvedTerrainGrid, zone_class,
 };
 use crate::map::tube_facts::{TubeFact, TubeId, TubeSource};
 use crate::rules::locomotor_type::MovementZone;
@@ -34,7 +33,6 @@ fn water_row_terrain(width: u16) -> ResolvedTerrainGrid {
     let cells = (0..width)
         .map(|rx| ResolvedTerrainCell {
             land_type: crate::sim::pathfinding::passability::LandType::Water.as_index(),
-            yr_cell_land_type: crate::sim::pathfinding::passability::LandType::Water.as_index(),
             terrain_class: TerrainClass::Water,
             is_water: true,
             zone_type: 4,
@@ -55,7 +53,6 @@ fn clear_beach_water_row_terrain() -> ResolvedTerrainGrid {
         .enumerate()
         .map(|(rx, land_type)| ResolvedTerrainCell {
             land_type,
-            yr_cell_land_type: land_type,
             terrain_class: match land_type {
                 x if x == crate::sim::pathfinding::passability::LandType::Water.as_index() => {
                     TerrainClass::Water
@@ -90,11 +87,10 @@ fn automatic_tube_shell_ground_terrain() -> ResolvedTerrainGrid {
             None
         };
         cells.push(ResolvedTerrainCell {
-            land_type: crate::sim::pathfinding::passability::LandType::Clear.as_index(),
-            yr_cell_land_type: if is_low_bridge {
-                YR_CELL_LAND_TUNNEL
+            land_type: if is_low_bridge {
+                crate::sim::pathfinding::passability::LandType::Tunnel.as_index()
             } else {
-                0
+                crate::sim::pathfinding::passability::LandType::Clear.as_index()
             },
             terrain_class: if is_low_bridge {
                 TerrainClass::Tunnel
@@ -144,7 +140,6 @@ pub(super) fn terrain_from_zone_classes(
             } else {
                 crate::sim::pathfinding::passability::LandType::Clear.as_index()
             };
-            cell.yr_cell_land_type = cell.land_type;
             cell.terrain_class = if cell.is_water {
                 TerrainClass::Water
             } else if zone_type == zone_class::BEACH {

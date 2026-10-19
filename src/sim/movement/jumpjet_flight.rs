@@ -63,7 +63,9 @@ use super::JumpjetRuntime;
 use crate::rules::jumpjet_params::JumpjetParams;
 use crate::sim::movement::facing_class::FacingClass;
 use crate::util::direction::DIRECTION_DELTAS;
-use crate::util::direction_tables::LEPTON_DELTAS;
+use crate::util::direction_tables::{
+    LEPTON_DELTAS, dir_from_facing16, radians_from_facing16, round_facing16_to_8,
+};
 use crate::util::lepton::{BRIDGE_DECK_HEIGHT_LEPTONS, GROUND_LEVEL_HEIGHT_LEPTONS};
 use crate::util::native_x87::{NativeF32Bits, NativeF64Bits, X87Chop53, X87Ordering, X87Value};
 use crate::util::retail_trig::TrigTable;
@@ -73,8 +75,6 @@ const ARRIVAL_RADIUS: i32 = 20;
 /// Extra reference height for a non-building techno in a cell (`ADD EBP,0x55`
 /// at `0x004850EF`).
 const CELL_OBJECT_LIFT: i32 = 0x55;
-/// `0x007E2810`: -2pi/65534.
-const NEG_RADIANS_PER_FACING_UNIT: u64 = 0xBF19_222D_989F_5E57;
 /// `0x007E3CC0`: 2pi.
 const TWO_PI: u64 = 0x4019_21FB_5444_2D18;
 /// `0x007ECE60`: 15.0.
@@ -525,11 +525,6 @@ fn native_cell(value: i32) -> i16 {
     (value.wrapping_add((value >> 31) & 0xFF) >> 8) as i16
 }
 
-/// The eight-way direction `0x0054D897..D8AC` derives from a 16-bit facing.
-fn facing_direction(facing: u16) -> usize {
-    ((((u32::from(facing) >> 12) + 1) >> 1) & 7) as usize
-}
-
 /// Reference height `0x0054D820`: the current cell's top height, and while
 /// moving the max-or-average with the cell one step ahead along the facing.
 ///
@@ -548,7 +543,9 @@ fn reference_height(
     if ordering(double(flight.current_speed_bits), zero()) != X87Ordering::Greater {
         return here;
     }
-    let (dx, dy) = LEPTON_DELTAS[facing_direction(flight.facing.current(host.binary_frame()))];
+    // `0x0054D897..D8AC`: the eight-way direction of the 16-bit facing.
+    let direction = dir_from_facing16(flight.facing.current(host.binary_frame()));
+    let (dx, dy) = LEPTON_DELTAS[usize::from(direction)];
     let ahead_xy = [location[0].wrapping_add(dx), location[1].wrapping_add(dy)];
     let ahead = host.cell_top_height(ahead_xy);
     if host.cell_high_bridge(ahead_xy) {
@@ -710,11 +707,8 @@ pub(crate) fn update_coordinates_and_altitude(
     let step = int(X87Chop53::ftol_i32_low_masked(double(
         flight.current_speed_bits,
     )));
-    let facing = flight.facing.current(frame) as i16;
-    let angle = X87Chop53::mul(
-        int(i32::from(facing) - 0x3FFF),
-        double(NEG_RADIANS_PER_FACING_UNIT),
-    );
+    let angle = X87Chop53::load_f64(radians_from_facing16(flight.facing.current(frame)))
+        .expect("a facing word's radians are finite");
     let new_y = X87Chop53::ftol_i32_low_masked(X87Chop53::sub(
         int(location[1]),
         X87Chop53::mul(host.trig().sin_from_table(angle), step),
@@ -778,7 +772,7 @@ pub(crate) fn state3_translate(
         .facing
         .destination()
         .wrapping_sub(runtime.flight.facing.current(frame));
-    let turn_error = ((((u32::from(difference) >> 7) + 1) >> 1) & 0xFF) as i32;
+    let turn_error = i32::from(round_facing16_to_8(difference));
 
     let distance = crate::sim::cell_kernel::native_xy_distance(
         location[0].wrapping_sub(destination[0]),
@@ -2703,7 +2697,7 @@ mod tests {
     /// turn left reads 192 and a quarter turn right reads 64.
     #[test]
     fn a_left_turn_reads_as_a_larger_error_than_the_same_right_turn() {
-        let error = |difference: u16| ((((u32::from(difference) >> 7) + 1) >> 1) & 0xFF) as i32;
+        let error = crate::util::direction_tables::round_facing16_to_8;
         assert_eq!(error(0x4000), 64);
         assert_eq!(error(0xC000), 192);
         assert_eq!(error(0xFFFF), 0);

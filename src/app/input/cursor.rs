@@ -2494,7 +2494,7 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
                     .unwrap()
                     .cell_mut(x, 2)
                     .unwrap()
-                    .yr_cell_land_type = u8::try_from(land_type).unwrap();
+                    .land_type = u8::try_from(land_type).unwrap();
             }
             let target = if case["route"] == "cell" {
                 TargetKind::Cell(x, 2)

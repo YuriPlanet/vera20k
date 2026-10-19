@@ -1861,7 +1861,7 @@ fn lifecycle_authority_combat_leaves_transport_cargo_for_carrier_uninit() {
 }
 
 #[test]
-fn lifecycle_authority_animated_combat_handoff_changes_only_dying_and_sequence() {
+fn lifecycle_authority_animated_combat_handoff_changes_only_health_and_sequence() {
     let rules = infantry_fire_frame_rules();
     let mut store = EntityStore::new();
 
@@ -1889,7 +1889,8 @@ fn lifecycle_authority_animated_combat_handoff_changes_only_dying_and_sequence()
     assert_eq!(result.despawned_ids, vec![1]);
     let dead = store.get(1).unwrap();
     assert_eq!(dead.health.current(), 0);
-    assert!(dead.death.is_dying());
+    // The Die1 corpse carries no mark of its own.
+    assert!(!dead.death.is_dying());
     assert_eq!(dead.mission_leaf.as_infantry().unwrap().doing(), 11);
     assert_eq!(dead.native_stage().value(), 0);
     assert_eq!(dead.infantry_sprite_pose(), Some((11, 0)));
@@ -7346,8 +7347,8 @@ fn a_death_weapon_over_water_picks_its_anim_at_the_zero_location() {
     let mut interner = test_interner();
     let mut terrain = crate::sim::tiberium::test_support::flat_terrain(16, 16);
     let water = terrain.cell_mut(8, 5).unwrap();
-    water.yr_cell_land_type = 2;
-    water.base_yr_cell_land_type = 2;
+    water.land_type = 2;
+    water.base_land_type = 2;
     // The tank's shot lands on the demo truck and kills it.
     let shot = crate::sim::projectile::ProjectileDetonation {
         projectile_id: 7,

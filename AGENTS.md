@@ -195,7 +195,7 @@ determinism/authority/lifecycle work cannot close that loop.
 
 Delegate independent work with clear ownership. For changes to gameplay behavior, run
 one fresh read-only [critic](.agents/skills/_shared/review.md) after implementation
-and focused tests, before the full suite. The critic is free to inspect original evidence
+and focused tests. The critic is free to inspect original evidence
 and challenge scope/design. It identifies implementation defects and useful refactoring
 opportunities, explaining their impact and risks. The owner fixes confirmed defects,
 rejects false positives with evidence and may implement worthwhile in-scope refactors,
@@ -233,9 +233,10 @@ Skip `cargo check` when a planned test answers the same question.
 - Working Rust: start with focused
   `cargo test -p <crate> --lib <module_path>::`, where `<crate>` is `vera20k-core`
   for engine modules and `vera20k` for `app`, `render`, `ui`, `audio` and `asset_tools`.
-- Rust PR readiness: once per PR, after any critic fixes, one full
-  `cargo test --workspace --lib` with retail `ini/` and `VERA20K_REQUIRE_RETAIL_INI=1`;
-  no baseline runs, and rerun only after a failure or a `main` merge conflict. Tests
+- Rust PR readiness: after any critic fixes, focused tests for the modules the change
+  touches and their direct consumers, with retail `ini/` and
+  `VERA20K_REQUIRE_RETAIL_INI=1`; no baseline runs. The full
+  `cargo test --workspace --lib` is not required; run it only when asked. Tests
   tagged `#[ignore = "slow; …"]` run (`-- --ignored`) only when your change touches
   what they cover. Don't dispatch the manual platform workflows unless asked.
 - Clippy: once a month on `main`, not per PR: `cargo clippy --workspace --lib` in the

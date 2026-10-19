@@ -25,12 +25,12 @@ use crate::util::fixed_math::{SIM_ONE, SIM_ZERO, SimFixed};
 /// exit's NavCom test scatters it off that Cell (`0x00736005..0x00736028`).
 #[test]
 fn ordinary_drive_retires_selector_before_entering_an_explicit_tube() {
-    use crate::map::resolved_terrain::YR_CELL_LAND_TUNNEL;
     use crate::map::tube_facts::{TubeFact, TubeId};
+    use crate::rules::terrain_rules::LandType;
     use crate::sim::pathfinding::zone_map::ZoneGrid;
 
     let mut cells: Vec<_> = (0..6).map(|x| drivable_slope_cell(x, 0, 0)).collect();
-    cells[1].yr_cell_land_type = YR_CELL_LAND_TUNNEL;
+    cells[1].land_type = LandType::Tunnel.as_index();
     cells[1].tube_index = Some(TubeId(0));
     // (4, 0) stays open: the exit's Scatter goes there.
     for cell in &mut cells[2..4] {

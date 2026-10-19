@@ -923,3 +923,71 @@ fn unit_source_arm_matches_original_execution() {
     }
     assert_eq!(checked, 58);
 }
+
+/// FootClass::AI's idle scatter (`0x004DADF5..0x004DAE59`): a grounded tank
+/// with no NavCom on a flat cell whose south-east neighbour stands four
+/// levels higher, so that the terrain projection (`0x0070C620`) names the
+/// neighbour, scatters on a frame whose low six bits are set, and only then.
+/// Without the cliff the projection names its own cell and it stays; with a
+/// NavCom it stays too.
+#[test]
+fn an_idle_tank_behind_a_cliff_scatters_every_sixty_four_frames() {
+    use crate::rules::ini_parser::IniFile;
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[VehicleTypes]\n0=MTNK\n[MTNK]\nStrength=300\nSpeed=6\nSpeedType=Track\n\
+         MovementZone=Normal\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n",
+    ))
+    .unwrap();
+    let mut sim = Simulation::new();
+    crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
+    let tank = sim
+        .spawn_object("MTNK", "Americans", 10, 10, 0, &rules)
+        .unwrap();
+    let idle_scatter = |sim: &mut Simulation, frame: u32| {
+        sim.session.binary_frame = frame;
+        sim.foot_idle_scatter(
+            tank,
+            &rules,
+            None,
+            crate::sim::world::FrameEffects::default(),
+        )
+        .unwrap();
+        sim.substrate
+            .entities
+            .get(tank)
+            .unwrap()
+            .navigation
+            .nav_com()
+    };
+    assert_eq!(idle_scatter(&mut sim, 127), None, "no cliff");
+
+    sim.resolved_terrain
+        .as_mut()
+        .unwrap()
+        .cell_mut(11, 11)
+        .unwrap()
+        .level = 4;
+    assert_eq!(idle_scatter(&mut sim, 126), None, "off the cadence");
+    let held = Some(NavTargetRef::cell(20, 20));
+    sim.substrate
+        .entities
+        .get_mut(tank)
+        .unwrap()
+        .navigation
+        .set_nav_com_for_test(held);
+    assert_eq!(idle_scatter(&mut sim, 127), held, "a NavCom refuses");
+    sim.substrate
+        .entities
+        .get_mut(tank)
+        .unwrap()
+        .navigation
+        .set_nav_com_for_test(None);
+    let rng = sim.scenario_rng.state();
+    sim.session.binary_frame = 127;
+    let cell = sim.scatter_nearby_cell(tank, &rules).unwrap();
+    assert_eq!(
+        idle_scatter(&mut sim, 127),
+        Some(NavTargetRef::cell(cell.0, cell.1))
+    );
+    assert_eq!(sim.scenario_rng.state(), rng);
+}

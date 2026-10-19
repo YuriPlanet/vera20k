@@ -1,7 +1,7 @@
 //! CaptureManager472160 -> Techno704E40 relationship curves, at Tactical's tail.
 //! The simulation owns nodes and expiry; drawing never mutates those owners.
 
-use super::target_lines::{TacticalViewport, push_surface_rect};
+use super::target_lines::{TacticalViewport, push_surface_word};
 use crate::map::houses::HouseColorMap;
 use crate::render::batch::SpriteInstance;
 use crate::rules::house_colors::NO_REMAP;
@@ -67,15 +67,7 @@ pub(crate) fn append_line_instances(
     view: TacticalViewport,
 ) {
     emit(from, to, rgb, wall_ms, view, |rect, word| {
-        let rgb = crate::render::native_surface_format::RGB565.unpack_rgb8(word);
-        let rgba = crate::render::native_surface_format::ACTIVE_RETAIL_RGB565_PRESENTATION
-            .quantize_rgba8([rgb[0], rgb[1], rgb[2], 255]);
-        push_surface_rect(
-            instances,
-            rect,
-            [rgba[0], rgba[1], rgba[2]].map(|v| f32::from(v) / 255.),
-            view,
-        );
+        push_surface_word(instances, rect, word, view);
     });
 }
 
@@ -104,15 +96,9 @@ fn emit(
         ]
     };
     let base = RGB565.pack_rgb8(rgb);
-    for point in [project(from), project(to)] {
-        draw(
-            crate::util::rect::clip_rect(
-                [point[0].wrapping_sub(2), point[1].wrapping_sub(2), 3, 3],
-                view.clip,
-            ),
-            base,
-        );
-    }
+    super::target_lines::endpoint_boxes([project(from), project(to)], view.clip, |rect| {
+        draw(rect, base)
+    });
     let mut previous = from;
     let phase = (wall_ms >> 4).wrapping_mul(8);
     for i in 1i32..=32 {

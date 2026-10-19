@@ -115,7 +115,6 @@ impl ResolvedTerrainGrid {
                 metadata: TileMetadata {
                     tileset_index: Some(1),
                     land_type: LandType::Clear.as_index(),
-                    yr_cell_land_type: LandType::Clear.as_index(),
                     slope_type,
                     template_height,
                     terrain_class: TerrainClass::Clear,
@@ -486,7 +485,6 @@ fn recalc_dynamic_tile_attributes(
     cell.filled_clear = false;
     cell.tileset_index = metadata.tileset_index;
     cell.land_type = metadata.land_type;
-    cell.yr_cell_land_type = metadata.yr_cell_land_type;
     cell.template_height = metadata.template_height;
     cell.height_in_pixels = metadata.height_in_pixels;
     cell.render_offset_x = metadata.render_offset_x;
@@ -505,7 +503,6 @@ fn recalc_dynamic_tile_attributes(
     cell.base_ground_walk_blocked = metadata.ground_blocked;
     cell.base_build_blocked = metadata.build_blocked;
     cell.base_land_type = metadata.land_type;
-    cell.base_yr_cell_land_type = metadata.yr_cell_land_type;
     cell.base_terrain_class = metadata.terrain_class;
     cell.base_speed_costs = metadata.speed_costs;
     cell.ground_walk_blocked = metadata.ground_blocked || cell.terrain_object_blocks;

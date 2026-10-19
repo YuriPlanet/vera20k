@@ -256,7 +256,9 @@ impl<F: FnMut(CellCoord) -> DepthCell> Cells<F> {
                 return base.wrapping_add(2);
             }
         }
-        let facing = (((u32::from(context.facing_u16) >> 12) + 1) >> 1) as usize & 7;
+        let facing = usize::from(crate::util::direction_tables::dir_from_facing16(
+            context.facing_u16,
+        ));
         let probes = [
             facing + 1,
             facing + 7,

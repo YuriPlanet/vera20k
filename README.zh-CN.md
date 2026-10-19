@@ -101,7 +101,9 @@ VERA20K 的开发者都是你们的朋友。我们希望把庞大的中国红警
 所有收到的捐款都将根据
 [TIBTRE 贡献账本](https://github.com/YuriPlanet/tibtre-ledger)分配给贡献者。
 
-贡献者可通过 PayPal、中国银联、支付宝、Vipps、SEPA 银行转账或比特币收款。
+贡献者收款方式：
+
+<p><img src="https://img.shields.io/badge/PayPal-003087?style=flat&amp;logo=paypal&amp;logoColor=white" alt="PayPal" height="20"> <img src="https://img.shields.io/badge/China_UnionPay-E21836?style=flat" alt="China UnionPay" height="20"> <img src="https://img.shields.io/badge/Alipay-1677FF?style=flat&amp;logo=alipay&amp;logoColor=white" alt="Alipay" height="20"> <img src="https://img.shields.io/badge/Vipps-FF5B24?style=flat" alt="Vipps" height="20"> <img src="https://img.shields.io/badge/SEPA-2D4B9A?style=flat&amp;logo=sepa&amp;logoColor=white" alt="SEPA" height="20"> <img src="https://img.shields.io/badge/Bitcoin-F7931A?style=flat&amp;logo=bitcoin&amp;logoColor=white" alt="Bitcoin" height="20"></p>
 
 ## 致谢与法律声明
 

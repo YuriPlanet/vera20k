@@ -52,7 +52,7 @@ pub(crate) fn apply(
     if X::compare(absolute(load(distance)), double(0x3ef4_f8b5_88e3_68f1)) != X87Ordering::Greater {
         return false;
     }
-    let angle = X::load_f64(crate::sim::projectile::native_math::radians(facing)).unwrap();
+    let angle = X::load_f64(crate::util::direction_tables::radians_from_facing16(facing)).unwrap();
     let trig = TrigTable::embedded();
     let sin = store(trig.sin_from_table(angle));
     let cos = store(trig.cos_from_table(angle));

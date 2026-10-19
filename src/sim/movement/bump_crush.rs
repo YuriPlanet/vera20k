@@ -133,8 +133,9 @@ pub(crate) fn blocker_plane_source(
     if retained_foot && entity.category() != EntityCategory::Structure {
         return None;
     }
-    // Dying corpses are off the occupancy grid: don't let them inflate the
-    // A* dynamic-blocker neighbor costs.
+    // An object on the SHP death sequence adds nothing. An infantry corpse
+    // stays Marked (`+0x74`) until its UnInit's Limbo, as the retained Foot
+    // counters follow Mark and Limbo, and keeps blocking.
     if entity.death.is_dying() || !entity.lifecycle.cell_marked() {
         return None;
     }
@@ -443,15 +444,6 @@ pub fn within_crush_distance_sq(crusher: (i32, i32), victim: (i32, i32)) -> bool
     dx * dx + dy * dy <= CRUSH_DISTANCE_SQ_LIMIT
 }
 
-/// The victim's GetCoords XY (vt+0x48, `0x007417FB`) `TechnoClass::DistanceSquaredTo`
-/// (`0x005F6560`) measures in `UnitClass::Crush_Or_Prescatter_Cell` (`0x007416A0`).
-fn entity_crush_coord(entity: &GameEntity) -> (i32, i32) {
-    (
-        i32::from(entity.position.rx()) * 256 + entity.position.sub_x().to_num::<i32>(),
-        i32::from(entity.position.ry()) * 256 + entity.position.sub_y().to_num::<i32>(),
-    )
-}
-
 /// The victim-side inputs of the native crush predicate.
 ///
 /// Exactly five type-level facts and two instance facts enter the decision:
@@ -663,7 +655,11 @@ pub fn select_crush_victims(
         .filter(|&id| id != crusher_id)
         .filter(|&id| {
             entities.get(id).is_some_and(|victim| {
-                within_crush_distance_sq(crusher_coord, entity_crush_coord(victim))
+                // The victim's GetCoords XY (vt+0x48, `0x007417FB`) that
+                // `TechnoClass::DistanceSquaredTo` (`0x005F6560`) measures in
+                // `UnitClass::Crush_Or_Prescatter_Cell` (`0x007416A0`).
+                let [x, y] = super::ground_pose::position_world_xy(&victim.position);
+                within_crush_distance_sq(crusher_coord, (x, y))
                     && can_crush(
                         capability,
                         CrushTarget::from_entity(victim, current_frame),

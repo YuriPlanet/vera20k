@@ -10,10 +10,6 @@
 
 use super::*;
 
-fn exit_octant(turn: &TurnTrack) -> u8 {
-    (((u32::from(turn.target_facing) << 8) >> 12).wrapping_add(1) >> 1 & 7) as u8
-}
-
 /// `Can_Use_Track 0x004B4B00` ratchet over the shipped tables: true only on a
 /// turning curve whose cursor sits on its chain point, with a path head that
 /// leaves the curve's exit octant into another curve.
@@ -24,7 +20,7 @@ fn occupant_can_use_track_answers_only_at_the_chain_point_of_a_turning_curve() {
     let mut checked_true = 0;
     for (turn_index, turn) in TURN_TRACKS.iter().enumerate().take(64) {
         let raw = &RAW_TRACKS[usize::from(turn.normal_track)];
-        let exit = exit_octant(turn);
+        let exit = crate::util::direction::direction_from_facing(turn.target_facing);
         for head in 0u8..8 {
             let chained = &TURN_TRACKS[usize::from(head) + usize::from(exit) * 8];
             let chained_entry_nonzero = chained.normal_track != 0

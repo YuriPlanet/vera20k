@@ -81,7 +81,7 @@ impl ResolvedTerrainGrid {
             self.native_tube_indices[index]
                 .validated_id(self.tube_facts.len())
                 .is_some()
-                && self.cells[index].yr_cell_land_type == YR_CELL_LAND_TUNNEL
+                && self.cells[index].land_type == LandType::Tunnel.as_index()
         };
         if is_tube(origin) {
             return true;
@@ -197,7 +197,7 @@ pub(super) fn build_auto_low_bridge_tubes(
     tubes: &mut Vec<TubeFact>,
 ) {
     for cell in cells.iter_mut() {
-        if cell.yr_cell_land_type != YR_CELL_LAND_TUNNEL || cell.tube_index.is_some() {
+        if cell.land_type != LandType::Tunnel.as_index() || cell.tube_index.is_some() {
             continue;
         }
         let Some(direction) = auto_tube_direction_for_tile(cell.final_tile_index, theater_data)

@@ -975,7 +975,7 @@ fn drive_across_high_bridge_with_order(
 //
 // The last line is the surprise and it is recorded, not worked around: the
 // `TubeClass` marker is absent from the entire measured corpus. It is gated on
-// `yr_cell_land_type == YR_CELL_LAND_TUNNEL` (10), but a low-bridge overlay
+// `land_type == LandType::Tunnel` (10), but a low-bridge overlay
 // rewrites the cell's Land to Road (1), and `build_auto_low_bridge_tubes`
 // matches *iso-tile* ids, not overlays. So `tube_movement.rs` and
 // `PathCell::low_bridge_tube_cell` are not on the stock low-bridge crossing
@@ -1176,7 +1176,7 @@ fn print_low_inventory(terrain: &ResolvedTerrainGrid, grid: &PathGrid, span: &Lo
             rt.tube_index
                 .and_then(|t| terrain.tube(t))
                 .map(|t| t.source),
-            rt.yr_cell_land_type,
+            rt.land_type,
             rt.land_type,
             rt.base_land_type,
             rt.base_ground_walk_blocked,
@@ -2969,7 +2969,7 @@ fn print_under_cell_row(
         rt.base_ground_walk_blocked,
         rt.land_type,
         rt.base_land_type,
-        rt.yr_cell_land_type,
+        rt.land_type,
         rt.zone_type,
         cost(SpeedType::Foot),
         cost(SpeedType::Track),

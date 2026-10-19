@@ -1612,7 +1612,9 @@ fn harvest_overlay_frame(
 /// nothing.
 fn oregath_frame(body_frame_counter: u32, frame: u32, body_facing: u16) -> Option<u16> {
     let within = (body_frame_counter as i32).wrapping_add(frame as i32) % 15;
-    let row = 7 - ((((i32::from(body_facing) >> 12) + 1) >> 1) & 7);
+    let row = 7 - i32::from(crate::util::direction_tables::dir_from_facing16(
+        body_facing,
+    ));
     u16::try_from(row * 15 + within).ok()
 }
 
@@ -1626,9 +1628,9 @@ fn harvest_arm_screen_position(
     entity: &crate::sim::game_entity::GameEntity,
     frame: u32,
 ) -> (f32, f32) {
-    let current = u32::from(entity.body_facing_current(frame));
+    let current = entity.body_facing_current(frame);
     // `MOVSX` takes the low word, so a heading from 0xF000 rounds up to north.
-    let eighth = ((((current >> 12) + 1) >> 1) << 13) as u16;
+    let eighth = u16::from(crate::util::direction_tables::dir_from_facing16(current)) << 13;
     crate::render::locomotor_visual::facing_step_screen_position(entity, eighth, 30)
 }
 

@@ -22,7 +22,7 @@ use crate::sim::combat::combat_targeting::AttackerSnapshot;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::projectile::{ProjectileCoord, ProjectileTarget};
 use crate::sim::world::Simulation;
-use crate::util::direction_tables::{facing16_between, step32_from_facing16};
+use crate::util::direction_tables::{facing16_between, round_facing16_to_8, step32_from_facing16};
 use crate::util::lepton::LEPTONS_PER_LEVEL;
 use crate::util::pixel_conversion::PixelConversionBounds;
 
@@ -582,8 +582,7 @@ fn building_fire_facings(
         .and_then(|target| super::resolve_target_coords(&target, world));
     let (Some(origin), Some(target)) = (origin, target.map(coords_xy)) else {
         // `0x0044D7F4..0x0044D7FF`: `((current >> 7) + 1) >> 1` as the high byte.
-        let rounded = ((((u32::from(current) >> 7) + 1) >> 1) & 0xFF) << 8;
-        return (current, rounded as u16);
+        return (current, u16::from(round_facing16_to_8(current)) << 8);
     };
     if obj.has_turret {
         // `0x0044D83A..0x0044D844`.

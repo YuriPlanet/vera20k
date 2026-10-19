@@ -2630,13 +2630,17 @@ pub fn projectile_shp_frame(
     if projectile_type.rotates {
         return 0;
     }
-    use crate::util::direction_tables::{DRAGON_FRAME_TABLE, step32_from_facing16};
-    let angle = (-f64::from_bits(projectile.velocity.y.bits()))
-        .atan2(f64::from_bits(projectile.velocity.x.bits()));
-    let word =
-        (((angle - std::f64::consts::FRAC_PI_2) * -10430.06004058427).trunc() as i32) & 0xffff;
+    use crate::util::direction_tables::{
+        DRAGON_FRAME_TABLE, facing16_from_angle, step32_from_facing16,
+    };
+    use crate::util::native_x87::X87Chop53 as X;
+    use native_math::{atan, d};
+    // FCHS of the velocity Y, `Math::atan2 @ 0x004CAE30`, then the DirStruct
+    // word conversion (FSUB pi/2, FMUL, ftol).
+    let velocity = projectile.velocity;
+    let word = facing16_from_angle(atan(X::neg(d(velocity.y)), d(velocity.x)));
     // 46805D: the 32-step bucket of the angle word indexes the 0x007F4890 table.
-    DRAGON_FRAME_TABLE[usize::from(step32_from_facing16(word as u16))] as u8
+    DRAGON_FRAME_TABLE[usize::from(step32_from_facing16(word))] as u8
 }
 
 // YR BulletClass::AI linkage: this is the bounded ordinary-flight rung; exact trajectory kernels remain separate.

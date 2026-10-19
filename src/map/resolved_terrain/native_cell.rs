@@ -331,9 +331,7 @@ impl<'a> NativeCellQuery<'a> {
     /// Land must not perform another lookup or replace the shared Dummy.
     pub fn land_type(&self, cell: NativeCellIdentity) -> i32 {
         match cell {
-            NativeCellIdentity::Real(index) => {
-                i32::from(self.terrain.cells[index].yr_cell_land_type)
-            }
+            NativeCellIdentity::Real(index) => i32::from(self.terrain.cells[index].land_type),
             NativeCellIdentity::Dummy => self.dummy.land_type(),
         }
     }

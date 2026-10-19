@@ -50,7 +50,7 @@ pub(crate) fn depth_cell(
             ramp: cell.slope_type,
             flags: cell.bridge_facts.raw_flags,
             iso_tile_index: cell.final_tile_index,
-            low_bridge: cell.yr_cell_land_type == 10
+            low_bridge: cell.land_type == crate::rules::terrain_rules::LandType::Tunnel.as_index()
                 && terrain.tube_at_cell(cell.rx, cell.ry).is_some(),
             overlay_rock: rock(overlay_id),
             tmp_height: terrain.native_tmp_draw_height(cell.final_tile_index, cell.final_sub_tile),
@@ -79,17 +79,6 @@ fn coefficients(object: Option<&ObjectType>) -> FootDepthCoefficients {
         tunnel: o.zfudge_tunnel,
         bridge: o.zfudge_bridge,
     })
-}
-
-fn world_xy(entity: &GameEntity) -> [i32; 2] {
-    [
-        i32::from(entity.position.rx())
-            .wrapping_mul(256)
-            .wrapping_add(entity.position.sub_x().to_num::<i32>()),
-        i32::from(entity.position.ry())
-            .wrapping_mul(256)
-            .wrapping_add(entity.position.sub_y().to_num::<i32>()),
-    ]
 }
 
 /// Unit DrawExtras temporarily selects UnloadingClass (0x73D2C4). Art-only
@@ -195,7 +184,7 @@ fn unit_bridge_condition_in_runtime(
     let Some(terrain) = view.resolved_terrain() else {
         return factory;
     };
-    let xy = world_xy(entity);
+    let xy = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
     crate::render::foot_depth::unit_composite_split(
         FootDepthContext {
             cell: [(xy[0] / 256) as i16, (xy[1] / 256) as i16],
@@ -239,7 +228,7 @@ fn shp_z_adjust_in_runtime(
     let Some(terrain) = runtime.and_then(|rt| rt.view().resolved_terrain()) else {
         return height_only as f32;
     };
-    let xy = world_xy(entity);
+    let xy = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
     let cell = depth_cell(
         terrain,
         None,
@@ -306,7 +295,7 @@ fn unit_z_adjust_in_runtime(
     };
     let sim = &runtime.simulation;
     let object = draw_type(runtime, entity, unloading_body);
-    let xy = world_xy(entity);
+    let xy = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
     // ObjectClass cell getter 0x41BEA0 truncates signed coordinates toward zero.
     let coord = [(xy[0] / 256) as i16, (xy[1] / 256) as i16];
     let special = if entity.category() == EntityCategory::Unit {

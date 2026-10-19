@@ -369,7 +369,7 @@ impl BridgeRecalcCatalog {
                 if pristine
                     .entries
                     .iter()
-                    .any(|entry| entry.yr_cell_land_type == YR_CELL_LAND_TUNNEL)
+                    .any(|entry| entry.land_type == LandType::Tunnel.as_index())
                 {
                     return Err(BridgeRecalcCatalogError::Unsupported {
                         tile,

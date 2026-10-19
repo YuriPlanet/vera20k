@@ -288,7 +288,7 @@ fn animated_mutation_victim_retires(explosion: bool) {
 }
 
 #[test]
-fn infantry_terminal_effect_only_cleanup_follows_recursive_deaths() {
+fn infantry_effect_only_cleanup_follows_recursive_deaths() {
     use crate::sim::world::LifecycleTestEvent;
     // InfDeath3's external-effect receiver UnInits inline. Missing sprite
     // data is not a native substitute for selecting that death recipe.
@@ -319,7 +319,6 @@ fn infantry_terminal_effect_only_cleanup_follows_recursive_deaths() {
     for id in [parent, child] {
         let entity = sim.substrate.entities.get(id).unwrap();
         assert!(entity.lifecycle.in_limbo() && !entity.in_logic_vector.is_member());
-        assert!(entity.death.infantry_terminal().is_none());
     }
     sim.advance_tick(&[], Some(&rules), None, None, 100);
     assert!(!sim.substrate.entities.contains(parent));
@@ -327,7 +326,7 @@ fn infantry_terminal_effect_only_cleanup_follows_recursive_deaths() {
 }
 
 #[test]
-fn infantry_terminal_same_frame_firer_death_keeps_electric_consequences() {
+fn infantry_same_frame_firer_death_keeps_electric_consequences() {
     for inf_death in [2, 3] {
         let mut art = terminal_art(3, 3);
         // This control's first visit must discharge before the other shooter
@@ -448,7 +447,7 @@ fn infantry_terminal_same_frame_firer_death_keeps_electric_consequences() {
 }
 
 #[test]
-fn infantry_terminal_receiver_sequences_finish_through_production_frames() {
+fn infantry_receiver_sequences_finish_through_production_frames() {
     // Original520BC6 compares the signed Stage with the raw death count;
     // Techno6FABC4 advances only when its retained countdown expires.
     for (inf_death, doing) in [(1, 11), (2, 12)] {
@@ -458,7 +457,9 @@ fn infantry_terminal_receiver_sequences_finish_through_production_frames() {
             .unwrap();
         launch_command(&mut sim, &rules, "IC", 5, 5);
         let object = sim.substrate.entities.get(victim).unwrap();
-        assert!(object.death.is_dying() && object.death.infantry_terminal().is_some());
+        // The corpse: IsAlive at Health 0, with no mark of its own.
+        assert!(!object.death.is_dying() && object.lifecycle.object_alive());
+        assert_eq!(object.health.current(), 0);
         assert_eq!(object.infantry_sprite_pose(), Some((doing, 0)));
         assert_eq!(object.native_stage().rate(), 1);
         assert_eq!(object.native_stage().timer().start_frame(), 0);
@@ -481,8 +482,12 @@ fn infantry_terminal_receiver_sequences_finish_through_production_frames() {
     }
 }
 
+/// Do_Action refuses a death sequence with no frames (`0x0051D70F`), and the
+/// Die2 arm ignores the answer (`0x005185E5`): the infantryman keeps his
+/// action at Health 0, and his next visit's Health reset (`0x0051BC57`)
+/// raises him to Health 1, alive.
 #[test]
-fn infantry_terminal_zero_count_death_request_retains_the_previous_action() {
+fn zero_count_death_request_leaves_an_infantryman_the_health_reset_revives() {
     let art = terminal_art(3, 0);
     let (mut sim, rules) = fixture_with_art("", Some(&art));
     let victim = sim
@@ -505,15 +510,25 @@ fn infantry_terminal_zero_count_death_request_retains_the_previous_action() {
     // longer invents immediate retirement for a refused class action.
     assert_eq!(object.infantry_sprite_pose(), Some((0, before.value())));
     assert_eq!(*object.native_stage(), before);
+    assert_eq!(object.health.current(), 0);
     assert!(
-        object.death.is_dying()
+        !object.death.is_dying()
+            && object.lifecycle.object_alive()
             && object.lifecycle.cell_marked()
             && object.in_logic_vector.is_member()
     );
+    sim.advance_tick(&[], Some(&rules), None, None, 100);
+    let object = sim
+        .substrate
+        .entities
+        .get(victim)
+        .expect("the refused death removes no one");
+    assert_eq!(object.health.current(), 1);
+    assert!(object.is_ai_alive());
 }
 
 #[test]
-fn infantry_terminal_retained_zero_count_death_retires_at_the_native_boundary() {
+fn retained_zero_count_death_retires_at_the_native_boundary() {
     let rows: Vec<serde_json::Value> = serde_json::from_str(crate::test_fixture::text(
         "tools/spatial_oracle/infantry_death_completion.json",
     ))
@@ -705,7 +720,10 @@ fn iron_curtain_command_forces_authored_strength_and_attributes_retained_deaths(
         "forced C4 bypasses prior invulnerability"
     );
     assert!(
-        dead.death.is_dying() && dead.lifecycle.cell_marked() && dead.in_logic_vector.is_member()
+        !dead.death.is_dying()
+            && dead.lifecycle.object_alive()
+            && dead.lifecycle.cell_marked()
+            && dead.in_logic_vector.is_member()
     );
     assert_eq!(dead.infantry_sprite_pose(), Some((12, 0)));
     assert_eq!(dead.kill_record.killer(), Some(owner));
@@ -1048,7 +1066,7 @@ fn iron_curtain_command_observes_native_deck_order_after_nested_bridge_drop_in()
     launch_command(&mut sim, &rules, "IC", 5, 5);
     let current = sim.substrate.entities.get(boomer).unwrap();
     assert!(
-        current.death.is_dying() && !current.on_bridge(),
+        current.health.current() == 0 && !current.on_bridge(),
         "nested fallout relayers the retained current receiver"
     );
     let recipient = sim.substrate.entities.get(tank).unwrap();

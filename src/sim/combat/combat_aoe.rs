@@ -867,18 +867,12 @@ fn push_airborne_aoe_damage(
     {
         return;
     }
-    let target_z = crate::sim::movement::ground_pose::object_world_z_leptons(entity, Some(terrain));
+    let target = crate::sim::movement::ground_pose::object_location(entity, Some(terrain));
     let impact_point = impact.world_point(impact_rx, impact_ry);
     let (impact_x, impact_y) = (impact_point.x, impact_point.y);
-    let target_x = i32::from(entity.position.rx())
-        .wrapping_mul(256)
-        .wrapping_add(entity.position.sub_x().to_num::<i32>());
-    let target_y = i32::from(entity.position.ry())
-        .wrapping_mul(256)
-        .wrapping_add(entity.position.sub_y().to_num::<i32>());
     let raw_distance_leptons = distance_3d_leptons(
         [impact_x, impact_y, impact.z_leptons],
-        [target_x, target_y, target_z],
+        [target.x, target.y, target.z],
     );
     if i64::from(raw_distance_leptons) > spread_leptons {
         return;
@@ -977,14 +971,8 @@ fn push_entity_aoe_damage(
             });
         [x, y, z]
     } else {
-        let x = i32::from(entity.position.rx())
-            .wrapping_mul(256)
-            .wrapping_add(entity.position.sub_x().to_num::<i32>());
-        let y = i32::from(entity.position.ry())
-            .wrapping_mul(256)
-            .wrapping_add(entity.position.sub_y().to_num::<i32>());
-        let z = crate::sim::movement::ground_pose::object_world_z_leptons(entity, terrain);
-        [x, y, z]
+        let location = crate::sim::movement::ground_pose::object_location(entity, terrain);
+        [location.x, location.y, location.z]
     };
     let distance_leptons = if entity.category() == EntityCategory::Structure && center_cell {
         let height_above_cell = impact.z_leptons.wrapping_sub(target_xyz[2]);

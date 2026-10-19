@@ -61,7 +61,7 @@ impl OrdinaryBridgeHost for Observed<'_, '_> {
             .terrain()
             .cell(coord.0 as u16, coord.1 as u16)
             .expect("physical bridge cell")
-            .yr_cell_land_type;
+            .land_type;
         self.events.push(json!({"kind":"occupants","coord":coord,
             "mode_byte":mode,"land":land}));
         OrdinaryBridgeHost::occupants(&mut self.inner, cell, mode)
@@ -252,8 +252,8 @@ fn snapshot(
         // Native House+5574 counts on-map units. EntityStore's type index
         // counts stored objects, including these retained dead receivers.
         "owner_active_units":sim.houses[&owner].tracking.active_for_test().0-other_active_units,
-        "current_land":terrain.cell(current.0,current.1).unwrap().yr_cell_land_type,
-        "impact_land":terrain.cell(115,59).unwrap().yr_cell_land_type,
+        "current_land":terrain.cell(current.0,current.1).unwrap().land_type,
+        "impact_land":terrain.cell(115,59).unwrap().land_type,
         "target":target_name(actor.attack_target.target().as_ref()),
         "mission":actor.mission.current().raw(),"suspended":actor.mission.suspended().raw(),
         "suspended_target":target_name(actor.suspended_attack_target.target().as_ref()),
@@ -451,7 +451,7 @@ fn assert_span(sim: &Simulation, native: &Value, context: &str) {
                 x,
                 y,
                 cell.bridge_facts.overlay_id.map_or(-1, i32::from),
-                cell.yr_cell_land_type
+                cell.land_type
             ]),
             *row,
             "{context}: raw cell {x},{y}"

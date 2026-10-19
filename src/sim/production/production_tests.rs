@@ -233,8 +233,15 @@ pub(super) fn build_catalog_rules() -> RuleSet {
 }
 
 pub(super) fn naval_production_rules() -> RuleSet {
-    let ini = IniFile::from_str(
-        "[Countries]\n0=Americans\n1=Alliance\n2=Russians\n3=Soviet\n[InfantryTypes]\n\
+    naval_rules_with_infantry("", "")
+}
+
+/// [`naval_production_rules`] with `infantry` listed under `[InfantryTypes]`
+/// and `sections` appended. A non-empty `infantry` also binds the fixed GI
+/// ART (Image=GI) and its infantry sequences.
+fn naval_rules_with_infantry(infantry: &str, sections: &str) -> RuleSet {
+    let ini = IniFile::from_str(&format!(
+        "[Countries]\n0=Americans\n1=Alliance\n2=Russians\n3=Soviet\n[InfantryTypes]\n{infantry}\
          [VehicleTypes]\n\
          0=DEST\n\
          [AircraftTypes]\n\
@@ -250,7 +257,7 @@ pub(super) fn naval_production_rules() -> RuleSet {
          Naval=yes\n\
          SpeedType=Float\n\
          MovementZone=Water\n\
-         Locomotor={2BEA74E1-7CCA-11d3-BE14-00104B62A16C}\n\
+         Locomotor={{2BEA74E1-7CCA-11d3-BE14-00104B62A16C}}\n\
          TechLevel=1\n\
          Owner=Americans\n\
          [GAYARD]\n\
@@ -263,13 +270,23 @@ pub(super) fn naval_production_rules() -> RuleSet {
          Foundation=4x4\n\
          SpeedType=Float\n\
          WaterBound=yes\n\
-         ExitCoord=512,256,0\n",
-    );
-    RuleSet::from_ini_with_fixed_art_for_test(
-        &ini,
-        &IniFile::from_str("[GAYARD]\nFoundation=4x4\n"),
-    )
-    .expect("naval production rules and ART should parse")
+         ExitCoord=512,256,0\n{sections}",
+    ));
+    let gi_art = if infantry.is_empty() {
+        ""
+    } else {
+        crate::rules::retail_ini_fixture::GI_ART_EXCERPT
+    };
+    let art = IniFile::from_str(&format!("[GAYARD]\nFoundation=4x4\n{gi_art}"));
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art)
+        .expect("naval production rules and ART should parse");
+    if !infantry.is_empty() {
+        rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(&art));
+        rules.bind_animation_sequences(
+            &crate::rules::infantry_sequence::parse_infantry_sequence_registry(&art),
+        );
+    }
+    rules
 }
 
 pub(super) fn water_terrain(width: u16, height: u16) -> ResolvedTerrainGrid {
@@ -278,7 +295,6 @@ pub(super) fn water_terrain(width: u16, height: u16) -> ResolvedTerrainGrid {
         for x in 0..width {
             cells.push(ResolvedTerrainCell {
                 land_type: 2,
-                yr_cell_land_type: 2,
                 terrain_class: crate::rules::terrain_rules::TerrainClass::Water,
                 speed_costs: crate::rules::terrain_rules::SpeedCostProfile {
                     float: Some(100),
@@ -288,7 +304,6 @@ pub(super) fn water_terrain(width: u16, height: u16) -> ResolvedTerrainGrid {
                 is_water: true,
                 zone_type: crate::map::resolved_terrain::zone_class::WATER,
                 base_land_type: 2,
-                base_yr_cell_land_type: 2,
                 base_terrain_class: crate::rules::terrain_rules::TerrainClass::Water,
                 base_speed_costs: crate::rules::terrain_rules::SpeedCostProfile {
                     float: Some(100),
@@ -851,7 +866,6 @@ fn mixed_land_and_naval_factories_bind_independent_vehicle_and_ship_slots() {
     let land_exit = terrain.cell_mut(6, 5).unwrap();
     land_exit.is_water = false;
     land_exit.land_type = crate::rules::terrain_rules::LandType::Clear.as_index();
-    land_exit.yr_cell_land_type = crate::rules::terrain_rules::LandType::Clear.as_index();
     land_exit.terrain_class = crate::rules::terrain_rules::TerrainClass::Clear;
     let grid = PathGrid::test_all_passable(40, 40);
     sim.install_fixture_path_grid(Some(&grid));
@@ -1314,9 +1328,9 @@ fn naval_empty_fnpc_refunds_then_a_fresh_successor_records_delivery_once() {
     );
 }
 
-#[test]
-fn naval_delivery_success_uses_producer_rally_then_move_and_recentres() {
-    let rules = naval_production_rules();
+/// A 4x4 naval yard (id 1) at (10, 10) on open water, its rally at
+/// (20, 10).
+fn naval_yard_with_rally(rules: &RuleSet) -> Simulation {
     let mut sim = Simulation::new();
     let terrain = water_terrain(40, 40);
     let grid = PathGrid::from_resolved_terrain(&terrain);
@@ -1333,7 +1347,7 @@ fn naval_delivery_success_uses_producer_rally_then_move_and_recentres() {
     sim.session.map_width = 40;
     sim.session.map_height = 40;
 
-    spawn_structure(&mut sim, &rules, 1, "Americans", "GAYARD", 10, 10);
+    spawn_structure(&mut sim, rules, 1, "Americans", "GAYARD", 10, 10);
     sim.remove_entity_occupancy(1);
     {
         let yard = sim.substrate.entities.get_mut(1).unwrap();
@@ -1341,6 +1355,79 @@ fn naval_delivery_success_uses_producer_rally_then_move_and_recentres() {
         yard.set_archive_target(Some(crate::sim::combat::TargetKind::Cell(20, 10)));
     }
     sim.add_entity_occupancy(1);
+    sim
+}
+
+/// Builds a DEST at the yard of [`naval_yard_with_rally`] and returns its
+/// cell.
+fn deliver_naval_yard_ship(sim: &mut Simulation, rules: &RuleSet) -> (u16, u16) {
+    arm_build_via(sim, rules, "Americans", "DEST", ProductionCategory::Ship, 1);
+    let americans = sim.interner.intern("Americans");
+    assert!(
+        sim.production
+            .factories
+            .test_arm_ready(americans, ProductionCategory::Ship)
+    );
+    assert!(super::dispatch_production_changes_for_tests(
+        sim, rules, None
+    ));
+    sim.substrate
+        .entities
+        .values()
+        .find(|entity| {
+            entity.owner() == americans
+                && sim
+                    .interner
+                    .resolve(entity.type_ref())
+                    .eq_ignore_ascii_case("DEST")
+        })
+        .map(|ship| (ship.position.rx(), ship.position.ry()))
+        .expect("naval Unit delivered")
+}
+
+/// `CellClass::Find_Nearest_Object @ 0x0047C3D0` (`0x00444329`) takes any
+/// Techno in the rally walk's water cell, with no alive or Health test: an
+/// infantry corpse on its Die1 sequence there refuses the fast path, as a
+/// living swimmer would, and the ship leaves by another cell.
+#[test]
+fn an_infantry_corpse_in_the_rally_cell_refuses_the_naval_fast_path() {
+    let rules = naval_rules_with_infantry("0=E1\n", "[E1]\nImage=GI\nStrength=100\n");
+    let mut sim = naval_yard_with_rally(&rules);
+    let mut corpse =
+        crate::sim::game_entity::GameEntity::test_default(50, "E1", "Americans", 14, 12);
+    corpse.set_category_for_test(crate::map::entities::EntityCategory::Infantry);
+    corpse.set_owner_for_test(sim.interner.intern("Americans"));
+    corpse.set_type_ref_for_test(sim.interner.intern("E1"));
+    corpse.mission_leaf = crate::sim::mission::leaf::MissionLeafState::for_entity_category(
+        crate::map::entities::EntityCategory::Infantry,
+    );
+    corpse.health.set_for_test(0);
+    sim.substrate.entities.insert(corpse);
+    sim.substrate.occupancy.add(
+        14,
+        12,
+        50,
+        crate::sim::movement::locomotor::MovementLayer::Ground,
+        Some(0),
+        CellListInsertion::PrependNonBuilding,
+    );
+    sim.begin_infantry_death_sequence(
+        50,
+        crate::sim::world::InfantryDeathSequence::Die1,
+        &rules,
+        crate::sim::world::FrameEffects::default(),
+    );
+    let corpse = sim.substrate.entities.get(50).unwrap();
+    assert_eq!(corpse.mission_leaf.as_infantry().unwrap().doing(), 11);
+    assert_ne!(deliver_naval_yard_ship(&mut sim, &rules), (14, 12));
+    let mut clear = naval_yard_with_rally(&rules);
+    assert_eq!(deliver_naval_yard_ship(&mut clear, &rules), (14, 12));
+}
+
+#[test]
+fn naval_delivery_success_uses_producer_rally_then_move_and_recentres() {
+    let rules = naval_production_rules();
+    let mut sim = naval_yard_with_rally(&rules);
 
     arm_build_via(
         &mut sim,

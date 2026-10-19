@@ -3410,8 +3410,8 @@ pub(crate) fn occupant_can_use_track(
     } else {
         turn.normal_track
     };
-    let exit_octant = ((u32::from(turn.target_facing) << 8) >> 12).wrapping_add(1) >> 1 & 7;
-    if exit_octant == u32::from(head) {
+    let exit_octant = crate::util::direction::direction_from_facing(turn.target_facing);
+    if exit_octant == head {
         return false;
     }
     let Some(raw_meta) = RAW_TRACKS.get(usize::from(raw)) else {
@@ -3420,7 +3420,7 @@ pub(crate) fn occupant_can_use_track(
     if i32::from(raw_meta.chain_index) != track.cursor() || track.cursor() == 0 {
         return false;
     }
-    let chained_index = usize::from(head) + exit_octant as usize * FACING_DIRECTIONS;
+    let chained_index = usize::from(head) + usize::from(exit_octant) * FACING_DIRECTIONS;
     let Some(chained) = turn_track_at(chained_index) else {
         return false;
     };

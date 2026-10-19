@@ -52,6 +52,11 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         self.persistence.options_profile.original_shape = original_shape;
         App::sync_zoom_pass(self);
     }
+    fn store_ra2_look(&mut self, ra2_look: bool) {
+        // The menu movie's session identity carries the choice, so its next
+        // paint loads the other game's copy; the splash follows next launch.
+        self.persistence.options_profile.ra2_look = ra2_look;
+    }
 }
 
 struct AppStateLauncherParentOperations<'a> {

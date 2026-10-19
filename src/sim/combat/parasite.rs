@@ -79,6 +79,7 @@ use crate::sim::movement::{ground_pose, target_cell_coord};
 use crate::sim::timer::CdTimer;
 use crate::sim::world::{FrameEffects, Simulation, UninitContext};
 use crate::util::direction::DIRECTION_DELTAS;
+use crate::util::direction_tables::{dir_from_facing16, round_facing16_to_8};
 
 #[path = "parasite_grapple.rs"]
 mod grapple;
@@ -303,16 +304,6 @@ fn weapon_zero<'r>(
 ) -> Option<&'r crate::rules::weapon_type::WeaponType> {
     super::combat_weapon::weapon_for_index(object, veterancy, 0)
         .and_then(|(name, _)| rules.weapon(name))
-}
-
-/// `((raw >> 12) + 1) >> 1 & 7`: the eight-way direction of a facing word.
-fn dir8(raw: u16) -> usize {
-    (((u32::from(raw) >> 12) + 1) >> 1) as usize & 7
-}
-
-/// Unlimbo DirType argument `((raw >> 7) + 1) >> 1 & 0xFF`.
-fn dir_type(raw: u16) -> u8 {
-    ((((u32::from(raw) >> 7) + 1) >> 1) & 0xFF) as u8
 }
 
 impl Simulation {
@@ -589,7 +580,10 @@ impl Simulation {
                     rules,
                 );
             }
-            if let Some(name) = anims.get(dir8(raw)).filter(|_| !anims.is_empty()) {
+            if let Some(name) = anims
+                .get(usize::from(dir_from_facing16(raw)))
+                .filter(|_| !anims.is_empty())
+            {
                 let world = crate::sim::anim_class::AnimWorldCoord {
                     x: location.x,
                     y: location.y,
@@ -622,7 +616,7 @@ impl Simulation {
             } else {
                 -2
             };
-            let angle = X::load_f64(crate::sim::projectile::native_math::radians(
+            let angle = X::load_f64(crate::util::direction_tables::radians_from_facing16(
                 raw.wrapping_sub(0x3fff),
             ))
             .expect("finite parasite bite facing");
@@ -702,7 +696,7 @@ impl Simulation {
             return;
         };
         let raw = victim_entity.body_facing_current(frame);
-        let released = if dir8(raw) <= 2 {
+        let released = if dir_from_facing16(raw) <= 2 {
             raw.wrapping_add(0x3FFF)
         } else {
             raw.wrapping_sub(0x3FFF)
@@ -727,7 +721,7 @@ impl Simulation {
             return;
         }
         let requested = if naval {
-            let (dx, dy) = DIRECTION_DELTAS[dir8(released)];
+            let (dx, dy) = DIRECTION_DELTAS[usize::from(dir_from_facing16(released))];
             (
                 victim_cell.0.wrapping_add(dx as i16),
                 victim_cell.1.wrapping_add(dy as i16),
@@ -751,7 +745,13 @@ impl Simulation {
                     .as_ref(),
             );
             self.parasite_can_place_at_victim(owner, victim, rules)
-                && self.parasite_unlimbo_owner(owner, coords, dir_type(released), rules, effects)
+                && self.parasite_unlimbo_owner(
+                    owner,
+                    coords,
+                    round_facing16_to_8(released),
+                    rules,
+                    effects,
+                )
         });
         if placed {
             self.parasite_reselect(owner, rules, effects);
@@ -855,7 +855,13 @@ impl Simulation {
         // 0x0062A2F8..0x0062A379: the 0xA8E7AC bracket around Unlimbo.
         let placed = coords.is_some_and(|coords| {
             self.with_object_placement_scope(|sim| {
-                sim.parasite_unlimbo_owner(owner, coords, dir_type(victim_raw), rules, effects)
+                sim.parasite_unlimbo_owner(
+                    owner,
+                    coords,
+                    round_facing16_to_8(victim_raw),
+                    rules,
+                    effects,
+                )
             })
         });
         if placed {
@@ -933,7 +939,7 @@ impl Simulation {
             victim_entity.position.rx() as i16,
             victim_entity.position.ry() as i16,
         );
-        let (dx, dy) = DIRECTION_DELTAS[dir8(raw)];
+        let (dx, dy) = DIRECTION_DELTAS[usize::from(dir_from_facing16(raw))];
         let adjacent = (
             victim_cell.0.wrapping_add(dx as i16),
             victim_cell.1.wrapping_add(dy as i16),
@@ -1055,7 +1061,7 @@ impl Simulation {
             .resolved_terrain
             .as_ref()
             .and_then(|t| t.cell(cell.0 as u16, cell.1 as u16))
-            .map(|c| c.yr_cell_land_type);
+            .map(|c| c.land_type);
         let restricted = land.is_some_and(|land| {
             land == LandType::Water.as_index()
                 || land == LandType::Beach.as_index()

@@ -1993,11 +1993,9 @@ mod tests {
             vec![ResolvedTerrainCell {
                 tileset_index: None,
                 land_type: LandType::Clear.as_index(),
-                yr_cell_land_type: LandType::Clear.as_index(),
                 speed_costs,
                 zone_type: zone_class::GROUND,
                 base_land_type: LandType::Clear.as_index(),
-                base_yr_cell_land_type: LandType::Clear.as_index(),
                 base_terrain_class: TerrainClass::Clear,
                 base_speed_costs: speed_costs,
                 ..crate::map::resolved_terrain::test_flat_cell(0, 0)

@@ -1181,7 +1181,7 @@ fn crate_surface_at(sim: &Simulation, cell: (u16, u16)) -> CrateSurface {
         .resolved_terrain
         .as_ref()
         .and_then(|terrain| terrain.cell(cell.0, cell.1))
-        .is_some_and(|cell| cell.yr_cell_land_type == LandType::Water.as_index())
+        .is_some_and(|cell| cell.land_type == LandType::Water.as_index())
     {
         CrateSurface::Water
     } else {
@@ -3390,7 +3390,7 @@ pub(crate) mod tests {
                 cell.speed_costs.track = Some(0);
             }
             let drawn_cell = terrain.cell_mut(drawn.0, drawn.1).expect("drawn cell");
-            drawn_cell.yr_cell_land_type = if drawn_is_water {
+            drawn_cell.land_type = if drawn_is_water {
                 LandType::Water.as_index()
             } else {
                 LandType::Clear.as_index()
@@ -3405,7 +3405,7 @@ pub(crate) mod tests {
                 .expect("destination cell");
             destination_cell.speed_costs.float = Some(100);
             destination_cell.speed_costs.track = Some(100);
-            destination_cell.yr_cell_land_type = if drawn_is_water {
+            destination_cell.land_type = if drawn_is_water {
                 LandType::Clear.as_index()
             } else {
                 LandType::Water.as_index()
@@ -3564,13 +3564,11 @@ pub(crate) mod tests {
         };
         let template = ResolvedTerrainCell {
             land_type,
-            yr_cell_land_type: land_type,
             speed_costs,
             is_water: water,
             allows_tiberium: true,
             zone_type: zone_class::GROUND,
             base_land_type: land_type,
-            base_yr_cell_land_type: land_type,
             base_terrain_class: TerrainClass::Clear,
             base_speed_costs: speed_costs,
             ..crate::map::resolved_terrain::test_flat_cell(0, 0)

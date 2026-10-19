@@ -45,7 +45,7 @@ pub fn apply_rocker_impulse(state: &mut Option<RockingState>, request: RockerImp
     let distance = sqrt_approx_f32(squared).expect("finite squared rocker distance");
     //70B32A..70B341 uses the shared signed word-to-radians owner,
     // including its binary64 store, not a quantized compass step.
-    let angle = X::load_f64(crate::sim::projectile::native_math::radians(
+    let angle = X::load_f64(crate::util::direction_tables::radians_from_facing16(
         request.body_facing,
     ))
     .unwrap();

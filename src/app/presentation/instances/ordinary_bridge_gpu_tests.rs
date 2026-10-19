@@ -417,10 +417,10 @@ impl Probe {
             } else {
                 LandType::Road
             };
-            assert_eq!(cell.yr_cell_land_type, land.as_index(), "{phase} {x},{row}");
+            assert_eq!(cell.land_type, land.as_index(), "{phase} {x},{row}");
             cells.push(json!({"coord":[x,row],"level":cell.level,
                 "tile":cell.final_tile_index,"subtile":cell.final_sub_tile,
-                "land":cell.yr_cell_land_type,"raw_bridge_flags":cell.bridge_facts.raw_flags}));
+                "land":cell.land_type,"raw_bridge_flags":cell.bridge_facts.raw_flags}));
         }
         let name = &self.names[&id];
         assert_eq!(

@@ -148,7 +148,7 @@ fn tube_hierarchy_generated_records_connect_full_and_local_precheck() {
         .map(|(i, x)| {
             let cell = &mut cells[32 * usize::from(width) + usize::from(x)];
             cell.tube_index = Some(TubeId(i as u16));
-            cell.yr_cell_land_type = LandType::Tunnel.as_index();
+            cell.land_type = LandType::Tunnel.as_index();
             TubeFact::explicit((x, 32), (x + 32, 32), 0, vec![2; 32])
         })
         .collect();
