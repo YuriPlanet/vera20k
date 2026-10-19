@@ -1,5 +1,5 @@
-//! Ported scenarios from ra2-mono SuperweaponTargetPreflightTests.cs (MIT).
-//! Copyright (c) 2026 ra2-mono contributors. See superweapon_targeting.LICENSE.
+//! Ported scenarios from ra2-mono's SuperweaponTargetPreflightTests.cs,
+//! contributed under VERA's GPLv3 from the author's earlier ra2-mono work.
 
 use super::*;
 

@@ -1,5 +1,5 @@
-//! Port of ra2-mono's SuperweaponTargetPreflight.cs (MIT).
-//! Copyright (c) 2026 ra2-mono contributors. See superweapon_targeting.LICENSE.
+//! Rust port of ra2-mono's SuperweaponTargetPreflight.cs, contributed under
+//! VERA's GPLv3 from the author's earlier ra2-mono work.
 //!
 //! The decision is pure: commands, AI and cursor queries pass observations
 //! from their existing world owners. It never spends charge or changes fog/RNG.

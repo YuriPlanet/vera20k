@@ -61,12 +61,12 @@ Provide the normal art/cameo assets for your mod.
 
 ## Port provenance
 
-The target decision kernel is a Rust port of ra2-mono's
-`src/Ra2.Logic/Domains/SupportSuperweapons/SuperweaponTargetPreflight.cs`.
-The corresponding `SuperweaponTargetPreflightTests.cs` scenarios are migrated
+The target decision kernel is a Rust port of the author's earlier ra2-mono work
+(`src/Ra2.Logic/Domains/SupportSuperweapons/SuperweaponTargetPreflight.cs`) and
+is contributed to VERA under this repository's GPLv3. The corresponding
+`SuperweaponTargetPreflightTests.cs` scenarios are migrated
 in `src/rules/superweapon_targeting_tests.rs` and the production-command
-scenes in `src/sim/superweapon/generic_warhead_tests.rs`. The MIT copyright
-and permission notice is preserved in `src/rules/superweapon_targeting.LICENSE`.
+scenes in `src/sim/superweapon/generic_warhead_tests.rs`.
 The source file used for the port has SHA-256
 `CEF5E67CE6EE0B8D09CEB193D474A5C23F36CDBA619249D791DD262C99ECF4D7`;
 its last committed change is ra2-mono commit `299548d1`.
