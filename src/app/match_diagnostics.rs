@@ -71,6 +71,18 @@ impl MatchDiagnosticsState {
         replays_dir: &Path,
         unix_secs: u64,
     ) -> anyhow::Result<Option<ReplayLogFlush>> {
+        self.flush_to_with_writer(session_tick, replays_dir, unix_secs, |log, file| {
+            log.write_json(file)
+        })
+    }
+
+    fn flush_to_with_writer(
+        &mut self,
+        session_tick: u64,
+        replays_dir: &Path,
+        unix_secs: u64,
+        write: impl FnOnce(&ReplayLog, &mut std::fs::File) -> anyhow::Result<()>,
+    ) -> anyhow::Result<Option<ReplayLogFlush>> {
         let Some(log) = self.replay_log.take() else {
             return Ok(None);
         };
@@ -80,14 +92,15 @@ impl MatchDiagnosticsState {
 
         let result = (|| {
             std::fs::create_dir_all(replays_dir)?;
-            let path = reserve_segment_path(replays_dir, session_tick, unix_secs)?;
-            // `save` truncates the reservation into the published artifact.
-            // Release the reserved name on failure so a retry can take the
-            // same candidate instead of walking to a suffix behind a stray
-            // empty file.
-            if let Err(error) = log.save(&path) {
+            let (path, mut file) = reserve_segment_path(replays_dir, session_tick, unix_secs)?;
+            // Keep the exclusively created handle through the write. Reopening
+            // its path could truncate a replacement supplied after reservation.
+            let written = write(&log, &mut file);
+            drop(file);
+            if let Err(error) = written {
+                // Close before deleting so retry cleanup also works on Windows.
                 let _ = std::fs::remove_file(&path);
-                return Err(error);
+                return Err(error.context(format!("Diagnostic log: {}", path.display())));
             }
             Ok(Some(ReplayLogFlush {
                 path,
@@ -138,7 +151,7 @@ fn reserve_segment_path(
     replays_dir: &Path,
     session_tick: u64,
     unix_secs: u64,
-) -> anyhow::Result<PathBuf> {
+) -> anyhow::Result<(PathBuf, std::fs::File)> {
     let stem = format!("replay_tick{session_tick}_{unix_secs}");
     let mut suffix: u32 = 0;
     loop {
@@ -152,7 +165,7 @@ fn reserve_segment_path(
             .create_new(true)
             .open(&path)
         {
-            Ok(_reservation) => return Ok(path),
+            Ok(file) => return Ok((path, file)),
             Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
                 suffix += 1;
             }
@@ -355,6 +368,113 @@ mod tests {
         assert!(outgoing.replay_log.is_none());
         assert!(restored.replay_log.is_none());
         std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn partial_write_failure_restores_the_segment_and_reuses_the_reserved_name() {
+        use std::io::Write;
+        struct PartialWriter<'a> {
+            file: &'a mut std::fs::File,
+            written: usize,
+        }
+        impl Write for PartialWriter<'_> {
+            fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+                if self.written != 0 {
+                    return Err(std::io::Error::other("injected partial-write failure"));
+                }
+                let length = bytes.len().min(17);
+                self.file.write_all(&bytes[..length])?;
+                self.written = length;
+                Ok(length)
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                self.file.flush()
+            }
+        }
+        let root = test_path("partial-write");
+        let first = diagnostics_with_segment()
+            .flush_to(41, &root, 1234)
+            .unwrap()
+            .unwrap();
+        let original_bytes = std::fs::read(&first.path).unwrap();
+        let mut second = MatchDiagnosticsState {
+            replay_log: Some(sample_log_with(0xBEEF, "restored.map", 0x5555)),
+        };
+        let error = second.flush_to_with_writer(41, &root, 1234, |log, file| {
+            let mut writer = PartialWriter { file, written: 0 };
+            let result = log.write_json(&mut writer);
+            assert_eq!(
+                writer.written, 17,
+                "error follows a real nonempty file write"
+            );
+            result
+        });
+        assert!(error.is_err());
+        assert_eq!(second.replay_log.as_ref().unwrap().header.seed, 0xBEEF);
+        assert_eq!(
+            second.replay_log.as_ref().unwrap().ticks[0].state_hash,
+            Some(0x5555)
+        );
+        let candidate = root.join("replay_tick41_1234_1.json");
+        assert!(!candidate.exists(), "partial reservation must be removed");
+        assert_eq!(std::fs::read(&first.path).unwrap(), original_bytes);
+        let retry = second.flush_to(41, &root, 1234).unwrap().unwrap();
+        assert_eq!(retry.path, candidate);
+        assert_eq!(ReplayLog::load(&retry.path).unwrap().header.seed, 0xBEEF);
+        assert!(second.replay_log.is_none());
+        assert!(second.flush_to(41, &root, 1234).unwrap().is_none());
+        assert_eq!(std::fs::read_dir(&root).unwrap().count(), 2);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn simultaneous_flushes_keep_both_complete_segments() {
+        let root = test_path("simultaneous");
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(2));
+        let workers: Vec<_> = [0x1234, 0xBEEF]
+            .into_iter()
+            .map(|seed| {
+                let root = root.clone();
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    let mut state = MatchDiagnosticsState {
+                        replay_log: Some(sample_log_with(seed, "racing.map", seed)),
+                    };
+                    barrier.wait();
+                    let result = state.flush_to(41, &root, 1234).unwrap().unwrap();
+                    assert!(state.replay_log.is_none());
+                    result.path
+                })
+            })
+            .collect();
+        let paths: Vec<_> = workers
+            .into_iter()
+            .map(|worker| worker.join().unwrap())
+            .collect();
+        assert_ne!(paths[0], paths[1]);
+        let seeds: std::collections::BTreeSet<_> = paths
+            .iter()
+            .map(|path| ReplayLog::load(path).unwrap().header.seed)
+            .collect();
+        assert_eq!(seeds, [0x1234, 0xBEEF].into_iter().collect());
+        assert_eq!(std::fs::read_dir(&root).unwrap().count(), 2);
+        std::fs::remove_dir_all(root).unwrap();
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn reserved_handle_does_not_reopen_a_replaced_path() {
+        let root = test_path("reserved-handle");
+        std::fs::create_dir_all(&root).unwrap();
+        let (path, mut file) = super::reserve_segment_path(&root, 41, 1234).unwrap();
+        let moved = root.join("original-reservation.json");
+        std::fs::rename(&path, &moved).unwrap();
+        std::fs::write(&path, b"replacement sentinel").unwrap();
+        sample_log().write_json(&mut file).unwrap();
+        drop(file);
+        assert_eq!(std::fs::read(&path).unwrap(), b"replacement sentinel");
+        assert_eq!(ReplayLog::load(&moved).unwrap().header.seed, 0x1234);
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

@@ -12,6 +12,7 @@
 //! [`NativeReplay`], which is kept for native recording playback.
 
 use std::num::NonZeroI32;
+#[cfg(any(test, feature = "test-support"))]
 use std::path::Path;
 
 use anyhow::{Context, Result};
@@ -781,11 +782,12 @@ impl ReplayLog {
         effects
     }
 
-    pub fn save(&self, path: &Path) -> Result<()> {
+    pub fn write_json(&self, writer: &mut impl std::io::Write) -> Result<()> {
         let bytes = serde_json::to_vec_pretty(self)
             .context("Failed to serialize deterministic diagnostic log to JSON")?;
-        std::fs::write(path, bytes)
-            .with_context(|| format!("Failed to write diagnostic log: {}", path.display()))
+        writer
+            .write_all(&bytes)
+            .context("Failed to write diagnostic log")
     }
 
     #[cfg(any(test, feature = "test-support"))]
