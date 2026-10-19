@@ -1,0 +1,423 @@
+{
+  "cases": [
+    {
+      "code_unchanged": true,
+      "expected": {
+        "can_fire": true,
+        "emitted": [
+          {
+            "kind": "GUI",
+            "sound": 42
+          },
+          {
+            "kind": "EVA",
+            "name": "EVA_SelectTarget"
+          }
+        ],
+        "event_count": 0,
+        "event_hex": null,
+        "modes": [
+          0,
+          0,
+          0
+        ],
+        "placement": [
+          0,
+          0,
+          -1
+        ],
+        "selected": 0
+      },
+      "input": {}
+    },
+    {
+      "code_unchanged": true,
+      "expected": {
+        "can_fire": false,
+        "emitted": [
+          {
+            "kind": "GUI",
+            "sound": 42
+          }
+        ],
+        "event_count": 0,
+        "event_hex": null,
+        "modes": [
+          1,
+          1,
+          1
+        ],
+        "placement": [
+          553713456,
+          553707296,
+          7
+        ],
+        "selected": -1
+      },
+      "input": {
+        "held": true
+      }
+    },
+    {
+      "code_unchanged": true,
+      "expected": {
+        "can_fire": false,
+        "emitted": [
+          {
+            "kind": "GUI",
+            "sound": 42
+          }
+        ],
+        "event_count": 0,
+        "event_hex": null,
+        "modes": [
+          1,
+          1,
+          1
+        ],
+        "placement": [
+          553713456,
+          553707296,
+          7
+        ],
+        "selected": -1
+      },
+      "input": {
+        "ready": false
+      }
+    },
+    {
+      "code_unchanged": true,
+      "expected": {
+        "can_fire": true,
+        "emitted": [
+          {
+            "kind": "GUI",
+            "sound": 42
+          },
+          {
+            "kind": "EVA",
+            "name": "EVA_SelectTarget"
+          }
+        ],
+        "event_count": 0,
+        "event_hex": null,
+        "modes": [
+          0,
+          0,
+          0
+        ],
+        "placement": [
+          0,
+          0,
+          -1
+        ],
+        "selected": 0
+      },
+      "input": {
+        "selected": 0
+      }
+    },
+    {
+      "code_unchanged": true,
+      "expected": {
+        "can_fire": false,
+        "emitted": [],
+        "event_count": 0,
+        "event_hex": null,
+        "modes": [
+          1,
+          1,
+          1
+        ],
+        "placement": [
+          553713456,
+          553707296,
+          7
+        ],
+        "selected": -1
+      },
+      "input": {
+        "held": true,
+        "right": true,
+        "selected": 0
+      }
+    },
+    {
+      "code_unchanged": true,
+      "expected": {
+        "can_fire": false,
+        "emitted": [],
+        "event_count": 0,
+        "event_hex": null,
+        "modes": [
+          1,
+          1,
+          1
+        ],
+        "placement": [
+          553713456,
+          553707296,
+          7
+        ],
+        "selected": -1
+      },
+      "input": {
+        "ready": false,
+        "right": true,
+        "selected": 5
+      }
+    },
+    {
+      "code_unchanged": true,
+      "expected": {
+        "can_fire": true,
+        "emitted": [
+          {
+            "kind": "GUI",
+            "sound": 42
+          },
+          {
+            "kind": "EVA",
+            "name": "EVA_SelectTarget"
+          }
+        ],
+        "event_count": 0,
+        "event_hex": null,
+        "modes": [
+          0,
+          0,
+          0
+        ],
+        "placement": [
+          0,
+          0,
+          -1
+        ],
+        "selected": 0
+      },
+      "input": {
+        "drain": true,
+        "ready": false,
+        "state": 1
+      }
+    },
+    {
+      "code_unchanged": true,
+      "expected": {
+        "can_fire": false,
+        "emitted": [
+          {
+            "kind": "GUI",
+            "sound": 42
+          }
+        ],
+        "event_count": 0,
+        "event_hex": null,
+        "modes": [
+          1,
+          1,
+          1
+        ],
+        "placement": [
+          553713456,
+          553707296,
+          7
+        ],
+        "selected": -1
+      },
+      "input": {
+        "drain": true,
+        "state": 0
+      }
+    },
+    {
+      "code_unchanged": true,
+      "expected": {
+        "can_fire": true,
+        "emitted": [
+          {
+            "kind": "GUI",
+            "sound": 42
+          }
+        ],
+        "event_count": 1,
+        "event_hex": "1200007b00000000000000000000000000",
+        "modes": [
+          1,
+          1,
+          1
+        ],
+        "placement": [
+          553713456,
+          553707296,
+          7
+        ],
+        "selected": 5
+      },
+      "input": {
+        "action": 0,
+        "selected": 5
+      }
+    },
+    {
+      "code_unchanged": true,
+      "expected": {
+        "can_fire": false,
+        "emitted": [
+          {
+            "kind": "GUI",
+            "sound": 42
+          }
+        ],
+        "event_count": 0,
+        "event_hex": null,
+        "modes": [
+          1,
+          1,
+          1
+        ],
+        "placement": [
+          553713456,
+          553707296,
+          7
+        ],
+        "selected": 5
+      },
+      "input": {
+        "held": true,
+        "selected": 5
+      }
+    },
+    {
+      "code_unchanged": true,
+      "expected": {
+        "can_fire": true,
+        "emitted": [
+          {
+            "kind": "GUI",
+            "sound": 42
+          },
+          {
+            "kind": "EVA",
+            "name": "EVA_SelectTarget"
+          }
+        ],
+        "event_count": 0,
+        "event_hex": null,
+        "modes": [
+          0,
+          0,
+          0
+        ],
+        "placement": [
+          0,
+          0,
+          -1
+        ],
+        "selected": 0
+      },
+      "input": {
+        "drain": true,
+        "ready": false,
+        "state": 2
+      }
+    },
+    {
+      "code_unchanged": true,
+      "expected": {
+        "can_fire": true,
+        "emitted": [
+          {
+            "kind": "GUI",
+            "sound": 42
+          },
+          {
+            "kind": "EVA",
+            "name": "EVA_SelectTarget"
+          }
+        ],
+        "event_count": 0,
+        "event_hex": null,
+        "modes": [
+          0,
+          0,
+          0
+        ],
+        "placement": [
+          0,
+          0,
+          -1
+        ],
+        "selected": 0
+      },
+      "input": {
+        "drain": true,
+        "ready": false,
+        "state": -1
+      }
+    },
+    {
+      "code_unchanged": true,
+      "expected": {
+        "can_fire": false,
+        "emitted": [
+          {
+            "kind": "GUI",
+            "sound": 42
+          }
+        ],
+        "event_count": 0,
+        "event_hex": null,
+        "modes": [
+          1,
+          1,
+          1
+        ],
+        "placement": [
+          553713456,
+          553707296,
+          7
+        ],
+        "selected": -1
+      },
+      "input": {
+        "drain": true,
+        "held": true,
+        "state": 1
+      }
+    },
+    {
+      "code_unchanged": true,
+      "expected": {
+        "can_fire": true,
+        "emitted": [
+          {
+            "kind": "GUI",
+            "sound": 42
+          },
+          {
+            "kind": "EVA",
+            "name": "EVA_SelectTarget"
+          }
+        ],
+        "event_count": 0,
+        "event_hex": null,
+        "modes": [
+          0,
+          0,
+          0
+        ],
+        "placement": [
+          0,
+          0,
+          -1
+        ],
+        "selected": 0
+      },
+      "input": {
+        "granted": false
+      }
+    }
+  ]
+}
