@@ -53,7 +53,9 @@ mod house_cheer_tests;
 mod house_defeat;
 pub(crate) use house_defeat::HouseBlowupSubset;
 mod ion_blast;
+mod spotlight;
 pub(crate) use house_base::HouseBaseState;
+pub use spotlight::BuildingSpotlight;
 mod infantry_death;
 mod jumpjet_cruise;
 pub use infantry_death::InfantryDeathPostlude;
@@ -3835,6 +3837,7 @@ impl Simulation {
             let live_objects = TiberiumPlacementObjectContext::new(
                 &self.substrate.entities,
                 &self.substrate.occupancy,
+                &self.substrate.raw_cell_occupation,
                 rules,
                 &self.interner,
                 &self.production.terrain_object_cells,
@@ -4336,7 +4339,12 @@ impl Simulation {
                         .projectiles
                         .get(id)
                         .is_some_and(|projectile| projectile.in_logic_vector)
-                    || self.waves.get(id).is_some_and(|wave| wave.in_logic_vector),
+                    || self.waves.get(id).is_some_and(|wave| wave.in_logic_vector)
+                    || self
+                        .substrate
+                        .spotlights
+                        .get(id)
+                        .is_some_and(|light| light.in_logic_vector),
                 "logic order id {id} is missing or not membership-flagged",
             );
         }
@@ -4380,7 +4388,14 @@ impl Simulation {
             .iter()
             .filter(|(_, wave)| wave.in_logic_vector)
             .count();
-        let flagged = flagged_entities
+        let flagged_spotlights = self
+            .substrate
+            .spotlights
+            .iter()
+            .filter(|(_, l)| l.in_logic_vector)
+            .count();
+        let flagged = flagged_spotlights
+            + flagged_entities
             + flagged_anims
             + flagged_voxel_anims
             + flagged_particle_systems
@@ -4596,6 +4611,9 @@ impl Simulation {
         for anim in self.substrate.anims.values_mut() {
             anim.in_logic_vector = false;
         }
+        for light in self.substrate.spotlights.values_mut() {
+            light.in_logic_vector = false;
+        }
         for debris in self.substrate.voxel_anims.values_mut() {
             debris.in_logic_vector = false;
         }
@@ -4616,6 +4634,8 @@ impl Simulation {
                 e.in_logic_vector.mark(true);
             } else if let Some(anim) = self.substrate.anims.get_mut(id) {
                 anim.in_logic_vector = true;
+            } else if let Some(light) = self.substrate.spotlights.get_mut(id) {
+                light.in_logic_vector = true;
             } else if let Some(debris) = self.substrate.voxel_anims.get_mut(id) {
                 debris.in_logic_vector = true;
             } else if let Some(system) = self.substrate.particle_systems.get_mut(id) {
@@ -5806,6 +5826,9 @@ impl Simulation {
         for anim in self.substrate.anims.values_mut() {
             anim.in_logic_vector = false;
         }
+        for light in self.substrate.spotlights.values_mut() {
+            light.in_logic_vector = false;
+        }
         for debris in self.substrate.voxel_anims.values_mut() {
             debris.in_logic_vector = false;
         }
@@ -5826,6 +5849,8 @@ impl Simulation {
                 entity.in_logic_vector.mark(true);
             } else if let Some(anim) = self.substrate.anims.get_mut(id) {
                 anim.in_logic_vector = true;
+            } else if let Some(light) = self.substrate.spotlights.get_mut(id) {
+                light.in_logic_vector = true;
             } else if let Some(debris) = self.substrate.voxel_anims.get_mut(id) {
                 debris.in_logic_vector = true;
             } else if let Some(system) = self.substrate.particle_systems.get_mut(id) {

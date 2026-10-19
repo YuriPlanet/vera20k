@@ -1,9 +1,10 @@
 # Optional Ares superweapon building gates
 
-This contribution ports the auxiliary/negative-building availability decision
-and two regression scenarios from the author's earlier ra2-mono work, and is
-contributed to VERA under this repository's GPLv3.
-It is independent of the GenericWarhead contribution and adds no new SW type.
+Original implementation by **baixiong443**, who attributes the availability
+logic and regression scenarios to their earlier ra2-mono work and contributes
+this change under VERA's GPLv3. That donor repository was unavailable during
+review; its source and history have not been independently verified.
+The gates compose with existing superweapon types, including GenericWarhead.
 
 ```ini
 [BlackWidowSpecial]
@@ -20,12 +21,14 @@ The normal weapon needs either GASCEA or GASCPF and is unavailable while its
 owner has GAMERC. The alternative needs GAMERC. Both still need a building
 providing their `SuperWeapon=` / `SuperWeapon2=` grant. Native `AuxBuilding=`
 remains a separate AND requirement. An omitted extension list retains its
-earlier rules-layer value; `none` clears it. List references participate in
-VERA's ordered BuildingType allocation/binding, rather than a late string scan.
+earlier rules-layer value; `none` clears it. Each nonempty authored list replaces
+the prior list and binds only BuildingTypes registered at that read point.
+Unknown names are skipped and never create a type. A later type registration
+does not retroactively resolve an earlier miss.
 
 ## Port provenance and adaptation
 
-Source files in the author's ra2-mono checkout:
+Contributor-reported source files (unavailable for independent inspection):
 
 - `src/Ra2.Logic/GameLogicManager.SuperweaponAvailability.cs`:
   `IsSuperweaponBlockedByMissingAuxBuildings` and
@@ -40,7 +43,7 @@ PsychicReveal types and the two existing provider slots exercise the same
 availability/charge transaction and mutual-exclusion mechanism without those
 unimplemented dependencies.
 
-The original C# code enumerates ready/live owned structures. This adaptation
+The contributor describes the C# source as enumerating ready/live owned structures. This adaptation
 uses VERA's existing authoritative `HouseTracking::active_count` (the same
 owner as native `AuxBuilding`), matching Ares's owned-and-present query. No
 new building index, periodic world scan, persistent availability cache, or
@@ -51,8 +54,9 @@ upgrades are not independent prerequisite buildings.
 Compatibility reference: [Ares availability documentation](https://ares-developers.github.io/Ares-docs/new/superweapons/availability.html)
 and the auxiliary/negative predicates in
 [`SWTypeExt::ExtData::IsAvailable`](https://github.com/Ares-Developers/Ares/blob/master/src/Ext/SWType/Body.cpp).
-These establish the tag meaning; they are not the source of an imported Ares
-C++ implementation.
+These establish the tag meaning. The Ares pointer-vector reader uses `Find`,
+not `FindOrAllocate` (`Utilities/TemplateDef.h` and `Utilities/Parser.h` at Ares
+commit `4f1d929920aca31924c6cd4d3dfa849daa65252a`). No C++ implementation is imported.
 
 ## Integration and boundaries
 
@@ -71,7 +75,7 @@ extension hash input is added. Native stock firing,
 charge, power and provider behavior is otherwise unchanged. Resolved extension
 lists participate in the simulation configuration hash and persisted processed
 rules; availability itself is recomputed from the restored House counts.
-The snapshot format advances from 434 to 435 because persisted processed type
+The snapshot format advances from 438 to 439 because persisted processed type
 records have a new optional field; older binary records must be rejected rather
 than silently decoded with the new positional layout.
 

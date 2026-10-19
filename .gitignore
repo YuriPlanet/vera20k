@@ -28,6 +28,7 @@ Thumbs.db
 /infodocs/
 
 /docs/*
+!/docs/ares-generic-warhead.md
 !/docs/_config.yml
 !/docs/index.md
 !/docs/Networking.md

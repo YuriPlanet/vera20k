@@ -2818,6 +2818,7 @@ impl Simulation {
                     let objects = TiberiumPlacementObjectContext::new(
                         &self.substrate.entities,
                         &self.substrate.occupancy,
+                        &self.substrate.raw_cell_occupation,
                         rules,
                         &self.interner,
                         &self.production.terrain_object_cells,
@@ -2854,9 +2855,9 @@ impl Simulation {
                 //424140 executes even when Overlay Unlimbo refused the cell.
                 let density = self.scenario_rng.next_range_i32_inclusive(0, 2) as u8;
                 if let Some(grid) = self.overlay_grid.as_mut() {
-                    //Like Place487190's post-constructor store, this is a
+                    //424155: like Place487190's post-constructor store, a
                     //literal Cell+11E write even when no overlay was installed.
-                    grid.cell_mut(cell.0, cell.1).overlay_data = density;
+                    grid.write_cell_data(self.resolved_terrain.as_mut(), cell.0, cell.1, density);
                 }
                 if !self.tactical_dirty_cells.contains(&cell) {
                     self.tactical_dirty_cells.push(cell);

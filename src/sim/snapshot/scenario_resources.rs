@@ -125,6 +125,9 @@ pub struct SavedMapMetadata {
     local_player_name: Option<String>,
     /// ThemeSave721010's retained/pending pair. The live owner remains in audio.
     theme_slots: [i32; 2],
+    /// Rust media reconstruction policy: release this credit because the
+    /// physical Radar video queue is not restored. Other pause holds persist.
+    radar_pause_credit: bool,
 }
 
 impl SavedMapMetadata {
@@ -157,6 +160,7 @@ impl SavedMapMetadata {
             elapsed_buckets,
             local_player_name: local_player_name.map(str::to_owned),
             theme_slots,
+            radar_pause_credit: false,
         }
     }
 
@@ -190,6 +194,12 @@ impl SavedMapMetadata {
     }
     pub fn local_player_name(&self) -> Option<&str> {
         self.local_player_name.as_deref()
+    }
+    pub fn radar_pause_credit(&self) -> bool {
+        self.radar_pause_credit
+    }
+    pub fn set_radar_pause_credit(&mut self, held: bool) {
+        self.radar_pause_credit = held;
     }
     pub fn theme_slots(&self) -> [i32; 2] {
         self.theme_slots

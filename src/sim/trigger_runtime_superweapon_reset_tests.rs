@@ -245,7 +245,15 @@ fn superweapon_reset_releases_a_production_chrono_placement_without_destroying_i
     instance.is_active = true;
     instance.is_ready = true;
     instance.set_recharge_time(4500);
-    assert!(sim.fire_super_weapon(&rules, owner, id, (10, 10), None, FrameEffects::default()));
+    assert!(sim.fire_super_weapon(
+        &rules,
+        owner,
+        id,
+        (10, 10),
+        None,
+        FrameEffects::default(),
+        false
+    ));
     let held = sim.super_placement_anims();
     assert_eq!(held.len(), 1);
     let anim = held[0].1;

@@ -42,6 +42,8 @@ impl Simulation {
     /// `HouseClass::Fire_SW @ 0x004FAE50` for `owner`'s Super of type
     /// `sw_type_id` at `cell`. Returns whether ClickFire called Launch, a
     /// VERA answer: native Fire_SW returns 1 either way.
+    /// Manual commands and AI share this transaction; `automatic` selects
+    /// the extension target requirements before any charge is consumed.
     pub(crate) fn fire_super_weapon(
         &mut self,
         rules: &RuleSet,
@@ -50,6 +52,7 @@ impl Simulation {
         cell: (u16, u16),
         overlay_registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
+        automatic: bool,
     ) -> bool {
         #[cfg(any(test, feature = "test-support"))]
         super::ai_fire::observe(super::ai_fire::AiFireEvent::Fire(sw_type_id, cell));
@@ -65,6 +68,9 @@ impl Simulation {
         if sw.building_requirements.is_some()
             && !super::building_requirements_met(self, rules, owner, sw)
         {
+            return false;
+        }
+        if super::targeting::check(self, rules, owner, sw, cell, automatic).is_err() {
             return false;
         }
         let paired = sw
@@ -130,6 +136,11 @@ fn click_fire(
     frame_effects: FrameEffects<'_>,
 ) -> bool {
     if sw.use_charge_drain {
+        return false;
+    }
+    if sw.kind == SuperWeaponKind::GenericWarhead
+        && !super::generic_warhead::can_launch(sim, rules, sw, cell)
+    {
         return false;
     }
     let Some(instance) = super_instance(sim, owner, sw_type_id) else {
@@ -269,6 +280,18 @@ fn launch(
         }
         SuperWeaponKind::SpyPlane => {
             super::spy_plane::launch(sim, rules, owner, sw_type_id, (rx, ry), frame_effects);
+        }
+        SuperWeaponKind::GenericWarhead => {
+            super::generic_warhead::launch(
+                sim,
+                rules,
+                owner,
+                sw_type_id,
+                sw,
+                (rx, ry),
+                overlay_registry,
+                frame_effects,
+            );
         }
     }
 }

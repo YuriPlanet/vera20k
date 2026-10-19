@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Tactical superweapon targeting pulse, ring loop and shared radial radius prefix controls",
+  "assumptions": [
+    "Original WinMain controlfp/cache fragment6BBFB7..6BBFCE executes from Windows initial x87 control word027F and reaches7CBF49/7C5EE4; live FPCW and cached822D80 both become0E3F.",
+    "Loop controls enter the native post-admission pulse block6DC25A after Tactical__DrawUnitActionVisuals has selected an armed type with Range>0. The native caller pulse, positive-LM/local per-ring pulse and shared RGB adjustment6612C0 all execute. CurrentPlayer/House/type memory is ABI-shaped test input; DrawRadialIndicator456980 is intercepted only at the external geometry boundary to record its original arguments and preserve caller registers while applying its stack cleanup.",
+    "The shared radial helper reads its pixel-radius and truncate-radius flags as separate DWORD arguments at EBP+1C and EBP+20. The positive-LM caller pushes 0/0; its LM<1 fallback pushes DWORD1 then DWORD0, yielding pixel=0/truncate=1. The capture reads the two independent stack words.",
+    "NukeSpecial controls run two consecutive native pulse blocks in one Unicorn machine so persistent B0E64C/842954 state is observed across draws. Inactive controls execute the selected-index=-1 and Range=0 branches at6DC1AF and verify that those gates leave pulse state unchanged.",
+    "Helper controls execute original DrawRadialIndicator456980 through sqrt4CAC40 and ftol7C5F00, stopping before world projection/drawing at4569E3. This compares only the numeric prefix, not pixels.",
+    "NukeSpecial7/2 and IronCurtainSpecial1.4/3 are authored Steam RulesMD values; 2.8/5 is a synthetic near-integer product control, not a retail type."
+  ],
+  "substitutions": [
+    "The current-player pointer, house array/current House RGB, selected type and fixed cell locals are supplied as explicit consumer inputs. The final ellipse/raster body is not executed by loop controls; only its radius/color arguments and ordering are observed. Helper controls stop before projection."
+  ],
+  "entry_points": {
+    "winmain_control": "0x006BBFB7",
+    "pulse": "0x006DC25A",
+    "superweapon_loop": "0x006DC2F5",
+    "superweapon_loop_stop": "0x006DC3A3",
+    "fallback_ring": "0x006DC3AB",
+    "fallback_stop": "0x006DC3F3",
+    "inactive_gate": "0x006DC1AF",
+    "caller_rgb_adjust": "0x006612C0",
+    "radial_helper": "0x00456980",
+    "radial_helper_numeric_stop": "0x004569E3",
+    "sqrt": "0x004CAC40",
+    "ftol": "0x007C5F00"
+  },
+  "fpcw_initial": "0x027F",
+  "fpcw_live_and_cached": "0x0E3F",
+  "fpcw_cache_address": "0x00822D80",
+  "required_winmain_callees": [
+    "0x007CBF49",
+    "0x007C5EE4"
+  ],
+  "replay_command": "python -m tools.procedural_drawing_oracle.shroud --superweapon-range --check",
+  "generation_command": "python -m tools.procedural_drawing_oracle.shroud --superweapon-range --write",
+  "required_environment": "VERA20K_GAMEMD_EXE must identify a supported original image; --check requires the recorded SHA256",
+  "payload_sha256": "c2c6d8e3b12030690b3f1831f0ee069730f6672a0c7703db192bd96ff14fee8a"
+}

@@ -302,6 +302,7 @@ fn forced_spread_matches_original_admission_placement_queues_and_rng() {
         let objects = TiberiumPlacementObjectContext::new(
             &s.sim.substrate.entities,
             &s.sim.substrate.occupancy,
+            &s.sim.substrate.raw_cell_occupation,
             &s.rules,
             &s.sim.interner,
             &s.sim.production.terrain_object_cells,

@@ -7,9 +7,11 @@ use super::tubes::build_auto_low_bridge_tubes;
 use super::*;
 
 /// Identifies whether map overlays still require the ordinary authored-map
-/// `OverlayClass::Mark` pass. RMG writes its complete overlay/data rectangles
-/// directly into live cells; serializing those cells through `MapFile` must not
-/// turn loading into a second Mark operation.
+/// `OverlayClass::Mark` pass. The random-map generator
+/// (`RandomMapGenerator::Generate @ 0x00598960`) stores each overlay index and
+/// data byte (`CellClass+0x44`, `+0x11E`) in its live cell itself and constructs
+/// no `OverlayClass`; serializing those cells through `MapFile` must not turn
+/// loading into a Mark operation. Evidence: `OverlayGrid::from_generated_overlays`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OverlayLoadSource {
     Authored,
@@ -84,7 +86,7 @@ impl ResolvedTerrainGrid {
     /// Selector-free generated-map load seam for focused construction tests.
     /// Production generated maps use `build_with_variant_selector_and_shared_dummy`.
     #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn build_generated_materialized_for_test(map: &MapFile) -> Self {
+    pub fn build_generated_materialized_for_test(map: &MapFile) -> Self {
         Self::build_inner(
             map,
             None,

@@ -242,7 +242,7 @@ pub(crate) fn projectile_draw_instance(
         .chain(std::iter::once((TerrainPiece::Body, geometry.body)))
     {
         pieces.push(ObjectPieceInstance {
-            target: ObjectTexture::ProjectileShp(entry.page as usize, piece),
+            target: ObjectTexture::SpriteAtlasEdit(entry.page as usize, piece),
             render_z: RenderZPolicy::ReadOnly,
             instance: SpriteInstance {
                 position: [

@@ -1171,10 +1171,14 @@ use crate::util::save_codec;
 // [Triggers], [Events] and [Actions] records and the always-empty trigger
 // graph. The trigger runtime saved with the Simulation is the only owner of
 // those definitions.
-// 434 -> 435: processed SuperWeaponTypes retain optional Ares auxiliary and
-// negative building lists inside saved scenario resources. The positional
-// type-record layout changes even when those lists are absent.
-const SNAPSHOT_VERSION: u32 = 435;
+// 434 -> 435: retain Scenario34A7, ScenarioPause62C/630/prior lock,
+// and the credit of the unrestored physical Radar video queue.
+// 435 -> 436: process-resident Rules retain IRepairStep, URepairRate and
+// IRepairRate across layer reads, saved state and destructive Type resets.
+// 436 -> 437: independent BuildingLight objects and retained Spotlight rules.
+// 437 -> 438: retain the GenericWarhead payload reference in processed rules.
+// 438 -> 439: retain optional Ares auxiliary and negative building lists.
+const SNAPSHOT_VERSION: u32 = 439;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -1400,6 +1404,11 @@ pub enum SnapshotRestoreError {
     InvalidScalableProjectileRuntime(&'static str),
     #[error("invalid radiation site order: {0}")]
     InvalidRadiationSiteOrder(&'static str),
+    #[error("invalid saved Spotlight {object_id}: {reason}")]
+    InvalidSpotlightState {
+        object_id: u64,
+        reason: &'static str,
+    },
     #[error("invalid saved DiskLaser {object_id}: {reason}")]
     InvalidDiskLaserState {
         object_id: u64,
@@ -1908,6 +1917,15 @@ impl RestoredObjectIndex {
         }
         for (&registry_id, anim) in sim.substrate.anims.iter() {
             Self::register(&mut identities, "AnimStore", registry_id, anim.stable_id)?;
+            highest_id = highest_id.max(registry_id);
+        }
+        for (&registry_id, light) in sim.substrate.spotlights.iter() {
+            Self::register(
+                &mut identities,
+                "SpotlightStore",
+                registry_id,
+                light.stable_id,
+            )?;
             highest_id = highest_id.max(registry_id);
         }
         for (&registry_id, debris) in sim.substrate.voxel_anims.iter() {
@@ -2726,6 +2744,13 @@ impl Simulation {
     /// weak/derived identities, and reconstructs skipped indexes in dependency
     /// order.
     pub fn restore_after_snapshot_load(&mut self) -> Result<(), SnapshotRestoreError> {
+        self.validate_restored_spotlights()
+            .map_err(
+                |(object_id, reason)| SnapshotRestoreError::InvalidSpotlightState {
+                    object_id,
+                    reason,
+                },
+            )?;
         self.projectiles
             .validate_scalable_runtime(&self.interner)
             .map_err(SnapshotRestoreError::InvalidScalableProjectileRuntime)?;
@@ -4848,7 +4873,12 @@ mod tests {
         // 431 -> 432: the Boarding passenger relation is gone.
         // 432 -> 433: one Object spelling for a NavCom-family pointer.
         // 433 -> 434: no trigger-record copies in saved scenario resources.
-        assert_eq!(super::SNAPSHOT_VERSION, 434);
+        // 434 -> 435: Scenario vein switch and shared Scenario pause.
+        // 435 -> 436: retained repair service inputs.
+        // 436 -> 437: independent BuildingLight and retained Spotlight rules.
+        // 437 -> 438: the retained GenericWarhead payload binding.
+        // 438 -> 439: retained Ares building requirement lists.
+        assert_eq!(super::SNAPSHOT_VERSION, 439);
     }
 
     #[test]

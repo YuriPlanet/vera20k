@@ -152,7 +152,7 @@ pub(crate) fn super_weapon_ready_event(kind: SuperWeaponKind) -> Option<&'static
         SuperWeaponKind::IronCurtain => "EVA_IronCurtainReady",
         SuperWeaponKind::LightningStorm => "EVA_LightningStormReady",
         SuperWeaponKind::ChronoSphere => "EVA_ChronosphereReady",
-        SuperWeaponKind::ChronoWarp => return None,
+        SuperWeaponKind::ChronoWarp | SuperWeaponKind::GenericWarhead => return None,
         SuperWeaponKind::ParaDrop | SuperWeaponKind::AmerParaDrop => "EVA_ReinforcementsReady",
         SuperWeaponKind::PsychicDominator => "EVA_PsychicDominatorReady",
         SuperWeaponKind::SpyPlane => "EVA_SpyPlaneReady",
@@ -172,7 +172,15 @@ pub(crate) fn super_weapon_ready_event(kind: SuperWeaponKind) -> Option<&'static
 /// `[SuperWeaponTypes]` order puts NukeSpecial, IronCurtainSpecial,
 /// LightningStormSpecial, ChronoSphereSpecial, ..., PsychicDominatorSpecial
 /// (7), ..., GeneticConverterSpecial (9) on exactly those slots.
-pub(crate) fn super_weapon_detected_event(list_index: usize) -> Option<&'static str> {
+pub(crate) fn super_weapon_detected_event(
+    kind: SuperWeaponKind,
+    list_index: usize,
+) -> Option<&'static str> {
+    // Extension types have no stock construction announcement, even when a
+    // mod places one in an early SuperWeaponTypes slot.
+    if !(0..12).contains(&kind.native_index()) {
+        return None;
+    }
     match list_index {
         0 => Some("EVA_NuclearSiloDetected"),
         1 => Some("EVA_IronCurtainDetected"),
@@ -316,6 +324,7 @@ mod tests {
     #[test]
     fn ready_table_follows_the_type_index_jump_table() {
         use SuperWeaponKind as K;
+        assert_eq!(super_weapon_ready_event(K::GenericWarhead), None);
         assert_eq!(
             super_weapon_ready_event(K::MultiMissile),
             Some("EVA_NuclearMissileReady")
@@ -370,32 +379,47 @@ mod tests {
     #[test]
     fn detected_table_follows_the_list_index_jump_table() {
         assert_eq!(
-            super_weapon_detected_event(0),
+            super_weapon_detected_event(SuperWeaponKind::MultiMissile, 0),
             Some("EVA_NuclearSiloDetected")
         );
         assert_eq!(
-            super_weapon_detected_event(1),
+            super_weapon_detected_event(SuperWeaponKind::MultiMissile, 1),
             Some("EVA_IronCurtainDetected")
         );
         assert_eq!(
-            super_weapon_detected_event(2),
+            super_weapon_detected_event(SuperWeaponKind::MultiMissile, 2),
             Some("EVA_WeatherDeviceReady")
         );
         assert_eq!(
-            super_weapon_detected_event(3),
+            super_weapon_detected_event(SuperWeaponKind::MultiMissile, 3),
             Some("EVA_ChronosphereDetected")
         );
         for silent in [4, 5, 6, 8, 10, 11, 12] {
-            assert_eq!(super_weapon_detected_event(silent), None, "index {silent}");
+            assert_eq!(
+                super_weapon_detected_event(SuperWeaponKind::MultiMissile, silent),
+                None,
+                "index {silent}"
+            );
         }
         assert_eq!(
-            super_weapon_detected_event(7),
+            super_weapon_detected_event(SuperWeaponKind::MultiMissile, 7),
             Some("EVA_PsychicDominatorDetected")
         );
         assert_eq!(
-            super_weapon_detected_event(9),
+            super_weapon_detected_event(SuperWeaponKind::MultiMissile, 9),
             Some("EVA_GeneticMutatorDetected")
         );
+    }
+
+    #[test]
+    fn extension_types_do_not_borrow_stock_detection_lines() {
+        for index in 0..12 {
+            assert_eq!(
+                super_weapon_detected_event(SuperWeaponKind::GenericWarhead, index),
+                None,
+                "extension in list slot {index}"
+            );
+        }
     }
 
     #[test]

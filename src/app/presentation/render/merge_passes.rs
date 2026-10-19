@@ -271,7 +271,7 @@ pub(super) fn draw_native_object_pass<'a>(
                 | ObjectTexture::Status(_) => {
                     unreachable!("surface commands replay before sprite dispatch")
                 }
-                ObjectTexture::TerrainShp(_) | ObjectTexture::ProjectileShp(_, _) => {
+                ObjectTexture::TerrainShp(_) | ObjectTexture::SpriteAtlasEdit(_, _) => {
                     unreachable!("native destination edits split normal runs")
                 }
                 ObjectTexture::OverlayAtlas => {
@@ -456,7 +456,7 @@ fn destination_edit(
 ) -> Option<(crate::render::terrain_draw::TerrainPiece, usize)> {
     match target {
         ObjectTexture::TerrainShp(piece) => Some((piece, 0)),
-        ObjectTexture::ProjectileShp(page, piece) => Some((piece, page + 1)),
+        ObjectTexture::SpriteAtlasEdit(page, piece) => Some((piece, page + 1)),
         _ => None,
     }
 }

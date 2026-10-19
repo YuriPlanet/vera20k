@@ -150,7 +150,15 @@ fn black_widow_upgrade_switches_grants_at_the_existing_dirty_house_tail() {
     // The stale normal grant cannot be fired even before the dirty tail.
     let id = ready(&mut sim, NORMAL);
     let owner = sim.interner.get(OWNER).unwrap();
-    assert!(!sim.fire_super_weapon(&rules, owner, id, (15, 15), None, FrameEffects::default()));
+    assert!(!sim.fire_super_weapon(
+        &rules,
+        owner,
+        id,
+        (15, 15),
+        None,
+        FrameEffects::default(),
+        false
+    ));
     sim.sound_events.clear();
     recheck(&mut sim, &rules, OWNER);
     assert!(!active(&sim, OWNER, NORMAL));
@@ -290,7 +298,15 @@ fn trigger_granted_super_cannot_bypass_extension_preflight() {
         assert!(trigger_grant_super(&mut sim, &rules, owner, id, one_time));
         ready(&mut sim, NORMAL);
         let before = sim.state_hash();
-        assert!(!sim.fire_super_weapon(&rules, owner, id, (15, 15), None, FrameEffects::default()));
+        assert!(!sim.fire_super_weapon(
+            &rules,
+            owner,
+            id,
+            (15, 15),
+            None,
+            FrameEffects::default(),
+            false
+        ));
         assert_eq!(sim.state_hash(), before);
     }
 }
@@ -341,69 +357,96 @@ fn rejected_postclick_does_not_consume_the_paired_super_charge() {
     ready(&mut sim, NORMAL);
     let id = ready(&mut sim, ALPHA);
     let before = sim.state_hash();
-    assert!(!sim.fire_super_weapon(&rules, owner, id, (15, 15), None, FrameEffects::default()));
+    assert!(!sim.fire_super_weapon(
+        &rules,
+        owner,
+        id,
+        (15, 15),
+        None,
+        FrameEffects::default(),
+        false
+    ));
     assert_eq!(sim.state_hash(), before);
 }
 
 #[test]
-fn ordered_rules_bind_list_only_buildings_retain_omissions_and_clear_explicit_none() {
+fn ordered_building_lists_find_existing_types_without_allocation() {
     let art = IniFile::empty();
-    let mut layers = RulesLayerStack::new(IniFile::from_str(
-        "[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
-         [SuperWeaponTypes]\n0=Gate\n[Gate]\nType=PsychicReveal\n\
-         SW.AuxBuildings=OnlyInList,SECOND\nSW.NegBuildings=Blocked\n\
-         [OnlyInList]\nStrength=432\n[SECOND]\nStrength=123\n[Blocked]\nStrength=100\n",
+    let source = |lists: &str| {
+        IniFile::from_str(&format!(
+            "[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n0=First\n1=SECOND\n2=Blocked\n\
+         [SuperWeaponTypes]\n0=Gate\n[Gate]\nType=PsychicReveal\n{lists}\n\
+         [First]\nStrength=432\n[SECOND]\nStrength=123\n[Blocked]\nStrength=100\n"
+        ))
+    };
+    let mut layers = RulesLayerStack::new(source(
+        "SW.AuxBuildings=first,Missing,SECOND\nSW.NegBuildings=Blocked,Missing",
     ));
+    let processed = layers.process_with_fixed_art(&art).unwrap();
+    let control = RulesLayerStack::new(source("SW.AuxBuildings=none\nSW.NegBuildings=none"))
+        .process_with_fixed_art(&art)
+        .unwrap();
+    assert_eq!(
+        processed.native_type_construction_trace().events(),
+        control.native_type_construction_trace().events()
+    );
+    let inspect = |layers: &RulesLayerStack| {
+        let processed = layers.process_with_fixed_art(&art).unwrap();
+        let saved = crate::util::save_codec::serialize(&processed).unwrap();
+        let restored = crate::util::save_codec::deserialize(&saved).unwrap();
+        let rules = RuleSet::from_processed_rules(&restored).unwrap();
+        let requirements = rules
+            .super_weapon("Gate")
+            .unwrap()
+            .building_requirements
+            .clone()
+            .unwrap();
+        (rules, requirements)
+    };
+    let (rules, requirements) = inspect(&layers);
+    assert_eq!(requirements.auxiliary, ["First", "SECOND"]);
+    assert_eq!(requirements.negative, ["Blocked"]);
+    assert!(
+        rules
+            .object_in_category(ObjectCategory::Building, "Missing")
+            .is_none()
+    );
+
     layers.push(
         RulesLayerKind::GameMode,
-        IniFile::from_str("[Gate]\nRechargeTime=2\n"),
+        IniFile::from_str("[Gate]\nSW.AuxBuildings=\nRechargeTime=2"),
     );
-    let processed = layers.process_with_fixed_art(&art).unwrap();
-    let saved = crate::util::save_codec::serialize(&processed).unwrap();
-    let restored = crate::util::save_codec::deserialize(&saved).unwrap();
-    let rules = RuleSet::from_processed_rules(&restored).unwrap();
-    let requirements = rules
-        .super_weapon("Gate")
-        .unwrap()
-        .building_requirements
-        .as_ref()
-        .unwrap();
-    assert_eq!(requirements.auxiliary, ["OnlyInList", "SECOND"]);
-    assert_eq!(requirements.negative, ["Blocked"]);
     assert_eq!(
-        rules
-            .object_in_category(ObjectCategory::Building, "OnlyInList")
-            .unwrap()
-            .strength,
-        432
+        inspect(&layers).1,
+        requirements,
+        "empty and omitted keys retain"
     );
     layers.push(
         RulesLayerKind::Scenario,
-        IniFile::from_str("[Gate]\nSW.AuxBuildings=second\nSW.NegBuildings=none\n"),
+        IniFile::from_str("[BuildingTypes]\n3=Missing\n[Missing]\nStrength=77"),
     );
-    let rules =
-        RuleSet::from_processed_rules(&layers.process_with_fixed_art(&art).unwrap()).unwrap();
-    let requirements = rules
-        .super_weapon("Gate")
-        .unwrap()
-        .building_requirements
-        .as_ref()
-        .unwrap();
-    assert_eq!(requirements.auxiliary, ["SECOND"]);
-    assert!(requirements.negative.is_empty());
+    assert_eq!(
+        inspect(&layers).1,
+        requirements,
+        "later registration cannot retroactively bind"
+    );
     layers.push(
         RulesLayerKind::Scenario,
-        IniFile::from_str("[Gate]\nSW.AuxBuildings=none\n"),
+        IniFile::from_str("[Gate]\nSW.AuxBuildings=missing\nSW.NegBuildings=Unknown"),
     );
-    let rules =
-        RuleSet::from_processed_rules(&layers.process_with_fixed_art(&art).unwrap()).unwrap();
-    let requirements = rules
-        .super_weapon("Gate")
-        .unwrap()
-        .building_requirements
-        .as_ref()
-        .unwrap();
+    let (_, requirements) = inspect(&layers);
+    assert_eq!(requirements.auxiliary, ["Missing"]);
+    assert!(
+        requirements.negative.is_empty(),
+        "unknown-only replaces previous list"
+    );
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[Gate]\nSW.AuxBuildings=none\nSW.NegBuildings=,,,"),
+    );
+    let (_, requirements) = inspect(&layers);
     assert!(requirements.auxiliary.is_empty());
+    assert!(requirements.negative.is_empty());
     assert!(requirements.allows(|_| false));
 }
 
@@ -453,4 +496,58 @@ fn absent_tags_preserve_stock_and_resolved_extension_lists_participate_in_hash()
         restored_rules.simulation_config_hash(),
         stock.simulation_config_hash()
     );
+}
+
+#[test]
+fn generic_warhead_uses_the_same_gate_before_damage_and_charge() {
+    let rules = rules_with(
+        "[BlackWidowSpecial]\nType=GenericWarhead\nSW.Warhead=Payload\nSW.Damage=75\n[Payload]\nCellSpread=0.5\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+    );
+    let mut sim = world(&rules);
+    let target = spawn(&mut sim, &rules, "GAMERC", OTHER, 15);
+    let owner = sim.interner.get(OWNER).unwrap();
+    let id = sim.interner.get(NORMAL).unwrap();
+    assert!(trigger_grant_super(&mut sim, &rules, owner, id, true));
+    ready(&mut sim, NORMAL);
+    sim.sound_events.clear();
+    let before = sim.state_hash();
+    assert!(!sim.fire_super_weapon(
+        &rules,
+        owner,
+        id,
+        (15, 10),
+        None,
+        FrameEffects::default(),
+        false
+    ));
+    assert_eq!(sim.state_hash(), before);
+    assert!(sim.sound_events.is_empty());
+    assert_eq!(sim.entities().get(target).unwrap().health.current(), 1000);
+    let auxiliary = spawn(&mut sim, &rules, "GASCEA", OWNER, 8);
+    sim.sound_events.clear();
+    assert!(sim.fire_super_weapon(
+        &rules,
+        owner,
+        id,
+        (15, 10),
+        None,
+        FrameEffects::default(),
+        false
+    ));
+    assert_eq!(sim.entities().get(target).unwrap().health.current(), 925);
+    // A new retained ready instance is gated immediately after removal, before
+    // the house's grant/revoke tail can hide a missing final-command check.
+    ready(&mut sim, NORMAL);
+    sim.uninit_with_rules(auxiliary, &rules);
+    let before = sim.state_hash();
+    assert!(!sim.fire_super_weapon(
+        &rules,
+        owner,
+        id,
+        (15, 10),
+        None,
+        FrameEffects::default(),
+        false
+    ));
+    assert_eq!(sim.state_hash(), before);
 }

@@ -85,6 +85,8 @@ pub(crate) enum AiFireArm {
     GeneticMutator,
     /// `0x00509A3E`: [`force_shield_target`].
     ForceShield,
+    /// Ares default `SW.AITargeting=Offensive` (or disabled with `None`).
+    GenericWarhead,
     /// `0x00509AD2`: Iron Curtain and the Chronosphere pair are left to team
     /// scripts.
     None,
@@ -102,6 +104,7 @@ impl AiFireArm {
             SuperWeaponKind::PsychicDominator => Self::PsychicDominator,
             SuperWeaponKind::GeneticConverter => Self::GeneticMutator,
             SuperWeaponKind::ForceShield => Self::ForceShield,
+            SuperWeaponKind::GenericWarhead => Self::GenericWarhead,
             SuperWeaponKind::IronCurtain
             | SuperWeaponKind::ChronoSphere
             | SuperWeaponKind::ChronoWarp => Self::None,
@@ -192,13 +195,30 @@ pub(crate) fn try_fire(
             AiFireArm::GroundRallyPoint => ground_rally_point(sim, rules, owner, registry),
             AiFireArm::PsychicDominator => psychic_dominator_target(sim, rules, owner),
             AiFireArm::GeneticMutator => genetic_mutator_target(sim, rules, owner),
+            AiFireArm::GenericWarhead => {
+                use crate::rules::superweapon_type::GenericWarheadAiTargeting;
+                sw.generic_warhead
+                    .as_ref()
+                    .filter(|settings| {
+                        settings.ai_targeting == GenericWarheadAiTargeting::Offensive
+                    })
+                    .and_then(|_| offensive_target(sim, rules, owner, sw))
+            }
             AiFireArm::ForceShield => sim.houses.get(&owner).and_then(|house| {
                 force_shield_target(house, rules, sim.session.binary_frame as i32)
             }),
             AiFireArm::LightningStorm | AiFireArm::None => None,
         };
         if let Some(cell) = cell {
-            sim.fire_super_weapon(rules, owner, sw_type_id, cell, registry, frame_effects);
+            sim.fire_super_weapon(
+                rules,
+                owner,
+                sw_type_id,
+                cell,
+                registry,
+                frame_effects,
+                true,
+            );
         }
     }
 }
@@ -302,6 +322,49 @@ fn find_best_rally_target(
         .map(|entity| rally_entry(sim, rules, house, enemy, entity))
         .collect();
     pick_best_rally_target(&entries, &mut sim.scenario_rng)
+}
+
+/// Ares Hooks.Targeting.cpp: OffensiveTargetSelector/ PickIonCannonTarget.
+/// Shares native eligibility and values, but ignores cloaked objects and
+/// scripted target preferences. Only a final tie selection draws Scenario RNG.
+fn offensive_target(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    owner: InternedId,
+    sw: &crate::rules::superweapon_type::SuperWeaponType,
+) -> Option<(u16, u16)> {
+    let house = sim.houses.get(&owner)?;
+    let enemy = house.enemy_house?;
+    let mut best = 0;
+    let mut picks = Vec::new();
+    let sites: Vec<_> = super::targeting::launch_sites(sim, rules, owner, sw)
+        .into_iter()
+        .map(|(_, site)| site)
+        .collect();
+    for entity in sim.substrate.entities.values() {
+        let entry = rally_entry(sim, rules, house, enemy, entity);
+        let cell = (entry.cell.0 as u16, entry.cell.1 as u16);
+        if !entry.candidate
+            || !entry.in_playfield
+            || entry.cloaked
+            || entry.value < best
+            || super::targeting::check_with_sites(sim, rules, owner, sw, cell, true, &sites)
+                .is_err()
+        {
+            continue;
+        }
+        if entry.value > best {
+            best = entry.value;
+            picks.clear();
+        }
+        picks.push(cell);
+    }
+    if picks.is_empty() {
+        return None;
+    }
+    let last = i32::try_from(picks.len() - 1).unwrap_or(i32::MAX);
+    let cell = picks[sim.scenario_rng.next_range_i32_inclusive(0, last) as usize];
+    (cell != (0, 0)).then_some(cell)
 }
 
 /// What AI_FindBestRallyTarget reads of one TechnoClass::Array entry.

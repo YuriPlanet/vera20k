@@ -417,6 +417,89 @@ fn ordinary_building_atlas_retains_native_completed_health_frames() {
     );
 }
 
+#[test]
+#[ignore = "requires the retail archives and a headless wgpu adapter"]
+fn retail_gapowr_atlas_registers_native_embedded_shadow_frames() {
+    let root = std::path::PathBuf::from(
+        std::env::var("RA2_DIR").expect("set RA2_DIR to the retail game directory"),
+    );
+    let scenario = crate::headless_scenario::load(&root, "Dustbowl.mmx", 0x0B21_D6E5)
+        .expect("retail TEMPERATE scenario loads");
+    let mut assets =
+        AssetManager::new(&root, MediaArchiveMode::STOCK_DIGITAL).expect("retail archives load");
+    let theater_name = scenario.map.header.theater.clone();
+    let theater = crate::map::theater::load_theater(&mut assets, &theater_name)
+        .expect("retail theater loads");
+    let rules = &scenario.runtime.resources.rules;
+    let art = rules.art();
+    let source = load_shp_source(
+        &assets,
+        "GAPOWR",
+        None,
+        theater.extension,
+        &theater_name,
+        Some(rules),
+        Some(art),
+    )
+    .expect("retail GAPOWR SHP resolves through its rules and theater image");
+    assert_eq!(source.found_name, "GGPOWR.SHP");
+    assert_eq!(source.shp.frames.len(), 6);
+
+    let gpu = crate::render::terrain_draw_gpu_tests::Gpu::new();
+    let batch = BatchRenderer::new_with_device(
+        &gpu.device,
+        &gpu.queue,
+        wgpu::TextureFormat::Bgra8UnormSrgb,
+    );
+    let house_colors = HouseColorMap::from([("Americans".to_string(), HouseColorIndex(2))]);
+    let remaps = HashSet::new();
+    let cell_drawers = HashSet::new();
+    let extra_building_types = ["GAPOWR"];
+    let sprites = build_sprite_atlas(
+        &gpu.device,
+        &gpu.queue,
+        &batch,
+        scenario.runtime.simulation.entities(),
+        &assets,
+        &theater.unit_palette,
+        theater.extension,
+        &theater_name,
+        Some(rules),
+        Some(art),
+        &house_colors,
+        &extra_building_types,
+        &remaps,
+        &cell_drawers,
+        Some(&theater.iso_palette),
+        None,
+        Some(&scenario.runtime.simulation.interner),
+    )
+    .expect("the production object atlas builds from retail rules, ART, theater and SHPs");
+    assert_eq!(sprites.object_shp_frame_count("GAPOWR"), Some(6));
+
+    let key = |frame| ShpSpriteKey {
+        palette_context: ShpPaletteContext::Legacy,
+        type_id: "GAPOWR".to_string(),
+        facing: 0,
+        frame,
+        house_color: HouseColorIndex(2),
+    };
+    assert!(
+        sprites.get(&key(0)).is_some(),
+        "retail body frame 0 is resident"
+    );
+    assert!(
+        sprites.get(&key(1)).is_some(),
+        "retail body frame 1 is resident"
+    );
+    for (body_frame, shadow_frame) in [(0, 3), (1, 4)] {
+        assert!(
+            sprites.get(&key(shadow_frame)).is_some(),
+            "native body frame {body_frame} requires retail GGPOWR shadow frame {shadow_frame}"
+        );
+    }
+}
+
 fn raw_infantry_atlas_rules(sequence_rows: &str) -> (RuleSet, ArtRegistry) {
     use crate::rules::ini_parser::IniFile;
     let art_ini = IniFile::from_str(&format!(

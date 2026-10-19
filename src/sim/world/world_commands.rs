@@ -1943,6 +1943,7 @@ impl Simulation {
                     (*target_rx, *target_ry),
                     overlay_registry,
                     frame_effects,
+                    false,
                 )
             }
             Command::EnterBunker { unit_id, bunker_id } => {

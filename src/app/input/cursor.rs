@@ -138,6 +138,24 @@ pub(crate) fn current_cursor_feedback_kind(state: &AppState) -> Option<CursorFee
     // Sidebar/minimap hits are already short-circuited above, so the SW reticle
     // only renders on the tactical map.
     if let Some(section) = state.armed_super_weapon_type() {
+        if let Some(runtime) = state.match_state.sim_runtime.as_ref()
+            && let Some(owner) = preferred_local_owner_name(state)
+                .and_then(|name| runtime.simulation.interner.get(&name))
+            && let Some(sw_type) = runtime.simulation.interner.get(section)
+        {
+            let cell = crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
+                state,
+                state.match_state.input.cursor_x,
+                state.match_state.input.cursor_y,
+            );
+            if runtime
+                .simulation
+                .super_weapon_target_check(&runtime.resources.rules, owner, sw_type, cell, false)
+                .is_err()
+            {
+                return Some(CursorFeedbackKind::SuperWeaponTarget(CursorId::Default));
+            }
+        }
         let cursor_id = state
             .rules()
             .and_then(|r| r.super_weapon(section))
@@ -1496,6 +1514,7 @@ pub(crate) fn current_sidebar_view_hit(state: &AppState) -> bool {
 /// unrecognized string. Caller should fall back to `CursorId::Default`.
 pub(crate) fn super_weapon_cursor_id(action: &str) -> Option<CursorId> {
     match action {
+        "Attack" => Some(CursorId::Attack),
         "Nuke" => Some(CursorId::Nuke),
         "ChronoSphere" => Some(CursorId::Chronosphere),
         "ChronoWarp" => Some(CursorId::Chronosphere),
@@ -1955,6 +1974,7 @@ mod tests {
 
     #[test]
     fn maps_every_yr_active_action() {
+        assert_eq!(super_weapon_cursor_id("Attack"), Some(CursorId::Attack));
         assert_eq!(super_weapon_cursor_id("Nuke"), Some(CursorId::Nuke));
         assert_eq!(
             super_weapon_cursor_id("ChronoSphere"),

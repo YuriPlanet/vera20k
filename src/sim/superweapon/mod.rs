@@ -16,6 +16,10 @@ pub mod chrono_screen;
 mod chronosphere;
 pub use chronosphere::CHRONO_WARP_SELECTION_INDEX;
 pub mod airstrike_tint;
+#[cfg(test)]
+mod can_fire_tests;
+#[cfg(test)]
+mod view_admission_tests;
 #[cfg(any(test, feature = "test-support"))]
 mod cell_receiver_tests;
 #[cfg(test)]
@@ -28,6 +32,8 @@ mod chronosphere_lunar_retail_tests;
 pub mod chronosphere_tests;
 mod fire;
 pub mod force_shield;
+mod generic_warhead;
+mod targeting;
 pub mod genetic_converter;
 pub mod invulnerability;
 pub mod iron_curtain;
@@ -525,6 +531,18 @@ impl SuperWeaponInstance {
         true
     }
 
+    /// SuperClass::CanFire6CC360, used by Select6AAEEA before selecting a
+    /// target. This is distinct from ClickFire: no granted/timer test, and
+    /// charge-drain types read their signed state rather than IsReady.
+    fn can_fire(&self, sw: &SuperWeaponType) -> bool {
+        !self.is_suspended
+            && if sw.use_charge_drain {
+                self.charge_drain_state != 0
+            } else {
+                self.is_ready
+            }
+    }
+
     /// `SuperClass::ClickFire @ 0x006CB920`'s admission without charge drain
     /// (`0x006CB933..0x006CB95F`): a running recharge timer on a granted,
     /// charged Super. A timer held for low power does not run.
@@ -667,7 +685,7 @@ pub(crate) fn super_types_with_type(
         .filter(move |name| {
             rules
                 .super_weapon(name)
-                .is_some_and(|sw| sw.kind.native_index() == type_value)
+                .is_some_and(|sw| type_value >= 0 && sw.kind.native_index() == type_value)
         })
         .map(String::as_str)
 }
@@ -858,6 +876,8 @@ pub struct SuperWeaponView {
     pub progress: f32,
     pub is_ready: bool,
     pub is_online: bool,
+    /// Native CanFire6CC360, independently of the raw charge/display flags.
+    pub can_fire: bool,
     pub sidebar_image: Option<String>,
 }
 
@@ -885,6 +905,7 @@ pub fn superweapon_views_for_owner(
             progress: inst.charge_progress(sim.session.binary_frame, inst.recharge_time(sw_type)),
             is_ready: inst.is_ready,
             is_online: !inst.is_suspended,
+            can_fire: inst.can_fire(sw_type),
             sidebar_image: sw_type.sidebar_image.clone(),
         });
     }
@@ -1016,7 +1037,8 @@ pub(crate) fn tick_active_superweapon_effects(
         sim.update_lighting();
     }
     let dominator = psychic_dominator::process(sim, rules, overlay_registry, frame_effects);
-    sim.process_chrono_screen_effect();
+    let chrono = sim.process_chrono_screen_effect();
+    sim.publish_trigger_effects(chrono);
     let storm = lightning_storm::process(sim, rules, overlay_registry, frame_effects);
     dominator || storm
 }

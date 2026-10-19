@@ -46,9 +46,9 @@ pub(crate) enum ObjectTexture {
     OverlayAtlas,
     /// Per-piece native destination edit; never a texture-only coalesced draw.
     TerrainShp(crate::render::terrain_draw::TerrainPiece),
-    /// Bullet body/shadow: signed native Z comparison, destination edits,
-    /// and no depth write. The atlas page is payload, never an ordering key.
-    ProjectileShp(usize, crate::render::terrain_draw::TerrainPiece),
+    /// An atlas SHP whose source mask performs a native destination edit.
+    /// The atlas page is payload, never an ordering key.
+    SpriteAtlasEdit(usize, crate::render::terrain_draw::TerrainPiece),
     UnitAtlasPage(usize),
     UnitPosePage(usize),
     ShpPage(usize),
@@ -66,6 +66,10 @@ pub(crate) struct ObjectPieceInstance {
 /// A native body that edits the destination without a source sprite.
 pub(crate) enum ObjectBodyDraw {
     Surface(SurfaceDraw),
+    Spotlight {
+        glow: Option<crate::render::combat_light::CombatLightDrawRecord>,
+        beams: [Option<SurfaceDraw>; 2],
+    },
     CombatLight(crate::render::combat_light::CombatLightDrawRecord),
 }
 
@@ -520,16 +524,14 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                     ObjectBodyDraw::Surface(draw) => {
                         push_surface_draws(lowered, std::iter::once(draw))
                     }
+                    ObjectBodyDraw::Spotlight { glow, beams } => {
+                        if let Some(record) = glow {
+                            push_combat_light(lowered, record);
+                        }
+                        push_surface_draws(lowered, beams.into_iter().flatten());
+                    }
                     ObjectBodyDraw::CombatLight(record) => {
-                        let index = lowered.light_records.len();
-                        lowered.light_records.push(record);
-                        lowered.runs.push(ObjectDrawRun {
-                            target: ObjectTexture::CombatLight(index),
-                            render_z: RenderZPolicy::None,
-                            packed_parent: None,
-                            start: lowered.instances.len() as u32,
-                            count: 0,
-                        });
+                        push_combat_light(lowered, record);
                     }
                 }
             }
@@ -557,6 +559,21 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
         }
     }
     layers
+}
+
+fn push_combat_light(
+    pass: &mut ObjectLayerPass,
+    record: crate::render::combat_light::CombatLightDrawRecord,
+) {
+    let index = pass.light_records.len();
+    pass.light_records.push(record);
+    pass.runs.push(ObjectDrawRun {
+        target: ObjectTexture::CombatLight(index),
+        render_z: RenderZPolicy::None,
+        packed_parent: None,
+        start: pass.instances.len() as u32,
+        count: 0,
+    });
 }
 
 fn push_surface_draws(
@@ -1001,7 +1018,7 @@ mod tests {
                             .into_iter()
                             .map(|piece| {
                                 marked_piece(
-                                    ObjectTexture::ProjectileShp(index % 2, piece),
+                                    ObjectTexture::SpriteAtlasEdit(index % 2, piece),
                                     id as u32,
                                 )
                             })
@@ -1406,6 +1423,14 @@ mod tests {
                         23,
                     ),
                     building_piece(BuildingPieceKind::Body, ObjectTexture::ShpPage(1), 22),
+                    building_piece(
+                        BuildingPieceKind::Shadow,
+                        ObjectTexture::SpriteAtlasEdit(
+                            0,
+                            crate::render::terrain_draw::TerrainPiece::Shadow,
+                        ),
+                        24,
+                    ),
                     building_piece(BuildingPieceKind::Bib, ObjectTexture::ShpPage(0), 21),
                 ],
             ),
@@ -1415,13 +1440,13 @@ mod tests {
             ),
         ]);
 
-        assert_eq!(pass.owners, [1, 2, 2, 2, 3]);
+        assert_eq!(pass.owners, [1, 2, 2, 2, 2, 3]);
         assert_eq!(
             pass.instances
                 .iter()
                 .map(|instance| instance.draw_state.fx_flags)
                 .collect::<Vec<_>>(),
-            [1, 21, 22, 23, 3]
+            [1, 22, 24, 21, 23, 3]
         );
     }
     #[test]

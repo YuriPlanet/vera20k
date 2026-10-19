@@ -1601,6 +1601,7 @@ mod tests {
             startup_admitted: true,
             frame_stepping: false,
             paused: false,
+            scenario_paused: false,
             menu_open: false,
             session_mode: SessionMode::Skirmish,
             pacer_timing_admits: true,

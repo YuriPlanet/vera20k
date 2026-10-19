@@ -40,6 +40,8 @@ pub struct BasicSection {
     pub tiberium_growth_enabled: Option<bool>,
     /// Scenario+34A8, current-default ReadBool68A5A7..68A5C5; fresh true.
     pub ice_growth_enabled: Option<bool>,
+    /// Scenario34A7: current-default ReadBool68A58F..68A5BA, fresh true.
+    pub vein_growth_enabled: Option<bool>,
     /// Scenario+34A5, current-default ReadBool68A235..68A24D; fresh false.
     pub train_crate: Option<bool>,
     /// Scenario+34B1, current-default ReadBool68A217..68A22F; fresh false.
@@ -163,6 +165,7 @@ pub fn parse_basic_section(ini: &IniFile) -> BasicSection {
             .then(|| section.read_int("NewINIFormat", 0)),
         tiberium_growth_enabled: section.read_bool_value("TiberiumGrowthEnabled"),
         ice_growth_enabled: section.read_bool_value("IceGrowthEnabled"),
+        vein_growth_enabled: section.read_bool_value("VeinGrowthEnabled"),
         train_crate: section.read_bool_value("TrainCrate"),
         truck_crate: section.read_bool_value("TruckCrate"),
         free_radar: section.read_bool_value("FreeRadar"),

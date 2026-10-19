@@ -1484,25 +1484,30 @@ def system_hold_metadata():
     return record
 
 
-def inputs(root, extra):
+def inputs(root, extra, *, unit_names=("MGTK",), extra_assets=(), absent_assets=()):
     m = c.ready_building_inputs(root)
     m.phase = 'setup_factory_loss_inputs'
     u = m.u
-    assets = {name: (extra / name).read_bytes() for name in EXTRA_ASSETS}
+    assets = {name: (extra / name).read_bytes() for name in (*EXTRA_ASSETS, *extra_assets)}
     m.assets.update(assets)
     m.platform_audio.configure_transport(prepared_files={
-        **{name + '.SHP': None for name in ABSENT_SHAPES}, **assets,
+        **{name + '.SHP': None for name in ABSENT_SHAPES},
+        **dict.fromkeys(absent_assets), **assets,
     })
     for name, size, ctor in (
         ('GAWEAP', 0x2000, 0x45DD90), ('GATECH', 0x2000, 0x45DD90),
-        ('MGTK', 0xF00, 0x7470D0),
     ):
         pointer = m.alloc(size)
         m.invoke(ctor, pointer, (m.cstring(name),))
         m.types[name] = pointer
+    for name in unit_names:
+        if name not in m.types:
+            pointer = m.alloc(0xF00)
+            m.invoke(0x7470D0, pointer, (m.cstring(name),))
+            m.types[name] = pointer
     art = sections((root / 'ARTMD.INI').read_bytes())
     selected = {name: values for name, values in art.items()
-                if name in (*m.ready_art, *m.death_art_input_sections, 'RTNK')
+                if name in (*m.ready_art, *m.death_art_input_sections, 'RTNK', *unit_names)
                 or name.startswith(('GAWEAP', 'GATECH'))}
     m.make_ini(selected)
     art_cache = bytes(u.mem_read(c.INI, 0x40))
@@ -1513,18 +1518,20 @@ def inputs(root, extra):
             continue
         physical = sections(path.read_bytes())
         m.make_ini({name: values for name, values in physical.items()
-                    if name in ('GAWEAP', 'GATECH', 'MGTK', 'E1',
+                    if name in ('GAWEAP', 'GATECH', *unit_names, 'E1',
                                 'General', 'Americans', 'Sides')})
         ini = m.alloc(0x40)
         u.mem_write(ini, bytes(u.mem_read(c.INI, 0x40)))
         u.mem_write(c.INI, art_cache)
         for name in ('GAWEAP', 'GATECH'):
             m.invoke(0x45FE50, m.types[name], (ini,))
-        m.invoke(0x747620, m.types['MGTK'], (ini,))
+        for name in unit_names:
+            m.invoke(0x747620, m.types[name], (ini,))
     # Original selected TechnoType post-read pass, after all rule layers.
-    u.reg_write(UC_X86_REG_ESP, c.INI_SP)
-    u.reg_write(UC_X86_REG_EBP, m.types['MGTK'])
-    run_checked(u, 0x715B10, 0x715F9E)
+    for name in unit_names:
+        u.reg_write(UC_X86_REG_ESP, c.INI_SP)
+        u.reg_write(UC_X86_REG_EBP, m.types[name])
+        run_checked(u, 0x715B10, 0x715F9E)
     return m
 
 
