@@ -10,8 +10,8 @@
 //! the ZBuffer's row seed less `AdjustForZ(z)` (`0x0053D69D..0x0053D6AE`). The
 //! renderer owns the pixels (`render::terrain_draw`'s IonBlast pass).
 
-use crate::render::ion_blast_ripple::{FRAME_HEIGHT, FRAME_WIDTH};
 use crate::render::terrain_draw::IonBlastDraw;
+use crate::sim::ion_blast_ripple::{FRAME_HEIGHT, FRAME_WIDTH};
 
 /// The detail level the ripple draws at (`CMP EAX,2` at `0x0053D588`).
 const RIPPLE_DETAIL_LEVEL: u32 = 2;

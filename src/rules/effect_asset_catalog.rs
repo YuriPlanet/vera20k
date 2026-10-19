@@ -277,6 +277,7 @@ pub fn anim_class_roots(rules: &RuleSet) -> Vec<String> {
     insert(&rules.general.iron_curtain_invoke_anim);
     insert(&rules.general.force_shield_invoke_anim);
     insert(&rules.general.ion_blast_anim);
+    insert(&rules.general.ion_beam_anim);
     // The Chronosphere's source loop and both Chrono Warp blasts
     // (`sim::superweapon::chronosphere`).
     insert(&rules.general.chrono_placement_anim);

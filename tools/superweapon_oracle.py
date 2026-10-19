@@ -33,7 +33,7 @@ spawn_parachuted) and src/sim/superweapon/genetic_converter_tests.rs
 (genetic_launch, infantry_mutate_death, make_infantry) and
 src/sim/superweapon/psychic_reveal_tests.rs (psychic_launch) and
 src/app/presentation/super_timers.rs (tactical_timers, timer_lines) and
-src/render/ion_blast_ripple_tests.rs (ion_blast_ripple),
+src/sim/ion_blast_ripple_tests.rs (ion_blast_ripple),
 src/sim/world/ion_blast_tests.rs (ion_blast_update) and
 src/app/presentation/ion_blasts_tests.rs and ion_blasts_gpu_tests.rs
 (ion_blast_draw).
@@ -8121,6 +8121,89 @@ def ion_blast_update():
     return rows
 
 
+def ion_blast_forces_row(row):
+    """Full original post-frame0 update; only cells and surface bytes supplied."""
+    emu = IonEmu()
+    uc = emu.uc
+    for entry in ION_STEP_INITIALIZERS:
+        invoke_under(emu, entry, fpcw=STARTUP_FPCW)
+    blast, actor, kind, cell, empty, tactical, surface, vtable, sample, voxel = (
+        emu.alloc(size) for size in (0x14, 0x800, 0x100, 0x200, 0x200,
+                                     0x1000, 0x30, 0x80, 1, 1))
+    origin = [25728, 25728, 0]
+    position = [a + b for a, b in zip(origin, row['delta'])]
+    uc.mem_write(blast, struct.pack('<iiiii', *origin, row['frame'], 0))
+    emu.write32(actor, 0x7F5C70)
+    uc.mem_write(actor + 0x9C, struct.pack('<iii', *position))
+    emu.write32(actor + 0x6C4, kind)
+    emu.write32(kind + 0xB0, voxel if row['loaded'] else 0)
+    emu.write32(cell + 0xE4, actor)
+    uc.mem_write(actor + 0x328, struct.pack('<4f', 0.25, -0.5, 0.125, -0.25))
+    uc.mem_write(actor + 0x578, struct.pack('<d', 0.5))
+    write8(emu, actor + 0x6B4, 7)
+    argument = emu.alloc(4)
+    emu.invoke(0x4C91C0, ecx=actor + 0x388)
+    emu.write32(argument, row['facing'])
+    emu.invoke(0x4C9300, ecx=actor + 0x388, args=[argument])
+    emu.write32(TACTICAL_PTR, tactical)
+    uc.mem_write(TACTICAL_CACHED_RECT, struct.pack('<iiii', 0, 0, 640, 480))
+    uc.mem_write(ADJUST_FOR_Z_SCALE, struct.pack('<Q', STANDARD_Z_MULTIPLIER_BITS))
+    write8(emu, sample, row['sample'] & 255)
+    emu.write32(surface, vtable)
+    emu.write32(vtable + 0x5C, STUBS + 0x200)
+    emu.write32(ION_RIPPLE_SURFACES + row['frame'] * 4, surface)
+    queries, pixels = [], []
+
+    def lookup(_emu):
+        x, y = struct.unpack('<hh', uc.mem_read(emu.arg(0), 4))
+        queries.append([x, y])
+        return cell if (x, y) == (100, 100) else empty
+
+    def pixel(_emu):
+        pixels.append([emu.arg(0), emu.arg(1)])
+        return sample
+
+    emu.hook(0x5657A0, lookup, 4)
+    emu.hook(STUBS + 0x200, pixel, 8)
+    invoke_under(emu, 0x53CBE0, ecx=blast)
+    assert queries == [[x, y] for x in range(97, 104) for y in range(97, 104)]
+    return dict(input=row,
+                angles=list(struct.unpack('<4I', uc.mem_read(actor + 0x328, 16))),
+                speed_bits=struct.unpack('<Q', uc.mem_read(actor + 0x578, 8))[0],
+                lift=struct.unpack('<b', uc.mem_read(actor + 0x6B4, 1))[0],
+                sample_calls=pixels, queried_cells=len(queries),
+                frame=emu.read_i32(blast + 0xC))
+
+
+def ion_blast_forces():
+    cases = [
+        ([256,0,0],1,0,4,True),
+        ([0,256,0],4,16384,0,True),
+        ([128,-256,104],12,32000,34,True),
+        ([0,0,0],1,0,4,True),
+        ([256,256,0],5,65535,-1,True),
+        ([256,0,0],1,0,4,False),
+        ([4096,4096,0],20,10000,4,True),
+        ([256,0,0],7,0,15,True),
+        ([-128,256,-104],35,65535,0,True),
+        ([0,0,104],78,32768,0,True),
+    ]
+    return [ion_blast_forces_row(dict(delta=d,frame=n,facing=f,sample=b,loaded=v))
+            for d,n,f,b,v in cases]
+
+
+def ion_blast_forces_metadata():
+    return provenance(
+        scope='Original unflagged IonBlast53CBE0 post-frame0 force update, including projection, ripple sampling gates, Foot speed/lift and native binary32 angles/rates; no frame0 damage or whole-world/render parity.',
+        assumptions=[
+            'One fixture Unit with original7F5C70 vtable, Type pointer and supplied E4 ground-list membership only at cell100,100; the other48 queried cells are empty. Location delta, snapped FacingClass, frame, prefilled four rocking words, applied speed0.5 and prior lift7 are declared inputs.',
+            'Original Tactical6D2140, standard Z scale, Facing constructor/Snap/Current, signed WhatAmI and GetType, SetSpeedFraction, sqrt/trig, spiral and force arithmetic execute unchanged. Ring step initializers run under startup027F; update runs under process0E7F.',
+            'A supplied signed ripple byte is an independent surface-boundary control, not a claimed generated sample for that frame. The existing ion_blast_ripple corpus separately establishes the generated tables. Loaded VXL is an explicit Type+B0 null/non-null sentinel, not an asset-loader comparison.',
+        ],
+        substitutions=['Existing IonEmu allocation/CRT transports; Map5657A0 returns declared fixture cells and Surface+5C returns the supplied byte address. No numeric, projection, facing or rocking answer is supplied.'],
+        entry_points={'IonBlastUpdate':0x53CBE0,'CoordsToClient2':0x6D2140,'RingStep':0x53CA30,'SpiralPoint':0x53D8E0})
+
+
 def ion_ripple_pattern(n, sx, sy):
     """The draw fixture's ripple byte at (sx, sy) of frame n: every value the
     generator writes, in a pattern that varies by row, column and frame."""
@@ -8515,6 +8598,12 @@ def generate():
 
 if __name__ == '__main__':
     import sys
+    if '--ion-forces' in sys.argv[1:]:
+        arguments = sys.argv[1:]
+        arguments.remove('--ion-forces')
+        finish_vectors(ion_blast_forces, Path(__file__).with_name('ion_blast_forces.json'),
+                       provenance=ion_blast_forces_metadata, argv=arguments)
+        raise SystemExit
     if '--berserk-color' in sys.argv[1:]:
         arguments = sys.argv[1:]
         arguments.remove('--berserk-color')

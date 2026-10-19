@@ -8,6 +8,7 @@
 //! unit_rocking_update.json. Drive/Ship slope state remains locomotor-owned.
 
 pub mod impulse;
+pub(crate) mod ion_blast;
 pub mod rocking_system;
 pub mod self_destruct;
 

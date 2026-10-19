@@ -14,7 +14,7 @@ impl Simulation {
     /// invalid coordinates stamp the same process CellClass Dummy in order.
     /// Native executable controls for the downstream FocusOn/TacticalAI:
     /// tools/input_oracle/fast_scroll.{py,json,meta.json}.
-    pub(crate) fn trigger_waypoint_coord(&self, index: i32) -> Option<[i32; 3]> {
+    pub(crate) fn trigger_waypoint_ground_coord(&self, index: i32) -> Option<[i32; 3]> {
         let cell = self.session.waypoint_cell(index)?;
         let terrain = self.resolved_terrain.as_ref()?;
         let cells = NativeCellQuery::canonical(terrain);
@@ -26,8 +26,15 @@ impl Simulation {
             0,
         );
         let (x, y) = (center.x, center.y);
-        let mut z = query_ground_height(&cells, DriveCoord { x, y, z: 0 })
+        let z = query_ground_height(&cells, DriveCoord { x, y, z: 0 })
             .expect("authored camera ground query requires a valid native slope");
+        Some([x, y, z])
+    }
+
+    pub(crate) fn trigger_waypoint_coord(&self, index: i32) -> Option<[i32; 3]> {
+        let [x, y, mut z] = self.trigger_waypoint_ground_coord(index)?;
+        let cell = self.session.waypoint_cell(index)?;
+        let cells = NativeCellQuery::canonical(self.resolved_terrain.as_ref()?);
         let first = cells.lookup(cell);
         if cells.flags(first) & 0x100 != 0 || cells.flags(cells.lookup(cell)) & 0x400 != 0 {
             z = z.wrapping_add(BRIDGE_DECK_HEIGHT_LEPTONS);

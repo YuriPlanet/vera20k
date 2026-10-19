@@ -24,18 +24,18 @@ use crate::map::retail_trig::TrigTable;
 use crate::util::native_x87::{NativeF64Bits, X87Chop53, X87Ordering, X87Value, sqrt_approx_f32};
 
 /// Width of a ripple frame (`BSurface` width `0x200`, `0x0053D39E`).
-pub(crate) const FRAME_WIDTH: usize = 512;
+pub const FRAME_WIDTH: usize = 512;
 /// Height of a ripple frame (`0x100`, `0x0053D3A5`).
-pub(crate) const FRAME_HEIGHT: usize = 256;
+pub const FRAME_HEIGHT: usize = 256;
 /// Frames in the table (`0x00A9FFC8..0x00AA0108`).
-pub(crate) const FRAME_COUNT: usize = 80;
+pub const FRAME_COUNT: usize = 80;
 
 /// The ring's step (`0x00A9FF80`, copied to `0x00A9FFA8`):
 /// `(512 - 0 + 57) * 0.0125` (`0x0053CA30`), a C++ static initializer.
 /// It runs from `_cinit` (`0x007CBDAF`) after `_setdefaultprecision`
 /// (53-bit) and before WinMain sets truncation (`_controlfp(0x300, 0x300)`
 /// at `0x006BBFC1`), so it rounds to nearest: `7.112500000000001`.
-const RING_STEP: NativeF64Bits = NativeF64Bits::from_bits(0x401c_7333_3333_3334);
+pub(crate) const RING_STEP: NativeF64Bits = NativeF64Bits::from_bits(0x401c_7333_3333_3334);
 
 const F64_57: NativeF64Bits = NativeF64Bits::from_bits(0x404c_8000_0000_0000);
 const F64_38: NativeF64Bits = NativeF64Bits::from_bits(0x4043_0000_0000_0000);
@@ -48,11 +48,25 @@ const F64_1_2: NativeF64Bits = NativeF64Bits::from_bits(0x3ff3_3333_3333_3333);
 
 /// The 80 ripple frames, each `FRAME_WIDTH * FRAME_HEIGHT` signed bytes in
 /// rows.
-pub(crate) struct RippleFrames {
+pub struct RippleFrames {
     bytes: Vec<u8>,
 }
 
 impl RippleFrames {
+    /// One immutable native-generated table shared by simulation and drawing.
+    pub fn shared() -> &'static Self {
+        static FRAMES: std::sync::OnceLock<RippleFrames> = std::sync::OnceLock::new();
+        FRAMES.get_or_init(|| Self::generate(TrigTable::embedded()))
+    }
+
+    /// Update53CF39 samples the middle row at projected distance plus8.
+    pub(crate) fn force_sample(&self, frame: i32, radius: i32) -> i8 {
+        self.bytes[frame as usize * FRAME_WIDTH * FRAME_HEIGHT
+            + FRAME_HEIGHT / 2 * FRAME_WIDTH
+            + FRAME_WIDTH / 2
+            + radius as usize] as i8
+    }
+
     /// `0x0053D330` under the process control word (53-bit, truncating),
     /// reading the retail sine table.
     pub(crate) fn generate(trig: &TrigTable) -> Self {
@@ -127,7 +141,7 @@ impl RippleFrames {
     }
 
     /// Every frame, in order, each in rows of [`FRAME_WIDTH`].
-    pub(crate) fn bytes(&self) -> &[u8] {
+    pub fn bytes(&self) -> &[u8] {
         &self.bytes
     }
 }
@@ -153,7 +167,7 @@ fn spiral_index(x: i32, y: i32) -> i32 {
 
 /// `0x0053D8E0`: the point at spiral index `index` (1 or more), the inverse
 /// of [`spiral_index`].
-fn spiral_point(index: i32) -> (i32, i32) {
+pub(crate) fn spiral_point(index: i32) -> (i32, i32) {
     let mut rest = index - 1;
     let mut ring = 1;
     if rest >= 8 {
@@ -180,7 +194,7 @@ fn spiral_point(index: i32) -> (i32, i32) {
 
 /// The pixels the draw moves a destination pixel by for a positive ripple
 /// byte: `(x, 2y)` of its spiral point (module doc).
-pub(crate) fn displacement(byte: u8) -> Option<[i32; 2]> {
+pub fn displacement(byte: u8) -> Option<[i32; 2]> {
     let index = i32::from(byte as i8);
     (index > 0).then(|| {
         let (x, y) = spiral_point(index);

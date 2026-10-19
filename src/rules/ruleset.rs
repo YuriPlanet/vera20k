@@ -1814,6 +1814,11 @@ pub struct GeneralRules {
     /// Mutator launch constructs (`SuperClass::Launch 0x006CD8A5`). Retail
     /// `RING1`. The constructor default is a null type: no key, no animation.
     pub ion_blast_anim: String,
+    /// General IonBeam, Rules+29C: ctor665A24=null, reader66DCDD..66DD0D.
+    pub ion_beam_anim: String,
+    /// CombatDamage IonCannonDamage, Rules+490: ctor665CD4=700;
+    /// ReadInt5276D0/current default at66BBF8..66BC12, unclamped.
+    pub ion_cannon_damage: i32,
     // --- ForceShield ([General], RulesClass::ReadGeneral) ---
     /// `ForceShieldRadius=` (`Rules+0x17B8`, `0x0067109F`), in cells; the
     /// constructor's 10 (`0x006676C8`).
@@ -2548,6 +2553,8 @@ impl Default for GeneralRules {
             dominator_capture_range: 2,
             dominator_damage: 50,
             ion_blast_anim: String::new(),
+            ion_beam_anim: String::new(),
+            ion_cannon_damage: 700,
             force_shield_radius: 10,
             force_shield_duration: 400,
             force_shield_blackout_duration: 800,
@@ -3745,7 +3752,10 @@ impl GeneralRules {
             dominator_fire_at_percentage: general.read_int("DominatorFireAtPercentage", 50),
             dominator_capture_range: general.read_int("DominatorCaptureRange", 2),
             dominator_damage: general.read_int("DominatorDamage", 50),
-            ion_blast_anim: general.read_string("IonBlast", "", 0x80),
+            // The native Process state supplies all four IonBlast inputs.
+            ion_blast_anim: defaults.ion_blast_anim.clone(),
+            ion_beam_anim: defaults.ion_beam_anim.clone(),
+            ion_cannon_damage: defaults.ion_cannon_damage,
             force_shield_radius: general.read_int("ForceShieldRadius", 10),
             force_shield_duration: general.read_int("ForceShieldDuration", 400),
             force_shield_blackout_duration: general.read_int("ForceShieldBlackoutDuration", 800),
@@ -4174,6 +4184,10 @@ impl RuleSet {
         rules.general.difficulty_rows = *processed.difficulty_rows();
         rules.general.detail = processed.detail();
         rules.general.talk_bubble_time = processed.talk_bubble_time();
+        let (damage, blast, beam, _) = processed.ion_blast_inputs();
+        rules.general.ion_cannon_damage = damage;
+        rules.general.ion_blast_anim = blast.to_string();
+        rules.general.ion_beam_anim = beam.to_string();
         let (ambient_rate, ambient_step) = processed.ambient_change_inputs();
         (
             rules.general.ambient_change_rate_nonzero,
@@ -4933,11 +4947,11 @@ impl RuleSet {
             .map(CombatDamageDefaults::from_ini_section)
             .unwrap_or_default();
 
-        // Parse [CombatDamage] bridge-warhead names (IonCannonWarhead, C4Warhead).
-        let bridge_warheads = ini
-            .section("CombatDamage")
-            .map(crate::rules::bridge_warheads::BridgeWarheads::from_ini_section)
-            .unwrap_or_default();
+        // IonCannon's retained reference comes from its sole ordered reader.
+        let bridge_warheads = crate::rules::bridge_warheads::BridgeWarheads::from_ini_section(
+            &ini.section_or_empty("CombatDamage"),
+            processed.ion_blast_inputs().3,
+        );
 
         let mind_control = crate::rules::mind_control_rules::MindControlRules::from_ini(
             ini,
@@ -5490,7 +5504,7 @@ impl RuleSet {
     /// slices and are not claimed by this hash yet.
     pub fn simulation_config_hash(&self) -> u64 {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        b"rules-simulation-config-v21".hash(&mut hasher);
+        b"rules-simulation-config-v22".hash(&mut hasher);
         self.source_ini_hash.hash(&mut hasher);
         // Global construction order changes which category106 mutates when
         // IDs coincide. Current TechLevels can also differ after retained
@@ -5524,6 +5538,11 @@ impl RuleSet {
             .hash(&mut hasher);
         self.general.ambient_change_step.hash(&mut hasher);
         self.general.prism_support.hash(&mut hasher);
+        // These current-default inputs survive a process registry handoff.
+        self.general.ion_cannon_damage.hash(&mut hasher);
+        self.general.ion_blast_anim.hash(&mut hasher);
+        self.general.ion_beam_anim.hash(&mut hasher);
+        self.bridge_warheads.ion_cannon_name.hash(&mut hasher);
         // Earlier Rules passes retain these signed divisors even when the
         // current source stack omits them; sale crew and its RNG consumers
         // must not be presented as the same effective configuration.
@@ -9987,9 +10006,9 @@ Projectile=Invisible
         let rules: RuleSet = RuleSet::from_ini(&ini).expect("rules parse");
         let mut interner = StringInterner::default();
         let handles = ResolvedRuleHandles::resolve(&rules, &mut interner);
-        // Defaults match retail rulesmd.ini ("IonCannonWH" + "Super") because
-        // the test rules.ini has no `[CombatDamage]` overrides.
-        assert_eq!(interner.resolve(handles.ion_cannon), "IonCannonWH");
+        // Rules666BD5 initializes IonCannonWarhead to null. The existing
+        // C4/Crush legacy defaults remain outside this reader migration.
+        assert_eq!(interner.resolve(handles.ion_cannon), "");
         assert_eq!(interner.resolve(handles.c4), "Super");
         assert_eq!(interner.resolve(handles.crush), "Crush");
         assert!(handles.is_crush(handles.crush));

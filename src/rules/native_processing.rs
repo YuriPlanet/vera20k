@@ -1079,6 +1079,17 @@ impl ProcessedRulesLayers {
             .rules_talk_bubble_time
     }
 
+    /// Rules+490, +298, +29C, +FF0, retained across ordered Process calls.
+    pub(crate) fn ion_blast_inputs(&self) -> (i32, &str, &str, &str) {
+        let state = self.native_type_construction_trace.registry_state();
+        (
+            state.rules_ion_cannon_damage,
+            &state.rules_ion_blast_anim,
+            &state.rules_ion_beam_anim,
+            &state.rules_ion_cannon_warhead,
+        )
+    }
+
     /// Consume only the typed-reader compatibility projection and deliberately
     /// discard the native constructor/registry receipt.
     ///
@@ -1295,6 +1306,10 @@ pub(crate) struct NativeRulesRegistryState {
     rules_survivor_divisors: [i32; 3],
     rules_maximum_cheer_rate: i32,
     rules_talk_bubble_time: i32,
+    rules_ion_cannon_damage: i32,
+    rules_ion_blast_anim: String,
+    rules_ion_beam_anim: String,
+    rules_ion_cannon_warhead: String,
     rules_mind_control_attack_line_frames: i32,
     rules_line_trail_override: [u8; 3],
     rules_chrono_beam_color: [u8; 3],
@@ -1335,6 +1350,11 @@ impl Default for NativeRulesRegistryState {
             rules_survivor_divisors: crate::rules::ruleset::DEFAULT_SURVIVOR_DIVISORS,
             rules_maximum_cheer_rate: crate::rules::ruleset::DEFAULT_MAXIMUM_CHEER_RATE,
             rules_talk_bubble_time: general.talk_bubble_time,
+            // Rules665CD4=700; pointer fields665A18/665A24/666BD5 start null.
+            rules_ion_cannon_damage: 700,
+            rules_ion_blast_anim: String::new(),
+            rules_ion_beam_anim: String::new(),
+            rules_ion_cannon_warhead: String::new(),
             // MindControlAttackLineFrames, Rules+310: constructor 0x00665ABE.
             rules_mind_control_attack_line_frames: 15,
             rules_line_trail_override: general.line_trail_color_override,
@@ -1518,6 +1538,7 @@ impl NativeRulesRegistryState {
             rules_survivor_divisors: self.rules_survivor_divisors,
             rules_maximum_cheer_rate: self.rules_maximum_cheer_rate,
             rules_talk_bubble_time: self.rules_talk_bubble_time,
+            rules_ion_cannon_damage: self.rules_ion_cannon_damage,
             rules_mind_control_attack_line_frames: self.rules_mind_control_attack_line_frames,
             rules_line_trail_override: self.rules_line_trail_override,
             rules_chrono_beam_color: self.rules_chrono_beam_color,
@@ -1845,6 +1866,10 @@ struct RulesPassProcessor {
     rules_survivor_divisors: [i32; 3],
     rules_maximum_cheer_rate: i32,
     rules_talk_bubble_time: i32,
+    rules_ion_cannon_damage: i32,
+    rules_ion_blast_anim: String,
+    rules_ion_beam_anim: String,
+    rules_ion_cannon_warhead: String,
     rules_mind_control_attack_line_frames: i32,
     rules_line_trail_override: [u8; 3],
     rules_chrono_beam_color: [u8; 3],
@@ -1889,6 +1914,10 @@ impl RulesPassProcessor {
             rules_survivor_divisors: registry_state.rules_survivor_divisors,
             rules_maximum_cheer_rate: registry_state.rules_maximum_cheer_rate,
             rules_talk_bubble_time: registry_state.rules_talk_bubble_time,
+            rules_ion_cannon_damage: registry_state.rules_ion_cannon_damage,
+            rules_ion_blast_anim: registry_state.rules_ion_blast_anim,
+            rules_ion_beam_anim: registry_state.rules_ion_beam_anim,
+            rules_ion_cannon_warhead: registry_state.rules_ion_cannon_warhead,
             rules_mind_control_attack_line_frames: registry_state
                 .rules_mind_control_attack_line_frames,
             rules_line_trail_override: registry_state.rules_line_trail_override,
@@ -2429,6 +2458,8 @@ impl RulesPassProcessor {
             } else if matches!(
                 key,
                 "LightningWarhead"
+                    | "IonBlast"
+                    | "IonBeam"
                     | "WeatherConBoltExplosion"
                     | "WeaponNullifyAnim"
                     | "PrismType"
@@ -2456,6 +2487,10 @@ impl RulesPassProcessor {
                     let resolved = resolved.unwrap_or_default();
                     match key {
                         "LightningWarhead" => self.select_anim.lightning_warhead = resolved,
+                        //66DCC7..66DD0D: ReadString128/Anim428B80, current
+                        //pointer retained for missing/empty; native none clears.
+                        "IonBlast" => self.rules_ion_blast_anim = resolved,
+                        "IonBeam" => self.rules_ion_beam_anim = resolved,
                         "WeatherConBoltExplosion" => {
                             self.select_anim.weather_con_bolt_explosion = resolved;
                         }
@@ -3212,6 +3247,10 @@ impl RulesPassProcessor {
         let Some(section) = pass.section("CombatDamage") else {
             return;
         };
+        // CombatDamage66BBF8..66BC12: exact-case signed ReadInt5276D0,
+        // current Rules+490 default, constructor665CD4=700, no clamp.
+        self.rules_ion_cannon_damage =
+            section.read_int("IonCannonDamage", self.rules_ion_cannon_damage);
         for key in [
             "Scorches",
             "Scorches1",
@@ -3258,8 +3297,13 @@ impl RulesPassProcessor {
         for key in ["ControlledAnimationType", "PermaControlledAnimationType"] {
             let _ = self.resolve_scalar_from(section, key, RulesTypeFamily::Animation, 0x80);
         }
-        let _ =
-            self.resolve_scalar_from(section, "IonCannonWarhead", RulesTypeFamily::Warhead, 0x80);
+        //66CA96..66CACB retains the current Rules+FF0 pointer on an
+        //empty read; the existing allocating scalar reader handles none.
+        if let Some(resolved) =
+            self.resolve_scalar_from(section, "IonCannonWarhead", RulesTypeFamily::Warhead, 0x80)
+        {
+            self.rules_ion_cannon_warhead = resolved.unwrap_or_default();
+        }
         for key in [
             "DefaultLargeGreySmokeSystem",
             "DefaultSmallGreySmokeSystem",
@@ -3473,6 +3517,10 @@ impl RulesPassProcessor {
                     rules_survivor_divisors: self.rules_survivor_divisors,
                     rules_maximum_cheer_rate: self.rules_maximum_cheer_rate,
                     rules_talk_bubble_time: self.rules_talk_bubble_time,
+                    rules_ion_cannon_damage: self.rules_ion_cannon_damage,
+                    rules_ion_blast_anim: self.rules_ion_blast_anim,
+                    rules_ion_beam_anim: self.rules_ion_beam_anim,
+                    rules_ion_cannon_warhead: self.rules_ion_cannon_warhead,
                     rules_mind_control_attack_line_frames: self
                         .rules_mind_control_attack_line_frames,
                     rules_line_trail_override: self.rules_line_trail_override,

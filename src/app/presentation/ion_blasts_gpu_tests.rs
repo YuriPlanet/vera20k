@@ -5,9 +5,9 @@
 
 use super::*;
 use crate::render::batch::BatchRenderer;
-use crate::render::ion_blast_ripple::FRAME_COUNT;
 use crate::render::terrain_draw::TerrainDrawRenderer;
 use crate::render::terrain_draw_gpu_tests::{Gpu, camera, encoded};
+use crate::sim::ion_blast_ripple::FRAME_COUNT;
 use crate::util::fnv::{FNV1A64_OFFSET_BASIS, fnv1a64_fold_bytes};
 use serde_json::Value;
 

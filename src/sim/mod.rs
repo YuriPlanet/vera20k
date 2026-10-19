@@ -158,6 +158,8 @@ pub mod ore_growth;
 pub(crate) mod ore_twinkle;
 pub mod radar;
 pub mod rocking;
+/// Native ripple table shared by IonBlast forces and presentation.
+pub mod ion_blast_ripple;
 pub mod terrain_object;
 pub mod terrain_spawn;
 pub mod tiberium;

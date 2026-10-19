@@ -1212,7 +1212,7 @@ fn unit_draw_anchor(
             120.0,
         )
     };
-    admitted.then_some([x, y])
+    admitted.then_some([x, y - f32::from(entity.ion_blast_lift_pixels())])
 }
 
 /// One parent raster has separate atlas storage and native drawing bounds.

@@ -4023,6 +4023,12 @@ impl Simulation {
                     effects.push(TriggerEffect::BridgeStateChanged);
                 }
             }
+            94 => {
+                let Some(waypoint) = action.waypoint_index else {
+                    return false;
+                };
+                return self.trigger_ion_blast(waypoint as i32);
+            }
             95 => {
                 let (Some(rules), Some(waypoint)) = (rules, action.waypoint_index) else {
                     return false;

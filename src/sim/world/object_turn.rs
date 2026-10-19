@@ -964,6 +964,11 @@ impl Simulation {
         // FootClass::AI 0x004DAE5F..0x004DAEC3: the active IPiggyback ends
         // when its Is_Ok_To_End allows.
         sim.try_end_piggyback(stable_id, rules);
+        // Foot4DAECA clears the transient draw lift after piggyback callbacks,
+        // before the warp-in/pending-entry predicate and ParasiteAI.
+        if let Some(entity) = sim.substrate.entities.get_mut(stable_id) {
+            entity.set_ion_blast_lift(0);
+        }
         // FootClass::AI 0x004DAED0..0x004DAEDC: with vt+0x1D8 (the warp-in)
         // clear, the pending entry (`Unit+0x500`) asks for its slot.
         if let Some(rules) = rules

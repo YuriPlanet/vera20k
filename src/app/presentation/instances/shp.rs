@@ -148,7 +148,11 @@ pub(crate) fn build_shp_instances(
             if entity.category() == EntityCategory::Structure {
                 crate::render::locomotor_visual::building_art_anchor(anchor.0, anchor.1)
             } else {
-                anchor
+                // Infantry DrawIt519524/51958A uses the signed Foot+6B4 lift.
+                (
+                    anchor.0,
+                    anchor.1 - f32::from(entity.ion_blast_lift_pixels()),
+                )
             }
         };
         if !in_view(sx, sy, 200.0, 200.0, cam_x, cam_y, sw, sh, 200.0) {

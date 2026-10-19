@@ -331,6 +331,10 @@ pub struct GameEntity {
     /// and of the active/suspended locomotor. Deterministic fixed radians.
     #[serde(default)]
     pub(crate) flight_attitude: crate::sim::movement::fly_height::FlightAttitude,
+    /// Foot+6B4, ctor4D343E zero; IonBlast53CF7F writes a signed pixel
+    /// lift. FootAI4DAECA clears it; Foot save4DBD7C retains it.
+    #[serde(default)]
+    ion_blast_lift: i8,
     /// The Foot occupation enable (`Foot+0x6B6`), an [`OccupationEnable`]
     /// that `movement::foot_mark` owns. Unit's constructor (`0x007353CE`)
     /// runs the Foot one that sets it.
@@ -829,6 +833,15 @@ mod simple_deploy;
 mod voxel_recoil;
 
 impl GameEntity {
+    /// Infantry519524/51958A and Unit73CEF3 subtract Foot+6B4 in DrawIt.
+    pub fn ion_blast_lift_pixels(&self) -> i8 {
+        self.ion_blast_lift
+    }
+
+    pub(crate) fn set_ion_blast_lift(&mut self, pixels: i8) {
+        self.ion_blast_lift = pixels;
+    }
+
     /// The infantry house-total latches (`Techno+0x438/+0x439`). Only
     /// `sim::house_tracking` can change them; the mutable borrow exists so
     /// that owner can reach the latches stored on the object.
@@ -1462,6 +1475,7 @@ impl GameEntity {
             navigation: NavigationState::at_frame(construction_frame),
             foot_speed: crate::sim::components::FootSpeedState::default(),
             flight_attitude: Default::default(),
+            ion_blast_lift: 0,
             foot_occupation_enabled: crate::sim::movement::foot_mark::OccupationEnable::constructed(
             ),
             lift: Default::default(),

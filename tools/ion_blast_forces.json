@@ -1,0 +1,287 @@
+[
+  {
+    "angles": [
+      1053137269,
+      609875236,
+      1040187392,
+      3196059648
+    ],
+    "frame": 2,
+    "input": {
+      "delta": [
+        256,
+        0,
+        0
+      ],
+      "facing": 0,
+      "frame": 1,
+      "loaded": true,
+      "sample": 4
+    },
+    "lift": 2,
+    "queried_cells": 49,
+    "sample_calls": [
+      [
+        297,
+        128
+      ]
+    ],
+    "speed_bits": 0
+  },
+  {
+    "angles": [
+      3195305446,
+      0,
+      1040187392,
+      3196059648
+    ],
+    "frame": 5,
+    "input": {
+      "delta": [
+        0,
+        256,
+        0
+      ],
+      "facing": 16384,
+      "frame": 4,
+      "loaded": true,
+      "sample": 0
+    },
+    "lift": 7,
+    "queried_cells": 49,
+    "sample_calls": [
+      [
+        297,
+        128
+      ]
+    ],
+    "speed_bits": 4602678819172646912
+  },
+  {
+    "angles": [
+      1043972217,
+      1050404655,
+      1040187392,
+      3196059648
+    ],
+    "frame": 13,
+    "input": {
+      "delta": [
+        128,
+        -256,
+        104
+      ],
+      "facing": 32000,
+      "frame": 12,
+      "loaded": true,
+      "sample": 34
+    },
+    "lift": 6,
+    "queried_cells": 49,
+    "sample_calls": [
+      [
+        314,
+        128
+      ]
+    ],
+    "speed_bits": 0
+  },
+  {
+    "angles": [
+      1048576000,
+      3204448256,
+      1040187392,
+      3196059648
+    ],
+    "frame": 2,
+    "input": {
+      "delta": [
+        0,
+        0,
+        0
+      ],
+      "facing": 0,
+      "frame": 1,
+      "loaded": true,
+      "sample": 4
+    },
+    "lift": 2,
+    "queried_cells": 49,
+    "sample_calls": [
+      [
+        264,
+        128
+      ]
+    ],
+    "speed_bits": 0
+  },
+  {
+    "angles": [
+      1048576000,
+      3204448256,
+      1040187392,
+      3196059648
+    ],
+    "frame": 6,
+    "input": {
+      "delta": [
+        256,
+        256,
+        0
+      ],
+      "facing": 65535,
+      "frame": 5,
+      "loaded": true,
+      "sample": -1
+    },
+    "lift": 7,
+    "queried_cells": 49,
+    "sample_calls": [
+      [
+        294,
+        128
+      ]
+    ],
+    "speed_bits": 4602678819172646912
+  },
+  {
+    "angles": [
+      1048576000,
+      3204448256,
+      1040187392,
+      3196059648
+    ],
+    "frame": 2,
+    "input": {
+      "delta": [
+        256,
+        0,
+        0
+      ],
+      "facing": 0,
+      "frame": 1,
+      "loaded": false,
+      "sample": 4
+    },
+    "lift": 2,
+    "queried_cells": 49,
+    "sample_calls": [
+      [
+        297,
+        128
+      ]
+    ],
+    "speed_bits": 0
+  },
+  {
+    "angles": [
+      1048576000,
+      3204448256,
+      1040187392,
+      3196059648
+    ],
+    "frame": 21,
+    "input": {
+      "delta": [
+        4096,
+        4096,
+        0
+      ],
+      "facing": 10000,
+      "frame": 20,
+      "loaded": true,
+      "sample": 4
+    },
+    "lift": 7,
+    "queried_cells": 49,
+    "sample_calls": [],
+    "speed_bits": 4602678819172646912
+  },
+  {
+    "angles": [
+      3182407957,
+      2738998004,
+      1040187392,
+      3196059648
+    ],
+    "frame": 8,
+    "input": {
+      "delta": [
+        256,
+        0,
+        0
+      ],
+      "facing": 0,
+      "frame": 7,
+      "loaded": true,
+      "sample": 15
+    },
+    "lift": 4,
+    "queried_cells": 49,
+    "sample_calls": [
+      [
+        297,
+        128
+      ]
+    ],
+    "speed_bits": 0
+  },
+  {
+    "angles": [
+      1036894262,
+      1045282974,
+      1040187392,
+      3196059648
+    ],
+    "frame": 36,
+    "input": {
+      "delta": [
+        -128,
+        256,
+        -104
+      ],
+      "facing": 65535,
+      "frame": 35,
+      "loaded": true,
+      "sample": 0
+    },
+    "lift": 7,
+    "queried_cells": 49,
+    "sample_calls": [
+      [
+        313,
+        128
+      ]
+    ],
+    "speed_bits": 4602678819172646912
+  },
+  {
+    "angles": [
+      0,
+      0,
+      1040187392,
+      3196059648
+    ],
+    "frame": 79,
+    "input": {
+      "delta": [
+        0,
+        0,
+        104
+      ],
+      "facing": 32768,
+      "frame": 78,
+      "loaded": true,
+      "sample": 0
+    },
+    "lift": 7,
+    "queried_cells": 49,
+    "sample_calls": [
+      [
+        279,
+        128
+      ]
+    ],
+    "speed_bits": 4602678819172646912
+  }
+]
