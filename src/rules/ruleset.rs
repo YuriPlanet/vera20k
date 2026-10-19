@@ -4356,6 +4356,15 @@ impl RuleSet {
                 references.apply_to(object);
             }
         }
+        for (category, name, shadow_index) in processed.voxel_shadow_states() {
+            if let Some(object) = rules
+                .object_list
+                .iter_mut()
+                .find(|object| object.category == category && object.id == name)
+            {
+                object.set_voxel_shadow_index(shadow_index);
+            }
+        }
         for (name, pips) in processed.infantry_pip_states() {
             if let Some(object) = rules
                 .object_list

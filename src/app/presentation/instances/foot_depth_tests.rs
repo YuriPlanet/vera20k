@@ -113,18 +113,33 @@ fn runtime_rules_and_live_cliff_edits_reach_depth_instead_of_the_load_template()
         .cell_mut(3, 3)
         .unwrap()
         .level = 9;
-    assert_eq!(unit_z_adjust_in_runtime(Some(&runtime), &tank, true), -1);
+    assert_eq!(
+        unit_z_adjust_in_runtime(Some(&runtime), &tank, true, None),
+        -1
+    );
 
     // This is an adapter sequence, not another exhaustive helper truth table:
     // runtime changes must be visible immediately, without replacing resources.
     set_live_level(&mut runtime, (3, 3), 4);
-    assert_eq!(unit_z_adjust_in_runtime(Some(&runtime), &tank, true), 19);
-    assert_eq!(unit_z_adjust_in_runtime(Some(&runtime), &custom, true), 13);
+    assert_eq!(
+        unit_z_adjust_in_runtime(Some(&runtime), &tank, true, None),
+        19
+    );
+    assert_eq!(
+        unit_z_adjust_in_runtime(Some(&runtime), &custom, true, None),
+        13
+    );
     set_live_level(&mut runtime, (4, 4), 4);
-    assert_eq!(unit_z_adjust_in_runtime(Some(&runtime), &tank, true), 9);
+    assert_eq!(
+        unit_z_adjust_in_runtime(Some(&runtime), &tank, true, None),
+        9
+    );
     set_live_level(&mut runtime, (3, 3), 0);
     set_live_level(&mut runtime, (4, 4), 0);
-    assert_eq!(unit_z_adjust_in_runtime(Some(&runtime), &tank, true), -1);
+    assert_eq!(
+        unit_z_adjust_in_runtime(Some(&runtime), &tank, true, None),
+        -1
+    );
     assert_eq!(
         runtime
             .resources
@@ -144,16 +159,22 @@ fn native_on_bridge_controls_the_cliff_gate_and_shp_surface() {
     let mut tank = entity(&mut runtime, "TANK", EntityCategory::Unit);
     set_live_level(&mut runtime, (3, 3), 4);
     tank.set_on_bridge(false);
-    assert_eq!(unit_z_adjust_in_runtime(Some(&runtime), &tank, true), 19);
+    assert_eq!(
+        unit_z_adjust_in_runtime(Some(&runtime), &tank, true, None),
+        19
+    );
     assert_eq!(shp_z_adjust_in_runtime(Some(&runtime), &tank), 17.0);
 
     tank.set_on_bridge(true);
-    assert_eq!(unit_z_adjust_in_runtime(Some(&runtime), &tank, true), -1);
+    assert_eq!(
+        unit_z_adjust_in_runtime(Some(&runtime), &tank, true, None),
+        -1
+    );
     // Exactly on the native bridge surface: GetHeight()==0 still reaches Foot,
     // even when the derived occupancy marker is absent.
     tank.position
         .set_exact_z_leptons_for_test(Some(crate::util::lepton::BRIDGE_DECK_HEIGHT_LEPTONS));
-    let foot = unit_z_adjust_in_runtime(Some(&runtime), &tank, true);
+    let foot = unit_z_adjust_in_runtime(Some(&runtime), &tank, true, None);
     assert_eq!(
         shp_z_adjust_in_runtime(Some(&runtime), &tank),
         (foot - 2) as f32
@@ -170,13 +191,19 @@ fn shp_uses_exact_height_and_category_while_raw_unit_depth_keeps_foot() {
     set_live_level(&mut runtime, (3, 3), 4);
     assert_eq!(shp_z_adjust_in_runtime(Some(&runtime), &infantry), 17.0);
     assert_eq!(shp_z_adjust_in_runtime(Some(&runtime), &aircraft), -2.0);
-    assert_eq!(unit_z_adjust_in_runtime(Some(&runtime), &aircraft, true), 0);
+    assert_eq!(
+        unit_z_adjust_in_runtime(Some(&runtime), &aircraft, true, None),
+        0
+    );
 
     // An exact one-lepton height excludes Foot even though it rounds to no
     // screen lift and there is no air-layer locomotor.
     tank.position.set_exact_z_leptons_for_test(Some(1));
     assert_eq!(shp_z_adjust_in_runtime(Some(&runtime), &tank), -2.0);
-    assert_eq!(unit_z_adjust_in_runtime(Some(&runtime), &tank, true), 19);
+    assert_eq!(
+        unit_z_adjust_in_runtime(Some(&runtime), &tank, true, None),
+        19
+    );
 
     let mut locomotor =
         LocomotorState::from_object_type(runtime.resources.rules.object("TANK").unwrap(), 0);
@@ -191,15 +218,18 @@ fn shp_uses_exact_height_and_category_while_raw_unit_depth_keeps_foot() {
     );
     tank.position.set_exact_z_leptons_for_test(Some(104));
     assert_eq!(shp_z_adjust_in_runtime(Some(&runtime), &tank), -17.0);
-    assert_eq!(unit_z_adjust_in_runtime(Some(&runtime), &tank, true), 4);
+    assert_eq!(
+        unit_z_adjust_in_runtime(Some(&runtime), &tank, true, None),
+        4
+    );
     aircraft.position.set_exact_z_leptons_for_test(Some(104));
     assert_eq!(shp_z_adjust_in_runtime(Some(&runtime), &aircraft), -17.0);
     assert_eq!(
-        unit_z_adjust_in_runtime(Some(&runtime), &aircraft, true),
+        unit_z_adjust_in_runtime(Some(&runtime), &aircraft, true, None),
         -15
     );
     assert_eq!(shp_z_adjust_in_runtime(None, &tank), -17.0);
-    assert_eq!(unit_z_adjust_in_runtime(None, &tank, true), -15);
+    assert_eq!(unit_z_adjust_in_runtime(None, &tank, true, None), -15);
 }
 
 #[test]
@@ -232,7 +262,7 @@ fn shp_ramp_gate_preserves_coarse_grounded_poses_and_checks_exact_surface_height
     assert!(infantry.position.exact_z_leptons().is_none());
     assert_eq!(
         shp_z_adjust_in_runtime(Some(&runtime), &infantry),
-        (unit_z_adjust_in_runtime(Some(&runtime), &infantry, true) - 2) as f32
+        (unit_z_adjust_in_runtime(Some(&runtime), &infantry, true, None) - 2) as f32
     );
     assert_ne!(shp_z_adjust_in_runtime(Some(&runtime), &infantry), -2.0);
 
@@ -244,7 +274,7 @@ fn shp_ramp_gate_preserves_coarse_grounded_poses_and_checks_exact_surface_height
         .set_exact_z_leptons_for_test(Some(surface));
     assert_eq!(
         shp_z_adjust_in_runtime(Some(&runtime), &infantry),
-        (unit_z_adjust_in_runtime(Some(&runtime), &infantry, true) - 2) as f32
+        (unit_z_adjust_in_runtime(Some(&runtime), &infantry, true, None) - 2) as f32
     );
     infantry
         .position
@@ -253,7 +283,7 @@ fn shp_ramp_gate_preserves_coarse_grounded_poses_and_checks_exact_surface_height
     assert_eq!(airborne, (-adjust_for_z_standard(surface + 1) - 2) as f32);
     assert_ne!(
         airborne,
-        (unit_z_adjust_in_runtime(Some(&runtime), &infantry, true) - 2) as f32
+        (unit_z_adjust_in_runtime(Some(&runtime), &infantry, true, None) - 2) as f32
     );
 }
 
@@ -269,8 +299,14 @@ fn actual_type_wins_display_art_except_the_harvester_unloading_body() {
     let mut disguise = DisguiseRuntime::default();
     disguise.acquire(0, Some(unloading), None);
     tank.disguise = Some(disguise);
-    assert_eq!(unit_z_adjust_in_runtime(Some(&runtime), &tank, true), 19);
-    assert_eq!(unit_z_adjust_in_runtime(Some(&runtime), &tank, false), 19);
+    assert_eq!(
+        unit_z_adjust_in_runtime(Some(&runtime), &tank, true, None),
+        19
+    );
+    assert_eq!(
+        unit_z_adjust_in_runtime(Some(&runtime), &tank, false, None),
+        19
+    );
     assert_eq!(shp_z_adjust_in_runtime(Some(&runtime), &tank), 17.0);
 
     // Unit+6C4 is temporarily replaced for the unloading body. The original
@@ -279,17 +315,17 @@ fn actual_type_wins_display_art_except_the_harvester_unloading_body() {
         .display_type_override
         .set_for_test(Some(unloading));
     assert_eq!(
-        unit_z_adjust_in_runtime(Some(&runtime), &harvester, true),
+        unit_z_adjust_in_runtime(Some(&runtime), &harvester, true, None),
         5
     );
     assert_eq!(shp_z_adjust_in_runtime(Some(&runtime), &harvester), 3.0);
     assert_eq!(
-        unit_z_adjust_in_runtime(Some(&runtime), &harvester, false),
+        unit_z_adjust_in_runtime(Some(&runtime), &harvester, false, None),
         19
     );
     harvester.display_type_override.set_for_test(None);
     assert_eq!(
-        unit_z_adjust_in_runtime(Some(&runtime), &harvester, true),
+        unit_z_adjust_in_runtime(Some(&runtime), &harvester, true, None),
         19
     );
 }
@@ -319,7 +355,7 @@ fn fixed_slot_alias_and_missing_cells_leave_the_shared_simulation_dummy_unchange
     for (rx, ry) in [(512, 1), (500, 500), (0, 0)] {
         tank.position.set_rx_for_test(rx);
         tank.position.set_ry_for_test(ry);
-        let _ = unit_z_adjust_in_runtime(Some(&runtime), &tank, true);
+        let _ = unit_z_adjust_in_runtime(Some(&runtime), &tank, true, None);
         let _ = shp_z_adjust_in_runtime(Some(&runtime), &tank);
         assert_eq!(
             dummy.snapshot(),

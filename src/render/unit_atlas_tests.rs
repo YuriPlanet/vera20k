@@ -3,6 +3,84 @@ use crate::render::vxl_raster::VxlSprite;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::voxel_frame_catalog::draws_turret_parts;
 
+/// Aircraft DrawIt4148A0 reaches the shared Foot shadow owner. An ordinary
+/// retail Harrier therefore needs a shadow resident alongside its body.
+#[test]
+fn retail_fly_aircraft_demand_includes_ground_shadow() {
+    use crate::rules::retail_ini_fixture::{retail_assets, retail_battle_rules};
+    let Some(battle) = retail_battle_rules() else {
+        return;
+    };
+    let (_, assets) = retail_assets().expect("retail assets for the loaded rules");
+    let object = battle.rules.object("ORCA").expect("retail Harrier");
+    assert_eq!(
+        object.locomotor,
+        crate::rules::locomotor_type::LocomotorKind::Fly
+    );
+    assert!(!object.no_shadow);
+    let demand = UnitAtlasDemand {
+        air: BTreeSet::from(["ORCA".to_string()]),
+        ..Default::default()
+    };
+    let (keys, _) = needed_unit_keys(&demand, &assets, Some(&battle.rules));
+    assert!(
+        keys.iter()
+            .any(|key| key.type_id == "ORCA" && key.layer == VxlLayer::Shadow),
+        "Aircraft DrawIt requires the resident ground-shadow stencil"
+    );
+    let model = UnitModel::load(&assets, "ORCA", Some(&battle.rules)).unwrap();
+    let fixture: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/voxel_oracle/aircraft_shadow.json",
+    ))
+    .unwrap();
+    let native = &fixture["retail"]["cases"][0];
+    assert_eq!(
+        voxel_image_id("ORCA", Some(&battle.rules)),
+        fixture["retail"]["image"].as_str().unwrap()
+    );
+    let key = UnitSpriteKey {
+        type_id: "ORCA".into(),
+        turret_index: 0,
+        facing: 0,
+        layer: VxlLayer::Shadow,
+        frame: 0,
+        slope_type: 0,
+        barrel_pitch: 0,
+    };
+    let (sprite, bounds) = model.render(&key, None, None, &mut None).unwrap();
+    let rect: Vec<i32> = native["rect"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_i64().unwrap() as i32)
+        .collect();
+    assert_eq!(bounds, Some([rect[0], rect[1], rect[4], rect[5]]));
+    let mut expected = vec![0u8; 65536];
+    for p in native["pixels"].as_array().unwrap() {
+        expected[p[0].as_u64().unwrap() as usize] = p[1].as_u64().unwrap() as u8;
+    }
+    let cropped: Vec<u8> = (rect[3]..rect[3] + rect[5])
+        .flat_map(|y| {
+            let start = (y * 256 + rect[2]) as usize;
+            expected[start..start + rect[4] as usize].iter().copied()
+        })
+        .collect();
+    assert_eq!(
+        sprite.palette_indices, cropped,
+        "production UnitModel native ORCA stencil"
+    );
+    for name in ["V3ROCKET", "DMISL", "CMISL"] {
+        if let Some(missile) = battle.rules.object(name) {
+            eprintln!(
+                "retail {name}: NoShadow={} ConsideredAircraft={} ShadowIndex={}",
+                missile.no_shadow,
+                missile.considered_aircraft,
+                missile.voxel_shadow_index()
+            );
+        }
+    }
+}
+
 fn gsi_13_07_variant_rules() -> RuleSet {
     RuleSet::from_ini(&IniFile::from_str(
         "\

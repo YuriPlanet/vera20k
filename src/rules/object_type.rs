@@ -482,6 +482,9 @@ pub struct ObjectType {
     /// TechnoType+C95: ctor7113B9=false, ReadINI712350..712373 reads
     /// IsDropship; Fly4CDA28 selects its distinct vertical motion.
     pub(crate) is_dropship: bool,
+    /// TechnoType+7FC, read from the current Image section of fixed ARTMD.
+    /// The ordered processor owns its retained default (constructor0).
+    voxel_shadow_index: i32,
     /// TechnoType+3B0, ReadINI712379..712391: degrees converted to radians;
     /// -1 preserves the constructor value (20 degrees). Used by Fly approach.
     pub(crate) pitch_angle: SimFixed,
@@ -2068,6 +2071,20 @@ fn native_minutes_to_ticks(value: f64) -> u32 {
 }
 
 impl ObjectType {
+    /// Native fixed-ART ShadowIndex, retained by the ordered Type reader.
+    pub const fn voxel_shadow_index(&self) -> i32 {
+        self.voxel_shadow_index
+    }
+
+    pub(crate) fn set_voxel_shadow_index(&mut self, index: i32) {
+        self.voxel_shadow_index = index;
+    }
+
+    /// Type+C95 also selects Fly's flat shadow-matrix arm (4CFB4B).
+    pub const fn is_dropship(&self) -> bool {
+        self.is_dropship
+    }
+
     pub(crate) const fn carries_crate(&self) -> bool {
         self.carries_crate
     }
@@ -2644,6 +2661,7 @@ impl ObjectType {
             slowdown_distance: section.read_int("SlowdownDistance", 500),
             flight_level: section.read_int("FlightLevel", -1),
             is_dropship: section.read_bool("IsDropship", false),
+            voxel_shadow_index: 0,
             // `ReadDouble(-1)` (`0x00712364..0x00712399`): -1 keeps the
             // constructor's 20 degrees.
             pitch_angle: SimFixed::from_num(

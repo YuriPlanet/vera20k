@@ -851,6 +851,26 @@ impl ProcessedRulesLayers {
             })
     }
 
+    /// TechnoType+7FC after each reached fixed-ART ShadowIndex read.
+    pub(crate) fn voxel_shadow_states(&self) -> impl Iterator<Item = (ObjectCategory, &str, i32)> {
+        self.native_type_construction_trace
+            .registry_state()
+            .families
+            .iter()
+            .filter_map(|(family, members)| {
+                family.object_category().map(|category| (category, members))
+            })
+            .flat_map(|(category, members)| {
+                members.iter().map(move |member| {
+                    (
+                        category,
+                        member.native_stored_id.as_str(),
+                        member.voxel_shadow_index,
+                    )
+                })
+            })
+    }
+
     /// Each SuperWeaponType's `WeaponType=` (+9C) and `AuxBuilding=` (+C8)
     /// after every reached pass.
     pub(crate) fn super_weapon_reference_states(
@@ -1901,6 +1921,10 @@ struct WarheadAnimReadState {
 struct ProcessedType {
     native_stored_id: String,
     body: IniSection,
+    /// Constructor711351=0; fixed ART ReadInt71592A..715948 keeps the
+    /// current value as default across Image changes and later Rules passes.
+    #[serde(default)]
+    voxel_shadow_index: i32,
     /// TechnoType ctor711082 initializes+634 to255; ReadInt714570 uses
     /// its current value, including a prior TAction106 write, as the default.
     /// Native controls: trigger_object_tech_level.json scalar_layers/lifecycle.
@@ -2296,6 +2320,7 @@ impl ProcessedType {
     fn new(native_stored_id: String) -> Self {
         Self {
             body: IniSection::new(native_stored_id.clone()),
+            voxel_shadow_index: 0,
             tech_level: crate::rules::object_type::DEFAULT_TECH_LEVEL,
             projectile_art: ProjectileArtState::new(&native_stored_id),
             techno_references: TechnoTypeReferences::new(&native_stored_id),
@@ -3481,6 +3506,10 @@ impl RulesPassProcessor {
                 let references = &mut self.family_mut(family)[index].techno_references;
                 let image = raw.read_string("Image", &references.image, 0x19);
                 references.image.clone_from(&image);
+                let member = &mut self.families.get_mut(&family).unwrap()[index];
+                member.voxel_shadow_index = fixed_art
+                    .section_or_empty(&image)
+                    .read_int("ShadowIndex", member.voxel_shadow_index);
                 match family {
                     RulesTypeFamily::Building => {
                         let member = &mut self.families.get_mut(&family).unwrap()[index];
