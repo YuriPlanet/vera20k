@@ -552,3 +552,20 @@ fn superweapon_money_two_stage_kinds_cannot_bypass_exclusion_by_clearing_flags()
         assert!(sim.sound_events.is_empty());
     }
 }
+
+#[test]
+fn superweapon_money_postclick_rejects_paid_predecessor_with_single_stage_flags() {
+    for amount in [-500, 500] {
+        let rules = rules(&format!(
+            "[Sphere]\nType=PsychicReveal\nPreClick=no\nMoney.Amount={amount}\n"
+        ));
+        let (mut sim, owner) = world(&rules, 1000, true);
+        let source = ready(&mut sim, &rules, owner, "Sphere", false);
+        let destination = ready(&mut sim, &rules, owner, "Warp", false);
+        let before = sim.state_hash();
+        assert!(!fire(&mut sim, &rules, owner, destination, (15, 15)));
+        assert_eq!(sim.state_hash(), before);
+        assert!(sim.super_weapons[&owner][&source].is_ready);
+        assert!(sim.sound_events.is_empty());
+    }
+}

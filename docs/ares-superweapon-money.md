@@ -84,7 +84,8 @@ exclude money at source selection, and its
 uses remembered source settings at final activation. VERA's existing native
 source readiness can return on the next House update; it is not a one-use
 financial token. Paid two-stage support requires a saved, authoritative selection
-transaction and is not approximated by paying on repeatable source clicks.
+transaction and is tracked in [#2107](https://github.com/YuriPlanet/vera20k/issues/2107);
+it is not approximated by paying on repeatable source clicks.
 
 Also excluded: Money.DrainAmount/Delay, charge-drain activation, the reported
 donor's legacy SW.Money alias/test-range bypass, general Ares messages and

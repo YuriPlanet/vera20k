@@ -87,7 +87,7 @@ impl Simulation {
         // becomes ready again on its next House update. Keep those optional
         // configurations inert, including a free destination of a paid source.
         if !super::money::configuration_supported(sw)
-            || paired.is_some_and(|(_, source)| !super::money::configuration_supported(source))
+            || paired.is_some_and(|(_, source)| source.money_amount != 0)
         {
             return false;
         }
