@@ -561,8 +561,8 @@ fn receiver_garrison_survivor_keeps_height_aware_playfield_membership() {
         building
             .type_facts
             .set_foundation_for_test("2x2".to_string());
-        let mut cargo = PassengerCargo::new(5, 1);
-        cargo.board_forced_chain(&[(passenger_id, 1)]);
+        let mut cargo = PassengerCargo::new(5, 1.0);
+        cargo.board_forced_chain(&[(passenger_id, 1.0)]);
         building.passenger_role = PassengerRole::transport(cargo);
     }
     assert!(matches!(
@@ -3284,9 +3284,9 @@ fn lifecycle_authority_transport_uninits_passengers_in_cargo_order_before_carrie
     insert_entity(&mut sim, 2, EntityCategory::Infantry);
     insert_entity(&mut sim, 3, EntityCategory::Infantry);
     let _ = sim.reveal(1);
-    let mut cargo = PassengerCargo::new(5, 1);
-    cargo.board_forced_chain(&[(2, 1)]);
-    cargo.board_forced_chain(&[(3, 1)]);
+    let mut cargo = PassengerCargo::new(5, 1.0);
+    cargo.board_forced_chain(&[(2, 1.0)]);
+    cargo.board_forced_chain(&[(3, 1.0)]);
     sim.substrate.entities.get_mut(1).unwrap().passenger_role = PassengerRole::transport(cargo);
     sim.substrate.entities.get_mut(2).unwrap().passenger_role =
         PassengerRole::inside_for_test(1, false);
@@ -3344,11 +3344,11 @@ fn nested_transport_uninit_keeps_inner_cargo_until_its_recursive_transaction() {
     insert_entity(&mut sim, 2, EntityCategory::Unit);
     insert_entity(&mut sim, 3, EntityCategory::Infantry);
     let _ = sim.reveal(1);
-    let mut outer = PassengerCargo::new(12, 6);
-    outer.board_forced_chain(&[(2, 3)]);
+    let mut outer = PassengerCargo::new(12, 6.0);
+    outer.board_forced_chain(&[(2, 3.0)]);
     sim.substrate.entities.get_mut(1).unwrap().passenger_role = PassengerRole::transport(outer);
-    let mut inner = PassengerCargo::new(5, 2);
-    inner.board_forced_chain(&[(3, 1)]);
+    let mut inner = PassengerCargo::new(5, 2.0);
+    inner.board_forced_chain(&[(3, 1.0)]);
     let entity = sim.substrate.entities.get_mut(2).unwrap();
     entity.passenger_role = PassengerRole::transport(inner);
     entity.passenger_role.set_inside_transport(1, false);
@@ -3409,8 +3409,8 @@ fn nested_transport_parent_expiry_preserves_its_independent_cargo() {
             let parent = sim.substrate.entities.get_mut(1).unwrap();
             parent.lifecycle.set_object_alive_for_test(alive);
             parent.health.set_for_test(health);
-            let mut cargo = PassengerCargo::new(5, 2);
-            cargo.board_forced_chain(&[(3, 1)]);
+            let mut cargo = PassengerCargo::new(5, 2.0);
+            cargo.board_forced_chain(&[(3, 1.0)]);
             let entity = sim.substrate.entities.get_mut(2).unwrap();
             entity.passenger_role = PassengerRole::transport(cargo);
             if inside {
@@ -4467,9 +4467,9 @@ fn expiring_mixed_size_passenger_updates_transport_total_exactly() {
     insert_entity(&mut sim, 1, EntityCategory::Unit);
     insert_entity(&mut sim, 2, EntityCategory::Infantry);
     insert_entity(&mut sim, 3, EntityCategory::Infantry);
-    let mut cargo = PassengerCargo::new(5, 0);
-    cargo.board_forced_chain(&[(2, 3)]);
-    cargo.board_forced_chain(&[(3, 1)]);
+    let mut cargo = PassengerCargo::new(5, 0.0);
+    cargo.board_forced_chain(&[(2, 3.0)]);
+    cargo.board_forced_chain(&[(3, 1.0)]);
     sim.substrate.entities.get_mut(1).unwrap().passenger_role = PassengerRole::transport(cargo);
     sim.substrate.entities.get_mut(2).unwrap().passenger_role =
         PassengerRole::inside_for_test(1, false);
@@ -4487,7 +4487,7 @@ fn expiring_mixed_size_passenger_updates_transport_total_exactly() {
         .cargo()
         .unwrap();
     assert_eq!(cargo.passengers(), vec![3]);
-    assert_eq!(cargo.passenger_sizes(), vec![1]);
+    assert_eq!(cargo.passenger_sizes(), vec![1.0]);
     assert_eq!(cargo.total_size(), 1);
 }
 
@@ -6538,8 +6538,8 @@ fn gsi_05_04_combat_fatal_garrison_recursion_keeps_cell_target() {
             .type_facts
             .set_foundation_for_test("2x2".to_string());
         building.health.set_for_test(10);
-        let mut cargo = PassengerCargo::new(5, 1);
-        cargo.board_forced_chain(&[(passenger_id, 1)]);
+        let mut cargo = PassengerCargo::new(5, 1.0);
+        cargo.board_forced_chain(&[(passenger_id, 1.0)]);
         building.passenger_role = PassengerRole::transport(cargo);
     }
     assert!(matches!(

@@ -1603,6 +1603,12 @@ def _passenger_cases(base):
         dict(name='engineer',actors=[dict(base,passenger='ENGINEER')]),
         dict(name='integer_size_passenger',actors=[dict(base,type_name='LCRF',
             passenger='MTNK',health=300)]),
+        dict(name='fractional_size_1_5_two_passengers',
+            current_type_size_override_after_read=dict(type_name='MTNK',f64_bits='3FF8000000000000'),
+            actors=[dict(base,type_name='LCRF',passenger=None,passengers=['MTNK','MTNK'],health=300)]),
+        dict(name='fractional_size_2_8_two_passengers',
+            current_type_size_override_after_read=dict(type_name='MTNK',f64_bits='4006666666666666'),
+            actors=[dict(base,type_name='LCRF',passenger=None,passengers=['MTNK','MTNK'],health=300)]),
         dict(name='unload_empty',actors=[dict(base,unload=True)]),
         dict(name='hover_only',actors=[dict(base,selected=False,hovered=True)]),
         dict(name='absent',actors=[dict(base,selected=False)]),
@@ -2098,6 +2104,7 @@ def generate_unit_health(*, building=False, rank=False, passenger=False, ammo=Fa
     else:
         m.assets = assets
     u = m.u
+    startup_fpcw = _superweapon_winmain_fpcw(u, READER_SP) if passenger else None
     if building:
         rules, typ = m.rules, scene['typ']
     else:
@@ -2432,6 +2439,9 @@ def generate_unit_health(*, building=False, rank=False, passenger=False, ammo=Fa
         if passenger:
             _prepare_ground_building(m,actor,types['NABNKR'],house,selected=False)
             actor_templates['NABNKR']=bytes(u.mem_read(actor,0x900))
+            passenger_pools={name:[prepared] for name,prepared in passengers.items()}
+            passenger_pools['MTNK'].append(
+                _prepare_status_passengers(m,{'MTNK':types['MTNK']},house)['MTNK'])
         if spawns:
             # Same explicit HouseType index prior as the shared Building
             # status owner; nonallied health admission reads it before210.
@@ -2654,6 +2664,22 @@ def generate_unit_health(*, building=False, rank=False, passenger=False, ammo=Fa
             patch_after=_building_health_fields(m,typ,absorber=True)
         if mobile_status or absorber:
             spec['actors'] = [dict(actor) for actor in spec['actors']]
+        size_patch_observation=None
+        size_override=case.get('current_type_size_override_after_read')
+        if size_override:
+            size_type=types[size_override['type_name']]
+            before_size=bytes(u.mem_read(size_type+0x380,8))
+            size_bits=int(size_override['f64_bits'],16)
+            after_size=struct.pack('<Q',size_bits)
+            u.mem_write(size_type+0x380,after_size)
+            assert bytes(u.mem_read(size_type+0x380,8))==after_size
+            size_patch_observation=dict(type_name=size_override['type_name'],
+                address=f'{size_type+0x380:08X}',
+                before_f64_bits=f'{struct.unpack("<Q",before_size)[0]:016X}',
+                after_f64_bits=f'{size_bits:016X}',
+                before_size=struct.unpack('<d',before_size)[0],
+                after_size=struct.unpack('<d',after_size)[0],
+                patch_boundary='after selected native retail type readers, before Cargo.Add and DrawExtras')
         u.mem_write(clip, words(*spec['clip']))
         buffers = prepare_surface(u, spec, size=tuple(size))
         guard = bytes([0xA5]) * 16
@@ -2731,12 +2757,13 @@ def generate_unit_health(*, building=False, rank=False, passenger=False, ammo=Fa
                         cargo_entries.append(f'{pc:08X}')
                 cargo_hook=u.hook_add(UC_HOOK_CODE,cargo_calls)
                 requested=(supplied.get('passengers',[]) if absorber else
-                           [supplied['passenger']] if supplied['passenger'] and not is_garrison else [])
+                           supplied.get('passengers',
+                               [supplied['passenger']] if supplied.get('passenger') and not is_garrison else []))
                 used={}
                 for passenger_name in requested:
                     index=used.get(passenger_name,0)
                     used[passenger_name]=index+1
-                    prepared=passenger_pools[passenger_name][index] if absorber else passengers[passenger_name]
+                    prepared=passenger_pools[passenger_name][index] if absorber or passenger else passengers[passenger_name]
                     u.mem_write(prepared['actor'],prepared['template'])
                     m.invoke(0x4733A0,actor+0x114,(prepared['actor'],))
                     head=m.read32(actor+0x118)
@@ -2804,7 +2831,7 @@ def generate_unit_health(*, building=False, rank=False, passenger=False, ammo=Fa
                 actors[-1].update(cargo_operations=cargo_events,cargo_entries=cargo_entries,
                     cargo_count=m.read32(actor+0x114),
                     pip_max=m.invoke(0x716290,current_type))
-                if case['name']=='integer_size_passenger':
+                if case['name']=='integer_size_passenger' or size_patch_observation:
                     actors[-1]['cargo_size']=m.invoke(0x473460,actor+0x114)
                 if is_garrison:
                     actors[-1].update(garrison_slots=m.read32(current_type+0x1580),
@@ -2875,9 +2902,12 @@ def generate_unit_health(*, building=False, rank=False, passenger=False, ammo=Fa
         for buffer in (PIXELS, Z, A):
             assert bytes(u.mem_read(buffer - 16, 16)) == guard
             assert bytes(u.mem_read(buffer + size[0] * size[1] * 2, 16)) == guard
-        rows.append(dict(name=case['name'], input=spec, actor_results=actors,
-                         draws=draws, entries=entries, stores=stores, pixels=pixels,
-                         a_unchanged=True, z_unchanged=True, rng_entries=rng))
+        row=dict(name=case['name'], input=spec, actor_results=actors,
+                 draws=draws, entries=entries, stores=stores, pixels=pixels,
+                 a_unchanged=True, z_unchanged=True, rng_entries=rng)
+        if size_patch_observation:
+            row['current_type_size_patch']=size_patch_observation
+        rows.append(row)
         if groups:
             rows[-1].update(text_draws=text_recorder.rows,font_entries=text_recorder.entries)
             for text in text_recorder.rows:
@@ -2999,6 +3029,9 @@ def generate_unit_health(*, building=False, rank=False, passenger=False, ammo=Fa
             m.rules_cache({'YAPOWR':restore})
             _absorber_pip_reads(m,typ)
             assert _building_health_fields(m,typ,absorber=True)==patch_before
+        if size_patch_observation:
+            u.mem_write(size_type+0x380,before_size)
+            assert bytes(u.mem_read(size_type+0x380,8))==before_size
     assert original_code == sha(u.mem_read(0x401000, 0x3E0000))
     assert original_vtables == bytes(u.mem_read(0x7F5C70, 0x750))
     if scales:
@@ -3010,6 +3043,11 @@ def generate_unit_health(*, building=False, rank=False, passenger=False, ammo=Fa
                   readers=dict(constructor=constructor, layers=layers, result=fields(),
                                ordinary_tail_constructor=tail_defaults),
                   palette=palette_result, raster_controls=rows, original_code_unchanged=True)
+    if passenger:
+        result['startup_fpcw']=startup_fpcw
+        result['passenger_pool_runtime']={name:[prepared['evidence'] for prepared in pool]
+                                          for name,pool in passenger_pools.items()
+                                          if name=='MTNK'}
     if rank:
         result['rank_runtime'] = rank_runtime['evidence']
         result['vtable_bindings'] = _rank_vtable_bindings(m)
@@ -3809,7 +3847,7 @@ def unit_rank_metadata():
 
 def passenger_pips_metadata():
     return native.provenance(
-        scope='Stock FV passenger status through whole Extras, shared ReadPip passes and affected PIPS2/PIPS consumers',
+        scope='Stock FV passenger status and bounded fractional LCRF Size controls through whole Extras and PIPS2 consumers',
         assumptions=[
             'The existing selected-health generator and _HealthRecorder have one additive passenger mode. Existing Building-health PaletteReader, native allocator/cache/physical transports and shape Surface/A/Z owners are reused in the same VM; no copied VM, INI/parser, cargo/manager/storage owner, palette, SHP decoder or rasterizer generates outputs.',
             'The existing Building type/runtime has an optional NABNKR health-only mode: complete BuildingType45DD90/45FE50 consumes physical RULESMD, absent LANGRULE, MPBattleMD and XMP03T4, with fixed ART. Actual Building43B740/44D6A0, GetCoords447AC0 and Dimension2464AF0 supply the affected garrison health consumer. Its body/ground drawing is disabled; no NABNKR body, placement or garrison-entry lifecycle is claimed.',
@@ -3818,6 +3856,8 @@ def passenger_pips_metadata():
             'Existing Unit7353C0->Foot4D31E0 prefix stops7354CE before typed COM activation, followed by real Drive4AF540. Infantry517A50 prefix stops517AE6 before ID/COM, followed by real Walk75AA90. Supplied interface owner/link/active priors expose their original virtuals. Original constructor Limbo1 permits whole Cargo4733A0->51DF10->4DB260->6F6AC0 and473430 without gameplay sinks. Whole typed construction, Unlimbo, boarding and unloading missions remain separate production tests. Selected mobile prefix RNG requests/passive timers are recorded separately from drawing; inherited Building/type/palette startup is outside that recorded initialization interval.',
             'Every mobile row executes complete6F5190, original rank/observer gates,6F64A0 and actual709A90/70AA60 tails. Native716290/473460/473450 and passenger array fill choose physical PIPS2 frames, centered origins and flags600. Garrison rows enter full6F64A0 directly with explicit prepared occupant vector/count, then actual709C27..709D17 uses raw OccupyPip11 or reader-evolved1 and emptyframe6. These direct-health rows do not establish whole Building Extras admission.',
             'One affected shared frame-consumer row uses stock LCRF Passengers12/SizeLimit6/Size16 and MTNK Size3 through the same constructors/read blocks. LCRF consumes real Hover513C20 with supplied interface linkage, matching physical Locomotor742; MTNK uses the existing Unit/Drive prefix with native Limbo1. Whole Cargo4733A0 reaches Unit4DB260/Techno6F6AC0 and retains one size3 passenger. Original709F0A..709F23 fills higher slots with frame3 before placing Unitframe5 in the lower slot, producing5,3,3 then nine empty0 frames. This is a render-consumer/whole-Cargo dependency control, not LCRF boarding, movement, placement or whole construction evidence.',
+            'Two named fractional rows use one LCRF carrying two distinct prepared MTNK objects. Each row patches the current MTNK TechnoType+0x380 qword after the selected native stock type readers, using explicit binary64 Size bits3FF8000000000000 or4006666666666666; the patch is restored after that row. These are controlled consumer inputs, not retail or parser outputs. Whole CargoTotalSize473460, FTOL7C5F00, and the actual709EF0 passenger filler execute; PIPS2 frames and sparse pixels are recorded.',
+            'Before current type reader blocks and PIPS consumers, the original WinMain controlfp/cache fragment6BBFB7..6BBFCE runs from initial word027F. Live and cached FPCW are both checked as0E3F; existing PaletteReader/Building fixture initialization before this bounded fragment remains a supplied setup boundary.',
             'MIND uses the original4717D0 manager constructor with retained count/vector and overload-counter priors, not captures/Update; original4722D0/4726C0 and708C30 execute. HARV receives explicit four native float storage slots; original6C9650/6C9680 and independent ore/gem rounding execute. Stock positive Storage40 and size-one infantry match the existing gameplay state owners. Fractional size/reload behavior, manager lifecycle, harvest lifecycle and other PipScales remain open.',
             'PIPS/PIPBRD/PALETTE retain established normal STOCK_DIGITAL winners. Original5F76B0 pushes literal PIPS2.SHP at5F7758 through CCFile65CA80/loader4A3890, retainsAC1480 at5F7776 and709AEF consumes that same asset. Independent normal STOCK_DIGITAL AssetManager lookup selects ra2md.mix/conqmd.mix PIPS2,1384bytes/19frames, no loose override or catalog-only hit; ra2.mix/conquer.mix1280bytes/18frames is shadowed. The oracle pins the selected physical bytes while archive/cache transport remains supplied. Native palette/Convert constructors,4AED70/pickers/rowwalkers/leaves execute unchanged. A127/63/2/0, oldZ0, clip, sinking and ordered overlapping parents are render-consumer controls. Sparse pixels/draws and counts are native stores; no VERA scalar or host palette/raster/count formula supplies expected output.',
             'Original code/vtables, prepared actor bytes and A/Z remain unchanged across measured draws; no drawing RNG, timer write or detach occurs. The component does not run mobile bodies, whole Display/Scenario/Map, selection generation, damage/promotion or a whole native frame.',
@@ -3827,7 +3867,7 @@ def passenger_pips_metadata():
             building_type_ctor=0x45DD90,building_type_reader=0x45FE50,
             infantry_ctor_begin=0x517A50,infantry_ctor_stop=0x517AE6,walk_ctor=0x75AA90,
             unit_ctor_begin=0x7353C0,unit_ctor_stop=0x7354CE,drive_ctor=0x4AF540,
-            hover_ctor=0x513C20,
+            hover_ctor=0x513C20,winmain_fpcw=0x6BBFB7,
             pip_ctor=0x5236BD,occupy_pip_ctor=0x5236C7,read_pip=0x4748A0,
             pip_caller=0x5240E3,occupy_pip_caller=0x5240FD,section_gate=0x410A60,
             cargo_add=0x4733A0,cargo_remove=0x473430,cargo_head=0x473450,cargo_size=0x473460,

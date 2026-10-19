@@ -2039,7 +2039,7 @@ fn a_warped_transport_admits_no_one() {
         let entity = sim.substrate.entities.get_mut(carrier).unwrap();
         if entity.passenger_role.cargo().is_none() {
             entity.passenger_role = crate::sim::passenger::PassengerRole::transport(
-                crate::sim::passenger::PassengerCargo::new(5, 0),
+                crate::sim::passenger::PassengerCargo::new(5, 0.0),
             );
         }
     }

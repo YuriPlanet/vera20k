@@ -1050,6 +1050,10 @@ pub struct Simulation {
     /// from the app-layer descriptor; serialized + hashed except for that
     /// diagnostic accumulator. See `sim::scenario_session`.
     pub session: ScenarioSession,
+    /// Opt-in trainer state. No save, checksum, or normal-build representation.
+    #[cfg(feature = "debug-tools")]
+    #[serde(skip)]
+    pub(crate) debug_tools: crate::sim::cheats::DebugToolsState,
     /// Opt-in wall-clock observations. Never part of saves, hashes, or gameplay.
     #[cfg(feature = "telemetry")]
     #[serde(skip)]
@@ -3370,6 +3374,8 @@ impl Simulation {
             rule_handles: None,
             production: ProductionState::default(),
             session,
+            #[cfg(feature = "debug-tools")]
+            debug_tools: Default::default(),
             #[cfg(feature = "telemetry")]
             frame_profiling: false,
             #[cfg(feature = "telemetry")]
@@ -4926,8 +4932,14 @@ impl Simulation {
         if !self.houses.contains_key(&owner) {
             return;
         }
+        #[cfg(feature = "debug-tools")]
+        let debug_full_power = self.debug_flags_for(owner).infinite_power;
         let state = self.power_states.entry(owner).or_default();
-        let was_low_power = state.is_low_power;
+        #[cfg(feature = "debug-tools")]
+        state.set_debug_full_power(debug_full_power);
+        #[cfg(feature = "debug-tools")]
+        let debug_power_changed = state.take_debug_power_changed();
+        let was_low_power = state.low_power();
         let assessed = power_system::assess_house_power(
             state,
             &self.substrate.entities,
@@ -4940,7 +4952,10 @@ impl Simulation {
             production::refresh_factory_rates_for_house(self, rules, owner);
             // Power508DD5 compares the old/current ratio;508DDB invokes the
             // shared hold/revoke before the radar tail, only on that edge.
-            if self.power_states[&owner].is_low_power != was_low_power {
+            let power_changed = self.power_states[&owner].low_power() != was_low_power;
+            #[cfg(feature = "debug-tools")]
+            let power_changed = power_changed || debug_power_changed;
+            if power_changed {
                 crate::sim::superweapon::update_owned_supers(self, rules, owner);
             }
         }
@@ -6923,6 +6938,8 @@ impl Simulation {
                 }
             };
         }
+        #[cfg(feature = "debug-tools")]
+        self.apply_debug_tools(rules);
         let effects = effects
             .with_rules(rules)
             .with_overlay_registry(overlay_registry);

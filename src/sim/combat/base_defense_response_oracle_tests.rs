@@ -556,9 +556,9 @@ fn native_base_response_live_threat_matches_representable_original_rows() {
             owner.bunker.set_bunker_occupant_for_test(Some(2));
         }
         if count > 0 {
-            let mut cargo = PassengerCargo::new(count as u32, 1);
+            let mut cargo = PassengerCargo::new(count as u32, 1.0);
             for id in 0..count as u64 {
-                cargo.board_forced_chain(&[(id + 10, 1)]);
+                cargo.board_forced_chain(&[(id + 10, 1.0)]);
             }
             owner.passenger_role = PassengerRole::transport(cargo);
         }

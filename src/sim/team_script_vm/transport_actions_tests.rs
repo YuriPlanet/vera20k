@@ -138,7 +138,7 @@ impl Fixture {
                     .passenger_role
                     .cargo_mut()
                     .expect("transport cargo")
-                    .board_forced_chain(&[(passenger, 1)]);
+                    .board_forced_chain(&[(passenger, 1.0)]);
                 self.sim
                     .substrate
                     .entities
@@ -849,10 +849,10 @@ impl OracleTeam {
             if count > 0 {
                 let mut cargo = crate::sim::passenger::PassengerCargo::new(
                     u32::try_from(passengers.max(0)).unwrap(),
-                    0,
+                    0.0,
                 );
                 cargo.set_passengers_for_test(vec![u64::MAX; count]);
-                cargo.set_passenger_sizes_for_test(vec![1; count]);
+                cargo.set_passenger_sizes_for_test(vec![1.0; count]);
                 entity.passenger_role = PassengerRole::transport(cargo);
             }
             entity

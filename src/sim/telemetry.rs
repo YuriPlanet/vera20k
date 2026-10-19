@@ -56,7 +56,8 @@ use crate::sim::world::Simulation;
 /// teams with their members and script step) and `base_plan` (its planned base
 /// positions).
 /// v22: read-only schema; trainer state is absent and collections are bounded.
-pub const TELEMETRY_SCHEMA_VERSION: u32 = 22;
+/// v23: optional developer-tools capability and bounded selected-object history.
+pub const TELEMETRY_SCHEMA_VERSION: u32 = 23;
 
 /// Spot ceiling per snapshot: the project's headline unit scale. Beyond it
 /// the capture keeps the first N in store order (deterministic) and the
@@ -275,6 +276,19 @@ pub struct SelectedDebug {
     /// The first steps of the remaining path, the mover's next cell first.
     pub path_preview: Vec<PathStep>,
     pub miner: Option<MinerDebug>,
+    #[cfg(feature = "debug-tools")]
+    #[serde(default)]
+    pub inspector_active: bool,
+    #[cfg(feature = "debug-tools")]
+    #[serde(default)]
+    pub events: Vec<DebugEventReport>,
+}
+
+#[cfg(feature = "debug-tools")]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct DebugEventReport {
+    pub tick: u32,
+    pub text: String,
 }
 
 /// The dashboard's read-only terrain and selection observations.
@@ -322,6 +336,9 @@ pub struct OverlayFlags {
     pub foot_path: bool,
     /// Debug pause (`^+J`).
     pub paused: bool,
+    #[cfg(feature = "debug-tools")]
+    #[serde(default)]
+    pub unit_inspector: bool,
 }
 
 /// Process-level resources, filled by the app layer: the simulation has no
@@ -459,6 +476,35 @@ pub struct LogBatch {
     pub lines: Vec<LogRecord>,
 }
 
+/// The optional developer build's capability and live trainer readback.
+#[cfg(feature = "debug-tools")]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct DebugToolsReport {
+    pub enabled: bool,
+    pub unavailable_reason: Option<String>,
+    /// App-owned session epoch; no commands are accepted without one.
+    pub session: Option<u64>,
+    pub cheats: Option<CheatReport>,
+}
+
+/// Original contributor's trainer readback, bounded to the local house.
+#[cfg(feature = "debug-tools")]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct CheatReport {
+    pub infinite_money: bool,
+    pub money_target: i32,
+    pub infinite_power: bool,
+    pub instant_build: bool,
+    pub invincible: bool,
+    pub damage_scale: u16,
+    pub reveal_map: bool,
+    pub tech_all: bool,
+    pub tech_boost: bool,
+    pub build_anywhere: bool,
+    pub owner: Option<String>,
+    pub power_forced: bool,
+}
+
 /// One dashboard sample: the whole wire payload per snapshot.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct TelemetrySnapshot {
@@ -493,6 +539,8 @@ pub struct TelemetrySnapshot {
     pub render: Option<RenderTimingReport>,
     /// App-filled log records since the previous snapshot.
     pub logs: Option<LogBatch>,
+    #[cfg(feature = "debug-tools")]
+    pub debug_tools: DebugToolsReport,
 }
 
 /// Bound copied identifiers before allocating wire strings. Never splits UTF-8.
@@ -713,6 +761,31 @@ impl Simulation {
             profile: self.frame_profile().report(),
             render: None,
             logs: None,
+            #[cfg(feature = "debug-tools")]
+            debug_tools: {
+                let flags = self.cheat_flags();
+                DebugToolsReport {
+                    enabled: self.trainer_available(),
+                    unavailable_reason: self.trainer_unavailable_reason().map(str::to_owned),
+                    session: None,
+                    cheats: self.trainer_available().then(|| CheatReport {
+                        infinite_money: flags.infinite_money,
+                        money_target: flags.money_target,
+                        infinite_power: flags.infinite_power,
+                        instant_build: flags.instant_build,
+                        invincible: flags.invincible,
+                        damage_scale: flags.damage_scale,
+                        reveal_map: flags.reveal_map,
+                        tech_all: flags.tech_all,
+                        tech_boost: flags.tech_boost,
+                        build_anywhere: flags.build_anywhere,
+                        owner: self
+                            .trainer_owner()
+                            .map(|owner| bounded_name(self.interner.resolve(owner))),
+                        power_forced: self.trainer_power_forced(),
+                    }),
+                }
+            },
         }
     }
 }

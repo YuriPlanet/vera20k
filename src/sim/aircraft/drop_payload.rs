@@ -565,8 +565,8 @@ mod tests {
         aircraft.set_type_ref_for_test(sim.interner.intern("PDPLANE"));
         aircraft.body_facing.snap(0x8000, 0);
         aircraft.install_ammo_for_test(Some(TechnoAmmo::new(4)));
-        let mut cargo = PassengerCargo::new(8, 0);
-        cargo.board_forced_chain(&[(passenger_id, 1)]);
+        let mut cargo = PassengerCargo::new(8, 0.0);
+        cargo.board_forced_chain(&[(passenger_id, 1.0)]);
         aircraft.passenger_role = PassengerRole::transport(cargo);
         sim.substrate.entities.insert(aircraft);
 
@@ -1301,7 +1301,7 @@ mod tests {
             .cargo_mut()
             .unwrap();
         cargo_hold.clear_contents();
-        cargo_hold.board_forced_chain(&[(missing_passenger_id, 1)]);
+        cargo_hold.board_forced_chain(&[(missing_passenger_id, 1.0)]);
 
         let mut peer = GameEntity::test_default(peer_id, "E1", "Americans", 11, 10);
         peer.set_owner_for_test(sim.interner.intern("Americans"));
@@ -1355,8 +1355,7 @@ mod tests {
                 // a size-3 entry: mixed sizes.
                 let real = cargo.passengers()[0];
                 cargo.set_passengers_for_test(vec![real, 1234]);
-                cargo.set_passenger_sizes_for_test(vec![7, 3]);
-                cargo.set_total_size_for_test(10);
+                cargo.set_passenger_sizes_for_test(vec![7.0, 3.0]);
             }
             let held = serde_json::to_value(
                 sim.substrate
@@ -1441,7 +1440,7 @@ mod tests {
                     .cargo()
                     .unwrap();
                 assert_eq!(cargo.passengers(), vec![1234]);
-                assert_eq!(cargo.passenger_sizes(), vec![3]);
+                assert_eq!(cargo.passenger_sizes(), vec![3.0]);
                 assert_eq!(cargo.total_size(), 3);
                 let passenger = sim.substrate.entities.get(2).unwrap();
                 assert!(passenger.is_falling_down());

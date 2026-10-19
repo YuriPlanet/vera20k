@@ -116,7 +116,7 @@ fn restore_departure(
     transport_id: u64,
     open_topped: bool,
     passenger_id: u64,
-    passenger_size: u32,
+    passenger_size: f64,
     route: DepartureRoute,
     failure: DepartureFailure,
     effects: FrameEffects<'_>,

@@ -35,11 +35,11 @@ fn rules_with_patch(patch: &str) -> RuleSet {
          [BFRT]\nStrength=600\nArmor=heavy\nSpeed=4\nROT=5\nPassengers=5\nSizeLimit=2\n\
          OpenTopped=yes\nLeaveTransportSound=ExitTransport\n\
          Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\n\
-         [FV]\nStrength=200\nArmor=light\nSpeed=4\nROT=5\nPassengers=3\nTurret=yes\n\
+         [FV]\nStrength=200\nArmor=light\nSpeed=4\nROT=5\nPassengers=3\nSizeLimit=1\nTurret=yes\n\
          TurretCount=4\nGunner=yes\nNormalTurretWeapon=0\nMachineGunTurretWeapon=1\nMachineGunTurretIndex=2\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\n\
          [BGGY]\nStrength=100\nArmor=light\nSpeed=6\nROT=5\nSize=1\n\
          Locomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n\n\
-         [LCRF]\nStrength=300\nArmor=light\nSpeed=6\nROT=5\nPassengers=12\nSpeedType=Hover\n\
+         [LCRF]\nStrength=300\nArmor=light\nSpeed=6\nROT=5\nPassengers=12\nSizeLimit=12\nSpeedType=Hover\n\
          MovementZone=Amphibious\nLocomotor={4A582742-9839-11d1-B709-00A024DDAFD1}\n\n\
          [SHAD]\nStrength=200\nArmor=light\nSpeed=14\nROT=5\nPassengers=5\nLandable=yes\n\
          SizeLimit=2\nSpeedType=Hover\nMovementZone=Fly\n\
@@ -198,8 +198,8 @@ impl Fixture {
                 .get_mut(transport)
                 .and_then(|t| t.passenger_role.cargo_mut())
                 .expect("transport cargo");
-            assert!(cargo.can_accept(1), "cargo accepts passenger {i}");
-            cargo.board_forced_chain(&[(pax, 1)]);
+            assert!(cargo.can_accept(1.0), "cargo accepts passenger {i}");
+            cargo.board_forced_chain(&[(pax, 1.0)]);
             self.sim
                 .substrate
                 .entities
@@ -1108,8 +1108,8 @@ fn relaxed_pass_drives_vehicle_passenger_to_the_fnpc_cell() {
         .get_mut(bfrt)
         .and_then(|t| t.passenger_role.cargo_mut())
         .expect("transport cargo");
-    assert!(cargo.can_accept(1), "cargo accepts the vehicle");
-    cargo.board_forced_chain(&[(bggy, 1)]);
+    assert!(cargo.can_accept(1.0), "cargo accepts the vehicle");
+    cargo.board_forced_chain(&[(bggy, 1.0)]);
     fx.sim
         .substrate
         .entities
@@ -1230,8 +1230,8 @@ fn vehicle_passenger_leaves_with_its_turret_on_the_exit_direction() {
         .get_mut(bfrt)
         .and_then(|t| t.passenger_role.cargo_mut())
         .expect("transport cargo");
-    assert!(cargo.can_accept(1), "cargo accepts the vehicle");
-    cargo.board_forced_chain(&[(bggy, 1)]);
+    assert!(cargo.can_accept(1.0), "cargo accepts the vehicle");
+    cargo.board_forced_chain(&[(bggy, 1.0)]);
     fx.sim
         .substrate
         .entities
@@ -1360,8 +1360,8 @@ fn vehicle_passenger_off_the_playfield_exit_lands_on_raised_in_playfield_ground(
         .get_mut(bfrt)
         .and_then(|t| t.passenger_role.cargo_mut())
         .expect("transport cargo");
-    assert!(cargo.can_accept(1), "cargo accepts the vehicle");
-    cargo.board_forced_chain(&[(bggy, 1)]);
+    assert!(cargo.can_accept(1.0), "cargo accepts the vehicle");
+    cargo.board_forced_chain(&[(bggy, 1.0)]);
     fx.sim
         .substrate
         .entities
@@ -1825,9 +1825,8 @@ fn cargo_departure_ground_reveal_rejection_preserves_route_retry_state() {
                 let cargo = carrier.passenger_role.cargo_mut().unwrap();
                 // Admission-time size differs from current E1 Size=1.
                 let mut sizes = cargo.passenger_sizes().to_vec();
-                sizes[0] = 7;
+                sizes[0] = 7.0;
                 cargo.set_passenger_sizes_for_test(sizes);
-                cargo.set_total_size_for_test(7);
             }
             let held = serde_json::to_value(
                 fx.sim

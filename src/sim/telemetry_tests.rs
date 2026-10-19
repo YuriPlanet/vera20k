@@ -513,7 +513,7 @@ fn snapshot_bounds_long_names_house_rows_and_production_queues() {
     );
     let json = serde_json::to_value(&snapshot).unwrap();
     assert!(json.get("cheats").is_none());
-    assert_eq!(json["version"], 22);
+    assert_eq!(json["version"], TELEMETRY_SCHEMA_VERSION);
 }
 
 #[test]
@@ -680,6 +680,10 @@ fn debug_panel_round_trips_through_save_codec() {
                 archived_ore: Some((50, 60)),
                 teleport_active: false,
             }),
+            #[cfg(feature = "debug-tools")]
+            inspector_active: false,
+            #[cfg(feature = "debug-tools")]
+            events: Vec::new(),
         }],
         overlays: OverlayFlags {
             terrain_costs: true,
@@ -688,13 +692,34 @@ fn debug_panel_round_trips_through_save_codec() {
             fog: true,
             foot_path: false,
             paused: false,
+            #[cfg(feature = "debug-tools")]
+            unit_inspector: false,
         },
     };
     let bytes = crate::util::save_codec::serialize(&debug).expect("serialize");
     let restored: DebugPanel = crate::util::save_codec::deserialize(&bytes).expect("deserialize");
     assert_eq!(debug, restored);
     let json = serde_json::to_value(&debug).unwrap();
-    assert!(json["selected"][0].get("inspector_active").is_none());
-    assert!(json["selected"][0].get("events").is_none());
-    assert!(json["overlays"].get("unit_inspector").is_none());
+    #[cfg(not(feature = "debug-tools"))]
+    {
+        assert!(json["selected"][0].get("inspector_active").is_none());
+        assert!(json["selected"][0].get("events").is_none());
+        assert!(json["overlays"].get("unit_inspector").is_none());
+    }
+    #[cfg(feature = "debug-tools")]
+    {
+        assert_eq!(json["selected"][0]["inspector_active"], false);
+        assert!(json["selected"][0]["events"].as_array().unwrap().is_empty());
+        assert_eq!(json["overlays"]["unit_inspector"], false);
+    }
+}
+
+#[cfg(not(feature = "debug-tools"))]
+#[test]
+fn dashboard_only_payload_contains_no_trainer_or_inspector() {
+    let value = serde_json::to_value(Simulation::new().telemetry_snapshot()).unwrap();
+    assert!(value.get("debug_tools").is_none());
+    assert!(value.get("cheats").is_none());
+    let flags = serde_json::to_value(crate::sim::telemetry::OverlayFlags::default()).unwrap();
+    assert!(flags.get("unit_inspector").is_none());
 }

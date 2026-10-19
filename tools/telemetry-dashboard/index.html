@@ -60,6 +60,7 @@
     <span class="meta"><span data-i18n="hdr.entities">entities</span> <b id="entities">-</b></span>
     <span class="meta"><span data-i18n="hdr.map">map</span> <b id="mapsize">-</b></span>
   </div>
+  <button id="debug-tools-open" class="switch" type="button" hidden data-i18n="tools.open">Offline debug tools</button>
   <span id="status"><i id="dot"></i><span id="statustext">connecting</span></span>
   <span id="lang">
     <button data-locale="en">EN</button>
@@ -311,6 +312,106 @@
     </div>
   </div>
 </div>
+
+<dialog id="debug-tools-dialog" aria-labelledby="debug-tools-title">
+  <div class="debug-tools-head">
+    <h2 id="debug-tools-title" data-i18n="tools.title">Offline debug tools</h2>
+    <button id="debug-tools-close" class="switch" type="button" data-i18n="tools.close">Close</button>
+  </div>
+  <p class="debug-tools-warning" data-i18n="tools.warning">These tools change offline gameplay. They are unavailable in replay and network sessions.</p>
+  <p id="debug-tools-status" class="note" role="status"></p>
+  <fieldset id="debug-switch-fields" class="debug-tools-fields" disabled>
+    <legend data-i18n="sec.switches">Debug switches</legend>
+    <div id="switches"></div>
+  </fieldset>
+  <fieldset id="debug-trainer-fields" class="debug-tools-fields" disabled>
+    <legend data-i18n="cheat.title">Trainer</legend>
+    <div class="cheat-head">
+      <p class="note" id="cheat-owner"></p>
+      <button id="cheat-reset" class="switch" type="button" data-i18n="cheat.reset">全部关闭</button>
+    </div>
+    <div class="cheat-grid">
+      <section class="cheat-card">
+        <h3 data-i18n="cheat.economy">经济</h3>
+        <label class="cheat-row">
+          <span class="cheat-label" data-i18n="cheat.infiniteMoney">无限金钱</span>
+          <input type="checkbox" class="cheat-switch" data-cheat="infinite_money">
+        </label>
+        <label class="cheat-row">
+          <span class="cheat-label" data-i18n="cheat.moneyTarget">金钱下限</span>
+          <input id="cheat-money" class="cheat-num" type="number" min="0" max="1000000000" step="1000" value="999999">
+        </label>
+        <label class="cheat-row">
+          <span class="cheat-label" data-i18n="cheat.infinitePower">无限电力</span>
+          <input type="checkbox" class="cheat-switch" data-cheat="infinite_power">
+        </label>
+        <p class="cheat-note" id="cheat-power"></p>
+      </section>
+
+      <section class="cheat-card">
+        <h3 data-i18n="cheat.build">建造</h3>
+        <label class="cheat-row">
+          <span class="cheat-label" data-i18n="cheat.instantBuild">瞬间建造</span>
+          <input type="checkbox" class="cheat-switch" data-cheat="instant_build">
+        </label>
+        <p class="cheat-note" data-i18n="cheat.instantBuildNote">进度直接拉满，仍按造价扣钱</p>
+        <label class="cheat-row">
+          <span class="cheat-label" data-i18n="cheat.buildAnywhere">随处建造</span>
+          <input type="checkbox" class="cheat-switch" data-cheat="build_anywhere">
+        </label>
+        <p class="cheat-note" data-i18n="cheat.buildAnywhereNote">无视建造距离和地形限制，哪儿都能放；仍然不能叠在已有建筑上</p>
+        <label class="cheat-row">
+          <span class="cheat-label" data-i18n="cheat.techAll">科技全开</span>
+          <input type="checkbox" class="cheat-switch" data-cheat="tech_all">
+        </label>
+        <p class="cheat-note" data-i18n="cheat.techAllNote">不需要任何前置建筑；0–10 全部等级直接可造</p>
+        <label class="cheat-row">
+          <span class="cheat-label" data-i18n="cheat.techBoost">科技加强</span>
+          <input type="checkbox" class="cheat-switch" data-cheat="tech_boost">
+        </label>
+        <p class="cheat-note" data-i18n="cheat.techBoostNote">同时解锁正常可建造科技等级范围之外的类型。</p>
+        <div class="cheat-actions">
+          <button id="cheat-supers" class="cheat-btn" type="button" data-i18n="cheat.supers">超级武器就绪</button>
+        </div>
+      </section>
+
+      <section class="cheat-card">
+        <h3 data-i18n="cheat.combat">战斗</h3>
+        <label class="cheat-row">
+          <span class="cheat-label" data-i18n="cheat.invincible">无敌</span>
+          <input type="checkbox" class="cheat-switch" data-cheat="invincible">
+        </label>
+        <label class="cheat-row">
+          <span class="cheat-label" data-i18n="cheat.damageScale">伤害倍率</span>
+          <input id="cheat-damage" class="cheat-num" type="number" min="1" max="100" step="1" value="1">
+        </label>
+        <div class="cheat-presets">
+          <button class="cheat-chip" type="button" data-scale="1">×1</button>
+          <button class="cheat-chip" type="button" data-scale="10">×10</button>
+          <button class="cheat-chip" type="button" data-scale="100">×100</button>
+        </div>
+        <div class="cheat-actions">
+          <button id="cheat-heal" class="cheat-btn" type="button" data-i18n="cheat.heal">治疗全部</button>
+          <button id="cheat-veteran" class="cheat-btn" type="button" data-i18n="cheat.veteran">全体升级</button>
+        </div>
+      </section>
+
+      <section class="cheat-card">
+        <h3 data-i18n="cheat.map">地图</h3>
+        <label class="cheat-row">
+          <span class="cheat-label" data-i18n="cheat.reveal">全图视野</span>
+          <input type="checkbox" class="cheat-switch" data-cheat="reveal_map">
+        </label>
+        <p class="cheat-note" data-i18n="cheat.revealNote">关掉迷雾绘制，也能点选雾里的目标</p>
+      </section>
+    </div>
+    <p class="note" data-i18n="cheat.hint">开关状态是临时的，但使用后保存的游戏可能保留其效果。</p>
+  </fieldset>
+  <section class="debug-tools-events">
+    <h3 data-i18n="sec.events">Event history</h3>
+    <div id="debug-events"></div>
+  </section>
+</dialog>
 
 <script type="module" src="./starfield.js"></script>
 <script type="module" src="./dashboard.js"></script>

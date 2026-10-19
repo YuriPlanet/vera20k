@@ -1189,7 +1189,7 @@ fn jumpjet_fixture(balloon: bool) -> (Simulation, RuleSet, u64, u64) {
                 z: 0,
             })
             .with_flight_for_test(flight);
-        entity.passenger_role = PassengerRole::transport(PassengerCargo::new(2, 0));
+        entity.passenger_role = PassengerRole::transport(PassengerCargo::new(2, 0.0));
     }
     sim.add_entity_occupancy(1);
     // This held-aircraft midpoint follows native takeoff's tracker Add;
@@ -1221,7 +1221,7 @@ fn jumpjet_fixture(balloon: bool) -> (Simulation, RuleSet, u64, u64) {
             .passenger_role
             .cargo_mut()
             .unwrap()
-            .board_forced_chain(&[(rider, 1)]);
+            .board_forced_chain(&[(rider, 1.0)]);
     }
     let spawn = |sim: &mut Simulation, owner: &str, rx: u16, ry: u16| {
         let owner = sim.interner.intern(owner);
@@ -2147,7 +2147,7 @@ fn retail_dustbowl_flak_shoots_down_a_nighthawk_and_a_kirov() {
                 .passenger_role
                 .cargo_mut()
                 .expect("the Nighthawk carries")
-                .board_forced_chain(&[(rider, 1)]);
+                .board_forced_chain(&[(rider, 1.0)]);
             rider
         })
         .collect();

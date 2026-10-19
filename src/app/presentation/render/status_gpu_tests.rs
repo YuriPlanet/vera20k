@@ -905,7 +905,19 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                     )
                     .expect("native admitted scenario section")
                 });
-            let rules = patched.as_ref().map_or(rules, |retail| &retail.rules);
+            let base_rules = patched.as_ref().map_or(rules, |retail| &retail.rules);
+            let size_overridden_rules = input
+                .get("current_type_size_override_after_read")
+                .filter(|override_input| !override_input.is_null())
+                .map(|override_input| {
+                    let mut rules = (*base_rules).clone();
+                    super::super::passenger_pip_tests::apply_native_size_override_for_test(
+                        &mut rules,
+                        override_input,
+                    );
+                    rules
+                });
+            let rules = size_overridden_rules.as_ref().unwrap_or(base_rules);
             let size = pair(&input["size"]);
             let tactical_clip: [u32; 4] = input
                 .get("tactical_clip")
@@ -1140,10 +1152,10 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                 }
                 if object.passengers > 0 || object.max_number_occupants > 0 {
                     use crate::sim::passenger::{PassengerCargo, PassengerRole};
-                    let capacity = if actor_category == EntityCategory::Structure
+                    let is_garrison = actor_category == EntityCategory::Structure
                         && object.can_be_occupied
-                        && !object.absorbs_passengers()
-                    {
+                        && !object.absorbs_passengers();
+                    let capacity = if is_garrison {
                         object.max_number_occupants
                     } else {
                         object.passengers as u32
@@ -1179,11 +1191,17 @@ fn native_status_controls(fixture: &'static str, type_name: &str, category: Enti
                             false,
                         );
                         sim.entities_mut().insert(passenger);
-                        assert!(
-                            cargo.can_accept(passenger_type.size),
-                            "{} cargo prior for {name}",
-                            row["name"]
-                        );
+                        // Garrison rows supply a post-admission drawing hold;
+                        // CanBeOccupiedBy uses MaxNumberOccupants rather than
+                        // the transport SizeLimit gate. Transport and absorber
+                        // rows retain this SizeLimit prior check.
+                        if !is_garrison {
+                            assert!(
+                                cargo.can_accept(passenger_type.size),
+                                "{} cargo prior for {name}",
+                                row["name"]
+                            );
+                        }
                         cargo.board_forced_chain(&[(passenger_id, passenger_type.size)]);
                     }
                     if actor["unload"].as_bool().unwrap_or(false)

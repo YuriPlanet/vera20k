@@ -312,7 +312,7 @@ mod tests {
             .passenger_role
             .cargo_mut()
             .unwrap()
-            .board_forced_chain(&[(passenger, 1)]);
+            .board_forced_chain(&[(passenger, 1.0)]);
         tick(&mut sim, &rules);
         let occupied = sim.entities().get(id).unwrap().building_art.anim_slots[4].unwrap();
         assert!(sim.anim(empty).is_none());

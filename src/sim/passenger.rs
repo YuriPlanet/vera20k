@@ -119,14 +119,14 @@ pub struct PassengerCargo {
     /// its size as a separate argument. Keeping the admission-time size with
     /// the entry gives the Rust cargo list the same exact bookkeeping ability.
     #[serde(default)]
-    passenger_sizes: Vec<u32>,
+    passenger_sizes: Vec<f64>,
     /// Maximum passenger count (from Passengers= or MaxNumberOccupants= in rules.ini).
     capacity: u32,
     /// Maximum Size= of individual passenger allowed (from SizeLimit= in rules.ini).
-    /// 0 means no size restriction.
-    size_limit: u32,
-    /// Total Size units currently occupied (sum of passenger Size= values).
-    total_size: u32,
+    size_limit: f64,
+    /// Native CargoTotalSize's signed low-32-bit FTOL result, recomputed in
+    /// passenger-list order after every mutation.
+    total_size: i32,
     /// Round-robin index for garrison fire — which occupant fires next.
     /// Matches gamemd BuildingClass+0x69C (CurrentFireIdx). Init 0, advanced
     /// by garrison combat after each shot: `(idx + 1) % occupant_count`.
@@ -150,7 +150,7 @@ enum CarrierRelation {
 }
 
 impl PassengerCargo {
-    pub fn new(capacity: u32, size_limit: u32) -> Self {
+    pub fn new(capacity: u32, size_limit: f64) -> Self {
         Self {
             passengers: Vec::new(),
             passenger_sizes: Vec::new(),
@@ -174,7 +174,7 @@ impl PassengerCargo {
     }
 
     /// The `Size=` each passenger had when it boarded, by index.
-    pub(crate) fn passenger_sizes(&self) -> &[u32] {
+    pub(crate) fn passenger_sizes(&self) -> &[f64] {
         &self.passenger_sizes
     }
 
@@ -183,15 +183,76 @@ impl PassengerCargo {
         self.capacity
     }
 
-    /// `SizeLimit=`; 0 admits any size.
+    /// The transport's native double `SizeLimit=`.
     #[cfg(test)]
-    pub fn size_limit(&self) -> u32 {
+    pub fn size_limit(&self) -> f64 {
         self.size_limit
     }
 
     /// The passengers' total `Size=`.
-    pub fn total_size(&self) -> u32 {
+    pub fn total_size(&self) -> i32 {
         self.total_size
+    }
+
+    /// CargoTotalSize473460: add each current passenger Size as binary64 to
+    /// the signed accumulator, then apply native FTOL's signed-64 result
+    /// truncated to its low 32 bits after every passenger. The passenger
+    /// identity/type and session rules are immutable, so admission-time
+    /// doubles remain the current Size values for this live cargo list.
+    fn cargo_total_size(passenger_sizes: &[f64]) -> i32 {
+        use crate::util::native_x87::{MaskedX87Chop53 as X87, NativeF64Bits};
+
+        let mut total = 0_i32;
+        for &size in passenger_sizes {
+            let sum = X87::add(
+                X87::load_i32(total),
+                X87::load_f64(NativeF64Bits::from_bits(size.to_bits())),
+            );
+            total = X87::ftol_i32_low_masked(sum);
+        }
+        total
+    }
+
+    /// Recalculate through the same order-sensitive numeric owner used by
+    /// the native CargoTotalSize consumer; subtraction cannot reproduce its
+    /// per-passenger truncation for fractional or negative Sizes.
+    fn recompute_total_size(&mut self) {
+        self.total_size = Self::cargo_total_size(&self.passenger_sizes);
+    }
+
+    /// Re-evaluate CargoTotalSize for snapshot consistency checks.
+    pub(crate) fn recomputed_total_size(&self) -> i32 {
+        Self::cargo_total_size(&self.passenger_sizes)
+    }
+
+    /// Apply the native binary64 `Size <= SizeLimit` admission comparison.
+    /// Zero is a real limit: it refuses a positive Size.
+    pub(crate) fn size_within_limit(size: f64, limit: f64) -> bool {
+        use crate::util::native_x87::{MaskedX87Chop53 as X87, MaskedX87Ordering, NativeF64Bits};
+
+        matches!(
+            X87::compare(
+                X87::load_f64(NativeF64Bits::from_bits(size.to_bits())),
+                X87::load_f64(NativeF64Bits::from_bits(limit.to_bits())),
+            ),
+            MaskedX87Ordering::Less | MaskedX87Ordering::Equal
+        )
+    }
+
+    /// Apply Unit Receive_Radio's `cargo total + passenger Size <= Passengers`
+    /// comparison, preserving the signed integer cargo total and binary64
+    /// passenger value until after the x87 comparison.
+    pub(crate) fn size_fits_capacity(cargo_total: i32, size: f64, capacity: i32) -> bool {
+        use crate::util::native_x87::{MaskedX87Chop53 as X87, MaskedX87Ordering, NativeF64Bits};
+
+        let occupied = X87::add(
+            X87::load_i32(cargo_total),
+            X87::load_f64(NativeF64Bits::from_bits(size.to_bits())),
+        );
+        matches!(
+            X87::compare(occupied, X87::load_i32(capacity)),
+            MaskedX87Ordering::Less | MaskedX87Ordering::Equal
+        )
     }
 
     /// `BuildingClass+0x69C`, the garrison occupant that fires next.
@@ -222,29 +283,24 @@ impl PassengerCargo {
 
     /// Install a fixture's admission-time sizes.
     #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn set_passenger_sizes_for_test(&mut self, sizes: Vec<u32>) {
+    pub(crate) fn set_passenger_sizes_for_test(&mut self, sizes: Vec<f64>) {
         self.passenger_sizes = sizes;
-    }
-
-    /// Install a fixture's total size, whatever the sizes say.
-    #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn set_total_size_for_test(&mut self, total_size: u32) {
-        self.total_size = total_size;
+        self.recompute_total_size();
     }
 
     /// Whether the transport has room for a passenger of the given size.
-    pub fn can_accept(&self, passenger_size: u32) -> bool {
-        self.count() < self.capacity && (self.size_limit == 0 || passenger_size <= self.size_limit)
+    pub fn can_accept(&self, passenger_size: f64) -> bool {
+        self.count() < self.capacity && Self::size_within_limit(passenger_size, self.size_limit)
     }
 
     /// Append a garrison occupant: `Occupants.AddItem` in
     /// `AddGarrisonOccupant` (`0x0052293B..0x0052297C`). The vector grows
     /// past `MaxNumberOccupants=`; `CanBeOccupiedBy`'s count test is the
     /// admission.
-    pub(crate) fn add_occupant(&mut self, stable_id: u64, passenger_size: u32) {
+    pub(crate) fn add_occupant(&mut self, stable_id: u64, passenger_size: f64) {
         self.passengers.push(stable_id);
         self.passenger_sizes.push(passenger_size);
-        self.total_size += passenger_size;
+        self.recompute_total_size();
     }
 
     /// Cargo4733A0 attaches an existing Foot+30 chain ahead of the old head.
@@ -255,20 +311,20 @@ impl PassengerCargo {
     /// `SizeLimit=`) belong to those callers.
     /// Class Limbo belongs to Simulation::add_cargo_passenger_chain before
     /// this splice. Known Foot IDs replace native raw link/AbstractFlags reads.
-    pub fn board_forced_chain(&mut self, head_first: &[(u64, u32)]) {
+    pub fn board_forced_chain(&mut self, head_first: &[(u64, f64)]) {
         self.passengers
             .splice(0..0, head_first.iter().map(|&(id, _)| id));
         self.passenger_sizes
             .splice(0..0, head_first.iter().map(|&(_, size)| size));
-        self.total_size += head_first.iter().map(|&(_, size)| size).sum::<u32>();
+        self.recompute_total_size();
     }
 
     /// Remove a specific passenger. Returns true if found and removed.
     pub fn disembark(&mut self, stable_id: u64) -> bool {
         if let Some(pos) = self.passengers.iter().position(|&id| id == stable_id) {
             self.passengers.remove(pos);
-            let passenger_size = self.passenger_sizes.remove(pos);
-            self.total_size = self.total_size.saturating_sub(passenger_size);
+            self.passenger_sizes.remove(pos);
+            self.recompute_total_size();
             true
         } else {
             false
@@ -277,13 +333,13 @@ impl PassengerCargo {
 
     /// Remove and return the list HEAD (the most recently boarded passenger)
     /// and its recorded size — `CargoClass::RemoveFirstPassenger @ 0x00473430`.
-    pub(crate) fn unload_first(&mut self) -> Option<(u64, u32)> {
+    pub(crate) fn unload_first(&mut self) -> Option<(u64, f64)> {
         if self.passengers.is_empty() {
             None
         } else {
             let id = self.passengers.remove(0);
             let passenger_size = self.passenger_sizes.remove(0);
-            self.total_size = self.total_size.saturating_sub(passenger_size);
+            self.recompute_total_size();
             Some((id, passenger_size))
         }
     }
@@ -324,7 +380,7 @@ impl Simulation {
     pub(crate) fn add_cargo_passenger_chain(
         &mut self,
         transport_id: u64,
-        head_first: &[(u64, u32)],
+        head_first: &[(u64, f64)],
         context: UninitContext<'_>,
     ) -> bool {
         let Some(&(head, _)) = head_first.first() else {
@@ -472,7 +528,7 @@ impl PassengerRole {
                 },
                 Role::None | Role::Transport { .. } => CarrierRelation::Outside,
             };
-            let mut cargo = PassengerCargo::new(0, 0);
+            let mut cargo = PassengerCargo::new(0, 0.0);
             cargo.carrier_relation = carrier_relation;
             self.role = Role::Transport { cargo };
         }
@@ -776,12 +832,10 @@ pub(crate) fn board_passenger(
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     effects: FrameEffects<'_>,
 ) -> bool {
-    let Some(pax_size) = sim
-        .substrate
-        .entities
-        .get(pax_id)
-        .map(|pax| sim.object_type(pax.type_ref(), rules).map_or(1, |o| o.size))
-    else {
+    let Some(pax_size) = sim.substrate.entities.get(pax_id).map(|pax| {
+        sim.object_type(pax.type_ref(), rules)
+            .map_or(1.0, |o| o.size)
+    }) else {
         return false;
     };
     let Some(carrier) = sim
@@ -1415,6 +1469,47 @@ mod tests {
     use crate::rules::ruleset::RuleSet;
 
     use crate::sim::world::RevealOutcome;
+
+    /// Replays the original CargoTotalSize execution controls. Size is added
+    /// to the signed accumulator in passenger-list order and FTOL's low dword
+    /// is retained after each entry, so neither a Rust float sum nor a final
+    /// cast is an equivalent implementation.
+    #[test]
+    fn cargo_total_size_matches_original_ordered_ftol_controls() {
+        let native: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/cargo_total_size.json",
+        ))
+        .unwrap();
+
+        for row in native["rows"].as_array().unwrap() {
+            let head_first: Vec<(u64, f64)> = row["input"]["size_f64_bits"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .enumerate()
+                .map(|(index, bits)| {
+                    let bits = u64::from_str_radix(bits.as_str().unwrap(), 16)
+                        .expect("native Size bits are hexadecimal u64");
+                    (index as u64 + 1, f64::from_bits(bits))
+                })
+                .collect();
+            let expected = row["total_size_i32"].as_i64().unwrap() as i32;
+            let mut cargo = PassengerCargo::new(head_first.len() as u32, 0.0);
+            cargo.board_forced_chain(&head_first);
+            assert_eq!(
+                cargo.total_size(),
+                expected,
+                "{}",
+                row["input"]["name"].as_str().unwrap_or("unnamed control")
+            );
+            assert_eq!(
+                expected as u32,
+                u32::from_str_radix(row["eax_hex"].as_str().unwrap(), 16).unwrap(),
+                "native EAX encoding for {}",
+                row["input"]["name"].as_str().unwrap_or("unnamed control")
+            );
+        }
+    }
 
     fn open_topped_test_rules() -> RuleSet {
         let ini = IniFile::from_str(

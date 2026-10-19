@@ -651,6 +651,12 @@ pub(crate) fn commit_entities(
         if !area_isolation_dispatches(world, event, near_center_ic_isolation, current_tick) {
             continue;
         }
+        #[cfg(feature = "debug-tools")]
+        let Some(debug_event) = world.debug_damage_event(*event) else {
+            continue;
+        };
+        #[cfg(feature = "debug-tools")]
+        let event = &debug_event;
         let target_id = event.target_id;
         let attacker_id = event.attacker_id;
         run.selected_units.retain(|&id| id != target_id);

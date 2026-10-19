@@ -2448,7 +2448,7 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
             .passenger_role
             .cargo_mut()
             .unwrap()
-            .board_forced_chain(&[(gi, 1)]);
+            .board_forced_chain(&[(gi, 1.0)]);
         assert!(rules.object("HOUSE").unwrap().primary().is_none());
         for (actor, y) in [(tower, 6), (house, 10)] {
             assert_eq!(
@@ -2654,7 +2654,7 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
                 .passenger_role
                 .cargo_mut()
                 .unwrap()
-                .board_forced_chain(&[(gi, 1)]);
+                .board_forced_chain(&[(gi, 1.0)]);
             sim.entities_mut().get_mut(gi).unwrap().passenger_role =
                 PassengerRole::inside_for_test(house, false);
             let occupant = sim.entities().get(gi).unwrap();

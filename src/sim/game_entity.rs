@@ -118,6 +118,10 @@ impl StructureUpgradeLink {
 /// getters and changes it through that module's functions.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct GameEntity {
+    /// Bounded optional observations; absent from saves and normal builds.
+    #[cfg(feature = "debug-tools")]
+    #[serde(skip)]
+    pub(crate) debug_log: Option<crate::sim::debug_event_log::DebugEventLog>,
     // --- Always present (every entity has these) ---
     // The object's identity (stable id, native UniqueID, the constructor's
     // Scenario word, owner, type and class) is private to this module:
@@ -1436,6 +1440,8 @@ impl GameEntity {
             cached_spatial_threat: Default::default(),
             tracking_facts: Default::default(),
             house_tracking_latches: Default::default(),
+            #[cfg(feature = "debug-tools")]
+            debug_log: None,
             stable_id,
             native_unique_id,
             native_cloak_displacement: crate::util::native_x87::NativeF32Bits::POSITIVE_ZERO,

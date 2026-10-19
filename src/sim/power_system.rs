@@ -58,6 +58,13 @@ impl PowerHealthSample {
 /// values through its IHouse interface, rather than reassessing on a query.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PowerState {
+    /// Derived debug override: real totals and outage timers remain untouched.
+    #[cfg(feature = "debug-tools")]
+    #[serde(skip)]
+    debug_full_power: bool,
+    #[cfg(feature = "debug-tools")]
+    #[serde(skip)]
+    debug_power_changed: bool,
     /// Signed retained generation at House+53A4. `Power_Output4F6A00`
     /// returns interface+5380, where that IHouse receiver is House+24.
     /// The query does not clamp; assessment and the later House clamp own it.
@@ -91,6 +98,10 @@ pub struct PowerState {
 impl Default for PowerState {
     fn default() -> Self {
         Self {
+            #[cfg(feature = "debug-tools")]
+            debug_full_power: false,
+            #[cfg(feature = "debug-tools")]
+            debug_power_changed: false,
             total_output: 0,
             total_drain: 0,
             has_drained_power_source: false,
@@ -206,7 +217,49 @@ impl PowerState {
     /// otherwise signed produced/drained is compared with1. With finite i32
     /// operands, a negative denominator reverses the strict less-than result.
     pub(crate) fn has_full_power(&self) -> bool {
+        #[cfg(feature = "debug-tools")]
+        if self.debug_full_power {
+            return true;
+        }
+        self.retained_full_power()
+    }
+
+    fn retained_full_power(&self) -> bool {
         self.total_output >= self.total_drain || self.total_drain <= 0
+    }
+
+    /// Gameplay-facing reading; retained native totals stay available for
+    /// persistence and diagnostics even while the trainer supplies power.
+    pub fn effective_totals(&self) -> (i32, i32) {
+        #[cfg(feature = "debug-tools")]
+        if self.debug_full_power {
+            return (self.total_output.max(self.total_drain), self.total_drain);
+        }
+        (self.total_output, self.total_drain)
+    }
+
+    pub fn low_power(&self) -> bool {
+        #[cfg(feature = "debug-tools")]
+        if self.debug_full_power {
+            return false;
+        }
+        self.is_low_power
+    }
+
+    #[cfg(feature = "debug-tools")]
+    pub(crate) fn set_debug_full_power(&mut self, enabled: bool) -> bool {
+        if self.debug_full_power == enabled {
+            return false;
+        }
+        self.debug_full_power = enabled;
+        self.debug_power_changed = true;
+        self.invalidate(true);
+        true
+    }
+
+    #[cfg(feature = "debug-tools")]
+    pub(crate) fn take_debug_power_changed(&mut self) -> bool {
+        std::mem::take(&mut self.debug_power_changed)
     }
 
     /// House4F87FF..4F8825 clamps signed totals after its early power/radar
@@ -215,7 +268,7 @@ impl PowerState {
     pub(crate) fn clamp_negative_totals(&mut self) {
         self.total_output = self.total_output.max(0);
         self.total_drain = self.total_drain.max(0);
-        self.is_low_power = !self.has_full_power();
+        self.is_low_power = !self.retained_full_power();
     }
 }
 
@@ -392,7 +445,7 @@ fn recalculate_power_for_owner(
 
     state.total_output = produced;
     state.total_drain = drained;
-    state.is_low_power = !state.has_full_power();
+    state.is_low_power = !state.retained_full_power();
 }
 
 /// Fixture-only assessment of supplied buildings. Production visits each
@@ -488,7 +541,7 @@ fn radar_provider_available(
     owner: InternedId,
     interner: &crate::sim::intern::StringInterner,
 ) -> bool {
-    if state.is_low_power {
+    if state.low_power() {
         return false;
     }
     // Native House+68 order chooses the first otherwise eligible provider;
@@ -818,10 +871,9 @@ BuildSpeed=0.02
             let mut store = EntityStore::new();
             let mut building = make_building(1, "TEST", "Owner", value("actual"));
             let occupants = value("occupants") as u32;
-            let mut cargo = crate::sim::passenger::PassengerCargo::new(occupants, 0);
+            let mut cargo = crate::sim::passenger::PassengerCargo::new(occupants, 0.0);
             cargo.set_passengers_for_test((0..occupants).map(|i| 100 + u64::from(i)).collect());
-            cargo.set_passenger_sizes_for_test(vec![1; occupants as usize]);
-            cargo.set_total_size_for_test(occupants);
+            cargo.set_passenger_sizes_for_test(vec![1.0; occupants as usize]);
             building.passenger_role = crate::sim::passenger::PassengerRole::transport(cargo);
             store.insert(building);
             // Supply existing aggregate output with a signed-HP Power=1 source.

@@ -5001,8 +5001,8 @@ mod tests {
             .passenger_role
             .cargo_mut()
             .unwrap();
-        cargo.board_forced_chain(&[(cleg, 1)]);
-        cargo.board_forced_chain(&[(other, 1)]);
+        cargo.board_forced_chain(&[(cleg, 1.0)]);
+        cargo.board_forced_chain(&[(other, 1.0)]);
         sim.substrate
             .entities
             .get_mut(victim)

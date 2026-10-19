@@ -710,7 +710,7 @@ pub enum ScenarioServiceInput {
 }
 
 impl ScenarioServiceInput {
-    fn apply(self, sim: &mut Simulation) -> Vec<crate::sim::trigger_runtime::TriggerEffect> {
+    pub fn apply(self, sim: &mut Simulation) -> Vec<crate::sim::trigger_runtime::TriggerEffect> {
         match self {
             Self::Pause => sim.pause_scenario(0),
             Self::Resume => sim.resume_scenario(),
@@ -815,6 +815,10 @@ impl ReplayRunner {
         replay: &ReplayLog,
         tick_ms: u32,
     ) -> Result<Vec<Option<u64>>> {
+        #[cfg(feature = "debug-tools")]
+        runtime
+            .simulation
+            .set_debug_session_context(crate::sim::cheats::DebugSessionContext::Replay);
         anyhow::ensure!(
             runtime.simulation.session.pixel_conversion_bounds
                 == replay.header.pixel_conversion_bounds,
@@ -907,6 +911,8 @@ impl ReplayRunner {
         tick_ms: u32,
         poll_triggers: bool,
     ) -> Vec<Option<u64>> {
+        #[cfg(feature = "debug-tools")]
+        sim.set_debug_session_context(crate::sim::cheats::DebugSessionContext::Replay);
         // The diagnostic playback must be constructed from the recorded seed.
         assert_eq!(
             sim.session.pixel_conversion_bounds, replay.header.pixel_conversion_bounds,

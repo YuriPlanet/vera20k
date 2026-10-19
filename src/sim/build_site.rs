@@ -148,6 +148,11 @@ pub(crate) fn is_clear_to_build(
     if !crate::sim::cell_rect::retained_cell_is_in_playfield(cell, sim.playfield_bounds, cells) {
         return false;
     }
+    // Deliberate developer override; object occupancy and bounds above still apply.
+    #[cfg(feature = "debug-tools")]
+    if ty.is_some() && house.is_some_and(|house| sim.debug_flags_for(house).build_anywhere) {
+        return true;
+    }
     let flags = cells.flags(cell);
     let slope = cells.ground_fields(cell).1;
     if let NativeCellIdentity::Real(index) = cell {

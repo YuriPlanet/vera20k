@@ -110,7 +110,7 @@ pub(crate) fn update_house_eva(sim: &mut Simulation, rules: &RuleSet, owner: Int
     let short = sim
         .power_states
         .get(&owner)
-        .is_some_and(|power| power.is_low_power);
+        .is_some_and(|power| power.low_power());
     if !short {
         guard = false;
     } else if owns_construction_yard(sim, rules, owner) && !guard {

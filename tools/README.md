@@ -7,7 +7,7 @@ points; the exhaustive oracle/tool inventory remains tracked in issue #746.
 
 | Job | Owner / entry point |
 | --- | --- |
-| Observe match populations, production, timings and logs in a local browser | [Read-only telemetry dashboard](telemetry-dashboard/README.md) |
+| Observe match data or explicitly enable offline trainer/event tools | [Telemetry dashboard and debug build](telemetry-dashboard/README.md) |
 | Give a new worktree its ignored `ini/` and `config.toml`, or a clone its `config.toml`; report what the game, retail tests and oracles still need | `python -m tools.prepare_checkout` |
 | Run all Python tool and source-skill tests | `python -m tools.run_tests` (below) |
 | Inspect scenario ART ownership, native checks and retail load validation | [ART registry owner](art_registry_owner.md) |
@@ -47,6 +47,9 @@ points; the exhaustive oracle/tool inventory remains tracked in issue #746.
 | Synchronize authoritative skill sources | `python tools/skill_sync.py --write`, then `--check` |
 
 ## Dev chord builds
+
+For the optional browser dashboard and separately gated trainer/event hooks,
+see the [offline debug build](telemetry-dashboard/README.md#offline-trainer-and-event-hooks).
 
 The default `dev-overlays` feature carries the Ctrl+Shift dev chord, including
 the renderer-native diagnostic overlays (cell grid, heightmap, pathgrid, foot

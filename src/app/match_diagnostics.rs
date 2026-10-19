@@ -43,8 +43,16 @@ impl MatchDiagnosticsState {
     pub(crate) fn get_or_begin_replay(
         &mut self,
         runtime: &crate::sim::runtime::SimRuntime,
-    ) -> &mut ReplayLog {
-        self.replay_log.get_or_insert_with(|| {
+    ) -> Option<&mut ReplayLog> {
+        // Trainer changes are deliberately outside the ordinary command log.
+        // The caller closes the valid prefix before the first such mutation;
+        // never emit an apparently replayable continuation afterward.
+        #[cfg(feature = "debug-tools")]
+        if runtime.simulation.trainer_modified() {
+            self.replay_log = None;
+            return None;
+        }
+        Some(self.replay_log.get_or_insert_with(|| {
             let sim = &runtime.simulation;
             ReplayLog::new(crate::sim::replay::ReplayHeader {
                 pixel_conversion_bounds: sim.session.pixel_conversion_bounds,
@@ -54,7 +62,7 @@ impl MatchDiagnosticsState {
                 map_name: sim.session.map_name.clone(),
                 rules_hash: runtime.resources.rules.simulation_config_hash(),
             })
-        })
+        }))
     }
 
     /// Persist and consume the active segment. `Ok(None)` when there is no
@@ -188,6 +196,41 @@ mod tests {
 
     static NEXT_TEST_PATH: AtomicU64 = AtomicU64::new(0);
 
+    #[cfg(feature = "debug-tools")]
+    #[test]
+    fn trainer_modified_world_cannot_resume_normal_replay_recording() {
+        use crate::sim::cheats::{CheatFlags, DebugSessionContext};
+        use crate::sim::house_state::HouseState;
+        let mut sim = crate::sim::world::Simulation::with_seed(17);
+        let owner = sim.interner.intern("Allies");
+        sim.houses
+            .insert(owner, HouseState::new(owner, 0, None, true, 500, 10));
+        sim.session.current_house = Some(owner);
+        sim.session.house_order.push(owner);
+        let mut runtime = crate::sim::runtime::SimRuntime::from_simulation(sim);
+        let mut diagnostics = MatchDiagnosticsState::default();
+        assert!(diagnostics.get_or_begin_replay(&runtime).is_some());
+        runtime
+            .simulation
+            .set_debug_session_context(DebugSessionContext::Offline);
+        runtime
+            .simulation
+            .set_cheat_flags(CheatFlags {
+                infinite_money: true,
+                money_target: 1000,
+                ..Default::default()
+            })
+            .unwrap();
+        runtime.simulation.apply_debug_tools(None);
+        assert!(diagnostics.get_or_begin_replay(&runtime).is_none());
+        assert!(diagnostics.replay_log.is_none());
+        runtime.simulation.clear_debug_tools();
+        assert!(
+            diagnostics.get_or_begin_replay(&runtime).is_none(),
+            "switching off cannot make a mutated world replayable"
+        );
+    }
+
     fn test_path(label: &str) -> PathBuf {
         std::env::temp_dir().join(format!(
             "vera20k-gsi-17-08-{}-{label}-{}",
@@ -229,6 +272,7 @@ mod tests {
         let mut diagnostics = MatchDiagnosticsState::default();
         diagnostics
             .get_or_begin_replay(&runtime)
+            .expect("unmodified offline match records")
             .apply_scenario_service(&mut runtime.simulation, ScenarioServiceInput::Pause);
         let flush = diagnostics.flush_to(0, &root, 1234).unwrap().unwrap();
         let log = ReplayLog::load(&flush.path).unwrap();

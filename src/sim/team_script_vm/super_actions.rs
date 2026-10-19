@@ -1,20 +1,25 @@
 //! The computer's superweapon script actions (jump table `0x006E9F74`):
 //! action 55 (`0x006EFC70`, case `0x006E9D95`) fires the house's Iron
-//! Curtain at the team, action 57 (`0x006F0130`, case `0x006E9DC7`)
-//! chronoshifts the team onto its leader's quarry. Retail AIMD runs 55 in
+//! Curtain at the team, action 56 (`0x006EFE60`, case `0x006E9DAE`)
+//! chronoshifts to a BuildingWithProperty target, and action 57 (`0x006F0130`,
+//! case `0x006E9DC7`) chronoshifts onto its leader's quarry. Retail AIMD runs 55 in
 //! the "Soviet Iron Curtain" scripts after action 53 and 57 in "Allied
 //! Chronosphere" after action 54.
 //!
 //! Evidence: `tools/superweapon_oracle.py` section `team_super_actions` runs
-//! both handlers natively (the leader loop, the Supers search, the power
+//! handlers 55 and 57 natively (the leader loop, the Supers search, the power
 //! ratio, the RechargeTimer read, `GetRechargeTime` and `Quarry_To_Threat`;
 //! the threat scan and Fire_SW are recorded stubs); `super_actions_tests.rs`
 //! replays it.
+//! Action 56 adapts the author's ra2-mono QueryTeamSuperweaponProgress and
+//! primary-House/building-selector regression under VERA's GPLv3, reusing the
+//! existing shared owners. See `docs/script-action-56.md` for source mapping;
+//! the added authored regressions are not native-execution goldens.
 //!
 //! RESIDUALS:
 //! - A team without a centre (`+0x34` NULL: no live joined member in the
 //!   playfield) faults natively once its action fires, reading the centre's
-//!   vtable (`0x006EFD6D`, `0x006F026F`). VERA fires nothing and finishes
+//!   vtable (`0x006EFD6D`, `0x006EFFBE`, `0x006F026F`). VERA fires nothing and finishes
 //!   the action. A team with members always holds a joined one (`+0x689`):
 //!   Add_Member joins the first recruit and only it
 //!   (`0x006EA554..0x006EA55C`), Remove_Member joins the head once no joined
@@ -29,11 +34,8 @@
 //!   than that value makes Fire_SW read past the Supers vector natively;
 //!   VERA fires nothing. Dormant: retail lists all twelve types in `Type=`
 //!   order.
-//! - The per-Super charge time override (`SuperClass+0x24`): the wait test
-//!   divides by the type's `RechargeTime=` ([`super_nearly_ready`]'s
-//!   residual).
 //!
-//! Ledger: neither handler draws a random number, writes a timer or detaches
+//! Ledger: none of the three handlers draws a random number, writes a timer or detaches
 //! anything itself. Greatest_Threat's empty-scan latch is the shared scan's
 //! (`world/techno_ai/target_scan.rs`), Assign_Mission_Target's writes are
 //! [`Simulation::team_assign_mission_target`]'s, and the recharge restarts
@@ -58,6 +60,13 @@ enum SuperStep {
     Wait,
     /// The action finishes.
     Finish,
+}
+
+/// Only destination selection differs between the two native Chronosphere
+/// actions. The common path owns readiness, paired firing and completion.
+pub(super) enum ChronoshiftTarget {
+    Building(i32),
+    Quarry(i32),
 }
 
 impl Simulation {
@@ -101,9 +110,10 @@ impl Simulation {
         }
     }
 
-    /// Script action 57 (`0x006F0130`), argument the quarry: with the
+    /// Script actions 56 (`0x006EFE60`) and 57 (`0x006F0130`): with the
     /// leader's house's last Chronosphere (`Type=` 3) passing
-    /// [`Self::team_super_step`], the leader looks for the quarry as action 0
+    /// [`Self::team_super_step`], action 56 selects a BuildingWithProperty
+    /// target as action 47 does, while 57 asks for its quarry as action 0
     /// does ([`Self::team_quarry_threat`]). Finding one, the house fires the
     /// Chronosphere at the cell of the team's centre and its last Chrono Warp
     /// (`Type=` 4, whose charge is not read) at the target's cell, and the
@@ -114,7 +124,7 @@ impl Simulation {
     pub(super) fn team_action_chronoshift(
         &mut self,
         team_id: u64,
-        quarry: i32,
+        destination: ChronoshiftTarget,
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
@@ -129,8 +139,18 @@ impl Simulation {
         match checked {
             Some((_, _, SuperStep::Wait)) => return,
             Some((leader, owner, SuperStep::Fire)) => {
-                if let Some(target) =
-                    self.team_quarry_threat(team_id, leader, quarry, rules, registry)
+                // 56 at 6EFF5D..6EFFAF calls 6EEBD0 directly, with the selected
+                // leader (not the member-list head), its House's enemy and the
+                // TeamType's OnlyTargetHouseEnemy. No quarry/weapon/fog gate.
+                let target = match destination {
+                    ChronoshiftTarget::Building(argument) => {
+                        self.team_find_target_building(team_id, leader, argument)
+                    }
+                    ChronoshiftTarget::Quarry(quarry) => {
+                        self.team_quarry_threat(team_id, leader, quarry, rules, registry)
+                    }
+                };
+                if let Some(target) = target
                     && let Some(centre) = self.team_centre_cell(team_id)
                     && let Some(TeamTarget::Cell { x, y }) =
                         self.team_target_cell_of_coord(TeamTarget::Object(target))
@@ -167,8 +187,8 @@ impl Simulation {
         }
     }
 
-    /// The test both actions put to the Super they check
-    /// (`0x006EFD46..0x006EFE4F`, `0x006F01ED..0x006F020A` and
+    /// The test all three actions put to the Super they check
+    /// (`0x006EFD46..0x006EFE4F`, `0x006EFF3A..0x006F011B`, `0x006F01ED..0x006F020A` and
     /// `0x006F032B..0x006F039C`): charged (`+0x6F`) with the house's power
     /// ratio (`GetPowerRatio @ 0x004FCE30`, `FCOMP` with 1.0) not below one
     /// fires; otherwise a Super that is [`super_nearly_ready`] waits.

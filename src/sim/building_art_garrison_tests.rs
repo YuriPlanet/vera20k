@@ -99,7 +99,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet, u64) {
     }
     let count = integer(&input["occupant_count"]);
     assert!((0..=1).contains(&count));
-    let mut cargo = PassengerCargo::new(1, 0);
+    let mut cargo = PassengerCargo::new(1, 0.0);
     for _ in 0..count {
         let occupant_id = sim.allocate_stable_id();
         let mut occupant = GameEntity::test_default_of_category(
@@ -114,7 +114,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet, u64) {
         occupant.set_owner_for_test(sim.interner.intern("A"));
         occupant.passenger_role = PassengerRole::inside_for_test(id, false);
         sim.substrate.entities.insert(occupant);
-        cargo.board_forced_chain(&[(occupant_id, 1)]);
+        cargo.board_forced_chain(&[(occupant_id, 1.0)]);
     }
     let building = sim.substrate.entities.get_mut(id).unwrap();
     building.passenger_role = PassengerRole::transport(cargo);

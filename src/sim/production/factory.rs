@@ -526,7 +526,7 @@ pub(super) fn time_to_build_inputs(
     let (power_output, power_drain) = sim
         .power_states
         .get(&owner)
-        .map_or((0, 0), |power| (power.total_output, power.total_drain));
+        .map_or((0, 0), |power| power.effective_totals());
     let slot = FactorySlot::of(FactoryType::for_category(obj.category), obj.naval);
     let factory_count = sim
         .houses
@@ -1363,6 +1363,49 @@ impl FactoryRegistry {
             if matches!(outcome, StepOutcome::Completed) {
                 f.step_rate_frames = 0;
                 f.step_timer.start(frame as i32, 0);
+            }
+        }
+    }
+
+    /// Optional developer fast-forward through the existing payment/completion
+    /// owner. Held/paused factories stay held; delivery still runs normally.
+    #[cfg(feature = "debug-tools")]
+    pub(super) fn debug_complete(
+        &mut self,
+        houses: &mut BTreeMap<InternedId, crate::sim::house_state::HouseState>,
+        frame: u32,
+        owner: InternedId,
+    ) {
+        let order: Vec<_> = self
+            .holders_insertion_ordered()
+            .into_iter()
+            .map(|(holder, _)| holder)
+            .collect();
+        for holder in order {
+            let Some(factory) = self.factories.get_mut(&holder) else {
+                continue;
+            };
+            if factory.owner != owner || factory.object.is_none() || factory.suspended {
+                continue;
+            }
+            let Some(house) = houses.get_mut(&owner) else {
+                continue;
+            };
+            for _ in 0..PRODUCTION_STEPS {
+                if factory.progress >= PRODUCTION_STEPS {
+                    break;
+                }
+                factory.on_hold = false;
+                if !matches!(
+                    factory.advance_one_step(&mut house.economy),
+                    StepOutcome::Stepped
+                ) {
+                    break;
+                }
+            }
+            if factory.progress >= PRODUCTION_STEPS {
+                factory.step_rate_frames = 0;
+                factory.step_timer.start(frame as i32, 0);
             }
         }
     }
@@ -3069,6 +3112,46 @@ mod tests {
             category_for_object(land),
             ProductionCategory::Vehicle,
             "land Unit independently binds HouseClass Primary_ForVehicles"
+        );
+    }
+    #[cfg(feature = "debug-tools")]
+    #[test]
+    fn debug_completion_preserves_payment_and_explicit_hold() {
+        let owner = InternedId::from_index(1);
+        let mut reg = reg_with(owner, ProductionCategory::Infantry, armed_factory(540));
+        let mut houses = BTreeMap::new();
+        houses.insert(
+            owner,
+            crate::sim::house_state::HouseState::new(owner, 0, None, true, 540, 10),
+        );
+        reg.factories
+            .get_mut(&FactoryHolder::House(owner, ProductionCategory::Infantry))
+            .unwrap()
+            .suspended = false;
+        reg.debug_complete(&mut houses, 10, owner);
+        assert_eq!(
+            reg.view(owner, ProductionCategory::Infantry)
+                .unwrap()
+                .progress,
+            PRODUCTION_STEPS
+        );
+        assert_eq!(houses[&owner].economy.credits(), 0);
+        assert!(
+            reg.view(owner, ProductionCategory::Infantry)
+                .unwrap()
+                .complete_object()
+                .is_some()
+        );
+
+        let mut held = armed_factory(540);
+        held.suspended = true;
+        let mut reg = reg_with(owner, ProductionCategory::Infantry, held);
+        reg.debug_complete(&mut houses, 10, owner);
+        assert_eq!(
+            reg.view(owner, ProductionCategory::Infantry)
+                .unwrap()
+                .progress,
+            0
         );
     }
 }
