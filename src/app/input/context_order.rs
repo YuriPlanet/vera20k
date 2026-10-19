@@ -2994,6 +2994,10 @@ fn selected_rally_producer_ids(
 }
 
 #[cfg(test)]
+#[path = "building_redeploy_tests.rs"]
+mod building_redeploy_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::sim::combat::Health;
