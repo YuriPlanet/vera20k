@@ -1955,9 +1955,12 @@ impl MapLoadInitial {
         // standard Battle launch application, and the shared Post_Map_Init
         // finalizer.
         let theater_result = theater::load_theater(asset_manager, &map_data.header.theater);
-        let mode_override_ini = asset_manager
-            .get_ref(&match_launch_descriptor.session().mode.override_file)
-            .and_then(|bytes| IniFile::from_bytes(bytes).ok());
+        let mode_override_ini = crate::rules::retail_sources::select_optional_ini(
+            asset_manager,
+            match_launch_descriptor.session().mode.override_file.trim(),
+        )
+        .expect("select the generated-map mode INI layer")
+        .map(|selected| selected.ini);
         let (mut rules, rules_ini, art_ini, native_rules_receipt) = load_rules_with_merged_ini(
             asset_manager,
             mode_override_ini.as_ref(),
@@ -2604,20 +2607,15 @@ pub(crate) fn load_map_from_initial(
     // semantics and art-foundation data are available to the pipeline.
     // The selected game mode's override INI (MPModes roster row) applies its
     // rules payload between rulesmd and the map overrides — without it every
-    // non-Battle mode silently plays with Battle rules.
+    // non-Battle mode silently plays with Battle rules. A selected file that
+    // is missing keeps an empty layer (0x005D67B0) instead of aborting.
     let mode_override_ini: Option<IniFile> = {
         let override_file = skirmish_launch_session
             .map(|launch| launch.mode.override_file.trim())
             .unwrap_or("");
-        if override_file.is_empty() {
-            None
-        } else {
-            Some(
-                crate::rules::retail_sources::select_ini(asset_manager, override_file)
-                    .map_err(anyhow::Error::msg)?
-                    .ini,
-            )
-        }
+        crate::rules::retail_sources::select_optional_ini(asset_manager, override_file)
+            .map_err(anyhow::Error::msg)?
+            .map(|selected| selected.ini)
     };
     // Full_Init686D35 processes the campaign's scenario-basename INI before
     // resetting Rules. It is optional and distinct from MISSIONMD loading art.

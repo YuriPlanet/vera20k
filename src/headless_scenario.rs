@@ -201,12 +201,13 @@ pub fn load_with_launch(
         )
         .map_err(|error| format!("prepare stock-offline scenario prefix: {error}"))?;
     let override_file = launch.session().mode.override_file.trim();
-    let mode_override = crate::rules::retail_sources::select_ini(&assets, override_file)?.ini;
+    let mode_override = crate::rules::retail_sources::select_optional_ini(&assets, override_file)?
+        .map(|selected| selected.ini);
     let (mut rules, rules_ini, art_ini, native_rules_receipt) = native_rules_owner
         .load_scenario(
-            crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(Some(
-                &mode_override,
-            )),
+            crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(
+                mode_override.as_ref(),
+            ),
             &map.ini,
         )
         .map_err(|error| format!("load native noncampaign rules: {error}"))?
@@ -613,6 +614,27 @@ mod retail_construction_tests {
         assert_eq!(session.selected_map_file.as_deref(), Some("TEST.MAP"));
         assert!(session.opponents.is_empty());
         assert_eq!(session.local.color_index, 0);
+    }
+
+    /// Issue #481: the loader 0x005D67B0 keeps an empty INI when the selected
+    /// mode file is missing, so the headless load must continue with an empty
+    /// mode layer instead of failing the whole scenario.
+    #[test]
+    fn headless_missing_mode_ini_continues_with_an_empty_mode_layer() {
+        let Some((root, _)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        let mut launch = battle_session(
+            "XMP03T4.MAP",
+            &[(LaunchCountry::America, AiDifficulty::Easy)],
+        );
+        launch.mode.override_file = "MPMissingMD.ini".to_string();
+        let scenario = load_session(&root, "XMP03T4.MAP", 0x1234_5678, launch)
+            .expect("a missing mode INI continues with an empty mode layer");
+        assert!(
+            scenario.sim().session.current_house.is_some(),
+            "the scenario still launches its local house"
+        );
     }
 
     #[test]

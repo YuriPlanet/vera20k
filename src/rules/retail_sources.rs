@@ -50,6 +50,25 @@ pub fn select_ini(assets: &AssetManager, name: &str) -> Result<SelectedIni, Stri
     })
 }
 
+/// The optional selected-mode INI layer. Native 0x005D67B0 keeps an empty INI
+/// and continues scenario processing when the selected mode file is missing,
+/// so an empty or unresolved name yields no layer instead of an error. A file
+/// that exists but fails to parse stays an error, matching [`select_ini`]; no
+/// native execution evidence covers that branch, so it stays conservative.
+pub fn select_optional_ini(
+    assets: &AssetManager,
+    name: &str,
+) -> Result<Option<SelectedIni>, String> {
+    if name.is_empty() {
+        return Ok(None);
+    }
+    if assets.resolve_ref(name).is_none() {
+        log::warn!("Optional INI {name} is missing; continuing without its layer");
+        return Ok(None);
+    }
+    select_ini(assets, name).map(Some)
+}
+
 /// Transient selected inputs, consumed when the process authority is constructed.
 /// Optional LANGRULE retains the existing production missing/parse-failure
 /// policy. ART is fixed and never enters the scenario layer stack. Audio
@@ -197,6 +216,103 @@ mod tests {
                 .unwrap()
                 .get_for_test("FlightLevel"),
             Some("1500")
+        );
+    }
+
+    #[test]
+    fn optional_mode_ini_missing_file_continues_with_an_empty_layer() {
+        // Issue #481: native 0x005D67B0 keeps an empty INI when the selected
+        // mode file is missing. The match load, headless and random-map paths
+        // select their mode layer through this owner, so a missing file must
+        // leave the layer absent instead of aborting the load.
+        let directory = TestDirectory::new("optional-mode-ini-missing");
+        directory.write("rulesmd.ini", b"[General]\nBuildSpeed=.7\n");
+        directory.write("artmd.ini", b"[TECH]\nFoundation=2x3\n");
+        let assets = AssetManager::from_loose_root_for_test(directory.path());
+        assert!(
+            select_ini(&assets, "MPMissingMD.ini").is_err(),
+            "the required-INI selector keeps a missing file fatal (rulesmd policy)"
+        );
+        let selected = select_optional_ini(&assets, "MPMissingMD.ini")
+            .expect("missing optional INI is not an error");
+        assert!(selected.is_none());
+        let (_, _, mut owner) = load_startup_rules(&assets, Arc::default())
+            .expect("startup")
+            .into_parts();
+        let (rules, ini, _, _) = owner
+            .load_scenario(
+                crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(
+                    selected.as_ref().map(|source| &source.ini),
+                ),
+                &IniFile::from_str("[General]\nFlightLevel=1500\n"),
+            )
+            .expect("scenario rebuild completes with an empty mode layer")
+            .into_parts();
+        assert_eq!(
+            rules.production.build_speed.bits(),
+            f64::from(0.7_f32).to_bits()
+        );
+        assert_eq!(
+            ini.section("General").unwrap().get_for_test("FlightLevel"),
+            Some("1500")
+        );
+    }
+
+    #[test]
+    fn optional_mode_ini_empty_name_selects_no_layer() {
+        let directory = TestDirectory::new("optional-mode-ini-empty-name");
+        directory.write("rulesmd.ini", b"[General]\nBuildSpeed=.7\n");
+        directory.write("artmd.ini", b"[TECH]\nFoundation=2x3\n");
+        let assets = AssetManager::from_loose_root_for_test(directory.path());
+        let selected =
+            select_optional_ini(&assets, "").expect("an empty optional name is not an error");
+        assert!(selected.is_none());
+    }
+
+    #[test]
+    fn optional_mode_ini_present_file_overlays_rulesmd_under_the_map() {
+        let directory = TestDirectory::new("optional-mode-ini-present");
+        directory.write(
+            "rulesmd.ini",
+            b"[General]\nBuildSpeed=.7\nFlightLevel=1500\n",
+        );
+        directory.write("artmd.ini", b"[TECH]\nFoundation=2x3\n");
+        directory.write("MPBattleMD.ini", b"[General]\nFlightLevel=1200\n");
+        let assets = AssetManager::from_loose_root_for_test(directory.path());
+        let selected = select_optional_ini(&assets, "MPBattleMD.ini")
+            .expect("present optional INI selects")
+            .expect("a present file yields a layer");
+        assert_eq!(selected.source.logical_name, "MPBattleMD.ini");
+        assert_eq!(
+            selected
+                .ini
+                .section("General")
+                .unwrap()
+                .get_for_test("FlightLevel"),
+            Some("1200")
+        );
+        let (_, _, mut owner) = load_startup_rules(&assets, Arc::default())
+            .expect("startup")
+            .into_parts();
+        let (_, ini, _, _) = owner
+            .load_scenario(
+                crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(Some(
+                    &selected.ini,
+                )),
+                &IniFile::from_str("[General]\nBuildSpeed=1\n"),
+            )
+            .expect("scenario rebuild with the mode layer")
+            .into_parts();
+        let general = ini.section("General").unwrap();
+        assert_eq!(
+            general.get_for_test("FlightLevel"),
+            Some("1200"),
+            "the mode layer beats rulesmd"
+        );
+        assert_eq!(
+            general.get_for_test("BuildSpeed"),
+            Some("1"),
+            "the map layer beats the mode layer"
         );
     }
 
