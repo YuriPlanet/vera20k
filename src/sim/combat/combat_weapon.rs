@@ -979,7 +979,7 @@ pub(crate) fn techno_target_facts<'a>(
 ) -> TargetFacts<'a> {
     let cell = terrain.and_then(|grid| grid.cell(target.position.rx(), target.position.ry()));
     let cell_land_type = cell
-        .map(|cell| cell.yr_cell_land_type)
+        .map(|cell| cell.land_type())
         .unwrap_or(LandType::Clear.as_index());
     TargetFacts::Techno {
         obj: target_obj,
@@ -1008,7 +1008,7 @@ pub(crate) fn cell_target_facts(
 ) -> TargetFacts<'static> {
     match terrain.and_then(|grid| grid.cell(rx, ry).map(|cell| (grid, cell))) {
         Some((grid, cell)) => TargetFacts::Cell {
-            land_type: cell.yr_cell_land_type,
+            land_type: cell.land_type(),
             tile_in_water_set: grid.tile_is_water_set(cell.final_tile_index),
             bridge_flag: cell.bridge_facts.has_structural_bridge(),
         },

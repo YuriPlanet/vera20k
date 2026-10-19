@@ -26,17 +26,33 @@ pub(crate) use crate::sim::building_construction::BuildingDown;
 #[cfg(any(test, feature = "test-support"))]
 pub use crate::sim::building_construction::BuildingUp;
 
-/// Native-like navigation target reference.
+/// A NavCom-family pointer: NavCom (`Foot+0x5A4`), its auxiliary slot
+/// (`+0x5A0`), SuspendedNavCom (`+0x5A8`) and the NavQueue and navigation-list
+/// entries.
 ///
-/// In gamemd this is an `AbstractClass*`. Phase 1 needs cell targets for normal
-/// Drive move commands, while the entity variant gives action lines and later
-/// destination paths a shared shape without claiming those paths are complete.
+/// In gamemd each is an untagged `AbstractClass*`. The Foot setter
+/// (`FootClass::Set_Destination_Internal @ 0x004D94B0`) stores its argument
+/// as given (`0x004D9510`), and readers ask the pointee for its kind or
+/// compare pointers: `AircraftClass::Mission_Enter @ 0x00419C80` compares
+/// NavCom with `+0x6CC` (`0x00419D25`) and calls NavCom's What_Am_I
+/// (virtual `+0x2C`, `0x00419D2F`) to test for a Building (6).
+///
+/// So there is one representation per pointee kind. A Cell is named by its
+/// cell. An Object, a Techno or a Terrain, is named by its stable ID; every
+/// object store draws from one ID namespace (`Simulation::allocate_stable_id`,
+/// and snapshot restore rejects an ID that two registries claim), so the ID
+/// alone says which store holds the object and what kind it is.
+///
+/// A Cell compares by its coordinates, not as the native Dummy cell pointer
+/// (`0x00ABDC50`) that stands for any cell the map lacks: see the residuals
+/// in `sim::aircraft::leave_map` and `Per_Cell_Process` (`movement::per_cell`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum NavTargetRef {
+    /// A `CellClass*`, by its cell.
     Cell { rx: u16, ry: u16 },
-    Entity { id: u64 },
+    /// An `ObjectClass*`, by stable ID: a Techno in the entity store or a
+    /// Terrain object.
     Object { id: u64 },
-    Building { id: u64 },
 }
 
 impl NavTargetRef {
@@ -48,8 +64,12 @@ impl NavTargetRef {
         Self::Object { id }
     }
 
-    pub fn building(id: u64) -> Self {
-        Self::Building { id }
+    /// The object this names; a Cell names none.
+    pub(crate) const fn object_id(self) -> Option<u64> {
+        match self {
+            Self::Object { id } => Some(id),
+            Self::Cell { .. } => None,
+        }
     }
 }
 
@@ -697,16 +717,6 @@ mod tests {
         assert_eq!(coord.x, 45 * 256 + 128);
         assert_eq!(coord.y, 40 * 256 + 128);
         assert_eq!(coord.z, 0);
-    }
-
-    #[test]
-    fn nav_target_ref_has_cell_object_and_building_shapes() {
-        assert_eq!(
-            NavTargetRef::cell(45, 40),
-            NavTargetRef::Cell { rx: 45, ry: 40 }
-        );
-        assert_eq!(NavTargetRef::object(7), NavTargetRef::Object { id: 7 });
-        assert_eq!(NavTargetRef::building(9), NavTargetRef::Building { id: 9 });
     }
 
     #[test]

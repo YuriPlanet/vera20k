@@ -343,6 +343,12 @@ pub fn has_weapon_ability(rank: VeterancyRank, object: &ObjectType, ability: Abi
     }
 }
 
+/// A demolition infantryman's test: `C4=` (`InfantryType+0xEC2`) or a rank
+/// holding weapon ability 14 ([`has_weapon_ability`]), in that order.
+pub fn holds_c4(rank: VeterancyRank, object: &ObjectType) -> bool {
+    object.c4 || has_weapon_ability(rank, object, Ability::C4)
+}
+
 /// The one arithmetic shape every rank multiplier uses:
 /// `FILD dword; FMUL double [Rules+off]; CALL ftol`.
 ///

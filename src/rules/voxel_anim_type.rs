@@ -169,8 +169,10 @@ impl VoxelAnimType {
         out.max_xy_vel = section.read_double_bits("MaxXYVel", out.max_xy_vel);
 
         // ReadString 0x80 ahead of each type or sound lookup
-        // (`0x0074B207`-`0x0074B4C1`).
-        out.spawns = section.read_type_name("Spawns", 0x80).map(str::to_string);
+        // (`0x0074B207`-`0x0074B4C1`). The Type references (`Spawns=`, `BounceAnim=`,
+        // `ExpireAnim=`, `TrailerAnim=`, `Warhead=`, `AttachedSystem=`) keep
+        // the constructor's nulls: only the ordered Process owner reads them
+        // (`VoxelAnimTypeReferences`), and `RuleSet` publishes them.
         out.spawn_count = section.read_int("SpawnCount", out.spawn_count);
         out.start_sound = section
             .read_type_name("StartSound", 0x80)
@@ -178,21 +180,8 @@ impl VoxelAnimType {
         out.stop_sound = section
             .read_type_name("StopSound", 0x80)
             .map(str::to_string);
-        out.bounce_anim = section
-            .read_type_name("BounceAnim", 0x80)
-            .map(str::to_string);
-        out.expire_anim = section
-            .read_type_name("ExpireAnim", 0x80)
-            .map(str::to_string);
-        out.trailer_anim = section
-            .read_type_name("TrailerAnim", 0x80)
-            .map(str::to_string);
         out.damage = section.read_int("Damage", out.damage);
         out.damage_radius = section.read_int("DamageRadius", out.damage_radius);
-        out.warhead = section.read_type_name("Warhead", 0x80).map(str::to_string);
-        out.attached_system = section
-            .read_type_name("AttachedSystem", 0x80)
-            .map(str::to_string);
 
         out.share_source = section
             .read_type_name("ShareSource", 0x80)
@@ -269,14 +258,18 @@ mod tests {
     fn stock_piece_section_parses() {
         // Verbatim from `rulesmd.ini` `[PIECE]`, the scrap thrown by a dying
         // vehicle — the only stock VoxelAnim with an expiry warhead.
-        let ini = section(
-            "[PIECE]\nName=Scrap Metal Debris\nElasticity=0\n\
+        // The Type references come from the ordered Rules processor, which
+        // `RuleSet` publishes.
+        let rules = crate::rules::ruleset::RuleSet::from_ini(&section(
+            "[VoxelAnims]\n0=PIECE\n\
+             [PIECE]\nName=Scrap Metal Debris\nElasticity=0\n\
              MinAngularVelocity=5.0\nMaxAngularVelocity=9.0\n\
              MinZVel=24.0\nMaxZVel=28.0\nMaxXYVel=15.0\n\
              Duration=75\nDamage=5\nExpireAnim=TWLT036\n\
              DamageRadius=100\nWarhead=TankOGas\n",
-        );
-        let vat = VoxelAnimType::from_ini_section("PIECE", ini.section("PIECE").unwrap());
+        ))
+        .unwrap();
+        let vat = rules.voxel_anim_type(rules.voxel_anim_type_id_by_name("PIECE").unwrap());
         assert_eq!(f64::from_bits(vat.elasticity.bits()), 0.0);
         assert_eq!(vat.duration, 75);
         assert_eq!(vat.damage, 5);

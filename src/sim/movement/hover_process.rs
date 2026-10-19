@@ -1363,7 +1363,6 @@ mod tests {
                 .cell_mut(10, 10)
                 .unwrap();
             cell.land_type = input["land"].as_u64().unwrap_or(2) as u8;
-            cell.yr_cell_land_type = cell.land_type;
             let mut entity = GameEntity::test_default(1, "ROBO", "Americans", 10, 10);
             entity
                 .position

@@ -41,6 +41,7 @@ fn retail_inactive_high_record_restamp_inventory() {
         let objects = crate::sim::tiberium::TiberiumPlacementObjectContext::new(
             sim.entities(),
             sim.occupancy(),
+            &sim.substrate.raw_cell_occupation,
             &scenario.runtime.resources.rules,
             &sim.interner,
             &sim.production.terrain_object_cells,
@@ -87,7 +88,7 @@ fn retail_inactive_high_record_restamp_inventory() {
             json!({"coord": [x, y], "real": cell.is_some(), "cell": cell.map(|c| json!({
                 "tile": c.final_tile_index, "subtile": c.final_sub_tile,
                 "flags": c.bridge_flags(), "level": c.level, "slope": c.slope_type,
-                "land": c.yr_cell_land_type, "zone": c.zone_type,
+                "land": c.land_type, "zone": c.zone_type,
                 "outside_playfield": c.outside_playfield, "allows_tiberium": c.allows_tiberium,
                 "base_build_blocked": c.base_build_blocked,
                 "resolved_tiberium_admission": crate::sim::tiberium::resolved_cell_accepts_tiberium(c),
@@ -143,7 +144,7 @@ fn retail_inactive_high_record_restamp_inventory() {
                         c.final_tile_index,
                         c.final_sub_tile,
                         c.bridge_flags(),
-                        c.yr_cell_land_type,
+                        c.land_type,
                         c.tube_index.map_or(-1, |id| i32::from(id.0)),
                         c.level,
                         c.slope_type
@@ -484,7 +485,7 @@ fn retail_cliff_override_level_difference_census() {
             // destination's own row for that SpeedType.
             let road_row = rules
                 .terrain_rules
-                .semantics_by_name("Road")
+                .semantics_for_land_type(crate::rules::terrain_rules::LandType::Road.as_index())
                 .map_or(crate::util::fixed_math::SIM_ONE, |road| {
                     road.speed_costs.speed_multiplier_for(speed_type)
                 });

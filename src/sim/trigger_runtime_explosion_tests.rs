@@ -44,7 +44,7 @@ fn authored_waypoint_explosions_detonate_the_selected_weapon_at_the_waypoint() {
         rules.bind_anim_class_assets(&roots, &assets, "UBN", "NEWURBAN");
 
         let entry = map.actions[row["trigger_id"].as_str().unwrap()]
-            .entries
+            .entries()
             .iter()
             .find(|entry| entry.kind == 42)
             .unwrap()

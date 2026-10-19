@@ -115,10 +115,8 @@ impl ResolvedTerrainGrid {
                 metadata: TileMetadata {
                     tileset_index: Some(1),
                     land_type: LandType::Clear.as_index(),
-                    yr_cell_land_type: LandType::Clear.as_index(),
                     slope_type,
                     template_height,
-                    terrain_class: TerrainClass::Clear,
                     radar_left: [slope_type, 1, 2],
                     radar_right: [slope_type, 3, 4],
                     ..TileMetadata::default()
@@ -407,8 +405,7 @@ pub(super) fn build_destroyable_cliff_catalog(
         .slope_set_pieces
         .and_then(|set| td.lookup.bounds().get(usize::from(set)))?
         .start;
-    let mut warned_unknown_land_types = HashSet::new();
-    let mut load_template = |tile_id: u16| -> Option<SparseTileTemplate> {
+    let load_template = |tile_id: u16| -> Option<SparseTileTemplate> {
         let filename = td.lookup.filename(i32::from(tile_id))?;
         let bytes = assets.get(filename)?;
         let tmp = TmpFile::from_bytes(&bytes).ok()?;
@@ -431,7 +428,6 @@ pub(super) fn build_destroyable_cliff_catalog(
                             sub_tile,
                             variant: 0,
                         },
-                        &mut warned_unknown_land_types,
                     ),
                     accepts_smudge: td.lookup.is_morphable(tile_id),
                     allows_tiberium: td.lookup.allows_tiberium(tile_id),
@@ -486,17 +482,11 @@ fn recalc_dynamic_tile_attributes(
     cell.filled_clear = false;
     cell.tileset_index = metadata.tileset_index;
     cell.land_type = metadata.land_type;
-    cell.yr_cell_land_type = metadata.yr_cell_land_type;
     cell.template_height = metadata.template_height;
     cell.height_in_pixels = metadata.height_in_pixels;
     cell.render_offset_x = metadata.render_offset_x;
     cell.render_offset_y = metadata.render_offset_y;
-    cell.terrain_class = metadata.terrain_class;
     cell.speed_costs = metadata.speed_costs;
-    cell.is_water = metadata.is_water;
-    cell.is_cliff_like = metadata.is_cliff_like;
-    cell.is_rough = metadata.is_rough;
-    cell.is_road = metadata.is_road;
     cell.accepts_smudge = prototype.accepts_smudge;
     cell.allows_tiberium = prototype.allows_tiberium;
     cell.variant = 0;
@@ -505,8 +495,6 @@ fn recalc_dynamic_tile_attributes(
     cell.base_ground_walk_blocked = metadata.ground_blocked;
     cell.base_build_blocked = metadata.build_blocked;
     cell.base_land_type = metadata.land_type;
-    cell.base_yr_cell_land_type = metadata.yr_cell_land_type;
-    cell.base_terrain_class = metadata.terrain_class;
     cell.base_speed_costs = metadata.speed_costs;
     cell.ground_walk_blocked = metadata.ground_blocked || cell.terrain_object_blocks;
     cell.zone_type = recalc_zone_type(

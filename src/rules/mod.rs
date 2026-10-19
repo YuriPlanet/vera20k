@@ -149,6 +149,7 @@ mod radial_indicator_tests;
 pub mod recoil;
 pub mod secret_lab;
 pub mod retail_sources;
+pub(crate) mod rules_type_references;
 pub mod ruleset;
 pub mod shp_vehicle_sequence;
 pub mod smudge_type;

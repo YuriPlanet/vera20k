@@ -12,8 +12,8 @@
 //!
 //! Reached through `carve_driver`, which runs on the two island map types.
 
+use crate::map::playfield::PlayfieldBounds;
 use crate::map::rmg::grid::RmgGrid;
-use crate::map::rmg::preview::Playfield;
 use crate::map::rmg::scratch::RmgScratch;
 use crate::map::rmg::tiles::TileIds;
 
@@ -121,7 +121,7 @@ pub fn rect_is_carveable(
     grid: &mut RmgGrid,
     scratch: &RmgScratch,
     ids: &TileIds,
-    playfield: &Playfield,
+    playfield: &PlayfieldBounds,
     rect: (i32, i32, i32, i32),
     region: i32,
     lower_region: i32,
@@ -151,7 +151,12 @@ pub fn rect_is_carveable(
         let Some(cell) = grid.get(x, y) else {
             return false;
         };
-        if !playfield.contains_raised(cx, cy, cell.level as i8, cell.slope) {
+        if !playfield.contains_height_aware_packed(
+            i32::from(cx),
+            i32::from(cy),
+            cell.level as i8,
+            cell.slope,
+        ) {
             return false;
         }
     }

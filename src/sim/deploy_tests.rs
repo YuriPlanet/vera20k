@@ -577,8 +577,6 @@ fn deploy_mcv_rejects_sloped_foundation_cell() {
 fn deploy_mcv_rejects_nonbuildable_land_type_foundation_cell() {
     let terrain = mcv_deploy_terrain_with(|cell| {
         cell.land_type = crate::sim::pathfinding::passability::LandType::Water.as_index();
-        cell.yr_cell_land_type = cell.land_type;
-        cell.is_water = true;
     });
 
     let (applied, mcv_remains, sound_count) = deploy_mcv_with_terrain(terrain);
@@ -1798,7 +1796,7 @@ fn a_transport_may_not_unload_on_or_beside_a_bridge_on_human_water_or_in_a_build
     };
     let water = |cell: &mut ResolvedTerrainCell, here: (u16, u16)| {
         if here == (20, 22) {
-            cell.yr_cell_land_type = crate::rules::terrain_rules::LandType::Water.as_index();
+            cell.land_type = crate::rules::terrain_rules::LandType::Water.as_index();
         }
     };
     let plain = |_: &mut ResolvedTerrainCell, _: (u16, u16)| {};

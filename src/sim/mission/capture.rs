@@ -9,7 +9,6 @@
 //! with nothing to capture hunting.
 
 use crate::map::entities::EntityCategory;
-use crate::rules::object_type::Ability;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::{TargetKind, veterancy};
@@ -63,12 +62,7 @@ pub(crate) fn mission_capture(
         && sim
             .object_type(entity.type_ref(), rules)
             .is_some_and(|object| {
-                object.c4
-                    || veterancy::has_weapon_ability(
-                        entity.veterancy.rank_kind(),
-                        object,
-                        Ability::C4,
-                    )
+                veterancy::holds_c4(entity.veterancy.rank_kind(), object)
                     || object.engineer
                     || object.occupier
                     || object.assaulter

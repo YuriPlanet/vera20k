@@ -20,8 +20,8 @@ fn tube_hierarchy_restore_prepares_detached_dummy_then_publishes_terminal_fields
                     c.zone_type = crate::map::resolved_terrain::zone_class::OUTSIDE;
                 }
                 if [(1, 16), (2, 16), (3, 16)].contains(&(x, y)) {
-                    c.yr_cell_land_type = 10;
-                    c.base_yr_cell_land_type = 10;
+                    c.land_type = 10;
+                    c.base_land_type = 10;
                 }
                 c
             })

@@ -291,7 +291,7 @@ fn receiver_records_an_impassable_current_cell() {
             .unwrap()
             .cell_mut(10, 10)
             .unwrap();
-        cell.yr_cell_land_type = 2;
+        cell.land_type = 2;
         cell.speed_costs.foot = Some(0);
         cell.base_speed_costs.foot = Some(0);
     }
@@ -516,7 +516,7 @@ fn first_limbo_runs_the_infantry_stop_driver() {
             .unwrap()
             .cell_mut(10, 10)
             .unwrap();
-        cell.yr_cell_land_type = 2;
+        cell.land_type = 2;
         cell.speed_costs.foot = Some(0);
         cell.base_speed_costs.foot = Some(0);
     }

@@ -5,7 +5,7 @@
 use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid};
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
-use crate::rules::terrain_rules::{SpeedCostProfile, TerrainClass};
+use crate::rules::terrain_rules::SpeedCostProfile;
 use crate::sim::command::Command;
 use crate::sim::mission::{MissionId, MissionType};
 use crate::sim::passenger::PassengerRole;
@@ -79,12 +79,7 @@ fn water_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
     let mut cell = clear_cell(rx, ry);
     let water = LandType::Water.as_index();
     cell.land_type = water;
-    cell.yr_cell_land_type = water;
     cell.base_land_type = water;
-    cell.base_yr_cell_land_type = water;
-    cell.is_water = true;
-    cell.terrain_class = TerrainClass::Water;
-    cell.base_terrain_class = TerrainClass::Water;
     let costs = SpeedCostProfile {
         foot: Some(0),
         track: Some(0),
@@ -179,7 +174,8 @@ impl Fixture {
                 .unwrap()
                 .cell(cell.0, cell.1)
                 .unwrap()
-                .is_water;
+                .land_type()
+                == LandType::Water.as_index();
             let pax = if water {
                 // Supply already-limbo cargo for the landing-craft prestate.
                 // Ordinary Foot Unlimbo correctly refuses this water row;
@@ -322,8 +318,8 @@ impl Fixture {
 }
 
 /// Drive4B20CD..4B2115 retires the arrival track before Unit PerCell739EC0
-/// can attach a vehicle (73A6E8..73A793). Boarding at a cell boundary in the
-/// late passenger phase instead retains that track across Limbo/Unlimbo.
+/// attaches a vehicle (73A6E8..73A793), so no track survives its Limbo and
+/// Unlimbo.
 #[test]
 fn driven_vehicle_boards_at_arrival_and_unloads_at_the_moved_transport() {
     let mut fx = Fixture::new(|_, _| false);
@@ -494,8 +490,7 @@ fn vehicle_unload_republishes_threat_and_foot_coefficient_before_movement() {
         Some(7)
     );
     // This component comparison supplies physical arrival after the native
-    // Enter order. Mobile infantry attaches at PerCellProcess519630; the
-    // later passenger frame phase is no longer an arrival substitute.
+    // Enter order. Mobile infantry attaches at PerCellProcess519630.
     let arrival = crate::sim::movement::ground_pose::position_world_coord(
         &fx.sim.substrate.entities.get(transport).unwrap().position,
     );
@@ -515,7 +510,6 @@ fn vehicle_unload_republishes_threat_and_foot_coefficient_before_movement() {
     entity
         .mission
         .set_current_for_test(MissionId::from_known(MissionType::Enter), 0);
-    crate::sim::passenger::begin_boarding(entity, transport);
     fx.sim
         .per_cell_process(
             passenger,

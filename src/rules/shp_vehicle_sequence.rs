@@ -434,7 +434,6 @@ mod tests {
             building_body_ranges: [[0, 1, 0]; 4],
             buildup: None,
             foundation: None,
-            to_overlay: None,
             bib_shape: None,
             palette: None,
             sequence: None,

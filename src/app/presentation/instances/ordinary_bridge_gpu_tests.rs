@@ -417,10 +417,10 @@ impl Probe {
             } else {
                 LandType::Road
             };
-            assert_eq!(cell.yr_cell_land_type, land.as_index(), "{phase} {x},{row}");
+            assert_eq!(cell.land_type, land.as_index(), "{phase} {x},{row}");
             cells.push(json!({"coord":[x,row],"level":cell.level,
                 "tile":cell.final_tile_index,"subtile":cell.final_sub_tile,
-                "land":cell.yr_cell_land_type,"raw_bridge_flags":cell.bridge_facts.raw_flags}));
+                "land":cell.land_type,"raw_bridge_flags":cell.bridge_facts.raw_flags}));
         }
         let name = &self.names[&id];
         assert_eq!(
@@ -566,7 +566,7 @@ impl Probe {
                     [255; 4]
                 } else {
                     opaque += 1;
-                    let rgb = self.palette.colors[usize::from(index)];
+                    let rgb = self.palette.color(index);
                     // Existing native-backed LightConvert owner supplies the
                     // expected source color. Clear tactical A is 127
                     // (006D3F9F), matching palette_light.wgsl; A=0 selects the

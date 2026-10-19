@@ -244,39 +244,41 @@ pub(super) fn build_world_instances(
     // Anim/System/Particle bodies then share one retained Display traversal.
     instances::build_building_anim_instances(state, &mut planned_objects, &display_order);
     let mut particle_draws = state.diagnostic_presentation_ms().map(|_| Vec::new());
-    if let Some(runtime) = state.match_state.sim_runtime.as_ref() {
+    let display_inputs = state.match_state.sim_runtime.as_ref().map(|runtime| {
         let presentation = &state.match_state.match_presentation;
         let (x, y, width, height) = crate::app::input::camera::tactical_viewport_px(state);
         let local_owner = crate::app::input::commands::preferred_local_owner_name(state)
             .and_then(|name| runtime.simulation.interner.get(&name));
-        particle_draws = instances::build_display_effect_instances(
-            &instances::DisplayEffectInputs {
-                sim: &runtime.simulation,
-                rules: &runtime.resources.rules,
-                camera: [
-                    state.match_state.input.camera_x,
-                    state.match_state.input.camera_y,
-                ],
-                render_size: [state.render_width(), state.render_height()],
-                tactical: [x, y, width, height],
-                zoom: state.match_state.input.zoom_level,
-                axis: instances::depth_axis(state),
-                atlas: presentation.sprite_atlas.as_ref(),
-                detail: &presentation.detail,
-                detail_level: presentation.in_game_options.detail_level,
-                lighting: presentation.lighting.grid(),
-                house_colors: &presentation.house_color_map,
-                hidden_super_anims: &presentation.hidden_super_anims,
-                show_hidden: presentation.in_game_options.show_hidden,
-                local_owner,
-                observe_particles: state.diagnostic_presentation_ms().is_some(),
-            },
-            &mut planned_objects,
-            &display_order,
-        );
+        instances::DisplayEffectInputs {
+            sim: &runtime.simulation,
+            rules: &runtime.resources.rules,
+            camera: [
+                state.match_state.input.camera_x,
+                state.match_state.input.camera_y,
+            ],
+            render_size: [state.render_width(), state.render_height()],
+            tactical: [x, y, width, height],
+            zoom: state.match_state.input.zoom_level,
+            axis: instances::depth_axis(state),
+            atlas: presentation.sprite_atlas.as_ref(),
+            detail: &presentation.detail,
+            detail_level: presentation.in_game_options.detail_level,
+            lighting: presentation.lighting.grid(),
+            house_colors: &presentation.house_color_map,
+            hidden_super_anims: &presentation.hidden_super_anims,
+            show_hidden: presentation.in_game_options.show_hidden,
+            local_owner,
+            observe_particles: state.diagnostic_presentation_ms().is_some(),
+        }
+    });
+    if let Some(input) = display_inputs.as_ref() {
+        particle_draws =
+            instances::build_display_effect_instances(input, &mut planned_objects, &display_order);
     }
     instances::build_projectile_visual_instances(state, &mut planned_objects, &display_order);
-    instances::build_parachute_instances(state, &mut planned_objects, &parachute_body_depths);
+    if let Some(input) = display_inputs.as_ref() {
+        instances::build_parachute_instances(input, &mut planned_objects, &parachute_body_depths);
+    }
 
     // Every dynamic pose consumer, including Bullet46B0C0, has now populated
     // the shared page. One upload precedes this frame's draw submission.
@@ -616,7 +618,7 @@ pub(super) fn build_debug_instances(state: &AppState, sw: f32, sh: f32) -> Debug
 /// Update minimap unit dots for the current frame.
 pub(super) fn update_minimap(state: &mut AppState, local_owner: &Option<String>) {
     let (playfield_bounds, playfield_revision) =
-        crate::app::input::camera::sync_playfield_presentation_bounds(state);
+        crate::app::input::camera::playfield_presentation_authority(state);
     let needs_playfield_reconcile = state
         .match_state
         .match_presentation
@@ -747,6 +749,26 @@ pub(super) fn build_ui_instances(state: &AppState, wall_ms: u32) -> UiInstances 
         zoom: if interleave_enabled { 1. } else { view.zoom },
         ..view
     };
+    // The shroud A-buffer sample DSurface4C0750's dashed lines read.
+    let mut shroud_alpha = |point: [i32; 2]| -> u8 {
+        if state.match_state.sandbox_full_visibility {
+            return 127;
+        }
+        state
+            .match_state
+            .match_presentation
+            .shroud_buffer
+            .as_ref()
+            .and_then(|buffer| {
+                buffer.sample_world(
+                    (point[0] + camera[0] - view.clip[0]) as f32,
+                    (point[1] + camera[1] - view.clip[1]) as f32,
+                    input.camera_x,
+                    input.camera_y,
+                )
+            })
+            .unwrap_or(127)
+    };
     let mut tactical_line_calls = Vec::new();
     let mut after_entity = |id, instances: &mut Vec<SpriteInstance>| {
         use crate::app::presentation::airstrike_lines::{TacticalLineCall, drain_opaque};
@@ -778,6 +800,7 @@ pub(super) fn build_ui_instances(state: &AppState, wall_ms: u32) -> UiInstances 
             } else {
                 None
             },
+            &mut shroud_alpha,
         ),
     );
     target_line.extend(planning_highlights);
@@ -803,25 +826,7 @@ pub(super) fn build_ui_instances(state: &AppState, wall_ms: u32) -> UiInstances 
             &state.match_state.match_presentation.house_color_map,
             preferred_local_owner(state).as_deref(),
             view,
-            |point| {
-                if state.match_state.sandbox_full_visibility {
-                    return 127;
-                }
-                state
-                    .match_state
-                    .match_presentation
-                    .shroud_buffer
-                    .as_ref()
-                    .and_then(|buffer| {
-                        buffer.sample_world(
-                            (point[0] + camera[0] - view.clip[0]) as f32,
-                            (point[1] + camera[1] - view.clip[1]) as f32,
-                            input.camera_x,
-                            input.camera_y,
-                        )
-                    })
-                    .unwrap_or(127)
-            },
+            &mut shroud_alpha,
         );
 
     UiInstances {

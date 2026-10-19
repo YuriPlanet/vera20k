@@ -1082,8 +1082,19 @@ pub(crate) struct NativePaletteProbe {
     pub size: [u32; 2],
 }
 
-/// Real loose SHP decoding and palette registration, laid out on an atlas page.
+/// The synthetic palette `tools/palette_oracle` built its native LightConvert
+/// fixtures from: RGB(index, index * 73 mod 256, 255 - index).
+pub(crate) fn native_probe_rgb(index: u8) -> [u8; 3] {
+    [index, index.wrapping_mul(73), 255 - index]
+}
+
+/// The probe page in the native fixtures' palette.
 pub(crate) fn native_palette_probe_page() -> NativePaletteProbe {
+    palette_probe_page(&Palette::from_rgb(native_probe_rgb))
+}
+
+/// Real loose SHP decoding and palette registration, laid out on an atlas page.
+pub(crate) fn palette_probe_page(palette: &Palette) -> NativePaletteProbe {
     let directory = StoredFrameTestDirectory::new();
     let mut bytes = Vec::new();
     for value in [0u16, 256, 1, 1] {
@@ -1098,17 +1109,6 @@ pub(crate) fn native_palette_probe_page() -> NativePaletteProbe {
     bytes.extend(0..=255u8);
     std::fs::write(directory.0.join("PALPROBE.SHP"), bytes).unwrap();
     let assets = AssetManager::from_loose_root_for_test(&directory.0);
-    let palette = Palette {
-        colors: std::array::from_fn(|i| {
-            let i = i as u8;
-            crate::assets::pal_file::Color {
-                r: i,
-                g: i.wrapping_mul(73),
-                b: 255 - i,
-                a: if i == 0 { 0 } else { 255 },
-            }
-        }),
-    };
     let key = ShpSpriteKey {
         palette_context: ShpPaletteContext::SelectedScheme,
         type_id: "PALPROBE".into(),
@@ -1119,7 +1119,7 @@ pub(crate) fn native_palette_probe_page() -> NativePaletteProbe {
     let source = load_shp_source(&assets, "PALPROBE", None, "tem", "TEMPERATE", None, None)
         .expect("probe SHP decodes");
     let mut palettes = ShpPalettes::default();
-    let sprite = render_shp_frame(&source, &palette, true, &key, None, &mut palettes).unwrap();
+    let sprite = render_shp_frame(&source, palette, true, &key, None, &mut palettes).unwrap();
     assert_eq!(sprite.indices(), (0..=255u8).collect::<Vec<_>>());
     let size = [262, 3];
     let mut indices = vec![0; size[0] * size[1]];
@@ -1128,7 +1128,7 @@ pub(crate) fn native_palette_probe_page() -> NativePaletteProbe {
     let start = size[0] + 3;
     indices[start..start + 256].copy_from_slice(&sprite.indices());
     rgba[start * 4..(start + 256) * 4]
-        .copy_from_slice(&source.shp.frame_to_rgba(0, &palette).unwrap());
+        .copy_from_slice(&source.shp.frame_to_rgba(0, palette).unwrap());
     assert_eq!(&indices[265..521], (0..=255u8).collect::<Vec<_>>());
     NativePaletteProbe {
         palette_row: palettes.colors[sprite.palette as usize].clone(),
@@ -1370,11 +1370,8 @@ fn refreshed_sprites_upload_to_a_growth_page_and_leave_resident_ones_in_place() 
         ],
         extended: false,
     };
-    let palette = |color: fn(u8) -> crate::assets::pal_file::Color| Palette {
-        colors: std::array::from_fn(|index| color(index as u8)),
-    };
-    let resident_palette = palette(|i| crate::assets::pal_file::Color::rgb(i, 255 - i, 7));
-    let new_palette = palette(|i| crate::assets::pal_file::Color::rgb(3, i, i / 2));
+    let resident_palette = Palette::from_rgb(|i| [i, 255 - i, 7]);
+    let new_palette = Palette::from_rgb(|i| [3, i, i / 2]);
     let mut palettes = ShpPalettes::default();
     let resident_row = palettes.row(&resident_palette).unwrap();
     let mut atlas = pack_sprites(

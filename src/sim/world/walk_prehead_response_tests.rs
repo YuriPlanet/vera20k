@@ -103,8 +103,7 @@ fn fixture(row: &Value) -> (Simulation, RuleSet, OverlayTypeRegistry, u64, Optio
         cell.level = 2;
         cell.slope_type = 1;
     }
-    terrain.cell_mut(9, 10).unwrap().yr_cell_land_type =
-        input["current_land"].as_u64().unwrap_or(0) as u8;
+    terrain.cell_mut(9, 10).unwrap().land_type = input["current_land"].as_u64().unwrap_or(0) as u8;
     let candidate = terrain.cell_mut(10, 10).unwrap();
     candidate.level = input["candidate_level"].as_i64().unwrap_or(2) as u8;
     candidate.bridge_facts.raw_flags = input["candidate_flags"].as_u64().unwrap_or(0) as u32;

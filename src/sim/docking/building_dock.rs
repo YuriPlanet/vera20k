@@ -956,11 +956,15 @@ fn break_depot_contact(
     }
 }
 
-/// The pending entry (`Unit+0x500`): the building a Foot waits to enter,
-/// independent of its Radio contacts. The Techno constructor clears it
-/// (`0x006F310C`).
+/// The pending entry (QueueUpToEnter, `Unit+0x500`): the Techno a Foot waits
+/// to enter, independent of its Radio contacts. The Techno constructor
+/// clears it (`0x006F310C`).
 ///
-/// - [`Self::install`]: the class destination setters' `UnitRepair=` arms
+/// - [`Self::install`]: the class destination setters' Enter arms: the
+///   Infantry setter's for a Unit or Building already in radio contact
+///   (`0x0051AC6D..0x0051ACC5`); the Unit setter's for a Unit or a
+///   `UnitAbsorb=` building while it holds no contact (`0x00741C4F..
+///   0x00741CCC`, `0x00741CE5..0x00741D0D`); and the `UnitRepair=` arms
 ///   (`UnitClass::Set_Destination` `0x00741D9F`, `AircraftClass::
 ///   Set_Destination` `0x0041ABC4`), for a building holding no free slot.
 /// - [`Self::clear`]: `FootClass::TryEnterTransport`'s admission, refusal
@@ -977,14 +981,15 @@ fn break_depot_contact(
 pub(crate) struct PendingEntry(Option<u64>);
 
 impl PendingEntry {
-    /// The building waited for.
+    /// The Techno waited for.
     pub(crate) const fn get(self) -> Option<u64> {
         self.0
     }
 
-    /// A class destination setter's store of a full `UnitRepair=` building.
-    pub(crate) fn install(&mut self, building: u64) {
-        self.0 = Some(building);
+    /// A class destination setter's store of the Techno it waits for (see the
+    /// type).
+    pub(crate) fn install(&mut self, target: u64) {
+        self.0 = Some(target);
     }
 
     /// Drop the entry (see the type).

@@ -23,12 +23,11 @@ pub(crate) struct LoadCellRecalcState<'a> {
     resident_bridge: Option<&'a BridgeRecalcCatalog>,
     terrain_rules: Option<&'a TerrainRules>,
     overlay_types: &'a OverlayTypeRegistry,
-    playfield: Option<Playfield>,
+    playfield: Option<PlayfieldBounds>,
     pub(super) lat_config: Option<lat::LatConfig>,
     pub(super) slope_config: Option<lat::SlopeFixupConfig>,
     pub(super) cliff_back_impassability: u8,
     metadata_cache: HashMap<TileKey, TileMetadata>,
-    warned_unknown_land_types: HashSet<u8>,
     pub(super) terrain_anim_latched: Vec<bool>,
     pixel_conversion_bounds: PixelConversionBounds,
 }
@@ -54,12 +53,11 @@ impl<'a> LoadCellRecalcState<'a> {
             resident_bridge: None,
             terrain_rules: Some(terrain_rules),
             overlay_types,
-            playfield: Some(Playfield::from_header(&map.header)),
+            playfield: Some(PlayfieldBounds::from_map_header(&map.header)),
             lat_config,
             slope_config,
             cliff_back_impassability,
             metadata_cache: HashMap::new(),
-            warned_unknown_land_types: HashSet::new(),
             terrain_anim_latched: vec![false; cell_count],
             pixel_conversion_bounds,
         }
@@ -81,7 +79,6 @@ impl<'a> LoadCellRecalcState<'a> {
             slope_config: None,
             cliff_back_impassability: 0,
             metadata_cache: HashMap::new(),
-            warned_unknown_land_types: HashSet::new(),
             terrain_anim_latched: vec![false; cell_count],
             pixel_conversion_bounds: PixelConversionBounds::default(),
         }
@@ -149,7 +146,6 @@ impl<'a> LoadCellRecalcState<'a> {
                     sub_tile,
                     variant: 0,
                 },
-                &mut self.warned_unknown_land_types,
             )));
         }
 
@@ -175,20 +171,11 @@ impl<'a> LoadCellRecalcState<'a> {
             resident_bridge: Some(catalog),
             terrain_rules: Some(&catalog.terrain_rules),
             overlay_types,
-            playfield: bounds.map(|bounds| {
-                Playfield::from_local_size(
-                    bounds.base,
-                    bounds.off_fc,
-                    bounds.off_100,
-                    bounds.off_104,
-                    bounds.off_108,
-                )
-            }),
+            playfield: bounds,
             lat_config: catalog.lat_config.clone(),
             slope_config: catalog.slope_config,
             cliff_back_impassability: catalog.cliff_back_impassability,
             metadata_cache: HashMap::new(),
-            warned_unknown_land_types: HashSet::new(),
             terrain_anim_latched: Vec::new(),
             pixel_conversion_bounds: PixelConversionBounds::default(),
         }
@@ -219,23 +206,14 @@ impl<'a> LoadCellRecalcState<'a> {
     }
 
     fn clear_land_metadata(&self) -> TileMetadata {
-        let mut metadata = TileMetadata::default();
-        if let Some(semantics) = self
-            .terrain_rules
-            .and_then(|rules| rules.semantics_for_land_type(LandType::Clear.as_index()))
-        {
-            metadata.land_type = LandType::Clear.as_index();
-            metadata.yr_cell_land_type = LandType::Clear.as_index();
-            metadata.terrain_class = semantics.terrain_class;
-            metadata.speed_costs = semantics.speed_costs;
-            metadata.is_water = semantics.water;
-            metadata.is_cliff_like = semantics.cliff_like;
-            metadata.is_rough = semantics.rough;
-            metadata.is_road = semantics.road;
-            metadata.ground_blocked = semantics.ground_blocked;
-            metadata.build_blocked = !semantics.buildable;
+        let clear = land_row(self.terrain_rules, LandType::Clear);
+        TileMetadata {
+            land_type: LandType::Clear.as_index(),
+            speed_costs: clear.speed_costs,
+            ground_blocked: clear.ground_blocked,
+            build_blocked: !clear.buildable,
+            ..TileMetadata::default()
         }
-        metadata
     }
 }
 
@@ -527,7 +505,7 @@ impl ResolvedTerrainGrid {
 
             if valid_entry {
                 let cell = &self.cells[index];
-                if cell.yr_cell_land_type == YR_CELL_LAND_TUNNEL
+                if cell.land_type == LandType::Tunnel.as_index()
                     && self.native_tube_indices[index]
                         .admits_automatic_construction(self.tube_facts.len())
                     && let Some(direction) = state.automatic_tube_direction(cell.final_tile_index)
@@ -725,37 +703,20 @@ impl ResolvedTerrainGrid {
         if state.cliff_back_impassability != 2 || (!apply_base && !apply_current) {
             return None;
         }
-        let rock = state
-            .terrain_rules
-            .and_then(|rules| rules.semantics_for_land_type(LandType::Rock.as_index()))
-            .copied();
+        // The Rock row, as a TMP Rock cell takes it.
+        let rock = land_row(state.terrain_rules, LandType::Rock);
         let cell = &mut self.cells[index];
-        let terrain_class = rock.map_or(LandType::Rock.terrain_class(), |row| row.terrain_class);
-        let mut speed_costs = rock.map_or_else(SpeedCostProfile::default, |row| row.speed_costs);
-        if rock.is_none() {
-            speed_costs.wheel = Some(0);
-        }
-        let ground_blocked = rock.is_none_or(|row| row.ground_blocked);
-        let build_blocked = rock.is_none_or(|row| !row.buildable);
         if apply_base {
             cell.base_land_type = LandType::Rock.as_index();
-            cell.base_yr_cell_land_type = LandType::Rock.as_index();
-            cell.base_terrain_class = terrain_class;
-            cell.base_speed_costs = speed_costs;
-            cell.base_ground_walk_blocked = ground_blocked;
-            cell.base_build_blocked = build_blocked;
+            cell.base_speed_costs = rock.speed_costs;
+            cell.base_ground_walk_blocked = rock.ground_blocked;
+            cell.base_build_blocked = !rock.buildable;
         }
         if apply_current {
             cell.land_type = LandType::Rock.as_index();
-            cell.yr_cell_land_type = LandType::Rock.as_index();
-            cell.terrain_class = terrain_class;
-            cell.speed_costs = speed_costs;
-            cell.is_water = false;
-            cell.is_cliff_like = true;
-            cell.is_rough = false;
-            cell.is_road = false;
+            cell.speed_costs = rock.speed_costs;
         }
-        apply_current.then_some(ground_blocked)
+        apply_current.then_some(rock.ground_blocked)
     }
 
     fn finish_authored_load_cell_projection(
@@ -808,7 +769,12 @@ impl ResolvedTerrainGrid {
         cell.ground_walk_blocked =
             land_ground_blocked || cell.terrain_object_blocks || cell.overlay_blocks;
         cell.outside_playfield = state.playfield.is_some_and(|playfield| {
-            !playfield.contains_raised(cell.rx, cell.ry, cell.level as i8, cell.slope_type)
+            !playfield.contains_height_aware_packed(
+                i32::from(cell.rx),
+                i32::from(cell.ry),
+                cell.level as i8,
+                cell.slope_type,
+            )
         });
         cell.zone_type = recalc_zone_type(
             cell.outside_playfield,

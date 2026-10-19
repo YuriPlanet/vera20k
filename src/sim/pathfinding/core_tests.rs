@@ -3,9 +3,9 @@
 //! Extracted from pathfinding.rs to stay under the 400-line limit.
 
 use super::*;
-use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid, YR_CELL_LAND_TUNNEL};
+use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid};
 use crate::map::tube_facts::{TubeFact, TubeId};
-use crate::rules::terrain_rules::{SpeedCostProfile, TerrainClass};
+use crate::rules::terrain_rules::{LandType, SpeedCostProfile};
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::pathfinding::zone_hierarchy::{MarkedZones, ZoneLevelGraph, ZoneRecord};
 use crate::sim::pathfinding::zone_map::ZoneId;
@@ -201,7 +201,7 @@ fn a_tube_edge_costs_the_cells_to_its_exit_not_its_path_length() {
         }
     }
     let start_idx = 5; // (0, 1)
-    cells[start_idx].yr_cell_land_type = YR_CELL_LAND_TUNNEL;
+    cells[start_idx].land_type = LandType::Tunnel.as_index();
     cells[start_idx].tube_index = Some(TubeId(0));
     let terrain = ResolvedTerrainGrid::from_cells_with_tubes(
         5,
@@ -577,7 +577,7 @@ fn test_from_resolved_terrain_uses_resolved_blocking_flags() {
         vec![
             make_resolved_cell(0, 0),
             ResolvedTerrainCell {
-                is_water: true,
+                land_type: LandType::Water.as_index(),
                 ground_walk_blocked: true,
                 ..make_resolved_cell(1, 0)
             },
@@ -636,14 +636,12 @@ fn test_path_grid_rebuild_closes_destroyed_bridge_deck() {
                 ground_walk_blocked: true,
                 base_build_blocked: true,
                 base_land_type: 0,
-                base_yr_cell_land_type: 0,
-                base_terrain_class: Default::default(),
                 base_speed_costs: Default::default(),
                 bridge_walkable: true,
                 bridge_transition: true,
                 bridge_deck_level: 4,
                 has_bridge_deck: true,
-                is_water: true,
+                land_type: LandType::Water.as_index(),
                 ..make_resolved_cell(2, 0)
             },
             ResolvedTerrainCell {
@@ -707,13 +705,11 @@ fn test_pathcell_bridge_walkable_preserved_for_bridgeheads_across_rebuild() {
                 ground_walk_blocked: true,
                 base_build_blocked: true,
                 base_land_type: 0,
-                base_yr_cell_land_type: 0,
-                base_terrain_class: Default::default(),
                 base_speed_costs: Default::default(),
                 bridge_walkable: true,
                 bridge_deck_level: 4,
                 has_bridge_deck: true,
-                is_water: true,
+                land_type: LandType::Water.as_index(),
                 ..make_resolved_cell(2, 0)
             },
             ResolvedTerrainCell {
@@ -952,7 +948,7 @@ fn a_height_change_costs_the_same_as_a_flat_step() {
 #[test]
 fn path_grid_preserves_low_bridge_tube_metadata() {
     let mut cell = make_resolved_cell(0, 0);
-    cell.yr_cell_land_type = YR_CELL_LAND_TUNNEL;
+    cell.land_type = LandType::Tunnel.as_index();
     cell.tube_index = Some(TubeId(7));
     let terrain = ResolvedTerrainGrid::from_cells(1, 1, vec![cell]);
 
@@ -965,7 +961,7 @@ fn path_grid_preserves_low_bridge_tube_metadata() {
 #[test]
 fn astar_uses_explicit_nonzero_tube_edge() {
     let mut cells: Vec<_> = (0..5).map(|x| make_resolved_cell(x, 0)).collect();
-    cells[0].yr_cell_land_type = YR_CELL_LAND_TUNNEL;
+    cells[0].land_type = LandType::Tunnel.as_index();
     cells[0].tube_index = Some(TubeId(0));
     for cell in &mut cells[1..4] {
         cell.ground_walk_blocked = true;
@@ -988,7 +984,7 @@ fn astar_uses_explicit_nonzero_tube_edge() {
 #[test]
 fn astar_rejects_zero_step_auto_shell_tube_edge() {
     let mut cells: Vec<_> = (0..5).map(|x| make_resolved_cell(x, 0)).collect();
-    cells[0].yr_cell_land_type = YR_CELL_LAND_TUNNEL;
+    cells[0].land_type = LandType::Tunnel.as_index();
     cells[0].tube_index = Some(TubeId(0));
     for cell in &mut cells[1..4] {
         cell.ground_walk_blocked = true;
@@ -1015,7 +1011,7 @@ fn astar_walks_stock_low_bridge_cells_without_explicit_tubes() {
     let mut cells: Vec<_> = (0..5).map(|x| make_resolved_cell(x, 0)).collect();
     let mut tubes = Vec::new();
     for cell in &mut cells[1..4] {
-        cell.yr_cell_land_type = YR_CELL_LAND_TUNNEL;
+        cell.land_type = LandType::Tunnel.as_index();
         cell.tube_index = Some(TubeId(tubes.len() as u16));
         tubes.push(TubeFact::auto_low_bridge((cell.rx, cell.ry), 2));
     }
@@ -1124,7 +1120,7 @@ fn astar_marker_overlay_does_not_apply_to_direction8_tube_edge() {
         }
     }
     let start_idx = 5; // (0, 1)
-    cells[start_idx].yr_cell_land_type = YR_CELL_LAND_TUNNEL;
+    cells[start_idx].land_type = LandType::Tunnel.as_index();
     cells[start_idx].tube_index = Some(TubeId(0));
     let terrain = ResolvedTerrainGrid::from_cells_with_tubes(
         5,
@@ -1376,13 +1372,12 @@ fn make_water_channel_terrain() -> ResolvedTerrainGrid {
         for rx in 0..width {
             let is_water: bool = ry == 1;
             cells.push(ResolvedTerrainCell {
-                is_water,
-                ground_walk_blocked: is_water,
-                terrain_class: if is_water {
-                    TerrainClass::Water
+                land_type: if is_water {
+                    LandType::Water.as_index()
                 } else {
-                    TerrainClass::Clear
+                    LandType::Clear.as_index()
                 },
+                ground_walk_blocked: is_water,
                 speed_costs: if is_water {
                     // Water: ground blocked, Float/Hover/Amphibious passable.
                     SpeedCostProfile {
@@ -1438,7 +1433,7 @@ fn test_cliff_cells_remain_pathgrid_blocked() {
         vec![
             make_resolved_cell(0, 0),
             ResolvedTerrainCell {
-                is_cliff_like: true,
+                land_type: LandType::Rock.as_index(),
                 ..make_resolved_cell(1, 0)
             },
             make_resolved_cell(2, 0),
@@ -1601,7 +1596,7 @@ fn terrain_occupation_five_and_six_leave_one_subcell_for_infantry() {
 #[test]
 fn terrain_relaxation_never_reopens_a_cliff_cell() {
     let cliff_with_tree = ResolvedTerrainCell {
-        is_cliff_like: true,
+        land_type: LandType::Rock.as_index(),
         base_ground_walk_blocked: true,
         ..tree_cell(0, 0, 4)
     };

@@ -618,9 +618,6 @@ fn losing_robot_power_drops_water_hover_and_keeps_land_hover_alive() {
             .unwrap();
         terrain_cell.land_type = 2;
         terrain_cell.base_land_type = 2;
-        terrain_cell.yr_cell_land_type = 2;
-        terrain_cell.base_yr_cell_land_type = 2;
-        terrain_cell.is_water = true;
         run_until(&mut sim, &rules, &grid, 60, &mut events, |sim| {
             let tank = sim
                 .substrate

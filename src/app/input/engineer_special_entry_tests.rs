@@ -7,8 +7,15 @@ use crate::sim::mission::MissionType;
 use crate::sim::world::Simulation;
 
 fn scene(hospital: bool) -> (Simulation, RuleSet, u64, HoverTargetKindWithId) {
+    scene_with_repair_step(hospital, 20)
+}
+
+fn scene_with_repair_step(
+    hospital: bool,
+    repair_step: i32,
+) -> (Simulation, RuleSet, u64, HoverTargetKindWithId) {
     let ini = crate::sim::arena_fixture::clear_ground_ini(&format!(
-        "[General]\nIRepairStep=20\nIRepairRate=.001\n\
+        "[General]\nIRepairStep={repair_step}\nIRepairRate=.001\n\
          [Countries]\n0=Americans\n[InfantryTypes]\n0=ENGINEER\n[BuildingTypes]\n0=FACILITY\n\
          [ENGINEER]\nImage=GI\nStrength=75\nEngineer=yes\nSpeed=4\nCost=500\nSoylent=500\n\
          Locomotor={{4A582744-9839-11D1-B709-00A024DDAFD1}}\n\
@@ -64,7 +71,6 @@ fn step(sim: &mut Simulation, rules: &RuleSet) -> crate::sim::world::SimFrameOut
         None,
         33,
         crate::sim::world::TickLane::Ordinary,
-        None,
         Default::default(),
     )
     .unwrap()
@@ -321,6 +327,33 @@ fn destroying_a_hospital_cleans_up_its_hidden_patient() {
         }
     }
     panic!("patient never entered the hospital");
+}
+
+#[test]
+fn infantry_repair_tick_clamps_nonpositive_steps_to_one() {
+    use crate::sim::radio::{RadioMessage, RadioPayload, RadioResponse, transmit};
+
+    // Techno6F4D1C clamps the virtual InfantryType524790 getter result to1.
+    for repair_step in [0, -3] {
+        let (mut sim, rules, actor, hover) = scene_with_repair_step(true, repair_step);
+        let owner = sim.entities().get(actor).unwrap().owner();
+        let before = sim.houses[&owner].economy.credits();
+        assert_eq!(rules.general.infantry_repair_step, repair_step);
+        assert_eq!(
+            transmit(
+                &mut sim,
+                hover.stable_id,
+                actor,
+                RadioMessage::RepairTick,
+                RadioPayload::default(),
+                Some(&rules),
+                Default::default(),
+            ),
+            RadioResponse::Roger
+        );
+        assert_eq!(sim.entities().get(actor).unwrap().health.current(), 31);
+        assert_eq!(sim.houses[&owner].economy.credits(), before);
+    }
 }
 
 #[test]

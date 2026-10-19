@@ -20,7 +20,7 @@ use crate::app::loading::fresh_scenario::{
 #[cfg(test)]
 use crate::app::loading::init_helpers::load_rules_with_merged_ini;
 use crate::app::loading::init_helpers::{
-    build_tile_atlas, log_trigger_graph_diagnostics, parse_debug_spawn_units_env, theater_ext_for,
+    build_tile_atlas, parse_debug_spawn_units_env, theater_ext_for,
 };
 use crate::app::match_bootstrap::LoadingStartup;
 use crate::sim::scenario_bootstrap::{
@@ -36,9 +36,7 @@ use crate::app::presentation::lighting::{build_lighting_grid_from_view, derive_l
 use crate::assets::asset_manager::AssetManager;
 #[cfg(test)]
 use crate::assets::asset_manager::MediaArchiveMode;
-use crate::map::actions::ActionMap;
 use crate::map::basic::{BasicSection, BridgeDestroyabilityMode};
-use crate::map::events::EventMap;
 use crate::map::houses::{self, HouseColorMap, HouseRoster};
 use crate::map::lighting::{self, CellLightGrid, LightingConfig};
 use crate::map::map_file::MapFile;
@@ -47,10 +45,8 @@ use crate::map::resolved_terrain::{ResolvedTerrainGrid, scheduler_anim_roots};
 use crate::map::source::{
     LoadedMap, LoadedMapSource, load_map_by_name_or_path_with_assets, try_load_mmx,
 };
-use crate::map::terrain::{self, LocalBounds, TerrainGrid};
+use crate::map::terrain::{self, TerrainGrid};
 use crate::map::theater;
-use crate::map::trigger_graph::TriggerGraph;
-use crate::map::triggers::TriggerMap;
 use crate::map::waypoints;
 use crate::render::batch::BatchRenderer;
 use crate::render::bridge_atlas::BridgeAtlas;
@@ -133,7 +129,7 @@ fn refresh_generated_tiberium_presentation_frames(
 mod map_wall_owner_candidate_tests {
     use super::*;
     use crate::map::entities::EntityCategory;
-    use crate::rules::terrain_rules::TerrainClass;
+    use crate::rules::terrain_rules::LandType;
     use crate::sim::combat::Health;
     use crate::sim::components::BuildingUp;
     use crate::sim::game_entity::GameEntity;
@@ -318,7 +314,14 @@ mod map_wall_owner_candidate_tests {
                     let cell = terrain
                         .cell((origin.0 as i16 + dx) as u16, (origin.1 as i16 + dy) as u16)
                         .unwrap();
-                    assert_eq!((cell.level, cell.slope_type, cell.is_water), (2, 0, false));
+                    assert_eq!(
+                        (
+                            cell.level,
+                            cell.slope_type,
+                            cell.land_type == LandType::Water.as_index()
+                        ),
+                        (2, 0, false)
+                    );
                 }
             }
         }
@@ -513,16 +516,16 @@ mod map_wall_owner_candidate_tests {
             );
         }
         assert_eq!(
-            terrain.cell(1, 1).unwrap().terrain_class,
-            TerrainClass::Tiberium
+            terrain.cell(1, 1).unwrap().land_type,
+            LandType::Tiberium.as_index()
         );
         assert_eq!(
-            terrain.cell(2, 1).unwrap().terrain_class,
-            TerrainClass::Tiberium
+            terrain.cell(2, 1).unwrap().land_type,
+            LandType::Tiberium.as_index()
         );
         assert_eq!(
-            terrain.cell(4, 1).unwrap().terrain_class,
-            TerrainClass::Tiberium,
+            terrain.cell(4, 1).unwrap().land_type,
+            LandType::Tiberium.as_index(),
             "the unknown Terrain fixture starts with the same projected ore state"
         );
         overlays.take_dirty_cells();
@@ -567,16 +570,16 @@ mod map_wall_owner_candidate_tests {
         assert_eq!(overlays.cell(4, 1).overlay_id, Some(0));
         assert_eq!(overlays.cell(4, 1).overlay_data, 10);
         assert_eq!(
-            terrain.cell(1, 1).unwrap().terrain_class,
-            TerrainClass::Clear
+            terrain.cell(1, 1).unwrap().land_type,
+            LandType::Clear.as_index()
         );
         assert_eq!(
-            terrain.cell(2, 1).unwrap().terrain_class,
-            TerrainClass::Clear
+            terrain.cell(2, 1).unwrap().land_type,
+            LandType::Clear.as_index()
         );
         assert_eq!(
-            terrain.cell(4, 1).unwrap().terrain_class,
-            TerrainClass::Tiberium,
+            terrain.cell(4, 1).unwrap().land_type,
+            LandType::Tiberium.as_index(),
             "an unknown TerrainType leaves the resolved ore projection intact"
         );
         assert!(
@@ -1279,8 +1282,8 @@ mod map_wall_owner_candidate_tests {
             level_delay: 90,
             light_delay: 90,
             level_factor: 0.2,
-            light_factor: crate::util::fixed_math::sim_from_f32(0.1),
-            tint_factor: crate::util::fixed_math::sim_from_f32(1.0),
+            light_factor: crate::util::fixed_math::SimFixed::from_num(0.1_f32),
+            tint_factor: crate::util::fixed_math::SimFixed::from_num(1.0_f32),
             color: (0, 255, 0),
             site_warhead: "RadSite".to_string(),
         };
@@ -1502,7 +1505,8 @@ mod map_wall_owner_candidate_tests {
 }
 
 /// Scenario/runtime inputs produced by loading a map (F11): everything the
-/// sim runtime, trigger machinery, and match view facts consume.
+/// sim runtime and match view facts consume. The constructed Simulation
+/// already holds the trigger runtime's definitions.
 pub struct ScenarioLoadInputs {
     pub(crate) startup: LoadingStartup,
     pub(crate) map_source: LoadedMapSource,
@@ -1517,10 +1521,6 @@ pub struct ScenarioLoadInputs {
     pub overlays: Vec<OverlayEntry>,
     /// Terrain objects for per-frame instance generation.
     pub terrain_objects: Vec<TerrainObject>,
-    pub triggers: TriggerMap,
-    pub events: EventMap,
-    pub actions: ActionMap,
-    pub trigger_graph: TriggerGraph,
     /// Overlay type registry — kept so wall placement can look up overlay_id by name.
     pub overlay_registry: OverlayTypeRegistry,
     pub house_roster: HouseRoster,
@@ -1996,6 +1996,7 @@ impl MapLoadInitial {
             train_crate: map_data.basic.train_crate.unwrap_or(false),
             truck_crate: map_data.basic.truck_crate.unwrap_or(false),
             ice_growth_enabled: map_data.basic.ice_growth_enabled,
+            vein_growth_enabled: map_data.basic.vein_growth_enabled,
             // Skirmish start forces `TiberiumGrows|TiberiumSpreads` (`OR 0xC0`
             // at `0x005E74CD`), copied into the scenario at `0x00687C23`.
             tiberium_grows_flag: true,
@@ -2109,31 +2110,9 @@ impl MapLoadInitial {
             .collect();
         let scenario_after_trace = simulation.rng_state().scenario;
 
-        let overlay_shp_ids = resolved_overlay_shp_ids(
-            &overlay_registry,
-            &rules_ini,
-            rules.art(),
-            asset_manager,
-            theater_ext,
-            &map_data.header.theater,
-        );
-        let mut overlay_grid = crate::sim::overlay_grid::OverlayGrid::from_native_overlay_packs(
-            &map_data.overlays,
-            map_data
-                .overlay_data_pack()
-                .expect("random-map snapshot precedes authored pack consumption"),
-            &mut resolved_terrain,
-            &overlay_registry,
-            &overlay_shp_ids,
-            true,
-        );
-        let _ = crate::sim::terrain_spawn::clear_tiberium_source_cells_for_terrain(
-            &mut overlay_grid,
-            &mut resolved_terrain,
-            &map_data.terrain_objects,
-            &rules,
-            &overlay_registry,
-        );
+        let mut overlay_grid =
+            generated_overlay_grid(&map_data, &mut resolved_terrain, &rules, &overlay_registry)
+                .expect("random-map snapshot precedes authored pack consumption");
         let house_roster =
             houses::parse_house_roster(&map_data.ini, &rules.color_schemes, Some(&rules));
         let bridge_destroyability_mode =
@@ -2477,7 +2456,6 @@ pub(crate) fn load_map_initial_with_assets(
         map_data.cells.len(),
         map_data.entities.len()
     );
-    log_trigger_graph_diagnostics(&map_data);
 
     // First post-render-handoff milestone: the selected map has been opened and
     // parsed. (gamemd emits 8 at theater-init entry; in our pipeline the map is
@@ -2492,6 +2470,101 @@ pub(crate) fn load_map_initial_with_assets(
         retained_campaign_special_flags: None,
         generated_construction_trace: None,
     })
+}
+
+/// The overlay grid of a generated launch, shared by its match and snapshot
+/// routes: the generator's own cell writes
+/// ([`OverlayGrid::from_generated_overlays`]; native runs no
+/// `OverlayClass::Mark` for them), then the same-cell tiberium a recognized
+/// tree clears.
+///
+/// [`OverlayGrid::from_generated_overlays`]: crate::sim::overlay_grid::OverlayGrid::from_generated_overlays
+fn generated_overlay_grid(
+    map_data: &MapFile,
+    resolved_terrain: &mut ResolvedTerrainGrid,
+    rules: &RuleSet,
+    overlay_registry: &OverlayTypeRegistry,
+) -> anyhow::Result<crate::sim::overlay_grid::OverlayGrid> {
+    let data = map_data
+        .overlay_data_pack()
+        .map_err(|_| anyhow::anyhow!("generated overlay packs were already consumed"))?;
+    let mut overlay_grid = crate::sim::overlay_grid::OverlayGrid::from_generated_overlays(
+        &map_data.overlays,
+        data,
+        resolved_terrain,
+        overlay_registry,
+    );
+    let cleared = crate::sim::terrain_spawn::clear_tiberium_source_cells_for_terrain(
+        &mut overlay_grid,
+        resolved_terrain,
+        &map_data.terrain_objects,
+        rules,
+        overlay_registry,
+    );
+    if !cleared.is_empty() {
+        log::info!(
+            "Cleared {} same-cell tiberium overlay cell(s) for recognized terrain",
+            cleared.len(),
+        );
+    }
+    Ok(overlay_grid)
+}
+
+#[cfg(test)]
+mod generated_overlay_grid_tests {
+    use super::*;
+    use crate::map::rmg::{RmgGrid, RmgOptions, emit};
+
+    /// The random-map path from the generator's grid: its `MapFile`
+    /// projection, the generated terrain build and the overlay grid both
+    /// generated launch routes take. Native stores these cells itself and
+    /// never runs `OverlayClass::Mark` on them, so a rock on a steep cell
+    /// stays (Mark's slope gate at `0x005FC5CD` would refuse it), while the
+    /// later `RecalcAttributes` still drops sloped ore with its data.
+    #[test]
+    fn random_map_overlays_reach_the_grid_as_the_generator_wrote_them() {
+        let registry = OverlayTypeRegistry::from_ini(
+            &IniFile::from_str(
+                "[OverlayTypes]\n0=ROCK\n1=ORE\n[ROCK]\nIsARock=yes\n[ORE]\nTiberium=yes\n",
+            ),
+            None,
+        );
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n",
+        ))
+        .expect("rules");
+        let (map_w, map_h) = (20, 24);
+        let mut generated = RmgGrid::new((map_w + map_h + 1) as usize, map_w, map_w + 2 * map_h);
+        for ((x, y), overlay, density) in [((22, 22), 0, 3), ((22, 24), 1, 7), ((24, 24), 1, 7)] {
+            let cell = generated.get_mut(x, y).expect("in-band generated cell");
+            cell.tile = 0;
+            cell.overlay = overlay;
+            cell.density = density;
+        }
+        let mut map = emit::empty_map_file(&RmgOptions::default(), 16, 12);
+        emit::populate(&mut map, &generated, &[], &[], &[]);
+        let mut terrain = ResolvedTerrainGrid::build_generated_materialized_for_test(&map);
+        terrain.cell_mut(22, 22).expect("rock cell").slope_type = 5;
+        terrain
+            .cell_mut(22, 24)
+            .expect("sloped ore cell")
+            .slope_type = 1;
+
+        let grid = generated_overlay_grid(&map, &mut terrain, &rules, &registry)
+            .expect("a generated map retains its overlay data");
+
+        let cell = |rx, ry| {
+            let overlay = grid.cell(rx, ry);
+            (overlay.overlay_id, overlay.overlay_data)
+        };
+        assert_eq!(cell(22, 22), (Some(0), 3), "the steep rock stays");
+        assert_eq!(
+            cell(22, 24),
+            (None, 0),
+            "Recalc drops the sloped ore and its data"
+        );
+        assert_eq!(cell(24, 24), (Some(1), 7));
+    }
 }
 
 pub(crate) fn load_map_from_initial(
@@ -2677,11 +2750,6 @@ pub(crate) fn load_map_from_initial(
     let house_roster =
         houses::parse_house_roster(&map_data.ini, rules.color_schemes.as_slice(), Some(&rules));
 
-    // Compute playable area bounds from LocalSize (border filler hidden by shroud).
-    let local_bounds: Option<LocalBounds> = Some(LocalBounds::from_playfield(
-        crate::sim::cell_rect::PlayfieldBounds::from_map_header(&map_data.header),
-    ));
-
     let cliff_back = rules.general.cliff_back_impassability;
 
     // Parse Scenario-owned lighting before Fill so the one authoritative
@@ -2736,6 +2804,7 @@ pub(crate) fn load_map_from_initial(
         train_crate: map_data.basic.train_crate.unwrap_or(false),
         truck_crate: map_data.basic.truck_crate.unwrap_or(false),
         ice_growth_enabled: map_data.basic.ice_growth_enabled,
+        vein_growth_enabled: map_data.basic.vein_growth_enabled,
         // Skirmish start forces `TiberiumGrows|TiberiumSpreads` (`OR 0xC0`
         // at `0x005E74CD`), copied into the scenario at `0x00687C23`.
         tiberium_grows_flag: game_mode_nonzero
@@ -2908,14 +2977,6 @@ pub(crate) fn load_map_from_initial(
         },
         variant_table_draws,
     );
-    let overlay_shp_ids = resolved_overlay_shp_ids(
-        &overlay_registry,
-        &rules_ini,
-        rules.art(),
-        asset_manager,
-        theater_ext,
-        &map_data.header.theater,
-    );
     // Parse house color assignments from map INI ([Houses] + per-house Color=).
     // Color=<name> resolves against the rules `[Colors]` list (entry index).
     let house_color_map: HouseColorMap = skirmish_launch_session
@@ -2934,6 +2995,14 @@ pub(crate) fn load_map_from_initial(
             let fill = authored_terrain_fill
                 .take()
                 .expect("authored materialization retained its pending Fill owner");
+            let overlay_shp_ids = resolved_overlay_shp_ids(
+                &overlay_registry,
+                &rules_ini,
+                rules.art(),
+                asset_manager,
+                theater_ext,
+                &map_data.header.theater,
+            );
             let output = crate::sim::runtime::finalize_and_populate_staged_authored_scenario(
                 &mut staged_simulation,
                 &mut map_data,
@@ -2963,30 +3032,8 @@ pub(crate) fn load_map_from_initial(
             let resolved_terrain = resolved_terrain
                 .as_mut()
                 .expect("generated materialization retained its eager terrain");
-            let mut overlay_grid = crate::sim::overlay_grid::OverlayGrid::from_native_overlay_packs(
-                &map_data.overlays,
-                map_data.overlay_data_pack().map_err(|_| {
-                    anyhow::anyhow!("generated overlay packs were already consumed")
-                })?,
-                resolved_terrain,
-                &overlay_registry,
-                &overlay_shp_ids,
-                true,
-            );
-            let cleared_terrain_overlay_cells =
-                crate::sim::terrain_spawn::clear_tiberium_source_cells_for_terrain(
-                    &mut overlay_grid,
-                    resolved_terrain,
-                    &map_data.terrain_objects,
-                    &rules,
-                    &overlay_registry,
-                );
-            if !cleared_terrain_overlay_cells.is_empty() {
-                log::info!(
-                    "Cleared {} same-cell tiberium overlay cell(s) for recognized terrain",
-                    cleared_terrain_overlay_cells.len(),
-                );
-            }
+            let mut overlay_grid =
+                generated_overlay_grid(&map_data, resolved_terrain, &rules, &overlay_registry)?;
             crate::app::loading::init_helpers::populate_staged_app_scenario(
                 &mut staged_simulation,
                 &map_data,
@@ -3073,11 +3120,8 @@ pub(crate) fn load_map_from_initial(
     let bridge_middle_tiles = theater_result
         .as_ref()
         .and_then(crate::map::theater::BridgeMiddleTiles::from_theater);
-    let grid: TerrainGrid = terrain::build_terrain_grid_from_resolved(
-        &resolved_terrain,
-        local_bounds,
-        bridge_middle_tiles,
-    );
+    let grid: TerrainGrid =
+        terrain::build_terrain_grid_from_resolved(&resolved_terrain, bridge_middle_tiles);
     progress.milestone(50);
     progress.milestone(55);
     progress.milestone(58);
@@ -3367,15 +3411,10 @@ pub(crate) fn load_map_from_initial(
                 .unwrap_or(0);
             crate::app::input::camera::cell_centre_world_point(start_wp.rx, start_wp.ry, wp_z)
         } else {
-            let (area_x, area_y, area_w, area_h) = match local_bounds {
-                Some(b) => (b.pixel_x, b.pixel_y, b.pixel_w, b.pixel_h),
-                None => (
-                    grid.origin_x,
-                    grid.origin_y,
-                    grid.world_width,
-                    grid.world_height,
-                ),
-            };
+            // VERA-only fallback: the centre of the native scroll rectangle.
+            let (area_x, area_y, area_w, area_h) = crate::app::input::camera::tactical_scroll_rect(
+                crate::map::playfield::PlayfieldBounds::from_map_header(&map_data.header),
+            );
             (area_x + area_w / 2.0, area_y + area_h / 2.0)
         };
     let presentation = crate::app::loading::init_helpers::finish_presentation_assets(
@@ -3417,10 +3456,6 @@ pub(crate) fn load_map_from_initial(
             simulation,
             overlays: overlays_connected,
             terrain_objects: map_data.terrain_objects,
-            triggers: map_data.triggers,
-            events: map_data.events,
-            actions: map_data.actions,
-            trigger_graph: map_data.trigger_graph,
             overlay_registry,
             house_roster,
             height_map,

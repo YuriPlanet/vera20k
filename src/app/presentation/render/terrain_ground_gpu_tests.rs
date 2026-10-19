@@ -202,9 +202,7 @@ fn vehicle_shadow_after_body_preserves_body_and_clipped_read_only_depth() {
             ),
         },
     ]);
-    let palette = crate::assets::pal_file::Palette {
-        colors: [crate::assets::pal_file::Color::rgb(0, 252, 0); 256],
-    };
+    let palette = crate::assets::pal_file::Palette::from_rgb(|_| [0, 252, 0]);
     let ramps = crate::rules::house_colors::HouseColorRamps::from_schemes(&[]);
     let palettes =
         PaletteSet::new_on_device(&gpu.device, &gpu.queue, &palette, &palette, &ramps, &[]);
@@ -363,9 +361,7 @@ fn tree_transactions_preserve_tmp_shp_voxel_overlap_and_coalesced_order() {
     let units = UnitAtlas::from_test_pages(vec![crate::render::unit_atlas::UnitAtlasPage {
         texture: batch.create_unit_atlas_texture_on_device(&gpu.device, &gpu.queue, 1, 1, &[33]),
     }]);
-    let palette = crate::assets::pal_file::Palette {
-        colors: [crate::assets::pal_file::Color::rgb(0, 252, 0); 256],
-    };
+    let palette = crate::assets::pal_file::Palette::from_rgb(|_| [0, 252, 0]);
     let ramps = crate::rules::house_colors::HouseColorRamps::from_schemes(&[]);
     let palettes =
         PaletteSet::new_on_device(&gpu.device, &gpu.queue, &palette, &palette, &ramps, &[]);
@@ -597,9 +593,7 @@ fn destination_batching_layer_fences_do_not_plan_ordinary_unit_instances() {
     let units = UnitAtlas::from_test_pages(vec![crate::render::unit_atlas::UnitAtlasPage {
         texture: batch.create_unit_atlas_texture_on_device(&gpu.device, &gpu.queue, 1, 1, &[0]),
     }]);
-    let palette = crate::assets::pal_file::Palette {
-        colors: [crate::assets::pal_file::Color::rgb(0, 252, 0); 256],
-    };
+    let palette = crate::assets::pal_file::Palette::from_rgb(|_| [0, 252, 0]);
     let ramps = crate::rules::house_colors::HouseColorRamps::from_schemes(&[]);
     let palettes =
         PaletteSet::new_on_device(&gpu.device, &gpu.queue, &palette, &palette, &ramps, &[]);

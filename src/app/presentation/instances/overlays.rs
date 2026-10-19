@@ -26,22 +26,6 @@ use super::helpers::{
     ANIM_DRAW_DEPTH_BIAS_PX, apply_shape_z_adjust, compute_sprite_depth_params, in_view,
 };
 
-/// Ordinary global/cell AnimClass palette ownership; explicit per-instance
-/// converters remain with their producer until its brightness lifetime is known.
-fn anim_palette_light(
-    state: &AppState,
-    cell: (u16, u16),
-    cfg: Option<&AnimTypeRuntimeConfig>,
-    cell_drawer: bool,
-) -> crate::render::palette_light::PaletteLight {
-    crate::app::presentation::lighting::anim_palette_light(
-        state.match_state.match_presentation.lighting.grid(),
-        cell,
-        cfg,
-        cell_drawer,
-    )
-}
-
 /// Map terrain entries remain the render metadata source, but once rules-backed
 /// simulation authority exists the live cell index decides whether an instance
 /// still exists. This keeps loading/fallback screens static without letting a
@@ -581,7 +565,7 @@ pub(super) fn anim_world_render_coords(
     let (rx, ry, sub_x, sub_y, z) = world.to_cell_sub_z();
     let (screen_x, screen_y) =
         crate::util::lepton::lepton_to_screen_exact_z(rx, ry, sub_x, sub_y, world.z);
-    let lift_px = crate::util::flh_transform::adjust_for_z_leptons(world.z);
+    let lift_px = crate::util::native_x87::adjust_for_z_standard(world.z);
     (screen_x, screen_y, rx, ry, z, lift_px)
 }
 
@@ -1143,19 +1127,16 @@ pub(crate) fn build_weapon_wave_instances(
 /// canopy keyed off the drawn row would sort ~14 iso rows behind the man
 /// hanging on it and disappear behind any building in between.
 ///
-/// Palette: `AltPalette=yes` selects the unit palette (`sprite_palette_choice`
-/// reads the art type's flag).
+/// Palette: native `ObjectClass::Paradrop @ 0x005F5940` stores the owner's
+/// `GetRemapColour` result at Anim+0xD4. The retained Anim remap selects the
+/// matching `SelectedScheme` atlas variant; an absent remap keeps the ordinary
+/// AltPalette `GlobalAnim`/colour-0 path.
 ///
-/// DRIFT: after the attach native copies two draw fields onto the canopy:
-/// `+0xD4`, the owner's drawer (`vtable+0x1E4`, its ConvertClass), and `+0xFC`,
-/// the owner cell's ground Z adjust (`+0x10A`), the same pair
-/// `Simulation::set_cell_anim_draw_authority` models for cell anims. This pass
-/// draws the canopy with house colour index 0 and no Z test instead. Trigger:
-/// every paradrop. Player effect: the canopy is not remapped to the dropping
-/// house and cannot be hidden behind terrain. Frequency: each paradrop.
-/// Downstream risk: presentation only.
+/// RESIDUAL: native also copies `+0x10A` of the owner's cell (vtable+0x1BC)
+/// to Anim+0xFC after attach (`0x005F5B1F..0x005F5B30`); this renderer still
+/// draws without a Z test. It is independent of the owner's palette selection.
 pub(crate) fn build_parachute_instances(
-    state: &AppState,
+    input: &DisplayEffectInputs<'_>,
     ground_objects: &mut [crate::app::presentation::render::draw_plan_lowering::PlannedObjectInstance],
     body_depths: &super::shp::ParachuteBodyDepths,
 ) {
@@ -1170,31 +1151,21 @@ pub(crate) fn build_parachute_instances(
     /// frame-internal positioning, which our atlas doesn't replicate exactly.
     const CHUTE_Y_LIFT: f32 = 8.0;
 
-    let (sim, atlas) = match (
-        state
-            .match_state
-            .sim_runtime
-            .as_ref()
-            .map(|rt| &rt.simulation),
-        &state.match_state.match_presentation.sprite_atlas,
-    ) {
-        (Some(s), Some(a)) => (s, a),
-        _ => return,
+    let sim = input.sim;
+    let Some(atlas) = input.atlas else {
+        return;
     };
-    let z = state.match_state.input.zoom_level;
+    let z = input.zoom;
     let (cam_x, cam_y, sw, sh) = (
-        state.match_state.input.camera_x,
-        state.match_state.input.camera_y,
-        state.render_width() as f32 / z,
-        state.render_height() as f32 / z,
+        input.camera[0],
+        input.camera[1],
+        input.render_size[0] as f32 / z,
+        input.render_size[1] as f32 / z,
     );
     // The canopy is a simulation `AnimClass` attached to the falling object
     // (`Simulation::attach_parachute_anim`); this pass only places it on the
     // body's sort key. The generic anim pass skips it (`parachute_canopy_owner`).
-    let Some(shp_name) = state
-        .rules()
-        .and_then(|r| r.general.parachute_shp.as_deref())
-    else {
+    let Some(shp_name) = input.rules.general.parachute_shp.as_deref() else {
         return;
     };
     let Some(parachute_type) = sim.interner.get(shp_name) else {
@@ -1229,12 +1200,18 @@ pub(crate) fn build_parachute_instances(
         }
 
         // Single-facing anim (no Facings= in art.ini for PARACH).
+        let remap_color =
+            crate::render::sprite_atlas::anim_remap_color(anim, &sim.interner, input.house_colors);
         let key = ShpSpriteKey {
-            palette_context: crate::render::sprite_atlas::ShpPaletteContext::GlobalAnim,
+            palette_context: if remap_color.is_some() {
+                crate::render::sprite_atlas::ShpPaletteContext::SelectedScheme
+            } else {
+                crate::render::sprite_atlas::ShpPaletteContext::GlobalAnim
+            },
             type_id: shp_name.to_string(),
             facing: 0,
             frame,
-            house_color: HouseColorIndex(0),
+            house_color: remap_color.unwrap_or(HouseColorIndex(0)),
         };
         let Some(entry) = atlas.get(&key) else {
             // PARACH not yet loaded into the atlas. Logged once at startup
@@ -1244,9 +1221,8 @@ pub(crate) fn build_parachute_instances(
         let cx: f32 = gx + entry.offset_x;
         let cy: f32 = gy + entry.offset_y - CHUTE_Y_LIFT;
 
-        // No owner tint and no lighting tint: chutes look identical
-        // regardless of dropping house, matching gamemd's AltPalette=yes
-        // path (ColorScheme[0]'s ConvertPalette).
+        // Preserve the existing canopy tint; only the source palette variant
+        // follows the native per-instance ConvertClass.
         let tint: [f32; 3] = [1.0, 1.0, 1.0];
 
         // Depth: GI body depth minus a small epsilon so the chute draws on
@@ -1279,12 +1255,10 @@ pub(crate) fn build_parachute_instances(
                     source_palette: entry.source_palette,
                     depth,
                     tint,
-                    palette_light: anim_palette_light(
-                        state,
+                    palette_light: crate::app::presentation::lighting::anim_palette_light(
+                        input.lighting,
                         (entity.position.rx(), entity.position.ry()),
-                        state
-                            .rules()
-                            .and_then(|r| r.art().anim_runtime_config(shp_name)),
+                        input.rules.art().anim_runtime_config(shp_name),
                         false,
                     ),
                     alpha: 1.0,

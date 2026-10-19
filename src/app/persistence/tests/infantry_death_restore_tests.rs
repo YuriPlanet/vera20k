@@ -34,7 +34,7 @@ fn infantry_fatal_frame_exit_preserves_delivered_cleanup_through_load() {
             "Americans",
             1,
             1,
-            crate::sim::movement::facing_from_delta(1, 0),
+            crate::util::direction_tables::facing8_from_delta(1, 0),
             0,
             &rules,
         )
@@ -56,7 +56,6 @@ fn infantry_fatal_frame_exit_preserves_delivered_cleanup_through_load() {
             Some(&registry),
             67,
             TickLane::Ordinary,
-            None,
             crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete");
@@ -129,7 +128,6 @@ fn infantry_fatal_frame_exit_preserves_delivered_cleanup_through_load() {
             Some(&registry),
             67,
             TickLane::Ordinary,
-            None,
             crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete");

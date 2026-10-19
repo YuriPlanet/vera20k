@@ -581,7 +581,7 @@ fn a_guarding_miner_sent_to_a_free_refinery_queues_enter_without_a_destination()
         .unwrap();
     s.sim.set_unit_destination(
         s.miner,
-        crate::sim::components::NavTargetRef::Building { id: s.refinery },
+        crate::sim::components::NavTargetRef::Object { id: s.refinery },
         &s.rules,
         true,
         crate::sim::world::FrameEffects::default(),

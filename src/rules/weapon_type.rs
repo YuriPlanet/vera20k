@@ -86,6 +86,8 @@ pub struct WeaponType {
     pub rad_level: i32,
 
     // ── String/reference fields ──────────────────────────────────────
+    // The Type references are the stored IDs the ordered Rules processor's
+    // factories answered (`native_processing`); `RuleSet` publishes them.
     /// Animation played by occupants when firing from a building.
     pub occupant_anim: Option<String>,
     /// Animation played by units firing from an open-topped transport.
@@ -234,26 +236,13 @@ impl WeaponType {
             laser_duration: i32::from(section.read_int("LaserDuration", 10) as i8),
             rad_level: section.read_int("RadLevel", 0),
 
-            // String/reference fields
-            // ReadString 0x80 at `0x007725B5`, `0x007725EE`.
-            occupant_anim: section.read_name("OccupantAnim", 0x80).map(str::to_string),
-            open_topped_anim: section
-                .read_name("OpenToppedAnim", 0x80)
-                .map(str::to_string),
-            // A 0x14-byte buffer (`0x00772920`).
-            attached_particle_system: section
-                .read_name("AttachedParticleSystem", 0x14)
-                .map(str::to_string),
-            // `0x00772479`: ReadString 0x80, then `strtok(",")`, keeping each
-            // token `0x00428B80` resolves (`0x007724B8`). RESIDUAL: VERA keeps
-            // unresolved names too, which shifts the damage-indexed pick past
-            // one; every retail `Anim=` name resolves.
-            anim: section
-                .read_list("Anim", 0x80)
-                .unwrap_or_default()
-                .into_iter()
-                .map(str::to_string)
-                .collect(),
+            // The constructor's nulls and empty list (`0x00771C70`); only the
+            // ordered Process owner reads `OccupantAnim=`, `OpenToppedAnim=`,
+            // `AttachedParticleSystem=` and `Anim=`.
+            occupant_anim: None,
+            open_topped_anim: None,
+            attached_particle_system: None,
+            anim: Vec::new(),
 
             // Color fields: ReadColorRGB over the constructor's zero
             // (`0x00771D30`-`0x00771D60`), at `0x00772770`, `0x00772796` and
@@ -612,15 +601,14 @@ mod tests {
 
     #[test]
     fn test_parse_anim_list() {
-        let ini: IniFile =
-            IniFile::from_str("[TestWeapon]\nDamage=50\nAnim=YOURFIRE,YOUREXPL,YOURBOOM\n");
-        let section: &IniSection = ini.section("TestWeapon").unwrap();
-        let weapon: WeaponType = WeaponType::from_ini_section("TestWeapon", section);
+        let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
+            "[VehicleTypes]\n0=TANK\n[TANK]\nPrimary=TestWeapon\n\
+             [TestWeapon]\nDamage=50\nAnim=YOURFIRE,YOUREXPL,YOURBOOM\n",
+        ))
+        .unwrap();
+        let weapon = rules.weapon("TestWeapon").unwrap();
 
-        assert_eq!(weapon.anim.len(), 3);
-        assert_eq!(weapon.anim[0], "YOURFIRE");
-        assert_eq!(weapon.anim[1], "YOUREXPL");
-        assert_eq!(weapon.anim[2], "YOURBOOM");
+        assert_eq!(weapon.anim, ["YOURFIRE", "YOUREXPL", "YOURBOOM"]);
     }
 
     /// `CCINIClass::ReadRange` 0x00474620 multiplies by `256.0` and THEN chops,

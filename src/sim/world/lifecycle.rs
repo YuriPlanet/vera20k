@@ -4055,20 +4055,6 @@ impl Simulation {
         self.trace_lifecycle_for_test(LifecycleTestEvent::UninitClassPre { stable_id });
     }
 
-    fn nav_ref_targets_expired(target: &NavTargetRef, expired_id: u64) -> bool {
-        Self::nav_ref_object(target) == Some(expired_id)
-    }
-
-    /// The object a navigation entry names, if it names one.
-    fn nav_ref_object(target: &NavTargetRef) -> Option<u64> {
-        match *target {
-            NavTargetRef::Entity { id }
-            | NavTargetRef::Object { id }
-            | NavTargetRef::Building { id } => Some(id),
-            NavTargetRef::Cell { .. } => None,
-        }
-    }
-
     /// What `listener` holds that its pointer-expiry forwards can change:
     /// `name` gets each id a field [`Self::notify_entity_pointer_expired`] or
     /// a forward compares (repeats possible), and the result says whether it
@@ -4106,10 +4092,9 @@ impl Simulation {
             .chain(navigation.nav_com().iter())
             .chain(navigation.nav_queue().iter())
             .chain(navigation.nav_list().iter())
-            .filter_map(Self::nav_ref_object)
+            .filter_map(|target| target.object_id())
             .for_each(&mut name);
         [
-            listener.passenger_role.boarding_transport_id(),
             listener.passenger_role.inside_transport_id(),
             listener.pending_entry(),
             listener.spawn_owner_id.owner(),
@@ -4607,16 +4592,9 @@ impl Simulation {
         // PAIR clear below; the `+0x5A8` clear above it is unguarded. The two
         // Booleans are equal in value because both read the receiver's house at
         // the same cell, so the single `allow_clear` local models both.
-        let clear_suspended_nav_com = listener
-            .navigation
-            .suspended_nav_com()
-            .as_ref()
-            .is_some_and(|target| Self::nav_ref_targets_expired(target, expired_id));
-        let current_nav_matches = listener
-            .navigation
-            .nav_com()
-            .as_ref()
-            .is_some_and(|target| Self::nav_ref_targets_expired(target, expired_id));
+        let expired_nav = NavTargetRef::object(expired_id);
+        let clear_suspended_nav_com = listener.navigation.suspended_nav_com() == Some(expired_nav);
+        let current_nav_matches = listener.navigation.nav_com() == Some(expired_nav);
         let retain_capture_nav = current_nav_matches
             && listener.category() == EntityCategory::Infantry
             && listener.removal_facts.occupier()
@@ -4628,18 +4606,10 @@ impl Simulation {
         //4D9A0F gates the pair on current NavCom identity;4D9ABD then
         //clears both fields, irrespective of the auxiliary pointer's value.
         let clear_nav_com = current_nav_matches && !retain_capture_nav && allow_clear;
-        let prune_nav_queue = listener
-            .navigation
-            .nav_queue()
-            .iter()
-            .any(|target| Self::nav_ref_targets_expired(target, expired_id));
+        let prune_nav_queue = listener.navigation.nav_queue().contains(&expired_nav);
         // `0x004D9B43..0x004D9B95`: every navigation list entry naming the
         // expiring object goes, before the NavQueue's.
-        let prune_nav_list = listener
-            .navigation
-            .nav_list()
-            .iter()
-            .any(|target| Self::nav_ref_targets_expired(target, expired_id));
+        let prune_nav_list = listener.navigation.nav_list().contains(&expired_nav);
 
         // Techno707AE7..707AF5 clears private pending+500 only on control1.
         // Non-destructive DetachAll(false) retains this independent entry;
@@ -4656,13 +4626,11 @@ impl Simulation {
         // Transporter+11C survives a live hull's ordinary Limbo announcement,
         // for either control. Clear only on Object+90==0, exact Health==0 or
         // ScenarioInit(A8E7AC)!=0. Negative live HP is not this zero test.
-        // The boarding adapter follows NavCom expiry independently.
-        let clear_passenger_role = listener.passenger_role.boarding_transport_id()
+        let clear_passenger_role = listener.passenger_role.inside_transport_id()
             == Some(expired_id)
-            || (listener.passenger_role.inside_transport_id() == Some(expired_id)
-                && (!expired_object_alive
-                    || expired_health == 0
-                    || self.object_placement_scope_active()));
+            && (!expired_object_alive
+                || expired_health == 0
+                || self.object_placement_scope_active());
         let clear_c4_source = listener
             .pending_c4_detonation
             .pending()
@@ -4719,12 +4687,12 @@ impl Simulation {
         if prune_nav_list {
             listener
                 .navigation
-                .retain_nav_list(|target| !Self::nav_ref_targets_expired(target, expired_id));
+                .retain_nav_list(|target| *target != expired_nav);
         }
         if prune_nav_queue {
             listener
                 .navigation
-                .retain_nav_queue(|target| !Self::nav_ref_targets_expired(target, expired_id));
+                .retain_nav_queue(|target| *target != expired_nav);
         }
         if clear_dock {
             // `0x00707AF5`.

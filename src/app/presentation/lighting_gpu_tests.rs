@@ -97,7 +97,6 @@ fn stock_lamp_loaded_by_scenario_changes_actual_terrain_pixels() {
         world_height: tile.height as f32,
         origin_x: 0.0,
         origin_y: 0.0,
-        local_bounds: None,
         bridge_middle_tiles: None,
     };
     let mut lighting = MatchLighting::default();

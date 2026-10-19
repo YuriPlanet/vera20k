@@ -265,28 +265,22 @@ fn building_navcom_reads_live_type_requester_and_radio_slots_after_restore() {
         }
         sim.interner = test_interner();
         sim.substrate.next_stable_object_id = 200;
-        for target in [
-            NavTargetRef::Entity { id: 2 },
-            NavTargetRef::Building { id: 2 },
-            NavTargetRef::Object { id: 2 },
-        ] {
-            let before = super::super::nav_target_coordinate(
-                target,
-                requester.map(|_| 1),
-                &sim,
-                None,
-                Some((&rules, &sim.interner)),
-            )
-            .unwrap();
-            assert_eq!(before, coord(&row["coordinate"]), "{input}");
-        }
+        let before = super::super::nav_target_coordinate(
+            NavTargetRef::object(2),
+            requester.map(|_| 1),
+            &sim,
+            None,
+            Some((&rules, &sim.interner)),
+        )
+        .unwrap();
+        assert_eq!(before, coord(&row["coordinate"]), "{input}");
         if checked % 13 == 0 {
             let saved = GameSnapshot::save(&sim, 0, 0, "building destination", 0);
             let mut restored = GameSnapshot::load(&saved).unwrap().sim;
             restored.restore_after_snapshot_load().unwrap();
             assert_eq!(sim.state_hash(), restored.state_hash());
             let result = super::super::nav_target_coordinate(
-                NavTargetRef::Building { id: 2 },
+                NavTargetRef::Object { id: 2 },
                 requester.map(|_| 1),
                 &restored,
                 None,

@@ -159,7 +159,7 @@ fn native_physical_hills_tyre_constructor_flight_and_host_retirement() {
             cell["slope"].as_u64().unwrap()
         );
         assert_eq!(
-            u64::from(resolved.yr_cell_land_type),
+            u64::from(resolved.land_type),
             cell["land"].as_u64().unwrap()
         );
     }

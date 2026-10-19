@@ -22,7 +22,7 @@ fn map_music_action_follows_native_read_and_queue() {
     use crate::map::map_file::MapFile;
     use crate::rules::team_ai_ini::TeamAiIniRegistry;
     use crate::sim::trigger_runtime::{ThemeRequest, TriggerEffect};
-    use crate::sim::world::{FrameEffects, Simulation, TriggerInputs};
+    use crate::sim::world::{FrameEffects, Simulation};
 
     let fixture: Value = serde_json::from_str(crate::test_fixture::text(
         "tools/spatial_oracle/trigger_music_theme.json",
@@ -54,15 +54,7 @@ fn map_music_action_follows_native_read_and_queue() {
         sim.initialize_trigger_definitions(&map, &TeamAiIniRegistry::default(), None, None);
         sim.classify_map_triggers(None);
         sim.set_trigger_variable(false, 9, true);
-        let effects = sim.advance_triggers(
-            TriggerInputs {
-                events: &map.events,
-                actions: &map.actions,
-                rules: None,
-            },
-            None,
-            FrameEffects::default(),
-        );
+        let effects = sim.advance_triggers(None, None, FrameEffects::default());
         assert_eq!(effects.len(), actions.len(), "{case}");
 
         let prior = &fixture["default_prior"];

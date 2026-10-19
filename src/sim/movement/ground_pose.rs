@@ -262,7 +262,7 @@ impl Simulation {
         rules: &crate::rules::ruleset::RuleSet,
     ) -> Result<(i16, i16), String> {
         let coordinate = self.navigation_target_coordinate(
-            crate::sim::components::NavTargetRef::Entity { id },
+            crate::sim::components::NavTargetRef::object(id),
             None,
             rules,
         )?;

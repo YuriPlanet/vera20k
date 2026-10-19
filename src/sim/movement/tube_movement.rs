@@ -27,8 +27,7 @@ use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::occupancy::OccupancyGrid;
 use crate::sim::world::{FrameAdvanceError, FrameEffects, Simulation};
 use crate::util::fixed_math::{SIM_ONE, SIM_ZERO};
-use crate::util::native_x87::{NativeF32Bits, NativeF64Bits, X87Chop53, distance_3d_leptons};
-use crate::util::retail_trig::TrigTable;
+use crate::util::native_x87::{NativeF64Bits, X87Chop53, distance_3d_leptons};
 
 /// FootClass-owned active TubeMovement payload.
 ///
@@ -443,8 +442,7 @@ fn tick_active_tube_object(
     );
     if distance > budget {
         let raw_step = tube.path_steps[usize::from(state.cursor)];
-        let trig = TrigTable::embedded();
-        let next = advance_amount(current, state.target, budget, raw_step, z_step, trig);
+        let next = advance_amount(current, state.target, budget, raw_step, z_step);
         ground_pose::foot_set_location(entities, entity_id, next, rules, interner);
         return TubeTurn::Moved;
     }
@@ -467,8 +465,7 @@ fn tick_active_tube_object(
     state.target.y = state.target.y.wrapping_add(dy.wrapping_mul(256));
     state.target.z = state.target.z.wrapping_add(z_step);
     let leftover = budget.wrapping_sub(distance);
-    let trig = TrigTable::embedded();
-    let next = advance_amount(old_target, state.target, leftover, next_raw, z_step, trig);
+    let next = advance_amount(old_target, state.target, leftover, next_raw, z_step);
     if let Some(entity) = entities.get_mut(entity_id) {
         entity.low_bridge_tube_state = Some(state);
     }
@@ -905,19 +902,17 @@ fn advance_amount(
     amount: i32,
     raw_step: i32,
     z_step: i32,
-    trig: &TrigTable,
 ) -> DriveCoord {
     let facing = crate::util::direction_tables::facing16_from_delta(
         target.x.wrapping_sub(base.x),
         target.y.wrapping_sub(base.y),
     );
-    let angle_scale = f64::from_bits(0xbf19_222d_989f_5e57);
-    let angle = f64::from(i32::from(facing as i16).wrapping_sub(0x3fff)) * angle_scale;
-    let cosine = trig.cos_radians(angle);
-    let sine = trig.sin_radians(angle);
+    // `0x00735C53..0x00735CC0` (and `0x00735D56..0x00735DC1`) are the Walk
+    // step's instructions (`0x0075C067..0x0075C0CB`): the stored radians of
+    // the facing word, `SinFromTable`/`CosFromTable`, times the amount, added
+    // to the coordinate and cut by ftol.
+    let [x, y] = crate::util::native_trig::facing_step_world_xy([base.x, base.y], facing, amount);
     let amount_x87 = X87Chop53::load_i32(amount);
-    let x = ftol_add_f32_product(base.x, cosine, amount_x87);
-    let y = ftol_add_f32_product(base.y, -sine, amount_x87);
 
     let nominal_bits = if raw_step & 1 == 0 {
         256.0_f64.to_bits()
@@ -931,16 +926,6 @@ fn advance_amount(
     let z = X87Chop53::ftol_i64(X87Chop53::add(X87Chop53::load_i32(base.z), z_delta))
         .expect("tube Z fits i32") as i32;
     DriveCoord { x, y, z }
-}
-
-fn ftol_add_f32_product(base: i32, factor: f32, amount: crate::util::native_x87::X87Value) -> i32 {
-    let factor = X87Chop53::load_f32(NativeF32Bits::from_bits(factor.to_bits()))
-        .expect("retail trig entry is finite");
-    X87Chop53::ftol_i64(X87Chop53::add(
-        X87Chop53::load_i32(base),
-        X87Chop53::mul(factor, amount),
-    ))
-    .expect("tube XY fits i32") as i32
 }
 
 #[cfg(test)]

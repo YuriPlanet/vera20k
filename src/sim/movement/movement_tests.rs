@@ -25,12 +25,12 @@ use crate::util::fixed_math::{SIM_ONE, SIM_ZERO, SimFixed};
 /// exit's NavCom test scatters it off that Cell (`0x00736005..0x00736028`).
 #[test]
 fn ordinary_drive_retires_selector_before_entering_an_explicit_tube() {
-    use crate::map::resolved_terrain::YR_CELL_LAND_TUNNEL;
     use crate::map::tube_facts::{TubeFact, TubeId};
+    use crate::rules::terrain_rules::LandType;
     use crate::sim::pathfinding::zone_map::ZoneGrid;
 
     let mut cells: Vec<_> = (0..6).map(|x| drivable_slope_cell(x, 0, 0)).collect();
-    cells[1].yr_cell_land_type = YR_CELL_LAND_TUNNEL;
+    cells[1].land_type = LandType::Tunnel.as_index();
     cells[1].tube_index = Some(TubeId(0));
     // (4, 0) stays open: the exit's Scatter goes there.
     for cell in &mut cells[2..4] {
@@ -264,51 +264,6 @@ fn ordinary_drive_retires_selector_before_entering_an_explicit_tube() {
         "the unit drove off the exit to (4, 0): position={:?}",
         entity.position
     );
-}
-
-#[test]
-fn test_facing_iso_north() {
-    // (0,-1) = north on screen → facing 0.
-    let f: u8 = facing_from_delta(0, -1);
-    assert_eq!(f, 0, "North (0,-1) should be facing 0");
-}
-
-#[test]
-fn test_facing_iso_east() {
-    let f: u8 = facing_from_delta(1, 0);
-    assert_eq!(f, 63, "East (1,0) should be computed facing 63");
-}
-
-#[test]
-fn test_facing_iso_south() {
-    let f: u8 = facing_from_delta(0, 1);
-    assert_eq!(f, 127, "South (0,1) should be computed facing 127");
-}
-
-#[test]
-fn test_facing_iso_west() {
-    // (-1,0) = west on screen → facing 192.
-    let f: u8 = facing_from_delta(-1, 0);
-    assert_eq!(f, 192, "West (-1,0) should be facing 192");
-}
-
-#[test]
-fn test_facing_iso_northeast() {
-    // (1,-1) = NE on screen → facing 32.
-    let f: u8 = facing_from_delta(1, -1);
-    assert_eq!(f, 32, "NE (1,-1) should be facing 32");
-}
-
-#[test]
-fn test_facing_iso_southeast() {
-    let f: u8 = facing_from_delta(1, 1);
-    assert_eq!(f, 95, "SE (1,1) should be computed facing 95");
-}
-
-#[test]
-fn test_facing_zero_delta() {
-    let f: u8 = facing_from_delta(0, 0);
-    assert_eq!(f, 63, "Zero delta follows the native conversion path");
 }
 
 // --- Movement tick tests ---

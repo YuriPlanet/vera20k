@@ -22,6 +22,13 @@ pub(super) fn mission_repair(
     effects: FrameEffects<'_>,
 ) -> i32 {
     let now = sim.session.binary_frame;
+    //44BA44 reads the live BuildingType+684 Ammo, not an instance cache.
+    let type_ammo = sim
+        .substrate
+        .entities
+        .get(hospital)
+        .and_then(|building| sim.object_type(building.type_ref(), rules))
+        .map_or(-1, |object| object.ammo);
     let Some(building) = sim.substrate.entities.get_mut(hospital) else {
         return 1;
     };
@@ -34,7 +41,7 @@ pub(super) fn mission_repair(
             .mission_leaf
             .start_building_repair_progress(now as i32);
         if let Some(ammo) = building.ammo_mut()
-            && ammo.max() != -1
+            && type_ammo != -1
             && ammo.add(-1) < 0
         {
             ammo.empty();

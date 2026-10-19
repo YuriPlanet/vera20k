@@ -10,7 +10,6 @@ use crate::sim::world::Simulation;
 fn flat_cell(rx: u16, ry: u16) -> crate::map::resolved_terrain::ResolvedTerrainCell {
     crate::map::resolved_terrain::ResolvedTerrainCell {
         filled_clear: true,
-        terrain_class: Default::default(),
         accepts_smudge: true,
         ..crate::map::resolved_terrain::test_flat_cell(rx, ry)
     }
@@ -41,7 +40,7 @@ fn walk_attack_scene() -> (Simulation, RuleSet, u64, u64) {
     sim.session.current_house = sim.interner.get("Local");
     let costs = rules
         .terrain_rules
-        .semantics_by_name("Clear")
+        .semantics_for_land_type(crate::rules::terrain_rules::LandType::Clear.as_index())
         .unwrap()
         .speed_costs;
     let cells = (0..64)
@@ -633,13 +632,13 @@ fn walk_null_setter_matches_original_caller_rows() {
             dispatch_timer: MissionDispatchTimer::at_frame(0),
         });
         e.navigation
-            .set_nav_com_for_test(Some(NavTargetRef::Entity { id: victim }));
+            .set_nav_com_for_test(Some(NavTargetRef::Object { id: victim }));
         e.navigation
-            .set_nav_com_aux_for_test(Some(NavTargetRef::Entity { id: victim }));
+            .set_nav_com_aux_for_test(Some(NavTargetRef::Object { id: victim }));
         e.navigation.path_replay = FootPathQueue::for_test(vec![2, 3, 4, 5], 0, Some((10, 10)));
         if input["nav_queue"] == 1 {
             e.navigation
-                .push_nav_queue_for_test(NavTargetRef::Entity { id: victim });
+                .push_nav_queue_for_test(NavTargetRef::Object { id: victim });
         }
         if input["contact"] == true {
             e.radio_contacts.insert(victim);

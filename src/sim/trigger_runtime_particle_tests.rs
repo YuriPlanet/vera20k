@@ -19,8 +19,8 @@ fn action(kind: i32, value: i32) -> RuntimeAction {
     let entry = crate::map::actions::parse_actions(&ini)
         .remove("CASE")
         .unwrap()
-        .entries
-        .remove(0);
+        .entries()[0]
+        .clone();
     RuntimeDefinitions::default().resolve_action(entry, None, None)
 }
 
@@ -207,15 +207,7 @@ fn counted_tag_create_then_stop_reaches_the_normal_ai_and_late_delete_drain() {
     );
     sim.classify_map_triggers(None);
     sim.session.set_started(true);
-    sim.advance_triggers(
-        TriggerInputs {
-            events: &map.events,
-            actions: &map.actions,
-            rules: Some(&rules),
-        },
-        None,
-        FrameEffects::default(),
-    );
+    sim.advance_triggers(Some(&rules), None, FrameEffects::default());
     assert!(sim.trigger_runtime.logic_tags.is_empty());
     let ids: Vec<_> = sim.particle_systems().iter().map(|(&id, _)| id).collect();
     assert_eq!(ids.len(), 1);
@@ -229,7 +221,6 @@ fn counted_tag_create_then_stop_reaches_the_normal_ai_and_late_delete_drain() {
             None,
             67,
             TickLane::Ordinary,
-            None,
             FrameEffects::default(),
         )
         .unwrap();

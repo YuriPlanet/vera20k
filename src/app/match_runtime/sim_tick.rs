@@ -13,15 +13,12 @@ use crate::app::AppState;
 use crate::app::input::commands::{preferred_local_owner, preferred_local_owner_name};
 use crate::app::match_runtime::session::SessionMode;
 
-use crate::app::types::SIM_TICK_HZ;
 use crate::app::types::SIM_TICK_MS;
-use crate::assets::asset_manager::AssetManager;
-use crate::assets::pal_file::Palette;
 use crate::map::terrain;
 use crate::render::sprite_atlas;
 use crate::render::unit_atlas;
 use crate::sim::production;
-use crate::sim::replay::{ReplayHeader, ReplayLog};
+use crate::sim::replay::ScenarioServiceInput;
 use crate::sim::trigger_runtime::TriggerEffect;
 use crate::sim::world::{FrameEffects, LifecycleOutput, SimFireEvent, SimFrameOutput, TickLane};
 use crate::ui::game_screen::GameScreen;
@@ -557,7 +554,9 @@ pub(crate) fn pump_audio_service(state: &mut AppState, now_ms: u64) {
     // only the process before its first scenario uses the frontend cursor.
     //Full-screen5BED40 acquires its own shared movie hold synchronously.
     //It does not also call the scenario/menu pause path684140.
-    let paused = state.match_state.presentation_paused();
+    let paused = state
+        .match_state
+        .presentation_paused(&state.frontend.screen);
     let assets = crate::app::loading::pump::audio_service_asset_manager(
         &state.process_assets,
         state.frontend.loading_session.as_ref(),
@@ -638,6 +637,7 @@ pub(crate) struct RuntimePassInputs {
     pub(crate) startup_admitted: bool,
     pub(crate) frame_stepping: bool,
     pub(crate) paused: bool,
+    pub(crate) scenario_paused: bool,
     pub(crate) menu_open: bool,
     pub(crate) session_mode: SessionMode,
     /// The frame pacer's pure timing answer (`should_admit` with no pause
@@ -687,6 +687,11 @@ pub(crate) fn decide_runtime_pass(inputs: RuntimePassInputs) -> RuntimePassDecis
     );
     let pacer_admitted = service.simulation && inputs.pacer_timing_admits;
     let run_sim = !inputs.focus_frozen
+        && !(inputs.scenario_paused
+            && matches!(
+                inputs.session_mode,
+                SessionMode::Campaign | SessionMode::Skirmish
+            ))
         && inputs.startup_admitted
         && (inputs.frame_stepping || pacer_admitted);
     let tick_lane = if inputs.paused && inputs.session_mode.is_network() {
@@ -826,6 +831,35 @@ fn advance_in_game_runtime_mode(
         }
         RuntimeAdvanceMode::ExactOneStep => false,
     };
+    let wall_ms = match mode {
+        RuntimeAdvanceMode::WallClock { now_ms } => now_ms,
+        RuntimeAdvanceMode::ExactOneStep => crate::app::match_runtime::frame_pacer::wall_clock_ms(),
+    };
+    let service_live = matches!(mode, RuntimeAdvanceMode::WallClock { .. })
+        && !state.match_state.match_presentation.in_game_menu.is_open()
+        && !state.match_state.debug_pause
+        && !state.platform.focus_freeze_active();
+    if service_live {
+        super::scenario_pause::poll(state, wall_ms);
+    }
+    let scenario_paused = state
+        .match_state
+        .sim_runtime
+        .as_ref()
+        .is_some_and(|rt| rt.simulation.session.scenario_paused());
+    if service_live
+        && scenario_paused
+        && matches!(
+            state.match_state.session.mode(),
+            SessionMode::Campaign | SessionMode::Skirmish
+        )
+        && pacer_timing_admits
+    {
+        // Main_Tick55D830..55D859 services53B560 and returns without Logic.
+        // A Finish here admits the world only on the following pass.
+        super::scenario_pause::apply_service(state, ScenarioServiceInput::StepChronoScreen);
+        state.platform.frame_pacer.record_admitted_frame(wall_ms);
+    }
     let decision = decide_runtime_pass(RuntimePassInputs {
         exact_step: matches!(mode, RuntimeAdvanceMode::ExactOneStep),
         window_active: state.platform.window_active,
@@ -833,6 +867,7 @@ fn advance_in_game_runtime_mode(
         startup_admitted,
         frame_stepping,
         paused: state.match_state.paused(),
+        scenario_paused,
         menu_open: state.match_state.match_presentation.in_game_menu.is_open(),
         session_mode: state.match_state.session.mode(),
         pacer_timing_admits,
@@ -971,21 +1006,7 @@ fn advance_one_simulation_frame(
     let mut frame_committed = state.match_state.sim_runtime.is_none();
 
     if let Some(rt) = state.match_state.sim_runtime.as_ref() {
-        // F10: the segment opens lazily on the first frame of a timeline and
-        // lives on the app-owned diagnostics owner, never on the simulation.
-        if state.match_state.match_diagnostics.replay_log.is_none() {
-            let sim = &rt.simulation;
-            state.match_state.match_diagnostics.replay_log = Some(ReplayLog::new(ReplayHeader {
-                pixel_conversion_bounds: sim.session.pixel_conversion_bounds,
-                version: 1,
-                tick_hz: SIM_TICK_HZ,
-                seed: sim.session.seed,
-                // Scenario identity is session state — the header derives
-                // from the sim, not from app-resident view fields.
-                map_name: sim.session.map_name.clone(),
-                rules_hash: rules_hash(&rt.resources.rules),
-            }));
-        }
+        state.match_state.match_diagnostics.get_or_begin_replay(rt);
     }
 
     for _ in 0..1 {
@@ -1475,10 +1496,21 @@ fn refresh_cell_lighting(state: &mut AppState) {
     );
 }
 
-fn apply_trigger_effects(state: &mut AppState, effects: &[TriggerEffect]) {
+pub(crate) fn apply_trigger_effects(state: &mut AppState, effects: &[TriggerEffect]) {
     let mut refresh_sidebar = false;
     for effect in effects {
         match effect {
+            TriggerEffect::ScenarioPause {
+                duration,
+                outermost,
+            } => {
+                let now = crate::app::match_runtime::frame_pacer::wall_clock_ms();
+                super::scenario_pause::enter(state, *duration, *outermost, now);
+            }
+            TriggerEffect::ScenarioResume => {
+                let now = crate::app::match_runtime::frame_pacer::wall_clock_ms();
+                super::scenario_pause::resume(state, now);
+            }
             TriggerEffect::TalkBubble {
                 actor,
                 value,
@@ -1695,12 +1727,12 @@ pub(crate) fn refresh_entity_atlases(state: &mut AppState) {
         return;
     }
 
-    let unit_palette = load_unit_palette(
+    // Growth pages must key on the palettes the load-time pages used.
+    let Some((palette, cell_palette)) = crate::map::theater::load_theater_unit_and_iso_palettes(
         asset_manager,
-        &state.match_state.match_presentation.theater_ext,
-    );
-    let Some(palette) = unit_palette else {
-        log::warn!("Atlas refresh skipped: unit palette not found");
+        &state.match_state.match_presentation.theater_name,
+    ) else {
+        log::warn!("Atlas refresh skipped: theater palettes not found");
         return;
     };
 
@@ -1731,10 +1763,6 @@ pub(crate) fn refresh_entity_atlases(state: &mut AppState) {
             .flat_map(|terrain| terrain.tile_animations())
             .map(|anim| anim.anim_name.to_ascii_uppercase())
             .collect();
-        let cell_palette = load_iso_palette(
-            asset_manager,
-            &state.match_state.match_presentation.theater_ext,
-        );
         if let Some(new_sprite_atlas) = sprite_atlas::build_sprite_atlas(
             &state.renderer.gpu.device,
             &state.renderer.gpu.queue,
@@ -1750,7 +1778,7 @@ pub(crate) fn refresh_entity_atlases(state: &mut AppState) {
             &extra_buildings,
             &anim_remap_keys,
             &cell_drawer_type_ids,
-            cell_palette.as_ref(),
+            Some(&cell_palette),
             existing,
             Some(&sim.interner),
         ) {
@@ -1805,34 +1833,6 @@ fn upsert_overlay_entries(
     let synced = index.upsert_occupied(candidates);
     *existing = index.as_slice().to_vec();
     synced
-}
-
-fn load_unit_palette(asset_manager: &AssetManager, theater_ext: &str) -> Option<Palette> {
-    let themed = format!("unit{}.pal", theater_ext.to_ascii_lowercase());
-    let candidates = [
-        themed.as_str(),
-        "unittem.pal",
-        "unitsno.pal",
-        "uniturb.pal",
-        "unit.pal",
-        "temperat.pal",
-    ];
-    for name in candidates {
-        let Some(data) = asset_manager.get(name) else {
-            continue;
-        };
-        if let Ok(pal) = Palette::from_bytes(&data) {
-            return Some(pal);
-        }
-    }
-    None
-}
-
-fn load_iso_palette(asset_manager: &AssetManager, theater_ext: &str) -> Option<Palette> {
-    let name = format!("iso{}.pal", theater_ext.to_ascii_lowercase());
-    asset_manager
-        .get_ref(&name)
-        .and_then(|bytes| Palette::from_bytes(bytes).ok())
 }
 
 pub(crate) fn screen_point_to_world(state: &AppState, screen_x: f32, screen_y: f32) -> (f32, f32) {
@@ -1938,15 +1938,6 @@ pub(crate) fn clamp_cell_to_grid(
     (cell.0.min(max_x), cell.1.min(max_y))
 }
 
-pub(crate) fn rules_hash(rules: &crate::rules::ruleset::RuleSet) -> u64 {
-    // Compatibility covers the processed rules layers plus resolved entity
-    // animation, effect/particle timing, terrain-spawner raw frame timing, and
-    // smudge-selection frame dimensions.
-    // Compatibility must distinguish static inputs that can advance the same
-    // entity differently.
-    rules.simulation_config_hash()
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
@@ -1955,7 +1946,7 @@ mod tests {
     };
     use crate::map::overlay::OverlayEntry;
     use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid, zone_class};
-    use crate::rules::terrain_rules::{LandType, SpeedCostProfile, TerrainClass};
+    use crate::rules::terrain_rules::{LandType, SpeedCostProfile};
     use crate::sim::intern::StringInterner;
     use crate::sim::terrain_object::{
         TerrainObjectState, mark_terrain_occupation, unmark_terrain_occupation,
@@ -1993,12 +1984,9 @@ mod tests {
             vec![ResolvedTerrainCell {
                 tileset_index: None,
                 land_type: LandType::Clear.as_index(),
-                yr_cell_land_type: LandType::Clear.as_index(),
                 speed_costs,
                 zone_type: zone_class::GROUND,
                 base_land_type: LandType::Clear.as_index(),
-                base_yr_cell_land_type: LandType::Clear.as_index(),
-                base_terrain_class: TerrainClass::Clear,
                 base_speed_costs: speed_costs,
                 ..crate::map::resolved_terrain::test_flat_cell(0, 0)
             }],

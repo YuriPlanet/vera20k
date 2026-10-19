@@ -14,7 +14,6 @@ use crate::map::map_file::MapFile;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::map::terrain::TerrainGrid;
 use crate::map::theater::{self, TileImage, TileKey};
-use crate::map::trigger_graph;
 use crate::render::batch::BatchRenderer;
 use crate::render::gpu::GpuContext;
 use crate::render::sidebar_cameo_atlas::{self, SidebarCameoAtlas};
@@ -74,6 +73,8 @@ pub(crate) fn maybe_export_sidebar_cameo_debug(asset_manager: &AssetManager, rul
     );
 }
 
+/// Init_Game `0x0052BA60` converts CAMEO.PAL like every palette load; the
+/// later names are VERA fallbacks for installs without it.
 pub(crate) fn load_sidebar_cameo_palette(asset_manager: &AssetManager) -> Option<Palette> {
     let palette_names = [
         "cameo.pal",
@@ -94,59 +95,6 @@ pub(crate) fn load_sidebar_cameo_palette(asset_manager: &AssetManager) -> Option
     }
     log::warn!("Sidebar cameo palette not found");
     None
-}
-
-pub(crate) fn log_trigger_graph_diagnostics(map_data: &MapFile) {
-    let diag = trigger_graph::analyze_trigger_graph(
-        &map_data.cell_tags,
-        &map_data.tags,
-        &map_data.triggers,
-        &map_data.events,
-        &map_data.actions,
-    );
-    if diag.cell_tags_total == 0
-        && diag.tags_total == 0
-        && diag.triggers_total == 0
-        && map_data.events.is_empty()
-        && map_data.actions.is_empty()
-    {
-        return;
-    }
-
-    log::info!(
-        "Trigger graph: cell_tags={}/{} resolved, tags={}/{} trigger refs resolved, triggers={} events={} actions={}",
-        diag.cell_tags_resolved,
-        diag.cell_tags_total,
-        diag.tags_resolved_to_triggers,
-        diag.tags_with_trigger_ref,
-        diag.triggers_total,
-        diag.triggers_with_event,
-        diag.triggers_with_action
-    );
-    if !diag.dangling_cell_tags.is_empty() {
-        log::warn!(
-            "Trigger graph dangling cell tags (first 8): {:?}",
-            &diag.dangling_cell_tags[..diag.dangling_cell_tags.len().min(8)]
-        );
-    }
-    if !diag.dangling_tag_trigger_refs.is_empty() {
-        log::warn!(
-            "Trigger graph dangling tag->trigger refs (first 8): {:?}",
-            &diag.dangling_tag_trigger_refs[..diag.dangling_tag_trigger_refs.len().min(8)]
-        );
-    }
-    if !diag.triggers_missing_event.is_empty() {
-        log::warn!(
-            "Trigger graph triggers missing events (first 8): {:?}",
-            &diag.triggers_missing_event[..diag.triggers_missing_event.len().min(8)]
-        );
-    }
-    if !diag.triggers_missing_action.is_empty() {
-        log::warn!(
-            "Trigger graph triggers missing actions (first 8): {:?}",
-            &diag.triggers_missing_action[..diag.triggers_missing_action.len().min(8)]
-        );
-    }
 }
 
 pub(crate) fn parse_debug_spawn_units_env() -> Option<Vec<String>> {
@@ -287,7 +235,10 @@ pub(crate) fn load_neutral_tech_types(
         );
         return Vec::new();
     };
-    let types = crate::map::rmg::tech_catalog::resolve(processed.ini(), owner.fixed_art());
+    let types = crate::map::rmg::tech_catalog::resolve(
+        processed.neutral_tech_buildings(),
+        owner.fixed_art(),
+    );
     log::info!(
         "random map: resolved {} neutral tech building type(s)",
         types.len()
@@ -431,19 +382,10 @@ pub(crate) fn build_presentation_manifest(
     theater_iso_palette: Option<&Palette>,
 ) -> PresentationManifest {
     let art = rules.map(RuleSet::art);
-    // Use the theater-specific unit palette if provided, otherwise fall back to search.
-    let palette: Option<Palette> = theater_unit_palette.cloned().or_else(|| {
-        let pal_names: &[&str] = &["unittem.pal", "unit.pal", "temperat.pal"];
-        pal_names.iter().find_map(|name| {
-            let data: Vec<u8> = asset_manager.get(name)?;
-            Palette::from_bytes(&data).ok()
-        })
-    });
-    // Atlas build no longer needs the palette (tiles store palette indices,
-    // not RGB). The palette load above is kept because downstream PaletteSet
-    // construction (Task 1.9) will consume it. Skip the build if no palette
-    // is available — it indicates a missing theater asset and rendering
-    // wouldn't work anyway.
+    // `load_theater_unit_and_iso_palettes` owns both theater palettes:
+    // `load_theater` publishes them and mid-match atlas growth re-reads them.
+    // Without a loaded theater nothing renders, so no entity atlas is built.
+    let palette = theater_unit_palette;
     let unit_atlas: Option<UnitAtlas> = if palette.is_some() {
         unit_atlas::build_unit_atlas(
             &gpu.device,
@@ -471,14 +413,7 @@ pub(crate) fn build_presentation_manifest(
         .flat_map(|terrain| terrain.tile_animations())
         .map(|anim| anim.anim_name.to_ascii_uppercase())
         .collect();
-    let loaded_iso_palette = theater_iso_palette.is_none().then(|| {
-        asset_manager
-            .get_ref(&format!("iso{}.pal", theater_ext.to_ascii_lowercase()))
-            .and_then(|bytes| Palette::from_bytes(bytes).ok())
-    });
-    let cell_palette =
-        theater_iso_palette.or_else(|| loaded_iso_palette.as_ref().and_then(Option::as_ref));
-    let shp_atlas: Option<SpriteAtlas> = palette.as_ref().and_then(|pal| {
+    let shp_atlas: Option<SpriteAtlas> = palette.and_then(|pal| {
         sprite_atlas::build_sprite_atlas(
             &gpu.device,
             &gpu.queue,
@@ -494,7 +429,7 @@ pub(crate) fn build_presentation_manifest(
             &extra_buildings,
             &anim_remap_keys,
             &cell_drawer_type_ids,
-            cell_palette,
+            theater_iso_palette,
             None, // initial build — no existing cache
             Some(&sim.interner),
         )
@@ -512,10 +447,8 @@ pub(crate) fn build_presentation_manifest(
     let house_ramps: &crate::rules::house_colors::HouseColorRamps = rules
         .map(|r| &r.house_color_ramps)
         .unwrap_or(&default_ramps);
-    let palette_set: Option<crate::render::palette_textures::PaletteSet> = palette
-        .as_ref()
-        .zip(global_palette.as_ref())
-        .map(|(pal, global)| {
+    let palette_set: Option<crate::render::palette_textures::PaletteSet> =
+        palette.zip(global_palette.as_ref()).map(|(pal, global)| {
             let active = voxel_palette_demand(house_colors, rules);
             crate::render::palette_textures::PaletteSet::new(gpu, pal, global, house_ramps, &active)
         });
@@ -724,7 +657,7 @@ mod tests {
     #[test]
     fn gsi_13_04_scheduler_roots_include_generic_resolved_tile_names() {
         let ini = IniFile::from_str(
-            "[General]\nDamageFireTypes=FIRE_A,FIRE_B\n\
+            "[General]\nDamageFireTypes=FIRE_A,FIRE_B\nWake=WAKE1\n\
              [Animations]\n0=crate_spark\n\
              [OverlayTypes]\n0=STARTBOX\n[STARTBOX]\nCellAnim=crate_spark\n\
              [CrateRules]\nCrateImg=STARTBOX\nWoodCrateImg=STARTBOX\nWaterCrateImg=STARTBOX\n",
@@ -761,8 +694,8 @@ mod tests {
                 "CUSTOM_MOUTH",
                 "FIRE_A",
                 "FIRE_B",
-                // [General] Wake= default: constructed as a scheduler AnimClass
-                // by the drive locomotor, so it is bound with the roots.
+                // [General] Wake=: constructed as a scheduler AnimClass by the
+                // drive locomotor, so it is bound with the roots.
                 "WAKE1"
             ]
         );

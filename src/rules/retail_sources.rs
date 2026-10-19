@@ -244,7 +244,10 @@ mod tests {
         let projected = owner
             .startup_compatibility_projection()
             .expect("read-only startup projection");
-        let types = crate::map::rmg::tech_catalog::resolve(projected.ini(), owner.fixed_art());
+        let types = crate::map::rmg::tech_catalog::resolve(
+            projected.neutral_tech_buildings(),
+            owner.fixed_art(),
+        );
         assert_eq!(types.len(), 1);
         assert_eq!(types[0].name, "TECH2");
         assert_eq!(

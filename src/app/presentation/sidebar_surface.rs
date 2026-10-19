@@ -591,7 +591,7 @@ mod tests {
     #[ignore = "requires a wgpu adapter and configured retail assets; executes native sidebar packed drawing"]
     fn darken_indices_clip_native_size_and_load_later_status_layers() {
         use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};
-        use crate::assets::pal_file::{Color, Palette};
+        use crate::assets::pal_file::Palette;
         use crate::render::batch::SpriteInstance;
         use crate::render::sidebar_chrome::SidebarDarkenMask;
         use crate::render::terrain_draw_gpu_tests::encoded;
@@ -615,9 +615,7 @@ mod tests {
             crate::util::sha256::sha256_hex(&source.bytes),
             "c4455fb08203e0089af30dab37553854a892ba73eb3e00bb0fdf049576cf4e8a"
         );
-        let palette = Palette {
-            colors: [Color::rgb(255, 37, 91); 256],
-        };
+        let palette = Palette::from_rgb(|_| [255, 37, 91]);
         let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, FORMAT);
         let retail =
             SidebarDarkenMask::from_bytes(&gpu.device, &gpu.queue, &batch, &source.bytes, &palette)

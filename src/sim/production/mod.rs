@@ -104,7 +104,7 @@ pub(in crate::sim) use self::factory_lifecycle::{
 pub(in crate::sim) use self::production_queue::exit_produced_object;
 pub(crate) use self::production_tech::factory_category_for_building;
 pub(crate) use self::wall_placement::{
-    autofill_walls, linked_overlay_id as linked_wall_overlay_id, mark_wall,
+    autofill_walls, linked_overlay_id as linked_wall_overlay_id,
 };
 
 #[cfg(test)]

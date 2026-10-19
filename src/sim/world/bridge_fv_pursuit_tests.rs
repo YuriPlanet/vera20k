@@ -192,7 +192,7 @@ fn paid_snapshot(
         "live_bullet_positions":bullets.iter().map(|b|b["position"].clone()).collect::<Vec<_>>(),
         "bullets":bullets,"anims":anims,
         "anim_count":sim.substrate.anims.iter().filter(|(id, _)| !ambient_anims.contains(id)).count(),
-        "target_cell":{"land":cell.yr_cell_land_type,"zone_type":cell.zone_type,
+        "target_cell":{"land":cell.land_type,"zone_type":cell.zone_type,
             "level":cell.level,"tile":cell.final_tile_index,"subtile":cell.final_sub_tile,
             "overlay":cell.bridge_facts.overlay_id.map_or(-1,i32::from),
             "state":cell.bridge_facts.state_byte},

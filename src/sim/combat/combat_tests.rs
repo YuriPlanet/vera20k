@@ -7347,8 +7347,8 @@ fn a_death_weapon_over_water_picks_its_anim_at_the_zero_location() {
     let mut interner = test_interner();
     let mut terrain = crate::sim::tiberium::test_support::flat_terrain(16, 16);
     let water = terrain.cell_mut(8, 5).unwrap();
-    water.yr_cell_land_type = 2;
-    water.base_yr_cell_land_type = 2;
+    water.land_type = 2;
+    water.base_land_type = 2;
     // The tank's shot lands on the demo truck and kills it.
     let shot = crate::sim::projectile::ProjectileDetonation {
         projectile_id: 7,

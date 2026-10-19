@@ -2270,10 +2270,7 @@ impl Simulation {
     /// `0x00A83D4C`) detect the anim? Not when it is allied with the anim's
     /// House (`HouseClass::IsAlliedWith @ 0x004F9A50`, null not allied).
     /// Otherwise, when one of its PsychicDetection buildings
-    /// (`HouseClass+0x128`: placed buildings whose type's
-    /// `PsychicDetectionRadius=` (`+0x170C`) is positive, added by
-    /// `BuildingClass::Unlimbo` at `0x004414A0` and moved by
-    /// `BuildingClass::ChangeOwner`) is operational (vt+0x350) and its
+    /// ([`Simulation::psychic_detection_sites`]) is operational and its
     /// GetCoords lies within the radius in leptons (`<< 8`, `jle` at
     /// `0x0043B5A9`) of the centre of the anim's cell (`MapClass::operator[]
     /// @ 0x00565730`, `CellClass::Get_Center_Coords @ 0x00480A30`), measured
@@ -2304,29 +2301,13 @@ impl Simulation {
             (at.x / 256) as u16,
             (at.y / 256) as u16,
         );
-        self.substrate.entities.values().any(|entity| {
-            if entity.owner() != viewer
-                || entity.category() != crate::map::entities::EntityCategory::Structure
-                || !entity.lifecycle.object_alive()
-                || entity.lifecycle.in_limbo()
-            {
-                return false;
-            }
-            let radius = self
-                .interner
-                .object_type(entity.type_ref(), rules)
-                .map_or(0, |object| i32::from(object.psychic_detection_radius));
-            if radius <= 0
-                || self.building_operational_state(entity.stable_id(), rules) != Some(true)
-            {
-                return false;
-            }
-            let coords = crate::sim::movement::ground_pose::object_get_coords(entity, terrain);
-            crate::util::native_x87::distance_3d_leptons(
-                [coords.x, coords.y, coords.z],
-                [cell.x, cell.y, cell.z],
-            ) <= radius << 8
-        })
+        self.psychic_detection_sites(viewer, rules)
+            .any(|(site, radius)| {
+                crate::util::native_x87::distance_3d_leptons(
+                    [site.x, site.y, site.z],
+                    [cell.x, cell.y, cell.z],
+                ) <= radius
+            })
     }
 
     pub(crate) fn update_building_damage_fire(&mut self, building_id: u64, rules: &RuleSet) {
@@ -2837,6 +2818,7 @@ impl Simulation {
                     let objects = TiberiumPlacementObjectContext::new(
                         &self.substrate.entities,
                         &self.substrate.occupancy,
+                        &self.substrate.raw_cell_occupation,
                         rules,
                         &self.interner,
                         &self.production.terrain_object_cells,
@@ -2873,9 +2855,9 @@ impl Simulation {
                 //424140 executes even when Overlay Unlimbo refused the cell.
                 let density = self.scenario_rng.next_range_i32_inclusive(0, 2) as u8;
                 if let Some(grid) = self.overlay_grid.as_mut() {
-                    //Like Place487190's post-constructor store, this is a
+                    //424155: like Place487190's post-constructor store, a
                     //literal Cell+11E write even when no overlay was installed.
-                    grid.cell_mut(cell.0, cell.1).overlay_data = density;
+                    grid.write_cell_data(self.resolved_terrain.as_mut(), cell.0, cell.1, density);
                 }
                 if !self.tactical_dirty_cells.contains(&cell) {
                     self.tactical_dirty_cells.push(cell);
@@ -3866,16 +3848,30 @@ mod tests {
         }
     }
 
+    /// Each `art_text` section is an AnimType, so the ordered Rules processor
+    /// reads its fixed-ART Type references (`Next=`, `TrailerAnim=`, ...) as
+    /// in production.
     fn runtime_rules(art_text: &str, frame_counts: &[(&str, i32)]) -> RuleSet {
-        let mut rules = RuleSet::from_ini(&IniFile::from_str(
-            "[General]\nDamageFireTypes=\n\n[AudioVisual]\nConditionYellow=50%\nConditionRed=25%\n",
-        ))
+        let art_ini = IniFile::from_str(art_text);
+        let animations: String = art_ini
+            .section_names()
+            .iter()
+            .enumerate()
+            .map(|(index, name)| format!("{index}={name}\n"))
+            .collect();
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str(&format!(
+                "[General]\nDamageFireTypes=\n\n[AudioVisual]\nConditionYellow=50%\nConditionRed=25%\n\n\
+                 [Animations]\n{animations}"
+            )),
+            &art_ini,
+        )
         .unwrap();
-        let mut art = ArtRegistry::from_ini(&IniFile::from_str(art_text));
+        let mut art = ArtRegistry::from_ini(&art_ini);
         for &(name, frames) in frame_counts {
             art.bind_anim_frame_count_for_test(name, frames);
         }
-        rules.replace_art_registry_for_test(art);
+        rules.install_art_fixture(art);
         rules
     }
 
@@ -5226,25 +5222,32 @@ mod tests {
     /// destroyed. Its Location follows the body every tick.
     #[test]
     fn a_debris_chunk_lands_and_blasts_what_is_under_it() {
-        let mut rules = RuleSet::from_ini(&IniFile::from_str(
-            "[General]\nDamageFireTypes=\n\
-             [AudioVisual]\nConditionYellow=50%\nConditionRed=25%\n\
-             [InfantryTypes]\n[VehicleTypes]\n0=TANK\n[AircraftTypes]\n[BuildingTypes]\n\
-             [TANK]\nStrength=300\nArmor=heavy\nSpeed=4\n\
-             [Warheads]\n0=HE\n\
-             [HE]\nCellSpread=.5\nPercentAtMax=.5\n\
-             Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
-        ))
-        .unwrap();
-        let mut art = ArtRegistry::from_ini(&IniFile::from_str(
+        let art_ini = IniFile::from_str(
             "[CHUNK]\nBouncer=yes\nElasticity=0.0\nMaxXYVel=0.5\nMinZVel=25.0\n\
              ExpireAnim=BOOM\nDamage=20\nDamageRadius=80\nWarhead=HE\n\
              LoopEnd=15\nLoopCount=-1\nRandomRate=220,600\n\
              [BOOM]\nRate=900\n",
-        ));
+        );
+        // The ordered Rules processor reads CHUNK's `ExpireAnim=` and
+        // `Warhead=` with its ART body.
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str(
+                "[General]\nDamageFireTypes=\n\
+                 [AudioVisual]\nConditionYellow=50%\nConditionRed=25%\n\
+                 [InfantryTypes]\n[VehicleTypes]\n0=TANK\n[AircraftTypes]\n[BuildingTypes]\n\
+                 [Animations]\n0=CHUNK\n1=BOOM\n\
+                 [TANK]\nStrength=300\nArmor=heavy\nSpeed=4\n\
+                 [Warheads]\n0=HE\n\
+                 [HE]\nCellSpread=.5\nPercentAtMax=.5\n\
+                 Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
+            ),
+            &art_ini,
+        )
+        .unwrap();
+        let mut art = ArtRegistry::from_ini(&art_ini);
         art.bind_anim_frame_count_for_test("CHUNK", 30);
         art.bind_anim_frame_count_for_test("BOOM", 17);
-        rules.replace_art_registry_for_test(art);
+        rules.install_art_fixture(art);
         let mut sim = Simulation::with_seed(3);
         let americans = sim.interner.intern("Americans");
         sim.houses.insert(
@@ -6194,12 +6197,7 @@ mod tests {
                 .anim_ids,
         );
     }
-    fn waypoint_cue_flare_scene() -> (
-        Simulation,
-        RuleSet,
-        crate::map::map_file::MapFile,
-        crate::sim::intern::InternedId,
-    ) {
+    fn waypoint_cue_flare_scene() -> (Simulation, RuleSet, crate::sim::intern::InternedId) {
         // Custom DropZone binding from the original connected controls. ART and
         // the five-frame SHP metadata are physical ARRWSE inputs; no GPU claim.
         let mut rules=RuleSet::from_ini(&IniFile::from_str(
@@ -6238,20 +6236,12 @@ mod tests {
             None,
         );
         sim.classify_map_triggers(Some(&rules));
-        (sim, rules, map, player)
+        (sim, rules, player)
     }
 
-    fn waypoint_cue_spring_flare(
-        sim: &mut Simulation,
-        rules: &RuleSet,
-        map: &crate::map::map_file::MapFile,
-    ) -> AnimId {
+    fn waypoint_cue_spring_flare(sim: &mut Simulation, rules: &RuleSet) -> AnimId {
         sim.advance_triggers(
-            crate::sim::world::TriggerInputs {
-                events: &map.events,
-                actions: &map.actions,
-                rules: Some(rules),
-            },
+            Some(rules),
             None,
             crate::sim::world::FrameEffects::default(),
         );
@@ -6267,9 +6257,9 @@ mod tests {
 
     #[test]
     fn waypoint_cue_flare_uses_tail_slot_reveals_current_house_and_keeps_first_start() {
-        let (mut sim, rules, map, player) = waypoint_cue_flare_scene();
+        let (mut sim, rules, player) = waypoint_cue_flare_scene();
         assert!(!sim.fog.is_cell_revealed(player, 10, 10));
-        let id = waypoint_cue_spring_flare(&mut sim, &rules, &map);
+        let id = waypoint_cue_spring_flare(&mut sim, &rules);
         let anim = sim.anim(id).unwrap();
         assert_eq!(
             anim.world_coord,
@@ -6301,7 +6291,7 @@ mod tests {
     fn waypoint_cue_flare_ground_building_ends_before_first_guard_and_deck_does_not() {
         use crate::sim::movement::locomotor::MovementLayer;
         for layer in [MovementLayer::Ground, MovementLayer::Bridge] {
-            let (mut sim, rules, map, player) = waypoint_cue_flare_scene();
+            let (mut sim, rules, player) = waypoint_cue_flare_scene();
             if layer == MovementLayer::Bridge {
                 let terrain = sim.resolved_terrain.as_mut().unwrap();
                 let cell = terrain.native_cell_identity((10, 10));
@@ -6333,7 +6323,7 @@ mod tests {
                 None,
                 crate::sim::occupancy::CellListInsertion::AppendBuilding,
             );
-            let id = waypoint_cue_spring_flare(&mut sim, &rules, &map);
+            let id = waypoint_cue_spring_flare(&mut sim, &rules);
             assert_eq!(
                 sim.anim(id).unwrap().world_coord.z,
                 if layer == MovementLayer::Bridge {

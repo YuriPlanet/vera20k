@@ -540,7 +540,7 @@ pub(super) fn retail_hills_collapsed_scene(
     for xy in [(64, 69), (66, 69)] {
         let cell = pristine.cell(xy.0, xy.1).unwrap();
         assert_eq!(
-            (cell.level, cell.slope_type, cell.base_yr_cell_land_type),
+            (cell.level, cell.slope_type, cell.base_land_type),
             (6, 0, 7)
         );
         assert_eq!(cell.base_speed_costs.track, Some(100));

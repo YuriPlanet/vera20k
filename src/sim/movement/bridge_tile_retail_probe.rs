@@ -135,7 +135,7 @@ fn retail_high_bridge_middle_tile_inputs() {
                     .native_anchor
                     .map(|anchor| terrain.native_cell_coord(anchor)),
                 cell.level,
-                cell.yr_cell_land_type
+                cell.land_type
             ])
         })
         .collect();
@@ -153,7 +153,7 @@ fn retail_high_bridge_middle_tile_inputs() {
         .map(|cell| {
             json!({"coord": [cell.rx, cell.ry], "tile": cell.final_tile_index,
         "subtile": cell.final_sub_tile, "level": cell.level, "slope": cell.slope_type,
-        "land": cell.yr_cell_land_type, "zone": cell.zone_type,
+        "land": cell.land_type, "zone": cell.zone_type,
         "has_deck": cell.has_bridge_deck, "walkable": cell.bridge_walkable,
         "bridge_facts": cell.bridge_facts})
         })

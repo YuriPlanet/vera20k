@@ -91,14 +91,15 @@ impl TypeHandleTable {
 /// warhead identities combat compares per detonation. `RuleSet` keeps only the
 /// canonical names (`rules.bridge_warheads`); the interned ids live here,
 /// built beside `TypeHandleTable` after interning and rebuilt from rules on
-/// load. Derived cache — never serialized, never hashed.
+/// load. Derived cache — never serialized, never hashed. An unset key keeps
+/// the RulesClass constructor's null, the empty name, which no warhead has.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ResolvedRuleHandles {
-    /// Resolved `IonCannonWarhead=` (retail default `IonCannonWH`).
+    /// Resolved `IonCannonWarhead=` (retail `IonCannonWH`).
     pub ion_cannon: crate::sim::intern::InternedId,
-    /// Resolved `C4Warhead=` (retail default `Super`).
+    /// Resolved `C4Warhead=` (retail `Super`).
     pub c4: crate::sim::intern::InternedId,
-    /// Resolved `CrushWarhead=` (retail default `Crush`).
+    /// Resolved `CrushWarhead=` (retail `Crush`).
     pub crush: crate::sim::intern::InternedId,
 }
 

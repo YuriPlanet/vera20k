@@ -12,7 +12,7 @@
 use std::collections::{HashMap, HashSet};
 
 use crate::assets::asset_manager::AssetManager;
-use crate::assets::pal_file::{Color, Palette};
+use crate::assets::pal_file::Palette;
 use crate::assets::tmp_file::TmpFile;
 use crate::map::map_file::MapError;
 use crate::rules::ini_parser::{IniFile, IniSection};
@@ -838,9 +838,8 @@ pub fn load_theater(asset_manager: &mut AssetManager, theater_name: &str) -> Opt
         lookup.bounds().len()
     );
 
-    let iso_palette = load_exact_palette(asset_manager, def.iso_palette_name, theater_name, "iso")?;
-    let unit_palette =
-        load_exact_palette(asset_manager, def.unit_palette_name, theater_name, "unit")?;
+    let (unit_palette, iso_palette) =
+        load_theater_unit_and_iso_palettes(asset_manager, theater_name)?;
     let tiberium_palette = load_exact_palette(
         asset_manager,
         def.theater_palette_name,
@@ -1097,6 +1096,29 @@ fn read_general_u16(general: Option<&IniSection>, key: &str) -> Option<u16> {
     u16::try_from(general?.read_int(key, -1)).ok()
 }
 
+/// The theater's unit and iso palettes, by their exact names: the one choice
+/// [`load_theater`] publishes and mid-match atlas growth re-reads, so pages
+/// grown later key on the load-time RGBA rows.
+///
+/// Init_Theater (`0x005349C0`, UNIT%s.PAL) and Read_Theater_TileSets_INI
+/// (ISO%s.PAL, `0x005454DB`) store each component `<< 2`, the one palette
+/// conversion. gamemd builds its colour tables with no colour key:
+/// ConvertClass (`0x0048E740`, 16-bit rows from `0x004BBB00`) and
+/// LightConvertClass::UpdateColors (`0x00556090`, through its RGB565 row
+/// builder `0x007DE200` or its generic loop) convert each entry by its RGB,
+/// and only index 0 is special (UpdateColors writes it as 0). Retail
+/// UNITTEM.PAL holds raw 63,0,63 at 204..239 and ISOTEM.PAL at 10; they draw
+/// as that colour.
+pub fn load_theater_unit_and_iso_palettes(
+    asset_manager: &AssetManager,
+    theater_name: &str,
+) -> Option<(Palette, Palette)> {
+    let def = theater_def(theater_name)?;
+    let iso = load_exact_palette(asset_manager, def.iso_palette_name, theater_name, "iso")?;
+    let unit = load_exact_palette(asset_manager, def.unit_palette_name, theater_name, "unit")?;
+    Some((unit, iso))
+}
+
 fn load_exact_palette(
     asset_manager: &AssetManager,
     name: &str,
@@ -1104,7 +1126,7 @@ fn load_exact_palette(
     palette_kind: &str,
 ) -> Option<Palette> {
     if let Some((data, source)) = asset_manager.get_with_source(name)
-        && let Ok(palette) = Palette::from_bytes_gamemd_ui(&data)
+        && let Ok(palette) = Palette::from_bytes(&data)
     {
         log::info!(
             "Theater {}: {} palette '{}' from {}",
@@ -1125,17 +1147,7 @@ fn load_exact_palette(
 }
 
 fn native_missing_theater_palette() -> Palette {
-    let mut colors = [Color::rgb(0, 0, 0); 256];
-    for (index, color) in colors.iter_mut().enumerate() {
-        let value = index as u8;
-        *color = Color {
-            r: value,
-            g: 255u8.wrapping_sub(value),
-            b: value.wrapping_shl(2),
-            a: if index == 0 { 0 } else { 255 },
-        };
-    }
-    Palette { colors }
+    Palette::from_rgb(|value| [value, 255u8.wrapping_sub(value), value.wrapping_shl(2)])
 }
 
 /// Collect all unique TileKey values used by a terrain grid.

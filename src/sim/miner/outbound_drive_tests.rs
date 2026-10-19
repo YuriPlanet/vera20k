@@ -8,7 +8,7 @@ use crate::rules::ini_parser::IniFile;
 use crate::rules::locomotor_type::{LocomotorKind, MovementZone, SpeedType};
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
-use crate::rules::terrain_rules::{SpeedCostProfile, TerrainClass};
+use crate::rules::terrain_rules::SpeedCostProfile;
 use crate::sim::components::{DriveCoord, NavTargetRef};
 use crate::sim::house_state::HouseState;
 use crate::sim::miner::{CargoBale, MinerConfig, MinerKind, MinerState, ResourceType};
@@ -56,12 +56,12 @@ fn outbound_contract_oracle() -> OutboundContractOracle {
     let tib01 = overlays.id_for_name("TIB01").expect("retail TIB01");
     let clear_speed_costs = rules
         .terrain_rules
-        .semantics_by_name("Clear")
+        .semantics_for_land_type(crate::rules::terrain_rules::LandType::Clear.as_index())
         .expect("merged [Clear]")
         .speed_costs;
     let tiberium_speed_costs = rules
         .terrain_rules
-        .semantics_by_name("Tiberium")
+        .semantics_for_land_type(crate::rules::terrain_rules::LandType::Tiberium.as_index())
         .expect("merged [Tiberium]")
         .speed_costs;
 
@@ -123,19 +123,14 @@ fn seed_human_house(sim: &mut Simulation, owner: &str) {
 fn resolved_cell(
     rx: u16,
     ry: u16,
-    terrain_class: TerrainClass,
     land_type: u8,
     speed_costs: SpeedCostProfile,
 ) -> ResolvedTerrainCell {
     ResolvedTerrainCell {
         land_type,
-        yr_cell_land_type: land_type,
-        terrain_class,
         speed_costs,
         zone_type: zone_class::GROUND,
         base_land_type: LandType::Clear.as_index(),
-        base_yr_cell_land_type: LandType::Clear.as_index(),
-        base_terrain_class: TerrainClass::Clear,
         base_speed_costs: speed_costs,
         ..crate::map::resolved_terrain::test_flat_cell(rx, ry)
     }
@@ -151,15 +146,8 @@ fn staged_terrain(
         GRID_SIZE,
         (0..GRID_SIZE)
             .flat_map(|ry| {
-                (0..GRID_SIZE).map(move |rx| {
-                    resolved_cell(
-                        rx,
-                        ry,
-                        TerrainClass::Clear,
-                        clear_land_type,
-                        oracle.clear_speed_costs,
-                    )
-                })
+                (0..GRID_SIZE)
+                    .map(move |rx| resolved_cell(rx, ry, clear_land_type, oracle.clear_speed_costs))
             })
             .collect(),
     );
@@ -167,8 +155,6 @@ fn staged_terrain(
         let cell = terrain.cell_mut(rx, ry).expect("staged ore cell");
         let tiberium_land_type = LandType::Tiberium.as_index();
         cell.land_type = tiberium_land_type;
-        cell.yr_cell_land_type = tiberium_land_type;
-        cell.terrain_class = TerrainClass::Tiberium;
         cell.speed_costs = oracle.tiberium_speed_costs;
         cell.allows_tiberium = true;
     }
@@ -251,13 +237,9 @@ fn rock_where_grid_blocks(sim: &mut Simulation, grid: &PathGrid) {
                 .and_then(|terrain| terrain.cell_mut(rx, ry))
                 .expect("staged cell");
             cell.land_type = LandType::Rock.as_index();
-            cell.yr_cell_land_type = LandType::Rock.as_index();
-            cell.terrain_class = TerrainClass::Rock;
             cell.speed_costs = rock;
             cell.zone_type = zone_class::IMPASSABLE;
             cell.base_land_type = LandType::Rock.as_index();
-            cell.base_yr_cell_land_type = LandType::Rock.as_index();
-            cell.base_terrain_class = TerrainClass::Rock;
             cell.base_speed_costs = rock;
         }
     }
@@ -907,9 +889,13 @@ fn gsi_04_07_placement_miner_return_threads_live_wall_neighbor_authority() {
         let overlays = sim.overlay_grid.as_mut().expect("live overlay grid");
         overlays.place_overlay(30, 33, overlay_id, 0);
         if overlay_id == wall_id {
-            // A placed wall's `OverlayClass::Mark` increments
-            // (`0x005FC762..0x005FC775`); a rock contributes none.
-            overlays.add_retained_wall_neighbor_source(sim.resolved_terrain.as_ref(), 30, 33);
+            // A placed wall's `OverlayClass::Mark` increments its eight
+            // neighbours (`0x005FC762..0x005FC775`); a rock contributes none.
+            let terrain = sim.resolved_terrain.as_ref().expect("live terrain");
+            for (dx, dy) in crate::util::direction::DIRECTION_DELTAS {
+                let neighbor = terrain.native_cell_identity((30 + dx as i16, 33 + dy as i16));
+                overlays.increment_retained_wall_neighbor_count(terrain, neighbor);
+            }
         }
 
         // Zone_precheck marks only the start/goal zones (1 and 2). The route
@@ -1754,15 +1740,10 @@ fn outbound_contract_matches_selected_retail_hills_battle() {
     let overlays = OverlayTypeRegistry::from_ini(&retail.processed_rules, Some(&retail.fixed_art));
     let tib01 = overlays.id_for_name("TIB01").expect("retail TIB01");
     assert!(overlays.flags(tib01).is_some_and(|flags| flags.tiberium));
-    for terrain in ["Clear", "Tiberium"] {
-        let expected = miner_contract_rules
-            .terrain_rules
-            .semantics_by_name(terrain)
-            .unwrap_or_else(|| panic!("contract {terrain} terrain"));
-        let actual = rules
-            .terrain_rules
-            .semantics_by_name(terrain)
-            .unwrap_or_else(|| panic!("retail {terrain} terrain"));
+    for land in [LandType::Clear, LandType::Tiberium] {
+        let terrain = land.section_name();
+        let expected = miner_contract_rules.terrain_rules.row(land);
+        let actual = rules.terrain_rules.row(land);
         assert_eq!(actual.buildable, expected.buildable, "{terrain} Buildable");
         assert_eq!(
             actual.speed_costs, expected.speed_costs,

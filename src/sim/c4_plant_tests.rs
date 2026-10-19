@@ -177,7 +177,7 @@ fn stand_in(sim: &mut Simulation, id: u64, building: u64) {
     }
     planter
         .navigation
-        .set_nav_com_for_test(Some(NavTargetRef::building(building)));
+        .set_nav_com_for_test(Some(NavTargetRef::object(building)));
     planter
         .locomotor
         .as_mut()
@@ -266,7 +266,7 @@ fn a_hunting_demolition_man_whose_scan_finds_a_building_sabotages_it() {
     assert!(
         matches!(
             entity.navigation.nav_com(),
-            Some(NavTargetRef::Entity { id } | NavTargetRef::Object { id }) if id == target
+            Some(NavTargetRef::Object { id }) if id == target
         ),
         "{:?}",
         entity.navigation.nav_com()
@@ -481,7 +481,7 @@ fn a_second_planter_leaves_the_first_charge_alone() {
     );
     assert_ne!(
         planter.navigation.nav_com(),
-        Some(NavTargetRef::building(building))
+        Some(NavTargetRef::object(building))
     );
     assert_eq!(sim.scenario_rng.logical_state(), after);
 }
@@ -553,7 +553,7 @@ fn the_arm_plants_only_from_a_sabotage_c4_arrival_at_its_navcom() {
                     .get_mut(actor)
                     .unwrap()
                     .navigation
-                    .set_nav_com_for_test(Some(NavTargetRef::building(other)));
+                    .set_nav_com_for_test(Some(NavTargetRef::object(other)));
             }
             _ => {}
         }

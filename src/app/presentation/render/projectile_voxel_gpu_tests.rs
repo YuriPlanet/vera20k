@@ -536,7 +536,7 @@ fn kirov_voxel_pose_upload_and_retained_replay_survive_a_changed_second_frame() 
                                 rules.house_color_ramps.ramp(HouseColorIndex(0))
                                     [(index - 16) as usize]
                             } else {
-                                palette.colors[index as usize]
+                                palette.color(index)
                             };
                             encoded(light.rgb565([rgb.r, rgb.g, rgb.b], index, 127), format)
                         };
@@ -596,13 +596,12 @@ fn global_voxel_palette_bypasses_theater_and_house_remap_on_both_replay_routes()
     assert!(
         indices[2..]
             .iter()
-            .any(|&index| theater.colors[index as usize] != global.colors[index as usize])
+            .any(|&index| theater.color(index) != global.color(index))
     );
     let ramps = &battle.rules.house_color_ramps;
     assert!(
         indices[..2].iter().any(
-            |&index| ramps.ramp(HouseColorIndex(0))[(index - 16) as usize]
-                != global.colors[index as usize]
+            |&index| ramps.ramp(HouseColorIndex(0))[(index - 16) as usize] != global.color(index)
         )
     );
     let size = [indices.len() as u32, 1];
@@ -713,11 +712,11 @@ fn global_voxel_palette_bypasses_theater_and_house_remap_on_both_replay_routes()
                 let output = gpu.finish(encoder, &reads, size);
                 for (x, &index) in indices.iter().enumerate() {
                     let rgb = if source_palette == 1 {
-                        global.colors[index as usize]
+                        global.color(index)
                     } else if (16..32).contains(&index) {
                         ramps.ramp(HouseColorIndex(0))[(index - 16) as usize]
                     } else {
-                        theater.colors[index as usize]
+                        theater.color(index)
                     };
                     let expected = encoded(light.rgb565([rgb.r, rgb.g, rgb.b], index, 127), format);
                     assert_eq!(

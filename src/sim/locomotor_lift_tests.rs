@@ -243,7 +243,6 @@ fn retail_tank_let_go_over_a_unit_crashes_onto_it() {
                 None,
                 33,
                 crate::sim::world::TickLane::Ordinary,
-                None,
                 FrameEffects::default(),
             )
             .expect("admitted drop frame");

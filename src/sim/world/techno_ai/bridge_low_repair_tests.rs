@@ -19,8 +19,8 @@ fn export_scene(scene: &HeadlessScenario, phase: &str) {
             Some(json!({
                 "coord":[x,y], "tile":cell.final_tile_index,
                 "subtile":cell.final_sub_tile, "level":cell.level,
-                "slope":cell.slope_type, "land":cell.yr_cell_land_type,
-                "base_land":cell.base_yr_cell_land_type,
+                "slope":cell.slope_type, "land":cell.land_type,
+                "base_land":cell.base_land_type,
                 "zone_type":cell.zone_type,
                 "bridge":cell.bridge_facts,
                 "ground_walk_blocked":cell.ground_walk_blocked,
@@ -73,7 +73,7 @@ fn retail_shrapnel_engineer_repairs_authored_water_gap() {
             .cell(x, 59)
             .unwrap();
         assert_eq!(cell.bridge_facts.overlay_id, Some(101));
-        assert_eq!(cell.yr_cell_land_type, LandType::Water.as_index());
+        assert_eq!(cell.land_type, LandType::Water.as_index());
         assert!(!cell.bridge_facts.has_structural_bridge());
     }
     let runtime = &mut scene.runtime;
@@ -151,7 +151,7 @@ fn retail_shrapnel_engineer_repairs_authored_water_gap() {
                 .overlay_id
                 .is_some_and(|overlay| (83..=86).contains(&overlay))
         );
-        assert_eq!(cell.yr_cell_land_type, LandType::Road.as_index());
+        assert_eq!(cell.land_type, LandType::Road.as_index());
         assert!(!cell.bridge_facts.has_structural_bridge());
     }
     let repaired_snapshot = save_scene(&scene, "Shrapnel low bridge repaired");
@@ -190,7 +190,7 @@ fn retail_shrapnel_engineer_repairs_authored_water_gap() {
                 .unwrap()
                 .cell(x, 59)
                 .unwrap();
-            assert_eq!(cell.yr_cell_land_type, LandType::Road.as_index());
+            assert_eq!(cell.land_type, LandType::Road.as_index());
             assert!(!cell.bridge_facts.has_structural_bridge());
         }
         cross_repaired_road(&mut scene);
@@ -804,7 +804,7 @@ fn assert_retained_naval_ship(
             .unwrap()
             .cell(113, 59)
             .unwrap()
-            .yr_cell_land_type,
+            .land_type,
         native["land"].as_u64().unwrap() as u8
     );
     assert_no_naval_cell_member(sim, id);

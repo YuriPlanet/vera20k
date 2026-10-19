@@ -9,26 +9,19 @@ use crate::map::rmg::phases::tech_buildings::TechType;
 use crate::rules::foundation::{FOUNDATION_TABLE, read_foundation};
 use crate::rules::ini_parser::IniFile;
 
-/// Section and key naming the neutral types the generator draws from.
-const AI_SECTION: &str = "AI";
-const NEUTRAL_TECH_BUILDINGS: &str = "NeutralTechBuildings";
-
-/// Build the catalog from a merged rules INI and a merged art INI.
+/// Build the catalog from the BuildingType IDs of `[AI]
+/// NeutralTechBuildings=` and a merged art INI.
 ///
-/// Both are the active standalone YR sources (`rulesmd` and `artmd`):
-/// the stock YR list has six entries where base RA2 has four.
-pub fn resolve(rules: &IniFile, art: &IniFile) -> Vec<TechType> {
-    // The building TypeList read (`0x0067B550`): ReadString 0x80, `strtok`.
-    let Some(names) = rules
-        .section(AI_SECTION)
-        .and_then(|section| section.read_list(NEUTRAL_TECH_BUILDINGS, 0x80))
-    else {
-        return Vec::new();
-    };
+/// The IDs are those the ordered Rules processor's BuildingType list read
+/// (`0x0067B550`: ReadString 0x80, `strtok`) kept
+/// (`ProcessedRulesLayers::neutral_tech_buildings`) over the active
+/// standalone YR sources: the stock YR list has six entries where base RA2
+/// has four.
+pub fn resolve(names: &[String], art: &IniFile) -> Vec<TechType> {
     names
-        .into_iter()
+        .iter()
         .map(|name| TechType {
-            name: name.to_string(),
+            name: name.clone(),
             footprint: footprint_for(art, name),
         })
         .collect()
@@ -62,15 +55,27 @@ pub(crate) fn stock_contract_catalog() -> Vec<TechType> {
     let art = IniFile::from_str(crate::test_fixture::text(
         "tests/fixtures/ini/rmg_neutral_tech_art_contract.ini",
     ));
-    resolve(&rules, &art)
+    let processed = crate::rules::native_processing::RulesLayerStack::new(rules)
+        .process()
+        .expect("neutral tech rules fixture");
+    resolve(processed.neutral_tech_buildings(), &art)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn rules_with(list: &str) -> IniFile {
-        IniFile::from_str(&format!("[AI]\nNeutralTechBuildings={list}\n"))
+    /// The catalog of `rules` through the production reader.
+    fn catalog(rules: &str, art: &IniFile) -> Vec<TechType> {
+        let processed =
+            crate::rules::native_processing::RulesLayerStack::new(IniFile::from_str(rules))
+                .process()
+                .unwrap();
+        resolve(processed.neutral_tech_buildings(), art)
+    }
+
+    fn rules_with(list: &str) -> String {
+        format!("[AI]\nNeutralTechBuildings={list}\n")
     }
 
     /// The verified stock YR list and footprints through a narrow INI fixture.
@@ -97,14 +102,14 @@ mod tests {
     #[test]
     fn absent_section_or_key_yields_an_empty_catalog() {
         let art = IniFile::from_str("[CAOILD]\nFoundation=2x2\n");
-        assert!(resolve(&IniFile::from_str(""), &art).is_empty());
-        assert!(resolve(&IniFile::from_str("[AI]\nFixtureOnly=1\n"), &art).is_empty());
+        assert!(catalog("", &art).is_empty());
+        assert!(catalog("[AI]\nFixtureOnly=1\n", &art).is_empty());
     }
 
     #[test]
     fn empty_list_value_yields_an_empty_catalog() {
         let art = IniFile::from_str("[CAOILD]\nFoundation=2x2\n");
-        assert!(resolve(&rules_with(""), &art).is_empty());
+        assert!(catalog(&rules_with(""), &art).is_empty());
     }
 
     /// A named type with no art entry, no `Foundation=`, or an unrecognised
@@ -112,7 +117,7 @@ mod tests {
     #[test]
     fn unresolved_foundations_fall_back_to_the_table_default() {
         let art = IniFile::from_str("[CANOKEY]\nHeight=5\n[CABAD]\nFoundation=7x7\n");
-        let catalog = resolve(&rules_with("CAMISSING,CANOKEY,CABAD"), &art);
+        let catalog = catalog(&rules_with("CAMISSING,CANOKEY,CABAD"), &art);
         assert_eq!(catalog.len(), 3);
         for entry in &catalog {
             assert_eq!(entry.footprint, [(0, 0)], "{} footprint", entry.name);
@@ -124,18 +129,33 @@ mod tests {
     #[test]
     fn list_entries_keep_their_spaces_and_empty_fields_drop() {
         let art = IniFile::from_str("[CAOILD]\nFoundation=2x2\n[CAPOWR]\nFoundation=2x2\n");
-        let catalog = resolve(&rules_with("CAOILD , ,,CAPOWR"), &art);
+        let catalog = catalog(&rules_with("CAOILD , ,,CAPOWR"), &art);
         let names: Vec<&str> = catalog.iter().map(|t| t.name.as_str()).collect();
         assert_eq!(names, ["CAOILD ", " ", "CAPOWR"]);
         assert_eq!(catalog[0].footprint, [(0, 0)]);
         assert_eq!(catalog[2].footprint.len(), 4);
     }
 
+    /// Each entry is the BuildingType its factory found: `none` is null and
+    /// a token names the registered Type whatever its case.
+    #[test]
+    fn list_entries_are_the_types_the_factory_found() {
+        let art = IniFile::from_str("[CAOILD]\nFoundation=2x2\n");
+        let catalog = catalog(
+            "[BuildingTypes]\n0=CAOILD\n[CAOILD]\nFoundation=2x2\n\
+             [AI]\nNeutralTechBuildings=caoild,none\n",
+            &art,
+        );
+        let names: Vec<&str> = catalog.iter().map(|t| t.name.as_str()).collect();
+        assert_eq!(names, ["CAOILD"]);
+        assert_eq!(catalog[0].footprint.len(), 4);
+    }
+
     /// A non-square foundation keeps its width/height orientation.
     #[test]
     fn rectangular_foundation_is_row_major_width_by_height() {
         let art = IniFile::from_str("[CAOUTP]\nFoundation=4x3\n");
-        let catalog = resolve(&rules_with("CAOUTP"), &art);
+        let catalog = catalog(&rules_with("CAOUTP"), &art);
         assert_eq!(catalog[0].footprint.len(), 12);
         assert_eq!(catalog[0].footprint[0], (0, 0));
         assert_eq!(catalog[0].footprint[3], (3, 0));
@@ -151,7 +171,7 @@ mod tests {
         let startup = owner
             .startup_compatibility_projection()
             .expect("RMG shell projection");
-        let actual = resolve(startup.ini(), owner.fixed_art());
+        let actual = resolve(startup.neutral_tech_buildings(), owner.fixed_art());
         let expected = stock_contract_catalog();
         assert_eq!(
             actual

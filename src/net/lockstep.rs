@@ -9,6 +9,12 @@
 //! player removal are session-owner boundaries: due `0x13` records reach the
 //! generic execute callback, but this module does not claim that callback alone
 //! reproduces the native EXIT path.
+//!
+//! Production does not run this queue yet. Matches schedule commands through
+//! `Simulation::queue_command` (`sim/world/command_schedule.rs`) and share only
+//! [`SynchronizedCommand::decode_for_simulation`] with it. The queue, the
+//! scheduler, the send policy and the dispatch house are kept for the native
+//! multiplayer transport.
 
 use std::collections::VecDeque;
 use std::mem::size_of;

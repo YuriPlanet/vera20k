@@ -2040,7 +2040,7 @@ mod tests {
             } else {
                 let costs = terrain.land_speed_costs(land);
                 let cell = &mut terrain.cells[0];
-                cell.yr_cell_land_type = land as u8;
+                cell.land_type = land as u8;
                 cell.speed_costs = costs;
                 cell.zone_type = zone_class::GROUND;
                 cell.level = level as u8;

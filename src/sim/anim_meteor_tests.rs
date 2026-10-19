@@ -205,13 +205,6 @@ fn meteor_landing_runs_children_without_expire_and_uses_last_water_splash() {
         .unwrap()
         .cell_mut(40, 40)
         .unwrap()
-        .yr_cell_land_type = 2;
-    water
-        .resolved_terrain
-        .as_mut()
-        .unwrap()
-        .cell_mut(40, 40)
-        .unwrap()
         .land_type = 2;
     assert!(!water.anim_bounce_landing(
         config,
@@ -251,10 +244,15 @@ fn retail_meteor_profiles_keep_missing_stock_images_explicit() {
             cfg.tiberium_spread_radius,
             section.read_int("TiberiumSpreadRadius", 0)
         );
+        // Only a registered AnimType's ReadINI reads its ART references;
+        // retail keeps METSMALL, METLARGE and METDEBRI as commented-out `;GEF`
+        // [Animations] entries, so no AnimType holds their Spawns.
+        let registered = fixture.rules.anim_type_names.contains(name);
         assert_eq!(
             cfg.spawns.as_deref(),
             section
                 .read_name("Spawns", 0x80)
+                .filter(|_| registered)
                 .map(str::to_ascii_uppercase)
                 .as_deref()
         );
@@ -378,10 +376,10 @@ fn strict_and_tolerant_spawn_closures_bind_cycles_with_explicit_custom_images() 
     let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
         return;
     };
-    let art = IniFile::from_str(
-        "[METSMALL]\nImage=BEACON\nSpawns=METLARGE\n[METLARGE]\nImage=BEACON\nSpawns=CHILD\n[CHILD]\nImage=BEACON\nSpawns=METSMALL\n",
-    );
-    let mut rules = formed_rules("");
+    let cycle = "[METSMALL]\nImage=BEACON\nSpawns=METLARGE\n[METLARGE]\nImage=BEACON\nSpawns=CHILD\n[CHILD]\nImage=BEACON\nSpawns=METSMALL\n";
+    let art = IniFile::from_str(cycle);
+    // The ordered Rules processor reads the `Spawns=` cycle with the ART bodies.
+    let mut rules = formed_rules(cycle);
     for strict in [true, false] {
         rules.install_art_fixture(ArtRegistry::from_ini(&art));
         let roots = vec!["METSMALL".to_string()];

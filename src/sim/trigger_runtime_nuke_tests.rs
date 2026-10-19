@@ -208,7 +208,7 @@ fn high_explosive_revenge_authored_strikes_launch_and_reach_damage() {
 
     for record in retail["actions"].as_array().unwrap() {
         let entry = map.actions[record["trigger_id"].as_str().unwrap()]
-            .entries
+            .entries()
             .iter()
             .find(|entry| entry.kind == 95)
             .unwrap()
@@ -263,7 +263,7 @@ fn high_explosive_revenge_authored_strikes_launch_and_reach_damage() {
         &[(at, integer(&input["flat_level"]) as u8)],
     );
     let entry = map.actions[retail["actions"][0]["trigger_id"].as_str().unwrap()]
-        .entries
+        .entries()
         .iter()
         .find(|entry| entry.kind == 95)
         .unwrap()
@@ -326,7 +326,7 @@ fn high_explosive_revenge_authored_strikes_launch_and_reach_damage() {
         .unwrap();
     let health = sim.entities().get(victim).unwrap().health.current();
     let entry = map.actions[retail["actions"][0]["trigger_id"].as_str().unwrap()]
-        .entries
+        .entries()
         .iter()
         .find(|entry| entry.kind == 95)
         .unwrap()

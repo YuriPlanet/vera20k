@@ -44,7 +44,6 @@ fn update_all_matches_native() {
 use crate::map::{map_file::MapFile, waypoints::Waypoint};
 use crate::rules::ini_parser::IniFile;
 use crate::sim::superweapon::chronosphere_tests::{place, world_with};
-use crate::sim::world::TriggerInputs;
 use std::collections::HashMap;
 
 fn rules() -> RuleSet {
@@ -101,15 +100,7 @@ fn counted_action94_uses_ground_then_real_frame_damage_and_cleanup() {
     );
     sim.classify_map_triggers(None);
     sim.session.set_started(true);
-    sim.advance_triggers(
-        TriggerInputs {
-            events: &map.events,
-            actions: &map.actions,
-            rules: Some(&rules),
-        },
-        None,
-        FrameEffects::default(),
-    );
+    sim.advance_triggers(Some(&rules), None, FrameEffects::default());
     assert!(sim.trigger_local_is_set_for_test(0));
     assert_eq!(
         sim.ion_blasts().collect::<Vec<_>>(),
@@ -166,7 +157,7 @@ fn water_selects_last_splash_and_only_raw100_adds_a_deck_area() {
         let (rules, mut sim, _) = world_with(rules(), 64, &[]);
         waypoint(&mut sim, (20, 20));
         let terrain = sim.resolved_terrain.as_mut().unwrap();
-        terrain.cell_mut(20, 20).unwrap().yr_cell_land_type = land;
+        terrain.cell_mut(20, 20).unwrap().land_type = land;
         let cell = terrain.native_cell_identity((20, 20));
         terrain.write_native_cell_flags(cell, flags);
         assert!(sim.trigger_ion_blast(1));

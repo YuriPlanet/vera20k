@@ -141,8 +141,8 @@ fn unit(
         crate::map::resolved_terrain::install_tunnel_repair_test_catalog(terrain);
         let cell = terrain.cell_mut(x as u16, y as u16).unwrap();
         cell.final_tile_index = 1;
-        cell.yr_cell_land_type = 10;
-        cell.base_yr_cell_land_type = 10;
+        cell.land_type = 10;
+        cell.base_land_type = 10;
     }
     // The row's Unit type: SpeedType Wheel, Crusher=yes or CrusherAll.
     let variant = if input["movement_zone"] == 12 {

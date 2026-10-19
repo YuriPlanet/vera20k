@@ -6,7 +6,6 @@ use super::*;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
-use crate::rules::terrain_rules::TerrainClass;
 use crate::sim::bridge_state::{BridgeEndpointRecord, BridgeRecordKind};
 use crate::sim::intern::InternedId;
 use serde_json::{Value, json};
@@ -587,12 +586,12 @@ impl Simulation {
         sim.playfield_size_height = Some(8);
         let clear = rules
             .terrain_rules
-            .semantics_by_name("Clear")
+            .semantics_for_land_type(crate::rules::terrain_rules::LandType::Clear.as_index())
             .unwrap()
             .speed_costs;
         let water = rules
             .terrain_rules
-            .semantics_by_name("Water")
+            .semantics_for_land_type(crate::rules::terrain_rules::LandType::Water.as_index())
             .unwrap()
             .speed_costs;
         let cells = (0..16)
@@ -604,11 +603,6 @@ impl Simulation {
                     cell.speed_costs = if river { water } else { clear };
                     cell.base_speed_costs = cell.speed_costs;
                     if river {
-                        cell.is_water = true;
-                        cell.terrain_class = TerrainClass::Water;
-                        cell.base_terrain_class = TerrainClass::Water;
-                        cell.yr_cell_land_type = 2;
-                        cell.base_yr_cell_land_type = 2;
                         cell.land_type = 2;
                         cell.base_land_type = 2;
                         cell.zone_type = crate::map::resolved_terrain::zone_class::WATER;

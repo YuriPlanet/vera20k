@@ -23,7 +23,7 @@ use std::path::{Path, PathBuf};
 use crate::asset_tools::canvas::{self, Rgba, SheetCell};
 use crate::asset_tools::identify;
 use crate::asset_tools::names::NameDict;
-use crate::asset_tools::palette::{self, AlphaPolicy};
+use crate::asset_tools::palette;
 use crate::asset_tools::report::{ErrorReport, RenderOutputs, RenderReport};
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::pal_file::Palette;
@@ -255,7 +255,6 @@ pub fn run(
     };
 
     let choice = load.choice();
-    let alpha_policy = load.alpha_policy;
     if is_last_resort_palette(&load.reason) {
         warnings.push(format!(
             "palette `{}` came from the last-resort archive scan ({}) — it renders, which is not evidence it is the right palette",
@@ -349,12 +348,7 @@ pub fn run(
             out_of_bounds.push(frame_index);
         }
 
-        // Alpha policy decides the converter. Getting this backwards is the
-        // single most likely way this ships wrong-looking art.
-        let converted = match alpha_policy {
-            AlphaPolicy::Standard => shp.frame_to_rgba(frame_index, &render_palette),
-            AlphaPolicy::GamemdUi => shp.frame_to_rgba_ui(frame_index, &render_palette),
-        };
+        let converted = shp.frame_to_rgba(frame_index, &render_palette);
         let frame_image = match converted {
             Ok(rgba) if geom.w > 0 && geom.h > 0 => {
                 // A short pixel buffer means the frame decoded partially; report
@@ -445,7 +439,6 @@ pub fn run(
             mode,
             &choice.name,
             &choice.reason,
-            &choice.alpha_policy,
             opts.house,
         );
         let sheet = canvas::build_contact_sheet(&header, &cells);
@@ -596,7 +589,6 @@ fn sheet_header(
     mode: &str,
     palette_name: &str,
     palette_reason: &str,
-    alpha_policy: &str,
     house: Option<u8>,
 ) -> Vec<String> {
     let mut header = vec![
@@ -604,7 +596,7 @@ fn sheet_header(
         format!(
             "canvas {canvas_w}x{canvas_h}   frames {rendered}/{total}   scale {scale}x   mode {mode}"
         ),
-        format!("palette {palette_name} ({palette_reason}, alpha={alpha_policy})"),
+        format!("palette {palette_name} ({palette_reason})"),
     ];
     if let Some(index) = house {
         header.push(format!(
@@ -1022,7 +1014,6 @@ mod tests {
             MODE_CANVAS,
             "unittem.pal",
             "theater default",
-            "standard",
             Some(2),
         );
         let joined = header.join("\n");

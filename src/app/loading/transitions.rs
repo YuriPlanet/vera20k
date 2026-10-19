@@ -8,7 +8,6 @@ use crate::app::loading::init;
 use crate::app::presentation::render;
 use crate::map::basic::BasicSection;
 use crate::map::houses::HouseRoster;
-use crate::map::trigger_graph::TriggerGraph;
 use crate::render::radar::minimap::MinimapRenderer;
 use crate::render::selection_overlay::SelectionOverlay;
 use crate::rules::overlay_types::OverlayTypeRegistry;
@@ -63,10 +62,6 @@ pub(crate) fn fallback_map_load_result() -> init::MapLoadResult {
             simulation: None,
             overlays: Vec::new(),
             terrain_objects: Vec::new(),
-            triggers: HashMap::new(),
-            events: HashMap::new(),
-            actions: HashMap::new(),
-            trigger_graph: TriggerGraph::default(),
             overlay_registry: OverlayTypeRegistry::empty(),
             house_roster: HouseRoster::default(),
             height_map: BTreeMap::new(),
@@ -138,10 +133,6 @@ pub(crate) fn install_world_presentation(
     state.match_state.match_presentation.terrain_grid = map.terrain_grid;
     state.match_state.match_presentation.height_map = map.height_map;
     state.match_state.match_presentation.bridge_height_map = map.bridge_height_map;
-    state
-        .match_state
-        .match_presentation
-        .installed_playfield_authority = None;
     state.frontend.shell_preview_overlay_registry = state
         .match_state
         .sim_runtime
@@ -249,7 +240,7 @@ pub(crate) fn install_world_presentation(
     // Current MapClass authority, including restored/triggered LocalSize,
     // reaches camera and minimap before either route positions its view.
     let (playfield_bounds, playfield_revision) =
-        crate::app::input::camera::sync_playfield_presentation_bounds(state);
+        crate::app::input::camera::playfield_presentation_authority(state);
     let minimap = state
         .match_state
         .match_presentation
@@ -333,6 +324,7 @@ pub(crate) fn finish_fresh_scenario_read(state: &mut AppState, mut result: init:
 }
 
 pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadResult) {
+    crate::app::match_runtime::scenario_pause::reset_clock(state);
     let wall_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
     crate::app::radar_movie::retire(state, wall_ms);
     crate::app::chrono_screen::retire(state, wall_ms);
@@ -390,10 +382,6 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
                 overlay_registry: result.scenario.overlay_registry,
                 terrain_template: result.scenario.resolved_terrain,
                 rules,
-                trigger_graph: result.scenario.trigger_graph,
-                triggers: result.scenario.triggers,
-                events: result.scenario.events,
-                actions: result.scenario.actions,
             },
         }
     });

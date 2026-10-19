@@ -153,7 +153,7 @@ fn retail_production_world(history: &Value) -> Option<(SimRuntime, InternedId)> 
         "the selected authored route is the physical ALL05 action list"
     );
     let authored = crate::map::actions::parse_actions(&map.ini);
-    let entries = &authored[route["trigger_id"].as_str().unwrap()].entries;
+    let entries = authored[route["trigger_id"].as_str().unwrap()].entries();
     let declared = input["raw_actions"].as_array().unwrap();
     let changes: Vec<_> = entries.iter().filter(|entry| entry.kind == 106).collect();
     assert_eq!(changes.len(), declared.len());
@@ -162,7 +162,7 @@ fn retail_production_world(history: &Value) -> Option<(SimRuntime, InternedId)> 
             "[Actions]\nCONTROL=1,{}\n",
             raw.as_str().unwrap()
         )));
-        let original = &control["CONTROL"].entries[0];
+        let original = &control["CONTROL"].entries()[0];
         assert_eq!(entry.inline_type_name(), original.inline_type_name());
         assert_eq!(entry.literal_value(), original.literal_value());
     }

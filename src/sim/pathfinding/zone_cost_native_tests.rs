@@ -450,7 +450,7 @@ fn structural_bridge_cost_exits_match_original_six_probe_order() {
             let xy = cell(&facts["coord"]);
             let entry = terrain.cell_mut(xy.0 as u16, xy.1 as u16).unwrap();
             entry.final_tile_index = facts["tile"].as_i64().unwrap() as i32;
-            entry.yr_cell_land_type = facts["land"].as_u64().unwrap() as u8;
+            entry.land_type = facts["land"].as_u64().unwrap() as u8;
             entry.bridge_facts.raw_flags = facts["flags"].as_u64().unwrap() as u32;
         }
         let grid = PathGrid::from_resolved_terrain(&terrain);

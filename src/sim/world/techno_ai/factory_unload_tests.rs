@@ -334,9 +334,6 @@ fn fixture(rules: &RuleSet, ini: &IniFile) -> Fixture {
                 let mut cell =
                     crate::sim::world::lifecycle_tests::common_raw_terrain_cell(rx, ry, 4, false);
                 cell.land_type = 1;
-                cell.yr_cell_land_type = 1;
-                cell.terrain_class = road.terrain_class;
-                cell.base_terrain_class = road.terrain_class;
                 cell.speed_costs = road.speed_costs;
                 cell.base_speed_costs = road.speed_costs;
                 cell

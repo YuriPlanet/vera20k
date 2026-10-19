@@ -103,7 +103,7 @@ fn sov01_transport_crosses_water_below_golden_gate() {
             println!(
                 "cell=({}, {y}) land={} zone={} flags={:#x} level={} slope={} groundzone={} entry={entry} building={building:?}",
                 start.0,
-                c.yr_cell_land_type,
+                c.land_type,
                 c.zone_type,
                 c.bridge_facts.raw_flags,
                 c.level,

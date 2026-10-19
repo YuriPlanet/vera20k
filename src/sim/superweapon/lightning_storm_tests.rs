@@ -130,7 +130,7 @@ fn fixture_cell(x: u16, y: u16, spec: Option<&Value>) -> ResolvedTerrainCell {
         };
     }
     if let Some(land) = spec.get("land").and_then(Value::as_i64) {
-        cell.yr_cell_land_type = land as u8;
+        cell.land_type = land as u8;
     }
     cell
 }

@@ -4,10 +4,7 @@
 //! terrain below/alongside bridges. Retain registered pristine heads plus
 //! independent presentation files; missing sources never become sparse entries.
 
-use super::build::{
-    TileMetadata, merge_tmp_file_metadata, metadata_from_set_name,
-    ordinary_variant_selection_enabled,
-};
+use super::build::{TileMetadata, merge_tmp_file_metadata, ordinary_variant_selection_enabled};
 use super::tubes::auto_tube_direction_from_bases;
 use super::*;
 use crate::map::tile_variant_selector::TileVariantSelector;
@@ -78,9 +75,7 @@ fn read_resident_tmp(
     rules: &TerrainRules,
     tile: u16,
     filename: &str,
-    set_name: Option<&str>,
     set: Option<u16>,
-    warned: &mut HashSet<u8>,
 ) -> Result<ResidentBridgeTmp, BridgeRecalcCatalogError> {
     let bytes = assets
         .get(filename)
@@ -100,10 +95,13 @@ fn read_resident_tmp(
             reason: format!("{filename}: empty TMP template"),
         });
     }
-    let mut metadata = |sub| {
-        let mut entry = metadata_from_set_name(set_name, set);
-        entry.tmp_file_valid = true;
-        merge_tmp_file_metadata(&mut entry, &tmp, sub, Some(rules), warned);
+    let metadata = |sub| {
+        let mut entry = TileMetadata {
+            tileset_index: set,
+            tmp_file_valid: true,
+            ..TileMetadata::default()
+        };
+        merge_tmp_file_metadata(&mut entry, &tmp, sub, Some(rules));
         entry
     };
     let entries = (0..count).map(|sub| metadata(sub as u8)).collect();
@@ -236,22 +234,12 @@ impl BridgeRecalcCatalog {
         names: &[&str],
         table: [u8; 64],
     ) -> Self {
-        let mut warned = HashSet::new();
         self.files.insert(
             tile,
             names
                 .iter()
                 .map(|name| {
-                    read_resident_tmp(
-                        assets,
-                        &self.terrain_rules,
-                        tile,
-                        name,
-                        None,
-                        None,
-                        &mut warned,
-                    )
-                    .map(Arc::new)
+                    read_resident_tmp(assets, &self.terrain_rules, tile, name, None).map(Arc::new)
                 })
                 .collect(),
         );
@@ -312,7 +300,6 @@ impl BridgeRecalcCatalog {
         let ini = crate::rules::ini_parser::IniFile::from_bytes(&theater.ini_data);
         let mut heads = HashMap::new();
         let mut files = HashMap::new();
-        let mut warned = HashSet::new();
         for id in ids {
             let Ok(tile) = u16::try_from(id) else {
                 continue;
@@ -321,7 +308,6 @@ impl BridgeRecalcCatalog {
                 continue;
             }
             let set = theater.lookup.tileset_index(tile);
-            let set_name = set.and_then(|set| theater.lookup.set_name(set));
             let pristine = theater
                 .lookup
                 .filename(id)
@@ -329,9 +315,7 @@ impl BridgeRecalcCatalog {
                     tile,
                     reason: "no pristine filename".into(),
                 })
-                .and_then(|filename| {
-                    read_resident_tmp(assets, rules, tile, filename, set_name, set, &mut warned)
-                })
+                .and_then(|filename| read_resident_tmp(assets, rules, tile, filename, set))
                 .map(Arc::new);
             let result = (|| {
                 let ini = ini
@@ -369,7 +353,7 @@ impl BridgeRecalcCatalog {
                 if pristine
                     .entries
                     .iter()
-                    .any(|entry| entry.yr_cell_land_type == YR_CELL_LAND_TUNNEL)
+                    .any(|entry| entry.land_type == LandType::Tunnel.as_index())
                 {
                     return Err(BridgeRecalcCatalogError::Unsupported {
                         tile,
@@ -385,18 +369,7 @@ impl BridgeRecalcCatalog {
                     .filename_for_variant(tile, variant)
                     .expect("registered variant has a filename");
                 let set = theater.lookup.tileset_index(tile);
-                siblings.push(
-                    read_resident_tmp(
-                        assets,
-                        rules,
-                        tile,
-                        filename,
-                        set.and_then(|set| theater.lookup.set_name(set)),
-                        set,
-                        &mut warned,
-                    )
-                    .map(Arc::new),
-                );
+                siblings.push(read_resident_tmp(assets, rules, tile, filename, set).map(Arc::new));
             }
             files.insert(tile, siblings.into_boxed_slice());
             heads.insert(tile, result);

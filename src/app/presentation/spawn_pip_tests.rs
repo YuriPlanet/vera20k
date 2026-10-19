@@ -142,7 +142,6 @@ fn stock_carrier_pips_follow_construction_sortie_recall_reload_and_selection() {
                 None,
                 33,
                 crate::sim::world::TickLane::Ordinary,
-                None,
                 crate::sim::world::FrameEffects::default(),
             )
             .expect("ordinary stock Carrier frame");
@@ -266,7 +265,8 @@ fn stock_carrier_spawner_fire_reveals_to_its_human_victim() {
             .unwrap()
             .cell(source.0, source.1)
             .unwrap()
-            .is_water,
+            .land_type()
+            == crate::rules::terrain_rules::LandType::Water.as_index(),
         "authored source is real loaded Water"
     );
     let weapon = scene

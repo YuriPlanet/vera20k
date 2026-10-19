@@ -158,7 +158,6 @@ fn terrain_cell(rx: u16, ry: u16, level: u8) -> ResolvedTerrainCell {
     ResolvedTerrainCell {
         level,
         filled_clear: true,
-        terrain_class: Default::default(),
         accepts_smudge: true,
         ..crate::map::resolved_terrain::test_flat_cell(rx, ry)
     }

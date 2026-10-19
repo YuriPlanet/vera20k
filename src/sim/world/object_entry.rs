@@ -319,7 +319,7 @@ fn raw(live: &EntryReadContext<'_>, cell: Cell, layer: MovementLayer) -> (u8, Op
 // Unit73F5EF/73F628/73F823 compare actual object pointers, never a Cell
 // sharing the blocker's coordinates. Infantry has a distinct Cell shortcut.
 fn object_target_is(mover: &GameEntity, blocker: u64) -> bool {
-    matches!(mover.navigation.nav_com(), Some(NavTargetRef::Entity{id}|NavTargetRef::Object{id}|NavTargetRef::Building{id}) if id==blocker)
+    mover.navigation.nav_com() == Some(NavTargetRef::object(blocker))
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum InfantryTargetAdmission {
@@ -933,7 +933,7 @@ fn full_foot_entry<'a>(
             return Ok(7);
         };
         let c = &live.terrain().cells()[index];
-        if c.yr_cell_land_type == 10 {
+        if c.land_type() == crate::rules::terrain_rules::LandType::Tunnel.as_index() {
             //73F12E..73F1D9: passing the Tube shape gate bypasses only
             //required-land equality; later list/speed/raw predicates still run.
             let required_subtile =
@@ -945,7 +945,7 @@ fn full_foot_entry<'a>(
             if required_subtile.is_some_and(|sub| c.final_sub_tile != sub) {
                 return Ok(7);
             }
-        } else if c.yr_cell_land_type != required.as_index()
+        } else if c.land_type() != required.as_index()
             && !(matches!(c.bridge_facts.overlay_id, Some(237 | 238))
                 && args.height != i32::from(initial_level))
         {
@@ -1988,7 +1988,7 @@ mod tests {
             .get_mut(infantry)
             .unwrap()
             .navigation
-            .set_nav_com_for_test(Some(NavTargetRef::Building { id: hut }));
+            .set_nav_com_for_test(Some(NavTargetRef::Object { id: hut }));
         assert!(probe(&mut sim));
         assert_eq!(
             sim.resolved_terrain

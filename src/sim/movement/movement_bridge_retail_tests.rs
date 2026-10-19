@@ -961,7 +961,7 @@ fn drive_across_high_bridge_with_order(
 //   has_bridge_deck = true        bridge_deck_level == ground_level  (no +4)
 //   bridge_structural = false     bridge_walkable   = false
 //   transition        = false     ground_walkable   = true
-//   zone_type = 0 (Ground)        LandType  = 1 (Road)   is_water = false
+//   zone_type = 0 (Ground)        LandType  = 1 (Road)
 //   tube_index = None             low_bridge_tube_cell = false
 //
 // The first line is the whole geometry: `resolve_overlay`
@@ -975,7 +975,7 @@ fn drive_across_high_bridge_with_order(
 //
 // The last line is the surprise and it is recorded, not worked around: the
 // `TubeClass` marker is absent from the entire measured corpus. It is gated on
-// `yr_cell_land_type == YR_CELL_LAND_TUNNEL` (10), but a low-bridge overlay
+// `land_type == LandType::Tunnel` (10), but a low-bridge overlay
 // rewrites the cell's Land to Road (1), and `build_auto_low_bridge_tubes`
 // matches *iso-tile* ids, not overlays. So `tube_movement.rs` and
 // `PathCell::low_bridge_tube_cell` are not on the stock low-bridge crossing
@@ -1176,11 +1176,11 @@ fn print_low_inventory(terrain: &ResolvedTerrainGrid, grid: &PathGrid, span: &Lo
             rt.tube_index
                 .and_then(|t| terrain.tube(t))
                 .map(|t| t.source),
-            rt.yr_cell_land_type,
+            rt.land_type,
             rt.land_type,
             rt.base_land_type,
             rt.base_ground_walk_blocked,
-            rt.is_water,
+            rt.land_type == crate::rules::terrain_rules::LandType::Water.as_index(),
             rt.zone_type,
             pc.ground_walkable,
             pc.bridge_walkable,
@@ -2307,7 +2307,9 @@ fn retail_damaged_bridge_inventory() {
                 cells.len(),
                 pc.map(|c| c.ground_walkable),
                 pc.map(|c| c.ground_level),
-                terrain.cell(sample.0, sample.1).map(|c| c.is_water),
+                terrain
+                    .cell(sample.0, sample.1)
+                    .map(|c| c.land_type == crate::rules::terrain_rules::LandType::Water.as_index()),
             );
         }
     }
@@ -2963,13 +2965,13 @@ fn print_under_cell_row(
         pc.ground_level,
         pc.bridge_deck_level,
         pc.ground_walkable,
-        rt.is_water,
-        rt.is_cliff_like,
+        rt.land_type == crate::rules::terrain_rules::LandType::Water.as_index(),
+        rt.land_type == crate::rules::terrain_rules::LandType::Rock.as_index(),
         rt.ground_walk_blocked,
         rt.base_ground_walk_blocked,
         rt.land_type,
         rt.base_land_type,
-        rt.yr_cell_land_type,
+        rt.land_type,
         rt.zone_type,
         cost(SpeedType::Foot),
         cost(SpeedType::Track),
@@ -3663,8 +3665,9 @@ fn tank_cannot_reach_the_riverbed_beside_bay_of_pigs_high_bridge() {
         // (`0x0073FAB5`, `world::object_entry`).
         let track_row = rt.speed_costs.cost_for_speed_type(SpeedType::Track);
         println!(
-            "riverbed {cell:?}: Track row {track_row:?} is_water={} zone_type={}",
-            rt.is_water, rt.zone_type,
+            "riverbed {cell:?}: Track row {track_row:?} water={} zone_type={}",
+            rt.land_type == crate::rules::terrain_rules::LandType::Water.as_index(),
+            rt.zone_type,
         );
         assert_eq!(
             track_row,

@@ -194,11 +194,7 @@ fn supplied_world(
                 .unwrap();
             terrain.slope_type = signed(&world["default_slope"]) as u8;
             terrain.land_type = land;
-            terrain.yr_cell_land_type = land;
             terrain.base_land_type = land;
-            terrain.base_yr_cell_land_type = land;
-            terrain.terrain_class = semantics.terrain_class;
-            terrain.base_terrain_class = semantics.terrain_class;
             terrain.speed_costs = semantics.speed_costs;
             terrain.base_speed_costs = semantics.speed_costs;
         }
@@ -216,8 +212,6 @@ fn supplied_world(
             .cell_mut(at.0, at.1)
             .unwrap();
         terrain.land_type = land;
-        terrain.yr_cell_land_type = land;
-        terrain.terrain_class = semantics.terrain_class;
         terrain.speed_costs = semantics.speed_costs;
         // The native input writes cached Cell+EC only. Its empty tile array
         // still supplies Clear on the next actual Mark/Recalc; this is not a

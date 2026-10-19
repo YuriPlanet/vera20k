@@ -97,6 +97,7 @@ pub mod radio; // RadioMessage / RadioResponse / RadioPayload
 //     special locomotors, drive tracks, turret rotation ---
 pub mod movement;
 pub mod pathfinding; // A* search, zone connectivity, terrain speed, path smoothing
+pub mod psychic_detection;
 pub mod projectile; // serialized BulletClass-style flight state and detonation handoff
 pub mod wave; // serialized WaveClass-style display registrations and lifetime
 
@@ -138,6 +139,7 @@ pub mod map; // bridge topology service (first member of the map/cell-substrate 
 // --- Mutable per-cell overlay state (ore density, wall damage, bridge frames) ---
 pub mod cell_neighbors;
 pub mod overlay_grid;
+pub(crate) mod overlay_mark_host; // the live Simulation's host of OverlayClass::Mark
 
 // --- Mutable per-cell smudge state (craters, scorches, pre-placed map decals) ---
 pub mod smudge_grid;

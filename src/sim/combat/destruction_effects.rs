@@ -338,7 +338,7 @@ impl Simulation {
             && self.resolved_terrain.as_ref().is_some_and(|terrain| {
                 terrain
                     .cell(entity.position.rx(), entity.position.ry())
-                    .is_some_and(|cell| cell.yr_cell_land_type == LandType::Water.as_index())
+                    .is_some_and(|cell| cell.land_type() == LandType::Water.as_index())
             })
             && entity.teleport_state().is_none()
     }

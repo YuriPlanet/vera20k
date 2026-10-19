@@ -60,7 +60,7 @@ pub(super) fn compute_bridge_endpoints(
 }
 
 fn is_tube(terrain: &ResolvedTerrainGrid, cell: &ResolvedTerrainCell) -> bool {
-    cell.yr_cell_land_type == crate::map::resolved_terrain::YR_CELL_LAND_TUNNEL
+    cell.land_type() == crate::rules::terrain_rules::LandType::Tunnel.as_index()
         && terrain.tube_at_cell(cell.rx, cell.ry).is_some()
 }
 

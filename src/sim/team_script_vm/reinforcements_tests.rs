@@ -421,14 +421,9 @@ pub(crate) fn reinforcement_world(
         let mut cell = test_flat_cell(x, y);
         cell.level = 4;
         cell.land_type = 1;
-        cell.yr_cell_land_type = 1;
         cell.base_land_type = 1;
-        cell.base_yr_cell_land_type = 1;
-        cell.terrain_class = road.terrain_class;
-        cell.base_terrain_class = road.terrain_class;
         cell.speed_costs = road.speed_costs.clone();
         cell.base_speed_costs = road.speed_costs.clone();
-        cell.is_road = true;
         cell
     });
     if input["droppod"].as_bool().unwrap_or(false) {

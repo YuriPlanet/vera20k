@@ -97,27 +97,14 @@ fn install(sim: &mut Simulation, rules: &RuleSet, body: &str) -> crate::map::map
     map
 }
 
-fn poll(
-    sim: &mut Simulation,
-    rules: &RuleSet,
-    registry: &OverlayTypeRegistry,
-    map: &crate::map::map_file::MapFile,
-) {
-    let _ = sim.advance_triggers(
-        TriggerInputs {
-            events: &map.events,
-            actions: &map.actions,
-            rules: Some(rules),
-        },
-        Some(registry),
-        FrameEffects::default(),
-    );
+fn poll(sim: &mut Simulation, rules: &RuleSet, registry: &OverlayTypeRegistry) {
+    let _ = sim.advance_triggers(Some(rules), Some(registry), FrameEffects::default());
 }
 
 #[test]
 fn authored_create_crate_action_reaches_existing_placement_owner() {
     let (mut sim, rules, registry, _, _) = fixture();
-    let map = install(
+    install(
         &mut sim,
         &rules,
         "[Triggers]\nCREATE=Americans,<none>,Crate,0,1,1,1,0\n\
@@ -125,7 +112,7 @@ fn authored_create_crate_action_reaches_existing_placement_owner() {
          [Actions]\nCREATE=1,108,0,0,0,0,0,0,AU\n\
          [Tags]\nCRATE=0,Crate,CREATE\n[Waypoints]\n46=15016\n",
     );
-    poll(&mut sim, &rules, &registry, &map);
+    poll(&mut sim, &rules, &registry);
     assert_eq!(
         sim.overlay_grid.as_ref().unwrap().cell(16, 15).overlay_id,
         registry.id_for_name("O0"),
@@ -179,7 +166,7 @@ fn crate_tag_can_kill_collector_before_removal_and_notification() {
 #[test]
 fn untagged_crate_pickup_notifies_logic_event50_once() {
     let (mut sim, rules, registry, _, actor) = fixture();
-    let map = install(
+    install(
         &mut sim,
         &rules,
         "[Triggers]\nPICKED=Americans,<none>,Picked,0,1,1,1,0\n\
@@ -202,7 +189,7 @@ fn untagged_crate_pickup_notifies_logic_event50_once() {
     ));
     assert!(sim.trigger_runtime.dirty[3]);
     assert!(!sim.trigger_runtime.locals_set.contains(&7));
-    poll(&mut sim, &rules, &registry, &map);
+    poll(&mut sim, &rules, &registry);
     assert!(sim.trigger_runtime.locals_set.contains(&7));
     assert!(!sim.trigger_runtime.dirty[3]);
 }
@@ -272,10 +259,7 @@ fn authored_placement_matches_eight_original_controls_and_all_rng_streams() {
                 for x in 0..33 {
                     let c = terrain.cell_mut(x, y).unwrap();
                     c.land_type = 2;
-                    c.yr_cell_land_type = 2;
                     c.base_land_type = 2;
-                    c.base_yr_cell_land_type = 2;
-                    c.is_water = true;
                     c.speed_costs = costs;
                     c.base_speed_costs = costs;
                 }
@@ -385,7 +369,7 @@ fn authored_placement_matches_eight_original_controls_and_all_rng_streams() {
             case["output"]["scenario_id_cursor"],
             "{name}: constructor identity continuation"
         );
-        assert_eq!(map.actions["CREATE"].entries[0].kind, 108);
+        assert_eq!(map.actions["CREATE"].entries()[0].kind, 108);
         if let Some(lifetime) = case.get("lifecycle") {
             // Native AllAbstract already contains the supplied Action, whereas
             // this owner records only Overlay objects. Compare registry deltas
@@ -874,7 +858,7 @@ fn retail_all07_elapsed_crates_and_money_survive_save_and_notify_logic() {
         .unwrap();
     let deadline = sim.trigger_runtime.trigger(live).unwrap().timer.duration() as u32;
     sim.session.binary_frame = deadline - 1;
-    poll(&mut sim, &rules, &registry, &map);
+    poll(&mut sim, &rules, &registry);
     assert_eq!(
         sim.crate_authority
             .slots()
@@ -895,7 +879,7 @@ fn retail_all07_elapsed_crates_and_money_survive_save_and_notify_logic() {
         .unwrap();
     sim.resolve_type_handles(&rules);
     sim.session.binary_frame = deadline;
-    poll(&mut sim, &rules, &registry, &map);
+    poll(&mut sim, &rules, &registry);
     assert_eq!(
         sim.crate_authority
             .slots()
@@ -951,7 +935,7 @@ fn retail_all07_elapsed_crates_and_money_survive_save_and_notify_logic() {
     sim.resolve_type_handles(&rules);
     assert_eq!(sim.crate_authority, authority);
     assert!(sim.trigger_runtime.dirty[3]);
-    poll(&mut sim, &rules, &registry, &map);
+    poll(&mut sim, &rules, &registry);
     assert!(sim.trigger_runtime.globals_set.contains(&7));
     assert!(!sim.trigger_runtime.dirty[3]);
     assert_eq!(
@@ -969,7 +953,7 @@ fn retail_all07_elapsed_crates_and_money_survive_save_and_notify_logic() {
         .iter()
         .filter(|(kind, _)| *kind == 28)
         .count();
-    poll(&mut sim, &rules, &registry, &map);
+    poll(&mut sim, &rules, &registry);
     assert_eq!(
         sim.trigger_runtime
             .action_trace

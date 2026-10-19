@@ -532,11 +532,16 @@ mod tests {
         std::fs::write(root.path().join("BETA.SHP"), shp_with_undecodable_pixels(4))
             .expect("write chained SHP");
         let assets = AssetManager::from_loose_root_for_test(root.path());
-        let mut art = ArtRegistry::from_ini(&IniFile::from_str(
-            "[ALPHA]\nNext=BETA\n[BETA]\nRate=450\n[ABSENT]\nRate=450\n",
-        ));
+        let art = IniFile::from_str("[ALPHA]\nNext=BETA\n[BETA]\nRate=450\n[ABSENT]\nRate=450\n");
+        // The ordered Rules processor reads ALPHA's `Next=` with its ART body.
+        let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str("[Animations]\n0=ALPHA\n1=BETA\n2=ABSENT\n"),
+            &art,
+        )
+        .expect("anim rules");
+        rules.install_art_data(ArtRegistry::from_ini(&art));
 
-        let skipped = art.bind_anim_class_assets(
+        let skipped = rules.bind_anim_class_assets(
             &["ABSENT".to_string(), "ALPHA".to_string()],
             &assets,
             "TEM",
@@ -544,11 +549,11 @@ mod tests {
         );
 
         assert_eq!(skipped, 1, "the missing sprite is counted, not fatal");
-        let bound = art.scheduler_anim_types();
+        let bound = rules.art().scheduler_anim_types();
         assert!(bound.contains("ALPHA"));
         assert!(bound.contains("BETA"), "Next= chain is bound with its root");
         assert!(!bound.contains("ABSENT"));
-        assert_eq!(art.anim_runtime_config("BETA").unwrap().end, 4);
+        assert_eq!(rules.art().anim_runtime_config("BETA").unwrap().end, 4);
     }
 
     fn catalog_hash(catalog: &EffectAssetCatalog) -> u64 {

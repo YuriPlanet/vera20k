@@ -125,7 +125,7 @@ fn world_with_cells(
 
 /// Retail rules and a flat 64x64 map of open water.
 fn retail_water_world() -> Option<(RuleSet, Simulation, InternedId)> {
-    use crate::rules::terrain_rules::{LandType, SpeedCostProfile, TerrainClass};
+    use crate::rules::terrain_rules::{LandType, SpeedCostProfile};
     let float = SpeedCostProfile {
         float: Some(100),
         ..SpeedCostProfile::default()
@@ -137,14 +137,9 @@ fn retail_water_world() -> Option<(RuleSet, Simulation, InternedId)> {
         ("water", Vec::new()),
         |x, y| crate::map::resolved_terrain::ResolvedTerrainCell {
             land_type: water,
-            yr_cell_land_type: water,
             base_land_type: water,
-            base_yr_cell_land_type: water,
-            terrain_class: TerrainClass::Water,
-            base_terrain_class: TerrainClass::Water,
             speed_costs: float,
             base_speed_costs: float,
-            is_water: true,
             zone_type: 4,
             ground_walk_blocked: true,
             base_ground_walk_blocked: true,

@@ -573,7 +573,7 @@ fn an_empty_fighter_lets_go_heads_for_its_edge_and_idles() {
     assert!(plane.radio_contacts.contains(2), "HELLO linked the dock");
     assert_eq!(
         plane.navigation.nav_com(),
-        Some(NavTargetRef::Building { id: 2 }),
+        Some(NavTargetRef::Object { id: 2 }),
         "home to the dock, not to the edge {edge:?}"
     );
     let fly = plane.locomotor.as_ref().unwrap().fly_runtime().unwrap();

@@ -488,7 +488,7 @@ fn project_combat_light_anchor(coord: crate::sim::projectile::ProjectileCoord) -
     [
         planar_x,
         planar_y
-            .wrapping_sub(crate::util::flh_transform::adjust_for_z_leptons(coord.z))
+            .wrapping_sub(crate::util::native_x87::adjust_for_z_standard(coord.z))
             .wrapping_add(15),
     ]
 }

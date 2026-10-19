@@ -180,8 +180,8 @@ fn fixture(row: &Value, rules: &RuleSet, type_name: &str) -> (Simulation, u64) {
         .flat_map(|y| (0..width).map(move |x| test_flat_cell(x, y)))
         .collect::<Vec<_>>();
     let terrain_cell = &mut cells[usize::from(cell.1) * usize::from(width) + usize::from(cell.0)];
-    terrain_cell.yr_cell_land_type = input["land"].as_u64().unwrap_or(2) as u8;
-    terrain_cell.base_yr_cell_land_type = terrain_cell.yr_cell_land_type;
+    terrain_cell.land_type = input["land"].as_u64().unwrap_or(2) as u8;
+    terrain_cell.base_land_type = terrain_cell.land_type;
     sim.install_resolved_terrain_for_new_map(ResolvedTerrainGrid::from_cells(width, height, cells));
     let id = sim
         .construct_object_limbo_at_height(

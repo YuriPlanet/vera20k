@@ -425,7 +425,7 @@ fn assert_retail_idle_timeline(retail_dir: &std::path::Path, row: &Value) {
         .unwrap()
         .cells()
         .iter()
-        .filter(|cell| cell.yr_cell_land_type == 2)
+        .filter(|cell| cell.land_type == 2)
         .map(|cell| (cell.rx, cell.ry))
         .collect();
     let id = water

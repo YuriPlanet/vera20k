@@ -45,7 +45,7 @@ fn stock_world(rules: &RuleSet, input: &Value) -> Simulation {
         cell.final_tile_index = tile;
         cell.final_sub_tile = subtile;
         cell.level = level;
-        cell.yr_cell_land_type = land;
+        cell.land_type = land;
         cell.bridge_facts = BridgeCellFacts {
             state_byte: state,
             overlay_id: overlay,

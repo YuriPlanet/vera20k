@@ -18,14 +18,9 @@ pub(crate) struct ChronoScreenPresentation {
     capture_destination: bool,
     draw: Option<ChronoScreenDraw>,
     eva_credits: u32,
-    scenario_paused: bool,
 }
 
 impl ChronoScreenPresentation {
-    pub(crate) const fn scenario_paused(&self) -> bool {
-        self.scenario_paused
-    }
-
     pub(crate) fn before_frame(
         &mut self,
         gpu: &crate::render::gpu::GpuContext,
@@ -150,17 +145,7 @@ pub(crate) fn apply(state: &mut AppState, command: ChronoScreenCommand) {
         ChronoScreenCommand::White => {
             state.match_state.match_presentation.chrono_screen.draw = Some(ChronoScreenDraw::White);
         }
-        ChronoScreenCommand::Pause => {
-            state
-                .match_state
-                .match_presentation
-                .chrono_screen
-                .scenario_paused = true;
-            state.match_state.scenario_elapsed_clock.pause(wall_ms);
-            if let Some(sfx) = state.audio.sfx_player.as_mut() {
-                sfx.set_paused(true, wall_ms);
-            }
-        }
+        ChronoScreenCommand::Pause => {}
         ChronoScreenCommand::CaptureDestination => {
             state
                 .match_state
@@ -177,16 +162,9 @@ pub(crate) fn apply(state: &mut AppState, command: ChronoScreenCommand) {
             }
         }
         ChronoScreenCommand::Finish => {
-            state
-                .match_state
-                .match_presentation
-                .chrono_screen
-                .scenario_paused = false;
-            let paused = state.match_state.paused() || state.frontend.fullscreen_movie.is_some();
             if let Some(sfx) = state.audio.sfx_player.as_mut() {
                 //684180/406F40 runs while original phase is still3: the
                 //53BAD0 gate skips SFX resume but unpauses EVA.
-                sfx.set_paused(paused, wall_ms);
                 sfx.release_animation_sound(HANDLE);
                 sfx.stop_animation_sound(HANDLE); //4060F0(NULL),405C00
                 sfx.set_voc_enabled(true);
@@ -201,7 +179,10 @@ pub(crate) fn apply(state: &mut AppState, command: ChronoScreenCommand) {
                 }
                 sfx.set_chrono_screen_active(false);
             }
-            if !state.match_state.presentation_paused() {
+            if !state
+                .match_state
+                .presentation_paused(&state.frontend.screen)
+            {
                 state.match_state.scenario_elapsed_clock.resume(wall_ms);
             }
             state.match_state.match_presentation.chrono_screen.draw =
@@ -215,9 +196,6 @@ pub(crate) fn apply(state: &mut AppState, command: ChronoScreenCommand) {
 pub(crate) fn retire(state: &mut AppState, wall_ms: u64) {
     let screen = std::mem::take(&mut state.match_state.match_presentation.chrono_screen);
     if let Some(sfx) = state.audio.sfx_player.as_mut() {
-        if screen.scenario_paused {
-            sfx.set_paused(state.match_state.paused(), wall_ms);
-        }
         sfx.stop_animation_sound(HANDLE);
         sfx.set_voc_enabled(true);
         sfx.set_chrono_screen_active(false);
@@ -225,7 +203,10 @@ pub(crate) fn retire(state: &mut AppState, wall_ms: u64) {
             sfx.resume_eva();
         }
     }
-    if !state.match_state.presentation_paused() {
+    if !state
+        .match_state
+        .presentation_paused(&state.frontend.screen)
+    {
         state.match_state.scenario_elapsed_clock.resume(wall_ms);
     }
 }

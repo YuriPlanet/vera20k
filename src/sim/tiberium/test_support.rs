@@ -7,14 +7,16 @@
 use std::collections::BTreeMap;
 use std::sync::OnceLock;
 
-use crate::map::resolved_terrain::ResolvedTerrainGrid;
+use crate::map::resolved_terrain::{
+    ResolvedTerrainCell, ResolvedTerrainGrid, TEST_RETAIL_CLEAR_SPEED_COSTS,
+};
 use crate::rules::ini_parser::IniFile;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::entity_store::EntityStore;
 use crate::sim::intern::StringInterner;
 use crate::sim::miner::ResourceType;
-use crate::sim::occupancy::OccupancyGrid;
+use crate::sim::occupancy::{OccupancyGrid, RawCellOccupationGrid};
 use crate::sim::overlay_grid::OverlayGrid;
 use crate::sim::tiberium::TiberiumPlacementObjectContext;
 use crate::sim::world::Simulation;
@@ -22,12 +24,16 @@ use crate::sim::world::Simulation;
 /// Side length of the overlay grid [`place_tiberium`] creates on demand.
 pub(crate) const TEST_GRID_SIZE: u16 = 64;
 
+/// Flat Clear cells that allow tiberium and carry the retail `[Clear]` row,
+/// whose Track entry a new ore Overlay's Mark admission reads
+/// (`CellClass::CheckCellPassability @ 0x004834A0`, called at `0x005FD00C`;
+/// `0x005FD04F` for TIB01).
 pub(crate) fn flat_terrain(width: u16, height: u16) -> ResolvedTerrainGrid {
-    crate::map::resolved_terrain::test_grid(
-        width,
-        height,
-        crate::map::resolved_terrain::test_tiberium_cell,
-    )
+    crate::map::resolved_terrain::test_grid(width, height, |rx, ry| ResolvedTerrainCell {
+        speed_costs: TEST_RETAIL_CLEAR_SPEED_COSTS,
+        base_speed_costs: TEST_RETAIL_CLEAR_SPEED_COSTS,
+        ..crate::map::resolved_terrain::test_tiberium_cell(rx, ry)
+    })
 }
 
 /// A world with no objects in it: the live-object half of a
@@ -35,6 +41,7 @@ pub(crate) fn flat_terrain(width: u16, height: u16) -> ResolvedTerrainGrid {
 pub(crate) struct NoLiveObjects {
     entities: EntityStore,
     occupancy: OccupancyGrid,
+    raw_occupation: RawCellOccupationGrid,
     rules: RuleSet,
     interner: StringInterner,
     terrain_object_cells: BTreeMap<(u16, u16), u64>,
@@ -45,6 +52,7 @@ impl NoLiveObjects {
         Self {
             entities: EntityStore::new(),
             occupancy: OccupancyGrid::new(),
+            raw_occupation: RawCellOccupationGrid::new(),
             rules: RuleSet::from_ini(&IniFile::from_str(
                 "[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n",
             ))
@@ -58,6 +66,7 @@ impl NoLiveObjects {
         TiberiumPlacementObjectContext::new(
             &self.entities,
             &self.occupancy,
+            &self.raw_occupation,
             &self.rules,
             &self.interner,
             &self.terrain_object_cells,

@@ -7,7 +7,9 @@
 //! original scheduler rungs.
 //!
 //! [`ReplayLog`] remains the richer Rust-only command/hash diagnostic used by
-//! parity tests. It is deliberately separate from [`NativeReplay`].
+//! parity tests. It is deliberately separate from [`NativeReplay`]. Production
+//! does not record or play native streams yet; only tests build
+//! [`NativeReplay`], which is kept for native recording playback.
 
 use std::num::NonZeroI32;
 use std::path::Path;
@@ -21,8 +23,9 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::command::{COMMAND_RECORD_LEN, CommandEnvelope, CommandRecord};
 #[cfg(any(test, feature = "test-support"))]
 use crate::sim::pathfinding::PathGrid;
+use crate::sim::world::Simulation;
 #[cfg(any(test, feature = "test-support"))]
-use crate::sim::world::{Simulation, TickLane, TriggerInputs};
+use crate::sim::world::TickLane;
 
 /// Value written by the compiled legacy recorder at the start of a stream.
 ///
@@ -690,6 +693,32 @@ pub struct ReplayHeader {
 /// ([`Simulation::hash_state_every`](crate::sim::world::Simulation::hash_state_every)).
 pub const PLAY_HASH_INTERVAL: std::num::NonZeroU64 = std::num::NonZeroU64::new(15).unwrap();
 
+/// App service inputs which change scenario state between ordinary frames.
+/// These replay the existing native owners; wall time and media stay outside sim.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ScenarioServiceInput {
+    /// Radar657CA0 acquires an untimed ScenarioPause684060 credit.
+    Pause,
+    /// Radar657CC8 releases its ScenarioPause684180 credit.
+    Resume,
+    /// Main_Tick55D815 observes that the system-clock timer has elapsed.
+    ExpireTimedPause,
+    /// Main_Tick55D83A visits53B560 without an ordinary world frame.
+    StepChronoScreen,
+}
+
+impl ScenarioServiceInput {
+    fn apply(self, sim: &mut Simulation) -> Vec<crate::sim::trigger_runtime::TriggerEffect> {
+        match self {
+            Self::Pause => sim.pause_scenario(0),
+            Self::Resume => sim.resume_scenario(),
+            Self::ExpireTimedPause => sim.expire_scenario_pause(),
+            Self::StepChronoScreen => sim.process_chrono_screen_effect(),
+        }
+    }
+}
+
 /// One tick in the Rust-only deterministic diagnostic log.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReplayTick {
@@ -698,6 +727,9 @@ pub struct ReplayTick {
     /// The state hash after this tick, on the ticks that hashed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub state_hash: Option<u64>,
+    /// Ordered inputs after this frame's hash and before the next frame.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub scenario_services: Vec<ScenarioServiceInput>,
 }
 
 /// Rich Rust-only command/hash log used by tests and diagnostics.
@@ -705,6 +737,8 @@ pub struct ReplayTick {
 pub struct ReplayLog {
     pub header: ReplayHeader,
     pub ticks: Vec<ReplayTick>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub initial_scenario_services: Vec<ScenarioServiceInput>,
 }
 
 impl ReplayLog {
@@ -712,6 +746,7 @@ impl ReplayLog {
         Self {
             header,
             ticks: Vec::new(),
+            initial_scenario_services: Vec::new(),
         }
     }
 
@@ -725,7 +760,25 @@ impl ReplayLog {
             tick,
             commands,
             state_hash,
+            scenario_services: Vec::new(),
         });
+    }
+
+    /// Apply and record at one boundary so live service cannot omit its input.
+    pub fn apply_scenario_service(
+        &mut self,
+        sim: &mut Simulation,
+        input: ScenarioServiceInput,
+    ) -> Vec<crate::sim::trigger_runtime::TriggerEffect> {
+        let effects = input.apply(sim);
+        // A timed pause also polls an inactive Chrono effect. It changes nothing.
+        if input != ScenarioServiceInput::StepChronoScreen || !effects.is_empty() {
+            match self.ticks.last_mut() {
+                Some(frame) => frame.scenario_services.push(input),
+                None => self.initial_scenario_services.push(input),
+            }
+        }
+        effects
     }
 
     pub fn save(&self, path: &Path) -> Result<()> {
@@ -783,6 +836,9 @@ impl ReplayRunner {
             .simulation
             .hash_state_every(std::num::NonZeroU64::MIN);
         let mut hashes: Vec<Option<u64>> = Vec::with_capacity(replay.ticks.len());
+        for input in &replay.initial_scenario_services {
+            input.apply(&mut runtime.simulation);
+        }
         for entry in &replay.ticks {
             let due_commands = runtime
                 .simulation
@@ -791,8 +847,12 @@ impl ReplayRunner {
                 &due_commands,
                 tick_ms,
                 crate::sim::world::TickLane::Ordinary,
-             crate::sim::world::FrameEffects::default(),)?;
+                crate::sim::world::FrameEffects::default(),
+            )?;
             hashes.push(output.tick.state_hash);
+            for input in &entry.scenario_services {
+                input.apply(&mut runtime.simulation);
+            }
         }
         Ok(hashes)
     }
@@ -828,14 +888,14 @@ impl ReplayRunner {
             path_grid,
             overlay_registry,
             tick_ms,
-            None,
+            false,
         )
     }
 
     /// Fixture-only replay through the same master-frame admission gameplay
-    /// uses, with caller-owned static map trigger definitions. Diagnostic
-    /// logs own commands and hashes. Production replay execution is
-    /// `run_runtime`.
+    /// uses; `poll_triggers` polls the simulation's installed triggers.
+    /// Diagnostic logs own commands and hashes. Production replay execution
+    /// is `run_runtime`.
     pub(crate) fn run_fixture_master_frame(
         sim: &mut Simulation,
         replay: &ReplayLog,
@@ -843,7 +903,7 @@ impl ReplayRunner {
         path_grid: Option<&PathGrid>,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         tick_ms: u32,
-        trigger_inputs: Option<TriggerInputs<'_>>,
+        poll_triggers: bool,
     ) -> Vec<Option<u64>> {
         // The diagnostic playback must be constructed from the recorded seed.
         assert_eq!(
@@ -877,6 +937,9 @@ impl ReplayRunner {
         // a recording compared with it must ask for the same.
         sim.hash_state_every(std::num::NonZeroU64::MIN);
         let mut hashes: Vec<Option<u64>> = Vec::with_capacity(replay.ticks.len());
+        for input in &replay.initial_scenario_services {
+            input.apply(sim);
+        }
         for entry in &replay.ticks {
             let due_commands = sim.take_due_replay_commands(entry.commands.iter().cloned());
             let result = sim
@@ -886,13 +949,17 @@ impl ReplayRunner {
                     overlay_registry,
                     tick_ms,
                     TickLane::Ordinary,
-                    trigger_inputs,
-                 crate::sim::world::FrameEffects::default(),)
+                    poll_triggers,
+                    crate::sim::world::FrameEffects::default(),
+                )
                 .expect("fixture frame must complete")
                 .into_tick();
             // Replay has no app layer to consume presentation-only trigger effects.
             let _ = sim.drain_trigger_effects();
             hashes.push(result.state_hash);
+            for input in &entry.scenario_services {
+                input.apply(sim);
+            }
         }
         hashes
     }

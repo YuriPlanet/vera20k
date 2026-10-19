@@ -175,7 +175,7 @@ fn fixture(input: &serde_json::Value) -> (Simulation, RuleSet) {
         .navigation
         .set_nav_com_for_test(match &input["nav_com"] {
             serde_json::Value::String(kind) if kind == "dock" => {
-                Some(NavTargetRef::Building { id: DOCK })
+                Some(NavTargetRef::Object { id: DOCK })
             }
             serde_json::Value::Bool(true) => Some(NavTargetRef::cell(80, 64)),
             _ => None,

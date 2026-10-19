@@ -452,15 +452,12 @@ fn low_dropped_bombs_use_class_water_splashes_without_debris() {
                 cell.base_speed_costs = open;
                 if (x, y) == (12, 12) {
                     cell.level = 2;
-                    cell.is_water = water;
                     cell.land_type = if water {
                         LandType::Water.as_index()
                     } else {
                         LandType::Clear.as_index()
                     };
-                    cell.yr_cell_land_type = cell.land_type;
                     cell.base_land_type = cell.land_type;
-                    cell.base_yr_cell_land_type = cell.land_type;
                 }
                 cell
             })
@@ -810,8 +807,6 @@ fn a_heavy_ship_dying_on_water_sinks_without_its_explosion() {
                 cell.base_speed_costs = open;
                 if (x, y) == (12, 12) {
                     cell.land_type = LandType::Water.as_index();
-                    cell.yr_cell_land_type = LandType::Water.as_index();
-                    cell.is_water = true;
                 }
                 cell
             })
@@ -830,7 +825,7 @@ fn a_heavy_ship_dying_on_water_sinks_without_its_explosion() {
         if !water {
             // Only the gate's `+0xEC` read changes; the ship stays placed.
             let cell = sim.resolved_terrain.as_mut().unwrap().cell_mut(12, 12);
-            cell.unwrap().yr_cell_land_type = LandType::Clear.as_index();
+            cell.unwrap().land_type = LandType::Clear.as_index();
         }
         let mut replay = sim.scenario_rng.clone();
         kill(&mut sim, &rules, ship);

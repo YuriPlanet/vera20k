@@ -144,7 +144,7 @@ fn retail_transylv_ambient_action_reaches_native_fade_and_large_flash_request() 
         history["initial"]["current"].as_i64().unwrap() as i32
     );
     let ambient = map.actions["07718EBC"]
-        .entries
+        .entries()
         .iter()
         .find(|a| a.kind == 73)
         .unwrap()
@@ -182,7 +182,7 @@ fn retail_transylv_ambient_action_reaches_native_fade_and_large_flash_request() 
     crate::sim::arena_fixture::supply_native_map_keyed(&mut sim, "trigger-map-lighting");
     sim.session.install_waypoints(&map.waypoints);
     let flash = map.actions["09DE99FC"]
-        .entries
+        .entries()
         .iter()
         .find(|a| a.kind == 66)
         .unwrap()
@@ -571,7 +571,7 @@ fn ambient_rate_and_step_match_original_action_bits_and_due_logic_rung() {
             crate::map::actions::parse_actions(&crate::rules::ini_parser::IniFile::from_str(
                 &format!("[Actions]\nA=1,{kind},0,{operand},0,0,0,0,A\n"),
             ));
-        let entry = parsed["A"].entries[0].clone();
+        let entry = parsed["A"].entries()[0].clone();
         assert_eq!(entry.literal_value(), Some(value));
         assert!(run(&mut sim, &rules, entry), "Action{kind}: {operand}");
         assert_eq!(sim.session.lighting.current_ambient, 60);
@@ -696,7 +696,7 @@ fn ambient_action_values_survive_save_and_transfer_to_retained_rules_at_retireme
 #[test]
 fn ordered_timer_trigger_updates_live_ambient_inputs_before_the_next_fade() {
     let (mut sim, rules, overlays, _) = super::tests::event_ingress_fixture();
-    let map = super::tests::install_event_ingress_map(
+    super::tests::install_event_ingress_map(
         &mut sim,
         &rules,
         "[Triggers]\nAMBIENT=Country0,<none>,Ambient,0,1,1,1,0\n\
@@ -708,15 +708,7 @@ fn ordered_timer_trigger_updates_live_ambient_inputs_before_the_next_fade() {
     sim.session.lighting.target_ambient = 60;
     sim.session.lighting.transition_timer = CdTimer::started(12, 8);
     sim.session.binary_frame = 20;
-    sim.advance_triggers(
-        TriggerInputs {
-            events: &map.events,
-            actions: &map.actions,
-            rules: Some(&rules),
-        },
-        Some(&overlays),
-        FrameEffects::default(),
-    );
+    sim.advance_triggers(Some(&rules), Some(&overlays), FrameEffects::default());
     assert_eq!(
         sim.trigger_runtime
             .action_trace

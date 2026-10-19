@@ -682,7 +682,7 @@ mod dispatch_tests {
                 track: Some(100),
                 ..Default::default()
             },
-            ..crate::map::resolved_terrain::test_unclassified_cell(rx, ry)
+            ..crate::map::resolved_terrain::test_filled_smudge_cell(rx, ry)
         }
     }
 

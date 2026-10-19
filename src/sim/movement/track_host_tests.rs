@@ -175,7 +175,7 @@ fn building_navigation_reaches_drive_and_ship_terminal_callbacks() {
             let destination = head(mover, family);
             mover
                 .navigation
-                .set_nav_com_for_test(Some(NavTargetRef::Building { id: 2 }));
+                .set_nav_com_for_test(Some(NavTargetRef::Object { id: 2 }));
             match family {
                 TrackFamily::Drive => {
                     assert!(mover.locomotor.as_mut().unwrap().store_track_destination(
@@ -259,7 +259,7 @@ fn terminal_queries_retained_target_after_clearing_own_head_before_per_cell() {
         let destination = head(mover, family);
         mover
             .navigation
-            .set_nav_com_for_test(Some(NavTargetRef::Entity { id: 2 }));
+            .set_nav_com_for_test(Some(NavTargetRef::Object { id: 2 }));
         match family {
             TrackFamily::Drive => {
                 assert!(mover.locomotor.as_mut().unwrap().store_track_destination(
@@ -620,11 +620,9 @@ fn accepted_chain_preserves_call_budget_and_reloads_callback_queue_once() {
                         cell.speed_costs.float = Some(100);
                         if family == TrackFamily::Ship {
                             cell.zone_type = crate::map::resolved_terrain::zone_class::WATER;
-                            cell.is_water = true;
                             cell.ground_walk_blocked = true;
                             cell.land_type =
                                 crate::rules::terrain_rules::LandType::Water.as_index();
-                            cell.yr_cell_land_type = cell.land_type;
                         }
                         cell
                     })
@@ -1422,7 +1420,7 @@ fn per_cell_factory_clearance_keeps_reason_mission_rtti_and_ground_building_gate
         sim.substrate.entities.insert(target);
         let unit = sim.substrate.entities.get_mut(1).unwrap();
         unit.navigation
-            .set_nav_com_for_test(Some(NavTargetRef::Entity { id: 3 }));
+            .set_nav_com_for_test(Some(NavTargetRef::Object { id: 3 }));
         unit.mission.apply_test_fixture(MissionTestFixture {
             current: MissionId::from_raw(7),
             suspended: MissionId::NONE,
@@ -1832,11 +1830,7 @@ fn native_depot_arrival_uses_the_original_terminal_handoff() {
         let nav = |target: Option<NavTargetRef>| match target {
             None => Value::Null,
             Some(NavTargetRef::Cell { rx, ry }) => json!([rx, ry]),
-            Some(
-                NavTargetRef::Building { id }
-                | NavTargetRef::Entity { id }
-                | NavTargetRef::Object { id },
-            ) => name(Some(id)),
+            Some(NavTargetRef::Object { id }) => name(Some(id)),
         };
         let target = |target: Option<TargetKind>| match target {
             None => Value::Null,
@@ -2087,7 +2081,7 @@ fn native_depot_arrival_uses_the_original_terminal_handoff() {
         unit.navigation.set_nav_com_for_test(
             before["unit_nav"]
                 .is_string()
-                .then_some(NavTargetRef::Building { id: depot }),
+                .then_some(NavTargetRef::Object { id: depot }),
         );
         unit.navigation.set_nav_com_aux_for_test(None);
         unit.attack_target

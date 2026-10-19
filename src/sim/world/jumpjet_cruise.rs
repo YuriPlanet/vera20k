@@ -222,7 +222,7 @@ impl JumpjetFlightHost for CruiseHost<'_> {
     fn cell_land_type(&self, xy: [i32; 2]) -> u8 {
         self.terrain().map_or(0, |terrain| {
             match terrain.native_cell_identity(self.cell_of(xy)) {
-                NativeCellIdentity::Real(index) => terrain.cells()[index].yr_cell_land_type,
+                NativeCellIdentity::Real(index) => terrain.cells()[index].land_type(),
                 NativeCellIdentity::Dummy => 0,
             }
         })

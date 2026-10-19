@@ -1265,13 +1265,7 @@ impl Simulation {
             digest.hash(hasher);
         }
         self.fog.gap_sources.hash(hasher);
-        self.fog.sight_admissions.hash(hasher);
-        // Folded only when present, so hashes without a RevealToAll opening
-        // keep their composition.
-        if !self.fog.alternate_sight_admissions.is_empty() {
-            b"alternate-sight-admissions-v1".hash(hasher);
-            self.fog.alternate_sight_admissions.hash(hasher);
-        }
+        self.fog.hash_sight_admissions(hasher);
         self.fog.hash_whole_map_reveal_state(hasher);
         b"fogged-object-footprints-v1".hash(hasher);
         self.fog.next_fogged_object_id.hash(hasher);
@@ -2105,14 +2099,10 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
                 passenger_size.hash(hasher);
             }
             cargo.total_size().hash(hasher);
-            // A Foot can own cargo while boarding/riding another
-            // transport (Unit PerCell 0x0073A730..0x0073A77C).
-            // Only append a live parent relation, preserving ordinary
-            // outside-cargo hash controls.
-            if let Some(parent) = role.boarding_transport_id() {
-                2u8.hash(hasher);
-                parent.hash(hasher);
-            } else if let Some((parent, open_topped)) = role.inside_transport() {
+            // A Foot can own cargo while riding another transport (Unit
+            // PerCell 0x0073A730..0x0073A77C). Only append a live parent
+            // relation, preserving ordinary outside-cargo hash controls.
+            if let Some((parent, open_topped)) = role.inside_transport() {
                 3u8.hash(hasher);
                 parent.hash(hasher);
                 open_topped.hash(hasher);
@@ -2126,10 +2116,7 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
             }
         }
         None => {
-            if let Some(target_transport_id) = role.boarding_transport_id() {
-                2u8.hash(hasher);
-                target_transport_id.hash(hasher);
-            } else if let Some((transport_id, open_topped)) = role.inside_transport() {
+            if let Some((transport_id, open_topped)) = role.inside_transport() {
                 3u8.hash(hasher);
                 transport_id.hash(hasher);
                 // `+0x82`, folded only when set so a closed transport's
@@ -4420,17 +4407,9 @@ mod passenger_cargo_hash_tests {
             .get_mut(1)
             .unwrap()
             .passenger_role
-            .set_boarding(20);
-        let boarding = sim.state_hash();
-        assert_ne!(boarding, outside);
-        sim.substrate
-            .entities
-            .get_mut(1)
-            .unwrap()
-            .passenger_role
             .set_inside_transport(20, false);
         let inside = sim.state_hash();
-        assert_ne!(inside, boarding);
+        assert_ne!(inside, outside);
         sim.substrate
             .entities
             .get_mut(1)

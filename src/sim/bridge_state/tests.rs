@@ -2,9 +2,10 @@
 
 use super::*;
 use crate::map::resolved_terrain::{
-    BridgeDirection, BridgeLayer, ResolvedTerrainCell, ResolvedTerrainGrid, YR_CELL_LAND_TUNNEL,
+    BridgeDirection, BridgeLayer, ResolvedTerrainCell, ResolvedTerrainGrid,
 };
 use crate::map::tube_facts::{TubeFact, TubeId};
+use crate::rules::terrain_rules::LandType;
 
 include!("record_native_tests.rs");
 include!("gap_restamp_tests.rs");
@@ -71,7 +72,7 @@ fn make_low_bridge_terrain() -> ResolvedTerrainGrid {
                     deck_level: cell.level,
                     direction: BridgeDirection::Low,
                 });
-                cell.yr_cell_land_type = YR_CELL_LAND_TUNNEL;
+                cell.land_type = LandType::Tunnel.as_index();
                 let tube_id = TubeId(tubes.len() as u16);
                 tubes.push(TubeFact::auto_low_bridge((cell.rx, cell.ry), 2));
                 cell.tube_index = Some(tube_id);
@@ -375,7 +376,7 @@ fn low_bridge_tube_record_requires_opposite_neighbors() {
     let mut terrain = make_low_bridge_terrain();
     let cell = terrain.cell_mut(3, 0).expect("right low bridge cell");
     cell.tube_index = None;
-    cell.yr_cell_land_type = 0;
+    cell.land_type = 0;
 
     let state = BridgeRuntimeState::from_resolved_terrain(&terrain, true, 300);
     assert!(

@@ -154,7 +154,7 @@ fn retail_placement_matches_original_cell_and_foundation_raster() {
         assert_eq!(
             serde_json::json!({
                 "tile": cell.final_tile_index, "subtile": cell.final_sub_tile,
-                "level": cell.level, "slope": cell.slope_type, "land": cell.yr_cell_land_type,
+                "level": cell.level, "slope": cell.slope_type, "land": cell.land_type,
             }),
             *output
         );

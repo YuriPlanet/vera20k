@@ -10,7 +10,7 @@ use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid, zon
 use crate::rules::ini_parser::IniFile;
 use crate::rules::locomotor_type::MovementZone;
 use crate::rules::ruleset::RuleSet;
-use crate::rules::terrain_rules::{LandType, SpeedCostProfile, TerrainClass};
+use crate::rules::terrain_rules::{LandType, SpeedCostProfile};
 use crate::sim::bridge_state::{BridgeEndpointRecord, BridgeRecordKind};
 use crate::sim::cell_rect::PlayfieldBounds;
 use crate::sim::components::NavTargetRef;
@@ -32,12 +32,9 @@ fn gsi_04_12_terrain(width: u16, height: u16) -> ResolvedTerrainGrid {
             (0..width).map(move |rx| ResolvedTerrainCell {
                 tileset_index: None,
                 land_type: LandType::Clear.as_index(),
-                yr_cell_land_type: LandType::Clear.as_index(),
                 speed_costs,
                 zone_type: zone_class::GROUND,
                 base_land_type: LandType::Clear.as_index(),
-                base_yr_cell_land_type: LandType::Clear.as_index(),
-                base_terrain_class: TerrainClass::Clear,
                 base_speed_costs: speed_costs,
                 ..crate::map::resolved_terrain::test_flat_cell(rx, ry)
             })
@@ -655,7 +652,7 @@ fn tube_hierarchy_dword_zone_query_matches_original_executable() {
             let c = coord(&entry[0]);
             let cell = terrain.cell_mut(c.0, c.1).unwrap();
             cell.final_tile_index = entry[1].as_i64().unwrap() as i32;
-            cell.yr_cell_land_type = entry[2].as_u64().unwrap() as u8;
+            cell.land_type = entry[2].as_u64().unwrap() as u8;
             cell.bridge_facts.raw_flags = entry[3].as_u64().unwrap() as u32;
         }
         let flags = case["flags"].as_u64().unwrap() as u32;
@@ -754,7 +751,7 @@ fn tube_hierarchy_native_entry_prefix_matches_original_executable() {
             let cell = terrain.cell_mut(c.0, c.1).unwrap();
             cell.bridge_facts.raw_flags = row[1].as_u64().unwrap() as u32;
             cell.final_tile_index = row[2].as_i64().unwrap() as i32;
-            cell.yr_cell_land_type = row[3].as_u64().unwrap() as u8;
+            cell.land_type = row[3].as_u64().unwrap() as u8;
         }
         let records: Vec<_> = case["records"]
             .as_array()

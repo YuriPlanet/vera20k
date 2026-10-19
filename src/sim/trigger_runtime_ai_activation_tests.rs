@@ -26,7 +26,7 @@ fn authored_ai_trigger_actions_change_only_the_selected_house_latch() {
         }
         // Incoming House is Country0; the action's Country7 operand selects
         // House1 instead. 6E45E0 is the existing selector for both actions.
-        let map = super::tests::install_event_ingress_map(
+        super::tests::install_event_ingress_map(
             &mut sim,
             &rules,
             &format!(
@@ -48,15 +48,7 @@ fn authored_ai_trigger_actions_change_only_the_selected_house_latch() {
             sim.main_rng.native_state_hex(),
             sim.mapgen_rng.native_state_hex(),
         );
-        let _ = sim.advance_triggers(
-            TriggerInputs {
-                events: &map.events,
-                actions: &map.actions,
-                rules: Some(&rules),
-            },
-            Some(&registry),
-            FrameEffects::default(),
-        );
+        let _ = sim.advance_triggers(Some(&rules), Some(&registry), FrameEffects::default());
         for (index, owner) in houses.iter().enumerate() {
             let house = &sim.houses[owner];
             let wanted = HouseAiActivationLatches {
@@ -826,8 +818,8 @@ fn house_control_action(
     let entry = crate::map::actions::parse_actions(&ini)
         .remove("CONTROL")
         .unwrap()
-        .entries
-        .remove(0);
+        .entries()[0]
+        .clone();
     let action = RuntimeDefinitions::default().resolve_action(entry, None, None);
     sim.apply_live_trigger_action(
         &action,
@@ -1266,7 +1258,7 @@ fn house_team_controls_ordered_tag_history_preserves_native_due_selection_and_sa
     sim.houses.get_mut(&houses[0]).unwrap().enemy_house = Some(houses[1]);
     let (old_team, types) = install_team_scene(&mut sim, houses[0]);
     let old_team_bytes = save_codec::serialize(sim.team_script_vm.team(old_team).unwrap()).unwrap();
-    let map = super::tests::install_event_ingress_map(
+    super::tests::install_event_ingress_map(
         &mut sim,
         &rules,
         "[Triggers]\nAI=Country0,<none>,AI,0,1,1,1,0\n[Events]\nAI=1,13,0,0\n\
@@ -1278,15 +1270,7 @@ fn house_team_controls_ordered_tag_history_preserves_native_due_selection_and_sa
     let main_before = sim.main_rng.native_state_hex();
     let mapgen_before = sim.mapgen_rng.native_state_hex();
     let untouched = save_codec::serialize(&sim.houses[&houses[2]]).unwrap();
-    sim.advance_triggers(
-        TriggerInputs {
-            events: &map.events,
-            actions: &map.actions,
-            rules: Some(&rules),
-        },
-        Some(&registry),
-        FrameEffects::default(),
-    );
+    sim.advance_triggers(Some(&rules), Some(&registry), FrameEffects::default());
     // Original consecutive Read/Execute13/77/78/79, Steam3e81a617..08600:
     // 13 selects Country7, while all three ratio actions use incoming House0.
     assert_eq!(

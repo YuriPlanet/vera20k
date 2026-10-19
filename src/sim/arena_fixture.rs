@@ -85,19 +85,11 @@ pub fn flood(
     for (x, y) in cells {
         let cell = terrain.cell_mut(x, y).unwrap();
         cell.land_type = LandType::Water.as_index();
-        cell.yr_cell_land_type = cell.land_type;
-        cell.terrain_class = water.terrain_class;
         cell.speed_costs = water.speed_costs;
-        cell.is_water = water.water;
-        cell.is_cliff_like = water.cliff_like;
-        cell.is_rough = water.rough;
-        cell.is_road = water.road;
         cell.ground_walk_blocked = water.ground_blocked;
         cell.base_ground_walk_blocked = water.ground_blocked;
         cell.base_build_blocked = !water.buildable;
         cell.base_land_type = cell.land_type;
-        cell.base_yr_cell_land_type = cell.yr_cell_land_type;
-        cell.base_terrain_class = cell.terrain_class;
         cell.base_speed_costs = cell.speed_costs;
         cell.zone_type = crate::map::resolved_terrain::recalc_zone_type(
             false,

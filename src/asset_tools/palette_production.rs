@@ -23,18 +23,11 @@
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ProductionBinding {
     pub palette: &'static str,
-    /// "standard" or "gamemd_ui" — must match what the cited call site uses.
-    pub alpha_policy: &'static str,
     /// Human-readable rule, e.g. "sidebar chrome atlas for sidec01.mix".
     pub rule: &'static str,
     /// The code path this was read from, e.g. "render/sidebar_chrome.rs:296".
     pub site: &'static str,
 }
-
-/// `Palette::from_bytes` at the cited call site.
-const STANDARD: &str = "standard";
-/// `Palette::from_bytes_gamemd_ui` at the cited call site.
-const GAMEMD_UI: &str = "gamemd_ui";
 
 /// Which assets a rule claims.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -92,7 +85,7 @@ struct Rule {
 /// rows are written once and both tables are generated from them.
 macro_rules! production_bindings {
     ($(
-        $asset:expr, $archive:expr => $palette:expr, $alpha:expr, $rule:expr, $site:expr;
+        $asset:expr, $archive:expr => $palette:expr, $rule:expr, $site:expr;
     )*) => {
         const RULES: &[Rule] = &[$(
             Rule {
@@ -100,7 +93,6 @@ macro_rules! production_bindings {
                 archive: $archive,
                 binding: ProductionBinding {
                     palette: $palette,
-                    alpha_policy: $alpha,
                     rule: $rule,
                     site: $site,
                 },
@@ -111,7 +103,6 @@ macro_rules! production_bindings {
         pub const BINDINGS: &[ProductionBinding] = &[$(
             ProductionBinding {
                 palette: $palette,
-                alpha_policy: $alpha,
                 rule: $rule,
                 site: $site,
             },
@@ -128,15 +119,15 @@ production_bindings! {
     // palette in the same call, and `resolve_theme_palette_with_source` prefers
     // the copy inside that archive — so the pairing is per-archive, not global.
     Name("radar.shp"), Leaf("sidec01")
-        => "sidebar.pal", STANDARD,
+        => "sidebar.pal",
            "Allied sidebar radar art from sidec01.mix",
            "render/sidebar_chrome.rs:296";
     Name("radar.shp"), Leaf("sidec02")
-        => "sidebar.pal", STANDARD,
+        => "sidebar.pal",
            "Soviet sidebar radar art from sidec02.mix",
            "render/sidebar_chrome.rs:306";
     Name("radary.shp"), Leaf("sidec02md")
-        => "radaryuri.pal", STANDARD,
+        => "radaryuri.pal",
            "Yuri sidebar radar art from sidec02md.mix",
            "render/sidebar_chrome.rs:316";
 
@@ -144,27 +135,27 @@ production_bindings! {
     // clone of it), so the plain names take sidebar.pal and the `*y` names take
     // the Yuri palette.
     Name("bkgdlg.shp"), AnyArchive
-        => "sidebar.pal", STANDARD,
+        => "sidebar.pal",
            "Allied/Soviet large sidebar background",
            "render/sidebar_chrome.rs:602";
     Name("bkgdmd.shp"), AnyArchive
-        => "sidebar.pal", STANDARD,
+        => "sidebar.pal",
            "Allied/Soviet medium sidebar background",
            "render/sidebar_chrome.rs:603";
     Name("bkgdsm.shp"), AnyArchive
-        => "sidebar.pal", STANDARD,
+        => "sidebar.pal",
            "Allied/Soviet small sidebar background",
            "render/sidebar_chrome.rs:604";
     Name("bkgdlgy.shp"), AnyArchive
-        => "radaryuri.pal", STANDARD,
+        => "radaryuri.pal",
            "Yuri large sidebar background",
            "render/sidebar_chrome.rs:318";
     Name("bkgdmdy.shp"), AnyArchive
-        => "radaryuri.pal", STANDARD,
+        => "radaryuri.pal",
            "Yuri medium sidebar background",
            "render/sidebar_chrome.rs:318";
     Name("bkgdsmy.shp"), AnyArchive
-        => "radaryuri.pal", STANDARD,
+        => "radaryuri.pal",
            "Yuri small sidebar background",
            "render/sidebar_chrome.rs:318";
 
@@ -172,27 +163,27 @@ production_bindings! {
     // backgrounds they keep one name across all three themes — so the archive
     // is what decides.
     Name("tabs.shp"), Leaf("sidec01")
-        => "sidebar.pal", STANDARD,
+        => "sidebar.pal",
            "Allied sidebar tab strip, theme palette",
            "render/sidebar_chrome.rs:526";
     Name("tabs.shp"), Leaf("sidec02")
-        => "sidebar.pal", STANDARD,
+        => "sidebar.pal",
            "Soviet sidebar tab strip, theme palette",
            "render/sidebar_chrome.rs:526";
     Name("tabs.shp"), Leaf("sidec02md")
-        => "radaryuri.pal", STANDARD,
+        => "radaryuri.pal",
            "Yuri sidebar tab strip, theme palette",
            "render/sidebar_chrome.rs:526";
     Name("power.shp"), Leaf("sidec01")
-        => "sidebar.pal", STANDARD,
+        => "sidebar.pal",
            "Allied power bar frame, theme palette",
            "render/sidebar_chrome.rs:587";
     Name("power.shp"), Leaf("sidec02")
-        => "sidebar.pal", STANDARD,
+        => "sidebar.pal",
            "Soviet power bar frame, theme palette",
            "render/sidebar_chrome.rs:587";
     Name("power.shp"), Leaf("sidec02md")
-        => "radaryuri.pal", STANDARD,
+        => "radaryuri.pal",
            "Yuri power bar frame, theme palette",
            "render/sidebar_chrome.rs:587";
 
@@ -200,55 +191,55 @@ production_bindings! {
     // decoded with SIDEBAR.PAL for every theme, including Yuri — so they must
     // outrank the archive-wide Yuri rule below.
     Name("side1.shp"), AnyArchive
-        => "sidebar.pal", STANDARD,
+        => "sidebar.pal",
            "Sidebar body panel, generic SIDEBAR.PAL",
            "render/sidebar_chrome.rs:521";
     Name("side2.shp"), AnyArchive
-        => "sidebar.pal", STANDARD,
+        => "sidebar.pal",
            "Sidebar body panel, generic SIDEBAR.PAL",
            "render/sidebar_chrome.rs:522";
     Name("side3.shp"), AnyArchive
-        => "sidebar.pal", STANDARD,
+        => "sidebar.pal",
            "Sidebar body panel, generic SIDEBAR.PAL",
            "render/sidebar_chrome.rs:523";
     Name("tab00.shp"), AnyArchive
-        => "sidebar.pal", STANDARD,
+        => "sidebar.pal",
            "Sidebar tab button, generic SIDEBAR.PAL",
            "render/sidebar_chrome.rs:536";
     Name("tab01.shp"), AnyArchive
-        => "sidebar.pal", STANDARD,
+        => "sidebar.pal",
            "Sidebar tab button, generic SIDEBAR.PAL",
            "render/sidebar_chrome.rs:536";
     Name("tab02.shp"), AnyArchive
-        => "sidebar.pal", STANDARD,
+        => "sidebar.pal",
            "Sidebar tab button, generic SIDEBAR.PAL",
            "render/sidebar_chrome.rs:536";
     Name("tab03.shp"), AnyArchive
-        => "sidebar.pal", STANDARD,
+        => "sidebar.pal",
            "Sidebar tab button, generic SIDEBAR.PAL",
            "render/sidebar_chrome.rs:536";
     Name("repair.shp"), AnyArchive
-        => "sidebar.pal", STANDARD,
+        => "sidebar.pal",
            "Sidebar repair button, generic SIDEBAR.PAL",
            "render/sidebar_chrome.rs:552";
     Name("sell.shp"), AnyArchive
-        => "sidebar.pal", STANDARD,
+        => "sidebar.pal",
            "Sidebar sell button, generic SIDEBAR.PAL",
            "render/sidebar_chrome.rs:561";
     Name("r-up.shp"), AnyArchive
-        => "sidebar.pal", STANDARD,
+        => "sidebar.pal",
            "Build strip scroll-up button, generic SIDEBAR.PAL",
            "render/sidebar_chrome.rs:577";
     Name("r-dn.shp"), AnyArchive
-        => "sidebar.pal", STANDARD,
+        => "sidebar.pal",
            "Build strip scroll-down button, generic SIDEBAR.PAL",
            "render/sidebar_chrome.rs:579";
     Name("powerp.shp"), AnyArchive
-        => "sidebar.pal", STANDARD,
+        => "sidebar.pal",
            "Power bar meter strip, generic SIDEBAR.PAL",
            "render/sidebar_chrome.rs:592";
     Name("gclock2.shp"), AnyArchive
-        => "sidebar.pal", STANDARD,
+        => "sidebar.pal",
            "Production progress clock, generic SIDEBAR.PAL",
            "render/sidebar_chrome.rs:641";
 
@@ -256,15 +247,15 @@ production_bindings! {
     // decoded with that theme's palette by `collect_extra_entries`, so an
     // unrecognised sidebar sprite still has a production answer.
     AnyAsset, Leaf("sidec01")
-        => "sidebar.pal", STANDARD,
+        => "sidebar.pal",
            "Any remaining Allied sidebar piece, theme palette",
            "render/sidebar_chrome.rs:631";
     AnyAsset, Leaf("sidec02")
-        => "sidebar.pal", STANDARD,
+        => "sidebar.pal",
            "Any remaining Soviet sidebar piece, theme palette",
            "render/sidebar_chrome.rs:631";
     AnyAsset, Leaf("sidec02md")
-        => "radaryuri.pal", STANDARD,
+        => "radaryuri.pal",
            "Any remaining Yuri sidebar piece, theme palette",
            "render/sidebar_chrome.rs:631";
 
@@ -273,27 +264,27 @@ production_bindings! {
     // built, and the atlas decodes every cameo SHP with one palette chosen from
     // an ordered list whose first entry is cameo.pal.
     AnyAsset, Leaf("cameo")
-        => "cameo.pal", STANDARD,
+        => "cameo.pal",
            "Sidebar cameo art from cameo.mix",
            "app_init.rs:1259";
     AnyAsset, Leaf("cameomd")
-        => "cameo.pal", STANDARD,
+        => "cameo.pal",
            "Sidebar cameo art from cameomd.mix",
            "app_init.rs:1259";
 
     // ---------------------------------------------------------------- cursors
     Name("mouse.sha"), AnyArchive
-        => "mousepal.pal", STANDARD,
+        => "mousepal.pal",
            "Software cursor sprite sheet",
            "render/cursor_atlas.rs:350";
     Name("mouse.shp"), AnyArchive
-        => "mousepal.pal", STANDARD,
+        => "mousepal.pal",
            "Software cursor sprite sheet, .shp spelling",
            "render/cursor_atlas.rs:354";
 
     // ------------------------------------------------------------ world anims
     Name("oregath.shp"), AnyArchive
-        => "anim.pal", STANDARD,
+        => "anim.pal",
            "Harvest overlay animation, effect palette",
            "render/sprite_atlas.rs:1343";
 
@@ -301,25 +292,25 @@ production_bindings! {
     // Named "the general game palette, NOT unittem.pal" at the call site; the
     // unittem.pal fallback only fires when palette.pal is missing.
     Name("pips.shp"), AnyArchive
-        => "palette.pal", STANDARD,
+        => "palette.pal",
            "Health and occupant pips",
            "render/selection_overlay.rs:701";
     Name("pips2.shp"), AnyArchive
-        => "palette.pal", STANDARD,
+        => "palette.pal",
            "Tiberium cargo pips",
            "render/selection_overlay.rs:999";
     Name("pipbrd.shp"), AnyArchive
-        => "palette.pal", STANDARD,
+        => "palette.pal",
            "Health bar backing plate",
            "render/selection_overlay.rs:1095";
 
     // ------------------------------------------------------- startup splash
     Name("glssmd.shp"), AnyArchive
-        => "glsmd.pal", GAMEMD_UI,
+        => "glsmd.pal",
            "Startup splash, 640-wide client",
            "app/frontend/startup_splash.rs:219";
     Name("glslmd.shp"), AnyArchive
-        => "glsmd.pal", GAMEMD_UI,
+        => "glsmd.pal",
            "Startup splash, wider than 640",
            "app/frontend/startup_splash.rs:219";
 
@@ -328,180 +319,179 @@ production_bindings! {
     // Skirmish builders agree on every asset listed here; the two that disagree
     // are omitted and recorded in the ledger.
     Name("sdtp.shp"), AnyArchive
-        => "shell.pal", STANDARD,
+        => "shell.pal",
            "Shell right-panel top cap",
            "render/main_menu_shell_chrome.rs:95";
     Name("sdbtm.shp"), AnyArchive
-        => "shell.pal", STANDARD,
+        => "shell.pal",
            "Shell right-panel bottom cap",
            "render/main_menu_shell_chrome.rs:96";
     Name("lwscrns.shp"), AnyArchive
-        => "shell.pal", STANDARD,
+        => "shell.pal",
            "Shell lower-side chrome, 640-wide",
            "render/main_menu_shell_chrome.rs:97";
     Name("lwscrnl.shp"), AnyArchive
-        => "shell.pal", STANDARD,
+        => "shell.pal",
            "Shell lower-side chrome, wide",
            "render/main_menu_shell_chrome.rs:98";
     Name("mnscrnl.shp"), AnyArchive
-        => "shell.pal", STANDARD,
+        => "shell.pal",
            "Shell parent background, wide",
            "render/main_menu_shell_chrome.rs:102";
     Name("sdmpbtn.shp"), AnyArchive
-        => "shell.pal", STANDARD,
+        => "shell.pal",
            "Skirmish shell multiplayer button",
            "render/skirmish_shell_chrome.rs:327";
     Name("startbut.shp"), AnyArchive
-        => "shell.pal", STANDARD,
+        => "shell.pal",
            "Skirmish start marker",
            "render/skirmish_shell_chrome.rs:390";
     Name("sdbtnbkgd.shp"), AnyArchive
-        => "shell2.pal", STANDARD,
+        => "shell2.pal",
            "Shell right-panel tile",
            "render/main_menu_shell_chrome.rs:107";
     Name("sdbtnanm.shp"), AnyArchive
-        => "sdbtnanm.pal", STANDARD,
+        => "sdbtnanm.pal",
            "Shell owner-draw button animation",
            "render/main_menu_shell_chrome.rs:76";
     Name("sidebttn.shp"), AnyArchive
-        => "sidebar.pal", STANDARD,
+        => "sidebar.pal",
            "In-game Options dialog buttons",
            "render/skirmish_shell_chrome.rs:273";
     Name("mnbttn.shp"), AnyArchive
-        => "mainbttn.pal", STANDARD,
+        => "mainbttn.pal",
            "Validation modal button",
            "render/skirmish_shell_chrome.rs:293";
     Name("pudlgbgn.shp"), AnyArchive
-        => "dialogn.pal", STANDARD,
+        => "dialogn.pal",
            "Validation modal background",
            "render/skirmish_shell_chrome.rs:314";
     Name("mnscrnlcustomizebattle.shp"), AnyArchive
-        => "mnscrnlcustomizebattle.pal", STANDARD,
+        => "mnscrnlcustomizebattle.pal",
            "Choose Map modal background",
            "render/skirmish_shell_chrome.rs:375";
 
     // -------------------------------------------------------- loading screen
-    // One palette per country, from the loading-art manifest, decoded with the
-    // non-alpha-baking conversion.
+    // One palette per country, from the loading-art manifest.
     Name("progbarm.shp"), AnyArchive
-        => "mpls.pal", GAMEMD_UI,
+        => "mpls.pal",
            "Loading screen progress bar",
            "render/loading_screen_chrome.rs:296";
     Name("ls640yuri.shp"), AnyArchive
-        => "mpyls.pal", GAMEMD_UI,
+        => "mpyls.pal",
            "Loading background, Yuri, 640-wide",
            "render/loading_screen_chrome.rs:156";
     Name("ls800yuri.shp"), AnyArchive
-        => "mpyls.pal", GAMEMD_UI,
+        => "mpyls.pal",
            "Loading background, Yuri, 800-wide",
            "render/loading_screen_chrome.rs:156";
     Name("ls640obs.shp"), AnyArchive
-        => "mplsobs.pal", GAMEMD_UI,
+        => "mplsobs.pal",
            "Loading background, Observer, 640-wide",
            "render/loading_screen_chrome.rs:157";
     Name("ls800obs.shp"), AnyArchive
-        => "mplsobs.pal", GAMEMD_UI,
+        => "mplsobs.pal",
            "Loading background, Observer, 800-wide",
            "render/loading_screen_chrome.rs:157";
     Name("ls640ustates.shp"), AnyArchive
-        => "mplsu.pal", GAMEMD_UI,
+        => "mplsu.pal",
            "Loading background, Americans, 640-wide",
            "render/loading_screen_chrome.rs:158";
     Name("ls800ustates.shp"), AnyArchive
-        => "mplsu.pal", GAMEMD_UI,
+        => "mplsu.pal",
            "Loading background, Americans, 800-wide",
            "render/loading_screen_chrome.rs:158";
     Name("ls640russia.shp"), AnyArchive
-        => "mplsr.pal", GAMEMD_UI,
+        => "mplsr.pal",
            "Loading background, Russians, 640-wide",
            "render/loading_screen_chrome.rs:159";
     Name("ls800russia.shp"), AnyArchive
-        => "mplsr.pal", GAMEMD_UI,
+        => "mplsr.pal",
            "Loading background, Russians, 800-wide",
            "render/loading_screen_chrome.rs:159";
     Name("ls640libya.shp"), AnyArchive
-        => "mplsl.pal", GAMEMD_UI,
+        => "mplsl.pal",
            "Loading background, Africans, 640-wide",
            "render/loading_screen_chrome.rs:160";
     Name("ls800libya.shp"), AnyArchive
-        => "mplsl.pal", GAMEMD_UI,
+        => "mplsl.pal",
            "Loading background, Africans, 800-wide",
            "render/loading_screen_chrome.rs:160";
     Name("ls640korea.shp"), AnyArchive
-        => "mplsk.pal", GAMEMD_UI,
+        => "mplsk.pal",
            "Loading background, Alliance, 640-wide",
            "render/loading_screen_chrome.rs:161";
     Name("ls800korea.shp"), AnyArchive
-        => "mplsk.pal", GAMEMD_UI,
+        => "mplsk.pal",
            "Loading background, Alliance, 800-wide",
            "render/loading_screen_chrome.rs:161";
     Name("ls640iraq.shp"), AnyArchive
-        => "mplsi.pal", GAMEMD_UI,
+        => "mplsi.pal",
            "Loading background, Arabs, 640-wide",
            "render/loading_screen_chrome.rs:162";
     Name("ls800iraq.shp"), AnyArchive
-        => "mplsi.pal", GAMEMD_UI,
+        => "mplsi.pal",
            "Loading background, Arabs, 800-wide",
            "render/loading_screen_chrome.rs:162";
     Name("ls640germany.shp"), AnyArchive
-        => "mplsg.pal", GAMEMD_UI,
+        => "mplsg.pal",
            "Loading background, Germans, 640-wide",
            "render/loading_screen_chrome.rs:163";
     Name("ls800germany.shp"), AnyArchive
-        => "mplsg.pal", GAMEMD_UI,
+        => "mplsg.pal",
            "Loading background, Germans, 800-wide",
            "render/loading_screen_chrome.rs:163";
     Name("ls640france.shp"), AnyArchive
-        => "mplsf.pal", GAMEMD_UI,
+        => "mplsf.pal",
            "Loading background, French, 640-wide",
            "render/loading_screen_chrome.rs:164";
     Name("ls800france.shp"), AnyArchive
-        => "mplsf.pal", GAMEMD_UI,
+        => "mplsf.pal",
            "Loading background, French, 800-wide",
            "render/loading_screen_chrome.rs:164";
     Name("ls640cuba.shp"), AnyArchive
-        => "mplsc.pal", GAMEMD_UI,
+        => "mplsc.pal",
            "Loading background, Confederation, 640-wide",
            "render/loading_screen_chrome.rs:165";
     Name("ls800cuba.shp"), AnyArchive
-        => "mplsc.pal", GAMEMD_UI,
+        => "mplsc.pal",
            "Loading background, Confederation, 800-wide",
            "render/loading_screen_chrome.rs:165";
     Name("ls640ukingdom.shp"), AnyArchive
-        => "mplsuk.pal", GAMEMD_UI,
+        => "mplsuk.pal",
            "Loading background, British, 640-wide",
            "render/loading_screen_chrome.rs:166";
     Name("ls800ukingdom.shp"), AnyArchive
-        => "mplsuk.pal", GAMEMD_UI,
+        => "mplsuk.pal",
            "Loading background, British, 800-wide",
            "render/loading_screen_chrome.rs:166";
 
     // -------------------------------------------------------- theater tiles
     // A TMP's extension *is* the theater selector: theater load pairs each
     // theater with one exact iso palette, and the tile atlas decodes that
-    // theater's tiles with it. Loaded with the non-alpha-baking conversion.
+    // theater's tiles with it.
     Ext("tem"), AnyArchive
-        => "isotem.pal", GAMEMD_UI,
+        => "isotem.pal",
            "Temperate terrain tiles",
            "map/theater.rs:78";
     Ext("sno"), AnyArchive
-        => "isosno.pal", GAMEMD_UI,
+        => "isosno.pal",
            "Snow terrain tiles",
            "map/theater.rs:89";
     Ext("urb"), AnyArchive
-        => "isourb.pal", GAMEMD_UI,
+        => "isourb.pal",
            "Urban terrain tiles",
            "map/theater.rs:106";
     Ext("lun"), AnyArchive
-        => "isolun.pal", GAMEMD_UI,
+        => "isolun.pal",
            "Lunar terrain tiles",
            "map/theater.rs:117";
     Ext("des"), AnyArchive
-        => "isodes.pal", GAMEMD_UI,
+        => "isodes.pal",
            "Desert terrain tiles",
            "map/theater.rs:128";
     Ext("ubn"), AnyArchive
-        => "isoubn.pal", GAMEMD_UI,
+        => "isoubn.pal",
            "New Urban terrain tiles",
            "map/theater.rs:139";
 }
@@ -666,18 +656,6 @@ mod tests {
     }
 
     #[test]
-    fn alpha_policy_is_only_ever_one_of_the_two_legal_strings() {
-        for binding in BINDINGS {
-            assert!(
-                binding.alpha_policy == "standard" || binding.alpha_policy == "gamemd_ui",
-                "binding {} has illegal alpha policy {:?}",
-                binding.site,
-                binding.alpha_policy
-            );
-        }
-    }
-
-    #[test]
     fn palette_names_are_lowercase_pal_files() {
         for binding in BINDINGS {
             assert!(
@@ -701,16 +679,6 @@ mod tests {
             assert_eq!(*binding, rule.binding);
         }
     }
-
-    #[test]
-    fn theater_tiles_use_the_non_alpha_baking_conversion() {
-        // The theater loader takes the gamemd UI conversion for iso palettes;
-        // getting this backwards renders terrain as an opaque black square.
-        let tile = binding_for("clat01.tem", "isotemmd.mix").expect("temperate tile binding");
-        assert_eq!(tile.alpha_policy, "gamemd_ui");
-        let sidebar = binding_for("side1.shp", "sidec01.mix").expect("sidebar binding");
-        assert_eq!(sidebar.alpha_policy, "standard");
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -725,8 +693,8 @@ mod tests {
 //   :316  ...pairs sidec02md.mix with "radaryuri.pal"
 //   :297/:307/:317  radar art name per theme: radar.shp, radar.shp, radary.shp
 //   :298/:308/:318  background names per theme: bkgd{lg,md,sm}[y].shp
-//   :452/:458  resolve_theme_palette_with_source uses Palette::from_bytes
-//              (standard), preferring the copy inside the theme archive
+//   :452/:458  resolve_theme_palette_with_source uses Palette::from_bytes,
+//              preferring the copy inside the theme archive
 //   :496/:498  generic_palette_name = "SIDEBAR.PAL", Palette::from_bytes
 //   :506  tabs_palette = theme_palette.clone()
 //   :521-523  side1/2/3.shp decoded with the generic SIDEBAR.PAL
@@ -746,7 +714,7 @@ mod tests {
 //   src/app_init.rs:1266 (now app/loading/init.rs)  build_sidebar_cameo_atlas called immediately after
 //   src/app_init_helpers.rs:80 (now app/loading/init_helpers.rs)  palette order cameo.pal, cameomd.pal, mousepal.pal,
 //         anim.pal, unittem.pal, unit.pal, temperat.pal — first present wins
-//   src/app_init_helpers.rs:91 (same file)  Palette::from_bytes (standard)
+//   src/app_init_helpers.rs:91 (same file)  Palette::from_bytes
 //   Note: src/render/sidebar_cameo_atlas.rs:140 is export_debug_palette_sheet,
 //         a RA2_DEBUG_CAMEO_PALETTES-gated comparison sheet, not a production
 //         binding; it is not in the table.
@@ -771,7 +739,7 @@ mod tests {
 //   :32-34  SMALL_SPLASH_SHP = GLSS.SHP, LARGE_SPLASH_SHP = GLSL.SHP,
 //           SPLASH_PALETTE = GLS.PAL — the Red Alert 2 art, chosen deliberately
 //           over the Yuri's Revenge `*MD` variants
-//   :219  Palette::from_bytes_gamemd_ui
+//   :219  Palette::from_bytes
 //
 // SHELL CHROME
 //   src/render/main_menu_shell_chrome.rs:76   SDBTNANM.SHP → SDBTNANM.PAL
@@ -801,7 +769,7 @@ mod tests {
 //         prefix 640 or 800 (:93-96)
 //   :283  background decoded with the manifest palette
 //   :296  PROGBARM.SHP decoded with a ramp-remapped MPLS.PAL (:284)
-//   :477  load_named_ui_palette uses Palette::from_bytes_gamemd_ui
+//   :477  load_named_ui_palette uses Palette::from_bytes
 //
 // THEATER TILES — src/map/theater.rs
 //   :77-80    TEMPERATE: extension "tem", iso isotem.pal, unit unittem.pal,
@@ -812,7 +780,7 @@ mod tests {
 //   :127-130  DESERT: "des", isodes.pal, unitdes.pal, desert.pal
 //   :138-141  NEWURBAN: "ubn", isoubn.pal, unitubn.pal, urbann.pal
 //   :818-827  iso / unit / theater palettes loaded by exact name
-//   :1107     load_exact_palette uses Palette::from_bytes_gamemd_ui
+//   :1107     load_exact_palette uses Palette::from_bytes
 //   src/app_init.rs:709 (now app/loading/init.rs)  the tile atlas is built with td.iso_palette and
 //             td.extension, so a `.{ext}` tile is an iso-palette asset
 //
@@ -820,9 +788,8 @@ mod tests {
 // OMITTED — real production pairings that this table deliberately does not make
 //
 // mmpb.shp — two production paths, two palettes: the loading screen decodes it
-//   with MPLS.PAL under from_bytes_gamemd_ui
-//   (src/render/loading_screen_chrome.rs:284, :382, :302) while the Skirmish
-//   shell decodes it with SHELL.PAL under from_bytes
+//   with MPLS.PAL (src/render/loading_screen_chrome.rs:284, :382, :302) while
+//   the Skirmish shell decodes it with SHELL.PAL
 //   (src/render/skirmish_shell_chrome.rs:387-392). Name and archive cannot tell
 //   the two apart, so the matcher returns None rather than pick one.
 //
@@ -846,18 +813,3 @@ mod tests {
 // World effect SHPs — anim.pal at src/render/sprite_atlas.rs:941, but the asset
 //   set is rules-driven (effect_type_ids), not name-derivable. Only the one
 //   hardcoded name, oregath.shp, is in the table.
-//
-// ---------------------------------------------------------------------------
-// DRIFT NOTED AGAINST THE HEURISTIC — for whoever reconciles the two
-//
-// asset_tools::palette::ARCHIVE_PALETTE_MAP proposes "isonurb.pal" for a
-//   NEWURBAN archive. src/map/theater.rs:139 names isoubn.pal. The heuristic
-//   name does not appear anywhere in the engine.
-//
-// asset_tools::palette::GAMEMD_UI_PALETTES omits unit*.pal, but
-//   src/map/theater.rs:820 loads the unit palette through
-//   load_exact_palette, which is from_bytes_gamemd_ui (:1107). The fallback
-//   paths that run only when no theater loaded (src/app_init_helpers.rs:632, now app/loading/init_helpers.rs,
-//   src/app_sim_tick.rs:1707, src/app_skirmish.rs:2897 - now under app/) use from_bytes. Since a
-//   skirmish always loads a theater, the production policy for unit*.pal is
-//   gamemd_ui.

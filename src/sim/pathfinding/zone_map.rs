@@ -683,7 +683,7 @@ impl ZoneGrid {
                     // in all six hash-bound retail theaters (bridge report).
                     if let CellRef::Real(exit) = current
                         && terrain.high_bridge_tile_offset(exit).is_some()
-                        && exit.yr_cell_land_type != LandType::Rock.as_index()
+                        && exit.land_type() != LandType::Rock.as_index()
                     {
                         selected = record.endpoint_b;
                     }
@@ -827,7 +827,7 @@ impl ZoneGrid {
         let is_exit = |cell: &CellRef<'_>| {
             matches!(cell, CellRef::Real(cell)
                 if terrain.high_bridge_tile_offset(cell).is_some()
-                && cell.yr_cell_land_type != LandType::Rock.as_index())
+                && cell.land_type() != LandType::Rock.as_index())
         };
         let step = |xy: (u16, u16), direction: usize| {
             let delta = DIRECTION_DELTAS[direction];

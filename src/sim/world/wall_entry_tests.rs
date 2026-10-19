@@ -793,7 +793,7 @@ fn assert_retail_wall_history(native_path: &'static str, wall_name: &str, direct
         json!({"cell":[at.0,at.1], "overlay":overlay.overlay_id.map_or(-1,i32::from),
             "data":overlay.overlay_data,
             "neighbors":grid.retained_neighbor_counts()[usize::from(at.1)*usize::from(grid.width())+usize::from(at.0)],
-            "land":ground.yr_cell_land_type,"zone":ground.zone_type,
+            "land":ground.land_type,"zone":ground.zone_type,
             "tile":ground.final_tile_index,"subtile":ground.final_sub_tile,
             "level":ground.level,"slope":ground.slope_type})
     }
@@ -940,14 +940,10 @@ fn assert_retail_wall_history(native_path: &'static str, wall_name: &str, direct
                     placement["cell"][0].as_u64().unwrap() as u16,
                     placement["cell"][1].as_u64().unwrap() as u16,
                 );
-                assert!(crate::sim::production::mark_wall(
-                    sim,
-                    rules,
-                    registry,
-                    coordinate.0,
-                    coordinate.1,
-                    wall,
-                ));
+                assert_eq!(
+                    sim.mark_overlay_for_test(rules, registry, coordinate, wall),
+                    crate::map::overlay_mark::OverlayMarkOutcome::Marked
+                );
                 for change in placement["changed"].as_array().unwrap() {
                     assert_cell(sim, &change["after"], &neighbor_domain);
                 }

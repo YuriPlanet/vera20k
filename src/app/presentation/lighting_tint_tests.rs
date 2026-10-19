@@ -9,7 +9,7 @@ use crate::map::map_file::MapFile;
 use crate::render::palette_light::PaletteLight;
 use crate::rules::{art_data::ArtRegistry, ini_parser::IniFile};
 use crate::sim::scenario_session::ScenarioLightingProfile;
-use crate::sim::world::{FrameEffects, TriggerInputs};
+use crate::sim::world::FrameEffects;
 
 fn global(palette: PaletteUpdate, state: ScenarioLightingState) -> LightingEvent {
     LightingEvent::Global {
@@ -249,15 +249,7 @@ fn live_tag_rgb_overrides_reach_packets_and_survive_ambient_writes_during_storm(
     sim.publish_global_lighting(PaletteUpdate::from_scenario(&sim.session.lighting));
     lights.apply_events(&terrain, &sim.lighting_sources.pending);
     sim.discard_lighting_events();
-    sim.advance_triggers(
-        TriggerInputs {
-            events: &map.events,
-            actions: &map.actions,
-            rules: None,
-        },
-        None,
-        FrameEffects::default(),
-    );
+    sim.advance_triggers(None, None, FrameEffects::default());
     assert_eq!(sim.lighting_sources.pending.len(), 3);
     lights.apply_events(&terrain, &sim.lighting_sources.pending);
     sim.discard_lighting_events();

@@ -95,7 +95,7 @@ fn tracker_object_signed_cell(
     // perform a Map lookup here: the handler clamps these words first.
     let point = simulation
         .navigation_target_coordinate(
-            crate::sim::components::NavTargetRef::Entity { id: stable_id },
+            crate::sim::components::NavTargetRef::object(stable_id),
             None,
             rules,
         )

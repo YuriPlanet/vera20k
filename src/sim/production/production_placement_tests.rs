@@ -10,6 +10,7 @@ use super::{
     publish_production_changes, ready_building_entity_for_owner, ready_buildings_for_owner,
 };
 use crate::map::entities::EntityCategory;
+use crate::map::overlay_mark::OverlayMarkOutcome;
 use crate::map::resolved_terrain::{
     RampDirection, ResolvedTerrainCell, ResolvedTerrainGrid, zone_class,
 };
@@ -17,7 +18,7 @@ use crate::rules::art_data::ArtRegistry;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
-use crate::rules::terrain_rules::{LandType, SpeedCostProfile, TerrainClass};
+use crate::rules::terrain_rules::{LandType, SpeedCostProfile};
 use crate::sim::combat::{Health, TargetKind};
 use crate::sim::command::{Command, CommandEnvelope};
 use crate::sim::components::BuildingUp;
@@ -1081,7 +1082,7 @@ fn place_ready_building_rejects_blocked_cell_inside_mixed_height_footprint() {
     let rules = placement_radius_rules();
     sim.resolved_terrain = Some(resolved_clear_grid_with_override(64, 64, |cell| {
         if (cell.rx, cell.ry) == (13, 11) {
-            cell.yr_cell_land_type = LandType::Rock.as_index();
+            cell.land_type = LandType::Rock.as_index();
         }
     }));
     spawn_structure(&mut sim, &rules, 1, "Americans", "GACNST", 10, 10);
@@ -1565,7 +1566,7 @@ fn place_ready_building_rejects_blocked_or_overlapping_cells() {
     let rules = build_catalog_rules();
     sim.resolved_terrain = Some(resolved_clear_grid_with_override(64, 64, |cell| {
         if (cell.rx, cell.ry) == (31, 31) {
-            cell.yr_cell_land_type = LandType::Rock.as_index();
+            cell.land_type = LandType::Rock.as_index();
         }
     }));
     spawn_structure(&mut sim, &rules, 1, "Americans", "GACNST", 30, 30);
@@ -2819,7 +2820,7 @@ fn placement_preview_reports_blocked_terrain() {
     let rules = placement_radius_rules();
     sim.resolved_terrain = Some(resolved_clear_grid_with_override(64, 64, |cell| {
         if (cell.rx, cell.ry) == (12, 10) {
-            cell.yr_cell_land_type = LandType::Rock.as_index();
+            cell.land_type = LandType::Rock.as_index();
         }
     }));
 
@@ -2951,7 +2952,6 @@ fn place_ready_building_rejects_destroyed_bridge_over_blocked_ground() {
     let resolved = resolved_clear_grid_with_override(64, 64, |cell| {
         if cell.rx == 12 && cell.ry == 10 {
             cell.ground_walk_blocked = true;
-            cell.is_water = true;
             cell.base_build_blocked = true;
             cell.has_bridge_deck = true;
             cell.bridge_walkable = true;
@@ -2992,11 +2992,8 @@ fn gsi_04_04_water_bound_building_accepts_water_but_not_beach_zone() {
         ready_building(&mut sim, &rules, "Americans", "GAYARD");
         sim.resolved_terrain = Some(resolved_clear_grid_with_override(64, 64, |cell| {
             if cell.rx == 20 && cell.ry == 20 {
-                cell.is_water = true;
                 cell.land_type = land_type.as_index();
-                cell.yr_cell_land_type = cell.land_type;
                 cell.zone_type = zone_type;
-                cell.terrain_class = TerrainClass::Water;
                 cell.base_build_blocked = true;
             }
         }));
@@ -3504,9 +3501,10 @@ fn wall_mark_rejects_buildable_ground_that_track_cannot_enter() {
     let mut sim = placement_sim();
     sim.overlay_grid = Some(OverlayGrid::new(64, 64));
     let before = sim.state_hash();
-    assert!(!super::wall_placement::mark_wall(
-        &mut sim, &rules, &registry, 12, 12, 0
-    ));
+    assert_eq!(
+        sim.mark_overlay_for_test(&rules, &registry, (12, 12), 0),
+        OverlayMarkOutcome::WallRefused
+    );
     assert_eq!(
         sim.state_hash(),
         before,
@@ -3528,9 +3526,10 @@ fn retained_wall_plane_runtime_placement_and_damage_update_once() {
     let mut sim = placement_sim();
     sim.resolved_terrain = Some(resolved_clear_grid_with_override(5, 5, |_| {}));
     sim.overlay_grid = Some(OverlayGrid::new(5, 5));
-    assert!(super::wall_placement::mark_wall(
-        &mut sim, &rules, &registry, 2, 2, 0
-    ));
+    assert_eq!(
+        sim.mark_overlay_for_test(&rules, &registry, (2, 2), 0),
+        OverlayMarkOutcome::Marked
+    );
     let mut grid = sim.overlay_grid.take().unwrap();
     let mut terrain = sim.resolved_terrain.take().unwrap();
     let placed = grid.retained_neighbor_counts();
@@ -3600,9 +3599,10 @@ fn retained_wall_plane_placement_reaches_fixed_stride_alias() {
         .as_mut()
         .unwrap()
         .place_overlay(511, 0, 0, 0);
-    assert!(super::wall_placement::mark_wall(
-        &mut sim, &rules, &registry, 0, 1, 0
-    ));
+    assert_eq!(
+        sim.mark_overlay_for_test(&rules, &registry, (0, 1), 0),
+        OverlayMarkOutcome::Marked
+    );
     let alias_grid = sim.overlay_grid.as_ref().unwrap();
     assert_eq!(
         alias_grid.cell(0, 1).overlay_data & 0x0F,

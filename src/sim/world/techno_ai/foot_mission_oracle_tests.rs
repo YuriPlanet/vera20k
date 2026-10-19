@@ -1349,7 +1349,7 @@ fn install_recorded_anytown_query_state(
             signed(&receipt["slope"]),
             "{name}: physical slope"
         );
-        cell.yr_cell_land_type = signed(&receipt["land"]) as u8;
+        cell.land_type = signed(&receipt["land"]) as u8;
         let identity = terrain.native_cell_identity((x as i16, y as i16));
         terrain.write_native_cell_flags(identity, receipt["flags"].as_u64().unwrap() as u32);
     }

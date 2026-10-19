@@ -1587,8 +1587,7 @@ impl Simulation {
                 // Validate transport exists and has cargo capacity.
                 // CanBeOccupiedBy is also the cursor's garrison predicate,
                 // but that action sends Capture8, never this Enter7 payload
-                // (Infantry51E6A8 -> Foot4D7716). Retire the old adapter
-                // rather than inventing Boarding state for a garrison.
+                // (Infantry51E6A8 -> Foot4D7716).
                 let carrier = self.substrate.entities.get(*transport_id).is_some_and(|t| {
                     t.passenger_role.cargo().is_some()
                         && !(t.category() == crate::map::entities::EntityCategory::Structure
@@ -1845,9 +1844,7 @@ impl Simulation {
                         }
                         // The class setter samples the building's +4C.
                         crate::sim::movement::nav_target_coordinate(
-                            crate::sim::components::NavTargetRef::Building {
-                                id: *target_building_id,
-                            },
+                            crate::sim::components::NavTargetRef::object(*target_building_id),
                             Some(*attacker_id),
                             self,
                             self.resolved_terrain.as_ref(),
@@ -1903,9 +1900,7 @@ impl Simulation {
                         }
                         // The class setter samples the building's +4C.
                         crate::sim::movement::nav_target_coordinate(
-                            crate::sim::components::NavTargetRef::Building {
-                                id: *target_building_id,
-                            },
+                            crate::sim::components::NavTargetRef::object(*target_building_id),
                             Some(*engineer_id),
                             self,
                             self.resolved_terrain.as_ref(),
@@ -2617,20 +2612,6 @@ impl Simulation {
                 overlay_registry,
                 frame_effects,
             );
-        }
-        // Existing Boarding adapter for carriers/absorbers. Destination
-        // setters and Boarding keep their own admission and arrival logic;
-        // garrisons use Capture and the separate PerCell owner.
-        if mission == MissionType::Enter
-            && let Some(combat::TargetKind::Entity(carrier)) = destination
-            && self
-                .substrate
-                .entities
-                .get(carrier)
-                .is_some_and(|target| target.passenger_role.cargo().is_some())
-            && let Some(actor) = self.substrate.entities.get_mut(entity_id)
-        {
-            passenger::begin_boarding(actor, carrier);
         }
         MegaMissionExecution::Executed
     }

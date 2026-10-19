@@ -3,8 +3,8 @@ name: Test (reusable)
 # The library test job, shared by the per-platform workflows so each platform
 # reports its own status check. Runs what a fresh clone can run: no retail
 # game data is available here, so tests that need the gitignored `ini/` print
-# SKIPPED and pass. Maintainers run the full suite locally with `ini/` present
-# before merging.
+# SKIPPED and pass. Local focused runs with `ini/` present cover the retail-data
+# tests a change touches.
 on:
   workflow_call:
     inputs:

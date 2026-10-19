@@ -176,7 +176,7 @@ fn retail_concrete_hut_damage_matches_native_both_huts_and_three_states() {
             .map(|(x, y)| {
                 let c = sim.resolved_terrain.as_ref().unwrap().cell(x, y).unwrap();
                 json!({"coord":[x,y],"overlay":c.bridge_facts.overlay_id,
-                    "land":c.yr_cell_land_type,"level":c.level,"slope":c.slope_type,
+                    "land":c.land_type,"level":c.level,"slope":c.slope_type,
                     "zone_type":c.zone_type,"tile":c.final_tile_index,"subtile":c.final_sub_tile,
                     "flags":c.bridge_facts.raw_flags,"state":c.bridge_facts.state_byte})
             })
@@ -296,7 +296,7 @@ fn retail_concrete_collapse_rechecks_an_incoming_drive_head() {
             .unwrap()
             .cell(87, 54)
             .unwrap()
-            .yr_cell_land_type,
+            .land_type,
         LandType::Water.as_index()
     );
     assert_eq!(
@@ -305,7 +305,7 @@ fn retail_concrete_collapse_rechecks_an_incoming_drive_head() {
             .unwrap()
             .cell(87, 53)
             .unwrap()
-            .yr_cell_land_type,
+            .land_type,
         LandType::Road.as_index()
     );
     // Original487A10 checks the active Drive Is_At_Coord even though the

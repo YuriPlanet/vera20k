@@ -392,7 +392,7 @@ impl Scene {
                     cell.final_tile_index as i32,
                     i32::from(cell.level),
                     i32::from(cell.slope_type),
-                    i32::from(cell.yr_cell_land_type)
+                    i32::from(cell.land_type)
                 ),
                 (
                     expected("tile"),
@@ -498,7 +498,6 @@ fn native_whole_wall_autofill_constructs_retires_and_keeps_the_refused_middle() 
                 .unwrap()
                 .cell_mut(x, y)
                 .unwrap();
-            cell.yr_cell_land_type = land;
             cell.land_type = land;
             cell.speed_costs = semantics.speed_costs;
         }

@@ -1,25 +1,47 @@
-//! Map tag parsing.
+//! Map tag records.
 //!
-//! `[Tags]` assigns stable identifiers to raw map tag records. We keep the
-//! parsing low-assumption for now so later trigger work can decide semantics
-//! without having to undo an early guess.
+//! `[Tags]` holds each TagType record. TagType::ReadINI (`0x006E6080`) reads
+//! it by the Type's own ID through the exact-case INI lookup, so records are
+//! keyed by their exact key and the runtime reader in `sim::trigger_runtime`
+//! takes each one by that ID.
 
 use std::collections::HashMap;
 
 use crate::rules::ini_parser::IniFile;
-use crate::rules::ini_value::strtok;
+use crate::rules::ini_value::{crt_atoi, strtok, truncate_native_bytes};
 
+/// One `[Tags]` record as TagType::ReadINI takes it from its 0x80-byte
+/// ReadString copy.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MapTag {
-    pub id: String,
-    pub fields: Vec<String>,
+    repeat: i32,
+    name: String,
+    trigger: Option<String>,
+}
+
+impl MapTag {
+    /// TagType+9C: `atoi` of the whole copy after the first `strtok`
+    /// (`0x006E60D5`), so an empty leading field reads 0.
+    pub fn repeat(&self) -> i32 {
+        self.repeat
+    }
+
+    /// TagType+64: the second token cut to 48 bytes (`0x006E6101`), empty
+    /// when absent.
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// The third token as written, which the TriggerType factory
+    /// (`0x00727AA0`) resolves.
+    pub fn trigger(&self) -> Option<&str> {
+        self.trigger.as_deref()
+    }
 }
 
 pub type TagMap = HashMap<String, MapTag>;
 
-/// Parse `[Tags]` into a tag-id keyed map. TagType's INI read
-/// (`0x006E6080`) takes each entry as a 0x80-byte ReadString split by
-/// `strtok(",")`: repeat mode, name, trigger.
+/// Parse `[Tags]` into exact-key records.
 pub fn parse_tags(ini: &IniFile) -> TagMap {
     let Some(section) = ini.section("Tags") else {
         return HashMap::new();
@@ -30,13 +52,17 @@ pub fn parse_tags(ini: &IniFile) -> TagMap {
         let Some(raw_value) = section.read_name(key, 0x80) else {
             continue;
         };
-        let id = key.trim();
-        if id.is_empty() {
-            continue;
-        }
-        let id = id.to_ascii_uppercase();
-        let fields: Vec<String> = strtok(raw_value, &[',']).map(str::to_string).collect();
-        tags.insert(id.clone(), MapTag { id, fields });
+        // The first token only ends the field `atoi` reads.
+        let mut tokens = strtok(raw_value, &[',']).skip(1);
+        let name = tokens
+            .next()
+            .map_or("", |name| truncate_native_bytes(name, 0x30));
+        let tag = MapTag {
+            repeat: crt_atoi(raw_value),
+            name: name.to_string(),
+            trigger: tokens.next().map(str::to_string),
+        };
+        tags.insert(key.to_string(), tag);
     }
 
     if !tags.is_empty() {
@@ -51,20 +77,30 @@ mod tests {
 
     #[test]
     fn test_parse_tags() {
-        let ini = IniFile::from_str("[Tags]\nTRIG_A=0,1,SomeName\nOBJ_01=2,0\n");
+        let ini = IniFile::from_str("[Tags]\nTRIG_A=0,SomeName,Trig\nObj_01=2,Name\n");
         let tags = parse_tags(&ini);
         assert_eq!(tags.len(), 2);
         assert_eq!(
             tags.get("TRIG_A"),
             Some(&MapTag {
-                id: "TRIG_A".to_string(),
-                fields: vec!["0".to_string(), "1".to_string(), "SomeName".to_string()],
+                repeat: 0,
+                name: "SomeName".to_string(),
+                trigger: Some("Trig".to_string()),
             })
         );
-        assert_eq!(
-            tags.get("OBJ_01").map(|tag| tag.fields.as_slice()),
-            Some(&["2".to_string(), "0".to_string()][..])
-        );
+        let tag = &tags["Obj_01"];
+        assert_eq!((tag.repeat(), tag.name(), tag.trigger()), (2, "Name", None));
+        assert!(!tags.contains_key("OBJ_01"));
+    }
+
+    #[test]
+    fn repeat_reads_the_whole_copy_and_the_name_is_cut_to_48_bytes() {
+        let name = "N".repeat(60);
+        let ini = IniFile::from_str(&format!("[Tags]\nT=,2,{name},X\n"));
+        let tag = &parse_tags(&ini)["T"];
+        assert_eq!(tag.repeat(), 0);
+        assert_eq!(tag.name(), &name[..0x30]);
+        assert_eq!(tag.trigger(), Some("X"));
     }
 
     #[test]

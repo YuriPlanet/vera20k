@@ -342,7 +342,6 @@ pub(super) mod tests {
     use crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
     use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid};
     use crate::rules::ini_parser::IniFile;
-    use crate::rules::terrain_rules::TerrainClass;
     use crate::sim::combat::Health;
     use crate::sim::game_entity::GameEntity;
     use crate::sim::occupancy::CellListInsertion;
@@ -351,7 +350,6 @@ pub(super) mod tests {
     pub(in crate::sim::particles) fn terrain_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
         ResolvedTerrainCell {
             tileset_index: None,
-            base_terrain_class: TerrainClass::Clear,
             ..crate::map::resolved_terrain::test_flat_cell(rx, ry)
         }
     }

@@ -131,7 +131,6 @@ impl GuardScene {
                 None,
                 33,
                 TickLane::Ordinary,
-                None,
                 FrameEffects::default(),
             )
             .expect("ordinary Aegis frame");

@@ -162,7 +162,7 @@ fn game_speed_transition_applies_at_ingress_before_triggers_and_hash() {
             None,
             67,
             TickLane::Ordinary,
-            None,
+            false,
             crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete")
@@ -174,7 +174,7 @@ fn game_speed_transition_applies_at_ingress_before_triggers_and_hash() {
             None,
             67,
             TickLane::Ordinary,
-            None,
+            false,
             crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete")
@@ -334,7 +334,7 @@ fn network_modal_does_not_execute_game_speed_ingress() {
             None,
             67,
             TickLane::NetworkModal,
-            None,
+            false,
             crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete")
@@ -430,7 +430,7 @@ fn master_frame_hash_observes_living_animation_completion_facing() {
             None,
             67,
             TickLane::Ordinary,
-            None,
+            false,
             crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete")
@@ -455,7 +455,6 @@ fn app_and_headless_frames_hash_identically_for_animation_progress() {
             None,
             67,
             TickLane::Ordinary,
-            None,
             crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete");
@@ -492,7 +491,6 @@ fn app_and_headless_frames_hash_identically_for_particle_frame_timing() {
                 None,
                 67,
                 TickLane::Ordinary,
-                None,
                 crate::sim::world::FrameEffects::default(),
             )
             .expect("fixture frame must complete");
@@ -541,7 +539,7 @@ fn a_jumpjet_cruising_over_water_leaves_no_wake() {
         .expect("spawn Jumpjet");
     let mut terrain = water_terrain(2, 1);
     for cell in &mut terrain.cells {
-        cell.yr_cell_land_type = crate::rules::terrain_rules::LandType::Water.as_index();
+        cell.land_type = crate::rules::terrain_rules::LandType::Water.as_index();
     }
     sim.resolved_terrain = Some(terrain);
     let runtime = sim
@@ -581,7 +579,8 @@ fn a_jumpjet_cruising_over_water_leaves_no_wake() {
 #[test]
 fn a_ship_wakes_every_eighth_frame_unless_it_is_underwater() {
     let ini = IniFile::from_str(
-        "[InfantryTypes]\n[VehicleTypes]\n0=DEST\n1=SUB\n[AircraftTypes]\n[BuildingTypes]\n\
+        "[General]\nWake=WAKE1\n\
+         [InfantryTypes]\n[VehicleTypes]\n0=DEST\n1=SUB\n[AircraftTypes]\n[BuildingTypes]\n\
          [DEST]\nStrength=600\nArmor=heavy\nSpeed=6\nMovementZone=Water\nSpeedType=Float\n\
          Naval=yes\nLocomotor={2BEA74E1-7CCA-11d3-BE14-00104B62A16C}\n\
          [SUB]\nStrength=600\nArmor=heavy\nSpeed=6\nMovementZone=Water\nSpeedType=Float\n\
@@ -619,7 +618,7 @@ fn a_ship_wakes_every_eighth_frame_unless_it_is_underwater() {
     // The gate reads the `CellClass+0xEC` mirror; stamp Water on the fixture.
     let mut terrain = water_terrain(4, 1);
     for cell in &mut terrain.cells {
-        cell.yr_cell_land_type = crate::rules::terrain_rules::LandType::Water.as_index();
+        cell.land_type = crate::rules::terrain_rules::LandType::Water.as_index();
     }
     sim.resolved_terrain = Some(terrain);
     let wakes = |sim: &Simulation| {
@@ -645,7 +644,10 @@ fn moving_water_unit_spawns_rules_bound_wake_without_preinterned_effect_name() {
     // A drive-family boat: the native wake gate is the drive locomotor's
     // `Is_Moving_Now` slot, so the fixture names the Drive locomotor.
     let ini: IniFile = IniFile::from_str(
-        "[InfantryTypes]
+        "[General]
+Wake=WAKE1
+
+         [InfantryTypes]
 
          [VehicleTypes]
 0=BOAT
@@ -686,7 +688,7 @@ Rate=120
     // grid carries land type 4 for movement, so stamp the binary's mirror.
     let mut terrain = water_terrain(2, 1);
     for cell in &mut terrain.cells {
-        cell.yr_cell_land_type = crate::rules::terrain_rules::LandType::Water.as_index();
+        cell.land_type = crate::rules::terrain_rules::LandType::Water.as_index();
     }
     sim.resolved_terrain = Some(terrain);
     {
@@ -874,7 +876,7 @@ fn terminal_master_frame_visits_class_sequence_before_exit_without_frame_commit(
             None,
             67,
             TickLane::Ordinary,
-            None,
+            false,
             crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete")
@@ -919,7 +921,6 @@ fn app_frame_output_transfers_pre_tick_sound_exactly_once_without_hash_change() 
             None,
             67,
             TickLane::Ordinary,
-            None,
             crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete");
@@ -936,7 +937,6 @@ fn app_frame_output_transfers_pre_tick_sound_exactly_once_without_hash_change() 
             None,
             67,
             TickLane::Ordinary,
-            None,
             crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete");
@@ -965,7 +965,6 @@ fn app_frame_output_finalizes_overlay_navigation_and_delivers_updates_once() {
             None,
             67,
             TickLane::Ordinary,
-            None,
             crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete");
@@ -984,7 +983,6 @@ fn app_frame_output_finalizes_overlay_navigation_and_delivers_updates_once() {
             Some(&overlays),
             67,
             TickLane::Ordinary,
-            None,
             crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete");
@@ -1006,7 +1004,6 @@ fn app_frame_output_finalizes_overlay_navigation_and_delivers_updates_once() {
             Some(&overlays),
             67,
             TickLane::Ordinary,
-            None,
             crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete");
@@ -1045,7 +1042,6 @@ fn terminal_app_frame_finalizes_overlay_updates_before_hash() {
             Some(&overlays),
             67,
             TickLane::Ordinary,
-            None,
             crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete");
@@ -1082,7 +1078,6 @@ fn terminal_app_frame_finalizes_overlay_updates_before_hash() {
             Some(&overlays),
             67,
             TickLane::Ordinary,
-            None,
             crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete");
@@ -1927,7 +1922,6 @@ fn dynamic_navigation_publication_composes_structures_bibs_and_bridges() {
         let cell = terrain.cell_mut(2, 1).expect("bridge body cell");
         cell.ground_walk_blocked = true;
         cell.base_build_blocked = true;
-        cell.is_water = true;
         cell.bridge_walkable = true;
         cell.has_bridge_deck = true;
         cell.bridge_deck_level = 4;
@@ -2754,29 +2748,45 @@ const OPEN_SPEED_COSTS: crate::rules::terrain_rules::SpeedCostProfile =
         hover: Some(100),
     };
 
-/// Create a water terrain grid (all cells are water, land_type=4) for ship tests.
+/// A water terrain grid for ship tests: every cell Water land with the Water
+/// zone, ground-blocked and unbuildable as a loaded Water cell is, and every
+/// SpeedType row open.
 fn water_terrain(width: u16, height: u16) -> ResolvedTerrainGrid {
-    water_terrain_with_land_type(width, height, 4, false)
+    use crate::map::resolved_terrain::zone_class;
+    use crate::rules::terrain_rules::LandType;
+
+    let water = LandType::Water.as_index();
+    let cells = (0..height)
+        .flat_map(|y| {
+            (0..width).map(move |x| crate::map::resolved_terrain::ResolvedTerrainCell {
+                land_type: water,
+                speed_costs: OPEN_SPEED_COSTS,
+                zone_type: zone_class::WATER,
+                ground_walk_blocked: true,
+                base_ground_walk_blocked: true,
+                base_build_blocked: true,
+                base_land_type: water,
+                base_speed_costs: OPEN_SPEED_COSTS,
+                ..crate::map::resolved_terrain::test_flat_cell(x, y)
+            })
+        })
+        .collect();
+    ResolvedTerrainGrid::from_cells(width, height, cells)
 }
 
 fn gsi_04_10_clear_terrain(width: u16, height: u16) -> ResolvedTerrainGrid {
     use crate::map::resolved_terrain::zone_class;
-    use crate::rules::terrain_rules::{LandType, TerrainClass};
+    use crate::rules::terrain_rules::LandType;
 
     let mut terrain = water_terrain(width, height);
     for cell in &mut terrain.cells {
         cell.land_type = LandType::Clear.as_index();
-        cell.yr_cell_land_type = LandType::Clear.as_index();
-        cell.terrain_class = TerrainClass::Clear;
         cell.speed_costs = OPEN_SPEED_COSTS;
-        cell.is_water = false;
         cell.ground_walk_blocked = false;
         cell.zone_type = zone_class::GROUND;
         cell.base_ground_walk_blocked = false;
         cell.base_build_blocked = false;
         cell.base_land_type = LandType::Clear.as_index();
-        cell.base_yr_cell_land_type = LandType::Clear.as_index();
-        cell.base_terrain_class = TerrainClass::Clear;
         cell.base_speed_costs = OPEN_SPEED_COSTS;
     }
     terrain
@@ -2858,7 +2868,7 @@ fn gsi_04_15_active_tube_leaf_preempts_unit_and_infantry_mission_host() {
         } else {
             entity
                 .navigation
-                .set_nav_com_for_test(Some(crate::sim::components::NavTargetRef::building(2)));
+                .set_nav_com_for_test(Some(crate::sim::components::NavTargetRef::object(2)));
         }
         for _ in 0..41 {
             entity.mission.increment_ai_counter();
@@ -2953,7 +2963,7 @@ fn gsi_04_15_active_tube_leaf_preempts_unit_and_infantry_mission_host() {
                 ));
                 assert_eq!(
                     entity.navigation.nav_com(),
-                    Some(crate::sim::components::NavTargetRef::building(2)),
+                    Some(crate::sim::components::NavTargetRef::object(2)),
                     "Tube final retains the authoritative building destination"
                 );
                 assert!(
@@ -3105,30 +3115,6 @@ fn gsi_04_10_zero_occupation_removal_forces_ground_zone_with_same_walkability() 
     );
 }
 
-fn water_terrain_with_land_type(
-    width: u16,
-    height: u16,
-    land_type: u8,
-    is_cliff_like: bool,
-) -> ResolvedTerrainGrid {
-    let mut cells = Vec::new();
-    for y in 0..height {
-        for x in 0..width {
-            cells.push(crate::map::resolved_terrain::ResolvedTerrainCell {
-                land_type,
-                yr_cell_land_type: land_type,
-                speed_costs: OPEN_SPEED_COSTS,
-                is_water: true,
-                is_cliff_like,
-                zone_type: 4,
-                base_speed_costs: OPEN_SPEED_COSTS,
-                ..crate::map::resolved_terrain::test_flat_cell(x, y)
-            });
-        }
-    }
-    ResolvedTerrainGrid::from_cells(width, height, cells)
-}
-
 fn single_bridge_cell(rx: u16, ry: u16, deck_level: u8) -> ResolvedTerrainGrid {
     let mut cells = Vec::new();
     for y in 0..=ry {
@@ -3205,17 +3191,12 @@ fn water_under_structural_bridge() -> (ResolvedTerrainGrid, BridgeRuntimeState) 
     let water = water_terrain(1, 1).cells[0].clone();
     for cell in &mut terrain.cells {
         cell.land_type = water.land_type;
-        cell.yr_cell_land_type = water.yr_cell_land_type;
-        cell.terrain_class = water.terrain_class;
         cell.speed_costs = water.speed_costs;
-        cell.is_water = water.is_water;
         cell.ground_walk_blocked = water.ground_walk_blocked;
         cell.zone_type = water.zone_type;
         cell.base_ground_walk_blocked = water.base_ground_walk_blocked;
         cell.base_build_blocked = water.base_build_blocked;
         cell.base_land_type = water.base_land_type;
-        cell.base_yr_cell_land_type = water.base_yr_cell_land_type;
-        cell.base_terrain_class = water.base_terrain_class;
         cell.base_speed_costs = water.base_speed_costs;
     }
     let state = BridgeRuntimeState::from_resolved_terrain(&terrain, true, 15);
@@ -3228,7 +3209,7 @@ fn structural_bridge_for_fallout(
     ground_level: u8,
     water_below: bool,
 ) -> (ResolvedTerrainGrid, BridgeRuntimeState) {
-    use crate::rules::terrain_rules::{LandType, SpeedCostProfile, TerrainClass};
+    use crate::rules::terrain_rules::{LandType, SpeedCostProfile};
     let (mut terrain, _) = structural_bridge_for_damage_dispatch();
     for x in 3..=6 {
         let cell = terrain.cell_mut(x, 5).unwrap();
@@ -3240,17 +3221,12 @@ fn structural_bridge_for_fallout(
                 ..Default::default()
             };
             cell.land_type = LandType::Water.as_index();
-            cell.yr_cell_land_type = LandType::Water.as_index();
-            cell.terrain_class = TerrainClass::Water;
             cell.speed_costs = costs;
-            cell.is_water = true;
             cell.zone_type = 4;
             cell.ground_walk_blocked = true;
             cell.base_ground_walk_blocked = true;
             cell.base_build_blocked = true;
             cell.base_land_type = LandType::Water.as_index();
-            cell.base_yr_cell_land_type = LandType::Water.as_index();
-            cell.base_terrain_class = TerrainClass::Water;
             cell.base_speed_costs = costs;
         }
     }
@@ -3991,12 +3967,12 @@ fn sonic_cell_fire_wave_damage_selects_level_two_bridge_plane() {
     for cell in &mut cells {
         cell.level = 2;
         cell.template_height = 2;
-        cell.land_type = 4;
-        cell.yr_cell_land_type = 4;
-        cell.is_water = true;
-        cell.zone_type = 4;
-        cell.base_land_type = 4;
-        cell.base_yr_cell_land_type = 4;
+        cell.land_type = crate::rules::terrain_rules::LandType::Water.as_index();
+        cell.zone_type = crate::map::resolved_terrain::zone_class::WATER;
+        cell.ground_walk_blocked = true;
+        cell.base_ground_walk_blocked = true;
+        cell.base_build_blocked = true;
+        cell.base_land_type = cell.land_type;
         cell.has_bridge_deck = true;
         cell.bridge_walkable = true;
         cell.bridge_deck_level = 6;
@@ -4125,6 +4101,7 @@ fn short_game_defeat_test_rules() -> RuleSet {
          [SMCV]\nStrength=450\nArmor=heavy\nSpeed=5\nDeploysInto=GACNST\n\n\
          [PCV]\nStrength=450\nArmor=heavy\nSpeed=5\nDeploysInto=GACNST\n\n\
          [GACNST]\nStrength=1000\nArmor=wood\nConstructionYard=yes\nUndeploysInto=AMCV\n\n\
+         [CombatDamage]\nC4Warhead=Super\n\n\
          [Warheads]\n0=Super\n\n\
          [Super]\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
     );
@@ -5043,14 +5020,14 @@ fn test_destroyed_bridge_arms_fall_over_blocked_ground() {
 
 /// After collapse, the rebuilt path grid reverts the bridge cell to its
 /// underlying ground walkability — a cliff-like cell stays unwalkable
-/// (per `from_resolved_terrain_with_bridges`'s `is_cliff_like` branch).
+/// (per `from_resolved_terrain_with_bridges`'s Rock-land branch).
 /// Concrete overlay damage leaves structural fallout to its native caller.
 #[test]
 fn test_destroyed_bridge_fallout_matches_rebuilt_ground_walkability() {
     let mut sim = Simulation::new();
     let (mut resolved, bridge_state) = structural_bridge_for_damage_dispatch();
     let idx = resolved.index(5, 5).expect("bridge index");
-    resolved.cells[idx].is_cliff_like = true;
+    resolved.cells[idx].land_type = crate::rules::terrain_rules::LandType::Rock.as_index();
     install_rectangular_test_playfield(&mut sim, resolved.width(), resolved.height());
     sim.resolved_terrain = Some(resolved.clone());
     sim.bridge_state = Some(bridge_state);
@@ -5106,6 +5083,7 @@ fn test_destroyed_bridge_fallout_matches_rebuilt_ground_walkability() {
 fn test_bridge_collapse_kills_ground_unit_under_destroyed_cell() {
     let rules = RuleSet::from_ini(&IniFile::from_str(
         "[VehicleTypes]\n0=MTNK\n[MTNK]\nStrength=300\nArmor=heavy\nSpeed=6\n\
+         [CombatDamage]\nC4Warhead=Super\n\
          [Warheads]\n0=Super\n[Super]\nInfDeath=2\nPenetratesBunker=yes\n\
          Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n",
     ))
@@ -5240,8 +5218,8 @@ fn concrete_damage_fixture(
         let cell = terrain.cell(x, y).unwrap();
         assert_eq!(cell.final_tile_index, 0);
         assert_eq!(cell.final_sub_tile, 0);
-        assert_eq!(cell.base_yr_cell_land_type, pristine_land);
-        assert_eq!(cell.yr_cell_land_type, pristine_land);
+        assert_eq!(cell.base_land_type, pristine_land);
+        assert_eq!(cell.land_type, pristine_land);
         sim.overlay_grid
             .as_mut()
             .unwrap()
@@ -5303,8 +5281,8 @@ fn assert_concrete_damage_result(sim: &Simulation, native: &serde_json::Value) {
         assert!(!cell.bridge_walkable);
         // Destroyed232 uses the pristine TMP, which is also Road in this
         // synthetic catalog. It does not imply Water or Clear after collapse.
-        assert_eq!(cell.base_yr_cell_land_type, LandType::Road.as_index());
-        assert_eq!(cell.yr_cell_land_type, LandType::Road.as_index());
+        assert_eq!(cell.base_land_type, LandType::Road.as_index());
+        assert_eq!(cell.land_type, LandType::Road.as_index());
         assert!(
             !sim.path_grid()
                 .unwrap()
@@ -5713,53 +5691,51 @@ fn test_ship_turn_path_completes_without_drive_track_stall() {
     );
 }
 
-/// Land type 4 is the pure water column. Real maps also carry water-surface
-/// tiles that keep is_water=true with a shoreline/coast land_type (7); ships
-/// still navigate them.
 #[test]
 fn test_real_ship_locomotor_move_command_crosses_water_cells() {
     let rules = real_ship_test_rules();
-    for land_type in [4, 7] {
-        let mut sim = Simulation::new();
-        let terrain = water_terrain_with_land_type(4, 4, land_type, false);
-        let path_grid = PathGrid::from_resolved_terrain(&terrain);
-        install_rectangular_test_map(&mut sim, terrain.width(), terrain.height());
-        sim.resolved_terrain = Some(terrain.clone());
-        assert!(sim.rebuild_dynamic_navigation(&rules));
+    let mut sim = Simulation::new();
+    let terrain = water_terrain(4, 4);
+    let path_grid = PathGrid::from_resolved_terrain(&terrain);
+    install_rectangular_test_map(&mut sim, terrain.width(), terrain.height());
+    sim.resolved_terrain = Some(terrain.clone());
+    assert!(sim.rebuild_dynamic_navigation(&rules));
 
-        let ship_id = sim
-            .spawn_object("DEST", "Americans", 0, 0, 64, &rules)
-            .expect("spawn destroyer");
-        let cmd = cmd_envelope(&sim, "Americans", 1, move_command(ship_id, (3, 1)));
+    let ship_id = sim
+        .spawn_object("DEST", "Americans", 0, 0, 64, &rules)
+        .expect("spawn destroyer");
+    let cmd = cmd_envelope(&sim, "Americans", 1, move_command(ship_id, (3, 1)));
 
-        let _ = sim.advance_tick(&[cmd], Some(&rules), Some(&path_grid), None, 100);
-        // GSI-13.06: Ship Process_Drive_Track (0x6A05F0) spends the integer
-        // GetCurrentSpeed budget in strict 7-unit points; DEST's default ramp can
-        // reach the 0.3 brake floor while its final raw-track tail is still live.
-        for _ in 0..100 {
-            let _ = sim.advance_tick(&[], Some(&rules), Some(&path_grid), None, 100);
-            if sim.substrate.entities.get(ship_id).is_some_and(|ship| {
-                crate::sim::movement::motion_query::is_moving(&ship) != Some(true)
-            }) {
-                break;
-            }
-        }
-
-        let ship = sim
+    let _ = sim.advance_tick(&[cmd], Some(&rules), Some(&path_grid), None, 100);
+    // GSI-13.06: Ship Process_Drive_Track (0x6A05F0) spends the integer
+    // GetCurrentSpeed budget in strict 7-unit points; DEST's default ramp can
+    // reach the 0.3 brake floor while its final raw-track tail is still live.
+    for _ in 0..100 {
+        let _ = sim.advance_tick(&[], Some(&rules), Some(&path_grid), None, 100);
+        if sim
             .substrate
             .entities
             .get(ship_id)
-            .expect("ship still exists");
-        assert_eq!(
-            (ship.position.rx(), ship.position.ry()),
-            (3, 1),
-            "land type {land_type}: real Ship locomotor should complete a simple move over water"
-        );
-        assert!(
-            crate::sim::movement::motion_query::is_moving(&ship) != Some(true),
-            "land type {land_type}: real Ship locomotor should finish its move command"
-        );
+            .is_some_and(|ship| crate::sim::movement::motion_query::is_moving(&ship) != Some(true))
+        {
+            break;
+        }
     }
+
+    let ship = sim
+        .substrate
+        .entities
+        .get(ship_id)
+        .expect("ship still exists");
+    assert_eq!(
+        (ship.position.rx(), ship.position.ry()),
+        (3, 1),
+        "real Ship locomotor should complete a simple move over water"
+    );
+    assert!(
+        crate::sim::movement::motion_query::is_moving(&ship) != Some(true),
+        "real Ship locomotor should finish its move command"
+    );
 }
 
 #[test]
@@ -5851,10 +5827,7 @@ fn a_ship_order_routes_around_an_island_through_the_live_search() {
         for x in 3..=5 {
             let cell = terrain.cell_mut(x, y).expect("island cell");
             cell.land_type = LandType::Clear.as_index();
-            cell.yr_cell_land_type = LandType::Clear.as_index();
             cell.base_land_type = LandType::Clear.as_index();
-            cell.base_yr_cell_land_type = LandType::Clear.as_index();
-            cell.is_water = false;
             cell.zone_type = zone_class::GROUND;
             cell.speed_costs = land_costs;
             cell.base_speed_costs = land_costs;
@@ -8042,14 +8015,12 @@ fn make_realistic_bridgehead_terrain() -> ResolvedTerrainGrid {
             ground_walk_blocked: true,
             base_build_blocked: true,
             base_land_type: 0,
-            base_yr_cell_land_type: 0,
-            base_terrain_class: Default::default(),
             base_speed_costs: Default::default(),
             bridge_walkable: true,
             bridge_transition: true,
             bridge_deck_level: 4,
             has_bridge_deck: true,
-            is_water: true,
+            land_type: crate::rules::terrain_rules::LandType::Water.as_index(),
             ..bridgehead_base_cell(2, 0)
         },
         ResolvedTerrainCell {
@@ -8698,7 +8669,7 @@ fn parked_friendly_on_the_route_is_scattered_out_of_the_way() {
     // Retail [Rock]: 0% for every SpeedType, zone impassable.
     {
         use crate::map::resolved_terrain::zone_class;
-        use crate::rules::terrain_rules::{LandType, SpeedCostProfile, TerrainClass};
+        use crate::rules::terrain_rules::{LandType, SpeedCostProfile};
         let rock = SpeedCostProfile {
             foot: Some(0),
             track: Some(0),
@@ -8712,16 +8683,12 @@ fn parked_friendly_on_the_route_is_scattered_out_of_the_way() {
         for ry in (0..24).filter(|&ry| ry != PARKED_AT.1) {
             let cell = terrain.cell_mut(PARKED_AT.0, ry).expect("wall cell");
             cell.land_type = LandType::Rock.as_index();
-            cell.yr_cell_land_type = LandType::Rock.as_index();
-            cell.terrain_class = TerrainClass::Rock;
             cell.speed_costs = rock;
             cell.zone_type = zone_class::IMPASSABLE;
             cell.ground_walk_blocked = true;
             cell.base_ground_walk_blocked = true;
             cell.base_build_blocked = true;
             cell.base_land_type = LandType::Rock.as_index();
-            cell.base_yr_cell_land_type = LandType::Rock.as_index();
-            cell.base_terrain_class = TerrainClass::Rock;
             cell.base_speed_costs = rock;
         }
     }
@@ -10240,7 +10207,8 @@ fn group_move_never_draws_two_hulls_on_one_spot() {
 
 #[test]
 fn rule_handles_resolve_at_init_and_stay_none_for_unresolved_fixtures() {
-    let rules = RuleSet::from_ini(&IniFile::from_str("")).expect("empty rules fixture parses");
+    let rules = RuleSet::from_ini(&IniFile::from_str("[CombatDamage]\nCrushWarhead=Crush\n"))
+        .expect("crush rules fixture parses");
 
     // Init-path resolution pins the canonical warhead names.
     let mut init_sim = Simulation::new();
@@ -10296,7 +10264,6 @@ fn current_rust_frame_call_order_is_preserved() {
             None,
             16,
             TickLane::Ordinary,
-            None,
             crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete");
@@ -10314,7 +10281,6 @@ fn current_rust_frame_call_order_is_preserved() {
             None,
             16,
             TickLane::Ordinary,
-            None,
             crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete");

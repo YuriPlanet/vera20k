@@ -62,7 +62,7 @@ pub(super) fn navigation_snapshot(
         let cluster = *base.zone_ids.get(index)?;
         Some(json!({
             "coord": [x,y], "level": c.level, "slope": c.slope_type,
-            "zone_type": c.zone_type, "land": c.yr_cell_land_type,
+            "zone_type": c.zone_type, "land": c.land_type,
             "tile": c.final_tile_index, "subtile": c.final_sub_tile,
             "bridge_flags": c.bridge_facts.raw_flags,
             "overlay": c.bridge_facts.overlay_id,
@@ -727,7 +727,7 @@ fn assert_repaired_ground_row(
                 .overlay_id
                 .is_some_and(|id| overlays.contains(&id))
         );
-        assert_eq!(c.yr_cell_land_type, LandType::Road.as_index());
+        assert_eq!(c.land_type, LandType::Road.as_index());
         assert!(!c.bridge_facts.has_structural_bridge());
     }
 }

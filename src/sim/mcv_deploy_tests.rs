@@ -1059,7 +1059,7 @@ fn retail_dustbowl_computer_mcv() -> (
                     terrain.cell(cx, cy).is_some_and(|cell| {
                         cell.level == level
                             && cell.slope_type == 0
-                            && buildable.contains(&cell.yr_cell_land_type)
+                            && buildable.contains(&cell.land_type)
                             && cell.terrain_object_occupation.is_none()
                             && !cell.has_bridge_deck
                             && !cell.bridge_facts.has_structural_bridge()

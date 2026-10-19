@@ -611,7 +611,7 @@ fn retail_teleport_default_action_matches_the_native_sequencer() {
     assert_eq!(rows.len(), 54);
     let clear_costs = rules
         .terrain_rules
-        .semantics_by_name("Clear")
+        .semantics_for_land_type(crate::rules::terrain_rules::LandType::Clear.as_index())
         .unwrap()
         .speed_costs;
     for (index, row) in rows.iter().enumerate() {

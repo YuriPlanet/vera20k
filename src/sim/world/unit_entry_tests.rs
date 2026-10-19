@@ -490,7 +490,7 @@ fn compare_rows(json: &str, expected_count: usize, repair_projection: bool) {
                 .unwrap()
                 .cell_mut(11, 10)
                 .unwrap();
-            cell.yr_cell_land_type = input["land"].as_u64().unwrap_or(0) as u8;
+            cell.land_type = input["land"].as_u64().unwrap_or(0) as u8;
             cell.final_tile_index = 0;
             cell.final_sub_tile = input["subtile"].as_u64().unwrap_or(0) as u8;
         }
@@ -719,7 +719,7 @@ fn compare_rows(json: &str, expected_count: usize, repair_projection: bool) {
                 .get_mut(90)
                 .unwrap()
                 .navigation
-                .set_nav_com_for_test(Some(NavTargetRef::Entity {
+                .set_nav_com_for_test(Some(NavTargetRef::Object {
                     id: ids[index as usize],
                 }));
         }

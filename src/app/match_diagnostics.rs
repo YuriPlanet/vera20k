@@ -4,8 +4,8 @@
 //! Diagnostic state lives beside the runtime, never inside `Simulation` —
 //! recording is app-owned so it cannot perturb deterministic state, and the
 //! segment's lifetime is owned by explicit app transitions:
-//! - lazily opened on the first recorded frame of a runtime (fresh or
-//!   restored timelines alike);
+//! - lazily opened on the first recorded frame or scenario service input of
+//!   a runtime (fresh or restored timelines alike);
 //! - a failed load retains the active segment untouched (the log no longer
 //!   rides the simulation slot, so replacing or restoring a sim cannot drop
 //!   it);
@@ -37,6 +37,24 @@ pub(crate) struct ReplayLogFlush {
 }
 
 impl MatchDiagnosticsState {
+    /// Open before the first frame or scenario service input of this timeline.
+    pub(crate) fn get_or_begin_replay(
+        &mut self,
+        runtime: &crate::sim::runtime::SimRuntime,
+    ) -> &mut ReplayLog {
+        self.replay_log.get_or_insert_with(|| {
+            let sim = &runtime.simulation;
+            ReplayLog::new(crate::sim::replay::ReplayHeader {
+                pixel_conversion_bounds: sim.session.pixel_conversion_bounds,
+                version: 2,
+                tick_hz: crate::app::types::SIM_TICK_HZ,
+                seed: sim.session.seed,
+                map_name: sim.session.map_name.clone(),
+                rules_hash: runtime.resources.rules.simulation_config_hash(),
+            })
+        })
+    }
+
     /// Persist and consume the active segment. `Ok(None)` when there is no
     /// segment or it recorded nothing. A successful write consumes the log so
     /// repeated teardown hooks cannot duplicate it; any failure restores it
@@ -51,7 +69,7 @@ impl MatchDiagnosticsState {
         let Some(log) = self.replay_log.take() else {
             return Ok(None);
         };
-        if log.ticks.is_empty() {
+        if log.ticks.is_empty() && log.initial_scenario_services.is_empty() {
             return Ok(None);
         }
 
@@ -125,6 +143,26 @@ mod tests {
         MatchDiagnosticsState {
             replay_log: Some(sample_log()),
         }
+    }
+
+    #[test]
+    fn service_before_first_frame_is_flushed_without_inventing_a_tick() {
+        use crate::sim::replay::ScenarioServiceInput;
+        let root = test_path("initial-service");
+        let mut runtime = crate::sim::runtime::SimRuntime::from_simulation(
+            crate::sim::world::Simulation::with_seed(17),
+        );
+        let mut diagnostics = MatchDiagnosticsState::default();
+        diagnostics
+            .get_or_begin_replay(&runtime)
+            .apply_scenario_service(&mut runtime.simulation, ScenarioServiceInput::Pause);
+        let flush = diagnostics.flush_to(0, &root, 1234).unwrap().unwrap();
+        let log = ReplayLog::load(&flush.path).unwrap();
+        assert_eq!(log.header.seed, 17);
+        assert!(log.ticks.is_empty());
+        assert_eq!(log.initial_scenario_services, [ScenarioServiceInput::Pause]);
+        assert!(diagnostics.replay_log.is_none());
+        std::fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

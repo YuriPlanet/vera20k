@@ -137,7 +137,7 @@ fn load_hills() -> crate::headless_scenario::HeadlessScenario {
             "slope {x},{y}"
         );
         assert_eq!(
-            u64::from(cell.yr_cell_land_type),
+            u64::from(cell.land_type),
             row["land"].as_u64().unwrap(),
             "land {x},{y}"
         );

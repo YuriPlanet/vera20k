@@ -47,67 +47,6 @@ pub const RA2_LOGIC_FRAMES_PER_SECOND: u32 = 15;
 pub const SIM_TICK_HZ: u32 = 45;
 
 // ---------------------------------------------------------------------------
-// Conversion helpers
-// ---------------------------------------------------------------------------
-
-/// Convert `f32` to `SimFixed` for loading INI data into the sim layer.
-/// Only use at data-load boundaries (rules.ini, art.ini parsing).
-#[inline]
-pub fn sim_from_f32(val: f32) -> SimFixed {
-    SimFixed::from_num(val)
-}
-
-/// Convert `f64` to `SimFixed` for intermediate calculations during data loading.
-/// Only use at data-load boundaries — never within sim tick logic.
-#[cfg(any(test, feature = "test-support"))]
-#[inline]
-pub fn sim_from_f64(val: f64) -> SimFixed {
-    SimFixed::from_num(val)
-}
-
-// ---------------------------------------------------------------------------
-// Math helpers
-// ---------------------------------------------------------------------------
-
-/// Facing calculation from a screen-relative coordinate delta.
-///
-/// Returns the high byte of the active-retail full-word conversion. Computed
-/// east and south are therefore 63 and 127; authored quarter-turn facings
-/// remain the exact table values 64 and 128.
-pub fn facing_from_delta_int(dx: i32, dy: i32) -> u8 {
-    crate::util::direction_tables::facing8_from_delta(dx, dy)
-}
-
-/// Full-word facing from a screen-relative coordinate delta.
-///
-/// This preserves the native lookup, float-store, quadrant, and 65,534-scale
-/// boundaries used before a value enters `FacingClass`.
-pub fn facing_from_delta_int_u16(dx: i32, dy: i32) -> u16 {
-    crate::util::direction_tables::facing16_from_delta(dx, dy)
-}
-
-/// Inverse of `facing_from_delta_int` for quantized 8-direction facings.
-///
-/// Quantizes the input facing to the nearest of 8 compass points (32
-/// facing units apart) and returns the unit cell delta for that
-/// direction. Used by movement code that needs to step one cell in
-/// the unit's current facing without a path waypoint.
-///
-/// Iso-grid convention (matches the canonical `DIR_DELTAS` in
-/// `sim/pathfinding/path_smooth.rs`):
-///   N (0)   → ( 0, -1)
-///   NE (32) → ( 1, -1)
-///   E (64)  → ( 1,  0)
-///   SE (96) → ( 1,  1)
-///   S (128) → ( 0,  1)
-///   SW (160)→ (-1,  1)
-///   W (192) → (-1,  0)
-///   NW (224)→ (-1, -1)
-pub fn dir_to_cell_delta(facing: u8) -> (i32, i32) {
-    crate::util::direction::delta_from_facing(facing)
-}
-
-// ---------------------------------------------------------------------------
 // RA2 speed conversion
 // ---------------------------------------------------------------------------
 
@@ -152,100 +91,6 @@ mod tests {
         assert!((half - 0.5).abs() < 0.001);
     }
 
-    // -----------------------------------------------------------------------
-    // Facing tests
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn test_facing_diagonals() {
-        // Iso diagonals map to screen diagonals.
-        // (1,-1) = NE on screen → facing 32
-        let ne: u8 = facing_from_delta_int(1, -1);
-        assert!((ne as i16 - 32).abs() <= 1, "NE facing={ne}");
-        // (1,1) = SE on screen → facing 96
-        let se: u8 = facing_from_delta_int(1, 1);
-        assert!((se as i16 - 96).abs() <= 1, "SE facing={se}");
-        // (-1,1) = SW on screen → facing 160
-        let sw: u8 = facing_from_delta_int(-1, 1);
-        assert!((sw as i16 - 160).abs() <= 1, "SW facing={sw}");
-        // (-1,-1) = NW on screen → facing 224
-        let nw: u8 = facing_from_delta_int(-1, -1);
-        assert!(nw >= 223 || nw <= 1, "NW facing={nw}");
-    }
-
-    /// Verify facing produces sane quadrant values for a grid of deltas.
-    /// +dx = east, -dy = north, so (dx>0,dy<0) = NE quadrant.
-    #[test]
-    fn test_facing_quadrants() {
-        // NE quadrant (dx>0, dy<0): facing 0..64 (N..E)
-        for dx in 1..=5 {
-            for dy in -5..=-1 {
-                let f: u8 = facing_from_delta_int(dx, dy);
-                assert!((0..=64).contains(&f), "NE: dx={dx}, dy={dy} -> {f}");
-            }
-        }
-        // SE quadrant (dx>0, dy>0): facing 64..128 (E..S)
-        for dx in 1..=5 {
-            for dy in 1..=5 {
-                let f: u8 = facing_from_delta_int(dx, dy);
-                assert!((64..=128).contains(&f), "SE: dx={dx}, dy={dy} -> {f}");
-            }
-        }
-        // SW quadrant (dx<0, dy>0): facing 128..192 (S..W)
-        for dx in -5..=-1 {
-            for dy in 1..=5 {
-                let f: u8 = facing_from_delta_int(dx, dy);
-                assert!((128..=192).contains(&f), "SW: dx={dx}, dy={dy} -> {f}");
-            }
-        }
-        // NW quadrant (dx<0, dy<0): facing 192..256 (W..N, wraps around 0)
-        for dx in -5..=-1 {
-            for dy in -5..=-1 {
-                let f: u8 = facing_from_delta_int(dx, dy);
-                assert!(f >= 192 || f == 0, "NW: dx={dx}, dy={dy} -> {f}");
-            }
-        }
-    }
-
-    // -----------------------------------------------------------------------
-    // 16-bit facing tests
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn test_facing_u16_diagonals() {
-        let ne: u16 = facing_from_delta_int_u16(1, -1);
-        assert_eq!(ne, 8_315);
-        let se: u16 = facing_from_delta_int_u16(1, 1);
-        assert_eq!(se, 24_451);
-        let sw: u16 = facing_from_delta_int_u16(-1, 1);
-        assert_eq!(sw, 41_082);
-        let nw: u16 = facing_from_delta_int_u16(-1, -1);
-        assert_eq!(nw, 57_221);
-    }
-
-    #[test]
-    fn test_facing_u16_consistent_with_u8() {
-        // u16 facing >> 8 should match the u8 facing for cardinal/diagonal deltas.
-        for (dx, dy) in [(0, -1), (1, 0), (0, 1), (-1, 0), (1, -1), (1, 1), (-1, 1)] {
-            let f8: u8 = facing_from_delta_int(dx, dy);
-            let f16: u16 = facing_from_delta_int_u16(dx, dy);
-            let f16_as_u8: u8 = (f16 >> 8) as u8;
-            assert!(
-                (f8 as i16 - f16_as_u8 as i16).abs() <= 1,
-                "dx={dx}, dy={dy}: u8={f8}, u16>>8={f16_as_u8}"
-            );
-        }
-    }
-
-    #[test]
-    fn test_facing_u16_lepton_scale() {
-        // Lepton-scale deltas should produce the same result as cell-scale for
-        // the same direction — atan2 depends on ratio, not magnitude.
-        let cell: u16 = facing_from_delta_int_u16(3, 4);
-        let lepton: u16 = facing_from_delta_int_u16(3 * 256, 4 * 256);
-        assert_eq!(cell, lepton);
-    }
-
     /// S0 GATE (design Correction 1): pin the ReadDouble->SimFixed quantization.
     /// gamemd computes `(double)(float)sscanf("%f")`, times the binary64 0.01
     /// under its chop control word if the value holds a '%', and keeps the raw
@@ -264,15 +109,13 @@ mod tests {
         ];
         for s in rows {
             let reference = crate::rules::ini_value::parse_read_double(s);
-            let from_f64 = sim_from_f64(reference);
-            let from_f32 = sim_from_f32(reference as f32);
-            // (a) f32-path vs f64-path agree after 16.16 quantization:
+            let from_f64 = SimFixed::from_num(reference);
+            let from_f32 = SimFixed::from_num(reference as f32);
+            // The f32 and f64 paths agree after 16.16 quantization.
             assert_eq!(
                 from_f64, from_f32,
                 "path divergence for {s:?}: f64={from_f64} f32={from_f32}"
             );
-            // (b) chosen path equals from_num(reference_double):
-            assert_eq!(from_f64, SimFixed::from_num(reference), "row {s:?}");
         }
     }
 
@@ -324,51 +167,5 @@ mod tests {
             (speed - 3825.0).abs() < 1.0,
             "Speed=100: got {speed}, expected ~3825"
         );
-    }
-
-    // -----------------------------------------------------------------------
-    // dir_to_cell_delta tests
-    // -----------------------------------------------------------------------
-
-    #[test]
-    fn dir_to_cell_delta_quantized_directions() {
-        assert_eq!(dir_to_cell_delta(0), (0, -1)); // N
-        assert_eq!(dir_to_cell_delta(32), (1, -1)); // NE
-        assert_eq!(dir_to_cell_delta(64), (1, 0)); // E
-        assert_eq!(dir_to_cell_delta(96), (1, 1)); // SE
-        assert_eq!(dir_to_cell_delta(128), (0, 1)); // S
-        assert_eq!(dir_to_cell_delta(160), (-1, 1)); // SW
-        assert_eq!(dir_to_cell_delta(192), (-1, 0)); // W
-        assert_eq!(dir_to_cell_delta(224), (-1, -1)); // NW
-    }
-
-    #[test]
-    fn dir_to_cell_delta_rounds_to_nearest() {
-        // 16 is the boundary, rounds up to NE.
-        assert_eq!(dir_to_cell_delta(16), (1, -1));
-        assert_eq!(dir_to_cell_delta(17), (1, -1));
-        // 240 wraps: (240 + 16) % 256 = 0 → N
-        assert_eq!(dir_to_cell_delta(240), (0, -1));
-        // 248 wraps: (248 + 16) % 256 = 8 → 8/32 = 0 → N
-        assert_eq!(dir_to_cell_delta(248), (0, -1));
-    }
-
-    #[test]
-    fn dir_to_cell_delta_round_trips_through_facing_from_delta() {
-        for &f in &[0u8, 32, 64, 96, 128, 160, 192, 224] {
-            let (dx, dy) = dir_to_cell_delta(f);
-            let recovered = facing_from_delta_int(dx, dy);
-            let diff = (recovered as i16 - f as i16).rem_euclid(256);
-            let dist = diff.min(256 - diff);
-            assert!(
-                dist <= 4,
-                "facing {} → ({},{}) → {} (dist {})",
-                f,
-                dx,
-                dy,
-                recovered,
-                dist
-            );
-        }
     }
 }
