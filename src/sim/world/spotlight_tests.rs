@@ -6,6 +6,41 @@ use crate::sim::{combat::Health, game_entity::GameEntity};
 fn rules() -> RuleSet {
     RuleSet::from_ini(&IniFile::from_str("[General]\nSpotlightMovementRadius=2000\nSpotlightLocationRadius=1000\nSpotlightSpeed=.015\nSpotlightAcceleration=.0025\nSpotlightAngle=.5\n[VehicleTypes]\n0=TANK\n[TANK]\nStrength=100\n[BuildingTypes]\n0=LIGHT\n[LIGHT]\nHasSpotlight=yes\nStrength=100\nFoundation=1x1\n")).unwrap()
 }
+
+#[test]
+fn overflowed_authored_spotlight_motion_keeps_its_last_pose_and_cleanup() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[General]\nSpotlightSpeed=1e99\n[BuildingTypes]\n0=LIGHT\n\
+         [LIGHT]\nHasSpotlight=yes\nStrength=100\nFoundation=1x1\n",
+    ))
+    .unwrap();
+    assert!(!f64::from_bits(rules.general.spotlight.speed.bits()).is_finite());
+    let mut sim = Simulation::with_seed(9);
+    let p = parent(&mut sim, EntityCategory::Structure);
+    sim.construct_spotlight(p, Some(&rules));
+    let id = sim
+        .substrate
+        .entities
+        .get(p)
+        .unwrap()
+        .building_light
+        .light()
+        .unwrap();
+    let before = sim.substrate.spotlights.get(id).unwrap().coord;
+    sim.set_spotlight_behavior(id, 2);
+    sim.visit_spotlight(id, &rules, UninitContext::new(Some(&rules), None));
+    assert_eq!(sim.substrate.spotlights.get(id).unwrap().coord, before);
+    assert!(sim.building_spotlight(id, &rules).is_some());
+    // Invalid authored motion must not bypass ordinary orphan cleanup.
+    sim.spotlights_pointer_expired(p);
+    sim.visit_spotlight(id, &rules, UninitContext::new(Some(&rules), None));
+    assert!(
+        sim.substrate
+            .pending_delete
+            .object_tickets()
+            .any(|i| i == id)
+    );
+}
 fn parent(sim: &mut Simulation, category: EntityCategory) -> u64 {
     parent_id(sim, category, 1)
 }
@@ -257,15 +292,7 @@ fn spotlight_action52_counts_only_matching_live_trigger_buildings_and_keeps_full
         init(&mut sim, &map);
         sim.attach_object_trigger_tag(first, Some("TAG"));
         sim.attach_object_trigger_tag(second, Some("OTHER"));
-        sim.advance_triggers(
-            super::super::TriggerInputs {
-                events: &map.events,
-                actions: &map.actions,
-                rules: Some(&rules),
-            },
-            None,
-            super::super::FrameEffects::default(),
-        );
+        sim.advance_triggers(Some(&rules), None, super::super::FrameEffects::default());
         assert_eq!(sim.substrate.spotlights.get(a).unwrap().mode, mode);
         assert_eq!(sim.substrate.spotlights.get(b).unwrap().mode, 1);
     }

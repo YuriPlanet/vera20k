@@ -89,7 +89,10 @@ Native lost-target mode3 `436321` submits uninitialized stack coordinates after
 resetting mode1. Rust retains the last coordinate for that transition. Invalid
 authored zero bucket divisors return zero; invalid negative beam widths refuse
 geometry instead of indexing an invalid trig entry. These are explicit safety
-policies. The renderer keys its mask cache by effective Rules radius; exact
+policies. Nonfinite authored motion inputs preserve the last drawable pose and
+skip movement/detection while retaining ordinary parent-expiry cleanup. The
+retained INI values are not clamped; exceptional native floating-state propagation
+is outside the finite motion kernel's coverage. The renderer keys its mask cache by effective Rules radius; exact
 native graphics-cache retention across scenario replacement is not established.
 Native parent byte `+6E7` has its established constructor-zero state here;
 foreign native-save bytes are not imported.

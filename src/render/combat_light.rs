@@ -1214,6 +1214,107 @@ mod tests {
         assert!(failures.is_empty(), "{}", failures.join("\n"));
     }
 
+    #[test]
+    #[ignore = "requires GPU; whole original type16 Spotlight5FF850 pixels at stages80 and89"]
+    fn production_type16_spotlight_pixels_match_original() {
+        use crate::render::native_surface_format::RGB565;
+        use crate::render::terrain_draw_gpu_tests::{Gpu, encoded};
+
+        let native = crate::test_fixture::json("tools/procedural_drawing_oracle/spotlight.json");
+        let rows = native["type16_draws"].as_array().unwrap();
+        assert_eq!(rows.len(), 2);
+        let gpu = Gpu::new();
+        for format in [
+            wgpu::TextureFormat::Bgra8UnormSrgb,
+            wgpu::TextureFormat::Rgba8UnormSrgb,
+        ] {
+            let mut renderer = CombatLightRenderer::new_with_device(&gpu.device, &gpu.queue, format);
+            for row in rows {
+                let size: [u32; 2] = serde_json::from_value(row["size"].clone()).unwrap();
+                let mut camera: [i32; 2] = serde_json::from_value(row["camera"].clone()).unwrap();
+                camera[1] += crate::util::lepton::absolute_leptons_to_screen(0, 0, 0).1 as i32;
+                let at: [i32; 3] = serde_json::from_value(row["position"].clone()).unwrap();
+                let clip: [u32; 4] = serde_json::from_value(row["clip"].clone()).unwrap();
+                let background = row["background"].as_u64().unwrap() as u16;
+                let surface_index = row["surface_index"].as_i64().unwrap() as i32;
+                assert!((64..=73).contains(&surface_index));
+                for invariant in [
+                    "rng_unchanged",
+                    "z_unchanged",
+                    "alpha_unchanged",
+                    "guards_unchanged",
+                    "text_unchanged",
+                ] {
+                    assert_eq!(row[invariant], true, "native {invariant}");
+                }
+                renderer.set_spotlight_radius(&gpu.queue, row["radius"].as_i64().unwrap() as i32);
+                renderer.prepare_with_device(
+                    &gpu.device,
+                    &gpu.queue,
+                    &[CombatLightDrawRecord {
+                        coord: crate::sim::projectile::ProjectileCoord::new(at[0], at[1], at[2]),
+                        surface_index,
+                        flags: row["flags"].as_u64().unwrap() as u32,
+                    }],
+                    size.map(|value| value as f32),
+                    camera.map(|value| value as f32),
+                    1.,
+                );
+                let initial = encoded(background, format).repeat((size[0] * size[1]) as usize);
+                gpu.queue.write_texture(
+                    wgpu::TexelCopyTextureInfo {
+                        texture: renderer.composition_texture(),
+                        mip_level: 0,
+                        origin: wgpu::Origin3d::ZERO,
+                        aspect: wgpu::TextureAspect::All,
+                    },
+                    &initial,
+                    wgpu::TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(size[0] * 4),
+                        rows_per_image: Some(size[1]),
+                    },
+                    renderer.composition_texture().size(),
+                );
+                let mut encoder = gpu.device.create_command_encoder(&Default::default());
+                assert!(renderer.draw_record(&mut encoder, clip, 0));
+                let read = gpu.read(&mut encoder, renderer.composition_texture());
+                let output = gpu.finish(encoder, &[read], size);
+                let mut expected = vec![background; (size[0] * size[1]) as usize];
+                let pixels = row["pixels"].as_array().unwrap();
+                assert!(!pixels.is_empty(), "native type16 control must edit pixels");
+                for pixel in pixels {
+                    let offset = (pixel[1].as_u64().unwrap() * u64::from(size[0])
+                        + pixel[0].as_u64().unwrap()) as usize;
+                    expected[offset] = pixel[2].as_u64().unwrap() as u16;
+                }
+                for (offset, (pixel, &word)) in output[0]
+                    .as_chunks::<4>()
+                    .0
+                    .iter()
+                    .zip(&expected)
+                    .enumerate()
+                {
+                    let rgb = if format == wgpu::TextureFormat::Bgra8UnormSrgb {
+                        [pixel[2], pixel[1], pixel[0]]
+                    } else {
+                        [pixel[0], pixel[1], pixel[2]]
+                    };
+                    // The combat-light shader's existing low-bit expansion
+                    // residual is outside the native RGB565 word domain.
+                    assert_eq!(
+                        RGB565.pack_rgb8(rgb),
+                        word,
+                        "type16 stage{} radius{} {format:?} pixel{offset}",
+                        row["stage"],
+                        row["radius"]
+                    );
+                    assert_eq!(pixel[3], 255);
+                }
+            }
+        }
+    }
+
     fn native_channel(destination: u8, mask: u8, flags: u32, disable_bit: u32) -> u8 {
         let quantized = if disable_bit == 4 {
             destination & 0xfc

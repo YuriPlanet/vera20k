@@ -2904,8 +2904,7 @@ impl Simulation {
         self.unregister_logic_object(stable_id)
     }
 
-    /// `ObjectClass::Unlimbo` inside `VoxelAnimClass::Constructor @ 0x007493B0`
-    /// reveals the piece, which is what puts it in the LogicClass vector.
+    /// The BuildingLight constructor435820 explicitly joins the shared Logic owner.
     pub(super) fn register_spotlight_logic(&mut self, id: u64) {
         self.register_logic_object(id);
     }
@@ -2914,6 +2913,8 @@ impl Simulation {
         self.unregister_logic_object(id);
     }
 
+    /// `ObjectClass::Unlimbo` inside `VoxelAnimClass::Constructor @ 0x007493B0`
+    /// reveals the piece, which is what puts it in the LogicClass vector.
     pub(crate) fn reveal_voxel_anim(&mut self, stable_id: u64) -> bool {
         if !self.substrate.voxel_anims.contains_key(stable_id) {
             return false;

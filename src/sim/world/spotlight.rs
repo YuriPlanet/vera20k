@@ -473,6 +473,22 @@ impl Simulation {
         let parent_coord = coords(parent, self);
         let owner = parent.owner();
         let params = rules.general.spotlight;
+        // Authored exponent overflow can survive the native floating reader.
+        // Motion's finite numeric owner cannot represent it: retain the last
+        // drawable pose instead of panicking or clamping the retained INI.
+        // Parent expiry above still follows the ordinary cleanup path.
+        if [
+            params.speed,
+            params.acceleration,
+            params.angle,
+            light.angle,
+            light.rate,
+        ]
+        .into_iter()
+        .any(|value| !f64::from_bits(value.bits()).is_finite())
+        {
+            return;
+        }
         match light.mode {
             1 => {
                 advance_angle(&mut light, params);
