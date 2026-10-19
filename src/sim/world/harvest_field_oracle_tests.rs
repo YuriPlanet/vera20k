@@ -222,7 +222,7 @@ pub(super) fn row_scene_with(input: &Value, edit: impl FnOnce(&mut String, &mut 
             ),
         );
         let current = s.sim.substrate.entities.get(s.miner).unwrap().owner();
-        s.sim.session.current_house = Some(current);
+        s.sim.session.set_current_house_for_test(Some(current));
         s.sim
             .substrate
             .entities
@@ -575,7 +575,7 @@ fn campaign_player_scan_rejects_unexplored_ore() {
         .get(scene.miner)
         .unwrap()
         .owner();
-    scene.sim.session.current_house = Some(owner);
+    scene.sim.session.set_current_house_for_test(Some(owner));
     // The native control supplies Techno+41A=1 independently of House+1EC.
     scene
         .sim
