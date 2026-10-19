@@ -42,28 +42,9 @@ impl Simulation {
     /// `HouseClass::Fire_SW @ 0x004FAE50` for `owner`'s Super of type
     /// `sw_type_id` at `cell`. Returns whether ClickFire called Launch, a
     /// VERA answer: native Fire_SW returns 1 either way.
+    /// Manual commands and AI share this transaction; `automatic` selects
+    /// the extension target requirements before any charge is consumed.
     pub(crate) fn fire_super_weapon(
-        &mut self,
-        rules: &RuleSet,
-        owner: InternedId,
-        sw_type_id: InternedId,
-        cell: (u16, u16),
-        overlay_registry: Option<&OverlayTypeRegistry>,
-        frame_effects: FrameEffects<'_>,
-    ) -> bool {
-        self.fire_super_weapon_with_targeting(
-            rules,
-            owner,
-            sw_type_id,
-            cell,
-            overlay_registry,
-            frame_effects,
-            false,
-        )
-    }
-
-    /// AI uses the same launch/charge transaction, with its own target masks.
-    pub(crate) fn fire_super_weapon_with_targeting(
         &mut self,
         rules: &RuleSet,
         owner: InternedId,

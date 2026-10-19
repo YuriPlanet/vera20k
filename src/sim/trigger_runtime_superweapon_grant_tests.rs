@@ -121,7 +121,15 @@ fn super_grant_one_time_click_consumes_and_repeating_click_recharges() {
             superweapon::tick_house_superweapon_instances(&mut sim, &rules, owner);
         }
         assert!(sim.super_weapons[&owner][&id].is_ready);
-        assert!(sim.fire_super_weapon(&rules, owner, id, (10, 10), None, FrameEffects::default()));
+        assert!(sim.fire_super_weapon(
+            &rules,
+            owner,
+            id,
+            (10, 10),
+            None,
+            FrameEffects::default(),
+            false
+        ));
         let instance = &sim.super_weapons[&owner][&id];
         assert_eq!(instance.is_active, kind == 34);
         assert!(!instance.is_ready);
@@ -255,7 +263,15 @@ fn super_grant_repeat_after_once_saves_both_flags_and_still_fires_once() {
     // snapshot decoding alone does not restore source terrain/navigation.
     crate::sim::arena_fixture::flat_ground(&mut restored, &rules);
     restored.install_playfield_from_map_header(&map.header);
-    assert!(restored.fire_super_weapon(&rules, owner, id, (10, 10), None, FrameEffects::default()));
+    assert!(restored.fire_super_weapon(
+        &rules,
+        owner,
+        id,
+        (10, 10),
+        None,
+        FrameEffects::default(),
+        false
+    ));
     assert!(!restored.super_weapons[&owner][&id].is_active);
     assert_eq!(
         serde_json::to_value(&restored.super_weapons[&owner][&id]).unwrap()["one_time"],
@@ -267,7 +283,8 @@ fn super_grant_repeat_after_once_saves_both_flags_and_still_fires_once() {
         id,
         (10, 10),
         None,
-        FrameEffects::default()
+        FrameEffects::default(),
+        false,
     ));
 }
 
@@ -321,7 +338,15 @@ fn super_grant_one_time_nuke_uses_payload_speed_and_ground_warning_without_silo(
             cell
         }));
         spring(&mut sim, &rules);
-        assert!(sim.fire_super_weapon(&rules, owner, id, (10, 10), None, FrameEffects::default()));
+        assert!(sim.fire_super_weapon(
+            &rules,
+            owner,
+            id,
+            (10, 10),
+            None,
+            FrameEffects::default(),
+            false
+        ));
         assert!(!sim.super_weapons[&owner][&id].is_active);
         let (&bullet_id, bullet) = sim
             .projectiles
@@ -403,7 +428,15 @@ fn super_grant_retail_one_time_nuke_reaches_wait_damage_radiation_and_cleanup() 
     let health = sim.entities().get(victim).unwrap().health.current();
     let id = sim.interner.get("NukeSpecial").unwrap();
     assert!(execute(&mut sim, &rules, owner, 33, index));
-    assert!(sim.fire_super_weapon(&rules, owner, id, target, None, FrameEffects::default()));
+    assert!(sim.fire_super_weapon(
+        &rules,
+        owner,
+        id,
+        target,
+        None,
+        FrameEffects::default(),
+        false
+    ));
     assert!(!sim.super_weapons[&owner][&id].is_active);
     let bullet_id = *sim.projectiles.iter().next().unwrap().0;
     let warning_id = sim

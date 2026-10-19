@@ -1176,7 +1176,7 @@ use crate::util::save_codec;
 // 435 -> 436: process-resident Rules retain IRepairStep, URepairRate and
 // IRepairRate across layer reads, saved state and destructive Type resets.
 // 436 -> 437: independent BuildingLight objects and retained Spotlight rules.
-const SNAPSHOT_VERSION: u32 = 437;
+const SNAPSHOT_VERSION: u32 = 438;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -4874,7 +4874,8 @@ mod tests {
         // 434 -> 435: Scenario vein switch and shared Scenario pause.
         // 435 -> 436: retained repair service inputs.
         // 436 -> 437: independent BuildingLight and retained Spotlight rules.
-        assert_eq!(super::SNAPSHOT_VERSION, 437);
+        // 437 -> 438: the retained GenericWarhead payload binding.
+        assert_eq!(super::SNAPSHOT_VERSION, 438);
     }
 
     #[test]

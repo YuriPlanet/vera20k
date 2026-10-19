@@ -1,5 +1,6 @@
-//! Rust port of ra2-mono's SuperweaponTargetPreflight.cs, contributed under
-//! VERA's GPLv3 from the author's earlier ra2-mono work.
+//! Target-preflight port attributed by contributor baixiong443 to their
+//! earlier ra2-mono work, submitted under VERA's GPLv3. The donor source was
+//! unavailable for independent review; see the documented provenance below.
 //!
 //! The decision is pure: commands, AI and cursor queries pass observations
 //! from their existing world owners. It never spends charge or changes fog/RNG.

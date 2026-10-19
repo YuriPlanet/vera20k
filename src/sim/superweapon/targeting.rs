@@ -159,10 +159,7 @@ pub(super) fn launch_sites(
         .flat_map(|house| house.base_projection.buildings())
         .filter_map(|&id| {
             let entity = sim.substrate.entities.get(id)?;
-            let ty = sim.interner.object_type(entity.type_ref(), rules)?;
-            if ![ty.super_weapon.as_deref(), ty.super_weapon2.as_deref()]
-                .into_iter()
-                .flatten()
+            if !super::provided_supers(sim, rules, entity)
                 .any(|name| name.eq_ignore_ascii_case(&sw.id))
             {
                 return None;

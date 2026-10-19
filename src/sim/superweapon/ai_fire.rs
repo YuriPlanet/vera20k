@@ -204,7 +204,7 @@ pub(crate) fn try_fire(
             AiFireArm::LightningStorm | AiFireArm::None => None,
         };
         if let Some(cell) = cell {
-            sim.fire_super_weapon_with_targeting(
+            sim.fire_super_weapon(
                 rules,
                 owner,
                 sw_type_id,

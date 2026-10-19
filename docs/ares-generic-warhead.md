@@ -61,15 +61,15 @@ Provide the normal art/cameo assets for your mod.
 
 ## Port provenance
 
-The target decision kernel is a Rust port of the author's earlier ra2-mono work
-(`src/Ra2.Logic/Domains/SupportSuperweapons/SuperweaponTargetPreflight.cs`) and
-is contributed to VERA under this repository's GPLv3. The corresponding
-`SuperweaponTargetPreflightTests.cs` scenarios are migrated
-in `src/rules/superweapon_targeting_tests.rs` and the production-command
-scenes in `src/sim/superweapon/generic_warhead_tests.rs`.
-The source file used for the port has SHA-256
-`CEF5E67CE6EE0B8D09CEB193D474A5C23F36CDBA619249D791DD262C99ECF4D7`;
-its last committed change is ra2-mono commit `299548d1`.
+Original implementation and the reported ra2-mono port are by **baixiong443**.
+The contributor identifies the earlier source as
+`src/Ra2.Logic/Domains/SupportSuperweapons/SuperweaponTargetPreflight.cs`,
+with SHA-256 `CEF5E67CE6EE0B8D09CEB193D474A5C23F36CDBA619249D791DD262C99ECF4D7`
+at ra2-mono commit `299548d1`, and contributes this change under VERA's GPLv3.
+That donor repository was unavailable during review; its contents, hash and
+history have not been independently verified. The mapping below records the
+contributor's attribution. Review used the submitted Rust, its production
+consumers and the available official Ares sources.
 
 | ra2-mono source | Rust adaptation |
 | --- | --- |
@@ -96,11 +96,17 @@ Intentional boundaries/adaptations:
   fallback state so hovering cannot change the authoritative shared Dummy.
 - The pure kernel retains per-launcher range overrides from the source, but
   GenericWarhead has no per-launcher override producer. EMPulse weapon-range
-  fallback, test-range synthetic launchers and availability rules are not
-  transplanted into this PR.
+  fallback, test-range synthetic launchers and additional Ares availability
+  rules are not transplanted into this PR. Launch sites use VERA's existing
+  provider owner, including native `AuxBuilding` prerequisites.
 - ra2-mono's delayed support-effect state and custom extensions are not
   copied: this launch is synchronous as in Ares GenericWarhead. The source's
   broader pipeline is not a claim that VERA now implements AttachEffect/EMP.
+
+- Target masks accept any occupant whose type and house both qualify. This
+  differs from Ares's singular `Cell.GetContent()` selection in mixed-occupant
+  cells. The Offensive selector uses VERA's stable entity order; exact Ares
+  building tie order and RNG draw equivalence have not been demonstrated.
 
 ## Compatibility boundary
 
@@ -118,6 +124,6 @@ Implementation references:
 - [Ares GenericWarhead activation](https://github.com/Ares-Developers/Ares/blob/master/src/Misc/SWTypes/GenericWarhead.cpp)
 - [Ares automatic targeting](https://github.com/Ares-Developers/Ares/blob/master/src/Ext/SWType/Hooks.Targeting.cpp)
 
-The implementation is based on the ra2-mono code/test port, source reading
-and synthetic Rust regressions;
+The implementation combines the contributor-attributed port, available Ares
+source reading and synthetic Rust regressions;
 it does not claim a native executable comparison or a retail playtest.

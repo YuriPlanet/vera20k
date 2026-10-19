@@ -179,6 +179,44 @@ fn ares_generic_warhead_source_obeys_damage_self() {
 }
 
 #[test]
+fn generic_warhead_source_destruction_keeps_single_charge_cleanup() {
+    for one_time in [false, true] {
+        let (mut sim, rules, owner, sw_type, _) = fixture(
+            "[Strike]\nSW.Damage=250\n[LAUNCHER]\nDamageSelf=yes\n",
+            "Russians",
+        );
+        let source = sim.houses[&owner].base_projection.buildings()[0];
+        sim.super_weapons
+            .get_mut(&owner)
+            .unwrap()
+            .get_mut(&sw_type)
+            .unwrap()
+            .one_time = one_time;
+        assert!(fire(&mut sim, &rules, owner, sw_type, (6, 6)));
+        assert!(
+            sim.entities()
+                .get(source)
+                .is_none_or(|entity| !entity.is_object_alive())
+        );
+        let instance = &sim.super_weapons[&owner][&sw_type];
+        assert!(!instance.is_ready);
+        if one_time {
+            assert!(!instance.is_active);
+        }
+        assert!(!fire(&mut sim, &rules, owner, sw_type, (6, 6)));
+        assert_eq!(
+            sim.sound_events
+                .iter()
+                .filter(|event| matches!(event,
+                    SimSoundEvent::SuperWeaponLaunched { sw_type: kind, .. } if *kind == sw_type
+                ))
+                .count(),
+            1
+        );
+    }
+}
+
+#[test]
 fn ares_generic_warhead_ai_offensive_and_none_use_normal_firing() {
     for mode in ["Offensive", "None"] {
         let (mut sim, rules, owner, sw_type, target) =
@@ -261,6 +299,38 @@ fn mono_invalid_preflight_preserves_charge_health_and_observable_effects() {
         assert_eq!(sim.entities().get(target).unwrap().health.current(), 200);
         assert!(sim.super_weapons[&owner][&sw_type].is_ready);
     }
+}
+
+#[test]
+fn generic_warhead_range_requires_the_existing_provider_prerequisites() {
+    use crate::rules::superweapon_targeting::TargetReject;
+
+    let (mut sim, rules, owner, sw_type, _) = fixture(
+        "[Strike]\nAuxBuilding=TARGET\nSW.RangeMaximum=1\n",
+        "Russians",
+    );
+    // A trigger may grant a one-time Super independently of building grants.
+    sim.super_weapons
+        .get_mut(&owner)
+        .unwrap()
+        .get_mut(&sw_type)
+        .unwrap()
+        .one_time = true;
+    assert_eq!(
+        sim.super_weapon_target_check(&rules, owner, sw_type, (6, 6), false),
+        Err(TargetReject::NoEligibleLaunchSite),
+    );
+    assert!(!fire(&mut sim, &rules, owner, sw_type, (6, 6)));
+    assert!(sim.super_weapons[&owner][&sw_type].is_ready);
+
+    sim.spawn_object_at_height("TARGET", "Russians", 8, 8, 0, 0, &rules)
+        .unwrap();
+    assert_eq!(
+        sim.super_weapon_target_check(&rules, owner, sw_type, (6, 6), false),
+        Ok(())
+    );
+    assert!(fire(&mut sim, &rules, owner, sw_type, (6, 6)));
+    assert!(!sim.super_weapons[&owner][&sw_type].is_ready);
 }
 
 #[test]

@@ -850,7 +850,10 @@ pub(super) fn dispatch_sim_sound_events(
                     .super_weapon_order
                     .iter()
                     .position(|section| section.eq_ignore_ascii_case(&type_name))
-                    .and_then(eva_producers::super_weapon_detected_event)
+                    .and_then(|index| {
+                        let sw = rules.super_weapon(&type_name)?;
+                        eva_producers::super_weapon_detected_event(sw.kind, index)
+                    })
                 else {
                     continue;
                 };
