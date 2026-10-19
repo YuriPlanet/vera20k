@@ -61,7 +61,7 @@ fn fixture(static_bridge: Option<(u16, u16)>) -> (TerrainGrid, ResolvedTerrainGr
         })
         .collect();
     let resolved = ResolvedTerrainGrid::from_cells(SIDE, SIDE, cells);
-    let grid = build_terrain_grid_from_resolved(&resolved, None, None);
+    let grid = build_terrain_grid_from_resolved(&resolved, None);
     (grid, resolved)
 }
 

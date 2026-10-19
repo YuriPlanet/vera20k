@@ -3,6 +3,8 @@
 //! `[Events]` stores a counted list of event-condition chunks per trigger id.
 //! We preserve the raw field list and also expose normalized conditions so
 //! runtime code can evaluate them without hardcoding a flat row assumption.
+//! Records keep their exact key: TriggerType::ReadINI (`0x0072749B`) reads
+//! the entry by the Type's own ID.
 
 use std::collections::HashMap;
 
@@ -21,16 +23,25 @@ pub struct EventCondition {
     pub team_name: Option<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// One `[Events]` record.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MapEvent {
-    pub id: String,
-    pub fields: Vec<String>,
-    pub conditions: Vec<EventCondition>,
+    id: String,
+    fields: Vec<String>,
+    conditions: Vec<EventCondition>,
+}
+
+impl MapEvent {
+    /// The events in native list order: the loop at `0x007274E2` prepends
+    /// each one it reads, so the last authored event comes first.
+    pub fn conditions(&self) -> &[EventCondition] {
+        &self.conditions
+    }
 }
 
 pub type EventMap = HashMap<String, MapEvent>;
 
-/// Parse `[Events]` into an id -> event record map.
+/// Parse `[Events]` into exact-key event records.
 pub fn parse_events(ini: &IniFile) -> EventMap {
     let Some(section) = ini.section("Events") else {
         return HashMap::new();
@@ -40,11 +51,7 @@ pub fn parse_events(ini: &IniFile) -> EventMap {
     for key in section.keys() {
         // TriggerType Read7274A6 uses the same512-byte buffer as its header.
         let raw_value = section.read_string(key, "", 512);
-        let id = key.trim();
-        if id.is_empty() {
-            continue;
-        }
-        let id = id.to_ascii_uppercase();
+        let id = key.to_string();
         let fields: Vec<String> = strtok(&raw_value, &[',']).map(str::to_string).collect();
         let conditions = parse_event_conditions(&raw_value);
         events.insert(

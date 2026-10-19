@@ -1581,11 +1581,9 @@ pub fn build_sprite_atlas(
     }
 
     // Step 1e: Pre-load the parachute SHP (`[General] Parachute=`).
-    // The canopy's frames are keyed on the unit-palette context the parachute
-    // pass draws with, so they are registered here as well as through the
-    // AnimClass closure `[General] Parachute=` now belongs to. Its palette is not
-    // decided by this registration: `sprite_palette_choice` reads the art type's
-    // `AltPalette=` flag, which PARACH sets, and that selects the unit palette.
+    // This registers the no-remap GlobalAnim/colour-0 fallback. The live
+    // AnimClass remap closure adds SelectedScheme variants for remapped canopies;
+    // both use the unit palette here because PARACH sets `AltPalette=`.
     let parachute = rules
         .filter(|_| previous_atlas.is_none())
         .and_then(|r| r.general.parachute_shp.as_deref());
@@ -1675,7 +1673,8 @@ pub fn build_sprite_atlas(
     );
 
     // Load anim.pal for world effect SHPs. Anim types (explosions, warp flashes,
-    // etc.) are drawn with anim.pal, not unit.pal.
+    // etc.) are drawn with anim.pal, not unit.pal. Init_Game 0x0052BA60
+    // converts ANIM.PAL and PALETTE.PAL like every palette load.
     let effect_palette: Option<Palette> = asset_manager
         .get_ref("anim.pal")
         .and_then(|d| Palette::from_bytes(d).ok());
@@ -2251,7 +2250,7 @@ fn render_harvest_overlay_frames<'a>(
 }
 
 #[cfg(test)]
-pub(crate) use tests::native_palette_probe_page;
+pub(crate) use tests::{native_palette_probe_page, native_probe_rgb, palette_probe_page};
 
 /// Index bytes of rows at which a map-load upload band closes. A band holds
 /// whole shelves, so it exceeds this by less than its last shelf.

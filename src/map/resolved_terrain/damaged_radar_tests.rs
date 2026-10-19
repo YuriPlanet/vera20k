@@ -1,5 +1,4 @@
 use super::build::{TileMetadata, merge_tmp_file_metadata, retained_damaged_radar_metadata};
-use super::*;
 
 use crate::assets::tmp_file::TmpFile;
 
@@ -48,7 +47,7 @@ fn parsed_metadata(tmp: &TmpFile) -> TileMetadata {
         tmp_file_valid: true,
         ..TileMetadata::default()
     };
-    merge_tmp_file_metadata(&mut metadata, tmp, 0, None, &mut HashSet::new());
+    merge_tmp_file_metadata(&mut metadata, tmp, 0, None);
     metadata
 }
 

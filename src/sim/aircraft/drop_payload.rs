@@ -867,6 +867,7 @@ mod tests {
         let mut sim = Simulation::new();
         let mut rules = drop_test_rules();
         rules.general.parachute_shp = Some("PARACH".to_string());
+        rules.general.infantry_death_anims[3] = Some("S_BANG34".to_string());
         // An E1 sequence with Paradrop frames, as retail's GI has: without them
         // Do_Action refuses the drop's Paradrop (`0x0051D70F`).
         let art_ini = IniFile::from_str(

@@ -4,7 +4,6 @@ use crate::map::resolved_terrain::{RadarColorMetadata, ResolvedTerrainCell};
 use crate::map::terrain::build_terrain_grid_from_resolved;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
-use crate::rules::terrain_rules::TerrainClass;
 use crate::sim::bridge_state::{BridgeDamageEvent, BridgeRuntimeState};
 use crate::sim::world::Simulation;
 
@@ -30,7 +29,6 @@ fn cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
         final_tile_index: if in_flood { 42 } else { 0 },
         level: 4,
         accepts_smudge: true,
-        base_terrain_class: TerrainClass::Clear,
         radar_left: [20, 40, 60],
         radar_right: [7, 8, 9],
         has_damaged_data: in_flood,
@@ -85,7 +83,7 @@ fn simulation_fixture() -> (Simulation, crate::map::terrain::TerrainGrid) {
     for (rx, ry) in [FLOOD[0], REPAIR_START] {
         terrain.cell_mut(rx, ry).unwrap().bridge_facts.overlay_id = Some(0xD1);
     }
-    let grid = build_terrain_grid_from_resolved(&terrain, None, None);
+    let grid = build_terrain_grid_from_resolved(&terrain, None);
     let bridge_state = BridgeRuntimeState::from_resolved_terrain_with_map_size(
         &terrain,
         true,

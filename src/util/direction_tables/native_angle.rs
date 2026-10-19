@@ -257,4 +257,50 @@ mod tests {
         assert_eq!(facing8_from_delta(-1, 0), 192);
         assert_eq!(facing8_from_delta(0, 0), 63);
     }
+
+    #[test]
+    fn diagonals_and_quadrants_follow_the_native_word() {
+        for ((dx, dy), word, byte) in [
+            ((1, -1), 8_315, 32),
+            ((1, 1), 24_451, 95),
+            ((-1, 1), 41_082, 160),
+            ((-1, -1), 57_221, 223),
+        ] {
+            assert_eq!(facing16_from_delta(dx, dy), word, "({dx},{dy})");
+            assert_eq!(facing8_from_delta(dx, dy), byte, "({dx},{dy})");
+        }
+        // +dx is east and -dy north; each quadrant keeps to its quarter turn.
+        for dx in 1..=5 {
+            for dy in 1..=5 {
+                let north_east = facing8_from_delta(dx, -dy);
+                assert!(
+                    (0..=64).contains(&north_east),
+                    "({dx},-{dy}) -> {north_east}"
+                );
+                let south_east = facing8_from_delta(dx, dy);
+                assert!(
+                    (64..=128).contains(&south_east),
+                    "({dx},{dy}) -> {south_east}"
+                );
+                let south_west = facing8_from_delta(-dx, dy);
+                assert!(
+                    (128..=192).contains(&south_west),
+                    "(-{dx},{dy}) -> {south_west}"
+                );
+                let north_west = facing8_from_delta(-dx, -dy);
+                assert!(
+                    north_west >= 192 || north_west == 0,
+                    "(-{dx},-{dy}) -> {north_west}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn the_word_depends_on_the_ratio_not_the_magnitude() {
+        assert_eq!(
+            facing16_from_delta(3, 4),
+            facing16_from_delta(3 * 256, 4 * 256)
+        );
+    }
 }

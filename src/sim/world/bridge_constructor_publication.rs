@@ -1,9 +1,17 @@
-//! Original5FC380/5FC570 for the four active bridge reconstruction types.
+//! Original5FC380 for the four active bridge reconstruction types, whose
+//! Reveal reaches the one `OverlayClass::Mark @ 0x005FC570` port
+//! ([`crate::map::overlay_mark`]) on this publication's live scalar cells.
 //! Evidence: tools/spatial_oracle/bridge_constructor. The caller supplies the
 //! registered stock OverlayType and frame-1, and retains partial synchronous
 //! writes if an unsupported resident Recalc input prevents continuation.
 
 use super::*;
+use crate::map::bridge_facts::BridgeStampFamily;
+use crate::map::overlay_mark::{
+    MarkCrateImages, NO_OVERLAY, OverlayCellAnim, OverlayMarkHost, OverlayMarkOutcome,
+    OverlayMarkRequest, mark_overlay,
+};
+use crate::rules::locomotor_type::SpeedType;
 use crate::sim::world::load_object_lifecycle::LoadOverlayHandle;
 
 #[cfg(test)]
@@ -28,16 +36,14 @@ impl LivePublication<'_> {
         let flags = registry
             .flags(overlay)
             .ok_or("missing bridge OverlayType")?;
-        // Active RULESMD's BRIDGE1/2 and BRIDGEB1/2 have Clear land and no
-        // Wall, Crate or CellAnim branch. Reject a different type configuration
-        // explicitly until its extra constructor callbacks are delivered.
-        if flags.land != crate::rules::terrain_rules::LandType::Clear
-            || flags.wall
-            || flags.crate_type
-            || flags.cell_anim.is_some()
-        {
-            return Err("bridge OverlayType requires additional Mark callbacks".into());
+        // Mark's wall arm asks Is_Clear_To_Build and the wall owners, which
+        // this publication does not host. Active RULESMD's BRIDGE1/2 and
+        // BRIDGEB1/2 are not walls; reject that configuration before the
+        // constructor's effects.
+        if flags.wall {
+            return Err("bridge OverlayType requires the wall Mark callbacks".into());
         }
+        let rules = self.rules;
         if self.sim.native_unique_ids.is_none() {
             return Err("live bridge constructor has no Scenario native-ID continuation".into());
         }
@@ -88,69 +94,176 @@ impl LivePublication<'_> {
         self.sim
             .tactical_dirty_cells
             .push((lookup.0 as u16, lookup.1 as u16));
-        // Reveal's virtual Mark obtains its own current CellClass receiver.
-        let cell = self.lookup(lookup);
-        let slope = match cell {
-            Cell::Real(index) => self.terrain().cells()[index].slope_type,
-            Cell::Dummy => self.terrain().shared_cell_dummy().snapshot().slope_type,
+        let request = OverlayMarkRequest {
+            overlay_id: overlay,
+            flags,
+            cell: lookup,
+            location: [world[0], world[1], 0],
+            registry,
+            tiberium_types: Some(&rules.tiberium_types),
+            crate_images: MarkCrateImages::resolve(&rules.crate_rules, registry),
         };
-        if slope > 4 {
-            self.sim
-                .load_objects
-                .finish_slope_survivor(handle)
-                .map_err(|error| error.to_string())?;
-            return Ok(handle);
-        }
-
-        //47E040 and47E470 have identical decoded instructions after internal
-        // branch relocation; their absolute callees also match. Preserve each
-        // scalar store/lookup through the shared publisher, including aliases.
-        publication::set_bridge_direction(
-            self,
-            cell,
-            if matches!(overlay, 24 | 237) { 0 } else { 6 },
-            true,
-        );
-        let current = match cell {
-            Cell::Real(index) => self.terrain().cells()[index].bridge_facts.overlay_id,
-            Cell::Dummy => self.terrain().shared_cell_dummy().overlay_fields().0,
+        let mut host = BridgeMarkHost {
+            publication: self,
+            registry,
         };
-        let overridden = current
-            .and_then(|id| registry.flags(id))
-            .is_some_and(|f| f.overrides);
-        if !overridden {
-            let state = self.terrain().native_cell_state(cell);
-            match cell {
-                Cell::Real(index) => {
-                    let coord = self.real_coord(cell).unwrap();
-                    let sim = &mut self.sim;
-                    let grid = sim
-                        .overlay_grid
-                        .as_mut()
-                        .ok_or("missing live bridge overlay grid")?;
-                    if !grid.write_crate_mark_fields(
-                        sim.resolved_terrain.as_mut().unwrap(),
-                        registry,
-                        coord.0,
-                        coord.1,
-                        overlay,
-                        state,
-                    ) {
-                        return Err("live bridge Mark could not publish its real overlay".into());
-                    }
-                    self.retain_real_write(Cell::Real(index));
-                }
-                Cell::Dummy => self
-                    .terrain()
-                    .shared_cell_dummy()
-                    .write_overlay_identity(i32::from(overlay)),
+        match mark_overlay(&mut host, &request)? {
+            OverlayMarkOutcome::SlopeRefused => {
+                self.sim
+                    .load_objects
+                    .finish_slope_survivor(handle)
+                    .map_err(|error| error.to_string())?;
+                return Ok(handle);
             }
+            OverlayMarkOutcome::WallRefused => {
+                unreachable!("bridge reconstruction admits no wall OverlayType")
+            }
+            OverlayMarkOutcome::Marked => {}
         }
-        self.recalc_cell(cell, -1)?;
         self.sim
             .load_objects
             .finish_common(handle, &mut self.sim.substrate.pending_delete)
             .map_err(|error| error.to_string())?;
         Ok(handle)
+    }
+}
+
+/// The bridge publication as the CellClass surface of `OverlayClass::Mark`.
+/// Its overlay identity and data are the live scalar cells the publication
+/// reads (`bridge_facts`), which the OverlayGrid mirrors on every store.
+struct BridgeMarkHost<'p, 'a> {
+    publication: &'p mut LivePublication<'a>,
+    registry: &'a crate::rules::overlay_types::OverlayTypeRegistry,
+}
+
+impl OverlayMarkHost for BridgeMarkHost<'_, '_> {
+    type Error = String;
+
+    fn cell(&mut self, coord: (i16, i16)) -> Cell {
+        self.publication.lookup(coord)
+    }
+
+    fn coord(&self, cell: Cell) -> (i16, i16) {
+        self.publication.coord(cell)
+    }
+
+    fn in_bounds(&mut self, coord: (i16, i16)) -> Result<bool, String> {
+        Ok(self.publication.sim.map_cell_in_bounds(coord))
+    }
+
+    fn slope(&self, cell: Cell) -> u8 {
+        self.publication.terrain().native_cell_ground_fields(cell).1
+    }
+
+    fn identity(&self, cell: Cell) -> i32 {
+        let terrain = self.publication.terrain();
+        let identity = match cell {
+            Cell::Real(index) => terrain.cells()[index].bridge_facts.overlay_id,
+            Cell::Dummy => terrain.shared_cell_dummy().overlay_fields().0,
+        };
+        identity.map_or(NO_OVERLAY, i32::from)
+    }
+
+    fn data(&self, cell: Cell) -> u8 {
+        self.publication.state(cell)
+    }
+
+    fn write_identity(&mut self, cell: Cell, overlay_id: u8) -> Result<(), String> {
+        let registry = self.registry;
+        let Some((x, y)) = self.publication.real_coord(cell) else {
+            self.publication
+                .terrain()
+                .shared_cell_dummy()
+                .write_overlay_identity(i32::from(overlay_id));
+            return Ok(());
+        };
+        let sim = &mut *self.publication.sim;
+        let grid = sim
+            .overlay_grid
+            .as_mut()
+            .ok_or("missing live bridge overlay grid")?;
+        if !grid.write_mark_identity(sim.resolved_terrain.as_mut(), registry, x, y, overlay_id) {
+            return Err("live bridge Mark could not publish its real overlay".into());
+        }
+        self.publication.retain_real_write(cell);
+        Ok(())
+    }
+
+    fn write_data(&mut self, cell: Cell, data: u8) -> Result<(), String> {
+        self.publication.write_state(cell, data);
+        Ok(())
+    }
+
+    fn scenario_init(&self) -> bool {
+        self.publication.sim.object_placement_scope_active()
+    }
+
+    fn next_scenario_raw(&mut self) -> u32 {
+        self.publication.sim.scenario_rng.next_u32()
+    }
+
+    fn passable(&mut self, cell: Cell, speed: SpeedType, ignore: bool) -> Result<bool, String> {
+        Ok(crate::sim::overlay_mark_host::mark_cell_passable(
+            self.publication.sim,
+            cell,
+            speed,
+            ignore,
+        ))
+    }
+
+    fn set_bridge_direction(
+        &mut self,
+        anchor: Cell,
+        _family: BridgeStampFamily,
+        direction: u8,
+    ) -> Result<(), String> {
+        //47E040 and47E470 have identical decoded instructions after internal
+        // branch relocation; their absolute callees also match. Preserve each
+        // scalar store/lookup through the shared publisher, including aliases.
+        publication::set_bridge_direction(self.publication, anchor, direction, true);
+        Ok(())
+    }
+
+    fn wall_clear_to_build(&mut self, _anchor: Cell) -> Result<bool, String> {
+        Err("bridge reconstruction hosts no wall Mark".into())
+    }
+
+    fn wall_cleanup(&mut self, _anchor: Cell) -> Result<(), String> {
+        Err("bridge reconstruction hosts no wall Mark".into())
+    }
+
+    fn merge_wall_zones(&mut self, _anchor: Cell) -> Result<(), String> {
+        Err("bridge reconstruction hosts no wall Mark".into())
+    }
+
+    fn increment_wall_neighbor_count(&mut self, _cell: Cell) -> Result<(), String> {
+        Err("bridge reconstruction hosts no wall Mark".into())
+    }
+
+    fn spawn_cell_anim(&mut self, request: OverlayCellAnim<'_>) -> Result<(), String> {
+        let rules = self.publication.rules;
+        let ground = crate::sim::overlay_mark_host::OverlayCellAnimGround::read(
+            self.publication.terrain(),
+            &request,
+        );
+        let sim = &mut *self.publication.sim;
+        let lighting = sim
+            .session
+            .lighting
+            .profile(crate::sim::scenario_session::ScenarioLightingProfile::Normal)
+            .into();
+        sim.construct_overlay_cell_anim(
+            rules,
+            request,
+            ground,
+            lighting,
+            crate::sim::anim_class::AnimConstructorInput::Runtime,
+        )
+        .map(|_| ())
+        .map_err(|error| error.to_string())
+    }
+
+    fn recalc(&mut self, cell: Cell) -> Result<(), String> {
+        self.publication.recalc_cell(cell, -1)
     }
 }

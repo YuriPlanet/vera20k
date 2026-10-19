@@ -44,7 +44,6 @@ fn update_all_matches_native() {
 use crate::map::{map_file::MapFile, waypoints::Waypoint};
 use crate::rules::ini_parser::IniFile;
 use crate::sim::superweapon::chronosphere_tests::{place, world_with};
-use crate::sim::world::TriggerInputs;
 use std::collections::HashMap;
 
 fn rules() -> RuleSet {
@@ -101,15 +100,7 @@ fn counted_action94_uses_ground_then_real_frame_damage_and_cleanup() {
     );
     sim.classify_map_triggers(None);
     sim.session.set_started(true);
-    sim.advance_triggers(
-        TriggerInputs {
-            events: &map.events,
-            actions: &map.actions,
-            rules: Some(&rules),
-        },
-        None,
-        FrameEffects::default(),
-    );
+    sim.advance_triggers(Some(&rules), None, FrameEffects::default());
     assert!(sim.trigger_local_is_set_for_test(0));
     assert_eq!(
         sim.ion_blasts().collect::<Vec<_>>(),

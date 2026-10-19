@@ -939,11 +939,7 @@ pub(super) fn select_step_head_at(
     let mut priority = false;
     if [7, 8, 9, 11, 25].contains(&entity.mission.current().raw()) {
         let target = match entity.navigation.nav_com() {
-            Some(
-                crate::sim::components::NavTargetRef::Entity { id }
-                | crate::sim::components::NavTargetRef::Object { id }
-                | crate::sim::components::NavTargetRef::Building { id },
-            ) => entities.get(id),
+            Some(crate::sim::components::NavTargetRef::Object { id }) => entities.get(id),
             _ => None,
         };
         if let Some(target) = target {

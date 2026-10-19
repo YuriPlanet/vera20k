@@ -517,7 +517,7 @@ impl Simulation {
             return Ok(None);
         }
         let navigation = crate::sim::movement::nav_target_coordinate(
-            NavTargetRef::Entity { id: target },
+            NavTargetRef::object(target),
             None,
             self,
             Some(terrain),

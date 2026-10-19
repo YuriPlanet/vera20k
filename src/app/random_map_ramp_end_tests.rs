@@ -217,8 +217,10 @@ fn generated_connector_uses_native_slope_piece_tileset() {
                         painted.sub_tile,
                         painted.z,
                     )
-            }) && crate::map::rmg::preview::Playfield::from_header(&generated.map_file.header)
-                .contains(cell.rx, cell.ry)
+            }) && crate::map::playfield::PlayfieldBounds::from_map_header(
+                &generated.map_file.header,
+            )
+            .contains_geometry_packed(i32::from(cell.rx), i32::from(cell.ry))
         })
         .expect("a generated native ramp end survives later stages into the emitted playable map");
     let mut main_rng = crate::sim::rng::MainRng::new(0x0401_599d);

@@ -129,7 +129,6 @@ fn fixture(input: &Value, stock: &Value) -> (Scene, Vec<(u16, u16)>) {
                     .cell_mut(at.0, at.1)
                     .unwrap();
                 c.land_type = 1;
-                c.base_terrain_class = crate::rules::terrain_rules::TerrainClass::Road;
                 c.allows_tiberium = false;
             }
             "slope" => {
@@ -303,6 +302,7 @@ fn forced_spread_matches_original_admission_placement_queues_and_rng() {
         let objects = TiberiumPlacementObjectContext::new(
             &s.sim.substrate.entities,
             &s.sim.substrate.occupancy,
+            &s.sim.substrate.raw_cell_occupation,
             &s.rules,
             &s.sim.interner,
             &s.sim.production.terrain_object_cells,

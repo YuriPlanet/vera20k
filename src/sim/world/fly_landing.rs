@@ -331,9 +331,7 @@ impl Simulation {
         let e = self.substrate.entities.get(id).unwrap();
         let (requested, object) = match destination {
             NavTargetRef::Cell { rx, ry } => ((rx as i16, ry as i16), None),
-            NavTargetRef::Entity { id: object }
-            | NavTargetRef::Object { id: object }
-            | NavTargetRef::Building { id: object } => {
+            NavTargetRef::Object { id: object } => {
                 let Some(center) = self.fire_location_center(destination) else {
                     return false;
                 };
@@ -419,14 +417,7 @@ impl Simulation {
                             },
                         )
                     }
-                    (
-                        Some(object),
-                        Some(
-                            NavTargetRef::Entity { id: nav }
-                            | NavTargetRef::Object { id: nav }
-                            | NavTargetRef::Building { id: nav },
-                        ),
-                    ) => nav == object,
+                    (Some(object), Some(NavTargetRef::Object { id: nav })) => nav == object,
                     _ => false,
                 }
         })
@@ -453,11 +444,7 @@ impl Simulation {
                 !e.radio_contacts.is_empty()
                     && e.navigation.nav_com().is_some()
                     && match e.navigation.nav_com() {
-                        Some(
-                            NavTargetRef::Entity { id }
-                            | NavTargetRef::Object { id }
-                            | NavTargetRef::Building { id },
-                        ) => e.radio_contacts.slot(0) != Some(id),
+                        Some(NavTargetRef::Object { id }) => e.radio_contacts.slot(0) != Some(id),
                         Some(NavTargetRef::Cell { .. }) => true,
                         None => false,
                     }

@@ -1,10 +1,10 @@
 //! `[CombatDamage]` section parser — global default particle systems used
 //! by various combat effects (smoke plumes, sparks, fire streams, debris).
 //!
-//! Fields hold unresolved particle-system section names; ID resolution
-//! against the particle-system registry is deferred (matches the same
-//! pattern used by ParticleType.warhead, ParticleSystemType.holds_what,
-//! ObjectType.damage_particle_systems, and GeneralRules.barrel_particle).
+//! The Type references (the default particle systems, `DrainAnimationType=`,
+//! `IvanWarhead=`, `DeathWeapon=`, `SplashList=`) are the stored IDs the
+//! ordered Rules processor's factories answered (`native_processing`), which
+//! `RuleSet` publishes; ID resolution against the registries is deferred.
 //!
 //! The particle fields below mirror the fixed RulesClass slots at +0x1018..+0x1038;
 //! retail rulesmd.ini ships a 10th key (`DefaultFirestormExplosionSystem=`)
@@ -19,9 +19,10 @@ use crate::rules::ini_parser::IniSection;
 
 /// Default particle-system fallbacks read from `[CombatDamage]`.
 ///
-/// Each field is the section name of a `ParticleSystemType` (resolved later
-/// against `RuleSet::ps_type_id_by_name`). `None` means the key was absent
-/// or empty — consumers must supply their own fallback in that case.
+/// Each reference is the stored ID of a Type (a `ParticleSystemType` resolved
+/// later against `RuleSet::ps_type_id_by_name`, and so on). `None` is the
+/// constructor's null, which an absent key or a `none` keeps — consumers
+/// must supply their own fallback in that case.
 #[derive(Debug, Clone)]
 pub struct CombatDamageDefaults {
     /// Signed post-Verses cap used by ApplyWarheadDamage. The executable's
@@ -109,8 +110,9 @@ pub struct CombatDamageDefaults {
 }
 
 impl CombatDamageDefaults {
-    /// Parse from a `[CombatDamage]` `IniSection`. Missing keys become `None`.
-    /// Every name is ReadString 0x80 (`0x0066C514`-`0x0066CCCA`).
+    /// Parse the scalars from a `[CombatDamage]` `IniSection`. The Type
+    /// references keep the constructor's nulls: only the ordered Process
+    /// owner reads them.
     pub fn from_ini_section(section: &IniSection) -> Self {
         Self {
             max_damage: section.read_int("MaxDamage", 1000),
@@ -119,47 +121,24 @@ impl CombatDamageDefaults {
             crush: section.read_range("Crush", 0x180),
             incoming: section.read_speed("Incoming", 0),
             open_topped_warp_distance: section.read_int("OpenToppedWarpDistance", 5),
-            // Constructor null; only the ordered Process owner reads it.
             death_weapon: None,
-            drain_animation_type: section
-                .read_type_name("DrainAnimationType", 0x80)
-                .map(str::to_string),
+            drain_animation_type: None,
             falling_damage_multiplier: section.read_float("FallingDamageMultiplier", 1.0),
             current_strength_damage: section.read_bool("CurrentStrengthDamage", true),
-            ivan_warhead: section.read_name("IvanWarhead", 0x80).map(str::to_string),
+            ivan_warhead: None,
             ivan_damage: section.read_int("IvanDamage", 100),
             ivan_timed_delay: section.read_int("IvanTimedDelay", 450),
             ivan_icon_flicker_rate: section.read_int("IvanIconFlickerRate", 8),
-            // Read only by the ordered Process owner (`native_processing`,
-            // `0x0066C184..0x0066C287`), which `RuleSet` publishes.
             splash_list: Vec::new(),
-            default_large_grey_smoke_system: section
-                .read_name("DefaultLargeGreySmokeSystem", 0x80)
-                .map(str::to_string),
-            default_small_grey_smoke_system: section
-                .read_name("DefaultSmallGreySmokeSystem", 0x80)
-                .map(str::to_string),
-            default_spark_system: section
-                .read_name("DefaultSparkSystem", 0x80)
-                .map(str::to_string),
-            default_large_red_smoke_system: section
-                .read_name("DefaultLargeRedSmokeSystem", 0x80)
-                .map(str::to_string),
-            default_small_red_smoke_system: section
-                .read_name("DefaultSmallRedSmokeSystem", 0x80)
-                .map(str::to_string),
-            default_debris_smoke_system: section
-                .read_name("DefaultDebrisSmokeSystem", 0x80)
-                .map(str::to_string),
-            default_fire_stream_system: section
-                .read_name("DefaultFireStreamSystem", 0x80)
-                .map(str::to_string),
-            default_test_particle_system: section
-                .read_name("DefaultTestParticleSystem", 0x80)
-                .map(str::to_string),
-            default_repair_particle_system: section
-                .read_name("DefaultRepairParticleSystem", 0x80)
-                .map(str::to_string),
+            default_large_grey_smoke_system: None,
+            default_small_grey_smoke_system: None,
+            default_spark_system: None,
+            default_large_red_smoke_system: None,
+            default_small_red_smoke_system: None,
+            default_debris_smoke_system: None,
+            default_fire_stream_system: None,
+            default_test_particle_system: None,
+            default_repair_particle_system: None,
         }
     }
 }
@@ -200,9 +179,17 @@ mod tests {
     use super::*;
     use crate::rules::ini_parser::IniFile;
 
+    /// The production reader: the ordered Rules processor reads the Type
+    /// references, `RuleSet` publishes them.
+    fn read(text: &str) -> CombatDamageDefaults {
+        crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(text))
+            .unwrap()
+            .combat_damage
+    }
+
     #[test]
     fn parses_full_combat_damage_section() {
-        let ini = IniFile::from_str(
+        let cd = read(
             "[CombatDamage]\n\
              DefaultLargeGreySmokeSystem=BigGreySmokeSys\n\
              DefaultSmallGreySmokeSystem=SmallGreySSys\n\
@@ -214,8 +201,6 @@ mod tests {
              DefaultTestParticleSystem=TestSmokeSys\n\
              DefaultRepairParticleSystem=WeldingSys\n",
         );
-        let section = ini.section("CombatDamage").unwrap();
-        let cd = CombatDamageDefaults::from_ini_section(section);
 
         assert_eq!(
             cd.default_large_grey_smoke_system.as_deref(),
@@ -254,9 +239,7 @@ mod tests {
 
     #[test]
     fn section_without_recognized_keys_yields_all_none() {
-        let ini = IniFile::from_str("[CombatDamage]\nFixtureOnly=1\n");
-        let section = ini.section("CombatDamage").unwrap();
-        let cd = CombatDamageDefaults::from_ini_section(section);
+        let cd = read("[CombatDamage]\nFixtureOnly=1\n");
         assert!(cd.default_large_grey_smoke_system.is_none());
         assert!(cd.default_spark_system.is_none());
         assert!(cd.default_fire_stream_system.is_none());
@@ -265,17 +248,13 @@ mod tests {
 
     #[test]
     fn whitespace_only_value_treated_as_none() {
-        let ini = IniFile::from_str("[CombatDamage]\nFixtureOnly=1\nDefaultSparkSystem=   \n");
-        let section = ini.section("CombatDamage").unwrap();
-        let cd = CombatDamageDefaults::from_ini_section(section);
+        let cd = read("[CombatDamage]\nFixtureOnly=1\nDefaultSparkSystem=   \n");
         assert!(cd.default_spark_system.is_none());
     }
 
     #[test]
     fn trims_whitespace_around_value() {
-        let ini = IniFile::from_str("[CombatDamage]\nDefaultSparkSystem=  SparkSys  \n");
-        let section = ini.section("CombatDamage").unwrap();
-        let cd = CombatDamageDefaults::from_ini_section(section);
+        let cd = read("[CombatDamage]\nDefaultSparkSystem=  SparkSys  \n");
         assert_eq!(cd.default_spark_system.as_deref(), Some("SparkSys"));
     }
 

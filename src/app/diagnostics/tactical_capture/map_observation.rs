@@ -2148,7 +2148,6 @@ fn temporal_observation(entity: &crate::sim::game_entity::GameEntity) -> Value {
     json!({"has_link": entity.temporal.has_link(),
         "warp_target": entity.temporal.warp_target(),
         "chain_head": entity.temporal.chain_head(),
-        "boarding_transport": entity.passenger_role.boarding_transport_id(),
         "inside_transport": inside, "cargo": cargo})
 }
 
@@ -5015,7 +5014,7 @@ mod tests {
         assert_eq!(
             snapshot,
             json!({"has_link": false, "warp_target": null, "chain_head": null,
-                "boarding_transport": null, "inside_transport": null,
+                "inside_transport": null,
                 "cargo": {"count": 2, "passengers": [other, cleg]}})
         );
         assert_eq!(temporal_sample_count(&snapshot), 3);
@@ -5023,7 +5022,7 @@ mod tests {
         assert_eq!(
             temporal_observation(sim.substrate.entities.get(cleg).unwrap()),
             json!({"has_link": true, "warp_target": null, "chain_head": null,
-                "boarding_transport": null, "inside_transport": null, "cargo": null})
+                "inside_transport": null, "cargo": null})
         );
         let target = temporal_observation(sim.substrate.entities.get(victim).unwrap());
         assert_eq!(target["has_link"], false);

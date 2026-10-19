@@ -23,7 +23,7 @@ use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::entity_store::EntityStore;
 use crate::sim::intern::{InternedId, StringInterner};
-use crate::sim::occupancy::OccupancyGrid;
+use crate::sim::occupancy::{OccupancyGrid, RawCellOccupationGrid};
 use crate::sim::ore_growth::OreGrowthState;
 use crate::sim::overlay_grid::OverlayGrid;
 use crate::sim::rng::SimRng;
@@ -152,6 +152,8 @@ pub struct TerrainSpawnContext<'a> {
     pub spawning_terrain_cells: Option<&'a BTreeSet<(u16, u16)>>,
     pub entities: Option<&'a EntityStore>,
     pub occupancy: Option<&'a OccupancyGrid>,
+    /// Live raw occupation planes, which a new ore Overlay's Mark tests.
+    pub(crate) raw_occupation: Option<&'a RawCellOccupationGrid>,
     pub rules: Option<&'a RuleSet>,
     pub interner: Option<&'a StringInterner>,
     /// Terrain objects (trees, rocks) indexed by cell — the non-Techno half of the
@@ -176,6 +178,7 @@ impl<'a> TerrainSpawnContext<'a> {
             spawning_terrain_cells: None,
             entities: None,
             occupancy: None,
+            raw_occupation: None,
             rules: None,
             interner: None,
             terrain_object_cells: None,
@@ -224,16 +227,18 @@ impl<'a> TerrainSpawnContext<'a> {
         self
     }
 
-    pub fn with_live_object_context(
+    pub(crate) fn with_live_object_context(
         mut self,
         entities: &'a EntityStore,
         occupancy: &'a OccupancyGrid,
+        raw_occupation: &'a RawCellOccupationGrid,
         rules: &'a RuleSet,
         interner: &'a StringInterner,
         terrain_object_cells: &'a BTreeMap<(u16, u16), u64>,
     ) -> Self {
         self.entities = Some(entities);
         self.occupancy = Some(occupancy);
+        self.raw_occupation = Some(raw_occupation);
         self.rules = Some(rules);
         self.interner = Some(interner);
         self.terrain_object_cells = Some(terrain_object_cells);
@@ -300,6 +305,7 @@ fn tick_terrain_spawner_one_inner(
         live_object_context(
             ctx.entities,
             ctx.occupancy,
+            ctx.raw_occupation,
             ctx.rules,
             ctx.interner,
             ctx.terrain_object_cells,
@@ -384,6 +390,7 @@ pub(crate) fn tick_terrain_object_ai(
             .with_live_object_context(
                 &sim.substrate.entities,
                 &sim.substrate.occupancy,
+                &sim.substrate.raw_cell_occupation,
                 rules,
                 &sim.interner,
                 &production.terrain_object_cells,
@@ -404,6 +411,7 @@ pub(crate) fn tick_terrain_object_ai(
 fn live_object_context<'a>(
     entities: Option<&'a EntityStore>,
     occupancy: Option<&'a OccupancyGrid>,
+    raw_occupation: Option<&'a RawCellOccupationGrid>,
     rules: Option<&'a RuleSet>,
     interner: Option<&'a StringInterner>,
     terrain_object_cells: Option<&'a BTreeMap<(u16, u16), u64>>,
@@ -411,6 +419,7 @@ fn live_object_context<'a>(
     Some(TiberiumPlacementObjectContext::new(
         entities?,
         occupancy?,
+        raw_occupation?,
         rules?,
         interner?,
         terrain_object_cells?,
@@ -672,12 +681,11 @@ mod tests {
     use crate::rules::ini_parser::IniFile;
     use crate::rules::overlay_types::OverlayTypeRegistry;
     use crate::rules::ruleset::RuleSet;
-    use crate::rules::terrain_rules::TerrainClass;
     use crate::sim::entity_store::EntityStore;
 
     use crate::sim::intern::StringInterner;
 
-    use crate::sim::occupancy::OccupancyGrid;
+    use crate::sim::occupancy::{OccupancyGrid, RawCellOccupationGrid};
     use crate::sim::ore_growth::OreGrowthState;
 
     #[test]
@@ -734,11 +742,12 @@ mod tests {
     const STOCK_FRAME_COUNT: u16 = 22;
     const STOCK_RATE: i32 = 3;
 
+    /// A flat Clear cell that allows tiberium, with the retail `[Clear]` row
+    /// whose Track entry the new ore's Mark admission reads (`0x004834A0`).
     fn resolved_cell() -> ResolvedTerrainCell {
         ResolvedTerrainCell {
             allows_tiberium: true,
-            base_terrain_class: TerrainClass::Clear,
-            ..crate::map::resolved_terrain::test_flat_cell(0, 0)
+            ..crate::map::resolved_terrain::test_retail_clear_cell(0, 0)
         }
     }
 
@@ -782,6 +791,7 @@ mod tests {
         interner: StringInterner,
         entities: EntityStore,
         occupancy: OccupancyGrid,
+        raw_occupation: RawCellOccupationGrid,
         terrain_object_cells: BTreeMap<(u16, u16), u64>,
     }
 
@@ -806,6 +816,7 @@ mod tests {
                 interner: StringInterner::default(),
                 entities: EntityStore::new(),
                 occupancy: OccupancyGrid::new(),
+                raw_occupation: RawCellOccupationGrid::new(),
                 terrain_object_cells: BTreeMap::new(),
             }
         }
@@ -822,6 +833,7 @@ mod tests {
                     .with_live_object_context(
                         &self.entities,
                         &self.occupancy,
+                        &self.raw_occupation,
                         &self.rules,
                         &self.interner,
                         &self.terrain_object_cells,
@@ -850,6 +862,45 @@ mod tests {
         }
         let ini = IniFile::from_str(&ini_text);
         OverlayTypeRegistry::from_ini(&ini, None)
+    }
+
+    /// `CellClass::PlaceTiberium @ 0x0048728C` reveals a tree's new ore into
+    /// `OverlayClass::Mark`, whose ordinary admission
+    /// (`CellClass::CheckCellPassability @ 0x004834A0`, called at `0x005FD00C`
+    /// or for TIB01 at `0x005FD04F`, Track with both ignores) still refuses a
+    /// landed aircraft's bit 0x40.
+    #[test]
+    fn tree_grows_no_ore_under_a_landed_aircraft() {
+        let run = |landed: bool| {
+            let mut world = SpawnWorld::new();
+            if landed {
+                for ry in 0..32 {
+                    for rx in 0..32 {
+                        world.raw_occupation.mark_ground(
+                            rx,
+                            ry,
+                            crate::sim::occupancy::OBJECT_OCCUPATION_BIT,
+                        );
+                    }
+                }
+            }
+            let mut spawners = BTreeMap::new();
+            spawners.insert(
+                (10, 10),
+                spawner(&mut world.interner, "TIBTRE_HALF", 500_000),
+            );
+            let mut rng = SimRng::new(42);
+            for _ in 0..200 {
+                world.tick(&mut spawners, &mut rng);
+            }
+            world.placed()
+        };
+
+        assert!(!run(false).is_empty(), "the open control grows ore");
+        assert!(
+            run(true).is_empty(),
+            "no ore identity under a landed aircraft"
+        );
     }
 
     #[test]

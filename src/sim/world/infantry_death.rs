@@ -599,7 +599,8 @@ mod corpse_tests {
              [RadSite]\nVerses=100%,100%,100%,50%,10%,10%,0%,0%,0%,100%,100%\n\
              InfDeath=7\nRadiation=yes\n\
              [Radiation]\nRadDurationMultiple=1\nRadApplicationDelay=16\nRadLevelMax=500\n\
-             RadLevelDelay=90\nRadLevelFactor=.2\nRadSiteWarhead=RadSite\n",
+             RadLevelDelay=90\nRadLevelFactor=.2\nRadSiteWarhead=RadSite\n\
+             [General]\nInfantryNuked=NUKEDIE\n",
         );
         let art = IniFile::from_str(&format!(
             "{}\n[NUKEDIE]\nEnd=20\n",

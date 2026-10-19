@@ -561,12 +561,15 @@ fn render_pcx_entry(assets: &AssetManager, file_name: &str) -> Option<RenderedLo
     })
 }
 
+/// Loading-screen palettes come from ConvertClass__BuildFromPaletteFile
+/// `0x0072ADE0` and the meter base from Init_Game's TEMPERAT.PAL loop
+/// (`0x0052BC6A..0x0052BCB9`); both convert like every other palette load.
 fn load_named_ui_palette(assets: &AssetManager, name: &str) -> Option<Palette> {
     let Some(bytes) = assets.get_ref(name) else {
         log::warn!("Missing loading palette {name}");
         return None;
     };
-    Palette::from_bytes_gamemd_ui(bytes)
+    Palette::from_bytes(bytes)
         .map_err(|err| {
             log::warn!("Could not parse loading palette {name}: {err:#}");
             err
@@ -613,7 +616,7 @@ fn render_shp_entry(
         return None;
     }
     let frame_rgba = shp
-        .frame_to_rgba_ui(frame, palette)
+        .frame_to_rgba(frame, palette)
         .map_err(|err| {
             log::warn!("Could not decode loading SHP {file_name} frame {frame}: {err:#}");
             err
@@ -784,19 +787,20 @@ mod tests {
 
     #[test]
     fn progress_palette_replaces_only_the_house_color_band() {
-        let mut colors = [Color::rgb(3, 4, 5); 256];
-        colors[16] = Color::rgb(7, 8, 9);
-        colors[31] = Color::rgb(10, 11, 12);
-        let palette = Palette { colors };
+        let palette = Palette::from_rgb(|index| match index {
+            16 => [7, 8, 9],
+            31 => [10, 11, 12],
+            _ => [3, 4, 5],
+        });
         let ramp = std::array::from_fn(|index| {
             Color::rgb(index as u8, (index as u8) + 32, (index as u8) + 64)
         });
 
         let remapped = progress_palette_with_player_ramp(&palette, &ramp);
 
-        assert_eq!(&remapped.colors[16..32], &ramp);
-        assert_eq!(remapped.colors[15], palette.colors[15]);
-        assert_eq!(remapped.colors[32], palette.colors[32]);
+        assert_eq!(&remapped.colors()[16..32], &ramp);
+        assert_eq!(remapped.color(15), palette.color(15));
+        assert_eq!(remapped.color(32), palette.color(32));
     }
 
     /// The meter and the map-preview markers both take the house scheme's convert, so
@@ -808,7 +812,7 @@ mod tests {
             return;
         };
         let load = |name: &str| {
-            Palette::from_bytes_gamemd_ui(
+            Palette::from_bytes(
                 assets
                     .get_ref(name)
                     .unwrap_or_else(|| panic!("retail {name}")),
@@ -819,8 +823,8 @@ mod tests {
         let ui = load("MPLS.PAL");
 
         let outside_band = (0..16)
-            .chain(32..256)
-            .filter(|index| temperat.colors[*index] != ui.colors[*index])
+            .chain(32..=255)
+            .filter(|index| temperat.color(*index) != ui.color(*index))
             .count();
         assert!(
             outside_band > 0,
@@ -1099,7 +1103,7 @@ mod tests {
             assets.get_ref("MPLS.PAL").is_some(),
             "MPLS.PAL should resolve from configured RA2 install"
         );
-        let marker_palette = crate::assets::pal_file::Palette::from_bytes_gamemd_ui(
+        let marker_palette = crate::assets::pal_file::Palette::from_bytes(
             assets.get_ref("TEMPERAT.PAL").expect("TEMPERAT palette"),
         )
         .expect("TEMPERAT palette should decode");
@@ -1124,7 +1128,7 @@ mod tests {
             let palette_bytes = assets
                 .get_ref(manifest.palette_name)
                 .unwrap_or_else(|| panic!("{variant:?} loading palette should resolve"));
-            let palette = crate::assets::pal_file::Palette::from_bytes_gamemd_ui(palette_bytes)
+            let palette = crate::assets::pal_file::Palette::from_bytes(palette_bytes)
                 .unwrap_or_else(|err| panic!("{variant:?} loading palette should decode: {err:#}"));
             assert!(
                 assets

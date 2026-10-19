@@ -1,37 +1,71 @@
-//! Map trigger parsing.
+//! Map trigger records.
 //!
-//! `[Triggers]` defines the raw trigger records that later connect tags,
-//! events, and actions into actual scenario behavior. We preserve the raw
-//! fields and also expose the key structured values needed by runtime logic.
-//! Format per ModEnc for RA2/YR maps:
-//! `ID=HOUSE,<TRIGGER>,NAME,A,B,C,D,E`
+//! `[Triggers]` holds each TriggerType header. TriggerType::ReadINI
+//! (`0x00727240`) reads it by the Type's own ID through the exact-case INI
+//! lookup, so records are keyed by their exact key and the runtime reader in
+//! `sim::trigger_runtime` takes each one by that ID.
+//! Format: `ID=HOUSE,<TRIGGER>,NAME,DISABLED,EASY,MEDIUM,HARD,TRANSFER`.
 
 use std::collections::HashMap;
 
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ini_value::{crt_atoi, strtok, truncate_native_bytes};
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct TriggerDifficulty {
-    pub easy: bool,
-    pub medium: bool,
-    pub hard: bool,
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct TriggerDifficulty {
+    easy: bool,
+    medium: bool,
+    hard: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// One `[Triggers]` header as TriggerType::ReadINI takes it.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MapTrigger {
-    pub id: String,
-    pub fields: Vec<String>,
-    pub owner: Option<String>,
-    pub linked_trigger_id: Option<String>,
-    pub name: Option<String>,
-    pub enabled: bool,
-    pub difficulty: TriggerDifficulty,
+    id: String,
+    fields: Vec<String>,
+    owner: Option<String>,
+    linked_trigger_id: Option<String>,
+    name: Option<String>,
+    enabled: bool,
+    difficulty: TriggerDifficulty,
+}
+
+impl MapTrigger {
+    /// Token 1, which `HouseTypeClass::FindIndex` (`0x007272B0`) resolves.
+    pub fn owner(&self) -> Option<&str> {
+        self.owner.as_deref()
+    }
+
+    /// Token 2 as written, absent for `<none>` or `none` (`0x007272E4`,
+    /// `0x0072730C`); the caller's factory matches it ignoring case.
+    pub fn linked_trigger_id(&self) -> Option<&str> {
+        self.linked_trigger_id.as_deref()
+    }
+
+    /// TriggerType+9F: token 4 is DISABLED.
+    pub fn enabled(&self) -> bool {
+        self.enabled
+    }
+
+    /// TriggerType+9C/9D/9E in that order: easy, medium, hard.
+    pub fn difficulty(&self) -> [bool; 3] {
+        [
+            self.difficulty.easy,
+            self.difficulty.medium,
+            self.difficulty.hard,
+        ]
+    }
+
+    /// Token 8 (`0x00727475..0x0072749B`): a nonzero `atoi` sets
+    /// TriggerType+A0, which a zero token never clears.
+    pub fn transfer_on_capture(&self) -> bool {
+        self.fields.get(7).is_some_and(|value| crt_atoi(value) != 0)
+    }
 }
 
 pub type TriggerMap = HashMap<String, MapTrigger>;
 
-/// Parse `[Triggers]` into an id -> raw trigger record map.
+/// Parse `[Triggers]` into exact-key header records.
 pub fn parse_triggers(ini: &IniFile) -> TriggerMap {
     let Some(section) = ini.section("Triggers") else {
         return HashMap::new();
@@ -39,15 +73,10 @@ pub fn parse_triggers(ini: &IniFile) -> TriggerMap {
 
     let mut triggers: TriggerMap = HashMap::new();
     for key in section.keys() {
-        let id = key.trim();
-        if id.is_empty() {
-            continue;
-        }
-        let id = id.to_ascii_uppercase();
         // TriggerType::ReadINI727274 uses a 512-byte ReadString buffer.
         let value = section.read_string(key, "", 512);
         if !value.is_empty() {
-            triggers.insert(id.clone(), parse_record(id, &value));
+            triggers.insert(key.to_string(), parse_record(key.to_string(), &value));
         }
     }
 
@@ -96,7 +125,7 @@ fn parse_linked_trigger(fields: &[&str]) -> Option<String> {
     if value.eq_ignore_ascii_case("<none>") || value.eq_ignore_ascii_case("none") {
         None
     } else {
-        Some(value.to_ascii_uppercase())
+        Some(value.to_string())
     }
 }
 
@@ -105,9 +134,6 @@ fn parse_name(fields: &[&str]) -> Option<String> {
         .get(2)
         .map(|name| truncate_native_bytes(name, 0x30).to_string())
 }
-
-// TriggerType+0xA0 retains token8's unrelated boolean in native storage.
-// Repetition belongs to TagType+0x9C and has no Trigger projection here.
 
 #[cfg(test)]
 mod tests {
@@ -177,7 +203,7 @@ mod tests {
         assert_eq!(trigger.name.as_deref(), Some(&name[..0x30]));
         assert_eq!(trigger.fields[7], "02");
         let linked = parse_record("T".to_string(), "Neutral, next,x");
-        assert_eq!(linked.linked_trigger_id.as_deref(), Some(" NEXT"));
+        assert_eq!(linked.linked_trigger_id(), Some(" next"));
     }
 
     #[test]

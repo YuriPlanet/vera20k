@@ -8,7 +8,7 @@ use crate::map::map_file::MapFile;
 use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
 use crate::sim::{snapshot::GameSnapshot, world::TickLane};
 
-fn fixture(threshold: i32, target_action: bool) -> (Simulation, MapFile) {
+fn fixture(threshold: i32, target_action: bool) -> Simulation {
     let repeat = if target_action { 0 } else { 2 };
     // Boundary controls keep both independent predicates registered. The
     // saved-frame scenario selects just Below's one-shot continuation.
@@ -57,7 +57,7 @@ fn fixture(threshold: i32, target_action: bool) -> (Simulation, MapFile) {
         32,
         crate::map::resolved_terrain::test_flat_cell,
     ));
-    (sim, map)
+    sim
 }
 
 #[test]
@@ -73,7 +73,7 @@ fn ambient_events_poll_current_signed_scalar_and_include_equality() {
         (i32::MAX, i32::MIN, false, true),
         (i32::MIN, i32::MIN, true, true),
     ] {
-        let (mut sim, map) = fixture(threshold, false);
+        let mut sim = fixture(threshold, false);
         // Different normal and target values expose accidental profile reads.
         sim.session.lighting.normal.ambient_percent = 777;
         sim.session.lighting.target_ambient = -888;
@@ -84,15 +84,7 @@ fn ambient_events_poll_current_signed_scalar_and_include_equality() {
             sim.scenario_rng.native_state_hex(),
             sim.mapgen_rng.native_state_hex(),
         );
-        sim.advance_triggers(
-            TriggerInputs {
-                events: &map.events,
-                actions: &map.actions,
-                rules: None,
-            },
-            None,
-            FrameEffects::default(),
-        );
+        sim.advance_triggers(None, None, FrameEffects::default());
         assert_eq!(
             sim.trigger_local_is_set_for_test(0),
             below,
@@ -117,7 +109,7 @@ fn ambient_events_poll_current_signed_scalar_and_include_equality() {
 
 #[test]
 fn saved_pending_ambient_event_fires_after_the_production_frame_fade() {
-    let (mut original, map) = fixture(90, true);
+    let mut original = fixture(90, true);
     let rules = RuleSet::from_ini(&IniFile::empty()).unwrap();
     let first = original
         .advance_app_frame(
@@ -126,11 +118,6 @@ fn saved_pending_ambient_event_fires_after_the_production_frame_fade() {
             None,
             67,
             TickLane::Ordinary,
-            Some(TriggerInputs {
-                events: &map.events,
-                actions: &map.actions,
-                rules: Some(&rules),
-            }),
             FrameEffects::default(),
         )
         .unwrap();
@@ -157,11 +144,6 @@ fn saved_pending_ambient_event_fires_after_the_production_frame_fade() {
                 None,
                 67,
                 TickLane::Ordinary,
-                Some(TriggerInputs {
-                    events: &map.events,
-                    actions: &map.actions,
-                    rules: Some(&rules),
-                }),
                 FrameEffects::default(),
             )
             .unwrap();

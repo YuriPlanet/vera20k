@@ -97,8 +97,8 @@ fn dispatch(
     let entry = crate::map::actions::parse_actions(&ini)
         .remove("SPEECH")
         .unwrap()
-        .entries
-        .remove(0);
+        .entries()[0]
+        .clone();
     let action = sim
         .trigger_runtime
         .definitions

@@ -224,11 +224,7 @@ impl Simulation {
             return false;
         };
         let object = match actor.navigation.nav_com() {
-            Some(
-                NavTargetRef::Entity { id: object }
-                | NavTargetRef::Object { id: object }
-                | NavTargetRef::Building { id: object },
-            ) => object,
+            Some(NavTargetRef::Object { id: object }) => object,
             _ => return false,
         };
         if !self.substrate.entities.get(object).is_some_and(|nav| {

@@ -704,6 +704,15 @@ fn order_voice_key(command: &Command) -> Option<&'static str> {
         }
         Command::Attack { .. } | Command::ForceAttackCell { .. } => Some("VoiceAttack"),
         Command::HarvestCell { .. } => Some("VoiceHarvest"),
+        Command::MegaMission {
+            mission: crate::sim::mission::MissionType::Enter,
+            ..
+        } => Some("VoiceEnter"),
+        // Eaten9 takes QueueMegaMission6FFD42's default voice branch.
+        Command::MegaMission {
+            mission: crate::sim::mission::MissionType::Eaten,
+            ..
+        } => Some("VoiceSpecialAttack"),
         Command::CaptureBuilding { .. } => Some("VoiceCapture"),
         Command::MinerReturn { .. }
         | Command::EnterTransport { .. }
@@ -731,6 +740,7 @@ fn order_voice_key(command: &Command) -> Option<&'static str> {
 fn command_actor_id(command: &Command) -> Option<u64> {
     match command {
         Command::Move { entity_id, .. }
+        | Command::MegaMission { entity_id, .. }
         | Command::MoveToObject { entity_id, .. }
         | Command::AttackMove { entity_id, .. }
         | Command::Guard { entity_id, .. }
@@ -2510,21 +2520,32 @@ fn engineer_capture_orders(
             return true;
         };
         use crate::sim::world::EngineerBuildingAction;
-        let admitted = matches!(
-            action,
-            EngineerBuildingAction::Capture
-                | EngineerBuildingAction::Damage
-                | EngineerBuildingAction::Repair(true)
-        );
-        //Hospital/grinder Enter producers still require their own entry
-        //mechanism. They must not silently enqueue ordinary capture/repair.
         consumed = true;
         // Foot4D7716 calls Infantry+A0/Techno700C40 before enqueue.
-        if admitted && sim.techno_player_controllable(id, rules) {
-            orders.push(Command::CaptureBuilding {
-                engineer_id: id,
-                target_building_id: hover.stable_id,
-            });
+        if sim.techno_player_controllable(id, rules) {
+            match action {
+                EngineerBuildingAction::Capture
+                | EngineerBuildingAction::Damage
+                | EngineerBuildingAction::Repair(true) => orders.push(Command::CaptureBuilding {
+                    engineer_id: id,
+                    target_building_id: hover.stable_id,
+                }),
+                // Foot clicked actions3/11, 4D76F6/4D7761: NULL Target,
+                // building Destination. Event4 and Event36 share these tokens.
+                EngineerBuildingAction::EnterHospital | EngineerBuildingAction::EnterGrinder => {
+                    orders.push(Command::MegaMission {
+                        entity_id: id,
+                        mission: if action == EngineerBuildingAction::EnterHospital {
+                            crate::sim::mission::MissionType::Enter
+                        } else {
+                            crate::sim::mission::MissionType::Eaten
+                        },
+                        target: None,
+                        destination: Some(TargetKind::Entity(hover.stable_id)),
+                    });
+                }
+                EngineerBuildingAction::Repair(false) => {}
+            }
         }
         false
     });
@@ -5493,3 +5514,7 @@ mod allied_object_action_tests;
 #[cfg(test)]
 #[path = "context_order_cursor_contract_tests.rs"]
 mod cursor_contract_tests;
+
+#[cfg(test)]
+#[path = "engineer_special_entry_tests.rs"]
+mod engineer_special_entry_tests;

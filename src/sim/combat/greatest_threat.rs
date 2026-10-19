@@ -1459,12 +1459,10 @@ fn scanner_mask<'r>(
                 armed: is_armed_from_facts(attacker_obj, facts),
                 infiltrate: attacker_obj.infiltrate,
                 vehicle_thief: attacker_obj.vehicle_thief,
-                c4: attacker_obj.c4
-                    || super::veterancy::has_weapon_ability(
-                        super::veterancy::rank_from_u16(attacker.veterancy),
-                        attacker_obj,
-                        crate::rules::object_type::Ability::C4,
-                    ),
+                c4: super::veterancy::holds_c4(
+                    super::veterancy::rank_from_u16(attacker.veterancy),
+                    attacker_obj,
+                ),
                 class_bits,
                 primary_warhead_spares_medium_and_wood: || {
                     primary_warhead_spares_medium_and_wood(rules, attacker_obj, attacker.veterancy)

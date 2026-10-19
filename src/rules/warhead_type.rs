@@ -255,7 +255,9 @@ pub struct WarheadType {
     ///
     /// gamemd-derived: `WarheadTypeClass::ReadINI` "DebrisTypes" @ `0x0075DAF5`
     /// -> warhead `+0x18C`, resolved through the `VoxelAnimTypeClass` name
-    /// lookup at `0x0074B960`. These are voxel-anim types, NOT AnimTypes.
+    /// lookup at `0x0074B960`, which answers null for `none` and `<none>`.
+    /// These are voxel-anim types, NOT AnimTypes. Only the ordered Rules
+    /// processor reads the key; `RuleSet` publishes its list.
     ///
     /// Stock Smashing (Brute Smash/SmashE) and TRexWH author MinDebris1 /
     /// MaxDebris3, with no typed entries: Bullet469D06..469EBA uses the
@@ -300,11 +302,6 @@ impl WarheadType {
         let percent_at_max_native = section.read_float("PercentAtMax", 1.0);
         let percent_at_max_f64 = f64::from(percent_at_max_native);
         let delay_kill_at_max_f64 = f64::from(section.read_float("DelayKillAtMax", 1.0));
-
-        let debris_types: Vec<String> = section
-            .read_list("DebrisTypes", 0x80)
-            .map(|tokens| tokens.into_iter().map(str::to_owned).collect())
-            .unwrap_or_default();
 
         // The IntVector reader (`0x0075DD22` -> `0x00475D70`).
         let debris_maximums: Vec<i32> = section.read_int_list("DebrisMaximums").unwrap_or_default();
@@ -381,7 +378,7 @@ impl WarheadType {
             em_effect: false,
 
             // List fields
-            debris_types,
+            debris_types: Vec::new(),
             debris_maximums,
             min_debris,
             max_debris,
@@ -590,14 +587,11 @@ mod tests {
         // `WarheadTypeClass::ReadINI` never looks at "Debris" — that string's
         // only reader is `TiberiumClass::ReadINI_Fields @ 0x00721B4F`. The
         // warhead key is "DebrisTypes" @ 0x0075DAF5.
-        let ini = IniFile::from_str(
-            "[W]
-Debris=CRYSTAL1
-DebrisTypes=TIRE
-",
-        );
-        let wh = WarheadType::from_ini_section("W", ini.section("W").unwrap());
-        assert_eq!(wh.debris_types, vec!["TIRE".to_string()]);
+        let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(
+            "[Warheads]\n0=W\n[W]\nDebris=CRYSTAL1\nDebrisTypes=TIRE\n",
+        ))
+        .unwrap();
+        assert_eq!(rules.warhead("W").unwrap().debris_types, ["TIRE"]);
     }
 
     #[test]

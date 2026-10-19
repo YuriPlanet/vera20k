@@ -235,6 +235,18 @@ pub(super) fn resolve_receive_damage(
     if target.category() == EntityCategory::Structure && target.health.current() == 0 {
         return None;
     }
+    // Residual: a null warhead (the empty name) finds no WarheadType, so the
+    // hit is dropped. Native passes it with IgnoreDefenses: Object 5F5390
+    // skips 489180, Building 442230 reads it only in its NowYellow/NowRed
+    // Sparky loop, Unit 737C90 and Aircraft 4165C0 never read it, and Foot
+    // 4D7330 and Techno 701BF6 test it, so the target dies; an Infantry death
+    // reads its InfDeath (518369) and crashes. Only custom Rules without
+    // `[CombatDamage] C4Warhead=`/`CrushWarhead=` reach it (retail and all
+    // nine modes set both): the C4 detonation (world_orders), the Fly/Jumpjet
+    // self-destruct (`receive_own_health_c4`), dominated insignificant units
+    // (house_strategy) and the Lift drop crush (locomotor_lift). The tree
+    // death's C4 area damage matches native, which returns on the null
+    // warhead (DamageArea 489280 at 4892D7).
     let warhead = rules.warhead(interner.resolve(event.warhead_ref))?;
     let target_type = interner.object_type(target.type_ref(), rules);
     let source = (event.attacker_id != RAD_NO_ATTACKER)

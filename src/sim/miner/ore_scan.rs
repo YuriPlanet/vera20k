@@ -45,7 +45,7 @@ pub(crate) fn cell_is_tiberium_land(
     if let Some(terrain) = sim.resolved_terrain.as_ref() {
         return terrain
             .cell(cell.0, cell.1)
-            .is_some_and(|cell| cell.land_type == LandType::Tiberium.as_index());
+            .is_some_and(|cell| cell.land_type() == LandType::Tiberium.as_index());
     }
     let overlay = sim
         .overlay_grid

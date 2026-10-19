@@ -245,7 +245,7 @@ fn ordered_country_side_name_lookup_matches_original_signed_controls() {
         let token = row["token"].as_str().unwrap();
         let expected = row["result"].as_i64().unwrap() as i32;
         assert_eq!(processor.country_index_of_name(token), expected, "{row}");
-        let (_, trace, _, _, _, _) = processor.finish();
+        let (_, trace, _) = processor.finish();
         let processed = RulesLayerStack::new(IniFile::empty())
             .process_with_fixed_art_and_registry_state(
                 &IniFile::empty(),

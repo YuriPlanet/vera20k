@@ -54,25 +54,12 @@
 //! global-registry pick, signed ftol ties, latch and reissue, with admission
 //! answers supplied; the production retail test covers the real INI reader.
 //!
+//! A Bio Reactor seek's entry runs as a player's Enter order does: the
+//! class setter's Enter arm makes the absorber the Foot's radio contact or
+//! its pending entry, Mission_Enter (`0x004D9290`) probes it each dispatch,
+//! and the class PerCellProcess takes the Foot in (`sim::movement::per_cell`).
+//!
 //! RESIDUALS:
-//! - An absorber entry runs through VERA's Boarding adapter
-//!   (`passenger::tick_passenger_system`), as a player's Enter order does:
-//!   the class setter's Enter arm (radio HELLO and DOCKING,
-//!   `0x0051AC25..0x0051AD17`) and InfantryClass::PerCellProcess's DOCK_NOW
-//!   to that contact (`0x0051A298..0x0051A2A7`) are not represented. The
-//!   reissue test below never finds the absorber as a radio contact; while
-//!   the adapter walks the Foot, Mission_Enter (`0x004D9290`) is not run, so
-//!   its DOCKING probe and its Rate epilogue draw (RandomRanged(0, 2) on the
-//!   Scenario stream) are skipped each dispatch; and a Foot that arrives at
-//!   an absorber filled meanwhile is turned away, where DOCK_NOW, which an
-//!   absorber answers ROGER, would let it in. Mission_Enter then idles it
-//!   and its Guard head seeks again. Trigger: every seek. Frequency: AI Yuri
-//!   games with Bio Reactors.
-//! - A Foot that is itself a transport or a passenger is not handed to the
-//!   adapter, which keeps one role per object; it takes the Enter order and
-//!   the destination only. Trigger: a transport seeking a `UnitAbsorb=`
-//!   building (retail has none), or an open-topped rider whose Guard head
-//!   runs with the latch set.
 //! - Mission_Unload's eject clears the latch of a human house's passenger
 //!   (`0x0044DBEA`); the absorber Unload path calls
 //!   [`Simulation::clear_human_absorber_seek_on_unload`].
@@ -221,11 +208,7 @@ fn pick_nearest_admitted(
 /// (`0x004DFDBA..0x004DFDD2`) and GarrisonStructure
 /// (`0x004DFF0D..0x004DFF18`): none while NavCom is the pick on Capture.
 fn garrison_seek_reissues(pick: u64, nav_com: Option<NavTargetRef>, mission: MissionId) -> bool {
-    let heading = matches!(
-        nav_com,
-        Some(NavTargetRef::Entity { id } | NavTargetRef::Object { id } | NavTargetRef::Building { id })
-            if id == pick
-    );
+    let heading = nav_com == Some(NavTargetRef::object(pick));
     !(heading && mission == MissionId::from_known(MissionType::Capture))
 }
 
@@ -294,9 +277,7 @@ impl Simulation {
         ) else {
             return false;
         };
-        let nav_matches = matches!(foot.navigation.nav_com(),
-            Some(NavTargetRef::Object { id } | NavTargetRef::Building { id }
-                | NavTargetRef::Entity { id }) if id == building_id);
+        let nav_matches = foot.navigation.nav_com() == Some(NavTargetRef::object(building_id));
         if !nav_matches && foot.attack_target.target() != Some(TargetKind::Entity(building_id)) {
             return false;
         }
@@ -534,11 +515,6 @@ impl Simulation {
             registry,
             effects,
         );
-        // The Boarding adapter carries the entry to the absorber (module
-        // residual).
-        if let Some(foot) = self.substrate.entities.get_mut(id) {
-            crate::sim::passenger::begin_boarding(foot, best);
-        }
         true
     }
 

@@ -2,7 +2,7 @@
 //! The JSON contains native execution, never expected pixels made by Rust.
 
 use super::*;
-use crate::sim::components::DriveCoord;
+use crate::sim::components::{DriveCoord, NavTargetRef};
 use serde_json::Value;
 
 fn native() -> &'static Value {
@@ -776,7 +776,7 @@ fn physical_palette_matches_original_convert_middle_row() {
     );
     let convert = crate::render::palette_light::PaletteLight::plain(53, 1000);
     let actual: Vec<_> = palette
-        .colors
+        .colors()
         .iter()
         .enumerate()
         .flat_map(|(index, color)| {

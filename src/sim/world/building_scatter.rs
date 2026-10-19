@@ -62,8 +62,10 @@ impl Simulation {
             if !e.lifecycle.object_alive() || first_building != Some(building) {
                 continue;
             }
-            if e.navigation.nav_com().is_some_and(|target| !matches!(target,
-                NavTargetRef::Entity{id} | NavTargetRef::Object{id} | NavTargetRef::Building{id} if id == building)) {
+            if e.navigation
+                .nav_com()
+                .is_some_and(|target| target != NavTargetRef::object(building))
+            {
                 continue;
             }
             changed |= self

@@ -236,7 +236,7 @@ pub fn run(
             load.name, load.reason
         ));
     }
-    let render_palette = terrain_palette(load.palette);
+    let render_palette = load.palette;
 
     let cols = tmp.template_width.max(1) as usize;
     let tile_count = tmp.tiles.len();
@@ -449,7 +449,6 @@ pub fn run(
         mode,
         &choice.name,
         &choice.reason,
-        &choice.alpha_policy,
     );
     let sheet = assemble_sheet(&header, &sheet_art);
     let sheet_path = dir.join(sheet_png_name(&sanitised));
@@ -478,24 +477,6 @@ pub fn run(
             index: Some(index_path.display().to_string()),
         },
     })
-}
-
-/// Prepare a palette so the parser's diamond mask survives.
-///
-/// `TmpFile::tile_to_rgba` keys the mask off index 0 carrying alpha 0: inside
-/// the diamond it forces that pixel opaque (which is what stops black grid lines
-/// appearing at every cell boundary), outside it leaves it transparent. The
-/// gamemd-UI palette conversion assigns no alpha at all — and theater palettes
-/// are exactly the ones that take that conversion — so with a real terrain
-/// palette the test never fires and every tile renders as an opaque rectangle
-/// with its diamond silhouette gone.
-///
-/// Restoring the flag on index 0 makes the existing rule reachable. The rule
-/// itself is untouched, and index 0's colour is preserved for the pixels inside
-/// the diamond that legitimately use it.
-fn terrain_palette(mut palette: Palette) -> Palette {
-    palette.colors[0].a = 0;
-    palette
 }
 
 /// Decode one tile into an RGBA buffer, or `None` when the pixel data and the
@@ -621,7 +602,6 @@ fn sheet_header(
     mode: &str,
     palette_name: &str,
     palette_reason: &str,
-    alpha_policy: &str,
 ) -> Vec<String> {
     vec![
         glyphable(&format!("{name}   {source_archive}")),
@@ -632,9 +612,7 @@ fn sheet_header(
         glyphable(&format!(
             "drawn {drawn}   composite {composite_w}x{composite_h}   scale {scale}x   mode {mode}"
         )),
-        glyphable(&format!(
-            "palette {palette_name}   {palette_reason}   alpha {alpha_policy}"
-        )),
+        glyphable(&format!("palette {palette_name}   {palette_reason}")),
         glyphable("captions are t index  h height  r ramp type"),
     ]
 }
@@ -1124,7 +1102,6 @@ mod tests {
             MODE_ISOMETRIC,
             "isotem.pal",
             "archive-map:isotemp",
-            "gamemd_ui",
         ) {
             assert!(line.chars().all(is_drawable), "header line {line:?}");
         }
@@ -1235,26 +1212,6 @@ mod tests {
         let fitted = fit_scale(4000, 4000, 16).unwrap();
         assert!((MIN_SCALE..16).contains(&fitted), "{fitted}");
         assert_eq!(fit_scale(60_000, 60_000, 1), None);
-    }
-
-    #[test]
-    fn terrain_palette_restores_the_diamond_mask_flag() {
-        // The gamemd-UI conversion leaves index 0 opaque, which would erase the
-        // diamond silhouette the TMP reader keys off it.
-        let mut bytes = vec![0u8; 768];
-        bytes[0..3].copy_from_slice(&[10, 20, 30]);
-        let ui = Palette::from_bytes_gamemd_ui(&bytes).expect("palette");
-        assert_eq!(ui.colors[0].a, 255);
-
-        let fixed = terrain_palette(ui);
-        assert_eq!(fixed.colors[0].a, 0);
-        // Index 0's colour survives: pixels inside the diamond still use it.
-        assert_eq!(
-            (fixed.colors[0].r, fixed.colors[0].g, fixed.colors[0].b),
-            (40, 80, 120)
-        );
-        // Every other entry is untouched.
-        assert_eq!(fixed.colors[1].a, 255);
     }
 
     #[test]

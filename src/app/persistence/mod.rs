@@ -562,7 +562,7 @@ mod tests {
     use crate::map::overlay::OverlayEntry;
     use crate::map::resolved_terrain::{DynamicTerrainCellState, ResolvedTerrainCell};
     use crate::rules::ini_parser::IniFile;
-    use crate::rules::terrain_rules::{SpeedCostProfile, TerrainClass};
+    use crate::rules::terrain_rules::SpeedCostProfile;
     use crate::sim::overlay_grid::OverlayGrid;
     use crate::sim::replay::{ReplayHeader, ReplayLog};
     use crate::sim::world::{Simulation, SimulationRngState};
@@ -798,7 +798,6 @@ mod tests {
             source_tile_index: tile_index,
             final_tile_index: tile_index,
             zone_type: crate::map::resolved_terrain::zone_class::GROUND,
-            base_terrain_class: TerrainClass::Clear,
             ..crate::map::resolved_terrain::test_flat_cell(0, 0)
         }
     }

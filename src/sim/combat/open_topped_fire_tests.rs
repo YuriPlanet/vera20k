@@ -111,7 +111,7 @@ fn retail_dustbowl_battle_fortress_boarded(riders: u16) -> Fortress {
 }
 
 /// Exercise the player's EnterTransport, class setter, Walk/Teleport arrival
-/// and OpenTopped registration, rather than fabricating a Boarding role.
+/// and OpenTopped registration, rather than fabricating cargo.
 fn board_infantry(fortress: &mut Fortress, kind: &str) -> u64 {
     let (x, y) = fortress.cell;
     let crate::sim::runtime::SimRuntime {

@@ -44,7 +44,10 @@ impl SplashArt {
 // (source record D:\ra2mdpost\Init.CPP; called from Init_Game at 0x0052ba60):
 // load GLSMD.PAL, then GLSSMD.SHP at exactly 640 pixels wide or GLSLMD.SHP at
 // every other width. If the optional SHP is unavailable, native still draws
-// its text, presents the surface, and arms the 5-second deadline.
+// its text, presents the surface, and arms the 5-second deadline. The palette
+// gets the shared `raw << 2` conversion (`Palette::from_bytes`) and a
+// ConvertClass, and CC_Draw_Shape SHAPE_NORMAL skips only index 0
+// (`ShpFile::frame_to_rgba`).
 const YR_SPLASH: SplashArt = SplashArt {
     palette: "GLSMD.PAL",
     small: "GLSSMD.SHP",
@@ -273,13 +276,13 @@ fn compose_startup_splash(
         assets.load_file_from_mix(art.shape_for_width(client_width as u32)),
     ) {
         match (
-            Palette::from_bytes_gamemd_ui(palette_bytes),
+            Palette::from_bytes(palette_bytes),
             ShpFile::from_bytes(&shp_load.bytes),
         ) {
             (Ok(palette), Ok(shp)) => {
                 if let Some(frame) = shp.frames.first() {
                     let frame_rgba = shp
-                        .frame_to_rgba_ui(0, &palette)
+                        .frame_to_rgba(0, &palette)
                         .context("decode startup splash SHP frame 0")?;
                     let origin_x = centered_offset(client_width as i32, shp.width as i32)
                         + frame.frame_x as i32;
@@ -466,17 +469,16 @@ mod tests {
         height: usize,
     ) {
         let shape_name = art.shape_for_width(width as u32);
-        let palette = Palette::from_bytes_gamemd_ui(
-            assets.get_ref(art.palette).expect("retail splash palette"),
-        )
-        .expect("parse retail splash palette");
+        let palette =
+            Palette::from_bytes(assets.get_ref(art.palette).expect("retail splash palette"))
+                .expect("parse retail splash palette");
         let loaded = assets
             .load_file_from_mix(shape_name)
             .expect("retail splash shape");
         let shape = ShpFile::from_bytes(&loaded.bytes).expect("parse retail splash shape");
         let frame = shape.frames.first().expect("splash frame 0");
         let frame_rgba = shape
-            .frame_to_rgba_ui(0, &palette)
+            .frame_to_rgba(0, &palette)
             .expect("decode retail splash frame 0");
         let composed = compose_startup_splash(assets, None, font, width, height, art)
             .expect("compose production startup splash");

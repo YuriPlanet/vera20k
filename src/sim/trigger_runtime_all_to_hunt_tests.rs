@@ -6,7 +6,6 @@ use crate::map::entities::EntityCategory;
 use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
 use crate::sim::{combat::Health, game_entity::GameEntity, house_state::HouseState};
 use serde_json::Value;
-use std::collections::HashMap;
 
 fn corpus() -> &'static Value {
     let result = crate::test_fixture::json("tools/spatial_oracle/trigger_all_to_hunt.json");
@@ -281,11 +280,10 @@ fn all_to_hunt_retail_all06_elapsed_enable_chain_releases_existing_gattling_team
         body.push_str(&format!("[{section}]\n"));
         for (key, value) in map.ini.section(section).unwrap().raw_entries() {
             if (section == "Tags"
-                && map.tags.get(key).is_some_and(|tag| {
-                    tag.fields
-                        .get(2)
-                        .is_some_and(|id| chain.contains(&id.as_str()))
-                }))
+                && map
+                    .tags
+                    .get(key)
+                    .is_some_and(|tag| tag.trigger().is_some_and(|id| chain.contains(&id))))
                 || (section != "Tags" && chain.contains(&key))
             {
                 body.push_str(&format!("{key}={value}\n"));
@@ -378,7 +376,7 @@ fn all_to_hunt_retail_all06_elapsed_enable_chain_releases_existing_gattling_team
     assert!(!enabled(&sim, chain[0]) && !enabled(&sim, chain[1]));
     // Execute the actual Wave4 predecessor's final Enable action, supplying
     // only that already-arrived-wave precondition, excluding its other arms.
-    let entry = map.actions["095EB2AC"].entries.last().unwrap().clone();
+    let entry = map.actions["095EB2AC"].entries().last().unwrap().clone();
     let action = sim
         .trigger_runtime
         .definitions
@@ -398,15 +396,7 @@ fn all_to_hunt_retail_all06_elapsed_enable_chain_releases_existing_gattling_team
     assert!(enabled(&sim, chain[0]));
     for frame in [0, 3599, 3600, 4049, 4050] {
         sim.session.binary_frame = frame;
-        sim.advance_triggers(
-            TriggerInputs {
-                events: &HashMap::new(),
-                actions: &HashMap::new(),
-                rules: Some(&rules),
-            },
-            None,
-            FrameEffects::default(),
-        );
+        sim.advance_triggers(Some(&rules), None, FrameEffects::default());
         for &id in &actors {
             assert_eq!(
                 sim.team_script_vm.team_for_member(id).is_none(),

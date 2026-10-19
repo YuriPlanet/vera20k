@@ -304,7 +304,7 @@ fn naval_rally_fast_path_cell(
     );
 
     let terrain = resolved_terrain?;
-    if terrain.cell(candidate.0, candidate.1)?.land_type
+    if terrain.cell(candidate.0, candidate.1)?.land_type()
         != crate::rules::terrain_rules::LandType::Water.as_index()
     {
         return None;
@@ -341,11 +341,11 @@ fn naval_rally_walk_candidate(
     rally: (u16, u16),
     occupancy: &OccupancyGrid,
 ) -> (u16, u16) {
-    let facing = crate::util::fixed_math::facing_from_delta_int(
+    let facing = crate::util::direction_tables::facing8_from_delta(
         i32::from(rally.0) - i32::from(producer_nw.0),
         i32::from(rally.1) - i32::from(producer_nw.1),
     );
-    let (step_x, step_y) = crate::util::fixed_math::dir_to_cell_delta(facing);
+    let (step_x, step_y) = crate::util::direction::delta_from_facing(facing);
     let mut candidate = foundation_center;
 
     // Look_up_building_in_cell @ 0x0047C520 returns the first Building in
@@ -396,7 +396,6 @@ pub(super) fn unlimbo_held_naval_unit(
 mod tests {
     use super::*;
     use crate::map::resolved_terrain::ResolvedTerrainGrid;
-    use crate::rules::terrain_rules::TerrainClass;
 
     fn flat_terrain(width: u16, height: u16) -> ResolvedTerrainGrid {
         crate::map::resolved_terrain::test_grid(
@@ -594,7 +593,6 @@ mod tests {
             .cell_mut(cell.0, cell.1)
             .unwrap();
         water.land_type = crate::rules::terrain_rules::LandType::Water.as_index();
-        water.terrain_class = TerrainClass::Water;
         water.speed_costs.float = Some(100);
         water.base_speed_costs.float = Some(100);
     }

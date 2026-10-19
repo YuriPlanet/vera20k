@@ -24,7 +24,7 @@ impl ElectricBoltPalette {
     /// Bolt4C24BE/4C26C7 reads its middle row directly, like action lines.
     pub(crate) fn from_palette(palette: &crate::assets::pal_file::Palette) -> Self {
         let color = |index: u8| {
-            let color = palette.colors[usize::from(index)];
+            let color = palette.color(index);
             super::palette_light::PaletteLight::plain(53, 1000).rgb565(
                 [color.r, color.g, color.b],
                 index,

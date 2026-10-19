@@ -1542,7 +1542,7 @@ fn retail_dustbowl_crews_scatter_off_their_wrecks() {
 
 /// Retail Dustbowl runtime: GIs board a full Battle Fortress (`OpenTopped=`,
 /// five), an IFV (`Gunner=`) and a Flak Track through the production
-/// boarding, the transports die through the production receiver, and every GI
+/// attach, the transports die through the production receiver, and every GI
 /// steps out onto its transport's cell, Scatters and walks off the wreck. The
 /// Battle Fortress's fourth and fifth GIs are admitted because the earlier
 /// ones already move: Scatter's Set_Destination reaches the Walk's MoveTo
@@ -1633,8 +1633,6 @@ fn retail_dustbowl_passengers_leave_their_destroyed_transports() {
                             if i < 3 { ty + 1 } else { ty - 1 },
                         )
                     });
-                sim.substrate.entities.get_mut(id).unwrap().passenger_role =
-                    PassengerRole::boarding_for_test(transport);
                 id
             })
             .collect();
@@ -1642,12 +1640,21 @@ fn retail_dustbowl_passengers_leave_their_destroyed_transports() {
     }
     let guard = keep_undefeated(sim, resources, loads[0].2);
     sim.resolve_type_handles(rules);
-    crate::sim::passenger::tick_passenger_system(
-        sim,
-        rules,
-        None,
-        crate::sim::world::FrameEffects::default(),
-    );
+    // The Infantry transport arm's attach once CAN_LOAD said ROGER
+    // (`0x0051A3FC..0x0051A485`); the walk in has its own tests.
+    for (_, transport, _, gis) in &loads {
+        for &gi in gis {
+            assert!(crate::sim::passenger::board_passenger(
+                sim,
+                rules,
+                gi,
+                *transport,
+                crate::sim::passenger::BoardingArm::InfantryTransport,
+                Some(&resources.overlay_registry),
+                crate::sim::world::FrameEffects::default(),
+            ));
+        }
+    }
     for (kind, transport, _, gis) in &loads {
         assert_eq!(cargo_len(sim, *transport), gis.len(), "{kind} boarded");
     }

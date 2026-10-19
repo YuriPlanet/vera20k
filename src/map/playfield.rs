@@ -353,4 +353,172 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn playfield_bounds_are_asymmetric_exactly_where_the_test_is() {
+        // Only the x+y upper bound is inclusive; the other three are strict.
+        // Each assertion below sits one cell either side of a boundary.
+        let field = PlayfieldBounds::from_map_header(&header((20, 20), [2, 5, 10, 8]));
+        // sum bounds: (20 + 10, 20 + 10 + 16 + 2] = (30, 48]
+        assert!(
+            !field.contains_geometry_packed(15, 15),
+            "sum 30 is excluded at the low end"
+        );
+        assert!(
+            field.contains_geometry_packed(16, 15),
+            "sum 31 is the first admitted"
+        );
+        assert!(
+            field.contains_geometry_packed(24, 24),
+            "sum 48 is admitted -- inclusive"
+        );
+        assert!(
+            !field.contains_geometry_packed(25, 24),
+            "sum 49 is past the inclusive top"
+        );
+        // diff bounds: (2*2 - 20, 2*2 - 20 + 20) = (-16, 4)
+        let on_sum = |diff: i32| {
+            // Pick a cell with sum 40 (inside) and the requested difference.
+            let x = (40 + diff) / 2;
+            let y = 40 - x;
+            (x, y)
+        };
+        let (x, y) = on_sum(-16);
+        assert!(
+            !field.contains_geometry_packed(x, y),
+            "diff -16 is excluded, strict"
+        );
+        let (x, y) = on_sum(-14);
+        assert!(field.contains_geometry_packed(x, y), "diff -14 is inside");
+        let (x, y) = on_sum(2);
+        assert!(field.contains_geometry_packed(x, y), "diff 2 is inside");
+        let (x, y) = on_sum(4);
+        assert!(
+            !field.contains_geometry_packed(x, y),
+            "diff 4 is excluded, strict"
+        );
+    }
+
+    #[test]
+    fn normalized_header_bounds_decide_membership() {
+        let field = PlayfieldBounds::from_map_header(&header((80, 80), [-5, -6, 100, 100]));
+        assert!(field.contains_geometry_packed(43, 42));
+        assert!(!field.contains_geometry_packed(42, 42));
+    }
+
+    #[test]
+    fn raising_a_cell_shifts_the_band_rather_than_widening_it() {
+        // Elevation moves both x+y bounds by the same amount: a raised cell
+        // gains room at the far edge and loses exactly as much at the near
+        // one. Widening instead of shifting would quietly enlarge the
+        // playfield for every plateau on the map.
+        let field = PlayfieldBounds::from_map_header(&header((20, 20), [2, 5, 10, 8]));
+        // sum band at level 0 is (30, 48]; at level 1 it is (31, 49].
+        assert!(
+            field.contains_height_aware_packed(16, 15, 0, 0),
+            "sum 31, flat"
+        );
+        assert!(
+            !field.contains_height_aware_packed(16, 15, 1, 0),
+            "sum 31 lost when raised"
+        );
+        assert!(
+            !field.contains_height_aware_packed(25, 24, 0, 0),
+            "sum 49, flat"
+        );
+        assert!(
+            field.contains_height_aware_packed(25, 24, 1, 0),
+            "sum 49 gained when raised"
+        );
+    }
+
+    #[test]
+    fn a_flat_cell_at_level_zero_matches_the_plain_test() {
+        // The elevation-aware form must degenerate to the original, or the
+        // preview and the generator would disagree about the same map.
+        let field = PlayfieldBounds::from_map_header(&header((20, 20), [2, 5, 10, 8]));
+        for x in 0..30 {
+            for y in 0..30 {
+                assert_eq!(
+                    field.contains_geometry_packed(x, y),
+                    field.contains_height_aware_packed(x, y, 0, 0),
+                    "({x},{y})"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn a_sloped_cell_near_the_near_edge_counts_one_step_higher() {
+        // The ramp's upper lip already reads as the next level up, but only
+        // close to the near edge — far from it the slope byte changes nothing.
+        let field = PlayfieldBounds::from_map_header(&header((20, 20), [2, 5, 10, 8]));
+        // sum 31 is inside when flat, and pushed out by the slope bump.
+        assert!(
+            field.contains_height_aware_packed(16, 15, 0, 0),
+            "flat, admitted"
+        );
+        assert!(
+            !field.contains_height_aware_packed(16, 15, 0, 1),
+            "sloped, bumped out"
+        );
+        // sum 40 is far from the near edge, so the bump does not apply.
+        assert_eq!(
+            field.contains_height_aware_packed(20, 20, 0, 0),
+            field.contains_height_aware_packed(20, 20, 0, 1),
+            "slope is irrelevant away from the near edge"
+        );
+        // The sharp case: sum 49 sits one past the far bound. If the bump were
+        // applied regardless of position it would drag the far bound out to 49
+        // and admit this cell. It must stay excluded — the probe is what keeps
+        // the bump local to the near edge.
+        assert!(
+            !field.contains_height_aware_packed(25, 24, 0, 1),
+            "a sloped cell past the far bound is not rescued by the bump"
+        );
+    }
+
+    #[test]
+    fn elevation_never_moves_the_diff_bounds() {
+        // Only x+y shifts. A cell outside on the diff axis stays outside no
+        // matter how high it is.
+        let field = PlayfieldBounds::from_map_header(&header((20, 20), [2, 5, 10, 8]));
+        // diff 4 is excluded (strict upper bound), sum 40 is well inside.
+        let (x, y) = (22, 18);
+        assert_eq!(x - y, 4, "the fixture really is on diff 4");
+        for level in 0..6i8 {
+            assert!(
+                !field.contains_height_aware_packed(x, y, level, 0),
+                "still out at level {level}"
+            );
+        }
+    }
+
+    #[test]
+    fn normalized_predicate_ignores_full_map_height_after_bounds_are_stable() {
+        // Full map height participates in LocalSize normalization, but once the
+        // authored LocalSize is stable only the full map width enters 0x00578460.
+        let short = PlayfieldBounds::from_map_header(&header((20, 20), [2, 5, 10, 8]));
+        let mut tall_header = header((20, 20), [2, 5, 10, 8]);
+        tall_header.height = 500;
+        assert_eq!(PlayfieldBounds::from_map_header(&tall_header), short);
+    }
+
+    #[test]
+    fn the_playfield_shifts_with_the_full_map_width() {
+        // Width enters both axes, so widening the map moves the whole diamond.
+        let narrow = PlayfieldBounds::from_map_header(&header((20, 20), [2, 5, 10, 8]));
+        let wide = PlayfieldBounds::from_map_header(&header((30, 30), [2, 5, 10, 8]));
+        assert_ne!(narrow, wide);
+        // Cell (20,30): sum 50, diff -10. The wider map admits it on both axes;
+        // the narrower one's sum window tops out at 48.
+        assert!(
+            wide.contains_geometry_packed(20, 30),
+            "inside the wider map's playfield"
+        );
+        assert!(
+            !narrow.contains_geometry_packed(20, 30),
+            "outside the narrower one"
+        );
+    }
 }

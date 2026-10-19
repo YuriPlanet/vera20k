@@ -251,12 +251,15 @@ impl OverlayTypeFlags {
 /// Cell overlay-data byte written by the successful ordinary Mark tail.
 ///
 /// `OverlayClass__Mark @ 0x005FC570` writes zero at `0x005FD0CC`, replaces it
-/// with one for `Land=Road` at `0x005FD0E5`, then replaces either value with
-/// `0xFF` when `OverlayType+0x2AA` (`Crate=yes`) at `0x005FD0FB..0x005FD105`.
+/// with one when `OverlayType+0x298` (Land) is 5, `Land=Tiberium`
+/// (`0x005FD0D9..0x005FD0E5`), then replaces either value with `0xFF` when
+/// `OverlayType+0x2AA` (`Crate=yes`) at `0x005FD0FB..0x005FD105`. The one
+/// stands only when `SpreadCellGerminate @ 0x004818E0` finds no TiberiumClass
+/// for the cell; a `Tiberium=yes` type stores its germinated density instead.
 pub fn native_mark_overlay_data(flags: &OverlayTypeFlags) -> u8 {
     if flags.crate_type {
         u8::MAX
-    } else if flags.land == LandType::Road {
+    } else if flags.land == LandType::Tiberium {
         1
     } else {
         0
@@ -628,6 +631,23 @@ pub(crate) fn retained_overlay_land(flags: &OverlayTypeFlags, slope_type: u8) ->
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mark_data_tests_land_five_not_road() {
+        // OverlayClass::Mark @ 0x005FD0D9 compares OverlayType+0x298 with 5.
+        let reg = OverlayTypeRegistry::from_ini(
+            &IniFile::from_str(
+                "[OverlayTypes]\n0=ROADBOX\n1=TIBBOX\n2=TIBCRATE\n\
+                 [ROADBOX]\nLand=Road\n[TIBBOX]\nLand=Tiberium\n\
+                 [TIBCRATE]\nLand=Tiberium\nCrate=yes\n",
+            ),
+            None,
+        );
+        let data = |id| native_mark_overlay_data(reg.flags(id).unwrap());
+        assert_eq!(data(0), 0, "Land=Road keeps the ordinary zero");
+        assert_eq!(data(1), 1, "Land=Tiberium stores one");
+        assert_eq!(data(2), u8::MAX, "Crate=yes overwrites last");
+    }
 
     #[test]
     fn test_parse_overlay_types() {

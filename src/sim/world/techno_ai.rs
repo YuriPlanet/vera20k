@@ -2917,7 +2917,6 @@ mod tests {
             None,
             67,
             super::super::TickLane::Ordinary,
-            None,
             crate::sim::world::FrameEffects::default(),
         )
         .expect("empty authoritative frame");
@@ -5663,12 +5662,17 @@ mod tests {
             base_mission_handler_delay(EntityCategory::Unit, Some(MissionType::AreaGuard)),
             None
         );
+        // Infantry Enter runs Mission_Enter (`0x004D9290`), a real handler
+        // that sets its own timer.
+        assert_eq!(
+            base_mission_handler_delay(EntityCategory::Infantry, Some(MissionType::Enter)),
+            None
+        );
         for (category, mission) in [
             (EntityCategory::Unit, MissionType::Enter),
             (EntityCategory::Unit, MissionType::Unload),
             // Repair overrides on Units even though it is a stub on Infantry.
             (EntityCategory::Unit, MissionType::Repair),
-            (EntityCategory::Infantry, MissionType::Enter),
         ] {
             assert_eq!(
                 base_mission_handler_delay(category, Some(mission)),
@@ -5679,18 +5683,12 @@ mod tests {
             let rules = representative_foot_handler_rules();
             let mut unit = entity_of(1, category);
             commit_due_mission(&mut unit.mission, mission, 0);
-            // A Foot on Enter is held by an entry adapter (Boarding, or for
-            // a unit the tank bunker approach); once it lets go, the Enter
-            // arms run Mission_Enter.
+            // A unit on Enter held by the tank bunker approach does not run
+            // Mission_Enter; once the adapter lets go, the Enter arm does.
             if mission == MissionType::Enter {
-                if category == EntityCategory::Infantry {
-                    unit.passenger_role =
-                        crate::sim::passenger::PassengerRole::boarding_for_test(2);
-                } else {
-                    unit.bunker.set_bunker_link_for_test(
-                        crate::sim::docking::bunker_link::BunkerLink::Approaching(2),
-                    );
-                }
+                unit.bunker.set_bunker_link_for_test(
+                    crate::sim::docking::bunker_link::BunkerLink::Approaching(2),
+                );
             }
             register_entity(&mut sim, unit);
 

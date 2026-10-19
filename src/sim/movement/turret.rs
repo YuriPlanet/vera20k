@@ -15,7 +15,8 @@
 use crate::rules::ruleset::RuleSet;
 use crate::sim::entity_store::EntityStore;
 use crate::sim::game_entity::GameEntity;
-use crate::util::fixed_math::{SimFixed, facing_from_delta_int_u16};
+use crate::util::direction_tables::facing16_from_delta;
+use crate::util::fixed_math::SimFixed;
 
 /// Compute the signed shortest-path rotation from `current` to `target` in
 /// 8-bit facing space. No production caller; the live shortest-arc logic is the
@@ -52,7 +53,7 @@ pub fn facing_toward_lepton(
     let to_lep_y: i32 = to_ry as i32 * 256 + to_sub_y.to_num::<i32>();
     let dx: i32 = to_lep_x - from_lep_x;
     let dy: i32 = to_lep_y - from_lep_y;
-    facing_from_delta_int_u16(dx, dy)
+    facing16_from_delta(dx, dy)
 }
 
 /// Convert an 8-bit facing to a 16-bit one (shifts into the upper byte).
