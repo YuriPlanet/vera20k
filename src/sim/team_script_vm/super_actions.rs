@@ -34,9 +34,6 @@
 //!   than that value makes Fire_SW read past the Supers vector natively;
 //!   VERA fires nothing. Dormant: retail lists all twelve types in `Type=`
 //!   order.
-//! - The per-Super charge time override (`SuperClass+0x24`): the wait test
-//!   divides by the type's `RechargeTime=` ([`super_nearly_ready`]'s
-//!   residual).
 //!
 //! Ledger: none of the three handlers draws a random number, writes a timer or detaches
 //! anything itself. Greatest_Threat's empty-scan latch is the shared scan's
