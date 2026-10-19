@@ -277,17 +277,25 @@ impl MoviesCapture {
                 self.observed_campaign_runtime = Some(campaign_runtime_receipt(state)?);
                 self.route
                     .push(json!({"frame": frame, "action": "first live observed", "tick": 0}));
-                // This is the ordinary Escape-press owner at handler.rs808..819;
-                // in_game_key_edge alone would skip its modal admission branch.
+                // Ordinary world Escape resolves the actual binding before
+                // Options enters B5, exactly as the window handler does.
                 ensure!(
                     state.platform.live_modifiers.is_empty(),
                     "pause menu requires bare Escape"
                 );
-                ensure!(
-                    App::in_game_menu_owns_escape(state),
-                    "Escape belongs to an armed tactical mode"
+                let escape = winit::keyboard::Key::Named(winit::keyboard::NamedKey::Escape);
+                crate::app::input::keyboard::in_game_key_edge(
+                    state,
+                    crate::app::input::keyboard::InGameKeyEdge {
+                        physical: winit::keyboard::KeyCode::Escape,
+                        logical: &escape,
+                        unmodified: &escape,
+                        location: winit::keyboard::KeyLocation::Standard,
+                        state: winit::event::ElementState::Pressed,
+                        repeat: false,
+                    },
+                    false,
                 );
-                App::route_in_game_menu_escape(state);
                 ensure!(
                     state.match_state.match_presentation.in_game_menu
                         == crate::ui::pause_menu::InGameMenuState::Menu,

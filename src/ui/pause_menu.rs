@@ -14,6 +14,7 @@
 //! | 1 | the in-game menu | the sidebar menu control | its buttons |
 //! | 3 | abort-mission confirm | the menu's Abort Mission button | see below |
 //! | 5 | Game Controls / Options | the menu's Options button | back to 1 |
+//! | 8 | Diplomacy | Tab or the sidebar diplomacy control | Return to 0 |
 //!
 //! Two re-entry rules matter to the player and are reproduced here:
 //!
@@ -72,6 +73,8 @@ pub enum InGameMenuState {
     Sound,
     /// Shared Keyboard A3, child of Game Controls (native state4).
     Keyboard,
+    /// Player names, alliances and live kill counters (native state8/73).
+    Diplomacy,
     /// Native558DD0 browser nested beneath B5. Its mode has no independent
     /// scenario-state number: native keeps the parent hidden during this call.
     SavedGame(crate::ui::skirmish_shell::SavedSeedMode),
@@ -102,7 +105,7 @@ impl InGameMenuState {
             Self::AbortConfirm => Self::AbortConfirm,
             // Options is a child of the menu.
             Self::Options => Self::Menu,
-            Self::SavedGame(_) | Self::Sound => self,
+            Self::SavedGame(_) | Self::Sound | Self::Diplomacy => self,
             Self::Keyboard => Self::Options,
         }
     }
@@ -110,12 +113,10 @@ impl InGameMenuState {
 
 /// Does an Escape press belong to the in-scenario modal machine?
 ///
-/// Escape opens native Options through the command route5372D0→647040.
-/// It only reaches the machine when no in-world mode is armed:
-/// while a placement/targeting cursor or a repair/sell mode is live and no
-/// modal is open, Escape cancels that instead.
-pub fn escape_belongs_to_modal_machine(state: InGameMenuState, in_world_mode_armed: bool) -> bool {
-    state.is_open() || !in_world_mode_armed
+/// Existing dialogs own Escape. Ordinary world input must first resolve the
+/// reloaded binding; Options is only ProcessCommand55E079's fallback.
+pub fn escape_belongs_to_modal_machine(state: InGameMenuState) -> bool {
+    state.is_open()
 }
 
 /// What the player picked on the abort-mission confirmation.
@@ -212,24 +213,20 @@ mod tests {
         assert_eq!(InGameMenuState::Menu.on_escape(), InGameMenuState::Menu);
     }
 
-    /// An armed in-world mode takes Escape ahead of opening the menu, but never
-    /// ahead of a modal that is already up.
+    /// The handler must not intercept world Escape before the command lookup.
     #[test]
-    fn in_world_cancel_outranks_opening_the_menu_only_while_closed() {
-        assert!(!escape_belongs_to_modal_machine(
-            InGameMenuState::Closed,
-            true
-        ));
-        assert!(escape_belongs_to_modal_machine(
-            InGameMenuState::Closed,
-            false
-        ));
+    fn closed_world_resolves_escape_bindings_before_opening_the_menu() {
+        assert!(!escape_belongs_to_modal_machine(InGameMenuState::Closed,));
         for open in [
             InGameMenuState::Menu,
             InGameMenuState::AbortConfirm,
             InGameMenuState::Options,
+            InGameMenuState::Diplomacy,
         ] {
-            assert!(escape_belongs_to_modal_machine(open, true));
+            assert!(escape_belongs_to_modal_machine(open));
+            if open == InGameMenuState::Diplomacy {
+                assert_eq!(open.on_escape(), open);
+            }
         }
     }
 }

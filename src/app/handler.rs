@@ -739,11 +739,9 @@ impl ApplicationHandler for App {
                         return;
                     }
 
-                    // The in-scenario modal machine owns Escape: it opens the
-                    // in-game menu, backs Options out to its parent menu, and
-                    // leaves B5/B6 open. Escape's in-world
-                    // cancel duties (placement/targeting, repair/sell) still
-                    // run first — see `in_game_menu_owns_escape`.
+                    // An existing modal handles Escape before tactical input.
+                    // World Escape goes through the bindings below; Options
+                    // opens B5 only if selected, or as the native fallback.
                     if in_game && is_escape && Self::in_game_menu_owns_escape(state) {
                         Self::route_in_game_menu_escape(state);
                         state.platform.window.request_redraw();
@@ -972,6 +970,13 @@ impl ApplicationHandler for App {
                 if state.frontend.keyboard_dialog.is_some() {
                     crate::app::input::keyboard::wheel(state, lines);
                     state.platform.window.request_redraw();
+                    return;
+                }
+                if state.frontend.screen == GameScreen::InGame
+                    && state.match_state.match_presentation.in_game_menu
+                        == crate::ui::pause_menu::InGameMenuState::Diplomacy
+                {
+                    crate::app::input::diplomacy::wheel(state, lines);
                     return;
                 }
                 if state.frontend.screen == GameScreen::MainMenu

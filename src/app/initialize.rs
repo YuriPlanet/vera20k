@@ -528,6 +528,7 @@ impl App {
                     in_game_menu: crate::ui::pause_menu::InGameMenuState::default(),
                     pause_menu_has_saves: false,
                     pause_menu_interaction: Default::default(),
+                    diplomacy: None,
                     sound_dialog: None,
                     abort_buttons: Default::default(),
                     saved_game_browser: None,

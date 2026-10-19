@@ -337,12 +337,12 @@ mod campaign_score_model_tests {
     }
 }
 
-/// A score row's name: the house's UI name (`house+0x1602A`, copied at
-/// `0x005C98FE`). Skirmish setup gives a human house its player's handle
+/// A House's UI name (House+0x1602A), read by both score5C98FE and
+/// diplomacy65837A. Skirmish setup gives a human house its player's handle
 /// (`0x00688094`) and every computer house `TXT_COMPUTER`
 /// (`0x00688252..0x00688270`). A human without a recorded handle (a launch
 /// with no skirmish session) shows `fallback`.
-fn score_row_display_name(
+pub(crate) fn house_display_name(
     is_human: bool,
     handle: Option<&str>,
     computer: &str,
@@ -385,7 +385,7 @@ fn resolve_score_rows(
                 .copied()
                 .unwrap_or(crate::rules::house_colors::NO_REMAP);
             crate::ui::score_shell::ScoreRow {
-                name: score_row_display_name(
+                name: house_display_name(
                     is_human,
                     sources.handle,
                     sources.computer,

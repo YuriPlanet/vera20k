@@ -20,6 +20,8 @@ pub(crate) use in_game_shell::{
 };
 mod pause_menu;
 pub(crate) use pause_menu::render_pause_menu_shell;
+mod diplomacy;
+pub(crate) use diplomacy::render_diplomacy_shell;
 mod saved_games;
 pub(crate) use saved_games::{family_saved_game_overlays, render_saved_game_shell};
 mod launcher_options;

@@ -61,6 +61,9 @@ pub struct CountryRules {
     /// ReadColor474A90 at51193D with the current index as default. The
     /// Process owner supplies the typed value from each actual catalog pass.
     color_scheme: i32,
+    /// HouseType+1A5, constructor511559=false and ReadBool511A70 over
+    /// the current value. Diplomacy658369 admits rows only for Multiplay types.
+    pub multiplay: bool,
     /// `MultiplayPassive=` allows non-owner garrison entry in `BuildingClass::CanBeOccupiedBy`.
     pub multiplay_passive: bool,
     /// `WallOwner=` allows this house type's buildings to claim nearby map walls.
@@ -158,6 +161,7 @@ impl Default for CountryRules {
         // multiplier is `INCOME_PPM_SCALE`, not 0.
         Self {
             color_scheme: 0,
+            multiplay: false,
             multiplay_passive: false,
             wall_owner: true,
             income_ppm: INCOME_PPM_SCALE,
@@ -188,6 +192,7 @@ impl CountryRules {
             // Filled from the typed Process receipt, never by resolving an
             // earlier projected string against the final Colors registry.
             color_scheme: 0,
+            multiplay: section.read_bool("Multiplay", false),
             multiplay_passive: section.read_bool("MultiplayPassive", false),
             wall_owner: section.read_bool("WallOwner", true),
             // IncomeMult is a raw multiplier (NOT a percent). Round in f64 to avoid f32
@@ -6129,6 +6134,12 @@ impl RuleSet {
         ]
     }
 
+    /// Whether a country/house type has `Multiplay=true` (HouseType+1A5).
+    pub fn country_is_multiplayer(&self, id: &str) -> bool {
+        self.country_rules(id)
+            .is_some_and(|country| country.multiplay)
+    }
+
     /// Whether a country/house type has `MultiplayPassive=true`.
     pub fn country_multiplay_passive(&self, id: &str) -> bool {
         self.country_rules(id)
@@ -7222,6 +7233,55 @@ fn parse_particle_system_types(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn country_multiplay_is_independent_of_passive_and_retained_across_layers() {
+        // HouseType511559 starts false; ReadBool511A70 defaults to the live
+        // field, independent of the following MultiplayPassive reader.
+        let mut layers = RulesLayerStack::new(IniFile::from_str(
+            "[Countries]\n0=Alpha\n1=Beta\n[Alpha]\nMultiplay=yes\n\
+             [Beta]\nMultiplayPassive=yes\n",
+        ));
+        layers.push(
+            RulesLayerKind::Scenario,
+            IniFile::from_str("[Alpha]\nName=Renamed\n"),
+        );
+        let rules = RuleSet::from_rules_layers(&layers).unwrap();
+        assert!(rules.country_is_multiplayer("Alpha"));
+        assert!(!rules.country_is_multiplayer("Beta"));
+        assert!(rules.country_multiplay_passive("Beta"));
+        layers.push(
+            RulesLayerKind::Scenario,
+            IniFile::from_str("[Alpha]\nMultiplay=no\n[Beta]\nMultiplay=yes\n"),
+        );
+        let rules = RuleSet::from_rules_layers(&layers).unwrap();
+        assert!(!rules.country_is_multiplayer("Alpha"));
+        assert!(rules.country_is_multiplayer("Beta"));
+        assert!(!rules.country_is_multiplayer("Unknown"));
+    }
+
+    #[test]
+    fn retail_diplomacy_countries_use_multiplay_admission() {
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_rulesmd_rules() else {
+            return;
+        };
+        for id in [
+            "Americans",
+            "Alliance",
+            "French",
+            "Germans",
+            "British",
+            "Africans",
+            "Arabs",
+            "Confederation",
+            "Russians",
+            "YuriCountry",
+        ] {
+            assert!(rules.country_is_multiplayer(id), "{id}");
+        }
+        assert!(!rules.country_is_multiplayer("Neutral"));
+        assert!(!rules.country_is_multiplayer("Special"));
+    }
+
     #[test]
     fn infantry_occupy_pip_uses_each_admitted_rules_section_pass() {
         use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};

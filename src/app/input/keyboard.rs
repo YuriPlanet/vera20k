@@ -543,9 +543,16 @@ fn virtual_key_name(vk: u16) -> String {
             16 => "Shift".into(),
             17 => "Ctrl".into(),
             18 => "Alt".into(),
+            0x13 => "Pause".into(),
+            0x14 => "CapsLock".into(),
+            0x1b => "Esc".into(),
+            0x20 => "Space".into(),
+            0x2c => "PrintScreen".into(),
+            0x90 => "NumLock".into(),
             0x30..=0x5a => char::from_u32(u32::from(vk)).unwrap().to_string(),
             0x70..=0x87 => format!("F{}", vk - 0x6f),
-            _ => format!("{vk}"),
+            _ => hotkeys::portable_oem_key_name(vk)
+                .map_or_else(|| format!("{vk}"), |text| text.to_string()),
         }
     }
 }

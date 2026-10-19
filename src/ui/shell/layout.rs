@@ -69,6 +69,19 @@ fn in_game_options_centered_offset(screen_w: i32, screen_h: i32) -> (i32, i32) {
     ((screen_w - SHELL_BASE_W) / 2, (screen_h - SHELL_BASE_H) / 2)
 }
 
+/// Original60B7A0 active-scenario placement, shared by ordinary controls of
+/// Game Controls and Diplomacy. The caller supplies the converted window;
+/// this owner performs the signed centering and final position clamp.
+pub fn in_game_ordinary_child_rect(window: RectPx, screen_w: i32, screen_h: i32) -> RectPx {
+    let (dx, dy) = in_game_options_centered_offset(screen_w, screen_h);
+    RectPx::new(
+        (window.x + dx).max(0),
+        (window.y + dy).max(0),
+        window.w,
+        window.h,
+    )
+}
+
 /// App-supplied anchoring inputs for the active in-game Options (`0xBBB`) overlay
 /// that `ui/shell` cannot compute itself. The native child-resize helper anchors
 /// the owner-draw buttons to the in-game SIDEBAR geometry (a 25-px row stack) and
@@ -101,7 +114,6 @@ pub fn layout_pass_in_game_options(
     anchor: InGameOptionsAnchor,
 ) -> Vec<LaidOutControl> {
     use super::in_game_options::control;
-    let (dx, dy) = in_game_options_centered_offset(screen_w, screen_h);
     desc.controls
         .iter()
         .map(|c| {
@@ -128,7 +140,7 @@ pub fn layout_pass_in_game_options(
             } else {
                 // 60B7A0 shifts even smaller screens, then clamps final positions.
                 let raw = geom::dlu_rect(c.dlu_rect.x, c.dlu_rect.y, c.dlu_rect.w, c.dlu_rect.h);
-                RectPx::new((raw.x + dx).max(0), (raw.y + dy).max(0), raw.w, raw.h)
+                in_game_ordinary_child_rect(raw, screen_w, screen_h)
             };
             LaidOutControl { id: c.id, rect }
         })
