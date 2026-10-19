@@ -135,7 +135,7 @@ pub(super) fn check_with_sites(
         contents: &contents,
         target_in_bounds: true,
         terrain_is_water: Some(
-            target.land_type == crate::rules::terrain_rules::LandType::Water.as_index(),
+            target.land_type() == crate::rules::terrain_rules::LandType::Water.as_index(),
         ),
         fire_into_shroud: targeting.fire_into_shroud,
         shrouded,
