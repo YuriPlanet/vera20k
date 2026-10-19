@@ -354,10 +354,35 @@ impl SidebarProjectionState {
                 });
             }
         }
+        let paid_supers = view
+            .items
+            .iter()
+            .any(|item| {
+                item.super_weapon_section
+                    .as_deref()
+                    .and_then(|name| rules.super_weapon(name))
+                    .is_some_and(|sw| sw.money_amount != 0)
+            })
+            .then(|| crate::sim::superweapon::superweapon_views_for_owner(sim, rules, &owner));
         for item in &mut view.items {
             // A super weapon's cameo darkens from its SuperClass readiness,
             // not from a build factory.
             if item.is_superweapon {
+                if let Some(views) = &paid_supers
+                    && let Some(section) = item.super_weapon_section.as_deref()
+                    && rules
+                        .super_weapon(section)
+                        .is_some_and(|sw| sw.money_amount != 0)
+                {
+                    item.enabled = views
+                        .iter()
+                        .find(|sw| {
+                            sim.interner
+                                .resolve(sw.type_id)
+                                .eq_ignore_ascii_case(section)
+                        })
+                        .is_some_and(|sw| sw.is_online && sw.can_afford);
+                }
                 continue;
             }
             let (Some(type_id), Some(object)) =

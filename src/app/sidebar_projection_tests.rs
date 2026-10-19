@@ -67,6 +67,66 @@ fn world(rules: &RuleSet, factories: &[&str]) -> (Simulation, InternedId) {
     (sim, owner)
 }
 
+#[test]
+fn superweapon_money_cameo_refresh_tracks_wallet_without_membership_rebuild() {
+    let rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &crate::sim::arena_fixture::clear_ground_ini(
+            "[Countries]\n0=Americans\n[SuperWeaponTypes]\n0=Paid\n[Paid]\nType=PsychicReveal\nMoney.Amount=-50001\n"
+        ), &crate::rules::ini_parser::IniFile::empty(),
+    ).unwrap();
+    let (mut sim, owner) = world(&rules, &[]);
+    let id = sim.interner.get("Paid").unwrap();
+    let mut instance = crate::sim::superweapon::SuperWeaponInstance::new(id, owner, 0);
+    instance.is_active = true;
+    instance.is_ready = true;
+    sim.super_weapons
+        .entry(owner)
+        .or_default()
+        .insert(id, instance);
+    let supers = crate::sim::superweapon::superweapon_views_for_owner(&sim, &rules, &owner);
+    let mut projection = SidebarProjectionState::default();
+    let candidates = cameo_candidates(&sim, &rules, None, owner, &[], &[], &supers);
+    projection.reconcile_fixture(owner, &candidates, 4);
+    let mut view = build_sidebar_view_with_spec(
+        SidebarChromeLayoutSpec::stock(),
+        800.0,
+        600.0,
+        SidebarTab::Defense,
+        50_000,
+        0,
+        0,
+        None,
+        &[],
+        &[],
+        &[],
+        None,
+        &[],
+        Some(&sim.interner),
+        &supers,
+        &SidebarGadgetState::new(),
+        None,
+        None,
+        None,
+        None,
+        [None; 2],
+        projection.cameo_strips(),
+    );
+    assert_eq!(view.items.len(), 1);
+    assert!(!view.items[0].enabled);
+    let order = projection.cameo_strips().saved_identities();
+    sim.houses.get_mut(&owner).unwrap().economy.add_credits(1);
+    let before = sim.state_hash();
+    projection.apply_cameo_draw_state(&mut view, &sim, &rules, owner, None);
+    assert!(view.items[0].enabled);
+    assert!(view.items[0].is_ready);
+    assert_eq!(sim.state_hash(), before);
+    sim.houses.get_mut(&owner).unwrap().economy.add_credits(-1);
+    projection.apply_cameo_draw_state(&mut view, &sim, &rules, owner, None);
+    assert!(!view.items[0].enabled);
+    assert!(view.items[0].is_ready);
+    assert_eq!(projection.cameo_strips().saved_identities(), order);
+}
+
 fn view(
     sim: &Simulation,
     options: &[BuildOption],

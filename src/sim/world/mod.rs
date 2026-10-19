@@ -805,6 +805,12 @@ pub enum SimSoundEvent {
     /// (`0x006CBAD6..0x006CBAF6`). The client whose player owns it posts
     /// `Msg:DominatorActive` (`PsyDom::PrintMessage @ 0x0053B410`).
     PsychicDominatorRefused { owner: InternedId },
+    /// A paid superweapon was ready but its House wallet cannot cover the
+    /// configured cost. Only the owning client presents the configured EVA.
+    SuperWeaponInsufficientFunds {
+        owner: InternedId,
+        sw_type: InternedId,
+    },
     /// First occupant entered a CanBeOccupied building (cargo 0→1).
     /// Owner is the building owner at AddGarrisonOccupant time; civilian
     /// ownership transfer is reported separately from building reconciliation.

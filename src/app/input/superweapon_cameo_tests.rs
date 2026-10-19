@@ -193,3 +193,63 @@ fn native_superweapon_cameo_controls_match_modes_and_requests() {
 
 #[path = "superweapon_cameo_retail_tests.rs"]
 mod retail_tests;
+
+#[test]
+fn superweapon_money_cameo_refuses_before_target_or_direct_launch_but_allows_right_cancel() {
+    for action in ["PsychicReveal", "None"] {
+        let rules = RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str(&format!(
+                "[SuperWeaponTypes]\n0=Paid\n[Paid]\nType=PsychicReveal\nAction={action}\nMoney.Amount=-500\n"
+            )), &IniFile::empty(),
+        ).unwrap();
+        let mut sim = Simulation::new();
+        let owner = sim.interner.intern("Americans");
+        let id = sim.interner.intern("Paid");
+        sim.houses.insert(
+            owner,
+            crate::sim::house_state::HouseState::new(owner, 0, None, true, 499, 10),
+        );
+        let mut instance = SuperWeaponInstance::new(id, owner, 0);
+        instance.is_active = true;
+        instance.is_ready = true;
+        sim.super_weapons
+            .entry(owner)
+            .or_default()
+            .insert(id, instance);
+        let mut input = MatchInputState::new(Default::default());
+        input.begin_building_placement("BUILDING", 7, owner);
+        let mut gadgets = SidebarGadgetState::default();
+        gadgets.repair_mode_on = true;
+        let views = superweapon_views_for_owner(&sim, &rules, &owner);
+        assert!(views[0].can_fire, "native readiness remains independent");
+        assert!(!views[0].can_afford);
+        let result = press(&mut input, &mut gadgets, views.first(), Some(action), false);
+        assert_eq!(result, SuperWeaponClick::Refused);
+        assert!(result.gui_sound());
+        assert!(
+            input
+                .targeting_mode
+                .as_ref()
+                .and_then(TargetingMode::as_building_placement)
+                .is_some()
+        );
+        assert!(gadgets.repair_mode_on);
+        input.targeting_mode = Some(TargetingMode::SuperWeapon("Paid".to_owned()));
+        assert_eq!(
+            press(&mut input, &mut gadgets, views.first(), Some(action), true),
+            SuperWeaponClick::None
+        );
+        assert!(input.targeting_mode.is_none());
+        sim.houses.get_mut(&owner).unwrap().economy.add_credits(1);
+        let views = superweapon_views_for_owner(&sim, &rules, &owner);
+        let result = press(&mut input, &mut gadgets, views.first(), Some(action), false);
+        assert_eq!(
+            result,
+            if action == "None" {
+                SuperWeaponClick::Launch(id)
+            } else {
+                SuperWeaponClick::Target
+            }
+        );
+    }
+}

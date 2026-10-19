@@ -1109,6 +1109,19 @@ pub(crate) fn apply_sidebar_action(state: &mut AppState, action: SidebarAction) 
                 crate::app::App::play_shell_ui_sound_by_id(state, sound.as_deref());
             }
             match click {
+                super::superweapon_cameo::SuperWeaponClick::Refused
+                    if selection
+                        .as_ref()
+                        .is_some_and(|(view, _)| view.can_fire && !view.can_afford) =>
+                {
+                    let cue = state
+                        .rules()
+                        .and_then(|rules| rules.super_weapon(&section))
+                        .and_then(|sw| sw.insufficient_funds_eva.clone());
+                    if let Some(cue) = cue {
+                        push_local_eva(state, &cue);
+                    }
+                }
                 super::superweapon_cameo::SuperWeaponClick::Target => {
                     queue_selection_snapshot_command(state, Vec::new(), false);
                     push_local_eva(state, sidebar_eva::EVA_SELECT_TARGET);

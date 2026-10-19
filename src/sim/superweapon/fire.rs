@@ -73,6 +73,22 @@ impl Simulation {
         if super::targeting::check(self, rules, owner, sw, cell, automatic).is_err() {
             return false;
         }
+        if sw.money_amount != 0
+            && sw.kind == SuperWeaponKind::GenericWarhead
+            && !super::generic_warhead::can_launch(self, rules, sw, cell)
+        {
+            return false;
+        }
+        // Explicit extension only: refuse before the post-click source/cell
+        // writes. Stock zero-cost Fire_SW keeps its native unconditional tail.
+        if sw.money_amount != 0
+            && (sw.post_click
+                || !super::money::valid_target(self, sw, cell)
+                || !click_fire_admission(self, owner, sw_type_id, sw)
+                || !super::money::admit(self, owner, sw_type_id, sw))
+        {
+            return false;
+        }
         let paired = sw
             .post_click
             .then(|| pre_dependent(self, rules, sw))
@@ -135,7 +151,7 @@ fn click_fire(
     overlay_registry: Option<&OverlayTypeRegistry>,
     frame_effects: FrameEffects<'_>,
 ) -> bool {
-    if sw.use_charge_drain {
+    if !click_fire_admission(sim, owner, sw_type_id, sw) {
         return false;
     }
     if sw.kind == SuperWeaponKind::GenericWarhead
@@ -143,20 +159,11 @@ fn click_fire(
     {
         return false;
     }
-    let Some(instance) = super_instance(sim, owner, sw_type_id) else {
-        return false;
-    };
-    if !instance.click_fire_admits() && !sw.post_click {
-        return false;
-    }
-    if sw.kind == SuperWeaponKind::LightningStorm && super::lightning_storm::has_deferment(sim) {
-        sim.sound_events
-            .push(SimSoundEvent::LightningStormRefused { owner });
-        return false;
-    }
-    if sw.kind == SuperWeaponKind::PsychicDominator && super::psychic_dominator::active(sim) {
-        sim.sound_events
-            .push(SimSoundEvent::PsychicDominatorRefused { owner });
+    if sw.money_amount != 0
+        && (sw.post_click
+            || !super::money::valid_target(sim, sw, cell)
+            || !super::money::transact(sim, owner, sw_type_id, sw))
+    {
         return false;
     }
     launch(
@@ -182,6 +189,36 @@ fn click_fire(
         .and_then(|weapons| weapons.get_mut(&sw_type_id))
     {
         instance.finish_click_fire(sw, frame);
+    }
+    true
+}
+
+/// Pure admission apart from existing type-specific refusal feedback. Reused
+/// before paid paired-Super writes; successful checks neither charge nor pay.
+fn click_fire_admission(
+    sim: &mut Simulation,
+    owner: InternedId,
+    sw_type_id: InternedId,
+    sw: &SuperWeaponType,
+) -> bool {
+    if sw.use_charge_drain {
+        return false;
+    }
+    let Some(instance) = super_instance(sim, owner, sw_type_id) else {
+        return false;
+    };
+    if !instance.click_fire_admits() && !sw.post_click {
+        return false;
+    }
+    if sw.kind == SuperWeaponKind::LightningStorm && super::lightning_storm::has_deferment(sim) {
+        sim.sound_events
+            .push(SimSoundEvent::LightningStormRefused { owner });
+        return false;
+    }
+    if sw.kind == SuperWeaponKind::PsychicDominator && super::psychic_dominator::active(sim) {
+        sim.sound_events
+            .push(SimSoundEvent::PsychicDominatorRefused { owner });
+        return false;
     }
     true
 }

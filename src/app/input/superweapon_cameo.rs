@@ -47,7 +47,7 @@ pub(crate) fn press(
     let Some(view) = view else {
         return SuperWeaponClick::None;
     };
-    if !view.can_fire {
+    if !view.can_fire || !view.can_afford {
         return SuperWeaponClick::Refused;
     }
     if !action.is_some_and(|action| !action.eq_ignore_ascii_case("none")) {

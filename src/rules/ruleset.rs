@@ -5772,6 +5772,21 @@ impl RuleSet {
             "Ares.SuperWeaponBuildingRequirements".hash(&mut hasher);
             building_requirements.hash(&mut hasher);
         }
+        let superweapon_money = self
+            .super_weapons
+            .iter()
+            .filter(|(_, sw)| sw.money_amount != 0)
+            .map(|(id, sw)| {
+                (
+                    id.to_ascii_uppercase(),
+                    (sw.money_amount, &sw.insufficient_funds_eva),
+                )
+            })
+            .collect::<BTreeMap<_, _>>();
+        if !superweapon_money.is_empty() {
+            "Ares.SuperWeaponMoney".hash(&mut hasher);
+            superweapon_money.hash(&mut hasher);
+        }
         self.weapons
             .iter()
             .map(|(id, weapon)| {

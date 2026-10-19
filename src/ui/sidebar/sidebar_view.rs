@@ -553,7 +553,7 @@ fn collect_build_entries(
                 display_name: sw.display_name.clone(),
                 cost: None,
                 queue_category: ProductionCategory::Defense,
-                enabled: sw.is_online,
+                enabled: sw.is_online && sw.can_afford,
                 at_build_limit: false,
                 progress: sw.progress,
                 queued_count: 0,
@@ -651,6 +651,36 @@ mod tests {
     use crate::rules::object_type::ObjectCategory;
     use crate::sim::intern::StringInterner;
     use crate::sim::production::{BuildOption, BuildQueueState, ProductionCategory, QueueItemView};
+
+    #[test]
+    fn superweapon_money_affordability_darkens_cameo_without_erasing_readiness() {
+        let mut interner = StringInterner::new();
+        let id = interner.intern("Paid");
+        for (online, affordable) in [(true, true), (true, false), (false, true), (false, false)] {
+            let views = [crate::sim::superweapon::SuperWeaponView {
+                type_id: id,
+                display_name: "Paid".to_owned(),
+                progress: 1.0,
+                is_ready: true,
+                is_online: online,
+                can_fire: online,
+                can_afford: affordable,
+                sidebar_image: None,
+            }];
+            let entries = super::collect_build_entries(
+                ProductionCategory::Defense,
+                &[],
+                &[],
+                &[],
+                None,
+                Some(&interner),
+                &views,
+            );
+            assert_eq!(entries.len(), 1);
+            assert_eq!(entries[0].enabled, online && affordable);
+            assert!(entries[0].is_ready, "cash does not erase the charged Super");
+        }
+    }
 
     fn unit_option(
         interner: &mut StringInterner,

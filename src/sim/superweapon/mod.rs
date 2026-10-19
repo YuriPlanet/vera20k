@@ -31,6 +31,7 @@ mod chronosphere_lunar_retail_tests;
 #[cfg(any(test, feature = "test-support"))]
 pub mod chronosphere_tests;
 mod fire;
+mod money;
 pub mod force_shield;
 mod generic_warhead;
 mod targeting;
@@ -878,6 +879,8 @@ pub struct SuperWeaponView {
     pub is_online: bool,
     /// Native CanFire6CC360, independently of the raw charge/display flags.
     pub can_fire: bool,
+    /// Derived from the same wallet predicate used at launch, not readiness.
+    pub can_afford: bool,
     pub sidebar_image: Option<String>,
 }
 
@@ -906,6 +909,7 @@ pub fn superweapon_views_for_owner(
             is_ready: inst.is_ready,
             is_online: !inst.is_suspended,
             can_fire: inst.can_fire(sw_type),
+            can_afford: money::can_afford(sim, *owner, sw_type),
             sidebar_image: sw_type.sidebar_image.clone(),
         });
     }

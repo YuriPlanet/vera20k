@@ -348,16 +348,27 @@ fn with_disabled_suffix(state: &AppState, tip: String, disabled: bool) -> String
 /// stacked lines — `Grizzly` / `Battle` / `Tank` / `$700` — not one line and
 /// not a name/price pair.
 fn cameo_tip_text(money_format: Option<&str>, name: &str, cost: Option<i32>) -> String {
+    cameo_tip_text_wide(money_format, name, cost.map(i64::from))
+}
+
+fn cameo_tip_text_wide(money_format: Option<&str>, name: &str, cost: Option<i64>) -> String {
     let formatted = match (money_format, cost) {
-        (Some(fmt), Some(cost)) => {
-            format_csf(fmt, &[CsfArg::Str(name), CsfArg::Int(i64::from(cost))])
-        }
+        (Some(fmt), Some(cost)) => format_csf(fmt, &[CsfArg::Str(name), CsfArg::Int(cost)]),
         // VERA-internal: gamemd has neither case — a failed CSF load is fatal
         // there and every buildable cameo carries a cost — so this only keeps
         // an assetless dev run readable. gamemd equivalent UNCHECKED.
         _ => name.to_string(),
     };
     formatted.replace(' ', "\n")
+}
+
+fn superweapon_money_tip(money_format: Option<&str>, name: &str, amount: i32) -> String {
+    if amount < 0 {
+        cameo_tip_text_wide(money_format, name, Some(-i64::from(amount)))
+    } else {
+        // Keep stock zero-cost Super tooltips verbatim, including spaces.
+        name.to_owned()
+    }
 }
 
 /// Sidebar regions, mirroring the native registration set: tabs and scroll
@@ -455,8 +466,18 @@ fn sync_in_game_regions(state: &mut AppState) {
         let text = dynamic_tip_text(cursor, || {
             if item.is_superweapon {
                 // The retained view carries the same native UIName used for
-                // ordering. Supers display it verbatim, without a cost suffix.
-                item.display_name.clone()
+                // ordering. Only explicitly paid Supers add a localized cost.
+                let amount = item
+                    .super_weapon_section
+                    .as_deref()
+                    .and_then(|name| state.rules()?.super_weapon(name))
+                    .map_or(0, |sw| sw.money_amount);
+                let money_format = state
+                    .process_assets
+                    .csf
+                    .as_ref()
+                    .map(|csf| csf.text(CAMEO_TIP_MONEY_FORMAT));
+                superweapon_money_tip(money_format.as_deref(), &item.display_name, amount)
             } else {
                 let money_format = state
                     .process_assets
@@ -1113,6 +1134,28 @@ mod tests {
             cameo_tip_text(Some(RETAIL_MONEY_FORMAT_2), "Grizzly Battle Tank", None),
             "Grizzly\nBattle\nTank"
         );
+    }
+
+    #[test]
+    fn superweapon_money_tooltip_uses_localized_cost_and_handles_minimum_integer() {
+        assert_eq!(
+            superweapon_money_tip(Some("%s %d kr"), "Paid Power", -500),
+            "Paid\nPower\n500\nkr"
+        );
+        assert_eq!(
+            superweapon_money_tip(Some("%s $%d"), "Paid", i32::MIN),
+            "Paid\n$2147483648"
+        );
+    }
+
+    #[test]
+    fn superweapon_money_tooltip_keeps_stock_and_reward_names_verbatim() {
+        for amount in [0, 500] {
+            assert_eq!(
+                superweapon_money_tip(Some("%s $%d"), "Stock Power", amount),
+                "Stock Power"
+            );
+        }
     }
 
     #[test]
