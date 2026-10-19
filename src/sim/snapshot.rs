@@ -4850,7 +4850,8 @@ mod tests {
         // 432 -> 433: one Object spelling for a NavCom-family pointer.
         // 433 -> 434: no trigger-record copies in saved scenario resources.
         // 434 -> 435: Scenario vein switch and shared Scenario pause.
-        assert_eq!(super::SNAPSHOT_VERSION, 435);
+        // 435 -> 436: retained repair service inputs.
+        assert_eq!(super::SNAPSHOT_VERSION, 436);
     }
 
     #[test]
