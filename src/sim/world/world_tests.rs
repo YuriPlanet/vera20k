@@ -2124,8 +2124,8 @@ fn gsi_04_07_damage_fatal_transport_lifecycle_brackets_nested_death_weapon() {
         let owner = sim.interner.intern("Americans");
         let enemy = sim.interner.intern("Soviet");
 
-        let mut cargo = crate::sim::passenger::PassengerCargo::new(2, 1);
-        cargo.board_forced_chain(&[(11, 1)]);
+        let mut cargo = crate::sim::passenger::PassengerCargo::new(2, 1.0);
+        cargo.board_forced_chain(&[(11, 1.0)]);
         let mut carrier = GameEntity::test_default(10, "BOOMER", "Soviet", 8, 5);
         carrier.set_owner_for_test(enemy);
         carrier.set_type_ref_for_test(sim.interner.intern("BOOMER"));

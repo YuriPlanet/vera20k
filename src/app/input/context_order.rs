@@ -4470,8 +4470,8 @@ mod tests {
         let reactor = sim
             .spawn_object_limbo_at_height("YAPOWR", "Americans", 10, 10, 0, 0, &rules)
             .expect("Bio Reactor builds");
-        let mut cargo = crate::sim::passenger::PassengerCargo::new(5, 0);
-        cargo.board_forced_chain(&[(99, 1)]);
+        let mut cargo = crate::sim::passenger::PassengerCargo::new(5, 0.0);
+        cargo.board_forced_chain(&[(99, 1.0)]);
         sim.entities_mut().get_mut(reactor).unwrap().passenger_role =
             crate::sim::passenger::PassengerRole::transport(cargo);
         let hover = HoverTargetKindWithId {
@@ -4517,8 +4517,8 @@ mod tests {
         let ifv = sim
             .spawn_object_limbo_at_height("IFV", "Americans", 10, 10, 0, 0, &rules)
             .expect("transport builds");
-        let mut cargo = crate::sim::passenger::PassengerCargo::new(1, 0);
-        cargo.board_forced_chain(&[(99, 1)]);
+        let mut cargo = crate::sim::passenger::PassengerCargo::new(1, 0.0);
+        cargo.board_forced_chain(&[(99, 1.0)]);
         sim.entities_mut().get_mut(ifv).unwrap().passenger_role =
             crate::sim::passenger::PassengerRole::transport(cargo);
         let hover = HoverTargetKindWithId {

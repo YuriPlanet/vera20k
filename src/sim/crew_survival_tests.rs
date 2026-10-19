@@ -592,7 +592,7 @@ fn load_absorbed(sim: &mut Simulation, rules: &RuleSet, building: u64, count: us
         .entities
         .get_mut(building)
         .unwrap()
-        .passenger_role = PassengerRole::transport(PassengerCargo::new(5, 0));
+        .passenger_role = PassengerRole::transport(PassengerCargo::new(5, 0.0));
     (0..count)
         .map(|_| {
             let id = sim
@@ -617,7 +617,7 @@ fn load_absorbed(sim: &mut Simulation, rules: &RuleSet, building: u64, count: us
                 .passenger_role
                 .cargo_mut()
                 .unwrap();
-            cargo.board_forced_chain(&[(id, 1)]);
+            cargo.board_forced_chain(&[(id, 1.0)]);
             id
         })
         .collect()
@@ -1070,7 +1070,7 @@ fn load_passengers(
             .passenger_role
             .cargo_mut()
             .expect("a transport");
-        cargo.board_forced_chain(&[(id, 1)]);
+        cargo.board_forced_chain(&[(id, 1.0)]);
     }
     passengers
 }

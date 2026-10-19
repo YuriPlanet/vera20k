@@ -158,7 +158,7 @@ fn absorb(sim: &mut Simulation, rules: &RuleSet, building: u64, count: usize) {
             .passenger_role
             .cargo_mut()
             .unwrap()
-            .board_forced_chain(&[(id, 1)]);
+            .board_forced_chain(&[(id, 1.0)]);
     }
 }
 
@@ -1972,7 +1972,7 @@ fn the_nearest_own_bunker_with_room_takes_an_occupier() {
             .passenger_role
             .cargo_mut()
             .unwrap()
-            .add_occupant(id, 1);
+            .add_occupant(id, 1.0);
     }
     sim.substrate
         .entities
@@ -2147,7 +2147,7 @@ fn an_occupier_turned_away_at_a_full_bunker_gives_up() {
             .passenger_role
             .cargo_mut()
             .unwrap()
-            .add_occupant(id, 1);
+            .add_occupant(id, 1.0);
     }
 
     assert!(run_until(&mut sim, &rules, &grid, 900, |sim| {

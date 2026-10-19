@@ -236,7 +236,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
             )));
         }
     }
-    let mut cargo = PassengerCargo::new(100, 0);
+    let mut cargo = PassengerCargo::new(100, 0.0);
     for (n, passenger) in passengers.iter().enumerate().rev() {
         let id = 500 + n as u64;
         insert(
@@ -252,7 +252,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
         e.veterancy
             .set_rank_for_test((passenger["veterancy"].as_u64().unwrap_or(0) * 100) as u16);
         e.set_gunner_selection_for_test(passenger["current"].as_i64().unwrap_or(0) as i32, -1);
-        cargo.board_forced_chain(&[(id, 1)]);
+        cargo.board_forced_chain(&[(id, 1.0)]);
     }
     sim.substrate.entities.get_mut(1).unwrap().passenger_role = PassengerRole::transport(cargo);
     // The original global Cell flags belong to CurrentHouse, even when the

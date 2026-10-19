@@ -416,8 +416,8 @@ fn crossing_mark_state_and_open_topped_cargo_are_visible_before_paid_continuatio
     ))
     .unwrap();
     sim.interner = crate::sim::intern::test_interner();
-    let mut cargo = PassengerCargo::new(2, 1);
-    cargo.board_forced_chain(&[(2, 1)]);
+    let mut cargo = PassengerCargo::new(2, 1.0);
+    cargo.board_forced_chain(&[(2, 1.0)]);
     sim.substrate.entities.get_mut(1).unwrap().passenger_role = PassengerRole::transport(cargo);
     let passenger = GameEntity::test_default(2, "E1", "Americans", 4, 4);
     sim.substrate.entities.insert(passenger);
@@ -2747,7 +2747,7 @@ fn a_mission_only_transport_with_passengers_selects_unload() {
             unit.passenger_role
                 .cargo_mut()
                 .unwrap()
-                .board_forced_chain(&[(passenger, 1)]);
+                .board_forced_chain(&[(passenger, 1.0)]);
         }
         if case == "teamed" {
             crate::sim::team_script_vm::join_team_for_test(&mut sim, &[id], false, false);

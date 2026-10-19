@@ -871,10 +871,9 @@ BuildSpeed=0.02
             let mut store = EntityStore::new();
             let mut building = make_building(1, "TEST", "Owner", value("actual"));
             let occupants = value("occupants") as u32;
-            let mut cargo = crate::sim::passenger::PassengerCargo::new(occupants, 0);
+            let mut cargo = crate::sim::passenger::PassengerCargo::new(occupants, 0.0);
             cargo.set_passengers_for_test((0..occupants).map(|i| 100 + u64::from(i)).collect());
-            cargo.set_passenger_sizes_for_test(vec![1; occupants as usize]);
-            cargo.set_total_size_for_test(occupants);
+            cargo.set_passenger_sizes_for_test(vec![1.0; occupants as usize]);
             building.passenger_role = crate::sim::passenger::PassengerRole::transport(cargo);
             store.insert(building);
             // Supply existing aggregate output with a signed-HP Power=1 source.

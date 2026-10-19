@@ -187,9 +187,9 @@ fn vehicle_grinding_refunds_both_cargo_levels_and_removes_each_passenger() {
     let nested = spawn(&mut sim, &rules, "CIV", "Russians", 12, 10);
     let sibling = spawn(&mut sim, &rules, "CIV", "Russians", 13, 10);
     let context = crate::sim::world::UninitContext::new(Some(&rules), None);
-    assert!(sim.add_cargo_passenger_chain(outer, &[(nested, 1)], context));
-    assert!(sim.add_cargo_passenger_chain(tank, &[(sibling, 1)], context));
-    assert!(sim.add_cargo_passenger_chain(tank, &[(outer, 1)], context));
+    assert!(sim.add_cargo_passenger_chain(outer, &[(nested, 1.0)], context));
+    assert!(sim.add_cargo_passenger_chain(tank, &[(sibling, 1.0)], context));
+    assert!(sim.add_cargo_passenger_chain(tank, &[(outer, 1.0)], context));
     sim.substrate.occupancy.add(
         10,
         10,

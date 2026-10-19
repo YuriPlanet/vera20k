@@ -71,7 +71,7 @@ fn check_fill(row: &serde_json::Value, rules: &RuleSet) {
     if let Some(count) = input["cargo_count"].as_u64() {
         let mut cargo = PassengerCargo::new(object.passengers as u32, object.size_limit);
         for id in 10..10 + count {
-            cargo.board_forced_chain(&[(id, 1)]);
+            cargo.board_forced_chain(&[(id, 1.0)]);
         }
         entity.passenger_role = PassengerRole::transport(cargo);
     }

@@ -105,7 +105,7 @@ fn spawn_and_board(sim: &mut Simulation, rules: &RuleSet, passenger_type: &str) 
 fn assert_boarded(sim: &Simulation, ifv: u64, passenger: u64) {
     let cargo = entity(sim, ifv).passenger_role.cargo().expect("IFV cargo");
     assert_eq!(cargo.passengers, [passenger]);
-    assert_eq!(cargo.passenger_sizes, [1]);
+    assert_eq!(cargo.passenger_sizes, [1.0]);
     assert_eq!(cargo.total_size, 1);
     let pax = entity(sim, passenger);
     assert_eq!(pax.passenger_role.inside_transport(), Some((ifv, false)));
@@ -358,7 +358,11 @@ fn retail_vehicle_enter_keeps_live_transport_target() {
         let size = rules.object(passenger_type).unwrap().size;
         assert_eq!(cargo.passengers, [passenger], "{passenger_type}: cargo");
         assert_eq!(cargo.passenger_sizes, [size]);
-        assert_eq!(cargo.total_size, size);
+        assert!(
+            size.fract() == 0.0,
+            "stock control size is integral: {size}"
+        );
+        assert_eq!(cargo.total_size, size as i32);
         assert!(entity(&sim, passenger).lifecycle.in_limbo());
         assert!(!sim.live_object_order_snapshot().contains(&passenger));
     }
@@ -400,7 +404,7 @@ fn retail_loaded_ifv_survives_transport_snapshot_unload_and_reentry() {
     assert_selection(&sim, ifv, (1, 2));
     let outer_cargo = entity(&sim, boat).passenger_role.cargo().unwrap();
     assert_eq!(outer_cargo.passengers, [ifv]);
-    assert_eq!(outer_cargo.total_size, rules.object("FV").unwrap().size);
+    assert_eq!(outer_cargo.total_size, 3);
 
     let terrain_template = sim.resolved_terrain.as_ref().unwrap().clone();
     let bytes = GameSnapshot::save(&sim, 0, 0, "nested repair IFV", 0);

@@ -59,6 +59,20 @@ use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::occupancy::CellObjectMember;
 use crate::sim::world::{FrameEffects, Simulation, UninitContext};
 
+/// Magnetron shot admission compares signed Bullet strength to the current
+/// Type's binary64 Size with FILD/FCOMP (`0x004696BD`): only greater passes.
+fn shot_strength_exceeds_size(strength: i32, size: f64) -> bool {
+    use crate::util::native_x87::{MaskedX87Chop53 as X87, MaskedX87Ordering, NativeF64Bits};
+
+    matches!(
+        X87::compare(
+            X87::load_i32(strength),
+            X87::load_f64(NativeF64Bits::from_bits(size.to_bits())),
+        ),
+        MaskedX87Ordering::Greater
+    )
+}
+
 /// The bullet's `+0x10C` as the locomotor arm reads it: an object, a cell
 /// (a real one or the dummy cell) or nothing.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -263,10 +277,11 @@ impl Simulation {
     /// at a landed aircraft. Effect: VERA's shot does nothing; native's lift
     /// and drop of an aircraft are untraced. Frequency: uncommon.
     ///
-    /// RESIDUAL: `Size=` is a double natively (`TechnoTypeClass+0x380`,
-    /// constructor 1.0); VERA's reader keeps an int with a per-category
-    /// default, so a type without the key compares against 1 or 3 instead of
-    /// 1.0. The stock Magnetron's 5000 exceeds every stock size.
+    /// Native execution (`gamemd` 3e81a617…d308600, FPCW 0x0E3F) confirms
+    /// FILD Bullet strength then FCOMP current Type+0x380 Size at `0x004696BD`:
+    /// strength 1 vs Size 1.5 refuses; strength 2 vs 1.5 accepts; equality
+    /// and unordered comparisons refuse. The `ReadDouble` owner preserves
+    /// Size, and this arm uses the shared masked x87 compare.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn locomotor_detonation(
         &mut self,
@@ -321,7 +336,7 @@ impl Simulation {
             && !victim.lift.swap_active()
             && self
                 .object_type(victim.type_ref(), rules)
-                .is_some_and(|object| f64::from(strength) > f64::from(object.size));
+                .is_some_and(|object| shot_strength_exceeds_size(strength, object.size));
         if admitted {
             self.imbue_locomotor(owner, victim_id, kind, rules, registry, effects);
         }

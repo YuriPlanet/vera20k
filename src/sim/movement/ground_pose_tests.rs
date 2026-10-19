@@ -1386,8 +1386,8 @@ fn foot_set_location_always_writes_but_moves_riders_only_on_a_change() {
         .position
         .set_sub_y_for_test(SimFixed::from_num(128));
     transport.position.set_exact_z_leptons_for_test(Some(0));
-    let mut cargo = PassengerCargo::new(5, 2);
-    cargo.board_forced_chain(&[(2, 1)]);
+    let mut cargo = PassengerCargo::new(5, 2.0);
+    cargo.board_forced_chain(&[(2, 1.0)]);
     transport.passenger_role = PassengerRole::transport(cargo);
     let mut rider = GameEntity::test_default(2, "E1", "Americans", 3, 0);
     rider.passenger_role = PassengerRole::inside_for_test(1, true);

@@ -238,7 +238,10 @@ impl Simulation {
             );
         } else if obj.can_be_occupied && obj.max_number_occupants > 0 {
             ge.passenger_role = crate::sim::passenger::PassengerRole::transport(
-                crate::sim::passenger::PassengerCargo::new(obj.max_number_occupants, 1),
+                crate::sim::passenger::PassengerCargo::new(
+                    obj.max_number_occupants,
+                    obj.size_limit,
+                ),
             );
         }
 

@@ -277,8 +277,7 @@ pub(crate) fn can_load(
     // or a sender controlling something (0x004722C0), is refused. With a
     // free passenger slot (+0x114 against +0x5E0) and the sender's Size=
     // within SizeLimit= it answers ROGER; otherwise the later arms decide.
-    // Size= and SizeLimit= are native doubles that VERA reads as integers
-    // (equal on every retail value).
+    // Both values are native doubles; preserve their binary64 comparison.
     if absorbs {
         let class_refused = match unit.category() {
             EntityCategory::Unit => !building_type.unit_absorb,
@@ -298,7 +297,10 @@ pub(crate) fn can_load(
             .cargo()
             .map_or(0, |cargo| cargo.count());
         if i64::from(passengers) < i64::from(building_type.passengers)
-            && unit_type.size <= building_type.size_limit
+            && crate::sim::passenger::PassengerCargo::size_within_limit(
+                unit_type.size,
+                building_type.size_limit,
+            )
         {
             return CanLoad::Answer(RadioResponse::Roger);
         }
@@ -1024,8 +1026,8 @@ fn unit_docking(
 /// query. Both the UI adapter and the real arrival radio use this one owner.
 /// Native controls: unit_transport_can_enter.py. It reads the receiver's
 /// one-way alliance, the ground Cell building list, and total cargo Size,
-/// not the passenger count. Size/SizeLimit are native doubles represented as
-/// integers here; the saved controls cover integer retail values only.
+/// not the passenger count. Native controls cover integer and fractional
+/// Size/SizeLimit inputs through the shared masked-x87 admission owner.
 pub(crate) fn unit_can_enter_radio(
     sim: &Simulation,
     unit: u64,
@@ -1088,10 +1090,10 @@ pub(crate) fn unit_can_enter_radio(
 
 /// A Unit transport's room for a sender, as its DOCKING and CAN_LOAD arms
 /// measure it (`UnitClass::Receive_Radio @ 0x00737430`, 0x0E and 0x0F): its
-/// cargo's total `Size=` plus the sender's within `Passengers=`, and the
-/// sender's `Size=` within `SizeLimit=`. Both are native doubles VERA reads
-/// as integers; the saved controls (`unit_transport_can_enter.json`) cover
-/// integer retail values only.
+/// cargo's signed-int total plus the sender's binary64 `Size=` within the
+/// receiver's integer `Passengers=`, and the sender's binary64 `Size=` within
+/// binary64 `SizeLimit=`. The original receiver performs these comparisons
+/// in the x87 owner exposed by PassengerCargo.
 fn transport_has_room(
     transport: &crate::sim::game_entity::GameEntity,
     transport_type: &crate::rules::object_type::ObjectType,
@@ -1101,8 +1103,14 @@ fn transport_has_room(
         .passenger_role
         .cargo()
         .map_or(0, |cargo| cargo.total_size());
-    i64::from(occupied) + i64::from(sender_type.size) <= i64::from(transport_type.passengers)
-        && sender_type.size <= transport_type.size_limit
+    crate::sim::passenger::PassengerCargo::size_fits_capacity(
+        occupied,
+        sender_type.size,
+        transport_type.passengers,
+    ) && crate::sim::passenger::PassengerCargo::size_within_limit(
+        sender_type.size,
+        transport_type.size_limit,
+    )
 }
 
 /// PREPARE_TO_DOCK, `UnitClass::Receive_Radio` case 0x16 (`0x007376AD`):
@@ -3020,9 +3028,8 @@ mod tests {
         );
     }
 
-    /// Replays original Unit737430 message0F with the same supplied integer
-    /// Size/cargo/alliance and refusal states. Original query execution, not
-    /// full construction/boarding or fractional Size parity.
+    /// Replays original Unit737430 message0F with supplied signed cargo,
+    /// binary64 Size/SizeLimit, alliance and refusal controls.
     #[test]
     fn unit_transport_can_enter_matches_original_radio_controls() {
         use crate::rules::ini_parser::IniFile;
@@ -3035,8 +3042,8 @@ mod tests {
         for row in corpus["rows"].as_array().unwrap() {
             let input = &row["input"];
             let capacity = input["capacity"].as_i64().unwrap();
-            let limit = input["size_limit"].as_u64().unwrap();
-            let size = input["passenger_size"].as_u64().unwrap();
+            let limit = input["size_limit"].as_f64().unwrap();
+            let size = input["passenger_size"].as_f64().unwrap();
             let rules = crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(&format!(
                 "[VehicleTypes]\n0=TRAN\n[TRAN]\nStrength=100\nPassengers={capacity}\nSizeLimit={limit}\n\
                  [InfantryTypes]\n0=E1\n[E1]\nStrength=100\nSize={size}\n"
@@ -3068,9 +3075,9 @@ mod tests {
                 5,
                 false,
             );
-            let mut cargo = PassengerCargo::new(capacity.max(0) as u32, limit as u32);
+            let mut cargo = PassengerCargo::new(capacity.max(0) as u32, limit);
             for (index, entry) in input["cargo_sizes"].as_array().unwrap().iter().enumerate() {
-                cargo.board_forced_chain(&[(10 + index as u64, entry.as_u64().unwrap() as u32)]);
+                cargo.board_forced_chain(&[(10 + index as u64, entry.as_f64().unwrap())]);
             }
             carrier.passenger_role = PassengerRole::transport(cargo);
             if input["warped"].as_bool().unwrap_or(false) {
@@ -3179,7 +3186,7 @@ mod tests {
             5,
             false,
         );
-        plane.passenger_role = PassengerRole::transport(PassengerCargo::new(5, 0));
+        plane.passenger_role = PassengerRole::transport(PassengerCargo::new(5, 0.0));
         sim.substrate.entities.insert(plane);
         let gi_type = sim.intern("E1");
         sim.substrate

@@ -1179,7 +1179,11 @@ use crate::util::save_codec;
 // 437 -> 438: retain the GenericWarhead payload reference in processed rules.
 // 438 -> 439: retain optional Ares auxiliary and negative building lists.
 // 439 -> 440: UnitDelivery rules, pending effects and per-building base override.
-const SNAPSHOT_VERSION: u32 = 440;
+// 440 -> 441: Cargo SizeLimit and each passenger Size use binary64; the cached
+// CargoTotalSize is the signed low-32-bit result of native's ordered per-entry
+// FTOL. The positional passenger-size payload widened, so a v440 body cannot
+// be decoded under this schema.
+const SNAPSHOT_VERSION: u32 = 441;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -1537,12 +1541,12 @@ pub enum SnapshotRestoreError {
         size_count: usize,
     },
     #[error(
-        "carrier {carrier_id} saved total Size {saved_total}, but its entry sizes sum to {computed_total}"
+        "carrier {carrier_id} saved CargoTotalSize {saved_total}, but its ordered passenger Sizes produce {computed_total}"
     )]
     PassengerSizeTotalMismatch {
         carrier_id: u64,
-        saved_total: u32,
-        computed_total: u64,
+        saved_total: i32,
+        computed_total: i32,
     },
     #[error("snapshot restore requires the {component}")]
     MissingMapAuthorityComponent { component: &'static str },
@@ -2097,12 +2101,8 @@ fn validate_passenger_size_tables(sim: &Simulation) -> Result<(), SnapshotRestor
                 size_count: cargo.passenger_sizes().len(),
             });
         }
-        let computed_total: u64 = cargo
-            .passenger_sizes()
-            .iter()
-            .map(|&size| u64::from(size))
-            .sum();
-        if computed_total != u64::from(cargo.total_size()) {
+        let computed_total = cargo.recomputed_total_size();
+        if computed_total != cargo.total_size() {
             return Err(SnapshotRestoreError::PassengerSizeTotalMismatch {
                 carrier_id,
                 saved_total: cargo.total_size(),
@@ -4425,8 +4425,8 @@ mod tests {
             GameSnapshot::load(&preamble_only),
             Err(SnapshotError::VersionMismatch {
                 expected: SNAPSHOT_VERSION,
-                found,
-            }) if found == SNAPSHOT_VERSION - 1
+                found: 440,
+            })
         ));
     }
 
@@ -4579,7 +4579,7 @@ mod tests {
     /// 132 -> 133 persists the `HouseClass+0x57D4` funds-nag timer and the
     /// `[0xA8F040]` low-power guard.
     #[test]
-    fn current_snapshot_version_includes_gap_operational_state() {
+    fn current_snapshot_version_includes_fractional_passenger_sizes() {
         // 133 -> 134: repair-depot docking layout (see the constant's comment).
         // 134 -> 135: GameEntity ProduceCash timer + drain link pair (GSI-09.01).
         // 135 -> 136: explicit retained Infantry terminal lifetime policy.
@@ -4885,7 +4885,8 @@ mod tests {
         // 437 -> 438: the retained GenericWarhead payload binding.
         // 438 -> 439: retained Ares building requirement lists.
         // 439 -> 440: UnitDelivery state and instance base policy.
-        assert_eq!(super::SNAPSHOT_VERSION, 440);
+        // 440 -> 441: binary64 passenger Size/SizeLimit and signed CargoTotalSize.
+        assert_eq!(super::SNAPSHOT_VERSION, 441);
     }
 
     #[test]
@@ -4942,6 +4943,107 @@ mod tests {
                 crate::sim::estimated_health::EstimatedHealth::from_raw(estimated.wrapping_add(1));
             assert_ne!(restored.state_hash(), before);
         }
+    }
+
+    #[test]
+    fn fractional_passenger_sizes_roundtrip_and_recompute_after_remove() {
+        use crate::sim::game_entity::GameEntity;
+        use crate::sim::passenger::{PassengerCargo, PassengerRole};
+
+        let oracle: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/spatial_oracle/cargo_total_size.json",
+        ))
+        .unwrap();
+        let row = oracle["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|row| row["input"]["name"] == "positive_then_negative")
+            .unwrap();
+        let size_bits: Vec<u64> = row["input"]["size_f64_bits"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|bits| u64::from_str_radix(bits.as_str().unwrap(), 16).unwrap())
+            .collect();
+        let sizes: Vec<f64> = size_bits.iter().copied().map(f64::from_bits).collect();
+        let native_total = row["total_size_i32"].as_i64().unwrap() as i32;
+
+        let mut sim = Simulation::new();
+        let carrier_id = sim.allocate_stable_id();
+        let passenger_ids = [sim.allocate_stable_id(), sim.allocate_stable_id()];
+        let mut cargo = PassengerCargo::new(2, 1.25);
+        cargo.board_forced_chain(&passenger_ids.into_iter().zip(sizes).collect::<Vec<_>>());
+        assert_eq!(cargo.total_size(), native_total);
+
+        let owner = sim.intern("Americans");
+        let mut carrier = GameEntity::test_default(carrier_id, "TRAN", "Americans", 0, 0);
+        carrier.set_owner_for_test(owner);
+        carrier.set_type_ref_for_test(sim.intern("TRAN"));
+        carrier.passenger_role = PassengerRole::transport(cargo);
+        sim.substrate.entities.insert(carrier);
+        for id in passenger_ids {
+            let mut passenger = GameEntity::test_default(id, "E1", "Americans", 0, 0);
+            passenger.set_owner_for_test(owner);
+            passenger.set_type_ref_for_test(sim.intern("E1"));
+            passenger
+                .passenger_role
+                .set_inside_transport(carrier_id, false);
+            sim.substrate.entities.insert(passenger);
+        }
+
+        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        let before = sim.state_hash();
+        let bytes = GameSnapshot::save(&sim, 0, 0, "fractional-cargo", 0);
+        let mut restored = GameSnapshot::load(&bytes)
+            .expect("fractional cargo schema")
+            .sim;
+        restored
+            .restore_after_snapshot_load()
+            .expect("fractional cargo references");
+        let cargo = restored
+            .substrate
+            .entities
+            .get(carrier_id)
+            .unwrap()
+            .passenger_role
+            .cargo()
+            .unwrap();
+        assert_eq!(cargo.passengers(), passenger_ids.as_slice());
+        assert_eq!(
+            cargo
+                .passenger_sizes()
+                .iter()
+                .map(|size| size.to_bits())
+                .collect::<Vec<_>>(),
+            size_bits
+        );
+        assert_eq!(cargo.size_limit().to_bits(), 1.25_f64.to_bits());
+        assert_eq!(cargo.total_size(), native_total);
+        assert_eq!(cargo.total_size(), cargo.recomputed_total_size());
+        assert_eq!(restored.state_hash(), before);
+
+        let cargo = restored
+            .substrate
+            .entities
+            .get_mut(carrier_id)
+            .unwrap()
+            .passenger_role
+            .cargo_mut()
+            .unwrap();
+        assert!(cargo.disembark(passenger_ids[1]));
+        assert_eq!(cargo.passengers(), &passenger_ids[..1]);
+        assert_eq!(cargo.passenger_sizes()[0].to_bits(), size_bits[0]);
+        assert_eq!(cargo.total_size(), cargo.recomputed_total_size());
+        assert_eq!(cargo.total_size(), 1);
+        restored
+            .substrate
+            .entities
+            .get_mut(passenger_ids[1])
+            .unwrap()
+            .passenger_role
+            .clear_carrier_relation();
+        assert_ne!(restored.state_hash(), before);
     }
 
     #[test]

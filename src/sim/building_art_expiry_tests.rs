@@ -203,8 +203,8 @@ fn scene(golden: &Value, row: &Value) -> (Simulation, RuleSet, u64, u64) {
     // Negative native vector counts have no equivalent valid Rust vector;
     // this control supplies its empty predicate, without certifying malformed state.
     if case["garrison_count"].as_i64().unwrap_or(0) > 0 {
-        let mut cargo = crate::sim::passenger::PassengerCargo::new(1, 0);
-        cargo.board_forced_chain(&[(contact, 1)]);
+        let mut cargo = crate::sim::passenger::PassengerCargo::new(1, 0.0);
+        cargo.board_forced_chain(&[(contact, 1.0)]);
         entity.passenger_role = crate::sim::passenger::PassengerRole::transport(cargo);
     }
     sim.substrate.entities.insert(entity);
