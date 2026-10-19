@@ -17,7 +17,7 @@
 //! `deploy` rows (actions 14, 43, 8 and 9) in `transport_tests`.
 //!
 //! RESIDUALS:
-//! - Actions other than 0, 1, 2, 3, 5, 6, 8, 9, 11, 14, 16, 17, 19, 20, 21, 24, 30, 37, 39, 40, 42, 43,
+//! - Actions other than 0, 1, 2, 3, 5, 6, 8, 9, 10, 11, 14, 16, 17, 19, 20, 21, 24, 30, 37, 39, 40, 42, 43,
 //!   46, 47, 49, 50, 53, 54, 55, 57, 58, 59, 60, 61, 62, 63 and 64 are not ported. A team
 //!   that reaches one stays on it, as a native handler that has not
 //!   finished does, and records the first as its refusal; the rest of its
@@ -112,6 +112,7 @@ pub(super) const fn action_is_ported(action_id: i32) -> bool {
             | 6
             | 8
             | 9
+            | 10
             | 11
             | 14
             | 16
@@ -340,6 +341,7 @@ impl Simulation {
             }
             8 => self.team_action_unload(team_id, action.argument, rules, registry, frame_effects),
             9 => self.team_action_deploy(team_id, rules, registry, frame_effects),
+            10 => self.team_action_follow_friendlies(team_id, rules, registry, frame_effects),
             11 => self.team_action_do_mission(
                 team_id,
                 action.argument,
