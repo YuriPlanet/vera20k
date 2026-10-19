@@ -435,7 +435,7 @@ pub(crate) fn build_unit_instances(
         }
 
         // Sampled at the turret's frame, so the two sprites cannot disagree.
-        let body_facing = entity.body_facing_byte(sim.session.binary_frame);
+        let body_facing = body_draw_facing(entity, sim.session.binary_frame);
         let ground_pose = ground_pose(entity, slope_state, sim.session.binary_frame);
         if let BodyDraw::Pose(tilt) = body {
             let key = UnitSpriteKey {
@@ -816,6 +816,25 @@ fn body_pose(
             Some(PoseTilt::Jumpjet(angles))
         }
         _ => None,
+    }
+}
+
+/// Fly DrawMatrix4CF632/4CF659 reads SecondaryFacing for both its cache key
+/// and rotation, like its separate ShadowMatrix. PrimaryFacing may already
+/// point elsewhere while the plane turns. Other locomotors keep their owner.
+fn body_draw_facing(entity: &crate::sim::game_entity::GameEntity, binary_frame: u32) -> u8 {
+    if entity
+        .locomotor
+        .as_ref()
+        .is_some_and(|loco| loco.active_kind() == crate::rules::locomotor_type::LocomotorKind::Fly)
+    {
+        let facing = entity.barrel_facing.as_ref().map_or_else(
+            || entity.body_facing_current(binary_frame),
+            |facing| facing.current(binary_frame),
+        );
+        crate::render::vxl_raster::voxel_facing_step_u16(facing) * 8
+    } else {
+        entity.body_facing_byte(binary_frame)
     }
 }
 
@@ -2147,6 +2166,36 @@ mod tests {
         }
         entity.cloak.as_mut().unwrap().set_state_for_test(0);
         assert!(unit_shadow_admitted(&entity, false, EntityDrawBand::Ground));
+    }
+
+    #[test]
+    fn fly_body_draw_uses_the_executed_secondary_facing_cache_key() {
+        let fixture: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/voxel_oracle/aircraft_shadow.json",
+        ))
+        .unwrap();
+        let mut compared = 0;
+        for case in fixture["callers"].as_array().unwrap() {
+            let Some(native_key) = case["body_cache_key"].as_u64() else {
+                continue;
+            };
+            let input = &case["input"];
+            let mut entity = GameEntity::test_default(1, "ORCA", "Americans", 10, 10);
+            entity.set_category_for_test(EntityCategory::Aircraft);
+            entity.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Fly));
+            entity
+                .body_facing
+                .snap(input["primary"].as_u64().unwrap() as u16, 0);
+            crate::sim::movement::air_movement::ensure_fly_secondary_facing(&mut entity);
+            entity
+                .barrel_facing
+                .as_mut()
+                .unwrap()
+                .snap(input["secondary"].as_u64().unwrap() as u16, 0);
+            assert_eq!(body_draw_facing(&entity, 0), native_key as u8, "{input}");
+            compared += 1;
+        }
+        assert_eq!(compared, 4);
     }
 
     /// A crashing body takes its pose before the turret split, whether or not

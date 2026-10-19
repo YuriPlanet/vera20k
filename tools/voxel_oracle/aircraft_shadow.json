@@ -5,6 +5,7 @@
         320,
         115
       ],
+      "body_cache_key": 0,
       "input": {
         "locomotor": "Fly",
         "primary": 0,
@@ -309,6 +310,7 @@
         320,
         115
       ],
+      "body_cache_key": 8,
       "input": {
         "locomotor": "Fly",
         "primary": 1023,
@@ -356,6 +358,7 @@
         320,
         115
       ],
+      "body_cache_key": 0,
       "input": {
         "locomotor": "Fly",
         "primary": 1024,
@@ -477,6 +480,54 @@
         0,
         3203850005,
         3208126301,
+        1056968322,
+        0
+      ],
+      "restored_6b6": 1,
+      "restored_xyz": [
+        2688,
+        2688,
+        0
+      ],
+      "temporary_xyz": [
+        2688,
+        2688,
+        0
+      ]
+    },
+    {
+      "anchor": [
+        320,
+        115
+      ],
+      "body_cache_key": 64,
+      "input": {
+        "locomotor": "Fly",
+        "primary": 36864,
+        "secondary": 16384,
+        "xyz": [
+          2688,
+          2688,
+          0
+        ]
+      },
+      "mark_modes": [
+        0,
+        1,
+        0,
+        1
+      ],
+      "matrix_bits": [
+        1060457467,
+        1060421071,
+        0,
+        0,
+        3199521355,
+        1052074119,
+        1063103350,
+        0,
+        1058832617,
+        3206347781,
         1056968322,
         0
       ],
@@ -4893,7 +4944,7 @@
         ]
       },
       {
-        "caller": 18,
+        "caller": 19,
         "combined_matrix_bits": [
           3210138036,
           1054279553,
@@ -5266,7 +5317,7 @@
         ]
       },
       {
-        "caller": 18,
+        "caller": 19,
         "combined_matrix_bits": [
           3210138036,
           1054279553,
@@ -5639,7 +5690,7 @@
         ]
       },
       {
-        "caller": 18,
+        "caller": 19,
         "combined_matrix_bits": [
           3210138036,
           1054279553,
@@ -5944,7 +5995,7 @@
         ]
       },
       {
-        "caller": 18,
+        "caller": 19,
         "combined_matrix_bits": [
           3210138036,
           1054279553,
@@ -11012,7 +11063,7 @@
         ]
       },
       {
-        "caller": 18,
+        "caller": 19,
         "combined_matrix_bits": [
           3210138036,
           1054279552,

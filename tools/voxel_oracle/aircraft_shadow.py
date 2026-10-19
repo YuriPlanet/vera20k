@@ -119,8 +119,13 @@ def execute(case, inspect_renderer=False):
     result['restored_xyz'] = list(struct.unpack('<3i', u.mem_read(OWNER + 0x9C, 12)))
     result['restored_6b6'] = u.mem_read(OWNER + 0x6B6, 1)[0]
     result['mark_modes'] = marks
-    assert before_rng == bytes(u.mem_read(SCENARIO + 0x218, 0x3F4))
     assert result['restored_xyz'] == case['xyz']
+    if case['locomotor'] == 'Fly' and case['xyz'][2] == 0 and not case.get('slope', 0):
+        body_matrix, body_key = SCRATCH + 0x53000, SCRATCH + 0x53100
+        u.mem_write(body_key, dwords(0))
+        f.call(0x4CF610, 0, [loco + 4, body_matrix, body_key])
+        result['body_cache_key'] = struct.unpack('<I', u.mem_read(body_key, 4))[0]
+    assert before_rng == bytes(u.mem_read(SCENARIO + 0x218, 0x3F4))
     return result
 
 
@@ -136,6 +141,7 @@ def generate():
     controls += [dict(base, locomotor=kind, primary=primary, secondary=secondary)
                  for kind in ('Fly', 'Rocket')
                  for primary, secondary in ((0x3FF, 0x400), (0x400, 0x3FF))]
+    controls.append(dict(base, primary=0x9000, secondary=0x4000))
     for kind in ('Fly', 'Rocket'):
         for on_bridge, flags, neighbor, z in ((False, 0x900, 0x100, 1500),
                                              (True, 0x100, 0x100, 1500),
@@ -176,6 +182,7 @@ if __name__ == '__main__':
         substitutions=['Foot Mark external display notification: records mode and supplies marked byte/success',
                        'Techno final drawing output boundary for caller cleanup; separate native core raster comparison',
                        'immutable file vtable IO and mapped heap allocation in shared shadow raster helper'],
-        entry_points={'aircraft_caller': 0x414687, 'fly_matrix': 0x4CFB00, 'fly_point': 0x4CF940,
+        entry_points={'aircraft_caller': 0x414687, 'fly_body_matrix': 0x4CF610,
+                      'fly_matrix': 0x4CFB00, 'fly_point': 0x4CF940,
                       'rocket_matrix': 0x55A7D0, 'rocket_point': 0x55A8C0, 'foot_shadow': 0x4DB0D0,
                       'techno_shadow': 0x706BD0, 'quad': 0x753F90, 'crop': 0x754510}))

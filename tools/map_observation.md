@@ -857,6 +857,10 @@ wrapper reports denied variables and does not silently change the environment.
 After sourcing the native development environment, explicitly remove `RA2_DIR`
 for this command as above; asset loading uses the working directory's config.
 
+On Linux, winit's text-free `Ime::Disabled` startup notification is recognized
+as lifecycle state while the capture window is observably hidden and unfocused.
+Keyboard, pointer and other IME events still reach the input guards.
+
 The [factory tank exit profile](map_observation.factory-tank-exit.example.json)
 exercises the ordinary human GAWEAP → MTNK production path on retail AnyTown
 (`XMP03T4.MAP`). It deploys the starting MCV, builds power, barracks and refinery,

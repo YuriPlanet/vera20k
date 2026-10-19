@@ -20,6 +20,7 @@
   ],
   "entry_points": {
     "aircraft_caller": "0x00414687",
+    "fly_body_matrix": "0x004CF610",
     "fly_matrix": "0x004CFB00",
     "fly_point": "0x004CF940",
     "rocket_matrix": "0x0055A7D0",
@@ -30,5 +31,5 @@
     "crop": "0x00754510"
   },
   "replay_command": "python -m tools.voxel_oracle.aircraft_shadow",
-  "payload_sha256": "a80c42cf01472b60e6a80be77e6b03c15423b951bf32c9095768930a51f007bb"
+  "payload_sha256": "4fd1c6fd148099640fe4095576f493ebb0ac1fec7543825f2c484c09428b4743"
 }
