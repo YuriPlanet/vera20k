@@ -101,20 +101,25 @@ fn initial_endpoint(parent: [i32; 3], facing: u16, radius: i32) -> [i32; 3] {
         parent[2],
     ]
 }
-fn rotate(endpoint: [i32; 3], pivot: [i32; 3], angle: NativeF64Bits) -> [i32; 3] {
+fn rotate(endpoint: [i32; 3], pivot: [i32; 3], angle: NativeF64Bits) -> Option<[i32; 3]> {
     use crate::util::native_affine as a;
     //436384/436534 spills angle to float, then shared MatrixRotateZ5AF1A0
     //and TransformPoint5AFB80, vector floats, add pivot and ftol.
-    let angle = X::load_f32(X::store_f32(d(angle)).unwrap()).unwrap();
+    let angle = X::load_f32(X::store_f32(d(angle)).ok()?).ok()?;
     let t = TrigTable::embedded();
-    let sin = a::store(t.sin_from_table(angle)).unwrap();
-    let cos = a::store(t.cos_from_table(angle)).unwrap();
+    let sin = a::store(t.sin_from_table(angle))?;
+    let cos = a::store(t.cos_from_table(angle))?;
     let m = a::rotate_z(glam::Mat4::IDENTITY, sin, cos);
-    let point = glam::Vec3::from_array(std::array::from_fn(|i| {
-        a::store(X::load_i32(endpoint[i].wrapping_sub(pivot[i]))).unwrap()
-    }));
-    let p = a::transform_point(m, point).unwrap().to_array();
-    std::array::from_fn(|i| integer(X::add(X::load_i32(pivot[i]), a::load(p[i]).unwrap())))
+    let mut point = [0.0; 3];
+    for i in 0..3 {
+        point[i] = a::store(X::load_i32(endpoint[i].wrapping_sub(pivot[i])))?;
+    }
+    let p = a::transform_point(m, glam::Vec3::from_array(point))?.to_array();
+    let mut result = [0; 3];
+    for i in 0..3 {
+        result[i] = integer(X::add(X::load_i32(pivot[i]), a::load(p[i])?));
+    }
+    Some(result)
 }
 fn advance_angle(light: &mut Spotlight, rules: SpotlightRules) {
     light.angle = save(X::add(d(light.angle), d(light.rate)));
@@ -206,8 +211,8 @@ impl Simulation {
                     .1,
             );
             Some([
-                rotate(coord, p, angle),
-                rotate(coord, p, save(X::neg(d(angle)))),
+                rotate(coord, p, angle)?,
+                rotate(coord, p, save(X::neg(d(angle))))?,
             ])
         } else {
             None
@@ -492,7 +497,10 @@ impl Simulation {
         match light.mode {
             1 => {
                 advance_angle(&mut light, params);
-                light.coord = rotate(light.endpoint, light.pivot, light.angle);
+                let Some(coord) = rotate(light.endpoint, light.pivot, light.angle) else {
+                    return;
+                };
+                light.coord = coord;
             }
             2 => {
                 let angle = X::add(X::mul(d(params.speed), X::load_i32(4)), d(light.angle));
@@ -504,7 +512,10 @@ impl Simulation {
                         angle
                     },
                 );
-                light.coord = rotate(light.endpoint, parent_raw, light.angle);
+                let Some(coord) = rotate(light.endpoint, parent_raw, light.angle) else {
+                    return;
+                };
+                light.coord = coord;
             }
             3 => {
                 if let Some(target) = light

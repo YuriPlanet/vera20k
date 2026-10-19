@@ -1,8 +1,9 @@
 # BuildingLight trigger control and detection
 
 `BuildingLightClass` is an ObjectClass child, separate from the temporary
-`SpotLightClass` used by drawing. The original Steam binary identity and replay
-commands are pinned by the adjacent `spotlight.meta.json` sidecars.
+`SpotLightClass` used by drawing. Each `spotlight.meta.json` sidecar identifies
+its source retail binary and replay command; the motion and drawing corpora
+were generated on different supported retail builds.
 
 - `435820` constructs ObjectClass, enters the `8B4190` class array, derives two
   endpoints from the parent's raw coordinates and FacingCurrent `4C93D0`, places
@@ -78,8 +79,10 @@ RA2_DIR=/path/to/retail python -m tools.procedural_drawing_oracle.spotlight
 
 `--write` regenerates the consumed controls. They cover five constructor
 headings, five motion traces through frame160, three cone geometries, twenty
-mask surfaces at two supplied radii, and four complete brightening-line store
-walks. They do not establish whole-scenario or GPU pixel parity.
+mask surfaces at two supplied radii, four complete brightening-line store
+walks and final pixels, and two complete type16 light draws. The production GPU
+tests compare the uncut lines and type16 draws in both supported color formats.
+These controls do not establish whole-scenario parity.
 
 The shared clipper intentionally retains its documented nearest-f64/native-chop
 edge residual. Three uncut store walks compare exactly; the selected clipped
@@ -89,10 +92,12 @@ Native lost-target mode3 `436321` submits uninitialized stack coordinates after
 resetting mode1. Rust retains the last coordinate for that transition. Invalid
 authored zero bucket divisors return zero; invalid negative beam widths refuse
 geometry instead of indexing an invalid trig entry. These are explicit safety
-policies. Nonfinite authored motion inputs preserve the last drawable pose and
-skip movement/detection while retaining ordinary parent-expiry cleanup. The
+policies. Nonfinite authored motion inputs or a failed float conversion preserve
+the last drawable pose and skip movement/detection while retaining ordinary
+parent-expiry cleanup. The
 retained INI values are not clamped; exceptional native floating-state propagation
-is outside the finite motion kernel's coverage. The renderer keys its mask cache by effective Rules radius; exact
+is outside the finite motion kernel's coverage. The renderer keys its mask cache
+by effective Rules radius; exact
 native graphics-cache retention across scenario replacement is not established.
 Native parent byte `+6E7` has its established constructor-zero state here;
 foreign native-save bytes are not imported.
