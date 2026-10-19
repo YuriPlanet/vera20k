@@ -152,7 +152,7 @@ pub(crate) fn super_weapon_ready_event(kind: SuperWeaponKind) -> Option<&'static
         SuperWeaponKind::IronCurtain => "EVA_IronCurtainReady",
         SuperWeaponKind::LightningStorm => "EVA_LightningStormReady",
         SuperWeaponKind::ChronoSphere => "EVA_ChronosphereReady",
-        SuperWeaponKind::ChronoWarp => return None,
+        SuperWeaponKind::ChronoWarp | SuperWeaponKind::GenericWarhead => return None,
         SuperWeaponKind::ParaDrop | SuperWeaponKind::AmerParaDrop => "EVA_ReinforcementsReady",
         SuperWeaponKind::PsychicDominator => "EVA_PsychicDominatorReady",
         SuperWeaponKind::SpyPlane => "EVA_SpyPlaneReady",
@@ -316,6 +316,7 @@ mod tests {
     #[test]
     fn ready_table_follows_the_type_index_jump_table() {
         use SuperWeaponKind as K;
+        assert_eq!(super_weapon_ready_event(K::GenericWarhead), None);
         assert_eq!(
             super_weapon_ready_event(K::MultiMissile),
             Some("EVA_NuclearMissileReady")

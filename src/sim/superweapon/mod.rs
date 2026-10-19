@@ -26,6 +26,8 @@ mod chronosphere_lunar_retail_tests;
 pub mod chronosphere_tests;
 mod fire;
 pub mod force_shield;
+mod generic_warhead;
+mod targeting;
 pub mod genetic_converter;
 pub mod invulnerability;
 pub mod iron_curtain;
@@ -665,7 +667,7 @@ pub(crate) fn super_types_with_type(
         .filter(move |name| {
             rules
                 .super_weapon(name)
-                .is_some_and(|sw| sw.kind.native_index() == type_value)
+                .is_some_and(|sw| type_value >= 0 && sw.kind.native_index() == type_value)
         })
         .map(String::as_str)
 }

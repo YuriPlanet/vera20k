@@ -53,10 +53,13 @@ pub enum SuperWeaponKind {
     ForceShield,
     /// Type=PsychicReveal (index 11) — Shroud reveal.
     PsychicReveal,
+    /// Ares extension: detonate `SW.Warhead` at the selected cell.
+    GenericWarhead,
 }
 
 impl SuperWeaponKind {
-    /// The native `Type=` value (`SuperWeaponTypeClass+0xB4`).
+    /// The retail `Type=` value (`SuperWeaponTypeClass+0xB4`), or -1 for an
+    /// extension. Extensions must never alias one of the twelve retail types.
     pub const fn native_index(self) -> i32 {
         match self {
             Self::MultiMissile => 0,
@@ -71,6 +74,7 @@ impl SuperWeaponKind {
             Self::GeneticConverter => 9,
             Self::ForceShield => 10,
             Self::PsychicReveal => 11,
+            Self::GenericWarhead => -1,
         }
     }
 
@@ -89,9 +93,29 @@ impl SuperWeaponKind {
             "geneticconverter" => Some(Self::GeneticConverter),
             "forceshield" => Some(Self::ForceShield),
             "psychicreveal" => Some(Self::PsychicReveal),
+            "genericwarhead" => Some(Self::GenericWarhead),
             _ => None,
         }
     }
+}
+
+/// The supported Ares GenericWarhead payload and automatic targeting mode.
+/// Ares sources: `src/Misc/SWTypes/GenericWarhead.cpp` and
+/// `src/Ext/SWType/Body.cpp` in https://github.com/Ares-Developers/Ares.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct GenericWarheadSettings {
+    /// Bound by the ordered Rules processor, including otherwise unreferenced
+    /// Warheads. An absent/null reference makes the launch unavailable.
+    pub warhead: Option<String>,
+    pub damage: i32,
+    pub ai_targeting: GenericWarheadAiTargeting,
+    pub targeting: crate::rules::superweapon_targeting::SuperWeaponTargeting,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum GenericWarheadAiTargeting {
+    None,
+    Offensive,
 }
 
 /// Superweapon type definition parsed from a rules.ini section.
@@ -160,6 +184,9 @@ pub struct SuperWeaponType {
     pub ai_defend_against: bool,
     /// When true, suspension doesn't auto-resume on power restore.
     pub manual_control: bool,
+    /// Present only for the explicitly selected Ares extension; stock types
+    /// retain their existing readers and behavior.
+    pub generic_warhead: Option<GenericWarheadSettings>,
 }
 
 impl SuperWeaponType {
@@ -189,8 +216,14 @@ impl SuperWeaponType {
                 },
             ),
             is_powered: section.read_bool("IsPowered", true),
-            // ReadAction's 0x20-byte ReadString (`0x00474EE0`).
-            action: section.read_name("Action", 0x20).map(str::to_string),
+            // Ares LoadFromRulesFile installs its custom action for new SWs;
+            // InitializeConstants supplies an Attack cursor. Stock ReadAction
+            // keeps its 0x20-byte ReadString (`0x00474EE0`).
+            action: if kind == SuperWeaponKind::GenericWarhead {
+                Some("Attack".to_string())
+            } else {
+                section.read_name("Action", 0x20).map(str::to_string)
+            },
             // ReadString 0x100, then a 24-byte copy (`0x006CEDB1`,
             // `0x006CEDD6`) that names the cameo.
             sidebar_image: section
@@ -199,13 +232,21 @@ impl SuperWeaponType {
             show_timer: section.read_bool("ShowTimer", false),
             disableable_from_shell: section.read_bool("DisableableFromShell", false),
             use_charge_drain: section.read_bool("UseChargeDrain", false),
-            pre_click: section.read_bool("PreClick", false),
-            post_click: section.read_bool("PostClick", false),
+            // Ares LoadFromINIFile derives these from the new type's Flags,
+            // not user tags. GenericWarhead is an ordinary one-click type.
+            pre_click: kind != SuperWeaponKind::GenericWarhead
+                && section.read_bool("PreClick", false),
+            post_click: kind != SuperWeaponKind::GenericWarhead
+                && section.read_bool("PostClick", false),
             // ReadString 0x28 (`0x006CEC98`).
-            pre_dependent: section
-                .read_name("PreDependent", 0x28)
-                .and_then(SuperWeaponKind::from_ini_str)
-                .map_or(-1, SuperWeaponKind::native_index),
+            pre_dependent: if kind == SuperWeaponKind::GenericWarhead {
+                -1
+            } else {
+                section
+                    .read_name("PreDependent", 0x28)
+                    .and_then(SuperWeaponKind::from_ini_str)
+                    .map_or(-1, SuperWeaponKind::native_index)
+            },
             // Constructor nulls; only the ordered Process owner reads them.
             weapon_type: None,
             aux_building: None,
@@ -213,6 +254,28 @@ impl SuperWeaponType {
             start_sound: section.read_name("StartSound", 0x80).map(str::to_string),
             ai_defend_against: section.read_bool("AIDefendAgainst", false),
             manual_control: section.read_bool("ManualControl", false),
+            generic_warhead: (kind == SuperWeaponKind::GenericWarhead).then(|| {
+                let ai_targeting = match section.read_name("SW.AITargeting", 0x40) {
+                    None => GenericWarheadAiTargeting::Offensive,
+                    Some(mode) if mode.eq_ignore_ascii_case("Offensive") => {
+                        GenericWarheadAiTargeting::Offensive
+                    }
+                    Some(mode) => {
+                        if !mode.eq_ignore_ascii_case("None") {
+                            log::warn!("SuperWeapon '{id}': unsupported SW.AITargeting={mode}");
+                        }
+                        GenericWarheadAiTargeting::None
+                    }
+                };
+                GenericWarheadSettings {
+                    warhead: None,
+                    damage: section.read_int("SW.Damage", 0),
+                    ai_targeting,
+                    targeting: crate::rules::superweapon_targeting::SuperWeaponTargeting::from_ini(
+                        section,
+                    ),
+                }
+            }),
         })
     }
 }
@@ -268,6 +331,30 @@ Type=BogusType
         let ini = IniFile::from_str(ini_text);
         let section = ini.section("BogusWeapon").unwrap();
         assert!(SuperWeaponType::from_ini_section("BogusWeapon", section).is_none());
+    }
+
+    #[test]
+    fn parse_ares_generic_warhead() {
+        let ini =
+            IniFile::from_str("[Strike]\nType=GenericWarhead\nSW.Warhead=Payload\nSW.Damage=75\n");
+        let sw = SuperWeaponType::from_ini_section("Strike", ini.section("Strike").unwrap())
+            .expect("Ares GenericWarhead is a supported superweapon type");
+        assert_eq!(
+            sw.kind.native_index(),
+            -1,
+            "extensions have no retail Type index"
+        );
+        assert_eq!(sw.generic_warhead.as_ref().unwrap().damage, 75);
+        assert_eq!(sw.action.as_deref(), Some("Attack"));
+        let defaults = IniFile::from_str("[Default]\nType=gEnErIcWaRhEaD\n");
+        let default_sw =
+            SuperWeaponType::from_ini_section("Default", defaults.section("Default").unwrap())
+                .unwrap();
+        assert_eq!(default_sw.generic_warhead.as_ref().unwrap().damage, 0);
+        assert_eq!(
+            default_sw.generic_warhead.as_ref().unwrap().ai_targeting,
+            GenericWarheadAiTargeting::Offensive
+        );
     }
 
     #[test]

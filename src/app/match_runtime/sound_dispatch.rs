@@ -1091,7 +1091,9 @@ pub(crate) fn superweapon_launch_cue(
             ..positional
         },
         // Cases 3, 5, 6 and 8 reach neither a `VocClass` nor a `VoxClass` call.
-        K::ChronoSphere | K::ParaDrop | K::AmerParaDrop | K::SpyPlane => {
+        // GenericWarhead has no default Ares launch sound/EVA; custom Ares
+        // audio overrides are outside this initial payload implementation.
+        K::ChronoSphere | K::ParaDrop | K::AmerParaDrop | K::SpyPlane | K::GenericWarhead => {
             SuperWeaponLaunchCue::default()
         }
     }
@@ -2161,6 +2163,9 @@ mod tests {
         use crate::rules::superweapon_type::SuperWeaponKind as K;
         let g = stock_audio_visual();
         let cue = |kind, start: Option<&str>| superweapon_launch_cue(kind, &g, start);
+        let generic = cue(K::GenericWarhead, None);
+        assert_eq!(generic.sound_id, None);
+        assert_eq!(generic.eva_event, None);
 
         // Case 0: DigSound at the target plus the nuke EVA.
         let nuke = cue(K::MultiMissile, None);

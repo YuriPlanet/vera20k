@@ -4399,6 +4399,16 @@ impl RuleSet {
         }
         // Equal truncated stored IDs share one projected type, which the last
         // such member's state is written to last.
+        for (name, warhead) in processed.generic_super_weapon_warhead_states() {
+            if let Some(settings) = rules
+                .super_weapons
+                .values_mut()
+                .find(|super_weapon| super_weapon.id.eq_ignore_ascii_case(name))
+                .and_then(|super_weapon| super_weapon.generic_warhead.as_mut())
+            {
+                settings.warhead = warhead.map(str::to_owned);
+            }
+        }
         for (name, warhead) in processed.particle_warhead_states() {
             if let Some(particle) = rules
                 .particle_types
@@ -5649,6 +5659,20 @@ impl RuleSet {
             })
             .collect::<BTreeMap<_, _>>()
             .hash(&mut hasher);
+        // Keep stock rules hashes unchanged. Extension payload references are
+        // resolved state too: a layered clear/rebind must invalidate a save.
+        let generic_warheads = self
+            .super_weapons
+            .iter()
+            .filter_map(|(id, sw)| {
+                sw.generic_warhead
+                    .as_ref()
+                    .map(|settings| (id.to_ascii_uppercase(), settings))
+            })
+            .collect::<BTreeMap<_, _>>();
+        if !generic_warheads.is_empty() {
+            generic_warheads.hash(&mut hasher);
+        }
         self.weapons
             .iter()
             .map(|(id, weapon)| {

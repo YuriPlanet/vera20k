@@ -51,12 +51,37 @@ impl Simulation {
         overlay_registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> bool {
+        self.fire_super_weapon_with_targeting(
+            rules,
+            owner,
+            sw_type_id,
+            cell,
+            overlay_registry,
+            frame_effects,
+            false,
+        )
+    }
+
+    /// AI uses the same launch/charge transaction, with its own target masks.
+    pub(crate) fn fire_super_weapon_with_targeting(
+        &mut self,
+        rules: &RuleSet,
+        owner: InternedId,
+        sw_type_id: InternedId,
+        cell: (u16, u16),
+        overlay_registry: Option<&OverlayTypeRegistry>,
+        frame_effects: FrameEffects<'_>,
+        automatic: bool,
+    ) -> bool {
         #[cfg(any(test, feature = "test-support"))]
         super::ai_fire::observe(super::ai_fire::AiFireEvent::Fire(sw_type_id, cell));
         let Some(sw) = rules.super_weapon(self.interner.resolve(sw_type_id)) else {
             return false;
         };
         if super_instance(self, owner, sw_type_id).is_none() {
+            return false;
+        }
+        if super::targeting::check(self, rules, owner, sw, cell, automatic).is_err() {
             return false;
         }
         let paired = sw
@@ -122,6 +147,11 @@ fn click_fire(
     frame_effects: FrameEffects<'_>,
 ) -> bool {
     if sw.use_charge_drain {
+        return false;
+    }
+    if sw.kind == SuperWeaponKind::GenericWarhead
+        && !super::generic_warhead::can_launch(sim, rules, sw, cell)
+    {
         return false;
     }
     let Some(instance) = super_instance(sim, owner, sw_type_id) else {
@@ -261,6 +291,18 @@ fn launch(
         }
         SuperWeaponKind::SpyPlane => {
             super::spy_plane::launch(sim, rules, owner, sw_type_id, (rx, ry), frame_effects);
+        }
+        SuperWeaponKind::GenericWarhead => {
+            super::generic_warhead::launch(
+                sim,
+                rules,
+                owner,
+                sw_type_id,
+                sw,
+                (rx, ry),
+                overlay_registry,
+                frame_effects,
+            );
         }
     }
 }

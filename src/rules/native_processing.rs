@@ -846,6 +846,16 @@ impl ProcessedRulesLayers {
         })
     }
 
+    /// Ares GenericWarhead references, resolved by the same ordered type
+    /// allocator as native references. Kept separate from the retail fields.
+    pub(crate) fn generic_super_weapon_warhead_states(
+        &self,
+    ) -> impl Iterator<Item = (&str, Option<&str>)> {
+        self.member_states(RulesTypeFamily::SuperWeapon, |member| {
+            member.generic_super_weapon_warhead.as_deref()
+        })
+    }
+
     /// Each ParticleType's `Warhead=` after every reached pass.
     pub(crate) fn particle_warhead_states(&self) -> impl Iterator<Item = (&str, Option<&str>)> {
         self.member_states(RulesTypeFamily::Particle, |member| {
@@ -1890,6 +1900,8 @@ struct ProcessedType {
     /// SuperWeaponType+C8 `AuxBuilding=` (`0x006CED07..0x006CED2E`), read the
     /// same way through BuildingType's factory (`0x004653C0`).
     super_weapon_aux_building: Option<String>,
+    /// Ares `SW.Warhead=`, read only for Type=GenericWarhead.
+    generic_super_weapon_warhead: Option<String>,
     /// ParticleType `Warhead=` (`0x00645043..0x00645067`): ReadString128,
     /// then WarheadType's factory (`0x0075E3B0`); an empty read keeps it.
     particle_warhead: Option<String>,
@@ -2243,6 +2255,7 @@ impl ProcessedType {
             holds_what: None,
             super_weapon_weapon: None,
             super_weapon_aux_building: None,
+            generic_super_weapon_warhead: None,
             particle_warhead: None,
             voxel_anim_references: VoxelAnimTypeReferences::default(),
             anim_references: AnimTypeReferences::default(),
@@ -3124,7 +3137,7 @@ impl RulesPassProcessor {
     fn process_super_weapon_family(&mut self, pass: &IniFile) {
         let mut index = 0;
         while index < self.family_len(RulesTypeFamily::SuperWeapon) {
-            if let Some((_id, raw, _effective)) =
+            if let Some((_id, raw, effective)) =
                 self.begin_rules_member_read(RulesTypeFamily::SuperWeapon, index, pass)
             {
                 if let Some(weapon) =
@@ -3138,6 +3151,15 @@ impl RulesPassProcessor {
                 {
                     self.family_mut(RulesTypeFamily::SuperWeapon)[index]
                         .super_weapon_aux_building = building;
+                }
+                if effective
+                    .read_name("Type", 0x28)
+                    .is_some_and(|kind| kind.eq_ignore_ascii_case("GenericWarhead"))
+                    && let Some(warhead) =
+                        self.resolve_scalar_from(&raw, "SW.Warhead", RulesTypeFamily::Warhead, 0x80)
+                {
+                    self.family_mut(RulesTypeFamily::SuperWeapon)[index]
+                        .generic_super_weapon_warhead = warhead;
                 }
             }
             index += 1;
