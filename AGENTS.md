@@ -218,6 +218,12 @@ Integrate promptly when authorized. Owners resolve conflicts and revalidate.
 Preserve unique/local data: remove a worktree or branch only once its work is merged or
 saved, with `git worktree remove` and `git branch -d`, never forced.
 
+Preserve contributor credit. Use verified GitHub usernames unless the contributor
+explicitly prefers another public name; raw Git names and email addresses do not
+establish that preference. Before merging, check the final author identity, message
+and trailers using the [attribution rule](.agents/skills/review-pr/SKILL.md#contributor-attribution),
+then verify the resulting commit.
+
 After each fetch, fast-forward `<main-checkout>` (`merge --ff-only origin/main`) when it is on
 `main` without tracked changes or a Cargo run; sessions load this contract from it.
 

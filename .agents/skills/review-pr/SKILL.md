@@ -61,9 +61,10 @@ oracles, scripts) until steps 1 and 2 are clean.
      for the touched modules.
    - Push to the contributor's branch, and confirm the PR head equals the SHA you
      pushed.
-   - Squash a single-contributor PR in the contributor's name, with `--subject`,
-     `--body-file` and `--match-head-commit <actual head SHA>`. Write "Part of #N"
-     unless the PR really closes N.
+   - Apply [Contributor attribution](#contributor-attribution) before choosing the
+     merge method. Use an explicit `--subject`, `--body-file` and
+     `--match-head-commit <actual head SHA>`. Write "Part of #N" unless the PR
+     really closes N.
    - Remove the worktree and fast-forward the main checkout.
 5. **Report** briefly:
    - the malware verdict;
@@ -71,3 +72,28 @@ oracles, scripts) until steps 1 and 2 are clean.
    - authenticity per claim;
    - what you changed;
    - anything left for the user, such as labels and follow-ups.
+
+## Contributor attribution
+
+- Use the contributor's verified GitHub login as the default public credit,
+  including the author name on maintainer-created integration commits. A numeric
+  username is a complete identity. Honor an explicit different public-name
+  preference from that contributor or the maintainer; verify who supplied it.
+- A raw Git author name, email address or social-profile name is not evidence of
+  the preferred public credit. Without that explicit preference, do not infer,
+  translate, expand or copy a personal name from those fields into attribution.
+  Use a public author email already verified as belonging to the contributor;
+  never invent an address.
+- Preserve every actual contributor's credit through fixes and squashing. Do not
+  replace it with maintainer or agent credit for integration work. Add
+  `Co-authored-by` only for an additional actual contributor with a verified
+  identity; never repeat the primary author as a co-author. Respect explicit
+  requests about names and trailers.
+- Before merging, inspect the exact author/account mapping, subject, body and
+  trailers the merge will produce, including GitHub's generated defaults. Resolve
+  unexpected identities, unrequested personal names and duplicate credit first.
+  If GitHub's squash would replace the contributor with the PR opener, prepare
+  one combined commit and use a merge method that preserves its author.
+- After merging, read back the resulting commit and verify the same attribution.
+  Report a mismatch and resolve it before further merges. Do not rewrite shared
+  history without the user's explicit authorization.
