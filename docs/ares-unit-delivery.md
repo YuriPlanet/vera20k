@@ -2,6 +2,7 @@
 
 ```ini
 [SuperWeaponTypes]
+; Use the next unused list index in your mod.
 0=ReinforcementSpecial
 
 [ReinforcementSpecial]
@@ -84,8 +85,8 @@ at acceptance; their queued effect still completes once.
 
 Placement retains the contribution's deterministic ring selector, using VERA's
 portable hasher over stable simulation inputs. This is a VERA adaptation, not a
-claim of Ares's exact placement order or RNG stream. Existing constructors,
-infantry placement and Scatter retain their own simulation RNG draws. Full-map
+claim of Ares's exact placement order or RNG stream. Initial delivered facing is zero; Ares derives it from the cell index. Existing
+constructors, infantry placement and Scatter retain their own simulation RNG draws. Full-map
 search cost for large blocked payloads has not been profiled; no 20,000-unit
 performance claim is made for this extension.
 
