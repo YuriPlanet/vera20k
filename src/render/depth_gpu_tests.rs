@@ -1395,9 +1395,22 @@ fn indexed_shp_pages_draw_the_pixels_their_rgba_pages_drew() {
     // `ShpFile::frame_to_rgba` converts its frame to, once from its indices
     // and palette row. The row sits behind a decoy row, so the row selection
     // is exercised. The precomposed path and a native palette conversion must
-    // both agree pixel for pixel, holes included.
+    // both agree pixel for pixel, holes included. Index 204 holds raw 63,0,63
+    // (252,0,252), as retail UNITTEM.PAL does; no converter keys it
+    // (ConvertClass 0x0048E740 -> 0x004BBB00), so both paths draw it.
+    const MAGENTA: u8 = 204;
     let gpu = Gpu::new();
-    let probe = super::sprite_atlas::native_palette_probe_page();
+    let probe = super::sprite_atlas::palette_probe_page(
+        &crate::assets::pal_file::Palette::from_rgb(|index| {
+            if index == MAGENTA {
+                [252, 0, 252]
+            } else {
+                super::sprite_atlas::native_probe_rgb(index)
+            }
+        }),
+    );
+    let magenta_pixel = (probe.size[0] + 3 + u32::from(MAGENTA)) as usize;
+    assert_eq!(probe.indices[magenta_pixel], MAGENTA);
     let rows = [vec![255; 1024], probe.palette_row.clone()].concat();
     let fixture = super::palette_light::native_fixtures()
         .into_iter()
@@ -1418,10 +1431,16 @@ fn indexed_shp_pages_draw_the_pixels_their_rgba_pages_drew() {
             let mut indexed = rgba.clone();
             indexed.palette_rows = Some(rows.clone());
             indexed.instance.source_palette = 2;
+            let drawn = gpu.render_sized(&[indexed], probe.size);
             assert_eq!(
-                gpu.render_sized(&[indexed], probe.size),
+                drawn,
                 gpu.render_sized(&[rgba], probe.size),
                 "{shader:?}, {palette_light:?}"
+            );
+            let magenta = drawn[magenta_pixel];
+            assert!(
+                magenta[0] > 0 && magenta[2] > 0,
+                "{shader:?}, {palette_light:?}: index {MAGENTA} drew {magenta:?}"
             );
         }
     }

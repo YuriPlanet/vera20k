@@ -23,8 +23,8 @@ pub struct EventCondition {
     pub team_name: Option<String>,
 }
 
-/// One `[Events]` record. Saved scenario resources serialize this layout.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// One `[Events]` record.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MapEvent {
     id: String,
     fields: Vec<String>,

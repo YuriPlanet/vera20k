@@ -153,9 +153,7 @@ pub(crate) use movement_commands::{can_accept_destination, prepare_walk_destinat
 pub(crate) use movement_path::{
     path_search_used_zone_grid_marker, reset_path_search_used_zone_grid_marker,
 };
-pub(crate) use navcom::{
-    nav_targets_same_receiver, set_destination_internal_cell, target_cell_coord, track_stop_moving,
-};
+pub(crate) use navcom::{set_destination_internal_cell, target_cell_coord, track_stop_moving};
 // Legacy batch tick used by focused movement fixtures.
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) use movement_tick::tick_movement_with_grids;

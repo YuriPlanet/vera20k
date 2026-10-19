@@ -11,8 +11,8 @@
 //! runs headless. What it returns is a buffer
 //! of post-VPL, pre-house-remap palette indices in which byte 0 means "no voxel
 //! here". That byte must become fully transparent regardless of what the
-//! palette holds at index 0 — a `gamemd_ui` palette has an opaque entry there,
-//! and honouring it would paint the whole background in palette colour 0.
+//! palette holds at index 0 — every palette entry is opaque, and honouring it
+//! would paint the whole background in palette colour 0.
 //!
 //! Turret and barrel are composited in, through the same depth-correct CPU
 //! merge the unit atlas bakes with (`render::unit_atlas::composite_unit_vxl_cpu`)
@@ -416,7 +416,6 @@ pub fn run(
             scale,
             &choice.name,
             &choice.reason,
-            &choice.alpha_policy,
             opts.house,
         );
         let sheet = canvas::build_contact_sheet(&header, &cells);
@@ -662,10 +661,9 @@ fn select_hva_frame(requested: Option<usize>, frame_count: u32) -> (u32, Option<
 
 /// Palette indices to RGBA, with the rasteriser's empty byte forced clear.
 ///
-/// Index 0 is "no voxel", not "palette colour 0". A `gamemd_ui` palette carries
-/// an opaque entry there, so trusting the palette would fill the sprite's whole
-/// bounding box with a solid colour. The alpha policy still governs every other
-/// index, which is why the chosen palette is applied unchanged elsewhere.
+/// Index 0 is "no voxel", not "palette colour 0". Every palette entry is
+/// opaque, index 0 included, so trusting the palette would fill the sprite's
+/// whole bounding box with a solid colour.
 ///
 /// The caller bounds the slice length; this walks it once and allocates 4x.
 fn indices_to_rgba(indices: &[u8], palette: &Palette) -> Vec<u8> {
@@ -675,8 +673,8 @@ fn indices_to_rgba(indices: &[u8], palette: &Palette) -> Vec<u8> {
             data.extend_from_slice(&[0, 0, 0, 0]);
             continue;
         }
-        let color = palette.colors[usize::from(index)];
-        data.extend_from_slice(&[color.r, color.g, color.b, color.a]);
+        let color = palette.color(index);
+        data.extend_from_slice(&[color.r, color.g, color.b, 255]);
     }
     data
 }
@@ -830,7 +828,6 @@ fn sheet_header(
     scale: u32,
     palette_name: &str,
     palette_reason: &str,
-    alpha_policy: &str,
     house: Option<u8>,
 ) -> Vec<String> {
     let lighting = if has_vpl {
@@ -849,7 +846,7 @@ fn sheet_header(
             vxl.limb_count
         ),
         format!("{animation}   {lighting}"),
-        format!("palette {palette_name}   {palette_reason}   alpha {alpha_policy}"),
+        format!("palette {palette_name}   {palette_reason}"),
     ];
     if let Some(index) = house {
         header.push(format!(
@@ -1011,17 +1008,15 @@ fn summarise_facings(facings: &[u8]) -> String {
 mod tests {
     use super::*;
 
-    /// A palette whose index 0 is *opaque*, so a test that sees a transparent
-    /// index-0 pixel proves the voxel rule fired rather than the palette's own
-    /// alpha policy. `from_bytes` would bake index 0 clear on its own and hide
-    /// the difference; the UI conversion does not.
+    /// Palette entries are opaque, index 0 included, so a test that sees a
+    /// transparent index-0 pixel proves the voxel rule fired.
     fn opaque_zero_palette() -> Palette {
         let mut bytes = vec![0u8; 768];
         // Index 0: mid grey. Index 1: pure red. Index 2: pure green.
         bytes[0..3].copy_from_slice(&[32, 32, 32]);
         bytes[3..6].copy_from_slice(&[63, 0, 0]);
         bytes[6..9].copy_from_slice(&[0, 63, 0]);
-        Palette::from_bytes_gamemd_ui(&bytes).expect("768 bytes parse")
+        Palette::from_bytes(&bytes).expect("768 bytes parse")
     }
 
     fn sprite(indices: Vec<u8>, w: u32, h: u32) -> VxlSprite {
@@ -1112,12 +1107,12 @@ mod tests {
     fn index_zero_is_transparent_regardless_of_the_palette() {
         let palette = opaque_zero_palette();
         // The palette itself reports index 0 as opaque mid grey.
-        assert_eq!(palette.colors[0].a, 255);
+        assert_eq!(palette.color(0).a, 255);
 
         let rgba = indices_to_rgba(&[0, 1, 2, 0], &palette);
         assert_eq!(rgba.len(), 16);
         assert_eq!(&rgba[0..4], &[0, 0, 0, 0], "empty voxel must be clear");
-        assert_eq!(rgba[7], 255, "index 1 keeps the palette's alpha");
+        assert_eq!(rgba[7], 255, "index 1 is opaque");
         assert!(
             rgba[4] > 0 && rgba[5] == 0,
             "index 1 is red: {:?}",
@@ -1344,7 +1339,6 @@ mod tests {
             4,
             "unittem.pal",
             "fallback-chain",
-            "standard",
             Some(2),
         );
         let joined = header.join("\n");

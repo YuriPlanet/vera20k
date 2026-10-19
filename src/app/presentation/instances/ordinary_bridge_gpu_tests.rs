@@ -566,7 +566,7 @@ impl Probe {
                     [255; 4]
                 } else {
                     opaque += 1;
-                    let rgb = self.palette.colors[usize::from(index)];
+                    let rgb = self.palette.color(index);
                     // Existing native-backed LightConvert owner supplies the
                     // expected source color. Clear tactical A is 127
                     // (006D3F9F), matching palette_light.wgsl; A=0 selects the

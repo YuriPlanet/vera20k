@@ -14,17 +14,15 @@ use crate::rules::ruleset::RuleSet;
 use crate::sim::runtime::SimResources;
 
 /// Frozen inputs for rebuilding a saved world's resident resources. Caches,
-/// process identities, RNG streams and GPU objects are deliberately absent.
+/// process identities, RNG streams and GPU objects are deliberately absent,
+/// and so are the map's trigger records: the saved Simulation's trigger
+/// runtime is their only owner.
 #[derive(Serialize, Deserialize)]
 pub struct SavedScenarioResources {
     processed_rules: ProcessedRulesLayers,
     fixed_art_hash: u64,
     scheduler_anim_roots: Vec<String>,
     terrain: SavedTerrainTemplate,
-    trigger_graph: crate::map::trigger_graph::TriggerGraph,
-    triggers: crate::map::triggers::TriggerMap,
-    events: crate::map::events::EventMap,
-    actions: crate::map::actions::ActionMap,
     map: SavedMapMetadata,
 }
 
@@ -36,10 +34,6 @@ pub struct SavedScenarioResourcesRef<'a> {
     fixed_art_hash: u64,
     scheduler_anim_roots: Vec<String>,
     terrain: SavedTerrainTemplate,
-    trigger_graph: &'a crate::map::trigger_graph::TriggerGraph,
-    triggers: &'a crate::map::triggers::TriggerMap,
-    events: &'a crate::map::events::EventMap,
-    actions: &'a crate::map::actions::ActionMap,
     map: SavedMapMetadata,
 }
 
@@ -62,10 +56,6 @@ impl<'a> SavedScenarioResourcesRef<'a> {
                 .cloned()
                 .collect(),
             terrain,
-            trigger_graph: &resources.trigger_graph,
-            triggers: &resources.triggers,
-            events: &resources.events,
-            actions: &resources.actions,
             map,
         }
     }
@@ -107,10 +97,6 @@ impl SavedScenarioResources {
                 rules,
                 terrain_template: Some(terrain),
                 overlay_registry,
-                trigger_graph: self.trigger_graph,
-                triggers: self.triggers,
-                events: self.events,
-                actions: self.actions,
             },
             self.processed_rules,
             self.map,
@@ -139,6 +125,9 @@ pub struct SavedMapMetadata {
     local_player_name: Option<String>,
     /// ThemeSave721010's retained/pending pair. The live owner remains in audio.
     theme_slots: [i32; 2],
+    /// Rust media reconstruction policy: release this credit because the
+    /// physical Radar video queue is not restored. Other pause holds persist.
+    radar_pause_credit: bool,
 }
 
 impl SavedMapMetadata {
@@ -171,6 +160,7 @@ impl SavedMapMetadata {
             elapsed_buckets,
             local_player_name: local_player_name.map(str::to_owned),
             theme_slots,
+            radar_pause_credit: false,
         }
     }
 
@@ -204,6 +194,12 @@ impl SavedMapMetadata {
     }
     pub fn local_player_name(&self) -> Option<&str> {
         self.local_player_name.as_deref()
+    }
+    pub fn radar_pause_credit(&self) -> bool {
+        self.radar_pause_credit
+    }
+    pub fn set_radar_pause_credit(&mut self, held: bool) {
+        self.radar_pause_credit = held;
     }
     pub fn theme_slots(&self) -> [i32; 2] {
         self.theme_slots

@@ -386,9 +386,12 @@ const BRIDGE_HARNESS_FINAL_HASH: u64 = 0xED02_4584_1661_7711;
 fn bridge_ini() -> IniFile {
     // One armed ground vehicle and one distant infantryman on a second house, so
     // no side is defeated on frame one. Their ranges keep them out of each
-    // other's reach for the whole run.
+    // other's reach for the whole run. On the deck the tank is four levels
+    // above its cell, so Drive takes Road's row (`0x4B3C84`), Track=100% as in
+    // retail; an unauthored [Road] is the zero row and halves its speed there.
     IniFile::from_str(
         "[Clear]\nFoot=100%\nTrack=100%\nWheel=100%\nHover=100%\nFloat=0%\nAmphibious=100%\nBuildable=yes\n\n\
+         [Road]\nTrack=100%\n\n\
          [InfantryTypes]\n0=E1\n\n\
          [VehicleTypes]\n0=MTNK\n\n\
          [AircraftTypes]\n\n\
@@ -494,7 +497,7 @@ fn bridge_resolved_terrain(
         BRIDGE_FLAG_STRUCTURAL, BRIDGE_FLAG_TRANSITION, BridgeCellFacts,
     };
     use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid};
-    use crate::rules::terrain_rules::{LandType, TerrainClass};
+    use crate::rules::terrain_rules::LandType;
     let clear_costs = rules
         .terrain_rules
         .semantics_for_land_type(LandType::Clear.as_index())
@@ -520,7 +523,6 @@ fn bridge_resolved_terrain(
                 ground_walk_blocked: !path.ground_walkable,
                 base_ground_walk_blocked: !path.ground_walkable,
                 base_build_blocked: !path.ground_walkable,
-                base_terrain_class: TerrainClass::Clear,
                 base_speed_costs: clear_costs,
                 // Production bridgeheads carry no deck: only 0x100 cells do.
                 has_bridge_deck: path.bridge_walkable && flags & BRIDGE_FLAG_STRUCTURAL != 0,

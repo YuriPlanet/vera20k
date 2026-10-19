@@ -3,6 +3,7 @@
 //! Extracted from theater.rs to stay under the 400-line limit.
 
 use super::*;
+use crate::assets::pal_file::Color;
 
 fn make_test_ini() -> String {
     "[TileSet0000]\nSetName=Grass\nFileName=clear\nTilesInSet=1\n\n\
@@ -62,18 +63,10 @@ fn active_theater_names_and_archive_order_match_retail() {
 #[test]
 fn missing_theater_palette_uses_native_rgb_ramp() {
     let palette = native_missing_theater_palette();
-    assert_eq!(
-        palette.colors[0],
-        Color {
-            r: 0,
-            g: 255,
-            b: 0,
-            a: 0,
-        }
-    );
-    assert_eq!(palette.colors[1], Color::rgb(1, 254, 4));
-    assert_eq!(palette.colors[64], Color::rgb(64, 191, 0));
-    assert_eq!(palette.colors[255], Color::rgb(255, 0, 252));
+    assert_eq!(palette.color(0), Color::rgb(0, 255, 0));
+    assert_eq!(palette.color(1), Color::rgb(1, 254, 4));
+    assert_eq!(palette.color(64), Color::rgb(64, 191, 0));
+    assert_eq!(palette.color(255), Color::rgb(255, 0, 252));
 }
 
 #[test]
@@ -1373,9 +1366,9 @@ fn atlas_growth_reads_the_published_theater_palettes() {
     exact.write("isotem.pal", &magenta);
     let assets = AssetManager::from_loose_root_for_test(exact.path());
     let (unit, iso) = load_theater_unit_and_iso_palettes(&assets, "TEMPERATE").unwrap();
-    assert_eq!(unit.colors[204], Color::rgb(252, 0, 252));
-    assert_eq!(iso.colors[10], Color::rgb(252, 0, 252));
-    assert_eq!(unit.colors[0], Color::rgb(0, 0, 0));
+    assert_eq!(unit.color(204), Color::rgb(252, 0, 252));
+    assert_eq!(iso.color(10), Color::rgb(252, 0, 252));
+    assert_eq!(unit.color(0), Color::rgb(0, 0, 0));
 
     // No looser search: the generic unit palette is not the theater's.
     let generic = TestDirectory::new("theater-atlas-palettes-generic");

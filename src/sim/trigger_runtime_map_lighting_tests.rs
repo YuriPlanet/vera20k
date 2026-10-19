@@ -696,7 +696,7 @@ fn ambient_action_values_survive_save_and_transfer_to_retained_rules_at_retireme
 #[test]
 fn ordered_timer_trigger_updates_live_ambient_inputs_before_the_next_fade() {
     let (mut sim, rules, overlays, _) = super::tests::event_ingress_fixture();
-    let map = super::tests::install_event_ingress_map(
+    super::tests::install_event_ingress_map(
         &mut sim,
         &rules,
         "[Triggers]\nAMBIENT=Country0,<none>,Ambient,0,1,1,1,0\n\
@@ -708,15 +708,7 @@ fn ordered_timer_trigger_updates_live_ambient_inputs_before_the_next_fade() {
     sim.session.lighting.target_ambient = 60;
     sim.session.lighting.transition_timer = CdTimer::started(12, 8);
     sim.session.binary_frame = 20;
-    sim.advance_triggers(
-        TriggerInputs {
-            events: &map.events,
-            actions: &map.actions,
-            rules: Some(&rules),
-        },
-        Some(&overlays),
-        FrameEffects::default(),
-    );
+    sim.advance_triggers(Some(&rules), Some(&overlays), FrameEffects::default());
     assert_eq!(
         sim.trigger_runtime
             .action_trace

@@ -917,7 +917,12 @@ fn a_captive_sent_to_a_bio_reactor_does_not_hunt() {
     let entity = sim.substrate.entities.get(gi).unwrap();
     assert_eq!(queued_mission(&sim, gi), Some(MissionType::Enter));
     assert!(entity.building_entry.should_enter_absorber());
-    assert_eq!(entity.passenger_role.boarding_transport_id(), Some(reactor));
+    assert_eq!(
+        entity.navigation.nav_com(),
+        Some(crate::sim::components::NavTargetRef::object(reactor))
+    );
+    // The Infantry setter's Enter arm HELLOs the absorber (`0x0051ACD4`).
+    assert_eq!(entity.radio_contacts.slot(0), Some(reactor));
     assert_eq!(sim.scenario_rng.state(), replay.state());
 }
 
@@ -2190,8 +2195,12 @@ fn a_released_captive_resumes_its_attack_move() {
 /// PerCellProcess sites): it goes in as its original house's unit.
 #[test]
 fn a_captive_boarding_an_absorber_is_freed_first() {
-    use crate::sim::passenger::PassengerRole;
-    let rules = rules();
+    let mut rules = rules_from(&RULES.replace(
+        "[BIOR]\nStrength=900\nPassengers=5",
+        "[BIOR]\nStrength=900\nPassengers=5\nInfantryAbsorb=yes\nSizeLimit=15",
+    ));
+    // DecideUnitFate's Bio Reactor choice queues the captive's Enter.
+    rules.mind_control.ai_capture = std::array::from_fn(|_| vec![0, 0, 100, 0]);
     let mut sim = sim(35);
     let yuri = spawn(&mut sim, &rules, "YURI", "YuriCountry", 10, 10);
     let reactor = spawn(&mut sim, &rules, "BIOR", "YuriCountry", 14, 10);
@@ -2203,18 +2212,32 @@ fn a_captive_boarding_an_absorber_is_freed_first() {
         None,
         crate::sim::world::FrameEffects::default()
     ));
+    assert_eq!(
+        sim.substrate
+            .entities
+            .get(gi)
+            .unwrap()
+            .radio_contacts
+            .slot(0),
+        Some(reactor)
+    );
     sim.sound_events.clear();
-    // PerCellProcess boards from the absorber's own foundation cell.
+    // PerCellProcess boards from the absorber's own foundation cell once
+    // the queued Enter is current.
+    let now = sim.session.binary_frame;
     let gi_entity = sim.substrate.entities.get_mut(gi).unwrap();
+    assert!(crate::sim::mission::authority::commence_entity_mission(
+        gi_entity, now
+    ));
     gi_entity.position.set_rx_for_test(14);
-    gi_entity.passenger_role = PassengerRole::boarding_for_test(reactor);
-
-    crate::sim::passenger::tick_passenger_system(
-        &mut sim,
-        &rules,
+    sim.per_cell_process(
+        gi,
+        crate::sim::movement::PerCellReason::Arrival,
+        Some(&rules),
         None,
         crate::sim::world::FrameEffects::default(),
-    );
+    )
+    .unwrap();
 
     let entity = sim.substrate.entities.get(gi).unwrap();
     assert!(!entity.mind_control.is_mind_controlled());

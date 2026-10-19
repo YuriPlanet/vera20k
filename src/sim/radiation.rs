@@ -682,7 +682,6 @@ mod tests {
             level,
             filled_clear: true,
             slope_type,
-            terrain_class: Default::default(),
             accepts_smudge: true,
             ..crate::map::resolved_terrain::test_flat_cell(rx, ry)
         }

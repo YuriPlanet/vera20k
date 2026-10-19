@@ -4,20 +4,21 @@ use crate::assets::asset_manager::AssetManager;
 use crate::map::authored_overlay::{
     AuthoredOverlayCellRef, AuthoredOverlayLoadHost, MapLoadDirtyKind, NativeOverlayCellTarget,
 };
+use crate::map::overlay_mark::OverlayCellAnim;
 use crate::map::resolved_terrain::{
-    AutomaticTubeAllocation, AutomaticTubeRequest, TerrainTileAnimation,
+    AutomaticTubeAllocation, AutomaticTubeRequest, ResolvedTerrainGrid, TerrainTileAnimation,
 };
 use crate::rules::art_data::AnimAssetBindError;
 use crate::sim::anim_class::{
     AnimConstructorInput, AnimDrawRuntime, AnimSpawnError, AnimWorldCoord,
 };
 use crate::sim::components::AnimClassSpawnDescriptor;
+use crate::sim::overlay_mark_host::OverlayCellAnimGround;
 use crate::sim::world::Simulation;
 
 use super::load_object_lifecycle::{LoadOverlayHandle, LoadOverlayLifecycleError};
 
 const TILE_ANIM_DRAW_FLAGS: u32 = 0x1600;
-const CELL_CENTRE_LEPTONS: i32 = crate::util::lepton::LEPTONS_PER_CELL_I32 / 2;
 
 #[derive(Debug, thiserror::Error)]
 pub enum SimulationAuthoredLoadError {
@@ -229,32 +230,34 @@ impl AuthoredOverlayLoadHost for SimulationAuthoredLoadHost<'_> {
     fn spawn_cell_anim(
         &mut self,
         _handle: Self::Handle,
-        anim_name: &str,
-        cell: AuthoredOverlayCellRef,
-        world_z: i32,
+        request: OverlayCellAnim<'_>,
+        terrain: &ResolvedTerrainGrid,
     ) -> Result<(), Self::Error> {
-        let Some((rx, ry)) = Self::real_coord(cell) else {
-            return Ok(());
-        };
-        let world = AnimWorldCoord {
-            x: i32::from(rx)
-                .wrapping_mul(crate::util::lepton::LEPTONS_PER_CELL_I32)
-                .wrapping_add(CELL_CENTRE_LEPTONS),
-            y: i32::from(ry)
-                .wrapping_mul(crate::util::lepton::LEPTONS_PER_CELL_I32)
-                .wrapping_add(CELL_CENTRE_LEPTONS),
-            z: world_z,
-        };
-        let descriptor = AnimClassSpawnDescriptor::new(
-            Default::default(),
-            rx,
-            ry,
-            crate::util::fixed_math::SimFixed::from_num(CELL_CENTRE_LEPTONS),
-            crate::util::fixed_math::SimFixed::from_num(CELL_CENTRE_LEPTONS),
-            u8::try_from(world_z.div_euclid(crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTONS))
-                .unwrap_or(0),
-        );
-        self.spawn_load_anim(anim_name, world, descriptor)?;
+        self.rules.bind_authored_load_anim(
+            request.anim,
+            self.assets,
+            self.theater_ext,
+            self.theater_name,
+        )?;
+        let ground = OverlayCellAnimGround::read(terrain, &request);
+        let native_unique_id = self.next_native_id()?;
+        // Residual: the load-time CellClass+0x10A the tint copies is read
+        // from the Normal profile; its initialization order against
+        // ReadMapOverlayPacks is unverified. Retail OverlayTypes declare no
+        // CellAnim.
+        let lighting = self
+            .sim
+            .session
+            .lighting
+            .profile(crate::sim::scenario_session::ScenarioLightingProfile::Normal)
+            .into();
+        self.sim.construct_overlay_cell_anim(
+            self.rules,
+            request,
+            ground,
+            lighting,
+            AnimConstructorInput::AssignedIdentity(native_unique_id),
+        )?;
         Ok(())
     }
 

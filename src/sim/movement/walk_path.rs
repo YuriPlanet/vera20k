@@ -315,16 +315,8 @@ impl Simulation {
             .get(id)
             .and_then(|e| e.attack_target.target());
         if let Some(target) = target {
-            let target = match target {
-                crate::sim::combat::TargetKind::Entity(id) => {
-                    crate::sim::components::NavTargetRef::Object { id }
-                }
-                crate::sim::combat::TargetKind::Cell(rx, ry) => {
-                    crate::sim::components::NavTargetRef::Cell { rx, ry }
-                }
-            };
             let coordinate = super::navcom::nav_target_coordinate(
-                target,
+                target.into(),
                 Some(id),
                 self,
                 self.resolved_terrain.as_ref(),

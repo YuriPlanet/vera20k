@@ -457,16 +457,6 @@ pub(super) fn dispatch_draw_passes(
     // voxel turret inside the building's retained Display slot, after the
     // body. Atlas page changes preserve that parent and its piece order.)
 
-    // BuildingLightClass registers in layer 3. This pass is exact once its
-    // authoritative child-light coordinates are emitted; it deliberately does
-    // not substitute the parent building coordinate.
-    if let Some((buffer, count)) = pool.get("spotlight_type16") {
-        state
-            .renderer
-            .batch_renderer
-            .draw_spotlight_type16(&mut pass, buffer, count);
-    }
-
     // Finish remaining Layer3 families before the distinct retained Top4.
     drop(pass);
     state

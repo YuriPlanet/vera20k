@@ -6,7 +6,6 @@ use crate::app::input::cursor::{capability_cursor_for_hover, cursor_id_for_feedb
 use crate::app::types::{CursorFeedbackKind, CursorId};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::house_state::HouseState;
-use crate::sim::passenger::tick_passenger_system;
 use crate::sim::world::UnitRepairAction;
 use crate::sim::world::{FrameEffects, Simulation};
 
@@ -42,7 +41,6 @@ fn boarded_ifv(rules: &RuleSet, passenger_type: &str) -> (Simulation, u64, u64) 
         },
         Some(rules)
     ));
-    tick_passenger_system(&mut sim, rules, None, FrameEffects::default());
     let grid = sim.path_grid_snapshot().unwrap();
     for _ in 0..240 {
         if sim

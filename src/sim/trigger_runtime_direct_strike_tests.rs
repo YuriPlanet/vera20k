@@ -146,15 +146,7 @@ fn counted_trigger_dispatches_both_strikes_then_continues() {
     );
     sim.classify_map_triggers(None);
     sim.session.set_started(true);
-    sim.advance_triggers(
-        TriggerInputs {
-            events: &map.events,
-            actions: &map.actions,
-            rules: Some(&rules),
-        },
-        None,
-        FrameEffects::default(),
-    );
+    sim.advance_triggers(Some(&rules), None, FrameEffects::default());
     assert!(sim.trigger_local_is_set_for_test(0));
     assert_eq!(sim.projectiles.iter().count(), 1);
     let entity = sim.entities().get(victim).unwrap();

@@ -200,13 +200,15 @@ pub fn load_with_launch(
             seed,
         )
         .map_err(|error| format!("prepare stock-offline scenario prefix: {error}"))?;
-    let override_file = launch.session().mode.override_file.trim();
-    let mode_override = crate::rules::retail_sources::select_ini(&assets, override_file)?.ini;
+    let mode_override = crate::rules::retail_sources::select_mode_ini(
+        &assets,
+        Some(&launch.session().mode.override_file),
+    )?;
     let (mut rules, rules_ini, art_ini, native_rules_receipt) = native_rules_owner
         .load_scenario(
-            crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(Some(
-                &mode_override,
-            )),
+            crate::rules::process_owner::NativeScenarioRulesPrefix::NonCampaign(
+                mode_override.as_ref(),
+            ),
             &map.ini,
         )
         .map_err(|error| format!("load native noncampaign rules: {error}"))?
@@ -245,6 +247,7 @@ pub fn load_with_launch(
         train_crate: map.basic.train_crate.unwrap_or(false),
         truck_crate: map.basic.truck_crate.unwrap_or(false),
         ice_growth_enabled: map.basic.ice_growth_enabled,
+        vein_growth_enabled: map.basic.vein_growth_enabled,
         // Skirmish start forces `TiberiumGrows|TiberiumSpreads` (`OR 0xC0`
         // at `0x005E74CD`), copied into the scenario at `0x00687C23`.
         tiberium_grows_flag: true,
@@ -419,10 +422,6 @@ pub fn load_with_launch(
                 overlay_registry,
                 terrain_template: None,
                 rules,
-                trigger_graph: map.trigger_graph.clone(),
-                triggers: map.triggers.clone(),
-                events: map.events.clone(),
-                actions: map.actions.clone(),
             },
         },
         map,
@@ -1358,8 +1357,6 @@ mod retail_construction_tests {
                                 entity.navigation.nav_com(),
                                 if entity.passenger_role.is_inside_transport() {
                                     " aboard"
-                                } else if entity.passenger_role.boarding_transport_id().is_some() {
-                                    " boarding"
                                 } else {
                                     ""
                                 },
@@ -2261,7 +2258,7 @@ mod retail_construction_tests {
                 hit = Some(frame);
             }
             if charged.is_none()
-                && entity.navigation.nav_com() == Some(NavTargetRef::Entity { id: gi })
+                && entity.navigation.nav_com() == Some(NavTargetRef::object(gi))
                 && (entity.mission.queued() == move_mission
                     || entity.mission.current() == move_mission)
             {

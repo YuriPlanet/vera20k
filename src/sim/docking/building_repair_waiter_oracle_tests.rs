@@ -152,7 +152,7 @@ fn native_marked_foundation_entry_parking_and_retry_match_shared_owners() {
                 "busy_destination" => {
                     scene.sim.set_unit_destination(
                         scene.tank,
-                        NavTargetRef::Building { id: scene.depot },
+                        NavTargetRef::Object { id: scene.depot },
                         &scene.rules,
                         true,
                         crate::sim::world::FrameEffects::default(),

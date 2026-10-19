@@ -67,7 +67,7 @@ fn the_walk_matches_native() {
             int(&row["radius"]) as u16,
             int(&row["z"]),
             row["by_height"] == true && row["reveal_by_height"] == true,
-            Some(&heights),
+            Some(CellLevels::Plane(&heights)),
             GRID,
             Some((int(&row["size"][0]), int(&row["size"][1]))),
         );
@@ -111,7 +111,7 @@ fn native_trigger_reveal_signed_los_matches_original_walk() {
             int(&row["radius"]) as u16,
             int(&row["z"]),
             row["by_height"] == true && row["reveal_by_height"] == true,
-            Some(&heights),
+            Some(CellLevels::Plane(&heights)),
             GRID,
             Some((int(&row["size"][0]), int(&row["size"][1]))),
         );

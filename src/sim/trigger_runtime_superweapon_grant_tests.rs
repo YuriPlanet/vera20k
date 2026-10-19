@@ -56,24 +56,16 @@ fn scene_with_rules(
     (sim, rules, map, owner, id)
 }
 
-fn spring(sim: &mut Simulation, rules: &RuleSet, map: &MapFile) {
-    sim.advance_triggers(
-        crate::sim::world::TriggerInputs {
-            events: &map.events,
-            actions: &map.actions,
-            rules: Some(rules),
-        },
-        None,
-        FrameEffects::default(),
-    );
+fn spring(sim: &mut Simulation, rules: &RuleSet) {
+    sim.advance_triggers(Some(rules), None, FrameEffects::default());
 }
 
 #[test]
 fn super_grant_actions_reach_retained_instances_and_immediate_one_time_readiness() {
     for kind in [33, 34] {
-        let (mut sim, rules, map, owner, id) = scene(kind);
+        let (mut sim, rules, _, owner, id) = scene(kind);
         let rng = sim.rng_state();
-        spring(&mut sim, &rules, &map);
+        spring(&mut sim, &rules);
         let instance = &sim.super_weapons[&owner][&id];
         assert!(
             instance.is_active,
@@ -100,8 +92,8 @@ fn super_grant_actions_reach_retained_instances_and_immediate_one_time_readiness
 #[test]
 fn super_grant_actions_survive_provider_loss_power_and_shell_until_house_defeat() {
     for kind in [33, 34] {
-        let (mut sim, rules, map, owner, id) = scene(kind);
-        spring(&mut sim, &rules, &map);
+        let (mut sim, rules, _, owner, id) = scene(kind);
+        spring(&mut sim, &rules);
         sim.session.game_options.super_weapons = false;
         sim.power_states.entry(owner).or_default().is_low_power = true;
         let before = serde_json::to_value(&sim.super_weapons[&owner][&id]).unwrap();
@@ -122,8 +114,8 @@ fn super_grant_actions_survive_provider_loss_power_and_shell_until_house_defeat(
 #[test]
 fn super_grant_one_time_click_consumes_and_repeating_click_recharges() {
     for kind in [33, 34] {
-        let (mut sim, rules, map, owner, id) = scene(kind);
-        spring(&mut sim, &rules, &map);
+        let (mut sim, rules, _, owner, id) = scene(kind);
+        spring(&mut sim, &rules);
         if kind == 34 {
             sim.session.binary_frame = 1900;
             superweapon::tick_house_superweapon_instances(&mut sim, &rules, owner);
@@ -233,7 +225,7 @@ fn super_grant_retained_histories_preserve_original_flags_and_old_hold() {
 #[test]
 fn super_grant_repeat_after_once_saves_both_flags_and_still_fires_once() {
     let (mut sim, rules, map, owner, id) = scene(33);
-    spring(&mut sim, &rules, &map);
+    spring(&mut sim, &rules);
     let first = sim.state_hash();
     assert!(execute(&mut sim, &rules, owner, 34, 1));
     let mixed = sim.state_hash();
@@ -317,7 +309,7 @@ fn super_grant_one_time_nuke_uses_payload_speed_and_ground_warning_without_silo(
         assert_eq!(rules.weapon("NukePayload").unwrap().speed, 235);
         rules.set_weapon_speed_for_test("NukePayload", 77);
         let index = rules.super_weapon_index("NukeSpecial").unwrap();
-        let (mut sim, rules, map, owner, id) = scene_with_rules(33, rules, index);
+        let (mut sim, rules, _, owner, id) = scene_with_rules(33, rules, index);
         sim.install_resolved_terrain_for_new_map(test_grid(32, 32, |x, y| {
             let mut cell = ResolvedTerrainCell {
                 level: if (x, y) == (10, 10) { level } else { 0 },
@@ -328,7 +320,7 @@ fn super_grant_one_time_nuke_uses_payload_speed_and_ground_warning_without_silo(
             }
             cell
         }));
-        spring(&mut sim, &rules, &map);
+        spring(&mut sim, &rules);
         assert!(sim.fire_super_weapon(&rules, owner, id, (10, 10), None, FrameEffects::default()));
         assert!(!sim.super_weapons[&owner][&id].is_active);
         let (&bullet_id, bullet) = sim

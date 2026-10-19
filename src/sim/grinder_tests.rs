@@ -468,11 +468,6 @@ fn sov03_authored_trigger80_teams_walk_and_recycle_all_four_civilian_types() {
                 None,
                 67,
                 crate::sim::world::TickLane::Ordinary,
-                Some(crate::sim::world::TriggerInputs {
-                    events: &cropped.events,
-                    actions: &cropped.actions,
-                    rules: Some(&rules),
-                }),
                 FrameEffects::default(),
             )
             .unwrap();

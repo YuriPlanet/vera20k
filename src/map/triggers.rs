@@ -11,16 +11,15 @@ use std::collections::HashMap;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::ini_value::{crt_atoi, strtok, truncate_native_bytes};
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 struct TriggerDifficulty {
     easy: bool,
     medium: bool,
     hard: bool,
 }
 
-/// One `[Triggers]` header as TriggerType::ReadINI takes it. Saved scenario
-/// resources serialize this layout.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// One `[Triggers]` header as TriggerType::ReadINI takes it.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MapTrigger {
     id: String,
     fields: Vec<String>,
@@ -61,43 +60,6 @@ impl MapTrigger {
     /// TriggerType+A0, which a zero token never clears.
     pub fn transfer_on_capture(&self) -> bool {
         self.fields.get(7).is_some_and(|value| crt_atoi(value) != 0)
-    }
-}
-
-#[cfg(any(test, feature = "test-support"))]
-impl MapTrigger {
-    /// A fixture header with all difficulties set, including the absent owner
-    /// the reader produces only for a record of bare commas.
-    pub fn for_test(
-        id: &str,
-        owner: Option<&str>,
-        linked_trigger_id: Option<&str>,
-        name: &str,
-        enabled: bool,
-    ) -> Self {
-        let fields = [
-            owner.unwrap_or(""),
-            linked_trigger_id.unwrap_or("<none>"),
-            name,
-            if enabled { "0" } else { "1" },
-            "1",
-            "1",
-            "1",
-            "0",
-        ];
-        Self {
-            id: id.to_string(),
-            fields: fields.map(str::to_string).to_vec(),
-            owner: owner.map(str::to_string),
-            linked_trigger_id: linked_trigger_id.map(str::to_string),
-            name: Some(name.to_string()),
-            enabled,
-            difficulty: TriggerDifficulty {
-                easy: true,
-                medium: true,
-                hard: true,
-            },
-        }
     }
 }
 

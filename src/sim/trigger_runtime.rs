@@ -12,17 +12,11 @@ use std::hash::{Hash, Hasher};
 use crate::map::actions::{ActionDefinitionReference, ActionEntry, DefinitionSelector};
 use crate::map::cell_index::NativeCellIdentity;
 use crate::map::events::EventCondition;
-#[cfg(any(test, feature = "test-support"))]
-use crate::map::events::EventMap;
 use crate::map::resolved_terrain::NativeCellQuery;
-#[cfg(any(test, feature = "test-support"))]
-use crate::map::triggers::TriggerMap;
-#[cfg(any(test, feature = "test-support"))]
-use crate::map::variable_names::LocalVariableMap;
 use crate::rules::ini_parser::is_native_none_type_name;
 use crate::rules::ini_value::{crt_atoi, truncate_native_bytes};
 use crate::sim::timer::CdTimer;
-use crate::sim::world::{FrameEffects, SimSoundEvent, Simulation, TriggerInputs};
+use crate::sim::world::{FrameEffects, SimSoundEvent, Simulation};
 
 const ACTION_PLAY_SOUND: i32 = 19;
 const ACTION_FORCE_TRIGGER: i32 = 22;
@@ -109,6 +103,13 @@ pub enum TriggerEffect {
     ChronoScreen {
         command: crate::sim::superweapon::chrono_screen::ChronoScreenCommand,
     },
+    /// Execute110/6DF6FD forwards raw+90 to ScenarioPause684060.
+    /// Its clock is the app system clock, not the deterministic world clock.
+    ScenarioPause {
+        duration: i32,
+        outermost: bool,
+    },
+    ScenarioResume,
     /// Execute20 queues the song; the shared Theme owner controls admission,
     /// fade, subsequent playback and the process Main RNG.
     MusicTheme {
@@ -635,8 +636,6 @@ pub struct TriggerRuntime {
     definitions_prepared: bool,
     classified: bool,
     #[cfg(any(test, feature = "test-support"))]
-    fixture_awaiting_records: bool,
-    #[cfg(any(test, feature = "test-support"))]
     fixture_difficulty: Option<i32>,
     #[cfg(any(test, feature = "test-support"))]
     #[serde(skip)]
@@ -1040,83 +1039,6 @@ impl Simulation {
             .map_or(1, |(player, _)| player.table_index() as i32)
     }
 
-    /// Legacy unit fixtures declare one synthetic Tag per Trigger. This seam
-    /// supplies fixture definitions only; construction, polling and actions use
-    /// the same production owner. Map loading always uses the physical reader.
-    #[cfg(any(test, feature = "test-support"))]
-    fn initialize_map_triggers(&mut self, triggers: &TriggerMap, locals: &LocalVariableMap) {
-        let mut ids: Vec<_> = triggers.keys().collect();
-        ids.sort();
-        let mut definitions = RuntimeDefinitions::default();
-        for id in &ids {
-            definitions.trigger_type(id);
-        }
-        for id in ids {
-            let index = definitions.trigger_type(id).unwrap();
-            let record = &triggers[id];
-            let linked = record
-                .linked_trigger_id()
-                .and_then(|id| definitions.trigger_type(id));
-            let typ = &mut definitions.trigger_types[index];
-            typ.owner = record.owner().map(str::to_string);
-            typ.linked = linked;
-            typ.enabled = record.enabled();
-            typ.transfer_on_capture |= record.transfer_on_capture();
-            typ.difficulty = record.difficulty();
-            definitions.tag_types.push(TagType {
-                id: id.clone(),
-                name: id.clone(),
-                repeat: 0,
-                trigger: Some(index),
-            });
-        }
-        self.trigger_runtime = TriggerRuntime {
-            definitions,
-            definitions_prepared: true,
-            locals_set: locals
-                .values()
-                .filter(|v| v.initially_set)
-                .map(|v| v.index)
-                .collect(),
-            fixture_awaiting_records: true,
-            ..TriggerRuntime::default()
-        };
-    }
-
-    #[cfg(any(test, feature = "test-support"))]
-    fn install_pending_trigger_fixture(&mut self, inputs: TriggerInputs<'_>) {
-        if !self.trigger_runtime.fixture_awaiting_records {
-            return;
-        }
-        let count = self.trigger_runtime.definitions.trigger_types.len();
-        for index in 0..count {
-            let id = self.trigger_runtime.definitions.trigger_types[index]
-                .id
-                .clone();
-            let events = inputs
-                .events
-                .get(&id)
-                .map_or_else(Vec::new, |r| r.conditions().to_vec());
-            let entries = inputs
-                .actions
-                .get(&id)
-                .map_or_else(Vec::new, |r| r.entries().to_vec());
-            let actions = entries
-                .into_iter()
-                .map(|entry| {
-                    self.trigger_runtime
-                        .definitions
-                        .resolve_action(entry, None, None)
-                })
-                .collect();
-            let typ = &mut self.trigger_runtime.definitions.trigger_types[index];
-            typ.events = events.into_iter().map(RuntimeEvent::from).collect();
-            typ.actions = actions;
-        }
-        self.trigger_runtime.fixture_awaiting_records = false;
-        self.classify_map_triggers(inputs.rules);
-    }
-
     /// Original Tag6E52A0 includes pending-but-not-yet-destroyed instances.
     fn shared_trigger_tag(&mut self, type_index: usize) -> usize {
         if let Some(index) = self.trigger_runtime.tag_order.iter().copied().find(|&i| {
@@ -1400,6 +1322,13 @@ impl Simulation {
         self.trigger_runtime
             .attachments
             .remove(&TagAttachment::Object(object));
+    }
+
+    /// Object+34 nonnull gate; dispatch itself owns Tag liveness.
+    pub(crate) fn object_has_trigger_tag(&self, object: u64) -> bool {
+        self.trigger_runtime
+            .attachments
+            .contains_key(&TagAttachment::Object(object))
     }
 
     /// Object5F5B50 attachment funnel. An absent/null authored reference clears
@@ -1988,6 +1917,7 @@ impl Simulation {
             //31: bridge575EE0 raises it on each tagged span cell. After this
             //gate,71EE91 routes it to71F069, whose Country502D30 lookup
             //selects only the71F1B1 true tail either way.
+            35 => input.kind == 35 && !self.buildup_bypass_active(),
             2 | 4 | 6 | 7 | 29 | 31 | 33 | 38 | 39 | 40 | 41 | 42 | 43 | 48 | 49 | 50 => {
                 input.kind == condition.kind && !self.buildup_bypass_active()
             }
@@ -2693,14 +2623,14 @@ impl Simulation {
     /// Logic55AFB0 reads the mutable list length and dirty bytes afresh for
     /// every Tag. A removed current Tag shifts the next entry, which is skipped
     /// until the next visit; an enabled later Tag can fire during this pass.
+    /// `rules` are the frame's bound match rules, which action callbacks share
+    /// with ordinary Techno runtime calculations.
     pub fn advance_triggers(
         &mut self,
-        inputs: TriggerInputs<'_>,
+        rules: Option<&crate::rules::ruleset::RuleSet>,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> Vec<TriggerEffect> {
-        #[cfg(any(test, feature = "test-support"))]
-        self.install_pending_trigger_fixture(inputs);
         let mut effects = Vec::new();
         self.trigger_runtime.logic_cursor = 0;
         while let Some(&tag) = self
@@ -2720,7 +2650,7 @@ impl Simulation {
                         force: false,
                     },
                     &mut effects,
-                    inputs.rules,
+                    rules,
                     overlay_registry,
                     frame_effects,
                 );
@@ -2737,7 +2667,7 @@ impl Simulation {
                             force: false,
                         },
                         &mut effects,
-                        inputs.rules,
+                        rules,
                         overlay_registry,
                         frame_effects,
                     ) {
@@ -2758,7 +2688,7 @@ impl Simulation {
                             force: false,
                         },
                         &mut effects,
-                        inputs.rules,
+                        rules,
                         overlay_registry,
                         frame_effects,
                     ) {
@@ -2778,7 +2708,7 @@ impl Simulation {
                         force: false,
                     },
                     &mut effects,
-                    inputs.rules,
+                    rules,
                     overlay_registry,
                     frame_effects,
                 );
@@ -2794,7 +2724,7 @@ impl Simulation {
                         force: false,
                     },
                     &mut effects,
-                    inputs.rules,
+                    rules,
                     overlay_registry,
                     frame_effects,
                 );
@@ -3165,6 +3095,44 @@ impl Simulation {
                     return false;
                 };
                 self.house_cheer(owner, rules, frame_effects);
+            }
+            52 => {
+                //Execute6DEFBC..6DF04E: forward live Building array; no House filter.
+                let (Some(live), Some(rules)) = (context.live_index, rules) else {
+                    return false;
+                };
+                let mut matched = false;
+                let mut ordinal = 0;
+                while ordinal < self.substrate.entities.building_registry_len() {
+                    let id = self
+                        .substrate
+                        .entities
+                        .building_registry_at(ordinal)
+                        .unwrap();
+                    let light = self
+                        .substrate
+                        .entities
+                        .get(id)
+                        .filter(|e| {
+                            e.health.current() > 0
+                                && e.lifecycle.object_alive()
+                                && e.lifecycle.cell_marked()
+                                && !e.lifecycle.in_limbo()
+                        })
+                        .filter(|e| {
+                            self.object_type(e.type_ref(), rules)
+                                .is_some_and(|o| o.has_spotlight)
+                        })
+                        .and_then(|e| e.building_light.light());
+                    if let Some(light) = light
+                        && self.tag_contains_live_trigger(TagAttachment::Object(id), live)
+                    {
+                        self.set_spotlight_behavior(light, value.unwrap_or(0));
+                        matched = true;
+                    }
+                    ordinal += 1;
+                }
+                return matched;
             }
             60 => {
                 //6DDEF5 scans the live Building registry forward and calls
@@ -3909,6 +3877,13 @@ impl Simulation {
                     return false;
                 };
                 return self.trigger_reduce_tiberium_at_waypoint(waypoint, rules, registry);
+            }
+            85 => {
+                // Execute6DDB94/6E0250 stores the literal low byte in34A7.
+                self.session.set_vein_growth(value.unwrap_or(0));
+            }
+            110 => {
+                effects.extend(self.pause_scenario(value.unwrap_or(0)));
             }
             87 => {
                 // Steam3e81a617..08600, Execute6DDBD5..6DDBF3.
@@ -4790,3 +4765,7 @@ mod cargo_tests;
 #[cfg(test)]
 #[path = "trigger_runtime_restore_tests.rs"]
 mod restore_tests;
+
+#[cfg(test)]
+#[path = "trigger_runtime_scenario_pause_tests.rs"]
+mod scenario_pause_tests;

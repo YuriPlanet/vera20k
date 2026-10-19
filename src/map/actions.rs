@@ -136,8 +136,8 @@ impl ActionEntry {
     }
 }
 
-/// One `[Actions]` record. Saved scenario resources serialize this layout.
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// One `[Actions]` record.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MapAction {
     id: String,
     fields: Vec<String>,
@@ -149,19 +149,6 @@ impl MapAction {
     /// consumed them.
     pub fn entries(&self) -> &[ActionEntry] {
         &self.entries
-    }
-}
-
-#[cfg(any(test, feature = "test-support"))]
-impl MapAction {
-    /// A fixture record holding entries the reader cannot produce, such as an
-    /// empty waypoint token.
-    pub fn for_test(id: &str, entries: Vec<ActionEntry>) -> Self {
-        Self {
-            id: id.to_string(),
-            fields: Vec::new(),
-            entries,
-        }
     }
 }
 

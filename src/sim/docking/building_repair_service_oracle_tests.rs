@@ -167,11 +167,7 @@ impl Scene {
         match nav {
             None => Value::Null,
             Some(NavTargetRef::Cell { rx, ry }) => json!([rx, ry]),
-            Some(
-                NavTargetRef::Building { id }
-                | NavTargetRef::Entity { id }
-                | NavTargetRef::Object { id },
-            ) => self.name(Some(id)),
+            Some(NavTargetRef::Object { id }) => self.name(Some(id)),
         }
     }
 
@@ -186,10 +182,7 @@ impl Scene {
             .repair_progress();
         let raw_stage = serde_json::to_value(stage).unwrap();
         let rng = self.sim.scenario_rng.logical_view();
-        let archive = unit.archive_target().map(|value| match value {
-            TargetKind::Cell(rx, ry) => NavTargetRef::cell(rx, ry),
-            TargetKind::Entity(id) => NavTargetRef::Entity { id },
-        });
+        let archive = unit.archive_target().map(NavTargetRef::from);
         let at = crate::sim::movement::ground_pose::object_get_coords(
             unit,
             self.sim.resolved_terrain.as_ref(),
@@ -516,11 +509,11 @@ fn scene(golden: &Value, row: &Value) -> Scene {
             } else {
                 before["unit_nav"]
                     .is_string()
-                    .then_some(NavTargetRef::Building { id: depot })
+                    .then_some(NavTargetRef::Object { id: depot })
             });
         unit.navigation.set_nav_com_aux_for_test(
             (before["unit_nav_aux"] == "other")
-                .then(|| NavTargetRef::Building { id: other.unwrap() }),
+                .then(|| NavTargetRef::Object { id: other.unwrap() }),
         );
         unit.set_pending_entry(match before["pending_entry"].as_str() {
             Some("other") => other,
@@ -1001,7 +994,7 @@ fn native_unit_destination_power_tail_uses_raw_cell_and_shared_setters() {
             );
         } else {
             let destination = if row["input"]["target"] == "depot" {
-                NavTargetRef::Building { id: scene.depot }
+                NavTargetRef::Object { id: scene.depot }
             } else {
                 NavTargetRef::cell(13, 13)
             };

@@ -696,15 +696,7 @@ fn funds_events_match_original_house_logic_and_cleanup_histories() {
             if mixed {
                 // Logic runs before House; the original mixed trigger can
                 // succeed on frame3750, which is not an eighth-frame poll.
-                sim.advance_triggers(
-                    TriggerInputs {
-                        events: &Default::default(),
-                        actions: &Default::default(),
-                        rules: Some(&rules),
-                    },
-                    Some(&overlay),
-                    FrameEffects::default(),
-                );
+                sim.advance_triggers(Some(&rules), Some(&overlay), FrameEffects::default());
             }
             sim.raise_house_tags(
                 houses[0],
@@ -1580,7 +1572,7 @@ struct All01ChargeInputs {
 fn all01_due_charge_and_damage_share_the_production_house_power_phase() {
     use crate::map::{entities::EntityCategory, resolved_terrain, waypoints::Waypoint};
     use crate::rules::{ini_parser::IniFile, team_ai_ini::TeamAiIniRegistry};
-    use crate::sim::world::{TickLane, TriggerInputs};
+    use crate::sim::world::TickLane;
     let charge: Value = serde_json::from_str(crate::test_fixture::text(
         "tools/spatial_oracle/trigger_super_charge_percent.json",
     ))
@@ -1747,11 +1739,6 @@ fn all01_due_charge_and_damage_share_the_production_house_power_phase() {
             None,
             67,
             TickLane::Ordinary,
-            Some(TriggerInputs {
-                events: &map.events,
-                actions: &map.actions,
-                rules: Some(&rules),
-            }),
             FrameEffects::default(),
         )
         .unwrap();
@@ -1773,11 +1760,6 @@ fn all01_due_charge_and_damage_share_the_production_house_power_phase() {
         None,
         67,
         TickLane::Ordinary,
-        Some(TriggerInputs {
-            events: &map.events,
-            actions: &map.actions,
-            rules: Some(&rules),
-        }),
         FrameEffects::default(),
     )
     .unwrap();
@@ -1845,11 +1827,6 @@ fn all01_due_charge_and_damage_share_the_production_house_power_phase() {
         None,
         67,
         TickLane::Ordinary,
-        Some(TriggerInputs {
-            events: &map.events,
-            actions: &map.actions,
-            rules: Some(&rules),
-        }),
         FrameEffects::default(),
     )
     .unwrap();
@@ -2688,7 +2665,7 @@ fn native_trigger_reveal_action_matches_original_controls() {
         };
         compare(&sim.fog, &row["final_cells"]);
         let config = sim.sight_reveal_config(Some(&rules));
-        let heights = sim.path_grid().unwrap().ground_height_grid();
+        let heights = sim.sight_height_grid(&config);
         let mut probe = Simulation::with_seed(31);
         probe.fog = FogState::new(128, 128);
         probe.session.current_house = Some(player);
@@ -3622,15 +3599,7 @@ fn physical_retail_sov01_registration_and_enable_timers_match_original_at_all_di
         compare_stock_state(&sim, draw_count, &row["history"][1]);
         sim.trigger_runtime.stop_before_action = Some(integer(&row["first_poll"]["action_kind"]));
         let boundary = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            sim.advance_triggers(
-                TriggerInputs {
-                    events: &map.events,
-                    actions: &map.actions,
-                    rules: Some(&rules),
-                },
-                None,
-                FrameEffects::default(),
-            )
+            sim.advance_triggers(Some(&rules), None, FrameEffects::default())
         }))
         .expect_err("same original first gameplay-action boundary must stop the prefix");
         assert_eq!(*boundary.downcast::<i32>().unwrap(), 46);
@@ -4251,15 +4220,7 @@ pub(super) fn replay_native_histories(rows: impl Iterator<Item = Value>) -> usiz
                         ]
                     }
                     "poll" => {
-                        effects = sim.advance_triggers(
-                            TriggerInputs {
-                                events: &HashMap::new(),
-                                actions: &HashMap::new(),
-                                rules: Some(&rules),
-                            },
-                            None,
-                            FrameEffects::default(),
-                        );
+                        effects = sim.advance_triggers(Some(&rules), None, FrameEffects::default());
                     }
                     kind => panic!("unhandled native operation {name}/{step}/{kind}"),
                 }

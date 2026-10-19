@@ -78,7 +78,10 @@ fn fs_main(input: Output) -> @location(0) vec4f {
             i32((word >> 5u) & 63u) << 2u, i32(word & 31u) << 3u);
         let src = vec3i(i32(op.rgb & 255u),i32((op.rgb >> 8u) & 255u),i32((op.rgb >> 16u) & 255u));
         var lit: vec3i;
-        if op.mode == 0u {
+        if op.mode == 8u {
+            //4BBCA0: per-channel signed multiplication/shift, saturation, repack.
+            lit = min(dst + ((dst * op.strength) >> vec3u(8)),vec3i(255));
+        } else if op.mode == 0u {
             let mixed = ((dst * (256 - op.strength)) >> vec3u(8))
                 + ((src * op.strength) >> vec3u(8));
             lit = (mixed * i32(op.alpha)) >> vec3u(7);

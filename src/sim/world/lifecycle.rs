@@ -35,45 +35,23 @@ use super::{FrameEffects, Simulation};
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct BuildingLight {
     spotlight_capable: bool,
-    light: Option<BuildingLightRuntime>,
+    light: Option<u64>,
 }
-
-/// The parent-owned `BuildingLightClass` runtime.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub(crate) struct BuildingLightRuntime {
-    behavior: u8,
-    target_id: Option<u64>,
-}
-
 impl BuildingLight {
-    /// Construction's copy of the type's `HasSpotlight=`.
     pub(crate) fn stamp(&mut self, has_spotlight: bool) {
         self.spotlight_capable = has_spotlight;
     }
-
-    /// The type has `HasSpotlight=yes`.
     pub(crate) const fn spotlight_capable(self) -> bool {
         self.spotlight_capable
     }
-
-    /// The owned light, while the building is placed.
-    pub(crate) const fn light(self) -> Option<BuildingLightRuntime> {
+    pub(crate) const fn light(self) -> Option<u64> {
         self.light
     }
-
-    /// Unlimbo's construction (`0x00441187`): behavior 1, no target.
-    fn construct_light(&mut self) {
-        if self.spotlight_capable && self.light.is_none() {
-            self.light = Some(BuildingLightRuntime {
-                behavior: 1,
-                target_id: None,
-            });
-        }
+    pub(super) fn attach(&mut self, id: u64) {
+        self.light = Some(id);
     }
-
-    /// `BuildingClass::Limbo` destroys the light.
-    fn destroy_light(&mut self) {
-        self.light = None;
+    pub(super) fn take(&mut self) -> Option<u64> {
+        self.light.take()
     }
 }
 
@@ -1225,12 +1203,6 @@ impl Simulation {
                 }
                 return RevealOutcome::Failed(RevealFailure::MarkFailed);
             }
-            if let Some(entity) = self.substrate.entities.get_mut(stable_id)
-                && entity.category() == crate::map::entities::EntityCategory::Structure
-            {
-                // `BuildingClass::Unlimbo @ 0x00441187` constructs after placement succeeds.
-                entity.building_light.construct_light();
-            }
         }
         // Techno6F6CB1 calls Object Unlimbo, and its failed return6F6CB8
         // precedes the +3D5 establishment at6F6CFE. Failed Mark retains the
@@ -1538,15 +1510,16 @@ impl Simulation {
                 // Building440D2D, after native House building registration.
                 entity.reset_building_health_sample_at_unlimbo();
             }
+            self.refresh_waypoint_edge_from_committed_structure(stable_id);
+            self.mark_building_base_reservation_with_arg(stable_id, false, context);
+            self.discover_building_owner_after_unlimbo(stable_id, context);
+            self.construct_spotlight(stable_id, context.rules());
             if let Some(rules) = context.rules() {
                 // Unlimbo44119C clears this object's retained primary before
                 //448070 asks the owning house for another live primary.
                 self.production.clear_primary_factory(stable_id);
                 crate::sim::production::initialize_factory_primary(self, stable_id, rules);
             }
-            self.refresh_waypoint_edge_from_committed_structure(stable_id);
-            self.mark_building_base_reservation_with_arg(stable_id, false, context);
-            self.discover_building_owner_after_unlimbo(stable_id, context);
             //440E76's virtual discovery precedes the successful BasePlan
             // tail at44159D..4415B3, including a reached first opening.
             self.fill_base_plan_from_successful_building_unlimbo(stable_id);
@@ -2719,6 +2692,8 @@ impl Simulation {
             Some(ObjectKind::Anim)
         } else if self.substrate.voxel_anims.contains_key(stable_id) {
             Some(ObjectKind::VoxelAnim)
+        } else if self.substrate.spotlights.contains_key(stable_id) {
+            Some(ObjectKind::Spotlight)
         } else if self.substrate.particle_systems.contains_key(stable_id) {
             Some(ObjectKind::ParticleSystem)
         } else if self.production.terrain_objects.contains_key(&stable_id) {
@@ -2747,6 +2722,11 @@ impl Simulation {
     /// For a Techno, `Object+0x98`: RegisterObject sets it (`0x0055BAC6`).
     fn logic_membership_flag(&self, stable_id: u64, kind: ObjectKind) -> bool {
         match kind {
+            ObjectKind::Spotlight => self
+                .substrate
+                .spotlights
+                .get(stable_id)
+                .is_some_and(|l| l.in_logic_vector),
             ObjectKind::Smudge => false,
             ObjectKind::Anim => self
                 .substrate
@@ -2790,6 +2770,11 @@ impl Simulation {
     /// or UnregisterObject's clear (`0x0055BB27`).
     fn set_logic_membership_flag(&mut self, stable_id: u64, kind: ObjectKind, member: bool) {
         match kind {
+            ObjectKind::Spotlight => {
+                if let Some(l) = self.substrate.spotlights.get_mut(stable_id) {
+                    l.in_logic_vector = member;
+                }
+            }
             ObjectKind::Smudge => assert!(!member, "Smudge {stable_id} never joins Logic"),
             ObjectKind::Anim => {
                 if let Some(anim) = self.substrate.anims.get_mut(stable_id) {
@@ -2917,6 +2902,15 @@ impl Simulation {
         self.substrate.display.remove(stable_id);
         self.mark_anim_display(stable_id, false);
         self.unregister_logic_object(stable_id)
+    }
+
+    /// The BuildingLight constructor435820 explicitly joins the shared Logic owner.
+    pub(super) fn register_spotlight_logic(&mut self, id: u64) {
+        self.register_logic_object(id);
+    }
+    pub(super) fn conceal_spotlight_logic(&mut self, id: u64) {
+        self.substrate.display.remove(id);
+        self.unregister_logic_object(id);
     }
 
     /// `ObjectClass::Unlimbo` inside `VoxelAnimClass::Constructor @ 0x007493B0`
@@ -3322,12 +3316,10 @@ impl Simulation {
 
         // ObjectConceal5F4E98 invokes vt+0x11C here, before +81 Limbo is set
         // at5F4E9E (the same byte tested by the5F4D45 entry guard).
+        self.destroy_spotlight_for_parent(stable_id, context);
         self.techno_clear_discovery_on_conceal(stable_id);
         if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
             entity.lifecycle.in_limbo = true;
-            // `BuildingClass::Limbo` destroys its owned BuildingLight before
-            // the remaining building-count/base-node teardown.
-            entity.building_light.destroy_light();
         } else {
             // Ordinary Particle base fields are null and Mark(REMOVE) has
             // no cell footprint; the same Object5F4D30 body still owns its
@@ -3601,7 +3593,17 @@ impl Simulation {
         // TechnoClass::Limbo releases the gattling loop and clears the report
         // latch (`0x006F6C6B`, `0x006F6C76`) ahead of its radio pass.
         self.gattling_limbo(stable_id, context);
-        crate::sim::radio::broadcast_break(self, stable_id, None, context.effects());
+        // RadioLimbo65AA80..65AA99 tests InLimbo before Broadcast(3).
+        // CargoAdd4733B0 repeats virtual Limbo after Hospital51A35F's
+        // post-conceal HELLO; breaking again loses the repair contact.
+        if self
+            .substrate
+            .entities
+            .get(stable_id)
+            .is_some_and(|entity| !entity.lifecycle.in_limbo)
+        {
+            crate::sim::radio::broadcast_break(self, stable_id, None, context.effects());
+        }
         let outcome = self.object_conceal_with_context(stable_id, context);
         // Building445DF4..445E14 follows the base Limbo, including the
         // already-limbo branch4458CE. This is one House/category callback,
@@ -4045,20 +4047,6 @@ impl Simulation {
         self.trace_lifecycle_for_test(LifecycleTestEvent::UninitClassPre { stable_id });
     }
 
-    fn nav_ref_targets_expired(target: &NavTargetRef, expired_id: u64) -> bool {
-        Self::nav_ref_object(target) == Some(expired_id)
-    }
-
-    /// The object a navigation entry names, if it names one.
-    fn nav_ref_object(target: &NavTargetRef) -> Option<u64> {
-        match *target {
-            NavTargetRef::Entity { id }
-            | NavTargetRef::Object { id }
-            | NavTargetRef::Building { id } => Some(id),
-            NavTargetRef::Cell { .. } => None,
-        }
-    }
-
     /// What `listener` holds that its pointer-expiry forwards can change:
     /// `name` gets each id a field [`Self::notify_entity_pointer_expired`] or
     /// a forward compares (repeats possible), and the result says whether it
@@ -4096,10 +4084,9 @@ impl Simulation {
             .chain(navigation.nav_com().iter())
             .chain(navigation.nav_queue().iter())
             .chain(navigation.nav_list().iter())
-            .filter_map(Self::nav_ref_object)
+            .filter_map(|target| target.object_id())
             .for_each(&mut name);
         [
-            listener.passenger_role.boarding_transport_id(),
             listener.passenger_role.inside_transport_id(),
             listener.pending_entry(),
             listener.spawn_owner_id.owner(),
@@ -4113,6 +4100,7 @@ impl Simulation {
             listener.lift.target(),
             listener.lift.source(),
             listener.drop_credit.manipulated_by(),
+            listener.building_light.light(),
         ]
         .into_iter()
         .flatten()
@@ -4597,16 +4585,9 @@ impl Simulation {
         // PAIR clear below; the `+0x5A8` clear above it is unguarded. The two
         // Booleans are equal in value because both read the receiver's house at
         // the same cell, so the single `allow_clear` local models both.
-        let clear_suspended_nav_com = listener
-            .navigation
-            .suspended_nav_com()
-            .as_ref()
-            .is_some_and(|target| Self::nav_ref_targets_expired(target, expired_id));
-        let current_nav_matches = listener
-            .navigation
-            .nav_com()
-            .as_ref()
-            .is_some_and(|target| Self::nav_ref_targets_expired(target, expired_id));
+        let expired_nav = NavTargetRef::object(expired_id);
+        let clear_suspended_nav_com = listener.navigation.suspended_nav_com() == Some(expired_nav);
+        let current_nav_matches = listener.navigation.nav_com() == Some(expired_nav);
         let retain_capture_nav = current_nav_matches
             && listener.category() == EntityCategory::Infantry
             && listener.removal_facts.occupier()
@@ -4618,18 +4599,10 @@ impl Simulation {
         //4D9A0F gates the pair on current NavCom identity;4D9ABD then
         //clears both fields, irrespective of the auxiliary pointer's value.
         let clear_nav_com = current_nav_matches && !retain_capture_nav && allow_clear;
-        let prune_nav_queue = listener
-            .navigation
-            .nav_queue()
-            .iter()
-            .any(|target| Self::nav_ref_targets_expired(target, expired_id));
+        let prune_nav_queue = listener.navigation.nav_queue().contains(&expired_nav);
         // `0x004D9B43..0x004D9B95`: every navigation list entry naming the
         // expiring object goes, before the NavQueue's.
-        let prune_nav_list = listener
-            .navigation
-            .nav_list()
-            .iter()
-            .any(|target| Self::nav_ref_targets_expired(target, expired_id));
+        let prune_nav_list = listener.navigation.nav_list().contains(&expired_nav);
 
         // Techno707AE7..707AF5 clears private pending+500 only on control1.
         // Non-destructive DetachAll(false) retains this independent entry;
@@ -4646,13 +4619,11 @@ impl Simulation {
         // Transporter+11C survives a live hull's ordinary Limbo announcement,
         // for either control. Clear only on Object+90==0, exact Health==0 or
         // ScenarioInit(A8E7AC)!=0. Negative live HP is not this zero test.
-        // The boarding adapter follows NavCom expiry independently.
-        let clear_passenger_role = listener.passenger_role.boarding_transport_id()
+        let clear_passenger_role = listener.passenger_role.inside_transport_id()
             == Some(expired_id)
-            || (listener.passenger_role.inside_transport_id() == Some(expired_id)
-                && (!expired_object_alive
-                    || expired_health == 0
-                    || self.object_placement_scope_active()));
+            && (!expired_object_alive
+                || expired_health == 0
+                || self.object_placement_scope_active());
         let clear_c4_source = listener
             .pending_c4_detonation
             .pending()
@@ -4665,6 +4636,10 @@ impl Simulation {
         // Building44EA77 removes a charger for either control, irrespective
         // of the base target exemptions. Only later AI changes the weapon latch.
         let clear_tesla_charger = listener.tesla_charge.chargers().contains(&expired_id);
+        // BuildingPointerExpired44E932..44E93A clears its owned child for
+        // either control, before that storage is physically removed.
+        let clear_spotlight = listener.category() == EntityCategory::Structure
+            && listener.building_light.light() == Some(expired_id);
         if !(clear_suspended_target
             || clear_spark_system
             || clear_damage_smoke
@@ -4678,7 +4653,8 @@ impl Simulation {
             || clear_passenger_role
             || clear_c4_source
             || expire_mega_pointer
-            || clear_tesla_charger)
+            || clear_tesla_charger
+            || clear_spotlight)
         {
             return;
         }
@@ -4709,12 +4685,12 @@ impl Simulation {
         if prune_nav_list {
             listener
                 .navigation
-                .retain_nav_list(|target| !Self::nav_ref_targets_expired(target, expired_id));
+                .retain_nav_list(|target| *target != expired_nav);
         }
         if prune_nav_queue {
             listener
                 .navigation
-                .retain_nav_queue(|target| !Self::nav_ref_targets_expired(target, expired_id));
+                .retain_nav_queue(|target| *target != expired_nav);
         }
         if clear_dock {
             // `0x00707AF5`.
@@ -4737,6 +4713,9 @@ impl Simulation {
         if clear_tesla_charger {
             listener.tesla_charge.pointer_expired(expired_id);
         }
+        if clear_spotlight {
+            listener.building_light.take();
+        }
     }
 
     /// ObjectClass::Detach_From_All_Lists represented listener broadcast.
@@ -4755,7 +4734,8 @@ impl Simulation {
     /// has temporarily lent that grid through UninitContext. The remaining arms
     /// read the object's liveness, health and mission from the same world.
     pub(crate) fn notify_pointer_expired(&mut self, expired_id: u64, context: UninitContext<'_>) {
-        if !self.substrate.entities.contains(expired_id)
+        if !self.substrate.spotlights.contains_key(expired_id)
+            && !self.substrate.entities.contains(expired_id)
             && !self.substrate.particle_systems.contains_key(expired_id)
             && self
                 .substrate
@@ -4893,6 +4873,10 @@ impl Simulation {
                     .as_ref()?
                     .object(target_id)
                     .map(|smudge| [smudge.location().x, smudge.location().y])
+            })
+            .or_else(|| {
+                self.spotlight_object_coord(target_id)
+                    .map(|[x, y, _]| [x, y])
             });
         let Some([x, y]) = xy else {
             return ProjectileTarget::None;
@@ -5041,6 +5025,14 @@ impl Simulation {
                 )
             })
             .or_else(|| {
+                let [x, y, _] = self.spotlight_object_coord(expired_id)?;
+                let cell = u16::try_from(crate::util::lepton::lepton_to_cell(x))
+                    .ok()
+                    .zip(u16::try_from(crate::util::lepton::lepton_to_cell(y)).ok());
+                // ObjectCtor5F390B supplies255; the class has no Techno owner.
+                Some((cell, self.spotlight_alive(expired_id)?, 255, false, None))
+            })
+            .or_else(|| {
                 let system = self.substrate.particle_systems.get(expired_id)?;
                 let cell = u16::try_from(crate::util::lepton::lepton_to_cell(system.coords.x))
                     .ok()
@@ -5090,6 +5082,10 @@ impl Simulation {
         else {
             return;
         };
+
+        // BuildingLight436A00 clears parent/target for either expiry control.
+        // These nullable-field writes commute with the other listener clears.
+        self.spotlights_pointer_expired(expired_id);
 
         #[cfg(any(test, feature = "test-support"))]
         if let Some(smudge) = self
@@ -5218,7 +5214,7 @@ impl Simulation {
                     .as_ref()
                     .and_then(|grid| grid.object(listener_id))
                     .is_some(),
-                ObjectKind::VoxelAnim | ObjectKind::Terrain => false,
+                ObjectKind::VoxelAnim | ObjectKind::Terrain | ObjectKind::Spotlight => false,
             };
             if !present {
                 continue;
@@ -5265,6 +5261,10 @@ impl Simulation {
                         self.projectiles
                             .get(expired_id)
                             .map(|bullet| (true, !bullet.in_logic_vector))
+                    })
+                    .or_else(|| {
+                        self.spotlight_alive(expired_id)
+                            .map(|alive| (alive, !alive))
                     })
                     .unwrap_or((false, true));
                 self.trace_lifecycle_for_test(LifecycleTestEvent::UninitRemovalListenerVisited {
@@ -5494,6 +5494,7 @@ impl Simulation {
 
     pub fn uninit_with_context(&mut self, stable_id: u64, context: UninitContext<'_>) {
         self.planning_detach_actor(stable_id);
+        let spotlight = self.substrate.spotlights.contains_key(stable_id);
         let smudge = self
             .smudge_grid
             .as_ref()
@@ -5506,7 +5507,7 @@ impl Simulation {
             .is_some();
         // Ordinary Particle and Smudge instances have no Techno/Foot hooks
         // or passengers. Every represented family joins the one base tail.
-        if !smudge && !particle {
+        if !smudge && !particle && !spotlight {
             let Some(entity) = self.substrate.entities.get(stable_id) else {
                 return;
             };
@@ -5569,7 +5570,10 @@ impl Simulation {
         self.bomb_defuse(stable_id);
         self.notify_pointer_expired(stable_id, context);
 
-        if smudge {
+        if spotlight {
+            self.notify_pointer_expired(stable_id, context);
+            self.finish_spotlight_retirement(stable_id);
+        } else if smudge {
             // Whole Smudge6B4A50 delegates to Object5F65F0. Its Mark(0)
             // writes no cell data; preserve its existing fused Conceal tail.
             self.notify_pointer_expired(stable_id, context);
@@ -5635,6 +5639,9 @@ impl Simulation {
     }
 
     fn pending_object_is_ready(&self, stable_id: u64) -> bool {
+        if let Some(alive) = self.spotlight_alive(stable_id) {
+            return !alive;
+        }
         if let Some(smudge) = self
             .smudge_grid
             .as_ref()
@@ -5681,6 +5688,11 @@ impl Simulation {
         context: UninitContext<'_>,
         game_state: i32,
     ) {
+        if self.substrate.spotlights.contains_key(stable_id) {
+            self.destroy_spotlight(stable_id, context);
+            return;
+        }
+        self.destroy_spotlight_for_parent(stable_id, context);
         let foot = self
             .substrate
             .entities

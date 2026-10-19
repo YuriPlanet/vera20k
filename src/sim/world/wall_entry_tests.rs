@@ -940,14 +940,10 @@ fn assert_retail_wall_history(native_path: &'static str, wall_name: &str, direct
                     placement["cell"][0].as_u64().unwrap() as u16,
                     placement["cell"][1].as_u64().unwrap() as u16,
                 );
-                assert!(crate::sim::production::mark_wall(
-                    sim,
-                    rules,
-                    registry,
-                    coordinate.0,
-                    coordinate.1,
-                    wall,
-                ));
+                assert_eq!(
+                    sim.mark_overlay_for_test(rules, registry, coordinate, wall),
+                    crate::map::overlay_mark::OverlayMarkOutcome::Marked
+                );
                 for change in placement["changed"].as_array().unwrap() {
                     assert_cell(sim, &change["after"], &neighbor_domain);
                 }

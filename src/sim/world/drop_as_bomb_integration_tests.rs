@@ -126,7 +126,6 @@ fn put_on_deck(sim: &mut Simulation, rules: &RuleSet, id: u64, water: bool) {
     cell.bridge_walkable = true;
     cell.bridge_deck_level = cell.level + 4;
     if water {
-        cell.is_water = true;
         cell.land_type = LandType::Water.as_index();
         cell.base_land_type = cell.land_type;
     }

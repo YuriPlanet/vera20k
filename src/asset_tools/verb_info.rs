@@ -490,7 +490,7 @@ fn pal_body(data: &[u8], warnings: &mut Vec<String>) -> InfoBody {
     }
 
     let colors: Vec<String> = palette
-        .colors
+        .colors()
         .iter()
         .map(|color| format!("#{:02X}{:02X}{:02X}", color.r, color.g, color.b))
         .collect();

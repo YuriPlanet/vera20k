@@ -1,9 +1,11 @@
 //! Construction and frame API around Simulation and its bound match resources.
 //!
 //! App, headless and replay execution use SimRuntime. SimResources binds the
-//! rules/art registry, overlay registry, trigger definitions and
-//! base terrain template; advance_frame reads these without caller-substituted
-//! per-frame resources. Simulation owns live mutable terrain and gameplay state.
+//! rules/art registry, overlay registry and base terrain template;
+//! advance_frame reads these without caller-substituted per-frame resources.
+//! Simulation owns live mutable terrain and gameplay state, including the
+//! trigger runtime's definitions, which it reads from the map once at
+//! scenario init.
 //! SimView provides immutable access for presentation and diagnostics.
 //!
 //! Dependency rules: part of sim/; never depends on render/, ui/,
@@ -26,15 +28,6 @@ pub struct SimResources {
     pub terrain_template: Option<crate::map::resolved_terrain::ResolvedTerrainGrid>,
     /// The complete immutable match rules (including the sole ArtRegistry).
     pub rules: crate::rules::ruleset::RuleSet,
-    /// Copies of the map's trigger records. No production path reads them:
-    /// the trigger runtime reads its definitions from the map once, at
-    /// scenario init. They stay because the saved scenario resources
-    /// serialize them and `headless_scenario.rs` binds them; legacy test
-    /// fixtures still take events and actions from here.
-    pub trigger_graph: crate::map::trigger_graph::TriggerGraph,
-    pub triggers: crate::map::triggers::TriggerMap,
-    pub events: crate::map::events::EventMap,
-    pub actions: crate::map::actions::ActionMap,
 }
 
 impl SimResources {
@@ -47,10 +40,6 @@ impl SimResources {
             )
             .expect("empty rules parse"),
             terrain_template: None,
-            trigger_graph: Default::default(),
-            triggers: Default::default(),
-            events: Default::default(),
-            actions: Default::default(),
         }
     }
 }
@@ -198,13 +187,6 @@ impl SimRuntime {
             Some(&self.resources.overlay_registry),
             tick_ms,
             lane,
-            Some(crate::sim::world::TriggerInputs {
-                #[cfg(any(test, feature = "test-support"))]
-                events: &self.resources.events,
-                #[cfg(any(test, feature = "test-support"))]
-                actions: &self.resources.actions,
-                rules: Some(&self.resources.rules),
-            }),
             effects,
         )
     }
@@ -255,15 +237,7 @@ mod tests {
             |_| {},
         )
         .expect("shared fresh-map construction");
-        let mut resources = SimResources::empty();
-        resources.trigger_graph = map.trigger_graph;
-        resources.triggers = map.triggers;
-        resources.events = map.events;
-        resources.actions = map.actions;
-        let mut runtime = SimRuntime {
-            simulation: sim,
-            resources,
-        };
+        let mut runtime = SimRuntime::from_simulation(sim);
         let before_first_frame = GameSnapshot::save(&runtime.simulation, 0, 0, "trigger_owner", 0);
         let run = |runtime: &mut SimRuntime| {
             runtime

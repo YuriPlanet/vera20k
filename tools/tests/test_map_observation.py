@@ -2373,7 +2373,8 @@ class MapObservationTests(unittest.TestCase):
                        {'suspended_target': {'Entity': 0}, 'suspended_nav': None},
                        {'suspended_target': {'Cell': {'rx': 1, 'ry': 2}}, 'suspended_nav': None},
                        {'suspended_target': None, 'suspended_nav': {'Cell': [1, 2]}},
-                       {'suspended_target': None, 'suspended_nav': {'Object': {'id': True}}}):
+                       {'suspended_target': None, 'suspended_nav': {'Object': {'id': True}}},
+                       {'suspended_target': None, 'suspended_nav': {'Building': {'id': 9}}}):
             with self.subTest(retask=retask), self.assertRaises(ValidationError):
                 observation._actor(dict(self.actor(), retask=retask), 'actor')
 
@@ -3157,7 +3158,7 @@ class MapObservationTests(unittest.TestCase):
     @staticmethod
     def temporal_state():
         return {'has_link': True, 'warp_target': 9, 'chain_head': None,
-                'boarding_transport': None, 'inside_transport': None,
+                'inside_transport': None,
                 'cargo': {'count': 2, 'passengers': [11, 8]}}
 
     def test_temporal_snapshots_and_shared_fire_readback_survive_sealed_recheck(self):
@@ -3216,13 +3217,13 @@ class MapObservationTests(unittest.TestCase):
     def test_temporal_snapshot_keeps_independent_queries_and_checks_shapes(self):
         self.assertEqual(observation._temporal(self.temporal_state(), 'temporal'), 3)
         row = dict(self.temporal_state(), has_link=False, warp_target=9,
-                   chain_head=10, boarding_transport=12,
+                   chain_head=10,
                    inside_transport={'transport': 13, 'open_topped': True},
                    cargo={'count': 99, 'passengers': [11, 8]})
         self.assertEqual(observation._temporal(row, 'temporal'), 3)
         self.assertEqual(observation._temporal(dict(row, cargo=None), 'temporal'), 1)
         for key, value in (('has_link', 1), ('warp_target', 0), ('chain_head', True),
-                           ('boarding_transport', 1 << 64),
+                           ('chain_head', 1 << 64),
                            ('cargo', {'count': 0, 'passengers': [True]}),
                            ('inside_transport', {'transport': 8, 'open_topped': 1})):
             with self.subTest(key=key), self.assertRaises(ValidationError):

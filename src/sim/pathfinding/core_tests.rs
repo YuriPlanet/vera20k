@@ -5,7 +5,7 @@
 use super::*;
 use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid};
 use crate::map::tube_facts::{TubeFact, TubeId};
-use crate::rules::terrain_rules::{LandType, SpeedCostProfile, TerrainClass};
+use crate::rules::terrain_rules::{LandType, SpeedCostProfile};
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::pathfinding::zone_hierarchy::{MarkedZones, ZoneLevelGraph, ZoneRecord};
 use crate::sim::pathfinding::zone_map::ZoneId;
@@ -577,7 +577,7 @@ fn test_from_resolved_terrain_uses_resolved_blocking_flags() {
         vec![
             make_resolved_cell(0, 0),
             ResolvedTerrainCell {
-                is_water: true,
+                land_type: LandType::Water.as_index(),
                 ground_walk_blocked: true,
                 ..make_resolved_cell(1, 0)
             },
@@ -636,13 +636,12 @@ fn test_path_grid_rebuild_closes_destroyed_bridge_deck() {
                 ground_walk_blocked: true,
                 base_build_blocked: true,
                 base_land_type: 0,
-                base_terrain_class: Default::default(),
                 base_speed_costs: Default::default(),
                 bridge_walkable: true,
                 bridge_transition: true,
                 bridge_deck_level: 4,
                 has_bridge_deck: true,
-                is_water: true,
+                land_type: LandType::Water.as_index(),
                 ..make_resolved_cell(2, 0)
             },
             ResolvedTerrainCell {
@@ -706,12 +705,11 @@ fn test_pathcell_bridge_walkable_preserved_for_bridgeheads_across_rebuild() {
                 ground_walk_blocked: true,
                 base_build_blocked: true,
                 base_land_type: 0,
-                base_terrain_class: Default::default(),
                 base_speed_costs: Default::default(),
                 bridge_walkable: true,
                 bridge_deck_level: 4,
                 has_bridge_deck: true,
-                is_water: true,
+                land_type: LandType::Water.as_index(),
                 ..make_resolved_cell(2, 0)
             },
             ResolvedTerrainCell {
@@ -1374,13 +1372,12 @@ fn make_water_channel_terrain() -> ResolvedTerrainGrid {
         for rx in 0..width {
             let is_water: bool = ry == 1;
             cells.push(ResolvedTerrainCell {
-                is_water,
-                ground_walk_blocked: is_water,
-                terrain_class: if is_water {
-                    TerrainClass::Water
+                land_type: if is_water {
+                    LandType::Water.as_index()
                 } else {
-                    TerrainClass::Clear
+                    LandType::Clear.as_index()
                 },
+                ground_walk_blocked: is_water,
                 speed_costs: if is_water {
                     // Water: ground blocked, Float/Hover/Amphibious passable.
                     SpeedCostProfile {
@@ -1436,7 +1433,7 @@ fn test_cliff_cells_remain_pathgrid_blocked() {
         vec![
             make_resolved_cell(0, 0),
             ResolvedTerrainCell {
-                is_cliff_like: true,
+                land_type: LandType::Rock.as_index(),
                 ..make_resolved_cell(1, 0)
             },
             make_resolved_cell(2, 0),
@@ -1599,7 +1596,7 @@ fn terrain_occupation_five_and_six_leave_one_subcell_for_infantry() {
 #[test]
 fn terrain_relaxation_never_reopens_a_cliff_cell() {
     let cliff_with_tree = ResolvedTerrainCell {
-        is_cliff_like: true,
+        land_type: LandType::Rock.as_index(),
         base_ground_walk_blocked: true,
         ..tree_cell(0, 0, 4)
     };

@@ -189,13 +189,10 @@ impl Fixture {
             .unwrap_or_default()
     }
 
-    fn boarding(&self, id: u64) -> Option<u64> {
-        self.sim
-            .substrate
-            .entities
-            .get(id)?
-            .passenger_role
-            .boarding_transport_id()
+    /// `id`'s first radio contact, which an infantryman's Enter destination
+    /// setter HELLOs (`0x0051ACD4`).
+    fn contact(&self, id: u64) -> Option<u64> {
+        self.sim.substrate.entities.get(id)?.radio_contacts.slot(0)
     }
 
     fn cargo(&self, transport: u64) -> Vec<u64> {
@@ -237,12 +234,14 @@ fn ordered(entity: &GameEntity) -> Option<MissionType> {
     }
 }
 
-/// Action 14 (`0x006ED200`): one member is sent aboard per update (Enter,
-/// the transport as its destination, handed to the Boarding adapter), the
-/// next once the first is on Enter. Each passenger leaves the team as it
-/// boards (Conceal's Foot `Detach_All`, `0x004D9744`); once only the
-/// transport is left action 14 is finished, and action 43 with the
-/// transport full.
+/// Action 14 (`0x006ED200`): one member is sent aboard (Enter, the
+/// transport as its destination), whose destination setter makes the
+/// transport his radio contact (`0x0051AC25..0x0051AD17`); while it holds
+/// that contact no one else is ordered (`0x006ED2EE..0x006ED2F5`), so the
+/// next goes once the first is in and his Limbo broke it. Each passenger
+/// leaves the team as it boards (Conceal's Foot `Detach_All`,
+/// `0x004D9744`); once only the transport is left action 14 is finished,
+/// and action 43 with the transport full.
 #[test]
 fn the_passengers_are_sent_aboard_one_per_update_and_leave_the_team() {
     let mut f = Fixture::new(&[(14, 0), (43, 0), (2, 0)], false);
@@ -257,15 +256,25 @@ fn the_passengers_are_sent_aboard_one_per_update_and_leave_the_team() {
 
     for _ in 0..5 {
         f.tick();
-        if f.boarding(first).is_some() {
+        if f.contact(first).is_some() {
             break;
         }
     }
-    assert_eq!(f.boarding(first), Some(apc));
-    assert_eq!(f.boarding(second), None, "one member is ordered per update");
+    assert_eq!(f.contact(first), Some(apc));
     let entity = f.entity(first);
     assert_eq!(ordered(entity), Some(MissionType::Enter));
     assert_eq!(entity.navigation.nav_com(), Some(NavTargetRef::object(apc)));
+    // Further updates while he walks in order no one else.
+    for _ in 0..5 {
+        f.tick();
+    }
+    assert!(f.cargo(apc).is_empty(), "the first is still walking in");
+    assert_eq!(f.contact(second), None);
+    assert_ne!(
+        ordered(f.entity(second)),
+        Some(MissionType::Enter),
+        "no one else is ordered while the transport holds a contact"
+    );
 
     f.run_past(team, 1, 900);
     assert_eq!(f.cursor(team), 2, "actions 14 and 43 are finished");
@@ -294,7 +303,7 @@ fn a_transport_in_radio_contact_holds_the_load_order() {
         .radio_contacts
         .insert(contact);
     f.load_action(team);
-    assert_eq!(f.boarding(passenger), None);
+    assert_eq!(f.contact(passenger), None);
     assert!(!f.finished(team));
 
     f.sim
@@ -305,7 +314,7 @@ fn a_transport_in_radio_contact_holds_the_load_order() {
         .radio_contacts
         .remove(contact);
     f.load_action(team);
-    assert_eq!(f.boarding(passenger), Some(apc));
+    assert_eq!(f.contact(passenger), Some(apc));
     assert!(!f.finished(team));
 }
 
@@ -322,7 +331,7 @@ fn the_transport_is_the_first_vehicle_with_a_free_seat() {
     f.load(full, 2);
     let team = f.plain_team(&[passenger, full, free]);
     f.load_action(team);
-    assert_eq!(f.boarding(passenger), Some(free));
+    assert_eq!(f.contact(passenger), Some(free));
     assert!(!f.finished(team));
 
     f.load(free, 2);
@@ -792,6 +801,11 @@ impl OracleTeam {
             15,
             row.get("zone").map_or([0x80, 0x80, 0], point),
         );
+        assert_eq!(
+            sim.substrate.entities.get(zone).unwrap().category(),
+            EntityCategory::Infantry,
+            "the radio rows' contact is an infantryman"
+        );
         let mut members = Vec::new();
         for (slot, member) in row["members"].as_array().unwrap().iter().enumerate() {
             let passengers = int(&member["passengers"]);
@@ -888,14 +902,13 @@ impl OracleTeam {
 
     /// Each member as the row's events leave it: its NavCom, its target
     /// (each starts with one), its last ordered mission and whether it
-    /// commenced, its team membership and +0x689, its Boarding role and its
-    /// archive target. Remove_Member is a recording stub in the
-    /// oracle, so its own effects are added from its port
-    /// (`team_remove_member`, `0x006EA870`): once no initiated member is
-    /// left, the head is initiated, and a removed infantryman's or
-    /// aircraft's later orders, which its idle mode decides (an archive in
-    /// another cell sends an infantryman there; an aircraft's Retreat
-    /// refuses the Move after it), are not compared.
+    /// commenced, its team membership and +0x689, and its archive target.
+    /// Remove_Member is a recording stub in the oracle, so its own effects
+    /// are added from its port (`team_remove_member`, `0x006EA870`): once no
+    /// initiated member is left, the head is initiated, and a removed
+    /// infantryman's or aircraft's later orders, which its idle mode decides
+    /// (an archive in another cell sends an infantryman there; an aircraft's
+    /// Retreat refuses the Move after it), are not compared.
     fn check(&self, row: &serde_json::Value, case: usize, loading: bool) {
         let state = &self.sim.team_script_vm.teams[&self.team];
         assert_eq!(
@@ -946,12 +959,42 @@ impl OracleTeam {
                     EntityCategory::Infantry | EntityCategory::Aircraft
                 );
             // The oracle records Assign_Destination's argument, not the
-            // class setter body. Unit741C4F..741CCC parks a contactless
-            // Unit Enter target in +500 and clears its archive/NavCom.
-            // Derive that continuation from the native row's inputs;
-            // movement/boarding integration is covered by transport_unload.
+            // class setter body, so the setter's two effects are compared
+            // as the member's state shows them. Unit741AD1..741B22: a
+            // transport (`Passengers=` above 0) whose first contact is an
+            // infantryman breaks it when sent to a Techno it holds no
+            // contact with. A member's only contact here is the zone's
+            // infantryman and no member is one, so a transport sent to a
+            // member must have lost it and every other contact must stand;
+            // the setter's other gates have their own controls
+            // (`gunner_tests`).
+            let had_contact = flag(&member["radio"]);
+            let sent_to_member = destination[index]
+                .as_ref()
+                .and_then(serde_json::Value::as_u64)
+                .is_some();
+            let breaks = had_contact
+                && member["class"] == "unit"
+                && int(&member["passengers"]) > 0
+                && sent_to_member;
+            assert!(
+                entity
+                    .radio_contacts
+                    .iter_live()
+                    .all(|contact| contact == self.zone),
+                "{at}: the zone's infantryman is the only contact"
+            );
+            assert_eq!(
+                entity.radio_contacts.contains(self.zone),
+                had_contact && !breaks,
+                "{at}: contact with the zone"
+            );
+            // Unit741C4F..741CCC then parks an Enter target that is a Unit
+            // in +500 and clears the archive and NavCom, when no contact is
+            // left; movement and boarding integration is covered by
+            // transport_unload.
             let pending_entry = if member["class"] == "unit"
-                && !flag(&member["radio"])
+                && entity.radio_contacts.is_empty()
                 && mission[index] == Some(MissionType::Enter as i32)
             {
                 destination[index]
@@ -1009,16 +1052,6 @@ impl OracleTeam {
                     }
                     None => {}
                 }
-            }
-            if mission[index] == Some(MissionType::Enter as i32)
-                && let Some(target) = &destination[index]
-                && entity.passenger_role.cargo().is_none()
-            {
-                assert!(
-                    entity.passenger_role.boarding_transport_id()
-                        == Some(self.members[slot(target)]),
-                    "{at}: boarding"
-                );
             }
             let [x, y, z] = point(&member["xyz"]);
             let archive = row["archive"][index]

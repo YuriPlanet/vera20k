@@ -73,6 +73,8 @@ pub(crate) fn maybe_export_sidebar_cameo_debug(asset_manager: &AssetManager, rul
     );
 }
 
+/// Init_Game `0x0052BA60` converts CAMEO.PAL like every palette load; the
+/// later names are VERA fallbacks for installs without it.
 pub(crate) fn load_sidebar_cameo_palette(asset_manager: &AssetManager) -> Option<Palette> {
     let palette_names = [
         "cameo.pal",

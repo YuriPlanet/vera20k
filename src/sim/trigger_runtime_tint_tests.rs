@@ -141,11 +141,6 @@ fn ordered_tag_rgb_actions_then_the_production_fade_keep_distinct_palette_operat
             None,
             67,
             TickLane::Ordinary,
-            Some(TriggerInputs {
-                events: &map.events,
-                actions: &map.actions,
-                rules: Some(&rules),
-            }),
             FrameEffects::default(),
         )
         .unwrap();

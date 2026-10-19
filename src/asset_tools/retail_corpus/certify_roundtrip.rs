@@ -1,13 +1,13 @@
 //! `certify_*` byte-identity round-trips (PAL, HVA, VPL, MIX name resolution).
 //!
-//! HVA/VPL fields are compared directly with retail bytes. PAL components
-//! are compared with checked native expansion outputs for those input bytes;
-//! renderer alpha policy is outside that native component comparison.
+//! HVA/VPL fields are compared directly with retail bytes. PAL entries are
+//! compared with checked native expansion outputs for those input bytes; the
+//! native conversion keys no entry, so every decoded entry is opaque.
 
 use super::*;
 
 use crate::assets::hva_file::HvaFile;
-use crate::assets::pal_file::Palette;
+use crate::assets::pal_file::{Color, Palette};
 use crate::assets::vpl_file::VplFile;
 
 /// Original PAL expansion 0x0072AE3E -> 0x0072AE99, reproduced with
@@ -73,25 +73,14 @@ fn certify_pal_roundtrip_bytes() {
                 data[pos]
             ));
         }
-        let vga = Palette::from_bytes(data).map_err(|e| e.to_string())?;
-        let ui = Palette::from_bytes_gamemd_ui(data).map_err(|e| e.to_string())?;
-        for i in 0..256 {
-            let raw = [data[i * 3], data[i * 3 + 1], data[i * 3 + 2]];
-            let v = vga.colors[i];
-            let u = ui.colors[i];
-            // Alpha excluded: transparency policy is a documented parser
-            // choice (index 0 / magenta chroma key), not file data.
-            let expected = raw.map(|component| native_components[usize::from(component)]);
-            if [v.r, v.g, v.b] != expected {
+        let palette = Palette::from_bytes(data).map_err(|e| e.to_string())?;
+        for (index, decoded) in palette.colors().iter().enumerate() {
+            let raw = [data[index * 3], data[index * 3 + 1], data[index * 3 + 2]];
+            let [r, g, b] = raw.map(|component| native_components[usize::from(component)]);
+            if *decoded != Color::rgb(r, g, b) {
                 return Err(format!(
-                    "index {i}: from_bytes {:?} != native expansion of {raw:?} = {expected:?}",
-                    [v.r, v.g, v.b]
-                ));
-            }
-            if [u.r, u.g, u.b] != expected {
-                return Err(format!(
-                    "index {i}: from_bytes_gamemd_ui {:?} != native expansion of {raw:?} = {expected:?}",
-                    [u.r, u.g, u.b]
+                    "index {index}: from_bytes {decoded:?} != native expansion of {raw:?} = {:?}",
+                    [r, g, b]
                 ));
             }
         }

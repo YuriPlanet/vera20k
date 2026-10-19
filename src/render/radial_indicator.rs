@@ -2,14 +2,19 @@
 //! This producer emits shared surface operations; it owns no selection, clocks,
 //! RNG or simulation state. Original execution: procedural_drawing_oracle/radial_indicator.
 
-use super::surface_line::{SurfaceDraw, SurfaceLine, SurfaceLineBlend};
+use super::surface_line::{MAX_ELLIPSE_RADIUS_PIXELS, SurfaceDraw, SurfaceLine, SurfaceLineBlend};
 use crate::util::native_x87::{NativeF64Bits, X87Chop53 as X, X87Value};
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct RadialIndicatorDraw {
     /// CoordsToClient2 plus tactical origin, in logical surface pixels.
     pub center: [i32; 2],
-    pub radius: i32,
+    /// Native +0x18 float radius. Superweapon rings can retain a fractional
+    /// `Range / LineMultiplier` result until the shared helper converts it.
+    pub radius: f32,
+    /// Native +0x20: convert the radius through `ftol` before pixel math.
+    pub truncate_radius: bool,
+    /// Native +0x1C: radius already uses tactical screen pixels.
     pub pixel_radius: bool,
     pub rgb: [u8; 3],
     pub fade: bool,
@@ -32,20 +37,51 @@ fn div(a: X87Value, b: X87Value) -> X87Value {
 
 ///4569B9..4569DC. Use the existing numeric owner for the native f32 root
 /// and truncation; no fitted screen radius or new x87 implementation.
-pub(crate) fn radius_pixels(radius: i32) -> i32 {
-    X::ftol_i32_low_masked(X::mul(
-        div(X::add(X::load_i32(radius), real(0.5)), root(real(2.))),
-        real(60.),
+pub(crate) fn radius_pixels(radius: f32, truncate_radius: bool) -> Option<i32> {
+    let radius = X::load_f32(crate::util::native_x87::NativeF32Bits::from_bits(
+        radius.to_bits(),
     ))
+    .ok()?;
+    // Reject before masked ftol could wrap an oversized authored radius into
+    // a small drawable value. Inputs stay unchanged in the rules owner.
+    if X::compare(radius, X::load_i32(0)) == crate::util::native_x87::X87Ordering::Less
+        || X::compare(radius, X::load_i32(i32::MAX))
+            == crate::util::native_x87::X87Ordering::Greater
+    {
+        return None;
+    }
+    let radius = if truncate_radius {
+        X::load_i32(X::ftol_i32_low_masked(radius))
+    } else {
+        radius
+    };
+    let pixels = X::mul(div(X::add(radius, real(0.5)), root(real(2.))), real(60.));
+    if X::compare(pixels, X::load_i32(i32::MAX)) == crate::util::native_x87::X87Ordering::Greater {
+        return None;
+    }
+    Some(X::ftol_i32_low_masked(pixels))
 }
 
 impl RadialIndicatorDraw {
     pub(crate) fn draws(self, clip: [i32; 4], mut emit: impl FnMut(SurfaceDraw)) {
         let rx = if self.pixel_radius {
-            self.radius
+            X::load_f32(crate::util::native_x87::NativeF32Bits::from_bits(
+                self.radius.to_bits(),
+            ))
+            .ok()
+            .filter(|radius| {
+                X::compare(*radius, X::load_i32(0)) != crate::util::native_x87::X87Ordering::Less
+                    && X::compare(*radius, X::load_i32(MAX_ELLIPSE_RADIUS_PIXELS))
+                        != crate::util::native_x87::X87Ordering::Greater
+            })
+            .map(X::ftol_i32_low_masked)
         } else {
-            radius_pixels(self.radius)
+            radius_pixels(self.radius, self.truncate_radius)
         };
+        let Some(rx) = rx else { return };
+        if !(0..=MAX_ELLIPSE_RADIUS_PIXELS).contains(&rx) {
+            return;
+        }
         let ry = rx / 2;
         if self.center[0].wrapping_add(rx) <= clip[0]
             || self.center[0].wrapping_sub(rx) >= clip[0] + clip[2]

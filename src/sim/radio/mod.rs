@@ -416,6 +416,11 @@ pub enum RadioResponse {
     None = 0,
     Roger = 1,
     Negatory = 0x0A,
+    /// DOCKING echoed back: a transport answers it once it has taken the
+    /// sender as its own destination (Unit `0x00737955`, `0x00737984`). The
+    /// Infantry destination setter then returns before Foot's setter
+    /// (`0x0051ACF4`); Mission_Enter treats it as a refusal.
+    Docking = 0x0E,
     /// A Foot's answer to MOVE_HERE when it already stands in the cell.
     AlreadyThere = 0x14, // name inferred
     Queued = 0x17,

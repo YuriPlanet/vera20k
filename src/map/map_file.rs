@@ -26,7 +26,6 @@ use crate::map::overlay::{
 };
 use crate::map::preview::{self, PreviewSection};
 use crate::map::tags::{self, TagMap};
-use crate::map::trigger_graph::TriggerGraph;
 use crate::map::triggers::{self, TriggerMap};
 use crate::map::variable_names::{self, LocalVariableMap};
 use crate::map::waypoints::{self, Waypoint};
@@ -291,8 +290,6 @@ pub struct MapFile {
     pub actions: ActionMap,
     /// Local variable definitions from [VariableNames].
     pub local_variables: LocalVariableMap,
-    /// Always empty; see `map::trigger_graph` for why the field remains.
-    pub trigger_graph: TriggerGraph,
     /// Parsed `[SpecialFlags]` section (TiberiumGrows, TiberiumSpreads overrides).
     pub special_flags: SpecialFlagsSection,
     /// Full parsed INI for accessing additional sections (e.g., [Houses]).
@@ -359,7 +356,6 @@ impl MapFile {
             events,
             actions,
             local_variables,
-            trigger_graph: TriggerGraph::default(),
             special_flags,
             ini,
         })

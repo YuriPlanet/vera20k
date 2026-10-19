@@ -53,7 +53,9 @@ mod house_cheer_tests;
 mod house_defeat;
 pub(crate) use house_defeat::HouseBlowupSubset;
 mod ion_blast;
+mod spotlight;
 pub(crate) use house_base::HouseBaseState;
+pub use spotlight::BuildingSpotlight;
 mod infantry_death;
 mod jumpjet_cruise;
 pub use infantry_death::InfantryDeathPostlude;
@@ -209,11 +211,7 @@ pub use world_spawn::{GeneratedTechnoInitError, GeneratedTechnoInitTable};
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
-#[cfg(any(test, feature = "test-support"))]
-use crate::map::actions::ActionMap;
 use crate::map::entities::EntityCategory;
-#[cfg(any(test, feature = "test-support"))]
-use crate::map::events::EventMap;
 use crate::map::houses::HouseAllianceMap;
 use crate::map::overlay::OverlayEntry;
 use crate::map::playfield::PlayfieldBounds;
@@ -379,21 +377,6 @@ pub enum TickLane {
     Ordinary,
     /// LAN/WOL modal pump: service PerTickUpdate and the late tail only.
     NetworkModal,
-}
-
-/// Existing rule owner borrowed for one authoritative trigger frame.
-/// Live definitions and mutable Trigger/Tag state belong to `Simulation`.
-#[derive(Clone, Copy)]
-pub struct TriggerInputs<'a> {
-    // Legacy focused fixtures finish their test-only definition installation
-    // on first dispatch. Production uses the installed live registry only.
-    #[cfg(any(test, feature = "test-support"))]
-    pub events: &'a EventMap,
-    #[cfg(any(test, feature = "test-support"))]
-    pub actions: &'a ActionMap,
-    /// Bound match rules used by action callbacks that share ordinary Techno
-    /// runtime calculations (not reparsed or substituted by trigger data).
-    pub rules: Option<&'a RuleSet>,
 }
 
 #[cfg(any(test, feature = "test-support"))]
@@ -3854,6 +3837,7 @@ impl Simulation {
             let live_objects = TiberiumPlacementObjectContext::new(
                 &self.substrate.entities,
                 &self.substrate.occupancy,
+                &self.substrate.raw_cell_occupation,
                 rules,
                 &self.interner,
                 &self.production.terrain_object_cells,
@@ -4106,12 +4090,12 @@ impl Simulation {
 
     fn poll_triggers_for_master_frame(
         &mut self,
-        inputs: TriggerInputs<'_>,
+        rules: Option<&RuleSet>,
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
         // YR LogicClass::Update polls scenario triggers before the live-object walk.
-        let effects = self.advance_triggers(inputs, overlay_registry, frame_effects);
+        let effects = self.advance_triggers(rules, overlay_registry, frame_effects);
         self.publish_trigger_effects(effects);
     }
 
@@ -4355,7 +4339,12 @@ impl Simulation {
                         .projectiles
                         .get(id)
                         .is_some_and(|projectile| projectile.in_logic_vector)
-                    || self.waves.get(id).is_some_and(|wave| wave.in_logic_vector),
+                    || self.waves.get(id).is_some_and(|wave| wave.in_logic_vector)
+                    || self
+                        .substrate
+                        .spotlights
+                        .get(id)
+                        .is_some_and(|light| light.in_logic_vector),
                 "logic order id {id} is missing or not membership-flagged",
             );
         }
@@ -4399,7 +4388,14 @@ impl Simulation {
             .iter()
             .filter(|(_, wave)| wave.in_logic_vector)
             .count();
-        let flagged = flagged_entities
+        let flagged_spotlights = self
+            .substrate
+            .spotlights
+            .iter()
+            .filter(|(_, l)| l.in_logic_vector)
+            .count();
+        let flagged = flagged_spotlights
+            + flagged_entities
             + flagged_anims
             + flagged_voxel_anims
             + flagged_particle_systems
@@ -4615,6 +4611,9 @@ impl Simulation {
         for anim in self.substrate.anims.values_mut() {
             anim.in_logic_vector = false;
         }
+        for light in self.substrate.spotlights.values_mut() {
+            light.in_logic_vector = false;
+        }
         for debris in self.substrate.voxel_anims.values_mut() {
             debris.in_logic_vector = false;
         }
@@ -4635,6 +4634,8 @@ impl Simulation {
                 e.in_logic_vector.mark(true);
             } else if let Some(anim) = self.substrate.anims.get_mut(id) {
                 anim.in_logic_vector = true;
+            } else if let Some(light) = self.substrate.spotlights.get_mut(id) {
+                light.in_logic_vector = true;
             } else if let Some(debris) = self.substrate.voxel_anims.get_mut(id) {
                 debris.in_logic_vector = true;
             } else if let Some(system) = self.substrate.particle_systems.get_mut(id) {
@@ -5272,6 +5273,14 @@ impl Simulation {
         //Cell. The same Cell survives the owner write for701774..780.
         let spatial_threat_cell =
             rules.and_then(|_| self.spatial_threat_before_owner_change(stable_id));
+        // Techno70172F: `ReReveal(0, 0, 0, 0)` before the owner store takes
+        // the sight off every map the old owner's reveal wrote. A building
+        // released it at 448BD9 and an object in limbo at its Limbo, so for
+        // them the cleared latch makes it a no-op.
+        self.release_object_sight_with_context(
+            stable_id,
+            UninitContext::new(rules, registry).with_effects(effects),
+        );
         self.substrate.entities.change_owner(stable_id, new_owner);
         if let Some(rules) = rules {
             self.spatial_threat_after_owner_change(stable_id, spatial_threat_cell, rules);
@@ -5373,12 +5382,37 @@ impl Simulation {
         // read the type and skips it.
         if let Some(rules) = rules {
             self.change_owner_mission_half(stable_id, rules, effects);
-            if category == EntityCategory::Structure {
-                crate::sim::production::initialize_factory_primary(self, stable_id, rules);
-                //448CEF: Grand_Opening(1) also runs on an already placed
-                //building; its6E4 gate prevents repeating first-opening slots.
-                self.grand_opening(stable_id, true, false, rules, None, effects);
-            }
+        }
+        // Techno70187B: `UpdateReveal(0, 0, 0, 0, 0)` closes the Techno
+        // owner change for an object out of limbo (7017C0 skips the tail for
+        // one in limbo): its sight opens where it stands, on the maps the new
+        // owner's reveal writes. A building's own tail follows (448BE8).
+        //
+        // RESIDUAL: Building448D83 reveals once more when the new owner is
+        // the human player (IsHumanPlayer50B6F0). The latch 70187B set makes
+        // that a no-op for a placed building; one captured in limbo would
+        // natively open its sight there. No VERA producer captures a building
+        // in limbo.
+        if self
+            .substrate
+            .entities
+            .get(stable_id)
+            .is_some_and(|entity| !entity.lifecycle.in_limbo())
+        {
+            self.update_object_sight_with_context(
+                stable_id,
+                0,
+                None,
+                UninitContext::new(rules, registry).with_effects(effects),
+            );
+        }
+        if let Some(rules) = rules
+            && category == EntityCategory::Structure
+        {
+            crate::sim::production::initialize_factory_primary(self, stable_id, rules);
+            //448CEF: Grand_Opening(1) also runs on an already placed
+            //building; its6E4 gate prevents repeating first-opening slots.
+            self.grand_opening(stable_id, true, false, rules, None, effects);
         }
         // `FootClass::ChangeOwner @ 0x004DBF13..0x004DBF32`: a Foot given to
         // a human house leaves its team.
@@ -5392,7 +5426,6 @@ impl Simulation {
         }
         self.foot_neighbors_after_owner_change(stable_id, rules);
         self.refresh_waypoint_edge_from_committed_structure(stable_id);
-        self.reveal_building_sight_after_owner_change(stable_id, rules);
         if let Some(rules) = rules {
             self.reapply_building_gap_after_owner_change(stable_id, rules);
         }
@@ -5793,6 +5826,9 @@ impl Simulation {
         for anim in self.substrate.anims.values_mut() {
             anim.in_logic_vector = false;
         }
+        for light in self.substrate.spotlights.values_mut() {
+            light.in_logic_vector = false;
+        }
         for debris in self.substrate.voxel_anims.values_mut() {
             debris.in_logic_vector = false;
         }
@@ -5813,6 +5849,8 @@ impl Simulation {
                 entity.in_logic_vector.mark(true);
             } else if let Some(anim) = self.substrate.anims.get_mut(id) {
                 anim.in_logic_vector = true;
+            } else if let Some(light) = self.substrate.spotlights.get_mut(id) {
+                light.in_logic_vector = true;
             } else if let Some(debris) = self.substrate.voxel_anims.get_mut(id) {
                 debris.in_logic_vector = true;
             } else if let Some(system) = self.substrate.particle_systems.get_mut(id) {
@@ -6294,11 +6332,11 @@ impl Simulation {
         }
     }
 
-    /// The per-frame fog pass: ends last frame's sight, releases the sight of
-    /// objects that no longer hold it and admits the sight of objects without
-    /// one (the remaining House admission reconciliation), then applies SpySat
-    /// and Gap Generator effects. Footprints move only at reveal events
-    /// ([`Self::refresh_object_sight`]).
+    /// The per-frame fog pass: ends last frame's sight and marks the retained
+    /// footprints again ([`Self::refresh_sight_sources`]), then applies SpySat
+    /// and Gap Generator effects. It reveals and releases no source sight:
+    /// footprints open, move and close only at their native events
+    /// ([`crate::sim::vision`] lists them).
     fn refresh_fog(&mut self, config: &vision::VisionConfig, rules: Option<&RuleSet>) {
         self.refresh_sight_sources(config, rules);
 
@@ -6687,9 +6725,10 @@ impl Simulation {
     }
 
     /// Fixture-only frame adapter (F09): unit tests drive one Main_Tick-shaped
-    /// frame with explicitly supplied rules/heights/navigation. Production and
-    /// tooling advance exclusively through `SimRuntime::advance_frame`, whose
-    /// resources are bound at construction and cannot be substituted per call.
+    /// frame with explicitly supplied rules/heights/navigation, without the
+    /// trigger poll. Production and tooling advance exclusively through
+    /// `SimRuntime::advance_frame`, whose resources are bound at construction
+    /// and cannot be substituted per call.
     #[cfg(any(test, feature = "test-support"))]
     pub fn advance_tick(
         &mut self,
@@ -6706,7 +6745,7 @@ impl Simulation {
             overlay_registry,
             tick_ms,
             TickLane::Ordinary,
-            None,
+            false,
             FrameEffects::default(),
         )
         .expect("fixture frame must complete")
@@ -6719,6 +6758,7 @@ impl Simulation {
     /// the returned facts instead of reaching back into Simulation-owned
     /// transient queues. `SimRuntime::advance_frame` is the sole production
     /// caller (F09); headless and replay execution go through the runtime.
+    /// Every frame polls the installed scenario triggers.
     pub fn advance_app_frame(
         &mut self,
         commands: &[CommandEnvelope],
@@ -6726,7 +6766,6 @@ impl Simulation {
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         tick_ms: u32,
         lane: TickLane,
-        trigger_inputs: Option<TriggerInputs<'_>>,
         effects: FrameEffects<'_>,
     ) -> Result<SimFrameOutput, FrameAdvanceError> {
         let frame = self.advance_master_frame(
@@ -6735,7 +6774,7 @@ impl Simulation {
             overlay_registry,
             tick_ms,
             lane,
-            trigger_inputs,
+            true,
             effects,
         );
         // A failed frame must not carry a previous caller's derived interest
@@ -6818,9 +6857,12 @@ impl Simulation {
     /// Advance exactly one authoritative simulation frame.
     ///
     /// This is the sole Main_Tick-shaped entry point, reached in production
-    /// only through `advance_app_frame` (F09). The fixture-only `advance_tick`
-    /// adapter and the replay fixture runners are `#[cfg(test)]`; gameplay
-    /// supplies its map definitions through `trigger_inputs`.
+    /// only through `advance_app_frame` (F09), which always polls the trigger
+    /// definitions installed at scenario init, with the frame's `rules`. The
+    /// fixture-only `advance_tick` adapter and the replay fixture runners are
+    /// `#[cfg(test)]`; they and focused frame tests may pass `poll_triggers`
+    /// false to leave the poll out, also with map triggers installed, as when
+    /// a test isolates the House rung's Tag raise.
     pub(crate) fn advance_master_frame(
         &mut self,
         commands: &[CommandEnvelope],
@@ -6828,7 +6870,7 @@ impl Simulation {
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         tick_ms: u32,
         lane: TickLane,
-        trigger_inputs: Option<TriggerInputs<'_>>,
+        poll_triggers: bool,
         effects: FrameEffects<'_>,
     ) -> Result<MasterFrameOutput, FrameAdvanceError> {
         let effects = effects
@@ -6878,8 +6920,8 @@ impl Simulation {
         // live LogicVector, so object work in this frame observes its actions.
         #[cfg(any(test, feature = "test-support"))]
         self.trace_master_frame_rung(MasterFrameTestRung::Triggers);
-        if let Some(inputs) = trigger_inputs {
-            self.poll_triggers_for_master_frame(inputs, overlay_registry, effects);
+        if poll_triggers {
+            self.poll_triggers_for_master_frame(rules, overlay_registry, effects);
         }
 
         // Logic55B29A/55B2AD: consume prior pending conceal at the signed
@@ -6953,8 +6995,9 @@ impl Simulation {
         }
 
         // --- Phase 3: Vision refresh ---
-        // DEPENDS ON: movement (positions updated), spawn (new entities need LOS).
-        // PRODUCES: fog state for the later phases and the next frame.
+        // The frame's sight projection and Gap Generator cover. Sources open,
+        // move and close their sight at their own events (Unlimbo, arrival,
+        // Limbo), so an object spawned after this pass holds its sight already.
         let vision_config = self.sight_reveal_config(rules);
         self.refresh_fog(&vision_config, rules);
 
@@ -6983,10 +7026,9 @@ impl Simulation {
             // turn or a damage commit.
             self.finish_terrain_navigation_changes(rules, &[]);
             self.flush_smudge_dirty();
-            // --- Phase 6: Passengers ---
             // Retaliation is not a phase: every receiver issues its Mission
-            // Override inline (`TechnoClass::ReceiveDamage 0x00702A43`).
-            passenger::tick_passenger_system(self, rules, overlay_registry, effects);
+            // Override inline (`TechnoClass::ReceiveDamage 0x00702A43`), and
+            // passengers board in their class PerCellProcess.
             // `IonBlastClass::UpdateAll @ 0x0053D310` follows the object loop
             // (`0x0055B64B`).
             bridge_state_changed |= self.update_ion_blasts(rules, overlay_registry, effects);
@@ -7054,9 +7096,6 @@ impl Simulation {
                 overlay_registry,
                 effects,
             );
-            if spawned_entities {
-                self.refresh_fog(&vision_config, Some(rules));
-            }
         }
 
         // ===== SPINE REGION: LATE — AI, defeat, anims, frame commit =====
@@ -7286,7 +7325,7 @@ pub(crate) fn wake_anchor_for(
         return None;
     }
     let cell = terrain?.cell(entity.position.rx(), entity.position.ry())?;
-    if cell.land_type != crate::rules::terrain_rules::LandType::Water.as_index() {
+    if cell.land_type() != crate::rules::terrain_rules::LandType::Water.as_index() {
         return None;
     }
     Some((

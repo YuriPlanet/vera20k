@@ -86,7 +86,6 @@ fn advance(sim: &mut Simulation, rules: &RuleSet) {
         None,
         33,
         TickLane::Ordinary,
-        None,
         FrameEffects::default(),
     )
     .expect("ordinary stock Bio Reactor frame");

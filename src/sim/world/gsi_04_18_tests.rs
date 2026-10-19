@@ -96,6 +96,19 @@ fn insert_sight_unit(sim: &mut Simulation, stable_id: u64, owner: InternedId, rx
     sim.add_entity_occupancy(stable_id);
 }
 
+/// The sight reveal of the Unlimbo an inserted fixture stands for
+/// (`0x006F6D27`), through the sight owner.
+fn reveal_inserted_sight(sim: &mut Simulation, stable_id: u64) {
+    sim.update_object_sight_in_view(
+        stable_id,
+        0,
+        None,
+        &vision::VisionConfig::default(),
+        None,
+        UninitContext::default(),
+    );
+}
+
 fn set_missions(entity: &mut GameEntity, current: MissionId, queued: MissionId) {
     entity.mission.apply_test_fixture(MissionTestFixture {
         current,
@@ -242,6 +255,8 @@ fn gsi_04_18_last_uplink_loss_preserves_surviving_techno_sight() {
     insert_structure(&mut sim, 1, owner, "GASPYSAT", 6);
     insert_sight_unit(&mut sim, 2, owner, 4, 4);
     sim.reconcile_active_vision_structures(&rules);
+    reveal_inserted_sight(&mut sim, 1);
+    reveal_inserted_sight(&mut sim, 2);
     sim.refresh_fog(&vision::VisionConfig::default(), Some(&rules));
     assert!(sim.fog.is_cell_visible(owner, 4, 4));
     assert!(sim.fog.is_cell_revealed(owner, 23, 23));
@@ -405,19 +420,23 @@ fn shroud_current_sight_world_collector_and_native_frame_restore() {
     insert_structure(&mut sim, 1, gapper, "GAGAP", 12);
     sim.visit_building_operational(1, &rules, None, crate::sim::world::FrameEffects::default());
     insert_sight_unit(&mut sim, 2, owner, 12, 12);
+    reveal_inserted_sight(&mut sim, 1);
+    reveal_inserted_sight(&mut sim, 2);
     sim.refresh_fog(&vision::VisionConfig::default(), Some(&rules));
     sim.reconcile_active_vision_structures(&rules);
     assert!(sim.fog.is_cell_visible(owner, 12, 12));
     assert!(!sim.fog.is_cell_gap_covered(owner, 12, 12));
-    // Actual entity-source departure occurs after an early frame120 sweep.
+    // Actual entity-source departure occurs after an early frame120 sweep:
+    // the frame's object work Limbos the source, whose ReReveal leaves.
     sim.session.binary_frame = 120;
+    sim.advance_tick(&[], None, None, None, 67);
+    sim.release_object_sight_with_context(2, UninitContext::default());
     sim.substrate
         .entities
         .get_mut(2)
         .unwrap()
         .lifecycle
         .set_in_limbo_for_test(true);
-    sim.advance_tick(&[], None, None, None, 67);
     assert!(
         sim.fog.is_cell_revealed(owner, 12, 12),
         "current-pass departure waits for the next boundary"
@@ -464,7 +483,10 @@ fn shroud_current_sight_new_generator_identity_consumes_pending() {
     insert_structure(&mut sim, 1, gapper, "GAGAP", 12);
     sim.visit_building_operational(1, &rules, None, crate::sim::world::FrameEffects::default());
     insert_sight_unit(&mut sim, 2, owner, 12, 12);
+    reveal_inserted_sight(&mut sim, 1);
+    reveal_inserted_sight(&mut sim, 2);
     sim.refresh_fog(&vision::VisionConfig::default(), Some(&rules));
+    sim.release_object_sight_with_context(2, UninitContext::default());
     sim.substrate
         .entities
         .get_mut(2)
@@ -893,7 +915,7 @@ fn shroud_current_sight_live_refresh_gates_preserve_or_reload_native_timer() {
             .timer(owner),
         CdTimer::started(119, 15)
     );
-    assert!(sim.fog.sight_admissions.is_empty());
+    assert!(sim.fog.sight_admissions_for_test().is_empty());
     sim.substrate
         .entities
         .get_mut(2)
@@ -929,7 +951,9 @@ fn shroud_current_sight_live_refresh_gates_preserve_or_reload_native_timer() {
         CdTimer::started(134, 15)
     );
     assert!(
-        sim.fog.sight_admissions[&(2, owner)].cells.is_empty(),
+        sim.fog.sight_admissions_for_test()[&(2, owner)]
+            .cells
+            .is_empty(),
         "a nonzero negative Type Sight still admits the source latch"
     );
 }
@@ -1085,8 +1109,9 @@ fn shroud_current_sight_spy_sat_replays_allied_buildings_but_not_mobile_admissio
         } else {
             insert_sight_unit(&mut sim, 1, ally, 12, 12);
         }
+        reveal_inserted_sight(&mut sim, 1);
         sim.refresh_fog(&vision::VisionConfig::default(), Some(&rules));
-        let admission = sim.fog.sight_admissions[&(1, viewer)].clone();
+        let admission = sim.fog.sight_admissions_for_test()[&(1, viewer)].clone();
         insert_structure(&mut sim, 2, hostile, "GAGAP", 12);
         sim.visit_building_operational(2, &rules, None, crate::sim::world::FrameEffects::default());
         sim.reconcile_active_vision_structures(&rules);
@@ -1097,7 +1122,7 @@ fn shroud_current_sight_spy_sat_replays_allied_buildings_but_not_mobile_admissio
         //Untouched mobile latch survives, but577D90 overwrote its raw counter;
         //the later Gap callback therefore conceals that viewer's cell.
         assert_eq!(sim.fog.is_cell_revealed(viewer, 12, 12), building);
-        assert_eq!(sim.fog.sight_admissions[&(1, viewer)], admission);
+        assert_eq!(sim.fog.sight_admissions_for_test()[&(1, viewer)], admission);
         for _ in 0..2 {
             sim.refresh_fog(&vision::VisionConfig::default(), Some(&rules));
             sim.reconcile_active_vision_structures(&rules);
@@ -1113,7 +1138,7 @@ fn shroud_current_sight_spy_sat_replays_allied_buildings_but_not_mobile_admissio
         sim.refresh_fog(&vision::VisionConfig::default(), Some(&rules));
         sim.reconcile_active_vision_structures(&rules);
         assert_eq!(sim.fog.is_cell_revealed(viewer, 12, 12), building);
-        assert_eq!(sim.fog.sight_admissions[&(1, viewer)], admission);
+        assert_eq!(sim.fog.sight_admissions_for_test()[&(1, viewer)], admission);
     }
 }
 
@@ -1135,6 +1160,8 @@ fn reset_shroud_replays_own_sight_and_allied_buildings() {
         .insert("ALLIANCE".into());
     insert_sight_unit(&mut sim, 1, viewer, 4, 4);
     insert_structure(&mut sim, 2, ally, "GSI418SIGHT", 18);
+    reveal_inserted_sight(&mut sim, 1);
+    reveal_inserted_sight(&mut sim, 2);
     sim.refresh_fog(&vision::VisionConfig::default(), Some(&rules));
     assert!(sim.fog.is_cell_visible(viewer, 18, 12));
     sim.reveal_map_for_owner(viewer, &rules);

@@ -165,7 +165,7 @@ pub(crate) fn render_game(
     });
     let bracket_palette = surface_palette.as_ref().map(|palette| {
         [15_u8, 12].map(|index| {
-            let color = palette.colors[usize::from(index)];
+            let color = palette.color(index);
             crate::render::palette_light::PaletteLight::plain(53, 1000).rgb565(
                 [color.r, color.g, color.b],
                 index,
@@ -247,6 +247,12 @@ pub(crate) fn render_game(
         );
     }
     let persistent_lights = persistent_light_start..combat_lights.len();
+    if let Some(runtime) = state.match_state.sim_runtime.as_ref() {
+        state.renderer.combat_light_renderer.set_spotlight_radius(
+            &state.renderer.gpu.queue,
+            runtime.resources.rules.general.spotlight.radius,
+        );
+    }
     state.renderer.combat_light_renderer.prepare(
         &state.renderer.gpu,
         &combat_lights,
@@ -319,15 +325,28 @@ pub(crate) fn render_game(
         &state.match_state.input.selection_order,
         state.match_state.input.selection_order_pending,
     );
+    let armed_super_weapon = state.armed_super_weapon_type().map(str::to_owned);
+    let cursor_cell = armed_super_weapon.as_ref().map(|_| {
+        crate::app::match_runtime::sim_tick::screen_point_to_world_cell(
+            state,
+            state.match_state.input.cursor_x,
+            state.match_state.input.cursor_y,
+        )
+    });
+    let sim_runtime = state.match_state.sim_runtime.as_ref();
+    let simulation = sim_runtime.map(|runtime| &runtime.simulation);
+    let rules = sim_runtime
+        .map(|runtime| &runtime.resources.rules)
+        .or(state.frontend.frontend_rules.as_ref());
+    let match_presentation = &mut state.match_state.match_presentation;
     let radials = crate::app::presentation::radial_indicators::build(
-        state
-            .match_state
-            .sim_runtime
-            .as_ref()
-            .map(|rt| &rt.simulation),
-        state.rules(),
+        simulation,
+        rules,
         &radial_selection,
-        &state.match_state.match_presentation.house_color_map,
+        armed_super_weapon.as_deref(),
+        cursor_cell,
+        &mut match_presentation.superweapon_range_pulse,
+        &match_presentation.house_color_map,
         viewport,
         times.radar_ms,
     );
@@ -593,11 +612,6 @@ fn upload_to_gpu(
     pool.upload(&state.renderer.gpu, "super_timer_fill", &super_timer_fill);
     pool.upload(&state.renderer.gpu, "super_timer_text", &super_timer_text);
     pool.upload(&state.renderer.gpu, "weapon_waves", &world.weapon_waves);
-    pool.upload(
-        &state.renderer.gpu,
-        "spotlight_type16",
-        &world.spotlight_type16,
-    );
 
     // UI overlays
     pool.upload(&state.renderer.gpu, "drag", &ui.drag);

@@ -53,9 +53,7 @@ fn target(label: &str, shape: u8) -> Option<NavTargetRef> {
     };
     Some(match shape {
         0 => NavTargetRef::cell(40 + id as u16, 41),
-        1 => NavTargetRef::Entity { id },
-        2 => NavTargetRef::Object { id },
-        3 => NavTargetRef::Building { id },
+        1 => NavTargetRef::object(id),
         _ => unreachable!(),
     })
 }
@@ -127,7 +125,7 @@ fn building_destination_matches_64_native_mode_one_rows_for_all_target_shapes() 
         .filter(|row| row["input"]["kind"] == "destination" && row["input"]["mode"] != 0)
         .collect();
     assert_eq!(cases.len(), 64);
-    for shape in 0..4 {
+    for shape in 0..2 {
         for row in &cases {
             let input = &row["input"];
             let mut sim = fixture(input, shape);

@@ -452,7 +452,6 @@ fn low_dropped_bombs_use_class_water_splashes_without_debris() {
                 cell.base_speed_costs = open;
                 if (x, y) == (12, 12) {
                     cell.level = 2;
-                    cell.is_water = water;
                     cell.land_type = if water {
                         LandType::Water.as_index()
                     } else {
@@ -808,7 +807,6 @@ fn a_heavy_ship_dying_on_water_sinks_without_its_explosion() {
                 cell.base_speed_costs = open;
                 if (x, y) == (12, 12) {
                     cell.land_type = LandType::Water.as_index();
-                    cell.is_water = true;
                 }
                 cell
             })

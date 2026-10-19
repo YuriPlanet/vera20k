@@ -496,9 +496,7 @@ impl Simulation {
                 .nav_com()
                 .and_then(|nav_com| match nav_com {
                     NavTargetRef::Cell { .. } => None,
-                    NavTargetRef::Entity { id }
-                    | NavTargetRef::Object { id }
-                    | NavTargetRef::Building { id } => self.substrate.entities.get(id),
+                    NavTargetRef::Object { id } => self.substrate.entities.get(id),
                 })
                 .filter(|building| building.category() == EntityCategory::Structure)
                 .and_then(|building| {
@@ -639,11 +637,7 @@ impl Simulation {
                 }
             } else if aircraft && let Some(rules) = rules {
                 aim = self
-                    .aircraft_find_attack_cell(
-                        id,
-                        Some(NavTargetRef::Building { id: building }),
-                        rules,
-                    )
+                    .aircraft_find_attack_cell(id, Some(NavTargetRef::object(building)), rules)
                     .and_then(|cell| {
                         let cells = self
                             .resolved_terrain

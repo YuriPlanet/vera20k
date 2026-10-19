@@ -1159,7 +1159,24 @@ use crate::util::save_codec;
 // SuperWeapon AuxBuilding, ParticleType, VoxelAnimType and AnimType
 // references, Warhead DebrisTypes), and process Rules state keeps its
 // RulesClass Type pointers and lists, the crate and rocket ones included.
-const SNAPSHOT_VERSION: u32 = 430;
+// 430 -> 431: saved dynamic terrain cells drop the terrain-class, water,
+// cliff, rough and road copies of that LandType.
+// 431 -> 432: the VERA-only Boarding passenger relation is gone, which
+// renumbers the later PassengerRole and carrier-relation variants.
+// 432 -> 433: a NavCom-family
+// reference (NavCom, its auxiliary, SuspendedNavCom, NavQueue and navigation
+// list) is a Cell or an Object. The Entity and Building spellings of an
+// Object pointer are gone, which renumbers the reference's variants.
+// 433 -> 434: saved scenario resources drop their copies of the map's
+// [Triggers], [Events] and [Actions] records and the always-empty trigger
+// graph. The trigger runtime saved with the Simulation is the only owner of
+// those definitions.
+// 434 -> 435: retain Scenario34A7, ScenarioPause62C/630/prior lock,
+// and the credit of the unrestored physical Radar video queue.
+// 435 -> 436: process-resident Rules retain IRepairStep, URepairRate and
+// IRepairRate across layer reads, saved state and destructive Type resets.
+// 436 -> 437: independent BuildingLight objects and retained Spotlight rules.
+const SNAPSHOT_VERSION: u32 = 437;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -1385,6 +1402,11 @@ pub enum SnapshotRestoreError {
     InvalidScalableProjectileRuntime(&'static str),
     #[error("invalid radiation site order: {0}")]
     InvalidRadiationSiteOrder(&'static str),
+    #[error("invalid saved Spotlight {object_id}: {reason}")]
+    InvalidSpotlightState {
+        object_id: u64,
+        reason: &'static str,
+    },
     #[error("invalid saved DiskLaser {object_id}: {reason}")]
     InvalidDiskLaserState {
         object_id: u64,
@@ -1895,6 +1917,15 @@ impl RestoredObjectIndex {
             Self::register(&mut identities, "AnimStore", registry_id, anim.stable_id)?;
             highest_id = highest_id.max(registry_id);
         }
+        for (&registry_id, light) in sim.substrate.spotlights.iter() {
+            Self::register(
+                &mut identities,
+                "SpotlightStore",
+                registry_id,
+                light.stable_id,
+            )?;
+            highest_id = highest_id.max(registry_id);
+        }
         for (&registry_id, debris) in sim.substrate.voxel_anims.iter() {
             Self::register(
                 &mut identities,
@@ -2027,33 +2058,26 @@ fn require_resolved_reference(
     }
 }
 
-fn validate_nav_reference(
-    target: &crate::sim::components::NavTargetRef,
-    identities: &BTreeMap<u64, &'static str>,
+/// The one rule for the stores an Object pointer may name, whether TarCom,
+/// NavCom or another target or owner slot: a Techno or a Terrain, the two
+/// stores whose objects the coordinate owners (`target_get_coords`,
+/// `nav_target_coordinate`) resolve.
+fn require_object_reference(
     entity_ids: &BTreeSet<u64>,
+    terrain_objects: &BTreeMap<u64, crate::sim::terrain_object::TerrainObjectState>,
+    source_registry: &'static str,
     source_id: u64,
     field: &'static str,
+    target_id: u64,
 ) -> Result<(), SnapshotRestoreError> {
-    match target {
-        crate::sim::components::NavTargetRef::Cell { .. } => Ok(()),
-        crate::sim::components::NavTargetRef::Entity { id }
-        | crate::sim::components::NavTargetRef::Building { id } => require_resolved_reference(
-            entity_ids.contains(id),
-            "EntityStore",
-            source_id,
-            field,
-            "EntityStore",
-            *id,
-        ),
-        crate::sim::components::NavTargetRef::Object { id } => require_resolved_reference(
-            identities.contains_key(id),
-            "EntityStore",
-            source_id,
-            field,
-            "object namespace",
-            *id,
-        ),
-    }
+    require_resolved_reference(
+        entity_ids.contains(&target_id) || terrain_objects.contains_key(&target_id),
+        source_registry,
+        source_id,
+        field,
+        "EntityStore or TerrainObjectStore",
+        target_id,
+    )
 }
 
 fn validate_passenger_size_tables(sim: &Simulation) -> Result<(), SnapshotRestoreError> {
@@ -2277,24 +2301,22 @@ fn restore_object_references(
                 }
             }
             if let Some(TargetKind::Entity(target_id)) = manager.current_target() {
-                require_resolved_reference(
-                    entity_ids.contains(&target_id)
-                        || sim.production.terrain_objects.contains_key(&target_id),
+                require_object_reference(
+                    &entity_ids,
+                    &sim.production.terrain_objects,
                     "EntityStore",
                     entity_id,
                     "spawn_manager.current_target",
-                    "EntityStore or TerrainObjectStore",
                     target_id,
                 )?;
             }
             if let Some(TargetKind::Entity(target_id)) = manager.queued_target() {
-                require_resolved_reference(
-                    entity_ids.contains(&target_id)
-                        || sim.production.terrain_objects.contains_key(&target_id),
+                require_object_reference(
+                    &entity_ids,
+                    &sim.production.terrain_objects,
                     "EntityStore",
                     entity_id,
                     "spawn_manager.queued_target",
-                    "EntityStore or TerrainObjectStore",
                     target_id,
                 )?;
             }
@@ -2328,72 +2350,47 @@ fn restore_object_references(
         }
 
         if let Some(TargetKind::Entity(target_id)) = entity.attack_target.target() {
-            require_resolved_reference(
-                entity_ids.contains(&target_id)
-                    || sim.production.terrain_objects.contains_key(&target_id),
+            require_object_reference(
+                &entity_ids,
+                &sim.production.terrain_objects,
                 "EntityStore",
                 entity_id,
                 "attack_target",
-                "EntityStore or TerrainObjectStore",
                 target_id,
             )?;
         }
         if let Some(TargetKind::Entity(target_id)) = entity.suspended_attack_target.target() {
-            require_resolved_reference(
-                entity_ids.contains(&target_id)
-                    || sim.production.terrain_objects.contains_key(&target_id),
+            require_object_reference(
+                &entity_ids,
+                &sim.production.terrain_objects,
                 "EntityStore",
                 entity_id,
                 "suspended_attack_target",
-                "EntityStore or TerrainObjectStore",
                 target_id,
             )?;
         }
 
-        if let Some(target) = entity.navigation.suspended_nav_com().as_ref() {
-            validate_nav_reference(
-                target,
-                identities,
-                &entity_ids,
-                entity_id,
+        let nav = &entity.navigation;
+        for (field, targets) in [
+            (
                 "navigation.suspended_nav_com",
-            )?;
-        }
-        if let Some(target) = entity.navigation.nav_com_aux().as_ref() {
-            validate_nav_reference(
-                target,
-                identities,
-                &entity_ids,
-                entity_id,
-                "navigation.nav_com_aux",
-            )?;
-        }
-        if let Some(target) = entity.navigation.nav_com().as_ref() {
-            validate_nav_reference(
-                target,
-                identities,
-                &entity_ids,
-                entity_id,
-                "navigation.nav_com",
-            )?;
-        }
-        for target in entity.navigation.nav_queue() {
-            validate_nav_reference(
-                target,
-                identities,
-                &entity_ids,
-                entity_id,
-                "navigation.nav_queue",
-            )?;
-        }
-        for target in entity.navigation.nav_list() {
-            validate_nav_reference(
-                target,
-                identities,
-                &entity_ids,
-                entity_id,
-                "navigation.nav_list",
-            )?;
+                nav.suspended_nav_com().as_slice(),
+            ),
+            ("navigation.nav_com_aux", nav.nav_com_aux().as_slice()),
+            ("navigation.nav_com", nav.nav_com().as_slice()),
+            ("navigation.nav_queue", nav.nav_queue()),
+            ("navigation.nav_list", nav.nav_list()),
+        ] {
+            for target_id in targets.iter().filter_map(|target| target.object_id()) {
+                require_object_reference(
+                    &entity_ids,
+                    &sim.production.terrain_objects,
+                    "EntityStore",
+                    entity_id,
+                    field,
+                    target_id,
+                )?;
+            }
         }
 
         if let Some(target_id) = entity.tether.partner() {
@@ -2484,22 +2481,12 @@ fn restore_object_references(
             }
         }
 
-        let passenger_partner = entity
-            .passenger_role
-            .boarding_transport_id()
-            .map(|id| (id, "passenger_role.boarding"))
-            .or_else(|| {
-                entity
-                    .passenger_role
-                    .inside_transport_id()
-                    .map(|id| (id, "passenger_role.inside"))
-            });
-        if let Some((target_id, field)) = passenger_partner {
+        if let Some(target_id) = entity.passenger_role.inside_transport_id() {
             require_resolved_reference(
                 entity_ids.contains(&target_id),
                 "EntityStore",
                 entity_id,
-                field,
+                "passenger_role.inside",
                 "EntityStore",
                 target_id,
             )?;
@@ -2578,24 +2565,22 @@ fn restore_object_references(
 
     for (&system_id, system) in sim.substrate.particle_systems.iter() {
         if let Some(owner_id) = system.owner_entity {
-            require_resolved_reference(
-                entity_ids.contains(&owner_id)
-                    || sim.production.terrain_objects.contains_key(&owner_id),
+            require_object_reference(
+                &entity_ids,
+                &sim.production.terrain_objects,
                 "ParticleSystemStore",
                 system_id,
                 "owner_entity",
-                "EntityStore or TerrainObjectStore",
                 owner_id,
             )?;
         }
         if let Some(crate::sim::combat::TargetKind::Entity(attached_id)) = system.target_ref {
-            require_resolved_reference(
-                entity_ids.contains(&attached_id)
-                    || sim.production.terrain_objects.contains_key(&attached_id),
+            require_object_reference(
+                &entity_ids,
+                &sim.production.terrain_objects,
                 "ParticleSystemStore",
                 system_id,
                 "target_ref",
-                "EntityStore or TerrainObjectStore",
                 attached_id,
             )?;
         }
@@ -2662,13 +2647,12 @@ fn restore_object_references(
             )?;
         }
         if let Some(TargetKind::Entity(target_id)) = wave.target_ref {
-            require_resolved_reference(
-                entity_ids.contains(&target_id)
-                    || sim.production.terrain_objects.contains_key(&target_id),
+            require_object_reference(
+                &entity_ids,
+                &sim.production.terrain_objects,
                 "WaveStore",
                 wave_id,
                 "target_ref",
-                "EntityStore or TerrainObjectStore",
                 target_id,
             )?;
         }
@@ -2694,13 +2678,12 @@ fn restore_object_references(
     }
 
     for &object_id in sim.object_custom_sounds.keys() {
-        require_resolved_reference(
-            entity_ids.contains(&object_id)
-                || sim.production.terrain_objects.contains_key(&object_id),
+        require_object_reference(
+            &entity_ids,
+            &sim.production.terrain_objects,
             "ObjectCustomSounds",
             object_id,
             "object",
-            "EntityStore or TerrainObjectStore",
             object_id,
         )?;
     }
@@ -2759,6 +2742,13 @@ impl Simulation {
     /// weak/derived identities, and reconstructs skipped indexes in dependency
     /// order.
     pub fn restore_after_snapshot_load(&mut self) -> Result<(), SnapshotRestoreError> {
+        self.validate_restored_spotlights()
+            .map_err(
+                |(object_id, reason)| SnapshotRestoreError::InvalidSpotlightState {
+                    object_id,
+                    reason,
+                },
+            )?;
         self.projectiles
             .validate_scalable_runtime(&self.interner)
             .map_err(SnapshotRestoreError::InvalidScalableProjectileRuntime)?;
@@ -4877,7 +4867,14 @@ mod tests {
         // 428 -> 429: one CellClass+0xEC LandType per saved terrain cell.
         // 429 -> 430: the remaining Type references and RulesClass Type
         // pointers and lists.
-        assert_eq!(super::SNAPSHOT_VERSION, 430);
+        // 430 -> 431: no derived land caches beside that LandType.
+        // 431 -> 432: the Boarding passenger relation is gone.
+        // 432 -> 433: one Object spelling for a NavCom-family pointer.
+        // 433 -> 434: no trigger-record copies in saved scenario resources.
+        // 434 -> 435: Scenario vein switch and shared Scenario pause.
+        // 435 -> 436: retained repair service inputs.
+        // 436 -> 437: independent BuildingLight and retained Spotlight rules.
+        assert_eq!(super::SNAPSHOT_VERSION, 437);
     }
 
     #[test]
@@ -8241,6 +8238,57 @@ mod tests {
                 restored.projectiles.get(projectile_id).unwrap().target,
                 ProjectileTarget::Terrain(target_id)
             );
+        }
+    }
+
+    #[test]
+    fn navcom_restore_admits_only_techno_and_terrain_objects() {
+        use crate::sim::components::NavTargetRef;
+        use crate::sim::game_entity::GameEntity;
+        // `nav_target_coordinate` resolves a NavCom Object in the entity or
+        // Terrain store. Another registered identity (a projectile) or a
+        // missing one names no NavCom target.
+        for case in ["techno", "terrain", "projectile", "missing"] {
+            let (mut sim, _, tree_id, projectile_id) = terrain_target_snapshot_fixture();
+            let spawn = |sim: &mut Simulation| {
+                let id = sim.allocate_stable_id();
+                sim.substrate.entities.insert(GameEntity::test_default(
+                    id,
+                    "DUMMY",
+                    "Americans",
+                    2,
+                    2,
+                ));
+                sim.register_live_object(id);
+                id
+            };
+            let foot = spawn(&mut sim);
+            let target = match case {
+                "techno" => spawn(&mut sim),
+                "terrain" => tree_id,
+                "projectile" => projectile_id,
+                _ => 9_999,
+            };
+            sim.substrate
+                .entities
+                .get_mut(foot)
+                .unwrap()
+                .navigation
+                .set_nav_com_for_test(Some(NavTargetRef::object(target)));
+            let bytes = GameSnapshot::save(&sim, 0, 0, "navcom-object", 0);
+            let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
+            let expected = if matches!(case, "techno" | "terrain") {
+                Ok(())
+            } else {
+                Err(SnapshotRestoreError::UnresolvedObjectReference {
+                    source_registry: "EntityStore",
+                    source_id: foot,
+                    field: "navigation.nav_com",
+                    target_registry: "EntityStore or TerrainObjectStore",
+                    target_id: target,
+                })
+            };
+            assert_eq!(restored.restore_after_snapshot_load(), expected, "{case}");
         }
     }
 

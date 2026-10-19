@@ -74,19 +74,13 @@ fn world(input: &Value, facing: u16) -> (Simulation, RuleSet) {
     let mut actor = unit(ACTOR, "KIROV", (10, 10), (128, 128));
     let target = target(input);
     if input["target"] != false {
-        actor.attack_target.set_for_test(Some(match target {
-            TargetKind::Entity(id) => TargetKind::Entity(id),
-            TargetKind::Cell(rx, ry) => TargetKind::Cell(rx, ry),
-        }));
+        actor.attack_target.set_for_test(Some(target));
     }
     actor
         .navigation
         .set_nav_com_for_test(match input["nav"].as_str().unwrap_or("none") {
             "none" => None,
-            "target" => Some(match target {
-                TargetKind::Entity(id) => NavTargetRef::object(id),
-                TargetKind::Cell(rx, ry) => NavTargetRef::cell(rx, ry),
-            }),
+            "target" => Some(NavTargetRef::from(target)),
             "other" => Some(NavTargetRef::object(OTHER)),
             _ => Some(NavTargetRef::cell(11, 10)),
         });
@@ -159,11 +153,7 @@ fn balloon_approach_arm_matches_the_original() {
         let answer = sim.balloon_hover_approach(ACTOR, &rules);
         assert_eq!(answer.is_some(), row["path"] == "returned", "{input}");
         if let Some(destination) = answer {
-            let expected = match target(input) {
-                TargetKind::Entity(id) => NavTargetRef::object(id),
-                TargetKind::Cell(rx, ry) => NavTargetRef::cell(rx, ry),
-            };
-            assert_eq!(destination, expected, "{input}");
+            assert_eq!(destination, NavTargetRef::from(target(input)), "{input}");
             returned += 1;
         }
         // The missions pass no-move 0: then, and only then, the Target becomes

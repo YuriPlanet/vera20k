@@ -1,11 +1,12 @@
 //! The single Foot Enter mission owner (gamemd.exe 0x004D9290).
 //!
-//! Refinery and repair-depot entry share contact/archive admission, pending
-//! entry parking, navigation handoff and the current-mission Rate/RNG tail.
-//! The class radio receiver owns docking decisions; this mission does not
-//! repeat them. Evidence: tools/spatial_oracle/refinery_dock.json and .md.
-//! Infantry inherit the body (InfantryClass vt+0x240); theirs runs once the
-//! Boarding adapter has let them go (`techno_ai::mission_handlers`). The
+//! Refinery, repair-depot, transport and absorber entry share
+//! contact/archive admission, pending entry parking, navigation handoff and
+//! the current-mission Rate/RNG tail. The class radio receiver owns docking
+//! decisions (a transport's DOCKING is `radio::receive`'s Unit 0x0E arm);
+//! this mission does not repeat them. Evidence:
+//! tools/spatial_oracle/refinery_dock.json and .md. Infantry inherit the body
+//! (InfantryClass vt+0x240; `techno_ai::mission_handlers`). The
 //! nav-queue and `Teleporter=` arms take the receiver's class setter
 //! (vt+0x480, [`Simulation::assign_destination_represented`]) whatever its
 //! class: no class test precedes them (`0x004D92C2..0x004D93FA`).
@@ -55,16 +56,14 @@ pub(crate) fn mission_enter(
                 .get(id)
                 .and_then(|entity| entity.navigation.nav_com());
             let nav_is_mover = match nav {
-                Some(
-                    NavTargetRef::Entity { id: nav }
-                    | NavTargetRef::Object { id: nav }
-                    | NavTargetRef::Building { id: nav },
-                ) => sim.substrate.entities.get(nav).is_some_and(|other| {
-                    matches!(
-                        other.category(),
-                        EntityCategory::Unit | EntityCategory::Aircraft
-                    )
-                }),
+                Some(NavTargetRef::Object { id: nav }) => {
+                    sim.substrate.entities.get(nav).is_some_and(|other| {
+                        matches!(
+                            other.category(),
+                            EntityCategory::Unit | EntityCategory::Aircraft
+                        )
+                    })
+                }
                 _ => false,
             };
             if !parked && !nav_is_mover {
