@@ -130,8 +130,8 @@ fn native_superweapon_cameo_controls_match_modes_and_requests() {
             ));
         }
         let mut gadgets = SidebarGadgetState::default();
-        gadgets.repair_mode_on = true;
-        gadgets.sell_mode_on = true;
+        gadgets.repair_mode_on = supplied["repair"].as_bool().unwrap_or(true);
+        gadgets.sell_mode_on = supplied["sell"].as_bool().unwrap_or(true);
         let views = superweapon_views_for_owner(&sim, &rules, &owner);
         let result = press(
             &mut input,
@@ -151,9 +151,16 @@ fn native_superweapon_cameo_controls_match_modes_and_requests() {
             expected["selected"].as_i64().unwrap(),
             "{supplied}"
         );
-        let cleared = expected["modes"][0] == 0;
-        assert_eq!(gadgets.repair_mode_on, !cleared, "{supplied}");
-        assert_eq!(gadgets.sell_mode_on, !cleared, "{supplied}");
+        assert_eq!(
+            gadgets.repair_mode_on,
+            expected["repair"].as_bool().unwrap(),
+            "{supplied}"
+        );
+        assert_eq!(
+            gadgets.sell_mode_on,
+            expected["sell"].as_bool().unwrap(),
+            "{supplied}"
+        );
         if prior == -1 {
             assert_eq!(
                 input
@@ -161,7 +168,7 @@ fn native_superweapon_cameo_controls_match_modes_and_requests() {
                     .as_ref()
                     .and_then(TargetingMode::as_building_placement)
                     .is_some(),
-                !cleared,
+                expected["placement"][0] != 0,
                 "{supplied}"
             );
         }

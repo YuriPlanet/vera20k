@@ -15,7 +15,6 @@ fn frame(sim: &mut Simulation, rules: &RuleSet) -> SimFrameOutput {
         None,
         67,
         TickLane::Ordinary,
-        None,
         FrameEffects::default(),
     )
     .expect("ordinary authoritative frame")
