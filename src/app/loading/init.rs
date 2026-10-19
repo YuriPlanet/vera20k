@@ -2991,10 +2991,13 @@ pub(crate) fn load_map_from_initial(
         },
         variant_table_draws,
     );
-    // Parse house color assignments from map INI ([Houses] + per-house Color=).
-    // Color=<name> resolves against the rules `[Colors]` list (entry index).
+    // Campaigns retain authored house colors. Skirmish CreateHouses supplies
+    // player priorities and the Neutral/Special LightGrey schemes, even when
+    // the multiplayer map has no [Houses] section.
     let house_color_map: HouseColorMap = skirmish_launch_session
-        .map(|launch| house_color_map_for_launch_session(launch, &house_roster))
+        .map(|launch| {
+            house_color_map_for_launch_session(launch, &house_roster, &rules.color_schemes)
+        })
         .unwrap_or_else(|| house_roster.color_map());
     let bridge_destroyability_mode = skirmish_launch_session
         .map(|launch| BridgeDestroyabilityMode::SkirmishOrMultiplayer {

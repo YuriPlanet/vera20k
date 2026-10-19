@@ -15,8 +15,10 @@ use crate::render::bridge_atlas::{self, BridgeAtlas};
 use crate::render::gpu::GpuContext;
 use crate::render::overlay_assets::{render_overlay_names, resolve_overlay_name_for_render};
 use crate::render::overlay_atlas::{self, OverlayAtlas};
-use crate::rules::color_scheme::scheme_entry_for_priority;
-use crate::rules::house_colors::HouseColorIndex;
+use crate::rules::color_scheme::{
+    ColorSchemeEntry, scheme_entry_by_name, scheme_entry_for_priority,
+};
+use crate::rules::house_colors::{DEFAULT_SCHEME_ENTRY, HouseColorIndex};
 use crate::rules::ini_parser::IniFile;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
@@ -26,11 +28,33 @@ use crate::skirmish_launch::SkirmishLaunchSession;
 pub(crate) fn house_color_map_for_launch_session(
     session: &SkirmishLaunchSession,
     house_roster: &HouseRoster,
+    schemes: &[ColorSchemeEntry],
 ) -> HouseColorMap {
+    // Active-retail CreateHouses @ 0x6882D1..0x68837D constructs Neutral and
+    // Special even without [Houses]. Each looks up literal "LightGrey" with
+    // 53 rows (0x688309/0x68835C -> 0x68CAB0), then calls InitColor (0x50B840).
+    // A failed lookup falls back to runtime scheme 5, logical entry 2.
+    let neutral_color = HouseColorIndex(
+        scheme_entry_by_name(schemes, "LightGrey")
+            .and_then(|entry| u8::try_from(entry).ok())
+            .filter(|&entry| entry != crate::rules::house_colors::NO_REMAP.0)
+            .unwrap_or(DEFAULT_SCHEME_ENTRY as u8),
+    );
     let mut colors = HouseColorMap::new();
+    colors.insert("Neutral".to_string(), neutral_color);
+    colors.insert("Special".to_string(), neutral_color);
     for house in &house_roster.houses {
         if !is_playable_faction_name(&house.name) {
-            colors.insert(house.name.clone(), house.color);
+            // Preserve authored identity casing, but these two skirmish houses
+            // use CreateHouses' explicit color rather than campaign Color=.
+            let color = if house.name.eq_ignore_ascii_case("Neutral")
+                || house.name.eq_ignore_ascii_case("Special")
+            {
+                neutral_color
+            } else {
+                house.color
+            };
+            colors.insert(house.name.clone(), color);
         }
     }
     for slot in normalized_launch_slots(session) {
@@ -714,19 +738,60 @@ mod tests {
     }
 
     #[test]
-    fn launch_color_map_keeps_non_players_and_uses_session_slots() {
+    fn launch_color_map_initializes_neutral_houses_and_uses_session_slots() {
+        let schemes = crate::rules::color_scheme::parse_color_schemes(&IniFile::from_str(
+            crate::test_fixture::text("ini/rulesmd.ini"),
+        ));
         let colors = house_color_map_for_launch_session(
             &test_session(),
             &roster_with_neutral_and_playable(),
+            &schemes,
         );
 
-        // Neutral keeps the roster-assigned index; players resolve their lobby
-        // priority through the [Colors] entry LUT (priority 1 → entry 5 DarkRed,
+        // CreateHouses overrides Neutral's authored color. Players resolve their
+        // lobby priority through the [Colors] LUT (priority 1 → entry 5 DarkRed,
         // priority 2 → entry 10 DarkBlue).
-        assert_eq!(colors.get("Neutral"), Some(&HouseColorIndex(8)));
+        assert_eq!(schemes[2].name, "LightGrey");
+        assert_eq!(colors.get("Neutral"), Some(&HouseColorIndex(2)));
+        assert_eq!(colors.get("Special"), Some(&HouseColorIndex(2)));
         assert_eq!(colors.get("Player"), Some(&HouseColorIndex(5)));
         assert_eq!(colors.get("Computer1"), Some(&HouseColorIndex(10)));
         assert!(!colors.contains_key("Americans"));
+    }
+
+    #[test]
+    fn launch_color_map_remaps_neutral_oil_without_authored_houses() {
+        let schemes = crate::rules::color_scheme::parse_color_schemes(&IniFile::from_str(
+            crate::test_fixture::text("ini/rulesmd.ini"),
+        ));
+        // Ordinary multiplayer maps, including Storm, have neutral structures
+        // but no campaign-style [Houses] roster.
+        let map = IniFile::from_str("[Structures]\n0=Neutral,CAOILD,256,168,78,64,None,0,0,0\n");
+        let roster = crate::map::houses::parse_house_roster(&map, &schemes, None);
+        assert!(roster.houses.is_empty());
+        let colors = house_color_map_for_launch_session(&test_session(), &roster, &schemes);
+        assert_eq!(colors.get("Neutral"), Some(&HouseColorIndex(2)));
+        assert_eq!(colors.get("Special"), Some(&HouseColorIndex(2)));
+        assert_eq!(colors.get("Player"), Some(&HouseColorIndex(5)));
+    }
+
+    #[test]
+    fn launch_color_map_resolves_neutral_scheme_by_name_and_native_fallback() {
+        let mut roster = roster_with_neutral_and_playable();
+        roster.houses[0].name = "nEuTrAl".to_string();
+        for (ini, expected) in [
+            ("[Colors]\nlightgrey=0,0,240\nGold=25,255,255\n", 0),
+            (
+                "[Colors]\nGold=25,255,255\nGrey=0,0,100\nOther=0,255,255\n",
+                2,
+            ),
+        ] {
+            let schemes = crate::rules::color_scheme::parse_color_schemes(&IniFile::from_str(ini));
+            let colors = house_color_map_for_launch_session(&test_session(), &roster, &schemes);
+            for name in ["Neutral", "Special", "nEuTrAl"] {
+                assert_eq!(colors.get(name), Some(&HouseColorIndex(expected)));
+            }
+        }
     }
 
     #[test]
@@ -742,6 +807,9 @@ mod tests {
 
     #[test]
     fn current_house_collision_preserves_launch_label_and_distinct_colors() {
+        let schemes = crate::rules::color_scheme::parse_color_schemes(&IniFile::from_str(
+            crate::test_fixture::text("ini/rulesmd.ini"),
+        ));
         for (handle, expected_key) in [
             ("Neutral", "Player"),
             (" Neutral ", "Player"),
@@ -762,9 +830,12 @@ mod tests {
             assert_eq!(slots[0].owner_name, expected_key);
             assert_eq!(slots[1].owner_name, "Computer1");
             assert_ne!(slots[0].owner_name, slots[1].owner_name);
-            let colors =
-                house_color_map_for_launch_session(&session, &roster_with_neutral_and_playable());
-            assert_eq!(colors.get("Neutral"), Some(&HouseColorIndex(8)));
+            let colors = house_color_map_for_launch_session(
+                &session,
+                &roster_with_neutral_and_playable(),
+                &schemes,
+            );
+            assert_eq!(colors.get("Neutral"), Some(&HouseColorIndex(2)));
             assert_eq!(colors.get(expected_key), Some(&HouseColorIndex(5)));
             assert_eq!(colors.get("Computer1"), Some(&HouseColorIndex(10)));
             let row =
