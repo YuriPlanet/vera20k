@@ -516,6 +516,8 @@ pub struct ScenarioDescriptor {
     pub truck_crate: bool,
     /// Map Basic.IceGrowthEnabled; None uses SetDefaults683856's true.
     pub ice_growth_enabled: Option<bool>,
+    /// Basic.VeinGrowthEnabled, constructor68384F true.
+    pub vein_growth_enabled: Option<bool>,
     /// Native `ScenarioClass` flags bit `0x40` (`[SpecialFlags] TiberiumGrows`,
     /// bit layout from the writer `0x006B8B30`). Every skirmish/multiplayer
     /// start forces it on (`OR 0xC0` at `0x005E74CD` on the ordinary skirmish
@@ -611,6 +613,7 @@ pub struct ScenarioSession {
     input_locked: bool,
     /// Native ChronoScreenEffect globals; GPU surface/handle remain app-local.
     chrono_screen: crate::sim::superweapon::chrono_screen::ChronoScreenState,
+    scenario_pause: pause::ScenarioPause,
     /// Scenario+11E8 countdown and authored+11F4/+11F8 caption. Mutations
     /// belong to the countdown owner; UI consumes only its retained view.
     #[serde(default)]
@@ -639,6 +642,9 @@ pub struct ScenarioSession {
     /// Basic's bool reader normalizes only when it actually reads a value.
     /// Retain the byte even though no ice-growth simulation leaf is ported.
     ice_growth: u8,
+    /// Scenario34A7. Native Veinhole74D80A reads this byte; that separate
+    /// TS mechanism is not ported. Do not fabricate growth from this switch.
+    vein_growth: u8,
     /// Persisted native `ScenarioClass` flags bit `0x40` (`TiberiumGrows`);
     /// see the descriptor field of the same name.
     #[serde(default)]
@@ -851,6 +857,10 @@ impl ScenarioSession {
             b"scenario-campaign-startup-v1".hash(hasher);
             campaign.hash(hasher);
         }
+        if s.scenario_paused() || s.scenario_pause_timed() {
+            b"scenario-pause-v1".hash(hasher);
+            s.scenario_pause.hash(hasher);
+        }
         if s.input_locked {
             b"scenario-input-lock-v1".hash(hasher);
         }
@@ -889,6 +899,10 @@ impl ScenarioSession {
         }
         if s.truck_crate {
             b"scenario-truck-crate-v1".hash(hasher);
+        }
+        if s.vein_growth != 1 {
+            b"scenario-vein-growth".hash(hasher);
+            s.vein_growth.hash(hasher);
         }
         if s.ice_growth != 1 {
             b"scenario-ice-growth-v1".hash(hasher);
@@ -1013,6 +1027,16 @@ impl ScenarioSession {
         self.train_crate = !self.train_crate;
     }
 
+    /// Retained Scenario34A7; not a claim of a ported Veinhole consumer.
+    pub const fn vein_growth_enabled(&self) -> bool {
+        self.vein_growth != 0
+    }
+
+    /// Execute85@6DDB94/6E0250: raw low byte, no clamp.
+    pub(crate) fn set_vein_growth(&mut self, value: i32) {
+        self.vein_growth = value as u8;
+    }
+
     /// Execute87@6DDBD5 and6E0290: no clamp or truth normalization.
     pub(crate) fn set_ice_growth(&mut self, value: i32) {
         self.ice_growth = value as u8;
@@ -1027,6 +1051,7 @@ impl ScenarioSession {
             campaign: None,
             input_locked: false,
             chrono_screen: crate::sim::superweapon::chrono_screen::ChronoScreenState::default(),
+            scenario_pause: pause::ScenarioPause::default(),
             scenario_countdown: countdown::ScenarioCountdown::default(),
             started: false,
             no_damage: desc.no_damage,
@@ -1035,6 +1060,7 @@ impl ScenarioSession {
             train_crate: desc.train_crate,
             truck_crate: desc.truck_crate,
             ice_growth: u8::from(desc.ice_growth_enabled.unwrap_or(true)),
+            vein_growth: u8::from(desc.vein_growth_enabled.unwrap_or(true)),
             tiberium_grows_flag: desc.tiberium_grows_flag,
             tiberium_spreads_flag: desc.tiberium_spreads_flag,
             computer_slot_has_team: false,
@@ -1478,3 +1504,5 @@ mod tests {
         assert_eq!(restored.state_hash(), forced.state_hash());
     }
 }
+
+mod pause;

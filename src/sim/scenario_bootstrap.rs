@@ -2951,13 +2951,11 @@ mod tests {
                 .copied()
                 .map(|start| (start.index, start))
                 .collect(),
-            cell_tags: Default::default(),
             tags: Default::default(),
             triggers: Default::default(),
             events: Default::default(),
             actions: Default::default(),
             local_variables: Default::default(),
-            trigger_graph: Default::default(),
             special_flags: Default::default(),
             ini: IniFile::from_str(""),
         }

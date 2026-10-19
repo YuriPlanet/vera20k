@@ -1020,23 +1020,31 @@ mod tests {
     }
 
     /// Build a single-cell terrain grid where (5,5) is a bridge deck at
-    /// `deck_level`, ground level=0, water below (`is_water=true`,
-    /// `ground_walk_blocked=true`). Used to verify DropIn lets deck units
-    /// survive even with no walkable ground.
+    /// `deck_level`, ground level=0, Water below (its land, zone and ground
+    /// block). Used to verify DropIn lets deck units survive even with no
+    /// walkable ground.
     pub(super) fn water_below_bridge_terrain(deck_level: u8) -> ResolvedTerrainGrid {
         let mut cells = Vec::new();
         for y in 0..=5u16 {
             for x in 0..=5u16 {
                 let is_bridge = x == 5 && y == 5;
-                cells.push(ResolvedTerrainCell {
-                    is_water: is_bridge,
-                    ground_walk_blocked: is_bridge,
+                let mut cell = ResolvedTerrainCell {
                     has_bridge_deck: is_bridge,
                     bridge_walkable: is_bridge,
                     bridge_transition: is_bridge,
                     bridge_deck_level: if is_bridge { deck_level } else { 0 },
                     ..crate::map::resolved_terrain::test_flat_cell(x, y)
-                });
+                };
+                if is_bridge {
+                    let water = crate::rules::terrain_rules::LandType::Water.as_index();
+                    cell.land_type = water;
+                    cell.base_land_type = water;
+                    cell.zone_type = crate::map::resolved_terrain::zone_class::WATER;
+                    cell.ground_walk_blocked = true;
+                    cell.base_ground_walk_blocked = true;
+                    cell.base_build_blocked = true;
+                }
+                cells.push(cell);
             }
         }
         ResolvedTerrainGrid::from_cells(6, 6, cells)

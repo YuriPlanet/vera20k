@@ -318,8 +318,8 @@ fn original_n1_tables_drive_sidebar_palette_and_skip_alpha() {
     .unwrap();
     for c in packet.cases {
         let p = super::decode_sidebar_palette(&c.raw).unwrap();
-        assert_eq!(p.colors.len(), c.words.len());
-        for (i, color) in p.colors.iter().enumerate() {
+        assert_eq!(p.colors().len(), c.words.len());
+        for (i, color) in p.colors().iter().enumerate() {
             let native = c.words[i];
             let actual = ((u16::from(color.r) >> 3) << 11)
                 | ((u16::from(color.g) >> 2) << 5)

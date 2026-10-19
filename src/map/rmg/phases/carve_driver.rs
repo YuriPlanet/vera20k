@@ -178,7 +178,7 @@ pub(crate) fn carve_connectors_for_region(
             // Leniency runs 0.00, 0.01 ... 0.99 off the ZERO-based attempt
             // index, so the first try is the strictest.
             let leniency = attempt as f32 * LENIENCY_STEP;
-            if ctx.playfield.contains(cell.0 as u16, cell.1 as u16)
+            if ctx.playfield.contains_geometry_packed(cell.0, cell.1)
                 && try_carve_connector_at_cell(ctx, carve_regions, cell, leniency)
             {
                 successes += 1;

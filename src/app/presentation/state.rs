@@ -50,11 +50,6 @@ pub(crate) struct MatchPresentationState {
     pub(crate) height_map: BTreeMap<(u16, u16), u8>,
     /// Load-time high-bridge deck levels for the same click resolution.
     pub(crate) bridge_height_map: BTreeMap<(u16, u16), u8>,
-    /// Last mutable MapClass playfield authority installed into presentation.
-    /// `None` is an explicit stale gate (new map / quickload); the inner
-    /// optional bounds preserves fail-closed absence without inventing a rect.
-    pub(crate) installed_playfield_authority:
-        Option<(Option<crate::map::playfield::PlayfieldBounds>, u64)>,
     /// Overlay entries from map for per-frame instance generation.
     pub(crate) overlays: crate::app::presentation::overlay_index::OverlayRenderIndex,
     /// Terrain objects from map for per-frame instance generation.
@@ -73,6 +68,10 @@ pub(crate) struct MatchPresentationState {
     pub(crate) electric_bolts: super::electric_bolts::ElectricBolts,
     /// Process registry B04A60; ordinary kind1 beams copy their endpoints.
     pub(crate) radiation_beams: super::radiation_beams::RadiationBeams,
+    /// Process-lived native Tactical superweapon ring fade state. Map loads
+    /// replace map resources but keep this presentation owner alive.
+    pub(crate) superweapon_range_pulse:
+        crate::app::presentation::radial_indicators::SuperweaponRangePulse,
     /// Native process-lived FPS counter and detail hysteresis, never sim state.
     pub(crate) detail: std::cell::RefCell<super::detail::DetailState>,
     /// The client's AnimClass `+0x19D` for Supers' ChronoPlacement anims
@@ -87,6 +86,7 @@ pub(crate) struct MatchPresentationState {
     pub(crate) radar_anim: Option<crate::render::radar::anim::RadarAnimState>,
     pub(crate) radar_movies: crate::app::radar_movie::RadarMovies,
     pub(crate) chrono_screen: crate::app::chrono_screen::ChronoScreenPresentation,
+    pub(crate) scenario_pause: crate::app::match_runtime::scenario_pause::ScenarioPauseClock,
     /// Requested-versus-resolved atlas identity used to construct `radar_anim`.
     ///
     /// Kept beside the animation so tactical evidence never reconstructs

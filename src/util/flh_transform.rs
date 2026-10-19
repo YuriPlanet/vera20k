@@ -8,11 +8,6 @@
 //! ## Dependency rules
 //! - Part of util/; no simulation or presentation dependency.
 
-/// Convert world Z leptons into gamemd-style screen-Y lift.
-pub fn adjust_for_z_leptons(z: i32) -> i32 {
-    crate::util::native_x87::adjust_for_z_standard(z)
-}
-
 /// Mirror the lateral offset on odd burst shots.
 ///
 /// gamemd-derived: `TechnoClass::GetFLH @ 0x006F3AD0` computes the sign from

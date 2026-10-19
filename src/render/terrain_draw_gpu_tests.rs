@@ -1963,7 +1963,7 @@ fn retail_pips2_centered_strip_preserves_native_frames_palette_and_scissor() {
                         {
                             continue;
                         }
-                        let c = palette.colors[usize::from(index)];
+                        let c = palette.color(index);
                         expected[(dy * size[0] + dx) as usize] = [c.r, c.g, c.b, 255];
                     }
                 }

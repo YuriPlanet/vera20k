@@ -682,7 +682,6 @@ mod tests {
             level,
             filled_clear: true,
             slope_type,
-            terrain_class: Default::default(),
             accepts_smudge: true,
             ..crate::map::resolved_terrain::test_flat_cell(rx, ry)
         }
@@ -751,8 +750,8 @@ mod tests {
             level_delay: 90,
             light_delay: 90,
             level_factor: 0.2,
-            light_factor: crate::util::fixed_math::sim_from_f32(0.1),
-            tint_factor: crate::util::fixed_math::sim_from_f32(1.0),
+            light_factor: crate::util::fixed_math::SimFixed::from_num(0.1_f32),
+            tint_factor: crate::util::fixed_math::SimFixed::from_num(1.0_f32),
             color: (0, 255, 0),
             site_warhead: "RadSite".to_string(),
         }

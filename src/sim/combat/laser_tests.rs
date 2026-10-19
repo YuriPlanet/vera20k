@@ -378,7 +378,6 @@ fn production_frame_orders_laser_update_before_delayed_support_birth() {
             None,
             67,
             TickLane::Ordinary,
-            None,
             crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
@@ -487,7 +486,6 @@ fn retail_delayed_main_uses_preclear_count_and_failed_admission_emits_no_laser()
                 None,
                 67,
                 TickLane::Ordinary,
-                None,
                 crate::sim::world::FrameEffects::default(),
             )
             .unwrap();

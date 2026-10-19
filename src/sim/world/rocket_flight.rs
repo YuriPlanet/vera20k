@@ -325,6 +325,7 @@ pub(super) mod retail_tests {
     //! whole-flight or whole-match comparison.
 
     use crate::headless_scenario::SIM_TICK_MS;
+    use crate::rules::terrain_rules::LandType;
     use crate::sim::command::{Command, CommandEnvelope};
     use crate::sim::movement::ground_pose::position_world_coord;
     use std::collections::BTreeSet;
@@ -359,7 +360,7 @@ pub(super) mod retail_tests {
                 && terrain.cell(x, y).is_some_and(|cell| {
                     cell.level == level
                         && cell.slope_type == 0
-                        && !cell.is_water
+                        && cell.land_type != LandType::Water.as_index()
                         && !cell.bridge_facts.has_structural_bridge()
                 })
                 && navigation
@@ -528,7 +529,7 @@ pub(super) mod retail_tests {
             // state at Mission_Attack's 0.
             use crate::sim::components::NavTargetRef;
             use crate::sim::mission::MissionType::{Attack, Move, Retreat};
-            let tank = Some(NavTargetRef::Entity { id: target });
+            let tank = Some(NavTargetRef::Object { id: target });
             assert_eq!(
                 moves[0],
                 (launched, ((Some(Move), Some(0)), tank)),
@@ -649,7 +650,8 @@ pub(super) mod retail_tests {
                     let (cx, cy) = (i32::from(x) + dx, i32::from(y) + dy);
                     in_playfield(cx, cy)
                         && terrain.cell(cx as u16, cy as u16).is_some_and(|cell| {
-                            cell.is_water && !cell.bridge_facts.has_structural_bridge()
+                            cell.land_type == LandType::Water.as_index()
+                                && !cell.bridge_facts.has_structural_bridge()
                         })
                 })
             }) && sim.substrate.occupancy.get(x, y).is_none()
@@ -658,7 +660,7 @@ pub(super) mod retail_tests {
             (-3..=3).all(|d| in_playfield(i32::from(x) + d, i32::from(y) + d))
                 && terrain.cell(x, y).is_some_and(|cell| {
                     cell.slope_type == 0
-                        && !cell.is_water
+                        && cell.land_type != LandType::Water.as_index()
                         && !cell.bridge_facts.has_structural_bridge()
                 })
                 && navigation

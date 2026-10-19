@@ -117,6 +117,13 @@ impl RockingState {
     pub fn set_angle_forwards_for_test(&mut self, angle: SimFixed) {
         self.angle_forwards = fixed_word(angle);
     }
+    /// Retained binary32 angles I16F16 cannot hold, as RockingUpdate70B570
+    /// leaves them; the setters above quantize through SimFixed.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_angles_native_for_test(&mut self, [sideways, forwards]: [f32; 2]) {
+        self.angle_sideways = NativeF32Bits::from_bits(sideways.to_bits());
+        self.angle_forwards = NativeF32Bits::from_bits(forwards.to_bits());
+    }
     #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn set_vel_sideways_for_test(&mut self, value: SimFixed) {
         self.vel_sideways = fixed_word(value);

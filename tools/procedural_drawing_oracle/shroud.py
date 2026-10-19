@@ -31,6 +31,8 @@ through the same native status, palette and packed-shape owners.
 ordered INIT/YENGINEER Cargo and the native absorber passenger-pip arm.
 ``--radial-indicator`` executes selected GAGAP range geometry, original
 ellipse/DSurface cubic rays and their shared primary A/Z admission.
+``--superweapon-range`` executes the original active targeting ring loop and
+shared radial helper numeric prefixes with WinMain's actual x87 control word.
 ``--infantry-berserk-body`` composes the existing Infantry, palette, TMP and
 Surface owners for physical GI body/shadow pixels with the caller colour word.
 """
@@ -4421,6 +4423,305 @@ def radial_indicator_metadata():
             ellipse=0x7BB350,cubic_line=0x4BC750,cubic_end=0x4BC7C2,tangent=0x4CAD50))
 
 
+def _superweapon_control_machine():
+    u = native.Uc(native.UC_ARCH_X86, native.UC_MODE_32)
+    native.load_image(u)
+    u.mem_map(native.STACK_BASE, native.STACK_SIZE)
+    u.mem_map(native.RET_MAGIC, 0x1000)
+    return u
+
+
+def _superweapon_winmain_fpcw(u, sp):
+    # Supply the Windows startup x87 state, then execute the real WinMain
+    # controlfp/cache fragment instead of assuming native.NATIVE_FPCW.
+    u.reg_write(UC_X86_REG_ESP, sp)
+    u.reg_write(UC_X86_REG_FPCW, 0x027F)
+    native.run_checked(u, 0x006BBFB7, 0x006BBFCE, count=1000,
+        required_addresses=(0x007CBF49, 0x007C5EE4),
+        context={'case':'WinMain x87 control/cache initialization'})
+    live = u.reg_read(UC_X86_REG_FPCW)
+    cached = struct.unpack('<H', u.mem_read(0x00822D80, 2))[0]
+    if (live, cached) != (0x0E3F, 0x0E3F):
+        raise native.OracleError(
+            f'WinMain FPCW mismatch: live={live:04X}, cached={cached:04X}')
+    return live
+
+
+def _superweapon_loop_control(name, range_bits, line_multiplier, *, draws=1):
+    u = _superweapon_control_machine()
+    fake = 0x50000000
+    type_ptr, player_ptr = fake + 0x1000, fake + 0x2000
+    house_array, house_ptr = fake + 0x3000, fake + 0x4000
+    u.mem_map(fake, 0x10000)
+    u.mem_write(type_ptr + 0xF8, struct.pack('<I', range_bits))
+    u.mem_write(type_ptr + 0xFC, struct.pack('<i', line_multiplier))
+    # ABI-shaped CurrentPlayer/House inputs. The native loop and its shared
+    # RGBClass adjustment still execute; only radial geometry is intercepted.
+    u.mem_write(0x00A83D4C, struct.pack('<I', player_ptr))
+    u.mem_write(player_ptr + 0x30, struct.pack('<i', 0))
+    u.mem_write(0x00A8022C, struct.pack('<I', house_array))
+    u.mem_write(house_array, struct.pack('<I', house_ptr))
+    house_rgb = [33, 67, 101]
+    u.mem_write(house_ptr + 0x56F9, bytes(house_rgb) + b'\x00')
+
+    sp = native.STACK_BASE + native.STACK_SIZE - 0x4000
+    fpcw = _superweapon_winmain_fpcw(u, sp)
+    # B0E64C is zero-initialized image BSS; 842954 is the native data word +1.
+    phase_before = struct.unpack('<i', u.mem_read(0x00B0E64C, 4))[0]
+    direction_before = struct.unpack('<i', u.mem_read(0x00842954, 4))[0]
+    if phase_before != 0 or direction_before != 1:
+        raise native.OracleError(
+            f'{name}: native pulse startup changed ({phase_before}, {direction_before})')
+    u.mem_write(0x00B0CD70, b'\x00\x00\x00')
+
+    events = {'color_calls': [], 'radial_calls': []}
+
+    def capture_color_input(machine, _address, _size, _data):
+        call_sp = machine.reg_read(UC_X86_REG_ESP)
+        source = machine.reg_read(UC_X86_REG_ECX)
+        amount = struct.unpack('<I', machine.mem_read(call_sp + 4, 4))[0]
+        target = struct.unpack('<I', machine.mem_read(call_sp + 8, 4))[0]
+        events['color_calls'].append(dict(
+            factor=amount,
+            source_rgb=list(machine.mem_read(source, 3)),
+            target_rgb=list(machine.mem_read(target, 3))))
+
+    def capture_radial_args(machine, _address, _size, _data):
+        call_sp = machine.reg_read(UC_X86_REG_ESP)
+        ret = struct.unpack('<I', machine.mem_read(call_sp, 4))[0]
+        radius_bits = struct.unpack('<I', machine.mem_read(call_sp + 0x14, 4))[0]
+        # The helper reads separate 32-bit stack arguments: pixel radius at
+        # entry ESP+0x18 (EBP+0x1C), truncate radius at ESP+0x1C (EBP+0x20).
+        flags = [
+            struct.unpack('<I', machine.mem_read(call_sp + 0x18, 4))[0],
+            struct.unpack('<I', machine.mem_read(call_sp + 0x1C, 4))[0],
+        ]
+        events['radial_calls'].append(dict(
+            return_address=f'0x{ret:08X}',
+            radius_f32_bits=f'{radius_bits:08X}',
+            rgb_after_caller_adjust=list(machine.mem_read(call_sp + 0x10, 3)),
+            pixel_radius_and_truncate_flags=flags,
+            draw_rays=machine.reg_read(UC_X86_REG_ECX) & 0xFF,
+            adjust_color=machine.reg_read(UC_X86_REG_EDX) & 0xFF))
+        # Retain caller registers; perform only DrawRadialIndicator's cdecl
+        # stack cleanup at this declared external geometry boundary.
+        machine.reg_write(UC_X86_REG_ESP, call_sp + 4 + 0x1C)
+        machine.reg_write(UC_X86_REG_EIP, ret)
+
+    u.hook_add(UC_HOOK_CODE, capture_color_input,
+               begin=0x006612C0, end=0x006612C0)
+    u.hook_add(UC_HOOK_CODE, capture_radial_args,
+               begin=0x00456980, end=0x00456980)
+
+    def run_draw(index):
+        u.mem_write(type_ptr + 0xF8, struct.pack('<I', range_bits))
+        u.mem_write(type_ptr + 0xFC, struct.pack('<i', line_multiplier))
+        u.mem_write(sp + 0x18, b'\x00\x00\x00\x00')
+        u.mem_write(sp + 0x20, struct.pack('<I', range_bits))
+        u.mem_write(sp + 0x30, struct.pack('<i', 0x12345))
+        u.mem_write(sp + 0x34, struct.pack('<i', -0x23456))
+        u.mem_write(sp + 0x44, struct.pack('<i', 0x34567))
+        u.reg_write(UC_X86_REG_ESP, sp)
+        u.reg_write(UC_X86_REG_EDI, type_ptr)
+        u.reg_write(UC_X86_REG_EBP, 1)
+        u.reg_write(UC_X86_REG_ESI, 0)
+        u.reg_write(UC_X86_REG_EBX, 0x34567)
+        events['color_calls'] = []
+        events['radial_calls'] = []
+        phase_start = struct.unpack('<i', u.mem_read(0x00B0E64C, 4))[0]
+        direction_start = struct.unpack('<i', u.mem_read(0x00842954, 4))[0]
+        end = 0x006DC3A3 if line_multiplier >= 1 else 0x006DC3F3
+        required = ((0x006DC379, 0x006612C0, 0x00456980)
+                    if line_multiplier >= 1 else (0x006612C0, 0x00456980))
+        stop = native.run_checked(u, 0x006DC25A, end,
+            required_addresses=required,
+            context={'case':name,'draw':index + 1,
+                     'range_f32_bits':f'{range_bits:08X}',
+                     'line_multiplier':line_multiplier,'fpcw':f'{fpcw:04X}'})
+        calls = events['radial_calls']
+        colors = events['color_calls']
+        expected_return = 0x006DC37E if line_multiplier >= 1 else 0x006DC3F3
+        if not calls or any(call['return_address'] != f'0x{expected_return:08X}'
+                            for call in calls):
+            raise native.OracleError(f'{name}: unexpected radial call return address')
+        expected_flags = [0, 0] if line_multiplier >= 1 else [0, 1]
+        if any((call['draw_rays'], call['adjust_color']) != (0, 1)
+               or call['pixel_radius_and_truncate_flags'] != expected_flags
+               for call in calls):
+            raise native.OracleError(f'{name}: native radial call ABI changed')
+        if len(colors) != len(calls) or any(
+                color['source_rgb'] != house_rgb or color['target_rgb'] != [0, 0, 0]
+                for color in colors):
+            raise native.OracleError(f'{name}: caller color adjustment sequence changed')
+        phase_end = struct.unpack('<i', u.mem_read(0x00B0E64C, 4))[0]
+        direction_end = struct.unpack('<i', u.mem_read(0x00842954, 4))[0]
+        return dict(name=f'{name}_draw_{index + 1}',
+            phase_direction_before=[phase_start, direction_start],
+            phase_direction_after=[phase_end, direction_end],
+            caller_factors=[call['factor'] for call in colors],
+            caller_rgb_after_adjust=[call['rgb_after_caller_adjust'] for call in calls],
+            radial_calls=calls, stop_address=f'0x{stop:08X}')
+
+    pulse_draws = [run_draw(index) for index in range(draws)]
+    first_radii = [call['radius_f32_bits'] for call in pulse_draws[0]['radial_calls']]
+    return dict(name=name, range_f32_bits=f'{range_bits:08X}',
+                line_multiplier=line_multiplier, radii_f32_bits=first_radii,
+                pulse_draws=pulse_draws, house_rgb=house_rgb, fpcw=f'{fpcw:04X}')
+
+
+def _superweapon_inactive_controls():
+    controls = []
+    for name, selected_index, range_bits in (
+            ('no_selected_superweapon', -1, 0x40E00000),
+            ('zero_range_selected_superweapon', 0, 0x00000000)):
+        u = _superweapon_control_machine()
+        fake = 0x50000000
+        type_ptr, types = fake + 0x1000, fake + 0x3000
+        u.mem_map(fake, 0x10000)
+        sp = native.STACK_BASE + native.STACK_SIZE - 0x1000
+        fpcw = _superweapon_winmain_fpcw(u, sp)
+        u.mem_write(0x00842954, struct.pack('<i', -1))
+        u.mem_write(0x00B0E64C, struct.pack('<i', 37))
+        u.mem_write(0x00A8EB7E, b'\x01')
+        u.mem_write(0x008809A0, struct.pack('<i', selected_index))
+        u.mem_write(0x00A8E334, struct.pack('<I', types))
+        u.mem_write(types, struct.pack('<I', type_ptr))
+        u.mem_write(type_ptr + 0xF8, struct.pack('<I', range_bits))
+        before = [struct.unpack('<i', u.mem_read(0x00B0E64C, 4))[0],
+                  struct.unpack('<i', u.mem_read(0x00842954, 4))[0]]
+        required = ((0x006DC1AF, 0x006DC1B4) if selected_index < 0 else
+                    (0x006DC1AF, 0x006DC1C6, 0x006DC1D8))
+        stop = native.run_checked(u, 0x006DC1AF, 0x006DC3F3,
+            required_addresses=required,
+            context={'case':name,'fpcw':f'{fpcw:04X}'})
+        after = [struct.unpack('<i', u.mem_read(0x00B0E64C, 4))[0],
+                 struct.unpack('<i', u.mem_read(0x00842954, 4))[0]]
+        if before != after:
+            raise native.OracleError(f'{name}: inactive superweapon changed pulse state')
+        controls.append(dict(name=name, range_f32_bits=f'{range_bits:08X}',
+            phase_direction_before=before, phase_direction_after=after,
+            radial_calls=0, stop_address=f'0x{stop:08X}'))
+    return controls
+
+
+def _superweapon_radius_control(name, radius_bits, truncate=False):
+    u = _superweapon_control_machine()
+    sp = native.STACK_BASE + native.STACK_SIZE - 0x1000
+    _superweapon_winmain_fpcw(u, sp)
+    u.mem_write(sp, struct.pack('<I', native.RET_MAGIC))
+    u.mem_write(sp + 4, struct.pack('<iii', 0x12345, -0x23456, 0x34567))
+    u.mem_write(sp + 16, bytes((0x21, 0x43, 0x65, 0)))
+    u.mem_write(sp + 20, struct.pack('<I', radius_bits))
+    u.mem_write(sp + 24, struct.pack('<I', 0))
+    u.mem_write(sp + 28, struct.pack('<I', int(truncate)))
+    u.reg_write(UC_X86_REG_ESP, sp)
+    u.reg_write(UC_X86_REG_ECX, 0)
+    u.reg_write(UC_X86_REG_EDX, 1)
+    native.run_checked(u, 0x00456980, 0x004569E3,
+        required_addresses=(0x0045698D, 0x004569B9, 0x004569DC),
+        context={'case':name,'radius_f32_bits':f'{radius_bits:08X}',
+                 'truncate_input':truncate,'fpcw':'0E3F'})
+    return dict(name=name, input_radius_f32_bits=f'{radius_bits:08X}',
+                truncate_input=truncate,
+                output_radius_pixels=u.reg_read(UC_X86_REG_ESI))
+
+
+def generate_superweapon_range_controls():
+    loop_controls = [
+        _superweapon_loop_control('nuke_special_retail_7_2', 0x40E00000, 2, draws=2),
+        _superweapon_loop_control('iron_curtain_special_retail_1_4_3', 0x3FB33333, 3),
+        _superweapon_loop_control('synthetic_2_8_5', 0x40333333, 5),
+    ]
+    expected = [(15, '40E00000'), (5, '3FAAAAAA'), (14, '40266666')]
+    for row, (count, last) in zip(loop_controls, expected):
+        radii = row['radii_f32_bits']
+        if len(radii) != count or radii[-1] != last:
+            raise native.OracleError(
+                f"{row['name']}: native ring controls changed ({len(radii)}, {radii[-1]})")
+    radius_controls = [
+        _superweapon_radius_control('positive_lm_zero_iteration_radius', 0x00000000),
+        _superweapon_radius_control('retail_i4_over_lm3', 0x3FAAAAAA),
+        _superweapon_radius_control('synthetic_fractional_2_6', 0x40266666),
+        _superweapon_radius_control('retail_lm_below_one_single_ring', 0x3FB33333,
+                                    truncate=True),
+    ]
+    expected_pixels = [21, 77, 131, 63]
+    if [row['output_radius_pixels'] for row in radius_controls] != expected_pixels:
+        raise native.OracleError('Native radial helper numeric controls changed')
+    fallback = _superweapon_loop_control(
+        'retail_lm_zero_single_ring', 0x3FB33333, 0)['pulse_draws'][0]
+    return dict(native_sha256=native.image_sha256(), fpcw='0E3F',
+                loop_controls=loop_controls,
+                pulse_controls=dict(house_rgb=[33, 67, 101],
+                    lm_below_one=fallback,
+                    inactive=_superweapon_inactive_controls()),
+                primitive_radius_controls=radius_controls)
+
+
+def finish_superweapon_range_controls(argv=None):
+    import argparse
+    parser = argparse.ArgumentParser(description='Execute native superweapon ring controls')
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument('--check', action='store_true', help='compare without writing (default)')
+    mode.add_argument('--write', action='store_true', help='update only the superweapon corpus section')
+    args = parser.parse_args(argv)
+    source_paths = {'oracle':Path(__file__), 'shared_runner':Path(native.__file__)}
+    sources = native.oracle_sources.source_identity(source_paths)
+    generated = generate_superweapon_range_controls()
+    payload = json.dumps(generated, sort_keys=True, separators=(',', ':'),
+                         allow_nan=False).encode('utf-8')
+    metadata = native.provenance(
+        scope='Original Tactical superweapon targeting pulse, ring loop and shared radial radius prefix controls',
+        assumptions=[
+            'Original WinMain controlfp/cache fragment6BBFB7..6BBFCE executes from Windows initial x87 control word027F and reaches7CBF49/7C5EE4; live FPCW and cached822D80 both become0E3F.',
+            'Loop controls enter the native post-admission pulse block6DC25A after Tactical__DrawUnitActionVisuals has selected an armed type with Range>0. The native caller pulse, positive-LM/local per-ring pulse and shared RGB adjustment6612C0 all execute. CurrentPlayer/House/type memory is ABI-shaped test input; DrawRadialIndicator456980 is intercepted only at the external geometry boundary to record its original arguments and preserve caller registers while applying its stack cleanup.',
+            'The shared radial helper reads its pixel-radius and truncate-radius flags as separate DWORD arguments at EBP+1C and EBP+20. The positive-LM caller pushes 0/0; its LM<1 fallback pushes DWORD1 then DWORD0, yielding pixel=0/truncate=1. The capture reads the two independent stack words.',
+            'NukeSpecial controls run two consecutive native pulse blocks in one Unicorn machine so persistent B0E64C/842954 state is observed across draws. Inactive controls execute the selected-index=-1 and Range=0 branches at6DC1AF and verify that those gates leave pulse state unchanged.',
+            'Helper controls execute original DrawRadialIndicator456980 through sqrt4CAC40 and ftol7C5F00, stopping before world projection/drawing at4569E3. This compares only the numeric prefix, not pixels.',
+            'NukeSpecial7/2 and IronCurtainSpecial1.4/3 are authored Steam RulesMD values; 2.8/5 is a synthetic near-integer product control, not a retail type.',
+        ],
+        substitutions=[
+            'The current-player pointer, house array/current House RGB, selected type and fixed cell locals are supplied as explicit consumer inputs. The final ellipse/raster body is not executed by loop controls; only its radius/color arguments and ordering are observed. Helper controls stop before projection.',
+        ],
+        entry_points=dict(winmain_control=0x6BBFB7, pulse=0x6DC25A,
+            superweapon_loop=0x6DC2F5, superweapon_loop_stop=0x6DC3A3,
+            fallback_ring=0x6DC3AB, fallback_stop=0x6DC3F3,
+            inactive_gate=0x6DC1AF, caller_rgb_adjust=0x6612C0,
+            radial_helper=0x456980,
+            radial_helper_numeric_stop=0x4569E3, sqrt=0x4CAC40, ftol=0x7C5F00))
+    metadata.update(
+        fpcw_initial='0x027F', fpcw_live_and_cached='0x0E3F',
+        fpcw_cache_address='0x00822D80',
+        required_winmain_callees=['0x007CBF49', '0x007C5EE4'],
+        replay_command='python -m tools.procedural_drawing_oracle.shroud --superweapon-range --check',
+        generation_command='python -m tools.procedural_drawing_oracle.shroud --superweapon-range --write',
+        required_environment='VERA20K_GAMEMD_EXE must identify a supported original image; --check requires the recorded SHA256')
+    metadata['payload_sha256'] = hashlib.sha256(payload).hexdigest()
+    target = Path(__file__).with_name('radial_indicator.json')
+    sidecar = Path(__file__).with_name('superweapon_range.meta.json')
+    if difference := native.first_difference(sources,
+            native.oracle_sources.source_identity(source_paths)):
+        raise native.OracleError(f'Source changed during native generation: {difference}')
+    if args.write:
+        corpus = json.loads(target.read_text(encoding='utf-8'))
+        corpus['superweapon_range'] = generated
+        target.write_text(json.dumps(corpus, indent=2, allow_nan=False) + '\n',
+                          encoding='utf-8')
+        sidecar.write_text(json.dumps(metadata, indent=2, allow_nan=False) + '\n',
+                           encoding='utf-8')
+        print(f'WROTE {target} and {sidecar}; review the native controls before accepting them')
+        return
+    if not target.is_file() or not sidecar.is_file():
+        raise native.OracleError('Superweapon corpus or sidecar is missing; use --write deliberately')
+    corpus = json.loads(target.read_text(encoding='utf-8'))
+    if difference := native.first_difference(corpus.get('superweapon_range'), generated):
+        raise native.OracleMismatch(f'Superweapon corpus mismatch: {difference}')
+    expected_metadata = json.loads(sidecar.read_text(encoding='utf-8'))
+    if difference := native.first_difference(expected_metadata, metadata):
+        raise native.OracleMismatch(f'Superweapon provenance mismatch: {difference}')
+    print(f'PASS {target}: native superweapon controls match; no files written')
+
+
 def generate_infantry_berserk_body():
     """Eight body draws and 28 joined Object/viewport draws in one owner.
 
@@ -4822,6 +5123,10 @@ def infantry_berserk_body_metadata():
 
 if __name__=='__main__':
     import sys
+    if '--superweapon-range' in sys.argv[1:]:
+        finish_superweapon_range_controls(
+            argv=[arg for arg in sys.argv[1:] if arg!='--superweapon-range'])
+        raise SystemExit(0)
     if '--infantry-berserk-body' in sys.argv[1:]:
         native.finish_vectors(generate_infantry_berserk_body,
             Path(__file__).with_name('infantry_berserk_body.json'),

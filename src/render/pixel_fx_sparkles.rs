@@ -259,8 +259,11 @@ pub struct SparkleInput<'a> {
 fn gate_cell(rx: u16, ry: u16, input: &SparkleInput<'_>) -> Option<(bool, &'static SparkleParams)> {
     let cell = input.resolved_terrain.cell(rx, ry)?;
     let has_ore = ore_value_nonzero(rx, ry, input);
-    if !cell.is_water && !has_ore {
-        return None; // L17
+    // L17: `CMP dword ptr [ESI + 0xEC], 0x2` @ 0x006D7A6C, the cell's
+    // LandType against Water.
+    let water = cell.land_type() == crate::rules::terrain_rules::LandType::Water.as_index();
+    if !water && !has_ore {
+        return None;
     }
 
     if let Some(occ) = input.occupancy.get(rx, ry)

@@ -32,7 +32,7 @@ use crate::rules::jumpjet_params::JumpjetParams;
 use crate::rules::locomotor_type::{LocomotorKind, MovementZone, SpeedType};
 use crate::rules::sound_ini::SoundRegistry;
 use crate::rules::terrain_rules::LandType;
-use crate::util::fixed_math::{SimFixed, sim_from_f32};
+use crate::util::fixed_math::SimFixed;
 
 /// Which type registry an object belongs to.
 ///
@@ -2631,9 +2631,11 @@ impl ObjectType {
             walk_rate: section.read_int("WalkRate", 1),
             idle_rate: section.read_int("IdleRate", 0),
             // Double fields (`0x007124A3..0x007124E5`).
-            weight: sim_from_f32(section.read_double("Weight", 1.0) as f32),
-            accel_factor: sim_from_f32(section.read_double("AccelerationFactor", 0.03) as f32),
-            decel_factor: sim_from_f32(section.read_double("DeaccelerationFactor", 0.002) as f32),
+            weight: SimFixed::from_num(section.read_double("Weight", 1.0) as f32),
+            accel_factor: SimFixed::from_num(section.read_double("AccelerationFactor", 0.03) as f32),
+            decel_factor: SimFixed::from_num(
+                section.read_double("DeaccelerationFactor", 0.002) as f32
+            ),
             accelerates: section.read_bool("Accelerates", true),
             passive: category == ObjectCategory::Vehicle && section.read_bool("Passive", false),
             is_train: section.read_bool("IsTrain", false),
@@ -2642,7 +2644,7 @@ impl ObjectType {
             is_dropship: section.read_bool("IsDropship", false),
             // `ReadDouble(-1)` (`0x00712364..0x00712399`): -1 keeps the
             // constructor's 20 degrees.
-            pitch_angle: sim_from_f32(
+            pitch_angle: SimFixed::from_num(
                 match section.read_double("PitchAngle", -1.0) {
                     -1.0 => 20.0,
                     degrees => degrees as f32,
@@ -5898,7 +5900,7 @@ mod tests {
             IniFile::from_str("[MTNK]\nStrength=300\nArmor=heavy\nSpeed=6\nAirRangeBonus=4\n");
         let section = ini.section("MTNK").expect("section");
         let obj = ObjectType::from_ini_section("MTNK", section, ObjectCategory::Vehicle);
-        assert_eq!(obj.air_range_bonus, Some(sim_from_f32(4.0)));
+        assert_eq!(obj.air_range_bonus, Some(SimFixed::from_num(4.0_f32)));
     }
 
     #[test]
@@ -6027,7 +6029,7 @@ mod tests {
         );
         assert_eq!(
             zep.jumpjet_params.speed,
-            crate::util::fixed_math::sim_from_f32(5.0)
+            crate::util::fixed_math::SimFixed::from_num(5.0_f32)
         );
         assert_eq!(zep.jumpjet_params.climb, 6.0);
         assert_eq!(zep.jumpjet_params.crash, 12.0);
@@ -6042,7 +6044,7 @@ mod tests {
         );
         assert_eq!(
             disk.jumpjet_params.speed,
-            crate::util::fixed_math::sim_from_f32(16.0)
+            crate::util::fixed_math::SimFixed::from_num(16.0_f32)
         );
         assert_eq!(disk.jumpjet_params.climb, 8.0);
         assert_eq!(disk.jumpjet_params.crash, 15.0);

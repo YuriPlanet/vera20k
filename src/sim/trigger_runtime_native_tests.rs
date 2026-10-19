@@ -424,11 +424,11 @@ fn naval_event_retail_all05_removal_enables_black_eagle_support_once() {
         native["actions"].as_str()
     );
     assert_eq!(
-        map.events[source].conditions[0].kind,
+        map.events[source].conditions()[0].kind,
         integer(&native["native_read"]["kind"])
     );
     assert_eq!(
-        map.events[source].conditions[0].value,
+        map.events[source].conditions()[0].value,
         integer(&native["native_read"]["value"])
     );
 
@@ -441,11 +441,10 @@ fn naval_event_retail_all05_removal_enables_black_eagle_support_once() {
         records.push_str(&format!("[{section}]\n"));
         for (key, value) in map.ini.section(section).unwrap().raw_entries() {
             if (section == "Tags"
-                && map.tags.get(key).is_some_and(|tag| {
-                    tag.fields
-                        .get(2)
-                        .is_some_and(|target| chain.contains(&target.as_str()))
-                }))
+                && map
+                    .tags
+                    .get(key)
+                    .is_some_and(|tag| tag.trigger().is_some_and(|target| chain.contains(&target))))
                 || (section != "Tags" && chain.contains(&key))
             {
                 records.push_str(&format!("{key}={value}\n"));
@@ -697,15 +696,7 @@ fn funds_events_match_original_house_logic_and_cleanup_histories() {
             if mixed {
                 // Logic runs before House; the original mixed trigger can
                 // succeed on frame3750, which is not an eighth-frame poll.
-                sim.advance_triggers(
-                    TriggerInputs {
-                        events: &Default::default(),
-                        actions: &Default::default(),
-                        rules: Some(&rules),
-                    },
-                    Some(&overlay),
-                    FrameEffects::default(),
-                );
+                sim.advance_triggers(Some(&rules), Some(&overlay), FrameEffects::default());
             }
             sim.raise_house_tags(
                 houses[0],
@@ -1581,7 +1572,7 @@ struct All01ChargeInputs {
 fn all01_due_charge_and_damage_share_the_production_house_power_phase() {
     use crate::map::{entities::EntityCategory, resolved_terrain, waypoints::Waypoint};
     use crate::rules::{ini_parser::IniFile, team_ai_ini::TeamAiIniRegistry};
-    use crate::sim::world::{TickLane, TriggerInputs};
+    use crate::sim::world::TickLane;
     let charge: Value = serde_json::from_str(crate::test_fixture::text(
         "tools/spatial_oracle/trigger_super_charge_percent.json",
     ))
@@ -1748,11 +1739,6 @@ fn all01_due_charge_and_damage_share_the_production_house_power_phase() {
             None,
             67,
             TickLane::Ordinary,
-            Some(TriggerInputs {
-                events: &map.events,
-                actions: &map.actions,
-                rules: Some(&rules),
-            }),
             FrameEffects::default(),
         )
         .unwrap();
@@ -1774,11 +1760,6 @@ fn all01_due_charge_and_damage_share_the_production_house_power_phase() {
         None,
         67,
         TickLane::Ordinary,
-        Some(TriggerInputs {
-            events: &map.events,
-            actions: &map.actions,
-            rules: Some(&rules),
-        }),
         FrameEffects::default(),
     )
     .unwrap();
@@ -1846,11 +1827,6 @@ fn all01_due_charge_and_damage_share_the_production_house_power_phase() {
         None,
         67,
         TickLane::Ordinary,
-        Some(TriggerInputs {
-            events: &map.events,
-            actions: &map.actions,
-            rules: Some(&rules),
-        }),
         FrameEffects::default(),
     )
     .unwrap();
@@ -1945,7 +1921,7 @@ fn native_all01_super_charge_dispatch_uses_retail_type_and_retained_operands() {
     let authored = map
         .actions
         .values()
-        .flat_map(|action| &action.entries)
+        .flat_map(|action| action.entries())
         .find(|entry| entry.kind == ACTION_SET_SUPER_CHARGE_PERCENTAGE)
         .unwrap();
     assert_eq!(
@@ -2004,8 +1980,8 @@ fn native_all01_super_charge_dispatch_uses_retail_type_and_retained_operands() {
         let entry = crate::map::actions::parse_actions(&ini)
             .remove("CHARGE")
             .unwrap()
-            .entries
-            .remove(0);
+            .entries()[0]
+            .clone();
         assert_eq!(json!(entry.auxiliary_value()), row["read"]["auxiliary"]);
         let action = definitions.resolve_action(entry, None, None);
         assert_eq!(json!(action.value), row["read"]["value"]);
@@ -2115,8 +2091,8 @@ fn native_damage_at_waypoint_dispatch_matches_original_controls() {
         let entry = crate::map::actions::parse_actions(&ini)
             .remove("DAMAGE")
             .unwrap()
-            .entries
-            .remove(0);
+            .entries()[0]
+            .clone();
         let action = definitions.resolve_action(entry, None, None);
         assert_eq!(json!(action.value), row["read"]["value"], "{name}: +90");
         sim.trigger_runtime.definitions = definitions;
@@ -2324,7 +2300,7 @@ fn native_all01_reactor_damage_uses_retail_rules_and_shared_power_owner() {
     let mut definitions = RuntimeDefinitions::default();
     let typ = definitions.trigger_type("DAMAGE").unwrap();
     let entry = map.actions["087857CC"]
-        .entries
+        .entries()
         .iter()
         .find(|entry| entry.kind == ACTION_DAMAGE_AT_WAYPOINT)
         .unwrap()
@@ -2541,8 +2517,8 @@ fn native_trigger_reveal_action_matches_original_controls() {
         let entry = crate::map::actions::parse_actions(&ini)
             .remove("REVEAL")
             .unwrap()
-            .entries
-            .remove(0);
+            .entries()[0]
+            .clone();
         let action = definitions.resolve_action(entry, None, None);
         assert_eq!(
             json!(action.value),
@@ -2689,7 +2665,7 @@ fn native_trigger_reveal_action_matches_original_controls() {
         };
         compare(&sim.fog, &row["final_cells"]);
         let config = sim.sight_reveal_config(Some(&rules));
-        let heights = sim.path_grid().unwrap().ground_height_grid();
+        let heights = sim.sight_height_grid(&config);
         let mut probe = Simulation::with_seed(31);
         probe.fog = FogState::new(128, 128);
         probe.session.current_house = Some(player);
@@ -2838,12 +2814,12 @@ fn native_trigger_reveal_retail_definitions_use_retained_radius_and_literal_wayp
         let id = trigger["id"].as_str().unwrap();
         let authored = &map.actions[id];
         assert_eq!(
-            authored.entries.len(),
+            authored.entries().len(),
             trigger["actions"].as_array().unwrap().len(),
             "{id}"
         );
         for (entry, expected) in authored
-            .entries
+            .entries()
             .iter()
             .zip(trigger["actions"].as_array().unwrap())
         {
@@ -2864,7 +2840,7 @@ fn native_trigger_reveal_retail_definitions_use_retained_radius_and_literal_wayp
         json!(
             map.actions
                 .values()
-                .flat_map(|actions| &actions.entries)
+                .flat_map(|actions| actions.entries())
                 .filter(|entry| entry.kind == 16)
                 .count()
         ),
@@ -2898,8 +2874,8 @@ fn action_11_inline_labels_and_ordered_effects_match_original_controls() {
             crate::map::actions::parse_actions(&ini)
                 .remove("LABEL")
                 .unwrap()
-                .entries
-                .remove(0)
+                .entries()[0]
+                .clone()
         } else {
             // Original constructor-only control retains an empty inline label.
             ActionEntry {
@@ -3360,7 +3336,7 @@ fn definition_factories_match_all_original_action_reference_controls() {
         let record = crate::map::actions::parse_actions(&ini)
             .remove("REFERENCE")
             .unwrap();
-        let resolved = definitions.resolve_action(record.entries[0].clone(), None, None);
+        let resolved = definitions.resolve_action(record.entries()[0].clone(), None, None);
         let names: Vec<_> = match parameter_type {
             1 | 5 => definitions.team_types.iter().map(String::as_str).collect(),
             2 => definitions
@@ -3623,15 +3599,7 @@ fn physical_retail_sov01_registration_and_enable_timers_match_original_at_all_di
         compare_stock_state(&sim, draw_count, &row["history"][1]);
         sim.trigger_runtime.stop_before_action = Some(integer(&row["first_poll"]["action_kind"]));
         let boundary = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            sim.advance_triggers(
-                TriggerInputs {
-                    events: &map.events,
-                    actions: &map.actions,
-                    rules: Some(&rules),
-                },
-                None,
-                FrameEffects::default(),
-            )
+            sim.advance_triggers(Some(&rules), None, FrameEffects::default())
         }))
         .expect_err("same original first gameplay-action boundary must stop the prefix");
         assert_eq!(*boundary.downcast::<i32>().unwrap(), 46);
@@ -4252,15 +4220,7 @@ pub(super) fn replay_native_histories(rows: impl Iterator<Item = Value>) -> usiz
                         ]
                     }
                     "poll" => {
-                        effects = sim.advance_triggers(
-                            TriggerInputs {
-                                events: &HashMap::new(),
-                                actions: &HashMap::new(),
-                                rules: Some(&rules),
-                            },
-                            None,
-                            FrameEffects::default(),
-                        );
+                        effects = sim.advance_triggers(Some(&rules), None, FrameEffects::default());
                     }
                     kind => panic!("unhandled native operation {name}/{step}/{kind}"),
                 }

@@ -139,6 +139,7 @@ pub mod map; // bridge topology service (first member of the map/cell-substrate 
 // --- Mutable per-cell overlay state (ore density, wall damage, bridge frames) ---
 pub mod cell_neighbors;
 pub mod overlay_grid;
+pub(crate) mod overlay_mark_host; // the live Simulation's host of OverlayClass::Mark
 
 // --- Mutable per-cell smudge state (craters, scorches, pre-placed map decals) ---
 pub mod smudge_grid;

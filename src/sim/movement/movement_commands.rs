@@ -132,14 +132,21 @@ pub(crate) fn prepare_walk_destination(
     true
 }
 
+/// Enter, current (Get_Mission) or queued (`+0xB4`), without a radio contact
+/// (`0x0065AE30`): the class setters run their Enter radio arm instead of
+/// clearing the path head (Infantry `0x0051AC25..0x0051AC4B`, Unit
+/// `0x00741C4F..0x00741C78`).
+pub(crate) fn enter_without_contact(entity: &GameEntity) -> bool {
+    (entity.mission.effective().raw() == 7 || entity.mission.queued().raw() == 7)
+        && entity.radio_contacts.is_empty()
+}
+
 /// The setters' one-word PathHead clear, which Enter (current or queued)
 /// without a radio contact skips: Infantry 51AC25..51AD17, Unit
 /// 741C4F..741C78 -> 741E88 (both the NULL and the non-NULL destination).
 /// NavQueue, suffix and reference survive.
 pub(crate) fn clear_destination_path_head(entity: &mut GameEntity) {
-    if (entity.mission.effective().raw() != 7 && entity.mission.queued().raw() != 7)
-        || !entity.radio_contacts.is_empty()
-    {
+    if !enter_without_contact(entity) {
         entity.navigation.path_replay.clear_live_head();
     }
 }

@@ -239,4 +239,18 @@ mod tests {
             );
         }
     }
+
+    /// A compass facing's cell step converts back through the native angle
+    /// path to within a few facing units of where it started.
+    #[test]
+    fn delta_from_facing_round_trips_through_the_native_facing() {
+        for facing in (0u8..=224).step_by(32) {
+            let (dx, dy) = delta_from_facing(facing);
+            let recovered = crate::util::direction_tables::facing8_from_delta(dx, dy);
+            let distance = recovered
+                .wrapping_sub(facing)
+                .min(facing.wrapping_sub(recovered));
+            assert!(distance <= 4, "{facing} -> ({dx},{dy}) -> {recovered}");
+        }
+    }
 }

@@ -147,7 +147,6 @@ fn house_pass_carries_stored_building_order_before_recalculation() {
             None,
             22,
             crate::sim::world::TickLane::Ordinary,
-            None,
             Default::default(),
         )
         .unwrap();

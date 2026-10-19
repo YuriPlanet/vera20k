@@ -156,7 +156,6 @@ fn brute_smash_emits_debris(elite: bool, expected: SmashDebrisExpectation) {
                 None,
                 33,
                 TickLane::Ordinary,
-                None,
                 FrameEffects::default(),
             )
             .expect("ordinary Brute combat frame");
@@ -325,7 +324,6 @@ fn brute_smash_emits_debris(elite: bool, expected: SmashDebrisExpectation) {
                     None,
                     33,
                     TickLane::Ordinary,
-                    None,
                     FrameEffects::default(),
                 )
                 .expect("live debris continuation frame");
@@ -338,7 +336,6 @@ fn brute_smash_emits_debris(elite: bool, expected: SmashDebrisExpectation) {
                             None,
                             33,
                             TickLane::Ordinary,
-                            None,
                             FrameEffects::default(),
                         )
                         .expect("restored live debris continuation frame");

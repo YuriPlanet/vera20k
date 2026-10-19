@@ -63,7 +63,7 @@ pub(super) fn fixture(corpus: &Value, row: &Value, retail: RetailBattleRules) ->
     let registry = OverlayTypeRegistry::from_ini(&ini, Some(&retail.fixed_art));
     let terrain_rules = TerrainRules::from_ini(&ini);
     let profile = terrain_rules
-        .semantics_by_name("Clear")
+        .semantics_for_land_type(crate::rules::terrain_rules::LandType::Clear.as_index())
         .unwrap()
         .speed_costs;
     let stride = corpus["histories"]["world"]["zone_storage"]["stride"]

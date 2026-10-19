@@ -290,7 +290,7 @@ fn assert_paid_deso_light_lifecycle(packet_path: &'static str, profile_path: &'s
             .map(|pixel| (pixel[0] * 255.0).round() as u8)
             .collect();
         assert_eq!(actual_a, a_pixels(input, size), "{phase}: actual live A");
-        let mut grid = build_terrain_grid_from_resolved(terrain, None, None);
+        let mut grid = build_terrain_grid_from_resolved(terrain, None);
         grid.cells.retain(|cell| [cell.rx, cell.ry] == coords);
         assert_eq!(grid.cells.len(), 1);
         for (format, batch, atlas, pool) in &mut renderers {
@@ -691,7 +691,7 @@ fn assert_retail_amcv_sight_raster(moving: bool) {
             i64::from(light.common_scalar),
             row["output"]["common_scalar"].as_i64().unwrap()
         );
-        let mut grid = build_terrain_grid_from_resolved(terrain, None, None);
+        let mut grid = build_terrain_grid_from_resolved(terrain, None);
         grid.cells.retain(|cell| [cell.rx, cell.ry] == coords);
         assert_eq!(grid.cells.len(), 1);
         for (format, batch, atlas, pool) in &mut renderers {
@@ -1092,7 +1092,7 @@ fn assert_retail_tmp_rasters(packet: &Value, filename: &str, sub_tile: u8) {
                 assert!(row["output"]["runs"].as_array().unwrap().is_empty());
             }
             assert_eq!(live.level, level);
-            let mut grid = build_terrain_grid_from_resolved(terrain, None, None);
+            let mut grid = build_terrain_grid_from_resolved(terrain, None);
             grid.cells.retain(|cell| [cell.rx, cell.ry] == coords);
             assert_eq!(grid.cells.len(), 1);
             let lights = if actual_map {
@@ -1321,7 +1321,7 @@ fn retail_partial_redraw_continuation_matches_full_reconstruction() {
     let hash = sim.state_hash();
     let rng = sim.rng_state();
     let terrain = sim.resolved_terrain.as_ref().unwrap();
-    let grid = build_terrain_grid_from_resolved(terrain, None, None);
+    let grid = build_terrain_grid_from_resolved(terrain, None);
     let lights = build_cell_light_grid_from_heights_and_units(
         terrain.iter().map(|cell| ((cell.rx, cell.ry), cell.level)),
         profile(&serde_json::json!({"scene_lighting": scene["lighting"]})),

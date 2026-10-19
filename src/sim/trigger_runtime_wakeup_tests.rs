@@ -231,7 +231,6 @@ fn retail_all02_prisoner_damage_enable_elapsed_wakeup_survives_restore() {
     use crate::rules::{process_owner::NativeScenarioRulesPrefix, team_ai_ini::TeamAiIniRegistry};
     use crate::sim::mission::MissionType;
     use crate::sim::snapshot::GameSnapshot;
-    use std::collections::HashMap;
 
     let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
         "tools/spatial_oracle/trigger_wakeup.json",
@@ -286,11 +285,9 @@ fn retail_all02_prisoner_damage_enable_elapsed_wakeup_survives_restore() {
         body.push_str(&format!("[{section}]\n"));
         for (key, value) in map.ini.section(section).unwrap().raw_entries() {
             let selected = if section == "Tags" {
-                map.tags.get(key).is_some_and(|tag| {
-                    tag.fields
-                        .get(2)
-                        .is_some_and(|id| chain.contains(&id.as_str()))
-                })
+                map.tags
+                    .get(key)
+                    .is_some_and(|tag| tag.trigger().is_some_and(|id| chain.contains(&id)))
             } else {
                 chain.contains(&key)
             };
@@ -427,15 +424,7 @@ fn retail_all02_prisoner_damage_enable_elapsed_wakeup_survives_restore() {
     assert_eq!(guards.len(), 8);
     assert_eq!(sim.trigger_runtime.tag(wake_tag).unwrap().refs, 7);
     let poll = |sim: &mut Simulation| {
-        sim.advance_triggers(
-            TriggerInputs {
-                events: &HashMap::new(),
-                actions: &HashMap::new(),
-                rules: Some(&rules),
-            },
-            Some(&overlays),
-            FrameEffects::default(),
-        );
+        sim.advance_triggers(Some(&rules), Some(&overlays), FrameEffects::default());
     };
     poll(&mut sim);
     assert!(sim.trigger_runtime.action_trace.is_empty());

@@ -650,6 +650,8 @@ fn load_shell_palette(assets: &AssetManager) -> Option<Palette> {
     load_named_palette(assets, "SHELL.PAL")
 }
 
+/// Shell palettes come from ConvertClass__BuildFromPaletteFile `0x0072ADE0`,
+/// the shared palette conversion.
 fn load_named_palette(assets: &AssetManager, name: &str) -> Option<Palette> {
     let Some(palette_bytes) = assets.get_ref(name) else {
         log::warn!("Missing verified Skirmish shell palette {name}");

@@ -16,6 +16,10 @@ pub mod chrono_screen;
 mod chronosphere;
 pub use chronosphere::CHRONO_WARP_SELECTION_INDEX;
 pub mod airstrike_tint;
+#[cfg(test)]
+mod can_fire_tests;
+#[cfg(test)]
+mod view_admission_tests;
 #[cfg(any(test, feature = "test-support"))]
 mod cell_receiver_tests;
 #[cfg(test)]
@@ -43,8 +47,6 @@ pub mod psychic_reveal;
 mod spy_plane;
 #[cfg(test)]
 mod spy_plane_tests;
-#[cfg(test)]
-mod view_admission_tests;
 
 use crate::rules::ruleset::RuleSet;
 use crate::rules::superweapon_type::SuperWeaponType;
@@ -525,13 +527,16 @@ impl SuperWeaponInstance {
         true
     }
 
-    /// `SuperClass::CanFire @ 0x006CC360`: a suspended Super (`+0x70`) is
-    /// refused before its charge is read; then the charged flag (`+0x6F`)
-    /// decides, with `is_ready` standing in for the charge-drain `+0x7C`
-    /// state as elsewhere. The sidebar's left-click arm path reads exactly
-    /// this (`SelectClass::Action @ 0x006AAD00`, call at `0x006AAEEA`).
-    pub(crate) fn can_fire(&self) -> bool {
-        !self.is_suspended && self.is_ready
+    /// SuperClass::CanFire6CC360, used by Select6AAEEA before selecting a
+    /// target. This is distinct from ClickFire: no granted/timer test, and
+    /// charge-drain types read their signed state rather than IsReady.
+    fn can_fire(&self, sw: &SuperWeaponType) -> bool {
+        !self.is_suspended
+            && if sw.use_charge_drain {
+                self.charge_drain_state != 0
+            } else {
+                self.is_ready
+            }
     }
 
     /// `SuperClass::ClickFire @ 0x006CB920`'s admission without charge drain
@@ -867,10 +872,7 @@ pub struct SuperWeaponView {
     pub progress: f32,
     pub is_ready: bool,
     pub is_online: bool,
-    /// Fire admission ([`SuperWeaponInstance::can_fire`],
-    /// `SuperClass::CanFire @ 0x006CC360`): false while a charged Super is
-    /// suspended. The sidebar's arm decision consumes this one field
-    /// instead of composing `is_ready`/`is_online` itself.
+    /// Native CanFire6CC360, independently of the raw charge/display flags.
     pub can_fire: bool,
     pub sidebar_image: Option<String>,
 }
@@ -899,7 +901,7 @@ pub fn superweapon_views_for_owner(
             progress: inst.charge_progress(sim.session.binary_frame, inst.recharge_time(sw_type)),
             is_ready: inst.is_ready,
             is_online: !inst.is_suspended,
-            can_fire: inst.can_fire(),
+            can_fire: inst.can_fire(sw_type),
             sidebar_image: sw_type.sidebar_image.clone(),
         });
     }
@@ -1031,7 +1033,8 @@ pub(crate) fn tick_active_superweapon_effects(
         sim.update_lighting();
     }
     let dominator = psychic_dominator::process(sim, rules, overlay_registry, frame_effects);
-    sim.process_chrono_screen_effect();
+    let chrono = sim.process_chrono_screen_effect();
+    sim.publish_trigger_effects(chrono);
     let storm = lightning_storm::process(sim, rules, overlay_registry, frame_effects);
     dominator || storm
 }

@@ -184,7 +184,6 @@ impl Encounter {
                 None,
                 33,
                 TickLane::Ordinary,
-                None,
                 FrameEffects::default(),
             )
             .expect("ordinary open-water Squid combat frame");
@@ -790,7 +789,6 @@ fn stock_squid_internal_snapshot_preserves_live_roll_progress_and_reference() {
                 None,
                 33,
                 TickLane::Ordinary,
-                None,
                 FrameEffects::default(),
             )
             .expect("internal restored grapple continuation");

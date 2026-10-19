@@ -37,7 +37,7 @@ fn rules(bind_warp_art: bool) -> RuleSet {
 fn install_destination_cells(sim: &mut Simulation, rules: &RuleSet) {
     let speed_costs = rules
         .terrain_rules
-        .semantics_by_name("Clear")
+        .semantics_for_land_type(crate::rules::terrain_rules::LandType::Clear.as_index())
         .unwrap()
         .speed_costs;
     sim.install_resolved_terrain_for_new_map(ResolvedTerrainGrid::from_cells(

@@ -358,8 +358,6 @@ fn retail_damage_scene(route: &Value) -> Option<RetailDamageScene> {
     let clear = terrain_rules.semantics_for_land_type(0).unwrap();
     let terrain = crate::map::resolved_terrain::test_grid(64, 64, |x, y| {
         let mut cell = crate::map::resolved_terrain::test_clear_cell(x, y);
-        cell.terrain_class = clear.terrain_class;
-        cell.base_terrain_class = clear.terrain_class;
         cell.speed_costs = clear.speed_costs;
         cell.base_speed_costs = clear.speed_costs;
         cell
@@ -761,15 +759,7 @@ fn retail_all06_red_damage_runs_parliament_destroy_attached_synchronously() {
     let timer = sim.trigger_runtime.trigger(next).unwrap().timer;
     sim.session.binary_frame = timer.start_frame().wrapping_add(timer.duration()) as u32;
     let previous_actions = sim.trigger_runtime.action_trace.len();
-    let effects = sim.advance_triggers(
-        TriggerInputs {
-            events: &map.events,
-            actions: &map.actions,
-            rules: Some(&rules),
-        },
-        Some(&overlays),
-        FrameEffects::default(),
-    );
+    let effects = sim.advance_triggers(Some(&rules), Some(&overlays), FrameEffects::default());
     assert!(!sim.trigger_runtime.trigger(next).unwrap().enabled);
     assert_eq!(
         sim.trigger_runtime.action_trace[previous_actions..]
@@ -777,7 +767,7 @@ fn retail_all06_red_damage_runs_parliament_destroy_attached_synchronously() {
             .map(|row| row.0)
             .collect::<Vec<_>>(),
         map.actions["048BB6BC"]
-            .entries
+            .entries()
             .iter()
             .map(|action| action.kind)
             .collect::<Vec<_>>()

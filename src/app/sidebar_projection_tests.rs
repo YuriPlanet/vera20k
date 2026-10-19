@@ -822,7 +822,6 @@ fn building_production_darkens_other_cameos_until_cancelled() {
                 None,
                 67,
                 crate::sim::world::TickLane::Ordinary,
-                None,
                 crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
@@ -1150,25 +1149,33 @@ fn retail_rules_admission_and_csf_names_keep_the_same_identity_in_every_view() {
     assert_eq!(observed, visible);
 }
 
-/// Issue #1313 regression, synthetic fixture (no retail data): NAMISL's
-/// NukeSpecial (`IsPowered=yes`), charged, then held by low power. The
-/// sim-owned view admission (`can_fire`, `SuperClass::CanFire @
-/// 0x006CC360`: suspended `+0x70` is refused before the charge `+0x6F`)
-/// must gate the cameo's arm decision (`SelectClass::Action @ 0x006AAD00`
-/// reads CanFire at `0x006AAEEA`): an offline charged Super is the
-/// `0x006AAFB1` no-op, not an armed targeting cursor that can never fire.
+/// Supplied charge/hold flags isolate retained membership from the live click
+/// decision. Native CanFire/Select controls and real retail power transitions
+/// are covered separately by the superweapon cameo tests.
 #[test]
-fn suspended_charged_superweapon_cameo_does_not_arm_targeting() {
-    // The Defense strip's SW cameo for the sim's current NukeSpecial view.
+fn superweapon_retained_cameo_keeps_identity_through_hold_and_recovery() {
+    use crate::app::input::state::MatchInputState;
+    use crate::app::input::superweapon_cameo::{self, SuperWeaponClick};
+    use crate::app::types::TargetingMode;
+    use crate::sim::superweapon::{SuperWeaponInstance, superweapon_views_for_owner};
+
     fn sw_cameo(
         sim: &Simulation,
         rules: &RuleSet,
         owner: InternedId,
+        projection: &mut SidebarProjectionState,
         armed: Option<&ArmedSidebarEntry>,
-    ) -> crate::ui::sidebar::SidebarItem {
-        let sw_views = crate::sim::superweapon::superweapon_views_for_owner(sim, rules, &owner);
-        let cameos =
-            crate::ui::sidebar::cameo_order::CameoStrips::layout_fixture(&[], &[], &sw_views);
+    ) -> (crate::ui::sidebar::SidebarItem, CameoReconcile) {
+        let sw_views = superweapon_views_for_owner(sim, rules, &owner);
+        let candidates = cameo_candidates(sim, rules, None, owner, &[], &[], &sw_views);
+        let change = projection.reconcile_cameos(owner, &candidates, 3, &[]);
+        let ids: Vec<_> = projection
+            .cameo_strips()
+            .items(SidebarTab::Defense)
+            .iter()
+            .map(|entry| entry.id)
+            .collect();
+        assert_eq!(ids, vec![CameoId::SuperWeapon(sw_views[0].type_id)]);
         let sidebar = build_sidebar_view_with_spec(
             SidebarChromeLayoutSpec::stock(),
             800.0,
@@ -1183,7 +1190,7 @@ fn suspended_charged_superweapon_cameo_does_not_arm_targeting() {
             &[],
             armed,
             &[],
-            None,
+            Some(&sim.interner),
             &sw_views,
             &SidebarGadgetState::new(),
             None,
@@ -1191,20 +1198,48 @@ fn suspended_charged_superweapon_cameo_does_not_arm_targeting() {
             None,
             None,
             [None; 2],
-            &cameos,
+            projection.cameo_strips(),
         );
-        sidebar
-            .items
-            .iter()
-            .find(|item| item.is_superweapon)
-            .expect("Defense strip holds the SW cameo")
-            .clone()
+        assert_eq!(
+            sidebar.items.len(),
+            1,
+            "one retained Super, without duplicates"
+        );
+        (sidebar.items[0].clone(), change)
+    }
+
+    fn click(
+        sim: &Simulation,
+        rules: &RuleSet,
+        owner: InternedId,
+        item: &crate::ui::sidebar::SidebarItem,
+        right: bool,
+        input: &mut MatchInputState,
+        gadgets: &mut SidebarGadgetState,
+    ) -> SuperWeaponClick {
+        let SidebarAction::SuperWeaponPress {
+            section,
+            right: routed_right,
+        } = hit_test_item(item, right, false)
+        else {
+            panic!("held and charging cameos must still forward their press");
+        };
+        assert_eq!(section, "NukeSpecial");
+        assert_eq!(routed_right, right);
+        let views = superweapon_views_for_owner(sim, rules, &owner);
+        superweapon_cameo::press(
+            input,
+            gadgets,
+            views.iter().find(|view| view.display_name == section),
+            rules.super_weapon(&section).unwrap().action.as_deref(),
+            right,
+        )
     }
 
     let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
         "[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n\
          [SuperWeaponTypes]\n0=NukeSpecial\n\
-         [NukeSpecial]\nType=MultiMissile\nRechargeTime=10\nIsPowered=yes\n",
+         [NukeSpecial]\nType=MultiMissile\nAction=Nuke\nRechargeTime=10\nIsPowered=yes\n",
     ))
     .unwrap();
     let mut sim = Simulation::with_seed(0);
@@ -1213,52 +1248,120 @@ fn suspended_charged_superweapon_cameo_does_not_arm_targeting() {
         .insert(owner, HouseState::new(owner, 0, None, true, 0, 10));
     sim.session.house_order.push(owner);
     let sw_type = sim.interner.intern("NukeSpecial");
-    let mut instance = crate::sim::superweapon::SuperWeaponInstance::new(sw_type, owner, 0);
+    let mut instance = SuperWeaponInstance::new(sw_type, owner, 0);
     instance.is_active = true;
     instance.is_ready = true;
-    instance.is_suspended = true;
     sim.super_weapons
         .entry(owner)
         .or_default()
         .insert(sw_type, instance);
+    let mut projection = SidebarProjectionState::default();
+    let (online, initial) = sw_cameo(&sim, &rules, owner, &mut projection, None);
+    assert!(online.enabled && online.is_ready);
+    assert_eq!(
+        initial
+            .transitions()
+            .tab_button_disabled(SidebarTab::Defense),
+        Some(false)
+    );
 
-    let held = sw_cameo(&sim, &rules, owner, None);
-    assert!(!held.enabled, "the offline overlay still draws");
-    assert!(held.is_ready, "the hold keeps the charged look");
-    assert!(!held.sw_can_fire, "0x006CC360 refuses the suspended Super");
-    // Left click never arms; right click stays the strip's no-op.
-    assert_eq!(hit_test_item(&held, false, false), SidebarAction::None);
-    assert_eq!(hit_test_item(&held, true, false), SidebarAction::None);
+    sim.super_weapons
+        .get_mut(&owner)
+        .unwrap()
+        .get_mut(&sw_type)
+        .unwrap()
+        .is_suspended = true;
+    let (held, change) = sw_cameo(&sim, &rules, owner, &mut projection, None);
+    assert_eq!(
+        change,
+        CameoReconcile::default(),
+        "hold keeps the retained entry"
+    );
+    assert!(!held.enabled && held.is_ready);
+    let mut input = MatchInputState::new(Default::default());
+    let mut gadgets = SidebarGadgetState::new();
+    input.begin_building_placement("BUILDING", 0, owner);
+    gadgets.repair_mode_on = true;
+    // Cached online draw flags cannot admit the newly held live Super.
+    assert_eq!(
+        click(
+            &sim,
+            &rules,
+            owner,
+            &online,
+            false,
+            &mut input,
+            &mut gadgets
+        ),
+        SuperWeaponClick::Refused
+    );
+    assert!(
+        input
+            .targeting_mode
+            .as_ref()
+            .unwrap()
+            .as_building_placement()
+            .is_some()
+    );
+    assert!(gadgets.repair_mode_on);
 
-    // Control: an armed-then-held Super's cameo click is the same no-op;
-    // the armed state itself is out of this chain's scope.
-    let armed_held = sw_cameo(
+    input.targeting_mode = Some(TargetingMode::SuperWeapon("NukeSpecial".into()));
+    let (armed_held, change) = sw_cameo(
         &sim,
         &rules,
         owner,
+        &mut projection,
         Some(&ArmedSidebarEntry::SuperWeapon("NukeSpecial".into())),
     );
+    assert_eq!(change, CameoReconcile::default());
     assert!(armed_held.is_armed);
     assert_eq!(
-        hit_test_item(&armed_held, false, false),
-        SidebarAction::None
+        click(
+            &sim,
+            &rules,
+            owner,
+            &armed_held,
+            false,
+            &mut input,
+            &mut gadgets
+        ),
+        SuperWeaponClick::Refused
+    );
+    assert_eq!(
+        input.targeting_mode.as_ref().unwrap().as_super_weapon(),
+        Some("NukeSpecial")
+    );
+    assert_eq!(
+        click(&sim, &rules, owner, &held, true, &mut input, &mut gadgets),
+        SuperWeaponClick::None
+    );
+    assert!(
+        input.targeting_mode.is_none(),
+        "held right-click cancels targeting"
     );
 
-    // Controls: releasing the hold (still charged) arms again; a charging
-    // Super never arms.
     sim.super_weapons
         .get_mut(&owner)
         .unwrap()
         .get_mut(&sw_type)
         .unwrap()
         .is_suspended = false;
-    let online = sw_cameo(&sim, &rules, owner, None);
-    assert!(online.enabled);
-    assert!(online.is_ready);
-    assert!(online.sw_can_fire);
+    let (recovered, change) = sw_cameo(&sim, &rules, owner, &mut projection, None);
     assert_eq!(
-        hit_test_item(&online, false, false),
-        SidebarAction::ArmSuperWeapon("NukeSpecial".to_string())
+        change,
+        CameoReconcile::default(),
+        "recovery does not reinsert the cameo"
+    );
+    assert!(recovered.enabled && recovered.is_ready);
+    // Cached offline draw flags cannot veto the now-admitted live Super.
+    assert_eq!(
+        click(&sim, &rules, owner, &held, false, &mut input, &mut gadgets),
+        SuperWeaponClick::Target
+    );
+    assert!(!gadgets.repair_mode_on);
+    assert_eq!(
+        input.targeting_mode.as_ref().unwrap().as_super_weapon(),
+        Some("NukeSpecial")
     );
 
     sim.super_weapons
@@ -1267,7 +1370,23 @@ fn suspended_charged_superweapon_cameo_does_not_arm_targeting() {
         .get_mut(&sw_type)
         .unwrap()
         .is_ready = false;
-    let charging = sw_cameo(&sim, &rules, owner, None);
-    assert!(!charging.sw_can_fire);
-    assert_eq!(hit_test_item(&charging, false, false), SidebarAction::None);
+    let (charging, change) = sw_cameo(&sim, &rules, owner, &mut projection, None);
+    assert_eq!(
+        change,
+        CameoReconcile::default(),
+        "charging keeps membership too"
+    );
+    assert!(!charging.is_ready);
+    assert_eq!(
+        click(
+            &sim,
+            &rules,
+            owner,
+            &charging,
+            false,
+            &mut input,
+            &mut gadgets
+        ),
+        SuperWeaponClick::Refused
+    );
 }

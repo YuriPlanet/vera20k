@@ -283,7 +283,6 @@ fn flight_fixture(rules: &RuleSet, input: &Value) -> (Simulation, BTreeSet<(u16,
                 cell.final_tile_index = if bridge { 1020 } else { -1 };
                 cell.bridge_facts.raw_flags = if bridge { 0x100 } else { 0 };
                 cell.land_type = if water { 2 } else { 0 };
-                cell.is_water = water;
                 cell
             })
         })
