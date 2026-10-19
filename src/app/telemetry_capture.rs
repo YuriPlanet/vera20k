@@ -3,7 +3,7 @@
 //! Assembles the whole wire payload from live app state: the simulation-side
 //! capture (`Simulation::telemetry_snapshot`) plus the app-only facts —
 //! frame timing, cursor cell, walkability, selected movers' paths and miner
-//! state. Removed per-entity event hooks are not reintroduced for this view.
+//! state. Per-entity event history is available only with `debug-tools`.
 //!
 //! The app owns diagnostic samples and log delivery; gameplay state is read-only.
 
@@ -26,6 +26,8 @@ const PUBLISH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(1
 
 /// World replacement starts a new observation window without touching the world.
 pub(crate) fn reset_observation(state: &mut AppState) {
+    #[cfg(feature = "debug-tools")]
+    crate::app::debug_tools::reset_session(state);
     state.match_state.telemetry_timing.clear();
     state.match_state.telemetry_tick_rate.clear();
     state.diag.render_timing = Default::default();
@@ -60,6 +62,14 @@ fn bounded_text(value: &str, maximum: usize) -> String {
 pub fn capture_snapshot(state: &AppState) -> Option<TelemetrySnapshot> {
     let runtime = state.match_state.sim_runtime.as_ref()?;
     let mut snapshot = runtime.simulation.telemetry_snapshot();
+    #[cfg(feature = "debug-tools")]
+    {
+        snapshot.debug_tools.session = snapshot
+            .debug_tools
+            .enabled
+            .then_some(state.diag.debug_session_epoch)
+            .filter(|epoch| *epoch != 0);
+    }
     // House colours: the same `[Colors]` scheme map the renderer tints units
     // with, so the dashboard shows each player's real team colour instead of a
     // dashboard-invented palette.
@@ -335,6 +345,8 @@ fn capture_debug(state: &AppState, sim: &Simulation) -> DebugPanel {
             fog: !state.match_state.sandbox_full_visibility,
             foot_path: state.diag.debug_show_foot_path,
             paused: state.match_state.paused(),
+            #[cfg(feature = "debug-tools")]
+            unit_inspector: sim.debug_event_logging(),
         },
     }
 }
@@ -398,8 +410,16 @@ mod tests {
         );
         assert_eq!(before, crate::util::save_codec::serialize(&sim).unwrap());
         let json = serde_json::to_value(&selected).unwrap();
-        assert!(json[0].get("events").is_none());
-        assert!(json[0].get("inspector_active").is_none());
+        #[cfg(not(feature = "debug-tools"))]
+        {
+            assert!(json[0].get("events").is_none());
+            assert!(json[0].get("inspector_active").is_none());
+        }
+        #[cfg(feature = "debug-tools")]
+        {
+            assert_eq!(json[0]["inspector_active"], false);
+            assert_eq!(json[0]["events"], serde_json::json!([]));
+        }
     }
 }
 
@@ -484,5 +504,22 @@ fn capture_selected(
         goal,
         path_preview,
         miner,
+        #[cfg(feature = "debug-tools")]
+        inspector_active: entity.debug_log().is_some(),
+        #[cfg(feature = "debug-tools")]
+        events: entity
+            .debug_log()
+            .map(|log| {
+                log.events()
+                    .iter()
+                    .rev()
+                    .take(64)
+                    .map(|event| crate::sim::telemetry::DebugEventReport {
+                        tick: event.tick,
+                        text: bounded_text(&event.kind.to_string(), 512),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default(),
     }
 }

@@ -1188,7 +1188,7 @@ pub(crate) fn update_owned_supers(sim: &mut Simulation, rules: &RuleSet, owner: 
     let low_power = sim
         .power_states
         .get(&owner)
-        .is_some_and(|state| state.is_low_power);
+        .is_some_and(|state| state.low_power());
     let (provided, online) = provider_supers(sim, rules, owner);
     for type_id in house_super_order(sim, rules, owner) {
         let Some(sw) = rules.super_weapon(sim.interner.resolve(type_id)) else {
@@ -1244,7 +1244,7 @@ pub(crate) fn grant_provided_supers(sim: &mut Simulation, rules: &RuleSet, owner
     let low_power = sim
         .power_states
         .get(&owner)
-        .is_some_and(|state| state.is_low_power);
+        .is_some_and(|state| state.low_power());
     let (provided, _) = provider_supers(sim, rules, owner);
     for type_id in house_super_order(sim, rules, owner) {
         if !provided.contains(&type_id) {

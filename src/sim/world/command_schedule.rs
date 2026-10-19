@@ -180,6 +180,8 @@ impl Simulation {
         &mut self,
         commands: impl IntoIterator<Item = CommandEnvelope>,
     ) -> Vec<CommandEnvelope> {
+        #[cfg(feature = "debug-tools")]
+        self.set_debug_session_context(crate::sim::cheats::DebugSessionContext::Replay);
         self.replaying_recorded_commands = true;
         let commands: Vec<_> = commands.into_iter().collect();
         let execute_tick = self.session.tick.saturating_add(1);

@@ -1016,7 +1016,7 @@ fn advance_one_simulation_frame(
     let mut frame_committed = state.match_state.sim_runtime.is_none();
 
     if let Some(rt) = state.match_state.sim_runtime.as_ref() {
-        state.match_state.match_diagnostics.get_or_begin_replay(rt);
+        let _ = state.match_state.match_diagnostics.get_or_begin_replay(rt);
     }
 
     for _ in 0..1 {

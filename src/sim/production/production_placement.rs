@@ -673,6 +673,14 @@ pub fn is_within_build_area(
     rx: u16,
     ry: u16,
 ) -> bool {
+    #[cfg(feature = "debug-tools")]
+    if sim
+        .interner
+        .get(owner)
+        .is_some_and(|id| sim.debug_flags_for(id).build_anywhere)
+    {
+        return true;
+    }
     let (width, height) = foundation_dimensions(&obj.foundation);
     let placed_adjacent = obj.adjacent;
     if placed_adjacent < 0 {

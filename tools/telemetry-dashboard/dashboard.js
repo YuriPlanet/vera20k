@@ -12,13 +12,14 @@
  */
 import { applyStaticTranslations, onLocaleChange, setLocale, syncSwitcher, t, } from "./i18n.js";
 import { createMap3D } from "./map3d.js";
+import { setupDebugTools, updateDebugTools } from "./debug-tools.js";
 import { SCHEMA_VERSION, } from "./types.js";
 /** Chart window: the ring keeps the last N samples. */
 const CHART_WINDOW = 240;
 let map3d = null;
 /** Latest snapshot, kept so a language switch can re-render every panel. */
 let lastSnapshot = null;
-/** The authenticated read-only telemetry socket. */
+/** The authenticated telemetry socket; commands require a separate capability. */
 let socket = null;
 // ---------------------------------------------------------------- map
 /** Latched once WebGL proves unavailable, so a retry on every snapshot does not
@@ -2423,6 +2424,7 @@ function connect() {
             return;
         clearConnectionTimer();
         socket = null;
+        updateDebugTools(null, false);
         if (disposed)
             return;
         if (terminalFailure || event.code === 1008 || event.code === 1002) {
@@ -2448,6 +2450,7 @@ function connect() {
         if (!snapshot || typeof snapshot !== "object")
             return;
         if (snapshot.version !== SCHEMA_VERSION) {
+            updateDebugTools(null, false);
             setStatus(true, "status.unsupported", { v: String(snapshot.version) });
             return;
         }
@@ -2455,6 +2458,7 @@ function connect() {
             return;
         reconnectAttempts = 0;
         lastSnapshot = snapshot;
+        updateDebugTools(snapshot, true);
         snapTicks += 1;
         acceptLogs(snapshot.logs);
         setStatus(true);
@@ -2499,6 +2503,10 @@ syncSwitcher();
 renderStatus();
 setupViews();
 setupPager();
+setupDebugTools((envelope) => {
+    if (socket?.readyState === WebSocket.OPEN)
+        socket.send(JSON.stringify(envelope));
+});
 for (const button of document.querySelectorAll("#lang [data-locale]")) {
     button.addEventListener("click", () => {
         setLocale(button.dataset.locale);
@@ -2539,6 +2547,7 @@ sessionToken = consumeSessionToken();
 connect();
 window.addEventListener("pagehide", () => {
     disposed = true;
+    updateDebugTools(null, false);
     sessionToken = null;
     window.clearInterval(statusTimer);
     if (reconnectTimer !== null)

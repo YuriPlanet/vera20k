@@ -47,6 +47,9 @@ default = ["dev-overlays"]
 dev-overlays = ["vera20k-core/dev-overlays"]
 # Optional read-only local browser dashboard, absent from default/shipping builds.
 telemetry-dashboard = ["vera20k-core/telemetry", "dep:getrandom", "dep:sha1"]
+# Explicit offline trainer and per-unit event hooks. Never enabled by the
+# dashboard alone or the default/shipping feature set.
+debug-tools = ["telemetry-dashboard", "dev-overlays", "vera20k-core/debug-tools"]
 
 [dependencies]
 # The GPU-free engine. Its dev features follow this package's.

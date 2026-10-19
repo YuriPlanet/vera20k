@@ -35,6 +35,8 @@ use crate::util::config::GameConfig;
 pub(crate) mod audio_runtime;
 pub(crate) mod campaign_victory;
 pub(crate) mod chrono_screen;
+#[cfg(feature = "debug-tools")]
+pub(crate) mod debug_tools;
 pub(crate) mod diagnostics;
 mod frame;
 pub mod frontend;

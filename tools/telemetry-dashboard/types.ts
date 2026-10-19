@@ -1,8 +1,8 @@
 /**
- * Schema mirror of `src/sim/telemetry.rs` (v22); keep both in step.
+ * Schema mirror of `src/sim/telemetry.rs` (v23); keep both in step.
  */
 
-export const SCHEMA_VERSION = 22;
+export const SCHEMA_VERSION = 23;
 
 export type EntityCategory = "Unit" | "Infantry" | "Aircraft" | "Structure";
 
@@ -159,6 +159,14 @@ export interface SelectedDebug {
   goal: [number, number] | null;
   path_preview: PathStep[];
   miner: MinerDebug | null;
+  /** Present only in a debug-tools build. */
+  inspector_active?: boolean;
+  events?: DebugEventEntry[];
+}
+
+export interface DebugEventEntry {
+  tick: number;
+  text: string;
 }
 
 export interface DebugPanel {
@@ -183,6 +191,32 @@ export interface OverlayFlags {
   fog: boolean;
   foot_path: boolean;
   paused: boolean;
+  unit_inspector?: boolean;
+}
+
+/** Trainer state is reported only by the separately enabled debug-tools build. */
+export interface CheatReport {
+  infinite_money: boolean;
+  money_target: number;
+  infinite_power: boolean;
+  instant_build: boolean;
+  invincible: boolean;
+  damage_scale: number;
+  reveal_map: boolean;
+  tech_all: boolean;
+  tech_boost: boolean;
+  build_anywhere: boolean;
+  owner: string | null;
+  power_forced: boolean;
+}
+
+export interface DebugToolsReport {
+  /** True only for an eligible offline match, not merely a compiled feature. */
+  enabled: boolean;
+  unavailable_reason: string | null;
+  /** Changes when the authoritative match changes; old commands are rejected. */
+  session: number | null;
+  cheats: CheatReport | null;
 }
 
 /** Process-level resources, filled by the app layer. */
@@ -260,4 +294,6 @@ export interface TelemetrySnapshot {
   profile: FrameProfileReport | null;
   render: RenderTimingReport | null;
   logs: LogBatch | null;
+  /** Absent in ordinary builds, including the read-only telemetry dashboard. */
+  debug_tools?: DebugToolsReport | null;
 }

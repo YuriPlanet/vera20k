@@ -40,6 +40,8 @@ impl App {
     ) -> bool {
         #[cfg(feature = "telemetry-dashboard")]
         crate::app::telemetry_capture::synchronize_observer(state);
+        #[cfg(feature = "debug-tools")]
+        crate::app::debug_tools::service(state);
         // HouseClass keeps simulating for SavourDelay, then blocks on the
         // current outcome Vox before it raises the victory/defeat exit global.
         // Drive that gate before deciding whether another sim frame is legal.

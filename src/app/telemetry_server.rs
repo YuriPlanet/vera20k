@@ -1,5 +1,7 @@
 //! Read-only, loopback dashboard transport. The app publishes bounded JSON
-//! snapshots; browsers can only receive them. No message can mutate the game.
+//! snapshots; browsers can only receive them in dashboard-only builds. The
+//! separate `debug-tools` feature admits bounded commands only while the app
+//! explicitly enables an offline world, and binds them to that world epoch.
 //!
 //! Admission follows RFC 6455 with a per-server OS-random credential and exact
 //! Host/Origin checks. Only fixed public dashboard assets are served over HTTP.
@@ -157,9 +159,29 @@ struct Shared {
     stop: AtomicBool,
     admission: Admission,
     web_root: PathBuf,
+    #[cfg(feature = "debug-tools")]
+    commands: Mutex<crate::app::debug_tools::CommandInbox>,
 }
 
 impl Shared {
+    #[cfg(feature = "debug-tools")]
+    fn commands(&self) -> MutexGuard<'_, crate::app::debug_tools::CommandInbox> {
+        self.commands
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+    }
+
+    fn debug_allowed(&self) -> bool {
+        #[cfg(feature = "debug-tools")]
+        {
+            self.commands().enabled()
+        }
+        #[cfg(not(feature = "debug-tools"))]
+        {
+            false
+        }
+    }
+
     fn clients(&self) -> MutexGuard<'_, Vec<Client>> {
         self.clients
             .lock()
@@ -207,6 +229,8 @@ impl TelemetryServer {
                 secret,
             },
             web_root,
+            #[cfg(feature = "debug-tools")]
+            commands: Default::default(),
         });
         let accept_shared = Arc::clone(&shared);
         let accept_thread = thread::Builder::new()
@@ -244,6 +268,19 @@ impl TelemetryServer {
 
     pub fn has_clients(&self) -> bool {
         !self.shared.clients().is_empty()
+    }
+
+    #[cfg(feature = "debug-tools")]
+    pub(crate) fn set_debug_session(&self, session: Option<u64>) {
+        self.shared.commands().set_session(session);
+    }
+
+    #[cfg(feature = "debug-tools")]
+    pub(crate) fn drain_debug_commands(
+        &self,
+        session: u64,
+    ) -> Vec<crate::app::debug_tools::DebugCommand> {
+        self.shared.commands().drain(session)
     }
 }
 
@@ -534,11 +571,21 @@ enum ControlFrame {
     Ping(Vec<u8>),
     Pong,
     Close(Vec<u8>),
+    #[cfg(feature = "debug-tools")]
+    Command(Vec<u8>),
 }
 
-/// The only accepted inbound payload is RFC control traffic. Reject data at
-/// its header, before buffering its declared length or interpreting its bytes.
+#[cfg(test)]
 fn parse_client_frame(bytes: &[u8]) -> Result<Option<(ControlFrame, usize)>, u16> {
+    parse_client_frame_with_debug(bytes, false)
+}
+
+/// Reject data at the header unless this build and current session explicitly
+/// admit debug commands. Even then, only small, final, masked text frames pass.
+fn parse_client_frame_with_debug(
+    bytes: &[u8],
+    _allow_debug: bool,
+) -> Result<Option<(ControlFrame, usize)>, u16> {
     if bytes.len() < 2 {
         return Ok(None);
     }
@@ -547,6 +594,10 @@ fn parse_client_frame(bytes: &[u8]) -> Result<Option<(ControlFrame, usize)>, u16
     }
     let opcode = bytes[0] & 15;
     if matches!(opcode, 1 | 2) {
+        #[cfg(feature = "debug-tools")]
+        if opcode == 1 && _allow_debug {
+            return parse_debug_frame(bytes);
+        }
         return Err(1008);
     }
     if bytes[0] & 0x80 == 0 || !matches!(opcode, 8..=10) {
@@ -589,6 +640,44 @@ fn parse_client_frame(bytes: &[u8]) -> Result<Option<(ControlFrame, usize)>, u16
     Ok(Some((frame, end)))
 }
 
+#[cfg(feature = "debug-tools")]
+fn parse_debug_frame(bytes: &[u8]) -> Result<Option<(ControlFrame, usize)>, u16> {
+    if bytes[0] & 0x80 == 0 {
+        return Err(1002);
+    }
+    let length = usize::from(bytes[1] & 127);
+    let (length, header) = match length {
+        127 => return Err(1009),
+        126 => {
+            if bytes.len() < 4 {
+                return Ok(None);
+            }
+            let length = usize::from(u16::from_be_bytes([bytes[2], bytes[3]]));
+            if length < 126 {
+                return Err(1002);
+            }
+            (length, 4)
+        }
+        length => (length, 2),
+    };
+    if length > crate::app::debug_tools::MAX_REQUEST_BYTES {
+        return Err(1009);
+    }
+    let end = header + 4 + length;
+    if bytes.len() < end {
+        return Ok(None);
+    }
+    let payload: Vec<u8> = bytes[header + 4..end]
+        .iter()
+        .enumerate()
+        .map(|(i, byte)| byte ^ bytes[header + i % 4])
+        .collect();
+    if std::str::from_utf8(&payload).is_err() {
+        return Err(1007);
+    }
+    Ok(Some((ControlFrame::Command(payload), end)))
+}
+
 fn write_control(
     stream: &mut TcpStream,
     shared: &Shared,
@@ -610,10 +699,12 @@ fn writer_loop(
     let mut chunk = [0_u8; 1024];
     let mut window = Instant::now();
     let mut controls = 0;
+    #[cfg(feature = "debug-tools")]
+    let mut commands = 0;
     while !shared.stopped() {
         let mut processed = 0;
         while processed < MAX_CONTROL_BATCH && !shared.stopped() {
-            let parsed = match parse_client_frame(&inbound) {
+            let parsed = match parse_client_frame_with_debug(&inbound, shared.debug_allowed()) {
                 Ok(parsed) => parsed,
                 Err(code) => return write_control(stream, shared, 8, &code.to_be_bytes()),
             };
@@ -625,6 +716,10 @@ fn writer_loop(
             if window.elapsed() >= Duration::from_secs(1) {
                 window = Instant::now();
                 controls = 0;
+                #[cfg(feature = "debug-tools")]
+                {
+                    commands = 0;
+                }
             }
             controls += 1;
             if controls > MAX_CONTROLS_PER_SECOND {
@@ -634,6 +729,13 @@ fn writer_loop(
                 ControlFrame::Ping(payload) => write_control(stream, shared, 10, &payload)?,
                 ControlFrame::Pong => (),
                 ControlFrame::Close(payload) => return write_control(stream, shared, 8, &payload),
+                #[cfg(feature = "debug-tools")]
+                ControlFrame::Command(payload) => {
+                    commands += 1;
+                    if commands > 16 || shared.commands().push(&payload).is_err() {
+                        return write_control(stream, shared, 8, &1008_u16.to_be_bytes());
+                    }
+                }
             }
         }
         match receiver.try_recv() {
@@ -670,6 +772,7 @@ fn public_asset(path: &str) -> Option<(&'static str, &'static str)> {
         "/i18n.js" => Some(("i18n.js", "text/javascript; charset=utf-8")),
         "/map3d.js" => Some(("map3d.js", "text/javascript; charset=utf-8")),
         "/types.js" => Some(("types.js", "text/javascript; charset=utf-8")),
+        "/debug-tools.js" => Some(("debug-tools.js", "text/javascript; charset=utf-8")),
         "/vendor/three.core.js" => Some(("vendor/three.core.js", "text/javascript; charset=utf-8")),
         "/vendor/three.module.js" => {
             Some(("vendor/three.module.js", "text/javascript; charset=utf-8"))

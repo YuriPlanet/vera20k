@@ -20,6 +20,7 @@ import {
   t,
 } from "./i18n.js";
 import { createMap3D, Map3D } from "./map3d.js";
+import { setupDebugTools, updateDebugTools } from "./debug-tools.js";
 import {
   DebugPanel,
   EntityDesc,
@@ -45,7 +46,7 @@ type AppView = "wall" | "detail" | "report" | "logs";
 let map3d: Map3D | null = null;
 /** Latest snapshot, kept so a language switch can re-render every panel. */
 let lastSnapshot: TelemetrySnapshot | null = null;
-/** The authenticated read-only telemetry socket. */
+/** The authenticated telemetry socket; commands require a separate capability. */
 let socket: WebSocket | null = null;
 
 // ---------------------------------------------------------------- map
@@ -2681,6 +2682,7 @@ function connect(): void {
     if (socket !== next) return;
     clearConnectionTimer();
     socket = null;
+    updateDebugTools(null, false);
     if (disposed) return;
     if (terminalFailure || event.code === 1008 || event.code === 1002) {
       setStatus(false, "status.sessionRejected");
@@ -2701,12 +2703,14 @@ function connect(): void {
     }
     if (!snapshot || typeof snapshot !== "object") return;
     if (snapshot.version !== SCHEMA_VERSION) {
+      updateDebugTools(null, false);
       setStatus(true, "status.unsupported", { v: String(snapshot.version) });
       return;
     }
     if (!Array.isArray(snapshot.houses) || !Array.isArray(snapshot.spots)) return;
     reconnectAttempts = 0;
     lastSnapshot = snapshot;
+    updateDebugTools(snapshot, true);
     snapTicks += 1;
     acceptLogs(snapshot.logs);
     setStatus(true);
@@ -2751,6 +2755,9 @@ syncSwitcher();
 renderStatus();
 setupViews();
 setupPager();
+setupDebugTools((envelope) => {
+  if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(envelope));
+});
 
 for (const button of document.querySelectorAll<HTMLElement>("#lang [data-locale]")) {
   button.addEventListener("click", () => {
@@ -2793,6 +2800,7 @@ connect();
 
 window.addEventListener("pagehide", () => {
   disposed = true;
+  updateDebugTools(null, false);
   sessionToken = null;
   window.clearInterval(statusTimer);
   if (reconnectTimer !== null) window.clearTimeout(reconnectTimer);

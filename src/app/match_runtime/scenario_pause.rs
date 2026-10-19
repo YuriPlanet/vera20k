@@ -91,8 +91,10 @@ pub(crate) fn apply_service(state: &mut AppState, input: ScenarioServiceInput) {
     let Some(rt) = state.match_state.sim_runtime.as_mut() else {
         return;
     };
-    let log = state.match_state.match_diagnostics.get_or_begin_replay(rt);
-    let effects = log.apply_scenario_service(&mut rt.simulation, input);
+    let effects = match state.match_state.match_diagnostics.get_or_begin_replay(rt) {
+        Some(log) => log.apply_scenario_service(&mut rt.simulation, input),
+        None => input.apply(&mut rt.simulation),
+    };
     super::sim_tick::apply_trigger_effects(state, &effects);
 }
 

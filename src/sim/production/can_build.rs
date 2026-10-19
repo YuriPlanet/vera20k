@@ -86,6 +86,12 @@ pub(crate) fn can_build(
     skip_tech: bool,
     count_in_production: bool,
 ) -> CanBuild {
+    #[cfg(feature = "debug-tools")]
+    let trainer = sim.debug_flags_for(owner);
+    #[cfg(feature = "debug-tools")]
+    if trainer.tech_all {
+        return build_limit(sim, rules, owner, obj, count_in_production);
+    }
     if skip_tech {
         return build_limit(sim, rules, owner, obj, count_in_production);
     }
@@ -132,7 +138,11 @@ pub(crate) fn can_build(
     {
         return CanBuild::No;
     }
-    if type_tech_level > house.tech_level {
+    #[cfg(feature = "debug-tools")]
+    let exceeds_tech_level = type_tech_level > house.tech_level && !trainer.tech_boost;
+    #[cfg(not(feature = "debug-tools"))]
+    let exceeds_tech_level = type_tech_level > house.tech_level;
+    if exceeds_tech_level {
         return CanBuild::No;
     }
     if !house.is_controlled_by_human(sim.session.game_mode_nonzero) {
