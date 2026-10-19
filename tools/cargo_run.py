@@ -420,7 +420,42 @@ def run_recorded_tests(record: Path) -> int:
     return failed
 
 
+class RunTimes:
+    """Where one run's wall time went, printed as its last stderr line.
+
+    Callers mostly keep only the tail of the output, and Codex collapses the
+    repeated lock-wait lines: in the October 2026 transcripts one 1432 s focused
+    test showed 51 s of compile and three wait lines, so its queue was invisible.
+    """
+
+    PARTS = ('waiting for the build lock', 'cache retention', 'Cargo', 'tests')
+
+    def __init__(self):
+        self.started = time.monotonic()
+        self.seconds = dict.fromkeys(self.PARTS, 0.0)
+
+    @contextmanager
+    def timing(self, part: str):
+        started = time.monotonic()
+        try:
+            yield
+        finally:
+            self.seconds[part] += time.monotonic() - started
+
+    def summary(self) -> str:
+        return (f'cargo_run: {time.monotonic() - self.started:.1f} s in all: '
+                + ', '.join(f'{seconds:.1f} s {part}' for part, seconds in self.seconds.items()))
+
+
 def run(root: Path, args: list[str], label: str | None, timeout: float, *, policy=None) -> int:
+    times = RunTimes()
+    try:
+        return _run(root, args, label, timeout, policy, times)
+    finally:
+        print(times.summary(), file=sys.stderr, flush=True)
+
+
+def _run(root: Path, args: list[str], label: str | None, timeout: float, policy, times: RunTimes) -> int:
     from tools._cargo_cache import CachePolicy, register_locked, automatic_locked, retention_due
     policy = policy if policy is not None else CachePolicy.from_env()
     args = cargo_args(args, label)
@@ -436,12 +471,14 @@ def run(root: Path, args: list[str], label: str | None, timeout: float, *, polic
     # test executable to a recorder, and they start once the shared lock is
     # released. This checkout's lock stays held, so its next run cannot relink them.
     with ExitStack() as checkout, ExitStack() as shared:
-        checkout.enter_context(file_lock(store / 'checkouts' / f'{namespace}.lock', deadline))
+        with times.timing('waiting for the build lock'):
+            checkout.enter_context(file_lock(store / 'checkouts' / f'{namespace}.lock', deadline))
         record = None
         if args[0] == 'test' and '--no-run' not in options:
             record = Path(checkout.enter_context(tempfile.TemporaryDirectory(prefix='cargo-tests-'))) / 'tests.jsonl'
             args = [args[0], '--config', test_runner_config(record), *args[1:]]
-        shared.enter_context(build_lock(store / 'cargo.lock', deadline - time.monotonic()))
+        with times.timing('waiting for the build lock'):
+            shared.enter_context(build_lock(store / 'cargo.lock', deadline - time.monotonic()))
         if output and output.exists():
             raise ValueError(f'Label already exists; choose a new label: {output}')
         if others := register_locked(root, store, target):
@@ -461,7 +498,8 @@ def run(root: Path, args: list[str], label: str | None, timeout: float, *, polic
         # and grows with each worktree. Before Cargo it can matter only by
         # restoring the reserve, and the reserve is cheap to measure.
         if below_reserve():
-            automatic_locked(root, store, policy)
+            with times.timing('cache retention'):
+                automatic_locked(root, store, policy)
         # Admission uses a fresh measurement after cleanup, not projected file
         # allocation or a retention receipt. A protected cache must never cause
         # another compile to consume the remaining volume reserve.
@@ -479,8 +517,9 @@ def run(root: Path, args: list[str], label: str | None, timeout: float, *, polic
             env = dict(os.environ, CARGO_TARGET_DIR=str(target))
             command = ['cargo', *args]
             print(f'Checkout: {root}\nTarget: {target}\nCommand: {command}', file=sys.stderr, flush=True)
-            with subprocess.Popen(command, cwd=root, env=env, stdout=subprocess.PIPE,
-                                  text=True, encoding='utf-8', errors='replace') as child:
+            with times.timing('Cargo'), subprocess.Popen(
+                    command, cwd=root, env=env, stdout=subprocess.PIPE,
+                    text=True, encoding='utf-8', errors='replace') as child:
                 assert child.stdout is not None
                 for line in child.stdout:
                     try:
@@ -537,10 +576,13 @@ def run(root: Path, args: list[str], label: str | None, timeout: float, *, polic
         finally:
             register_locked(root, store, target, artifacts)
             if retention_due(store, policy, volumes):
-                automatic_locked(root, store, policy)
+                with times.timing('cache retention'):
+                    automatic_locked(root, store, policy)
         shared.close()
         if record:
-            if failed := run_recorded_tests(record):
+            with times.timing('tests'):
+                failed = run_recorded_tests(record)
+            if failed:
                 return failed
             if source_identity(root, hashes) != before:
                 raise ValueError('Source changed during the tests; result is not a validation')

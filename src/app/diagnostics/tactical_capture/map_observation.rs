@@ -2570,6 +2570,68 @@ struct MapFrameObservation {
     audio_state: Option<Value>,
 }
 
+/// Inputs retained by the ordinary terrain owners after this exact step's
+/// draw. This is not a GPU readback or proof that a fragment reached the target.
+/// In particular, a missing/out-of-view A sample remains null rather than
+/// claiming the shader's disabled/out-of-bounds neutral fallback was sampled.
+fn terrain_render_observation(state: &AppState, rx: u16, ry: u16) -> Value {
+    let presentation = &state.match_state.match_presentation;
+    let grid = state
+        .match_state
+        .sim_runtime
+        .as_ref()
+        .and_then(|runtime| runtime.view().resolved_terrain());
+    let cell = grid.and_then(|grid| grid.cell(rx, ry));
+    let tactical_variant = grid.and_then(|grid| grid.tactical_draw_variant(rx, ry));
+    // Observe the same live key that terrain_instances::build_visible_instances
+    // requests, without calling Recalc, creating an atlas entry or substituting
+    // a pristine image when the exact selected key is absent.
+    let atlas_key = cell.and_then(|cell| {
+        let (tile_id, sub_tile) = grid?.presentation_tile(cell);
+        Some(crate::map::theater::TileKey {
+            tile_id,
+            sub_tile,
+            variant: tactical_variant.unwrap_or(cell.variant),
+        })
+    });
+    let uv = atlas_key.and_then(|key| presentation.tile_atlas.as_ref()?.get_uv(key));
+    let lighting = presentation.lighting.grid();
+    let palette_light = cell.and_then(|_| {
+        lighting.cell_light_at((rx, ry))?;
+        Some(crate::render::palette_light::PaletteLight::cell(lighting, (rx, ry), false).0)
+    });
+    let center = cell.map(|cell| {
+        let (x, y) = crate::map::terrain::iso_to_screen(rx, ry, cell.level);
+        [
+            x + crate::map::terrain::TILE_WIDTH / 2.0,
+            y + crate::map::terrain::TILE_HEIGHT / 2.0,
+        ]
+    });
+    let camera = [
+        state.match_state.input.camera_x,
+        state.match_state.input.camera_y,
+    ];
+    let a_source = (!state.match_state.sandbox_full_visibility)
+        .then_some(presentation.shroud_buffer.as_ref())
+        .flatten();
+    let a_center =
+        center.and_then(|point| a_source?.sample_world(point[0], point[1], camera[0], camera[1]));
+    json!({
+        "phase": "after_draw",
+        "variant": cell.map(|cell| cell.variant),
+        "tactical_variant": tactical_variant,
+        "atlas_key": atlas_key.map(|key| [u32::from(key.tile_id), u32::from(key.sub_tile), u32::from(key.variant)]),
+        "atlas_ready": presentation.tile_atlas.is_some(),
+        "exact_atlas_uv": uv.map(|uv| json!({"origin": uv.uv_origin, "size": uv.uv_size,
+            "pixel_size": uv.pixel_size, "draw_offset": uv.draw_offset})),
+        "palette_light": palette_light,
+        "cell_center_world": center,
+        "camera_top_left": camera,
+        "a_bound": a_source.is_some(),
+        "a_center": a_center,
+    })
+}
+
 #[derive(Debug, Serialize)]
 struct MapDrawTime {
     completed_steps: u64,
@@ -4105,7 +4167,8 @@ impl TacticalCaptureSession {
                 "raw_bridge_flags": cell.map(|cell| cell.bridge_facts.raw_flags),
                 "bridge_state": cell.map(|cell| cell.bridge_facts.state_byte),
                 "has_deck": cell.map(|cell| cell.has_bridge_deck), "deck_level": cell.map(|cell| cell.bridge_deck_level),
-                "walkable": cell.map(|cell| cell.bridge_walkable), "transition": cell.map(|cell| cell.bridge_transition)})
+                "walkable": cell.map(|cell| cell.bridge_walkable), "transition": cell.map(|cell| cell.bridge_transition),
+                "render": null})
         }).collect();
         let frame = MapFrameObservation {
             completed_steps: self.exact_step_receipts.len() as u64,
@@ -4219,6 +4282,11 @@ impl TacticalCaptureSession {
                 )
             })
             .transpose()?;
+        let terrain_render: Vec<_> = profile
+            .terrain_cells()
+            .iter()
+            .map(|&[rx, ry]| terrain_render_observation(state, rx, ry))
+            .collect();
         let map = self.map_state_mut()?;
         if let Some(effects) = electric {
             map.sample_count = map
@@ -4271,6 +4339,15 @@ impl TacticalCaptureSession {
         }
         map.observe_draw(requested, step, output.times)?;
         map.draws.last_mut().expect("draw just observed").tooltip = tooltip;
+        if let Some(frame) = map
+            .frames
+            .last_mut()
+            .filter(|frame| frame.completed_steps == step)
+        {
+            for (cell, rendered) in frame.terrain.iter_mut().zip(terrain_render) {
+                cell["render"] = rendered;
+            }
+        }
         if let Some(frame) = map
             .sidebar_frames
             .last_mut()

@@ -72,7 +72,7 @@ fn retail_plain_pavement_native_entry_draw_selection_and_snapshot() {
                 live.sim.dynamic_terrain_cells.get(&p),
                 Some(&DynamicTerrainCellState::capture(cell))
             );
-            assert_eq!(live.terrain().pavement_draw_variant(p.0, p.1), Some(1));
+            assert_eq!(live.terrain().tactical_draw_variant(p.0, p.1), Some(1));
             plain += usize::from(plain_at_load(p));
         }
     }
@@ -93,7 +93,7 @@ fn retail_plain_pavement_native_entry_draw_selection_and_snapshot() {
     for &p in &expected_radar {
         let terrain = restored.resolved_terrain.as_ref().unwrap();
         assert!(terrain.pavement_damaged_at(p.0, p.1));
-        assert_eq!(terrain.pavement_draw_variant(p.0, p.1), Some(1));
+        assert_eq!(terrain.tactical_draw_variant(p.0, p.1), Some(1));
         assert_eq!(
             terrain.current_tile_radar_metadata(p.0, p.1),
             live.terrain().current_tile_radar_metadata(p.0, p.1)

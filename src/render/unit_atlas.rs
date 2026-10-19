@@ -565,18 +565,20 @@ fn render_unit_key(
     pose: &mut Option<PoseParts>,
 ) -> Option<RenderedKey> {
     let (sprite, native_draw_bounds) = model.render(key, vpl, None, pose)?;
-    let legacy_shadow = (key.layer == VxlLayer::Shadow && native_draw_bounds.is_some())
-        .then(|| {
-            let mut fallback_key = key.clone();
-            fallback_key.frame = LEGACY_SHADOW_FRAME;
-            let (fallback, _) = model.render(&fallback_key, vpl, None, pose)?;
-            Some(CachedUnitSprite::from_rendered(RenderedSprite {
-                key: fallback_key,
-                sprite: fallback,
-                native_draw_bounds: None,
-            }))
-        })
-        .flatten();
+    let legacy_shadow = (key.layer == VxlLayer::Shadow
+        && native_draw_bounds.is_some()
+        && !model.shadow.is_some_and(|shadow| shadow.aircraft))
+    .then(|| {
+        let mut fallback_key = key.clone();
+        fallback_key.frame = LEGACY_SHADOW_FRAME;
+        let (fallback, _) = model.render(&fallback_key, vpl, None, pose)?;
+        Some(CachedUnitSprite::from_rendered(RenderedSprite {
+            key: fallback_key,
+            sprite: fallback,
+            native_draw_bounds: None,
+        }))
+    })
+    .flatten();
     Some(RenderedKey {
         sprite: CachedUnitSprite::from_rendered(RenderedSprite {
             key: key.clone(),
@@ -702,11 +704,18 @@ fn seed_unit_variant_keys(
     let barrel_pitches = rules
         .and_then(|rules| rules.object(variant))
         .map_or_else(|| vec![0], |object| unit_barrel_pitches(object.fire_angle));
+    let shadow = rules
+        .and_then(|rules| rules.object(variant))
+        .and_then(ShadowModel::for_object);
+    let mut shadow_frames = 1;
     for (layer, turret_index) in layers {
         let frame_key = (variant.to_string(), layer, turret_index);
         let num_frames = *frame_counts.entry(frame_key).or_insert_with(|| {
             detect_hva_frame_count(asset_manager, variant, layer, turret_index, rules)
         });
+        if matches!(layer, VxlLayer::Body | VxlLayer::Composite) {
+            shadow_frames = num_frames;
+        }
         insert_unit_layer_keys(
             needed,
             variant,
@@ -723,11 +732,18 @@ fn seed_unit_variant_keys(
             &barrel_pitches,
         );
     }
-    // Ground vehicles and ships cast a voxel shadow (one frame, every facing
-    // and slope). Aircraft use FlyLocomotion's own shadow matrix and point,
-    // which are not modelled yet, so they get none (recorded residual).
-    if is_ground_vehicle {
-        insert_unit_layer_keys(needed, variant, VxlLayer::Shadow, 0, 1, true, &[0]);
+    // Aircraft414728 includes the body frame remainder in its shadow cache
+    // key, but707280 still samples ShadowIndex's HVA frame zero.
+    if is_ground_vehicle || shadow.is_some_and(|shadow| shadow.aircraft) {
+        insert_unit_layer_keys(
+            needed,
+            variant,
+            VxlLayer::Shadow,
+            0,
+            if is_ground_vehicle { 1 } else { shadow_frames },
+            true,
+            &[0],
+        );
     }
 }
 
@@ -999,8 +1015,28 @@ pub(crate) struct UnitModel {
     body: Option<VoxelPart>,
     /// One pair per native turret index; the body is parsed and stored once.
     guns: Vec<GunParts>,
-    /// Ordinary ground Drive units cast the prepared native shadow.
-    drive_shadow: bool,
+    shadow: Option<ShadowModel>,
+}
+
+#[derive(Clone, Copy)]
+struct ShadowModel {
+    index: i32,
+    considered_aircraft: bool,
+    aircraft: bool,
+}
+
+impl ShadowModel {
+    fn for_object(object: &crate::rules::object_type::ObjectType) -> Option<Self> {
+        use crate::rules::locomotor_type::LocomotorKind;
+        let aircraft = object.category == crate::rules::object_type::ObjectCategory::Aircraft
+            && matches!(object.locomotor, LocomotorKind::Fly | LocomotorKind::Rocket);
+        (aircraft || (object.locomotor == LocomotorKind::Drive && !object.considered_aircraft))
+            .then_some(Self {
+                index: object.voxel_shadow_index(),
+                considered_aircraft: object.considered_aircraft,
+                aircraft,
+            })
+    }
 }
 
 #[derive(Default)]
@@ -1044,7 +1080,7 @@ impl UnitModel {
                 type_id: type_id.to_string(),
                 body: None,
                 guns: vec![guns],
-                drive_shadow: false,
+                shadow: None,
             });
         }
         let (body, guns) =
@@ -1057,10 +1093,9 @@ impl UnitModel {
             type_id: type_id.to_string(),
             body: Some(body),
             guns,
-            drive_shadow: rules.and_then(|r| r.object(type_id)).is_some_and(|o| {
-                o.locomotor == crate::rules::locomotor_type::LocomotorKind::Drive
-                    && !o.considered_aircraft
-            }),
+            shadow: rules
+                .and_then(|r| r.object(type_id))
+                .and_then(ShadowModel::for_object),
         })
     }
 
@@ -1093,7 +1128,7 @@ impl UnitModel {
             return None;
         }
         let params: VxlRenderParams = VxlRenderParams {
-            frame: if key.layer == VxlLayer::Shadow && key.frame == LEGACY_SHADOW_FRAME {
+            frame: if key.layer == VxlLayer::Shadow {
                 0
             } else {
                 key.frame
@@ -1103,21 +1138,34 @@ impl UnitModel {
             slope_blend,
             ..VxlRenderParams::default()
         };
-        // Ordinary ground, single-section ShadowIndex/frame-zero geometry. Keep
-        // aircraft scaling and unsupported callers on the existing path.
+        // Aircraft templates are unmasked: the original4148A0->4DB0D0->
+        //706BD0->707280 caller supplies NULL for its body-mask surface.
+        // Ground Drive retains its existing first-fill composed-body mask.
         if key.layer == VxlLayer::Shadow
-            && key.frame == 0
-            && self.drive_shadow
+            && key.frame != LEGACY_SHADOW_FRAME
+            && let Some(shadow) = self.shadow
+            && (shadow.aircraft || (params.slope_type == 0 && key.frame == 0))
             && let Some(body) = &self.body
-            && let Some(sprite) = vxl_raster::shadow::render(body.vxl(), body.hva(), &params)
         {
-            let bounds = [
-                sprite.offset_x as i32,
-                sprite.offset_y as i32,
-                sprite.width as i32,
-                sprite.height as i32,
-            ];
-            return Some((sprite, Some(bounds)));
+            let sprite = vxl_raster::shadow::render(
+                body.vxl(),
+                body.hva(),
+                &params,
+                shadow.index,
+                shadow.considered_aircraft,
+            );
+            if shadow.aircraft && sprite.is_none() {
+                return None;
+            }
+            if let Some(sprite) = sprite {
+                let bounds = [
+                    sprite.offset_x as i32,
+                    sprite.offset_y as i32,
+                    sprite.width as i32,
+                    sprite.height as i32,
+                ];
+                return Some((sprite, Some(bounds)));
+            }
         }
         // A barrel key draws its part at its pitch; the pose's other parts,
         // and every other key, stay level.
@@ -1290,7 +1338,7 @@ impl UnitModel {
             self.render_matrix(matrix, 0, false, vxl_raster::VxlLighting::Diffuse, vpl)?;
         Some((
             sprite,
-            vxl_raster::shadow::render_matrix(body.vxl(), matrix),
+            vxl_raster::shadow::render_matrix(body.vxl(), matrix, 0, false),
         ))
     }
 

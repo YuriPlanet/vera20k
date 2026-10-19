@@ -267,7 +267,13 @@ pub(crate) fn build_unit_instances(
         } else {
             [sw, sh]
         };
-        let Some([sx, sy]) = unit_draw_anchor(entity, [cam_x, cam_y], viewport) else {
+        let aircraft_shadow = aircraft_shadow_pose(state, entity);
+        let Some([sx, sy]) = unit_draw_anchor(
+            entity,
+            [cam_x, cam_y],
+            viewport,
+            aircraft_shadow.as_ref().map(|pose| pose.anchor),
+        ) else {
             continue;
         };
         // Common visibility, passenger, limbo, and DrawState admission is shared below.
@@ -412,9 +418,24 @@ pub(crate) fn build_unit_instances(
         // 0x73B140's split is inside the same native parent draw call.
         // Ground units, including those below bridges, keep LayerClass order.
         let mut pieces = Vec::new();
+        // Aircraft4148A0 draws the unmasked ground shadow before its body
+        // at4149D7. Unlike Unit's masked suffix, the body's later pixels
+        // cover its own stencil when parked or low above the ground.
+        if let Some(pose) = aircraft_shadow {
+            emit_aircraft_shadow_sprite(
+                state,
+                atlas,
+                entity,
+                type_str,
+                anim_frame,
+                pose,
+                draw_state,
+                &mut pieces,
+            );
+        }
 
         // Sampled at the turret's frame, so the two sprites cannot disagree.
-        let body_facing = entity.body_facing_byte(sim.session.binary_frame);
+        let body_facing = body_draw_facing(entity, sim.session.binary_frame);
         let ground_pose = ground_pose(entity, slope_state, sim.session.binary_frame);
         if let BodyDraw::Pose(tilt) = body {
             let key = UnitSpriteKey {
@@ -496,7 +517,8 @@ pub(crate) fn build_unit_instances(
             if let Some((entry, texture_source)) = unit_entry_for_pose(state, atlas, &key, None) {
                 let depth_y: f32 = sy + entry.offset_y + entry.pixel_size[1] + dock_depth_y_offset;
                 let depth: f32 = body_sort_depth(state, entity, depth_y, interp_z);
-                let voxel_adjust = super::foot_depth::unit_z_adjust(state, entity, true) as f32;
+                let voxel_adjust =
+                    super::foot_depth::unit_z_adjust(state, entity, true, None) as f32;
                 let native_shadow = matches!(texture_source, UnitTextureSource::Stable(_))
                     && prepare_unit_shadow(
                         state,
@@ -624,7 +646,7 @@ enum BodyDraw {
 /// Native vectors: tools/spatial_oracle/unit_simple_deploy.json draw_frames
 /// and aircraft_draw_frames. Aircraft also includes this remainder in its
 /// shadow cache key (414728); its shadow uses HVA frame0 and ShadowIndex
-/// separately. Aircraft shadow rendering remains open in issue1102.
+/// separately.
 fn unit_animation_frames(
     entity: &crate::sim::game_entity::GameEntity,
     model: &str,
@@ -797,6 +819,25 @@ fn body_pose(
     }
 }
 
+/// Fly DrawMatrix4CF632/4CF659 reads SecondaryFacing for both its cache key
+/// and rotation, like its separate ShadowMatrix. PrimaryFacing may already
+/// point elsewhere while the plane turns. Other locomotors keep their owner.
+fn body_draw_facing(entity: &crate::sim::game_entity::GameEntity, binary_frame: u32) -> u8 {
+    if entity
+        .locomotor
+        .as_ref()
+        .is_some_and(|loco| loco.active_kind() == crate::rules::locomotor_type::LocomotorKind::Fly)
+    {
+        let facing = entity.barrel_facing.as_ref().map_or_else(
+            || entity.body_facing_current(binary_frame),
+            |facing| facing.current(binary_frame),
+        );
+        crate::render::vxl_raster::voxel_facing_step_u16(facing) * 8
+    } else {
+        entity.body_facing_byte(binary_frame)
+    }
+}
+
 /// Drive4AFFB0..4AFFE8 / Ship69F6C0..69F6F8 key dynamic draws for an unsettled slope or either
 /// qualifying angle. Model loading stays with UnitModel; no ART boolean is
 /// used as evidence that a VXL loaded. Read-only: no RNG/timer/detach writes.
@@ -857,7 +898,7 @@ fn emit_pose_sprite(
     };
     let depth_y = center_y + entry.offset_y + entry.pixel_size[1];
     let depth = body_sort_depth(state, entity, depth_y, z);
-    let voxel_adjust = super::foot_depth::unit_z_adjust(state, entity, true) as f32;
+    let voxel_adjust = super::foot_depth::unit_z_adjust(state, entity, true, None) as f32;
     let bounds = composite_draw_bounds([(entry, [center_x, center_y])]);
     let (composite_rect, split) = bounds.depth_rect(false);
     pieces.push(ObjectPieceInstance {
@@ -1100,8 +1141,11 @@ fn unit_shadow_admitted(
     entity.category() == EntityCategory::Unit
         && !entity.sinking.is_active()
         && band == EntityDrawBand::Ground
-        && !no_shadow
-        && entity.cloak.as_ref().is_none_or(|cloak| cloak.state() == 0)
+        && techno_shadow_admitted(entity, no_shadow)
+}
+
+fn techno_shadow_admitted(entity: &crate::sim::game_entity::GameEntity, no_shadow: bool) -> bool {
+    !no_shadow && entity.cloak.as_ref().is_none_or(|cloak| cloak.state() == 0)
 }
 
 fn shadow_lookup_key(mut key: UnitSpriteKey, native_shadow: bool) -> UnitSpriteKey {
@@ -1152,10 +1196,30 @@ fn emit_unit_shadow_sprite(
     let Some(entry) = atlas.get(&lookup_key).or_else(|| atlas.get(&key)).copied() else {
         return;
     };
+    emit_shadow_stencil(
+        entry,
+        [center_x, center_y],
+        depth,
+        voxel_adjust,
+        draw_state,
+        pieces,
+    );
+}
+
+/// Shared Techno706BD0 stencil emission. Aircraft4148A0 supplies no composed
+/// body mask, so its immutable atlas entry also serves pitched/rolled bodies.
+fn emit_shadow_stencil(
+    entry: UnitSpriteEntry,
+    anchor: [f32; 2],
+    depth: f32,
+    voxel_adjust: f32,
+    draw_state: DrawState,
+    pieces: &mut Vec<ObjectPieceInstance>,
+) {
     let mut shadow_state: DrawState = draw_state;
     shadow_state.fx_flags |= FX_SHADOW;
     let sprite = SpriteInstance {
-        position: [center_x + entry.offset_x, center_y + entry.offset_y],
+        position: [anchor[0] + entry.offset_x, anchor[1] + entry.offset_y],
         size: entry.pixel_size,
         uv_origin: entry.uv_origin,
         uv_size: entry.uv_size,
@@ -1170,6 +1234,87 @@ fn emit_unit_shadow_sprite(
         ..Default::default()
     };
     push_unit_sprite(UnitTextureSource::Stable(entry.page), sprite, pieces);
+}
+
+fn aircraft_shadow_pose(
+    state: &AppState,
+    entity: &crate::sim::game_entity::GameEntity,
+) -> Option<crate::render::aircraft_shadow::AircraftShadowPose> {
+    if entity.category() != EntityCategory::Aircraft || entity.sinking.is_active() {
+        return None;
+    }
+    let runtime = state.match_state.sim_runtime.as_ref()?;
+    let view = runtime.view();
+    let object = view
+        .interner()
+        .object_type(entity.type_ref(), &runtime.resources.rules)?;
+    if !techno_shadow_admitted(entity, object.no_shadow) {
+        return None;
+    }
+    let terrain = view.resolved_terrain()?;
+    let xy = crate::sim::movement::ground_pose::position_world_xy(&entity.position);
+    let frame = view.session().binary_frame;
+    let primary = entity.body_facing_current(frame);
+    crate::render::aircraft_shadow::pose(
+        crate::render::aircraft_shadow::AircraftShadowContext {
+            xyz: [
+                xy[0],
+                xy[1],
+                crate::sim::movement::ground_pose::object_world_z_leptons(entity, Some(terrain)),
+            ],
+            on_bridge: entity.on_bridge(),
+            locomotor: entity.locomotor.as_ref()?.active_kind(),
+            is_dropship: object.is_dropship(),
+            primary_facing: primary,
+            secondary_facing: entity
+                .barrel_facing
+                .as_ref()
+                .map_or(primary, |facing| facing.current(frame)),
+        },
+        |coord| super::foot_depth::depth_cell(terrain, None, None, coord),
+    )
+}
+
+fn emit_aircraft_shadow_sprite(
+    state: &AppState,
+    atlas: &crate::render::unit_atlas::UnitAtlas,
+    entity: &crate::sim::game_entity::GameEntity,
+    type_id: &str,
+    frame: u32,
+    pose: crate::render::aircraft_shadow::AircraftShadowPose,
+    draw_state: DrawState,
+    pieces: &mut Vec<ObjectPieceInstance>,
+) {
+    let key = UnitSpriteKey {
+        type_id: type_id.to_owned(),
+        turret_index: 0,
+        facing: pose.facing,
+        layer: VxlLayer::Shadow,
+        frame,
+        slope_type: pose.slope,
+        barrel_pitch: 0,
+    };
+    let Some(entry) = atlas
+        .get(&key)
+        .filter(|entry| entry.native_draw_bounds.is_some())
+        .copied()
+    else {
+        return;
+    };
+    let depth = compute_sprite_depth(
+        state,
+        pose.anchor[1] + entry.offset_y + entry.pixel_size[1],
+        0,
+    );
+    let z_adjust = super::foot_depth::unit_z_adjust(state, entity, false, Some(pose.world_z));
+    emit_shadow_stencil(
+        entry,
+        pose.anchor,
+        depth,
+        z_adjust as f32,
+        draw_state,
+        pieces,
+    );
 }
 
 fn push_unit_sprite(
@@ -1192,6 +1337,7 @@ fn unit_draw_anchor(
     entity: &crate::sim::game_entity::GameEntity,
     camera: [f32; 2],
     viewport: [f32; 2],
+    shadow_anchor: Option<[f32; 2]>,
 ) -> Option<[f32; 2]> {
     let (x, y) = crate::render::locomotor_visual::screen_position(entity);
     // Unit draw admission precedes stateful +3CA capture. A smaller visual
@@ -1209,7 +1355,19 @@ fn unit_draw_anchor(
             viewport[0],
             viewport[1],
             120.0,
-        )
+        ) || shadow_anchor.is_some_and(|[sx, sy]| {
+            in_view(
+                sx,
+                sy,
+                TILE_WIDTH,
+                TILE_HEIGHT,
+                camera[0],
+                camera[1],
+                viewport[0],
+                viewport[1],
+                120.0,
+            )
+        })
     };
     admitted.then_some([x, y - f32::from(entity.ion_blast_lift_pixels())])
 }
@@ -1344,7 +1502,7 @@ fn emit_turret_unit_sprites(
     pieces: &mut Vec<ObjectPieceInstance>,
 ) {
     let slope_type = stable_slope_for_key(slope_state);
-    let voxel_adjust = super::foot_depth::unit_z_adjust(state, entity, true) as f32;
+    let voxel_adjust = super::foot_depth::unit_z_adjust(state, entity, true, None) as f32;
     let body_key = UnitSpriteKey {
         type_id: type_id.to_string(),
         turret_index: 0,
@@ -1677,7 +1835,7 @@ fn emit_harvest_overlay(
             alpha: 1.0,
             draw_state,
             // An SHP draw of the harvester (`TechnoClass_DrawSHP`, a7 - 2).
-            z_adjust: super::foot_depth::unit_z_adjust(state, entity, false)
+            z_adjust: super::foot_depth::unit_z_adjust(state, entity, false, None)
                 .wrapping_add(SHP_DRAW_Z_ADJUST_PX) as f32,
             z_gradient: pack_z_gradient(ZGradient::Vertical, false),
             ..Default::default()
@@ -2008,6 +2166,36 @@ mod tests {
         }
         entity.cloak.as_mut().unwrap().set_state_for_test(0);
         assert!(unit_shadow_admitted(&entity, false, EntityDrawBand::Ground));
+    }
+
+    #[test]
+    fn fly_body_draw_uses_the_executed_secondary_facing_cache_key() {
+        let fixture: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/voxel_oracle/aircraft_shadow.json",
+        ))
+        .unwrap();
+        let mut compared = 0;
+        for case in fixture["callers"].as_array().unwrap() {
+            let Some(native_key) = case["body_cache_key"].as_u64() else {
+                continue;
+            };
+            let input = &case["input"];
+            let mut entity = GameEntity::test_default(1, "ORCA", "Americans", 10, 10);
+            entity.set_category_for_test(EntityCategory::Aircraft);
+            entity.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Fly));
+            entity
+                .body_facing
+                .snap(input["primary"].as_u64().unwrap() as u16, 0);
+            crate::sim::movement::air_movement::ensure_fly_secondary_facing(&mut entity);
+            entity
+                .barrel_facing
+                .as_mut()
+                .unwrap()
+                .snap(input["secondary"].as_u64().unwrap() as u16, 0);
+            assert_eq!(body_draw_facing(&entity, 0), native_key as u8, "{input}");
+            compared += 1;
+        }
+        assert_eq!(compared, 4);
     }
 
     /// A crashing body takes its pose before the turret split, whether or not

@@ -1188,7 +1188,12 @@ use crate::util::save_codec;
 // 442 -> 443: exact session mode and multiplayer launch/observer state;
 // retained CompEasyBonus rules scalar and House Flag_To_Die latch.
 // The positional session/House payload changed.
-const SNAPSHOT_VERSION: u32 = 443;
+// 443 -> 444: retained fixed-ART TechnoType ShadowIndex in the process
+// registry and its runtime ObjectType projection.
+// 444 -> 445: processed BuildingTypes retain the native signed integer light
+// fields across per-layer reads. Their positional rules-state payload replaces
+// the merged-INI float light projection, so v444 cannot use this schema.
+const SNAPSHOT_VERSION: u32 = 445;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -4611,7 +4616,7 @@ mod tests {
     /// 132 -> 133 persists the `HouseClass+0x57D4` funds-nag timer and the
     /// `[0xA8F040]` low-power guard.
     #[test]
-    fn current_snapshot_version_includes_foot_crush_slowdown() {
+    fn current_snapshot_version_includes_voxel_shadow_index() {
         // 133 -> 134: repair-depot docking layout (see the constant's comment).
         // 134 -> 135: GameEntity ProduceCash timer + drain link pair (GSI-09.01).
         // 135 -> 136: explicit retained Infantry terminal lifetime policy.
@@ -4921,7 +4926,9 @@ mod tests {
         // 441 -> 442: the Foot-owned crush slowdown / rocking flag.
         // 442 -> 443: exact session mode, multiplayer launch/observer state,
         // CompEasyBonus and the House Flag_To_Die latch.
-        assert_eq!(super::SNAPSHOT_VERSION, 443);
+        // 443 -> 444: retained TechnoType ShadowIndex.
+        // 444 -> 445: retained per-pass BuildingType light integers.
+        assert_eq!(super::SNAPSHOT_VERSION, 445);
     }
 
     #[test]

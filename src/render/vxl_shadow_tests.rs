@@ -63,6 +63,8 @@ fn native_generated_shadow_geometry_and_body_mask() {
                 facing: step * 8,
                 ..Default::default()
             },
+            0,
+            false,
         )
         .unwrap();
         if case["masked"].as_bool().unwrap() {
@@ -88,7 +90,9 @@ fn native_generated_shadow_geometry_and_body_mask() {
             &VxlRenderParams {
                 frame: 1,
                 ..Default::default()
-            }
+            },
+            0,
+            false,
         )
         .is_none()
     );
@@ -97,12 +101,87 @@ fn native_generated_shadow_geometry_and_body_mask() {
             &vxl,
             Some(&hva),
             &VxlRenderParams {
-                slope_type: 1,
+                slope_type: 17,
                 ..Default::default()
-            }
+            },
+            0,
+            false,
         )
         .is_none()
     );
+}
+
+fn aircraft_params(caller: &Value) -> VxlRenderParams {
+    let input = &caller["input"];
+    let fly = input["locomotor"] == "Fly";
+    let facing = input[if fly { "secondary" } else { "primary" }]
+        .as_u64()
+        .unwrap() as u16;
+    VxlRenderParams {
+        facing: super::super::voxel_facing_step_u16(facing) * 8,
+        slope_type: if fly && input["dropship"].as_bool().unwrap_or(false) {
+            0
+        } else {
+            input["slope"].as_u64().unwrap_or(0) as u8
+        },
+        ..Default::default()
+    }
+}
+
+#[test]
+fn native_aircraft_shadow_half_viewer_selected_section_and_slope() {
+    let fixture: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/voxel_oracle/aircraft_shadow.json",
+    ))
+    .unwrap();
+    let data = &fixture["generated"];
+    let vxl = VxlFile::from_bytes(&bytes(data["vxl"].as_str().unwrap())).unwrap();
+    let hva = HvaFile::from_bytes(&bytes(data["hva"].as_str().unwrap())).unwrap();
+    for case in data["cases"].as_array().unwrap() {
+        let caller = &fixture["callers"][case["caller"].as_u64().unwrap() as usize];
+        let sprite = render(
+            &vxl,
+            Some(&hva),
+            &aircraft_params(caller),
+            case["shadow_index"].as_i64().unwrap() as i32,
+            case["considered_aircraft"].as_bool().unwrap(),
+        )
+        .unwrap();
+        check(&sprite, case, &format!("aircraft generated {case}"));
+    }
+    assert!(render(&vxl, Some(&hva), &Default::default(), -1, true).is_none());
+    assert!(render(&vxl, Some(&hva), &Default::default(), 4, true).is_none());
+}
+
+#[test]
+fn retail_harrier_shadow_matches_original_caller_and_stencil() {
+    let Some((_, assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+        return;
+    };
+    let fixture: Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/voxel_oracle/aircraft_shadow.json",
+    ))
+    .unwrap();
+    let stock = &fixture["retail"];
+    for name in ["FALC.VXL", "FALC.HVA", "VOXELS.VPL"] {
+        let raw = assets.get_ref(name).expect(name);
+        assert_eq!(
+            crate::util::sha256::sha256_hex(raw),
+            stock["sha256"][name].as_str().unwrap(),
+            "{name}"
+        );
+    }
+    let vxl = VxlFile::from_bytes(assets.get_ref("FALC.VXL").unwrap()).unwrap();
+    let hva = HvaFile::from_bytes(assets.get_ref("FALC.HVA").unwrap()).unwrap();
+    for case in stock["cases"].as_array().unwrap() {
+        let caller = &fixture["callers"][case["caller"].as_u64().unwrap() as usize];
+        let sprite = render(&vxl, Some(&hva), &aircraft_params(caller), 0, true).unwrap();
+        check(
+            &sprite,
+            case,
+            &format!("retail ORCA caller {}", case["caller"]),
+        );
+    }
 }
 
 /// `VoxelAnimClass::DrawIt`'s shadow (`0x00749CBE..0x00749CE8`): the bounce
@@ -125,7 +204,7 @@ fn tumbling_piece_shadow_matches_original_execution() {
             .collect();
         let matrix =
             super::super::hva_to_mat4(&std::array::from_fn(|i| f32::from_bits(bits[i])), 1.0);
-        let sprite = render_matrix(&vxl, matrix).unwrap();
+        let sprite = render_matrix(&vxl, matrix, 0, false).unwrap();
         check(
             &sprite,
             shadow,
@@ -173,6 +252,8 @@ fn stock_shadow_geometry_and_native_composed_body_masks() {
                     facing: step * 8,
                     ..Default::default()
                 },
+                0,
+                false,
             )
             .unwrap();
             if masked {

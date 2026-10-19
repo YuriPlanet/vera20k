@@ -258,6 +258,20 @@ impl ApplicationHandler for App {
         let Some(state) = &mut self.state else { return };
         state.sync_cursor_space();
 
+        // winit 0.30.12's X11 Ime::create_context(window, false) sends an
+        // Ime::Disabled lifecycle notification even for an unmapped window.
+        // It carries no input. Recognize it at the shared capture entry;
+        // the guards below still own every keyboard/pointer/IME input event.
+        // https://github.com/rust-windowing/winit/blob/v0.30.12/src/platform_impl/linux/x11/ime/mod.rs
+        #[cfg(target_os = "linux")]
+        if (shell_capture_active || tactical_capture_active)
+            && state.platform.window.is_visible() == Some(false)
+            && !state.platform.window.has_focus()
+            && matches!(&event, WindowEvent::Ime(winit::event::Ime::Disabled))
+        {
+            return;
+        }
+
         // This checkpoint is driven entirely from `about_to_wait`. Focused
         // input would contaminate its hidden, no-input production oracle.
         if tactical_capture_active {

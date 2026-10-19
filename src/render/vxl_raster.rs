@@ -1052,7 +1052,7 @@ pub fn render_vxl_shadow(
     hva: Option<&HvaFile>,
     params: &VxlRenderParams,
 ) -> VxlSprite {
-    if let Some(sprite) = shadow::render(vxl, hva, params) {
+    if let Some(sprite) = shadow::render(vxl, hva, params, 0, false) {
         return sprite;
     }
     render_legacy_vxl_shadow(vxl, hva, params)

@@ -258,7 +258,7 @@ fn shp_z_adjust_in_runtime(
         )
     };
     if height_above_ground == 0 {
-        unit_z_adjust_in_runtime(runtime, entity, true).wrapping_sub(2) as f32
+        unit_z_adjust_in_runtime(runtime, entity, true, None).wrapping_sub(2) as f32
     } else {
         height_only as f32
     }
@@ -267,11 +267,19 @@ fn shp_z_adjust_in_runtime(
 /// Foot 0x4DAFC0 used by VXL body/shadow and OREGATH. `unloading_body` selects
 /// only the proven Unit+6C4 temporary UnloadingClass substitution at 0x73D2C4;
 /// camouflage/NoSpawnAlt art must not replace the depth coefficients.
-pub(crate) fn unit_z_adjust(state: &AppState, entity: &GameEntity, unloading_body: bool) -> i32 {
+/// Aircraft's shadow caller temporarily SetHeights the object; its read-only
+/// adapter supplies that world Z here instead of changing the simulation.
+pub(crate) fn unit_z_adjust(
+    state: &AppState,
+    entity: &GameEntity,
+    unloading_body: bool,
+    world_z_override: Option<i32>,
+) -> i32 {
     unit_z_adjust_in_runtime(
         state.match_state.sim_runtime.as_ref(),
         entity,
         unloading_body,
+        world_z_override,
     )
 }
 
@@ -279,8 +287,10 @@ fn unit_z_adjust_in_runtime(
     runtime: Option<&crate::sim::runtime::SimRuntime>,
     entity: &GameEntity,
     unloading_body: bool,
+    world_z_override: Option<i32>,
 ) -> i32 {
-    let world_z = crate::sim::movement::ground_pose::object_world_z_leptons(entity, None);
+    let world_z = world_z_override
+        .unwrap_or_else(|| crate::sim::movement::ground_pose::object_world_z_leptons(entity, None));
     if !matches!(
         entity.category(),
         EntityCategory::Unit | EntityCategory::Infantry

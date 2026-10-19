@@ -457,6 +457,17 @@ class CargoRunTests(unittest.TestCase):
         reports = [json.loads(line) for line in report.read_text().splitlines()] if report.exists() else []
         return result, commands, reports
 
+    def test_every_run_ends_by_reporting_where_its_time_went(self):
+        summary = (r'cargo_run: [\d.]+ s in all: [\d.]+ s waiting for the build lock, '
+                   r'[\d.]+ s cache retention, [\d.]+ s Cargo, [\d.]+ s tests')
+        for calls in ([(0, '')], [(3, '')]):
+            with self.subTest(calls=calls), redirect_stderr(io.StringIO()) as stderr:
+                self.run_tests(calls)
+            self.assertRegex(stderr.getvalue().splitlines()[-1], '^' + summary + '$')
+        with redirect_stderr(io.StringIO()) as stderr, self.assertRaises(ValueError):
+            self.run_tests([(0, str(self.root / 'source.rs'))])
+        self.assertRegex(stderr.getvalue().splitlines()[-1], '^' + summary + '$')
+
     def test_tests_run_after_releasing_the_shared_lock_but_not_the_checkout_lock(self):
         result, _, reports = self.run_tests([(0, '')])
         self.assertEqual(result, 0)

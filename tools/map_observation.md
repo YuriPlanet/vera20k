@@ -201,6 +201,16 @@ capture demonstrate building pixels crossing a frontier while its anchor is
 still unexplored, without changing sight or substituting a diagnostic reveal.
 Older receipts may omit the field; their absence supplies no visibility evidence.
 
+Requested terrain rows additionally retain nullable `render`. It stays `null`
+for committed steps that were not drawn. After the matching ordinary draw,
+`phase: "after_draw"` records the live TMP variant/pavement choice, exact atlas
+key and nullable UV, palette-light words, camera and elevated cell center, and
+the shared CPU A-buffer's nullable center sample (`a_bound` names whether that
+buffer was bound). Missing cells/assets/light state or out-of-view samples stay
+explicitly null. These are passive post-draw inputs, not GPU fragment or pixel
+readbacks; they do not certify that a selected tile reached the final surface.
+Historical receipts may omit `render` and supply no evidence for those inputs.
+
 Actor `cloak`, when present, reads the existing raw signed state/progress,
 live signed Rules `CloakingStages`, actual VXL/SHP route, and original type's
 `NoShadow` flag. `null` means no cloak runtime. Reading this projection sends
@@ -856,6 +866,10 @@ variable in its denylist must be absent, even if set to an empty string. The
 wrapper reports denied variables and does not silently change the environment.
 After sourcing the native development environment, explicitly remove `RA2_DIR`
 for this command as above; asset loading uses the working directory's config.
+
+On Linux, winit's text-free `Ime::Disabled` startup notification is recognized
+as lifecycle state while the capture window is observably hidden and unfocused.
+Keyboard, pointer and other IME events still reach the input guards.
 
 The [factory tank exit profile](map_observation.factory-tank-exit.example.json)
 exercises the ordinary human GAWEAP → MTNK production path on retail AnyTown

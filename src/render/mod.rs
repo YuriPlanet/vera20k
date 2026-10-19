@@ -16,6 +16,7 @@
 //!   borrowed process Main cursor, never Scenario/MapGen or gameplay state
 //! - render/ does NOT depend on: ui/, audio/, net/
 
+pub(crate) mod aircraft_shadow;
 pub(crate) mod atlas_growth;
 #[cfg(test)]
 mod atlas_refresh_retail_tests;

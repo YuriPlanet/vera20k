@@ -102,6 +102,11 @@ second lock per checkout stays held until the tests finish, so another run from 
 same checkout waits instead of relinking a running test. A runner configured for the
 host target in Cargo configuration takes precedence; the tests then run under the lock.
 
+Every run ends with one stderr line saying where its time went, including after a
+failure, for example
+`cargo_run: 94.2 s in all: 31.0 s waiting for the build lock, 12.1 s cache retention, 48.3 s Cargo, 2.6 s tests`.
+It stays visible when callers keep only the tail of the output.
+
 Each worktree has a separate cache under
 `<cache root>/owned-worktrees/<checkout-path-hash>`, where the cache root is
 `CARGO_TARGET_DIR` when set and otherwise the `target/` of the repository's primary
@@ -140,7 +145,7 @@ worktree, so the runner starts one only when it can matter:
 
 - **Before compiling**, when the target volume is below the minimum free space
   (labelled builds also measure the saved-artifact volume).
-- **After compiling**, also after failed builds, at most once every 30 minutes
+- **After compiling**, also after failed builds, at most once every two hours
   (`AUTOMATIC_INTERVAL_SECONDS`), or at once when a volume is below the minimum
   or cannot be measured. Any applied pass counts, including one that ended
   blocked or partial; a dry run does not. `--trim-cache` always runs one.
@@ -151,8 +156,10 @@ worktree, so the runner starts one only when it can matter:
 Between passes the cache can exceed its budgets; the free-space reserve is still
 measured on every invocation. Defaults are **40 GiB total compiler
 cache**, **16 GiB incremental cache**, and **12 GiB minimum free space** per cache
-volume. Set `VERA20K_CACHE_GIB`, `VERA20K_INCREMENTAL_GIB`, and
-`VERA20K_MIN_FREE_GIB`, or pass `--cache-gib`, `--incremental-gib`, and
+volume. A pass that finds the reserve short trims until **8 GiB of headroom**
+above it is free, so the next build does not need another pass at once. Set
+`VERA20K_CACHE_GIB`, `VERA20K_INCREMENTAL_GIB`, `VERA20K_MIN_FREE_GIB` and
+`VERA20K_FREE_HEADROOM_GIB`, or pass `--cache-gib`, `--incremental-gib`, and
 `--min-free-gib` before `--`; they set the policy the next pass applies. Sizes
 accept finite nonnegative decimal GiB.
 Cache budgets are soft when protected files prevent reclaiming enough space.
@@ -178,7 +185,14 @@ python -m tools.cargo_run --trim-cache
 The owner records every new target (including failed, unlabelled, check and custom
 target invocations) in `owned-builds/cache-roots.json`. Historical labelled roots
 are adopted only when their live checkout/common Git directory and namespace
-prove ownership. Unregistered, abandoned or unverifiable caches stay untouched.
+prove ownership. A registered cache whose checkout no longer exists is abandoned
+once it has been idle an hour (`ABANDONED_SECONDS`), it sits in this repository's
+cache root under its checkout's namespace, and no run holds that checkout's lock.
+Every pass then removes the Cargo profile output in it, whatever the budgets, apart
+from files a preserved or latest build still names; its latest record goes first,
+since only its live checkout could resolve it. Empty directories go with it, and a
+cache left empty leaves the registry. Unregistered or unverifiable caches stay
+untouched.
 Only orphaned `deps/*.rcgu.o`, complete finalized incremental sessions and older
 Mach-O/ELF executables in `deps` are eligible; paths must belong to exact Cargo
 profile directories. An older executable is a `<name>-<16 hex>` file with a newer
@@ -188,7 +202,9 @@ its recorded tests may still run. Objects only older executables name become
 eligible after those executables, never ahead of them. Cross-target profiles require
 an executable path reported by Cargo or retained in a preserved build manifest.
 Older sessions are considered first; newest sessions are eligible if pressure
-remains. Working sessions and sessions containing links or unknown files stay
+remains, except that a crate's newest session built in the last 12 hours
+(`ACTIVE_SESSION_SECONDS`) yields only to a short free-space reserve, never to the
+cache or incremental budget. Working sessions and sessions containing links or unknown files stay
 protected. Shared compiler objects are eligible only when every inode alias
 is accounted for in registered caches and required debug-reference paths survive.
 Unknown external hardlinks remain protected; the cleaner never unlinks a required
@@ -275,7 +291,7 @@ ownership records or debug inputs remain blocked; do not manufacture metadata.
 
 Each attempt writes `owned-builds/retention/<timestamp>-<id>.json`: selected and
 removed files, allocated/logical bytes removed, observed free-space change, errors
-and unmet targets. Dry runs never remove files; their projected space is an estimate.
+and unmet targets. A pass removes receipts older than seven days. Dry runs never remove files; their projected space is an estimate.
 APFS clones/snapshots and unrelated volume activity can make observed reclamation
 differ from file allocation; applying a plan rechecks real free space and tries
 additional eligible cold entries when necessary. Plans are never reused for deletion.

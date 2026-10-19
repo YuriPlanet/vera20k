@@ -1,8 +1,9 @@
 """Private retention implementation; cargo_run owns its lock, registry and CLI.
 
-Only compiler objects, complete incremental sessions and executables a newer one of
-the same name replaced in a Cargo deps directory are disposable. Preserved
-labels and all surviving references remain protected. Never infer that linking made its
+Only compiler objects, complete incremental sessions, executables a newer one of
+the same name replaced in a Cargo deps directory, and the Cargo profile output of
+a cache whose checkout is gone are disposable. Preserved labels and all surviving
+references remain protected. Never infer that linking made its
 debug objects disposable: Mach-O executables commonly refer to them by pathname.
 """
 from __future__ import annotations
@@ -49,23 +50,41 @@ def gib_bytes(value: str) -> int:
 # 2026-09-30 to 10-18, free space starting at 20 GiB or less fell at most
 # 7.2 GiB before the next pass. On 2026-10-18 the volume's 12-16 GiB free sat
 # below the former 16 GiB reserve for hours, blocking builds 12 GiB admits.
+# A pass the reserve starts trims past it by the headroom. Trimming only back to
+# the reserve made the next build due another pass: on 2026-10-19 87 passes of
+# about a minute each held the build lock for 108 minutes, each freeing 4-6 GiB
+# that builds used up within about ten minutes.
 @dataclass(frozen=True)
 class CachePolicy:
     cache_bytes: int = 40 * GIB
     incremental_bytes: int = 16 * GIB
     min_free_bytes: int = 12 * GIB
+    free_headroom_bytes: int = 8 * GIB
 
     def __post_init__(self):
         if any(type(value) is not int or value < 0 for value in asdict(self).values()):
             raise ValueError('Cache byte limits must be nonnegative integers')
 
     @classmethod
-    def from_env(cls, cache=None, incremental=None, free=None):
+    def from_env(cls, cache=None, incremental=None, free=None, headroom=None):
         return cls(*(gib_bytes(value if value is not None else os.environ.get(key, default))
                      for value, key, default in (
                          (cache, 'VERA20K_CACHE_GIB', '40'),
                          (incremental, 'VERA20K_INCREMENTAL_GIB', '16'),
-                         (free, 'VERA20K_MIN_FREE_GIB', '12'))))
+                         (free, 'VERA20K_MIN_FREE_GIB', '12'),
+                         (headroom, 'VERA20K_FREE_HEADROOM_GIB', '8'))))
+
+
+# A crate's newest finalized session built this recently belongs to current work:
+# the soft budgets never take it, only a short free-space reserve. Under the soft
+# budgets alone, passes on 2026-10-19 removed sessions minutes old, and 18% of
+# focused-test compiles took 75 s or more against a 32 s median.
+ACTIVE_SESSION_SECONDS = 12 * 60 * 60
+# A registered cache whose checkout is gone, unused at least this long, is
+# reclaimed whatever the budgets; see _abandoned_roots.
+ABANDONED_SECONDS = 60 * 60
+# Receipts are an audit trail of recent passes: 3,883 held 1.1 GiB on 2026-10-19.
+RECEIPT_SECONDS = 7 * 24 * 60 * 60
 
 
 def _json(path: Path):
@@ -256,6 +275,54 @@ def _owned_root(checkout: str, target: Path, store: Path, stores: dict) -> Path 
     if not canonical.is_dir():
         raise ValueError(f'Owned target is not a directory: {canonical}')
     return canonical
+
+
+def _abandoned_roots(root: Path, store: Path) -> set[Path]:
+    """Registered caches whose checkout is gone: output nothing can build into again.
+
+    A removed worktree leaves its cache, and _owned_root adopts only caches of live
+    checkouts, so on 2026-10-19 five such caches held 17.8 GiB that no budget
+    counted. The registry proves ownership: the cache sits in this repository's
+    cache root under the namespace of its recorded checkout path, that path no
+    longer exists, no run holds the checkout's lock, and the cache has been idle
+    for ABANDONED_SECONDS.
+    """
+    from tools.cargo_run import build_store, owned_target
+    registry = store / 'cache-roots.json'
+    if not registry.exists():
+        return set()
+    data = _json(registry)
+    if not isinstance(data, dict) or not isinstance(data.get('roots'), dict):
+        raise ValueError('Malformed owned cache registry')
+    _, namespace = build_store(root)
+    cache_root = owned_target(root, namespace).parent
+    abandoned = set()
+    for name, entry in data['roots'].items():
+        if not isinstance(entry, dict):
+            raise ValueError('Malformed owned cache entry')
+        checkout, used = entry.get('checkout'), entry.get('last_use_unix')
+        target = Path(name)
+        if (not isinstance(checkout, str) or not Path(checkout).is_absolute()
+                or type(used) not in (int, float) or Path(checkout).exists()
+                or target.parent != cache_root or not target.is_dir()
+                or target.name != hashlib.sha256(os.fsencode(checkout)).hexdigest()[:16]
+                or not time.time() - used >= ABANDONED_SECONDS
+                or _checkout_running(store, target.name)):
+            continue
+        try:
+            _plain(target)
+        except ValueError:
+            continue  # A linked cache is unverifiable; never adopt it for deletion.
+        abandoned.add(target)
+    return abandoned
+
+
+def _abandoned_output(cache: Path, path: Path) -> bool:
+    """Cargo's own output in an abandoned cache: host profile trees and root files."""
+    from tools.cargo_run import HOST_PROFILES
+    parts = path.relative_to(cache).parts
+    return (len(parts) > 1 and parts[0] in HOST_PROFILES) or parts in (
+        ('.rustc_info.json',), ('.future-incompat-report.json',), ('CACHEDIR.TAG',))
 
 
 def _inputs(root: Path, store: Path, *, preserved_checks=None, profiles=None, notes=None):
@@ -556,6 +623,16 @@ def trim_locked(root: Path, store: Path, policy: CachePolicy, *, dry_run=False) 
     receipt['degraded_debug_inputs'] = {}
     receipt['inspection_cache'] = {'hits': 0, 'misses': 0, 'failure_hits': 0}
     try:
+        abandoned = _abandoned_roots(root, store)
+        receipt['abandoned_roots'] = sorted(map(str, abandoned))
+        if not dry_run:
+            # Only resolve_binary reads a latest record, for its live checkout.
+            for cache in sorted(abandoned):
+                record = store / 'latest' / f'{cache.name}.json'
+                if record.exists():
+                    _regular(record)
+                    record.unlink()
+                    receipt['notes'].append(f'Removed the latest record of abandoned cache {cache}')
         receipt['cache_state'] = _cache_state(root, store)
         (store / 'inspections').mkdir(parents=True, exist_ok=True)
         _plain(store / 'inspections')
@@ -565,16 +642,21 @@ def trim_locked(root: Path, store: Path, policy: CachePolicy, *, dry_run=False) 
         profiles = set()
         roots, binaries, watched = _inputs(root, store, profiles=profiles, notes=receipt['notes'])
         inventory = {path: info for cache in sorted(roots) for path, info in _files(cache, directory_states)}
+        leftovers = {path: (cache, info) for cache in sorted(abandoned)
+                     for path, info in _files(cache, directory_states)}
+        inventory.update((path, info) for path, (_, info) in leftovers.items())
         total = _allocated_total(inventory.values())
         increments = {path for path in inventory if any(path.is_relative_to(
             profile / 'incremental') for profile in profiles)}
         incremental = _allocated_total(inventory[path] for path in increments)
-        devices = {cache.stat().st_dev: cache for cache in sorted(roots)}
+        # An abandoned cache may be gone by the final measurement; its parent stays.
+        devices = {cache.stat().st_dev: cache for cache in [
+            *(cache.parent for cache in sorted(abandoned)), *sorted(roots)]}
         free = {str(device): shutil.disk_usage(cache).free for device, cache in devices.items()}
         receipt.update(roots=[str(path) for path in sorted(roots)], cache_allocated_bytes=total,
                        incremental_allocated_bytes=incremental, free_before=free,
                        selected_files=[], protected_files=0)
-        pressure = total > policy.cache_bytes or incremental > policy.incremental_bytes or any(
+        pressure = bool(leftovers) or total > policy.cache_bytes or incremental > policy.incremental_bytes or any(
             count < policy.min_free_bytes for count in free.values())
         if not pressure:
             receipt['state'] = 'under_budget'
@@ -594,7 +676,9 @@ def trim_locked(root: Path, store: Path, policy: CachePolicy, *, dry_run=False) 
             # Include unlabelled lib tests, examples and build-script executables.
             # No dependence on Unix executable bits (Windows does not have them).
             for path, info in inventory.items():
-                if path.suffix in {'.o', '.obj', '.rlib', '.rmeta', '.a', '.bin', '.pdb', '.dwo', '.dwp'}:
+                # An abandoned cache's own executables protect nothing; it goes whole.
+                if path in leftovers or path.suffix in {
+                        '.o', '.obj', '.rlib', '.rmeta', '.a', '.bin', '.pdb', '.dwo', '.dwp'}:
                     continue
                 if _magic(path) in MACH | {b'\x7fELF'} or _magic(path)[:2] == b'MZ':
                     binaries.add(path)
@@ -635,6 +719,10 @@ def trim_locked(root: Path, store: Path, policy: CachePolicy, *, dry_run=False) 
                 if (path.name.endswith('.rcgu.o') and path.parent in {profile / 'deps' for profile in profiles}
                         and links.eligible(path) and path not in protected):
                     groups.append(([path], False, info.st_mtime_ns, 0, frozenset(needed.get(path, ()))))
+            # Cargo output of an abandoned cache goes first, whatever the budgets.
+            for path, (cache, info) in leftovers.items():
+                if _abandoned_output(cache, path) and links.eligible(path) and path not in protected:
+                    groups.append(([path], False, info.st_mtime_ns, -1, frozenset()))
             sessions = {}
             for path in increments:
                 # Cargo incremental/<crate-hash>/s-<session>/{objects,*.bin}.
@@ -677,14 +765,28 @@ def trim_locked(root: Path, store: Path, policy: CachePolicy, *, dry_run=False) 
             groups.sort(key=lambda group: (
                 group[3], max([group[2], *(inventory[path].st_mtime_ns for path in group[4])]),
                 bool(group[4]), str(group[0][0])))
-            receipt['removable_groups'] = len(groups)
+            # A short reserve is restored with headroom; see CachePolicy.
+            free_target = policy.min_free_bytes + (policy.free_headroom_bytes if any(
+                count < policy.min_free_bytes for count in free.values()) else 0)
+            active_since = time.time_ns() - ACTIVE_SESSION_SECONDS * 1_000_000_000
+
+            def wanted(is_incremental, age, newest, total_now, incremental_now, free_now):
+                if newest < 0 or free_now < free_target:
+                    return True
+                if newest and age >= active_since:
+                    return False  # Recent work's newest session; see ACTIVE_SESSION_SECONDS.
+                return total_now > policy.cache_bytes or (
+                    is_incremental and incremental_now > policy.incremental_bytes)
+
+            receipt['removable_groups'] = sum(
+                wanted(is_incremental, age, newest, total, incremental, free[str(inventory[paths[0]].st_dev)])
+                for paths, is_incremental, age, newest, _ in groups)
             selected, projected_free, projected_total, projected_incremental = [], dict(free), total, incremental
             projection, chosen = _CacheLinks(inventory, increments), set()
-            for paths, is_incremental, _, _, after in groups:
+            for paths, is_incremental, age, newest, after in groups:
                 device = str(inventory[paths[0]].st_dev)
-                if (projected_total <= policy.cache_bytes and
-                        (not is_incremental or projected_incremental <= policy.incremental_bytes)
-                        and projected_free[device] >= policy.min_free_bytes):
+                if not wanted(is_incremental, age, newest, projected_total,
+                              projected_incremental, projected_free[device]):
                     continue
                 if not after <= chosen:
                     continue
@@ -704,6 +806,9 @@ def trim_locked(root: Path, store: Path, policy: CachePolicy, *, dry_run=False) 
             # cooperating tasks; stat checks also detect external mutation.
             if build_processes():
                 raise ValueError('Unwrapped Cargo/rustc became active; no deletion')
+            # A cache abandoned since inventory waits for the next pass.
+            if not abandoned <= _abandoned_roots(root, store):
+                raise ValueError('Abandoned cache ownership changed during inspection')
             for path, identity in watched.items():
                 if _dependency_identity(path) != identity:
                     raise ValueError(f'Debug dependency changed during inspection: {path}')
@@ -727,25 +832,26 @@ def trim_locked(root: Path, store: Path, policy: CachePolicy, *, dry_run=False) 
                 receipt['selected_files'] = []
                 remaining_total, remaining_incremental, checked_at = total, incremental, 0.0
                 removed = set()
-                for paths, is_incremental, _, _, after in groups:
+                for paths, is_incremental, age, newest, after in groups:
                     device = inventory[paths[0]].st_dev
                     actual_free = shutil.disk_usage(devices[device]).free
-                    if (remaining_total <= policy.cache_bytes and
-                            (not is_incremental or remaining_incremental <= policy.incremental_bytes)
-                            and actual_free >= policy.min_free_bytes):
+                    if not wanted(is_incremental, age, newest, remaining_total,
+                                  remaining_incremental, actual_free):
                         continue
                     if not after <= removed:
                         continue
                     if time.monotonic() - checked_at >= 1:
                         if build_processes():
                             raise ValueError('Unwrapped Cargo/rustc became active; stopping deletion')
+                        if abandoned and not abandoned <= _abandoned_roots(root, store):
+                            raise ValueError('Abandoned cache ownership changed before deletion')
                         for path, identity in watched.items():
                             if _dependency_identity(path) != identity:
                                 raise ValueError(f'Debug dependency changed before deletion: {path}')
                         # Cache parents change from our unlinks; label/latest
                         # directories do not. Keep checking those publications.
                         for path, identity in directory_states.items():
-                            if not any(path.is_relative_to(cache) for cache in roots) and _directory_identity(path) != identity:
+                            if not any(path.is_relative_to(cache) for cache in roots | abandoned) and _directory_identity(path) != identity:
                                 raise ValueError(f'Build publication changed before deletion: {path}')
                         checked_at = time.monotonic()
                     receipt['selected_files'].extend(str(path) for path in paths)
@@ -791,6 +897,23 @@ def trim_locked(root: Path, store: Path, policy: CachePolicy, *, dry_run=False) 
                         except OSError:
                             pass
                 projected_total, projected_incremental = remaining_total, remaining_incremental
+                # Empty directories of abandoned caches go too, deepest first (never
+                # rmtree); a cache left empty leaves the registry.
+                emptied = set()
+                for cache in sorted(abandoned):
+                    for directory, _, _ in os.walk(cache, topdown=False):
+                        try:
+                            os.rmdir(directory)
+                        except OSError:
+                            pass
+                    if not cache.exists():
+                        emptied.add(str(cache))
+                if emptied:
+                    registry = store / 'cache-roots.json'
+                    data = _json(registry)
+                    data['roots'] = {name: entry for name, entry in data['roots'].items() if name not in emptied}
+                    _write(registry, data)
+                    receipt['removed_abandoned_roots'] = sorted(emptied)
             receipt['free_after'] = {str(device): shutil.disk_usage(cache).free
                                      for device, cache in devices.items()}
             receipt['unmet_targets'] = {
@@ -820,6 +943,13 @@ def trim_locked(root: Path, store: Path, policy: CachePolicy, *, dry_run=False) 
     path = store / 'retention' / f'{time.time_ns()}-{uuid.uuid4().hex[:8]}.json'
     _write(path, receipt)
     receipt['receipt_path'] = str(path)
+    cutoff = time.time_ns() - RECEIPT_SECONDS * 1_000_000_000
+    for name in os.listdir(path.parent):
+        if (match := re.fullmatch(r'(\d+)-[0-9a-f]{8}\.json', name)) and int(match[1]) < cutoff:
+            try:
+                (path.parent / name).unlink()
+            except OSError:
+                pass  # The pass is complete; an old receipt can go next time.
     return receipt
 
 
@@ -831,7 +961,9 @@ def trim(root: Path, policy: CachePolicy, timeout: float, *, dry_run=False) -> d
 
 
 # The soft budgets are enforced after a build at most this often; see retention_due.
-AUTOMATIC_INTERVAL_SECONDS = 30 * 60
+# They no longer take recent work's sessions, and a short reserve always gets a
+# pass, so an interval pass reclaims only cold caches.
+AUTOMATIC_INTERVAL_SECONDS = 2 * 60 * 60
 
 
 def _last_applied_pass(store: Path) -> tuple[Path, dict, float] | None:
@@ -860,7 +992,9 @@ def _cache_state(root: Path, store: Path) -> str:
     state = [sorted(map(str, roots)), sorted(map(str, profiles)),
              sorted((str(path), _identity(path)) for path in binaries)]
     directories = []
-    for cache in sorted(roots):
+    abandoned = _abandoned_roots(root, store)
+    state.append(sorted(map(str, abandoned)))
+    for cache in sorted(roots | abandoned):
         _plain(cache)
         pending = [cache]
         while pending:

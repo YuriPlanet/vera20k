@@ -1,4 +1,4 @@
-//! Ordinary single-section, flat ground shadow geometry.
+//! Native selected-section VXL ground shadow geometry.
 //!
 //! Original 753F90 submits four bottom-face corners; 756860 walks the span
 //! start table in 8.8 coordinates and writes TWO horizontal stencil pixels.
@@ -13,50 +13,59 @@ use crate::util::native_x87::X87Chop53 as Fpu;
 pub(crate) fn supported(vxl: &VxlFile, params: &VxlRenderParams) -> bool {
     params.scale == 1.0
         && params.frame == 0
-        && params.slope_type == 0
+        && params.slope_type < 17
         && params.slope_blend.is_none()
-        && vxl.limbs.len() == 1
-        && vxl.limbs[0].native_spans.is_some()
+        && !vxl.limbs.is_empty()
 }
 
 #[cfg(test)]
 #[path = "vxl_shadow_tests.rs"]
 mod tests;
 
-/// Native clear visibility buffer and crop. HVA ShadowIndex/frame zero and
-/// ordinary scale-one viewer are the supported caller boundary. Other callers
-/// continue through the explicitly retained legacy shadow path.
+/// Native clear visibility buffer and crop. ShadowIndex selects one section
+/// at HVA frame zero; ConsideredAircraft selects the original half-size viewer.
 pub(crate) fn render(
     vxl: &VxlFile,
     hva: Option<&HvaFile>,
     params: &VxlRenderParams,
+    shadow_index: i32,
+    considered_aircraft: bool,
 ) -> Option<VxlSprite> {
     if !supported(vxl, params) {
         return None;
     }
-    let limb = vxl.limbs.first()?;
-    let draw =
-        super::voxel_draw_rotation_for_state(0, None, super::voxel_facing_step(params.facing));
+    let limb_index = usize::try_from(shadow_index).ok()?;
+    vxl.limbs.get(limb_index)?;
+    let draw = super::voxel_draw_rotation_for_state(
+        params.slope_type,
+        None,
+        super::voxel_facing_step(params.facing),
+    );
     let matrix = if let Some(hva) = hva {
-        let mut raw = *hva.get_transform(0, 0)?;
+        let mut raw = *hva.get_transform(0, limb_index as u32)?;
+        // The native HVA loader scales every section's translation by the
+        // first VXL tailer's scale (5BD730), even for a different ShadowIndex.
+        let scale = vxl.limbs.first()?.scale;
         for column in [3, 7, 11] {
-            raw[column] = store(Fpu::mul(load(raw[column])?, load(limb.scale)?))?;
+            raw[column] = store(Fpu::mul(load(raw[column])?, load(scale)?))?;
         }
         matrix_product(draw, super::hva_to_mat4(&raw, 1.0))?
     } else {
         draw
     };
-    render_matrix(vxl, matrix)
+    render_matrix(vxl, matrix, shadow_index, considered_aircraft)
 }
 
-/// The stencil of a single-section VXL at a supplied matrix.
+/// The stencil of a selected VXL section at a supplied matrix.
 /// `VoxelAnimClass::DrawIt` passes 753F90 the bounce body's drawing matrix
 /// directly, with the identity viewer and no HVA (`0x00749CE8`).
-pub(crate) fn render_matrix(vxl: &VxlFile, matrix: super::Mat4) -> Option<VxlSprite> {
-    if vxl.limbs.len() != 1 || vxl.limbs[0].native_spans.is_none() {
-        return None;
-    }
-    let limb = &vxl.limbs[0];
+pub(crate) fn render_matrix(
+    vxl: &VxlFile,
+    matrix: super::Mat4,
+    shadow_index: i32,
+    considered_aircraft: bool,
+) -> Option<VxlSprite> {
+    let limb = vxl.limbs.get(usize::try_from(shadow_index).ok()?)?;
     let nx = usize::from(limb.size_x);
     let ny = usize::from(limb.size_y);
     if nx == 0 || ny == 0 {
@@ -80,8 +89,15 @@ pub(crate) fn render_matrix(vxl: &VxlFile, matrix: super::Mat4) -> Option<VxlSpr
     {
         let mut p = transform_point(matrix, point)?;
         p.y = -p.y;
-        p.x = store(Fpu::add(load(p.x)?, load(light_x)?))?;
         p.z = 0.0;
+        //707319..70732C scales the viewer. 753F90 applies its light
+        //translation afterward; the light itself is not halved. Executed
+        //half-viewer controls in aircraft_shadow.json catch this ordering.
+        if considered_aircraft {
+            p.x = store(Fpu::mul(load(p.x)?, load(0.5)?))?;
+            p.y = store(Fpu::mul(load(p.y)?, load(0.5)?))?;
+        }
+        p.x = store(Fpu::add(load(p.x)?, load(light_x)?))?;
         for axis in 0..2 {
             if p[axis] < lo[axis] {
                 lo[axis] = p[axis];
