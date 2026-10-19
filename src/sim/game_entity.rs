@@ -747,6 +747,9 @@ pub struct GameEntity {
     ///
     /// [`DeployAttachment`]: simple_deploy::DeployAttachment
     deploy_attachment: simple_deploy::DeployAttachment,
+    /// The Behind indicator Anim (`TechnoClass+0x12C`) that
+    /// `game_entity::behind_indicator` owns.
+    behind_anim: Option<crate::sim::anim_class::AnimId>,
     /// Unit+0x68C: runtime Deploy continuation, not the type's DeployToFire;
     /// a [`DeployContinuation`] that `mcv_deploy` owns.
     ///
@@ -822,6 +825,7 @@ pub struct GameEntity {
     pub(crate) cached_spatial_threat: crate::sim::house_threat::SpatialThreat,
 }
 
+mod behind_indicator;
 mod construction_stage;
 mod gunner;
 mod simple_deploy;
@@ -1559,6 +1563,7 @@ impl GameEntity {
             door: crate::sim::door::DoorClass::at_frame(construction_frame),
             bunker_runtime: None,
             deploy_attachment: Default::default(),
+            behind_anim: None,
             mcv_deploy_pending: Default::default(),
             infantry: if category == EntityCategory::Infantry {
                 Some(crate::sim::infantry::InfantryRuntime::new())

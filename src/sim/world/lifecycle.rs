@@ -5882,8 +5882,17 @@ impl Simulation {
             self.sound_events
                 .push(super::SimSoundEvent::UnitVoiceDestroyed { owner: stable_id });
         }
-        // Techno destructor6F467F..6F4691 UnInits its retained deploy Anim.
-        // Pointer-expiry may already have cleared it through the Anim owner.
+        // Techno destructor6F4667..6F4679 UnInits its Behind Anim, then
+        //6F467F..6F4691 its retained deploy Anim. Pointer-expiry may already
+        // have cleared either through the Anim owner.
+        if let Some(anim) = self
+            .substrate
+            .entities
+            .get_mut(stable_id)
+            .and_then(|entity| entity.take_behind_anim())
+        {
+            self.destroy_anim_with_context(anim, context.rules());
+        }
         if let Some(anim) = self
             .substrate
             .entities

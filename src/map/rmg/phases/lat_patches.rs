@@ -11,7 +11,8 @@ use crate::map::rmg::grid::RmgGrid;
 use crate::map::rmg::rng::{RANGE_K_BITS, RmgRng};
 use crate::map::rmg::scratch::RmgScratch;
 use crate::map::rmg::tiles::TileIds;
-use crate::map::rmg::x87::{self, Gaussian, TruncF64, approx_sqrt};
+use crate::map::rmg::x87::{Gaussian, TruncF64, approx_sqrt};
+use crate::util::native_x87::X87Chop53;
 
 use super::blob::MinHeap;
 
@@ -178,7 +179,9 @@ fn mean_draw(rng: &mut RmgRng) -> i32 {
     let scale = t(f64::from_bits(MEAN_K_BITS));
     let offset = t(MEAN_OFFSET);
     loop {
-        let value = x87::ftol(t(f64::from(rng.next_u32())).mul(scale).add(offset).to_f64());
+        let value = X87Chop53::ftol_f64_low_masked(
+            t(f64::from(rng.next_u32())).mul(scale).add(offset).to_f64(),
+        );
         if value <= MEAN_MAX {
             return value;
         }
@@ -193,7 +196,7 @@ fn patch_size(gauss: &mut Gaussian, rng: &mut RmgRng, mean: i32, scale: f64, max
             .add(t(f64::from(mean)))
             .to_f64();
         if (SIZE_MIN..=max).contains(&value) {
-            return x87::ftol(value);
+            return X87Chop53::ftol_f64_low_masked(value);
         }
     }
 }
@@ -206,7 +209,7 @@ fn patch_size_other(gauss: &mut Gaussian, rng: &mut RmgRng) -> i32 {
             .add(t(SIZE_BASE_OTHER))
             .to_f64();
         if (SIZE_MIN..=SIZE_MAX_OTHER).contains(&value) {
-            return x87::ftol(value);
+            return X87Chop53::ftol_f64_low_masked(value);
         }
     }
 }

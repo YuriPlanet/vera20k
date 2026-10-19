@@ -5,7 +5,7 @@
 //! resolved terrain from final land type and theater tile identity.
 
 use crate::map::tube_facts::TubeFact;
-use crate::rules::ini_parser::{IniFile, IniSection};
+use crate::rules::ini_parser::IniFile;
 use crate::rules::ini_value::{crt_atoi, strtok};
 
 const MIN_TUBE_FIELDS: usize = 5;
@@ -23,9 +23,7 @@ pub(crate) struct RawTubeRecord {
     value: String,
 }
 
-/// Move-only raw section receipt. Gameplay obtains this directly from the INI
-/// instead of using `MapFile::explicit_tubes`, whose safe convenience parser
-/// deliberately filters malformed rows.
+/// Move-only raw section receipt, the map's only `[Tubes]` reader.
 #[derive(Debug, Default)]
 pub(crate) struct RawTubeSection {
     records: Vec<RawTubeRecord>,
@@ -149,27 +147,6 @@ pub(crate) fn construct_raw_tube_section(
     Ok(())
 }
 
-pub fn parse_tubes(ini: &IniFile) -> Vec<TubeFact> {
-    let Some(section) = ini.section("Tubes") else {
-        return Vec::new();
-    };
-    parse_tubes_section(section)
-}
-
-fn parse_tubes_section(section: &IniSection) -> Vec<TubeFact> {
-    let mut tubes = Vec::new();
-    for key in section.keys() {
-        match parse_allocated_tube_entry(&section.read_string(key, "", TUBE_ROW_CAPACITY)) {
-            Ok(tube) => tubes.push(tube),
-            Err(error) => log::warn!("dropping malformed [Tubes] convenience fact: {error}"),
-        }
-    }
-    if !tubes.is_empty() {
-        log::info!("Parsed {} explicit map tubes from [Tubes]", tubes.len());
-    }
-    tubes
-}
-
 fn parse_allocated_tube_entry(value: &str) -> Result<TubeFact, AllocatedTubeParseError> {
     let fields: Vec<&str> = strtok(value, &[',']).collect();
     if fields.len() < MIN_TUBE_FIELDS {
@@ -208,8 +185,7 @@ fn parse_allocated_tube_entry(value: &str) -> Result<TubeFact, AllocatedTubePars
     if !terminated {
         // Active-retail faults after construction/ID assignment when strtok
         // returns NULL before either stop condition. Rust surfaces that same
-        // boundary as a hard load error in the gameplay constructor. The
-        // legacy convenience parser logs and drops it instead.
+        // boundary as a hard load error in the gameplay constructor.
         return Err(AllocatedTubeParseError::PathRunsOutBeforeNativeStop);
     }
 
@@ -222,32 +198,14 @@ mod tests {
     use crate::map::tube_facts::TubeSource;
 
     #[test]
-    fn parse_tubes_preserves_entry_exit_direction_and_steps_until_sentinel() {
-        let ini = IniFile::from_str("[Tubes]\n0=1,2,2,4,2,2,2,-1,6\n");
+    fn a_row_keeps_entry_exit_direction_and_steps_until_sentinel() {
+        let tube = parse_allocated_tube_entry("1,2,2,4,2,2,2,-1,6").unwrap();
 
-        let tubes = parse_tubes(&ini);
-
-        assert_eq!(tubes.len(), 1);
-        assert_eq!(tubes[0].entry, (1, 2));
-        assert_eq!(tubes[0].exit, (4, 2));
-        assert_eq!(tubes[0].direction, 2);
-        assert_eq!(tubes[0].path_steps, vec![2, 2]);
-        assert_eq!(tubes[0].source, TubeSource::ExplicitMap);
-    }
-
-    #[test]
-    fn parse_tubes_preserves_source_order() {
-        let ini = IniFile::from_str(
-            "[Tubes]\n\
-             7=7,0,6,4,0,6,6,-1\n\
-             2=2,0,2,5,0,2,2,-1\n",
-        );
-
-        let tubes = parse_tubes(&ini);
-
-        assert_eq!(tubes.len(), 2);
-        assert_eq!(tubes[0].entry, (7, 0));
-        assert_eq!(tubes[1].entry, (2, 0));
+        assert_eq!(tube.entry, (1, 2));
+        assert_eq!(tube.exit, (4, 2));
+        assert_eq!(tube.direction, 2);
+        assert_eq!(tube.path_steps, vec![2, 2]);
+        assert_eq!(tube.source, TubeSource::ExplicitMap);
     }
 
     /// `MapClass::ReadTubesINI` 0x007283C0 does not reject an over-long path.
@@ -260,14 +218,11 @@ mod tests {
         for _ in 0..105 {
             value.push_str(",2");
         }
-        let ini = IniFile::from_str(&format!("[Tubes]\n0={value}\n"));
+        let tube = parse_allocated_tube_entry(&value).expect("gamemd keeps the row");
 
-        let tubes = parse_tubes(&ini);
-
-        assert_eq!(tubes.len(), 1, "gamemd keeps the row; it does not drop it");
-        assert_eq!(tubes[0].path_len(), 99);
-        assert_eq!(tubes[0].entry, (0, 0));
-        assert_eq!(tubes[0].exit, (100, 0));
+        assert_eq!(tube.path_len(), 99);
+        assert_eq!(tube.entry, (0, 0));
+        assert_eq!(tube.exit, (100, 0));
     }
 
     /// A sentinel sitting exactly on the last slot the native loop reaches is
@@ -280,40 +235,28 @@ mod tests {
             value.push_str(",2");
         }
         value.push_str(",-1,7,7");
-        let ini = IniFile::from_str(&format!("[Tubes]\n0={value}\n"));
 
-        let tubes = parse_tubes(&ini);
-
-        assert_eq!(tubes.len(), 1);
-        assert_eq!(tubes[0].path_len(), 99);
-    }
-
-    #[test]
-    fn missing_tubes_section_returns_empty_vec() {
-        let ini = IniFile::from_str("[Map]\nTheater=TEMPERATE\n");
-
-        assert!(parse_tubes(&ini).is_empty());
+        assert_eq!(parse_allocated_tube_entry(&value).unwrap().path_len(), 99);
     }
 
     #[test]
     fn gsi_04_15_raw_atoi_values_and_low16_coordinates_are_preserved() {
-        let ini = IniFile::from_str("[Tubes]\nname=-1,65537,9tail,4,2,10,-2,15,-1,6\n");
+        let tube = parse_allocated_tube_entry("-1,65537,9tail,4,2,10,-2,15,-1,6").unwrap();
 
-        let tubes = parse_tubes(&ini);
-
-        assert_eq!(tubes.len(), 1);
-        assert_eq!(tubes[0].entry, (u16::MAX, 1));
-        assert_eq!(tubes[0].direction, 9);
-        assert_eq!(tubes[0].path_steps, vec![10, -2, 15]);
+        assert_eq!(tube.entry, (u16::MAX, 1));
+        assert_eq!(tube.direction, 9);
+        assert_eq!(tube.path_steps, vec![10, -2, 15]);
     }
 
-    /// Safe convenience parsing drops the row. The gameplay constructor is
-    /// stricter: it assigns first, then returns a hard load error at this
-    /// boundary so later rows and Overlay construction never run.
+    /// The gameplay constructor assigns the row's ID first, then returns a
+    /// hard load error at this boundary so later rows and Overlay
+    /// construction never run.
     #[test]
     fn gsi_04_15_missing_path_sentinel_is_rejected_safely() {
-        let ini = IniFile::from_str("[Tubes]\n0=1,2,2,4,2,2,2\n");
-        assert!(parse_tubes(&ini).is_empty());
+        assert_eq!(
+            parse_allocated_tube_entry("1,2,2,4,2,2,2"),
+            Err(AllocatedTubeParseError::PathRunsOutBeforeNativeStop)
+        );
     }
 
     // RESIDUAL — gamemd address 0x007283C0, `MapClass::ReadTubesINI`.

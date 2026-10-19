@@ -1790,7 +1790,6 @@ pub(crate) struct RandomMapProjection {
     smudges: Vec<(String, u16, u16)>,
     terrain_objects: Vec<(String, u16, u16)>,
     waypoints: Vec<(u32, u16, u16)>,
-    explicit_tubes: Vec<crate::map::tube_facts::TubeFact>,
     ini_content_hash: u64,
 }
 
@@ -1941,7 +1940,6 @@ impl MapLoadInitial {
                 .map(|object| (object.name.clone(), object.rx, object.ry))
                 .collect(),
             waypoints,
-            explicit_tubes: map_data.explicit_tubes.clone(),
             ini_content_hash: map_data.ini.content_hash(),
         };
         let trace = generated_construction_trace

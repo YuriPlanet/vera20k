@@ -321,17 +321,6 @@ pub fn iso_to_screen(rx: u16, ry: u16, z: u8) -> (f32, f32) {
     (sx, sy)
 }
 
-/// Convert absolute lepton-world coords to screen pixels with sub-cell
-/// precision — **the entity frame**, the absolute-lepton twin of
-/// `util::lepton::lepton_to_screen`.
-///
-/// The shared projector preserves active YR's signed integer arithmetic and
-/// final `/ 256` truncation. The returned `f32`s therefore always represent
-/// whole native pixels; float conversion is only the render API boundary.
-pub fn lepton_to_screen(coords: glam::IVec3) -> (f32, f32) {
-    crate::util::lepton::absolute_leptons_to_screen(coords.x, coords.y, coords.z)
-}
-
 /// Convert screen-space pixel position back to isometric cell coordinates.
 ///
 /// Inverse of `iso_to_screen`. Assumes z=0 (ground level). Returns floating-point
@@ -980,51 +969,5 @@ mod tests {
             high_suffix_sentinels > 0,
             "at least one of the 125 visible ClearTile fallbacks must select e/f/g"
         );
-    }
-
-    #[test]
-    fn lepton_to_screen_zero_matches_iso_origin() {
-        let (sx, sy) = lepton_to_screen(glam::IVec3::ZERO);
-        assert_eq!(sx, 0.0);
-        assert_eq!(sy, TILE_HEIGHT / 2.0);
-    }
-
-    #[test]
-    fn lepton_to_screen_integer_cell_lands_at_iso_center() {
-        // 4 cells east, 2 cells south = (4*256, 2*256, 0).
-        let (sx, sy) = lepton_to_screen(glam::IVec3::new(4 * 256, 2 * 256, 0));
-        assert_eq!(sx, (4.0 - 2.0) * TILE_WIDTH / 2.0);
-        assert_eq!(sy, (4.0 + 2.0) * TILE_HEIGHT / 2.0 + TILE_HEIGHT / 2.0);
-    }
-
-    #[test]
-    fn lepton_to_screen_sub_cell_offset_is_iso_subdivided() {
-        // Sub-cell offset of (128, 0) — native truncates the complete Y
-        // numerator from 7.5 to 7 before VERA's common +15 row bias.
-        let (sx, sy) = lepton_to_screen(glam::IVec3::new(128, 0, 0));
-        assert_eq!((sx, sy), (15.0, 22.0));
-    }
-
-    #[test]
-    fn lepton_to_screen_negative_coords_use_signed_truncation() {
-        let (sx, sy) = lepton_to_screen(glam::IVec3::new(-50, 0, 0));
-        assert_eq!((sx, sy), (-5.0, 13.0));
-    }
-
-    #[test]
-    fn adjust_for_z_lepton_projection_matches_retail_fixtures_and_boundary() {
-        let (_, baseline) = lepton_to_screen(glam::IVec3::ZERO);
-        for (z, expected_lift) in [
-            (104, 15.0),
-            (208, 30.0),
-            (256, 37.0),
-            (727, 104.0),
-            (728, 105.0),
-            (1_500, 216.0),
-            (-400, -56.0),
-        ] {
-            let (_, projected) = lepton_to_screen(glam::IVec3::new(0, 0, z));
-            assert_eq!(baseline - projected, expected_lift, "z={z}");
-        }
     }
 }

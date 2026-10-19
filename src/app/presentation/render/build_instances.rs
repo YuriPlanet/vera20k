@@ -267,6 +267,7 @@ pub(super) fn build_world_instances(
                 lighting: presentation.lighting.grid(),
                 house_colors: &presentation.house_color_map,
                 hidden_super_anims: &presentation.hidden_super_anims,
+                show_hidden: presentation.in_game_options.show_hidden,
                 local_owner,
                 observe_particles: state.diagnostic_presentation_ms().is_some(),
             },

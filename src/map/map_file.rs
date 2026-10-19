@@ -29,8 +29,6 @@ use crate::map::preview::{self, PreviewSection};
 use crate::map::tags::{self, TagMap};
 use crate::map::trigger_graph::{self, TriggerGraph};
 use crate::map::triggers::{self, TriggerMap};
-use crate::map::tube_facts::TubeFact;
-use crate::map::tubes;
 use crate::map::variable_names::{self, LocalVariableMap};
 use crate::map::waypoints::{self, Waypoint};
 use crate::rules::error::RulesError;
@@ -299,8 +297,6 @@ pub struct MapFile {
     pub trigger_graph: TriggerGraph,
     /// Parsed `[SpecialFlags]` section (TiberiumGrows, TiberiumSpreads overrides).
     pub special_flags: SpecialFlagsSection,
-    /// Explicit full TubeClass records parsed from `[Tubes]`.
-    pub explicit_tubes: Vec<TubeFact>,
     /// Full parsed INI for accessing additional sections (e.g., [Houses]).
     pub ini: IniFile,
 }
@@ -345,7 +341,6 @@ impl MapFile {
         let events: EventMap = events::parse_events(&ini);
         let actions: ActionMap = actions::parse_actions(&ini);
         let local_variables: LocalVariableMap = variable_names::parse_local_variables(&ini);
-        let explicit_tubes: Vec<TubeFact> = tubes::parse_tubes(&ini);
         let trigger_graph: TriggerGraph =
             trigger_graph::build_trigger_graph(&cell_tags, &tags, &triggers, &events, &actions);
         Ok(MapFile {
@@ -372,7 +367,6 @@ impl MapFile {
             local_variables,
             trigger_graph,
             special_flags,
-            explicit_tubes,
             ini,
         })
     }

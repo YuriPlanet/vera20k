@@ -1414,6 +1414,7 @@ fn techno_common_steps(
             return false;
         }
     }
+    behind_indicator_step(sim, id, rules);
     allied_target_drop_step(sim, id, rules);
     illegal_target_drop_step(sim, id, rules);
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
@@ -1721,9 +1722,10 @@ fn allied_target_drop_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
 /// calling `FootClass::AI` (`0x0051BC9F`) until the sequence completes, and
 /// `TechnoClass::AI_Update` has no health gate on these steps: the berserk
 /// countdown (`0x006F9F0D`), the estimate
-/// recovery (`0x006F9F6E`), the allied and illegal target drops
-/// (`0x006FA30C`, `0x006FA472`) and the passive block (`0x006FA65A`), whose
-/// scan draws and can acquire. Mission dispatch alone skips a Health-0
+/// recovery (`0x006F9F6E`), the Behind indicator (`0x006FA24A`), the allied
+/// and illegal target drops
+/// (`0x006FA30C`, `0x006FA472`), the passive block (`0x006FA65A`), whose
+/// scan draws and can acquire, and the healer drops (`0x006FA9D8`). Mission dispatch alone skips a Health-0
 /// object (`0x005B30A7`). The corpse's own fire routine is refused CANT for
 /// its death Doing (`0x0051C8B8`).
 ///
@@ -1757,6 +1759,7 @@ pub(super) fn dying_infantry_techno_ai(
             .estimated_health
             .recover(entity.health.current(), sim.session.binary_frame);
     }
+    behind_indicator_step(sim, id, rules);
     allied_target_drop_step(sim, id, rules);
     illegal_target_drop_step(sim, id, rules);
     if let Some(entity) = sim.substrate.entities.get_mut(id) {
@@ -1764,6 +1767,7 @@ pub(super) fn dying_infantry_techno_ai(
     }
     charge_turret_step(sim, id, rules);
     passive_acquire_step(sim, id, Some(rules), ctx);
+    healer_target_drop_step(sim, id, rules);
     //51BC9F still reaches Techno6FABC4 for Die1/Die2. A retained death
     // sequence uses the same absolute Stage clock as every other Infantry;
     // its sequencer runs only after this visit, never a second clock.
@@ -1819,8 +1823,247 @@ fn techno_after_acquisition(
             ctx.overlay_registry,
             ctx.effects,
         );
+        healer_target_drop_step(sim, id, rules);
     }
     true
+}
+
+/// `TechnoClass::AI_Update @ 0x006FA24A..0x006FA30C`, before the allied
+/// target drop: an object whose type has `CanBeHidden=` (TechnoType `+0x724`)
+/// and that is not an Aircraft (vt+0x2C 2), standing on a Cell that hides it
+/// (`cell_hides_objects`, `0x00487E00`, the Cell of its GetCoords vt+0x48),
+/// takes the Behind indicator (`UpdateBehindIndicator @ 0x0070F1D0`); any
+/// other object UnInits a retained one (vt+0xF8) and clears `+0x12C`.
+///
+/// UpdateBehindIndicator acts only when GetVisualState(0, NULL) (vt+0x68,
+/// [`screen_visual_character`]) answers 0 and `+0x12C` is empty: it
+/// constructs `[General] Behind=` (`Rules+0xB8`) at the object's GetCoords
+/// with delay 0, loop 1, flags 0x600, ZAdjust 0 (`0x0070F20D..0x0070F24C`),
+/// stores it at `+0x12C` and attaches it (SetOwnerObject `0x00424B50`). The
+/// Anim's hidden byte (`+0x19D`) follows the local Show Hidden option
+/// (`Options+0x1F`, `0x0070F26B`, AnimClass::AI `0x00423B62..0x00423B88`); the
+/// presentation reads the option in its place.
+///
+/// RESIDUAL: with no `Behind=` type (retail sets BEHIND), native draws a
+/// blinking bracket at the caller's screen point instead
+/// (`0x0070F290..0x0070F659`); VERA draws nothing.
+///
+/// RESIDUAL: GetVisualState(0, NULL) depends on the current house only for
+/// an `Invisible=`/`InvisibleInGame=` object (about ten retail buildings) on
+/// a hiding Cell: it is 0 for its owner and 5 for anyone else, so whether
+/// the anim exists, and the IDs after it, differ between peers, as natively.
+///
+/// RESIDUAL: when BEHIND's art never bound, the spawn takes a native unique
+/// ID and fails each frame; native instead constructs a default-type Anim
+/// that expires and is rebuilt. Neither draws. No RNG draws or timer writes.
+fn behind_indicator_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
+    use crate::sim::components::AnimClassSpawnDescriptor;
+    let Some(entity) = sim.substrate.entities.get(id) else {
+        return;
+    };
+    let Some(object) = sim.interner.object_type(entity.type_ref(), rules) else {
+        return;
+    };
+    // With no hidden-occupation entry no Cell hides anything; skip the
+    // per-object coordinate and Cell lookups (VERA-only, result unchanged).
+    let coord = (object.can_be_hidden
+        && entity.category() != EntityCategory::Aircraft
+        && sim.substrate.hidden_occupation.entry_count() != 0)
+        .then(|| sim.anim_owner_coords(id))
+        .flatten();
+    let hidden = coord.is_some_and(|coord| {
+        u16::try_from(coord.x / 256)
+            .ok()
+            .zip(u16::try_from(coord.y / 256).ok())
+            .is_some_and(|(rx, ry)| sim.substrate.cell_hides_objects(rx, ry))
+    });
+    if !hidden {
+        if let Some(anim) = sim
+            .substrate
+            .entities
+            .get_mut(id)
+            .and_then(|entity| entity.take_behind_anim())
+        {
+            sim.destroy_anim(anim, rules);
+        }
+        return;
+    }
+    if screen_visual_character(sim, entity, rules) != 0 || entity.behind_anim().is_some() {
+        return;
+    }
+    let (Some(name), Some(coord)) = (rules.general.behind.as_deref(), coord) else {
+        return;
+    };
+    let type_name = sim.interner.intern(name);
+    let (rx, ry, sub_x, sub_y, z) = coord.to_cell_sub_z();
+    let descriptor = AnimClassSpawnDescriptor {
+        draw_flags: 0x600,
+        owner: Some(id),
+        ..AnimClassSpawnDescriptor::new(type_name, rx, ry, sub_x, sub_y, z)
+    };
+    if let Ok(anim) = sim.spawn_anim_at_world(rules, descriptor, coord)
+        && let Some(entity) = sim.substrate.entities.get_mut(id)
+    {
+        entity.retain_behind_anim(anim);
+    }
+}
+
+/// GetVisualState(0, NULL) (`0x00703860`) as the AI asks it: the screen
+/// query for the current house (`0x00A83D4C`, the persisted
+/// `session.current_house`), its sensor on the object's Cell and both
+/// alliance directions.
+fn screen_visual_character(
+    sim: &Simulation,
+    entity: &crate::sim::game_entity::GameEntity,
+    rules: &RuleSet,
+) -> u8 {
+    use crate::sim::combat::combat_weapon::is_ally_by_object;
+    let viewer = sim.session.current_house;
+    let owner = entity.owner();
+    let allied = |a, b| is_ally_by_object(Some(&sim.house_alliances), &sim.interner, a, b);
+    let invisible = sim
+        .interner
+        .object_type(entity.type_ref(), rules)
+        .is_some_and(|object| {
+            object.invisible
+                || entity.category() == EntityCategory::Structure && object.invisible_in_game
+        });
+    entity.visual_character(
+        rules.general.cloaking_stages,
+        invisible,
+        crate::sim::cloak_disguise::VisualCharacterQuery::screen(
+            true,
+            viewer.is_some(),
+            viewer.is_some_and(|viewer| {
+                sim.fog
+                    .has_sensor_for_house(viewer, entity.position.rx(), entity.position.ry())
+            }),
+            viewer.is_some_and(|viewer| allied(viewer, owner) && allied(owner, viewer)),
+            !sim.session.game_mode_nonzero,
+            false,
+        ),
+    )
+}
+
+/// `TechnoClass::AI_Update @ 0x006FA9D8..0x006FAAEF`, after the spawn manager
+/// (`0x006FA958`) and the cloak-field arms: a healer (CombatDamage
+/// `0x006F3970(-1) < 0`) lets go of its target (vt+0x3C8(NULL)) in three
+/// arms, each re-reading the target:
+/// - GameMode 0 (`0x00A8B238`): a house that is not the player's
+///   (`0x0050B6F0`) drops a target it is not allied with
+///   (`0x004F9AF0`, `0x006FA9D8..0x006FAA1B`);
+/// - any other GameMode: a human house (`+0x1EC`, which IsControlledByHuman
+///   `0x0050B730` reads there) drops a target it is not allied with
+///   (`0x006FAA21..0x006FAA69`);
+/// - a Unit drops an Aircraft target that is airborne (GetHeight vt+0x1C8
+///   above 0) or stands on a building's Cell (`0x0047C520` at its Location,
+///   `0x006FAA6F..0x006FAAE9`).
+///
+/// IsAlliedWith on an object asks its owner; a Cell or an ownerless object is
+/// never allied. Both alliance arms ask the object's own house (+0x21C).
+///
+/// RESIDUAL: the cloak-field arms before this block (`0x006FA95B..0x006FA9D2`)
+/// are not run. Trigger: an object in a house's cloak field, which only a
+/// `CloakGenerator=` building raises; retail rules name it only in a comment
+/// and `fog.cloaked_by_houses` has no writer, so they are dormant, not
+/// unreachable. Effect if a map sets it: the field's cloak and uncloak calls
+/// are missed. No RNG draws.
+fn healer_target_drop_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
+    use crate::sim::combat::{TargetKind, combat_weapon};
+    let healer = |sim: &Simulation| {
+        sim.substrate.entities.get(id).is_some_and(|entity| {
+            sim.interner
+                .object_type(entity.type_ref(), rules)
+                .is_some_and(|kind| {
+                    combat_weapon::weapon_damage_value(
+                        entity,
+                        kind,
+                        &sim.substrate.entities,
+                        rules,
+                        &sim.interner,
+                    ) < 0
+                })
+        })
+    };
+    let target = |sim: &Simulation| {
+        sim.substrate
+            .entities
+            .get(id)
+            .and_then(|entity| entity.attack_target.target())
+    };
+    let allied = |sim: &Simulation, target: TargetKind| {
+        let (Some(entity), TargetKind::Entity(target_id)) =
+            (sim.substrate.entities.get(id), target)
+        else {
+            return false;
+        };
+        sim.substrate.entities.get(target_id).is_some_and(|object| {
+            combat_weapon::is_ally_by_object(
+                Some(&sim.house_alliances),
+                &sim.interner,
+                entity.owner(),
+                object.owner(),
+            )
+        })
+    };
+    let drop = |sim: &mut Simulation| {
+        sim.assign_target_represented(id, None, Some(rules), None, FrameEffects::default())
+            .expect("the queried healer receiver remains present");
+    };
+    let Some(owner) = sim.substrate.entities.get(id).map(|entity| entity.owner()) else {
+        return;
+    };
+    if !sim.session.game_mode_nonzero
+        && !sim.house_is_human_player(owner)
+        && let Some(current) = target(sim)
+        && !allied(sim, current)
+        && healer(sim)
+    {
+        drop(sim);
+    }
+    if let Some(current) = target(sim)
+        && sim.session.game_mode_nonzero
+        && sim.owner_is_human(owner)
+        && healer(sim)
+        && !allied(sim, current)
+    {
+        drop(sim);
+    }
+    let Some(TargetKind::Entity(target_id)) = target(sim) else {
+        return;
+    };
+    let Some(aircraft) = sim
+        .substrate
+        .entities
+        .get(target_id)
+        .filter(|object| object.category() == EntityCategory::Aircraft)
+    else {
+        return;
+    };
+    let unit = sim
+        .substrate
+        .entities
+        .get(id)
+        .is_some_and(|entity| entity.category() == EntityCategory::Unit);
+    if !unit || !healer(sim) {
+        return;
+    }
+    let airborne = crate::sim::movement::air_movement::current_fly_height(
+        aircraft,
+        sim.resolved_terrain.as_ref(),
+    ) > 0;
+    let padded = sim
+        .substrate
+        .occupancy
+        .first_building_on_layer(
+            aircraft.position.rx(),
+            aircraft.position.ry(),
+            crate::sim::movement::locomotor::MovementLayer::Ground,
+        )
+        .is_some();
+    if airborne || padded {
+        drop(sim);
+    }
 }
 
 /// The common Techno post-mission stage and the stock-dormant Cyborg Spark
@@ -1987,6 +2230,212 @@ mod tests {
     use crate::sim::movement::locomotor::LocomotorState;
     use crate::sim::movement::tube_movement::LowBridgeTubeMovementState;
     use crate::sim::snapshot::GameSnapshot;
+
+    /// TechnoClass::AI's Behind indicator (`0x006FA24A..0x006FA30C`) on
+    /// retail rules: a tank on a hiding Cell takes one attached BEHIND anim
+    /// and keeps it, and UnInits it once the Cell stops hiding it; an
+    /// Aircraft never takes one; a Cell holding a building hides only from a
+    /// second contribution on.
+    #[test]
+    fn a_tank_behind_a_building_takes_the_behind_anim_until_it_leaves() {
+        use crate::rules::object_type::BuildingHiddenOccupancyProfile;
+        let Some(fixture) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+            return;
+        };
+        let mut rules = fixture.rules;
+        assert_eq!(rules.general.behind.as_deref(), Some("BEHIND"));
+        // The fixture binds no SHPs; a stand-in frame count binds BEHIND.
+        rules.bind_anim_frame_count_for_test("BEHIND", 19);
+        assert!(
+            rules
+                .object("MTNK")
+                .is_some_and(|object| object.can_be_hidden)
+        );
+        let mut sim = Simulation::new();
+        sim.session.map_width = 32;
+        sim.session.map_height = 32;
+        sim.resolve_type_handles(&rules);
+        let tank = sim
+            .spawn_object("MTNK", "Americans", 10, 10, 0, &rules)
+            .expect("retail MTNK spawns");
+        let profile = BuildingHiddenOccupancyProfile {
+            can_hide_things: true,
+            occupy_height: 1,
+            ..Default::default()
+        };
+        let hide = |sim: &mut Simulation, enter: bool, cell: (u16, u16)| {
+            let grid = &mut sim.substrate.hidden_occupation;
+            if enter {
+                grid.enter_building(cell, "1x1", profile, Some((32, 32)));
+            } else {
+                grid.exit_building(cell, "1x1", profile, Some((32, 32)));
+            }
+        };
+        let behind = |sim: &Simulation| sim.substrate.entities.get(tank).unwrap().behind_anim();
+
+        behind_indicator_step(&mut sim, tank, &rules);
+        assert_eq!(behind(&sim), None, "an open Cell");
+        hide(&mut sim, true, (10, 10));
+        behind_indicator_step(&mut sim, tank, &rules);
+        let anim = behind(&sim).expect("the Behind anim");
+        let object = sim.anim(anim).unwrap();
+        assert_eq!(object.owner_entity, Some(tank));
+        assert!(
+            sim.interner
+                .resolve(object.type_id)
+                .eq_ignore_ascii_case("BEHIND")
+        );
+        behind_indicator_step(&mut sim, tank, &rules);
+        assert_eq!(behind(&sim), Some(anim), "one anim");
+        hide(&mut sim, false, (10, 10));
+        behind_indicator_step(&mut sim, tank, &rules);
+        assert_eq!(behind(&sim), None);
+        assert!(sim.substrate.pending_delete.contains_object(&anim));
+
+        // An Aircraft never takes it.
+        let orca = sim
+            .spawn_object("ORCA", "Americans", 14, 10, 0, &rules)
+            .expect("retail ORCA spawns");
+        hide(&mut sim, true, (14, 10));
+        behind_indicator_step(&mut sim, orca, &rules);
+        assert_eq!(
+            sim.substrate.entities.get(orca).unwrap().behind_anim(),
+            None
+        );
+
+        let power = sim
+            .spawn_object("GAPOWR", "Americans", 20, 10, 0, &rules)
+            .expect("retail GAPOWR spawns");
+        assert!(sim.substrate.occupancy.contains_entity(20, 10, power));
+        while sim.substrate.hidden_occupation.count(20, 10) != 0 {
+            hide(&mut sim, false, (20, 10));
+        }
+        hide(&mut sim, true, (20, 10));
+        assert!(!sim.substrate.cell_hides_objects(20, 10), "its own count");
+        hide(&mut sim, true, (20, 10));
+        assert!(sim.substrate.cell_hides_objects(20, 10));
+    }
+
+    /// TechnoClass::AI's healer drops (`0x006FA9D8..0x006FAAEF`) in
+    /// skirmish: a human house's medic lets go of an enemy (a target Yuri
+    /// took over) and keeps an ally; a healing Unit lets go of an airborne
+    /// aircraft and keeps a grounded one; an ordinary gun keeps any target.
+    #[test]
+    fn a_human_healer_drops_an_enemy_and_a_unit_healer_an_airborne_aircraft() {
+        let rules = RuleSet::from_ini(&IniFile::from_str(
+            "[InfantryTypes]\n0=MEDIC\n[VehicleTypes]\n0=IFV\n1=TANK\n\
+             [AircraftTypes]\n0=ORCA\n[BuildingTypes]\n0=PAD\n\
+             [PAD]\nStrength=500\nFoundation=1x1\n\
+             [MEDIC]\nStrength=100\nPrimary=Heal\n\
+             [IFV]\nStrength=200\nPrimary=Fix\n\
+             [TANK]\nStrength=300\nPrimary=Gun\n\
+             [ORCA]\nStrength=150\n\
+             [WeaponTypes]\n0=Heal\n1=Fix\n2=Gun\n\
+             [Heal]\nDamage=-50\nRange=2\n[Fix]\nDamage=-30\nRange=2\n\
+             [Gun]\nDamage=60\nRange=5\n",
+        ))
+        .unwrap();
+        let mut sim = Simulation::new();
+        let ours = sim.interner.intern("Americans");
+        let theirs = sim.interner.intern("Russians");
+        sim.houses.insert(
+            ours,
+            crate::sim::house_state::HouseState::new(ours, 0, None, true, 0, 10),
+        );
+        sim.houses.insert(
+            theirs,
+            crate::sim::house_state::HouseState::new(theirs, 1, None, false, 0, 10),
+        );
+        sim.session.game_mode_nonzero = true;
+        sim.session.current_house = Some(ours);
+        sim.resolve_type_handles(&rules);
+        let spawn = |sim: &mut Simulation, name: &str, owner: &str, x: u16| {
+            sim.spawn_object(name, owner, x, 10, 0, &rules)
+                .unwrap_or_else(|| panic!("{name} spawns"))
+        };
+        let medic = spawn(&mut sim, "MEDIC", "Americans", 10);
+        let ifv = spawn(&mut sim, "IFV", "Americans", 12);
+        let gun = spawn(&mut sim, "TANK", "Americans", 14);
+        let enemy = spawn(&mut sim, "TANK", "Russians", 16);
+        let friend = spawn(&mut sim, "TANK", "Americans", 18);
+        let orca = spawn(&mut sim, "ORCA", "Americans", 20);
+        let pad = spawn(&mut sim, "PAD", "Americans", 24);
+        let their_medic = spawn(&mut sim, "MEDIC", "Russians", 26);
+        let run = |sim: &mut Simulation, id: u64, target: u64| {
+            sim.substrate
+                .entities
+                .get_mut(id)
+                .unwrap()
+                .attack_target
+                .set_for_test(Some(TargetKind::Entity(target)));
+            healer_target_drop_step(sim, id, &rules);
+            sim.substrate
+                .entities
+                .get(id)
+                .unwrap()
+                .attack_target
+                .target()
+        };
+        assert_eq!(run(&mut sim, medic, enemy), None);
+        assert_eq!(
+            run(&mut sim, medic, friend),
+            Some(TargetKind::Entity(friend))
+        );
+        assert_eq!(run(&mut sim, gun, enemy), Some(TargetKind::Entity(enemy)));
+        sim.substrate
+            .entities
+            .get_mut(orca)
+            .unwrap()
+            .position
+            .set_exact_z_leptons_for_test(Some(0));
+        assert_eq!(run(&mut sim, ifv, orca), Some(TargetKind::Entity(orca)));
+        sim.substrate
+            .entities
+            .get_mut(orca)
+            .unwrap()
+            .position
+            .set_exact_z_leptons_for_test(Some(600));
+        assert_eq!(run(&mut sim, ifv, orca), None);
+        // Only a Unit drops an aircraft.
+        assert_eq!(run(&mut sim, medic, orca), Some(TargetKind::Entity(orca)));
+        // A grounded aircraft on a building's Cell (an airpad).
+        let at_pad = |sim: &mut Simulation| {
+            let position = &mut sim.substrate.entities.get_mut(orca).unwrap().position;
+            position.set_rx_for_test(24);
+            position.set_exact_z_leptons_for_test(Some(0));
+        };
+        at_pad(&mut sim);
+        assert_eq!(
+            sim.substrate.occupancy.first_building_on_layer(
+                24,
+                10,
+                crate::sim::movement::locomotor::MovementLayer::Ground
+            ),
+            Some(pad)
+        );
+        assert_eq!(run(&mut sim, ifv, orca), None);
+        // A Cell is never allied.
+        sim.substrate
+            .entities
+            .get_mut(medic)
+            .unwrap()
+            .attack_target
+            .set_for_test(Some(TargetKind::Cell(30, 10)));
+        healer_target_drop_step(&mut sim, medic, &rules);
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(medic)
+                .unwrap()
+                .attack_target
+                .target(),
+            None
+        );
+        // GameMode 0: a computer house drops an enemy, a human house keeps it.
+        sim.session.game_mode_nonzero = false;
+        assert_eq!(run(&mut sim, their_medic, friend), None);
+        assert_eq!(run(&mut sim, medic, enemy), Some(TargetKind::Entity(enemy)));
+    }
 
     #[test]
     fn wave_context_keeps_terrain_object_coordinates_until_pointer_expiry() {

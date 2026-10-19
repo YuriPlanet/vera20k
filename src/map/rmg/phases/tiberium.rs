@@ -16,7 +16,8 @@ use crate::map::rmg::grid::RmgGrid;
 use crate::map::rmg::rng::{RANGE_K_BITS, RmgRng};
 use crate::map::rmg::scratch::RmgScratch;
 use crate::map::rmg::tiles::TileIds;
-use crate::map::rmg::x87::{self, Gaussian, TruncF64, approx_sqrt, approx_sqrt_f32};
+use crate::map::rmg::x87::{Gaussian, TruncF64, approx_sqrt, approx_sqrt_f32};
+use crate::util::native_x87::X87Chop53;
 
 use super::blob::MinHeap;
 use super::regions::Regions;
@@ -121,7 +122,7 @@ pub fn run(ctx: &mut TiberiumCtx<'_>, args: &TiberiumArgs) -> TiberiumOutcome {
 
         let field_count = ctx.regions.list[index].field_slots.as_ref().unwrap().len() as i32;
         // Field-count formula: two-stage truncation, no RNG.
-        let lerp = x87::ftol(
+        let lerp = X87Chop53::ftol_f64_low_masked(
             TruncF64::from_f64(f64::from(args.tib_option))
                 .mul(TruncF64::from_f64(PERCENT))
                 .mul(TruncF64::from_f64(f64::from(span)))
@@ -133,7 +134,7 @@ pub fn run(ctx: &mut TiberiumCtx<'_>, args: &TiberiumArgs) -> TiberiumOutcome {
         } else {
             f64::from(quota)
         };
-        let region_total = x87::ftol(
+        let region_total = X87Chop53::ftol_f64_low_masked(
             TruncF64::from_f64(f64::from(lerp))
                 .mul(TruncF64::from_f64(mult))
                 .to_f64(),
@@ -153,7 +154,7 @@ pub fn run(ctx: &mut TiberiumCtx<'_>, args: &TiberiumArgs) -> TiberiumOutcome {
                     break value;
                 }
             };
-            let size = x87::ftol(f64::from(per_field_base) + j);
+            let size = X87Chop53::ftol_f64_low_masked(f64::from(per_field_base) + j);
             if size >= 0 {
                 let origin = ctx.regions.list[index].field_slots.as_ref().unwrap()[i as usize];
                 let is_gem = i == nearest_slot;
@@ -183,7 +184,7 @@ pub fn run(ctx: &mut TiberiumCtx<'_>, args: &TiberiumArgs) -> TiberiumOutcome {
         }
         let min_score = scores.iter().copied().fold(SCORE_MIN_INIT, f64::min);
         for s in 0..quota {
-            let size = x87::ftol(
+            let size = X87Chop53::ftol_f64_low_masked(
                 TruncF64::from_f64(scores[s as usize])
                     .sub(TruncF64::from_f64(min_score))
                     .mul(TruncF64::from_f64(GEM_SIZE_SCALE))
@@ -254,7 +255,7 @@ fn gem_anchor(
         let dy = reference.1 - i32::from(slot.1);
         let dist = approx_sqrt_f32(dx * dx + dy * dy);
         if f64::from(dist) < f64::from(min) {
-            min = x87::ftol(f64::from(dist));
+            min = X87Chop53::ftol_f64_low_masked(f64::from(dist));
             nearest = i as i32;
         }
     }
@@ -266,7 +267,7 @@ fn tibtre_draw(rng: &mut RmgRng) -> i32 {
     let scale = TruncF64::from_f64(f64::from_bits(K3_BITS));
     let one = TruncF64::from_f64(1.0);
     loop {
-        let value = x87::ftol(
+        let value = X87Chop53::ftol_f64_low_masked(
             TruncF64::from_f64(f64::from(rng.next_u32()))
                 .mul(scale)
                 .add(one)
@@ -282,7 +283,7 @@ fn tibtre_draw(rng: &mut RmgRng) -> i32 {
 fn density_draw(rng: &mut RmgRng) -> i32 {
     let scale = TruncF64::from_f64(f64::from_bits(K12_BITS));
     loop {
-        let value = x87::ftol(
+        let value = X87Chop53::ftol_f64_low_masked(
             TruncF64::from_f64(f64::from(rng.next_u32()))
                 .mul(scale)
                 .to_f64(),
@@ -521,7 +522,7 @@ mod tests {
     fn field_count_uses_two_stage_truncation() {
         // regionTotal = trunc(trunc(tib*0.01*(max-min)+min) * max(quota,0.5)).
         let two_stage = |tib: i32, min: i32, max: i32, quota: i32| {
-            let lerp = x87::ftol(
+            let lerp = X87Chop53::ftol_f64_low_masked(
                 TruncF64::from_f64(f64::from(tib))
                     .mul(TruncF64::from_f64(0.01))
                     .mul(TruncF64::from_f64(f64::from(max - min)))
@@ -533,7 +534,7 @@ mod tests {
             } else {
                 f64::from(quota)
             };
-            x87::ftol(
+            X87Chop53::ftol_f64_low_masked(
                 TruncF64::from_f64(f64::from(lerp))
                     .mul(TruncF64::from_f64(mult))
                     .to_f64(),

@@ -1274,7 +1274,6 @@ fn retail_partial_redraw_continuation_matches_full_reconstruction() {
     map.overlays.clear();
     map.smudges.clear();
     map.terrain_objects.clear();
-    map.explicit_tubes.clear();
     let table = &scene["selector_table"];
     let table = std::array::from_fn(|i| table[i].as_u64().unwrap() as u8);
     let mut cache = TileVariantSelectorCache::initialized_for_test(table);

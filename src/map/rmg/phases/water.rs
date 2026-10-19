@@ -8,7 +8,8 @@
 
 use crate::map::rmg::grid::RmgGrid;
 use crate::map::rmg::rng::{RANGE_K_BITS, RmgRng};
-use crate::map::rmg::x87::{self, TruncF64, approx_sqrt};
+use crate::map::rmg::x87::{TruncF64, approx_sqrt};
+use crate::util::native_x87::X87Chop53;
 
 use super::blob::{self, BlobCtx, BlobParams};
 use super::lake;
@@ -194,7 +195,7 @@ fn archipelago(ctx: &mut BlobCtx<'_>, args: &WaterArgs) {
 
     // Extra-island draw: ftol(draw * m * K + 1.0), rejection > m.
     let extra = loop {
-        let value = x87::ftol(
+        let value = X87Chop53::ftol_f64_low_masked(
             TruncF64::from_f64(f64::from(ctx.rng.next_u32()))
                 .mul(TruncF64::from_f64(f64::from(m)))
                 .mul(TruncF64::from_f64(f64::from_bits(RANGE_K_BITS)))
@@ -221,7 +222,7 @@ fn archipelago(ctx: &mut BlobCtx<'_>, args: &WaterArgs) {
 
         // Blob size: ((draw*K*0.05) + 0.45) * (2*w*h) — drawn once per entry.
         let area2 = entry[2] * entry[3] * 2;
-        let size = x87::ftol(
+        let size = X87Chop53::ftol_f64_low_masked(
             TruncF64::from_f64(f64::from(ctx.rng.next_u32()))
                 .mul(TruncF64::from_f64(f64::from_bits(RANGE_K_BITS)))
                 .mul(TruncF64::from_f64(MODE0_SPAN))
@@ -254,7 +255,7 @@ fn continental(ctx: &mut BlobCtx<'_>, args: &WaterArgs) {
     let area_f = TruncF64::from_f64(f64::from(area));
 
     let target = land_target(args.water_percent, MODE1_MAX, MODE1_MIN);
-    let cap = x87::ftol(
+    let cap = X87Chop53::ftol_f64_low_masked(
         area_f
             .mul(TruncF64::from_f64(MODE1_CAP))
             .mul(target)
@@ -279,7 +280,8 @@ fn continental(ctx: &mut BlobCtx<'_>, args: &WaterArgs) {
         if !fraction.lt(target) || !TruncF64::from_f64(0.0).lt(target) || calls >= 100 {
             break;
         }
-        let want = x87::ftol(target.sub(fraction).mul(area_f).to_f64()).min(cap);
+        let want =
+            X87Chop53::ftol_f64_low_masked(target.sub(fraction).mul(area_f).to_f64()).min(cap);
         let params = BlobParams {
             max_cells: want,
             rect,
@@ -303,7 +305,7 @@ fn islands_in_sea(ctx: &mut BlobCtx<'_>, args: &WaterArgs) {
     let area_f = TruncF64::from_f64(f64::from(area));
 
     let target = land_target(args.water_percent, MODE2_MAX, MODE2_MIN);
-    let cap = x87::ftol(
+    let cap = X87Chop53::ftol_f64_low_masked(
         area_f
             .mul(TruncF64::from_f64(MODE2_CAP))
             .mul(target)
@@ -359,7 +361,8 @@ fn islands_in_sea(ctx: &mut BlobCtx<'_>, args: &WaterArgs) {
             if !fraction.lt(target) || calls >= 100 {
                 break;
             }
-            let want = x87::ftol(target.sub(fraction).mul(area_f).to_f64()).min(cap);
+            let want =
+                X87Chop53::ftol_f64_low_masked(target.sub(fraction).mul(area_f).to_f64()).min(cap);
             let params = BlobParams {
                 max_cells: want,
                 rect,
@@ -437,7 +440,7 @@ fn nearest_unstamped_linear(
         if !ellipse_gate(map_w, (x, y), rect, coeff_a, coeff_b) {
             continue;
         }
-        let metric = x87::ftol(
+        let metric = X87Chop53::ftol_f64_low_masked(
             TruncF64::from_f64(f64::from((y - center.1).abs()))
                 .mul(wy)
                 .add(TruncF64::from_f64(f64::from((x - center.0).abs())).mul(wx))
@@ -479,7 +482,7 @@ fn ellipse_gate(
 /// leftover removal. Emits logical rects `{x+2, y+2, cw-4, ch-4}`,
 /// strip-major.
 pub fn partition_grid(rng: &mut RmgRng, n: i32, rect: &[i32; 4]) -> Vec<[i32; 4]> {
-    let s = x87::ftol(approx_sqrt(TruncF64::from_f64(f64::from(n))).to_f64());
+    let s = X87Chop53::ftol_f64_low_masked(approx_sqrt(TruncF64::from_f64(f64::from(n))).to_f64());
     let slots_per_strip = if s * s == n { s } else { s + 1 };
     let strips = if n <= slots_per_strip * s {
         s
@@ -506,7 +509,7 @@ pub fn partition_grid(rng: &mut RmgRng, n: i32, rect: &[i32; 4]) -> Vec<[i32; 4]
     for _ in 0..leftover {
         let scale = TruncF64::from_f64(f64::from_bits(RANGE_K_BITS));
         let index = loop {
-            let value = x87::ftol(
+            let value = X87Chop53::ftol_f64_low_masked(
                 TruncF64::from_f64(f64::from(rng.next_u32()))
                     .mul(TruncF64::from_f64(indices.len() as f64))
                     .mul(scale)
@@ -732,7 +735,7 @@ mod tests {
         // Drain the extra-island draw the same way the shape does.
         let m = 4;
         let extra = loop {
-            let value = x87::ftol(
+            let value = X87Chop53::ftol_f64_low_masked(
                 TruncF64::from_f64(f64::from(rng.next_u32()))
                     .mul(TruncF64::from_f64(f64::from(m)))
                     .mul(TruncF64::from_f64(f64::from_bits(RANGE_K_BITS)))

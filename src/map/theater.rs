@@ -1006,7 +1006,7 @@ fn resolve_tileset_start(lookup: &TilesetLookup, ordinal: i32) -> Option<u16> {
         .map(|bounds| bounds.start)
 }
 
-fn resolve_rmg_tile_keys(
+pub(crate) fn resolve_rmg_tile_keys(
     lookup: &TilesetLookup,
     general: Option<&IniSection>,
     slope_set_pieces: Option<u16>,

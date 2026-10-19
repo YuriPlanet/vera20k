@@ -540,6 +540,24 @@ impl ObjectSubstrate {
         }
     }
 
+    /// `CellClass @ 0x00487E00`: does the Cell hide what stands on it? Its
+    /// hidden-occupation count (`+0x100`) is nonzero, except a Cell whose
+    /// ground object list (`+0xE4`) holds a Building and whose count is
+    /// exactly 1, the building's own contribution. The building walk is
+    /// gated on GameActive (`0x00A8E9A0`), which holds during the AI.
+    pub(crate) fn cell_hides_objects(&self, rx: u16, ry: u16) -> bool {
+        let count = self.hidden_occupation.count(rx, ry);
+        let building = self
+            .occupancy
+            .first_building_on_layer(
+                rx,
+                ry,
+                crate::sim::movement::locomotor::MovementLayer::Ground,
+            )
+            .is_some();
+        count != 0 && !(building && count == 1)
+    }
+
     pub(crate) fn fold_hidden_occupation(&self, hasher: &mut impl std::hash::Hasher) {
         let entry_count = self.hidden_occupation.entry_count();
         if entry_count == 0 {

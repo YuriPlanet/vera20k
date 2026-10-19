@@ -22,8 +22,9 @@ use crate::map::rmg::phases::carve::{CarveCtx, stamp_iso_block};
 use crate::map::rmg::rng::{RANGE_K_BITS, RmgRng};
 use crate::map::rmg::scratch::RmgScratch;
 use crate::map::rmg::tiles::TileIds;
-use crate::map::rmg::x87::{self, TruncF64};
+use crate::map::rmg::x87::TruncF64;
 use crate::map::rmg::{RmgConstructionPhase, RmgConstructionTrace};
+use crate::util::native_x87::X87Chop53;
 
 use super::area::{area_is_paved_clear, corners_in_diamond, tile_is_placeable};
 
@@ -49,7 +50,7 @@ fn draw_cell_index(rng: &mut RmgRng, span: i32) -> u32 {
     let scale = TruncF64::from_f64(f64::from_bits(RANGE_K_BITS));
     let span_f = TruncF64::from_f64(f64::from(span));
     loop {
-        let value = x87::ftol(
+        let value = X87Chop53::ftol_f64_low_masked(
             TruncF64::from_f64(f64::from(rng.next_u32()))
                 .mul(span_f)
                 .mul(scale)

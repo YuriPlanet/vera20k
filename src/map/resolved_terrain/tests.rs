@@ -138,7 +138,7 @@ fn gsi_04_02_last_tiles_tmp_bytes(
 }
 
 fn gsi_04_02_last_tiles_theater() -> TheaterData {
-    synthetic_theater_from_ini(
+    synthetic_lat_theater_from_ini(
         b"[General]\nRoughTile=2\nClearToRoughLat=3\n\
           [TileSet0000]\nTilesInSet=3\nFileName=base\nSetName=Clear\n\
           [TileSet0001]\nTilesInSet=5\nLastTilesInSet=2\nFileName=old\nSetName=Clear\n\
@@ -216,7 +216,6 @@ fn make_map(
         local_variables: HashMap::new(),
         trigger_graph: crate::map::trigger_graph::TriggerGraph::default(),
         special_flags: crate::map::basic::SpecialFlagsSection::default(),
-        explicit_tubes: Vec::new(),
         ini: IniFile::from_str(""),
     }
 }
@@ -622,6 +621,19 @@ fn synthetic_theater_from_ini(ini: &[u8]) -> TheaterData {
         cliff_ranges: crate::map::theater::TheaterCliffRanges::default(),
         rmg_tiles: crate::map::theater::RmgTileKeys::default(),
     }
+}
+
+/// [`synthetic_theater_from_ini`] with the RMG/LAT globals theater init
+/// resolves from its `[General]` section.
+fn synthetic_lat_theater_from_ini(ini: &[u8]) -> TheaterData {
+    let mut theater = synthetic_theater_from_ini(ini);
+    let parsed = IniFile::from_bytes(ini).expect("synthetic theater INI parses");
+    theater.rmg_tiles = crate::map::theater::resolve_rmg_tile_keys(
+        &theater.lookup,
+        parsed.section("General"),
+        None,
+    );
+    theater
 }
 
 #[test]
@@ -1513,7 +1525,6 @@ fn authored_fill_defers_all_executable_projection() {
             name: "TREE".to_string(),
         }],
     );
-    map.explicit_tubes = vec![TubeFact::explicit((2, 3), (2, 3), 2, Vec::new())];
     map.replace_unconsumed_overlay_data(OverlayDataPack::from_cells([(2, 3, 99)]))
         .expect("fixture overlay data remains unconsumed");
 
@@ -1555,7 +1566,6 @@ fn authored_fill_defers_all_executable_projection() {
     assert_eq!(eager_cell.bridge_facts.state_byte, 99);
     assert_eq!(eager_cell.terrain_object_occupation, Some(7));
     assert!(!eager.tile_animations().is_empty());
-    assert!(!eager.tube_facts().is_empty());
 
     let mut pending_scenario_rng = SimRng::new(0x401);
     let mut pending_fill_calls = 0usize;
@@ -1635,7 +1645,7 @@ fn authored_fill_defers_all_executable_projection() {
     let consumed = pending.into_pending_grid();
     assert_eq!(consumed.cell(2, 3).unwrap().source_tile_index, 0);
 
-    let lat_theater = synthetic_theater_from_ini(
+    let lat_theater = synthetic_lat_theater_from_ini(
         b"[General]\nRoughTile=1\nClearToRoughLat=2\n\
           [TileSet0000]\nSetName=Clear\nFileName=clear\nTilesInSet=5\n\
           [TileSet0001]\nSetName=Rough\nFileName=rough\nTilesInSet=5\n\
@@ -2478,46 +2488,6 @@ fn gsi_02_11_positive_registry_oor_uses_clear_and_invokes_selector() {
 }
 
 #[test]
-fn explicit_map_tubes_seed_resolved_grid() {
-    let mut map = make_map(
-        vec![
-            MapCell {
-                rx: 0,
-                ry: 0,
-                tile_index: 0,
-                sub_tile: 0,
-                z: 0,
-            },
-            MapCell {
-                rx: 1,
-                ry: 0,
-                tile_index: 0,
-                sub_tile: 0,
-                z: 0,
-            },
-            MapCell {
-                rx: 2,
-                ry: 0,
-                tile_index: 0,
-                sub_tile: 0,
-                z: 0,
-            },
-        ],
-        Vec::new(),
-        Vec::new(),
-    );
-    map.explicit_tubes = vec![TubeFact::explicit((0, 0), (2, 0), 2, vec![2, 2])];
-
-    let grid = ResolvedTerrainGrid::build(&map, None, None, None, None, false, 0);
-
-    let cell = grid.cell(0, 0).expect("entry cell");
-    assert_eq!(cell.tube_index, Some(TubeId(0)));
-    assert_eq!(grid.tube_facts().len(), 1);
-    assert_eq!(grid.tube_facts()[0].source, TubeSource::ExplicitMap);
-    assert_eq!(grid.step_coord_by_direction((0, 0), 8), Some((2, 0)));
-}
-
-#[test]
 fn test_resolved_grid_preserves_raw_fields_and_fills_clear_cells() {
     let map = make_map(
         vec![MapCell {
@@ -2725,7 +2695,7 @@ fn resolved_terrain_allow_tiberium_uses_final_lat_tile() {
                 FileName=crgh\n\
                 TilesInSet=16\n\
                 AllowTiberium=true\n";
-    let theater = synthetic_theater_from_ini(ini);
+    let theater = synthetic_lat_theater_from_ini(ini);
     let map = make_map(
         vec![
             MapCell {
@@ -3869,12 +3839,14 @@ fn test_canonical_ramp_is_ground_passable_but_stays_non_buildable() {
 
 #[test]
 fn authored_load_lat_reads_live_cardinals_in_north_east_south_west_order() {
-    let theater = synthetic_theater_from_ini(
+    let theater = synthetic_lat_theater_from_ini(
         b"[General]\nRoughTile=0\nClearToRoughLat=1\n\
           [TileSet0000]\nTilesInSet=1\nFileName=base\nSetName=Rough\n\
           [TileSet0001]\nTilesInSet=16\nFileName=lat\nSetName=Rough LAT\n",
     );
-    let lat_config = lat::parse_lat_config(&theater.ini_data, &theater.lookup);
+    let lat_config = lat::LatConfig::from_tile_ids(&crate::map::rmg::tiles::TileIds::from_keys(
+        &theater.rmg_tiles,
+    ));
     let registry = OverlayTypeRegistry::from_ini(&IniFile::from_str(""), None);
     let cardinals = [(1usize, 0usize), (2, 1), (1, 2), (0, 1)];
 
@@ -3922,7 +3894,9 @@ fn authored_load_lat_reads_live_cardinals_in_north_east_south_west_order() {
     guarded.cells[0].final_tile_index = 99;
     guarded.stamp_dummy_cell_requested_coord(7, 8);
     let mut state = LoadCellRecalcState::synthetic(&registry, 1);
-    state.lat_config = Some(lat::parse_lat_config(&theater.ini_data, &theater.lookup));
+    state.lat_config = Some(lat::LatConfig::from_tile_ids(
+        &crate::map::rmg::tiles::TileIds::from_keys(&theater.rmg_tiles),
+    ));
     state.slope_config = Some(lat::SlopeFixupConfig {
         ramp_base: 100,
         ramp_smooth: 500,

@@ -30,6 +30,7 @@ use crate::map::rmg::grid::RmgGrid;
 use crate::map::rmg::rng::{RANGE_K_BITS, RmgRng};
 use crate::map::rmg::scratch::RmgScratch;
 use crate::map::rmg::x87::{self, TruncF64};
+use crate::util::native_x87::X87Chop53;
 
 use super::blob::BlobCtx;
 
@@ -258,14 +259,14 @@ fn step_budget(border_total: usize, step_density: f32, rng: &mut RmgRng) -> i32 
     term = term.mul(TruncF64::from_f64(f64::from(step_density)));
     term = TruncF64::from_f64(STEP_LOG_FLOOR).div(term);
     term = term.mul(TruncF64::from_f64(STEP_HALF));
-    let base = x87::ftol(term.to_f64());
+    let base = X87Chop53::ftol_f64_low_masked(term.to_f64());
 
     let half = base / 2;
     let scale = TruncF64::from_f64(f64::from_bits(RANGE_K_BITS));
     // The rejection can only fire on the single draw whose scaled value reaches
     // exactly one, so in practice this is one draw — but it is reachable.
     let extra = loop {
-        let value = x87::ftol(
+        let value = X87Chop53::ftol_f64_low_masked(
             TruncF64::from_f64(f64::from(rng.next_u32()))
                 .mul(TruncF64::from_f64(f64::from(half + 1)))
                 .mul(scale)

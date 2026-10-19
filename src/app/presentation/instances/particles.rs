@@ -10,7 +10,6 @@
 use crate::app::presentation::render::draw_plan_lowering::{
     NativeDisplayOrder, ObjectBodyDraw, ObjectPieceInstance, ObjectTexture, PlannedObjectInstance,
 };
-use crate::map::terrain;
 use crate::render::batch::SpriteInstance;
 use crate::render::draw_state::DrawState;
 use crate::render::native_z::ZGradient;
@@ -20,6 +19,7 @@ use crate::render::surface_line::SurfaceDraw;
 use crate::render::tactical_draw_plan::{BlitPolicy, RenderZPolicy, SpriteEncoding};
 use crate::rules::house_colors::HouseColorIndex;
 use crate::rules::particle_type::ParticleBehavesLike;
+use crate::util::lepton::absolute_leptons_to_screen;
 use crate::util::native_x87::adjust_for_z_standard;
 
 use super::helpers::{compute_sprite_depth_params_lifted, projection_admitted};
@@ -119,7 +119,7 @@ pub(super) fn build_particle_system_instance(
     let Some(parent) = order.object_draw(system.stable_id, SpriteEncoding::Plain) else {
         return;
     };
-    let point = terrain::lepton_to_screen(system.coords);
+    let point = absolute_leptons_to_screen(system.coords.x, system.coords.y, system.coords.z);
     if system.in_limbo()
         || !projection_admitted([point.0, point.1], context.camera, context.viewport)
     {
@@ -158,7 +158,7 @@ pub(super) fn build_particle_instance(
     let camera = context.camera;
     let viewport = context.viewport;
     let axis = context.axis;
-    let point = terrain::lepton_to_screen(particle.coords);
+    let point = absolute_leptons_to_screen(particle.coords.x, particle.coords.y, particle.coords.z);
     if !projection_admitted([point.0, point.1], camera, viewport) {
         return;
     }

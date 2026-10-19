@@ -445,6 +445,7 @@ pub(super) fn build_destroyable_cliff_catalog(
             entries,
         })
     };
+    let ids = crate::map::rmg::tiles::TileIds::from_keys(&td.rmg_tiles);
     Some(DestroyableCliffCatalog {
         destroyable_start,
         old: [
@@ -457,11 +458,8 @@ pub(super) fn build_destroyable_cliff_catalog(
             load_template(slope_start.checked_add(2)?)?,
             load_template(slope_start.checked_add(3)?)?,
         ],
-        lat_config: lat::parse_lat_config(&td.ini_data, &td.lookup),
-        slope_config: lat::SlopeFixupConfig {
-            ramp_base: td.rmg_tiles.ramp_base.map_or(-1, i32::from),
-            ramp_smooth: td.rmg_tiles.ramp_smooth.map_or(-1, i32::from),
-        },
+        lat_config: lat::LatConfig::from_tile_ids(&ids),
+        slope_config: lat::SlopeFixupConfig::from_tile_ids(&ids),
     })
 }
 

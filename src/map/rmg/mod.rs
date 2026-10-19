@@ -178,7 +178,7 @@ pub fn generated_dimensions(options: &RmgOptions) -> (i32, i32) {
     let lerp = |min: i32, max: i32, s: x87::TruncF64| {
         let low = x87::TruncF64::from_f64(f64::from(min)).mul(one.sub(s));
         let high = x87::TruncF64::from_f64(f64::from(max)).mul(s);
-        x87::ftol(low.add(high).to_f64())
+        crate::util::native_x87::X87Chop53::ftol_f64_low_masked(low.add(high).to_f64())
     };
 
     (

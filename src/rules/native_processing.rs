@@ -1016,6 +1016,16 @@ impl ProcessedRulesLayers {
         )
     }
 
+    /// `[General] Behind=` (Rules `+0xB8`) after the ordered General reads
+    /// (`0x0066E4F5..0x0066E513`): the constructor's null (`0x00665765`),
+    /// empty retention and the AnimType factory's identity.
+    pub(crate) fn behind(&self) -> Option<&str> {
+        self.native_type_construction_trace
+            .registry_state()
+            .rules_behind
+            .as_deref()
+    }
+
     /// `[General] PrismType=` (Rules `+0x498`), the stored ID of its type.
     pub(crate) fn prism_type(&self) -> Option<&str> {
         self.native_type_construction_trace
@@ -1375,6 +1385,7 @@ pub(crate) struct NativeRulesRegistryState {
     rules_prism_type: Option<String>,
     rules_drop_zone_anim: Option<String>,
     rules_drop_zone_radius: i32,
+    rules_behind: Option<String>,
     rules_prerequisite_proc_alternate: Option<String>,
     /// The six `[General] Prerequisite*` lists (Rules `+0x358..+0x3E4`), in
     /// [`PrerequisiteGroup::ALL`] order.
@@ -1427,6 +1438,7 @@ impl Default for NativeRulesRegistryState {
             rules_prism_type: None,
             rules_drop_zone_anim: None,
             rules_drop_zone_radius: general.drop_zone_radius,
+            rules_behind: None,
             rules_prerequisite_proc_alternate: None,
             rules_prerequisite_lists: Default::default(),
             rules_building_types: GeneralBuildingTypes::default(),
@@ -2028,6 +2040,7 @@ struct RulesPassProcessor {
     rules_prism_type: Option<String>,
     rules_drop_zone_anim: Option<String>,
     rules_drop_zone_radius: i32,
+    rules_behind: Option<String>,
     rules_prerequisite_proc_alternate: Option<String>,
     rules_prerequisite_lists: [Vec<Prerequisite>; 6],
     rules_building_types: GeneralBuildingTypes,
@@ -2078,6 +2091,7 @@ impl RulesPassProcessor {
             rules_prism_type: registry_state.rules_prism_type,
             rules_drop_zone_anim: registry_state.rules_drop_zone_anim,
             rules_drop_zone_radius: registry_state.rules_drop_zone_radius,
+            rules_behind: registry_state.rules_behind,
             rules_prerequisite_proc_alternate: registry_state.rules_prerequisite_proc_alternate,
             rules_prerequisite_lists: registry_state.rules_prerequisite_lists,
             rules_building_types: registry_state.rules_building_types,
@@ -2616,6 +2630,7 @@ impl RulesPassProcessor {
                     | "WeaponNullifyAnim"
                     | "PrismType"
                     | "DropZoneAnim"
+                    | "Behind"
                     | "PrerequisiteProcAlternate"
                     | "GDIGateOne"
                     | "GDIGateTwo"
@@ -2649,6 +2664,9 @@ impl RulesPassProcessor {
                         "WeaponNullifyAnim" => self.select_anim.weapon_nullify_anim = resolved,
                         "DropZoneAnim" => {
                             self.rules_drop_zone_anim = Some(resolved).filter(|id| !id.is_empty());
+                        }
+                        "Behind" => {
+                            self.rules_behind = Some(resolved).filter(|id| !id.is_empty());
                         }
                         "PrismType" => {
                             self.rules_prism_type = Some(resolved).filter(|id| !id.is_empty());
@@ -3714,6 +3732,7 @@ impl RulesPassProcessor {
                     rules_prism_type: self.rules_prism_type,
                     rules_drop_zone_anim: self.rules_drop_zone_anim,
                     rules_drop_zone_radius: self.rules_drop_zone_radius,
+                    rules_behind: self.rules_behind,
                     rules_prerequisite_proc_alternate: self.rules_prerequisite_proc_alternate,
                     rules_prerequisite_lists: self.rules_prerequisite_lists,
                     rules_building_types: self.rules_building_types,

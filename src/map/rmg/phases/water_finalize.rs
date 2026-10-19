@@ -25,7 +25,8 @@
 use crate::map::rmg::grid::RmgGrid;
 use crate::map::rmg::rng::RmgRng;
 use crate::map::rmg::tiles::TileIds;
-use crate::map::rmg::x87::{self, TruncF64};
+use crate::map::rmg::x87::TruncF64;
+use crate::util::native_x87::X87Chop53;
 
 use super::shore::TileBlocks;
 
@@ -39,7 +40,7 @@ const K201_BITS: u64 = 0x3E69_2000_0019_2000;
 fn scaled_draw(rng: &mut RmgRng, k_bits: u64, offset: f64, max: i32) -> i32 {
     let scale = TruncF64::from_f64(f64::from_bits(k_bits));
     loop {
-        let value = x87::ftol(
+        let value = X87Chop53::ftol_f64_low_masked(
             TruncF64::from_f64(f64::from(rng.next_u32()))
                 .mul(scale)
                 .add(TruncF64::from_f64(offset))
@@ -176,7 +177,7 @@ mod tests {
         // Raw draw 0x80000000: the FP chain gives trunc(2^31 * ~201*2^-32)
         // = 100 -> band 2; a modulo implementation would give 3 -> band 0.
         let scale = TruncF64::from_f64(f64::from_bits(K201_BITS));
-        let value = x87::ftol(
+        let value = X87Chop53::ftol_f64_low_masked(
             TruncF64::from_f64(f64::from(0x8000_0000u32))
                 .mul(scale)
                 .to_f64(),

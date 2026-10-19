@@ -776,6 +776,12 @@ pub struct GeneralRules {
     pub wake: AnimRef,
     /// Multiplayer move-command feedback animation (MoveFlash= in [General]).
     pub move_flash: AnimRef,
+    /// `[General] Behind=` (`Rules+0xB8`): the indicator Anim a Techno
+    /// behind a building takes (`TechnoClass::AI_Update @ 0x006FA2D3`).
+    /// The ordered processor's General read (`0x0066E4F5..0x0066E513`,
+    /// AnimType factory `0x00428B80`) publishes it; the constructor leaves it
+    /// null (`0x00665765`).
+    pub behind: Option<String>,
     /// Fatal infantry animation bindings indexed by Warhead `InfDeath`.
     /// Slots 3/4/6..10 come from `[General]`; slot 5 is the second declared
     /// `[Animations]` entry. Slots 0..2 intentionally have no external anim.
@@ -2297,6 +2303,7 @@ impl Default for GeneralRules {
             move_flash: AnimRef {
                 name: "RING".to_string(),
             },
+            behind: None,
             infantry_death_anims: [
                 None,
                 None,
@@ -3586,6 +3593,7 @@ impl GeneralRules {
             move_flash: AnimRef {
                 name: parse_anim_name("MoveFlash", "RING"),
             },
+            behind: defaults.behind,
             infantry_death_anims,
             damage_delay_minutes: general.read_double("DamageDelay", 1.0) as f32,
             spy_power_blackout: general.read_int("SpyPowerBlackout", defaults.spy_power_blackout),
@@ -4203,6 +4211,7 @@ impl RuleSet {
         let (drop_zone_anim, drop_zone_radius) = processed.drop_zone_controls();
         rules.general.drop_zone_anim = drop_zone_anim.map(str::to_owned);
         rules.general.drop_zone_radius = drop_zone_radius;
+        rules.general.behind = processed.behind().map(str::to_owned);
         rules.general.prerequisite_proc_alternate =
             processed.prerequisite_proc_alternate().map(str::to_owned);
         rules.prerequisite_lists = processed.prerequisite_lists().clone();
@@ -5598,6 +5607,11 @@ impl RuleSet {
             b"drop-zone-controls-v1".hash(&mut hasher);
             self.general.drop_zone_anim.hash(&mut hasher);
             self.general.drop_zone_radius.hash(&mut hasher);
+        }
+        // An earlier Process pass can retain Behind past an absent key.
+        if self.general.behind.is_some() {
+            b"behind-anim-v1".hash(&mut hasher);
+            self.general.behind.hash(&mut hasher);
         }
         self.general.default_mirage_disguises.hash(&mut hasher);
         self.general.infantry_disguises.hash(&mut hasher);

@@ -3,7 +3,7 @@
 
 use super::bridge_flags::apply_native_bridge_flag_stamp_to_parts;
 use super::native_cell::native_resolved_cell_index;
-use super::tubes::{build_auto_low_bridge_tubes, seed_explicit_map_tubes};
+use super::tubes::build_auto_low_bridge_tubes;
 use super::*;
 
 /// Identifies whether map overlays still require the ordinary authored-map
@@ -301,11 +301,9 @@ impl ResolvedTerrainGrid {
         });
         let load_slope_states = if projection.is_eager() && lat_enabled {
             theater_data.map(|td| {
-                let lat_config = lat::parse_lat_config(&td.ini_data, &td.lookup);
-                let slope_config = lat::SlopeFixupConfig {
-                    ramp_base: td.rmg_tiles.ramp_base.map_or(-1, i32::from),
-                    ramp_smooth: td.rmg_tiles.ramp_smooth.map_or(-1, i32::from),
-                };
+                let ids = crate::map::rmg::tiles::TileIds::from_keys(&td.rmg_tiles);
+                let lat_config = lat::LatConfig::from_tile_ids(&ids);
+                let slope_config = lat::SlopeFixupConfig::from_tile_ids(&ids);
                 let mut pristine_slope = |tile_index: i32, sub_tile: u8| {
                     let Ok(tile_id) = u16::try_from(tile_index) else {
                         return 0;
@@ -966,7 +964,6 @@ impl ResolvedTerrainGrid {
 
         let mut tube_facts = Vec::new();
         if projection.is_eager() {
-            tube_facts = seed_explicit_map_tubes(&mut cells, width, height, &map.explicit_tubes);
             build_auto_low_bridge_tubes(&mut cells, width, height, theater_data, &mut tube_facts);
         }
         let tube_native_ids = vec![None; tube_facts.len()];

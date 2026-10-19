@@ -2072,8 +2072,9 @@ impl Simulation {
     pub(crate) fn detach_anim_from_owner(&mut self, id: AnimId, rules: &RuleSet) -> Option<u64> {
         let owner = self.anim(id)?.owner_entity?;
         if let Some(entity) = self.substrate.entities.get_mut(owner) {
-            // TechnoClass::Detach71042F/710443 clear the matching Techno+0x1D4
-            // and +0x130.
+            // TechnoClass::Detach710415/71042F/710443 clear the matching
+            // Techno+0x12C, +0x1D4 and +0x130.
+            entity.expire_behind_anim(id);
             entity.drain.expire_anim(id);
             entity.expire_deploy_anim(id);
         }
@@ -2086,6 +2087,7 @@ impl Simulation {
     pub(crate) fn release_anim_owner_reference(&mut self, id: AnimId) -> Option<u64> {
         let owner = self.anim_mut_by_id(id)?.owner_entity.take()?;
         if let Some(entity) = self.substrate.entities.get_mut(owner) {
+            entity.expire_behind_anim(id);
             entity.drain.expire_anim(id);
             entity.expire_deploy_anim(id);
         }

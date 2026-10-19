@@ -2020,6 +2020,7 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
         entity.mcv_deploy_pending.is_pending().hash(hasher);
     }
     entity.hash_deploy_attachment(hasher);
+    entity.hash_behind_anim(hasher);
 
     if let Some(infantry) = entity.infantry {
         1u8.hash(hasher);

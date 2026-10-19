@@ -79,7 +79,6 @@ pub fn empty_map_file(options: &RmgOptions, gen_w: u32, gen_h: u32) -> MapFile {
         local_variables: Default::default(),
         trigger_graph: Default::default(),
         special_flags: Default::default(),
-        explicit_tubes: Vec::new(),
         // `IniFile` has no `Default`; an empty document is the equivalent.
         ini: IniFile::from_str(""),
     }

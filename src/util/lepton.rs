@@ -373,7 +373,7 @@ pub(crate) fn absolute_lepton_axis(cell: u16, sub_cell: SimFixed) -> i32 {
 /// object's own coordinate and starts tile art on the box top, so a unit's feet
 /// meet the middle of the tile it stands on rather than its northern vertex.
 ///
-/// `map::terrain::lepton_to_screen` is the absolute-lepton twin of this
+/// [`absolute_leptons_to_screen`] is the absolute-lepton twin of this
 /// function and produces the identical point; `matching_lepton_projections_agree`
 /// pins that.
 ///
@@ -479,25 +479,22 @@ mod tests {
             (SUBCELL_4_X, SUBCELL_4_Y),
         ] {
             let util = lepton_to_screen(10, 4, sub_x, sub_y, 2);
-            let terrain = terrain::lepton_to_screen(glam::IVec3::new(
+            let absolute = absolute_leptons_to_screen(
                 absolute_lepton_axis(10, sub_x),
                 absolute_lepton_axis(4, sub_y),
                 2 * GROUND_LEVEL_HEIGHT_LEPTONS,
-            ));
-            assert_eq!(util, terrain, "canonical subcell ({sub_x}, {sub_y})");
+            );
+            assert_eq!(util, absolute, "canonical subcell ({sub_x}, {sub_y})");
         }
 
         let negative = lepton_to_screen(0, 0, SimFixed::from_num(-9), SimFixed::from_num(5), 0);
-        assert_eq!(
-            negative,
-            terrain::lepton_to_screen(glam::IVec3::new(-9, 5, 0))
-        );
+        assert_eq!(negative, absolute_leptons_to_screen(-9, 5, 0));
 
         let crossing = lepton_to_screen(1, 0, SimFixed::lit("-0.5"), SIM_ZERO, 0);
         assert_eq!(crossing, (29.0, 29.0));
         assert_eq!(
             crossing,
-            terrain::lepton_to_screen(glam::IVec3::new(255, 0, 0)),
+            absolute_leptons_to_screen(255, 0, 0),
             "the complete 255.5-lepton absolute coordinate chops to 255",
         );
     }
@@ -616,14 +613,14 @@ mod tests {
                         SimFixed::from_num(sub_y),
                         0,
                     );
-                    let (bx, by) = terrain::lepton_to_screen(glam::IVec3::new(
+                    let (bx, by) = absolute_leptons_to_screen(
                         i32::from(rx) * 256 + sub_x,
                         i32::from(ry) * 256 + sub_y,
                         0,
-                    ));
+                    );
                     assert!(
                         (ax - bx).abs() < 0.01 && (ay - by).abs() < 0.01,
-                        "cell ({rx},{ry}) sub ({sub_x},{sub_y}): util {:?} vs terrain {:?}",
+                        "cell ({rx},{ry}) sub ({sub_x},{sub_y}): util {:?} vs absolute {:?}",
                         (ax, ay),
                         (bx, by),
                     );
@@ -681,5 +678,54 @@ mod tests {
         assert_eq!(subcell_lepton_offset(Some(2)), (SUBCELL_2_X, SUBCELL_2_Y));
         assert_eq!(subcell_lepton_offset(Some(3)), (SUBCELL_3_X, SUBCELL_3_Y));
         assert_eq!(subcell_lepton_offset(Some(4)), (SUBCELL_4_X, SUBCELL_4_Y));
+    }
+
+    #[test]
+    fn absolute_leptons_to_screen_zero_matches_iso_origin() {
+        let (sx, sy) = absolute_leptons_to_screen(0, 0, 0);
+        assert_eq!(sx, 0.0);
+        assert_eq!(sy, terrain::TILE_HEIGHT / 2.0);
+    }
+
+    #[test]
+    fn absolute_leptons_to_screen_integer_cell_lands_at_iso_center() {
+        // 4 cells east, 2 cells south = (4*256, 2*256, 0).
+        let (sx, sy) = absolute_leptons_to_screen(4 * 256, 2 * 256, 0);
+        assert_eq!(sx, (4.0 - 2.0) * terrain::TILE_WIDTH / 2.0);
+        assert_eq!(
+            sy,
+            (4.0 + 2.0) * terrain::TILE_HEIGHT / 2.0 + terrain::TILE_HEIGHT / 2.0
+        );
+    }
+
+    #[test]
+    fn absolute_leptons_to_screen_sub_cell_offset_is_iso_subdivided() {
+        // Sub-cell offset of (128, 0) — native truncates the complete Y
+        // numerator from 7.5 to 7 before VERA's common +15 row bias.
+        let (sx, sy) = absolute_leptons_to_screen(128, 0, 0);
+        assert_eq!((sx, sy), (15.0, 22.0));
+    }
+
+    #[test]
+    fn absolute_leptons_to_screen_negative_coords_use_signed_truncation() {
+        let (sx, sy) = absolute_leptons_to_screen(-50, 0, 0);
+        assert_eq!((sx, sy), (-5.0, 13.0));
+    }
+
+    #[test]
+    fn adjust_for_z_lepton_projection_matches_retail_fixtures_and_boundary() {
+        let (_, baseline) = absolute_leptons_to_screen(0, 0, 0);
+        for (z, expected_lift) in [
+            (104, 15.0),
+            (208, 30.0),
+            (256, 37.0),
+            (727, 104.0),
+            (728, 105.0),
+            (1_500, 216.0),
+            (-400, -56.0),
+        ] {
+            let (_, projected) = absolute_leptons_to_screen(0, 0, z);
+            assert_eq!(baseline - projected, expected_lift, "z={z}");
+        }
     }
 }

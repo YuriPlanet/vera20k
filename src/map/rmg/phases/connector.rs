@@ -20,7 +20,8 @@
 
 use crate::map::rmg::rng::RmgRng;
 use crate::map::rmg::scratch::RmgScratch;
-use crate::map::rmg::x87::{self, TruncF64};
+use crate::map::rmg::x87::TruncF64;
+use crate::util::native_x87::X87Chop53;
 
 /// Side of the 5x5 window grid: nine windows, three per axis.
 const RING_SPAN: i32 = 3;
@@ -120,7 +121,7 @@ pub(crate) fn region_meets_quota_in_rect(
 fn window_threshold(leniency: f32) -> i32 {
     let span = TruncF64::from_f64(THRESHOLD_AT_STRICT - THRESHOLD_AT_LENIENT);
     let remaining = TruncF64::from_f64(f64::from(1.0f32 - leniency));
-    x87::ftol(
+    X87Chop53::ftol_f64_low_masked(
         span.mul(remaining)
             .add(TruncF64::from_f64(THRESHOLD_AT_LENIENT))
             .to_f64(),
@@ -176,7 +177,7 @@ pub(crate) fn ring_orientation_mask(
 pub(crate) fn jitter(rng: &mut RmgRng) -> i32 {
     let scale = TruncF64::from_f64(f64::from_bits(JITTER_SCALE_BITS));
     loop {
-        let value = x87::ftol(
+        let value = X87Chop53::ftol_f64_low_masked(
             TruncF64::from_f64(f64::from(rng.next_u32()))
                 .mul(scale)
                 .to_f64(),

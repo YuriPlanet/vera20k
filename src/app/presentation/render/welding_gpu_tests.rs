@@ -131,7 +131,7 @@ fn ordinary_repair_children_reach_the_actual_effect_builder_and_gpu_without_muta
     let before_hash = sim.state_hash();
     let before_rng = sim.rng_state();
     let size = [160, 120];
-    let center = crate::map::terrain::lepton_to_screen(at);
+    let center = crate::util::lepton::absolute_leptons_to_screen(at.x, at.y, at.z);
     let view_camera = [center.0 - 80., center.1 - 60.];
     let order = NativeDisplayOrder::from_display(sim.display_layers());
     let lighting = crate::map::lighting::CellLightGrid::new();
@@ -155,6 +155,7 @@ fn ordinary_repair_children_reach_the_actual_effect_builder_and_gpu_without_muta
                 lighting: &lighting,
                 house_colors: &house_colors,
                 hidden_super_anims: &hidden,
+                show_hidden: false,
                 local_owner: sim.session.current_house,
                 observe_particles: false,
             },

@@ -18,7 +18,8 @@ use crate::map::rmg::grid::{CellRef, RmgGrid};
 use crate::map::rmg::rng::RmgRng;
 use crate::map::rmg::scratch::RmgScratch;
 use crate::map::rmg::tiles::TileIds;
-use crate::map::rmg::x87::{self, TruncF64};
+use crate::map::rmg::x87::TruncF64;
+use crate::util::native_x87::X87Chop53;
 
 use super::regions::{Regions, RmgRegion};
 
@@ -231,7 +232,7 @@ fn is_class_cell(ids: &TileIds, tile: i32) -> bool {
 fn uniform_below(rng: &mut RmgRng, span: i32) -> i32 {
     let scale = TruncF64::from_f64(f64::from_bits(UNIFORM_SCALE_BITS));
     loop {
-        let value = x87::ftol(
+        let value = X87Chop53::ftol_f64_low_masked(
             TruncF64::from_f64(f64::from(rng.next_u32()))
                 .mul(TruncF64::from_f64(f64::from(span)))
                 .mul(scale)

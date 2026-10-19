@@ -13,7 +13,8 @@ use crate::map::rmg::grid::RmgGrid;
 use crate::map::rmg::rng::{RANGE_K_BITS, RmgRng};
 use crate::map::rmg::scratch::RmgScratch;
 use crate::map::rmg::tiles::TileIds;
-use crate::map::rmg::x87::{self, TruncF64, approx_sqrt_f32};
+use crate::map::rmg::x87::{TruncF64, approx_sqrt_f32};
+use crate::util::native_x87::X87Chop53;
 
 use super::area;
 use super::blob::MinHeap;
@@ -95,7 +96,8 @@ pub fn run(ctx: &mut StartsCtx<'_>, args: &StartsArgs, zones: &ZoneField) -> Sta
         .mul(TruncF64::from_f64(f64::from(args.gen_w)))
         .mul(TruncF64::from_f64(AREA_FRACTION));
     let floor = TruncF64::from_f64(MIN_REGION_CELLS);
-    let threshold = x87::ftol(if area.lt(floor) { floor } else { area }.to_f64());
+    let threshold =
+        X87Chop53::ftol_f64_low_masked(if area.lt(floor) { floor } else { area }.to_f64());
 
     rebuild_regions(ctx, zones);
 
@@ -136,7 +138,7 @@ pub fn run(ctx: &mut StartsCtx<'_>, args: &StartsArgs, zones: &ZoneField) -> Sta
         let quota = if position == order.len() - 1 {
             args.start_quota - assigned
         } else {
-            x87::ftol(
+            X87Chop53::ftol_f64_low_masked(
                 TruncF64::from_f64(f64::from(cumulative))
                     .div(TruncF64::from_f64(f64::from(total)))
                     .mul(TruncF64::from_f64(f64::from(args.start_quota)))
@@ -244,7 +246,7 @@ fn rebuild_regions(ctx: &mut StartsCtx<'_>, zones: &ZoneField) {
 fn lane_draw(rng: &mut RmgRng) -> i32 {
     let scale = TruncF64::from_f64(f64::from_bits(K3_BITS));
     loop {
-        let value = x87::ftol(
+        let value = X87Chop53::ftol_f64_low_masked(
             TruncF64::from_f64(f64::from(rng.next_u32()))
                 .mul(scale)
                 .to_f64(),
@@ -352,7 +354,7 @@ fn select_candidates(
     let quota = ctx.regions.list[region_index].start_quota;
     let count = buffer.len() as i32;
 
-    let mut target = x87::ftol(
+    let mut target = X87Chop53::ftol_f64_low_masked(
         TruncF64::from_f64(f64::from(args.tiberium_layout))
             .mul(TruncF64::from_f64(LAYOUT_SCALE))
             .mul(TruncF64::from_f64(LAYOUT_SPREAD))
@@ -613,7 +615,7 @@ mod tests {
             let quota = if i == counts.len() - 1 {
                 quota_total - assigned
             } else {
-                x87::ftol(
+                X87Chop53::ftol_f64_low_masked(
                     TruncF64::from_f64(f64::from(cumulative))
                         .div(TruncF64::from_f64(f64::from(total)))
                         .mul(TruncF64::from_f64(f64::from(quota_total)))

@@ -45,12 +45,9 @@ impl<'a> LoadCellRecalcState<'a> {
         cell_count: usize,
         pixel_conversion_bounds: PixelConversionBounds,
     ) -> Self {
-        let lat_config = lat_enabled
-            .then(|| lat::parse_lat_config(&theater_data.ini_data, &theater_data.lookup));
-        let slope_config = lat_enabled.then_some(lat::SlopeFixupConfig {
-            ramp_base: theater_data.rmg_tiles.ramp_base.map_or(-1, i32::from),
-            ramp_smooth: theater_data.rmg_tiles.ramp_smooth.map_or(-1, i32::from),
-        });
+        let ids = crate::map::rmg::tiles::TileIds::from_keys(&theater_data.rmg_tiles);
+        let lat_config = lat_enabled.then(|| lat::LatConfig::from_tile_ids(&ids));
+        let slope_config = lat_enabled.then(|| lat::SlopeFixupConfig::from_tile_ids(&ids));
         Self {
             theater_data: Some(theater_data),
             asset_manager: Some(asset_manager),

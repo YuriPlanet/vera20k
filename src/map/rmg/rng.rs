@@ -8,6 +8,7 @@
 use super::x87::TruncF64;
 use crate::rng_continuation::{MAPGEN_RNG_STATE_WORDS, MapGenRngContinuation};
 use crate::util::native_random::{self, LAG};
+use crate::util::native_x87::X87Chop53;
 
 /// Number of state words in the generator buffer.
 const STATE_LEN: usize = MAPGEN_RNG_STATE_WORDS;
@@ -75,7 +76,7 @@ impl RmgRng {
         loop {
             let draw = TruncF64::from_f64(f64::from(self.next_u32()));
             let scaled = draw.mul(span).mul(scale).add(floor);
-            let value = super::x87::ftol(scaled.to_f64());
+            let value = X87Chop53::ftol_f64_low_masked(scaled.to_f64());
             if value <= max {
                 return value;
             }

@@ -4,7 +4,7 @@
 //!
 //! ## Coordinate frames
 //! Three frames meet in this file and mixing them is the classic bug here:
-//! * **World pixels** — what `terrain::iso_to_screen` / `terrain::lepton_to_screen`
+//! * **World pixels** — what `terrain::iso_to_screen` / `absolute_leptons_to_screen`
 //!   produce. `camera_x`/`camera_y` live in this frame and name the world point
 //!   drawn at window pixel `(0, 0)`. Within world pixels there are two anchors
 //!   that differ by half a tile: `iso_to_screen` gives a cell's *tile* corner,

@@ -34,7 +34,8 @@
 //! Active low-deck overlays/CABHUTs are a separate `bridge_deck` mechanism.
 
 use crate::map::rmg::rng::{RANGE_K_BITS, RmgRng};
-use crate::map::rmg::x87::{self, Gaussian, TruncF64};
+use crate::map::rmg::x87::{Gaussian, TruncF64};
+use crate::util::native_x87::X87Chop53;
 
 use super::blob::{BlobCtx, seed_draw};
 use super::bridge;
@@ -144,7 +145,7 @@ struct Launch {
 fn launch(ctx: &mut BlobCtx<'_>, gauss_first: bool) -> Launch {
     let _ = gauss_first;
     let edge = loop {
-        let value = x87::ftol(
+        let value = X87Chop53::ftol_f64_low_masked(
             unit_draw(ctx.rng)
                 .mul(TruncF64::from_f64(f64::from(EDGES)))
                 .to_f64(),
@@ -209,14 +210,20 @@ fn carve_section(
     let mut x = fx - step_back * sin;
     let mut y = fy - step_back * cos;
     let mut section = Section {
-        first: (x87::ftol(x), x87::ftol(y)),
+        first: (
+            X87Chop53::ftol_f64_low_masked(x),
+            X87Chop53::ftol_f64_low_masked(y),
+        ),
         last: (0, 0),
         column_straight: true,
         row_straight: true,
     };
 
     for _ in 0..span {
-        let (cx, cy) = (x87::ftol(x), x87::ftol(y));
+        let (cx, cy) = (
+            X87Chop53::ftol_f64_low_masked(x),
+            X87Chop53::ftol_f64_low_masked(y),
+        );
         section.last = (cx, cy);
         if ctx.scratch.in_diamond(cx, cy) {
             let owner = ctx.scratch.get(cx, cy).region;
@@ -243,10 +250,10 @@ fn carve_section(
         // spans one position past the section's end — a section that would
         // leave its column on the very next substep does not count as
         // straight.
-        if x87::ftol(x + sin) != cx {
+        if X87Chop53::ftol_f64_low_masked(x + sin) != cx {
             section.column_straight = false;
         }
-        if x87::ftol(y + cos) != cy {
+        if X87Chop53::ftol_f64_low_masked(y + cos) != cy {
             section.row_straight = false;
         }
         // The section always completes, even once the walk is doomed.
@@ -309,14 +316,14 @@ pub fn carve(
     let heading0 = heading;
 
     // Width setup.
-    let width_max = x87::ftol(
+    let width_max = X87Chop53::ftol_f64_low_masked(
         TruncF64::from_f64(f64::from(args.water_percent))
             .mul(TruncF64::from_f64(WIDTH_SCALE))
             .to_f64()
             .max(WIDTH_MIN),
     );
     let width = loop {
-        let value = x87::ftol(
+        let value = X87Chop53::ftol_f64_low_masked(
             unit_draw(ctx.rng)
                 .mul(TruncF64::from_f64(f64::from(width_max)))
                 .add(TruncF64::from_f64(WIDTH_MIN))
@@ -331,7 +338,7 @@ pub fn carve(
 
     // The earliest step at which this river may attempt waterfall terrain.
     let waterfall_min_step = loop {
-        let value = x87::ftol(
+        let value = X87Chop53::ftol_f64_low_masked(
             TruncF64::from_f64(f64::from(ctx.rng.next_u32()))
                 .mul(TruncF64::from_f64(WATERFALL_STEP_SPAN_SCALED))
                 .add(TruncF64::from_f64(WATERFALL_STEP_BASE))
@@ -354,7 +361,10 @@ pub fn carve(
     };
 
     loop {
-        let (sx, sy) = (x87::ftol(fx), x87::ftol(fy));
+        let (sx, sy) = (
+            X87Chop53::ftol_f64_low_masked(fx),
+            X87Chop53::ftol_f64_low_masked(fy),
+        );
         if !ctx.scratch.in_diamond(sx, sy) || !walk.alive {
             break;
         }
@@ -362,7 +372,7 @@ pub fn carve(
         let sin = f64::from(trig.sin_radians(heading));
         let cos = f64::from(trig.cos_radians(heading));
 
-        let span = x87::ftol(width_walk + HALF);
+        let span = X87Chop53::ftol_f64_low_masked(width_walk + HALF);
         let section = carve_section(ctx, &mut walk, fx, fy, span, sin, cos);
 
         // Exactly one straightness flag survives a step: whichever axis
@@ -379,7 +389,7 @@ pub fn carve(
         // endpoints and the heading as they stand. A river that is a branch or
         // has spawned one cannot attempt it, and one success is the lifetime cap.
         if !no_more_branches && (column_straight || row_straight) && waterfall_successes < 1 {
-            let drift = x87::ftol(heading - heading0).abs();
+            let drift = X87Chop53::ftol_f64_low_masked(heading - heading0).abs();
             if f64::from(drift) < EIGHTH_TURN
                 && args.bridge_enabled
                 && walk.steps > waterfall_min_step
@@ -429,8 +439,8 @@ pub fn carve(
                 heading + START_SIGMA,
                 heading + 5.0 * START_SIGMA,
             );
-            let bx = x87::ftol(fx + f64::from(span) * sin);
-            let by = x87::ftol(fy + f64::from(span) * cos);
+            let bx = X87Chop53::ftol_f64_low_masked(fx + f64::from(span) * sin);
+            let by = X87Chop53::ftol_f64_low_masked(fy + f64::from(span) * cos);
             // A failed branch kills the parent — and rolls the whole river back.
             walk.alive = carve(ctx, args, quota, Some((bx, by, angle)), true);
         }
@@ -470,7 +480,10 @@ pub fn carve(
     // A river that ran out of map does not get an end lake; only one that chose
     // to stop does.
     if walk.rolled_to_a_stop && walk.alive {
-        let end = (x87::ftol(fx), x87::ftol(fy));
+        let end = (
+            X87Chop53::ftol_f64_low_masked(fx),
+            X87Chop53::ftol_f64_low_masked(fy),
+        );
         if ctx.scratch.in_diamond(end.0, end.1) {
             walk.alive = lake::grow_lake(ctx, args, quota, Some(end));
         }
@@ -943,7 +956,7 @@ mod tests {
         let step_back = f64::from(span - 1) * HALF;
         let x0 = 10.0 - step_back * sin;
         let y0 = 10.0 - step_back * cos;
-        assert_eq!(x87::ftol(x0), 10);
-        assert_eq!(x87::ftol(y0), 9);
+        assert_eq!(X87Chop53::ftol_f64_low_masked(x0), 10);
+        assert_eq!(X87Chop53::ftol_f64_low_masked(y0), 9);
     }
 }

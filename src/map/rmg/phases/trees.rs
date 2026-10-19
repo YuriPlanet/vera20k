@@ -15,7 +15,8 @@ use crate::map::rmg::grid::RmgGrid;
 use crate::map::rmg::rng::{RANGE_K_BITS, RmgRng};
 use crate::map::rmg::scratch::RmgScratch;
 use crate::map::rmg::tiles::TileIds;
-use crate::map::rmg::x87::{self, Gaussian, TruncF64, approx_sqrt};
+use crate::map::rmg::x87::{Gaussian, TruncF64, approx_sqrt};
+use crate::util::native_x87::X87Chop53;
 
 use super::blob::MinHeap;
 
@@ -92,7 +93,7 @@ pub fn run(ctx: &mut TreeCtx<'_>, args: &TreeArgs) -> Vec<(String, i16, i16)> {
         .mul(t(WIDTH_SCALE))
         .add(t(WIDTH_OFFSET));
     let veg_term = t(f64::from(args.vegetation)).mul(t(VEG_SCALE));
-    let mut remaining = x87::ftol(
+    let mut remaining = X87Chop53::ftol_f64_low_masked(
         width_term
             .mul(veg_term)
             .mul(t(f64::from(args.max_trees)))
@@ -164,7 +165,7 @@ fn size_draw(gauss: &mut Gaussian, rng: &mut RmgRng) -> i32 {
             .add(t(SIZE_OFFSET))
             .to_f64();
         if (SIZE_MIN..=SIZE_MAX).contains(&value) {
-            return x87::ftol(value);
+            return X87Chop53::ftol_f64_low_masked(value);
         }
     }
 }
@@ -174,7 +175,9 @@ fn tree_index_draw(rng: &mut RmgRng) -> i32 {
     let scale = t(f64::from_bits(TREE_INDEX_K_BITS));
     let offset = t(TREE_INDEX_OFFSET);
     loop {
-        let value = x87::ftol(t(f64::from(rng.next_u32())).mul(scale).add(offset).to_f64());
+        let value = X87Chop53::ftol_f64_low_masked(
+            t(f64::from(rng.next_u32())).mul(scale).add(offset).to_f64(),
+        );
         if value <= TREE_INDEX_MAX {
             return value;
         }

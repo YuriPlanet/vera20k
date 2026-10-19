@@ -224,39 +224,6 @@ pub(super) fn build_auto_low_bridge_tubes(
     }
 }
 
-pub(super) fn seed_explicit_map_tubes(
-    cells: &mut [ResolvedTerrainCell],
-    width: u16,
-    height: u16,
-    explicit_tubes: &[TubeFact],
-) -> Vec<TubeFact> {
-    let mut tubes = Vec::with_capacity(explicit_tubes.len());
-    for tube in explicit_tubes {
-        let Ok(raw_id) = u16::try_from(tubes.len()) else {
-            log::warn!(
-                "ResolvedTerrain: explicit [Tubes] registry exceeded u16::MAX; skipping remaining tubes"
-            );
-            break;
-        };
-        let tube_id = TubeId(raw_id);
-        tubes.push(tube.clone());
-        let (rx, ry) = tube.entry;
-        if rx >= width || ry >= height {
-            log::warn!(
-                "ResolvedTerrain: explicit [Tubes] entry cell ({}, {}) outside resolved grid",
-                rx,
-                ry
-            );
-            continue;
-        }
-        let idx = ry as usize * width as usize + rx as usize;
-        if let Some(cell) = cells.get_mut(idx) {
-            cell.tube_index = Some(tube_id);
-        }
-    }
-    tubes
-}
-
 pub(super) fn auto_tube_direction_for_tile(
     final_tile_index: i32,
     theater_data: Option<&TheaterData>,

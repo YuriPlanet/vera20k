@@ -541,7 +541,6 @@ mod tests {
             local_variables: std::collections::HashMap::new(),
             trigger_graph: crate::map::trigger_graph::TriggerGraph::default(),
             special_flags: crate::map::basic::SpecialFlagsSection::default(),
-            explicit_tubes: Vec::new(),
             ini: IniFile::from_str(""),
         }
     }

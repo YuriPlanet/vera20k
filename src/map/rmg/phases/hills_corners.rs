@@ -10,7 +10,7 @@
 use crate::map::rmg::grid::RmgGrid;
 use crate::map::rmg::scratch::RmgScratch;
 use crate::map::rmg::tiles::{TILE_UNASSIGNED, TileIds};
-use crate::map::rmg::x87;
+use crate::util::native_x87::X87Chop53;
 
 /// One level of corner height (deltas in the ramp table are 0/15/30).
 const LEVEL: i32 = 15;
@@ -364,7 +364,7 @@ pub fn morph(
         let level = i32::from(cell.level);
         let height = scratch.cells()[k].height;
         let current = cg.current_level(grid, scratch, mx, my, ids, morphable);
-        let delta = x87::ftol(f64::from(level) + height - f64::from(current));
+        let delta = X87Chop53::ftol_f64_low_masked(f64::from(level) + height - f64::from(current));
         let direction = if delta >= 0 { 1 } else { -1 };
         for _ in 0..delta.abs() {
             let mask = cg.pick_mask(mx, my, direction);

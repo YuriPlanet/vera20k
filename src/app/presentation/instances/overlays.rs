@@ -232,6 +232,8 @@ pub(crate) struct DisplayEffectInputs<'a> {
     pub lighting: &'a crate::map::lighting::CellLightGrid,
     pub house_colors: &'a crate::map::houses::HouseColorMap,
     pub hidden_super_anims: &'a std::collections::BTreeSet<crate::sim::anim_class::AnimId>,
+    /// The local Show Hidden option (`Options+0x1F`).
+    pub show_hidden: bool,
     pub local_owner: Option<crate::sim::intern::InternedId>,
     pub observe_particles: bool,
 }
@@ -334,6 +336,18 @@ pub(crate) fn build_display_effect_instances(
                     true => !local_owner.is_some_and(|viewer| {
                         sim.psi_warning_detected_by(viewer, anim, input.rules)
                     }),
+                    // ... and the `[General] Behind=` anim's from the local
+                    // Show Hidden option (`0x00423B62..0x00423B88`).
+                    false
+                        if input
+                            .rules
+                            .general
+                            .behind
+                            .as_deref()
+                            .is_some_and(|behind| behind.eq_ignore_ascii_case(type_name)) =>
+                    {
+                        !input.show_hidden
+                    }
                     // A Super's ChronoPlacement anim: the client's byte
                     // (`match_runtime::super_selection`).
                     false => {

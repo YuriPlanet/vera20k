@@ -29,7 +29,8 @@
 //! adjustments are what let the river-finish shore pass accept the junction
 //! between the near and far river regions.
 
-use crate::map::rmg::x87::{self, TruncF64};
+use crate::map::rmg::x87::TruncF64;
+use crate::util::native_x87::X87Chop53;
 
 use super::blob::BlobCtx;
 use super::meander;
@@ -144,7 +145,7 @@ fn layout(args: &BridgeArgs) -> Layout {
 fn scaled_draw(ctx: &mut BlobCtx<'_>, scale_bits: u64, max: u32) -> u32 {
     let scale = TruncF64::from_f64(f64::from_bits(scale_bits));
     loop {
-        let value = x87::ftol(
+        let value = X87Chop53::ftol_f64_low_masked(
             TruncF64::from_f64(f64::from(ctx.rng.next_u32()))
                 .mul(scale)
                 .to_f64(),
@@ -723,7 +724,6 @@ mod tests {
                 "no emitted OverlayDataPack"
             );
             assert!(map.entities.is_empty(), "no emitted structures");
-            assert!(map.explicit_tubes.is_empty(), "no explicit Tube topology");
 
             let resolved = ResolvedTerrainGrid::build_generated_materialized_for_test(&map);
             assert!(

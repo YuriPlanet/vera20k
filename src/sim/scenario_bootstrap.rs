@@ -2959,7 +2959,6 @@ mod tests {
             local_variables: Default::default(),
             trigger_graph: Default::default(),
             special_flags: Default::default(),
-            explicit_tubes: Vec::new(),
             ini: IniFile::from_str(""),
         }
     }

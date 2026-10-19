@@ -11,7 +11,8 @@ use crate::map::rmg::grid::RmgGrid;
 use crate::map::rmg::rng::RmgRng;
 use crate::map::rmg::scratch::RmgScratch;
 use crate::map::rmg::tiles::TileIds;
-use crate::map::rmg::x87::{self, Gaussian, TruncF64};
+use crate::map::rmg::x87::{Gaussian, TruncF64};
+use crate::util::native_x87::X87Chop53;
 
 use super::hills_corners::{self, CornerGrid, Morphable};
 
@@ -200,7 +201,7 @@ pub fn walk(scratch: &mut RmgScratch, gauss: &mut Gaussian, rng: &mut RmgRng, ru
     // Final pass: truncate every height to a whole number.
     for k in 0..width * width {
         let height = scratch.cells()[k].height;
-        scratch.cells_mut()[k].height = f64::from(x87::ftol(height));
+        scratch.cells_mut()[k].height = f64::from(X87Chop53::ftol_f64_low_masked(height));
     }
 }
 

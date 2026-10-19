@@ -401,6 +401,7 @@ impl BridgeRecalcCatalog {
             files.insert(tile, siblings.into_boxed_slice());
             heads.insert(tile, result);
         }
+        let ids = crate::map::rmg::tiles::TileIds::from_keys(&theater.rmg_tiles);
         Self {
             heads,
             files,
@@ -408,12 +409,8 @@ impl BridgeRecalcCatalog {
             permissions,
             registered_names,
             terrain_rules: rules.clone(),
-            lat_config: lat_enabled
-                .then(|| lat::parse_lat_config(&theater.ini_data, &theater.lookup)),
-            slope_config: lat_enabled.then_some(lat::SlopeFixupConfig {
-                ramp_base: theater.rmg_tiles.ramp_base.map_or(-1, i32::from),
-                ramp_smooth: theater.rmg_tiles.ramp_smooth.map_or(-1, i32::from),
-            }),
+            lat_config: lat_enabled.then(|| lat::LatConfig::from_tile_ids(&ids)),
+            slope_config: lat_enabled.then(|| lat::SlopeFixupConfig::from_tile_ids(&ids)),
             cliff_back_impassability,
             automatic_tube_bases: theater.automatic_tube_bases,
             wood_bridge_start: theater

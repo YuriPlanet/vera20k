@@ -13,6 +13,7 @@ use crate::map::rmg::rng::{RANGE_K_BITS, RmgRng};
 use crate::map::rmg::scratch::RmgScratch;
 use crate::map::rmg::tiles::TileIds;
 use crate::map::rmg::x87::{self, Gaussian, TruncF64, approx_sqrt};
+use crate::util::native_x87::X87Chop53;
 
 use super::shore::{self, ShoreCtx, TileBlocks};
 
@@ -143,7 +144,7 @@ pub(crate) fn seed_draw(rng: &mut RmgRng, dim: i32) -> i32 {
     let span = TruncF64::from_f64(f64::from(dim));
     loop {
         let draw = TruncF64::from_f64(f64::from(rng.next_u32()));
-        let value = x87::ftol(draw.mul(span).mul(scale).to_f64());
+        let value = X87Chop53::ftol_f64_low_masked(draw.mul(span).mul(scale).to_f64());
         if value < dim {
             return value;
         }
@@ -294,8 +295,8 @@ pub fn carve(ctx: &mut BlobCtx<'_>, blob_counter: &mut i32, params: &BlobParams)
                 continue;
             }
             // Rounded drift center, recomputed per accepted neighbor.
-            let rx = x87::ftol(cx.add(half).to_f64());
-            let ry = x87::ftol(cy.add(half).to_f64());
+            let rx = X87Chop53::ftol_f64_low_masked(cx.add(half).to_f64());
+            let ry = X87Chop53::ftol_f64_low_masked(cy.add(half).to_f64());
             let key = if params.directed {
                 directed_key((rx, ry), (nx, ny), params.target, weight_x, weight_y)
             } else {

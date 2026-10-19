@@ -595,14 +595,15 @@ mod tests {
         );
     }
 
+    /// A malformed row spends its ID and stops the section before the valid
+    /// row after it.
     #[test]
-    fn filtered_convenience_tubes_are_not_native_identity_authority() {
+    fn a_malformed_tube_row_stops_native_construction() {
         let ini = IniFile::from_str(
             "[Tubes]\n\
              malformed=1,2,2,4,2,2,2\n\
              valid=7,0,6,4,0,6,6,-1\n",
         );
-        assert_eq!(crate::map::tubes::parse_tubes(&ini).len(), 1);
         let mut simulation = simulation_with_saved_prefix(1_000_018);
 
         let error = simulation.construct_native_map_tubes(&ini).unwrap_err();

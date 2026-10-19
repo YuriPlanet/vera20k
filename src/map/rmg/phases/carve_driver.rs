@@ -18,7 +18,8 @@
 //! the ramp order described above.
 
 use crate::map::rmg::rng::RmgRng;
-use crate::map::rmg::x87::{self, TruncF64};
+use crate::map::rmg::x87::TruncF64;
+use crate::util::native_x87::X87Chop53;
 
 use super::adjacency;
 use super::bridge_deck;
@@ -64,7 +65,7 @@ pub struct ConnectorRegion {
 fn connection_count(rng: &mut RmgRng, accessibility: i32) -> i32 {
     let access_scale = TruncF64::from_f64(f64::from_bits(ACCESS_ROLL_SCALE_BITS));
     let roll = loop {
-        let v = x87::ftol(
+        let v = X87Chop53::ftol_f64_low_masked(
             TruncF64::from_f64(f64::from(rng.next_u32()))
                 .mul(access_scale)
                 .to_f64(),
@@ -83,7 +84,7 @@ fn connection_count(rng: &mut RmgRng, accessibility: i32) -> i32 {
     let extra_scale = TruncF64::from_f64(f64::from_bits(EXTRA_ROLL_SCALE_BITS));
     let one = TruncF64::from_f64(1.0);
     let extra = loop {
-        let v = x87::ftol(
+        let v = X87Chop53::ftol_f64_low_masked(
             TruncF64::from_f64(f64::from(rng.next_u32()))
                 .mul(extra_scale)
                 .add(one)
@@ -101,7 +102,7 @@ fn pick_border_cell(rng: &mut RmgRng, count: i32) -> usize {
     let scale = TruncF64::from_f64(f64::from_bits(BORDER_PICK_SCALE_BITS));
     let span = TruncF64::from_f64(f64::from(count));
     loop {
-        let v = x87::ftol(
+        let v = X87Chop53::ftol_f64_low_masked(
             TruncF64::from_f64(f64::from(rng.next_u32()))
                 .mul(span)
                 .mul(scale)
