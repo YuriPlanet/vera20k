@@ -196,6 +196,14 @@ fn step_install(
             }
         }
         BunkerState::TrackStep => {
+            settle_completed_install_track(
+                sim,
+                rules,
+                registry,
+                building_id,
+                unit_id,
+                frame_effects,
+            );
             if arrived_and_stopped(sim, building_id, unit_id) {
                 turn_unit(sim, unit_id, SOUTH_FACING);
                 set_state(sim, building_id, BunkerState::TurnSouth, Some(unit_id));
@@ -219,6 +227,47 @@ fn step_install(
             }
         }
         BunkerState::Idle | BunkerState::Occupied => {}
+    }
+}
+
+/// The contact-free entry adapter can leave the forced destination retained
+/// after the track has retired with no NavCom (Drive's terminal arrival gate
+/// requires one). Is_Moving then stays true even at the exact foundation
+/// centre. Finish that adapter-owned move through the locomotor's Stop_Moving;
+/// Unit's null destination setter intentionally does nothing with null NavCom.
+/// never move the object or alter a still-active track to satisfy the wait.
+fn settle_completed_install_track(
+    sim: &mut Simulation,
+    rules: &RuleSet,
+    registry: Option<&OverlayTypeRegistry>,
+    building_id: u64,
+    unit_id: u64,
+    effects: FrameEffects<'_>,
+) {
+    let Some(building) = sim.substrate.entities.get(building_id) else {
+        return;
+    };
+    let centre = object_get_coords(building, sim.resolved_terrain.as_ref());
+    let completed = sim.substrate.entities.get(unit_id).is_some_and(|unit| {
+        let Some(loco) = unit.locomotor.as_ref() else {
+            return false;
+        };
+        let Some(family) = movement::track_process::TrackFamily::from_kind(loco.active_kind())
+        else {
+            return false;
+        };
+        unit.navigation.nav_com().is_none()
+            && object_get_coords(unit, sim.resolved_terrain.as_ref()) == centre
+            && loco.track_head(family).is_none()
+            && loco
+                .track_progress(family)
+                .is_some_and(|track| track.turn_index() == -1)
+            && loco.track_destination(family) == Some(centre)
+    });
+    if completed {
+        if let Err(cause) = sim.locomotor_stop_moving(unit_id, Some(rules), registry, effects) {
+            log::warn!("Bunker install track completion {unit_id}: {cause}");
+        }
     }
 }
 
@@ -476,6 +525,212 @@ mod tests {
             .unwrap()
             .bunker_runtime
             .unwrap()
+    }
+
+    #[test]
+    fn bunker_completed_track_without_navcom_clears_stale_move_before_turning() {
+        use crate::sim::components::{DriveCoord, TrackProgress};
+        use crate::sim::movement::track_process::TrackFamily;
+
+        // Reproduces save_tick3036_1792426331: LTNK 773 at the NATBNK
+        // centre, no head/selector/NavCom, but a nonnull Drive destination.
+        let rules = rules_with_foundation("2x2");
+        let mut sim = Simulation::new();
+        spawn_bunker(&mut sim, 2);
+        sim.substrate
+            .entities
+            .get_mut(2)
+            .unwrap()
+            .type_facts
+            .set_foundation_for_test("2x2".into());
+        assert!(matches!(sim.reveal(2), RevealOutcome::Revealed { .. }));
+        spawn_tank_on(&mut sim, 1, 11, 11);
+        let centre = object_get_coords(sim.substrate.entities.get(2).unwrap(), None);
+        let frame = sim.session.binary_frame;
+        let unit = sim.substrate.entities.get_mut(1).unwrap();
+        unit.position.put_location(centre);
+        unit.body_facing = movement::FacingClass::new(0x6000, 5);
+        unit.bunker
+            .set_bunker_link_for_test(BunkerLink::Approaching(2));
+        let loco = unit.locomotor.as_mut().unwrap();
+        loco.store_track_destination(TrackFamily::Drive, Some(centre));
+        loco.store_track_head(TrackFamily::Drive, None);
+        loco.store_track_progress(TrackFamily::Drive, TrackProgress::for_test(-1, 0, false, 0));
+        set_state(&mut sim, 2, BunkerState::TrackStep, Some(1));
+        assert_eq!(
+            movement::motion_query::is_moving(sim.substrate.entities.get(1).unwrap()),
+            Some(true)
+        );
+
+        tick_bunker_install(&mut sim, &rules, None, FrameEffects::default());
+        assert_eq!(rt(&sim, 2).state(), BunkerState::TurnSouth);
+        let unit = sim.substrate.entities.get(1).unwrap();
+        assert_eq!(
+            object_get_coords(unit, None),
+            centre,
+            "completion never teleports the tank"
+        );
+        assert_eq!(unit.bunker.link(), BunkerLink::Approaching(2));
+        assert_eq!(movement::motion_query::is_moving(unit), Some(false));
+        assert_eq!(unit.body_facing.destination(), SOUTH_FACING);
+        sim.session.binary_frame = frame + 100;
+        tick_bunker_install(&mut sim, &rules, None, FrameEffects::default());
+        assert_eq!(rt(&sim, 2).state(), BunkerState::Occupied);
+
+        // A live segment must not be cut short even if its current sample
+        // touches the centre. Keep the head/selector and the waiting state.
+        set_state(&mut sim, 2, BunkerState::TrackStep, Some(1));
+        let unit = sim.substrate.entities.get_mut(1).unwrap();
+        unit.bunker
+            .set_bunker_link_for_test(BunkerLink::Approaching(2));
+        let loco = unit.locomotor.as_mut().unwrap();
+        loco.store_track_destination(TrackFamily::Drive, Some(centre));
+        loco.store_track_head(
+            TrackFamily::Drive,
+            Some(DriveCoord {
+                x: centre.x + 1,
+                ..centre
+            }),
+        );
+        loco.store_track_progress(
+            TrackFamily::Drive,
+            TrackProgress::for_test(0x44, 1, false, 0),
+        );
+        tick_bunker_install(&mut sim, &rules, None, FrameEffects::default());
+        assert_eq!(rt(&sim, 2).state(), BunkerState::TrackStep);
+    }
+
+    #[test]
+    fn retail_tank_bunker_entry_completes_through_full_world_frames() {
+        use crate::sim::command::{Command, CommandEnvelope};
+
+        let Some(mut rules) = crate::rules::retail_ini_fixture::retail_unlayered_rules_with_art()
+        else {
+            return;
+        };
+        let Some((_, mut assets)) = crate::rules::retail_ini_fixture::retail_assets() else {
+            return;
+        };
+        crate::map::theater::load_theater(&mut assets, "TEMPERATE").unwrap();
+        let wall_names = [
+            "NATBNK_A",
+            "NATBNK_B",
+            "NATBNK_AD",
+            "NATBNK_BD",
+            "NATBNK_A2",
+            "NATBNK_B2",
+            "NATBNK_A2D",
+            "NATBNK_B2D",
+        ]
+        .map(str::to_owned);
+        assert_eq!(
+            rules.bind_anim_class_assets(&wall_names, &assets, "TEM", "TEMPERATE"),
+            0
+        );
+        for start in [
+            (6, 6),
+            (10, 6),
+            (14, 6),
+            (14, 10),
+            (14, 14),
+            (10, 14),
+            (6, 14),
+            (6, 10),
+        ] {
+            let mut sim = crate::sim::arena_fixture::rival_arena(&rules, 0x458E50);
+            sim.intern_rule_type_ids(&rules);
+            sim.resolve_type_handles(&rules);
+            sim.input_delay_ticks = 0;
+            sim.session.binary_frame = 1;
+            let bunker = sim
+                .spawn_object("NATBNK", "Americans", 10, 10, 0, &rules)
+                .unwrap();
+            let tank = sim
+                .spawn_object("LTNK", "Americans", start.0, start.1, 0, &rules)
+                .unwrap();
+            let owner = sim.interner.intern("Americans");
+            sim.queue_command(CommandEnvelope::new(
+                owner,
+                sim.session.tick + 1,
+                Command::EnterBunker {
+                    unit_id: tank,
+                    bunker_id: bunker,
+                },
+            ));
+
+            let mut trace = Vec::new();
+            let mut previous = None;
+            let mut previous_xy = movement::ground_pose::position_world_xy(
+                &sim.substrate.entities.get(tank).unwrap().position,
+            );
+            let mut sliding = false;
+            let mut slide_samples = 0;
+            for _ in 0..600 {
+                let commands = sim.take_due_commands();
+                let grid = sim.path_grid_snapshot();
+                sim.advance_tick(&commands, Some(&rules), grid.as_deref(), None, 33);
+                let state = rt(&sim, bunker).state();
+                let xy = movement::ground_pose::position_world_xy(
+                    &sim.substrate.entities.get(tank).unwrap().position,
+                );
+                if sliding {
+                    let step = (xy[0] - previous_xy[0])
+                        .abs()
+                        .max((xy[1] - previous_xy[1]).abs());
+                    if step > 0 {
+                        slide_samples += 1;
+                    }
+                    assert!(
+                        step <= 64,
+                        "entry from {start:?} jumped {step} leptons in one frame"
+                    );
+                }
+                previous_xy = xy;
+                sliding = state == BunkerState::TrackStep;
+                if previous != Some(state) {
+                    let unit = sim.substrate.entities.get(tank).unwrap();
+                    trace.push(format!(
+                        "frame={} state={state:?} coord={:?} mission={:?} moving={:?}",
+                        sim.session.binary_frame,
+                        object_get_coords(unit, sim.resolved_terrain.as_ref()),
+                        unit.mission.current(),
+                        movement::motion_query::is_moving(unit)
+                    ));
+                    previous = Some(state);
+                }
+                if state == BunkerState::Occupied {
+                    break;
+                }
+            }
+            let unit = sim.substrate.entities.get(tank).unwrap();
+            assert!(
+                slide_samples >= 3,
+                "entry from {start:?} must drive through intermediate positions"
+            );
+            assert_eq!(
+                rt(&sim, bunker).state(),
+                BunkerState::Occupied,
+                "entry from {start:?} stalled: {trace:#?}; position={:?} moving={:?} nav={:?}",
+                object_get_coords(unit, sim.resolved_terrain.as_ref()),
+                movement::motion_query::is_moving(unit),
+                unit.navigation.nav_com()
+            );
+            assert_eq!(unit.bunker.link(), BunkerLink::Installed(bunker));
+            assert_eq!(
+                unit.body_facing_current(sim.session.binary_frame),
+                SOUTH_FACING
+            );
+            let building = sim.substrate.entities.get(bunker).unwrap();
+            assert_eq!(building.bunker.occupant(), Some(tank));
+            assert!(
+                building.building_art.anim_slots()[10].is_some(),
+                "front wall animation"
+            );
+            assert!(
+                building.building_art.anim_slots()[11].is_some(),
+                "rear wall animation"
+            );
+        }
     }
 
     #[test]
@@ -829,7 +1084,7 @@ mod tests {
 
     /// UpdateBunker states 0 and 3 wait on the locomotor's Is_Moving
     /// (`0x00458EE4`, `0x0045920B`), not on an order: a Drive with a
-    /// destination waits in the bunker cell, and stopped, it proceeds. Outside
+    /// destination and active head waits in the bunker cell; stopped, it proceeds. Outside
     /// the bunker's cell (`0x00458EBC..0x00458EC3`, `0x004591E3..0x004591EA`)
     /// it waits too.
     #[test]
@@ -869,6 +1124,10 @@ mod tests {
                 movement::track_process::TrackFamily::Drive,
                 Some(crate::sim::components::DriveCoord::cell(10, 10, 0)),
             ));
+            assert!(unit.locomotor.as_mut().unwrap().store_track_head(
+                movement::track_process::TrackFamily::Drive,
+                Some(crate::sim::components::DriveCoord::cell(10, 10, 0)),
+            ));
             tick(&mut sim);
             assert_eq!(rt(&sim, 2).state, waiting, "still moving");
 
@@ -878,6 +1137,12 @@ mod tests {
                     .as_mut()
                     .unwrap()
                     .store_track_destination(movement::track_process::TrackFamily::Drive, None)
+            );
+            assert!(
+                unit.locomotor
+                    .as_mut()
+                    .unwrap()
+                    .store_track_head(movement::track_process::TrackFamily::Drive, None,)
             );
             tick(&mut sim);
             assert_eq!(rt(&sim, 2).state, next);
