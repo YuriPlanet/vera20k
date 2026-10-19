@@ -38,21 +38,4 @@ impl ResolvedTerrainGrid {
                 false
             })
     }
-
-    /// Native480350 checks file count before the pristine damaged-data gate.
-    /// None leaves the ordinary coordinate-selected file choice to its caller.
-    pub fn pavement_draw_variant(&self, rx: u16, ry: u16) -> Option<u8> {
-        let cell = self.cell(rx, ry)?;
-        if let Some(count) = self.native_tmp_file_count(cell.final_tile_index) {
-            if count < 2 {
-                return Some(0);
-            }
-            if !self.native_tmp_has_damaged_data(cell.final_tile_index, cell.final_sub_tile)? {
-                return None;
-            }
-        } else if !cell.has_damaged_data {
-            return None;
-        }
-        Some(u8::from(self.pavement_damaged_at(rx, ry)))
-    }
 }

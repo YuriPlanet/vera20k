@@ -4071,6 +4071,31 @@ class MapObservationTests(unittest.TestCase):
         self.assertEqual(json.loads((self.root / 'invalid.json').read_text())['status'], 'INVALID')
 
 
+    def test_terrain_render_extension_keeps_undrawn_null_and_checks_post_draw_inputs(self):
+        cell = self.unallocated_cell([74, 32])
+        observation._terrain(dict(cell, render=None), [74, 32], 'terrain')
+        render = dict(phase='after_draw', variant=0, tactical_variant=None,
+                      atlas_key=[140, 0, 0], atlas_ready=True,
+                      exact_atlas_uv=dict(origin=[0.2, 0.3], size=[0.1, 0.1],
+                                          pixel_size=[60, 30], draw_offset=[0, 0]),
+                      palette_light=[53 << 24 | 65536, 65536, 65536, 1000],
+                      cell_center_world=[1800, 4080], camera_top_left=[1484, 3166],
+                      a_bound=True, a_center=127)
+        observation._terrain(dict(cell, render=render), [74, 32], 'terrain')
+        for key, value in (('phase', 'before_draw'), ('variant', 256),
+                           ('tactical_variant', True), ('atlas_key', [140, 0]),
+                           ('atlas_ready', False), ('a_bound', False),
+                           ('a_center', 256), ('palette_light', [0, 0, 0]),
+                           ('cell_center_world', [1]), ('camera_top_left', [0, float('nan')])):
+            with self.subTest(key=key, value=value):
+                with self.assertRaises(observation.ValidationError):
+                    observation._terrain(dict(cell, render=dict(render, **{key: value})),
+                                         [74, 32], 'terrain')
+        empty = dict(render, variant=None, tactical_variant=None, atlas_key=None,
+                     atlas_ready=False, exact_atlas_uv=None, palette_light=None,
+                     cell_center_world=None, a_bound=False, a_center=None)
+        observation._terrain(dict(cell, render=empty), [74, 32], 'terrain')
+
     def test_terrain_resource_extension_accepts_native_frame_and_rejects_invalid_values(self):
         cell = self.unallocated_cell([74, 32])
         cell['overlay'] = {'id': None, 'density': 3}

@@ -79,8 +79,10 @@ pub fn build_visible_instances(
         // Bridge publication (56EB80 floods and the ramp helpers under
         // 576BA0/571490) and cliff collapse rewrite tiles and levels after
         // load, so the live terrain wins over the load-time grid. The file
-        // choice checks current pavement flags (resident file count before
-        // the pristine damaged-data gate), else the live Recalc variant. A
+        // choice checks the current TMP family (resident file count before
+        // the pristine damaged-data gate), then the process-owned coordinate
+        // selector. LAT may have replaced the source family after its cached
+        // Recalc variant was chosen. A
         // live tile missing from the atlas keeps the grid tile and level.
         // Culling still uses the grid position; CULL_MARGIN covers 8 levels.
         let place = |tile_id: u16, sub_tile: u8, variant: u8| match &uv_fn {
@@ -96,7 +98,7 @@ pub fn build_visible_instances(
             let live = terrain.cell(cell.rx, cell.ry)?;
             let (tile_id, sub_tile) = terrain.presentation_tile(live);
             let variant = terrain
-                .pavement_draw_variant(cell.rx, cell.ry)
+                .tactical_draw_variant(cell.rx, cell.ry)
                 .unwrap_or(live.variant);
             Some((place(tile_id, sub_tile, variant)?, live.level))
         });
