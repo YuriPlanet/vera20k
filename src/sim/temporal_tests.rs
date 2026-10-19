@@ -98,6 +98,7 @@ Strength=1000
 Power=150
 InfantryAbsorb=yes
 Passengers=5
+SizeLimit=15
 [NeutronRifle]
 Damage=8
 ROF=120

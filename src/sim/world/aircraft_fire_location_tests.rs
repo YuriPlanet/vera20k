@@ -179,7 +179,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
             .get_mut(2)
             .unwrap()
             .navigation
-            .set_nav_com_for_test(Some(NavTargetRef::Entity { id: 3 }));
+            .set_nav_com_for_test(Some(NavTargetRef::Object { id: 3 }));
     }
     let owner = sim.substrate.entities.get_mut(1).unwrap();
     owner
@@ -191,7 +191,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
     if input["carryall_target"].as_bool().unwrap_or(false) {
         owner
             .navigation
-            .set_nav_com_for_test(Some(NavTargetRef::Entity { id: 4 }));
+            .set_nav_com_for_test(Some(NavTargetRef::Object { id: 4 }));
     }
     if input.get("blocker").is_some() {
         insert(
@@ -345,7 +345,7 @@ pub(super) fn reengagement_fixture(input: &Value) -> (Simulation, RuleSet) {
     entity.install_ammo_for_test(Some(ammo));
     entity
         .navigation
-        .set_nav_com_aux_for_test(Some(NavTargetRef::Entity { id: 2 }));
+        .set_nav_com_aux_for_test(Some(NavTargetRef::Object { id: 2 }));
     entity.navigation.set_nav_com_for_test(
         input["old_nav"]
             .as_bool()
@@ -389,7 +389,7 @@ pub(super) fn assert_reengagement(sim: &mut Simulation, row: &Value) {
     let entity = sim.substrate.entities.get(1).unwrap();
     let nav = match entity.navigation.nav_com() {
         Some(NavTargetRef::Cell { rx, ry }) => json!([rx, ry]),
-        Some(NavTargetRef::Entity { id: 2 } | NavTargetRef::Object { id: 2 }) => json!("target"),
+        Some(NavTargetRef::Object { id: 2 }) => json!("target"),
         None => Value::Null,
         other => panic!("unexpected NavCom: {other:?}"),
     };
@@ -500,7 +500,7 @@ fn selected(value: Option<NavTargetRef>) -> Value {
     match value {
         None => Value::Null,
         Some(NavTargetRef::Cell { rx, ry }) => json!([rx as i16, ry as i16]),
-        Some(NavTargetRef::Entity { id: 2 }) => json!("target"),
+        Some(NavTargetRef::Object { id: 2 }) => json!("target"),
         other => panic!("unexpected returned identity {other:?}"),
     }
 }
@@ -529,7 +529,7 @@ fn fire_location_live_inputs_and_rng_match_original_search() {
             row["input"]
         );
         let target = (!row["input"]["null_target"].as_bool().unwrap_or(false))
-            .then_some(NavTargetRef::Entity { id: 2 });
+            .then_some(NavTargetRef::Object { id: 2 });
         let before = sim.scenario_rng.logical_state();
         let result = sim.aircraft_find_fire_location(1, target, &rules);
         assert_eq!(selected(result), row["result"], "{}", row["input"]);
@@ -574,7 +574,7 @@ fn fire_location_reads_restored_reservations_cargo_and_current_house() {
             assert_eq!(
                 selected(world.aircraft_find_fire_location(
                     1,
-                    Some(NavTargetRef::Entity { id: 2 }),
+                    Some(NavTargetRef::Object { id: 2 }),
                     &rules
                 )),
                 row["result"],

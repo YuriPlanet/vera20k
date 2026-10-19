@@ -44,8 +44,8 @@ fn apply(sim: &mut Simulation, owner: Option<InternedId>, kind: i32, tail: &str)
     let entry = crate::map::actions::parse_actions(&ini)
         .remove("CASE")
         .unwrap()
-        .entries
-        .remove(0);
+        .entries()[0]
+        .clone();
     let action = RuntimeDefinitions::default().resolve_action(entry, None, None);
     sim.apply_live_trigger_action(
         &action,

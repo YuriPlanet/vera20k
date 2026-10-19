@@ -236,7 +236,7 @@ impl GuardHost for WorldGuard<'_> {
     fn assign_dock(&mut self, dock: u64) {
         self.sim.assign_aircraft_destination(
             self.id,
-            Some(NavTargetRef::Building { id: dock }),
+            Some(NavTargetRef::object(dock)),
             self.rules,
             self.ctx.effects,
         );

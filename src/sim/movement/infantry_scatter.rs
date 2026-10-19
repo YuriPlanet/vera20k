@@ -32,6 +32,16 @@ fn represented_infantry_destination(actor: &crate::sim::game_entity::GameEntity)
 /// and the Infantry setter (`0x0051AA60..0x0051AA7E`) test them.
 const DEPLOY_DOINGS: std::ops::RangeInclusive<i32> = 0x1B..=0x1E;
 
+/// How the Infantry setter carries on after its Enter radio arm.
+enum EnterRadioArm {
+    /// The destination stands (`0x0051AD17`).
+    Continue,
+    /// The busy destination waits in QueueUpToEnter; Foot's setter takes NULL.
+    Queued,
+    /// The transport comes to him; the setter returns at once.
+    Docking,
+}
+
 /// What `InfantryClass::Scatter` reads between its deploy arm and its
 /// coordinate test (`0x0051D162..0x0051D220`).
 #[derive(Clone, Copy, Debug)]
@@ -485,9 +495,10 @@ impl Simulation {
     ///   another unless he is on Attack with this NavCom already;
     /// - the human same-reference prone DoAction7 (`0x0051ABD7..0x0051AC1F`)
     ///   uses the existing action owner;
-    /// - on Enter (current or queued) without a radio contact the transport
-    ///   radio arm runs and the path head stays (`0x0051AC25..0x0051AD17`);
-    ///   otherwise the path head clears;
+    /// - on Enter (current or queued) without a radio contact the path head
+    ///   stays and a Techno destination runs the Enter radio arm
+    ///   ([`Self::infantry_enter_radio_arm`], `0x0051AC25..0x0051AD0F`), which
+    ///   may end the call; otherwise the path head clears (`0x0051AD11`);
     /// - Foot's setter (`0x0051B1D2`).
     ///
     /// Non-cell targets retain their reference and read the receiver's +4C
@@ -511,16 +522,6 @@ impl Simulation {
     /// shifts for every later draw. Frequency: most orders to an airborne
     /// Rocketeer. Risk: RNG drift against native, not a visible movement
     /// difference.
-    ///
-    /// RESIDUAL: the Enter radio arm is not ported. With a Techno destination
-    /// (`0x0040DD70`) it queues him on a transport already in radio contact
-    /// (QueueUpToEnter `+0x500`, ArchiveTarget cleared, NULL destination) or
-    /// sends RADIO_HELLO and, on ROGER, message 0xE, returning before Foot's
-    /// setter when that answers 0xE. VERA writes the object through Foot's
-    /// setter either way. Trigger: an infantryman's boarding order
-    /// (EnterTransport, Enter 7) or an Enter re-target. Frequency: every
-    /// infantry boarding. Risk: boarding a busy transport or one that turns
-    /// him away differs from native.
     ///
     /// RESIDUAL: a `JumpJet=` infantryman's Walk piggyback is not modelled.
     /// The setter swaps the Jumpjet of one that is not moving for a Walk
@@ -586,7 +587,7 @@ impl Simulation {
             let actor = self.substrate.entities.get(id).unwrap();
             if jumpjet_type
                 || actor.mission.current().raw() != 1
-                || !super::navcom::nav_targets_same_receiver(actor.navigation.nav_com(), requested)
+                || actor.navigation.nav_com() != Some(requested)
             {
                 self.infantry_stop_driver(id, rules, registry, frame_effects)?;
             }
@@ -601,7 +602,7 @@ impl Simulation {
             .ok_or("destination lost infantry after Stop_Driver")?;
         if human
             && type_allows_up
-            && super::navcom::nav_targets_same_receiver(actor.navigation.nav_com(), requested)
+            && actor.navigation.nav_com() == Some(requested)
             && actor
                 .infantry
                 .as_ref()
@@ -609,12 +610,30 @@ impl Simulation {
         {
             self.infantry_do_action(id, 7, false, rules, frame_effects)?;
         }
-        super::movement_commands::clear_destination_path_head(
-            self.substrate
-                .entities
-                .get_mut(id)
-                .ok_or("destination lost infantry after DoAction")?,
-        );
+        // 51AC25..51AC4B decides on the state before the arm's HELLO.
+        let actor = self
+            .substrate
+            .entities
+            .get_mut(id)
+            .ok_or("destination lost infantry after DoAction")?;
+        let enter_radio_arm = super::movement_commands::enter_without_contact(actor);
+        super::movement_commands::clear_destination_path_head(actor);
+        let techno_target = match requested {
+            NavTargetRef::Object { id: target } => crate::sim::radio::as_techno(self, target),
+            NavTargetRef::Cell { .. } => None,
+        };
+        if let Some(target) = techno_target.filter(|_| enter_radio_arm) {
+            match self.infantry_enter_radio_arm(id, target, rules, frame_effects) {
+                EnterRadioArm::Continue => {}
+                // 51ACB1..51ACC5: Foot's setter takes NULL (51B1D2).
+                EnterRadioArm::Queued => {
+                    self.foot_null_destination(id, Some(rules), registry, frame_effects);
+                    return Ok(true);
+                }
+                // 51ACF7: no Foot setter at all.
+                EnterRadioArm::Docking => return Ok(true),
+            }
+        }
         if !self.begin_foot_destination(id, true, Some(rules), registry, frame_effects) {
             return Ok(true);
         }
@@ -659,6 +678,78 @@ impl Simulation {
                     super::DestinationTiming::from_rules(self.session.binary_frame, Some(rules)),
                 );
                 Ok(true)
+            }
+        }
+    }
+
+    /// The Infantry setter's Enter radio arm (`0x0051AC51..0x0051AD0F`), for
+    /// a Techno destination (`As_Techno @ 0x0040DD70`) while he is on Enter
+    /// without a radio contact:
+    /// - a destination in radio contact with anyone (`0x0065AE30`) that is a
+    ///   Unit or a Building becomes his pending entry (QueueUpToEnter
+    ///   `+0x500`) with the ArchiveTarget cleared, and Foot's setter takes
+    ///   NULL (`0x0051AC6D..0x0051ACC5`); any other busy Techno becomes the
+    ///   ArchiveTarget and the destination stands (`0x0051ACCA`);
+    /// - a free one is sent HELLO and, answered ROGER, DOCKING through the
+    ///   new contact: a DOCKING answer ends the setter before Foot's setter,
+    ///   ROGER carries on, anything else breaks the contact
+    ///   (`0x0051ACD4..0x0051AD0F`).
+    fn infantry_enter_radio_arm(
+        &mut self,
+        id: u64,
+        target: u64,
+        rules: &RuleSet,
+        frame_effects: FrameEffects<'_>,
+    ) -> EnterRadioArm {
+        use crate::map::entities::EntityCategory;
+        use crate::sim::radio::{RadioMessage, RadioPayload, RadioResponse};
+        let busy = self
+            .substrate
+            .entities
+            .get(target)
+            .map(|target| (!target.radio_contacts.is_empty(), target.category()));
+        if let Some((true, category)) = busy {
+            let Some(actor) = self.substrate.entities.get_mut(id) else {
+                return EnterRadioArm::Continue;
+            };
+            if matches!(category, EntityCategory::Unit | EntityCategory::Structure) {
+                actor.pending_entry.install(target);
+                actor.set_archive_target(None);
+                return EnterRadioArm::Queued;
+            }
+            actor.set_archive_target(Some(crate::sim::combat::TargetKind::Entity(target)));
+            return EnterRadioArm::Continue;
+        }
+        if crate::sim::radio::transmit(
+            self,
+            id,
+            target,
+            RadioMessage::Hello,
+            RadioPayload::default(),
+            Some(rules),
+            frame_effects,
+        ) != RadioResponse::Roger
+        {
+            return EnterRadioArm::Continue;
+        }
+        match crate::sim::radio::transmit_to_contact(
+            self,
+            id,
+            RadioMessage::CanDock,
+            Some(rules),
+            frame_effects,
+        ) {
+            RadioResponse::Docking => EnterRadioArm::Docking,
+            RadioResponse::Roger => EnterRadioArm::Continue,
+            _ => {
+                crate::sim::radio::transmit_to_contact(
+                    self,
+                    id,
+                    RadioMessage::Break,
+                    Some(rules),
+                    frame_effects,
+                );
+                EnterRadioArm::Continue
             }
         }
     }

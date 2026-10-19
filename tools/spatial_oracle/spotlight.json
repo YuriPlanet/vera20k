@@ -1,0 +1,690 @@
+{
+  "constructors": [
+    {
+      "parent": [
+        3200,
+        4096,
+        384
+      ],
+      "facing": 0,
+      "pivot": [
+        3199,
+        6096,
+        384
+      ],
+      "endpoint": [
+        3200,
+        3096,
+        384
+      ]
+    },
+    {
+      "parent": [
+        3200,
+        4096,
+        384
+      ],
+      "facing": 16383,
+      "pivot": [
+        1200,
+        4096,
+        384
+      ],
+      "endpoint": [
+        4200,
+        4096,
+        384
+      ]
+    },
+    {
+      "parent": [
+        3200,
+        4096,
+        384
+      ],
+      "facing": 16384,
+      "pivot": [
+        1200,
+        4096,
+        384
+      ],
+      "endpoint": [
+        4200,
+        4096,
+        384
+      ]
+    },
+    {
+      "parent": [
+        3200,
+        4096,
+        384
+      ],
+      "facing": 32768,
+      "pivot": [
+        3200,
+        2096,
+        384
+      ],
+      "endpoint": [
+        3199,
+        5096,
+        384
+      ]
+    },
+    {
+      "parent": [
+        3200,
+        4096,
+        384
+      ],
+      "facing": 65535,
+      "pivot": [
+        3199,
+        6096,
+        384
+      ],
+      "endpoint": [
+        3200,
+        3096,
+        384
+      ]
+    }
+  ],
+  "motions": [
+    {
+      "mode": 1,
+      "direction": false,
+      "constructor": {
+        "parent": [
+          3200,
+          4096,
+          384
+        ],
+        "facing": 16384,
+        "pivot": [
+          1200,
+          4096,
+          384
+        ],
+        "endpoint": [
+          4200,
+          4096,
+          384
+        ]
+      },
+      "states": [
+        {
+          "frame": 1,
+          "coord": [
+            4200,
+            4096,
+            384
+          ],
+          "angle_bits": "0000000000000000",
+          "rate_bits": "bf647ae140000000",
+          "direction": false
+        },
+        {
+          "frame": 2,
+          "coord": [
+            4199,
+            4089,
+            384
+          ],
+          "angle_bits": "bf647ae140000000",
+          "rate_bits": "bf747ae140000000",
+          "direction": false
+        },
+        {
+          "frame": 3,
+          "coord": [
+            4199,
+            4077,
+            384
+          ],
+          "angle_bits": "bf7eb851e0000000",
+          "rate_bits": "bf7eb851e0000000",
+          "direction": false
+        },
+        {
+          "frame": 20,
+          "coord": [
+            4109,
+            3364,
+            384
+          ],
+          "angle_bits": "bfcfae146f000000",
+          "rate_bits": "bf8eb851e0000000",
+          "direction": false
+        },
+        {
+          "frame": 40,
+          "coord": [
+            4162,
+            3626,
+            384
+          ],
+          "angle_bits": "bfc428f5bb000000",
+          "rate_bits": "3f8eb851e0000000",
+          "direction": true
+        },
+        {
+          "frame": 80,
+          "coord": [
+            4097,
+            4873,
+            384
+          ],
+          "angle_bits": "3fd0ccccc6800000",
+          "rate_bits": "bf8eb851e0000000",
+          "direction": false
+        },
+        {
+          "frame": 160,
+          "coord": [
+            4119,
+            4786,
+            384
+          ],
+          "angle_bits": "3fcdc28f51000000",
+          "rate_bits": "3f8eb851e0000000",
+          "direction": true
+        }
+      ]
+    },
+    {
+      "mode": 1,
+      "direction": true,
+      "constructor": {
+        "parent": [
+          3200,
+          4096,
+          384
+        ],
+        "facing": 16384,
+        "pivot": [
+          1200,
+          4096,
+          384
+        ],
+        "endpoint": [
+          4200,
+          4096,
+          384
+        ]
+      },
+      "states": [
+        {
+          "frame": 1,
+          "coord": [
+            4200,
+            4096,
+            384
+          ],
+          "angle_bits": "0000000000000000",
+          "rate_bits": "3f647ae140000000",
+          "direction": true
+        },
+        {
+          "frame": 2,
+          "coord": [
+            4199,
+            4102,
+            384
+          ],
+          "angle_bits": "3f647ae140000000",
+          "rate_bits": "3f747ae140000000",
+          "direction": true
+        },
+        {
+          "frame": 3,
+          "coord": [
+            4199,
+            4119,
+            384
+          ],
+          "angle_bits": "3f7eb851e0000000",
+          "rate_bits": "3f7eb851e0000000",
+          "direction": true
+        },
+        {
+          "frame": 20,
+          "coord": [
+            4108,
+            4831,
+            384
+          ],
+          "angle_bits": "3fcfae146f000000",
+          "rate_bits": "3f8eb851e0000000",
+          "direction": true
+        },
+        {
+          "frame": 40,
+          "coord": [
+            4162,
+            4565,
+            384
+          ],
+          "angle_bits": "3fc428f5bb000000",
+          "rate_bits": "bf8eb851e0000000",
+          "direction": false
+        },
+        {
+          "frame": 80,
+          "coord": [
+            4097,
+            3318,
+            384
+          ],
+          "angle_bits": "bfd0ccccc6800000",
+          "rate_bits": "3f8eb851e0000000",
+          "direction": true
+        },
+        {
+          "frame": 160,
+          "coord": [
+            4119,
+            3405,
+            384
+          ],
+          "angle_bits": "bfcdc28f51000000",
+          "rate_bits": "bf8eb851e0000000",
+          "direction": false
+        }
+      ]
+    },
+    {
+      "mode": 2,
+      "direction": false,
+      "constructor": {
+        "parent": [
+          3200,
+          4096,
+          384
+        ],
+        "facing": 16384,
+        "pivot": [
+          1200,
+          4096,
+          384
+        ],
+        "endpoint": [
+          4200,
+          4096,
+          384
+        ]
+      },
+      "states": [
+        {
+          "frame": 1,
+          "coord": [
+            4198,
+            4155,
+            384
+          ],
+          "angle_bits": "3faeb851e0000000",
+          "rate_bits": "0000000000000000",
+          "direction": false
+        },
+        {
+          "frame": 2,
+          "coord": [
+            4192,
+            4215,
+            384
+          ],
+          "angle_bits": "3fbeb851e0000000",
+          "rate_bits": "0000000000000000",
+          "direction": false
+        },
+        {
+          "frame": 3,
+          "coord": [
+            4183,
+            4275,
+            384
+          ],
+          "angle_bits": "3fc70a3d68000000",
+          "rate_bits": "0000000000000000",
+          "direction": false
+        },
+        {
+          "frame": 20,
+          "coord": [
+            3562,
+            5028,
+            384
+          ],
+          "angle_bits": "3ff333332c000000",
+          "rate_bits": "0000000000000000",
+          "direction": false
+        },
+        {
+          "frame": 40,
+          "coord": [
+            2462,
+            4771,
+            384
+          ],
+          "angle_bits": "400333332c000000",
+          "rate_bits": "0000000000000000",
+          "direction": false
+        },
+        {
+          "frame": 80,
+          "coord": [
+            3287,
+            3099,
+            384
+          ],
+          "angle_bits": "401333332c000000",
+          "rate_bits": "0000000000000000",
+          "direction": false
+        },
+        {
+          "frame": 160,
+          "coord": [
+            2215,
+            3922,
+            384
+          ],
+          "angle_bits": "400a88d60777a5d0",
+          "rate_bits": "0000000000000000",
+          "direction": false
+        }
+      ]
+    },
+    {
+      "mode": 0,
+      "direction": false,
+      "constructor": {
+        "parent": [
+          3200,
+          4096,
+          384
+        ],
+        "facing": 16384,
+        "pivot": [
+          1200,
+          4096,
+          384
+        ],
+        "endpoint": [
+          4200,
+          4096,
+          384
+        ]
+      },
+      "states": [
+        {
+          "frame": 1,
+          "coord": [
+            4200,
+            4096,
+            384
+          ],
+          "angle_bits": "0000000000000000",
+          "rate_bits": "0000000000000000",
+          "direction": false
+        },
+        {
+          "frame": 2,
+          "coord": [
+            4200,
+            4096,
+            384
+          ],
+          "angle_bits": "0000000000000000",
+          "rate_bits": "0000000000000000",
+          "direction": false
+        },
+        {
+          "frame": 3,
+          "coord": [
+            4200,
+            4096,
+            384
+          ],
+          "angle_bits": "0000000000000000",
+          "rate_bits": "0000000000000000",
+          "direction": false
+        },
+        {
+          "frame": 20,
+          "coord": [
+            4200,
+            4096,
+            384
+          ],
+          "angle_bits": "0000000000000000",
+          "rate_bits": "0000000000000000",
+          "direction": false
+        },
+        {
+          "frame": 40,
+          "coord": [
+            4200,
+            4096,
+            384
+          ],
+          "angle_bits": "0000000000000000",
+          "rate_bits": "0000000000000000",
+          "direction": false
+        },
+        {
+          "frame": 80,
+          "coord": [
+            4200,
+            4096,
+            384
+          ],
+          "angle_bits": "0000000000000000",
+          "rate_bits": "0000000000000000",
+          "direction": false
+        },
+        {
+          "frame": 160,
+          "coord": [
+            4200,
+            4096,
+            384
+          ],
+          "angle_bits": "0000000000000000",
+          "rate_bits": "0000000000000000",
+          "direction": false
+        }
+      ]
+    },
+    {
+      "mode": 256,
+      "direction": true,
+      "constructor": {
+        "parent": [
+          3200,
+          4096,
+          384
+        ],
+        "facing": 16384,
+        "pivot": [
+          1200,
+          4096,
+          384
+        ],
+        "endpoint": [
+          4200,
+          4096,
+          384
+        ]
+      },
+      "states": [
+        {
+          "frame": 1,
+          "coord": [
+            4200,
+            4096,
+            384
+          ],
+          "angle_bits": "0000000000000000",
+          "rate_bits": "0000000000000000",
+          "direction": true
+        },
+        {
+          "frame": 2,
+          "coord": [
+            4200,
+            4096,
+            384
+          ],
+          "angle_bits": "0000000000000000",
+          "rate_bits": "0000000000000000",
+          "direction": true
+        },
+        {
+          "frame": 3,
+          "coord": [
+            4200,
+            4096,
+            384
+          ],
+          "angle_bits": "0000000000000000",
+          "rate_bits": "0000000000000000",
+          "direction": true
+        },
+        {
+          "frame": 20,
+          "coord": [
+            4200,
+            4096,
+            384
+          ],
+          "angle_bits": "0000000000000000",
+          "rate_bits": "0000000000000000",
+          "direction": true
+        },
+        {
+          "frame": 40,
+          "coord": [
+            4200,
+            4096,
+            384
+          ],
+          "angle_bits": "0000000000000000",
+          "rate_bits": "0000000000000000",
+          "direction": true
+        },
+        {
+          "frame": 80,
+          "coord": [
+            4200,
+            4096,
+            384
+          ],
+          "angle_bits": "0000000000000000",
+          "rate_bits": "0000000000000000",
+          "direction": true
+        },
+        {
+          "frame": 160,
+          "coord": [
+            4200,
+            4096,
+            384
+          ],
+          "angle_bits": "0000000000000000",
+          "rate_bits": "0000000000000000",
+          "direction": true
+        }
+      ]
+    }
+  ],
+  "draw_geometry": [
+    {
+      "parent": [
+        3200,
+        4096,
+        384
+      ],
+      "coord": [
+        4200,
+        4096,
+        384
+      ],
+      "edges": [
+        [
+          4184,
+          4270,
+          384
+        ],
+        [
+          4184,
+          3921,
+          384
+        ]
+      ],
+      "origin": [
+        3200,
+        4096,
+        814
+      ]
+    },
+    {
+      "parent": [
+        3200,
+        4096,
+        384
+      ],
+      "coord": [
+        4500,
+        4700,
+        384
+      ],
+      "edges": [
+        [
+          4404,
+          4873,
+          384
+        ],
+        [
+          4570,
+          4515,
+          384
+        ]
+      ],
+      "origin": [
+        3200,
+        4096,
+        814
+      ]
+    },
+    {
+      "parent": [
+        3200,
+        4096,
+        384
+      ],
+      "coord": [
+        3200,
+        6096,
+        384
+      ],
+      "edges": [
+        [
+          2967,
+          6082,
+          384
+        ],
+        [
+          3432,
+          6082,
+          384
+        ]
+      ],
+      "origin": [
+        3200,
+        4096,
+        814
+      ]
+    }
+  ]
+}

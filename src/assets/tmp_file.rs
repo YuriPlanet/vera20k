@@ -251,13 +251,15 @@ impl TmpFile {
         let pixel_count: usize = tile.pixel_width as usize * tile.pixel_height as usize;
         let mut rgba: Vec<u8> = Vec::with_capacity(pixel_count * 4);
         for (i, &idx) in tile.pixels.iter().enumerate() {
-            let color = palette.colors[idx as usize];
+            let color = palette.color(idx);
             rgba.push(color.r);
             rgba.push(color.g);
             rgba.push(color.b);
             // Inside the diamond, palette index 0 is a valid color — render opaque.
-            // Outside the diamond, index 0 means transparent background.
-            // Chroma key (magenta, idx != 0) stays transparent everywhere.
+            // Outside the diamond, index 0 means transparent background. Every
+            // other index is opaque: no palette entry is a colour key
+            // (ConvertClass 0x0048E740 -> 0x004BBB00 and LightConvertClass
+            // 0x00556090 convert every entry by its colour).
             //
             // The index-0 decision must NOT consult the palette's alpha: retail
             // palettes carry no alpha at all — in gamemd, transparency is the
@@ -276,7 +278,7 @@ impl TmpFile {
                 );
                 rgba.push(if inside { 255 } else { 0 });
             } else {
-                rgba.push(color.a);
+                rgba.push(255);
             }
         }
         Ok(rgba)
@@ -481,11 +483,11 @@ mod tests {
     #[test]
     fn tile_corners_bake_transparent_even_when_palette_has_no_alpha() {
         let tmp = TmpFile::from_bytes(&make_test_tmp()).expect("parse");
-        let pal = crate::assets::pal_file::Palette::from_bytes_gamemd_ui(&vec![21u8; 768])
-            .expect("palette");
+        let pal = Palette::from_bytes(&vec![21u8; 768]).expect("palette");
         assert_eq!(
-            pal.colors[0].a, 255,
-            "fixture guard: palette carries no alpha policy"
+            pal.color(0).a,
+            255,
+            "fixture guard: palette carries no alpha"
         );
 
         let rgba = tmp.tile_to_rgba(0, &pal).expect("convert");
@@ -494,6 +496,22 @@ mod tests {
         assert_eq!(rgba[7], 0, "corner (1,0) must be transparent");
         // Row 0 columns 2..6 are inside the diamond (indices 1..): opaque.
         assert_eq!(rgba[2 * 4 + 3], 255, "diamond pixel stays opaque");
+    }
+
+    /// Tile pixels inside the diamond draw through the converter entry of
+    /// their index; ConvertClass (`0x0048E740` -> `0x004BBB00`) and
+    /// LightConvertClass::UpdateColors (`0x00556090`) key no colour. Retail
+    /// ISOTEM.PAL stores raw 63,0,63 at index 10.
+    #[test]
+    fn a_raw_magenta_palette_entry_inside_the_diamond_draws_opaque() {
+        let tmp = TmpFile::from_bytes(&make_test_tmp()).expect("parse");
+        let mut pal_data: Vec<u8> = vec![0u8; 768];
+        pal_data[3..6].copy_from_slice(&[63, 0, 63]); // index 1, at (2, 0)
+        let palette = Palette::from_bytes(&pal_data).expect("palette");
+
+        let rgba = tmp.tile_to_rgba(0, &palette).expect("convert");
+
+        assert_eq!(&rgba[2 * 4..3 * 4], &[252, 0, 252, 255]);
     }
 
     #[test]
@@ -663,7 +681,7 @@ mod tests {
         data.extend_from_slice(&vec![0u8; dpixels]);
 
         let tmp: TmpFile = TmpFile::from_bytes(&data).expect("Should parse");
-        // Create palette where index 0 is black with alpha=0.
+        // Palette entries are opaque; index 0 is decided by the diamond.
         let palette: Palette = Palette::from_bytes(&vec![0u8; 768]).expect("palette");
         let rgba: Vec<u8> = tmp.tile_to_rgba(0, &palette).expect("Should convert");
 

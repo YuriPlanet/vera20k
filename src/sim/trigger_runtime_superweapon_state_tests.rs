@@ -231,8 +231,8 @@ fn all03_authored_nuke_order_preserves_current_timer_and_recharges_at_override()
                     )
                     .remove("ROW")
                     .unwrap()
-                    .entries
-                    .remove(0);
+                    .entries()[0]
+                        .clone();
                     assert_eq!(action.entry, parsed, "actual retail ordered action");
                     ordinal += 1;
                     let returned = sim.apply_live_trigger_action(
@@ -321,8 +321,8 @@ fn dispatch_matches_original_signed_override_waypoint_and_incoming_house_gates()
         let entry = crate::map::actions::parse_actions(&ini)
             .remove("CASE")
             .unwrap()
-            .entries
-            .remove(0);
+            .entries()[0]
+            .clone();
         assert_eq!(json!(entry.kind), row["read"]["kind"]);
         assert_eq!(json!(entry.literal_value()), row["read"]["value"]);
         assert_eq!(json!(entry.waypoint_index), row["read"]["waypoint"]);

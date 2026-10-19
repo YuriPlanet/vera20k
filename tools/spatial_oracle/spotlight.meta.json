@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "BuildingLight ctor numeric region43592A..435ACD and whole AI4361D0 modes0/1/2/invalid; sampled frames through160. Beam geometry435DFD..436099 is observed before projection through declared argument sinks.",
+  "assumptions": [
+    "Original Unit7F5C70 parent vtable makes post-movement Building-only Event35 scan ineligible. Parent raw coordinate and snapped FacingClass are supplied inputs. Retail parsed spotlight values are declared inputs; reader fidelity is tested independently in Rust.",
+    "Constructor region begins after Object allocation/vector append and stops before native placement. These controls establish numeric endpoints and motion only."
+  ],
+  "substitutions": [
+    "No instruction patches or replacement arithmetic. Runtime storage and stack/return sentinel are fixture data. Drawing-region controls supply parent virtual coordinates through originalObjectGetCoords5F65A0 via a fixture vtable. Tactical6D2140 is an argument sink for the three computed world coordinates; projection/pixels are excluded. No complete lifecycle, renderer or target acquisition equivalence claim."
+  ],
+  "entry_points": {
+    "constructor_numeric": "0x0043592A",
+    "AI": "0x004361D0",
+    "beam_geometry": "0x00435DFD"
+  },
+  "command": "RA2_DIR=/path/to/retail python -m tools.spatial_oracle.spotlight --write"
+}

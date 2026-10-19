@@ -263,6 +263,17 @@ pub(crate) fn build_display_effect_instances(
         .and_then(|name| sim.interner.get(name));
     let local_owner = input.local_owner;
     for &stable_id in sim.display_layers().ordered_ids() {
+        if let Some(light) = sim.building_spotlight(stable_id, input.rules) {
+            super::particles::build_spotlight_instance(
+                input,
+                stable_id,
+                light,
+                &context,
+                ground_objects,
+                ground_order,
+            );
+            continue;
+        }
         if let Some(system) = sim.particle_systems().get(stable_id) {
             super::particles::build_particle_system_instance(
                 input,
@@ -565,7 +576,7 @@ pub(super) fn anim_world_render_coords(
     let (rx, ry, sub_x, sub_y, z) = world.to_cell_sub_z();
     let (screen_x, screen_y) =
         crate::util::lepton::lepton_to_screen_exact_z(rx, ry, sub_x, sub_y, world.z);
-    let lift_px = crate::util::flh_transform::adjust_for_z_leptons(world.z);
+    let lift_px = crate::util::native_x87::adjust_for_z_standard(world.z);
     (screen_x, screen_y, rx, ry, z, lift_px)
 }
 

@@ -1,0 +1,534 @@
+{
+  "controls": [
+    {
+      "mode": 0,
+      "steps": [
+        {
+          "bucket": 100,
+          "depth": 1,
+          "events": [
+            "enter_audio"
+          ],
+          "operation": "enter",
+          "timed": 0,
+          "timer_duration": 0,
+          "timer_start": -1,
+          "value": 0
+        }
+      ]
+    },
+    {
+      "mode": 0,
+      "steps": [
+        {
+          "bucket": 100,
+          "depth": 1,
+          "events": [
+            "enter_audio"
+          ],
+          "operation": "enter",
+          "timed": 1,
+          "timer_duration": 60,
+          "timer_start": 100,
+          "value": 1
+        }
+      ]
+    },
+    {
+      "mode": 0,
+      "steps": [
+        {
+          "bucket": 100,
+          "depth": 1,
+          "events": [
+            "enter_audio"
+          ],
+          "operation": "enter",
+          "timed": 1,
+          "timer_duration": -60,
+          "timer_start": 100,
+          "value": -1
+        }
+      ]
+    },
+    {
+      "mode": 0,
+      "steps": [
+        {
+          "bucket": 100,
+          "depth": 1,
+          "events": [
+            "enter_audio"
+          ],
+          "operation": "enter",
+          "timed": 1,
+          "timer_duration": -60,
+          "timer_start": 100,
+          "value": 2147483647
+        }
+      ]
+    },
+    {
+      "mode": 0,
+      "steps": [
+        {
+          "bucket": 100,
+          "depth": 1,
+          "events": [
+            "enter_audio"
+          ],
+          "operation": "enter",
+          "timed": 1,
+          "timer_duration": 0,
+          "timer_start": 100,
+          "value": -2147483648
+        }
+      ]
+    },
+    {
+      "mode": 0,
+      "steps": [
+        {
+          "bucket": 100,
+          "depth": 1,
+          "events": [
+            "enter_audio"
+          ],
+          "operation": "enter",
+          "timed": 1,
+          "timer_duration": -16,
+          "timer_start": 100,
+          "value": 71582788
+        }
+      ]
+    },
+    {
+      "mode": 0,
+      "steps": [
+        {
+          "bucket": 100,
+          "depth": 1,
+          "events": [
+            "enter_audio"
+          ],
+          "operation": "enter",
+          "timed": 1,
+          "timer_duration": 44,
+          "timer_start": 100,
+          "value": 71582789
+        }
+      ]
+    },
+    {
+      "mode": 0,
+      "steps": [
+        {
+          "bucket": 100,
+          "depth": 1,
+          "events": [
+            "enter_audio"
+          ],
+          "operation": "enter",
+          "timed": 1,
+          "timer_duration": 60,
+          "timer_start": 100,
+          "value": 1
+        },
+        {
+          "bucket": 159,
+          "depth": 1,
+          "events": [
+            "paused_branch"
+          ],
+          "operation": "poll",
+          "timed": 1,
+          "timer_duration": 60,
+          "timer_start": 100,
+          "value": 0
+        },
+        {
+          "bucket": 160,
+          "depth": 0,
+          "events": [
+            "exit_audio",
+            "world_branch"
+          ],
+          "operation": "poll",
+          "timed": 0,
+          "timer_duration": 60,
+          "timer_start": 100,
+          "value": 0
+        }
+      ]
+    },
+    {
+      "mode": 5,
+      "steps": [
+        {
+          "bucket": 100,
+          "depth": 1,
+          "events": [
+            "enter_audio"
+          ],
+          "operation": "enter",
+          "timed": 1,
+          "timer_duration": 120,
+          "timer_start": 100,
+          "value": 2
+        },
+        {
+          "bucket": 130,
+          "depth": 1,
+          "events": [],
+          "operation": "enter",
+          "timed": 1,
+          "timer_duration": 60,
+          "timer_start": 130,
+          "value": 1
+        },
+        {
+          "bucket": 189,
+          "depth": 1,
+          "events": [
+            "paused_branch"
+          ],
+          "operation": "poll",
+          "timed": 1,
+          "timer_duration": 60,
+          "timer_start": 130,
+          "value": 0
+        },
+        {
+          "bucket": 190,
+          "depth": 0,
+          "events": [
+            "exit_audio",
+            "world_branch"
+          ],
+          "operation": "poll",
+          "timed": 0,
+          "timer_duration": 60,
+          "timer_start": 130,
+          "value": 0
+        }
+      ]
+    },
+    {
+      "mode": 0,
+      "steps": [
+        {
+          "bucket": 100,
+          "depth": 1,
+          "events": [
+            "enter_audio"
+          ],
+          "operation": "enter",
+          "timed": 1,
+          "timer_duration": 60,
+          "timer_start": 100,
+          "value": 1
+        },
+        {
+          "bucket": 101,
+          "depth": 2,
+          "events": [],
+          "operation": "enter",
+          "timed": 1,
+          "timer_duration": 60,
+          "timer_start": 100,
+          "value": 0
+        },
+        {
+          "bucket": 160,
+          "depth": 1,
+          "events": [
+            "paused_branch"
+          ],
+          "operation": "poll",
+          "timed": 0,
+          "timer_duration": 60,
+          "timer_start": 100,
+          "value": 0
+        },
+        {
+          "bucket": 161,
+          "depth": 0,
+          "events": [
+            "exit_audio"
+          ],
+          "operation": "exit",
+          "timed": 0,
+          "timer_duration": 60,
+          "timer_start": 100,
+          "value": 0
+        }
+      ]
+    },
+    {
+      "mode": 0,
+      "steps": [
+        {
+          "bucket": 100,
+          "depth": 1,
+          "events": [
+            "enter_audio"
+          ],
+          "operation": "enter",
+          "timed": 0,
+          "timer_duration": 0,
+          "timer_start": -1,
+          "value": 0
+        },
+        {
+          "bucket": 101,
+          "depth": 2,
+          "events": [],
+          "operation": "enter",
+          "timed": 1,
+          "timer_duration": 60,
+          "timer_start": 101,
+          "value": 1
+        },
+        {
+          "bucket": 102,
+          "depth": 1,
+          "events": [],
+          "operation": "exit",
+          "timed": 1,
+          "timer_duration": 60,
+          "timer_start": 101,
+          "value": 0
+        },
+        {
+          "bucket": 161,
+          "depth": 0,
+          "events": [
+            "exit_audio",
+            "world_branch"
+          ],
+          "operation": "poll",
+          "timed": 0,
+          "timer_duration": 60,
+          "timer_start": 101,
+          "value": 0
+        }
+      ]
+    },
+    {
+      "mode": 3,
+      "steps": [
+        {
+          "bucket": 100,
+          "depth": 1,
+          "events": [
+            "enter_audio"
+          ],
+          "operation": "enter",
+          "timed": 1,
+          "timer_duration": 60,
+          "timer_start": 100,
+          "value": 1
+        },
+        {
+          "bucket": 1000,
+          "depth": 1,
+          "events": [
+            "world_branch"
+          ],
+          "operation": "poll",
+          "timed": 1,
+          "timer_duration": 60,
+          "timer_start": 100,
+          "value": 0
+        },
+        {
+          "bucket": 1001,
+          "depth": 0,
+          "events": [
+            "exit_audio"
+          ],
+          "operation": "exit",
+          "timed": 1,
+          "timer_duration": 60,
+          "timer_start": 100,
+          "value": 0
+        }
+      ]
+    },
+    {
+      "mode": 0,
+      "steps": [
+        {
+          "bucket": 268435455,
+          "depth": 1,
+          "events": [
+            "enter_audio"
+          ],
+          "operation": "enter",
+          "timed": 1,
+          "timer_duration": 60,
+          "timer_start": 268435455,
+          "value": 1
+        },
+        {
+          "bucket": 0,
+          "depth": 1,
+          "events": [
+            "paused_branch"
+          ],
+          "operation": "poll",
+          "timed": 1,
+          "timer_duration": 60,
+          "timer_start": 268435455,
+          "value": 0
+        }
+      ]
+    }
+  ],
+  "radar_controls": [
+    {
+      "clips": [
+        true,
+        true
+      ],
+      "initial_hold": false,
+      "steps": [
+        {
+          "depth": 1,
+          "events": [
+            "enter_audio"
+          ],
+          "held": true,
+          "operation": "draw"
+        },
+        {
+          "depth": 1,
+          "events": [],
+          "held": true,
+          "operation": "finish"
+        },
+        {
+          "depth": 1,
+          "events": [],
+          "held": true,
+          "operation": "draw"
+        },
+        {
+          "depth": 0,
+          "events": [
+            "exit_audio"
+          ],
+          "held": false,
+          "operation": "finish"
+        }
+      ]
+    },
+    {
+      "clips": [
+        true,
+        false
+      ],
+      "initial_hold": false,
+      "steps": [
+        {
+          "depth": 1,
+          "events": [
+            "enter_audio"
+          ],
+          "held": true,
+          "operation": "draw"
+        },
+        {
+          "depth": 1,
+          "events": [],
+          "held": true,
+          "operation": "finish"
+        },
+        {
+          "depth": 0,
+          "events": [
+            "exit_audio"
+          ],
+          "held": false,
+          "operation": "draw"
+        },
+        {
+          "depth": 0,
+          "events": [],
+          "held": false,
+          "operation": "finish"
+        }
+      ]
+    },
+    {
+      "clips": [
+        false,
+        true
+      ],
+      "initial_hold": false,
+      "steps": [
+        {
+          "depth": 0,
+          "events": [],
+          "held": false,
+          "operation": "draw"
+        },
+        {
+          "depth": 0,
+          "events": [],
+          "held": false,
+          "operation": "finish"
+        },
+        {
+          "depth": 1,
+          "events": [
+            "enter_audio"
+          ],
+          "held": true,
+          "operation": "draw"
+        },
+        {
+          "depth": 0,
+          "events": [
+            "exit_audio"
+          ],
+          "held": false,
+          "operation": "finish"
+        }
+      ]
+    },
+    {
+      "clips": [
+        true,
+        true
+      ],
+      "initial_hold": true,
+      "steps": [
+        {
+          "depth": 2,
+          "events": [],
+          "held": true,
+          "operation": "draw"
+        },
+        {
+          "depth": 2,
+          "events": [],
+          "held": true,
+          "operation": "finish"
+        },
+        {
+          "depth": 2,
+          "events": [],
+          "held": true,
+          "operation": "draw"
+        },
+        {
+          "depth": 1,
+          "events": [],
+          "held": false,
+          "operation": "finish"
+        }
+      ]
+    }
+  ]
+}

@@ -330,7 +330,7 @@ fn chrono_reinforcement_reader_dispatch_placement_and_process_match_original() {
             "[Actions]\nCONTROL={}\n",
             row["read"]["read"].as_str().unwrap()
         ));
-        let entry = crate::map::actions::parse_actions(&ini)["CONTROL"].entries[0].clone();
+        let entry = crate::map::actions::parse_actions(&ini)["CONTROL"].entries()[0].clone();
         assert_eq!(entry.kind, number(&row["read"]["kind"]));
         assert_eq!(
             entry.waypoint_index.map(|value| value as i32).unwrap_or(-1),

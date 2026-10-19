@@ -529,35 +529,9 @@ pub(crate) fn building_dock_coordinate(
     .ok()
 }
 
-/// Native pointer-comparison gates use the receiver identity. The stored tag
-/// is retained; it does not make a different entity receiver. Valid Cells
-/// retain the existing coordinate identity; dummy/aliased Cell pointer
-/// retention is outside this ordinary object-reference slice.
-pub(crate) fn nav_targets_same_receiver(left: Option<NavTargetRef>, right: NavTargetRef) -> bool {
-    match (left, right) {
-        (
-            Some(NavTargetRef::Cell {
-                rx: left_x,
-                ry: left_y,
-            }),
-            NavTargetRef::Cell { rx, ry },
-        ) => (left_x, left_y) == (rx, ry),
-        (
-            Some(
-                NavTargetRef::Entity { id: left }
-                | NavTargetRef::Object { id: left }
-                | NavTargetRef::Building { id: left },
-            ),
-            NavTargetRef::Entity { id: right }
-            | NavTargetRef::Object { id: right }
-            | NavTargetRef::Building { id: right },
-        ) => left == right,
-        _ => false,
-    }
-}
-
-/// Resolve the live receiver behind a non-null NavCom. The Rust reference tag
-/// does not change the native virtual receiver, and a dangling ID is not NULL.
+/// Resolve the live receiver behind a non-null NavCom: the object's store and
+/// kind decide its coordinate, as its own virtual does natively. A dangling ID
+/// is not NULL.
 pub(crate) fn nav_target_coordinate(
     target: NavTargetRef,
     requester: Option<u64>,
@@ -578,9 +552,7 @@ pub(crate) fn nav_target_coordinate(
                     .as_ref(),
             ));
         }
-        NavTargetRef::Entity { id }
-        | NavTargetRef::Object { id }
-        | NavTargetRef::Building { id } => id,
+        NavTargetRef::Object { id } => id,
     };
     let entities = &world.substrate.entities;
     let Some(entity) = entities.get(id) else {

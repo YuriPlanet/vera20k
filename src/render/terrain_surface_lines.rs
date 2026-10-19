@@ -196,6 +196,7 @@ fn raster_draw(
     }
     let (rgb, mode, strength) = match line.blend {
         SurfaceLineBlend::Mix { rgb, strength } => (packed_rgb(rgb), 0, strength),
+        SurfaceLineBlend::Brighten { amount } => (0, 8, amount),
         SurfaceLineBlend::Add(rgb) => (packed_rgb(rgb), 1, 0),
         SurfaceLineBlend::Replace(word) => (u32::from(word), 2, 0),
         SurfaceLineBlend::Antialiased { .. } => unreachable!(),
@@ -207,7 +208,7 @@ fn raster_draw(
         } else {
             pixel.point
         };
-        let a = alpha(sample);
+        let a = if mode == 8 { 127 } else { alpha(sample) };
         if a != 0 {
             emit(&[(
                 pixel.point,
@@ -713,3 +714,7 @@ mod radial_indicator_tests;
 #[cfg(test)]
 #[path = "welding_gpu_tests.rs"]
 mod welding_tests;
+
+#[cfg(test)]
+#[path = "spotlight_tests.rs"]
+mod spotlight_tests;

@@ -25,7 +25,7 @@ fn advance(sim: &mut Simulation, rules: Option<&RuleSet>, lane: TickLane) {
             None,
             67,
             lane,
-            None,
+            false,
             crate::sim::world::FrameEffects::default(),
         )
         .expect("fixture frame must complete")

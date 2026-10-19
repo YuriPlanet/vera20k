@@ -109,6 +109,16 @@ pub struct SuperWeaponType {
     pub ui_name: Option<String>,
     /// Launch dispatch type (determines what happens on fire).
     pub kind: SuperWeaponKind,
+    /// `Range=` (`SuperWeaponTypeClass+0xF8`), a stored native float. The
+    /// constructor initializes it to `0.0` (`0x006CE5B0`); `ReadINI @
+    /// 0x006CEA20` reads the current value with `ReadDouble @ 0x005283D0`
+    /// and stores the result as a float at `0x006CEC01`, with no later clamp.
+    pub range: f32,
+    /// `LineMultiplier=` (`SuperWeaponTypeClass+0xFC`), a signed integer.
+    /// The constructor initializes it to `0` (`0x006CE5B0`); `ReadINI @
+    /// 0x006CEA20` reads the current value with `ReadInt @ 0x005276D0` at
+    /// `0x006CEC0E`, with no later clamp.
+    pub line_multiplier: i32,
     /// Charge time in game frames. INI value is minutes × 900.
     pub recharge_time_frames: i32,
     /// Whether charging pauses when the owner has low power.
@@ -166,6 +176,10 @@ impl SuperWeaponType {
     /// Parse a SuperWeaponType from a rules.ini section
     /// (`SuperWeaponTypeClass::ReadINI`, reads `0x006CEA6D`-`0x006CEDB1`).
     pub fn from_ini_section(id: &str, section: &IniSection) -> Option<Self> {
+        // Native reads Range and LineMultiplier before Type. The constructor
+        // owns the zero defaults; keep the same current-value defaults here.
+        let range = section.read_float("Range", 0.0);
+        let line_multiplier = section.read_int("LineMultiplier", 0);
         // ReadString 0x28 ahead of the kind lookup (`0x006CEC2D`).
         let kind = SuperWeaponKind::from_ini_str(section.read_name("Type", 0x28)?)?;
         Some(Self {
@@ -173,6 +187,8 @@ impl SuperWeaponType {
             // AbstractTypeClass `UIName=`, ReadString 0x20 (`0x00410AFB`).
             ui_name: section.read_name("UIName", 0x20).map(str::to_string),
             kind,
+            range,
+            line_multiplier,
             // `0x006CED6E` ReadDouble(0.0): zero keeps the field, anything
             // else stores `ftol(minutes * 900.0)` (`0x006CED80`). An `f32`
             // minute count times 900 is exact in `f64`, so the cast chops
@@ -257,6 +273,29 @@ DisableableFromShell=yes
         let section = ini.section("NoNameSW").unwrap();
         let sw = SuperWeaponType::from_ini_section("NoNameSW", section).unwrap();
         assert_eq!(sw.ui_name, None);
+        assert_eq!(sw.range, 0.0);
+        assert_eq!(sw.line_multiplier, 0);
+    }
+
+    #[test]
+    fn range_and_line_multiplier_use_native_typed_readers() {
+        let ini = IniFile::from_str("[RangeSW]\nType=MultiMissile\nRange=7.25\nLineMultiplier=2\n");
+        let section = ini.section("RangeSW").unwrap();
+        let sw = SuperWeaponType::from_ini_section("RangeSW", section).unwrap();
+        assert_eq!(sw.range, 7.25);
+        assert_eq!(sw.line_multiplier, 2);
+    }
+
+    #[test]
+    fn retail_battle_nuke_range_fields_follow_production_rules_reader() {
+        let Some(retail) =
+            crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+        else {
+            return;
+        };
+        let nuke = retail.rules.super_weapon("NukeSpecial").unwrap();
+        assert_eq!(nuke.range, 7.0);
+        assert_eq!(nuke.line_multiplier, 2);
     }
 
     #[test]

@@ -66,6 +66,10 @@ pub(crate) struct ObjectPieceInstance {
 /// A native body that edits the destination without a source sprite.
 pub(crate) enum ObjectBodyDraw {
     Surface(SurfaceDraw),
+    Spotlight {
+        glow: Option<crate::render::combat_light::CombatLightDrawRecord>,
+        beams: [Option<SurfaceDraw>; 2],
+    },
     CombatLight(crate::render::combat_light::CombatLightDrawRecord),
 }
 
@@ -520,16 +524,14 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
                     ObjectBodyDraw::Surface(draw) => {
                         push_surface_draws(lowered, std::iter::once(draw))
                     }
+                    ObjectBodyDraw::Spotlight { glow, beams } => {
+                        if let Some(record) = glow {
+                            push_combat_light(lowered, record);
+                        }
+                        push_surface_draws(lowered, beams.into_iter().flatten());
+                    }
                     ObjectBodyDraw::CombatLight(record) => {
-                        let index = lowered.light_records.len();
-                        lowered.light_records.push(record);
-                        lowered.runs.push(ObjectDrawRun {
-                            target: ObjectTexture::CombatLight(index),
-                            render_z: RenderZPolicy::None,
-                            packed_parent: None,
-                            start: lowered.instances.len() as u32,
-                            count: 0,
-                        });
+                        push_combat_light(lowered, record);
                     }
                 }
             }
@@ -557,6 +559,21 @@ pub(crate) fn lower_object_instances(entries: Vec<PlannedObjectInstance>) -> [Ob
         }
     }
     layers
+}
+
+fn push_combat_light(
+    pass: &mut ObjectLayerPass,
+    record: crate::render::combat_light::CombatLightDrawRecord,
+) {
+    let index = pass.light_records.len();
+    pass.light_records.push(record);
+    pass.runs.push(ObjectDrawRun {
+        target: ObjectTexture::CombatLight(index),
+        render_z: RenderZPolicy::None,
+        packed_parent: None,
+        start: pass.instances.len() as u32,
+        count: 0,
+    });
 }
 
 fn push_surface_draws(

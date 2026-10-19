@@ -26,9 +26,7 @@ pub(super) fn destination_cell(
     interner: &StringInterner,
 ) -> Result<(i32, i32), String> {
     let coord = crate::sim::movement::nav_target_coordinate(
-        crate::sim::components::NavTargetRef::Entity {
-            id: entity.stable_id(),
-        },
+        crate::sim::components::NavTargetRef::object(entity.stable_id()),
         None,
         sim,
         terrain,

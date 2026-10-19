@@ -1326,7 +1326,7 @@ fn after_active_rows_gate_the_same_call_continuation() {
                 let t = sim.substrate.entities.get_mut(target).unwrap();
                 t.locomotor.as_mut().unwrap().set_step_head(Some(coord));
             }
-            (NavTargetRef::Entity { id: target }, coord)
+            (NavTargetRef::Object { id: target }, coord)
         });
         let e = sim.substrate.entities.get_mut(id).unwrap();
         e.lifecycle

@@ -531,6 +531,22 @@ impl ProcessedRulesLayers {
             .map(|member| (member.native_stored_id.as_str(), member.building_foundation))
     }
 
+    /// BuildingType+154B after each reached Rules body; current-default ReadBool.
+    pub(crate) fn building_spotlight_flags(&self) -> impl Iterator<Item = (&str, bool)> {
+        self.native_type_construction_trace
+            .registry_state()
+            .families
+            .get(&RulesTypeFamily::Building)
+            .into_iter()
+            .flatten()
+            .map(|member| {
+                (
+                    member.native_stored_id.as_str(),
+                    member.building_has_spotlight,
+                )
+            })
+    }
+
     /// BuildingType+EBC after each reached Rules body. Fixed ART never reads it.
     pub(crate) fn building_target_coord_offsets(&self) -> impl Iterator<Item = (&str, [i32; 3])> {
         self.native_type_construction_trace
@@ -953,6 +969,17 @@ impl ProcessedRulesLayers {
             .rules_wind_direction
     }
 
+    /// ReadGeneral670DE9/670E30/670E57, current scalar defaults across
+    /// layers and Type resets (original gamemd SHA2561cdd1180..84298c).
+    pub(crate) fn repair_service_inputs(&self) -> (i32, f64, f64) {
+        let state = self.native_type_construction_trace.registry_state();
+        (
+            state.rules_infantry_repair_step,
+            f64::from_bits(state.rules_unit_repair_rate.bits()),
+            f64::from_bits(state.rules_infantry_repair_rate.bits()),
+        )
+    }
+
     pub(crate) fn gravity(&self) -> i32 {
         self.native_type_construction_trace
             .registry_state()
@@ -1182,6 +1209,12 @@ impl ProcessedRulesLayers {
         self.native_type_construction_trace
             .registry_state()
             .rules_talk_bubble_time
+    }
+
+    pub(crate) fn spotlight(&self) -> crate::rules::ruleset::SpotlightRules {
+        self.native_type_construction_trace
+            .registry_state()
+            .rules_spotlight
     }
 
     /// Rules+490, +298, +29C, +FF0, retained across ordered Process calls.
@@ -1422,8 +1455,12 @@ pub(crate) struct NativeRulesRegistryState {
     rules_parachute_max_fall_rate: i32,
     rules_no_parachute_max_fall_rate: i32,
     rules_survivor_divisors: [i32; 3],
+    rules_infantry_repair_step: i32,
+    rules_unit_repair_rate: NativeF64Bits,
+    rules_infantry_repair_rate: NativeF64Bits,
     rules_maximum_cheer_rate: i32,
     rules_talk_bubble_time: i32,
+    rules_spotlight: crate::rules::ruleset::SpotlightRules,
     rules_ion_cannon_damage: i32,
     rules_ion_blast_anim: String,
     rules_ion_beam_anim: String,
@@ -1480,8 +1517,14 @@ impl Default for NativeRulesRegistryState {
             rules_parachute_max_fall_rate: general.parachute_max_fall_rate,
             rules_no_parachute_max_fall_rate: general.no_parachute_max_fall_rate,
             rules_survivor_divisors: crate::rules::ruleset::DEFAULT_SURVIVOR_DIVISORS,
+            rules_infantry_repair_step: general.infantry_repair_step,
+            rules_unit_repair_rate: NativeF64Bits::from_bits(general.unit_repair_rate.to_bits()),
+            rules_infantry_repair_rate: NativeF64Bits::from_bits(
+                general.infantry_repair_rate.to_bits(),
+            ),
             rules_maximum_cheer_rate: crate::rules::ruleset::DEFAULT_MAXIMUM_CHEER_RATE,
             rules_talk_bubble_time: general.talk_bubble_time,
+            rules_spotlight: general.spotlight,
             // Rules665CD4=700; pointer fields665A18/665A24/666BD5 start null.
             rules_ion_cannon_damage: 700,
             rules_ion_blast_anim: String::new(),
@@ -1677,8 +1720,12 @@ impl NativeRulesRegistryState {
             rules_parachute_max_fall_rate: self.rules_parachute_max_fall_rate,
             rules_no_parachute_max_fall_rate: self.rules_no_parachute_max_fall_rate,
             rules_survivor_divisors: self.rules_survivor_divisors,
+            rules_infantry_repair_step: self.rules_infantry_repair_step,
+            rules_unit_repair_rate: self.rules_unit_repair_rate,
+            rules_infantry_repair_rate: self.rules_infantry_repair_rate,
             rules_maximum_cheer_rate: self.rules_maximum_cheer_rate,
             rules_talk_bubble_time: self.rules_talk_bubble_time,
+            rules_spotlight: self.rules_spotlight,
             rules_ion_cannon_damage: self.rules_ion_cannon_damage,
             rules_mind_control_attack_line_frames: self.rules_mind_control_attack_line_frames,
             rules_line_trail_override: self.rules_line_trail_override,
@@ -1850,6 +1897,8 @@ struct ProcessedType {
     building_foundation: u8,
     /// Constructor45DEBC..45DEC8 clears BuildingType+EBC/EC0/EC4.
     building_target_coord_offset: [i32; 3],
+    /// BuildingType ctor45DFDA=false; ReadBool45FEE5..45FF0D, current default.
+    building_has_spotlight: bool,
     secret_lab: crate::rules::secret_lab::SecretLabRules,
     /// Unit ctor747167..7471B2 and reached fixed-ART reader7477C1..747AAE.
     unit_shp: crate::rules::shp_vehicle_sequence::UnitShpReadState,
@@ -2224,6 +2273,7 @@ impl ProcessedType {
             anim_art_read: false,
             building_foundation: 0,
             building_target_coord_offset: [0; 3],
+            building_has_spotlight: false,
             secret_lab: Default::default(),
             unit_shp: Default::default(),
             unit_speed_type: SpeedType::Invalid,
@@ -2276,8 +2326,12 @@ struct RulesPassProcessor {
     rules_parachute_max_fall_rate: i32,
     rules_no_parachute_max_fall_rate: i32,
     rules_survivor_divisors: [i32; 3],
+    rules_infantry_repair_step: i32,
+    rules_unit_repair_rate: NativeF64Bits,
+    rules_infantry_repair_rate: NativeF64Bits,
     rules_maximum_cheer_rate: i32,
     rules_talk_bubble_time: i32,
+    rules_spotlight: crate::rules::ruleset::SpotlightRules,
     rules_ion_cannon_damage: i32,
     rules_ion_blast_anim: String,
     rules_ion_beam_anim: String,
@@ -2327,8 +2381,12 @@ impl RulesPassProcessor {
             rules_parachute_max_fall_rate: registry_state.rules_parachute_max_fall_rate,
             rules_no_parachute_max_fall_rate: registry_state.rules_no_parachute_max_fall_rate,
             rules_survivor_divisors: registry_state.rules_survivor_divisors,
+            rules_infantry_repair_step: registry_state.rules_infantry_repair_step,
+            rules_unit_repair_rate: registry_state.rules_unit_repair_rate,
+            rules_infantry_repair_rate: registry_state.rules_infantry_repair_rate,
             rules_maximum_cheer_rate: registry_state.rules_maximum_cheer_rate,
             rules_talk_bubble_time: registry_state.rules_talk_bubble_time,
+            rules_spotlight: registry_state.rules_spotlight,
             rules_ion_cannon_damage: registry_state.rules_ion_cannon_damage,
             rules_ion_blast_anim: registry_state.rules_ion_blast_anim,
             rules_ion_beam_anim: registry_state.rules_ion_beam_anim,
@@ -2838,9 +2896,19 @@ impl RulesPassProcessor {
         ]) {
             *value = section.read_int(key, *value);
         }
+        // ReadGeneral670DE9/670E30/670E57: ReadInt, then ReadDouble twice,
+        // current Rules+16D8/+16E8/+16F0 defaults, exact keys, no read clamps.
+        // Rules66751A/667540 constructor defaults come from GeneralRules.
+        self.rules_infantry_repair_step =
+            section.read_int("IRepairStep", self.rules_infantry_repair_step);
+        self.rules_unit_repair_rate =
+            section.read_double_bits("URepairRate", self.rules_unit_repair_rate);
+        self.rules_infantry_repair_rate =
+            section.read_double_bits("IRepairRate", self.rules_infantry_repair_rate);
         // ReadGeneral's Prism block (`0x0067114F..0x006711B8`), current values
         // as defaults; RulesClass keeps them across Full_Init's reset.
         self.rules_prism_support = self.rules_prism_support.read_pass(section);
+        self.rules_spotlight.read_pass(section);
         self.rules_talk_bubble_time = section.read_talk_bubble_time(self.rules_talk_bubble_time);
 
         for &(key, family, is_list) in SITES {
@@ -3272,6 +3340,8 @@ impl RulesPassProcessor {
                         let member = &mut self.families.get_mut(&family).unwrap()[index];
                         // ReadINI460F50..460F9C: exact Rules key, ReadCoord529CA0,
                         // current value as default, no clamp or conversion.
+                        member.building_has_spotlight =
+                            raw.read_bool("HasSpotlight", member.building_has_spotlight);
                         member.building_target_coord_offset = raw
                             .read_coord3("TargetCoordOffset", member.building_target_coord_offset);
                         member.building_foundation =
@@ -4149,8 +4219,12 @@ impl RulesPassProcessor {
                     rules_parachute_max_fall_rate: self.rules_parachute_max_fall_rate,
                     rules_no_parachute_max_fall_rate: self.rules_no_parachute_max_fall_rate,
                     rules_survivor_divisors: self.rules_survivor_divisors,
+                    rules_infantry_repair_step: self.rules_infantry_repair_step,
+                    rules_unit_repair_rate: self.rules_unit_repair_rate,
+                    rules_infantry_repair_rate: self.rules_infantry_repair_rate,
                     rules_maximum_cheer_rate: self.rules_maximum_cheer_rate,
                     rules_talk_bubble_time: self.rules_talk_bubble_time,
+                    rules_spotlight: self.rules_spotlight,
                     rules_ion_cannon_damage: self.rules_ion_cannon_damage,
                     rules_ion_blast_anim: self.rules_ion_blast_anim,
                     rules_ion_beam_anim: self.rules_ion_beam_anim,

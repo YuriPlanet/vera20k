@@ -795,7 +795,7 @@ pub(crate) fn unit_mission_unload(
                 .resolved_terrain
                 .as_ref()
                 .and_then(|terrain| terrain.cell(entity.position.rx(), entity.position.ry()))
-                .is_some_and(|cell| cell.land_type == LandType::Water.as_index());
+                .is_some_and(|cell| cell.land_type() == LandType::Water.as_index());
             if entity.navigation.nav_com().is_none() && on_water {
                 // `PUSH 0x2` at `0x0073D790`: the search runs for speed-type
                 // index 2 — Wheel in the native `SpeedType` order (Foot 0,

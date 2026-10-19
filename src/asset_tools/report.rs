@@ -271,9 +271,6 @@ pub struct PaletteChoice {
     pub name: String,
     /// Why this palette won — see `asset_tools::palette::PaletteReason`.
     pub reason: String,
-    /// `standard` bakes index-0 alpha into the palette; `gamemd_ui` does not.
-    /// Pairing the wrong one with a frame converter yields opaque sprites.
-    pub alpha_policy: String,
     /// `production` when a real engine code path binds this palette to this
     /// asset class, `declared` when art.ini named it, `heuristic` otherwise.
     pub confidence: String,

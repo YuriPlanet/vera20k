@@ -1,8 +1,9 @@
 //! Cargo-head departure owns admission-time size and the complete retry transition.
 //!
 //! Geometry and mission cadence remain with each production caller. No removed
-//! entry escapes this operation: an unsuccessful attempt restores the same head
-//! and recorded size before returning. Serialized CargoClass state is unchanged.
+//! retryable departure escapes this operation: an unsuccessful attempt restores
+//! the same head and recorded size before returning. Hospital and DeathEscape
+//! explicitly never reattach a removed head. Serialized CargoClass state is unchanged.
 //! Native removal: CargoClass::RemoveFirstPassenger @ 0x00473430; retry:
 //! AddPassenger @ 0x004733A0. Route-specific compatibility policies below preserve
 //! the existing Rust branches; they do not claim uniform native retry semantics.
@@ -22,6 +23,9 @@ pub enum DepartureRoute {
     /// A building absorber's native Unload path: pop one, try the ordered
     /// eight-cell scan, and prepend the same passenger if placement fails.
     Absorber,
+    /// Hospital44B9A8/44B9E0 removes Cargo's head and ignores ExitObject's
+    /// return. It neither retries nor reattaches a refused exit.
+    Hospital,
     /// A dying Unit's passenger (`UnitClass::ReceiveDamage` `0x00737FD4`,
     /// `FootClass::RemoveFirstPassenger @ 0x004DE710`). Its attempt never
     /// fails: a refused passenger dies instead of re-boarding.
@@ -73,6 +77,11 @@ pub fn depart_cargo_head(
         super::remove_gunner(sim, rules, transport_id, removed.map(|(id, _)| id));
     }
     let (passenger_id, passenger_size) = removed.ok_or(DepartureFailure::NoCargo)?;
+    if route == DepartureRoute::Hospital
+        && let Some(passenger) = sim.substrate.entities.get_mut(passenger_id)
+    {
+        passenger.passenger_role.clear_carrier_relation();
+    }
     // A failed Unlimbo re-attaches the passenger with `+0x82` untouched; only
     // a successful unload clears it (`0x0073DB98`).
     let open_topped = sim
@@ -81,7 +90,9 @@ pub fn depart_cargo_head(
         .get(passenger_id)
         .is_some_and(|passenger| passenger.passenger_role.in_open_transport());
     let result = attempt(sim, passenger_id);
-    if let Err(failure) = result.as_ref() {
+    if let Err(failure) = result.as_ref()
+        && route != DepartureRoute::Hospital
+    {
         restore_departure(
             sim,
             rules,
@@ -142,8 +153,8 @@ fn restore_departure(
                 unreachable!("invalid paradrop departure phase")
             }
         },
-        DepartureRoute::DeathEscape => {
-            unreachable!("a dying transport's passenger never re-boards")
+        DepartureRoute::DeathEscape | DepartureRoute::Hospital => {
+            unreachable!("this departure route never reattaches its passenger")
         }
         DepartureRoute::Vehicle | DepartureRoute::LandedAircraft | DepartureRoute::Absorber => {
             assert!(

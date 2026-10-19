@@ -50,7 +50,8 @@ pub(crate) fn depth_cell(
             ramp: cell.slope_type,
             flags: cell.bridge_facts.raw_flags,
             iso_tile_index: cell.final_tile_index,
-            low_bridge: cell.land_type == crate::rules::terrain_rules::LandType::Tunnel.as_index()
+            low_bridge: cell.land_type()
+                == crate::rules::terrain_rules::LandType::Tunnel.as_index()
                 && terrain.tube_at_cell(cell.rx, cell.ry).is_some(),
             overlay_rock: rock(overlay_id),
             tmp_height: terrain.native_tmp_draw_height(cell.final_tile_index, cell.final_sub_tile),

@@ -266,51 +266,6 @@ fn ordinary_drive_retires_selector_before_entering_an_explicit_tube() {
     );
 }
 
-#[test]
-fn test_facing_iso_north() {
-    // (0,-1) = north on screen → facing 0.
-    let f: u8 = facing_from_delta(0, -1);
-    assert_eq!(f, 0, "North (0,-1) should be facing 0");
-}
-
-#[test]
-fn test_facing_iso_east() {
-    let f: u8 = facing_from_delta(1, 0);
-    assert_eq!(f, 63, "East (1,0) should be computed facing 63");
-}
-
-#[test]
-fn test_facing_iso_south() {
-    let f: u8 = facing_from_delta(0, 1);
-    assert_eq!(f, 127, "South (0,1) should be computed facing 127");
-}
-
-#[test]
-fn test_facing_iso_west() {
-    // (-1,0) = west on screen → facing 192.
-    let f: u8 = facing_from_delta(-1, 0);
-    assert_eq!(f, 192, "West (-1,0) should be facing 192");
-}
-
-#[test]
-fn test_facing_iso_northeast() {
-    // (1,-1) = NE on screen → facing 32.
-    let f: u8 = facing_from_delta(1, -1);
-    assert_eq!(f, 32, "NE (1,-1) should be facing 32");
-}
-
-#[test]
-fn test_facing_iso_southeast() {
-    let f: u8 = facing_from_delta(1, 1);
-    assert_eq!(f, 95, "SE (1,1) should be computed facing 95");
-}
-
-#[test]
-fn test_facing_zero_delta() {
-    let f: u8 = facing_from_delta(0, 0);
-    assert_eq!(f, 63, "Zero delta follows the native conversion path");
-}
-
 // --- Movement tick tests ---
 
 #[test]

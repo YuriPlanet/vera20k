@@ -8,7 +8,6 @@ use anyhow::Result;
 
 use crate::assets::asset_manager::{AssetManager, retail_enumerated_file};
 use crate::assets::csf_file::CsfFile;
-use crate::assets::mix_archive::MixArchive;
 use crate::map::preview::PreviewSection;
 use crate::map::scenario_menu::MapMenuEntry;
 use crate::map::scenario_menu::read_map_menu_entry_from_ini;
@@ -71,20 +70,11 @@ pub fn list_skirmish_scenario_records_with_assets(
     assets: &mut AssetManager,
     csf: Option<&CsfFile>,
 ) -> Result<Vec<SkirmishScenarioRecord>> {
-    list_skirmish_scenario_records_from_sources(ra2_dir, Some(assets), csf)
-}
-
-fn list_skirmish_scenario_records_from_sources(
-    ra2_dir: &Path,
-    assets: Option<&mut AssetManager>,
-    csf: Option<&CsfFile>,
-) -> Result<Vec<SkirmishScenarioRecord>> {
     let mut records = Vec::new();
 
-    if let Some(assets) = assets.as_deref()
-        && let Some(pkt) = assets
-            .get_ref("MISSIONSMD.PKT")
-            .and_then(|bytes| IniFile::from_bytes(bytes).ok())
+    if let Some(pkt) = assets
+        .get_ref("MISSIONSMD.PKT")
+        .and_then(|bytes| IniFile::from_bytes(bytes).ok())
     {
         append_pkt_records(
             &mut records,
@@ -100,7 +90,7 @@ fn list_skirmish_scenario_records_from_sources(
         );
     }
 
-    append_loose_pkt_records(&mut records, ra2_dir, assets.as_deref(), csf)?;
+    append_loose_pkt_records(&mut records, ra2_dir, assets, csf)?;
     append_loose_yro_records(&mut records, ra2_dir, assets, csf)?;
     append_loose_yrm_records(&mut records, ra2_dir)?;
 
@@ -110,7 +100,7 @@ fn list_skirmish_scenario_records_from_sources(
 fn append_loose_pkt_records(
     records: &mut Vec<SkirmishScenarioRecord>,
     ra2_dir: &Path,
-    assets: Option<&AssetManager>,
+    assets: &AssetManager,
     csf: Option<&CsfFile>,
 ) -> Result<()> {
     for (path, file_name) in loose_files_with_extension(ra2_dir, "pkt")? {
@@ -131,7 +121,7 @@ fn append_loose_pkt_records(
             |map_file| {
                 read_map_ini_for_metadata(&ra2_dir.join(map_file)).or_else(|| {
                     assets
-                        .and_then(|assets| assets.get_ref(map_file))
+                        .get_ref(map_file)
                         .and_then(|bytes| IniFile::from_bytes(bytes).ok())
                 })
             },
@@ -143,7 +133,7 @@ fn append_loose_pkt_records(
 fn append_loose_yro_records(
     records: &mut Vec<SkirmishScenarioRecord>,
     ra2_dir: &Path,
-    mut assets: Option<&mut AssetManager>,
+    manager: &mut AssetManager,
     csf: Option<&CsfFile>,
 ) -> Result<()> {
     for (path, file_name) in loose_files_with_extension(ra2_dir, "yro")? {
@@ -161,56 +151,30 @@ fn append_loose_yro_records(
             continue;
         };
 
-        if let Some(manager) = assets.as_deref_mut() {
-            if manager.register_loose_yro_archive(&path).is_err() {
-                continue;
-            }
-
-            // Retail provenance: global YRO-derived PKT/map resolution —
-            // `SessionClass::ScanMultiplayerMapFiles` @ `0x00699980`.
-            let Some(pkt) = manager
-                .get_ref(&pkt_name)
-                .and_then(|bytes| IniFile::from_bytes(bytes).ok())
-            else {
-                continue;
-            };
-            append_pkt_records(
-                records,
-                &pkt,
-                SkirmishScenarioSource::LooseYro(file_name),
-                csf,
-                PktTitleStyle::YroPlayerCountSuffix,
-                |map_file| {
-                    manager
-                        .get_ref(map_file)
-                        .and_then(|bytes| IniFile::from_bytes(bytes).ok())
-                },
-            );
-        } else {
-            let archive = match MixArchive::load(&path) {
-                Ok(archive) => archive,
-                Err(_) => continue,
-            };
-            let Some(pkt) = archive
-                .get_by_name(&pkt_name)
-                .and_then(|bytes| IniFile::from_bytes(bytes).ok())
-            else {
-                continue;
-            };
-            append_pkt_records(
-                records,
-                &pkt,
-                SkirmishScenarioSource::LooseYro(file_name),
-                csf,
-                PktTitleStyle::YroPlayerCountSuffix,
-                |map_file| {
-                    archive
-                        .get_by_name(map_file)
-                        .and_then(|bytes| IniFile::from_bytes(bytes).ok())
-                        .or_else(|| read_map_ini_for_metadata(&ra2_dir.join(map_file)))
-                },
-            );
+        if manager.register_loose_yro_archive(&path).is_err() {
+            continue;
         }
+
+        // Retail provenance: global YRO-derived PKT/map resolution —
+        // `SessionClass::ScanMultiplayerMapFiles` @ `0x00699980`.
+        let Some(pkt) = manager
+            .get_ref(&pkt_name)
+            .and_then(|bytes| IniFile::from_bytes(bytes).ok())
+        else {
+            continue;
+        };
+        append_pkt_records(
+            records,
+            &pkt,
+            SkirmishScenarioSource::LooseYro(file_name),
+            csf,
+            PktTitleStyle::YroPlayerCountSuffix,
+            |map_file| {
+                manager
+                    .get_ref(map_file)
+                    .and_then(|bytes| IniFile::from_bytes(bytes).ok())
+            },
+        );
     }
     Ok(())
 }
@@ -647,7 +611,7 @@ mod tests {
 
         let mut manager = AssetManager::from_loose_root_for_test(directory.path());
         let mut records = Vec::new();
-        append_loose_yro_records(&mut records, directory.path(), Some(&mut manager), None)
+        append_loose_yro_records(&mut records, directory.path(), &mut manager, None)
             .expect("scan loose YRO");
 
         assert_eq!(records.len(), 1);

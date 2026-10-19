@@ -56,9 +56,7 @@ fn many_ordinary_fences_submit_in_order_and_preserve_native_destination_words() 
                 &[33],
             ),
         }]);
-        let palette = crate::assets::pal_file::Palette {
-            colors: [crate::assets::pal_file::Color::rgb(0, 252, 0); 256],
-        };
+        let palette = crate::assets::pal_file::Palette::from_rgb(|_| [0, 252, 0]);
         let ramps = crate::rules::house_colors::HouseColorRamps::from_schemes(&[]);
         let palettes =
             PaletteSet::new_on_device(&gpu.device, &gpu.queue, &palette, &palette, &ramps, &[]);

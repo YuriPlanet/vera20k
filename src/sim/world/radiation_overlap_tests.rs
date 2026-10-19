@@ -24,7 +24,6 @@ fn advance(sim: &mut Simulation, rules: &RuleSet) -> super::SimFrameOutput {
             None,
             33,
             TickLane::Ordinary,
-            None,
             FrameEffects::default(),
         )
         .expect("ordinary DESO overlap frame");

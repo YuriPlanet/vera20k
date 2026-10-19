@@ -803,7 +803,7 @@ fn bridge_redirect_for_structural_cell(
         }
         return Some(
             if terrain.high_bridge_tile_offset(cell).is_some()
-                && cell.land_type != LandType::Rock.as_index()
+                && cell.land_type() != LandType::Rock.as_index()
             {
                 record.endpoint_b
             } else {
@@ -837,7 +837,6 @@ mod tests {
     use super::*;
     include!("bridge_base_native_tests.rs");
     use crate::map::resolved_terrain::ResolvedTerrainCell;
-    use crate::rules::terrain_rules::TerrainClass;
     use crate::sim::bridge_state::{BridgeEndpointRecord, BridgeRecordKind};
     use crate::sim::movement::locomotor::MovementLayer;
 
@@ -875,7 +874,6 @@ mod tests {
                     land_type: LandType::Clear.as_index(),
                     zone_type: zone_class::GROUND,
                     base_land_type: LandType::Clear.as_index(),
-                    base_terrain_class: TerrainClass::Clear,
                     ..crate::map::resolved_terrain::test_flat_cell(rx, ry)
                 };
                 configure(&mut cell);

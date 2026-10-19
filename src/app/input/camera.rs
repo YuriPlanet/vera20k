@@ -1306,7 +1306,6 @@ pub(crate) fn poll_mouse_scroll(state: &mut AppState) -> (f32, f32) {
 /// Tactical__AI commits the accumulated request before follow (0x6D26F9),
 /// clamping once against the current frame's authoritative LocalSize.
 pub(crate) fn commit_camera_scroll(state: &mut AppState, mouse: (f32, f32)) {
-    sync_playfield_presentation_bounds(state);
     let current = (
         state.match_state.input.camera_x,
         state.match_state.input.camera_y,
@@ -1329,7 +1328,6 @@ pub(crate) fn commit_camera_scroll(state: &mut AppState, mouse: (f32, f32)) {
 /// this visit sampled mouse input. `frame` is its pre-increment binary frame;
 /// the simulation has already committed N+1 by the time presentation runs.
 pub(crate) fn advance_camera_ai(state: &mut AppState, mouse: (f32, f32), frame: u32) {
-    sync_playfield_presentation_bounds(state);
     let (width, height) = tactical_viewport_size(state);
     let current = (
         state.match_state.input.camera_x,
@@ -1783,7 +1781,6 @@ pub(crate) fn center_camera_on_cell(state: &mut AppState, rx: u16, ry: u16) {
 
 pub(crate) fn clamp_camera_to_playable_area(state: &mut AppState, sw: f32, sh: f32) {
     constrain_zoom_to_texture(state, sw, sh);
-    sync_playfield_presentation_bounds(state);
     let (camera_x, camera_y) = clamp_camera_point_for_state(
         state,
         (
@@ -1814,35 +1811,18 @@ fn minimum_view_zoom(extent: [f32; 2], texture_limit: u32) -> f32 {
     MIN_ZOOM.max(extent[0].max(extent[1]) / texture_limit as f32)
 }
 
-/// Reconcile the camera's exact mode-zero scroll authority with the current
-/// normalized MapClass LocalSize. This is called from every clamp entry and
-/// the minimap frame feed, so trigger action 0x28 is visible before any next
-/// presentation operation; the `(bounds, revision)` comparison also forces a
-/// restored timeline and repeated writer through the same path.
-pub(crate) fn sync_playfield_presentation_bounds(
-    state: &mut AppState,
+/// The current normalized MapClass LocalSize and its revision, read from the
+/// simulation for every consumer, so trigger action 0x28 and a restored
+/// timeline reach the minimap's `(bounds, revision)` gate on its next frame.
+pub(crate) fn playfield_presentation_authority(
+    state: &AppState,
 ) -> (Option<crate::map::playfield::PlayfieldBounds>, u64) {
-    let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
-        // Non-match renderer fixtures have no MapClass authority to install.
-        // Keep their explicit test bounds; live parity paths always have a sim.
-        return (None, 0);
-    };
-    let authority = runtime.view().playfield_authority();
-    if state
+    // Non-match renderer fixtures have no MapClass authority.
+    state
         .match_state
-        .match_presentation
-        .installed_playfield_authority
-        != Some(authority)
-    {
-        if let Some(grid) = state.match_state.match_presentation.terrain_grid.as_mut() {
-            grid.install_playfield_local_bounds(authority.0);
-        }
-        state
-            .match_state
-            .match_presentation
-            .installed_playfield_authority = Some(authority);
-    }
-    authority
+        .sim_runtime
+        .as_ref()
+        .map_or((None, 0), |runtime| runtime.view().playfield_authority())
 }
 
 fn clamp_camera_point_for_state(
@@ -1872,21 +1852,18 @@ fn clamp_camera_point_for_state(
                 )
             });
     }
+    // Renderer fixtures without a simulation clamp to the whole grid.
     let Some(grid) = &state.match_state.match_presentation.terrain_grid else {
         return point;
     };
-    let (area_x, area_y, area_w, area_h) = match grid.local_bounds {
-        Some(b) => (b.pixel_x, b.pixel_y, b.pixel_w, b.pixel_h),
-        None => (
+    clamp_camera_point_to_rect(
+        point,
+        (
             grid.origin_x,
             grid.origin_y,
             grid.world_width,
             grid.world_height,
         ),
-    };
-    clamp_camera_point_to_rect(
-        point,
-        (area_x, area_y, area_w, area_h),
         viewport,
         state.match_state.input.zoom_level,
     )
@@ -1898,12 +1875,20 @@ fn clamp_camera_point_to_local_bounds(
     viewport: (f32, f32),
     zoom: f32,
 ) -> (f32, f32) {
-    // Original Tactical::ClampViewCenter6D8640. Convert its absolute centre
-    // bounds to VERA world top-left using the shared projection's row bias;
-    // the viewport/2 terms cancel. Retain x86 wrapping integer arithmetic
-    // before presentation conversion. Executed controls include all edges,
-    // shifted LocalSize: fast_scroll.json. Oversized views deliberately use
-    // VERA's stable centering policy below instead of native alternating bounds.
+    // Oversized views deliberately use VERA's stable centering policy in
+    // clamp_camera_point_to_rect instead of native alternating bounds.
+    clamp_camera_point_to_rect(point, tactical_scroll_rect(bounds), viewport, zoom)
+}
+
+/// The scroll rectangle of Tactical::ClampViewCenter `0x006D8640`, as VERA
+/// world `(x, y, width, height)`: the one owner of that extent. Its absolute
+/// centre bounds convert to a world top-left through the shared projection's
+/// row bias; the viewport/2 terms cancel. Retain x86 wrapping integer
+/// arithmetic before presentation conversion. Executed controls include all
+/// edges and shifted LocalSize: fast_scroll.json.
+pub(crate) fn tactical_scroll_rect(
+    bounds: crate::map::playfield::PlayfieldBounds,
+) -> (f32, f32, f32, f32) {
     let bias = crate::util::lepton::absolute_leptons_to_screen(0, 0, 0);
     let left = bounds
         .off_fc
@@ -1917,16 +1902,11 @@ fn clamp_camera_point_to_local_bounds(
         .wrapping_mul(15);
     let width = bounds.off_104.wrapping_mul(60);
     let height = bounds.off_108.wrapping_mul(60).wrapping_add(270) / 2;
-    clamp_camera_point_to_rect(
-        point,
-        (
-            left as f32 + bias.0 + 30.0,
-            top as f32 + bias.1,
-            width as f32,
-            height as f32,
-        ),
-        viewport,
-        zoom,
+    (
+        left as f32 + bias.0 + 30.0,
+        top as f32 + bias.1,
+        width as f32,
+        height as f32,
     )
 }
 

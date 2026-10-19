@@ -19,12 +19,13 @@ const EXPIRE_STAGE: u8 = 0x50;
 /// entries at stages 0, 8, ..., 72, but retaining the complete table makes the
 /// integer indexing contract explicit.
 #[rustfmt::skip]
-const STAGE_SCALE: [u8; 80] = [
+const STAGE_SCALE: [u8; 90] = [
      5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55, 60, 61, 62, 63, 63,
     63, 62, 61, 60, 59, 58, 57, 56, 55, 54, 53, 52, 51, 50, 49, 48,
     47, 46, 45, 44, 43, 42, 41, 40, 39, 38, 37, 36, 35, 34, 33, 32,
     31, 30, 29, 28, 27, 26, 25, 24, 23, 22, 21, 20, 19, 18, 17, 16,
     15, 14, 13, 12, 11, 10,  9,  8,  7,  6,  5,  4,  3,  2,  1,  0,
+    64,65,66,67,68,69,70,71,72,73,
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -221,8 +222,16 @@ fn materialize_base_size(damage: i32, override_size: f64) -> i32 {
 }
 
 fn scaled_surface_index(base_size: i32, stage: u8) -> i32 {
-    let scale = STAGE_SCALE[usize::from(stage.min(79))];
-    base_size.wrapping_mul(i32::from(scale)) / 64
+    // Native indexes beyond the known90-byte table are undefined; preserve a
+    // missing logical record instead of inventing another type16 light.
+    let Some(&scale) = STAGE_SCALE.get(usize::from(stage)) else {
+        return -1;
+    };
+    if scale >= 64 {
+        i32::from(scale)
+    } else {
+        base_size.wrapping_mul(i32::from(scale)) / 64
+    }
 }
 
 #[cfg(test)]
@@ -237,7 +246,7 @@ mod tests {
         let native = crate::render::tactical_compat::welding_tests::native();
         let stage_bytes =
             crate::render::tactical_compat::welding_tests::decode_hex(&native["stage_table_hex"]);
-        assert_eq!(STAGE_SCALE.as_slice(), stage_bytes);
+        assert_eq!(&STAGE_SCALE[..80], stage_bytes);
         let rows = native["system_draw_cases"].as_array().unwrap();
         assert!(!rows.is_empty());
         for row in rows {
@@ -796,5 +805,25 @@ mod tests {
             serde_json::json!(omitted_flash.minimum_frame_rate()),
             history["without_flash_next_threshold"]
         );
+    }
+}
+
+#[cfg(test)]
+mod spotlight_tests {
+    use super::*;
+    #[test]
+    fn spotlight_stages_use_original_surface_bank_without_scale_multiplication() {
+        let native = crate::test_fixture::json("tools/procedural_drawing_oracle/spotlight.json");
+        let hex = STAGE_SCALE
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<String>();
+        assert_eq!(hex, native["stage_table_hex"].as_str().unwrap());
+        assert_eq!(scaled_surface_index(16, 90), -1);
+        for size in [16, 0, -1, i32::MAX] {
+            for stage in 80..=89 {
+                assert_eq!(scaled_surface_index(size, stage), i32::from(stage) - 16);
+            }
+        }
     }
 }

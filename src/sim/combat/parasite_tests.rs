@@ -799,6 +799,12 @@ fn a_host_lost_in_flight_returns_the_drone_to_its_launch_cell() {
     assert!(returned.parasite.class().unwrap().victim.is_none());
     // The refusal (0x0062AA96..0x0062AAC9) never calls Set_ArchiveTarget.
     assert_eq!(returned.archive_target(), anchor);
+    // Its ReReveal (0x0062AA51) takes back the sight the Unlimbo opened, and
+    // no frame gives it back before the drone's next reveal event.
+    let russians = returned.owner();
+    assert!(!arena.sim.fog.sight_is_latched(drone, russians));
+    arena.step(&rules);
+    assert!(!arena.sim.fog.sight_is_latched(drone, russians));
 }
 
 #[test]

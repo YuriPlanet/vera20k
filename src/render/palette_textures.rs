@@ -88,8 +88,8 @@ impl PaletteSet {
         ramps: &HouseColorRamps,
         houses: &[HouseColorIndex],
     ) -> Self {
-        let mut palette_bytes = build_palette_bytes(palette);
-        palette_bytes.extend(build_palette_bytes(global_palette));
+        let mut palette_bytes = palette.to_rgba_bytes();
+        palette_bytes.extend(global_palette.to_rgba_bytes());
         let palette_tex: wgpu::Texture = device.create_texture(&wgpu::TextureDescriptor {
             label: Some("voxel_palette_tex"),
             size: wgpu::Extent3d {
@@ -236,17 +236,6 @@ impl PaletteSet {
     }
 }
 
-/// Convert a 256-entry RGB palette to row-major Rgba8UnormSrgb bytes (alpha = 255).
-/// Bytes are written as-is — the sRGB texture format handles decode on sample.
-fn build_palette_bytes(palette: &Palette) -> Vec<u8> {
-    let mut out: Vec<u8> = Vec::with_capacity(PALETTE_ENTRIES as usize * 4);
-    for i in 0..PALETTE_ENTRIES as usize {
-        let c = palette.colors[i];
-        out.extend_from_slice(&[c.r, c.g, c.b, 255]);
-    }
-    out
-}
-
 /// Build the per-house ramp texture as MAX_HOUSES × 16 RGBA bytes, row-major.
 /// Row 0 = theater palette's [16, 32) range (no-remap fallback for units
 /// whose `HouseColorIndex == NO_REMAP`). Sampling this row reproduces the
@@ -265,8 +254,10 @@ fn build_house_ramp_bytes(
     let row_bytes: usize = (RAMP_SIZE * 4) as usize;
     let mut out: Vec<u8> = vec![0u8; (MAX_HOUSES * RAMP_SIZE * 4) as usize];
     // Row 0: theater palette [16, 32) — no-remap fallback.
-    for i in 0..RAMP_SIZE as usize {
-        let c = palette.colors[16 + i];
+    for (i, c) in palette.colors()[16..16 + RAMP_SIZE as usize]
+        .iter()
+        .enumerate()
+    {
         let off = i * 4;
         out[off] = c.r;
         out[off + 1] = c.g;
@@ -301,21 +292,13 @@ mod tests {
     use crate::assets::pal_file::Color;
 
     fn dummy_palette() -> Palette {
-        let mut colors: [Color; 256] = [Color {
-            r: 0,
-            g: 0,
-            b: 0,
-            a: 255,
-        }; 256];
-        for (i, color) in colors.iter_mut().enumerate().take(32).skip(16) {
-            *color = Color {
-                r: i as u8,
-                g: 100,
-                b: 200,
-                a: 255,
-            };
-        }
-        Palette { colors }
+        Palette::from_rgb(|i| {
+            if (16..32).contains(&i) {
+                [i, 100, 200]
+            } else {
+                [0, 0, 0]
+            }
+        })
     }
 
     /// 16 distinct schemes (one per entry index) so each ramp differs and a

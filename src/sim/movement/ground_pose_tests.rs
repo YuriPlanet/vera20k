@@ -1248,7 +1248,7 @@ fn a_building_on_a_ramp_is_targeted_at_its_floor() {
         crate::sim::world::RevealOutcome::Revealed { .. }
     ));
     let coord = super::navcom::nav_target_coordinate(
-        crate::sim::components::NavTargetRef::Building { id: 1 },
+        crate::sim::components::NavTargetRef::Object { id: 1 },
         None,
         &sim,
         sim.resolved_terrain.as_ref(),

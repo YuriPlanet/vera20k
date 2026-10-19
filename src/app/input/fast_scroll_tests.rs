@@ -233,6 +233,7 @@ fn a_drag_between_offline_polls_remains_a_cancel_click() {
             startup_admitted: true,
             frame_stepping: false,
             paused: false,
+            scenario_paused: false,
             menu_open: false,
             session_mode: SessionMode::from_game_mode(mode),
             pacer_timing_admits: false,

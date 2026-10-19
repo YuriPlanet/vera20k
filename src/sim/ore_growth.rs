@@ -1666,7 +1666,7 @@ mod tests {
     use crate::sim::game_entity::GameEntity;
     use crate::sim::intern::StringInterner;
     use crate::sim::movement::locomotor::MovementLayer;
-    use crate::sim::occupancy::{CellListInsertion, OccupancyGrid};
+    use crate::sim::occupancy::{CellListInsertion, OccupancyGrid, RawCellOccupationGrid};
     use crate::sim::overlay_grid::OverlayGrid;
     use crate::sim::rng::SimRng;
 
@@ -1674,9 +1674,15 @@ mod tests {
         OreGrowthState::new(width, height)
     }
 
+    /// Loader-filled Clear cells that allow tiberium, with the retail
+    /// `[Clear]` row whose Track entry the new ore's Mark admission reads
+    /// (`0x004834A0`, called at `0x005FD00C`; `0x005FD04F` for TIB01).
     fn flat_clear_resolved_grid(width: u16, height: u16) -> ResolvedTerrainGrid {
+        use crate::map::resolved_terrain::TEST_RETAIL_CLEAR_SPEED_COSTS;
         crate::map::resolved_terrain::test_grid(width, height, |rx, ry| ResolvedTerrainCell {
             allows_tiberium: true,
+            speed_costs: TEST_RETAIL_CLEAR_SPEED_COSTS,
+            base_speed_costs: TEST_RETAIL_CLEAR_SPEED_COSTS,
             ..crate::map::resolved_terrain::test_loader_clear_cell(rx, ry)
         })
     }
@@ -2586,6 +2592,7 @@ SpreadPercentage=.06
         let interner = StringInterner::default();
         let entities = EntityStore::new();
         let occupancy = OccupancyGrid::new();
+        let raw_occupation = RawCellOccupationGrid::new();
 
         let run = |terrain_object_cells: &BTreeMap<(u16, u16), u64>| {
             let mut overlay_grid = OverlayGrid::new(8, 8);
@@ -2602,6 +2609,7 @@ SpreadPercentage=.06
             let live_objects = TiberiumPlacementObjectContext::new(
                 &entities,
                 &occupancy,
+                &raw_occupation,
                 &rules,
                 &interner,
                 terrain_object_cells,
@@ -2898,10 +2906,12 @@ SpreadPercentage=.06
         let interner = StringInterner::default();
         let entities = EntityStore::new();
         let occupancy = OccupancyGrid::new();
+        let raw_occupation = RawCellOccupationGrid::new();
         let terrain_object_cells = BTreeMap::new();
         let live_objects = TiberiumPlacementObjectContext::new(
             &entities,
             &occupancy,
+            &raw_occupation,
             &rules,
             &interner,
             &terrain_object_cells,
@@ -2975,6 +2985,92 @@ SpreadPercentage=.06
         assert_eq!(rng.logical_state(), expected_rng.logical_state());
     }
 
+    /// The new Overlay's `OverlayClass::Mark` asks
+    /// `CellClass::CheckCellPassability @ 0x004834A0` (called at `0x005FD00C`,
+    /// or `0x005FD04F` for TIB01; Track, both ignores), which still refuses a
+    /// landed aircraft's bit 0x40.
+    /// `CellClass::PlaceTiberium @ 0x00487190` then queues growth and stores
+    /// the amount on the cell without an identity, spending the same draws.
+    #[test]
+    fn scheduled_spread_places_no_ore_under_a_landed_aircraft() {
+        let (_ini, overlay_registry, tiberium_types) = tiberium_rebuild_fixture();
+        let tib01 = overlay_registry.id_for_name("TIB01").expect("TIB01");
+        let blocker = overlay_registry.id_for_name("GEM01").expect("GEM01");
+        let mut overlay_grid = OverlayGrid::new(8, 8);
+        overlay_grid.place_overlay(3, 3, tib01, 3);
+        block_all_neighbors_except(&mut overlay_grid, blocker, (3, 3), Some((4, 3)));
+        let terrain = flat_clear_resolved_grid(8, 8);
+        let rules_ini = IniFile::from_str(
+            "[InfantryTypes]\n[VehicleTypes]\n[AircraftTypes]\n[BuildingTypes]\n",
+        );
+        let rules = RuleSet::from_ini(&rules_ini).expect("rules");
+        let interner = StringInterner::default();
+        let entities = EntityStore::new();
+        let occupancy = OccupancyGrid::new();
+        let mut raw_occupation = RawCellOccupationGrid::new();
+        raw_occupation.mark_ground(4, 3, crate::sim::occupancy::OBJECT_OCCUPATION_BIT);
+        let terrain_object_cells = BTreeMap::new();
+        let live_objects = TiberiumPlacementObjectContext::new(
+            &entities,
+            &occupancy,
+            &raw_occupation,
+            &rules,
+            &interner,
+            &terrain_object_cells,
+        );
+        let mut state = make_state(8, 8);
+        state.reset_native_tiberium_classes(tiberium_types.len(), 10);
+        state.native_tiberium.classes[0]
+            .spread
+            .push(NativeTiberiumQueueEntry {
+                rx: 3,
+                ry: 3,
+                priority_bits: 0.0f32.to_bits(),
+            });
+        state.native_tiberium.classes[0]
+            .spread_bitmap
+            .insert((3, 3));
+        let mut rng = SimRng::new(13);
+        let mut expected_rng = rng.clone();
+        expected_rng.next_u32(); // SpreadProcessor budget.
+        expected_rng.next_range_u32(8); // Initial neighbor direction.
+        expected_rng.next_range_u32(12); // Flat variant.
+        let growth_priority_raw = expected_rng.next_u32();
+        let mut radar_dirty = Vec::new();
+        let mut radar_generation = 0;
+        let mut tactical_dirty = Vec::new();
+
+        let stats = state.tick_native_spread_driver(
+            &mut overlay_grid,
+            &overlay_registry,
+            &tiberium_types,
+            Some(&terrain),
+            &BTreeSet::new(),
+            Some(live_objects),
+            &mut rng,
+            200,
+            true,
+            true,
+            Some(&mut radar_dirty),
+            Some(&mut radar_generation),
+            Some(&mut tactical_dirty),
+        );
+
+        assert_eq!(stats.spread_calls, 1);
+        assert_eq!(overlay_grid.cell(4, 3).overlay_id, None);
+        assert_eq!(overlay_grid.cell(4, 3).overlay_data, 3);
+        let class = &state.native_tiberium_state().classes[0];
+        assert_eq!(class.growth.len(), 1);
+        assert_eq!(
+            class.growth.heap_entry(0).unwrap().priority_bits,
+            growth_queue_priority(200, growth_priority_raw).to_bits(),
+            "AddToGrowthQueue still runs after the refused Mark"
+        );
+        assert_eq!(radar_dirty, vec![(4, 3)]);
+        assert_eq!(tactical_dirty, vec![(4, 3)]);
+        assert_eq!(rng.logical_state(), expected_rng.logical_state());
+    }
+
     #[test]
     fn gsi_04_09_scheduled_spread_rejects_visible_live_building_target() {
         let (_ini, overlay_registry, tiberium_types) = tiberium_rebuild_fixture();
@@ -3002,6 +3098,7 @@ SpreadPercentage=.06
         );
         building.set_type_ref_for_test(interner.intern("GAPOWR"));
         entities.insert(building);
+        let raw_occupation = RawCellOccupationGrid::new();
         let mut occupancy = OccupancyGrid::new();
         occupancy.add(
             4,
@@ -3015,6 +3112,7 @@ SpreadPercentage=.06
         let live_objects = TiberiumPlacementObjectContext::new(
             &entities,
             &occupancy,
+            &raw_occupation,
             &rules,
             &interner,
             &terrain_object_cells,
@@ -3084,10 +3182,12 @@ SpreadPercentage=.06
         let interner = StringInterner::default();
         let entities = EntityStore::new();
         let occupancy = OccupancyGrid::new();
+        let raw_occupation = RawCellOccupationGrid::new();
         let terrain_object_cells = BTreeMap::new();
         let live_objects = TiberiumPlacementObjectContext::new(
             &entities,
             &occupancy,
+            &raw_occupation,
             &rules,
             &interner,
             &terrain_object_cells,

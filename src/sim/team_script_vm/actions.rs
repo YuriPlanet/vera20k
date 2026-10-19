@@ -29,19 +29,6 @@
 //!   building with [`target_building_pick`] too; no AIMD script names it,
 //!   but four scripts of the retail campaign map SOV02SMD.MAP do, whose
 //!   teams idle on it.
-//! - Action 14's passengers board through VERA's Boarding adapter
-//!   ([`crate::sim::passenger::begin_boarding`]), without the native radio
-//!   route: the Infantry destination setter's Enter arm contacts the
-//!   transport (`0x0051AC25..0x0051AD17`), and while it holds that contact
-//!   (`0x0065AE30`) action 14 orders no one else. While the adapter walks a
-//!   passenger, Mission_Enter (`0x004D9290`) is not run, so its DOCKING
-//!   probe and its Rate epilogue draw (RandomRanged(0, 2), Scenario stream)
-//!   are skipped each dispatch, as for the building-entry seeks
-//!   (`sim::building_entry`). Trigger: every retail transport team (16
-//!   TeamTypes) loading. Effect: native's passengers walk in one at a time;
-//!   VERA's are ordered one per update as each takes Enter, so they walk in
-//!   together and the team sets out sooner, and the Scenario stream misses
-//!   one draw per walking passenger per dispatch.
 //! - `Coordinate_Attack` keeps a cell target that only a terrain object
 //!   blocks: a team target holds no terrain object. Trigger: a cell target,
 //!   which no ported caller gives (`Greatest_Threat`'s wall fallback is not
@@ -163,12 +150,7 @@ fn nav_names(nav: NavTargetRef, target: TeamTarget) -> bool {
         (NavTargetRef::Cell { rx, ry }, TeamTarget::Cell { x, y }) => {
             rx == x as u16 && ry == y as u16
         }
-        (
-            NavTargetRef::Entity { id }
-            | NavTargetRef::Object { id }
-            | NavTargetRef::Building { id },
-            TeamTarget::Object(object),
-        ) => id == object,
+        (NavTargetRef::Object { id }, TeamTarget::Object(object)) => id == object,
         _ => false,
     }
 }
@@ -180,9 +162,7 @@ fn nav_target(nav: NavTargetRef) -> TeamTarget {
             x: rx as i16,
             y: ry as i16,
         },
-        NavTargetRef::Entity { id }
-        | NavTargetRef::Object { id }
-        | NavTargetRef::Building { id } => TeamTarget::Object(id),
+        NavTargetRef::Object { id } => TeamTarget::Object(id),
     }
 }
 
@@ -1028,12 +1008,9 @@ impl Simulation {
     /// the team as it boards, by its Conceal's Foot `Detach_All`,
     /// `0x004D9744`), a `TransportsReturnOnUnload=` TeamType's transport
     /// archives the cell holding its Location (`0x006ED43F..0x006ED47C`), and
-    /// the action is finished.
-    ///
-    /// VERA boards through the Boarding adapter
-    /// ([`crate::sim::passenger::begin_boarding`]), which opens no radio
-    /// contact, so the transport is never found in one here (module
-    /// residual).
+    /// the action is finished. An infantryman's destination setter makes the
+    /// transport his radio contact (`0x0051AC25..0x0051AD17`), so the next
+    /// member is ordered once he has boarded and his Limbo broke it.
     fn team_action_load_onto_transport(
         &mut self,
         team_id: u64,
@@ -1109,9 +1086,6 @@ impl Simulation {
                     registry,
                     frame_effects,
                 );
-                if let Some(entity) = self.substrate.entities.get_mut(member) {
-                    crate::sim::passenger::begin_boarding(entity, transport);
-                }
                 return;
             }
         }

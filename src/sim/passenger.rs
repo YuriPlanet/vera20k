@@ -13,6 +13,60 @@
 //! follow their Foot+0x30 link. This owner's Vec keeps that same head order.
 //! Building garrisons use a separate append-order occupants vector.
 //!
+//! ## The way aboard: RNG draws, timer writes and detaches
+//! An Enter order, team script action 14 and the Bio Reactor seek all take
+//! this one route; each step lists what it writes.
+//! - Order admission ([`can_enter_transport`]): the click's alliance test and
+//!   the carrier's CAN_LOAD, sending nothing; no writes.
+//! - The Infantry setter's Enter radio arm (`0x0051AC51..0x0051AD0F`): a
+//!   busy Unit or Building becomes his pending entry (`+0x500`), his
+//!   ArchiveTarget is cleared and Foot's setter takes NULL; a free Techno
+//!   is sent HELLO (a contact both ways) and DOCKING, and any answer but
+//!   ROGER or DOCKING BREAKs it (both ways).
+//! - The Unit setter: a transport whose first contact is an infantryman
+//!   BREAKs it when sent to a Techno it holds no contact with
+//!   (`0x00741AD1..0x00741B22`); its Enter arm parks a Unit or `UnitAbsorb=`
+//!   target in `+0x500` with the ArchiveTarget cleared (`0x00741C4F..
+//!   0x00741CCC`, `0x00741CE5..0x00741D0D`).
+//! - Every class setter call that takes a destination writes Foot's
+//!   movement timers `+0x640` and `+0x668` and clears `+0x6B7`
+//!   (`0x004D96C2..0x004D9707`).
+//! - A transport's DOCKING (`0x007377D8..0x00737A95`): one with no contact
+//!   HELLOs the sender; on Water or across zones it takes the sender as its
+//!   destination (its setter's writes) and answers DOCKING; otherwise it asks
+//!   NEED_TO_MOVE and sends MOVE_HERE with itself. The sender's Foot
+//!   receiver (`0x004D9139`) answers ALREADY_THERE in the transport's cell;
+//!   elsewhere it may queue Move (Guard with nothing queued), commences a
+//!   queued Enter when ready, gives the transport to its own class setter
+//!   (that setter's writes) and writes its UpdateTimer `{Frame, 0}`
+//!   (`0x004D91F1`). Mission_Enter's dispatch epilogue overwrites that
+//!   timer; at order time (the Infantry setter's DOCKING) it stands. A
+//!   MOVE_HERE not answered ROGER makes the transport BREAK the sender
+//!   (`0x00737A7F`), and it still answers ROGER.
+//! - Mission_Enter (`0x004D9290`), each dispatch: DOCKING to Contacts[0] or
+//!   the ArchiveTarget, and on any answer but ROGER, untethered, BREAK and
+//!   idle (Guard or AreaGuard queued); with neither, the pending entry is
+//!   walked to (its setter, Move queued; a dead one clears `+0x500`) or the
+//!   Foot idles. Then the timer: `ftol(Rate * 900)` plus one Scenario
+//!   `RandomRanged(0, 2)` (`0x004D946C..0x004D9497`).
+//! - FootClass::AI's TryEnterTransport (`0x0070D7E0`) for a `+0x500` entry:
+//!   HELLO; CAN_LOAD ROGER queues Enter, sets the destination and clears
+//!   `+0x500`; any other answer queues NONE, sets NULL, clears `+0x500` and
+//!   BREAKs.
+//! - Arrival (`sim::movement::per_cell`): an infantryman's carrier's Tag
+//!   hears event 1, whose triggers may act; the Infantry building arm sends
+//!   DOCK_NOW (a depot queues its Repair and his Sleep, a refinery his
+//!   Unload). A refusal sets NULL, queues Guard and Scatters from no
+//!   coordinate: one Scenario `RandomRanged(0, 4)` once an infantryman's
+//!   Scatter is admitted (`0x0051D2D9`), none for a Unit (`0x00743BE0`).
+//! - [`board_passenger`]: the ArchiveTarget, OnBridge, `+0xC4` and the
+//!   gattling spin cleared, a captive freed, then Limbo, which BREAKs every
+//!   contact and conceals him; the arm's HELLO or house power
+//!   invalidation, AddPassenger, an open-topped rider's Guard orders and
+//!   logic entry, a gunner's weapon, and Stop_Moving after the building arm.
+//! - Action 14 orders one member at a time; its next comes once his Limbo
+//!   broke the transport's contact.
+//!
 //! ## Dependency rules
 //! - Part of sim/ — depends on rules/ (ObjectType), sim/game_entity, sim/entity_store.
 //! - sim/ NEVER depends on render/, ui/, audio/, net/.
@@ -89,9 +143,6 @@ pub struct PassengerCargo {
 enum CarrierRelation {
     #[default]
     Outside,
-    Boarding {
-        target_transport_id: u64,
-    },
     Inside {
         transport_id: u64,
         open_topped: bool,
@@ -283,12 +334,7 @@ impl Simulation {
         let Some(transport) = self.substrate.entities.get_mut(transport_id) else {
             return false;
         };
-        if transport.category() == EntityCategory::Structure
-            && !transport.passenger_role.is_transport()
-        {
-            return false;
-        }
-        // Every native Foot has CargoClass even when Type.Passengers is0.
+        // Every native Techno has CargoClass even when Type.Passengers is0.
         // Make its empty hold at the first raw Cargo attach; ordinary
         // capacity admission remains a caller policy.
         let cargo = transport.passenger_role.ensure_hold();
@@ -303,8 +349,9 @@ impl Simulation {
 /// An entity's passenger relation and, for a type that holds passengers, its
 /// cargo hold. Natively these are separate Techno fields: the CargoClass
 /// `Passengers` (`TechnoClass+0x114`, [`PassengerCargo`]), the Transporter
-/// (`+0x11C`) and InOpenToppedTransport (`+0x82`). VERA keeps a hold only for
-/// a type that can carry passengers, and a transport's own relation to the
+/// (`+0x11C`) and InOpenToppedTransport (`+0x82`). VERA creates a hold for
+/// configured carriers or when native raw Cargo admission first uses it,
+/// and keeps a transport's own relation to the
 /// hull it rides in inside that hold. This module owns all of it: other
 /// modules read it through these methods and change it through its boarding,
 /// unload and teardown methods.
@@ -314,8 +361,8 @@ pub struct PassengerRole {
 }
 
 /// The stored shape of a [`PassengerRole`]. A transport keeps its own cargo
-/// while boarding or riding in another hull; other entities keep the
-/// Boarding/Inside representations.
+/// while riding in another hull; other entities keep the Inside
+/// representation.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 enum Role {
     /// Entity has no passenger/transport role. Most entities are this.
@@ -323,8 +370,6 @@ enum Role {
     None,
     /// Entity is a transport or garrisonable building that can hold passengers.
     Transport { cargo: PassengerCargo },
-    /// Entity is approaching a transport to board it.
-    Boarding { target_transport_id: u64 },
     /// Entity is inside a transport (hidden from map, not targetable).
     Inside {
         transport_id: u64,
@@ -348,23 +393,6 @@ impl PassengerRole {
         }
     }
 
-    /// Live transport destination held by the boarding adapter, including a
-    /// vehicle which itself retains passengers.
-    pub fn boarding_transport_id(&self) -> Option<u64> {
-        match &self.role {
-            Role::Boarding {
-                target_transport_id,
-            } => Some(*target_transport_id),
-            Role::Transport { cargo } => match cargo.carrier_relation {
-                CarrierRelation::Boarding {
-                    target_transport_id,
-                } => Some(target_transport_id),
-                _ => None,
-            },
-            _ => None,
-        }
-    }
-
     /// Transporter+11C and InOpenToppedTransport+82, independent of an entity's
     /// own CargoClass. Callers do not inspect the storage representation.
     pub fn inside_transport(&self) -> Option<(u64, bool)> {
@@ -382,27 +410,6 @@ impl PassengerRole {
             },
             _ => None,
         }
-    }
-
-    /// Begin or replace a boarding request without replacing the owned hold.
-    /// Already attached passengers cannot start a second relationship.
-    pub(crate) fn set_boarding(&mut self, target_transport_id: u64) -> bool {
-        if self.is_inside_transport() {
-            return false;
-        }
-        match &mut self.role {
-            Role::Transport { cargo } => {
-                cargo.carrier_relation = CarrierRelation::Boarding {
-                    target_transport_id,
-                };
-            }
-            role => {
-                *role = Role::Boarding {
-                    target_transport_id,
-                }
-            }
-        }
-        true
     }
 
     /// Successful attachment or departure rollback. Cargo and its gunner
@@ -456,11 +463,6 @@ impl PassengerRole {
     pub(crate) fn ensure_hold(&mut self) -> &mut PassengerCargo {
         if !self.is_transport() {
             let carrier_relation = match self.role {
-                Role::Boarding {
-                    target_transport_id,
-                } => CarrierRelation::Boarding {
-                    target_transport_id,
-                },
                 Role::Inside {
                     transport_id,
                     open_topped,
@@ -533,22 +535,14 @@ impl PassengerRole {
             },
         }
     }
-
-    /// A fixture's Foot walking to board `target_transport_id`, replacing
-    /// any hold.
-    #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn boarding_for_test(target_transport_id: u64) -> Self {
-        Self {
-            role: Role::Boarding {
-                target_transport_id,
-            },
-        }
-    }
 }
 
-/// The shared order/UI admission adapter. Mobile Unit radio admission is owned
-/// by `radio::receive::unit_can_enter_radio` (original737430 message0F).
-/// Building garrison admission keeps its existing CanBeOccupiedBy owner.
+/// The shared order/UI admission adapter, the click's ENTER
+/// (`InfantryClass::What_Action_OnObject` `0x0051ED10..0x0051EE3B`): the
+/// passenger's house allied with the carrier's, then the carrier's CAN_LOAD
+/// ([`crate::sim::radio::receive::can_load_query`], each class receiver's
+/// answer), whose ROGER is ENTER. Building garrison admission keeps its
+/// existing CanBeOccupiedBy owner.
 pub fn can_enter_transport(
     sim: &Simulation,
     rules: &RuleSet,
@@ -580,36 +574,15 @@ pub fn can_enter_transport(
             sim,
         );
     }
-    if transport.category() == EntityCategory::Unit {
-        // Infantry51ED10 asks the actor's alliance before issuing the radio;
-        // Unit7375AD then independently asks the receiver's alliance.
-        return crate::sim::combat::combat_weapon::is_ally_by_object(
-            Some(&sim.house_alliances),
-            &sim.interner,
-            passenger.owner(),
-            transport.owner(),
-        ) && crate::sim::radio::receive::unit_can_enter_radio(
-            sim,
-            transport_id,
-            Some(passenger_id),
-            rules,
-        ) == crate::sim::radio::RadioResponse::Roger;
-    }
-    // The building absorber and nonretail aircraft adapters retain their
-    // existing admission; their separate receiver mechanisms are outside this
-    // mobile Unit chain.
-    if passenger.owner() != transport.owner()
-        || (transport.category() == EntityCategory::Structure && !transport.building_online())
-        || passenger.parasite.eater().is_some()
-        || (transport.category() != EntityCategory::Aircraft
-            && passenger
-                .capture_manager
-                .as_ref()
-                .is_some_and(|manager| manager.has_any()))
-    {
-        return false;
-    }
-    cargo.can_accept(passenger_obj.size)
+    // Infantry51ED10 asks the actor's alliance before issuing the radio; the
+    // receiver then asks its own (Building 0x0043C2D0, Unit 0x00737430).
+    crate::sim::combat::combat_weapon::is_ally_by_object(
+        Some(&sim.house_alliances),
+        &sim.interner,
+        passenger.owner(),
+        transport.owner(),
+    ) && crate::sim::radio::receive::can_load_query(sim, transport_id, passenger_id, rules)
+        == crate::sim::radio::RadioResponse::Roger
 }
 
 /// `BuildingClass::CanBeOccupiedBy @ 0x00457CE0` for an infantryman: the
@@ -744,429 +717,214 @@ fn garrison_parts<'a>(
     ))
 }
 
-/// `InfantryClass::PerCellProcess` `0x0051A258..0x0051A2A7`: with the
-/// building as NavCom (or Target) and mission Enter, the infantry boards the
-/// moment `CellClass::GetBuilding` of its *current* cell is that building,
-/// which is any cell of the foundation. The walk itself targets the
-/// building's `+0x4C` coordinate, the foundation centre for a garrison
-/// (`building_coordinate::navigation_coordinate`), so a passenger that stops
-/// at the centre of a 4x4 is two cells from the origin and never adjacent to
-/// it. Vehicle transports take the other arm (`0x0051A3A0..0x0051A3DF`, same
-/// cell as the transport's `GetMapCoords`).
-fn passenger_stands_on_garrison(passenger_cell: (u16, u16), building: &GameEntity) -> bool {
-    let (width, height) =
-        crate::rules::foundation::foundation_dimensions(building.type_facts.foundation());
-    let (rx, ry) = (building.position.rx(), building.position.ry());
-    passenger_cell.0 >= rx
-        && u32::from(passenger_cell.0) < u32::from(rx) + u32::from(width)
-        && passenger_cell.1 >= ry
-        && u32::from(passenger_cell.1) < u32::from(ry) + u32::from(height)
+/// The class `PerCellProcess` arm that takes a passenger aboard. Each runs
+/// [`board_passenger`], which keeps their native differences.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum BoardingArm {
+    /// `InfantryClass::PerCellProcess`'s building arm, after the building
+    /// answered DOCK_NOW (`0x0051A2AD..0x0051A39D`).
+    InfantryBuilding,
+    /// Its transport arm, after the transport answered CAN_LOAD
+    /// (`0x0051A3FC..0x0051A485`).
+    InfantryTransport,
+    /// `UnitClass::PerCellProcess`'s `UnitAbsorb=` arm, after CAN_LOAD
+    /// (`0x0073A28A..0x0073A31C`).
+    UnitAbsorber,
+    /// Its transport arm, after CAN_LOAD (`0x0073A6E8..0x0073A793`).
+    UnitTransport,
 }
 
-/// Hands a Foot ordered to enter `target` to the Boarding adapter
-/// ([`tick_passenger_system`]), which walks it in without the native radio
-/// route; building-entry seeks (`sim::building_entry`) and team script
-/// action 14 start one here. A Foot's own CargoClass survives the request:
-/// Unit74029F..740375 does not require an empty passenger hold.
-pub(crate) fn begin_boarding(foot: &mut GameEntity, target: u64) {
-    if matches!(
-        foot.category(),
-        EntityCategory::Infantry | EntityCategory::Unit
-    ) {
-        foot.passenger_role.set_boarding(target);
+impl BoardingArm {
+    /// The building arms add through CargoClass alone; the transport arms
+    /// through `TechnoClass::AddPassenger` (vt+0x394).
+    fn building(self) -> bool {
+        matches!(self, Self::InfantryBuilding | Self::UnitAbsorber)
     }
 }
 
-/// Advance legacy building-entry adapters and retire invalid boarding orders.
-/// Mobile passengers attach in their class PerCell arrival, not this late
-/// frame phase; a still-live pending entry can be waiting on a radio slot.
+/// The admission an arm runs once its carrier said yes; its gates belong to
+/// the class arrival (`sim::movement::per_cell`):
+/// - every arm but the Infantry building one clears the ArchiveTarget
+///   (`Set_ArchiveTarget(0)`) and OnBridge; all zero the mission tick count
+///   and the gattling spin (`+0xC4`, `SetValue(0)`, `SetStage(0)`) and release
+///   a captive (`CaptureManager::Free`);
+/// - an `InfantryAbsorb=` building plays `EnterBioReactorSound=` at the
+///   infantryman and sets `+0x439` before Limbo (`0x0051A2DF..0x0051A30F`),
+///   whose house-total tail follows it (`0x0051A327..0x0051A348`);
+/// - Limbo (vt+0xD4) BREAKs every contact;
+/// - the Infantry building arm then HELLOs a building that does not absorb
+///   infantry, or invalidates an `InfantryAbsorb=` one's house power when
+///   its `ExtraPower=` is positive (`0x0051A34F..0x0051A37C`); the Unit
+///   absorber arm invalidates it after the add (`0x0073A2F4..0x0073A30E`);
+/// - the passenger joins the cargo, a transport's through AddPassenger,
+///   which plays `EnterTransportSound=` and takes a `Gunner=` transport's
+///   gunner; an `OpenTopped=` transport makes it a rider
+///   (`SetInOpenTransport @ 0x00710470`);
+/// - the Infantry building arm stops his movement (`0x004DF0D0`), and an
+///   open-topped Unit's own riders let go of their targets
+///   (`0x0073A76E..0x0073A77C`).
 ///
-/// Nothing unloads here: a garrison's Unload is the building's mission
-/// (`BuildingClass::Mission_Unload @ 0x0044D880`, `sim::world::techno_ai`)
-/// and a vehicle or aircraft transport's is `crate::sim::transport_unload`.
-/// Garrison allegiance belongs to the building's own AI tail.
-///
-/// Mobile infantry Enter and garrison Capture arrive through PerCell. The
-/// remaining Boarding adapters still run here. RESIDUAL: a building Enter
-/// adapter reached before its receiver's native AI turn can take effect a
-/// frame late. Its separate arrival integration is excluded movement work.
-pub fn tick_passenger_system(
-    sim: &mut Simulation,
-    rules: &RuleSet,
-    registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
-    effects: FrameEffects<'_>,
-) {
-    let order = sim.live_object_order_snapshot();
-    for entity_id in order {
-        if sim.substrate.entities.get(entity_id).is_none() {
-            continue;
-        }
-
-        // Boarding is the passenger's own mission and unloading the
-        // building's; a warped object runs neither (`GameEntity::ai_frozen`).
-        let frozen = sim
-            .substrate
-            .entities
-            .get(entity_id)
-            .is_some_and(GameEntity::ai_frozen);
-        if !frozen
-            && sim
-                .substrate
-                .entities
-                .get(entity_id)
-                .is_some_and(|e| e.passenger_role.boarding_transport_id().is_some())
-        {
-            process_boarding_passenger(
-                sim,
-                rules,
-                entity_id,
-                BoardingVisit::LegacyPhase,
-                registry,
-                effects,
-            );
-        }
-    }
-}
-
-/// Mobile Enter is dispatched by Infantry PerCell519630 or Unit739EC0,
-/// not by a later frame phase. The legacy phase retains building adapters
-/// and retires invalidated Boarding state; it cannot attach mobile passengers.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum BoardingVisit {
-    CellArrival,
-    LegacyPhase,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum BoardingOutcome {
-    Waiting,
-    Boarded,
-    Refused,
-}
-
-pub(crate) fn process_boarding_passenger(
+/// Every arm ends with the passenger's vt+0x11C, which repeats the
+/// discovery clear its Limbo already made, so nothing follows it here.
+/// Answers whether the passenger went in.
+pub(crate) fn board_passenger(
     sim: &mut Simulation,
     rules: &RuleSet,
     pax_id: u64,
-    visit: BoardingVisit,
+    carrier_id: u64,
+    arm: BoardingArm,
     registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     effects: FrameEffects<'_>,
-) -> BoardingOutcome {
-    let Some(transport_id) = sim
+) -> bool {
+    let Some(pax_size) = sim
         .substrate
         .entities
         .get(pax_id)
-        .and_then(|entity| entity.passenger_role.boarding_transport_id())
+        .map(|pax| sim.object_type(pax.type_ref(), rules).map_or(1, |o| o.size))
     else {
-        return BoardingOutcome::Waiting;
+        return false;
     };
-
-    let transport_alive = sim
+    let Some(carrier) = sim
         .substrate
         .entities
-        .get(transport_id)
-        .is_some_and(|t| t.is_alive() && !t.death.is_dying());
-    if !transport_alive {
-        if let Some(e) = sim.substrate.entities.get_mut(pax_id) {
-            e.passenger_role.clear_carrier_relation();
-        }
-        return BoardingOutcome::Waiting;
-    }
-
-    // Occupiers use Capture/PerCell519675, with no Boarding relation. An
-    // obsolete adapter relation cannot conceal one in the late Enter phase.
-    // Ordinary command admission no longer creates this relation for them.
-    if sim
-        .substrate
-        .entities
-        .get(transport_id)
-        .filter(|target| target.category() == EntityCategory::Structure)
-        .and_then(|target| sim.object_type(target.type_ref(), rules))
-        .is_some_and(|object| object.can_be_occupied)
-    {
-        sim.substrate
-            .entities
-            .get_mut(pax_id)
-            .unwrap()
-            .passenger_role
-            .clear_carrier_relation();
-        return BoardingOutcome::Refused;
-    }
-
-    // The mobile PerCellProcess branch enters only its live NavCom, on Enter
-    // (Infantry519630, 51A21F..51A252 and 51A3DA). The Boarding role is an
-    // adapter, not a second authority after a replacement Move/Stop order.
-    if sim
-        .substrate
-        .entities
-        .get(transport_id)
-        .is_some_and(|transport| transport.category() != EntityCategory::Structure)
-    {
-        let passenger = sim.substrate.entities.get(pax_id).unwrap();
-        let matches_destination = crate::sim::movement::nav_targets_same_receiver(
-            passenger.navigation.nav_com(),
-            crate::sim::components::NavTargetRef::object(transport_id),
-        );
-        // Unit741CB8 parks a mobile destination in Foot+500 until the
-        // shared pending-entry owner70D7E0 establishes its radio contact.
-        let pending_destination = passenger.pending_entry() == Some(transport_id);
-        let entering =
-            passenger.mission.effective().known() == Some(crate::sim::mission::MissionType::Enter);
-        let enter_pending =
-            passenger.mission.queued().known() == Some(crate::sim::mission::MissionType::Enter);
-        // Foot70D8F0 parks a busy waiter on Move while retaining +500.
-        // Only the canonical pending owner/retask can cancel that wait;
-        // the temporary mission does not retire its boarding adapter.
-        if !pending_destination && (!matches_destination || (!entering && !enter_pending)) {
-            sim.substrate
-                .entities
-                .get_mut(pax_id)
-                .unwrap()
-                .passenger_role
-                .clear_carrier_relation();
-            return BoardingOutcome::Waiting;
-        }
-        if !entering || !matches_destination {
-            return BoardingOutcome::Waiting;
-        }
-        if visit == BoardingVisit::LegacyPhase {
-            return BoardingOutcome::Waiting;
-        }
-        // Unit73A6AC requires Is_On_Radio65AD50 before asking CanEnter.
-        // Foot70D7E0 owns HELLO; a physical cell match cannot replace it.
-        if passenger.category() == EntityCategory::Unit
-            && !passenger.radio_contacts.contains(transport_id)
-        {
-            return BoardingOutcome::Waiting;
-        }
-    }
-
-    let (pax_rx, pax_ry) = match sim.substrate.entities.get(pax_id) {
-        Some(e) => (e.position.rx(), e.position.ry()),
-        None => return BoardingOutcome::Waiting,
+        .get(carrier_id)
+        .and_then(|carrier| Some((carrier.owner(), sim.object_type(carrier.type_ref(), rules)?)))
+        .map(|(owner, object)| {
+            (
+                owner,
+                object.open_topped,
+                object.gunner,
+                object.infantry_absorb,
+                object.extra_power > 0,
+            )
+        })
+    else {
+        return false;
     };
-    let arrived = match sim.substrate.entities.get(transport_id) {
-        Some(e) if e.category() == EntityCategory::Structure => {
-            passenger_stands_on_garrison((pax_rx, pax_ry), e)
+    let (carrier_owner, open_topped, gunner, infantry_absorb, extra_power) = carrier;
+    // Infantry51A38A adds to every building that admitted DOCK_NOW, including
+    // Hospital=yes with Passengers=0. The shared raw Cargo owner creates the
+    // empty hold lazily; configured capacity remains an admission policy.
+    let absorber_entry = arm == BoardingArm::InfantryBuilding && infantry_absorb;
+    // `0x0051A2EF..0x0051A30A`: Foot's GetCoords (`+0x48`) before Limbo,
+    // played with `VocClass::PlayAt @ 0x007509E0` once the add commits.
+    let bio_reactor_entry_sound = absorber_entry
+        .then(|| rules.general.enter_bio_reactor_sound.clone())
+        .flatten()
+        .and_then(|sound_id| {
+            sim.substrate.entities.get(pax_id).map(|passenger| {
+                (
+                    sound_id,
+                    crate::sim::movement::ground_pose::object_get_coords(
+                        passenger,
+                        sim.resolved_terrain.as_ref(),
+                    ),
+                )
+            })
+        });
+    if let Some(pax) = sim.substrate.entities.get_mut(pax_id) {
+        // `0x0051A3FF`, `0x0073A28E`, `0x0073A6EC`.
+        if arm != BoardingArm::InfantryBuilding {
+            pax.set_archive_target(None);
         }
-        Some(e) => {
-            // Infantry51A3C0..51A3D4 and Unit73A692..73A6A3 require equal
-            // GetMapCoords before radio CanEnter. Being adjacent is not arrival.
-            (pax_rx, pax_ry) == (e.position.rx(), e.position.ry())
-        }
-        None => return BoardingOutcome::Waiting,
-    };
-    if !arrived {
-        return BoardingOutcome::Waiting;
+        // Infantry `0x0051A2B0..0x0051A2BE` and `0x0051A40E..0x0051A41C`,
+        // Unit `0x0073A29E..0x0073A2B1` and `0x0073A6FC..0x0073A70F`.
+        pax.mission.clear_ai_counter();
+        pax.gattling.set_value(0);
+        pax.gattling.set_stage(0);
     }
-
-    let pax_type_str = sim
+    // `0x0051A2DA`, `0x0051A438`, `0x0073A2CD`, `0x0073A72B`.
+    if let Some(controller) = sim
         .substrate
         .entities
         .get(pax_id)
-        .map(|e| sim.interner.resolve(e.type_ref()).to_string())
-        .unwrap_or_default();
-    let transport_type_str = sim
-        .substrate
-        .entities
-        .get(transport_id)
-        .map(|e| sim.interner.resolve(e.type_ref()).to_string())
-        .unwrap_or_default();
-
-    let pax_size = rules.object(&pax_type_str).map(|obj| obj.size).unwrap_or(1);
-    let transport_obj = rules.object(&transport_type_str);
-    let transport_gunner = transport_obj.map(|obj| obj.gunner).unwrap_or(false);
-    let transport_open_topped = transport_obj.map(|obj| obj.open_topped).unwrap_or(false);
-    let infantry_absorber_entry =
-        sim.substrate
-            .entities
-            .get(transport_id)
-            .is_some_and(|transport| {
-                transport.category() == EntityCategory::Structure
-                    && sim
-                        .substrate
-                        .entities
-                        .get(pax_id)
-                        .is_some_and(|passenger| passenger.category() == EntityCategory::Infantry)
-                    && transport_obj.is_some_and(|object| object.infantry_absorb)
-            });
-
-    let can_board = if sim
-        .substrate
-        .entities
-        .get(transport_id)
-        .is_some_and(|target| target.category() == EntityCategory::Unit)
+        .and_then(|pax| pax.mind_control.controller())
     {
-        // Infantry51A3ED transmits0F before attachment. Unit737430's
-        // receiver owns current cargo, house and cell admission; a queued
-        // command's earlier capacity query cannot replace this transaction.
-        crate::sim::radio::transmit(
-            sim,
-            pax_id,
-            transport_id,
-            crate::sim::radio::RadioMessage::CanEnter,
-            crate::sim::radio::RadioPayload::default(),
-            Some(rules),
-            effects,
-        ) == crate::sim::radio::RadioResponse::Roger
+        sim.free_unit(controller, pax_id, rules, registry, effects);
+    }
+    // Add_Tracking skips its house-total arm while `+0x439` is set and keeps
+    // the per-type count; the post-Limbo tail removes the old `+0x2F4`
+    // contribution and clears `+0x438`.
+    if absorber_entry {
+        sim.set_infantry_absorber_entry(pax_id, true);
+    }
+    let context = UninitContext::new(Some(rules), registry).with_effects(effects);
+    if sim.techno_limbo_with_context(pax_id, context) != ConcealOutcome::Concealed {
+        if absorber_entry {
+            sim.set_infantry_absorber_entry(pax_id, false);
+        }
+        return false;
+    }
+    if absorber_entry {
+        sim.account_infantry_absorber_entry(pax_id);
+    }
+    match arm {
+        BoardingArm::InfantryBuilding if !infantry_absorb => {
+            crate::sim::radio::transmit(
+                sim,
+                pax_id,
+                carrier_id,
+                crate::sim::radio::RadioMessage::Hello,
+                crate::sim::radio::RadioPayload::default(),
+                Some(rules),
+                effects,
+            );
+        }
+        BoardingArm::InfantryBuilding if extra_power => {
+            sim.invalidate_house_power(carrier_owner, false);
+        }
+        _ => {}
+    }
+    // RESIDUAL: native clears OnBridge before Limbo (`0x0051A407`,
+    // `0x0073A297`, `0x0073A6F5`), whose Pick_Up unlinks from the list
+    // OnBridge names (`0x005687F0` -> RemoveContent `0x0047EA90`), so a
+    // passenger boarding from a cell's bridge list stays linked there. VERA
+    // clears it after Limbo, which unlinks it. Trigger: boarding with
+    // OnBridge set, from a bridge deck or as a trooper Paradrop refused over
+    // a bridge. Effect: native leaves the passenger in that cell's bridge
+    // list. Frequency: rare. Risk: a later pass over that list meets the
+    // passenger.
+    if arm != BoardingArm::InfantryBuilding
+        && let Some(pax) = sim.substrate.entities.get_mut(pax_id)
+    {
+        pax.on_bridge.store(false);
+    }
+    //4733A0 repeats the head's virtual Limbo before its unconditional
+    //prepend.
+    let boarded = sim.add_cargo_passenger_chain(carrier_id, &[(pax_id, pax_size)], context);
+    // The admitted carrier survives Limbo; Cargo creates its hold if needed.
+    debug_assert!(boarded, "boarding admission changed during one transaction");
+    if !boarded {
+        // Recover the passenger rather than strand a concealed object if an
+        // invariant is broken. Reveal does not re-run Add_Tracking, so undo
+        // the entry's House+0x2F4 removal and +0x439 skip byte through the
+        // owner a successful unload uses.
+        if absorber_entry {
+            sim.restore_absorbed_infantry_tracking(pax_id);
+        }
+        let _ = sim.reveal_entity_with_context(pax_id, context);
+        return false;
+    }
+    if let Some(pax) = sim.substrate.entities.get_mut(pax_id) {
+        // VERA's carrier relation stands for Transporter (`+0x11C`, written
+        // by the transport arms at `0x0051A463` and `0x0073A768`) and for
+        // membership of a building's cargo. Boarding keeps the passenger's
+        // TarCom and passive flag: neither arm nor Limbo writes them.
+        pax.passenger_role
+            .set_inside_transport(carrier_id, open_topped && !arm.building());
+        if arm == BoardingArm::InfantryBuilding {
+            pax.navigation.stop_moving();
+        }
+    }
+    if arm.building() {
+        if arm == BoardingArm::UnitAbsorber && extra_power {
+            sim.invalidate_house_power(carrier_owner, false);
+        }
     } else {
-        sim.substrate
-            .entities
-            .get(transport_id)
-            .and_then(|target| target.passenger_role.cargo())
-            .is_some_and(|cargo| cargo.can_accept(pax_size))
-    };
-
-    if can_board {
-        // Native `InfantryClass::Per_Cell_Process @ 0x00519630` accepts the
-        // Bio Reactor's DOCK_NOW response at `0x0051A298..0x0051A2A7`, checks
-        // `InfantryAbsorb` at `0x0051A2DF..0x0051A2ED`, then calls Foot's
-        // GetCoords (`+0x48`, `0x0051A2EF..0x0051A2FC`) before Limbo and plays
-        // Rules+0x270 with `VocClass::PlayAt @ 0x007509E0`
-        // (`0x0051A304..0x0051A30A`). Retain that arriving-Foot position now;
-        // emit only after this Rust admission transaction commits below.
-        let bio_reactor_entry_sound = if infantry_absorber_entry {
-            rules
-                .general
-                .enter_bio_reactor_sound
-                .as_ref()
-                .and_then(|sound_id| {
-                    sim.substrate.entities.get(pax_id).map(|passenger| {
-                        (
-                            sound_id.clone(),
-                            crate::sim::movement::ground_pose::object_get_coords(
-                                passenger,
-                                sim.resolved_terrain.as_ref(),
-                            ),
-                        )
-                    })
-                })
-        } else {
-            None
-        };
-        // PerCellProcess zeroes the mission tick count and the gattling spin
-        // first (`+0xC4 = 0`, `SetValue(0)`, `SetStage(0)`: Unit
-        // `0x0073A6FC..0x0073A70F` and `0x0073A29E..0x0073A2B1`, Infantry
-        // `0x0051A40E..0x0051A41C` and `0x0051A2B0..0x0051A2BE`).
-        if let Some(pax) = sim.substrate.entities.get_mut(pax_id) {
-            // `Set_ArchiveTarget(0)` opens both (`0x0051A3FF`, `0x0073A6EC`).
-            pax.set_archive_target(None);
-            pax.mission.clear_ai_counter();
-            pax.gattling.set_value(0);
-            pax.gattling.set_stage(0);
-        }
-        // PerCellProcess releases a captive before it enters (`0x0051A2DA`,
-        // `0x0051A438`, `0x0073A2CD`, `0x0073A72B`); the transport radio gates
-        // leave only absorbing buildings to reach this.
-        if let Some(controller) = sim
-            .substrate
-            .entities
-            .get(pax_id)
-            .and_then(|pax| pax.mind_control.controller())
-        {
-            sim.free_unit(controller, pax_id, rules, registry, effects);
-        }
-        //Infantry51A37C/Unit73A30E invalidates positive ExtraPower
-        //absorbers before AddPassenger. Ordinary mobile transports do not
-        //write this House byte. The shared boarding owner handles both.
-        if let Some(owner) = sim
-            .substrate
-            .entities
-            .get(transport_id)
-            .and_then(|transport| {
-                sim.interner
-                    .object_type(transport.type_ref(), rules)
-                    .and_then(|object| {
-                        (transport.category() == EntityCategory::Structure
-                            && object.extra_power > 0
-                            && object.absorbs_passengers())
-                        .then_some(transport.owner())
-                    })
-            })
-        {
-            sim.invalidate_house_power(owner, false);
-        }
-        // Infantry::PerCellProcess writes `+0x439 = 1` immediately before
-        // Limbo for InfantryAbsorb (`0x0051A30F`). Add_Tracking then skips its
-        // house-total arm while retaining the per-type count; the explicit
-        // post-Limbo tail removes the old `+0x2F4` contribution and clears
-        // `+0x438` (`0x0051A327..0x0051A348`).
-        if infantry_absorber_entry {
-            sim.set_infantry_absorber_entry(pax_id, true);
-        }
-        // CargoClass::AddPassenger conceals the passenger before splicing it
-        // into the cargo chain. Techno Limbo owns BREAK, Mark removal, and
-        // LogicVector removal in that order.
-        let context = UninitContext::new(Some(rules), registry).with_effects(effects);
-        if sim.techno_limbo_with_context(pax_id, context) != ConcealOutcome::Concealed {
-            if infantry_absorber_entry {
-                sim.set_infantry_absorber_entry(pax_id, false);
-            }
-            return BoardingOutcome::Refused;
-        }
-        if infantry_absorber_entry {
-            sim.account_infantry_absorber_entry(pax_id);
-        }
-        // PerCellProcess clears OnBridge in both Unit arms (`0x0073A297`,
-        // `0x0073A6F5`) and the Infantry transport arm (`0x0051A407`), not the
-        // Infantry building arm (`0x0051A27F..`), so a transport's passenger
-        // leaves on the ground.
-        //
-        // RESIDUAL: native clears it before Limbo (`0x0051A441`), whose
-        // Pick_Up unlinks from the list OnBridge names (`0x005687F0` ->
-        // RemoveContent `0x0047EA90`), so a passenger boarding from a cell's
-        // bridge list stays linked there. VERA clears it after Limbo, which
-        // unlinks it. Trigger: boarding with OnBridge set, from a bridge deck
-        // or as a trooper Paradrop refused over a bridge. Effect: native
-        // leaves the passenger in that cell's bridge list. Frequency: rare.
-        // Risk: a later pass over that list meets the passenger.
-        let building_arm = sim
-            .substrate
-            .entities
-            .get(transport_id)
-            .is_some_and(|transport| transport.category() == EntityCategory::Structure);
-        if let Some(pax) = sim.substrate.entities.get_mut(pax_id)
-            && !(building_arm && pax.category() == EntityCategory::Infantry)
-        {
-            pax.on_bridge.store(false);
-        }
-        //4733A0 repeats the head's virtual Limbo before its unconditional
-        //prepend, after the class PerCellProcess admission prefix above.
-        let boarded = sim.add_cargo_passenger_chain(transport_id, &[(pax_id, pax_size)], context);
-        debug_assert!(boarded, "boarding admission changed during one transaction");
-        if !boarded {
-            // No mutation can race the single-threaded transaction, but recover
-            // the passenger rather than stranding a concealed object if an
-            // invariant is broken.
-            if infantry_absorber_entry {
-                // Reveal does not re-run Add_Tracking, so undo the entry's
-                // House+0x2F4 removal and +0x439 skip byte through the same
-                // owner the successful unload uses.
-                sim.restore_absorbed_infantry_tracking(pax_id);
-            }
-            let _ = sim.reveal_entity_with_context(pax_id, context);
-            return BoardingOutcome::Refused;
-        }
-
-        if let Some(pax) = sim.substrate.entities.get_mut(pax_id) {
-            // Boarding keeps the passenger's TarCom and passive flag:
-            // PerCellProcess's transport and building arms (Infantry
-            // `0x0051A3FC..0x0051A47E` and `0x0051A27F..0x0051A39D`, Unit
-            // `0x0073A28A..0x0073A31C` and `0x0073A6E8..0x0073A793`) write
-            // neither, nor does Limbo. A closed transport's rider has no AI
-            // turn to act on it; an open-topped one reaches the setter below.
-            pax.passenger_role
-                .set_inside_transport(transport_id, transport_open_topped);
-        }
-        // The transport arms reach vt+0x394 `TechnoClass::AddPassenger @
-        // 0x00710670` (Infantry `0x0051A46E`, Unit `0x0073A740`): after
-        // CargoClass::AddPassenger, the transport type's EnterTransportSound=
-        // plays at the transport's Location (`VocClass::PlayAtCoord @
-        // 0x00750E20`, flags 0). The building arms add through Cargo alone.
-        // Infantry's arm sets InOpenTransport (`0x0051A45E`) first and Unit's
-        // (`0x0073A75D`) after; the setter below plays no sound.
-        if !building_arm
-            && let Some(transport) = sim.substrate.entities.get(transport_id)
+        // `TechnoClass::AddPassenger @ 0x00710670` (Infantry `0x0051A46E`,
+        // Unit `0x0073A740`): the transport type's `EnterTransportSound=` at
+        // its Location (`VocClass::PlayAtCoord @ 0x00750E20`, flags 0).
+        if let Some(transport) = sim.substrate.entities.get(carrier_id)
             && let Some(sound_id) = sim
                 .object_type(transport.type_ref(), rules)
                 .and_then(|object| object.enter_transport_sound.clone())
@@ -1180,50 +938,42 @@ pub(crate) fn process_boarding_passenger(
             });
             effects.flush_sound(sim, Some(rules));
         }
-        if let Some((sound_id, coordinate)) = bio_reactor_entry_sound {
-            sim.sound_events.push(SimSoundEvent::voc_at_world_coord(
-                sound_id,
-                crate::sim::anim_class::AnimWorldCoord {
-                    x: coordinate.x,
-                    y: coordinate.y,
-                    z: coordinate.z,
-                },
-            ));
-        }
-        if transport_open_topped {
-            // `SetInOpenTransport @ 0x00710470` (Infantry `0x0051A45E`, Unit
-            // `0x0073A75D`): `+0x82` (the role's flag above), then
-            // `ResetOrdersToGuard` (vt+0x3D0) and the LogicClass add, so the
-            // rider keeps an AI turn and guards from inside.
-            // Infantry Limbo51DF10 keeps TarCom: 51A441 ->51A45E ->710484
-            // reaches the class NULL setter with the former target intact.
-            // Clearing it above would bypass the changed-target effects.
-            sim.reset_orders_to_guard(pax_id, rules, effects);
-            let registered = sim.register_open_topped_passenger(pax_id);
-            debug_assert!(
-                registered,
-                "accepted open-topped passenger must remain active"
-            );
-            // The rider stands where its walk into the transport ended, and
-            // every later transport `SetLocation` copies the transport's
-            // coordinate onto it (`FootClass::SetLocation 0x004DB810` ->
-            // `0x007104F0`). Boarding itself preserves the arrival subcell;
-            // the existing SetLocation rider owner follows later hull movement.
-        }
-        // A boarding open-topped unit's own riders let go of their targets
-        // (Unit `0x0073A76E..0x0073A77C`).
-        sim.open_topped_passengers_take_target(pax_id, None, rules, registry, effects);
-
-        if transport_gunner {
-            receive_gunner(sim, rules, transport_id, pax_id);
-        }
-        BoardingOutcome::Boarded
-    } else if let Some(pax) = sim.substrate.entities.get_mut(pax_id) {
-        pax.passenger_role.clear_carrier_relation();
-        BoardingOutcome::Refused
-    } else {
-        BoardingOutcome::Refused
     }
+    if let Some((sound_id, coordinate)) = bio_reactor_entry_sound {
+        sim.sound_events.push(SimSoundEvent::voc_at_world_coord(
+            sound_id,
+            crate::sim::anim_class::AnimWorldCoord {
+                x: coordinate.x,
+                y: coordinate.y,
+                z: coordinate.z,
+            },
+        ));
+    }
+    if open_topped && !arm.building() {
+        // `SetInOpenTransport @ 0x00710470` (Infantry `0x0051A45E`, before
+        // AddPassenger; Unit `0x0073A75D`, after): `+0x82` (the relation's
+        // flag above), then `ResetOrdersToGuard` (vt+0x3D0) and the
+        // LogicClass add, so the rider keeps an AI turn and guards from
+        // inside. Infantry Limbo51DF10 keeps TarCom: 51A441 ->51A45E ->710484
+        // reaches the class NULL setter with the former target intact.
+        sim.reset_orders_to_guard(pax_id, rules, effects);
+        let registered = sim.register_open_topped_passenger(pax_id);
+        debug_assert!(
+            registered,
+            "accepted open-topped passenger must remain active"
+        );
+        // The rider stands where its walk into the transport ended, and
+        // every later transport `SetLocation` copies the transport's
+        // coordinate onto it (`FootClass::SetLocation 0x004DB810` ->
+        // `0x007104F0`). Boarding itself preserves the arrival subcell.
+    }
+    if arm == BoardingArm::UnitTransport {
+        sim.open_topped_passengers_take_target(pax_id, None, rules, registry, effects);
+    }
+    if gunner && !arm.building() {
+        receive_gunner(sim, rules, carrier_id, pax_id);
+    }
+    true
 }
 
 /// `InfantryClass::AddGarrisonOccupant @ 0x00522910`, the one way into a
@@ -1619,52 +1369,35 @@ pub(crate) fn reconcile_civilian_garrison_owner_for_building(
     false
 }
 
-/// Test driver for one supplied cell arrival through the existing class owner,
-/// without running the separate Building AI ownership-reconciliation phase.
+/// Test driver for one supplied cell arrival through the class PerCell
+/// owner, for every infantryman on Enter or Capture, without running the
+/// separate Building AI ownership-reconciliation phase.
 #[cfg(any(test, feature = "test-support"))]
 fn tick_entry_arrival(sim: &mut Simulation, rules: &RuleSet) {
-    let boarding_ids: Vec<u64> = sim
+    use crate::sim::mission::MissionType;
+    let arriving: Vec<u64> = sim
         .substrate
         .entities
         .keys_sorted()
         .into_iter()
         .filter(|&id| {
             sim.substrate.entities.get(id).is_some_and(|entity| {
-                entity.passenger_role.boarding_transport_id().is_some()
-                    || entity.mission.effective().known()
-                        == Some(crate::sim::mission::MissionType::Capture)
+                matches!(
+                    entity.mission.effective().known(),
+                    Some(MissionType::Enter | MissionType::Capture)
+                )
             })
         })
         .collect();
-    for id in boarding_ids {
-        if sim
-            .substrate
-            .entities
-            .get(id)
-            .unwrap()
-            .mission
-            .effective()
-            .known()
-            == Some(crate::sim::mission::MissionType::Capture)
-        {
-            sim.per_cell_process(
-                id,
-                crate::sim::movement::PerCellReason::Arrival,
-                Some(rules),
-                None,
-                FrameEffects::default(),
-            )
-            .expect("supplied infantry arrival");
-        } else {
-            process_boarding_passenger(
-                sim,
-                rules,
-                id,
-                BoardingVisit::CellArrival,
-                None,
-                FrameEffects::default(),
-            );
-        }
+    for id in arriving {
+        sim.per_cell_process(
+            id,
+            crate::sim::movement::PerCellReason::Arrival,
+            Some(rules),
+            None,
+            FrameEffects::default(),
+        )
+        .expect("supplied infantry arrival");
     }
 }
 
@@ -1757,8 +1490,8 @@ ConditionYellow=50%
         stable_id
     }
 
-    /// Supply an infantry arrival: Capture for a garrison, Enter/Boarding for
-    /// other carriers, using the same production PerCell entry owner as the walk.
+    /// Supply an infantry arrival: Capture for a garrison, Enter for other
+    /// carriers, using the same production PerCell entry owner as the walk.
     fn spawn_entering_infantry(
         sim: &mut Simulation,
         rules: &RuleSet,
@@ -1783,9 +1516,6 @@ ConditionYellow=50%
             .get(transport_id)
             .and_then(|target| sim.object_type(target.type_ref(), rules))
             .is_some_and(|object| object.can_be_occupied);
-        if !capture {
-            ge.passenger_role = PassengerRole::boarding_for_test(transport_id);
-        }
         sim.substrate.entities.insert(ge);
         assert!(matches!(
             sim.reveal_entity_with_rules(stable_id, rules),
@@ -1868,5 +1598,26 @@ ConditionYellow=50%
             row["after"]["firing_latch"].as_u64().unwrap() as u8,
             "SetInOpenTransport710484 must observe the former TarCom",
         );
+    }
+
+    /// Retail depots and refineries have no configured passenger capacity.
+    /// Their absence of ordinary transport admission does not constrain the
+    /// raw Cargo leaf used by an already-admitted building entry.
+    #[test]
+    fn retail_no_service_building_carries_passengers() {
+        let Some(rules) = crate::rules::retail_ini_fixture::retail_rulesmd_rules() else {
+            return;
+        };
+        let mut services = 0;
+        for name in &rules.building_ids {
+            let Some(object) = rules.object(name) else {
+                continue;
+            };
+            if object.unit_repair || object.unit_reload || object.dock_unload {
+                services += 1;
+                assert!(object.passengers <= 0, "{name}");
+            }
+        }
+        assert!(services > 0, "retail has depots and refineries");
     }
 }

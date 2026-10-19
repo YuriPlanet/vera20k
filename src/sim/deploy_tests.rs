@@ -577,7 +577,6 @@ fn deploy_mcv_rejects_sloped_foundation_cell() {
 fn deploy_mcv_rejects_nonbuildable_land_type_foundation_cell() {
     let terrain = mcv_deploy_terrain_with(|cell| {
         cell.land_type = crate::sim::pathfinding::passability::LandType::Water.as_index();
-        cell.is_water = true;
     });
 
     let (applied, mcv_remains, sound_count) = deploy_mcv_with_terrain(terrain);

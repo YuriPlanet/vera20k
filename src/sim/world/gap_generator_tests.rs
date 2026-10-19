@@ -112,6 +112,19 @@ fn refresh(sim: &mut Simulation, rules: &RuleSet) {
     sim.refresh_fog(&vision::VisionConfig::default(), Some(rules));
 }
 
+/// The sight reveal of the Unlimbo `insert` stands for (`0x006F6D27`),
+/// through the sight owner.
+fn reveal_inserted_sight(sim: &mut Simulation, rules: &RuleSet, id: u64) {
+    sim.update_object_sight_in_view(
+        id,
+        0,
+        None,
+        &vision::VisionConfig::default(),
+        None,
+        UninitContext::with_rules(rules),
+    );
+}
+
 #[test]
 fn explicit_power_off_removes_gap_before_the_operational_visit_and_on_defers_add() {
     let (mut sim, rules, a, b, _) = fixture();
@@ -201,7 +214,10 @@ pub fn gap_operational_power_loss_views() -> Vec<(
     insert(&mut sim, 40, first, "POWER", 2, 2);
     insert(&mut sim, 50, last, "POWER", 2, 25);
     insert(&mut sim, 10, viewer, "SIGHT", 13, 13);
-    refresh(&mut sim, &rules); // original reveal
+    for id in [40, 50, 10] {
+        reveal_inserted_sight(&mut sim, &rules, id); // original reveal
+    }
+    refresh(&mut sim, &rules);
     insert(&mut sim, 20, first, "GAGAP", 10, 12);
     power(&mut sim, &rules);
     sim.visit_building_operational(20, &rules, None, crate::sim::world::FrameEffects::default()); // gap
@@ -439,7 +455,7 @@ fn gap_operational_owner_change_reveals_sight_before_new_gap_and_death_removes()
     assert!(sim.fog.gap_sources[&owner].is_empty());
     assert!(
         !sim.fog
-            .sight_admissions
+            .sight_admissions_for_test()
             .iter()
             .any(|(key, source)| key.0 == 1 && source.latched)
     );
