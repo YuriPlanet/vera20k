@@ -113,20 +113,29 @@ impl Simulation {
     }
 
     /// LightningStorm::Process53A747, after Dominator and before storm work.
-    pub(super) fn process_chrono_screen_effect(&mut self) {
+    /// Original53B560 also runs from Main_Tick55D83A while ordinary Logic
+    /// is paused. Return ordered effects to the calling frame/service owner.
+    pub fn process_chrono_screen_effect(&mut self) -> Vec<TriggerEffect> {
+        let mut effects = Vec::new();
         let was_locked = self.session.input_locked();
         let commands = self.session.step_chrono_screen_state();
         for command in commands {
-            self.publish_trigger_effects(vec![TriggerEffect::ChronoScreen { command }]);
+            match command {
+                ChronoScreenCommand::Pause => effects.extend(self.pause_scenario(0)),
+                ChronoScreenCommand::Finish => effects.extend(self.resume_scenario()),
+                _ => {}
+            }
+            effects.push(TriggerEffect::ChronoScreen { command });
             if command == ChronoScreenCommand::Finish
                 && !self.session.chrono_screen().prior_input_locked()
             {
-                self.publish_trigger_effects(vec![TriggerEffect::InputLockChanged {
+                effects.push(TriggerEffect::InputLockChanged {
                     locked: false,
                     was_locked,
-                }]);
+                });
             }
         }
+        effects
     }
 }
 

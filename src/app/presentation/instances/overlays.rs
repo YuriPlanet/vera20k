@@ -263,6 +263,17 @@ pub(crate) fn build_display_effect_instances(
         .and_then(|name| sim.interner.get(name));
     let local_owner = input.local_owner;
     for &stable_id in sim.display_layers().ordered_ids() {
+        if let Some(light) = sim.building_spotlight(stable_id, input.rules) {
+            super::particles::build_spotlight_instance(
+                input,
+                stable_id,
+                light,
+                &context,
+                ground_objects,
+                ground_order,
+            );
+            continue;
+        }
         if let Some(system) = sim.particle_systems().get(stable_id) {
             super::particles::build_particle_system_instance(
                 input,

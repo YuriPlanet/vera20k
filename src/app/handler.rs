@@ -972,13 +972,6 @@ impl ApplicationHandler for App {
                     state.platform.window.request_redraw();
                     return;
                 }
-                if state.frontend.screen == GameScreen::InGame
-                    && state.match_state.match_presentation.in_game_menu
-                        == crate::ui::pause_menu::InGameMenuState::Diplomacy
-                {
-                    crate::app::input::diplomacy::wheel(state, lines);
-                    return;
-                }
                 if state.frontend.screen == GameScreen::MainMenu
                     && Self::native_skirmish_shell_active(state)
                     && Self::handle_skirmish_shell_mouse_wheel(state, lines)

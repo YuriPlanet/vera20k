@@ -171,15 +171,25 @@ impl AcosTable {
     /// minus four times that offset, subtracted from double pi/2. Returns the
     /// entry index with the angle.
     pub(crate) fn acos_lookup(&self, argument: X87Value) -> (usize, X87Value) {
+        let (index, angle) = self.asin_lookup(argument);
+        (
+            index,
+            X87Chop53::sub(X87Chop53::load_f64(ACOS_PI_HALF).unwrap(), angle),
+        )
+    }
+
+    /// Original AsinFromTable4CAD80: current double argument, native index,
+    /// and the raw arcsine entry (Acos4CADB0 subtracts this from pi/2).
+    pub(crate) fn asin_lookup(&self, argument: X87Value) -> (usize, X87Value) {
         let argument = X87Chop53::store_f64(argument)
             .and_then(X87Chop53::load_f64)
-            .expect("Acos_lookup takes a finite double");
+            .expect("AsinFromTable takes a finite double");
         let scaled = X87Chop53::mul(
             X87Chop53::add(argument, X87Chop53::load_i32(1)),
             X87Chop53::load_f32(ACOS_INDEX_SCALE).expect("finite binary32 scale"),
         );
         let index = X87Chop53::ftol_i32_low_masked(scaled).wrapping_neg() as usize;
-        (index, self.lookup_angle(index))
+        (index, table_value(self.entries[index]))
     }
 
     /// `Acos_lookup` for a NaN argument (a native 0/0): `Math::ftol` returns the

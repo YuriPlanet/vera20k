@@ -79,6 +79,15 @@ pub(super) fn follow_selection_writes(
             .super_weapon(sim.interner.resolve(*sw_type))
             .map(|sw| sw.kind)
         {
+            Some(SuperWeaponKind::GenericWarhead | SuperWeaponKind::UnitDelivery) => {
+                // Ares new-type cleanup only clears the fired selection:
+                // an automatic launch must not disarm a different SW.
+                if selected
+                    .is_some_and(|name| name.eq_ignore_ascii_case(sim.interner.resolve(*sw_type)))
+                {
+                    *targeting = None;
+                }
+            }
             Some(SuperWeaponKind::ChronoSphere) => {
                 *targeting = chrono_warp_selection(rules)
                     .map(|name| TargetingMode::SuperWeapon(name.to_string()));
@@ -141,6 +150,54 @@ mod tests {
 
     fn warp_selected() -> Option<TargetingMode> {
         Some(TargetingMode::SuperWeapon("ChronoWarpSpecial".to_string()))
+    }
+
+    #[test]
+    fn extensions_only_clear_the_matching_local_selection() {
+        for kind in ["GenericWarhead", "UnitDelivery"] {
+            let rules = RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(&format!(
+            "[SuperWeaponTypes]\n0=Strike\n1=Other\n[Strike]\nType={kind}\n[Other]\nType=GenericWarhead\n",
+        ))).unwrap();
+            let mut sim = Simulation::with_seed(0);
+            let local = sim.interner.intern("Local");
+            let remote = sim.interner.intern("Remote");
+            let sw_type = sim.interner.intern("Strike");
+            let launched = |owner| SimSoundEvent::SuperWeaponLaunched {
+                owner,
+                sw_type,
+                rx: 10,
+                ry: 10,
+            };
+            let mut selected = Some(TargetingMode::SuperWeapon("Other".to_owned()));
+            follow_selection_writes(
+                &mut selected,
+                &[launched(local)],
+                &sim,
+                &rules,
+                Some("Local"),
+            );
+            assert_eq!(
+                selected,
+                Some(TargetingMode::SuperWeapon("Other".to_owned()))
+            );
+            selected = Some(TargetingMode::SuperWeapon("Strike".to_owned()));
+            follow_selection_writes(
+                &mut selected,
+                &[launched(remote)],
+                &sim,
+                &rules,
+                Some("Local"),
+            );
+            assert!(selected.is_some());
+            follow_selection_writes(
+                &mut selected,
+                &[launched(local)],
+                &sim,
+                &rules,
+                Some("Local"),
+            );
+            assert!(selected.is_none());
+        }
     }
 
     /// Case 3 selects the Chrono Warp for its player (`0x006CC46E`), case 4

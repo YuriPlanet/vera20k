@@ -68,6 +68,10 @@ pub(crate) struct MatchPresentationState {
     pub(crate) electric_bolts: super::electric_bolts::ElectricBolts,
     /// Process registry B04A60; ordinary kind1 beams copy their endpoints.
     pub(crate) radiation_beams: super::radiation_beams::RadiationBeams,
+    /// Process-lived native Tactical superweapon ring fade state. Map loads
+    /// replace map resources but keep this presentation owner alive.
+    pub(crate) superweapon_range_pulse:
+        crate::app::presentation::radial_indicators::SuperweaponRangePulse,
     /// Native process-lived FPS counter and detail hysteresis, never sim state.
     pub(crate) detail: std::cell::RefCell<super::detail::DetailState>,
     /// The client's AnimClass `+0x19D` for Supers' ChronoPlacement anims
@@ -82,6 +86,7 @@ pub(crate) struct MatchPresentationState {
     pub(crate) radar_anim: Option<crate::render::radar::anim::RadarAnimState>,
     pub(crate) radar_movies: crate::app::radar_movie::RadarMovies,
     pub(crate) chrono_screen: crate::app::chrono_screen::ChronoScreenPresentation,
+    pub(crate) scenario_pause: crate::app::match_runtime::scenario_pause::ScenarioPauseClock,
     /// Requested-versus-resolved atlas identity used to construct `radar_anim`.
     ///
     /// Kept beside the animation so tactical evidence never reconstructs
@@ -147,7 +152,6 @@ pub(crate) struct MatchPresentationState {
     pub(crate) in_game_menu: crate::ui::pause_menu::InGameMenuState,
     pub(crate) pause_menu_has_saves: bool,
     pub(crate) pause_menu_interaction: crate::ui::shell::pause_menu::PauseMenuInteraction,
-    pub(crate) diplomacy: Option<crate::ui::shell::diplomacy::DiplomacyState>,
     pub(crate) sound_dialog: Option<crate::ui::shell::sound::SoundState>,
     pub(crate) abort_buttons:
         crate::ui::shell::button::ShellButtonInteraction<crate::ui::shell::abort::AbortButton>,

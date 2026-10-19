@@ -54390,5 +54390,1293 @@
       "cubic_slot": "3C",
       "memory_surface": "007E2070"
     }
+  },
+  "superweapon_range": {
+    "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+    "fpcw": "0E3F",
+    "loop_controls": [
+      {
+        "name": "nuke_special_retail_7_2",
+        "range_f32_bits": "40E00000",
+        "line_multiplier": 2,
+        "radii_f32_bits": [
+          "00000000",
+          "3F000000",
+          "3F800000",
+          "3FC00000",
+          "40000000",
+          "40200000",
+          "40400000",
+          "40600000",
+          "40800000",
+          "40900000",
+          "40A00000",
+          "40B00000",
+          "40C00000",
+          "40D00000",
+          "40E00000"
+        ],
+        "pulse_draws": [
+          {
+            "name": "nuke_special_retail_7_2_draw_1",
+            "phase_direction_before": [
+              0,
+              1
+            ],
+            "phase_direction_after": [
+              10,
+              1
+            ],
+            "caller_factors": [
+              20,
+              30,
+              40,
+              50,
+              60,
+              70,
+              80,
+              90,
+              100,
+              90,
+              80,
+              70,
+              60,
+              50,
+              40
+            ],
+            "caller_rgb_after_adjust": [
+              [
+                31,
+                62,
+                94
+              ],
+              [
+                30,
+                60,
+                90
+              ],
+              [
+                28,
+                57,
+                86
+              ],
+              [
+                27,
+                54,
+                82
+              ],
+              [
+                26,
+                52,
+                78
+              ],
+              [
+                24,
+                49,
+                74
+              ],
+              [
+                23,
+                47,
+                70
+              ],
+              [
+                22,
+                44,
+                66
+              ],
+              [
+                21,
+                41,
+                62
+              ],
+              [
+                22,
+                44,
+                66
+              ],
+              [
+                23,
+                47,
+                70
+              ],
+              [
+                24,
+                49,
+                74
+              ],
+              [
+                26,
+                52,
+                78
+              ],
+              [
+                27,
+                54,
+                82
+              ],
+              [
+                28,
+                57,
+                86
+              ]
+            ],
+            "radial_calls": [
+              {
+                "return_address": "0x006DC37E",
+                "radius_f32_bits": "00000000",
+                "rgb_after_caller_adjust": [
+                  31,
+                  62,
+                  94
+                ],
+                "pixel_radius_and_truncate_flags": [
+                  0,
+                  0
+                ],
+                "draw_rays": 0,
+                "adjust_color": 1
+              },
+              {
+                "return_address": "0x006DC37E",
+                "radius_f32_bits": "3F000000",
+                "rgb_after_caller_adjust": [
+                  30,
+                  60,
+                  90
+                ],
+                "pixel_radius_and_truncate_flags": [
+                  0,
+                  0
+                ],
+                "draw_rays": 0,
+                "adjust_color": 1
+              },
+              {
+                "return_address": "0x006DC37E",
+                "radius_f32_bits": "3F800000",
+                "rgb_after_caller_adjust": [
+                  28,
+                  57,
+                  86
+                ],
+                "pixel_radius_and_truncate_flags": [
+                  0,
+                  0
+                ],
+                "draw_rays": 0,
+                "adjust_color": 1
+              },
+              {
+                "return_address": "0x006DC37E",
+                "radius_f32_bits": "3FC00000",
+                "rgb_after_caller_adjust": [
+                  27,
+                  54,
+                  82
+                ],
+                "pixel_radius_and_truncate_flags": [
+                  0,
+                  0
+                ],
+                "draw_rays": 0,
+                "adjust_color": 1
+              },
+              {
+                "return_address": "0x006DC37E",
+                "radius_f32_bits": "40000000",
+                "rgb_after_caller_adjust": [
+                  26,
+                  52,
+                  78
+                ],
+                "pixel_radius_and_truncate_flags": [
+                  0,
+                  0
+                ],
+                "draw_rays": 0,
+                "adjust_color": 1
+              },
+              {
+                "return_address": "0x006DC37E",
+                "radius_f32_bits": "40200000",
+                "rgb_after_caller_adjust": [
+                  24,
+                  49,
+                  74
+                ],
+                "pixel_radius_and_truncate_flags": [
+                  0,
+                  0
+                ],
+                "draw_rays": 0,
+                "adjust_color": 1
+              },
+              {
+                "return_address": "0x006DC37E",
+                "radius_f32_bits": "40400000",
+                "rgb_after_caller_adjust": [
+                  23,
+                  47,
+                  70
+                ],
+                "pixel_radius_and_truncate_flags": [
+                  0,
+                  0
+                ],
+                "draw_rays": 0,
+                "adjust_color": 1
+              },
+              {
+                "return_address": "0x006DC37E",
+                "radius_f32_bits": "40600000",
+                "rgb_after_caller_adjust": [
+                  22,
+                  44,
+                  66
+                ],
+                "pixel_radius_and_truncate_flags": [
+                  0,
+                  0
+                ],
+                "draw_rays": 0,
+                "adjust_color": 1
+              },
+              {
+                "return_address": "0x006DC37E",
+                "radius_f32_bits": "40800000",
+                "rgb_after_caller_adjust": [
+                  21,
+                  41,
+                  62
+                ],
+                "pixel_radius_and_truncate_flags": [
+                  0,
+                  0
+                ],
+                "draw_rays": 0,
+                "adjust_color": 1
+              },
+              {
+                "return_address": "0x006DC37E",
+                "radius_f32_bits": "40900000",
+                "rgb_after_caller_adjust": [
+                  22,
+                  44,
+                  66
+                ],
+                "pixel_radius_and_truncate_flags": [
+                  0,
+                  0
+                ],
+                "draw_rays": 0,
+                "adjust_color": 1
+              },
+              {
+                "return_address": "0x006DC37E",
+                "radius_f32_bits": "40A00000",
+                "rgb_after_caller_adjust": [
+                  23,
+                  47,
+                  70
+                ],
+                "pixel_radius_and_truncate_flags": [
+                  0,
+                  0
+                ],
+                "draw_rays": 0,
+                "adjust_color": 1
+              },
+              {
+                "return_address": "0x006DC37E",
+                "radius_f32_bits": "40B00000",
+                "rgb_after_caller_adjust": [
+                  24,
+                  49,
+                  74
+                ],
+                "pixel_radius_and_truncate_flags": [
+                  0,
+                  0
+                ],
+                "draw_rays": 0,
+                "adjust_color": 1
+              },
+              {
+                "return_address": "0x006DC37E",
+                "radius_f32_bits": "40C00000",
+                "rgb_after_caller_adjust": [
+                  26,
+                  52,
+                  78
+                ],
+                "pixel_radius_and_truncate_flags": [
+                  0,
+                  0
+                ],
+                "draw_rays": 0,
+                "adjust_color": 1
+              },
+              {
+                "return_address": "0x006DC37E",
+                "radius_f32_bits": "40D00000",
+                "rgb_after_caller_adjust": [
+                  27,
+                  54,
+                  82
+                ],
+                "pixel_radius_and_truncate_flags": [
+                  0,
+                  0
+                ],
+                "draw_rays": 0,
+                "adjust_color": 1
+              },
+              {
+                "return_address": "0x006DC37E",
+                "radius_f32_bits": "40E00000",
+                "rgb_after_caller_adjust": [
+                  28,
+                  57,
+                  86
+                ],
+                "pixel_radius_and_truncate_flags": [
+                  0,
+                  0
+                ],
+                "draw_rays": 0,
+                "adjust_color": 1
+              }
+            ],
+            "stop_address": "0x006DC3A3"
+          },
+          {
+            "name": "nuke_special_retail_7_2_draw_2",
+            "phase_direction_before": [
+              10,
+              1
+            ],
+            "phase_direction_after": [
+              20,
+              1
+            ],
+            "caller_factors": [
+              30,
+              40,
+              50,
+              60,
+              70,
+              80,
+              90,
+              100,
+              90,
+              80,
+              70,
+              60,
+              50,
+              40,
+              30
+            ],
+            "caller_rgb_after_adjust": [
+              [
+                30,
+                60,
+                90
+              ],
+              [
+                28,
+                57,
+                86
+              ],
+              [
+                27,
+                54,
+                82
+              ],
+              [
+                26,
+                52,
+                78
+              ],
+              [
+                24,
+                49,
+                74
+              ],
+              [
+                23,
+                47,
+                70
+              ],
+              [
+                22,
+                44,
+                66
+              ],
+              [
+                21,
+                41,
+                62
+              ],
+              [
+                22,
+                44,
+                66
+              ],
+              [
+                23,
+                47,
+                70
+              ],
+              [
+                24,
+                49,
+                74
+              ],
+              [
+                26,
+                52,
+                78
+              ],
+              [
+                27,
+                54,
+                82
+              ],
+              [
+                28,
+                57,
+                86
+              ],
+              [
+                30,
+                60,
+                90
+              ]
+            ],
+            "radial_calls": [
+              {
+                "return_address": "0x006DC37E",
+                "radius_f32_bits": "00000000",
+                "rgb_after_caller_adjust": [
+                  30,
+                  60,
+                  90
+                ],
+                "pixel_radius_and_truncate_flags": [
+                  0,
+                  0
+                ],
+                "draw_rays": 0,
+                "adjust_color": 1
+              },
+              {
+                "return_address": "0x006DC37E",
+                "radius_f32_bits": "3F000000",
+                "rgb_after_caller_adjust": [
+                  28,
+                  57,
+                  86
+                ],
+                "pixel_radius_and_truncate_flags": [
+                  0,
+                  0
+                ],
+                "draw_rays": 0,
+                "adjust_color": 1
+              },
+              {
+                "return_address": "0x006DC37E",
+                "radius_f32_bits": "3F800000",
+                "rgb_after_caller_adjust": [
+                  27,
+                  54,
+                  82
+                ],
+                "pixel_radius_and_truncate_flags": [
+                  0,
+                  0
+                ],
+                "draw_rays": 0,
+                "adjust_color": 1
+              },
+              {
+                "return_address": "0x006DC37E",
+                "radius_f32_bits": "3FC00000",
+                "rgb_after_caller_adjust": [
+                  26,
+                  52,
+                  78
+                ],
+                "pixel_radius_and_truncate_flags": [
+                  0,
+                  0
+                ],
+                "draw_rays": 0,
+                "adjust_color": 1
+              },
+              {
+                "return_address": "0x006DC37E",
+                "radius_f32_bits": "40000000",
+                "rgb_after_caller_adjust": [
+                  24,
+                  49,
+                  74
+                ],
+                "pixel_radius_and_truncate_flags": [
+                  0,
+                  0
+                ],
+                "draw_rays": 0,
+                "adjust_color": 1
+              },
+              {
+                "return_address": "0x006DC37E",
+                "radius_f32_bits": "40200000",
+                "rgb_after_caller_adjust": [
+                  23,
+                  47,
+                  70
+                ],
+                "pixel_radius_and_truncate_flags": [
+                  0,
+                  0
+                ],
+                "draw_rays": 0,
+                "adjust_color": 1
+              },
+              {
+                "return_address": "0x006DC37E",
+                "radius_f32_bits": "40400000",
+                "rgb_after_caller_adjust": [
+                  22,
+                  44,
+                  66
+                ],
+                "pixel_radius_and_truncate_flags": [
+                  0,
+                  0
+                ],
+                "draw_rays": 0,
+                "adjust_color": 1
+              },
+              {
+                "return_address": "0x006DC37E",
+                "radius_f32_bits": "40600000",
+                "rgb_after_caller_adjust": [
+                  21,
+                  41,
+                  62
+                ],
+                "pixel_radius_and_truncate_flags": [
+                  0,
+                  0
+                ],
+                "draw_rays": 0,
+                "adjust_color": 1
+              },
+              {
+                "return_address": "0x006DC37E",
+                "radius_f32_bits": "40800000",
+                "rgb_after_caller_adjust": [
+                  22,
+                  44,
+                  66
+                ],
+                "pixel_radius_and_truncate_flags": [
+                  0,
+                  0
+                ],
+                "draw_rays": 0,
+                "adjust_color": 1
+              },
+              {
+                "return_address": "0x006DC37E",
+                "radius_f32_bits": "40900000",
+                "rgb_after_caller_adjust": [
+                  23,
+                  47,
+                  70
+                ],
+                "pixel_radius_and_truncate_flags": [
+                  0,
+                  0
+                ],
+                "draw_rays": 0,
+                "adjust_color": 1
+              },
+              {
+                "return_address": "0x006DC37E",
+                "radius_f32_bits": "40A00000",
+                "rgb_after_caller_adjust": [
+                  24,
+                  49,
+                  74
+                ],
+                "pixel_radius_and_truncate_flags": [
+                  0,
+                  0
+                ],
+                "draw_rays": 0,
+                "adjust_color": 1
+              },
+              {
+                "return_address": "0x006DC37E",
+                "radius_f32_bits": "40B00000",
+                "rgb_after_caller_adjust": [
+                  26,
+                  52,
+                  78
+                ],
+                "pixel_radius_and_truncate_flags": [
+                  0,
+                  0
+                ],
+                "draw_rays": 0,
+                "adjust_color": 1
+              },
+              {
+                "return_address": "0x006DC37E",
+                "radius_f32_bits": "40C00000",
+                "rgb_after_caller_adjust": [
+                  27,
+                  54,
+                  82
+                ],
+                "pixel_radius_and_truncate_flags": [
+                  0,
+                  0
+                ],
+                "draw_rays": 0,
+                "adjust_color": 1
+              },
+              {
+                "return_address": "0x006DC37E",
+                "radius_f32_bits": "40D00000",
+                "rgb_after_caller_adjust": [
+                  28,
+                  57,
+                  86
+                ],
+                "pixel_radius_and_truncate_flags": [
+                  0,
+                  0
+                ],
+                "draw_rays": 0,
+                "adjust_color": 1
+              },
+              {
+                "return_address": "0x006DC37E",
+                "radius_f32_bits": "40E00000",
+                "rgb_after_caller_adjust": [
+                  30,
+                  60,
+                  90
+                ],
+                "pixel_radius_and_truncate_flags": [
+                  0,
+                  0
+                ],
+                "draw_rays": 0,
+                "adjust_color": 1
+              }
+            ],
+            "stop_address": "0x006DC3A3"
+          }
+        ],
+        "house_rgb": [
+          33,
+          67,
+          101
+        ],
+        "fpcw": "0E3F"
+      },
+      {
+        "name": "iron_curtain_special_retail_1_4_3",
+        "range_f32_bits": "3FB33333",
+        "line_multiplier": 3,
+        "radii_f32_bits": [
+          "00000000",
+          "3EAAAAAA",
+          "3F2AAAAA",
+          "3F800000",
+          "3FAAAAAA"
+        ],
+        "pulse_draws": [
+          {
+            "name": "iron_curtain_special_retail_1_4_3_draw_1",
+            "phase_direction_before": [
+              0,
+              1
+            ],
+            "phase_direction_after": [
+              10,
+              1
+            ],
+            "caller_factors": [
+              20,
+              30,
+              40,
+              50,
+              60
+            ],
+            "caller_rgb_after_adjust": [
+              [
+                31,
+                62,
+                94
+              ],
+              [
+                30,
+                60,
+                90
+              ],
+              [
+                28,
+                57,
+                86
+              ],
+              [
+                27,
+                54,
+                82
+              ],
+              [
+                26,
+                52,
+                78
+              ]
+            ],
+            "radial_calls": [
+              {
+                "return_address": "0x006DC37E",
+                "radius_f32_bits": "00000000",
+                "rgb_after_caller_adjust": [
+                  31,
+                  62,
+                  94
+                ],
+                "pixel_radius_and_truncate_flags": [
+                  0,
+                  0
+                ],
+                "draw_rays": 0,
+                "adjust_color": 1
+              },
+              {
+                "return_address": "0x006DC37E",
+                "radius_f32_bits": "3EAAAAAA",
+                "rgb_after_caller_adjust": [
+                  30,
+                  60,
+                  90
+                ],
+                "pixel_radius_and_truncate_flags": [
+                  0,
+                  0
+                ],
+                "draw_rays": 0,
+                "adjust_color": 1
+              },
+              {
+                "return_address": "0x006DC37E",
+                "radius_f32_bits": "3F2AAAAA",
+                "rgb_after_caller_adjust": [
+                  28,
+                  57,
+                  86
+                ],
+                "pixel_radius_and_truncate_flags": [
+                  0,
+                  0
+                ],
+                "draw_rays": 0,
+                "adjust_color": 1
+              },
+              {
+                "return_address": "0x006DC37E",
+                "radius_f32_bits": "3F800000",
+                "rgb_after_caller_adjust": [
+                  27,
+                  54,
+                  82
+                ],
+                "pixel_radius_and_truncate_flags": [
+                  0,
+                  0
+                ],
+                "draw_rays": 0,
+                "adjust_color": 1
+              },
+              {
+                "return_address": "0x006DC37E",
+                "radius_f32_bits": "3FAAAAAA",
+                "rgb_after_caller_adjust": [
+                  26,
+                  52,
+                  78
+                ],
+                "pixel_radius_and_truncate_flags": [
+                  0,
+                  0
+                ],
+                "draw_rays": 0,
+                "adjust_color": 1
+              }
+            ],
+            "stop_address": "0x006DC3A3"
+          }
+        ],
+        "house_rgb": [
+          33,
+          67,
+          101
+        ],
+        "fpcw": "0E3F"
+      },
+      {
+        "name": "synthetic_2_8_5",
+        "range_f32_bits": "40333333",
+        "line_multiplier": 5,
+        "radii_f32_bits": [
+          "00000000",
+          "3E4CCCCC",
+          "3ECCCCCC",
+          "3F199999",
+          "3F4CCCCC",
+          "3F800000",
+          "3F999999",
+          "3FB33333",
+          "3FCCCCCC",
+          "3FE66666",
+          "40000000",
+          "400CCCCC",
+          "40199999",
+          "40266666"
+        ],
+        "pulse_draws": [
+          {
+            "name": "synthetic_2_8_5_draw_1",
+            "phase_direction_before": [
+              0,
+              1
+            ],
+            "phase_direction_after": [
+              10,
+              1
+            ],
+            "caller_factors": [
+              20,
+              30,
+              40,
+              50,
+              60,
+              70,
+              80,
+              90,
+              100,
+              90,
+              80,
+              70,
+              60,
+              50
+            ],
+            "caller_rgb_after_adjust": [
+              [
+                31,
+                62,
+                94
+              ],
+              [
+                30,
+                60,
+                90
+              ],
+              [
+                28,
+                57,
+                86
+              ],
+              [
+                27,
+                54,
+                82
+              ],
+              [
+                26,
+                52,
+                78
+              ],
+              [
+                24,
+                49,
+                74
+              ],
+              [
+                23,
+                47,
+                70
+              ],
+              [
+                22,
+                44,
+                66
+              ],
+              [
+                21,
+                41,
+                62
+              ],
+              [
+                22,
+                44,
+                66
+              ],
+              [
+                23,
+                47,
+                70
+              ],
+              [
+                24,
+                49,
+                74
+              ],
+              [
+                26,
+                52,
+                78
+              ],
+              [
+                27,
+                54,
+                82
+              ]
+            ],
+            "radial_calls": [
+              {
+                "return_address": "0x006DC37E",
+                "radius_f32_bits": "00000000",
+                "rgb_after_caller_adjust": [
+                  31,
+                  62,
+                  94
+                ],
+                "pixel_radius_and_truncate_flags": [
+                  0,
+                  0
+                ],
+                "draw_rays": 0,
+                "adjust_color": 1
+              },
+              {
+                "return_address": "0x006DC37E",
+                "radius_f32_bits": "3E4CCCCC",
+                "rgb_after_caller_adjust": [
+                  30,
+                  60,
+                  90
+                ],
+                "pixel_radius_and_truncate_flags": [
+                  0,
+                  0
+                ],
+                "draw_rays": 0,
+                "adjust_color": 1
+              },
+              {
+                "return_address": "0x006DC37E",
+                "radius_f32_bits": "3ECCCCCC",
+                "rgb_after_caller_adjust": [
+                  28,
+                  57,
+                  86
+                ],
+                "pixel_radius_and_truncate_flags": [
+                  0,
+                  0
+                ],
+                "draw_rays": 0,
+                "adjust_color": 1
+              },
+              {
+                "return_address": "0x006DC37E",
+                "radius_f32_bits": "3F199999",
+                "rgb_after_caller_adjust": [
+                  27,
+                  54,
+                  82
+                ],
+                "pixel_radius_and_truncate_flags": [
+                  0,
+                  0
+                ],
+                "draw_rays": 0,
+                "adjust_color": 1
+              },
+              {
+                "return_address": "0x006DC37E",
+                "radius_f32_bits": "3F4CCCCC",
+                "rgb_after_caller_adjust": [
+                  26,
+                  52,
+                  78
+                ],
+                "pixel_radius_and_truncate_flags": [
+                  0,
+                  0
+                ],
+                "draw_rays": 0,
+                "adjust_color": 1
+              },
+              {
+                "return_address": "0x006DC37E",
+                "radius_f32_bits": "3F800000",
+                "rgb_after_caller_adjust": [
+                  24,
+                  49,
+                  74
+                ],
+                "pixel_radius_and_truncate_flags": [
+                  0,
+                  0
+                ],
+                "draw_rays": 0,
+                "adjust_color": 1
+              },
+              {
+                "return_address": "0x006DC37E",
+                "radius_f32_bits": "3F999999",
+                "rgb_after_caller_adjust": [
+                  23,
+                  47,
+                  70
+                ],
+                "pixel_radius_and_truncate_flags": [
+                  0,
+                  0
+                ],
+                "draw_rays": 0,
+                "adjust_color": 1
+              },
+              {
+                "return_address": "0x006DC37E",
+                "radius_f32_bits": "3FB33333",
+                "rgb_after_caller_adjust": [
+                  22,
+                  44,
+                  66
+                ],
+                "pixel_radius_and_truncate_flags": [
+                  0,
+                  0
+                ],
+                "draw_rays": 0,
+                "adjust_color": 1
+              },
+              {
+                "return_address": "0x006DC37E",
+                "radius_f32_bits": "3FCCCCCC",
+                "rgb_after_caller_adjust": [
+                  21,
+                  41,
+                  62
+                ],
+                "pixel_radius_and_truncate_flags": [
+                  0,
+                  0
+                ],
+                "draw_rays": 0,
+                "adjust_color": 1
+              },
+              {
+                "return_address": "0x006DC37E",
+                "radius_f32_bits": "3FE66666",
+                "rgb_after_caller_adjust": [
+                  22,
+                  44,
+                  66
+                ],
+                "pixel_radius_and_truncate_flags": [
+                  0,
+                  0
+                ],
+                "draw_rays": 0,
+                "adjust_color": 1
+              },
+              {
+                "return_address": "0x006DC37E",
+                "radius_f32_bits": "40000000",
+                "rgb_after_caller_adjust": [
+                  23,
+                  47,
+                  70
+                ],
+                "pixel_radius_and_truncate_flags": [
+                  0,
+                  0
+                ],
+                "draw_rays": 0,
+                "adjust_color": 1
+              },
+              {
+                "return_address": "0x006DC37E",
+                "radius_f32_bits": "400CCCCC",
+                "rgb_after_caller_adjust": [
+                  24,
+                  49,
+                  74
+                ],
+                "pixel_radius_and_truncate_flags": [
+                  0,
+                  0
+                ],
+                "draw_rays": 0,
+                "adjust_color": 1
+              },
+              {
+                "return_address": "0x006DC37E",
+                "radius_f32_bits": "40199999",
+                "rgb_after_caller_adjust": [
+                  26,
+                  52,
+                  78
+                ],
+                "pixel_radius_and_truncate_flags": [
+                  0,
+                  0
+                ],
+                "draw_rays": 0,
+                "adjust_color": 1
+              },
+              {
+                "return_address": "0x006DC37E",
+                "radius_f32_bits": "40266666",
+                "rgb_after_caller_adjust": [
+                  27,
+                  54,
+                  82
+                ],
+                "pixel_radius_and_truncate_flags": [
+                  0,
+                  0
+                ],
+                "draw_rays": 0,
+                "adjust_color": 1
+              }
+            ],
+            "stop_address": "0x006DC3A3"
+          }
+        ],
+        "house_rgb": [
+          33,
+          67,
+          101
+        ],
+        "fpcw": "0E3F"
+      }
+    ],
+    "pulse_controls": {
+      "house_rgb": [
+        33,
+        67,
+        101
+      ],
+      "lm_below_one": {
+        "name": "retail_lm_zero_single_ring_draw_1",
+        "phase_direction_before": [
+          0,
+          1
+        ],
+        "phase_direction_after": [
+          10,
+          1
+        ],
+        "caller_factors": [
+          10
+        ],
+        "caller_rgb_after_adjust": [
+          [
+            32,
+            65,
+            98
+          ]
+        ],
+        "radial_calls": [
+          {
+            "return_address": "0x006DC3F3",
+            "radius_f32_bits": "3FB33333",
+            "rgb_after_caller_adjust": [
+              32,
+              65,
+              98
+            ],
+            "pixel_radius_and_truncate_flags": [
+              0,
+              1
+            ],
+            "draw_rays": 0,
+            "adjust_color": 1
+          }
+        ],
+        "stop_address": "0x006DC3F3"
+      },
+      "inactive": [
+        {
+          "name": "no_selected_superweapon",
+          "range_f32_bits": "40E00000",
+          "phase_direction_before": [
+            37,
+            -1
+          ],
+          "phase_direction_after": [
+            37,
+            -1
+          ],
+          "radial_calls": 0,
+          "stop_address": "0x006DC3F3"
+        },
+        {
+          "name": "zero_range_selected_superweapon",
+          "range_f32_bits": "00000000",
+          "phase_direction_before": [
+            37,
+            -1
+          ],
+          "phase_direction_after": [
+            37,
+            -1
+          ],
+          "radial_calls": 0,
+          "stop_address": "0x006DC3F3"
+        }
+      ]
+    },
+    "primitive_radius_controls": [
+      {
+        "name": "positive_lm_zero_iteration_radius",
+        "input_radius_f32_bits": "00000000",
+        "truncate_input": false,
+        "output_radius_pixels": 21
+      },
+      {
+        "name": "retail_i4_over_lm3",
+        "input_radius_f32_bits": "3FAAAAAA",
+        "truncate_input": false,
+        "output_radius_pixels": 77
+      },
+      {
+        "name": "synthetic_fractional_2_6",
+        "input_radius_f32_bits": "40266666",
+        "truncate_input": false,
+        "output_radius_pixels": 131
+      },
+      {
+        "name": "retail_lm_below_one_single_ring",
+        "input_radius_f32_bits": "3FB33333",
+        "truncate_input": true,
+        "output_radius_pixels": 63
+      }
+    ]
   }
 }

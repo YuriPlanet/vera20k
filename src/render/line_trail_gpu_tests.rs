@@ -434,7 +434,8 @@ fn line_trail_native_fixture_submission_timings() {
                 let radials: Vec<_> = (0..count)
                     .map(|i| crate::render::radial_indicator::RadialIndicatorDraw {
                         center: [640 + (i % 5 - 2) * 20, 360 + (i / 5) * 20],
-                        radius: 10,
+                        radius: 10.0,
+                        truncate_radius: true,
                         pixel_radius: false,
                         rgb: [255, 0, 0],
                         fade: true,

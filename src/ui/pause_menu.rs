@@ -14,7 +14,6 @@
 //! | 1 | the in-game menu | the sidebar menu control | its buttons |
 //! | 3 | abort-mission confirm | the menu's Abort Mission button | see below |
 //! | 5 | Game Controls / Options | the menu's Options button | back to 1 |
-//! | 8 | Diplomacy | Tab or the sidebar diplomacy control | Return to 0 |
 //!
 //! Two re-entry rules matter to the player and are reproduced here:
 //!
@@ -73,8 +72,6 @@ pub enum InGameMenuState {
     Sound,
     /// Shared Keyboard A3, child of Game Controls (native state4).
     Keyboard,
-    /// Player names, alliances and live kill counters (native state8/73).
-    Diplomacy,
     /// Native558DD0 browser nested beneath B5. Its mode has no independent
     /// scenario-state number: native keeps the parent hidden during this call.
     SavedGame(crate::ui::skirmish_shell::SavedSeedMode),
@@ -105,7 +102,7 @@ impl InGameMenuState {
             Self::AbortConfirm => Self::AbortConfirm,
             // Options is a child of the menu.
             Self::Options => Self::Menu,
-            Self::SavedGame(_) | Self::Sound | Self::Diplomacy => self,
+            Self::SavedGame(_) | Self::Sound => self,
             Self::Keyboard => Self::Options,
         }
     }
@@ -221,12 +218,8 @@ mod tests {
             InGameMenuState::Menu,
             InGameMenuState::AbortConfirm,
             InGameMenuState::Options,
-            InGameMenuState::Diplomacy,
         ] {
             assert!(escape_belongs_to_modal_machine(open));
-            if open == InGameMenuState::Diplomacy {
-                assert_eq!(open.on_escape(), open);
-            }
         }
     }
 }

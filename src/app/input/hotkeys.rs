@@ -1393,7 +1393,7 @@ mod tests {
 
     #[cfg(not(windows))]
     #[test]
-    fn portable_oem_shortcuts_survive_capture_assignment_and_disk_roundtrip() {
+    fn portable_oem_shortcuts_roundtrip_saved_bindings() {
         // Win32's US OEM identities. Windows keeps its real layout lookup;
         // non-Windows hosts must at least be able to bind ordinary punctuation.
         for (text, vk) in [

@@ -31,5 +31,4 @@ pub mod trackbar;
 
 pub mod list;
 
-pub mod diplomacy;
 pub mod keyboard;

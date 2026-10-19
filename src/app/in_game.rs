@@ -45,7 +45,6 @@ impl App {
         state.match_state.match_presentation.in_game_options_anchor = None;
         state.match_state.match_presentation.pause_menu_interaction = Default::default();
         state.match_state.match_presentation.abort_buttons = Default::default();
-        state.match_state.match_presentation.diplomacy = None;
         state.match_state.match_presentation.sound_dialog = None;
         state.match_state.match_presentation.saved_game_browser = None;
         // Persist the deterministic diagnostic log before leaving the scenario.
@@ -216,8 +215,6 @@ impl App {
         state.match_state.match_presentation.in_game_menu = next;
         state.match_state.match_presentation.pause_menu_interaction = Default::default();
         state.match_state.match_presentation.abort_buttons = Default::default();
-        state.match_state.match_presentation.diplomacy =
-            (next == InGameMenuState::Diplomacy).then(Default::default);
         state.match_state.match_presentation.sound_dialog = None;
         if will_be_open {
             // Deactivate683EB0/4AEAD0 tears down drag/capture on the way into

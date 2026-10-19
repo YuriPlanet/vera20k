@@ -21,6 +21,8 @@ use crate::rules::prerequisite::{Prerequisite, PrerequisiteGroup, parse_prerequi
 use crate::rules::projectile_type::ProjectileArtState;
 use crate::rules::rules_type_references::{DEFAULT_PARTICLE_SYSTEMS, RulesTypeReferences};
 use crate::rules::ruleset::{DetailRules, GeneralBuildingTypes, PrismSupportRules};
+use crate::rules::superweapon_type::SuperWeaponBuildingRequirements;
+use crate::rules::superweapon_type::{DeliveryOwner, DeliveryType, UnitDeliveryRules};
 use crate::util::native_x87::NativeF64Bits;
 use std::collections::{HashMap, HashSet};
 use std::hash::{Hash, Hasher};
@@ -531,6 +533,22 @@ impl ProcessedRulesLayers {
             .map(|member| (member.native_stored_id.as_str(), member.building_foundation))
     }
 
+    /// BuildingType+154B after each reached Rules body; current-default ReadBool.
+    pub(crate) fn building_spotlight_flags(&self) -> impl Iterator<Item = (&str, bool)> {
+        self.native_type_construction_trace
+            .registry_state()
+            .families
+            .get(&RulesTypeFamily::Building)
+            .into_iter()
+            .flatten()
+            .map(|member| {
+                (
+                    member.native_stored_id.as_str(),
+                    member.building_has_spotlight,
+                )
+            })
+    }
+
     /// BuildingType+EBC after each reached Rules body. Fixed ART never reads it.
     pub(crate) fn building_target_coord_offsets(&self) -> impl Iterator<Item = (&str, [i32; 3])> {
         self.native_type_construction_trace
@@ -846,6 +864,32 @@ impl ProcessedRulesLayers {
         })
     }
 
+    pub(crate) fn super_weapon_building_requirements(
+        &self,
+    ) -> impl Iterator<Item = (&str, Option<&SuperWeaponBuildingRequirements>)> {
+        self.member_states(RulesTypeFamily::SuperWeapon, |member| {
+            member.super_weapon_building_requirements.as_ref()
+        })
+    }
+
+    /// Ares GenericWarhead references, resolved by the same ordered type
+    /// allocator as native references. Kept separate from the retail fields.
+    pub(crate) fn generic_super_weapon_warhead_states(
+        &self,
+    ) -> impl Iterator<Item = (&str, Option<&str>)> {
+        self.member_states(RulesTypeFamily::SuperWeapon, |member| {
+            member.generic_super_weapon_warhead.as_deref()
+        })
+    }
+
+    pub(crate) fn unit_delivery_states(
+        &self,
+    ) -> impl Iterator<Item = (&str, Option<&UnitDeliveryRules>)> {
+        self.member_states(RulesTypeFamily::SuperWeapon, |member| {
+            member.unit_delivery.as_ref()
+        })
+    }
+
     /// Each ParticleType's `Warhead=` after every reached pass.
     pub(crate) fn particle_warhead_states(&self) -> impl Iterator<Item = (&str, Option<&str>)> {
         self.member_states(RulesTypeFamily::Particle, |member| {
@@ -951,6 +995,17 @@ impl ProcessedRulesLayers {
         self.native_type_construction_trace
             .registry_state()
             .rules_wind_direction
+    }
+
+    /// ReadGeneral670DE9/670E30/670E57, current scalar defaults across
+    /// layers and Type resets (original gamemd SHA2561cdd1180..84298c).
+    pub(crate) fn repair_service_inputs(&self) -> (i32, f64, f64) {
+        let state = self.native_type_construction_trace.registry_state();
+        (
+            state.rules_infantry_repair_step,
+            f64::from_bits(state.rules_unit_repair_rate.bits()),
+            f64::from_bits(state.rules_infantry_repair_rate.bits()),
+        )
     }
 
     pub(crate) fn gravity(&self) -> i32 {
@@ -1182,6 +1237,12 @@ impl ProcessedRulesLayers {
         self.native_type_construction_trace
             .registry_state()
             .rules_talk_bubble_time
+    }
+
+    pub(crate) fn spotlight(&self) -> crate::rules::ruleset::SpotlightRules {
+        self.native_type_construction_trace
+            .registry_state()
+            .rules_spotlight
     }
 
     /// Rules+490, +298, +29C, +FF0, retained across ordered Process calls.
@@ -1422,8 +1483,12 @@ pub(crate) struct NativeRulesRegistryState {
     rules_parachute_max_fall_rate: i32,
     rules_no_parachute_max_fall_rate: i32,
     rules_survivor_divisors: [i32; 3],
+    rules_infantry_repair_step: i32,
+    rules_unit_repair_rate: NativeF64Bits,
+    rules_infantry_repair_rate: NativeF64Bits,
     rules_maximum_cheer_rate: i32,
     rules_talk_bubble_time: i32,
+    rules_spotlight: crate::rules::ruleset::SpotlightRules,
     rules_ion_cannon_damage: i32,
     rules_ion_blast_anim: String,
     rules_ion_beam_anim: String,
@@ -1480,8 +1545,14 @@ impl Default for NativeRulesRegistryState {
             rules_parachute_max_fall_rate: general.parachute_max_fall_rate,
             rules_no_parachute_max_fall_rate: general.no_parachute_max_fall_rate,
             rules_survivor_divisors: crate::rules::ruleset::DEFAULT_SURVIVOR_DIVISORS,
+            rules_infantry_repair_step: general.infantry_repair_step,
+            rules_unit_repair_rate: NativeF64Bits::from_bits(general.unit_repair_rate.to_bits()),
+            rules_infantry_repair_rate: NativeF64Bits::from_bits(
+                general.infantry_repair_rate.to_bits(),
+            ),
             rules_maximum_cheer_rate: crate::rules::ruleset::DEFAULT_MAXIMUM_CHEER_RATE,
             rules_talk_bubble_time: general.talk_bubble_time,
+            rules_spotlight: general.spotlight,
             // Rules665CD4=700; pointer fields665A18/665A24/666BD5 start null.
             rules_ion_cannon_damage: 700,
             rules_ion_blast_anim: String::new(),
@@ -1677,8 +1748,12 @@ impl NativeRulesRegistryState {
             rules_parachute_max_fall_rate: self.rules_parachute_max_fall_rate,
             rules_no_parachute_max_fall_rate: self.rules_no_parachute_max_fall_rate,
             rules_survivor_divisors: self.rules_survivor_divisors,
+            rules_infantry_repair_step: self.rules_infantry_repair_step,
+            rules_unit_repair_rate: self.rules_unit_repair_rate,
+            rules_infantry_repair_rate: self.rules_infantry_repair_rate,
             rules_maximum_cheer_rate: self.rules_maximum_cheer_rate,
             rules_talk_bubble_time: self.rules_talk_bubble_time,
+            rules_spotlight: self.rules_spotlight,
             rules_ion_cannon_damage: self.rules_ion_cannon_damage,
             rules_mind_control_attack_line_frames: self.rules_mind_control_attack_line_frames,
             rules_line_trail_override: self.rules_line_trail_override,
@@ -1850,6 +1925,8 @@ struct ProcessedType {
     building_foundation: u8,
     /// Constructor45DEBC..45DEC8 clears BuildingType+EBC/EC0/EC4.
     building_target_coord_offset: [i32; 3],
+    /// BuildingType ctor45DFDA=false; ReadBool45FEE5..45FF0D, current default.
+    building_has_spotlight: bool,
     secret_lab: crate::rules::secret_lab::SecretLabRules,
     /// Unit ctor747167..7471B2 and reached fixed-ART reader7477C1..747AAE.
     unit_shp: crate::rules::shp_vehicle_sequence::UnitShpReadState,
@@ -1890,6 +1967,11 @@ struct ProcessedType {
     /// SuperWeaponType+C8 `AuxBuilding=` (`0x006CED07..0x006CED2E`), read the
     /// same way through BuildingType's factory (`0x004653C0`).
     super_weapon_aux_building: Option<String>,
+    #[serde(default)]
+    super_weapon_building_requirements: Option<SuperWeaponBuildingRequirements>,
+    /// Ares `SW.Warhead=`, read only for Type=GenericWarhead.
+    generic_super_weapon_warhead: Option<String>,
+    unit_delivery: Option<UnitDeliveryRules>,
     /// ParticleType `Warhead=` (`0x00645043..0x00645067`): ReadString128,
     /// then WarheadType's factory (`0x0075E3B0`); an empty read keeps it.
     particle_warhead: Option<String>,
@@ -2224,6 +2306,7 @@ impl ProcessedType {
             anim_art_read: false,
             building_foundation: 0,
             building_target_coord_offset: [0; 3],
+            building_has_spotlight: false,
             secret_lab: Default::default(),
             unit_shp: Default::default(),
             unit_speed_type: SpeedType::Invalid,
@@ -2243,6 +2326,9 @@ impl ProcessedType {
             holds_what: None,
             super_weapon_weapon: None,
             super_weapon_aux_building: None,
+            unit_delivery: None,
+            super_weapon_building_requirements: None,
+            generic_super_weapon_warhead: None,
             particle_warhead: None,
             voxel_anim_references: VoxelAnimTypeReferences::default(),
             anim_references: AnimTypeReferences::default(),
@@ -2276,8 +2362,12 @@ struct RulesPassProcessor {
     rules_parachute_max_fall_rate: i32,
     rules_no_parachute_max_fall_rate: i32,
     rules_survivor_divisors: [i32; 3],
+    rules_infantry_repair_step: i32,
+    rules_unit_repair_rate: NativeF64Bits,
+    rules_infantry_repair_rate: NativeF64Bits,
     rules_maximum_cheer_rate: i32,
     rules_talk_bubble_time: i32,
+    rules_spotlight: crate::rules::ruleset::SpotlightRules,
     rules_ion_cannon_damage: i32,
     rules_ion_blast_anim: String,
     rules_ion_beam_anim: String,
@@ -2327,8 +2417,12 @@ impl RulesPassProcessor {
             rules_parachute_max_fall_rate: registry_state.rules_parachute_max_fall_rate,
             rules_no_parachute_max_fall_rate: registry_state.rules_no_parachute_max_fall_rate,
             rules_survivor_divisors: registry_state.rules_survivor_divisors,
+            rules_infantry_repair_step: registry_state.rules_infantry_repair_step,
+            rules_unit_repair_rate: registry_state.rules_unit_repair_rate,
+            rules_infantry_repair_rate: registry_state.rules_infantry_repair_rate,
             rules_maximum_cheer_rate: registry_state.rules_maximum_cheer_rate,
             rules_talk_bubble_time: registry_state.rules_talk_bubble_time,
+            rules_spotlight: registry_state.rules_spotlight,
             rules_ion_cannon_damage: registry_state.rules_ion_cannon_damage,
             rules_ion_blast_anim: registry_state.rules_ion_blast_anim,
             rules_ion_beam_anim: registry_state.rules_ion_beam_anim,
@@ -2650,6 +2744,27 @@ impl RulesPassProcessor {
     /// Resolve each native pointer once, in constructor order. None means the
     /// reader retained its previous vector; Some(empty) is a real replacement
     /// (for example `,,,` or only exact `none` sentinels).
+    /// Ares pointer vectors look up existing types at this exact read point.
+    /// ReadString/strtok retain the native 2048-byte, comma-only list policy.
+    fn resolve_existing_list_from(
+        &self,
+        section: &IniSection,
+        key: &str,
+        family: RulesTypeFamily,
+        capacity: usize,
+    ) -> Option<Vec<String>> {
+        Some(
+            section
+                .read_list(key, capacity)?
+                .into_iter()
+                .filter_map(|token| {
+                    self.find_existing(family, token)
+                        .map(|index| self.families[&family][index].native_stored_id.clone())
+                })
+                .collect(),
+        )
+    }
+
     fn resolve_list_from(
         &mut self,
         section: &IniSection,
@@ -2838,9 +2953,19 @@ impl RulesPassProcessor {
         ]) {
             *value = section.read_int(key, *value);
         }
+        // ReadGeneral670DE9/670E30/670E57: ReadInt, then ReadDouble twice,
+        // current Rules+16D8/+16E8/+16F0 defaults, exact keys, no read clamps.
+        // Rules66751A/667540 constructor defaults come from GeneralRules.
+        self.rules_infantry_repair_step =
+            section.read_int("IRepairStep", self.rules_infantry_repair_step);
+        self.rules_unit_repair_rate =
+            section.read_double_bits("URepairRate", self.rules_unit_repair_rate);
+        self.rules_infantry_repair_rate =
+            section.read_double_bits("IRepairRate", self.rules_infantry_repair_rate);
         // ReadGeneral's Prism block (`0x0067114F..0x006711B8`), current values
         // as defaults; RulesClass keeps them across Full_Init's reset.
         self.rules_prism_support = self.rules_prism_support.read_pass(section);
+        self.rules_spotlight.read_pass(section);
         self.rules_talk_bubble_time = section.read_talk_bubble_time(self.rules_talk_bubble_time);
 
         for &(key, family, is_list) in SITES {
@@ -3124,7 +3249,7 @@ impl RulesPassProcessor {
     fn process_super_weapon_family(&mut self, pass: &IniFile) {
         let mut index = 0;
         while index < self.family_len(RulesTypeFamily::SuperWeapon) {
-            if let Some((_id, raw, _effective)) =
+            if let Some((_id, raw, effective)) =
                 self.begin_rules_member_read(RulesTypeFamily::SuperWeapon, index, pass)
             {
                 if let Some(weapon) =
@@ -3138,6 +3263,95 @@ impl RulesPassProcessor {
                 {
                     self.family_mut(RulesTypeFamily::SuperWeapon)[index]
                         .super_weapon_aux_building = building;
+                }
+                // Ares ValueableVector<BuildingTypeClass*> uses Find, not
+                // FindOrAllocate (Utilities/TemplateDef.h::parse_values and
+                // Utilities/Parser.h::Parser<T,1>, Ares 4f1d9299). Unknown
+                // tokens are skipped; each nonempty read replaces the list.
+                let auxiliary = self.resolve_existing_list_from(
+                    &raw,
+                    "SW.AuxBuildings",
+                    RulesTypeFamily::Building,
+                    0x800,
+                );
+                let negative = self.resolve_existing_list_from(
+                    &raw,
+                    "SW.NegBuildings",
+                    RulesTypeFamily::Building,
+                    0x800,
+                );
+                if auxiliary.is_some() || negative.is_some() {
+                    let requirements = self.family_mut(RulesTypeFamily::SuperWeapon)[index]
+                        .super_weapon_building_requirements
+                        .get_or_insert_default();
+                    if let Some(auxiliary) = auxiliary {
+                        requirements.auxiliary = auxiliary;
+                    }
+                    if let Some(negative) = negative {
+                        requirements.negative = negative;
+                    }
+                }
+                if effective
+                    .read_name("Type", 0x28)
+                    .is_some_and(|kind| kind.eq_ignore_ascii_case("GenericWarhead"))
+                    && let Some(warhead) =
+                        self.resolve_scalar_from(&raw, "SW.Warhead", RulesTypeFamily::Warhead, 0x80)
+                {
+                    self.family_mut(RulesTypeFamily::SuperWeapon)[index]
+                        .generic_super_weapon_warhead = warhead;
+                }
+                if raw
+                    .read_name("Type", 0x28)
+                    .is_some_and(|kind| kind.eq_ignore_ascii_case("UnitDelivery"))
+                    || self.families[&RulesTypeFamily::SuperWeapon][index]
+                        .unit_delivery
+                        .is_some()
+                {
+                    let types = raw.read_list("Deliver.Types", 2048).map(|tokens| {
+                        tokens
+                            .into_iter()
+                            .filter_map(|token| {
+                                let matches: Vec<_> = [
+                                    (RulesTypeFamily::Infantry, ObjectCategory::Infantry),
+                                    (RulesTypeFamily::Vehicle, ObjectCategory::Vehicle),
+                                    (RulesTypeFamily::Aircraft, ObjectCategory::Aircraft),
+                                    (RulesTypeFamily::Building, ObjectCategory::Building),
+                                ]
+                                .into_iter()
+                                .filter_map(|(family, category)| {
+                                    self.find_existing(family, token).map(|index| DeliveryType {
+                                        category,
+                                        id: self.families[&family][index].native_stored_id.clone(),
+                                    })
+                                })
+                                .collect();
+                                // Do not silently bind an ambiguous cross-category ID
+                                // to an unrelated type. Unknown/none tokens add none.
+                                (matches.len() == 1).then(|| matches.into_iter().next().unwrap())
+                            })
+                            .collect()
+                    });
+                    let state = self.family_mut(RulesTypeFamily::SuperWeapon)[index]
+                        .unit_delivery
+                        .get_or_insert_default();
+                    if let Some(types) = types {
+                        state.types = types;
+                    }
+                    let delay = raw.read_int("SW.Deferment", state.deferment);
+                    state.deferment = if delay < 0 { 20 } else { delay };
+                    state.base_normal = raw.read_bool("Deliver.BaseNormal", state.base_normal);
+                    if let Some(owner) = raw.read_name("Deliver.Owner", 2048) {
+                        state.owner = match owner.to_ascii_lowercase().as_str() {
+                            "invoker" => DeliveryOwner::Invoker,
+                            "neutral" => DeliveryOwner::Neutral,
+                            "special" => DeliveryOwner::Special,
+                            "civilian" => DeliveryOwner::Civilian,
+                            _ => state.owner,
+                        };
+                    }
+                    // Activation sound resolves against the fixed SOUNDMD catalog
+                    // in RuleSet::bind_type_sound_references, using this type's
+                    // retained INI read history rather than an unresolved name.
                 }
             }
             index += 1;
@@ -3272,6 +3486,8 @@ impl RulesPassProcessor {
                         let member = &mut self.families.get_mut(&family).unwrap()[index];
                         // ReadINI460F50..460F9C: exact Rules key, ReadCoord529CA0,
                         // current value as default, no clamp or conversion.
+                        member.building_has_spotlight =
+                            raw.read_bool("HasSpotlight", member.building_has_spotlight);
                         member.building_target_coord_offset = raw
                             .read_coord3("TargetCoordOffset", member.building_target_coord_offset);
                         member.building_foundation =
@@ -4149,8 +4365,12 @@ impl RulesPassProcessor {
                     rules_parachute_max_fall_rate: self.rules_parachute_max_fall_rate,
                     rules_no_parachute_max_fall_rate: self.rules_no_parachute_max_fall_rate,
                     rules_survivor_divisors: self.rules_survivor_divisors,
+                    rules_infantry_repair_step: self.rules_infantry_repair_step,
+                    rules_unit_repair_rate: self.rules_unit_repair_rate,
+                    rules_infantry_repair_rate: self.rules_infantry_repair_rate,
                     rules_maximum_cheer_rate: self.rules_maximum_cheer_rate,
                     rules_talk_bubble_time: self.rules_talk_bubble_time,
+                    rules_spotlight: self.rules_spotlight,
                     rules_ion_cannon_damage: self.rules_ion_cannon_damage,
                     rules_ion_blast_anim: self.rules_ion_blast_anim,
                     rules_ion_beam_anim: self.rules_ion_beam_anim,

@@ -79,7 +79,6 @@ pub(crate) fn native_in_game_shell_active(state: &AppState) -> bool {
                 | crate::ui::pause_menu::InGameMenuState::AbortConfirm
                 | crate::ui::pause_menu::InGameMenuState::Sound
                 | crate::ui::pause_menu::InGameMenuState::Keyboard
-                | crate::ui::pause_menu::InGameMenuState::Diplomacy
                 | crate::ui::pause_menu::InGameMenuState::Options
                 | crate::ui::pause_menu::InGameMenuState::SavedGame(_)
         )

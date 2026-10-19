@@ -99,12 +99,6 @@ pub(crate) fn handle_mouse_input(
                 .cancel_pointer_capture();
         }
         if state.match_state.match_presentation.in_game_menu
-            == crate::ui::pause_menu::InGameMenuState::Diplomacy
-        {
-            crate::app::input::diplomacy::mouse(state, button, pressed);
-            return;
-        }
-        if state.match_state.match_presentation.in_game_menu
             == crate::ui::pause_menu::InGameMenuState::Sound
         {
             crate::app::input::sound::mouse(state, button, pressed);
@@ -732,12 +726,6 @@ pub(crate) fn handle_cursor_moved_in_game(state: &mut AppState) {
     // selection drag or camera pan behind the overlay.
     if state.match_state.paused() {
         if state.match_state.match_presentation.in_game_menu
-            == crate::ui::pause_menu::InGameMenuState::Diplomacy
-        {
-            crate::app::input::diplomacy::cursor_moved(state);
-            return;
-        }
-        if state.match_state.match_presentation.in_game_menu
             == crate::ui::pause_menu::InGameMenuState::Sound
         {
             crate::app::input::sound::cursor_moved(state);
@@ -909,25 +897,6 @@ fn local_interned(state: &AppState, type_id: &str) -> Option<crate::sim::intern:
         .and_then(|rt| rt.simulation.interner.get(type_id))
 }
 
-/// The `EVA_SelectTarget` decision for the local player's superweapon
-/// `section`: its live view (ready, online) and the type's `Action=`.
-fn local_super_weapon_select_target_line(state: &AppState, section: &str) -> Option<&'static str> {
-    let owner = preferred_local_owner_name(state)?;
-    let sim = state
-        .match_state
-        .sim_runtime
-        .as_ref()
-        .map(|rt| &rt.simulation)?;
-    let rules = state.rules()?;
-    let type_id = sim.interner.get(section)?;
-    let owner_iid = sim.interner.get(&owner)?;
-    let view = crate::sim::superweapon::superweapon_views_for_owner(sim, rules, &owner_iid)
-        .into_iter()
-        .find(|view| view.type_id == type_id)?;
-    let action = rules.super_weapon(section)?.action.as_deref();
-    sidebar_eva::select_target_line(view.is_ready, view.is_online, action)
-}
-
 /// Speak an app-local EVA line (`VoxClass::PlayEVA(name, -1)` inside a click
 /// handler): the entry's own `Type=`/`Priority=` route it.
 pub(crate) fn push_local_eva(state: &mut AppState, event: &str) {
@@ -1096,7 +1065,7 @@ pub(crate) fn apply_sidebar_action(state: &mut AppState, action: SidebarAction) 
     match action {
         SidebarAction::None => {}
         SidebarAction::OpenPauseMenu => open_pause_menu(state),
-        SidebarAction::OpenDiplomacy => crate::app::input::diplomacy::open(state),
+        SidebarAction::OpenDiplomacy => open_diplomacy_menu(state),
         SidebarAction::SelectTab(tab) => {
             // Retained strips own their rows; changing tabs only selects a strip.
             state.match_state.match_presentation.active_sidebar_tab = tab;
@@ -1114,36 +1083,50 @@ pub(crate) fn apply_sidebar_action(state: &mut AppState, action: SidebarAction) 
             };
             sidebar_cameo_press(state, &type_id, press, at_build_limit);
         }
-        SidebarAction::ArmSuperWeapon(section) => {
-            // `SelectClass::Action 0x006AAFA7`: a ready, targeted superweapon
-            // cameo speaks `EVA_SelectTarget` on the clicking machine
-            // (`sidebar_eva::select_target_line`). The cameo only arms when
-            // its view is ready, so the not-ready silence is the hit test's.
-            if let Some(line) = local_super_weapon_select_target_line(state, &section) {
-                push_local_eva(state, line);
-            }
-            state.match_state.input.targeting_mode =
-                Some(crate::app::types::TargetingMode::SuperWeapon(section));
-            // Mutual exclusion: clear building-placement preview AND repair/sell modes.
-            state.match_state.input.building_placement_preview = None;
-            state
-                .match_state
-                .match_presentation
-                .sidebar_gadget_state
-                .repair_mode_on = false;
-            state
-                .match_state
-                .match_presentation
-                .sidebar_gadget_state
-                .sell_mode_on = false;
-            log::info!(
-                "SuperWeapon armed: type={}",
-                state.armed_super_weapon_type().unwrap_or("")
+        SidebarAction::SuperWeaponPress { section, right } => {
+            let selection = (|| {
+                let runtime = state.match_state.sim_runtime.as_ref()?;
+                let sim = &runtime.simulation;
+                let rules = &runtime.resources.rules;
+                let owner = sim.interner.get(&preferred_local_owner_name(state)?)?;
+                let type_id = sim.interner.get(&section)?;
+                let view = crate::sim::superweapon::superweapon_views_for_owner(sim, rules, &owner)
+                    .into_iter()
+                    .find(|view| view.type_id == type_id)?;
+                Some((view, rules.super_weapon(&section)?.action.clone()))
+            })();
+            let click = super::superweapon_cameo::press(
+                &mut state.match_state.input,
+                &mut state.match_state.match_presentation.sidebar_gadget_state,
+                selection.as_ref().map(|(view, _)| view),
+                selection.as_ref().and_then(|(_, action)| action.as_deref()),
+                right,
             );
-        }
-        SidebarAction::ClearSuperWeaponMode => {
-            state.match_state.input.targeting_mode = None;
-            log::info!("SuperWeapon targeting cleared");
+            if click.gui_sound() {
+                let sound = state
+                    .rules()
+                    .and_then(|rules| rules.general.gui_build_sound.clone());
+                crate::app::App::play_shell_ui_sound_by_id(state, sound.as_deref());
+            }
+            match click {
+                super::superweapon_cameo::SuperWeaponClick::Target => {
+                    queue_selection_snapshot_command(state, Vec::new(), false);
+                    push_local_eva(state, sidebar_eva::EVA_SELECT_TARGET);
+                }
+                super::superweapon_cameo::SuperWeaponClick::Launch(sw_type_id) => {
+                    let owner = preferred_local_owner_name(state).unwrap_or_default();
+                    crate::app::input::commands::try_schedule_command(
+                        state,
+                        &owner,
+                        Command::LaunchSuperWeapon {
+                            sw_type_id,
+                            target_rx: 0,
+                            target_ry: 0,
+                        },
+                    );
+                }
+                _ => {}
+            }
         }
         SidebarAction::CycleProducer(category) => {
             cycle_active_producer(state, category);
@@ -1453,7 +1436,7 @@ pub(crate) fn handle_hotkey_pressed(
     match resolution {
         HotkeyResolution::Command(command) => dispatch_retail_hotkey(state, command),
         HotkeyResolution::Fallback(HotkeyFallback::DiplomacyDialog) => {
-            crate::app::input::diplomacy::open(state);
+            open_diplomacy_menu(state);
         }
         HotkeyResolution::Fallback(
             HotkeyFallback::ArrowLeft
@@ -1706,6 +1689,12 @@ pub(crate) fn dispatch_command_bar(state: &mut AppState, command: usize, right: 
 fn open_pause_menu(state: &mut AppState) {
     crate::app::App::enter_in_game_menu_state(state, crate::ui::pause_menu::InGameMenuState::Menu);
     log::info!("Game paused");
+}
+
+fn open_diplomacy_menu(_state: &mut AppState) {
+    // 6538FE -> GameState8 (diplomacy), or9 (mission briefing in mode0).
+    // Existing diplomacy hotkey boundary: the actual modal is not implemented.
+    // Keep this residual explicit; this increment establishes its gadget only.
 }
 
 fn handle_options_hotkey(state: &mut AppState) {
