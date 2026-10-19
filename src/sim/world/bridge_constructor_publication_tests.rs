@@ -515,7 +515,7 @@ fn sparse_native_sight_indexes_real_cells_and_keeps_diagnostics_read_only() {
         sim.reveal(101),
         crate::sim::world::RevealOutcome::Revealed { .. }
     ));
-    let admission = &sim.fog.sight_admissions[&(101, owner)];
+    let admission = &sim.fog.sight_admissions_for_test()[&(101, owner)];
     assert!(admission.latched && !admission.cells.is_empty());
     let cached_geometry = (admission.origin, admission.radius);
     let terrain = sim.resolved_terrain.as_ref().unwrap();
@@ -535,7 +535,7 @@ fn sparse_native_sight_indexes_real_cells_and_keeps_diagnostics_read_only() {
         "diagnostics cannot stamp the retained Dummy"
     );
     sim.advance_tick(&[], None, None, None, 67);
-    let admission = &sim.fog.sight_admissions[&(101, owner)];
+    let admission = &sim.fog.sight_admissions_for_test()[&(101, owner)];
     assert!(admission.latched);
     assert_eq!((admission.origin, admission.radius), cached_geometry);
 }

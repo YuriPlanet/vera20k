@@ -29,7 +29,13 @@ fn reveal_between_frames(
             .find(|entity| entity.owner() == firer_owner)
             .map(|entity| crate::sim::movement::ground_pose::position_world_coord(&entity.position))
     {
-        super::reveal_shroud_on_fire(&mut sim.fog, viewer, coord, &config, heights.levels());
+        super::reveal_shroud_on_fire(
+            &mut sim.fog,
+            viewer,
+            coord,
+            &config,
+            heights.cell_levels(sim.resolved_terrain.as_ref()),
+        );
     }
     if frame % 60 == 0 {
         for final_pass in [false, true] {

@@ -25,7 +25,7 @@ fn cell_at(world: &Simulation, coord: ProjectileCoord) -> CellRef<'_> {
 
 pub(crate) fn land_at(world: &Simulation, coord: ProjectileCoord) -> i32 {
     match cell_at(world, coord) {
-        CellRef::Real(cell) => i32::from(cell.land_type),
+        CellRef::Real(cell) => i32::from(cell.land_type()),
         CellRef::Dummy { cell } => cell.land_type(),
     }
 }

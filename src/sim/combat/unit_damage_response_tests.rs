@@ -176,7 +176,7 @@ fn computer_crusher_charges_a_crushable_attacker() {
         let before = health(&sim);
         hit(&mut sim, &rules, rhino, source, damage);
         assert_eq!(damage == 0, health(&sim) == before);
-        nav_com(&sim, rhino) == Some(NavTargetRef::Entity { id: source })
+        nav_com(&sim, rhino) == Some(NavTargetRef::Object { id: source })
             && queued(&sim, rhino) == MOVE
     };
     let unchanged = |_: &mut Simulation, _: u64, gi: u64| gi;
@@ -291,7 +291,7 @@ fn gassed_computer_fortress_charges_the_chaos_drone() {
     );
     assert_eq!(
         nav_com(&sim, fortress),
-        Some(NavTargetRef::Entity { id: drone })
+        Some(NavTargetRef::Object { id: drone })
     );
     assert_eq!(queued(&sim, fortress), MOVE);
 }

@@ -28,7 +28,7 @@ use std::path::{Path, PathBuf};
 use crate::asset_tools::canvas::{self, Rgba, SheetCell};
 use crate::asset_tools::identify;
 use crate::asset_tools::names::NameDict;
-use crate::asset_tools::palette::{self, AlphaPolicy};
+use crate::asset_tools::palette;
 use crate::asset_tools::report::{CompareReport, CompareVariant, ErrorReport, RenderOutputs};
 use crate::assets::asset_manager::AssetManager;
 use crate::assets::aud_file;
@@ -647,12 +647,7 @@ fn render_variants(
             continue;
         }
 
-        // Alpha policy decides the converter. Getting this backwards is the
-        // single most likely way this ships wrong-looking art.
-        let converted = match load.alpha_policy {
-            AlphaPolicy::Standard => shp.frame_to_rgba(opts.frame, &load.palette),
-            AlphaPolicy::GamemdUi => shp.frame_to_rgba_ui(opts.frame, &load.palette),
-        };
+        let converted = shp.frame_to_rgba(opts.frame, &load.palette);
         let frame = &shp.frames[opts.frame];
         let frame_image = match converted {
             Ok(rgba) if frame.frame_width > 0 && frame.frame_height > 0 => {

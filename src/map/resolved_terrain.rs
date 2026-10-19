@@ -31,7 +31,6 @@ use crate::map::lat;
 use crate::map::map_file::{MapCell, MapFile};
 use crate::map::overlay::OverlayEntry;
 use crate::map::playfield::PlayfieldBounds;
-use crate::map::rmg::preview::Playfield;
 use crate::map::theater::{self, TheaterData, TileKey, TilesetLookup};
 use crate::map::tile_variant_selector::TileVariantSelectionContext;
 use crate::map::tube_facts::{NativeTubeCellIndex, TubeFact, TubeId};
@@ -42,9 +41,9 @@ use crate::rules::overlay_types::{
 };
 use crate::rules::ruleset::RuleSet;
 use crate::rules::terrain_object_type::TerrainObjectType;
-use crate::rules::terrain_rules::{LandType, SpeedCostProfile, TerrainClass, TerrainRules};
+use crate::rules::terrain_rules::{LandType, LandTypeSemantics, SpeedCostProfile, TerrainRules};
 use crate::util::pixel_conversion::PixelConversionBounds;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::{
     Arc,
     atomic::{AtomicI16, AtomicI32, AtomicU8, AtomicU32, AtomicU64, Ordering},
@@ -192,9 +191,17 @@ pub struct ResolvedTerrainCell {
     pub level: u8,
     pub filled_clear: bool,
     pub tileset_index: Option<u16>,
-    /// CellClass+0xEC LandType after TMP and overlay derivation. Reduced
-    /// `zone_type`, not this field, selects the movement matrix column.
+    /// `CellClass+0xEC` LandType after TMP and overlay derivation: the one
+    /// land attribute gamemd stores per cell (constructor `0x0047BC93`,
+    /// RecalcAttributes `0x0047D2B0`). Water, cliff and the rest are asked of
+    /// it, never cached beside it. Reduced `zone_type`, not this field, selects
+    /// the movement matrix column. Other modules read [`Self::land_type`];
+    /// production writes stay in this module's load, Recalc, CliffBack,
+    /// overlay and snapshot writers. Test builds may write it directly.
+    #[cfg(any(test, feature = "test-support"))]
     pub land_type: u8,
+    #[cfg(not(any(test, feature = "test-support")))]
+    land_type: u8,
     pub slope_type: u8,
     /// Registered pristine TMP +0x28 height field (CellClass-owned).
     pub template_height: u8,
@@ -203,12 +210,7 @@ pub struct ResolvedTerrainCell {
     /// Tactical render origin owned by the selected independent TMP.
     pub render_offset_x: i32,
     pub render_offset_y: i32,
-    pub terrain_class: TerrainClass,
     pub speed_costs: SpeedCostProfile,
-    pub is_water: bool,
-    pub is_cliff_like: bool,
-    pub is_rough: bool,
-    pub is_road: bool,
     /// True when this cell's tileset has `Morphable=yes`. Smudge placement
     /// requires this gate (matches gamemd IsoTileTypeClass+0x2E0).
     pub accepts_smudge: bool,
@@ -249,13 +251,17 @@ pub struct ResolvedTerrainCell {
     /// removal without the conflated `ground_walk_blocked` field.
     pub base_ground_walk_blocked: bool,
     pub base_build_blocked: bool,
-    /// Underlying `land_type` before any overlay override (tiberium / road).
-    /// Used by `recalc_overlay_passability` to restore the pre-overlay value
-    /// when an ore overlay is fully harvested (or any other overlay removed).
-    /// Same pattern as `base_ground_walk_blocked`.
+    /// Underlying `land_type` before any overlay override (tiberium / road):
+    /// the pristine TMP subtile land (`GetSubtileLandType 0x00544BE0`) or the
+    /// CliffBack Rock reclass. Written with the pristine metadata by this
+    /// module's load, Recalc, CliffBack, tile-replacement and snapshot writers;
+    /// `recalc_overlay_passability` restores `land_type` from it when an
+    /// overlay goes (an ore overlay fully harvested), where RecalcAttributes
+    /// would re-read the TMP. Same pattern as `base_ground_walk_blocked`.
+    #[cfg(any(test, feature = "test-support"))]
     pub base_land_type: u8,
-    /// Underlying terrain classification before overlay overrides.
-    pub base_terrain_class: TerrainClass,
+    #[cfg(not(any(test, feature = "test-support")))]
+    base_land_type: u8,
     /// Underlying terrain speed-cost profile before overlay overrides. Restored
     /// on overlay removal so harvested ore cells revert to the original
     /// terrain's per-locomotor speed table.
@@ -282,6 +288,11 @@ pub struct ResolvedTerrainCell {
 }
 
 impl ResolvedTerrainCell {
+    /// `CellClass+0xEC` LandType, compared against [`LandType::as_index`].
+    pub fn land_type(&self) -> u8 {
+        self.land_type
+    }
+
     /// Refresh byte-encoded height views of the current Cell, independently of
     /// its Recalc-owned class, flags and cached topology. Preserve the encoded
     /// signed-level +4 result: raw252 (-4) has a structural deck at level0.
@@ -416,6 +427,10 @@ const CELL_CENTRE_LEPTONS: i32 = LEPTONS_PER_CELL / 2;
 /// replaced after map construction. The live ResolvedTerrainGrid is derived
 /// and skipped by Simulation snapshots, so collapse projects these exact
 /// fields into Simulation and reapplies them after map reconstruction.
+///
+/// Only [`Self::capture`] (or a saved game) makes one and only
+/// [`ResolvedTerrainGrid::apply_dynamic_cell_state`] writes it back, so the
+/// two land values stay this module's, as on [`ResolvedTerrainCell`].
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct DynamicTerrainCellState {
     pub final_tile_index: i32,
@@ -424,18 +439,16 @@ pub struct DynamicTerrainCellState {
     pub level: u8,
     pub filled_clear: bool,
     pub tileset_index: Option<u16>,
+    #[cfg(any(test, feature = "test-support"))]
     pub land_type: u8,
+    #[cfg(not(any(test, feature = "test-support")))]
+    land_type: u8,
     pub slope_type: u8,
     pub template_height: u8,
     pub height_in_pixels: i8,
     pub render_offset_x: i32,
     pub render_offset_y: i32,
-    pub terrain_class: TerrainClass,
     pub speed_costs: SpeedCostProfile,
-    pub is_water: bool,
-    pub is_cliff_like: bool,
-    pub is_rough: bool,
-    pub is_road: bool,
     pub accepts_smudge: bool,
     pub allows_tiberium: bool,
     pub variant: u8,
@@ -447,8 +460,10 @@ pub struct DynamicTerrainCellState {
     pub zone_type: u8,
     pub base_ground_walk_blocked: bool,
     pub base_build_blocked: bool,
+    #[cfg(any(test, feature = "test-support"))]
     pub base_land_type: u8,
-    pub base_terrain_class: TerrainClass,
+    #[cfg(not(any(test, feature = "test-support")))]
+    base_land_type: u8,
     pub base_speed_costs: SpeedCostProfile,
     pub has_bridge_deck: bool,
     pub bridge_walkable: bool,
@@ -476,12 +491,7 @@ impl DynamicTerrainCellState {
             height_in_pixels: cell.height_in_pixels,
             render_offset_x: cell.render_offset_x,
             render_offset_y: cell.render_offset_y,
-            terrain_class: cell.terrain_class,
             speed_costs: cell.speed_costs,
-            is_water: cell.is_water,
-            is_cliff_like: cell.is_cliff_like,
-            is_rough: cell.is_rough,
-            is_road: cell.is_road,
             accepts_smudge: cell.accepts_smudge,
             allows_tiberium: cell.allows_tiberium,
             variant: cell.variant,
@@ -494,7 +504,6 @@ impl DynamicTerrainCellState {
             base_ground_walk_blocked: cell.base_ground_walk_blocked,
             base_build_blocked: cell.base_build_blocked,
             base_land_type: cell.base_land_type,
-            base_terrain_class: cell.base_terrain_class,
             base_speed_costs: cell.base_speed_costs,
             has_bridge_deck: cell.has_bridge_deck,
             bridge_walkable: cell.bridge_walkable,
@@ -508,7 +517,7 @@ impl DynamicTerrainCellState {
         }
     }
 
-    pub(crate) fn apply(&self, cell: &mut ResolvedTerrainCell) {
+    fn apply(&self, cell: &mut ResolvedTerrainCell) {
         cell.final_tile_index = self.final_tile_index;
         cell.final_sub_tile = self.final_sub_tile;
         cell.is_wood_bridge_repair_tile = self.is_wood_bridge_repair_tile;
@@ -521,12 +530,7 @@ impl DynamicTerrainCellState {
         cell.height_in_pixels = self.height_in_pixels;
         cell.render_offset_x = self.render_offset_x;
         cell.render_offset_y = self.render_offset_y;
-        cell.terrain_class = self.terrain_class;
         cell.speed_costs = self.speed_costs;
-        cell.is_water = self.is_water;
-        cell.is_cliff_like = self.is_cliff_like;
-        cell.is_rough = self.is_rough;
-        cell.is_road = self.is_road;
         cell.accepts_smudge = self.accepts_smudge;
         cell.allows_tiberium = self.allows_tiberium;
         cell.variant = self.variant;
@@ -539,7 +543,6 @@ impl DynamicTerrainCellState {
         cell.base_ground_walk_blocked = self.base_ground_walk_blocked;
         cell.base_build_blocked = self.base_build_blocked;
         cell.base_land_type = self.base_land_type;
-        cell.base_terrain_class = self.base_terrain_class;
         cell.base_speed_costs = self.base_speed_costs;
         cell.has_bridge_deck = self.has_bridge_deck;
         cell.bridge_walkable = self.bridge_walkable;
@@ -745,13 +748,10 @@ pub const TEST_OPEN_SPEED_COSTS: SpeedCostProfile = SpeedCostProfile {
     hover: Some(100),
 };
 
-/// [`test_flat_cell`] whose base terrain class is Clear.
+/// [`test_flat_cell`], named for the Clear land it carries.
 #[cfg(any(test, feature = "test-support"))]
 pub(crate) fn test_clear_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
-    ResolvedTerrainCell {
-        base_terrain_class: TerrainClass::Clear,
-        ..test_flat_cell(rx, ry)
-    }
+    test_flat_cell(rx, ry)
 }
 
 /// [`test_clear_cell`] that accepts smudges.
@@ -772,13 +772,11 @@ pub(crate) fn test_tiberium_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
     }
 }
 
-/// [`test_flat_cell`] that is `filled_clear`, has an Unknown terrain class
-/// (`TerrainClass`'s default) and accepts smudges.
+/// [`test_flat_cell`] that is `filled_clear` and accepts smudges.
 #[cfg(any(test, feature = "test-support"))]
-pub(crate) fn test_unclassified_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
+pub(crate) fn test_filled_smudge_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
     ResolvedTerrainCell {
         filled_clear: true,
-        terrain_class: TerrainClass::default(),
         accepts_smudge: true,
         ..test_flat_cell(rx, ry)
     }
@@ -796,7 +794,7 @@ pub fn test_loader_clear_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
 }
 
 /// A fully-populated flat `ResolvedTerrainCell`, for tests in other modules that
-/// need a grid and should not carry a 47-field copy of this literal.
+/// need a grid and should not carry a copy of this whole literal.
 #[cfg(any(test, feature = "test-support"))]
 pub fn test_flat_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
     ResolvedTerrainCell {
@@ -815,14 +813,9 @@ pub fn test_flat_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
         template_height: 0,
         render_offset_x: 0,
         render_offset_y: 0,
-        terrain_class: TerrainClass::Clear,
         speed_costs: SpeedCostProfile::default(),
-        is_water: false,
-        is_cliff_like: false,
         height_in_pixels: 0,
         variant: 0,
-        is_rough: false,
-        is_road: false,
         accepts_smudge: false,
         allows_tiberium: false,
         has_ramp: false,
@@ -837,7 +830,6 @@ pub fn test_flat_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
         base_ground_walk_blocked: false,
         base_build_blocked: false,
         base_land_type: 0,
-        base_terrain_class: Default::default(),
         base_speed_costs: Default::default(),
         has_bridge_deck: false,
         bridge_walkable: false,
@@ -852,14 +844,25 @@ pub fn test_flat_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
     }
 }
 
+/// The rules row a cell of `land` takes: the scenario's (the zero row for an
+/// unauthored section), or, with no rules table bound at all (test fixtures
+/// only; every production builder binds one), the unbound row: no SpeedType
+/// rows, not blocked, buildable.
+fn land_row(rules: Option<&TerrainRules>, land: LandType) -> LandTypeSemantics {
+    rules.map_or(
+        LandTypeSemantics {
+            buildable: true,
+            ground_blocked: false,
+            speed_costs: SpeedCostProfile::default(),
+        },
+        |rules| *rules.row(land),
+    )
+}
+
 fn land_speed_cost_profiles(
     rules: Option<&TerrainRules>,
 ) -> [SpeedCostProfile; LandType::ALL.len()] {
-    std::array::from_fn(|index| {
-        rules
-            .and_then(|rules| rules.semantics_for_land_type(LandType::ALL[index].as_index()))
-            .map_or_else(SpeedCostProfile::default, |row| row.speed_costs)
-    })
+    LandType::ALL.map(|land| land_row(rules, land).speed_costs)
 }
 
 /// The two `OverlayTypeClass` fields `CellClass::CheckCellPassability @
@@ -942,9 +945,10 @@ impl ResolvedTerrainGrid {
     }
 
     /// Original4835D5..4835DE indexes the 89EA40 table using retained Land.
-    /// The existing TerrainRules owner supplies these rows; this grid does
-    /// not parse or independently mutate rules. A missing or invalid row is
-    /// the unbound profile, every cost absent.
+    /// The existing TerrainRules owner supplies these rows (the zero row for
+    /// an unauthored section); this grid does not parse or independently
+    /// mutate rules. A value outside the twelve land types is the unbound
+    /// profile, every cost absent.
     pub(crate) fn land_speed_costs(&self, land: i32) -> SpeedCostProfile {
         usize::try_from(land)
             .ok()

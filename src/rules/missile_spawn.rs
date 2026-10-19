@@ -61,11 +61,13 @@ pub enum MissileFamily {
 }
 
 /// One `RocketStruct` and the two `[CombatDamage]` warheads its family
-/// detonates with.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+/// detonates with. The ordered Rules processor resolves the type and both
+/// warheads through their factories (`native_processing`), which answer null
+/// for `none` and `<none>`; this block keeps the stored IDs it supplies.
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub struct MissileSpawnParams {
-    /// Resolved child TechnoType section name (`V3ROCKET` / `DMISL` / `CMISL`),
-    /// `+0x30`; empty while the key is unset (a null pointer).
+    /// Resolved child AircraftType (`V3ROCKET` / `DMISL` / `CMISL`), `+0x30`,
+    /// as its stored ID; empty for the constructor's null.
     pub type_name: String,
     /// `+0x00` frames in MissionState 1 before the tilt.
     pub pause_frames: i32,
@@ -91,9 +93,9 @@ pub struct MissileSpawnParams {
     pub body_length: i32,
     /// `+0x2C` blend the cruise pitch toward the target angle.
     pub lazy_curve: bool,
-    /// `[CombatDamage] *Warhead`.
+    /// `[CombatDamage] *Warhead`, a stored ID; empty for null.
     pub warhead: String,
-    /// `[CombatDamage] *EliteWarhead`.
+    /// `[CombatDamage] *EliteWarhead`, a stored ID; empty for null.
     pub elite_warhead: String,
 }
 
@@ -179,16 +181,13 @@ impl MissileSpawnParams {
         self.elite_damage = general.read_int(&key("EliteDamage"), self.elite_damage);
         self.body_length = general.read_int(&key("BodyLength"), self.body_length);
         self.lazy_curve = general.read_bool(&key("LazyCurve"), self.lazy_curve);
-        // ReadString into 0x80 bytes ahead of the type lookup (`0x0067BD30`),
-        // which an absent key skips.
-        if let Some(name) = general.read_name(&key("Type"), 0x80) {
-            self.type_name = name.to_string();
-        }
+        // The block's last read, `<prefix>Type=` through `0x0067BD30`, is the
+        // ordered Rules processor's ([`MissileSpawnRules::set_type`]).
     }
 }
 
 /// The three `RocketStruct` blocks.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Hash, serde::Serialize, serde::Deserialize)]
 pub struct MissileSpawnRules {
     pub v3: MissileSpawnParams,
     pub dmisl: MissileSpawnParams,
@@ -225,18 +224,17 @@ impl Default for MissileSpawnRules {
 }
 
 impl MissileSpawnRules {
-    /// One `RulesClass::Process` pass: `ReadGeneral` returns at once when the
-    /// pass has no `[General]` (`0x0066D54C..0x0066D558`), and
-    /// `ReadCombatDamage` likewise for `[CombatDamage]`. Within a present
-    /// `[General]` every key keeps the live value when absent, except
-    /// `CMislAcceleration`, whose default is DMisl's live acceleration: a pass
-    /// with `[General]` but no `CMislAcceleration=` copies DMisl's.
+    /// One `RulesClass::Process` pass of the `[General]` rocket scalars:
+    /// `ReadGeneral` returns at once when the pass has no `[General]`
+    /// (`0x0066D54C..0x0066D558`). Within a present `[General]` every key
+    /// keeps the live value when absent, except `CMislAcceleration`, whose
+    /// default is DMisl's live acceleration: a pass with `[General]` but no
+    /// `CMislAcceleration=` copies DMisl's. The rocket types and warheads are
+    /// Type references the ordered Rules processor reads in the same pass
+    /// ([`Self::set_type`], [`Self::read_warheads`]).
     pub fn apply_pass(&mut self, ini: &IniFile) {
         if let Some(general) = ini.section("General") {
             self.read_general(general);
-        }
-        if let Some(combat_damage) = ini.section("CombatDamage") {
-            self.read_combat_damage(combat_damage);
         }
     }
 
@@ -251,18 +249,31 @@ impl MissileSpawnRules {
             .read_general(general, "CMisl", cmisl_acceleration_default);
     }
 
-    /// `ReadCombatDamage`'s six warhead reads (`0x0066C390..0x0066C4F4`), in
-    /// order. Each is ReadString into 0x80 bytes, then the warhead lookup
-    /// (`0x0075E3B0`) when the copy is nonempty; otherwise the default. A
-    /// normal warhead's default is its own live value, but an elite warhead's
-    /// is its family's normal warhead as this pass left it: a pass whose
-    /// `[CombatDamage]` names `V3Warhead=` without `V3EliteWarhead=` gives the
-    /// elite launcher the normal warhead.
-    fn read_combat_damage(&mut self, combat_damage: &IniSection) {
-        let read = |key: &str, default: &str| {
-            combat_damage
-                .read_name(key, 0x80)
-                .map_or_else(|| default.to_string(), str::to_string)
+    /// A family's `[General] <prefix>Type=` as the ordered Rules processor
+    /// resolved it: `None` is the factory's null for `none` or `<none>`.
+    pub(crate) fn set_type(&mut self, family: MissileFamily, type_name: Option<String>) {
+        let block = match family {
+            MissileFamily::V3Rocket => &mut self.v3,
+            MissileFamily::DMisl => &mut self.dmisl,
+            MissileFamily::CMisl => &mut self.cmisl,
+        };
+        block.type_name = type_name.unwrap_or_default();
+    }
+
+    /// `ReadCombatDamage`'s six warhead reads (`0x0066C36A..0x0066C4F4`), in
+    /// order. `resolve` is the processor's ReadString128 and WarheadType
+    /// factory (`0x0075E3B0`): `None` for an empty read, otherwise the
+    /// factory's answer. An empty read keeps the default: a normal warhead's
+    /// own live value, but for an elite warhead its family's normal warhead
+    /// as this pass left it, so a pass whose `[CombatDamage]` names
+    /// `V3Warhead=` without `V3EliteWarhead=` gives the elite launcher the
+    /// normal warhead.
+    pub(crate) fn read_warheads(
+        &mut self,
+        mut resolve: impl FnMut(&str) -> Option<Option<String>>,
+    ) {
+        let mut read = |key: &str, default: &str| {
+            resolve(key).map_or_else(|| default.to_owned(), Option::unwrap_or_default)
         };
         self.v3.warhead = read("V3Warhead", &self.v3.warhead);
         self.dmisl.warhead = read("DMislWarhead", &self.dmisl.warhead);
@@ -270,6 +281,18 @@ impl MissileSpawnRules {
         self.dmisl.elite_warhead = read("DMislEliteWarhead", &self.dmisl.warhead);
         self.cmisl.warhead = read("CMislWarhead", &self.cmisl.warhead);
         self.cmisl.elite_warhead = read("CMislEliteWarhead", &self.cmisl.warhead);
+    }
+
+    /// The types and warheads Full_Init's Type reset leaves dangling,
+    /// cleared; the scalars stay (`NativeRulesRegistryState::
+    /// destructive_reset`).
+    pub(crate) fn without_type_references(mut self) -> Self {
+        for block in [&mut self.v3, &mut self.dmisl, &mut self.cmisl] {
+            block.type_name.clear();
+            block.warhead.clear();
+            block.elite_warhead.clear();
+        }
+        self
     }
 
     /// The spawn manager's missile-slot test: the type is one of the three
@@ -339,11 +362,20 @@ impl MissileSpawnRules {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
+
+    /// The production reader: rules passes in order, the rocket types and
+    /// warheads read by the ordered Rules processor.
+    fn parse_layers(layers: &[&str]) -> MissileSpawnRules {
+        let mut stack = RulesLayerStack::new(IniFile::from_str(layers[0]));
+        for layer in &layers[1..] {
+            stack.push(RulesLayerKind::Scenario, IniFile::from_str(layer));
+        }
+        stack.process().unwrap().missile_spawn().clone()
+    }
 
     fn parse(text: &str) -> MissileSpawnRules {
-        let mut rules = MissileSpawnRules::default();
-        rules.apply_pass(&IniFile::from_str(text));
-        rules
+        parse_layers(&[text])
     }
 
     #[test]
@@ -449,15 +481,14 @@ mod tests {
 
     #[test]
     fn elite_warheads_default_to_the_pass_normal_warhead() {
-        let mut rules = parse(
-            "[CombatDamage]\n\
+        let first = "[CombatDamage]\n\
              V3Warhead=V3WH\n\
              V3EliteWarhead=V3EWH\n\
-             CMislWarhead=CMISLWH\n",
-        );
+             CMislWarhead=CMISLWH\n";
+        let rules = parse(first);
         assert_eq!(rules.v3.elite_warhead, "V3EWH");
         assert_eq!(rules.cmisl.elite_warhead, "CMISLWH");
-        rules.apply_pass(&IniFile::from_str("[CombatDamage]\nC4Delay=0.03\n"));
+        let rules = parse_layers(&[first, "[CombatDamage]\nC4Delay=0.03\n"]);
         assert_eq!(rules.v3.warhead, "V3WH");
         assert_eq!(rules.v3.elite_warhead, "V3WH");
     }

@@ -26,37 +26,19 @@ use super::x87::{Gaussian, TruncF64};
 use super::{GeneratedMap, MapGeometry, RmgOptions, RmgSettings, Stage, emit, grid};
 use crate::util::retail_trig::TrigTable;
 
-/// Land type → rules section, the RA2 `LandType` enum order (verified against
-/// the zone classifier's `LAND_WATER == 2` / `LAND_BEACH == 6`).
-const LAND_TYPE_SECTIONS: [Option<&str>; LAND_TYPES] = [
-    Some("Clear"),    // 0
-    Some("Road"),     // 1
-    Some("Water"),    // 2
-    Some("Rock"),     // 3
-    Some("Wall"),     // 4
-    Some("Tiberium"), // 5
-    Some("Beach"),    // 6
-    Some("Rough"),    // 7
-    Some("Ice"),      // 8
-    Some("Railroad"), // 9
-    Some("Tunnel"),   // 10
-    Some("Weeds"),    // 11
-    None,             // 12
-    None,             // 13
-    None,             // 14
-    None,             // 15
-];
-
 /// Wheel speed at or below this percent classifies the land as wheel-impassable.
 const WHEEL_IMPASSABLE_MAX: u8 = 1;
 
 /// Per-land-type "Wheel speed <= 1%" flags for the zone classifier, read from
-/// the terrain rules. Stock rules make only Rock wheel-impassable.
+/// the terrain rules' rows in `LandType` order (the classifier's
+/// `LAND_WATER == 2` / `LAND_BEACH == 6`); indices past the twelve land types
+/// stay false.
 pub fn wheel_impassable_from_rules(rules: &TerrainRules) -> [bool; LAND_TYPES] {
     std::array::from_fn(|land| {
-        LAND_TYPE_SECTIONS[land]
-            .and_then(|name| rules.semantics_by_name(name))
-            .and_then(|sem| sem.cost_for_speed_type(SpeedType::Wheel))
+        u8::try_from(land)
+            .ok()
+            .and_then(|land| rules.semantics_for_land_type(land))
+            .and_then(|row| row.cost_for_speed_type(SpeedType::Wheel))
             .is_some_and(|wheel| wheel <= WHEEL_IMPASSABLE_MAX)
     })
 }
@@ -290,31 +272,6 @@ mod tests {
     use crate::rules::ini_parser::IniFile;
     use crate::rules::terrain_rules::LandType;
 
-    #[test]
-    fn gsi_04_04_rmg_land_sections_follow_canonical_order() {
-        assert_eq!(
-            LAND_TYPE_SECTIONS,
-            [
-                Some("Clear"),
-                Some("Road"),
-                Some("Water"),
-                Some("Rock"),
-                Some("Wall"),
-                Some("Tiberium"),
-                Some("Beach"),
-                Some("Rough"),
-                Some("Ice"),
-                Some("Railroad"),
-                Some("Tunnel"),
-                Some("Weeds"),
-                None,
-                None,
-                None,
-                None,
-            ],
-        );
-    }
-
     struct OneByOne(TileBlock);
     impl TileBlocks for OneByOne {
         fn block(&self, _tile: i32) -> Option<&TileBlock> {
@@ -388,11 +345,20 @@ mod tests {
     }
 
     #[test]
-    fn missing_wheel_key_is_passable() {
-        let rules = TerrainRules::from_ini(&IniFile::from_str(""));
+    fn missing_wheel_key_is_passable_but_missing_section_is_not() {
+        // An authored section reads an absent Wheel as 1.0; an unauthored one
+        // keeps the zero row (`0x0089EA40`), which is wheel-impassable.
+        let rules = TerrainRules::from_ini(&IniFile::from_str("[Clear]\nBuildable=yes\n"));
         let wheel = wheel_impassable_from_rules(&rules);
-        // No section defines Wheel → nothing is wheel-impassable.
-        assert!(wheel.iter().all(|&blocked| !blocked));
+        for land in LandType::ALL {
+            assert_eq!(
+                wheel[land.as_index() as usize],
+                land != LandType::Clear,
+                "{}",
+                land.section_name()
+            );
+        }
+        assert!(wheel[LandType::ALL.len()..].iter().all(|&blocked| !blocked));
     }
 
     fn options(map_type: i32, theater: i32) -> RmgOptions {

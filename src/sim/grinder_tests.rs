@@ -406,10 +406,10 @@ fn sov03_authored_trigger80_teams_walk_and_recycle_all_four_civilian_types() {
         assert_eq!(rules.object(type_id).unwrap().soylent, 100);
         let tag = &authored.tags[tag_id];
         let mut chain = Vec::new();
-        let mut next = Some(tag.fields[2].as_str());
+        let mut next = tag.trigger();
         while let Some(id) = next {
             chain.push(id);
-            next = authored.triggers[id].linked_trigger_id.as_deref();
+            next = authored.triggers[id].linked_trigger_id();
         }
         assert_eq!(chain.len(), 7);
         assert_eq!(chain.last().copied(), Some(first_trigger));
@@ -435,9 +435,13 @@ fn sov03_authored_trigger80_teams_walk_and_recycle_all_four_civilian_types() {
             format!(
                 "[Map]\nSize=0,0,32,32\nLocalSize=0,0,32,32\nTheater=NEWURBAN\n\
              [IsoMapPack5]\n1=DwALABwBAAIA/////wAAABEAAA==\n\
-             {records}[Tags]\n{}={}\n[Waypoints]\n{waypoints}",
-                tag.id,
-                tag.fields.join(","),
+             {records}[Tags]\n{tag_id}={}\n[Waypoints]\n{waypoints}",
+                authored
+                    .ini
+                    .section("Tags")
+                    .unwrap()
+                    .get_for_test(tag_id)
+                    .unwrap(),
             )
             .as_bytes(),
         )
@@ -464,11 +468,6 @@ fn sov03_authored_trigger80_teams_walk_and_recycle_all_four_civilian_types() {
                 None,
                 67,
                 crate::sim::world::TickLane::Ordinary,
-                Some(crate::sim::world::TriggerInputs {
-                    events: &cropped.events,
-                    actions: &cropped.actions,
-                    rules: Some(&rules),
-                }),
                 FrameEffects::default(),
             )
             .unwrap();

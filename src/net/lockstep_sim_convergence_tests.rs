@@ -254,7 +254,7 @@ fn two_instance_multiplayer_checksums_match_every_frame_and_catch_a_desync() {
         sim.session.current_house = sim.interner.get("Local");
         let costs = rules
             .terrain_rules
-            .semantics_by_name("Clear")
+            .semantics_for_land_type(crate::rules::terrain_rules::LandType::Clear.as_index())
             .unwrap()
             .speed_costs;
         let cells = (0..64)
@@ -262,7 +262,6 @@ fn two_instance_multiplayer_checksums_match_every_frame_and_catch_a_desync() {
                 (0..64).map(move |x| {
                     let mut cell = crate::map::resolved_terrain::ResolvedTerrainCell {
                         filled_clear: true,
-                        terrain_class: Default::default(),
                         accepts_smudge: true,
                         ..crate::map::resolved_terrain::test_flat_cell(x, y)
                     };
@@ -300,7 +299,6 @@ fn two_instance_multiplayer_checksums_match_every_frame_and_catch_a_desync() {
                 None,
                 67,
                 TickLane::Ordinary,
-                None,
                 FrameEffects::default(),
             )
             .expect("scene frame completes")

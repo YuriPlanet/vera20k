@@ -1167,7 +1167,7 @@ mod tests {
         crate::map::resolved_terrain::test_grid(
             w,
             h,
-            crate::map::resolved_terrain::test_unclassified_cell,
+            crate::map::resolved_terrain::test_filled_smudge_cell,
         )
     }
 
@@ -2467,7 +2467,7 @@ mod tests {
     fn terrain_with_bridge_cells(cells_on_bridge: &[(u16, u16)]) -> ResolvedTerrainGrid {
         let mut cells: Vec<ResolvedTerrainCell> = (0..16)
             .flat_map(|ry| {
-                (0..16).map(move |rx| crate::map::resolved_terrain::test_unclassified_cell(rx, ry))
+                (0..16).map(move |rx| crate::map::resolved_terrain::test_filled_smudge_cell(rx, ry))
             })
             .collect();
         for &(rx, ry) in cells_on_bridge {
@@ -2573,7 +2573,7 @@ mod tests {
     fn inrange_bridge_gate_follows_flag_0x100_not_the_overlay_deck() {
         let mut cells: Vec<ResolvedTerrainCell> = (0..16)
             .flat_map(|ry| {
-                (0..16).map(move |rx| crate::map::resolved_terrain::test_unclassified_cell(rx, ry))
+                (0..16).map(move |rx| crate::map::resolved_terrain::test_filled_smudge_cell(rx, ry))
             })
             .collect();
         let idx = 5 * 16 + 5;

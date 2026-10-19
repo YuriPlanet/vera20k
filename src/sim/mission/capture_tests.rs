@@ -93,11 +93,7 @@ fn head_for(sim: &mut Simulation, rules: &RuleSet, id: u64, building: u64) {
 
 fn heading(sim: &Simulation, id: u64) -> Option<u64> {
     match sim.substrate.entities.get(id)?.navigation.nav_com() {
-        Some(
-            NavTargetRef::Entity { id }
-            | NavTargetRef::Object { id }
-            | NavTargetRef::Building { id },
-        ) => Some(id),
+        Some(NavTargetRef::Object { id }) => Some(id),
         _ => None,
     }
 }

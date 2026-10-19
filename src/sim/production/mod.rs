@@ -100,11 +100,10 @@ pub(in crate::sim) use self::factory_lifecycle::{
     abandon_house_factories, detach_building_production, recalculate_strips,
     refresh_factory_rates_for_house, step_factories, update_factory_queue,
 };
-#[cfg(any(test, feature = "test-support"))]
 pub(in crate::sim) use self::production_queue::exit_produced_object;
 pub(crate) use self::production_tech::factory_category_for_building;
 pub(crate) use self::wall_placement::{
-    autofill_walls, linked_overlay_id as linked_wall_overlay_id, mark_wall,
+    autofill_walls, linked_overlay_id as linked_wall_overlay_id,
 };
 
 #[cfg(test)]

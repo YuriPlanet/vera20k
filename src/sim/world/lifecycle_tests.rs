@@ -8,7 +8,7 @@ use crate::map::bridge_facts::{
 use crate::map::entities::{EntityCategory, MapEntity};
 use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid};
 use crate::rules::locomotor_type::LocomotorKind;
-use crate::rules::terrain_rules::{SpeedCostProfile, TerrainClass};
+use crate::rules::terrain_rules::SpeedCostProfile;
 use crate::sim::anim_class::{AnimObject, AnimRuntime, AnimWorldCoord};
 use crate::sim::combat::{Health, TargetKind};
 use crate::sim::components::NavTargetRef;
@@ -766,7 +766,6 @@ pub fn common_raw_terrain_cell(
     ResolvedTerrainCell {
         level,
         template_height: level,
-        base_terrain_class: TerrainClass::Clear,
         has_bridge_deck,
         bridge_walkable: has_bridge_deck,
         bridge_deck_level: if has_bridge_deck {
@@ -3416,8 +3415,6 @@ fn nested_transport_parent_expiry_preserves_its_independent_cargo() {
             entity.passenger_role = PassengerRole::transport(cargo);
             if inside {
                 entity.passenger_role.set_inside_transport(1, false);
-            } else {
-                assert!(entity.passenger_role.set_boarding(1));
             }
             sim.substrate
                 .entities
@@ -3441,7 +3438,6 @@ fn nested_transport_parent_expiry_preserves_its_independent_cargo() {
                 announce_expiry(&mut sim);
             }
             let role = &sim.substrate.entities.get(2).unwrap().passenger_role;
-            assert_eq!(role.boarding_transport_id(), None);
             assert_eq!(
                 role.inside_transport(),
                 if inside && retain_inside {
@@ -3591,15 +3587,15 @@ fn pointer_expiry_clears_live_target_and_navigation_refs() {
         .set_for_test(Some(TargetKind::Entity(2)));
     listener
         .navigation
-        .set_suspended_nav_com_for_test(Some(NavTargetRef::Entity { id: 2 }));
+        .set_suspended_nav_com_for_test(Some(NavTargetRef::Object { id: 2 }));
     listener
         .navigation
         .set_nav_com_aux_for_test(Some(NavTargetRef::Object { id: 2 }));
     listener
         .navigation
-        .set_nav_com_for_test(Some(NavTargetRef::Building { id: 2 }));
+        .set_nav_com_for_test(Some(NavTargetRef::Object { id: 2 }));
     listener.navigation.set_nav_queue_for_test(vec![
-        NavTargetRef::Entity { id: 2 },
+        NavTargetRef::Object { id: 2 },
         NavTargetRef::Cell { rx: 7, ry: 8 },
         NavTargetRef::Object { id: 2 },
     ]);
@@ -3634,16 +3630,16 @@ fn occupier_capture_retains_live_non_selling_nav_target() {
     listener.removal_facts.set_occupier_for_test(true);
     listener
         .navigation
-        .set_suspended_nav_com_for_test(Some(NavTargetRef::Building { id: 2 }));
+        .set_suspended_nav_com_for_test(Some(NavTargetRef::Object { id: 2 }));
     listener
         .navigation
-        .set_nav_com_aux_for_test(Some(NavTargetRef::Building { id: 2 }));
+        .set_nav_com_aux_for_test(Some(NavTargetRef::Object { id: 2 }));
     listener
         .navigation
-        .set_nav_com_for_test(Some(NavTargetRef::Building { id: 2 }));
+        .set_nav_com_for_test(Some(NavTargetRef::Object { id: 2 }));
     listener
         .navigation
-        .set_nav_queue_for_test(vec![NavTargetRef::Building { id: 2 }]);
+        .set_nav_queue_for_test(vec![NavTargetRef::Object { id: 2 }]);
 
     sim.uninit(2);
 
@@ -3651,11 +3647,11 @@ fn occupier_capture_retains_live_non_selling_nav_target() {
     assert!(listener.navigation.suspended_nav_com().is_none());
     assert_eq!(
         listener.navigation.nav_com_aux(),
-        Some(NavTargetRef::Building { id: 2 })
+        Some(NavTargetRef::Object { id: 2 })
     );
     assert_eq!(
         listener.navigation.nav_com(),
-        Some(NavTargetRef::Building { id: 2 })
+        Some(NavTargetRef::Object { id: 2 })
     );
     assert!(listener.navigation.nav_queue().is_empty());
 }
@@ -3683,10 +3679,10 @@ fn selling_target_disables_occupier_capture_nav_retention() {
     listener.removal_facts.set_occupier_for_test(true);
     listener
         .navigation
-        .set_nav_com_aux_for_test(Some(NavTargetRef::Building { id: 2 }));
+        .set_nav_com_aux_for_test(Some(NavTargetRef::Object { id: 2 }));
     listener
         .navigation
-        .set_nav_com_for_test(Some(NavTargetRef::Building { id: 2 }));
+        .set_nav_com_for_test(Some(NavTargetRef::Object { id: 2 }));
 
     sim.uninit(2);
 

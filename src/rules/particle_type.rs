@@ -72,7 +72,8 @@ pub struct ParticleType {
     pub max_ec: i32,
     /// Damage amount per damage tick.
     pub damage: i32,
-    /// Warhead reference name, resolved later against the warhead registry.
+    /// `Warhead=`, the stored ID the ordered Rules processor's WarheadType
+    /// factory answered; resolved later against the warhead registry.
     pub warhead: Option<String>,
     /// Frames per animation loop.
     #[cfg(test)]
@@ -188,7 +189,8 @@ impl ParticleType {
             max_dc: section.read_int("MaxDC", 0),
             max_ec: section.read_int("MaxEC", 1),
             damage: section.read_int("Damage", 0),
-            warhead: section.read_name("Warhead", 0x80).map(str::to_owned),
+            // Constructor null; only the ordered Process owner reads it.
+            warhead: None,
             #[cfg(test)]
             num_loop_frames: section
                 .read_int("NumLoopFrames", 1)
@@ -338,7 +340,6 @@ mod tests {
         assert_eq!(pt.max_dc, 60);
         assert_eq!(pt.max_ec, 448);
         assert_eq!(pt.damage, 0);
-        assert_eq!(pt.warhead.as_deref(), Some("Gas"));
         assert_eq!(pt.end_state_ai, 11);
         assert_eq!(pt.state_ai_advance, 3);
         assert_eq!(pt.translucency, 50);

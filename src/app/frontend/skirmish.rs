@@ -271,7 +271,7 @@ mod tests {
     use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid, zone_class};
     use crate::map::waypoints::Waypoint;
     use crate::rules::ini_parser::IniFile;
-    use crate::rules::terrain_rules::{SpeedCostProfile, TerrainClass};
+    use crate::rules::terrain_rules::SpeedCostProfile;
     use crate::sim::cell_rect::{PlayfieldBounds, cell_is_in_playfield_height_aware};
     use crate::sim::house_state::{HouseDifficulty, HouseState};
     use crate::sim::mission::MissionType;
@@ -533,13 +533,11 @@ mod tests {
             smudges: Vec::new(),
             terrain_objects: Vec::new(),
             waypoints,
-            cell_tags: std::collections::HashMap::new(),
             tags: std::collections::HashMap::new(),
             triggers: std::collections::HashMap::new(),
             events: std::collections::HashMap::new(),
             actions: std::collections::HashMap::new(),
             local_variables: std::collections::HashMap::new(),
-            trigger_graph: crate::map::trigger_graph::TriggerGraph::default(),
             special_flags: crate::map::basic::SpecialFlagsSection::default(),
             ini: IniFile::from_str(""),
         }
@@ -680,7 +678,6 @@ mod tests {
                 ..Default::default()
             },
             zone_type: zone_class::GROUND,
-            base_terrain_class: TerrainClass::Clear,
             base_speed_costs: SpeedCostProfile {
                 track: track_cost,
                 ..Default::default()

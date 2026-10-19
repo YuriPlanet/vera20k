@@ -50,8 +50,6 @@ pub(super) struct WorldInstances {
     pub cell_sparkles: Vec<SpriteInstance>,
     /// Sonic's legacy outline fallback; Magnetic bodies use retained parents.
     pub weapon_waves: Vec<SpriteInstance>,
-    /// SpotlightClass type-16 masks with authoritative child-light coordinates.
-    pub spotlight_type16: Vec<SpriteInstance>,
 }
 
 /// Debug visualization overlays (toggled by hotkeys at runtime).
@@ -413,12 +411,6 @@ pub(super) fn build_world_instances(
         );
     }
 
-    // Named residual: BuildingLightRuntime currently records the parent/target
-    // relation but not SpotlightClass's evolving child coordinate and angle.
-    // Drawing at the parent would invent visible semantics, so the exact live
-    // destination-factor path stays empty until that authoritative input exists.
-    let spotlight_type16 = Vec::new();
-
     WorldInstances {
         terrain,
         overlay,
@@ -431,7 +423,6 @@ pub(super) fn build_world_instances(
         particle_draws,
         cell_sparkles,
         weapon_waves,
-        spotlight_type16,
     }
 }
 
@@ -618,7 +609,7 @@ pub(super) fn build_debug_instances(state: &AppState, sw: f32, sh: f32) -> Debug
 /// Update minimap unit dots for the current frame.
 pub(super) fn update_minimap(state: &mut AppState, local_owner: &Option<String>) {
     let (playfield_bounds, playfield_revision) =
-        crate::app::input::camera::sync_playfield_presentation_bounds(state);
+        crate::app::input::camera::playfield_presentation_authority(state);
     let needs_playfield_reconcile = state
         .match_state
         .match_presentation

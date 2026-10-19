@@ -4196,9 +4196,6 @@ mod tests {
         );
         let rules = RuleSet::from_ini(&ini).expect("Terrain receiver-order rules");
         let warhead = rules.warhead("WOODWH").expect("wood warhead").clone();
-        let mut interner = StringInterner::new();
-        let warhead_ref = interner.intern("WOODWH");
-        let tree_ref = interner.intern("TREE01");
 
         let mut entities = EntityStore::new();
         let mut unit = GameEntity::test_default(20, "UNIT", "Americans", 5, 5);
@@ -4233,6 +4230,11 @@ mod tests {
             .with_air_spatial_membership_for_test(Some(5 + 5 * 20), 1)
             .with_air_tracker_cell_for_test((5, 5));
         entities.insert(air);
+        // The entities' names are interned in the thread's test interner;
+        // damage resolves them through these ids.
+        let mut interner = crate::sim::intern::test_interner();
+        let warhead_ref = interner.intern("WOODWH");
+        let tree_ref = interner.intern("TREE01");
 
         let mut occupancy = OccupancyGrid::new();
         prepend_ground(&mut occupancy, 5, 5, 20);

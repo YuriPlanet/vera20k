@@ -3,6 +3,46 @@
 use super::*;
 use crate::util::save_codec;
 
+#[test]
+fn repair_inputs_retain_native_layer_defaults_through_reset_and_save() {
+    use crate::rules::ruleset::RuleSet;
+
+    // ReadGeneral670DE9/670E30/670E57 use current Rules scalars as defaults.
+    let mut layers = RulesLayerStack::new(IniFile::from_str(
+        "[General]\nIRepairStep=20\nURepairRate=.25\nIRepairRate=.001\n",
+    ));
+    layers.push(
+        RulesLayerKind::GameMode,
+        IniFile::from_str("[General]\nIRepairStep=-3tail\nIRepairRate=.5\n"),
+    );
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[General]\nIRepairStep=\nURepairRate=\nIRepairRate=\n"),
+    );
+    let processed = layers.process().unwrap();
+    let assert_values = |rules: &RuleSet| {
+        assert_eq!(rules.general.infantry_repair_step, -3);
+        assert_eq!(rules.general.unit_repair_rate, 0.25);
+        assert_eq!(rules.general.infantry_repair_rate, 0.5);
+    };
+    assert_values(&RuleSet::from_processed_rules(&processed).unwrap());
+    let (_, trace) = processed.into_ini_and_native_type_construction_trace();
+    let state = trace.into_registry_state_discarding_events();
+    let state: NativeRulesRegistryState =
+        save_codec::deserialize(&save_codec::serialize(&state).unwrap()).unwrap();
+    let next = RulesLayerStack::new(IniFile::from_str("[General]\nName=Next scene\n"))
+        .process_with_fixed_art_and_registry_state(&IniFile::empty(), state.destructive_reset())
+        .unwrap();
+    let retained = RuleSet::from_processed_rules(&next).unwrap();
+    assert_values(&retained);
+    let cold = RuleSet::from_ini(&IniFile::from_str("[General]\nName=Next scene\n")).unwrap();
+    assert_eq!(retained.source_ini_hash(), cold.source_ini_hash());
+    assert_ne!(
+        retained.simulation_config_hash(),
+        cold.simulation_config_hash()
+    );
+}
+
 /// Rules+580 is a signed retained ReadInt/current-default, not stock300.
 #[test]
 fn maximum_cheer_rate_preserves_native_defaults_layers_and_rules_lifetime() {
@@ -941,24 +981,30 @@ fn bridge_animation_lists_match_original_retained_vectors() {
     }
 }
 
+/// MetallicDebris and BridgeExplosions are RulesClass vectors, which ReadGeneral
+/// replaces only on a nonempty read: a Process call that continues the live
+/// state and omits them keeps them, and their AnimTypes stay registered.
 #[test]
-fn bridge_animation_vectors_belong_to_rules_stack_not_type_registry() {
+fn bridge_animation_vectors_survive_a_continued_process_with_their_types() {
     use crate::rules::ruleset::RuleSet;
     let processed = RulesLayerStack::new(IniFile::from_str(
         "[General]\nMetallicDebris=ONE,ONE\nBridgeExplosions=TWO\n",
     ))
     .process()
     .unwrap();
+    let debris = processed.metallic_debris().to_vec();
+    let explosions = processed.bridge_explosions().to_vec();
+    assert!(!debris.is_empty() && !explosions.is_empty());
     let (_, receipt) = processed.into_ini_and_native_type_construction_trace();
-    let fresh_rules = RulesLayerStack::new(IniFile::empty())
+    let continued = RulesLayerStack::new(IniFile::empty())
         .process_with_fixed_art_and_registry_state(
             &IniFile::empty(),
             receipt.into_registry_state_discarding_events(),
         )
         .unwrap();
-    let rules = RuleSet::from_processed_rules(&fresh_rules).unwrap();
-    assert!(rules.general.metallic_debris.is_empty());
-    assert!(rules.bridge_rules.explosions.is_empty());
+    let rules = RuleSet::from_processed_rules(&continued).unwrap();
+    assert_eq!(rules.general.metallic_debris, debris);
+    assert_eq!(rules.bridge_rules.explosions, explosions);
     assert!(rules.anim_type_names.iter().any(|name| name == "ONE"));
     assert!(rules.anim_type_names.iter().any(|name| name == "TWO"));
 }
@@ -2435,7 +2481,7 @@ fn crate_rule_images_allocate_and_alias_by_overlay_identity() {
 }
 
 #[test]
-fn crate_rule_image_readstring_capacity_owns_retention_and_allocation() {
+fn crate_rule_images_retain_the_stored_id_of_the_type_they_allocate() {
     let exact = "A".repeat(127);
     let over = "B".repeat(128);
     let processed = RulesLayerStack::new(IniFile::from_str(&format!(
@@ -2444,27 +2490,24 @@ fn crate_rule_image_readstring_capacity_owns_retention_and_allocation() {
     .process()
     .expect("crate rules process");
 
-    assert_eq!(
-        processed.crate_rules().wood_crate_img.as_deref(),
-        Some(exact.as_str())
-    );
-    let truncated = "B".repeat(127);
-    assert_eq!(
-        processed.crate_rules().crate_img.as_deref(),
-        Some(truncated.as_str())
-    );
-    assert_eq!(
-        processed.crate_rules().water_crate_img.as_deref(),
-        Some(truncated.as_str()),
-        "capacity includes the forced NUL, so only 127 ASCII bytes survive"
-    );
-    // The semantic CrateRules strings keep the 127-byte ReadString capacity,
-    // but every Type constructor stores only the native 24-byte ID and Find
-    // compares the full input against that stored prefix. A 127-byte name
-    // therefore misses every lookup and constructs a duplicate stored ID per
-    // reference (see `native_type_registry_compares_full_input_but_stores_and_emits_24_bytes`).
+    // ReadString128 bounds each read, but every Type constructor stores only
+    // the native 24-byte ID and Find compares the full input against that
+    // stored prefix. A 127-byte name therefore misses every lookup and
+    // constructs a duplicate stored ID per reference (see
+    // `native_type_registry_compares_full_input_but_stores_and_emits_24_bytes`),
+    // and each field keeps the Type the factory returned.
     let stored_a = "A".repeat(0x18);
     let stored_b = "B".repeat(0x18);
+    let crate_rules = processed.crate_rules();
+    assert_eq!(
+        crate_rules.wood_crate_img.as_deref(),
+        Some(stored_a.as_str())
+    );
+    assert_eq!(crate_rules.crate_img.as_deref(), Some(stored_b.as_str()));
+    assert_eq!(
+        crate_rules.water_crate_img.as_deref(),
+        Some(stored_b.as_str())
+    );
     assert_eq!(
         processed
             .ini()
@@ -2472,7 +2515,6 @@ fn crate_rule_image_readstring_capacity_owns_retention_and_allocation() {
             .expect("truncated references allocate")
             .registry_ids(),
         vec![stored_a.as_str(), stored_b.as_str(), stored_b.as_str()],
-        "late allocation stores 24-byte IDs while semantic crate strings keep 127 bytes"
     );
 }
 
@@ -3112,4 +3154,87 @@ fn waypoint_cue_drop_zone_rules_keep_native_defaults_layers_and_saved_state() {
         Some("BEACON")
     );
     assert_eq!(retail.rules.general.drop_zone_radius, 1024);
+}
+
+#[test]
+fn spotlight_rules_keep_constructor_bits_native_parser_and_retained_pass_defaults() {
+    use crate::rules::ruleset::{RuleSet, SpotlightRules};
+    let mut layers = RulesLayerStack::new(IniFile::from_str("[General]\n"));
+    assert_eq!(
+        RuleSet::from_processed_rules(&layers.process().unwrap())
+            .unwrap()
+            .general
+            .spotlight,
+        SpotlightRules::default()
+    );
+    layers.push(RulesLayerKind::GameMode,IniFile::from_str("[General]\nSpotlightMovementRadius=-123tail\nSpotlightSpeed=.015\nSpotlightAngle=.5\nSpotlightRadius=201\n"));
+    layers.push(RulesLayerKind::Scenario,IniFile::from_str("[General]\nSpotlightMovementRadius=bad\nSpotlightSpeed=bad\nSpotlightRadius=\nSpotlightangle=8\n"));
+    let processed = layers.process().unwrap();
+    let fields = RuleSet::from_processed_rules(&processed)
+        .unwrap()
+        .general
+        .spotlight;
+    // Present malformed numeric strings read zero; only absent/empty keys keep defaults.
+    assert_eq!(fields.movement_radius, 0);
+    assert_eq!(fields.radius, 201);
+    assert_eq!(fields.speed.bits(), 0);
+    assert_eq!(fields.angle.bits(), 0x3fe0000000000000);
+    let (_, trace) = processed.into_ini_and_native_type_construction_trace();
+    let retained = trace
+        .into_registry_state_discarding_events()
+        .destructive_reset();
+    let next = RulesLayerStack::new(IniFile::from_str("[General]\n"))
+        .process_with_fixed_art_and_registry_state(&IniFile::empty(), retained)
+        .unwrap();
+    assert_eq!(
+        RuleSet::from_processed_rules(&next)
+            .unwrap()
+            .general
+            .spotlight,
+        fields
+    );
+}
+#[test]
+fn spotlight_retail_inputs_use_the_production_layered_reader() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let r = retail.rules.general.spotlight;
+    assert_eq!(
+        (r.movement_radius, r.location_radius, r.radius),
+        (2000, 1000, 175)
+    );
+    assert_eq!(r.speed.bits(), 0x3f8eb851e0000000);
+    assert_eq!(r.acceleration.bits(), 0x3f647ae140000000);
+    assert_eq!(r.angle.bits(), 0x3fe0000000000000);
+}
+
+#[test]
+fn spotlight_type_flag_retains_the_native_current_default_across_rules_layers() {
+    use crate::rules::ruleset::RuleSet;
+    let mut layers = RulesLayerStack::new(IniFile::from_str(
+        "[BuildingTypes]\n0=LIGHT\n[LIGHT]\nHasSpotlight=yes\n",
+    ));
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[LIGHT]\nHasSpotlight=invalid\n"),
+    );
+    assert!(
+        RuleSet::from_processed_rules(&layers.process().unwrap())
+            .unwrap()
+            .object("LIGHT")
+            .unwrap()
+            .has_spotlight
+    );
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[LIGHT]\nHasSpotlight=no\n"),
+    );
+    assert!(
+        !RuleSet::from_processed_rules(&layers.process().unwrap())
+            .unwrap()
+            .object("LIGHT")
+            .unwrap()
+            .has_spotlight
+    );
 }

@@ -354,8 +354,10 @@ original Load721E80 resets timers via 46B640 at721FA9..721FC2, while Rust's save
 state/restore integration is covered separately by the library suite.
 
 The shared nonrandom germination port and signed cell-value helper now live in
-`src/map/tiberium_cell.rs`, below simulation consumers. Authored Overlay Mark,
-generated final cell attributes, crate Mark, and live Place call that one owner.
+`src/map/tiberium_cell.rs`, below simulation consumers. The one
+`OverlayClass::Mark` port (`src/map/overlay_mark.rs`), which map load, crates,
+meteor ore, bridge rebuild and live Place share, and generated final cell
+attributes call that one owner.
 The authored copy's separate neighbor/density tables were removed (refactor
 issue #714); `MaxDensity` remains the existing constructor constant 12, without
 adding a new INI reader. Rust native fixtures explicitly set the resource
@@ -378,8 +380,8 @@ pixels or the whole Scenario. Reproduce the edge run with
 `tools/map_observation.ore-spread.example.json` through the existing observation
 wrapper. The `natural_spread_followup` stage in `ore_queue.validation.json` (in git at 1b1a8b43e) keeps
 source/native/binary/input/result hashes and the earlier enqueue evidence intact.
-The value-owner consolidation also resolves issue #713. Adjacent authored-crate
-Land1-versus5 admission remains issue #993, unchanged by this kernel move.
+The value-owner consolidation also resolves issue #713. The Mark port tests Land 5
+(Tiberium) at `0x005FD0D9` for every caller (issue #993).
 
 ## Physical authored natural history
 

@@ -14,7 +14,6 @@ use crate::render::batch::SpriteInstance;
 use crate::rules::house_colors::{HouseColorRamps, NO_REMAP};
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::TargetKind;
-use crate::sim::components::NavTargetRef;
 use crate::sim::game_entity::GameEntity;
 use crate::sim::timer::CdTimer;
 use crate::sim::world::Simulation;
@@ -571,13 +570,7 @@ fn action_line_endpoints(
         object_location, query_ground_height, target_get_coords,
     };
     let terrain = sim.resolved_terrain.as_ref();
-    let target = match nav_target {
-        NavTargetRef::Cell { rx, ry } => TargetKind::Cell(rx, ry),
-        NavTargetRef::Entity { id }
-        | NavTargetRef::Object { id }
-        | NavTargetRef::Building { id } => TargetKind::Entity(id),
-    };
-    let mut end = target_get_coords(target, sim, cells)?;
+    let mut end = target_get_coords(TargetKind::from(nav_target), sim, cells)?;
     let end_cell = (
         crate::util::lepton::lepton_to_cell_packed(end.x),
         crate::util::lepton::lepton_to_cell_packed(end.y),
@@ -617,7 +610,7 @@ fn rally_tint_for_owner(
 /// surface color; the action line does not sample A or use cell lighting.
 fn action_line_color(palette: &crate::assets::pal_file::Palette, index: u8) -> [f32; 3] {
     use crate::render::native_surface_format::{ACTIVE_RETAIL_RGB565_PRESENTATION, RGB565};
-    let color = palette.colors[usize::from(index)];
+    let color = palette.color(index);
     let word = crate::render::palette_light::PaletteLight::plain(53, 1000).rgb565(
         [color.r, color.g, color.b],
         index,
@@ -750,6 +743,7 @@ mod tests {
     use crate::rules::ini_parser::IniFile;
     use crate::rules::ruleset::RuleSet;
     use crate::sim::combat::TargetKind;
+    use crate::sim::components::NavTargetRef;
     use crate::sim::game_entity::GameEntity;
 
     #[test]

@@ -138,6 +138,60 @@ pub(super) fn build_particle_system_instance(
     }
 }
 
+/// BuildingLight435BE0: one temporary5FF850 glow followed by two native
+/// DSurface4BBCA0 brightening lines in this child's retained AIR Display slot.
+pub(super) fn build_spotlight_instance(
+    input: &DisplayEffectInputs<'_>,
+    id: u64,
+    light: crate::sim::world::BuildingSpotlight,
+    context: &ParticleDrawContext,
+    objects: &mut Vec<PlannedObjectInstance>,
+    order: &NativeDisplayOrder,
+) {
+    let Some(parent) = order.object_draw(id, SpriteEncoding::Plain) else {
+        return;
+    };
+    let p = light.coord;
+    let point = absolute_leptons_to_screen(p[0], p[1], p[2]);
+    if !projection_admitted([point.0, point.1], context.camera, context.viewport) {
+        return;
+    }
+    let glow = crate::app::presentation::combat_lights::CombatLight {
+        coord: crate::sim::projectile::ProjectileCoord::new(p[0], p[1], p[2]),
+        stage: light.glow_stage,
+        base_size: 16,
+        flags: 0,
+    }
+    .draw_record(&mut input.detail.borrow_mut());
+    let project = |p: [i32; 3]| {
+        let xy = absolute_leptons_to_screen(p[0], p[1], p[2]);
+        [
+            xy.0 as i32 - context.camera[0].floor() as i32,
+            xy.1 as i32 - context.camera[1].floor() as i32,
+        ]
+    };
+    let beams = light
+        .beam_edges
+        .map(|edges| {
+            edges.map(|edge| {
+                Some(SurfaceDraw::Line(
+                    crate::render::surface_line::SurfaceLine {
+                        from: project(light.beam_origin),
+                        to: project(edge),
+                        z_adjust: light.beam_z_adjust,
+                        blend: crate::render::surface_line::SurfaceLineBlend::Brighten {
+                            amount: light.beam_amount,
+                        },
+                    },
+                ))
+            })
+        })
+        .unwrap_or([None, None]);
+    let mut planned = PlannedObjectInstance::object(parent, Vec::new());
+    planned.body_draw = Some(ObjectBodyDraw::Spotlight { glow, beams });
+    objects.push(planned);
+}
+
 /// Particle62CEC0 consumes one retained AIR registration. Its mutable FPS
 /// query is made by the shared Display traversal, before its later A/Z read.
 /// Move-dead children keep their last draw until their lifecycle removes them.

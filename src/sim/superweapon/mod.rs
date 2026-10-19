@@ -1014,7 +1014,8 @@ pub(crate) fn tick_active_superweapon_effects(
         sim.update_lighting();
     }
     let dominator = psychic_dominator::process(sim, rules, overlay_registry, frame_effects);
-    sim.process_chrono_screen_effect();
+    let chrono = sim.process_chrono_screen_effect();
+    sim.publish_trigger_effects(chrono);
     let storm = lightning_storm::process(sim, rules, overlay_registry, frame_effects);
     dominator || storm
 }

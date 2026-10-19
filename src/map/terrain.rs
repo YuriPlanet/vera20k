@@ -112,25 +112,14 @@ pub enum TacticalInverseResult {
     Fallback { rx: f32, ry: f32 },
 }
 
-/// Tactical scroll rectangle derived from the final MapClass Size/LocalSize.
-/// Coordinates are VERA world pixels. The existing camera clamp subtracts
-/// half a tile from `pixel_x` and from the far Y edge; the constructor adapts
-/// native6D8640 to that convention. Radar-cell extents have different vertical
-/// headroom and are owned separately by PlayfieldPresentationGeometry.
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct LocalBounds {
-    pub pixel_x: f32,
-    pub pixel_y: f32,
-    pub pixel_w: f32,
-    pub pixel_h: f32,
-}
-
-/// Exact presentation projection of the current normalized MapClass
-/// playfield. Native `ComputeRadarMapBounds` enumerates mode-zero-valid cells;
-/// this mirrors that ownership instead of reconstructing a raw-header TS pixel
-/// rectangle. The extent is expressed in the flat (z=0) tile frame so terrain,
-/// overlays, radar events and click inverse share one space. Native camera
-/// clamping reads the same MapClass fields through its own arithmetic.
+/// Flat (z=0) tile-frame rectangle of the cells `IsCellInPlayfield` mode zero
+/// admits: the radar adapter for renderer fixtures without MapClass data.
+/// Native `ComputeRadarMapBounds` (`0x0065455B..0x00654572`) enumerates mode
+/// one, which `NativeRadarSurfaceGeometry::from_playfield` owns. This rectangle
+/// decides radar pixels only when that surface is absent, which needs a
+/// missing resolved terrain or playfield authority; a match binds both
+/// (`MinimapRenderer::new`, `reconcile_playfield`), so it is kept for the
+/// mapless fixtures alone.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PlayfieldPresentationGeometry {
     pub origin_x: f32,
@@ -172,56 +161,6 @@ impl PlayfieldPresentationGeometry {
             world_height: max_y - min_y,
             valid_cell_count,
         })
-    }
-}
-
-impl TerrainGrid {
-    /// Install camera authority derived from the current normalized playfield.
-    /// `None` intentionally removes the raw-header approximation.
-    pub fn install_playfield_local_bounds(
-        &mut self,
-        bounds: Option<crate::map::playfield::PlayfieldBounds>,
-    ) {
-        self.local_bounds = bounds.map(LocalBounds::from_playfield);
-    }
-}
-
-impl LocalBounds {
-    /// ClampViewCenter6D8640 reads final MapClass fields directly. Its near
-    /// X/Y center bounds add the viewport's integer halves; far bounds add
-    /// 60*LocalWidth and (60*LocalHeight+270)/2, then subtract the full view.
-    /// Keep those extent products in native wrapping i32 arithmetic before
-    /// conversion to the presentation API. Original load/resize controls:
-    /// tools/input_oracle/fast_scroll.json/camera_save_load.
-    pub fn from_playfield(bounds: crate::map::playfield::PlayfieldBounds) -> Self {
-        let left = bounds
-            .off_fc
-            .wrapping_mul(2)
-            .wrapping_sub(bounds.base)
-            .wrapping_mul(30);
-        let top = bounds
-            .base
-            .wrapping_add(bounds.off_100.wrapping_mul(2))
-            .wrapping_sub(5)
-            .wrapping_mul(15);
-        let width = bounds.off_104.wrapping_mul(60);
-        let height = bounds.off_108.wrapping_mul(60).wrapping_add(270) / 2;
-        let world_bias = crate::util::lepton::absolute_leptons_to_screen(0, 0, 0);
-        Self {
-            pixel_x: left as f32 + world_bias.0 + TILE_WIDTH / 2.0,
-            pixel_y: top as f32 + world_bias.1,
-            pixel_w: width as f32,
-            pixel_h: height as f32 + TILE_HEIGHT / 2.0,
-        }
-    }
-
-    /// Check if a screen position is within the playable area.
-    #[cfg(test)]
-    pub fn contains(&self, screen_x: f32, screen_y: f32) -> bool {
-        screen_x >= self.pixel_x
-            && screen_x < self.pixel_x + self.pixel_w
-            && screen_y >= self.pixel_y
-            && screen_y < self.pixel_y + self.pixel_h
     }
 }
 
@@ -288,8 +227,6 @@ pub struct TerrainGrid {
     pub origin_x: f32,
     /// Minimum screen_y across all cells (world origin y).
     pub origin_y: f32,
-    /// Playable area bounds (from LocalSize). Used to clip overlays/entities too.
-    pub local_bounds: Option<LocalBounds>,
     /// Bridge middle tiles a live publication can write, for the atlas
     /// pre-load. None when the theater lacks BridgeMiddle1/2 or both sets.
     pub bridge_middle_tiles: Option<crate::map::theater::BridgeMiddleTiles>,
@@ -564,7 +501,6 @@ fn tactical_cardinal_neighbor(rx: u16, ry: u16, direction: u8) -> Option<(u16, u
 /// tile choice.
 pub fn build_terrain_grid_from_resolved(
     resolved: &ResolvedTerrainGrid,
-    local_bounds: Option<LocalBounds>,
     bridge_middle_tiles: Option<crate::map::theater::BridgeMiddleTiles>,
 ) -> TerrainGrid {
     let mut cells: Vec<TerrainCell> = Vec::with_capacity(resolved.cells().len());
@@ -612,7 +548,6 @@ pub fn build_terrain_grid_from_resolved(
         world_height: max_y - min_y,
         origin_x: min_x,
         origin_y: min_y,
-        local_bounds,
         bridge_middle_tiles,
     }
 }
@@ -773,22 +708,6 @@ mod tests {
     }
 
     #[test]
-    fn test_local_bounds_contains() {
-        let bounds = LocalBounds {
-            pixel_x: -1950.0,
-            pixel_y: 1215.0,
-            pixel_w: 3900.0,
-            pixel_h: 2010.0,
-        };
-        assert!(bounds.contains(-1950.0, 1215.0)); // top-left (inclusive)
-        assert!(bounds.contains(0.0, 2000.0)); // center
-        assert!(!bounds.contains(-1951.0, 1215.0)); // just left
-        assert!(!bounds.contains(-1950.0, 1214.0)); // just above
-        assert!(!bounds.contains(1950.0, 1215.0)); // at right edge (exclusive)
-        assert!(!bounds.contains(-1950.0, 3225.0)); // at bottom edge (exclusive)
-    }
-
-    #[test]
     #[ignore = "requires RA2_DIR with retail RA2/YR assets"]
     fn gsi_02_11_xmp29u2_clear_fallback_loads_and_selects_all_retail_variants() {
         let ra2_dir = PathBuf::from(
@@ -819,9 +738,7 @@ mod tests {
                 .map(|suffix| format!("clear01{}.urb", char::from(suffix)))
                 .collect::<Vec<_>>()
         );
-        let bounds = LocalBounds::from_playfield(
-            crate::map::playfield::PlayfieldBounds::from_map_header(&map.header),
-        );
+        let bounds = crate::map::playfield::PlayfieldBounds::from_map_header(&map.header);
         let mut selector_cache =
             crate::map::tile_variant_selector::TileVariantSelectorCache::default();
         let mut main_rng = crate::sim::rng::SimRng::new(0);
@@ -845,17 +762,14 @@ mod tests {
             assert!(selector.generated_table());
             resolved
         };
-        let grid = build_terrain_grid_from_resolved(&resolved, Some(bounds), None);
+        let grid = build_terrain_grid_from_resolved(&resolved, None);
 
         const XMP29U2_NO_TILE: i32 = 0xFFFF;
         let in_bounds_sentinels: Vec<_> = map
             .cells
             .iter()
             .filter(|cell| cell.tile_index == XMP29U2_NO_TILE)
-            .filter(|cell| {
-                let (sx, sy) = iso_to_screen(cell.rx, cell.ry, cell.z);
-                bounds.contains(sx, sy)
-            })
+            .filter(|cell| bounds.contains_geometry_packed(i32::from(cell.rx), i32::from(cell.ry)))
             .collect();
         assert_eq!(
             map.cells
@@ -864,8 +778,10 @@ mod tests {
                 .count(),
             164
         );
-        assert_eq!(in_bounds_sentinels.len(), 125);
-        assert_eq!(grid.cells.len(), 6_160);
+        assert_eq!(in_bounds_sentinels.len(), 108);
+        // The map load allocates more cells than the IsoMapPack holds; every
+        // allocated cell reaches presentation.
+        assert_eq!(grid.cells.len(), resolved.iter().count());
 
         let needed = HashSet::from([crate::map::theater::TileKey {
             tile_id: clear_tile_id,
@@ -967,7 +883,7 @@ mod tests {
         }
         assert!(
             high_suffix_sentinels > 0,
-            "at least one of the 125 visible ClearTile fallbacks must select e/f/g"
+            "at least one in-playfield ClearTile fallback must select e/f/g"
         );
     }
 }

@@ -69,8 +69,6 @@ pub struct ArtEntry {
     /// Present ART Foundation resolved by native474DA0's fixed table.
     /// Missing retains the caller's current index; a present unknown is0.
     pub foundation: Option<u8>,
-    /// Overlay type produced by this BuildingType's art (`ToOverlay=`).
-    pub to_overlay: Option<String>,
     /// BibShape: separate SHP for the ground-level pad/bib under a building.
     pub bib_shape: Option<String>,
     /// Custom palette override from art.ini `Palette=`.
@@ -325,6 +323,10 @@ pub struct AnimTypeRuntimeConfig {
     pub hide_if_no_ore: bool,
     pub is_animated_tiberium: bool,
     pub tiberium_spread_radius: i32,
+    /// The Type references (`TiberiumSpawnType=`, `Spawns=`, `Warhead=`,
+    /// `SpawnsParticle=`, `Next=`, `BounceAnim=`, `ExpireAnim=`,
+    /// `TrailerAnim=`) are the upper-cased stored IDs the ordered Rules
+    /// processor's factories answered (`AnimTypeReferences`).
     pub tiberium_spawn_type: Option<String>,
     /// Raw `MakeInfantry=` index. Native defaults to -1 and treats every
     /// other value as enabling the AnimClass cell-occupation lifecycle.
@@ -401,7 +403,8 @@ pub struct AnimTypeRuntimeConfig {
     /// Unlike every other key in this parser, `ReadINI` writes the field
     /// **only when the key is present** (`0x00427D00`: the store sits inside
     /// the `if (ReadString != 0)` arm), so an absent key keeps the
-    /// constructor's `-1`. `None` here is that `-1`.
+    /// constructor's `-1`. `None` here is that `-1`, or the factory's `-1`
+    /// for `<none>`.
     pub spawns_particle: Option<String>,
     /// art.ini `NumParticles=`, `AnimTypeClass+0x2D0`.
     pub num_particles: i32,
@@ -728,23 +731,22 @@ fn parse_anim_runtime_config(section: &IniSection) -> AnimTypeRuntimeConfig {
         hide_if_no_ore: section.read_bool("HideIfNoOre", false),
         is_animated_tiberium: section.read_bool("IsAnimatedTiberium", false),
         tiberium_spread_radius: section.read_int("TiberiumSpreadRadius", 0),
-        tiberium_spawn_type: section
-            .read_name("TiberiumSpawnType", 0x80)
-            .map(str::to_ascii_uppercase),
+        // The Type references (`TiberiumSpawnType=`, `Spawns=`, `Warhead=`,
+        // `SpawnsParticle=`, `Next=`, `BounceAnim=`, `ExpireAnim=`,
+        // `TrailerAnim=`) start null: the ordered Rules processor reads them
+        // with the AnimType's ART body, and `RuleSet` hands them over through
+        // [`ArtRegistry::apply_anim_type_references`].
+        tiberium_spawn_type: None,
         make_infantry: section.read_int("MakeInfantry", -1),
         bouncer: section.read_bool("Bouncer", false),
-        spawns: section
-            .read_name("Spawns", 0x80)
-            .map(str::to_ascii_uppercase),
+        spawns: None,
         spawn_count: section.read_int("SpawnCount", 0),
         running_frames: section.read_int("RunningFrames", 0),
         // gamemd-derived: `AnimTypeClass::ReadINI @ 0x00427D00` reads these
         // through `CCINIClass::ReadDouble` and each defaults to the value the
         // constructor (`AnimTypeClass::AnimTypeClass @ 0x00427530`) left.
         damage: section.read_double_bits("Damage", ANIM_DAMAGE_DEFAULT),
-        warhead: section
-            .read_name("Warhead", 0x80)
-            .map(str::to_ascii_uppercase),
+        warhead: None,
         damage_radius: section.read_int("DamageRadius", 0),
         elasticity: section.read_double_bits("Elasticity", ANIM_ELASTICITY_DEFAULT),
         min_z_vel: section.read_double_bits("MinZVel", ANIM_MIN_Z_VEL_DEFAULT),
@@ -759,24 +761,16 @@ fn parse_anim_runtime_config(section: &IniSection) -> AnimTypeRuntimeConfig {
         psi_warning: section.read_bool("PsiWarning", false),
         double_thick: section.read_bool("DoubleThick", false),
         flamer: section.read_bool("Flamer", false),
-        spawns_particle: section
-            .read_name("SpawnsParticle", 0x20)
-            .map(str::to_ascii_uppercase),
+        spawns_particle: None,
         num_particles: section.read_int("NumParticles", 0),
         // Both constructor defaults are 1, not 0.
         should_fog_remove: section.read_bool("ShouldFogRemove", true),
         should_use_cell_drawer: section.read_bool("ShouldUseCellDrawer", true),
         detail_level: section.read_int("DetailLevel", 0),
-        next: section.read_name("Next", 0x80).map(str::to_ascii_uppercase),
-        bounce_anim: section
-            .read_name("BounceAnim", 0x80)
-            .map(str::to_ascii_uppercase),
-        expire_anim: section
-            .read_name("ExpireAnim", 0x80)
-            .map(str::to_ascii_uppercase),
-        trailer_anim: section
-            .read_name("TrailerAnim", 0x80)
-            .map(str::to_ascii_uppercase),
+        next: None,
+        bounce_anim: None,
+        expire_anim: None,
+        trailer_anim: None,
         trailer_seperation: section.read_int("TrailerSeperation", 0),
         // ReadMinMax (`0x004280D4`); `None` marks an absent key.
         random_loop_delay: section.is_present("RandomLoopDelay").then(|| {
@@ -1040,8 +1034,6 @@ impl ArtRegistry {
             let foundation = section
                 .is_present("Foundation")
                 .then(|| crate::rules::foundation::read_foundation(section, 0));
-            let to_overlay: Option<String> =
-                section.read_name("ToOverlay", 0x80).map(str::to_owned);
             let bib_shape: Option<String> = section.read_name("BibShape", 0x40).map(str::to_owned);
             let palette: Option<String> = section
                 .read_name("Palette", 0x20)
@@ -1239,7 +1231,6 @@ impl ArtRegistry {
                     buildup: Some(section.read_string("Buildup", "", 16))
                         .filter(|name| !name.is_empty()),
                     foundation,
-                    to_overlay,
                     bib_shape,
                     palette,
                     sequence,
@@ -1349,6 +1340,28 @@ impl ArtRegistry {
             config.art_body_read = false;
             config.image = name.clone();
             self.anim_runtime_configs.insert(key, config);
+        }
+    }
+
+    /// Apply the canonical RulesClass processing receipt's AnimType references
+    /// ([`AnimTypeReferences`]), in AnimType registry order. A name's first
+    /// slot wins, as in [`Self::apply_anim_type_read_states`]; a type whose
+    /// ART body was never read carries the constructor's nulls.
+    ///
+    /// [`AnimTypeReferences`]: crate::rules::native_processing::AnimTypeReferences
+    pub(crate) fn apply_anim_type_references(
+        &mut self,
+        states: &[(String, crate::rules::native_processing::AnimTypeReferences)],
+    ) {
+        let mut seen = BTreeSet::new();
+        for (name, references) in states {
+            let key = name.to_ascii_uppercase();
+            if !seen.insert(key.clone()) {
+                continue;
+            }
+            if let Some(config) = self.anim_runtime_configs.get_mut(&key) {
+                references.apply_to(config);
+            }
         }
     }
 
@@ -2305,6 +2318,44 @@ mod anim_runtime_metadata_tests {
     use super::*;
     use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};
 
+    /// `art` installed the production way: the ordered Rules processor reads
+    /// the fixed-ART Type references of every section `art` holds, each listed
+    /// as an AnimType, and `RuleSet` hands them to the registry.
+    fn installed(art: &str) -> crate::rules::ruleset::RuleSet {
+        let art = IniFile::from_str(art);
+        let animations: String = art
+            .section_names()
+            .iter()
+            .enumerate()
+            .map(|(index, name)| format!("{index}={name}\n"))
+            .collect();
+        let mut rules = crate::rules::ruleset::RuleSet::from_ini_with_fixed_art_for_test(
+            &IniFile::from_str(&format!("[Animations]\n{animations}")),
+            &art,
+        )
+        .unwrap();
+        rules.install_art_data(ArtRegistry::from_ini(&art));
+        rules
+    }
+
+    /// Retail RULESMD over ARTMD from the archives, installed as the loader
+    /// installs it: the AnimTypes' references come from the ordered Rules
+    /// processor.
+    fn installed_retail(assets: &AssetManager) -> crate::rules::ruleset::RuleSet {
+        let read = |name: &str| {
+            IniFile::from_bytes(assets.get_ref(name).expect("retail INI"))
+                .expect("parse retail INI")
+        };
+        let artmd = read("ARTMD.INI");
+        let mut rules = crate::rules::ruleset::RuleSet::from_ini_with_fixed_art_for_test(
+            &read("RULESMD.INI"),
+            &artmd,
+        )
+        .expect("retail rules");
+        rules.install_art_data(ArtRegistry::from_ini(&artmd));
+        rules
+    }
+
     #[test]
     fn building_body_fields_match_original_native_readers() {
         #[derive(serde::Deserialize)]
@@ -2378,15 +2429,15 @@ mod anim_runtime_metadata_tests {
 
     #[test]
     fn normalizes_anim_spawn_metadata_refs_to_uppercase() {
-        let ini = IniFile::from_str(
+        let rules = installed(
             "[DBRIS1LG]\n\
              TrailerAnim=smokey2\n\
              BounceAnim=twlt026\n\
              ExpireAnim=twlt036\n",
         );
-        let reg = ArtRegistry::from_ini(&ini);
 
-        let config = reg
+        let config = rules
+            .art()
             .anim_runtime_config("DBRIS1LG")
             .expect("DBRIS1LG runtime metadata");
         assert_eq!(config.trailer_anim.as_deref(), Some("SMOKEY2"));
@@ -2425,7 +2476,7 @@ mod anim_runtime_metadata_tests {
 
     #[test]
     fn anim_spawn_metadata_preserves_existing_next_random_and_rate_fields() {
-        let ini = IniFile::from_str(
+        let rules = installed(
             "[METSTRAL]\n\
              Rate=300\n\
              Normalized=yes\n\
@@ -2433,9 +2484,9 @@ mod anim_runtime_metadata_tests {
              RandomLoopDelay=2,5\n\
              RandomRate=300,900\n",
         );
-        let reg = ArtRegistry::from_ini(&ini);
 
-        let config = reg
+        let config = rules
+            .art()
             .anim_runtime_config("METSTRAL")
             .expect("METSTRAL runtime metadata");
         assert_eq!(config.rate_logic_frames, 3);
@@ -2660,7 +2711,7 @@ mod anim_runtime_metadata_tests {
 
     #[test]
     fn anim_runtime_metadata_parses_tiberium_declaration_cluster() {
-        let ini = IniFile::from_str(
+        let rules = installed(
             "[TIBERIUM]\n\
              TiberiumChainReaction=yes\n\
              IsTiberium=true\n\
@@ -2671,7 +2722,7 @@ mod anim_runtime_metadata_tests {
              [UNRELATED]\n\
              Rate=900\n",
         );
-        let reg = ArtRegistry::from_ini(&ini);
+        let reg = rules.art();
 
         let tiberium = reg.anim_runtime_config("TIBERIUM").unwrap();
         assert!(tiberium.tiberium_chain_reaction);
@@ -2699,9 +2750,8 @@ mod anim_runtime_metadata_tests {
         );
         let assets = AssetManager::new(&ra2_dir, MediaArchiveMode::STOCK_DIGITAL)
             .expect("load retail RA2/YR archive stack");
-        let artmd_bytes = assets.get_ref("ARTMD.INI").expect("load retail ARTMD.INI");
-        let artmd = IniFile::from_bytes(artmd_bytes).expect("parse retail ARTMD.INI");
-        let registry = ArtRegistry::from_ini(&artmd);
+        let rules = installed_retail(&assets);
+        let registry = rules.art();
 
         assert!(
             registry
@@ -2742,9 +2792,8 @@ mod anim_runtime_metadata_tests {
         );
         let assets = AssetManager::new(&ra2_dir, MediaArchiveMode::STOCK_DIGITAL)
             .expect("load retail RA2/YR archive stack");
-        let artmd_bytes = assets.get_ref("ARTMD.INI").expect("load retail ARTMD.INI");
-        let artmd = IniFile::from_bytes(artmd_bytes).expect("parse retail ARTMD.INI");
-        let registry = ArtRegistry::from_ini(&artmd);
+        let rules = installed_retail(&assets);
+        let registry = rules.art();
 
         let debris = registry
             .anim_runtime_config("DBRIS1LG")
@@ -2779,13 +2828,17 @@ mod anim_runtime_metadata_tests {
 
         // The counts this module's `alt_palette` / `use_normal_light` docs
         // claim, derived rather than asserted from memory. gamemd's INI key
-        // lookup is case-sensitive, so only the exact spellings count.
-        let alt_palette = registry
+        // lookup is case-sensitive, so only the exact spellings count. They
+        // count artmd.ini sections, so they read the raw ART parse.
+        let artmd_bytes = assets.get_ref("ARTMD.INI").expect("load retail ARTMD.INI");
+        let artmd = IniFile::from_bytes(artmd_bytes).expect("parse retail ARTMD.INI");
+        let raw = ArtRegistry::from_ini(&artmd);
+        let alt_palette = raw
             .anim_runtime_configs
             .values()
             .filter(|config| config.alt_palette)
             .count();
-        let use_normal_light = registry
+        let use_normal_light = raw
             .anim_runtime_configs
             .values()
             .filter(|config| config.use_normal_light)
@@ -2803,7 +2856,7 @@ mod anim_runtime_metadata_tests {
     /// never an integer: the stock population is `.003`-scale.
     #[test]
     fn anim_double_keys_keep_their_fraction() {
-        let ini = IniFile::from_str(
+        let rules = installed(
             "[DEBRIS]\n\
              Damage=20\n\
              Warhead=he\n\
@@ -2814,7 +2867,7 @@ mod anim_runtime_metadata_tests {
              [BURNER]\n\
              Damage=.003\n",
         );
-        let reg = ArtRegistry::from_ini(&ini);
+        let reg = rules.art();
 
         let debris = reg.anim_runtime_config("DEBRIS").unwrap();
         assert_eq!(f64::from_bits(debris.damage.bits()), 20.0);
@@ -2887,7 +2940,7 @@ mod anim_runtime_metadata_tests {
 
     #[test]
     fn anim_middle_effect_flags_and_particle_spawn_parse() {
-        let ini = IniFile::from_str(
+        let rules = installed(
             "[VIRUSD]\n\
              SpawnsParticle=  gasCloud  \n\
              NumParticles=8\n\
@@ -2902,8 +2955,7 @@ mod anim_runtime_metadata_tests {
              IsVeins=yes\n\
              IsFlamingGuy=yes\n",
         );
-        let reg = ArtRegistry::from_ini(&ini);
-        let config = reg.anim_runtime_config("VIRUSD").unwrap();
+        let config = rules.art().anim_runtime_config("VIRUSD").unwrap();
         assert_eq!(config.spawns_particle.as_deref(), Some("GASCLOUD"));
         assert_eq!(config.num_particles, 8);
         assert!(config.scorch);

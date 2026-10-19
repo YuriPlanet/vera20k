@@ -707,9 +707,7 @@ impl crate::sim::world::Simulation {
                     return false;
                 };
                 let target_id = match reference {
-                    crate::sim::components::NavTargetRef::Entity { id }
-                    | crate::sim::components::NavTargetRef::Object { id }
-                    | crate::sim::components::NavTargetRef::Building { id } => id,
+                    crate::sim::components::NavTargetRef::Object { id } => id,
                     crate::sim::components::NavTargetRef::Cell { .. } => return false,
                 };
                 let Some(target) = self.substrate.entities.get(target_id) else {

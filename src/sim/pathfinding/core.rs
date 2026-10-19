@@ -21,6 +21,7 @@ use super::zone_search::PathSearchFailure;
 use crate::map::bridge_facts::BRIDGE_FLAG_ANCHOR_SELF;
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::map::tube_facts::{TubeId, TubeSource};
+use crate::rules::terrain_rules::LandType;
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::util::direction::DIRECTION_DELTAS;
 use crate::util::native_x87::{
@@ -1400,13 +1401,18 @@ fn project_terrain_path_cell(
     let bridge_intact = cell.bridge_facts.has_structural_bridge()
         || !bridge_structural
         || crate::sim::bridge_state::cell_render_state(cell.bridge_facts).is_some();
+    // PathGrid is VERA's own walkability plane, with no native counterpart, so
+    // it asks the cell's one land attribute (`CellClass+0xEC`) directly.
+    let land = cell.land_type();
+    let rock = land == LandType::Rock.as_index();
+    let water = land == LandType::Water.as_index();
     let path_cell = PathCell {
         // Walkability rules (matching old PathGrid::from_resolved_terrain):
         // - Overlay blocks / terrain object blocks → blocked
         // - Intact bridge deck → walkable (overrides underlying terrain)
         // - Destroyed bridge deck → revert to underlying terrain
-        // - Cliff → blocked
-        // - Water → walkable (the mover's Can_Enter_Cell reads the land row)
+        // - Rock land → blocked, even on a ramp tile
+        // - Water land → walkable (the mover's Can_Enter_Cell reads the land row)
         // - Everything else → use ground_walk_blocked
         ground_walkable: if cell.overlay_blocks || cell.terrain_object_blocks {
             false
@@ -1415,7 +1421,7 @@ fn project_terrain_path_cell(
                 true
             } else {
                 // Destroyed bridge: revert to underlying terrain walkability.
-                !cell.is_cliff_like && !cell.ground_walk_blocked
+                !rock && !cell.ground_walk_blocked
             }
         } else if cell.bridge_walkable && cell.bridge_transition {
             // Bridgehead ramp: walkable on the ground layer regardless
@@ -1424,10 +1430,10 @@ fn project_terrain_path_cell(
             // row and its bridge entry through Foot `0x004D9C60`, both
             // inside the class's Can_Enter_Cell.
             true
-        } else if cell.is_cliff_like {
+        } else if rock {
             false
         } else {
-            !cell.ground_walk_blocked || cell.is_water
+            !cell.ground_walk_blocked || water
         },
         bridge_walkable: if bridge_structural {
             cell.bridge_walkable && bridge_intact
@@ -1455,14 +1461,14 @@ fn project_terrain_path_cell(
         if bridge_intact {
             true
         } else {
-            !cell.is_cliff_like && !(cell.base_ground_walk_blocked || cell.overlay_blocks)
+            !rock && !(cell.base_ground_walk_blocked || cell.overlay_blocks)
         }
     } else if cell.bridge_walkable && cell.bridge_transition {
         true
-    } else if cell.is_cliff_like {
+    } else if rock {
         false
     } else {
-        !(cell.base_ground_walk_blocked || cell.overlay_blocks) || cell.is_water
+        !(cell.base_ground_walk_blocked || cell.overlay_blocks) || water
     };
     (
         path_cell,

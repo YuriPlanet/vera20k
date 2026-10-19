@@ -61,7 +61,7 @@ fn fixture(input: &Value, other_flags: &str) -> (Simulation, RuleSet) {
     });
     infantry
         .navigation
-        .set_nav_com_for_test(identity(&input["nav_com"]).map(NavTargetRef::building));
+        .set_nav_com_for_test(identity(&input["nav_com"]).map(NavTargetRef::object));
     infantry
         .attack_target
         .set_for_test(identity(&input["attack_target"]).map(|id| TargetKind::Entity(id)));
@@ -193,6 +193,6 @@ fn one_cell_undeploy_navcom_stays_at_the_separate_conversion_boundary() {
             .unwrap()
             .navigation
             .nav_com(),
-        Some(NavTargetRef::building(OTHER))
+        Some(NavTargetRef::object(OTHER))
     );
 }

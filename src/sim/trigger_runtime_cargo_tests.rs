@@ -44,7 +44,7 @@ fn rng(sim: &Simulation) -> [String; 3] {
 
 fn action(sim: &mut Simulation, kind: i32, value: i32) {
     let ini = IniFile::from_str(&format!("[Actions]\nA=1,{kind},0,{value},0,0,0,0,Z\n"));
-    let entry = crate::map::actions::parse_actions(&ini)["A"].entries[0].clone();
+    let entry = crate::map::actions::parse_actions(&ini)["A"].entries()[0].clone();
     let action = RuntimeDefinitions::default().resolve_action(entry, None, None);
     assert!(sim.apply_live_trigger_action(
         &action,

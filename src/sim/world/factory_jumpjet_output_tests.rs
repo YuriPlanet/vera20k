@@ -140,7 +140,6 @@ fn two_paid_rocketeers(rally: Option<(u16, u16)>) {
                 Some(&registry),
                 TICK_MS,
                 super::TickLane::Ordinary,
-                None,
              crate::sim::world::FrameEffects::default(),)
             .expect("the ordinary app frame completes");
         let frame = sim.session.binary_frame;

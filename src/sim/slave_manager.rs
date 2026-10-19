@@ -1053,10 +1053,9 @@ impl Simulation {
         };
         let building = owner.category() == EntityCategory::Structure;
         let destination = if building {
-            owner.archive_target().map(|target| match target {
-                TargetKind::Cell(x, y) => crate::sim::components::NavTargetRef::cell(x, y),
-                TargetKind::Entity(id) => crate::sim::components::NavTargetRef::object(id),
-            })
+            owner
+                .archive_target()
+                .map(crate::sim::components::NavTargetRef::from)
         } else if owner.category() == EntityCategory::Unit {
             owner.navigation.nav_com()
         } else {

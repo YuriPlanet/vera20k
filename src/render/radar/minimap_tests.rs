@@ -63,7 +63,6 @@ fn playfield_projection_grid(side: u16) -> TerrainGrid {
         world_height: 1.0,
         origin_x: 0.0,
         origin_y: 0.0,
-        local_bounds: None,
         bridge_middle_tiles: None,
     }
 }
@@ -609,21 +608,17 @@ fn minimap_techno_membership_is_height_aware_at_raised_slope_edge() {
 
 #[test]
 fn playfield_projection_updates_camera_bounds_and_click_inverse_mapping() {
-    let mut grid = playfield_projection_grid(64);
+    let grid = playfield_projection_grid(64);
     let initial_geometry = PlayfieldPresentationGeometry::from_grid(&grid, expanded_playfield())
         .expect("expanded geometry");
     let shrunk_geometry = PlayfieldPresentationGeometry::from_grid(&grid, shrunken_playfield())
         .expect("shrunken geometry");
-    let camera_bounds = crate::map::terrain::LocalBounds::from_playfield(shrunken_playfield());
+    let (_, camera_y, _, camera_h) =
+        crate::app::input::camera::tactical_scroll_rect(shrunken_playfield());
     // Radar enumerates playable cells; camera6D8640 has its own headroom.
     // Sharing MapClass authority does not make their pixel extents identical.
-    assert_ne!(camera_bounds.pixel_y, shrunk_geometry.origin_y);
-    assert_ne!(camera_bounds.pixel_h, shrunk_geometry.world_height);
-    grid.install_playfield_local_bounds(Some(expanded_playfield()));
-    let installed_initial = grid.local_bounds.expect("initial camera authority");
-    grid.install_playfield_local_bounds(Some(shrunken_playfield()));
-    assert_eq!(grid.local_bounds, Some(camera_bounds));
-    assert_ne!(grid.local_bounds, Some(installed_initial));
+    assert_ne!(camera_y, shrunk_geometry.origin_y);
+    assert_ne!(camera_h, shrunk_geometry.world_height);
 
     let projection = MinimapPlayfieldProjection::derive(
         &grid,

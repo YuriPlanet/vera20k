@@ -179,11 +179,7 @@ impl<'r> RepresentedConcreteMissionEffects<'r> {
         destination: Option<NavTargetRef>,
     ) -> bool {
         if self.rules.is_some()
-            && let Some(
-                NavTargetRef::Entity { id }
-                | NavTargetRef::Object { id }
-                | NavTargetRef::Building { id },
-            ) = destination
+            && let Some(NavTargetRef::Object { id }) = destination
             && !sim.substrate.entities.contains(id)
             && !sim.production.terrain_objects.contains_key(&id)
             // Building455D50 only archives the pointer; it never asks the

@@ -609,6 +609,8 @@ fn load_named_palette(assets: &AssetManager, name: &str) -> Option<Palette> {
         .ok()
 }
 
+/// Shell palettes come from ConvertClass__BuildFromPaletteFile `0x0072ADE0`
+/// (SHELL.PAL is read at `0x0072ABDC`), the shared palette conversion.
 fn read_named_palette(assets: &AssetManager, name: &str) -> Result<Palette> {
     let bytes = assets
         .get_ref(name)

@@ -10,7 +10,7 @@ use crate::app::loading::{init, init_helpers};
 use crate::app::process_assets::ProcessAssets;
 use crate::assets::asset_manager::AssetManager;
 use crate::map::resolved_terrain::{ResolvedTerrainGrid, SharedCellDummy};
-use crate::map::terrain::{LocalBounds, TerrainGrid, build_terrain_grid_from_resolved};
+use crate::map::terrain::{TerrainGrid, build_terrain_grid_from_resolved};
 use crate::map::theater::{self, BridgeMiddleTiles};
 use crate::map::tile_variant_selector::TileVariantSelectorCache;
 use crate::rules::native_processing::ProcessedRulesLayers;
@@ -262,14 +262,8 @@ impl PreparedSavedGame {
             .resolved_terrain
             .as_ref()
             .expect("prepared world terrain");
-        let terrain_grid = build_terrain_grid_from_resolved(
-            terrain,
-            world
-                .simulation
-                .playfield_bounds
-                .map(LocalBounds::from_playfield),
-            BridgeMiddleTiles::from_theater(theater),
-        );
+        let terrain_grid =
+            build_terrain_grid_from_resolved(terrain, BridgeMiddleTiles::from_theater(theater));
         let csf = Some(
             init::load_csf(assets)
                 .map_err(|error| PreparedLoadError::Resources(error.to_string()))?,

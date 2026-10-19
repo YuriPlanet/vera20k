@@ -537,7 +537,7 @@ impl Simulation {
             .as_ref()
             .and_then(|terrain| terrain.cell(entity.position.rx(), entity.position.ry()))
             .is_some_and(|cell| {
-                cell.land_type == crate::rules::terrain_rules::LandType::Water.as_index()
+                cell.land_type() == crate::rules::terrain_rules::LandType::Water.as_index()
             });
         let object = self.object_type(entity.type_ref(), rules);
         let sound = if water {

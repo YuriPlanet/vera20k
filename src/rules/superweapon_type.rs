@@ -137,7 +137,8 @@ pub struct SuperWeaponType {
     /// `WeaponType=` (+9C), the WeaponType the ordered Rules processor
     /// resolved (e.g., NukeCarrier for the nuke).
     pub weapon_type: Option<String>,
-    /// Required secondary building (e.g., NukeSilo for nuke).
+    /// `AuxBuilding=` (+C8), the BuildingType the ordered Rules processor
+    /// resolved: a required secondary building (e.g., NukeSilo for nuke).
     pub aux_building: Option<String>,
     /// `SpecialSound=` (`+0xC0`, `0x006CEB74`): the cue SuperClass::AI
     /// plays when a Force Shield's countdown runs out (`0x006CBCCF`). A read
@@ -205,13 +206,9 @@ impl SuperWeaponType {
                 .read_name("PreDependent", 0x28)
                 .and_then(SuperWeaponKind::from_ini_str)
                 .map_or(-1, SuperWeaponKind::native_index),
-            // Constructor null; only the ordered Process owner reads it.
+            // Constructor nulls; only the ordered Process owner reads them.
             weapon_type: None,
-            // ReadString 0x80, then BuildingTypeClass::FindOrAllocate
-            // (`0x006CED1F`), which answers `none` and `<none>` null.
-            aux_building: section
-                .read_type_name("AuxBuilding", 0x80)
-                .map(str::to_string),
+            aux_building: None,
             special_sound: section.read_name("SpecialSound", 0x80).map(str::to_string),
             start_sound: section.read_name("StartSound", 0x80).map(str::to_string),
             ai_defend_against: section.read_bool("AIDefendAgainst", false),

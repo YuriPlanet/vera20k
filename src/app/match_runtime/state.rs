@@ -61,10 +61,14 @@ pub(crate) struct MatchState {
 }
 
 impl MatchState {
-    /// ScenarioPause684060 during ChronoScreen affects audio/elapsed time,
-    /// while the original Logic53A747 effect clock continues advancing.
-    pub(crate) fn presentation_paused(&self) -> bool {
-        self.paused() || self.match_presentation.chrono_screen.scenario_paused()
+    /// Shared ScenarioPause684060 audio hold, independent of menu/debug pause.
+    /// Main_Tick55D82C also gates offline world admission on its counter.
+    pub(crate) fn presentation_paused(&self, screen: &crate::ui::game_screen::GameScreen) -> bool {
+        presentation_pause_for_screen(
+            screen,
+            self.paused(),
+            self.sim_runtime.as_ref().map(|rt| &rt.simulation.session),
+        )
     }
     /// True when the game is paused and the simulation frozen: an in-scenario
     /// modal is open, or the debug pause is on.
@@ -83,6 +87,69 @@ impl MatchState {
         self.sim_runtime
             .as_ref()
             .and_then(|runtime| scenario_local_owner(&runtime.simulation))
+    }
+}
+
+/// A retained runtime can outlive its tactical screen. This is a physical
+/// audio/presentation query; it never retires saved simulation pause credits.
+fn presentation_pause_for_screen(
+    screen: &crate::ui::game_screen::GameScreen,
+    local_pause: bool,
+    scenario: Option<&crate::sim::scenario_session::ScenarioSession>,
+) -> bool {
+    matches!(screen, crate::ui::game_screen::GameScreen::InGame)
+        && (local_pause || scenario.is_some_and(|session| session.scenario_paused()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::presentation_pause_for_screen;
+    use crate::sim::world::Simulation;
+    use crate::ui::game_screen::GameScreen;
+
+    #[test]
+    fn retained_pause_does_not_leak_into_result_or_shell_audio() {
+        let mut sim = Simulation::with_seed(0);
+        sim.session.set_started(true);
+        sim.pause_scenario(2);
+        assert!(presentation_pause_for_screen(
+            &GameScreen::InGame,
+            false,
+            Some(&sim.session)
+        ));
+        // Score entry retains ScenarioStarted until Continue; it is not the
+        // presentation-lifetime boundary. Shell return retains the runtime too.
+        for screen in [
+            GameScreen::MissionResult {
+                title: String::new(),
+                detail: String::new(),
+            },
+            GameScreen::MainMenu,
+            GameScreen::Loading,
+        ] {
+            assert!(
+                !presentation_pause_for_screen(&screen, false, Some(&sim.session)),
+                "{screen:?}"
+            );
+        }
+        // A failed load returning to the current world must retain the hold.
+        assert!(sim.session.scenario_pause_timed());
+        assert!(presentation_pause_for_screen(
+            &GameScreen::InGame,
+            false,
+            Some(&sim.session)
+        ));
+        sim.expire_scenario_pause();
+        assert!(!presentation_pause_for_screen(
+            &GameScreen::InGame,
+            false,
+            Some(&sim.session)
+        ));
+        assert!(presentation_pause_for_screen(
+            &GameScreen::InGame,
+            true,
+            Some(&sim.session)
+        ));
     }
 }
 

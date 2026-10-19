@@ -19,7 +19,6 @@ use crate::assets::error::AssetError;
 use crate::assets::mix_archive::MixArchive;
 use crate::map::actions::{self, ActionMap};
 use crate::map::basic::{self, BasicSection, SpecialFlagsSection};
-use crate::map::cell_tags::{self, CellTagMap};
 use crate::map::entities::{self, MapEntity};
 use crate::map::events::{self, EventMap};
 use crate::map::overlay::{
@@ -27,7 +26,6 @@ use crate::map::overlay::{
 };
 use crate::map::preview::{self, PreviewSection};
 use crate::map::tags::{self, TagMap};
-use crate::map::trigger_graph::{self, TriggerGraph};
 use crate::map::triggers::{self, TriggerMap};
 use crate::map::variable_names::{self, LocalVariableMap};
 use crate::map::waypoints::{self, Waypoint};
@@ -281,20 +279,17 @@ pub struct MapFile {
     pub terrain_objects: Vec<TerrainObject>,
     /// Waypoint index -> cell coordinate mapping from [Waypoints].
     pub waypoints: HashMap<u32, Waypoint>,
-    /// Cell coordinate -> tag id mapping from [CellTags].
-    pub cell_tags: CellTagMap,
-    /// Tag id -> raw tag record from [Tags].
+    /// Exact key -> tag record from [Tags]. `[CellTags]` has one reader:
+    /// the trigger runtime's native `Read_Map_Section` port.
     pub tags: TagMap,
-    /// Trigger id -> raw trigger record from [Triggers].
+    /// Exact key -> trigger header from [Triggers].
     pub triggers: TriggerMap,
-    /// Event id -> raw event record from [Events].
+    /// Exact key -> event record from [Events].
     pub events: EventMap,
-    /// Action id -> raw action record from [Actions].
+    /// Exact key -> action record from [Actions].
     pub actions: ActionMap,
     /// Local variable definitions from [VariableNames].
     pub local_variables: LocalVariableMap,
-    /// Normalized trigger-link graph derived from CellTags/Tags/Triggers/Events/Actions.
-    pub trigger_graph: TriggerGraph,
     /// Parsed `[SpecialFlags]` section (TiberiumGrows, TiberiumSpreads overrides).
     pub special_flags: SpecialFlagsSection,
     /// Full parsed INI for accessing additional sections (e.g., [Houses]).
@@ -335,14 +330,11 @@ impl MapFile {
         let terrain_objects: Vec<TerrainObject> = overlay::parse_terrain_objects(&ini);
         let smudges: Vec<MapSmudgeEntry> = parse_map_smudges(&ini);
         let waypoints: HashMap<u32, Waypoint> = waypoints::parse_waypoints(&ini);
-        let cell_tags: CellTagMap = cell_tags::parse_cell_tags(&ini);
         let tags: TagMap = tags::parse_tags(&ini);
         let triggers: TriggerMap = triggers::parse_triggers(&ini);
         let events: EventMap = events::parse_events(&ini);
         let actions: ActionMap = actions::parse_actions(&ini);
         let local_variables: LocalVariableMap = variable_names::parse_local_variables(&ini);
-        let trigger_graph: TriggerGraph =
-            trigger_graph::build_trigger_graph(&cell_tags, &tags, &triggers, &events, &actions);
         Ok(MapFile {
             header,
             basic,
@@ -359,13 +351,11 @@ impl MapFile {
             smudges,
             terrain_objects,
             waypoints,
-            cell_tags,
             tags,
             triggers,
             events,
             actions,
             local_variables,
-            trigger_graph,
             special_flags,
             ini,
         })

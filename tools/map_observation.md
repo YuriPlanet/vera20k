@@ -375,10 +375,10 @@ fields, v1 rejects any presence, and present null/nonboolean values are invalid.
 Optional v2/v3 `observe_temporal: true` adds `temporal` and the same `fire`
 readback to every observed actor at L0 and each committed frame. `temporal`
 reads public owner queries: `has_link`, nullable `warp_target` and `chain_head`,
-nullable `boarding_transport`, nullable `inside_transport` (`transport`,
-`open_topped`), and nullable `cargo` (`count`, ordered `passengers`). The count,
-list, carrier relationship and link queries remain independent; the observer
-never repairs membership, calls a gunner callback, advances a timer or draws RNG.
+nullable `inside_transport` (`transport`, `open_topped`), and nullable `cargo`
+(`count`, ordered `passengers`). The count, list, carrier relationship and link
+queries remain independent; the observer never repairs membership, calls a
+gunner callback, advances a timer or draws RNG.
 The existing Unit `current_weapon_138` and `current_turret_124` report IFV mode;
 private burst/charge state is not exposed. Count one snapshot and every cargo
 entry toward the shared sample budget. Fire state is emitted once when both

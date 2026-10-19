@@ -137,7 +137,6 @@ fn new_presentation(gpu: &Gpu, scene: &HeadlessScenario, format: wgpu::TextureFo
     let grid = crate::map::terrain::build_terrain_grid_from_resolved(
         view.resolved_terrain().unwrap(),
         None,
-        None,
     );
     let (bounds, revision) = view.playfield_authority();
     let batch = BatchRenderer::new_with_device(&gpu.device, &gpu.queue, format);

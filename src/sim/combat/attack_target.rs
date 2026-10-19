@@ -22,9 +22,7 @@ impl From<crate::sim::components::NavTargetRef> for TargetKind {
         use crate::sim::components::NavTargetRef;
         match target {
             NavTargetRef::Cell { rx, ry } => Self::Cell(rx, ry),
-            NavTargetRef::Entity { id }
-            | NavTargetRef::Object { id }
-            | NavTargetRef::Building { id } => Self::Entity(id),
+            NavTargetRef::Object { id } => Self::Entity(id),
         }
     }
 }

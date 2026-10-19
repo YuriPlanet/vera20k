@@ -580,7 +580,7 @@ fn spyplane_missions_match_native() {
         assert_eq!(plane.navigation.nav_com(), nav, "{row}");
         let radius = sim
             .fog
-            .sight_admissions
+            .sight_admissions_for_test()
             .get(&(id, americans))
             .map_or(0, |admission| admission.radius);
         let revealed = events(row, "reveal")

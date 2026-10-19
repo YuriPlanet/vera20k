@@ -16,17 +16,48 @@
 //! callers are a network player's exit (`0x0064CA0D`, `0x0050A7B4`) and
 //! base initialization (`0x0050C2F0`, reached by TAction30).
 //!
+//! MakeAlly and MakeEnemy bracket their work with the map's release and
+//! re-admission callbacks (`0x004ADEE0` at `0x004F9B9A`/`0x004F9FD8`,
+//! `0x004ADCD0` at `0x004F9F4F`/`0x004FA1E3`), which walk every Techno for the
+//! player whose map they write. VERA keeps a map per House, and ports the arm
+//! whose outcome the ally bit decides: an ally's Buildings, whose sight
+//! leaves the map of the House an edge stops counting as an ally and opens on
+//! the map of one it starts counting (`Simulation::release_allied_building_sight`,
+//! `Simulation::admit_allied_building_sight`). An ally's other objects take no
+//! sight callback there: their sight reaches a new ally's map at their next
+//! reveal event.
+//!
 //! RESIDUALS
-//! - MakeAlly and MakeEnemy do not bracket their work with the map's release
-//!   and re-admission callbacks (`0x004ADEE0` at `0x004F9B9A`/`0x004F9FD8`,
-//!   `0x004ADCD0` at `0x004F9F4F`/`0x004FA1E3`). Computer_Paranoid never
-//!   changes an alliance of the current (human) house, so on its map the
-//!   bracket only counts a standing `RevealToAll=` building's sight once
-//!   more: re-admission has that branch and release does not. Trigger: a
-//!   computer MCV deploy, scripted base initialization, or a computer house's
-//!   defeat under `[AI] Paranoid`, while a `RevealToAll=` building stands. Effect: after the
-//!   building dies, native keeps its cells counted, so a hostile Gap
-//!   Generator cannot shroud them; VERA's can. Frequency: late game, rare.
+//! - Natively, a Building whose latch (`+0x250`) is still set from a reveal
+//!   made before the alliance opens on the new ally's map only at the next
+//!   bracket; VERA opens it at this one
+//!   (`Simulation::admit_allied_building_sight`).
+//! - The rest of each bracket is unported. Its Human arm re-reveals each of
+//!   the player's own discovered objects (`+0x41B`) where it stands, and the
+//!   allied-Building arm re-reveals the Buildings of allies whose bit did not
+//!   change. Trigger: every MakeAlly and MakeEnemy. Effect: native snaps a
+//!   mover's footprint to its current cell a few frames before its next
+//!   arrival would, resets a Spy Plane's `Damage=` footprint to its `Sight=`,
+//!   and opens the sight of an own object that has none yet (one promoted
+//!   into the playfield since its last arrival). Frequency: launch alliances
+//!   and Computer_Paranoid. Risk: one-cell footprint differences until the
+//!   next reveal event.
+//! - Native's ReReveal on an ex-ally's mobile leaves this map's counters
+//!   alone (`MapClass::RevealArea`'s house gate rejects it), so the last
+//!   footprint it revealed stays counted there; VERA's per-map caches take it
+//!   off at that mobile's next release. Trigger: MakeEnemy between Houses
+//!   with standing allied units. Effect: native's ex-ally keeps seeing those
+//!   cells. Frequency: rare (Paranoid, triggers).
+//! - The bracket's `RevealToAll=` branch re-admission has no release half, so
+//!   on its map each bracket counts a standing `RevealToAll=` building's
+//!   sight once more. Computer_Paranoid never changes an alliance of the
+//!   current (human) house. Trigger: a computer MCV deploy, scripted base
+//!   initialization, or a computer house's defeat under `[AI] Paranoid`,
+//!   while a `RevealToAll=` building stands. Effect: after the building
+//!   dies, native keeps its cells counted, so a hostile Gap Generator cannot
+//!   shroud them; VERA's can. Frequency: late game, rare.
+//! - The brackets' gap callbacks (`+0x418`, `+0x414`) stay with the Gap
+//!   Generator owner's per-frame materialization, which reads the ally graph.
 //! - The human-only alliance messages and EVA lines (`0x004F9D4E..
 //!   0x004F9F35`, `0x004FA0E4..0x004FA1D5`) and the radar redraw
 //!   (`0x004F42F0`) are not represented. No VERA producer makes a human
@@ -95,11 +126,46 @@ impl Simulation {
                     .ne(alliances.get(&key).into_iter().flatten())
             })
             .collect();
+        // Each MakeAlly or MakeEnemy that native's install makes brackets its
+        // bit write: the allied Buildings of each edge it clears leave the
+        // ally's map first, and those of each edge it sets open there after.
+        let (before, after) = (
+            self.ally_edges(&self.house_alliances),
+            self.ally_edges(&alliances),
+        );
+        let context = crate::sim::world::UninitContext::with_rules(rules);
+        for &(owner, viewer) in before.difference(&after) {
+            self.release_allied_building_sight(owner, viewer, context);
+        }
         self.house_alliances = alliances;
         self.reveal_viewers.forget();
         for owner in changed {
             self.rebuild_house_spatial_threat(owner, rules);
         }
+        for &(owner, viewer) in after.difference(&before) {
+            self.admit_allied_building_sight(owner, viewer, context);
+        }
+    }
+
+    /// Every ally edge of `alliances` between two distinct houses of the
+    /// House array: `(owner, ally)` where `owner`'s IsAlliedWith names `ally`.
+    fn ally_edges(
+        &self,
+        alliances: &HouseAllianceMap,
+    ) -> std::collections::BTreeSet<(InternedId, InternedId)> {
+        let houses = &self.session.house_order;
+        houses
+            .iter()
+            .flat_map(|&owner| houses.iter().map(move |&ally| (owner, ally)))
+            .filter(|&(owner, ally)| {
+                owner != ally
+                    && crate::map::houses::is_allied_with(
+                        alliances,
+                        self.interner.resolve(owner),
+                        self.interner.resolve(ally),
+                    )
+            })
+            .collect()
     }
 
     /// `HouseClass::Computer_Paranoid @ 0x00501640`: each live computer house
@@ -187,55 +253,67 @@ impl Simulation {
         {
             house.enemy_house = None;
         }
-        if self.object_placement_scope_active() {
-            // 0x004F9C06..0x004F9C31: ordinary initialization skips the live
-            // Paranoid, target and announcement tail. Native also keeps an
-            // initial Allies mask at +0x1D8 for WriteScenarioINI 0x0050131C;
-            // map-INI export and its GameMode 4 exception are outside this
-            // boolean-mode model.
-            return;
-        }
-        // 0x004F9C37..0x004F9C7A: a human house allying with a house type
-        // that is not MultiplayPassive turns the computers paranoid.
-        let game_mode_nonzero = self.session.game_mode_nonzero;
-        if game_mode_nonzero
-            && rules.general.paranoid
-            && self
-                .houses
-                .get(&owner)
-                .is_some_and(|house| house.is_controlled_by_human(game_mode_nonzero))
-            && self
-                .houses
-                .get(&other)
-                .is_some_and(|house| !house.multiplay_passive)
-        {
-            self.computer_paranoid(rules, registry, effects);
-        }
-        // 0x004F9C7F..0x004F9D48: in Logic order, each of the house's Technos
-        // (As_Techno 0x0040DD70) out of limbo (+0x81) whose target is a
-        // Techno of a house it now counts as friendly takes
-        // Assign_Target(NULL) (vt+0x3C8).
-        for id in self.logic_order().to_vec() {
-            let Some(entity) = self.substrate.entities.get(id) else {
-                continue;
-            };
-            if entity.owner() != owner || !entity.is_ai_alive() || entity.lifecycle.in_limbo() {
-                continue;
+        // 0x004F9B9A's release bracket ran while `owner` did not count
+        // `other` an ally (CanAlly refuses an existing ally), so it took no
+        // allied Building's sight off `other`'s map.
+        'live: {
+            if self.object_placement_scope_active() {
+                // 0x004F9C06..0x004F9C31: ordinary initialization skips the
+                // live Paranoid, target and announcement tail. Native also
+                // keeps an initial Allies mask at +0x1D8 for WriteScenarioINI
+                // 0x0050131C; map-INI export and its GameMode 4 exception are
+                // outside this boolean-mode model.
+                break 'live;
             }
-            let Some(TargetKind::Entity(target)) = entity.attack_target.target() else {
-                continue;
-            };
-            if let Some(target_owner) = self.substrate.entities.get(target).map(|t| t.owner())
-                && is_ally_by_object(
-                    Some(&self.house_alliances),
-                    &self.interner,
-                    owner,
-                    target_owner,
-                )
+            // 0x004F9C37..0x004F9C7A: a human house allying with a house type
+            // that is not MultiplayPassive turns the computers paranoid.
+            let game_mode_nonzero = self.session.game_mode_nonzero;
+            if game_mode_nonzero
+                && rules.general.paranoid
+                && self
+                    .houses
+                    .get(&owner)
+                    .is_some_and(|house| house.is_controlled_by_human(game_mode_nonzero))
+                && self
+                    .houses
+                    .get(&other)
+                    .is_some_and(|house| !house.multiplay_passive)
             {
-                let _ = self.assign_target_represented(id, None, Some(rules), registry, effects);
+                self.computer_paranoid(rules, registry, effects);
+            }
+            // 0x004F9C7F..0x004F9D48: in Logic order, each of the house's
+            // Technos (As_Techno 0x0040DD70) out of limbo (+0x81) whose
+            // target is a Techno of a house it now counts as friendly takes
+            // Assign_Target(NULL) (vt+0x3C8).
+            for id in self.logic_order().to_vec() {
+                let Some(entity) = self.substrate.entities.get(id) else {
+                    continue;
+                };
+                if entity.owner() != owner || !entity.is_ai_alive() || entity.lifecycle.in_limbo() {
+                    continue;
+                }
+                let Some(TargetKind::Entity(target)) = entity.attack_target.target() else {
+                    continue;
+                };
+                if let Some(target_owner) = self.substrate.entities.get(target).map(|t| t.owner())
+                    && is_ally_by_object(
+                        Some(&self.house_alliances),
+                        &self.interner,
+                        owner,
+                        target_owner,
+                    )
+                {
+                    let _ =
+                        self.assign_target_represented(id, None, Some(rules), registry, effects);
+                }
             }
         }
+        // 0x004F9F46..0x004F9F4F: both arms end in the re-admission bracket.
+        self.admit_allied_building_sight(
+            owner,
+            other,
+            crate::sim::world::UninitContext::new(Some(rules), registry).with_effects(effects),
+        );
     }
 
     /// `HouseClass::Make_Enemy @ 0x004F9F90` for its live callers, which
@@ -253,6 +331,17 @@ impl Simulation {
             && (other_house.multiplay_passive || house.multiplay_passive)
         {
             return;
+        }
+        // 0x004F9FD8: the release bracket precedes the anger and the bit
+        // writes. Each alliance this call breaks (below) takes its Buildings'
+        // sight off the ex-ally's map; the re-admission bracket at the end
+        // (0x004FA1E3) has nothing to open on a map whose ally bit cleared.
+        if is_ally_by_object(Some(&self.house_alliances), &self.interner, owner, other) {
+            let context = crate::sim::world::UninitContext::with_rules(rules);
+            self.release_allied_building_sight(owner, other, context);
+            if is_ally_by_object(Some(&self.house_alliances), &self.interner, other, owner) {
+                self.release_allied_building_sight(other, owner, context);
+            }
         }
         // 0x004F9FDD..0x004F9FE2.
         update_anger_nodes(

@@ -85,6 +85,29 @@ fn a_perma_disguised_spy_starts_wearing_its_sides_rules_disguise() {
     );
 }
 
+/// `AlliedDisguise=` goes through InfantryType's factory (`0x0067BAC0`),
+/// whose `none` is null, so the American spy starts disguised with no type.
+/// The spawn read a second, typed copy that kept `none` as a name.
+#[test]
+fn a_none_rules_disguise_starts_the_spy_with_no_disguise_type() {
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        &RULES.replace("AlliedDisguise=E1", "AlliedDisguise=none"),
+    ))
+    .expect("rules");
+    let mut sim = Simulation::with_seed(3);
+    let id = sim.interner.intern("Americans");
+    sim.houses
+        .insert(id, HouseState::new(id, 0, None, false, 0, 10));
+    sim.session.house_order.push(id);
+    let spy = sim
+        .spawn_object_at_height("SPY", "Americans", 10, 10, 0, 0, &rules)
+        .expect("SPY spawns");
+    let disguise = sim.substrate.entities.get(spy).unwrap().disguise.clone();
+    let disguise = disguise.expect("constructed disguised");
+    assert!(disguise.is_disguised());
+    assert_eq!(disguise.type_id(), None);
+}
+
 /// Retail RULESMD through the production reader: [SPY] sets both keys,
 /// [General] names E1/E2/INIT, and [MGTK] is CanDisguise only.
 #[test]
@@ -97,13 +120,12 @@ fn a_retail_spy_starts_disguised_as_its_sides_infantry() {
     assert!(spy.can_disguise && spy.perma_disguise);
     let mgtk = rules.object("MGTK").expect("retail MGTK");
     assert!(mgtk.can_disguise && !mgtk.perma_disguise);
-    let general = &rules.general;
     assert_eq!(
-        [
-            general.allied_disguise.as_deref(),
-            general.soviet_disguise.as_deref(),
-            general.third_disguise.as_deref(),
-        ],
+        rules
+            .general
+            .infantry_disguises
+            .each_ref()
+            .map(Option::as_deref),
         [Some("E1"), Some("E2"), Some("INIT")]
     );
     let mut sim = Simulation::with_seed(3);
