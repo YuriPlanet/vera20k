@@ -594,6 +594,7 @@ impl Simulation {
         Self::hash_entities(&entity_digests, hasher);
         self.hash_anims(hasher);
         self.hash_voxel_anims(hasher);
+        self.substrate.spotlights.hash_state(hasher);
         self.hash_particle_systems(hasher);
         self.session.fold_identity(hasher);
         self.session.pixel_conversion_bounds.hash(hasher);

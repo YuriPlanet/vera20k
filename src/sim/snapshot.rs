@@ -1149,7 +1149,8 @@ use crate::util::save_codec;
 // 424 -> 425: Scenario retains TrainCrate, TruckCrate and the raw ice-growth byte.
 // 425 -> 426: retain the Techno+0x12C Behind indicator Anim.
 // 426 -> 427: retained IonBlast rules inputs, pending damaging blasts and Foot draw lift.
-const SNAPSHOT_VERSION: u32 = 427;
+// 427 -> 428: independent BuildingLight objects and retained Spotlight rules.
+const SNAPSHOT_VERSION: u32 = 428;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -1375,6 +1376,11 @@ pub enum SnapshotRestoreError {
     InvalidScalableProjectileRuntime(&'static str),
     #[error("invalid radiation site order: {0}")]
     InvalidRadiationSiteOrder(&'static str),
+    #[error("invalid saved Spotlight {object_id}: {reason}")]
+    InvalidSpotlightState {
+        object_id: u64,
+        reason: &'static str,
+    },
     #[error("invalid saved DiskLaser {object_id}: {reason}")]
     InvalidDiskLaserState {
         object_id: u64,
@@ -1883,6 +1889,15 @@ impl RestoredObjectIndex {
         }
         for (&registry_id, anim) in sim.substrate.anims.iter() {
             Self::register(&mut identities, "AnimStore", registry_id, anim.stable_id)?;
+            highest_id = highest_id.max(registry_id);
+        }
+        for (&registry_id, light) in sim.substrate.spotlights.iter() {
+            Self::register(
+                &mut identities,
+                "SpotlightStore",
+                registry_id,
+                light.stable_id,
+            )?;
             highest_id = highest_id.max(registry_id);
         }
         for (&registry_id, debris) in sim.substrate.voxel_anims.iter() {
@@ -2749,6 +2764,13 @@ impl Simulation {
     /// weak/derived identities, and reconstructs skipped indexes in dependency
     /// order.
     pub fn restore_after_snapshot_load(&mut self) -> Result<(), SnapshotRestoreError> {
+        self.validate_restored_spotlights()
+            .map_err(
+                |(object_id, reason)| SnapshotRestoreError::InvalidSpotlightState {
+                    object_id,
+                    reason,
+                },
+            )?;
         self.projectiles
             .validate_scalable_runtime(&self.interner)
             .map_err(SnapshotRestoreError::InvalidScalableProjectileRuntime)?;
@@ -4877,7 +4899,8 @@ mod tests {
         // 424 -> 425: Scenario cargo flags and the ice-growth byte.
         // 425 -> 426: the Techno+0x12C Behind indicator Anim.
         // 426 -> 427: IonBlast process inputs, pending forces and Foot lift.
-        assert_eq!(super::SNAPSHOT_VERSION, 427);
+        // 427 -> 428: independent BuildingLight and retained Spotlight rules.
+        assert_eq!(super::SNAPSHOT_VERSION, 428);
     }
 
     #[test]

@@ -314,6 +314,42 @@ pub(crate) fn native_minutes_to_frames(minutes: f64) -> i32 {
     ))
 }
 
+/// Retained General spotlight inputs, Rules+788..7A8. Constructor6660F3..66613F;
+/// ReadGeneral671748..671816 uses current defaults, exact-case native readers,
+/// and no clamp. Doubles retain the native parser's binary32 promotion bits.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct SpotlightRules {
+    pub movement_radius: i32,
+    pub location_radius: i32,
+    pub speed: crate::util::native_x87::NativeF64Bits,
+    pub acceleration: crate::util::native_x87::NativeF64Bits,
+    pub angle: crate::util::native_x87::NativeF64Bits,
+    pub radius: i32,
+}
+impl Default for SpotlightRules {
+    fn default() -> Self {
+        use crate::util::native_x87::NativeF64Bits as D;
+        Self {
+            movement_radius: 2000,
+            location_radius: 1000,
+            speed: D::from_bits(0x3fa999999999999a),
+            acceleration: D::from_bits(0x3f747ae147ae147b),
+            angle: D::from_bits(0x4034000000000000),
+            radius: 175,
+        }
+    }
+}
+impl SpotlightRules {
+    pub(crate) fn read_pass(&mut self, section: &IniSection) {
+        self.movement_radius = section.read_int("SpotlightMovementRadius", self.movement_radius);
+        self.location_radius = section.read_int("SpotlightLocationRadius", self.location_radius);
+        self.speed = section.read_double_bits("SpotlightSpeed", self.speed);
+        self.acceleration = section.read_double_bits("SpotlightAcceleration", self.acceleration);
+        self.angle = section.read_double_bits("SpotlightAngle", self.angle);
+        self.radius = section.read_int("SpotlightRadius", self.radius);
+    }
+}
+
 /// `[General] AIIonCannon*Value=`: `RulesClass::ReadGeneral` reads each
 /// through the IntVector reader `0x00475D70` with the field as its default
 /// (`0x00670801..0x00670AE6`, lists at `Rules+0x1194` step `0x1C`, in field
@@ -1825,6 +1861,8 @@ pub struct GeneralRules {
     /// CombatDamage IonCannonDamage, Rules+490: ctor665CD4=700;
     /// ReadInt5276D0/current default at66BBF8..66BC12, unclamped.
     pub ion_cannon_damage: i32,
+    /// General spotlight parameters, projected from the retained Process owner.
+    pub spotlight: SpotlightRules,
     // --- ForceShield ([General], RulesClass::ReadGeneral) ---
     /// `ForceShieldRadius=` (`Rules+0x17B8`, `0x0067109F`), in cells; the
     /// constructor's 10 (`0x006676C8`).
@@ -2562,6 +2600,7 @@ impl Default for GeneralRules {
             ion_blast_anim: String::new(),
             ion_beam_anim: String::new(),
             ion_cannon_damage: 700,
+            spotlight: SpotlightRules::default(),
             force_shield_radius: 10,
             force_shield_duration: 400,
             force_shield_blackout_duration: 800,
@@ -3764,6 +3803,7 @@ impl GeneralRules {
             ion_blast_anim: defaults.ion_blast_anim.clone(),
             ion_beam_anim: defaults.ion_beam_anim.clone(),
             ion_cannon_damage: defaults.ion_cannon_damage,
+            spotlight: defaults.spotlight,
             force_shield_radius: general.read_int("ForceShieldRadius", 10),
             force_shield_duration: general.read_int("ForceShieldDuration", 400),
             force_shield_blackout_duration: general.read_int("ForceShieldBlackoutDuration", 800),
@@ -4192,6 +4232,7 @@ impl RuleSet {
         rules.general.difficulty_rows = *processed.difficulty_rows();
         rules.general.detail = processed.detail();
         rules.general.talk_bubble_time = processed.talk_bubble_time();
+        rules.general.spotlight = processed.spotlight();
         let (damage, blast, beam, _) = processed.ion_blast_inputs();
         rules.general.ion_cannon_damage = damage;
         rules.general.ion_blast_anim = blast.to_string();
@@ -4403,6 +4444,15 @@ impl RuleSet {
                 building.base_reservation_spacing = building
                     .base_reservation_writer_eligible()
                     .then_some(rules.ai_base_spacing);
+            }
+        }
+        for (name, flag) in processed.building_spotlight_flags() {
+            if let Some(building) = rules
+                .object_list
+                .iter_mut()
+                .find(|o| o.category == ObjectCategory::Building && o.id == name)
+            {
+                building.has_spotlight = flag;
             }
         }
         for (name, offset) in processed.building_target_coord_offsets() {
@@ -5547,7 +5597,7 @@ impl RuleSet {
     /// slices and are not claimed by this hash yet.
     pub fn simulation_config_hash(&self) -> u64 {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        b"rules-simulation-config-v24".hash(&mut hasher);
+        b"rules-simulation-config-v25".hash(&mut hasher);
         self.source_ini_hash.hash(&mut hasher);
         // UnitType747734 retains CarriesCrate across later absent/invalid
         // keys; equal current source text can still mean different cargo.
@@ -5591,6 +5641,13 @@ impl RuleSet {
         self.general.prism_support.hash(&mut hasher);
         // These current-default inputs survive a process registry handoff.
         self.general.ion_cannon_damage.hash(&mut hasher);
+        self.general.spotlight.hash(&mut hasher);
+        self.object_list
+            .iter()
+            .filter(|o| o.category == ObjectCategory::Building)
+            .map(|o| (&o.id, o.has_spotlight))
+            .collect::<Vec<_>>()
+            .hash(&mut hasher);
         self.general.ion_blast_anim.hash(&mut hasher);
         self.general.ion_beam_anim.hash(&mut hasher);
         self.bridge_warheads.ion_cannon_name.hash(&mut hasher);

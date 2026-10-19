@@ -3113,3 +3113,86 @@ fn waypoint_cue_drop_zone_rules_keep_native_defaults_layers_and_saved_state() {
     );
     assert_eq!(retail.rules.general.drop_zone_radius, 1024);
 }
+
+#[test]
+fn spotlight_rules_keep_constructor_bits_native_parser_and_retained_pass_defaults() {
+    use crate::rules::ruleset::{RuleSet, SpotlightRules};
+    let mut layers = RulesLayerStack::new(IniFile::from_str("[General]\n"));
+    assert_eq!(
+        RuleSet::from_processed_rules(&layers.process().unwrap())
+            .unwrap()
+            .general
+            .spotlight,
+        SpotlightRules::default()
+    );
+    layers.push(RulesLayerKind::GameMode,IniFile::from_str("[General]\nSpotlightMovementRadius=-123tail\nSpotlightSpeed=.015\nSpotlightAngle=.5\nSpotlightRadius=201\n"));
+    layers.push(RulesLayerKind::Scenario,IniFile::from_str("[General]\nSpotlightMovementRadius=bad\nSpotlightSpeed=bad\nSpotlightRadius=\nSpotlightangle=8\n"));
+    let processed = layers.process().unwrap();
+    let fields = RuleSet::from_processed_rules(&processed)
+        .unwrap()
+        .general
+        .spotlight;
+    // Present malformed numeric strings read zero; only absent/empty keys keep defaults.
+    assert_eq!(fields.movement_radius, 0);
+    assert_eq!(fields.radius, 201);
+    assert_eq!(fields.speed.bits(), 0);
+    assert_eq!(fields.angle.bits(), 0x3fe0000000000000);
+    let (_, trace) = processed.into_ini_and_native_type_construction_trace();
+    let retained = trace
+        .into_registry_state_discarding_events()
+        .destructive_reset();
+    let next = RulesLayerStack::new(IniFile::from_str("[General]\n"))
+        .process_with_fixed_art_and_registry_state(&IniFile::empty(), retained)
+        .unwrap();
+    assert_eq!(
+        RuleSet::from_processed_rules(&next)
+            .unwrap()
+            .general
+            .spotlight,
+        fields
+    );
+}
+#[test]
+fn spotlight_retail_inputs_use_the_production_layered_reader() {
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let r = retail.rules.general.spotlight;
+    assert_eq!(
+        (r.movement_radius, r.location_radius, r.radius),
+        (2000, 1000, 175)
+    );
+    assert_eq!(r.speed.bits(), 0x3f8eb851e0000000);
+    assert_eq!(r.acceleration.bits(), 0x3f647ae140000000);
+    assert_eq!(r.angle.bits(), 0x3fe0000000000000);
+}
+
+#[test]
+fn spotlight_type_flag_retains_the_native_current_default_across_rules_layers() {
+    use crate::rules::ruleset::RuleSet;
+    let mut layers = RulesLayerStack::new(IniFile::from_str(
+        "[BuildingTypes]\n0=LIGHT\n[LIGHT]\nHasSpotlight=yes\n",
+    ));
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[LIGHT]\nHasSpotlight=invalid\n"),
+    );
+    assert!(
+        RuleSet::from_processed_rules(&layers.process().unwrap())
+            .unwrap()
+            .object("LIGHT")
+            .unwrap()
+            .has_spotlight
+    );
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[LIGHT]\nHasSpotlight=no\n"),
+    );
+    assert!(
+        !RuleSet::from_processed_rules(&layers.process().unwrap())
+            .unwrap()
+            .object("LIGHT")
+            .unwrap()
+            .has_spotlight
+    );
+}

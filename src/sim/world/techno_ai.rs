@@ -359,6 +359,17 @@ impl Simulation {
             }
             return outcome;
         }
+        if self.substrate.spotlights.contains_key(id) {
+            if let Some(rules) = rules {
+                self.visit_spotlight(
+                    id,
+                    rules,
+                    super::UninitContext::new(Some(rules), ctx.overlay_registry)
+                        .with_effects(ctx.effects),
+                );
+            }
+            return outcome;
+        }
         if self.substrate.voxel_anims.contains_key(id) {
             self.visit_voxel_anim(id, rules);
             return outcome;

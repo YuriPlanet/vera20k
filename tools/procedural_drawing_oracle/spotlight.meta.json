@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Initialize5FF420 prologue and complete type16 bank loop5FF5AA..5FF727; all ten masks for two declared radii. Whole DSurface4BBCA0 store-visit controls were added with the same machine transport and original binary.",
+  "assumptions": [
+    "Rules+7A8 supplied as175 or300. The production retained Rules reader is independently regression tested. All ten native midpoint-circle/downsample bodies execute.",
+    "Retained observations are mask64..73 outputs, the original90-byte stage table and declared brightening-line store visits; no full Windows startup or GPU pixel equivalence claim.",
+    "Brightening-line Z is prefilledFFFF, writeZ=false; native Z origin fields are observed as input. The A plane is not consulted. Retained store visits pin production CPU raster order/candidate Z, not GPU pixel parity."
+  ],
+  "substitutions": [
+    "Existing LightPixels operator-new/delete/BSurface memory storage transport. No gameplay instructions, circle raster, mask pixels or table values patched."
+  ],
+  "entry_points": {
+    "initialize": "0x005FF420",
+    "type16_loop": "0x005FF5AA",
+    "circle": "0x007BB920",
+    "brightening_line": "0x004BBCA0"
+  },
+  "command": "RA2_DIR=/path/to/retail python -m tools.procedural_drawing_oracle.spotlight --write"
+}
