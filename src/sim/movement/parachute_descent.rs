@@ -174,6 +174,7 @@ impl crate::sim::world::Simulation {
         let type_name = self
             .interner
             .intern(rules.general.parachute_shp.as_deref()?);
+        let owner_house = self.substrate.entities.get(owner_id)?.owner();
         let mut coord = self.anim_owner_coords(owner_id)?;
         coord.z = coord.z.wrapping_add(PARACHUTE_ANIM_Z_LIFT_LEPTONS);
         let (rx, ry, sub_x, sub_y, level) = coord.to_cell_sub_z();
@@ -189,7 +190,15 @@ impl crate::sim::world::Simulation {
             )
         };
         match self.spawn_anim_at_world(rules, descriptor, coord) {
-            Ok(anim_id) => Some(anim_id),
+            Ok(anim_id) => {
+                // Native Paradrop calls SetOwnerObject, then GetRemapColour
+                // through the owner's vtable and stores that ConvertClass at
+                // Anim+0xD4 (`ObjectClass::Paradrop @ 0x005F5940`,
+                // `0x005F5AFE..0x005F5B19`). Freeze the same house selection
+                // on the attached canopy after construction.
+                self.set_anim_house_remap(anim_id, owner_house);
+                Some(anim_id)
+            }
             Err(error) => {
                 // An art type that never bound draws nothing natively either.
                 log::debug!("parachute anim did not construct: {error}");
@@ -356,6 +365,13 @@ mod canopy_tests {
         assert_eq!(sim.interner.resolve(anim.type_id), "PARACH");
         assert_eq!((anim.draw_flags, anim.z_adjust), (0x600, 0));
         assert_eq!(anim.owner_entity, Some(id));
+        assert_eq!(
+            anim.remap(),
+            Some(crate::sim::anim_class::AnimRemap::House(
+                sim.entities().get(id).unwrap().owner()
+            )),
+            "Paradrop copies the owner's ConvertClass to Anim+0xD4"
+        );
         assert_eq!(
             anim.world_coord,
             AnimWorldCoord { x: 0, y: 0, z: 75 },
