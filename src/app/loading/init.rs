@@ -60,6 +60,7 @@ use crate::render::unit_atlas::UnitAtlas;
 #[cfg(test)]
 use crate::rules::art_data::ArtRegistry;
 use crate::rules::effect_asset_catalog::resolved_overlay_shp_ids;
+#[cfg(test)]
 use crate::rules::ini_parser::IniFile;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
