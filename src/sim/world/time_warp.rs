@@ -1,4 +1,4 @@
-//! Retained initial Techno records and House50D320 restoration (TAction130).
+//! Retained initial Techno records and House50D320/50D440 restoration (130/126).
 //!
 //! Original Steam SHA2563e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600.
 //! Native producer/repair execution and original bodies: time-warp-records-plan
@@ -76,13 +76,16 @@ impl Simulation {
         }
     }
 
-    /// House50D320, invoked after TAction1306E3120 selects a real House.
+    /// House50D440 (126/6E30C0) recreates all four Techno categories;
+    /// House50D320 (130/6E3120) repairs/recreates only Buildings.
+    /// Both use the same saved history, constructor and placement owners.
     /// Count is captured once; each slot/type/current resident is read anew
     /// after synchronous repair/create/lifecycle callbacks. Placement refusal
     /// is an ordinary native continuation, not failure of action admission.
-    pub(crate) fn restore_initial_house_buildings(
+    pub(crate) fn restore_initial_house_technos(
         &mut self,
         owner: InternedId,
+        recreate_all: bool,
         rules: &RuleSet,
         overlay_registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
@@ -100,65 +103,70 @@ impl Simulation {
                 continue;
             };
             let Some(object) = self.interner.object_type(type_id, rules) else {
-                log::debug!("House50D320 record has an unavailable Type");
+                log::debug!("Initial-Techno record has an unavailable Type");
                 return false;
             };
-            // Type RTTI7 is BuildingType; instance RTTI6 is BuildingClass.
-            if object.category != ObjectCategory::Building {
+            //50D524/50D530 admits Type RTTI3/7/16/40, not just Units.
+            // Native50D320 instead requires7 (BuildingType; instance RTTI6).
+            let category = object.category;
+            if !recreate_all && category != ObjectCategory::Building {
                 continue;
             }
             let strength = object.strength;
-            let Some(terrain) = self.resolved_terrain.as_ref() else {
-                return false;
-            };
-            let cell = NativeCellQuery::canonical(terrain).lookup(at);
-            let resident = match cell {
-                NativeCellIdentity::Real(_) => {
-                    let (x, y) = terrain.native_cell_coord(cell);
-                    self.substrate.occupancy.first_building_on_layer(
-                        x as u16,
-                        y as u16,
-                        MovementLayer::Ground,
-                    )
-                }
-                // The modeled shared Dummy has no stored object-list members.
-                // Retail initial Building records are allocated real cells;
-                // nonempty native Dummy lists remain an unrepresented boundary.
-                NativeCellIdentity::Dummy => None,
-            };
-            if let Some(id) = resident.filter(|&id| {
-                self.substrate
-                    .entities
-                    .get(id)
-                    .is_some_and(|entity| entity.type_ref() == type_id && entity.owner() == owner)
-            }) {
-                let Some(c4) = rules.warhead(&rules.bridge_warheads.c4_name) else {
+            if !recreate_all {
+                let Some(terrain) = self.resolved_terrain.as_ref() else {
                     return false;
                 };
-                let warhead_id = self.interner.intern(&c4.id);
-                self.commit_direct_damage_receiver(
-                    rules,
-                    overlay_registry,
-                    EntityDamageEvent::direct_receiver(
-                        id,
-                        strength.wrapping_neg(),
-                        0,
-                        0,
-                        None,
-                        warhead_id,
-                        ReceiverCallFlags {
-                            ignore_defenses: false,
-                            arg6: false,
-                        },
-                    ),
-                    frame_effects,
-                );
-                continue;
+                let cell = NativeCellQuery::canonical(terrain).lookup(at);
+                let resident = match cell {
+                    NativeCellIdentity::Real(_) => {
+                        let (x, y) = terrain.native_cell_coord(cell);
+                        self.substrate.occupancy.first_building_on_layer(
+                            x as u16,
+                            y as u16,
+                            MovementLayer::Ground,
+                        )
+                    }
+                    // The modeled shared Dummy has no stored object-list members.
+                    // Retail initial Building records are allocated real cells;
+                    // nonempty native Dummy lists remain an unrepresented boundary.
+                    NativeCellIdentity::Dummy => None,
+                };
+                if let Some(id) = resident.filter(|&id| {
+                    self.substrate.entities.get(id).is_some_and(|entity| {
+                        entity.type_ref() == type_id && entity.owner() == owner
+                    })
+                }) {
+                    let Some(c4) = rules.warhead(&rules.bridge_warheads.c4_name) else {
+                        return false;
+                    };
+                    let warhead_id = self.interner.intern(&c4.id);
+                    self.commit_direct_damage_receiver(
+                        rules,
+                        overlay_registry,
+                        EntityDamageEvent::direct_receiver(
+                            id,
+                            strength.wrapping_neg(),
+                            0,
+                            0,
+                            None,
+                            warhead_id,
+                            ReceiverCallFlags {
+                                ignore_defenses: false,
+                                arg6: false,
+                            },
+                        ),
+                        frame_effects,
+                    );
+                    continue;
+                }
             }
 
             let type_name = self.interner.resolve(type_id).to_owned();
             let owner_name = self.interner.resolve(owner).to_owned();
-            // Type+8C=45E880 constructs43B740 with zero held Location.
+            // Type+8C constructs at zero held Location.50D48C/50D49F
+            // do not seek an existing resident or skip a still-present object.
+            // For Buildings, Type+8C=45E880 constructs43B740.
             // Allocation/cast failure is unsafe natively at50D40F. Rust reports
             // unavailable construction rather than inventing a successful no-op.
             let Some(created) = self.construct_object_limbo_at_height(
@@ -173,7 +181,7 @@ impl Simulation {
             ) else {
                 return false;
             };
-            //50D3E3 redoes Map5657A0 after the actual constructor callbacks.
+            //50D3E3/50D4C9 query Map5657A0 after the actual constructor callbacks.
             let coord = self.resolved_terrain.as_ref().and_then(|terrain| {
                 let cells = NativeCellQuery::canonical(terrain);
                 crate::sim::cell_kernel::native_cell_own_coords(cells.lookup(at), &cells).map(
@@ -191,10 +199,10 @@ impl Simulation {
                 );
                 return false;
             };
-            // +490 is458A80, a clearing/placement transaction that calls the
-            // ordinary +D8=440580 internally. It is not an Unlimbo alias.
-            if self
-                .place_building_with_cleared_foundation(
+            //50D4F9/50D413 call +490, not ordinary Unlimbo:458A80
+            // for Buildings,4DF510 for all three Foot classes.
+            let placed = if category == ObjectCategory::Building {
+                self.place_building_with_cleared_foundation(
                     created,
                     coord,
                     0,
@@ -202,11 +210,20 @@ impl Simulation {
                     overlay_registry,
                     frame_effects,
                 )
-                .is_none()
-            {
-                //50D421 calls F8 even after458C3A has already uninitialized
-                // a failed new Building. Retain the shared owner's repeated
-                // lifecycle/queue semantics; do not direct-delete the identity.
+            } else {
+                self.place_foot_with_cleared_cell(
+                    created,
+                    coord,
+                    0,
+                    rules,
+                    overlay_registry,
+                    frame_effects,
+                )
+            };
+            if placed.is_none() {
+                //50D421/50D507 call F8 even after the placement method
+                // has already uninitialized a failed new object. Preserve
+                // the shared owner's repeated lifecycle/queue semantics.
                 self.uninit_with_context(
                     created,
                     UninitContext::new(Some(rules), overlay_registry).with_effects(frame_effects),

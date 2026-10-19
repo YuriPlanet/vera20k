@@ -1794,6 +1794,7 @@ impl WallDamageTransactionHost for SimulationWallRuntimeHost<'_> {
                 self.target_terrain_objects,
                 rx,
                 ry,
+                None,
                 #[cfg(any(test, feature = "test-support"))]
                 self.detach_trace,
             );
@@ -2618,6 +2619,7 @@ impl Simulation {
                                 &self.production.terrain_objects,
                                 coord.0,
                                 coord.1,
+                                Some((rules, &self.interner)),
                                 #[cfg(any(test, feature = "test-support"))]
                                 &mut effects.cell_target_detaches,
                             );

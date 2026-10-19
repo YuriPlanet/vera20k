@@ -899,6 +899,72 @@ mod tests {
         sim
     }
 
+    /// Techno Assign_Target's bunker redirect (`0x006FCE4B..0x006FCEB5`): a
+    /// bunkered tank becomes its bunker for an airstrike owner or an
+    /// IsLocomotor weapon 0, not for an ordinary gun; the receiver itself
+    /// becomes the Cell under it (`0x006FCEB8`).
+    #[test]
+    fn assign_target_redirects_a_bunkered_tank_to_its_bunker() {
+        use crate::sim::combat::TargetKind;
+        use crate::sim::mission::concrete_effects::assign_target_stored;
+        let mut sim = installed_sim();
+        let rules = rules();
+        spawn_tank(&mut sim, 3, "Russians", "TANK");
+        spawn_tank(&mut sim, 4, "Russians", "MAGNET");
+        let magnet_rules = RuleSet::from_ini(&IniFile::from_str(
+            "[VehicleTypes]\n0=MAGNET\n\n[InfantryTypes]\n\n[AircraftTypes]\n\n\
+             [BuildingTypes]\n\n[MAGNET]\nStrength=400\nPrimary=MagBeam\n\n\
+             [WeaponTypes]\n0=MagBeam\n\n[MagBeam]\nDamage=1\nRange=5\nWarhead=Mag\n\n\
+             [Warheads]\n0=Mag\n\n[Mag]\nIsLocomotor=yes\n",
+        ))
+        .unwrap();
+        let tank = Some(TargetKind::Entity(1));
+        let stored = |sim: &Simulation, receiver, rules| {
+            assign_target_stored(
+                &sim.substrate.entities,
+                &sim.production.terrain_objects,
+                receiver,
+                tank,
+                Some((rules, &sim.interner)),
+            )
+        };
+        assert_eq!(stored(&sim, 3, &rules), tank);
+        assert_eq!(stored(&sim, 4, &magnet_rules), Some(TargetKind::Entity(2)));
+        sim.substrate
+            .entities
+            .get_mut(3)
+            .unwrap()
+            .airstrike
+            .set_test_link(Some(3));
+        assert_eq!(stored(&sim, 3, &rules), Some(TargetKind::Entity(2)));
+        let own = assign_target_stored(
+            &sim.substrate.entities,
+            &sim.production.terrain_objects,
+            3,
+            Some(TargetKind::Entity(3)),
+            None,
+        );
+        assert_eq!(own, Some(TargetKind::Cell(12, 12)));
+        // The same-target test compares the request, so asking for the tank
+        // again while the bunker is held stores the bunker again.
+        for _ in 0..2 {
+            let held = stored(&sim, 3, &rules);
+            let receiver = sim.substrate.entities.get_mut(3).unwrap();
+            crate::sim::mission::concrete_effects::represented_assign_target_admitted(
+                receiver, tank, held,
+            );
+            assert_eq!(receiver.attack_target.target(), Some(TargetKind::Entity(2)));
+        }
+        // An object only approaching its bunker (no +0x2E4) is not redirected.
+        sim.substrate
+            .entities
+            .get_mut(1)
+            .unwrap()
+            .bunker
+            .set_bunker_link_for_test(BunkerLink::Approaching(2));
+        assert_eq!(stored(&sim, 3, &rules), tank);
+    }
+
     fn down_sounds(sim: &Simulation) -> usize {
         sim.sound_events
             .iter()

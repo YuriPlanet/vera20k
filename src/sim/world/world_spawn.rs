@@ -1285,8 +1285,6 @@ impl Simulation {
         frame_effects: FrameEffects<'_>,
     ) -> Option<u64> {
         use crate::map::cell_index::NativeCellIdentity;
-        use crate::sim::movement::locomotor::MovementLayer;
-        use crate::sim::occupancy::CellObjectMember;
         let building = self.substrate.entities.get(stable_id)?;
         if building.category() != EntityCategory::Structure {
             return None;
@@ -1323,46 +1321,15 @@ impl Simulation {
                     }
                 }
             }
-            //458B4B/458BB4 repeatedly reads this same Cell+E4, after every
-            // Limbo callback. Do not snapshot its occupants or use deck lists.
-            loop {
-                let member = match cell {
-                    NativeCellIdentity::Real(_) => {
-                        let mut members =
-                            self.cell_objects((at.0 as u16, at.1 as u16), MovementLayer::Ground);
-                        members.next()
-                    }
-                    NativeCellIdentity::Dummy => None,
-                };
-                let Some(member) = member else { break };
-                let movable = match member {
-                    CellObjectMember::Entity(id) => self
-                        .substrate
-                        .entities
-                        .get(id)
-                        .is_some_and(|entity| {
-                            matches!(
-                                entity.category(),
-                                EntityCategory::Unit
-                                    | EntityCategory::Infantry
-                                    | EntityCategory::Aircraft
-                            )
-                        })
-                        .then_some(id),
-                    CellObjectMember::Terrain(_) => None,
-                };
-                let Some(id) = movable else {
-                    self.restore_cleared_foundation_technos(
-                        displaced,
-                        false,
-                        rules,
-                        overlay_registry,
-                        frame_effects,
-                    );
-                    return None;
-                };
-                displaced.push(id);
-                self.techno_limbo_with_context(id, context);
+            if !self.clear_mobile_placement_cell(cell, &mut displaced, context) {
+                self.restore_displaced_placement_technos(
+                    displaced,
+                    false,
+                    rules,
+                    overlay_registry,
+                    frame_effects,
+                );
+                return None;
             }
         }
 
@@ -1380,7 +1347,7 @@ impl Simulation {
             // Its caller may subsequently repeatF8 (House50D421/TAction125).
             self.uninit_with_context(stable_id, context);
         }
-        self.restore_cleared_foundation_technos(
+        self.restore_displaced_placement_technos(
             displaced,
             placed.is_some(),
             rules,
@@ -1390,10 +1357,124 @@ impl Simulation {
         placed
     }
 
-    /// The two458A80 rollback arms and its successful displaced-object tail
-    /// share their ordinary Unlimbo/F8 owner. Raw Location is read after
+    /// Foot4DF510 (all three Foot-class vtables' +490), Steam3e81a617..08600.
+    /// Temporarily Limbo non-Building Technos on the target ground Cell,
+    /// then call the concrete ordinary Unlimbo. Refusal restores old Locations;
+    /// success restores old objects nearby, with allowBridge=false (4DF732).
+    /// Building458A80 owns its separate foundation/overlay prelude.
+    pub(crate) fn place_foot_with_cleared_cell(
+        &mut self,
+        stable_id: u64,
+        coord: crate::sim::components::DriveCoord,
+        facing: u8,
+        rules: &RuleSet,
+        overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        frame_effects: FrameEffects<'_>,
+    ) -> Option<u64> {
+        let foot = self.substrate.entities.get(stable_id)?;
+        if !matches!(
+            foot.category(),
+            EntityCategory::Infantry | EntityCategory::Unit | EntityCategory::Aircraft
+        ) {
+            return None;
+        }
+        let at = (
+            crate::util::lepton::lepton_to_cell_packed(coord.x),
+            crate::util::lepton::lepton_to_cell_packed(coord.y),
+        );
+        let cell = self.resolved_terrain.as_ref()?.native_cell_identity(at);
+        let context = super::lifecycle::UninitContext::new(Some(rules), overlay_registry)
+            .with_effects(frame_effects);
+        let mut displaced = Vec::new();
+        if !self.clear_mobile_placement_cell(cell, &mut displaced, context) {
+            self.restore_displaced_placement_technos(
+                displaced,
+                false,
+                rules,
+                overlay_registry,
+                frame_effects,
+            );
+            return None;
+        }
+        let placed = self.reveal_constructed_object_at_coord_with_overlay_context(
+            stable_id,
+            coord,
+            facing,
+            PlacementEvidence::EvaluateMark,
+            rules,
+            overlay_registry,
+            frame_effects,
+        );
+        if placed.is_none() {
+            //4DF674: this failure already UnInits the new Foot;50D507 may
+            // repeat it. Preserve the existing ordered lifecycle owner.
+            self.uninit_with_context(stable_id, context);
+        }
+        self.restore_displaced_placement_technos(
+            displaced,
+            placed.is_some(),
+            rules,
+            overlay_registry,
+            frame_effects,
+        );
+        placed
+    }
+
+    /// Common Cell+E4 transaction of458B4B/458BB4 and4DF57E..4DF5F9.
+    /// Re-read the same ground head after each concrete Limbo callback.
+    /// The current Dummy model has no object-list members (the existing
+    /// Building boundary); no deck list, health or Alive filter is substituted.
+    fn clear_mobile_placement_cell(
+        &mut self,
+        cell: crate::map::cell_index::NativeCellIdentity,
+        displaced: &mut Vec<u64>,
+        context: super::lifecycle::UninitContext<'_>,
+    ) -> bool {
+        use crate::map::cell_index::NativeCellIdentity;
+        use crate::sim::movement::locomotor::MovementLayer;
+        use crate::sim::occupancy::CellObjectMember;
+        let Some(terrain) = self.resolved_terrain.as_ref() else {
+            return false;
+        };
+        let at = terrain.native_cell_coord(cell);
+        loop {
+            let member = match cell {
+                NativeCellIdentity::Real(_) => self
+                    .cell_objects((at.0 as u16, at.1 as u16), MovementLayer::Ground)
+                    .next(),
+                NativeCellIdentity::Dummy => None,
+            };
+            let Some(member) = member else {
+                return true;
+            };
+            let movable = match member {
+                CellObjectMember::Entity(id) => self
+                    .substrate
+                    .entities
+                    .get(id)
+                    .is_some_and(|entity| {
+                        matches!(
+                            entity.category(),
+                            EntityCategory::Unit
+                                | EntityCategory::Infantry
+                                | EntityCategory::Aircraft
+                        )
+                    })
+                    .then_some(id),
+                CellObjectMember::Terrain(_) => None,
+            };
+            let Some(id) = movable else {
+                return false;
+            };
+            displaced.push(id);
+            self.techno_limbo_with_context(id, context);
+        }
+    }
+
+    ///458A80 and4DF510 share their reverse ordinary Unlimbo/F8 owner.
+    /// Both native nearby callers reject bridge cells. Raw Location is read after
     /// previous callbacks, not captured before Limbo or the new placement.
-    fn restore_cleared_foundation_technos(
+    fn restore_displaced_placement_technos(
         &mut self,
         displaced: Vec<u64>,
         nearby: bool,
@@ -1412,22 +1493,29 @@ impl Simulation {
                 let Some(object) = self.object_type(entity.type_ref(), rules) else {
                     continue;
                 };
-                //458D2D: raw Type+67C (Winged remains Winged), zone-1,
-                // Normal, no bridge-zone,1x1,allowBridge,noheight/nooccupancy.
+                //458D2D/4DF751: raw Type+67C (Winged remains Winged), zone-1,
+                // Normal, no bridge-zone,1x1,noheight/nooccupancy.
                 // The shared FNPC owner preserves candidate order and frame
                 // choice and consumes no RNG. No 703590 getter substitutions.
                 let at = self
                     .nearby_passable_cell(
-                        (location.x / 256, location.y / 256),
-                        NearbyArgs::plain(
-                            PassabilityArgs {
-                                speed_type: object.speed_type,
-                                required_zone_id: None,
-                                movement_zone: MovementZone::Normal,
-                                bridge_aware_zone: false,
-                            },
-                            NearbyFootprint::SINGLE,
+                        (
+                            i32::from(crate::util::lepton::lepton_to_cell_packed(location.x)),
+                            i32::from(crate::util::lepton::lepton_to_cell_packed(location.y)),
                         ),
+                        NearbyArgs {
+                            // Both original callers push0:458CF8/4DF732.
+                            allow_bridge_cells: false,
+                            ..NearbyArgs::plain(
+                                PassabilityArgs {
+                                    speed_type: object.speed_type,
+                                    required_zone_id: None,
+                                    movement_zone: MovementZone::Normal,
+                                    bridge_aware_zone: false,
+                                },
+                                NearbyFootprint::SINGLE,
+                            )
+                        },
                     )
                     // Original FNPC's failed output is Cell::Empty, and this
                     // caller still performs its Map lookup and Unlimbo.

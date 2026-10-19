@@ -360,7 +360,7 @@ mod tests {
         crate::sim::mission::concrete_effects::represented_assign_target_admitted(
             &mut entity,
             Some(TargetKind::Entity(3)),
-            true,
+            Some(TargetKind::Entity(3)),
         );
         assert_eq!(entity.weapon_burst.index(), 1);
         represented_assign_target(&mut entity, None);

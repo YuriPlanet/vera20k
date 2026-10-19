@@ -90,6 +90,63 @@ pub(crate) fn crush_distance(unit: [i32; 3], source: [i32; 3]) -> i32 {
 }
 
 impl Simulation {
+    /// Steam gamemd UnitReceiveDamage73838A..738457, after passenger/crew
+    /// escape and before Crash/UnInit. Trucks and trains have separate flags;
+    /// neither alone admits a type without CarriesCrate. The first FNPC has
+    /// literal Track/zone-1/Normal/1x1, no target/height/occupancy; PlaceCrate
+    /// then performs its own surface-based snap and one timer ranged call;
+    /// the existing crate owner retains any rejection draws within that call.
+    pub(crate) fn drop_unit_cargo_crate(
+        &mut self,
+        id: u64,
+        rules: &RuleSet,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+    ) {
+        use crate::rules::locomotor_type::{MovementZone, SpeedType};
+        use crate::sim::find_nearby_cell::{NearbyArgs, NearbyFootprint, PassabilityArgs};
+        let Some(unit) = self.substrate.entities.get(id) else {
+            return;
+        };
+        let Some(object) = self.object_type(unit.type_ref(), rules) else {
+            return;
+        };
+        if !object.carries_crate()
+            || !(if object.is_train {
+                self.session.train_crate()
+            } else {
+                self.session.truck_crate()
+            })
+        {
+            return;
+        }
+        //73840A is vt1B8 GetMapCoords (signed coordinate /256), not a
+        // neighbouring entity, its former NavCom or a cached path cell.
+        let coord = crate::sim::movement::ground_pose::position_world_coord(&unit.position);
+        let cell = self.nearby_passable_cell(
+            (
+                i32::from(crate::util::lepton::lepton_to_cell_packed(coord.x)),
+                i32::from(crate::util::lepton::lepton_to_cell_packed(coord.y)),
+            ),
+            NearbyArgs::plain(
+                PassabilityArgs {
+                    speed_type: SpeedType::Track,
+                    required_zone_id: None,
+                    movement_zone: MovementZone::Normal,
+                    bridge_aware_zone: false,
+                },
+                NearbyFootprint::SINGLE,
+            ),
+        );
+        // A8B261 is the existing session Crates option. Native checks it
+        // AFTER FNPC, whose Dummy writes must survive even when disabled.
+        if let Some((x, y)) = cell.filter(|&cell| cell != (0, 0))
+            && self.session.game_options.crates
+            && let Some(registry) = registry
+        {
+            crate::sim::crates::place_crate(self, rules, registry, (x as i16, y as i16), Some(20));
+        }
+    }
+
     /// `0x00738535..0x0073866E`, reached for results 0 to 3 of
     /// `FootClass::ReceiveDamage` (result 0 skips only the ping,
     /// `0x007384BB`). A unit in no team (`+0x5D4`), hit by a source, not

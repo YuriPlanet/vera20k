@@ -1646,6 +1646,48 @@ pub(crate) fn try_queue_context_order_at_screen_point(
                     force_fire,
                     &resources.overlay_registry,
                 )
+            } else if let TargetKind::Cell(rx, ry) = attack_target
+                && !force_fire
+                && modifier != OrderModifier::GuardArea
+            {
+                // Each selected object's What_Action on the Cell reaches its
+                // unforced Attack rung on its own (0x004AE750's object loop);
+                // its tail is the forced shot's, and any other answer keeps
+                // the object on its Move rungs below. Foot's shroud wrapper
+                // (0x004DDE64..0x004DDEBE) takes a Foot's Attack back over a
+                // shrouded Cell; the Building wrapper keeps it.
+                let rung: Vec<u64> = selected_ids
+                    .iter()
+                    .copied()
+                    .filter(|&id| {
+                        (!cell_is_shrouded
+                            || sim.entities().get(id).is_some_and(|entity| {
+                                entity.category() == EntityCategory::Structure
+                            }))
+                            && sim.cell_attack_rung_admits(
+                                id,
+                                (rx, ry),
+                                &resources.rules,
+                                Some(&resources.overlay_registry),
+                            )
+                            && armed_action(
+                                sim,
+                                &resources.rules,
+                                id,
+                                &attack_target,
+                                true,
+                                Some(&resources.overlay_registry),
+                            ) == Some(AttackAction::Attack)
+                    })
+                    .collect();
+                attack_branch_orders(
+                    sim,
+                    &resources.rules,
+                    &rung,
+                    attack_target,
+                    true,
+                    &resources.overlay_registry,
+                )
             } else {
                 AttackDispatch {
                     receivers: std::collections::BTreeSet::new(),

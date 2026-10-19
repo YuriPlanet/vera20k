@@ -126,6 +126,7 @@ impl WallDamageTransactionHost for AoEWallDamageHost<'_, '_> {
                 self.target_terrain_objects,
                 rx,
                 ry,
+                None,
                 #[cfg(any(test, feature = "test-support"))]
                 self.trace,
             );
@@ -758,15 +759,21 @@ pub(crate) fn expire_cell_target_references(
     terrain_objects: &BTreeMap<u64, TerrainObjectState>,
     rx: u16,
     ry: u16,
+    types: Option<(
+        &crate::rules::ruleset::RuleSet,
+        &crate::sim::intern::StringInterner,
+    )>,
     #[cfg(any(test, feature = "test-support"))] trace: &mut Vec<CellTargetDetach>,
 ) {
     let listener_ids = entities.keys_sorted();
     for listener_id in listener_ids {
-        let saved_target_commits = entities.get(listener_id).is_some_and(|entity| {
-            crate::sim::mission::concrete_effects::assign_target_commits(
+        let saved_target_stored = entities.get(listener_id).and_then(|entity| {
+            crate::sim::mission::concrete_effects::assign_target_stored(
                 entities,
                 terrain_objects,
+                listener_id,
                 entity.suspended_attack_target.target(),
+                types,
             )
         });
         let Some(entity) = entities.get_mut(listener_id) else {
@@ -783,7 +790,7 @@ pub(crate) fn expire_cell_target_references(
             entity.mission.suspended() != crate::sim::mission::MissionId::NONE;
         represented_assign_target(entity, None);
         let _restored = mission_was_suspended
-            && restore_entity_after_target_expiry(entity, saved_target_commits);
+            && restore_entity_after_target_expiry(entity, saved_target_stored);
         #[cfg(any(test, feature = "test-support"))]
         trace.push(CellTargetDetach {
             listener_id,

@@ -1740,6 +1740,7 @@ fn finish_concrete_death(
             selected_by_player,
             frame_effects,
         );
+        world.drop_unit_cargo_crate(dead_id, rules, overlay_registry);
     }
 
     let inf_death = killing_warhead.as_ref().map_or(1, |(wh, _)| wh.inf_death);

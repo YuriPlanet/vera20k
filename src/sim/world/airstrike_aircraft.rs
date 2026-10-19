@@ -251,7 +251,9 @@ mod tests {
                 )
                 .unwrap();
                 let plane = sim.substrate.entities.get(id).unwrap();
-                let should_clear = matches!(name, "BPLN" | "HORNET");
+                // A NULL request jumps to the store (0x006FCDF3), keeping
+                // the ammo; only a new target leaves the run.
+                let should_clear = matches!(name, "BPLN" | "HORNET") && target.is_some();
                 assert_eq!(
                     plane.ammo().unwrap().current(),
                     if should_clear { 0 } else { 2 },

@@ -358,10 +358,12 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects<'_> {
         if changes && entity.airstrike_link() == Some(prepared.receiver) {
             sim.airstrike_clear_target(prepared.receiver, self.rules, self.frame_effects);
         }
-        let commits = assign_target_commits(
+        let stored = assign_target_stored(
             &sim.substrate.entities,
             &sim.production.terrain_objects,
+            prepared.receiver,
             requested,
+            self.rules.map(|rules| (rules, &sim.interner)),
         );
         let entity = sim
             .substrate
@@ -372,7 +374,7 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects<'_> {
             //51B2A2: a same-target assignment still invalidates Foot+5E0.
             entity.clear_live_path_head();
         }
-        represented_assign_target_admitted(entity, requested, commits);
+        represented_assign_target_admitted(entity, requested, stored);
         //51B2B1..51B33F: an Infiltrate= infantryman with no NavCom heads for
         // a building target it may enter (vt+0x480(target, 1)).
         if infantry
@@ -591,6 +593,61 @@ pub(crate) fn assign_target_commits(
     }
 }
 
+/// The pointer `TechnoClass::Assign_Target @ 0x006FCDB0` stores for
+/// `requested` after its same-target test (`0x006FCE4B..0x006FCF36`):
+/// - an object other than a Building that is installed in a bunker
+///   (Techno+0x2E4) becomes that bunker when the receiver uses a Temporal
+///   (+0x274, `0x006FCE75`), its weapon 0's warhead has `IsLocomotor=`
+///   (+0x15B, `0x006FCE80..0x006FCEA3`), or it owns its airstrike (+0x294
+///   whose owner is the receiver, `0x006FCEA6..0x006FCEB5`);
+/// - the receiver itself becomes the Cell under its Location (`0x006FCEB8`);
+/// - then [`assign_target_commits`] admits the result, else NULL.
+///
+/// The `IsLocomotor=` arm needs the rules and interner. Residual: the wall
+/// hosts' cell-target expiry Restore has neither and skips that arm.
+pub(crate) fn assign_target_stored(
+    entities: &EntityStore,
+    terrain_objects: &BTreeMap<u64, TerrainObjectState>,
+    receiver: u64,
+    requested: Option<TargetKind>,
+    types: Option<(
+        &crate::rules::ruleset::RuleSet,
+        &crate::sim::intern::StringInterner,
+    )>,
+) -> Option<TargetKind> {
+    let mut target = requested;
+    if let Some(TargetKind::Entity(id)) = target
+        && let Some(object) = entities.get(id)
+        && object.category() != crate::map::entities::EntityCategory::Structure
+        && let Some(bunker) = object.bunker.link().installed_in()
+        && let Some(actor) = entities.get(receiver)
+        && (actor.temporal.has_link()
+            || types.is_some_and(|(rules, interner)| {
+                interner
+                    .object_type(actor.type_ref(), rules)
+                    .and_then(|kind| {
+                        crate::sim::combat::combat_weapon::get_weapon(
+                            actor, kind, 0, entities, rules, interner,
+                        )
+                    })
+                    .and_then(|weapon| weapon.warhead.as_deref())
+                    .and_then(|warhead| rules.warhead(warhead))
+                    .is_some_and(|warhead| warhead.is_locomotor)
+            })
+            || actor.airstrike_link() == Some(receiver))
+    {
+        target = Some(TargetKind::Entity(bunker));
+    }
+    if target == Some(TargetKind::Entity(receiver))
+        && let Some(actor) = entities.get(receiver)
+    {
+        target = Some(TargetKind::Cell(actor.position.rx(), actor.position.ry()));
+    }
+    assign_target_commits(entities, terrain_objects, target)
+        .then_some(target)
+        .flatten()
+}
+
 /// The represented `Assign_Target` write set for a NULL or cell target.
 ///
 /// An object target needs [`assign_target_commits`], which reads the target;
@@ -601,27 +658,26 @@ pub(crate) fn represented_assign_target(
 ) {
     debug_assert!(
         !matches!(requested, Some(TargetKind::Entity(_))),
-        "an object target needs assign_target_commits"
+        "an object target needs assign_target_stored"
     );
-    represented_assign_target_admitted(entity, requested, true);
+    represented_assign_target_admitted(entity, requested, requested);
 }
 
-/// The represented `Assign_Target` write set, entity-local; `commits` is
-/// [`assign_target_commits`] for `requested`, read before the receiver was
-/// borrowed.
+/// The represented `Assign_Target` write set, entity-local; `stored` is
+/// [`assign_target_stored`] for `requested`, read before the receiver was
+/// borrowed. The same-target test compares `requested`.
 ///
 /// This is the represented Techno6FCDB0 base write set, shared by Mission
 /// transactions and remaining bare-storage consumers. Infantry class action,
 /// DeployFire admission and path invalidation run before it in apply_target;
 /// they must not be approximated by clearing Doing here. Native Techno6FCDB0
-/// also redirects targets (a tank-bunkered object, self) and tears down linked
-/// effects. Remaining bare-storage callers do not yet dispatch the complete
+/// also tears down linked effects. Remaining bare-storage callers do not yet dispatch the complete
 /// class setter; neither this base write set nor apply_target claims those
 /// larger linked-effect/C4/Ivan branches.
 pub(crate) fn represented_assign_target_admitted(
     entity: &mut crate::sim::game_entity::GameEntity,
     requested: Option<TargetKind>,
-    commits: bool,
+    stored: Option<TargetKind>,
 ) {
     // The original's target assignment clears the passive-acquire flag as
     // its first statement, ahead of any same-target short-circuit, so a
@@ -638,18 +694,18 @@ pub(crate) fn represented_assign_target_admitted(
     // ammo, mid-run in Mission_Attack states 5..9, handed another target
     // drops it and empties its ammo, so it leaves the run. This reads the
     //TYPE's Spawned/MissileSpawn flags, also for Boris planes without a
-    //SpawnOwner. A NULL request reaches this gate too (6FCDEB..6FCE46).
-    let requested = if entity.type_facts.spawned_non_missile_aircraft()
+    //SpawnOwner. A NULL request skips the arm (0x006FCDF3 jumps to the
+    // store) and keeps the ammo.
+    let requested = if requested.is_some()
+        && entity.type_facts.spawned_non_missile_aircraft()
         && matches!(crate::sim::aircraft::attack_state(entity), Some(5..=9))
         && let Some(ammo) = entity.ammo_mut()
         && ammo.current() != 0
     {
         ammo.empty();
         None
-    } else if commits {
-        requested
     } else {
-        None
+        stored
     };
 
     if requested.is_none() {

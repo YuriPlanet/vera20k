@@ -932,6 +932,10 @@ pub struct ObjectType {
     /// clears it (`0x007470D0`). `CellClass::PickupCrate @ 0x00481A00` rejects
     /// every drawn type without it (`0x004821BD`).
     pub crate_goodie: bool,
+    /// UnitType+E1A, CarriesCrate (845DE0): ctor74715B clears it;
+    /// ReadINI74771F..74773F uses ReadBool5295F0 with the current value.
+    /// UnitReceiveDamage73838A also requires the appropriate Scenario flag.
+    carries_crate: bool,
     /// `Spawned=` (`TechnoTypeClass+0xD54`): this type is a carrier/launcher
     /// child (Hornet, V3/Dreadnought missile). `TechnoTypeClass::ReadINI`
     /// reads key `"Spawned"` (`0x008437D8`) at `0x00714E7D..0x00714E91`.
@@ -2053,6 +2057,10 @@ fn native_minutes_to_ticks(value: f64) -> u32 {
 }
 
 impl ObjectType {
+    pub(crate) const fn carries_crate(&self) -> bool {
+        self.carries_crate
+    }
+
     pub const fn has_radial_indicator(&self) -> bool {
         self.has_radial_indicator
     }
@@ -2827,6 +2835,8 @@ impl ObjectType {
             to_protect: section.read_bool("ToProtect", false),
             harvester: section.read_bool("Harvester", false),
             crate_goodie: section.read_bool("CrateGoodie", false),
+            carries_crate: category == ObjectCategory::Vehicle
+                && section.read_bool("CarriesCrate", false),
             spawned: section.read_bool("Spawned", false),
             refinery: section.read_bool("Refinery", false),
             weeder: section.read_bool("Weeder", false),

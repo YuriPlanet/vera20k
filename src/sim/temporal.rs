@@ -360,16 +360,18 @@ impl Simulation {
                     Some(bunker) if entity.category() == EntityCategory::Unit => {
                         // vtable +0x3C8 Assign_Target(bunker) on the firer.
                         let requested = Some(crate::sim::combat::TargetKind::Entity(bunker));
-                        let commits = crate::sim::mission::concrete_effects::assign_target_commits(
+                        let stored = crate::sim::mission::concrete_effects::assign_target_stored(
                             &self.substrate.entities,
                             &self.production.terrain_objects,
+                            firer,
                             requested,
+                            Some((rules, &self.interner)),
                         );
                         if let Some(firer_entity) = self.substrate.entities.get_mut(firer) {
                             crate::sim::mission::concrete_effects::represented_assign_target_admitted(
                                 firer_entity,
                                 requested,
-                                commits,
+                                stored,
                             );
                         }
                         Some(bunker)

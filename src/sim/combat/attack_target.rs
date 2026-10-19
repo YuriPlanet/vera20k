@@ -260,7 +260,7 @@ pub fn install_entity_attack_target_for_test(
     crate::sim::mission::concrete_effects::represented_assign_target_admitted(
         attacker,
         Some(TargetKind::Entity(target_id)),
-        true,
+        Some(TargetKind::Entity(target_id)),
     );
 
     true

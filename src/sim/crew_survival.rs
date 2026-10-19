@@ -459,14 +459,16 @@ impl Simulation {
             if let Some(planter) = enemy_planter {
                 // Infantry vt+0x3C8 (`0x0051B1F0`) over TechnoClass::Assign_Target.
                 let target = Some(crate::sim::combat::TargetKind::Entity(planter));
-                let commits = crate::sim::mission::concrete_effects::assign_target_commits(
+                let stored = crate::sim::mission::concrete_effects::assign_target_stored(
                     &sim.substrate.entities,
                     &sim.production.terrain_objects,
+                    id,
                     target,
+                    Some((rules, &sim.interner)),
                 );
                 if let Some(survivor) = sim.substrate.entities.get_mut(id) {
                     crate::sim::mission::concrete_effects::represented_assign_target_admitted(
-                        survivor, target, commits,
+                        survivor, target, stored,
                     );
                 }
             }

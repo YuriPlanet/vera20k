@@ -267,15 +267,17 @@ fn scene(input: &Value) -> Scene {
         if input["open_topped"] == true {
             assert!(sim.register_open_topped_passenger(id));
             // A target to drop: Assign_Target(NULL) is the only writer here.
-            let commits = crate::sim::mission::concrete_effects::assign_target_commits(
+            let stored = crate::sim::mission::concrete_effects::assign_target_stored(
                 &sim.substrate.entities,
                 &sim.production.terrain_objects,
+                id,
                 Some(TargetKind::Entity(attacker)),
+                None,
             );
             crate::sim::mission::concrete_effects::represented_assign_target_admitted(
                 sim.substrate.entities.get_mut(id).unwrap(),
                 Some(TargetKind::Entity(attacker)),
-                commits,
+                stored,
             );
         }
     }

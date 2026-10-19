@@ -3476,9 +3476,10 @@ impl Simulation {
                 }
                 return false;
             }
-            130 => {
-                //6E3120 uses the same live-trigger country selector as
-                //119..122;50D320 consumes the House's retained history.
+            126 | 130 => {
+                //126/6E30C0 and130/6E3120 use the same live-trigger
+                // country selector as119..122;50D440/50D320 consume the
+                // existing House history, with different restoration modes.
                 let (Some(live), Some(rules), Some(value)) = (context.live_index, rules, value)
                 else {
                     return false;
@@ -3487,7 +3488,13 @@ impl Simulation {
                 let Some(owner) = owner else {
                     return false;
                 };
-                self.restore_initial_house_buildings(owner, rules, overlay_registry, frame_effects);
+                self.restore_initial_house_technos(
+                    owner,
+                    action.kind == 126,
+                    rules,
+                    overlay_registry,
+                    frame_effects,
+                );
             }
             119..=122 => {
                 //6E3180/31E0/3240/32A0 require a live Trigger context.
@@ -3905,6 +3912,19 @@ impl Simulation {
                     return false;
                 };
                 return self.trigger_reduce_tiberium_at_waypoint(waypoint, rules, registry);
+            }
+            87 => {
+                // Steam3e81a617..08600, Execute6DDBD5..6DDBF3.
+                // This is the retained ice flag; never run the ore grower.
+                let Some(value) = value else {
+                    return false;
+                };
+                self.session.set_ice_growth(value);
+            }
+            97 => {
+                // Execute6DD8EE..6DD910: SETE of current Scenario+34A5;
+                // no Rules, actor, House, waypoint or numeric-value gate.
+                self.session.toggle_train_crate();
             }
             86 => {
                 let Some(value) = value else {
@@ -4765,3 +4785,11 @@ mod meteor_action_tests {
 #[cfg(test)]
 #[path = "trigger_runtime_talk_tests.rs"]
 mod talk_tests;
+
+#[cfg(test)]
+#[path = "trigger_runtime_cargo_tests.rs"]
+mod cargo_tests;
+
+#[cfg(test)]
+#[path = "trigger_runtime_restore_tests.rs"]
+mod restore_tests;

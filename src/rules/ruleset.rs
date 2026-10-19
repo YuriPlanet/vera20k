@@ -5538,8 +5538,16 @@ impl RuleSet {
     /// slices and are not claimed by this hash yet.
     pub fn simulation_config_hash(&self) -> u64 {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        b"rules-simulation-config-v23".hash(&mut hasher);
+        b"rules-simulation-config-v24".hash(&mut hasher);
         self.source_ini_hash.hash(&mut hasher);
+        // UnitType747734 retains CarriesCrate across later absent/invalid
+        // keys; equal current source text can still mean different cargo.
+        self.object_list
+            .iter()
+            .filter(|object| object.category == ObjectCategory::Vehicle)
+            .map(|object| (object.id.to_ascii_uppercase(), object.carries_crate()))
+            .collect::<BTreeMap<_, _>>()
+            .hash(&mut hasher);
         // Global construction order changes which category106 mutates when
         // IDs coincide. Current TechLevels can also differ after retained
         // default reads even when the compatibility INI is identical.
