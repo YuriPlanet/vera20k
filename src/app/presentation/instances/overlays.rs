@@ -1132,9 +1132,9 @@ pub(crate) fn build_weapon_wave_instances(
 /// matching `SelectedScheme` atlas variant; an absent remap keeps the ordinary
 /// AltPalette `GlobalAnim`/colour-0 path.
 ///
-/// RESIDUAL: native also copies the owner's cell Z adjust from Object+0x10A
-/// to Anim+0xFC after attach; this renderer still draws without a Z test.
-/// It is independent of the owner's palette selection.
+/// RESIDUAL: native also copies `+0x10A` of the owner's cell (vtable+0x1BC)
+/// to Anim+0xFC after attach (`0x005F5B1F..0x005F5B30`); this renderer still
+/// draws without a Z test. It is independent of the owner's palette selection.
 pub(crate) fn build_parachute_instances(
     input: &DisplayEffectInputs<'_>,
     ground_objects: &mut [crate::app::presentation::render::draw_plan_lowering::PlannedObjectInstance],
