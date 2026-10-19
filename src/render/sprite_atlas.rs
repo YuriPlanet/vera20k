@@ -1581,11 +1581,9 @@ pub fn build_sprite_atlas(
     }
 
     // Step 1e: Pre-load the parachute SHP (`[General] Parachute=`).
-    // The canopy's frames are keyed on the unit-palette context the parachute
-    // pass draws with, so they are registered here as well as through the
-    // AnimClass closure `[General] Parachute=` now belongs to. Its palette is not
-    // decided by this registration: `sprite_palette_choice` reads the art type's
-    // `AltPalette=` flag, which PARACH sets, and that selects the unit palette.
+    // This registers the no-remap GlobalAnim/colour-0 fallback. The live
+    // AnimClass remap closure adds SelectedScheme variants for remapped canopies;
+    // both use the unit palette here because PARACH sets `AltPalette=`.
     let parachute = rules
         .filter(|_| previous_atlas.is_none())
         .and_then(|r| r.general.parachute_shp.as_deref());
