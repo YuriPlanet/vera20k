@@ -1,19 +1,16 @@
-//! Authoritative regular-wall autofill scanning and Overlay Mark publication.
+//! Authoritative regular-wall autofill scanning.
 //!
 //! Native provenance: `HouseClass::Place_Production @ 0x004FB0E0` admits and
-//! consumes the ready product, `FUN_00588750 @ 0x00588750` constructs ordinary
-//! fillers, and `OverlayClass::Mark @ 0x005FC570` stamps each overlay. Building
-//! Unlimbo and retirement remain with the shared world lifecycle owner.
+//! consumes the ready product and `FUN_00588750 @ 0x00588750` constructs
+//! ordinary fillers. Each filler's Overlay reaches the one
+//! `OverlayClass::Mark @ 0x005FC570` port ([`crate::map::overlay_mark`])
+//! through Building Unlimbo, which the shared world lifecycle owner keeps.
 
 use crate::rules::object_type::ObjectType;
 use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::intern::InternedId;
-use crate::sim::overlay_grid::{
-    WallDamageTransactionHost, refresh_wall_connectivity_after_placement_with_host,
-};
-use crate::sim::pathfinding::zone_incremental::ZoneRepairKind;
-use crate::sim::world::{FrameEffects, Simulation, SimulationWallRuntimeHost};
+use crate::sim::world::{FrameEffects, Simulation};
 
 /// Native regular-wall visit order: north, east, south, west.
 const CARDINAL_DIRECTIONS: [(i32, i32); 4] = [(0, -1), (1, 0), (0, 1), (-1, 0)];
@@ -187,109 +184,4 @@ pub(crate) fn autofill_walls(
             );
         }
     }
-}
-
-/// Overlay5FC6F4..5FC777's wall arm, after base Mark and slope admission.
-/// The caller owns its transient Overlay lifecycle. Building4407FC stamps
-/// the placing House only after Overlay Unlimbo succeeds; crate constructors
-/// supply discriminator-1, preserving the prior owner here.
-/// Source: original5FC570/5FD270; shared wall-autofill/trigger-crate evidence.
-pub(crate) fn mark_wall(
-    sim: &mut Simulation,
-    rules: &RuleSet,
-    registry: &OverlayTypeRegistry,
-    rx: u16,
-    ry: u16,
-    overlay_id: u8,
-) -> bool {
-    let Some(grid) = sim.overlay_grid.as_ref() else {
-        return false;
-    };
-    if rx >= grid.width() || ry >= grid.height() {
-        return false;
-    }
-    // Overlay 0x5FC6F4..0x5FC705 asks the existing Cell 0x47C620 owner with
-    // SpeedType 1 (Track), BuildingType NULL and House NULL before any write.
-    // A refused old-wall sale must not become an unconditional overwrite.
-    let Some(terrain) = sim.resolved_terrain.as_ref() else {
-        return false;
-    };
-    let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
-    if !crate::sim::build_site::is_clear_to_build(
-        sim,
-        rules,
-        Some(registry),
-        cells.lookup((rx as i16, ry as i16)),
-        Some(crate::rules::locomotor_type::SpeedType::Track),
-        None,
-        None,
-        Some(&cells),
-    ) {
-        return false;
-    }
-
-    //5FC726..742 skips only the explicit anchor navigation pair in scope.
-    //PostDestructionWallCleanup retains its own hosted effects below.
-    let merge_anchor = !sim.object_placement_scope_active();
-    #[cfg(any(test, feature = "test-support"))]
-    let mut detach_trace = Vec::new();
-    let mut host = SimulationWallRuntimeHost {
-        entities: &mut sim.substrate.entities,
-        target_terrain_objects: &sim.production.terrain_objects,
-        #[cfg(any(test, feature = "test-support"))]
-        detach_trace: &mut detach_trace,
-        radar_dirty_cells: &mut sim.radar_terrain_dirty_cells,
-        radar_dirty_generation: &mut sim.radar_terrain_dirty_generation,
-        tactical_dirty_cells: &mut sim.tactical_dirty_cells,
-        zone_grid: &mut sim.zone_grid,
-        path_grid: &mut sim.path_grid,
-        bridge_state: sim.bridge_state.as_ref(),
-        playfield_bounds: sim.playfield_bounds,
-    };
-    let grid = sim.overlay_grid.as_mut().expect("validated wall grid");
-    mark_wall_transaction(
-        grid,
-        registry,
-        sim.resolved_terrain.as_mut(),
-        rx,
-        ry,
-        overlay_id,
-        merge_anchor,
-        &mut host,
-    )
-}
-
-fn mark_wall_transaction(
-    grid: &mut crate::sim::overlay_grid::OverlayGrid,
-    registry: &OverlayTypeRegistry,
-    mut terrain: Option<&mut crate::map::resolved_terrain::ResolvedTerrainGrid>,
-    rx: u16,
-    ry: u16,
-    overlay_id: u8,
-    merge_anchor: bool,
-    host: &mut dyn WallDamageTransactionHost,
-) -> bool {
-    //5FC717/71E writes only data/type: retained owner and rubble survive.
-    let Some(resolved) = terrain.as_deref_mut() else {
-        return false;
-    };
-    if !grid.write_crate_mark_fields(resolved, registry, rx, ry, overlay_id, 0) {
-        return false;
-    }
-    refresh_wall_connectivity_after_placement_with_host(
-        grid,
-        registry,
-        terrain.as_deref_mut(),
-        rx,
-        ry,
-        Some(&mut *host),
-    );
-    if merge_anchor && let Some(terrain) = terrain.as_deref() {
-        host.navigation_step(terrain, (rx, ry), false, ZoneRepairKind::MergeAdjacent);
-    }
-    grid.add_retained_wall_neighbor_source(terrain.as_deref(), rx, ry);
-    if let Some(terrain) = terrain {
-        grid.recalculate_runtime_cell(terrain, registry, (rx, ry));
-    }
-    true
 }

@@ -520,7 +520,6 @@ fn fatal_coil_bolt_releases_navigation_before_the_next_logic_reader() {
             None,
             67,
             TickLane::Ordinary,
-            None,
             crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
@@ -586,7 +585,6 @@ fn delayed_building_fire_skips_spark_after_bullet_compaction_until_the_next_pass
             None,
             67,
             TickLane::Ordinary,
-            None,
             crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
@@ -695,7 +693,6 @@ fn delayed_building_fire_skips_spark_after_bullet_compaction_until_the_next_pass
             None,
             67,
             TickLane::Ordinary,
-            None,
             crate::sim::world::FrameEffects::default(),
         )
         .unwrap();
@@ -824,7 +821,6 @@ fn natural_charge_expiry_preserves_native_bullet_and_spark_visit_order() {
                 None,
                 67,
                 TickLane::Ordinary,
-                None,
                 crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
@@ -845,7 +841,6 @@ fn natural_charge_expiry_preserves_native_bullet_and_spark_visit_order() {
                 None,
                 67,
                 TickLane::Ordinary,
-                None,
                 crate::sim::world::FrameEffects::default(),
             )
             .unwrap();
@@ -902,7 +897,6 @@ fn natural_charge_expiry_preserves_native_bullet_and_spark_visit_order() {
                     None,
                     67,
                     TickLane::Ordinary,
-                    None,
                     crate::sim::world::FrameEffects::default(),
                 )
                 .unwrap();

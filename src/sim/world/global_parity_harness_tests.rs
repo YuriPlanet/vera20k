@@ -130,10 +130,10 @@ pub(super) fn record_replay_diagnostic(
             "rng":{"scenario":sim.scenario_rng.native_state_hex(),
                 "main":sim.main_rng.native_state_hex(),"mapgen":sim.mapgen_rng.native_state_hex()},
             "draws":draws,"retained_path_inputs":retained_path_inputs,
-            "source_admissions":sim.fog.sight_admissions.iter().map(|(&(id,viewer),source)|
+            "source_admissions":sim.fog.sight_admissions_for_test().iter().map(|(&(id,viewer),source)|
                 serde_json::json!({"id":id,"viewer":sim.resolve(viewer),"source":source})
             ).collect::<Vec<_>>(),
-            "alternate_sight_admissions":sim.fog.alternate_sight_admissions.iter().map(|(&(id,viewer),source)|
+            "alternate_sight_admissions":sim.fog.alternate_sight_admissions_for_test().iter().map(|(&(id,viewer),source)|
                 serde_json::json!({"id":id,"viewer":sim.resolve(viewer),"source":source})
             ).collect::<Vec<_>>(),
             "fog_owners":sim.fog.by_owner.iter().map(|(owner,view)| {
@@ -178,10 +178,10 @@ pub(super) fn print_replay_summary(name: &str, sim: &Simulation) {
             "streams":[sim.scenario_rng.state(),sim.main_rng.state(),sim.mapgen_rng.state()],
             "actors":actors,"fire_count":sim.fire_events.len(),
             "hash_owners":sim.hash_owner_diagnostics_for_test(),
-            "source_admissions":sim.fog.sight_admissions.iter().map(|(&(id,viewer),source)|
+            "source_admissions":sim.fog.sight_admissions_for_test().iter().map(|(&(id,viewer),source)|
                 serde_json::json!({"id":id,"viewer":sim.resolve(viewer),"source":source})
             ).collect::<Vec<_>>(),
-            "alternate_sight_admissions":sim.fog.alternate_sight_admissions.iter().map(|(&(id,viewer),source)|
+            "alternate_sight_admissions":sim.fog.alternate_sight_admissions_for_test().iter().map(|(&(id,viewer),source)|
                 serde_json::json!({"id":id,"viewer":sim.resolve(viewer),"source":source})
             ).collect::<Vec<_>>(),
         })
@@ -1198,6 +1198,11 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
         let chunk = ReplayLog {
             header: log.header.clone(),
             ticks: log.ticks[chunk_start..chunk_end].to_vec(),
+            initial_scenario_services: if chunk_start == 0 {
+                log.initial_scenario_services.clone()
+            } else {
+                Vec::new()
+            },
         };
         replayed.extend(ReplayRunner::run_fixture_with_overlay_registry(
             &mut rep,
@@ -1219,6 +1224,7 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
         let tail = ReplayLog {
             header: log.header.clone(),
             ticks: log.ticks[chunk_start..].to_vec(),
+            initial_scenario_services: Vec::new(),
         };
         replayed.extend(ReplayRunner::run_fixture_with_overlay_registry(
             &mut rep,

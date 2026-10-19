@@ -118,9 +118,7 @@ impl Simulation {
                         .as_ref(),
                 ));
             }
-            NavTargetRef::Entity { id }
-            | NavTargetRef::Object { id }
-            | NavTargetRef::Building { id } => id,
+            NavTargetRef::Object { id } => id,
         };
         let entity = self.substrate.entities.get(id)?;
         Some(ground_pose::object_get_coords(
@@ -152,9 +150,7 @@ impl Simulation {
         let center = self.fire_location_center(target)?;
         let destination = match target {
             NavTargetRef::Cell { .. } => None,
-            NavTargetRef::Entity { id }
-            | NavTargetRef::Object { id }
-            | NavTargetRef::Building { id } => self
+            NavTargetRef::Object { id } => self
                 .substrate
                 .entities
                 .get(id)
@@ -286,11 +282,7 @@ impl Simulation {
         }
         let skip = if object.carryall {
             match entity.navigation.nav_com() {
-                Some(
-                    NavTargetRef::Entity { id }
-                    | NavTargetRef::Object { id }
-                    | NavTargetRef::Building { id },
-                ) => self
+                Some(NavTargetRef::Object { id }) => self
                     .substrate
                     .entities
                     .get(id)

@@ -10,7 +10,15 @@ pub(crate) fn is_locked(state: &AppState) -> bool {
         .match_state
         .sim_runtime
         .as_ref()
-        .is_some_and(|runtime| runtime.simulation.session.input_locked())
+        .is_some_and(|runtime| {
+            runtime.simulation.session.input_locked()
+                || (runtime.simulation.session.scenario_paused()
+                    && matches!(
+                        state.match_state.session.mode(),
+                        crate::app::match_runtime::session::SessionMode::Campaign
+                            | crate::app::match_runtime::session::SessionMode::Skirmish
+                    ))
+        })
 }
 
 /// Ordered effect emitted after the authoritative Scenario mutation. The

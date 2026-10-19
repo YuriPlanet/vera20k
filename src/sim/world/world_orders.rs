@@ -653,14 +653,10 @@ impl Simulation {
         ) {
             return InfantryPerCellBuildingAdmission::MissionNotAdmitted;
         }
-        let nav_object = match infantry.navigation.nav_com() {
-            Some(
-                NavTargetRef::Entity { id }
-                | NavTargetRef::Object { id }
-                | NavTargetRef::Building { id },
-            ) => Some(id),
-            _ => None,
-        };
+        let nav_object = infantry
+            .navigation
+            .nav_com()
+            .and_then(NavTargetRef::object_id);
         //519987 tests Techno RTTI bit1, not cell_marked. Building+80 is
         //457620 ->465D40;5199B8 also requires Building RTTI6 before the
         //separate5199A6 conversion/destination continuation can proceed,

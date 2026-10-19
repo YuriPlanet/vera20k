@@ -343,7 +343,11 @@ fn runtime_crate_sprite_keys(
             _ if flags.land == crate::rules::terrain_rules::LandType::Railroad => {
                 reachable.push((selected_id, 0..=0));
             }
-            _ if flags.land == crate::rules::terrain_rules::LandType::Road && flags.tiberium => {
+            // Mark's Land-5 arm (`0x005FD0D9`) germinates a resource type's
+            // density from its neighbours (`0x004818E0`).
+            _ if flags.land == crate::rules::terrain_rules::LandType::Tiberium
+                && flags.tiberium =>
+            {
                 reachable.push((selected_id, 0..=11));
             }
             _ => {
@@ -1536,14 +1540,14 @@ mod tests {
     #[test]
     fn startup_crate_preload_follows_resolved_identity_and_native_mark_data() {
         let ini = IniFile::from_str(
-            "[OverlayTypes]\n0=FLAGGED\n1=PLAIN\n2=ROADBOX\n\
-             [FLAGGED]\nCrate=yes\n[PLAIN]\n[ROADBOX]\nLand=Road\n",
+            "[OverlayTypes]\n0=FLAGGED\n1=PLAIN\n2=LANDBOX\n\
+             [FLAGGED]\nCrate=yes\n[PLAIN]\n[LANDBOX]\nLand=Tiberium\n",
         );
         let registry = OverlayTypeRegistry::from_ini(&ini, None);
         let rules = CrateRules {
             wood_crate_img: Some("PLAIN".to_owned()),
             crate_img: Some("FLAGGED".to_owned()),
-            water_crate_img: Some("ROADBOX".to_owned()),
+            water_crate_img: Some("LANDBOX".to_owned()),
             ..CrateRules::default()
         };
 
@@ -1556,11 +1560,39 @@ mod tests {
             name: "PLAIN".to_owned(),
             frame: 0,
         }));
+        // `Land=Tiberium` stores one (`0x005FD0D9..0x005FD0E5`); a type with
+        // no TiberiumClass keeps it.
         assert!(keys.contains(&OverlaySpriteKey {
-            name: "ROADBOX".to_owned(),
+            name: "LANDBOX".to_owned(),
             frame: 1,
         }));
         assert_eq!(keys.len(), 3);
+
+        // A resource type on the Land-5 arm takes its germinated density
+        // (`0x004818E0`); on Road it keeps the ordinary zero.
+        let resource_ini = IniFile::from_str(
+            "[OverlayTypes]\n0=TIBBOX\n1=ROADTIB\n\
+             [TIBBOX]\nLand=Tiberium\nTiberium=yes\n[ROADTIB]\nLand=Road\nTiberium=yes\n",
+        );
+        let resource_registry = OverlayTypeRegistry::from_ini(&resource_ini, None);
+        let resource_rules = CrateRules {
+            wood_crate_img: Some("TIBBOX".to_owned()),
+            crate_img: Some("ROADTIB".to_owned()),
+            water_crate_img: Some("ROADTIB".to_owned()),
+            ..CrateRules::default()
+        };
+        let resource_keys = runtime_crate_sprite_keys(&resource_registry, &resource_rules);
+        for frame in 0..=11 {
+            assert!(resource_keys.contains(&OverlaySpriteKey {
+                name: "TIBBOX".to_owned(),
+                frame,
+            }));
+        }
+        assert!(resource_keys.contains(&OverlaySpriteKey {
+            name: "ROADTIB".to_owned(),
+            frame: 0,
+        }));
+        assert_eq!(resource_keys.len(), 13);
     }
 
     #[test]

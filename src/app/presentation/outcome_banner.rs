@@ -39,7 +39,9 @@ impl OutcomeBannerArt {
         if (shp.frames.len() as i16) <= 0 {
             return None;
         }
-        let palette = Palette::from_bytes_gamemd_ui(assets.get_ref("GRFXTXT.PAL")?).ok()?;
+        //6D4E20 draws the frame with CC_Draw_Shape SHAPE_NORMAL through the
+        //GRFXTXT ConvertClass: the shared palette conversion, index 0 skipped.
+        let palette = Palette::from_bytes(assets.get_ref("GRFXTXT.PAL")?).ok()?;
         let atlas_width: u32 = shp
             .frames
             .iter()
@@ -57,7 +59,7 @@ impl OutcomeBannerArt {
         let mut x = 0;
         let mut frames = Vec::with_capacity(shp.frames.len());
         for (index, frame) in shp.frames.iter().enumerate() {
-            let pixels = shp.frame_to_rgba_ui(index, &palette).ok()?;
+            let pixels = shp.frame_to_rgba(index, &palette).ok()?;
             let width = u32::from(frame.frame_width);
             let height = u32::from(frame.frame_height);
             for row in 0..height {
@@ -248,7 +250,7 @@ mod tests {
                 .expect("InitGame literal shape"),
         )
         .unwrap();
-        let palette = Palette::from_bytes_gamemd_ui(
+        let palette = Palette::from_bytes(
             assets
                 .get_ref("GRFXTXT.PAL")
                 .expect("InitGame literal palette"),
@@ -256,7 +258,7 @@ mod tests {
         .unwrap();
         assert!(shp.frames.len() >= 4, "Flag bodies select frames0..3");
         for index in 0..4 {
-            let rgba = shp.frame_to_rgba_ui(index, &palette).unwrap();
+            let rgba = shp.frame_to_rgba(index, &palette).unwrap();
             assert_eq!(
                 rgba.len(),
                 usize::from(shp.frames[index].frame_width)

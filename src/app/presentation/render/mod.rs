@@ -28,6 +28,8 @@ mod building_bracket_gpu_tests;
 mod draw_passes;
 #[cfg(test)]
 mod magnetic_wave_gpu_tests;
+#[cfg(test)]
+mod parachute_owner_color_gpu_tests;
 mod object_extras;
 #[cfg(test)]
 mod placement_gpu_tests;
@@ -163,7 +165,7 @@ pub(crate) fn render_game(
     });
     let bracket_palette = surface_palette.as_ref().map(|palette| {
         [15_u8, 12].map(|index| {
-            let color = palette.colors[usize::from(index)];
+            let color = palette.color(index);
             crate::render::palette_light::PaletteLight::plain(53, 1000).rgb565(
                 [color.r, color.g, color.b],
                 index,
@@ -245,6 +247,12 @@ pub(crate) fn render_game(
         );
     }
     let persistent_lights = persistent_light_start..combat_lights.len();
+    if let Some(runtime) = state.match_state.sim_runtime.as_ref() {
+        state.renderer.combat_light_renderer.set_spotlight_radius(
+            &state.renderer.gpu.queue,
+            runtime.resources.rules.general.spotlight.radius,
+        );
+    }
     state.renderer.combat_light_renderer.prepare(
         &state.renderer.gpu,
         &combat_lights,
@@ -591,11 +599,6 @@ fn upload_to_gpu(
     pool.upload(&state.renderer.gpu, "super_timer_fill", &super_timer_fill);
     pool.upload(&state.renderer.gpu, "super_timer_text", &super_timer_text);
     pool.upload(&state.renderer.gpu, "weapon_waves", &world.weapon_waves);
-    pool.upload(
-        &state.renderer.gpu,
-        "spotlight_type16",
-        &world.spotlight_type16,
-    );
 
     // UI overlays
     pool.upload(&state.renderer.gpu, "drag", &ui.drag);

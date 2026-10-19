@@ -29,8 +29,8 @@
 //!
 //! Driven by `carve_driver`, which runs on the two island map types.
 
+use crate::map::playfield::PlayfieldBounds;
 use crate::map::rmg::grid::RmgGrid;
-use crate::map::rmg::preview::Playfield;
 use crate::map::rmg::rng::RmgRng;
 use crate::map::rmg::scratch::RmgScratch;
 use crate::map::rmg::tiles::TileIds;
@@ -46,7 +46,7 @@ pub struct CarveCtx<'a> {
     pub ids: &'a TileIds,
     pub blocks: &'a dyn TileBlocks,
     pub rng: &'a mut RmgRng,
-    pub playfield: &'a Playfield,
+    pub playfield: &'a PlayfieldBounds,
 }
 
 /// The two plateaus a carve joins.
@@ -1385,7 +1385,7 @@ mod tests {
         let ids = ids();
         let blocks = RecordingBlocks::new();
         let mut rng = RmgRng::new(1);
-        let playfield = Playfield::from_local_size(34, 0, 0, 34, 42);
+        let playfield = PlayfieldBounds::from_normalized_local_size(34, 0, 0, 34, 42);
         let mut ctx = CarveCtx {
             grid: &mut grid,
             scratch: &mut scratch,
@@ -1424,7 +1424,7 @@ mod tests {
         let ids = ids();
         let blocks = RecordingBlocks::new();
         let mut rng = RmgRng::new(1);
-        let playfield = Playfield::from_local_size(34, 0, 0, 34, 42);
+        let playfield = PlayfieldBounds::from_normalized_local_size(34, 0, 0, 34, 42);
         let mut ctx = CarveCtx {
             grid: &mut grid,
             scratch: &mut scratch,
@@ -1456,7 +1456,7 @@ mod tests {
             let ids = ids();
             let blocks = RecordingBlocks::new();
             let mut rng = RmgRng::new(1);
-            let playfield = Playfield::from_local_size(34, 0, 0, 34, 42);
+            let playfield = PlayfieldBounds::from_normalized_local_size(34, 0, 0, 34, 42);
             let mut ctx = CarveCtx {
                 grid: &mut grid,
                 scratch: &mut scratch,
@@ -1504,7 +1504,7 @@ mod tests {
             }
             let blocks = RecordingBlocks::new();
             let mut rng = RmgRng::new(1);
-            let playfield = Playfield::from_local_size(34, 0, 0, 34, 42);
+            let playfield = PlayfieldBounds::from_normalized_local_size(34, 0, 0, 34, 42);
             let mut ctx = CarveCtx {
                 grid: &mut grid,
                 scratch: &mut scratch,
@@ -1542,7 +1542,7 @@ mod tests {
         let ids = ids();
         let blocks = RecordingBlocks::new();
         let mut rng = RmgRng::new(1);
-        let playfield = Playfield::from_local_size(34, 0, 0, 34, 42);
+        let playfield = PlayfieldBounds::from_normalized_local_size(34, 0, 0, 34, 42);
         let mut ctx = CarveCtx {
             grid: &mut grid,
             scratch: &mut scratch,
@@ -1595,7 +1595,7 @@ mod tests {
         let ids = ids();
         let blocks = RecordingBlocks::new();
         let mut rng = RmgRng::new(1);
-        let pf = Playfield::from_local_size(34, 0, 0, 34, 42);
+        let pf = PlayfieldBounds::from_normalized_local_size(34, 0, 0, 34, 42);
         let mut ctx = ctx_over!(grid, scratch, ids, blocks, rng, pf);
         assert!(carve_straight_ramp_clear_east(
             &mut ctx,
@@ -1627,7 +1627,7 @@ mod tests {
         let ids = ids();
         let blocks = RecordingBlocks::new();
         let mut rng = RmgRng::new(1);
-        let pf = Playfield::from_local_size(34, 0, 0, 34, 42);
+        let pf = PlayfieldBounds::from_normalized_local_size(34, 0, 0, 34, 42);
         let mut ctx = ctx_over!(grid, scratch, ids, blocks, rng, pf);
         assert!(carve_straight_ramp_clear_east(
             &mut ctx,
@@ -1655,7 +1655,7 @@ mod tests {
         let ids = ids();
         let blocks = RecordingBlocks::new();
         let mut rng = RmgRng::new(1);
-        let pf = Playfield::from_local_size(34, 0, 0, 34, 42);
+        let pf = PlayfieldBounds::from_normalized_local_size(34, 0, 0, 34, 42);
         let mut ctx = ctx_over!(grid, scratch, ids, blocks, rng, pf);
         assert!(carve_straight_ramp_clear_east(
             &mut ctx,
@@ -1687,7 +1687,7 @@ mod tests {
             let ids = ids();
             let blocks = RecordingBlocks::new();
             let mut rng = RmgRng::new(1);
-            let pf = Playfield::from_local_size(34, 0, 0, 34, 42);
+            let pf = PlayfieldBounds::from_normalized_local_size(34, 0, 0, 34, 42);
             let mut ctx = ctx_over!(grid, scratch, ids, blocks, rng, pf);
             assert!(carve_straight_ramp_clear_east(
                 &mut ctx,
@@ -1720,7 +1720,7 @@ mod tests {
             let ids = ids();
             let blocks = RecordingBlocks::new();
             let mut rng = RmgRng::new(1);
-            let pf = Playfield::from_local_size(34, 0, 0, 34, 42);
+            let pf = PlayfieldBounds::from_normalized_local_size(34, 0, 0, 34, 42);
             let mut ctx = ctx_over!(grid, scratch, ids, blocks, rng, pf);
             let carved = carve_straight_ramp_clear_east(&mut ctx, regions(), (45, 52), b);
             assert_eq!(carved, should_carve, "b = {b:?}");
@@ -1748,7 +1748,7 @@ mod tests {
         let ids = ids();
         let blocks = RecordingBlocks::new();
         let mut rng = RmgRng::new(1);
-        let pf = Playfield::from_local_size(34, 0, 0, 34, 42);
+        let pf = PlayfieldBounds::from_normalized_local_size(34, 0, 0, 34, 42);
         let mut ctx = ctx_over!(grid, scratch, ids, blocks, rng, pf);
         assert!(carve_straight_ramp_clear_east(
             &mut ctx,
@@ -1770,7 +1770,7 @@ mod tests {
         // and the tile three above the base, the north-south run takes slope 3
         // and the tile two above. Sharing either constant puts one stair's
         // approach on the wrong face, which reads as a seam in the ground.
-        let pf = Playfield::from_local_size(34, 0, 0, 34, 42);
+        let pf = PlayfieldBounds::from_normalized_local_size(34, 0, 0, 34, 42);
 
         let (mut grid, mut scratch) = harness();
         let ids1 = ids();
@@ -1815,7 +1815,7 @@ mod tests {
         let ids = ids();
         let blocks = RecordingBlocks::new();
         let mut rng = RmgRng::new(1);
-        let pf = Playfield::from_local_size(34, 0, 0, 34, 42);
+        let pf = PlayfieldBounds::from_normalized_local_size(34, 0, 0, 34, 42);
         let mut ctx = ctx_over!(grid, scratch, ids, blocks, rng, pf);
         assert!(carve_straight_ramp_clear_north(
             &mut ctx,
@@ -1850,7 +1850,7 @@ mod tests {
         let ids = ids();
         let blocks = RecordingBlocks::new();
         let mut rng = RmgRng::new(1);
-        let pf = Playfield::from_local_size(34, 0, 0, 34, 42);
+        let pf = PlayfieldBounds::from_normalized_local_size(34, 0, 0, 34, 42);
         let mut ctx = ctx_over!(grid, scratch, ids, blocks, rng, pf);
         assert!(carve_straight_ramp_clear_north(
             &mut ctx,
@@ -1884,7 +1884,7 @@ mod tests {
         let ids = ids();
         let blocks = RecordingBlocks::new();
         let mut rng = RmgRng::new(1);
-        let pf = Playfield::from_local_size(34, 0, 0, 34, 42);
+        let pf = PlayfieldBounds::from_normalized_local_size(34, 0, 0, 34, 42);
         let mut ctx = ctx_over!(grid, scratch, ids, blocks, rng, pf);
         assert!(carve_straight_ramp_clear_north(
             &mut ctx,
@@ -1905,7 +1905,7 @@ mod tests {
             let ids = ids();
             let blocks = RecordingBlocks::new();
             let mut rng = RmgRng::new(1);
-            let pf = Playfield::from_local_size(34, 0, 0, 34, 42);
+            let pf = PlayfieldBounds::from_normalized_local_size(34, 0, 0, 34, 42);
             let mut ctx = ctx_over!(grid, scratch, ids, blocks, rng, pf);
             assert!(carve_straight_ramp_clear_north(
                 &mut ctx,
@@ -1926,7 +1926,7 @@ mod tests {
             let ids = ids();
             let blocks = RecordingBlocks::new();
             let mut rng = RmgRng::new(1);
-            let pf = Playfield::from_local_size(34, 0, 0, 34, 42);
+            let pf = PlayfieldBounds::from_normalized_local_size(34, 0, 0, 34, 42);
             let mut ctx = ctx_over!(grid, scratch, ids, blocks, rng, pf);
             let carved = carve_straight_ramp_clear_north(&mut ctx, regions(), (46, 50), b);
             assert_eq!(carved, should_carve, "b = {b:?}");
@@ -1951,7 +1951,7 @@ mod tests {
         let ids = ids();
         let blocks = RecordingBlocks::new();
         let mut rng = RmgRng::new(1);
-        let pf = Playfield::from_local_size(34, 0, 0, 34, 42);
+        let pf = PlayfieldBounds::from_normalized_local_size(34, 0, 0, 34, 42);
         let mut ctx = ctx_over!(grid, scratch, ids, blocks, rng, pf);
         assert!(carve_straight_ramp_clear_north(
             &mut ctx,
@@ -1996,7 +1996,7 @@ mod tests {
         let ids = ids();
         let blocks = RecordingBlocks::new();
         let mut rng = RmgRng::new(1);
-        let pf = Playfield::from_local_size(34, 0, 0, 34, 42);
+        let pf = PlayfieldBounds::from_normalized_local_size(34, 0, 0, 34, 42);
         let mut ctx = ctx_over!(grid, scratch, ids, blocks, rng, pf);
         assert!(carve_straight_ramp_clear_north(
             &mut ctx,
@@ -2014,7 +2014,7 @@ mod tests {
         let ids = ids();
         let blocks = RecordingBlocks::new();
         let mut rng = RmgRng::new(1);
-        let pf = Playfield::from_local_size(34, 0, 0, 34, 42);
+        let pf = PlayfieldBounds::from_normalized_local_size(34, 0, 0, 34, 42);
         let mut ctx = ctx_over!(grid, scratch, ids, blocks, rng, pf);
         assert!(carve_straight_ramp_clear_west(
             &mut ctx,
@@ -2050,7 +2050,7 @@ mod tests {
         let ids = ids();
         let blocks = RecordingBlocks::new();
         let mut rng = RmgRng::new(1);
-        let pf = Playfield::from_local_size(34, 0, 0, 34, 42);
+        let pf = PlayfieldBounds::from_normalized_local_size(34, 0, 0, 34, 42);
         let mut ctx = ctx_over!(grid, scratch, ids, blocks, rng, pf);
         assert!(carve_straight_ramp_clear_west(
             &mut ctx,
@@ -2073,7 +2073,7 @@ mod tests {
         let ids = ids();
         let blocks = RecordingBlocks::new();
         let mut rng = RmgRng::new(1);
-        let pf = Playfield::from_local_size(34, 0, 0, 34, 42);
+        let pf = PlayfieldBounds::from_normalized_local_size(34, 0, 0, 34, 42);
         let mut ctx = ctx_over!(grid, scratch, ids, blocks, rng, pf);
         assert!(carve_straight_ramp_clear_west(
             &mut ctx,
@@ -2105,7 +2105,7 @@ mod tests {
         let ids = ids();
         let blocks = RecordingBlocks::new();
         let mut rng = RmgRng::new(1);
-        let pf = Playfield::from_local_size(34, 0, 0, 34, 42);
+        let pf = PlayfieldBounds::from_normalized_local_size(34, 0, 0, 34, 42);
         let mut ctx = ctx_over!(grid, scratch, ids, blocks, rng, pf);
         assert!(carve_straight_ramp_clear_west(
             &mut ctx,
@@ -2140,7 +2140,7 @@ mod tests {
             let ids = ids();
             let blocks = RecordingBlocks::new();
             let mut rng = RmgRng::new(1);
-            let pf = Playfield::from_local_size(34, 0, 0, 34, 42);
+            let pf = PlayfieldBounds::from_normalized_local_size(34, 0, 0, 34, 42);
             let mut ctx = ctx_over!(grid, scratch, ids, blocks, rng, pf);
             assert!(carve_straight_ramp_clear_west(
                 &mut ctx,
@@ -2160,7 +2160,7 @@ mod tests {
             let ids = ids();
             let blocks = RecordingBlocks::new();
             let mut rng = RmgRng::new(1);
-            let pf = Playfield::from_local_size(34, 0, 0, 34, 42);
+            let pf = PlayfieldBounds::from_normalized_local_size(34, 0, 0, 34, 42);
             let mut ctx = ctx_over!(grid, scratch, ids, blocks, rng, pf);
             let carved = carve_straight_ramp_clear_west(&mut ctx, regions(), (50, 44), b);
             assert_eq!(carved, should_carve, "b = {b:?}");
@@ -2183,7 +2183,7 @@ mod tests {
         let ids = ids();
         let blocks = RecordingBlocks::new();
         let mut rng = RmgRng::new(1);
-        let pf = Playfield::from_local_size(34, 0, 0, 34, 42);
+        let pf = PlayfieldBounds::from_normalized_local_size(34, 0, 0, 34, 42);
         let mut ctx = ctx_over!(grid, scratch, ids, blocks, rng, pf);
         assert!(carve_straight_ramp_clear_west(
             &mut ctx,
@@ -2218,7 +2218,7 @@ mod tests {
         let ids = ids();
         let blocks = RecordingBlocks::new();
         let mut rng = RmgRng::new(1);
-        let pf = Playfield::from_local_size(34, 0, 0, 34, 42);
+        let pf = PlayfieldBounds::from_normalized_local_size(34, 0, 0, 34, 42);
         let mut ctx = ctx_over!(grid, scratch, ids, blocks, rng, pf);
         assert!(corner_carve!(ctx, (52, 54), (44, 46)));
         let mut fresh = RmgRng::new(1);
@@ -2238,7 +2238,7 @@ mod tests {
             let ids = ids();
             let blocks = RecordingBlocks::new();
             let mut rng = RmgRng::new(1);
-            let pf = Playfield::from_local_size(34, 0, 0, 34, 42);
+            let pf = PlayfieldBounds::from_normalized_local_size(34, 0, 0, 34, 42);
             let mut ctx = ctx_over!(grid, scratch, ids, blocks, rng, pf);
             let carved = corner_carve!(ctx, a, b);
             let expected = label.contains("carves");
@@ -2260,7 +2260,7 @@ mod tests {
         let ids = ids();
         let blocks = RecordingBlocks::new();
         let mut rng = RmgRng::new(1);
-        let pf = Playfield::from_local_size(34, 0, 0, 34, 42);
+        let pf = PlayfieldBounds::from_normalized_local_size(34, 0, 0, 34, 42);
         let mut ctx = ctx_over!(grid, scratch, ids, blocks, rng, pf);
         assert!(corner_carve!(ctx, (52, 54), (44, 46)));
         assert_eq!(
@@ -2276,7 +2276,7 @@ mod tests {
         let ids = ids();
         let blocks = RecordingBlocks::new();
         let mut rng = RmgRng::new(1);
-        let pf = Playfield::from_local_size(34, 0, 0, 34, 42);
+        let pf = PlayfieldBounds::from_normalized_local_size(34, 0, 0, 34, 42);
         // Seed the interior probe with the OTHER plateau first. The harness
         // already starts every cell owned by the upper region, so asserting
         // that afterwards would pass even if the rectangle were never written
@@ -2311,7 +2311,7 @@ mod tests {
         let ids = ids();
         let blocks = RecordingBlocks::new();
         let mut rng = RmgRng::new(1);
-        let pf = Playfield::from_local_size(34, 0, 0, 34, 42);
+        let pf = PlayfieldBounds::from_normalized_local_size(34, 0, 0, 34, 42);
         let mut ctx = ctx_over!(grid, scratch, ids, blocks, rng, pf);
         assert!(corner_carve!(ctx, (52, 54), (44, 46)));
 
@@ -2335,7 +2335,7 @@ mod tests {
         let ids = ids();
         let blocks = RecordingBlocks::new();
         let mut rng = RmgRng::new(1);
-        let pf = Playfield::from_local_size(34, 0, 0, 34, 42);
+        let pf = PlayfieldBounds::from_normalized_local_size(34, 0, 0, 34, 42);
         let mut ctx = ctx_over!(grid, scratch, ids, blocks, rng, pf);
         assert!(corner_carve!(ctx, (52, 54), (44, 46)));
         // Along-X approach at depth 0 reaches x = 47..51; at depth 1 one
@@ -2365,7 +2365,7 @@ mod tests {
         let ids = ids();
         let blocks = RecordingBlocks::new();
         let mut rng = RmgRng::new(1);
-        let pf = Playfield::from_local_size(34, 0, 0, 34, 42);
+        let pf = PlayfieldBounds::from_normalized_local_size(34, 0, 0, 34, 42);
         let mut ctx = ctx_over!(grid, scratch, ids, blocks, rng, pf);
         assert!(carve_corner_ramp_reflected(
             &mut ctx,
@@ -2395,7 +2395,7 @@ mod tests {
             let ids = ids();
             let blocks = RecordingBlocks::new();
             let mut rng = RmgRng::new(1);
-            let pf = Playfield::from_local_size(34, 0, 0, 34, 42);
+            let pf = PlayfieldBounds::from_normalized_local_size(34, 0, 0, 34, 42);
             let mut ctx = ctx_over!(grid, scratch, ids, blocks, rng, pf);
             let carved = carve_corner_ramp_reflected(&mut ctx, regions(), a, b);
             assert_eq!(carved, expected, "a = {a:?}, b = {b:?}");
@@ -2411,7 +2411,7 @@ mod tests {
         let ids = ids();
         let blocks = RecordingBlocks::new();
         let mut rng = RmgRng::new(1);
-        let pf = Playfield::from_local_size(34, 0, 0, 34, 42);
+        let pf = PlayfieldBounds::from_normalized_local_size(34, 0, 0, 34, 42);
         // Seed the interior probe with the other plateau so the assertion has
         // something to undo.
         scratch.get_mut(48, 50).region = LOWER;
@@ -2445,7 +2445,7 @@ mod tests {
         let ids = ids();
         let blocks = RecordingBlocks::new();
         let mut rng = RmgRng::new(1);
-        let pf = Playfield::from_local_size(34, 0, 0, 34, 42);
+        let pf = PlayfieldBounds::from_normalized_local_size(34, 0, 0, 34, 42);
         let mut ctx = ctx_over!(grid, scratch, ids, blocks, rng, pf);
         assert!(carve_corner_ramp_reflected(
             &mut ctx,
@@ -2467,7 +2467,7 @@ mod tests {
         let ids = ids();
         let blocks = RecordingBlocks::new();
         let mut rng = RmgRng::new(1);
-        let pf = Playfield::from_local_size(34, 0, 0, 34, 42);
+        let pf = PlayfieldBounds::from_normalized_local_size(34, 0, 0, 34, 42);
         let mut ctx = ctx_over!(grid, scratch, ids, blocks, rng, pf);
         assert!(carve_corner_ramp_reflected(
             &mut ctx,
@@ -2495,7 +2495,7 @@ mod tests {
             let ids = ids();
             let blocks = RecordingBlocks::new();
             let mut rng = RmgRng::new(1);
-            let pf = Playfield::from_local_size(34, 0, 0, 34, 42);
+            let pf = PlayfieldBounds::from_normalized_local_size(34, 0, 0, 34, 42);
             let mut ctx = ctx_over!(grid, scratch, ids, blocks, rng, pf);
             let carved = carve_corner_ramp_north_east(&mut ctx, regions(), a, b);
             assert_eq!(carved, expected, "a = {a:?}, b = {b:?}");
@@ -2511,7 +2511,7 @@ mod tests {
         let ids = ids();
         let blocks = RecordingBlocks::new();
         let mut rng = RmgRng::new(1);
-        let pf = Playfield::from_local_size(34, 0, 0, 34, 42);
+        let pf = PlayfieldBounds::from_normalized_local_size(34, 0, 0, 34, 42);
         let mut ctx = ctx_over!(grid, scratch, ids, blocks, rng, pf);
         assert!(carve_corner_ramp_north_east(
             &mut ctx,
@@ -2536,7 +2536,7 @@ mod tests {
         let ids = ids();
         let blocks = RecordingBlocks::new();
         let mut rng = RmgRng::new(1);
-        let pf = Playfield::from_local_size(34, 0, 0, 34, 42);
+        let pf = PlayfieldBounds::from_normalized_local_size(34, 0, 0, 34, 42);
         scratch.get_mut(48, 50).region = LOWER;
         grid.get_mut(48, 50).expect("native cell").level = LOWER_LEVEL;
         let mut ctx = ctx_over!(grid, scratch, ids, blocks, rng, pf);
@@ -2570,7 +2570,7 @@ mod tests {
         let ids = ids();
         let blocks = RecordingBlocks::new();
         let mut rng = RmgRng::new(1);
-        let pf = Playfield::from_local_size(34, 0, 0, 34, 42);
+        let pf = PlayfieldBounds::from_normalized_local_size(34, 0, 0, 34, 42);
         let mut ctx = ctx_over!(grid, scratch, ids, blocks, rng, pf);
         assert!(carve_corner_ramp_north_east(
             &mut ctx,
@@ -2605,7 +2605,7 @@ mod tests {
         let ids = ids();
         let blocks = RecordingBlocks::new();
         let mut rng = RmgRng::new(1);
-        let pf = Playfield::from_local_size(34, 0, 0, 34, 42);
+        let pf = PlayfieldBounds::from_normalized_local_size(34, 0, 0, 34, 42);
 
         // The harness owns the whole diamond for the region, which would make
         // every window pass and the mask come back full -- an interior cell,
@@ -2669,7 +2669,7 @@ mod tests {
         let ids = ids();
         let blocks = RecordingBlocks::new();
         let mut rng = RmgRng::new(1);
-        let pf = Playfield::from_local_size(34, 0, 0, 34, 42);
+        let pf = PlayfieldBounds::from_normalized_local_size(34, 0, 0, 34, 42);
         let mut ctx = ctx_over!(grid, scratch, ids, blocks, rng, pf);
         assert!(!try_carve_connector_at_cell(
             &mut ctx,
@@ -2698,7 +2698,7 @@ mod tests {
         let ids = ids();
         let blocks = RecordingBlocks::new();
         let mut rng = RmgRng::new(1);
-        let pf = Playfield::from_local_size(34, 0, 0, 34, 42);
+        let pf = PlayfieldBounds::from_normalized_local_size(34, 0, 0, 34, 42);
         let mut ctx = ctx_over!(grid, scratch, ids, blocks, rng, pf);
         assert!(try_carve_connector_at_cell(&mut ctx, regions(), cell, 0.0));
         assert_eq!(
@@ -2729,7 +2729,7 @@ mod tests {
             let ids = ids();
             let blocks = RecordingBlocks::new();
             let mut rng = RmgRng::new(1);
-            let pf = Playfield::from_local_size(34, 0, 0, 34, 42);
+            let pf = PlayfieldBounds::from_normalized_local_size(34, 0, 0, 34, 42);
             let mut ctx = ctx_over!(grid, scratch, ids, blocks, rng, pf);
             assert_eq!(
                 try_carve_connector_at_cell(&mut ctx, regions(), cell, leniency),
@@ -2772,7 +2772,7 @@ mod tests {
         let ids = ids();
         let blocks = RecordingBlocks::new();
         let mut rng = RmgRng::new(1);
-        let pf = Playfield::from_local_size(34, 0, 0, 34, 42);
+        let pf = PlayfieldBounds::from_normalized_local_size(34, 0, 0, 34, 42);
         let mut ctx = ctx_over!(grid, scratch, ids, blocks, rng, pf);
         assert!(try_carve_connector_at_cell(
             &mut ctx,

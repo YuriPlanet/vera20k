@@ -26,7 +26,7 @@ def project(path):
     actor_entry = entities[actor_id]
     actor = actor_entry["entity"]
     assert actor_entry["type_name"] == "ENGINEER"
-    hut_id = actor["navigation"]["nav_com"]["Building"]["id"]
+    hut_id = actor["navigation"]["nav_com"]["Object"]["id"]
     hut_entry = entities[hut_id]
     hut = hut_entry["entity"]
     assert hut_entry["type_name"] == "CABHUT"

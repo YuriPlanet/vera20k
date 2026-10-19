@@ -32,7 +32,7 @@ use crate::rules::jumpjet_params::JumpjetParams;
 use crate::rules::locomotor_type::{LocomotorKind, MovementZone, SpeedType};
 use crate::rules::sound_ini::SoundRegistry;
 use crate::rules::terrain_rules::LandType;
-use crate::util::fixed_math::{SimFixed, sim_from_f32};
+use crate::util::fixed_math::SimFixed;
 
 /// Which type registry an object belongs to.
 ///
@@ -979,9 +979,11 @@ pub struct ObjectType {
     /// capacity contributes to House+310, read by Available_Storage4F69D0;
     /// placement does not grant this many credits. Mobile cargo uses it too.
     pub storage: i32,
-    /// Free unit spawned when this structure is placed (FreeUnit= in rules.ini).
+    /// Free unit spawned when this structure is placed (FreeUnit= in rules.ini),
+    /// as the stored ID the ordered Rules processor resolved.
     pub free_unit: Option<String>,
-    /// Structures this unit may dock with (Dock= in rules.ini), normalized uppercase.
+    /// Structures this unit may dock with (Dock= in rules.ini), as the stored
+    /// IDs the ordered Rules processor resolved.
     pub dock: Vec<String>,
     /// `QueueingCell=` from the art section (see `ArtEntry::queueing_cell`),
     /// merged during init; `(0, 0)` without one.
@@ -1828,7 +1830,8 @@ pub struct ObjectType {
     /// Wall buildings render as overlays (auto-tiled connectivity frames),
     /// not as normal SHP building sprites. GAWALL, NAWALL, GAFWLL etc.
     pub wall: bool,
-    /// ART `ToOverlay=` identity merged after rules parsing.
+    /// BuildingType `ToOverlay=`, read from the fixed ART section the Image
+    /// names, as the ordered Rules processor resolved it.
     pub to_overlay: Option<String>,
     /// `Unsellable=` BuildingType gate. Native default is false.
     pub unsellable: bool,
@@ -2591,14 +2594,10 @@ impl ObjectType {
             .map(|key| {
                 section.read_double_to_float(key, crate::util::native_x87::NativeF32Bits::ONE)
             }),
-            explosion_anims: section
-                .read_list("Explosion", 0x80)
-                .map(|tokens| tokens.into_iter().map(str::to_owned).collect())
-                .unwrap_or_default(),
-            destroy_anims: section
-                .read_list("DestroyAnim", 0x80)
-                .map(|tokens| tokens.into_iter().map(str::to_owned).collect())
-                .unwrap_or_default(),
+            // Constructor empty; only the ordered Process owner reads the
+            // Type references (`TechnoTypeReferences`).
+            explosion_anims: Vec::new(),
+            destroy_anims: Vec::new(),
             trainable: section.read_bool("Trainable", category != ObjectCategory::Building),
             burst_delays: std::array::from_fn(|index| {
                 if category == ObjectCategory::Vehicle {
@@ -2607,14 +2606,8 @@ impl ObjectType {
                     -1
                 }
             }),
-            dead_bodies: if category == ObjectCategory::Infantry {
-                section
-                    .read_list("DeadBodies", 0x80)
-                    .map(|tokens| tokens.into_iter().map(str::to_owned).collect())
-                    .unwrap_or_default()
-            } else {
-                Vec::new()
-            },
+            // Constructor empty; only the ordered Process owner reads it.
+            dead_bodies: Vec::new(),
             not_human: category == ObjectCategory::Infantry && section.read_bool("NotHuman", false),
             strength: section.read_int("Strength", 0),
             dont_score: section.read_bool("DontScore", false),
@@ -2638,9 +2631,11 @@ impl ObjectType {
             walk_rate: section.read_int("WalkRate", 1),
             idle_rate: section.read_int("IdleRate", 0),
             // Double fields (`0x007124A3..0x007124E5`).
-            weight: sim_from_f32(section.read_double("Weight", 1.0) as f32),
-            accel_factor: sim_from_f32(section.read_double("AccelerationFactor", 0.03) as f32),
-            decel_factor: sim_from_f32(section.read_double("DeaccelerationFactor", 0.002) as f32),
+            weight: SimFixed::from_num(section.read_double("Weight", 1.0) as f32),
+            accel_factor: SimFixed::from_num(section.read_double("AccelerationFactor", 0.03) as f32),
+            decel_factor: SimFixed::from_num(
+                section.read_double("DeaccelerationFactor", 0.002) as f32
+            ),
             accelerates: section.read_bool("Accelerates", true),
             passive: category == ObjectCategory::Vehicle && section.read_bool("Passive", false),
             is_train: section.read_bool("IsTrain", false),
@@ -2649,7 +2644,7 @@ impl ObjectType {
             is_dropship: section.read_bool("IsDropship", false),
             // `ReadDouble(-1)` (`0x00712364..0x00712399`): -1 keeps the
             // constructor's 20 degrees.
-            pitch_angle: sim_from_f32(
+            pitch_angle: SimFixed::from_num(
                 match section.read_double("PitchAngle", -1.0) {
                     -1.0 => 20.0,
                     degrees => degrees as f32,
@@ -2855,29 +2850,23 @@ impl ObjectType {
                 section.read_double("GateCloseDelay", 0.0),
             ),
             storage: section.read_int("Storage", 0),
-            free_unit: section.read_name("FreeUnit", 0x80).map(str::to_owned),
-            dock: section
-                .read_list("Dock", 0x80)
-                .map(|tokens| tokens.into_iter().map(str::to_ascii_uppercase).collect())
-                .unwrap_or_default(),
+            // Constructor null and empty; only the ordered Process owner
+            // reads them.
+            free_unit: None,
+            dock: Vec::new(),
             queueing_cell: [0, 0], // merged from art.ini later
             pads: Vec::new(),      // merged from art.ini later
             hidden_occupancy: BuildingHiddenOccupancyProfile::default(),
             base_reservation_spacing: None,
-            unloading_class: section.read_name("UnloadingClass", 0x80).map(str::to_owned),
-            deploying_anim: section
-                .read_type_name("DeployingAnim", 0x80)
-                .map(str::to_owned),
+            // Constructor nulls; only the ordered Process owner reads them.
+            unloading_class: None,
+            deploying_anim: None,
             ammo: section.read_int("Ammo", -1),
             initial_ammo: section.read_int("InitialAmmo", -1),
 
-            // Spawn manager pool
-            // `0x00714E97..0x00714EB3` reads the name through
-            // `AircraftTypeClass::FindOrAllocate @ 0x0041CEF0`, which answers
-            // null for `none` and `<none>`.
-            spawns: section
-                .read_type_name("Spawns", 0x80)
-                .map(str::to_ascii_uppercase),
+            // Spawn manager pool. Constructor null; only the ordered Process
+            // owner reads `Spawns=`.
+            spawns: None,
             spawns_number: section.read_int("SpawnsNumber", 0),
             spawn_regen_rate: section.read_int("SpawnRegenRate", 0).max(0) as u32,
             spawn_reload_rate: section.read_int("SpawnReloadRate", 0).max(0) as u32,
@@ -2885,7 +2874,8 @@ impl ObjectType {
             no_spawn_alt: section.read_bool("NoSpawnAlt", false),
 
             // Slave Miner / economy fields
-            enslaves: section.read_name("Enslaves", 0x80).map(str::to_owned),
+            // Constructor null; only the ordered Process owner reads it.
+            enslaves: None,
             slaves_number: section.read_int("SlavesNumber", 0),
             slave_regen_rate: section.read_int("SlaveRegenRate", 0),
             slave_reload_rate: section.read_int("SlaveReloadRate", 0),
@@ -3025,14 +3015,10 @@ impl ObjectType {
             ),
             immune_to_poison: section.read_bool("ImmuneToPoison", false),
 
-            // Constructor null; only the ordered Process owner reads it.
+            // Constructor nulls; only the ordered Process owner reads them.
             deploys_into: None,
-            undeploys_into: section
-                .read_type_name("UndeploysInto", 0x80)
-                .map(str::to_owned),
-            powers_unit: section
-                .read_type_name("PowersUnit", 0x80)
-                .map(str::to_owned),
+            undeploys_into: None,
+            powers_unit: None,
             powered_unit: section.read_bool("PoweredUnit", false),
             // `ReadInt(DeployFacing, field >> 5) << 5` (`0x00460C6C..0x00460C86`).
             deploy_facing: (section.read_int("DeployFacing", 0x80 >> 5).clamp(0, 7) as u8) << 5,
@@ -3254,39 +3240,24 @@ impl ObjectType {
             light_blue_tint: section.read_double("LightBlueTint", 1.0) as f32,
             has_spotlight: section.read_bool("HasSpotlight", false),
 
-            // TechnoType particle effects
-            natural_particle_system: section
-                .read_name("NaturalParticleSystem", 0x80)
-                .map(str::to_owned),
+            // TechnoType particle effects. The Type references start null
+            // and empty; only the ordered Process owner reads them.
+            natural_particle_system: None,
             natural_particle_location: IVec3::from_array(
                 section.read_coord_tokens("NaturalParticleLocation", [0; 3]),
             ),
-            refinery_smoke_particle_system: section
-                .read_name("RefinerySmokeParticleSystem", 0x80)
-                .map(str::to_owned),
-            damage_particle_systems: section
-                .read_list("DamageParticleSystems", 0x80)
-                .map(|tokens| tokens.into_iter().map(str::to_owned).collect())
-                .unwrap_or_default(),
+            refinery_smoke_particle_system: None,
+            damage_particle_systems: Vec::new(),
             max_debris,
             min_debris,
-            debris_types: section
-                .read_list("DebrisTypes", 0x80)
-                .map(|tokens| tokens.into_iter().map(str::to_owned).collect())
-                .unwrap_or_default(),
+            debris_types: Vec::new(),
             debris_maximums: section.read_int_list("DebrisMaximums").unwrap_or_default(),
-            debris_anims: section
-                .read_list("DebrisAnims", 0x80)
-                .map(|tokens| tokens.into_iter().map(str::to_owned).collect())
-                .unwrap_or_default(),
+            debris_anims: Vec::new(),
             close_range: section.read_bool("CloseRange", false),
             stupid_hunt: section.read_bool("StupidHunt", false),
             default_to_guard_area: section.read_bool("DefaultToGuardArea", false),
             cyborg: section.read_bool("Cyborg", false),
-            destroy_particle_systems: section
-                .read_list("DestroyParticleSystems", 0x80)
-                .map(|tokens| tokens.into_iter().map(str::to_owned).collect())
-                .unwrap_or_default(),
+            destroy_particle_systems: Vec::new(),
             damage_smoke_offset: IVec3::from_array(
                 section.read_coord_tokens("DamageSmokeOffset", [0; 3]),
             ),
@@ -4304,10 +4275,12 @@ mod tests {
 
     #[test]
     fn test_parse_undeploys_into() {
-        let ini: IniFile = IniFile::from_str("[GACNST]\nUndeploysInto=AMCV\nFoundation=4x4\n");
-        let section: &IniSection = ini.section("GACNST").unwrap();
-        let mut obj: ObjectType =
-            ObjectType::from_ini_section("GACNST", section, ObjectCategory::Building);
+        let rules = rules(
+            "[BuildingTypes]\n0=GACNST\n1=MODDEPLOY\n\
+             [GACNST]\nUndeploysInto=AMCV\nFoundation=4x4\n\
+             [MODDEPLOY]\nUndeploysInto=MODUNIT\nFoundation=1x1\n",
+        );
+        let mut obj = rules.object("GACNST").unwrap().clone();
         assert_eq!(obj.undeploys_into, Some("AMCV".to_string()));
         assert_eq!(obj.deploys_into, None);
         assert!(
@@ -4319,13 +4292,7 @@ mod tests {
         obj.foundation = "4x4".to_owned();
         assert!(!obj.is_1x1_with_undeploy());
 
-        let one_by_one = IniFile::from_str("[MODDEPLOY]\nUndeploysInto=MODUNIT\nFoundation=1x1\n");
-        let obj = ObjectType::from_ini_section(
-            "MODDEPLOY",
-            one_by_one.section("MODDEPLOY").unwrap(),
-            ObjectCategory::Building,
-        );
-        assert!(obj.is_1x1_with_undeploy());
+        assert!(rules.object("MODDEPLOY").unwrap().is_1x1_with_undeploy());
     }
 
     #[test]
@@ -4359,16 +4326,21 @@ mod tests {
         assert!(!parse("NO").ai_build_this);
     }
 
+    /// The production reader: the ordered Rules processor reads the Type
+    /// references, `RuleSet` publishes them.
+    fn rules(text: &str) -> crate::rules::ruleset::RuleSet {
+        crate::rules::ruleset::RuleSet::from_ini(&IniFile::from_str(text)).unwrap()
+    }
+
     #[test]
     fn test_parse_slave_miner_fields() {
-        let ini: IniFile = IniFile::from_str(
-            "[SMIN]\nEnslaves=SLAV\nSlavesNumber=5\nSlaveRegenRate=500\n\
+        let rules = rules(
+            "[VehicleTypes]\n0=SMIN\n[InfantryTypes]\n0=SLAV\n\
+             [SMIN]\nEnslaves=SLAV\nSlavesNumber=5\nSlaveRegenRate=500\n\
              SlaveReloadRate=25\nResourceGatherer=yes\nResourceDestination=yes\n\
              Storage=20\nSpeed=3\n",
         );
-        let section: &IniSection = ini.section("SMIN").unwrap();
-        let obj: ObjectType =
-            ObjectType::from_ini_section("SMIN", section, ObjectCategory::Vehicle);
+        let obj = rules.object("SMIN").unwrap();
         assert_eq!(obj.enslaves, Some("SLAV".to_string()));
         assert_eq!(obj.slaves_number, 5);
         assert_eq!(obj.slave_regen_rate, 500);
@@ -4399,26 +4371,21 @@ mod tests {
         assert!(obj.ore_purifier);
     }
 
+    /// `Dock=` tokens resolve to the stored IDs of their BuildingTypes, found
+    /// case-insensitively or allocated.
     #[test]
     fn test_parse_refinery_free_unit_and_dock() {
-        let ini: IniFile = IniFile::from_str(
-            "[MODPROC]\nRefinery=yes\nDockUnload=yes\nFreeUnit=MODHARV\n\
+        let rules = rules(
+            "[BuildingTypes]\n0=MODPROC\n[VehicleTypes]\n0=MODHARV\n\
+             [MODPROC]\nRefinery=yes\nDockUnload=yes\nFreeUnit=MODHARV\n\
              [MODHARV]\nHarvester=yes\nDock=modproc,NAREFN\n",
         );
 
-        let refinery = ObjectType::from_ini_section(
-            "MODPROC",
-            ini.section("MODPROC").expect("MODPROC section"),
-            ObjectCategory::Building,
-        );
+        let refinery = rules.object("MODPROC").unwrap();
         assert!(refinery.refinery);
         assert_eq!(refinery.free_unit, Some("MODHARV".to_string()));
 
-        let harvester = ObjectType::from_ini_section(
-            "MODHARV",
-            ini.section("MODHARV").expect("MODHARV section"),
-            ObjectCategory::Vehicle,
-        );
+        let harvester = rules.object("MODHARV").unwrap();
         assert!(harvester.harvester);
         assert_eq!(
             harvester.dock,
@@ -4439,17 +4406,11 @@ mod tests {
 
     #[test]
     fn unit_weeder_is_independent_from_slave_ownership() {
-        let ini: IniFile = IniFile::from_str("[WEED]\nWeeder=yes\n[SLAVER]\nEnslaves=SLAV\n");
-        let weeder = ObjectType::from_ini_section(
-            "WEED",
-            ini.section("WEED").unwrap(),
-            ObjectCategory::Vehicle,
+        let rules = rules(
+            "[VehicleTypes]\n0=WEED\n1=SLAVER\n[WEED]\nWeeder=yes\n[SLAVER]\nEnslaves=SLAV\n",
         );
-        let slaver = ObjectType::from_ini_section(
-            "SLAVER",
-            ini.section("SLAVER").unwrap(),
-            ObjectCategory::Vehicle,
-        );
+        let weeder = rules.object("WEED").unwrap();
+        let slaver = rules.object("SLAVER").unwrap();
 
         assert!(weeder.weeder);
         assert!(weeder.enslaves.is_none());
@@ -5325,17 +5286,16 @@ mod tests {
     fn gsi_05_14_debris_keys_are_case_exact_so_the_retail_lowercase_spelling_is_unread() {
         // A death spends a count drawn from [MinDebris, MaxDebris] on
         // DebrisTypes VoxelAnims and DebrisAnims SHP anims.
-        let ini: IniFile = IniFile::from_str(
-            "[GAPOWR]\n\
+        let rules = rules(
+            "[BuildingTypes]\n0=GAPOWR\n1=NAPOWR\n\
+             [GAPOWR]\n\
              MinDebris=4\nMaxDebris=9\n\
              DebrisTypes=TIRE\nDebrisMaximums=3\n\
-             DebrisAnims=DBRIS1LG,DBRIS1SM,DBRIS4LG\n",
+             DebrisAnims=DBRIS1LG,DBRIS1SM,DBRIS4LG\n\
+             [NAPOWR]\nMaxDebris=5\n\
+             debristypes=TIRE\nDEBRISMAXIMUMS=3\nDebrisanims=DBRIS1LG\n",
         );
-        let obj = ObjectType::from_ini_section(
-            "GAPOWR",
-            ini.section("GAPOWR").unwrap(),
-            ObjectCategory::Building,
-        );
+        let obj = rules.object("GAPOWR").unwrap();
         assert_eq!((obj.min_debris, obj.max_debris), (4, 9));
         assert_eq!(obj.debris_types, vec!["TIRE".to_string()]);
         assert_eq!(obj.debris_maximums, vec![3]);
@@ -5366,15 +5326,7 @@ mod tests {
         // The same rule on the CSV siblings: no stock section mis-spells any
         // of these three, so this arm is wrong-in-principle only today, but it
         // goes live the moment a mod mis-spells one.
-        let ini: IniFile = IniFile::from_str(
-            "[NAPOWR]\nMaxDebris=5\n\
-             debristypes=TIRE\nDEBRISMAXIMUMS=3\nDebrisanims=DBRIS1LG\n",
-        );
-        let obj = ObjectType::from_ini_section(
-            "NAPOWR",
-            ini.section("NAPOWR").unwrap(),
-            ObjectCategory::Building,
-        );
+        let obj = rules.object("NAPOWR").unwrap();
         assert_eq!(obj.max_debris, 5);
         assert!(obj.debris_types.is_empty());
         assert!(obj.debris_maximums.is_empty());
@@ -5423,13 +5375,12 @@ mod tests {
     /// `ParticleSystemTypeClass::FindOrAllocate` (`0x00644890`).
     #[test]
     fn techno_type_parses_damage_particle_systems_csv() {
-        let ini: IniFile = IniFile::from_str(
-            "[GAPOWR]\n\
+        let rules = rules(
+            "[BuildingTypes]\n0=GAPOWR\n[GAPOWR]\n\
              DamageParticleSystems=BigGreySSys, SmallGreySSys ,SparkSys\n\
              DestroyParticleSystems=DebrisSmokeSys\n",
         );
-        let section = ini.section("GAPOWR").unwrap();
-        let obj = ObjectType::from_ini_section("GAPOWR", section, ObjectCategory::Building);
+        let obj = rules.object("GAPOWR").unwrap();
 
         assert_eq!(
             obj.damage_particle_systems,
@@ -5552,16 +5503,16 @@ mod tests {
 
     #[test]
     fn techno_type_parses_refinery_smoke_offsets() {
-        let ini: IniFile = IniFile::from_str(
-            "[GAREFN]\n\
+        let rules = rules(
+            "[BuildingTypes]\n0=GAREFN\n\
+             [GAREFN]\n\
              RefinerySmokeParticleSystem=BigGreySSys\n\
              RefinerySmokeOffsetOne=10,20,30\n\
              RefinerySmokeOffsetTwo=-5,0,15\n\
              RefinerySmokeOffsetThree=0,0,0\n\
              RefinerySmokeOffsetFour=100,-50,200\n",
         );
-        let section = ini.section("GAREFN").unwrap();
-        let obj = ObjectType::from_ini_section("GAREFN", section, ObjectCategory::Building);
+        let obj = rules.object("GAREFN").unwrap();
 
         assert_eq!(
             obj.refinery_smoke_particle_system.as_deref(),
@@ -5615,8 +5566,8 @@ mod tests {
 
     #[test]
     fn techno_type_parses_natural_and_smoke_keys() {
-        let ini: IniFile = IniFile::from_str(
-            "[GAGAP]\n\
+        let rules = rules(
+            "[BuildingTypes]\n0=GAGAP\n[GAGAP]\n\
              NaturalParticleSystem=GapPSys\n\
              NaturalParticleLocation=0,0,256\n\
              DamageSmokeOffset=12,-12,48\n\
@@ -5630,8 +5581,7 @@ mod tests {
              SensorsSight=14\n\
              CloakGenerator=yes\n",
         );
-        let section = ini.section("GAGAP").unwrap();
-        let obj = ObjectType::from_ini_section("GAGAP", section, ObjectCategory::Building);
+        let obj = rules.object("GAGAP").unwrap();
 
         assert_eq!(obj.natural_particle_system.as_deref(), Some("GapPSys"));
         assert_eq!(obj.natural_particle_location, IVec3::new(0, 0, 256));
@@ -5950,7 +5900,7 @@ mod tests {
             IniFile::from_str("[MTNK]\nStrength=300\nArmor=heavy\nSpeed=6\nAirRangeBonus=4\n");
         let section = ini.section("MTNK").expect("section");
         let obj = ObjectType::from_ini_section("MTNK", section, ObjectCategory::Vehicle);
-        assert_eq!(obj.air_range_bonus, Some(sim_from_f32(4.0)));
+        assert_eq!(obj.air_range_bonus, Some(SimFixed::from_num(4.0_f32)));
     }
 
     #[test]
@@ -6079,7 +6029,7 @@ mod tests {
         );
         assert_eq!(
             zep.jumpjet_params.speed,
-            crate::util::fixed_math::sim_from_f32(5.0)
+            crate::util::fixed_math::SimFixed::from_num(5.0_f32)
         );
         assert_eq!(zep.jumpjet_params.climb, 6.0);
         assert_eq!(zep.jumpjet_params.crash, 12.0);
@@ -6094,7 +6044,7 @@ mod tests {
         );
         assert_eq!(
             disk.jumpjet_params.speed,
-            crate::util::fixed_math::sim_from_f32(16.0)
+            crate::util::fixed_math::SimFixed::from_num(16.0_f32)
         );
         assert_eq!(disk.jumpjet_params.climb, 8.0);
         assert_eq!(disk.jumpjet_params.crash, 15.0);

@@ -10,7 +10,7 @@ use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid, zon
 use crate::rules::ini_parser::IniFile;
 use crate::rules::locomotor_type::MovementZone;
 use crate::rules::ruleset::RuleSet;
-use crate::rules::terrain_rules::{LandType, SpeedCostProfile, TerrainClass};
+use crate::rules::terrain_rules::{LandType, SpeedCostProfile};
 use crate::sim::bridge_state::{BridgeEndpointRecord, BridgeRecordKind};
 use crate::sim::cell_rect::PlayfieldBounds;
 use crate::sim::components::NavTargetRef;
@@ -35,7 +35,6 @@ fn gsi_04_12_terrain(width: u16, height: u16) -> ResolvedTerrainGrid {
                 speed_costs,
                 zone_type: zone_class::GROUND,
                 base_land_type: LandType::Clear.as_index(),
-                base_terrain_class: TerrainClass::Clear,
                 base_speed_costs: speed_costs,
                 ..crate::map::resolved_terrain::test_flat_cell(rx, ry)
             })

@@ -37,12 +37,12 @@ use super::phases::{
     cliff_materialization, cliff_variants, green_spread, hills, lat_fixup, lat_patches, regions,
     rocks, starts, tech_buildings, tiberium, trees, water, water_finalize,
 };
-use super::preview::Playfield;
 use super::rng::RmgRng;
 use super::scratch::RmgScratch;
 use super::tiles::TileIds;
 use super::x87::Gaussian;
 use super::{MapGeometry, RmgConstructionTrace, Stage};
+use crate::map::playfield::PlayfieldBounds;
 
 /// The land-type count of the wheel-impassable table (`zones::LAND_TYPES`).
 pub const LAND_TYPES: usize = super::phases::zones::LAND_TYPES;
@@ -225,8 +225,13 @@ pub fn run_pipeline(
         // same finished partition the original's pre-pass would have built.
         // The third pass — freeing the vectors — has no analogue: the lists
         // are values and drop on their own.
-        let playfield =
-            Playfield::from_local_size(map_w, local_rect[0], local_rect[1], gen_w, gen_h);
+        let playfield = PlayfieldBounds::from_normalized_local_size(
+            map_w,
+            local_rect[0],
+            local_rect[1],
+            gen_w,
+            gen_h,
+        );
         let connector_regions: Vec<ConnectorRegion> = regions
             .list
             .iter()
@@ -657,7 +662,7 @@ mod tests {
         identity.paved_roads = 640;
         identity.paved_road_ends = 660;
         let blocks = one_by_one();
-        let playfield = Playfield::from_local_size(74, 2, 5, 70, 70);
+        let playfield = PlayfieldBounds::from_normalized_local_size(74, 2, 5, 70, 70);
         let mut rng = RmgRng::new(seed);
         let mut structures = Vec::new();
         let mut trace = RmgConstructionTrace::default();

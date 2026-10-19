@@ -209,7 +209,7 @@ fn outer_cells_are_usable(ctx: &CarveCtx<'_>, a: (i32, i32), b: (i32, i32)) -> b
     [a, b].into_iter().all(|(x, y)| {
         x >= 0
             && y >= 0
-            && ctx.playfield.contains(x as u16, y as u16)
+            && ctx.playfield.contains_geometry_packed(x, y)
             && ctx.grid.get(x, y).is_some_and(|cell| {
                 !ctx.ids
                     .cliffs
@@ -571,9 +571,9 @@ pub fn end_area_is_placeable(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::map::playfield::PlayfieldBounds;
     use crate::map::rmg::phases::carve_driver::{ConnectorRegion, carve_connectors_for_region};
     use crate::map::rmg::phases::shore::{SubTile, TileBlock, TileBlocks};
-    use crate::map::rmg::preview::Playfield;
     use crate::map::theater::TheaterCliffRanges;
 
     /// Tile bases the fixtures address families by. Spaced far enough apart
@@ -853,8 +853,8 @@ mod tests {
         }
     }
 
-    fn playfield() -> Playfield {
-        Playfield::from_local_size(74, 2, 5, 70, 70)
+    fn playfield() -> PlayfieldBounds {
+        PlayfieldBounds::from_normalized_local_size(74, 2, 5, 70, 70)
     }
 
     fn cross_candidate(horizontal_radius: i32, vertical_radius: i32) -> DeckCandidate {

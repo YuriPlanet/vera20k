@@ -706,7 +706,7 @@ fn a_gattling_tank_boards_with_its_spin_reset() {
         .expect("spawn HOVR");
     // Supplied already-arrived component boundary, after Enter has retained
     // the live transport reference. Unit73A692 requires the same physical
-    // cell; adjacency and a Boarding adapter alone are not native arrival.
+    // cell; adjacency alone is not native arrival.
     let arrival = crate::sim::movement::ground_pose::position_world_coord(
         &spin.sim.substrate.entities.get(hover).unwrap().position,
     );
@@ -726,7 +726,6 @@ fn a_gattling_tank_boards_with_its_spin_reset() {
             crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Enter),
             0,
         );
-        crate::sim::passenger::begin_boarding(tank, hover);
     }
     assert_eq!(
         crate::sim::radio::transmit(

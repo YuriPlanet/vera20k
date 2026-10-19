@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::rules::ini_parser::IniSection;
 use crate::rules::particle_type::ParticleTypeId;
-use crate::util::fixed_math::{SimFixed, sim_from_f32};
+use crate::util::fixed_math::SimFixed;
 use crate::util::native_x87::{NativeF32Bits, NativeF64Bits};
 
 /// Default `ParticlesPerCoord` from the constructor (Railgun field, parsed
@@ -168,24 +168,24 @@ impl ParticleSystemType {
             ),
 
             // Double fields (`FSTP qword` at `0x006444B0..0x00644555`).
-            particles_per_coord: sim_from_f32(
+            particles_per_coord: SimFixed::from_num(
                 section.read_double("ParticlesPerCoord", DEFAULT_PARTICLES_PER_COORD.to_num())
                     as f32,
             ),
-            spiral_delta_per_coord: sim_from_f32(section.read_double(
+            spiral_delta_per_coord: SimFixed::from_num(section.read_double(
                 "SpiralDeltaPerCoord",
                 DEFAULT_SPIRAL_DELTA_PER_COORD.to_num(),
             ) as f32),
-            spiral_radius: sim_from_f32(
+            spiral_radius: SimFixed::from_num(
                 section.read_double("SpiralRadius", DEFAULT_SPIRAL_RADIUS.to_num()) as f32,
             ),
-            position_perturbation_coefficient: sim_from_f32(
+            position_perturbation_coefficient: SimFixed::from_num(
                 section.read_double("PositionPerturbationCoefficient", 0.0) as f32,
             ),
-            movement_perturbation_coefficient: sim_from_f32(
+            movement_perturbation_coefficient: SimFixed::from_num(
                 section.read_double("MovementPerturbationCoefficient", 0.0) as f32,
             ),
-            velocity_perturbation_coefficient: sim_from_f32(
+            velocity_perturbation_coefficient: SimFixed::from_num(
                 section.read_double("VelocityPerturbationCoefficient", 0.0) as f32,
             ),
 
@@ -341,9 +341,9 @@ mod tests {
         let pst = ParticleSystemType::from_ini_section("RGSys", section);
 
         assert_eq!(pst.behaves_like, ParticleSystemBehavesLike::Railgun);
-        assert_eq!(pst.particles_per_coord, sim_from_f32(0.5));
-        assert_eq!(pst.spiral_delta_per_coord, sim_from_f32(0.05));
-        assert_eq!(pst.spiral_radius, sim_from_f32(12.0));
+        assert_eq!(pst.particles_per_coord, SimFixed::from_num(0.5_f32));
+        assert_eq!(pst.spiral_delta_per_coord, SimFixed::from_num(0.05_f32));
+        assert_eq!(pst.spiral_radius, SimFixed::from_num(12.0_f32));
         assert!(pst.laser);
         assert_eq!(pst.laser_color, [255, 128, 64]);
     }

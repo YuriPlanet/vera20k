@@ -1155,34 +1155,18 @@ pub fn accumulate_point_lights(grid: &mut CellLightGrid, lights: &[PointLight]) 
         .map(|(cell, light)| (cell, light.clone()))
         .collect();
     for (cell, base_light) in cells {
-        let cell_center_x = i32::from(cell.0) * LEPTONS_PER_CELL + HALF_CELL_LEPTONS;
-        let cell_center_y = i32::from(cell.1) * LEPTONS_PER_CELL + HALF_CELL_LEPTONS;
         let mut raw_rgb = base_light.raw_rgb;
         let mut raw_additive = base_light.raw_additive_intensity;
         let mut raw_top = base_light.raw_top_scalar;
         let mut raw_bottom = base_light.raw_bottom_scalar;
-        for light in lights {
-            if !light.active || !light.detail || light.radius_leptons <= 0 {
-                continue;
-            }
-            let dx = i64::from(cell_center_x - light.center_x);
-            let dy = i64::from(cell_center_y - light.center_y);
-            let distance_sq = dx * dx + dy * dy;
-            let radius = i64::from(light.radius_leptons);
-            if distance_sq > radius * radius {
-                continue;
-            }
-            let distance = integer_sqrt(distance_sq);
-            let falloff = radius - distance;
-            let factor = (falloff * i64::from(LIGHT_UNIT)) / radius;
-            let intensity = signed_div_1000(i64::from(light.intensity) * factor);
-            raw_additive += intensity;
-            raw_top += intensity;
-            raw_bottom += intensity;
-            for (channel, raw) in raw_rgb.iter_mut().enumerate() {
-                *raw += signed_div_1000(i64::from(light.tint[channel]) * factor);
-            }
-        }
+        accumulate_light_sample(
+            cell,
+            lights,
+            &mut raw_rgb,
+            &mut raw_additive,
+            &mut raw_top,
+            &mut raw_bottom,
+        );
         let updated = build_cell_light_from_raw(
             &mut grid.profiles,
             raw_rgb,
@@ -1256,6 +1240,8 @@ fn sample_cell_light(
     }
 }
 
+/// The one per-light sum: the full rebuild ([`accumulate_point_lights`]) and
+/// each per-event refresh ([`sample_cell_light`]) add lights through it.
 fn accumulate_light_sample(
     cell: (u16, u16),
     lights: &[PointLight],

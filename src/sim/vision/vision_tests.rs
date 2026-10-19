@@ -11,6 +11,9 @@ use crate::util::save_codec;
 /// Persistent production Simulation for source/frame regression fixtures.
 /// Only fixture input construction lives here; all admission, Cell writes,
 /// frame projection and synchronous discovery run through their real owners.
+///
+/// A store swap moves no sight by itself: a fixture that drops or adds an
+/// object runs that object's sight event ([`fixture_frame_with_sight`]).
 fn fixture_frame(
     world: &mut crate::sim::world::Simulation,
     fog: &mut FogState,
@@ -23,6 +26,45 @@ fn fixture_frame(
     interner: &intern::StringInterner,
     rules: Option<&crate::rules::ruleset::RuleSet>,
 ) {
+    fixture_frame_with_sight(
+        world,
+        fog,
+        entities,
+        path_grid,
+        alliances,
+        config,
+        height_grid,
+        terrain,
+        interner,
+        rules,
+        &[],
+    );
+}
+
+/// The sight event of an object a fixture's store swap drops or adds.
+#[derive(Clone, Copy)]
+enum FixtureSight {
+    /// Its Limbo's ReReveal (`0x006F6B16`) takes its sight off the maps.
+    Limbo(u64),
+    /// Its Unlimbo's UpdateReveal (`0x006F6D27`) opens its sight.
+    Unlimbo(u64),
+}
+
+/// [`fixture_frame`] that first runs `sight`, in order, through the sight
+/// owner, after the swap installs the store.
+fn fixture_frame_with_sight(
+    world: &mut crate::sim::world::Simulation,
+    fog: &mut FogState,
+    entities: &EntityStore,
+    path_grid: Option<&PathGrid>,
+    alliances: &HouseAllianceMap,
+    config: &VisionConfig,
+    height_grid: Option<&[u8]>,
+    terrain: Option<&crate::map::resolved_terrain::ResolvedTerrainGrid>,
+    interner: &intern::StringInterner,
+    rules: Option<&crate::rules::ruleset::RuleSet>,
+    sight: &[FixtureSight],
+) {
     assert!(
         height_grid.is_none(),
         "fixture heights belong in its PathGrid"
@@ -33,6 +75,16 @@ fn fixture_frame(
     world.house_alliances = alliances.clone();
     world.resolved_terrain = terrain.cloned();
     world.path_grid = path_grid.cloned().map(std::sync::Arc::new);
+    let context = crate::sim::world::UninitContext::new(rules, None);
+    for &event in sight {
+        match event {
+            FixtureSight::Limbo(id) => world.release_object_sight_with_context(id, context),
+            FixtureSight::Unlimbo(id) => {
+                let heights = world.sight_height_grid(config);
+                world.update_object_sight_in_view(id, 0, None, config, Some(&heights), context);
+            }
+        }
+    }
     world.refresh_sight_sources(config, rules);
     *fog = std::mem::take(&mut world.fog);
 }
@@ -888,7 +940,7 @@ fn test_in_place_preserves_revealed() {
     spawn_with_vision(&mut store, 2, "Americans", 10, 10, 2);
 
     // Second compute in-place: (5,5) should still be revealed but not visible.
-    fixture_frame(
+    fixture_frame_with_sight(
         &mut sight_world,
         &mut fog,
         &store,
@@ -899,6 +951,7 @@ fn test_in_place_preserves_revealed() {
         None,
         &ti(),
         None,
+        &[FixtureSight::Limbo(1), FixtureSight::Unlimbo(2)],
     );
     assert!(fog.is_cell_revealed(intern::test_intern("Americans"), 5, 5));
     assert!(!fog.is_cell_visible(intern::test_intern("Americans"), 5, 5));
@@ -931,7 +984,7 @@ fn test_dead_owner_keeps_revealed() {
 
     // Remove all Soviet entities.
     store.remove(1);
-    fixture_frame(
+    fixture_frame_with_sight(
         &mut sight_world,
         &mut fog,
         &store,
@@ -942,6 +995,7 @@ fn test_dead_owner_keeps_revealed() {
         None,
         &ti(),
         None,
+        &[FixtureSight::Limbo(1)],
     );
 
     // Soviet's revealed state persists, but nothing is visible.
@@ -1103,7 +1157,7 @@ fn test_gap_generator_sets_gap_covered_flag() {
     // Release the sustained source first: original past_sight retains mapped
     // knowledge at counter0, which the next hostile write can conceal.
     store.remove(1);
-    fixture_frame(
+    fixture_frame_with_sight(
         &mut sight_world,
         &mut fog,
         &store,
@@ -1114,6 +1168,7 @@ fn test_gap_generator_sets_gap_covered_flag() {
         None,
         &ti(),
         None,
+        &[FixtureSight::Limbo(1)],
     );
     assert!(fog.is_cell_revealed(intern::test_intern("Soviet"), 12, 10));
     assert!(!fog.is_cell_visible(intern::test_intern("Soviet"), 12, 10));
@@ -1188,7 +1243,17 @@ fn test_height_los_blocks_sight_behind_cliff() {
     let mut hg = vec![0u8; width as usize * height as usize];
     hg[7 * width as usize + 9] = 5; // obstruction cell (9,7)
 
-    reveal_radius_into(&mut vis, 5, 5, 5, 0, true, Some(&hg), width, height);
+    reveal_radius_into(
+        &mut vis,
+        5,
+        5,
+        5,
+        0,
+        true,
+        Some(CellLevels::Plane(&hg)),
+        width,
+        height,
+    );
 
     // (6,5)'s obstruction is (7,7) (no cliff) — visible.
     assert!(vis.is_visible(6, 5));
@@ -1207,7 +1272,17 @@ fn test_height_los_plus_two_obstruction_offset() {
     let mut vis = OwnerVisibility::new(20, 20);
     let mut hg = vec![0u8; width as usize * height as usize];
     hg[5 * width as usize + 7] = 5; // (7,5) — the pre-fix obstruction guess
-    reveal_radius_into(&mut vis, 5, 5, 5, 0, true, Some(&hg), width, height);
+    reveal_radius_into(
+        &mut vis,
+        5,
+        5,
+        5,
+        0,
+        true,
+        Some(CellLevels::Plane(&hg)),
+        width,
+        height,
+    );
     assert!(
         vis.is_visible(8, 5),
         "naive (7,5) cliff must not block with the +2 offset"
@@ -1217,7 +1292,17 @@ fn test_height_los_plus_two_obstruction_offset() {
     let mut vis2 = OwnerVisibility::new(20, 20);
     let mut hg2 = vec![0u8; width as usize * height as usize];
     hg2[7 * width as usize + 9] = 5; // (9,7) — the actual obstruction cell
-    reveal_radius_into(&mut vis2, 5, 5, 5, 0, true, Some(&hg2), width, height);
+    reveal_radius_into(
+        &mut vis2,
+        5,
+        5,
+        5,
+        0,
+        true,
+        Some(CellLevels::Plane(&hg2)),
+        width,
+        height,
+    );
     assert!(
         !vis2.is_visible(8, 5),
         "+2 obstruction cell (9,7) must block"
@@ -1237,14 +1322,34 @@ fn test_height_los_high_viewer_sees_past_cliff() {
 
     // Low viewer (z=0, no shift): index-29 reveal cell is (8,5); 0+3 < 5 → blocked.
     let mut low = OwnerVisibility::new(width, height);
-    reveal_radius_into(&mut low, 5, 5, 5, 0, true, Some(&hg), width, height);
+    reveal_radius_into(
+        &mut low,
+        5,
+        5,
+        5,
+        0,
+        true,
+        Some(CellLevels::Plane(&hg)),
+        width,
+        height,
+    );
     assert!(!low.is_visible(8, 5), "low viewer is blocked by the cliff");
 
     // High viewer (level 4 = 4*104 leptons, shift=2): index-29 reveal cell
     // shifts to (6,3); the SAME obstruction (9,7) is checked, but 4+3 = 7 >= 5
     // → LOS passes.
     let mut high = OwnerVisibility::new(width, height);
-    reveal_radius_into(&mut high, 5, 5, 5, 4 * 104, true, Some(&hg), width, height);
+    reveal_radius_into(
+        &mut high,
+        5,
+        5,
+        5,
+        4 * 104,
+        true,
+        Some(CellLevels::Plane(&hg)),
+        width,
+        height,
+    );
     assert!(
         high.is_visible(6, 3),
         "high viewer sees past the cliff (reveal cell shifted to (6,3))"
@@ -1305,7 +1410,17 @@ fn test_height_los_disabled_when_false() {
     let mut hg = vec![0u8; width as usize * height as usize];
     hg[5 * width as usize + 7] = 5;
 
-    reveal_radius_into(&mut vis, 5, 5, 5, 0, false, Some(&hg), width, height);
+    reveal_radius_into(
+        &mut vis,
+        5,
+        5,
+        5,
+        0,
+        false,
+        Some(CellLevels::Plane(&hg)),
+        width,
+        height,
+    );
 
     // With reveal_by_height=false, the cliff doesn't block.
     assert!(vis.is_visible(8, 5));
@@ -1495,7 +1610,17 @@ fn height_los_on_flat_terrain_blocks_nothing() {
     for range in 1..=MAX_SIGHT_RANGE {
         let mut with_los = OwnerVisibility::new(w, h);
         let mut without_los = OwnerVisibility::new(w, h);
-        super::reveal_radius_into(&mut with_los, 32, 32, range, 0, true, Some(&flat), w, h);
+        super::reveal_radius_into(
+            &mut with_los,
+            32,
+            32,
+            range,
+            0,
+            true,
+            Some(CellLevels::Plane(&flat)),
+            w,
+            h,
+        );
         super::reveal_radius_into(&mut without_los, 32, 32, range, 0, false, None, w, h);
 
         let mut blocked: Vec<(u16, u16)> = Vec::new();
@@ -1532,8 +1657,28 @@ fn distant_terrain_cannot_block_nearby_sight() {
     let mut with_obstacle = OwnerVisibility::new(w, h);
     let mut flat_only = OwnerVisibility::new(w, h);
     let flat: Vec<u8> = vec![0; usize::from(w) * usize::from(h)];
-    super::reveal_radius_into(&mut with_obstacle, 32, 32, 5, 0, true, Some(&heights), w, h);
-    super::reveal_radius_into(&mut flat_only, 32, 32, 5, 0, true, Some(&flat), w, h);
+    super::reveal_radius_into(
+        &mut with_obstacle,
+        32,
+        32,
+        5,
+        0,
+        true,
+        Some(CellLevels::Plane(&heights)),
+        w,
+        h,
+    );
+    super::reveal_radius_into(
+        &mut flat_only,
+        32,
+        32,
+        5,
+        0,
+        true,
+        Some(CellLevels::Plane(&flat)),
+        w,
+        h,
+    );
 
     let mut differing: Vec<(u16, u16)> = Vec::new();
     for ry in 0..h {
@@ -1633,7 +1778,17 @@ fn sight_ten_outer_ring_is_still_blocked_by_terrain_height() {
     let (w, h) = (64u16, 64u16);
     let flat: Vec<u8> = vec![0; usize::from(w) * usize::from(h)];
     let mut open = OwnerVisibility::new(w, h);
-    super::reveal_radius_into(&mut open, 32, 32, 10, 0, true, Some(&flat), w, h);
+    super::reveal_radius_into(
+        &mut open,
+        32,
+        32,
+        10,
+        0,
+        true,
+        Some(CellLevels::Plane(&flat)),
+        w,
+        h,
+    );
     assert!(open.is_revealed(42, 32), "flat ground hides nothing");
 
     // Ring-10 target (42,32) is spiral offset (10,0), whose mirror is (-1,0);
@@ -1642,7 +1797,17 @@ fn sight_ten_outer_ring_is_still_blocked_by_terrain_height() {
     let mut heights = flat.clone();
     heights[usize::from(34u16) * usize::from(w) + usize::from(43u16)] = 8;
     let mut blocked = OwnerVisibility::new(w, h);
-    super::reveal_radius_into(&mut blocked, 32, 32, 10, 0, true, Some(&heights), w, h);
+    super::reveal_radius_into(
+        &mut blocked,
+        32,
+        32,
+        10,
+        0,
+        true,
+        Some(CellLevels::Plane(&heights)),
+        w,
+        h,
+    );
     assert!(
         !blocked.is_revealed(42, 32),
         "a ring-10 cell must be gated by the same height test as ring 9"
@@ -1715,11 +1880,29 @@ fn an_airborne_viewer_sees_past_a_cliff() {
     // 0, and far below one cruising at 1500 leptons (level 14).
     let heights: Vec<u8> = vec![12; usize::from(w) * usize::from(h)];
     let mut grounded = OwnerVisibility::new(w, h);
-    for (x, y) in super::collect_reveal_cells(30, 30, 5, 0, true, Some(&heights), (w, h), None) {
+    for (x, y) in super::collect_reveal_cells(
+        30,
+        30,
+        5,
+        0,
+        true,
+        Some(CellLevels::Plane(&heights)),
+        (w, h),
+        None,
+    ) {
         grounded.mark_visible(x, y);
     }
     let mut flying = OwnerVisibility::new(w, h);
-    for (x, y) in super::collect_reveal_cells(30, 30, 5, 1500, true, Some(&heights), (w, h), None) {
+    for (x, y) in super::collect_reveal_cells(
+        30,
+        30,
+        5,
+        1500,
+        true,
+        Some(CellLevels::Plane(&heights)),
+        (w, h),
+        None,
+    ) {
         flying.mark_visible(x, y);
     }
 
@@ -2066,7 +2249,7 @@ fn shroud_current_sight_allied_gap_and_pending_survive_serialization() {
         ..Default::default()
     };
     fog.by_owner.insert(owner, OwnerVisibility::new(32, 32));
-    fixture_frame(
+    fixture_frame_with_sight(
         &mut sight_world,
         &mut fog,
         &store,
@@ -2077,6 +2260,7 @@ fn shroud_current_sight_allied_gap_and_pending_survive_serialization() {
         None,
         &interner,
         None,
+        &[FixtureSight::Unlimbo(1)],
     );
     apply_gap_generators(&mut fog, &alliances, &[(gapper, 10, 10, 3)], &interner);
     assert!(fog.is_cell_visible(owner, 10, 10));
@@ -2086,7 +2270,7 @@ fn shroud_current_sight_allied_gap_and_pending_survive_serialization() {
     apply_gap_generators(&mut restored, &alliances, &[(gapper, 10, 10, 3)], &interner);
     assert!(restored.is_cell_revealed(owner, 10, 10));
     store.remove(1);
-    fixture_frame(
+    fixture_frame_with_sight(
         &mut sight_world,
         &mut restored,
         &store,
@@ -2097,6 +2281,7 @@ fn shroud_current_sight_allied_gap_and_pending_survive_serialization() {
         None,
         &interner,
         None,
+        &[FixtureSight::Limbo(1)],
     );
     apply_gap_generators(&mut restored, &alliances, &[(gapper, 10, 10, 3)], &interner);
     let encoded = save_codec::serialize(&restored).unwrap();
@@ -2185,7 +2370,7 @@ fn shroud_current_sight_direct_allies_do_not_reexport_immunity() {
     for owner in [a, b, c] {
         fog.by_owner.insert(owner, OwnerVisibility::new(32, 32));
     }
-    fixture_frame(
+    fixture_frame_with_sight(
         &mut sight_world,
         &mut fog,
         &store,
@@ -2196,6 +2381,7 @@ fn shroud_current_sight_direct_allies_do_not_reexport_immunity() {
         None,
         &interner,
         None,
+        &[FixtureSight::Unlimbo(1)],
     );
     for _ in 0..3 {
         apply_gap_generators(&mut fog, &alliances, &[(hostile, 10, 10, 3)], &interner);
@@ -2249,8 +2435,9 @@ fn shroud_current_sight_unchanged_refresh_does_not_invent_a_return_event() {
     spawn_with_vision(&mut store, 1, "Americans", 10, 10, 2);
     let refresh = |sight_world: &mut crate::sim::world::Simulation,
                    fog: &mut FogState,
-                   store: &EntityStore| {
-        fixture_frame(
+                   store: &EntityStore,
+                   sight: &[FixtureSight]| {
+        fixture_frame_with_sight(
             sight_world,
             fog,
             store,
@@ -2261,14 +2448,25 @@ fn shroud_current_sight_unchanged_refresh_does_not_invent_a_return_event() {
             None,
             &interner,
             None,
+            sight,
         )
     };
-    refresh(&mut sight_world, &mut fog, &store);
+    refresh(
+        &mut sight_world,
+        &mut fog,
+        &store,
+        &[FixtureSight::Unlimbo(1)],
+    );
     let first = [(gapper, 10, 10, 3)];
     let both = [(gapper, 10, 10, 3), (gapper, 10, 10, 3)];
     apply_gap_generators(&mut fog, &HouseAllianceMap::new(), &first, &interner);
     store.remove(1);
-    refresh(&mut sight_world, &mut fog, &store);
+    refresh(
+        &mut sight_world,
+        &mut fog,
+        &store,
+        &[FixtureSight::Limbo(1)],
+    );
     apply_gap_generators(&mut fog, &HouseAllianceMap::new(), &both, &interner);
     assert!(fog.is_cell_gap_covered(owner, 10, 10));
     spawn_with_vision(&mut store, 1, "Americans", 10, 10, 2);
@@ -2287,7 +2485,7 @@ fn shroud_current_sight_unchanged_refresh_does_not_invent_a_return_event() {
     );
     let mut fog: FogState = save_codec::deserialize(&save_codec::serialize(&fog).unwrap()).unwrap();
     for _ in 0..3 {
-        refresh(&mut sight_world, &mut fog, &store);
+        refresh(&mut sight_world, &mut fog, &store, &[]);
         apply_gap_generators(&mut fog, &HouseAllianceMap::new(), &both, &interner);
     }
     fog.flush_pending_gap_conceal(120);
@@ -2295,7 +2493,7 @@ fn shroud_current_sight_unchanged_refresh_does_not_invent_a_return_event() {
         !fog.is_cell_revealed(owner, 10, 10),
         "original second-gap/return retains pending despite negative counter"
     );
-    refresh(&mut sight_world, &mut fog, &store);
+    refresh(&mut sight_world, &mut fog, &store, &[]);
     apply_gap_generators(&mut fog, &HouseAllianceMap::new(), &both, &interner);
     assert!(
         !fog.is_cell_revealed(owner, 10, 10),

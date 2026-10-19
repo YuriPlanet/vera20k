@@ -230,7 +230,7 @@ impl SidebarDarkenMask {
         }
         // Unavailable496250 uses indices alone; flash4963F0 uses this same
         // frame with the sidebar's ordinary N=1 palette conversion.
-        let rgba = shp.frame_to_rgba_ui(0, palette).ok()?;
+        let rgba = shp.frame_to_rgba(0, palette).ok()?;
         Some(Self {
             texture: batch.create_texture_on_device(
                 device,
@@ -538,17 +538,18 @@ fn build_gclock_texture(
     Some((texture, atlas.frames))
 }
 
-// Original72ADE0 expands six-bit PAL; ordinary Convert48E740->4BBB00 N=1
-// stores exact R5G6B5. Precompose once through the enrolled retail output
-// profile; the shared RGBA shader must not apply LightConvert row lighting.
+// Original72ADE0 expands six-bit PAL (the one palette conversion); ordinary
+// Convert48E740->4BBB00 N=1 stores exact R5G6B5. Precompose once through the
+// enrolled retail output profile; the shared RGBA shader must not apply
+// LightConvert row lighting.
 fn decode_sidebar_palette(bytes: &[u8]) -> Result<Palette, crate::assets::error::AssetError> {
-    let mut palette = Palette::from_bytes_gamemd_ui(bytes)?;
-    for color in &mut palette.colors {
-        let [r, g, b, a] = crate::render::native_surface_format::ACTIVE_RETAIL_RGB565_PRESENTATION
+    let palette = Palette::from_bytes(bytes)?;
+    Ok(Palette::from_rgb(|index| {
+        let color = palette.color(index);
+        let [r, g, b, _] = crate::render::native_surface_format::ACTIVE_RETAIL_RGB565_PRESENTATION
             .quantize_rgba8([color.r, color.g, color.b, color.a]);
-        *color = crate::assets::pal_file::Color { r, g, b, a };
-    }
-    Ok(palette)
+        [r, g, b]
+    }))
 }
 
 fn resolve_theme_palette_with_source(

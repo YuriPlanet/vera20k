@@ -288,7 +288,7 @@ fn raw_words(draws: &[Value]) -> Value {
 fn param(input: &Value) -> Option<NavTargetRef> {
     match &input["param"] {
         Value::Null => None,
-        Value::String(name) if name == "blocker" => Some(NavTargetRef::Entity { id: BLOCKER }),
+        Value::String(name) if name == "blocker" => Some(NavTargetRef::Object { id: BLOCKER }),
         cell => {
             let (rx, ry) = cell_of(cell);
             Some(NavTargetRef::cell(rx, ry))
@@ -300,7 +300,7 @@ fn name(target: Option<NavTargetRef>) -> Value {
     match target {
         None => Value::Null,
         Some(NavTargetRef::Cell { rx, ry }) => json!(["cell", rx, ry]),
-        Some(NavTargetRef::Entity { id: BLOCKER }) => json!("blocker"),
+        Some(NavTargetRef::Object { id: BLOCKER }) => json!("blocker"),
         Some(other) => panic!("unexpected destination {other:?}"),
     }
 }

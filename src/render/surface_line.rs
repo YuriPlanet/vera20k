@@ -21,6 +21,8 @@ pub(crate) struct SurfaceLineViewport {
 pub(crate) enum SurfaceLineBlend {
     /// Surface4BEAC0: old destination/RGB intensity mix, followed by A.
     Mix { rgb: [u8; 3], strength: i32 },
+    /// DSurface4BBCA0: brighten old RGB channels by signed amount/256; no A/WriteZ.
+    Brighten { amount: i32 },
     /// 4BDF00 pre-scales its RGB by the retained float then admits any >7.
     Add([u8; 3]),
     /// 4BFD30 receives an already packed surface word.

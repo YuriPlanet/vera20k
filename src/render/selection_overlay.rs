@@ -113,7 +113,8 @@ impl CenteredShapeStrip {
         Some(instance)
     }
 
-    /// Decode every raw SHP frame in its named palette. This is the same
+    /// Decode every SHP frame in its named palette with
+    /// `ShpFile::frame_to_rgba`, keeping its indices. This is the same
     /// resource path for windowed loading and offscreen GPU checks.
     pub(crate) fn from_assets_on_device(
         device: &wgpu::Device,
@@ -145,19 +146,16 @@ impl CenteredShapeStrip {
         let mut indices = vec![0u8; (atlas_w * atlas_h) as usize];
         let mut frames = Vec::with_capacity(shp.frames.len());
         let mut x = 0;
-        for frame in &shp.frames {
+        for (frame_index, frame) in shp.frames.iter().enumerate() {
             let (w, h) = (u32::from(frame.frame_width), u32::from(frame.frame_height));
+            let frame_rgba = shp.frame_to_rgba(frame_index, &palette).ok()?;
+            let row = w as usize;
             for py in 0..h {
-                for px in 0..w {
-                    let index = frame.pixels[(py * w + px) as usize];
-                    indices[(py * atlas_w + x + px) as usize] = index;
-                    if index == 0 {
-                        continue;
-                    }
-                    let color = palette.colors[index as usize];
-                    let dst = ((py * atlas_w + x + px) * 4) as usize;
-                    rgba[dst..dst + 4].copy_from_slice(&[color.r, color.g, color.b, 255]);
-                }
+                let src = (py * w) as usize;
+                let dst = (py * atlas_w + x) as usize;
+                indices[dst..dst + row].copy_from_slice(&frame.pixels[src..src + row]);
+                rgba[dst * 4..(dst + row) * 4]
+                    .copy_from_slice(&frame_rgba[src * 4..(src + row) * 4]);
             }
             frames.push(CenteredShapeFrame {
                 x,

@@ -28,7 +28,7 @@ fn nav(s: &Scene, v: &Value) -> Option<NavTargetRef> {
     if v.is_null() {
         None
     } else if let Some(name) = v.as_str() {
-        Some(NavTargetRef::Building { id: s.id(name) })
+        Some(NavTargetRef::Object { id: s.id(name) })
     } else {
         let (rx, ry) = cell(v);
         Some(NavTargetRef::cell(rx, ry))
@@ -39,11 +39,7 @@ fn nav_name(s: &Scene, v: Option<NavTargetRef>) -> Value {
     match v {
         None => Value::Null,
         Some(NavTargetRef::Cell { rx, ry }) => json!([rx, ry]),
-        Some(
-            NavTargetRef::Building { id }
-            | NavTargetRef::Entity { id }
-            | NavTargetRef::Object { id },
-        ) => s.name(id),
+        Some(NavTargetRef::Object { id }) => s.name(id),
     }
 }
 
@@ -167,11 +163,7 @@ fn fixture(row: &Value) -> Scene {
     }
     let before = &row["before"];
     let raw_nav = nav(&s, &before["miner_nav"]);
-    let archive = nav(&s, &before["archive"]).map(|v| match v {
-        NavTargetRef::Cell { rx, ry } => TargetKind::Cell(rx, ry),
-        NavTargetRef::Building { id } => TargetKind::Entity(id),
-        _ => unreachable!(),
-    });
+    let archive = nav(&s, &before["archive"]).map(TargetKind::from);
     for (id, contact, tether) in [
         (s.miner, "miner_contact", "miner_tether"),
         (s.refinery, "refinery_contact", "refinery_tether"),
@@ -300,10 +292,7 @@ fn compare(s: &Scene, native: &Value, context: &str) {
     let b = s.sim.substrate.entities.get(s.refinery).unwrap();
     let at =
         crate::sim::movement::ground_pose::object_get_coords(e, s.sim.resolved_terrain.as_ref());
-    let archive = e.archive_target().map(|v| match v {
-        TargetKind::Cell(rx, ry) => NavTargetRef::cell(rx, ry),
-        TargetKind::Entity(id) => NavTargetRef::Entity { id },
-    });
+    let archive = e.archive_target().map(NavTargetRef::from);
     let pending = e
         .pending_entry()
         .map(|id| s.name(id))

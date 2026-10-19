@@ -272,10 +272,10 @@ fn post_percell_completion_matches_original_setter_refusal_and_stop_order() {
         }
         actor
             .navigation
-            .set_nav_com_for_test(Some(NavTargetRef::Entity { id: 2 }));
+            .set_nav_com_for_test(Some(NavTargetRef::Object { id: 2 }));
         actor
             .navigation
-            .set_nav_com_aux_for_test(Some(NavTargetRef::Entity { id: 123 }));
+            .set_nav_com_aux_for_test(Some(NavTargetRef::Object { id: 123 }));
         actor
             .navigation
             .set_nav_queue_for_test(vec![NavTargetRef::cell(20, 15), NavTargetRef::cell(21, 15)]);

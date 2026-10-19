@@ -1,6 +1,6 @@
 //! Supplied Cell/zone fixture shared by original Foot4DE1D0 and Building443860 inputs.
 use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid, zone_class};
-use crate::rules::terrain_rules::{TerrainClass, TerrainRules};
+use crate::rules::terrain_rules::TerrainRules;
 use crate::sim::bridge_state::{BridgeEndpointRecord, BridgeRecordKind};
 use crate::sim::cell_rect::PlayfieldBounds;
 use crate::sim::components::DriveCoord;
@@ -10,7 +10,6 @@ use serde_json::Value;
 pub(super) fn terrain_cell(rx: u16, ry: u16) -> ResolvedTerrainCell {
     ResolvedTerrainCell {
         zone_type: zone_class::GROUND,
-        base_terrain_class: TerrainClass::Clear,
         ..crate::map::resolved_terrain::test_flat_cell(rx, ry)
     }
 }

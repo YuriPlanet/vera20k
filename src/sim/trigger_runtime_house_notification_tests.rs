@@ -292,7 +292,7 @@ fn captured_house_event_uses_engineer_notification_and_keeps_the_original_raise_
         .get_mut(engineer)
         .unwrap()
         .navigation
-        .set_nav_com_for_test(Some(crate::sim::components::NavTargetRef::Building {
+        .set_nav_com_for_test(Some(crate::sim::components::NavTargetRef::Object {
             id: building,
         }));
     // Declare an admitted paid arrival at the receiver, using the shared

@@ -79,8 +79,8 @@ fn action(raw: &str) -> ActionEntry {
     crate::map::actions::parse_actions(&ini)
         .remove("CASE")
         .unwrap()
-        .entries
-        .remove(0)
+        .entries()[0]
+        .clone()
 }
 
 fn execute(

@@ -336,6 +336,7 @@ impl EnterOrderCounter {
 pub(crate) enum ObjectKind {
     Anim,
     VoxelAnim,
+    Spotlight,
     ParticleSystem,
     Terrain,
     Projectile,
@@ -398,6 +399,8 @@ pub struct ObjectSubstrate {
     /// `AbstractClass::Create_ID` and `ObjectClass::Unlimbo`.
     #[serde(default)]
     pub(crate) voxel_anims: VoxelAnimStore,
+    #[serde(default)]
+    pub(crate) spotlights: super::spotlight::SpotlightStore,
     /// ParticleSystemClass registry. Systems share the global object-ID
     /// namespace and LogicVector; individual particles remain container-owned.
     #[serde(default)]
@@ -448,6 +451,7 @@ impl ObjectSubstrate {
             entities: EntityStore::new(),
             anims: AnimStore::default(),
             voxel_anims: VoxelAnimStore::default(),
+            spotlights: Default::default(),
             particle_systems: ParticleSystemStore::default(),
             pending_delete: DeferredDeleteQueue::default(),
         }

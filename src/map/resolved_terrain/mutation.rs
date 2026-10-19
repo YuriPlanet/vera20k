@@ -4,7 +4,7 @@
 
 use super::{ResolvedTerrainGrid, overlay_reduced_zone_type, recalc_zone_type, zone_class};
 use crate::rules::overlay_types::{OverlayTypeFlags, retained_overlay_land};
-use crate::rules::terrain_rules::{LandType, SpeedCostProfile, TerrainClass};
+use crate::rules::terrain_rules::{LandType, SpeedCostProfile};
 
 impl ResolvedTerrainGrid {
     // Authored loading writes identity and state in separate native passes.
@@ -57,13 +57,7 @@ impl ResolvedTerrainGrid {
             terrain_cell.overlay_blocks,
             terrain_cell.zone_type,
             terrain_cell.land_type,
-            terrain_cell.land_type,
-            terrain_cell.terrain_class,
             terrain_cell.speed_costs,
-            terrain_cell.is_water,
-            terrain_cell.is_cliff_like,
-            terrain_cell.is_rough,
-            terrain_cell.is_road,
             terrain_cell.ground_walk_blocked,
         );
 
@@ -102,13 +96,7 @@ impl ResolvedTerrainGrid {
             terrain_cell.overlay_blocks,
             terrain_cell.zone_type,
             terrain_cell.land_type,
-            terrain_cell.land_type,
-            terrain_cell.terrain_class,
             terrain_cell.speed_costs,
-            terrain_cell.is_water,
-            terrain_cell.is_cliff_like,
-            terrain_cell.is_rough,
-            terrain_cell.is_road,
             terrain_cell.ground_walk_blocked,
         );
         old_overlay_zone_type != terrain_cell.overlay_zone_type || old != new
@@ -142,14 +130,7 @@ impl ResolvedTerrainGrid {
 
 fn restore_pristine_land(cell: &mut crate::map::resolved_terrain::ResolvedTerrainCell) {
     cell.land_type = cell.base_land_type;
-    cell.terrain_class = cell.base_terrain_class;
     cell.speed_costs = cell.base_speed_costs;
-    let base_land = LandType::from_index(cell.base_land_type);
-    cell.is_water = base_land.is_some_and(LandType::is_water);
-    cell.is_cliff_like = base_land.is_some_and(LandType::is_cliff_like)
-        || matches!(cell.base_terrain_class, TerrainClass::Cliff);
-    cell.is_rough = base_land.is_some_and(LandType::is_rough);
-    cell.is_road = base_land.is_some_and(LandType::is_road);
 }
 
 fn apply_overlay_land(
@@ -158,10 +139,5 @@ fn apply_overlay_land(
     speed_costs: Option<SpeedCostProfile>,
 ) {
     cell.land_type = land.as_index();
-    cell.terrain_class = land.terrain_class();
     cell.speed_costs = speed_costs.unwrap_or_default();
-    cell.is_water = land.is_water();
-    cell.is_cliff_like = land.is_cliff_like();
-    cell.is_rough = land.is_rough();
-    cell.is_road = land.is_road();
 }

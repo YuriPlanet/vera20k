@@ -630,6 +630,7 @@ pub(crate) fn build_software_cursor(
     batch: &BatchRenderer,
     asset_manager: &AssetManager,
 ) -> Option<SoftwareCursor> {
+    // Init_Game 0x0052BA60 converts MOUSEPAL.PAL like every palette load.
     let palette = asset_manager
         .get_ref("mousepal.pal")
         .and_then(|data| Palette::from_bytes(data).ok())?;

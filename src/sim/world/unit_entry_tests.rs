@@ -719,7 +719,7 @@ fn compare_rows(json: &str, expected_count: usize, repair_projection: bool) {
                 .get_mut(90)
                 .unwrap()
                 .navigation
-                .set_nav_com_for_test(Some(NavTargetRef::Entity {
+                .set_nav_com_for_test(Some(NavTargetRef::Object {
                     id: ids[index as usize],
                 }));
         }

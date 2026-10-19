@@ -199,13 +199,7 @@ impl Simulation {
         }
         let now = self.session.binary_frame;
         if self.unit_should_crush(id, source, rules) {
-            self.set_unit_destination(
-                id,
-                NavTargetRef::Entity { id: source },
-                rules,
-                true,
-                effects,
-            );
+            self.set_unit_destination(id, NavTargetRef::object(source), rules, true, effects);
             let _ = self.mission_queue_exact(
                 id,
                 MissionId::from_known(MissionType::Move),

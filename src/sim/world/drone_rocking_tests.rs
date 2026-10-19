@@ -18,7 +18,6 @@ fn ordinary_frame(sim: &mut Simulation, rules: &RuleSet) -> Vec<super::SimFireEv
             None,
             33,
             TickLane::Ordinary,
-            None,
             FrameEffects::default(),
         )
         .expect("ordinary retail Drone combat frame");

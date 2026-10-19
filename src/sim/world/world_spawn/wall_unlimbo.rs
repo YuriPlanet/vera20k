@@ -7,10 +7,14 @@
 
 use super::{RevealOutcome, RevealPosition, Simulation};
 use crate::map::entities::EntityCategory;
+use crate::map::overlay_mark::{
+    MarkCrateImages, OverlayMarkOutcome, OverlayMarkRequest, mark_overlay,
+};
 use crate::map::resolved_terrain::NativeCellQuery;
 use crate::rules::{overlay_types::OverlayTypeRegistry, ruleset::RuleSet};
 use crate::sim::movement::{ground_pose, infantry_entry::InfantryEntryArgs};
 use crate::sim::occupancy::CellObjectMember;
+use crate::sim::overlay_mark_host::SimulationMarkHost;
 use crate::sim::world::lifecycle::RevealFailure;
 use crate::sim::world::{FrameEffects, UninitContext};
 
@@ -145,27 +149,50 @@ impl Simulation {
             .begin_mark(handle, Some([coord.x, coord.y, coord.z]))
             .expect("wall Overlay enters Mark once");
         self.tactical_dirty_cells.push(dirty);
-        let slope = self
-            .resolved_terrain
-            .as_ref()
-            .and_then(|terrain| terrain.cell(rx, ry))
-            .expect("admitted wall has a real cell")
-            .slope_type;
-        if !crate::sim::overlay_grid::overlay_mark_accepts_slope(overlay_id, slope) {
-            self.load_objects
-                .finish_slope_survivor(handle)
-                .expect("slope refusal retains the live Overlay");
-            return Some(RevealOutcome::Failed(RevealFailure::MarkFailed));
+        //5FD270 reaches the one OverlayClass::Mark port; Location is the
+        //requested coordinate, and its wall arm owns slope, Track and writes.
+        let flags = registry
+            .flags(overlay_id)
+            .expect("linked wall Overlay has a registered type");
+        let request = OverlayMarkRequest {
+            overlay_id,
+            flags,
+            cell: (rx as i16, ry as i16),
+            location: [coord.x, coord.y, coord.z],
+            registry,
+            tiberium_types: Some(&rules.tiberium_types),
+            crate_images: MarkCrateImages::resolve(&rules.crate_rules, registry),
+        };
+        let lighting = self
+            .session
+            .lighting
+            .profile(crate::sim::scenario_session::ScenarioLightingProfile::Normal)
+            .into();
+        let outcome = match mark_overlay(
+            &mut SimulationMarkHost::new(self, Some(rules), registry, lighting),
+            &request,
+        ) {
+            Ok(outcome) => outcome,
+            Err(never) => match never {},
+        };
+        match outcome {
+            OverlayMarkOutcome::SlopeRefused => {
+                self.load_objects
+                    .finish_slope_survivor(handle)
+                    .expect("slope refusal retains the live Overlay");
+                return Some(RevealOutcome::Failed(RevealFailure::MarkFailed));
+            }
+            OverlayMarkOutcome::WallRefused => {
+                self.load_objects
+                    .finish_wall_reject(handle, &mut self.substrate.pending_delete)
+                    .expect("Track-refused Overlay joins the shared deferred queue");
+                return Some(RevealOutcome::Failed(RevealFailure::MarkFailed));
+            }
+            OverlayMarkOutcome::Marked => self
+                .load_objects
+                .finish_common(handle, &mut self.substrate.pending_delete)
+                .expect("successful wall Overlay queues before its Building"),
         }
-        if !crate::sim::production::mark_wall(self, rules, registry, rx, ry, overlay_id) {
-            self.load_objects
-                .finish_wall_reject(handle, &mut self.substrate.pending_delete)
-                .expect("Track-refused Overlay joins the shared deferred queue");
-            return Some(RevealOutcome::Failed(RevealFailure::MarkFailed));
-        }
-        self.load_objects
-            .finish_common(handle, &mut self.substrate.pending_delete)
-            .expect("successful wall Overlay queues before its Building");
         //4407FC reads the Building's current owner after all Overlay callbacks.
         let owner = self
             .substrate
@@ -213,7 +240,7 @@ impl Simulation {
                 (rx, ry),
                 coord.z,
                 radius,
-                heights.levels(),
+                Some(&heights),
                 final_pass,
                 &config,
                 context,

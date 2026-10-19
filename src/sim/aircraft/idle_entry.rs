@@ -533,7 +533,7 @@ impl IdleHost for WorldIdle<'_> {
     }
 
     fn assign_dock(&mut self, dock: u64) {
-        self.assign_destination(Some(NavTargetRef::Building { id: dock }));
+        self.assign_destination(Some(NavTargetRef::object(dock)));
     }
 
     fn assign_airfield(&mut self) {

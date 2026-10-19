@@ -5,7 +5,7 @@ use super::*;
 use crate::rules::jumpjet_params::JumpjetParams;
 use crate::rules::locomotor_type::{LocomotorKind, MovementZone, SpeedType};
 use crate::rules::object_type::{ObjectCategory, ObjectType};
-use crate::util::fixed_math::{SIM_ZERO, sim_from_f32};
+use crate::util::fixed_math::{SIM_ZERO, SimFixed};
 
 #[test]
 fn walk_destination_and_cell_producer_match_original_startup_conversion() {
@@ -240,7 +240,7 @@ fn test_jumpjet_with_custom_params() {
     obj.jumpjet = true;
     obj.jumpjet_params = JumpjetParams {
         turn_rate: 4,
-        speed: sim_from_f32(20.0),
+        speed: SimFixed::from_num(20.0_f32),
         climb: 8.0,
         crash: 5.0,
         height: 750,
@@ -399,7 +399,7 @@ fn non_jumpjet_locomotors_ignore_the_types_jumpjet_block() {
         // Drive or Fly locomotor.
         obj.jumpjet_params = JumpjetParams {
             turn_rate: 100,
-            speed: sim_from_f32(99.0),
+            speed: SimFixed::from_num(99.0_f32),
             climb: 9.0,
             crash: 9.0,
             height: 750,

@@ -16,8 +16,8 @@ fn action(kind: i32, operand: &str) -> RuntimeAction {
     let entry = crate::map::actions::parse_actions(&ini)
         .remove("CASE")
         .unwrap()
-        .entries
-        .remove(0);
+        .entries()[0]
+        .clone();
     RuntimeDefinitions::default().resolve_action(entry, None, None)
 }
 
@@ -141,11 +141,6 @@ fn ordered_tag_rgb_actions_then_the_production_fade_keep_distinct_palette_operat
             None,
             67,
             TickLane::Ordinary,
-            Some(TriggerInputs {
-                events: &map.events,
-                actions: &map.actions,
-                rules: Some(&rules),
-            }),
             FrameEffects::default(),
         )
         .unwrap();

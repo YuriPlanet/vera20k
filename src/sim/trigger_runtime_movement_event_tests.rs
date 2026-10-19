@@ -412,3 +412,78 @@ fn ordinary_per_cell_arrival_raises_attached_near_event_before_next_poll_and_sur
         assert_eq!(rng(sim), before);
     }
 }
+
+/// Infantry PerCellProcess's Enter arm raises event 1 (Entered by) on the
+/// Tag of what he enters, with him as the actor (`0x0051A258..0x0051A26A`),
+/// before the building arm's DOCK_NOW takes him in.
+#[test]
+fn an_infantryman_entering_a_bio_reactor_raises_its_entered_by_event() {
+    let (mut sim, rules, registry, houses) = super::tests::event_ingress_fixture_with_rules(
+        "[InfantryTypes]\n0=TAGINF\n[TAGINF]\nStrength=100\nSpeed=4\nSpeedType=Foot\n\
+         Locomotor={4A582744-9839-11d1-B709-00A024DDAFD1}\n\
+         [BuildingTypes]\n0=TAGBIO\n[TAGBIO]\nStrength=500\nInfantryAbsorb=yes\n\
+         Passengers=5\nSizeLimit=15\n",
+    );
+    let owner = sim.interner.resolve(houses[0]).to_owned();
+    let reactor = sim
+        .spawn_object("TAGBIO", &owner, 16, 16, 0, &rules)
+        .unwrap();
+    let infantry = sim
+        .spawn_object("TAGINF", &owner, 17, 16, 0, &rules)
+        .unwrap();
+    install(&mut sim, &rules, "1,0,-1");
+    sim.attach_object_trigger_tag(reactor, Some("MOVETAG"));
+    sim.mission_assign_exact(
+        infantry,
+        crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Enter),
+        0,
+    )
+    .unwrap();
+    // The Infantry setter's Enter arm HELLOs the reactor (`0x0051ACD4`).
+    let _ = sim.assign_destination_represented(
+        infantry,
+        Some(crate::sim::components::NavTargetRef::object(reactor)),
+        Some(&rules),
+        Some(&registry),
+        FrameEffects::default(),
+    );
+    assert_eq!(
+        sim.substrate
+            .entities
+            .get(infantry)
+            .unwrap()
+            .radio_contacts
+            .slot(0),
+        Some(reactor)
+    );
+    // A supplied arrival on the reactor's cell through the shared Foot writer.
+    sim.foot_set_location_marked(
+        infantry,
+        DriveCoord {
+            x: 16 * 256 + 128,
+            y: 16 * 256 + 128,
+            z: 0,
+        },
+        Some(&rules),
+        Some(&registry),
+        FrameEffects::default(),
+    );
+    sim.per_cell_process(
+        infantry,
+        crate::sim::movement::PerCellReason::Arrival,
+        Some(&rules),
+        Some(&registry),
+        FrameEffects::default(),
+    )
+    .unwrap();
+    assert!(sim.trigger_runtime.globals_set.contains(&7));
+    assert_eq!(
+        sim.substrate
+            .entities
+            .get(infantry)
+            .unwrap()
+            .passenger_role
+            .inside_transport_id(),
+        Some(reactor)
+    );
+}

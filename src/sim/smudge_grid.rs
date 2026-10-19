@@ -937,7 +937,6 @@ mod tests {
     fn make_terrain(w: u16, h: u16, accepts: bool) -> ResolvedTerrainGrid {
         crate::map::resolved_terrain::test_grid(w, h, |rx, ry| ResolvedTerrainCell {
             filled_clear: true,
-            terrain_class: Default::default(),
             accepts_smudge: accepts,
             ..crate::map::resolved_terrain::test_flat_cell(rx, ry)
         })

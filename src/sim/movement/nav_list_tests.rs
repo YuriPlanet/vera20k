@@ -248,7 +248,7 @@ fn listing_tank() -> Option<(Simulation, RuleSet, u64, u64)> {
     let victim = sim
         .spawn_object("MTNK", "Americans", 20, 20, 0, &rules)
         .unwrap();
-    let named = NavTargetRef::Entity { id: victim };
+    let named = NavTargetRef::Object { id: victim };
     sim.substrate
         .entities
         .get_mut(id)
@@ -310,7 +310,7 @@ fn an_area_guard_order_keeps_the_list() {
         target: None,
     };
     assert!(sim.apply_command("Americans", &order, Some(&rules)));
-    let named = NavTargetRef::Entity { id: victim };
+    let named = NavTargetRef::Object { id: victim };
     assert_eq!(list(&sim, id), (vec![named, A, named], true));
 }
 

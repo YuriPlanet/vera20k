@@ -904,18 +904,17 @@ fn turret_screen_offset(
 /// Whether Drive/Ship `Draw_Matrix` gives `UnitClass::DrawVoxelBody` a turret
 /// image key. Its keyed arm needs a finished slope transition and both body
 /// tilt angles (`TechnoClass+0x328`, `+0x32C`) under 0.005
-/// (`0x004AFFB0..0x004AFFE8`, `[0x007E44E8]`); otherwise it keys -1
-/// (`0x004B0187`), and the turret and barrel draw uncached (`0x0073B74C`,
-/// `0x007067EF`).
+/// (`0x004AFFB0..0x004AFFE8`, `[0x007E44E8]`): the binary32 gate
+/// [`voxel_tilt_applies`](crate::map::voxel_pose::voxel_tilt_applies) owns,
+/// which [`ground_pose`] reads too. Otherwise it keys -1 (`0x004B0187`), and
+/// the turret and barrel draw uncached (`0x0073B74C`, `0x007067EF`).
 fn turret_images_cached(
     entity: &crate::sim::game_entity::GameEntity,
     slope_state: UnitRenderSlopeState,
 ) -> bool {
-    const TILT_GATE: crate::util::fixed_math::SimFixed =
-        crate::util::fixed_math::SimFixed::lit("0.005");
     matches!(slope_state, UnitRenderSlopeState::Stable(_))
-        && entity.rocking.as_ref().is_none_or(|rocking| {
-            rocking.angle_sideways().abs() < TILT_GATE && rocking.angle_forwards().abs() < TILT_GATE
+        && !entity.rocking.as_ref().is_some_and(|rocking| {
+            crate::map::voxel_pose::voxel_tilt_applies(rocking.angles_native())
         })
 }
 
@@ -2126,6 +2125,22 @@ mod tests {
                 "release restores ordinary atlas admission"
             );
         }
+    }
+
+    /// Drive Draw_Matrix `0x004AFFC0..0x004AFFE8` loads each binary32 body
+    /// angle, takes FABS and compares it with the double 0.005 at `0x007E44E8`;
+    /// the keyed arm needs both below. Binary32 0.005 lies just under that
+    /// double, so it keys the turret images; I16F16 rounds it up to the gate.
+    #[test]
+    fn turret_image_key_compares_binary32_angles_with_the_native_gate() {
+        let mut entity = GameEntity::test_default(1, "DEST", "Americans", 0, 0);
+        entity.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));
+        let mut rocking = crate::sim::rocking::RockingState::default();
+        rocking.set_angles_native_for_test([0.005, -0.005]);
+        entity.rocking = Some(rocking);
+        let stable = UnitRenderSlopeState::Stable(0);
+        assert!(ground_pose(&entity, stable, 0).is_none());
+        assert!(turret_images_cached(&entity, stable));
     }
 
     /// A missile draws its plain facing while CurrentPitch is zero and Rocket
