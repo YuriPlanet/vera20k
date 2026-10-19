@@ -171,6 +171,11 @@ pub struct SidebarItem {
     pub is_armed: bool,
     /// True if this cameo represents a superweapon (not a buildable).
     pub is_superweapon: bool,
+    /// Superweapon cameo's fire admission, the sim's `can_fire`
+    /// (`SuperClass::CanFire @ 0x006CC360`: suspended `+0x70` is refused
+    /// before the charge `+0x6F` is read). False for build cameos; only
+    /// the superweapon arm path reads it.
+    pub sw_can_fire: bool,
     /// Unique SW INI section name (e.g., "LightningStormSpecial"). Set
     /// only when `is_superweapon=true`. Multiple SWs may share `type_id`
     /// (SidebarImage), but section names are unique.
@@ -346,8 +351,12 @@ pub(crate) fn hit_test_item(item: &SidebarItem, right_click: bool, shift: bool) 
             at_build_limit: item.at_build_limit,
         };
     }
-    // SW cameos have no queue → right-click does nothing.
-    if right_click || !item.is_ready {
+    // SW cameos have no queue → right-click does nothing. A left click arms
+    // only on the sim's fire admission (`SelectClass::Action @ 0x006AAD00`
+    // calls `CanFire @ 0x006CC360` at 0x006AAEEA: a suspended Super is
+    // refused before its charge is read), so a low-power-held charged
+    // Super is a no-op (0x006AAFB1) instead of arming a dead cursor.
+    if right_click || !item.sw_can_fire {
         return SidebarAction::None;
     }
     if item.is_armed {

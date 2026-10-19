@@ -884,6 +884,7 @@ mod tests {
             is_on_hold: false,
             is_armed: false,
             is_superweapon: false,
+            sw_can_fire: false,
             super_weapon_section: None,
         };
         assert_eq!(cameo_status_text(&item, "Ready", "On Hold"), None);
@@ -928,6 +929,7 @@ mod tests {
             is_on_hold: false,
             is_armed: false,
             is_superweapon: false,
+            sw_can_fire: false,
             super_weapon_section: None,
         };
         assert!(!shows_build_clock(&item), "queued behind another build");

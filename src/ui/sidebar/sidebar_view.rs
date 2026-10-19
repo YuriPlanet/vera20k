@@ -368,6 +368,7 @@ pub(crate) fn build_sidebar_view_with_spec(
                 is_on_hold: entry.is_on_hold,
                 is_armed: entry.is_armed,
                 is_superweapon: entry.is_superweapon,
+                sw_can_fire: entry.sw_can_fire,
                 super_weapon_section: entry.super_weapon_section,
             }
         })
@@ -517,6 +518,9 @@ struct BuildEntry {
     is_on_hold: bool,
     is_armed: bool,
     is_superweapon: bool,
+    /// Sim-owned fire admission for a SW cameo (CanFire 0x006CC360);
+    /// false for build entries.
+    sw_can_fire: bool,
     super_weapon_section: Option<String>,
 }
 
@@ -563,6 +567,7 @@ fn collect_build_entries(
                 is_armed: armed_sw_section
                     .is_some_and(|s| s.eq_ignore_ascii_case(&sw.display_name)),
                 is_superweapon: true,
+                sw_can_fire: sw.can_fire,
                 super_weapon_section: Some(sw.display_name.clone()),
             });
         }
@@ -600,6 +605,7 @@ fn collect_build_entries(
                 is_on_hold: false,
                 is_armed: false,
                 is_superweapon: false,
+                sw_can_fire: false,
                 super_weapon_section: None,
             }
         })
@@ -636,6 +642,7 @@ fn collect_build_entries(
                 is_on_hold: false,
                 is_armed: false,
                 is_superweapon: false,
+                sw_can_fire: false,
                 super_weapon_section: None,
             });
         }
