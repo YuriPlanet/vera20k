@@ -26,22 +26,14 @@ struct NativeSystemTime {
     milliseconds: u16,
 }
 
-#[cfg(any(unix, all(windows, feature = "dev-ui")))]
+#[cfg(unix)]
 const WINDOWS_EPOCH_SECONDS: u64 = 11_644_473_600;
-#[cfg(any(unix, all(windows, feature = "dev-ui")))]
+#[cfg(unix)]
 const TICKS_PER_SECOND: u64 = 10_000_000;
 
 /// Saved-list 0x005596A0 omits both columns for either sentinel DWORD.
 fn is_sentinel(ticks: u64) -> bool {
     ticks as u32 == u32::MAX || (ticks >> 32) as u32 == u32::MAX
-}
-
-#[cfg(all(any(windows, unix), feature = "dev-ui"))]
-pub fn format_timestamp_parts(unix_secs: u64) -> Option<(String, String)> {
-    let ticks = unix_secs
-        .checked_add(WINDOWS_EPOCH_SECONDS)?
-        .checked_mul(TICKS_PER_SECOND)?;
-    format_file_time_parts(ticks)
 }
 
 /// Format native FILETIME without discarding its epoch or fractional fields.
@@ -208,11 +200,6 @@ pub fn format_file_time_parts(ticks: u64) -> Option<(String, String)> {
         };
         format(c"%x").zip(format(c"%X"))
     }
-}
-
-#[cfg(all(not(any(windows, unix)), feature = "dev-ui"))]
-pub fn format_timestamp_parts(_unix_secs: u64) -> Option<(String, String)> {
-    None
 }
 
 #[cfg(not(any(windows, unix)))]

@@ -27,16 +27,6 @@ impl App {
     /// sticky capture and must die on the same edge, or the next click is still
     /// routed to the region that captured it (the release that would free it
     /// was lost).
-    ///
-    /// A focus edge is the native trigger, but it is not the only way a
-    /// gesture can lose its release: while the debug overlay is up the
-    /// diagnostic GUI owns the pointer (`dev_ui_consumed` in the window-event
-    /// router) and every tactical press/release is dropped instead of
-    /// reaching the world. Whatever was half-done behind the overlay is
-    /// therefore still half-done when it closes, and the match looks dead
-    /// until something else — a minimise, an Alt+Tab — takes the focus away.
-    /// Ending the debug pause runs the same teardown so the first click after
-    /// the panel closes lands where the player aimed it.
     pub(crate) fn release_in_game_pointer_state(state: &mut AppState) {
         state.match_state.input.tactical_mouse.reset_on_focus_loss();
         state.match_state.input.selection_state.cancel_drag();
@@ -423,23 +413,6 @@ impl ApplicationHandler for App {
         if crate::app::frontend::status_screen::handle_event(state, &event, event_loop) {
             return;
         }
-        #[cfg(feature = "dev-ui")]
-        let dev_ui_consumed = if state.diagnostic_gui_visible() {
-            state
-                .renderer
-                .debug_ui
-                .on_window_event(&state.platform.window, &event)
-                .consumed
-                && state.match_state.paused()
-        } else {
-            state
-                .renderer
-                .debug_ui
-                .discard_pending_input(&state.platform.window);
-            false
-        };
-        #[cfg(not(feature = "dev-ui"))]
-        let dev_ui_consumed = false;
 
         match event {
             WindowEvent::CloseRequested => {
@@ -789,7 +762,6 @@ impl ApplicationHandler for App {
                                 state: event.state,
                                 repeat: event.repeat,
                             },
-                            dev_ui_consumed,
                             paused_at_event,
                         );
                     }
@@ -811,25 +783,25 @@ impl ApplicationHandler for App {
                     Self::handle_launcher_options_mouse(state, None);
                     return;
                 }
-                if !dev_ui_consumed && state.frontend.screen == GameScreen::InGame {
+                if state.frontend.screen == GameScreen::InGame {
                     dispatch::handle_cursor_moved_in_game(state);
                 }
-                if !dev_ui_consumed && Self::native_skirmish_shell_active(state) {
+                if Self::native_skirmish_shell_active(state) {
                     Self::handle_skirmish_shell_mouse_move(state);
                 }
-                if !dev_ui_consumed && Self::menu_page_active(state) {
+                if Self::menu_page_active(state) {
                     Self::handle_menu_page_mouse_move(state);
                 }
-                if !dev_ui_consumed && Self::movie_list_active(state) {
+                if Self::movie_list_active(state) {
                     Self::handle_movie_list_mouse_move(state);
                 }
-                if !dev_ui_consumed && Self::campaign_active(state) {
+                if Self::campaign_active(state) {
                     Self::handle_campaign_mouse_move(state);
                 }
-                if !dev_ui_consumed && Self::load_saved_game_active(state) {
+                if Self::load_saved_game_active(state) {
                     Self::handle_load_saved_game_mouse_move(state);
                 }
-                if !dev_ui_consumed && Self::wol_welcome_active(state) {
+                if Self::wol_welcome_active(state) {
                     Self::handle_wol_mouse_move(state);
                 }
                 if Self::score_shell_active(state) {
@@ -838,8 +810,7 @@ impl ApplicationHandler for App {
                 if Self::campaign_score_shell_active(state) {
                     Self::handle_campaign_score_mouse_move(state);
                 }
-                if !dev_ui_consumed
-                    && state.frontend.screen == GameScreen::MainMenu
+                if state.frontend.screen == GameScreen::MainMenu
                     && state.frontend.main_menu_shell_error.is_none()
                     && !Self::menu_page_active(state)
                     && !Self::movie_list_active(state)
@@ -978,7 +949,6 @@ impl ApplicationHandler for App {
                     }
                 } else if state.frontend.screen == GameScreen::MainMenu
                     && state.frontend.main_menu_shell_error.is_none()
-                    && !dev_ui_consumed
                 {
                     if button == MouseButton::Left {
                         if btn_state.is_pressed() {
@@ -987,7 +957,7 @@ impl ApplicationHandler for App {
                             Self::handle_main_menu_shell_mouse_up(state, event_loop);
                         }
                     }
-                } else if !dev_ui_consumed && state.frontend.screen == GameScreen::InGame {
+                } else if state.frontend.screen == GameScreen::InGame {
                     dispatch::handle_mouse_input(state, button, btn_state);
                 }
             }
@@ -1004,18 +974,14 @@ impl ApplicationHandler for App {
                     state.platform.window.request_redraw();
                     return;
                 }
-                if !dev_ui_consumed
-                    && state.frontend.screen == GameScreen::MainMenu
+                if state.frontend.screen == GameScreen::MainMenu
                     && Self::native_skirmish_shell_active(state)
                     && Self::handle_skirmish_shell_mouse_wheel(state, lines)
                 {
                     state.platform.window.request_redraw();
                     return;
                 }
-                if !dev_ui_consumed
-                    && state.frontend.screen == GameScreen::InGame
-                    && !state.match_state.paused()
-                {
+                if state.frontend.screen == GameScreen::InGame && !state.match_state.paused() {
                     // Every wheel notch scrolls the active build strip by one
                     // row, wherever the cursor is. gamemd routes the wheel
                     // message straight to the SidebarUp / SidebarDown commands

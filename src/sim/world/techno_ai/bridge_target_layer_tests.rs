@@ -24,10 +24,7 @@ fn supplied_world(rules: &RuleSet, case: &Value) -> Simulation {
     let obj = rules.object("FV").unwrap();
     assert_eq!(obj.weapon_list[0].as_deref(), Some("HoverMissile"));
     let weapon = rules.weapon("HoverMissile").unwrap();
-    assert_eq!(
-        json!((weapon.range * SimFixed::from_num(256)).to_num::<i32>()),
-        input["weapon_range"]
-    );
+    assert_eq!(json!(weapon.range_leptons), input["weapon_range"]);
     assert_eq!(
         json!(weapon.minimum_range_leptons),
         input["weapon_minimum_range"]

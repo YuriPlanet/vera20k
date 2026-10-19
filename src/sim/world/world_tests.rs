@@ -10382,67 +10382,6 @@ fn runtime_frame_call_order_matches_the_app_seam() {
     assert!(runtime.simulation.take_due_commands().is_empty());
 }
 
-/// F10: the debug-logging toggle is a sim-owned boundary method — enabling
-/// allocates logs on every existing entity and stamps the spawn flag so
-/// future spawns log too; disabling clears both.
-#[test]
-fn debug_toggle_updates_existing_and_future_entities() {
-    let rules = RuleSet::from_ini(&IniFile::from_str(
-        "[BuildingTypes]\n0=GACNST\n[GACNST]\nStrength=400\n",
-    ))
-    .expect("debug toggle rules");
-    let mut sim = Simulation::new();
-    let existing = sim
-        .spawn_object("GACNST", "Player", 5, 5, 0, &rules)
-        .expect("existing spawn");
-    assert!(
-        sim.entities()
-            .get(existing)
-            .expect("existing")
-            .debug_log()
-            .is_none(),
-        "logging starts disabled"
-    );
-
-    sim.set_debug_event_logging(true);
-    assert!(
-        sim.entities()
-            .get(existing)
-            .expect("existing")
-            .debug_log()
-            .is_some(),
-        "enabling allocates a log on the existing entity"
-    );
-    let future = sim
-        .spawn_object("GACNST", "Player", 9, 9, 0, &rules)
-        .expect("future spawn");
-    assert!(
-        sim.entities()
-            .get(future)
-            .expect("future")
-            .debug_log()
-            .is_some(),
-        "an entity spawned after enabling logs from the spawn flag"
-    );
-
-    sim.set_debug_event_logging(false);
-    assert!(
-        sim.entities()
-            .get(existing)
-            .expect("existing")
-            .debug_log()
-            .is_none()
-    );
-    assert!(
-        sim.entities()
-            .get(future)
-            .expect("future")
-            .debug_log()
-            .is_none(),
-        "disabling clears every entity's log"
-    );
-}
-
 /// The `VoxelAnimClass` store is a live scheduler citizen, not a side table.
 ///
 /// gamemd-derived: `VoxelAnimClass::Constructor @ 0x007493B0` assigns the

@@ -113,3 +113,48 @@ fn actual_scorer_consumes_live_signed_strength_and_masked_zero_division() {
     }
     assert_eq!(compared, 168);
 }
+
+/// The E term subtracts the selected weapon's +B4 leptons over 256, rounded
+/// toward zero (`0x0070CF6F..0x0070CF99`), not its range in floored cells.
+/// `Range=-1` keeps ReadRange's default (`0x0047463E`), the constructor zero,
+/// and `Range=-1.5` is -384 leptons, -1 cell.
+#[test]
+fn distance_term_reads_the_weapon_range_in_leptons() {
+    for (range, score) in [("-1", 100_000), ("-1.5", 99_990)] {
+        let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
+            "[VehicleTypes]\n0=SCORER\n1=CANDIDATE\n\
+             [SCORER]\nStrength=100\nPrimary=Gun\n[CANDIDATE]\nStrength=100\n\
+             [Gun]\nDamage=1\nRange={range}\nWarhead=HE\n[HE]\nCellSpread=0\n"
+        )))
+        .unwrap();
+        let mut interner = crate::sim::intern::test_interner();
+        let mut entities = EntityStore::new();
+        let mut scorer = GameEntity::test_default(1, "SCORER", "Americans", 2, 2);
+        scorer.set_type_ref_for_test(interner.intern("SCORER"));
+        entities.insert(scorer);
+        let mut candidate = GameEntity::test_default(2, "CANDIDATE", "Soviet", 2, 2);
+        candidate.set_type_ref_for_test(interner.intern("CANDIDATE"));
+        entities.insert(candidate);
+        let result = calculate_threat_score(
+            &entities,
+            1,
+            2,
+            &rules,
+            &interner,
+            None,
+            None,
+            ThreatCoefficients {
+                my_effectiveness: 0.0,
+                target_effectiveness: 0.0,
+                target_special_threat: 0.0,
+                target_strength: 0.0,
+                target_distance: -10.0,
+            },
+            ThreatReference::NullCoord,
+            None,
+        )
+        .unwrap();
+        // Zero distance: the score is 100000 + 10 * min(range in cells, 0).
+        assert_eq!(truncate_score(result), score, "Range={range}");
+    }
+}

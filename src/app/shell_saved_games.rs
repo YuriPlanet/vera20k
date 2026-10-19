@@ -133,7 +133,6 @@ impl App {
                 if let Err(error) = state.persistence.repository.delete(&file_name) {
                     log::warn!("Delete browser: {}: {error}", file_name.display());
                 }
-                state.persistence.invalidate_save_list();
                 let rows = Self::saved_game_layout(state, SavedSeedMode::Delete)
                     .map(|layout| {
                         SeedListGeometry::new(layout.list, 0, 0, ListMetrics::scaled(layout.scale))

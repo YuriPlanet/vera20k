@@ -28,13 +28,6 @@ pub(crate) fn quicksave(state: &mut AppState) {
     log_save_result("Quicksave", save(state, None, None));
 }
 
-/// Save As retains the exact user description in the envelope; only the
-/// filename is sanitized. Quick saves use the map name as their description.
-#[cfg(feature = "dev-ui")]
-pub(crate) fn save_with_name(state: &mut AppState, raw_name: &str) {
-    log_save_result("Save As", save_game(state, raw_name, None));
-}
-
 /// UI save/create/explicit overwrite request. A new timestamp-name collision
 /// is an error, never implicit permission to overwrite an existing save.
 /// This is the VERA snapshot format; it does not claim native SAV compatibility.
@@ -154,13 +147,17 @@ fn save(
     );
     let tick = sim.session.tick;
     let result = if let Some(path) = overwrite {
-        state.persistence.overwrite_save(path, &bytes, tick)
+        state
+            .persistence
+            .repository
+            .overwrite_existing(path, &bytes)
+            .map(|()| path.to_path_buf())
     } else {
         let filename = match sanitized {
             Some(name) => format!("save_{name}_tick{tick}_{now}.bin"),
             None => format!("save_tick{tick}_{now}.bin"),
         };
-        state.persistence.write_save(&filename, &bytes, tick)
+        state.persistence.repository.write_named(&filename, &bytes)
     };
     // Keep I/O dwell out of the source clock. VERA also resumes on a failed
     // write, preserving its live-match failure policy.

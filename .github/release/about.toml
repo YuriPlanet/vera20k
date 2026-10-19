@@ -17,9 +17,6 @@ accepted = [
     "Unicode-3.0",
     "MPL-2.0",
     "NCSA",
-    # Fonts embedded by egui's epaint; both licenses allow bundling with any software.
-    "OFL-1.1",
-    "Ubuntu-font-1.0",
 ]
 # The platforms release.yml builds.
 targets = [

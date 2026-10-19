@@ -120,6 +120,10 @@ pub struct OverlayTypeFlags {
     pub draw_flat: bool,
     /// Overlay `Armor=wood`, used by the Wood warhead wall-damage route.
     pub armor_is_wood: bool,
+    /// `LegalTarget=` -> ObjectTypeClass+0x231 (ReadINI `0x005F94AE`, key
+    /// string `0x00832B84`) over the ObjectTypeClass constructor's 1
+    /// (`0x005F7168`); the OverlayTypeClass constructor leaves it.
+    pub legal_target: bool,
     /// IsVeins=yes — rendered with unit palette, gets -12px Y offset.
     pub is_veins: bool,
     /// IsVeinholeMonster=yes — rendered with unit palette.
@@ -196,6 +200,7 @@ impl Default for OverlayTypeFlags {
             crush_sound: None,
             draw_flat: true,
             armor_is_wood: false,
+            legal_target: true,
             is_veins: false,
             is_veinhole_monster: false,
             is_gate: false,
@@ -374,6 +379,7 @@ impl OverlayTypeRegistry {
                     armor_is_wood: type_section
                         .read_name("Armor", 0x80)
                         .is_some_and(|armor| armor.eq_ignore_ascii_case("wood")),
+                    legal_target: type_section.read_bool("LegalTarget", true),
                     is_veins: type_section.read_bool("IsVeins", false),
                     is_veinhole_monster: type_section.read_bool("IsVeinholeMonster", false),
                     is_gate: type_section.read_bool("Gate", false),

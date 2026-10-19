@@ -1,5 +1,5 @@
 //! Process diagnostics owner (F12 `DiagnosticsState`): debug overlay toggles,
-//! the frame stepper, the parity digest sink, and dev-overlay bookkeeping.
+//! the frame stepper, the frame timer and the parity digest sink.
 //!
 //! Match-lifetime diagnostic replay lives in `app::match_diagnostics`; this
 //! owner is process-scoped tooling state.
@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 
 const FRAME_TIMER_WINDOW: usize = 60;
 
-/// Rolling FPS / frame-time tracker. Sampled once per `render_frame`.
+/// Rolling frame-time tracker. Sampled once per `render_frame`.
 pub(crate) struct FrameTimer {
     samples: VecDeque<Duration>,
     last_tick: Option<Instant>,
@@ -45,13 +45,6 @@ impl FrameTimer {
         let mean_ns: u128 = total_ns / self.samples.len() as u128;
         (mean_ns as f64 / 1_000_000.0) as f32
     }
-
-    /// FPS derived from the mean frame time, or 0 if no samples.
-    #[cfg(any(feature = "dev-ui", test))]
-    pub(crate) fn fps(&self) -> f32 {
-        let ms = self.frame_ms_mean();
-        if ms <= 0.0 { 0.0 } else { 1000.0 / ms }
-    }
 }
 
 impl Default for FrameTimer {
@@ -62,9 +55,7 @@ impl Default for FrameTimer {
 
 pub(crate) struct DiagnosticsState {
     presentation_clock: PresentationClock,
-    #[cfg(feature = "dev-ui")]
-    pending_ui_action: Option<crate::app::diagnostics::dev_overlay::DevOverlayAction>,
-    /// One-shot: advance a single sim tick while paused (dev overlay).
+    /// One-shot: advance a single sim tick while paused (Period).
     pub(crate) debug_frame_step_requested: bool,
     /// PathGrid walkability overlay toggle (P / F9).
     pub(crate) debug_show_pathgrid: bool,
@@ -79,15 +70,10 @@ pub(crate) struct DiagnosticsState {
     /// remaining route as a numbered line, so the shape and the step order both
     /// read at a glance. Independent of the PathGrid terrain-cost overlay.
     pub(crate) debug_show_foot_path: bool,
-    /// Debug unit inspector (X): mirrors sim-side per-entity event logging.
-    pub(crate) debug_unit_inspector: bool,
     /// Optional per-tick parity digest capture (diagnostics; never perturbs
     /// the run being measured).
     pub(crate) parity_digest_sink: Option<crate::sim::parity_digest::ParityDigestSink>,
-    /// Save-name text field in the dev overlay.
-    #[cfg(feature = "dev-ui")]
-    pub(crate) dev_overlay_save_name: String,
-    /// Rolling frame-time statistics for the dev overlay.
+    /// Rolling frame-time statistics for map observation metadata.
     pub(crate) frame_timer: FrameTimer,
 }
 
@@ -108,39 +94,15 @@ impl DiagnosticsState {
     ) -> Self {
         Self {
             presentation_clock: PresentationClock::Wall,
-            #[cfg(feature = "dev-ui")]
-            pending_ui_action: None,
             debug_frame_step_requested: false,
             debug_show_pathgrid: false,
             debug_terrain_cost_speed_type: None,
             debug_show_cell_grid: false,
             debug_show_heightmap: false,
             debug_show_foot_path: false,
-            debug_unit_inspector: false,
             parity_digest_sink,
-            #[cfg(feature = "dev-ui")]
-            dev_overlay_save_name: String::new(),
             frame_timer: FrameTimer::new(),
         }
-    }
-
-    #[cfg(feature = "dev-ui")]
-    pub(crate) fn queue_ui_action(
-        &mut self,
-        action: crate::app::diagnostics::dev_overlay::DevOverlayAction,
-    ) {
-        self.pending_ui_action = (!matches!(
-            action,
-            crate::app::diagnostics::dev_overlay::DevOverlayAction::None
-        ))
-        .then_some(action);
-    }
-
-    #[cfg(feature = "dev-ui")]
-    pub(crate) fn take_ui_action(
-        &mut self,
-    ) -> Option<crate::app::diagnostics::dev_overlay::DevOverlayAction> {
-        self.pending_ui_action.take()
     }
 
     pub(crate) fn use_map_presentation_clock(&mut self) -> anyhow::Result<()> {
@@ -232,7 +194,6 @@ mod tests {
     fn frame_timer_empty_returns_zero() {
         let t = FrameTimer::new();
         assert_eq!(t.frame_ms_mean(), 0.0);
-        assert_eq!(t.fps(), 0.0);
     }
 
     #[test]
@@ -252,8 +213,6 @@ mod tests {
         t.sample(t1);
         let mean = t.frame_ms_mean();
         assert!((mean - 16.0).abs() < 0.5, "expected ~16ms, got {mean}");
-        let fps = t.fps();
-        assert!((fps - 62.5).abs() < 5.0, "expected ~62.5 fps, got {fps}");
     }
 
     #[test]

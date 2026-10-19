@@ -635,7 +635,7 @@ impl FireQuery for WorldQuery<'_, '_> {
                     sub_x,
                     sub_y,
                 ),
-                weapon.range,
+                weapon.range_leptons,
             ),
         }
     }

@@ -1,9 +1,7 @@
 //! `asset scan` — corpus-wide search by sniffed format and field predicates.
 //!
-//! The question this retires is "find every SHP that is 60x48" or "every VXL
-//! with more than one limb". Today that means writing a throwaway test:
-//! `build_shp_index` in `src/bin/mix_browser_data.rs` is the closest thing that
-//! exists, and it materialises every SHP in every archive into one unpaged Vec.
+//! It answers questions like "find every SHP that is 60x48" or "every VXL with
+//! more than one limb" without a throwaway test.
 //!
 //! Unlike the name-based verbs, this walks [`AssetManager::visit_archives`]
 //! directly rather than going through `locate`. That is deliberate: name lookup

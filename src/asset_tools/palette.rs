@@ -3,11 +3,10 @@
 //! SHP frames are palette indices; nothing in the file says which palette. The
 //! chain here — override, `art.ini Palette=`, source-archive family, filename
 //! heuristics, a fallback list, then any 768-byte entry in the source archive —
-//! is lifted from the mix-browser preview panel, which is the only place in the
-//! tree that implements it.
+//! is the only one in the tree.
 //!
-//! Two things are added, and they are the point of the lift: every candidate
-//! carries **why** it was proposed, and the winner carries its **alpha policy**.
+//! Every candidate carries **why** it was proposed, and the winner carries its
+//! **alpha policy**.
 //! A wrong palette produces art that looks entirely valid, so a caller that
 //! cannot see the reasoning cannot tell a good render from a plausible one.
 //!

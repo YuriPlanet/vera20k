@@ -22,7 +22,6 @@ use crate::map::entities::EntityCategory;
 use crate::rules::ini_parser::IniFile;
 use crate::rules::native_processing::{RulesLayerKind, RulesLayerStack};
 use crate::rules::ruleset::RuleSet;
-use crate::sim::combat::combat_targeting::greatest_threat_for_entity;
 use crate::sim::combat::greatest_threat::{
     HOUSE_SELECTS_OWN_COEFFICIENTS, ThreatCoefficients, ThreatReference, calculate_threat_score,
 };
@@ -221,7 +220,7 @@ fn build_rules_with_native_reader_context(unread_weapons: bool, context: &str) -
         signed(&native["e1_ctor"]["health"])
     );
     assert_eq!(
-        rules.weapon("M60").unwrap().range.to_num::<i32>() * 256,
+        rules.weapon("M60").unwrap().range_leptons,
         signed(&native["mission_inputs"][0]["e1_range"])
     );
     assert_eq!(
@@ -1048,7 +1047,6 @@ fn original_concrete_greatest_threat_matches_winner_latch_and_three_rng_streams(
             fixture.actor,
             mask,
             Some(xyz(&scan["point_xyz"])),
-            greatest_threat_for_entity,
         );
         assert_eq!(actual, expected, "{name}: original class-dispatched winner");
         let actor = fixture.sim.substrate.entities.get(fixture.actor).unwrap();
@@ -1899,7 +1897,6 @@ fn original_full_retail_rescue_matches_native_scan_hit_and_empty_prefix() {
                 fixture.actor,
                 ScanMission::Hunt,
                 Some(xyz(&scan["anchor_xyz"])),
-                greatest_threat_for_entity,
             );
             assert_eq!(actual, None, "{name}: original concrete scan return");
             assert_foot_projection(&fixture, row);

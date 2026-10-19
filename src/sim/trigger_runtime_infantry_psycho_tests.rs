@@ -308,7 +308,7 @@ fn psycho_stops_the_cell_on_an_ally_while_hunt_still_sees_the_enemy_behind_it() 
         );
     }
     let scan = |sim: &Simulation, mask| {
-        combat_targeting::acquire_best_target_for_entity(
+        combat_targeting::greatest_threat_for_entity(
             &sim.substrate.entities,
             &cells,
             &rules,
@@ -360,7 +360,7 @@ fn attack_friendlies_is_consumed_by_the_shared_ground_and_flat_scans() {
         );
         let cells = crate::sim::occupancy::OccupancyGrid::rebuild(&sim.substrate.entities);
         for mask in [ScanMission::Guard, ScanMission::Hunt] {
-            let result = combat_targeting::acquire_best_target_for_entity(
+            let result = combat_targeting::greatest_threat_for_entity(
                 &sim.substrate.entities,
                 &cells,
                 &rules,

@@ -1,5 +1,4 @@
-//! Streaming Bink soundtrack output shared by the shell movie player and the
-//! standalone `bik-player` tool.
+//! Streaming Bink soundtrack output for the shell movie player.
 //!
 //! The decoder runs on the UI thread and pushes interleaved `f32` samples into
 //! a lock-free single-producer/single-consumer ring; rodio's audio thread

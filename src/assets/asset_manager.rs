@@ -174,10 +174,9 @@ pub struct MixFileLoad {
 /// ## Two lookup families (F11)
 ///
 /// - **Current-resolution** — `get`, `get_ref`, `get_with_source`,
-///   `get_with_source_ref`, `resolve_ref`, `contains`, `archive`,
-///   `archive_entry_data`: re-resolve through the live archive list and
-///   `lookup_index`, so their answers CHANGE when a theater activates or
-///   archives are (de)registered.
+///   `get_with_source_ref`, `resolve_ref`, `contains`, `archive`: re-resolve
+///   through the live archive list and `lookup_index`, so their answers CHANGE
+///   when a theater activates or archives are (de)registered.
 /// - **Process-sticky** — `load_file_from_mix`: the native
 ///   `LoadFileFromMIX @ 0x005B40B0` normalized-CRC first-winner cache. The
 ///   first resolution wins for the life of the process, deliberately
@@ -775,12 +774,6 @@ impl AssetManager {
             .chain(self.archive_catalog.iter())
             .find(|archive| archive_name_matches(&archive.name, name))
             .map(|archive| (archive.name.as_str(), &archive.archive))
-    }
-
-    /// Read one entry from a specific archive by entry hash.
-    pub fn archive_entry_data(&self, archive_name: &str, entry_id: i32) -> Option<Vec<u8>> {
-        let archive = self.archive(archive_name)?;
-        archive.get_by_id(entry_id).map(|data| data.to_vec())
     }
 
     /// Visit all loaded archives in search order.

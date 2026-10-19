@@ -1,9 +1,8 @@
 //! `asset csf-get <KEY>` / `asset csf-grep <TEXT>` — read the retail string table.
 //!
 //! Every piece of UI text the game draws — unit names, tooltips, EVA lines,
-//! briefings, error dialogs — comes out of a `.csf`. Until this verb there was no
-//! headless way to read one: `src/bin/mix_browser_csf.rs` is an egui table, so
-//! answering "what does the game actually call this" meant launching a GUI.
+//! briefings, error dialogs — comes out of a `.csf`, so this answers "what does
+//! the game actually call this".
 //!
 //! ## Why both forms of every string are reported
 //!

@@ -2188,8 +2188,10 @@ impl Simulation {
     /// `0x00822CF2` is set (`0x006FBFF4..0x006FC018`), VoiceSelect (vt+0x360)
     /// through [`Self::selection_voice_request`].
     ///
-    /// RESIDUAL: the planning-node selection add (`0x00637840`) is not
-    /// ported; it only matters while a planning path is being built.
+    /// RESIDUAL: the planning-node selection add (`0x00637840`) runs in the
+    /// app's selection resolver, since planning mode is local; these logic
+    /// Selects skip it. It differs only when a reselected crewman, escapee or
+    /// parasite still holds a path while the local player is in planning mode.
     pub(crate) fn techno_select(
         &mut self,
         stable_id: u64,

@@ -684,3 +684,42 @@ impl Simulation {
         assert!(self.rebuild_dynamic_navigation(rules));
     }
 }
+
+/// Techno What_Action on a Cell's unforced Attack rung over retail data: the
+/// Grizzly's 105mm warhead AP has `Wall=yes` and the GI's SA does not, and
+/// GAWALL keeps the ObjectType constructor's LegalTarget. Only a wall whose
+/// owner is not allied with the asker's House admits it.
+#[test]
+fn a_wall_warhead_reaches_the_attack_rung_over_an_enemy_wall() {
+    let Some(fixture) = crate::rules::retail_ini_fixture::retail_battle_rules() else {
+        return;
+    };
+    let registry =
+        OverlayTypeRegistry::from_ini(&fixture.processed_rules, Some(fixture.fixed_art.as_ref()));
+    let wall = registry.id_for_name("GAWALL").expect("retail GAWALL");
+    assert!(
+        registry
+            .flags(wall)
+            .is_some_and(|flags| flags.legal_target && flags.wall)
+    );
+    let (mut sim, rules, gi) = Simulation::walk_cell_input_test_scene_with(fixture.rules, false);
+    let owner = sim.interner.get("Local").unwrap();
+    let tank = sim
+        .spawn_object("MTNK", "Local", 6, 4, 0, &rules)
+        .expect("retail MTNK spawns");
+    sim.resolve_type_handles(&rules);
+    let enemy = sim.interner.intern("Russians");
+    let (width, height) = {
+        let terrain = sim.resolved_terrain.as_ref().unwrap();
+        (terrain.width(), terrain.height())
+    };
+    let mut grid = crate::sim::overlay_grid::OverlayGrid::new(width, height);
+    grid.place_owned_wall(8, 4, wall, 0, enemy);
+    grid.place_owned_wall(6, 6, wall, 0, owner);
+    sim.overlay_grid = Some(grid);
+    let admits = |id, cell| sim.cell_attack_rung_admits(id, cell, &rules, Some(&registry));
+    assert!(admits(tank, (8, 4)));
+    assert!(!admits(gi, (8, 4)), "SA has no Wall=");
+    assert!(!admits(tank, (6, 6)), "an own wall");
+    assert!(!admits(tank, (10, 4)), "no overlay and no cliff");
+}

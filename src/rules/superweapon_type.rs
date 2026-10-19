@@ -134,7 +134,8 @@ pub struct SuperWeaponType {
     /// it, so it names the `[SuperWeaponTypes]` entry at that position
     /// (retail ChronoWarpSpecial: `ChronoSphere`, 3).
     pub pre_dependent: i32,
-    /// WeaponType reference (e.g., NukeCarrier for nuke).
+    /// `WeaponType=` (+9C), the WeaponType the ordered Rules processor
+    /// resolved (e.g., NukeCarrier for the nuke).
     pub weapon_type: Option<String>,
     /// Required secondary building (e.g., NukeSilo for nuke).
     pub aux_building: Option<String>,
@@ -204,9 +205,8 @@ impl SuperWeaponType {
                 .read_name("PreDependent", 0x28)
                 .and_then(SuperWeaponKind::from_ini_str)
                 .map_or(-1, SuperWeaponKind::native_index),
-            // ReadString 0x80 at `0x006CEA6D`, `0x006CED0F`, `0x006CEB7C`,
-            // `0x006CEBBE`.
-            weapon_type: section.read_name("WeaponType", 0x80).map(str::to_string),
+            // Constructor null; only the ordered Process owner reads it.
+            weapon_type: None,
             // ReadString 0x80, then BuildingTypeClass::FindOrAllocate
             // (`0x006CED1F`), which answers `none` and `<none>` null.
             aux_building: section

@@ -147,12 +147,11 @@ impl App {
             // draws one of its own — that leaves a single (software) cursor and
             // avoids the OS arrow + game arrow flicker at the clip edge. Where
             // the game draws *no* software cursor (the status screen, and any
-            // debug-pause / diagnostic overlay, since the sim is paused and
-            // `use_software_cursor` is false there), surface the OS cursor so
-            // egui debug panels stay interactive. Do NOT gate on
-            // `battlefield_drawn`: the sim stops redrawing while paused, so the
-            // battlefield is not "drawn" yet the debug overlay still needs a
-            // visible pointer.
+            // debug pause, since the sim is paused and `use_software_cursor`
+            // is false there), surface the OS cursor so a pointer stays
+            // visible. Do NOT gate on `battlefield_drawn`: the sim stops
+            // redrawing while paused, so the battlefield is not "drawn" yet the
+            // debug pause still needs a visible pointer.
             status_screen_drawn || !state.use_software_cursor()
         } else {
             status_screen_drawn
@@ -581,8 +580,6 @@ impl App {
                         .copy_to(&mut encoder, &output.texture);
                     render_output
                 };
-                #[cfg(feature = "dev-ui")]
-                Self::render_diagnostic_ui(state, &mut encoder, &view);
                 game_render_output = Some(game_output);
             }
             GameScreen::MissionResult { title, detail } => {
@@ -813,8 +810,6 @@ impl App {
             }
         }
 
-        #[cfg(feature = "dev-ui")]
-        Self::commit_diagnostic_ui_action(state);
         crate::app::loading::pump::after_loading_frame_presented(state);
 
         Ok(())

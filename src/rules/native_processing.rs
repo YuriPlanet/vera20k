@@ -785,12 +785,10 @@ impl ProcessedRulesLayers {
             })
     }
 
-    /// Retained +A8 speed, +A0 projectile, +A4 Damage and +AC Warhead after
-    /// the last Weapon sweep, in the actual WeaponType array order.
-    /// References remain native family indices until this read-only projection.
-    pub(crate) fn weapon_states(
-        &self,
-    ) -> impl Iterator<Item = (&str, i32, Option<&str>, i32, Option<&str>)> {
+    /// Each WeaponType's retained reads after the last Weapon sweep, in the
+    /// actual WeaponType array order. References remain native family indices
+    /// until this read-only projection.
+    pub(crate) fn weapon_states(&self) -> impl Iterator<Item = WeaponState<'_>> {
         let families = &self
             .native_type_construction_trace
             .registry_state()
@@ -800,24 +798,83 @@ impl ProcessedRulesLayers {
             .into_iter()
             .flatten()
             .map(move |member| {
-                let projectile = member.weapon.projectile.map(|index| {
-                    families[&RulesTypeFamily::Projectile][index]
-                        .native_stored_id
-                        .as_str()
-                });
-                let warhead = member.weapon.warhead.map(|index| {
-                    families[&RulesTypeFamily::Warhead][index]
-                        .native_stored_id
-                        .as_str()
-                });
-                (
-                    member.native_stored_id.as_str(),
-                    member.weapon.speed,
-                    projectile,
-                    member.weapon.damage,
-                    warhead,
-                )
+                let name = |family: RulesTypeFamily, index: usize| {
+                    families[&family][index].native_stored_id.as_str()
+                };
+                WeaponState {
+                    id: member.native_stored_id.as_str(),
+                    damage: member.weapon.damage,
+                    speed: member.weapon.speed,
+                    range_leptons: member.weapon.range_leptons,
+                    projectile: member
+                        .weapon
+                        .projectile
+                        .map(|index| name(RulesTypeFamily::Projectile, index)),
+                    warhead: member
+                        .weapon
+                        .warhead
+                        .map(|index| name(RulesTypeFamily::Warhead, index)),
+                }
             })
+    }
+
+    /// Each TechnoType's Image and pointer fields after every reached
+    /// ReadINI pass.
+    pub(crate) fn techno_reference_states(
+        &self,
+    ) -> impl Iterator<Item = (ObjectCategory, &str, &TechnoTypeReferences)> {
+        self.native_type_construction_trace
+            .registry_state()
+            .families
+            .iter()
+            .filter_map(|(family, members)| {
+                family.object_category().map(|category| (category, members))
+            })
+            .flat_map(|(category, members)| {
+                members.iter().map(move |member| {
+                    (
+                        category,
+                        member.native_stored_id.as_str(),
+                        &member.techno_references,
+                    )
+                })
+            })
+    }
+
+    /// Each SuperWeaponType's `WeaponType=` (+9C) after every reached pass.
+    pub(crate) fn super_weapon_weapon_states(&self) -> impl Iterator<Item = (&str, Option<&str>)> {
+        self.member_states(RulesTypeFamily::SuperWeapon, |member| {
+            member.super_weapon_weapon.as_deref()
+        })
+    }
+
+    /// Each BulletType's `ShrapnelWeapon=` (+2B4) after every reached pass.
+    pub(crate) fn shrapnel_weapon_states(&self) -> impl Iterator<Item = (&str, Option<&str>)> {
+        self.member_states(RulesTypeFamily::Projectile, |member| {
+            member.shrapnel_weapon.as_deref()
+        })
+    }
+
+    fn member_states<'a, T>(
+        &'a self,
+        family: RulesTypeFamily,
+        state: impl Fn(&'a ProcessedType) -> T + 'a,
+    ) -> impl Iterator<Item = (&'a str, T)> + 'a {
+        self.native_type_construction_trace
+            .registry_state()
+            .families
+            .get(&family)
+            .into_iter()
+            .flatten()
+            .map(move |member| (member.native_stored_id.as_str(), state(member)))
+    }
+
+    /// `[CombatDamage] DeathWeapon=` (Rules+FDC) after the last pass.
+    pub(crate) fn combat_damage_death_weapon(&self) -> Option<&str> {
+        self.native_type_construction_trace
+            .registry_state()
+            .rules_death_weapon
+            .as_deref()
     }
 
     pub(crate) fn warhead_anim_states(
@@ -1309,6 +1366,12 @@ pub(crate) struct NativeRulesRegistryState {
     rules_prerequisite_lists: [Vec<Prerequisite>; 6],
     rules_building_types: GeneralBuildingTypes,
     select_anim: SelectAnimRulesState,
+    /// `[CombatDamage] DeathWeapon=` (Rules+FDC), the stored ID of its
+    /// WeaponType: constructor null (`0x00666BB2`); ReadCombatDamage
+    /// (`0x0066C57E..0x0066C5A8`) keeps it on an empty ReadString128 and
+    /// otherwise stores the WeaponType factory's answer, null for `none`.
+    /// The destructive reset clears it with the other Type references.
+    rules_death_weapon: Option<String>,
 }
 
 impl Default for NativeRulesRegistryState {
@@ -1348,6 +1411,7 @@ impl Default for NativeRulesRegistryState {
             rules_prerequisite_lists: Default::default(),
             rules_building_types: GeneralBuildingTypes::default(),
             select_anim: SelectAnimRulesState::default(),
+            rules_death_weapon: None,
         }
     }
 }
@@ -1709,11 +1773,80 @@ struct ProcessedType {
     prerequisite: Vec<Prerequisite>,
     prerequisite_override: Vec<Prerequisite>,
     weapon_slots: WeaponSlots,
+    techno_references: TechnoTypeReferences,
     weapon: WeaponReadState,
     warhead_anim: WarheadAnimReadState,
     /// ParticleSystemType+294, the bound ParticleType's index: constructor -1
     /// (`0x006440B3`), rebound by every reached ReadINI (`0x0064430F..0x00644323`).
     holds_what: Option<usize>,
+    /// SuperWeaponType+9C `WeaponType=`, the stored ID of its WeaponType:
+    /// constructor null (`0x006CE5CB`); ReadINI (`0x006CEA4A..0x006CEA8C`)
+    /// keeps it on an empty ReadString128 and otherwise stores
+    /// `WeaponTypeClass::FindOrAllocate @ 0x00772FA0`, null for `none`.
+    super_weapon_weapon: Option<String>,
+    /// BulletType+2B4 `ShrapnelWeapon=`, read the same way by BulletType
+    /// ReadINI (`0x0046C2E1..0x0046C31F`) over the constructor's null
+    /// (`0x0046BC82`). Its `AirburstWeapon=` (+2B0, `0x0046C2B9`) is
+    /// allocated but not retained: VERA has no consumer of the airburst
+    /// weapon native loads at `0x00469ECE`.
+    shrapnel_weapon: Option<String>,
+}
+
+/// The ObjectType `Image` and TechnoType pointer fields each reached ReadINI
+/// pass replaces and later passes keep; `RuleSet` publishes them onto its
+/// `ObjectType`. Each pointer is a ReadString into 0x80 bytes with an empty
+/// default: an empty read keeps the field, and a value goes through its
+/// family's FindOrAllocate, which answers null for `none` and `<none>`
+/// (WeaponTypes `0x00772FA0`, BuildingTypes `0x004653C0`).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub(crate) struct TechnoTypeReferences {
+    /// ObjectType+1F8 (`0x005F92F8..0x005F933B`): ReadString into 25 bytes
+    /// over a copy of the retained text, which starts as the type's ID. It
+    /// names the type's fixed ART section and its asset.
+    image: String,
+    /// `DeathWeapon=` (+D18): TechnoType ReadINI `0x007122D8..0x00712311`
+    /// over the constructor's null (`0x007114AE`).
+    death_weapon: Option<String>,
+    /// `DeploysInto=` (+404): `0x00713279..0x00713297`, a BuildingType, over
+    /// the constructor's null (`0x00710D61`).
+    deploys_into: Option<String>,
+    /// `OccupyWeapon=` (+E04) and `EliteOccupyWeapon=` (+E20). Only
+    /// InfantryType ReadINI reads them (`0x00524102..0x0052417F`); the
+    /// InfantryType constructor nulls both (`0x00523890`, `0x005238B4`).
+    occupy_weapon: Option<String>,
+    elite_occupy_weapon: Option<String>,
+}
+
+impl TechnoTypeReferences {
+    fn new(native_stored_id: &str) -> Self {
+        Self {
+            image: native_stored_id.to_owned(),
+            death_weapon: None,
+            deploys_into: None,
+            occupy_weapon: None,
+            elite_occupy_weapon: None,
+        }
+    }
+
+    pub(crate) fn image(&self) -> &str {
+        &self.image
+    }
+
+    pub(crate) fn death_weapon(&self) -> Option<&str> {
+        self.death_weapon.as_deref()
+    }
+
+    pub(crate) fn deploys_into(&self) -> Option<&str> {
+        self.deploys_into.as_deref()
+    }
+
+    pub(crate) fn occupy_weapon(&self) -> Option<&str> {
+        self.occupy_weapon.as_deref()
+    }
+
+    pub(crate) fn elite_occupy_weapon(&self) -> Option<&str> {
+        self.elite_occupy_weapon.as_deref()
+    }
 }
 
 /// The weapon block of `TechnoTypeClass::ReadINI @ 0x00712170`
@@ -1768,12 +1901,26 @@ impl WeaponSlots {
     }
 }
 
+/// One WeaponType's retained reads ([`WeaponReadState`]) with its references
+/// as stored IDs, for `RuleSet`.
+pub(crate) struct WeaponState<'a> {
+    pub(crate) id: &'a str,
+    pub(crate) damage: i32,
+    pub(crate) speed: i32,
+    pub(crate) range_leptons: i32,
+    pub(crate) projectile: Option<&'a str>,
+    pub(crate) warhead: Option<&'a str>,
+}
+
 /// Fields needed by Weapon7729F0, retained on the same live Weapon object.
 /// The projectile handle is an allocation index, not a relookup of a truncated
 /// name: repeated names longer than 24 bytes can allocate distinct native types.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 struct WeaponReadState {
     speed: i32,
+    /// +B4, ReadRange (`0x00474620`) at `0x00772331` with the retained value
+    /// as its default, over the constructor's zero (`0x00771CB6`): leptons,
+    /// `-1` keeps the field.
     range_leptons: i32,
     projectile: Option<usize>,
     /// Weapon771C70 initializes +A4/+AC to zero/null. ReadINI7722D4..7722E8
@@ -1790,6 +1937,7 @@ impl ProcessedType {
             body: IniSection::new(native_stored_id.clone()),
             tech_level: crate::rules::object_type::DEFAULT_TECH_LEVEL,
             projectile_art: ProjectileArtState::new(&native_stored_id),
+            techno_references: TechnoTypeReferences::new(&native_stored_id),
             native_stored_id,
             country_color_scheme: 0,
             country_side_index: -1,
@@ -1814,6 +1962,8 @@ impl ProcessedType {
             weapon: WeaponReadState::default(),
             warhead_anim: WarheadAnimReadState::default(),
             holds_what: None,
+            super_weapon_weapon: None,
+            shrapnel_weapon: None,
         }
     }
 }
@@ -1857,6 +2007,7 @@ struct RulesPassProcessor {
     rules_prerequisite_lists: [Vec<Prerequisite>; 6],
     rules_building_types: GeneralBuildingTypes,
     select_anim: SelectAnimRulesState,
+    rules_death_weapon: Option<String>,
 }
 
 impl Default for RulesPassProcessor {
@@ -1902,6 +2053,7 @@ impl RulesPassProcessor {
             rules_prerequisite_lists: registry_state.rules_prerequisite_lists,
             rules_building_types: registry_state.rules_building_types,
             select_anim: registry_state.select_anim,
+            rules_death_weapon: registry_state.rules_death_weapon,
             ordinary: None,
             crate_rules: CrateRulesAccumulator::default(),
             powerups: PowerupsAccumulator::default(),
@@ -2638,7 +2790,12 @@ impl RulesPassProcessor {
             if let Some((_id, raw, _effective)) =
                 self.begin_rules_member_read(RulesTypeFamily::SuperWeapon, index, pass)
             {
-                let _ = self.resolve_scalar_from(&raw, "WeaponType", RulesTypeFamily::Weapon, 0x80);
+                if let Some(weapon) =
+                    self.resolve_scalar_from(&raw, "WeaponType", RulesTypeFamily::Weapon, 0x80)
+                {
+                    self.family_mut(RulesTypeFamily::SuperWeapon)[index].super_weapon_weapon =
+                        weapon;
+                }
                 let _ =
                     self.resolve_scalar_from(&raw, "AuxBuilding", RulesTypeFamily::Building, 0x80);
             }
@@ -2742,14 +2899,14 @@ impl RulesPassProcessor {
                     member.infantry_pips.apply_pass(&raw);
                     member.infantry_infiltration.apply_pass(&raw);
                 }
-                // Native ObjectType5F933B copies Rules Image into its 25-byte
-                // field (+1F8) using the retained field as default. The
-                // reached-body projection holds the last input, so applying
-                // that native cut here preserves the same image across missing
-                // keys and registry handoffs. It names each fixed ART section
-                // below; the later ART Image redirect is local to visual asset
-                // loading.
-                let image = effective.read_string("Image", &native_stored_id, 0x19);
+                // ObjectType ReadINI (`0x005F92F8..0x005F933B`) reads Image
+                // into its 25-byte +1F8 over a copy of the retained text, so a
+                // pass without the key keeps it. It names each fixed ART
+                // section below; the later ART Image redirect is local to
+                // visual asset loading.
+                let references = &mut self.family_mut(family)[index].techno_references;
+                let image = raw.read_string("Image", &references.image, 0x19);
+                references.image.clone_from(&image);
                 match family {
                     RulesTypeFamily::Building => {
                         let member = &mut self.families.get_mut(&family).unwrap()[index];
@@ -2826,18 +2983,26 @@ impl RulesPassProcessor {
                             .read_pass(fixed_art.section_or_empty(&image), has_turret);
                     }
                     RulesTypeFamily::Infantry => {
-                        let _ = self.resolve_scalar_from(
+                        if let Some(weapon) = self.resolve_scalar_from(
                             &raw,
                             "OccupyWeapon",
                             RulesTypeFamily::Weapon,
                             0x80,
-                        );
-                        let _ = self.resolve_scalar_from(
+                        ) {
+                            self.family_mut(family)[index]
+                                .techno_references
+                                .occupy_weapon = weapon;
+                        }
+                        if let Some(weapon) = self.resolve_scalar_from(
                             &raw,
                             "EliteOccupyWeapon",
                             RulesTypeFamily::Weapon,
                             0x80,
-                        );
+                        ) {
+                            self.family_mut(family)[index]
+                                .techno_references
+                                .elite_occupy_weapon = weapon;
+                        }
                         self.allocate_list_from(
                             &raw,
                             "DeadBodies",
@@ -2859,7 +3024,13 @@ impl RulesPassProcessor {
     }
 
     fn process_techno_base(&mut self, family: RulesTypeFamily, index: usize, raw: &IniSection) {
-        let _ = self.resolve_scalar_from(raw, "DeathWeapon", RulesTypeFamily::Weapon, 0x80);
+        if let Some(weapon) =
+            self.resolve_scalar_from(raw, "DeathWeapon", RulesTypeFamily::Weapon, 0x80)
+        {
+            self.family_mut(family)[index]
+                .techno_references
+                .death_weapon = weapon;
+        }
         self.allocate_list_from(raw, "DebrisTypes", RulesTypeFamily::VoxelAnimation, 0x80);
         self.allocate_list_from(raw, "DebrisAnims", RulesTypeFamily::Animation, 0x80);
 
@@ -2933,7 +3104,13 @@ impl RulesPassProcessor {
         self.family_mut(family)[index].weapon_slots = slots;
 
         self.allocate_list_from(raw, "Dock", RulesTypeFamily::Building, 0x80);
-        let _ = self.resolve_scalar_from(raw, "DeploysInto", RulesTypeFamily::Building, 0x80);
+        if let Some(building) =
+            self.resolve_scalar_from(raw, "DeploysInto", RulesTypeFamily::Building, 0x80)
+        {
+            self.family_mut(family)[index]
+                .techno_references
+                .deploys_into = building;
+        }
         let _ = self.resolve_scalar_from(raw, "UndeploysInto", RulesTypeFamily::Vehicle, 0x80);
         let _ = self.resolve_scalar_from(raw, "PowersUnit", RulesTypeFamily::Vehicle, 0x80);
         self.allocate_list_from(raw, "Explosion", RulesTypeFamily::Animation, 0x80);
@@ -3100,8 +3277,11 @@ impl RulesPassProcessor {
                     .projectile_art = art;
                 let _ =
                     self.resolve_scalar_from(&raw, "AirburstWeapon", RulesTypeFamily::Weapon, 0x80);
-                let _ =
-                    self.resolve_scalar_from(&raw, "ShrapnelWeapon", RulesTypeFamily::Weapon, 0x80);
+                if let Some(weapon) =
+                    self.resolve_scalar_from(&raw, "ShrapnelWeapon", RulesTypeFamily::Weapon, 0x80)
+                {
+                    self.family_mut(RulesTypeFamily::Projectile)[index].shrapnel_weapon = weapon;
+                }
             }
             index += 1;
         }
@@ -3243,7 +3423,11 @@ impl RulesPassProcessor {
         ] {
             let _ = self.resolve_scalar_from(section, key, RulesTypeFamily::Warhead, 0x80);
         }
-        let _ = self.resolve_scalar_from(section, "DeathWeapon", RulesTypeFamily::Weapon, 0x80);
+        if let Some(weapon) =
+            self.resolve_scalar_from(section, "DeathWeapon", RulesTypeFamily::Weapon, 0x80)
+        {
+            self.rules_death_weapon = weapon;
+        }
         let _ = self.resolve_scalar_from(
             section,
             "DrainAnimationType",
@@ -3486,6 +3670,7 @@ impl RulesPassProcessor {
                     rules_prerequisite_lists: self.rules_prerequisite_lists,
                     rules_building_types: self.rules_building_types,
                     select_anim: self.select_anim,
+                    rules_death_weapon: self.rules_death_weapon,
                 },
             },
             self.crate_rules.finish(),

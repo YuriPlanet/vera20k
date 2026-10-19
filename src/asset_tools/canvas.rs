@@ -6,7 +6,7 @@
 //! annotation shapes, burned-in 5x7 labels, and contact-sheet layout.
 //!
 //! Dependencies: `image` (PNG encode only) and `crate::render::bit_font` for the
-//! shared 5x7 glyph table. Deliberately has **no** dependency on wgpu, egui, or
+//! shared 5x7 glyph table. Deliberately has **no** dependency on wgpu or
 //! `GpuContext` — every function here runs headless and is unit testable with
 //! synthetic buffers, so the CLI works over SSH and in CI without a GPU.
 //!

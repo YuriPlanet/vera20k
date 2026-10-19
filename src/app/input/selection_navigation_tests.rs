@@ -434,6 +434,7 @@ fn apply_history_selection(
         std::mem::take(&mut input.selection_order),
         input.follow_target,
         step["before"]["placement"].as_bool().unwrap(),
+        false,
         mutation,
     );
     assert_eq!(
@@ -1182,6 +1183,7 @@ fn combatant_native_cleanup_boundaries_reconcile_without_resetting_map_scope() {
                 input.selection_order,
                 None,
                 false,
+                false,
                 &result.mutation,
             );
             assert_eq!(
@@ -1328,6 +1330,7 @@ fn combatant_histories_match_native_membership_scope_follow_and_voice_continuati
                         ordered,
                         follow,
                         false,
+                        false,
                         &SelectionMutation {
                             deselect: vec![step["id"].as_u64().unwrap()],
                             ..Default::default()
@@ -1405,6 +1408,7 @@ fn combatant_histories_match_native_membership_scope_follow_and_voice_continuati
                 ordered,
                 follow,
                 before["placement"].as_bool().unwrap(),
+                false,
                 &result.mutation,
             );
             assert_eq!(
@@ -2022,6 +2026,7 @@ fn execute_histories_match_selection_follow_modes_placement_and_camera() {
                     current,
                     follow,
                     row.placement,
+                    false,
                     &SelectionMutation {
                         clear: true,
                         select: vec![id],
@@ -2224,6 +2229,7 @@ fn snapshot_restores_singleton_anchor_and_retained_layer_order_for_next_key() {
         current,
         row.follow,
         false,
+        false,
         &SelectionMutation {
             clear: true,
             select: vec![candidate],
@@ -2285,6 +2291,7 @@ fn snapshot_restores_singleton_anchor_and_retained_layer_order_for_next_key() {
         Some(&rules),
         current,
         first.follow_target,
+        false,
         false,
         &SelectionMutation {
             clear: true,

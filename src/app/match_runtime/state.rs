@@ -52,7 +52,7 @@ pub(crate) struct MatchState {
     pub(crate) local_owner_override: Option<String>,
     /// Seeded empty-map sandbox keeps full map visibility while still locking control.
     pub(crate) sandbox_full_visibility: bool,
-    /// The debug pause (`J` hotkey / dev overlay): the simulation is frozen
+    /// The debug pause (`J` hotkey): the simulation is frozen
     /// without an in-scenario modal. Every modal transition ends it.
     pub(crate) debug_pause: bool,
     /// Effective simulation ticks per second — controls game speed.

@@ -23,7 +23,6 @@ pub(crate) struct InGameKeyEdge<'a> {
 pub(crate) fn in_game_key_edge(
     state: &mut AppState,
     edge: InGameKeyEdge<'_>,
-    dev_ui_consumed: bool,
     paused_at_event: bool,
 ) {
     let is_escape = matches!(edge.logical, Key::Named(NamedKey::Escape));
@@ -42,7 +41,7 @@ pub(crate) fn in_game_key_edge(
     }
     let owned_planning_release =
         !edge.state.is_pressed() && state.match_state.input.planning.owns_key(edge.physical);
-    if owned_planning_release || ((is_escape || !dev_ui_consumed) && (!locked || is_escape)) {
+    if owned_planning_release || !locked || is_escape {
         let planning_consumed = crate::app::input::planning_mode::key_edge(
             state,
             resolution,
@@ -63,7 +62,7 @@ pub(crate) fn in_game_key_edge(
         }
     }
     // Paused capture changes no held-key state, even on the closing Escape.
-    if paused_at_event || dev_ui_consumed {
+    if paused_at_event {
         return;
     }
     if edge.state.is_pressed() {

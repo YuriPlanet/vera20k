@@ -548,7 +548,6 @@ fn probe_arrow_edge(state: &mut AppState, locked: bool) -> Result<Value> {
                 repeat: false,
             },
             false,
-            false,
         );
         if edge_state.is_pressed() {
             ensure!(

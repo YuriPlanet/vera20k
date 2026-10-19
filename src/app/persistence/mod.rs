@@ -1,13 +1,9 @@
 //! Save-game repository, transactional restore, and process-lifetime persistence state.
 //!
-//! The repository owns every save-directory filesystem operation. The two
-//! existing "latest" policies are intentionally distinct: panel rows sort by
-//! the embedded snapshot timestamp, while quickload selects by filesystem
-//! modification time. Unifying them would be VERA-internal / gamemd equivalent
-//! UNCHECKED.
+//! The repository owns every save-directory filesystem operation. Quickload
+//! selects the newest save by filesystem modification time.
 //!
-//! F12 owner tree: optional diagnostic save metadata and options persistence live here
-//! beside the repository they drive.
+//! F12 owner tree: options persistence lives here beside the save repository.
 
 pub(crate) mod commands;
 pub(crate) mod options;
@@ -16,8 +12,6 @@ mod resource_load;
 pub(crate) use resource_load::{PreparedSavedGame, SavedGamePreparationView};
 
 use std::path::{Path, PathBuf};
-#[cfg(any(feature = "dev-ui", test))]
-use std::time::Instant;
 #[cfg(any(feature = "dev-overlays", test))]
 use std::time::SystemTime;
 
@@ -37,13 +31,6 @@ pub(crate) struct PersistenceState {
     /// render, and audio state are projections of this single retained value.
     pub(crate) options_profile: options_profile::RetailOptionsProfile,
     pub(crate) repository: SaveRepository,
-    #[cfg(any(feature = "dev-ui", test))]
-    pub(crate) save_list_cache: SaveListCache,
-    #[cfg(any(feature = "dev-ui", test))]
-    last_save_tick: Option<u64>,
-    #[cfg(any(feature = "dev-ui", test))]
-    last_save_instant: Option<Instant>,
-    pub(crate) last_loaded_save_path: Option<PathBuf>,
 }
 
 impl PersistenceState {
@@ -51,13 +38,6 @@ impl PersistenceState {
         Self {
             options_profile,
             repository: SaveRepository::new(),
-            #[cfg(any(feature = "dev-ui", test))]
-            save_list_cache: SaveListCache::new(),
-            #[cfg(any(feature = "dev-ui", test))]
-            last_save_tick: None,
-            #[cfg(any(feature = "dev-ui", test))]
-            last_save_instant: None,
-            last_loaded_save_path: None,
         }
     }
 
@@ -66,62 +46,7 @@ impl PersistenceState {
     pub(crate) fn isolate_capture_saves(&mut self, directory: &Path) -> std::io::Result<()> {
         std::fs::create_dir(directory)?;
         self.repository = SaveRepository::at(directory);
-        self.invalidate_save_list();
         Ok(())
-    }
-
-    /// A successful disk write and its UI bookkeeping are one persistence
-    /// operation. Failed writes preserve the previous last-save indication.
-    pub(crate) fn write_save(
-        &mut self,
-        filename: &str,
-        bytes: &[u8],
-        tick: u64,
-    ) -> Result<PathBuf, SaveWriteError> {
-        let path = self.repository.write_named(filename, bytes)?;
-        self.record_successful_save(tick);
-        Ok(path)
-    }
-
-    /// Explicit selected-row replacement shares successful-save bookkeeping.
-    pub(crate) fn overwrite_save(
-        &mut self,
-        path: &Path,
-        bytes: &[u8],
-        tick: u64,
-    ) -> Result<PathBuf, SaveWriteError> {
-        self.repository.overwrite_existing(path, bytes)?;
-        self.record_successful_save(tick);
-        Ok(path.to_path_buf())
-    }
-
-    fn record_successful_save(&mut self, _tick: u64) {
-        #[cfg(any(feature = "dev-ui", test))]
-        {
-            self.last_save_tick = Some(_tick);
-            self.last_save_instant = Some(Instant::now());
-            self.invalidate_save_list();
-        }
-    }
-
-    #[cfg(any(feature = "dev-ui", test))]
-    pub(crate) fn last_save_tick(&self) -> Option<u64> {
-        self.last_save_tick
-    }
-
-    #[cfg(any(feature = "dev-ui", test))]
-    pub(crate) fn last_save_instant(&self) -> Option<Instant> {
-        self.last_save_instant
-    }
-
-    #[cfg(any(feature = "dev-ui", test))]
-    pub(crate) fn refresh_save_list_if_dirty(&mut self) {
-        self.save_list_cache.refresh_if_dirty(&self.repository);
-    }
-
-    pub(crate) fn invalidate_save_list(&mut self) {
-        #[cfg(any(feature = "dev-ui", test))]
-        self.save_list_cache.invalidate();
     }
 }
 
@@ -414,38 +339,6 @@ pub(crate) struct SaveEntry {
     pub(crate) header: GameSnapshotHeader,
 }
 
-/// Optional diagnostic listing, refreshed only after explicit invalidation.
-#[cfg(any(feature = "dev-ui", test))]
-pub(crate) struct SaveListCache {
-    entries: Vec<SaveEntry>,
-    dirty: bool,
-}
-
-#[cfg(any(feature = "dev-ui", test))]
-impl SaveListCache {
-    fn new() -> Self {
-        Self {
-            entries: Vec::new(),
-            dirty: true,
-        }
-    }
-
-    fn invalidate(&mut self) {
-        self.dirty = true;
-    }
-
-    pub(crate) fn entries(&self) -> &[SaveEntry] {
-        &self.entries
-    }
-
-    fn refresh_if_dirty(&mut self, repository: &SaveRepository) {
-        if self.dirty {
-            self.entries = repository.panel_entries_by_embedded_time();
-            self.dirty = false;
-        }
-    }
-}
-
 /// Filesystem stage that failed while writing a named save. Only the
 /// `dev-overlays` save log reads it.
 #[cfg(any(feature = "dev-overlays", test))]
@@ -552,8 +445,12 @@ impl SaveRepository {
 
     /// Only an explicit existing repository row can be replaced. Stage the
     /// complete snapshot beside it, then publish with same-directory rename;
-    /// failure leaves the previous save and persistence bookkeeping intact.
-    fn overwrite_existing(&self, path: &Path, bytes: &[u8]) -> Result<(), SaveWriteError> {
+    /// failure leaves the previous save intact.
+    pub(crate) fn overwrite_existing(
+        &self,
+        path: &Path,
+        bytes: &[u8],
+    ) -> Result<(), SaveWriteError> {
         if path.parent() != Some(self.directory.as_path())
             || path.extension().and_then(|ext| ext.to_str()) != Some("bin")
         {
@@ -593,35 +490,9 @@ impl SaveRepository {
         path.exists()
     }
 
-    /// Panel policy: admit only valid snapshot headers and sort newest embedded
-    /// save timestamp first.
-    #[cfg(any(feature = "dev-ui", test))]
-    pub(crate) fn panel_entries_by_embedded_time(&self) -> Vec<SaveEntry> {
-        let Ok(directory) = std::fs::read_dir(&self.directory) else {
-            return Vec::new();
-        };
-        let mut entries = Vec::new();
-        for item in directory {
-            let Ok(item) = item else { continue };
-            let path = item.path();
-            if path.extension().and_then(|extension| extension.to_str()) != Some("bin") {
-                continue;
-            }
-            let Ok(bytes) = self.read(&path) else {
-                continue;
-            };
-            let Ok(header) = GameSnapshot::read_header(&bytes) else {
-                continue;
-            };
-            entries.push(SaveEntry { path, header });
-        }
-        sort_panel_entries_by_embedded_time(&mut entries);
-        entries
-    }
-
-    /// Native5596A0 browser metadata: filesystem write time is independent of
-    /// the diagnostic panel's embedded-time policy. The shared browser sorts
-    /// these records with the established retail comparator after adding New.
+    /// Native5596A0 browser metadata with each file's write time. The shared
+    /// browser sorts these records with the established retail comparator after
+    /// adding New.
     pub(crate) fn browser_entries(&self) -> Vec<(SaveEntry, u64)> {
         self.readable_entries().collect()
     }
@@ -671,11 +542,6 @@ impl SaveRepository {
             Some((path, item.metadata().ok()?.modified().ok()?))
         }))
     }
-}
-
-#[cfg(any(feature = "dev-ui", test))]
-fn sort_panel_entries_by_embedded_time(entries: &mut [SaveEntry]) {
-    entries.sort_by_key(|entry| std::cmp::Reverse(entry.header.save_timestamp));
 }
 
 #[cfg(any(feature = "dev-overlays", test))]
@@ -799,7 +665,6 @@ mod tests {
         overlay_render_index: Vec<OverlayEntry>,
         lighting_grid: CellLightGrid,
         in_game_menu: crate::ui::pause_menu::InGameMenuState,
-        persistence: PersistenceState,
     }
 
     impl RunningMatchTestState {
@@ -826,10 +691,6 @@ mod tests {
             frame_pacer.record_admitted_frame(32);
             let mut lighting_grid = CellLightGrid::new();
             lighting_grid.set_compat_tint((3, 4), [0.25, 0.5, 0.75]);
-            let mut persistence =
-                PersistenceState::new(options_profile::RetailOptionsProfile::default());
-            persistence.last_loaded_save_path = Some(PathBuf::from("before-load.bin"));
-            persistence.save_list_cache.dirty = false;
 
             Self {
                 runtime: crate::sim::runtime::SimRuntime::from_simulation(simulation),
@@ -847,7 +708,6 @@ mod tests {
                 in_game_menu: crate::ui::pause_menu::InGameMenuState::SavedGame(
                     crate::ui::skirmish_shell::SavedSeedMode::Load,
                 ),
-                persistence,
             }
         }
 
@@ -874,8 +734,6 @@ mod tests {
                     .collect(),
                 lighting_tint: self.lighting_grid.tint_or_default((3, 4)),
                 in_game_menu: self.in_game_menu,
-                last_loaded_save_path: self.persistence.last_loaded_save_path.clone(),
-                save_list_dirty: self.persistence.save_list_cache.dirty,
             }
         }
 
@@ -902,8 +760,6 @@ mod tests {
         overlay_render_index: Vec<(u16, u16, u8, u8)>,
         lighting_tint: [f32; 3],
         in_game_menu: crate::ui::pause_menu::InGameMenuState,
-        last_loaded_save_path: Option<PathBuf>,
-        save_list_dirty: bool,
     }
 
     mod factory_restore_tests;
@@ -1461,45 +1317,27 @@ mod tests {
     }
 
     #[test]
-    fn save_write_updates_readout_and_listing_only_after_success() {
-        let directory = isolated_directory("save-bookkeeping");
-        let mut persistence =
-            PersistenceState::new(options_profile::RetailOptionsProfile::default());
-        persistence.repository = SaveRepository::at(&directory);
-        persistence.refresh_save_list_if_dirty();
-        assert!(persistence.save_list_cache.entries().is_empty());
+    fn save_write_reports_the_failed_stage() {
+        let directory = isolated_directory("save-write-stage");
+        let repository = SaveRepository::at(&directory);
         let bytes = snapshot("exact description", 123);
-        let path = persistence.write_save("saved.bin", &bytes, 42).unwrap();
-        assert_eq!(persistence.repository.read(&path).unwrap(), bytes);
-        assert_eq!(persistence.last_save_tick(), Some(42));
-        assert!(persistence.last_save_instant().is_some());
-        persistence.refresh_save_list_if_dirty();
-        assert_eq!(persistence.save_list_cache.entries().len(), 1);
-        let saved_at = persistence.last_save_instant();
+        let path = repository.write_named("saved.bin", &bytes).unwrap();
+        assert_eq!(repository.read(&path).unwrap(), bytes);
 
         // A directory at the chosen file path forces the actual write stage to fail.
         std::fs::create_dir(directory.join("blocked.bin")).unwrap();
-        let error = persistence
-            .write_save("blocked.bin", &bytes, 99)
-            .unwrap_err();
+        let error = repository.write_named("blocked.bin", &bytes).unwrap_err();
         assert_eq!(error.stage(), SaveWriteStage::WriteFile);
-        assert_eq!(persistence.last_save_tick(), Some(42));
-        assert_eq!(persistence.last_save_instant(), saved_at);
-        assert!(!persistence.save_list_cache.dirty);
 
-        persistence.repository = SaveRepository::at(&path);
-        let error = persistence
-            .write_save("unreachable.bin", &bytes, 100)
+        let error = SaveRepository::at(&path)
+            .write_named("unreachable.bin", &bytes)
             .unwrap_err();
         assert_eq!(error.stage(), SaveWriteStage::CreateDirectory);
-        assert_eq!(persistence.last_save_tick(), Some(42));
-        assert_eq!(persistence.last_save_instant(), saved_at);
-        assert!(!persistence.save_list_cache.dirty);
         std::fs::remove_dir_all(directory).unwrap();
     }
 
     #[test]
-    fn quickload_and_panel_keep_explicit_latest_policies() {
+    fn quickload_selects_newest_modified_time_over_embedded_time() {
         let directory = isolated_directory("save-latest-policies");
         let repository = SaveRepository::at(&directory);
         let embedded_newer_path = repository
@@ -1528,9 +1366,6 @@ mod tests {
             )
             .expect("set embedded-older modification time");
 
-        let panel_entries = repository.panel_entries_by_embedded_time();
-        assert_eq!(panel_entries.len(), 2);
-        assert_eq!(panel_entries[0].path, embedded_newer_path);
         assert_eq!(
             repository.quickload_path_by_modified_time(),
             Some(embedded_older_path)
@@ -1540,7 +1375,7 @@ mod tests {
     }
 
     #[test]
-    fn repository_owns_write_read_panel_scan_and_delete() {
+    fn repository_owns_write_read_browser_scan_and_delete() {
         let directory = isolated_directory("save-repository");
         let repository = SaveRepository::at(&directory);
         let mut simulation = Simulation::new();
@@ -1555,10 +1390,10 @@ mod tests {
             bytes
         );
 
-        let entries = repository.panel_entries_by_embedded_time();
+        let entries = repository.browser_entries();
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].path, path);
-        assert_eq!(entries[0].header.description, "Northern ridge");
+        assert_eq!(entries[0].0.path, path);
+        assert_eq!(entries[0].0.header.description, "Northern ridge");
 
         repository.delete(&path).expect("delete repository fixture");
         assert!(!repository.exists(&path));

@@ -1,10 +1,7 @@
 //! `asset render` for TMP terrain templates — the isometric tile files.
 //!
-//! The mix-browser can already *look* at a template (`render_tmp_preview` in
-//! `src/bin/mix_browser_renderers.rs`), but it returns an `egui::ColorImage`, so
-//! nothing headless can keep the result. This module closes that gap: the same
-//! template, written to PNGs, plus the per-tile fields that decide how the cell
-//! behaves in the sim.
+//! The template is written to PNGs, plus the per-tile fields that decide how the
+//! cell behaves in the sim.
 //!
 //! Two layouts, because they answer different questions:
 //!

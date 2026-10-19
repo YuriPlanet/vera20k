@@ -80,6 +80,11 @@ pub struct WarheadType {
     /// `WarheadTypeClass+0x147` (ReadINI `0x0075d556`, key string
     /// `0x00847e00`).
     pub wood: bool,
+    /// `Fire=` -> `WarheadTypeClass+0x14C` (ReadINI `0x0075d5f2`, key string
+    /// `0x00836f04`) over the constructor's 0 (`0x0075cf83`). Techno
+    /// What_Action on a Cell keeps a Fire warhead off a destroyable cliff
+    /// (`0x00700908..0x00700924`).
+    pub fire: bool,
     /// Whether this warhead reaches a target installed in a bunker. The active
     /// receiver has category-specific linked-building/occupant semantics.
     /// `WarheadTypeClass+0x146` (ReadINI `0x0075d53c`, key string
@@ -332,6 +337,7 @@ impl WarheadType {
             delay_kill_at_max_f64,
             wall: section.read_bool("Wall", false),
             wood: section.read_bool("Wood", false),
+            fire: section.read_bool("Fire", false),
             penetrates_bunker: section.read_bool("PenetratesBunker", false),
             affects_allies: section.read_bool("AffectsAllies", true),
             psychic_damage: section.read_bool("PsychicDamage", false),

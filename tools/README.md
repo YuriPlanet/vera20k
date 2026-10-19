@@ -45,40 +45,14 @@ points; the exhaustive oracle/tool inventory remains tracked in issue #746.
 | Check shell UI matrices | [exact shell matrix](exact_shell_ui_matrix/README.md) |
 | Synchronize authoritative skill sources | `python tools/skill_sync.py --write`, then `--check` |
 
-## Optional UI builds
-
-Normal game and headless tool builds use no Cargo features. The standalone
-`mix-browser` and `bik-player` GUIs require `tools-ui`; enabling it does not
-enable the engine's diagnostic overlay. Build either tool through the runner,
-then resolve its executable rather than assuming a `target/` path:
-
-```sh
-python -m tools.cargo_run -- build --locked --release --features tools-ui --bin mix-browser
-python -m tools.cargo_run --resolve mix-browser --profile release
-python -m tools.cargo_run -- build --locked --release --features tools-ui --bin bik-player
-python -m tools.cargo_run --resolve bik-player --profile release
-```
-
-Run the resolved MIX browser directly. The Bink player accepts a filesystem path
-or an asset name as its first argument, and loads a `.bik` file dropped on its
-window. `asset render` remains available without
-`tools-ui`, including TMP rendering to PNG and JSON reports.
-
-The in-engine diagnostic overlay is separately opt-in with `dev-ui`:
-
-```sh
-python -m tools.cargo_run -- build --locked --release --features dev-ui --bin vera20k
-```
-
-egui, egui-wgpu, egui-winit and eframe belong only to the optional UI
-builds. Their packages remain in `Cargo.lock` so those builds stay reproducible.
+## Dev chord builds
 
 The default `dev-overlays` feature carries the Ctrl+Shift dev chord, including
-the renderer-native diagnostic overlays (cell grid, heightmap, pathgrid, unit
-inspector, fog), the debug pause and quicksave/quickload. Development builds,
+the renderer-native diagnostic overlays (cell grid, heightmap, pathgrid, foot
+path, fog), the debug pause and quicksave/quickload. Development builds,
 captures and tests keep it; captures send literal Ctrl+Shift+M/N for
-quicksave/quickload. `dev-ui` implies it. The release workflow builds `vera20k`
-with `--no-default-features`, so shipped binaries carry no dev chord; build that
+quicksave/quickload. The release workflow builds `vera20k` with
+`--no-default-features`, so shipped binaries carry no dev chord; build that
 configuration locally with:
 
 ```sh

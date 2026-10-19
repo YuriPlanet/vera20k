@@ -93,9 +93,6 @@ impl Simulation {
         // current house is distinct from the notification/viewer binding.
         ge.discovery
             .classify_owner(self.session.current_house == Some(ge.owner()));
-        if self.debug_event_logging {
-            ge.set_debug_logging(true);
-        }
 
         stamp_scoring_flags(ge, obj, rules);
         if let Some(object) = obj {
