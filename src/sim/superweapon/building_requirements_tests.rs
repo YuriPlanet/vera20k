@@ -2,8 +2,7 @@
 //! Source: GameLogicManagerTriggerSuperweaponTests.cs, AuxBuildings_BlockUseBeforeCostAndCharge
 //! and BlackWidowStructureBoundSuperweapons_FilterMutualExclusiveUpgradeState.
 //! These are synthetic Rust regressions, not Ares/native executable comparisons.
-//! Copyright (c) 2026 ra2-mono contributors; see
-//! ../../rules/superweapon_building_requirements.LICENSE.
+//! Contributed under VERA's GPLv3, from the author's earlier ra2-mono work.
 
 use super::*;
 use crate::rules::ini_parser::IniFile;

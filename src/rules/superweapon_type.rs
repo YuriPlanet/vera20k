@@ -223,9 +223,10 @@ impl SuperWeaponType {
 
 /// Ares `SW.AuxBuildings` (any present) and `SW.NegBuildings` (none present).
 ///
-/// Ported from ra2-mono's GameLogicManager.SuperweaponAvailability.cs,
-/// IsSuperweaponBlockedByMissingAuxBuildings / IsSuperweaponBlockedByNegativeBuildings.
-/// Copyright (c) 2026 ra2-mono contributors; see superweapon_building_requirements.LICENSE.
+/// Ported from the author's earlier ra2-mono work
+/// (GameLogicManager.SuperweaponAvailability.cs,
+/// IsSuperweaponBlockedByMissingAuxBuildings / IsSuperweaponBlockedByNegativeBuildings)
+/// and contributed under VERA's GPLv3.
 /// Presence is supplied by the host engine, not cached in a second world model.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct SuperWeaponBuildingRequirements {

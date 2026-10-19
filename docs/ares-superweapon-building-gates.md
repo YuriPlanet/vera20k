@@ -1,7 +1,8 @@
 # Optional Ares superweapon building gates
 
 This contribution ports the auxiliary/negative-building availability decision
-and two regression scenarios from the local MIT-licensed ra2-mono project.
+and two regression scenarios from the author's earlier ra2-mono work, and is
+contributed to VERA under this repository's GPLv3.
 It is independent of the GenericWarhead contribution and adds no new SW type.
 
 ```ini
@@ -24,7 +25,7 @@ VERA's ordered BuildingType allocation/binding, rather than a late string scan.
 
 ## Port provenance and adaptation
 
-Source files in the MIT-licensed ra2-mono checkout:
+Source files in the author's ra2-mono checkout:
 
 - `src/Ra2.Logic/GameLogicManager.SuperweaponAvailability.cs`:
   `IsSuperweaponBlockedByMissingAuxBuildings` and
@@ -33,9 +34,7 @@ Source files in the MIT-licensed ra2-mono checkout:
   `UnitDeliverySuperweapon_AuxBuildings_BlockUseBeforeCostAndCharge` and
   `BlackWidowStructureBoundSuperweapons_FilterMutualExclusiveUpgradeState`.
 
-The source's MIT notice is retained in
-`src/rules/superweapon_building_requirements.LICENSE`. The host repository's
-GPLv3 license remains in force. The test's original UnitDelivery payload and
+The test's original UnitDelivery payload and
 extended building `SuperWeapons` list are not ported here: synthetic
 PsychicReveal types and the two existing provider slots exercise the same
 availability/charge transaction and mutual-exclusion mechanism without those
