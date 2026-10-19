@@ -146,7 +146,7 @@ impl BridgeRecalcCatalog {
                 tile: i32::from(tile),
             })?
             .get(usize::from(variant))
-            .ok_or(BridgeRecalcCatalogError::Unavailable {
+            .ok_or_else(|| BridgeRecalcCatalogError::Unavailable {
                 tile,
                 reason: format!("missing registered TMP file {variant}"),
             })?
