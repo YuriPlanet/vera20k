@@ -309,11 +309,11 @@ fn whole_choices_match_native() {
             center: cell(&row["center"]),
             bounds: rect(&row["rect"]),
             buildings,
-            side_index: int(&row["side"]) as u8,
+            side_index: int(&row["side"]) as i32,
             country_bit: country_bit(country),
             tech_level: int(&row["tech"]) as i32,
             candidate_tech_levels: rules
-                .base_defense_types(int(&row["side"]) as u8)
+                .base_defense_types(int(&row["side"]) as i32)
                 .iter()
                 .map(|id| {
                     rules
@@ -377,7 +377,7 @@ fn production_state_feeds_the_choice_as_native() {
     let (left, top, width, height) = rect(&row["rect"]);
     let mut house = HouseState::new(
         owner,
-        int(&row["side"]) as u8,
+        int(&row["side"]) as i32,
         Some(country),
         false,
         0,

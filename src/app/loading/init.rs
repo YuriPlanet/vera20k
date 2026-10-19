@@ -20,7 +20,8 @@ use crate::app::loading::fresh_scenario::{
 #[cfg(test)]
 use crate::app::loading::init_helpers::load_rules_with_merged_ini;
 use crate::app::loading::init_helpers::{
-    build_tile_atlas, parse_debug_spawn_units_env, theater_ext_for,
+    DebugSpawnMarch, build_tile_atlas, cells_by_distance_from, parse_debug_spawn_march_env,
+    parse_debug_spawn_units_env, theater_ext_for,
 };
 use crate::app::match_bootstrap::LoadingStartup;
 use crate::sim::scenario_bootstrap::{
@@ -252,8 +253,8 @@ mod map_wall_owner_candidate_tests {
             map,
             &[(LaunchCountry::America, AiDifficulty::Easy)],
         );
-        launch.player_name = "VERA-OBSERVER".into();
-        launch.local.country = LaunchCountry::America;
+        launch.local_player_mut().name = "VERA-OBSERVER".into();
+        launch.local_slot_mut().country = LaunchCountry::America;
         launch.options.bases = false;
         launch.options.unit_count = 0;
         launch.options.short_game = false;
@@ -1974,8 +1975,9 @@ impl MapLoadInitial {
         // Stage the one Simulation before terrain Fill, as the match load does:
         // the prefix cursors, Fill and every later load constructor mutate the
         // identity that reaches gameplay.
-        let bound_scenario_prefix =
-            scenario_prefix_plan.bind_native_rules_receipt(native_rules_receipt);
+        let bound_scenario_prefix = scenario_prefix_plan
+            .bind_native_rules_receipt(native_rules_receipt, &match_launch_descriptor, &rules)
+            .expect("generated fixture launch Countries");
         let pixel_conversion_bounds =
             crate::util::pixel_conversion::PixelConversionBounds::default();
         let native_start_bounds =
@@ -2770,7 +2772,15 @@ pub(crate) fn load_map_from_initial(
         .as_ref()
         .and_then(|campaign| campaign.game_options());
     let fresh_prefix = if let Some(plan) = scenario_prefix_plan {
-        FreshScenarioPrefix::StockOffline(plan.bind_native_rules_receipt(native_rules_receipt))
+        FreshScenarioPrefix::StockOffline(
+            plan.bind_native_rules_receipt(
+                native_rules_receipt,
+                match_launch_descriptor
+                    .as_ref()
+                    .expect("noncampaign prefix retains launch"),
+                &rules,
+            )?,
+        )
     } else {
         let campaign = campaign
             .as_ref()
@@ -2843,6 +2853,14 @@ pub(crate) fn load_map_from_initial(
     // constructor now mutate the same Simulation identity that reaches gameplay.
     let (mut staged_simulation, scenario_prefix_projection) =
         bootstrap_rng.into_fresh_staged_simulation(&scenario_descriptor, fresh_prefix)?;
+    staged_simulation
+        .session
+        .set_game_mode(startup.session_mode());
+    if let LoadingStartup::Network(accepted) = &startup {
+        staged_simulation
+            .session
+            .install_network_timing(accepted.max_ahead_frames());
+    }
     staged_simulation.bind_shared_cell_dummy(shared_cell_dummy.clone());
     staged_simulation
         .session
@@ -2991,10 +3009,13 @@ pub(crate) fn load_map_from_initial(
         },
         variant_table_draws,
     );
-    // Parse house color assignments from map INI ([Houses] + per-house Color=).
-    // Color=<name> resolves against the rules `[Colors]` list (entry index).
+    // Campaigns retain authored house colors. Skirmish CreateHouses supplies
+    // player priorities and the Neutral/Special LightGrey schemes, even when
+    // the multiplayer map has no [Houses] section.
     let house_color_map: HouseColorMap = skirmish_launch_session
-        .map(|launch| house_color_map_for_launch_session(launch, &house_roster))
+        .map(|launch| {
+            house_color_map_for_launch_session(launch, &house_roster, &rules.color_schemes)
+        })
         .unwrap_or_else(|| house_roster.color_map());
     let bridge_destroyability_mode = skirmish_launch_session
         .map(|launch| BridgeDestroyabilityMode::SkirmishOrMultiplayer {
@@ -3215,8 +3236,16 @@ pub(crate) fn load_map_from_initial(
 
     // Optional debug spawn list for render testing.
     // Examples:
-    //   RA2_DEBUG_SPAWN_UNITS=1                  -> default list (HTNK,MTNK,E1)
-    //   RA2_DEBUG_SPAWN_UNITS=HTNK,MTNK,APOC
+    //   RA2_DEBUG_SPAWN_UNITS=1                      -> default list (HTNK,MTNK,E1), one each
+    //   RA2_DEBUG_SPAWN_UNITS=HTNK,MTNK,APOC         -> one of each
+    //   RA2_DEBUG_SPAWN_UNITS=HTNK:10000,MTNK:10000  -> 20,000 units at scale, nearest cells first
+    // A scale run on a base-less map should name one `[General] BaseUnit=` type
+    // (stock YR: AMCV, SMCV, PCV) first: `AMCV:1,HTNK:10000,MTNK:10000`. Without a
+    // counted building or tracked base unit the house holds nothing and the
+    // defeat gate ends the match about half a minute in.
+    // `RA2_DEBUG_SPAWN_MARCH=1` (or `=<rx>,<ry>`) then orders every placed object
+    // to attack-move across the map, which is what loads pathfinding; unset leaves
+    // the army standing.
     if let Some(debug_units) = parse_debug_spawn_units_env() {
         let ruleset = &rules;
         let owner: String = house_color_map
@@ -3242,23 +3271,19 @@ pub(crate) fn load_map_from_initial(
             .or_else(|| map_data.cells.first().map(|c| (c.rx, c.ry)))
             .unwrap_or((50, 50));
 
-        let offsets: &[(i32, i32)] = &[
-            (2, 2),
-            (4, 2),
-            (6, 2),
-            (2, 4),
-            (4, 4),
-            (6, 4),
-            (2, 6),
-            (4, 6),
-        ];
-        let mut spawned: u32 = 0;
-        for (i, type_id) in debug_units.iter().enumerate() {
-            let (ox, oy) = offsets[i % offsets.len()];
-            let rx = (anchor_rx as i32 + ox).max(0) as u16;
-            let ry = (anchor_ry as i32 + oy).max(0) as u16;
-            if staged_simulation
-                .spawn_object_with_overlay_registry(
+        let cells: Vec<(u16, u16)> = map_data.cells.iter().map(|c| (c.rx, c.ry)).collect();
+        let mut free_cells = cells_by_distance_from(&cells, (anchor_rx, anchor_ry)).into_iter();
+        let requested: usize = debug_units.iter().map(|(_, count)| *count).sum();
+        let mut placed_total = 0usize;
+        let mut placed_ids: Vec<u64> = Vec::with_capacity(requested);
+        let mut placed_by_type: Vec<String> = Vec::with_capacity(debug_units.len());
+        for (type_id, count) in &debug_units {
+            let mut placed = 0usize;
+            for _ in 0..*count {
+                let Some((rx, ry)) = free_cells.next() else {
+                    break;
+                };
+                if let Some(id) = staged_simulation.spawn_object_with_overlay_registry(
                     type_id,
                     &owner,
                     rx,
@@ -3266,22 +3291,54 @@ pub(crate) fn load_map_from_initial(
                     64,
                     ruleset,
                     &overlay_registry,
-                )
-                .is_some()
-            {
-                spawned += 1;
-            } else {
-                log::warn!("Debug spawn failed for '{}'", type_id);
+                ) {
+                    placed += 1;
+                    placed_ids.push(id);
+                }
             }
+            placed_total += placed;
+            placed_by_type.push(format!("{type_id}={placed}/{count}"));
         }
-        if spawned > 0 {
+        let message = format!(
+            "Debug-spawned {placed_total} of {requested} unit(s) for owner={} near ({anchor_rx},{anchor_ry}): {}",
+            owner,
+            placed_by_type.join(" ")
+        );
+        if placed_total == 0 {
+            log::warn!("{message} — no cell accepted a unit");
+        } else {
+            log::info!("{message}");
+        }
+
+        if let Some(march) = parse_debug_spawn_march_env() {
+            let destination = match march {
+                DebugSpawnMarch::FarSide => {
+                    // Mirror the anchor through the map's own cell extent. The
+                    // diamond spans twice the `Size=` rectangle, so the header
+                    // width is not its far edge.
+                    let (min_x, max_x) = cells
+                        .iter()
+                        .fold((u16::MAX, 0u16), |(lo, hi), &(x, _)| (lo.min(x), hi.max(x)));
+                    let (min_y, max_y) = cells
+                        .iter()
+                        .fold((u16::MAX, 0u16), |(lo, hi), &(_, y)| (lo.min(y), hi.max(y)));
+                    let far = |lo: u16, hi: u16, from: u16| -> u16 {
+                        (i32::from(lo) + i32::from(hi) - i32::from(from)).clamp(0, 511) as u16
+                    };
+                    (far(min_x, max_x, anchor_rx), far(min_y, max_y, anchor_ry))
+                }
+                DebugSpawnMarch::Cell(rx, ry) => (rx, ry),
+            };
+            let ordered = crate::app::input::commands::schedule_stress_attack_moves(
+                &mut staged_simulation,
+                &owner,
+                &placed_ids,
+                destination,
+            );
             log::info!(
-                "Debug-spawned {} unit(s) for owner={} near ({},{}): {:?}",
-                spawned,
-                owner,
-                anchor_rx,
-                anchor_ry,
-                debug_units
+                "Debug stress march: {ordered} of {placed_total} object(s) queued to attack-move toward ({},{})",
+                destination.0,
+                destination.1
             );
         }
     }

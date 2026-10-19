@@ -141,7 +141,7 @@ impl Simulation {
     fn debug_local_owner(&self) -> Option<InternedId> {
         self.session.current_house.filter(|owner| {
             self.houses.get(owner).is_some_and(|house| {
-                !house.is_defeated && house.is_controlled_by_human(self.session.game_mode_nonzero)
+                !house.is_defeated && house.is_controlled_by_human(self.session.game_mode_nonzero())
             })
         })
     }

@@ -20,7 +20,9 @@ fn loss_threshold_events_poll_recorded_losses_and_create_real_reinforcements() {
 
     for (kind, victim_type) in [(15, "CABHUT"), (16, "TAGUNIT")] {
         let (mut sim, rules, overlay, houses) = event_ingress_fixture();
-        sim.session.game_mode_nonzero = false;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false),
+        );
         for house in sim.houses.values_mut() {
             house.is_human = true;
         }
@@ -122,7 +124,8 @@ fn loss_threshold_events_poll_recorded_losses_and_create_real_reinforcements() {
 #[test]
 fn funds_event_runs_from_house_rung_after_a_spend() {
     let (mut sim, rules, overlay, houses) = event_ingress_fixture();
-    sim.session.game_mode_nonzero = false;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false));
     for house in sim.houses.values_mut() {
         house.is_human = true;
     }
@@ -160,7 +163,8 @@ fn funds_event_runs_from_house_rung_after_a_spend() {
 #[test]
 fn building_loss_event_waits_for_the_real_destructor_and_house_poll() {
     let (mut sim, rules, overlay, houses) = event_ingress_fixture();
-    sim.session.game_mode_nonzero = false;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false));
     for house in sim.houses.values_mut() {
         house.is_human = true;
     }
@@ -223,7 +227,8 @@ fn naval_land_events_poll_final_tracking_removal_from_the_master_house_rung() {
         crate::sim::house_state::HouseState::new(owner, 0, Some(country), true, 0, 10),
     );
     sim.session.house_order.push(owner);
-    sim.session.game_mode_nonzero = false;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false));
     let navy = sim
         .spawn_object_limbo_at_height("NAVAL", "House0", 15, 15, 0, 0, &rules)
         .unwrap();
@@ -2955,7 +2960,8 @@ fn mission_announce_then_end_uses_the_player_house_and_shared_timer() {
     );
     sim.session.house_order = vec![player, other];
     sim.session.current_house = Some(player);
-    sim.session.game_mode_nonzero = false;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false));
     let map = trigger_fixture_map(
         "[Triggers]\nRESULT=OtherCountry,<none>,End Mission,0,1,1,1,0\n\
          [Events]\nRESULT=1,47,0,1\n[Actions]\nRESULT=2,67,0,0,0,0,0,0,A,69,0,0,0,0,0,0,A\n\

@@ -238,7 +238,7 @@ impl ResolvedTerrainGrid {
         self.destroyable_cliff_catalog = build_destroyable_cliff_catalog(theater, assets, rules);
         self.bridge_recalc_catalog = match (theater, assets, rules) {
             (Some(theater), Some(assets), Some(rules)) => {
-                Some(Arc::new(BridgeRecalcCatalog::for_runtime_bridges(
+                Some(Arc::new(BridgeRecalcCatalog::for_runtime_terrain(
                     theater,
                     assets,
                     rules,

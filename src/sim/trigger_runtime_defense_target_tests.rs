@@ -19,7 +19,8 @@ fn fixture() -> (Simulation, InternedId, InternedId) {
             .insert(id, HouseState::new(id, 0, None, false, 0, 10));
         sim.session.house_order.push(id);
     }
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     (sim, owner, other)
 }
 

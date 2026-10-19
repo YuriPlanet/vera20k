@@ -684,7 +684,14 @@
        both columns — the ledger is the evidence for the pies, not a third
        view of the match. */
     grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr);
-    grid-template-rows: auto minmax(0, 1fr);
+    /* Row 1: the match report, row 2: the whole-match timeline, row 3: the
+       ledger beside the house table. The timeline gets its own auto row so a
+       fixed-height chart is never squeezed by the 1 fr ledger row. */
+    /* Content-sized rows. A definite page height plus `auto`/`1 fr` tracks
+       squeezes whichever row the viewport cannot fit into its header; the
+       report page scrolls instead, so every panel keeps its natural height. */
+    grid-template-rows: none;
+    grid-auto-rows: max-content;
     grid-template-areas: none;
     gap: 10px;
     padding: 10px 12px 12px;
@@ -694,7 +701,8 @@
   main.report .panel { grid-area: auto !important; }
   /* The pies span both columns. `!important` because the reset above is
      `grid-area` with it, which would otherwise erase this span. */
-  main.report > .panel:first-of-type { grid-column: 1 / -1 !important; }
+  main.report > .panel:first-of-type,
+  main.report > .panel.history-panel { grid-column: 1 / -1 !important; }
   /* Two halves, one pie each: side by side they fill the panel instead of
      bunching against the left edge and leaving a dead column on the right. */
   .report-grid {
@@ -705,7 +713,7 @@
   }
   /* No report yet: one row only, so the empty table track does not stretch.
      `[hidden]` needs the rule below because `.panel` sets `display: flex`. */
-  main.report.only-pies { grid-template-rows: auto; }
+  main.report.only-pies { grid-template-rows: none; }
   main.report .panel[hidden] { display: none; }
   main.report .pie { max-width: none; }
   main.report .pie-canvas svg { width: 220px; height: 220px; }
@@ -1468,3 +1476,35 @@
   @media (max-width: 520px) {
     .cheat-grid { grid-template-columns: minmax(0, 1fr); }
   }
+/* Whole-match timeline (report page): tick axis, 1 Hz samples, brush zoom. */
+.history-chart { width: 100%; height: 220px; flex: 0 0 auto; }
+.history-chart svg { width: 100%; height: 100%; display: block; touch-action: none; }
+.history-chart .hgrid { stroke: rgba(140, 170, 220, .12); stroke-width: 1; }
+.history-chart .haxis { fill: var(--dim, #8ea0c4); font-size: 10px; }
+.history-chart .hline { fill: none; stroke-width: 1.6; }
+.history-chart .hband { fill: rgba(169, 139, 255, .16); stroke: none; }
+.history-chart .hevent { stroke: rgba(140, 170, 220, .35); stroke-width: 1; stroke-dasharray: 3 3; }
+.history-chart .hsel { stroke: var(--accent, #49b6ff); stroke-width: 1; }
+.history-chart .hdot { r: 3; }
+
+
+/* One-line facts under the timeline. Five stacked rows pushed the panel taller
+   than the chart it describes; they wrap only when the viewport is too narrow. */
+.history-facts { display: flex; flex-wrap: wrap; gap: 4px 20px; align-items: baseline; margin-top: 6px; font-size: 12px; }
+.history-facts .hf { display: inline-flex; gap: 6px; align-items: baseline; white-space: nowrap; }
+.history-facts .hk { color: var(--dim, #8ea0c4); }
+.history-facts b { font-variant-numeric: tabular-nums; }
+
+/* Marks on the timeline axis: this tick has a full report-grade sample. */
+.history-chart .hmark { fill: var(--accent, #49b6ff); opacity: .55; }
+
+/* Hover readout and the not-ready bubble. */
+.history-chart { position: relative; }
+.history-tip { position: absolute; z-index: 4; pointer-events: none; max-width: 260px;
+  padding: 5px 8px; border: 1px solid var(--glass-edge, #243252); border-radius: 6px;
+  background: rgba(10, 16, 32, .95); color: var(--text, #dce7f8);
+  font-size: 11px; line-height: 1.5; font-variant-numeric: tabular-nums; }
+.ui-bubble { position: fixed; z-index: 40; max-width: 210px; padding: 6px 10px;
+  border: 1px solid var(--glass-edge, #243252); border-radius: 8px;
+  background: rgba(10, 16, 32, .96); color: var(--text, #dce7f8);
+  font-size: 12px; box-shadow: 0 10px 30px -12px rgba(2, 6, 20, .9); }

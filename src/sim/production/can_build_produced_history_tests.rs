@@ -100,7 +100,9 @@ fn record_and_both_lifetime_limit_queries_match_original_retained_histories() {
         let mut sim = Simulation::new();
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         let country = sim.interner.intern("C0");
         let owner = sim.interner.intern("H0");
         let other = sim.interner.intern("H1");

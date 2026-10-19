@@ -283,7 +283,11 @@ fn damage_feedback_matches_original_draws_house_admission_coordinates_and_contin
         let mut house = HouseState::new(owner, 0, None, input["human"].as_bool().unwrap(), 0, 10);
         house.player_control = input["player_control"].as_bool().unwrap();
         sim.houses.insert(owner, house);
-        sim.session.game_mode_nonzero = input["game_mode"].as_u64().unwrap() != 0;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+                input["game_mode"].as_u64().unwrap() != 0,
+            ),
+        );
         sim.session.current_house = Some(if input["current_house_equal"].as_bool().unwrap() {
             owner
         } else {

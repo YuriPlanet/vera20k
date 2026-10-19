@@ -38,7 +38,8 @@ fn fixture_from_sources(ini: &IniFile, art: &IniFile) -> Fixture {
     rules.install_art_data(crate::rules::art_data::ArtRegistry::from_ini(art));
     let mut sim = Simulation::new();
     let path = crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     let owner = sim.interner.intern("AIHouse");
     let mut house = HouseState::new(owner, 0, None, false, 1_000, 10);
     house.enable_ai_deploy_latches();

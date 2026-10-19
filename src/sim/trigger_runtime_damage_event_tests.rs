@@ -337,7 +337,8 @@ fn retail_damage_scene(route: &Value) -> Option<RetailDamageScene> {
     let roster =
         crate::map::houses::parse_house_roster(&map.ini, &rules.color_schemes, Some(&rules));
     let mut sim = Simulation::with_seed(31);
-    sim.session.game_mode_nonzero = false;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false));
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
     crate::sim::scenario_bootstrap::initialize_map_roster_houses(

@@ -165,7 +165,11 @@ fn sim_for(row: &Value, rules: &RuleSet) -> (Simulation, InternedId) {
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
-    sim.session.game_mode_nonzero = house["game_mode"].as_i64().unwrap_or(1) != 0;
+    sim.session.set_game_mode(
+        crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+            house["game_mode"].as_i64().unwrap_or(1) != 0,
+        ),
+    );
     sim.session.game_options.super_weapons = flag("super_weapons", true);
     let owner = sim.interner.intern("H0");
     let other = sim.interner.intern("H1");
@@ -403,7 +407,8 @@ fn retail_slave_miner_meets_proc_and_docks_limit_harriers() {
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     let on_map = |sim: &mut Simulation, house, category, name: &str, count| {
         let type_id = sim.interner.get(name).unwrap();
         sim.houses

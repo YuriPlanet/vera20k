@@ -56,7 +56,8 @@ fn retail_runtime() -> Option<(SimRuntime, [u64; 2])> {
     sim.hash_state_every(std::num::NonZeroU64::MIN);
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     sim.session.game_options.short_game = true;
     for (country, human) in [("Americans", true), ("British", false)] {
         let owner = sim.intern(country);

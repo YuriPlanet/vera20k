@@ -1715,6 +1715,53 @@ def _actor(value: Any, label: str, *, building_state: bool = True,
     return identity, owner
 
 
+def _terrain_render(value: Any, label: str) -> None:
+    """Read-only CPU inputs sampled after a draw, never reconstructed pixels."""
+    if value is None:
+        return  # This committed step has not been drawn.
+    row = require_object(value, label)
+    require_exact_keys(row, ('phase', 'variant', 'tactical_variant', 'atlas_key', 'atlas_ready',
+                             'exact_atlas_uv', 'palette_light', 'cell_center_world',
+                             'camera_top_left', 'a_bound', 'a_center'), label)
+    require_value(row['phase'], 'after_draw', f'{label}.phase')
+    for key in ('variant', 'tactical_variant', 'a_center'):
+        if row[key] is not None:
+            _bounded_int(row[key], f'{label}.{key}', 0, 255)
+    for key in ('atlas_ready', 'a_bound'):
+        if type(row[key]) is not bool:
+            raise ValidationError(f'{label}.{key} must be boolean')
+    if not row['a_bound'] and row['a_center'] is not None:
+        raise ValidationError(f'{label}.a_center requires the bound A buffer')
+    if row['atlas_key'] is not None:
+        key = require_array(row['atlas_key'], f'{label}.atlas_key')
+        if len(key) != 3:
+            raise ValidationError(f'{label}.atlas_key must contain tile, subtile and variant')
+        for component, maximum in zip(key, (65535, 255, 255)):
+            _bounded_int(component, f'{label}.atlas_key', 0, maximum)
+    if row['palette_light'] is not None:
+        words = require_array(row['palette_light'], f'{label}.palette_light')
+        if len(words) != 4:
+            raise ValidationError(f'{label}.palette_light must contain four words')
+        for word in words:
+            _bounded_int(word, f'{label}.palette_light', 0, (1 << 32) - 1)
+    pairs = [('camera_top_left', row['camera_top_left'])]
+    if row['cell_center_world'] is not None:
+        pairs.append(('cell_center_world', row['cell_center_world']))
+    if row['exact_atlas_uv'] is not None:
+        if not row['atlas_ready'] or row['atlas_key'] is None:
+            raise ValidationError(f'{label}.exact_atlas_uv requires the atlas and exact key')
+        uv = require_object(row['exact_atlas_uv'], f'{label}.exact_atlas_uv')
+        require_exact_keys(uv, ('origin', 'size', 'pixel_size', 'draw_offset'),
+                           f'{label}.exact_atlas_uv')
+        pairs.extend((f'exact_atlas_uv.{key}', pair) for key, pair in uv.items())
+    for key, value in pairs:
+        pair = require_array(value, f'{label}.{key}')
+        if len(pair) != 2:
+            raise ValidationError(f'{label}.{key} must contain two finite numbers')
+        for component in pair:
+            _finite_number(component, f'{label}.{key}')
+
+
 def _terrain(value: Any, expected_cell: Any, label: str) -> None:
     cell = require_object(value, label)
     fields = ('final_tile_index', 'final_sub_tile', 'presentation_tile', 'level', 'slope',
@@ -1722,7 +1769,11 @@ def _terrain(value: Any, expected_cell: Any, label: str) -> None:
     extension = ('overlay', 'terrain_object') if 'overlay' in cell or 'terrain_object' in cell else ()
     visibility_extension = ('local_visibility',) if 'local_visibility' in cell else ()
     path_extension = ('path_grid',) if 'path_grid' in cell else ()
-    require_exact_keys(cell, ('cell', 'allocated', *fields, *extension, *visibility_extension, *path_extension), label)
+    render_extension = ('render',) if 'render' in cell else ()
+    require_exact_keys(cell, ('cell', 'allocated', *fields, *extension, *visibility_extension,
+                              *path_extension, *render_extension), label)
+    if render_extension:
+        _terrain_render(cell['render'], f'{label}.render')
     # PathGrid is a separate current projection. Null means no current grid or
     # no cell at this coordinate; it must not be inferred from bridge terrain.
     if path_extension and cell['path_grid'] is not None:

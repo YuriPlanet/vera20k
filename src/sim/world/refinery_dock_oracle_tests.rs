@@ -235,7 +235,11 @@ pub(super) fn scene_with(input: &Value, rules: RuleSet, ini: &IniFile) -> Scene 
         house.country = Some(owner);
     }
     sim.houses.insert(owner, house);
-    sim.session.game_mode_nonzero = input["game_mode"].as_u64().unwrap_or(1) != 0;
+    sim.session.set_game_mode(
+        crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+            input["game_mode"].as_u64().unwrap_or(1) != 0,
+        ),
+    );
     sim.session.binary_frame = input["frame"].as_u64().unwrap_or(200) as u32;
     let dock_type = if input["dock_unload"] == false {
         "GAREFX"

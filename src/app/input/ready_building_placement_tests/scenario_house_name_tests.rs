@@ -61,9 +61,9 @@ fn authored_computer_barracks_is_captured_and_delivers_paid_e2() {
     std::fs::write(&path, bytes).unwrap();
     let map_name = path.to_str().unwrap();
     let mut launch = battle_session(map_name, &[(LaunchCountry::Russia, AiDifficulty::Easy)]);
-    launch.player_name = "Computer".to_owned();
-    launch.local.country = LaunchCountry::Russia;
-    launch.local.start_position = LaunchStartPosition::Position(0);
+    launch.local_player_mut().name = "Computer".to_owned();
+    launch.local_slot_mut().country = LaunchCountry::Russia;
+    launch.local_slot_mut().start_position = LaunchStartPosition::Position(0);
     launch.opponents[0].start_position = LaunchStartPosition::Position(1);
     launch.options.starting_credits = 5000;
     launch.options.unit_count = 0;

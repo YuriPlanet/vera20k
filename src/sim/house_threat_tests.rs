@@ -95,7 +95,8 @@ fn fixture_with_additions(
         })
         .collect();
     sim.session.house_order = owners;
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     (sim, rules, registry)
 }
 

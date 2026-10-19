@@ -625,7 +625,11 @@ fn busy_factory_exit_original_rows_compare_receiver_archive_restoration_and_rng(
         sim.session.map_width = 128;
         sim.session.map_height = 128;
         sim.session.binary_frame = before["product"]["frame"].as_u64().unwrap() as u32;
-        sim.session.game_mode_nonzero = int(&before["actual_game_mode"]) != 0;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+                int(&before["actual_game_mode"]) != 0,
+            ),
+        );
         let owner = sim.intern("Americans");
         sim.houses.insert(
             owner,

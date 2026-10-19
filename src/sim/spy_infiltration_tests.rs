@@ -101,7 +101,8 @@ pub fn replay(row: &Value) -> Replay {
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     let local = row["local"].as_str().unwrap();
     for (role, name) in HOUSES {
         let id = sim.interner.intern(name);
@@ -351,7 +352,8 @@ fn arena(rules: &RuleSet) -> (Simulation, crate::sim::pathfinding::PathGrid) {
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
     sim.input_delay_ticks = 0;
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     sim.session.current_house = sim.interner.get("Americans");
     let grid = sim
         .path_grid_snapshot()

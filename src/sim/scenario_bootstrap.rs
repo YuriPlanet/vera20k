@@ -361,6 +361,7 @@ pub enum StockOfflineStartCallbackFamily {
 /// assignment are projected later; projection is deliberately draw-free.
 #[derive(Debug)]
 pub struct PreFillScenarioPrefixPlan {
+    start_header: crate::map::preview::ScenarioStartHeader,
     projection: StockOfflinePrefixProjection,
     #[cfg(any(test, feature = "test-support"))]
     first_gathered_starts: Vec<Waypoint>,
@@ -467,6 +468,8 @@ pub enum PreFillScenarioPrefixPlanError {
     },
     #[error("map Size does not produce a valid resized pre-Fill cell rectangle")]
     InvalidMapCellExtent,
+    #[error("accepted launch Country index {index} is absent after scenario Rules reset")]
+    MissingLaunchCountry { index: u16 },
 }
 
 impl PreFillScenarioPrefixPlan {
@@ -511,7 +514,10 @@ impl PreFillScenarioPrefixPlan {
     pub fn bind_native_rules_receipt(
         self,
         receipt: crate::rules::process_owner::NativeScenarioRulesReceipt,
-    ) -> BoundStockOfflineFreshPrefixPlan {
+        launch: &MatchLaunchDescriptor,
+        rules: &RuleSet,
+    ) -> Result<BoundStockOfflineFreshPrefixPlan, PreFillScenarioPrefixPlanError> {
+        launch.validate_countries(rules)?;
         let (early, rebuilt) = receipt.into_parts();
         let (early_events, first_super_weapon_type_count) = early.into_parts();
         let (rebuilt_events, final_super_weapon_type_count) = rebuilt.into_parts();
@@ -525,10 +531,10 @@ impl PreFillScenarioPrefixPlan {
             self.native_resize_width,
             self.native_resize_height,
         );
-        BoundStockOfflineFreshPrefixPlan {
+        Ok(BoundStockOfflineFreshPrefixPlan {
             scenario: self,
             native_ids,
-        }
+        })
     }
 
     /// Validate and transfer the one pre-loading RNG prefix to the stream that
@@ -598,8 +604,16 @@ pub fn prepare_stock_offline_scenario_prefix_plan(
 ) -> Result<PreFillScenarioPrefixPlan, PreFillScenarioPrefixPlanError> {
     let session = descriptor.session();
     let family = stock_offline_start_callback_family(session)?;
-    let launch_participant_count = 1usize + session.opponents.len();
-    let roster_start_count = session.pre_fill_house_roster.required_start_count();
+    let mut start_header = crate::map::preview::ScenarioStartHeader::default();
+    start_header.read_ini(&map_data.ini);
+    let launch_participant_count = (session
+        .humans
+        .iter()
+        .filter(|human| !human.is_observer())
+        .count() as i32)
+        .wrapping_add(session.ai_player_count)
+        .max(0) as usize;
+    let roster_start_count = session.required_start_count();
     if roster_start_count != launch_participant_count {
         return Err(PreFillScenarioPrefixPlanError::RosterParticipantMismatch {
             roster_start_count,
@@ -641,11 +655,7 @@ pub fn prepare_stock_offline_scenario_prefix_plan(
             &mut scenario_rng,
         ),
         StockOfflineStartCallbackFamily::Cooperative => {
-            let human_start_spots = map_data
-                .ini
-                .section_or_empty("Header")
-                .read_int("NumCoopHumanStartSpots", 0)
-                .max(0) as usize;
+            let human_start_spots = start_header.coop_human_start_spots().max(0) as usize;
             native_assign_cooperative_starts_from_preassignment(
                 session,
                 &final_gathered_starts,
@@ -671,6 +681,7 @@ pub fn prepare_stock_offline_scenario_prefix_plan(
     let after_second_house_pass = scenario_rng_after.clone();
 
     Ok(PreFillScenarioPrefixPlan {
+        start_header,
         projection: StockOfflinePrefixProjection {
             active_scenario_waypoints: start_waypoints.clone(),
             final_gathered_starts,
@@ -844,13 +855,9 @@ pub fn native_assign_launch_starts(
 }
 
 fn launch_start_requests(session: &SkirmishLaunchSession) -> Vec<LaunchStartPosition> {
-    std::iter::once(session.local.start_position)
-        .chain(
-            session
-                .opponents
-                .iter()
-                .map(|opponent| opponent.start_position),
-        )
+    normalized_launch_slots(session)
+        .iter()
+        .map(|slot| slot.start_position)
         .collect()
 }
 
@@ -895,16 +902,41 @@ fn native_assign_launch_starts_from_preassignment(
     let mut occupied: Vec<bool> = explicit_owner.iter().map(Option::is_some).collect();
     let mut assigned = vec![None; requested.len()];
 
-    // Unlike generic AssignStartingPoints, standard Battle walks every
-    // non-special House once and honors table ownership for AI houses too.
+    let slots = normalized_launch_slots(session);
+    let mut observer_reserved_first = false;
+    let mut observer_claim_complete = false;
+    // Battle5D6C70 visits House order; chooser5D6890 shares an observer's
+    // viewpoint without reserving another start. ABFDD4/5 distinguish a first
+    // observer reservation from an observer joining an already occupied view.
     for (slot, assigned_start) in assigned.iter_mut().enumerate() {
         let explicit = explicit_owner
             .iter()
             .rposition(|owner| *owner == Some(slot));
-        let start_index =
-            explicit.unwrap_or_else(|| choose_battle_automatic_start(starts, &occupied, rng));
-        occupied[start_index] = true;
-        explicit_owner[start_index] = Some(slot);
+        let first_occupied = explicit_owner.iter().position(Option::is_some);
+        let mut write_owner = true;
+        let start_index = if let Some(explicit) = explicit {
+            explicit
+        } else if let Some(first) = first_occupied {
+            if observer_reserved_first && !observer_claim_complete {
+                observer_claim_complete = true;
+                first
+            } else if slots[slot].observer {
+                observer_reserved_first = true;
+                observer_claim_complete = true;
+                write_owner = false;
+                first
+            } else {
+                choose_battle_automatic_start(starts, &occupied, rng)
+            }
+        } else {
+            observer_reserved_first = slots[slot].observer;
+            observer_claim_complete = false;
+            choose_battle_automatic_start(starts, &occupied, rng)
+        };
+        if write_owner {
+            occupied[start_index] = true;
+            explicit_owner[start_index] = Some(slot);
+        }
         *assigned_start = Some(starts[start_index]);
     }
 
@@ -936,7 +968,11 @@ pub fn native_assign_cooperative_launch_starts(
         starts,
         &preassignment,
         human_start_spots,
-        1,
+        session
+            .humans
+            .iter()
+            .filter(|human| !human.is_observer())
+            .count(),
         rng,
     )
 }
@@ -1064,6 +1100,8 @@ pub struct NormalizedSkirmishSlot {
     pub(crate) start_position: LaunchStartPosition,
     pub(crate) team: LaunchTeam,
     pub is_human: bool,
+    pub observer: bool,
+    pub source_human_index: Option<usize>,
     pub(crate) difficulty: HouseDifficulty,
 }
 
@@ -1104,17 +1142,19 @@ impl MatchLaunchDescriptor {
     /// Validate that the app's shell close transaction resolved every
     /// random choice before the session crosses into sim.
     pub fn from_resolved(session: SkirmishLaunchSession) -> Result<Self, UnresolvedShellChoice> {
-        if session.local.country_random {
-            return Err(UnresolvedShellChoice {
-                ai_slot: None,
-                choice: "country",
-            });
-        }
-        if session.local.color_random {
-            return Err(UnresolvedShellChoice {
-                ai_slot: None,
-                choice: "color",
-            });
+        for human in &session.humans {
+            if human.slot.country_random {
+                return Err(UnresolvedShellChoice {
+                    ai_slot: None,
+                    choice: "country",
+                });
+            }
+            if human.slot.color_random {
+                return Err(UnresolvedShellChoice {
+                    ai_slot: None,
+                    choice: "color",
+                });
+            }
         }
         for (index, opponent) in session.opponents.iter().enumerate() {
             if opponent.country_random {
@@ -1131,6 +1171,24 @@ impl MatchLaunchDescriptor {
             }
         }
         Ok(Self { session })
+    }
+
+    /// Full_Init6876AC deletes all HouseTypes (6689C3..6689E5), then
+    /// rebuilds them before CreateHouses687FBD indexes the final array without
+    /// a bounds gate. Reject a disappeared shell allocation rather than
+    /// reconstructing it or entering the native undefined-pointer domain.
+    pub fn validate_countries(
+        &self,
+        rules: &RuleSet,
+    ) -> Result<(), PreFillScenarioPrefixPlanError> {
+        for slot in normalized_launch_slots(&self.session) {
+            if rules.country_name(slot.country.index()).is_none() {
+                return Err(PreFillScenarioPrefixPlanError::MissingLaunchCountry {
+                    index: slot.country.raw_index(),
+                });
+            }
+        }
+        Ok(())
     }
 
     /// The resolved session's gameplay facts.
@@ -1162,21 +1220,39 @@ pub fn initialize_skirmish_launch_houses(
         "skirmish houses must be initialized before map objects"
     );
     let slots = normalized_launch_slots(session);
-    sim.session.game_options = session
-        .options
-        .to_game_options(session.opponents.len() as i32);
+    sim.session.game_options = session.options.to_game_options(session.ai_player_count);
     populate_launch_houses(sim, &slots, rules);
     // 688109 installs the original participant-array index0. These normalized
     // slots retain that launch identity; later MCV placement/viewer choice
     // cannot clear or replace the current house.
-    sim.session.current_house = slots.first().map(|slot| {
-        let id = sim
-            .interner
-            .get(&slot.owner_name)
-            .expect("created launch house");
-        assert!(sim.houses.contains_key(&id));
-        id
-    });
+    sim.session.current_house = slots
+        .iter()
+        .find(|slot| slot.source_human_index == Some(session.local_player_index))
+        .map(|slot| {
+            let id = sim
+                .interner
+                .get(&slot.owner_name)
+                .expect("created launch house");
+            assert!(sim.houses.contains_key(&id));
+            id
+        });
+    let observer = slots
+        .iter()
+        .rev()
+        .find(|slot| slot.observer)
+        .and_then(|slot| sim.interner.get(&slot.owner_name));
+    sim.session
+        .install_multiplayer_house_identity(session.mode.class, observer);
+    // 688109..10F sets player-control only for the local source node;
+    // remote human Houses remain human without acquiring local control.
+    for slot in &slots {
+        if let Some(id) = sim.interner.get(&slot.owner_name) {
+            sim.houses
+                .get_mut(&id)
+                .expect("created launch House")
+                .player_control = slot.source_human_index == Some(session.local_player_index);
+        }
+    }
     populate_special_houses(sim, house_roster, rules);
 }
 
@@ -1334,10 +1410,7 @@ fn apply_resolved_skirmish_launch_session(
         }
         #[cfg(any(test, feature = "test-support"))]
         LaunchStartResolution::PostFillTestCompatibility => {
-            let cooperative = session
-                .mode
-                .override_file
-                .eq_ignore_ascii_case("MPCoopMD.ini");
+            let cooperative = session.mode.class == crate::skirmish_modes::MpModeClass::Cooperative;
             // Direct unit fixtures historically enter with a constructed map.
             // Keep their compatibility resolver outside production compilation,
             // while still modeling two independent Gather callbacks.
@@ -1354,11 +1427,11 @@ fn apply_resolved_skirmish_launch_session(
                 bounds,
             );
             let assignment = if cooperative {
-                let human_start_spots = map_data
-                    .ini
-                    .section_or_empty("Header")
-                    .read_int("NumCoopHumanStartSpots", 0)
-                    .max(0) as usize;
+                let mut header = crate::map::preview::ScenarioStartHeader::default();
+                header.read_ini(&map_data.ini);
+                sim.session.install_start_header(header);
+                let human_start_spots =
+                    sim.session.start_header().coop_human_start_spots().max(0) as usize;
                 sim.assign_native_cooperative_starts(session, &starts, human_start_spots)
             } else {
                 sim.assign_native_battle_starts(session, &starts)
@@ -1369,14 +1442,24 @@ fn apply_resolved_skirmish_launch_session(
     project_pre_fill_start_assignment(sim, &slots, &start_assignment);
     let assignments = &start_assignment.placements;
     let mut spawned_mcvs = 0;
-    let mut local_owner = slots.first().map(|slot| slot.owner_name.clone());
+    let mut local_owner = slots
+        .iter()
+        .find(|slot| slot.source_human_index == Some(session.local_player_index))
+        .map(|slot| slot.owner_name.clone());
 
     if session.options.bases {
         for (slot_idx, waypoint) in assignments {
             let Some(slot) = slots.get(*slot_idx) else {
                 continue;
             };
-            let mcv_type = launch_mcv_type_for_country(slot.country, rules);
+            if slot.observer {
+                continue;
+            }
+            // Battle5D7062 skips Unit construction and its RNG when505310
+            // finds no Owner-compatible BaseUnit. The House still exists.
+            let Some(mcv_type) = launch_mcv_type_for_country(slot.country, rules) else {
+                continue;
+            };
             if place_starting_mcv(
                 sim,
                 mcv_type,
@@ -1400,7 +1483,7 @@ fn apply_resolved_skirmish_launch_session(
                     waypoint.rx,
                     waypoint.ry
                 );
-                if slot.is_human {
+                if slot.source_human_index == Some(session.local_player_index) {
                     local_owner = None;
                 }
             }
@@ -1517,47 +1600,61 @@ fn assign_launch_base_centers(
 }
 
 pub fn normalized_launch_slots(session: &SkirmishLaunchSession) -> Vec<NormalizedSkirmishSlot> {
-    // Native 687F10 allocates a distinct House before copying its names;
-    // 688092..6880A4 stores the participant handle separately from +15FF4.
-    // Our shared owner-key projection must likewise avoid merging the local
-    // House with a generated AI or special House. Keep the display handle in
-    // session.player_name and preserve every noncolliding compatibility key.
-    // `Player` cannot match Neutral/Special or any generated ComputerN key.
-    // Evidence: docs/research/PHASE3_CURRENT_HOUSE_IDENTITY_GHIDRA_REPORT.md.
-    // Allocate against the same key projection used by diplomacy readers
-    // and writers. A display handle such as ` Computer2 ` must not acquire
-    // that AI's team bits through the graph's trimmed, case-folded key.
-    let player_key = normalize_house_name(&session.player_name);
-    let name_collides = ["Neutral", "Special"]
-        .iter()
-        .any(|name| player_key == normalize_house_name(name))
-        || (1..=session.opponents.len())
-            .any(|index| player_key == normalize_house_name(&format!("Computer{index}")));
-    let local_owner_name = if name_collides {
-        "Player"
-    } else {
-        &session.player_name
-    };
-    let mut slots = Vec::with_capacity(1 + session.opponents.len());
-    slots.push(NormalizedSkirmishSlot {
-        owner_name: local_owner_name.to_string(),
-        country: session.local.country,
-        color_index: session.local.color_index,
-        start_position: session.local.start_position,
-        team: session.local.team,
-        is_human: true,
-        difficulty: HouseDifficulty::Normal,
-    });
-    for (idx, opponent) in session.opponents.iter().enumerate() {
+    // CreateHouses687F66..84 compares signed DWORD node+53; equal colors
+    // retain source order. 688137 writes the House index back to each node.
+    // Internal owner keys must stay distinct even for duplicate handles or
+    // handles colliding with generated AI/fixed Houses (688092..6880A4).
+    let mut used_names: Vec<String> = ["Neutral", "Special"]
+        .into_iter()
+        .map(normalize_house_name)
+        .collect();
+    used_names.extend(
+        (1..=session.opponents.len())
+            .map(|index| normalize_house_name(&format!("Computer{index}"))),
+    );
+    let mut humans: Vec<_> = session.humans.iter().enumerate().collect();
+    humans.sort_by_key(|(index, human)| (human.slot.color_index, *index));
+    let mut slots = Vec::with_capacity(humans.len() + session.opponents.len());
+    for (index, human) in humans {
+        let mut owner_name = human.name.clone();
+        let mut suffix = 0;
+        while used_names.contains(&normalize_house_name(&owner_name)) {
+            owner_name = if suffix == 0 {
+                "Player".into()
+            } else {
+                format!("Player{suffix}")
+            };
+            suffix += 1;
+        }
+        used_names.push(normalize_house_name(&owner_name));
         slots.push(NormalizedSkirmishSlot {
-            owner_name: format!("Computer{}", idx + 1),
+            owner_name,
+            country: if human.is_observer() {
+                LaunchCountry::America
+            } else {
+                human.slot.country
+            },
+            color_index: human.slot.color_index,
+            start_position: human.slot.start_position,
+            team: human.slot.team,
+            is_human: true,
+            observer: human.is_observer(),
+            source_human_index: Some(index),
+            difficulty: HouseDifficulty::Normal,
+        });
+    }
+    for (index, opponent) in session.opponents.iter().enumerate() {
+        slots.push(NormalizedSkirmishSlot {
+            owner_name: format!("Computer{}", index + 1),
             country: opponent.country,
             color_index: opponent.color_index,
             start_position: opponent.start_position,
             team: opponent.team,
             is_human: false,
+            observer: false,
+            source_human_index: None,
             difficulty: HouseDifficulty::from_native(opponent.difficulty.as_i32())
-                .expect("AiDifficulty uses native HouseClass discriminants"),
+                .expect("native AI difficulty"),
         });
     }
     slots
@@ -1620,16 +1717,15 @@ pub fn populate_launch_houses(
     slots: &[NormalizedSkirmishSlot],
     rules: &RuleSet,
 ) {
+    let human_count = slots.iter().filter(|slot| slot.is_human).count();
     for slot in slots {
         let name_id = sim.interner.intern(&slot.owner_name);
-        let country_name = slot.country.country_name();
+        let country_name = rules
+            .country_name(slot.country.index())
+            .expect("accepted launch Country must exist in the canonical Rules registry");
         let country_id = sim.interner.intern(country_name);
-        let side_index = crate::sim::house_state::resolve_house_side_index(
-            rules,
-            Some(country_name),
-            None,
-            slot.country.side_index(),
-        );
+        let side_index =
+            crate::sim::house_state::resolve_house_side_index(rules, Some(country_name), None, 0);
         let mut house = HouseState::new(
             name_id,
             side_index,
@@ -1653,11 +1749,20 @@ pub fn populate_launch_houses(
         // `HouseClass::SetDifficulty` (humans with 1, `0x00688132`; computer
         // slots with their own, `0x006882B9`); Neutral and Special are never
         // passed and keep the constructor's values.
+        // CreateHouses688293..6882B9 counts every human node, including
+        // observers, before applying Rules[AI].CompEasyBonus to positive AI
+        // difficulty values. The unchanged House owner applies its biases.
+        let difficulty = if !slot.is_human && human_count > 1 && rules.general.comp_easy_bonus {
+            HouseDifficulty::from_native((slot.difficulty as i32 - 1).max(0))
+                .expect("native AI difficulty")
+        } else {
+            slot.difficulty
+        };
         house.set_difficulty(
-            slot.difficulty,
+            difficulty,
             &rules.general,
             rules.country_difficulty_biases(country_name),
-            sim.session.game_mode_nonzero,
+            sim.session.game_mode_nonzero(),
             sim.session.house_order.len() as i32,
             sim.session.binary_frame as i32,
         );
@@ -1766,7 +1871,7 @@ pub fn launch_alliance_map(
             alliances.entry(right_key).or_default().insert(left_key);
         }
     }
-    if mode.override_file.eq_ignore_ascii_case("MPCoopMD.ini") {
+    if mode.class == crate::skirmish_modes::MpModeClass::Cooperative {
         for left in slots {
             for right in slots {
                 if left.owner_name == right.owner_name || left.is_human != right.is_human {
@@ -1983,6 +2088,10 @@ fn seed_starting_extra_units_with_overlay_registry(
     let mut spawned = 0;
 
     for slot in slots {
+        // 5D6F4A..53: observer node+6B==-1 skips all starting forces.
+        if slot.observer {
+            continue;
+        }
         let Some(base_center) = crate::sim::house_state::house_state_for_owner(
             &sim.houses,
             &slot.owner_name,
@@ -2102,7 +2211,7 @@ pub fn starting_unit_budget(
             || object.tech_level > tech_level
             || !slots
                 .iter()
-                .any(|slot| launch_country_can_own_object(slot.country, object))
+                .any(|slot| launch_country_can_own_object(slot.country, object, rules))
             || rules
                 .general
                 .base_unit_types
@@ -2122,7 +2231,7 @@ pub fn starting_unit_budget(
             || object.tech_level > tech_level
             || !slots
                 .iter()
-                .any(|slot| launch_country_can_own_object(slot.country, object))
+                .any(|slot| launch_country_can_own_object(slot.country, object, rules))
         {
             continue;
         }
@@ -2153,7 +2262,7 @@ pub fn starting_unit_candidates_for_country(
         .filter_map(|id| {
             let object = rules.object(id)?;
             if !starting_unit_vehicle_allowed(rules, object, tech_level)
-                || !launch_country_can_own_object(country, object)
+                || !launch_country_can_own_object(country, object, rules)
             {
                 return None;
             }
@@ -2169,7 +2278,7 @@ pub fn starting_unit_candidates_for_country(
         .filter_map(|id| {
             let object = rules.object(id)?;
             if !starting_unit_infantry_allowed(object, tech_level)
-                || !launch_country_can_own_object(country, object)
+                || !launch_country_can_own_object(country, object, rules)
             {
                 return None;
             }
@@ -2252,31 +2361,26 @@ fn starting_object_cell_placeable(
     cell.zone_type == crate::map::resolved_terrain::zone_class::GROUND
 }
 
-pub fn launch_mcv_type_for_country(country: LaunchCountry, rules: &RuleSet) -> &str {
-    rules
-        .general
-        .base_unit_types
-        .iter()
-        .find_map(|id| {
-            let object = rules.object(id)?;
-            launch_country_can_own_object(country, object).then_some(id.as_str())
-        })
-        .or_else(|| {
-            rules
-                .general
-                .base_unit_types
-                .iter()
-                .find(|id| rules.object(id).is_some())
-                .map(String::as_str)
-        })
-        .unwrap_or("AMCV")
+/// Battle5D7030 uses505310's Owner-only lookup, not production gates.
+pub fn launch_mcv_type_for_country(country: LaunchCountry, rules: &RuleSet) -> Option<&str> {
+    let name = rules.country_name(country.index())?;
+    crate::sim::ai_buildable::first_owner_compatible(
+        rules,
+        &rules.general.base_unit_types,
+        crate::rules::object_type::ObjectCategory::Vehicle,
+        crate::sim::ai_buildable::house_country_bit(rules, name),
+    )
+    .map(|object| object.id.as_str())
 }
 
 fn launch_country_can_own_object(
     country: LaunchCountry,
     object: &crate::rules::object_type::ObjectType,
+    rules: &RuleSet,
 ) -> bool {
-    let country_name = country.country_name();
+    let Some(country_name) = rules.country_name(country.index()) else {
+        return false;
+    };
     if !object.owner.iter().any(|owner| owner == country_name) {
         return false;
     }
@@ -2355,8 +2459,10 @@ impl ScenarioBootstrapRng {
         bound_prefix: BoundStockOfflineFreshPrefixPlan,
     ) -> Result<(Simulation, StockOfflinePrefixProjection), PreFillScenarioPrefixPlanError> {
         let (scenario_prefix, native_id_prefix) = bound_prefix.into_parts();
+        let start_header = scenario_prefix.start_header;
         let projection = scenario_prefix.install_before_terrain(&mut self.scenario)?;
         let mut simulation = self.into_simulation(descriptor);
+        simulation.session.install_start_header(start_header);
         simulation.native_unique_ids = Some(native_id_prefix.into_cursor());
         Ok((simulation, projection))
     }
@@ -2430,6 +2536,9 @@ impl ScenarioBootstrapRng {
                     }
                 }
                 let mut simulation = self.into_simulation(descriptor);
+                let mut start_header = crate::map::preview::ScenarioStartHeader::default();
+                start_header.read_ini(&map_data.ini);
+                simulation.session.install_start_header(start_header);
                 simulation.session.initialize_campaign_startup(
                     difficulty,
                     mission_counter,
@@ -2816,6 +2925,223 @@ pub fn initialize_map_roster_houses(
 mod tests {
     use super::*;
 
+    const CONTROLLED_STOCK_COUNTRIES: &str = "[Countries]\n0=Americans\n1=Alliance\n2=French\n3=Germans\n4=British\n5=Africans\n6=Arabs\n7=Confederation\n8=Russians\n9=YuriCountry\n[Sides]\nAllied=Americans,Alliance,French,Germans,British\nSoviet=Africans,Arabs,Confederation,Russians\nThirdSide=YuriCountry\n";
+
+    fn launch_fixture_ini(source: &str) -> IniFile {
+        IniFile::from_str(&format!("{CONTROLLED_STOCK_COUNTRIES}{source}"))
+    }
+
+    #[test]
+    fn registered_nonstock_country_reaches_house_without_stock_remapping() {
+        let mut ini = String::from(CONTROLLED_STOCK_COUNTRIES);
+        // A second physical Countries section is not a registry extension;
+        // append the new ID inside the original master list instead.
+        ini = ini.replace("[Sides]", "10=Allocated\n[Sides]");
+        let rules = RuleSet::from_ini(&IniFile::from_str(&ini)).unwrap();
+        let mut session = one_player_battle_launch("allocated.map").session().clone();
+        session.local_slot_mut().country = LaunchCountry::from_country_index(10);
+        let launch = MatchLaunchDescriptor::from_resolved(session).unwrap();
+        let mut sim = Simulation::new();
+        initialize_skirmish_launch_houses(&mut sim, &HouseRoster::default(), &rules, &launch);
+        let local = sim.session.current_house.unwrap();
+        let house = &sim.houses[&local];
+        assert_eq!(sim.interner.resolve(house.country.unwrap()), "Allocated");
+        assert_eq!(
+            house.side_index, -1,
+            "Country ctor's absent Side remains native-1"
+        );
+    }
+
+    #[test]
+    fn multiple_humans_including_observer_apply_layered_comp_easy_bonus_before_house_biases() {
+        let mut session = one_player_battle_launch("bonus.map").session().clone();
+        let mut observer = session.humans[0].clone();
+        observer.name = "Observer".into();
+        observer.raw_slot_index = Some(1);
+        observer.set_observer(true);
+        observer.slot.color_index = 8;
+        session.humans.push(observer);
+        session
+            .opponents
+            .push(crate::skirmish_launch::SkirmishAiSlot {
+                raw_slot_index: 2,
+                country: LaunchCountry::Russia,
+                country_random: false,
+                color_index: 1,
+                color_random: false,
+                start_position: LaunchStartPosition::Auto,
+                team: LaunchTeam::None,
+                difficulty: crate::skirmish_launch::AiDifficulty::Normal,
+            });
+        session.rebuild_house_roster();
+        let descriptor = MatchLaunchDescriptor::from_resolved(session).unwrap();
+        for (setting, expected) in [
+            ("", HouseDifficulty::Hard),
+            ("[AI]\nCompEasyBonus=no\n", HouseDifficulty::Normal),
+        ] {
+            let rules = RuleSet::from_ini(&launch_fixture_ini(setting)).unwrap();
+            let mut sim = Simulation::new();
+            initialize_skirmish_launch_houses(
+                &mut sim,
+                &HouseRoster::default(),
+                &rules,
+                &descriptor,
+            );
+            let ai = sim.interner.get("Computer1").unwrap();
+            assert_eq!(sim.houses[&ai].difficulty, expected);
+        }
+    }
+
+    #[test]
+    fn observer_start_views_match_executed_native_chooser_and_rng() {
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/lan_lobby.json",
+        ))
+        .unwrap();
+        for case in corpus["observer_starts"].as_array().unwrap() {
+            let mut session = one_player_battle_launch("observer.map").session().clone();
+            let template = session.humans[0].clone();
+            session.humans = case["observers"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .enumerate()
+                .map(|(index, observer)| {
+                    let mut human = template.clone();
+                    human.name = format!("Human{index}");
+                    human.raw_slot_index = Some(index as u8);
+                    human.set_observer(observer.as_bool().unwrap());
+                    human.slot.color_index = if human.is_observer() { 8 } else { index as u8 };
+                    human.slot.start_position = case["initial_table"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .position(|owner| owner.as_i64() == Some(index as i64))
+                        .map_or(LaunchStartPosition::Auto, |start| {
+                            LaunchStartPosition::Position(start as u8)
+                        });
+                    human
+                })
+                .collect();
+            session.rebuild_house_roster();
+            let starts: Vec<_> = case["starts"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .enumerate()
+                .map(|(index, cell)| Waypoint {
+                    index: index as u32,
+                    rx: cell[0].as_u64().unwrap() as u16,
+                    ry: cell[1].as_u64().unwrap() as u16,
+                })
+                .collect();
+            let mut rng =
+                SimRng::from_native_state_hex_for_test(case["initial_rng_hex"].as_str().unwrap());
+            let result = native_assign_launch_starts(&session, &starts, &mut rng);
+            assert_eq!(
+                result
+                    .start_table
+                    .iter()
+                    .map(|owner| owner.map_or(-1, |owner| owner as i64))
+                    .collect::<Vec<_>>(),
+                case["table"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|value| value.as_i64().unwrap())
+                    .collect::<Vec<_>>()
+            );
+            for (index, position) in &result.placements {
+                assert_eq!(
+                    [u64::from(position.rx), u64::from(position.ry)],
+                    [
+                        case["placements"][*index][0].as_u64().unwrap(),
+                        case["placements"][*index][1].as_u64().unwrap()
+                    ]
+                );
+            }
+            assert_eq!(
+                rng.native_state_hex(),
+                case["rng_hex"].as_str().unwrap(),
+                "{}",
+                case["name"]
+            );
+        }
+    }
+
+    #[test]
+    fn ordered_humans_keep_local_identity_after_color_sort_and_observer_viewpoint() {
+        let mut session = one_player_battle_launch("multiplayer.map")
+            .session()
+            .clone();
+        session.humans[0].name = "Host".into();
+        session.humans[0].slot.color_index = 6;
+        session.humans[0].slot.start_position = LaunchStartPosition::Position(0);
+        let mut local = session.humans[0].clone();
+        local.name = "Guest".into();
+        local.raw_slot_index = Some(1);
+        local.slot.color_index = 1;
+        local.slot.start_position = LaunchStartPosition::Position(1);
+        session.humans.push(local);
+        let mut observer = session.humans[0].clone();
+        observer.name = "Observer".into();
+        observer.raw_slot_index = Some(2);
+        observer.set_observer(true);
+        observer.slot.color_index = 8;
+        observer.slot.start_position = LaunchStartPosition::Auto;
+        session.humans.push(observer);
+        session.local_player_index = 1;
+        session.rebuild_house_roster();
+        assert!(session.house_roster_is_consistent());
+        assert_eq!(session.required_start_count(), 2);
+        assert_eq!(session.pre_fill_house_roster.created_house_count(), 5);
+        let descriptor = MatchLaunchDescriptor::from_resolved(session.clone()).unwrap();
+        let rules = techno_constructor_start_rules();
+        let mut sim = Simulation::new();
+        initialize_skirmish_launch_houses(&mut sim, &HouseRoster::default(), &rules, &descriptor);
+        let guest = sim.interner.get("Guest").unwrap();
+        let host = sim.interner.get("Host").unwrap();
+        assert_eq!(sim.session.current_house, Some(guest));
+        assert_eq!(sim.session.house_order[0], guest);
+        assert!(sim.houses[&guest].is_human && sim.houses[&guest].player_control);
+        assert!(sim.houses[&host].is_human && !sim.houses[&host].player_control);
+        let starts = [
+            Waypoint {
+                index: 0,
+                rx: 20,
+                ry: 20,
+            },
+            Waypoint {
+                index: 1,
+                rx: 40,
+                ry: 40,
+            },
+        ];
+        let map = prefix_map_with_starts(&starts);
+        let full_prefix =
+            prepare_stock_offline_scenario_prefix_plan(&descriptor, &map, &map.waypoints, 73)
+                .expect("ordered multi-human launch enters the real pre-Fill prefix");
+        assert_eq!(full_prefix.first_house_timers.len(), 5);
+        assert_eq!(full_prefix.second_house_timers.len(), 5);
+        assert_eq!(full_prefix.projection.assignment.placements.len(), 3);
+        let mut rng = SimRng::new(73);
+        let before = rng.logical_state();
+        let assigned = native_assign_launch_starts(&session, &starts, &mut rng);
+        assert_eq!(assigned.start_table, vec![Some(1), Some(0)]);
+        assert_eq!(
+            assigned.placements,
+            vec![(0, starts[1]), (1, starts[0]), (2, starts[0])]
+        );
+        assert_eq!(
+            rng.logical_state(),
+            before,
+            "observer shares an occupied view without a draw"
+        );
+        let mut unresolved_remote = session;
+        unresolved_remote.humans[0].slot.country_random = true;
+        assert!(MatchLaunchDescriptor::from_resolved(unresolved_remote).is_err());
+    }
+
     #[test]
     fn campaign_current_house_uses_exact_case_and_registry_fallback() {
         let mut sim = Simulation::new();
@@ -2901,6 +3227,7 @@ mod tests {
 
         MatchLaunchDescriptor::from_resolved(SkirmishLaunchSession {
             mode: SkirmishLaunchMode {
+                class: crate::skirmish_modes::MpModeClass::Battle,
                 id: 1,
                 ui_name_key: "GUI:Battle".to_string(),
                 tooltip_key: "STT:ModeBattle".to_string(),
@@ -2911,15 +3238,21 @@ mod tests {
                 must_ally: false,
             },
             selected_map_file: Some(selected_map_file.to_string()),
-            player_name: "Player".to_string(),
-            local: SkirmishLocalSlot {
-                country: LaunchCountry::America,
-                country_random: false,
-                color_index: 0,
-                color_random: false,
-                start_position: LaunchStartPosition::Auto,
-                team: LaunchTeam::None,
-            },
+            humans: vec![crate::skirmish_launch::SkirmishHumanSlot {
+                raw_slot_index: Some(0),
+                name: "Player".to_string(),
+                slot: SkirmishLocalSlot {
+                    country: LaunchCountry::America,
+                    country_random: false,
+                    color_index: 0,
+                    color_random: false,
+                    start_position: LaunchStartPosition::Auto,
+                    team: LaunchTeam::None,
+                },
+                role: crate::skirmish_launch::LaunchHumanRole::from_observer(false),
+            }],
+            local_player_index: 0,
+            ai_player_count: 0,
             opponents: Vec::new(),
             pre_fill_house_roster: PreFillHouseRoster::from_compact_skirmish(0),
             options: SkirmishLaunchOptions::default(),
@@ -2970,15 +3303,81 @@ mod tests {
     }
 
     #[test]
+    fn shell_allocated_country_is_readmitted_against_post_reset_process_rules() {
+        use crate::rules::process_owner::{NativeRulesProcessOwner, NativeScenarioRulesPrefix};
+        let root = "[Countries]\n0=Alpha\n[Alpha]\nName=Alpha\n[Orphan]\nName=Orphan\n";
+        for replacement in [None, Some("Replacement")] {
+            let mut owner = NativeRulesProcessOwner::from_cold_start_sources(
+                IniFile::from_str(root),
+                None,
+                IniFile::empty(),
+                std::sync::Arc::default(),
+                Default::default(),
+            )
+            .unwrap();
+            let index = owner
+                .read_multiplayer_country(&IniFile::from_str("[MultiPlayer]\nSide=Orphan\n"), -1);
+            assert_eq!(index, 1);
+            owner.refresh_multiplayer_country_bodies();
+            let mut shell_rules = RuleSet::from_ini(&IniFile::from_str(root)).unwrap();
+            owner.project_multiplayer_countries(&mut shell_rules);
+            let mut launch = one_player_battle_launch("country-reset.map");
+            launch.session.local_slot_mut().country =
+                LaunchCountry::from_country_index(index as u32);
+            launch.validate_countries(&shell_rules).unwrap();
+            let mut map = one_start_prefix_map(Waypoint {
+                index: 0,
+                rx: 40,
+                ry: 40,
+            });
+            if let Some(name) = replacement {
+                map.ini =
+                    IniFile::from_str(&format!("[Countries]\n1={name}\n[{name}]\nName={name}\n"));
+            }
+            let plan =
+                prepare_stock_offline_scenario_prefix_plan(&launch, &map, &map.waypoints, 1234)
+                    .unwrap();
+            let (rules, _, _, receipt) = owner
+                .load_scenario(NativeScenarioRulesPrefix::NonCampaign(None), &map.ini)
+                .unwrap()
+                .into_parts();
+            assert!(rules.country_index("Orphan").is_none());
+            let admitted = plan.bind_native_rules_receipt(receipt, &launch, &rules);
+            if replacement.is_none() {
+                assert!(matches!(
+                    admitted,
+                    Err(PreFillScenarioPrefixPlanError::MissingLaunchCountry { index: 1 })
+                ));
+                continue;
+            }
+            let (mut sim, _) = ScenarioBootstrapRng::new(1234)
+                .into_stock_offline_staged_simulation(
+                    &crate::sim::scenario_session::ScenarioDescriptor {
+                        seed: 1234,
+                        ..Default::default()
+                    },
+                    admitted.unwrap(),
+                )
+                .unwrap();
+            initialize_skirmish_launch_houses(&mut sim, &HouseRoster::default(), &rules, &launch);
+            let house = sim.houses.get(&sim.session.current_house.unwrap()).unwrap();
+            assert_eq!(
+                house.country.map(|id| sim.interner.resolve(id)),
+                Some("Replacement")
+            );
+        }
+    }
+
+    #[test]
     fn current_house_precedes_map_objects_and_survives_failed_starting_mcv() {
         // Exercise the same staged population and pre-Fill launch projection
         // used by the offline app. Blocking every candidate after map-object
         // creation supplies a deterministic total placement failure; it does
         // not replace the production MCV constructor/search/result branch.
-        let rules_ini = IniFile::from_str(
+        let rules_ini = launch_fixture_ini(
             "[General]\nBaseUnit=MTNK\n[VehicleTypes]\n0=MTNK\n\
              [BuildingTypes]\n0=CABHUT\n\
-             [MTNK]\nStrength=300\nSpeed=6\nCost=100\nOwner=Americans\n\
+             [MTNK]\nStrength=300\nSpeed=6\nCost=100\nOwner=Americans,Russians\n\
              [CABHUT]\nStrength=100\nFoundation=1x1\nOwner=Neutral\n",
         );
         let start = Waypoint {
@@ -3002,7 +3401,7 @@ mod tests {
             ("Computer01", true, "Computer01"),
         ] {
             let mut launch = one_player_battle_launch("current-house.map");
-            launch.session.player_name = handle.to_string();
+            launch.session.local_player_mut().name = handle.to_string();
             launch.session.options.bases = true;
             launch.session.options.unit_count = 0;
             if with_ai {
@@ -3010,6 +3409,7 @@ mod tests {
                     .session
                     .opponents
                     .push(crate::skirmish_launch::SkirmishAiSlot {
+                        raw_slot_index: 1,
                         country: LaunchCountry::Russia,
                         country_random: false,
                         color_index: 1,
@@ -3018,7 +3418,8 @@ mod tests {
                         team: LaunchTeam::None,
                         difficulty: crate::skirmish_launch::AiDifficulty::Easy,
                     });
-                launch.session.pre_fill_house_roster = PreFillHouseRoster::from_compact_skirmish(1);
+                launch.session.ai_player_count = 1;
+                launch.session.rebuild_house_roster();
                 map.waypoints.insert(
                     1,
                     Waypoint {
@@ -3059,7 +3460,9 @@ mod tests {
                     )
                     .expect("production noncampaign Rules reset/rebuild")
                     .into_parts();
-                let bound_prefix = plan.bind_native_rules_receipt(rules_receipt);
+                let bound_prefix = plan
+                    .bind_native_rules_receipt(rules_receipt, &launch, &rules)
+                    .unwrap();
                 let (mut sim, projection) = ScenarioBootstrapRng::new(scenario.seed)
                     .into_stock_offline_staged_simulation(&scenario, bound_prefix)
                     .expect("production admission installs the paired RNG/native-ID prefix");
@@ -3141,7 +3544,7 @@ mod tests {
                 );
                 assert_eq!(sim.session.current_house, Some(player));
                 assert!(sim.houses[&player].is_human && sim.houses[&player].player_control);
-                assert_eq!(launch.session.player_name, handle);
+                assert_eq!(launch.session.local_player().name, handle);
                 let mut distinct = sim.session.house_order.clone();
                 distinct.sort();
                 distinct.dedup();
@@ -3208,7 +3611,7 @@ mod tests {
     }
 
     fn techno_constructor_start_rules() -> RuleSet {
-        RuleSet::from_ini(&IniFile::from_str(
+        RuleSet::from_ini(&launch_fixture_ini(
             "[InfantryTypes]\n\n\
              [VehicleTypes]\n0=MTNK\n1=HTNK\n\n\
              [AircraftTypes]\n\n\
@@ -3441,6 +3844,8 @@ mod tests {
             start_position: LaunchStartPosition::Auto,
             team: LaunchTeam::None,
             is_human: true,
+            observer: false,
+            source_human_index: Some(0),
             difficulty: HouseDifficulty::Normal,
         }];
         let mut expected = SimRng::new(seed);
@@ -3662,15 +4067,16 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![0, 1, 3]
         );
-        assert_eq!(roster.required_start_count(), 3);
+        assert_eq!(roster.nonobserver_house_count(), 3);
         assert_eq!(roster.created_house_count(), 6);
 
         let mut session = one_player_battle_launch("prefix-roster.mmx")
             .session()
             .clone();
-        session.local.start_position = LaunchStartPosition::Position(0);
+        session.local_slot_mut().start_position = LaunchStartPosition::Position(0);
         session.opponents = (0..2)
             .map(|index| SkirmishAiSlot {
+                raw_slot_index: (index + 1) as u8,
                 country: LaunchCountry::Russia,
                 country_random: false,
                 color_index: index + 1,
@@ -3680,6 +4086,7 @@ mod tests {
                 difficulty: AiDifficulty::Easy,
             })
             .collect();
+        session.ai_player_count = session.opponents.len() as i32;
         session.pre_fill_house_roster = roster;
         let launch = MatchLaunchDescriptor::from_resolved(session).unwrap();
         let starts = [
@@ -3708,7 +4115,7 @@ mod tests {
                 .unwrap();
         let mut native_rules =
             crate::rules::process_owner::NativeRulesProcessOwner::from_cold_start_sources(
-                IniFile::from_bytes(b"").unwrap(),
+                IniFile::from_str(CONTROLLED_STOCK_COUNTRIES),
                 None,
                 IniFile::from_bytes(b"").unwrap(),
                 std::sync::Arc::default(),
@@ -3721,12 +4128,14 @@ mod tests {
                 &map.ini,
             )
             .unwrap();
-        let (_, _, _, receipt) = native_load.into_parts();
+        let (rules, _, _, receipt) = native_load.into_parts();
         let early_count = receipt.pre_reset().event_count() as u32;
         let first_super_count = receipt.pre_reset().allocated_super_weapon_type_count() as u32;
         let rebuilt_count = receipt.post_reset().event_count() as u32;
         let final_super_count = receipt.post_reset().allocated_super_weapon_type_count() as u32;
-        let bound_native = native_plan.bind_native_rules_receipt(receipt);
+        let bound_native = native_plan
+            .bind_native_rules_receipt(receipt, &launch, &rules)
+            .unwrap();
         let native_checkpoints = bound_native.native_ids.checkpoints();
         let resize_count = map
             .header
@@ -4039,7 +4448,7 @@ mod tests {
         };
         let map = one_start_prefix_map(start);
         let mut session = one_player_battle_launch("projection.mmx").session().clone();
-        session.local.start_position = LaunchStartPosition::Position(0);
+        session.local_slot_mut().start_position = LaunchStartPosition::Position(0);
         let launch = MatchLaunchDescriptor::from_resolved(session).unwrap();
         let plan = prepare_stock_offline_scenario_prefix_plan(&launch, &map, &map.waypoints, seed)
             .unwrap();
@@ -4074,7 +4483,7 @@ mod tests {
         };
         let map = one_start_prefix_map(start);
         let mut session = one_player_battle_launch("base-plan.mmx").session().clone();
-        session.local.start_position = LaunchStartPosition::Position(0);
+        session.local_slot_mut().start_position = LaunchStartPosition::Position(0);
         let launch = MatchLaunchDescriptor::from_resolved(session).unwrap();
         let plan = prepare_stock_offline_scenario_prefix_plan(&launch, &map, &map.waypoints, seed)
             .unwrap();
@@ -4321,7 +4730,7 @@ mod tests {
 
         const SIZE: u16 = 80;
         let seed = 0x51C0_100B;
-        let ini = IniFile::from_str(
+        let ini = launch_fixture_ini(
             "[General]\n\
              BaseUnit=MTNK\n\
              [InfantryTypes]\n\
@@ -4372,6 +4781,7 @@ mod tests {
         .expect("minimal generated-map-shaped input");
         let session = SkirmishLaunchSession {
             mode: SkirmishLaunchMode {
+                class: crate::skirmish_modes::MpModeClass::Battle,
                 id: 1,
                 ui_name_key: "GUI:Battle".to_string(),
                 tooltip_key: "STT:ModeBattle".to_string(),
@@ -4382,15 +4792,21 @@ mod tests {
                 must_ally: false,
             },
             selected_map_file: Some("RandMap.SED".to_string()),
-            player_name: "Player".to_string(),
-            local: SkirmishLocalSlot {
-                country: LaunchCountry::America,
-                country_random: false,
-                color_index: 0,
-                color_random: false,
-                start_position: LaunchStartPosition::Position(1),
-                team: LaunchTeam::None,
-            },
+            humans: vec![crate::skirmish_launch::SkirmishHumanSlot {
+                raw_slot_index: Some(0),
+                name: "Player".to_string(),
+                slot: SkirmishLocalSlot {
+                    country: LaunchCountry::America,
+                    country_random: false,
+                    color_index: 0,
+                    color_random: false,
+                    start_position: LaunchStartPosition::Position(1),
+                    team: LaunchTeam::None,
+                },
+                role: crate::skirmish_launch::LaunchHumanRole::from_observer(false),
+            }],
+            local_player_index: 0,
+            ai_player_count: 0,
             opponents: Vec::new(),
             pre_fill_house_roster:
                 crate::skirmish_launch::PreFillHouseRoster::from_compact_skirmish(0),

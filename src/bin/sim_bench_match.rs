@@ -247,8 +247,10 @@ struct Arsenal {
 }
 
 impl Arsenal {
-    fn new(rules: &RuleSet, side_index: u8, country: &str, super_weapons: bool) -> Self {
-        let side = [&ALLIED, &SOVIET, &YURI][usize::from(side_index).min(2)];
+    fn new(rules: &RuleSet, side_index: i32, country: &str, super_weapons: bool) -> Self {
+        let side = *[&ALLIED, &SOVIET, &YURI]
+            .get(usize::try_from(side_index).expect("benchmark requires a nonnegative stock side"))
+            .expect("benchmark requires a stock side");
         let bit = house_country_bit(rules, country);
         let ownable = |type_id: &str| {
             rules.object(type_id).is_some_and(|object| {

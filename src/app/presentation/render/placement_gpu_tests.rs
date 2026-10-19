@@ -47,7 +47,7 @@ fn paid_goldst(root: &std::path::Path) -> crate::headless_scenario::HeadlessScen
             (LaunchCountry::America, AiDifficulty::Easy),
         ],
     );
-    launch.local.start_position = LaunchStartPosition::Position(3);
+    launch.local_slot_mut().start_position = LaunchStartPosition::Position(3);
     launch.options.starting_credits = 50_000;
     launch.options.unit_count = 0;
     launch.options.tech_level = 10;

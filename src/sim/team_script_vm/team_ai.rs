@@ -211,7 +211,7 @@ impl Simulation {
         // `0x006E929B..0x006E9339`: an empty team that has been full, or
         // that could not fill before `DissolveUnfilledTeamDelay=` in a
         // multiplayer game, is destroyed.
-        let team_rules = TeamRules::new(&rules.general, self.session.game_mode_nonzero);
+        let team_rules = TeamRules::new(&rules.general, self.session.game_mode_nonzero());
         if team.dissolves(&team_rules, current_frame) {
             self.destroy_team(team_id, rules, frame_effects);
             return;

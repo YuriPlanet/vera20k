@@ -371,7 +371,7 @@ pub fn retail_harrier_dock_scene(
     let mut owners = Vec::new();
     for (index, name) in ["Player", "Enemy"].into_iter().enumerate() {
         let id = sim.interner.intern(name);
-        let mut house = HouseState::new(id, index as u8, None, true, 0, 10);
+        let mut house = HouseState::new(id, index as i32, None, true, 0, 10);
         house.multiplay_passive = true;
         sim.houses.insert(id, house);
         sim.session.house_order.push(id);

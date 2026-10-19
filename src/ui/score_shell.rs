@@ -115,7 +115,7 @@ pub struct ScoreScreenModel {
     /// The local side, `ScenarioClass +0x34B8`: in a skirmish the side of
     /// session player 0's country (`0x0068779A..0x0068782D`). It picks the
     /// art (`0x0072D730`) and the bars (`0x005CA110`).
-    pub side: u8,
+    pub side: i32,
     /// Rows in display order, at most [`SCORE_ROW_SLOTS`].
     pub rows: Vec<ScoreRow>,
 }

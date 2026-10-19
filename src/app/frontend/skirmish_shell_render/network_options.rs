@@ -10,10 +10,8 @@ use super::in_game_shell::{
 };
 use super::text::{button_text_rect, localized_label, rect_to_text_rect};
 use super::{
-    OWNERDRAW_SELECTED_RGB_FROM_DAT_00AC4604_PACKED_000000FF, SHELL_CONTROL_DEPTH,
-    SHELL_CONTROL_TEXT_DEPTH, SHELL_DROPDOWN_BG_RGB_PENDING_COMBODROPWIN_SOURCE_CAPTURE,
-    SHELL_DROPDOWN_DEPTH, SHELL_DROPDOWN_TEXT_DEPTH, SHELL_EDIT_CARET_DEPTH,
-    SHELL_EDIT_FRAME_DEPTH, SHELL_LABEL_TEXT_RGB,
+    SHELL_CONTROL_DEPTH, SHELL_CONTROL_TEXT_DEPTH, SHELL_DROPDOWN_DEPTH, SHELL_DROPDOWN_TEXT_DEPTH,
+    SHELL_EDIT_CARET_DEPTH, SHELL_EDIT_FRAME_DEPTH, SHELL_LABEL_TEXT_RGB,
 };
 use crate::app::AppState;
 use crate::app::frontend::shell_transition::ShellSlideKind;
@@ -266,26 +264,24 @@ pub(crate) fn render_network_options(
             }
         }
         if let Some(popup) = dialog.card_popup(&layout) {
-            push_solid_rect(
+            super::controls::push_popup_instances(
                 &mut overlay.controls,
                 atlas,
                 popup.rect,
-                SHELL_DROPDOWN_BG_RGB_PENDING_COMBODROPWIN_SOURCE_CAPTURE,
-                SHELL_DROPDOWN_DEPTH,
+                dialog.card_hot_row.and_then(|index| popup.row_rect(index)),
+                [],
+                popup.scrollbar().zip(popup.thumb()),
+                dialog
+                    .card_scroll
+                    .pressed_part()
+                    .map(super::controls::dropdown_scroll_part),
+                scale,
+                SHELL_DROPDOWN_DEPTH - 0.00002,
             );
             for index in popup.first..popup.first + popup.visible_rows {
                 let Some(row) = popup.row_rect(index) else {
                     continue;
                 };
-                if dialog.card_hot_row == Some(index) {
-                    push_solid_rect(
-                        &mut overlay.controls,
-                        atlas,
-                        row,
-                        OWNERDRAW_SELECTED_RGB_FROM_DAT_00AC4604_PACKED_000000FF,
-                        SHELL_DROPDOWN_DEPTH - 0.00001,
-                    );
-                }
                 overlay.texts.push(text(
                     card_label(index),
                     scale.derive_rect(row, |rect| {
@@ -295,33 +291,6 @@ pub(crate) fn render_network_options(
                     SHELL_DROPDOWN_TEXT_DEPTH,
                 ));
             }
-            if let (Some(scrollbar), Some(thumb)) = (popup.scrollbar(), popup.thumb()) {
-                paint_control(
-                    &mut overlay.controls,
-                    &atlas.control_chrome(),
-                    ControlPaint::ScrollBar {
-                        scrollbar,
-                        thumb,
-                        pressed_part: dialog.card_scroll.pressed_part().map(|part| {
-                            use crate::ui::shell::list::ListScrollPart;
-                            use crate::ui::skirmish_shell::DropdownScrollbarPart;
-                            match part {
-                                ListScrollPart::Up => DropdownScrollbarPart::UpArrow,
-                                ListScrollPart::Down => DropdownScrollbarPart::DownArrow,
-                                ListScrollPart::Thumb => DropdownScrollbarPart::Thumb,
-                                ListScrollPart::Track => DropdownScrollbarPart::Track,
-                            }
-                        }),
-                    },
-                    scale,
-                );
-            }
-            push_ownerdraw_two_pixel_bevel_frame(
-                &mut overlay.controls,
-                atlas,
-                popup.rect,
-                SHELL_DROPDOWN_DEPTH - 0.00002,
-            );
         }
         texts.extend(crate::render::shell_paint::paint_labels_scaled(
             font,

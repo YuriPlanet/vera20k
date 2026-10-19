@@ -139,7 +139,11 @@ fn area_guard_default_voice_matches_native_pre_gate_post_gate_and_main_continuat
             .interner
             .intern(&format!("NativeHouse{current_pointer}"));
         sim.session.current_house = Some(current);
-        sim.session.game_mode_nonzero = first["game_mode"].as_u64().unwrap() != 0;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+                first["game_mode"].as_u64().unwrap() != 0,
+            ),
+        );
         let initial_actors = row["boundaries"][0]["before"]["actors"]
             .as_object()
             .unwrap();

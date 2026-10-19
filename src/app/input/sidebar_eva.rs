@@ -170,6 +170,43 @@ fn is_structure_strip(category: ProductionCategory) -> bool {
     )
 }
 
+/// How many PRODUCE events one click queues.
+///
+/// This is VERA's own convenience, not native behavior. gamemd's
+/// `SelectClass::Action @ 0x006AAD00` reads the Shift bit for the right button
+/// only (`0x006AAD66`); a left press queues exactly one copy whatever the
+/// modifier state. So an unmodified press returns 1 and `cameo_click` stays a
+/// faithful port of the native decision.
+///
+/// Shift expands the press only where the native click really appends a copy: a
+/// mobile strip (Infantry/Vehicle/Aircraft) whose category is starting from
+/// idle. The other arms take their own single event and keep it:
+/// a structure strip, whose busy click is `EVA_UnableToComply` and whose
+/// `Begin_Production` never queues a second building; and a held or finished
+/// build, which resumes or places rather than appending.
+///
+/// `shift` is the Shift bit only while the player's `[VERA] ShiftQueue=` is on;
+/// the caller clears it otherwise. `count` is the configured
+/// `[VERA] ShiftQueueCount=`, already clamped by the profile owner. The
+/// expansion is deliberately not capped further here: each copy is an
+/// ordinary PRODUCE event, so `FactoryClass::StartProduction`'s own
+/// `[General] MaximumQueuedObjects=` check still refuses the extras, exactly as
+/// repeated fast clicks would.
+pub(crate) fn shift_queue_repeat(
+    category: ProductionCategory,
+    own: Option<BuildQueueState>,
+    shift: bool,
+    count: u32,
+) -> u32 {
+    let appends_a_copy = !is_structure_strip(category)
+        && !matches!(own, Some(BuildQueueState::Paused | BuildQueueState::Done));
+    if shift && appends_a_copy {
+        count.max(1)
+    } else {
+        1
+    }
+}
+
 /// `0x006AB484..0x006AB498` / `0x006AB6A1..0x006AB6C9`: infantry trains,
 /// everything else builds.
 pub(crate) fn start_line_for(category: ProductionCategory) -> &'static str {
@@ -222,5 +259,72 @@ mod tests {
             assert_eq!(right.eva, Some(EVA_ON_HOLD));
             assert!(!right.clear_building_placement);
         }
+    }
+
+    /// VERA's Shift repeat is an app convenience layered after the native
+    /// click, so every arm the native click gives a different single event
+    /// keeps exactly one PRODUCE.
+    #[test]
+    fn shift_repeats_only_where_the_native_click_appends_a_copy() {
+        // The caller supplies the configured count, so any value proves the
+        // arm decision without pinning the default here.
+        let n = 5;
+        // A mobile strip starting from idle: the native click appends, so
+        // Shift expands it.
+        for category in [
+            ProductionCategory::Infantry,
+            ProductionCategory::Vehicle,
+            ProductionCategory::Aircraft,
+        ] {
+            assert_eq!(
+                shift_queue_repeat(category, None, true, n),
+                n,
+                "{category:?}"
+            );
+            // Without the modifier the native click is unchanged.
+            assert_eq!(
+                shift_queue_repeat(category, None, false, n),
+                1,
+                "{category:?}"
+            );
+        }
+
+        // Both structure strips: a busy click is EVA_UnableToComply, and
+        // Begin_Production never queues a second building, so Shift must not
+        // multiply the event.
+        for category in [ProductionCategory::Building, ProductionCategory::Defense] {
+            assert_eq!(
+                shift_queue_repeat(category, None, true, n),
+                1,
+                "{category:?}"
+            );
+        }
+
+        // A held build takes the resume arm and a finished one the placement
+        // arm; neither appends, so neither expands even on a mobile strip.
+        for own in [BuildQueueState::Paused, BuildQueueState::Done] {
+            assert_eq!(
+                shift_queue_repeat(ProductionCategory::Vehicle, Some(own), true, n),
+                1,
+                "{own:?}"
+            );
+        }
+
+        // A running build still appends behind itself, so Shift expands there.
+        assert_eq!(
+            shift_queue_repeat(
+                ProductionCategory::Vehicle,
+                Some(BuildQueueState::Building),
+                true,
+                n
+            ),
+            n
+        );
+
+        // A configured 0 must still send the click's own PRODUCE.
+        assert_eq!(
+            shift_queue_repeat(ProductionCategory::Infantry, None, true, 0),
+            1
+        );
     }
 }

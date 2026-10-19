@@ -232,7 +232,9 @@ impl App {
                         runtime
                             .resources
                             .rules
-                            .side_name(crate::rules::ruleset::SideIdx(house.side_index))
+                            .side_name(crate::rules::ruleset::SideIdx(
+                                u8::try_from(house.side_index).ok()?,
+                            ))
                     });
                 let current = sim.session.map_name.as_str();
                 let scenario = match map_select(

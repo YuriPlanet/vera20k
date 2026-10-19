@@ -18,6 +18,8 @@ pub(crate) enum PresentedShell {
     LoadSavedGame,
     Options,
     NetworkOptions,
+    LanLobby,
+    LanSetup,
     WolWelcome,
     Score,
 }

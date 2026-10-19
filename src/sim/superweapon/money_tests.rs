@@ -395,7 +395,8 @@ fn superweapon_money_saved_wallet_and_charge_do_not_repeat_settlement() {
 fn superweapon_money_funded_ai_uses_the_same_single_settlement() {
     let rules = rules("[Reveal]\nMoney.Amount=-500\n");
     let (mut sim, owner) = world(&rules, 1000, false);
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     let id = ready(&mut sim, &rules, owner, "Reveal", false);
     sim.houses
         .get_mut(&owner)

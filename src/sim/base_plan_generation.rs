@@ -27,7 +27,7 @@ pub(crate) enum RecalcPreflightError {
 pub(crate) fn preflight_recalc(
     rules: &RuleSet,
     country_name: &str,
-    side_index: u8,
+    side_index: i32,
     difficulty: HouseDifficulty,
 ) -> Result<(), RecalcPreflightError> {
     let country_index = rules
@@ -67,7 +67,7 @@ pub(crate) fn recalc_base_plan(
     rules: &RuleSet,
     type_tech_levels: &TypeTechLevels,
     country_name: &str,
-    side_index: u8,
+    side_index: i32,
     difficulty: HouseDifficulty,
     tech_level: i32,
     super_weapons: bool,
@@ -257,7 +257,7 @@ fn recalc_candidate_allowed(
     candidate: &ObjectType,
     type_tech_levels: &TypeTechLevels,
     country_bit: u32,
-    side_index: u8,
+    side_index: i32,
     tech_level: i32,
     super_weapons: bool,
     rules: &RuleSet,
@@ -383,7 +383,7 @@ mod tests {
     fn generated_values(
         rules: &RuleSet,
         country: &str,
-        side: u8,
+        side: i32,
         difficulty: HouseDifficulty,
         seed: u64,
     ) -> (BasePlanState, SimRng) {

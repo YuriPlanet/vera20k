@@ -17,7 +17,8 @@ fn scene() -> (Simulation, RuleSet, OverlayTypeRegistry, [InternedId; 3]) {
          [Warheads]\n2=CONTROL\n[CONTROL]\nMindControl=yes\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
          [SuperWeaponTypes]\n0=REVEAL\n[REVEAL]\nType=PsychicReveal\nRechargeTime=.1\nIsPowered=no\nRevealRadius=1\n",
     );
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     let houses = std::array::from_fn(|i| {
         let name = sim.interner.intern(&format!("H{i}"));
         let country = sim.interner.intern(&format!("Country{i}"));

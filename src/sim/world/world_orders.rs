@@ -278,7 +278,7 @@ impl Simulation {
     pub fn house_is_human_player(&self, owner: InternedId) -> bool {
         // House50B6F0: nonzero session mode compares exactly to LocalPlayer;
         // mode zero uses the two native human/control flags.
-        if self.session.game_mode_nonzero {
+        if self.session.game_mode_nonzero() {
             //50B716 loads A83D4C, the persisted native current-house input.
             //Presentation viewer binding cannot change this receiver's result.
             self.session.current_house == Some(owner)
@@ -295,7 +295,7 @@ impl Simulation {
     /// Keep this distinct from `house_is_human_player`: its mode-zero branch
     /// also admits the separate `IsHuman` flag.
     pub fn house_is_control_group_eligible(&self, owner: InternedId) -> bool {
-        if self.session.game_mode_nonzero {
+        if self.session.game_mode_nonzero() {
             self.house_is_human_player(owner)
         } else {
             self.houses
@@ -333,7 +333,7 @@ impl Simulation {
             }
             if object.construction_yard
                 && !(self.owner_is_human(actor.owner())
-                    && self.session.game_mode_nonzero
+                    && self.session.game_mode_nonzero()
                     && self.session.game_options.mcv_redeploy
                     && actor.mind_control.controller().is_none())
             {
@@ -1056,7 +1056,9 @@ mod repair_notification_tests {
             sim.session.house_order.push(id);
         }
         sim.session.current_house = Some(owner);
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "notification", 0);
         let restore = || {

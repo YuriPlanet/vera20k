@@ -245,6 +245,7 @@ pub enum ShellCaptureCheckpoint {
     Options0xD5Steady,
     /// Ordinary D5 -> D7 with explicit service/settings inputs.
     NetworkOptions(movies::NetworkOptionsTarget),
+    Lan(movies::LanTarget),
     /// Network on `0xE2`: after its teardown slide and a new `0xE2`'s entry
     /// slide, the settled main menu.
     MainMenu0xE2NetworkBounce,
@@ -351,6 +352,12 @@ pub enum ShellCaptureCheckpoint {
 
 impl ShellCaptureCheckpoint {
     fn parse(value: &str) -> Result<Self> {
+        if let Some((_, target)) = movies::LAN_CHECKPOINTS
+            .iter()
+            .find(|(name, _)| *name == value)
+        {
+            return Ok(Self::Lan(*target));
+        }
         if let Some(tick) = value.strip_prefix(CHECKPOINT_CAMPAIGN_ALL1_OPENING_TICK_PREFIX) {
             let tick: u64 = tick
                 .parse()
@@ -644,6 +651,13 @@ impl ShellCaptureCheckpoint {
             Self::LoadSavedGame0xB7Steady => CHECKPOINT_LOAD_SAVED_GAME_0XB7_STEADY,
             Self::LoadSavedGame0xB7Entry(_) => "load-saved-game-0xb7-entry",
             Self::Options0xD5Steady => CHECKPOINT_OPTIONS_0XD5_STEADY,
+            Self::Lan(target) => {
+                movies::LAN_CHECKPOINTS
+                    .iter()
+                    .find(|(_, candidate)| *candidate == target)
+                    .expect("LAN checkpoint")
+                    .0
+            }
             Self::NetworkOptions(target) => {
                 NETWORK_OPTIONS_CHECKPOINTS
                     .iter()
@@ -786,6 +800,7 @@ impl ShellCaptureCheckpoint {
                 press: movies::WolPress::MainMenu,
             },
             Self::NetworkOptions(target) => movies::MoviesTarget::NetworkOptions(target),
+            Self::Lan(target) => movies::MoviesTarget::Lan(target),
             Self::Options0xD5Steady => movies::MoviesTarget::Options0xD5 {
                 entry_tick: None,
                 hover: None,
@@ -1745,6 +1760,9 @@ impl ShellCaptureSession {
         write_new_file(&frame_path, pixels)?;
         let manifest_path = self.request.output_dir().join(MANIFEST_FILE_NAME);
         write_new_file(&manifest_path, &manifest_bytes)?;
+        if let Some(capture) = self.movies.as_mut() {
+            capture.cleanup()?;
+        }
 
         self.outcome = Some(Ok(()));
         Ok(())
@@ -2187,6 +2205,19 @@ mod tests {
             assert_eq!(checkpoint.as_str(), name);
         }
         assert!(ShellCaptureCheckpoint::parse("options-0xd5-hover-nothing").is_err());
+    }
+
+    #[test]
+    fn lan_checkpoints_route_through_production_network() {
+        for &(name, target) in movies::LAN_CHECKPOINTS {
+            let checkpoint = ShellCaptureCheckpoint::parse(name).expect("LAN checkpoint");
+            assert_eq!(checkpoint.as_str(), name);
+            assert_eq!(
+                checkpoint.movies_target(),
+                Some(movies::MoviesTarget::Lan(target))
+            );
+        }
+        assert!(ShellCaptureCheckpoint::parse("lan-0xbd-offline-shortcut").is_err());
     }
 
     #[test]

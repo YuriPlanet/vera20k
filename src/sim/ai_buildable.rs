@@ -77,7 +77,7 @@ pub(crate) fn owner_allows(candidate: &ObjectType, country_bit: u32, rules: &Rul
 pub fn candidate_allowed(
     candidate: &ObjectType,
     country_bit: u32,
-    side_index: u8,
+    side_index: i32,
     super_weapons: bool,
     rules: &RuleSet,
 ) -> bool {
@@ -116,7 +116,7 @@ pub(crate) fn first_buildable_from_array<'a>(
     rules: &'a RuleSet,
     type_ids: &[String],
     country_name: &str,
-    side_index: u8,
+    side_index: i32,
     super_weapons: bool,
 ) -> Option<&'a ObjectType> {
     let bit = country_bit(rules.trigger_house_type_index(country_name)?);

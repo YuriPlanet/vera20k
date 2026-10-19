@@ -319,7 +319,8 @@ fn retail_all02_prisoner_damage_enable_elapsed_wakeup_survives_restore() {
     );
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.session.game_mode_nonzero = false;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false));
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
     for row in native["houses"].as_array().unwrap() {
         assert_eq!(

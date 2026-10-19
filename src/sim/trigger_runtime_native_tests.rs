@@ -1666,7 +1666,8 @@ fn all01_due_charge_and_damage_share_the_production_house_power_phase() {
         record.cell_y = record.cell_y.checked_sub(59).unwrap();
     }
     let mut sim = Simulation::with_seed(31);
-    sim.session.game_mode_nonzero = false;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false));
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
     let roster = crate::map::houses::parse_house_roster(&map.ini, &[], Some(&rules));
@@ -4334,7 +4335,9 @@ fn native_trigger_reveal_initial_event48_tags_receive_neutral_discovery_dispatch
         let player = sim.interner.intern("Player");
         let owner = sim.interner.intern(lead["owner"].as_str().unwrap());
         sim.session.current_house = Some(player);
-        sim.session.game_mode_nonzero = false;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false),
+        );
         sim.houses
             .insert(player, HouseState::new(player, 0, None, true, 0, 10));
         sim.houses

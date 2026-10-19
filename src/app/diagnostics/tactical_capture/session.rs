@@ -795,7 +795,7 @@ impl TacticalCaptureSession {
             "live raw map/playfield bounds differ from the sealed fixture"
         );
         validate_game_options(sim, &self.request.launch_session())?;
-        validate_houses_and_slots(sim, profile)?;
+        validate_houses_and_slots(sim, profile, state.rules().context("loaded Rules missing")?)?;
 
         validate_loaded_resources(state)?;
         ensure!(
@@ -1699,7 +1699,7 @@ fn validate_game_options(
     ensure!(
         crate::skirmish_launch::SkirmishLaunchOptions::from_game_options(&sim.session.game_options)
             == launch.options
-            && sim.session.game_options.ai_players == launch.opponents.len() as i32,
+            && sim.session.game_options.ai_players == launch.ai_player_count,
         "live GameOptions differ from the requested tactical launch"
     );
     Ok(())
@@ -1708,6 +1708,7 @@ fn validate_game_options(
 fn validate_houses_and_slots(
     sim: &crate::sim::world::Simulation,
     profile: &TacticalCaptureProfile,
+    rules: &crate::rules::ruleset::RuleSet,
 ) -> Result<()> {
     let local_name = &profile.launch.player_name;
     let local_id = sim
@@ -1722,11 +1723,16 @@ fn validate_houses_and_slots(
         .country
         .map(|country| sim.interner.resolve(country))
         .context("local country is absent")?;
-    let expected_local_country = profile.launch.local.country.launch_country();
+    let expected_local_country = rules
+        .country_name(profile.launch.local.country.launch_country().index())
+        .context("local Country index missing")?;
     ensure!(
         local.is_human
-            && local.side_index == expected_local_country.side_index()
-            && local_country == expected_local_country.country_name()
+            && local.side_index
+                == rules
+                    .country_side_index_raw(expected_local_country)
+                    .context("local Side missing")?
+            && local_country == expected_local_country
             && local.difficulty == HouseDifficulty::Normal
             && local.economy.credits() == profile.launch.options.starting_credits,
         "local HouseState differs from sealed slot"
@@ -1746,14 +1752,19 @@ fn validate_houses_and_slots(
         .country
         .map(|country| sim.interner.resolve(country))
         .context("Computer1 country is absent")?;
-    let expected_ai_country = profile.launch.opponents[0].country.launch_country();
+    let expected_ai_country = rules
+        .country_name(profile.launch.opponents[0].country.launch_country().index())
+        .context("AI Country index missing")?;
     // The sealed fixture uses Easy, zero starting units and stock RULESMD
     // MultiplayerAICM=400,0,0. Post_Map_Init @ 0x00686A52..0x00686A6B
     // therefore adds no opening grant (scenario_bootstrap's native evidence).
     ensure!(
         !ai.is_human
-            && ai.side_index == expected_ai_country.side_index()
-            && ai_country == expected_ai_country.country_name()
+            && ai.side_index
+                == rules
+                    .country_side_index_raw(expected_ai_country)
+                    .context("AI Side missing")?
+            && ai_country == expected_ai_country
             && ai.difficulty == HouseDifficulty::Easy
             && ai.economy.credits() == profile.launch.options.starting_credits,
         "Computer1 HouseState differs from sealed slot: credits={}, difficulty={:?}",

@@ -913,11 +913,18 @@ pub(crate) fn push_local_eva(state: &mut AppState, event: &str) {
 /// A press on a build cameo: `SelectClass::Action @ 0x006AAD00`'s decision
 /// (`sidebar_eva::cameo_click`) against the local player's queue, then its
 /// `GUIBuildSound`, EVA line and event.
+///
+/// `shift` also feeds VERA's own Shift repeat, off unless the player ticks
+/// Shift-Click Batch Queue in Options. It is not a native input:
+/// gamemd reads the modifier for the right button only (`0x006AAD66`), so an
+/// unshifted or right-button press is byte-for-byte the ported decision. The
+/// sound and the EVA line are spoken once per click regardless of the repeat.
 fn sidebar_cameo_press(
     state: &mut AppState,
     type_id: &str,
     press: sidebar_eva::CameoPress,
     at_build_limit: bool,
+    shift: bool,
 ) {
     let Some(category) = state
         .rules()
@@ -944,11 +951,14 @@ fn sidebar_cameo_press(
                 )
             })
     });
+    // The linked Factory's state also decides whether Shift may repeat: a held
+    // or finished build takes the resume/placement arm, not a fresh PRODUCE.
+    let own_for_repeat = linked_factory.map(|(status, _)| status);
     let click = sidebar_eva::cameo_click(
         &queue,
         category,
         type_iid,
-        linked_factory.map(|(status, _)| status),
+        own_for_repeat,
         type_iid.and_then(|type_id| {
             state
                 .match_state
@@ -997,7 +1007,20 @@ fn sidebar_cameo_press(
     }
     match click.order {
         None => {}
-        Some(sidebar_eva::CameoOrder::Produce) => queue_build_by_type(state, type_id),
+        Some(sidebar_eva::CameoOrder::Produce) => {
+            // The copies carry the current tick, so they execute in one frame in
+            // issue order; the sound and EVA above were spoken once. Shift
+            // repeats only while the Options page's Shift-Click Batch Queue
+            // (`[VERA] ShiftQueue=`) is ticked, `[VERA] ShiftQueueCount=` times.
+            let profile = &state.persistence.options_profile;
+            let repeat = sidebar_eva::shift_queue_repeat(
+                category,
+                own_for_repeat,
+                shift && profile.shift_queue,
+                profile.shift_queue_count,
+            );
+            queue_build_by_type(state, type_id, repeat);
+        }
         Some(sidebar_eva::CameoOrder::Suspend) => suspend_build(state, category),
         Some(sidebar_eva::CameoOrder::Abandon { all }) => {
             cancel_build_by_type(state, type_id, all);
@@ -1081,7 +1104,7 @@ pub(crate) fn apply_sidebar_action(state: &mut AppState, action: SidebarAction) 
             } else {
                 sidebar_eva::CameoPress::Left
             };
-            sidebar_cameo_press(state, &type_id, press, at_build_limit);
+            sidebar_cameo_press(state, &type_id, press, at_build_limit, shift);
         }
         SidebarAction::SuperWeaponPress { section, right } => {
             let selection = (|| {
@@ -2395,7 +2418,9 @@ mod item83_selection_order_tests {
         .expect("item83 voice rules");
         let mut sim = Simulation::new();
         let owner = sim.interner.intern("Americans");
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         sim.session.current_house = Some(owner);
         for (id, type_name) in [(1, "E1"), (2, "E2")] {
             let type_ref = sim.interner.intern(type_name);
@@ -3345,7 +3370,9 @@ mod deploy_key_tests {
     /// and activity tests can admit the fixture's objects.
     fn player_sim() -> Simulation {
         let mut sim = Simulation::new();
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         sim.session.current_house = Some(sim.interner.intern("Americans"));
         sim
     }
@@ -3891,7 +3918,9 @@ mod control_group_tests {
             group_entity(&mut sim, 1, local);
             group_entity(&mut sim, 2, ai);
             group_entity(&mut sim, 3, human_only);
-            sim.session.game_mode_nonzero = multiplayer;
+            sim.session.set_game_mode(
+                crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(multiplayer),
+            );
             sim.session.current_house = Some(local);
             let mut groups = vec![Vec::new(); 10];
             groups[1] = vec![1, 2, 3, 99];
@@ -3936,7 +3965,11 @@ mod control_group_tests {
                 house(&mut sim, "CurrentHouse", false, false),
                 house(&mut sim, "OtherHouse", false, false),
             ];
-            sim.session.game_mode_nonzero = input["mode"].as_u64().unwrap() != 0;
+            sim.session.set_game_mode(
+                crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+                    input["mode"].as_u64().unwrap() != 0,
+                ),
+            );
             sim.session.current_house = Some(owners[0]);
             let actors = input["actors"].as_array().unwrap();
             let mut groups = vec![Vec::new(); 10];
@@ -4033,7 +4066,9 @@ mod control_group_tests {
         let other_human = house(&mut sim, "OtherHuman", true, true);
         group_entity(&mut sim, 10, local);
         group_entity(&mut sim, 11, other_human);
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         sim.session.current_house = Some(local);
 
         assert_eq!(

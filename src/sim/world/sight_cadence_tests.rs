@@ -355,9 +355,9 @@ fn retail_goldst_initial_scenario() -> crate::headless_scenario::HeadlessScenari
         "GoldSt.mmx",
         &[(LaunchCountry::France, AiDifficulty::Easy)],
     );
-    session.player_name = "VERA-OBSERVER".to_owned();
-    session.local.country = LaunchCountry::America;
-    session.local.start_position = LaunchStartPosition::Position(3);
+    session.local_player_mut().name = "VERA-OBSERVER".to_owned();
+    session.local_slot_mut().country = LaunchCountry::America;
+    session.local_slot_mut().start_position = LaunchStartPosition::Position(3);
     session.opponents[0].start_position = LaunchStartPosition::Position(0);
     session.options = SkirmishLaunchOptions {
         starting_credits: 10_000,

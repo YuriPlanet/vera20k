@@ -28,7 +28,8 @@ fn object_pair(rules: &RuleSet, actor_kind: &str, relation: &str) -> (Simulation
         sim.session.house_order.push(owner);
     }
     let owner = sim.interner.get("Americans").unwrap();
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     sim.session.current_house = Some(owner);
     if relation == "ally" || relation == "reverse-ally" {
         let (asker, other) = if relation == "ally" {

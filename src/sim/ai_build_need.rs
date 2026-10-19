@@ -191,7 +191,7 @@ pub(crate) fn check_build_need(sim: &Simulation, rules: &RuleSet, owner: Interne
     let Some(house) = sim.houses.get(&owner) else {
         return false;
     };
-    if house.is_controlled_by_human(sim.session.game_mode_nonzero)
+    if house.is_controlled_by_human(sim.session.game_mode_nonzero())
         || can_make_money(sim, rules, owner)
     {
         return false;

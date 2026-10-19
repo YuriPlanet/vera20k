@@ -29,8 +29,8 @@ pub use layout::{
     random_map_setup_control_at, random_map_setup_dropdown_rect, random_map_setup_dropdown_row_at,
     saved_seed_control_at,
 };
-pub use state::{
-    AcceptOutcome, ChooseMapHoverTarget, ChooseMapListPress, ChooseMapModalState,
+pub use state::{country_choices, available_color_choices, available_start_choices, team_choices,
+    AcceptOutcome, ChooseMapHoverTarget, ChooseMapListPress, ChooseMapContext, ChooseMapModalState,
     ChooseMapSelection, DropdownScrollDragState, DropdownScrollbarPart,
     DropdownScrollbarPressState, EjectPrompt, EjectPromptButton, MainRngRanged, OpenComboDropdown,
     OwnerDrawButton, PLAYER_NAME_CARET_MARGIN_PX, PLAYER_NAME_DEFAULT,

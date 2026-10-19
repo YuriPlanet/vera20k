@@ -69,7 +69,7 @@ pub(super) fn team_label(state: &AppState, team: i32) -> String {
     localized_label(state, key, fallback)
 }
 
-pub(super) fn combo_item_label(state: &AppState, item: SkirmishComboItem) -> String {
+pub(crate) fn combo_item_label(state: &AppState, item: SkirmishComboItem) -> String {
     match item {
         SkirmishComboItem::AiType(row_type) => {
             let (key, fallback) = row_type_label(row_type);
@@ -101,24 +101,33 @@ pub(super) fn country_choice_label(
     country: LaunchCountry,
 ) -> String {
     if random {
-        localized_label(state, "GUI:RandomAsSymbols", "Random")
+        localized_label(state, "GUI:RandomEx", "Random")
     } else {
         country_label(state, country)
     }
 }
 
-/// Country display name, resolved through the retail `rules.ini Name=` ->
-/// CSF `NAME:<house id>` chain (e.g. `NAME:Germans`); falls back to the
-/// hardcoded English label when the CSF lacks the key.
+/// Country UIName from the retained HouseType reader (511850), resolved by
+/// the fixed CSF catalog as native4E3A00 uses it. A missing raw UIName remains
+/// empty; the country catalog decides whether that row is eligible.
 pub(super) fn country_label(state: &AppState, country: LaunchCountry) -> String {
-    let key = format!("NAME:{}", country.country_name());
-    state
-        .process_assets
-        .csf
-        .as_ref()
-        .and_then(|csf| csf.get(&key))
-        .map(str::to_string)
-        .unwrap_or_else(|| country.label().to_string())
+    if let Some(rules) = state.rules() {
+        let Some(id) = rules.country_name(country.index()) else {
+            return String::new();
+        };
+        let (key, _) = rules.country_display_name_sources(id);
+        return key
+            .and_then(|key| {
+                state
+                    .process_assets
+                    .csf
+                    .as_ref()
+                    .and_then(|csf| csf.get(key))
+            })
+            .unwrap_or("")
+            .to_owned();
+    }
+    String::new()
 }
 
 pub(super) fn trackbar_display_value(shell: &SkirmishShellState, id: SkirmishTrackbarId) -> String {
@@ -1227,17 +1236,10 @@ pub(super) fn push_choose_map_modal_text_draws(
 pub(super) fn push_validation_modal_text_draws(
     out: &mut Vec<ShellTextDraw>,
     state: &AppState,
+    modal: &crate::ui::skirmish_shell::SkirmishValidationModalState,
     layout: &BodyOkLayout,
     pressed: bool,
 ) {
-    let Some(modal) = state
-        .frontend
-        .skirmish_shell_state
-        .validation_modal
-        .as_ref()
-    else {
-        return;
-    };
     let body = [PaintLabel {
         text: (&modal.message).into(),
         rect: layout.body,

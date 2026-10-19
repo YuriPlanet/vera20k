@@ -97,9 +97,6 @@
 //!   destination in the immediate Process (the movement owner refuses a
 //!   blocked start cell); only seen with a building placed partly on such
 //!   ground.
-//! - House IsToDie (`+0x1F6`, set by `0x004FC980`): VERA has no resign
-//!   countdown, so it never suppresses the survivor roll. Frequency: only a
-//!   resigning house's buildings.
 //! - Original whole GAPOWR fatal/517A50/51DFF0 controls establish fresh E1
 //!   Doing=-1 and Scatter admission at51D1AA. Different preexisting passenger
 //!   Doing states remain bounded by their own Scatter controls.
@@ -255,10 +252,13 @@ impl Simulation {
     /// `TechnoClass::GetCrew @ 0x00707D20` for a Crewed type owned by a house
     /// of `side` (House `+0x1E8`): the side's crew, Technician for any other
     /// side, and a 15% Technician roll for an armed object. A country with no
-    /// `Side=` (HouseType `+0xBC == -1`, none in stock) would return
-    /// Technician before the roll; `side_index` cannot express it.
-    fn techno_crew_type(&mut self, rules: &RuleSet, side: u8, armed: bool) -> Option<String> {
+    /// `Side=` (HouseType `+0xBC == -1`) returns Technician before the roll
+    /// at707D81..707D8B. Executed controls: building_sale.py --crew-type.
+    fn techno_crew_type(&mut self, rules: &RuleSet, side: i32, armed: bool) -> Option<String> {
         let general = &rules.general;
+        if side == -1 {
+            return general.technician.clone();
+        }
         let crew = match side {
             0 => general.allied_crew.clone(),
             1 => general.soviet_crew.clone(),
@@ -335,7 +335,7 @@ impl Simulation {
             object,
             house,
             &factors,
-            self.session.game_mode_nonzero,
+            self.session.game_mode_nonzero(),
             false,
         );
         refund.checked_div(divisor).unwrap_or(0).clamp(1, 5)
@@ -392,7 +392,13 @@ impl Simulation {
             return;
         }
         for &cell in cells.iter().skip(cursor) {
-            if count > 0
+            // Original443070..443080 re-reads owner+1F6 for each cell.
+            // Pending House destruction skips crew RNG, but not its smudge.
+            if !self
+                .houses
+                .get(&owner)
+                .is_some_and(|house| house.is_to_die())
+                && count > 0
                 && self.scenario_rng.next_range_u32_inclusive(0, chance_max) == 1
                 && let Some(crew) = self.building_crew_type(rules, building_id)
                 && self.spawn_building_survivor(

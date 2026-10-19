@@ -373,8 +373,8 @@ fn assert_retail_amcv_sight_raster(moving: bool) {
         "GoldSt.mmx",
         &[(LaunchCountry::France, AiDifficulty::Easy)],
     );
-    launch.player_name = "VERA-OBSERVER".into();
-    launch.local.start_position = LaunchStartPosition::Position(3);
+    launch.local_player_mut().name = "VERA-OBSERVER".into();
+    launch.local_slot_mut().start_position = LaunchStartPosition::Position(3);
     launch.opponents[0].start_position = LaunchStartPosition::Position(0);
     launch.options.unit_count = 0;
     launch.options.starting_credits = 10_000;

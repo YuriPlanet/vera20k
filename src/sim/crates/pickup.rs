@@ -355,7 +355,7 @@ pub(crate) fn pickup_crate(
     if !flags.crate_type {
         return true;
     }
-    let multiplayer = sim.session.game_mode_nonzero;
+    let multiplayer = sim.session.game_mode_nonzero();
     if multiplayer
         && sim
             .houses

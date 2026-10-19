@@ -41,20 +41,32 @@ fn resolve_owner(state: &mut AppState) -> String {
     preferred_local_owner(state).unwrap_or_else(|| DEFAULT_OWNER.to_string())
 }
 
-pub(crate) fn queue_build_by_type(state: &mut AppState, type_id: &str) {
+/// Queue `repeat` builds of `type_id` as `repeat` ordinary PRODUCE events.
+///
+/// `repeat` comes from [`crate::app::input::sidebar_eva::shift_queue_repeat`],
+/// which reads the configured `[VERA] ShiftQueueCount=`; its default lives with
+/// the profile that owns the setting.
+///
+/// Each copy is the same deterministic command, so several of them replay and
+/// hash exactly like repeated clicks. All of them carry the current tick, so
+/// they execute in one frame and in issue order.
+pub(crate) fn queue_build_by_type(state: &mut AppState, type_id: &str, repeat: u32) {
     let owner: String = resolve_owner(state);
     let type_interned = intern_in_sim(state, type_id);
-    schedule_command(
-        state,
-        &owner,
-        Command::QueueProduction {
-            type_id: type_interned,
-        },
-    );
+    for _ in 0..repeat.max(1) {
+        schedule_command(
+            state,
+            &owner,
+            Command::QueueProduction {
+                type_id: type_interned,
+            },
+        );
+    }
     log::info!(
-        "Build command queued: owner={} type={} issue_frame=current",
+        "Build command queued: owner={} type={} count={} issue_frame=current",
         owner,
-        type_id
+        type_id,
+        repeat.max(1)
     );
 }
 
@@ -248,7 +260,7 @@ fn sell_wall_command_for_cell(
     }
     let wall_owner = cell.wall_owner?;
     let wall_owner_house = sim.houses.get(&wall_owner)?;
-    let owner_is_human_player = if sim.session.game_mode_nonzero {
+    let owner_is_human_player = if sim.session.game_mode_nonzero() {
         wall_owner == local_owner_id
     } else {
         wall_owner_house.is_human || wall_owner_house.player_control
@@ -544,6 +556,32 @@ pub(crate) fn place_starter_base_for_local_owner(state: &mut AppState) {
             owner
         );
     }
+}
+
+/// Queue one attack-move per object for a dev stress army. Every order goes
+/// through the ordinary local gate, so the stress march obeys the same input
+/// lock, owner interning and megamission byte round-trip as a player's click.
+pub(crate) fn schedule_stress_attack_moves(
+    sim: &mut crate::sim::world::Simulation,
+    owner: &str,
+    entity_ids: &[u64],
+    (rx, ry): (u16, u16),
+) -> usize {
+    entity_ids
+        .iter()
+        .filter(|&&entity_id| {
+            schedule_command_in_sim(
+                sim,
+                owner,
+                Command::AttackMove {
+                    entity_id,
+                    target: None,
+                    destination: Some(crate::sim::combat::TargetKind::Cell(rx, ry)),
+                },
+            )
+            .is_some()
+        })
+        .count()
 }
 
 pub(crate) fn spawn_test_units_for_local_owner(state: &mut AppState) {
@@ -1022,15 +1060,50 @@ pub(crate) fn is_playable_house_name(name: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{schedule_command_in_sim, sell_wall_command_for_cell};
+    use super::{
+        schedule_command_in_sim, schedule_stress_attack_moves, sell_wall_command_for_cell,
+    };
 
     use crate::map::entities::EntityCategory;
     use crate::rules::ini_parser::IniFile;
-    use crate::sim::combat::Health;
+    use crate::sim::combat::{Health, TargetKind};
     use crate::sim::command::{Command, CommandEnvelope};
     use crate::sim::game_entity::GameEntity;
     use crate::sim::house_state::HouseState;
     use crate::sim::world::Simulation;
+
+    #[test]
+    fn stress_march_queues_one_attack_move_per_object_through_the_local_gate() {
+        let mut sim = Simulation::new();
+        let local = sim.interner.intern("Local");
+        sim.houses
+            .insert(local, HouseState::new(local, 0, None, true, 0, 10));
+        sim.session.house_order.push(local);
+
+        let accepted = schedule_stress_attack_moves(&mut sim, "Local", &[11, 12, 13], (40, 60));
+        assert_eq!(accepted, 3, "every object of the stress army gets its own order");
+        let queued = sim.pending_command_snapshot();
+        assert_eq!(queued.len(), 3);
+        assert!(
+            queued.iter().all(|command| matches!(
+                command.payload,
+                Command::AttackMove {
+                    target: None,
+                    destination: Some(TargetKind::Cell(40, 60)),
+                    ..
+                }
+            )),
+            "one click, one destination for the whole army: {queued:?}"
+        );
+
+        sim.session.set_input_locked(true);
+        assert_eq!(
+            schedule_stress_attack_moves(&mut sim, "Local", &[14], (40, 60)),
+            0,
+            "the lock that rejects a player's click rejects the stress army too"
+        );
+        assert_eq!(sim.pending_command_snapshot().len(), 3);
+    }
 
     #[test]
     fn cinematic_lock_rejects_tactical_commands_but_keeps_escape_options_usable() {
@@ -1522,7 +1595,9 @@ mod tests {
         );
         assert_eq!(sim.take_due_commands().len(), 1);
 
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         sim.overlay_grid
             .as_mut()
             .unwrap()

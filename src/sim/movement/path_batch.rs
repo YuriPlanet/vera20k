@@ -114,6 +114,7 @@
 
 use std::collections::BTreeMap;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, Instant};
 
 use super::foot_path::MoverLift;
 use super::movement_path::MovePathFailure;
@@ -141,6 +142,117 @@ const SEARCHES_PER_PASS: usize = 256;
 /// The expansions a pass's urgency-2 re-paths make before it starts no more
 /// of them; see the module docs. Four cell searches at A*'s limit fit.
 const URGENCY2_STEPS_PER_PASS: u64 = 4 * crate::sim::pathfinding::MAX_SEARCH_NODES as u64;
+
+/// Passes whose durations the batch keeps for its mean and peak.
+const PASS_WINDOW: usize = 64;
+
+/// What the latest path batch pass did: the dashboard's pathfinding line.
+///
+/// Every count is one the pass already makes for its own caps, and the
+/// durations are its own wall clock. Nothing in the simulation reads any of
+/// this, and it is neither persisted nor state-hashed, so it moves no order
+/// and no hash.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct PathBatchStats {
+    /// Registrations waiting when the latest pass started.
+    pub waiting: u32,
+    /// Registrations the latest pass searched: after the per-pass cap, before
+    /// the urgency-2 budget cut drops answers.
+    pub searched: u32,
+    /// Registrations it answered, whether or not the Foot took the answer.
+    pub answered: u32,
+    /// Registrations it left with no answer, so they register again next
+    /// frame: the cap or the urgency-2 budget cut them out.
+    pub left_out: u32,
+    /// Cells every search of the latest pass expanded.
+    pub steps: u64,
+    /// Of those, the urgency-2 re-paths' expansions.
+    pub urgency2_steps: u64,
+    /// Milliseconds the latest pass took, and the mean and slowest over the
+    /// kept window.
+    pub last_ms: f64,
+    pub mean_ms: f64,
+    pub peak_ms: f64,
+    /// Passes the window holds.
+    pub samples: u32,
+}
+
+/// The batch's own observation of its passes; see [`PathBatchStats`].
+#[derive(Debug)]
+struct PassWindow {
+    waiting: u32,
+    searched: u32,
+    answered: u32,
+    steps: u64,
+    urgency2_steps: u64,
+    last_ns: u64,
+    ns: [u64; PASS_WINDOW],
+    next: usize,
+    filled: usize,
+}
+
+impl Default for PassWindow {
+    fn default() -> Self {
+        Self {
+            waiting: 0,
+            searched: 0,
+            answered: 0,
+            steps: 0,
+            urgency2_steps: 0,
+            last_ns: 0,
+            ns: [0; PASS_WINDOW],
+            next: 0,
+            filled: 0,
+        }
+    }
+}
+
+impl PassWindow {
+    fn finish(
+        &mut self,
+        took: Duration,
+        waiting: usize,
+        searched: usize,
+        answered: usize,
+        steps: u64,
+        urgency2_steps: u64,
+    ) {
+        let cast = |count: usize| u32::try_from(count).unwrap_or(u32::MAX);
+        self.waiting = cast(waiting);
+        self.searched = cast(searched);
+        self.answered = cast(answered);
+        self.steps = steps;
+        self.urgency2_steps = urgency2_steps;
+        self.last_ns = u64::try_from(took.as_nanos()).unwrap_or(u64::MAX);
+        self.ns[self.next] = self.last_ns;
+        self.next = (self.next + 1) % PASS_WINDOW;
+        if self.filled < PASS_WINDOW {
+            self.filled += 1;
+        }
+    }
+
+    fn stats(&self) -> PathBatchStats {
+        let ms = |ns: u64| ns as f64 / 1.0e6;
+        let window = &self.ns[..self.filled];
+        let total_ns: u64 = window.iter().sum();
+        PathBatchStats {
+            waiting: self.waiting,
+            searched: self.searched,
+            answered: self.answered,
+            left_out: self.waiting.saturating_sub(self.answered),
+            steps: self.steps,
+            urgency2_steps: self.urgency2_steps,
+            last_ms: ms(self.last_ns),
+            mean_ms: if window.is_empty() {
+                0.0
+            } else {
+                ms(total_ns) / window.len() as f64
+            },
+            peak_ms: ms(window.iter().max().copied().unwrap_or(0)),
+            samples: self.filled as u32,
+        }
+    }
+}
 
 /// The path searches waiting for the next frame, and this frame's answers.
 #[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
@@ -170,6 +282,10 @@ pub(crate) struct PathBatch {
     #[cfg(any(test, feature = "test-support"))]
     #[serde(skip)]
     answered: Vec<u64>,
+    /// The latest pass's own counts and durations, for the dashboard. Neither
+    /// persisted nor state-hashed: no simulation code reads it.
+    #[serde(skip)]
+    stats: PassWindow,
 }
 
 impl std::hash::Hash for PathBatch {
@@ -441,6 +557,7 @@ impl Simulation {
         let Some(batch) = self.path_batch.as_mut() else {
             return;
         };
+        let started = Instant::now();
         batch.ready.clear();
         #[cfg(any(test, feature = "test-support"))]
         batch.answered.clear();
@@ -449,6 +566,7 @@ impl Simulation {
         // registrations; its left-out urgency-2 re-paths go first.
         let last_left_out = std::mem::take(&mut batch.left_out_code2);
         if pending.is_empty() {
+            batch.stats.finish(started.elapsed(), 0, 0, 0, 0, 0);
             return;
         }
         // A Foot's latest registration this frame stands: its latest state
@@ -458,6 +576,7 @@ impl Simulation {
             .collect::<BTreeMap<_, _>>()
             .into_iter()
             .collect();
+        let waiting = pending.len();
         let (mut turn, others): (Vec<_>, Vec<_>) = pending
             .into_iter()
             .partition(|&(_, request)| request.is_urgency2());
@@ -477,13 +596,14 @@ impl Simulation {
         }
         batch.left_out_code2 = left_out;
         turn.extend(others);
-        let turns = match (rules, self.path_grid_snapshot()) {
+        let searched = turn.len();
+        let (turns, expanded, urgency2_made) = match (rules, self.path_grid_snapshot()) {
             (Some(rules), Some(grid))
                 if self.overlay_grid.is_some() && self.resolved_terrain.is_some() =>
             {
                 self.search_batch(&turn, urgent, urgency2_steps, rules, registry, &grid)
             }
-            _ => Vec::new(),
+            _ => (Vec::new(), 0, 0),
         };
         let mut turns = turns.into_iter();
         let batch = self.path_batch.as_mut().expect("batching is on");
@@ -508,6 +628,21 @@ impl Simulation {
         {
             batch.answered = batch.ready.keys().copied().collect();
         }
+        let answered = batch.ready.len();
+        batch.stats.finish(
+            started.elapsed(),
+            waiting,
+            searched,
+            answered,
+            expanded,
+            urgency2_made,
+        );
+    }
+
+    /// What the latest path batch pass did: its own counts and durations.
+    /// `None` while the simulation searches serially, since then no pass runs.
+    pub fn path_batch_stats(&self) -> Option<PathBatchStats> {
+        Some(self.path_batch.as_ref()?.stats.stats())
     }
 
     /// The end of the live object pass: its answers expire.
@@ -519,7 +654,8 @@ impl Simulation {
 
     /// The searches for `turn`, whose first `urgent` registrations are its
     /// urgency-2 re-paths in their turn's order, with `urgency2_steps` for
-    /// their budget.
+    /// their budget. Returns its turns, the cells every search expanded, and
+    /// the urgency-2 re-paths' share of them.
     fn search_batch(
         &mut self,
         turn: &[(u64, WaitingRequest)],
@@ -528,7 +664,7 @@ impl Simulation {
         rules: &RuleSet,
         registry: Option<&OverlayTypeRegistry>,
         grid: &PathGrid,
-    ) -> Vec<Turn> {
+    ) -> (Vec<Turn>, u64, u64) {
         // One blocker plane for every search. With an overlay grid movers
         // reach it through their Foot+55C counters, which Mark0 leaves alone,
         // so it is the plane each Find_Path would read after its Mark0.
@@ -596,6 +732,10 @@ impl Simulation {
         );
         #[cfg(any(test, feature = "test-support"))]
         assert_eq!(rng, sim.rng_state(), "batched searches draw no RNG");
+        // Expansions the pass actually made, counted before the cut drops the
+        // answers past the budget: that work was still done.
+        let expanded: u64 = searched.iter().flatten().map(|entry| entry.1).sum();
+        let urgency2_made = spent.load(Ordering::Acquire);
         // The cut, which depends on the re-paths' expansions alone: in turn
         // order a re-path is answered while the ones before it stay under the
         // budget.
@@ -610,10 +750,11 @@ impl Simulation {
                 *searched = None;
             }
         }
-        searched
+        let turns = searched
             .into_iter()
             .map(|searched| searched.map_or(Turn::OverBudget, |(answer, _)| Turn::Searched(answer)))
-            .collect()
+            .collect();
+        (turns, expanded, urgency2_made)
     }
 
     /// `id`'s search as its `request`'s Find_Path would run it now, without

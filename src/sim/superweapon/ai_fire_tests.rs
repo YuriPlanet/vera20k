@@ -474,7 +474,11 @@ fn the_try_fire_arms_match_native() {
         house.player_control = flag(&row["control"]);
         house.enemy_house = (int(&row["enemy_index"]) != -1).then_some(enemy);
         house.alert_super_weapon_defense(wide(cell(&row["defense"])), int(&row["defense_frame"]));
-        sim.session.game_mode_nonzero = int(&row["game_mode"]) != 0;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+                int(&row["game_mode"]) != 0,
+            ),
+        );
         sim.session.binary_frame = int(&row["frame"]) as u32;
         sim.resolved_terrain = Some(test_grid(64, 64, test_terrain_cell));
         sim.playfield_bounds = Some(test_playfield_bounds());
@@ -843,7 +847,8 @@ fn retail_skirmish() -> Option<(RuleSet, Simulation, InternedId, InternedId)> {
     let house = sim.houses.get_mut(&americans).unwrap();
     house.difficulty = HouseDifficulty::Hard;
     house.enemy_house = Some(russians);
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     sim.session.game_options.super_weapons = true;
     sim.resolved_terrain = Some(test_grid(64, 64, test_terrain_cell));
     sim.playfield_bounds = Some(test_playfield_bounds());

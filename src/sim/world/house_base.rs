@@ -369,7 +369,7 @@ impl Simulation {
             .get_mut(&owner)
             .expect("retained owner")
             .set_base_center(cell);
-        if self.session.game_mode_nonzero && !self.houses[&owner].is_controlled_by_human(true) {
+        if self.session.game_mode_nonzero() && !self.houses[&owner].is_controlled_by_human(true) {
             self.computer_paranoid(rules, registry, effects);
         }
         // 0x0050C2F5 rereads the plan after the diplomacy callbacks. Keep Recalc's

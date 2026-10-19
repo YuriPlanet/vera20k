@@ -533,7 +533,9 @@ impl SuppliedFootFixture {
         let actor = pointers[actor_pointer.as_str().unwrap()];
         let mut sim = Simulation::with_seed(input["scenario_seed"].as_u64().unwrap());
         sim.session.binary_frame = 1;
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         // Use the persistence owner to adopt the complete supplied original
         // cursor, including pre-fixture Main/MapGen history; no seed fitting.
         sim.scenario_rng =

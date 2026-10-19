@@ -85,7 +85,11 @@ fn fixture(row: &Value, rules: &RuleSet) -> (Simulation, u64, InternedId) {
     sim.resolve_type_handles(rules);
     sim.session.binary_frame = input["frame"].as_u64().unwrap() as u32;
     sim.session.game_options.game_speed = signed(&input["game_speed"]);
-    sim.session.game_mode_nonzero = row["human_input"]["game_mode"].as_u64().unwrap() != 0;
+    sim.session.set_game_mode(
+        crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+            row["human_input"]["game_mode"].as_u64().unwrap() != 0,
+        ),
+    );
     sim.session.map_width = 32;
     sim.session.map_height = 32;
     sim.session.map_name = "CLEG supplied command cells".into();

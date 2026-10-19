@@ -9,6 +9,56 @@ use crate::rules::ini_parser::IniFile;
 use crate::util::base64::base64_decode;
 use crate::util::lzo::{LzoError, decompress_chunks};
 
+/// Retained Scenario header input written by ReadStartPoints689D30. Map
+/// discovery stores the parsed write, not a defaulted value: previewing a map
+/// with no key (or failed hexadecimal conversion) must preserve the prior one.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ScenarioStartHeaderInput {
+    coop_human_start_spots: Option<i32>,
+}
+
+impl ScenarioStartHeaderInput {
+    pub fn from_ini(ini: &IniFile) -> Self {
+        Self {
+            coop_human_start_spots: ini
+                .section("Header")
+                .and_then(|section| section.read_int_value("NumCoopHumanStartSpots")),
+        }
+    }
+}
+
+/// Scenario+11E4: Set_Defaults683A40 seeds4; preview641F72 and scenario
+/// load6874F8 both call the same retained ReadStartPoints reader. Shell visits
+/// retain this owner; Clear_Scene685237 starts a fresh default before map load.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct ScenarioStartHeader {
+    coop_human_start_spots: i32,
+}
+
+impl Default for ScenarioStartHeader {
+    fn default() -> Self {
+        Self {
+            coop_human_start_spots: 4,
+        }
+    }
+}
+
+impl ScenarioStartHeader {
+    pub fn apply(&mut self, input: ScenarioStartHeaderInput) {
+        if let Some(value) = input.coop_human_start_spots {
+            self.coop_human_start_spots = value;
+        }
+    }
+
+    pub fn read_ini(&mut self, ini: &IniFile) {
+        self.apply(ScenarioStartHeaderInput::from_ini(ini));
+    }
+
+    pub fn coop_human_start_spots(self) -> i32 {
+        self.coop_human_start_spots
+    }
+}
+
 /// CPU RGBA thumbnail decoded from `[PreviewPack]`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DecodedPreview {
@@ -20,6 +70,7 @@ pub struct DecodedPreview {
 /// Parsed preview-related metadata from a map.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PreviewSection {
+    pub start_header: ScenarioStartHeaderInput,
     /// Size metadata from `[Preview] Size=` when present.
     pub size: Option<(u32, u32)>,
     /// True if `[PreviewPack]` exists and contains data.
@@ -87,6 +138,7 @@ pub fn parse_preview_section(ini: &IniFile) -> PreviewSection {
     let has_packed_preview = preview_pack_text(ini).is_some();
 
     PreviewSection {
+        start_header: ScenarioStartHeaderInput::from_ini(ini),
         size,
         has_packed_preview,
         decoded: None,
@@ -289,5 +341,31 @@ mod tests {
         assert_eq!(preview.size, Some((2, 1)));
         assert!(preview.has_packed_preview);
         assert_eq!(preview.decoded, None);
+    }
+}
+
+#[cfg(test)]
+mod scenario_start_header_tests {
+    use super::*;
+
+    #[test]
+    fn preview_visits_retain_header_until_scene_defaults_reset_it() {
+        let mut header = ScenarioStartHeader::default();
+        assert_eq!(header.coop_human_start_spots(), 4);
+        for (source, expected) in [
+            ("[Header]\nNumCoopHumanStartSpots=2", 2),
+            ("[Header]\nStartX=1", 2),
+            ("[Header]\nNumCoopHumanStartSpots=$no", 2),
+            ("[Header]\nnumcoophumanstartspots=7", 2),
+            ("[Header]\nNumCoopHumanStartSpots=garbage", 0),
+            ("[Header]\nNumCoopHumanStartSpots=-3", -3),
+        ] {
+            let preview = parse_preview_section(&IniFile::from_str(source));
+            header.apply(preview.start_header);
+            assert_eq!(header.coop_human_start_spots(), expected, "{source}");
+        }
+        let mut fresh = ScenarioStartHeader::default();
+        fresh.read_ini(&IniFile::from_str("[Header]\nStartX=1"));
+        assert_eq!(fresh.coop_human_start_spots(), 4);
     }
 }

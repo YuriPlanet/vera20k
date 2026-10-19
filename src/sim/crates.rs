@@ -2276,7 +2276,9 @@ pub(crate) mod tests {
              Ground=0.025\nLevel=0.005\nIonAmbient=1.20\nIonGround=0.040\n",
         ));
         let mut incoming = sim_with_grid(0x14_09_0007);
-        incoming.session.game_mode_nonzero = true;
+        incoming.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         incoming.session.binary_frame = 100;
         incoming.session.lighting = ScenarioLightingState::from_map(&profiles);
         incoming.session.lighting.selected_profile = ScenarioLightingProfile::Ion;

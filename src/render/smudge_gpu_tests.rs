@@ -335,9 +335,9 @@ fn retail_paid_destruction_and_replacement_reach_smudge_rendering() {
         "Hills.mmx",
         &[(LaunchCountry::France, AiDifficulty::Easy)],
     );
-    launch.player_name = "VERA-OBSERVER".into();
-    launch.local.country = LaunchCountry::America;
-    launch.local.start_position = LaunchStartPosition::Position(0);
+    launch.local_player_mut().name = "VERA-OBSERVER".into();
+    launch.local_slot_mut().country = LaunchCountry::America;
+    launch.local_slot_mut().start_position = LaunchStartPosition::Position(0);
     launch.opponents[0].start_position = LaunchStartPosition::Position(1);
     launch.options.starting_credits = 50_000;
     launch.options.unit_count = 1;

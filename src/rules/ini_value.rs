@@ -283,6 +283,16 @@ impl IniSection {
         self.fold_rules_values(key, default, parse_read_int)
     }
 
+    /// ReadInt5276D0 with its default supplied later: absent keys and failed
+    /// hexadecimal scans retain the default. Decimal text still uses C-atoi,
+    /// so present nonnumeric text is a concrete zero. Preserve prior successful
+    /// reads when this section represents multiple retained rules passes.
+    pub fn read_int_value(&self, key: &str) -> Option<i32> {
+        self.fold_rules_values(key, None, |current, raw| {
+            parse_read_int_value(raw).or(current)
+        })
+    }
+
     /// Ares Valueable<int>: ReadString(2048), then Parser<int>::TryParse.
     /// Absent, empty or failed conversions keep the current value. The `$`
     /// branch scans decimal (`$%d`), while a final `h`/`H` scans hex (`%xh`).
@@ -1379,6 +1389,23 @@ mod tests {
                 "original474A90 {row}",
             );
         }
+    }
+
+    #[test]
+    fn read_int_value_preserves_deferred_default_and_successful_prior_pass() {
+        let mut section = IniSection::new("Header".to_owned());
+        assert_eq!(section.read_int_value("NumCoopHumanStartSpots"), None);
+        section.set("NumCoopHumanStartSpots", "$invalid");
+        assert_eq!(section.read_int_value("NumCoopHumanStartSpots"), None);
+        section.set("NumCoopHumanStartSpots", "garbage");
+        assert_eq!(section.read_int_value("NumCoopHumanStartSpots"), Some(0));
+        let mut patch = IniSection::new("Header".to_owned());
+        patch.set("NumCoopHumanStartSpots", "2");
+        section.overlay_rules_pass(&patch);
+        patch.set("NumCoopHumanStartSpots", "$invalid");
+        section.overlay_rules_pass(&patch);
+        assert_eq!(section.read_int_value("NumCoopHumanStartSpots"), Some(2));
+        assert_eq!(section.read_int("NumCoopHumanStartSpots", 4), 2);
     }
 
     #[test] // P1/P2

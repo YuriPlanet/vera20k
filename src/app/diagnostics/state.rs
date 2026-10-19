@@ -134,12 +134,21 @@ pub(crate) struct DiagnosticsState {
     pub(crate) frame_timer: FrameTimer,
     #[cfg(feature = "telemetry-dashboard")]
     pub(crate) render_timing: RenderTimingMeter,
+    /// The last render breakdown with samples. A hidden window stops rendering,
+    /// and report samples close the live window, so the dashboard keeps the
+    /// last measured one instead of showing an empty report.
+    #[cfg(feature = "telemetry-dashboard")]
+    pub(crate) render_report_cache: Option<crate::sim::telemetry::RenderTimingReport>,
     #[cfg(feature = "telemetry-dashboard")]
     pub(crate) process_stats: crate::app::process_stats::ProcessStatsSampler,
     #[cfg(feature = "telemetry-dashboard")]
     pub(crate) telemetry_server: Option<crate::app::telemetry_server::TelemetryServer>,
     #[cfg(feature = "telemetry-dashboard")]
     pub(crate) telemetry_last_publish: Option<Instant>,
+    /// The server attach count the last publish answered; a change means a new
+    /// client still needs the whole-match history.
+    #[cfg(feature = "telemetry-dashboard")]
+    pub(crate) telemetry_history_generation: u64,
     #[cfg(feature = "telemetry-dashboard")]
     pub(crate) telemetry_observer: crate::app::match_runtime::telemetry::ObserverSession,
     #[cfg(feature = "debug-tools")]
@@ -174,11 +183,15 @@ impl DiagnosticsState {
             #[cfg(feature = "telemetry-dashboard")]
             render_timing: Default::default(),
             #[cfg(feature = "telemetry-dashboard")]
+            render_report_cache: None,
+            #[cfg(feature = "telemetry-dashboard")]
             process_stats: Default::default(),
             #[cfg(feature = "telemetry-dashboard")]
             telemetry_server: None,
             #[cfg(feature = "telemetry-dashboard")]
             telemetry_last_publish: None,
+            #[cfg(feature = "telemetry-dashboard")]
+            telemetry_history_generation: 0,
             #[cfg(feature = "telemetry-dashboard")]
             telemetry_observer: Default::default(),
             #[cfg(feature = "debug-tools")]

@@ -1,0 +1,1053 @@
+{
+  "current": -3,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "retail_registered": [
+    {
+      "id": "Americans",
+      "index": 0,
+      "multiplay": 0,
+      "name": "Americans"
+    },
+    {
+      "id": "Alliance",
+      "index": 1,
+      "multiplay": 0,
+      "name": "Alliance"
+    },
+    {
+      "id": "French",
+      "index": 2,
+      "multiplay": 0,
+      "name": "French"
+    },
+    {
+      "id": "Germans",
+      "index": 3,
+      "multiplay": 0,
+      "name": "Germans"
+    },
+    {
+      "id": "British",
+      "index": 4,
+      "multiplay": 0,
+      "name": "British"
+    },
+    {
+      "id": "Africans",
+      "index": 5,
+      "multiplay": 0,
+      "name": "Africans"
+    },
+    {
+      "id": "Arabs",
+      "index": 6,
+      "multiplay": 0,
+      "name": "Arabs"
+    },
+    {
+      "id": "Confederation",
+      "index": 7,
+      "multiplay": 0,
+      "name": "Confederation"
+    },
+    {
+      "id": "Russians",
+      "index": 8,
+      "multiplay": 0,
+      "name": "Russians"
+    },
+    {
+      "id": "YuriCountry",
+      "index": 9,
+      "multiplay": 0,
+      "name": "YuriCountry"
+    },
+    {
+      "id": "GDI",
+      "index": 10,
+      "multiplay": 0,
+      "name": "GDI"
+    },
+    {
+      "id": "Nod",
+      "index": 11,
+      "multiplay": 0,
+      "name": "Nod"
+    },
+    {
+      "id": "Neutral",
+      "index": 12,
+      "multiplay": 0,
+      "name": "Neutral"
+    },
+    {
+      "id": "Special",
+      "index": 13,
+      "multiplay": 0,
+      "name": "Special"
+    }
+  ],
+  "root": "[Countries]\n0=Alpha\n1=Beta\n[Alpha]\nName=Alias\nMultiplay=yes\n[Orphan]\nName=LaterAlias\nMultiplay=yes\n",
+  "rows": [
+    {
+      "phases": [
+        {
+          "allocated": [
+            {
+              "id": "Alpha",
+              "index": 0,
+              "multiplay": 0,
+              "name": "Alpha"
+            },
+            {
+              "id": "Beta",
+              "index": 1,
+              "multiplay": 0,
+              "name": "Beta"
+            }
+          ],
+          "refreshed": [
+            {
+              "id": "Alpha",
+              "index": 0,
+              "multiplay": 1,
+              "name": "Alias"
+            },
+            {
+              "id": "Beta",
+              "index": 1,
+              "multiplay": 0,
+              "name": "Beta"
+            }
+          ],
+          "result": -3
+        },
+        {
+          "allocated": [
+            {
+              "id": "Alpha",
+              "index": 0,
+              "multiplay": 1,
+              "name": "Alias"
+            },
+            {
+              "id": "Beta",
+              "index": 1,
+              "multiplay": 0,
+              "name": "Beta"
+            }
+          ],
+          "refreshed": [
+            {
+              "id": "Alpha",
+              "index": 0,
+              "multiplay": 1,
+              "name": "Alias"
+            },
+            {
+              "id": "Beta",
+              "index": 1,
+              "multiplay": 0,
+              "name": "Beta"
+            }
+          ],
+          "result": -3
+        }
+      ],
+      "token": null
+    },
+    {
+      "phases": [
+        {
+          "allocated": [
+            {
+              "id": "Alpha",
+              "index": 0,
+              "multiplay": 0,
+              "name": "Alpha"
+            },
+            {
+              "id": "Beta",
+              "index": 1,
+              "multiplay": 0,
+              "name": "Beta"
+            }
+          ],
+          "refreshed": [
+            {
+              "id": "Alpha",
+              "index": 0,
+              "multiplay": 1,
+              "name": "Alias"
+            },
+            {
+              "id": "Beta",
+              "index": 1,
+              "multiplay": 0,
+              "name": "Beta"
+            }
+          ],
+          "result": -3
+        },
+        {
+          "allocated": [
+            {
+              "id": "Alpha",
+              "index": 0,
+              "multiplay": 1,
+              "name": "Alias"
+            },
+            {
+              "id": "Beta",
+              "index": 1,
+              "multiplay": 0,
+              "name": "Beta"
+            }
+          ],
+          "refreshed": [
+            {
+              "id": "Alpha",
+              "index": 0,
+              "multiplay": 1,
+              "name": "Alias"
+            },
+            {
+              "id": "Beta",
+              "index": 1,
+              "multiplay": 0,
+              "name": "Beta"
+            }
+          ],
+          "result": -3
+        }
+      ],
+      "token": ""
+    },
+    {
+      "phases": [
+        {
+          "allocated": [
+            {
+              "id": "Alpha",
+              "index": 0,
+              "multiplay": 0,
+              "name": "Alpha"
+            },
+            {
+              "id": "Beta",
+              "index": 1,
+              "multiplay": 0,
+              "name": "Beta"
+            }
+          ],
+          "refreshed": [
+            {
+              "id": "Alpha",
+              "index": 0,
+              "multiplay": 1,
+              "name": "Alias"
+            },
+            {
+              "id": "Beta",
+              "index": 1,
+              "multiplay": 0,
+              "name": "Beta"
+            }
+          ],
+          "result": 0
+        },
+        {
+          "allocated": [
+            {
+              "id": "Alpha",
+              "index": 0,
+              "multiplay": 1,
+              "name": "Alias"
+            },
+            {
+              "id": "Beta",
+              "index": 1,
+              "multiplay": 0,
+              "name": "Beta"
+            }
+          ],
+          "refreshed": [
+            {
+              "id": "Alpha",
+              "index": 0,
+              "multiplay": 1,
+              "name": "Alias"
+            },
+            {
+              "id": "Beta",
+              "index": 1,
+              "multiplay": 0,
+              "name": "Beta"
+            }
+          ],
+          "result": 0
+        }
+      ],
+      "token": "Alpha"
+    },
+    {
+      "phases": [
+        {
+          "allocated": [
+            {
+              "id": "Alpha",
+              "index": 0,
+              "multiplay": 0,
+              "name": "Alpha"
+            },
+            {
+              "id": "Beta",
+              "index": 1,
+              "multiplay": 0,
+              "name": "Beta"
+            },
+            {
+              "id": "Alias",
+              "index": 2,
+              "multiplay": 0,
+              "name": "Alias"
+            }
+          ],
+          "refreshed": [
+            {
+              "id": "Alpha",
+              "index": 0,
+              "multiplay": 1,
+              "name": "Alias"
+            },
+            {
+              "id": "Beta",
+              "index": 1,
+              "multiplay": 0,
+              "name": "Beta"
+            },
+            {
+              "id": "Alias",
+              "index": 2,
+              "multiplay": 0,
+              "name": "Alias"
+            }
+          ],
+          "result": 2
+        },
+        {
+          "allocated": [
+            {
+              "id": "Alpha",
+              "index": 0,
+              "multiplay": 1,
+              "name": "Alias"
+            },
+            {
+              "id": "Beta",
+              "index": 1,
+              "multiplay": 0,
+              "name": "Beta"
+            },
+            {
+              "id": "Alias",
+              "index": 2,
+              "multiplay": 0,
+              "name": "Alias"
+            }
+          ],
+          "refreshed": [
+            {
+              "id": "Alpha",
+              "index": 0,
+              "multiplay": 1,
+              "name": "Alias"
+            },
+            {
+              "id": "Beta",
+              "index": 1,
+              "multiplay": 0,
+              "name": "Beta"
+            },
+            {
+              "id": "Alias",
+              "index": 2,
+              "multiplay": 0,
+              "name": "Alias"
+            }
+          ],
+          "result": 0
+        }
+      ],
+      "token": "Alias"
+    },
+    {
+      "phases": [
+        {
+          "allocated": [
+            {
+              "id": "Alpha",
+              "index": 0,
+              "multiplay": 0,
+              "name": "Alpha"
+            },
+            {
+              "id": "Beta",
+              "index": 1,
+              "multiplay": 0,
+              "name": "Beta"
+            },
+            {
+              "id": "Orphan",
+              "index": 2,
+              "multiplay": 0,
+              "name": "Orphan"
+            }
+          ],
+          "refreshed": [
+            {
+              "id": "Alpha",
+              "index": 0,
+              "multiplay": 1,
+              "name": "Alias"
+            },
+            {
+              "id": "Beta",
+              "index": 1,
+              "multiplay": 0,
+              "name": "Beta"
+            },
+            {
+              "id": "Orphan",
+              "index": 2,
+              "multiplay": 1,
+              "name": "LaterAlias"
+            }
+          ],
+          "result": 2
+        },
+        {
+          "allocated": [
+            {
+              "id": "Alpha",
+              "index": 0,
+              "multiplay": 1,
+              "name": "Alias"
+            },
+            {
+              "id": "Beta",
+              "index": 1,
+              "multiplay": 0,
+              "name": "Beta"
+            },
+            {
+              "id": "Orphan",
+              "index": 2,
+              "multiplay": 1,
+              "name": "LaterAlias"
+            }
+          ],
+          "refreshed": [
+            {
+              "id": "Alpha",
+              "index": 0,
+              "multiplay": 1,
+              "name": "Alias"
+            },
+            {
+              "id": "Beta",
+              "index": 1,
+              "multiplay": 0,
+              "name": "Beta"
+            },
+            {
+              "id": "Orphan",
+              "index": 2,
+              "multiplay": 1,
+              "name": "LaterAlias"
+            }
+          ],
+          "result": 2
+        }
+      ],
+      "token": "Orphan"
+    },
+    {
+      "phases": [
+        {
+          "allocated": [
+            {
+              "id": "Alpha",
+              "index": 0,
+              "multiplay": 0,
+              "name": "Alpha"
+            },
+            {
+              "id": "Beta",
+              "index": 1,
+              "multiplay": 0,
+              "name": "Beta"
+            }
+          ],
+          "refreshed": [
+            {
+              "id": "Alpha",
+              "index": 0,
+              "multiplay": 1,
+              "name": "Alias"
+            },
+            {
+              "id": "Beta",
+              "index": 1,
+              "multiplay": 0,
+              "name": "Beta"
+            }
+          ],
+          "result": -2
+        },
+        {
+          "allocated": [
+            {
+              "id": "Alpha",
+              "index": 0,
+              "multiplay": 1,
+              "name": "Alias"
+            },
+            {
+              "id": "Beta",
+              "index": 1,
+              "multiplay": 0,
+              "name": "Beta"
+            }
+          ],
+          "refreshed": [
+            {
+              "id": "Alpha",
+              "index": 0,
+              "multiplay": 1,
+              "name": "Alias"
+            },
+            {
+              "id": "Beta",
+              "index": 1,
+              "multiplay": 0,
+              "name": "Beta"
+            }
+          ],
+          "result": -2
+        }
+      ],
+      "token": "<random>"
+    },
+    {
+      "phases": [
+        {
+          "allocated": [
+            {
+              "id": "Alpha",
+              "index": 0,
+              "multiplay": 0,
+              "name": "Alpha"
+            },
+            {
+              "id": "Beta",
+              "index": 1,
+              "multiplay": 0,
+              "name": "Beta"
+            },
+            {
+              "id": "<none>",
+              "index": 2,
+              "multiplay": 0,
+              "name": "<none>"
+            }
+          ],
+          "refreshed": [
+            {
+              "id": "Alpha",
+              "index": 0,
+              "multiplay": 1,
+              "name": "Alias"
+            },
+            {
+              "id": "Beta",
+              "index": 1,
+              "multiplay": 0,
+              "name": "Beta"
+            },
+            {
+              "id": "<none>",
+              "index": 2,
+              "multiplay": 0,
+              "name": "<none>"
+            }
+          ],
+          "result": 2
+        },
+        {
+          "allocated": [
+            {
+              "id": "Alpha",
+              "index": 0,
+              "multiplay": 1,
+              "name": "Alias"
+            },
+            {
+              "id": "Beta",
+              "index": 1,
+              "multiplay": 0,
+              "name": "Beta"
+            },
+            {
+              "id": "<none>",
+              "index": 2,
+              "multiplay": 0,
+              "name": "<none>"
+            }
+          ],
+          "refreshed": [
+            {
+              "id": "Alpha",
+              "index": 0,
+              "multiplay": 1,
+              "name": "Alias"
+            },
+            {
+              "id": "Beta",
+              "index": 1,
+              "multiplay": 0,
+              "name": "Beta"
+            },
+            {
+              "id": "<none>",
+              "index": 2,
+              "multiplay": 0,
+              "name": "<none>"
+            }
+          ],
+          "result": 2
+        }
+      ],
+      "token": "<none>"
+    },
+    {
+      "phases": [
+        {
+          "allocated": [
+            {
+              "id": "Alpha",
+              "index": 0,
+              "multiplay": 0,
+              "name": "Alpha"
+            },
+            {
+              "id": "Beta",
+              "index": 1,
+              "multiplay": 0,
+              "name": "Beta"
+            },
+            {
+              "id": "none",
+              "index": 2,
+              "multiplay": 0,
+              "name": "none"
+            }
+          ],
+          "refreshed": [
+            {
+              "id": "Alpha",
+              "index": 0,
+              "multiplay": 1,
+              "name": "Alias"
+            },
+            {
+              "id": "Beta",
+              "index": 1,
+              "multiplay": 0,
+              "name": "Beta"
+            },
+            {
+              "id": "none",
+              "index": 2,
+              "multiplay": 0,
+              "name": "none"
+            }
+          ],
+          "result": 2
+        },
+        {
+          "allocated": [
+            {
+              "id": "Alpha",
+              "index": 0,
+              "multiplay": 1,
+              "name": "Alias"
+            },
+            {
+              "id": "Beta",
+              "index": 1,
+              "multiplay": 0,
+              "name": "Beta"
+            },
+            {
+              "id": "none",
+              "index": 2,
+              "multiplay": 0,
+              "name": "none"
+            }
+          ],
+          "refreshed": [
+            {
+              "id": "Alpha",
+              "index": 0,
+              "multiplay": 1,
+              "name": "Alias"
+            },
+            {
+              "id": "Beta",
+              "index": 1,
+              "multiplay": 0,
+              "name": "Beta"
+            },
+            {
+              "id": "none",
+              "index": 2,
+              "multiplay": 0,
+              "name": "none"
+            }
+          ],
+          "result": 2
+        }
+      ],
+      "token": "none"
+    },
+    {
+      "phases": [
+        {
+          "allocated": [
+            {
+              "id": "Alpha",
+              "index": 0,
+              "multiplay": 0,
+              "name": "Alpha"
+            },
+            {
+              "id": "Beta",
+              "index": 1,
+              "multiplay": 0,
+              "name": "Beta"
+            }
+          ],
+          "refreshed": [
+            {
+              "id": "Alpha",
+              "index": 0,
+              "multiplay": 1,
+              "name": "Alias"
+            },
+            {
+              "id": "Beta",
+              "index": 1,
+              "multiplay": 0,
+              "name": "Beta"
+            }
+          ],
+          "result": 4475
+        },
+        {
+          "allocated": [
+            {
+              "id": "Alpha",
+              "index": 0,
+              "multiplay": 1,
+              "name": "Alias"
+            },
+            {
+              "id": "Beta",
+              "index": 1,
+              "multiplay": 0,
+              "name": "Beta"
+            }
+          ],
+          "refreshed": [
+            {
+              "id": "Alpha",
+              "index": 0,
+              "multiplay": 1,
+              "name": "Alias"
+            },
+            {
+              "id": "Beta",
+              "index": 1,
+              "multiplay": 0,
+              "name": "Beta"
+            }
+          ],
+          "result": 4475
+        }
+      ],
+      "token": "<Player @ A>"
+    },
+    {
+      "phases": [
+        {
+          "allocated": [
+            {
+              "id": "Alpha",
+              "index": 0,
+              "multiplay": 0,
+              "name": "Alpha"
+            },
+            {
+              "id": "Beta",
+              "index": 1,
+              "multiplay": 0,
+              "name": "Beta"
+            }
+          ],
+          "refreshed": [
+            {
+              "id": "Alpha",
+              "index": 0,
+              "multiplay": 1,
+              "name": "Alias"
+            },
+            {
+              "id": "Beta",
+              "index": 1,
+              "multiplay": 0,
+              "name": "Beta"
+            }
+          ],
+          "result": 4482
+        },
+        {
+          "allocated": [
+            {
+              "id": "Alpha",
+              "index": 0,
+              "multiplay": 1,
+              "name": "Alias"
+            },
+            {
+              "id": "Beta",
+              "index": 1,
+              "multiplay": 0,
+              "name": "Beta"
+            }
+          ],
+          "refreshed": [
+            {
+              "id": "Alpha",
+              "index": 0,
+              "multiplay": 1,
+              "name": "Alias"
+            },
+            {
+              "id": "Beta",
+              "index": 1,
+              "multiplay": 0,
+              "name": "Beta"
+            }
+          ],
+          "result": 4482
+        }
+      ],
+      "token": "<Player @ H>"
+    },
+    {
+      "phases": [
+        {
+          "allocated": [
+            {
+              "id": "Alpha",
+              "index": 0,
+              "multiplay": 0,
+              "name": "Alpha"
+            },
+            {
+              "id": "Beta",
+              "index": 1,
+              "multiplay": 0,
+              "name": "Beta"
+            },
+            {
+              "id": "<player @ a>",
+              "index": 2,
+              "multiplay": 0,
+              "name": "<player @ a>"
+            }
+          ],
+          "refreshed": [
+            {
+              "id": "Alpha",
+              "index": 0,
+              "multiplay": 1,
+              "name": "Alias"
+            },
+            {
+              "id": "Beta",
+              "index": 1,
+              "multiplay": 0,
+              "name": "Beta"
+            },
+            {
+              "id": "<player @ a>",
+              "index": 2,
+              "multiplay": 0,
+              "name": "<player @ a>"
+            }
+          ],
+          "result": 2
+        },
+        {
+          "allocated": [
+            {
+              "id": "Alpha",
+              "index": 0,
+              "multiplay": 1,
+              "name": "Alias"
+            },
+            {
+              "id": "Beta",
+              "index": 1,
+              "multiplay": 0,
+              "name": "Beta"
+            },
+            {
+              "id": "<player @ a>",
+              "index": 2,
+              "multiplay": 0,
+              "name": "<player @ a>"
+            }
+          ],
+          "refreshed": [
+            {
+              "id": "Alpha",
+              "index": 0,
+              "multiplay": 1,
+              "name": "Alias"
+            },
+            {
+              "id": "Beta",
+              "index": 1,
+              "multiplay": 0,
+              "name": "Beta"
+            },
+            {
+              "id": "<player @ a>",
+              "index": 2,
+              "multiplay": 0,
+              "name": "<player @ a>"
+            }
+          ],
+          "result": 2
+        }
+      ],
+      "token": "<player @ a>"
+    },
+    {
+      "phases": [
+        {
+          "allocated": [
+            {
+              "id": "Alpha",
+              "index": 0,
+              "multiplay": 0,
+              "name": "Alpha"
+            },
+            {
+              "id": "Beta",
+              "index": 1,
+              "multiplay": 0,
+              "name": "Beta"
+            },
+            {
+              "id": "012345678901234567890123",
+              "index": 2,
+              "multiplay": 0,
+              "name": "012345678901234567890123"
+            }
+          ],
+          "refreshed": [
+            {
+              "id": "Alpha",
+              "index": 0,
+              "multiplay": 1,
+              "name": "Alias"
+            },
+            {
+              "id": "Beta",
+              "index": 1,
+              "multiplay": 0,
+              "name": "Beta"
+            },
+            {
+              "id": "012345678901234567890123",
+              "index": 2,
+              "multiplay": 0,
+              "name": "012345678901234567890123"
+            }
+          ],
+          "result": 2
+        },
+        {
+          "allocated": [
+            {
+              "id": "Alpha",
+              "index": 0,
+              "multiplay": 1,
+              "name": "Alias"
+            },
+            {
+              "id": "Beta",
+              "index": 1,
+              "multiplay": 0,
+              "name": "Beta"
+            },
+            {
+              "id": "012345678901234567890123",
+              "index": 2,
+              "multiplay": 0,
+              "name": "012345678901234567890123"
+            },
+            {
+              "id": "012345678901234567890123",
+              "index": 3,
+              "multiplay": 0,
+              "name": "012345678901234567890123"
+            }
+          ],
+          "refreshed": [
+            {
+              "id": "Alpha",
+              "index": 0,
+              "multiplay": 1,
+              "name": "Alias"
+            },
+            {
+              "id": "Beta",
+              "index": 1,
+              "multiplay": 0,
+              "name": "Beta"
+            },
+            {
+              "id": "012345678901234567890123",
+              "index": 2,
+              "multiplay": 0,
+              "name": "012345678901234567890123"
+            },
+            {
+              "id": "012345678901234567890123",
+              "index": 3,
+              "multiplay": 0,
+              "name": "012345678901234567890123"
+            }
+          ],
+          "result": 3
+        }
+      ],
+      "token": "012345678901234567890123Long"
+    }
+  ]
+}

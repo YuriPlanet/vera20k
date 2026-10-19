@@ -1893,7 +1893,7 @@ fn screen_visual_character(
                     .has_sensor_for_house(viewer, entity.position.rx(), entity.position.ry())
             }),
             viewer.is_some_and(|viewer| allied(viewer, owner) && allied(owner, viewer)),
-            !sim.session.game_mode_nonzero,
+            !sim.session.game_mode_nonzero(),
             false,
         ),
     )
@@ -1967,7 +1967,7 @@ fn healer_target_drop_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     let Some(owner) = sim.substrate.entities.get(id).map(|entity| entity.owner()) else {
         return;
     };
-    if !sim.session.game_mode_nonzero
+    if !sim.session.game_mode_nonzero()
         && !sim.house_is_human_player(owner)
         && let Some(current) = target(sim)
         && !allied(sim, current)
@@ -1976,7 +1976,7 @@ fn healer_target_drop_step(sim: &mut Simulation, id: u64, rules: &RuleSet) {
         drop(sim);
     }
     if let Some(current) = target(sim)
-        && sim.session.game_mode_nonzero
+        && sim.session.game_mode_nonzero()
         && sim.owner_is_human(owner)
         && healer(sim)
         && !allied(sim, current)
@@ -2300,7 +2300,9 @@ mod tests {
             theirs,
             crate::sim::house_state::HouseState::new(theirs, 1, None, false, 0, 10),
         );
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         sim.session.current_house = Some(ours);
         sim.resolve_type_handles(&rules);
         let spawn = |sim: &mut Simulation, name: &str, owner: &str, x: u16| {
@@ -2386,7 +2388,9 @@ mod tests {
             None
         );
         // GameMode 0: a computer house drops an enemy, a human house keeps it.
-        sim.session.game_mode_nonzero = false;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false),
+        );
         assert_eq!(run(&mut sim, their_medic, friend), None);
         assert_eq!(run(&mut sim, medic, enemy), Some(TargetKind::Entity(enemy)));
     }
@@ -2429,7 +2433,9 @@ mod tests {
             theirs,
             crate::sim::house_state::HouseState::new(theirs, 1, None, false, 0, 10),
         );
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         sim.session.current_house = Some(ours);
         sim.session.binary_frame = 1;
         sim.resolve_type_handles(&rules);

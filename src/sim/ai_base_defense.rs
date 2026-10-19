@@ -298,7 +298,7 @@ pub(crate) struct DefenseChoice<'r> {
     /// `HouseClass+0x6C`: each building's cell (`vt+0x1B8`) and type.
     pub buildings: Vec<((i16, i16), &'r ObjectType)>,
     /// `HouseTypeClass+0xBC`.
-    pub side_index: u8,
+    pub side_index: i32,
     /// `1 << FindIndexOfName(HouseTypeClass+0x98)` (`0x00507B92`); retail
     /// leaves every country's `ParentCountry=` at its own name.
     pub country_bit: u32,

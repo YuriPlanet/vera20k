@@ -175,7 +175,8 @@ fn retail_gi_and_guardian_gi_deploy_then_team_move_in_bound_runtime() {
         15
     );
     let mut sim = Simulation::with_seed(31);
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     // Supply the Clear/Foot row that ordinary Infantry Unlimbo reads before
     // these retail automatic-deploy frames begin.
     let terrain = test_flat_ground_grid(64);

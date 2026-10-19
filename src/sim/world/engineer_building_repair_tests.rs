@@ -214,7 +214,11 @@ impl Fixture {
         sim.session.current_house = Some(owner);
         // The reused native fixture supplies its game mode explicitly;
         // this is a caller prior, not a retail startup-default assertion.
-        sim.session.game_mode_nonzero = int(&route["arrivals"][0]["before"]["game_mode"]) != 0;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+                int(&route["arrivals"][0]["before"]["game_mode"]) != 0,
+            ),
+        );
         if name == "allied_damaged" {
             sim.house_alliances
                 .insert("AMERICANS".into(), ["SECOND".into()].into_iter().collect());

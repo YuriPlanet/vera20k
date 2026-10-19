@@ -85,7 +85,9 @@ fn retail_supers_recheck_live_admission_after_power_loss_and_recovery() {
         let mut sim = Simulation::with_seed(0x6CC3_6000);
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
-        sim.session.game_mode_nonzero = false;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false),
+        );
         sim.input_delay_ticks = 0;
         let owner = sim.interner.intern("Americans");
         let id = sim.interner.intern(name);

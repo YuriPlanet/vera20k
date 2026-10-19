@@ -22,6 +22,8 @@ pub enum MatchSeedSource {
     WindowsGetTickCount,
     Controlled,
     NonWindowsDevelopmentFallback,
+    /// Seed supplied by the admitted host start, never sampled by a guest.
+    AgreedNetworkHost,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -75,6 +77,52 @@ pub struct PreparedMatchStartup {
     pub correlation: MatchCorrelationId,
     pub seed: MatchSeed,
     pub session: AcceptedBattleSession,
+}
+
+/// Immutable accepted network handoff, shared with the live session owner.
+/// No UI or loading phase keeps a second mutable roster after this freeze.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PreparedNetworkStartup {
+    launch: SkirmishLaunchSession,
+    pub(crate) seed: MatchSeed,
+    mode: crate::app::match_runtime::session::SessionMode,
+    host: bool,
+    max_ahead_frames: i32,
+}
+
+impl PreparedNetworkStartup {
+    pub(crate) fn new(
+        launch: SkirmishLaunchSession,
+        seed: u32,
+        mode: crate::app::match_runtime::session::SessionMode,
+        host: bool,
+        max_ahead_frames: i32,
+    ) -> Self {
+        Self {
+            launch,
+            seed: MatchSeed {
+                value: seed,
+                source: MatchSeedSource::AgreedNetworkHost,
+                seed_authority_certifying: false,
+            },
+            mode,
+            host,
+            max_ahead_frames,
+        }
+    }
+
+    pub(crate) fn max_ahead_frames(&self) -> i32 {
+        self.max_ahead_frames
+    }
+    pub fn launch_session(&self) -> &SkirmishLaunchSession {
+        &self.launch
+    }
+    pub(crate) fn mode(&self) -> crate::app::match_runtime::session::SessionMode {
+        self.mode
+    }
+    pub(crate) fn host(&self) -> bool {
+        self.host
+    }
 }
 
 /// Explicit settings supplied by an external campaign launcher.
@@ -223,6 +271,7 @@ pub fn prepare_campaign_startup(
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum LoadingStartup {
+    Network(std::sync::Arc<PreparedNetworkStartup>),
     Campaign(PreparedCampaignStartup),
     Accepted(PreparedMatchStartup),
     UnverifiedLegacy {
@@ -237,6 +286,11 @@ pub enum LoadingStartup {
 impl LoadingStartup {
     pub fn selected_map_file(&self) -> &str {
         match self {
+            Self::Network(startup) => startup
+                .launch
+                .selected_map_file
+                .as_deref()
+                .expect("accepted network map"),
             Self::Campaign(startup) => startup.selected_map_file(),
             Self::Accepted(startup) => startup.session.selected_map_file(),
             Self::UnverifiedLegacy { session, .. } => {
@@ -248,6 +302,7 @@ impl LoadingStartup {
 
     pub fn launch_session(&self) -> Option<&SkirmishLaunchSession> {
         match self {
+            Self::Network(startup) => Some(startup.launch_session()),
             Self::Campaign(_) => None,
             Self::Accepted(startup) => Some(startup.session.launch_session()),
             Self::UnverifiedLegacy { session, .. } => Some(session),
@@ -258,7 +313,10 @@ impl LoadingStartup {
     pub fn accepted(&self) -> Option<&PreparedMatchStartup> {
         match self {
             Self::Accepted(startup) => Some(startup),
-            Self::Campaign(_) | Self::UnverifiedLegacy { .. } | Self::Generic { .. } => None,
+            Self::Network(_)
+            | Self::Campaign(_)
+            | Self::UnverifiedLegacy { .. }
+            | Self::Generic { .. } => None,
         }
     }
 
@@ -276,6 +334,7 @@ impl LoadingStartup {
     pub(crate) fn session_mode(&self) -> crate::app::match_runtime::session::SessionMode {
         use crate::app::match_runtime::session::SessionMode;
         match self {
+            Self::Network(startup) => startup.mode(),
             Self::Campaign(_) => SessionMode::Campaign,
             Self::Accepted(_) | Self::UnverifiedLegacy { .. } | Self::Generic { .. } => {
                 SessionMode::Skirmish
@@ -286,6 +345,7 @@ impl LoadingStartup {
     #[cfg(test)]
     pub fn seed_or_else(&self, unverified_fallback: impl FnOnce() -> u32) -> u32 {
         match self {
+            Self::Network(startup) => startup.seed.value,
             Self::Campaign(startup) => startup.seed.value,
             Self::Accepted(startup) => startup.seed.value,
             Self::UnverifiedLegacy { seed, .. } => seed.value,
@@ -328,22 +388,33 @@ pub fn classify_startup_session(session: &SkirmishLaunchSession) -> StartupSessi
             },
         );
     }
-    if session.player_name.is_empty() {
+    if session.humans.len() != 1
+        || session.local_player_index != 0
+        || session.humans[0].is_observer()
+    {
         return StartupSessionClassification::UnverifiedLegacy(
             UnverifiedStartupReason::IncompleteLedger,
         );
     }
-    if session.local.country_random {
+    if session.local_player().name.is_empty() {
+        return StartupSessionClassification::UnverifiedLegacy(
+            UnverifiedStartupReason::IncompleteLedger,
+        );
+    }
+    if session.local_slot().country_random {
         return StartupSessionClassification::UnverifiedLegacy(
             UnverifiedStartupReason::RandomLocalCountry,
         );
     }
-    if session.local.color_random {
+    if session.local_slot().color_random {
         return StartupSessionClassification::UnverifiedLegacy(
             UnverifiedStartupReason::RandomLocalColor,
         );
     }
-    if matches!(session.local.start_position, LaunchStartPosition::Auto) {
+    if matches!(
+        session.local_slot().start_position,
+        LaunchStartPosition::Auto
+    ) {
         return StartupSessionClassification::UnverifiedLegacy(
             UnverifiedStartupReason::AutoLocalStart,
         );
@@ -569,6 +640,7 @@ mod tests {
     fn explicit_session() -> SkirmishLaunchSession {
         SkirmishLaunchSession {
             mode: SkirmishLaunchMode {
+                class: crate::skirmish_modes::MpModeClass::Battle,
                 id: 1,
                 ui_name_key: "GUI:Battle".into(),
                 tooltip_key: "STT:ModeBattle".into(),
@@ -579,16 +651,23 @@ mod tests {
                 must_ally: false,
             },
             selected_map_file: Some("DeepFrze.map".into()),
-            player_name: "Player".into(),
-            local: SkirmishLocalSlot {
-                country: LaunchCountry::America,
-                country_random: false,
-                color_index: 0,
-                color_random: false,
-                start_position: LaunchStartPosition::Position(0),
-                team: LaunchTeam::None,
-            },
+            humans: vec![crate::skirmish_launch::SkirmishHumanSlot {
+                raw_slot_index: Some(0),
+                name: "Player".into(),
+                slot: SkirmishLocalSlot {
+                    country: LaunchCountry::America,
+                    country_random: false,
+                    color_index: 0,
+                    color_random: false,
+                    start_position: LaunchStartPosition::Position(0),
+                    team: LaunchTeam::None,
+                },
+                role: crate::skirmish_launch::LaunchHumanRole::from_observer(false),
+            }],
+            local_player_index: 0,
+            ai_player_count: 1,
             opponents: vec![SkirmishAiSlot {
+                raw_slot_index: 1,
                 country: LaunchCountry::Russia,
                 country_random: false,
                 color_index: 1,
@@ -764,14 +843,14 @@ mod tests {
         );
 
         let mut session = explicit_session();
-        session.local.country_random = true;
+        session.local_slot_mut().country_random = true;
         assert_eq!(
             classify_startup_session(&session),
             StartupSessionClassification::UnverifiedLegacy(
                 UnverifiedStartupReason::RandomLocalCountry
             )
         );
-        session.local.country_random = false;
+        session.local_slot_mut().country_random = false;
         session.opponents[0].start_position = LaunchStartPosition::Auto;
         assert_eq!(
             classify_startup_session(&session),
@@ -784,7 +863,7 @@ mod tests {
     #[test]
     fn random_local_country_is_unverified() {
         let mut session = explicit_session();
-        session.local.country_random = true;
+        session.local_slot_mut().country_random = true;
         assert_unverified(&session, UnverifiedStartupReason::RandomLocalCountry);
     }
 
@@ -801,7 +880,7 @@ mod tests {
     #[test]
     fn random_local_color_is_unverified() {
         let mut session = explicit_session();
-        session.local.color_random = true;
+        session.local_slot_mut().color_random = true;
         assert_unverified(&session, UnverifiedStartupReason::RandomLocalColor);
     }
 
@@ -818,7 +897,7 @@ mod tests {
     #[test]
     fn auto_local_start_is_unverified() {
         let mut session = explicit_session();
-        session.local.start_position = LaunchStartPosition::Auto;
+        session.local_slot_mut().start_position = LaunchStartPosition::Auto;
         assert_unverified(&session, UnverifiedStartupReason::AutoLocalStart);
     }
 
@@ -859,7 +938,7 @@ mod tests {
     #[test]
     fn team_none_is_concrete_and_accepted() {
         let session = explicit_session();
-        assert_eq!(session.local.team, LaunchTeam::None);
+        assert_eq!(session.local_slot().team, LaunchTeam::None);
         assert_eq!(session.opponents[0].team, LaunchTeam::None);
         assert!(matches!(
             classify_startup_session(&session),
@@ -1124,7 +1203,12 @@ mod tests {
         rejected.push(("seed authority", candidate));
 
         let mut candidate = receipt.clone();
-        candidate.session.launch.player_name.push_str("-other");
+        candidate
+            .session
+            .launch
+            .local_player_mut()
+            .name
+            .push_str("-other");
         rejected.push(("session", candidate));
 
         let mut candidate = receipt.clone();

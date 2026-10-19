@@ -65,6 +65,29 @@ impl TileVariantSelector {
         self.table8.get().copied()
     }
 
+    /// Read the process-owned selection without initializing its table or
+    /// consuming Main RNG. Presentation uses this only after scenario loading;
+    /// a cold process identity stays explicit instead of drawing from render.
+    pub(crate) fn select_initialized_variant(
+        &self,
+        cell: (i32, i32),
+        sub_tile: u8,
+        dimensions: (u32, u32),
+        total_file_count: u8,
+    ) -> Option<u8> {
+        self.table8.get().map(|table| {
+            select_from_initialized_table(
+                table,
+                cell.0,
+                cell.1,
+                sub_tile,
+                dimensions.0,
+                dimensions.1,
+                total_file_count,
+            )
+        })
+    }
+
     pub(crate) fn select_variant(
         &self,
         cell: (i32, i32),
@@ -348,6 +371,48 @@ mod tests {
             selector: TileVariantSelector::from_initialized(table),
             ..TileVariantSelectorCache::default()
         }
+    }
+
+    #[test]
+    fn draw_query_preserves_cold_selector_and_matches_initialized_native_selection() {
+        let selector = TileVariantSelector::default();
+        assert_eq!(
+            selector.select_initialized_variant((165, 105), 0, (1, 1), 2),
+            None
+        );
+        assert!(selector.initialized_table().is_none());
+        let packet =
+            crate::test_fixture::json("tools/spatial_oracle/bridge_recalc_presentation.json");
+        let table: [u8; 64] =
+            std::array::from_fn(|i| packet["process_table"][i].as_u64().unwrap() as u8);
+        let selector = TileVariantSelector::from_initialized(table);
+        let group = packet["groups"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|group| group["name"] == "ordinary2")
+            .unwrap();
+        for case in group["cases"].as_array().unwrap() {
+            if case["input_tile"] == 0xffff {
+                continue;
+            }
+            let xy = &case["coord"];
+            // The fixture's pristine template is 3x5; it is selected by the
+            // original4814F0, independently of the later selected-file size.
+            assert_eq!(
+                selector.select_initialized_variant(
+                    (
+                        xy[0].as_i64().unwrap() as i32,
+                        xy[1].as_i64().unwrap() as i32
+                    ),
+                    case["sub"].as_u64().unwrap() as u8,
+                    (3, 5),
+                    2,
+                ),
+                Some(case["selected"].as_u64().unwrap() as u8)
+            );
+        }
+        assert_eq!(selector.initialized_table(), Some(table));
     }
 
     #[test]

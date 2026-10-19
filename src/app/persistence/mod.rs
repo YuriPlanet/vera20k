@@ -595,6 +595,7 @@ mod tests {
     fn load_fixture_launch() -> SkirmishLaunchSession {
         SkirmishLaunchSession {
             mode: SkirmishLaunchMode {
+                class: crate::skirmish_modes::MpModeClass::Battle,
                 id: 1,
                 ui_name_key: "GUI:Battle".into(),
                 tooltip_key: "STT:ModeBattle".into(),
@@ -605,16 +606,23 @@ mod tests {
                 must_ally: false,
             },
             selected_map_file: Some(LOAD_FIXTURE_MAP_NAME.into()),
-            player_name: "Player".into(),
-            local: SkirmishLocalSlot {
-                country: LaunchCountry::America,
-                country_random: false,
-                color_index: 0,
-                color_random: false,
-                start_position: LaunchStartPosition::Position(0),
-                team: LaunchTeam::None,
-            },
+            humans: vec![crate::skirmish_launch::SkirmishHumanSlot {
+                raw_slot_index: Some(0),
+                name: "Player".into(),
+                slot: SkirmishLocalSlot {
+                    country: LaunchCountry::America,
+                    country_random: false,
+                    color_index: 0,
+                    color_random: false,
+                    start_position: LaunchStartPosition::Position(0),
+                    team: LaunchTeam::None,
+                },
+                role: crate::skirmish_launch::LaunchHumanRole::from_observer(false),
+            }],
+            local_player_index: 0,
+            ai_player_count: 1,
             opponents: vec![SkirmishAiSlot {
+                raw_slot_index: 1,
                 country: LaunchCountry::Russia,
                 country_random: false,
                 color_index: 1,
@@ -772,7 +780,9 @@ mod tests {
 
     fn load_fixture_rules() -> RuleSet {
         let ini = IniFile::from_str(
-            "[InfantryTypes]\n\
+            "[Countries]\n0=Americans\n1=Alliance\n2=French\n3=Germans\n\
+             4=British\n5=Africans\n6=Arabs\n7=Confederation\n8=Russians\n\
+             [InfantryTypes]\n\
              [VehicleTypes]\n\
              [AircraftTypes]\n\
              [BuildingTypes]\n\
@@ -1195,7 +1205,7 @@ mod tests {
         let repository = SaveRepository::at(&directory);
         for (case_index, handle) in ["Neutral", "sPeCiAl", "COMPUTER1"].into_iter().enumerate() {
             let mut session = load_fixture_launch();
-            session.player_name = handle.to_string();
+            session.local_player_mut().name = handle.to_string();
             let launch =
                 crate::sim::scenario_bootstrap::MatchLaunchDescriptor::from_resolved(session)
                     .expect("existing display name remains admitted");
@@ -1251,7 +1261,7 @@ mod tests {
                 .expect("restored collision-safe current-house frame");
             assert_eq!(runtime.simulation.session.tick, tick + 1);
             assert_eq!(runtime.simulation.session.current_house, Some(selected));
-            assert_eq!(launch.session().player_name, handle);
+            assert_eq!(launch.session().local_player().name, handle);
         }
         std::fs::remove_dir_all(directory).expect("remove collision load fixture");
     }

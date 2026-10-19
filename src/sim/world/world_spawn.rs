@@ -653,7 +653,7 @@ impl Simulation {
             // Native controls: input_oracle/campaign_house_names.
             let owner = self.scenario_house_named(&map_ent.owner)?;
             if map_ent.category == EntityCategory::Structure
-                && self.session.game_mode_nonzero
+                && self.session.game_mode_nonzero()
                 && self.session.current_house == Some(owner)
             {
                 return None;
@@ -1966,7 +1966,7 @@ impl Simulation {
                     .get(stable_id)
                     .is_some_and(|entity| {
                         self.houses.get(&entity.owner()).is_some_and(|house| {
-                            house.is_controlled_by_human(self.session.game_mode_nonzero)
+                            house.is_controlled_by_human(self.session.game_mode_nonzero())
                         })
                     })
                 {
@@ -2350,7 +2350,7 @@ impl Simulation {
         // directly indexed Recalc vectors before the destructive MCV removal.
         let recalc_context = self.houses.get(&owner_id).and_then(|house| {
             (is_construction_yard
-                && self.session.game_mode_nonzero
+                && self.session.game_mode_nonzero()
                 && !house.is_controlled_by_human(true))
             .then(|| {
                 let country_name = house

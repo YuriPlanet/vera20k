@@ -575,7 +575,7 @@ impl Simulation {
             let Some(human) = self
                 .houses
                 .get(&unit.owner())
-                .map(|house| house.is_controlled_by_human(self.session.game_mode_nonzero))
+                .map(|house| house.is_controlled_by_human(self.session.game_mode_nonzero()))
             else {
                 return;
             };

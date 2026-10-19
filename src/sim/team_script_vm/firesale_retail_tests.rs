@@ -89,9 +89,9 @@ fn authored_team_fire_sale_waits_for_strategy_then_sells_and_hunts() {
         std::fs::write(&path, &map).unwrap();
         let name = path.to_str().unwrap();
         let mut launch = battle_session(name, &[(LaunchCountry::Russia, AiDifficulty::Easy)]);
-        launch.local.country = LaunchCountry::America;
-        launch.local.start_position = LaunchStartPosition::Position(2);
-        launch.local.team = LaunchTeam::None;
+        launch.local_slot_mut().country = LaunchCountry::America;
+        launch.local_slot_mut().start_position = LaunchStartPosition::Position(2);
+        launch.local_slot_mut().team = LaunchTeam::None;
         launch.opponents[0].start_position = LaunchStartPosition::Position(1);
         launch.opponents[0].team = LaunchTeam::None;
         launch.options.starting_credits = 5000;

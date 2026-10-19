@@ -25,7 +25,8 @@ fn fixture(topology: &Value) -> (Simulation, InternedId, InternedId) {
     let player = sim.interner.intern("Player");
     let other = sim.interner.intern("Other");
     sim.session.current_house = Some(player);
-    sim.session.game_mode_nonzero = false;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false));
     for (owner, human) in [(player, true), (other, false)] {
         sim.houses
             .insert(owner, HouseState::new(owner, 0, None, human, 0, 10));
@@ -373,7 +374,9 @@ fn native_trigger_reveal_cell_put_then_discovery_matches_original_owner_historie
     for row in corpus["cell_put_controls"].as_array().unwrap() {
         let input = &row["input"];
         let (mut sim, player, other) = fixture(&input["topology"]);
-        sim.session.game_mode_nonzero = input["mode"] != 0;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(input["mode"] != 0),
+        );
         let owner = if input["foreign"] == true {
             other
         } else {
@@ -718,7 +721,11 @@ fn native_trigger_reveal_building_owner_entry_and_virtual_override_match_origina
         if input["player_null"] == true {
             sim.session.current_house = None;
         }
-        sim.session.game_mode_nonzero = input["mode"].as_i64().unwrap_or(0) != 0;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+                input["mode"].as_i64().unwrap_or(0) != 0,
+            ),
+        );
         let house = sim.houses.get_mut(&owner).unwrap();
         house.is_human = input["human"].as_i64().unwrap_or(0) != 0;
         house.player_control = input["player_control"].as_i64().unwrap_or(0) != 0;
@@ -893,7 +900,8 @@ fn reveal_entire_map_walks_the_size_diamond_and_notifies_each_cell() {
     sim.session.current_house = Some(player);
     // A campaign CellPUT discovers only on unshrouded ground, so the resident
     // stays undiscovered until the walk reaches its cell.
-    sim.session.game_mode_nonzero = false;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false));
     for (owner, human) in [(player, true), (other, false)] {
         sim.houses
             .insert(owner, HouseState::new(owner, 0, None, human, 0, 10));
@@ -1014,7 +1022,9 @@ impl EdgeScript {
             .map(|name| sim.interner.intern(name))
             .collect();
         sim.session.current_house = Some(viewers[0]);
-        sim.session.game_mode_nonzero = false;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false),
+        );
         for (index, &owner) in viewers.iter().enumerate() {
             sim.houses
                 .insert(owner, HouseState::new(owner, 0, None, index == 0, 0, 10));

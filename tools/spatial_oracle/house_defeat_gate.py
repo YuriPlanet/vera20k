@@ -202,6 +202,8 @@ class OutcomeFixture(Fixture):
         u.mem_write(RULES_PTR, dwords(RULES))
         u.mem_write(RULES + 0x14C8, struct.pack("<Q", savour_bits))
         u.mem_write(0xA83D4C, dwords(HOUSE))
+        u.mem_write(0xAC1198, dwords(HOUSE if case.get("observer", False) else 0))
+        u.mem_write(0xA8B550, struct.pack("<i", case.get("max_ahead", 0)))
         u.mem_write(0x887324, dwords(SCRATCH + 0xF000))
         u.mem_write(HOUSE + 0x1EC, bytes([case.get("human", 1), 0]))
         u.mem_write(HOUSE + 0x1F6, bytes([0, case.get("won", 0), case.get("lost", 0)]))
@@ -274,6 +276,13 @@ def outcome_inputs():
         dict(name="end69_running_lose", operation="end", lost=1, timer=[17, 0, 41]),
         dict(name="end69_no_result", operation="end", delay="retail"),
         dict(name="win_offline_mode5", operation="win", game_mode=5, delay="retail"),
+        dict(name="lan_win_alignment", operation="win", game_mode=3, frame=103, max_ahead=10),
+        dict(name="wol_loss_max_ahead", operation="lose", game_mode=4, frame=103, max_ahead=73),
+        dict(name="lan_observer_loss", operation="lose", game_mode=3, frame=103, max_ahead=10, observer=True),
+        dict(name="lan_negative_savour", operation="lose", game_mode=3, frame=103, max_ahead=2, delay="-.03"),
+        dict(name="lan_wrapping_expiry", operation="win", game_mode=3, frame=2147483640, max_ahead=10),
+        dict(name="lan_paused_anchor", operation="lose", game_mode=3, frame=-1, max_ahead=10, delay="-.03"),
+        dict(name="wol_skip_delay", operation="lose", game_mode=4, frame=103, max_ahead=73, skip_timer=True, timer=[17,0,41]),
     ]
 
 
@@ -332,13 +341,13 @@ def generate_outcomes():
 
 def outcome_metadata():
     return provenance(
-        scope="Full offline HouseFlagWin4FC9E0/FlagLose4FCBD0/EndScenario4FCDC0 and exact-zero/AllowWin result heads4F85BE/4F86FE",
-        assumptions=["FlagToDie+1F6 supplied zero; campaign mode0 and offline nonzero mode5 only; current PlayerPtr and human bytes supplied",
+        scope="Full HouseFlagWin4FC9E0/FlagLose4FCBD0/EndScenario4FCDC0 and exact-zero/AllowWin result heads4F85BE/4F86FE",
+        assumptions=["FlagToDie+1F6 supplied zero; campaign0, LAN3, WOL4 and skirmish5; current PlayerPtr, observer pointer and human bytes supplied",
                      "Constructor66731D..667331 original stores establish Rules+14C8 bits; physical AudioVisual SavourDelay token is passed through existing original5283D0 Reader; FPCW0E7F",
                      "House+298/+29C/+2A0 raw timer and +27C AllowWin count are independent supplied inputs; original branches and arithmetic execute"],
         substitutions=["Record and return UI/input/audio/dirty sinks684240,734E60,6D4DB0,752700,4F42F0,4068E0; no media device, localized text IO, rendering or actual sound",
                        "Result heads stop before6C8C40 WallClock/Vox wait at4F860B/4F8732; no completion, teardown or postgame/campaign-next-scene claim",
-                       "No Windows startup, full House constructor/world, network ten-frame alignment, FlagToDie producer or RNG path"],
+                       "No Windows startup, full House constructor/world, negotiated transport timing producer, FlagToDie producer or RNG path; MaxAhead is an explicit supplied input"],
         entry_points={**OutcomeFixture.FLAGS, "win_gate": 0x4F85BE, "lose_gate": 0x4F86FE,
                       "constructor_savour": 0x66731D, "read_double": 0x5283D0,
                       "banner_center": 0x6D4E95})

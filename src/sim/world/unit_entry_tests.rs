@@ -505,7 +505,11 @@ fn compare_rows(json: &str, expected_count: usize, repair_projection: bool) {
         }
         sim.session.binary_frame = 100;
         // The legacy corpus name seeds A8E7AC, not A8B238.
-        sim.session.game_mode_nonzero = flag("actual_game_mode");
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(flag(
+                "actual_game_mode",
+            )),
+        );
         if let Some(bounds) = input["bounds"].as_array() {
             sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
                 base: bounds[0].as_i64().unwrap() as i32,

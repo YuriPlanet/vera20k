@@ -22,8 +22,8 @@ fn actual_local_loss_refuses_eligible_cheer_without_consuming_the_input_clock() 
             "XMP03T4.MAP",
             &[(LaunchCountry::America, AiDifficulty::Easy)],
         );
-        launch.local.country = LaunchCountry::Russia;
-        launch.local.start_position = LaunchStartPosition::Position(1);
+        launch.local_slot_mut().country = LaunchCountry::Russia;
+        launch.local_slot_mut().start_position = LaunchStartPosition::Position(1);
         launch.opponents[0].start_position = LaunchStartPosition::Position(2);
         launch.options.starting_credits = 5000;
         launch.options.unit_count = 0;

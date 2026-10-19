@@ -27,6 +27,10 @@ pub(crate) enum ShellRoute {
     /// Westwood Online welcome `0x10E` (and its `TXT_APIMISSING` box),
     /// reached from Internet.
     WolWelcome,
+    /// LAN discovery BB.
+    LanLobby,
+    /// LAN host BC or guest BD; MatchSession owns the host role.
+    LanSetup,
     /// The native skirmish shell `0x102`. It is entered only from the
     /// single-player shell (directly, or on resume after a match), so Back
     /// returns there.
@@ -61,6 +65,13 @@ impl ShellRoute {
     /// Westwood Online welcome `0x10E`.
     pub(crate) fn wol_welcome(self) -> bool {
         matches!(self, Self::WolWelcome)
+    }
+
+    pub(crate) fn lan_lobby(self) -> bool {
+        matches!(self, Self::LanLobby)
+    }
+    pub(crate) fn lan_setup(self) -> bool {
+        matches!(self, Self::LanSetup)
     }
 
     pub(crate) fn skirmish(self) -> bool {

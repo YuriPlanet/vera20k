@@ -313,7 +313,8 @@ fn all_to_hunt_retail_all06_elapsed_enable_chain_releases_existing_gattling_team
     );
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.session.game_mode_nonzero = false;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false));
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
     let owner = sim.interner.get("YuriCountry").unwrap();
     assert_eq!(

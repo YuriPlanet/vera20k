@@ -40,21 +40,16 @@ pub fn combo_dropdown_rect(
     if item_count == 0 {
         return None;
     }
-    let max_rows = combo_dropdown_max_visible_rows(id);
-    let visible_rows = if max_rows > 0 {
-        item_count.min(max_rows)
-    } else {
-        item_count
-    };
-    // The panel hangs below the face as drawn, so the gap follows the face's
-    // stretched height; the rows keep the authored count and grow with the page.
-    let metrics = DropdownMetrics::scaled(layout.scale);
-    Some(RectPx::new(
-        rect.x,
-        rect.y + combo_face_rect(rect, layout.scale).h + 1,
-        rect.w,
-        visible_rows * metrics.row_h,
-    ))
+    Some(
+        crate::ui::shell::combobox::ComboPopup::new(
+            combo_face_rect(rect, layout.scale),
+            layout.scale,
+            item_count as usize,
+            combo_dropdown_max_visible_rows(id) as usize,
+            0,
+        )
+        .rect,
+    )
 }
 
 pub const fn combo_dropdown_max_visible_rows(id: SkirmishComboId) -> i32 {
@@ -251,26 +246,12 @@ pub fn combo_items(
         .into_iter()
         .map(SkirmishComboItem::AiType)
         .collect(),
-        SkirmishComboId::Side(_) => std::iter::once(SkirmishCountryChoice::Random)
-            .chain(
-                LaunchCountry::ALL
-                    .into_iter()
-                    .map(SkirmishCountryChoice::Country),
-            )
-            .map(SkirmishComboItem::Country)
-            .collect(),
-        SkirmishComboId::Color(row) => {
-            let selected = selected_color_claim(state, row);
-            let mut items = vec![SkirmishComboItem::ColorSentinel(-2)];
-            for color in 0..HOUSE_COLOR_COUNT {
-                if selected == Some(color)
-                    || color_claimed_by_other_row(state, row, color).is_none()
-                {
-                    items.push(SkirmishComboItem::Color(color));
-                }
-            }
-            items
-        }
+        SkirmishComboId::Side(_) => state.country_catalog.items().to_vec(),
+        SkirmishComboId::Color(row) => available_color_choices(
+            selected_color_claim(state, row),
+            (0..HOUSE_COLOR_COUNT)
+                .filter(|color| color_claimed_by_other_row(state, row, *color).is_some()),
+        ),
         SkirmishComboId::Start(row) => {
             let capacity = maps
                 .get(state.selected_map_idx)
@@ -278,32 +259,84 @@ pub fn combo_items(
                     map.player_capacity
                         .clamp(0, SKIRMISH_PLAYER_SLOT_COUNT as i32) as usize
                 })
-                .unwrap_or(SKIRMISH_PLAYER_SLOT_COUNT)
-                .min(SKIRMISH_PLAYER_SLOT_COUNT);
-            let selected = selected_start_position(state, row);
-            let mut items = vec![SkirmishComboItem::Start(LaunchStartPosition::Auto)];
-            for position in 0..capacity {
-                let start = LaunchStartPosition::Position(position as u8);
-                if selected == Some(start) || !start_position_taken_by_other_row(state, row, start)
-                {
-                    items.push(SkirmishComboItem::Start(start));
-                }
-            }
-            items
+                .unwrap_or(SKIRMISH_PLAYER_SLOT_COUNT);
+            available_start_choices(
+                selected_start_position(state, row),
+                (0..SKIRMISH_PLAYER_SLOT_COUNT)
+                    .map(|index| LaunchStartPosition::Position(index as u8))
+                    .filter(|start| start_position_taken_by_other_row(state, row, *start)),
+                capacity,
+            )
         }
-        SkirmishComboId::Team(_) => {
-            let values: &[i32] = if state.selected_mode_must_ally {
-                &[0, 1, 2, 3]
-            } else {
-                &[-2, 0, 1, 2, 3]
-            };
-            values
-                .iter()
-                .copied()
-                .map(SkirmishComboItem::Team)
-                .collect()
-        }
+        SkirmishComboId::Team(_) => team_choices(state.selected_mode_must_ally),
     }
+}
+
+/// Shared4E3A00 country catalog: registered source order, Multiplay enabled,
+/// and a nonempty HouseType UIName. Random is the first entry.
+pub fn country_choices(rules: &crate::rules::ruleset::RuleSet) -> Vec<SkirmishComboItem> {
+    std::iter::once(SkirmishCountryChoice::Random)
+        .chain(
+            rules
+                .cooperative_country_candidates()
+                .enumerate()
+                .filter(|(_, (id, _))| {
+                    rules.country_multiplay(id)
+                        && rules
+                            .country_display_name_sources(id)
+                            .0
+                            .is_some_and(|key| !key.is_empty())
+                })
+                .map(|(index, _)| {
+                    SkirmishCountryChoice::Country(LaunchCountry::from_country_index(index as u32))
+                }),
+        )
+        .map(SkirmishComboItem::Country)
+        .collect()
+}
+/// Shared4E4770/4E48E0 color catalog. A row retains its current claim while
+/// other occupied rows remove those colors from its available entries.
+pub fn available_color_choices(
+    selected: Option<usize>,
+    claimed: impl IntoIterator<Item = usize>,
+) -> Vec<SkirmishComboItem> {
+    let claimed: Vec<_> = claimed.into_iter().collect();
+    std::iter::once(SkirmishComboItem::ColorSentinel(-2))
+        .chain(
+            (0..HOUSE_COLOR_COUNT)
+                .filter(|color| selected == Some(*color) || !claimed.contains(color))
+                .map(SkirmishComboItem::Color),
+        )
+        .collect()
+}
+/// Shared4E50C0 start catalog; capacity comes from the selected scenario owner.
+pub fn available_start_choices(
+    selected: Option<LaunchStartPosition>,
+    claimed: impl IntoIterator<Item = LaunchStartPosition>,
+    capacity: usize,
+) -> Vec<SkirmishComboItem> {
+    let claimed: Vec<_> = claimed.into_iter().collect();
+    std::iter::once(SkirmishComboItem::Start(LaunchStartPosition::Auto))
+        .chain(
+            (0..capacity.min(SKIRMISH_PLAYER_SLOT_COUNT))
+                .map(|index| LaunchStartPosition::Position(index as u8))
+                .filter(|start| selected == Some(*start) || !claimed.contains(start))
+                .map(SkirmishComboItem::Start),
+        )
+        .collect()
+}
+/// Shared4E5B60 team catalog; mode default team decides whether None is listed.
+pub fn team_choices(must_ally: bool) -> Vec<SkirmishComboItem> {
+    let values: &[i32] = if must_ally {
+        &[0, 1, 2, 3]
+    } else {
+        &[-2, 0, 1, 2, 3]
+    };
+    values
+        .iter()
+        .copied()
+        .map(SkirmishComboItem::Team)
+        .collect()
 }
 
 pub fn selected_combo_item(

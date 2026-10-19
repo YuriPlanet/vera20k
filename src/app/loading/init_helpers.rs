@@ -97,8 +97,15 @@ pub(crate) fn load_sidebar_cameo_palette(asset_manager: &AssetManager) -> Option
     None
 }
 
-pub(crate) fn parse_debug_spawn_units_env() -> Option<Vec<String>> {
+/// `RA2_DEBUG_SPAWN_UNITS` stress spawn list: `TYPE` places one, `TYPE:COUNT`
+/// places `COUNT`. A count that is not a positive integer drops that entry with
+/// a warning, so a typo cannot quietly become a one-unit run.
+pub(crate) fn parse_debug_spawn_units_env() -> Option<Vec<(String, usize)>> {
     let raw = std::env::var("RA2_DEBUG_SPAWN_UNITS").ok()?;
+    parse_debug_spawn_units(&raw)
+}
+
+fn parse_debug_spawn_units(raw: &str) -> Option<Vec<(String, usize)>> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
         return None;
@@ -108,19 +115,85 @@ pub(crate) fn parse_debug_spawn_units_env() -> Option<Vec<String>> {
         .iter()
         .any(|v| trimmed.eq_ignore_ascii_case(v))
     {
-        return Some(vec![
-            "HTNK".to_string(),
-            "MTNK".to_string(),
-            "E1".to_string(),
-        ]);
+        return Some(
+            ["HTNK", "MTNK", "E1"]
+                .iter()
+                .map(|type_id| (type_id.to_string(), 1))
+                .collect(),
+        );
     }
-    let items: Vec<String> = trimmed
-        .split(',')
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
-        .map(|s| s.to_string())
-        .collect();
+    let mut items: Vec<(String, usize)> = Vec::new();
+    for entry in trimmed.split(',') {
+        let entry = entry.trim();
+        if entry.is_empty() {
+            continue;
+        }
+        let (type_id, count) = match entry.split_once(':') {
+            Some((name, count)) => {
+                let name = name.trim();
+                let Some(count) = count.trim().parse::<usize>().ok().filter(|c| *c > 0) else {
+                    log::warn!("Debug spawn entry '{entry}' has an unusable count; skipped");
+                    continue;
+                };
+                (name.to_string(), count)
+            }
+            None => (entry.to_string(), 1),
+        };
+        if type_id.is_empty() {
+            continue;
+        }
+        items.push((type_id, count));
+    }
     if items.is_empty() { None } else { Some(items) }
+}
+
+/// Where `RA2_DEBUG_SPAWN_MARCH` sends a stress army after the spawn pass.
+pub(crate) enum DebugSpawnMarch {
+    /// The cell opposite the spawn anchor, so the army crosses the whole map.
+    FarSide,
+    /// A cell named by the variable.
+    Cell(u16, u16),
+}
+
+pub(crate) fn parse_debug_spawn_march_env() -> Option<DebugSpawnMarch> {
+    let raw = std::env::var("RA2_DEBUG_SPAWN_MARCH").ok()?;
+    parse_debug_spawn_march(&raw)
+}
+
+/// `RA2_DEBUG_SPAWN_MARCH=1` marches to the far side; `=<rx>,<ry>` marches to
+/// that cell. Unset, empty or `0` leaves the army standing.
+fn parse_debug_spawn_march(raw: &str) -> Option<DebugSpawnMarch> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() || trimmed == "0" {
+        return None;
+    }
+    let enabled_tokens = ["1", "true", "yes", "on"];
+    if enabled_tokens
+        .iter()
+        .any(|v| trimmed.eq_ignore_ascii_case(v))
+    {
+        return Some(DebugSpawnMarch::FarSide);
+    }
+    let (rx, ry) = trimmed.split_once(',')?;
+    let (Ok(rx), Ok(ry)) = (rx.trim().parse::<u16>(), ry.trim().parse::<u16>()) else {
+        log::warn!("Debug spawn march '{raw}' is neither an enable switch nor an rx,ry cell");
+        return None;
+    };
+    Some(DebugSpawnMarch::Cell(rx, ry))
+}
+
+/// Every cell ordered by how near it stands to `anchor`, ties broken by cell so
+/// the order is total and reproducible. The stress spawn walks this until each
+/// type's quota is placed: an occupied or impassable cell costs a step, not a
+/// unit.
+pub(crate) fn cells_by_distance_from(cells: &[(u16, u16)], anchor: (u16, u16)) -> Vec<(u16, u16)> {
+    let (ax, ay) = (i32::from(anchor.0), i32::from(anchor.1));
+    let mut ordered = cells.to_vec();
+    ordered.sort_unstable_by_key(|&(rx, ry)| {
+        let (dx, dy) = (i32::from(rx) - ax, i32::from(ry) - ay);
+        (dx * dx + dy * dy, rx, ry)
+    });
+    ordered
 }
 
 /// Build a texture atlas from pre-loaded theater data and the terrain grid.
@@ -1182,6 +1255,80 @@ mod tests {
             no_override.source_ini_hash(),
             overridden.source_ini_hash(),
             "a map BuildSpeed override must change the rules hash"
+        );
+    }
+
+    #[test]
+    fn stress_spawn_list_reads_per_type_counts() {
+        assert_eq!(
+            super::parse_debug_spawn_units("HTNK:2,MTNK,E1:10000"),
+            Some(vec![
+                ("HTNK".to_string(), 2),
+                ("MTNK".to_string(), 1),
+                ("E1".to_string(), 10_000)
+            ]),
+            "a bare type still means one unit, so existing lists keep working"
+        );
+        assert_eq!(
+            super::parse_debug_spawn_units("1"),
+            Some(vec![
+                ("HTNK".to_string(), 1),
+                ("MTNK".to_string(), 1),
+                ("E1".to_string(), 1)
+            ]),
+            "the enable switch keeps the default list"
+        );
+    }
+
+    #[test]
+    fn stress_spawn_list_drops_unusable_counts() {
+        for raw in ["HTNK:0", "HTNK:x", "HTNK:", ""] {
+            assert_eq!(
+                super::parse_debug_spawn_units(raw),
+                None,
+                "'{raw}' names nothing placeable, so it must not start a spawn pass"
+            );
+        }
+        assert_eq!(
+            super::parse_debug_spawn_units("MTNK,HTNK:oops,E1:3"),
+            Some(vec![("MTNK".to_string(), 1), ("E1".to_string(), 3)]),
+            "one bad entry must not cost the rest of the list"
+        );
+    }
+
+    #[test]
+    fn stress_march_switch_reads_far_side_and_explicit_cell() {
+        use super::DebugSpawnMarch;
+        assert!(matches!(
+            super::parse_debug_spawn_march("1"),
+            Some(DebugSpawnMarch::FarSide)
+        ));
+        assert!(matches!(
+            super::parse_debug_spawn_march(" 42,77 "),
+            Some(DebugSpawnMarch::Cell(42, 77))
+        ));
+        for raw in ["", "0", "  "] {
+            assert!(
+                super::parse_debug_spawn_march(raw).is_none(),
+                "'{raw}' must leave the army standing"
+            );
+        }
+        for raw in ["far", "42", "42,70000", "a,b"] {
+            assert!(
+                super::parse_debug_spawn_march(raw).is_none(),
+                "'{raw}' is neither a switch nor a usable cell, so it must not order a march"
+            );
+        }
+    }
+
+    #[test]
+    fn stress_spawn_cells_nearest_first_is_total_and_reproducible() {
+        let cells = [(10, 10), (0, 0), (9, 11), (11, 9), (20, 20), (8, 8)];
+        assert_eq!(
+            super::cells_by_distance_from(&cells, (10, 10)),
+            vec![(10, 10), (9, 11), (11, 9), (8, 8), (0, 0), (20, 20)],
+            "nearest cell first, then each ring by distance, ties by (rx, ry): \
+             (0,0) and (20,20) are both 200 away, so the lower cell goes first"
         );
     }
 }

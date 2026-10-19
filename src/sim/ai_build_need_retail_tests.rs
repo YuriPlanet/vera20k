@@ -52,9 +52,9 @@ fn stock_scene(root: &std::path::Path) -> HeadlessScenario {
         "XMP03T4.MAP",
         &[(LaunchCountry::Russia, AiDifficulty::Easy)],
     );
-    launch.player_name = "VERA-OBSERVER".to_owned();
-    launch.local.country = LaunchCountry::Russia;
-    launch.local.start_position = LaunchStartPosition::Position(0);
+    launch.local_player_mut().name = "VERA-OBSERVER".to_owned();
+    launch.local_slot_mut().country = LaunchCountry::Russia;
+    launch.local_slot_mut().start_position = LaunchStartPosition::Position(0);
     launch.opponents[0].start_position = LaunchStartPosition::Position(1);
     launch.options = SkirmishLaunchOptions {
         starting_credits: 5000,

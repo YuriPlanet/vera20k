@@ -3108,7 +3108,9 @@ mod tests {
         let americans = sim.interner.intern("Americans");
         sim.session.house_order.push(americans);
         // The rung is a human player's (`0x007003ED`).
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         sim.session.current_house = Some(americans);
         let ivan = sim
             .spawn_object("IVAN", "Americans", 3, 5, 0, &rules)
@@ -3148,7 +3150,9 @@ mod tests {
             );
             sim.session.house_order.push(owner);
         }
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         sim.session.current_house = sim.interner.get("Americans");
         let seal = sim
             .spawn_object("GHOST", "Americans", 3, 5, 0, &rules)
@@ -3261,7 +3265,9 @@ mod tests {
             );
             sim.session.house_order.push(id);
         }
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         sim.session.current_house = sim.interner.get("Americans");
         let mut spawn = |kind: &str, owner: &str, rx: u16| {
             sim.spawn_object(kind, owner, rx, 5, 0, &rules).unwrap()
@@ -3326,7 +3332,9 @@ mod tests {
             sim.session.house_order.push(id);
         }
         // The attack rung is a human player's (`0x007003ED`).
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         sim.session.current_house = sim.interner.get("Americans");
         let mut spawn = |kind: &str, owner: &str, rx: u16| {
             sim.spawn_object(kind, owner, rx, 5, 0, &rules).unwrap()
@@ -3428,7 +3436,9 @@ mod tests {
             );
             sim.session.house_order.push(id);
         }
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         sim.session.current_house = sim.interner.get("Americans");
         let mut spawn = |kind: &str, owner: &str, rx: u16, ry: u16| {
             sim.spawn_object(kind, owner, rx, ry, 0, &rules).unwrap()
@@ -3727,7 +3737,9 @@ mod tests {
             );
             sim.session.house_order.push(id);
         }
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         sim.session.current_house = sim.interner.get("Americans");
         let agent = sim
             .spawn_object("AGENT", "Americans", 3, 5, 0, &rules)
@@ -4348,7 +4360,9 @@ mod tests {
         let mut sim = Simulation::with_seed(0x0044_8160);
         sim.intern_rule_type_ids(rules);
         sim.resolve_type_handles(rules);
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         for name in ["Americans", "Russians"] {
             let owner = sim.intern(name);
             let side = rules
@@ -4677,7 +4691,9 @@ mod tests {
             .expect("retail tank spawns");
         let owner = sim.interner.get("Americans").unwrap();
         sim.fog.reveal_all_for_owner(owner);
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         sim.session.current_house = Some(owner);
         let goals = |sim: &Simulation, id| {
             (
@@ -4762,7 +4778,9 @@ mod tests {
         }
         let americans = sim.interner.get("Americans").unwrap();
         // The rung is a human player's (`0x007003ED`).
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         sim.session.current_house = Some(americans);
         let mut spawn = |kind: &str, owner: &str, rx: u16| {
             sim.spawn_object(kind, owner, rx, 5, 0, &rules).unwrap()
@@ -4872,7 +4890,9 @@ mod tests {
         ).unwrap();
         let mut sim = Simulation::with_seed(0x587410);
         sim.resolve_type_handles(&rules);
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         sim.session.current_house = Some(sim.interner.intern("Americans"));
         let mut terrain = crate::map::resolved_terrain::test_grid(20, 20, |rx, ry| {
             crate::map::resolved_terrain::ResolvedTerrainCell {
@@ -5439,7 +5459,9 @@ Verses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%
         let enemy = sim
             .spawn_object("TANK", "Soviets", 20, 4, 0, &rules)
             .unwrap();
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         sim.session.current_house = Some(sim.entities().get(stationary).unwrap().owner());
         sim.entities_mut()
             .get_mut(stationary)

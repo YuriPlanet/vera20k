@@ -970,7 +970,7 @@ fn reveal_on_fire(
             world.resolved_terrain.as_ref(),
         );
         let owned = firer.owner() == house;
-        let discovered = world.session.game_mode_nonzero
+        let discovered = world.session.game_mode_nonzero()
             || (world.session.current_house == Some(house)
                 && firer.discovery.discovered_by_current_house());
         if owned || discovered {
@@ -2629,7 +2629,9 @@ mod reveal_on_fire_tests {
         let mut sim = Simulation::new();
         sim.fog.width = 32;
         sim.fog.height = 32;
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         for (name, human) in [("Americans", true), ("Soviet", false)] {
             let id = sim.interner.intern(name);
             sim.houses

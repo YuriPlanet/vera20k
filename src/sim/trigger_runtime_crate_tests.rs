@@ -16,7 +16,8 @@ fn fixture() -> (Simulation, RuleSet, OverlayTypeRegistry, InternedId, u64) {
              SoloCrateMoney=5000\n[O0]\nCrate=yes\nCrateTrigger=yes\n\
              [Powerups]\nMoney=20,<none>,yes,2000\n",
     );
-    sim.session.game_mode_nonzero = false;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false));
     sim.session.game_options.crates = false;
     let owner = sim.interner.intern("Americans");
     sim.houses.insert(
@@ -702,7 +703,8 @@ fn retail_all07_elapsed_crates_and_money_survive_save_and_notify_logic() {
     let (mut sim, _, _) = crate::sim::world::entry_test_fixture::fixture();
     sim.intern_rule_type_ids(&rules);
     sim.resolve_type_handles(&rules);
-    sim.session.game_mode_nonzero = false;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false));
     sim.session.initialize_campaign_startup(1, 7, None).unwrap();
     sim.session.game_options.crates = false;
     sim.session.binary_frame = 0;

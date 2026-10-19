@@ -28,4 +28,5 @@ pub(crate) mod sound;
 
 pub(crate) mod keyboard;
 pub(crate) mod network_options;
+pub(crate) mod multiplayer_setup;
 pub(crate) mod campaign_input;

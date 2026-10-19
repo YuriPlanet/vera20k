@@ -137,7 +137,7 @@ pub(crate) fn update_team_creation(
     frame_effects: FrameEffects<'_>,
 ) {
     let frame = sim.session.binary_frame as i32;
-    let game_mode_nonzero = sim.session.game_mode_nonzero;
+    let game_mode_nonzero = sim.session.game_mode_nonzero();
     let Some(house) = sim.houses.get(&owner) else {
         return;
     };
@@ -392,7 +392,7 @@ fn is_eligible(
     if !trigger.enabled {
         return false;
     }
-    if sim.session.game_mode_nonzero {
+    if sim.session.game_mode_nonzero() {
         if !trigger.multiplayer {
             return false;
         }
@@ -632,7 +632,7 @@ fn factories_admit(
         return false;
     };
     // Campaigns: module residual.
-    sim.session.game_mode_nonzero
+    sim.session.game_mode_nonzero()
         && task_force.entries.iter().all(|entry| {
             rules
                 .object_in_category(

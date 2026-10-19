@@ -220,6 +220,16 @@
     <p id="report-note" class="report-note"></p>
   </section>
 
+  <section class="panel history-panel">
+    <h2><span data-i18n="rep.history">整局耗时</span>
+      <button id="report-point" class="panel-btn" type="button" data-i18n="rep.pointReport">生成该点报告</button>
+      <button id="export-history" class="panel-btn" type="button" data-i18n="rep.exportHistory">导出整局</button>
+    </h2>
+    <p class="hint" data-i18n="rep.historyHint">横轴为 tick；每秒一个采样点，面板连接前的数据由引擎回填。拖框缩放，单击取点。</p>
+    <div id="history-chart" class="history-chart"></div>
+    <div id="history-detail" class="split-summary"></div>
+  </section>
+
   <section class="panel">
     <h2><span data-i18n="rep.phases">耗时明细</span>
       <button id="export-phases" class="panel-btn" type="button" data-i18n="rep.export">导出 PNG</button>

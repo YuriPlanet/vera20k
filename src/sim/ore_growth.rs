@@ -113,7 +113,7 @@ impl OreGrowthConfig {
         session: &crate::sim::scenario_session::ScenarioSession,
     ) -> Self {
         let grows = basic.tiberium_growth_enabled.unwrap_or(true);
-        let (tiberium_grows_flag, spreads) = if session.game_mode_nonzero {
+        let (tiberium_grows_flag, spreads) = if session.game_mode_nonzero() {
             (session.tiberium_grows_flag, session.tiberium_spreads_flag)
         } else {
             (

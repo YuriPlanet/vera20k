@@ -161,7 +161,8 @@ fn scene(input: &Value) -> Scene {
                 .insert(b.to_string());
         }
     }
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     // A selected human transport is the local player's (IsHumanPlayer
     // `0x0050B6F0` in a nonzero mode); its escapees pass Select's
     // ownership gate (`0x006FBFA0`).

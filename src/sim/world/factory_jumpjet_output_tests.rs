@@ -71,7 +71,8 @@ fn two_paid_rocketeers(rally: Option<(u16, u16)>) {
     sim.houses.insert(owner, house);
     sim.session.house_order.push(owner);
     sim.session.current_house = Some(owner);
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     sim.session.game_options.game_speed = 3;
     let spawn = |sim: &mut Simulation, name: &str, rx: u16, ry: u16| {
         sim.spawn_object_at_height_with_overlay_registry(
@@ -140,7 +141,8 @@ fn two_paid_rocketeers(rally: Option<(u16, u16)>) {
                 Some(&registry),
                 TICK_MS,
                 super::TickLane::Ordinary,
-             crate::sim::world::FrameEffects::default(),)
+                crate::sim::world::FrameEffects::default(),
+            )
             .expect("the ordinary app frame completes");
         let frame = sim.session.binary_frame;
         let log = radio::take_transmit_log();

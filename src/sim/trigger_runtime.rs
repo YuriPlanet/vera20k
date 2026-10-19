@@ -3621,7 +3621,7 @@ impl Simulation {
                         .trigger_create_team(team_id, rules, overlay_registry, frame_effects)
                         .is_some();
                 }
-                // Reinforcement6E2DC0 uses the TeamType waypoint. Action80
+                // Action7@6DEBAE calls65D8E0 with the TeamType waypoint. Action80
                 //6DEBD0 passes its+44 override to the same65D8E0 owner;
                 //null Team or waypoint-1 is rejected before that call.
                 let waypoint = if matches!(action.kind, 80 | 107) {

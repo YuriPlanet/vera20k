@@ -101,7 +101,11 @@ fn fixture(row: &Value, state: &Value, rules: &RuleSet) -> SuppliedFootFixture {
     f.sim.install_resolved_terrain_for_new_map(terrain);
     f.sim.session.binary_frame = state["frame"].as_u64().unwrap() as u32;
     f.sim.session.tick = state["frame"].as_u64().unwrap();
-    f.sim.session.game_mode_nonzero = state["game_mode"] != 0;
+    f.sim.session.set_game_mode(
+        crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+            state["game_mode"] != 0,
+        ),
+    );
     let friendly = f.sim.substrate.entities.get(f.actor).unwrap().owner();
     let enemy = f
         .sim

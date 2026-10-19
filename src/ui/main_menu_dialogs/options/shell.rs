@@ -9,7 +9,8 @@ use super::{
     FULL_SCREEN_HELP, FULL_SCREEN_LABEL, LauncherCheckboxId, LauncherComboId, LauncherCue,
     LauncherOptionsEvent, LauncherParentResult, LauncherTrackbarId, ORIGINAL_SHAPE_HELP,
     ORIGINAL_SHAPE_LABEL, OptionsDialogState, PhysicalControlFrame, RA2_LOOK_HELP, RA2_LOOK_LABEL,
-    SIDEBAR_HELP, SIDEBAR_LABEL, SidebarSize, ZOOM_HELP, ZOOM_LABEL, Zoom,
+    SHIFT_QUEUE_HELP, SHIFT_QUEUE_LABEL, SIDEBAR_HELP, SIDEBAR_LABEL, SidebarSize, ZOOM_HELP,
+    ZOOM_LABEL, Zoom,
 };
 use crate::ui::shell::descriptor::DialogId;
 use crate::ui::shell::geom::{RectPx, ShellScale, center_offset, child_window, dlu_rect};
@@ -82,7 +83,7 @@ pub(crate) struct LauncherOptionsLayout {
     /// The Sidebar combo, beside Difficulty as Zoom is beside Visual Details.
     pub(crate) sidebar: RectPx,
     pub(crate) trackbars: [(LauncherTrackbarId, RectPx); 6],
-    pub(crate) checkboxes: [(LauncherCheckboxId, RectPx); 6],
+    pub(crate) checkboxes: [(LauncherCheckboxId, RectPx); 7],
     pub(crate) buttons: [(LauncherParentResult, RectPx); 3],
     /// The mapping the rects are in: [`ShellScale::RETAIL`] centres the
     /// authored dialog in the window, otherwise the authored dialog is
@@ -162,6 +163,9 @@ impl LauncherOptionsLayout {
                 // The RA2 Loading & Menu Movie box continues the UI Options column
                 // under Show Hidden, where the band is empty above Audio.
                 (LauncherCheckboxId::Ra2Look, dlu(93, 233, 130, 10)),
+                // Shift-Click Batch Queue sits beside it, under the Scroll
+                // Rate slider, where the UI Options band is empty too.
+                (LauncherCheckboxId::ShiftQueue, dlu(238, 233, 120, 10)),
             ],
             buttons: [
                 (LauncherParentResult::Keyboard, button(KEYBOARD_BUTTON)),
@@ -326,6 +330,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::FullScreen => FULL_SCREEN_LABEL,
             LauncherCheckboxId::OriginalShape => ORIGINAL_SHAPE_LABEL,
             LauncherCheckboxId::Ra2Look => RA2_LOOK_LABEL,
+            LauncherCheckboxId::ShiftQueue => SHIFT_QUEUE_LABEL,
         }
     }
 
@@ -365,6 +370,7 @@ impl OptionsDialogState {
             LauncherCheckboxId::FullScreen => self.values.full_screen,
             LauncherCheckboxId::OriginalShape => self.values.original_shape,
             LauncherCheckboxId::Ra2Look => self.values.ra2_look,
+            LauncherCheckboxId::ShiftQueue => self.values.shift_queue,
         }
     }
 
@@ -489,6 +495,7 @@ impl OptionsDialogState {
                 LauncherCheckboxId::FullScreen => LauncherStatusHelp::Text(FULL_SCREEN_HELP),
                 LauncherCheckboxId::OriginalShape => LauncherStatusHelp::Text(ORIGINAL_SHAPE_HELP),
                 LauncherCheckboxId::Ra2Look => LauncherStatusHelp::Text(RA2_LOOK_HELP),
+                LauncherCheckboxId::ShiftQueue => LauncherStatusHelp::Text(SHIFT_QUEUE_HELP),
             });
         }
         if layout.sidebar.contains(x, y) {
@@ -1072,6 +1079,46 @@ mod tests {
             [
                 LauncherOptionsEvent::Cue(LauncherCue::Checkbox),
                 LauncherOptionsEvent::Ra2LookChanged(true)
+            ]
+        );
+    }
+
+    #[test]
+    fn shift_queue_box_sits_under_scroll_rate_and_applies_at_once() {
+        let mut state = state();
+        let layout = LauncherOptionsLayout::new(800, 600);
+        let (id, rect) = layout.checkboxes[6];
+        assert_eq!(id, LauncherCheckboxId::ShiftQueue);
+        // Beside RA2 Look, under the Scroll Rate slider, clear of both and of
+        // the Audio Options heading.
+        let ra2_look = layout.checkboxes[5].1;
+        let scroll = layout
+            .trackbars
+            .iter()
+            .find(|(id, _)| *id == LauncherTrackbarId::Scroll)
+            .unwrap()
+            .1;
+        assert_eq!((rect.y, rect.h), (ra2_look.y, ra2_look.h));
+        assert!(rect.x >= ra2_look.x + ra2_look.w);
+        assert_eq!(rect.x, scroll.x);
+        assert!(rect.y >= scroll.y + scroll.h);
+        let heading = state
+            .shell_labels(&layout)
+            .into_iter()
+            .find(|label| label.text == "Audio Options")
+            .expect("Audio Options heading")
+            .rect;
+        assert!(rect.y + rect.h <= heading.y);
+        assert_eq!(state.shell_checkbox_label(id), SHIFT_QUEUE_LABEL);
+        // Off until the player ticks it.
+        assert!(!state.shell_checkbox_checked(id));
+        state.shell_mouse_down(rect.x + 5, rect.y + 5, &layout);
+        assert!(state.shell_checkbox_checked(id));
+        assert_eq!(
+            state.drain_output().events,
+            [
+                LauncherOptionsEvent::Cue(LauncherCue::Checkbox),
+                LauncherOptionsEvent::ShiftQueueChanged(true)
             ]
         );
     }

@@ -895,6 +895,11 @@ impl Simulation {
         }
 
         if !tube_active_at_entry {
+            // Foot4DA63B..670 precedes the high-flight sight block and
+            // Process. Cruise crossing itself has no PerCell promotion.
+            if let Some(rules) = rules {
+                sim.promote_balloon_playfield_membership_before_process(stable_id, rules);
+            }
             sim.refresh_high_flying_sight_before_process(stable_id, rules);
         }
 
@@ -1053,18 +1058,18 @@ impl Simulation {
             .entities
             .get(stable_id)
             .map(|entity| (entity.position.rx(), entity.position.ry()));
-        // A mover whose Process has no ported `Per_Cell_Process` call (Fly,
-        // a cruising Jumpjet, Rocket) takes
-        // VERA's cell-change stand-in for the Foot body's sensor, uncloak,
-        // Temporal and promote steps (`movement/per_cell.rs`).
+        // A mover that changes cell in a frame without a `Per_Cell_Process`
+        // call takes VERA's cell-change stand-in for the Foot body's sensor,
+        // uncloak and Temporal steps (`movement/per_cell.rs`): Fly, Jumpjet
+        // cruise and Rocket (`0x006622C0`), whose native Process has no
+        // PerCell call at all, and a Hover crossing a cell outside its
+        // `0x00515A1C`/`0x005146CA` calls.
         //
-        // RESIDUAL: native Fly and Jumpjet cruise reach none of these from a
-        // cell change. Trigger: such a mover changing cell. Effect: its
-        // sensor deposit, cloak scan, Temporal release and (but for a Fly,
-        // whose Process latches `+0x3D5` itself, `0x004CD510`) playfield
-        // promote run there. Risk: an aircraft with `Sensors=` or a held
-        // Temporal target; the promote is what admits a Jumpjet arriving
-        // from off the map.
+        // RESIDUAL: native reaches none of these from a bare cell change.
+        // Trigger: such a mover changing cell. Effect: its sensor deposit,
+        // cloak scan and Temporal release run there (for a Hover, again at
+        // its next PerCell). Risk: a mover with `Sensors=` or a held
+        // Temporal target.
         if !track_owned
             && !walk_process_owned
             && !per_cell_ran
@@ -1077,15 +1082,6 @@ impl Simulation {
                 );
             }
             sim.temporal_release_if_warping(stable_id);
-            let fly = sim.substrate.entities.get(stable_id).is_some_and(|entity| {
-                entity
-                    .locomotor
-                    .as_ref()
-                    .is_some_and(|locomotor| locomotor.fly_runtime().is_some())
-            });
-            if !fly {
-                sim.promote_entity_playfield_membership_after_move(stable_id);
-            }
         }
 
         let mut lifecycle_requests = std::mem::take(&mut sim.pending_lifecycle_requests);

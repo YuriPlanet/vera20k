@@ -276,6 +276,40 @@ pub(crate) fn post_hud_message(state: &mut AppState, message: HudMessage) {
     post_localized_message(state, &post);
 }
 
+/// Loading timeout684596 -> DestroyConnection5DA750 reason1. Keep native
+/// MessageDelay/color/list ownership; the departed House remains in Simulation.
+pub(crate) fn post_connection_lost(state: &mut AppState, owner: &str, display_name: &str) {
+    let Some(rules) = state.rules() else {
+        return;
+    };
+    let rgb = house_message_rgb(
+        Some(owner),
+        &state.match_state.match_presentation.house_color_map,
+        Some(&rules.color_schemes),
+    );
+    let timeout_ms = message_delay_timeout_ms(rules.general.message_delay_minutes);
+    let template = state
+        .process_assets
+        .csf
+        .as_ref()
+        .map(|csf| csf.text("TXT_CONNECTION_LOST").into_owned())
+        .unwrap_or_else(|| "TXT_CONNECTION_LOST".to_string());
+    let text = crate::assets::csf_file::format_csf(
+        &template,
+        &[crate::assets::csf_file::CsfArg::Str(display_name)],
+    );
+    post_localized_message(
+        state,
+        &crate::ui::messages::MessagePost {
+            prefix: None,
+            text: &text,
+            rgb,
+            timeout_ms,
+            silent: false,
+        },
+    );
+}
+
 fn post_localized_message(state: &mut AppState, post: &crate::ui::messages::MessagePost<'_>) {
     sync_view(state);
     let now = message_now_ms(state);

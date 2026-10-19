@@ -284,8 +284,8 @@ fn paid_moon_amcv_on_concrete_wall_sinks_alive_then_cleans_up() {
         "MoonPatr.yro",
         &[(LaunchCountry::Russia, AiDifficulty::Easy)],
     );
-    launch.player_name = OWNER.to_owned();
-    launch.local.start_position = LaunchStartPosition::Position(0);
+    launch.local_player_mut().name = OWNER.to_owned();
+    launch.local_slot_mut().start_position = LaunchStartPosition::Position(0);
     launch.opponents[0].start_position = LaunchStartPosition::Position(1);
     launch.options.starting_credits = 10_000;
     launch.options.unit_count = 0;

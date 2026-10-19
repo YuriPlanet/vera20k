@@ -52,8 +52,8 @@ fn paid_soviet_opening(root: &std::path::Path) -> HeadlessScenario {
         "GoldSt.mmx",
         &[(LaunchCountry::France, AiDifficulty::Easy)],
     );
-    launch.local.country = LaunchCountry::Russia;
-    launch.local.start_position = LaunchStartPosition::Position(3);
+    launch.local_slot_mut().country = LaunchCountry::Russia;
+    launch.local_slot_mut().start_position = LaunchStartPosition::Position(3);
     launch.options.starting_credits = 50_000;
     launch.options.unit_count = 0;
     launch.options.tech_level = 10;
@@ -228,7 +228,7 @@ fn present(
                     view.fog(),
                     view.house_alliances(),
                     true,
-                    view.session().game_mode_nonzero,
+                    view.session().game_mode_nonzero(),
                     Some(&runtime.resources.rules),
                     Some(view.interner()),
                     view.overlay_grid(),

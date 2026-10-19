@@ -231,7 +231,8 @@ fn retail_production_world(history: &Value) -> Option<(SimRuntime, InternedId)> 
         off_108: number(&bounds[3]),
     });
     sim.playfield_size_height = Some(i32::from(height));
-    sim.session.game_mode_nonzero = false;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false));
     sim.set_input_delay_ticks(0);
     let owner = sim.interner.intern(owner_name);
     let country = sim.interner.intern(country_name);

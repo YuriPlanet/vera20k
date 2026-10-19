@@ -117,7 +117,7 @@ pub(super) fn remove_pickup_crate(
     registry: &OverlayTypeRegistry,
     cell: (i16, i16),
 ) -> bool {
-    if sim.session.game_mode_nonzero {
+    if sim.session.game_mode_nonzero() {
         let Some(index) = sim
             .crate_authority
             .slots()
@@ -206,7 +206,7 @@ pub(crate) fn tick_crate_regeneration(
     lighting_profile: LightingProfileUnits,
 ) -> CrateRegeneration {
     let mut result = CrateRegeneration::default();
-    if !sim.session.game_mode_nonzero || !sim.session.game_options.crates {
+    if !sim.session.game_mode_nonzero() || !sim.session.game_options.crates {
         return result;
     }
     let current_frame = sim.session.binary_frame as i32;
@@ -276,7 +276,11 @@ mod tests {
                 (v[0].as_i64().unwrap() as i16, v[1].as_i64().unwrap() as i16)
             });
             let mut sim = sim_with_grid(31);
-            sim.session.game_mode_nonzero = input["mode"].as_i64() != Some(0);
+            sim.session.set_game_mode(
+                crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+                    input["mode"].as_i64() != Some(0),
+                ),
+            );
             sim.session.binary_frame = 100;
             sim.playfield_bounds.as_mut().unwrap().base = 10;
             sim.playfield_size_height = Some(10);
@@ -567,7 +571,11 @@ mod tests {
         let registry = crate_registry();
         for (game_mode_nonzero, crates) in [(false, true), (true, false), (false, false)] {
             let mut sim = sim_with_grid(0x56);
-            sim.session.game_mode_nonzero = game_mode_nonzero;
+            sim.session.set_game_mode(
+                crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+                    game_mode_nonzero,
+                ),
+            );
             sim.session.game_options.crates = crates;
             *sim.crate_authority.slot_mut(0) = CrateSlot {
                 start_frame: -1,
@@ -595,7 +603,9 @@ mod tests {
     #[test]
     fn crate_regen_expires_only_due_slots_and_replaces_each_once() {
         let mut sim = sim_with_grid(0x57);
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         sim.session.game_options.crates = true;
         sim.session.binary_frame = 1_000;
         let rules = crate_ruleset("");
@@ -642,7 +652,9 @@ mod tests {
     #[test]
     fn crate_regen_replacement_never_lands_above_the_expiring_slot() {
         let mut sim = sim_with_grid(0x58);
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         sim.session.game_options.crates = true;
         sim.session.binary_frame = 4_000;
         let rules = crate_ruleset("");
@@ -682,7 +694,9 @@ mod tests {
     #[test]
     fn crate_regen_removes_the_old_overlay_and_marks_the_new_cell() {
         let mut sim = sim_with_grid(0x59);
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         sim.session.game_options.crates = true;
         sim.session.binary_frame = 500;
         let rules = crate_ruleset("");
@@ -811,7 +825,9 @@ mod tests {
         };
 
         let mut on = sim_with_grid(0x5C);
-        on.session.game_mode_nonzero = true;
+        on.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         on.session.game_options.crates = true;
         *on.crate_authority.slot_mut(0) = due_slot;
         on.advance_tick(&[], Some(&rules), None, Some(&registry), 33);
@@ -840,7 +856,9 @@ mod tests {
         );
 
         let mut off = sim_with_grid(0x5C);
-        off.session.game_mode_nonzero = true;
+        off.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         off.session.game_options.crates = false;
         *off.crate_authority.slot_mut(0) = due_slot;
         off.advance_tick(&[], Some(&rules), None, Some(&registry), 33);
@@ -856,7 +874,9 @@ mod tests {
     #[test]
     fn crate_regen_paused_zero_slot_refires_until_a_placement_succeeds() {
         let mut sim = sim_with_grid(0x5A);
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         sim.session.game_options.crates = true;
         let rules = crate_ruleset("");
         let registry = crate_registry();

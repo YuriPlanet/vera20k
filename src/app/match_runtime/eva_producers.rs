@@ -580,7 +580,9 @@ mod tests {
         let mut sim = Simulation::with_seed(0x4F93_E000);
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         sim.session.game_options.short_game = false;
         let local = sim.intern("YuriCountry");
         let enemy = sim.intern("Americans");

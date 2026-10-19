@@ -102,7 +102,11 @@ fn fixture(input: &Value) -> (Simulation, RuleSet, u64, Vec<InternedId>) {
             owner
         })
         .collect();
-    sim.session.game_mode_nonzero = integer(&input["game_mode"]) != 0;
+    sim.session.set_game_mode(
+        crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+            integer(&input["game_mode"]) != 0,
+        ),
+    );
     sim.session.current_house = input["local_house"]
         .as_u64()
         .map(|index| houses[index as usize]);

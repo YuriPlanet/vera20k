@@ -54,7 +54,8 @@ fn gsi_04_05_response_delay_is_the_native_ftol() {
 fn response_world(frame: u32, attacker_at: (u16, u16)) -> Simulation {
     let mut sim = Simulation::new();
     sim.session.binary_frame = frame;
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     for (name, side) in [("Victim", 0), ("Enemy", 1)] {
         let id = test_intern(name);
         sim.houses
@@ -691,7 +692,9 @@ fn retail_bridge_base_response_runs_through_the_protected_damage_receiver() {
             .find(|row| row["input"]["family"] == "drive" && row["input"]["name"] == name)
             .unwrap();
         let mut sim = Simulation::with_seed(0x708080);
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         sim.session.binary_frame = 41;
         for (name, side) in [("Americans", 0), ("Russians", 1)] {
             let owner = sim.interner.intern(name);

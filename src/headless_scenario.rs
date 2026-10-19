@@ -49,6 +49,7 @@ pub fn battle_session(
 
     SkirmishLaunchSession {
         mode: SkirmishLaunchMode {
+            class: crate::skirmish_modes::MpModeClass::Battle,
             id: 1,
             ui_name_key: "GUI:Battle".to_string(),
             tooltip_key: "STT:ModeBattle".to_string(),
@@ -59,19 +60,26 @@ pub fn battle_session(
             must_ally: false,
         },
         selected_map_file: Some(selected_map_file.to_string()),
-        player_name: "Player".to_string(),
-        local: SkirmishLocalSlot {
-            country: LaunchCountry::America,
-            country_random: false,
-            color_index: 0,
-            color_random: false,
-            start_position: LaunchStartPosition::Auto,
-            team: LaunchTeam::None,
-        },
+        humans: vec![crate::skirmish_launch::SkirmishHumanSlot {
+            raw_slot_index: Some(0),
+            name: "Player".to_string(),
+            slot: SkirmishLocalSlot {
+                country: LaunchCountry::America,
+                country_random: false,
+                color_index: 0,
+                color_random: false,
+                start_position: LaunchStartPosition::Auto,
+                team: LaunchTeam::None,
+            },
+            role: crate::skirmish_launch::LaunchHumanRole::from_observer(false),
+        }],
+        local_player_index: 0,
+        ai_player_count: opponents.len() as i32,
         opponents: opponents
             .iter()
             .enumerate()
             .map(|(slot, &(country, difficulty))| SkirmishAiSlot {
+                raw_slot_index: (slot + 1) as u8,
                 country,
                 country_random: false,
                 color_index: slot as u8 + 1,
@@ -112,6 +120,8 @@ impl HeadlessScenario {
             start_position: crate::skirmish_launch::LaunchStartPosition::Auto,
             team: crate::skirmish_launch::LaunchTeam::None,
             is_human: true,
+            observer: false,
+            source_human_index: None,
             difficulty: crate::sim::house_state::HouseDifficulty::Normal,
         };
         let runtime = &mut self.runtime;
@@ -214,8 +224,9 @@ pub fn load_with_launch(
         )
         .map_err(|error| format!("load native noncampaign rules: {error}"))?
         .into_parts();
-    let bound_scenario_prefix =
-        scenario_prefix_plan.bind_native_rules_receipt(native_rules_receipt);
+    let bound_scenario_prefix = scenario_prefix_plan
+        .bind_native_rules_receipt(native_rules_receipt, &launch, &rules)
+        .map_err(|error| format!("admit rebuilt launch Countries: {error}"))?;
     let team_ai_registry =
         crate::rules::team_ai_ini::TeamAiIniRegistry::load_retail(&assets, &map.ini, true)?;
     let theater = theater::load_theater(&mut assets, &map.header.theater)
@@ -616,7 +627,7 @@ mod retail_construction_tests {
         assert_eq!(session.mode.override_file, "MPBattleMD.ini");
         assert_eq!(session.selected_map_file.as_deref(), Some("TEST.MAP"));
         assert!(session.opponents.is_empty());
-        assert_eq!(session.local.color_index, 0);
+        assert_eq!(session.local_slot().color_index, 0);
     }
 
     #[test]
@@ -1235,7 +1246,7 @@ mod retail_construction_tests {
         ] {
             let (mut scenario, _) = retail_battle(
                 |session| {
-                    session.local.country = local;
+                    session.local_slot_mut().country = local;
                     session.options.unit_count = 0;
                 },
                 &[(opponent, AiDifficulty::Hard)],
@@ -1440,7 +1451,7 @@ mod retail_construction_tests {
         for lone in [true, false] {
             let (mut scenario, _) = retail_battle(
                 |session| {
-                    session.local.country = LaunchCountry::America;
+                    session.local_slot_mut().country = LaunchCountry::America;
                     session.options.unit_count = 0;
                 },
                 &[(LaunchCountry::Russia, AiDifficulty::Hard)],
@@ -2498,7 +2509,7 @@ mod retail_construction_tests {
 
         let (mut scenario, _) = retail_battle(
             |session| {
-                session.local.country = LaunchCountry::Russia;
+                session.local_slot_mut().country = LaunchCountry::Russia;
                 session.options.unit_count = 0;
             },
             &[(LaunchCountry::America, AiDifficulty::Normal)],
@@ -2627,7 +2638,7 @@ mod retail_construction_tests {
 
         let (mut scenario, _) = retail_battle(
             |session| {
-                session.local.country = LaunchCountry::Russia;
+                session.local_slot_mut().country = LaunchCountry::Russia;
                 session.options.unit_count = 0;
             },
             &[(LaunchCountry::America, AiDifficulty::Normal)],

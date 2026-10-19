@@ -287,6 +287,22 @@ pub struct FrameProfileReport {
     pub phases_ms: [f64; PHASE_COUNT],
 }
 
+impl Default for FrameProfileReport {
+    fn default() -> Self {
+        Self {
+            frames: 0,
+            mean_frame_ms: 0.0,
+            peak_frame_ms: 0.0,
+            logic_ms: 0.0,
+            objects_ms: 0.0,
+            vision_ms: 0.0,
+            tail_ms: 0.0,
+            unmarked_ms: 0.0,
+            phases_ms: [0.0; PHASE_COUNT],
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

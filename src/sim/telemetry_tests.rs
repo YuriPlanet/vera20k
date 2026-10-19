@@ -72,6 +72,10 @@ fn fresh_simulation_snapshot_is_empty() {
     assert!(snapshot.houses.is_empty());
     assert!(snapshot.spots.is_empty());
     assert_eq!(snapshot.timing, None);
+    assert_eq!(
+        snapshot.path_batch, None,
+        "a simulation that searches serially runs no pass to report"
+    );
     assert_eq!(snapshot.map_width, sim.session.map_width);
     assert_eq!(snapshot.map_height, sim.session.map_height);
 }

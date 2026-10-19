@@ -116,7 +116,7 @@ fn deploys_into_build_const(sim: &Simulation, entity: &GameEntity, rules: &RuleS
 fn owner_builds_its_own_base(sim: &Simulation, entity: &GameEntity) -> bool {
     sim.houses.get(&entity.owner()).is_some_and(|house| {
         house.ai_activation().auto_base_building
-            && !house.is_controlled_by_human(sim.session.game_mode_nonzero)
+            && !house.is_controlled_by_human(sim.session.game_mode_nonzero())
     })
 }
 
@@ -130,7 +130,7 @@ pub(crate) fn ai_queue_hunt(sim: &mut Simulation, id: u64, rules: &RuleSet) {
     };
     let hunts = deploys_into_build_const(sim, entity, rules)
         && owner_builds_its_own_base(sim, entity)
-        && sim.session.game_mode_nonzero
+        && sim.session.game_mode_nonzero()
         && sim
             .houses
             .get(&entity.owner())
@@ -433,10 +433,9 @@ pub(crate) fn finish_initial_attempt(sim: &mut Simulation, id: u64) {
                 .mission
                 .set_handler_state(2);
         } else {
-            let hunt =
-                sim.houses.get(&e.owner()).is_some_and(|house| {
-                    !house.is_controlled_by_human(sim.session.game_mode_nonzero)
-                }) && sim.session.game_mode_nonzero;
+            let hunt = sim.houses.get(&e.owner()).is_some_and(|house| {
+                !house.is_controlled_by_human(sim.session.game_mode_nonzero())
+            }) && sim.session.game_mode_nonzero();
             queue(
                 sim,
                 id,

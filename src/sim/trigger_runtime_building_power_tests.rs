@@ -13,7 +13,8 @@ fn fixture() -> (Simulation, RuleSet, OverlayTypeRegistry, [InternedId; 3]) {
          [TECH]\nStrength=500\nFoundation=1x1\nPower=-10\nNeedsEngineer=yes\n",
     );
     sim.session.current_house = Some(houses[0]);
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     tests::install_event_ingress_map(
         &mut sim,
         &rules,
@@ -183,7 +184,8 @@ fn counted_tag_runs_off_and_on_in_order_without_a_second_state_or_rng_draws() {
 #[test]
 fn authored_power_flag_and_needs_engineer_use_distinct_latches_and_survive_save_load() {
     let (mut sim, rules, registry, _) = fixture();
-    sim.session.game_mode_nonzero = false;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false));
     let ini = crate::rules::ini_parser::IniFile::from_str(
         "[Structures]\n\
          0=House0,LOAD,256,15,15,0,CONTROLTAG,0,0,0\n\

@@ -184,7 +184,7 @@ impl Simulation {
         // indexes reset to699 in SetDefaults683610 before the Basic read.
         let opening_view_cell = input.campaign_new_game_map.and_then(|map| {
             assert!(
-                input.skirmish_session.is_none() && !self.session.game_mode_nonzero,
+                input.skirmish_session.is_none() && !self.session.game_mode_nonzero(),
                 "campaign opening view requires the campaign family"
             );
             u32::try_from(map.basic.home_cell.unwrap_or(699))

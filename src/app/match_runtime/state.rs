@@ -28,6 +28,14 @@ pub(crate) struct MatchState {
     /// Read-only process measurements; never inputs to the simulation.
     #[cfg(feature = "telemetry-dashboard")]
     pub(crate) telemetry_timing: super::telemetry::TickTimingRing,
+    /// Whole-match 1 Hz timeline; recorded whether or not a dashboard client
+    /// is attached, so a late client can backfill.
+    #[cfg(feature = "telemetry-dashboard")]
+    pub(crate) telemetry_history: super::telemetry::MatchHistory,
+    /// Report-grade 5 s samples; each one renders the same report as the live
+    /// view, including the time before a client attached.
+    #[cfg(feature = "telemetry-dashboard")]
+    pub(crate) report_history: super::telemetry::ReportHistory,
     #[cfg(feature = "telemetry-dashboard")]
     pub(crate) telemetry_tick_rate: super::telemetry::TickRateMeter,
     pub(crate) map_basic: BasicSection,

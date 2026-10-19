@@ -35,7 +35,8 @@ fn scene_with_repair_step(
     sim.houses
         .insert(owner, HouseState::new(owner, 0, None, true, 10_000, 10));
     sim.session.current_house = Some(owner);
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     sim.input_delay_ticks = 0;
     sim.session.game_options.short_game = false;
     sim.session.house_order.push(owner);
@@ -445,7 +446,9 @@ fn retail_engineer_grinder_clicks_reach_yagrnd_in_both_input_modes() {
             .insert(owner, HouseState::new(owner, 0, None, true, 10_000, 10));
         sim.session.current_house = Some(owner);
         sim.session.house_order.push(owner);
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         sim.session.game_options.short_game = false;
         sim.input_delay_ticks = 0;
         let actor = sim

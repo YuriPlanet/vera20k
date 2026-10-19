@@ -1252,7 +1252,7 @@ fn release_contact(
     let ai_archive = archive.filter(|_| {
         sim.houses
             .get(&contact.owner())
-            .is_some_and(|h| !h.is_controlled_by_human(sim.session.game_mode_nonzero))
+            .is_some_and(|h| !h.is_controlled_by_human(sim.session.game_mode_nonzero()))
     });
     if state1
         && let Some(contact) = sim.substrate.entities.get_mut(unit)

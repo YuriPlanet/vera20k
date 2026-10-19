@@ -28,6 +28,16 @@ const PUBLISH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(1
 pub(crate) fn reset_observation(state: &mut AppState) {
     #[cfg(feature = "debug-tools")]
     crate::app::debug_tools::reset_session(state);
+    reset_live_window(state);
+    state.match_state.telemetry_history.clear();
+    state.match_state.report_history.clear();
+    state.diag.render_report_cache = None;
+    state.diag.telemetry_history_generation = 0;
+}
+
+/// The attach/detach boundary: the live window restarts, but the whole-match
+/// history must survive it — that is exactly the time a late client needs.
+fn reset_live_window(state: &mut AppState) {
     state.match_state.telemetry_timing.clear();
     state.match_state.telemetry_tick_rate.clear();
     state.diag.render_timing = Default::default();
@@ -46,7 +56,7 @@ pub(crate) fn synchronize_observer(state: &mut AppState) {
         .telemetry_observer
         .synchronize(simulation, active)
     {
-        reset_observation(state);
+        reset_live_window(state);
     }
 }
 
@@ -80,10 +90,14 @@ pub fn capture_snapshot(state: &AppState) -> Option<TelemetrySnapshot> {
             .get(&house.name)
             .map(|index| crate::rules::house_colors::house_text_rgb(schemes, *index));
         // The side's own `[Sides]` key — the index is just its position there.
-        house.side_name = runtime
-            .resources
-            .rules
-            .side_name(crate::rules::ruleset::SideIdx(house.side_index))
+        house.side_name = u8::try_from(house.side_index)
+            .ok()
+            .and_then(|index| {
+                runtime
+                    .resources
+                    .rules
+                    .side_name(crate::rules::ruleset::SideIdx(index))
+            })
             .map(|name| bounded_text(name, TELEMETRY_MAX_NAME_BYTES));
     }
     let speed = runtime
@@ -107,10 +121,30 @@ pub fn capture_snapshot(state: &AppState) -> Option<TelemetrySnapshot> {
     snapshot.debug = Some(capture_debug(state, &runtime.simulation));
     snapshot.process = Some(capture_process(state));
     // Mean per observed frame, accumulated only while a client is watching.
-    snapshot.profile = runtime.simulation.frame_profile().report();
+    // A report point closes the window, so the brief span between that reset
+    // and the next frame has nothing to report; fall back to the window the
+    // point just closed rather than flashing an empty report.
+    let closed = state.match_state.report_history.latest();
+    let mut profile = runtime.simulation.frame_profile().report();
+    if profile.as_ref().is_none_or(|report| report.frames == 0) {
+        profile = closed.as_ref().and_then(|point| point.profile);
+    }
+    snapshot.profile = profile;
     // Render phases are process wall time, so they come from the app's meter
     // rather than the simulation's profile.
-    snapshot.render = state.diag.render_timing.report();
+    let mut render = state.diag.render_timing.report();
+    if render.as_ref().is_none_or(|report| report.frames == 0) {
+        render = closed.as_ref().and_then(|point| point.render);
+    }
+    if render.is_none() {
+        // A hidden window renders nothing, so the live meter and the latest
+        // sample can both be empty; the last measured breakdown still stands.
+        render = state.diag.render_report_cache;
+    }
+    snapshot.render = render;
+    // The newest report-grade sample rides every publish; the whole ring goes
+    // out once, with the history backfill.
+    snapshot.report_point = state.match_state.report_history.latest();
     // Log records since the previous snapshot. Pending entries stay in the
     // bounded ring; actual evictions are reported as dropped.
     let subscribed = state
@@ -211,9 +245,23 @@ pub fn publish_if_due(state: &mut AppState) {
         return;
     }
     state.diag.telemetry_last_publish = Some(now);
-    let Some(snapshot) = capture_snapshot(state) else {
+    let Some(mut snapshot) = capture_snapshot(state) else {
         return;
     };
+    // A client that attached since the last publish receives the whole-match
+    // timeline once, so the time before it is not a hole.
+    let attached = state
+        .diag
+        .telemetry_server
+        .as_ref()
+        .map(crate::app::telemetry_server::TelemetryServer::attach_generation);
+    if let Some(attached) = attached
+        && attached != state.diag.telemetry_history_generation
+    {
+        state.diag.telemetry_history_generation = attached;
+        snapshot.history = Some(state.match_state.telemetry_history.samples());
+        snapshot.report_points = Some(state.match_state.report_history.points());
+    }
     match serde_json::to_string(&snapshot) {
         Ok(json) => {
             if let Some(server) = state.diag.telemetry_server.as_ref() {

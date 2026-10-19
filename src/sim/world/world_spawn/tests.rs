@@ -783,7 +783,9 @@ fn discovery_owner_entry_and_lifetime_match_original_history_blocks() {
         );
         sim.session.house_order = vec![owner, other];
         sim.session.current_house = Some(owner);
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         let entity = sim
             .construct_runtime_techno(
                 "E1",
@@ -913,7 +915,9 @@ fn outside_reentry_clears_current_discovery_only_after_successful_alive_mark() {
         );
         sim.session.house_order = vec![owner, other];
         sim.session.current_house = Some(owner);
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         let id = sim
             .spawn_object_at_height("E1", "Americans", 6, 5, 0, 0, &rules)
             .unwrap();
@@ -993,7 +997,8 @@ fn first_nonhuman_owner_entry_queues_hunt_from_ambush_but_repeat_does_not() {
     );
     sim.session.house_order = vec![current, other];
     sim.session.current_house = Some(current);
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     let id = sim
         .construct_object_limbo_at_height(
             "E1",
@@ -1082,7 +1087,9 @@ fn exact_sight_zero_survives_save_and_rules_less_reentry() {
         let owner = sim.interner.get("Americans").unwrap();
         sim.session.house_order = vec![owner];
         sim.session.current_house = Some(owner);
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         let entity = sim
             .construct_runtime_techno(
                 "E1",
@@ -1169,7 +1176,8 @@ fn infantry_owner_discovery_leaves_building_power_radar_and_spysat_inputs_unchan
     let owner = sim.interner.get("Americans").unwrap();
     sim.session.house_order = vec![owner];
     sim.session.current_house = Some(owner);
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     assert_eq!(
         sim.spawn_from_map(
             &[map_entity("OBS", EntityCategory::Structure, (6, 5))],
@@ -1337,7 +1345,9 @@ fn an_aircraft_unlimbo_asks_the_aircraft_entry_query() {
         install_constructor_test_playfield(&mut sim);
         install_constructor_flat_terrain(&mut sim);
         install_american_house(&mut sim);
-        sim.session.game_mode_nonzero = game_mode_nonzero;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(game_mode_nonzero),
+        );
         let owner = sim.interner.get("Americans").unwrap();
         sim.fog.width = 10;
         sim.fog.height = 10;
@@ -2835,7 +2845,9 @@ fn a_building_s_ai_repair_byte_follows_its_map_line_or_its_computer_owner() {
     ] {
         let mut sim = Simulation::with_seed(0x6CB);
         install_constructor_test_playfield(&mut sim);
-        sim.session.game_mode_nonzero = game_mode_nonzero;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(game_mode_nonzero),
+        );
         for (name, human, passive) in [
             ("Computer", false, false),
             ("Human", true, false),

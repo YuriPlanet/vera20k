@@ -340,7 +340,7 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
     state.audio.cancel_scenario_theme_request();
     crate::app::reset_scenario_exit_runtime(state);
     let startup = result.scenario.startup;
-    let returns_scenario_rng_to_offline_shell = startup.launch_session().is_some();
+    let returns_scenario_rng_to_multiplayer_shell = startup.launch_session().is_some();
     // A loaded world is not timed until the launch handoff reaches InGame.
     state.match_state.scenario_elapsed_clock.reset();
     #[cfg(feature = "telemetry-dashboard")]
@@ -540,6 +540,11 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
                 matches!(state.frontend.screen, GameScreen::Loading),
             )
         }
+        crate::app::match_bootstrap::LoadingStartup::Network(prepared) => {
+            state.match_state.session.assert_network_start(&prepared);
+            state.match_state.startup.clear();
+            Ok(())
+        }
         crate::app::match_bootstrap::LoadingStartup::UnverifiedLegacy { .. }
         | crate::app::match_bootstrap::LoadingStartup::Generic { .. } => {
             state.match_state.startup.clear();
@@ -551,11 +556,11 @@ pub(crate) fn apply_map_load_result(state: &mut AppState, result: init::MapLoadR
             let now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
             state.match_state.scenario_elapsed_clock.start(now_ms);
             state.frontend.screen = GameScreen::InGame;
-            if returns_scenario_rng_to_offline_shell {
+            if returns_scenario_rng_to_multiplayer_shell {
                 state
                     .frontend
-                    .offline_skirmish_runtime
-                    .mark_gameplay_rng_return_pending();
+                    .multiplayer_shell_runtime
+                    .mark_gameplay_scenario_return_pending();
             }
             log::info!("Transitioned to InGame after scenario installation");
         }

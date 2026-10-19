@@ -122,7 +122,9 @@ fn a_hunting_computer_aircraft_strikes_storage_in_multiplayer_only() {
     let rules = RuleSet::from_ini(&IniFile::from_str(RULES)).expect("rules");
     for (game_mode, quarry) in [(true, "MINER"), (true, "REFN"), (false, "MINER")] {
         let mut sim = Simulation::new();
-        sim.session.game_mode_nonzero = game_mode;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(game_mode),
+        );
         let mut owners = Vec::new();
         // The hunter's house is a computer one, as All_To_Hunt's caller's,
         // and passive, so its own Strategy stays out of the run. The enemy

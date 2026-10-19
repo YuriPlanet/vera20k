@@ -102,7 +102,7 @@ impl App {
         };
         let chosen_map = match state
             .frontend
-            .offline_skirmish_runtime
+            .multiplayer_shell_runtime
             .ensure_cooperative_selection(&file_name, state.frontend.scenario_catalog.shell_maps())
         {
             Ok(chosen_map) => chosen_map,
@@ -138,7 +138,7 @@ impl App {
         };
         if let Err(err) = state
             .frontend
-            .offline_skirmish_runtime
+            .multiplayer_shell_runtime
             .ensure_cooperative_selection(&file_name, state.frontend.scenario_catalog.shell_maps())
         {
             log::warn!("Could not bind Cooperative Choose Map progress: {err}");
@@ -157,7 +157,7 @@ impl App {
             Ok(raw_session) => {
                 if let Err(err) = state
                     .frontend
-                    .offline_skirmish_runtime
+                    .multiplayer_shell_runtime
                     .close_shell_transaction(
                         &state.frontend.skirmish_shell_state,
                         state.frontend.scenario_catalog.shell_maps(),
@@ -189,7 +189,7 @@ impl App {
         session: crate::skirmish_launch::SkirmishLaunchSession,
     ) {
         Self::teardown_skirmish_shell_for_start(state);
-        state.frontend.offline_skirmish_runtime.persist_snapshot();
+        state.frontend.multiplayer_shell_runtime.persist_snapshot();
         if let Err(error) = Self::start_skirmish_session(
             state,
             session,
@@ -202,7 +202,7 @@ impl App {
     /// Skirmish Back after the teardown slide: the session fields are written
     /// (`0x006990A0`), then state 1 builds the Single Player page.
     pub(super) fn commit_skirmish_back(state: &mut AppState) {
-        state.frontend.offline_skirmish_runtime.persist_snapshot();
+        state.frontend.multiplayer_shell_runtime.persist_snapshot();
         Self::return_from_skirmish_to_single_player_shell(state);
     }
 
@@ -338,7 +338,7 @@ impl App {
             Ok(raw_session) => {
                 match state
                     .frontend
-                    .offline_skirmish_runtime
+                    .multiplayer_shell_runtime
                     .close_shell_transaction(
                         &state.frontend.skirmish_shell_state,
                         state.frontend.scenario_catalog.shell_maps(),
@@ -433,7 +433,13 @@ impl App {
         crate::ui::skirmish_shell::blur_player_name_edit(&mut state.frontend.skirmish_shell_state);
     }
 
-    pub(super) fn open_choose_map_modal(state: &mut AppState) {
+    /// Opens the shared chooser on the caller's current mode and map. Each
+    /// dialog supplies its own selection; neither writes the other's state.
+    pub(super) fn open_choose_map_modal(
+        state: &mut AppState,
+        selected_mode_id: i32,
+        current_record_index: Option<usize>,
+    ) {
         state.frontend.skirmish_shell_state.open_combo_dropdown = None;
         state.frontend.skirmish_shell_state.dropdown_scroll_drag = None;
         state.frontend.skirmish_shell_state.trackbar_hold = None;
@@ -442,11 +448,21 @@ impl App {
             .skirmish_shell_state
             .pressed_owner_draw_button = None;
         crate::ui::skirmish_shell::clear_status_help_text(&mut state.frontend.skirmish_shell_state);
-        let current_record_index = Self::current_choose_map_record_index(state);
         let layout = Self::skirmish_choose_map_layout(state);
         state.frontend.skirmish_shell_state.choose_map_modal =
             Some(crate::ui::skirmish_shell::ChooseMapModalState::open(
-                state.frontend.skirmish_shell_state.selected_mode_id,
+                if state.frontend.shell_route.lan_setup() {
+                    crate::ui::skirmish_shell::ChooseMapContext::Network {
+                        observer: state
+                            .match_state
+                            .session
+                            .network_setup()
+                            .is_some_and(|launch| launch.local_player().is_observer()),
+                    }
+                } else {
+                    crate::ui::skirmish_shell::ChooseMapContext::Skirmish
+                },
+                selected_mode_id,
                 current_record_index,
                 &state.frontend.skirmish_modes,
                 state.frontend.scenario_catalog.records(),
@@ -455,7 +471,7 @@ impl App {
         Self::ensure_active_cooperative_modal_selection(state);
     }
 
-    fn current_choose_map_record_index(state: &AppState) -> Option<usize> {
+    pub(super) fn current_choose_map_record_index(state: &AppState) -> Option<usize> {
         let file_name = state
             .frontend
             .scenario_catalog
@@ -503,7 +519,7 @@ impl App {
             if Self::selected_skirmish_mode_is_cooperative(state, selection.mode_id) {
                 match state
                     .frontend
-                    .offline_skirmish_runtime
+                    .multiplayer_shell_runtime
                     .accept_cooperative_selection(
                         &clicked_file_name,
                         state.frontend.scenario_catalog.shell_maps(),
@@ -532,6 +548,19 @@ impl App {
             return false;
         };
 
+        if state.frontend.shell_route.lan_setup() {
+            return match crate::app::shell_lan_setup::commit_map_selection(
+                state,
+                selection.mode_id,
+                map_idx,
+            ) {
+                Ok(()) => true,
+                Err(error) => {
+                    log::warn!("Could not accept LAN map selection: {error:#}");
+                    false
+                }
+            };
+        }
         state.frontend.skirmish_shell_state.selected_mode_id = selection.mode_id;
         crate::ui::skirmish_shell::repair_teams_for_selected_mode(
             &mut state.frontend.skirmish_shell_state,
@@ -708,6 +737,18 @@ impl App {
         else {
             return false;
         };
+        if state.frontend.shell_route.lan_setup() {
+            return state
+                .match_state
+                .session
+                .network_setup()
+                .is_some_and(|launch| {
+                    launch
+                        .opponents
+                        .iter()
+                        .any(|ai| i32::from(ai.raw_slot_index) >= limit.max(0))
+                });
+        }
         crate::ui::skirmish_shell::ai_rows_beyond_limit_occupied(
             &state.frontend.skirmish_shell_state.opponents,
             limit,
@@ -844,7 +885,7 @@ impl App {
         let previous = modal.cancel_selection();
         let options = state
             .frontend
-            .offline_skirmish_runtime
+            .multiplayer_shell_runtime
             .random_map_options_for_setup();
         let available = Self::saved_seed_dir(state)
             .is_some_and(|dir| crate::map::rmg::saved_seeds::saved_seeds_available(&dir));

@@ -93,3 +93,24 @@ mod tests {
         assert!(!interaction.is_pressed(1));
     }
 }
+
+/// Visual input for the shared owner-draw button. Timer highlight is separate
+/// from hover and from enabled state (612B70 record+C4/C5).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct ButtonVisual {
+    pub pressed: bool,
+    pub highlighted: bool,
+}
+impl From<bool> for ButtonVisual {
+    fn from(pressed: bool) -> Self {
+        Self {
+            pressed,
+            highlighted: false,
+        }
+    }
+}
+/// Original612B70 4DC starts a1000ms alternating highlight, initiallyoff.
+/// Both the ordinary menu policy and explicit guest Accept prompt use it.
+pub(crate) fn flash_phase(start: std::time::Instant, now: std::time::Instant) -> bool {
+    now.saturating_duration_since(start).as_millis() / 1000 % 2 == 1
+}

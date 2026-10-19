@@ -474,7 +474,9 @@ fn vehicle_unload_republishes_threat_and_foot_coefficient_before_movement() {
         .collect();
     let opposing_house = owners[1];
     fx.sim.session.house_order = owners;
-    fx.sim.session.game_mode_nonzero = true;
+    fx.sim
+        .session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
 
     // Already facing the exit scorer's selected hull direction: the actual
     // state0 -> state1 -> state3 producer can run without advancing any AI.
@@ -1771,7 +1773,9 @@ fn nighthawk_passenger_is_refused_by_an_enemy_in_the_aircraft_cell() {
         })
         .collect();
     fx.sim.session.house_order = owners;
-    fx.sim.session.game_mode_nonzero = true;
+    fx.sim
+        .session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     let enemy = fx
         .sim
         .spawn_object("E1", "Russians", 20, 20, 0, &fx.rules)

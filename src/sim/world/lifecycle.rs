@@ -1571,7 +1571,7 @@ impl Simulation {
         let Some(entity) = self.substrate.entities.get(stable_id) else {
             return;
         };
-        let game_mode_nonzero = self.session.game_mode_nonzero;
+        let game_mode_nonzero = self.session.game_mode_nonzero();
         if entity.category() == EntityCategory::Structure
             && game_mode_nonzero
             && self.houses.get(&entity.owner()).is_some_and(|house| {
@@ -1604,7 +1604,7 @@ impl Simulation {
         if self
             .houses
             .get(&owner)
-            .is_some_and(|house| !house.is_controlled_by_human(self.session.game_mode_nonzero))
+            .is_some_and(|house| !house.is_controlled_by_human(self.session.game_mode_nonzero()))
         {
             self.discover_techno(id, owner, context);
         }
@@ -1641,7 +1641,7 @@ impl Simulation {
         let Some(house) = self.houses.get(&viewer) else {
             return false;
         };
-        let controlled = house.is_controlled_by_human(self.session.game_mode_nonzero);
+        let controlled = house.is_controlled_by_human(self.session.game_mode_nonzero());
         let owner = entity.owner();
         let entity = self
             .substrate
@@ -1739,7 +1739,7 @@ impl Simulation {
         let controlled = self
             .houses
             .get(&owner)
-            .is_some_and(|house| house.is_controlled_by_human(self.session.game_mode_nonzero));
+            .is_some_and(|house| house.is_controlled_by_human(self.session.game_mode_nonzero()));
         //44D632/44D664 query OWNER; shared6F4960 queries VIEWER.
         // A foreign viewer therefore does not open an AI building.
         // ScenarioInit affects the House notification writes,
@@ -1784,7 +1784,7 @@ impl Simulation {
         let Some(viewer) = self.session.current_house else {
             return;
         };
-        if !self.session.game_mode_nonzero {
+        if !self.session.game_mode_nonzero() {
             let Some(terrain) = context.terrain().or(self.resolved_terrain.as_ref()) else {
                 return;
             };
@@ -1817,7 +1817,7 @@ impl Simulation {
         else {
             return;
         };
-        let game_mode_nonzero = self.session.game_mode_nonzero;
+        let game_mode_nonzero = self.session.game_mode_nonzero();
         let Some(house) = self.houses.get_mut(&owner) else {
             return;
         };
@@ -1865,7 +1865,7 @@ impl Simulation {
                 type_index,
                 packed_cell,
                 is_base_defense,
-                self.session.game_mode_nonzero,
+                self.session.game_mode_nonzero(),
             );
         }
     }
@@ -3352,7 +3352,7 @@ impl Simulation {
             .entities
             .get(stable_id)
             .and_then(|entity| self.houses.get(&entity.owner()))
-            .map(|house| house.is_controlled_by_human(self.session.game_mode_nonzero));
+            .map(|house| house.is_controlled_by_human(self.session.game_mode_nonzero()));
         if human == Some(false)
             && let Some(entity) = self.substrate.entities.get_mut(stable_id)
         {

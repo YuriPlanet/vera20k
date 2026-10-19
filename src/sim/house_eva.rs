@@ -65,7 +65,7 @@ fn owns_construction_yard(sim: &Simulation, rules: &RuleSet, owner: InternedId) 
 /// defeat. The deterministic per-human projection is documented above.
 pub(crate) fn update_house_eva(sim: &mut Simulation, rules: &RuleSet, owner: InternedId) {
     let now = sim.session.binary_frame as i32;
-    let game_mode_nonzero = sim.session.game_mode_nonzero;
+    let game_mode_nonzero = sim.session.game_mode_nonzero();
     let delay = speak_delay_frames(rules, &sim.session.game_options);
     let Some(house) = sim.houses.get(&owner) else {
         return;

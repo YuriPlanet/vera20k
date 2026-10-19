@@ -45,7 +45,7 @@ fn neutral_refinery_spy_entry_cannot_steal_the_participants_starting_cash() {
     std::fs::write(&path, map).unwrap();
     let name = path.to_str().unwrap();
     let mut launch = battle_session(name, &[(LaunchCountry::Russia, AiDifficulty::Easy)]);
-    launch.local.start_position = LaunchStartPosition::Position(0);
+    launch.local_slot_mut().start_position = LaunchStartPosition::Position(0);
     launch.opponents[0].start_position = LaunchStartPosition::Position(1);
     launch.options.starting_credits = 5000;
     launch.options.bases = true;

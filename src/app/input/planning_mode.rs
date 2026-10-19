@@ -711,7 +711,9 @@ mod tests {
         let mut sim = Simulation::with_seed(0x004A_BFA9);
         sim.intern_rule_type_ids(rules);
         sim.resolve_type_handles(rules);
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         sim.session.game_options.short_game = false;
         let owner = sim.intern("Americans");
         let side = rules.country_side_index("Americans").unwrap().0;

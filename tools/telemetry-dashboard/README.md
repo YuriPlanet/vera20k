@@ -24,8 +24,11 @@ is rejected. Close the game to revoke the session.
 
 The feature is off by default and absent from ordinary release builds. Without
 `VERA_TELEMETRY_ADDR`, it starts no server. `VERA_TELEMETRY_WEB` can select the
-dashboard asset directory when running outside the checkout root. CPU timing and
-snapshot capture run only while an authenticated dashboard client is attached.
+dashboard asset directory when running outside the checkout root. Live snapshot
+publishing and the render/ledger meters start with the first authenticated
+client; the whole-match summary ring (1 Hz) and the report-grade ring (5 s) are
+recorded whether or not one is attached, and arrive with the first publish after
+a client connects. The newest report sample rides every snapshot.
 The existing `dev-overlays` feature and build profile are independent choices;
 an optimized build can include these diagnostics without a separate debug branch.
 The runner supports building and resolving the executable separately; it does not
@@ -88,6 +91,62 @@ python -m tools.cargo_run -- build --locked --profile fast -p vera20k --features
 ```
 
 This fixture animates artificial entities. Its timing is not a gameplay benchmark.
+
+## Startup parameters and usage
+
+### Command line
+
+| Switch | Effect |
+| --- | --- |
+| `-CD` | Use the wildcard media-archive branch. |
+| `-NOAUDIO` | Disable music and sound output. |
+| `-?`, `-h`, `/?`, `/h` | Print usage and exit. |
+| `-WIN` | Accepted; no effect. Full screen is a choice on the Options page. |
+| `-<W>X<H>`, `-480`, `-16`, `-RECORD`, `-PLAY`, `-SOCKET`, `-DESTNET`, other net/debug flags | Accepted so a launch never fails, not applied yet. |
+
+### Environment
+
+| Variable | Value | Effect |
+| --- | --- | --- |
+| `RA2_DIR` | retail install path | Where the engine reads `.mix` files. `config.toml` `[paths] ra2_dir` is the alternative; `RA2_DIR` wins when set. |
+| `RA2_QUICKPLAY` | map name or path (`.map`/`.mpr`/`.mmx`), or a `.sed` seed | Load straight into that map through the authored-map sandbox: one local house, no generated opponents and no starting forces. |
+| `RA2_DEBUG_SPAWN_UNITS` | `TYPE[:COUNT],...`, or `1` | Spawn units at load on the nearest free cells. A bare type is one unit; `=1` keeps the default list `HTNK,MTNK,E1`. |
+| `RA2_DEBUG_SPAWN_MARCH` | `1` or `rx,ry` | Order every spawned object to attack-move across the map (`1`) or to one cell. |
+| `VERA_TELEMETRY_ADDR` | `127.0.0.1:9741` | Start the read-only dashboard server on that loopback address. |
+| `VERA_TELEMETRY_WEB` | directory | Dashboard asset root when running outside the checkout. |
+| `RA2_DEBUG_DEPTH_VIEW`, `RA2_DEBUG_BRIDGE_RENDER_BUCKETS`, `RA2_DEBUG_CAMEO_PALETTES`, `RA2_DEBUG_MOUSE_CURSOR_SHEET`, `RA2_FORCE_TIB3_TO_TIB01`, `RA2_TIB_ID_OFFSET`, `RA2_FORCE_TIB_IMAGE`, `RA2_NORMALS`, `RA2_NORMAL_COUNT`, `RA2_QUEUE_FRAME_MS`, `RA2_DUMP_SHROUD`, `RA2_ENABLE_LAT`, `RA2_DISABLE_LAT` | — | Render and diagnostic toggles; not needed for ordinary runs. |
+
+A scale run on a base-less map needs one `[General] BaseUnit=` type in the spawn
+list (stock YR: `AMCV`, `SMCV`, `PCV`), or the defeat gate ends the match about
+half a minute in.
+
+### Examples
+
+20,000 units marching on the flat 500x500 scale map:
+
+```sh
+python -m tools.scale_map target/scale/flat500.map --starts 8
+python -m tools.cargo_run -- build --locked --profile fast -p vera20k   --features telemetry-dashboard --bin vera20k
+game=$(python -m tools.cargo_run --resolve vera20k --profile fast)
+RA2_QUICKPLAY="target/scale/flat500.map" RA2_DEBUG_SPAWN_UNITS=AMCV:1,HTNK:10000,MTNK:10000 RA2_DEBUG_SPAWN_MARCH=1 VERA_TELEMETRY_ADDR=127.0.0.1:9741 "$game"
+```
+
+Headless simulation benchmark (no window, no dashboard):
+
+```sh
+cargo build --release -p vera20k-core --bin sim-bench
+target/release/sim-bench --scenario march --units 20000 --houses 30
+```
+
+### Recording semantics
+
+The timeline on the match report page is tick-based, not wall-clock based.
+Whole-match summaries close every 15 ticks (one second at the retail 15 Hz
+logic rate); report-grade samples close every 75 ticks (five seconds) and each
+one renders the same report as the live view. A report sample closes the
+ledger window, so the live phase means cover at most the last five seconds and
+briefly fall back to the window the sample just closed. Both rings are
+app-owned, never read by the simulation, and are not persisted in saves.
 
 ## Limits and interpretation
 

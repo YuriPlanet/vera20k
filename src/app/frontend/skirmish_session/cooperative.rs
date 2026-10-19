@@ -15,6 +15,8 @@ const CAMPAIGN_VALUE_CAPACITY: usize = 0x80;
 
 #[derive(Debug, thiserror::Error, Clone, PartialEq, Eq)]
 pub enum CooperativeError {
+    #[error("launch Country index {index} is outside the allocated registry (count {count})")]
+    InvalidCountryIndex { index: u16, count: usize },
     #[error("CoopCampMD.ini was not found in the configured retail assets")]
     MissingCampaignIni,
     #[error("failed to parse CoopCampMD.ini from {source_name}: {message}")]
@@ -34,6 +36,10 @@ pub enum CooperativeError {
     },
     #[error("the global multiplayer country roster is empty")]
     EmptyCountryRoster,
+    #[error("Cooperative human start count {0} is outside native slot storage")]
+    InvalidHumanStartCount(i32),
+    #[error("Cooperative source human count {0} exceeds native eight-slot storage")]
+    TooManyHumans(usize),
     #[error("the Cooperative {role} country list has no country present in the global roster")]
     NoEligibleCountries { role: &'static str },
     #[error("campaign index {index} has no preconstructed reserve progress record")]
@@ -205,6 +211,11 @@ impl CooperativeRegistry {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CooperativeProgressRecord {
+    /// Derived snapshot of the two admitted source-order participant names.
+    /// Native49B760 copies the low-byte names to record+0/+1C. MatchSession
+    /// remains the identity authority; this record retains names for later
+    /// Cooperative save lookup/score orientation, even after setup closes.
+    partner_names: [Vec<u8>; 2],
     /// Native valid byte (`record+0x6C`).
     pub valid: bool,
     /// Native `CurrentMap`; fresh records start at -1, initialized at 0.
@@ -218,6 +229,7 @@ pub struct CooperativeProgressRecord {
 impl Default for CooperativeProgressRecord {
     fn default() -> Self {
         Self {
+            partner_names: [Vec::new(), Vec::new()],
             valid: false,
             current_map: -1,
             campaign_type: -1,
@@ -227,6 +239,24 @@ impl Default for CooperativeProgressRecord {
 }
 
 impl CooperativeProgressRecord {
+    /// Snapshot producer49B760. Rebinding names leaves valid/map/campaign and
+    /// the RNG-selected filenames untouched; campaign initialization likewise
+    /// does not clear these names. A new49B610 record begins with empty names.
+    fn bind_partners(&mut self, first: &str, second: &str) {
+        self.partner_names = [
+            crate::util::native_string::narrow_utf16_c_string(first.encode_utf16()),
+            crate::util::native_string::narrow_utf16_c_string(second.encode_utf16()),
+        ];
+    }
+
+    #[cfg(test)]
+    pub fn partner_names(&self) -> [&[u8]; 2] {
+        [
+            self.partner_names[0].as_slice(),
+            self.partner_names[1].as_slice(),
+        ]
+    }
+
     /// Initialize/reset a record for a source-order campaign index.
     ///
     /// A changed (including fresh `-1`) CampaignType makes exactly one logical
@@ -274,11 +304,103 @@ impl CooperativeProgressRecord {
     }
 }
 
+/// The two independently ordered writes of Cooperative mode+68/5C30C0.
+/// The session owner applies declared_count even when a stale campaign stage
+/// leaves rows unchanged; this is not a second participant authority.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub(crate) struct CooperativeAiPreparation {
+    pub declared_count: Option<i32>,
+    pub opponents: Option<Vec<crate::skirmish_launch::SkirmishAiSlot>>,
+}
+
+/// 5C30C0, called before69B8C0. No RNG. Country/color placeholders are masked
+/// by Random exactly as other shell assignments; the canonical resolver owns
+/// their eventual values.
+pub(crate) fn prepare_ai(
+    registry: &CooperativeRegistry,
+    progress: Option<&CooperativeProgressRecord>,
+    campaign_index: usize,
+    header: crate::map::preview::ScenarioStartHeader,
+    capacity: i32,
+    difficulty: i32,
+    existing: &[crate::skirmish_launch::SkirmishAiSlot],
+) -> Result<CooperativeAiPreparation, CooperativeError> {
+    use crate::skirmish_launch::{
+        AiDifficulty, LaunchCountry, LaunchStartPosition, LaunchTeam, SkirmishAiSlot,
+    };
+    let first = header.coop_human_start_spots();
+    let count = capacity.wrapping_sub(first);
+    if count <= 0 {
+        return Ok(CooperativeAiPreparation::default());
+    }
+    let mut effect = CooperativeAiPreparation {
+        declared_count: Some(count),
+        opponents: None,
+    };
+    let stage = progress.filter(|p| p.valid).map_or(0, |p| p.current_map);
+    let Some(campaign) = registry.campaign(campaign_index) else {
+        return Ok(effect);
+    };
+    if campaign.stages.is_empty() || stage >= campaign.stages.len() as i32 {
+        return Ok(effect);
+    }
+    // Negative values would write before Session's native array; reject that
+    // corrupt-data case instead of manufacturing an in-range native result.
+    if first < 0 {
+        return Err(CooperativeError::InvalidHumanStartCount(first));
+    }
+    let mut opponents: Vec<_> = existing
+        .iter()
+        .filter(|slot| i32::from(slot.raw_slot_index) < first)
+        .cloned()
+        .collect();
+    let difficulty = match difficulty {
+        0 => AiDifficulty::Easy,
+        1 => AiDifficulty::Normal,
+        _ => AiDifficulty::Hard,
+    };
+    for row in first..8 {
+        if row - first >= count {
+            break;
+        }
+        opponents.push(SkirmishAiSlot {
+            raw_slot_index: row as u8,
+            country: LaunchCountry::America,
+            country_random: true,
+            color_index: 0,
+            color_random: true,
+            start_position: LaunchStartPosition::Auto,
+            team: LaunchTeam::None,
+            difficulty,
+        });
+    }
+    effect.opponents = Some(opponents);
+    Ok(effect)
+}
+
+/// Mode+64/5C2710's retained C1 payload. Round-major order is also the native
+/// draw order; a pair is [country index, color index]. This cache is generated
+/// once after69B8C0 and replaced by a decoded C1 on guests. It does not replace
+/// MatchSession's current resolved participant choices.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct CooperativeRoundAssignments {
+    rounds: Vec<[[i32; 2]; 8]>,
+}
+impl CooperativeRoundAssignments {
+    pub(crate) fn rounds(&self) -> &[[[i32; 2]; 8]] {
+        &self.rounds
+    }
+    pub(crate) fn accept(&mut self, rounds: Vec<[[i32; 2]; 8]>) {
+        self.rounds = rounds;
+    }
+}
+
 /// Cooperative mode object progress ownership relevant to shell RNG parity.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct CooperativeProgressState {
     active: Option<CooperativeProgressRecord>,
     reserves: Vec<Option<CooperativeProgressRecord>>,
+    round_assignments: CooperativeRoundAssignments,
 }
 
 impl CooperativeProgressState {
@@ -297,7 +419,95 @@ impl CooperativeProgressState {
         Ok(Self {
             active: None,
             reserves,
+            round_assignments: CooperativeRoundAssignments::default(),
         })
+    }
+
+    /// Original5C2710: generate every campaign round using the CURRENT
+    /// stage's country callbacks, including all8 slots even when fewer are
+    /// active. Human colors come from already-resolved source-order nodes.
+    pub(crate) fn prepare_round_assignments(
+        &mut self,
+        registry: &CooperativeRegistry,
+        campaign_index: usize,
+        roster: &[CooperativeCountryRosterEntry],
+        human_colors: &[i32],
+        rng: &mut SimRng,
+    ) -> Result<(), CooperativeError> {
+        if human_colors.len() > 8 {
+            return Err(CooperativeError::TooManyHumans(human_colors.len()));
+        }
+        let campaign =
+            registry
+                .campaign(campaign_index)
+                .ok_or(CooperativeError::InvalidCampaignIndex {
+                    index: campaign_index,
+                    count: registry.campaigns.len(),
+                })?;
+        self.round_assignments.rounds.clear();
+        let progress = self.active.clone().unwrap_or_default();
+        let rounds = (campaign.stages.len() as i8).max(0) as usize;
+        for _ in 0..rounds {
+            let mut colors = [-2; 8];
+            colors[..human_colors.len()].copy_from_slice(human_colors);
+            let mut round = [[-1; 2]; 8];
+            for row in 0..8 {
+                let role = if row < human_colors.len() {
+                    CooperativeCountryRole::Player
+                } else {
+                    CooperativeCountryRole::Enemy
+                };
+                let country =
+                    draw_country_for_progress(registry, &progress, role, roster, rng)? as i32;
+                let color = if row < human_colors.len() {
+                    colors[row]
+                } else {
+                    let color = loop {
+                        let candidate = rng.next_range_u32_inclusive(0, 7) as i32;
+                        if !colors.contains(&candidate) {
+                            break candidate;
+                        }
+                    };
+                    colors[row] = color;
+                    color
+                };
+                round[row] = [country, color];
+            }
+            self.round_assignments.rounds.push(round);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn round_assignments(&self) -> &CooperativeRoundAssignments {
+        &self.round_assignments
+    }
+
+    /// Native+74/5C2A60 applies decoded service values without random draws.
+    pub(crate) fn accept_round_assignments(&mut self, rounds: Vec<[[i32; 2]; 8]>) {
+        self.round_assignments.accept(rounds);
+    }
+
+    /// MPCooperative5C1D80 Start validation binds exactly two humans only
+    /// while an active progress record already exists. It never allocates or
+    /// rerolls a record, and a different participant count leaves it intact.
+    pub fn bind_network_partners(&mut self, names: &[&str]) -> bool {
+        let [first, second] = names else {
+            return false;
+        };
+        let Some(active) = self.active.as_mut() else {
+            return false;
+        };
+        active.bind_partners(first, second);
+        true
+    }
+
+    /// Coop peer departure +90/5C3F80 ends at5C40E9..5C40FC by binding
+    /// two empty names through49B760. Keep the retained progress/maps intact;
+    /// the saved-campaign replacement branch is a separate caller effect.
+    pub fn clear_network_partners(&mut self) {
+        if let Some(active) = self.active.as_mut() {
+            active.bind_partners("", "");
+        }
     }
 
     pub fn active(&self) -> Option<&CooperativeProgressRecord> {
@@ -394,6 +604,19 @@ impl CooperativeCountryRosterEntry {
     }
 }
 
+/// Resolve authored tokens through the same ID/Name aliases used by the
+/// native country eligibility owner. Ordering and repeated tokens are retained
+/// for consumers that build a menu from the authored list.
+pub fn country_indices_in_authored_order(
+    tokens: &[String],
+    roster: &[CooperativeCountryRosterEntry],
+) -> Vec<usize> {
+    tokens
+        .iter()
+        .filter_map(|token| roster.iter().position(|entry| entry.matches(token)))
+        .collect()
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CooperativeCountryRole {
     Player,
@@ -426,10 +649,8 @@ impl CooperativeCountryEligibility {
             return Err(CooperativeError::EmptyCountryRoster);
         }
         let mut accepted = vec![false; roster.len()];
-        for token in tokens {
-            if let Some(index) = roster.iter().position(|entry| entry.matches(token)) {
-                accepted[index] = true;
-            }
+        for index in country_indices_in_authored_order(tokens, roster) {
+            accepted[index] = true;
         }
         if !accepted.iter().any(|accepted| *accepted) {
             return Err(CooperativeError::NoEligibleCountries { role: role.label() });
@@ -501,6 +722,170 @@ fn campaign_tokens(section: &IniSection, key: &str) -> Vec<String> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn native_cooperative_rounds_preserve_full_rng_and_current_stage_draw_order() {
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/lan_lobby.json",
+        ))
+        .unwrap();
+        let corpus = &corpus["cooperative"];
+        let registry = CooperativeRegistry::from_ini(&IniFile::from_str(
+            corpus["campaign_ini"].as_str().unwrap(),
+        ))
+        .unwrap();
+        for case in corpus["cases"].as_array().unwrap() {
+            let campaign_index = registry
+                .campaigns
+                .iter()
+                .position(|campaign| campaign.section == case["campaign"].as_str().unwrap())
+                .unwrap();
+            let roster: Vec<_> = case["roster"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|row| {
+                    CooperativeCountryRosterEntry::new(
+                        row["id"].as_str().unwrap(),
+                        row["name"].as_str(),
+                    )
+                })
+                .collect();
+            let colors: Vec<_> = case["human_colors"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|color| color.as_i64().unwrap() as i32)
+                .collect();
+            let mut owner = CooperativeProgressState::default();
+            owner.active = Some(CooperativeProgressRecord {
+                valid: true,
+                campaign_type: campaign_index as i32,
+                current_map: case["current_stage"].as_i64().unwrap() as i32,
+                ..Default::default()
+            });
+            let mut rng =
+                SimRng::from_native_state_hex_for_test(case["rng_before"].as_str().unwrap());
+            let (result, draws) = crate::sim::rng::trace_draws(|| {
+                owner.prepare_round_assignments(
+                    &registry,
+                    campaign_index,
+                    &roster,
+                    &colors,
+                    &mut rng,
+                )
+            });
+            result.unwrap();
+            assert_eq!(
+                serde_json::to_value(owner.round_assignments().rounds()).unwrap(),
+                case["rounds"],
+                "{} rounds",
+                case["name"]
+            );
+            assert_eq!(
+                rng.native_state_hex(),
+                case["rng_after"].as_str().unwrap(),
+                "{} full RNG",
+                case["name"]
+            );
+            let expected_raw: Vec<_> = case["draws"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .flat_map(|draw| draw["raw"].as_array().unwrap().iter().cloned())
+                .collect();
+            assert_eq!(
+                draws
+                    .iter()
+                    .map(|draw| draw["value"].clone())
+                    .collect::<Vec<_>>(),
+                expected_raw,
+                "{} raw draw order",
+                case["name"]
+            );
+            let before = rng.native_state_hex();
+            let rounds = owner.round_assignments().rounds().to_vec();
+            owner.accept_round_assignments(rounds.clone());
+            assert_eq!(owner.round_assignments().rounds(), rounds);
+            assert_eq!(rng.native_state_hex(), before, "decoded C1 does not draw");
+        }
+    }
+
+    #[test]
+    fn native_cooperative_ai_preparation_keeps_partial_count_effects() {
+        use crate::skirmish_launch::{
+            AiDifficulty, LaunchCountry, LaunchStartPosition, LaunchTeam, SkirmishAiSlot,
+        };
+        let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/lan_lobby.json",
+        ))
+        .unwrap();
+        let corpus = &corpus["cooperative"];
+        let registry = CooperativeRegistry::from_ini(&IniFile::from_str(
+            corpus["campaign_ini"].as_str().unwrap(),
+        ))
+        .unwrap();
+        for case in corpus["preparation"].as_array().unwrap() {
+            let existing = vec![SkirmishAiSlot {
+                raw_slot_index: 5,
+                country: LaunchCountry::Yuri,
+                country_random: false,
+                color_index: 3,
+                color_random: false,
+                start_position: LaunchStartPosition::Position(1),
+                team: LaunchTeam::Team(2),
+                difficulty: AiDifficulty::Hard,
+            }];
+            let progress = CooperativeProgressRecord {
+                valid: true,
+                campaign_type: 0,
+                current_map: case["current_stage"].as_i64().unwrap() as i32,
+                ..Default::default()
+            };
+            let mut header = crate::map::preview::ScenarioStartHeader::default();
+            header.read_ini(&IniFile::from_str(&format!(
+                "[Header]\nNumCoopHumanStartSpots={}",
+                case["first"]
+            )));
+            let effect = prepare_ai(
+                &registry,
+                Some(&progress),
+                0,
+                header,
+                case["capacity"].as_i64().unwrap() as i32,
+                case["difficulty"].as_i64().unwrap() as i32,
+                &existing,
+            )
+            .unwrap();
+            assert_eq!(
+                effect.declared_count.unwrap_or(17),
+                case["count"].as_i64().unwrap() as i32,
+                "{} count",
+                case["name"]
+            );
+            let rows = effect.opponents.unwrap_or(existing);
+            for row in 0..8 {
+                let expected = &case["rows"][row];
+                let actual = rows.iter().find(|ai| usize::from(ai.raw_slot_index) == row);
+                if expected[0].as_i64() == Some(-1) {
+                    assert!(actual.is_none());
+                    continue;
+                }
+                let actual = actual.unwrap();
+                assert_eq!(
+                    actual.difficulty.as_i32(),
+                    expected[0].as_i64().unwrap() as i32
+                );
+                assert_eq!(actual.country_random, expected[1].as_i64() == Some(-2));
+                assert_eq!(actual.color_random, expected[2].as_i64() == Some(-2));
+                if actual.color_random {
+                    assert_eq!(actual.start_position, LaunchStartPosition::Auto);
+                    assert_eq!(actual.team, LaunchTeam::None);
+                }
+            }
+            assert!(case["draws"].as_array().unwrap().is_empty());
+        }
+    }
+
     fn registry() -> CooperativeRegistry {
         CooperativeRegistry::from_ini(&IniFile::from_str(
             "[Campaigns]\nCampaign1=Allied\nCampaign2=World\n\
@@ -558,6 +943,45 @@ mod tests {
                 found: 2,
             })
         );
+    }
+
+    #[test]
+    fn start_partner_binding_is_a_derived_snapshot_without_progress_or_rng_mutation() {
+        let registry = registry();
+        let mut rng = SimRng::new(19);
+        let mut state = CooperativeProgressState::construct(&registry, &mut rng).unwrap();
+        assert!(!state.bind_network_partners(&["Host", "Guest"]));
+        state.clear_network_partners();
+        assert!(state.active().is_none());
+        state.ensure_active(&registry, 0, &mut rng).unwrap();
+        let before = state.active().unwrap().clone();
+        let rng_before = rng.state();
+        assert!(state.bind_network_partners(&["H\u{0131}", "G\u{0100}ignored"]));
+        let active = state.active().unwrap();
+        assert_eq!(active.partner_names(), [b"H1".as_slice(), b"G".as_slice()]);
+        assert_eq!(active.campaign_type, before.campaign_type);
+        assert_eq!(active.current_map, before.current_map);
+        assert_eq!(active.chosen_maps, before.chosen_maps);
+        assert_eq!(active.valid, before.valid);
+        assert_eq!(rng.state(), rng_before);
+        assert!(!state.bind_network_partners(&["OnlyOne"]));
+        assert_eq!(
+            state.active().unwrap().partner_names(),
+            [b"H1".as_slice(), b"G".as_slice()]
+        );
+        state
+            .active
+            .as_mut()
+            .unwrap()
+            .initialize_for_campaign(&registry, 0, &mut rng)
+            .unwrap();
+        assert_eq!(
+            state.active().unwrap().partner_names(),
+            [b"H1".as_slice(), b"G".as_slice()]
+        );
+        state.clear_network_partners();
+        assert_eq!(state.active().unwrap(), &before);
+        assert_eq!(rng.state(), rng_before);
     }
 
     #[test]

@@ -81,7 +81,7 @@ pub(crate) fn observer_draw_context(
             obj.invisible
                 || (entity.category() == EntityCategory::Structure && obj.invisible_in_game)
         }),
-        is_campaign: !sim.session.game_mode_nonzero,
+        is_campaign: !sim.session.game_mode_nonzero(),
         owner_is_current_player: sim.house_is_human_player(entity.owner()),
         disguise_cell_present: disguise_cell.is_some(),
         detects_disguise: local_owner_id

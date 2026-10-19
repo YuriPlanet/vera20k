@@ -1048,7 +1048,11 @@ fn original_fatal_mtnk_tires_precede_the_concrete_death_anim_identity() {
         );
         assert!(world.voxel_anims().iter().next().is_none() && world.anims().next().is_none());
         world.session.binary_frame = input["binary_frame"].as_u64().unwrap() as u32;
-        world.session.game_mode_nonzero = prior["session_mode"].as_u64().unwrap() != 0;
+        world.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+                prior["session_mode"].as_u64().unwrap() != 0,
+            ),
+        );
         assert_eq!(json!(world.owner_is_human(owner)), prior["owner_human"]);
 
         // Import all streams AFTER ordinary fixture startup. No seeded-Rust

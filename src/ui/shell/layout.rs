@@ -250,7 +250,7 @@ pub(crate) mod tests {
         control: u16,
         width: i32,
         height: i32,
-        side: u8,
+        side: i32,
     ) -> RectPx {
         let fixture: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
             "tools/storage_oracle/shell_relayout.json",

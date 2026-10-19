@@ -743,7 +743,7 @@ impl Simulation {
         let Some(owner_house) = self.houses.get(&wall_owner) else {
             return false;
         };
-        let owner_admitted = if self.session.game_mode_nonzero {
+        let owner_admitted = if self.session.game_mode_nonzero() {
             owner_house.is_human
         } else {
             owner_house.is_human || owner_house.player_control
@@ -2055,7 +2055,7 @@ impl Simulation {
         };
         if object.undeploys_into.is_some() {
             self.can_undeploy_building_runtime(stable_id, rules)
-                && (!object.construction_yard || self.session.game_mode_nonzero)
+                && (!object.construction_yard || self.session.game_mode_nonzero())
         } else {
             object.has_rally_line()
         }

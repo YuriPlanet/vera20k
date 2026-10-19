@@ -51,6 +51,12 @@ PALETTES = (0xB0FBCC, 0xB0FBDC, 0xB0FBA8)
 
 # Family dialogs: (name, top buttons, bottom button, +0xD5, +0xD6).
 DIALOGS = (
+    # Visible ownerdraw counts60A180/60A250: BB Observe6CE is hidden;
+    # BC Start588/ChooseMap5AA, BD Accept59F; bottom BB5C0, BC/BD2.
+    #6228E4..62298A sets D5/D6 for BC/BD only; D7 remains0.
+    ("0xBB", 2, 1, 0, 0),
+    ("0xBC", 2, 1, 1, 1),
+    ("0xBD", 1, 1, 1, 1),
     ("0xE2", 5, 1, 0, 0),
     ("0x100", 3, 1, 0, 0),
     ("0x129", 1, 1, 0, 0),
@@ -281,13 +287,13 @@ def generate():
 if __name__ == "__main__":
     finish_vectors(generate, Path(__file__).with_suffix(".json"),
                    provenance=lambda: provenance(
-        scope="Complete original slide engine 0x006071E0 (both directions) after the rect initializer 0x0072EC70, for the family dialogs and campaign victory 0x103 at 640x480, 800x600 and 1024x768",
+        scope="Complete original slide engine 0x006071E0 (both directions) after the rect initializer 0x0072EC70, for the family dialogs, LAN BB/BC/BD and campaign victory 0x103 at 640x480, 800x600 and 1024x768",
         assumptions=[
+            "LAN BB/BC/BD visible ownerdraw counts are 2/2/1 plus one bottom button:60A180 requires style low bits0xB and IsWindowVisible; BB Observe6CE is hidden; record flags6228E4..62298A set D5/D6 for BC/BD, not BB, and D7 remains0",
             "Visible top-button and bottom-button counts per dialog are supplied (0xE2 5+1, 0x100 and 0x101 3+1, 0x129 1+1, 0x102 2+1, 0x94 0+1 with Load 0x40E hidden, 0xB7 1+1 with Load 0x40F counted even when disabled, 0xD5 2+1 Keyboard and Network, 0x10E 6+1 the Westwood Online welcome buttons, 0xA3 0+1 Keyboard Back, 0x6B 2+1 Use Map and Create Random Map then Cancel, 0x108 0+1 Continue, 0x105 4+1 Use Map, Load, Save and Delete Map then Cancel); the classifier callbacks 0x0060A180/0x0060A250 are not executed",
             "Record flags +0xD5/+0xD6/+0xD7 as set per dialog id at creation: 0x102 has +0xD5 and +0xD6, 0x6B and 0x105 +0xD5 only (0x0062290E, 0x00622915), the family pages none",
             "Dialog 0x103's child counts are its original RT_DIALOG controls (0 top-list, 1 bottom-list); 0x0060A180/0x0060A250 are not executed here. Its record creator sets +0xD5=0, +0xD6=0, +0xD7=1 (0x0062290E..0x006229CE). The slide engine reads +0xD7 at 0x0060727D, so the fixture passes it explicitly",
             "Draw calls are recorded as (shape, frame, x, y); pixels, palettes and blits are not rasterised",
-            "The reference was regenerated with the supported Steam image 3e81a617...; its code addresses and file-backed section contents match the historical 1cdd1180... image (tools/native_oracle.md), and the pre-existing cases' ticks are unchanged",
         ],
         substitutions=[
             "CC_Draw_Shape 0x004AED70 recorded and returns 1",

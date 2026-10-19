@@ -52,9 +52,9 @@ fn padded_ai_handle_does_not_turn_an_enemy_refinery_into_an_allied_target() {
             (LaunchCountry::Russia, AiDifficulty::Easy),
         ],
     );
-    launch.player_name = " Computer2 ".to_owned();
-    launch.local.start_position = LaunchStartPosition::Position(0);
-    launch.local.team = LaunchTeam::None;
+    launch.local_player_mut().name = " Computer2 ".to_owned();
+    launch.local_slot_mut().start_position = LaunchStartPosition::Position(0);
+    launch.local_slot_mut().team = LaunchTeam::None;
     for (index, opponent) in launch.opponents.iter_mut().enumerate() {
         opponent.start_position = LaunchStartPosition::Position(index as u8 + 1);
         opponent.team = LaunchTeam::Team(1);

@@ -115,6 +115,22 @@ enum ChooseMapList {
     Map,
 }
 
+/// Native chooser admission depends on its caller: offline requires mode
+/// vslot40, network lists all modes and observer callers require vslotBC.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ChooseMapContext {
+    Skirmish,
+    Network { observer: bool },
+}
+impl ChooseMapContext {
+    fn permits(self, mode: &SkirmishGameMode) -> bool {
+        match self {
+            Self::Skirmish => mode.class.lists_in_skirmish(),
+            Self::Network { observer } => !observer || mode.class.allows_observers(),
+        }
+    }
+}
+
 impl ChooseMapModalState {
     /// `0x497` (`0x005E6EA6`): the current game type (or the default) is
     /// selected, its maps listed with the current map selected and scrolled
@@ -125,6 +141,7 @@ impl ChooseMapModalState {
     /// (`0x005D6263`). The fill's observer check (`0x005D6239`, vtable
     /// `+0xBC`) rejects only Cooperative, which that test already drops.
     pub fn open(
+        context: ChooseMapContext,
         current_mode_id: i32,
         current_record_index: Option<usize>,
         modes: &[SkirmishGameMode],
@@ -142,7 +159,7 @@ impl ChooseMapModalState {
             },
             mode_rows: modes
                 .iter()
-                .filter(|mode| mode.class.lists_in_skirmish())
+                .filter(|mode| context.permits(mode))
                 .map(|mode| mode.id)
                 .collect(),
             selected_mode_id,
@@ -493,7 +510,14 @@ mod tests {
     fn random_map_button_admission_tracks_the_built_mode() {
         let modes = stock_skirmish_modes();
         let layout = compute_choose_map_modal_layout(800, 600);
-        let mut modal = ChooseMapModalState::open(1, None, &modes, &[], &layout);
+        let mut modal = ChooseMapModalState::open(
+            crate::ui::skirmish_shell::ChooseMapContext::Skirmish,
+            1,
+            None,
+            &modes,
+            &[],
+            &layout,
+        );
         for mode_id in [1, 2] {
             assert!(modal.select_mode(mode_id, &modes, &[], &layout));
             assert!(modal.random_map_button_enabled());
@@ -508,7 +532,14 @@ mod tests {
     fn a_stale_random_map_press_cannot_dispatch() {
         let modes = stock_skirmish_modes();
         let layout = compute_choose_map_modal_layout(800, 600);
-        let mut modal = ChooseMapModalState::open(9, None, &modes, &[], &layout);
+        let mut modal = ChooseMapModalState::open(
+            crate::ui::skirmish_shell::ChooseMapContext::Skirmish,
+            9,
+            None,
+            &modes,
+            &[],
+            &layout,
+        );
         let random = ChooseMapModalButton::CreateRandomMap0x583;
         assert!(!modal.press_button(random));
         assert_eq!(modal.release_button(Some(random)), (false, None));
@@ -536,12 +567,26 @@ mod tests {
             .find(|mode| mode.map_filter == "standard")
             .expect("a standard mode");
         let all: Vec<_> = (0..40).map(|i| record(&format!("Map {i:02}"))).collect();
-        let modal = ChooseMapModalState::open(standard.id, Some(25), &modes, &all, &layout);
+        let modal = ChooseMapModalState::open(
+            crate::ui::skirmish_shell::ChooseMapContext::Skirmish,
+            standard.id,
+            Some(25),
+            &modes,
+            &all,
+            &layout,
+        );
         let geometry = modal.map_geometry(&layout);
         assert_eq!(geometry.visible_rows, 18, "surface 345 px tall: 18 rows");
         assert_eq!(modal.highlighted_filtered_index, Some(25));
         assert_eq!(modal.map_top_index, 22, "40 rows - 18 visible");
-        let modal = ChooseMapModalState::open(standard.id, Some(5), &modes, &all, &layout);
+        let modal = ChooseMapModalState::open(
+            crate::ui::skirmish_shell::ChooseMapContext::Skirmish,
+            standard.id,
+            Some(5),
+            &modes,
+            &all,
+            &layout,
+        );
         assert_eq!(modal.map_top_index, 5);
     }
 
@@ -556,7 +601,14 @@ mod tests {
         let modes = stock_skirmish_modes();
         let layout = compute_choose_map_modal_layout(800, 600);
         let all: Vec<_> = (0..30).map(|i| record(&format!("Map {i:02}"))).collect();
-        let mut modal = ChooseMapModalState::open(1, Some(20), &modes, &all, &layout);
+        let mut modal = ChooseMapModalState::open(
+            crate::ui::skirmish_shell::ChooseMapContext::Skirmish,
+            1,
+            Some(20),
+            &modes,
+            &all,
+            &layout,
+        );
         assert!(modal.select_mode(2, &modes, &all, &layout));
         assert_eq!(modal.highlighted_filtered_index, Some(20));
         assert_eq!(modal.map_top_index, 12, "30 rows - 18 visible");
@@ -575,11 +627,25 @@ mod tests {
             record_for("Bravo", &["teamgame"]),
             record_for("alpha", &["teamgame"]),
         ];
-        let mut modal = ChooseMapModalState::open(1, Some(1), &modes, &all, &layout);
+        let mut modal = ChooseMapModalState::open(
+            crate::ui::skirmish_shell::ChooseMapContext::Skirmish,
+            1,
+            Some(1),
+            &modes,
+            &all,
+            &layout,
+        );
         assert!(modal.select_mode(9, &modes, &all, &layout));
         assert_eq!(modal.filtered_record_indices, [1, 2, 3, 4]);
         assert_eq!(modal.selected_record_index(), Some(3), "the last Bravo");
-        let mut modal = ChooseMapModalState::open(1, Some(0), &modes, &all, &layout);
+        let mut modal = ChooseMapModalState::open(
+            crate::ui::skirmish_shell::ChooseMapContext::Skirmish,
+            1,
+            Some(0),
+            &modes,
+            &all,
+            &layout,
+        );
         assert!(modal.select_mode(9, &modes, &all, &layout));
         assert_eq!(
             modal.highlighted_filtered_index,
@@ -596,7 +662,14 @@ mod tests {
             record_for("Alpha", &["standard"]),
             record_for("Charlie", &["teamgame"]),
         ];
-        let modal = ChooseMapModalState::open(1, Some(1), &modes, &all, &layout);
+        let modal = ChooseMapModalState::open(
+            crate::ui::skirmish_shell::ChooseMapContext::Skirmish,
+            1,
+            Some(1),
+            &modes,
+            &all,
+            &layout,
+        );
         assert_eq!(modal.highlighted_filtered_index, None);
         assert_eq!(modal.accept_selection(), None, "Use Map does nothing");
     }
@@ -605,7 +678,14 @@ mod tests {
     fn a_double_click_on_a_row_is_not_a_second_press() {
         let modes = stock_skirmish_modes();
         let layout = compute_choose_map_modal_layout(800, 600);
-        let mut modal = ChooseMapModalState::open(1, None, &modes, &[], &layout);
+        let mut modal = ChooseMapModalState::open(
+            crate::ui::skirmish_shell::ChooseMapContext::Skirmish,
+            1,
+            None,
+            &modes,
+            &[],
+            &layout,
+        );
         let limits = (Duration::from_millis(500), 4, 4);
         let now = Instant::now();
         let mode_row = modal.mode_geometry(&layout).row(0);
@@ -637,7 +717,14 @@ mod tests {
     fn row_clicks_select_and_scrollbar_presses_capture() {
         let modes = stock_skirmish_modes();
         let layout = compute_choose_map_modal_layout(800, 600);
-        let mut modal = ChooseMapModalState::open(modes[0].id, None, &modes, &[], &layout);
+        let mut modal = ChooseMapModalState::open(
+            crate::ui::skirmish_shell::ChooseMapContext::Skirmish,
+            modes[0].id,
+            None,
+            &modes,
+            &[],
+            &layout,
+        );
         modal.filtered_record_indices = (0..30).collect();
         modal.highlighted_filtered_index = Some(0);
         let mut last = None;
@@ -693,7 +780,14 @@ mod tests {
     fn the_last_clicked_game_type_row_does_not_rebuild_the_list() {
         let modes = stock_skirmish_modes();
         let layout = compute_choose_map_modal_layout(800, 600);
-        let mut modal = ChooseMapModalState::open(modes[0].id, None, &modes, &[], &layout);
+        let mut modal = ChooseMapModalState::open(
+            crate::ui::skirmish_shell::ChooseMapContext::Skirmish,
+            modes[0].id,
+            None,
+            &modes,
+            &[],
+            &layout,
+        );
         let geometry = modal.mode_geometry(&layout);
         let row1 = geometry.row(1);
         let now = Instant::now();
@@ -722,7 +816,14 @@ mod tests {
             ChooseMapListPress::RowClicked { rebuilt: false }
         );
         // A later visit keeps the global: the same row still does not rebuild.
-        let mut modal = ChooseMapModalState::open(modes[0].id, None, &modes, &[], &layout);
+        let mut modal = ChooseMapModalState::open(
+            crate::ui::skirmish_shell::ChooseMapContext::Skirmish,
+            modes[0].id,
+            None,
+            &modes,
+            &[],
+            &layout,
+        );
         assert_eq!(
             modal.mouse_down(
                 &layout,
@@ -749,7 +850,14 @@ mod tests {
         // at x 115/116 and 312/313, y 126/127 and 471/472.
         let modes = stock_skirmish_modes();
         let layout = compute_choose_map_modal_layout(800, 600);
-        let mut modal = ChooseMapModalState::open(1, None, &modes, &[], &layout);
+        let mut modal = ChooseMapModalState::open(
+            crate::ui::skirmish_shell::ChooseMapContext::Skirmish,
+            1,
+            None,
+            &modes,
+            &[],
+            &layout,
+        );
         assert_eq!(
             modal.mode_geometry(&layout).row(0),
             RectPx::new(117, 128, 195, 19)
@@ -773,11 +881,25 @@ mod tests {
     fn skirmish_lists_battle_free_for_all_and_team_game() {
         let modes = stock_skirmish_modes();
         let layout = compute_choose_map_modal_layout(800, 600);
-        let modal = ChooseMapModalState::open(9, None, &modes, &[], &layout);
+        let modal = ChooseMapModalState::open(
+            crate::ui::skirmish_shell::ChooseMapContext::Skirmish,
+            9,
+            None,
+            &modes,
+            &[],
+            &layout,
+        );
         assert_eq!(modal.mode_rows(), [1, 2, 9]);
         assert_eq!(modal.selected_mode_row(), Some(2));
         // A current mode Skirmish does not list keeps its maps, on no row.
-        let modal = ChooseMapModalState::open(3, None, &modes, &[], &layout);
+        let modal = ChooseMapModalState::open(
+            crate::ui::skirmish_shell::ChooseMapContext::Skirmish,
+            3,
+            None,
+            &modes,
+            &[],
+            &layout,
+        );
         assert_eq!(modal.selected_mode_id, 3);
         assert_eq!(modal.selected_mode_row(), None);
     }

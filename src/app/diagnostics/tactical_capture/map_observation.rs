@@ -7,7 +7,7 @@ use super::*;
 use crate::app::diagnostics::state::{MAP_PRESENTATION_CLOCK_POLICY, MAP_PRESENTATION_INTERVAL_MS};
 use crate::app::presentation::render::GameRenderTimes;
 use crate::audio::sfx::{PcmObservationConfig, PcmObservationContext, PcmObservationReport};
-use crate::skirmish_launch::{LaunchStartPosition, PreFillHouseRoster, SkirmishLaunchSession};
+use crate::skirmish_launch::{LaunchStartPosition, SkirmishLaunchSession};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
 
@@ -837,15 +837,25 @@ impl MapCaptureProfile {
             "map observation requires an explicit fixed Battle launch"
         );
         ensure!(
-            self.launch.pre_fill_house_roster
-                == PreFillHouseRoster::from_compact_skirmish(self.launch.opponents.len()),
+            self.launch.humans.len() == 1
+                && self.launch.local_player_index == 0
+                && self.launch.humans[0].raw_slot_index == Some(0)
+                && !self.launch.humans[0].is_observer()
+                && self.launch.ai_player_count == self.launch.opponents.len() as i32
+                && self
+                    .launch
+                    .opponents
+                    .iter()
+                    .enumerate()
+                    .all(|(index, opponent)| usize::from(opponent.raw_slot_index) == index + 1)
+                && self.launch.house_roster_is_consistent(),
             "map observation requires the ordinary one-human compact skirmish roster"
         );
         let mut starts = std::collections::BTreeSet::new();
         let mut colors = std::collections::BTreeSet::new();
         for (start, color) in std::iter::once((
-            self.launch.local.start_position,
-            self.launch.local.color_index,
+            self.launch.local_slot().start_position,
+            self.launch.local_slot().color_index,
         ))
         .chain(
             self.launch
@@ -1626,7 +1636,7 @@ struct MapCommandBarThumbState {
     rect: [i32; 4],
     disabled: bool,
     current_house: Option<String>,
-    side_index: Option<u8>,
+    side_index: Option<i32>,
     local_player_defeated: bool,
     input_locked: bool,
     has_lost: Option<bool>,
@@ -2560,6 +2570,68 @@ struct MapFrameObservation {
     audio_state: Option<Value>,
 }
 
+/// Inputs retained by the ordinary terrain owners after this exact step's
+/// draw. This is not a GPU readback or proof that a fragment reached the target.
+/// In particular, a missing/out-of-view A sample remains null rather than
+/// claiming the shader's disabled/out-of-bounds neutral fallback was sampled.
+fn terrain_render_observation(state: &AppState, rx: u16, ry: u16) -> Value {
+    let presentation = &state.match_state.match_presentation;
+    let grid = state
+        .match_state
+        .sim_runtime
+        .as_ref()
+        .and_then(|runtime| runtime.view().resolved_terrain());
+    let cell = grid.and_then(|grid| grid.cell(rx, ry));
+    let tactical_variant = grid.and_then(|grid| grid.tactical_draw_variant(rx, ry));
+    // Observe the same live key that terrain_instances::build_visible_instances
+    // requests, without calling Recalc, creating an atlas entry or substituting
+    // a pristine image when the exact selected key is absent.
+    let atlas_key = cell.and_then(|cell| {
+        let (tile_id, sub_tile) = grid?.presentation_tile(cell);
+        Some(crate::map::theater::TileKey {
+            tile_id,
+            sub_tile,
+            variant: tactical_variant.unwrap_or(cell.variant),
+        })
+    });
+    let uv = atlas_key.and_then(|key| presentation.tile_atlas.as_ref()?.get_uv(key));
+    let lighting = presentation.lighting.grid();
+    let palette_light = cell.and_then(|_| {
+        lighting.cell_light_at((rx, ry))?;
+        Some(crate::render::palette_light::PaletteLight::cell(lighting, (rx, ry), false).0)
+    });
+    let center = cell.map(|cell| {
+        let (x, y) = crate::map::terrain::iso_to_screen(rx, ry, cell.level);
+        [
+            x + crate::map::terrain::TILE_WIDTH / 2.0,
+            y + crate::map::terrain::TILE_HEIGHT / 2.0,
+        ]
+    });
+    let camera = [
+        state.match_state.input.camera_x,
+        state.match_state.input.camera_y,
+    ];
+    let a_source = (!state.match_state.sandbox_full_visibility)
+        .then_some(presentation.shroud_buffer.as_ref())
+        .flatten();
+    let a_center =
+        center.and_then(|point| a_source?.sample_world(point[0], point[1], camera[0], camera[1]));
+    json!({
+        "phase": "after_draw",
+        "variant": cell.map(|cell| cell.variant),
+        "tactical_variant": tactical_variant,
+        "atlas_key": atlas_key.map(|key| [u32::from(key.tile_id), u32::from(key.sub_tile), u32::from(key.variant)]),
+        "atlas_ready": presentation.tile_atlas.is_some(),
+        "exact_atlas_uv": uv.map(|uv| json!({"origin": uv.uv_origin, "size": uv.uv_size,
+            "pixel_size": uv.pixel_size, "draw_offset": uv.draw_offset})),
+        "palette_light": palette_light,
+        "cell_center_world": center,
+        "camera_top_left": camera,
+        "a_bound": a_source.is_some(),
+        "a_center": a_center,
+    })
+}
+
 #[derive(Debug, Serialize)]
 struct MapDrawTime {
     completed_steps: u64,
@@ -3049,7 +3121,7 @@ impl TacticalCaptureSession {
                     "human": house.map(|h| h.is_human), "difficulty": house.map(|h| h.difficulty)})
                 })
                 .collect();
-            for start in std::iter::once(profile.launch.local.start_position).chain(
+            for start in std::iter::once(profile.launch.local_slot().start_position).chain(
                 profile
                     .launch
                     .opponents
@@ -4095,7 +4167,8 @@ impl TacticalCaptureSession {
                 "raw_bridge_flags": cell.map(|cell| cell.bridge_facts.raw_flags),
                 "bridge_state": cell.map(|cell| cell.bridge_facts.state_byte),
                 "has_deck": cell.map(|cell| cell.has_bridge_deck), "deck_level": cell.map(|cell| cell.bridge_deck_level),
-                "walkable": cell.map(|cell| cell.bridge_walkable), "transition": cell.map(|cell| cell.bridge_transition)})
+                "walkable": cell.map(|cell| cell.bridge_walkable), "transition": cell.map(|cell| cell.bridge_transition),
+                "render": null})
         }).collect();
         let frame = MapFrameObservation {
             completed_steps: self.exact_step_receipts.len() as u64,
@@ -4209,6 +4282,11 @@ impl TacticalCaptureSession {
                 )
             })
             .transpose()?;
+        let terrain_render: Vec<_> = profile
+            .terrain_cells()
+            .iter()
+            .map(|&[rx, ry]| terrain_render_observation(state, rx, ry))
+            .collect();
         let map = self.map_state_mut()?;
         if let Some(effects) = electric {
             map.sample_count = map
@@ -4261,6 +4339,15 @@ impl TacticalCaptureSession {
         }
         map.observe_draw(requested, step, output.times)?;
         map.draws.last_mut().expect("draw just observed").tooltip = tooltip;
+        if let Some(frame) = map
+            .frames
+            .last_mut()
+            .filter(|frame| frame.completed_steps == step)
+        {
+            for (cell, rendered) in frame.terrain.iter_mut().zip(terrain_render) {
+                cell["render"] = rendered;
+            }
+        }
         if let Some(frame) = map
             .sidebar_frames
             .last_mut()
@@ -4758,13 +4845,39 @@ mod tests {
     #[test]
     fn unresolved_launch_duplicate_slots_and_inconsistent_roster_fail() {
         let mut profile = example();
-        profile.launch.local.start_position = LaunchStartPosition::Auto;
+        profile.launch.local_slot_mut().start_position = LaunchStartPosition::Auto;
         assert!(profile.validate().is_err());
         let mut profile = example();
-        profile.launch.opponents[0].color_index = profile.launch.local.color_index;
+        profile.launch.opponents[0].color_index = profile.launch.local_slot().color_index;
         assert!(profile.validate().is_err());
         let mut profile = example();
         profile.launch.opponents.clear();
+        assert!(profile.validate().is_err());
+    }
+
+    #[test]
+    fn ordinary_capture_admission_uses_canonical_color_and_source_roster() {
+        let mut profile = example();
+        profile.launch.local_slot_mut().color_index = 6;
+        profile.launch.rebuild_house_roster();
+        profile.validate().unwrap();
+        let baseline = profile;
+        let mut profile = baseline.clone();
+        profile.launch.humans[0].raw_slot_index = Some(2);
+        assert!(profile.validate().is_err());
+        let mut profile = baseline.clone();
+        profile.launch.humans[0].role = crate::skirmish_launch::LaunchHumanRole::Observer;
+        profile.launch.rebuild_house_roster();
+        assert!(profile.validate().is_err());
+        let mut profile = baseline.clone();
+        profile.launch.opponents[0].raw_slot_index = 3;
+        profile.launch.rebuild_house_roster();
+        assert!(profile.validate().is_err());
+        let mut profile = baseline;
+        let mut remote = profile.launch.humans[0].clone();
+        remote.raw_slot_index = Some(2);
+        profile.launch.humans.push(remote);
+        profile.launch.rebuild_house_roster();
         assert!(profile.validate().is_err());
     }
 
@@ -6721,9 +6834,17 @@ mod tests {
         walk(&tools.unwrap(), &mut profiles);
         assert!(!profiles.is_empty());
         for path in profiles {
-            if let Err(error) = MapCaptureProfile::load(&path) {
-                panic!("{}: {error:#}", path.display());
-            }
+            let profile = MapCaptureProfile::load(&path)
+                .unwrap_or_else(|error| panic!("{}: {error:#}", path.display()));
+            let source: Value = serde_json::from_slice(&profile.bytes).unwrap();
+            // These maintained examples use the canonical serializer shape;
+            // legacy inputs remain supported only at the decoder boundary.
+            assert_eq!(
+                source["launch"],
+                serde_json::to_value(&profile.value.launch).unwrap(),
+                "{}",
+                path.display()
+            );
         }
     }
 

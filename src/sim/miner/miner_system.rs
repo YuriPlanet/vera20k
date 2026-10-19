@@ -787,7 +787,7 @@ fn handle_going_to_idle(
     let human = sim
         .houses
         .get(&snap.owner)
-        .is_none_or(|house| house.is_controlled_by_human(sim.session.game_mode_nonzero));
+        .is_none_or(|house| house.is_controlled_by_human(sim.session.game_mode_nonzero()));
     if !human {
         snap.state = MinerState::SearchOre;
         harvest_looking(sim, rules, overlay_registry, snap, frame_effects);
@@ -1275,7 +1275,7 @@ pub(crate) fn effective_purifier_count(
     else {
         return real;
     };
-    if house.is_human || !sim.session.game_mode_nonzero {
+    if house.is_human || !sim.session.game_mode_nonzero() {
         return real;
     }
     let table = rules.general.ai_virtual_purifiers;

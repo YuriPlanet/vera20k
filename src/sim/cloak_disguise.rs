@@ -771,7 +771,11 @@ impl crate::sim::world::Simulation {
             .session
             .current_house
             .and_then(|id| self.houses.get(&id))
-            .map_or(2, |house| usize::from(house.side_index).min(2));
+            .map_or(2, |house| match house.side_index {
+                0 => 0,
+                1 => 1,
+                _ => 2,
+            });
         rules.general.infantry_disguises[side]
             .as_deref()
             .and_then(|name| self.interner.get(name))

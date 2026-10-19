@@ -150,7 +150,7 @@ fn crew_scene(input: &Value) -> (SlaveScene, Vec<u64>) {
     let rules = &s.scene.rules;
     let sim = &mut s.scene.sim;
     let owner = sim.substrate.entities.get(refinery).unwrap().owner();
-    sim.houses.get_mut(&owner).unwrap().side_index = input["side"].as_u64().unwrap() as u8;
+    sim.houses.get_mut(&owner).unwrap().side_index = input["side"].as_i64().unwrap() as i32;
     let building = sim.substrate.entities.get_mut(refinery).unwrap();
     building
         .has_been_captured
@@ -573,7 +573,11 @@ fn the_computers_low_credit_sale_matches_the_original_admission() {
             RuleSet::from_ini_with_fixed_art_for_test(&IniFile::from_str(&text), &art).unwrap();
         rules.set_buildup_control_for_test("YAREFN", [0, 25, 2]);
         let mut sim = crate::sim::world::Simulation::new();
-        sim.session.game_mode_nonzero = int("game_mode") != 0;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+                int("game_mode") != 0,
+            ),
+        );
         let owner = sim.interner.intern("AI");
         let mut house = HouseState::new(owner, 0, None, false, int("balance"), int("tech_level"));
         house.current_iq = int("current_iq");

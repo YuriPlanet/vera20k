@@ -970,7 +970,10 @@ fn retail_spy_stolen_soviet_tech_admits_and_delivers_chrono_ivan() {
         return;
     };
     let owner = fixture.owner;
-    fixture.sim.session.game_mode_nonzero = true;
+    fixture
+        .sim
+        .session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     let enemy = fixture.sim.intern("Russians");
     // The supplied rival base is idle. Both House array entries are human,
     // so unrelated AI construction cannot manufacture the missing request.

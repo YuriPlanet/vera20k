@@ -445,7 +445,8 @@ pub(crate) fn reinforcement_world(
     sim.session.map_width = 80;
     sim.session.map_height = 85;
     sim.session.binary_frame = 1;
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     sim.playfield_bounds = Some(PlayfieldBounds::from_normalized_local_size(
         80, 5, 5, 70, 73,
     ));

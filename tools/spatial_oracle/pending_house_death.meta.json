@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "House Flag_To_Die4FC980, Update4F87C2 and fatal-building crew1F6 gate443070",
+  "assumptions": [
+    "Existing crew_fixture supplies declared House flags/shared timer and original-seeded Scenario RNG. Producer runs twice to test retained timer. Consumer frame is producer frame+1. Crew gate uses declared count5 and ordinary uncaptured chance_max2. Timer+29C padding is excluded."
+  ],
+  "substitutions": [
+    "No substitutions inside4FC980 or RNG65C7E0. House Update stops at4F87FF or before Blowup_All4FC6D0. Crew block stops at443292 smudge suffix or4430A7 immediately after original RandomRanged; no smudge/spawn behavior supplied. Existing crew_fixture startup transport only."
+  ],
+  "entry_points": {
+    "flag_to_die": "0x004FC980",
+    "update_gate": "0x004F87C2",
+    "crew_gate": "0x00443070",
+    "random_ranged": "0x0065C7E0"
+  },
+  "replay_command": "python -m tools.spatial_oracle.building_sale --pending-house-death",
+  "payload_sha256": "530cf9d2f8bb12e8724ddfb6fca9d5cbc559365070191a50e07a379bd9692972"
+}

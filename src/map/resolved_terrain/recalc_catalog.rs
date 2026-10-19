@@ -146,7 +146,7 @@ impl BridgeRecalcCatalog {
                 tile: i32::from(tile),
             })?
             .get(usize::from(variant))
-            .ok_or(BridgeRecalcCatalogError::Unavailable {
+            .ok_or_else(|| BridgeRecalcCatalogError::Unavailable {
                 tile,
                 reason: format!("missing registered TMP file {variant}"),
             })?
@@ -247,7 +247,7 @@ impl BridgeRecalcCatalog {
         self
     }
 
-    pub(super) fn for_runtime_bridges(
+    pub(super) fn for_runtime_terrain(
         theater: &TheaterData,
         assets: &crate::assets::asset_manager::AssetManager,
         rules: &TerrainRules,
@@ -258,14 +258,16 @@ impl BridgeRecalcCatalog {
         // Span construction and the queued Recalc rectangle have no family
         // gate. Registered ordinary sources and later LAT replacements must
         // remain available after TheaterData/AssetManager leave scope.
-        let has_bridge_family = theater.bridge_set.is_some() || theater.wood_bridge_set.is_some();
+        // The same registered TMPs serve tactical480350, independently of
+        // whether this theater declares a bridge family. LAT can replace the
+        // cell's original type after its cached variant was selected.
         let mut catalog = Self::for_tiles(
             theater,
             assets,
             rules,
             lat_enabled,
             cliff_back_impassability,
-            (0..theater.lookup.len() as i32).filter(|_| has_bridge_family),
+            0..theater.lookup.len() as i32,
         );
         catalog.selector = selector;
         catalog
@@ -497,6 +499,48 @@ struct BridgePresentation {
 }
 
 impl ResolvedTerrainGrid {
+    /// Cell480389..4803FA selects the CURRENT TMP's file count/damaged gate
+    /// before calling the shared4814F0 coordinate selector. LAT47CA80 may have
+    /// replaced the type since `cell.variant` was cached during authored Fill.
+    /// Keep that simulation/saved value untouched; rendering reads the retained
+    /// process table and never initializes it or consumes Main RNG.
+    /// Native caller/file controls: bridge_recalc_presentation.json and
+    /// tmp_clear_render.json; raw instructions480389..480499.
+    pub fn tactical_draw_variant(&self, rx: u16, ry: u16) -> Option<u8> {
+        let cell = self.cell(rx, ry)?;
+        if self.tile_registry_len.is_none() {
+            // Explicit from_cells/synthetic authority has no physical registry.
+            return Some(if cell.has_damaged_data {
+                u8::from(self.pavement_damaged_at(rx, ry))
+            } else {
+                cell.variant
+            });
+        }
+        let catalog = self.bridge_recalc_catalog.as_ref()?;
+        let (tile, fallback) = catalog.presentation_tile(cell, self.clear_tile_id);
+        let pristine = catalog.file(tile, 0).ok()?;
+        let count = u8::try_from(catalog.files.get(&tile)?.len()).ok()?;
+        if count < 2 {
+            return Some(0);
+        }
+        let source = pristine.tactical(cell.final_sub_tile);
+        if !fallback && source.has_damaged_data {
+            return Some(u8::from(self.pavement_damaged_at(rx, ry)));
+        }
+        catalog.selector.select_initialized_variant(
+            (i32::from(cell.rx), i32::from(cell.ry)),
+            cell.final_sub_tile,
+            (source.template_width_cells, source.template_height_cells),
+            count,
+        ).or_else(|| {
+            // Retail load's original Fill/registered-file selection initializes
+            // this shared table before drawing. Preserve explicit cold/synthetic
+            // fixtures instead of introducing a render-thread RNG mutation.
+            log::error!("tactical TMP selector is cold at ({rx},{ry}) tile {tile}; retaining cached variant");
+            Some(cell.variant)
+        })
+    }
+
     /// Unit73F12E..73F1D9 reads the CURRENT registered type's pristine
     /// dimensions, even when that type is not admitted by the runtime Recalc
     /// effect adapter. Registration546B46/546B50 stores the header low bytes.

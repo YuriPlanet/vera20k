@@ -282,12 +282,25 @@ pub(super) fn ensure_selected_preview_texture(state: &mut AppState) {
         return;
     }
     let selected_map_idx = preview_map_idx(state);
+    ensure_map_preview_texture(state, selected_map_idx);
+}
+
+/// Shared map preview cache used by offline and network setup/chooser pages.
+pub(super) fn ensure_map_preview_texture(state: &mut AppState, selected_map_idx: usize) {
     let selected_entry = state
         .frontend
         .scenario_catalog
         .shell_maps()
         .get(selected_map_idx)
         .cloned();
+    // PreviewClass689D30 applies Header reads even when no preview bitmap is
+    // available. The retained Scenario header belongs to the process runtime.
+    if let Some(entry) = selected_entry.as_ref() {
+        state
+            .frontend
+            .multiplayer_shell_runtime
+            .observe_map_preview(entry);
+    }
     let selected_is_random_sentinel = selected_entry
         .as_ref()
         .is_some_and(is_random_map_sentinel_entry);

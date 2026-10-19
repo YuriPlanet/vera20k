@@ -458,7 +458,7 @@ pub(crate) fn respond_to_base_attack(
         // `0x00708114`: `[g_GameMode 0x00A8B238] == 0 && this->Is_Armed
         // (vt+0x2AC)` — an armed victim in that game mode defends itself
         // instead of calling for help.
-        || (!world.session.game_mode_nonzero && is_armed(victim, victim_object))
+        || (!world.session.game_mode_nonzero() && is_armed(victim, victim_object))
         || !matches!(
             attacker.category(),
             EntityCategory::Unit | EntityCategory::Infantry

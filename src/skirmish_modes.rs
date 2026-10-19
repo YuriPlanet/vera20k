@@ -10,7 +10,7 @@ use crate::rules::ini_parser::{IniFile, IniSection};
 /// The mode class an `MPModesMD.ini` section builds. The loader `0x005D7CE0`
 /// reads the sections in this order, each through its own factory
 /// (`0x005D8170..0x005D82B0`), and inserts every mode by id (`0x005D7590`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum MpModeClass {
     Battle,
     ManBattle,
@@ -39,6 +39,92 @@ impl MpModeClass {
     }
 }
 
+/// Effects of the mode's successful Start validation. The shell/session owner
+/// applies these before random assignments, preserving vtable+14 ordering.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModeStartEffect {
+    None,
+    /// FreeForAll5C5D40 assigns each non-observer node+6B its source index.
+    FreeForAllSourceRoles,
+    /// Cooperative5C1D80 binds the two names to an existing campaign record.
+    CooperativePartners,
+}
+
+impl MpModeClass {
+    /// Active original vtable+BC:5C0FD0 for ordinary modes,5C4F00 for Coop.
+    pub const fn allows_observers(self) -> bool {
+        !matches!(self, Self::Cooperative)
+    }
+
+    /// Active original vtable+4:5C4EE0 is true only for Cooperative.
+    pub const fn permits_all_allied(self) -> bool {
+        matches!(self, Self::Cooperative)
+    }
+
+    /// Mode-specific cap used alongside the map's capacity by5EC3A0/5E9E70.
+    /// vtable+98:5C42C0 returns2; ordinary5C0F30 returns-1(no extra cap).
+    pub const fn setup_player_limit(self) -> Option<usize> {
+        if matches!(self, Self::Cooperative) {
+            Some(2)
+        } else {
+            None
+        }
+    }
+
+    ///5C21D0/5C2500 show Cooperative's description/difficulty controls and
+    /// hide rows beyond the two human positions. Ordinary options keep their
+    /// existing resource visibility; this method does not invent forced values.
+    pub const fn uses_cooperative_setup(self) -> bool {
+        matches!(self, Self::Cooperative)
+    }
+
+    ///5D6310/5CB400/5CA6D0/5C5D40/5C1D80 at the host's vtable+14 gate.
+    /// `roles` are node+6B in human source order, not team selectors(+63/+67).
+    /// A failure with no message is intentional: Unholy only returns false.
+    pub fn validate_setup_start(
+        self,
+        bases: bool,
+        roles: &[i32],
+    ) -> Result<ModeStartEffect, Option<&'static str>> {
+        match self {
+            Self::Battle | Self::ManBattle => Ok(ModeStartEffect::None),
+            Self::Unholy => {
+                if bases {
+                    Ok(ModeStartEffect::None)
+                } else {
+                    Err(None)
+                }
+            }
+            Self::FreeForAll => Ok(ModeStartEffect::FreeForAllSourceRoles),
+            Self::Cooperative => Ok(ModeStartEffect::CooperativePartners),
+            Self::Siege => {
+                let mut defender = false;
+                let mut attackers = 0;
+                for role in roles {
+                    match role {
+                        0 => {}
+                        1 => {
+                            if defender {
+                                return Err(Some("MP:OnlyOneBeseiged"));
+                            }
+                            defender = true;
+                        }
+                        2 => attackers += 1,
+                        _ => return Err(Some("MP:IllegalTeam")),
+                    }
+                }
+                if !defender {
+                    Err(Some("MP:NoDefender"))
+                } else if attackers == 0 {
+                    Err(Some("MP:NoAttackers"))
+                } else {
+                    Ok(ModeStartEffect::None)
+                }
+            }
+        }
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum SkirmishModeLoadError {
     #[error("MPModesMD.ini is missing from the configured retail archive stack")]
@@ -63,6 +149,16 @@ pub struct SkirmishGameMode {
 }
 
 impl SkirmishGameMode {
+    /// MultiplayerGameMode5D5DC0 reads MustAlly at+3F.
+    pub const fn default_human_team(&self) -> i32 {
+        if self.must_ally { 0 } else { -2 }
+    }
+
+    /// MultiplayerGameMode5D5DD0 reads AlliesAllowed at+3C.
+    pub const fn default_ai_team(&self) -> i32 {
+        if self.allies_allowed { 3 } else { -2 }
+    }
+
     /// `0x005D7590`: the row is ReadString into a CString (`0x00528C00`,
     /// 0x3FE bytes), then `CString::Tokenize(",")` fields trimmed of spaces
     /// ([`IniSection::read_trimmed_list`]).
@@ -218,6 +314,47 @@ pub fn mode_by_id(modes: &[SkirmishGameMode], id: i32) -> Option<&SkirmishGameMo
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn network_start_validation_keeps_mode_effects_and_failure_order() {
+        use super::{ModeStartEffect, MpModeClass};
+        assert_eq!(
+            MpModeClass::Unholy.validate_setup_start(false, &[0, 0]),
+            Err(None)
+        );
+        assert_eq!(
+            MpModeClass::Battle.validate_setup_start(false, &[0, 0]),
+            Ok(ModeStartEffect::None)
+        );
+        assert_eq!(
+            MpModeClass::FreeForAll.validate_setup_start(true, &[0, -1, 0]),
+            Ok(ModeStartEffect::FreeForAllSourceRoles)
+        );
+        assert_eq!(
+            MpModeClass::Cooperative.validate_setup_start(true, &[0, 0]),
+            Ok(ModeStartEffect::CooperativePartners)
+        );
+        assert_eq!(
+            MpModeClass::Siege.validate_setup_start(true, &[1, 2]),
+            Ok(ModeStartEffect::None)
+        );
+        assert_eq!(
+            MpModeClass::Siege.validate_setup_start(true, &[1, 1, 2]),
+            Err(Some("MP:OnlyOneBeseiged"))
+        );
+        assert_eq!(
+            MpModeClass::Siege.validate_setup_start(true, &[2, 0]),
+            Err(Some("MP:NoDefender"))
+        );
+        assert_eq!(
+            MpModeClass::Siege.validate_setup_start(true, &[1, 0]),
+            Err(Some("MP:NoAttackers"))
+        );
+        assert_eq!(
+            MpModeClass::Siege.validate_setup_start(true, &[-1, 1, 2]),
+            Err(Some("MP:IllegalTeam"))
+        );
+    }
     use super::*;
 
     #[test]

@@ -176,7 +176,7 @@ pub(crate) fn find_base_building_site(
             width,
             height,
             extra_border: ty.protect_with_wall || ty.wants_extra_space,
-            game_mode_nonzero: sim.session.game_mode_nonzero,
+            game_mode_nonzero: sim.session.game_mode_nonzero(),
             key,
         },
     )
@@ -192,7 +192,7 @@ pub(crate) fn reserved_near(
     ty: &ObjectType,
     cell: (i16, i16),
 ) -> bool {
-    if !sim.session.game_mode_nonzero {
+    if !sim.session.game_mode_nonzero() {
         return true;
     }
     let mut world = SimSiteWorld::new(sim, rules, owner, ty, None);
