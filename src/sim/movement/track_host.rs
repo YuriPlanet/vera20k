@@ -755,7 +755,7 @@ impl Simulation {
             );
         }
         if let Some(target) = pre_entry_cell {
-            // Drive4B1999..4B19FA, after Mark(DOWN)4B1993 and before
+            // Drive4B1999..4B1A58, after Mark(DOWN)4B1993 and before
             // SetHeight/track continuation. Type+D2B is TiltsWhenCrushes;
             // target+44/+2A8 is the live overlay/Wall, not a navigation head.
             let wall = self
@@ -763,32 +763,67 @@ impl Simulation {
                 .overlay_id
                 .and_then(|overlay| registry?.flags(overlay))
                 .is_some_and(|flags| flags.wall);
-            let tilt = wall
-                && self.substrate.entities.get(id).is_some_and(|entity| {
+            let Some(entity) = self.substrate.entities.get(id) else {
+                return;
+            };
+            if entity
+                .locomotor
+                .as_ref()
+                .and_then(|loco| loco.drive_straight())
+                != Some(true)
+            {
+                return;
+            }
+            let Some(object) =
+                rules.and_then(|rules| self.interner.object_type(entity.type_ref(), rules))
+            else {
+                return;
+            };
+            //4B1A0F GetUnit(false) selects Ground and does not exclude self
+            //or filter health. Mark(DOWN) has already returned. This host
+            //models active gameplay (native GameActive=true); the separate
+            //loader/teardown query gate is not represented here.
+            //Original histories: unit_per_cell_overlay.drive_crush.json.
+            let slowdown = object.movement_zone
+                == crate::rules::locomotor_type::MovementZone::CrusherAll
+                && match target {
+                    crate::map::cell_index::NativeCellIdentity::Real(index) => {
+                        let cell = &self.resolved_terrain.as_ref().unwrap().cells()[index];
+                        self.substrate
+                            .occupancy
+                            .first_category_on_layer(
+                                cell.rx,
+                                cell.ry,
+                                MovementLayer::Ground,
+                                EntityCategory::Unit,
+                                &self.substrate.entities,
+                            )
+                            .is_some()
+                    }
+                    crate::map::cell_index::NativeCellIdentity::Dummy => false,
+                };
+            let tilt = object.tilts_when_crushes
+                && (slowdown
+                    || (wall
+                        && (object.crusher
+                            || crate::sim::combat::veterancy::has_weapon_ability(
+                                entity.veterancy.rank_kind(),
+                                object,
+                                crate::rules::object_type::Ability::Crusher,
+                            ))));
+            if let Some(entity) = self.substrate.entities.get_mut(id) {
+                // A failed gate retains the flag; there is no per-frame clear.
+                if slowdown {
+                    entity.foot_speed.set_crush_slowdown(true);
+                }
+                if tilt {
                     entity
-                        .locomotor
-                        .as_ref()
-                        .and_then(|loco| loco.drive_straight())
-                        == Some(true)
-                        && rules
-                            .and_then(|rules| self.interner.object_type(entity.type_ref(), rules))
-                            .is_some_and(|object| {
-                                object.tilts_when_crushes
-                                    && (object.crusher
-                                        || crate::sim::combat::veterancy::has_weapon_ability(
-                                            entity.veterancy.rank_kind(),
-                                            object,
-                                            crate::rules::object_type::Ability::Crusher,
-                                        ))
-                            })
-                });
-            if tilt && let Some(entity) = self.substrate.entities.get_mut(id) {
-                entity
-                    .rocking
-                    .get_or_insert_with(Default::default)
-                    .set_vel_forwards_native(crate::util::native_x87::NativeF32Bits::from_bits(
-                        0xbd4c_cccd,
-                    ));
+                        .rocking
+                        .get_or_insert_with(Default::default)
+                        .set_vel_forwards_native(
+                            crate::util::native_x87::NativeF32Bits::from_bits(0xbd4c_cccd),
+                        );
+                }
             }
         }
     }

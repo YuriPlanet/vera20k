@@ -17,7 +17,7 @@
 //! `deploy` rows (actions 14, 43, 8 and 9) in `transport_tests`.
 //!
 //! RESIDUALS:
-//! - Actions other than 0, 1, 2, 3, 5, 6, 8, 9, 10, 11, 14, 16, 17, 19, 20, 21, 24, 30, 37, 39, 40, 42, 43,
+//! - Actions other than 0, 1, 2, 3, 5, 6, 8, 9, 10, 11, 14, 16, 17, 19, 20, 21, 24, 30, 37, 39, 40, 41, 42, 43,
 //!   46, 47, 49, 50, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63 and 64 are not ported. A team
 //!   that reaches one stays on it, as a native handler that has not
 //!   finished does, and records the first as its refusal; the rest of its
@@ -122,6 +122,7 @@ pub(super) const fn action_is_ported(action_id: i32) -> bool {
             | 37
             | 39
             | 40
+            | 41
             | 42
             | 43
             | 46
@@ -446,8 +447,11 @@ impl Simulation {
                 }
             }
             42 => self.team_action_force_facing(team_id, action.argument),
-            // `0x006E984B`: each member panics (`vt+0x518`, in list order).
-            19 => {
+            // gamemd.exe Team19@6E984B/41@6E9BDB: each member's
+            // Panic+518/UnPanic+51C in list order, then advance+80=1.
+            // The callbacks do not unlink; the next action waits for the
+            // next Team visit. Fear/stance remain with the Infantry owner.
+            19 | 41 => {
                 let members: Vec<u64> = self
                     .team_script_vm
                     .teams
@@ -464,7 +468,11 @@ impl Simulation {
                         continue;
                     };
                     if let Some(entity) = self.substrate.entities.get_mut(member) {
-                        crate::sim::infantry::apply_panic_force(object, entity);
+                        if action.action_id == 19 {
+                            crate::sim::infantry::apply_panic_force(object, entity);
+                        } else {
+                            crate::sim::infantry::apply_unpanic_force(object, entity);
+                        }
                     }
                 }
                 if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
@@ -2681,3 +2689,7 @@ mod tests;
 #[cfg(test)]
 #[path = "transport_actions_tests.rs"]
 mod transport_tests;
+
+#[cfg(test)]
+#[path = "unpanic_tests.rs"]
+mod unpanic_tests;

@@ -2937,3 +2937,340 @@ fn paid_drive_crossing_sets_wall_tilt_after_mark_put_before_per_cell() {
         assert_eq!(actual[3], if expected { 0xbd4c_cccd } else { before[3] });
     }
 }
+
+fn drive_crush_fixture(
+    input: &serde_json::Value,
+) -> (Simulation, TrackInvocation, RuleSet, OverlayTypeRegistry) {
+    use crate::rules::ini_parser::IniFile;
+    use crate::sim::overlay_grid::OverlayGrid;
+    use crate::util::fixed_math::SIM_ONE;
+    use crate::util::native_x87::NativeF32Bits;
+
+    let (mut sim, invocation, _) = fixture(TrackFamily::Drive, 8);
+    let yes = |key: &str| {
+        if input[key].as_bool().unwrap() {
+            "yes"
+        } else {
+            "no"
+        }
+    };
+    let zone = match input["zone"].as_i64().unwrap() {
+        0 => "Normal",
+        11 => "WaterBeach",
+        12 => "CrusherAll",
+        zone => panic!("unexpected native zone {zone}"),
+    };
+    let ini = IniFile::from_str(&format!(
+        "[VehicleTypes]\n0=MTNK\n[MTNK]\nStrength=300\nSpeed=6\n\
+         Crusher={}\nMovementZone={zone}\nAccelerates={}\nTiltsWhenCrushes={}\n\
+         [OverlayTypes]\n0=FENCE\n[FENCE]\nWall={}\nCrushable={}\nStrength=100\n",
+        yes("crusher"),
+        yes("accelerates"),
+        yes("tilts"),
+        yes("wall"),
+        yes("crushable"),
+    ));
+    let rules = RuleSet::from_ini(&ini).unwrap();
+    let registry = OverlayTypeRegistry::from_ini(&ini, None);
+    sim.install_resolved_terrain_for_new_map(crate::map::resolved_terrain::test_flat_ground_grid(
+        33,
+    ));
+    let mut overlays = OverlayGrid::new(33, 33);
+    if input["overlay"].as_bool().unwrap() {
+        for y in 0..33 {
+            for x in 0..33 {
+                overlays.place_overlay(x, y, 0, 0);
+            }
+        }
+    }
+    sim.overlay_grid = Some(overlays);
+    let actor = sim.substrate.entities.get_mut(1).unwrap();
+    actor.health = crate::sim::combat::Health::new(300);
+    actor
+        .mover_facts
+        .set_drive_accelerates_for_test(input["accelerates"].as_bool().unwrap());
+    actor.foot_speed.set_speed_fraction(SIM_ONE);
+    actor
+        .foot_speed
+        .set_crush_slowdown(input["initial_flag"].as_bool().unwrap());
+    let mut rocking = crate::sim::rocking::RockingState::default();
+    rocking.set_angles_native_for_test([0.0, f32::from_bits(0x3e99_999a)]);
+    rocking.set_vel_forwards_native(NativeF32Bits::from_bits(0x3d23_d70a));
+    actor.rocking = Some(rocking);
+    let loco = actor.locomotor.as_mut().unwrap();
+    loco.store_drive_straight(input["straight"].as_bool().unwrap());
+    loco.store_track_target_fraction(TrackFamily::Drive, SIM_ONE);
+    loco.store_track_destination(TrackFamily::Drive, Some(DriveCoord::cell(20, 10, 0)));
+    loco.store_track_head(TrackFamily::Drive, Some(DriveCoord::cell(10, 7, 0)));
+    (sim, invocation, rules, registry)
+}
+
+fn assert_crush_history_state(actor: &GameEntity, expected: &serde_json::Value) {
+    let word =
+        |field: &serde_json::Value| u32::from_str_radix(field.as_str().unwrap(), 16).unwrap();
+    let fraction = |key: &str| {
+        f64::from_bits(u64::from_str_radix(expected[key].as_str().unwrap(), 16).unwrap())
+    };
+    assert_eq!(
+        actor.foot_speed.crush_slowdown(),
+        expected["crush_flag"] == 1
+    );
+    assert_eq!(
+        actor.rocking.unwrap().native_bits(),
+        [
+            word(&expected["rocking_bits"][0]),
+            word(&expected["rocking_bits"][1]),
+            word(&expected["rocking_bits"][2]),
+            word(&expected["rocking_bits"][3]),
+        ]
+    );
+    // The existing speed owner uses I16F16 instead of native binary64.
+    assert!(
+        (actor.foot_speed.applied_fraction().to_num::<f64>() - fraction("applied_bits")).abs()
+            < 0.0001
+    );
+    assert!(
+        (actor
+            .locomotor
+            .as_ref()
+            .unwrap()
+            .track_target_fraction(TrackFamily::Drive)
+            .unwrap()
+            .to_num::<f64>()
+            - fraction("target_bits"))
+        .abs()
+            < 0.0001
+    );
+}
+
+/// Original component histories plus production paid-point/Mark and full Unit
+/// PerCell integration. Inputs supply admission, budget and uniform overlays;
+/// this does not certify whole native path admission or rendering.
+#[test]
+fn crusher_all_paid_crossing_caps_the_next_track_speed_prefix() {
+    use crate::sim::occupancy::CellListInsertion;
+    use crate::util::fixed_math::SIM_ONE;
+
+    let rows =
+        crate::test_fixture::json("tools/spatial_oracle/unit_per_cell_overlay.drive_crush.json");
+    let mut checked = 0;
+    for row in rows.as_array().unwrap() {
+        let input = &row["input"];
+        // Drive Process is scheduled only in active gameplay. The additional
+        // native GameActive=false control documents the query's loader gate.
+        if !input["game_active"].as_bool().unwrap() {
+            continue;
+        }
+        let (mut sim, invocation, rules, registry) = drive_crush_fixture(input);
+        let occupant = input["occupant"].as_str().unwrap();
+        let mut marked = false;
+        let moved = sim.run_track_points_observed(
+            invocation,
+            8,
+            Some(&rules),
+            Some(&registry),
+            &mut |sim, id, event| {
+                if event != TrackWorldEvent::MarkPut {
+                    return;
+                }
+                marked = true;
+                let actor = sim.substrate.entities.get(id).unwrap();
+                assert_eq!(
+                    actor.foot_speed.crush_slowdown(),
+                    input["initial_flag"].as_bool().unwrap()
+                );
+                let at = (actor.position.rx(), actor.position.ry());
+                // These three controls supply the same post-Mark selected
+                // lists as the native boundary, without changing the query.
+                if occupant != "self" {
+                    sim.substrate.occupancy.remove(at.0, at.1, id);
+                    match occupant {
+                        "none" => {}
+                        "deck" => sim.substrate.occupancy.add(
+                            at.0,
+                            at.1,
+                            id,
+                            MovementLayer::Bridge,
+                            None,
+                            CellListInsertion::PrependNonBuilding,
+                        ),
+                        "infantry" => {
+                            sim.substrate
+                                .entities
+                                .insert(GameEntity::test_default_of_category(
+                                    2,
+                                    "E1",
+                                    "Americans",
+                                    at.0,
+                                    at.1,
+                                    EntityCategory::Infantry,
+                                ));
+                            sim.substrate.occupancy.add(
+                                at.0,
+                                at.1,
+                                2,
+                                MovementLayer::Ground,
+                                None,
+                                CellListInsertion::PrependNonBuilding,
+                            );
+                        }
+                        other => panic!("unexpected occupant {other}"),
+                    }
+                }
+            },
+        );
+        assert_eq!(moved, 1, "{input}");
+        assert!(marked);
+        assert_crush_history_state(sim.substrate.entities.get(1).unwrap(), &row["pre_entry"]);
+        let advance_speed = |sim: &mut Simulation| {
+            super::super::track_speed::advance(
+                sim.substrate.entities.get_mut(1).unwrap(),
+                rules.object("MTNK"),
+                Some(&rules),
+                &sim.houses,
+                sim.resolved_terrain.as_ref(),
+                sim.path_grid.as_deref(),
+            );
+        };
+        advance_speed(&mut sim);
+        assert_crush_history_state(sim.substrate.entities.get(1).unwrap(), &row["speed"]);
+        assert!(!crate::sim::rocking::rocking_system::update(
+            sim.substrate.entities.get_mut(1).unwrap(),
+            rules.object("MTNK").unwrap(),
+            SIM_ONE,
+            0,
+        ));
+        assert_crush_history_state(sim.substrate.entities.get(1).unwrap(), &row["rocking"]);
+        let at = {
+            let actor = sim.substrate.entities.get(1).unwrap();
+            (actor.position.rx(), actor.position.ry())
+        };
+        sim.per_cell_process(
+            1,
+            super::super::PerCellReason::TurnComplete,
+            Some(&rules),
+            Some(&registry),
+            crate::sim::world::FrameEffects::default(),
+        )
+        .unwrap();
+        assert_crush_history_state(sim.substrate.entities.get(1).unwrap(), &row["per_cell"]);
+        assert_eq!(
+            sim.overlay_grid
+                .as_ref()
+                .unwrap()
+                .cell(at.0, at.1)
+                .overlay_id
+                .is_none(),
+            !input["overlay"].as_bool().unwrap()
+                || (input["crusher"].as_bool().unwrap() && input["wall"].as_bool().unwrap())
+        );
+        advance_speed(&mut sim);
+        assert_crush_history_state(
+            sim.substrate.entities.get(1).unwrap(),
+            &row["retained_speed"],
+        );
+        super::super::track_speed::publish_fresh_track_target(
+            sim.substrate.entities.get_mut(1).unwrap(),
+            300,
+            &rules,
+            sim.resolved_terrain.as_ref().unwrap(),
+            &crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig::default(),
+            (20, 10),
+            false,
+        );
+        advance_speed(&mut sim);
+        assert_crush_history_state(
+            sim.substrate.entities.get(1).unwrap(),
+            &row["refreshed_speed"],
+        );
+        checked += 1;
+    }
+    assert_eq!(checked, 13);
+}
+
+#[test]
+fn crush_slowdown_is_foot_owned_saved_and_hashed() {
+    use crate::sim::snapshot::GameSnapshot;
+    let mut sim = Simulation::new();
+    sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    sim.interner = crate::sim::intern::test_interner();
+    sim.substrate
+        .entities
+        .insert(GameEntity::test_default(1, "BFRT", "Americans", 10, 10));
+    let clear = sim.state_hash();
+    sim.substrate
+        .entities
+        .get_mut(1)
+        .unwrap()
+        .foot_speed
+        .set_crush_slowdown(true);
+    assert_ne!(sim.state_hash(), clear);
+    let actor = sim.substrate.entities.get_mut(1).unwrap();
+    actor.locomotor = Some(super::super::locomotor::LocomotorState::for_test_kind(
+        crate::rules::locomotor_type::LocomotorKind::Ship,
+    ));
+    assert!(
+        actor.foot_speed.crush_slowdown(),
+        "a locomotor replacement does not own Foot+6B5"
+    );
+    let hash = sim.state_hash();
+    let bytes = GameSnapshot::save(&sim, 0, 0, "crush-slowdown", 0);
+    let restored = GameSnapshot::load(&bytes).unwrap().sim;
+    assert_eq!(restored.state_hash(), hash);
+    assert!(
+        restored
+            .substrate
+            .entities
+            .get(1)
+            .unwrap()
+            .foot_speed
+            .crush_slowdown()
+    );
+}
+
+#[test]
+fn retail_battle_fortress_preserves_nonaccelerating_speed_during_crush() {
+    use crate::util::fixed_math::SIM_ONE;
+    let Some(rules) = crate::rules::retail_ini_fixture::retail_rulesmd_rules() else {
+        return;
+    };
+    let object = rules.object("BFRT").unwrap();
+    assert_eq!(
+        object.movement_zone,
+        crate::rules::locomotor_type::MovementZone::CrusherAll
+    );
+    assert!(object.crusher);
+    assert!(!object.accelerates);
+    let rows =
+        crate::test_fixture::json("tools/spatial_oracle/unit_per_cell_overlay.drive_crush.json");
+    let (mut sim, invocation, _, registry) = drive_crush_fixture(&rows[0]["input"]);
+    let type_ref = sim.intern("BFRT");
+    let actor = sim.substrate.entities.get_mut(1).unwrap();
+    actor.set_type_ref_for_test(type_ref);
+    actor.health = crate::sim::combat::Health::new(object.strength);
+    actor
+        .mover_facts
+        .set_drive_accelerates_for_test(object.accelerates);
+    // The paid fixture supplies only track admission/budget. Type gates and
+    // speed parameters below are read through the stock production reader.
+    assert_eq!(
+        sim.run_track_points(invocation, 8, Some(&rules), Some(&registry)),
+        1
+    );
+    let actor = sim.substrate.entities.get_mut(1).unwrap();
+    assert!(actor.foot_speed.crush_slowdown());
+    assert_eq!(
+        actor.foot_speed.applied_fraction(),
+        SIM_ONE,
+        "the current call paid its budget before crossing"
+    );
+    super::super::track_speed::advance(
+        actor,
+        Some(object),
+        Some(&rules),
+        &sim.houses,
+        sim.resolved_terrain.as_ref(),
+        sim.path_grid.as_deref(),
+    );
+    assert_eq!(actor.foot_speed.applied_fraction(), SIM_ONE);
+}

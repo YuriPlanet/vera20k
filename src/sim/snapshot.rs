@@ -1183,9 +1183,11 @@ use crate::util::save_codec;
 // CargoTotalSize is the signed low-32-bit result of native's ordered per-entry
 // FTOL. The positional passenger-size payload widened, so a v440 body cannot
 // be decoded under this schema.
-// 441 -> 442: retained fixed-ART TechnoType ShadowIndex in the process
+// 441 -> 442: FootSpeedState retains the native Foot+6B5 crush flag shared
+// by Drive/Ship speed prefixes and Techno RockingUpdate.
+// 442 -> 443: retained fixed-ART TechnoType ShadowIndex in the process
 // registry and its runtime ObjectType projection.
-const SNAPSHOT_VERSION: u32 = 442;
+const SNAPSHOT_VERSION: u32 = 443;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -4427,7 +4429,7 @@ mod tests {
             GameSnapshot::load(&preamble_only),
             Err(SnapshotError::VersionMismatch {
                 expected: SNAPSHOT_VERSION,
-                found: 441,
+                found: 442,
             })
         ));
     }
@@ -4888,8 +4890,9 @@ mod tests {
         // 438 -> 439: retained Ares building requirement lists.
         // 439 -> 440: UnitDelivery state and instance base policy.
         // 440 -> 441: binary64 passenger Size/SizeLimit and signed CargoTotalSize.
-        // 441 -> 442: retained TechnoType ShadowIndex.
-        assert_eq!(super::SNAPSHOT_VERSION, 442);
+        // 441 -> 442: the Foot-owned crush slowdown / rocking flag.
+        // 442 -> 443: retained TechnoType ShadowIndex.
+        assert_eq!(super::SNAPSHOT_VERSION, 443);
     }
 
     #[test]

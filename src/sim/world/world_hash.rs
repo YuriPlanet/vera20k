@@ -1849,6 +1849,10 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
     entity.navigation.pending_destination_setter().hash(hasher);
 
     entity.foot_speed.applied_fraction().hash(hasher);
+    if entity.foot_speed.crush_slowdown() {
+        0x6b5_u32.hash(hasher);
+        true.hash(hasher);
+    }
     if entity.flight_attitude != Default::default() {
         0x2e8_u32.hash(hasher);
         entity.flight_attitude.hash(hasher);

@@ -180,12 +180,26 @@ pub fn can_decay_fear(obj: &ObjectType) -> bool {
     !obj.fearless
 }
 
+/// `gamemd.exe` Infantry521C10..521C3B (Foot virtual +518).
 pub fn apply_panic_force(obj: &ObjectType, entity: &mut GameEntity) {
     if is_fear_application_blocked(obj, entity) {
         return;
     }
     if let Some(infantry) = entity.infantry.as_mut() {
         infantry.fear_level = MAX_FEAR;
+    }
+}
+
+/// `gamemd.exe` Infantry521C40..521C5A (Foot virtual +51C): type Fearless
+/// vetoes the fear0 write. Unlike Panic, this does not test the FEARLESS
+/// ability or change stance, Doing, Stage, timers, targets or mission.
+/// Unit/Aircraft inherit the empty Foot41C110 receiver.
+pub(crate) fn apply_unpanic_force(obj: &ObjectType, entity: &mut GameEntity) {
+    if obj.fearless {
+        return;
+    }
+    if let Some(infantry) = entity.infantry.as_mut() {
+        infantry.fear_level = 0;
     }
 }
 

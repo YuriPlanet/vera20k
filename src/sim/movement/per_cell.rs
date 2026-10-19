@@ -441,9 +441,9 @@ impl Simulation {
                 .rocking
                 .get_or_insert_with(Default::default)
                 .recoil_after_overlay_crush();
-            // 73B067 clears Foot+6B5. For selected normal MTNK its ctor0
-            // persists: Drive4B1A2F's only positive writer requires Zone12.
-            // CrusherAll building-crush state/consumers remain a separate chain.
+            //73B067 clears Foot+6B5 after the damage call, even when the
+            //Cell refuses a non-Wall overlay. TiltsWhenCrushes is not a gate.
+            actor.foot_speed.set_crush_slowdown(false);
         }
     }
 

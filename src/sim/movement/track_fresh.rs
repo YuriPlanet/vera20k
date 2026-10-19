@@ -33,11 +33,8 @@
 //! - Terrain blockers retain the actual Object target through the shared
 //!   code-4/5 Override arm (4B3B8D..4B3BE9). The ordinary route must first
 //!   admit that cell; a blocked zone can reject a destination before this arm.
-//! - Drive's retained +64 now feeds the wall pre-entry tilt in `track_host`.
-//!   The separate CrusherAll/current-Unit arm4B1A04..4B1A58 still lacks its
-//!   Foot+6B5 producer/speed-clamp integration. Selected stock MTNK's zone0
-//!   does not enter it. Ship's distinct +64 constructor/fresh writers and
-//!   reader6A103A are outside that Drive wall-tilt path and remain unported.
+//! - Ship's distinct +64 constructor/fresh writers and reader6A103A remain
+//!   unported. Drive's +64 wall/CrusherAll pre-entry paths live in `track_host`.
 //! - A candidate at a negative cell coordinate publishes no target speed
 //!   (`publish_fresh_speed`); native reads the shared dummy Cell's land row.
 //!   Trigger: a Foot on map row or column 0 heading off the map. Frequency:
