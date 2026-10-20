@@ -67,14 +67,14 @@ fn first_buildable_shipyard<'a>(
     sim: &Simulation,
     house: &HouseState,
 ) -> Option<&'a ObjectType> {
-    let country = house.country?;
+    let country = house.country()?;
     let country_name = sim.interner.resolve(country);
     crate::sim::ai_buildable::first_buildable_from_array(
         rules,
         &rules.shipyard_types,
         country_name,
-        house.side_index,
-        sim.session.game_options.super_weapons,
+        house.side_index(),
+        sim.session.game_options().super_weapons,
     )
 }
 
@@ -93,7 +93,7 @@ fn first_yard_distance_accepts(
     candidate: (u16, u16),
     terrain: &crate::map::resolved_terrain::ResolvedTerrainGrid,
 ) -> bool {
-    let Some(&yard_id) = house.build_const_order.first() else {
+    let Some(&yard_id) = house.build_const_order().first() else {
         return true;
     };
     let Some(yard) = sim.substrate.entities.get(yard_id) else {
@@ -152,8 +152,8 @@ mod tests {
         let mut sim = crate::sim::arena_fixture::rival_water_arena(&rules, 0, 32);
         let owner = sim.interner.intern("Russians");
         let house = sim.houses.get_mut(&owner).unwrap();
-        house.country = Some(owner);
-        house.base_center = Some((16, 16));
+        house.set_country_for_test(Some(owner));
+        house.set_base_center_for_test(Some((16, 16)));
         assert_eq!(
             find_naval_base_placement(&sim, &rules, owner),
             Some((16, 16))
@@ -163,7 +163,7 @@ mod tests {
         sim.substrate.raw_cell_occupation.mark_ground(19, 18, 0x40);
         // Ring 1's first cell, whose rect (15..=18, 15..=17) misses (19, 18),
         // is the frame-0 pick.
-        assert_eq!(sim.session.binary_frame, 0);
+        assert_eq!(sim.session.binary_frame(), 0);
         assert_eq!(
             find_naval_base_placement(&sim, &rules, owner),
             Some((15, 15))

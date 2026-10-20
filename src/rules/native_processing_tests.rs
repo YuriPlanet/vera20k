@@ -3,6 +3,58 @@
 use super::*;
 use crate::util::save_codec;
 
+///71592A reads exact-case ART ShadowIndex with the current field as default,
+///after each retained Rules Image read. Neither retail zero nor final-image
+///defaults can replace the previous section's selected value.
+#[test]
+fn voxel_shadow_index_retains_art_image_history_and_save_state() {
+    use crate::rules::ruleset::RuleSet;
+    let art = IniFile::from_str(
+        "[FIRST]\nShadowIndex=2tail\n[OTHER]\nShadowindex=9\n[NEGATIVE]\nShadowIndex=-1\n",
+    );
+    let mut layers = RulesLayerStack::new(IniFile::from_str(
+        "[AircraftTypes]\n0=JET\n[JET]\nImage=FIRST\nShadowIndex=99\n",
+    ));
+    let read = |processed: &ProcessedRulesLayers| {
+        RuleSet::from_processed_rules(processed)
+            .unwrap()
+            .object("JET")
+            .unwrap()
+            .voxel_shadow_index()
+    };
+    assert_eq!(read(&layers.process_with_fixed_art(&art).unwrap()), 2);
+    layers.push(
+        RulesLayerKind::GameMode,
+        IniFile::from_str("[JET]\nImage=OTHER\n"),
+    );
+    assert_eq!(read(&layers.process_with_fixed_art(&art).unwrap()), 2);
+    layers.push(
+        RulesLayerKind::Scenario,
+        IniFile::from_str("[JET]\nImage=NEGATIVE\n"),
+    );
+    let processed = layers.process_with_fixed_art(&art).unwrap();
+    assert_eq!(read(&processed), -1);
+    let (_, receipt) = processed.into_ini_and_native_type_construction_trace();
+    let retained = receipt.into_registry_state_discarding_events();
+    let retained = save_codec::deserialize(&save_codec::serialize(&retained).unwrap()).unwrap();
+    let next = RulesLayerStack::new(IniFile::from_str(
+        "[AircraftTypes]\n0=JET\n[JET]\nImage=OTHER\n",
+    ))
+    .process_with_fixed_art_and_registry_state(&art, retained)
+    .unwrap();
+    assert_eq!(read(&next), -1);
+    let cold = RulesLayerStack::new(IniFile::from_str(
+        "[AircraftTypes]\n0=JET\n[JET]\nShadowIndex=99\n",
+    ))
+    .process_with_fixed_art(&art)
+    .unwrap();
+    assert_eq!(
+        read(&cold),
+        0,
+        "constructor zero and no Rules ShadowIndex read"
+    );
+}
+
 #[test]
 fn repair_inputs_retain_native_layer_defaults_through_reset_and_save() {
     use crate::rules::ruleset::RuleSet;

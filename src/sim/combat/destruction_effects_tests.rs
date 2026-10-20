@@ -168,8 +168,7 @@ fn sim(seed: u64) -> Simulation {
     let mut sim = Simulation::with_seed(seed);
     let owner = sim.interner.intern("Americans");
     sim.houses
-        .insert(owner, HouseState::new(owner, 0, None, false, 0, 10));
-    sim.session.house_order.push(owner);
+        .register(HouseState::new(owner, 0, None, false, 0, 10));
     sim
 }
 
@@ -185,11 +184,11 @@ fn anims(sim: &Simulation) -> Vec<(String, AnimWorldCoord, u16, u32, i32)> {
         .iter()
         .map(|(_, anim)| {
             (
-                sim.interner.resolve(anim.type_id).to_string(),
-                anim.world_coord,
-                anim.runtime.delay_remaining,
-                anim.draw_flags,
-                anim.z_adjust,
+                sim.interner.resolve(anim.type_id()).to_string(),
+                anim.world_coord(),
+                anim.runtime().delay_remaining,
+                anim.draw_flags(),
+                anim.z_adjust(),
             )
         })
         .collect()
@@ -590,8 +589,7 @@ fn infantry_death_anims_are_built_inline_and_the_virus_takes_the_killers_house()
         let mut sim = sim(5);
         let russians = sim.interner.intern("Russians");
         sim.houses
-            .insert(russians, HouseState::new(russians, 1, None, false, 0, 10));
-        sim.session.house_order.push(russians);
+            .register(HouseState::new(russians, 1, None, false, 0, 10));
         (sim, russians)
     };
 
@@ -824,7 +822,11 @@ fn a_heavy_ship_dying_on_water_sinks_without_its_explosion() {
         let ship = spawn(&mut sim, &rules, kind, 12, 12);
         if !water {
             // Only the gate's `+0xEC` read changes; the ship stays placed.
-            let cell = sim.resolved_terrain.as_mut().unwrap().cell_mut(12, 12);
+            let cell = sim
+                .resolved_terrain
+                .as_mut()
+                .unwrap()
+                .cell_mut_for_test(12, 12);
             cell.unwrap().land_type = LandType::Clear.as_index();
         }
         let mut replay = sim.scenario_rng.clone();
@@ -850,12 +852,12 @@ fn a_heavy_ship_dying_on_water_sinks_without_its_explosion() {
                 "native737F7A still unmarks the hull"
             );
             let owner = retained.owner();
-            assert_eq!(sim.houses[&owner].stats.units_lost(), 1);
+            assert_eq!(sim.houses[&owner].stats().units_lost(), 1);
             // An area dispatch rejects the now-unmarked hull (489A80).
             // The native repeated-hit packet is a direct Unit737C90 call.
             let before_area = sim.rng_state();
             kill(&mut sim, &rules, ship);
-            assert_eq!(sim.houses[&owner].stats.units_lost(), 1);
+            assert_eq!(sim.houses[&owner].stats().units_lost(), 1);
             assert_eq!(sim.rng_state(), before_area);
             assert_eq!(sim.scenario_rng.state(), replay.state());
 
@@ -914,7 +916,7 @@ fn a_heavy_ship_dying_on_water_sinks_without_its_explosion() {
             );
             assert_eq!(u64::from(retained.sinking.is_active()), repeat["sinking"]);
             assert_eq!(
-                u64::from(sim.houses[&owner].stats.units_lost()),
+                u64::from(sim.houses[&owner].stats().units_lost()),
                 repeat["losses"]
             );
             assert!(!retained.lifecycle.cell_marked());
@@ -940,7 +942,7 @@ fn a_heavy_ship_dying_on_water_sinks_without_its_explosion() {
                 None,
                 crate::sim::world::FrameEffects::default()
             ));
-            assert_eq!(sim.houses[&owner].stats.units_lost(), 3);
+            assert_eq!(sim.houses[&owner].stats().units_lost(), 3);
             assert!(sim.substrate.pending_delete.contains_object(&ship));
             assert!(
                 !sim.substrate
@@ -1029,11 +1031,7 @@ fn retail_dustbowl_death_anims_use_the_types_lists() {
         let rules = &resources.rules;
         let owner = sim.interner.intern("Americans");
         sim.houses
-            .entry(owner)
-            .or_insert_with(|| HouseState::new(owner, 0, None, false, 10_000, 10));
-        if !sim.session.house_order.contains(&owner) {
-            sim.session.house_order.push(owner);
-        }
+            .get_or_register_for_test(owner, || HouseState::new(owner, 0, None, false, 10_000, 10));
         let location_input = ints(&input["location"]);
         let (cell_x, cell_y) = (
             (location_input[0] / 256) as u16,
@@ -1201,17 +1199,21 @@ fn retail_dustbowl_death_anims_use_the_types_lists() {
                 .filter(|(id, _)| !before.contains(id))
                 .map(|(_, anim)| {
                     (
-                        sim.interner.resolve(anim.type_id).to_string(),
-                        [anim.world_coord.x, anim.world_coord.y, anim.world_coord.z]
-                            .map(i64::from)
-                            .to_vec(),
-                        anim.runtime.delay_remaining,
-                        anim.draw_flags,
-                        anim.z_adjust,
-                        anim.bounce.as_ref().map(|body| {
+                        sim.interner.resolve(anim.type_id()).to_string(),
+                        [
+                            anim.world_coord().x,
+                            anim.world_coord().y,
+                            anim.world_coord().z,
+                        ]
+                        .map(i64::from)
+                        .to_vec(),
+                        anim.runtime().delay_remaining,
+                        anim.draw_flags(),
+                        anim.z_adjust(),
+                        anim.bounce().as_ref().map(|body| {
                             (
-                                body.position.map(|v| i64::from(v.bits())).to_vec(),
-                                body.velocity.map(|v| i64::from(v.bits())).to_vec(),
+                                body.position().map(|v| i64::from(v.bits())).to_vec(),
+                                body.velocity().map(|v| i64::from(v.bits())).to_vec(),
                             )
                         }),
                     )

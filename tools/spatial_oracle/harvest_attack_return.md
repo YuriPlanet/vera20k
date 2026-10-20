@@ -200,3 +200,57 @@ stack local; Stage increment `+110=1` is inherited prior state.
 
 Native replay success establishes these sampled outputs. Rust comparison and
 connected production command/combat validation remain separate evidence levels.
+
+
+## Area Guard handoff
+
+The additive `--area-guard` mode records `harvest_area_guard.json` through the
+same `AttackReturn` fixture, readers and original command/mission owners. It
+leaves the 53 Attack-return histories unchanged:
+
+```sh
+VERA20K_HARVEST_ATTACK_INPUTS=/path/to/extracted/layers \
+  python -m tools.spatial_oracle.harvest_attack_return --area-guard --check
+```
+
+The ordinary G producer (`730D60`) admits a selected Harvester and emits
+mission 11 with its current Cell as Target. These six controls begin at that
+body-established event payload: original constructor `4C6860` and execution
+`4C6CB0` clear the Target and assign the same Cell to NavCom and ArchiveTarget.
+Original Ready/Commence promotes AreaGuard, and dispatcher `5B3060` selects
+Unit vtable `+220 -> 744100 -> Foot4D6AA0`. The keyboard, voice queue and
+OutList delivery are outside this corpus.
+
+The Foot body's Harvester branch (`4D6D1A..4D6D68`) tests Unit RTTI 1 and
+UnitType `+E0E`, then calls QueueMission(10, 0), **unconditional** Commence,
+and Scenario `RandomRanged(1,10) + 1`, in that order. Its earlier bunker,
+building-entry, AI navigation-list and archived allied-building branches
+execute over explicitly absent inputs. The allied-building relocation excludes
+Harvester types. These controls do not certify those independent mechanisms.
+No AreaGuard Rate, ordinary scan, idle action or approach runs on this exit.
+
+The existing independent native reader receipt supplies the HARV flag from the
+physical layers listed above: constructor false, original ReadBool at
+`7476AE` true, retained through Battle and XMP03T4. The supplied map, registered
+objects, no SlaveManager and other fixture boundaries remain those of
+`harvest_field`/`refinery_dock`; this is a bounded War Miner handoff comparison.
+
+Human/AI crossed with ore/clear controls use seeds 1, 4, 5 and 8. Seed 4's range
+call rejects raw words 1020323421 and 425984382, accepts 808536008, and returns
+9; the handler returns 10. Seed 5 takes two raw draws and returns handler delay
+11; seed 8 reaches the minimum delay 2. Every raw acceptance and full Scenario
+state comes from original execution. Main and MapGen are independently seeded
+by original `65C6D0` with 31 and 42, and their complete states remain unchanged.
+
+The retained-state control first asks original UnitReady with unloading `+6D1`
+set; it refuses. The already-current AreaGuard handler still calls Commence
+and installs Harvest, preserving the unload latch, Target, NavCom and archive.
+That prior cross-state and the unload producer are supplied, not claimed as a
+production history. A final control proves no handler draw before a retained
+deadline and the handoff exactly when it expires.
+
+Commence resets the handler cursor and its timer before the dispatcher writes
+the returned delay. Target, NavCom, archive, cargo and harvesting/unloading
+latches are otherwise retained, and no detach call is observed. The corpus
+stops at this handoff; subsequent Harvest, driving, ore collection and refinery
+return belong to their existing owners and production-frame integration tests.

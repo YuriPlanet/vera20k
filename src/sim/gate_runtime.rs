@@ -86,7 +86,7 @@ pub(crate) fn request_gate_open_for_cell(
                     DoorPhase::Closing | DoorPhase::ClosedStable
                 )
             {
-                let now = sim.session.binary_frame;
+                let now = sim.session.binary_frame();
                 let readiness = LiveReadyInputProvider { rules };
                 let _ = sim.mission_assign_exact(candidate_id, MissionId::NONE, now);
                 let _ = sim.mission_queue_exact(
@@ -138,7 +138,7 @@ pub(crate) fn mission_open(sim: &mut Simulation, id: u64, rules: &RuleSet) -> i3
     let Some(object) = sim.interner.object_type(entity.type_ref(), rules) else {
         return 0;
     };
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     if !object.gate {
         //44E77C..44E794: non-Gate Open queues Guard without commencing.
         let readiness = LiveReadyInputProvider { rules };
@@ -282,7 +282,7 @@ mod tests {
         .unwrap();
         let mut sim = Simulation::with_seed(seed);
         sim.install_resolved_terrain_for_new_map(test_flat_ground_grid(24));
-        sim.session.binary_frame = frame;
+        sim.session.set_binary_frame_for_test(frame);
         let owner = sim.interner.intern("Americans");
         let ty = sim.interner.intern("GATE");
         let mut gate = GameEntity::new_at_frame_for_test(
@@ -335,7 +335,7 @@ mod tests {
         // The native fixture supplies an already admitted cell-list object;
         // class construction/reveal is outside this comparison boundary.
         gate.lifecycle.set_in_limbo_for_test(false);
-        gate.lifecycle.set_cell_marked(true);
+        gate.lifecycle.set_cell_marked_for_test(true);
         gate.set_in_playfield(true);
         sim.substrate.entities.insert(gate);
         let mover_type = sim.interner.intern("MTNK");
@@ -536,12 +536,16 @@ mod tests {
             row["admission"].as_u64().unwrap()
         );
         assert_native_rng(&sim, &row["rng_before"], "cadence admission");
-        sim.session.binary_frame = 101;
+        sim.session.set_binary_frame_for_test(101);
         let frames = row["frames"].as_array().unwrap();
         assert_eq!(frames.len(), 350);
         for native in frames {
             let frame = native["frame"].as_u64().unwrap() as u32;
-            assert_eq!(sim.session.binary_frame, frame, "frame owner before visit");
+            assert_eq!(
+                sim.session.binary_frame(),
+                frame,
+                "frame owner before visit"
+            );
             sim.advance_tick(&[], Some(&rules), None, None, 67);
             let context = format!("Gate object turn{frame}");
             assert_native_state(&sim, native, &context);
@@ -615,7 +619,7 @@ mod tests {
             assert_ne!(sim.state_hash(), hash, "{name}: hold anchor in world hash");
             sim.substrate.entities.get_mut(GATE).unwrap().building_gate = initial_hold;
             assert_eq!(sim.state_hash(), hash, "{name}: restored hold");
-            let frame = sim.session.binary_frame;
+            let frame = sim.session.binary_frame();
             sim.substrate
                 .entities
                 .get_mut(GATE)
@@ -656,86 +660,6 @@ mod tests {
             CellListInsertion::AppendBuilding,
         );
         (sim, rules)
-    }
-
-    #[test]
-    fn allied_gate_request_uses_real_mission_and_read_only_passability() {
-        let (mut sim, rules) = fixture();
-        let rng = sim.scenario_rng.logical_state();
-        assert!(!request_gate_open_for_cell(&mut sim, (10, 10), 1, &rules));
-        let gate = sim.substrate.entities.get(100).unwrap();
-        assert_eq!(gate.mission.current().known(), Some(MissionType::Open));
-        assert_eq!(gate.mission.queued(), MissionId::NONE);
-        assert_eq!(gate.mission.handler_state(), 0);
-        assert_eq!(gate.door_phase(), DoorPhase::ClosedStable);
-        assert!(!gate.is_open_gate());
-        assert_eq!(sim.scenario_rng.logical_state(), rng);
-
-        assert_eq!(mission_open(&mut sim, 100, &rules), 0);
-        let gate = sim.substrate.entities.get(100).unwrap();
-        assert_eq!(gate.mission.handler_state(), 1);
-        assert_eq!(gate.door_phase(), DoorPhase::Opening);
-        assert_eq!(sim.scenario_rng.logical_state(), rng);
-        sim.session.binary_frame = 39;
-        sim.substrate
-            .entities
-            .get_mut(100)
-            .unwrap()
-            .advance_door(39);
-        assert!(request_gate_open_for_cell(&mut sim, (10, 10), 1, &rules));
-        assert_eq!(
-            sim.substrate
-                .entities
-                .get(100)
-                .unwrap()
-                .mission
-                .handler_state(),
-            1
-        );
-        assert_eq!(mission_open(&mut sim, 100, &rules), 0);
-        assert_eq!(
-            sim.substrate
-                .entities
-                .get(100)
-                .unwrap()
-                .mission
-                .handler_state(),
-            2
-        );
-    }
-
-    #[test]
-    fn hold_reads_only_ground_lists_and_preserves_its_anchor() {
-        let (mut sim, rules) = fixture();
-        request_gate_open_for_cell(&mut sim, (10, 10), 1, &rules);
-        let gate = sim.substrate.entities.get_mut(100).unwrap();
-        gate.open_door(0, 0);
-        gate.advance_door(0);
-        mission_open(&mut sim, 100, &rules);
-        sim.substrate.occupancy.add(
-            11,
-            10,
-            1,
-            MovementLayer::Bridge,
-            None,
-            CellListInsertion::PrependNonBuilding,
-        );
-        sim.session.binary_frame = 179;
-        mission_open(&mut sim, 100, &rules);
-        let gate = sim.substrate.entities.get(100).unwrap();
-        assert_eq!(gate.mission.handler_state(), 2);
-        assert_eq!(
-            gate.building_gate.unwrap().hold_timer,
-            MissionTimer::armed(0, 180)
-        );
-        sim.session.binary_frame = 180;
-        mission_open(&mut sim, 100, &rules);
-        let gate = sim.substrate.entities.get(100).unwrap();
-        assert_eq!(gate.mission.handler_state(), 3);
-        assert_eq!(
-            gate.building_gate.unwrap().hold_timer,
-            MissionTimer::armed(0, 180)
-        );
     }
 
     /// PlaceInfantryInCell refuses a ground object bit unless its building

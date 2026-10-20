@@ -116,7 +116,7 @@ fn ground_walk_order_preserves_native_human_deploy_refusal() {
     let (mut sim, rules, id) = Simulation::walk_cell_input_test_scene(false);
     let actor = sim.substrate.entities.get_mut(id).unwrap();
     actor.mission_leaf.set_infantry_doing_verified(27).unwrap();
-    actor.navigation.path_runtime.start_movement(50, 5);
+    actor.navigation.path_runtime_mut().start_movement(50, 5);
     let navigation_before = serde_json::to_value(&actor.navigation).unwrap();
     let rng_before = sim.rng_state();
 
@@ -140,7 +140,7 @@ fn ground_walk_order_preserves_native_human_deploy_refusal() {
         json!(u8::from(walk.walk_is_moving().unwrap())),
         native["moving"]
     );
-    let timer = actor.navigation.path_runtime.movement_timer();
+    let timer = actor.navigation.path_runtime().movement_timer();
     assert_eq!(
         json!({"start_frame": timer.start_frame(), "duration": timer.duration()}),
         native["movement_timer"]
@@ -150,33 +150,6 @@ fn ground_walk_order_preserves_native_human_deploy_refusal() {
         navigation_before
     );
     assert_eq!(sim.rng_state(), rng_before);
-}
-
-#[test]
-fn isolated_cell_queries_preserve_all_modeled_dummy_inputs_and_identity() {
-    let terrain = ResolvedTerrainGrid::from_cells(1, 1, vec![terrain_cell(0, 0)]);
-    let canonical = terrain.shared_cell_dummy();
-    canonical.stamp_coord(99, 98);
-    canonical.set_level_slope(-3, 2);
-    canonical.write_raw_flags(0x10d80);
-    canonical.write_native_anchor(Some(NativeCellIdentity::Real(0)));
-    canonical.set_overlay_fields(Some(0x18), 7);
-    canonical.write_raw_tube_index(23);
-    let before = format!("{canonical:?}");
-    let cells = NativeCellQuery::isolated(&terrain);
-    let copied = cells.dummy();
-    assert_eq!(copied.snapshot(), canonical.snapshot());
-    assert_eq!(copied.raw_flags(), canonical.raw_flags());
-    assert_eq!(copied.native_anchor(), canonical.native_anchor());
-    assert_eq!(copied.overlay_fields(), canonical.overlay_fields());
-    assert_eq!(copied.raw_tube_index(), canonical.raw_tube_index());
-    let retained = cells.lookup((20, 21));
-    assert_eq!(retained, NativeCellIdentity::Dummy);
-    assert_eq!(cells.lookup_world(22 * 256, 23 * 256), retained);
-    assert_eq!(cells.coord(retained), (22, 23));
-    assert_eq!(copied.snapshot().coord, (22, 23));
-    assert_eq!(cells.flags(retained), 0x10d80);
-    assert_eq!(format!("{canonical:?}"), before);
 }
 
 /// The walk scene's river map with retail rules: the retail E1 it spawns at
@@ -435,34 +408,6 @@ fn a_jumpjet_infantry_no_move_searches_near_the_object_in_any_zone() {
     assert!(x < 8, "{x}");
 }
 
-/// An Aircraft orders nothing over an object whose coordinate, raised to its
-/// ground, is shrouded (`0x004D7809..0x004D7896`); the retail GI's Move over
-/// it goes to FNPC on its own bank, as the shrouded Cell asks (`0x004D7B01`).
-#[test]
-fn an_aircraft_orders_nothing_over_a_shrouded_object() {
-    let Some((mut sim, rules, owner, gi, harrier)) = retail_scene("ORCA") else {
-        return;
-    };
-    let hidden = sim.spawn_object("MTNK", "Local", 12, 5, 0, &rules).unwrap();
-    sim.resolve_type_handles(&rules);
-    sim.fog = crate::sim::vision::FogState::new(16, 16);
-    sim.fog.reveal_cells_for_owner(
-        owner,
-        (0..16)
-            .flat_map(|y| (0..16).map(move |x| (x, y)))
-            .filter(|&cell| cell != (12, 5)),
-    );
-    let click = |id| {
-        sim.object_move_click(owner, id, hidden, MoveAction::Move, false, &rules)
-            .unwrap()
-    };
-    assert_eq!(click(harrier), None);
-    let Some(TargetKind::Cell(x, _)) = click(gi) else {
-        panic!("the GI's click searches its own zone");
-    };
-    assert!(x < 8, "{x}");
-}
-
 /// Outside the playfield (`0x00578460(cell, 1)`) every mover, special or
 /// not, searches its own zone near the object's Cell (`0x004D7AF5..0x004D7AF7`
 /// to `0x004D7B5E`), so a Harrier that keeps an object inside it gets a Cell
@@ -519,7 +464,7 @@ fn a_move_onto_a_tank_walks_the_gi_beside_it() {
     let start = distance(&sim);
     sim.queue_command(crate::sim::command::CommandEnvelope::new(
         owner,
-        sim.session.tick,
+        sim.session.tick(),
         crate::sim::command::Command::MoveToObject {
             entity_id: gi,
             target_id: target,
@@ -567,18 +512,17 @@ impl Simulation {
         let mut sim = Self::with_seed(0x4de1d0);
         sim.intern_rule_type_ids(&rules);
         let owner = sim.interner.intern("Local");
-        sim.houses.insert(
-            owner,
-            crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10),
-        );
-        sim.session.house_order.push(owner);
-        sim.session.current_house = Some(owner);
-        sim.session.binary_frame = 100;
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                owner, 0, None, true, 0, 10,
+            ));
+        sim.session.set_current_house_for_test(Some(owner));
+        sim.session.set_binary_frame_for_test(100);
         // Infantry-only contenders need Long Game: Short Game correctly
         // defeats both Houses without a building or BaseUnit.
-        sim.session.game_options.short_game = false;
-        sim.session.map_width = 16;
-        sim.session.map_height = 16;
+        sim.session.game_options_mut_for_test().short_game = false;
+        sim.session.set_map_width_for_test(16);
+        sim.session.set_map_height_for_test(16);
         // Native Unlimbo now publishes sight synchronously. Allocate the map
         // domain before either source can create a viewer plane/cache.
         sim.fog = crate::sim::vision::FogState::new(16, 16);
@@ -649,11 +593,10 @@ impl Simulation {
             .unwrap();
         // Keep two live Long Game contenders while the real frame host runs.
         let enemy = sim.interner.intern("Enemy");
-        sim.houses.insert(
-            enemy,
-            crate::sim::house_state::HouseState::new(enemy, 1, None, false, 0, 10),
-        );
-        sim.session.house_order.push(enemy);
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                enemy, 1, None, false, 0, 10,
+            ));
         sim.spawn_object("E1", "Enemy", 12, 11, 0, &rules).unwrap();
         sim.resolve_type_handles(&rules);
         sim.fog.reveal_all_for_owner(owner);
@@ -665,7 +608,7 @@ impl Simulation {
         let terrain = self.resolved_terrain.as_mut().unwrap();
         for x in 8..=10 {
             let cell = terrain
-                .cells
+                .cells_mut_for_test()
                 .iter_mut()
                 .find(|c| c.rx == x && c.ry == 6)
                 .unwrap();

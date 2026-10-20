@@ -201,6 +201,23 @@ pub(crate) struct FiredBullet {
     pub(super) velocity: crate::sim::projectile::ProjectileVelocity,
     /// The current speed.
     pub(super) speed: u16,
+    /// The OnBridge byte an `Inviso=` bullet takes: FireAt copies it from the
+    /// Object its caller targeted (`0x006FF08B..0x006FF0B0`, the entry local
+    /// `[ESP+0x84]`), which AreaFire's own-cell retarget does not replace.
+    /// Other launchers take their target's.
+    pub(super) target_on_bridge: bool,
+}
+
+/// An Object target's OnBridge (`+0x8C`); `false` for anything else.
+pub(super) fn target_on_bridge(world: &Simulation, target: ProjectileTarget) -> bool {
+    match target {
+        ProjectileTarget::Entity(id) => world
+            .substrate
+            .entities
+            .get(id)
+            .is_some_and(|target| target.on_bridge()),
+        _ => false,
+    }
 }
 
 impl FiredBullet {
@@ -242,7 +259,7 @@ impl FiredBullet {
             }
             // Terrain+58 (410540) forwards Object+48 (5F65A0).
             ProjectileTarget::Terrain(id) => {
-                world.production.terrain_objects.get(&id)?.world_coord()
+                world.terrain_objects.objects().get(&id)?.world_coord()
             }
             ProjectileTarget::None => return None,
         };
@@ -269,6 +286,7 @@ impl FiredBullet {
             velocity,
             speed: crate::sim::projectile::projectile_velocity_magnitude(velocity)
                 .clamp(0.0, f64::from(u16::MAX)) as u16,
+            target_on_bridge: target_on_bridge(world, target),
         })
     }
 }
@@ -337,8 +355,7 @@ impl ProjectileDelivery {
 /// Unlimbos it at its coordinate, which appends it to the Logic vector
 /// (`0x005F5040`): it takes its first AI later in this frame's pass. An
 /// `Inviso=` bullet then stands on its placement ([`inviso_fire_placement`],
-/// [`ProjectileStore::fire_inviso`]) with the target's OnBridge, as FireAt
-/// copies it at `0x006FF08B`.
+/// [`ProjectileStore::fire_inviso`]) with [`FiredBullet::target_on_bridge`].
 ///
 /// [`ProjectileStore::fire_inviso`]: crate::sim::projectile::ProjectileStore::fire_inviso
 pub(crate) fn admit_fired_bullet(
@@ -367,14 +384,7 @@ pub(crate) fn admit_fired_bullet(
             .push((bullet_id, delivery.inviso, spawn));
     }
     if delivery.inviso {
-        let on_bridge = match bullet.target {
-            ProjectileTarget::Entity(id) => world
-                .substrate
-                .entities
-                .get(id)
-                .is_some_and(|target| target.on_bridge()),
-            _ => false,
-        };
+        let on_bridge = bullet.target_on_bridge;
         let placement = inviso_fire_placement(
             world,
             rules,

@@ -26,8 +26,7 @@ fn nuke_scene() -> (Simulation, RuleSet, InternedId, InternedId) {
     let mut sim = Simulation::with_seed(0);
     let owner = sim.interner.intern("Americans");
     sim.houses
-        .insert(owner, HouseState::new(owner, 0, None, true, 0, 10));
-    sim.session.house_order.push(owner);
+        .register(HouseState::new(owner, 0, None, true, 0, 10));
     let type_id = sim.interner.intern("NukeSpecial");
     sim.super_weapons
         .entry(owner)
@@ -59,7 +58,7 @@ fn charged_super_held_by_low_power_stays_charged_but_cannot_fire() {
 
     // The House Super AI visit completes the charge (RechargeTime=10 is
     // minutes -> 9000 native frames).
-    sim.session.binary_frame = 9000;
+    sim.session.set_binary_frame_for_test(9000);
     tick_house_superweapon_instances(&mut sim, &rules, owner);
     let view = nuke_view(&sim, &rules, owner);
     assert!(view.is_ready);
@@ -69,7 +68,10 @@ fn charged_super_held_by_low_power_stays_charged_but_cannot_fire() {
     // The power edge holds the charged Super: the view keeps the charge
     // (and the timer/flash readers), drops online, and drops the fire
     // admission — 0x006CC360 reads the hold before the charge.
-    sim.power_states.get_mut(&owner).unwrap().is_low_power = true;
+    sim.power_states
+        .get_mut(&owner)
+        .unwrap()
+        .set_is_low_power_for_test(true);
     update_owned_supers(&mut sim, &rules, owner);
     assert!(sim.super_weapons[&owner][&type_id].is_suspended);
     let view = nuke_view(&sim, &rules, owner);
@@ -81,7 +83,10 @@ fn charged_super_held_by_low_power_stays_charged_but_cannot_fire() {
     );
 
     // Restoring power releases the hold; the admission returns.
-    sim.power_states.get_mut(&owner).unwrap().is_low_power = false;
+    sim.power_states
+        .get_mut(&owner)
+        .unwrap()
+        .set_is_low_power_for_test(false);
     update_owned_supers(&mut sim, &rules, owner);
     assert!(!sim.super_weapons[&owner][&type_id].is_suspended);
     assert!(nuke_view(&sim, &rules, owner).can_fire);

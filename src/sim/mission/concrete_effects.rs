@@ -181,7 +181,7 @@ impl<'r> RepresentedConcreteMissionEffects<'r> {
         if self.rules.is_some()
             && let Some(NavTargetRef::Object { id }) = destination
             && !sim.substrate.entities.contains(id)
-            && !sim.production.terrain_objects.contains_key(&id)
+            && !sim.terrain_objects.objects().contains_key(&id)
             // Building455D50 only archives the pointer; it never asks the
             // destination for a coordinate or otherwise dereferences it.
             && sim.substrate.entities.get(receiver).is_some_and(|actor| {
@@ -356,7 +356,7 @@ impl ConcreteMissionEffects for RepresentedConcreteMissionEffects<'_> {
         }
         let stored = assign_target_stored(
             &sim.substrate.entities,
-            &sim.production.terrain_objects,
+            sim.terrain_objects.objects(),
             prepared.receiver,
             requested,
             self.rules.map(|rules| (rules, &sim.interner)),
@@ -582,7 +582,7 @@ pub(crate) fn assign_target_commits(
                 // Foot bit, sinking state or Infantry death-action gate.
                 terrain_objects
                     .get(&id)
-                    .is_some_and(|target| target.object_alive() && target.health != 0)
+                    .is_some_and(|target| target.object_alive() && target.health() != 0)
             }
         }
         Some(TargetKind::Cell(..)) | None => true,

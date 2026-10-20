@@ -46,8 +46,7 @@ fn a_dying_war_miners_tyres_draw_from_admission_to_the_pose_page() {
         32,
     ));
     let miner = sim.allocate_stable_id();
-    sim.substrate
-        .entities
+    sim.entities_mut_for_test()
         .insert(crate::sim::game_entity::GameEntity::test_default(
             miner,
             "HARV",
@@ -55,7 +54,7 @@ fn a_dying_war_miners_tyres_draw_from_admission_to_the_pose_page() {
             12,
             12,
         ));
-    sim.interner = crate::sim::intern::test_interner();
+    *sim.interner_mut_for_test() = crate::sim::intern::test_interner();
     assert!(matches!(
         sim.reveal(miner),
         crate::sim::world::RevealOutcome::Revealed { .. }
@@ -80,7 +79,7 @@ fn a_dying_war_miners_tyres_draw_from_admission_to_the_pose_page() {
     let first = sim.voxel_anims().get(ids[0]).unwrap().world_coord();
     let [x, y] = screen(first.x, first.y, first.z);
     let view = DebrisView {
-        terrain: sim.resolved_terrain.as_ref().unwrap(),
+        terrain: sim.resolved_terrain().unwrap(),
         camera: [x - 400.0, y - 300.0],
         viewport: [800.0, 600.0],
         axis: DepthAxis::NONE,
@@ -111,7 +110,7 @@ fn a_dying_war_miners_tyres_draw_from_admission_to_the_pose_page() {
     let mut cache = crate::render::unit_pose_cache::VxlPoseFrameCache::default();
     for &id in &ids {
         let piece = sim.voxel_anims().get(id).unwrap();
-        let kind = rules.voxel_anim_type(piece.type_id);
+        let kind = rules.voxel_anim_type(piece.type_id());
         assert_eq!(kind.image, "TIRE");
         let location = piece.world_coord();
         let palette = piece_palette(piece, kind, &sim, &house_colors, &light);
@@ -234,7 +233,7 @@ fn an_unowned_retail_tyre_draws_with_the_global_plain_convert() {
         sim.visit_voxel_anim(id, Some(rules));
     }
     let piece = sim.voxel_anims().get(id).unwrap();
-    assert_eq!(piece.owner_house, None);
+    assert_eq!(piece.owner_house(), None);
     let mut light = CellLightGrid::new();
     let location = piece.world_coord();
     let cell = ((location.x / 256) as u16, (location.y / 256) as u16);
@@ -269,7 +268,7 @@ fn an_unowned_retail_tyre_draws_with_the_global_plain_convert() {
     let order = NativeDisplayOrder::from_display(sim.display_layers());
     let [x, y] = screen(location.x, location.y, location.z);
     let view = DebrisView {
-        terrain: sim.resolved_terrain.as_ref().unwrap(),
+        terrain: sim.resolved_terrain().unwrap(),
         camera: [x - 400., y - 300.],
         viewport: [800., 600.],
         axis: DepthAxis::NONE,

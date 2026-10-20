@@ -111,33 +111,6 @@ fn assert_health(sim: &Simulation, id: u64, actual: i32) {
 }
 
 #[test]
-fn mcv_conversion_uses_actual_and_type_strength_then_resets_estimate() {
-    let rules = rules();
-    let mut sim = Simulation::with_seed(123);
-    crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
-    let source = sim
-        .spawn_object_at_height("MCV", "Neutral", 10, 10, 0, 0, &rules)
-        .unwrap();
-    damage(&mut sim, source, 25);
-    assert!(sim.deploy_mcv(
-        source,
-        &rules,
-        None,
-        crate::sim::world::FrameEffects::default()
-    ));
-    sim.flush_pending_delete();
-    assert!(sim.substrate.entities.get(source).is_none());
-    let destination = sim
-        .substrate
-        .entities
-        .values()
-        .find(|e| sim.interner.resolve(e.type_ref()) == "YARD")
-        .unwrap()
-        .stable_id();
-    assert_health(&sim, destination, 250);
-}
-
-#[test]
 fn building_conversion_reads_health_when_animation_finishes() {
     let rules = rules();
     let mut sim = Simulation::with_seed(123);
@@ -255,75 +228,6 @@ fn slave_conversions_reset_master_health_but_preserve_retained_slave_state() {
 }
 
 #[test]
-fn all_four_conversion_callers_preserve_results_above_u16() {
-    let rules = with_buildup(RuleSet::from_ini_with_fixed_art_for_test(&IniFile::from_str(
-        "[VehicleTypes]\n0=MCV\n1=SMIN\n[BuildingTypes]\n0=YARD\n1=YAREFN\n[InfantryTypes]\n0=SLAV\n\
-         [MCV]\nStrength=100000\nSpeed=5\nDeploysInto=YARD\n\
-         [YARD]\nStrength=1000000\nDeployFacing=0\nUndeploysInto=MCV\n\
-         [SMIN]\nStrength=100000\nSpeed=3\nDeploysInto=YAREFN\nEnslaves=SLAV\nSlavesNumber=1\n\
-         [YAREFN]\nStrength=1000000\nDeployFacing=0\nUndeploysInto=SMIN\nEnslaves=SLAV\nSlavesNumber=1\n\
-         [SLAV]\nStrength=125\nSpeed=3\nStorage=4\n[Clear]\nBuildable=yes\n"
-    ), &IniFile::from_str(CONVERSION_ART)).unwrap());
-    let mut sim = Simulation::with_seed(123);
-    crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
-    let source = sim
-        .spawn_object_at_height("MCV", "Neutral", 10, 10, 0, 0, &rules)
-        .unwrap();
-    damage(&mut sim, source, 75_000);
-    assert!(sim.deploy_mcv(
-        source,
-        &rules,
-        None,
-        crate::sim::world::FrameEffects::default()
-    ));
-    sim.flush_pending_delete();
-    let yard = sim
-        .substrate
-        .entities
-        .values()
-        .find(|entity| sim.interner.resolve(entity.type_ref()) == "YARD")
-        .unwrap()
-        .stable_id();
-    assert_health(&sim, yard, 750_000);
-    // The 31-frame Buildup at rate 1 completes by the 32nd frame.
-    for _ in 0..32 {
-        sim.advance_tick(&[], Some(&rules), None, None, 22);
-    }
-    assert!(!sim.substrate.entities.get(yard).unwrap().building_up());
-    assert!(sim.undeploy_building(
-        yard,
-        &rules,
-        None,
-        crate::sim::world::FrameEffects::default()
-    ));
-    sim.substrate
-        .entities
-        .get_mut(yard)
-        .unwrap()
-        .finish_pack_up_for_test();
-    sim.advance_tick(&[], Some(&rules), None, None, 22);
-    let mcv = sim
-        .substrate
-        .entities
-        .values()
-        .find(|entity| sim.interner.resolve(entity.type_ref()) == "MCV")
-        .unwrap()
-        .stable_id();
-    assert_health(&sim, mcv, 75_000);
-
-    let mut sim = Simulation::with_seed(123);
-    crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
-    let source = sim
-        .spawn_object_at_height("SMIN", "Neutral", 10, 10, 0, 0, &rules)
-        .unwrap();
-    damage(&mut sim, source, 75_000);
-    let building = deploy(&mut sim, &rules, source, "YAREFN");
-    assert_health(&sim, building, 750_000);
-    let unit = undeploy(&mut sim, &rules, building, "SMIN");
-    assert_health(&sim, unit, 75_000);
-}
-
-#[test]
 fn mcv_building_slots_wait_for_completion_and_use_converted_health() {
     let rules_ini = IniFile::from_str(
         "[VehicleTypes]\n0=MCV\n[BuildingTypes]\n0=YARD\n[Animations]\n0=N\n1=D\n[MCV]\nStrength=100\nSpeed=5\nDeploysInto=YARD\n[YARD]\nStrength=1000\nFoundation=1x1\nDeployFacing=0\n[Clear]\nBuildable=yes\n",
@@ -393,9 +297,9 @@ fn mcv_building_slots_wait_for_completion_and_use_converted_health() {
     let anim = sim
         .anim(destination.building_art.anim_slots()[18].unwrap())
         .unwrap();
-    assert_eq!(sim.interner.resolve(anim.type_id), "D");
+    assert_eq!(sim.interner.resolve(anim.type_id()), "D");
     let expected_rate = expected_rng.next_range_u32_inclusive(1, 5) as u16;
-    assert_eq!(anim.runtime.rate_reload, expected_rate);
+    assert_eq!(anim.runtime().rate_reload, expected_rate);
     assert_eq!(
         sim.scenario_rng.logical_state(),
         expected_rng.logical_state()

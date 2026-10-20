@@ -129,7 +129,7 @@ fn list_fixture() -> (RuleSet, EntityStore, OccupancyGrid, ResolvedTerrainGrid) 
     ] {
         let mut entity = GameEntity::test_default(id, kind, owner, x, 5);
         entity.lifecycle.set_in_limbo_for_test(false);
-        entity.lifecycle.set_cell_marked(true);
+        entity.lifecycle.set_cell_marked_for_test(true);
         entity.set_on_bridge(on_bridge);
         occupancy.add(
             x,
@@ -259,7 +259,7 @@ fn original_dead_missing_cell_candidate_runs_fire_probe_before_health_rejection(
         .unwrap()["steps"][0];
     let mut world = Simulation::with_seed(31);
     world.intern_rule_type_ids(&rules);
-    world.session.binary_frame = 173;
+    world.session.set_binary_frame_for_test(173);
     let obj = rules.object("FV").unwrap();
     for (id, owner, x, y, hp) in [(1, "Americans", 10, 20, 200), (2, "Russians", 41, 41, 0)] {
         let owner = world.intern(owner);
@@ -281,7 +281,7 @@ fn original_dead_missing_cell_candidate_runs_fire_probe_before_health_rejection(
         entity.position.set_z_for_test(6);
         entity.position.set_exact_z_leptons_for_test(Some(624));
         entity.health.set_for_test(hp);
-        entity.lifecycle.set_cell_marked(true);
+        entity.lifecycle.set_cell_marked_for_test(true);
         entity.lifecycle.set_in_limbo_for_test(false);
         entity.set_in_playfield(true);
         entity.locomotor = Some(LocomotorState::from_object_type(obj, 0));
@@ -340,6 +340,11 @@ fn original_dead_missing_cell_candidate_runs_fire_probe_before_health_rejection(
         allies_of_scanner: Default::default(),
         probe_firer: Default::default(),
         scanner_facts: attacker_facts(firer, obj),
+        harvester_immune: false,
+        harvester_unit_ids: Vec::new(),
+        scenario_rng: Default::default(),
+        scenario_draws: Default::default(),
+        met_idle_disguise: Default::default(),
     };
     let walk = WalkArgs {
         flags: 0x8042,

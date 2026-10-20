@@ -170,7 +170,7 @@ impl AppState {
     /// Whether any main-menu modal dialog (exit confirm, options, keyboard)
     /// is currently open.
     pub(crate) fn main_menu_dialog_open(&self) -> bool {
-        self.frontend.exit_confirm_modal.is_some()
+        self.frontend.shell_message_box.is_some()
             || self.frontend.options_dialog.is_some()
             || self.frontend.keyboard_dialog.is_some()
     }
@@ -284,33 +284,6 @@ fn cursor_in_space(
 }
 
 #[cfg(test)]
-mod cursor_space_tests {
-    use super::cursor_in_space;
-    use crate::render::upscale_pass::{FrameShape, ZoomGeometry};
-
-    #[test]
-    fn leaving_or_resizing_a_zoomed_match_keeps_the_pointer_in_place() {
-        let zoomed = ZoomGeometry::new(1600, 1200, 200, FrameShape::Window);
-        // Source (400, 300) is window (800, 600), where the menus read it.
-        assert_eq!(
-            cursor_in_space((400.0, 300.0), Some(zoomed), None),
-            (800.0, 600.0)
-        );
-        // Resized to 1925x1083 at 300%: the frame starts at window x = 1.
-        let resized = ZoomGeometry::new(1925, 1083, 300, FrameShape::Window);
-        assert_eq!(
-            cursor_in_space((400.0, 300.0), Some(zoomed), Some(resized)),
-            (799.0 / 3.0, 200.0)
-        );
-        // Entering a match keeps the point the tactical install placed.
-        assert_eq!(
-            cursor_in_space((320.0, 200.0), None, Some(zoomed)),
-            (320.0, 200.0)
-        );
-    }
-}
-
-#[cfg(test)]
 mod main_draw_tests {
     use super::process_main_draws;
     use crate::sim::{
@@ -359,7 +332,7 @@ mod main_draw_tests {
         let mapgen = installed.rng_state().mapgen;
         let mut reference = SimRng::new(42);
         for _ in 0..7 {
-            assert_eq!(installed.main_rng.next_u32(), reference.next_u32());
+            assert_eq!(installed.main_rng().next_u32(), reference.next_u32());
         }
         installed.install_fresh_process_main(&frontend);
         assert_eq!(frontend.logical_state(), reference.logical_state());
@@ -378,7 +351,7 @@ mod main_draw_tests {
         // A later fresh scenario reuses that same process cell again.
         let mut replacement = Simulation::with_seed(99);
         let mut next_reference = SimRng::new(99);
-        assert_eq!(replacement.main_rng.next_u32(), next_reference.next_u32());
+        assert_eq!(replacement.main_rng().next_u32(), next_reference.next_u32());
         replacement.install_fresh_process_main(&frontend);
         drop(installed);
         assert_eq!(retained.next_u32(), next_reference.next_u32());

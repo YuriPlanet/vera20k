@@ -215,11 +215,12 @@ pub(crate) fn zones(terrain: &ResolvedTerrainGrid, row: &Value) -> ZoneGrid {
         terrain.height(),
         Some((i32::from(size.0), i32::from(size.1))),
     );
-    let base = zones.base_topology_mut();
-    base.zone_ids.fill(0);
+    let base = zones.base_topology_mut_for_test();
+    base.zone_ids_mut_for_test().fill(0);
     for cell in supplied["group_cells"].as_array().unwrap() {
         let (x, y) = pair(&cell["xy"]);
-        base.zone_ids[usize::from(y) * usize::from(terrain.width()) + usize::from(x)] =
+        base.zone_ids_mut_for_test()
+            [usize::from(y) * usize::from(terrain.width()) + usize::from(x)] =
             cell["group"].as_u64().unwrap() as u16;
     }
     let labels: Vec<_> = supplied["raw_labels"]
@@ -228,7 +229,7 @@ pub(crate) fn zones(terrain: &ResolvedTerrainGrid, row: &Value) -> ZoneGrid {
         .iter()
         .map(|v| v.as_u64().unwrap() as u16)
         .collect();
-    for raw in &mut base.raw_zone_ids_by_row {
+    for raw in base.raw_zone_ids_by_row_mut_for_test() {
         *raw = labels.clone();
     }
     reset_dummy(terrain, &row["input"]);

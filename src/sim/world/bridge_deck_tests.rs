@@ -27,15 +27,14 @@ fn structural_fallout_retires_effect_only_ground_victim() {
     // Admit the initial victim on clear ground before supplying the later
     // structural bridge state. Its ordinary Unlimbo needs Clear/Foot, and
     // this effect-only corridor supplies no OverlayType reader context.
-    let clear = terrain.cell_mut(4, 4).unwrap();
+    let clear = terrain.cell_mut_for_test(4, 4).unwrap();
     clear.speed_costs.foot = Some(100);
     clear.base_speed_costs.foot = Some(100);
     sim.resolved_terrain = Some(terrain);
     sim.bridge_state = Some(BridgeRuntimeState::default());
     let owner = sim.interner.intern("Americans");
     sim.houses
-        .insert(owner, HouseState::new(owner, 0, None, true, 1000, 10));
-    sim.session.house_order.push(owner);
+        .register(HouseState::new(owner, 0, None, true, 1000, 10));
     let victim = sim
         .spawn_object_at_height("E1", "Americans", 4, 4, 0, 0, &rules)
         .unwrap();
@@ -108,7 +107,7 @@ fn structural_drop_in_owns_order_footprints_and_restore_without_teardown_side_ef
             .resolved_terrain
             .as_mut()
             .unwrap()
-            .cell_mut(x, y)
+            .cell_mut_for_test(x, y)
             .unwrap();
         cell.level = 0;
         cell.bridge_facts.raw_flags = crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
@@ -333,7 +332,7 @@ fn a_bombed_bridge_hut_drops_its_bridge() {
             sim.resolved_terrain
                 .as_mut()
                 .unwrap()
-                .cell_mut(17, y)
+                .cell_mut_for_test(17, y)
                 .unwrap()
                 .bridge_facts
                 .overlay_id = Some(0xD4);
@@ -350,11 +349,8 @@ fn a_bombed_bridge_hut_drops_its_bridge() {
         ));
         for (side, name) in ["Americans", "Russians"].into_iter().enumerate() {
             let house = sim.interner.intern(name);
-            sim.houses.insert(
-                house,
-                HouseState::new(house, side as u8, None, false, 1000, 10),
-            );
-            sim.session.house_order.push(house);
+            sim.houses
+                .register(HouseState::new(house, side as u8, None, false, 1000, 10));
         }
         // Beside the span, inside its 5x5 scan.
         let hut = sim
@@ -363,7 +359,7 @@ fn a_bombed_bridge_hut_drops_its_bridge() {
         let ivan = sim
             .spawn_object_at_height("IVAN", "Russians", 12, 15, 0, 0, &rules)
             .unwrap();
-        sim.session.binary_frame = 100;
+        sim.session.set_binary_frame_for_test(100);
         if bombed {
             sim.bomb_attach(ivan, Some(hut), &rules);
         }
@@ -388,7 +384,7 @@ fn a_bombed_bridge_hut_drops_its_bridge() {
                 crate::sim::world::FrameEffects::default(),
             );
         } else {
-            sim.session.binary_frame = 100 + 451;
+            sim.session.set_binary_frame_for_test(100 + 451);
             sim.bomb_fuse_step(
                 hut,
                 &rules,

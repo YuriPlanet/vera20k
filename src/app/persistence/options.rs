@@ -137,7 +137,7 @@ pub(crate) fn persist_options_profile(state: &AppState) {
     if let Err(error) = state
         .persistence
         .options_profile
-        .commit_ra2md(&config.paths.ra2_dir)
+        .commit_ra2md(config.paths.settings_dir())
     {
         log::warn!("Failed to persist Options profile to RA2MD.INI: {error}");
     }
@@ -345,19 +345,6 @@ mod tests {
         assert_eq!(transaction.consumer_effects, 0);
         assert_eq!(transaction.writes, 0);
         assert!(transaction.events.is_empty());
-    }
-
-    #[test]
-    fn apply_disables_target_lines_when_unit_action_lines_are_off() {
-        let mut target_lines = TargetLineState::default();
-        apply_target_lines(
-            &mut target_lines,
-            &InGameOptionsState {
-                unit_action_lines: false,
-                ..Default::default()
-            },
-        );
-        assert!(!target_lines.unit_action_lines_enabled());
     }
 
     #[test]

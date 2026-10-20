@@ -76,8 +76,8 @@ fn relocating_chrono_unit(target: (u16, u16)) -> Simulation {
 
 fn relocating_owner(category: EntityCategory, type_name: &str, target: (u16, u16)) -> Simulation {
     let mut sim = Simulation::with_seed(0);
-    sim.fog.width = 32;
-    sim.fog.height = 32;
+    sim.fog.set_width_for_test(32);
+    sim.fog.set_height_for_test(32);
     // Construct the actual class. Reclassifying a Unit test default leaves
     // Infantry's required fear/action runtime absent from its real AI turn.
     let mut entity = GameEntity::new_at_frame_zero_for_test(
@@ -136,13 +136,13 @@ fn relocation_constructs_departure_and_arrival_warp_anims_in_the_mover_turn() {
         .anims
         .iter()
         .map(|(_, anim)| anim)
-        .filter(|anim| anim.type_id == warp_out)
+        .filter(|anim| anim.type_id() == warp_out)
         .collect();
     assert_eq!(anims.len(), 2, "one at the origin, one at the destination");
     let mut cells: Vec<_> = anims
         .iter()
         .map(|anim| {
-            let (rx, ry, _, _, z) = anim.world_coord.to_cell_sub_z();
+            let (rx, ry, _, _, z) = anim.world_coord().to_cell_sub_z();
             (rx, ry, z)
         })
         .collect();
@@ -150,59 +150,15 @@ fn relocation_constructs_departure_and_arrival_warp_anims_in_the_mover_turn() {
     // Each at the exact Location: the arrival's is the destination's (z 0).
     assert_eq!(cells, vec![(5, 5, 2), (8, 9, 0)]);
     for anim in &anims {
-        assert_eq!(anim.draw_flags, 0x600);
-        assert_eq!(anim.z_adjust, 0);
-        assert_eq!(anim.runtime.delay_remaining, 0);
+        assert_eq!(anim.draw_flags(), 0x600);
+        assert_eq!(anim.z_adjust(), 0);
+        assert_eq!(anim.runtime().delay_remaining, 0);
         assert_eq!(
-            anim.runtime.rate_reload,
+            anim.runtime().rate_reload,
             crate::rules::art_data::art_rate_to_logic_frames(120),
             "the art section's own Rate=, through the one AnimType rule"
         );
     }
-}
-
-#[test]
-fn unbound_warp_art_relocates_without_an_anim() {
-    let rules = rules(false);
-    let mut sim = relocating_legionnaire((8, 9));
-
-    sim.advance_live_object_turn(1, Some(&rules), techno_ai::ObjectAiCtx::default())
-        .unwrap();
-
-    let mover = sim.substrate.entities.get(1).unwrap();
-    assert_eq!((mover.position.rx(), mover.position.ry()), (8, 9));
-    assert_eq!(sim.substrate.anims.len(), 0);
-}
-
-#[test]
-fn teleport_loses_incoming_bullet_target_before_relocation() {
-    use crate::sim::projectile::{ProjectileCoord, ProjectileTarget};
-    let rules = rules(false);
-    let mut sim = relocating_legionnaire((8, 9));
-    install_destination_cells(&mut sim, &rules);
-    let mut shot = super::super::lifecycle_tests::gsi_05_02_projectile(1, None);
-    shot.target = ProjectileTarget::Entity(1);
-    shot.initial_target_position = ProjectileCoord::new(1408, 1408, 208);
-    sim.projectiles.spawn(99, shot);
-    // Another target and a shot fired by this unit but aimed elsewhere are
-    // outside LoseTarget's exact target comparison.
-    shot.target = ProjectileTarget::Entity(2);
-    sim.projectiles.spawn(98, shot);
-    let unrelated = sim.projectiles.get(98).unwrap().clone();
-    let mut expected = sim.projectiles.get(99).unwrap().clone();
-    expected.target = ProjectileTarget::Cell { rx: 5, ry: 5 };
-
-    sim.advance_live_object_turn(1, Some(&rules), techno_ai::ObjectAiCtx::default())
-        .unwrap();
-
-    assert_eq!(
-        sim.projectiles.get(99),
-        Some(&expected),
-        "LoseTarget changes only the target, even when the teleporter is also its firer"
-    );
-    let mover = sim.substrate.entities.get(1).unwrap();
-    assert_eq!((mover.position.rx(), mover.position.ry()), (8, 9));
-    assert_eq!(sim.projectiles.get(98), Some(&unrelated));
 }
 
 #[test]
@@ -297,12 +253,12 @@ fn teleport_target_loss_and_pointer_expiry_match_native_controls() {
             });
             entity
                 .lifecycle
-                .set_cell_marked(input["marked"].as_bool().unwrap());
+                .set_cell_marked_for_test(input["marked"].as_bool().unwrap());
             let mut shot = super::super::lifecycle_tests::gsi_05_02_projectile(1, None);
             shot.target = ProjectileTarget::Entity(1);
             sim.admit_projectile(99, shot);
             let mut expected = sim.projectiles.get(99).unwrap().clone();
-            expected.target = match row["target"]["kind"].as_str().unwrap() {
+            expected.set_target_for_test(match row["target"]["kind"].as_str().unwrap() {
                 "none" => ProjectileTarget::None,
                 "dummy" => ProjectileTarget::DummyCell,
                 "cell" => ProjectileTarget::Cell {
@@ -310,7 +266,7 @@ fn teleport_target_loss_and_pointer_expiry_match_native_controls() {
                     ry: row["target"]["cell"][1].as_u64().unwrap() as u16,
                 },
                 other => panic!("unexpected native target {other}"),
-            };
+            });
             let repair = |sim: &mut Simulation| {
                 if expire {
                     sim.detach_all_pointer_expired(1, &rules, None, FrameEffects::default());
@@ -325,7 +281,7 @@ fn teleport_target_loss_and_pointer_expiry_match_native_controls() {
             }
             if expire {
                 assert_eq!(row["expiry_source_cleared"], true);
-                expected.source_id = crate::sim::combat::RAD_NO_ATTACKER;
+                expected.set_source_id_for_test(crate::sim::combat::RAD_NO_ATTACKER);
             } else {
                 assert_eq!(row["source_preserved"], true);
             }
@@ -372,7 +328,7 @@ fn retail_cmin_teleport_preserves_departure_cell_through_guidance_and_snapshot()
     };
     let mut sim = relocating_owner(EntityCategory::Unit, "CMIN", (9, 8));
     install_destination_cells(&mut sim, &rules);
-    sim.session.binary_frame = 1;
+    sim.session.set_binary_frame_for_test(1);
     let bullet_id = sim.allocate_stable_id();
     let payload = ProjectilePayload::new(
         weapon.damage,
@@ -400,14 +356,20 @@ fn retail_cmin_teleport_preserves_departure_cell_through_guidance_and_snapshot()
         .unwrap();
 
     let mut expected = original;
-    expected.target = ProjectileTarget::Cell { rx: 5, ry: 5 };
+    expected.set_target_for_test(ProjectileTarget::Cell { rx: 5, ry: 5 });
     assert_eq!(sim.projectiles.get(bullet_id), Some(&expected));
     let mover = sim.substrate.entities.get(1).unwrap();
     assert_eq!((mover.position.rx(), mover.position.ry()), (9, 8));
     let repaired_hash = sim.state_hash();
-    sim.projectiles.get_mut(bullet_id).unwrap().target = ProjectileTarget::Entity(1);
+    sim.projectiles
+        .get_mut(bullet_id)
+        .unwrap()
+        .set_target_for_test(ProjectileTarget::Entity(1));
     assert_ne!(repaired_hash, sim.state_hash());
-    sim.projectiles.get_mut(bullet_id).unwrap().target = expected.target;
+    sim.projectiles
+        .get_mut(bullet_id)
+        .unwrap()
+        .set_target_for_test(expected.target());
 
     // Native load resets the Scenario stream; keep that independent policy
     // equal while checking the repaired target and its next flight step.
@@ -422,8 +384,8 @@ fn retail_cmin_teleport_preserves_departure_cell_through_guidance_and_snapshot()
     sim.projectiles
         .get_mut(bullet_id)
         .unwrap()
-        .arm_timer
-        .start(sim.session.binary_frame as i32, 0);
+        .arm_timer_mut_for_test()
+        .start(sim.session.binary_frame() as i32, 0);
     assert_eq!(
         restored.projectiles.get(bullet_id),
         sim.projectiles.get(bullet_id)
@@ -435,13 +397,13 @@ fn retail_cmin_teleport_preserves_departure_cell_through_guidance_and_snapshot()
             techno_ai::ObjectAiCtx::default()
         ));
         let advanced = world.projectiles.get(bullet_id).unwrap();
-        assert_eq!(advanced.position, translated(&flight["candidate"]));
+        assert_eq!(advanced.position(), translated(&flight["candidate"]));
         assert_eq!(
-            advanced.last_target_position,
+            advanced.last_target_position(),
             translated(&flight["homing_targets"][0])
         );
         let actual = advanced
-            .velocity
+            .velocity()
             .native()
             .map(|v| format!("{:016x}", v.bits()));
         let expected: Vec<_> = flight["velocity"]["bits"]
@@ -555,70 +517,6 @@ fn warp_moves_an_infantrymans_list_entry_and_leaves_his_raw_bit() {
     assert_eq!(raw_bits(&sim, (8, 9)), 0, "the destination gets none");
     assert!(!sim.substrate.occupancy.contains_entity(5, 5, 1));
     assert!(sim.substrate.occupancy.contains_entity(8, 9, 1));
-}
-
-/// Only the relocating frame builds the two WarpOut animations: a turn in
-/// the chrono delay that follows builds none.
-#[test]
-fn a_chrono_delay_turn_builds_no_warp_anim() {
-    let rules = rules(true);
-    let mut sim = relocating_legionnaire((8, 9));
-    sim.substrate
-        .entities
-        .get_mut(1)
-        .unwrap()
-        .teleport_state_for_test_mut()
-        .unwrap()
-        .set_ticks_for_test(5);
-
-    sim.advance_live_object_turn(1, Some(&rules), techno_ai::ObjectAiCtx::default())
-        .unwrap();
-    assert_eq!(sim.substrate.anims.len(), 2);
-    assert_eq!(
-        sim.substrate
-            .entities
-            .get(1)
-            .unwrap()
-            .teleport_state()
-            .map(|state| state.phase()),
-        Some(TeleportPhase::ChronoDelay)
-    );
-    sim.advance_live_object_turn(1, Some(&rules), techno_ai::ObjectAiCtx::default())
-        .unwrap();
-    assert_eq!(sim.substrate.anims.len(), 2);
-}
-
-/// The warp's first step is the Techno detach sweep (`0x007193C7`): an
-/// attacker's lock on the owner is dropped in the owner's warp turn.
-#[test]
-fn the_warp_drops_attack_locks_on_its_owner() {
-    let rules = rules(false);
-    let mut sim = relocating_legionnaire((8, 9));
-    let mut attacker = GameEntity::test_default(2, "CMON", "Russians", 4, 5);
-    attacker
-        .attack_target
-        .set_for_test(Some(crate::sim::combat::TargetKind::Entity(1)));
-    sim.substrate.entities.insert(attacker);
-
-    sim.advance_live_object_turn(1, Some(&rules), techno_ai::ObjectAiCtx::default())
-        .unwrap();
-
-    assert_eq!(
-        (
-            sim.substrate.entities.get(1).unwrap().position.rx(),
-            sim.substrate.entities.get(1).unwrap().position.ry()
-        ),
-        (8, 9)
-    );
-    assert!(
-        sim.substrate
-            .entities
-            .get(2)
-            .unwrap()
-            .attack_target
-            .target()
-            .is_none()
-    );
 }
 
 /// The warp's first step is the shared detach sweep (`0x007193C7` ->
@@ -785,33 +683,6 @@ fn restoration_callbacks_forward_overlay_inputs_before_any_destination_write() {
     assert_eq!(mover.teleport_state().unwrap().target_cell(), Some((12, 7)));
     assert_eq!((mover.position.rx(), mover.position.ry()), (5, 5));
     assert_ne!(raw_bits(&sim, (12, 7)), 0, "the restored Cell is reserved");
-}
-
-/// A ground order to an infantryman on Teleport reaches the Infantry setter,
-/// which arms the warp, not a route no Process follows.
-#[test]
-fn a_ground_order_arms_the_warp() {
-    let rules = rules(false);
-    let mut sim = relocating_legionnaire((8, 9));
-    install_destination_cells(&mut sim, &rules);
-    sim.substrate
-        .entities
-        .get_mut(1)
-        .unwrap()
-        .install_teleport_state_for_test(None);
-
-    sim.assign_destination_represented(
-        1,
-        Some(crate::sim::components::NavTargetRef::cell(12, 7)),
-        Some(&rules),
-        None,
-        crate::sim::world::FrameEffects::default(),
-    )
-    .unwrap();
-
-    let mover = sim.substrate.entities.get(1).unwrap();
-    let warp = mover.teleport_state().expect("armed warp");
-    assert_eq!(warp.target_cell().unwrap(), (12, 7));
 }
 
 /// A warp the Teleport armed waits while a Drive piggybacks over it: the

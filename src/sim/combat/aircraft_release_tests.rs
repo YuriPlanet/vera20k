@@ -153,7 +153,7 @@ fn shared_fireat_refuses_positive_health_limbo_objects_before_emission() {
             }
             "terrain" => {
                 let type_ref = sim.interner.intern("TREE01");
-                sim.production.terrain_objects.insert(
+                sim.terrain_objects.objects_mut_for_test().insert(
                     2,
                     crate::sim::terrain_object::TerrainObjectState::for_test(2, type_ref, 11, 10),
                 );
@@ -180,9 +180,15 @@ fn shared_fireat_refuses_positive_health_limbo_objects_before_emission() {
                 target.lifecycle.set_in_limbo_for_test(true);
                 assert!(target.lifecycle.object_alive() && target.health.current() > 0);
             } else {
-                let target = sim.production.terrain_objects.get_mut(&2).unwrap();
-                target.lifecycle = crate::sim::terrain_object::TerrainObjectLifecycle::Limbo;
-                assert!(target.object_alive() && target.health > 0);
+                let target = sim
+                    .terrain_objects
+                    .objects_mut_for_test()
+                    .get_mut(&2)
+                    .unwrap();
+                target.set_lifecycle_for_test(
+                    crate::sim::terrain_object::TerrainObjectLifecycle::Limbo,
+                );
+                assert!(target.object_alive() && target.health() > 0);
             }
         }
         let before = sim.state_hash();
@@ -284,7 +290,7 @@ fn aircraft_request_preserves_rearm_and_state3_does_not_fire_early() {
             3,
         );
     assert!(dispatch(&mut sim, &rules).is_empty());
-    let frame = sim.session.binary_frame as i32;
+    let frame = sim.session.binary_frame() as i32;
     sim.substrate
         .entities
         .get_mut(1)
@@ -322,7 +328,7 @@ fn aircraft_release_uses_raw_burst_above_byte_width_and_one_ammo_charge() {
     assert_eq!(entity.ammo().unwrap().current(), 2);
     assert_eq!(entity.weapon_burst.index(), 0);
     // The Mission return owns cadence, independent of the final rearm jitter.
-    sim.session.binary_frame = 19;
+    sim.session.set_binary_frame_for_test(19);
     assert!(crate::sim::aircraft::tick_aircraft_missions(&mut sim, &rules).is_empty());
     assert_eq!(
         sim.substrate
@@ -334,7 +340,7 @@ fn aircraft_release_uses_raw_burst_above_byte_width_and_one_ammo_charge() {
             .current(),
         2
     );
-    sim.session.binary_frame = 20;
+    sim.session.set_binary_frame_for_test(20);
     crate::sim::aircraft::tick_aircraft_missions(&mut sim, &rules);
     let entity = sim.substrate.entities.get(1).unwrap();
     assert_eq!(entity.ammo().unwrap().current(), 1);
@@ -366,7 +372,7 @@ fn aircraft_release_snapshot_retains_burst_pending_and_mission_delay() {
     restored.scenario_rng = sim.scenario_rng.clone();
     assert_eq!(restored.state_hash(), sim.state_hash());
     for world in [&mut sim, &mut restored] {
-        world.session.binary_frame = 20;
+        world.session.set_binary_frame_for_test(20);
         crate::sim::aircraft::tick_aircraft_missions(world, &rules);
         let entity = world.substrate.entities.get(1).unwrap();
         assert_eq!(entity.weapon_burst.index(), 1);
@@ -457,7 +463,7 @@ fn a_strafer_drops_five_bombs_on_one_pass() {
     let mut bombs = Vec::new();
     let mut states = vec![4u8];
     for frame in 0..400u32 {
-        sim.session.binary_frame = frame;
+        sim.session.set_binary_frame_for_test(frame);
         let fired = dispatch(&mut sim, &rules).len();
         if fired > 0 {
             bombs.push((frame, fired));
@@ -511,7 +517,7 @@ fn a_fighter_out_of_range_cycles_back_to_its_search() {
     assert_eq!(entity.mission.dispatch_timer().delay(), 1);
 
     let before = sim.scenario_rng.clone();
-    sim.session.binary_frame = 1;
+    sim.session.set_binary_frame_for_test(1);
     assert!(dispatch(&mut sim, &rules).is_empty());
     let entity = sim.substrate.entities.get(1).unwrap();
     assert_eq!(crate::sim::aircraft::attack_state(entity), Some(1));
@@ -529,7 +535,7 @@ fn a_fighter_out_of_range_cycles_back_to_its_search() {
 /// The first bullet a strike releases.
 fn first_bullet(sim: &mut Simulation, rules: &RuleSet) -> crate::sim::projectile::Projectile {
     for frame in 0..60u32 {
-        sim.session.binary_frame = frame;
+        sim.session.set_binary_frame_for_test(frame);
         dispatch(sim, rules);
         if let Some((_, bullet)) = sim.projectiles.iter().next() {
             return bullet.clone();
@@ -551,7 +557,7 @@ fn a_strafers_bomb_leaves_at_its_weapon_speed_toward_the_target() {
     assert_eq!(weapon_speed, 76);
     let bomb = first_bullet(&mut sim, &rules);
     let [x, y, z] = bomb
-        .velocity
+        .velocity()
         .native()
         .map(|axis| f64::from_bits(axis.bits()));
     let speed = (x * x + y * y + z * z).sqrt();
@@ -615,8 +621,8 @@ fn a_human_aircraft_shooting_over_shroud_maps_the_cells_around_it() {
             64,
             crate::map::resolved_terrain::test_flat_cell,
         ));
-        sim.fog.width = 64;
-        sim.fog.height = 64;
+        sim.fog.set_width_for_test(64);
+        sim.fog.set_height_for_test(64);
         sim.substrate
             .entities
             .get_mut(1)
@@ -624,10 +630,10 @@ fn a_human_aircraft_shooting_over_shroud_maps_the_cells_around_it() {
             .position
             .set_exact_z_leptons_for_test(Some(1500));
         let americans = sim.interner.intern("Americans");
-        sim.houses.insert(
-            americans,
-            crate::sim::house_state::HouseState::new(americans, 0, None, human, 0, 10),
-        );
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                americans, 0, None, human, 0, 10,
+            ));
         let result = dispatch(&mut sim, &rules);
         assert_eq!(result.len(), 1, "one shot");
         let mapped = |rx, ry| sim.fog.is_ground_unshrouded(americans, rx, ry);
@@ -673,8 +679,8 @@ fn an_aircraft_strike_scatters_the_target_cell_away_from_the_aircraft() {
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
     let russians = sim.interner.intern("Russians");
     let mut house = crate::sim::house_state::HouseState::new(russians, 0, None, false, 0, 10);
-    house.current_iq = 5;
-    sim.houses.insert(russians, house);
+    house.set_current_iq_for_test(5);
+    sim.houses.register(house);
     let tank = sim
         .spawn_object("MTNK", "Russians", 10, 9, 0, &rules)
         .unwrap();

@@ -80,8 +80,8 @@ fn original_approach_candidate_heights() {
                 .flat_map(|ry| (0..width).map(move |rx| test_flat_cell(rx, ry)))
                 .collect(),
         );
-        let sampled =
-            &mut terrain.cells[usize::from(cell[1]) * usize::from(width) + usize::from(cell[0])];
+        let sampled = &mut terrain.cells_mut_for_test()
+            [usize::from(cell[1]) * usize::from(width) + usize::from(cell[0])];
         sampled.level = row["level"].as_u64().unwrap().try_into().unwrap();
         sampled.slope_type = row["slope"].as_u64().unwrap().try_into().unwrap();
         sampled.bridge_facts.raw_flags = row["flags"].as_u64().unwrap().try_into().unwrap();
@@ -135,8 +135,7 @@ fn retail_legionnaire_attacks_distant_object_after_teleport_recovery() {
         for (name, side) in [("Americans", 0), ("Russians", 1)] {
             let owner = sim.intern(name);
             sim.houses
-                .insert(owner, HouseState::new(owner, side, None, true, 0, 10));
-            sim.session.house_order.push(owner);
+                .register(HouseState::new(owner, side, None, true, 0, 10));
         }
         let grid = crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
         let target = sim
@@ -192,7 +191,7 @@ fn retail_legionnaire_attacks_distant_object_after_teleport_recovery() {
                 if stop_after_freeze && !stop_issued {
                     stop = Some(CommandEnvelope::new(
                         owner,
-                        sim.session.tick + 1,
+                        sim.session.tick() + 1,
                         Command::Stop { entity_id: cleg },
                     ));
                     stop_issued = true;
@@ -343,7 +342,7 @@ fn stamp_destroyable_cliff(sim: &mut Simulation) {
                 continue;
             }
             let cell = terrain
-                .cell_mut(8 + u16::from(column), 9 + u16::from(row))
+                .cell_mut_for_test(8 + u16::from(column), 9 + u16::from(row))
                 .unwrap();
             cell.final_tile_index = 100;
             cell.final_sub_tile = sub_tile;

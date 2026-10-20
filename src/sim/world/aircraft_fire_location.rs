@@ -168,7 +168,7 @@ impl Simulation {
             .unwrap_or_else(|| {
                 ground_pose::object_get_coords(entity, self.resolved_terrain.as_ref())
             });
-        let check_shroud = !self.session.game_mode_nonzero && !entity.is_mission_only();
+        let check_shroud = !self.session.game_mode_nonzero() && !entity.is_mission_only();
         let mut claims = None;
         let mut radius = range.wrapping_sub(256);
         while radius > 256 {
@@ -193,7 +193,7 @@ impl Simulation {
                         .resolved_terrain
                         .as_ref()
                         .map_or(cell, |t| t.native_cell_coord(t.native_cell_identity(cell)));
-                    if !self.session.current_house.is_some_and(|viewer| {
+                    if !self.session.current_house().is_some_and(|viewer| {
                         self.fog
                             .is_ground_open(viewer, resolved.0 as u16, resolved.1 as u16)
                     }) {

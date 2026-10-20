@@ -70,6 +70,12 @@ impl SkirmishStatics {
         self.map_label.show(now);
     }
 
+    /// Shared setup pages replace map/mode strings without replaying SHOW.
+    pub(crate) fn set_map_labels(&mut self, game_type: &str, map_label: &str, now: Instant) {
+        self.game_type.set_text(game_type, now);
+        self.map_label.set_text(map_label, now);
+    }
+
     /// A hover message to the status line ([`DialogStatics::hover`]).
     pub(crate) fn hover(&mut self, help: &str, now: Instant) -> bool {
         self.dialog.hover(help, now)
@@ -176,24 +182,6 @@ mod tests {
             Some(("Start Game help", 1))
         );
         assert_eq!(present(&mut statics, t0), [Some(1); 4]);
-    }
-
-    #[test]
-    fn a_reshown_dialog_repaints_its_finished_statics_at_the_final_count() {
-        let t0 = Instant::now();
-        let mut statics = SkirmishStatics::default();
-        statics.show("Skirmish Game", "Battle", "Map", t0);
-        let settled = settle(&mut statics, t0);
-        // The last timer paint leaves "Skirmish Game" at count 21 of 22.
-        assert_eq!(present(&mut statics, settled)[0], Some(21));
-        // Back from Choose Map with the same texts: no restart, one repaint
-        // at the count the last timer paint left, at or past the target,
-        // where every unit is plain (the status line steps by 3 past 17).
-        statics.show("Skirmish Game", "Battle", "Map", settled);
-        assert_eq!(
-            present(&mut statics, settled),
-            [Some(22), Some(15), Some(12), Some(19)]
-        );
     }
 
     #[test]

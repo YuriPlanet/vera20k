@@ -5247,6 +5247,11 @@
           "IvanBomb": null,
           "Sonic": null
         },
+        "CMIN": {
+          "Harvester": "yes",
+          "Primary": "none",
+          "Secondary": null
+        },
         "MTNK": {
           "AttackCursorOnFriendlies": null,
           "AttackFriendlies": null,
@@ -5275,6 +5280,890 @@
     }
   ],
   "schema": 1,
+  "unarmed_object_controls": [
+    {
+      "action": 7,
+      "ally_queries": [
+        {
+          "allied": false,
+          "asking_house": "actor",
+          "target_is_hovered_object": true
+        },
+        {
+          "allied": false,
+          "asking_house": "actor",
+          "target_is_hovered_object": true
+        },
+        {
+          "allied": false,
+          "asking_house": "target",
+          "target_is_hovered_object": false
+        },
+        {
+          "allied": false,
+          "asking_house": "actor",
+          "target_is_hovered_object": true
+        }
+      ],
+      "clicked_action": null,
+      "cursor": {
+        "output": {
+          "cursor_row": 17,
+          "descriptor_dwords": [
+            18,
+            13,
+            4,
+            -1,
+            -1,
+            12345,
+            12345
+          ],
+          "descriptor_hex": "120000000d00000004000000ffffffffffffffff3930000039300000",
+          "entry": "004AAE90",
+          "selected_count": 1
+        }
+      },
+      "detach_calls": 0,
+      "input": {
+        "actor_alliance_mask": 0,
+        "actor_house_index": 0,
+        "allied_objects": true,
+        "alt": false,
+        "attack_cursor_on_friendlies": false,
+        "attack_friendlies": false,
+        "ctrl": false,
+        "cursor_contract": true,
+        "in_range": true,
+        "infested": false,
+        "installed": false,
+        "ivan_bomb": false,
+        "name": "unarmed_normal_unselected",
+        "relation": "other",
+        "route": "object",
+        "shift": false,
+        "sonic": false,
+        "target_alliance_mask": 0,
+        "target_house_index": 1,
+        "target_passengers": 0,
+        "target_selected": false,
+        "unarmed": true
+      },
+      "left_up": {
+        "boundary": "replace_selection",
+        "entry": "0x004AB9B0",
+        "stop": "0x4abe4a"
+      },
+      "main_draw_count": 0,
+      "text_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc",
+      "timer_start_calls": 0,
+      "trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectBest-singleton",
+          "result": 536870912
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0,
+          "target": 536895488
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0,
+          "target": 536895488
+        },
+        {
+          "kind": "original",
+          "name": "AttackFriendliesGrantReady",
+          "pc": "0x7003bd"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoNonAttackTail",
+          "pc": "0x70056c"
+        },
+        {
+          "kind": "original",
+          "name": "SelectReturn",
+          "pc": "0x7005da"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectSimpleDeployerTail",
+          "pc": "0x74037a"
+        },
+        {
+          "kind": "original",
+          "name": "UnitNonePostprocess",
+          "pc": "0x7403eb"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "LeftUp",
+          "pc": "0x4ab9b0"
+        },
+        {
+          "kind": "original",
+          "name": "LeftUpSelect",
+          "pc": "0x4abe4a"
+        }
+      ]
+    },
+    {
+      "action": 7,
+      "ally_queries": [
+        {
+          "allied": false,
+          "asking_house": "actor",
+          "target_is_hovered_object": true
+        },
+        {
+          "allied": false,
+          "asking_house": "actor",
+          "target_is_hovered_object": true
+        },
+        {
+          "allied": false,
+          "asking_house": "target",
+          "target_is_hovered_object": false
+        },
+        {
+          "allied": false,
+          "asking_house": "actor",
+          "target_is_hovered_object": true
+        }
+      ],
+      "clicked_action": null,
+      "cursor": {
+        "output": {
+          "cursor_row": 17,
+          "descriptor_dwords": [
+            18,
+            13,
+            4,
+            -1,
+            -1,
+            12345,
+            12345
+          ],
+          "descriptor_hex": "120000000d00000004000000ffffffffffffffff3930000039300000",
+          "entry": "004AAE90",
+          "selected_count": 1
+        }
+      },
+      "detach_calls": 0,
+      "input": {
+        "actor_alliance_mask": 0,
+        "actor_house_index": 0,
+        "allied_objects": true,
+        "alt": false,
+        "attack_cursor_on_friendlies": false,
+        "attack_friendlies": false,
+        "ctrl": true,
+        "cursor_contract": true,
+        "in_range": true,
+        "infested": false,
+        "installed": false,
+        "ivan_bomb": false,
+        "name": "unarmed_ctrl_unselected",
+        "relation": "other",
+        "route": "object",
+        "shift": false,
+        "sonic": false,
+        "target_alliance_mask": 0,
+        "target_house_index": 1,
+        "target_passengers": 0,
+        "target_selected": false,
+        "unarmed": true
+      },
+      "left_up": {
+        "boundary": "replace_selection",
+        "entry": "0x004AB9B0",
+        "stop": "0x4abe4a"
+      },
+      "main_draw_count": 0,
+      "text_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc",
+      "timer_start_calls": 0,
+      "trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectBest-singleton",
+          "result": 536870912
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0,
+          "target": 536895488
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0,
+          "target": 536895488
+        },
+        {
+          "kind": "original",
+          "name": "AttackFriendliesGrantReady",
+          "pc": "0x7003bd"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoNonAttackTail",
+          "pc": "0x70056c"
+        },
+        {
+          "kind": "original",
+          "name": "SelectReturn",
+          "pc": "0x7005da"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectSimpleDeployerTail",
+          "pc": "0x74037a"
+        },
+        {
+          "kind": "original",
+          "name": "UnitNonePostprocess",
+          "pc": "0x7403eb"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "LeftUp",
+          "pc": "0x4ab9b0"
+        },
+        {
+          "kind": "original",
+          "name": "LeftUpSelect",
+          "pc": "0x4abe4a"
+        }
+      ]
+    },
+    {
+      "action": 2,
+      "ally_queries": [
+        {
+          "allied": false,
+          "asking_house": "actor",
+          "target_is_hovered_object": true
+        },
+        {
+          "allied": false,
+          "asking_house": "actor",
+          "target_is_hovered_object": true
+        },
+        {
+          "allied": false,
+          "asking_house": "actor",
+          "target_is_hovered_object": true
+        },
+        {
+          "allied": false,
+          "asking_house": "actor",
+          "target_is_hovered_object": true
+        },
+        {
+          "allied": false,
+          "asking_house": "actor",
+          "target_is_hovered_object": true
+        },
+        {
+          "allied": false,
+          "asking_house": "actor",
+          "target_is_hovered_object": true
+        }
+      ],
+      "clicked_action": {
+        "boundary": "object_navigation_coordinates",
+        "entry": "0x00738890",
+        "stop": "0x4d78ba"
+      },
+      "cursor": {
+        "output": {
+          "cursor_row": 19,
+          "descriptor_dwords": [
+            41,
+            1,
+            0,
+            52,
+            1,
+            12345,
+            12345
+          ],
+          "descriptor_hex": "29000000010000000000000034000000010000003930000039300000",
+          "entry": "004AAE90",
+          "selected_count": 1
+        }
+      },
+      "detach_calls": 0,
+      "input": {
+        "actor_alliance_mask": 0,
+        "actor_house_index": 0,
+        "allied_objects": true,
+        "alt": false,
+        "attack_cursor_on_friendlies": false,
+        "attack_friendlies": false,
+        "ctrl": false,
+        "cursor_contract": true,
+        "in_range": true,
+        "infested": false,
+        "installed": false,
+        "ivan_bomb": false,
+        "name": "unarmed_normal_selected",
+        "relation": "other",
+        "route": "object",
+        "shift": false,
+        "sonic": false,
+        "target_alliance_mask": 0,
+        "target_house_index": 1,
+        "target_passengers": 0,
+        "target_selected": true,
+        "unarmed": true
+      },
+      "left_up": {
+        "boundary": "object_dispatch",
+        "entry": "0x004AB9B0",
+        "stop": "0x4ae750"
+      },
+      "main_draw_count": 0,
+      "text_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc",
+      "timer_start_calls": 0,
+      "trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectBest-singleton",
+          "result": 536870912
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0,
+          "target": 536895488
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0,
+          "target": 536895488
+        },
+        {
+          "kind": "original",
+          "name": "AttackFriendliesGrantReady",
+          "pc": "0x7003bd"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoNonAttackTail",
+          "pc": "0x70056c"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoNoneReturn",
+          "pc": "0x7005e6"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectSimpleDeployerTail",
+          "pc": "0x74037a"
+        },
+        {
+          "kind": "original",
+          "name": "UnitNonePostprocess",
+          "pc": "0x7403eb"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "LeftUp",
+          "pc": "0x4ab9b0"
+        },
+        {
+          "kind": "original",
+          "name": "UnitClickedObject",
+          "pc": "0x738890"
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0,
+          "target": 536895488
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0,
+          "target": 536895488
+        },
+        {
+          "kind": "original",
+          "name": "AttackFriendliesGrantReady",
+          "pc": "0x7003bd"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoNonAttackTail",
+          "pc": "0x70056c"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoNoneReturn",
+          "pc": "0x7005e6"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectSimpleDeployerTail",
+          "pc": "0x74037a"
+        },
+        {
+          "kind": "original",
+          "name": "UnitNonePostprocess",
+          "pc": "0x7403eb"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "FootClickedObject",
+          "pc": "0x4d74e0"
+        },
+        {
+          "kind": "original",
+          "name": "NoMoveObjectReceiver",
+          "pc": "0x4d77bd"
+        },
+        {
+          "kind": "original",
+          "name": "MoveAdmission",
+          "pc": "0x4d77fb"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        }
+      ]
+    },
+    {
+      "action": 2,
+      "ally_queries": [
+        {
+          "allied": false,
+          "asking_house": "actor",
+          "target_is_hovered_object": true
+        },
+        {
+          "allied": false,
+          "asking_house": "actor",
+          "target_is_hovered_object": true
+        },
+        {
+          "allied": false,
+          "asking_house": "actor",
+          "target_is_hovered_object": true
+        },
+        {
+          "allied": false,
+          "asking_house": "actor",
+          "target_is_hovered_object": true
+        },
+        {
+          "allied": false,
+          "asking_house": "actor",
+          "target_is_hovered_object": true
+        },
+        {
+          "allied": false,
+          "asking_house": "actor",
+          "target_is_hovered_object": true
+        }
+      ],
+      "clicked_action": {
+        "boundary": "object_navigation_coordinates",
+        "entry": "0x00738890",
+        "stop": "0x4d78ba"
+      },
+      "cursor": {
+        "output": {
+          "cursor_row": 19,
+          "descriptor_dwords": [
+            41,
+            1,
+            0,
+            52,
+            1,
+            12345,
+            12345
+          ],
+          "descriptor_hex": "29000000010000000000000034000000010000003930000039300000",
+          "entry": "004AAE90",
+          "selected_count": 1
+        }
+      },
+      "detach_calls": 0,
+      "input": {
+        "actor_alliance_mask": 0,
+        "actor_house_index": 0,
+        "allied_objects": true,
+        "alt": false,
+        "attack_cursor_on_friendlies": false,
+        "attack_friendlies": false,
+        "ctrl": true,
+        "cursor_contract": true,
+        "in_range": true,
+        "infested": false,
+        "installed": false,
+        "ivan_bomb": false,
+        "name": "unarmed_ctrl_selected",
+        "relation": "other",
+        "route": "object",
+        "shift": false,
+        "sonic": false,
+        "target_alliance_mask": 0,
+        "target_house_index": 1,
+        "target_passengers": 0,
+        "target_selected": true,
+        "unarmed": true
+      },
+      "left_up": {
+        "boundary": "object_dispatch",
+        "entry": "0x004AB9B0",
+        "stop": "0x4ae750"
+      },
+      "main_draw_count": 0,
+      "text_sha256": "4cd5557a7490debc493ff965afc4483d8d2f1065f434f6b665cbb8fc4835b0cc",
+      "timer_start_calls": 0,
+      "trace": [
+        {
+          "kind": "original",
+          "name": "DetermineAction",
+          "pc": "0x692610"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectBest-singleton",
+          "result": 536870912
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0,
+          "target": 536895488
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0,
+          "target": 536895488
+        },
+        {
+          "kind": "original",
+          "name": "AttackFriendliesGrantReady",
+          "pc": "0x7003bd"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoNonAttackTail",
+          "pc": "0x70056c"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoNoneReturn",
+          "pc": "0x7005e6"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectSimpleDeployerTail",
+          "pc": "0x74037a"
+        },
+        {
+          "kind": "original",
+          "name": "UnitNonePostprocess",
+          "pc": "0x7403eb"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayEntry",
+          "pc": "0x4aae90"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayModifierAction",
+          "pc": "0x70f0b0"
+        },
+        {
+          "kind": "original",
+          "name": "DisplayNormalSwitch",
+          "pc": "0x4ab449"
+        },
+        {
+          "kind": "original",
+          "name": "LeftUp",
+          "pc": "0x4ab9b0"
+        },
+        {
+          "kind": "original",
+          "name": "UnitClickedObject",
+          "pc": "0x738890"
+        },
+        {
+          "kind": "original",
+          "name": "UnitObject",
+          "pc": "0x73fd50"
+        },
+        {
+          "kind": "original",
+          "name": "FootObject",
+          "pc": "0x4dded0"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoObject",
+          "pc": "0x6ffec0"
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0,
+          "target": 536895488
+        },
+        {
+          "kind": "seam",
+          "name": "SelectWeapon",
+          "result": 0,
+          "target": 536895488
+        },
+        {
+          "kind": "original",
+          "name": "AttackFriendliesGrantReady",
+          "pc": "0x7003bd"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoNonAttackTail",
+          "pc": "0x70056c"
+        },
+        {
+          "kind": "original",
+          "name": "TechnoNoneReturn",
+          "pc": "0x7005e6"
+        },
+        {
+          "kind": "original",
+          "name": "ObjectSimpleDeployerTail",
+          "pc": "0x74037a"
+        },
+        {
+          "kind": "original",
+          "name": "UnitNonePostprocess",
+          "pc": "0x7403eb"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        },
+        {
+          "kind": "original",
+          "name": "FootClickedObject",
+          "pc": "0x4d74e0"
+        },
+        {
+          "kind": "original",
+          "name": "NoMoveObjectReceiver",
+          "pc": "0x4d77bd"
+        },
+        {
+          "kind": "original",
+          "name": "MoveAdmission",
+          "pc": "0x4d77fb"
+        },
+        {
+          "kind": "original",
+          "name": "IsControllable",
+          "pc": "0x700c40"
+        },
+        {
+          "kind": "original",
+          "name": "BunkerGate",
+          "pc": "0x700c66"
+        }
+      ]
+    }
+  ],
   "voice_controls": [
     {
       "input": {

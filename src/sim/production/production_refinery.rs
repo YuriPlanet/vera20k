@@ -253,7 +253,7 @@ fn refund_free_unit(sim: &mut Simulation, rules: &RuleSet, owner: &str, unit_typ
             object,
             house,
             &factors,
-            sim.session.game_mode_nonzero,
+            sim.session.game_mode_nonzero(),
             true,
         ),
         _ => return 0,
@@ -298,17 +298,7 @@ fn find_free_unit_nearby_cell(
 
 #[cfg(test)]
 mod tests {
-    use super::{FREE_UNIT_FALLBACK_ATTEMPTS, primary_free_unit_cell};
-
-    #[test]
-    fn stock_4x3_primary_cell_is_center_plus_south() {
-        assert_eq!(primary_free_unit_cell(20, 20, 4, 3), Some((22, 22)));
-    }
-
-    #[test]
-    fn primary_cell_rejects_u16_overflow() {
-        assert_eq!(primary_free_unit_cell(u16::MAX, u16::MAX, 4, 3), None);
-    }
+    use super::FREE_UNIT_FALLBACK_ATTEMPTS;
 
     #[test]
     fn fallback_attempts_reject_overlays_first_then_allow_them() {

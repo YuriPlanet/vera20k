@@ -33,7 +33,7 @@ fn arena(rules: &RuleSet) -> Simulation {
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
     sim.input_delay_ticks = 0;
-    sim.session.binary_frame = 1;
+    sim.session.set_binary_frame_for_test(1);
     sim
 }
 
@@ -43,7 +43,7 @@ fn spawn(sim: &mut Simulation, rules: &RuleSet, kind: &str, owner: &str, cell: (
 }
 
 fn start_mission(sim: &mut Simulation, id: u64, mission: MissionType) {
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     sim.mission_assign_exact(id, MissionId::from_known(mission), now)
         .unwrap();
     let _ = sim.mission_commence_exact(id, now);
@@ -60,7 +60,7 @@ fn target(sim: &mut Simulation, id: u64, target: u64) {
 
 fn order(sim: &mut Simulation, owner: &str, command: Command) {
     let owner = sim.interner.intern(owner);
-    let tick = sim.session.tick + 1;
+    let tick = sim.session.tick() + 1;
     sim.queue_command(CommandEnvelope::new(owner, tick, command));
 }
 
@@ -1048,4 +1048,51 @@ fn a_brute_ordered_to_attack_a_tank_walks_beside_it_and_smashes_it() {
     assert!(rx.abs_diff(16) <= 1 && ry.abs_diff(10) <= 1, "{first:?}");
     let smashed = smashed.expect("the Brute smashes the tank");
     assert!(smashed.distance <= range(&rules, "Smash"), "{smashed:?}");
+}
+
+/// Production Hunt must carry a stock Kirov through approach and bomb release.
+/// A stationary power plant keeps target motion out of this regression.
+#[test]
+fn a_hunting_kirov_closes_on_a_building_and_drops_bombs() {
+    let Some(rules) = retail_rules() else {
+        return;
+    };
+    let mut sim = arena(&rules);
+    spawn(&mut sim, &rules, "NAPOWR", "Russians", (2, 24));
+    let victim = spawn(&mut sim, &rules, "GAPOWR", "Americans", (18, 10));
+    let kirov = spawn(&mut sim, &rules, "ZEP", "Russians", (4, 10));
+    let goal = crate::sim::movement::ground_pose::object_get_coords(
+        sim.substrate.entities.get(victim).unwrap(),
+        sim.resolved_terrain.as_ref(),
+    );
+    let health = sim.substrate.entities.get(victim).unwrap().health.current();
+    start_mission(&mut sim, kirov, MissionType::Hunt);
+    let mut closest = i32::MAX;
+    let mut fired = false;
+    let mut seen = Vec::new();
+    let mut last = None;
+    for visit in 0..900 {
+        step(&mut sim, &rules);
+        let actor = sim.substrate.entities.get(kirov).expect("Kirov lives");
+        assert_eq!(actor.mission.current().known(), Some(MissionType::Hunt));
+        let at = position_world_coord(&actor.position);
+        let distance =
+            crate::util::native_x87::distance_3d_leptons([at.x, at.y, 0], [goal.x, goal.y, 0]);
+        closest = closest.min(distance);
+        fired |= actor.rearm_timer.duration() > 0;
+        let state = (actor.attack_target.target(), actor.navigation.nav_com());
+        if Some(state) != last {
+            seen.push((visit, state, distance, at));
+            last = Some(state);
+        }
+        if !sim.substrate.entities.contains(victim)
+            || sim.substrate.entities.get(victim).unwrap().health.current() < health
+        {
+            assert!(fired, "bomb damage must follow a committed shot");
+            return;
+        }
+    }
+    panic!(
+        "Hunt never bombed the stationary plant: closest={closest}, fired={fired}, transitions={seen:?}"
+    );
 }

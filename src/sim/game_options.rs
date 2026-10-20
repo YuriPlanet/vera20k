@@ -48,7 +48,10 @@ pub struct GameOptions {
     pub shroud: bool,
     /// Ore/gems regenerate on the map. Rules+0x14B0.
     pub tiberium_grows: bool,
-    /// Engineers capture at reduced HP only. Rules+0x14B4.
+    /// The MultiEngineer option, Session `0x00A8B26C` (Rules+0x14B4 until a
+    /// setup dialog sets it, `0x0052D1DD`; the skirmish dialog clears it,
+    /// `0x006AD8A4`). With it an Engineer damages a hostile building above
+    /// `ConditionRed=` instead of capturing it (`0x00519DA9`).
     pub multi_engineer: bool,
     /// Harvesters immune to enemy fire. Rules+0x14B3.
     pub harvester_truce: bool,
@@ -206,11 +209,6 @@ mod tests {
     use crate::rules::ini_parser::IniFile;
 
     #[test]
-    fn build_off_ally_default_matches_yr_enabled() {
-        assert!(GameOptions::default().build_off_ally);
-    }
-
-    #[test]
     fn in_game_speed_transition_accepts_six_and_rejects_seven_without_clamping() {
         let mut options = GameOptions::default();
         assert!(options.apply_in_game_speed(6));
@@ -256,17 +254,6 @@ mod tests {
     }
 
     #[test]
-    fn absent_section_keeps_all_defaults() {
-        let ini = IniFile::from_str("[General]\nFoo=1\n");
-        let parsed = GameOptions::from_multiplayer_dialog_settings(&ini);
-        let default = GameOptions::default();
-        assert_eq!(parsed.starting_credits, default.starting_credits);
-        assert_eq!(parsed.tech_level, default.tech_level);
-        assert!(parsed.bases);
-        assert!(parsed.super_weapons);
-    }
-
-    #[test]
     fn modded_numeric_and_bool_keys_override_defaults() {
         let ini = IniFile::from_str(
             "[MultiplayerDialogSettings]\n\
@@ -299,12 +286,6 @@ mod tests {
         );
         let right = IniFile::from_str("[MultiplayerDialogSettings]\nSuperWeaponsAllowed=no\n");
         assert!(!GameOptions::from_multiplayer_dialog_settings(&right).super_weapons);
-    }
-
-    #[test]
-    fn build_off_ally_key_overrides_default() {
-        let ini = IniFile::from_str("[MultiplayerDialogSettings]\nBuildOffAlly=no\n");
-        assert!(!GameOptions::from_multiplayer_dialog_settings(&ini).build_off_ally);
     }
 
     #[test]

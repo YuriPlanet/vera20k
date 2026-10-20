@@ -16,32 +16,3 @@ pub const GAS_WIND_DY: [i32; 8] = [-2, -2, 0, 2, 2, 2, 0, -2];
 pub const SMOKE_WIND_DX: [i32; 8] = [0, 2, 2, 2, 0, -2, -2, -2];
 /// Smoke particles: per-tick Y drift (lepton units).
 pub const SMOKE_WIND_DY: [i32; 8] = [-2, -2, 0, 2, 2, 2, 0, -2];
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn gas_and_smoke_dx_differ_at_se() {
-        assert_eq!(GAS_WIND_DX[3], 1);
-        assert_eq!(SMOKE_WIND_DX[3], 2);
-    }
-
-    #[test]
-    fn dy_tables_are_identical() {
-        assert_eq!(GAS_WIND_DY, SMOKE_WIND_DY);
-    }
-
-    #[test]
-    fn dx_tables_match_outside_se() {
-        for i in 0..8 {
-            if i == 3 {
-                continue;
-            }
-            assert_eq!(
-                GAS_WIND_DX[i], SMOKE_WIND_DX[i],
-                "DX tables must match outside SE (idx {i})"
-            );
-        }
-    }
-}

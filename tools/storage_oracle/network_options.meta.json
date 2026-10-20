@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original D7 WM_COMMAND/IDOK validation and field writes plus session698161..69822D once-only MainRng initialization and repeated settings reads",
+  "assumptions": [
+    "D7 already exists; controls supply bounded ASCII text, selected adapter and checkbox state. Every row has a fresh VM and explicit previous settings.",
+    "Original CRT atoi7C9BFD, strtok7C9CC2 and sscanf7CA530 execute with image static C-locale tables; per-thread CRT storage is supplied zeroed.",
+    "The dialog's initial population, edit widget filtering/truncation, native Win32 rendering, file persistence internals and network transport are outside this component comparison.",
+    "Initialization histories enter at698161 with Session in EBP and stop69822D after SendDelay/PortNumberOverride stores; the broader country/phonebook reader is not claimed.",
+    "Each initialization history uses shared seeded_struct executing original65C6D0, a zero first-entry gate, and two calls on the same VM without resetting RNG or gate. Full3F4-byte RNG states and actual65C84B stores are retained."
+  ],
+  "substitutions": [
+    "Existing shell_relayout.Machine provides mapped retail image, original D7 resource children and explicit Win32 import transport; unexpected imports fail.",
+    "Common shell message handler622B50 returns unhandled; GetWindowLongA returns a supplied result cell; GetDlgItem uses original resource control IDs.",
+    "StringTable734E60 returns an opaque original key; message-box5D3490 records that key and current settings instead of rendering or waiting for dismissal.",
+    "CRT _getptd7D140B returns supplied per-thread storage; no decimal or hexadecimal parser is substituted.",
+    "Firewall reset5D8FC0 and RawFile/INI persistence calls are ordered sinks; no disk or live network state changes.",
+    "Initialization uses existing building_body_rules.Fixture to supply cached INI entries with original native key CRCs at process owner8870C0; original5276D0/5295F0 parsers,65C7E0 RNG and5D93D0 firewall reader execute unchanged. No parser or RNG result substitution."
+  ],
+  "entry_points": {
+    "dialog": "0x00560480",
+    "atoi": "0x007C9BFD",
+    "strtok": "0x007C9CC2",
+    "sscanf": "0x007CA530",
+    "session_prefix": "0x00698161",
+    "session_stop": "0x0069822D",
+    "rng_seed": "0x0065C6D0",
+    "rng_ranged": "0x0065C7E0",
+    "read_int": "0x005276D0",
+    "read_bool": "0x005295F0",
+    "firewall_read": "0x005D93D0"
+  },
+  "replay_command": "python -m tools.storage_oracle.network_options",
+  "payload_sha256": "df237caa7bf72a8cbf62b4c6d9e2fc2853936e944736c0e9a42c1c0e910e50d8"
+}

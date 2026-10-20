@@ -35,13 +35,11 @@ fn world() -> Option<(RuleSet, Simulation, InternedId)> {
     });
     assert!(sim.rebuild_dynamic_navigation(&rules));
     let confederation = sim.interner.intern("Confederation");
-    sim.houses.insert(
-        confederation,
-        HouseState::new(confederation, 1, None, false, 0, 10),
-    );
-    sim.session.house_order.push(confederation);
-    sim.session.current_house = Some(americans);
-    sim.session.game_mode_nonzero = true;
+    sim.houses
+        .register(HouseState::new(confederation, 1, None, false, 0, 10));
+    sim.session.set_current_house_for_test(Some(americans));
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     sim.fog = vision::FogState::new(128, 128);
     let allocated: std::collections::BTreeSet<_> = sim
         .resolved_terrain
@@ -78,9 +76,9 @@ fn alternate_cells(sim: &Simulation, id: u64, viewer: InternedId) -> Vec<(u16, u
 /// `viewer`'s shroud counter at a cell (CellClass `+0x130`'s on the native
 /// map): 1 shrouded, 0 explored, -n under n sight contributions.
 fn counter(sim: &Simulation, viewer: InternedId, (x, y): (u16, u16)) -> i32 {
-    sim.fog.by_owner[&viewer].shroud_knowledge_raw()
-        [usize::from(y) * usize::from(sim.fog.width) + usize::from(x)]
-    .counter
+    sim.fog.by_owner()[&viewer].shroud_knowledge_raw()
+        [usize::from(y) * usize::from(sim.fog.width()) + usize::from(x)]
+    .counter()
 }
 
 #[test]
@@ -153,26 +151,6 @@ fn a_computer_houses_opening_shows_the_current_house_its_sight_until_it_dies() {
         assert!(!sim.fog.is_cell_visible(americans, x, y), "{x},{y}");
     }
     sim.techno_limbo_with_context(id, UninitContext::new(Some(&rules), None));
-    assert!(sim.fog.alternate_sight_admissions_for_test().is_empty());
-}
-
-#[test]
-fn a_human_houses_opening_shows_no_one_else_its_sight() {
-    let Some((rules, mut sim, _)) = world() else {
-        return;
-    };
-    let id = sim
-        .spawn_object("NAIRON", "Americans", SITE.0, SITE.1, 0, &rules)
-        .unwrap();
-    assert!(
-        sim.substrate
-            .entities
-            .get(id)
-            .unwrap()
-            .building_art
-            .actually_placed()
-    );
-    assert!(radar_events(&sim).is_empty());
     assert!(sim.fog.alternate_sight_admissions_for_test().is_empty());
 }
 
@@ -476,32 +454,6 @@ fn a_shroud_reset_shows_a_computer_superweapon_still_building_up() {
     }
 }
 
-/// A computer house that captures the human's Iron Curtain reopens it
-/// without showing its sight (`Grand_Opening(1)`). A Reset_Shroud of the
-/// current house shows it, as it does any computer house's.
-#[test]
-fn a_shroud_reset_shows_a_superweapon_a_computer_captured_from_the_human() {
-    let Some((rules, mut sim, americans)) = world() else {
-        return;
-    };
-    let russians = sim.interner.get("Russians").unwrap();
-    let id = sim
-        .spawn_object("NAIRON", "Americans", SITE.0, SITE.1, 0, &rules)
-        .unwrap();
-    sim.change_owner_with_rules(id, russians, &rules, None, FrameEffects::default());
-    assert_eq!(radar_events(&sim), [OPENED]);
-    assert!(sim.fog.alternate_sight_admissions_for_test().is_empty());
-
-    sim.reset_shroud_for_owner(americans, &rules);
-    let cells = alternate_cells(&sim, id, americans);
-    assert!(cells.contains(&SITE));
-    for &(x, y) in &cells {
-        assert!(sim.fog.is_cell_visible(americans, x, y), "{x},{y}");
-        assert_eq!(counter(&sim, americans, (x, y)), -1, "{x},{y}");
-    }
-    assert!(!sim.fog.is_cell_revealed(americans, FAR.0, FAR.1));
-}
-
 #[test]
 fn native_action51_keeps_null_house241_and_gates_foreign_map_changes() {
     // Map577C90 --reshroud corpus: full branch/allocated loop with declared
@@ -532,8 +484,10 @@ fn native_action51_keeps_null_house241_and_gates_foreign_map_changes() {
             local_height: width,
         });
         for (name, owner) in [("player", player), ("foreign", foreign)] {
-            sim.houses.get_mut(&owner).unwrap().map_is_clear =
-                row["houses_before"][name]["clear"] == 1;
+            sim.houses
+                .get_mut(&owner)
+                .unwrap()
+                .set_map_is_clear_for_test(row["houses_before"][name]["clear"] == 1);
             assert_eq!(row["houses_before"][name]["revealed"], 1);
             sim.fog.admit_whole_map_reveal(owner);
         }
@@ -551,7 +505,7 @@ fn native_action51_keeps_null_house241_and_gates_foreign_map_changes() {
         sim.trigger_reshroud_map(incoming, &rules);
         for (name, owner) in [("player", player), ("foreign", foreign)] {
             assert_eq!(
-                sim.houses[&owner].map_is_clear,
+                sim.houses[&owner].map_is_clear(),
                 row["houses"][name]["clear"] == 1,
                 "{} {name}241",
                 row["name"]

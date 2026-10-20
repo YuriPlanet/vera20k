@@ -54,9 +54,9 @@ fn target_role(roles: &Roles, target: Option<TargetKind>) -> Value {
 
 fn scene(rules: &RuleSet, cursor: &Value) -> (Simulation, Roles) {
     let mut sim = Simulation::new();
-    sim.session.binary_frame = 36;
-    sim.session.map_width = 64;
-    sim.session.map_height = 64;
+    sim.session.set_binary_frame_for_test(36);
+    sim.session.set_map_width_for_test(64);
+    sim.session.set_map_height_for_test(64);
     sim.install_resolved_terrain_for_new_map(crate::map::resolved_terrain::test_grid(
         64,
         64,
@@ -65,8 +65,7 @@ fn scene(rules: &RuleSet, cursor: &Value) -> (Simulation, Roles) {
     sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(64, 64));
     let owner = sim.interner.intern("Americans");
     sim.houses
-        .insert(owner, HouseState::new(owner, 0, None, true, 0, 10));
-    sim.session.house_order.push(owner);
+        .register(HouseState::new(owner, 0, None, true, 0, 10));
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
     let mut roles = Roles::new();
@@ -107,18 +106,18 @@ fn scene(rules: &RuleSet, cursor: &Value) -> (Simulation, Roles) {
 
 fn system_state(system: &ParticleSystem, roles: &Roles) -> Value {
     json!({
-        "native_id":system.native_unique_id(), "position":system.coords.to_array(),
-        "offset":system.offset.to_array(), "target_coords":system.target_coords.to_array(),
-        "owner":system.owner_entity.map(|id|roles.iter().find(|(_,value)|**value==id).unwrap().0),
-        "retained_target":target_role(roles,system.target_ref),
-        "owner_house_present":system.owner_house.is_some(), "lifetime":system.lifetime,
-        "spark_spawn_frames":system.spark_spawn_frames, "stage":system.facing,
-        "spawn_timer_f32_bits":system.spawn_timer().bits(), "done":system.done_spawning,
+        "native_id":system.native_unique_id(), "position":system.coords().to_array(),
+        "offset":system.offset().to_array(), "target_coords":system.target_coords().to_array(),
+        "owner":system.owner_entity().map(|id|roles.iter().find(|(_,value)|**value==id).unwrap().0),
+        "retained_target":target_role(roles,system.target_ref()),
+        "owner_house_present":system.owner_house().is_some(), "lifetime":system.lifetime(),
+        "spark_spawn_frames":system.spark_spawn_frames(), "stage":system.facing(),
+        "spawn_timer_f32_bits":system.spawn_timer().bits(), "done":system.done_spawning(),
         // Original ctor62DD0A writes zero; the retained Spark owner documents
         // the absence of an active setter and does not store a second flag.
-        "direction_used":false, "particle_count":system.particles.len(),
-        "particle_native_ids":system.particles.iter().map(|p|p.native_unique_id()).collect::<Vec<_>>(),
-        "alive":system.alive(), "logic":system.in_logic_vector,
+        "direction_used":false, "particle_count":system.particles().len(),
+        "particle_native_ids":system.particles().iter().map(|p|p.native_unique_id()).collect::<Vec<_>>(),
+        "alive":system.alive(), "logic":system.in_logic_vector(),
     })
 }
 
@@ -290,7 +289,7 @@ fn original_particle_constructor_separates_supplied_coordinate_from_owner_target
             sim.resolved_terrain
                 .as_mut()
                 .unwrap()
-                .cell_mut(44, 48)
+                .cell_mut_for_test(44, 48)
                 .unwrap()
                 .bridge_facts
                 .raw_flags = crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
@@ -554,7 +553,7 @@ fn native_id(sim: &Simulation, id: u64) -> i32 {
     }
     sim.particle_systems()
         .iter()
-        .flat_map(|(_, system)| &system.particles)
+        .flat_map(|(_, system)| system.particles())
         .find(|particle| particle.stable_id() == id)
         .unwrap()
         .native_unique_id()
@@ -630,17 +629,18 @@ fn original_welding_live_logic_boundaries_match_rng_ids_children_and_same_pass_l
     let retirement = &row["retirement_before_drain"];
     let mut compared_produced_child = false;
     for tick in 1..=last {
-        sim.session.binary_frame = int(&row["input"]["first_frame"]) as u32 + tick as u32 - 1;
+        sim.session
+            .set_binary_frame_for_test(int(&row["input"]["first_frame"]) as u32 + tick as u32 - 1);
         sim.object_ai_stage(Some(&retail.rules));
         if !compared_produced_child
             && let Some(particle) = sim
                 .particle_systems()
                 .get(id)
-                .and_then(|system| system.particles.first())
+                .and_then(|system| system.particles().first())
         {
-            let spark = particle.spark.unwrap();
+            let spark = particle.spark().unwrap();
             let expected = &row["first_produced_particle"];
-            assert_eq!(json!(particle.coords.to_array()), expected["world"]);
+            assert_eq!(json!(particle.coords().to_array()), expected["world"]);
             assert_eq!(json!(spark.start_rgb), expected["start_rgb"]);
             assert_eq!(json!(spark.color_index), expected["color_index"]);
             assert_eq!(
@@ -675,7 +675,7 @@ fn original_welding_live_logic_boundaries_match_rng_ids_children_and_same_pass_l
                 for (field, actual) in [
                     ("alive", alive),
                     ("in_limbo", in_limbo),
-                    ("marked_for_deletion", particle.marked_for_deletion),
+                    ("marked_for_deletion", particle.marked_for_deletion()),
                     (
                         "display_registered",
                         sim.display_layers().layer_of(child_id).is_some(),
@@ -687,7 +687,7 @@ fn original_welding_live_logic_boundaries_match_rng_ids_children_and_same_pass_l
                     (
                         "in_parent_vector",
                         sim.particle_systems().iter().any(|(_, system)| {
-                            system.particles.iter().any(|p| p.stable_id() == child_id)
+                            system.particles().iter().any(|p| p.stable_id() == child_id)
                         }),
                     ),
                     ("object_registered", body_retained),
@@ -746,7 +746,9 @@ fn detached_particle_snapshot_keeps_bodies_and_queue_until_the_common_drain() {
     );
     let last = int(&native["retirement_before_drain"]["tick"]);
     for tick in 1..=last {
-        sim.session.binary_frame = int(&native["input"]["first_frame"]) as u32 + tick as u32 - 1;
+        sim.session.set_binary_frame_for_test(
+            int(&native["input"]["first_frame"]) as u32 + tick as u32 - 1,
+        );
         sim.object_ai_stage(Some(&retail.rules));
         if tick != last {
             sim.process_pending_delete();
@@ -823,7 +825,7 @@ fn system_child_reference_expiry_retains_the_live_body_until_common_uninit() {
         .particle_systems()
         .get(system_id)
         .unwrap()
-        .particles
+        .particles()
         .iter()
         .map(|particle| particle.stable_id())
         .collect();
@@ -838,7 +840,7 @@ fn system_child_reference_expiry_retains_the_live_body_until_common_uninit() {
         sim.particle_systems()
             .get(system_id)
             .unwrap()
-            .particles
+            .particles()
             .iter()
             .map(|particle| particle.stable_id())
             .collect::<Vec<_>>(),

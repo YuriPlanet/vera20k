@@ -41,7 +41,7 @@ fn stock_world(rules: &RuleSet, input: &Value) -> Simulation {
             serde_json::from_value(row.clone()).unwrap();
         let index = usize::from(y) * 512 + usize::from(x);
         allocated.push((x, y));
-        let cell = &mut terrain.cells[index];
+        let cell = &mut terrain.cells_mut_for_test()[index];
         cell.final_tile_index = tile;
         cell.final_sub_tile = subtile;
         cell.level = level;
@@ -142,7 +142,7 @@ fn bridge_rim_stock_damage_events_match_original_body_perpendicular_and_cleanup(
                             .unwrap()
                             .level,
                     );
-            sim.radar_terrain_dirty_cells.clear();
+            sim.dirty_cells.clear_radar_for_test();
             let collapsed = apply_bridge_damage_events_with_overlay_registry(
                 &mut sim,
                 &rules,
@@ -179,9 +179,11 @@ fn bridge_rim_stock_damage_events_match_original_body_perpendicular_and_cleanup(
                 }
             }
             assert_eq!(
-                sim.radar_terrain_dirty_cells, radar,
+                sim.dirty_cells.radar(),
+                radar,
                 "{} hit{} radar",
-                case["name"], hit["input"]
+                case["name"],
+                hit["input"]
             );
             for change in hit["changes"].as_array().unwrap() {
                 let coord: (u16, u16) =
@@ -193,7 +195,7 @@ fn bridge_rim_stock_damage_events_match_original_body_perpendicular_and_cleanup(
                     .cell(coord.0, coord.1)
                     .unwrap();
                 assert_eq!(
-                    sim.dynamic_terrain_cells[&coord],
+                    *sim.dynamic_terrain_cells.get(&coord).unwrap(),
                     DynamicTerrainCellState::capture(terrain)
                 );
                 if change["before"]["flags"].as_u64().unwrap() & 0x100 != 0

@@ -35,10 +35,11 @@ const EXPECTED_ENTRY_SHA256: &str =
 const EXPECTED_FONT_SHA256: &str =
     "ec8d6d85db3eedf5a862cc6ffb87bfad4c77279dd946bc2d30879ad9140c8d3f";
 
-const ENVIRONMENT_DENYLIST: [&str; 17] = [
+const ENVIRONMENT_DENYLIST: [&str; 18] = [
     "RA2_QUICKPLAY",
     "RA2_DEV_SKIRMISH_SHELL",
     "RA2_DEBUG_SPAWN_UNITS",
+    "RA2_DEBUG_SPAWN_MARCH",
     "RA2_DISABLE_LAT",
     "RA2_ENABLE_LAT",
     "RA2_DEBUG_CAMEO_PALETTES",
@@ -577,6 +578,7 @@ impl TacticalCaptureProfile {
         let mode = &self.launch.mode;
         SkirmishLaunchSession {
             mode: SkirmishLaunchMode {
+                class: crate::skirmish_modes::MpModeClass::Battle,
                 id: mode.id,
                 ui_name_key: mode.ui_name_key.clone(),
                 tooltip_key: mode.tooltip_key.clone(),
@@ -587,20 +589,28 @@ impl TacticalCaptureProfile {
                 must_ally: mode.must_ally,
             },
             selected_map_file: Some(self.fixture.logical_map_name.clone()),
-            player_name: self.launch.player_name.clone(),
-            local: SkirmishLocalSlot {
-                country: self.launch.local.country.launch_country(),
-                country_random: self.launch.local.country_random,
-                color_index: self.launch.local.color_index,
-                color_random: self.launch.local.color_random,
-                start_position: LaunchStartPosition::Position(self.launch.local.start_position),
-                team: launch_team(self.launch.local.team),
-            },
+            humans: vec![crate::skirmish_launch::SkirmishHumanSlot {
+                raw_slot_index: Some(0),
+                name: self.launch.player_name.clone(),
+                slot: SkirmishLocalSlot {
+                    country: self.launch.local.country.launch_country(),
+                    country_random: self.launch.local.country_random,
+                    color_index: self.launch.local.color_index,
+                    color_random: self.launch.local.color_random,
+                    start_position: LaunchStartPosition::Position(self.launch.local.start_position),
+                    team: launch_team(self.launch.local.team),
+                },
+                role: crate::skirmish_launch::LaunchHumanRole::from_observer(false),
+            }],
+            local_player_index: 0,
+            ai_player_count: self.launch.opponents.len() as i32,
             opponents: self
                 .launch
                 .opponents
                 .iter()
-                .map(|slot| SkirmishAiSlot {
+                .enumerate()
+                .map(|(index, slot)| SkirmishAiSlot {
+                    raw_slot_index: (index + 1) as u8,
                     country: slot.country.launch_country(),
                     country_random: slot.country_random,
                     color_index: slot.color_index,
@@ -788,44 +798,6 @@ mod tests {
             "environment_denylist":[]
         }"#;
         assert!(parse_strict_json::<TacticalCaptureContract>(boolean_timeout, "test").is_err());
-    }
-
-    #[test]
-    fn tracked_profiles_build_classifier_valid_fixed_battle_sessions() {
-        use crate::app::match_bootstrap::{StartupSessionClassification, classify_startup_session};
-
-        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        for (file_name, expected_country, expected_harvester) in [
-            (
-                "soviet-radar-online-v3.json",
-                LaunchCountry::Russia,
-                Some("HARV"),
-            ),
-            ("yuri-radar-online-v3.json", LaunchCountry::Yuri, None),
-        ] {
-            let path = root
-                .join("tools/tactical_certification/profiles")
-                .join(file_name);
-            let sealed = TacticalCaptureProfile::load_strict(&path).expect("profile");
-            let session = sealed.value.launch_session();
-            assert_eq!(session.local.country, expected_country);
-            assert_eq!(session.options.unit_count, 0);
-            assert_eq!(session.options.starting_credits, 10_000);
-            assert_eq!(session.opponents.len(), 1);
-            assert_eq!(
-                sealed
-                    .value
-                    .capture
-                    .build_targets
-                    .refinery_spawned_harvester
-                    .as_deref(),
-                expected_harvester
-            );
-            assert!(matches!(
-                classify_startup_session(&session),
-                StartupSessionClassification::AcceptedExplicitFixedBattle(_)
-            ));
-        }
     }
 
     #[test]

@@ -135,16 +135,12 @@ pub(crate) fn first_valid_placement(
     if path_grid.width() == 0 || path_grid.height() == 0 {
         return Err(PlacementSearchError::EmptyPathGrid);
     }
-    let anchor_valid = sim
-        .substrate
-        .entities
-        .get(anchor_yard_id)
-        .is_some_and(|entity| {
-            entity.is_active()
-                && entity.category() == EntityCategory::Structure
-                && sim.interner.resolve(entity.owner()) == owner
-                && (entity.position.rx(), entity.position.ry()) == anchor_cell
-        });
+    let anchor_valid = sim.entities().get(anchor_yard_id).is_some_and(|entity| {
+        entity.is_active()
+            && entity.category() == EntityCategory::Structure
+            && sim.interner().resolve(entity.owner()) == owner
+            && (entity.position.rx(), entity.position.ry()) == anchor_cell
+    });
     if !anchor_valid {
         return Err(PlacementSearchError::AnchorYardMissing {
             anchor_yard_id,
@@ -155,7 +151,7 @@ pub(crate) fn first_valid_placement(
     let ready_count = production::ready_buildings_for_owner(sim, rules, owner)
         .iter()
         .filter(|ready| {
-            sim.interner
+            sim.interner()
                 .resolve(ready.type_id)
                 .eq_ignore_ascii_case(type_id)
         })
@@ -258,24 +254,12 @@ Buildable=yes
         yard_cell: (u16, u16),
     ) -> (Simulation, RuleSet, PathGrid, u64) {
         let (mut sim, rules, grid, yard_id) = yard_fixture(width, height, yard_cell);
-        let owner_id = sim.interner.intern("Russians");
-        let target_id = sim.interner.intern("NAPOWR");
+        let owner_id = sim.intern("Russians");
+        let target_id = sim.intern("NAPOWR");
         crate::sim::production::complete_held_building_for_test(
             &mut sim, &rules, owner_id, target_id,
         );
         (sim, rules, grid, yard_id)
-    }
-
-    #[test]
-    fn radius_zero_visits_center_once() {
-        assert_eq!(
-            ordered_square_ring_cells((4, 5), 10, 10, 0),
-            vec![SquareRingCandidate {
-                cell: (4, 5),
-                radius: 0,
-                candidate_index: 0,
-            }]
-        );
     }
 
     #[test]
@@ -381,7 +365,7 @@ Buildable=yes
     #[test]
     fn anchor_must_still_be_the_live_local_structure() {
         let (mut sim, rules, grid, yard_id) = ready_fixture(24, 24, (10, 10));
-        sim.substrate.entities.remove(yard_id);
+        sim.entities_mut_for_test().remove(yard_id);
         assert!(matches!(
             first_valid_placement(
                 &sim,

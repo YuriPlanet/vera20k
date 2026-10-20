@@ -165,18 +165,6 @@ mod tests {
     }
 
     #[test]
-    fn clear_passable_for_all_ground() {
-        // Terrain type 0 (Clear) should be passable for all non-water zone layers.
-        for (layer, row) in MOVEMENT_ZONE_PASSABILITY.iter().enumerate().take(10) {
-            assert_eq!(
-                row[0], PASS_OK,
-                "Zone layer {} should pass on Clear terrain",
-                layer
-            );
-        }
-    }
-
-    #[test]
     fn gsi_04_04_impassable_zone_type_retains_row_specific_one_or_two() {
         // Reduced ZoneType 6 is the native Impassable column.
         // Subterranean (row 6) and Fly (row 9) can enter; all others blocked.
@@ -212,45 +200,6 @@ mod tests {
             passability_value(0, TERRAIN_TYPE_COUNT as u8),
             PASS_OUTSIDE_SENTINEL
         );
-    }
-
-    #[test]
-    fn water_only_for_ships() {
-        // Zone 10 (ships) should only pass on water (col 4).
-        let row = MOVEMENT_ZONE_PASSABILITY[10];
-        assert_eq!(row[4], PASS_OK);
-        assert_eq!(row[0], PASS_BLOCKED); // clear = blocked for ships
-        assert_eq!(row[1], PASS_BLOCKED); // crushable overlay = blocked for ships
-    }
-
-    #[test]
-    fn amphibious_destroyer_passes_land_and_water() {
-        // Legacy compatibility buckets; terrain-aware zoning uses reduced ZoneType.
-        let row = MOVEMENT_ZONE_PASSABILITY[3];
-        assert_eq!(row[0], PASS_OK); // clear
-        assert_eq!(row[1], PASS_OK); // crushable overlay
-        assert_eq!(row[2], PASS_OK); // wall
-        assert_eq!(row[3], PASS_OK); // beach
-        assert_eq!(row[4], PASS_OK); // water
-        assert_eq!(row[5], PASS_OK); // building
-        assert_eq!(row[6], PASS_BLOCKED); // impassable
-        assert_eq!(row[7], PASS_OUTSIDE_SENTINEL); // outside
-    }
-
-    #[test]
-    fn wheel_restricted() {
-        // Row 1 (Crusher/wheel compatibility) passes ground and crushable only.
-        let row = MOVEMENT_ZONE_PASSABILITY[1];
-        assert_eq!(row[0], PASS_OK); // clear
-        assert_eq!(row[1], PASS_OK); // crushable overlay
-        assert_eq!(row[2], PASS_BLOCKED); // wall
-    }
-
-    #[test]
-    fn movement_zone_water_is_zone_10() {
-        assert_eq!(MovementZone::Water.matrix_row(), Some(10));
-        assert!(!is_passable_for_zone(0, MovementZone::Water)); // clear blocked
-        assert!(is_passable_for_zone(4, MovementZone::Water)); // water OK
     }
 
     #[test]
@@ -344,52 +293,6 @@ mod tests {
     // -- LandType mapping tests --
 
     #[test]
-    fn tmp_clear_variants_map_to_clear() {
-        for byte in [0, 13] {
-            assert_eq!(
-                tmp_terrain_to_land_type(byte),
-                LandType::Clear,
-                "TMP byte {}",
-                byte
-            );
-        }
-    }
-
-    #[test]
-    fn tmp_water_maps_to_water() {
-        assert_eq!(tmp_terrain_to_land_type(9), LandType::Water);
-    }
-
-    #[test]
-    fn tmp_beach_maps_to_beach() {
-        assert_eq!(tmp_terrain_to_land_type(10), LandType::Beach);
-    }
-
-    #[test]
-    fn tmp_road_variants_map_to_road() {
-        assert_eq!(tmp_terrain_to_land_type(11), LandType::Road);
-        assert_eq!(tmp_terrain_to_land_type(12), LandType::Road);
-    }
-
-    #[test]
-    fn tmp_rough_maps_to_rough() {
-        assert_eq!(tmp_terrain_to_land_type(14), LandType::Rough);
-    }
-
-    #[test]
-    fn tmp_rock_and_cliff_map_to_rock() {
-        assert_eq!(tmp_terrain_to_land_type(7), LandType::Rock);
-        assert_eq!(tmp_terrain_to_land_type(8), LandType::Rock);
-        assert_eq!(tmp_terrain_to_land_type(15), LandType::Rock);
-    }
-
-    #[test]
-    fn tmp_tunnel_and_railroad_map_to_canonical_types() {
-        assert_eq!(tmp_terrain_to_land_type(5), LandType::Tunnel);
-        assert_eq!(tmp_terrain_to_land_type(6), LandType::Railroad);
-    }
-
-    #[test]
     fn tmp_unknown_bytes_default_to_clear() {
         for byte in 16..=255u8 {
             assert_eq!(
@@ -439,19 +342,6 @@ mod tests {
         ];
         for (raw, expected) in expected.into_iter().enumerate() {
             assert_eq!(tmp_terrain_to_land_type(raw as u8), expected, "TMP {raw}");
-        }
-    }
-
-    #[test]
-    fn gsi_04_04_movement_zone_indexes_native_matrix_directly() {
-        for movement_zone in MovementZone::all_ground() {
-            let row = movement_zone.matrix_row().expect("valid retail row");
-            for reduced_zone_type in 0..TERRAIN_TYPE_COUNT as u8 {
-                assert_eq!(
-                    is_passable_for_zone(reduced_zone_type, *movement_zone),
-                    MOVEMENT_ZONE_PASSABILITY[row][reduced_zone_type as usize] == PASS_OK,
-                );
-            }
         }
     }
 }

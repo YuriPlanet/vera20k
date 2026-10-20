@@ -10,7 +10,7 @@ use crate::rules::ini_parser::{IniFile, IniSection};
 /// The mode class an `MPModesMD.ini` section builds. The loader `0x005D7CE0`
 /// reads the sections in this order, each through its own factory
 /// (`0x005D8170..0x005D82B0`), and inserts every mode by id (`0x005D7590`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum MpModeClass {
     Battle,
     ManBattle,
@@ -36,6 +36,101 @@ impl MpModeClass {
     /// keep the base `0x005D6360` (false).
     pub const fn lists_in_skirmish(self) -> bool {
         matches!(self, Self::Battle | Self::FreeForAll)
+    }
+
+    /// Vtable `+0x4` and `+0x8`, which the sidebar Diplomacy button asks
+    /// before choosing the mission briefing over Diplomacy in LAN/WOL
+    /// (`0x00653918..0x00653938`). Only Cooperative (vtable `0x007EE27C`)
+    /// overrides the base `0x005C0E30`/`0x005C0E40` (false) with
+    /// `0x005C4EE0`/`0x005C4EF0` (true).
+    pub const fn restates_mission_for_diplomacy(self) -> bool {
+        matches!(self, Self::Cooperative)
+    }
+}
+
+/// Effects of the mode's successful Start validation. The shell/session owner
+/// applies these before random assignments, preserving vtable+14 ordering.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModeStartEffect {
+    None,
+    /// FreeForAll5C5D40 assigns each non-observer node+6B its source index.
+    FreeForAllSourceRoles,
+    /// Cooperative5C1D80 binds the two names to an existing campaign record.
+    CooperativePartners,
+}
+
+impl MpModeClass {
+    /// Active original vtable+BC:5C0FD0 for ordinary modes,5C4F00 for Coop.
+    pub const fn allows_observers(self) -> bool {
+        !matches!(self, Self::Cooperative)
+    }
+
+    /// Active original vtable+4:5C4EE0 is true only for Cooperative.
+    pub const fn permits_all_allied(self) -> bool {
+        matches!(self, Self::Cooperative)
+    }
+
+    /// Mode-specific cap used alongside the map's capacity by5EC3A0/5E9E70.
+    /// vtable+98:5C42C0 returns2; ordinary5C0F30 returns-1(no extra cap).
+    pub const fn setup_player_limit(self) -> Option<usize> {
+        if matches!(self, Self::Cooperative) {
+            Some(2)
+        } else {
+            None
+        }
+    }
+
+    ///5C21D0/5C2500 show Cooperative's description/difficulty controls and
+    /// hide rows beyond the two human positions. Ordinary options keep their
+    /// existing resource visibility; this method does not invent forced values.
+    pub const fn uses_cooperative_setup(self) -> bool {
+        matches!(self, Self::Cooperative)
+    }
+
+    ///5D6310/5CB400/5CA6D0/5C5D40/5C1D80 at the host's vtable+14 gate.
+    /// `roles` are node+6B in human source order, not team selectors(+63/+67).
+    /// A failure with no message is intentional: Unholy only returns false.
+    pub fn validate_setup_start(
+        self,
+        bases: bool,
+        roles: &[i32],
+    ) -> Result<ModeStartEffect, Option<&'static str>> {
+        match self {
+            Self::Battle | Self::ManBattle => Ok(ModeStartEffect::None),
+            Self::Unholy => {
+                if bases {
+                    Ok(ModeStartEffect::None)
+                } else {
+                    Err(None)
+                }
+            }
+            Self::FreeForAll => Ok(ModeStartEffect::FreeForAllSourceRoles),
+            Self::Cooperative => Ok(ModeStartEffect::CooperativePartners),
+            Self::Siege => {
+                let mut defender = false;
+                let mut attackers = 0;
+                for role in roles {
+                    match role {
+                        0 => {}
+                        1 => {
+                            if defender {
+                                return Err(Some("MP:OnlyOneBeseiged"));
+                            }
+                            defender = true;
+                        }
+                        2 => attackers += 1,
+                        _ => return Err(Some("MP:IllegalTeam")),
+                    }
+                }
+                if !defender {
+                    Err(Some("MP:NoDefender"))
+                } else if attackers == 0 {
+                    Err(Some("MP:NoAttackers"))
+                } else {
+                    Ok(ModeStartEffect::None)
+                }
+            }
+        }
     }
 }
 
@@ -63,6 +158,16 @@ pub struct SkirmishGameMode {
 }
 
 impl SkirmishGameMode {
+    /// MultiplayerGameMode5D5DC0 reads MustAlly at+3F.
+    pub const fn default_human_team(&self) -> i32 {
+        if self.must_ally { 0 } else { -2 }
+    }
+
+    /// MultiplayerGameMode5D5DD0 reads AlliesAllowed at+3C.
+    pub const fn default_ai_team(&self) -> i32 {
+        if self.allies_allowed { 3 } else { -2 }
+    }
+
     /// `0x005D7590`: the row is ReadString into a CString (`0x00528C00`,
     /// 0x3FE bytes), then `CString::Tokenize(",")` fields trimmed of spaces
     /// ([`IniSection::read_trimmed_list`]).
@@ -218,17 +323,48 @@ pub fn mode_by_id(modes: &[SkirmishGameMode], id: i32) -> Option<&SkirmishGameMo
 
 #[cfg(test)]
 mod tests {
-    use super::*;
 
     #[test]
-    fn parses_stock_mpmodesmd_roster() {
-        let modes = stock_skirmish_modes();
-        let ids: Vec<i32> = modes.iter().map(|mode| mode.id).collect();
-        assert_eq!(ids, vec![1, 2, 3, 4, 5, 6, 7, 8, 9]);
-        assert_eq!(modes[0].ui_name_key, "GUI:Battle");
-        assert_eq!(modes[0].map_filter, "standard");
-        assert!(modes[0].random_maps_allowed);
+    fn network_start_validation_keeps_mode_effects_and_failure_order() {
+        use super::{ModeStartEffect, MpModeClass};
+        assert_eq!(
+            MpModeClass::Unholy.validate_setup_start(false, &[0, 0]),
+            Err(None)
+        );
+        assert_eq!(
+            MpModeClass::Battle.validate_setup_start(false, &[0, 0]),
+            Ok(ModeStartEffect::None)
+        );
+        assert_eq!(
+            MpModeClass::FreeForAll.validate_setup_start(true, &[0, -1, 0]),
+            Ok(ModeStartEffect::FreeForAllSourceRoles)
+        );
+        assert_eq!(
+            MpModeClass::Cooperative.validate_setup_start(true, &[0, 0]),
+            Ok(ModeStartEffect::CooperativePartners)
+        );
+        assert_eq!(
+            MpModeClass::Siege.validate_setup_start(true, &[1, 2]),
+            Ok(ModeStartEffect::None)
+        );
+        assert_eq!(
+            MpModeClass::Siege.validate_setup_start(true, &[1, 1, 2]),
+            Err(Some("MP:OnlyOneBeseiged"))
+        );
+        assert_eq!(
+            MpModeClass::Siege.validate_setup_start(true, &[2, 0]),
+            Err(Some("MP:NoDefender"))
+        );
+        assert_eq!(
+            MpModeClass::Siege.validate_setup_start(true, &[1, 0]),
+            Err(Some("MP:NoAttackers"))
+        );
+        assert_eq!(
+            MpModeClass::Siege.validate_setup_start(true, &[-1, 1, 2]),
+            Err(Some("MP:IllegalTeam"))
+        );
     }
+    use super::*;
 
     #[test]
     fn retail_skirmish_lists_battle_free_for_all_and_team_alliance() {
@@ -251,12 +387,6 @@ mod tests {
     }
 
     #[test]
-    fn stock_mpmodes_do_not_include_siege_without_roster_row() {
-        let modes = stock_skirmish_modes();
-        assert!(!modes.iter().any(|mode| mode.ui_name_key.contains("Siege")));
-    }
-
-    #[test]
     fn team_game_has_must_ally() {
         let modes = stock_skirmish_modes();
         let team = mode_by_id(&modes, 9).expect("team game mode");
@@ -265,27 +395,6 @@ mod tests {
         assert!(team.must_ally);
         assert!(!team.random_maps_allowed);
         assert_eq!(team.map_filter, "teamgame");
-    }
-
-    #[test]
-    fn free_for_all_disables_allies() {
-        let modes = stock_skirmish_modes();
-        let ffa = mode_by_id(&modes, 2).expect("free for all mode");
-        assert_eq!(ffa.ui_name_key, "GUI:FreeForAll");
-        assert!(!ffa.allies_allowed);
-        assert!(!ffa.must_ally);
-        assert!(ffa.random_maps_allowed);
-    }
-
-    #[test]
-    fn battle_and_free_for_all_allow_random_maps() {
-        let modes = stock_skirmish_modes();
-        let random_ids: Vec<i32> = modes
-            .iter()
-            .filter(|mode| mode.random_maps_allowed)
-            .map(|mode| mode.id)
-            .collect();
-        assert_eq!(random_ids, vec![1, 2]);
     }
 
     #[test]

@@ -14,7 +14,7 @@ use std::fmt::Write as _;
 use std::io::{self, Read, Write};
 use std::net::{IpAddr, Shutdown, SocketAddr, TcpListener, TcpStream};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, SyncSender, TryRecvError, TrySendError};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
@@ -157,6 +157,9 @@ struct Client {
 struct Shared {
     clients: Mutex<Vec<Client>>,
     stop: AtomicBool,
+    /// Connections accepted since the server started. A publisher compares it
+    /// with the value it last saw to know a client attached meanwhile.
+    attached: AtomicU64,
     admission: Admission,
     web_root: PathBuf,
     #[cfg(feature = "debug-tools")]
@@ -223,6 +226,7 @@ impl TelemetryServer {
         let shared = Arc::new(Shared {
             clients: Mutex::new(Vec::new()),
             stop: AtomicBool::new(false),
+            attached: AtomicU64::new(0),
             admission: Admission {
                 authority: addr.to_string(),
                 localhost: format!("localhost:{}", addr.port()),
@@ -281,6 +285,12 @@ impl TelemetryServer {
         session: u64,
     ) -> Vec<crate::app::debug_tools::DebugCommand> {
         self.shared.commands().drain(session)
+    }
+
+    /// Connections accepted since the server started; a publisher that sees a
+    /// higher value than last time knows a client needs the match history.
+    pub fn attach_generation(&self) -> u64 {
+        self.shared.attached.load(Ordering::Acquire)
     }
 }
 
@@ -557,6 +567,9 @@ fn serve_connection(stream: &mut TcpStream, shared: &Shared, id: u64) -> io::Res
     );
     let (sender, receiver) = mpsc::sync_channel(CLIENT_QUEUE_DEPTH);
     shared.clients().push(Client { id, sender });
+    // Only an admitted dashboard counts: static asset requests also reach the
+    // accept loop, and they do not read snapshots.
+    shared.attached.fetch_add(1, Ordering::AcqRel);
     write_until(
         stream,
         response.as_bytes(),

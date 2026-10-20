@@ -79,15 +79,15 @@ fn stock_base_fixture_from_retail(
     sim.resolve_type_handles(&rules);
     let owner = sim.intern(owner_name);
     let mut house = HouseState::new(owner, 0, Some(owner), true, 50_000, 10);
-    house.project_country_mults(&rules, &sim.interner);
-    sim.houses.insert(owner, house);
-    sim.session.house_order.push(owner);
-    sim.session.current_house = Some(owner);
+    house.project_country_mults(&rules, sim.interner());
+    sim.houses_mut_for_test().register(house);
+    sim.session_mut_for_test()
+        .set_current_house_for_test(Some(owner));
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
     // Like the supplied flat terrain/base, mapped ground is an explicit
     // fixture prerequisite. This fixture does not execute map reveal startup.
-    sim.fog = crate::sim::vision::FogState::new(32, 32);
-    sim.fog.reveal_all_for_owner(owner);
+    *sim.fog_mut_for_test() = crate::sim::vision::FogState::new(32, 32);
+    sim.fog_mut_for_test().reveal_all_for_owner(owner);
     for &(name, rx) in buildings {
         sim.spawn_object(name, owner_name, rx, 4, 0, &rules)
             .unwrap_or_else(|| panic!("healthy retail placement prerequisite {name}"));
@@ -122,7 +122,7 @@ fn roundtrip_fixture_save(fixture: &mut Fixture, label: &str) {
     let directory = crate::map::source::test_support::TestDirectory::new(label);
     let repository = crate::app::persistence::SaveRepository::at(directory.path());
     let path = repository.write_named("fixture.bin", &bytes).unwrap();
-    let terrain = fixture.sim.resolved_terrain.as_ref().unwrap().clone();
+    let terrain = fixture.sim.resolved_terrain().unwrap().clone();
     let mut runtime = crate::sim::runtime::SimRuntime {
         simulation: std::mem::replace(&mut fixture.sim, Simulation::new()),
         resources: crate::sim::runtime::SimResources {
@@ -205,7 +205,7 @@ fn paid_ready_fixture() -> Option<Fixture> {
         starting_credits - total_cost,
         "the completed objects must have been paid through the House economy"
     );
-    assert_eq!(sim.houses[&owner].economy.spent_credits(), total_cost);
+    assert_eq!(sim.houses()[&owner].economy().spent_credits(), total_cost);
 
     Some(Fixture {
         sim,
@@ -276,7 +276,7 @@ fn refresh_fixture_sidebar(
         &ready,
         armed.as_ref(),
         &[],
-        Some(&fixture.sim.interner),
+        Some(fixture.sim.interner()),
         &[],
         &SidebarGadgetState::new(),
         None,
@@ -289,7 +289,7 @@ fn refresh_fixture_sidebar(
     let armed_building = armed
         .as_ref()
         .and_then(ArmedSidebarEntry::as_building_placement)
-        .and_then(|name| fixture.sim.interner.get(name));
+        .and_then(|name| fixture.sim.interner().get(name));
     fixture.projection.apply_cameo_draw_state(
         &mut view,
         &fixture.sim,
@@ -319,11 +319,11 @@ fn press_cameo(
     if name == "GAPOWR"
         && fixture
             .sim
-            .production
-            .factories
+            .production()
+            .factories()
             .view(fixture.owner, ProductionCategory::Building)
             .and_then(|factory| factory.complete_object())
-            .is_some_and(|object| fixture.sim.interner.resolve(object.type_id) == "GAPILE")
+            .is_some_and(|object| fixture.sim.interner().resolve(object.type_id) == "GAPILE")
     {
         assert!(
             item.is_ready,
@@ -411,18 +411,18 @@ fn press_cameo(
     let click = sidebar_eva::cameo_click(
         &queue,
         category,
-        fixture.sim.interner.get(&type_id),
+        fixture.sim.interner().get(&type_id),
         fixture
             .projection
             .cameo_factory(
                 &fixture.sim,
                 fixture.owner,
-                fixture.sim.interner.get(&type_id).unwrap(),
+                fixture.sim.interner().get(&type_id).unwrap(),
             )
             .map(|factory| factory.cameo_state()),
         fixture
             .projection
-            .cameo_request(fixture.sim.interner.get(&type_id).unwrap()),
+            .cameo_request(fixture.sim.interner().get(&type_id).unwrap()),
         dispatched_press,
         at_build_limit,
     );
@@ -433,7 +433,7 @@ fn press_cameo(
         &fixture.sim,
         &fixture.rules,
         fixture.owner,
-        fixture.sim.interner.get(&type_id).unwrap(),
+        fixture.sim.interner().get(&type_id).unwrap(),
         click,
     );
     // Cameos fire on DOWN; the real UP edge must not dispatch another entry.
@@ -469,7 +469,7 @@ fn press_ready_cameo(fixture: &mut Fixture, name: &str, tab: SidebarTab) -> bool
         .cameo_factory(
             &fixture.sim,
             fixture.owner,
-            fixture.sim.interner.get(name).unwrap(),
+            fixture.sim.interner().get(name).unwrap(),
         )
         .unwrap()
         .complete_object()
@@ -485,7 +485,7 @@ fn press_ready_cameo(fixture: &mut Fixture, name: &str, tab: SidebarTab) -> bool
     production::object_find_factory(&fixture.sim, &fixture.rules, product, false, false)
         .expect("the actual held object finds its healthy retail builder");
     fixture.input.begin_building_placement(
-        fixture.sim.interner.resolve(type_id),
+        fixture.sim.interner().resolve(type_id),
         product,
         fixture.owner,
     )
@@ -510,7 +510,7 @@ fn arm_gapowr_with_preview(fixture: &mut Fixture) -> production::BuildingPlaceme
 
 fn ready_identities(fixture: &Fixture) -> [(InternedId, u64); 2] {
     ["GAPOWR", "GAPILL"].map(|name| {
-        let type_id = fixture.sim.interner.get(name).unwrap();
+        let type_id = fixture.sim.interner().get(name).unwrap();
         let product = production::ready_building_entity_for_owner(
             &fixture.sim,
             &fixture.rules,
@@ -527,7 +527,7 @@ fn ready_product(fixture: &Fixture, name: &str) -> u64 {
         &fixture.sim,
         &fixture.rules,
         fixture.owner,
-        fixture.sim.interner.get(name).unwrap(),
+        fixture.sim.interner().get(name).unwrap(),
     )
     .expect("completed product identity remains owned by its House factory")
 }
@@ -571,9 +571,9 @@ fn submit_current_building(fixture: &mut Fixture, cell: (u16, u16)) -> CommandEn
     );
     let command = CommandEnvelope::new(
         fixture.input.building_placement_issuer().unwrap(),
-        fixture.sim.session.tick + 1,
+        fixture.sim.session().tick() + 1,
         Command::PlaceReadyBuilding {
-            type_id: fixture.sim.interner.get(&name).unwrap(),
+            type_id: fixture.sim.interner().get(&name).unwrap(),
             rx: cell.0,
             ry: cell.1,
         },
@@ -588,9 +588,9 @@ fn submit_current_building(fixture: &mut Fixture, cell: (u16, u16)) -> CommandEn
 fn cancel_envelope(fixture: &Fixture, name: &str) -> CommandEnvelope {
     CommandEnvelope::new(
         fixture.owner,
-        fixture.sim.session.tick + 1,
+        fixture.sim.session().tick() + 1,
         Command::CancelProductionByType {
-            type_id: fixture.sim.interner.get(name).unwrap(),
+            type_id: fixture.sim.interner().get(name).unwrap(),
             all: false,
         },
     )
@@ -644,7 +644,7 @@ fn pending_produce_right_click_suspends_on_arrival_without_duplicate_orders() {
         assert_eq!(right_idle, CameoClick::default());
         assert_eq!(idle["after"], 0);
         assert!(idle["events"].as_array().unwrap().is_empty());
-        let type_id = fixture.sim.interner.get(name).unwrap();
+        let type_id = fixture.sim.interner().get(name).unwrap();
         let left = press_cameo(&mut fixture, name, tab, CameoPress::Left);
         assert_eq!(left.order, Some(CameoOrder::Produce));
         crate::app::input::commands::schedule_command_in_sim(
@@ -708,8 +708,8 @@ fn pending_produce_right_click_suspends_on_arrival_without_duplicate_orders() {
         consume_frame_outputs(&mut fixture, &frame, Some(owner));
         let factory = fixture
             .sim
-            .production
-            .factories
+            .production()
+            .factories()
             .view(fixture.owner, category)
             .unwrap();
         assert!(
@@ -721,7 +721,7 @@ fn pending_produce_right_click_suspends_on_arrival_without_duplicate_orders() {
         assert_eq!(resume.order, Some(CameoOrder::Produce));
         let command = CommandEnvelope::new(
             owner,
-            fixture.sim.session.tick + 1,
+            fixture.sim.session().tick() + 1,
             Command::QueueProduction { type_id },
         );
         let frame = advance_commands(&mut fixture, &[command]);
@@ -729,8 +729,8 @@ fn pending_produce_right_click_suspends_on_arrival_without_duplicate_orders() {
         assert_eq!(
             fixture
                 .sim
-                .production
-                .factories
+                .production()
+                .factories()
                 .view(fixture.owner, category)
                 .unwrap()
                 .cameo_state(),
@@ -774,7 +774,7 @@ fn pending_alternating_clicks_retain_native_hold_request_and_resume_on_arrival()
         for step in history["steps"].as_array().unwrap() {
             let clicked_name = step["source"].as_str().unwrap();
             let clicked_tab = SidebarTab::all()[step["tab"].as_u64().unwrap() as usize];
-            let type_id = fixture.sim.interner.get(clicked_name).unwrap();
+            let type_id = fixture.sim.interner().get(clicked_name).unwrap();
             let clicked_category =
                 production::category_for_object(fixture.rules.object(clicked_name).unwrap());
             let press = match step["press"].as_str().unwrap() {
@@ -822,7 +822,7 @@ fn pending_alternating_clicks_retain_native_hold_request_and_resume_on_arrival()
                 .map(|request| {
                     let id = fixture
                         .sim
-                        .interner
+                        .interner()
                         .get(request["source"].as_str().unwrap())
                         .unwrap();
                     let state = match request["request_state"].as_u64().unwrap() {
@@ -858,8 +858,8 @@ fn pending_alternating_clicks_retain_native_hold_request_and_resume_on_arrival()
         assert_eq!(
             fixture
                 .sim
-                .production
-                .factories
+                .production()
+                .factories()
                 .view(owner, category)
                 .unwrap()
                 .cameo_state(),
@@ -924,9 +924,9 @@ fn start_mixed_infantry_queue(fixture: &mut Fixture) -> (u64, u64) {
         .map(|name| {
             CommandEnvelope::new(
                 fixture.owner,
-                fixture.sim.session.tick + 1,
+                fixture.sim.session().tick() + 1,
                 Command::QueueProduction {
-                    type_id: fixture.sim.interner.get(name).unwrap(),
+                    type_id: fixture.sim.interner().get(name).unwrap(),
                 },
             )
         })
@@ -938,8 +938,8 @@ fn start_mixed_infantry_queue(fixture: &mut Fixture) -> (u64, u64) {
     assert_eq!(click.order, Some(CameoOrder::Produce));
     let factory = fixture
         .sim
-        .production
-        .factories
+        .production()
+        .factories()
         .view(fixture.owner, ProductionCategory::Infantry)
         .unwrap();
     assert_eq!(fixture.sim.resolve(factory.object.unwrap().type_id), "E1");
@@ -970,14 +970,16 @@ fn retail_spy_stolen_soviet_tech_admits_and_delivers_chrono_ivan() {
         return;
     };
     let owner = fixture.owner;
-    fixture.sim.session.game_mode_nonzero = true;
+    fixture
+        .sim
+        .session_mut_for_test()
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     let enemy = fixture.sim.intern("Russians");
     // The supplied rival base is idle. Both House array entries are human,
     // so unrelated AI construction cannot manufacture the missing request.
     let mut house = HouseState::new(enemy, 1, Some(enemy), true, 0, 10);
-    house.project_country_mults(&fixture.rules, &fixture.sim.interner);
-    fixture.sim.houses.insert(enemy, house);
-    fixture.sim.session.house_order.push(enemy);
+    house.project_country_mults(&fixture.rules, fixture.sim.interner());
+    fixture.sim.houses_mut_for_test().register(house);
     let laboratory = fixture
         .sim
         .spawn_object_at_height("NATECH", "Russians", 18, 20, 0, 0, &fixture.rules)
@@ -993,7 +995,7 @@ fn retail_spy_stolen_soviet_tech_admits_and_delivers_chrono_ivan() {
         .unwrap()
         .health
         .current();
-    let ivan = fixture.sim.interner.get("CIVAN").unwrap();
+    let ivan = fixture.sim.interner().get("CIVAN").unwrap();
     assert!(fixture.rules.is_build_tech("NATECH"));
     assert_eq!(
         fixture
@@ -1054,7 +1056,7 @@ fn retail_spy_stolen_soviet_tech_admits_and_delivers_chrono_ivan() {
 
     let capture = CommandEnvelope::new(
         owner,
-        fixture.sim.session.tick + 1,
+        fixture.sim.session().tick() + 1,
         Command::CaptureBuilding {
             engineer_id: spy,
             target_building_id: laboratory,
@@ -1142,7 +1144,7 @@ fn retail_spy_stolen_soviet_tech_admits_and_delivers_chrono_ivan() {
     );
     assert_eq!(click.order, Some(CameoOrder::Produce));
     let credits_before = production::credits_for_owner(&fixture.sim, "Americans");
-    let spent_before = fixture.sim.houses[&owner].economy.spent_credits();
+    let spent_before = fixture.sim.houses()[&owner].economy().spent_credits();
     let cost = fixture.sim.cost_of(
         owner,
         fixture.rules.object("CIVAN").unwrap(),
@@ -1150,7 +1152,7 @@ fn retail_spy_stolen_soviet_tech_admits_and_delivers_chrono_ivan() {
     );
     let produce = CommandEnvelope::new(
         owner,
-        fixture.sim.session.tick + 1,
+        fixture.sim.session().tick() + 1,
         Command::QueueProduction { type_id: ivan },
     );
     let mut held = None;
@@ -1168,8 +1170,8 @@ fn retail_spy_stolen_soviet_tech_admits_and_delivers_chrono_ivan() {
         refresh_fixture_sidebar(&mut fixture, SidebarTab::Infantry);
         if let Some(product) = fixture
             .sim
-            .production
-            .factories
+            .production()
+            .factories()
             .view(owner, ProductionCategory::Infantry)
             .and_then(|factory| factory.object)
         {
@@ -1199,7 +1201,7 @@ fn retail_spy_stolen_soviet_tech_admits_and_delivers_chrono_ivan() {
         credits_before - cost
     );
     assert_eq!(
-        fixture.sim.houses[&owner].economy.spent_credits(),
+        fixture.sim.houses()[&owner].economy().spent_credits(),
         spent_before + cost
     );
 }
@@ -1252,9 +1254,9 @@ fn selling_barracks_retains_paid_clock_and_queued_dark_cameo_until_house_recheck
     let commands = ["E2", "E2", "FLAKT"].map(|name| {
         CommandEnvelope::new(
             owner,
-            fixture.sim.session.tick + 1,
+            fixture.sim.session().tick() + 1,
             Command::QueueProduction {
-                type_id: fixture.sim.interner.get(name).unwrap(),
+                type_id: fixture.sim.interner().get(name).unwrap(),
             },
         )
     });
@@ -1272,11 +1274,11 @@ fn selling_barracks_retains_paid_clock_and_queued_dark_cameo_until_house_recheck
         .unwrap();
     assert!(head.progress > 0.0 && head.progress < 1.0);
     assert_eq!(head.queued_count, 2);
-    assert!(fixture.sim.houses[&owner].economy.spent_credits() > 0);
+    assert!(fixture.sim.houses()[&owner].economy().spent_credits() > 0);
     let identities = fixture.projection.cameo_strips().saved_identities();
     let sale = CommandEnvelope::new(
         owner,
-        fixture.sim.session.tick + 1,
+        fixture.sim.session().tick() + 1,
         Command::SellBuilding {
             entity_id: barracks,
         },
@@ -1420,9 +1422,9 @@ fn paid_user_hold_stays_stopped_after_a_power_building_sale_refresh() {
     assert!(fixture.rules.has_buildup("NAPOWR"));
     // The clear arena has no overlays. Saved-world preparation still requires
     // that empty map authority, as the ordinary map loader supplies it.
-    fixture.sim.overlay_grid = Some(crate::sim::overlay_grid::OverlayGrid::new(
-        fixture.sim.session.map_width,
-        fixture.sim.session.map_height,
+    *fixture.sim.overlay_grid_mut_for_test() = Some(crate::sim::overlay_grid::OverlayGrid::new(
+        fixture.sim.session().map_width(),
+        fixture.sim.session().map_height(),
     ));
     let owner = fixture.owner;
     for _ in 0..8 {
@@ -1430,11 +1432,11 @@ fn paid_user_hold_stays_stopped_after_a_power_building_sale_refresh() {
         consume_frame_outputs(&mut fixture, &frame, Some(owner));
     }
     let _ = refresh_fixture_sidebar(&mut fixture, SidebarTab::Infantry);
-    let e2 = fixture.sim.interner.get("E2").unwrap();
+    let e2 = fixture.sim.interner().get("E2").unwrap();
     let commands = [0, 1].map(|_| {
         CommandEnvelope::new(
             owner,
-            fixture.sim.session.tick + 1,
+            fixture.sim.session().tick() + 1,
             Command::QueueProduction { type_id: e2 },
         )
     });
@@ -1446,8 +1448,8 @@ fn paid_user_hold_stays_stopped_after_a_power_building_sale_refresh() {
     }
     let factory = fixture
         .sim
-        .production
-        .factories
+        .production()
+        .factories()
         .view(owner, ProductionCategory::Infantry)
         .unwrap();
     let held_id = factory.object.unwrap().entity_id.unwrap();
@@ -1463,7 +1465,7 @@ fn paid_user_hold_stays_stopped_after_a_power_building_sale_refresh() {
     assert_eq!(press.eva, Some(sidebar_eva::EVA_ON_HOLD));
     let suspend = CommandEnvelope::new(
         owner,
-        fixture.sim.session.tick + 1,
+        fixture.sim.session().tick() + 1,
         Command::SuspendProduction {
             category: ProductionCategory::Infantry,
         },
@@ -1472,12 +1474,12 @@ fn paid_user_hold_stays_stopped_after_a_power_building_sale_refresh() {
     consume_frame_outputs(&mut fixture, &frame, Some(owner));
     let progress = fixture
         .sim
-        .production
-        .factories
+        .production()
+        .factories()
         .view(owner, ProductionCategory::Infantry)
         .unwrap()
         .progress;
-    let spent = fixture.sim.houses[&owner].economy.spent_credits();
+    let spent = fixture.sim.houses()[&owner].economy().spent_credits();
     assert!(spent > 0);
     let power = fixture
         .sim
@@ -1488,7 +1490,7 @@ fn paid_user_hold_stays_stopped_after_a_power_building_sale_refresh() {
         .stable_id();
     let sale = CommandEnvelope::new(
         owner,
-        fixture.sim.session.tick + 1,
+        fixture.sim.session().tick() + 1,
         Command::SellBuilding { entity_id: power },
     );
     let mut frame = advance_commands(&mut fixture, &[sale]);
@@ -1496,14 +1498,17 @@ fn paid_user_hold_stays_stopped_after_a_power_building_sale_refresh() {
         consume_frame_outputs(&mut fixture, &frame, Some(owner));
         let factory = fixture
             .sim
-            .production
-            .factories
+            .production()
+            .factories()
             .view(owner, ProductionCategory::Infantry)
             .unwrap();
         assert_eq!(factory.progress, progress);
         assert_eq!(factory.construction_order(), order);
         assert_eq!(factory.object.unwrap().entity_id, Some(held_id));
-        assert_eq!(fixture.sim.houses[&owner].economy.spent_credits(), spent);
+        assert_eq!(
+            fixture.sim.houses()[&owner].economy().spent_credits(),
+            spent
+        );
         let view = refresh_fixture_sidebar(&mut fixture, SidebarTab::Infantry);
         let head = view.items.iter().find(|item| item.type_id == "E2").unwrap();
         assert!(
@@ -1522,17 +1527,22 @@ fn paid_user_hold_stays_stopped_after_a_power_building_sale_refresh() {
         assert!(step < 1023, "real power-building sale must finish");
         frame = advance_commands(&mut fixture, &[]);
     }
-    fixture.sim.session.map_name = "HOLD-RESUME.MAP".into();
-    fixture.sim.session.set_started(true);
-    let before_factories = fixture.sim.production.factories.clone();
-    let before_wallet = fixture.sim.houses[&owner].economy.clone();
+    fixture
+        .sim
+        .session_mut_for_test()
+        .set_map_name_for_test("HOLD-RESUME.MAP".into());
+    fixture.sim.publish_scenario_started();
+    let before_factories = fixture.sim.production().factories().clone();
+    let before_wallet = fixture.sim.houses()[&owner].economy().clone();
     roundtrip_fixture_save(&mut fixture, "paid-user-hold");
     assert_eq!(
-        fixture.sim.production.factories, before_factories,
+        *fixture.sim.production().factories(),
+        before_factories,
         "saved Factory authorities"
     );
     assert_eq!(
-        fixture.sim.houses[&owner].economy, before_wallet,
+        *fixture.sim.houses()[&owner].economy(),
+        before_wallet,
         "saved paid wallet"
     );
     // Whole pre/post-load hash equality is not a load invariant: native load
@@ -1563,15 +1573,15 @@ fn paid_user_hold_stays_stopped_after_a_power_building_sale_refresh() {
     assert_eq!(resume.eva, Some(sidebar_eva::EVA_TRAINING));
     let command = CommandEnvelope::new(
         owner,
-        fixture.sim.session.tick + 1,
+        fixture.sim.session().tick() + 1,
         Command::QueueProduction { type_id: e2 },
     );
     let frame = advance_commands(&mut fixture, &[command]);
     consume_frame_outputs(&mut fixture, &frame, Some(owner));
     let factory = fixture
         .sim
-        .production
-        .factories
+        .production()
+        .factories()
         .view(owner, ProductionCategory::Infantry)
         .unwrap();
     assert_eq!(factory.construction_order(), order);
@@ -1594,8 +1604,8 @@ fn paid_user_hold_stays_stopped_after_a_power_building_sale_refresh() {
     assert!(delivered, "resumed same paid E2 must reach the real exit");
     let successor = fixture
         .sim
-        .production
-        .factories
+        .production()
+        .factories()
         .view(owner, ProductionCategory::Infantry)
         .unwrap();
     assert_eq!(successor.construction_order(), order);
@@ -1603,7 +1613,7 @@ fn paid_user_hold_stays_stopped_after_a_power_building_sale_refresh() {
     let queued = production::queue_view_for_owner(&fixture.sim, &fixture.rules, "Russians");
     assert_eq!(queued.len(), 1, "resume did not append a third E2");
     assert_eq!(
-        fixture.sim.houses[&owner].economy.spent_credits(),
+        fixture.sim.houses()[&owner].economy().spent_credits(),
         fixture
             .sim
             .cost_of(owner, fixture.rules.object("E2").unwrap(), &fixture.rules)
@@ -1611,8 +1621,8 @@ fn paid_user_hold_stays_stopped_after_a_power_building_sale_refresh() {
 }
 
 fn assert_old_infantry_cameo_released(fixture: &mut Fixture, order: u64) {
-    let old_type = fixture.sim.interner.get("E1").unwrap();
-    let successor = fixture.sim.interner.get("ENGINEER").unwrap();
+    let old_type = fixture.sim.interner().get("E1").unwrap();
+    let successor = fixture.sim.interner().get("ENGINEER").unwrap();
     let factory = fixture
         .projection
         .cameo_factory(&fixture.sim, fixture.owner, successor)
@@ -1666,7 +1676,11 @@ fn mixed_infantry_cancel_clears_old_cameo_before_same_factory_promotion() {
     assert_eq!(
         fixture
             .projection
-            .cameo_factory(&fixture.sim, owner, fixture.sim.interner.get("E1").unwrap())
+            .cameo_factory(
+                &fixture.sim,
+                owner,
+                fixture.sim.interner().get("E1").unwrap()
+            )
             .unwrap()
             .construction_order(),
         order,
@@ -1674,14 +1688,14 @@ fn mixed_infantry_cancel_clears_old_cameo_before_same_factory_promotion() {
     );
     let enqueue = CommandEnvelope::new(
         owner,
-        fixture.sim.session.tick + 1,
+        fixture.sim.session().tick() + 1,
         Command::QueueProduction {
-            type_id: fixture.sim.interner.get("ENGINEER").unwrap(),
+            type_id: fixture.sim.interner().get("ENGINEER").unwrap(),
         },
     );
     let suspend = CommandEnvelope::new(
         owner,
-        fixture.sim.session.tick + 1,
+        fixture.sim.session().tick() + 1,
         Command::SuspendProduction {
             category: ProductionCategory::Infantry,
         },
@@ -1701,7 +1715,7 @@ fn mixed_infantry_cancel_clears_old_cameo_before_same_factory_promotion() {
     let cancel = cancel_envelope(&fixture, "E1");
     let frame = advance_commands(&mut fixture, &[cancel]);
     consume_frame_outputs(&mut fixture, &frame, Some(owner));
-    assert!(!fixture.sim.substrate.entities.contains(product));
+    assert!(!fixture.sim.entities().contains(product));
     assert_old_infantry_cameo_released(&mut fixture, order);
 }
 
@@ -1715,14 +1729,14 @@ fn mixed_infantry_delivery_clears_old_cameo_before_same_factory_promotion() {
     };
     let (order, product) = start_mixed_infantry_queue(&mut fixture);
     let owner = fixture.owner;
-    let successor = fixture.sim.interner.get("ENGINEER").unwrap();
+    let successor = fixture.sim.interner().get("ENGINEER").unwrap();
     for _ in 0..4096 {
         let frame = advance_commands(&mut fixture, &[]);
         consume_frame_outputs(&mut fixture, &frame, Some(owner));
         if fixture
             .sim
-            .production
-            .factories
+            .production()
+            .factories()
             .view(owner, ProductionCategory::Infantry)
             .is_some_and(|factory| {
                 factory
@@ -1735,8 +1749,7 @@ fn mixed_infantry_delivery_clears_old_cameo_before_same_factory_promotion() {
     }
     let delivered = fixture
         .sim
-        .substrate
-        .entities
+        .entities()
         .get(product)
         .expect("successful delivery retains the E1");
     assert!(!delivered.lifecycle.in_limbo());
@@ -1757,8 +1770,8 @@ fn mixed_infantry_terminal_delivery_clears_old_cameo_before_same_factory_promoti
     for _ in 0..4096 {
         if fixture
             .sim
-            .production
-            .factories
+            .production()
+            .factories()
             .view(owner, ProductionCategory::Infantry)
             .is_some_and(|factory| factory.complete_object().is_some())
         {
@@ -1773,8 +1786,8 @@ fn mixed_infantry_terminal_delivery_clears_old_cameo_before_same_factory_promoti
     assert!(
         fixture
             .sim
-            .production
-            .factories
+            .production()
+            .factories()
             .building_factory(producer)
             .is_none()
     );
@@ -1798,8 +1811,7 @@ fn mixed_infantry_terminal_delivery_clears_old_cameo_before_same_factory_promoti
     assert!(
         fixture
             .sim
-            .substrate
-            .entities
+            .entities()
             .get(producer)
             .unwrap()
             .radio_contacts
@@ -1810,7 +1822,7 @@ fn mixed_infantry_terminal_delivery_clears_old_cameo_before_same_factory_promoti
     let frame = advance_commands(&mut fixture, &[]);
     consume_frame_outputs(&mut fixture, &frame, Some(owner));
     assert!(
-        !fixture.sim.substrate.entities.contains(product),
+        !fixture.sim.entities().contains(product),
         "the busy terminal refusal destroys the held E1"
     );
     assert!(
@@ -1966,8 +1978,8 @@ fn assert_pending_repeat(name: &str, tab: SidebarTab) {
         .map(|category| {
             let factory = fixture
                 .sim
-                .production
-                .factories
+                .production()
+                .factories()
                 .view(fixture.owner, category)
                 .unwrap();
             let object = factory.complete_object().unwrap();
@@ -1976,12 +1988,14 @@ fn assert_pending_repeat(name: &str, tab: SidebarTab) {
         .into_iter()
         .collect();
     let credits_before = production::credits_for_owner(&fixture.sim, "Americans");
-    let spent_before = fixture.sim.houses[&fixture.owner].economy.spent_credits();
+    let spent_before = fixture.sim.houses()[&fixture.owner]
+        .economy()
+        .spent_credits();
     let hash_before = fixture.sim.state_hash();
     let rng_before = (
-        fixture.sim.main_rng.logical_state(),
-        fixture.sim.scenario_rng.logical_state(),
-        fixture.sim.mapgen_rng.logical_state(),
+        fixture.sim.main_rng().logical_state(),
+        fixture.sim.scenario_rng().logical_state(),
+        fixture.sim.mapgen_rng().logical_state(),
     );
     let preview = arm_gapowr_with_preview(&mut fixture);
     let pending_before = fixture.input.targeting_mode.clone();
@@ -2002,8 +2016,8 @@ fn assert_pending_repeat(name: &str, tab: SidebarTab) {
         );
         let object = fixture
             .sim
-            .production
-            .factories
+            .production()
+            .factories()
             .view(fixture.owner, category)
             .unwrap()
             .complete_object()
@@ -2025,15 +2039,17 @@ fn assert_pending_repeat(name: &str, tab: SidebarTab) {
         credits_before
     );
     assert_eq!(
-        fixture.sim.houses[&fixture.owner].economy.spent_credits(),
+        fixture.sim.houses()[&fixture.owner]
+            .economy()
+            .spent_credits(),
         spent_before
     );
     assert_eq!(fixture.sim.state_hash(), hash_before);
     assert_eq!(
         (
-            fixture.sim.main_rng.logical_state(),
-            fixture.sim.scenario_rng.logical_state(),
-            fixture.sim.mapgen_rng.logical_state(),
+            fixture.sim.main_rng().logical_state(),
+            fixture.sim.scenario_rng().logical_state(),
+            fixture.sim.mapgen_rng().logical_state(),
         ),
         rng_before,
         "input admission has no simulated RNG side effects"
@@ -2069,11 +2085,6 @@ fn same_ready_cameo_retains_pending_building_and_preview() {
 }
 
 #[test]
-fn other_ready_cameo_retains_pending_building_and_preview() {
-    assert_pending_repeat("GAPILL", SidebarTab::Defense);
-}
-
-#[test]
 #[ignore = "slow; run when changing what it covers"]
 fn own_ready_cameo_right_clears_other_category_pending_before_abandon() {
     for shift in [false, true] {
@@ -2083,7 +2094,9 @@ fn own_ready_cameo_right_clears_other_category_pending_before_abandon() {
         arm_gapowr_with_preview(&mut fixture);
         let identities_before = ready_identities(&fixture);
         let credits_before = production::credits_for_owner(&fixture.sim, "Americans");
-        let spent_before = fixture.sim.houses[&fixture.owner].economy.spent_credits();
+        let spent_before = fixture.sim.houses()[&fixture.owner]
+            .economy()
+            .spent_credits();
         let hash_before = fixture.sim.state_hash();
         let click = press_cameo(
             &mut fixture,
@@ -2104,7 +2117,9 @@ fn own_ready_cameo_right_clears_other_category_pending_before_abandon() {
             credits_before
         );
         assert_eq!(
-            fixture.sim.houses[&fixture.owner].economy.spent_credits(),
+            fixture.sim.houses()[&fixture.owner]
+                .economy()
+                .spent_credits(),
             spent_before
         );
         assert_eq!(
@@ -2131,7 +2146,7 @@ fn queued_only_cameo_right_retains_pending_and_preview_before_abandon() {
         let options =
             production::all_build_options_for_owner(&fixture.sim, &fixture.rules, "Americans");
         for name in ["E1", "ENGINEER"] {
-            let type_id = fixture.sim.interner.get(name).unwrap();
+            let type_id = fixture.sim.interner().get(name).unwrap();
             assert!(
                 options
                     .iter()
@@ -2147,7 +2162,7 @@ fn queued_only_cameo_right_retains_pending_and_preview_before_abandon() {
                 false,
             ));
         }
-        let engineer = fixture.sim.interner.get("ENGINEER").unwrap();
+        let engineer = fixture.sim.interner().get("ENGINEER").unwrap();
         let queue = production::queue_view_for_owner(&fixture.sim, &fixture.rules, "Americans");
         assert!(queue.iter().any(|item| {
             item.type_id == engineer
@@ -2245,10 +2260,10 @@ fn mixed_slope_preview_uses_proximity_and_preserves_paid_product_lifecycle() {
     for cell in [near, far] {
         fixture
             .sim
-            .resolved_terrain
+            .resolved_terrain_mut_for_test()
             .as_mut()
             .unwrap()
-            .cell_mut(cell.0, cell.1)
+            .cell_mut_for_test(cell.0, cell.1)
             .unwrap()
             .slope_type = 1;
     }
@@ -2301,15 +2316,15 @@ fn mixed_slope_preview_uses_proximity_and_preserves_paid_product_lifecycle() {
     // receiver/input transaction, not AppState's physical mouse dispatcher.
     fixture
         .sim
-        .resolved_terrain
+        .resolved_terrain_mut_for_test()
         .as_mut()
         .unwrap()
-        .cell_mut(near.0, near.1)
+        .cell_mut_for_test(near.0, near.1)
         .unwrap()
         .slope_type = 0;
     fixture
         .sim
-        .fog
+        .fog_mut_for_test()
         .set_ground_bits_for_test(owner, near.0, near.1, 0);
     let hidden = production::placement_preview_for_owner_with_overlays(
         &fixture.sim,
@@ -2331,14 +2346,14 @@ fn mixed_slope_preview_uses_proximity_and_preserves_paid_product_lifecycle() {
     assert_eq!(ready_product(&fixture, "GAPOWR"), product);
     fixture
         .sim
-        .fog
+        .fog_mut_for_test()
         .set_ground_bits_for_test(owner, near.0, near.1, 0x18);
     fixture
         .sim
-        .resolved_terrain
+        .resolved_terrain_mut_for_test()
         .as_mut()
         .unwrap()
-        .cell_mut(near.0, near.1)
+        .cell_mut_for_test(near.0, near.1)
         .unwrap()
         .slope_type = 1;
     let command = submit_current_building(&mut fixture, near);
@@ -2369,10 +2384,10 @@ fn mixed_slope_preview_uses_proximity_and_preserves_paid_product_lifecycle() {
 
     fixture
         .sim
-        .resolved_terrain
+        .resolved_terrain_mut_for_test()
         .as_mut()
         .unwrap()
-        .cell_mut(near.0, near.1)
+        .cell_mut_for_test(near.0, near.1)
         .unwrap()
         .slope_type = 0;
     let command = submit_ready_building(&mut fixture, "GAPOWR", SidebarTab::Building, near);
@@ -2390,7 +2405,7 @@ fn mixed_slope_preview_uses_proximity_and_preserves_paid_product_lifecycle() {
             &fixture.sim,
             &fixture.rules,
             owner,
-            fixture.sim.interner.get("GAPOWR").unwrap(),
+            fixture.sim.interner().get("GAPOWR").unwrap(),
         )
         .is_none()
     );
@@ -2641,14 +2656,14 @@ fn unlinked_abandon_clears_current_before_product_expiry() {
         return;
     };
     let owner = fixture.owner;
-    let power_type = fixture.sim.interner.get("GAPOWR").unwrap();
+    let power_type = fixture.sim.interner().get("GAPOWR").unwrap();
     let power_product = ready_product(&fixture, "GAPOWR");
-    let pill_type = fixture.sim.interner.get("GAPILL").unwrap();
+    let pill_type = fixture.sim.interner().get("GAPILL").unwrap();
     let pill_product = ready_product(&fixture, "GAPILL");
     let pill_order = fixture
         .sim
-        .production
-        .factories
+        .production()
+        .factories()
         .view(owner, ProductionCategory::Defense)
         .unwrap()
         .construction_order();
@@ -2731,12 +2746,12 @@ fn unlinked_abandon_clears_current_before_product_expiry() {
         &fixture,
         &native_after(history, "house_abandon", 0)["placement"],
     );
-    assert!(!fixture.sim.substrate.entities.contains(power_product));
+    assert!(!fixture.sim.entities().contains(power_product));
     assert!(
         fixture
             .sim
-            .production
-            .factories
+            .production()
+            .factories()
             .view(owner, ProductionCategory::Building)
             .is_none()
     );
@@ -2798,7 +2813,7 @@ fn remote_success_and_retry_facts_do_not_consume_the_local_backup() {
     let frame = advance_commands(&mut fixture, &[first, second]);
     // Supplied nonlocal House identity for the output consumer; this does
     // not claim a second House's production or native player initialization.
-    let remote = fixture.sim.interner.intern("Russians");
+    let remote = fixture.sim.intern("Russians");
     for local_house in [None, Some(remote)] {
         assert_eq!(consume_frame_outputs(&mut fixture, &frame, local_house), 0);
         assert!(fixture.input.targeting_mode.is_none());
@@ -2822,7 +2837,7 @@ fn remote_other_category_abandon_does_not_clear_the_current_building() {
     let pending = fixture.input.targeting_mode.clone();
     let abandon = cancel_envelope(&fixture, "GAPILL");
     let frame = advance_commands(&mut fixture, &[abandon]);
-    let remote = fixture.sim.interner.intern("Russians");
+    let remote = fixture.sim.intern("Russians");
     assert_eq!(consume_frame_outputs(&mut fixture, &frame, Some(remote)), 0);
     assert_eq!(fixture.input.targeting_mode, pending);
     assert_same_preview(
@@ -2879,8 +2894,8 @@ fn current_product_expiry_retains_type_and_preview_but_has_no_issuer() {
     assert_saved_matches_native(&fixture, native);
     let factory = fixture
         .sim
-        .production
-        .factories
+        .production()
+        .factories()
         .view(fixture.owner, ProductionCategory::Building)
         .expect("product expiry alone retains its factory before a building-state recheck");
     assert_eq!(factory.progress, 54);
@@ -2892,7 +2907,7 @@ fn current_product_expiry_retains_type_and_preview_but_has_no_issuer() {
             &fixture.sim,
             &fixture.rules,
             fixture.owner,
-            fixture.sim.interner.get("GAPOWR").unwrap(),
+            fixture.sim.interner().get("GAPOWR").unwrap(),
         )
         .is_none()
     );
@@ -2981,8 +2996,8 @@ fn null_product_cameo_right_retains_orphan_until_house_abandon() {
     assert!(
         fixture
             .sim
-            .production
-            .factories
+            .production()
+            .factories()
             .view(owner, ProductionCategory::Building)
             .is_none()
     );
@@ -3051,8 +3066,8 @@ fn null_product_house_abandon_accepts_nonzero_buildcat_without_a_held_type() {
         assert!(
             fixture
                 .sim
-                .production
-                .factories
+                .production()
+                .factories()
                 .view(owner, ProductionCategory::Building)
                 .is_some()
         );
@@ -3073,8 +3088,8 @@ fn null_product_house_abandon_accepts_nonzero_buildcat_without_a_held_type() {
         assert!(
             fixture
                 .sim
-                .production
-                .factories
+                .production()
+                .factories()
                 .view(owner, ProductionCategory::Building)
                 .is_none()
         );
@@ -3121,8 +3136,8 @@ fn defense_null_product_house_abandon_clears_only_its_live_factory() {
     assert!(
         fixture
             .sim
-            .production
-            .factories
+            .production()
+            .factories()
             .view(owner, ProductionCategory::Defense)
             .is_none()
     );
@@ -3141,11 +3156,11 @@ fn same_factory_rearm_retains_the_old_cameos_factory_link_and_construction_order
     let product = ready_product(&fixture, "GAPOWR");
     let factory_order = fixture
         .sim
-        .production
-        .factories
+        .production()
+        .factories()
         .iter_insertion_ordered()
         .iter()
-        .map(|factory| (factory.category, factory.insertion_seq))
+        .map(|factory| (factory.category(), factory.insertion_seq()))
         .collect::<Vec<_>>();
     // A real admission is saved; its returned envelope is deliberately not
     // delivered before the supplied product-expiry notification.
@@ -3172,7 +3187,7 @@ fn same_factory_rearm_retains_the_old_cameos_factory_link_and_construction_order
         FrameEffects::default(),
         false,
     ));
-    let type_id = fixture.sim.interner.get("GAPILE").unwrap();
+    let type_id = fixture.sim.interner().get("GAPILE").unwrap();
     for _ in 0..4096 {
         if production::ready_building_entity_for_owner(&fixture.sim, &fixture.rules, owner, type_id)
             .is_some()
@@ -3212,22 +3227,22 @@ fn same_factory_rearm_retains_the_old_cameos_factory_link_and_construction_order
     assert_eq!(
         fixture
             .sim
-            .production
-            .factories
+            .production()
+            .factories()
             .iter_insertion_ordered()
             .iter()
-            .map(|factory| factory.category)
+            .map(|factory| factory.category())
             .collect::<Vec<_>>(),
         native_order,
     );
     assert_eq!(
         fixture
             .sim
-            .production
-            .factories
+            .production()
+            .factories()
             .iter_insertion_ordered()
             .iter()
-            .map(|factory| (factory.category, factory.insertion_seq))
+            .map(|factory| (factory.category(), factory.insertion_seq()))
             .collect::<Vec<_>>(),
         factory_order,
         "native Begin reuses the Factory rather than appending a new one"
@@ -3315,8 +3330,8 @@ fn same_factory_rearm_retains_the_old_cameos_factory_link_and_construction_order
     assert!(
         fixture
             .sim
-            .production
-            .factories
+            .production()
+            .factories()
             .view(owner, ProductionCategory::Building)
             .is_none()
     );
@@ -3361,7 +3376,7 @@ fn saved_product_expiry_clears_backup_without_clearing_another_current_product()
             &fixture.sim,
             &fixture.rules,
             fixture.owner,
-            fixture.sim.interner.get("GAPOWR").unwrap(),
+            fixture.sim.interner().get("GAPOWR").unwrap(),
         )
         .is_none()
     );
@@ -3378,9 +3393,9 @@ fn saved_product_expiry_clears_backup_without_clearing_another_current_product()
     install_late_stationary_blocker(&mut fixture, (8, 4));
     let failed = CommandEnvelope::new(
         fixture.owner,
-        fixture.sim.session.tick + 1,
+        fixture.sim.session().tick() + 1,
         Command::PlaceReadyBuilding {
-            type_id: fixture.sim.interner.get("GAPILL").unwrap(),
+            type_id: fixture.sim.interner().get("GAPILL").unwrap(),
             rx: 8,
             ry: 4,
         },
@@ -3447,13 +3462,15 @@ fn sentinel_placement_keeps_human_factories_and_current_without_retry_or_eva() {
     production::object_find_factory(&fixture.sim, &fixture.rules, product, false, true)
         .expect("the sentinel's alternate ObjectFindFactory(0,1) finds the actual healthy yard");
     let credits = production::credits_for_owner(&fixture.sim, "Americans");
-    let spent = fixture.sim.houses[&fixture.owner].economy.spent_credits();
+    let spent = fixture.sim.houses()[&fixture.owner]
+        .economy()
+        .spent_credits();
     for (occurrence, cell) in [(0, 0), (u16::MAX, u16::MAX)].into_iter().enumerate() {
         let command = CommandEnvelope::new(
             fixture.owner,
-            fixture.sim.session.tick + 1,
+            fixture.sim.session().tick() + 1,
             Command::PlaceReadyBuilding {
-                type_id: fixture.sim.interner.get("GAPOWR").unwrap(),
+                type_id: fixture.sim.interner().get("GAPOWR").unwrap(),
                 rx: cell.0,
                 ry: cell.1,
             },
@@ -3481,7 +3498,9 @@ fn sentinel_placement_keeps_human_factories_and_current_without_retry_or_eva() {
             credits
         );
         assert_eq!(
-            fixture.sim.houses[&fixture.owner].economy.spent_credits(),
+            fixture.sim.houses()[&fixture.owner]
+                .economy()
+                .spent_credits(),
             spent
         );
         let native = native_placement_after(

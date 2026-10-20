@@ -137,11 +137,7 @@ impl CellFacts {
         let c = &terrain.cells()[index];
         let key = RawCellKey::from_native(terrain, cell);
         let raw = &sim.substrate.raw_cell_occupation;
-        let terrain_object = sim
-            .production
-            .terrain_object_cells
-            .get(&(c.rx, c.ry))
-            .copied();
+        let terrain_object = sim.terrain_objects.cell_index().get(&(c.rx, c.ry)).copied();
         let listed = |layer| {
             sim.substrate
                 .occupancy

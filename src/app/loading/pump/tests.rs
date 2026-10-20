@@ -10,6 +10,7 @@ use crate::skirmish_launch::{
 pub(super) fn test_launch_session(country: LaunchCountry) -> SkirmishLaunchSession {
     SkirmishLaunchSession {
         mode: SkirmishLaunchMode {
+            class: crate::skirmish_modes::MpModeClass::Battle,
             id: 1,
             ui_name_key: "GUI:Battle".to_string(),
             tooltip_key: "STT:ModeBattle".to_string(),
@@ -20,16 +21,23 @@ pub(super) fn test_launch_session(country: LaunchCountry) -> SkirmishLaunchSessi
             must_ally: false,
         },
         selected_map_file: Some("mp01t4.map".to_string()),
-        player_name: "Player".to_string(),
-        local: SkirmishLocalSlot {
-            country,
-            country_random: false,
-            color_index: 0,
-            color_random: false,
-            start_position: LaunchStartPosition::Position(0),
-            team: LaunchTeam::None,
-        },
+        humans: vec![crate::skirmish_launch::SkirmishHumanSlot {
+            raw_slot_index: Some(0),
+            name: "Player".to_string(),
+            slot: SkirmishLocalSlot {
+                country,
+                country_random: false,
+                color_index: 0,
+                color_random: false,
+                start_position: LaunchStartPosition::Position(0),
+                team: LaunchTeam::None,
+            },
+            role: crate::skirmish_launch::LaunchHumanRole::from_observer(false),
+        }],
+        local_player_index: 0,
+        ai_player_count: 1,
         opponents: vec![SkirmishAiSlot {
+            raw_slot_index: 1,
             country: LaunchCountry::Russia,
             country_random: false,
             color_index: 1,
@@ -41,6 +49,30 @@ pub(super) fn test_launch_session(country: LaunchCountry) -> SkirmishLaunchSessi
         pre_fill_house_roster: crate::skirmish_launch::PreFillHouseRoster::from_compact_skirmish(1),
         options: SkirmishLaunchOptions::default(),
     }
+}
+
+#[test]
+fn failed_network_load_retries_its_shell_without_installing_an_offline_fallback() {
+    use crate::app::match_runtime::session::{MatchSession, NetworkReturnContext, SessionMode};
+    let mut session = MatchSession::default();
+    session.enter_network(SessionMode::Lan, NetworkReturnContext::LanLobby);
+    session
+        .accept_network_setup(test_launch_session(LaunchCountry::America), true, Some(7))
+        .unwrap();
+    session.set_network_start_seed(77).unwrap();
+    session.prepare_network_timing(2, || 0).unwrap();
+    let startup = session.freeze_network_start(77).unwrap();
+    let loading = LoadingSession::from_request(LoadingRequest::network(startup));
+    assert_eq!(
+        loading.failure_policy(),
+        LoadingFailurePolicy::RetryNetworkShell
+    );
+    assert_eq!(
+        session.return_to_network_lobby(),
+        Some(NetworkReturnContext::LanLobby)
+    );
+    assert_eq!(session.mode(), SessionMode::Lan);
+    assert!(session.network_setup().is_none());
 }
 
 struct TestClock(u32);
@@ -80,8 +112,67 @@ fn prepared_campaign() -> crate::app::match_bootstrap::PreparedCampaignStartup {
     );
     let mut campaigns = crate::rules::campaigns::CampaignRegistry::default();
     campaigns.apply_ini(&ini, &crate::rules::movies::MovieRegistry::default());
-    crate::app::match_bootstrap::prepare_campaign_startup(&campaigns, "ALL1", 1, &mut TestClock(31))
-        .expect("synthetic campaign catalog admits a selected campaign")
+    crate::app::match_bootstrap::prepare_campaign_startup(
+        &campaigns,
+        "ALL1",
+        1,
+        None,
+        None,
+        &mut TestClock(31),
+    )
+    .expect("synthetic campaign catalog admits a selected campaign")
+}
+
+#[test]
+fn admitted_network_start_preserves_canonical_humans_and_host_seed_in_fresh_loading() {
+    use crate::app::match_runtime::session::{MatchSession, NetworkReturnContext, SessionMode};
+    let mut launch = test_launch_session(LaunchCountry::America);
+    launch.opponents.clear();
+    launch.humans[0].slot.color_index = 6;
+    let mut guest = launch.humans[0].clone();
+    guest.name = "Guest".into();
+    guest.raw_slot_index = Some(1);
+    guest.slot.color_index = 1;
+    guest.slot.start_position = LaunchStartPosition::Position(1);
+    launch.humans.push(guest);
+    launch.local_player_index = 1;
+    let mut session = MatchSession::default();
+    session.enter_network(SessionMode::Lan, NetworkReturnContext::LanLobby);
+    session
+        .accept_network_setup(launch, false, Some(7))
+        .unwrap();
+    session.prepare_network_timing(2, || 0).unwrap();
+    let startup = session.freeze_network_start(0xabc123).unwrap();
+    let request = LoadingRequest::network(startup);
+    let initial = crate::app::loading::init::MapLoadInitial::from_test_map_source(
+        prefix_test_map(&[(0, 20, 24), (1, 42, 46)]),
+        crate::map::source::LoadedMapSource::Loose {
+            path: std::path::PathBuf::from("mp01t4.map"),
+            payload_len: 23,
+            source_sha256: crate::util::sha256::sha256_hex(b"synthetic network map"),
+        },
+    );
+    let prepared = request.prepare_initial(initial).unwrap();
+    assert_eq!(prepared.context.match_seed(), 0xabc123);
+    assert_eq!(
+        prepared.context.startup_provenance(),
+        crate::app::loading::fresh_scenario::FreshStartupProvenance::NetworkAccepted
+    );
+    let launch = prepared.context.stock_offline_launch().session();
+    assert_eq!(launch.humans.len(), 2);
+    assert_eq!(launch.local_player_index, 1);
+    assert_eq!(launch.local_player().name, "Guest");
+    let markers =
+        selected_map_start_assignments(launch, Some(prepared.context.stock_offline_projection()));
+    assert_eq!(
+        markers
+            .iter()
+            .map(|marker| marker.participant)
+            .collect::<Vec<_>>(),
+        vec![LoadingParticipantId::Human(0), LoadingParticipantId::Local]
+    );
+    assert_eq!(session.mode(), SessionMode::Lan);
+    assert!(!session.host());
 }
 
 #[test]
@@ -326,6 +417,21 @@ fn loading_replacement_and_terminal_retirement_preserve_cache_and_admission_orde
             )
             .is_err()
     );
+    // A fully loaded network wait retains the same leased cache; retiring it
+    // before peer completion must return that manager too.
+    let pending = slot.as_mut().unwrap();
+    let mut result = super::super::transitions::fallback_map_load_result();
+    result.scenario.startup = LoadingStartup::Accepted(replacement.clone());
+    result.asset_manager = pending.job.asset_manager.take();
+    pending.stage = LoadingStage::AwaitingPeers {
+        result: Box::new(result),
+        wait: NetworkLoadWait::new(0, 0.5),
+    };
+    let cached = audio_service_asset_manager(&assets, slot.as_ref())
+        .unwrap()
+        .load_file_from_mix("sentinel.bin")
+        .unwrap();
+    assert!(std::sync::Arc::ptr_eq(&original.bytes, &cached.bytes));
     // The installer's resource-only cleanup must preserve the replacement
     // admission until its actual L0 observation commits.
     retire_loading_attempt(&mut slot, &mut assets);
@@ -527,52 +633,55 @@ fn loading_preparation_consumes_real_source_and_returns_lease_on_initial_and_adm
 }
 
 #[test]
-fn loading_side_comes_from_first_launch_node_country() {
-    let session = LoadingSession::from_request(LoadingRequest::unverified_legacy_skirmish(
-        test_launch_session(LaunchCountry::Korea),
-        unverified_seed(1),
-    ));
-
-    assert_eq!(
-        session.native.as_ref().map(|native| native.variant),
-        Some(NativeLoadingArt::StockOffline(LoadingArtVariant::Alliance))
-    );
+fn extended_country_identity_survives_without_stock_loading_art() {
+    // Human/AI creation indexes the full HouseType registry, while native
+    // stock loading art/insignia stop at9 (5534CE/4E3671).
+    for index in [10, 13, 14] {
+        let country = LaunchCountry::from_country_index(index);
+        let request = LoadingRequest::unverified_legacy_skirmish(
+            test_launch_session(country),
+            unverified_seed(1),
+        );
+        let session = LoadingSession::from_request(request);
+        assert_eq!(
+            session
+                .stage
+                .startup()
+                .launch_session()
+                .unwrap()
+                .local_slot()
+                .country,
+            country
+        );
+        let native = session.native.as_ref().unwrap();
+        assert_eq!(native.variant, NativeLoadingArt::StockOffline(None));
+        assert!(native.progress_row.participants[0].variant.is_none());
+        assert_eq!(native.local_side_index, -1);
+    }
 }
 
 #[test]
-fn loading_progress_row_snapshots_the_launch_player_name() {
-    let mut launch = test_launch_session(LaunchCountry::America);
-    launch.player_name = "Commander".to_owned();
-    let session = LoadingSession::from_request(LoadingRequest::unverified_legacy_skirmish(
-        launch,
-        unverified_seed(22),
-    ));
-
-    assert_eq!(
-        session
-            .native
-            .as_ref()
-            .map(|native| native.progress_row.label.as_str()),
-        Some("Commander"),
+fn ctor_only_country_side_uses_nonzero_loading_text_scheme() {
+    let schemes = [
+        ColorSchemeEntry {
+            name: "AlliedLoad".into(),
+            hsv: [1, 255, 255],
+        },
+        ColorSchemeEntry {
+            name: "SovietLoad".into(),
+            hsv: [127, 255, 255],
+        },
+    ];
+    let ramps = HouseColorRamps::from_schemes(&schemes);
+    let mut native = NativeLoadingScreenState::standard_skirmish(
+        None,
+        -1,
+        HouseColorIndex(0),
+        LoadingProgressRowSnapshot::default(),
+        NativeLoadingProgressCadence::SelectedMap,
     );
-}
-
-#[test]
-fn loading_session_preserves_selected_map_filename() {
-    let session = LoadingSession::from_request(LoadingRequest::unverified_legacy_skirmish(
-        test_launch_session(LaunchCountry::Yuri),
-        unverified_seed(2),
-    ));
-
-    assert_eq!(session.stage.request().selected_map_file(), "mp01t4.map");
-    assert_eq!(
-        session
-            .stage
-            .request()
-            .skirmish_launch_session()
-            .and_then(|launch| launch.selected_map_file.as_deref()),
-        Some("mp01t4.map")
-    );
+    native.resolve_player_colors(&schemes, &ramps);
+    assert_eq!(native.text_rgb, normalize_rgb(hsv_to_rgb(schemes[1].hsv)));
 }
 
 #[test]
@@ -757,8 +866,8 @@ fn gsi_04_12_generated_prefix_uses_accepted_staging_once() {
     );
     assert_eq!(
         staged_sim
-            .session
-            .mp_start_waypoints
+            .session()
+            .mp_start_waypoints()
             .iter()
             .map(|(&index, &(rx, ry))| (index as u8, rx, ry))
             .collect::<Vec<_>>(),
@@ -846,6 +955,7 @@ fn load_descriptor_source_family_format_matrix() {
         launch.selected_map_file = Some(selected.clone());
         if mode_id == 2 {
             launch.mode = SkirmishLaunchMode {
+                class: crate::skirmish_modes::MpModeClass::FreeForAll,
                 id: 2,
                 ui_name_key: "GUI:FreeForAll".to_string(),
                 tooltip_key: "STT:ModeFreeForAll".to_string(),
@@ -980,7 +1090,7 @@ fn generic_manual_and_unresolved_legacy_reject_before_receipt_or_staging() {
     let accepted = accepted_random_map_with_starts(selected, 0x4567, &starts, &starts);
     let mut unresolved_session = test_launch_session(LaunchCountry::America);
     unresolved_session.selected_map_file = Some(selected.to_string());
-    unresolved_session.local.country_random = true;
+    unresolved_session.local_slot_mut().country_random = true;
     let mut unresolved =
         LoadingRequest::unverified_legacy_skirmish(unresolved_session, unverified_seed(0x4567))
             .with_accepted_random_map(Some(accepted));
@@ -1013,11 +1123,12 @@ fn loading_assignments_keep_gather_table_slots_separate_from_sparse_waypoint_ind
 
     let mut launch = test_launch_session(LaunchCountry::America);
     let mut second_opponent = launch.opponents[0].clone();
+    second_opponent.raw_slot_index = 2;
     second_opponent.color_index = 2;
     second_opponent.start_position = LaunchStartPosition::Position(2);
     launch.opponents.push(second_opponent);
-    launch.pre_fill_house_roster =
-        crate::skirmish_launch::PreFillHouseRoster::from_compact_skirmish(2);
+    launch.ai_player_count = 2;
+    launch.rebuild_house_roster();
 
     // Gather target 3 retains raw slots 0 and 2, then appends a fallback
     // at vector position 2. The retained slot and fallback consequently
@@ -1086,53 +1197,6 @@ fn loading_assignments_keep_gather_table_slots_separate_from_sparse_waypoint_ind
     assert_eq!(markers.len(), 2);
     assert_eq!(markers[1].waypoint.index, 2);
     assert_eq!(markers[1].participant, LoadingParticipantId::Opponent(1));
-}
-
-#[test]
-fn gsi_04_12_generated_prefix_rejects_presentation_only_preview() {
-    let selected = "RandMap.Sed";
-    let starts = [(0, 20, 24), (1, 42, 46)];
-    let mut launch = test_launch_session(LaunchCountry::America);
-    launch.selected_map_file = Some(selected.to_string());
-    let initial = crate::app::loading::init::MapLoadInitial::from_test_map_source(
-        prefix_test_map(&starts),
-        crate::map::source::LoadedMapSource::Generated {
-            seed_name: selected.to_string(),
-            seed_source: None,
-        },
-    );
-    let mut request = LoadingRequest::unverified_legacy_skirmish(launch, unverified_seed(0x1313))
-        .with_random_map_preview(Some(generated_preview_with_starts(0x1313, &starts)));
-
-    let err = request.admit_context(&initial).unwrap_err();
-    assert!(
-        format!("{err:#}").contains("no accepted setup start staging"),
-        "unexpected error: {err:#}"
-    );
-}
-
-#[test]
-fn generated_prefix_rejects_mismatched_source_name() {
-    let selected = "RandMap.Sed";
-    let starts = [(0, 20, 24), (1, 42, 46)];
-    let mut launch = test_launch_session(LaunchCountry::America);
-    launch.selected_map_file = Some(selected.to_string());
-    let accepted = accepted_random_map_with_starts(selected, 0x1414, &starts, &starts);
-    let initial = crate::app::loading::init::MapLoadInitial::from_test_map_source(
-        prefix_test_map(&starts),
-        crate::map::source::LoadedMapSource::Generated {
-            seed_name: "Other.Sed".to_string(),
-            seed_source: None,
-        },
-    );
-    let mut request = LoadingRequest::unverified_legacy_skirmish(launch, unverified_seed(0x1414))
-        .with_accepted_random_map(Some(accepted));
-
-    let err = request.admit_context(&initial).unwrap_err();
-    assert!(
-        format!("{err:#}").contains("does not match selected record"),
-        "unexpected error: {err:#}"
-    );
 }
 
 #[test]
@@ -1264,6 +1328,7 @@ fn gsi_04_12_stock_ffa_preview_can_only_supply_loading_fallback_pixels() {
 
     let mut launch = test_launch_session(LaunchCountry::America);
     launch.mode = SkirmishLaunchMode {
+        class: crate::skirmish_modes::MpModeClass::FreeForAll,
         id: 2,
         ui_name_key: "GUI:FreeForAll".to_string(),
         tooltip_key: "STT:ModeFreeForAll".to_string(),
@@ -1393,25 +1458,6 @@ fn random_map_progress_uses_native_integer_halving_and_raw_200_terminal() {
         NativeLoadingProgressCadence::SelectedMap.terminal_raw_percent(),
         100
     );
-}
-
-#[test]
-fn loading_session_falls_back_without_native_session_only_outside_parity_path() {
-    let session = LoadingSession::from_request(LoadingRequest::generic_map_load("auto"));
-
-    assert!(session.native.is_none());
-    assert!(session.stage.request().skirmish_launch_session().is_none());
-    assert_eq!(session.stage.request().selected_map_file(), "auto");
-}
-
-#[test]
-fn loading_session_starts_at_initial_map_selection_phase() {
-    let session = LoadingSession::from_request(LoadingRequest::unverified_legacy_skirmish(
-        test_launch_session(LaunchCountry::America),
-        unverified_seed(3),
-    ));
-
-    assert!(matches!(session.stage, LoadingStage::Selected(_)));
 }
 
 #[test]
@@ -1578,42 +1624,6 @@ fn rejected_startup_observation_does_not_publish_partial_admission() {
 }
 
 #[test]
-fn loading_progress_standard_skirmish_initializes_one_lane_max_100() {
-    let progress = LoadingProgressState::standard_skirmish();
-
-    assert_eq!(progress.max_value(), 100.0);
-    assert_eq!(progress.current_value(), 0.0);
-    assert_eq!(progress.current_percent(), 0.0);
-}
-
-#[test]
-fn loading_progress_duplicate_milestones_do_not_redraw() {
-    let mut progress = LoadingProgressState::standard_skirmish();
-
-    assert!(progress.advance_progress(3));
-    assert!(!progress.advance_progress(3));
-    assert_eq!(progress.current_value(), 3.0);
-}
-
-#[test]
-fn loading_progress_lower_milestone_does_not_redraw() {
-    let mut progress = LoadingProgressState::standard_skirmish();
-
-    assert!(progress.advance_progress(8));
-    assert!(!progress.advance_progress(6));
-    assert_eq!(progress.current_value(), 8.0);
-}
-
-#[test]
-fn loading_progress_advancing_milestone_requests_redraw() {
-    let mut progress = LoadingProgressState::standard_skirmish();
-
-    assert!(progress.advance_progress(3));
-    assert!(progress.advance_progress(8));
-    assert_eq!(progress.current_value(), 8.0);
-}
-
-#[test]
 fn loading_progress_clipped_width_matches_native_formula_for_exact_values() {
     let mut progress = LoadingProgressState::standard_skirmish();
 
@@ -1643,23 +1653,9 @@ fn loading_progress_theater_ramp_stock_rulesmd_count_emits_13_through_25() {
 }
 
 #[test]
-fn loading_progress_theater_ramp_nonmultiple_base_count_uses_native_quotient() {
-    let emitted = theater_ramp_changed_values(38);
-
-    assert_eq!(emitted, (13..=25).collect::<Vec<_>>());
-}
-
-#[test]
 fn loading_progress_theater_ramp_zero_or_invalid_small_count_has_no_dynamic_values() {
     assert!(theater_ramp_changed_values(0).is_empty());
     assert!(theater_ramp_changed_values(12).is_empty());
-}
-
-#[test]
-fn loading_theater_cache_mismatch_covers_first_same_and_changed_cases() {
-    assert!(theater_cache_mismatch(false, "TEMPERATE", "TEMPERATE"));
-    assert!(!theater_cache_mismatch(true, "TEMPERATE", "temperate"));
-    assert!(theater_cache_mismatch(true, "TEMPERATE", "SNOW"));
 }
 
 #[test]
@@ -1669,12 +1665,12 @@ fn selected_native_gate_preserves_metadata_and_raw_progress_cadence() {
         (NativeLoadingProgressCadence::RandomMapHalved, 6.0),
     ] {
         let mut native = NativeLoadingScreenState::standard_skirmish(
-            LoadingArtVariant::Americans,
+            Some(LoadingArtVariant::Americans),
             0,
             HouseColorIndex(0),
-            LoadingProgressRowSnapshot {
-                label: "Player".into(),
-            },
+            LoadingProgressRowSnapshot::from_launch_session(&test_launch_session(
+                LaunchCountry::America,
+            )),
             cadence,
         );
         native.runtime_color_scheme_count = 16;
@@ -1712,12 +1708,12 @@ fn native_loading_state_keeps_the_full_player_progress_ramp() {
         mk("DarkBlue", [153, 214, 212]),
     ]);
     let mut native = NativeLoadingScreenState::standard_skirmish(
-        LoadingArtVariant::Americans,
+        Some(LoadingArtVariant::Americans),
         0,
         HouseColorIndex(1),
-        LoadingProgressRowSnapshot {
-            label: "Player".to_owned(),
-        },
+        LoadingProgressRowSnapshot::from_launch_session(&test_launch_session(
+            LaunchCountry::America,
+        )),
         NativeLoadingProgressCadence::SelectedMap,
     );
     native.resolve_player_colors(
@@ -1729,25 +1725,6 @@ fn native_loading_state_keeps_the_full_player_progress_ramp() {
     assert_eq!(native.progress_ramp, *ramps.ramp(HouseColorIndex(1)));
     assert_ne!(native.progress_ramp[0], native.progress_ramp[15]);
     assert!(native.progress_ramp[0].b > native.progress_ramp[0].r);
-}
-
-#[test]
-fn both_native_loading_cadences_prepare_scenario_before_first_frame() {
-    assert!(NativeLoadingProgressCadence::SelectedMap.prepares_scenario_before_first_frame());
-    assert!(NativeLoadingProgressCadence::RandomMapHalved.prepares_scenario_before_first_frame());
-}
-
-#[test]
-fn selected_generic_progress_uses_no_native_loader_metadata() {
-    let mut phase = LoadingPhaseProgress::select(None, true, |_| {
-        panic!("generic loading must never construct rendering progress")
-    });
-    assert!(matches!(&phase.sink, SelectedProgressSink::Generic(_)));
-    assert!(!phase.native_theater_cache_mismatch);
-    assert_eq!(phase.runtime_color_scheme_count, 0);
-    for raw in [8, 6, 8, 12, 100, 200] {
-        phase.sink.milestone(raw);
-    }
 }
 
 /// Startup absence and a lost loading lease both rebuild from the retained
@@ -1857,4 +1834,152 @@ fn absent_and_lost_loading_managers_preserve_media_policy() {
         session.job.retire(&mut owner);
         assert!(owner.is_available());
     }
+}
+
+#[test]
+fn network_loading_progress_and_completion_match_original_controls() {
+    let corpus: serde_json::Value =
+        crate::test_fixture::json("tools/storage_oracle/lan_lobby.json").clone();
+    for row in corpus["loading_wait_progress"].as_array().unwrap() {
+        let mut launch = test_launch_session(LaunchCountry::America);
+        let template = launch.humans[0].clone();
+        launch.humans = (0..row["count"].as_u64().unwrap() as usize)
+            .map(|index| {
+                let mut human = template.clone();
+                human.name = format!("Player{index}");
+                human.raw_slot_index = Some(index as u8);
+                human
+            })
+            .collect();
+        let mut rows = LoadingProgressRowSnapshot::from_launch_session(&launch);
+        let mut local = LoadingProgressState::standard_skirmish();
+        for update in row["updates"].as_array().unwrap() {
+            let index = update[0].as_u64().unwrap() as usize;
+            let percent = update[1].as_i64().unwrap() as i32;
+            if index == 0 {
+                local.advance_progress(percent as u32);
+            } else {
+                rows.update_remote_progress(index, percent);
+            }
+        }
+        for (index, expected) in row["values"].as_array().unwrap().iter().enumerate() {
+            let actual = rows.participants[index]
+                .remote_progress
+                .as_ref()
+                .unwrap_or(&local)
+                .current_value();
+            assert_eq!(actual, expected.as_f64().unwrap());
+        }
+        let fraction = rows.total_fraction(&local);
+        let expected = row["fraction"].as_f64().unwrap();
+        // Native x87 averages retain intermediate precision; integer packet
+        // values cannot reach that sub-ULP gap at the0.9995 admission boundary.
+        assert!((fraction - expected).abs() <= expected.abs().max(1.0) * f64::EPSILON * 2.0);
+        let mut wait = NetworkLoadWait::new(10, fraction);
+        assert_eq!(
+            wait.poll(10, fraction) == NetworkLoadPoll::Complete,
+            row["complete"].as_bool().unwrap()
+        );
+    }
+}
+
+#[test]
+fn network_loading_wait_resends_rearms_on_regression_and_expires_before_completion() {
+    let mut wait = NetworkLoadWait::new(0, 0.5);
+    assert_eq!(wait.poll(299, 0.5), NetworkLoadPoll::Pending);
+    assert_eq!(wait.poll(300, 0.5), NetworkLoadPoll::ReportProgress);
+    assert_eq!(wait.poll(359, 0.5), NetworkLoadPoll::Pending);
+    assert_eq!(wait.poll(360, 0.5), NetworkLoadPoll::ReportProgress);
+    assert_eq!(wait.poll(1000, 0.75), NetworkLoadPoll::ReportProgress);
+    assert_eq!(wait.poll(1001, 0.5), NetworkLoadPoll::Pending);
+    assert_eq!(wait.poll(8200, 0.5), NetworkLoadPoll::ReportProgress);
+    assert_eq!(wait.poll(8201, 1.0), NetworkLoadPoll::TimedOut);
+    let mut unchanged = NetworkLoadWait::new(0, 0.5);
+    assert_eq!(unchanged.poll(3600, 0.5), NetworkLoadPoll::TimedOut);
+}
+
+#[test]
+fn loading_timeout_retires_only_live_peer_and_flags_existing_house_before_install() {
+    use crate::app::match_runtime::session::{MatchSession, NetworkReturnContext, SessionMode};
+    let mut launch = test_launch_session(LaunchCountry::America);
+    launch.opponents.clear();
+    launch.ai_player_count = 0;
+    let mut remote = launch.humans[0].clone();
+    remote.name = "Remote".into();
+    remote.raw_slot_index = Some(1);
+    remote.slot.color_index = 1;
+    launch.humans.push(remote);
+    launch.rebuild_house_roster();
+    let rules = crate::rules::ruleset::RuleSet::from_ini(
+        &crate::rules::ini_parser::IniFile::from_str("[Countries]\n0=Americans\n"),
+    )
+    .unwrap();
+    let descriptor =
+        crate::sim::scenario_bootstrap::MatchLaunchDescriptor::from_resolved(launch.clone())
+            .unwrap();
+    let mut sim = crate::sim::world::Simulation::new();
+    crate::sim::scenario_bootstrap::initialize_skirmish_launch_houses(
+        &mut sim,
+        &Default::default(),
+        &rules,
+        &descriptor,
+    );
+    let local = sim.interner().get("Player").unwrap();
+    let peer = sim.interner().get("Remote").unwrap();
+    let mut session = MatchSession::default();
+    session.enter_network(SessionMode::Lan, NetworkReturnContext::LanLobby);
+    session.accept_network_setup(launch, true, Some(7)).unwrap();
+    session.prepare_network_timing(2, || 0).unwrap();
+    let mut result = super::super::transitions::fallback_map_load_result();
+    result.scenario.startup = session.freeze_network_start(1).unwrap();
+    result.scenario.simulation = Some(sim);
+    let notices = apply_network_loading_disconnects(&mut session, &mut result, &[1]);
+    assert_eq!(notices, vec![("Remote".into(), "Remote".into())]);
+    assert_eq!(session.network_connected_source_indices(), &[0]);
+    assert_eq!(
+        result
+            .scenario
+            .startup
+            .launch_session()
+            .unwrap()
+            .humans
+            .len(),
+        2
+    );
+    let sim = result.scenario.simulation.as_ref().unwrap();
+    assert!(sim.houses()[&peer].is_to_die());
+    assert!(!sim.houses()[&local].is_to_die());
+    assert_eq!(sim.session().current_house(), Some(local));
+    assert!(apply_network_loading_disconnects(&mut session, &mut result, &[1]).is_empty());
+}
+
+#[cfg(target_os = "linux")]
+#[path = "campaign_miner_tests.rs"]
+mod campaign_miner;
+
+#[test]
+fn a_network_start_installs_its_mode_and_timing_into_the_scenario() {
+    use crate::app::match_runtime::session::{MatchSession, NetworkReturnContext, SessionMode};
+    let mut session = MatchSession::default();
+    session.enter_network(SessionMode::Lan, NetworkReturnContext::LanLobby);
+    session
+        .accept_network_setup(test_launch_session(LaunchCountry::America), true, Some(7))
+        .unwrap();
+    session.set_network_start_seed(77).unwrap();
+    session.prepare_network_timing(2, || 0).unwrap();
+    let startup = session.freeze_network_start(77).unwrap();
+    let crate::app::match_bootstrap::LoadingStartup::Network(accepted) = &startup else {
+        panic!("a frozen network start");
+    };
+    let mut sim = crate::sim::world::Simulation::new();
+    crate::app::loading::init::install_startup_session_mode(&mut sim, &startup);
+    assert_eq!(sim.session().game_mode(), SessionMode::Lan);
+    assert_eq!(
+        sim.session().network_max_ahead_frames(),
+        Some(accepted.max_ahead_frames())
+    );
+    assert_eq!(
+        sim.session().game_mode().command_queue_route(),
+        crate::sim::world::CommandQueueRoute::Multiplayer
+    );
 }

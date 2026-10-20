@@ -113,6 +113,17 @@ impl RockingState {
         ));
     }
 
+    /// Crush_Or_Prescatter_Cell's tail after crushing a Unit
+    /// (`0x00741939..0x00741954`): FCOMP of Techno+334 with binary32 0.0
+    /// (`0x007E1748`); on C3 (equal, either zero, or unordered) the store of
+    /// binary32 -0.05 (`0xBD4CCCCD`).
+    pub(crate) fn tilt_after_unit_crush(&mut self) {
+        let forwards = f32::from_bits(self.vel_forwards.bits());
+        if forwards == 0.0 || forwards.is_nan() {
+            self.vel_forwards = NativeF32Bits::from_bits(0xbd4c_cccd);
+        }
+    }
+
     #[cfg(any(test, feature = "test-support"))]
     pub fn set_angle_forwards_for_test(&mut self, angle: SimFixed) {
         self.angle_forwards = fixed_word(angle);

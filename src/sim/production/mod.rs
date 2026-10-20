@@ -35,6 +35,7 @@ pub use self::factory::{
     category_for_object, time_to_build, type_base_build_time,
 };
 pub use self::factory_lifecycle::suspend_production;
+pub use self::production_spawn::mark_war_factory_spawn_contact;
 pub use self::factory_lifecycle::{
     FactoryRestoreError, ready_building_entity_for_owner, validate_restored_factory_state,
 };

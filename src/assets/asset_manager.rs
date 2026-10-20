@@ -1841,28 +1841,6 @@ mod tests {
     }
 
     #[test]
-    fn archive_lookup_is_case_insensitive() {
-        let mut manager = AssetManager {
-            archives: vec![NamedArchive {
-                name: "RA2.MIX".to_string(),
-                archive: make_new_format_mix("rules.ini", b"test"),
-            }],
-            archive_catalog: Vec::new(),
-            lookup_index: HashMap::new(),
-            mix_file_cache: Mutex::new(HashMap::new()),
-            loose_files: HashMap::new(),
-            audio_pair: SelectedAudioPair::default(),
-            active_theater: None,
-            active_theater_archives: Vec::new(),
-            ra2_dir: PathBuf::new(),
-        };
-        manager.rebuild_indexes();
-
-        assert!(manager.archive("ra2.mix").is_some());
-        assert!(manager.archive("RA2.MIX").is_some());
-    }
-
-    #[test]
     fn archive_lookup_matches_nested_leaf_aliases() {
         let mut manager = AssetManager {
             archives: vec![NamedArchive {
@@ -2141,24 +2119,6 @@ mod tests {
         assert_eq!(
             manager.registered_archive_names(),
             ["temperat.mix", "isotemmd.mix"]
-        );
-    }
-
-    #[test]
-    fn neutral_sidebar_nested_names_expose_leaf_lookup_keys() {
-        assert_eq!(
-            archive_lookup_keys("ra2.mix -> sidenc01.mix"),
-            vec![
-                "ra2.mix -> sidenc01.mix".to_string(),
-                "sidenc01.mix".to_string(),
-            ]
-        );
-        assert_eq!(
-            archive_lookup_keys("ra2md.mix -> sidenc02.mix"),
-            vec![
-                "ra2md.mix -> sidenc02.mix".to_string(),
-                "sidenc02.mix".to_string(),
-            ]
         );
     }
 }

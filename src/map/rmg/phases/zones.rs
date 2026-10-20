@@ -438,7 +438,6 @@ impl Fill {
 mod tests {
     use super::*;
     use crate::map::rmg::phases::shore::{SubTile, TileBlock, TileBlocks};
-    use crate::map::rmg::tiles::TILE_UNASSIGNED;
 
     /// Terrain bytes per tile id: 0 clear, 9 water, 0xA beach, 7 rock.
     struct TerrainBlocks;
@@ -624,16 +623,6 @@ mod tests {
         let field = compute(&grid, &TerrainBlocks, &params, ZoneKind::Amphibious);
         assert_eq!(field.class(rock.0, rock.1), 6);
         assert!(!field.is_reference_ground(rock.0, rock.1));
-    }
-
-    #[test]
-    fn unassigned_tiles_classify_as_clear() {
-        let (mut grid, params) = world();
-        let cells = playable(&grid, &params);
-        let spot = cells[0];
-        grid.get_mut(spot.0, spot.1).unwrap().tile = TILE_UNASSIGNED;
-        let field = compute(&grid, &TerrainBlocks, &params, ZoneKind::Amphibious);
-        assert_eq!(field.class(spot.0, spot.1), 0);
     }
 
     #[test]

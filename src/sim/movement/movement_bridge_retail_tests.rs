@@ -47,6 +47,9 @@ mod bridge_restamp_retail_probe;
 #[path = "bridge_tile_retail_probe.rs"]
 mod bridge_tile_retail_probe;
 
+#[path = "bridge_retail_power_fixture.rs"]
+mod bridge_retail_power_fixture;
+
 #[path = "sov01_bridge_retail_tests.rs"]
 mod sov01_bridge_retail_tests;
 
@@ -315,15 +318,11 @@ fn prepare_commanding_house(scenario: &mut crate::headless_scenario::HeadlessSce
             let name = "Americans".to_string();
             let id = sim.interner.intern(&name);
             sim.houses
-                .insert(id, HouseState::new(id, 0, None, true, 10_000, 10));
+                .register(HouseState::new(id, 0, None, true, 10_000, 10));
             name
         });
     for house in sim.houses.values_mut() {
-        house.multiplay_passive = true;
-    }
-    let id = sim.interner.get(&name).expect("owner interned");
-    if sim.session.house_order.is_empty() {
-        sim.session.house_order = vec![id];
+        house.set_multiplay_passive_for_test(true);
     }
     name
 }
@@ -425,7 +424,7 @@ fn diagnose_rejected_order(
         "NavCom and route length after direct apply: {:?}",
         simulation.entities().get(entity_id).map(|entity| (
             entity.navigation.nav_com(),
-            entity.navigation.path_replay.route_cells().len()
+            entity.navigation.path_replay().route_cells().len()
         ))
     );
 }
@@ -455,7 +454,7 @@ fn accepted_route(
 ) -> Option<Vec<(u16, u16)>> {
     let entity = scenario.sim().entities().get(entity_id)?;
     entity.navigation.nav_com()?;
-    Some(entity.navigation.path_replay.route_cells())
+    Some(entity.navigation.path_replay().route_cells())
 }
 
 /// Issue an ordinary player `Command::Move` — the same entry point a right-click
@@ -553,8 +552,8 @@ fn drive_across_high_bridge_with_order(
     };
     println!(
         "loaded {map_file} ({}x{}, theater {})",
-        scenario.sim().session.map_width,
-        scenario.sim().session.map_height,
+        scenario.sim().session.map_width(),
+        scenario.sim().session.map_height(),
         scenario.map.header.theater,
     );
 
@@ -580,6 +579,12 @@ fn drive_across_high_bridge_with_order(
 
     let owner_name = prepare_commanding_house(&mut scenario);
     println!("commanding house: {owner_name}");
+    bridge_retail_power_fixture::prepare_powered_mover(
+        &mut scenario,
+        &owner_name,
+        unit_type,
+        span.approach_a,
+    );
 
     // Spawn on the near approach; fall back one cell further back if that cell
     // is already occupied by map-placed content.
@@ -638,7 +643,7 @@ fn drive_across_high_bridge_with_order(
         .interner
         .get(&owner_name)
         .expect("owner interned");
-    let execute_tick = scenario.sim().session.tick + 1;
+    let execute_tick = scenario.sim().session.tick() + 1;
     println!("order source: {order_source:?} -> {:?}", span.approach_b);
     let order = CommandEnvelope::new(
         owner_id,
@@ -647,7 +652,12 @@ fn drive_across_high_bridge_with_order(
     );
     scenario
         .runtime
-        .advance_frame(&[order], SIM_TICK_MS, TickLane::Ordinary, crate::sim::world::FrameEffects::default())
+        .advance_frame(
+            &[order],
+            SIM_TICK_MS,
+            TickLane::Ordinary,
+            crate::sim::world::FrameEffects::default(),
+        )
         .expect("fixture frame must complete");
 
     let ordered_path = accepted_route(&scenario, entity_id);
@@ -704,7 +714,7 @@ fn drive_across_high_bridge_with_order(
         };
         let loco_layer = entity.movement_layer_or_ground();
         rows.push(TickRow {
-            tick: sim.session.tick,
+            tick: sim.session.tick(),
             cell,
             z: entity.position.z(),
             on_bridge: entity.on_bridge(),
@@ -1269,8 +1279,8 @@ fn drive_across_low_bridge(map_file: &str, unit_type: &str) {
     };
     println!(
         "loaded {map_file} ({}x{}, theater {})",
-        scenario.sim().session.map_width,
-        scenario.sim().session.map_height,
+        scenario.sim().session.map_width(),
+        scenario.sim().session.map_height(),
         scenario.map.header.theater,
     );
 
@@ -1295,6 +1305,12 @@ fn drive_across_low_bridge(map_file: &str, unit_type: &str) {
 
     let owner_name = prepare_commanding_house(&mut scenario);
     println!("commanding house: {owner_name}");
+    bridge_retail_power_fixture::prepare_powered_mover(
+        &mut scenario,
+        &owner_name,
+        unit_type,
+        span.approach_a,
+    );
 
     let start_candidates = [
         span.approach_a,
@@ -1365,7 +1381,7 @@ fn drive_across_low_bridge(map_file: &str, unit_type: &str) {
         .interner
         .get(&owner_name)
         .expect("owner interned");
-    let execute_tick = scenario.sim().session.tick + 1;
+    let execute_tick = scenario.sim().session.tick() + 1;
     let order = CommandEnvelope::new(
         owner_id,
         execute_tick,
@@ -1377,7 +1393,12 @@ fn drive_across_low_bridge(map_file: &str, unit_type: &str) {
     );
     scenario
         .runtime
-        .advance_frame(&[order], SIM_TICK_MS, TickLane::Ordinary, crate::sim::world::FrameEffects::default())
+        .advance_frame(
+            &[order],
+            SIM_TICK_MS,
+            TickLane::Ordinary,
+            crate::sim::world::FrameEffects::default(),
+        )
         .expect("fixture frame must complete");
 
     match accepted_route(&scenario, entity_id) {
@@ -1423,7 +1444,7 @@ fn drive_across_low_bridge(map_file: &str, unit_type: &str) {
         };
         let loco_layer = entity.movement_layer_or_ground();
         rows.push(TickRow {
-            tick: sim.session.tick,
+            tick: sim.session.tick(),
             cell,
             z: entity.position.z(),
             on_bridge: entity.on_bridge(),
@@ -1681,85 +1702,6 @@ fn hover_tank_crosses_killer_low_bridge_at_ground_height() {
     drive_across_low_bridge("Killer.mmx", "ROBO");
 }
 
-/// Inventory only: where the stock maps put low spans and what facts those cells
-/// carry. Diagnostic — it asserts nothing about movement, and exists because the
-/// low-span invariant had to be measured before it could be written down.
-#[test]
-#[ignore = "requires a retail RA2/YR install (RA2_DIR or config.toml)"]
-fn retail_low_bridge_inventory() {
-    let Some(retail) = retail_dir() else {
-        eprintln!("SKIPPED: no retail root (set RA2_DIR or provide config.toml)");
-        return;
-    };
-    for map_file in [
-        "Lostlake.mmx",
-        "Shrapnel.mmx",
-        "Killer.mmx",
-        "EB3.mmx",
-        "Dustbowl.mmx",
-        "Bermuda.mmx",
-        "BayOPigs.mmx",
-        "Hills.mmx",
-    ] {
-        println!("\n===== {map_file} =====");
-        match headless_scenario::load(&retail, map_file, SEED) {
-            Ok(scenario) => {
-                let sim = scenario.sim();
-                let terrain = sim
-                    .resolved_terrain
-                    .as_ref()
-                    .expect("headless load keeps resolved terrain");
-                let grid = sim.path_grid().expect("navigation published");
-                let all: Vec<(u16, u16)> = (0..terrain.height())
-                    .flat_map(|y| (0..terrain.width()).map(move |x| (x, y)))
-                    .collect();
-                let low = all
-                    .iter()
-                    .filter(|c| is_low_deck_cell(terrain, **c))
-                    .count();
-                let structural = all
-                    .iter()
-                    .filter(|(x, y)| grid.cell(*x, *y).is_some_and(|c| c.bridge_structural))
-                    .count();
-                let tube_marked = all
-                    .iter()
-                    .filter(|(x, y)| grid.cell(*x, *y).is_some_and(|c| c.low_bridge_tube_cell))
-                    .count();
-                let tube_indexed = all
-                    .iter()
-                    .filter(|(x, y)| terrain.cell(*x, *y).is_some_and(|c| c.tube_index.is_some()))
-                    .count();
-                println!(
-                    "{}x{}: {low} low-deck cell(s), {structural} structural high cell(s), \
-                     {tube_marked} low_bridge_tube_cell, {tube_indexed} with a tube index",
-                    terrain.width(),
-                    terrain.height(),
-                );
-                let spans = find_low_bridge_spans(terrain, grid);
-                println!("{} crossable low run(s), longest first:", spans.len());
-                for span in &spans {
-                    println!(
-                        "  {:?} .. {:?} ({} cells, step {:?}) approaches {:?} lvl {} / {:?} lvl {}",
-                        span.deck[0],
-                        span.deck.last().expect("non-empty"),
-                        span.deck.len(),
-                        span.step,
-                        span.approach_a,
-                        span.approach_a_level,
-                        span.approach_b,
-                        span.approach_b_level,
-                    );
-                }
-                match spans.first() {
-                    Some(span) => print_low_inventory(terrain, grid, span),
-                    None => println!("no usable low span"),
-                }
-            }
-            Err(error) => println!("{map_file}: load failed: {error}"),
-        }
-    }
-}
-
 #[test]
 #[ignore = "requires a retail RA2/YR install (RA2_DIR or config.toml)"]
 fn tank_crosses_bay_of_pigs_high_bridge_at_deck_height() {
@@ -1999,7 +1941,7 @@ fn tank_repathing_around_a_deck_blocker_stays_on_the_bridge_layer() {
         .map(|entity| {
             entity
                 .navigation
-                .path_replay
+                .path_replay()
                 .installed_cells(span.approach_a)
         })
         .unwrap_or_default();
@@ -2052,7 +1994,7 @@ fn tank_repathing_around_a_deck_blocker_stays_on_the_bridge_layer() {
         .get(crosser)
         .expect("crosser present")
         .navigation
-        .path_replay
+        .path_replay()
         .clone();
     let mut idle_frames = 0u32;
     for _ in 0..MAX_TICKS {
@@ -2071,7 +2013,7 @@ fn tank_repathing_around_a_deck_blocker_stays_on_the_bridge_layer() {
         };
         let loco_layer = entity.movement_layer_or_ground();
         let row = TickRow {
-            tick: sim.session.tick,
+            tick: sim.session.tick(),
             cell,
             z: entity.position.z(),
             on_bridge: entity.on_bridge(),
@@ -2097,7 +2039,7 @@ fn tank_repathing_around_a_deck_blocker_stays_on_the_bridge_layer() {
                 .copied()
                 .expect("the park cell is on the path grid");
             blocker_parked = Some((
-                sim.session.tick,
+                sim.session.tick(),
                 parked.position.z(),
                 parked.on_bridge(),
                 deck.bridge_structural,
@@ -2116,7 +2058,7 @@ fn tank_repathing_around_a_deck_blocker_stays_on_the_bridge_layer() {
             ground_layer_deck_frames.push(row);
         }
         if crate::sim::movement::motion_query::is_moving(&entity) == Some(true) {
-            let route = &entity.navigation.path_replay;
+            let route = entity.navigation.path_replay();
             if route_reinstalled(&previous_route, route) {
                 path_rebuilds += 1;
                 if row.structural {
@@ -2216,104 +2158,6 @@ fn tank_repathing_around_a_deck_blocker_stays_on_the_bridge_layer() {
 // ledger names, so the crossing tests below assert measured geometry instead of
 // the ledger's second-hand cell list.
 // ---------------------------------------------------------------------------
-
-/// Print, for one map, every structural run that is **broken** — a straight line
-/// of stamped cells interrupted by one or more unstamped cells at the same
-/// terrain level, i.e. a partially collapsed high span — plus the raw bridge
-/// facts of every low-deck cell whose overlay id is not a pristine body id.
-#[test]
-#[ignore = "requires a retail RA2/YR install (RA2_DIR or config.toml)"]
-fn retail_damaged_bridge_inventory() {
-    let Some(retail) = retail_dir() else {
-        eprintln!("SKIPPED: no retail root (set RA2_DIR or provide config.toml)");
-        return;
-    };
-    for map_file in ["Deadman.mmx", "YuriPlot.mmx", "Shrapnel.mmx"] {
-        let Ok(scenario) = headless_scenario::load(&retail, map_file, SEED) else {
-            println!("{map_file}: load failed");
-            continue;
-        };
-        let sim = scenario.sim();
-        let grid = sim.path_grid().expect("navigation published");
-        let terrain = sim
-            .resolved_terrain
-            .as_ref()
-            .expect("headless load keeps resolved terrain");
-        println!("\n=== {map_file} ({}x{}) ===", grid.width(), grid.height());
-
-        // High: structural cells, grouped into straight runs, reporting gaps.
-        let mut structural: Vec<(u16, u16)> = Vec::new();
-        for y in 0..grid.height() {
-            for x in 0..grid.width() {
-                if grid.cell(x, y).is_some_and(|c| c.bridge_structural) {
-                    structural.push((x, y));
-                }
-            }
-        }
-        println!("  {} structural cell(s)", structural.len());
-        // Rows that contain structural cells with a hole in them.
-        let mut rows: std::collections::BTreeMap<u16, Vec<u16>> = std::collections::BTreeMap::new();
-        for (x, y) in &structural {
-            rows.entry(*y).or_default().push(*x);
-        }
-        for (y, xs) in &rows {
-            let (min, max) = (xs[0], *xs.last().expect("non-empty"));
-            let holes: Vec<u16> = (min..=max).filter(|x| !xs.contains(x)).collect();
-            if holes.is_empty() {
-                continue;
-            }
-            println!("  row y={y}: structural x={min}..={max} with HOLE(S) at {holes:?}");
-            for x in min..=max {
-                let Some(pc) = grid.cell(x, *y) else { continue };
-                let rt = terrain.cell(x, *y);
-                println!(
-                    "    ({x},{y}) struct={} bw={} trans={} gw={} g_lvl={} deck_lvl={} \
-                     state={:?} overlay={:?} raw_flags={:?}",
-                    pc.bridge_structural,
-                    pc.bridge_walkable,
-                    pc.transition,
-                    pc.ground_walkable,
-                    pc.ground_level,
-                    pc.bridge_deck_level,
-                    rt.map(|c| c.bridge_facts.state_byte),
-                    rt.and_then(|c| c.bridge_layer.as_ref().map(|b| b.overlay_id)),
-                    rt.map(|c| c.bridge_facts.raw_flags),
-                );
-            }
-        }
-
-        // Low: any low-deck cell whose overlay id is outside the pristine body
-        // range the intact fixtures use.
-        let mut low_by_overlay: std::collections::BTreeMap<u8, Vec<(u16, u16)>> =
-            std::collections::BTreeMap::new();
-        for y in 0..terrain.height() {
-            for x in 0..terrain.width() {
-                if !is_low_deck_cell(terrain, (x, y)) {
-                    continue;
-                }
-                let overlay = terrain
-                    .cell(x, y)
-                    .and_then(|c| c.bridge_layer.as_ref().map(|b| b.overlay_id))
-                    .unwrap_or(0);
-                low_by_overlay.entry(overlay).or_default().push((x, y));
-            }
-        }
-        for (overlay, cells) in &low_by_overlay {
-            let sample = cells[0];
-            let pc = grid.cell(sample.0, sample.1);
-            println!(
-                "  low overlay {overlay}: {} cell(s), sample {sample:?} gw={:?} lvl={:?} \
-                 water={:?}",
-                cells.len(),
-                pc.map(|c| c.ground_walkable),
-                pc.map(|c| c.ground_level),
-                terrain
-                    .cell(sample.0, sample.1)
-                    .map(|c| c.land_type == crate::rules::terrain_rules::LandType::Water.as_index()),
-            );
-        }
-    }
-}
 
 /// One author-placed collapse gap: stamped deck on both sides, a hole between
 /// them where the deck is missing and the ground is four levels down.
@@ -2508,7 +2352,7 @@ fn tank_ordered_across_the_deadman_collapse_gap_never_drives_into_it() {
         .interner
         .get(&owner_name)
         .expect("owner interned");
-    let execute_tick = scenario.sim().session.tick + 1;
+    let execute_tick = scenario.sim().session.tick() + 1;
     scenario
         .runtime
         .advance_frame(
@@ -2523,7 +2367,8 @@ fn tank_ordered_across_the_deadman_collapse_gap_never_drives_into_it() {
             )],
             SIM_TICK_MS,
             TickLane::Ordinary,
-         crate::sim::world::FrameEffects::default(),)
+            crate::sim::world::FrameEffects::default(),
+        )
         .expect("fixture frame must complete");
     let accepted = accepted_route(&scenario, entity_id).map(|path| (path.len(), path));
     println!(
@@ -2715,7 +2560,7 @@ fn tank_cannot_cross_a_destroyed_shrapnel_low_bridge() {
         .interner
         .get(&owner_name)
         .expect("owner interned");
-    let execute_tick = scenario.sim().session.tick + 1;
+    let execute_tick = scenario.sim().session.tick() + 1;
     scenario
         .runtime
         .advance_frame(
@@ -2730,7 +2575,8 @@ fn tank_cannot_cross_a_destroyed_shrapnel_low_bridge() {
             )],
             SIM_TICK_MS,
             TickLane::Ordinary,
-         crate::sim::world::FrameEffects::default(),)
+            crate::sim::world::FrameEffects::default(),
+        )
         .expect("fixture frame must complete");
     let accepted = accepted_route(&scenario, entity_id).map(|path| path.len());
     println!("ordinary Command::Move across the destroyed strip: path={accepted:?}");
@@ -2921,177 +2767,6 @@ fn build_under_span_transect(
     }
 }
 
-/// Everything the passability instruments say about one cell, ground plane
-/// first. Printed for every cell of a transect so the geometry section of the
-/// report is a measurement rather than a summary.
-fn print_under_cell_row(
-    label: &str,
-    cell: (u16, u16),
-    grid: &PathGrid,
-    terrain: &ResolvedTerrainGrid,
-    zones: Option<&crate::sim::pathfinding::zone_map::ZoneGrid>,
-) {
-    use crate::rules::locomotor_type::SpeedType;
-    use crate::sim::movement::locomotor::MovementLayer;
-
-    let Some(pc) = grid.cell(cell.0, cell.1) else {
-        println!("  {label} {cell:?}: NOT IN PATH GRID");
-        return;
-    };
-    let Some(rt) = terrain.cell(cell.0, cell.1) else {
-        println!("  {label} {cell:?}: NOT IN RESOLVED TERRAIN");
-        return;
-    };
-    let cost = |st: SpeedType| rt.speed_costs.cost_for_speed_type(st).unwrap_or(255);
-    let zone_of = |mz: MovementZone| {
-        zones
-            .and_then(|z| z.map_for(mz))
-            .map(|m| {
-                (
-                    m.zone_at(cell.0, cell.1, MovementLayer::Ground),
-                    m.zone_at(cell.0, cell.1, MovementLayer::Bridge),
-                )
-            })
-            .map_or_else(|| "-/-".to_string(), |(g, b)| format!("{g}/{b}"))
-    };
-    println!(
-        "  {label} {cell:?}: struct={} bwalk={} trans={} g_lvl={} deck_lvl={} gwalk={} \
-         || under: water={} cliff={} gwblk={} base_gwblk={} land={} base_land={} yr_land={} \
-         zone_type={} || row Foot={} Track={} Wheel={} Amph={} Hover={} \
-         || zone(G/B) Normal={} AmphDest={} Infantry={}",
-        pc.bridge_structural,
-        pc.bridge_walkable,
-        pc.transition,
-        pc.ground_level,
-        pc.bridge_deck_level,
-        pc.ground_walkable,
-        rt.land_type == crate::rules::terrain_rules::LandType::Water.as_index(),
-        rt.land_type == crate::rules::terrain_rules::LandType::Rock.as_index(),
-        rt.ground_walk_blocked,
-        rt.base_ground_walk_blocked,
-        rt.land_type,
-        rt.base_land_type,
-        rt.land_type,
-        rt.zone_type,
-        cost(SpeedType::Foot),
-        cost(SpeedType::Track),
-        cost(SpeedType::Wheel),
-        cost(SpeedType::Amphibious),
-        cost(SpeedType::Hover),
-        zone_of(MovementZone::Normal),
-        zone_of(MovementZone::AmphibiousDestroyer),
-        zone_of(MovementZone::Infantry),
-    );
-}
-
-/// Measurement only — matrix rows T1-13/14/15, step 1.
-///
-/// Evidence gap 1 was "measured" on 2026-08-28 by adding `ground_walkable` to
-/// `print_inventory`, which reported 17/17 on BayOPigs and 22/22 on Hills. That
-/// number is **not** a statement about the riverbed:
-/// `PathGrid::from_resolved_terrain_with_bridges` (`sim/pathfinding/core.rs`)
-/// hardcodes `ground_walkable = true` for any intact structural bridge cell,
-/// with the comment "Intact bridge deck → walkable (overrides underlying
-/// terrain)". The flag therefore describes the deck, not the ground under it, on
-/// every fixture — which is why this test prints the *underlying* terrain fields
-/// that override masks, and prints them for the valley floor either side of
-/// the structural band as well.
-#[test]
-#[ignore = "requires a retail RA2/YR install (RA2_DIR or config.toml)"]
-fn retail_under_high_span_geometry() {
-    let Some(retail) = retail_dir() else {
-        eprintln!("SKIPPED: no retail root (set RA2_DIR or provide config.toml)");
-        return;
-    };
-    for map_file in ["BayOPigs.mmx", "Hills.mmx"] {
-        println!("\n===== {map_file} =====");
-        let scenario = match headless_scenario::load(&retail, map_file, SEED) {
-            Ok(scenario) => scenario,
-            Err(error) => {
-                println!("{map_file}: load failed: {error}");
-                continue;
-            }
-        };
-        let sim = scenario.sim();
-        let grid = sim.path_grid().expect("navigation published");
-        let terrain = sim
-            .resolved_terrain
-            .as_ref()
-            .expect("headless load keeps resolved terrain");
-        let Some(span) = find_high_bridge_span(grid) else {
-            println!("{map_file}: no usable high span");
-            continue;
-        };
-        println!(
-            "drive line {:?} -> {:?}, {} deck cell(s), deck terrain level {}, approach level {}, \
-             step {:?}",
-            span.approach_a,
-            span.approach_b,
-            span.deck.len(),
-            span.deck_terrain_level,
-            span.approach_level,
-            span.step,
-        );
-
-        // Structural footprint, whole-map. The drive line is one lane of it.
-        let structural: Vec<(u16, u16)> = (0..grid.height())
-            .flat_map(|y| (0..grid.width()).map(move |x| (x, y)))
-            .filter(|(x, y)| grid.cell(*x, *y).is_some_and(|c| c.bridge_structural))
-            .collect();
-        println!(
-            "{} structural cell(s) on the map; the discovered drive line accounts for {}",
-            structural.len(),
-            span.deck.len()
-        );
-
-        // Three cuts: the two ends of the span and its middle, so a report can
-        // say whether the band width is uniform.
-        let picks = [
-            span.deck[0],
-            span.deck[span.deck.len() / 2],
-            *span.deck.last().expect("non-empty span"),
-        ];
-        for through in picks {
-            let cut = build_under_span_transect(grid, &span, through);
-            println!(
-                "\ntransect through {:?} (perp {:?}): band {} cell(s) {:?} .. {:?}; \
-                 under_a={:?} under_b={:?}",
-                cut.through,
-                cut.perp,
-                cut.band.len(),
-                cut.band.first(),
-                cut.band.last(),
-                cut.under_a,
-                cut.under_b,
-            );
-            let mut cells: Vec<(&str, (u16, u16))> = Vec::new();
-            for k in 1..=(UNDER_APPROACH_MARGIN + 2) {
-                if let Some(c) = offset(
-                    *cut.band.first().expect("non-empty band"),
-                    (-cut.perp.0 * k, -cut.perp.1 * k),
-                ) {
-                    cells.push(("side", c));
-                }
-            }
-            cells.reverse();
-            for c in &cut.band {
-                cells.push(("BAND", *c));
-            }
-            for k in 1..=(UNDER_APPROACH_MARGIN + 2) {
-                if let Some(c) = offset(
-                    *cut.band.last().expect("non-empty band"),
-                    (cut.perp.0 * k, cut.perp.1 * k),
-                ) {
-                    cells.push(("side", c));
-                }
-            }
-            for (label, c) in &cells {
-                print_under_cell_row(label, *c, grid, terrain, sim.zone_grid.as_ref());
-            }
-        }
-    }
-}
-
 /// One recorded under-span run.
 struct UnderSpanRun {
     span: HighBridgeSpan,
@@ -3212,7 +2887,7 @@ fn record_until(
             );
         }
         rows.push(TickRow {
-            tick: sim.session.tick,
+            tick: sim.session.tick(),
             cell,
             z: entity.position.z(),
             on_bridge: entity.on_bridge(),
@@ -3283,6 +2958,12 @@ fn order_under_high_span(map_file: &str, unit_type: &str) -> Option<UnderSpanRun
     };
 
     let owner_name = prepare_commanding_house(&mut scenario);
+    bridge_retail_power_fixture::prepare_powered_mover(
+        &mut scenario,
+        &owner_name,
+        unit_type,
+        under_a,
+    );
     let mut entity_id = None;
     let mut start_cell = under_a;
     for candidate in [
@@ -3340,7 +3021,7 @@ fn order_under_high_span(map_file: &str, unit_type: &str) -> Option<UnderSpanRun
         .interner
         .get(&owner_name)
         .expect("owner interned");
-    let execute_tick = scenario.sim().session.tick + 1;
+    let execute_tick = scenario.sim().session.tick() + 1;
     scenario
         .runtime
         .advance_frame(
@@ -3355,7 +3036,8 @@ fn order_under_high_span(map_file: &str, unit_type: &str) -> Option<UnderSpanRun
             )],
             SIM_TICK_MS,
             TickLane::Ordinary,
-         crate::sim::world::FrameEffects::default(),)
+            crate::sim::world::FrameEffects::default(),
+        )
         .expect("fixture frame must complete");
     let path = accepted_route(&scenario, entity_id).map(|path| path.len());
     println!("ordinary Command::Move {start_cell:?} -> {under_b:?}: path={path:?}");
@@ -3880,47 +3562,6 @@ fn deck_and_ground_under_one_high_bridge_cell_are_separate_occupancy_planes() {
     );
 }
 
-/// Inventory only: which stock maps expose a high-bridge span at all, and what
-/// the deck/approach levels are. Diagnostic — it asserts nothing about movement.
-#[test]
-#[ignore = "requires a retail RA2/YR install (RA2_DIR or config.toml)"]
-fn retail_high_bridge_inventory() {
-    let Some(retail) = retail_dir() else {
-        eprintln!("SKIPPED: no retail root (set RA2_DIR or provide config.toml)");
-        return;
-    };
-    for map_file in [
-        "BayOPigs.mmx",
-        "Dustbowl.mmx",
-        "Bermuda.mmx",
-        "Lostlake.mmx",
-        "Hills.mmx",
-    ] {
-        match headless_scenario::load(&retail, map_file, SEED) {
-            Ok(scenario) => {
-                let grid = scenario.sim().path_grid().expect("navigation published");
-                let structural = (0..grid.height())
-                    .flat_map(|y| (0..grid.width()).map(move |x| (x, y)))
-                    .filter(|(x, y)| grid.cell(*x, *y).is_some_and(|c| c.bridge_structural))
-                    .count();
-                match find_high_bridge_span(grid) {
-                    Some(span) => println!(
-                        "{map_file}: {structural} structural cell(s); best span {} cell(s) at \
-                         terrain level {} between {:?} and {:?} (approach level {})",
-                        span.deck.len(),
-                        span.deck_terrain_level,
-                        span.approach_a,
-                        span.approach_b,
-                        span.approach_level,
-                    ),
-                    None => println!("{map_file}: {structural} structural cell(s); no usable span"),
-                }
-            }
-            Err(error) => println!("{map_file}: load failed: {error}"),
-        }
-    }
-}
-
 /// Scale instrument, not a parity test: N tanks on `Hills.mmx` all ordered
 /// across the valley, per-frame wall time of the whole simulation frame.
 /// `VERA20K_SCALE_MOVERS` overrides the count (default 400).
@@ -3972,7 +3613,7 @@ fn scale_benchmark_many_movers_on_hills() {
         .interner
         .get(&owner_name)
         .expect("owner interned");
-    let execute_tick = scenario.sim().session.tick + 1;
+    let execute_tick = scenario.sim().session.tick() + 1;
     let commands: Vec<CommandEnvelope> = ids
         .iter()
         .map(|&(id, rx, ry)| {
@@ -3995,7 +3636,12 @@ fn scale_benchmark_many_movers_on_hills() {
         let started = std::time::Instant::now();
         scenario
             .runtime
-            .advance_frame(batch, SIM_TICK_MS, TickLane::Ordinary, crate::sim::world::FrameEffects::default())
+            .advance_frame(
+                batch,
+                SIM_TICK_MS,
+                TickLane::Ordinary,
+                crate::sim::world::FrameEffects::default(),
+            )
             .expect("frame completes");
         let elapsed = started.elapsed();
         total += elapsed;

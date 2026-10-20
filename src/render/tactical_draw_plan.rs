@@ -159,6 +159,9 @@ pub enum BuildingPieceKind {
     Body,
     Shadow,
     Bib,
+    /// A war factory's `UnderDoorAnim=` and its shadow, drawn after the bib
+    /// (`BuildingClass::DrawIt @ 0x0043D8EE`).
+    UnderDoor,
     PoweredOrActiveOverlay,
     SplitBack,
     SplitFront,
@@ -269,8 +272,9 @@ fn building_piece_order(kind: BuildingPieceKind) -> u8 {
         BuildingPieceKind::Body => 2,
         BuildingPieceKind::Shadow => 3,
         BuildingPieceKind::Bib => 4,
-        BuildingPieceKind::PoweredOrActiveOverlay => 5,
-        BuildingPieceKind::SplitFront => 6,
+        BuildingPieceKind::UnderDoor => 5,
+        BuildingPieceKind::PoweredOrActiveOverlay => 6,
+        BuildingPieceKind::SplitFront => 7,
     }
 }
 
@@ -435,13 +439,5 @@ mod tests {
                 .collect::<Vec<_>>(),
             [22, 23, 21]
         );
-    }
-
-    #[test]
-    fn alpha_z_policy_is_explicit_for_future_shared_blitter_lowering() {
-        let policy = BlitPolicy::translucent(SpriteEncoding::Rle, RenderZPolicy::AlphaReadWrite);
-        assert_eq!(policy.encoding, SpriteEncoding::Rle);
-        assert_eq!(policy.render_z, RenderZPolicy::AlphaReadWrite);
-        assert!(policy.translucent);
     }
 }

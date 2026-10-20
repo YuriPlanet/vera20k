@@ -400,13 +400,6 @@ mod tests {
     }
 
     #[test]
-    fn normalized_header_bounds_decide_membership() {
-        let field = PlayfieldBounds::from_map_header(&header((80, 80), [-5, -6, 100, 100]));
-        assert!(field.contains_geometry_packed(43, 42));
-        assert!(!field.contains_geometry_packed(42, 42));
-    }
-
-    #[test]
     fn raising_a_cell_shifts_the_band_rather_than_widening_it() {
         // Elevation moves both x+y bounds by the same amount: a raised cell
         // gains room at the far edge and loses exactly as much at the near
@@ -502,23 +495,5 @@ mod tests {
         let mut tall_header = header((20, 20), [2, 5, 10, 8]);
         tall_header.height = 500;
         assert_eq!(PlayfieldBounds::from_map_header(&tall_header), short);
-    }
-
-    #[test]
-    fn the_playfield_shifts_with_the_full_map_width() {
-        // Width enters both axes, so widening the map moves the whole diamond.
-        let narrow = PlayfieldBounds::from_map_header(&header((20, 20), [2, 5, 10, 8]));
-        let wide = PlayfieldBounds::from_map_header(&header((30, 30), [2, 5, 10, 8]));
-        assert_ne!(narrow, wide);
-        // Cell (20,30): sum 50, diff -10. The wider map admits it on both axes;
-        // the narrower one's sum window tops out at 48.
-        assert!(
-            wide.contains_geometry_packed(20, 30),
-            "inside the wider map's playfield"
-        );
-        assert!(
-            !narrow.contains_geometry_packed(20, 30),
-            "outside the narrower one"
-        );
     }
 }

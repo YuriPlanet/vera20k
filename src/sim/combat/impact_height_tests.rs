@@ -3,6 +3,7 @@ use crate::map::resolved_terrain::{ResolvedTerrainCell, ResolvedTerrainGrid};
 use crate::rules::ini_parser::IniFile;
 use crate::sim::intern::test_interner;
 use crate::sim::world::Simulation;
+use std::collections::BTreeMap;
 
 const TEST_GRID: u16 = 16;
 /// Terrain floor used by every raised-ground case here. Chosen because two
@@ -114,7 +115,7 @@ fn debris_pieces_construct_between_picks_as_the_original() {
             sim.substrate
                 .anims
                 .iter()
-                .map(|(_, anim)| sim.interner.resolve(anim.type_id).to_string())
+                .map(|(_, anim)| sim.interner.resolve(anim.type_id()).to_string())
                 .collect::<Vec<_>>(),
             names,
             "{input}"
@@ -132,23 +133,27 @@ fn debris_pieces_construct_between_picks_as_the_original() {
         {
             let location = native["location"].as_array().unwrap();
             assert_eq!(
-                [anim.world_coord.x, anim.world_coord.y, anim.world_coord.z],
+                [
+                    anim.world_coord().x,
+                    anim.world_coord().y,
+                    anim.world_coord().z
+                ],
                 std::array::from_fn(|i| location[i].as_i64().unwrap() as i32),
                 "{input}"
             );
             if native["is_bouncing"].as_u64().unwrap() == 0 {
                 assert!(
-                    anim.bounce.is_none(),
+                    anim.bounce().is_none(),
                     "unread retail D is not a Bouncer: {input}"
                 );
                 assert_eq!(native["type"], "D");
                 continue;
             }
-            let body = anim.bounce.expect("an ART-read bouncing chunk");
+            let body = anim.bounce().expect("an ART-read bouncing chunk");
             let bits = |key: &str, i: usize| native["bounce"][key][i].as_u64().unwrap() as u32;
             for axis in 0..3 {
-                assert_eq!(body.position[axis].bits(), bits("position_bits", axis));
-                assert_eq!(body.velocity[axis].bits(), bits("velocity_bits", axis));
+                assert_eq!(body.position()[axis].bits(), bits("position_bits", axis));
+                assert_eq!(body.velocity()[axis].bits(), bits("velocity_bits", axis));
             }
         }
     }

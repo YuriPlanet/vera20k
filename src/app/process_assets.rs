@@ -215,6 +215,37 @@ impl ProcessAssets {
         self.native_rules.as_ref()
     }
 
+    pub(crate) fn read_multiplayer_country(
+        &mut self,
+        settings: &crate::rules::ini_parser::IniFile,
+        current: i32,
+    ) -> i32 {
+        self.native_rules.as_mut().map_or(current, |rules| {
+            rules.read_multiplayer_country(settings, current)
+        })
+    }
+
+    pub(crate) fn refresh_multiplayer_country_bodies(&mut self) {
+        if let Some(rules) = self.native_rules.as_mut() {
+            rules.refresh_multiplayer_country_bodies();
+        }
+    }
+
+    pub(crate) fn multiplayer_countries(&self) -> impl Iterator<Item = (&str, Option<&str>)> {
+        self.native_rules
+            .iter()
+            .flat_map(|rules| rules.multiplayer_countries())
+    }
+
+    pub(crate) fn project_multiplayer_countries(
+        &self,
+        projection: &mut crate::rules::ruleset::RuleSet,
+    ) {
+        if let Some(rules) = self.native_rules.as_ref() {
+            rules.project_multiplayer_countries(projection);
+        }
+    }
+
     /// Split the process-resident authorities used by a synchronous
     /// scenario load. The leased MIX manager lives in `LoadingJob`; the native
     /// Rules registry remains here so every `?` after its destructive reset

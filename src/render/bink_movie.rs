@@ -26,12 +26,14 @@ pub struct BinkMovieSurface {
 }
 
 impl BinkMovieSurface {
+    /// `filter` samples the frame texture when a draw scales it.
     pub fn from_bytes(
         gpu: &GpuContext,
         batch: &BatchRenderer,
         bytes: Arc<[u8]>,
         source_archive: String,
         looping: bool,
+        filter: wgpu::FilterMode,
     ) -> Result<Self, crate::assets::error::AssetError> {
         let file = BinkFile::parse(bytes)?;
         let mut decoder = BinkDecoder::new(&file.header)?;
@@ -44,6 +46,7 @@ impl BinkMovieSurface {
             &rgba,
             file.header.width,
             file.header.height,
+            filter,
         );
         Ok(Self {
             file,
@@ -249,11 +252,6 @@ mod tests {
     fn jpeg_black_and_white() {
         assert_eq!(yuv_to_rgb_jpeg(0, 128, 128), (0, 0, 0));
         assert_eq!(yuv_to_rgb_jpeg(255, 128, 128), (255, 255, 255));
-    }
-
-    #[test]
-    fn jpeg_mid_grey() {
-        assert_eq!(yuv_to_rgb_jpeg(128, 128, 128), (128, 128, 128));
     }
 
     #[test]

@@ -137,14 +137,14 @@ fn native_reveal_zone_dispatch_uses_literal_waypoint_raw_zone_and_radius_two() {
         sim.playfield_size_height = Some(number(&row["size"][1]));
         let player = sim.interner.intern("Player");
         let other = sim.interner.intern("Other");
-        sim.session.current_house = Some(player);
+        sim.session.set_current_house_for_test(Some(player));
         sim.fog = FogState::new(128, 128);
         if row["input"]["latch"] == 1 {
             sim.fog.reveal_all_for_owner(player);
         }
         for viewer in [player, other] {
             sim.fog
-                .by_owner
+                .by_owner_mut_for_test()
                 .insert(viewer, OwnerVisibility::new(128, 128));
         }
         let mut definitions = RuntimeDefinitions::default();
@@ -230,7 +230,7 @@ fn native_reveal_zone_dispatch_uses_literal_waypoint_raw_zone_and_radius_two() {
             "{name}: retained original stream words"
         );
         assert_eq!(
-            json!(sim.session.binary_frame),
+            json!(sim.session.binary_frame()),
             row["frame_after"],
             "{name}"
         );
@@ -277,20 +277,20 @@ fn native_reveal_zone_dispatch_uses_literal_waypoint_raw_zone_and_radius_two() {
                 number(&cell["cell"][1]) as u16,
             );
             if query.lookup((x as i16, y as i16)) != NativeCellIdentity::Dummy {
-                let state = sim.fog.by_owner[&player].shroud_knowledge_raw()
+                let state = sim.fog.by_owner()[&player].shroud_knowledge_raw()
                     [usize::from(y) * 128 + usize::from(x)];
                 assert_eq!(
-                    state.counter,
+                    state.counter(),
                     number(&cell["counter"]),
                     "{name}: counter {x},{y}"
                 );
                 assert_eq!(
-                    state.gap_counter,
+                    state.gap_counter(),
                     number(&cell["gap"]),
                     "{name}: gap {x},{y}"
                 );
                 assert_eq!(
-                    state.local_sources + state.allied_sources,
+                    state.local_sources() + state.allied_sources(),
                     0,
                     "{name}: no sustained source"
                 );

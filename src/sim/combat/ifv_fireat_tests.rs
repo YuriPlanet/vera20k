@@ -56,17 +56,17 @@ fn empty_fv_two_shot_fireat_matches_native_muzzles_ids_rearm_and_rng() {
 
     let mut world = Simulation::new();
     let owner = world.interner.intern("Americans");
-    world.houses.insert(
-        owner,
-        crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10),
-    );
-    world.session.house_order.push(owner);
+    world
+        .houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, true, 0, 10,
+        ));
     crate::sim::arena_fixture::flat_arena(&mut world, &rules);
     // guided_step.create supplies flat level6 cells and no bridge flags.
     let terrain = world.resolved_terrain.as_mut().unwrap();
     for y in 16..25 {
         for x in 6..25 {
-            terrain.cell_mut(x, y).unwrap().level = 6;
+            terrain.cell_mut_for_test(x, y).unwrap().level = 6;
         }
     }
     let firer_id = world
@@ -120,7 +120,7 @@ fn empty_fv_two_shot_fireat_matches_native_muzzles_ids_rearm_and_rng() {
 
     for row in rows {
         let frame = row["supplied"]["binary_frame"].as_u64().unwrap() as u32;
-        world.session.binary_frame = frame;
+        world.session.set_binary_frame_for_test(frame);
         let firer = world.substrate.entities.get(firer_id).unwrap();
         assert_eq!(
             firer.weapon_burst.index(),
@@ -186,18 +186,19 @@ fn empty_fv_two_shot_fireat_matches_native_muzzles_ids_rearm_and_rng() {
         assert_eq!(new_bullets.len(), 1, "one constructor at {frame}");
         let (&stable_id, bullet) = new_bullets[0];
         assert_eq!(
-            bullet.native_unique_id,
+            bullet.native_unique_id(),
             row["launch"]["unique_id"].as_i64().unwrap() as i32
         );
-        assert_ne!(stable_id, bullet.native_unique_id as u64);
-        assert_eq!(bullet.launch_origin, coord(&row["launch"]["position"]));
+        assert_ne!(stable_id, bullet.native_unique_id() as u64);
+        assert_eq!(bullet.launch_origin(), coord(&row["launch"]["position"]));
         assert_eq!(
-            bullet.position, bullet.launch_origin,
+            bullet.position(),
+            bullet.launch_origin(),
             "no intervening Bullet AI"
         );
-        assert_eq!(bullet.launch_target, coord(&row["launch"]["target"]));
+        assert_eq!(bullet.launch_target(), coord(&row["launch"]["target"]));
         assert_eq!(emitted.fire_events.len(), 1);
-        assert_eq!(emitted.fire_events[0].fire_coord, bullet.launch_origin);
+        assert_eq!(emitted.fire_events[0].fire_coord, bullet.launch_origin());
         assert_eq!(
             world.substrate.anims.len(),
             anim_count,

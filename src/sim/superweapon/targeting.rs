@@ -149,7 +149,7 @@ pub(super) fn check_with_sites(
         contents: &contents,
         target_in_bounds: true,
         terrain_is_water: Some(
-            target.land_type() == crate::rules::terrain_rules::LandType::Water.as_index(),
+            target.land_type == crate::rules::terrain_rules::LandType::Water.as_index(),
         ),
         fire_into_shroud: targeting.fire_into_shroud,
         shrouded,
@@ -170,7 +170,7 @@ pub(super) fn launch_sites(
     sim.houses
         .get(&owner)
         .into_iter()
-        .flat_map(|house| house.base_projection.buildings())
+        .flat_map(|house| house.base_projection().buildings())
         .filter_map(|&id| {
             let entity = sim.substrate.entities.get(id)?;
             if !super::provided_supers(sim, rules, entity)

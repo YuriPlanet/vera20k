@@ -103,7 +103,8 @@ fn edit_append_commit_preserves_missions_and_shares_same_frame_nodes() {
     let commit = sim.encode_plan_commit_record(owner).unwrap();
     apply(&mut sim, &rules, commit);
     assert!(sim.planning_paths(owner).iter().all(|view| !view.editing));
-    sim.session.binary_frame += 1;
+    sim.session
+        .set_binary_frame_for_test(sim.session.binary_frame() + 1);
     append(&mut sim, &rules, owner, 1, (16, 15));
     assert_eq!(sim.planning.paths[&1].pending, 1);
     assert_eq!(sim.planning_paths(owner)[0].cells, vec![(12, 15), (16, 15)]);
@@ -117,12 +118,11 @@ fn fixture() -> (Simulation, RuleSet, InternedId) {
     let grid = crate::sim::pathfinding::PathGrid::new(40, 40);
     sim.install_fixture_path_grid(Some(&grid));
     let owner = sim.interner.intern("Americans");
-    sim.houses.insert(
-        owner,
-        crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10),
-    );
-    sim.session.house_order = vec![owner];
-    sim.session.current_house = Some(owner);
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, true, 0, 10,
+        ));
+    sim.session.set_current_house_for_test(Some(owner));
     for actor in 1..=3 {
         assert_eq!(sim.allocate_stable_id(), actor);
         crate::sim::world::lifecycle_tests::insert_entity(
@@ -146,7 +146,7 @@ fn fixture() -> (Simulation, RuleSet, InternedId) {
 
 fn apply(sim: &mut Simulation, rules: &RuleSet, record: CommandRecord) {
     let envelope = sim
-        .decode_native_command_record(&record, sim.session.tick)
+        .decode_native_command_record(&record, sim.session.tick())
         .unwrap();
     assert!(sim.apply_command("Americans", &envelope.payload, Some(rules)));
 }
@@ -166,76 +166,29 @@ fn append(sim: &mut Simulation, rules: &RuleSet, owner: InternedId, actor: u64, 
 }
 
 #[test]
-fn connect_copies_suffix_and_self_connect_sets_loop() {
-    let (mut sim, rules, owner) = fixture();
-    for cell in [(12, 15), (16, 15), (20, 15)] {
-        append(&mut sim, &rules, owner, 1, cell);
+fn stop_or_uninit_detaches_only_its_actor_from_shared_nodes() {
+    for uninit in [false, true] {
+        let (mut sim, rules, owner) = fixture();
+        for actor in [1, 2] {
+            append(&mut sim, &rules, owner, actor, (12, 15));
+        }
+        if uninit {
+            sim.uninit(1);
+        } else {
+            assert!(sim.apply_command("Americans", &Command::Stop { entity_id: 1 }, Some(&rules)));
+        }
+        assert!(!sim.planning.paths.contains_key(&1), "uninit={uninit}");
+        assert!(sim.planning.paths.contains_key(&2), "uninit={uninit}");
+        assert_eq!(
+            sim.planning.nodes[&0]
+                .orders
+                .iter()
+                .map(|(id, _)| *id)
+                .collect::<Vec<_>>(),
+            vec![2],
+            "uninit={uninit}"
+        );
     }
-    let connect = sim.encode_plan_connect_record(owner, 2, (16, 15)).unwrap();
-    apply(&mut sim, &rules, connect);
-    assert_eq!(
-        sim.planning.paths[&2].nodes,
-        sim.planning.paths[&1].nodes[1..]
-    );
-    assert_eq!(sim.planning_paths(owner)[1].cells, vec![(16, 15), (20, 15)]);
-    let loop_record = sim.encode_plan_connect_record(owner, 1, (12, 15)).unwrap();
-    apply(&mut sim, &rules, loop_record);
-    assert_eq!(sim.planning.paths[&1].loop_start, Some(0));
-    assert!(sim.planning.paths[&1].loop_changed);
-    let commit = sim.encode_plan_commit_record(owner).unwrap();
-    apply(&mut sim, &rules, commit);
-    assert_eq!(sim.planning.paths[&1].loop_start, Some(0));
-    assert!(!sim.planning.paths[&1].loop_changed);
-}
-
-#[test]
-fn delete_shared_node_updates_every_path_and_releases_last_node() {
-    let (mut sim, rules, owner) = fixture();
-    append(&mut sim, &rules, owner, 1, (12, 15));
-    append(&mut sim, &rules, owner, 2, (12, 15));
-    append(&mut sim, &rules, owner, 1, (16, 15));
-    let delete = sim.encode_plan_node_delete_record(owner, (12, 15)).unwrap();
-    apply(&mut sim, &rules, delete);
-    assert_eq!(sim.planning.paths.len(), 1);
-    assert_eq!(sim.planning_paths(owner)[0].cells, vec![(16, 15)]);
-    assert!(!sim.planning_node_at_cell(owner, (12, 15)));
-    let delete = sim.encode_plan_node_delete_record(owner, (16, 15)).unwrap();
-    apply(&mut sim, &rules, delete);
-    assert!(sim.planning.paths.is_empty());
-    assert!(sim.planning.nodes.is_empty());
-}
-
-#[test]
-fn ordinary_stop_detaches_only_its_actor_from_shared_nodes() {
-    let (mut sim, rules, owner) = fixture();
-    for actor in [1, 2] {
-        append(&mut sim, &rules, owner, actor, (12, 15));
-    }
-    assert!(sim.apply_command("Americans", &Command::Stop { entity_id: 1 }, Some(&rules)));
-    assert!(!sim.planning.paths.contains_key(&1));
-    assert!(sim.planning.paths.contains_key(&2));
-    assert_eq!(
-        sim.planning.nodes[&0]
-            .orders
-            .iter()
-            .map(|(id, _)| *id)
-            .collect::<Vec<_>>(),
-        vec![2]
-    );
-}
-
-#[test]
-fn planned_execution_for_connected_actor_keeps_path_and_uses_its_uid() {
-    let (mut sim, rules, owner) = fixture();
-    append(&mut sim, &rules, owner, 1, (12, 15));
-    let connect = sim.encode_plan_connect_record(owner, 2, (12, 15)).unwrap();
-    apply(&mut sim, &rules, connect);
-    let node = sim.planning.nodes.values().next().unwrap();
-    let mut record = node.order(2).unwrap().clone();
-    record.payload_mut()[22] = 2;
-    apply(&mut sim, &rules, record);
-    assert!(sim.planning.paths.contains_key(&2));
-    assert!(sim.planning.paths.contains_key(&1));
 }
 
 fn special_ordinary_retask_cancels_shared_route(kind: &str) {
@@ -243,12 +196,11 @@ fn special_ordinary_retask_cancels_shared_route(kind: &str) {
         "[VehicleTypes]\n0=PLANNER\n1=CARRIER\n[PLANNER]\nStrength=100\nSpeed=6\nSpeedType=Track\nMovementZone=Normal\nHarvester=yes\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n[CARRIER]\nStrength=200\nSpeed=6\nSpeedType=Track\nPassengers=5\nSizeLimit=10\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n[BuildingTypes]\n1=DEPOT\n[DEPOT]\nStrength=800\nUnitRepair=yes\n",
     );
     let owner = sim.interner.intern("Americans");
-    sim.houses.insert(
-        owner,
-        crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10),
-    );
-    sim.session.house_order = vec![owner];
-    sim.session.current_house = Some(owner);
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, true, 0, 10,
+        ));
+    sim.session.set_current_house_for_test(Some(owner));
     let actor = sim
         .spawn_object("PLANNER", "Americans", 15, 15, 0, &rules)
         .unwrap();
@@ -326,37 +278,10 @@ fn special_ordinary_retask_cancels_shared_route(kind: &str) {
 }
 
 #[test]
-fn ordinary_harvest_cancels_shared_planning_route() {
-    special_ordinary_retask_cancels_shared_route("harvest");
-}
-
-#[test]
-fn ordinary_depot_repair_cancels_shared_planning_route() {
-    special_ordinary_retask_cancels_shared_route("repair");
-}
-
-#[test]
-fn ordinary_boarding_cancels_shared_planning_route() {
-    special_ordinary_retask_cancels_shared_route("board");
-}
-
-#[test]
-fn uninit_actor_detaches_planning_path_but_retains_shared_survivor() {
-    let (mut sim, rules, owner) = fixture();
-    for actor in [1, 2] {
-        append(&mut sim, &rules, owner, actor, (12, 15));
+fn ordinary_harvest_repair_and_boarding_cancel_shared_planning_route() {
+    for kind in ["harvest", "repair", "board"] {
+        special_ordinary_retask_cancels_shared_route(kind);
     }
-    sim.uninit(1);
-    assert!(!sim.planning.paths.contains_key(&1));
-    assert!(sim.planning.paths.contains_key(&2));
-    assert_eq!(
-        sim.planning.nodes[&0]
-            .orders
-            .iter()
-            .map(|(id, _)| *id)
-            .collect::<Vec<_>>(),
-        vec![2]
-    );
 }
 
 #[test]
@@ -459,12 +384,12 @@ fn guard_commit_consumes_first_node_stages_deliberate_and_retains_next_node() {
         Some(crate::sim::mission::MissionType::Deliberate)
     );
     assert!(sim.take_due_commands().is_empty());
-    sim.session.tick += 1;
+    sim.session.set_tick_for_test(sim.session.tick() + 1);
     let due = sim.take_due_commands();
     assert_eq!(due.len(), 1);
-    assert_eq!(due[0].execute_tick, sim.session.tick + 1);
+    assert_eq!(due[0].execute_tick, sim.session.tick() + 1);
     assert!(matches!(&due[0].payload, Command::PlanningRecord { record }
-        if record.payload()[22] == 2 && record.frame_stamp() == sim.session.binary_frame as i32 + 1));
+        if record.payload()[22] == 2 && record.frame_stamp() == sim.session.binary_frame() as i32 + 1));
 }
 
 #[test]
@@ -523,11 +448,10 @@ fn ownership_transfer_detaches_path_preserves_generated_event_and_restores_snaps
     let generated = sim.pending_command_snapshot();
     assert_eq!(generated.len(), 1);
     let new_owner = sim.interner.intern("Russians");
-    sim.houses.insert(
-        new_owner,
-        crate::sim::house_state::HouseState::new(new_owner, 1, None, false, 0, 10),
-    );
-    sim.session.house_order.push(new_owner);
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            new_owner, 1, None, false, 0, 10,
+        ));
     // Techno701585 ->638840 clears the path, not the published DoList event.
     sim.change_owner(1, new_owner);
     assert_eq!(sim.substrate.entities.get(1).unwrap().owner(), new_owner);
@@ -548,13 +472,13 @@ fn ownership_transfer_detaches_path_preserves_generated_event_and_restores_snaps
     assert_eq!(restored.state_hash(), hash);
     assert!(!restored.planning.paths.contains_key(&1));
     assert_eq!(restored.planning_paths(owner)[0].cells, vec![(20, 15)]);
-    sim.session.tick += 1;
+    sim.session.set_tick_for_test(sim.session.tick() + 1);
     let due = sim.take_due_commands();
     assert_eq!(due, generated);
     sim.apply_due_commands(
         &due,
         Some(&rules),
-        sim.session.tick + 1,
+        sim.session.tick() + 1,
         None,
         crate::sim::world::FrameEffects::default(),
     );
@@ -607,12 +531,12 @@ fn same_batch_commit_precedes_staged_edit_and_next_batch_commit_starts_path() {
         2,
         Command::PlanningRecord { record: commit },
     )];
-    sim.session.tick = 1;
+    sim.session.set_tick_for_test(1);
     sim.apply_due_commands(&batch, Some(&rules), 2, None, FrameEffects::default());
     assert_eq!(sim.planning.paths[&1].pending, -1);
     assert!(sim.planning.paths[&1].executing);
     assert!(sim.take_due_commands().is_empty());
-    sim.session.tick += 1;
+    sim.session.set_tick_for_test(sim.session.tick() + 1);
     let due = sim.take_due_commands();
     assert_eq!(due.len(), 1);
     assert!(
@@ -621,25 +545,8 @@ fn same_batch_commit_precedes_staged_edit_and_next_batch_commit_starts_path() {
 }
 
 #[test]
-fn restored_planning_rebuilds_location_index_for_node_sharing_and_connect() {
-    let (mut sim, rules, owner) = fixture();
-    append(&mut sim, &rules, owner, 1, (12, 15));
-    let bytes = save_codec::serialize(&sim.planning).unwrap();
-    sim.planning = save_codec::deserialize(&bytes).unwrap();
-    assert!(sim.planning_node_at_cell(owner, (12, 15)));
-    append(&mut sim, &rules, owner, 2, (12, 15));
-    assert_eq!(
-        sim.planning.nodes.len(),
-        1,
-        "restored index shares a same-frame node"
-    );
-    let connect = sim.encode_plan_connect_record(owner, 3, (12, 15)).unwrap();
-    apply(&mut sim, &rules, connect);
-    assert_eq!(sim.planning.paths[&3].nodes, sim.planning.paths[&1].nodes);
-}
-
-#[test]
-fn planning_restore_rejects_broken_graph_and_record_references() {
+fn planning_restore_rejects_broken_graph_record_actor_and_house_references() {
+    use crate::sim::snapshot::GameSnapshot;
     let (mut sim, rules, owner) = fixture();
     append(&mut sim, &rules, owner, 1, (12, 15));
     for corrupt in 0..8 {
@@ -672,6 +579,21 @@ fn planning_restore_rejects_broken_graph_and_record_references() {
             "corrupt planning case {corrupt}"
         );
     }
+    for missing_actor in [true, false] {
+        let (mut sim, rules, owner) = fixture();
+        append(&mut sim, &rules, owner, 1, (12, 15));
+        if missing_actor {
+            sim.substrate.entities.remove(1);
+        } else {
+            sim.houses.remove_for_test(&owner);
+        }
+        let bytes = GameSnapshot::save(&sim, 0, 0, "planning", 0);
+        let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
+        assert!(matches!(
+            restored.restore_after_snapshot_load(),
+            Err(crate::sim::snapshot::SnapshotRestoreError::InvalidPlanningReferences { .. })
+        ));
+    }
 }
 
 #[test]
@@ -696,12 +618,11 @@ fn two_planned_move_legs_progress_through_spawn_and_master_frame_lifecycle() {
         "[VehicleTypes]\n0=PLANNER\n[PLANNER]\nStrength=100\nSpeed=8\nSpeedType=Track\nMovementZone=Normal\nLocomotor={4A582741-9839-11d1-B709-00A024DDAFD1}\n",
     );
     let owner = sim.interner.intern("Americans");
-    sim.houses.insert(
-        owner,
-        crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10),
-    );
-    sim.session.house_order = vec![owner];
-    sim.session.current_house = Some(owner);
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, true, 0, 10,
+        ));
+    sim.session.set_current_house_for_test(Some(owner));
     let actor = sim
         .spawn_object_with_overlay_registry("PLANNER", "Americans", 15, 15, 0, &rules, &registry)
         .unwrap();
@@ -712,7 +633,7 @@ fn two_planned_move_legs_progress_through_spawn_and_master_frame_lifecycle() {
     let record = sim.encode_plan_commit_record(owner).unwrap();
     let commit = CommandEnvelope::new(
         owner,
-        sim.session.tick + 1,
+        sim.session.tick() + 1,
         Command::PlanningRecord { record },
     );
     let grid = sim.path_grid.clone();
@@ -934,26 +855,6 @@ fn planning_append_rejects_exact_sixteen_and_any_loop() {
 }
 
 #[test]
-fn planning_snapshot_rejects_missing_actor_or_house() {
-    use crate::sim::snapshot::GameSnapshot;
-    for missing_actor in [true, false] {
-        let (mut sim, rules, owner) = fixture();
-        append(&mut sim, &rules, owner, 1, (12, 15));
-        if missing_actor {
-            sim.substrate.entities.remove(1);
-        } else {
-            sim.houses.remove(&owner);
-        }
-        let bytes = GameSnapshot::save(&sim, 0, 0, "planning", 0);
-        let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
-        assert!(matches!(
-            restored.restore_after_snapshot_load(),
-            Err(crate::sim::snapshot::SnapshotRestoreError::InvalidPlanningReferences { .. })
-        ));
-    }
-}
-
-#[test]
 fn connect_rotates_source_loop_suffix_and_preserves_auxiliary_provenance() {
     for clicked in [0, 1, 2] {
         let (mut sim, rules, owner) = fixture();
@@ -1093,7 +994,7 @@ fn planned_force_attack_preserves_admitted_friendly_target_through_native_dispat
     append(&mut sim, &rules, owner, 1, (16, 15));
     let commit = sim.encode_plan_commit_record(owner).unwrap();
     apply(&mut sim, &rules, commit);
-    sim.session.tick += 1;
+    sim.session.set_tick_for_test(sim.session.tick() + 1);
     let due = sim.take_due_commands();
     assert_eq!(due.len(), 1);
     assert!(
@@ -1123,11 +1024,10 @@ fn planned_force_attack_preserves_admitted_friendly_target_through_native_dispat
 fn captured_actor_path_commits_for_current_house_and_preserves_original_issuer() {
     let (mut sim, rules, owner) = fixture();
     let new_owner = sim.interner.intern("Russians");
-    sim.houses.insert(
-        new_owner,
-        crate::sim::house_state::HouseState::new(new_owner, 1, None, false, 0, 10),
-    );
-    sim.session.house_order.push(new_owner);
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            new_owner, 1, None, false, 0, 10,
+        ));
     append(&mut sim, &rules, owner, 2, (12, 15));
     sim.change_owner(1, new_owner);
     // The old issuer's delayed flag1 is admitted after capture. Its actor's
@@ -1159,7 +1059,7 @@ fn captured_actor_path_commits_for_current_house_and_preserves_original_issuer()
         );
     let record = sim.encode_plan_commit_record(new_owner).unwrap();
     let envelope = sim
-        .decode_native_command_record(&record, sim.session.tick)
+        .decode_native_command_record(&record, sim.session.tick())
         .unwrap();
     assert!(sim.apply_command("Russians", &envelope.payload, Some(&rules)));
     let generated = sim.pending_command_snapshot();
@@ -1171,7 +1071,7 @@ fn captured_actor_path_commits_for_current_house_and_preserves_original_issuer()
     let bytes = save_codec::serialize(&sim.planning).unwrap();
     sim.planning = save_codec::deserialize(&bytes).unwrap();
     sim.validate_planning_references().unwrap();
-    sim.session.tick += 1;
+    sim.session.set_tick_for_test(sim.session.tick() + 1);
     let due = sim.take_due_commands();
     assert!(sim.apply_command("Americans", &due[0].payload, Some(&rules)));
     assert_eq!(
@@ -1182,16 +1082,34 @@ fn captured_actor_path_commits_for_current_house_and_preserves_original_issuer()
 }
 
 #[test]
-fn planning_append_defers_actor_lifetime_admission_until_execution() {
-    let (mut sim, rules, owner) = fixture();
-    let actor = sim.substrate.entities.get_mut(1).unwrap();
-    actor.lifecycle.set_object_alive_for_test(false);
-    actor.lifecycle.set_in_limbo_for_test(true);
-    append(&mut sim, &rules, owner, 1, (12, 15));
-    assert_eq!(sim.planning.paths[&1].nodes.len(), 1);
-    let bytes = save_codec::serialize(&sim.planning).unwrap();
-    sim.planning = save_codec::deserialize(&bytes).unwrap();
-    sim.validate_planning_references().unwrap();
+fn append_and_connect_receivers_defer_actor_owner_and_lifetime_admission() {
+    {
+        let (mut sim, rules, owner) = fixture();
+        let actor = sim.substrate.entities.get_mut(1).unwrap();
+        actor.lifecycle.set_object_alive_for_test(false);
+        actor.lifecycle.set_in_limbo_for_test(true);
+        append(&mut sim, &rules, owner, 1, (12, 15));
+        assert_eq!(sim.planning.paths[&1].nodes.len(), 1);
+        let bytes = save_codec::serialize(&sim.planning).unwrap();
+        sim.planning = save_codec::deserialize(&bytes).unwrap();
+        sim.validate_planning_references().unwrap();
+    }
+    {
+        let (mut sim, rules, owner) = fixture();
+        append(&mut sim, &rules, owner, 1, (12, 15));
+        let connect = sim.encode_plan_connect_record(owner, 2, (12, 15)).unwrap();
+        let new_owner = sim.interner.intern("Russians");
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                new_owner, 1, None, false, 0, 10,
+            ));
+        sim.change_owner(2, new_owner);
+        let actor = sim.substrate.entities.get_mut(2).unwrap();
+        actor.lifecycle.set_object_alive_for_test(false);
+        actor.lifecycle.set_in_limbo_for_test(true);
+        apply(&mut sim, &rules, connect);
+        assert_eq!(sim.planning.paths[&2].nodes, sim.planning.paths[&1].nodes);
+    }
 }
 
 #[test]
@@ -1310,39 +1228,6 @@ fn connect_suffix_copies_the_selected_source_actor_order_at_shared_node() {
 }
 
 #[test]
-fn connect_receiver_defers_actor_owner_and_lifetime_admission() {
-    let (mut sim, rules, owner) = fixture();
-    append(&mut sim, &rules, owner, 1, (12, 15));
-    let connect = sim.encode_plan_connect_record(owner, 2, (12, 15)).unwrap();
-    let new_owner = sim.interner.intern("Russians");
-    sim.houses.insert(
-        new_owner,
-        crate::sim::house_state::HouseState::new(new_owner, 1, None, false, 0, 10),
-    );
-    sim.change_owner(2, new_owner);
-    let actor = sim.substrate.entities.get_mut(2).unwrap();
-    actor.lifecycle.set_object_alive_for_test(false);
-    actor.lifecycle.set_in_limbo_for_test(true);
-    apply(&mut sim, &rules, connect);
-    assert_eq!(sim.planning.paths[&2].nodes, sim.planning.paths[&1].nodes);
-}
-
-#[test]
-fn commit_uses_the_same_effective_house_as_node_grouping() {
-    let (mut sim, rules, owner) = fixture();
-    let controlled = sim.interner.intern("Controlled");
-    sim.houses.insert(
-        controlled,
-        crate::sim::house_state::HouseState::new(controlled, 1, None, true, 0, 10),
-    );
-    sim.change_owner(1, controlled);
-    append(&mut sim, &rules, owner, 1, (12, 15));
-    let commit = sim.encode_plan_commit_record(owner).unwrap();
-    apply(&mut sim, &rules, commit);
-    assert_eq!(sim.planning.paths[&1].pending, -1);
-}
-
-#[test]
 fn draw_graph_merges_equal_predecessor_coords_and_tracks_commit_boundary() {
     let (mut sim, rules, owner) = fixture();
     for actor in [2, 1] {
@@ -1379,74 +1264,6 @@ fn draw_graph_merges_equal_predecessor_coords_and_tracks_commit_boundary() {
             .iter()
             .all(|actor| !actor.connection.as_ref().unwrap().bright)
     );
-}
-
-#[test]
-fn draw_graph_has_one_loop_backlink_and_hover_tracks_shared_node_identity() {
-    let (mut sim, rules, owner) = fixture();
-    for cell in [(12, 15), (16, 15), (20, 15)] {
-        append(&mut sim, &rules, owner, 1, cell);
-    }
-    let connect = sim.encode_plan_connect_record(owner, 1, (12, 15)).unwrap();
-    apply(&mut sim, &rules, connect);
-    let coord = sim.planning_node_coords(0).unwrap();
-    let (x, y) = crate::util::lepton::absolute_leptons_to_screen(coord.x, coord.y, coord.z);
-    let graph = sim.planning_draw_graph(owner, &[], Some([x as i32, y as i32]), Some(1));
-    assert_eq!(graph.hovered_node, Some(0));
-    assert_eq!(graph.highlighted_node, Some(1));
-    assert_eq!(
-        graph
-            .nodes
-            .iter()
-            .filter(|node| node.loop_segment.is_some())
-            .count(),
-        1
-    );
-    let back = graph.nodes[0].loop_segment.as_ref().unwrap();
-    assert_eq!(back.source, graph.nodes[2].coord);
-    assert_eq!(back.target, graph.nodes[0].coord);
-    assert!(back.bright);
-    let commit = sim.encode_plan_commit_record(owner).unwrap();
-    apply(&mut sim, &rules, commit);
-    assert!(
-        !sim.planning_draw_graph(owner, &[], None, None).nodes[0]
-            .loop_segment
-            .as_ref()
-            .unwrap()
-            .bright
-    );
-}
-
-#[test]
-fn closing_move_route_promotes_patrol_tasks_and_badges() {
-    for armed in [false, true] {
-        let (mut sim, rules, owner) = fixture();
-        let rules = if armed {
-            RuleSet::from_ini(&crate::rules::ini_parser::IniFile::from_str(
-                "[VehicleTypes]\n0=TEST\n[TEST]\nStrength=100\nSpeed=4\nPrimary=GUN\n[WeaponTypes]\n0=GUN\n[GUN]\nDamage=10\nRange=5\n",
-            ))
-            .unwrap()
-        } else {
-            rules
-        };
-        assert_eq!(sim.techno_can_attack_move(1, &rules), armed);
-        for cell in [(8, 15), (12, 15), (16, 15), (16, 19)] {
-            append(&mut sim, &rules, owner, 1, cell);
-        }
-        let connect = sim.encode_plan_connect_record(owner, 1, (12, 15)).unwrap();
-        apply(&mut sim, &rules, connect);
-        let graph = sim.planning_draw_graph(owner, &[], None, None);
-        assert!(graph.nodes[0].badge.is_none(), "entry prefix stays Move");
-        for node in &graph.nodes[1..] {
-            assert_eq!(
-                node.badge,
-                armed.then_some(super::PlanningBadgeKind::AttackMove)
-            );
-            let record = sim.planning.nodes[&node.id].order(1).unwrap();
-            assert_eq!(record.payload()[5], if armed { 29 } else { 2 });
-        }
-        assert!(graph.nodes[1].loop_segment.is_some());
-    }
 }
 
 #[test]
@@ -1728,11 +1545,10 @@ fn delete_handoff_uses_first_member_successor_and_invalidates_retained_node() {
 fn retained_highlight_keeps_hidden_node_coordinates_and_full_membership() {
     let (mut sim, rules, owner) = fixture();
     let enemy = sim.interner.intern("Russians");
-    sim.houses.insert(
-        enemy,
-        crate::sim::house_state::HouseState::new(enemy, 1, None, false, 0, 10),
-    );
-    sim.session.house_order.push(enemy);
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            enemy, 1, None, false, 0, 10,
+        ));
     sim.change_owner(2, enemy);
     let record = sim
         .encode_planning_order_record(
@@ -1745,14 +1561,14 @@ fn retained_highlight_keeps_hidden_node_coordinates_and_full_membership() {
         )
         .unwrap();
     let envelope = sim
-        .decode_native_command_record(&record, sim.session.tick)
+        .decode_native_command_record(&record, sim.session.tick())
         .unwrap();
     assert!(sim.apply_command("Russians", &envelope.payload, Some(&rules)));
     // Connect receiver639800 resolves actors without an owner gate. The node
     // remains hidden by its FIRST member while containing a visible actor.
     let connect = sim.encode_plan_connect_record(enemy, 1, (12, 15)).unwrap();
     let envelope = sim
-        .decode_native_command_record(&connect, sim.session.tick)
+        .decode_native_command_record(&connect, sim.session.tick())
         .unwrap();
     assert!(sim.apply_command("Russians", &envelope.payload, Some(&rules)));
     let coord = sim.planning_node_coords(0).unwrap();

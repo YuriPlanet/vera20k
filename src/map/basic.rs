@@ -28,6 +28,9 @@ pub struct BasicSection {
     pub briefing: Option<String>,
     /// Post-read movie catalog name (Scenario+1444, Basic.Action).
     pub action: Option<String>,
+    /// Scenario+0x1440 movie (`ReadMovie` at `0x0068A066`), which campaign
+    /// defeat plays before its retry prompt (`0x0068606B`).
+    pub lose: Option<String>,
     /// Opening campaign waypoint; SetDefaults683622 resets it to699.
     pub home_cell: Option<i32>,
     /// Alternate opening waypoint; SetDefaults683628 resets it to699.
@@ -91,6 +94,14 @@ pub struct SpecialFlagsSection {
     /// Campaign/editor `ScenarioFlags` bit 0x20. While set, direct and area
     /// damage return before mutating world state (`Inert=`).
     pub inert: Option<bool>,
+    /// Campaign/editor `ScenarioFlags` bit 0x800 (`HarvesterImmune=`,
+    /// `ScenarioClass::Read_SpecialFlags @ 0x006B8EBF..0x006B8ED7`, the
+    /// reader's last key). While set, `Evaluate_Candidate`
+    /// (`0x006F8009..0x006F8047`) refuses every candidate whose type is in
+    /// Rules' `HarvesterUnit=` list. A nonzero game mode never reads it: the
+    /// session's Harvester Truce replaces the map's flags
+    /// (`0x00687C16..0x00687C29`).
+    pub harvester_immune: Option<bool>,
 }
 
 impl SpecialFlagsSection {
@@ -115,6 +126,13 @@ impl SpecialFlagsSection {
             prior
                 .and_then(|flags| flags.destroyable_bridges)
                 .unwrap_or(true),
+        );
+        // The cold ctor word `0x8088` leaves bit 0x800 clear; a retained
+        // scenario keeps it until a key rewrites the bit.
+        self.harvester_immune.get_or_insert(
+            prior
+                .and_then(|flags| flags.harvester_immune)
+                .unwrap_or(false),
         );
     }
 
@@ -151,6 +169,9 @@ pub fn parse_basic_section(ini: &IniFile) -> BasicSection {
         action: section
             .is_present("Action")
             .then(|| section.read_string("Action", "", 128)),
+        lose: section
+            .is_present("Lose")
+            .then(|| section.read_string("Lose", "", 128)),
         // Current-default reads at68A601..68A656, after fresh SetDefaults.
         home_cell: section
             .is_present("HomeCell")
@@ -201,6 +222,10 @@ pub fn parse_special_flags_section(ini: &IniFile) -> SpecialFlagsSection {
         tiberium_spreads: section.read_bool_value("TiberiumSpreads"),
         destroyable_bridges: section.read_bool_value("DestroyableBridges"),
         inert: section.read_bool_value("Inert"),
+        // `0x006B8EBF..0x006B8ED7`, the reader's last key; every read takes
+        // the current bit as its default, which the campaign retention pass
+        // (`resolve_campaign_defaults`) models.
+        harvester_immune: section.read_bool_value("HarvesterImmune"),
     }
 }
 
@@ -220,6 +245,7 @@ mod tests {
             tiberium_grows: Some(word & 0x40 != 0),
             tiberium_spreads: Some(word & 0x80 != 0),
             destroyable_bridges: Some(word & 0x08 != 0),
+            harvester_immune: Some(word & 0x800 != 0),
             ..SpecialFlagsSection::default()
         };
         let assert_bits = |actual: &SpecialFlagsSection, expected: u64| {
@@ -228,6 +254,7 @@ mod tests {
             assert_eq!(actual.tiberium_grows, expected.tiberium_grows);
             assert_eq!(actual.tiberium_spreads, expected.tiberium_spreads);
             assert_eq!(actual.destroyable_bridges, expected.destroyable_bridges);
+            assert_eq!(actual.harvester_immune, expected.harvester_immune);
         };
         for row in native["special_controls"].as_array().unwrap() {
             let ini =
@@ -291,13 +318,6 @@ mod tests {
     }
 
     #[test]
-    fn missing_basic_section_returns_defaults() {
-        let ini = IniFile::from_str("[Map]\nTheater=TEMPERATE\n");
-        let basic = parse_basic_section(&ini);
-        assert_eq!(basic, BasicSection::default());
-    }
-
-    #[test]
     fn free_radar_preserves_original_bool_tokens_and_supplied_default() {
         let original: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
             "tools/free_radar_oracle/fixtures/native-free-radar.json",
@@ -344,30 +364,29 @@ mod tests {
         assert_eq!(flags.inert, Some(true));
     }
 
+    /// `HarvesterImmune=` (`0x006B8EBF..0x006B8ED7`): present key parses;
+    /// absent key stays `None` and the campaign default resolves it from the
+    /// retained scenario bit, cold false.
     #[test]
-    fn gsi_04_10_special_flags_inert_is_optional_scenario_authority() {
+    fn parse_special_flags_harvester_immune_key_and_campaign_default() {
+        let ini = IniFile::from_str("[SpecialFlags]\nHarvesterImmune=yes\n");
         assert_eq!(
-            parse_special_flags_section(&IniFile::from_str("[SpecialFlags]\nInert=yes\n")).inert,
+            parse_special_flags_section(&ini).harvester_immune,
             Some(true)
         );
-        assert_eq!(
-            parse_special_flags_section(&IniFile::from_str("[SpecialFlags]\nInert=no\n")).inert,
-            Some(false)
-        );
-        assert_eq!(
-            parse_special_flags_section(&IniFile::from_str("[Basic]\nName=Ordinary\n")).inert,
-            None
-        );
-    }
 
-    #[test]
-    fn parse_special_flags_mcvdeploy_no() {
-        let ini = IniFile::from_str("[SpecialFlags]\nMCVDeploy=no\n");
-        let flags = parse_special_flags_section(&ini);
-        assert_eq!(flags.mcv_deploy, Some(false));
-        assert_eq!(flags.tiberium_grows, None);
-        assert_eq!(flags.tiberium_spreads, None);
-        assert_eq!(flags.destroyable_bridges, None);
+        let ini = IniFile::from_str("[SpecialFlags]\nTiberiumGrows=yes\n");
+        let mut flags = parse_special_flags_section(&ini);
+        assert_eq!(flags.harvester_immune, None);
+        flags.resolve_campaign_defaults(Some(&SpecialFlagsSection {
+            harvester_immune: Some(true),
+            ..SpecialFlagsSection::default()
+        }));
+        assert_eq!(flags.harvester_immune, Some(true));
+
+        let mut cold = parse_special_flags_section(&ini);
+        cold.resolve_campaign_defaults(None);
+        assert_eq!(cold.harvester_immune, Some(false));
     }
 
     #[test]

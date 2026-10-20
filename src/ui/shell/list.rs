@@ -167,11 +167,9 @@ impl ShellListGeometry {
         );
         let thumb = scrollbar.map(|bar| {
             let height = thumb_height(bar.h, max_top, metrics);
-            let span = (bar.h - 2 - metrics.arrow_h * 2 - height).max(1);
-            let offset = (span as i64 * top.min(max_top) as i64 / max_top as i64) as i32;
             RectPx::new(
                 bar.x + 1,
-                bar.y + 1 + metrics.arrow_h + offset,
+                scrollbar_thumb_y(bar, height, top, max_top, metrics),
                 metrics.scrollbar_w - 2,
                 height,
             )
@@ -231,10 +229,43 @@ impl ShellListGeometry {
         let (Some(bar), Some(thumb)) = (self.scrollbar, self.thumb) else {
             return 0;
         };
-        let span = (bar.h - 2 - 44 - thumb.h).max(1);
-        let numerator = (y - bar.y - 22 - thumb.h / 2).clamp(0, span);
-        (numerator as i64 * self.max_top as i64 / span as i64) as usize
+        scrollbar_top_at_pointer(bar, thumb.h, self.max_top, y, self.metrics)
     }
+}
+
+/// Shared 0061C890..0061C8AA scrollbar placement. Both list boxes and
+/// ComboDropWin create the same 0061C690 child; its range is the maximum
+/// top index, not the item count. The paint origin includes the one-pixel inset.
+pub fn scrollbar_thumb_y(
+    bar: RectPx,
+    thumb_h: i32,
+    top: usize,
+    max_top: usize,
+    metrics: ListMetrics,
+) -> i32 {
+    let span = (bar.h - 2 - metrics.arrow_h * 2 - thumb_h).max(1);
+    let offset = if max_top == 0 {
+        0
+    } else {
+        (i64::from(span) * top.min(max_top) as i64 / max_top as i64) as i32
+    };
+    bar.y + 1 + metrics.arrow_h + offset
+}
+
+/// Shared 0061C8B3..0061C935 / 0061D4C4..0061D511 pointer projection.
+/// Native reads the pointer in window coordinates (before the paint inset),
+/// recenters the thumb on every drag update, and truncates signed division.
+/// The down event inside the thumb only captures; callers invoke this on move.
+pub fn scrollbar_top_at_pointer(
+    bar: RectPx,
+    thumb_h: i32,
+    max_top: usize,
+    pointer_y: i32,
+    metrics: ListMetrics,
+) -> usize {
+    let span = (bar.h - 2 - metrics.arrow_h * 2 - thumb_h).max(1);
+    let position = (pointer_y - bar.y - metrics.arrow_h - thumb_h / 2).clamp(0, span);
+    (i64::from(position) * max_top as i64 / i64::from(span)) as usize
 }
 
 /// A line tone of the owner-draw list frame (`0x00619230`).

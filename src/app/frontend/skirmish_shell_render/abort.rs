@@ -1,5 +1,7 @@
-//! Full-screen B6, ordinary Skirmish mode5. Original4F1840/4F18B0 and
-//! 60C540→621FB1→72F540; no modal card and no title694.
+//! Full-screen B6: campaign mode0 (Restart712 shown), Skirmish mode5
+//! (712 hidden) and LAN/WOL (Observe712 or hidden). Original4F1840/4F18B0
+//! and 60C540→621FB1→72F540; no modal
+//! card and no title694.
 
 use super::in_game_shell::{self, InGameShellFrame};
 use super::pause_menu::{button_frame, button_text_rect};
@@ -7,7 +9,6 @@ use super::text::{localized_label, push_text_draw, rect_to_text_rect};
 use super::{SHELL_CONTROL_TEXT_DEPTH, SHELL_LABEL_TEXT_RGB};
 use crate::app::AppState;
 use crate::render::shell_text::ShellAlign;
-use crate::ui::shell::abort::{AbortButton, abort_layout};
 use crate::ui::shell::geom::RectPx;
 use crate::ui::shell::pause_menu::PauseMenuButtonState;
 
@@ -20,16 +21,15 @@ pub(crate) fn render_abort_shell(
         width,
         height,
         layout: shell,
-        button_size,
+        ..
     } = in_game_shell::current_in_game_shell_layout(state).expect("active B6 geometry");
-    let layout = abort_layout(width, height, shell, button_size);
+    let layout = crate::app::input::abort::current_abort_layout(state).expect("active B6 geometry");
     let interaction = state.match_state.match_presentation.abort_buttons;
     let atlas = crate::app::presentation::sidebar_render::current_sidebar_chrome(state)
         .expect("active B6 art");
     let mut art = in_game_shell::background_instances(atlas, shell, width, height);
     let mut texts = Vec::new();
-    for button in AbortButton::ALL {
-        let rect = layout.button(button);
+    for (button, rect) in layout.buttons() {
         let pressed = interaction.is_pressed(button);
         let frame = button_frame(PauseMenuButtonState {
             pressed,
@@ -38,7 +38,7 @@ pub(crate) fn render_abort_shell(
         if let Some(entry) = atlas.in_game_shell.buttons[frame].or(atlas.in_game_shell.buttons[0]) {
             in_game_shell::push_art(&mut art, entry, rect, RectPx::new(0, 0, width, height));
         }
-        let (key, fallback) = button.label();
+        let (key, fallback) = button.label(layout.secondary_kind);
         push_text_draw(
             &mut texts,
             state,
@@ -63,7 +63,7 @@ pub(crate) fn render_abort_shell(
         1.0,
     );
     if let Some(button) = interaction.hovered {
-        let (key, fallback) = button.help();
+        let (key, fallback) = button.help(layout.secondary_kind);
         push_text_draw(
             &mut texts,
             state,

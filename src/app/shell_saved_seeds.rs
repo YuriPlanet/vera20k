@@ -349,14 +349,7 @@ impl App {
             return;
         };
         let edit = &mut browser.description_edit;
-        edit.first_visible_unit = edit.first_visible_unit.min(edit.caret);
-        while edit.first_visible_unit < edit.caret {
-            let prefix = String::from_utf16_lossy(&edit.units[edit.first_visible_unit..edit.caret]);
-            if state.renderer.bit_font.text_width(&prefix) <= available {
-                break;
-            }
-            edit.first_visible_unit += 1;
-        }
+        edit.scroll_to_caret(available, |text| state.renderer.bit_font.text_width(text));
     }
 
     pub(super) fn update_saved_seed_browser_scroll(state: &mut AppState, pointer_moved: bool) {

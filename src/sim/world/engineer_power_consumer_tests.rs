@@ -80,7 +80,7 @@ fn building(sim: &mut Simulation, id: u64, owner: InternedId, kind: &str, health
     entity.estimated_health = EstimatedHealth::from_raw(health);
     entity.lifecycle.set_object_alive_for_test(true);
     entity.lifecycle.set_in_limbo_for_test(false);
-    entity.lifecycle.set_cell_marked(true);
+    entity.lifecycle.set_cell_marked_for_test(true);
     entity.set_in_playfield(true);
     entity.building_art.set_actually_placed_for_test(true);
     entity.finish_building_construction_for_test();
@@ -124,8 +124,8 @@ fn fixture(radar: bool) -> (Simulation, RuleSet, InternedId) {
     .unwrap();
     let owner = sim.interner.intern("Americans");
     let mut house = HouseState::new(owner, 0, Some(owner), true, 5000, 10);
-    house.current_iq = 1;
-    sim.houses.insert(owner, house);
+    house.set_current_iq_for_test(1);
+    sim.houses.register(house);
     building(&mut sim, PLANT, owner, "GAPOWR", 374);
     building(&mut sim, DRAIN, owner, "DRAIN", 500);
     building(&mut sim, RADAR, owner, "RADAR", 500);
@@ -137,7 +137,7 @@ fn fixture(radar: bool) -> (Simulation, RuleSet, InternedId) {
     let gapowr = sim.interner.intern("GAPOWR");
     let house = sim.houses.get_mut(&owner).unwrap();
     house
-        .tracking
+        .tracking_mut()
         .set_active_for_test(EntityCategory::Structure, gapowr, 1);
     sim.substrate
         .entities
@@ -170,12 +170,12 @@ fn assert_rng(sim: &Simulation, native: &Value, boundary: &str) {
 fn assert_power(sim: &Simulation, owner: InternedId, native: &Value, boundary: &str) {
     let state = &sim.power_states[&owner];
     assert_eq!(
-        state.total_output,
+        state.total_output(),
         int(&native["output"]),
         "{boundary}: output"
     );
     assert_eq!(
-        state.total_drain,
+        state.total_drain(),
         int(&native["drain"]),
         "{boundary}: drain"
     );
@@ -220,54 +220,54 @@ fn assert_joined(sim: &Simulation, rules: &RuleSet, owner: InternedId, native: &
         "{boundary}: local derived radar projection"
     );
     assert_eq!(
-        sim.houses[&owner].eva_low_power_guard,
+        sim.houses[&owner].eva_low_power_guard(),
         native["eva_guard"] == 1,
         "{boundary}: local EVA guard"
     );
-    let factory = sim.production.factories.iter_insertion_ordered()[0];
+    let factory = sim.production.factories().iter_insertion_ordered()[0];
     let expected = &native["factory"];
     assert_eq!(
-        i32::from(factory.progress),
+        i32::from(factory.progress()),
         int(&expected["stage"]),
         "{boundary}: stage"
     );
     assert_eq!(
-        i32::from(factory.step_rate_frames),
+        i32::from(factory.step_rate_frames()),
         int(&expected["rate"]),
         "{boundary}: rate"
     );
     assert_eq!(
-        factory.step_timer.start_frame(),
+        factory.step_timer().start_frame(),
         int(&expected["timer_start"]),
         "{boundary}: timer start"
     );
     assert_eq!(
-        factory.step_timer.duration(),
+        factory.step_timer().duration(),
         int(&expected["timer_duration"]),
         "{boundary}: armed duration"
     );
     assert_eq!(
-        factory.balance,
+        factory.balance(),
         int(&expected["balance"]),
         "{boundary}: balance"
     );
     assert_eq!(
-        factory.on_hold,
+        factory.on_hold(),
         expected["on_hold"] == true,
         "{boundary}: cash hold"
     );
     assert_eq!(
-        factory.suspended,
+        factory.suspended(),
         expected["suspended"] == true,
         "{boundary}: suspended"
     );
     assert_eq!(
-        sim.houses[&owner].economy.credits(),
+        sim.houses[&owner].economy().credits(),
         int(&expected["credits"]),
         "{boundary}: credits"
     );
     assert_eq!(
-        sim.houses[&owner].economy.spent_credits(),
+        sim.houses[&owner].economy().spent_credits(),
         int(&expected["spent"]),
         "{boundary}: spending"
     );
@@ -285,7 +285,8 @@ fn settled_repair_native_health_sample_factory_cadence_radar_and_later_advice() 
         );
         let (mut sim, rules, owner) = fixture(true);
         let prior = &row["trace"][1];
-        sim.session.binary_frame = int(&prior["frame"]) as u32;
+        sim.session
+            .set_binary_frame_for_test(int(&prior["frame"]) as u32);
         let timer = &prior["blackout_timer"];
         sim.power_states
             .get_mut(&owner)
@@ -293,7 +294,7 @@ fn settled_repair_native_health_sample_factory_cadence_radar_and_later_advice() 
             .start_blackout(int(&timer[0]) as u32, int(&timer[2]));
         sim.assess_house_derived_state(owner, &rules);
         let type_ref = sim.interner.intern("PENDING");
-        assert!(sim.production.factories.test_enqueue_kernel(
+        assert!(sim.production.factories_mut().test_enqueue_kernel(
             owner,
             ProductionCategory::Vehicle,
             type_ref,
@@ -302,25 +303,25 @@ fn settled_repair_native_health_sample_factory_cadence_radar_and_later_advice() 
         ));
         // Exact native-produced frame195 prior, not a Rust-derived start.
         let pending = &prior["factory"];
-        let factory = sim.production.factories.test_first_mut().unwrap();
-        factory.progress = int(&pending["stage"]) as u16;
-        factory.step_rate_frames = int(&pending["rate"]) as u16;
-        factory.step_timer = CdTimer::from_raw(
+        let factory = sim.production.factories_mut().test_first_mut().unwrap();
+        factory.set_progress_for_test(int(&pending["stage"]) as u16);
+        factory.set_step_rate_frames_for_test(int(&pending["rate"]) as u16);
+        factory.set_step_timer_for_test(CdTimer::from_raw(
             int(&pending["timer_start"]),
             int(&pending["timer_duration"]),
-        );
-        factory.balance = int(&pending["balance"]);
-        factory.on_hold = pending["on_hold"] == true;
-        factory.suspended = pending["suspended"] == true;
+        ));
+        factory.set_balance_for_test(int(&pending["balance"]));
+        factory.set_on_hold_for_test(pending["on_hold"] == true);
+        factory.set_suspended_for_test(pending["suspended"] == true);
         sim.houses
             .get_mut(&owner)
             .unwrap()
-            .economy
+            .economy_mut()
             .set_credits_for_test(int(&pending["credits"]));
         sim.houses
             .get_mut(&owner)
             .unwrap()
-            .economy
+            .economy_mut()
             .set_spent_for_test(int(&pending["spent"]));
         sim.substrate
             .entities
@@ -333,7 +334,8 @@ fn settled_repair_native_health_sample_factory_cadence_radar_and_later_advice() 
         compared += 1;
 
         for native in row["trace"].as_array().unwrap().iter().skip(2) {
-            sim.session.binary_frame = int(&native["frame"]) as u32;
+            sim.session
+                .set_binary_frame_for_test(int(&native["frame"]) as u32);
             match native["phase"].as_str().unwrap() {
                 "plant_sample" => sim.sample_building_health_for_house_update(PLANT),
                 "paid_repair" => {
@@ -377,7 +379,7 @@ fn native_blackout_setter_replaces_shorter_longer_and_zero_durations() {
         let input = &row["input"];
         let prior = &input["prior_timer"];
         let start = int(&prior[0]) as u32;
-        sim.session.binary_frame = start;
+        sim.session.set_binary_frame_for_test(start);
         sim.power_states
             .get_mut(&owner)
             .unwrap()
@@ -389,13 +391,14 @@ fn native_blackout_setter_replaces_shorter_longer_and_zero_durations() {
         if input["prior_dirty"] == true {
             sim.invalidate_house_power(owner, input["prior_radar_dirty"] == true);
         }
-        sim.session.binary_frame = int(&input["frame"]) as u32;
+        sim.session
+            .set_binary_frame_for_test(int(&input["frame"]) as u32);
         assert_power(&sim, owner, &row["before"], "native setter prior");
         assert_rng(&sim, &row["receipt"]["rng_before"], "setter prior");
         sim.power_states
             .get_mut(&owner)
             .unwrap()
-            .start_blackout(sim.session.binary_frame, int(&input["duration"]));
+            .start_blackout(sim.session.binary_frame(), int(&input["duration"]));
         assert_power(&sim, owner, &row["output"], "whole50BC90 setter");
         assert_rng(&sim, &row["receipt"]["rng_after"], "whole50BC90 setter");
         assert_eq!(row["setter_execution"]["unique_instructions"], 13);
@@ -414,7 +417,7 @@ fn native_blackout_zero_one_and_two_remaining_with_clean_or_dirty_house() {
         let (mut sim, rules, owner) = fixture(true);
         let input = &row["input"];
         let start = int(&input["start"]) as u32;
-        sim.session.binary_frame = start;
+        sim.session.set_binary_frame_for_test(start);
         sim.power_states
             .get_mut(&owner)
             .unwrap()
@@ -422,7 +425,8 @@ fn native_blackout_zero_one_and_two_remaining_with_clean_or_dirty_house() {
         // Reach a clean power assessment while the timer still has2 frames.
         // Local radar's separately supplied prior bool is not compared here.
         sim.assess_house_derived_state(owner, &rules);
-        sim.session.binary_frame = int(&input["frame"]) as u32;
+        sim.session
+            .set_binary_frame_for_test(int(&input["frame"]) as u32);
         if input["prior_dirty"] == true {
             sim.invalidate_house_power(owner, false);
         }
@@ -450,11 +454,12 @@ fn native_local_radar_projection_uses_represented_provider_predicates_and_house_
             continue;
         }
         let (mut sim, rules, owner) = fixture(flag(input, "radar_type", true));
-        sim.session.free_radar = flag(input, "free", false);
+        sim.session
+            .set_free_radar_for_test(flag(input, "free", false));
         if flag(input, "second", false) {
             building(&mut sim, SECOND_RADAR, owner, "RADAR", 500);
             assert_eq!(
-                sim.houses[&owner].base_projection.buildings(),
+                sim.houses[&owner].base_projection().buildings(),
                 &[PLANT, DRAIN, RADAR, PRODUCER, SECOND_RADAR]
             );
             assert_eq!(
@@ -470,25 +475,26 @@ fn native_local_radar_projection_uses_represented_provider_predicates_and_house_
         );
         provider
             .lifecycle
-            .set_cell_marked(flag(input, "marked", true));
+            .set_cell_marked_for_test(flag(input, "marked", true));
         provider
             .lifecycle
             .set_in_limbo_for_test(flag(input, "limbo", false));
         let power = input["power"].as_array();
         let mut state = PowerState::default();
-        state.total_output = power.map_or(101, |v| int(&v[0]));
-        state.total_drain = power.map_or(100, |v| int(&v[1]));
-        state.is_low_power = state.total_output < state.total_drain;
+        state.set_total_output_for_test(power.map_or(101, |v| int(&v[0])));
+        state.set_total_drain_for_test(power.map_or(100, |v| int(&v[1])));
+        state.set_is_low_power_for_test(state.total_output() < state.total_drain());
         // House+2B0's timer (start, an unused dword, duration) at the row's
         // frame.
-        sim.session.binary_frame = int(&row["output"]["frame"]) as u32;
+        sim.session
+            .set_binary_frame_for_test(int(&row["output"]["frame"]) as u32);
         if let Some(outage) = input["outage"].as_array() {
             state.set_radar_outage_for_test(crate::sim::timer::CdTimer::from_raw(
                 int(&outage[0]),
                 int(&outage[2]),
             ));
         }
-        let order = sim.houses[&owner].base_projection.buildings();
+        let order = sim.houses[&owner].base_projection().buildings();
         power_system::assess_house_radar_projection(
             &mut state,
             &sim.substrate.entities,
@@ -496,8 +502,8 @@ fn native_local_radar_projection_uses_represented_provider_predicates_and_house_
             &rules,
             owner,
             &sim.interner,
-            sim.session.free_radar,
-            sim.session.binary_frame,
+            sim.session.free_radar(),
+            sim.session.binary_frame(),
         );
         sim.power_states.insert(owner, state);
         assert_eq!(
@@ -527,29 +533,33 @@ fn native_local_low_power_advice_guard_and_eight_speed_delay_values() {
             continue;
         }
         let (mut sim, rules, owner) = fixture(true);
-        sim.session.binary_frame = 196;
-        sim.session.game_options.game_speed = input["speed"].as_i64().unwrap_or(1) as i32;
-        sim.houses.get_mut(&owner).unwrap().eva_low_power_guard = int(&input["guard"]) != 0;
+        sim.session.set_binary_frame_for_test(196);
+        sim.session.game_options_mut_for_test().game_speed =
+            input["speed"].as_i64().unwrap_or(1) as i32;
+        sim.houses
+            .get_mut(&owner)
+            .unwrap()
+            .set_eva_low_power_guard_for_test(int(&input["guard"]) != 0);
         // The supplied `+0x5550` GAPOWR count, independent of the retained
         // House power totals.
         let gapowr = sim.interner.intern("GAPOWR");
         sim.houses
             .get_mut(&owner)
             .unwrap()
-            .tracking
+            .tracking_mut()
             .set_active_for_test(
                 EntityCategory::Structure,
                 gapowr,
                 input["count"].as_i64().unwrap_or(1) as i32,
             );
         let mut state = PowerState::default();
-        state.total_output = int(&input["power"][0]);
-        state.total_drain = int(&input["power"][1]);
-        state.is_low_power = state.total_output < state.total_drain;
+        state.set_total_output_for_test(int(&input["power"][0]));
+        state.set_total_drain_for_test(int(&input["power"][1]));
+        state.set_is_low_power_for_test(state.total_output() < state.total_drain());
         sim.power_states.insert(owner, state);
         house_eva::update_house_eva(&mut sim, &rules, owner);
         assert_eq!(
-            sim.houses[&owner].eva_low_power_guard,
+            sim.houses[&owner].eva_low_power_guard(),
             row["output"]["eva_guard"] == 1,
             "{input}"
         );
@@ -574,7 +584,7 @@ fn native_local_low_power_advice_guard_and_eight_speed_delay_values() {
         assert_eq!(lines, native_lines, "{input}: local EVA requests");
         if native_lines.contains(&EVA_LOW_POWER) {
             assert_eq!(
-                house_eva::speak_delay_frames(&rules, &sim.session.game_options),
+                house_eva::speak_delay_frames(&rules, sim.session.game_options()),
                 int(&row["output"]["low_power_timer"][2]),
                 "{input}: original advice's delay input"
             );

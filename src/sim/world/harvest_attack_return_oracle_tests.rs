@@ -67,7 +67,7 @@ impl Replay {
         scene
             .sim
             .houses
-            .insert(owner, HouseState::new(owner, 1, None, true, 0, 10));
+            .register(HouseState::new(owner, 1, None, true, 0, 10));
         let target_owner = if input["same_owner"] == true {
             "Americans"
         } else {
@@ -138,8 +138,8 @@ impl Replay {
         }
         if input["sensor"] == 1 {
             let owner = scene.sim.interner.get("Americans").unwrap();
-            scene.sim.fog.width = 33;
-            scene.sim.fog.height = 33;
+            scene.sim.fog.set_width_for_test(33);
+            scene.sim.fog.set_height_for_test(33);
             scene.sim.fog.sensors_add_at(owner, (16, 15), 1);
         }
         if let Some(control) = input.get("idle_control") {
@@ -158,11 +158,22 @@ impl Replay {
                 control["deploys_into"] == true
             );
             let owner = entity.owner();
-            scene.sim.houses.get_mut(&owner).unwrap().current_iq = int(&control["house_iq"]);
+            scene
+                .sim
+                .houses
+                .get_mut(&owner)
+                .unwrap()
+                .set_current_iq_for_test(int(&control["house_iq"]));
         }
         // Unit construction consumes shared stream work in Rust. All fixture
         // allocations precede the declared original Scenario seed/prestate.
         scene.sim.scenario_rng = crate::sim::rng::SimRng::new(input["seed"].as_u64().unwrap_or(1));
+        if input["area_guard_comparison"] == true {
+            // Independent native seed controls declared by the additive
+            // AreaGuard corpus, installed after the scene's construction.
+            scene.sim.main_rng = crate::sim::rng::MainRng::new(31);
+            scene.sim.mapgen_rng = crate::sim::rng::SimRng::new(42);
+        }
         Self {
             scene,
             first,
@@ -174,7 +185,7 @@ impl Replay {
         let s = &self.scene;
         let e = s.sim.substrate.entities.get(s.miner).unwrap();
         assert_eq!(
-            s.sim.session.binary_frame as i32,
+            s.sim.session.binary_frame() as i32,
             int(&native["frame"]),
             "{context}: frame"
         );
@@ -268,6 +279,21 @@ impl Replay {
             native["scenario_rng"],
             "{context}: full Scenario RNG"
         );
+        if let Some(other_rng) = native.get("other_rng") {
+            let views = s.sim.rng_views();
+            let main = views.main;
+            let mapgen = views.mapgen;
+            assert_eq!(
+                json!({"disabled": main.disabled, "index_a": main.index_a, "index_b": main.index_b, "state": main.words.as_slice()}),
+                other_rng["main"],
+                "{context}: full Main RNG"
+            );
+            assert_eq!(
+                json!({"disabled": mapgen.disabled, "index_a": mapgen.index_a, "index_b": mapgen.index_b, "state": mapgen.words}),
+                other_rng["mapgen"],
+                "{context}: full MapGen RNG"
+            );
+        }
         let stage = serde_json::to_value(e.native_stage()).unwrap();
         assert_eq!(
             stage["changed"], native["stage_changed"],
@@ -308,7 +334,7 @@ impl Replay {
     fn step(&mut self, step: &Value, context: &str) {
         let input = &step["input"];
         let s = &mut self.scene;
-        let now = s.sim.session.binary_frame;
+        let now = s.sim.session.binary_frame();
         match input["op"].as_str().unwrap() {
             "command" | "stop" => {
                 let command = match input["op"].as_str().unwrap() {
@@ -330,6 +356,13 @@ impl Replay {
                                 target_ry,
                             }
                         }
+                        "area_guard" => {
+                            let (x, y) = cell(&input["post"]);
+                            Command::Guard {
+                                entity_id: s.miner,
+                                target: Some(TargetKind::Cell(x, y)),
+                            }
+                        }
                         other => panic!("{context}: command {other}"),
                     },
                 };
@@ -345,6 +378,11 @@ impl Replay {
                 );
             }
             "promote" => s.sim.mission_host_promote(s.miner, now, &s.rules),
+            "ready" => assert_eq!(
+                u8::from(s.sim.mission_ready_to_commence(s.miner, &s.rules)),
+                int(&step["returned"]["ready_al"]) as u8,
+                "{context}: ReadyToCommence"
+            ),
             "dispatch" => {
                 let config = crate::sim::miner::MinerConfig::from_rules(&s.rules);
                 super::dispatch_foot_mission(
@@ -436,20 +474,31 @@ impl Replay {
             "deadline" => {
                 // Transport the ORIGINAL previous timer's deadline supplied
                 // by this corpus step; never calculate a Rust golden frame.
-                s.sim.session.binary_frame =
-                    int(&step["returned"]["supplied_frame_from_previous_native_timer"]) as u32;
+                s.sim.session.set_binary_frame_for_test(int(
+                    &step["returned"]["supplied_frame_from_previous_native_timer"],
+                ) as u32);
             }
             other => panic!("{context}: operation {other}"),
         }
     }
 }
 
+/// The attack-expiry/idle/harvest corpus, then the area-guard transition
+/// corpus read under the same reader receipts.
 #[test]
-fn attack_expiry_idle_and_harvest_match_original_executable_steps() {
+fn attack_expiry_idle_area_guard_and_harvest_match_original_executable_steps() {
     let corpus = corpus();
     assert_eq!(corpus["row_count"], 53);
+    let area_guard = crate::test_fixture::json("tools/spatial_oracle/harvest_area_guard.json");
+    assert_eq!(area_guard["reader_receipts"], corpus["reader_receipts"]);
+    assert_eq!(area_guard["rows"].as_array().unwrap().len(), 6);
     let mut compared = 0;
-    for row in corpus["rows"].as_array().unwrap() {
+    for row in corpus["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .chain(area_guard["rows"].as_array().unwrap())
+    {
         let name = row["input"]["name"].as_str().unwrap();
         let mut replay = Replay::new(row);
         replay.compare(&row["before"], &row["input"], &format!("{name}: initial"));
@@ -460,27 +509,7 @@ fn attack_expiry_idle_and_harvest_match_original_executable_steps() {
         }
         compared += 1;
     }
-    assert_eq!(compared, 53);
-}
-
-#[test]
-fn shared_unit_idle_setter_admission_matches_original_controls() {
-    let corpus = corpus();
-    let mut compared = 0;
-    for row in corpus["rows"].as_array().unwrap() {
-        if row["input"].get("idle_control").is_none() {
-            continue;
-        }
-        let name = row["input"]["name"].as_str().unwrap();
-        let mut replay = Replay::new(row);
-        replay.compare(&row["before"], &row["input"], &format!("{name}: initial"));
-        for step in row["steps"].as_array().unwrap() {
-            replay.step(step, name);
-            replay.compare(&step["after"], &row["input"], name);
-        }
-        compared += 1;
-    }
-    assert_eq!(compared, 10);
+    assert_eq!(compared, 53 + 6);
 }
 
 #[test]

@@ -97,9 +97,6 @@
 //!   destination in the immediate Process (the movement owner refuses a
 //!   blocked start cell); only seen with a building placed partly on such
 //!   ground.
-//! - House IsToDie (`+0x1F6`, set by `0x004FC980`): VERA has no resign
-//!   countdown, so it never suppresses the survivor roll. Frequency: only a
-//!   resigning house's buildings.
 //! - Original whole GAPOWR fatal/517A50/51DFF0 controls establish fresh E1
 //!   Doing=-1 and Scatter admission at51D1AA. Different preexisting passenger
 //!   Doing states remain bounded by their own Scatter controls.
@@ -255,10 +252,13 @@ impl Simulation {
     /// `TechnoClass::GetCrew @ 0x00707D20` for a Crewed type owned by a house
     /// of `side` (House `+0x1E8`): the side's crew, Technician for any other
     /// side, and a 15% Technician roll for an armed object. A country with no
-    /// `Side=` (HouseType `+0xBC == -1`, none in stock) would return
-    /// Technician before the roll; `side_index` cannot express it.
-    fn techno_crew_type(&mut self, rules: &RuleSet, side: u8, armed: bool) -> Option<String> {
+    /// `Side=` (HouseType `+0xBC == -1`) returns Technician before the roll
+    /// at707D81..707D8B. Executed controls: building_sale.py --crew-type.
+    fn techno_crew_type(&mut self, rules: &RuleSet, side: i32, armed: bool) -> Option<String> {
         let general = &rules.general;
+        if side == -1 {
+            return general.technician.clone();
+        }
         let crew = match side {
             0 => general.allied_crew.clone(),
             1 => general.soviet_crew.clone(),
@@ -284,7 +284,7 @@ impl Simulation {
         let captured = entity.has_been_captured.is_set();
         let armed = crate::sim::combat::combat_weapon::is_armed(entity, object);
         let yard = object.factory_type() == Some(FactoryType::BuildingType);
-        let side = self.houses.get(&entity.owner())?.side_index;
+        let side = self.houses.get(&entity.owner())?.side_index();
         if !captured && self.scenario_rng.next_range_u32_inclusive(0, 99) < 25 && yard {
             return rules.general.engineer_infantry.clone();
         }
@@ -313,7 +313,7 @@ impl Simulation {
         let Some(house) = self.houses.get(&entity.owner()) else {
             return 0;
         };
-        let divisor = match house.side_index {
+        let divisor = match house.side_index() {
             0 => rules.general.allied_survivor_divisor,
             1 => rules.general.soviet_survivor_divisor,
             2 => rules.general.third_survivor_divisor,
@@ -335,7 +335,7 @@ impl Simulation {
             object,
             house,
             &factors,
-            self.session.game_mode_nonzero,
+            self.session.game_mode_nonzero(),
             false,
         );
         refund.checked_div(divisor).unwrap_or(0).clamp(1, 5)
@@ -392,7 +392,13 @@ impl Simulation {
             return;
         }
         for &cell in cells.iter().skip(cursor) {
-            if count > 0
+            // Original443070..443080 re-reads owner+1F6 for each cell.
+            // Pending House destruction skips crew RNG, but not its smudge.
+            if !self
+                .houses
+                .get(&owner)
+                .is_some_and(|house| house.is_to_die())
+                && count > 0
                 && self.scenario_rng.next_range_u32_inclusive(0, chance_max) == 1
                 && let Some(crew) = self.building_crew_type(rules, building_id)
                 && self.spawn_building_survivor(
@@ -461,7 +467,7 @@ impl Simulation {
                 let target = Some(crate::sim::combat::TargetKind::Entity(planter));
                 let stored = crate::sim::mission::concrete_effects::assign_target_stored(
                     &sim.substrate.entities,
-                    &sim.production.terrain_objects,
+                    sim.terrain_objects.objects(),
                     id,
                     target,
                     Some((rules, &sim.interner)),
@@ -572,7 +578,7 @@ impl Simulation {
             let on_bridge = building.on_bridge();
             // `0x00442F3C..0x00442F63`: the building's `+0x388` Current() as a
             // rounded DirType is the Unlimbo direction.
-            let frame = sim.session.binary_frame;
+            let frame = sim.session.binary_frame();
             let facing = building.body_facing_dir(frame);
             let requested = building.position;
             let positioned = if infantry && !no_survivor {
@@ -666,7 +672,7 @@ impl Simulation {
         let armed = crate::sim::combat::combat_weapon::is_armed(entity, object);
         let on_bridge = entity.on_bridge();
         let position = entity.position;
-        let Some(side) = self.houses.get(&owner).map(|house| house.side_index) else {
+        let Some(side) = self.houses.get(&owner).map(|house| house.side_index()) else {
             return;
         };
         // `InfantryClass::Unlimbo @ 0x0051DFF0` places through
@@ -826,7 +832,7 @@ impl Simulation {
         let Some(unit) = self.substrate.entities.get(unit_id) else {
             return;
         };
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         let unit_owner = unit.owner();
         let on_bridge = unit.on_bridge();
         let dropped_as_bomb = unit.was_dropped_as_bomb();
@@ -1093,7 +1099,7 @@ impl Simulation {
             self.substrate
                 .entities
                 .get(id)
-                .map(|entity| entity.body_facing_dir(self.session.binary_frame))
+                .map(|entity| entity.body_facing_dir(self.session.binary_frame()))
         });
         let outcome = self.try_reveal_entity_with_context(
             id,

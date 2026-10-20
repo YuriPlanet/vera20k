@@ -96,7 +96,7 @@ impl Simulation {
             return;
         };
         if let Some(anim) = self.substrate.anims.get_mut(anim) {
-            anim.runtime.loop_remaining = 0;
+            anim.end_loops();
         }
     }
 }
@@ -335,7 +335,7 @@ fn warp_object(
         sim.commit_direct_damage_receiver(rules, overlay_registry, event, frame_effects);
         return;
     }
-    let frame = sim.session.binary_frame;
+    let frame = sim.session.binary_frame();
     let Some(entity) = sim.substrate.entities.get(id) else {
         return;
     };
@@ -410,7 +410,7 @@ fn arm_chrono_warp(
             entity.foot_occupation_enabled.resume();
         }
     }
-    let frame = sim.session.binary_frame;
+    let frame = sim.session.binary_frame();
     let Some(locomotor) = sim
         .substrate
         .entities

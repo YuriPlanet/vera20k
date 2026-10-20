@@ -570,9 +570,16 @@ fn run_bridge_catalog_native_group(group: &serde_json::Value, files: &[Vec<u8>])
                 grid.cells[index].height_in_pixels
             )
         );
-        let selected = grid
-            .pavement_draw_variant(16, 16)
-            .unwrap_or(grid.cells[index].variant);
+        // Authored LAT can replace an eight-file source by a two-file
+        // transition while leaving its stored source selection untouched.
+        // The native480350 draw chooses from the CURRENT registered type;
+        // an unrelated cached variant must neither hide the cell nor be
+        // written back into simulation/radar state by presentation.
+        let cached_variant = grid.cells[index].variant;
+        grid.cells[index].variant = u8::MAX;
+        let selected = grid.tactical_draw_variant(16, 16).unwrap();
+        assert_eq!(grid.cells[index].variant, u8::MAX);
+        grid.cells[index].variant = cached_variant;
         assert_eq!(
             u64::from(selected),
             case["selected"].as_u64().unwrap(),
@@ -625,6 +632,51 @@ fn run_bridge_catalog_native_group(group: &serde_json::Value, files: &[Vec<u8>])
         assert!(grid.apply_dynamic_cell_state(16, 16, &state));
         assert_eq!(grid.current_tile_radar_metadata(16, 16), radar);
     }
+}
+
+#[test]
+fn tactical_tmp_catalog_without_bridge_family_keeps_current_tile_selection() {
+    let mut theater =
+        synthetic_theater_from_ini(b"[TileSet0000]\nTilesInSet=1\nFileName=plain\nSetName=Plain\n");
+    assert!(theater.bridge_set.is_none() && theater.wood_bridge_set.is_none());
+    let pristine = gsi_04_02_last_tiles_tmp_bytes(0, [20, 40, 60], [70, 80, 90]);
+    let suffix = gsi_04_02_last_tiles_tmp_bytes(0, [30, 50, 70], [80, 90, 100]);
+    let (_directory, assets) = gsi_04_02_asset_manager_with_loose_tmps(&[
+        ("plain01.tem", &pristine),
+        ("plain01a.tem", &suffix),
+    ]);
+    crate::map::theater::resolve_contiguous_variant_chains_for_test(&mut theater.lookup, &assets);
+    let table: [u8; 64] = std::array::from_fn(|i| {
+        bridge_catalog_corpus()["process_table"][i]
+            .as_u64()
+            .unwrap() as u8
+    });
+    let selector = crate::map::tile_variant_selector::TileVariantSelector::from_initialized(table);
+    let rules = TerrainRules::default();
+    let mut cell = make_test_cell(16, 16);
+    cell.final_tile_index = 0;
+    cell.variant = 7;
+    let mut cells: Vec<_> = (0..17)
+        .flat_map(|y| (0..17).map(move |x| make_test_cell(x, y)))
+        .collect();
+    cells[16 * 17 + 16] = cell;
+    let mut grid = ResolvedTerrainGrid::from_cells(17, 17, cells);
+    // from_cells does not imply a physical registry, even if a test installs
+    // a catalog for a different query. The binder is the authority switch.
+    assert_eq!(grid.tactical_draw_variant(16, 16), Some(7));
+    grid.bind_asset_catalogs(
+        Some(&theater),
+        Some(&assets),
+        Some(&rules),
+        None,
+        false,
+        0,
+        selector,
+    );
+    assert_eq!(grid.native_tmp_file_count(0), Some(2));
+    // Original ordinary2 corpus at (16,16), sub0 chooses pristine0.
+    assert_eq!(grid.tactical_draw_variant(16, 16), Some(0));
+    assert_eq!(grid.cell(16, 16).unwrap().variant, 7);
 }
 
 #[test]
@@ -695,7 +747,7 @@ fn retail_bridge_recalc_and_presentation_match_original_execution() {
         .try_into()
         .unwrap();
     let rules = TerrainRules::default();
-    let catalog = BridgeRecalcCatalog::for_runtime_bridges(
+    let catalog = BridgeRecalcCatalog::for_runtime_terrain(
         &theater,
         &assets,
         &rules,

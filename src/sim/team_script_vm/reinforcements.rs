@@ -60,8 +60,8 @@ impl Simulation {
         let id = self.team_script_vm.construct_team(
             team_type,
             owner,
-            self.session.game_mode_nonzero,
-            self.session.binary_frame as i32,
+            self.session.game_mode_nonzero(),
+            self.session.binary_frame() as i32,
             placement_scope_active,
             zone,
         )?;
@@ -240,7 +240,7 @@ impl Simulation {
             waypoint_override
         };
         let origin = self.session.waypoint_cell(waypoint).unwrap_or((0, 0));
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         let mut successes = Vec::with_capacity(members.len());
         for member in members {
             let actor = self
@@ -505,7 +505,7 @@ impl Simulation {
                 return false;
             };
             let (authored, waypoint) = self.houses.get(&owner).map_or((-1, 0), |house| {
-                (house.authored_edge(), house.waypoint_edge)
+                (house.authored_edge(), house.waypoint_edge())
             });
             let Some(cell) =
                 self.aircraft_edge_cell(Edge::authored_or_waypoint(authored, waypoint))
@@ -579,7 +579,7 @@ impl Simulation {
         }
         //65DCF9 invokes Aircraft Commence41B870 directly, with no Ready
         //query, after the entire payload attaches. Use the sole mission owner.
-        let _ = self.mission_commence_exact(plane, self.session.binary_frame);
+        let _ = self.mission_commence_exact(plane, self.session.binary_frame());
         true
     }
 
@@ -634,7 +634,7 @@ impl Simulation {
         let team = self.team_script_vm.construct_team_instance(
             team_type,
             owner,
-            self.session.binary_frame as i32,
+            self.session.binary_frame() as i32,
             zone,
         )?;
         self.attach_team_trigger_tag(team, team_type);

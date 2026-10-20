@@ -39,7 +39,7 @@ fn scene(damage: i32, firepower: u64) -> (Simulation, RuleSet) {
             index as i32,
             0,
         );
-        sim.houses.insert(owner, house);
+        sim.houses.register(house);
     }
     for (id, kind, owner, rx) in [(1, "MTNK", "Americans", 2), (2, "E1", "Russians", 3)] {
         let mut entity = GameEntity::test_default(id, kind, owner, rx, 2);

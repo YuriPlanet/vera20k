@@ -5,10 +5,28 @@
 //! landing-effect and Display transactions are separate callers, still being
 //! migrated. Native comparisons: tools/spatial_oracle/fly_height.{py,json}.
 
+use super::air_movement::{FlySpeedFacts, MIN_CREEP_SPEED, fly_may_slow};
 #[cfg(any(test, feature = "test-support"))]
 use super::locomotor::AirMovePhase;
 use crate::sim::components::DriveCoord;
-use crate::util::fixed_math::SimFixed;
+use crate::util::fixed_math::{SIM_ONE, SIM_ZERO, SimFixed};
+
+/// Per-tick speed ramp step for Fly aircraft (0.1 per tick).
+/// Original: _DAT_007e3860 = 0.1 (verified from binary).
+/// Full acceleration 0->1 takes 10 ticks.
+const FLY_SPEED_RAMP_STEP: SimFixed = SimFixed::lit("0.1");
+
+/// The target speed of a Fly crawling in under the 0.1 slowdown floor
+/// (`0x004CE27C`).
+const FLY_CRAWL_SPEED: SimFixed = SimFixed::lit("0.1");
+
+/// Horizontal_Step's arrival distances (`0x004CF4F1`, `0x004CF527`,
+/// `0x004CF543`) and the speeds they ask for.
+pub(crate) const ARRIVAL_STOP: i32 = 0x80;
+const ARRIVAL_HALF: i32 = 0x200;
+pub(crate) const ARRIVAL_THREE_QUARTERS: i32 = 0x300;
+const HALF_SPEED: SimFixed = SimFixed::lit("0.5");
+const THREE_QUARTER_SPEED: SimFixed = SimFixed::lit("0.75");
 
 /// Constructor4CC9EE..4CC9FA clears target+38 and takeoff/landing+50/+51.
 /// Only this owner mutates those fields. Object coordinates own current Z.
@@ -43,8 +61,9 @@ pub struct FlyRuntime {
     fall_counter: i32,
     /// Fly+40, the target speed fraction the ramp chases. The constructor
     /// (`0x004CC9E5`) starts it at 0; Process's slowdown
-    /// (`air_movement::write_fly_target_speed`), the takeoff callback and the
-    /// landing write it.
+    /// ([`Self::write_target_speed`]), Horizontal_Step's arrival
+    /// ([`Self::slow_for_arrival`]), the takeoff callback and the landing write
+    /// it.
     #[serde(default)]
     target_speed: SimFixed,
     /// Fly+48, the current speed fraction, chasing `target_speed` by 0.1 a
@@ -59,18 +78,133 @@ impl FlyRuntime {
         self.target_speed
     }
 
-    /// Store the field.
-    pub(crate) fn set_target_speed(&mut self, target_speed: SimFixed) {
-        self.target_speed = target_speed;
-    }
-
     /// See the field.
     pub(crate) const fn current_speed(&self) -> SimFixed {
         self.current_speed
     }
 
-    /// Store the field.
-    pub(crate) fn set_current_speed(&mut self, current_speed: SimFixed) {
+    /// Process `0x004CE441..0x004CE495`: the current speed (`+0x48`) chases
+    /// the target speed (`+0x40`) by 0.1 a frame.
+    pub(crate) fn ramp_speed(&mut self) {
+        let target = self.target_speed;
+        let current = self.current_speed;
+        if current < target {
+            self.current_speed = (current + FLY_SPEED_RAMP_STEP).min(target);
+        } else if current > target {
+            self.current_speed = (current - FLY_SPEED_RAMP_STEP).max(target);
+        }
+    }
+
+    /// Fly Process `0x004CE145..0x004CE2DB`: the target speed (`+0x40`) that the
+    /// ramp chases, rewritten on every frame the Fly is moving and its owner
+    /// lives, is not landing, has climbed to half its takeoff height and holds a
+    /// destination:
+    /// - `0x004D0180` refusing: full speed. A locked aircraft, a cruising FlyBy
+    ///   and a cruising strafer or fighter with ammo never slow for their
+    ///   destination.
+    /// - HunterSeeker: full speed while it has a Target and is not taking off,
+    ///   else a stop.
+    /// - Otherwise `distance / SlowdownDistance`, capped at 1. Under 0.1 it is a
+    ///   0.1 crawl beyond 85 leptons and, within, a stop that halves the current
+    ///   speed. A current speed above the integer distance drops to it (only at
+    ///   distance 0). A Fly already at a standstill short of its destination gets
+    ///   a 0.05 current speed, which only the IsDropship attitude reads before the
+    ///   ramp (`0x004CE46F`) takes it back to the zero target: it moves nothing.
+    ///
+    /// Native keeps binary64 and VERA SimFixed, each result within one quantum of
+    /// native: the ratio truncates to Q16, and the halving rounds a dropped half
+    /// away from zero, so it is zero exactly when native's is (a speed of one
+    /// quantum truncated to zero would take the creep's branch). The floor test
+    /// is the exact `10 * distance <= SlowdownDistance`, assuming gamemd's chop
+    /// control word `0x0E7F`, under which the oracle runs: the chop quotient of
+    /// an exact tenth falls below the stored 0.1. Rounded to nearest it would
+    /// equal 0.1 and take the ratio arm (a 0.1 target for that frame, no
+    /// halving). The rows of `tools/spatial_oracle/fly_target_speed` hold the
+    /// native outputs.
+    pub(crate) fn write_target_speed(&mut self, facts: &FlySpeedFacts) {
+        let taking_off = self.taking_off;
+        if facts.health <= 0
+            || self.landing
+            || (taking_off && facts.height < self.target_height / 2)
+            || self.destination() == (DriveCoord { x: 0, y: 0, z: 0 })
+        {
+            return;
+        }
+        if !fly_may_slow(self.landing, self.cruise_mode, &facts.slow) {
+            self.target_speed = SIM_ONE;
+            return;
+        }
+        if facts.hunter_seeker {
+            self.target_speed = if !taking_off && facts.target {
+                SIM_ONE
+            } else {
+                SIM_ZERO
+            };
+            return;
+        }
+        let distance = i64::from(facts.distance);
+        let slowdown = i64::from(facts.slowdown_distance);
+        // A zero SlowdownDistance divides to +inf (NaN at distance 0), which the
+        // cap turns into full speed; a negative one is always under the floor.
+        if slowdown == 0 || (slowdown > 0 && distance * 10 > slowdown) {
+            self.target_speed = if slowdown == 0 || distance >= slowdown {
+                SIM_ONE
+            } else {
+                SimFixed::from_bits(((distance << 16) / slowdown) as i32)
+            };
+        } else if distance > 0x55 {
+            self.target_speed = FLY_CRAWL_SPEED;
+        } else {
+            let bits = self.current_speed.to_bits();
+            self.current_speed = SimFixed::from_bits(bits / 2 + bits % 2);
+            self.target_speed = SIM_ZERO;
+        }
+        if distance << 16 < i64::from(self.current_speed.to_bits()) {
+            self.current_speed = SimFixed::from_bits((distance << 16) as i32);
+        }
+        if self.target_speed == SIM_ZERO && self.current_speed == SIM_ZERO && distance > 0 {
+            self.current_speed = MIN_CREEP_SPEED;
+        }
+    }
+
+    /// Horizontal_Step's arrival arm (`0x004CF4F1`, `0x004CF527`,
+    /// `0x004CF543`): a stop within `ARRIVAL_STOP`, half speed within
+    /// `ARRIVAL_HALF`, three quarters within `ARRIVAL_THREE_QUARTERS`; a
+    /// farther Fly keeps its target speed.
+    pub(crate) fn slow_for_arrival(&mut self, distance: i32) {
+        if distance < ARRIVAL_STOP {
+            self.target_speed = SIM_ZERO;
+        } else if distance < ARRIVAL_HALF {
+            self.target_speed = HALF_SPEED;
+        } else if distance < ARRIVAL_THREE_QUARTERS {
+            self.target_speed = THREE_QUARTER_SPEED;
+        }
+    }
+
+    /// The takeoff callback (`0x004CE680`) asks full speed.
+    pub(crate) fn request_full_speed(&mut self) {
+        self.target_speed = SIM_ONE;
+    }
+
+    /// The landing callback (`0x004CE840`) asks a stop; the current speed
+    /// ramps down to it.
+    pub(crate) fn request_stop(&mut self) {
+        self.target_speed = SIM_ZERO;
+    }
+
+    /// A completed landing stands the Fly still: target and current speed 0.
+    pub(crate) fn halt(&mut self) {
+        self.target_speed = SIM_ZERO;
+        self.current_speed = SIM_ZERO;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn set_target_speed_for_test(&mut self, target_speed: SimFixed) {
+        self.target_speed = target_speed;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn set_current_speed_for_test(&mut self, current_speed: SimFixed) {
         self.current_speed = current_speed;
     }
 }
@@ -330,6 +464,7 @@ impl FlyRuntime {
         (self.target_height, self.taking_off, self.landing)
     }
 
+    #[cfg(any(test, feature = "test-support"))]
     pub(crate) fn target_height(&self) -> i32 {
         self.target_height
     }

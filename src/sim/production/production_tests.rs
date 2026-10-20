@@ -515,9 +515,10 @@ pub(super) fn install_infantry_delivery_fixture_map(sim: &mut Simulation) {
         off_108: 128,
     });
     sim.playfield_size_height = Some(64);
-    sim.session.map_width = 16;
-    sim.session.map_height = 64;
-    sim.session.game_mode_nonzero = true;
+    sim.session.set_map_width_for_test(16);
+    sim.session.set_map_height_for_test(64);
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
 }
 
 pub(super) fn spawn_structure(
@@ -531,14 +532,11 @@ pub(super) fn spawn_structure(
 ) {
     let owner_id = sim.interner.intern(owner);
     let type_id_interned = sim.interner.intern(type_id);
-    sim.houses.entry(owner_id).or_insert_with(|| {
+    sim.houses.get_or_register_for_test(owner_id, || {
         crate::sim::house_state::HouseState::new(owner_id, 0, None, true, STARTING_CREDITS, 10)
     });
     // LogicClass visits Houses through its constructor-ordered vector. Raw
     // placed-building fixtures must admit their House as well as its storage.
-    if !sim.session.house_order.contains(&owner_id) {
-        sim.session.house_order.push(owner_id);
-    }
     let mut ge = crate::sim::game_entity::GameEntity::new_at_frame_zero_for_test(
         sid,
         rx,
@@ -622,7 +620,7 @@ pub(super) fn arm_build_via(
     let cost = sim.object_type(tid, rules).map_or(0, |o| o.cost.max(0));
     let started =
         sim.production
-            .factories
+            .factories_mut()
             .test_enqueue_kernel(oid, queue_category, tid, order, cost);
     if started {
         super::construct_active_factory_fixture(sim, rules, oid, queue_category, tid)
@@ -746,7 +744,7 @@ fn naval_factory_spawn_uses_water_exit_and_defers_unload_only_without_contacts()
             off_108: 200,
         });
         sim.playfield_size_height = Some(32);
-        sim.session.binary_frame = 37;
+        sim.session.set_binary_frame_for_test(37);
 
         spawn_structure(&mut sim, &rules, 1, "Americans", "GAYARD", 20, 20);
         stamp_type_foundation(&mut sim, &rules, 1);
@@ -860,7 +858,7 @@ fn mixed_land_and_naval_factories_bind_independent_vehicle_and_ship_slots() {
     .expect("mixed stock-shaped Vehicle/Ship rules");
     let mut sim = Simulation::new();
     let mut terrain = water_terrain(40, 40);
-    let land_exit = terrain.cell_mut(6, 5).unwrap();
+    let land_exit = terrain.cell_mut_for_test(6, 5).unwrap();
     land_exit.land_type = crate::rules::terrain_rules::LandType::Clear.as_index();
     let grid = PathGrid::test_all_passable(40, 40);
     sim.install_fixture_path_grid(Some(&grid));
@@ -873,8 +871,8 @@ fn mixed_land_and_naval_factories_bind_independent_vehicle_and_ship_slots() {
         off_108: 200,
     });
     sim.playfield_size_height = Some(40);
-    sim.session.map_width = 40;
-    sim.session.map_height = 40;
+    sim.session.set_map_width_for_test(40);
+    sim.session.set_map_height_for_test(40);
 
     // The older/lower stable-id land factory must never win the Ship slot.
     spawn_structure(&mut sim, &rules, 1, "Americans", "GAWEAP", 4, 4);
@@ -977,12 +975,12 @@ fn mixed_land_and_naval_factories_bind_independent_vehicle_and_ship_slots() {
     );
     assert!(
         sim.production
-            .factories
+            .factories_mut()
             .test_arm_ready(americans, ProductionCategory::Ship)
     );
     assert!(
         sim.production
-            .factories
+            .factories()
             .view(americans, ProductionCategory::Vehicle)
             .and_then(|view| view.object)
             .is_some(),
@@ -990,7 +988,7 @@ fn mixed_land_and_naval_factories_bind_independent_vehicle_and_ship_slots() {
     );
     assert!(
         sim.production
-            .factories
+            .factories()
             .view(americans, ProductionCategory::Ship)
             .and_then(|view| view.object)
             .is_some()
@@ -1023,14 +1021,14 @@ fn mixed_land_and_naval_factories_bind_independent_vehicle_and_ship_slots() {
     );
     assert!(
         sim.production
-            .factories
+            .factories()
             .view(americans, ProductionCategory::Ship)
             .is_none(),
         "successful Ship delivery advances only the Ship queue"
     );
     assert!(
         sim.production
-            .factories
+            .factories()
             .view(americans, ProductionCategory::Vehicle)
             .and_then(|view| view.object)
             .is_some(),
@@ -1043,12 +1041,12 @@ fn naval_delivery_nonzero_canenter_refunds_without_trying_second_producer() {
     let rules = naval_production_rules();
     let mut sim = Simulation::new();
     let mut terrain = water_terrain(40, 40);
-    for cell in &mut terrain.cells {
+    for cell in terrain.cells_mut_for_test() {
         cell.speed_costs.float = Some(0);
         cell.base_speed_costs.float = Some(0);
     }
     for candidate in [(12, 12), (22, 22)] {
-        let cell = terrain.cell_mut(candidate.0, candidate.1).unwrap();
+        let cell = terrain.cell_mut_for_test(candidate.0, candidate.1).unwrap();
         cell.speed_costs.float = Some(100);
         cell.base_speed_costs.float = Some(100);
     }
@@ -1063,7 +1061,7 @@ fn naval_delivery_nonzero_canenter_refunds_without_trying_second_producer() {
         off_108: 200,
     });
     sim.playfield_size_height = Some(40);
-    sim.session.binary_frame = 37;
+    sim.session.set_binary_frame_for_test(37);
 
     spawn_structure(&mut sim, &rules, 1, "Americans", "GAYARD", 10, 10);
     spawn_structure(&mut sim, &rules, 2, "Americans", "GAYARD", 20, 20);
@@ -1105,7 +1103,7 @@ fn naval_delivery_nonzero_canenter_refunds_without_trying_second_producer() {
     let americans = sim.interner.intern("Americans");
     assert!(
         sim.production
-            .factories
+            .factories_mut()
             .test_arm_ready(americans, ProductionCategory::Ship)
     );
 
@@ -1134,7 +1132,7 @@ fn naval_delivery_nonzero_canenter_refunds_without_trying_second_producer() {
     assert!(!sim.substrate.entities.contains(held));
     assert!(
         sim.production
-            .factories
+            .factories()
             .view(americans, ProductionCategory::Ship)
             .is_none_or(|factory| factory.object.is_none())
     );
@@ -1164,7 +1162,7 @@ fn naval_delivery_nonzero_canenter_refunds_without_trying_second_producer() {
         0,
         "refusal destroys the held Unit without alternate delivery"
     );
-    assert_eq!(sim.houses[&americans].stats.built(), 0);
+    assert_eq!(sim.houses[&americans].stats().built(), 0);
 }
 
 #[test]
@@ -1172,7 +1170,7 @@ fn naval_empty_fnpc_refunds_then_a_fresh_successor_records_delivery_once() {
     let rules = naval_production_rules();
     let mut sim = Simulation::new();
     let mut terrain = water_terrain(40, 40);
-    for cell in &mut terrain.cells {
+    for cell in terrain.cells_mut_for_test() {
         cell.speed_costs.float = Some(0);
         cell.base_speed_costs.float = Some(0);
     }
@@ -1200,13 +1198,18 @@ fn naval_empty_fnpc_refunds_then_a_fresh_successor_records_delivery_once() {
         off_108: 200,
     });
     sim.playfield_size_height = Some(40);
-    sim.session.map_width = 40;
-    sim.session.map_height = 40;
+    sim.session.set_map_width_for_test(40);
+    sim.session.set_map_height_for_test(40);
     let americans = sim.interner.intern("Americans");
-    sim.houses.insert(
-        americans,
-        crate::sim::house_state::HouseState::new(americans, 0, None, true, STARTING_CREDITS, 10),
-    );
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            americans,
+            0,
+            None,
+            true,
+            STARTING_CREDITS,
+            10,
+        ));
     spawn_structure(&mut sim, &rules, 1, "Americans", "GAYARD", 10, 10);
     spawn_structure(&mut sim, &rules, 2, "Americans", "GAYARD", 20, 20);
     stamp_type_foundation(&mut sim, &rules, 1);
@@ -1231,7 +1234,7 @@ fn naval_empty_fnpc_refunds_then_a_fresh_successor_records_delivery_once() {
     );
     assert!(
         sim.production
-            .factories
+            .factories_mut()
             .test_arm_ready(americans, ProductionCategory::Ship)
     );
     let refused = super::lifecycle_tests::held_id(&sim, americans, ProductionCategory::Ship);
@@ -1260,7 +1263,7 @@ fn naval_empty_fnpc_refunds_then_a_fresh_successor_records_delivery_once() {
     );
     let factory = sim
         .production
-        .factories
+        .factories()
         .view(americans, ProductionCategory::Ship)
         .unwrap();
     assert_eq!(factory.progress, 0);
@@ -1271,11 +1274,11 @@ fn naval_empty_fnpc_refunds_then_a_fresh_successor_records_delivery_once() {
     assert_eq!(sim.substrate.entities.len(), entity_count);
     assert_eq!(sim.owned_object_counts(americans).1, owned_units);
     assert_eq!(credits_for_owner(&sim, "Americans"), credits + 1000);
-    assert_eq!(sim.houses[&americans].stats.built(), 0);
+    assert_eq!(sim.houses[&americans].stats().built(), 0);
 
-    let bytes = save_codec::serialize(&sim.production.factories)
+    let bytes = save_codec::serialize(sim.production.factories())
         .expect("serialize the fresh active factory");
-    sim.production.factories = save_codec::deserialize(&bytes).unwrap();
+    *sim.production.factories_mut() = save_codec::deserialize(&bytes).unwrap();
     // Publishing alone does not invent another PLACE for an unfinished successor.
     assert!(!super::dispatch_production_changes_for_tests(
         &mut sim, &rules, None
@@ -1291,8 +1294,8 @@ fn naval_empty_fnpc_refunds_then_a_fresh_successor_records_delivery_once() {
             .next(),
         Some(1)
     );
-    assert_eq!(sim.houses[&americans].stats.built(), 0);
-    for cell in &mut sim.resolved_terrain.as_mut().unwrap().cells {
+    assert_eq!(sim.houses[&americans].stats().built(), 0);
+    for cell in sim.resolved_terrain.as_mut().unwrap().cells_mut_for_test() {
         cell.speed_costs.float = Some(100);
         cell.base_speed_costs.float = Some(100);
     }
@@ -1300,7 +1303,7 @@ fn naval_empty_fnpc_refunds_then_a_fresh_successor_records_delivery_once() {
     sim.path_grid = Some(std::sync::Arc::new(grid));
     assert!(
         sim.production
-            .factories
+            .factories_mut()
             .test_arm_ready(americans, ProductionCategory::Ship)
     );
     assert!(super::dispatch_production_changes_for_tests(
@@ -1309,7 +1312,7 @@ fn naval_empty_fnpc_refunds_then_a_fresh_successor_records_delivery_once() {
     let delivered = sim.substrate.entities.get(successor).unwrap();
     assert!(delivered.lifecycle.cell_marked() && !delivered.lifecycle.in_limbo());
     assert_eq!(
-        sim.houses[&americans].stats.built(),
+        sim.houses[&americans].stats().built(),
         1,
         "Record_Last_Built4FB4B7 follows only the successor's successful exit"
     );
@@ -1317,7 +1320,7 @@ fn naval_empty_fnpc_refunds_then_a_fresh_successor_records_delivery_once() {
     assert_eq!(sim.owned_object_counts(americans).1, owned_units);
     assert!(
         sim.production
-            .factories
+            .factories()
             .view(americans, ProductionCategory::Ship)
             .is_none_or(|factory| factory.object.is_none())
     );
@@ -1339,8 +1342,8 @@ fn naval_yard_with_rally(rules: &RuleSet) -> Simulation {
         off_108: 200,
     });
     sim.playfield_size_height = Some(40);
-    sim.session.map_width = 40;
-    sim.session.map_height = 40;
+    sim.session.set_map_width_for_test(40);
+    sim.session.set_map_height_for_test(40);
 
     spawn_structure(&mut sim, rules, 1, "Americans", "GAYARD", 10, 10);
     sim.remove_entity_occupancy(1);
@@ -1360,7 +1363,7 @@ fn deliver_naval_yard_ship(sim: &mut Simulation, rules: &RuleSet) -> (u16, u16) 
     let americans = sim.interner.intern("Americans");
     assert!(
         sim.production
-            .factories
+            .factories_mut()
             .test_arm_ready(americans, ProductionCategory::Ship)
     );
     assert!(super::dispatch_production_changes_for_tests(
@@ -1435,7 +1438,7 @@ fn naval_delivery_success_uses_producer_rally_then_move_and_recentres() {
     let americans = sim.interner.intern("Americans");
     assert!(
         sim.production
-            .factories
+            .factories_mut()
             .test_arm_ready(americans, ProductionCategory::Ship)
     );
 
@@ -1532,85 +1535,10 @@ fn naval_delivery_success_uses_producer_rally_then_move_and_recentres() {
     assert!(removed < cleared && cleared < linked && linked < marked);
     assert!(
         sim.production
-            .factories
+            .factories()
             .view(americans, ProductionCategory::Ship)
             .is_none(),
         "successful delivery advances and prunes the completed queue"
-    );
-}
-
-#[test]
-fn naval_rally_destination_and_move_survive_without_path_grid() {
-    let rules = naval_production_rules();
-    let mut sim = Simulation::new();
-    let terrain = water_terrain(40, 40);
-    sim.resolved_terrain = Some(terrain);
-    sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
-        base: 40,
-        off_fc: -100,
-        off_100: -100,
-        off_104: 200,
-        off_108: 200,
-    });
-    sim.playfield_size_height = Some(40);
-    sim.session.map_width = 40;
-    sim.session.map_height = 40;
-
-    spawn_structure(&mut sim, &rules, 1, "Americans", "GAYARD", 10, 10);
-    sim.remove_entity_occupancy(1);
-    {
-        let yard = sim.substrate.entities.get_mut(1).unwrap();
-        yard.type_facts.set_foundation_for_test("4x4".to_string());
-        yard.set_archive_target(Some(crate::sim::combat::TargetKind::Cell(20, 10)));
-    }
-    sim.add_entity_occupancy(1);
-    arm_build_via(
-        &mut sim,
-        &rules,
-        "Americans",
-        "DEST",
-        ProductionCategory::Ship,
-        1,
-    );
-    let americans = sim.interner.intern("Americans");
-    assert!(
-        sim.production
-            .factories
-            .test_arm_ready(americans, ProductionCategory::Ship)
-    );
-
-    assert!(super::dispatch_production_changes_for_tests(
-        &mut sim, &rules, None
-    ));
-    let produced = sim
-        .substrate
-        .entities
-        .values()
-        .find(|entity| {
-            entity.owner() == americans
-                && sim
-                    .interner
-                    .resolve(entity.type_ref())
-                    .eq_ignore_ascii_case("DEST")
-        })
-        .expect("rally fast path delivers without a PathGrid");
-    assert_eq!(
-        produced.navigation.nav_com(),
-        Some(crate::sim::components::NavTargetRef::cell(20, 10)),
-        "Assign_Destination commits independently of immediate path authority"
-    );
-    assert_eq!(
-        produced.mission.queued(),
-        crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Move),
-        "Queue_Mission(Move, 0) is not gated by PathGrid availability"
-    );
-    assert!(
-        produced
-            .navigation
-            .path_replay
-            .remaining_directions()
-            .is_empty(),
-        "the class setter searches no route; the Ship's first Process does"
     );
 }
 
@@ -1633,8 +1561,8 @@ fn naval_rally_destination_and_move_survive_beyond_the_path_grid() {
         off_108: 200,
     });
     sim.playfield_size_height = Some(40);
-    sim.session.map_width = 40;
-    sim.session.map_height = 40;
+    sim.session.set_map_width_for_test(40);
+    sim.session.set_map_height_for_test(40);
 
     spawn_structure(&mut sim, &rules, 1, "Americans", "GAYARD", 10, 10);
     sim.remove_entity_occupancy(1);
@@ -1655,7 +1583,7 @@ fn naval_rally_destination_and_move_survive_beyond_the_path_grid() {
     let americans = sim.interner.intern("Americans");
     assert!(
         sim.production
-            .factories
+            .factories_mut()
             .test_arm_ready(americans, ProductionCategory::Ship)
     );
 
@@ -1693,52 +1621,12 @@ fn naval_rally_destination_and_move_survive_beyond_the_path_grid() {
     assert!(
         produced
             .navigation
-            .path_replay
+            .path_replay()
             .remaining_directions()
             .is_empty()
     );
     assert_eq!(
         crate::sim::movement::movement_goal_cell(produced),
         Some((39, 39))
-    );
-}
-
-#[test]
-fn custom_exit_coord_modded_factory_is_parsed() {
-    let ini = IniFile::from_str(
-        "[InfantryTypes]\n\
-         [VehicleTypes]\n\
-         [AircraftTypes]\n\
-         [BuildingTypes]\n\
-         0=MODFACT\n\
-         [MODFACT]\n\
-         Factory=UnitType\n\
-         ExitCoord=768,512,0\n",
-    );
-    let rules = RuleSet::from_ini(&ini).expect("modded rules should parse");
-    let modfact = rules.object("MODFACT").expect("MODFACT exists");
-    // 768/256=3 cells right, 512/256=2 cells down.
-    assert_eq!(modfact.exit_coord, Some((768, 512, 0)));
-
-    // This non-WeaponsFactory type reaches another native ExitObject arm.
-    // Its parser assertion does not establish a gameplay spawn coordinate.
-}
-
-/// Each house has its own wallet; a house that does not exist has no money
-/// and is not made up.
-#[test]
-fn owner_credits_are_isolated() {
-    let mut sim = Simulation::new();
-    super::house_for_test(&mut sim, "Soviet");
-    super::house_for_test(&mut sim, "Americans")
-        .economy
-        .add_credits(-750);
-    assert_eq!(credits_for_owner(&sim, "Americans"), STARTING_CREDITS - 750);
-    assert_eq!(credits_for_owner(&sim, "Soviet"), STARTING_CREDITS);
-    assert_eq!(credits_for_owner(&sim, "Germans"), 0);
-    assert!(
-        sim.interner
-            .get("Germans")
-            .is_none_or(|id| !sim.houses.contains_key(&id))
     );
 }

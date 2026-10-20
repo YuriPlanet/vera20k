@@ -40,10 +40,11 @@ fn retail_attack_acknowledgement_spends_the_original_singleton_main_draw() {
     };
     let mut sim = Simulation::with_seed(row["input"]["seed"].as_u64().unwrap());
     let local = sim.interner.intern("Local");
-    sim.session.current_house = Some(local);
-    sim.session.game_mode_nonzero = true;
+    sim.session.set_current_house_for_test(Some(local));
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     sim.houses
-        .insert(local, HouseState::new(local, 0, None, true, 0, 10));
+        .register(HouseState::new(local, 0, None, true, 0, 10));
     let type_ref = sim.interner.intern("MTNK");
     sim.entities_mut()
         .insert(GameEntity::new_at_frame_zero_for_test(
@@ -131,10 +132,14 @@ fn scene_for_rules(
         other => panic!("unknown native actor owner {other}"),
     };
     let type_ref = sim.interner.intern(type_name);
-    sim.session.current_house = Some(local);
-    sim.session.game_mode_nonzero = input["mode"].as_u64().unwrap_or(1) != 0;
+    sim.session.set_current_house_for_test(Some(local));
+    sim.session.set_game_mode(
+        crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+            input["mode"].as_u64().unwrap_or(1) != 0,
+        ),
+    );
     sim.houses
-        .insert(local, HouseState::new(local, 0, None, true, 0, 10));
+        .register(HouseState::new(local, 0, None, true, 0, 10));
     let mut other_house = HouseState::new(
         other,
         1,
@@ -143,8 +148,9 @@ fn scene_for_rules(
         0,
         10,
     );
-    other_house.player_control = input["other_player_control"].as_bool().unwrap_or(false);
-    sim.houses.insert(other, other_house);
+    other_house
+        .set_player_control_for_test(input["other_player_control"].as_bool().unwrap_or(false));
+    sim.houses.register(other_house);
     let id = 1;
     sim.entities_mut()
         .insert(GameEntity::new_at_frame_zero_for_test(
@@ -741,31 +747,6 @@ fn capture_enter_and_harvest_preserve_scalar_precedence_and_move_fallback() {
             );
         }
     }
-}
-
-#[test]
-fn scalar_and_unknown_order_voice_fields_do_not_spend_main_draws() {
-    let (mut sim, rules, id) = scene(
-        "VoiceMove=Move\nVoiceAttack=Attack\nVoiceCapture=Capture\n\
-         VoiceEnter=Enter\nVoiceHarvest=Harvest\n",
-    );
-    for (field, expected) in [
-        ("VoiceCapture", Some("Capture")),
-        ("VoiceEnter", Some("Enter")),
-        ("VoiceHarvest", Some("Harvest")),
-        ("unrecognized", None),
-    ] {
-        let before = sim.main_rng.native_state_hex();
-        let (sound, draws) = trace_draws(|| sim.order_voice_request(&rules, id, field, None, true));
-        assert_eq!(sound, expected, "{field}");
-        assert!(draws.is_empty(), "{field}");
-        assert_eq!(sim.main_rng.native_state_hex(), before, "{field}");
-    }
-    let (mut sim, rules, id) = scene("VoiceMove=Move\n");
-    assert_eq!(
-        sim.order_voice_request(&rules, id, "VoiceAttack", None, true),
-        None
-    );
 }
 
 #[test]

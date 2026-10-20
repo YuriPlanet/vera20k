@@ -868,6 +868,432 @@
         90
       ],
       "won": 1
+    },
+    {
+      "al": 1,
+      "calls": [
+        {
+          "address": "0x4068e0",
+          "ecx": 103,
+          "stack": [
+            8539264,
+            103
+          ]
+        },
+        {
+          "address": "0x734e60",
+          "ecx": 8539204,
+          "name": "TXT_VICTORIOUS",
+          "stack": [
+            8537892,
+            5642
+          ]
+        },
+        {
+          "address": "0x6d4db0",
+          "ecx": 536932352,
+          "stack": [
+            536935936,
+            2
+          ]
+        },
+        {
+          "address": "0x752700",
+          "ecx": 8539180,
+          "name": "EVA_YouAreVictorious",
+          "stack": [
+            4294967295,
+            0
+          ]
+        },
+        {
+          "address": "0x4f42f0",
+          "ecx": 8910824,
+          "stack": [
+            0,
+            0
+          ]
+        }
+      ],
+      "input": {
+        "frame": 103,
+        "game_mode": 3,
+        "max_ahead": 10,
+        "name": "lan_win_alignment",
+        "operation": "win"
+      },
+      "lost": 0,
+      "savour_bits": "3f9eb851eb851eb8",
+      "timer": [
+        103,
+        0,
+        27
+      ],
+      "won": 1
+    },
+    {
+      "al": 1,
+      "calls": [
+        {
+          "address": "0x4068e0",
+          "ecx": 103,
+          "stack": [
+            8539264,
+            103
+          ]
+        },
+        {
+          "address": "0x734e60",
+          "ecx": 8539296,
+          "name": "TXT_LOST",
+          "stack": [
+            8537892,
+            5697
+          ]
+        },
+        {
+          "address": "0x6d4db0",
+          "ecx": 536932352,
+          "stack": [
+            536935936,
+            3
+          ]
+        },
+        {
+          "address": "0x752700",
+          "ecx": 8539144,
+          "name": "EVA_YouHaveLost",
+          "stack": [
+            4294967295,
+            0
+          ]
+        },
+        {
+          "address": "0x4f42f0",
+          "ecx": 8910824,
+          "stack": [
+            0,
+            0
+          ]
+        }
+      ],
+      "input": {
+        "frame": 103,
+        "game_mode": 4,
+        "max_ahead": 73,
+        "name": "wol_loss_max_ahead",
+        "operation": "lose"
+      },
+      "lost": 1,
+      "savour_bits": "3f9eb851eb851eb8",
+      "timer": [
+        103,
+        0,
+        77
+      ],
+      "won": 0
+    },
+    {
+      "al": 1,
+      "calls": [
+        {
+          "address": "0x4068e0",
+          "ecx": 103,
+          "stack": [
+            8539264,
+            103
+          ]
+        },
+        {
+          "address": "0x734e60",
+          "ecx": 8539296,
+          "name": "TXT_LOST",
+          "stack": [
+            8537892,
+            5697
+          ]
+        },
+        {
+          "address": "0x6d4db0",
+          "ecx": 536932352,
+          "stack": [
+            536935936,
+            3
+          ]
+        },
+        {
+          "address": "0x4f42f0",
+          "ecx": 8910824,
+          "stack": [
+            0,
+            0
+          ]
+        }
+      ],
+      "input": {
+        "frame": 103,
+        "game_mode": 3,
+        "max_ahead": 10,
+        "name": "lan_observer_loss",
+        "observer": true,
+        "operation": "lose"
+      },
+      "lost": 1,
+      "savour_bits": "3f9eb851eb851eb8",
+      "timer": [
+        103,
+        0,
+        27
+      ],
+      "won": 0
+    },
+    {
+      "al": 1,
+      "calls": [
+        {
+          "address": "0x4068e0",
+          "ecx": 103,
+          "stack": [
+            8539264,
+            103
+          ]
+        },
+        {
+          "address": "0x734e60",
+          "ecx": 8539296,
+          "name": "TXT_LOST",
+          "stack": [
+            8537892,
+            5697
+          ]
+        },
+        {
+          "address": "0x6d4db0",
+          "ecx": 536932352,
+          "stack": [
+            536935936,
+            3
+          ]
+        },
+        {
+          "address": "0x752700",
+          "ecx": 8539144,
+          "name": "EVA_YouHaveLost",
+          "stack": [
+            4294967295,
+            0
+          ]
+        },
+        {
+          "address": "0x4f42f0",
+          "ecx": 8910824,
+          "stack": [
+            0,
+            0
+          ]
+        }
+      ],
+      "input": {
+        "delay": "-.03",
+        "frame": 103,
+        "game_mode": 3,
+        "max_ahead": 2,
+        "name": "lan_negative_savour",
+        "operation": "lose"
+      },
+      "lost": 1,
+      "savour_bits": "bf9eb851e0000000",
+      "timer": [
+        103,
+        0,
+        7
+      ],
+      "won": 0
+    },
+    {
+      "al": 1,
+      "calls": [
+        {
+          "address": "0x4068e0",
+          "ecx": 2147483640,
+          "stack": [
+            8539264,
+            2147483640
+          ]
+        },
+        {
+          "address": "0x734e60",
+          "ecx": 8539204,
+          "name": "TXT_VICTORIOUS",
+          "stack": [
+            8537892,
+            5642
+          ]
+        },
+        {
+          "address": "0x6d4db0",
+          "ecx": 536932352,
+          "stack": [
+            536935936,
+            2
+          ]
+        },
+        {
+          "address": "0x752700",
+          "ecx": 8539180,
+          "name": "EVA_YouAreVictorious",
+          "stack": [
+            4294967295,
+            0
+          ]
+        },
+        {
+          "address": "0x4f42f0",
+          "ecx": 8910824,
+          "stack": [
+            0,
+            0
+          ]
+        }
+      ],
+      "input": {
+        "frame": 2147483640,
+        "game_mode": 3,
+        "max_ahead": 10,
+        "name": "lan_wrapping_expiry",
+        "operation": "win"
+      },
+      "lost": 0,
+      "savour_bits": "3f9eb851eb851eb8",
+      "timer": [
+        2147483640,
+        0,
+        36
+      ],
+      "won": 1
+    },
+    {
+      "al": 1,
+      "calls": [
+        {
+          "address": "0x4068e0",
+          "ecx": 4294967295,
+          "stack": [
+            8539264,
+            4294967295
+          ]
+        },
+        {
+          "address": "0x734e60",
+          "ecx": 8539296,
+          "name": "TXT_LOST",
+          "stack": [
+            8537892,
+            5697
+          ]
+        },
+        {
+          "address": "0x6d4db0",
+          "ecx": 536932352,
+          "stack": [
+            536935936,
+            3
+          ]
+        },
+        {
+          "address": "0x752700",
+          "ecx": 8539144,
+          "name": "EVA_YouHaveLost",
+          "stack": [
+            4294967295,
+            0
+          ]
+        },
+        {
+          "address": "0x4f42f0",
+          "ecx": 8910824,
+          "stack": [
+            0,
+            0
+          ]
+        }
+      ],
+      "input": {
+        "delay": "-.03",
+        "frame": -1,
+        "game_mode": 3,
+        "max_ahead": 10,
+        "name": "lan_paused_anchor",
+        "operation": "lose"
+      },
+      "lost": 1,
+      "savour_bits": "bf9eb851e0000000",
+      "timer": [
+        -1,
+        0,
+        11
+      ],
+      "won": 0
+    },
+    {
+      "al": 1,
+      "calls": [
+        {
+          "address": "0x734e60",
+          "ecx": 8539296,
+          "name": "TXT_LOST",
+          "stack": [
+            8537892,
+            5697
+          ]
+        },
+        {
+          "address": "0x6d4db0",
+          "ecx": 536932352,
+          "stack": [
+            536935936,
+            3
+          ]
+        },
+        {
+          "address": "0x752700",
+          "ecx": 8539144,
+          "name": "EVA_YouHaveLost",
+          "stack": [
+            4294967295,
+            0
+          ]
+        },
+        {
+          "address": "0x4f42f0",
+          "ecx": 8910824,
+          "stack": [
+            0,
+            0
+          ]
+        }
+      ],
+      "input": {
+        "frame": 103,
+        "game_mode": 4,
+        "max_ahead": 73,
+        "name": "wol_skip_delay",
+        "operation": "lose",
+        "skip_timer": true,
+        "timer": [
+          17,
+          0,
+          41
+        ]
+      },
+      "lost": 1,
+      "savour_bits": "3f9eb851eb851eb8",
+      "timer": [
+        17,
+        0,
+        41
+      ],
+      "won": 0
     }
   ],
   "result_gates": [

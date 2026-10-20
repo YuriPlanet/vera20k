@@ -244,7 +244,7 @@ impl Simulation {
     /// Rocket Move_To (`0x006632E0`) for the Foot destination setter's
     /// locomotor dispatch.
     pub(crate) fn rocket_move_to(&mut self, id: u64, to: DriveCoord, rules: &RuleSet) {
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         let Some(entity) = self.substrate.entities.get_mut(id) else {
             return;
         };
@@ -284,7 +284,7 @@ impl Simulation {
             .missile_spawn
             .rocket_block(self.interner.resolve(entity.type_ref()));
         let trig = TrigTable::embedded();
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         let mut host = RocketProcessHost {
             sim: self,
             rules,
@@ -395,7 +395,11 @@ pub(super) mod retail_tests {
             let mut scenario = crate::headless_scenario::load(&retail, "Hills.mmx", 0x0B21_D6E5)
                 .expect("load retail Hills through the production loader");
             let candidates = sites(&scenario);
-            let owner = scenario.sim().session.current_house.expect("launch house");
+            let owner = scenario
+                .sim()
+                .session
+                .current_house()
+                .expect("launch house");
             let owner_name = scenario.sim().interner.resolve(owner).to_owned();
             let runtime = &mut scenario.runtime;
             let rules = &runtime.resources.rules;
@@ -441,7 +445,7 @@ pub(super) mod retail_tests {
                 let commands = if frame == order_frame {
                     vec![CommandEnvelope::new(
                         owner,
-                        runtime.simulation.session.tick + 1,
+                        runtime.simulation.session.tick() + 1,
                         Command::Attack {
                             attacker_id: v3,
                             target_id: target,
@@ -456,7 +460,7 @@ pub(super) mod retail_tests {
                 let sim = &runtime.simulation;
                 for (&id, anim) in sim.anims() {
                     if seen_anims.insert(id) {
-                        anim_names.insert(sim.interner.resolve(anim.type_id).to_owned());
+                        anim_names.insert(sim.interner.resolve(anim.type_id()).to_owned());
                     }
                 }
                 // Detonate's UnInit leaves the frame's pending-delete flush.
@@ -705,7 +709,11 @@ pub(super) mod retail_tests {
         let mut scenario = crate::headless_scenario::load(&retail, "Lostlake.mmx", 0x0B21_D6E5)
             .expect("load retail Lost Lake through the production loader");
         let candidates = naval_sites(&scenario, 15);
-        let owner = scenario.sim().session.current_house.expect("launch house");
+        let owner = scenario
+            .sim()
+            .session
+            .current_house()
+            .expect("launch house");
         let owner_name = scenario.sim().interner.resolve(owner).to_owned();
         let runtime = &mut scenario.runtime;
         let rules = &runtime.resources.rules;
@@ -737,7 +745,7 @@ pub(super) mod retail_tests {
             let commands = if frame == 0 {
                 vec![CommandEnvelope::new(
                     owner,
-                    runtime.simulation.session.tick + 1,
+                    runtime.simulation.session.tick() + 1,
                     Command::Attack {
                         attacker_id: dred,
                         target_id: target,
@@ -867,7 +875,7 @@ pub(super) mod retail_tests {
         let mut scenario = crate::headless_scenario::load(&retail, "Lostlake.mmx", 0x0B21_D6E5)
             .expect("load retail Lost Lake through the production loader");
         let candidates = naval_sites(&scenario, 12);
-        let owner = scenario.sim().session.current_house.expect("order house");
+        let owner = scenario.sim().session.current_house().expect("order house");
         let owner_name = scenario.sim().interner.resolve(owner).to_owned();
         let runtime = &mut scenario.runtime;
         let rules = &runtime.resources.rules;
@@ -902,7 +910,7 @@ pub(super) mod retail_tests {
             let commands = if frame == 0 {
                 vec![CommandEnvelope::new(
                     owner,
-                    runtime.simulation.session.tick + 1,
+                    runtime.simulation.session.tick() + 1,
                     Command::Attack {
                         attacker_id: carrier,
                         target_id: target,
@@ -934,13 +942,13 @@ pub(super) mod retail_tests {
                 i32::from(target_cell.1) * 256 + 128,
             ];
             for (&id, bomb) in sim.projectiles.iter() {
-                if hornets.contains(&bomb.source_id) && !bombs.contains_key(&id) {
-                    let [x, y, z] = bomb.velocity.native().map(|v| f64::from_bits(v.bits()));
-                    let toward = [goal[0] - bomb.position.x, goal[1] - bomb.position.y];
+                if hornets.contains(&bomb.source_id()) && !bombs.contains_key(&id) {
+                    let [x, y, z] = bomb.velocity().native().map(|v| f64::from_bits(v.bits()));
+                    let toward = [goal[0] - bomb.position().x, goal[1] - bomb.position().y];
                     let aim = x * f64::from(toward[0]) + y * f64::from(toward[1]);
                     bombs.insert(
                         id,
-                        (frame, bomb.source_id, (x * x + y * y + z * z).sqrt(), aim),
+                        (frame, bomb.source_id(), (x * x + y * y + z * z).sqrt(), aim),
                     );
                 }
             }
@@ -1023,13 +1031,17 @@ pub(super) mod retail_tests {
             crate::headless_scenario::load_session(&retail, "Hills.mmx", 0x0B21_D6E5, session)
                 .expect("load retail Hills with a computer opponent");
         let candidates = sites(&scenario);
-        let owner = scenario.sim().session.current_house.expect("launch house");
+        let owner = scenario
+            .sim()
+            .session
+            .current_house()
+            .expect("launch house");
         let owner_name = scenario.sim().interner.resolve(owner).to_owned();
         let enemy_name = scenario
             .sim()
             .houses
             .iter()
-            .find(|(name, house)| **name != owner && !house.multiplay_passive)
+            .find(|(name, house)| **name != owner && !house.multiplay_passive())
             .map(|(name, _)| scenario.sim().interner.resolve(*name).to_owned())
             .expect("the computer house");
         let runtime = &mut scenario.runtime;
@@ -1096,7 +1108,7 @@ pub(super) mod retail_tests {
             let commands = if frame == 0 {
                 vec![CommandEnvelope::new(
                     owner,
-                    runtime.simulation.session.tick + 1,
+                    runtime.simulation.session.tick() + 1,
                     Command::Attack {
                         attacker_id: v3,
                         target_id: target,
@@ -1114,8 +1126,8 @@ pub(super) mod retail_tests {
                 .filter(|(id, _)| !seen_anims.contains(*id))
                 .map(|(_, anim)| {
                     (
-                        sim.interner.resolve(anim.type_id).to_ascii_uppercase(),
-                        anim.world_coord,
+                        sim.interner.resolve(anim.type_id()).to_ascii_uppercase(),
+                        anim.world_coord(),
                     )
                 })
                 .collect();

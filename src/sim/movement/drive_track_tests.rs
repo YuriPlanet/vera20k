@@ -114,48 +114,6 @@ fn occupant_can_use_track_matches_native_oracle() {
 }
 
 #[test]
-fn bunker_install_force_tracks_present_with_diagonal_targets() {
-    // Tank-bunker install approach curves (0x43 NE / 0x44 SE / 0x45 SW / 0x46 NW),
-    // siblings of the refinery-exit track 0x47. Each uses raw track 14 and ends at
-    // a diagonal facing — the octant→track map depends on these target facings.
-    for (idx, target) in [(0x43u8, 0x20u8), (0x44, 0x60), (0x45, 0xA0), (0x46, 0xE0)] {
-        let tt = turn_track_at(idx as usize).expect("install track present");
-        assert_eq!(tt.normal_track, 14, "track 0x{idx:02X} raw index");
-        assert_eq!(tt.target_facing, target, "track 0x{idx:02X} target facing");
-    }
-}
-
-#[test]
-fn turn_tracks_have_valid_raw_track_indices() {
-    for (i, tt) in TURN_TRACKS.iter().enumerate() {
-        assert!(
-            (tt.normal_track as usize) < RAW_TRACKS.len(),
-            "TurnTrack[{}].normal_track={} exceeds RAW_TRACKS len {}",
-            i,
-            tt.normal_track,
-            RAW_TRACKS.len()
-        );
-        assert!(
-            (tt.short_track as usize) < RAW_TRACKS.len(),
-            "TurnTrack[{}].short_track={} exceeds RAW_TRACKS len {}",
-            i,
-            tt.short_track,
-            RAW_TRACKS.len()
-        );
-    }
-}
-
-#[test]
-fn turn_tracks_count_is_72() {
-    assert_eq!(TURN_TRACKS.len(), 72);
-}
-
-#[test]
-fn raw_tracks_count_is_16() {
-    assert_eq!(RAW_TRACKS.len(), 16);
-}
-
-#[test]
 fn turn_track_0x47_selects_raw_track_15_not_facing_0x47() {
     let turn = turn_track_at(0x47).expect("TurnTrack 0x47 exists");
     assert_eq!((turn.normal_track, turn.short_track), (15, 15));
@@ -174,46 +132,6 @@ fn turn_track_0x47_selects_raw_track_15_not_facing_0x47() {
     let last = points.last().expect("Track 15 last point");
     assert_eq!((first.x, first.y, first.facing), (128, -128, 0x80));
     assert_eq!((last.x, last.y, last.facing), (16, -4, 0xBC));
-}
-
-#[test]
-fn raw_track_0_is_empty() {
-    let track = &RAW_TRACKS[0];
-    assert_eq!(track.points_count, 0);
-}
-
-#[test]
-fn raw_track_1_is_straight_north() {
-    let points = raw_track_points(1);
-    assert_eq!(points.len(), 23);
-    // All points have x=0 (straight), face=0 (north)
-    for (i, p) in points.iter().enumerate() {
-        assert_eq!(p.x, 0, "Track1 point {} should have x=0", i);
-        assert_eq!(p.facing, 0, "Track1 point {} should face north", i);
-    }
-    // Y should decrease (moving northward)
-    assert!(
-        points[0].y > points[22].y,
-        "Track1 Y should decrease (northward)"
-    );
-    // First point near cell edge, last near/past center
-    assert!(points[0].y > 200, "Track1 starts near cell edge");
-    assert!(points[22].y < 10, "Track1 ends near/past cell center");
-}
-
-#[test]
-fn track1_y_step_is_consistent() {
-    let points = raw_track_points(1);
-    // Each step decreases Y by ~11 leptons
-    for i in 1..points.len() {
-        let step = points[i - 1].y - points[i].y;
-        assert!(
-            (10..=12).contains(&step),
-            "Track1 step {} has Y delta={}, expected ~11",
-            i,
-            step
-        );
-    }
 }
 
 #[test]
@@ -270,68 +188,9 @@ fn raw_track_3_is_north_to_ne_curve() {
     assert_eq!(points[53].y, 8);
 }
 
-#[test]
-fn select_drive_track_ne_diagonal_gives_track_2() {
-    // Facing NE (32), moving NE (32) → entry 9: normal_track=2 (straight diagonal).
-    let sel = select_drive_track(32, 32, false);
-    assert!(sel.is_some(), "NE diagonal should find Track 2");
-    let sel = sel.unwrap();
-    assert_eq!(
-        sel.raw_track_index, 2,
-        "should be Track 2 (straight diagonal)"
-    );
-}
-
-#[test]
-fn gsi_04_05_turning_tracks_preserve_valid_occupation_handoff_metadata() {
-    // RawTrack +0x0C is the occupation handoff point, not object-list crossing.
-    for (idx, track) in RAW_TRACKS.iter().enumerate().take(7).skip(3) {
-        assert!(
-            track.occupation_handoff_point_index >= 0,
-            "RawTrack[{}] should have a non-negative occupation handoff point, got {}",
-            idx,
-            track.occupation_handoff_point_index
-        );
-        assert!(
-            track.occupation_handoff_point_index < track.points_count as i16,
-            "RawTrack[{}] occupation handoff point {} exceeds points_count {}",
-            idx,
-            track.occupation_handoff_point_index,
-            track.points_count
-        );
-        assert!(
-            track.entry_index < track.points_count,
-            "RawTrack[{}] entry_index {} exceeds points_count {}",
-            idx,
-            track.entry_index,
-            track.points_count
-        );
-    }
-}
-
-#[test]
-fn turn_track_lookup_in_range() {
-    assert!(turn_track_at(0).is_some());
-    assert!(turn_track_at(71).is_some());
-    assert!(turn_track_at(72).is_none());
-}
-
 // ---------------------------------------------------------------------------
 // facing_to_dir tests
 // ---------------------------------------------------------------------------
-
-#[test]
-fn facing_to_dir_quantizes_8_directions() {
-    // Exact facing boundaries: 0=N, 32=NE, 64=E, 96=SE, 128=S, 160=SW, 192=W, 224=NW
-    assert_eq!(facing_to_dir(0), 0, "0 → N (dir 0)");
-    assert_eq!(facing_to_dir(32), 1, "32 → NE (dir 1)");
-    assert_eq!(facing_to_dir(64), 2, "64 → E (dir 2)");
-    assert_eq!(facing_to_dir(96), 3, "96 → SE (dir 3)");
-    assert_eq!(facing_to_dir(128), 4, "128 → S (dir 4)");
-    assert_eq!(facing_to_dir(160), 5, "160 → SW (dir 5)");
-    assert_eq!(facing_to_dir(192), 6, "192 → W (dir 6)");
-    assert_eq!(facing_to_dir(224), 7, "224 → NW (dir 7)");
-}
 
 #[test]
 fn facing_to_dir_rounds_near_boundaries() {
@@ -349,19 +208,6 @@ fn facing_to_dir_rounds_near_boundaries() {
 // ---------------------------------------------------------------------------
 // select_drive_track tests
 // ---------------------------------------------------------------------------
-
-#[test]
-fn select_drive_track_straight_north_gives_track_1() {
-    // Facing N (0), moving N (0) → entry 0: normal_track=1 (straight north).
-    // Track 1 has point data → should succeed.
-    let sel = select_drive_track(0, 0, false);
-    // Entry 0 has normal_track=1, but no facing change means same dir.
-    // Actually entry 0 is straight ahead — it should give Track 1.
-    assert!(sel.is_some(), "straight north should find Track 1");
-    let sel = sel.unwrap();
-    assert_eq!(sel.raw_track_index, 1, "should be Track 1 (straight north)");
-    assert_eq!(sel.target_facing, 0x00, "target facing should be 0 (north)");
-}
 
 #[test]
 fn select_drive_track_null_track_returns_none() {

@@ -9,6 +9,7 @@ pub(crate) mod control_links;
 pub(crate) mod detail;
 pub(crate) mod electric_bolts;
 pub(crate) mod fire_effects;
+pub(crate) mod house_ui;
 pub(crate) mod instances;
 pub(crate) mod ion_blasts;
 pub(crate) mod lasers;

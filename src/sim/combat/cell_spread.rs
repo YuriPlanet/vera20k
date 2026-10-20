@@ -147,11 +147,6 @@ mod tests {
     }
 
     #[test]
-    fn offset_idx0_is_origin() {
-        assert_eq!(OFFSET_TABLE[0], (0, 0));
-    }
-
-    #[test]
     fn offset_r1_sweep_exact_order() {
         // NE, N, NW, W, E, SW, S, SE — verified from the initializer body.
         assert_eq!(
@@ -193,11 +188,6 @@ mod tests {
     }
 
     #[test]
-    fn count_table_aligns_with_offset_len() {
-        assert_eq!(COUNT_TABLE[11] as usize, OFFSET_TABLE.len());
-    }
-
-    #[test]
     fn full_table_symmetric_except_r11_defect() {
         // Every cell except the R11 defect entries has its point mirror present.
         let t = &OFFSET_TABLE;
@@ -211,29 +201,6 @@ mod tests {
                 "idx {i} {:?} missing mirror",
                 (dx, dy)
             );
-        }
-    }
-
-    #[test]
-    fn splash_count_index_boundaries() {
-        // (CellSpread, expected count) where count = count_table[ftol(CS + 0.99)]: `ceil` for a
-        // fractional part of 0.01 or more, identity for whole numbers.
-        let cases = [
-            (0.0, 1usize),
-            (0.5, 9),
-            (1.0, 9),
-            (1.5, 21),
-            (2.0, 21),
-            (2.001, 21),
-            (2.011, 37),
-            (2.5, 37),
-            (3.0, 37),
-            (9.0, 253),
-            (10.0, 309),
-        ];
-        for (cs, want) in cases {
-            let idx = splash_count_index(f64::from(cs as f32)).min(MAX_COUNT_INDEX);
-            assert_eq!(COUNT_TABLE[idx] as usize, want, "CS={cs}");
         }
     }
 

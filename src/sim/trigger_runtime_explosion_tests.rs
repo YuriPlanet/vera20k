@@ -56,8 +56,10 @@ fn authored_waypoint_explosions_detonate_the_selected_weapon_at_the_waypoint() {
         let mut sim = Simulation::with_seed(0);
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
-        sim.session.map_width = map.header.width.try_into().unwrap();
-        sim.session.map_height = map.header.height.try_into().unwrap();
+        sim.session
+            .set_map_width_for_test(map.header.width.try_into().unwrap());
+        sim.session
+            .set_map_height_for_test(map.header.height.try_into().unwrap());
         // Declared actor-free prior: flat clear cells, no overlays, terrain
         // objects or receivers. Not ALL06/SOV03 topography or casualties.
         sim.install_resolved_terrain_for_new_map(crate::map::resolved_terrain::test_grid(
@@ -112,16 +114,20 @@ fn authored_waypoint_explosions_detonate_the_selected_weapon_at_the_waypoint() {
                 warhead
                     .anim_list
                     .iter()
-                    .any(|name| name.eq_ignore_ascii_case(sim.interner.resolve(anim.type_id))),
+                    .any(|name| name.eq_ignore_ascii_case(sim.interner.resolve(anim.type_id()))),
                 "{map_name}: {} from {:?}",
-                sim.interner.resolve(anim.type_id),
+                sim.interner.resolve(anim.type_id()),
                 warhead.anim_list
             );
             assert_eq!(
                 (
-                    [anim.world_coord.x, anim.world_coord.y, anim.world_coord.z],
-                    anim.draw_flags,
-                    anim.z_adjust,
+                    [
+                        anim.world_coord().x,
+                        anim.world_coord().y,
+                        anim.world_coord().z
+                    ],
+                    anim.draw_flags(),
+                    anim.z_adjust(),
                 ),
                 ([x, y, z], 0x2600, -15),
                 "{map_name} Anim constructor"

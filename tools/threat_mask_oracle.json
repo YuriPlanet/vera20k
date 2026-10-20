@@ -2769,6 +2769,1136 @@
       ]
     }
   ],
+  "disguise": [
+    {
+      "admitted": true,
+      "detects": false,
+      "difficulty": 1,
+      "disguised": false,
+      "draws": [],
+      "duration": 15,
+      "frame": 100,
+      "human": false,
+      "roll": 99,
+      "start": 100
+    },
+    {
+      "admitted": true,
+      "detects": true,
+      "difficulty": 1,
+      "disguised": false,
+      "draws": [],
+      "duration": 15,
+      "frame": 100,
+      "human": false,
+      "roll": 99,
+      "start": 100
+    },
+    {
+      "admitted": true,
+      "detects": true,
+      "difficulty": 1,
+      "disguised": true,
+      "draws": [],
+      "duration": 15,
+      "frame": 100,
+      "human": false,
+      "roll": 99,
+      "start": 100
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 1,
+      "disguised": true,
+      "draws": [],
+      "duration": 15,
+      "frame": 100,
+      "human": true,
+      "roll": 0,
+      "start": 100
+    },
+    {
+      "admitted": true,
+      "detects": false,
+      "difficulty": 0,
+      "disguised": true,
+      "draws": [
+        [
+          536,
+          0,
+          99
+        ]
+      ],
+      "duration": 15,
+      "frame": 100,
+      "human": false,
+      "roll": 15,
+      "start": 100
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 0,
+      "disguised": true,
+      "draws": [
+        [
+          536,
+          0,
+          99
+        ]
+      ],
+      "duration": 15,
+      "frame": 100,
+      "human": false,
+      "roll": 16,
+      "start": 100
+    },
+    {
+      "admitted": true,
+      "detects": false,
+      "difficulty": 1,
+      "disguised": true,
+      "draws": [
+        [
+          536,
+          0,
+          99
+        ]
+      ],
+      "duration": 15,
+      "frame": 100,
+      "human": false,
+      "roll": 5,
+      "start": 100
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 1,
+      "disguised": true,
+      "draws": [
+        [
+          536,
+          0,
+          99
+        ]
+      ],
+      "duration": 15,
+      "frame": 100,
+      "human": false,
+      "roll": 6,
+      "start": 100
+    },
+    {
+      "admitted": true,
+      "detects": false,
+      "difficulty": 2,
+      "disguised": true,
+      "draws": [
+        [
+          536,
+          0,
+          99
+        ]
+      ],
+      "duration": 15,
+      "frame": 100,
+      "human": false,
+      "roll": 2,
+      "start": 100
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 2,
+      "disguised": true,
+      "draws": [
+        [
+          536,
+          0,
+          99
+        ]
+      ],
+      "duration": 15,
+      "frame": 100,
+      "human": false,
+      "roll": 3,
+      "start": 100
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 1,
+      "disguised": true,
+      "draws": [],
+      "duration": 0,
+      "frame": 100,
+      "human": true,
+      "roll": 0,
+      "start": 100
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 0,
+      "disguised": true,
+      "draws": [],
+      "duration": 0,
+      "frame": 100,
+      "human": false,
+      "roll": 15,
+      "start": 100
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 0,
+      "disguised": true,
+      "draws": [],
+      "duration": 0,
+      "frame": 100,
+      "human": false,
+      "roll": 16,
+      "start": 100
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 1,
+      "disguised": true,
+      "draws": [],
+      "duration": 0,
+      "frame": 100,
+      "human": false,
+      "roll": 5,
+      "start": 100
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 1,
+      "disguised": true,
+      "draws": [],
+      "duration": 0,
+      "frame": 100,
+      "human": false,
+      "roll": 6,
+      "start": 100
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 2,
+      "disguised": true,
+      "draws": [],
+      "duration": 0,
+      "frame": 100,
+      "human": false,
+      "roll": 2,
+      "start": 100
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 2,
+      "disguised": true,
+      "draws": [],
+      "duration": 0,
+      "frame": 100,
+      "human": false,
+      "roll": 3,
+      "start": 100
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 1,
+      "disguised": true,
+      "draws": [],
+      "duration": 7,
+      "frame": 100,
+      "human": true,
+      "roll": 0,
+      "start": -1
+    },
+    {
+      "admitted": true,
+      "detects": false,
+      "difficulty": 0,
+      "disguised": true,
+      "draws": [
+        [
+          536,
+          0,
+          99
+        ]
+      ],
+      "duration": 7,
+      "frame": 100,
+      "human": false,
+      "roll": 15,
+      "start": -1
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 0,
+      "disguised": true,
+      "draws": [
+        [
+          536,
+          0,
+          99
+        ]
+      ],
+      "duration": 7,
+      "frame": 100,
+      "human": false,
+      "roll": 16,
+      "start": -1
+    },
+    {
+      "admitted": true,
+      "detects": false,
+      "difficulty": 1,
+      "disguised": true,
+      "draws": [
+        [
+          536,
+          0,
+          99
+        ]
+      ],
+      "duration": 7,
+      "frame": 100,
+      "human": false,
+      "roll": 5,
+      "start": -1
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 1,
+      "disguised": true,
+      "draws": [
+        [
+          536,
+          0,
+          99
+        ]
+      ],
+      "duration": 7,
+      "frame": 100,
+      "human": false,
+      "roll": 6,
+      "start": -1
+    },
+    {
+      "admitted": true,
+      "detects": false,
+      "difficulty": 2,
+      "disguised": true,
+      "draws": [
+        [
+          536,
+          0,
+          99
+        ]
+      ],
+      "duration": 7,
+      "frame": 100,
+      "human": false,
+      "roll": 2,
+      "start": -1
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 2,
+      "disguised": true,
+      "draws": [
+        [
+          536,
+          0,
+          99
+        ]
+      ],
+      "duration": 7,
+      "frame": 100,
+      "human": false,
+      "roll": 3,
+      "start": -1
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 1,
+      "disguised": true,
+      "draws": [],
+      "duration": 0,
+      "frame": 100,
+      "human": true,
+      "roll": 0,
+      "start": -1
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 0,
+      "disguised": true,
+      "draws": [],
+      "duration": 0,
+      "frame": 100,
+      "human": false,
+      "roll": 15,
+      "start": -1
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 0,
+      "disguised": true,
+      "draws": [],
+      "duration": 0,
+      "frame": 100,
+      "human": false,
+      "roll": 16,
+      "start": -1
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 1,
+      "disguised": true,
+      "draws": [],
+      "duration": 0,
+      "frame": 100,
+      "human": false,
+      "roll": 5,
+      "start": -1
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 1,
+      "disguised": true,
+      "draws": [],
+      "duration": 0,
+      "frame": 100,
+      "human": false,
+      "roll": 6,
+      "start": -1
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 2,
+      "disguised": true,
+      "draws": [],
+      "duration": 0,
+      "frame": 100,
+      "human": false,
+      "roll": 2,
+      "start": -1
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 2,
+      "disguised": true,
+      "draws": [],
+      "duration": 0,
+      "frame": 100,
+      "human": false,
+      "roll": 3,
+      "start": -1
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 1,
+      "disguised": true,
+      "draws": [],
+      "duration": -3,
+      "frame": 100,
+      "human": true,
+      "roll": 0,
+      "start": -1
+    },
+    {
+      "admitted": true,
+      "detects": false,
+      "difficulty": 0,
+      "disguised": true,
+      "draws": [
+        [
+          536,
+          0,
+          99
+        ]
+      ],
+      "duration": -3,
+      "frame": 100,
+      "human": false,
+      "roll": 15,
+      "start": -1
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 0,
+      "disguised": true,
+      "draws": [
+        [
+          536,
+          0,
+          99
+        ]
+      ],
+      "duration": -3,
+      "frame": 100,
+      "human": false,
+      "roll": 16,
+      "start": -1
+    },
+    {
+      "admitted": true,
+      "detects": false,
+      "difficulty": 1,
+      "disguised": true,
+      "draws": [
+        [
+          536,
+          0,
+          99
+        ]
+      ],
+      "duration": -3,
+      "frame": 100,
+      "human": false,
+      "roll": 5,
+      "start": -1
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 1,
+      "disguised": true,
+      "draws": [
+        [
+          536,
+          0,
+          99
+        ]
+      ],
+      "duration": -3,
+      "frame": 100,
+      "human": false,
+      "roll": 6,
+      "start": -1
+    },
+    {
+      "admitted": true,
+      "detects": false,
+      "difficulty": 2,
+      "disguised": true,
+      "draws": [
+        [
+          536,
+          0,
+          99
+        ]
+      ],
+      "duration": -3,
+      "frame": 100,
+      "human": false,
+      "roll": 2,
+      "start": -1
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 2,
+      "disguised": true,
+      "draws": [
+        [
+          536,
+          0,
+          99
+        ]
+      ],
+      "duration": -3,
+      "frame": 100,
+      "human": false,
+      "roll": 3,
+      "start": -1
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 1,
+      "disguised": true,
+      "draws": [],
+      "duration": 15,
+      "frame": 100,
+      "human": true,
+      "roll": 0,
+      "start": 90
+    },
+    {
+      "admitted": true,
+      "detects": false,
+      "difficulty": 0,
+      "disguised": true,
+      "draws": [
+        [
+          536,
+          0,
+          99
+        ]
+      ],
+      "duration": 15,
+      "frame": 100,
+      "human": false,
+      "roll": 15,
+      "start": 90
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 0,
+      "disguised": true,
+      "draws": [
+        [
+          536,
+          0,
+          99
+        ]
+      ],
+      "duration": 15,
+      "frame": 100,
+      "human": false,
+      "roll": 16,
+      "start": 90
+    },
+    {
+      "admitted": true,
+      "detects": false,
+      "difficulty": 1,
+      "disguised": true,
+      "draws": [
+        [
+          536,
+          0,
+          99
+        ]
+      ],
+      "duration": 15,
+      "frame": 100,
+      "human": false,
+      "roll": 5,
+      "start": 90
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 1,
+      "disguised": true,
+      "draws": [
+        [
+          536,
+          0,
+          99
+        ]
+      ],
+      "duration": 15,
+      "frame": 100,
+      "human": false,
+      "roll": 6,
+      "start": 90
+    },
+    {
+      "admitted": true,
+      "detects": false,
+      "difficulty": 2,
+      "disguised": true,
+      "draws": [
+        [
+          536,
+          0,
+          99
+        ]
+      ],
+      "duration": 15,
+      "frame": 100,
+      "human": false,
+      "roll": 2,
+      "start": 90
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 2,
+      "disguised": true,
+      "draws": [
+        [
+          536,
+          0,
+          99
+        ]
+      ],
+      "duration": 15,
+      "frame": 100,
+      "human": false,
+      "roll": 3,
+      "start": 90
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 1,
+      "disguised": true,
+      "draws": [],
+      "duration": 15,
+      "frame": 100,
+      "human": true,
+      "roll": 0,
+      "start": 85
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 0,
+      "disguised": true,
+      "draws": [],
+      "duration": 15,
+      "frame": 100,
+      "human": false,
+      "roll": 15,
+      "start": 85
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 0,
+      "disguised": true,
+      "draws": [],
+      "duration": 15,
+      "frame": 100,
+      "human": false,
+      "roll": 16,
+      "start": 85
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 1,
+      "disguised": true,
+      "draws": [],
+      "duration": 15,
+      "frame": 100,
+      "human": false,
+      "roll": 5,
+      "start": 85
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 1,
+      "disguised": true,
+      "draws": [],
+      "duration": 15,
+      "frame": 100,
+      "human": false,
+      "roll": 6,
+      "start": 85
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 2,
+      "disguised": true,
+      "draws": [],
+      "duration": 15,
+      "frame": 100,
+      "human": false,
+      "roll": 2,
+      "start": 85
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 2,
+      "disguised": true,
+      "draws": [],
+      "duration": 15,
+      "frame": 100,
+      "human": false,
+      "roll": 3,
+      "start": 85
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 1,
+      "disguised": true,
+      "draws": [],
+      "duration": 15,
+      "frame": 100,
+      "human": true,
+      "roll": 0,
+      "start": 101
+    },
+    {
+      "admitted": true,
+      "detects": false,
+      "difficulty": 0,
+      "disguised": true,
+      "draws": [
+        [
+          536,
+          0,
+          99
+        ]
+      ],
+      "duration": 15,
+      "frame": 100,
+      "human": false,
+      "roll": 15,
+      "start": 101
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 0,
+      "disguised": true,
+      "draws": [
+        [
+          536,
+          0,
+          99
+        ]
+      ],
+      "duration": 15,
+      "frame": 100,
+      "human": false,
+      "roll": 16,
+      "start": 101
+    },
+    {
+      "admitted": true,
+      "detects": false,
+      "difficulty": 1,
+      "disguised": true,
+      "draws": [
+        [
+          536,
+          0,
+          99
+        ]
+      ],
+      "duration": 15,
+      "frame": 100,
+      "human": false,
+      "roll": 5,
+      "start": 101
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 1,
+      "disguised": true,
+      "draws": [
+        [
+          536,
+          0,
+          99
+        ]
+      ],
+      "duration": 15,
+      "frame": 100,
+      "human": false,
+      "roll": 6,
+      "start": 101
+    },
+    {
+      "admitted": true,
+      "detects": false,
+      "difficulty": 2,
+      "disguised": true,
+      "draws": [
+        [
+          536,
+          0,
+          99
+        ]
+      ],
+      "duration": 15,
+      "frame": 100,
+      "human": false,
+      "roll": 2,
+      "start": 101
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 2,
+      "disguised": true,
+      "draws": [
+        [
+          536,
+          0,
+          99
+        ]
+      ],
+      "duration": 15,
+      "frame": 100,
+      "human": false,
+      "roll": 3,
+      "start": 101
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 1,
+      "disguised": true,
+      "draws": [],
+      "duration": 40,
+      "frame": 100,
+      "human": true,
+      "roll": 0,
+      "start": 2147483632
+    },
+    {
+      "admitted": true,
+      "detects": false,
+      "difficulty": 0,
+      "disguised": true,
+      "draws": [
+        [
+          536,
+          0,
+          99
+        ]
+      ],
+      "duration": 40,
+      "frame": 100,
+      "human": false,
+      "roll": 15,
+      "start": 2147483632
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 0,
+      "disguised": true,
+      "draws": [
+        [
+          536,
+          0,
+          99
+        ]
+      ],
+      "duration": 40,
+      "frame": 100,
+      "human": false,
+      "roll": 16,
+      "start": 2147483632
+    },
+    {
+      "admitted": true,
+      "detects": false,
+      "difficulty": 1,
+      "disguised": true,
+      "draws": [
+        [
+          536,
+          0,
+          99
+        ]
+      ],
+      "duration": 40,
+      "frame": 100,
+      "human": false,
+      "roll": 5,
+      "start": 2147483632
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 1,
+      "disguised": true,
+      "draws": [
+        [
+          536,
+          0,
+          99
+        ]
+      ],
+      "duration": 40,
+      "frame": 100,
+      "human": false,
+      "roll": 6,
+      "start": 2147483632
+    },
+    {
+      "admitted": true,
+      "detects": false,
+      "difficulty": 2,
+      "disguised": true,
+      "draws": [
+        [
+          536,
+          0,
+          99
+        ]
+      ],
+      "duration": 40,
+      "frame": 100,
+      "human": false,
+      "roll": 2,
+      "start": 2147483632
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 2,
+      "disguised": true,
+      "draws": [
+        [
+          536,
+          0,
+          99
+        ]
+      ],
+      "duration": 40,
+      "frame": 100,
+      "human": false,
+      "roll": 3,
+      "start": 2147483632
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 1,
+      "disguised": true,
+      "draws": [],
+      "duration": -5,
+      "frame": 100,
+      "human": true,
+      "roll": 0,
+      "start": 100
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 0,
+      "disguised": true,
+      "draws": [],
+      "duration": -5,
+      "frame": 100,
+      "human": false,
+      "roll": 15,
+      "start": 100
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 0,
+      "disguised": true,
+      "draws": [],
+      "duration": -5,
+      "frame": 100,
+      "human": false,
+      "roll": 16,
+      "start": 100
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 1,
+      "disguised": true,
+      "draws": [],
+      "duration": -5,
+      "frame": 100,
+      "human": false,
+      "roll": 5,
+      "start": 100
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 1,
+      "disguised": true,
+      "draws": [],
+      "duration": -5,
+      "frame": 100,
+      "human": false,
+      "roll": 6,
+      "start": 100
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 2,
+      "disguised": true,
+      "draws": [],
+      "duration": -5,
+      "frame": 100,
+      "human": false,
+      "roll": 2,
+      "start": 100
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 2,
+      "disguised": true,
+      "draws": [],
+      "duration": -5,
+      "frame": 100,
+      "human": false,
+      "roll": 3,
+      "start": 100
+    },
+    {
+      "admitted": true,
+      "detects": false,
+      "difficulty": 1,
+      "disguised": true,
+      "draws": [
+        [
+          536,
+          0,
+          99
+        ]
+      ],
+      "duration": 15,
+      "frame": 100,
+      "human": false,
+      "roll": 0,
+      "start": 100
+    },
+    {
+      "admitted": false,
+      "detects": false,
+      "difficulty": 1,
+      "disguised": true,
+      "draws": [
+        [
+          536,
+          0,
+          99
+        ]
+      ],
+      "duration": 15,
+      "frame": 100,
+      "human": false,
+      "roll": 99,
+      "start": 100
+    }
+  ],
   "enemy_bonus": [
     {
       "bonus_bits": "4079000000000000",

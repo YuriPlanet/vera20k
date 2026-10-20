@@ -183,7 +183,7 @@ fn crate_land_type(sim: &Simulation, cell: (i16, i16)) -> u8 {
         .as_ref()
         .and_then(|terrain| terrain.cell(rx, ry))
         .map_or(LandType::Clear.as_index(), |terrain_cell| {
-            terrain_cell.land_type()
+            terrain_cell.land_type
         })
 }
 
@@ -251,9 +251,9 @@ fn multiplayer_eligible_slot(
     let object = sim.object_type(actor.type_ref(), rules);
     let eligible = match powerup {
         // `0x00481C1E`: too many vehicles, or a shore cell.
-        POWERUP_UNIT => house.tracking.vehicles() <= UNIT_CRATE_MAX_VEHICLES && !shore,
+        POWERUP_UNIT => house.tracking().vehicles() <= UNIT_CRATE_MAX_VEHICLES && !shore,
         // `0x00481C32`: too much infantry, or a shore cell.
-        POWERUP_SQUAD => house.tracking.infantry() <= SQUAD_CRATE_MAX_INFANTRY && !shore,
+        POWERUP_SQUAD => house.tracking().infantry() <= SQUAD_CRATE_MAX_INFANTRY && !shore,
         // `0x00481D3A`: an already cloakable actor (`Techno+0x3D2`, seeded
         // from the type's `Cloakable=`; the Cloak crate's permanent write is
         // this module's residual).
@@ -303,10 +303,10 @@ fn mcv_preempt(sim: &Simulation, rules: &RuleSet, owner: InternedId) -> bool {
     let Some(house) = sim.houses.get(&owner) else {
         return false;
     };
-    if house.tracking.buildings() != 0 {
+    if house.tracking().buildings() != 0 {
         return false;
     }
-    if house.economy.available_money() <= MCV_PREEMPT_CREDITS {
+    if house.economy().available_money() <= MCV_PREEMPT_CREDITS {
         return false;
     }
     let country_bit = house_country_bit(rules, sim.interner.resolve(house.house_type_id()));
@@ -318,9 +318,9 @@ fn mcv_preempt(sim: &Simulation, rules: &RuleSet, owner: InternedId) -> bool {
     )
     .and_then(|mcv| sim.interner.get(&mcv.id))
     .map_or(0, |type_id| {
-        house.tracking.owned_count(EntityCategory::Unit, type_id)
+        house.tracking().owned_count(EntityCategory::Unit, type_id)
     });
-    mcv_tracked == 0 && sim.session.game_options.bases
+    mcv_tracked == 0 && sim.session.game_options().bases
 }
 
 /// `CellClass::PickupCrate @ 0x00481A00` for `actor_id` committing to
@@ -355,12 +355,12 @@ pub(crate) fn pickup_crate(
     if !flags.crate_type {
         return true;
     }
-    let multiplayer = sim.session.game_mode_nonzero;
+    let multiplayer = sim.session.game_mode_nonzero();
     if multiplayer
         && sim
             .houses
             .get(&owner)
-            .is_some_and(|house| house.multiplay_passive)
+            .is_some_and(|house| house.multiplay_passive())
     {
         return true;
     }
@@ -420,10 +420,10 @@ pub(crate) fn pickup_crate(
     }
     // `0x00481D86`: removal, then the replacement crate.
     let _ = remove_pickup_crate(sim, rules, registry, cell);
-    if multiplayer && sim.session.game_options.crates {
+    if multiplayer && sim.session.game_options().crates {
         let lighting = sim
             .session
-            .lighting
+            .lighting()
             .profile(crate::sim::scenario_session::ScenarioLightingProfile::Normal)
             .into();
         let _ = place_one_random_crate(
@@ -556,7 +556,7 @@ pub(crate) fn pickup_crate(
                     let owners: Vec<InternedId> = sim
                         .houses
                         .iter()
-                        .filter(|(_, house)| house.player_control)
+                        .filter(|(_, house)| house.player_control())
                         .map(|(&id, _)| id)
                         .collect();
                     announce_upgrade(sim, &owners, "EVA_UnitSpeedUpgraded");

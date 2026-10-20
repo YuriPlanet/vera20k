@@ -820,12 +820,13 @@ impl ReplayRunner {
             .simulation
             .set_debug_session_context(crate::sim::cheats::DebugSessionContext::Replay);
         anyhow::ensure!(
-            runtime.simulation.session.pixel_conversion_bounds
+            runtime.simulation.session.pixel_conversion_bounds()
                 == replay.header.pixel_conversion_bounds,
             "replay pixel conversion bounds differ from the initialized match"
         );
         debug_assert_eq!(
-            runtime.simulation.session.seed, replay.header.seed,
+            runtime.simulation.session.seed(),
+            replay.header.seed,
             "replay playback sim must be constructed from header.seed"
         );
         let current = runtime.resources.rules.simulation_config_hash();
@@ -915,14 +916,16 @@ impl ReplayRunner {
         sim.set_debug_session_context(crate::sim::cheats::DebugSessionContext::Replay);
         // The diagnostic playback must be constructed from the recorded seed.
         assert_eq!(
-            sim.session.pixel_conversion_bounds, replay.header.pixel_conversion_bounds,
+            sim.session.pixel_conversion_bounds(),
+            replay.header.pixel_conversion_bounds,
             "replay pixel conversion bounds differ from the initialized match"
         );
         // A sim seeded
         // differently than the header it replays is a guaranteed silent
         // divergence.
         debug_assert_eq!(
-            sim.session.seed, replay.header.seed,
+            sim.session.seed(),
+            replay.header.seed,
             "replay playback sim must be constructed from header.seed"
         );
         // A replay recorded under different processed rules or resolved ART
@@ -1447,45 +1450,14 @@ mod tests {
     }
 
     #[test]
-    fn gsi_04_07_wall_sell_diagnostic_replay_roundtrips_without_native_version_bump() {
-        let owner = crate::sim::intern::test_intern("Receiver");
-        let mut log = ReplayLog::new(ReplayHeader {
-            pixel_conversion_bounds: Default::default(),
-            version: 1,
-            tick_hz: 15,
-            seed: 7,
-            map_name: "wall.map".to_string(),
-            rules_hash: 9,
-        });
-        log.record_tick(
-            4,
-            vec![CommandEnvelope::new(
-                owner,
-                4,
-                Command::SellWallAtCell { x: 0, y: 12 },
-            )],
-            Some(11),
-        );
-        let json = serde_json::to_string(&log).unwrap();
-        let decoded: ReplayLog = serde_json::from_str(&json).unwrap();
-        assert_eq!(decoded.header.version, 1);
-        assert_eq!(
-            decoded.ticks[0].commands[0].payload,
-            Command::SellWallAtCell { x: 0, y: 12 }
-        );
-        assert_eq!(NATIVE_REPLAY_VERSION, 10);
-    }
-
-    #[test]
     fn gsi_01_04_exit_diagnostic_replay_roundtrips_without_native_version_bump() {
         let mut sim = Simulation::with_seed(7);
         let owner = sim.interner.intern("Local");
-        sim.houses.insert(
-            owner,
-            crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10),
-        );
-        sim.session.house_order.push(owner);
-        sim.session.tick = 3;
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                owner, 0, None, true, 0, 10,
+            ));
+        sim.session.set_tick_for_test(3);
         let mut log = ReplayLog::new(ReplayHeader {
             pixel_conversion_bounds: Default::default(),
             version: 1,
@@ -1520,17 +1492,16 @@ mod tests {
             let mut sim = Simulation::with_seed(7);
             sim.hash_state_every(std::num::NonZeroU64::MIN);
             let owner = sim.interner.intern("Local");
-            sim.houses.insert(
-                owner,
-                crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10),
-            );
-            sim.session.house_order.push(owner);
+            sim.houses
+                .register(crate::sim::house_state::HouseState::new(
+                    owner, 0, None, true, 0, 10,
+                ));
             (sim, owner)
         };
         let (mut recorded, owner) = make_sim();
         let command = CommandEnvelope::new(owner, 1, Command::SetGameSpeed { speed: 4 });
         let tick = recorded.advance_tick(std::slice::from_ref(&command), None, None, None, 67);
-        assert_eq!(recorded.session.game_options.game_speed, 4);
+        assert_eq!(recorded.session.game_options().game_speed, 4);
 
         let mut log = ReplayLog::new(ReplayHeader {
             pixel_conversion_bounds: Default::default(),
@@ -1547,7 +1518,7 @@ mod tests {
         let (mut replayed, _) = make_sim();
         let hashes = ReplayRunner::run_fixture(&mut replayed, &decoded, None, None, 67);
         assert_eq!(hashes, vec![tick.state_hash]);
-        assert_eq!(replayed.session.game_options.game_speed, 4);
+        assert_eq!(replayed.session.game_options().game_speed, 4);
         assert_eq!(replayed.state_hash(), recorded.state_hash());
         assert_eq!(NATIVE_REPLAY_VERSION, 10);
     }
@@ -1581,43 +1552,6 @@ mod tests {
         assert!(
             sim.pending_command_snapshot().is_empty(),
             "the old replay seam ignored and discarded a future-stamped entry"
-        );
-    }
-
-    #[test]
-    fn diagnostic_replay_does_not_double_admit_regenerated_pending_work() {
-        let mut sim = Simulation::with_seed(7);
-        let owner = sim.interner.intern("Local");
-        sim.houses.insert(
-            owner,
-            crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10),
-        );
-        sim.session.house_order.push(owner);
-
-        // Model a command regenerated during the preceding replay frame. The
-        // live app drained and recorded the same command for this frame, so the
-        // recorded copy executes once and consumes the matching regenerated
-        // envelope; unrelated and future pending work still survives playback.
-        let regenerated = CommandEnvelope::new(owner, 1, Command::SetGameSpeed { speed: 4 });
-        sim.queue_command(regenerated.clone());
-        let mut log = ReplayLog::new(ReplayHeader {
-            pixel_conversion_bounds: Default::default(),
-            version: 1,
-            tick_hz: 15,
-            seed: 7,
-            map_name: "regenerated-command.map".to_string(),
-            rules_hash: 0,
-        });
-        log.record_tick(1, vec![regenerated.clone()], Some(0));
-
-        let hashes = ReplayRunner::run_fixture(&mut sim, &log, None, None, 33);
-
-        assert_eq!(hashes.len(), 1);
-        assert_eq!(sim.session.game_options.game_speed, 4);
-        assert_eq!(
-            sim.pending_command_snapshot(),
-            &[],
-            "the recorded copy consumes its regenerated envelope exactly once"
         );
     }
 

@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original Foot4CBC40 directional cell visits and Team6EA0D0 retreat selection through original CalcCenter6EAEE0, House threat56BCD0, Sqrt_Approx/ftol and nearby Foot search. Four additional whole Foot/Infantry/Unit admission controls distinguish flat ground refusal from ramp admission.",
+  "assumptions": [
+    "x87 control word0E7F (PC53,chop), harness default.",
+    "Synthetic ordered House buildings and retained coarse threat grid; two joined live members at [5248,5248,0]/[5504,5248,0]."
+  ],
+  "substitutions": [
+    "Map5657A0/565730 return distinct declared real Cells with original Cell GetCoords486840;56BCD0 inline lookup runs original.",
+    "Class CanEnter records direction,height,previous,mode and answers the supplied ordinal or blocked-cell set.",
+    "Selector/directional controls: Building GetCoords/GetWeapon supply declared coordinates and armed status; Script.Current supplies action58. Original Script.Reset executes.",
+    "CoordinateMove6EBAD0 records final focus; member movement is covered separately through the Rust production team pass.",
+    "live_nearby controls reuse unit_source_scatter with original Cell/Infantry/Unit vtables and Walk/Drive construction. Declared level0,slope0/1,clear speed rows,no overlay or tube; no class entry/gameplay return substituted in these rows."
+  ],
+  "entry_points": {
+    "retreat": "0x006EA0D0",
+    "nearby": "0x004CBC40",
+    "center": "0x006EAEE0",
+    "threat": "0x0056BCD0",
+    "sqrt_approx": "0x004CAC40",
+    "ftol": "0x007C5F00"
+  },
+  "replay_command": "python -m tools.team_recruit_oracle --retreat",
+  "payload_sha256": "83959636bc4d05880178d1e2d1735b4a3fe76e410d8e7d4d0e1ff7b771d949bd"
+}

@@ -50,8 +50,7 @@ pub(crate) fn depth_cell(
             ramp: cell.slope_type,
             flags: cell.bridge_facts.raw_flags,
             iso_tile_index: cell.final_tile_index,
-            low_bridge: cell.land_type()
-                == crate::rules::terrain_rules::LandType::Tunnel.as_index()
+            low_bridge: cell.land_type == crate::rules::terrain_rules::LandType::Tunnel.as_index()
                 && terrain.tube_at_cell(cell.rx, cell.ry).is_some(),
             overlay_rock: rock(overlay_id),
             tmp_height: terrain.native_tmp_draw_height(cell.final_tile_index, cell.final_sub_tile),
@@ -258,7 +257,7 @@ fn shp_z_adjust_in_runtime(
         )
     };
     if height_above_ground == 0 {
-        unit_z_adjust_in_runtime(runtime, entity, true).wrapping_sub(2) as f32
+        unit_z_adjust_in_runtime(runtime, entity, true, None).wrapping_sub(2) as f32
     } else {
         height_only as f32
     }
@@ -267,11 +266,19 @@ fn shp_z_adjust_in_runtime(
 /// Foot 0x4DAFC0 used by VXL body/shadow and OREGATH. `unloading_body` selects
 /// only the proven Unit+6C4 temporary UnloadingClass substitution at 0x73D2C4;
 /// camouflage/NoSpawnAlt art must not replace the depth coefficients.
-pub(crate) fn unit_z_adjust(state: &AppState, entity: &GameEntity, unloading_body: bool) -> i32 {
+/// Aircraft's shadow caller temporarily SetHeights the object; its read-only
+/// adapter supplies that world Z here instead of changing the simulation.
+pub(crate) fn unit_z_adjust(
+    state: &AppState,
+    entity: &GameEntity,
+    unloading_body: bool,
+    world_z_override: Option<i32>,
+) -> i32 {
     unit_z_adjust_in_runtime(
         state.match_state.sim_runtime.as_ref(),
         entity,
         unloading_body,
+        world_z_override,
     )
 }
 
@@ -279,8 +286,10 @@ fn unit_z_adjust_in_runtime(
     runtime: Option<&crate::sim::runtime::SimRuntime>,
     entity: &GameEntity,
     unloading_body: bool,
+    world_z_override: Option<i32>,
 ) -> i32 {
-    let world_z = crate::sim::movement::ground_pose::object_world_z_leptons(entity, None);
+    let world_z = world_z_override
+        .unwrap_or_else(|| crate::sim::movement::ground_pose::object_world_z_leptons(entity, None));
     if !matches!(
         entity.category(),
         EntityCategory::Unit | EntityCategory::Infantry
@@ -311,8 +320,7 @@ fn unit_z_adjust_in_runtime(
             Some(-3)
         } else if object.is_some_and(|o| o.harvester) {
             let cell = depth_cell(terrain, None, None, coord);
-            sim.substrate
-                .occupancy
+            sim.occupancy()
                 .first_building_on_layer(
                     cell.coord[0] as u16,
                     cell.coord[1] as u16,
@@ -336,7 +344,7 @@ fn unit_z_adjust_in_runtime(
     let context = FootDepthContext {
         cell: coord,
         on_bridge: entity.on_bridge(),
-        facing_u16: entity.body_facing_current(view.session().binary_frame),
+        facing_u16: entity.body_facing_current(view.session().binary_frame()),
         world_z_leptons: world_z,
         // Drive 0x4B4870, Ship 0x6A3EA0, and the shared 0x55ABA0 inherited
         // by Walk/Hover/Fly/Jumpjet/Teleport all return zero at loco slot +0x38.

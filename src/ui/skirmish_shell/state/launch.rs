@@ -2,9 +2,9 @@
 
 use crate::map::scenario_menu::MapMenuEntry;
 use crate::skirmish_launch::{
-    HOUSE_COLOR_COUNT, LaunchStartPosition, LaunchTeam, LaunchValidationError, PreFillAiHouseSlot,
-    PreFillHouseRoster, PreFillHumanHouse, SKIRMISH_PLAYER_SLOT_COUNT, SkirmishAiSlot,
-    SkirmishLaunchMode, SkirmishLaunchSession, SkirmishLocalSlot,
+    HOUSE_COLOR_COUNT, LaunchStartPosition, LaunchTeam, LaunchValidationError, PreFillHouseRoster,
+    SKIRMISH_PLAYER_SLOT_COUNT, SkirmishAiSlot, SkirmishLaunchMode, SkirmishLaunchSession,
+    SkirmishLocalSlot,
 };
 use crate::skirmish_modes::{SkirmishGameMode, mode_by_id};
 
@@ -104,25 +104,6 @@ pub fn pack_launch_session_without_start_validation(
         team: LaunchTeam::from_shell_value(state.player_team),
     };
 
-    // Retain the native pre-compaction slot roster before closed AI rows are
-    // omitted from the gameplay-facing opponent vector.
-    let pre_fill_house_roster = PreFillHouseRoster::new(
-        vec![PreFillHumanHouse {
-            priority: 0,
-            source_order: 0,
-            observer: false,
-        }],
-        state
-            .opponents
-            .iter()
-            .enumerate()
-            .map(|(slot_index, opponent)| PreFillAiHouseSlot {
-                slot_index: slot_index as u8,
-                valid: opponent.is_active(),
-            })
-            .collect(),
-    );
-
     let mut opponents = Vec::new();
     for (idx, opponent) in state.opponents.iter().enumerate() {
         let Some(difficulty) = opponent.row_type.difficulty() else {
@@ -130,6 +111,7 @@ pub fn pack_launch_session_without_start_validation(
         };
         let slot = idx + 1;
         opponents.push(SkirmishAiSlot {
+            raw_slot_index: (idx + 1) as u8,
             country: opponent.country,
             country_random: opponent.country_random,
             color_index: launch_color_index(slot, opponent.color_index)?,
@@ -153,14 +135,31 @@ pub fn pack_launch_session_without_start_validation(
     options.build_off_ally = state.build_off_ally;
     options.crates = state.crates;
     options.mcv_redeploy = state.mcv_redeploy;
+    // Then SkirmishDialog's Start/Back packing (`0x006AD88F..0x006AD8A4`)
+    // forces four session bytes whatever the rules default: Fog of War
+    // (`0x00A8B31F`) off, Bridge Destruction (`0x00A8B260`) on, Harvester
+    // Truce (`0x00A8B31D`) off and MultiEngineer (`0x00A8B26C`) off. Only the
+    // network setup dialogs offer the last three.
+    options.fog_of_war = false;
+    options.bridges_destroyable = true;
+    options.harvester_truce = false;
+    options.multi_engineer = false;
 
-    Ok(SkirmishLaunchSession {
+    let mut session = SkirmishLaunchSession {
         mode: SkirmishLaunchMode::from_game_mode(selected_mode),
         selected_map_file: Some(selected_map.file_name.clone()),
-        player_name: state.player_name_edit.text.clone(),
-        local,
+        humans: vec![crate::skirmish_launch::SkirmishHumanSlot {
+            raw_slot_index: Some(0),
+            name: state.player_name_edit.text.clone(),
+            slot: local,
+            role: crate::skirmish_launch::LaunchHumanRole::from_observer(false),
+        }],
+        local_player_index: 0,
+        ai_player_count: opponents.len() as i32,
         opponents,
-        pre_fill_house_roster,
+        pre_fill_house_roster: PreFillHouseRoster::from_compact_skirmish(0),
         options,
-    })
+    };
+    session.rebuild_house_roster();
+    Ok(session)
 }

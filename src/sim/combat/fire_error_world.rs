@@ -147,7 +147,7 @@ impl<'a> FireSubject<'a> {
         };
         let terrain = match self.target {
             Some(TargetKind::Entity(id)) if entity.is_none() => {
-                self.world.production.terrain_objects.get(&id)
+                self.world.terrain_objects.objects().get(&id)
             }
             _ => None,
         };
@@ -167,7 +167,7 @@ impl<'a> FireSubject<'a> {
     }
 
     fn frame(&self) -> u32 {
-        self.world.session.binary_frame
+        self.world.session.binary_frame()
     }
 
     fn speed_rules(&self) -> crate::sim::movement::SpeedRules<'_> {
@@ -299,9 +299,10 @@ impl<'a> FireSubject<'a> {
             // T45: the object's own rearm countdown (`+0x2EC`).
             rearming: firer
                 .rearm_timer
-                .remaining(self.world.session.binary_frame as i32)
+                .remaining(self.world.session.binary_frame() as i32)
                 != 0,
             ammo: firer.ammo().map_or(-1, |ammo| ammo.current()),
+            firing_frame: firer.unit_firing_counter.get(),
             cloak_state: firer.cloak.as_ref().map_or(0, |cloak| cloak.state()),
             current_weapon: combat_weapon::attacker_facts(firer, obj).current_weapon_number,
             draining_me: firer.drain.draining_me().is_some(),
@@ -313,7 +314,7 @@ impl<'a> FireSubject<'a> {
                 &self.world.houses,
                 firer.owner(),
             )
-            .is_some_and(|house| house.is_human),
+            .is_some_and(|house| house.is_human()),
             paralyzed: firer.parasite.is_paralyzed(frame),
             spawns: firer.spawn_manager.as_ref().map(|manager| SpawnCounts {
                 not_regenerating: manager.count_alive_spawns() as i32,
@@ -472,7 +473,7 @@ impl<'a> FireSubject<'a> {
                             kind: FireTargetKind::Object,
                             in_limbo: !terrain.is_live(),
                             z: terrain.world_coord().z,
-                            health: super::Health::new(terrain.health),
+                            health: super::Health::new(terrain.health()),
                             ..TargetFacts::default()
                         },
                         TargetTypeFacts::default(),
@@ -991,8 +992,8 @@ mod terrain_target_tests {
             ),
             1
         );
-        let tree_id = world.production.terrain_object_cells[&(10, 10)];
-        let tree = &world.production.terrain_objects[&tree_id];
+        let tree_id = world.terrain_objects.cell_index()[&(10, 10)];
+        let tree = &world.terrain_objects.objects()[&tree_id];
         let target = TargetKind::Entity(tree_id);
         let firer = world.substrate.entities.get(firer_id).unwrap();
         let obj = world.interner.object_type(firer.type_ref(), rules).unwrap();
@@ -1022,7 +1023,7 @@ mod terrain_target_tests {
         };
         let facts = subject.whole_facts();
         assert_eq!(facts.target.kind, FireTargetKind::Object);
-        assert_eq!(facts.target.health.current(), tree.health);
+        assert_eq!(facts.target.health.current(), tree.health());
         assert_eq!(
             subject.target_point(),
             super::super::resolve_target_coords(&target, &world)

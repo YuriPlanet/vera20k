@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Twelve whole original Drive Process rest/early-return controls and four Stop-or-UnitNull -> optional rest -> new Unit destination histories ending before the next Foot FindPath executes, plus two six-frame paid departure histories with one supplied AStar route.",
+  "assumptions": [
+    "Inherited original destination/map/Drive construction fixture; Unit/Type state is supplied, not a whole native scenario load.",
+    "Level0 clear map; explicit destination,head,queue,mission, applied0.75/0/-0.25,target0.9 and facing timer. Every complete measured RNG buffer remains identical.",
+    "Histories supply accepted Move mission2 after the Unit setter; native command admission is outside coverage. Paid histories additionally declare health/strength300,rawSpeed15,house/crate1,rank0,Accelerates=yes, accel0.03,decel0.002,SlowdownDistance500 and east facing; original lepton-direction startup49F3A0 executes before movement."
+  ],
+  "substitutions": [
+    "Only inherited OS Interlocked import bodies. Process/Stop/setter results are never substituted. Only the paid histories supply AStar4CBBA0 one-cell-east PathType/moves; original Foot FindPath/fresh/class entry/paid Track/Process execute."
+  ],
+  "entry_points": {
+    "drive_process": "0x004B0500",
+    "common_tail": "0x004B078C",
+    "rest_speed": "0x004B0828",
+    "drive_stop": "0x004AFE00",
+    "unit_destination": "0x00741970",
+    "set_speed": "0x004D3710",
+    "find_path_boundary": "0x004D3920"
+  },
+  "replay_command": "python -m tools.spatial_oracle.track_order_path --rest",
+  "payload_sha256": "0b9df497b13c4587b6561502bf7a49598cf13d772d34d44f6faad545f2960abe"
+}

@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "14 original Drive pre-entry -> speed prefix -> RockingUpdate -> Unit overlay tail -> speed histories in one retained Foot",
+  "assumptions": [
+    "Reuses OriginalForceTrack map/constructor and track_speed_native getter inputs. Supplied healthy Unit, type speed15, crate/house1, far destination, selector0, applied/target1 and four binary32 rocking words. No retail type reader, path admission, paid-point placement or Mark body executes.",
+    "Original GetUnit(false) traverses supplied ground/deck lists using original RTTI, including actor itself after a supplied Mark boundary. Original type/ability getters, map lookup, GetCoords, speed setter/getter and RockingUpdate execute. GameActive, straight latch and zone are explicit boundary inputs.",
+    "Foot+6B5 is not reset between bodies. New target1 is supplied only for the last speed visit to model the documented next-candidate publication boundary. No numeric expected value is computed in Python.",
+    "All three RNG raw/ranged entry calls are rejected. No timer, detach, destruction or rendering comparison is claimed. Existing unit_per_cell_overlay corpus independently covers all overlay-tail gates and binary32 recoil."
+  ],
+  "substitutions": [
+    "Sound7509E0 and CellDamage480CB0 return0 with RET4; record calls without wall mutation, audio or downstream RNG effects."
+  ],
+  "entry_points": {
+    "pre_entry": "0x004B1999",
+    "prefix": "0x004B0F20",
+    "rocking": "0x0070B570",
+    "unit_overlay": "0x0073AFD4"
+  },
+  "replay_command": "python -m tools.spatial_oracle.unit_per_cell_overlay --drive-crush",
+  "payload_sha256": "eb0970a5ad8f404d76638cad26835b212a2b28a8ebccabe966e95e379682a5d8"
+}

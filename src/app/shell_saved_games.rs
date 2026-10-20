@@ -332,15 +332,7 @@ impl App {
             .w - 2)
                 .max(0) as u32;
             let edit = &mut browser.description_edit;
-            edit.first_visible_unit = edit.first_visible_unit.min(edit.caret);
-            while edit.first_visible_unit < edit.caret {
-                let text =
-                    String::from_utf16_lossy(&edit.units[edit.first_visible_unit..edit.caret]);
-                if state.renderer.bit_font.text_width(&text) <= available {
-                    break;
-                }
-                edit.first_visible_unit += 1;
-            }
+            edit.scroll_to_caret(available, |text| state.renderer.bit_font.text_width(text));
         }
     }
 }

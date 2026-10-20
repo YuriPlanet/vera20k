@@ -11,8 +11,8 @@ pub(crate) fn is_locked(state: &AppState) -> bool {
         .sim_runtime
         .as_ref()
         .is_some_and(|runtime| {
-            runtime.simulation.session.input_locked()
-                || (runtime.simulation.session.scenario_paused()
+            runtime.simulation.session().input_locked()
+                || (runtime.simulation.session().scenario_paused()
                     && matches!(
                         state.match_state.session.mode(),
                         crate::app::match_runtime::session::SessionMode::Campaign
@@ -63,8 +63,9 @@ mod tests {
         let mut interner = crate::sim::intern::StringInterner::new();
         let owner = interner.intern("FixtureHouse");
         for building in [true, false] {
-            let mut input =
-                MatchInputState::new(crate::app::input::hotkeys::HotkeyBindings::load(None));
+            let mut input = MatchInputState::new(
+                crate::app::input::hotkeys::HotkeyBindings::from_ini_bytes(None),
+            );
             if building {
                 assert!(input.begin_building_placement("FixtureBuilding", 23, owner,));
             } else {
@@ -135,8 +136,9 @@ mod tests {
         let mut interner = crate::sim::intern::StringInterner::new();
         let owner = interner.intern("FixtureHouse");
         for building in [true, false] {
-            let mut input =
-                MatchInputState::new(crate::app::input::hotkeys::HotkeyBindings::load(None));
+            let mut input = MatchInputState::new(
+                crate::app::input::hotkeys::HotkeyBindings::from_ini_bytes(None),
+            );
             if building {
                 assert!(input.begin_building_placement("FixtureBuilding", 23, owner,));
             } else {

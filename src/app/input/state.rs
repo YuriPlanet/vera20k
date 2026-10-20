@@ -129,7 +129,7 @@ impl PreparedSavedLocalView {
                     });
                 }
                 let owner = simulation
-                    .interner
+                    .interner()
                     .get(owner)
                     .ok_or_else(|| unknown("placement House", owner))?;
                 Some(crate::app::types::TargetingMode::BuildingPlacement(
@@ -583,7 +583,7 @@ impl MatchInputState {
                 SavedTargeting::BuildingPlacement {
                     type_id: target.type_id.clone(),
                     product_id: target.product_id.filter(alive),
-                    owner: simulation.interner.resolve(target.owner).to_owned(),
+                    owner: simulation.interner().resolve(target.owner).to_owned(),
                 }
             }
             crate::app::types::TargetingMode::SuperWeapon(name) => {

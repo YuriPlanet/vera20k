@@ -255,8 +255,7 @@ mod tests {
         sim.resolve_type_handles(&rules);
         let owner = sim.interner.intern("Russians");
         sim.houses
-            .insert(owner, HouseState::new(owner, 1, None, true, 0, 10));
-        sim.session.house_order.push(owner);
+            .register(HouseState::new(owner, 1, None, true, 0, 10));
         sim.resolved_terrain = Some(test_grid(16, 16, test_flat_cell));
         crate::sim::arena_fixture::supply_native_map(&mut sim);
         let id = sim
@@ -271,15 +270,16 @@ mod tests {
         for (index, row_super) in supers.iter().enumerate() {
             let type_id = sim.interner.intern(&format!("SW{index}"));
             let mut instance = SuperWeaponInstance::new(type_id, owner, 0);
-            instance.is_active = true;
-            instance.charge_start_tick = int(&row_super[1]);
-            instance.charge_duration = int(&row_super[2]);
+            instance.set_is_active_for_test(true);
+            instance.set_charge_start_tick_for_test(int(&row_super[1]));
+            instance.set_charge_duration_for_test(int(&row_super[2]));
             sim.super_weapons
                 .get_mut(&owner)
                 .unwrap()
                 .insert(type_id, instance);
         }
-        sim.session.binary_frame = u32::try_from(int(&row["frame"])).unwrap();
+        sim.session
+            .set_binary_frame_for_test(u32::try_from(int(&row["frame"])).unwrap());
         sim.substrate
             .entities
             .get_mut(id)
@@ -295,7 +295,7 @@ mod tests {
             .filter_map(|slot| {
                 let anim = entity.building_art.anim_slots[usize::from(slot)]?;
                 let anim = sim.substrate.anims.get(anim)?;
-                Some((slot, sim.interner.resolve(anim.type_id).to_string()))
+                Some((slot, sim.interner.resolve(anim.type_id()).to_string()))
             })
             .collect()
     }

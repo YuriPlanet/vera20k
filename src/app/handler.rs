@@ -44,6 +44,7 @@ impl App {
         state.match_state.match_presentation.in_game_options.buttons = Default::default();
         state.match_state.match_presentation.pause_menu_interaction = Default::default();
         state.match_state.match_presentation.abort_buttons = Default::default();
+        state.match_state.match_presentation.diplomacy = Default::default();
         if let Some(dialog) = state.match_state.match_presentation.sound_dialog.as_mut() {
             dialog.reset_interaction();
         }
@@ -203,8 +204,22 @@ impl ApplicationHandler for App {
                 return;
             }
         };
-        match Self::initialize(event_loop, capture_dimensions, self.startup_options) {
+        match Self::initialize(
+            event_loop,
+            capture_dimensions,
+            self.startup_options,
+            self.spawn_request.is_some(),
+        ) {
             Ok(mut state) => {
+                if let Some(request) = self.spawn_request.take()
+                    && let Err(error) = Self::start_spawn_session(&mut state, request)
+                {
+                    let error = format!("CnCNet startup failed: {error:#}");
+                    log::error!("{error}");
+                    self.startup_failure = Some(error);
+                    event_loop.exit();
+                    return;
+                }
                 if let Some(session) = self.shell_capture.as_mut() {
                     session.prepare_state(&mut state);
                 }
@@ -220,10 +235,13 @@ impl ApplicationHandler for App {
                 // default). A focus regain re-applies it if the OS dropped it.
                 crate::app::input::cursor::apply_cursor_confinement(&state);
                 self.state = Some(state);
-                log::info!("Initialization complete — showing main menu");
+                log::info!("Initialization complete");
             }
             Err(err) => {
                 log::error!("Failed to initialize: {:#}", err);
+                if self.spawn_request.is_some() {
+                    self.startup_failure = Some(format!("CnCNet initialization failed: {err:#}"));
+                }
                 if let Some(session) = self.shell_capture.as_mut() {
                     session.fail(format!("shell capture initialization failed: {err:#}"));
                 }
@@ -240,6 +258,20 @@ impl ApplicationHandler for App {
         let tactical_capture_active = self.tactical_capture.is_some();
         let Some(state) = &mut self.state else { return };
         state.sync_cursor_space();
+
+        // winit 0.30.12's X11 Ime::create_context(window, false) sends an
+        // Ime::Disabled lifecycle notification even for an unmapped window.
+        // It carries no input. Recognize it at the shared capture entry;
+        // the guards below still own every keyboard/pointer/IME input event.
+        // https://github.com/rust-windowing/winit/blob/v0.30.12/src/platform_impl/linux/x11/ime/mod.rs
+        #[cfg(target_os = "linux")]
+        if (shell_capture_active || tactical_capture_active)
+            && state.platform.window.is_visible() == Some(false)
+            && !state.platform.window.has_focus()
+            && matches!(&event, WindowEvent::Ime(winit::event::Ime::Disabled))
+        {
+            return;
+        }
 
         // This checkpoint is driven entirely from `about_to_wait`. Focused
         // input would contaminate its hidden, no-input production oracle.
@@ -426,7 +458,7 @@ impl ApplicationHandler for App {
                     // Pump/quit exits write the last durable snapshot after
                     // teardown, without a fresh control pack or RNG draw.
                     Self::teardown_skirmish_shell_for_start(state);
-                    state.frontend.offline_skirmish_runtime.persist_snapshot();
+                    state.frontend.multiplayer_shell_runtime.persist_snapshot();
                 }
                 event_loop.exit();
             }
@@ -469,6 +501,28 @@ impl ApplicationHandler for App {
                     }
                     if let Some(dialog) = state.frontend.keyboard_dialog.as_mut() {
                         dialog.reset_interaction();
+                    }
+                    if let Some(dialog) = state.frontend.network_options.as_mut() {
+                        dialog.cancel_pointer();
+                    }
+                    if let Some(lan) = state.frontend.lan.as_mut() {
+                        lan.lobby.cancel_pointer();
+                    }
+                    if let Some(crate::app::shell_wol::WolPage::Login(login)) =
+                        state.frontend.wol.as_mut().map(|visit| &mut visit.page)
+                    {
+                        login.cancel_pointer();
+                    }
+                    if let Some(lobby) = state
+                        .frontend
+                        .wol
+                        .as_mut()
+                        .and_then(|visit| visit.lobby_mut())
+                    {
+                        lobby.ui.cancel_pointer();
+                    }
+                    if let Some(setup) = state.frontend.multiplayer_setup.as_mut() {
+                        setup.cancel_pointer();
                     }
                     if let Some(dialog) = state.frontend.options_dialog.as_mut() {
                         dialog.shell_cancel_pointer_gesture();
@@ -530,6 +584,45 @@ impl ApplicationHandler for App {
                 }
                 if state.frontend.keyboard_dialog.is_some() {
                     crate::app::input::keyboard::key(state, &event);
+                    return;
+                }
+                if state.frontend.network_options.is_some() {
+                    crate::app::input::network_options::key(state, &event);
+                    return;
+                }
+                if state.frontend.screen == GameScreen::MainMenu
+                    && state.frontend.shell_route.lan_lobby()
+                {
+                    crate::app::shell_lan::key(state, &event);
+                    return;
+                }
+                if state.frontend.screen == GameScreen::MainMenu
+                    && state.frontend.shell_route.network_setup()
+                {
+                    if state
+                        .frontend
+                        .skirmish_shell_state
+                        .choose_map_modal
+                        .is_none()
+                    {
+                        crate::app::input::multiplayer_setup::key(state, &event);
+                    } else if event.state.is_pressed() && !event.repeat {
+                        // ChooseMap's loop has no IsDialogMessage. Only the
+                        // existing eject prompt consumes its default keys.
+                        if let PhysicalKey::Code(code) = event.physical_key {
+                            if Self::shell_key_for_code(code)
+                                .is_some_and(|key| Self::route_validation_modal_key(state, key))
+                            {
+                                return;
+                            }
+                            if matches!(
+                                code,
+                                KeyCode::Escape | KeyCode::Enter | KeyCode::NumpadEnter
+                            ) {
+                                Self::cancel_choose_map_eject_prompt(state);
+                            }
+                        }
+                    }
                     return;
                 }
                 if Self::native_skirmish_shell_active(state)
@@ -595,11 +688,14 @@ impl ApplicationHandler for App {
                     // not on the stack and keep the direct close.
                     if Self::main_menu_dialog_open(state) {
                         if is_escape {
-                            if state.frontend.exit_confirm_modal.is_some() {
-                                if !Self::route_exit_confirm_modal_key(state, ShellKey::Escape) {
+                            if state.frontend.shell_message_box.is_some() {
+                                if !Self::route_shell_message_box_key(state, ShellKey::Escape) {
                                     // Defensive: on_key only fails with an
-                                    // empty route — still close consistently.
-                                    Self::close_exit_confirm_modal_from_controller(state);
+                                    // empty route — still answer IDCANCEL.
+                                    Self::resolve_shell_message_box(
+                                        state,
+                                        crate::ui::shell::modal::ModalResult::MessageBox(1),
+                                    );
                                     state.platform.window.request_redraw();
                                 }
                             } else if launcher_options_consumes_escape(
@@ -657,10 +753,14 @@ impl ApplicationHandler for App {
                         return;
                     }
 
-                    if Self::wol_welcome_active(state) {
-                        // 0x10E ignores IDOK/IDCANCEL (0x007988C0), and the
-                        // 0xD0 box's loop (0x007759E0) dispatches without
-                        // IsDialogMessage.
+                    if Self::wol_active(state) {
+                        Self::handle_wol_key(
+                            state,
+                            Some(code),
+                            event.state.is_pressed(),
+                            event.text.as_deref(),
+                        );
+                        state.platform.window.request_redraw();
                         return;
                     }
 
@@ -698,10 +798,16 @@ impl ApplicationHandler for App {
                         return;
                     }
                     if in_game
-                        && state.match_state.match_presentation.in_game_menu
-                            == crate::ui::pause_menu::InGameMenuState::Sound
+                        && matches!(
+                            state.match_state.match_presentation.in_game_menu,
+                            crate::ui::pause_menu::InGameMenuState::Sound
+                                | crate::ui::pause_menu::InGameMenuState::Diplomacy
+                        )
                     {
-                        // B8 has no IDOK/IDCANCEL close command.
+                        // B8 has no IDOK/IDCANCEL close command. Neither has
+                        // 0x73: its proc keys commands by GetDlgCtrlID(lParam)
+                        // (0x006581A7), and Return 0x423 is owner-drawn, so
+                        // Enter and Escape name no child it handles.
                         return;
                     }
                     if in_game
@@ -777,6 +883,31 @@ impl ApplicationHandler for App {
                     crate::app::input::keyboard::cursor_moved(state);
                     return;
                 }
+                if state.frontend.network_options.is_some() {
+                    crate::app::input::network_options::cursor_moved(state);
+                    return;
+                }
+                if state.frontend.screen == GameScreen::MainMenu
+                    && state.frontend.shell_route.lan_lobby()
+                {
+                    crate::app::shell_lan::cursor_moved(state);
+                    return;
+                }
+                if state.frontend.screen == GameScreen::MainMenu
+                    && state.frontend.shell_route.network_setup()
+                {
+                    if state
+                        .frontend
+                        .skirmish_shell_state
+                        .choose_map_modal
+                        .is_some()
+                    {
+                        Self::handle_skirmish_shell_mouse_move(state);
+                    } else {
+                        crate::app::input::multiplayer_setup::cursor_moved(state);
+                    }
+                    return;
+                }
                 if Self::native_launcher_options_active(state) {
                     Self::handle_launcher_options_mouse(state, None);
                     return;
@@ -799,7 +930,7 @@ impl ApplicationHandler for App {
                 if Self::load_saved_game_active(state) {
                     Self::handle_load_saved_game_mouse_move(state);
                 }
-                if Self::wol_welcome_active(state) {
+                if Self::wol_active(state) {
                     Self::handle_wol_mouse_move(state);
                 }
                 if Self::score_shell_active(state) {
@@ -814,13 +945,13 @@ impl ApplicationHandler for App {
                     && !Self::movie_list_active(state)
                     && !Self::campaign_active(state)
                     && !Self::load_saved_game_active(state)
-                    && !Self::wol_welcome_active(state)
+                    && !Self::wol_active(state)
                     && state.frontend.fullscreen_movie.is_none()
                     && state.frontend.credits_roll.is_none()
                     && !Self::native_skirmish_shell_active(state)
                     // While the SHP quit-confirm modal owns the controller, the menu
                     // move handler must not re-activate 0xE2 and reset the gesture.
-                    && state.frontend.exit_confirm_modal.is_none()
+                    && state.frontend.shell_message_box.is_none()
                 {
                     Self::handle_main_menu_shell_mouse_move(state);
                 }
@@ -876,7 +1007,7 @@ impl ApplicationHandler for App {
                         }
                         return;
                     }
-                    if Self::wol_welcome_active(state) {
+                    if Self::wol_active(state) {
                         if button == MouseButton::Left {
                             if btn_state.is_pressed() {
                                 Self::handle_wol_mouse_down(state);
@@ -895,20 +1026,59 @@ impl ApplicationHandler for App {
                     crate::app::input::keyboard::mouse(state, button, btn_state.is_pressed());
                     return;
                 }
+                if state.frontend.network_options.is_some() {
+                    crate::app::input::network_options::mouse(
+                        state,
+                        button,
+                        btn_state.is_pressed(),
+                    );
+                    return;
+                }
+                if state.frontend.screen == GameScreen::MainMenu
+                    && state.frontend.shell_route.lan_lobby()
+                {
+                    crate::app::shell_lan::mouse(state, button, btn_state.is_pressed());
+                    return;
+                }
+                if state.frontend.screen == GameScreen::MainMenu
+                    && state.frontend.shell_route.network_setup()
+                {
+                    if state
+                        .frontend
+                        .skirmish_shell_state
+                        .choose_map_modal
+                        .is_some()
+                    {
+                        if button == MouseButton::Left {
+                            if btn_state.is_pressed() {
+                                Self::handle_skirmish_shell_mouse_down(state);
+                            } else {
+                                Self::handle_skirmish_shell_mouse_up(state);
+                            }
+                        }
+                    } else {
+                        crate::app::input::multiplayer_setup::mouse(
+                            state,
+                            button,
+                            btn_state.is_pressed(),
+                        );
+                    }
+                    return;
+                }
                 if Self::main_menu_dialog_open(state) {
                     if Self::native_launcher_options_active(state) && button == MouseButton::Left {
                         Self::handle_launcher_options_mouse(state, Some(btn_state.is_pressed()));
                         return;
                     }
-                    if state.frontend.exit_confirm_modal.is_some()
+                    if state.frontend.shell_message_box.is_some()
                         && state.frontend.screen == GameScreen::MainMenu
                         && state.frontend.main_menu_shell_error.is_none()
                         && button == MouseButton::Left
                     {
                         if btn_state.is_pressed() {
-                            Self::handle_exit_confirm_modal_mouse_down(state);
+                            Self::handle_shell_message_box_mouse_down(state);
                         } else {
-                            Self::handle_exit_confirm_modal_mouse_up(state);
+                            Self::handle_shell_message_box_mouse_up(state);
                         }
                     }
                     return;
@@ -972,6 +1142,10 @@ impl ApplicationHandler for App {
                     state.platform.window.request_redraw();
                     return;
                 }
+                if state.frontend.network_options.is_some() {
+                    // ComboDropWin consumes no mouse-wheel selection/scroll.
+                    return;
+                }
                 if state.frontend.screen == GameScreen::MainMenu
                     && Self::native_skirmish_shell_active(state)
                     && Self::handle_skirmish_shell_mouse_wheel(state, lines)
@@ -1007,6 +1181,11 @@ impl ApplicationHandler for App {
             Self::update_load_saved_game_scroll(state, false);
             [
                 crate::app::input::keyboard::poll_scroll_repeat(state),
+                crate::app::input::network_options::poll_scroll_repeat(state),
+                crate::app::shell_lan::poll(state),
+                crate::app::shell_wol::poll(state),
+                crate::app::shell_network_setup::poll(state),
+                crate::app::input::multiplayer_setup::poll(state),
                 crate::app::input::sound::poll_scroll_repeat(state),
                 Self::poll_movie_list_scroll(state),
                 Self::poll_choose_map_scroll(state),

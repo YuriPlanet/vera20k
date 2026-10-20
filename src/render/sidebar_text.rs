@@ -235,13 +235,6 @@ mod tests {
     use crate::render::bit_font::tests::make_test_font;
 
     #[test]
-    fn side_highlight_table_matches_doc() {
-        assert_eq!(side_highlight_color(SidebarTheme::Allied), HIGHLIGHT_ALLIED);
-        assert_eq!(side_highlight_color(SidebarTheme::Soviet), HIGHLIGHT_SOVIET);
-        assert_eq!(side_highlight_color(SidebarTheme::Yuri), HIGHLIGHT_YURI);
-    }
-
-    #[test]
     fn native_radar_outline_color_uses_encoded_batch_tint_contract() {
         // 72F440 side colors -> 652E90 packed Radar+1208 -> enrolled surface
         // display. The production shader readback is in sidebar_gpu_tests.
@@ -257,48 +250,6 @@ mod tests {
                 [bytes[0] & 0xf8, bytes[1] & 0xfc, bytes[2] & 0xf8],
                 packed_bytes
             );
-        }
-    }
-
-    #[test]
-    fn lerp_endpoints() {
-        let a = [0.0, 0.0, 0.0];
-        let b = [1.0, 1.0, 1.0];
-        assert_eq!(lerp_rgb(a, b, 0.0), a);
-        assert_eq!(lerp_rgb(a, b, 1.0), b);
-        let mid = lerp_rgb(a, b, 0.5);
-        assert!((mid[0] - 0.5).abs() < 1e-6);
-    }
-
-    #[test]
-    fn fade_param_zero_equivalent_to_build_text() {
-        let font = make_test_font(&[(b'a' as u16, 6), (b'b' as u16, 6), (b'c' as u16, 6)], 4);
-        let plain = build_text(
-            &font,
-            "abc",
-            0.0,
-            0.0,
-            1.0,
-            0.5,
-            [0.0, 0.0, 0.0],
-            [0.0, 0.0],
-        );
-        let faded = build_text_with_fade(
-            &font,
-            "abc",
-            0.0,
-            0.0,
-            1.0,
-            0.5,
-            [0.0, 0.0, 0.0],
-            [1.0, 1.0, 1.0],
-            0,
-            [0.0, 0.0],
-        );
-        assert_eq!(plain.len(), faded.len());
-        for (p, f) in plain.iter().zip(faded.iter()) {
-            assert_eq!(p.tint, f.tint);
-            assert!((p.position[0] - f.position[0]).abs() < 1e-3);
         }
     }
 

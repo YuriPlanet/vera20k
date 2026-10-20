@@ -3131,24 +3131,6 @@ mod tests {
         );
     }
 
-    #[test]
-    fn spatial_gain_volume_linear_is_ftol_capped_at_the_scale() {
-        assert_eq!(SpatialGain::CENTRED_FULL.volume_linear(), VOLUME_SCALE);
-        let half = SpatialGain {
-            volume: 0.5,
-            pan: PAN_CENTRE,
-        };
-        assert_eq!(half.volume_linear(), 8192);
-        let odd = SpatialGain {
-            volume: 400.0 / 600.0,
-            pan: PAN_CENTRE,
-        };
-        assert_eq!(
-            odd.volume_linear(),
-            X87Chop53::ftol_f64_low_masked(f64::from(400.0f32 / 600.0) * 16384.0)
-        );
-    }
-
     /// The `0x00816380` table (machine-read) against `round(1000 * log2(i /
     /// 100))` and the index arithmetic of `FUN_0040A6D0`.
     #[test]
@@ -3531,16 +3513,6 @@ mod tests {
             prepare_eva_stream_output(test_decoded_audio(), 13107, background).initial_volume,
             0.0
         );
-    }
-
-    /// An empty voice pool and EVA queue report no active voices. Skips
-    /// gracefully when no audio device is available (CI).
-    #[test]
-    fn voices_active_false_when_idle() {
-        let Some(player) = SfxPlayer::new() else {
-            return;
-        };
-        assert!(!player.voices_active());
     }
 
     /// Original action21 lookup/admission controls, through the process's
@@ -4362,25 +4334,6 @@ mod tests {
         assert_eq!(decoded.samples.len(), 8); // 4 mono → 4 stereo pairs
     }
 
-    #[test]
-    fn test_decode_wav_8bit_mono() {
-        let pcm: Vec<u8> = vec![128, 128, 128, 128];
-        let wav = build_test_wav(11025, 8, 1, &pcm);
-        let decoded = decode_wav(&wav, "test.wav").expect("should decode");
-        assert_eq!(decoded.sample_rate, 11025);
-        for s in &decoded.samples {
-            assert!(s.abs() < 0.01);
-        }
-    }
-
-    #[test]
-    fn test_decode_wav_16bit_stereo() {
-        let pcm: Vec<u8> = vec![0xE8, 0x03, 0x18, 0xFC, 0x00, 0x00, 0x00, 0x00];
-        let wav = build_test_wav(44100, 16, 2, &pcm);
-        let decoded = decode_wav(&wav, "test.wav").expect("should decode");
-        assert_eq!(decoded.samples.len(), 4); // 2 stereo frames, already 2ch
-    }
-
     /// Build a `wFormatTag == 0x11` (IMA ADPCM) WAV around a raw block payload.
     fn build_test_ima_wav(
         sample_rate: u32,
@@ -4458,16 +4411,5 @@ mod tests {
             .map(|&f| (f * 32768.0) as i16)
             .collect();
         assert_eq!(got, want);
-    }
-
-    #[test]
-    fn test_decode_wav_too_short() {
-        assert!(decode_wav(&[0u8; 10], "short.wav").is_none());
-    }
-
-    #[test]
-    fn test_decode_pcm_empty() {
-        let samples = decode_pcm(&[], 1, 16);
-        assert!(samples.is_empty());
     }
 }

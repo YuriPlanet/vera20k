@@ -184,7 +184,7 @@ pub(super) fn apply_building_receive_prelude(
     entities: &EntityStore,
     rules: &RuleSet,
     interner: &StringInterner,
-    houses: &mut BTreeMap<InternedId, HouseState>,
+    houses: &mut crate::sim::houses::Houses,
     current_tick: u64,
 ) -> BuildingReceivePrelude {
     let Some(target) = entities.get(event.target_id) else {
@@ -205,7 +205,7 @@ pub(super) fn apply_building_receive_prelude(
         && let Some(owner) = houses.get_mut(&target.owner())
     {
         owner
-            .strategy_emergency
+            .strategy_emergency_mut()
             .note_building_attack(current_tick as u32 as i32);
     }
 
@@ -220,7 +220,7 @@ pub(super) fn resolve_receive_damage(
     entities: &EntityStore,
     rules: &RuleSet,
     interner: &StringInterner,
-    houses: &BTreeMap<InternedId, HouseState>,
+    houses: &crate::sim::houses::Houses,
     alliances: &HouseAllianceMap,
     scenario_no_damage: bool,
     current_tick: u64,
@@ -407,7 +407,7 @@ pub(crate) fn wave_post_object_damage(
     entities: &EntityStore,
     rules: &RuleSet,
     interner: &StringInterner,
-    houses: &BTreeMap<InternedId, HouseState>,
+    houses: &crate::sim::houses::Houses,
     alliances: &HouseAllianceMap,
     scenario_no_damage: bool,
     current_tick: u64,

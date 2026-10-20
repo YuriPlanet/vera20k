@@ -266,7 +266,7 @@ fn assert_source(fixture: &SuppliedFootFixture, expected: &Value, name: &str) {
         "{name}: NavCom"
     );
     assert_eq!(
-        actor.body_facing_current(fixture.sim.session.binary_frame),
+        actor.body_facing_current(fixture.sim.session.binary_frame()),
         signed(&expected["body_facing_words"][0]) as u16,
         "{name}: primary facing"
     );
@@ -338,7 +338,7 @@ fn command_attack(fixture: &mut SuppliedFootFixture, case: &Value, rules: &RuleS
             fixture.actor,
             MissionId::from_raw(signed(&queue[0])),
             signed(&queue[1]),
-            fixture.sim.session.binary_frame,
+            fixture.sim.session.binary_frame(),
             &EntityReadyInputProvider,
         )
         .unwrap();
@@ -490,7 +490,7 @@ fn emission_fixture(case: &Value, rules: &RuleSet) -> SuppliedFootFixture {
         fixture
             .sim
             .session
-            .game_options
+            .game_options_mut_for_test()
             .apply_in_game_speed(case["input"]["game_speed_index"].as_u64().unwrap() as u8)
     );
     for pose in case["poses"].as_array().unwrap() {
@@ -672,22 +672,26 @@ fn assert_fired_bullet(
         .get(ids[expected["pointer"].as_str().unwrap()])
         .unwrap();
     assert_eq!(
-        [bullet.position.x, bullet.position.y, bullet.position.z],
+        [
+            bullet.position().x,
+            bullet.position().y,
+            bullet.position().z
+        ],
         xyz(&expected["position"]),
         "{name}: native Bullet launch XYZ"
     );
     assert_eq!(
-        bullet.source_id,
+        bullet.source_id(),
         fixture.id(&expected["owner"]).unwrap(),
         "{name}: Bullet owner"
     );
     assert_eq!(
-        bullet.target,
+        bullet.target(),
         ProjectileTarget::Entity(fixture.id(&expected["target"]).unwrap()),
         "{name}: Bullet target"
     );
     assert_eq!(
-        bullet.payload.base_damage,
+        bullet.payload().base_damage,
         signed(&expected["damage"]),
         "{name}: M60 raw damage"
     );
@@ -695,22 +699,22 @@ fn assert_fired_bullet(
         fixture
             .sim
             .interner
-            .resolve(bullet.payload.installed_weapon().unwrap()),
+            .resolve(bullet.payload().installed_weapon().unwrap()),
         expected["weapon"]["name"].as_str().unwrap(),
         "{name}: weapon identity"
     );
     assert_eq!(
-        fixture.sim.interner.resolve(bullet.payload.warhead),
+        fixture.sim.interner.resolve(bullet.payload().warhead),
         expected["warhead"]["name"].as_str().unwrap(),
         "{name}: warhead identity"
     );
     assert_eq!(
-        bullet.in_logic_vector,
+        bullet.in_logic_vector(),
         expected["logic_registered"] != 0,
         "{name}: Bullet Logic flag"
     );
     for (actual, expected) in bullet
-        .velocity
+        .velocity()
         .native()
         .iter()
         .zip(expected["velocity_f64_bits"].as_array().unwrap())
@@ -769,22 +773,26 @@ fn assert_recorded_anim_states(
             .get(ids[pointer.as_str().unwrap()])
             .unwrap();
         assert_eq!(
-            fixture.sim.interner.resolve(anim.type_id),
+            fixture.sim.interner.resolve(anim.type_id()),
             constructor["name"].as_str().unwrap(),
             "{name}: Anim type"
         );
         assert_eq!(
-            [anim.world_coord.x, anim.world_coord.y, anim.world_coord.z],
+            [
+                anim.world_coord().x,
+                anim.world_coord().y,
+                anim.world_coord().z
+            ],
             xyz(&expected["location"]),
             "{name}: retained Anim XYZ"
         );
         assert_eq!(
-            anim.draw_flags,
+            anim.draw_flags(),
             expected["draw_flags"].as_u64().unwrap() as u32,
             "{name}: Anim draw flags"
         );
         assert_eq!(
-            anim.z_adjust,
+            anim.z_adjust(),
             signed(&expected["z_adjust"]),
             "{name}: Anim z adjust"
         );
@@ -796,9 +804,9 @@ fn assert_recorded_anim_states(
                 let raw = event["args"][0].as_u64().unwrap();
                 (raw != 0).then(|| fixture.id(&json!(format!("0x{raw:x}"))).unwrap())
             });
-        assert_eq!(anim.owner_entity, owner, "{name}: Anim attachment");
+        assert_eq!(anim.owner_entity(), owner, "{name}: Anim attachment");
         let expected = &expected["runtime"];
-        let runtime = &anim.runtime;
+        let runtime = &anim.runtime();
         for (actual, key) in [
             (runtime.current_frame, "current_frame"),
             (runtime.frame_step, "frame_step"),
@@ -877,7 +885,10 @@ fn original_completed_prelaunch_ai_visits_match_doing_clock_latch_and_full_rng()
                 assert_eq!(frame["base_fire_entry"]["unexecuted"], true);
                 break;
             }
-            fixture.sim.session.binary_frame = frame["native_frame"].as_u64().unwrap() as u32;
+            fixture
+                .sim
+                .session
+                .set_binary_frame_for_test(frame["native_frame"].as_u64().unwrap() as u32);
             assert_source(&fixture, &frame["before"], name);
             assert_rng(&fixture.sim, &frame["rng_before"], name);
             source_ai_visit(&mut fixture.sim, fixture.actor, &rules);
@@ -909,8 +920,9 @@ fn original_single_listener_expiry_clears_pending_shot_and_shortens_passive_time
         for (calls, frame) in case["frames"].as_array().unwrap().iter().enumerate() {
             if calls == expiry_after {
                 let expiry = &case["expiry"];
-                fixture.sim.session.binary_frame =
-                    expiry["callback_events"][0]["frame"].as_u64().unwrap() as u32;
+                fixture.sim.session.set_binary_frame_for_test(
+                    expiry["callback_events"][0]["frame"].as_u64().unwrap() as u32,
+                );
                 assert_source(&fixture, &expiry["before"], name);
                 assert_rng(&fixture.sim, &expiry["rng_before"], name);
                 let target_id = fixture.id(&case["input"]["target"]).unwrap();
@@ -951,7 +963,10 @@ fn original_single_listener_expiry_clears_pending_shot_and_shortens_passive_time
                 assert!(fixture.sim.logic_order().contains(&target_id));
                 compared += 1;
             }
-            fixture.sim.session.binary_frame = frame["native_frame"].as_u64().unwrap() as u32;
+            fixture
+                .sim
+                .session
+                .set_binary_frame_for_test(frame["native_frame"].as_u64().unwrap() as u32);
             assert!(frame["returned"].as_bool().unwrap());
             assert_source(&fixture, &frame["before"], name);
             assert_rng(&fixture.sim, &frame["rng_before"], name);
@@ -997,7 +1012,10 @@ fn original_whole_ai_shot_dynamic_logic_damage_and_deferred_lifetimes_match_nati
         assert_emission_boundary(&fixture, &case["command"]["after"], &ids, name);
         assert_rng(&fixture.sim, &case["command"]["rng_after"], name);
         for visit in case["ai_visits"].as_array().unwrap() {
-            fixture.sim.session.binary_frame = visit["frame"].as_u64().unwrap() as u32;
+            fixture
+                .sim
+                .session
+                .set_binary_frame_for_test(visit["frame"].as_u64().unwrap() as u32);
             assert_emission_boundary(&fixture, &visit["before"], &ids, name);
             assert_rng(&fixture.sim, &visit["rng_before"], name);
             source_ai_visit(&mut fixture.sim, fixture.actor, &rules);
@@ -1058,7 +1076,10 @@ fn original_whole_ai_shot_dynamic_logic_damage_and_deferred_lifetimes_match_nati
             );
             // The original caller increments A8ED84 before725C70. Object AI
             // and both clocks saw the previous absolute frame throughout.
-            fixture.sim.session.binary_frame += 1;
+            fixture
+                .sim
+                .session
+                .set_binary_frame_for_test(fixture.sim.session.binary_frame() + 1);
             fixture.sim.process_pending_delete_with(
                 Some(&rules),
                 None,

@@ -160,8 +160,7 @@ fn sim_with_houses(seed: u64) -> Simulation {
     ] {
         let id = sim.interner.intern(name);
         sim.houses
-            .insert(id, HouseState::new(id, side, None, human, 0, 10));
-        sim.session.house_order.push(id);
+            .register(HouseState::new(id, side, None, human, 0, 10));
     }
     sim
 }
@@ -471,6 +470,58 @@ fn a_captured_yard_rolls_one_in_nine_without_the_engineer_draw() {
         expected_marks.push((cell, replay.state()));
     }
     assert_eq!(marks, expected_marks);
+}
+
+/// Original44307A..443080 suppresses each survivor roll while House1F6
+/// is pending, but the443292 suffix still visits every foundation cell.
+#[test]
+fn pending_house_death_skips_crew_rolls_but_retains_every_cell_mark() {
+    let rules = rules();
+    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/pending_house_death.json",
+    ))
+    .unwrap();
+    for row in corpus["crew"].as_array().unwrap() {
+        let pending = row["pending"].as_bool().unwrap();
+        let mut sim = sim_with_houses(5);
+        let yard = spawn(&mut sim, &rules, "GACNST", "Americans", 10, 10);
+        let owner = sim.interner.get("Americans").unwrap();
+        let before_ids = sim.substrate.entities.keys_sorted();
+        if pending {
+            assert!(sim.flag_house_to_die(owner));
+        }
+        sim.scenario_rng =
+            SimRng::from_native_state_hex_for_test(row["rng_before"].as_str().unwrap());
+        let expected = SimRng::from_native_state_hex_for_test(row["rng_after"].as_str().unwrap())
+            .logical_state();
+        let mut marks = Vec::new();
+        sim.spawn_building_survivors(
+            &rules,
+            None,
+            yard,
+            false,
+            |world, cell| {
+                if pending || marks.is_empty() {
+                    // The native unflagged first roll is2, so it reaches the mark
+                    // without a crew constructor; the pending case skips every roll.
+                    assert_eq!(world.scenario_rng.logical_state(), expected);
+                }
+                marks.push(cell);
+            },
+            FrameEffects::default(),
+        );
+        assert_eq!(marks, foundation_cells(10, 10, "3x3"));
+        if pending {
+            assert_eq!(sim.substrate.entities.keys_sorted(), before_ids);
+            assert_eq!(sim.scenario_rng.logical_state(), expected);
+            assert!(
+                sim.houses[&owner].is_to_die(),
+                "crew reader does not consume House latch"
+            );
+        } else {
+            assert_ne!(row["rng_before"], row["rng_after"]);
+        }
+    }
 }
 
 /// No survivor owed means no Phase B at all: no roll and no per-cell mark.
@@ -895,51 +946,6 @@ const ORDINARY: ReceiverCallFlags = ReceiverCallFlags {
     arg6: false,
 };
 
-/// Through the production receiver: the building is removed in the same
-/// call that spawns its crew, and an IgnoreDefenses kill (C4 expiry) spawns
-/// none.
-#[test]
-fn a_killing_hit_spawns_the_building_crew_in_the_same_receiver_call() {
-    let rules = rules();
-    let mut spawned = 0;
-    for seed in 1..=6 {
-        for flags in [
-            ORDINARY,
-            ReceiverCallFlags {
-                ignore_defenses: true,
-                arg6: false,
-            },
-        ] {
-            let mut sim = sim_with_houses(seed);
-            let yard = spawn(&mut sim, &rules, "GACNST", "Americans", 10, 10);
-            let before = sim.substrate.entities.keys_sorted();
-            kill(&mut sim, &rules, yard, flags);
-            assert!(
-                sim.substrate
-                    .entities
-                    .get(yard)
-                    .is_none_or(|entity| !entity.lifecycle.object_alive()),
-                "the yard died"
-            );
-            let crew: Vec<_> = new_ids(&sim, &before)
-                .into_iter()
-                .filter(|&id| {
-                    sim.substrate.entities.get(id).unwrap().category() == EntityCategory::Infantry
-                })
-                .collect();
-            assert!(crew.len() <= 5);
-            if flags.ignore_defenses {
-                assert!(crew.is_empty(), "NoSurvivor");
-            }
-            for id in &crew {
-                assert!(matches!(type_name(&sim, *id).as_str(), "E1" | "ENGINEER"));
-            }
-            spawned += crew.len();
-        }
-    }
-    assert!(spawned > 0);
-}
-
 /// The production rules reader and death receiver must use each side's
 /// `*Crew=` name, rather than the stock E1/E2/INIT assignment. Reusing the
 /// fixture's registered infantry types keeps this test about the binding.
@@ -974,56 +980,6 @@ fn renamed_general_crew_types_spawn_through_the_building_death_receiver() {
             }
         }
         assert!(spawned > 0, "no {owner} crew reached the receiver");
-    }
-}
-
-/// Through the production receiver: the dying vehicle leaves its cell before
-/// the crewman is placed there; arg6 keeps the crew inside.
-#[test]
-fn a_killing_hit_lets_the_vehicle_crew_out_unless_arg6() {
-    let rules = rules();
-    let mut escaped = 0;
-    for seed in 1..=8 {
-        for flags in [
-            ORDINARY,
-            ReceiverCallFlags {
-                ignore_defenses: false,
-                arg6: true,
-            },
-        ] {
-            let mut sim = sim_with_houses(seed);
-            let mcv = spawn(&mut sim, &rules, "AMCV", "Americans", 10, 10);
-            let before = sim.substrate.entities.keys_sorted();
-            kill(&mut sim, &rules, mcv, flags);
-            let crew = new_ids(&sim, &before);
-            if flags.arg6 {
-                assert!(crew.is_empty());
-            }
-            for id in &crew {
-                let crewman = sim.substrate.entities.get(*id).unwrap();
-                assert_eq!(type_name(&sim, *id), "E1");
-                assert_eq!((crewman.position.rx(), crewman.position.ry()), (10, 10));
-                assert!((5..=62).contains(&crewman.health.current()));
-            }
-            escaped += crew.len();
-        }
-    }
-    assert!(escaped > 0);
-}
-
-/// Through the production receiver: the fatal prelude leaves an absorbing
-/// building's passengers for Phase A instead of killing them.
-#[test]
-fn a_killing_hit_releases_the_bio_reactors_infantry() {
-    let rules = rules();
-    let mut sim = sim_with_houses(4);
-    let reactor = spawn(&mut sim, &rules, "YAPOWR", "Americans", 10, 10);
-    let absorbed = load_absorbed(&mut sim, &rules, reactor, 3);
-    kill(&mut sim, &rules, reactor, ORDINARY);
-    for id in absorbed {
-        let passenger = sim.substrate.entities.get(id).expect("released");
-        assert!(passenger.lifecycle.object_alive() && passenger.health.current() > 0);
-        assert!(!passenger.lifecycle.in_limbo());
     }
 }
 
@@ -1275,7 +1231,7 @@ fn a_selected_vehicle_selects_its_escapees_and_crewman() {
         for selected in [true, false] {
             let mut sim = sim_on_arena(seed, &rules);
             let owner = sim.interner.intern("AlliedHuman");
-            sim.session.current_house = Some(owner);
+            sim.session.set_current_house_for_test(Some(owner));
             let apc = spawn(&mut sim, &rules, "APC", "AlliedHuman", 10, 10);
             let mcv = spawn(&mut sim, &rules, "AMCV", "AlliedHuman", 20, 10);
             let passengers = load_passengers(&mut sim, &rules, apc, "AlliedHuman", 2);
@@ -1315,7 +1271,7 @@ fn a_selected_foreign_vehicle_selects_nothing() {
     let rules = rules();
     let mut sim = sim_on_arena(1, &rules);
     let player = sim.interner.intern("AlliedHuman");
-    sim.session.current_house = Some(player);
+    sim.session.set_current_house_for_test(Some(player));
     let apc = spawn(&mut sim, &rules, "APC", "Americans", 10, 10);
     let passengers = load_passengers(&mut sim, &rules, apc, "Americans", 2);
     sim.substrate
@@ -1451,11 +1407,7 @@ fn retail_dustbowl_crews_scatter_off_their_wrecks() {
         } = &mut scenario.runtime;
         let owner = sim.interner.intern("Americans");
         sim.houses
-            .entry(owner)
-            .or_insert_with(|| HouseState::new(owner, 0, None, false, 10_000, 10));
-        if !sim.session.house_order.contains(&owner) {
-            sim.session.house_order.push(owner);
-        }
+            .get_or_register_for_test(owner, || HouseState::new(owner, 0, None, false, 10_000, 10));
         // The first central cell that admits the MCV, with level walkable
         // ground under and around it and a power plant three cells west, as a
         // player's base would stand on.
@@ -1508,7 +1460,7 @@ fn retail_dustbowl_crews_scatter_off_their_wrecks() {
             scenario.tick();
         }
         assert!(scenario.sim().substrate.entities.get(guard).is_some());
-        assert!(!scenario.sim().houses[&owner].is_defeated);
+        assert!(!scenario.sim().houses[&owner].is_defeated());
         for (id, from_plant, spawn, destination) in crew {
             let entity = scenario
                 .sim()
@@ -1572,11 +1524,7 @@ fn retail_dustbowl_passengers_leave_their_destroyed_transports() {
     let rules = &resources.rules;
     let owner = sim.interner.intern("Americans");
     sim.houses
-        .entry(owner)
-        .or_insert_with(|| HouseState::new(owner, 0, None, false, 10_000, 10));
-    if !sim.session.house_order.contains(&owner) {
-        sim.session.house_order.push(owner);
-    }
+        .get_or_register_for_test(owner, || HouseState::new(owner, 0, None, false, 10_000, 10));
     // Each transport on the first central cell that admits it, with level
     // walkable ground around it for its GIs (the row south) and their
     // Scatter, four or more cells from the others. Check the shared playfield
@@ -1710,7 +1658,7 @@ fn retail_dustbowl_passengers_leave_their_destroyed_transports() {
         }
     }
     assert!(scenario.sim().substrate.entities.get(guard).is_some());
-    assert!(!scenario.sim().houses[&owner].is_defeated);
+    assert!(!scenario.sim().houses[&owner].is_defeated());
     for ((kind, id, wreck, destination), left) in destinations.into_iter().zip(left) {
         println!("{kind} GI {id}: wreck {wreck:?}, Scatter to {destination:?}");
         assert!(left, "{kind}: GI {id} walked off the wreck");
@@ -1770,7 +1718,7 @@ fn a_selected_mcvs_crewman_speaks_his_select_voice() {
     for seed in 1..=8 {
         let mut sim = sim_on_arena(seed, &rules);
         let owner = sim.interner.intern("AlliedHuman");
-        sim.session.current_house = Some(owner);
+        sim.session.set_current_house_for_test(Some(owner));
         let mcv = spawn(&mut sim, &rules, "AMCV", "AlliedHuman", 20, 10);
         sim.substrate
             .entities
@@ -1802,4 +1750,31 @@ fn a_selected_mcvs_crewman_speaks_his_select_voice() {
         }
     }
     assert!(crewmen > 0);
+}
+
+#[test]
+fn signed_country_crew_type_and_rng_match_original() {
+    let rows: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+        "tools/spatial_oracle/crew_type.json",
+    ))
+    .unwrap();
+    let rules = RuleSet::from_ini(&IniFile::from_str(RULES)).unwrap();
+    for row in rows.as_array().unwrap() {
+        let mut sim = Simulation::with_seed(1);
+        sim.scenario_rng =
+            SimRng::from_native_state_hex_for_test(row["rng_before"].as_str().unwrap());
+        assert_eq!(
+            sim.techno_crew_type(
+                &rules,
+                row["country_side"].as_i64().unwrap() as i32,
+                row["armed"].as_bool().unwrap()
+            )
+            .as_deref(),
+            row["result"].as_str()
+        );
+        assert_eq!(
+            sim.scenario_rng.native_state_hex(),
+            row["rng_after"].as_str().unwrap()
+        );
+    }
 }

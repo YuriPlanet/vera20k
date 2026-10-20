@@ -56,9 +56,12 @@ fn debris_contact_matches_original_tree_damage_gates_radius_and_retirement() {
             &rules,
             false,
         );
-        let id = sim.production.terrain_object_cells[&(10, 20)];
-        sim.production.terrain_objects.get_mut(&id).unwrap().health =
-            input["health"].as_i64().unwrap() as i32;
+        let id = sim.terrain_objects.cell_index()[&(10, 20)];
+        sim.terrain_objects
+            .objects_mut_for_test()
+            .get_mut(&id)
+            .unwrap()
+            .set_health_for_test(input["health"].as_i64().unwrap() as i32);
         // Preserve unrelated raw bits to expose over-broad occupation clears.
         sim.substrate.raw_cell_occupation.mark_ground(10, 20, 0xFC);
         let before_rng = sim.scenario_rng.clone();
@@ -78,14 +81,14 @@ fn debris_contact_matches_original_tree_damage_gates_radius_and_retirement() {
             ),
             "{label}"
         );
-        let tree = &sim.production.terrain_objects[&id];
+        let tree = &sim.terrain_objects.objects()[&id];
         assert_eq!(
-            tree.health,
+            tree.health(),
             row["health"].as_i64().unwrap() as i32,
             "{label}"
         );
         assert_eq!(tree.is_live(), row["alive"] == 1, "{label}");
-        assert_eq!(tree.in_logic_vector, row["in_logic"] == 1, "{label}");
+        assert_eq!(tree.in_logic_vector(), row["in_logic"] == 1, "{label}");
         assert_eq!(
             sim.substrate.raw_cell_occupation.ground_bits(10, 20),
             row["occupation"].as_u64().unwrap() as u8,

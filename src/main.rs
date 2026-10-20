@@ -28,11 +28,15 @@ fn main() -> Result<()> {
         log::info!("Log file: {}", path.display());
     }
 
-    let launch_mode = vera20k::app::frontend::launch::parse_launch_args(std::env::args_os().skip(1))?;
+    let launch_mode =
+        vera20k::app::frontend::launch::parse_launch_args(std::env::args_os().skip(1))?;
 
     // A help switch terminates before anything else is created, matching the
     // native switch parser returning a failure that makes WinMain bail.
-    if matches!(launch_mode, vera20k::app::frontend::launch::AppLaunchMode::Usage) {
+    if matches!(
+        launch_mode,
+        vera20k::app::frontend::launch::AppLaunchMode::Usage
+    ) {
         println!("{}", vera20k::app::frontend::startup_options::usage_text());
         return Ok(());
     }
@@ -43,10 +47,19 @@ fn main() -> Result<()> {
     // are deliberately left ungated so parallel captures still run —
     // VERA-internal exemption, native has no capture mode.
     let _instance_guard = match &launch_mode {
-        vera20k::app::frontend::launch::AppLaunchMode::Interactive(_) => {
+        vera20k::app::frontend::launch::AppLaunchMode::Interactive(_)
+        | vera20k::app::frontend::launch::AppLaunchMode::Spawn(_) => {
             match vera20k::util::single_instance::acquire() {
                 vera20k::util::single_instance::SingleInstance::Acquired(guard) => Some(guard),
                 vera20k::util::single_instance::SingleInstance::AlreadyRunning => {
+                    if matches!(
+                        &launch_mode,
+                        vera20k::app::frontend::launch::AppLaunchMode::Spawn(_)
+                    ) {
+                        anyhow::bail!(
+                            "cannot start the CnCNet session while another VERA20k instance is running"
+                        );
+                    }
                     // Recorded gap: native also exits with a success status
                     // here, so a live-smoke harness that only checks the exit
                     // code reads "already running" as a clean run. Anything
@@ -66,12 +79,17 @@ fn main() -> Result<()> {
     // Create the app and hand control to the event loop.
     // This blocks until the window is closed.
     let mut app: vera20k::app::App = match launch_mode {
-        vera20k::app::frontend::launch::AppLaunchMode::Usage => unreachable!("usage returned above"),
+        vera20k::app::frontend::launch::AppLaunchMode::Usage => {
+            unreachable!("usage returned above")
+        }
         vera20k::app::frontend::launch::AppLaunchMode::Interactive(options) => {
             // Pass the parsed process policy to its consumers: options,
             // audio and retained asset ownership.
             log::info!("Retail startup switches: {options:?}");
             vera20k::app::App::new(options)
+        }
+        vera20k::app::frontend::launch::AppLaunchMode::Spawn(options) => {
+            vera20k::app::App::new_spawn(options)?
         }
         vera20k::app::frontend::launch::AppLaunchMode::ShellCapture(request) => {
             request.validate_runtime_environment()?;

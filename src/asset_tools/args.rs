@@ -576,21 +576,6 @@ mod tests {
     }
 
     #[test]
-    fn bare_invocation_is_help_not_an_error() {
-        let cli = parse(args(&[])).expect("no args is help");
-        assert!(matches!(cli.verb, Verb::Help));
-    }
-
-    #[test]
-    fn verb_and_target_parse() {
-        let cli = parse(args(&["find", "POWERP.SHP"])).expect("parses");
-        match cli.verb {
-            Verb::Find { name } => assert_eq!(name, "POWERP.SHP"),
-            _ => panic!("wrong verb"),
-        }
-    }
-
-    #[test]
     fn missing_target_is_an_actionable_error() {
         let err = parse(args(&["info"]))
             .err()

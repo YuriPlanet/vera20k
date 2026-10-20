@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Four original state1 controls through the real Facing_Update latch producer.",
+  "assumptions": [
+    "Supplied type flags, independent Facing arcs and state1.",
+    "Facing ctor/snap/Set at frame100; original Facing_Update and Unload at101."
+  ],
+  "substitutions": [
+    "Inherited dock VM construction and empty-cell map boundaries."
+  ],
+  "entry_points": {
+    "facing_update": "0x00736990",
+    "unload": "0x0073D630"
+  },
+  "replay_command": "python -m tools.spatial_oracle.transport_unload",
+  "payload_sha256": "aa12f0451031138733ab159c1a385025c89380576e6bd6a590b3596bb7a86cb6"
+}

@@ -13,6 +13,12 @@ pub(crate) fn reload(root: &Path, archive: Option<&[u8]>) -> HotkeyBindings {
     let bytes = std::fs::read(path(root)).ok();
     HotkeyBindings::reload_from_ini_bytes(bytes.as_deref().or(archive))
 }
+/// Process startup shares the profile file owner, but retains the initial
+/// Escape/Delete/Space installation that a dialog reload intentionally omits.
+pub(crate) fn startup(root: &Path, archive: Option<&[u8]>) -> HotkeyBindings {
+    let bytes = std::fs::read(path(root)).ok();
+    HotkeyBindings::from_ini_bytes(bytes.as_deref().or(archive))
+}
 pub(crate) fn save(root: &Path, bindings: &HotkeyBindings) -> std::io::Result<()> {
     std::fs::write(path(root), bindings.to_ini_string())
 }
@@ -30,6 +36,24 @@ pub(crate) fn reset(root: &Path, archive: Option<&[u8]>) -> HotkeyBindings {
 mod tests {
     use super::*;
     use crate::app::input::hotkeys::HotkeyCommand;
+    #[test]
+    fn cncnet_profile_keyboard_startup_keeps_the_initial_system_keys() {
+        let root =
+            std::env::temp_dir().join(format!("vera-cncnet-keyboard-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let bytes = b"[Hotkey]\nStopObject=88\n";
+        std::fs::write(root.join("KeyboardMD.ini"), bytes).unwrap();
+        let bindings = startup(&root, Some(b"[Hotkey]\nStopObject=83\n"));
+        assert_eq!(bindings.first_key(HotkeyCommand::StopObject), Some(88));
+        assert_eq!(bindings.command_at(27), Some(HotkeyCommand::Options));
+        assert_eq!(
+            bindings.command_at(32),
+            Some(HotkeyCommand::CenterOnRadarEvent)
+        );
+        assert_eq!(std::fs::read(root.join("KeyboardMD.ini")).unwrap(), bytes);
+        std::fs::remove_file(root.join("KeyboardMD.ini")).unwrap();
+        std::fs::remove_dir(root).unwrap();
+    }
     #[test]
     fn disk_reload_and_reset_follow_current_file_not_entry_snapshot() {
         let root = std::env::temp_dir().join(format!("vera-keyboard-{}", std::process::id()));

@@ -152,7 +152,8 @@ fn house_notification_predicates_replay_twenty_original_controls() {
                     }
                 }
             }
-            sim.session.house_order = order.map(|i| houses[i]).to_vec();
+            sim.houses
+                .reorder_for_test(&order.map(|i| houses[i]).to_vec());
             let (_, live) = install(&mut sim, &rules, kind, country);
             let type_index = sim.trigger_runtime.trigger(live).unwrap().type_index;
             sim.trigger_runtime.definitions.trigger_types[type_index].events[0].retained_house =
@@ -203,10 +204,10 @@ fn discovered_house_event_runs_from_real_discovery_poll_and_saved_notification()
     let building = sim
         .spawn_object("DEPOT", "House1", 16, 16, 0, &rules)
         .unwrap();
-    sim.session.current_house = Some(houses[0]);
+    sim.session.set_current_house_for_test(Some(houses[0]));
     let (_, live) = install(&mut sim, &rules, 5, 7);
     assert!(!sim.houses[&houses[1]].discovered_by_current_house());
-    sim.session.binary_frame = 8;
+    sim.session.set_binary_frame_for_test(8);
     sim.raise_house_tags(
         houses[0],
         Some(&rules),
@@ -225,7 +226,7 @@ fn discovered_house_event_runs_from_real_discovery_poll_and_saved_notification()
     assert!(sim.houses[&houses[1]].discovered_by_current_house());
     assert!(!sim.houses[&houses[0]].discovered_by_current_house());
     let rng = sim.rng_state();
-    sim.session.binary_frame = 9;
+    sim.session.set_binary_frame_for_test(9);
     sim.raise_house_tags(
         houses[0],
         Some(&rules),
@@ -233,7 +234,7 @@ fn discovered_house_event_runs_from_real_discovery_poll_and_saved_notification()
         FrameEffects::default(),
     );
     assert!(!sim.trigger_runtime.globals_set.contains(&7));
-    sim.session.binary_frame = 16;
+    sim.session.set_binary_frame_for_test(16);
     sim.raise_house_tags(
         houses[0],
         Some(&rules),
@@ -255,7 +256,7 @@ fn discovered_house_event_runs_from_real_discovery_poll_and_saved_notification()
     restored.restore_after_snapshot_load().unwrap();
     assert!(restored.houses[&houses[1]].discovered_by_current_house());
     assert!(restored.set_trigger_variable(true, 7, false));
-    restored.session.binary_frame = 24;
+    restored.session.set_binary_frame_for_test(24);
     restored.raise_house_tags(
         houses[0],
         Some(&rules),
@@ -326,7 +327,7 @@ fn captured_house_event_uses_engineer_notification_and_keeps_the_original_raise_
 
     // 71EC9A requires3 even with House244=true. The existing ordinary
     // House poll8 must remain unable to satisfy it; do not invent a producer.
-    sim.session.binary_frame = 8;
+    sim.session.set_binary_frame_for_test(8);
     sim.raise_house_tags(
         houses[0],
         Some(&rules),

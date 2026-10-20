@@ -191,7 +191,7 @@ impl ReloadHost for WorldReload<'_> {
             self.registry,
             self.effects,
         );
-        let now = self.sim.session.binary_frame;
+        let now = self.sim.session.binary_frame();
         let _ =
             self.sim
                 .mission_assign_exact(contact, MissionId::from_known(MissionType::Guard), now);

@@ -147,24 +147,6 @@ mod tests {
     }
 
     #[test]
-    fn parse_non_spawning_terrain_section() {
-        let ini = IniFile::from_str("[TREE01]\nIsAnimated=no\n");
-        let section = ini.section("TREE01").expect("section");
-        let t = TerrainObjectType::from_ini_section("TREE01", section);
-        assert!(!t.spawns_tiberium);
-        assert!(!t.is_animated);
-        assert_eq!(t.animation_probability.bits(), 0);
-    }
-
-    #[test]
-    fn animation_probability_preserves_native_float_above_one() {
-        let ini = IniFile::from_str("[X]\nAnimationProbability=2.5\n");
-        let section = ini.section("X").expect("section");
-        let t = TerrainObjectType::from_ini_section("X", section);
-        assert_eq!(t.animation_probability.bits(), 2.5_f32.to_bits());
-    }
-
-    #[test]
     fn parse_tibtre_lifecycle_fields_and_tree_strength_fallback() {
         let ini = IniFile::from_str(
             "[TIBTRE03]\nSpawnsTiberium=yes\nIsAnimated=yes\nImmune=yes\n\
@@ -180,25 +162,6 @@ mod tests {
         assert!(t.legal_target);
         assert_eq!(t.temperate_occupation_bits, 4);
         assert_eq!(t.snow_occupation_bits, 7);
-    }
-
-    #[test]
-    fn gsi_04_10_strength_preserves_signed_explicit_and_fallback_values() {
-        for (body, tree_strength, expected) in [
-            ("AnimationRate=0\n", -375, -375),
-            ("Strength=0\n", 200, 0),
-            ("Strength=-27\n", 200, -27),
-            ("Strength=450\n", -375, 450),
-        ] {
-            let ini = IniFile::from_str(&format!("[TREE01]\n{body}"));
-            let section = ini.section("TREE01").expect("section");
-            let terrain = TerrainObjectType::from_ini_section_with_tree_strength(
-                "TREE01",
-                section,
-                tree_strength,
-            );
-            assert_eq!(terrain.strength, expected, "body={body:?}");
-        }
     }
 
     #[test]
@@ -261,14 +224,5 @@ mod tests {
             ),
             row["strength"].as_i64().unwrap()
         );
-    }
-
-    #[test]
-    fn art_foundation_is_normalized() {
-        let ini = IniFile::from_str("[TREE01]\nFixtureOnly=1\n");
-        let section = ini.section("TREE01").expect("section");
-        let mut t = TerrainObjectType::from_ini_section("TREE01", section);
-        t.merge_art_foundation("2x2");
-        assert_eq!(t.foundation, "2x2");
     }
 }

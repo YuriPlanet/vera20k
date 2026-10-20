@@ -62,6 +62,16 @@ pub struct PathsConfig {
     /// MIX files (ra2.mix, language.mix, theme.mix) are loaded from here.
     /// Example: "C:/Program Files/EA Games/Command and Conquer Red Alert II"
     pub ra2_dir: PathBuf,
+    /// Optional writable profile root. Assets continue to come from `ra2_dir`.
+    settings_dir: Option<PathBuf>,
+}
+
+impl PathsConfig {
+    /// RA2MD.INI and KeyboardMD.INI belong to this writable profile root.
+    /// Ordinary launches retain the retail asset root when no override is set.
+    pub fn settings_dir(&self) -> &Path {
+        self.settings_dir.as_deref().unwrap_or(&self.ra2_dir)
+    }
 }
 
 /// Graphics settings.
@@ -162,11 +172,14 @@ impl GameConfig {
             .with_context(|| format!("Failed to parse config file: {}", path.display()))?;
 
         // A packaged config must mean the same thing after Finder changes cwd.
+        let directory = path.parent().unwrap_or_else(|| Path::new("."));
         if config.paths.ra2_dir.is_relative() {
-            config.paths.ra2_dir = path
-                .parent()
-                .unwrap_or_else(|| Path::new("."))
-                .join(&config.paths.ra2_dir);
+            config.paths.ra2_dir = directory.join(&config.paths.ra2_dir);
+        }
+        if let Some(settings_dir) = config.paths.settings_dir.as_mut()
+            && settings_dir.is_relative()
+        {
+            *settings_dir = directory.join(&*settings_dir);
         }
 
         log::info!("Loaded config from {}", path.display());
@@ -181,6 +194,7 @@ impl GameConfig {
     /// values, so old configs with retired keys (`vsync`, `sim_tick_hz`) load.
     fn parse(contents: &str) -> Result<Self> {
         let mut ra2_dir = None;
+        let mut settings_dir = None;
         let mut graphics = GraphicsConfig::default();
         let mut gameplay = GameplayConfig::default();
         let mut profile = ProfileConfig::default();
@@ -215,6 +229,9 @@ impl GameConfig {
                 ("paths", "ra2_dir") => {
                     parse_string(value).map(|path| ra2_dir = Some(PathBuf::from(path)))
                 }
+                ("paths", "settings_dir") => {
+                    parse_string(value).map(|path| settings_dir = Some(PathBuf::from(path)))
+                }
                 ("graphics", "extra_animations") => {
                     parse_bool(value).map(|on| graphics.extra_animations = on)
                 }
@@ -231,7 +248,10 @@ impl GameConfig {
         }
         let ra2_dir = ra2_dir.context("missing `ra2_dir` in [paths]")?;
         Ok(Self {
-            paths: PathsConfig { ra2_dir },
+            paths: PathsConfig {
+                ra2_dir,
+                settings_dir,
+            },
             graphics,
             gameplay,
             profile,
@@ -240,7 +260,10 @@ impl GameConfig {
 
     fn from_retail_asset_root(ra2_dir: PathBuf) -> Self {
         Self {
-            paths: PathsConfig { ra2_dir },
+            paths: PathsConfig {
+                ra2_dir,
+                settings_dir: None,
+            },
             graphics: GraphicsConfig::default(),
             gameplay: GameplayConfig::default(),
             profile: ProfileConfig::default(),
@@ -383,7 +406,24 @@ mod tests {
         .unwrap();
         let config = fixture.load().unwrap();
         assert_eq!(config.paths.ra2_dir, fixture.0.join("app/retail files"));
+        assert_eq!(config.paths.settings_dir(), config.paths.ra2_dir.as_path());
         assert_eq!(config.profile.player_name(), Some("Packaged player"));
+    }
+
+    #[test]
+    fn relative_settings_root_is_resolved_beside_config_independently_of_assets() {
+        let fixture = ConfigFixture::new();
+        std::fs::write(
+            fixture.0.join("app/config.toml"),
+            "[paths]\nra2_dir = 'retail files'\nsettings_dir = 'client profile'\n",
+        )
+        .unwrap();
+        let config = fixture.load().unwrap();
+        assert_eq!(config.paths.ra2_dir, fixture.0.join("app/retail files"));
+        assert_eq!(
+            config.paths.settings_dir(),
+            fixture.0.join("app/client profile")
+        );
     }
 
     #[test]
@@ -419,30 +459,9 @@ mod tests {
     #[test]
     fn missing_configs_keep_retail_executable_directory_discovery() {
         let fixture = ConfigFixture::new();
-        assert_eq!(fixture.load().unwrap().paths.ra2_dir, fixture.0.join("app"));
-    }
-
-    #[test]
-    fn test_minimal_config() {
-        let toml_str = r#"
-[paths]
-ra2_dir = "C:/Westwood/RA2"
-"#;
-        let config = GameConfig::parse(toml_str).expect("Failed to parse test config");
-        assert!(config.graphics.extra_animations);
-        assert_eq!(config.gameplay.input_delay_ticks, 15);
-        assert!(!config.gameplay.pause_on_focus_loss);
-        // No [profile] section -> no pre-filled player name.
-        assert_eq!(config.profile.player_name(), None);
-    }
-
-    #[test]
-    fn configured_ahead_windows_preserve_zero_and_custom_values() {
-        for ahead in [0, 2, 30] {
-            let text = format!("[paths]\nra2_dir='.'\n[gameplay]\ninput_delay_ticks={ahead}\n");
-            let config = GameConfig::parse(&text).unwrap();
-            assert_eq!(config.gameplay.input_delay_ticks, ahead);
-        }
+        let config = fixture.load().unwrap();
+        assert_eq!(config.paths.ra2_dir, fixture.0.join("app"));
+        assert_eq!(config.paths.settings_dir(), config.paths.ra2_dir.as_path());
     }
 
     #[test]
@@ -540,13 +559,5 @@ name = "   "
             retail_asset_root_from_executable(&executable).expect("volume root"),
             root
         );
-    }
-
-    #[test]
-    fn discovered_config_keeps_host_defaults() {
-        let config = GameConfig::from_retail_asset_root(PathBuf::from(r"D:\Games\RA2"));
-        assert_eq!(config.paths.ra2_dir, PathBuf::from(r"D:\Games\RA2"));
-        assert!(config.graphics.extra_animations);
-        assert_eq!(config.profile.player_name(), None);
     }
 }

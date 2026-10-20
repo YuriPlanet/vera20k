@@ -5,6 +5,9 @@
 # Point this to your Red Alert 2: Yuri's Revenge installation directory.
 # The engine reads .mix files directly from here (ra2.mix, language.mix, etc.)
 ra2_dir = "C:/Westwood/RA2"
+# Optional writable RA2MD.INI / KeyboardMD.INI location (defaults to ra2_dir).
+# Relative paths are resolved beside this config file. Assets stay in ra2_dir.
+# settings_dir = "."
 
 [graphics]
 extra_animations = true   # cosmetic effects: water/ore sparkles (future: laser pulses, particle trails)

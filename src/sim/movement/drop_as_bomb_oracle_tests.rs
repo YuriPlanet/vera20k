@@ -134,7 +134,7 @@ mod tests {
         sim.scenario_rng = SimRng::new(0);
         let house = sim.interner.intern("Americans");
         sim.houses
-            .insert(house, HouseState::new(house, 0, None, true, 0, 10));
+            .register(HouseState::new(house, 0, None, true, 0, 10));
         let id = sim.allocate_stable_id();
         sim.substrate
             .entities

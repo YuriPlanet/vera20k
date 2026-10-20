@@ -4,7 +4,8 @@ Run python -m tools.team_recruit_oracle --check (or explicit --write).
 The bounded Script64 seek controls use --nearest-occupiable --check/--write;
 Script16 uses --patrol --check/--write; Script37 uses --delete-members for
 bounded original loop controls. Each has its own corpus; the
-ordinary reference is unchanged.
+ordinary reference is unchanged. Under-strength retreat and directional Foot
+nearby controls use --retreat; consumed by retreat_tests.rs and find_nearby_cell.rs.
 Rust consumers: src/sim/team_script_vm/recruit_oracle_tests.rs,
 src/sim/building_entry_tests.rs (the seeks) and src/sim/docking/bunker_link.rs
 (the tank bunker admission).
@@ -203,6 +204,240 @@ class TeamEmu(Emu):
         uc.reg_write(UC_X86_REG_FPCW, NATIVE_FPCW)
         uc.reg_write(UC_X86_REG_ECX, ecx)
         return run_checked(uc, entry, end)
+
+
+# ---------------------------------------------------------- retreat / Foot nearby
+
+FOOT_NEARBY = 0x4CBC40
+RETREAT = 0x6EA0D0
+CELL_LOOKUP = 0x5657A0
+CELL_VTABLE = 0x7E4EEC
+RETREAT_MAP_TABLE = 0xC00000
+STUB_RETREAT_WEAPON = STUBS + 0xF00
+
+
+class RetreatEmu(TeamEmu):
+    """Original retreat and Foot search; supplied class entry/weapon answers.
+
+    Distinct real Cells are essential: Calc_Center keeps a Cell pointer while
+    later threat/nearby lookups run. A single mutable fake Cell corrupts it.
+    """
+
+    def __init__(self, *, accept=-1, blocked=()):
+        self.cells = {}
+        self.visits = []
+        self.accept = accept
+        self.blocked = set(map(tuple, blocked))
+        self.building_inputs = {}
+        super().__init__()
+        # 56BCD0 performs its own inline fixed-stride lookup through this
+        # original Map field. Keep it original, including the House grid read.
+        self.write32(0x87F7E8 + 0x13C, RETREAT_MAP_TABLE)
+        self.write32(0x87F7E8 + 0x140, 0x40000)
+        self.hook(CELL_LOOKUP, lambda e: e.cell(struct.unpack(
+            '<hh', e.uc.mem_read(e.arg(0), 4))), 4)
+        self.hook(GET_CELL_AT, lambda e: e.cell(tuple(
+            trunc_div256(v) for v in struct.unpack('<iii', e.uc.mem_read(e.arg(0), 12))[:2])), 4)
+        self.draws([])
+
+    def cell(self, point):
+        if point not in self.cells:
+            address = ARRAYS + 0x1000 + len(self.cells) * 0x200
+            self.cells[point] = address
+            self.write32(address, CELL_VTABLE)
+            self.uc.mem_write(address + 0x24, struct.pack('<hh', *point))
+            if 0 <= point[0] < 512 and 0 <= point[1] < 512:
+                self.write32(RETREAT_MAP_TABLE + (point[0] + point[1] * 512) * 4, address)
+        return self.cells[point]
+
+    def cell_coord(self, address):
+        return list(struct.unpack('<hh', self.uc.mem_read(address + 0x24, 4)))
+
+    def can_enter_stub(self, e):
+        point = e.cell_coord(e.arg(0))
+        row = dict(cell=point, direction=i32(e.arg(1)), height=i32(e.arg(2)),
+                   previous=e.arg(3), mode=e.arg(4), member=e.index_of(
+                       e.uc.reg_read(UC_X86_REG_ECX)))
+        self.visits.append(row)
+        if self.accept is None:
+            return int(tuple(point) in self.blocked)
+        return int(len(self.visits) - 1 != self.accept)
+
+    def install_retreat(self, buildings):
+        self.accept = None
+        def current(e):
+            out = e.arg(0)
+            e.write32(out, 58)
+            e.write32(out + 4, 0)
+            return out
+        self.hook(CURRENT_ACTION, current, 4)
+        self.hook(0x6EBAD0, lambda e: e.events.append(
+            ['coordinate_move', e.cell_coord(e.read32(TEAM + 0x40))]), 0)
+        self.write8(TEAM + 0x7F, 1)
+        self.write32(TEAM + 0x2C, HOUSES)
+        self.write32(TEAM + 0x48, 2)
+        # Native-declared inputs, independent of VERA coordinates/subcells.
+        for i in range(2):
+            actor = self.object(i, xyz=(5248 + i * 256, 5248, 0))
+            self.write8(actor + 0x90, 1)
+            self.write32(actor + 0x6C, 100)
+            self.write8(actor + 0x689, 1)
+            self.write8(actor + 0x3D5, 1)
+            techno_type = self.techno_type_at(i)
+            self.techno_type[actor] = techno_type
+            self.write32(techno_type + 0x5FC, 5)
+            self.weight[actor] = 0
+            if i == 0:
+                self.write32(TEAM + 0x54, actor)
+            else:
+                self.write32(previous + 0x5D8, actor)
+            previous = actor
+        self.write32(HOUSES + 0x6C, ARRAYS)
+        self.write32(HOUSES + 0x78, len(buildings))
+        self.write32(BUILDING_VTABLE + 0x3F8, STUB_RETREAT_WEAPON)
+        self.write32(ARRAYS + 0x100, 0x1234)
+        self.hook(STUB_RETREAT_WEAPON, lambda e: ARRAYS + (0x100 if
+            e.building_inputs[e.uc.reg_read(UC_X86_REG_ECX)].get('armed') else 0x104), 4)
+        def coords(e):
+            out = e.arg(0)
+            row = e.building_inputs[e.uc.reg_read(UC_X86_REG_ECX)]
+            e.uc.mem_write(out, struct.pack('<iii', *row['xyz']))
+            return out
+        self.hook(STUB_BUILDING_COORDS, coords, 4)
+        threats = {}
+        for i, row in enumerate(buildings):
+            if row is None:
+                continue
+            actor = self.object(i + 16, xyz=row['xyz'], vtable=BUILDING_VTABLE,
+                                rtti=RTTI_BUILDING)
+            self.building_inputs[actor] = row
+            techno_type = BUILDING_TYPES + i * TYPE_SIZE
+            self.write32(actor + 0x520, techno_type)
+            self.write8(actor + 0x81, row.get('limbo', False))
+            self.write8(techno_type + 0x16A9, row.get('repair', False))
+            self.write32(ARRAYS + i * 4, actor)
+            point = tuple(trunc_div256(v) for v in row['xyz'][:2])
+            self.cell(point)
+            index = trunc_div4(point[0]) + 130 * trunc_div4(point[1])
+            threat = row.get('threat', 0)
+            if index in threats and threats[index] != threat:
+                raise ValueError('Conflicting inputs for one retained House threat slot')
+            threats[index] = threat
+            self.write32(HOUSES + 0x59F0 + index * 4, threat)
+
+
+def trunc_div256(value):
+    return (abs(value) // 256) * (-1 if value < 0 else 1)
+
+
+def trunc_div4(value):
+    return (abs(value) // 4) * (-1 if value < 0 else 1)
+
+
+def retreat_live_nearby(kind, slope):
+    """Whole Foot search through the original class admission and height prelude.
+
+    Reuses the existing map/locomotor fixture; no entry or gameplay return
+    is supplied. Empty cells carry a declared slope (0 flat / 1 ramp).
+    """
+    from tools.native_oracle import SCRATCH
+    from tools.spatial_oracle.map_queries import dwords, packed
+    from tools.spatial_oracle.unit_source_scatter import make_source_fixture, CELLS
+    from tools.spatial_oracle.unit_scatter_state import ACTOR, TYPE, LOCO, SP
+    u, call, read = make_source_fixture(dict(live_entry=True))
+    infantry = kind == 'infantry'
+    u.mem_write(ACTOR, dwords(0x7EB058 if infantry else 0x7F5C70))
+    u.mem_write(TYPE, dwords(0x7EB610 if infantry else 0x7F6218))
+    u.mem_write(ACTOR + (0x6C0 if infantry else 0x6C4), dwords(TYPE))
+    if infantry:
+        u.mem_write(ACTOR + 0x6C4, dwords(-1))
+        call(0x75AA90, LOCO, [])
+        u.mem_write(LOCO + 0xC, dwords(ACTOR))
+        u.mem_write(ACTOR + 0x674, dwords(LOCO + 4))
+    u.mem_write(ACTOR + 0x14, dwords(5))
+    u.mem_write(ACTOR + 0x3D5, b'\1')
+    for y in range(32):
+        for x in range(32):
+            cell = CELLS + (y * 32 + x) * 0x200
+            u.mem_write(cell + 0x116, b'\xff\xff')
+            u.mem_write(cell + 0x11C, bytes([slope]))
+    out, source, target = SCRATCH + 0xE000, SCRATCH + 0xE010, SCRATCH + 0xE020
+    u.mem_write(source, packed(20, 20))
+    u.mem_write(target, packed(10, 10))
+    visits = []
+    entry = 0x51BF90 if infantry else 0x73F0A0
+    def observe(_u, pc, _size, _data):
+        if pc in (0x65C780, 0x65C7E0):
+            raise AssertionError('Unexpected RNG in original nearby/class admission')
+        if pc == entry:
+            sp = u.reg_read(UC_X86_REG_ESP)
+            cell = read(sp + 4)
+            visits.append(dict(cell=list(struct.unpack('<hh', u.mem_read(cell + 0x24, 4))),
+                               direction=i32(read(sp + 8))))
+    hook = u.hook_add(UC_HOOK_CODE, observe)
+    try:
+        call(FOOT_NEARBY, ACTOR, [out, source, target, 2, 4])
+    finally:
+        u.hook_del(hook)
+    assert u.reg_read(UC_X86_REG_ESP) == SP + 24
+    return dict(kind=kind, slope=slope, source=[20, 20], target=[10, 10],
+                result=list(struct.unpack('<hh', u.mem_read(out, 4))), visits=visits)
+
+
+def retreat():
+    nearby = []
+    pairs = [((0, 0), point) for point in
+             [(10, 0), (10, 10), (0, 10), (-10, 10), (-10, 0),
+              (-10, -10), (0, -10), (10, -10)]]
+    pairs += [((4, 4), (4, 4)), ((-32768, 32767), (32767, -32768))]
+    controls = [(source, target, 2, 4, accept) for source, target in pairs
+                for accept in (-1, 0, 3, 9)]
+    # Exclusive/empty range and accepted null cell: success at (0,0) must
+    # stop the Foot search even though the caller rejects that sentinel.
+    controls += [((0, 0), (10, 0), 3, 3, -1),
+                 ((0, 0), (10, 0), 0, 2, -1),
+                 ((-10, -1), (2, -1), 2, 4, 0)]
+    for source, target, minimum, maximum, accept in controls:
+        e = RetreatEmu(accept=accept)
+        actor = e.object(0)
+        out, first, last = ARRAYS, ARRAYS + 16, ARRAYS + 32
+        e.uc.mem_write(first, struct.pack('<hh', *source))
+        e.uc.mem_write(last, struct.pack('<hh', *target))
+        e.invoke(FOOT_NEARBY, ecx=actor, args=(out, first, last, minimum, maximum))
+        nearby.append(dict(source=source, target=target, minimum=minimum,
+                           maximum=maximum, accept=accept,
+                           result=list(struct.unpack('<hh', e.uc.mem_read(out, 4))),
+                           visits=e.visits))
+    def building(x, y, **kwargs):
+        return dict(xyz=[x * 256, y * 256, 0], **kwargs)
+    cases = [
+        ('no-buildings', []),
+        ('unarmed', [building(10, 10)]),
+        ('armed-limbo-null', [None, building(18, 18, armed=True),
+                             building(16, 16, limbo=True), building(5, 5)]),
+        ('threat', [building(15, 15, threat=5), building(5, 5)]),
+        ('repair', [building(15, 15), building(10, 10, repair=True)]),
+        ('tie-first', [building(15, 10), building(15, 31)]),
+        ('tie-reversed', [building(15, 31), building(15, 10)]),
+        ('height', [dict(xyz=[15 * 256, 15 * 256, 10000]), building(10, 10)]),
+        ('wrapped-score', [building(15, 15, threat=2147483647), building(5, 5)]),
+    ]
+    selections = []
+    blocked = [(x, y) for x in range(12, 19) for y in range(12, 19)]
+    cases += [('blocked-first', [building(15, 15), building(5, 5)]),
+              ('all-blocked', [building(15, 15)])]
+    for name, buildings in cases:
+        refusals = blocked if name in ('blocked-first', 'all-blocked') else []
+        e = RetreatEmu(blocked=refusals)
+        e.install_retreat(buildings)
+        e.invoke(RETREAT, ecx=TEAM)
+        selections.append(dict(name=name, buildings=buildings, blocked=refusals,
+                               focus=e.cell_coord(e.read32(TEAM + 0x40)),
+                               formed=e.read8(TEAM + 0x7F),
+                               visits=e.visits, events=e.events))
+    return dict(nearby=nearby, selections=selections,
+                live_nearby=[retreat_live_nearby(kind, slope)
+                             for kind in ('infantry', 'unit') for slope in (0, 1)])
 
 
 # ---------------------------------------------------------------- recalc
@@ -1993,6 +2228,36 @@ def generate():
                 tank_bunker=tank_bunker(), load=load(), wait_loaded=wait_loaded(),
                 unload=unload(), deploy=deploy())
 
+
+if __name__ == '__main__' and '--retreat' in sys.argv:
+    finish_vectors(retreat, Path(__file__).with_name('team_retreat.json'),
+        provenance=lambda: provenance(
+            scope=('Original Foot4CBC40 directional cell visits and Team6EA0D0 '
+                   'retreat selection through original CalcCenter6EAEE0, House '
+                   'threat56BCD0, Sqrt_Approx/ftol and nearby Foot search. '
+                   'Four additional whole Foot/Infantry/Unit admission controls '
+                   'distinguish flat ground refusal from ramp admission.'),
+            assumptions=['x87 control word0E7F (PC53,chop), harness default.',
+                         'Synthetic ordered House buildings and retained coarse threat '
+                         'grid; two joined live members at [5248,5248,0]/[5504,5248,0].'],
+            substitutions=['Map5657A0/565730 return distinct declared real Cells with '
+                           'original Cell GetCoords486840;56BCD0 inline lookup runs original.',
+                           'Class CanEnter records direction,height,previous,mode and '
+                           'answers the supplied ordinal or blocked-cell set.',
+                           'Selector/directional controls: Building GetCoords/GetWeapon supply declared coordinates '
+                           'and armed status; Script.Current supplies action58. '
+                           'Original Script.Reset executes.',
+                           'CoordinateMove6EBAD0 records final focus; member movement '
+                           'is covered separately through the Rust production team pass.',
+                           'live_nearby controls reuse unit_source_scatter with original '
+                           'Cell/Infantry/Unit vtables and Walk/Drive construction. '
+                           'Declared level0,slope0/1,clear speed rows,no overlay or tube; '
+                           'no class entry/gameplay return substituted in these rows.'],
+            entry_points={'retreat':RETREAT, 'nearby':FOOT_NEARBY,
+                          'center':CALC_CENTER, 'threat':0x56BCD0,
+                          'sqrt_approx':0x4CAC40, 'ftol':0x7C5F00}),
+        argv=[arg for arg in sys.argv[1:] if arg != '--retreat'])
+    raise SystemExit
 
 if __name__ == '__main__' and '--attack-waypoint-building' in sys.argv:
     finish_vectors(attack_waypoint_building_rows, Path(__file__).with_name('team_attack_waypoint_building.json'),

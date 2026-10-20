@@ -4,6 +4,7 @@
 
 use super::*;
 use crate::rules::{art_data::ArtRegistry, ini_parser::IniFile};
+use crate::sim::house_state::HouseState;
 use crate::sim::world::ObjectAiCtx;
 use serde_json::Value;
 
@@ -96,16 +97,21 @@ fn fixture(input: &Value) -> (Simulation, RuleSet, u64, Vec<InternedId>) {
                 0,
                 10,
             );
-            state.player_control = house["player_control"].as_bool().unwrap();
-            sim.houses.insert(owner, state);
-            sim.session.house_order.push(owner);
+            state.set_player_control_for_test(house["player_control"].as_bool().unwrap());
+            sim.houses.register(state);
             owner
         })
         .collect();
-    sim.session.game_mode_nonzero = integer(&input["game_mode"]) != 0;
-    sim.session.current_house = input["local_house"]
-        .as_u64()
-        .map(|index| houses[index as usize]);
+    sim.session.set_game_mode(
+        crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+            integer(&input["game_mode"]) != 0,
+        ),
+    );
+    sim.session.set_current_house_for_test(
+        input["local_house"]
+            .as_u64()
+            .map(|index| houses[index as usize]),
+    );
     let id = sim.allocate_stable_id();
     let mut building =
         GameEntity::test_default_of_category(id, "B", "", 10, 11, EntityCategory::Structure);
@@ -267,7 +273,7 @@ fn missing_civilian_roster_does_not_fabricate_a_house() {
     }) {
         let (mut sim, rules, id, _) = fixture(&row["input"]);
         let old_owner = sim.substrate.entities.get(id).unwrap().owner();
-        let houses = sim.session.house_order.clone();
+        let houses = sim.houses.order().to_vec();
         assert!(!reconcile_civilian_garrison_owner_for_building(
             &mut sim,
             &rules,
@@ -276,7 +282,7 @@ fn missing_civilian_roster_does_not_fabricate_a_house() {
             crate::sim::world::FrameEffects::default()
         ));
         assert_eq!(sim.substrate.entities.get(id).unwrap().owner(), old_owner);
-        assert_eq!(sim.session.house_order, houses);
+        assert_eq!(sim.houses.order(), houses);
     }
 }
 
@@ -373,10 +379,9 @@ fn zero_capacity_map_garrison_abandons_without_allocated_cargo() {
             .unwrap()
             .0;
         sim.houses
-            .insert(owner, HouseState::new(owner, side, None, human, 0, 10));
-        sim.session.house_order.push(owner);
+            .register(HouseState::new(owner, side, None, human, 0, 10));
         if human {
-            sim.session.current_house = Some(owner);
+            sim.session.set_current_house_for_test(Some(owner));
         }
     }
     // Use the production constructor: unlike the corpus fixture, it represents

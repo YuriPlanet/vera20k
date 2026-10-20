@@ -44,13 +44,11 @@
 //!   once more (`0x007461D1`, the Jumpjet's 0x117C notice), outside any
 //!   receiver transaction: [`Simulation::unit_death_explosion`] builds
 //!   each anim right after its pick (`sim::world::crash`).
-//! - The other `Death_Explosion` callers are not wired:
-//!   - The crush of a Unit victim (`0x007418E5` -> `vt+0x170` =
-//!     `0x00746D60`: Death_Explosion, then the capture release `0x00710460`).
-//!     VERA's crush teardown (`movement_tick`) draws no pick and plays no
-//!     anim. Trigger: the Battle Fortress, stock's only `OmniCrusher=`,
-//!     crushing any vehicle but the five `OmniCrushResistant=` types.
-//!   - The `DeathFrames=` completion (`0x00736381`), dead on stock.
+//! - The crush of a Unit victim (`0x007418E5` -> `vt+0x170` = `0x00746D60`)
+//!   calls it too, from `Simulation::per_cell_process`: the Battle Fortress,
+//!   stock's only `OmniCrusher=`, crushing a vehicle.
+//! - The `DeathFrames=` completion (`0x00736381`), dead on stock, is not
+//!   wired.
 //! - DestroyAnim's palette (TechnoType `+0xDF0`/`+0xDD0` -> anim
 //!   `+0xD4`/`+0xDC`) is presentation and not carried.
 //! - Steps with no stock trigger or no VERA state: 2 (radar-spy bits `+0x210`),
@@ -338,7 +336,7 @@ impl Simulation {
             && self.resolved_terrain.as_ref().is_some_and(|terrain| {
                 terrain
                     .cell(entity.position.rx(), entity.position.ry())
-                    .is_some_and(|cell| cell.land_type() == LandType::Water.as_index())
+                    .is_some_and(|cell| cell.land_type == LandType::Water.as_index())
             })
             && entity.teleport_state().is_none()
     }

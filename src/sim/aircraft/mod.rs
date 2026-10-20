@@ -145,7 +145,7 @@ pub(crate) fn dispatch_mission(
     rules: &RuleSet,
     ctx: ObjectAiCtx<'_>,
 ) -> Option<DamageCommitReceipt> {
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     let entity = sim.substrate.entities.get(id)?;
     if entity.category() != EntityCategory::Aircraft || !entity.mission_handler_due(now) {
         return None;

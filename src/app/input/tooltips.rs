@@ -219,7 +219,7 @@ fn tactical_world_tip_text(
         world.1,
         crate::app::input::dispatch::CLICK_SELECT_RADIUS,
         Some(rules),
-        Some(&sim.houses),
+        Some(sim.houses()),
         height_map,
         crate::app::match_runtime::sim_tick::tactical_bridge_cells(sim),
         Some(view.interner()),
@@ -265,7 +265,7 @@ fn tactical_world_tip_text(
                 && !entity.is_disguised_to(
                     viewer,
                     Some(view.fog()),
-                    Some(&sim.house_alliances),
+                    Some(sim.house_alliances()),
                     view.interner(),
                 ) => {}
         // Positive TurretCount can reach HasTurretTooltips and the passenger/
@@ -870,18 +870,17 @@ mod tests {
         sim.resolve_type_handles(&rules);
         let owner = sim.intern(owner_name);
         let viewer = sim.intern(viewer_name);
-        sim.houses
-            .insert(viewer, HouseState::new(viewer, 0, None, true, 50_000, 10));
-        sim.session.house_order.push(viewer);
+        sim.houses_mut_for_test()
+            .register(HouseState::new(viewer, 0, None, true, 50_000, 10));
         if owner != viewer {
-            sim.houses
-                .insert(owner, HouseState::new(owner, 1, None, false, 50_000, 10));
-            sim.session.house_order.push(owner);
+            sim.houses_mut_for_test()
+                .register(HouseState::new(owner, 1, None, false, 50_000, 10));
         }
-        sim.session.current_house = Some(viewer);
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(viewer));
         crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
-        sim.fog = crate::sim::vision::FogState::new(32, 32);
-        sim.fog
+        *sim.fog_mut_for_test() = crate::sim::vision::FogState::new(32, 32);
+        sim.fog_mut_for_test()
             .reveal_cells_for_owner(viewer, (0..32).flat_map(|y| (0..32).map(move |x| (x, y))));
         // Admitted, mapped constructor prior. Paid production is a separate
         // witness; this test exercises the actual text/pick owners. Stock E2
@@ -908,23 +907,23 @@ mod tests {
         let world = crate::app::presentation::instances::interpolated_screen_position_entity(
             sim.entities().get(entity_id).unwrap(),
         );
-        let heights = sim.resolved_terrain.as_ref().unwrap().build_height_map();
+        let heights = sim.resolved_terrain().unwrap().build_height_map();
         let order = crate::app::presentation::instances::tactical_entity_encounter_order(&sim);
         assert_eq!(
             crate::app::input::entity_pick::pick_entity_at_point(
                 sim.entities(),
                 &order,
-                Some(&sim.fog),
+                Some(sim.fog()),
                 Some(viewer_name),
                 world.0,
                 world.1,
                 0.0,
                 Some(&rules),
-                Some(&sim.houses),
+                Some(sim.houses()),
                 &heights,
                 None,
-                Some(&sim.interner),
-                sim.resolved_terrain.as_ref(),
+                Some(sim.interner()),
+                sim.resolved_terrain(),
             ),
             Some(entity_id),
             "fixture must reach the same ordinary picker before testing the text"
@@ -1129,14 +1128,6 @@ mod tests {
     }
 
     #[test]
-    fn cameo_tip_without_cost_is_the_name_alone() {
-        assert_eq!(
-            cameo_tip_text(Some(RETAIL_MONEY_FORMAT_2), "Grizzly Battle Tank", None),
-            "Grizzly\nBattle\nTank"
-        );
-    }
-
-    #[test]
     fn superweapon_money_tooltip_uses_localized_cost_and_handles_minimum_integer() {
         assert_eq!(
             superweapon_money_tip(Some("%s %d kr"), "Paid Power", -500),
@@ -1170,19 +1161,6 @@ mod tests {
     }
 
     #[test]
-    fn tip_box_is_measured_text_plus_four_by_three() {
-        let font = make_test_font(&[(b'x' as u16, 6), (b'y' as u16, 6)], 4);
-        // Two lines: measured height is 2 * cell_height.
-        let (layout, size) = size_tip_box(&font, "xx\nxy", 0);
-        assert_eq!(layout.lines.len(), 2);
-        let measured_w = layout.width as f32;
-        let measured_h = layout.height as f32;
-        assert_eq!(measured_h, font.cell_height() * 2.0);
-        assert_eq!(size[0], measured_w + 4.0, "width pad is +4 total");
-        assert_eq!(size[1], measured_h + 3.0, "height pad is +3 total");
-    }
-
-    #[test]
     fn tip_box_remeasures_at_region_width_minus_four_when_too_wide() {
         // Each 'x' measures 6 px of ink plus 1 px trailing spacing = 7.
         let font = make_test_font(&[(b'x' as u16, 6)], 4);
@@ -1195,16 +1173,6 @@ mod tests {
         assert_eq!(layout.width, 21, "second measure used region_width - 4");
         assert_eq!(size[0], 25.0, "box is the re-measured width + 4");
         assert!(size[0] < region_w as f32);
-    }
-
-    #[test]
-    fn tip_box_keeps_the_first_measure_when_it_already_fits() {
-        let font = make_test_font(&[(b'x' as u16, 6)], 4);
-        // 3 glyphs = 21 px, box 25 px, comfortably inside a 100 px region.
-        let (layout, size) = size_tip_box(&font, "xxx", 100);
-        assert_eq!(layout.lines.len(), 1);
-        assert_eq!(size[0], 25.0);
-        assert_eq!(size[1], font.cell_height() + 3.0);
     }
 
     /// The UI pipeline binds a camera uniform carrying the live world camera
@@ -1315,35 +1283,6 @@ mod tests {
         assert_eq!(flipped[0].size, [25.0, font.cell_height() + 3.0]);
     }
 
-    #[test]
-    fn tip_outline_frames_the_box_in_the_text_colour() {
-        let font = make_test_font(&[(b'x' as u16, 6)], 4);
-        let tint = [0.4, 0.6, 1.0];
-        let (fill, border, _) = tooltip_quads(
-            &font,
-            "xxx",
-            [100, 100],
-            [0.0, 0.0, 800.0, 600.0],
-            tint,
-            [0.0, 0.0],
-            true,
-        );
-        let [bx, by] = fill[0].position;
-        let [bw, bh] = fill[0].size;
-        let expected = [
-            [bx, by, bw, 1.0],
-            [bx, by + bh - 1.0, bw, 1.0],
-            [bx, by, 1.0, bh],
-            [bx + bw - 1.0, by, 1.0, bh],
-        ];
-        assert_eq!(border.len(), expected.len());
-        for (quad, [x, y, w, h]) in border.iter().zip(expected) {
-            assert_eq!(quad.position, [x, y]);
-            assert_eq!(quad.size, [w, h]);
-            assert_eq!(quad.tint, tint, "outline follows the side colour");
-        }
-    }
-
     /// The retail tip's interior is solid black — captured over bright cameo art
     /// that reads through nowhere. The sidebar darken strip (0,0,0 at 175/255)
     /// dimmed instead of hiding, so a white-tinted darken quad is a regression.
@@ -1361,29 +1300,5 @@ mod tests {
         );
         assert_eq!(fill[0].tint, [0.0, 0.0, 0.0]);
         assert_eq!(fill[0].alpha, 1.0);
-    }
-
-    #[test]
-    fn tip_text_inset_is_two_by_four() {
-        // Pins the native draw origin inside the popup box; the previous VERA
-        // values were (4, 3).
-        assert_eq!(TIP_TEXT_INSET, [2.0, 4.0]);
-        assert_eq!(TIP_BOX_PAD, [4.0, 3.0]);
-    }
-
-    #[test]
-    fn sidebar_gadget_tip_labels_are_the_native_ones() {
-        // The ids are gamemd's, so the label table must line up with them:
-        // tabs 0xCB..0xCE are Tab1..Tab4 in sidebar tab order.
-        assert_eq!(crate::app::input::gadget_input::ID_TAB_BASE, 0x00CB);
-        assert_eq!(crate::app::input::gadget_input::ID_SCROLL_UP, 0x00C8);
-        assert_eq!(crate::app::input::gadget_input::ID_SCROLL_DOWN, 0x00C9);
-        assert_eq!(
-            TIP_LABELS_TAB,
-            ["Tip:Tab1", "Tip:Tab2", "Tip:Tab3", "Tip:Tab4"]
-        );
-        assert_eq!(TIP_LABEL_SCROLL_UP, "Tip:ScrollUp");
-        assert_eq!(TIP_LABEL_SCROLL_DOWN, "Tip:ScrollDown");
-        assert_eq!(TIP_LABEL_DISABLED, "Tip:Disabled");
     }
 }

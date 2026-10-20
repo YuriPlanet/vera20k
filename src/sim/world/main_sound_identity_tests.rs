@@ -53,17 +53,14 @@ fn rules() -> RuleSet {
 
 fn scene(rules: &RuleSet) -> (Simulation, [u64; 2], u64, u64) {
     let mut sim = Simulation::with_seed(1);
-    sim.session.map_width = 64;
-    sim.session.map_height = 64;
+    sim.session.set_map_width_for_test(64);
+    sim.session.set_map_height_for_test(64);
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
     for (index, name) in ["Local", "Enemy"].into_iter().enumerate() {
         let owner = sim.interner.intern(name);
-        sim.houses.insert(
-            owner,
-            HouseState::new(owner, index as u8, None, index == 0, 0, 10),
-        );
-        sim.session.house_order.push(owner);
+        sim.houses
+            .register(HouseState::new(owner, index as u8, None, index == 0, 0, 10));
     }
     let owner = sim.interner.get("Local").unwrap();
     let squids = std::array::from_fn(|index| {
@@ -205,10 +202,13 @@ fn presentation_main_service_cannot_change_later_projectile_identity() {
         let (_, bullet) = sim.projectiles.iter().next().unwrap();
         assert_eq!(
             sim.interner
-                .resolve(bullet.payload.installed_weapon().unwrap()),
+                .resolve(bullet.payload().installed_weapon().unwrap()),
             "LateGun"
         );
-        assert_eq!(sim.interner.resolve(bullet.payload.warhead), "LateWarhead");
+        assert_eq!(
+            sim.interner.resolve(bullet.payload().warhead),
+            "LateWarhead"
+        );
     }
     assert_eq!(
         quiet.scenario_rng.logical_state(),
@@ -221,8 +221,8 @@ fn presentation_main_service_cannot_change_later_projectile_identity() {
     let payload_ids = |sim: &Simulation| {
         let (_, bullet) = sim.projectiles.iter().next().unwrap();
         (
-            bullet.payload.installed_weapon().unwrap().index(),
-            bullet.payload.warhead.index(),
+            bullet.payload().installed_weapon().unwrap().index(),
+            bullet.payload().warhead.index(),
         )
     };
     assert_eq!(

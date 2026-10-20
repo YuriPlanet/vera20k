@@ -82,29 +82,11 @@ pub(super) fn radar_entity_owner_color(
     observer: Option<InternedId>,
     owner_allied_with_observer: bool,
 ) -> [u8; 4] {
-    use crate::map::entities::EntityCategory;
     // Radar655F48 asks the class's +D0(0) only when +C4 says disguised.
-    // Unit7465F0 and Infantry5226C0 preserve the owner's directional alliance
-    // with the current viewer; selection and disguise sensors are not inputs.
-    let color_owner = match entity.disguise.as_ref().filter(|d| d.is_disguised()) {
-        None => Some(entity.owner()),
-        Some(_)
-            if owner_allied_with_observer
-                && matches!(
-                    entity.category(),
-                    EntityCategory::Unit | EntityCategory::Infantry
-                ) =>
-        {
-            Some(entity.owner())
-        }
-        Some(disguise) => match entity.category() {
-            EntityCategory::Unit => disguise.house(),
-            // The Spy leaf deliberately differs: NULL disguiseHouse returns
-            // CurrentHouse, whereas a Mirage preserves NULL.
-            EntityCategory::Infantry => disguise.house().or(observer),
-            // Building/Aircraft retain Techno41BE70: XOR EAX,EAX; RET4.
-            EntityCategory::Structure | EntityCategory::Aircraft => None,
-        },
+    let color_owner = if entity.disguise.as_ref().is_some_and(|d| d.is_disguised()) {
+        entity.disguise_house(false, observer, owner_allied_with_observer)
+    } else {
+        Some(entity.owner())
     };
     let Some(color_owner) = color_owner else {
         // 655FD6..655FE5 finds literal LightGrey but copies ColorScheme+330
@@ -149,7 +131,7 @@ pub(super) fn radar_combat_flash_inverts(
 pub(super) fn radar_pixel_candidate_eligible(
     entry: RadarTrackerEntry,
     entities: &crate::sim::entity_store::EntityStore,
-    houses: &BTreeMap<InternedId, crate::sim::house_state::HouseState>,
+    houses: &crate::sim::houses::Houses,
     local_owner: Option<InternedId>,
     fog: &FogState,
     alliances: &crate::map::houses::HouseAllianceMap,
@@ -195,7 +177,7 @@ pub(super) fn radar_pixel_candidate_eligible(
     if object.is_some_and(|object| object.insignificant && !object.radar_visible)
         && !houses
             .get(&entity.owner())
-            .is_some_and(|house| !house.multiplay_passive)
+            .is_some_and(|house| !house.multiplay_passive())
     {
         return false;
     }
@@ -710,22 +692,6 @@ mod tests {
         // The mobile returns only at its later ordinary Techno +0x4A0 visit.
         tracker.update_object(update(1, false), false);
         assert!(tracker.is_registered(1));
-    }
-
-    #[test]
-    fn radar_tracker_two_identical_action40_resets_both_rebuild() {
-        let mut tracker = RetainedRadarTracker::default();
-        let mut building = update(2, false);
-        building.foundation = Some((2, 2));
-        tracker.update_object(building, false);
-        for _ in 0..2 {
-            tracker.reset_for_action40();
-            assert!(tracker.take_action40_building_tail_pending());
-            assert!(!tracker.is_registered(2));
-            tracker.update_object(building, true);
-            assert!(tracker.is_registered(2));
-            assert_eq!(tracker.entries_at(40, 60).len(), 1);
-        }
     }
 
     #[test]

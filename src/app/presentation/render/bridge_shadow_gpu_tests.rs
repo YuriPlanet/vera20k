@@ -358,7 +358,7 @@ impl RetailBridgeFixture {
         );
         for cell_input in &cells {
             let cell = terrain
-                .cell_mut(coords(cell_input, 0), coords(cell_input, 1))
+                .cell_mut_for_test(coords(cell_input, 0), coords(cell_input, 1))
                 .unwrap();
             cell.level = cell_input["level"].as_i64().unwrap() as u8;
             cell.bridge_facts.raw_flags = cell_input["flags"].as_u64().unwrap() as u32;
@@ -382,7 +382,8 @@ impl RetailBridgeFixture {
             // A 1x2 foundation has two overlay anchors but only its origin
             // records the BuildingType; the second cell must not duplicate it.
             for y in [ry, ry + 1] {
-                terrain.cell_mut(rx, y).unwrap().level = first["level"].as_i64().unwrap() as u8;
+                terrain.cell_mut_for_test(rx, y).unwrap().level =
+                    first["level"].as_i64().unwrap() as u8;
                 overlay_entries.push(crate::map::overlay::OverlayEntry {
                     rx,
                     ry: y,
@@ -397,7 +398,7 @@ impl RetailBridgeFixture {
             );
             if first["clear_rubble_type"] != true {
                 let type_id = interner.intern(input["building_type"].as_str().unwrap());
-                grid.cell_mut(rx, ry).rubble_building_type = Some(type_id);
+                grid.cell_mut_for_test(rx, ry).rubble_building_type = Some(type_id);
             }
             if first["overlay_id"].as_i64() == Some(-1) {
                 // Preserve the published anchors while the real overlay owner
@@ -513,7 +514,7 @@ fn assert_native_cell_sweep_order(
     for call in calls {
         let coords: [u16; 2] = std::array::from_fn(|i| call["coords"][i].as_u64().unwrap() as u16);
         expected.push(coords);
-        let cell = terrain.cell_mut(coords[0], coords[1]).unwrap();
+        let cell = terrain.cell_mut_for_test(coords[0], coords[1]).unwrap();
         cell.bridge_facts.raw_flags = 0x180;
         cell.bridge_facts.overlay_id = Some(id);
         let point = crate::map::terrain::iso_to_screen(coords[0], coords[1], 0);
@@ -1318,7 +1319,7 @@ fn retail_high_bridge_damage_and_repair_reach_shadow_pixels() {
         visit_retail_high_bridge_stages(kind, |phase, scene| {
             let sim = scene.sim();
             let before = sim.state_hash();
-            let terrain = sim.resolved_terrain.as_ref().unwrap();
+            let terrain = sim.resolved_terrain().unwrap();
             let mut instances = Vec::new();
             build_bridge_shadow_instances_inner(
                 terrain,
@@ -1401,7 +1402,7 @@ fn retail_high_bridge_damage_and_repair_reach_shadow_pixels() {
                 "flags":c.bridge_facts.raw_flags})
                 })
                 .collect();
-            let receipt = serde_json::json!({"scene":label,"phase":phase,"frame":sim.session.binary_frame,
+            let receipt = serde_json::json!({"scene":label,"phase":phase,"frame":sim.session().binary_frame(),
             "state_hash":format!("{before:016x}"),"cells":cells,"instances":instances.len(),
             "instance_sha256":sha256_hex(bytemuck::cast_slice(&instances)),
             "changed_pixels":changed,"color_sha256":sha256_hex(&output[0]),

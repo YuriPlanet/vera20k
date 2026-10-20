@@ -57,7 +57,7 @@ fn replay_fixture() -> crate::sim::components::FootPathQueue {
 }
 
 fn supply_drive_state(entity: &mut GameEntity) {
-    entity.navigation.path_replay = replay_fixture();
+    entity.navigation.set_path_replay_for_test(replay_fixture());
     entity.foot_speed.set_speed_fraction(SimFixed::lit("0.5"));
     assert!(
         entity
@@ -88,7 +88,7 @@ fn activate_drive(entity: &mut GameEntity) {
 fn owned_state(entity: &GameEntity) -> serde_json::Value {
     serde_json::to_value((
         &entity.locomotor,
-        &entity.navigation.path_replay,
+        entity.navigation.path_replay(),
         &entity.foot_speed,
     ))
     .expect("serialized complete locomotor and Foot state")
@@ -331,7 +331,7 @@ fn refused_installation_and_absent_stash_preserve_instance_and_foot_state() {
         if entity.locomotor.is_some() {
             supply_drive_state(entity);
         } else {
-            entity.navigation.path_replay = replay_fixture();
+            entity.navigation.set_path_replay_for_test(replay_fixture());
             entity.foot_speed.set_speed_fraction(SimFixed::lit("0.5"));
         }
         let before = owned_state(entity);
@@ -407,9 +407,9 @@ fn refused_miner_order_leaves_teleport_payload_untouched() {
         path_runtime.set_movement_timer_for_test(crate::sim::timer::CdTimer::from_raw(-1, -7));
         path_runtime
             .set_blocked_timer_for_test(crate::sim::timer::CdTimer::from_raw(i32::MAX - 2, 31));
-        path_runtime.set_path_blocked(true);
-        path_runtime.set_retries_left(u32::MAX);
-        entity.navigation.path_runtime = path_runtime;
+        path_runtime.set_path_blocked_for_test(true);
+        path_runtime.set_retries_left_for_test(u32::MAX);
+        entity.navigation.set_path_runtime_for_test(path_runtime);
         entity.death.set_dying_for_test(true);
         let before = owned_state(entity);
         let mut grid = PathGrid::test_all_blocked(16, 16);
@@ -428,7 +428,7 @@ fn refused_miner_order_leaves_teleport_payload_untouched() {
 
         let entity = sim.substrate.entities.get(1).unwrap();
         assert_eq!(owned_state(entity), before);
-        assert_eq!(entity.navigation.path_runtime, path_runtime);
+        assert_eq!(entity.navigation.path_runtime().clone(), path_runtime);
         assert!(matches!(
             entity.locomotor.as_ref().unwrap().runtime_payload(),
             LocomotorRuntimePayload::Teleport(_)
@@ -445,18 +445,18 @@ fn foot_queue_survives_drive_retirement_construction_and_reuse() {
     assert!(entity.foot_speed.accept_speed_crate(
         crate::util::native_x87::NativeF64Bits::from_bits(1.2_f64.to_bits())
     ));
-    let queue = entity.navigation.path_replay.clone();
+    let queue = entity.navigation.path_replay().clone();
     let speed = entity.foot_speed.clone();
     assert!(sim.try_end_piggyback(1, None));
     let entity = sim.substrate.entities.get_mut(1).unwrap();
     assert_retired(entity);
-    assert_eq!(entity.navigation.path_replay, queue);
+    assert_eq!(entity.navigation.path_replay().clone(), queue);
     assert_eq!(entity.foot_speed, speed);
     assert!(begin_drive_for_teleporter(entity, 51));
-    assert_eq!(entity.navigation.path_replay, queue);
+    assert_eq!(entity.navigation.path_replay().clone(), queue);
     assert_eq!(entity.foot_speed, speed);
     assert!(begin_drive_for_teleporter(entity, 52));
-    assert_eq!(entity.navigation.path_replay, queue);
+    assert_eq!(entity.navigation.path_replay().clone(), queue);
     assert_eq!(entity.foot_speed, speed);
 }
 
@@ -604,7 +604,7 @@ fn foot_stop_preserves_queue() {
         .navigation
         .set_nav_com_for_test(Some(crate::sim::components::NavTargetRef::cell(12, 8)));
     entity.navigation.stop_moving();
-    assert_eq!(entity.navigation.path_replay, replay_fixture());
+    assert_eq!(entity.navigation.path_replay().clone(), replay_fixture());
 }
 
 #[test]
@@ -615,7 +615,7 @@ fn foot_queue_without_class_payload_roundtrips_and_hashes_each_field() {
         .get_mut(1)
         .unwrap()
         .navigation
-        .path_replay = replay_fixture();
+        .set_path_replay_for_test(replay_fixture());
     let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "foot_queue", 0);
     let mut loaded = crate::sim::snapshot::GameSnapshot::load(&bytes)
         .unwrap()
@@ -635,21 +635,21 @@ fn foot_queue_without_class_payload_roundtrips_and_hashes_each_field() {
             .unwrap()
             .has_track_state(TrackFamily::Ship)
     );
-    assert_eq!(entity.navigation.path_replay, replay_fixture());
+    assert_eq!(entity.navigation.path_replay().clone(), replay_fixture());
     let original_hash = loaded.state_hash();
     for field in 0..3 {
-        let queue = &mut loaded
+        let queue = loaded
             .substrate
             .entities
             .get_mut(1)
             .unwrap()
             .navigation
-            .path_replay;
+            .path_replay_mut();
         *queue = replay_fixture();
         match field {
-            0 => queue.set_direction(1, 6),
-            1 => queue.set_cursor(2),
-            _ => queue.set_reference_cell(Some((-18, 301))),
+            0 => queue.set_direction_for_test(1, 6),
+            1 => queue.set_cursor_for_test(2),
+            _ => queue.set_reference_cell_for_test(Some((-18, 301))),
         }
         assert_ne!(
             loaded.state_hash(),
@@ -676,14 +676,15 @@ fn foot_queue_operations_match_original_memory_witnesses() {
         let entity = sim.substrate.entities.get_mut(1).unwrap();
         activate_drive(entity);
         // Native shifts the queue; Rust can retain an already-consumed prefix.
-        entity.navigation.path_replay = crate::sim::components::FootPathQueue::for_test(
-            [vec![6], directions].concat(),
-            1,
-            Some(reference),
+        entity.navigation.set_path_replay_for_test(
+            crate::sim::components::FootPathQueue::for_test(
+                [vec![6], directions].concat(),
+                1,
+                Some(reference),
+            ),
         );
         if operation.contains("fresh") {
-            super::super::path_markers::accept_path_replay(
-                &mut entity.navigation.path_replay,
+            entity.navigation.path_replay_mut().accept(
                 ((endpoint.0 / 256) as i16, (endpoint.1 / 256) as i16),
                 if operation.ends_with("two") { 2 } else { 1 },
             );
@@ -692,7 +693,7 @@ fn foot_queue_operations_match_original_memory_witnesses() {
         } else if operation == "drive_end" {
             assert!(sim.try_end_piggyback(1, None));
         } else {
-            super::super::path_markers::consume_path_replay(&mut entity.navigation.path_replay, 1);
+            entity.navigation.path_replay_mut().consume(1);
         }
         let entity = sim.substrate.entities.get(1).unwrap();
         let expected: Vec<u8> =
@@ -700,12 +701,12 @@ fn foot_queue_operations_match_original_memory_witnesses() {
         let expected_reference: (i16, i16) =
             serde_json::from_value(case["output"]["reference"].clone()).unwrap();
         assert_eq!(
-            entity.navigation.path_replay.remaining_directions(),
+            entity.navigation.path_replay().remaining_directions(),
             expected,
             "{operation}"
         );
         assert_eq!(
-            entity.navigation.path_replay.reference_cell(),
+            entity.navigation.path_replay().reference_cell(),
             Some(expected_reference),
             "{operation}"
         );

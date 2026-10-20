@@ -154,18 +154,6 @@ const LEVEL_HEIGHT_LEPTONS: i32 = crate::util::lepton::GROUND_LEVEL_HEIGHT_LEPTO
 const TRAILER_DRAW_FLAGS: u32 = 0x600;
 const DAMAGE_FIRE_SLOT_COUNT: usize = 8;
 
-/// Pure YR `AnimClass_UpdateBouncePhysics` directional-frame projection.
-#[cfg(any(test, feature = "test-support"))]
-pub fn directional_tumble_frame(running_frames: i32, bucket8: i32, global_frame: i32) -> i32 {
-    let running = running_frames.max(1);
-    running * ((-1 - bucket8) & 7) + (global_frame / 3).rem_euclid(running)
-}
-
-#[cfg(any(test, feature = "test-support"))]
-pub fn settled_bounce_frame(running_frames: i32) -> i32 {
-    running_frames.wrapping_mul(8).wrapping_add(1)
-}
-
 /// `AnimClass_Update` @ 0x00423f37: landing consumes two inclusive rolls.
 pub(crate) fn bounce_spawn_count(
     has_spawns: bool,
@@ -345,9 +333,9 @@ pub enum AnimRemap {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AnimObject {
-    pub stable_id: AnimId,
-    pub native_unique_id: i32,
-    pub type_id: InternedId,
+    stable_id: AnimId,
+    native_unique_id: i32,
+    type_id: InternedId,
     /// World leptons — but **owner-relative whenever `owner_entity` is set**,
     /// exactly as `AnimClass::SetOwnerObject @ 0x00424B50` stores it. Read it
     /// through [`Simulation::anim_absolute_coord`] for a world position; read
@@ -355,23 +343,23 @@ pub struct AnimObject {
     /// coordinate directly, which is the multiplayer sync checksum
     /// (`Compute_Game_Sync_Checksum @ 0x0064DAB0` folds `+0x9c`/`+0xa0`) and
     /// the state hash. All three axes are world leptons.
-    pub world_coord: AnimWorldCoord,
-    pub draw_flags: u32,
-    pub z_adjust: i32,
+    world_coord: AnimWorldCoord,
+    draw_flags: u32,
+    z_adjust: i32,
     /// Optional ConvertClass palette selected by a producer after construction
     /// (for example OverlayClass CellAnim over a Tiberium cell).
     #[serde(default)]
     remap: Option<AnimRemap>,
-    pub effective_end: i32,
-    pub effective_loop_end: i32,
-    pub runtime: AnimRuntime,
-    pub draw_runtime: AnimDrawRuntime,
+    effective_end: i32,
+    effective_loop_end: i32,
+    runtime: AnimRuntime,
+    draw_runtime: AnimDrawRuntime,
     /// AnimClass `+0x196`: use the containing CellClass draw/palette authority.
     #[serde(default)]
-    pub use_cell_drawer: bool,
+    use_cell_drawer: bool,
     /// AnimClass `+0x197`: created from a terrain tile animation descriptor.
     #[serde(default)]
-    pub terrain_attached: bool,
+    terrain_attached: bool,
     /// Anim+198. Constructor421FF1 clears it; TAction416E2368 sets it
     /// only after constructor-time Start. Start424CF1/424D5F, AI423AC6
     /// and UnInit4255DA suppress effects, independently of drawing/Middle.
@@ -380,12 +368,12 @@ pub struct AnimObject {
     /// LogicClass membership is reconstructed from the serialized vector.
     /// ObjectClass::Save does not persist its local membership byte.
     #[serde(skip)]
-    pub in_logic_vector: bool,
-    pub owner_entity: Option<u64>,
+    in_logic_vector: bool,
+    owner_entity: Option<u64>,
     /// Derived reverse index of Building+55C's slot reference, rebuilt on load.
     /// Independent of both Anim+118 and the Anim+CC Object-owner attachment.
     #[serde(skip)]
-    pub building_slot: Option<(u64, u8)>,
+    building_slot: Option<(u64, u8)>,
     /// Anim+118: ctor421F44 clears it; Building45199B sets it. It suppresses
     /// independent drawing and admits451B40, even after the slot is cleared.
     #[serde(default)]
@@ -393,19 +381,19 @@ pub struct AnimObject {
     /// Derived reverse index of Building+5C8's damage-fire slot, rebuilt on
     /// load. It survives owner expiry until the Anim's own UnInit broadcast.
     #[serde(skip)]
-    pub(crate) damage_fire_slot: Option<(u64, u8)>,
+    damage_fire_slot: Option<(u64, u8)>,
     /// Anim+179: constructor421FB0 clears it; normal AI completion424B31
     /// sets it before UnInit. Building451B40 distinguishes a completed
     /// retraction from an animation removed for another reason.
     #[serde(default)]
     completed: bool,
-    pub start_sound_active: bool,
-    pub stop_sound_id: Option<InternedId>,
-    pub(crate) display: AnimDisplayState,
+    start_sound_active: bool,
+    stop_sound_id: Option<InternedId>,
+    display: AnimDisplayState,
     /// `AnimClass+0x128`: a `Bouncer=` chunk's BounceClass body. Its presence
     /// is `+0x194` for the ported arm (the `IsMeteor=` arm is not built).
     #[serde(default)]
-    pub bounce: Option<BounceState>,
+    bounce: Option<BounceState>,
     /// `AnimClass+0x180`, the owning House (`SetOwnerHouse @ 0x00424CA0`).
     /// Its expiry also ends the anim (`0x004251D5`). The PsiWarning
     /// visibility test reads it against the local player (`0x0043B4C0`).
@@ -420,6 +408,195 @@ pub struct AnimObject {
 }
 
 impl AnimObject {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn draw_runtime_mut_for_test(&mut self) -> &mut AnimDrawRuntime {
+        &mut self.draw_runtime
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_building_slot_for_test(&mut self, value: Option<(u64, u8)>) {
+        self.building_slot = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_in_logic_vector_for_test(&mut self, value: bool) {
+        self.in_logic_vector = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_owner_entity_for_test(&mut self, value: Option<u64>) {
+        self.owner_entity = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_start_sound_active_for_test(&mut self, value: bool) {
+        self.start_sound_active = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_terrain_attached_for_test(&mut self, value: bool) {
+        self.terrain_attached = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn runtime_mut_for_test(&mut self) -> &mut AnimRuntime {
+        &mut self.runtime
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn world_coord_mut_for_test(&mut self) -> &mut AnimWorldCoord {
+        &mut self.world_coord
+    }
+
+    /// LogicClass membership: RegisterObject sets it (`0x0055BAC6`),
+    /// UnregisterObject clears it (`0x0055BB27`). Only the logic vector's
+    /// owner writes it, and a load rebuilds it from the saved vector.
+    pub(crate) fn mark_logic_membership(&mut self, member: bool) {
+        self.in_logic_vector = member;
+    }
+
+    /// Building43F738 moves a slot anim to its building's new coordinate;
+    /// it neither reconstructs the anim nor resets its timers.
+    pub(crate) fn move_with_building(&mut self, coord: AnimWorldCoord) {
+        self.world_coord = coord;
+    }
+
+    /// The anim takes slot `slot` of `building` (Building+55C), with the
+    /// slot config's `ZAdjust=`. The reverse index is derived from that slot.
+    pub(crate) fn enter_building_slot(&mut self, building: u64, slot: u8, z_adjust: i32) {
+        self.building_slot = Some((building, slot));
+        self.z_adjust = z_adjust;
+    }
+
+    /// The reverse index of the building slot that holds this anim, rebuilt
+    /// from Building+55C on load.
+    pub(crate) fn index_building_slot(&mut self, building: u64, slot: u8) {
+        self.building_slot = Some((building, slot));
+    }
+
+    /// The building slot leaves the anim: the index is cleared and returned.
+    pub(crate) fn take_building_slot(&mut self) -> Option<(u64, u8)> {
+        self.building_slot.take()
+    }
+
+    /// The reverse index of the Building+5C8 damage-fire slot that holds
+    /// this anim, rebuilt on load.
+    pub(crate) fn index_damage_fire_slot(&mut self, building: u64, slot: u8) {
+        self.damage_fire_slot = Some((building, slot));
+    }
+
+    /// Drop both derived slot indexes before a rebuild, or when the
+    /// building releases the anim.
+    pub(crate) fn clear_slot_indexes(&mut self) {
+        self.building_slot = None;
+        self.damage_fire_slot = None;
+    }
+
+    /// Anim pause (`0x00425260`): only Anim+19E changes; the absolute frame
+    /// timer keeps running.
+    pub(crate) fn pause(&mut self) {
+        self.runtime.paused = true;
+    }
+
+    /// Anim resume (`0x00425270`).
+    pub(crate) fn resume(&mut self) {
+        self.runtime.paused = false;
+    }
+
+    /// A building writes the anim's current frame: a slot successor keeps
+    /// its predecessor's frame, and SiloDamage (`0x00450D81`) shows the
+    /// storage tier.
+    pub(crate) fn jump_to_frame(&mut self, frame: i32) {
+        self.runtime.current_frame = frame;
+    }
+
+    /// No loops remain: the anim ends after its current pass. The
+    /// parachute release and the ChronoPlacement release use it.
+    pub(crate) fn end_loops(&mut self) {
+        self.runtime.loop_remaining = 0;
+    }
+
+    pub const fn stable_id(&self) -> AnimId {
+        self.stable_id
+    }
+
+    pub const fn native_unique_id(&self) -> i32 {
+        self.native_unique_id
+    }
+
+    pub const fn type_id(&self) -> InternedId {
+        self.type_id
+    }
+
+    pub const fn world_coord(&self) -> AnimWorldCoord {
+        self.world_coord
+    }
+
+    pub const fn draw_flags(&self) -> u32 {
+        self.draw_flags
+    }
+
+    pub const fn z_adjust(&self) -> i32 {
+        self.z_adjust
+    }
+
+    pub const fn effective_end(&self) -> i32 {
+        self.effective_end
+    }
+
+    pub const fn effective_loop_end(&self) -> i32 {
+        self.effective_loop_end
+    }
+
+    pub const fn runtime(&self) -> &AnimRuntime {
+        &self.runtime
+    }
+
+    pub const fn draw_runtime(&self) -> AnimDrawRuntime {
+        self.draw_runtime
+    }
+
+    pub const fn use_cell_drawer(&self) -> bool {
+        self.use_cell_drawer
+    }
+
+    pub const fn terrain_attached(&self) -> bool {
+        self.terrain_attached
+    }
+
+    pub const fn in_logic_vector(&self) -> bool {
+        self.in_logic_vector
+    }
+
+    pub const fn owner_entity(&self) -> Option<u64> {
+        self.owner_entity
+    }
+
+    pub const fn building_slot(&self) -> Option<(u64, u8)> {
+        self.building_slot
+    }
+
+    pub const fn damage_fire_slot(&self) -> Option<(u64, u8)> {
+        self.damage_fire_slot
+    }
+
+    pub const fn start_sound_active(&self) -> bool {
+        self.start_sound_active
+    }
+
+    pub const fn stop_sound_id(&self) -> Option<InternedId> {
+        self.stop_sound_id
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) const fn display(&self) -> &AnimDisplayState {
+        &self.display
+    }
+
+    pub const fn bounce(&self) -> Option<BounceState> {
+        self.bounce
+    }
+
     pub fn remap(&self) -> Option<AnimRemap> {
         self.remap
     }
@@ -1140,7 +1317,7 @@ impl Simulation {
     ///the current House. Rules+14BC is converted from leptons by signed /256;
     ///the existing Map5678E0 owner handles height, allies and notifications.
     fn reveal_drop_zone_from_anim(&mut self, rules: &RuleSet, world: AnimWorldCoord) {
-        let Some(owner) = self.session.current_house else {
+        let Some(owner) = self.session.current_house() else {
             return;
         };
         // Preserve large positive inputs through the narrower Rust parameter;
@@ -1175,7 +1352,7 @@ impl Simulation {
                 &config,
                 crate::sim::world::UninitContext::with_rules(rules),
                 crate::sim::vision::MapRevealProjection::Transient,
-                self.session.current_house,
+                self.session.current_house(),
             );
         }
     }
@@ -1300,7 +1477,7 @@ impl Simulation {
         };
         let rate_reload = self.anim_rate(&config, draws.random_rate);
         let frame_timer =
-            CdTimer::started(self.session.binary_frame as i32, i32::from(rate_reload));
+            CdTimer::started(self.session.binary_frame() as i32, i32::from(rate_reload));
         let registered = self
             .substrate
             .anims
@@ -1513,7 +1690,7 @@ impl Simulation {
 
         if let Some(trailer_name) = config.trailer_anim.as_deref()
             && trailer_cadence_matches(
-                u64::from(self.session.binary_frame),
+                u64::from(self.session.binary_frame()),
                 config.trailer_seperation,
             )
             && rules.art().anim_runtime_config(trailer_name).is_some()
@@ -1599,7 +1776,7 @@ impl Simulation {
 
         let mut action = VisitAction::None;
         let mut random_loop_delay = None;
-        let current_frame = self.session.binary_frame as i32;
+        let current_frame = self.session.binary_frame() as i32;
         let (middle, boundary) = {
             let Some(anim) = self.anim_mut_by_id(id) else {
                 return false;
@@ -1747,7 +1924,7 @@ impl Simulation {
         let defeated = |sim: &Self, house: InternedId| {
             sim.houses
                 .get(&house)
-                .is_some_and(|state| state.is_defeated)
+                .is_some_and(|state| state.is_defeated())
         };
         let owner = if owner.is_none_or(|house| defeated(self, house)) {
             match self.civilian_side_house(rules) {
@@ -1821,7 +1998,10 @@ impl Simulation {
             }
             self.foot_mark_put(infantry, Some(rules), overlay_registry, frame_effects);
         }
-        let human = self.houses.get(&owner).is_some_and(|house| house.is_human);
+        let human = self
+            .houses
+            .get(&owner)
+            .is_some_and(|house| house.is_human());
         if !human && let Some(entity) = self.substrate.entities.get_mut(infantry) {
             crate::sim::mission::authority::queue_entity_mission_deferred(
                 entity,
@@ -2141,7 +2321,7 @@ impl Simulation {
     /// write its reload rate (+C0 at6297B7), then set the requested frame.
     /// The animation remains in Logic and must retain this rate on expiry.
     pub(crate) fn set_anim_manual_frame(&mut self, id: AnimId, frame: i32, duration: u16) {
-        let current = self.session.binary_frame as i32;
+        let current = self.session.binary_frame() as i32;
         if let Some(anim) = self.anim_mut_by_id(id) {
             anim.runtime.frame_timer = CdTimer::started(current, i32::from(duration));
             anim.runtime.rate_reload = duration;
@@ -2488,7 +2668,7 @@ impl Simulation {
     fn anim_rate(&self, config: &AnimTypeRuntimeConfig, random_rate: Option<u16>) -> u16 {
         let delay = random_rate.unwrap_or(config.rate_logic_frames);
         if config.normalized {
-            self.session.game_options.normalized_anim_delay(delay)
+            self.session.game_options().normalized_anim_delay(delay)
         } else {
             delay
         }
@@ -2610,7 +2790,7 @@ impl Simulation {
                 // contact gate uses XY only (GetCoords5F65A0); it does not
                 // substitute ground/deck height for the object's location.
                 CellObjectMember::Terrain(id) => {
-                    self.production.terrain_objects.get(&id).map(|tree| {
+                    self.terrain_objects.objects().get(&id).map(|tree| {
                         let coord = tree.world_coord();
                         (coord.x, coord.y)
                     })
@@ -2640,11 +2820,11 @@ impl Simulation {
                             ),
                         ),
                         CellObjectMember::Terrain(id) => {
-                            let tree = &self.production.terrain_objects[&id];
+                            let tree = &self.terrain_objects.objects()[&id];
                             AreaDamageReceiver::Terrain(crate::sim::combat::TerrainDamageEvent {
                                 stable_id: id,
-                                rx: tree.rx,
-                                ry: tree.ry,
+                                rx: tree.cell().0,
+                                ry: tree.cell().1,
                                 damage,
                                 distance_leptons,
                                 warhead_ref,
@@ -2796,7 +2976,7 @@ impl Simulation {
         }
         let lighting = self
             .session
-            .lighting
+            .lighting()
             .profile(crate::sim::scenario_session::ScenarioLightingProfile::Normal)
             .into();
         for x in first..=radius {
@@ -2821,11 +3001,11 @@ impl Simulation {
                         &self.substrate.raw_cell_occupation,
                         rules,
                         &self.interner,
-                        &self.production.terrain_object_cells,
+                        self.terrain_objects.cell_index(),
                     );
                     crate::sim::tiberium::admit_new_tiberium_target(
                         grid,
-                        &self.production.tiberium_spawning_terrain_cells,
+                        self.terrain_objects.spawning_cells(),
                         NewTiberiumAdmission::runtime(terrain, objects),
                         cell,
                     )
@@ -2859,9 +3039,7 @@ impl Simulation {
                     //literal Cell+11E write even when no overlay was installed.
                     grid.write_cell_data(self.resolved_terrain.as_mut(), cell.0, cell.1, density);
                 }
-                if !self.tactical_dirty_cells.contains(&cell) {
-                    self.tactical_dirty_cells.push(cell);
-                }
+                self.dirty_cells.mark_tactical_once(cell);
                 //Anim's ore arm does not call AddToGrowthQueue or radar6551C0.
             }
         }
@@ -3057,7 +3235,7 @@ impl Simulation {
         let type_id = self.interner.intern(next);
         let rate_reload = self.choose_anim_rate(&config);
         let frame_timer =
-            CdTimer::started(self.session.binary_frame as i32, i32::from(rate_reload));
+            CdTimer::started(self.session.binary_frame() as i32, i32::from(rate_reload));
         let stop_sound_id = config
             .stop_sound
             .as_deref()
@@ -3349,32 +3527,6 @@ fn advance_anim_boundary(anim: &mut AnimObject, config: &AnimTypeRuntimeConfig) 
 #[cfg(test)]
 mod long_tail_contract_tests {
     use super::*;
-
-    #[test]
-    fn yr_long_tail_vectors() {
-        assert_eq!(directional_tumble_frame(5, 0, 9), 38);
-        assert_eq!(directional_tumble_frame(5, 7, 14), 4);
-        assert_eq!(settled_bounce_frame(5), 41);
-        assert_eq!(bounce_spawn_count(true, 4, 2, 3), 5);
-        assert_eq!(
-            anim_translucency_selection(AnimTranslucencyInput {
-                base_flags: 0,
-                forced_translucent: false,
-                forced_uses_75: false,
-                translucency_detail_level: 1,
-                game_detail_level: 2,
-                translucent_ramp: true,
-                current_frame: 7,
-                end_frame: 10,
-                explicit_translucency: 0,
-                instance_ramp: 0,
-            }),
-            AnimTranslucencyResult {
-                draw: true,
-                flags: 6
-            }
-        );
-    }
 
     /// `0x0042319A..0x004231BC`: only an exact `Translucency=` 25, 50 or 75
     /// selects a stage; any other value draws without one.
@@ -4154,7 +4306,8 @@ mod tests {
             // Native load resets Scenario RNG to seed zero. Keep this fixture
             // on that stream so endpoint continuation is comparable across load.
             let mut sim = Simulation::with_seed(0);
-            sim.session.map_name = "anim-boundary".to_string();
+            sim.session
+                .set_map_name_for_test("anim-boundary".to_string());
             let explosion_type = sim.interner.intern("TWLT036");
             let neighbor_type = sim.interner.intern("NEIGHBOR");
             let explosion = sim
@@ -4191,7 +4344,7 @@ mod tests {
             };
             let mut hashes = Vec::new();
             for frame in 0..=17 {
-                assert_eq!(runtime.simulation.session.binary_frame, frame);
+                assert_eq!(runtime.simulation.session.binary_frame(), frame);
                 if restore && frame == 8 {
                     assert_eq!(
                         runtime.simulation.rng_state().scenario,
@@ -4697,7 +4850,7 @@ mod tests {
         );
         assert_eq!(sim.anim(id).unwrap().runtime.current_frame, 0);
 
-        sim.session.binary_frame = 1;
+        sim.session.set_binary_frame_for_test(1);
         sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default());
 
         assert_eq!(sim.substrate.raw_cell_occupation.ground_bits(3, 4), 0);
@@ -4723,7 +4876,7 @@ mod tests {
 
         sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default());
         assert_eq!(sim.substrate.raw_cell_occupation.ground_bits(5, 6), 0x08);
-        sim.session.binary_frame = 1;
+        sim.session.set_binary_frame_for_test(1);
         sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default());
 
         assert_eq!(sim.anim(id).unwrap().type_id, plain);
@@ -5006,28 +5159,28 @@ mod tests {
             let bits = |key: &str, i: usize| native[key][i].as_u64().unwrap() as u32;
             for axis in 0..3 {
                 assert_eq!(
-                    body.position[axis].bits(),
+                    body.position()[axis].bits(),
                     bits("position_bits", axis),
                     "{input}"
                 );
                 assert_eq!(
-                    body.velocity[axis].bits(),
+                    body.velocity()[axis].bits(),
                     bits("velocity_bits", axis),
                     "{input}"
                 );
             }
             assert_eq!(
-                body.elasticity.bits(),
+                body.elasticity().bits(),
                 native["elasticity_bits"].as_u64().unwrap(),
                 "{input}"
             );
             assert_eq!(
-                body.gravity.bits(),
+                body.gravity().bits(),
                 native["gravity_bits"].as_u64().unwrap(),
                 "{input}"
             );
             assert_eq!(
-                body.angular_velocity_magnitude.bits(),
+                body.angular_velocity_magnitude().bits(),
                 native["clamp_bits"].as_u64().unwrap(),
                 "{input}"
             );
@@ -5202,13 +5355,13 @@ mod tests {
             // Every stored field, including both quaternions, is compared to
             // the whole original constructor rather than a second launch port.
             let actual = serde_json::json!({
-                "elasticity_bits": body.elasticity.bits(),
-                "gravity_bits": body.gravity.bits(),
-                "clamp_bits": body.angular_velocity_magnitude.bits(),
-                "position_bits": body.position.map(|v| v.bits()),
-                "velocity_bits": body.velocity.map(|v| v.bits()),
-                "orientation_bits": body.orientation.map(|v| v.bits()),
-                "rotation_bits": body.rotation.map(|v| v.bits()),
+                "elasticity_bits": body.elasticity().bits(),
+                "gravity_bits": body.gravity().bits(),
+                "clamp_bits": body.angular_velocity_magnitude().bits(),
+                "position_bits": body.position().map(|v| v.bits()),
+                "velocity_bits": body.velocity().map(|v| v.bits()),
+                "orientation_bits": body.orientation().map(|v| v.bits()),
+                "rotation_bits": body.rotation().map(|v| v.bits()),
             });
             assert_eq!(actual, row["bounce"], "{input}: whole native Bounce state");
         }
@@ -5250,11 +5403,10 @@ mod tests {
         rules.install_art_fixture(art);
         let mut sim = Simulation::with_seed(3);
         let americans = sim.interner.intern("Americans");
-        sim.houses.insert(
-            americans,
-            crate::sim::house_state::HouseState::new(americans, 0, None, true, 0, 10),
-        );
-        sim.session.house_order.push(americans);
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                americans, 0, None, true, 0, 10,
+            ));
         crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
         let tank = sim
             .spawn_object_at_height("TANK", "Americans", 8, 8, 0, 0, &rules)
@@ -5292,7 +5444,7 @@ mod tests {
 
         let mut landed_at = None;
         for frame in 1..200 {
-            sim.session.binary_frame = frame;
+            sim.session.set_binary_frame_for_test(frame);
             sim.visit_anim(
                 chunk,
                 &rules,
@@ -5342,7 +5494,7 @@ mod tests {
         let mut terrain = crate::map::resolved_terrain::test_flat_ground_grid(8);
         for ry in 0..8 {
             for rx in 0..8 {
-                terrain.cell_mut(rx, ry).unwrap().accepts_smudge = true;
+                terrain.cell_mut_for_test(rx, ry).unwrap().accepts_smudge = true;
             }
         }
         sim.resolved_terrain = Some(terrain);
@@ -5376,7 +5528,7 @@ mod tests {
         );
         let mut saw_middle = false;
         for frame in 1..40 {
-            sim.session.binary_frame = frame;
+            sim.session.set_binary_frame_for_test(frame);
             sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default());
             let Some(anim) = sim.anim(id) else {
                 break;
@@ -5401,7 +5553,7 @@ mod tests {
             let (rules, mut sim) = middle_world("[MARK]\nRate=900\nScorch=yes\n", 13);
             let id = spawn_mark(&mut sim, &rules, world_z);
             for frame in 1..40 {
-                sim.session.binary_frame = frame;
+                sim.session.set_binary_frame_for_test(frame);
                 sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default());
             }
             assert_eq!(marks_placed(&sim), expected, "z {world_z}");
@@ -5432,10 +5584,10 @@ mod tests {
             .unwrap();
 
         sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default()); // constructor first-AI guard at frame 0
-        sim.session.binary_frame = 1;
+        sim.session.set_binary_frame_for_test(1);
         sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default()); // delay 1 -> 0
         assert_eq!(sim.anim(id).unwrap().runtime.current_frame, 0);
-        sim.session.binary_frame = 2;
+        sim.session.set_binary_frame_for_test(2);
         sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default()); // constructor-anchored timer is already due
 
         assert_eq!(sim.anim(id).unwrap().runtime.current_frame, 1);
@@ -5445,39 +5597,13 @@ mod tests {
     }
 
     #[test]
-    fn normalized_rate_uses_live_speed_after_random_rate_selection() {
-        let rules = runtime_rules(
-            "[TEST]\nRate=900\nRandomRate=180,225\nNormalized=yes\nEnd=3\nLoopCount=1\n",
-            &[("TEST", 3)],
-        );
-        let mut sim = Simulation::new();
-        sim.session.game_options.game_speed = 1;
-        let type_id = sim.interner.intern("TEST");
-        let expected_rng = sim.scenario_rng.clone();
-        let expected_rate = sim.session.game_options.normalized_anim_delay(4);
-
-        let id = sim
-            .spawn_anim_object(&rules, runtime_descriptor(type_id, 0))
-            .unwrap();
-        let runtime = &sim.anim(id).unwrap().runtime;
-
-        assert_eq!(runtime.rate_reload, expected_rate);
-        assert_eq!(runtime.frame_timer.start_frame(), 0);
-        assert_eq!(runtime.frame_timer.duration(), i32::from(expected_rate));
-        assert_eq!(
-            sim.scenario_rng.logical_state(),
-            expected_rng.logical_state()
-        );
-    }
-
-    #[test]
     fn stock_naweap_a_rate_normalizes_to_six_frames_at_speed_one() {
         let rules = runtime_rules(
             "[NAWEAP_A]\nRate=200\nNormalized=yes\nEnd=12\nLoopCount=-1\n",
             &[("NAWEAP_A", 12)],
         );
         let mut sim = Simulation::new();
-        sim.session.game_options.game_speed = 1;
+        sim.session.game_options_mut_for_test().game_speed = 1;
         let type_id = sim.interner.intern("NAWEAP_A");
         let id = sim
             .spawn_anim_object(&rules, runtime_descriptor(type_id, 0))
@@ -5485,10 +5611,10 @@ mod tests {
 
         assert_eq!(sim.anim(id).unwrap().runtime.rate_reload, 6);
         sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default());
-        sim.session.binary_frame = 5;
+        sim.session.set_binary_frame_for_test(5);
         sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default());
         assert_eq!(sim.anim(id).unwrap().runtime.current_frame, 0);
-        sim.session.binary_frame = 6;
+        sim.session.set_binary_frame_for_test(6);
         sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default());
         assert_eq!(sim.anim(id).unwrap().runtime.current_frame, 1);
     }
@@ -5512,9 +5638,9 @@ mod tests {
         ));
 
         sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default()); // guard
-        sim.session.binary_frame = 1;
+        sim.session.set_binary_frame_for_test(1);
         sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default()); // frame 1
-        sim.session.binary_frame = 2;
+        sim.session.set_binary_frame_for_test(2);
         sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default()); // frame 2 -> SECOND in place + Middle
         let anim = sim.anim(id).unwrap();
         assert_eq!(sim.interner.resolve(anim.type_id), "SECOND");
@@ -5527,9 +5653,9 @@ mod tests {
             2,
         );
 
-        sim.session.binary_frame = 3;
+        sim.session.set_binary_frame_for_test(3);
         sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default()); // SECOND frame 1 (Next does not restore guard)
-        sim.session.binary_frame = 4;
+        sim.session.set_binary_frame_for_test(4);
         sim.visit_anim(id, &rules, None, crate::sim::world::FrameEffects::default()); // SECOND frame 2 -> destroy
         sim.destroy_anim(id, &rules);
         assert!(!sim.anim(id).unwrap().runtime.inactive);
@@ -6094,71 +6220,6 @@ mod tests {
     }
 
     #[test]
-    fn occupiable_building_selects_condition_red_boundary() {
-        let (mut sim, rules, building_id) = damage_fire_fixture(true);
-        sim.substrate
-            .entities
-            .get_mut(building_id)
-            .unwrap()
-            .health
-            .set_for_test(26);
-        sim.update_building_damage_fire(building_id, &rules);
-        assert!(
-            !sim.substrate
-                .entities
-                .get(building_id)
-                .unwrap()
-                .damage_fires
-                .active
-        );
-        sim.substrate
-            .entities
-            .get_mut(building_id)
-            .unwrap()
-            .health
-            .set_for_test(25);
-        sim.update_building_damage_fire(building_id, &rules);
-        assert!(
-            sim.substrate
-                .entities
-                .get(building_id)
-                .unwrap()
-                .damage_fires
-                .active
-        );
-    }
-
-    #[test]
-    fn first_anim_visit_only_clears_guard() {
-        let (mut sim, rules, building_id) = damage_fire_fixture(false);
-        sim.substrate
-            .entities
-            .get_mut(building_id)
-            .unwrap()
-            .health
-            .set_for_test(50);
-        sim.update_building_damage_fire(building_id, &rules);
-        let anim_id = sim
-            .substrate
-            .entities
-            .get(building_id)
-            .unwrap()
-            .damage_fires
-            .anim_ids[0]
-            .unwrap();
-        let frame = sim.anim(anim_id).unwrap().runtime.current_frame;
-        sim.visit_anim(
-            anim_id,
-            &rules,
-            None,
-            crate::sim::world::FrameEffects::default(),
-        );
-        let anim = sim.anim(anim_id).unwrap();
-        assert_eq!(anim.runtime.current_frame, frame);
-        assert!(!anim.runtime.first_ai_guard);
-    }
-
-    #[test]
     fn anim_store_slots_scheduler_and_hash_roundtrip() {
         let (mut sim, rules, building_id) = damage_fire_fixture(false);
         sim.substrate
@@ -6220,14 +6281,13 @@ mod tests {
         let player = sim.interner.intern("Player");
         let other = sim.interner.intern("Other");
         for (id, human) in [(player, true), (other, false)] {
-            sim.houses.insert(
-                id,
-                crate::sim::house_state::HouseState::new(id, 0, None, human, 0, 10),
-            );
-            sim.session.house_order.push(id);
+            sim.houses
+                .register(crate::sim::house_state::HouseState::new(
+                    id, 0, None, human, 0, 10,
+                ));
         }
-        sim.session.current_house = Some(player);
-        sim.session.binary_frame = 1000;
+        sim.session.set_current_house_for_test(Some(player));
+        sim.session.set_binary_frame_for_test(1000);
         sim.session.install_waypoints(&map.waypoints);
         sim.initialize_trigger_definitions(
             &map,

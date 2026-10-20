@@ -358,7 +358,7 @@ pub(crate) fn update_repair_and_power(
     let admitted = sim
         .houses
         .get(&owner)
-        .is_some_and(|house| house.current_iq >= rules.general.iq_repair_sell)
+        .is_some_and(|house| house.current_iq() >= rules.general.iq_repair_sell)
         && !entity.constructing_or_selling()
         && can_repair_building(sim, rules, id);
     if admitted {
@@ -395,13 +395,13 @@ fn low_credit_sale(
     let Some(house) = sim.houses.get(&entity.owner()) else {
         return;
     };
-    if !((sim.session.game_mode_nonzero || entity.ai_sell_repair.ai_sellable())
+    if !((sim.session.game_mode_nonzero() || entity.ai_sell_repair.ai_sellable())
         && entity.ai_sell_repair.was_attacked_by_enemy()
-        && house.authored_iq as u32 >= rules.general.iq_sell_back as u32)
+        && house.authored_iq() as u32 >= rules.general.iq_sell_back as u32)
     {
         return;
     }
-    let tech_level = house.tech_level;
+    let tech_level = house.tech_level();
     let Some(object) = sim.object_type(entity.type_ref(), rules) else {
         return;
     };
@@ -437,10 +437,10 @@ fn auto_repair_start(sim: &mut Simulation, rules: &RuleSet, id: u64) {
     let Some(house) = sim.houses.get(&owner) else {
         return;
     };
-    if house.repair_start_latch || entity.repairing.on {
+    if house.repair_start_latch() || entity.repairing.on {
         return;
     }
-    let controlled = house.is_controlled_by_human(sim.session.game_mode_nonzero);
+    let controlled = house.is_controlled_by_human(sim.session.game_mode_nonzero());
     if !(entity.has_been_captured.is_set() || entity.ai_sell_repair.ai_repairable() || controlled) {
         return;
     }
@@ -448,7 +448,7 @@ fn auto_repair_start(sim: &mut Simulation, rules: &RuleSet, id: u64) {
     sim.houses
         .get_mut(&owner)
         .expect("the owner was just read")
-        .repair_start_latch = true;
+        .latch_repair_start();
     toggle_repair(sim, rules, id, RepairControl::Start);
     if controlled {
         return;
@@ -461,9 +461,9 @@ fn auto_repair_start(sim: &mut Simulation, rules: &RuleSet, id: u64) {
     };
     let (longest, shortest) = (scaled(1800), scaled(225));
     let time_left = sim.scenario_rng.next_range_i32_inclusive(shortest, longest);
-    let now = sim.session.binary_frame as i32;
+    let now = sim.session.binary_frame() as i32;
     if let Some(house) = sim.houses.get_mut(&owner) {
-        house.repair_latch_timer.start(now, time_left);
+        house.arm_repair_latch(now, time_left);
     }
 }
 
@@ -485,7 +485,7 @@ fn repair_step(sim: &mut Simulation, rules: &RuleSet, id: u64) {
     }
     let period =
         crate::sim::combat::veterancy::self_heal_interval_frames(rules.general.repair_rate_minutes);
-    let frame = sim.session.binary_frame as i32;
+    let frame = sim.session.binary_frame() as i32;
     let remainder = frame.checked_rem(period).unwrap_or_else(|| {
         panic!("native repair step IDIV fault at 0045083F: frame={frame} period={period}")
     });

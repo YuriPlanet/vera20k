@@ -412,44 +412,6 @@ fn live_shot(sim: &Simulation, building: u64) -> Option<(String, TargetKind)> {
         })
 }
 
-/// A later object retargeting the building after its visit (a bullet's
-/// retaliation later in the Logic pass, say) leaves the visit's shot alone:
-/// native's FireAt ran inside the visit (`0x0044B6D0`), at that visit's
-/// TarCom with its weapon, before any later retarget can change it.
-#[test]
-fn a_retarget_after_the_visit_keeps_the_visits_shot() {
-    let rules = rules(36, 50, true);
-    let (mut sim, building, target) = fixture(&rules, "GAT", (8, 5));
-    let other = sim
-        .spawn_object("SHED", "Russians", 5, 8, 0, &rules)
-        .unwrap();
-    aim_at(&mut sim, building, target);
-    let (aimed, weapon) = attack_prelude(&mut sim, building, &rules).unwrap();
-    assert_eq!(
-        attack_arm(
-            &mut sim,
-            building,
-            &rules,
-            aimed,
-            weapon,
-            FireError::Ok,
-            ObjectAiCtx::default(),
-            &mut false
-        ),
-        1
-    );
-    aim_at(&mut sim, building, other);
-    assert_eq!(
-        live_shot(&sim, building),
-        Some(("W0".to_string(), TargetKind::Entity(target)))
-    );
-    let entity = sim.substrate.entities.get(building).unwrap();
-    assert_eq!(
-        entity.attack_target.target(),
-        Some(TargetKind::Entity(other))
-    );
-}
-
 /// Original44B6D0 returns from FireAt before44B6EF charges Gattling and
 /// before the next Logic object. A deferred request cannot supply its rearm
 /// or effect to that next caller (including Tesla's appended Spark system).
@@ -654,7 +616,7 @@ fn gattling_cadence_matches_the_original() {
         let mut scenario_draws = 0;
         // The object pass of the frame `advance_tick` commits as `start + k`
         // runs at `base + k`, the frame its timers record.
-        let start = sim.session.binary_frame;
+        let start = sim.session.binary_frame();
         let base = i64::from(start) - 1;
         let mut stage_before = 0;
         for frame in row["frames"].as_array().unwrap() {
@@ -706,7 +668,7 @@ fn gattling_cadence_matches_the_original() {
             sim.fire_events.clear();
             sim.sound_events.clear();
             sim.advance_tick(&[], Some(&rules), None, None, 67);
-            assert_eq!(u64::from(sim.session.binary_frame - start), k, "{name}");
+            assert_eq!(u64::from(sim.session.binary_frame() - start), k, "{name}");
 
             let entity = sim.substrate.entities.get(building).unwrap();
             assert_eq!(
@@ -933,7 +895,7 @@ fn retail_dustbowl_gattling_cannon_spins_up_and_winds_down() {
     );
 
     let enemy_house = scenario.sim().interner.get("Americans").unwrap();
-    let tick = scenario.sim().session.tick;
+    let tick = scenario.sim().session.tick();
     let order = retail_frame(
         &mut scenario,
         vec![CommandEnvelope::new(

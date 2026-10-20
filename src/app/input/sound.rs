@@ -93,16 +93,7 @@ fn back(state: &mut AppState) {
     }
     state.match_state.match_presentation.in_game_options =
         options::in_game_options_from_profile(&state.persistence.options_profile);
-    state
-        .match_state
-        .match_presentation
-        .in_game_options
-        .sound_enabled = state.audio.launcher_audio_available;
-    state
-        .match_state
-        .match_presentation
-        .in_game_options
-        .on_open();
+    crate::app::input::in_game_options::on_open(state);
     state.match_state.match_presentation.in_game_menu = InGameMenuState::Options;
 }
 fn activate(state: &mut AppState, id: SoundButton) {

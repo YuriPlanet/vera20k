@@ -67,14 +67,14 @@ fn stock_e1_feedback_matches_whole_native_receiver_before_audio_service() {
             u16::try_from(coordinate[1] >> 8).unwrap(),
         ];
         let mut sim = Simulation::new();
-        sim.fog.width = 128;
-        sim.fog.height = 128;
+        sim.fog.set_width_for_test(128);
+        sim.fog.set_height_for_test(128);
         sim.intern_rule_type_ids(rules);
         let owner = sim.interner.intern("Americans");
         let mut house = HouseState::new(owner, 0, None, true, 0, 10);
-        house.player_control = true;
-        sim.houses.insert(owner, house);
-        sim.session.current_house = Some(owner);
+        house.set_player_control_for_test(true);
+        sim.houses.register(house);
+        sim.session.set_current_house_for_test(Some(owner));
         let source = sim
             .spawn_object_at_height("MTNK", "Americans", cell[0] - 1, cell[1], 0, 0, rules)
             .expect("ordinary stock source");
@@ -268,7 +268,7 @@ fn damage_feedback_matches_original_draws_house_admission_coordinates_and_contin
         target.set_category_for_test(EntityCategory::Infantry);
         target.health.set_for_test(100);
         target.lifecycle.set_in_limbo_for_test(false);
-        target.lifecycle.set_cell_marked(true);
+        target.lifecycle.set_cell_marked_for_test(true);
         target.set_in_playfield(true);
         let coordinate = &input["coordinate"];
         target.position.put_location(DriveCoord {
@@ -281,14 +281,20 @@ fn damage_feedback_matches_original_draws_house_admission_coordinates_and_contin
         let owner = target.owner();
         let other = sim.interner.intern("OtherHouse");
         let mut house = HouseState::new(owner, 0, None, input["human"].as_bool().unwrap(), 0, 10);
-        house.player_control = input["player_control"].as_bool().unwrap();
-        sim.houses.insert(owner, house);
-        sim.session.game_mode_nonzero = input["game_mode"].as_u64().unwrap() != 0;
-        sim.session.current_house = Some(if input["current_house_equal"].as_bool().unwrap() {
-            owner
-        } else {
-            other
-        });
+        house.set_player_control_for_test(input["player_control"].as_bool().unwrap());
+        sim.houses.register(house);
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+                input["game_mode"].as_u64().unwrap() != 0,
+            ),
+        );
+        sim.session.set_current_house_for_test(Some(
+            if input["current_house_equal"].as_bool().unwrap() {
+                owner
+            } else {
+                other
+            },
+        ));
         sim.substrate.entities.insert(target);
         let warhead = sim.interner.intern("FeedbackWH");
         sim.main_rng =

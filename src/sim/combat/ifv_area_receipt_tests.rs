@@ -59,9 +59,16 @@ fn original_area_receipt_selects_nullify_after_em_effect_rng_and_before_return()
         );
         assert_eq!(rules.general.weapon_nullify_anim, "IRONFX");
         let mut world = Simulation::with_seed(31);
-        world.session.binary_frame = input["binary_frame"].as_u64().unwrap() as u32;
+        world
+            .session
+            .set_binary_frame_for_test(input["binary_frame"].as_u64().unwrap() as u32);
         crate::sim::arena_fixture::flat_arena(&mut world, &rules);
-        for cell in &mut world.resolved_terrain.as_mut().unwrap().cells {
+        for cell in world
+            .resolved_terrain
+            .as_mut()
+            .unwrap()
+            .cells_mut_for_test()
+        {
             cell.level = 6;
         }
         let receiver = if input["receiver_mode"] != "empty" {
@@ -169,7 +176,7 @@ fn original_area_receipt_selects_nullify_after_em_effect_rng_and_before_return()
             assert_eq!(fv.damage_particle_systems, ["SparkSys", "SmallGreySSys"]);
             let (id, smoke) = world.particle_systems().iter().next().unwrap();
             assert_eq!(
-                smoke.type_id,
+                smoke.type_id(),
                 rules.ps_type_id_by_name("SmallGreySSys").unwrap()
             );
             assert_eq!(
@@ -177,8 +184,11 @@ fn original_area_receipt_selects_nullify_after_em_effect_rng_and_before_return()
                 (row["native_cursor_before"].as_u64().unwrap() as u32).wrapping_add(1),
                 "{name}"
             );
-            assert!(smoke.particles.is_empty(), "{name}: no smoke AI visit yet");
-            assert_eq!(smoke.owner_entity, Some(receiver));
+            assert!(
+                smoke.particles().is_empty(),
+                "{name}: no smoke AI visit yet"
+            );
+            assert_eq!(smoke.owner_entity(), Some(receiver));
             assert_eq!(
                 world
                     .substrate
@@ -214,28 +224,32 @@ fn original_area_receipt_selects_nullify_after_em_effect_rng_and_before_return()
         );
         let anim = anims[0];
         assert_eq!(
-            world.interner.resolve(anim.type_id),
+            world.interner.resolve(anim.type_id()),
             row["constructed"].as_str().unwrap(),
             "{name}"
         );
         assert_eq!(
-            serde_json::json!([anim.world_coord.x, anim.world_coord.y, anim.world_coord.z]),
+            serde_json::json!([
+                anim.world_coord().x,
+                anim.world_coord().y,
+                anim.world_coord().z
+            ]),
             row["constructor"]["position"],
             "{name}"
         );
         assert_eq!(
-            serde_json::json!(anim.draw_flags),
+            serde_json::json!(anim.draw_flags()),
             row["constructor"]["flags"],
             "{name}"
         );
         assert_eq!(
-            serde_json::json!(anim.z_adjust),
+            serde_json::json!(anim.z_adjust()),
             row["constructor"]["z_adjust"],
             "{name}"
         );
         let expected_cursor = (row["native_cursor_after"].as_u64().unwrap() as u32)
             .wrapping_add(receiver_allocations);
-        assert_eq!(anim.native_unique_id as u32, expected_cursor, "{name}");
+        assert_eq!(anim.native_unique_id() as u32, expected_cursor, "{name}");
         assert_eq!(
             world.native_unique_ids.as_ref().unwrap().current_raw(),
             expected_cursor,
@@ -294,16 +308,23 @@ fn native_area_receipt_tracks_dispatch_and_strict_iron_curtain_boundary() {
         let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
         rules.install_art_data(crate::rules::retail_ini_fixture::art_registry(&art));
         let mut world = Simulation::with_seed(31);
-        world.session.binary_frame = 100;
-        world.session.no_damage = input["scenario_flags"].as_u64().unwrap() & 0x20 != 0;
+        world.session.set_binary_frame_for_test(100);
+        world
+            .session
+            .set_no_damage_for_test(input["scenario_flags"].as_u64().unwrap() & 0x20 != 0);
         let owner = world.interner.intern("Americans");
-        world.houses.insert(
-            owner,
-            crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10),
-        );
-        world.session.house_order.push(owner);
+        world
+            .houses
+            .register(crate::sim::house_state::HouseState::new(
+                owner, 0, None, true, 0, 10,
+            ));
         crate::sim::arena_fixture::flat_arena(&mut world, &rules);
-        for cell in &mut world.resolved_terrain.as_mut().unwrap().cells {
+        for cell in world
+            .resolved_terrain
+            .as_mut()
+            .unwrap()
+            .cells_mut_for_test()
+        {
             cell.level = 6;
         }
         let target = if input["empty"] == true {
@@ -326,7 +347,7 @@ fn native_area_receipt_tracks_dispatch_and_strict_iron_curtain_boundary() {
                 .set_object_alive_for_test(input["alive"].as_bool().unwrap());
             entity
                 .lifecycle
-                .set_cell_marked(input["marked"].as_bool().unwrap());
+                .set_cell_marked_for_test(input["marked"].as_bool().unwrap());
             entity
                 .lifecycle
                 .set_in_limbo_for_test(input["limbo"].as_bool().unwrap());

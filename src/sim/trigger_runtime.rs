@@ -1074,7 +1074,7 @@ impl Simulation {
             let index = self.trigger_runtime.triggers.len();
             self.trigger_runtime.triggers.push(Some(LiveTrigger {
                 type_index,
-                timer: CdTimer::started(self.session.binary_frame as i32, 0),
+                timer: CdTimer::started(self.session.binary_frame() as i32, 0),
                 completed: 0,
                 retained_house: None,
                 enabled: true,
@@ -1123,7 +1123,7 @@ impl Simulation {
             let trigger = self.trigger_runtime.triggers[index].as_mut().unwrap();
             trigger
                 .timer
-                .start(self.session.binary_frame as i32, duration);
+                .start(self.session.binary_frame() as i32, duration);
             trigger.completed &= !(1u32.wrapping_shl(ordinal as u32));
         }
     }
@@ -1516,7 +1516,7 @@ impl Simulation {
             if let Some(house) = resolve_trigger_house(self, owner, rules)
                 && let Some(house) = self.houses.get_mut(&house)
             {
-                house.removed_allow_win_tag(self.session.binary_frame as i32);
+                house.removed_allow_win_tag(self.session.binary_frame() as i32);
             }
         }
         for trigger in triggers {
@@ -1651,8 +1651,8 @@ impl Simulation {
             // Event+34. Both return directly, without House/raised-kind or
             // A8ED6B admission, persistence, timer, RNG or detach writes.
             // Original Steam gamemd3e81a617..08600, instruction reading.
-            45 => self.session.lighting.current_ambient <= condition.value,
-            46 => self.session.lighting.current_ambient >= condition.value,
+            45 => self.session.lighting().current_ambient() <= condition.value,
+            46 => self.session.lighting().current_ambient() >= condition.value,
             17 => {
                 // Steam3e81a617..08600:71EE82 takes the incoming House;
                 // 71EF3F..71EF89 reads tracked+2F0, then its ordered+68 list.
@@ -1667,13 +1667,13 @@ impl Simulation {
                 let Some(house) = self.houses.get(&owner) else {
                     return false;
                 };
-                if house.tracking.buildings() <= 0 {
+                if house.tracking().buildings() <= 0 {
                     return true;
                 }
                 let Some(rules) = rules else {
                     return false;
                 };
-                !house.base_projection.buildings().iter().any(|&id| {
+                !house.base_projection().buildings().iter().any(|&id| {
                     self.substrate.entities.get(id).is_some_and(|building| {
                         !building.lifecycle.in_limbo()
                             && self
@@ -1781,7 +1781,7 @@ impl Simulation {
                 let count = self.houses.get(&owner).map_or(0, |house| {
                     self.interner.get(type_name).map_or(0, |id| {
                         house
-                            .tracking
+                            .tracking()
                             .active_count(crate::map::entities::EntityCategory::Structure, id)
                     })
                 });
@@ -1805,9 +1805,9 @@ impl Simulation {
                     return false;
                 };
                 let losses = if condition.kind == 15 {
-                    house.stats.buildings_lost()
+                    house.stats().buildings_lost()
                 } else {
-                    house.stats.units_lost()
+                    house.stats().units_lost()
                 };
                 (losses as i32) >= condition.value
             }
@@ -1848,17 +1848,17 @@ impl Simulation {
                         .is_none_or(|house| match condition.kind {
                             3 => house.building_capture_notified(),
                             5 => house.discovered_by_current_house(),
-                            9 => house.tracking.units_destroyed(),
-                            10 => house.tracking.buildings() <= 0,
-                            11 => house.tracking.all_destroyed(),
-                            55 => house.tracking.navy() <= 0,
+                            9 => house.tracking().units_destroyed(),
+                            10 => house.tracking().buildings() <= 0,
+                            11 => house.tracking().all_destroyed(),
+                            55 => house.tracking().navy() <= 0,
                             56 => {
                                 house
-                                    .tracking
+                                    .tracking()
                                     .vehicles()
-                                    .wrapping_sub(house.tracking.navy())
+                                    .wrapping_sub(house.tracking().navy())
                                     <= 0
-                                    && house.tracking.infantry() <= 0
+                                    && house.tracking().infantry() <= 0
                             }
                             _ => unreachable!(),
                         })
@@ -1902,7 +1902,7 @@ impl Simulation {
                 .trigger(live_index)
                 .unwrap()
                 .timer
-                .expired(self.session.binary_frame as i32),
+                .expired(self.session.binary_frame() as i32),
             //71EC83/71F284 routes these discrete events through71EC9A:
             //matching raised kind and clear A8ED6B, then71F1B1 AL1.
             //All secondary switch entries are the generic true tail; no
@@ -1925,7 +1925,7 @@ impl Simulation {
             EVENT_ANY => true,
             _ => self
                 .trigger_runtime
-                .evaluate_event(&condition, self.session.binary_frame, self),
+                .evaluate_event(&condition, self.session.binary_frame(), self),
         }
     }
 
@@ -2049,7 +2049,7 @@ impl Simulation {
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
-        if (self.session.binary_frame as i32) % 8 != 0 {
+        if (self.session.binary_frame() as i32) % 8 != 0 {
             return;
         }
         let count = self
@@ -2957,7 +2957,7 @@ impl Simulation {
                 else {
                     return false;
                 };
-                house.strategy_emergency.set_state_four();
+                house.strategy_emergency_mut().set_state_four();
             }
             12 => {
                 // Steam3e81a617..08600, Execute6DF051..6DF08F: reverse
@@ -3621,7 +3621,7 @@ impl Simulation {
                         .trigger_create_team(team_id, rules, overlay_registry, frame_effects)
                         .is_some();
                 }
-                // Reinforcement6E2DC0 uses the TeamType waypoint. Action80
+                // Action7@6DEBAE calls65D8E0 with the TeamType waypoint. Action80
                 //6DEBD0 passes its+44 override to the same65D8E0 owner;
                 //null Team or waypoint-1 is rejected before that call.
                 let waypoint = if matches!(action.kind, 80 | 107) {
@@ -3791,7 +3791,7 @@ impl Simulation {
                 effects.push(TriggerEffect::FlashSidebarCameo {
                     type_id,
                     duration: value.unwrap_or(0),
-                    frame: self.session.binary_frame as i32,
+                    frame: self.session.binary_frame() as i32,
                 });
             }
             139 => {
@@ -3806,7 +3806,7 @@ impl Simulation {
                 self.power_states
                     .entry(owner)
                     .or_default()
-                    .start_radar_outage(self.session.binary_frame, value.unwrap_or(0));
+                    .start_radar_outage(self.session.binary_frame(), value.unwrap_or(0));
             }
             128 => {
                 //Execute6DFAD9 ->6E1A40 ->House50D6D0. Only +44 waypoint
@@ -3846,7 +3846,7 @@ impl Simulation {
                     .get(&owner)
                     .map(|house| {
                         house
-                            .base_projection
+                            .base_projection()
                             .buildings()
                             .iter()
                             .rev()
@@ -3902,9 +3902,7 @@ impl Simulation {
                 let Some(value) = value else {
                     return false;
                 };
-                self.production
-                    .ore_growth_config
-                    .set_enabled_from_trigger(value);
+                self.ore_growth_config.set_enabled_from_trigger(value);
             }
             88 => {
                 let (Some(rules), Some(index), Some(waypoint)) =
@@ -3964,7 +3962,7 @@ impl Simulation {
                     return false;
                 };
                 match action.kind {
-                    76 => house.team_creation.set_trigger_ratio(value),
+                    76 => house.team_creation_mut().set_trigger_ratio(value),
                     77 => house.set_aircraft_team_ratio(value),
                     78 => house.set_infantry_team_ratio(value),
                     79 => house.set_unit_team_ratio(value),
@@ -4047,8 +4045,11 @@ impl Simulation {
             }
             46 | 47 => {
                 let locked = action.kind == 46;
-                let was_locked = self.session.input_locked();
-                self.session.set_input_locked(locked);
+                let was_locked = if locked {
+                    self.session.lock_input()
+                } else {
+                    self.session.unlock_input()
+                };
                 effects.push(TriggerEffect::InputLockChanged { locked, was_locked });
             }
             ACTION_FORCE_TRIGGER | ACTION_ENABLE_TRIGGER | ACTION_DISABLE_TRIGGER => {
@@ -4118,7 +4119,7 @@ impl Simulation {
                 // not RGB, and the explicit palette operation preserves order.
                 let rgb = self
                     .session
-                    .lighting
+                    .lighting_mut()
                     .retint_normal_component((action.kind - 142) as usize, value);
                 self.publish_global_lighting(crate::sim::light_sources::PaletteUpdate::Normal(rgb));
             }
@@ -4127,7 +4128,7 @@ impl Simulation {
                     return false;
                 };
                 let storm = crate::sim::superweapon::lightning_storm::raging(self);
-                self.session.lighting.set_ambient_light(value, storm);
+                self.session.lighting_mut().set_ambient_light(value, storm);
             }
             64..=66 => {
                 let (Some(rules), Some(waypoint)) = (rules, value) else {
@@ -4162,7 +4163,7 @@ impl Simulation {
                     return false;
                 };
                 self.session
-                    .lighting
+                    .lighting_mut()
                     .set_ambient_change_input(action.kind == 72, bits);
             }
             ACTION_DAMAGE_AT_WAYPOINT => {
@@ -4336,7 +4337,7 @@ impl Simulation {
                         return instance.set_charge_percentage(
                             action.auxiliary_value(),
                             sw,
-                            self.session.binary_frame,
+                            self.session.binary_frame(),
                         );
                     }
                 }
@@ -4371,7 +4372,7 @@ impl Simulation {
                     if action.kind == 135 {
                         house.set_preferred_super_weapon_target(cell);
                     } else {
-                        house.alert_super_weapon_defense(cell, self.session.binary_frame as i32);
+                        house.alert_super_weapon_defense(cell, self.session.binary_frame() as i32);
                     }
                 } else if action.kind == 136 {
                     house.clear_preferred_super_weapon_target();
@@ -4464,7 +4465,7 @@ impl Simulation {
                 // waypoint and writes only `HouseClass+0x5494` through
                 // `FUN_0050DFE0`.
                 if let Some(house) = self.houses.get_mut(&house_id) {
-                    house.alternate_base_center = (cell.0 as u16, cell.1 as u16);
+                    house.set_alternate_base((cell.0 as u16, cell.1 as u16));
                 }
             }
             ACTION_CLEAR_ALTERNATE_BASE => {
@@ -4475,7 +4476,7 @@ impl Simulation {
                 // case 138 calls `FUN_006E4540`, which writes packed zero only
                 // to `HouseClass+0x5494` through `FUN_0050DFF0`.
                 if let Some(house) = self.houses.get_mut(&house_id) {
-                    house.alternate_base_center = (0, 0);
+                    house.clear_alternate_base();
                 }
             }
             1 | 2 | ACTION_ANNOUNCE_WIN | ACTION_ANNOUNCE_LOSE | ACTION_END_SCENARIO => {

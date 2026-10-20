@@ -48,7 +48,10 @@ fn paid_walk_matches_original_numeric_facing_and_boundary_vectors() {
         }
         entity.body_facing = body;
         entity.foot_speed.set_speed_fraction(SimFixed::lit("0.5"));
-        entity.navigation.path_runtime.set_path_blocked(true);
+        entity
+            .navigation
+            .path_runtime_mut()
+            .set_path_blocked_for_test(true);
         let speed = input["speed"].as_i64().unwrap() as i32;
         // The corpus stops before the same-cell SetCoords/SetHeight
         // (`0x0075C20F`, `0x0075C21C`), so it records the proposal's Z. Stand
@@ -91,7 +94,7 @@ fn paid_walk_matches_original_numeric_facing_and_boundary_vectors() {
         let heading = entity.body_facing.current(100);
         assert_eq!(u64::from(heading), row["facing"].as_u64().unwrap());
         assert_eq!(entity.foot_speed.applied_fraction(), SIM_ONE);
-        assert!(!entity.navigation.path_runtime.path_blocked());
+        assert!(!entity.navigation.path_runtime().path_blocked());
     }
 }
 
@@ -117,12 +120,12 @@ fn idle_walk_scold_tails_match_original_through_ordinary_process() {
             actor.locomotor.as_mut().unwrap().runtime_payload_mut()
         {
             // Supplied retained byte at the native tail boundary.
-            state.set_animation_moving(true);
+            state.set_animation_moving_for_test(true);
         }
         actor.foot_speed.set_speed_fraction(initial_speed);
         actor
             .navigation
-            .path_runtime
+            .path_runtime_mut()
             .set_scold_latch_for_test(row["supplied_byte"].as_u64().unwrap() as u8);
         sim.substrate.entities.insert(actor);
 
@@ -130,7 +133,7 @@ fn idle_walk_scold_tails_match_original_through_ordinary_process() {
             .unwrap();
         let actor = sim.substrate.entities.get(1).unwrap();
         assert_eq!(
-            u64::from(actor.navigation.path_runtime.scold_latch_raw()),
+            u64::from(actor.navigation.path_runtime().scold_latch_raw()),
             row["final_byte"].as_u64().unwrap(),
             "{row}"
         );
@@ -177,13 +180,13 @@ fn same_cell_paid_walk_scold_clear_matches_original_commit_tail() {
             }));
         actor
             .navigation
-            .path_runtime
+            .path_runtime_mut()
             .set_scold_latch_for_test(row["supplied_byte"].as_u64().unwrap() as u8);
         advance(&mut actor, SimFixed::from_num(90), None, 100, None, None);
         let position = crate::sim::movement::ground_pose::position_world_coord(&actor.position);
         assert_eq!((position.x / 256, position.y / 256), (9, 10));
         assert_eq!(
-            u64::from(actor.navigation.path_runtime.scold_latch_raw()),
+            u64::from(actor.navigation.path_runtime().scold_latch_raw()),
             row["final_byte"].as_u64().unwrap(),
             "{row}"
         );

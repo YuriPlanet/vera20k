@@ -48,7 +48,7 @@ fn assert_light_lifecycle(map: &str, packet: &'static str) {
         let name = history["name"].as_str().unwrap();
         let input = &history["input"];
         assert_eq!(
-            scene.sim().session.theater,
+            scene.sim().session.theater(),
             input["setup"]["theater"]["source_value"].as_str().unwrap()
         );
         let center = cell(&input["center"]);
@@ -76,10 +76,10 @@ fn assert_light_lifecycle(map: &str, packet: &'static str) {
             spread,
         };
         let mut state = RadiationState::default();
-        let mut events = Vec::new();
+        let mut events = crate::sim::light_sources::LightingSources::default();
         let mut source = None;
-        let mut publish = |events: &mut Vec<LightingEvent>| {
-            for event in events.drain(..) {
+        let mut publish = |events: &mut crate::sim::light_sources::LightingSources| {
+            for event in events.take_pending() {
                 match event {
                     LightingEvent::Radiation {
                         center: at,
@@ -96,7 +96,7 @@ fn assert_light_lifecycle(map: &str, packet: &'static str) {
         state.apply_detonation(
             detonation,
             0,
-            &scene.sim().session.theater,
+            &scene.sim().session.theater(),
             &rules.radiation,
             terrain,
             &mut events,
@@ -113,7 +113,7 @@ fn assert_light_lifecycle(map: &str, packet: &'static str) {
                     state.apply_detonation(
                         detonation,
                         frame,
-                        &scene.sim().session.theater,
+                        &scene.sim().session.theater(),
                         &rules.radiation,
                         terrain,
                         &mut events,
@@ -197,8 +197,10 @@ fn assert_light_lifecycle(map: &str, packet: &'static str) {
                 // before its independent light deadline. This empty World
                 // envelope is a snapshot control, not a paid-game bootstrap.
                 let mut world = crate::sim::world::Simulation::with_seed(0);
-                world.session.binary_frame = frame;
-                world.session.theater = scene.sim().session.theater.clone();
+                world.session.set_binary_frame_for_test(frame);
+                world
+                    .session
+                    .set_theater_for_test(scene.sim().session.theater().to_owned());
                 world.radiation = state.clone();
                 let before = world.state_hash();
                 let bytes = crate::sim::snapshot::GameSnapshot::save(
@@ -318,7 +320,7 @@ fn field_operations_match_native_overlap_controls() {
             row["factor_bits"]
         );
         let mut state = RadiationState::default();
-        let mut lights = Vec::new();
+        let mut lights = crate::sim::light_sources::LightingSources::default();
         let mut frame = 0;
         for stage in row["stages"].as_array().unwrap() {
             let action = &stage["action"];
@@ -333,7 +335,7 @@ fn field_operations_match_native_overlap_controls() {
                             spread: integer(&row["source_inputs"]["spread"]),
                         },
                         frame,
-                        &scene.session.theater,
+                        &scene.session.theater(),
                         &rules,
                         terrain,
                         &mut lights,
@@ -424,10 +426,10 @@ fn restore_rejects_missing_or_duplicate_radiation_update_slots() {
             spread: 2,
         },
         0,
-        &sim.session.theater,
+        &sim.session.theater(),
         &RadiationRules::default(),
         None,
-        &mut Vec::new(),
+        &mut crate::sim::light_sources::LightingSources::default(),
     );
     sim.radiation.creation_order.push((10, 10));
     assert_eq!(
@@ -463,10 +465,10 @@ fn equal_current_fields_with_different_update_order_hash_differently() {
                     spread: 10,
                 },
                 0,
-                &world.session.theater,
+                &world.session.theater(),
                 &RadiationRules::default(),
                 None,
-                &mut Vec::new(),
+                &mut crate::sim::light_sources::LightingSources::default(),
             );
         }
     }
@@ -495,10 +497,10 @@ fn serialized_radius_that_changes_future_decay_is_hash_relevant() {
             spread: 10,
         },
         0,
-        &original.session.theater,
+        &original.session.theater(),
         &RadiationRules::default(),
         None,
-        &mut Vec::new(),
+        &mut crate::sim::light_sources::LightingSources::default(),
     );
     let mut restored = crate::sim::world::Simulation::new();
     restored.radiation =

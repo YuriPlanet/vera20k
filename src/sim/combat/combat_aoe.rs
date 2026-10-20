@@ -1020,9 +1020,9 @@ fn push_terrain_aoe_damage(
     let Some(object) = view.objects.get(&stable_id) else {
         return;
     };
-    if object.lifecycle != TerrainObjectLifecycle::Live
-        || object.rx != scan_rx
-        || object.ry != scan_ry
+    if object.lifecycle() != TerrainObjectLifecycle::Live
+        || object.cell().0 != scan_rx
+        || object.cell().1 != scan_ry
     {
         return;
     }
@@ -1173,7 +1173,7 @@ mod tests {
     /// State the production ordered receiver commit (`commit_damage_events`)
     /// keeps across calls; no house order, overlays or traces.
     struct ReceiverCommit {
-        houses: BTreeMap<crate::sim::intern::InternedId, HouseState>,
+        houses: crate::sim::houses::Houses,
         alliances: HouseAllianceMap,
         main_rng: SimRng,
         scenario_rng: SimRng,
@@ -1183,7 +1183,7 @@ mod tests {
     impl ReceiverCommit {
         fn new() -> Self {
             Self {
-                houses: BTreeMap::new(),
+                houses: crate::sim::houses::Houses::default(),
                 alliances: HouseAllianceMap::new(),
                 main_rng: SimRng::new(1),
                 scenario_rng: SimRng::new(2),
@@ -1210,7 +1210,6 @@ mod tests {
                 rules,
                 interner,
                 &mut self.houses,
-                &[],
                 &self.alliances,
                 &mut self.main_rng,
                 &mut self.scenario_rng,
@@ -1649,13 +1648,13 @@ mod tests {
             // Ordinary Aircraft41B920 reaches Object5F6B90: Object+74 must
             // be marked before the physical GetHeight threshold is queried.
             air.lifecycle.set_in_limbo_for_test(false);
-            air.lifecycle.set_cell_marked(true);
+            air.lifecycle.set_cell_marked_for_test(true);
             air.position.set_exact_z_leptons_for_test(Some(altitude));
             let mut locomotor = crate::sim::movement::locomotor::LocomotorState::from_object_type(
                 rules.object(type_id).unwrap(),
                 0,
             );
-            locomotor.set_layer(MovementLayer::Air);
+            locomotor.set_layer_for_test(MovementLayer::Air);
             air.locomotor = Some(locomotor);
             air = air
                 .with_air_spatial_membership_for_test(Some(5 + 5 * 20), stable_id)
@@ -1725,13 +1724,13 @@ mod tests {
             air.set_category_for_test(EntityCategory::Aircraft);
             air.health.set_for_test(1000);
             air.lifecycle.set_in_limbo_for_test(false);
-            air.lifecycle.set_cell_marked(marked);
+            air.lifecycle.set_cell_marked_for_test(marked);
             air.position.set_exact_z_leptons_for_test(Some(0));
             let mut locomotor = crate::sim::movement::locomotor::LocomotorState::from_object_type(
                 rules.object("AIR").unwrap(),
                 0,
             );
-            locomotor.set_layer(layer);
+            locomotor.set_layer_for_test(layer);
             air.locomotor = Some(locomotor);
             air = air
                 .with_air_spatial_membership_for_test(Some(5 + 5 * 20), stable_id)
@@ -1931,7 +1930,7 @@ mod tests {
             vulnerable.position.set_sub_x_for_test(CELL_CENTER_LEPTON);
             vulnerable.position.set_sub_y_for_test(CELL_CENTER_LEPTON);
             vulnerable.lifecycle.set_in_limbo_for_test(false);
-            vulnerable.lifecycle.set_cell_marked(true);
+            vulnerable.lifecycle.set_cell_marked_for_test(true);
             entities.insert(vulnerable);
 
             let mut protected = GameEntity::test_default(2, "TARGET", "Victim", 5, 5);
@@ -1944,7 +1943,7 @@ mod tests {
             ));
             protected.position.set_sub_y_for_test(CELL_CENTER_LEPTON);
             protected.lifecycle.set_in_limbo_for_test(false);
-            protected.lifecycle.set_cell_marked(true);
+            protected.lifecycle.set_cell_marked_for_test(true);
             protected.invulnerability = Some(InvulnerabilityState::new(
                 crate::sim::timer::CdTimer::started(0, 100),
                 kind,
@@ -2068,7 +2067,7 @@ mod tests {
                 air.lifecycle.set_in_limbo_for_test(false);
                 // On the map, so marked (`+0x74`): the airborne phase skips
                 // an unmarked member.
-                air.lifecycle.set_cell_marked(true);
+                air.lifecycle.set_cell_marked_for_test(true);
                 air.health.set_for_test(hp);
                 air.position.set_z_for_test(0);
                 let mut air_locomotor =
@@ -2076,7 +2075,7 @@ mod tests {
                         rules.object("AIRBOMB").unwrap(),
                         0,
                     );
-                air_locomotor.set_layer(MovementLayer::Air);
+                air_locomotor.set_layer_for_test(MovementLayer::Air);
                 air.locomotor = Some(air_locomotor);
                 air.position.set_exact_z_leptons_for_test(Some(1));
                 air = air
@@ -2136,7 +2135,7 @@ mod tests {
             let hit_order = hit_ids(&aoe.hits);
             let mut main_rng = SimRng::new(9);
             let mut handled_deaths = Vec::new();
-            let mut houses = BTreeMap::new();
+            let mut houses = crate::sim::houses::Houses::default();
             let mut fatal_lifecycle = None;
             let mut sound_sink = None;
             // The production Apply_area_damage commit, whose dispatch gates
@@ -2149,7 +2148,6 @@ mod tests {
                     &rules,
                     &mut interner,
                     &mut houses,
-                    &[],
                     &HouseAllianceMap::new(),
                     &mut main_rng,
                     &mut scenario_rng,
@@ -2661,10 +2659,16 @@ mod tests {
                 // transition. Terrain remains in its real owning store.
                 let type_ref = world.interner.intern("TREE01");
                 let mut tree = TerrainObjectState::for_test(100, type_ref, 9, 8);
-                tree.health = health;
-                tree.lifecycle = lifecycle;
-                world.production.terrain_objects.insert(100, tree);
-                world.production.terrain_object_cells.insert((9, 8), 100);
+                tree.set_health_for_test(health);
+                tree.set_lifecycle_for_test(lifecycle);
+                world
+                    .terrain_objects
+                    .objects_mut_for_test()
+                    .insert(100, tree);
+                world
+                    .terrain_objects
+                    .cell_index_mut_for_test()
+                    .insert((9, 8), 100);
             }
             let warhead_ref = world.interner.intern("WH");
             let result = super::super::world_receiver::collect_area(
@@ -2763,7 +2767,7 @@ mod tests {
             for (above, expected) in [(208, ListLayer::Ground), (209, ListLayer::Bridge)] {
                 let (mut entities, occupancy, mut terrain, rules, warhead, mut interner) =
                     bridge_layer_test_fixture();
-                let cell = terrain.cell_mut(5, 5).unwrap();
+                let cell = terrain.cell_mut_for_test(5, 5).unwrap();
                 cell.level = level;
                 cell.slope_type = 1;
                 let z = floor + above;
@@ -2815,7 +2819,7 @@ mod tests {
                     self.visited = true;
                     terrain
                         .unwrap()
-                        .cell_mut(5, 5)
+                        .cell_mut_for_test(5, 5)
                         .unwrap()
                         .bridge_facts
                         .raw_flags = self.flags;
@@ -2825,7 +2829,11 @@ mod tests {
         for initial_bridge in [false, true] {
             let (mut entities, occupancy, mut terrain, rules, warhead, interner) =
                 bridge_layer_test_fixture();
-            terrain.cell_mut(5, 5).unwrap().bridge_facts.raw_flags = if initial_bridge {
+            terrain
+                .cell_mut_for_test(5, 5)
+                .unwrap()
+                .bridge_facts
+                .raw_flags = if initial_bridge {
                 BRIDGE_FLAG_STRUCTURAL
             } else {
                 0
@@ -3205,8 +3213,8 @@ mod tests {
 
         let mut commit = ReceiverCommit::new();
         let mut target_house = HouseState::new(american, 0, Some(american), true, 0, 10);
-        target_house.difficulty = HouseDifficulty::Normal;
-        commit.houses.insert(american, target_house);
+        target_house.set_difficulty_for_test(HouseDifficulty::Normal);
+        commit.houses.register(target_house);
         let (death, pings) = commit.run(
             &aoe.hits,
             &mut entities,
@@ -3497,11 +3505,11 @@ mod tests {
 
         let mut commit = ReceiverCommit::new();
         let mut normal = HouseState::new(normal_house, 0, None, false, 0, 10);
-        normal.difficulty = HouseDifficulty::Normal;
-        commit.houses.insert(normal_house, normal);
+        normal.set_difficulty_for_test(HouseDifficulty::Normal);
+        commit.houses.register(normal);
         let mut easy = HouseState::new(easy_house, 0, None, false, 0, 10);
-        easy.difficulty = HouseDifficulty::Easy;
-        commit.houses.insert(easy_house, easy);
+        easy.set_difficulty_for_test(HouseDifficulty::Easy);
+        commit.houses.register(easy);
         let (death, _) = commit.run(
             &aoe.hits,
             &mut entities,
@@ -3682,13 +3690,18 @@ mod tests {
                 victim.navigation.set_nav_com_aux_for_test(Some(
                     crate::sim::components::NavTargetRef::cell(1, 1),
                 ));
-                victim.navigation.path_replay =
-                    FootPathQueue::for_test(vec![2, 3, 4, 5], 0, Some((9, 8)));
-                let path = &mut victim.navigation.path_runtime;
+                victim
+                    .navigation
+                    .set_path_replay_for_test(FootPathQueue::for_test(
+                        vec![2, 3, 4, 5],
+                        0,
+                        Some((9, 8)),
+                    ));
+                let path = victim.navigation.path_runtime_mut();
                 path.set_movement_timer_for_test(CdTimer::started(50, 5));
                 path.set_blocked_timer_for_test(CdTimer::started(40, 6));
-                path.set_path_blocked(true);
-                path.set_retries_left(7);
+                path.set_path_blocked_for_test(true);
+                path.set_retries_left_for_test(7);
                 let loco = victim.locomotor.as_mut().unwrap();
                 loco.set_powered_for_test(case["power_off"] != true);
                 if let Some(head) = case["head"].as_array() {
@@ -3756,12 +3769,16 @@ mod tests {
                 .collect();
             let mut terrain = ResolvedTerrainGrid::from_cells(10, 10, cells);
             if fixture.first_bridge {
-                terrain.cell_mut(6, 4).unwrap().bridge_facts.raw_flags = 0x100;
+                terrain
+                    .cell_mut_for_test(6, 4)
+                    .unwrap()
+                    .bridge_facts
+                    .raw_flags = 0x100;
             }
             if fixture.all_bridges {
                 for (dx, dy) in crate::util::direction::DIRECTION_DELTAS {
                     terrain
-                        .cell_mut((5 + dx) as u16, (5 + dy) as u16)
+                        .cell_mut_for_test((5 + dx) as u16, (5 + dy) as u16)
                         .unwrap()
                         .bridge_facts
                         .raw_flags = 0x100;
@@ -3779,17 +3796,18 @@ mod tests {
                 };
                 for cell in case["cells"].as_array().into_iter().flatten() {
                     let (x, y) = xy(cell);
-                    let out = terrain.cell_mut(x, y).unwrap();
+                    let out = terrain.cell_mut_for_test(x, y).unwrap();
                     out.level = cell[2].as_i64().unwrap() as u8;
                     out.bridge_facts.raw_flags = cell[3].as_u64().unwrap() as u32;
                 }
                 for cell in case["slopes"].as_array().into_iter().flatten() {
                     let (x, y) = xy(cell);
-                    terrain.cell_mut(x, y).unwrap().slope_type = cell[2].as_u64().unwrap() as u8;
+                    terrain.cell_mut_for_test(x, y).unwrap().slope_type =
+                        cell[2].as_u64().unwrap() as u8;
                 }
                 for cell in case["blocked_terrain"].as_array().into_iter().flatten() {
                     let (x, y) = xy(cell);
-                    terrain.cell_mut(x, y).unwrap().speed_costs.foot = Some(0);
+                    terrain.cell_mut_for_test(x, y).unwrap().speed_costs.foot = Some(0);
                 }
                 for cell in case["raw"].as_array().into_iter().flatten() {
                     let (x, y) = xy(cell);
@@ -3837,15 +3855,17 @@ mod tests {
                     ),
                 );
             }
-            world.session.binary_frame = 100;
+            world.session.set_binary_frame_for_test(100);
             world.main_rng = SimRng::new(7).into();
             world.scenario_rng = SimRng::new(1);
             // Some(false) models campaign PlayerControl without IsHuman.
-            world.session.game_mode_nonzero = false;
+            world.session.set_game_mode(
+                crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false),
+            );
             let mut house =
                 HouseState::new(victim_house, 0, None, human_control == Some(true), 0, 10);
-            house.player_control = human_control.is_some();
-            world.houses.insert(victim_house, house);
+            house.set_player_control_for_test(human_control.is_some());
+            world.houses.register(house);
             if team {
                 let script = world.interner.intern("ScatterFixture");
                 world
@@ -3886,7 +3906,7 @@ mod tests {
                 },
                 setter: {
                     let loco = victim.locomotor.as_ref().unwrap();
-                    let path = &victim.navigation.path_runtime;
+                    let path = victim.navigation.path_runtime();
                     let coord = |value: Option<crate::sim::components::DriveCoord>| {
                         value.map_or([0, 0, 0], |v| [v.x + 1280, v.y + 1280, v.z])
                     };
@@ -3899,8 +3919,8 @@ mod tests {
                     serde_json::json!({
                         "nav": nav, "aux": if victim.navigation.nav_com_aux().is_none() { 0 } else { 123 },
                         "destination": coord(loco.walk_destination()), "head": coord(loco.step_head()),
-                        "queue": victim.navigation.path_replay.directions().iter().map(|&v| if v == 255 { -1 } else { i32::from(v) }).collect::<Vec<_>>(),
-                        "reference": victim.navigation.path_replay.reference_cell(),
+                        "queue": victim.navigation.path_replay().directions().iter().map(|&v| if v == 255 { -1 } else { i32::from(v) }).collect::<Vec<_>>(),
+                        "reference": victim.navigation.path_replay().reference_cell(),
                         "queued_mission": victim.mission.queued().raw(),
                         "facing": u32::from(victim.body_facing.destination()) * 65537,
                         "moving": u8::from(loco.walk_is_moving().unwrap()), "powered": u8::from(loco.is_powered()),
@@ -4216,14 +4236,14 @@ mod tests {
         let mut air = GameEntity::test_default(10, "AIR", "Americans", 5, 5);
         air.set_category_for_test(EntityCategory::Aircraft);
         air.lifecycle.set_in_limbo_for_test(false);
-        air.lifecycle.set_cell_marked(true);
+        air.lifecycle.set_cell_marked_for_test(true);
         air.position.set_sub_x_for_test(CELL_CENTER_LEPTON);
         air.position.set_sub_y_for_test(CELL_CENTER_LEPTON);
         let mut air_locomotor = crate::sim::movement::locomotor::LocomotorState::from_object_type(
             rules.object("AIR").expect("air type"),
             0,
         );
-        air_locomotor.set_layer(MovementLayer::Air);
+        air_locomotor.set_layer_for_test(MovementLayer::Air);
         air.locomotor = Some(air_locomotor);
         air.position.set_exact_z_leptons_for_test(Some(1));
         air = air
@@ -4245,7 +4265,7 @@ mod tests {
         for (stable_id, rx) in [(100, 5), (101, 6), (102, 8)] {
             terrain_objects.insert(stable_id, {
                 let mut terrain = TerrainObjectState::for_test(stable_id, tree_ref, rx, 5);
-                terrain.occupation_bits = 4;
+                terrain.set_occupation_bits_for_test(4);
                 terrain
             });
             terrain_cells.insert((rx, 5), stable_id);
@@ -4369,24 +4389,24 @@ mod tests {
         let terrain_ref = sim.interner.intern("TIBTREE");
         let terrain_state = {
             let mut terrain = TerrainObjectState::for_test(terrain_id, terrain_ref, 5, 5);
-            terrain.health = 10;
-            terrain.max_health = 10;
-            terrain.occupation_bits = 4;
+            terrain.set_health_for_test(10);
+            terrain.set_max_health_for_test(10);
+            terrain.set_occupation_bits_for_test(4);
             terrain
         };
-        sim.production
-            .terrain_objects
+        sim.terrain_objects
+            .objects_mut_for_test()
             .insert(terrain_id, terrain_state.clone());
-        sim.production
-            .terrain_object_cells
+        sim.terrain_objects
+            .cell_index_mut_for_test()
             .insert((5, 5), terrain_id);
-        sim.production
-            .tiberium_spawning_terrain_cells
+        sim.terrain_objects
+            .spawning_cells_mut_for_test()
             .insert((5, 5));
         crate::sim::terrain_object::mark_terrain_raw_occupation(
             &mut sim.substrate.raw_cell_occupation,
             (5, 5),
-            terrain_state.occupation_bits,
+            terrain_state.occupation_bits(),
         );
         sim.substrate.raw_cell_occupation.mark_ground(5, 5, 0x80);
         sim.substrate.raw_cell_occupation.mark_deck(5, 5, 0xA5);
@@ -4448,20 +4468,18 @@ mod tests {
                 .is_none(),
             "nested and parent null-source events do not fabricate an attacker"
         );
-        let destroyed = &sim.production.terrain_objects[&terrain_id];
-        assert_eq!(destroyed.health, 0);
-        assert_eq!(destroyed.lifecycle, TerrainObjectLifecycle::Destroyed);
-        assert!(!sim.production.terrain_object_cells.contains_key(&(5, 5)));
+        let destroyed = &sim.terrain_objects.objects()[&terrain_id];
+        assert_eq!(destroyed.health(), 0);
+        assert_eq!(destroyed.lifecycle(), TerrainObjectLifecycle::Destroyed);
+        assert!(!sim.terrain_objects.cell_index().contains_key(&(5, 5)));
         assert!(
-            !sim.production
-                .tiberium_spawning_terrain_cells
-                .contains(&(5, 5)),
+            !sim.terrain_objects.spawning_cells().contains(&(5, 5)),
             "the outer Terrain finalizes once after the Wood-enabled C4 re-entry is guarded"
         );
         assert_eq!(
             sim.substrate.raw_cell_occupation.ground_bits(5, 5)
                 & crate::sim::terrain_object::terrain_raw_occupation_mask(
-                    terrain_state.occupation_bits
+                    terrain_state.occupation_bits()
                 ),
             0,
             "Terrain-specific raw occupation clears even though the live Techno remains"
@@ -4515,20 +4533,22 @@ mod tests {
 
         let terrain_id = 901;
         let terrain_ref = sim.interner.intern("TIBTREE");
-        sim.production.terrain_objects.insert(terrain_id, {
-            let mut terrain = TerrainObjectState::for_test(terrain_id, terrain_ref, 5, 5);
-            terrain.health = 10;
-            terrain.max_health = 10;
-            terrain.occupation_bits = 4;
-            terrain
-        });
-        sim.production
-            .terrain_object_cells
+        sim.terrain_objects
+            .objects_mut_for_test()
+            .insert(terrain_id, {
+                let mut terrain = TerrainObjectState::for_test(terrain_id, terrain_ref, 5, 5);
+                terrain.set_health_for_test(10);
+                terrain.set_max_health_for_test(10);
+                terrain.set_occupation_bits_for_test(4);
+                terrain
+            });
+        sim.terrain_objects
+            .cell_index_mut_for_test()
             .insert((5, 5), terrain_id);
-        sim.production
-            .tiberium_spawning_terrain_cells
+        sim.terrain_objects
+            .spawning_cells_mut_for_test()
             .insert((5, 5));
-        sim.session.no_damage = true;
+        sim.session.set_no_damage_for_test(true);
         let outer_ref = sim.interner.intern("OUTERWH");
         let before_hash = sim.state_hash();
         let before_rng = sim.scenario_rng.state();
@@ -4571,10 +4591,10 @@ mod tests {
                 .current(),
             1000
         );
-        let terrain = &sim.production.terrain_objects[&terrain_id];
-        assert_eq!(terrain.health, 10);
-        assert_eq!(terrain.lifecycle, TerrainObjectLifecycle::Live);
-        assert_eq!(sim.production.terrain_object_cells[&(5, 5)], terrain_id);
+        let terrain = &sim.terrain_objects.objects()[&terrain_id];
+        assert_eq!(terrain.health(), 10);
+        assert_eq!(terrain.lifecycle(), TerrainObjectLifecycle::Live);
+        assert_eq!(sim.terrain_objects.cell_index()[&(5, 5)], terrain_id);
         assert_eq!(sim.scenario_rng.state(), before_rng);
         assert_eq!(sim.state_hash(), before_hash);
     }

@@ -3,9 +3,8 @@
 //! This is separate from Main and Scenario RNG. The app owns the UI thread's
 //! lifetime; opening another file dialog must not reset the stream.
 //!
-//! `_srand` (`0x007CB49D`) has no port: its only callers are network lobbies
-//! (ModemHost init `0x005B8AEB`, the LAN setup dialog 0xBC's init `0x005DEC4D`
-//! and the WOL chat sink `0x007A41EB`), none of which is ported.
+//! `_srand` at0x007CB49D replaces this thread's retained state. LAN setup
+//! init5DEC4D seeds it from a Main draw before taking the transmitted rand15.
 
 #[derive(Debug, Clone)]
 pub struct LegacyCrtRng {
@@ -24,6 +23,11 @@ impl Default for LegacyCrtRng {
 impl LegacyCrtRng {
     pub const fn with_seed(state: u32) -> Self {
         Self { state }
+    }
+
+    /// `_srand`7CB49D writes the supplied DWORD to the same CRT thread cell.
+    pub fn reseed(&mut self, seed: u32) {
+        self.state = seed;
     }
 
     /// `_rand` 0x007CB4AA, arithmetic at 0x007CB4AF..0x007CB4CB.
@@ -52,6 +56,13 @@ mod tests {
         {
             assert_eq!(case["seed"].as_u64().unwrap(), u64::from(seed));
             let mut rng = LegacyCrtRng::with_seed(seed);
+            let mut reseeded = LegacyCrtRng::with_seed(73);
+            let _ = reseeded.draw15();
+            reseeded.reseed(seed);
+            assert_eq!(
+                reseeded.draw15(),
+                case["draws"][0]["value"].as_u64().unwrap() as u16
+            );
             let draws = case["draws"].as_array().unwrap();
             assert_eq!(draws.len(), 32);
             for draw in draws {

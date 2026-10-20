@@ -283,7 +283,10 @@ impl Simulation {
                     let victim = self.substrate.entities.get(node.victim)?;
                     if !selected
                         && !victim.selection.is_selected()
-                        && node.line_timer.remaining(self.session.binary_frame as i32) <= 0
+                        && node
+                            .line_timer
+                            .remaining(self.session.binary_frame() as i32)
+                            <= 0
                     {
                         return None;
                     }
@@ -501,13 +504,13 @@ impl Simulation {
         let mut count = self
             .houses
             .get(&source)
-            .map_or(0, |house| house.base_projection.buildings().len());
+            .map_or(0, |house| house.base_projection().buildings().len());
         while count != 0 {
             count -= 1;
             let Some(id) = self
                 .houses
                 .get(&source)
-                .and_then(|house| house.base_projection.buildings().get(count))
+                .and_then(|house| house.base_projection().buildings().get(count))
                 .copied()
             else {
                 continue;
@@ -549,7 +552,7 @@ impl Simulation {
         };
         can_capture(
             controller,
-            CaptureVictimFacts::of(target, target_obj, self.session.binary_frame),
+            CaptureVictimFacts::of(target, target_obj, self.session.binary_frame()),
         )
     }
 
@@ -602,7 +605,7 @@ impl Simulation {
                 victim: target_id,
                 original_owner,
                 line_timer: crate::sim::timer::CdTimer::started(
-                    self.session.binary_frame as i32,
+                    self.session.binary_frame() as i32,
                     rules.mind_control.attack_line_frames,
                 ),
             });
@@ -637,7 +640,7 @@ impl Simulation {
         !object_type.immune_to_psionics
             && !crate::sim::superweapon::invulnerability::is_invulnerable(
                 object.invulnerability.as_ref(),
-                self.session.binary_frame,
+                self.session.binary_frame(),
             )
             && !object_type.balloon_hover
             && !crate::sim::movement::air_movement::is_high_flying(
@@ -966,7 +969,7 @@ impl Simulation {
         if self
             .houses
             .get(&unit_owner)
-            .is_none_or(|house| house.is_human)
+            .is_none_or(|house| house.is_human())
         {
             return;
         }
@@ -1027,7 +1030,7 @@ impl Simulation {
         {
             return;
         }
-        let now = self.session.binary_frame;
+        let now = self.session.binary_frame();
         let readiness = crate::sim::mission::authority::LiveReadyInputProvider { rules };
         let _ = self.mission_queue_exact(
             unit_id,

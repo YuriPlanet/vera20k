@@ -6,6 +6,7 @@
 
 mod layout;
 mod scroll;
+pub(crate) use scroll::ScrollModel;
 mod state;
 mod statics;
 pub(crate) use statics::SkirmishStatics;
@@ -19,7 +20,7 @@ pub use layout::{
     SavedSeedMode, ShellControlId, SkirmishCheckboxId, SkirmishCheckboxRect,
     SkirmishColumnLabelRects, SkirmishRightPanelTextRects, SkirmishRowRects, SkirmishShellLayout,
     SkirmishTrackbarId, SkirmishTrackbarLabelRects, SkirmishTrackbarRects, checkbox_icon_rect,
-    checkbox_text_rect, choose_map_modal_button_at, combo_arrow_rect, combo_dropdown_row_rect,
+    checkbox_text_rect, choose_map_modal_button_at, combo_arrow_hit_rect, combo_arrow_rect, combo_dropdown_row_rect,
     combo_face_rect, combo_swatch_rect, combo_text_rect, compute_choose_map_modal_layout,
     compute_fixed_800_layout, compute_layout, compute_layout_on, compute_random_map_setup_layout,
     compute_responsive_choose_map_modal_layout, compute_responsive_layout,
@@ -28,14 +29,15 @@ pub use layout::{
     random_map_setup_control_at, random_map_setup_dropdown_rect, random_map_setup_dropdown_row_at,
     saved_seed_control_at,
 };
-pub use state::{
-    AcceptOutcome, ChooseMapHoverTarget, ChooseMapListPress, ChooseMapModalState,
+pub use state::{country_choices, available_color_choices, available_start_choices, team_choices,
+    AcceptOutcome, ChooseMapHoverTarget, ChooseMapListPress, ChooseMapContext, ChooseMapModalState,
     ChooseMapSelection, DropdownScrollDragState, DropdownScrollbarPart,
     DropdownScrollbarPressState, EjectPrompt, EjectPromptButton, MainRngRanged, OpenComboDropdown,
     OwnerDrawButton, PLAYER_NAME_CARET_MARGIN_PX, PLAYER_NAME_DEFAULT,
     PLAYER_NAME_EDIT_LIMIT_BYTES, PLAYERS_RANGE, PlayerNameEditState, RandomMapSetupModalState,
     SAVED_SEED_DESCRIPTION_MAX_UNITS, SETUP_COMBO_ROWS, SavedSeedBrowserRow, SavedSeedBrowserState,
-    SavedSeedOutcome, SavedSeedPrompt, SavedSeedPromptPurpose, SetupCombo, SetupComboItem,
+    SavedSeedDescriptionEdit, SavedSeedOutcome, SavedSeedPrompt, SavedSeedPromptPurpose,
+    SetupCombo, SetupComboItem,
     SkirmishAiRowType, SkirmishComboId, SkirmishComboItem, SkirmishCountryChoice,
     SkirmishHoverTarget, SkirmishShellAction, SkirmishShellDialog, SkirmishShellOpponent,
     SkirmishShellState, SkirmishShellUiSound, SkirmishTrackbarBounds, SkirmishValidationModalState,

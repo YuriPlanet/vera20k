@@ -51,12 +51,9 @@ fn retail_dustbowl_battle_fortress_boarded(riders: u16) -> Fortress {
     let rules = &resources.rules;
     for (name, side) in [("Americans", 0), ("Russians", 1)] {
         let house = sim.interner.intern(name);
-        sim.houses
-            .entry(house)
-            .or_insert_with(|| HouseState::new(house, side, None, true, 10_000, 10));
-        if !sim.session.house_order.contains(&house) {
-            sim.session.house_order.push(house);
-        }
+        sim.houses.get_or_register_for_test(house, || {
+            HouseState::new(house, side, None, true, 10_000, 10)
+        });
     }
     let (bfrt, x, y) = (40..100_u16)
         .flat_map(|y| (40..100_u16).map(move |x| (x, y)))
@@ -183,7 +180,7 @@ fn order(fortress: &Fortress, payload: Command) -> CommandEnvelope {
     let sim = fortress.scenario.sim();
     CommandEnvelope::new(
         sim.interner.get("Americans").expect("Americans house"),
-        sim.session.tick + 1,
+        sim.session.tick() + 1,
         payload,
     )
 }

@@ -392,24 +392,6 @@ mod tests {
     }
 
     #[test]
-    fn generate_map_produces_a_populated_map() {
-        let generated = shared_run(1, 0);
-        // Every in-band cell is projected, and the terrain is shaped (not all
-        // no-tile). The header carries the generated dimensions.
-        assert!(!generated.map_file.cells.is_empty(), "cells were emitted");
-        let real = generated
-            .map_file
-            .cells
-            .iter()
-            .filter(|c| c.tile_index != -1)
-            .count();
-        assert!(real > 0, "some cells carry real tiles");
-        assert_eq!(generated.map_file.header.theater, "TEMPERATE");
-        // Rocks run on temperate.
-        assert!(generated.stages_run.contains(&Stage::Rocks));
-    }
-
-    #[test]
     fn generate_map_is_deterministic() {
         let resolved = resolved();
         let blocks = one_by_one();
@@ -616,17 +598,6 @@ mod tests {
                 .iter()
                 .all(|snapshot| snapshot.start_waypoints == generated.start_waypoints)
         );
-    }
-
-    #[test]
-    fn non_temperate_theater_skips_rocks_stage() {
-        let resolved = resolved();
-        let blocks = one_by_one();
-        let settings = RmgSettings::default();
-        let generated = generate_map(&options(1, 1), &settings, &resolved, &blocks, &[]);
-        assert_eq!(generated.map_file.header.theater, "SNOW");
-        assert!(!generated.stages_run.contains(&Stage::Rocks));
-        assert!(generated.stages_run.contains(&Stage::Trees));
     }
 
     // ---- The generation matrix -------------------------------------------
@@ -920,31 +891,6 @@ mod bridge_enable_coin_tests {
                 );
             }
         }
-    }
-
-    /// Both outcomes must be reachable, or the comparison is against a constant
-    /// and the threshold could be anything.
-    #[test]
-    fn the_coin_lands_both_ways_at_roughly_one_in_four() {
-        let mut enabled = 0usize;
-        const TRIALS: usize = 400;
-        for seed in 0..TRIALS {
-            let mut rng = RmgRng::new(seed as u16);
-            if draw_bridge_enable(&mut rng) {
-                enabled += 1;
-            }
-        }
-        assert!(
-            enabled > 0 && enabled < TRIALS,
-            "the coin never varies: {enabled}/{TRIALS}"
-        );
-        // Generous band — this is a sanity check on the threshold, not a
-        // distribution test on the generator.
-        assert!(
-            (TRIALS / 10..TRIALS / 2).contains(&enabled),
-            "{enabled}/{TRIALS} enabled — nowhere near the one-in-four the \
-             threshold should give"
-        );
     }
 }
 

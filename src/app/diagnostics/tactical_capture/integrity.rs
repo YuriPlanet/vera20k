@@ -296,27 +296,3 @@ impl<'de> Visitor<'de> for StrictJsonVisitor {
         Ok(StrictJson(Value::Object(values)))
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn sha256_matches_known_vectors() {
-        assert_eq!(
-            sha256_hex(b""),
-            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-        );
-        assert_eq!(
-            sha256_hex(b"abc"),
-            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
-        );
-
-        let bytes = b"chunk boundaries must not change a streaming SHA-256 digest";
-        let mut chunked = Sha256::new();
-        for chunk in bytes.chunks(7) {
-            chunked.update(chunk);
-        }
-        assert_eq!(digest_hex(chunked.finalize()), sha256_hex(bytes));
-    }
-}

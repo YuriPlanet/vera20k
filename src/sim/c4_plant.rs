@@ -1,11 +1,11 @@
 //! A demolition infantryman's C4 plant on a building.
 //!
-//! Two orders put a `C4=` infantryman on Sabotage (mission 17) with a
-//! building as its destination: the player's Sabotage order (the Event's
-//! MegaMission, `Command::PlantC4`) and the C4 arm that opens
-//! `InfantryClass::Mission_Attack` (`0x0051F3E3..0x0051F455`,
-//! `techno_ai::mission_handlers`), which a computer's Tanya team reaches
-//! through its script's attack. Sabotage dispatches to
+//! The player's Sabotage order (the Event's MegaMission, `Command::PlantC4`)
+//! and the demolition arms of Attack, Hunt, Guard and AreaGuard put a
+//! `C4=` infantryman on Sabotage (mission 17). Guard and AreaGuard promote
+//! a computer infantryman's building Target (`FootClass` `0x004D523A..0x004D52A9`
+//! and `0x004D6DBE..0x004D6E44`, `techno_ai::mission_handlers`), so a Tanya
+//! holding that Target walks in to plant. Sabotage dispatches to
 //! `FootClass::Mission_Capture` (`sim::mission::capture`), which heads for a
 //! building Target again once it has no destination. The walk enters the
 //! building's cells (`InfantryClass::Can_Enter_Cell`, `world::object_entry`),
@@ -229,7 +229,7 @@ impl Simulation {
         else {
             return Ok(false);
         };
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         let Some(target) = self.substrate.entities.get(building) else {
             return Ok(false);
         };
@@ -304,7 +304,7 @@ impl Simulation {
             live,
             burst_index,
         );
-        let frame = self.session.binary_frame as i32;
+        let frame = self.session.binary_frame() as i32;
         if let Some(planter) = self.substrate.entities.get_mut(id) {
             planter.rearm_timer.start(frame, rof);
         }

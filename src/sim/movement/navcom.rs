@@ -25,15 +25,15 @@ use crate::util::fixed_math::{SIM_ZERO, SimFixed};
 pub struct NavigationState {
     /// Foot+55C is retained lifecycle history, not current occupancy.
     #[serde(default)]
-    pub(crate) neighbor_state: crate::sim::cell_neighbors::FootNeighborState,
+    neighbor_state: crate::sim::cell_neighbors::FootNeighborState,
     /// Foot timers, retry count and blockage latch survive path retirement.
     #[serde(default)]
-    pub path_runtime: crate::sim::components::FootPathRuntime,
+    path_runtime: crate::sim::components::FootPathRuntime,
     /// Foot-owned direction replay and reference cell (+5E0/+558), shared by
     /// every locomotor instance. Retirement must not discard the owner queue.
     /// Native chain tails reload the owner at Drive4B1DF7 / Ship6A143A.
     #[serde(default)]
-    pub path_replay: crate::sim::components::FootPathQueue,
+    path_replay: crate::sim::components::FootPathQueue,
     /// `Foot+0x5A0`, NavCom's auxiliary slot, cleared whenever NavCom is
     /// published or stopped.
     #[serde(default)]
@@ -82,6 +82,63 @@ impl Default for NavigationState {
 }
 
 impl NavigationState {
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_neighbor_state_for_test(
+        &mut self,
+        value: crate::sim::cell_neighbors::FootNeighborState,
+    ) {
+        self.neighbor_state = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_path_replay_for_test(&mut self, value: crate::sim::components::FootPathQueue) {
+        self.path_replay = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_path_runtime_for_test(&mut self, value: crate::sim::components::FootPathRuntime) {
+        self.path_runtime = value;
+    }
+
+    /// Foot+55C neighbor history.
+    pub(crate) fn neighbor_state(&self) -> &crate::sim::cell_neighbors::FootNeighborState {
+        &self.neighbor_state
+    }
+
+    pub(crate) fn neighbor_state_mut(
+        &mut self,
+    ) -> &mut crate::sim::cell_neighbors::FootNeighborState {
+        &mut self.neighbor_state
+    }
+
+    /// The Foot path timers, retry count and blockage latch.
+    pub fn path_runtime(&self) -> &crate::sim::components::FootPathRuntime {
+        &self.path_runtime
+    }
+
+    pub(crate) fn path_runtime_mut(&mut self) -> &mut crate::sim::components::FootPathRuntime {
+        &mut self.path_runtime
+    }
+
+    /// The Foot-owned direction replay and reference cell (+5E0/+558).
+    pub fn path_replay(&self) -> &crate::sim::components::FootPathQueue {
+        &self.path_replay
+    }
+
+    pub(crate) fn path_replay_mut(&mut self) -> &mut crate::sim::components::FootPathQueue {
+        &mut self.path_replay
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn path_runtime_mut_for_test(&mut self) -> &mut crate::sim::components::FootPathRuntime {
+        &mut self.path_runtime
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn path_replay_mut_for_test(&mut self) -> &mut crate::sim::components::FootPathQueue {
+        &mut self.path_replay
+    }
+
     /// Foot constructor-owned navigation state, including its frame anchors.
     pub(crate) fn at_frame(frame: u32) -> Self {
         Self {
@@ -740,16 +797,8 @@ fn drive_stop_moving(entity: &mut GameEntity) {
         loco.store_track_target_fraction(TrackFamily::Drive, TRACK_STOP_TARGET_FRACTION);
     }
     loco.store_track_destination(TrackFamily::Drive, None);
-    // OPEN Process-host timing: native Stop4AFE00 clamps only class target
-    // and clears destination. The owner zero belongs to the admitted Process
-    // rest tail4B0828, which also tests queue emptiness. Several ordinary
-    // arrival returns skip that tail. Zero it here, as before, until that
-    // tail is ported; this is not Stop parity.
-    if loco.track_head(TrackFamily::Drive).is_none()
-        && entity.foot_speed.applied_fraction() > SIM_ZERO
-    {
-        entity.foot_speed.set_speed_fraction(SIM_ZERO);
-    }
+    // Foot+578 is retained here. The common Process tail4B0828 owns its
+    // eventual zero, after the destination/head/path gates (track_turn).
 }
 
 fn ship_set_destination(
@@ -883,7 +932,7 @@ impl crate::sim::world::Simulation {
                 entity.navigation.store_nav_com(None);
             }
         }
-        let timing = super::DestinationTiming::from_rules(self.session.binary_frame, rules);
+        let timing = super::DestinationTiming::from_rules(self.session.binary_frame(), rules);
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             timing.accept(entity);
         }

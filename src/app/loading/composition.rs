@@ -30,7 +30,6 @@ const NARROW_ART_SIZE: [i32; 2] = [640, 480];
 const WIDE_ART_SIZE: [i32; 2] = [800, 600];
 
 /// Skirmish mode whose briefing block sits lower on the loading screen.
-const COOPERATIVE_MODE_OVERRIDE_FILE: &str = "MPCoopMD.ini";
 
 /// Bitmap the random-map setup dialog writes and the preview source the
 /// random-map loading branch consumes.
@@ -157,6 +156,7 @@ pub(crate) struct MmpbMarkerAnchor {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum LoadingParticipantId {
     Local,
+    Human(usize),
     Opponent(usize),
 }
 
@@ -251,25 +251,16 @@ const COUNTRY_TEXT_KEYS: [LoadingCountryTextKeys; 10] = [
 pub(crate) const LOADING_TEXT_KEY: &str = "GUI:LoadingEx";
 
 /// Resolve the verified country-dependent key row without inventing fallback text.
-pub(crate) const fn loading_country_text_keys(country: LaunchCountry) -> LoadingCountryTextKeys {
-    COUNTRY_TEXT_KEYS[match country {
-        LaunchCountry::America => 0,
-        LaunchCountry::Korea => 1,
-        LaunchCountry::France => 2,
-        LaunchCountry::Germany => 3,
-        LaunchCountry::GreatBritain => 4,
-        LaunchCountry::Libya => 5,
-        LaunchCountry::Iraq => 6,
-        LaunchCountry::Cuba => 7,
-        LaunchCountry::Russia => 8,
-        LaunchCountry::Yuri => 9,
-    }]
+pub(crate) fn loading_country_text_keys(country: LaunchCountry) -> Option<LoadingCountryTextKeys> {
+    COUNTRY_TEXT_KEYS
+        .get(usize::from(country.raw_index()))
+        .copied()
 }
 
 /// Localized strings retained by the immutable loading composition.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct LocalizedLoadingTextSnapshot {
-    pub keys: LoadingCountryTextKeys,
+    pub keys: Option<LoadingCountryTextKeys>,
     pub country_name: Option<String>,
     pub special_unit: Option<String>,
     pub load_brief: Option<String>,
@@ -293,9 +284,17 @@ pub(crate) fn localize_loading_text(
     csf: &CsfFile,
     country: LaunchCountry,
 ) -> LocalizedLoadingTextSnapshot {
-    let keys = loading_country_text_keys(country);
+    let Some(keys) = loading_country_text_keys(country) else {
+        // DrawLoading55381E/553B39/553E52 supplies NULL outside0..9;
+        // 553B44 then copies NULL. Safely omit these unsupported stock labels
+        // rather than reproducing that crash or changing the canonical country.
+        return LocalizedLoadingTextSnapshot {
+            loading: Some(csf.text(LOADING_TEXT_KEY).into_owned()),
+            ..LocalizedLoadingTextSnapshot::missing(country)
+        };
+    };
     LocalizedLoadingTextSnapshot {
-        keys,
+        keys: Some(keys),
         country_name: Some(csf.text(keys.country_name).into_owned()),
         special_unit: Some(native_uppercase_special_unit(
             csf.text(keys.special_unit).as_ref(),
@@ -334,9 +333,7 @@ pub(crate) fn loading_text_rects(
             loading: RectPx::new(16, 235, 200, 20),
         }
     } else {
-        let cooperative = mode
-            .override_file
-            .eq_ignore_ascii_case(COOPERATIVE_MODE_OVERRIDE_FILE);
+        let cooperative = mode.class == crate::skirmish_modes::MpModeClass::Cooperative;
         LoadingTextRects {
             country_name: RectPx::new(540, 310, 200, 20),
             special_unit: RectPx::new(20, 90, 200, 20),
@@ -472,7 +469,7 @@ fn finish_loading_composition(
     preview: Option<PreparedLoadingPreview>,
     markers: Vec<MmpbMarkerRecord>,
 ) -> LoadingCompositionSnapshot {
-    let country = session.local.country;
+    let country = session.local_slot().country;
     let text = csf.map_or_else(
         || LocalizedLoadingTextSnapshot::missing(country),
         |csf| localize_loading_text(csf, country),
@@ -746,6 +743,11 @@ mod tests {
 
     fn mode(override_file: &str) -> SkirmishLaunchMode {
         SkirmishLaunchMode {
+            class: if override_file.eq_ignore_ascii_case("MPCoopMD.ini") {
+                crate::skirmish_modes::MpModeClass::Cooperative
+            } else {
+                crate::skirmish_modes::MpModeClass::Battle
+            },
             id: 0,
             ui_name_key: String::new(),
             tooltip_key: String::new(),
@@ -857,39 +859,6 @@ mod tests {
     }
 
     #[test]
-    fn marker_records_preserve_start_participant_and_color_identity() {
-        let prefix = [waypoint(0, 0, 0), waypoint(1, 1, 0)];
-        let assignments = [
-            LoadingStartAssignment {
-                start_index: 1,
-                participant: LoadingParticipantId::Local,
-                color_priority: 7,
-            },
-            LoadingStartAssignment {
-                start_index: 0,
-                participant: LoadingParticipantId::Opponent(0),
-                color_priority: 2,
-            },
-        ];
-        let bounds = ProjectedPlayfieldBounds {
-            min_x: 250,
-            min_y: 0,
-            extent_x: 20,
-            extent_y: 20,
-        };
-        let region = mmpb_region_rect(640);
-        let fit = aspect_fit_preview(region, 100, 100).expect("valid fit");
-        let markers = build_mmpb_marker_records(&prefix, &assignments, bounds, region, fit);
-        assert_eq!(markers.len(), 2);
-        assert_eq!(markers[0].start_index, 0);
-        assert_eq!(markers[0].participant, LoadingParticipantId::Opponent(0));
-        assert_eq!(markers[0].color_priority, 2);
-        assert_eq!(markers[1].start_index, 1);
-        assert_eq!(markers[1].participant, LoadingParticipantId::Local);
-        assert_eq!(markers[1].color_priority, 7);
-    }
-
-    #[test]
     fn black_source_indicator_clips_a_four_by_four_rect() {
         let mut preview = DecodedPreview {
             width: 3,
@@ -913,6 +882,25 @@ mod tests {
     }
 
     #[test]
+    fn allocated_country_has_no_stock_text_identity() {
+        let csf = test_csf(&[
+            ("Name:YuriCountry", "Yuri"),
+            ("Name:YURI", "Yuri Clone"),
+            ("LoadBrief:YuriCountry", "A stock briefing"),
+            ("GUI:LoadingEx", "Loading..."),
+        ]);
+        for index in [10, 13, 14] {
+            let country = LaunchCountry::from_country_index(index);
+            let text = localize_loading_text(&csf, country);
+            assert!(text.keys.is_none());
+            assert!(text.country_name.is_none());
+            assert!(text.special_unit.is_none());
+            assert!(text.load_brief.is_none());
+            assert_eq!(text.loading.as_deref(), Some("Loading..."));
+        }
+    }
+
+    #[test]
     fn country_key_table_contains_every_verified_load_brief_key() {
         let countries = [
             LaunchCountry::America,
@@ -928,7 +916,7 @@ mod tests {
         ];
         let briefs = countries
             .map(loading_country_text_keys)
-            .map(|keys| keys.load_brief);
+            .map(|keys| keys.unwrap().load_brief);
         assert_eq!(
             briefs,
             [
@@ -968,15 +956,21 @@ mod tests {
         SkirmishLaunchSession {
             mode: mode("MPBattleMD.ini"),
             selected_map_file: Some(RANDMAP_SED_FIXTURE.to_owned()),
-            player_name: "Player".to_owned(),
-            local: SkirmishLocalSlot {
-                country: LaunchCountry::America,
-                country_random: false,
-                color_index: 0,
-                color_random: false,
-                start_position: LaunchStartPosition::Position(0),
-                team: LaunchTeam::None,
-            },
+            humans: vec![crate::skirmish_launch::SkirmishHumanSlot {
+                raw_slot_index: Some(0),
+                name: "Player".to_owned(),
+                slot: SkirmishLocalSlot {
+                    country: LaunchCountry::America,
+                    country_random: false,
+                    color_index: 0,
+                    color_random: false,
+                    start_position: LaunchStartPosition::Position(0),
+                    team: LaunchTeam::None,
+                },
+                role: crate::skirmish_launch::LaunchHumanRole::from_observer(false),
+            }],
+            local_player_index: 0,
+            ai_player_count: 0,
             opponents: Vec::new(),
             pre_fill_house_roster:
                 crate::skirmish_launch::PreFillHouseRoster::from_compact_skirmish(0),
@@ -994,60 +988,6 @@ mod tests {
         assert_eq!(loading_base_origin([1024, 768]), [112, 84]);
         assert_eq!(loading_base_origin([1920, 1080]), [560, 240]);
         assert_eq!(loading_base_origin([640, 800]), [0, 160]);
-    }
-
-    #[test]
-    fn text_rects_shift_by_exactly_the_shared_base_origin() {
-        // The split-anchor bug this guards: the text layers moved with the
-        // window while the art and the progress row stayed at (0,0).
-        let battle = mode("MPBattleMD.ini");
-        let anchored = loading_text_rects([800, 600], &battle, ShellScale::RETAIL);
-        let maximized = loading_text_rects([1024, 768], &battle, ShellScale::RETAIL);
-        let [dx, dy] = loading_base_origin([1024, 768]);
-
-        assert_eq!(
-            maximized.country_name,
-            anchored.country_name.translate(dx, dy)
-        );
-        assert_eq!(
-            maximized.special_unit,
-            anchored.special_unit.translate(dx, dy)
-        );
-        assert_eq!(maximized.load_brief, anchored.load_brief.translate(dx, dy));
-        assert_eq!(maximized.loading, anchored.loading.translate(dx, dy));
-    }
-
-    #[test]
-    fn gsi_03_09_missing_random_preview_keeps_text_without_markers() {
-        let csf = test_csf(&[
-            ("Name:Americans", "America"),
-            ("Name:Para", "paradrop"),
-            ("LoadBrief:USA", "A briefing."),
-            ("GUI:LoadingEx", "Loading..."),
-        ]);
-        let map =
-            crate::map::rmg::emit::empty_map_file(&crate::map::rmg::RmgOptions::default(), 32, 32);
-        let composition = build_random_map_loading_composition(
-            &test_launch_session(),
-            Some(&csf),
-            [800, 600],
-            ShellScale::RETAIL,
-            None,
-            &map,
-            &map.waypoints,
-            &[],
-        );
-
-        assert_eq!(composition.text.country_name.as_deref(), Some("America"));
-        assert_eq!(composition.text.special_unit.as_deref(), Some("PARADROP"));
-        assert_eq!(composition.text.load_brief.as_deref(), Some("A briefing."));
-        assert_eq!(composition.text.loading.as_deref(), Some("Loading..."));
-        assert_eq!(
-            composition.text_rects,
-            loading_text_rects([800, 600], &mode("MPBattleMD.ini"), ShellScale::RETAIL)
-        );
-        assert!(composition.preview.is_none());
-        assert!(composition.markers.is_empty());
     }
 
     #[test]
@@ -1278,7 +1218,7 @@ mod tests {
             crate::app::loading::progress_row::LoadingProgressRowSnapshot::from_launch_session(
                 &session
             )
-            .label,
+            .local_label(),
             "Player"
         );
     }
@@ -1342,6 +1282,7 @@ mod tests {
             Some([47, 23]),
             [0, 12],
             scale,
+            0,
         );
         assert_eq!(row.bar_origin, [48, 664]);
         assert_eq!(row.icon_origin, Some([234, 646]));

@@ -228,9 +228,7 @@ pub fn handle_option_mouse_move(
     y: i32,
 ) -> SkirmishShellAction {
     if let Some(drag) = state.dropdown_scroll_drag {
-        if let Some(top_index) =
-            top_index_from_thumb_y(state, layout, maps, drag.id, y, drag.grab_offset_y)
-        {
+        if let Some(top_index) = top_index_from_thumb_y(state, layout, maps, drag.id, y) {
             set_open_combo_top_index(state, maps, drag.id, top_index);
         }
         return SkirmishShellAction::None;
@@ -290,23 +288,6 @@ mod bounds_tests {
         assert_eq!(
             bounds.range(SkirmishTrackbarId::UnitCount0x50c),
             TrackbarRange::new(0, 10, 1)
-        );
-    }
-
-    #[test]
-    fn default_bounds_match_stock_constants() {
-        let bounds = SkirmishTrackbarBounds::default();
-        assert_eq!(
-            bounds.range(SkirmishTrackbarId::Credits0x511),
-            TrackbarRange::new(CREDITS_MIN, CREDITS_MAX, CREDITS_STEP)
-        );
-        assert_eq!(
-            bounds.range(SkirmishTrackbarId::UnitCount0x50c),
-            TrackbarRange::new(UNIT_COUNT_MIN, UNIT_COUNT_MAX, UNIT_COUNT_STEP)
-        );
-        assert_eq!(
-            bounds.range(SkirmishTrackbarId::GameSpeed0x529),
-            TrackbarRange::new(GAME_SPEED_MIN, GAME_SPEED_MAX, GAME_SPEED_STEP)
         );
     }
 

@@ -13,6 +13,9 @@ use crate::rules::overlay_types::OverlayTypeRegistry;
 use crate::ui::game_screen::GameScreen;
 
 pub(crate) struct FrontendState {
+    /// External offline launch: returning from the session closes the process for its client.
+    pub(crate) external_launch: bool,
+    pub(crate) external_launch_error: Option<String>,
     /// The Skirmish setup dialog's state.
     pub(crate) skirmish_shell_state: crate::ui::skirmish_shell::SkirmishShellState,
     /// Choose Map's last clicked game-type row `[0x008316FC]`: starts at -1,
@@ -21,8 +24,8 @@ pub(crate) struct FrontendState {
     pub(crate) choose_map_last_mode_row: Option<usize>,
     /// Process-lifetime offline shell snapshot, Scenario cursor, and
     /// Cooperative progress authority.
-    pub(crate) offline_skirmish_runtime:
-        crate::app::frontend::skirmish_session::OfflineSkirmishRuntime,
+    pub(crate) multiplayer_shell_runtime:
+        crate::app::frontend::skirmish_session::MultiplayerShellRuntime,
     /// Last owner-draw Skirmish button state observed by the native render path.
     /// Used for the retail GenericClick paint-transition sound.
     pub(crate) skirmish_shell_last_painted_pressed_button:
@@ -84,10 +87,10 @@ pub(crate) struct FrontendState {
     pub(crate) quit_cascade: Option<crate::app::frontend::quit_cascade::QuitCascade>,
     /// Retail process-start splash, held until its post-present deadline.
     pub(crate) startup_splash: Option<startup_splash::StartupSplashPresentation>,
-    /// Exit-Game confirm message box, open while the player is being asked to
-    /// confirm quitting. The app only exits on confirm, never on the first
-    /// Exit click.
-    pub(crate) exit_confirm_modal: Option<crate::ui::main_menu_dialogs::ExitConfirmModalState>,
+    /// The two-button shell message box `0x120` over the empty backdrop:
+    /// main-menu Exit Game (the app only exits on its OK, never on the first
+    /// Exit click) or campaign defeat's retry prompt.
+    pub(crate) shell_message_box: Option<ShellMessageBox>,
     /// Retained active-YR launcher Options `0xD5` parent snapshot.
     pub(crate) options_dialog: Option<crate::ui::main_menu_dialogs::OptionsDialogState>,
     /// Shared A3 child, reached from launcher Options or paused Game Controls.
@@ -106,10 +109,29 @@ pub(crate) struct FrontendState {
     /// Its emblem and background art (`0x0072D9A0`), loaded with the dialog
     /// and freed when it closes (`0x0072DAA0`).
     pub(crate) campaign_art: Option<crate::render::main_menu_shell_chrome::CampaignShellArt>,
-    /// Westwood Online welcome `0x10E` (and its box) while its route shows.
-    pub(crate) wol_welcome: Option<crate::ui::wol_shell::WolWelcomeState>,
-    /// Its background and icon art (`0x0072C7E0`).
-    pub(crate) wol_welcome_art: Option<crate::render::main_menu_shell_chrome::WolWelcomeArt>,
+    /// One Westwood Online visit (`WOL_Main` `0x0077B2A0`): welcome, login,
+    /// waits, boxes and the lobby entry, from Internet until WOL is left.
+    pub(crate) wol: Option<crate::app::shell_wol::WolVisit>,
+    /// The login chain's process globals (nickname, password, Remember,
+    /// changed byte); they outlive every WOL visit.
+    pub(crate) wol_account: crate::ui::wol_login::WolAccountGlobals,
+    /// LAN lobby interaction/discovery; admitted participants belong to MatchSession.
+    pub(crate) lan: Option<crate::app::shell_lan::LanShellRuntime>,
+    pub(crate) network_setup_protocol:
+        Option<crate::app::shell_network_setup::NetworkSetupProtocol>,
+    /// BC/BD control interaction; values are projected from MatchSession.
+    pub(crate) multiplayer_setup: Option<crate::ui::multiplayer_setup::MultiplayerSetupState>,
+    /// Options' Network child D7, retained until its teardown completes.
+    pub(crate) network_options: Option<crate::ui::network_options::NetworkOptionsState>,
+    /// `0x10E`'s background and icon art (`0x0072C7E0`).
+    pub(crate) wol_welcome_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
+    /// `0x10F`'s background art (`0x0072C600`), freed with the dialog
+    /// (`0x0072C650`).
+    pub(crate) wol_login_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
+    /// `0x113`'s background and list art (`0x0072CD60`).
+    pub(crate) wol_lobby_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
+    /// The custom lobby's process globals (sorts, lobby number, filters).
+    pub(crate) wol_lobby_globals: crate::app::shell_wol::lobby::WolLobbyGlobals,
     /// Single Player's Load Saved Game `0xB7` while its route shows.
     pub(crate) load_saved_game:
         Option<crate::ui::skirmish_shell::SavedSeedBrowserState<std::path::PathBuf>>,
@@ -144,6 +166,9 @@ pub(crate) struct FrontendState {
     /// Audio, Theme and RMG continue that cursor behind the shell; the setup
     /// seed before the first scenario comes from shell Scenario.
     pub(crate) frontend_main_rng: crate::sim::rng::MainRng,
+    /// The process start `g_RngSeed` (`0xA8ED94`) before any match reseeds
+    /// it; WOL hosts publish the resident seed (C2 draws none).
+    pub(crate) startup_rng_seed: u32,
     /// UI-thread CRT state shared by storage dialogs, preserved across routes.
     /// Native tactical sparkle/network consumption is still an integration gap;
     /// do not infer exact post-game filenames from this initial state.
@@ -171,4 +196,20 @@ pub(crate) struct FrontendState {
     /// persistence of the old app field. Match paths read the runtime-bound
     /// copy via `overlay_registry()`.
     pub(crate) shell_preview_overlay_registry: Option<OverlayTypeRegistry>,
+}
+
+/// One open shell message box `0x120` and the caller its result returns to.
+#[derive(Debug)]
+pub(crate) struct ShellMessageBox {
+    pub(crate) labels: crate::ui::main_menu_dialogs::ShellMessageBoxLabels,
+    pub(crate) purpose: ShellMessageBoxPurpose,
+}
+
+#[derive(Debug)]
+pub(crate) enum ShellMessageBoxPurpose {
+    /// Main_Game state 6: OK quits, Cancel rebuilds `0xE2`.
+    ExitGame,
+    /// GameExit::Defeat `0x006860E5`: Yes restarts this start, if VERA can
+    /// rebuild one; No returns to the shell.
+    CampaignReplay(Option<Box<crate::app::match_bootstrap::PreparedCampaignStartup>>),
 }

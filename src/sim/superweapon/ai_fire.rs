@@ -160,7 +160,7 @@ pub(crate) fn try_fire(
     if sim
         .houses
         .get(&owner)
-        .is_none_or(|house| house.is_controlled_by_human(sim.session.game_mode_nonzero))
+        .is_none_or(|house| house.is_controlled_by_human(sim.session.game_mode_nonzero()))
     {
         return;
     }
@@ -216,7 +216,7 @@ pub(crate) fn try_fire(
                     .and_then(|_| offensive_target(sim, rules, owner, sw))
             }
             AiFireArm::ForceShield => sim.houses.get(&owner).and_then(|house| {
-                force_shield_target(house, rules, sim.session.binary_frame as i32)
+                force_shield_target(house, rules, sim.session.binary_frame() as i32)
             }),
             AiFireArm::LightningStorm | AiFireArm::None => None,
         };
@@ -245,7 +245,7 @@ fn rally_target(
     registry: Option<&OverlayTypeRegistry>,
 ) -> Option<(u16, u16)> {
     let house = sim.houses.get(&owner)?;
-    let enemy = house.enemy_house?;
+    let enemy = house.enemy_house()?;
     let preferred = house.preferred_super_weapon_target();
     let kind = house.preferred_super_weapon_target_kind();
     //509968..5099E6 /509E00: the enemy gate precedes this preference.
@@ -345,7 +345,7 @@ fn offensive_target(
     sw: &crate::rules::superweapon_type::SuperWeaponType,
 ) -> Option<(u16, u16)> {
     let house = sim.houses.get(&owner)?;
-    let enemy = house.enemy_house?;
+    let enemy = house.enemy_house()?;
     let mut best = 0;
     let mut picks = Vec::new();
     let sites: Vec<_> = super::targeting::launch_sites(sim, rules, owner, sw)
@@ -415,8 +415,8 @@ fn rally_entry(
             && entity.is_object_alive()
             && !entity.lifecycle.in_limbo();
         let candidate = standing
-            || (house.difficulty == HouseDifficulty::Hard
-                && sim.production.factories.is_building(id));
+            || (house.difficulty() == HouseDifficulty::Hard
+                && sim.production.factories().is_building(id));
         let ty = sim.interner.object_type(entity.type_ref(), rules);
         (candidate, rally_value(entity.category(), ty, rules, house))
     } else {
@@ -586,15 +586,12 @@ fn ground_rally_point(
 /// AI_GroundRallyPoint's seed: the enemy's base cell (`+0x5600`), the
 /// house's own without an enemy ([`HouseState::base_origin`],
 /// `0x00509D41..0x00509D5B`).
-fn ground_rally_seed(
-    houses: &std::collections::BTreeMap<InternedId, HouseState>,
-    owner: InternedId,
-) -> (u16, u16) {
+fn ground_rally_seed(houses: &crate::sim::houses::Houses, owner: InternedId) -> (u16, u16) {
     let Some(house) = houses.get(&owner) else {
         return (0, 0);
     };
     house
-        .enemy_house
+        .enemy_house()
         .and_then(|enemy| houses.get(&enemy))
         .unwrap_or(house)
         .base_origin()
@@ -680,7 +677,7 @@ fn psychic_dominator_target(
     if super::psychic_dominator::active(sim) {
         return None;
     }
-    sim.houses.get(&owner)?.enemy_house?;
+    sim.houses.get(&owner)?.enemy_house()?;
     if sim.houses.get(&owner)?.preferred_super_weapon_target() != (0, 0) {
         return None;
     }

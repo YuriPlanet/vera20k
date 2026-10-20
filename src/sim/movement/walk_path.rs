@@ -68,14 +68,14 @@ impl Simulation {
     ) -> Result<bool, String> {
         let rules = rules.ok_or("Walk path request requires rules")?;
         let id = request.entity_id;
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         //75AF69..8F arms the caller timer before Foot4D3920.
         self.substrate
             .entities
             .get_mut(id)
             .ok_or("retired Walk path requester")?
             .navigation
-            .path_runtime
+            .path_runtime_mut()
             .start_movement(frame, rules.general.path_delay_ticks());
         match self.foot_find_path(request, rules, registry, frame_effects)? {
             FindPathResult::Route => {
@@ -86,8 +86,8 @@ impl Simulation {
                     .get_mut(id)
                     .ok_or("retired Walk path requester")?
                     .navigation
-                    .path_runtime
-                    .set_retries_left(crate::sim::components::FootPathRuntime::RETRY_RELOAD);
+                    .path_runtime_mut()
+                    .reload_retries();
                 self.walk_short_path_receiver(id, rules)?;
                 Ok(true)
             }
@@ -158,7 +158,7 @@ impl Simulation {
         //0x51DB68..0x51DB7A: the 16-bit facing (+388) becomes an octant through
         //`((facing >> 12) + 1) >> 1 & 7`.
         let direction = i32::from(crate::util::direction_tables::dir_from_facing16(
-            actor.body_facing_current(self.session.binary_frame),
+            actor.body_facing_current(self.session.binary_frame()),
         ));
         let requested = failed_path_requested_action(doing, prone);
         self.apply_infantry_do_action(id, requested, false, &facts, rules, frame_effects)?;
@@ -250,7 +250,7 @@ impl Simulation {
             ) < rules.general.close_enough;
             if close && actor.tether.partner().is_none() {
                 self.assign_null_destination(id, Some(rules), None, frame_effects);
-            } else if actor.navigation.path_runtime.retries_left() != 0 {
+            } else if actor.navigation.path_runtime().retries_left() != 0 {
                 //The test is before the decrement: 1->0 does not run the
                 //exhaustion tail until a later failed Process invocation.
                 self.substrate
@@ -258,7 +258,7 @@ impl Simulation {
                     .get_mut(id)
                     .unwrap()
                     .navigation
-                    .path_runtime
+                    .path_runtime_mut()
                     .decrement_retries_left();
             } else {
                 self.finish_exhausted_walk_retry(id, rules, frame_effects)?;
@@ -293,7 +293,7 @@ impl Simulation {
             .get_mut(id)
             .ok_or("retired exhausted Walk actor")?
             .navigation
-            .path_runtime
+            .path_runtime_mut()
             .clear_scold_latch(); //75B0A9, even when the guard was zero.
         let actor = self
             .substrate

@@ -48,10 +48,10 @@ fn fresh_fill_silos_credits_reach_a_real_spy_entry() {
         std::fs::write(&path, map).unwrap();
         let name = path.to_str().unwrap();
         let mut launch = battle_session(name, &[(LaunchCountry::Russia, AiDifficulty::Easy)]);
-        launch.player_name = "Player".to_string();
-        launch.local.country = LaunchCountry::America;
-        launch.local.start_position = LaunchStartPosition::Position(0);
-        launch.local.team = LaunchTeam::None;
+        launch.local_player_mut().name = "Player".to_string();
+        launch.local_slot_mut().country = LaunchCountry::America;
+        launch.local_slot_mut().start_position = LaunchStartPosition::Position(0);
+        launch.local_slot_mut().team = LaunchTeam::None;
         launch.opponents[0].start_position = LaunchStartPosition::Position(1);
         launch.opponents[0].team = LaunchTeam::None;
         launch.options.starting_credits = 5000;
@@ -65,10 +65,10 @@ fn fresh_fill_silos_credits_reach_a_real_spy_entry() {
         assert_eq!(rules.object("NAHAND").unwrap().storage, 1);
         assert_eq!(rules.tiberium_types.types()[0].value, 25);
         let sim = scene.sim();
-        let player = sim.session.current_house.unwrap();
+        let player = sim.session.current_house().unwrap();
         let computer = sim.scenario_house_named("Computer").unwrap();
-        assert_eq!(sim.houses[&computer].tracking.storage_capacity(), 1);
-        assert_eq!(sim.houses[&player].tracking.storage_capacity(), 0);
+        assert_eq!(sim.houses[&computer].tracking().storage_capacity(), 1);
+        assert_eq!(sim.houses[&player].tracking().storage_capacity(), 0);
         assert_eq!(
             crate::sim::house_state::income_ppm_for_owner(
                 &sim.houses,
@@ -111,17 +111,17 @@ fn fresh_fill_silos_credits_reach_a_real_spy_entry() {
             })
             .unwrap();
         assert_eq!(
-            sim.houses[&computer].economy.credits(),
+            sim.houses[&computer].economy().credits(),
             control["expected"]["balance"].as_i64().unwrap() as i32,
             "startup uses its initial budget and the actually admitted capacity; enabled={enabled}"
         );
         assert_eq!(
-            sim.houses[&computer].economy.score(),
+            sim.houses[&computer].economy().score(),
             control["expected"]["score"].as_i64().unwrap() as i32
         );
-        assert_eq!(sim.houses[&player].economy.credits(), 5000);
+        assert_eq!(sim.houses[&player].economy().credits(), 5000);
         let health = sim.entities().get(target).unwrap().health;
-        let execute_tick = sim.session.tick + 1;
+        let execute_tick = sim.session.tick() + 1;
         scene.runtime.simulation.queue_command(CommandEnvelope::new(
             player,
             execute_tick,
@@ -133,7 +133,7 @@ fn fresh_fill_silos_credits_reach_a_real_spy_entry() {
         let mut entries = 0;
         let mut entered = false;
         for _ in 0..200 {
-            let before = scene.sim().houses[&computer].economy.clone();
+            let before = scene.sim().houses[&computer].economy().clone();
             let commands = scene.runtime.simulation.take_due_commands();
             let frame = scene
                 .runtime
@@ -150,24 +150,24 @@ fn fresh_fill_silos_credits_reach_a_real_spy_entry() {
             )).count();
             let sim = scene.sim();
             if sim.entities().get(spy).is_none() {
-                let taken = sim.houses[&player].economy.credits() - 5000;
+                let taken = sim.houses[&player].economy().credits() - 5000;
                 assert_eq!(
                     taken,
                     before.credits() / 2,
                     "cash uses the actual entry-frame wallet"
                 );
                 assert_eq!(
-                    sim.houses[&computer].economy.credits(),
+                    sim.houses[&computer].economy().credits(),
                     before.credits() - taken
                 );
                 assert_eq!(
-                    sim.houses[&computer].economy.spent_credits(),
+                    sim.houses[&computer].economy().spent_credits(),
                     before.spent_credits() + taken
                 );
                 entered = true;
                 break;
             }
-            assert_eq!(sim.houses[&player].economy.credits(), 5000);
+            assert_eq!(sim.houses[&player].economy().credits(), 5000);
         }
         assert!(
             entered,

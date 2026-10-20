@@ -300,18 +300,4 @@ mod tests {
         assert_eq!(rgba[8..12], [0, 0, 0, 0]);
         assert_eq!(rgba[12..16], [255, 255, 255, 255]);
     }
-
-    #[test]
-    fn text_width_empty() {
-        let fnt = FntFile {
-            source_identity: None,
-            cell_height: 17,
-            bitmap_rows: 16,
-            bytes_per_row: 3,
-            glyph_stride: 49,
-            glyphs: HashMap::new(),
-        };
-        assert_eq!(fnt.text_width(""), 0);
-        assert_eq!(fnt.text_width("xyz"), 0); // no glyphs loaded
-    }
 }

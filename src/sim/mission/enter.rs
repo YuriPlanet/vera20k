@@ -31,7 +31,7 @@ pub(crate) fn mission_enter(
     id: u64,
     effects: FrameEffects<'_>,
 ) -> i32 {
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     let Some(entity) = sim.substrate.entities.get(id) else {
         return 1;
     };

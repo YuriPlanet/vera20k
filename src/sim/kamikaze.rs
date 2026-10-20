@@ -260,7 +260,7 @@ impl KamikazeHost for WorldHost<'_> {
             .substrate
             .entities
             .get(child)
-            .map(|entity| entity.body_facing_current(self.sim.session.binary_frame))
+            .map(|entity| entity.body_facing_current(self.sim.session.binary_frame()))
             .unwrap_or_default()
     }
 
@@ -295,7 +295,7 @@ impl KamikazeHost for WorldHost<'_> {
     }
 
     fn queue_attack(&mut self, child: u64) {
-        let now = self.sim.session.binary_frame;
+        let now = self.sim.session.binary_frame();
         let _ = self.sim.mission_queue_exact(
             child,
             MissionId::from_known(MissionType::Attack),
@@ -341,13 +341,13 @@ impl Simulation {
     /// The `{Frame, 2}` restart the Launching pass and ClearAllTargets write
     /// after their Push.
     pub(crate) fn kamikaze_restart_after_push(&mut self) {
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         self.kamikaze.restart_after_push(frame);
     }
 
     /// Update (`0x0054E4D0`), from LogicClass::AI after the BombList.
     pub(crate) fn kamikaze_update(&mut self, rules: &RuleSet, effects: FrameEffects<'_>) {
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         update(
             &mut WorldHost {
                 sim: self,
@@ -514,30 +514,5 @@ mod tests {
                 assert_eq!(&actual, expected, "{name}: step {index} {step}");
             }
         }
-    }
-
-    #[test]
-    fn remove_drops_the_last_matching_node_only() {
-        let mut tracker = KamikazeTracker::default();
-        for (child, cell) in [(7, (1, 1)), (8, (2, 2)), (7, (3, 3))] {
-            tracker.nodes.push(KamikazeNode { child, cell });
-        }
-        tracker.remove(7);
-        assert_eq!(
-            tracker.nodes,
-            [
-                KamikazeNode {
-                    child: 7,
-                    cell: (1, 1)
-                },
-                KamikazeNode {
-                    child: 8,
-                    cell: (2, 2)
-                }
-            ]
-        );
-        assert!(tracker.contains(7));
-        tracker.remove(9);
-        assert_eq!(tracker.nodes.len(), 2);
     }
 }

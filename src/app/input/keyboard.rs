@@ -158,9 +158,9 @@ fn reload(state: &mut AppState, reset: bool) {
         .manager()
         .and_then(|a| a.get_archive_ref("KEYBOARDMD.INI"));
     state.match_state.input.hotkey_bindings = if reset {
-        crate::app::persistence::keyboard::reset(&config.paths.ra2_dir, archive)
+        crate::app::persistence::keyboard::reset(config.paths.settings_dir(), archive)
     } else {
-        crate::app::persistence::keyboard::reload(&config.paths.ra2_dir, archive)
+        crate::app::persistence::keyboard::reload(config.paths.settings_dir(), archive)
     };
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -220,7 +220,7 @@ pub(crate) fn commit_close(state: &mut AppState, exit: KeyboardExit) {
     if exit.binding_action() == BindingExit::Save {
         if let Some(config) = state.platform.game_config.as_ref()
             && let Err(error) = crate::app::persistence::keyboard::save(
-                &config.paths.ra2_dir,
+                config.paths.settings_dir(),
                 &state.match_state.input.hotkey_bindings,
             )
         {
@@ -236,12 +236,11 @@ pub(crate) fn commit_close(state: &mut AppState, exit: KeyboardExit) {
     match dialog.parent {
         KeyboardParent::Launcher => App::open_launcher_options_dialog(state),
         KeyboardParent::GameControls => {
-            let mut options = crate::app::persistence::options::in_game_options_from_profile(
-                &state.persistence.options_profile,
-            );
-            options.sound_enabled = state.audio.launcher_audio_available;
-            options.on_open();
-            state.match_state.match_presentation.in_game_options = options;
+            state.match_state.match_presentation.in_game_options =
+                crate::app::persistence::options::in_game_options_from_profile(
+                    &state.persistence.options_profile,
+                );
+            crate::app::input::in_game_options::on_open(state);
             state.match_state.match_presentation.in_game_menu =
                 crate::ui::pause_menu::InGameMenuState::Options;
         }

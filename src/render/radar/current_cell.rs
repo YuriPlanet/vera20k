@@ -49,8 +49,8 @@ impl<'a> CurrentRadarCellAuthority<'a> {
     /// Production presentation wiring after the restored simulation commits.
     pub(crate) fn from_runtime(runtime: &'a SimRuntime) -> Self {
         Self::new(
-            runtime.simulation.resolved_terrain.as_ref(),
-            runtime.simulation.overlay_grid.as_ref(),
+            runtime.simulation.resolved_terrain(),
+            runtime.simulation.overlay_grid(),
             Some(&runtime.resources.overlay_registry),
             Some(&runtime.resources.rules),
         )

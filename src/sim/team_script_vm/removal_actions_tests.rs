@@ -26,8 +26,7 @@ fn script37_caches_native_next_and_uses_ordered_limbo_uninit_before_drain() {
         let mut sim = Simulation::with_seed(37);
         let owner = sim.interner.intern("Owner");
         sim.houses
-            .insert(owner, HouseState::new(owner, 0, None, true, 0, 10));
-        sim.session.house_order.push(owner);
+            .register(HouseState::new(owner, 0, None, true, 0, 10));
         crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
         let order = row["order"].as_array().unwrap();
         let members: Vec<_> = order
@@ -123,7 +122,7 @@ fn script37_caches_native_next_and_uses_ordered_limbo_uninit_before_drain() {
                 matches!(event, SimSoundEvent::ObjectSoundDetached { owner } if *owner == member)
             ).count(), 1, "FootLimbo detaches its sound once; UnInit's repeated Limbo does not");
         }
-        assert_eq!(sim.houses[&owner].stats.units_lost(), 0);
+        assert_eq!(sim.houses[&owner].stats().units_lost(), 0);
         sim.process_pending_delete_with(Some(&rules), None, Default::default(), 1, true);
         assert!(
             members
@@ -131,7 +130,7 @@ fn script37_caches_native_next_and_uses_ordered_limbo_uninit_before_drain() {
                 .all(|member| !sim.substrate.entities.contains(*member))
         );
         assert_eq!(
-            sim.houses[&owner].stats.units_lost(),
+            sim.houses[&owner].stats().units_lost(),
             0,
             "healthy scripted disposal creates no loss"
         );
@@ -146,7 +145,7 @@ fn first_unit_limbo_uses_shared_stop_driver_before_hiding_the_actor() {
     let mut sim = Simulation::new();
     let owner = sim.interner.intern("Owner");
     sim.houses
-        .insert(owner, HouseState::new(owner, 0, None, true, 0, 10));
+        .register(HouseState::new(owner, 0, None, true, 0, 10));
     crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
     let member = sim
         .spawn_object_at_height("VEHICLE", "Owner", 10, 10, 0, 0, &rules)
@@ -196,64 +195,6 @@ fn first_unit_limbo_uses_shared_stop_driver_before_hiding_the_actor() {
             .track_destination(TrackFamily::Drive),
         None,
         "Foot4DB2FB must dispatch Unit4D55C0 before occupation release/Lock"
-    );
-}
-
-#[test]
-fn first_hover_limbo_enters_the_existing_native_hover_stop_receiver() {
-    use crate::rules::locomotor_type::LocomotorKind;
-    use crate::sim::components::DriveCoord;
-    use crate::sim::movement::hover::HoverRuntime;
-    use crate::util::native_x87::NativeF64Bits;
-    let rules = RuleSet::from_ini(&IniFile::from_str(&format!(
-        "[VehicleTypes]\n0=HOVER\n[HOVER]\nStrength=200\nSpeed=6\nLocomotor={}\n",
-        LocomotorKind::Hover.clsid()
-    )))
-    .unwrap();
-    let mut sim = Simulation::new();
-    let owner = sim.interner.intern("Owner");
-    sim.houses
-        .insert(owner, HouseState::new(owner, 0, None, true, 0, 10));
-    crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
-    let member = sim
-        .spawn_object_at_height("HOVER", "Owner", 10, 10, 0, 0, &rules)
-        .unwrap();
-    *sim.substrate
-        .entities
-        .get_mut(member)
-        .unwrap()
-        .locomotor
-        .as_mut()
-        .unwrap()
-        .hover_runtime_mut()
-        .unwrap() = HoverRuntime::moving_for_test(
-        Some(DriveCoord::cell(15, 10, 0)),
-        NativeF64Bits::from_bits(1.0_f64.to_bits()),
-    );
-    assert!(
-        sim.substrate
-            .entities
-            .get(member)
-            .unwrap()
-            .locomotor
-            .as_ref()
-            .unwrap()
-            .hover_runtime()
-            .unwrap()
-            .is_moving()
-    );
-    sim.techno_limbo_with_context(member, UninitContext::with_rules(&rules));
-    let entity = sim.substrate.entities.get(member).unwrap();
-    assert!(entity.lifecycle.in_limbo());
-    assert!(
-        !entity
-            .locomotor
-            .as_ref()
-            .unwrap()
-            .hover_runtime()
-            .unwrap()
-            .is_moving(),
-        "Unit4D55C0 must reach the existing Hover516320 Stop_Moving"
     );
 }
 

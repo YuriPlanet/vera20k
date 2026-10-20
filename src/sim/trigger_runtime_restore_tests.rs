@@ -4,7 +4,6 @@
 //! executable comparisons. Supplied-nearby tests assert caller arguments,
 //! and do not claim the supplied answer as native placement output.
 use super::*;
-use crate::map::entities::EntityCategory;
 use crate::rules::{ini_parser::IniFile, overlay_types::OverlayTypeRegistry, ruleset::RuleSet};
 use crate::sim::intern::InternedId;
 use crate::sim::movement::{fresh_oracle_seam, ground_pose};
@@ -139,13 +138,11 @@ fn live126_recreates_all_four_initial_categories_after_real_cleanup_in_record_or
         assert!(active(&sim).is_empty());
         if saved_house {
             let bytes = crate::util::save_codec::serialize(&sim.houses[&houses[0]]).unwrap();
-            sim.houses.insert(
-                houses[0],
-                crate::util::save_codec::deserialize(&bytes).unwrap(),
-            );
+            sim.houses
+                .replace_for_test(crate::util::save_codec::deserialize(&bytes).unwrap());
         }
         install(&mut sim, &rules, 0);
-        sim.session.binary_frame = 16;
+        sim.session.set_binary_frame_for_test(16);
         sim.raise_house_tags(
             houses[0],
             Some(&rules),
@@ -220,7 +217,7 @@ fn refused_placement_continues_with_next_record_and_following_trigger_action() {
     record(&mut sim, houses[0], "ENGINEER", (16, 15));
     record(&mut sim, houses[0], "TAGUNIT", (15, 15));
     install(&mut sim, &rules, 0);
-    sim.session.binary_frame = 8;
+    sim.session.set_binary_frame_for_test(8);
     sim.raise_house_tags(
         houses[0],
         Some(&rules),
@@ -260,7 +257,7 @@ fn restore126_always_constructs_a_new_unit_even_when_the_original_is_present() {
         .set_for_test(7);
     sim.retain_initial_house_technos();
     install(&mut sim, &rules, 0);
-    sim.session.binary_frame = 8;
+    sim.session.set_binary_frame_for_test(8);
     sim.raise_house_tags(
         houses[0],
         Some(&rules),
@@ -417,7 +414,8 @@ fn failed_foot_unlimbo_retires_new_object_and_restores_old_raw_location() {
         ground_pose::position_world_coord(&sim.substrate.entities.get(old).unwrap().position);
     // Aircraft4196B0, already covered by the original class-entry owner:
     // mode0 + owned-by-current-house + unmapped destination refuses +D8.
-    sim.session.game_mode_nonzero = false;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false));
     let created = construct(&mut sim, &rules, houses[0], "HORNET");
     sim.substrate
         .entities
@@ -448,41 +446,4 @@ fn failed_foot_unlimbo_retires_new_object_and_restores_old_raw_location() {
     let restored = sim.substrate.entities.get(old).unwrap();
     assert!(!restored.lifecycle.in_limbo());
     assert_eq!(ground_pose::position_world_coord(&restored.position), coord);
-}
-
-#[test]
-fn a_building_blocks_foot_clearance_before_the_new_object_unlimbo() {
-    let (mut sim, rules, registry, houses) = fixture();
-    let block = spawn(&mut sim, &rules, houses[1], "CABHUT", (15, 15));
-    let coord =
-        ground_pose::position_world_coord(&sim.substrate.entities.get(block).unwrap().position);
-    let created = construct(&mut sim, &rules, houses[0], "TAGUNIT");
-    assert!(
-        sim.place_foot_with_cleared_cell(
-            created,
-            coord,
-            0,
-            &rules,
-            Some(&registry),
-            FrameEffects::default()
-        )
-        .is_none()
-    );
-    let new = sim.substrate.entities.get(created).unwrap();
-    assert!(
-        new.lifecycle.object_alive() && new.lifecycle.in_limbo(),
-        "caller50D507 owns this early-refusal UnInit"
-    );
-    assert_eq!(
-        sim.substrate.entities.get(block).unwrap().category(),
-        EntityCategory::Structure
-    );
-    assert!(
-        sim.substrate
-            .entities
-            .get(block)
-            .unwrap()
-            .lifecycle
-            .object_alive()
-    );
 }

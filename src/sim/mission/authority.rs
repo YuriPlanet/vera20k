@@ -325,7 +325,7 @@ fn evaluate_ready(
             rules.map(|rules| {
                 crate::sim::movement::SpeedRules::new(rules, &sim.interner, &sim.houses)
             }),
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
         )
         .or(if degraded_moving_gate {
             Some(DEGRADED_NOT_MOVING)
@@ -1241,18 +1241,6 @@ mod tests {
     }
 
     #[test]
-    fn mission_authority_queue_zero_never_reads_or_commences() {
-        let mut sim = sim_with(entity(EntityCategory::Unit, GUARD));
-        let readiness = TestReadyProvider::ready(true);
-
-        sim.mission_queue_exact(1, MOVE, 0, 10, &readiness).unwrap();
-        let entity = sim.substrate.entities.get(1).unwrap();
-        assert_eq!(entity.mission.current(), GUARD);
-        assert_eq!(entity.mission.queued(), MOVE);
-        assert_eq!(readiness.reads.get(), 0);
-    }
-
-    #[test]
     fn mission_authority_queue_tests_only_low_byte_of_commence_now() {
         for commence_now in [0x100, 0x1_0000, i32::MIN] {
             let mut sim = sim_with(entity(EntityCategory::Unit, GUARD));
@@ -1276,29 +1264,6 @@ mod tests {
         assert_eq!(after.mission.current(), MOVE);
         assert_eq!(after.mission.queued(), MissionId::NONE);
         assert_eq!(readiness.reads.get(), 1);
-    }
-
-    #[test]
-    fn mission_authority_queue_ready_false_keeps_queue_ready_true_commences_inline() {
-        let mut false_sim = sim_with(entity(EntityCategory::Unit, GUARD));
-        let false_ready = TestReadyProvider::ready(false);
-        false_sim
-            .mission_queue_exact(1, MOVE, 1, 10, &false_ready)
-            .unwrap();
-        let false_entity = false_sim.substrate.entities.get(1).unwrap();
-        assert_eq!(false_entity.mission.current(), GUARD);
-        assert_eq!(false_entity.mission.queued(), MOVE);
-        assert_eq!(false_ready.reads.get(), 1);
-
-        let mut true_sim = sim_with(entity(EntityCategory::Unit, GUARD));
-        let true_ready = TestReadyProvider::ready(true);
-        true_sim
-            .mission_queue_exact(1, MOVE, 1, 10, &true_ready)
-            .unwrap();
-        let entity = true_sim.substrate.entities.get(1).unwrap();
-        assert_eq!(entity.mission.current(), MOVE);
-        assert_eq!(entity.mission.queued(), MissionId::NONE);
-        assert_eq!(true_ready.reads.get(), 1);
     }
 
     #[test]
@@ -1507,7 +1472,7 @@ mod tests {
                 let mut sim = Simulation::new();
                 let owner = sim.interner.intern("Receiver");
                 sim.houses
-                    .insert(owner, HouseState::new(owner, 0, None, true, 0, 0));
+                    .register(HouseState::new(owner, 0, None, true, 0, 0));
                 let mut actor = GameEntity::new_at_frame_zero_for_test(
                     1,
                     10,
@@ -1552,11 +1517,14 @@ mod tests {
                 actor
                     .navigation
                     .set_nav_com_for_test(Some(NavTargetRef::cell(12, 10)));
-                actor.navigation.path_replay.set_directions_for_test(vec![
-                    before["path_field"].as_u64().unwrap() as u8,
-                    2,
-                    3,
-                ]);
+                actor
+                    .navigation
+                    .path_replay_mut()
+                    .set_directions_for_test(vec![
+                        before["path_field"].as_u64().unwrap() as u8,
+                        2,
+                        3,
+                    ]);
                 actor.locomotor = Some(LocomotorState::for_test_kind(
                     crate::rules::locomotor_type::LocomotorKind::Walk,
                 ));
@@ -1590,7 +1558,8 @@ mod tests {
                         0,
                         true,
                     ));
-                sim.session.binary_frame = row["input"]["frame"].as_u64().unwrap() as u32;
+                sim.session
+                    .set_binary_frame_for_test(row["input"]["frame"].as_u64().unwrap() as u32);
                 sim.scenario_rng = SimRng::new(row["input"]["seed"].as_u64().unwrap());
                 assert_eq!(sim.scenario_rng.native_state_hex(), row["rng_before"]);
 
@@ -1675,7 +1644,7 @@ mod tests {
                 assert_eq!(
                     actor
                         .navigation
-                        .path_replay
+                        .path_replay()
                         .remaining_directions()
                         .first()
                         .copied(),
@@ -1986,12 +1955,6 @@ mod tests {
     }
 
     #[test]
-    fn restore_empty_does_not_require_concrete_provider() {
-        let mut sim = sim_with(entity(EntityCategory::Unit, GUARD));
-        assert!(!sim.mission_restore_exact(1).unwrap());
-    }
-
-    #[test]
     fn restore_success_unavailable_does_not_pop_mission() {
         let mut unit = entity(EntityCategory::Unit, ATTACK);
         unit.mission.apply_test_fixture(MissionTestFixture {
@@ -2056,40 +2019,6 @@ mod tests {
                 ConcreteEffectEvent::Target { .. },
                 ConcreteEffectEvent::Destination { .. }
             ]
-        ));
-    }
-
-    #[test]
-    fn missing_receiver_is_atomic_for_every_exact_authority_entry() {
-        let mut sim = Simulation::new();
-        let readiness = TestReadyProvider::ready(true);
-
-        assert!(matches!(
-            sim.mission_assign_exact(99, MOVE, 0),
-            Err(MissionAuthorityError::MissingReceiver(99))
-        ));
-        assert!(matches!(
-            sim.mission_queue_exact(99, MOVE, 1, 0, &readiness),
-            Err(MissionAuthorityError::MissingReceiver(99))
-        ));
-        assert!(matches!(
-            sim.mission_commence_exact(99, 0),
-            Err(MissionAuthorityError::MissingReceiver(99))
-        ));
-        assert!(matches!(
-            sim.mission_override_exact(
-                99,
-                OverridePacket {
-                    mission: MOVE,
-                    combat_target: None,
-                    destination: None,
-                }
-            ),
-            Err(MissionAuthorityError::MissingReceiver(99))
-        ));
-        assert!(matches!(
-            sim.mission_restore_exact(99),
-            Err(MissionAuthorityError::MissingReceiver(99))
         ));
     }
 

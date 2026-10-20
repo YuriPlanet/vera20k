@@ -32,6 +32,7 @@ from tools.spatial_oracle.unit_source_scatter import SCENARIO
 
 REDUCE, SCAN, SEARCH, ORE_TICK, HARVEST = 0x480A80, 0x4DD0A0, 0x4DCFE0, 0x73D450, 0x73E5E0
 IS_HARVESTABLE, REACH_ZONE, RECALC, RADAR_DIRTY = 0x4DCE80, 0x56D100, 0x47D2B0, 0x6551C0
+GROUND_HEIGHT, IS_SHROUDED = 0x578080, 0x586360
 ADD_GROWTH, ADD_SPREAD, CLEAR_BITMAPS = 0x7235A0, 0x722AF0, 0x722AB0
 DIRTY_RECTS, DIRTY_SCREEN = (0x47FDE0, 0x47FB90, 0x47FF80), 0x6D2790
 # A region of its own for the overlay/Tiberium tables and their queues.
@@ -144,7 +145,10 @@ def observe_field(u, read32, case, events, reach_args):
     def observe(_u, address, _size, _data):
         sp = u.reg_read(UC_X86_REG_ESP)
         this = u.reg_read(UC_X86_REG_ECX)
-        if address == REACH_ZONE:
+        if 'owned_by_current_house' in case and address in (GROUND_HEIGHT, IS_SHROUDED):
+            point = list(struct.unpack('<iii', u.mem_read(read32(sp + 4), 12)))
+            events.append(['height' if address == GROUND_HEIGHT else 'shroud', point])
+        elif address == REACH_ZONE:
             # Target only; the source cell, MovementZone and the three flag
             # arguments are the same on every probe of a row (reach_args).
             target = xy(read32(sp + 8))
@@ -219,6 +223,18 @@ def fixture(case):
         events, unused = observe_dock(u, read32, case)
     place_tiberium(u, read32, case)
     place_occupants(u, call, case)
+    if 'owned_by_current_house' in case:
+        # Declared native InitManagers prestate, independent of House+1EC.
+        u.mem_write(ACTOR + 0x41A, bytes([case['owned_by_current_house']]))
+        # Initialized Cell and Map height units, as in ramp_height_oracle and
+        # shroud_current_sight. Let original47B3A0 build its own slope cache.
+        u.mem_write(0x89E7C0, dwords(104))
+        u.mem_write(0x89E770, b'\x00')
+        u.mem_write(0xABDE88, dwords(104))
+        for x, y, level in case.get('levels', []):
+            u.mem_write(cell(x, y) + 0x11B, bytes([level & 255]))
+        for x, y in case.get('mapped', []):
+            u.mem_write(cell(x, y) + 0x12C, dwords(8))
     reach_args = []
     observe_field(u, read32, case, events, reach_args)
     # [General] TiberiumShortScan/TiberiumLongScan (leptons) and HarvesterLoadRate.
@@ -433,25 +449,51 @@ def harvest_cases():
     ]
 
 
+def campaign_shroud_cases():
+    """Original campaign gate, scan ordering and floor-projected shroud."""
+    base = dict(game_mode=0, owned_by_current_house=True, miner_cell=[15, 15],
+                range=3, ore=[[16, 15, 0, 0, 5], [17, 15, 0, 0, 3]])
+    return [
+        dict(base, name='campaign_hidden'),
+        dict(base, name='campaign_visible_near', mapped=[[16, 15]]),
+        dict(base, name='campaign_hidden_near_visible_far', mapped=[[17, 15]]),
+        dict(base, name='campaign_other_human', owned_by_current_house=False),
+        dict(base, name='campaign_computer', owned_by_current_house=False, human=False),
+        dict(base, name='skirmish_hidden', game_mode=5),
+        dict(base, name='lan_hidden', game_mode=3),
+        dict(base, name='wol_hidden', game_mode=4),
+        dict(base, name='campaign_own_cell', ore=[[15, 15, 0, 0, 5]]),
+        dict(base, name='campaign_high_ground_projected_visible',
+             ore=[[16, 15, 0, 0, 5]], levels=[[16, 15, 4]], mapped=[[14, 13]]),
+        dict(base, name='campaign_high_ground_nominal_visible',
+             ore=[[16, 15, 0, 0, 5]], levels=[[16, 15, 4]], mapped=[[16, 15]]),
+    ]
+
+
 def generate():
+    shroud = campaign_shroud_cases()
+    searches = shroud[:3] + [shroud[5]]
+    harvests = [dict(case, mission='harvest', status=0, long_scan=3 * 256)
+                for case in shroud[:3] + [dict(shroud[2], name='campaign_cmin_visible_far', cmin=True)]]
     return {'source': 'unicorn/gamemd.exe',
             'reduce': [reduce(case) for case in reduce_cases()],
-            'scan': [scan(case) for case in scan_cases()],
-            'search': [search(case) for case in search_cases()],
+            'scan': [scan(case) for case in scan_cases() + shroud],
+            'search': [search(case) for case in search_cases() + searches],
             'ore_tick': [ore_tick(case) for case in ore_tick_cases()],
-            'harvest': [harvest(case) for case in harvest_cases()]}
+            'harvest': [harvest(case) for case in harvest_cases() + harvests]}
 
 
 if __name__ == '__main__':
     finish_vectors(generate, Path(__file__).with_suffix('.json'), provenance=lambda: provenance(
-        scope='69 original executions at the ore field: 16 CellClass::Reduce_Tiberium calls (with the '
-              'TiberiumClass growth/spread queue inserts and their Scenario draws), 17 '
-              'FootClass::Scan_For_Tiberium scans (with Is_Cell_Harvestable), 4 '
-              'Search_For_Tiberium_And_Move calls, 11 UnitClass::Harvest_Ore_Tick calls and 21 '
+        scope='92 original executions at the ore field: 16 CellClass::Reduce_Tiberium calls (with the '
+              'TiberiumClass growth/spread queue inserts and their Scenario draws), 30 '
+              'FootClass::Scan_For_Tiberium scans (with Is_Cell_Harvestable), 8 '
+              'Search_For_Tiberium_And_Move calls, 11 UnitClass::Harvest_Ore_Tick calls and 27 '
               'UnitClass::Mission_Harvest dispatches in states 0 and 1.',
         entry_points={'reduce_tiberium': REDUCE, 'scan_for_tiberium': SCAN,
                       'search_for_tiberium_and_move': SEARCH, 'harvest_ore_tick': ORE_TICK,
                       'mission_harvest': HARVEST, 'is_cell_harvestable': IS_HARVESTABLE,
+                      'ground_height': GROUND_HEIGHT, 'is_shrouded': IS_SHROUDED,
                       'add_to_spread_queue': ADD_SPREAD, 'add_to_growth_queue': ADD_GROWTH},
         assumptions=['refinery_dock fixture: original Unit vtable over a constructed Drive, 32x32 map, '
                      'House, Rules, Scenario RNG seeded through the original seeder; a 4x3 DockUnload '
@@ -466,7 +508,16 @@ if __name__ == '__main__':
                      'and growth queues empty with 64 slots, Scenario flag 0x80 (spreads) unless the row '
                      'says.',
                      '[General] TiberiumShortScan 6 cells, TiberiumLongScan 48 cells (12 in the dispatch '
-                     'rows), HarvesterLoadRate 2 unless the row says; Storage 40; retail [Harvest] Rate.'],
+                     'rows), HarvesterLoadRate 2 unless the row says; Storage 40; retail [Harvest] Rate.',
+                     'Campaign shroud controls supply Techno+41A separately from House+1EC, '
+                     'GameMode0/3/4/5, Cell12C bit8 on mapped cells, initialized Cell/Map height units104 '
+                     'and selected levels. Original578080/47B3A0/586360 execute without substitution; '
+                     'height/shroud/reach events preserve call order. Elevated controls retain the '
+                     'declared reachable zone seam, not a complete elevation/pathfinding comparison.',
+                     'The new shroud gate introduces no RNG/timer/detach call; scans/searches retain '
+                     'Scenario cursors, while Mission_Harvest rate/timer and existing setter effects '
+                     'are observed by the existing state and event fields. No whole campaign/frame '
+                     'or original renderer comparison is claimed.'],
         substitutions=['MapClass::Can_Reach_Zone 0x56D100 is observed and answers reachable unless the row '
                        'lists the target cell.',
                        'CellClass::RecalcAttributes 0x47D2B0 is observed and sets the cleared cell\'s '

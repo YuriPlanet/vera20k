@@ -24,7 +24,7 @@ fn deployed_move_matches_native_action_navigation_timer_and_rng() {
     assert_eq!(rows.len(), 16);
     for row in rows {
         let (mut sim, rules, id) = native_deploy_fixture(row);
-        let now = sim.session.binary_frame;
+        let now = sim.session.binary_frame();
         sim.substrate
             .entities
             .get_mut(id)

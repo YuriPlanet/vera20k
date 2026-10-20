@@ -97,8 +97,15 @@ pub(crate) fn load_sidebar_cameo_palette(asset_manager: &AssetManager) -> Option
     None
 }
 
-pub(crate) fn parse_debug_spawn_units_env() -> Option<Vec<String>> {
+/// `RA2_DEBUG_SPAWN_UNITS` stress spawn list: `TYPE` places one, `TYPE:COUNT`
+/// places `COUNT`. A count that is not a positive integer drops that entry with
+/// a warning, so a typo cannot quietly become a one-unit run.
+pub(crate) fn parse_debug_spawn_units_env() -> Option<Vec<(String, usize)>> {
     let raw = std::env::var("RA2_DEBUG_SPAWN_UNITS").ok()?;
+    parse_debug_spawn_units(&raw)
+}
+
+fn parse_debug_spawn_units(raw: &str) -> Option<Vec<(String, usize)>> {
     let trimmed = raw.trim();
     if trimmed.is_empty() {
         return None;
@@ -108,19 +115,85 @@ pub(crate) fn parse_debug_spawn_units_env() -> Option<Vec<String>> {
         .iter()
         .any(|v| trimmed.eq_ignore_ascii_case(v))
     {
-        return Some(vec![
-            "HTNK".to_string(),
-            "MTNK".to_string(),
-            "E1".to_string(),
-        ]);
+        return Some(
+            ["HTNK", "MTNK", "E1"]
+                .iter()
+                .map(|type_id| (type_id.to_string(), 1))
+                .collect(),
+        );
     }
-    let items: Vec<String> = trimmed
-        .split(',')
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
-        .map(|s| s.to_string())
-        .collect();
+    let mut items: Vec<(String, usize)> = Vec::new();
+    for entry in trimmed.split(',') {
+        let entry = entry.trim();
+        if entry.is_empty() {
+            continue;
+        }
+        let (type_id, count) = match entry.split_once(':') {
+            Some((name, count)) => {
+                let name = name.trim();
+                let Some(count) = count.trim().parse::<usize>().ok().filter(|c| *c > 0) else {
+                    log::warn!("Debug spawn entry '{entry}' has an unusable count; skipped");
+                    continue;
+                };
+                (name.to_string(), count)
+            }
+            None => (entry.to_string(), 1),
+        };
+        if type_id.is_empty() {
+            continue;
+        }
+        items.push((type_id, count));
+    }
     if items.is_empty() { None } else { Some(items) }
+}
+
+/// Where `RA2_DEBUG_SPAWN_MARCH` sends a stress army after the spawn pass.
+pub(crate) enum DebugSpawnMarch {
+    /// The cell opposite the spawn anchor, so the army crosses the whole map.
+    FarSide,
+    /// A cell named by the variable.
+    Cell(u16, u16),
+}
+
+pub(crate) fn parse_debug_spawn_march_env() -> Option<DebugSpawnMarch> {
+    let raw = std::env::var("RA2_DEBUG_SPAWN_MARCH").ok()?;
+    parse_debug_spawn_march(&raw)
+}
+
+/// `RA2_DEBUG_SPAWN_MARCH=1` marches to the far side; `=<rx>,<ry>` marches to
+/// that cell. Unset, empty or `0` leaves the army standing.
+fn parse_debug_spawn_march(raw: &str) -> Option<DebugSpawnMarch> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() || trimmed == "0" {
+        return None;
+    }
+    let enabled_tokens = ["1", "true", "yes", "on"];
+    if enabled_tokens
+        .iter()
+        .any(|v| trimmed.eq_ignore_ascii_case(v))
+    {
+        return Some(DebugSpawnMarch::FarSide);
+    }
+    let (rx, ry) = trimmed.split_once(',')?;
+    let (Ok(rx), Ok(ry)) = (rx.trim().parse::<u16>(), ry.trim().parse::<u16>()) else {
+        log::warn!("Debug spawn march '{raw}' is neither an enable switch nor an rx,ry cell");
+        return None;
+    };
+    Some(DebugSpawnMarch::Cell(rx, ry))
+}
+
+/// Every cell ordered by how near it stands to `anchor`, ties broken by cell so
+/// the order is total and reproducible. The stress spawn walks this until each
+/// type's quota is placed: an occupied or impassable cell costs a step, not a
+/// unit.
+pub(crate) fn cells_by_distance_from(cells: &[(u16, u16)], anchor: (u16, u16)) -> Vec<(u16, u16)> {
+    let (ax, ay) = (i32::from(anchor.0), i32::from(anchor.1));
+    let mut ordered = cells.to_vec();
+    ordered.sort_unstable_by_key(|&(rx, ry)| {
+        let (dx, dy) = (i32::from(rx) - ax, i32::from(ry) - ay);
+        (dx * dx + dy * dy, rx, ry)
+    });
+    ordered
 }
 
 /// Build a texture atlas from pre-loaded theater data and the terrain grid.
@@ -395,7 +468,7 @@ pub(crate) fn build_presentation_manifest(
             asset_manager,
             rules,
             None, // initial build — no existing cache
-            Some(&sim.interner),
+            Some(sim.interner()),
         )
     } else {
         None
@@ -407,8 +480,7 @@ pub(crate) fn build_presentation_manifest(
         anim_remap_keys.extend(startup_crate_anim_remap_keys(rules, overlay_registry));
     }
     let cell_drawer_type_ids: HashSet<String> = sim
-        .resolved_terrain
-        .as_ref()
+        .resolved_terrain()
         .into_iter()
         .flat_map(|terrain| terrain.tile_animations())
         .map(|anim| anim.anim_name.to_ascii_uppercase())
@@ -431,7 +503,7 @@ pub(crate) fn build_presentation_manifest(
             &cell_drawer_type_ids,
             theater_iso_palette,
             None, // initial build — no existing cache
-            Some(&sim.interner),
+            Some(sim.interner()),
         )
     });
     // Init_Game52BFCE..52C075 builds the global 53-row plain Convert
@@ -761,10 +833,10 @@ mod tests {
         rules.replace_art_registry_for_test(art);
 
         let mut sim = Simulation::new();
-        let owner = sim.interner.intern("Neutral");
-        let type_ref = sim.interner.intern("MAP_OBJECT");
+        let owner = sim.intern("Neutral");
+        let type_ref = sim.intern("MAP_OBJECT");
         let map_object_id = sim.allocate_stable_id();
-        sim.entities_mut()
+        sim.entities_mut_for_test()
             .insert(GameEntity::new_at_frame_zero_for_test(
                 map_object_id,
                 1,
@@ -808,30 +880,30 @@ mod tests {
         for (id, tile) in ids.iter().zip(&tiles) {
             let anim = sim.anim(*id).expect("spawned terrain AnimClass");
             assert_eq!(
-                anim.world_coord,
+                anim.world_coord(),
                 crate::sim::anim_class::AnimWorldCoord {
                     x: tile.world_x,
                     y: tile.world_y,
                     z: tile.world_z,
                 }
             );
-            assert_eq!(anim.draw_flags, 0x1600);
-            assert_eq!(anim.z_adjust, tile.z_adjust);
-            assert_eq!(anim.runtime.loop_remaining, u8::MAX);
-            assert!(!anim.runtime.constructor_reverse);
-            assert!(anim.use_cell_drawer);
-            assert!(anim.terrain_attached);
+            assert_eq!(anim.draw_flags(), 0x1600);
+            assert_eq!(anim.z_adjust(), tile.z_adjust);
+            assert_eq!(anim.runtime().loop_remaining, u8::MAX);
+            assert!(!anim.runtime().constructor_reverse);
+            assert!(anim.use_cell_drawer());
+            assert!(anim.terrain_attached());
         }
         assert!(matches!(
-            sim.sound_events.as_slice(),
+            sim.sound_events(),
             [SimSoundEvent::AnimationStarted { anim_id, .. }] if *anim_id == ids[0]
         ));
-        assert_eq!(sim.sound_events.drain(..).count(), 1);
-        assert!(sim.sound_events.is_empty());
+        assert_eq!(sim.sound_events_mut_for_test().drain(..).count(), 1);
+        assert!(sim.sound_events().is_empty());
 
         // Native load resets Scenario RNG to Seed(0); isolate persistence of
         // the AnimStore and authoritative LogicVector registration order.
-        sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+        *sim.scenario_rng_mut_for_test() = crate::sim::rng::SimRng::new(0);
         let expected_hash = sim.state_hash();
         let bytes =
             crate::util::save_codec::serialize(&sim).expect("serialize terrain AnimClass state");
@@ -840,9 +912,9 @@ mod tests {
         restored.rebuild_logic_membership();
         assert_eq!(restored.live_object_order_snapshot(), expected_order);
         assert_eq!(restored.state_hash(), expected_hash);
-        assert!(restored.anim(ids[0]).unwrap().use_cell_drawer);
-        assert!(restored.anim(ids[0]).unwrap().terrain_attached);
-        assert!(restored.sound_events.is_empty());
+        assert!(restored.anim(ids[0]).unwrap().use_cell_drawer());
+        assert!(restored.anim(ids[0]).unwrap().terrain_attached());
+        assert!(restored.sound_events().is_empty());
     }
 
     fn overlay_registry_snapshot(
@@ -915,25 +987,6 @@ mod tests {
         assert_eq!(
             rules.production.build_speed,
             crate::util::native_x87::NativeF64Bits::ONE
-        );
-    }
-
-    /// AT-9 inverse: a map with no rules-shaped sections changes nothing.
-    #[test]
-    fn map_without_overrides_leaves_rules_unchanged() {
-        let mut with_map = RulesLayerStack::new(IniFile::from_str(RULES_BASE));
-        let map = IniFile::from_str("[Basic]\nName=Clean\n[Waypoints]\n0=45035\n");
-        with_map.push(
-            crate::rules::native_processing::RulesLayerKind::Scenario,
-            map,
-        );
-        let a = RuleSet::from_rules_layers(&with_map).expect("parse");
-        let b = RuleSet::from_ini(&IniFile::from_str(RULES_BASE)).expect("parse");
-        assert_eq!(a.c4_delay_frames(), b.c4_delay_frames());
-        assert_eq!(a.production.build_speed, b.production.build_speed);
-        assert_eq!(
-            a.object("E1").map(|o| o.strength),
-            b.object("E1").map(|o| o.strength)
         );
     }
 

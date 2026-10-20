@@ -100,29 +100,94 @@ pub struct SavedSeedDescriptionEdit {
     pub caret: usize,
     pub first_visible_unit: usize,
     pub focused: bool,
+    /// `ES_PASSWORD`: the paint passes `(style >> 5) & 1` to
+    /// `NewEdit__DrawTextAndCaret` `0x00623880`, which draws every unit as
+    /// `*` (`0x00614FDC..0x00615009`).
+    pub password: bool,
 }
 
 impl SavedSeedDescriptionEdit {
     pub fn set_text(&mut self, description: &SeedDescription) {
         // Programmatic assignment also passes through7B78D0 after EM_LIMITTEXT.
-        self.units = description
-            .units()
-            .iter()
-            .copied()
-            .take(SAVED_SEED_DESCRIPTION_MAX_UNITS)
+        self.set_units_limited(
+            description.units().iter().copied(),
+            SAVED_SEED_DESCRIPTION_MAX_UNITS,
+        );
+    }
+
+    /// NewEdit614B30's shared assignment: limits count UTF-16 units, and zero
+    /// means unlimited. D7 uses five/eleven units; its port has no limit.
+    pub fn set_units_limited(&mut self, units: impl IntoIterator<Item = u16>, limit: usize) {
+        self.units = units
+            .into_iter()
+            .take(if limit == 0 { usize::MAX } else { limit })
             .collect();
         self.caret = self.units.len();
         self.first_visible_unit = 0;
     }
 
     pub fn insert_text(&mut self, text: &str) {
-        for unit in text.encode_utf16().filter(|unit| *unit > 0x1f) {
-            if self.units.len() == SAVED_SEED_DESCRIPTION_MAX_UNITS {
-                break;
-            }
-            self.units.insert(self.caret, unit);
-            self.caret += 1;
+        self.insert_text_limited(text, SAVED_SEED_DESCRIPTION_MAX_UNITS);
+    }
+
+    /// Native 614B30 insertion, retaining the caller's configured EM_LIMITTEXT.
+    pub fn insert_text_limited(&mut self, text: &str, limit: usize) {
+        for unit in text.encode_utf16() {
+            self.insert_unit_filtered(unit, limit, false, &[]);
         }
+    }
+
+    /// NewEdit614B30 at615226..61527A: reject-character table, UTF-16
+    /// limit, control-character gate and optional byte-only input (<0x100).
+    /// One unit lets callers run their native EN_CHANGE handler after each
+    /// admitted WM_CHAR instead of applying that handler after a pasted batch.
+    pub fn insert_unit_filtered(
+        &mut self,
+        unit: u16,
+        limit: usize,
+        byte_only: bool,
+        rejected: &[u16],
+    ) -> bool {
+        if unit <= 0x1f
+            || (byte_only && unit >= 0x100)
+            || rejected.contains(&unit)
+            || (limit != 0 && self.units.len() >= limit)
+        {
+            return false;
+        }
+        self.units.insert(self.caret, unit);
+        self.caret += 1;
+        true
+    }
+
+    /// NewEdit multiline Enter614DEB appends CRLF to the end, independently
+    /// of the caret and EM_LIMITTEXT, before notifying its parent with501.
+    pub fn append_enter_line_end(&mut self) {
+        self.units.extend([13, 10]);
+    }
+
+    /// NewEdit4B3 getter614D49: caller capacity includes its forced final NUL.
+    pub fn wide_text(&self, capacity: usize) -> Vec<u16> {
+        self.units
+            .iter()
+            .copied()
+            .take(capacity.saturating_sub(1))
+            .take_while(|unit| *unit != 0)
+            .collect()
+    }
+
+    /// NewEdit message 0x4B5 (614D28): narrow each UTF-16 unit to its low byte,
+    /// then terminate the caller's buffer at capacity-1. This is not ACP.
+    pub fn narrow_text(&self, capacity: usize) -> String {
+        crate::util::native_string::widen_bytes(
+            &self
+                .units
+                .iter()
+                .take(capacity.saturating_sub(1))
+                .map(|unit| *unit as u8)
+                .take_while(|byte| *byte != 0)
+                .collect::<Vec<_>>(),
+        )
     }
 
     pub fn backspace(&mut self) {
@@ -168,6 +233,35 @@ impl SavedSeedDescriptionEdit {
 
     pub fn display_text(&self) -> String {
         String::from_utf16_lossy(&self.units)
+    }
+
+    /// The units `start..end` as the NewEdit paints them (masked for
+    /// `ES_PASSWORD`).
+    pub fn painted_range(&self, start: usize, end: usize) -> String {
+        let end = end.min(self.units.len());
+        let start = start.min(end);
+        if self.password {
+            "*".repeat(end - start)
+        } else {
+            String::from_utf16_lossy(&self.units[start..end])
+        }
+    }
+
+    /// The painted text from the first visible unit on.
+    pub fn painted_text(&self) -> String {
+        self.painted_range(self.first_visible_unit, self.units.len())
+    }
+
+    /// Keep the insertion point visible using the active font's measured width.
+    pub fn scroll_to_caret(&mut self, available: u32, measure: impl Fn(&str) -> u32) {
+        self.first_visible_unit = self.first_visible_unit.min(self.caret);
+        while self.first_visible_unit < self.caret {
+            let prefix = self.painted_range(self.first_visible_unit, self.caret);
+            if measure(&prefix) <= available {
+                break;
+            }
+            self.first_visible_unit += 1;
+        }
     }
 }
 

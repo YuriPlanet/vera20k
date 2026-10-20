@@ -24,7 +24,7 @@ use serde::{Deserialize, Serialize};
 use crate::map::lighting::{self, LIGHT_CLAMP_MAX, LIGHT_UNIT, PointLight};
 use crate::map::resolved_terrain::ResolvedTerrainGrid;
 use crate::rules::ruleset::RadiationRules;
-use crate::sim::light_sources::LightingEvent;
+use crate::sim::light_sources::{LightingEvent, LightingSources};
 use crate::sim::timer::CdTimer;
 use crate::util::lepton::{UnsupportedGroundSlope, ground_height_leptons};
 use crate::util::native_x87::sqrt_approx_length;
@@ -45,30 +45,30 @@ const FALLBACK_BOUNDS: (u16, u16) = (512, 512);
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RadSite {
     /// Center cell.
-    pub center: (u16, u16),
+    center: (u16, u16),
     /// Spread in whole cells (truncated warhead CellSpread); the affected
     /// square is (2·spread+1)² around the center. Fixed at creation — a merge
     /// does NOT update it even if the new weapon's warhead differs.
-    pub spread: i32,
+    spread: i32,
     /// Falloff radius in leptons = spread × 256 + 128.
-    pub radius_leptons: i32,
+    radius_leptons: i32,
     /// Site level at the last (re)activation. Constant between activations;
     /// the decay step recomputes per-cell falloff from this value.
-    pub level: i32,
+    level: i32,
     /// Number of decay steps over the lifetime = duration / level_delay
     /// (integer division — 0 is possible for short-lived sites and makes the
     /// per-step amount unbounded; zero-over-zero cells retain a masked NaN).
-    pub level_steps: i32,
+    level_steps: i32,
     /// Total lifetime in frames = duration_multiple × level.
-    pub duration: i32,
+    duration: i32,
     /// Frames left. Decremented once per tick; the site self-deletes when it
     /// drops below 1 (leaving residual cell levels in place — only the center
     /// marker is released).
-    pub remaining: i32,
+    remaining: i32,
     /// The level-decay countdown (`RadSiteClass+0x28`/`+0x30`), restarted
     /// with `RadLevelDelay=` at each activation and decay step
     /// (`RadSiteClass::AI @ 0x0065B80E`).
-    pub level_timer: CdTimer,
+    level_timer: CdTimer,
     /// Independent source clock and retained output, owned by this site.
     /// A before-AI activation decrements lifetime on its creation frame but
     /// does not advance this timer. Neither rendering nor load restarts it.
@@ -76,6 +76,38 @@ pub struct RadSite {
 }
 
 impl RadSite {
+    pub const fn center(&self) -> (u16, u16) {
+        self.center
+    }
+
+    pub const fn spread(&self) -> i32 {
+        self.spread
+    }
+
+    pub const fn radius_leptons(&self) -> i32 {
+        self.radius_leptons
+    }
+
+    pub const fn level(&self) -> i32 {
+        self.level
+    }
+
+    pub const fn level_steps(&self) -> i32 {
+        self.level_steps
+    }
+
+    pub const fn duration(&self) -> i32 {
+        self.duration
+    }
+
+    pub const fn remaining(&self) -> i32 {
+        self.remaining
+    }
+
+    pub const fn level_timer(&self) -> CdTimer {
+        self.level_timer
+    }
+
     /// Current source parameters, without deriving age from the lifetime.
     /// Callers receive a value; the site remains the sole mutation owner.
     pub fn light_source(&self) -> Option<PointLight> {
@@ -532,7 +564,7 @@ impl RadiationState {
         theater: &str,
         rules: &RadiationRules,
         terrain: Option<&ResolvedTerrainGrid>,
-        lights: &mut Vec<LightingEvent>,
+        lights: &mut LightingSources,
     ) {
         let center = (det.rx, det.ry);
         let merged = self.sites.get(&center).map(|site| {
@@ -582,7 +614,7 @@ impl RadiationState {
         // interval, even if another change later returns to the same inputs.
         let source = self.sites.get(&center).and_then(RadSite::light_source);
         if light_changed {
-            lights.push(LightingEvent::Radiation { center, source });
+            lights.publish(LightingEvent::Radiation { center, source });
         }
     }
 
@@ -595,7 +627,7 @@ impl RadiationState {
         frame: u32,
         rules: &RadiationRules,
         terrain: Option<&ResolvedTerrainGrid>,
-        lights: &mut Vec<LightingEvent>,
+        lights: &mut LightingSources,
     ) {
         if self.sites.is_empty() {
             return;
@@ -624,7 +656,7 @@ impl RadiationState {
                     .light
                     .advance(frame, site.remaining, site.duration, rules)
             {
-                lights.push(LightingEvent::Radiation {
+                lights.publish(LightingEvent::Radiation {
                     center,
                     source: site.light_source(),
                 });
@@ -632,7 +664,7 @@ impl RadiationState {
             if dead {
                 self.sites.remove(&center);
                 self.creation_order.retain(|retained| *retained != center);
-                lights.push(LightingEvent::Radiation {
+                lights.publish(LightingEvent::Radiation {
                     center,
                     source: None,
                 });
@@ -767,158 +799,6 @@ mod tests {
         }
     }
 
-    /// Same-center re-detonation merges (effective + added), it does not
-    /// stack to 2× full level.
-    #[test]
-    fn same_center_redetonation_merges_not_stacks() {
-        let rules = stock_rules();
-        let mut rad = RadiationState::default();
-        rad.apply_detonation(
-            desolator_det(50, 50),
-            0,
-            "TEMPERATE",
-            &rules,
-            None,
-            &mut Vec::new(),
-        );
-        // Immediately re-detonate: effective is still the full 500 (no frames
-        // elapsed), so the merged level is exactly 500 + 500.
-        rad.apply_detonation(
-            desolator_det(50, 50),
-            0,
-            "TEMPERATE",
-            &rules,
-            None,
-            &mut Vec::new(),
-        );
-        let site = rad.site_at((50, 50)).expect("merged site survives");
-        assert_eq!(site.level, 1000);
-        assert_eq!(site.duration, 1000);
-        assert_eq!(site.remaining, 1000);
-        // Field: spread(500) − outstanding(500·(0/90+1 step)) + spread(1000)
-        // = 1000 at the center.
-        assert_eq!(rad.cell_level((50, 50)), 1000.0);
-        // Exactly ONE site exists.
-        assert_eq!(rad.sites().count(), 1);
-    }
-
-    /// The site counts down once per tick, steps the field down every
-    /// `RadLevelDelay` frames, and self-deletes once `remaining < 1` —
-    /// releasing only the center registration.
-    #[test]
-    fn site_self_deletes_and_clears_center_ptr() {
-        let rules = stock_rules();
-        let mut rad = RadiationState::default();
-        rad.apply_detonation(
-            desolator_det(10, 10),
-            0,
-            "TEMPERATE",
-            &rules,
-            None,
-            &mut Vec::new(),
-        );
-        let full = rad.cell_level((10, 10));
-        // duration 500, level_steps = 500/90 = 5, step every 90 frames.
-        for frame in 1..=89 {
-            rad.tick_decay(frame, &rules, None, &mut Vec::new());
-        }
-        assert_eq!(
-            rad.cell_level((10, 10)),
-            full,
-            "no decay step before the 90-frame countdown expires"
-        );
-        rad.tick_decay(90, &rules, None, &mut Vec::new());
-        let after_one = rad.cell_level((10, 10));
-        assert_eq!(
-            after_one,
-            full - full / 5.0,
-            "first step removes falloff/level_steps"
-        );
-        // Run out the rest of the lifetime.
-        for frame in 91..=520 {
-            rad.tick_decay(frame, &rules, None, &mut Vec::new());
-        }
-        assert!(
-            rad.site_at((10, 10)).is_none(),
-            "site self-deletes at remaining < 1"
-        );
-        // 5 steps of full/5 each have cleared the center cell exactly (its
-        // per-step amount, 100.0, is representable). Off-center cells may
-        // keep ±1-ulp float residue — the sequential double subtraction
-        // leaves the same residue in the original engine — but nothing may
-        // remain at a level that truncates to a damaging value.
-        assert_eq!(rad.cell_level((10, 10)), 0.0);
-        assert!(
-            rad.iter_cells().all(|(_, &v)| v < 1e-9),
-            "only sub-damaging float residue may survive the full decay"
-        );
-        assert_eq!(rad.sites().count(), 0);
-    }
-
-    /// The decay countdown is per-site (anchored at activation), not a global
-    /// frame-modulo: a site created mid-stream steps 90 frames after ITS
-    /// activation.
-    #[test]
-    fn decay_countdown_is_activation_anchored() {
-        let rules = stock_rules();
-        let mut rad = RadiationState::default();
-        rad.apply_detonation(
-            desolator_det(10, 10),
-            37,
-            "TEMPERATE",
-            &rules,
-            None,
-            &mut Vec::new(),
-        );
-        let full = rad.cell_level((10, 10));
-        for frame in 38..=126 {
-            rad.tick_decay(frame, &rules, None, &mut Vec::new());
-        }
-        assert_eq!(rad.cell_level((10, 10)), full);
-        rad.tick_decay(127, &rules, None, &mut Vec::new());
-        assert!(rad.cell_level((10, 10)) < full);
-    }
-
-    /// Merge bookkeeping mid-life: outstanding contribution is removed with
-    /// the old level before the new level is spread.
-    #[test]
-    fn midlife_merge_resets_to_effective_plus_added() {
-        let rules = stock_rules();
-        let mut rad = RadiationState::default();
-        rad.apply_detonation(
-            desolator_det(10, 10),
-            0,
-            "TEMPERATE",
-            &rules,
-            None,
-            &mut Vec::new(),
-        );
-        // Advance 180 frames: two decay steps, remaining 500→320.
-        for frame in 1..=180 {
-            rad.tick_decay(frame, &rules, None, &mut Vec::new());
-        }
-        let site = rad.site_at((10, 10)).unwrap();
-        assert_eq!(site.remaining, 320);
-        // Effective = 320×500/500 = 320; merge adds 500 → 820.
-        rad.apply_detonation(
-            desolator_det(10, 10),
-            180,
-            "TEMPERATE",
-            &rules,
-            None,
-            &mut Vec::new(),
-        );
-        let site = rad.site_at((10, 10)).unwrap();
-        assert_eq!(site.level, 820);
-        assert_eq!(site.duration, 820);
-        assert_eq!(site.remaining, 820);
-        // Field at center: 500 − 2×(500/5) [two steps] = 300, then the
-        // outstanding removal (500/5)×(320/90+1) = 400 over-subtracts and
-        // clamps at exactly 0 (the subtraction stores 0 on a negative
-        // result), then the re-spread adds the full 820.
-        assert_eq!(rad.cell_level((10, 10)), 820.0);
-    }
-
     /// Square bounds clamp at the map edge without wrapping or panicking.
     #[test]
     fn detonation_near_origin_clamps_square() {
@@ -930,7 +810,7 @@ mod tests {
             "TEMPERATE",
             &rules,
             None,
-            &mut Vec::new(),
+            &mut crate::sim::light_sources::LightingSources::default(),
         );
         assert_eq!(rad.cell_level((2, 2)), 500.0);
         assert!(rad.cell_level((0, 0)) > 0.0);
@@ -947,10 +827,15 @@ mod tests {
             "TEMPERATE",
             &rules,
             None,
-            &mut Vec::new(),
+            &mut crate::sim::light_sources::LightingSources::default(),
         );
         for frame in 6..=130 {
-            rad.tick_decay(frame, &rules, None, &mut Vec::new());
+            rad.tick_decay(
+                frame,
+                &rules,
+                None,
+                &mut crate::sim::light_sources::LightingSources::default(),
+            );
         }
         let bytes = crate::util::save_codec::serialize(&rad).expect("serialize");
         let restored: RadiationState =

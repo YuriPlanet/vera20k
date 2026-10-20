@@ -58,8 +58,12 @@ fn request_move(
     // current cell; no layer is kept per route cell.
     (
         result,
-        actor.navigation.path_replay.route_cells(),
-        actor.navigation.path_replay.remaining_directions().to_vec(),
+        actor.navigation.path_replay().route_cells(),
+        actor
+            .navigation
+            .path_replay()
+            .remaining_directions()
+            .to_vec(),
     )
 }
 
@@ -72,10 +76,11 @@ fn live_avoid_threats_membership_reads_admitted_house_grid_through_search_and_sn
     let russian = sim.interner.intern("Russians");
     for owner in [american, russian] {
         sim.houses
-            .insert(owner, HouseState::new(owner, 0, None, true, 0, 10));
+            .register(HouseState::new(owner, 0, None, true, 0, 10));
     }
-    sim.session.house_order = vec![american, russian];
-    sim.session.game_mode_nonzero = true;
+    sim.houses.reorder_for_test(&[american, russian]);
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     let mover = sim
         .spawn_object("MTNK", "Americans", 13, 15, 0, &rules)
         .unwrap();

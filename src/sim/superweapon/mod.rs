@@ -17,30 +17,27 @@ mod chronosphere;
 pub use chronosphere::CHRONO_WARP_SELECTION_INDEX;
 pub mod airstrike_tint;
 #[cfg(test)]
-mod can_fire_tests;
+mod building_requirements_tests;
 #[cfg(test)]
-mod view_admission_tests;
+mod can_fire_tests;
 #[cfg(any(test, feature = "test-support"))]
 mod cell_receiver_tests;
 #[cfg(test)]
 mod charge_native_tests;
-#[cfg(test)]
-mod building_requirements_tests;
 #[cfg(any(test, feature = "test-support"))]
 mod chronosphere_lunar_retail_tests;
 #[cfg(any(test, feature = "test-support"))]
 pub mod chronosphere_tests;
 mod fire;
-mod money;
 pub mod force_shield;
 mod generic_warhead;
-mod targeting;
 pub mod genetic_converter;
 pub mod invulnerability;
 pub mod iron_curtain;
 pub mod lightning_storm;
 #[cfg(test)]
 pub(crate) mod lightning_storm_tests;
+mod money;
 pub(crate) mod nuke;
 #[cfg(test)]
 mod nuke_tests;
@@ -50,9 +47,12 @@ pub mod psychic_dominator;
 mod psychic_dominator_tests;
 pub mod psychic_reveal;
 mod spy_plane;
-pub(crate) mod unit_delivery;
 #[cfg(test)]
 mod spy_plane_tests;
+mod targeting;
+pub(crate) mod unit_delivery;
+#[cfg(test)]
+mod view_admission_tests;
 
 use crate::rules::ruleset::RuleSet;
 use crate::rules::superweapon_type::SuperWeaponType;
@@ -202,15 +202,15 @@ pub struct SuperWeaponInstance {
     #[serde(default)]
     native_unique_id: Option<i32>,
     /// Which SuperWeaponType this instance represents (interned ID of the INI section name).
-    pub type_id: InternedId,
+    type_id: InternedId,
     /// Which house owns this instance.
-    pub owner: InternedId,
+    owner: InternedId,
     /// Whether the SW is granted (owning building exists and is alive).
-    pub is_active: bool,
+    is_active: bool,
     /// Whether the SW is fully charged and ready to fire.
-    pub is_ready: bool,
+    is_ready: bool,
     /// Whether charging is paused due to low power.
-    pub is_suspended: bool,
+    is_suspended: bool,
     /// Super+6E: Grant6CB57D stores its one-time argument. ClickFire6CBB18
     /// consumes it after Launch; Deactivate deliberately leaves it retained.
     #[serde(default)]
@@ -220,18 +220,18 @@ pub struct SuperWeaponInstance {
     #[serde(default = "default_can_lose")]
     can_lose: bool,
     /// Native frame when charging began. -1 = timer stopped.
-    pub charge_start_tick: i32,
+    charge_start_tick: i32,
     /// Total charge duration in native frames (may be adjusted on suspend/resume).
-    pub charge_duration: i32,
+    charge_duration: i32,
     /// Super+24, initialized to -1 by 0x006CAFA7. Exactly -1 inherits the type's
     /// recharge time; every other signed value is retained verbatim.
     #[serde(default = "inherited_recharge_time")]
     custom_recharge_time: i32,
     /// Charge/drain state: -1=N/A, 0=empty, 1=charged, 2=draining.
     /// Only used when UseChargeDrain=yes (Force Shield). -1 for all others.
-    pub charge_drain_state: i32,
+    charge_drain_state: i32,
     /// Native frame when the SW became ready. Construction uses -100.
-    pub ready_tick: i32,
+    ready_tick: i32,
     /// `SuperClass+0x62` (ChronoMapCoords): the cell a Chronosphere click
     /// stores (`0x006CC3D3`) and a PostClick Fire_SW copies from its
     /// PreDependent Super (`0x004FAE8F`). Construction copies the static
@@ -278,6 +278,81 @@ fn default_can_lose() -> bool {
 }
 
 impl SuperWeaponInstance {
+    /// The SuperWeaponType this instance represents.
+    pub fn type_id(&self) -> InternedId {
+        self.type_id
+    }
+
+    pub fn owner(&self) -> InternedId {
+        self.owner
+    }
+
+    /// Granted (`SuperClass+0x6D`).
+    pub fn is_active(&self) -> bool {
+        self.is_active
+    }
+
+    /// Charged (`SuperClass+0x6F`).
+    pub fn is_ready(&self) -> bool {
+        self.is_ready
+    }
+
+    /// Held for low power or by the user ([`Self::suspend`]).
+    pub fn is_suspended(&self) -> bool {
+        self.is_suspended
+    }
+
+    pub fn charge_start_tick(&self) -> i32 {
+        self.charge_start_tick
+    }
+
+    pub fn charge_duration(&self) -> i32 {
+        self.charge_duration
+    }
+
+    pub fn charge_drain_state(&self) -> i32 {
+        self.charge_drain_state
+    }
+
+    pub fn ready_tick(&self) -> i32 {
+        self.ready_tick
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_charge_drain_state_for_test(&mut self, value: i32) {
+        self.charge_drain_state = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_charge_duration_for_test(&mut self, value: i32) {
+        self.charge_duration = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_charge_start_tick_for_test(&mut self, value: i32) {
+        self.charge_start_tick = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_is_active_for_test(&mut self, value: bool) {
+        self.is_active = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_is_ready_for_test(&mut self, value: bool) {
+        self.is_ready = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_is_suspended_for_test(&mut self, value: bool) {
+        self.is_suspended = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_ready_tick_for_test(&mut self, value: i32) {
+        self.ready_tick = value;
+    }
+
     #[inline]
     fn charge_timer(&self) -> CdTimer {
         CdTimer::from_raw(self.charge_start_tick, self.charge_duration)
@@ -475,6 +550,22 @@ impl SuperWeaponInstance {
         }
     }
 
+    /// SuperClass::AI's readiness edge: the charge is ready at `frame`.
+    fn mark_ready(&mut self, frame: u32) {
+        self.is_ready = true;
+        self.ready_tick = frame as i32;
+    }
+
+    /// The trainer's Superweapons Ready action on a granted, unheld
+    /// instance: [`Self::set_charge_percentage`] to 100, then the readiness
+    /// edge, without waiting for SuperClass::AI.
+    #[cfg(feature = "debug-tools")]
+    pub(crate) fn debug_charge_full(&mut self, sw: &SuperWeaponType, frame: u32) {
+        if self.is_active && !self.is_suspended && self.set_charge_percentage(100, sw, frame) {
+            self.mark_ready(frame);
+        }
+    }
+
     /// SetPercentage6CC1E0, called by Execute1296E430D. The actual f32 0.01
     /// (3C23D70A) is5368709/2^29. With percentage0..100 and an i32 recharge,
     /// the product fits i64; PC53 chop discards at most8 low bits, all below
@@ -654,7 +745,7 @@ pub(crate) fn reset_super(sim: &mut Simulation, rules: &RuleSet, owner: Interned
         return;
     };
     sim.release_super_anim(owner, type_id);
-    let frame = sim.session.binary_frame;
+    let frame = sim.session.binary_frame();
     if let Some(instance) = sim
         .super_weapons
         .get_mut(&owner)
@@ -716,7 +807,7 @@ pub(crate) fn super_nearly_ready(
     if !instance.is_active {
         return false;
     }
-    let remaining = instance.charge_remaining(sim.session.binary_frame as i32);
+    let remaining = instance.charge_remaining(sim.session.binary_frame() as i32);
     let recharge = rules
         .super_weapon(type_name)
         .map_or(0, |sw| instance.recharge_time(sw));
@@ -758,7 +849,7 @@ pub(crate) fn supers_of_kind_remaining(
     owner: InternedId,
     kind_index: i32,
 ) -> Vec<i32> {
-    let frame = sim.session.binary_frame as i32;
+    let frame = sim.session.binary_frame() as i32;
     let weapons = sim.super_weapons.get(&owner);
     super_types_with_type(rules, kind_index)
         .map(|name| {
@@ -844,7 +935,7 @@ impl SuperTimerView {
 
 /// The timer list, in its order.
 pub fn super_timer_views(sim: &Simulation, rules: &RuleSet) -> Vec<SuperTimerView> {
-    let frame = sim.session.binary_frame as i32;
+    let frame = sim.session.binary_frame() as i32;
     let mut views: Vec<SuperTimerView> = sim
         .super_weapons
         .iter()
@@ -906,7 +997,7 @@ pub fn superweapon_views_for_owner(
         views.push(SuperWeaponView {
             type_id: inst.type_id,
             display_name: type_id_str.to_string(),
-            progress: inst.charge_progress(sim.session.binary_frame, inst.recharge_time(sw_type)),
+            progress: inst.charge_progress(sim.session.binary_frame(), inst.recharge_time(sw_type)),
             is_ready: inst.is_ready,
             is_online: !inst.is_suspended,
             can_fire: inst.can_fire(sw_type),
@@ -925,7 +1016,7 @@ pub(crate) fn tick_house_superweapon_instances(
     rules: &RuleSet,
     owner: InternedId,
 ) {
-    let current_frame = sim.session.binary_frame;
+    let current_frame = sim.session.binary_frame();
     for type_id in house_super_order(sim, rules, owner) {
         let (fade, ready) = {
             let instance = sim
@@ -941,8 +1032,7 @@ pub(crate) fn tick_house_superweapon_instances(
                 && instance.charge_start_tick != -1
                 && instance.charge_timer().expired(current_frame as i32);
             if ready {
-                instance.is_ready = true;
-                instance.ready_tick = current_frame as i32;
+                instance.mark_ready(current_frame);
             }
             (fade, ready)
         };
@@ -984,7 +1074,7 @@ pub(crate) fn construct_house_supers(
     owner: InternedId,
     bind_native_ids: bool,
 ) {
-    let frame = sim.session.binary_frame as i32;
+    let frame = sim.session.binary_frame() as i32;
     let mut supers = std::collections::BTreeMap::new();
     for name in &rules.super_weapon_order {
         let type_id = sim.interner.intern(name);
@@ -1033,11 +1123,8 @@ pub(crate) fn tick_active_superweapon_effects(
     overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
     frame_effects: FrameEffects<'_>,
 ) -> bool {
-    if sim
-        .session
-        .lighting
-        .step_nuke_flash(sim.session.binary_frame as i32)
-    {
+    let frame = sim.session.binary_frame() as i32;
+    if sim.session.lighting_mut().step_nuke_flash(frame) {
         // `0x0053A705`; the screen redraw (`0x0053A711`) is presentation.
         sim.update_lighting();
     }
@@ -1062,7 +1149,7 @@ fn owned_live_buildings(
     sim.houses
         .get(&owner)
         .into_iter()
-        .flat_map(|house| house.base_projection.buildings())
+        .flat_map(|house| house.base_projection().buildings())
         .filter_map(|&id| sim.substrate.entities.get(id))
         .filter(move |building| {
             building.category() == crate::map::entities::EntityCategory::Structure
@@ -1097,7 +1184,7 @@ fn owned_building_present(sim: &Simulation, rules: &RuleSet, owner: InternedId, 
         .zip(sim.houses.get(&owner))
         .is_some_and(|(building, house)| {
             house
-                .tracking
+                .tracking()
                 .active_count(EntityCategory::Structure, building)
                 > 0
         })
@@ -1184,7 +1271,7 @@ pub(crate) fn update_owned_supers(sim: &mut Simulation, rules: &RuleSet, owner: 
     let Some(house) = sim.houses.get(&owner) else {
         return;
     };
-    let defeated = house.is_defeated;
+    let defeated = house.is_defeated();
     let low_power = sim
         .power_states
         .get(&owner)
@@ -1194,7 +1281,7 @@ pub(crate) fn update_owned_supers(sim: &mut Simulation, rules: &RuleSet, owner: 
         let Some(sw) = rules.super_weapon(sim.interner.resolve(type_id)) else {
             continue;
         };
-        let allowed = sim.session.game_options.super_weapons || !sw.disableable_from_shell;
+        let allowed = sim.session.game_options().super_weapons || !sw.disableable_from_shell;
         let changed = {
             let instance = sim
                 .super_weapons
@@ -1211,9 +1298,9 @@ pub(crate) fn update_owned_supers(sim: &mut Simulation, rules: &RuleSet, owner: 
                 instance.deactivate();
                 true
             } else if !low_power && online.contains(&type_id) {
-                instance.suspend(false, sw.manual_control, sim.session.binary_frame)
+                instance.suspend(false, sw.manual_control, sim.session.binary_frame())
             } else if sw.is_powered {
-                instance.suspend(true, sw.manual_control, sim.session.binary_frame)
+                instance.suspend(true, sw.manual_control, sim.session.binary_frame())
             } else {
                 false
             }
@@ -1237,7 +1324,7 @@ pub(crate) fn grant_provided_supers(sim: &mut Simulation, rules: &RuleSet, owner
     let Some(house) = sim.houses.get(&owner) else {
         return;
     };
-    if house.is_defeated {
+    if house.is_defeated() {
         return;
     }
     //50B2C7..50B305 uses the power ratio even for an unpowered Super type.
@@ -1253,7 +1340,7 @@ pub(crate) fn grant_provided_supers(sim: &mut Simulation, rules: &RuleSet, owner
         let Some(sw) = rules.super_weapon(sim.interner.resolve(type_id)) else {
             continue;
         };
-        if !sim.session.game_options.super_weapons && sw.disableable_from_shell {
+        if !sim.session.game_options().super_weapons && sw.disableable_from_shell {
             continue;
         }
         grant_super(sim, rules, owner, type_id, false, low_power);
@@ -1275,7 +1362,7 @@ fn grant_super(
     let Some(house) = sim.houses.get(&owner) else {
         return false;
     };
-    let passive = house.multiplay_passive;
+    let passive = house.multiplay_passive();
     let Some(sw) = rules.super_weapon(sim.interner.resolve(type_id)) else {
         return false;
     };
@@ -1287,7 +1374,7 @@ fn grant_super(
     else {
         return false;
     };
-    if !instance.apply_grant_state(sw, sim.session.binary_frame, one_time, on_hold) {
+    if !instance.apply_grant_state(sw, sim.session.binary_frame(), one_time, on_hold) {
         return false;
     }
     instance.timer_place = (sw.show_timer && !passive).then_some(place);

@@ -125,13 +125,13 @@ impl Simulation {
                 .expect("retained paired Super")
                 .is_ready = false;
             self.release_super_anim(owner, pre_type);
-            let frame = self.session.binary_frame;
+            let frame = self.session.binary_frame();
             super_instance(self, owner, pre_type)
                 .expect("retained paired Super")
                 .stop_preclick(pre_sw, frame);
         }
         // `0x004FAEC6..0x004FAEF2`: every house, last to first.
-        let houses: Vec<InternedId> = self.session.house_order.iter().rev().copied().collect();
+        let houses: Vec<InternedId> = self.houses.order().iter().rev().copied().collect();
         for house in houses {
             alert_super_weapon_defense(self, rules, house, sw, cell);
         }
@@ -186,7 +186,7 @@ fn click_fire(
     if !one_time && !sw.manual_control && !sw.pre_click && !sw.post_click {
         sim.release_super_anim(owner, sw_type_id);
     }
-    let frame = sim.session.binary_frame;
+    let frame = sim.session.binary_frame();
     if let Some(instance) = sim
         .super_weapons
         .get_mut(&owner)
@@ -399,12 +399,12 @@ fn alert_super_weapon_defense(
     let Some(house) = sim.houses.get(&house_id) else {
         return;
     };
-    if house.multiplay_passive || house.is_human || !sw.ai_defend_against {
+    if house.multiplay_passive() || house.is_human() || !sw.ai_defend_against {
         return;
     }
     let base = house.base_origin();
     let probability = house.difficulty_value(&rules.general.ai_super_defense_probability);
-    let first_yard = house.build_const_order.first().copied();
+    let first_yard = house.build_const_order().first().copied();
     let terrain = sim.resolved_terrain.as_ref();
     let cell_coords = |(x, y): (u16, u16)| {
         let coord = crate::sim::projectile::cell_ground_coord(terrain, x, y);
@@ -432,7 +432,7 @@ fn alert_super_weapon_defense(
             ((coords.x / 256) as u16, (coords.y / 256) as u16)
         })
         .unwrap_or(base);
-    let frame = sim.session.binary_frame as i32;
+    let frame = sim.session.binary_frame() as i32;
     if let Some(house) = sim.houses.get_mut(&house_id) {
         house.alert_super_weapon_defense(defended, frame);
     }

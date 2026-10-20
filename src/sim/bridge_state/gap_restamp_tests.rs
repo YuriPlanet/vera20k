@@ -147,7 +147,7 @@ fn gap_flags_snapshot_hash_and_later_setter_preserve_value_authority() {
     sim.resolved_terrain
         .as_mut()
         .unwrap()
-        .cell_mut(4, 3)
+        .cell_mut_for_test(4, 3)
         .unwrap()
         .bridge_facts
         .raw_flags &= !0xC00;

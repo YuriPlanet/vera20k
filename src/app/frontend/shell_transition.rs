@@ -64,8 +64,17 @@ pub(crate) enum ShellSlideKind {
     Options,
     /// Dialog 0x10E — Westwood Online welcome.
     WolWelcome,
+    /// Dialog 0x10F — Westwood Online login.
+    WolLogin,
+    /// Dialog 0x113 — Westwood Online custom-match lobby.
+    WolLobby,
     /// Dialog 0xA3 — Options' Keyboard page (front-end parent only).
     Keyboard,
+    /// Dialog D7, Options' Network child.
+    NetworkOptions,
+    LanLobby,
+    /// BC/BD (LAN) or C2/C9 (WOL) network setup.
+    NetworkSetup(crate::ui::multiplayer_setup::SetupDialog),
     /// Dialog 0x6B — Skirmish's Choose Map, a family page of its own.
     ChooseMap,
     /// Dialog 0x108 — the score screen after a skirmish game.
@@ -91,7 +100,12 @@ impl ShellSlideKind {
             ShellSlideKind::LoadSavedGame => 0x00B7,
             ShellSlideKind::Options => 0x00D5,
             ShellSlideKind::WolWelcome => 0x010E,
+            ShellSlideKind::WolLogin => 0x010F,
+            ShellSlideKind::WolLobby => 0x0113,
             ShellSlideKind::Keyboard => 0x00A3,
+            ShellSlideKind::NetworkOptions => 0x00D7,
+            ShellSlideKind::LanLobby => 0xBB,
+            ShellSlideKind::NetworkSetup(dialog) => dialog.page().dialog.0,
             ShellSlideKind::ChooseMap => 0x006B,
             ShellSlideKind::Score => 0x0108,
             ShellSlideKind::CampaignScore => 0x0103,
@@ -158,6 +172,18 @@ pub(crate) enum ShellExitThen {
     /// Keyboard `0xA3` Back or Cancel: `0x005FBEF0` tears it down with its
     /// slide, then the bindings save or reload and a new `0xD5` is built.
     KeyboardClose(crate::app::input::keyboard::KeyboardExit),
+    NetworkOptionsClose,
+    LanBack,
+    LanCreate {
+        observe: bool,
+    },
+    LanJoinAccepted(crate::app::shell_lan::LanJoinAcceptance),
+    NetworkSetupBack(crate::ui::multiplayer_setup::SetupDialog),
+    NetworkSetupChooseMap(crate::ui::multiplayer_setup::SetupDialog),
+    NetworkStart {
+        dialog: crate::ui::multiplayer_setup::SetupDialog,
+        agreed_seed: u32,
+    },
     /// Skirmish Choose Map (`0x5AA`): `0x102` slides out and hides without
     /// packing (`0x006AD931`, `0x006AD93C`), then `0x6B` runs.
     SkirmishChooseMap,
@@ -184,9 +210,19 @@ pub(crate) enum ShellExitThen {
     /// Campaign victory Continue (`0x423`, result 1): `0x103` slides out
     /// before GameExit::Victory continues the campaign.
     CampaignScoreContinue,
-    /// A Westwood Online action: `0x10E` closes before the WOLAPI object
-    /// fails to load and `TXT_APIMISSING` shows.
-    WolApiMissing,
+    /// A Westwood Online mode button: `0x10E` closes with the mode written
+    /// and `WOL_Main` runs that mode's flow.
+    WolAction(crate::ui::wol_shell::WolMode),
+    /// `0x10F` closed with Login (`0x539`) or Back (2).
+    WolLoginClose(u16),
+    /// `0x113` Back (`0x686`): the runner leaves its channel and returns 0.
+    WolLobbyBack,
+    /// A game join was requested (`0x0078C281`): `0x113` slides out and hides.
+    WolLobbyHide,
+    /// The create succeeded: `0x113` slides out and hides, then C2 opens.
+    WolCreateAccepted {
+        observe: bool,
+    },
 }
 
 impl ShellExitThen {
@@ -202,12 +238,23 @@ impl ShellExitThen {
             Self::LoadSavedGameBack => ShellSlideKind::LoadSavedGame,
             Self::Options(_) => ShellSlideKind::Options,
             Self::KeyboardClose(_) => ShellSlideKind::Keyboard,
+            Self::NetworkOptionsClose => ShellSlideKind::NetworkOptions,
+            Self::LanBack | Self::LanCreate { .. } | Self::LanJoinAccepted(_) => {
+                ShellSlideKind::LanLobby
+            }
+            Self::NetworkSetupBack(dialog)
+            | Self::NetworkSetupChooseMap(dialog)
+            | Self::NetworkStart { dialog, .. } => ShellSlideKind::NetworkSetup(*dialog),
             Self::SkirmishChooseMap => ShellSlideKind::Skirmish,
             Self::ChooseMapUse(_) | Self::ChooseMapCancel | Self::ChooseMapRandomMap => {
                 ShellSlideKind::ChooseMap
             }
             Self::RandomMapUse | Self::RandomMapCancel => ShellSlideKind::RandomMap,
-            Self::WolBack | Self::WolApiMissing => ShellSlideKind::WolWelcome,
+            Self::WolBack | Self::WolAction(_) => ShellSlideKind::WolWelcome,
+            Self::WolLoginClose(_) => ShellSlideKind::WolLogin,
+            Self::WolLobbyBack | Self::WolLobbyHide | Self::WolCreateAccepted { .. } => {
+                ShellSlideKind::WolLobby
+            }
             Self::ScoreContinue => ShellSlideKind::Score,
             Self::CampaignScoreContinue => ShellSlideKind::CampaignScore,
         }
@@ -365,6 +412,7 @@ enum ShellEntryEffect {
 
 #[derive(Debug)]
 enum ShellWaveCompletion {
+    MultiplayerSetup,
     /// Single Player `0x100`, Movies & Credits `0x101` or movie list `0x129`.
     MenuPage,
     Skirmish,
@@ -478,7 +526,12 @@ impl<'a> ShellLifecycleReducer<'a> {
             | ShellSlideKind::LoadSavedGame
             | ShellSlideKind::Options
             | ShellSlideKind::WolWelcome
-            | ShellSlideKind::Keyboard => ShellWaveCompletion::MenuPage,
+            | ShellSlideKind::WolLogin
+            | ShellSlideKind::WolLobby
+            | ShellSlideKind::Keyboard
+            | ShellSlideKind::NetworkOptions
+            | ShellSlideKind::LanLobby => ShellWaveCompletion::MenuPage,
+            ShellSlideKind::NetworkSetup(_) => ShellWaveCompletion::MultiplayerSetup,
             ShellSlideKind::Skirmish => ShellWaveCompletion::Skirmish,
             ShellSlideKind::ChooseMap => ShellWaveCompletion::ChooseMap,
             ShellSlideKind::RandomMap => ShellWaveCompletion::RandomMap,
@@ -650,12 +703,15 @@ pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideK
     // Keyboard page `0xA3` runs after `0xD5` is destroyed (`0x0055FD06`) and
     // slides like it. The Exit confirmation (state 6) and the quit after it
     // (state 7) run without a family dialog.
+    if state.frontend.network_options.is_some() {
+        return Some(ShellSlideKind::NetworkOptions);
+    }
     if let Some(dialog) = state.frontend.keyboard_dialog.as_ref() {
         return (dialog.parent == crate::ui::shell::keyboard::KeyboardParent::Launcher)
             .then_some(ShellSlideKind::Keyboard)
             .filter(|kind| crate::ui::shell::slide::is_slide_eligible(kind.dialog_id()));
     }
-    if state.frontend.exit_confirm_modal.is_some() || state.frontend.quit_cascade.is_some() {
+    if state.frontend.shell_message_box.is_some() || state.frontend.quit_cascade.is_some() {
         return None;
     }
     // Only the native page slides; the assetless fallback does not.
@@ -666,6 +722,19 @@ pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideK
     }
     let candidate = if state.frontend.shell_route.skirmish() {
         skirmish_slide_target(&state.frontend.skirmish_shell_state)?
+    } else if state.frontend.shell_route.lan_lobby() {
+        ShellSlideKind::LanLobby
+    } else if state.frontend.shell_route.network_setup() {
+        if state
+            .frontend
+            .skirmish_shell_state
+            .choose_map_modal
+            .is_some()
+        {
+            skirmish_slide_target(&state.frontend.skirmish_shell_state)?
+        } else {
+            ShellSlideKind::NetworkSetup(crate::app::shell_network_setup::dialog(state))
+        }
     } else if state.frontend.shell_route.single_player() {
         ShellSlideKind::SinglePlayer
     } else if state.frontend.shell_route.movies_and_credits() {
@@ -676,17 +745,26 @@ pub(crate) fn current_shell_slide_target(state: &AppState) -> Option<ShellSlideK
         ShellSlideKind::Campaign
     } else if state.frontend.shell_route.load_saved_game() {
         ShellSlideKind::LoadSavedGame
-    } else if state.frontend.shell_route.wol_welcome() {
-        // The TXT_APIMISSING box runs after 0x10E is destroyed.
-        if state
+    } else if state.frontend.shell_route.wol() {
+        // The waits and boxes run after a WOL dialog is destroyed, over the
+        // empty backdrop.
+        match state.frontend.wol.as_ref().map(|visit| &visit.page) {
+            Some(crate::app::shell_wol::WolPage::Welcome) => ShellSlideKind::WolWelcome,
+            Some(crate::app::shell_wol::WolPage::Login(_)) => ShellSlideKind::WolLogin,
+            _ => return None,
+        }
+    } else if state.frontend.shell_route.wol_lobby() {
+        // 0x113 is created hidden and hidden again for a game join.
+        if !state
             .frontend
-            .wol_welcome
+            .wol
             .as_ref()
-            .is_some_and(|wol| wol.api_missing.is_some())
+            .and_then(|visit| visit.lobby())
+            .is_some_and(|lobby| lobby.shown)
         {
             return None;
         }
-        ShellSlideKind::WolWelcome
+        ShellSlideKind::WolLobby
     } else if state.frontend.main_menu_shell_error.is_none() {
         ShellSlideKind::MainMenu
     } else {
@@ -868,12 +946,8 @@ pub(crate) fn render_shell_first_paint_slide(
                 destination,
             )?
         }
-        ShellSlideKind::WolWelcome => {
-            crate::app::frontend::wol_welcome_render::render_wol_welcome_page(
-                state,
-                encoder,
-                destination,
-            )?
+        ShellSlideKind::WolWelcome | ShellSlideKind::WolLogin | ShellSlideKind::WolLobby => {
+            crate::app::frontend::wol_welcome_render::render_wol_page(state, encoder, destination)?
         }
         ShellSlideKind::Options => {
             crate::app::App::native_launcher_options_active(state) && {
@@ -887,6 +961,30 @@ pub(crate) fn render_shell_first_paint_slide(
         }
         ShellSlideKind::Keyboard => {
             crate::app::frontend::skirmish_shell_render::render_keyboard_shell(
+                state,
+                encoder,
+                destination,
+            )?;
+            true
+        }
+        ShellSlideKind::LanLobby => {
+            crate::app::frontend::skirmish_shell_render::render_lan_lobby(
+                state,
+                encoder,
+                destination,
+            )?;
+            true
+        }
+        ShellSlideKind::NetworkSetup(_) => {
+            crate::app::frontend::skirmish_shell_render::render_multiplayer_setup(
+                state,
+                encoder,
+                destination,
+            )?;
+            true
+        }
+        ShellSlideKind::NetworkOptions => {
+            crate::app::frontend::skirmish_shell_render::render_network_options(
                 state,
                 encoder,
                 destination,
@@ -927,6 +1025,9 @@ pub(crate) fn render_shell_first_paint_slide(
     match completion {
         // `0x102`'s SHOW completion: its own statics start, or repaint when
         // the dialog shows again after Choose Map.
+        Some(ShellWaveCompletion::MultiplayerSetup) => {
+            crate::app::shell_network_setup::show_statics(state);
+        }
         Some(ShellWaveCompletion::Skirmish) => {
             let now = Instant::now();
             let (title, game_type, map_label) =
@@ -1067,7 +1168,14 @@ mod tests {
             Some(ShellSlideKind::Skirmish)
         );
         let chooser = compute_choose_map_modal_layout(800, 600);
-        shell.choose_map_modal = Some(ChooseMapModalState::open(1, None, &[], &[], &chooser));
+        shell.choose_map_modal = Some(ChooseMapModalState::open(
+            crate::ui::skirmish_shell::ChooseMapContext::Skirmish,
+            1,
+            None,
+            &[],
+            &[],
+            &chooser,
+        ));
         assert_eq!(
             skirmish_slide_target(&shell),
             Some(ShellSlideKind::ChooseMap)

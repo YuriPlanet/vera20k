@@ -12,8 +12,9 @@ fn fixture() -> (Simulation, RuleSet, OverlayTypeRegistry, [InternedId; 3]) {
          [POWERED]\nStrength=500\nFoundation=1x1\nPowered=yes\n\
          [TECH]\nStrength=500\nFoundation=1x1\nPower=-10\nNeedsEngineer=yes\n",
     );
-    sim.session.current_house = Some(houses[0]);
-    sim.session.game_mode_nonzero = true;
+    sim.session.set_current_house_for_test(Some(houses[0]));
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     tests::install_event_ingress_map(
         &mut sim,
         &rules,
@@ -50,7 +51,7 @@ fn run(
         &action,
         TriggerActionContext {
             live_index,
-            incoming_house: Some(sim.session.house_order[2]),
+            incoming_house: Some(sim.houses.order()[2]),
             input: TagEventInput::default(),
         },
         &mut Vec::new(),
@@ -87,7 +88,7 @@ fn building_toggle_scans_tagged_live_marked_unlimboed_buildings_and_returns_a_re
         .get_mut(unmarked)
         .unwrap()
         .lifecycle
-        .set_cell_marked(false);
+        .set_cell_marked_for_test(false);
     sim.substrate
         .entities
         .get_mut(dead)
@@ -114,7 +115,10 @@ fn building_toggle_scans_tagged_live_marked_unlimboed_buildings_and_returns_a_re
     assert!(sim.power_states[&houses[0]].power_recheck_for_test());
     assert!(sim.power_states[&houses[0]].radar_recheck_for_test());
     assert_eq!(
-        sim.lighting_sources.buildings.get(&local).map(|s| s.active),
+        sim.lighting_sources
+            .buildings()
+            .get(&local)
+            .map(|s| s.active),
         Some(false)
     );
     assert_eq!(
@@ -149,7 +153,7 @@ fn counted_tag_runs_off_and_on_in_order_without_a_second_state_or_rng_draws() {
     sim.attach_object_trigger_tag(load, Some("CONTROLTAG"));
     let rng = sim.rng_state();
     sim.sound_events.clear();
-    sim.session.binary_frame = 8;
+    sim.session.set_binary_frame_for_test(8);
     sim.raise_house_tags(
         houses[0],
         Some(&rules),
@@ -183,7 +187,8 @@ fn counted_tag_runs_off_and_on_in_order_without_a_second_state_or_rng_draws() {
 #[test]
 fn authored_power_flag_and_needs_engineer_use_distinct_latches_and_survive_save_load() {
     let (mut sim, rules, registry, _) = fixture();
-    sim.session.game_mode_nonzero = false;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false));
     let ini = crate::rules::ini_parser::IniFile::from_str(
         "[Structures]\n\
          0=House0,LOAD,256,15,15,0,CONTROLTAG,0,0,0\n\
@@ -249,7 +254,7 @@ fn authored_power_flag_and_needs_engineer_use_distinct_latches_and_survive_save_
     assert_eq!(
         restored
             .lighting_sources
-            .buildings
+            .buildings()
             .get(&load)
             .map(|source| source.active),
         Some(false)

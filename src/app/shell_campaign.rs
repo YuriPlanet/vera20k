@@ -246,6 +246,8 @@ impl App {
                 campaigns,
                 side.campaign_name(),
                 state.persistence.options_profile.difficulty,
+                None,
+                None,
                 &mut clock,
             )
         });

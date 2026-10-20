@@ -9,6 +9,7 @@ from itertools import product
 from pathlib import Path
 import hashlib
 import struct
+import sys
 
 from unicorn import Uc, UC_ARCH_X86, UC_MODE_32, UC_HOOK_CODE, UC_HOOK_MEM_WRITE
 from unicorn.x86_const import (
@@ -296,5 +297,158 @@ def metadata():
     return result
 
 
+def drive_crush_history(row):
+    """Retain one Foot across original crush, speed, rocking and reset bodies."""
+    from tools.spatial_oracle.locomotor_force_track import OriginalForceTrack, FOOT, LOCO, SP as FRAME_SP
+    from tools.spatial_oracle.track_speed_native import seed_getter_state, TYPE as SPEED_TYPE, HOUSE, HOUSE_TYPE, RULES
+    from unicorn.x86_const import UC_X86_REG_EBX
+
+    native = OriginalForceTrack({})
+    u = native.uc
+    seed_getter_state(u, dict(raw=15, rank=0, crate=1, applied=1), FOOT,
+                      SPEED_TYPE, HOUSE, HOUSE_TYPE, RULES)
+    cell = native.cell_address(10, 10)
+    overlay, table, other = SCRATCH + 0xC000, SCRATCH + 0xD000, SCRATCH + 0xE000
+    u.mem_write(FOOT + 0x9C, dwords(2688, 2688, 0))
+    u.mem_write(FOOT + 0x14, dwords(5))
+    u.mem_write(FOOT + 0x6C, dwords(300))
+    u.mem_write(FOOT + 0x5E0, dwords(-1))
+    u.mem_write(FOOT + CRUSH_FLAG, bytes((row['initial_flag'],)))
+    initial_rocking = [0, 0x3E99999A, 0, 0x3D23D70A]
+    u.mem_write(FOOT + 0x328, dwords(*initial_rocking))
+    u.mem_write(SPEED_TYPE + 0xA0, dwords(300))
+    u.mem_write(SPEED_TYPE + 0x5B4, dwords(row['zone']))
+    for offset, key in ((0xD28, 'crusher'), (0xD2B, 'tilts'), (0xDBD, 'accelerates')):
+        u.mem_write(SPEED_TYPE + offset, bytes((row[key],)))
+    u.mem_write(SPEED_TYPE + 0x2F8, dwords(500))
+    u.mem_write(SPEED_TYPE + 0x300, struct.pack('<d', 0.002))
+    u.mem_write(SPEED_TYPE + 0x308, struct.pack('<d', 0.03))
+    u.mem_write(LOCO + 0x34, dwords(5248, 2688, 0))
+    u.mem_write(LOCO + 0x50, struct.pack('<d', 1))
+    u.mem_write(LOCO + 0x58, dwords(0))
+    u.mem_write(LOCO + 0x64, bytes((row['straight'],)))
+    u.mem_write(0xA8E9A0, bytes((row['game_active'],)))
+    # GetUnit(false) must traverse the original selected list, including self.
+    if row['occupant'] == 'self':
+        u.mem_write(cell + 0xE4, dwords(FOOT))
+    elif row['occupant'] == 'deck':
+        u.mem_write(cell + 0xE8, dwords(FOOT))
+    elif row['occupant'] == 'infantry':
+        u.mem_write(other, dwords(0x7EB058))  # original Infantry vtable
+        u.mem_write(cell + 0xE4, dwords(other))
+    u.mem_write(0xA83D84, dwords(table))
+    u.mem_write(table, dwords(overlay))
+    u.mem_write(cell + 0x44, dwords(0 if row['overlay'] else -1))
+    u.mem_write(overlay + 0x22D, bytes((row['crushable'],)))
+    u.mem_write(overlay + 0x2A8, bytes((row['wall'],)))
+    bodies = ((0x4B1999, 0x4B1A77), (0x4B0F20, 0x4B1297),
+              (ENTRY, END), (0x70B570, 0x70BCAA))
+    originals = [bytes(u.mem_read(a, b - a)) for a, b in bodies]
+    original_vtable = bytes(u.mem_read(UNIT_VTABLE, 0x600))
+    stores, calls = [], []
+
+    def observe_write(uc, _access, address, size, value, _data):
+        if address in (FOOT + CRUSH_FLAG, FOOT + VELOCITY):
+            stores.append(dict(instruction=f'{uc.reg_read(UC_X86_REG_EIP):08X}',
+                               offset=address - FOOT, size=size,
+                               bits=f'{value & ((1 << (size * 8)) - 1):0{size * 2}x}'))
+
+    def observe_call(uc, pc, _size, _data):
+        assert pc not in (0x65C780, 0x65C7E0), 'unexpected RNG draw'
+        if pc not in (SOUND, DAMAGE):
+            return
+        sp = uc.reg_read(UC_X86_REG_ESP)
+        calls.append(dict(entry=f'{pc:08X}', arg=signed(uc, sp + 4)))
+        # These external effects are already independently tested by the
+        # existing Unit tail corpus. No wall mutation or sound RNG is claimed.
+        uc.reg_write(UC_X86_REG_EIP, unsigned(uc, sp))
+        uc.reg_write(UC_X86_REG_ESP, sp + 8)
+        uc.reg_write(UC_X86_REG_EAX, 0)
+
+    def state():
+        return dict(crush_flag=u.mem_read(FOOT + CRUSH_FLAG, 1)[0],
+                    rocking_bits=[f'{native.unsigned(FOOT + offset):08x}'
+                                  for offset in (0x328, 0x32C, 0x330, 0x334)],
+                    target_bits=native.double_bits(LOCO + 0x50),
+                    applied_bits=native.double_bits(FOOT + 0x578))
+
+    def prefix():
+        u.mem_write(FRAME_SP, dwords(0, 0))
+        u.reg_write(UC_X86_REG_ECX, LOCO)
+        u.reg_write(UC_X86_REG_ESP, FRAME_SP)
+        run_checked(u, 0x4B0F20, 0x4B1297, count=3000,
+                    required_addresses=(0x4DB1A0,))
+        return state()
+
+    u.hook_add(UC_HOOK_MEM_WRITE, observe_write)
+    u.hook_add(UC_HOOK_CODE, observe_call)
+    u.reg_write(UC_X86_REG_EBP, LOCO)
+    u.reg_write(UC_X86_REG_EBX, cell)
+    u.reg_write(UC_X86_REG_ESP, FRAME_SP)
+    run_checked(u, 0x4B1999, 0x4B1A77, count=3000)
+    pre_entry = state()
+    pre_entry_stores = list(stores)
+    speed = prefix()
+    native.invoke(0x70B570, FOOT)
+    rocking = state()
+    u.mem_write(FRAME_SP + 0x1C, struct.pack('<hh', 10, 10))
+    u.reg_write(UC_X86_REG_EBP, FOOT)
+    u.reg_write(UC_X86_REG_ESP, FRAME_SP)
+    run_checked(u, ENTRY, END, count=3000, required_addresses=(MAP_LOOKUP,))
+    per_cell = state()
+    retained_speed = prefix()
+    # Explicit new candidate target, as published by Process_Movement; no
+    # path search or fresh admission is executed in this component history.
+    u.mem_write(LOCO + 0x50, struct.pack('<d', 1))
+    refreshed_speed = prefix()
+    assert [bytes(u.mem_read(a, b - a)) for a, b in bodies] == originals
+    assert bytes(u.mem_read(UNIT_VTABLE, 0x600)) == original_vtable
+    return dict(input=row, initial_rocking_bits=[f'{x:08x}' for x in initial_rocking],
+                pre_entry=pre_entry, pre_entry_stores=pre_entry_stores,
+                speed=speed, rocking=rocking, per_cell=per_cell,
+                retained_speed=retained_speed, refreshed_speed=refreshed_speed,
+                calls=calls, stores=stores)
+
+
+def generate_drive_crush():
+    changes = [dict(name='bfrt_wall'), dict(name='bfrt_no_tilt', tilts=False),
+               dict(name='normal_tank_wall', zone=0),
+               dict(name='not_straight', straight=False),
+               dict(name='empty_ground', occupant='none'),
+               dict(name='deck_only', occupant='deck'),
+               dict(name='infantry_only', occupant='infantry'),
+               dict(name='inactive', game_active=False),
+               dict(name='zone11', zone=11),
+               dict(name='no_overlay', overlay=False),
+               dict(name='nonwall_overlay', wall=False, crushable=False),
+               dict(name='noncrusher', crusher=False),
+               dict(name='nonaccelerating', accelerates=False),
+               dict(name='retain_until_overlay', overlay=False, straight=False, initial_flag=True)]
+    base = dict(zone=12, crusher=True, tilts=True, accelerates=True, straight=True,
+                game_active=True, occupant='self', overlay=True, wall=True,
+                crushable=True, initial_flag=False)
+    return [drive_crush_history(dict(base, **change)) for change in changes]
+
+
+def drive_crush_metadata():
+    return provenance(
+        scope='14 original Drive pre-entry -> speed prefix -> RockingUpdate -> Unit overlay tail -> speed histories in one retained Foot',
+        assumptions=[
+            'Reuses OriginalForceTrack map/constructor and track_speed_native getter inputs. Supplied healthy Unit, type speed15, crate/house1, far destination, selector0, applied/target1 and four binary32 rocking words. No retail type reader, path admission, paid-point placement or Mark body executes.',
+            'Original GetUnit(false) traverses supplied ground/deck lists using original RTTI, including actor itself after a supplied Mark boundary. Original type/ability getters, map lookup, GetCoords, speed setter/getter and RockingUpdate execute. GameActive, straight latch and zone are explicit boundary inputs.',
+            'Foot+6B5 is not reset between bodies. New target1 is supplied only for the last speed visit to model the documented next-candidate publication boundary. No numeric expected value is computed in Python.',
+            'All three RNG raw/ranged entry calls are rejected. No timer, detach, destruction or rendering comparison is claimed. Existing unit_per_cell_overlay corpus independently covers all overlay-tail gates and binary32 recoil.',
+        ],
+        substitutions=['Sound7509E0 and CellDamage480CB0 return0 with RET4; record calls without wall mutation, audio or downstream RNG effects.'],
+        entry_points=dict(pre_entry=0x4B1999, prefix=0x4B0F20,
+                          rocking=0x70B570, unit_overlay=ENTRY))
+
+
 if __name__ == '__main__':
-    finish_vectors(generate, Path(__file__).with_suffix('.json'), provenance=metadata)
+    if '--drive-crush' in sys.argv:
+        finish_vectors(generate_drive_crush,
+                       Path(__file__).with_suffix('.drive_crush.json'),
+                       provenance=drive_crush_metadata,
+                       argv=[arg for arg in sys.argv[1:] if arg != '--drive-crush'])
+    else:
+        finish_vectors(generate, Path(__file__).with_suffix('.json'), provenance=metadata)

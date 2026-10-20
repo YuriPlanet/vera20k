@@ -58,12 +58,12 @@ fn simulation_fixture() -> (Simulation, crate::map::terrain::TerrainGrid) {
         crate::map::bridge_facts::BridgeStampFamily::Nesw,
     );
     terrain
-        .cell_mut(CENTER.0, CENTER.1)
+        .cell_mut_for_test(CENTER.0, CENTER.1)
         .unwrap()
         .bridge_facts
         .overlay_id = Some(24);
     terrain
-        .cell_mut(FLOOD[0].0, FLOOD[0].1)
+        .cell_mut_for_test(FLOOD[0].0, FLOOD[0].1)
         .expect("perpendicular anchor terrain cell")
         .bridge_facts
         .raw_flags |= BRIDGE_FLAG_ANCHOR_SELF;
@@ -81,7 +81,11 @@ fn simulation_fixture() -> (Simulation, crate::map::terrain::TerrainGrid) {
     // Ordinary high 0xD1 identities on the perpendicular anchor and the
     // repair start (CellClass+44).
     for (rx, ry) in [FLOOD[0], REPAIR_START] {
-        terrain.cell_mut(rx, ry).unwrap().bridge_facts.overlay_id = Some(0xD1);
+        terrain
+            .cell_mut_for_test(rx, ry)
+            .unwrap()
+            .bridge_facts
+            .overlay_id = Some(0xD1);
     }
     let grid = build_terrain_grid_from_resolved(&terrain, None);
     let bridge_state = BridgeRuntimeState::from_resolved_terrain_with_map_size(
@@ -92,8 +96,8 @@ fn simulation_fixture() -> (Simulation, crate::map::terrain::TerrainGrid) {
     );
 
     let mut sim = Simulation::new();
-    sim.resolved_terrain = Some(terrain);
-    sim.bridge_state = Some(bridge_state);
+    *sim.resolved_terrain_mut_for_test() = Some(terrain);
+    *sim.bridge_state_mut_for_test() = Some(bridge_state);
     (sim, grid)
 }
 
@@ -120,13 +124,13 @@ fn gsi_04_01_bridge_collapse_publishes_variant_preorder_before_setter_radar() {
     assert!(collapsed, "Ion retries the state machine through collapse");
     // Native56E990 publishes three per-cell radar callbacks before four
     // setter callbacks; each newly dirty coordinate advances the generation.
-    assert_eq!(sim.radar_terrain_dirty_generation, 7);
+    assert_eq!(sim.radar_terrain_dirty_generation(), 7);
     assert_eq!(
-        sim.radar_terrain_dirty_cells,
+        sim.radar_terrain_dirty_cells(),
         [FLOOD.as_slice(), &[CENTER, (25, 24), (25, 23), (25, 26)]].concat(),
     );
-    let mut unique = sim.radar_terrain_dirty_cells.clone();
+    let mut unique = sim.radar_terrain_dirty_cells().to_vec();
     unique.sort_unstable();
     unique.dedup();
-    assert_eq!(unique.len(), sim.radar_terrain_dirty_cells.len());
+    assert_eq!(unique.len(), sim.radar_terrain_dirty_cells().len());
 }

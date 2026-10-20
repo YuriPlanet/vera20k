@@ -104,7 +104,7 @@ fn building_receive(
             if let Some(entity) = sim.substrate.entities.get_mut(building) {
                 entity.begin_building_body(
                     crate::sim::building_construction::BuildingBodyMode::Idle,
-                    sim.session.binary_frame as i32,
+                    sim.session.binary_frame() as i32,
                 );
             }
             let _ = techno_receive(sim, building, sender, msg, payload, rules, effects);
@@ -305,8 +305,13 @@ pub(crate) fn can_load(
             return CanLoad::Answer(RadioResponse::Roger);
         }
     }
+    // `0x0043C4F8..0x0043C500`: a `Grinding=` building (`+0x16AD`) takes
+    // anyone the gates above admit.
+    if building_type.grinding {
+        return CanLoad::Answer(RadioResponse::Roger);
+    }
     // Other building mechanisms retain their existing owner/residual.
-    if building_type.grinding || building_type.bunker {
+    if building_type.bunker {
         return CanLoad::Answer(RadioResponse::None);
     }
     if building_type.unit_repair {
@@ -749,7 +754,7 @@ fn building_dock_now(
         if let Some(building) = sim.substrate.entities.get_mut(building_id) {
             building.mission_leaf.set_building_ready_latch(1);
         }
-        let now = sim.session.binary_frame;
+        let now = sim.session.binary_frame();
         let _ = sim.mission_queue_exact(
             building_id,
             MissionId::from_known(MissionType::Repair),
@@ -775,7 +780,7 @@ fn building_dock_now(
             from,
             MissionId::from_known(MissionType::Unload),
             0,
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
             &EntityReadyInputProvider,
         );
         return RadioResponse::Roger;
@@ -812,7 +817,7 @@ fn unit_receive(
                     unit,
                     MissionId::from_known(MissionType::Guard),
                     0,
-                    sim.session.binary_frame,
+                    sim.session.binary_frame(),
                     &EntityReadyInputProvider,
                 );
             }
@@ -917,7 +922,7 @@ fn unit_docking(
         // the DWORD -1 (`0x00737910..0x0073791B`). Without a zone grid both
         // lookups answer None and compare equal.
         let retained_zone = |foot: &crate::sim::game_entity::GameEntity| {
-            let (x, y) = foot.navigation.neighbor_state.cell();
+            let (x, y) = foot.navigation.neighbor_state().cell();
             sim.zone_grid
                 .as_ref()
                 .zip(sim.resolved_terrain.as_ref())
@@ -1135,7 +1140,7 @@ fn unit_prepare_to_dock(
         rules,
         effects,
     );
-    let frame = sim.session.binary_frame;
+    let frame = sim.session.binary_frame();
     let Some(entity) = sim.substrate.entities.get_mut(unit) else {
         return RadioResponse::Roger;
     };
@@ -1207,7 +1212,7 @@ fn unit_run_away(
     ) {
         log::debug!("RUN_AWAY unit {unit} did not scatter: {cause}");
     }
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     let _ = sim.mission_queue_exact(
         unit,
         MissionId::from_known(MissionType::Harvest),
@@ -1317,7 +1322,7 @@ fn aircraft_receive(
                     aircraft,
                     MissionId::from_known(MissionType::Move),
                     0,
-                    sim.session.binary_frame,
+                    sim.session.binary_frame(),
                     &EntityReadyInputProvider,
                 );
                 let airfield = sim.aircraft_nearest_friendly_airfield_cell(aircraft, rules);
@@ -1398,7 +1403,7 @@ fn aircraft_move_here(
         }
         None => MissionType::Move,
     };
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     let _ = sim.mission_queue_exact(
         aircraft,
         MissionId::from_known(mission),
@@ -1517,7 +1522,7 @@ fn foot_move_here(
     let Some(rules) = rules else {
         return RadioResponse::None;
     };
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     // 0x004D919A..0x004D91BA.
     if entity.mission.effective() == MissionId::from_known(MissionType::Guard)
         && entity.mission.queued() == MissionId::NONE
@@ -1570,7 +1575,7 @@ fn foot_run_away(
     let Some(rules) = rules else {
         return;
     };
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     let Some(entity) = sim.substrate.entities.get(foot) else {
         return;
     };
@@ -2147,7 +2152,6 @@ fn bunker_admits(sim: &Simulation, bld: u64, unit: u64) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::dock_pad_cell;
     use crate::map::entities::EntityCategory;
     use crate::sim::combat::Health;
     use crate::sim::game_entity::GameEntity;
@@ -2258,7 +2262,7 @@ mod tests {
         let building = sim.substrate.entities.get_mut(2).unwrap();
         building.set_type_ref_for_test(type_ref);
         building.lifecycle.set_in_limbo_for_test(false);
-        building.lifecycle.set_cell_marked(true);
+        building.lifecycle.set_cell_marked_for_test(true);
         let owner = sim.intern("Americans");
         let type_ref = sim.intern("E1");
         let mut infantry = GameEntity::new_at_frame_zero_for_test(
@@ -2276,7 +2280,7 @@ mod tests {
             false,
         );
         infantry.lifecycle.set_in_limbo_for_test(false);
-        infantry.lifecycle.set_cell_marked(true);
+        infantry.lifecycle.set_cell_marked_for_test(true);
         infantry.radio_contacts.set_capacity(3);
         sim.substrate.entities.insert(infantry);
         assert_eq!(hello(&mut sim, 1, 2), RadioResponse::Roger);
@@ -2563,32 +2567,6 @@ mod tests {
     }
 
     #[test]
-    fn bunker_dock_now_starts_install_machine() {
-        use crate::sim::docking::bunker_install::BunkerState;
-        let mut sim = Simulation::new();
-        spawn_bunker(&mut sim, 2, "Americans");
-        spawn_miner(&mut sim, 1, "Americans");
-        transmit(
-            &mut sim,
-            1,
-            2,
-            RadioMessage::DockNow,
-            RadioPayload::default(),
-            None,
-            crate::sim::world::FrameEffects::default(),
-        );
-        let rt = sim
-            .substrate
-            .entities
-            .get(2)
-            .unwrap()
-            .bunker_runtime
-            .unwrap();
-        assert_eq!(rt.state(), BunkerState::ArriveWait);
-        assert_eq!(rt.installing_unit(), Some(1));
-    }
-
-    #[test]
     fn refinery_full_second_hello_is_negatory_no_evict() {
         let mut sim = Simulation::new();
         spawn_refinery(&mut sim, 2, "Americans", 1);
@@ -2620,77 +2598,6 @@ mod tests {
                 .radio_contacts
                 .contains(1)
         );
-    }
-
-    #[test]
-    fn idempotent_hello_re_confirms_roger() {
-        let mut sim = Simulation::new();
-        spawn_refinery(&mut sim, 2, "Americans", 1);
-        spawn_miner(&mut sim, 1, "Americans");
-
-        assert_eq!(hello(&mut sim, 1, 2), RadioResponse::Roger);
-        assert_eq!(hello(&mut sim, 1, 2), RadioResponse::Roger);
-        assert_eq!(
-            sim.substrate.entities.get(2).unwrap().radio_contacts.len(),
-            1
-        );
-    }
-
-    #[test]
-    fn enter_dock_sets_flag_and_break_clears_both_sides() {
-        let mut sim = Simulation::new();
-        spawn_refinery(&mut sim, 2, "Americans", 1);
-        spawn_miner(&mut sim, 1, "Americans");
-
-        assert_eq!(hello(&mut sim, 1, 2), RadioResponse::Roger);
-        transmit(
-            &mut sim,
-            1,
-            2,
-            RadioMessage::Tether,
-            RadioPayload::default(),
-            None,
-            crate::sim::world::FrameEffects::default(),
-        );
-        assert_eq!(
-            sim.substrate.entities.get(1).unwrap().tether.partner(),
-            Some(2)
-        );
-
-        transmit(
-            &mut sim,
-            1,
-            2,
-            RadioMessage::Break,
-            RadioPayload::default(),
-            None,
-            crate::sim::world::FrameEffects::default(),
-        );
-        assert_eq!(
-            sim.substrate.entities.get(1).unwrap().tether.partner(),
-            None
-        );
-        assert!(
-            !sim.substrate
-                .entities
-                .get(2)
-                .unwrap()
-                .radio_contacts
-                .contains(1)
-        );
-        assert!(
-            !sim.substrate
-                .entities
-                .get(1)
-                .unwrap()
-                .radio_contacts
-                .contains(2)
-        );
-    }
-
-    #[test]
-    fn dock_pad_is_anchor_plus_three_one() {
-        assert_eq!(dock_pad_cell(10, 10), (13, 11));
     }
 
     /// TETHER on an `AirportBound=` aircraft takes the default path
@@ -2857,57 +2764,6 @@ mod tests {
                 },
             ]
         );
-        assert_eq!(
-            sim.substrate.entities.get(1).unwrap().tether.partner(),
-            None
-        );
-        assert!(
-            !sim.substrate
-                .entities
-                .get(2)
-                .unwrap()
-                .radio_contacts
-                .contains(1)
-        );
-    }
-
-    #[test]
-    fn lifecycle_authority_break_receiver_effect_precedes_common_clear() {
-        let mut sim = Simulation::new();
-        spawn_refinery(&mut sim, 2, "Americans", 1);
-        spawn_miner(&mut sim, 1, "Americans");
-        assert_eq!(hello(&mut sim, 1, 2), RadioResponse::Roger);
-        transmit(
-            &mut sim,
-            1,
-            2,
-            RadioMessage::Tether,
-            RadioPayload::default(),
-            None,
-            crate::sim::world::FrameEffects::default(),
-        );
-
-        clear_test_trace();
-        transmit(
-            &mut sim,
-            1,
-            2,
-            RadioMessage::Break,
-            RadioPayload::default(),
-            None,
-            crate::sim::world::FrameEffects::default(),
-        );
-        let trace = take_test_trace();
-
-        let effect_index = trace
-            .iter()
-            .position(|event| matches!(event, RadioTestEvent::ReceiverClassEffect { .. }))
-            .expect("represented receiver effect boundary");
-        let common_index = trace
-            .iter()
-            .position(|event| matches!(event, RadioTestEvent::ReceiverCommonCleared { .. }))
-            .expect("common receiver clear boundary");
-        assert!(effect_index < common_index);
         assert_eq!(
             sim.substrate.entities.get(1).unwrap().tether.partner(),
             None

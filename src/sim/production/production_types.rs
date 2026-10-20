@@ -9,7 +9,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::rules::object_type::ObjectCategory;
 use crate::sim::intern::InternedId;
-use crate::sim::ore_growth::{OreGrowthConfig, OreGrowthState};
 use crate::sim::production::factory::FactoryRegistry;
 
 /// A test house's opening balance.
@@ -199,33 +198,49 @@ pub struct ProductionState {
     // alongside the chosen on-map factory. This is the sole primary-state
     // owner; the House FactoryClass queue slots remain in `factories`.
     active_producer_by_owner: BTreeMap<InternedId, BTreeMap<ProductionCategory, BTreeSet<u64>>>,
-    pub next_enqueue_order: u64,
-    /// Ore growth/spread configuration resolved from merged INI sources.
-    pub ore_growth_config: OreGrowthConfig,
-    /// Per-TiberiumClass growth and spread queues, bitmaps and timers.
-    pub ore_growth_state: OreGrowthState,
-    /// Retained animations for all IsAnimated terrain, keyed by map cell.
-    /// Derived from live `terrain_objects`; removal/limbo must remove this index.
-    pub terrain_animations: BTreeMap<(u16, u16), crate::sim::terrain_spawn::TerrainAnimationState>,
-    /// Live `TerrainClass`-style map objects, keyed by deterministic stable id.
-    pub terrain_objects: BTreeMap<u64, crate::sim::terrain_object::TerrainObjectState>,
-    /// Live terrain object cell index, cell -> stable id.
-    pub terrain_object_cells: BTreeMap<(u16, u16), u64>,
-    /// Cells occupied by terrain objects whose type has `SpawnsTiberium=yes`.
-    ///
-    /// This has a different gate from `terrain_animations`: a non-animated
-    /// spawner rejects new ore, while an animated non-spawner still draws RNG.
-    pub tiberium_spawning_terrain_cells: BTreeSet<(u16, u16)>,
+    /// The monotonic temporal stamp the next accepted enqueue takes.
+    next_enqueue_order: u64,
     /// Per-(house, category) factory registry — the authoritative production state
     /// machine AND (as of P5d) the queue-of-record: the active build is the `Factory` head
     /// fields, the FIFO tail is `Factory.queue` of `QueueEntry`. Mutated directly by
     /// enqueue/cancel/delivery (no `queues_by_owner` mirror); serialized + hashed. Its
     /// per-step charge runs against the real wallet via
     /// `step_all` at the Phase-7 head, before the house tail (C1).
-    pub factories: FactoryRegistry,
+    factories: FactoryRegistry,
 }
 
 impl ProductionState {
+    /// The stamp the next enqueue takes; it is spent only once the enqueue
+    /// is accepted ([`Self::spend_enqueue_order`]).
+    pub fn next_enqueue_order(&self) -> u64 {
+        self.next_enqueue_order
+    }
+
+    /// An accepted enqueue (or a computer factory's construction) spends the
+    /// stamp it read.
+    pub(crate) fn spend_enqueue_order(&mut self) {
+        self.next_enqueue_order = self.next_enqueue_order.saturating_add(1);
+    }
+
+    pub fn factories(&self) -> &FactoryRegistry {
+        &self.factories
+    }
+
+    /// The registry's own operations carry the factory rules.
+    pub(crate) fn factories_mut(&mut self) -> &mut FactoryRegistry {
+        &mut self.factories
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_next_enqueue_order_for_test(&mut self, value: u64) {
+        self.next_enqueue_order = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn factories_mut_for_test(&mut self) -> &mut FactoryRegistry {
+        &mut self.factories
+    }
+
     // Native primary is per Factory RTTI/Naval, so both building sidebar tabs
     // use the same BuildingType primary. No second primary on the Defense tab.
     fn primary_category(category: ProductionCategory) -> ProductionCategory {
@@ -331,12 +346,6 @@ impl Default for ProductionState {
         Self {
             active_producer_by_owner: BTreeMap::new(),
             next_enqueue_order: 1,
-            ore_growth_config: OreGrowthConfig::disabled(),
-            ore_growth_state: OreGrowthState::new(0, 0),
-            terrain_animations: BTreeMap::new(),
-            terrain_objects: BTreeMap::new(),
-            terrain_object_cells: BTreeMap::new(),
-            tiberium_spawning_terrain_cells: BTreeSet::new(),
             factories: FactoryRegistry::default(),
         }
     }

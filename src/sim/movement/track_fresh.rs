@@ -33,11 +33,8 @@
 //! - Terrain blockers retain the actual Object target through the shared
 //!   code-4/5 Override arm (4B3B8D..4B3BE9). The ordinary route must first
 //!   admit that cell; a blocked zone can reject a destination before this arm.
-//! - Drive's retained +64 now feeds the wall pre-entry tilt in `track_host`.
-//!   The separate CrusherAll/current-Unit arm4B1A04..4B1A58 still lacks its
-//!   Foot+6B5 producer/speed-clamp integration. Selected stock MTNK's zone0
-//!   does not enter it. Ship's distinct +64 constructor/fresh writers and
-//!   reader6A103A are outside that Drive wall-tilt path and remain unported.
+//! - Ship's distinct +64 constructor/fresh writers and reader6A103A remain
+//!   unported. Drive's +64 wall/CrusherAll pre-entry paths live in `track_host`.
 //! - A candidate at a negative cell coordinate publishes no target speed
 //!   (`publish_fresh_speed`); native reads the shared dummy Cell's land row.
 //!   Trigger: a Foot on map row or column 0 heading off the map. Frequency:
@@ -113,7 +110,7 @@ struct FreshCall<'a> {
 fn path_word(entity: &GameEntity, index: usize) -> Option<u8> {
     entity
         .navigation
-        .path_replay
+        .path_replay()
         .remaining_directions()
         .get(index)
         .copied()
@@ -194,7 +191,7 @@ impl Simulation {
         //parasite arms), return with the out byte clear. Ship's vt+380 gate
         //is6A1DA9. The consumed track_fresh_response controls cover both
         //families with active and expired timers through this shared owner.
-        if actor.parasite.is_paralyzed(self.session.binary_frame) {
+        if actor.parasite.is_paralyzed(self.session.binary_frame()) {
             return Ok(false);
         }
         let head = if head.is_some() {
@@ -250,9 +247,9 @@ impl Simulation {
             .get_mut(id)
             .expect("same NavCom trim owner")
             .navigation
-            .path_replay;
+            .path_replay_mut();
         let slot = usize::from(queue.cursor()) + cells as usize;
-        queue.set_direction(slot, u8::MAX);
+        queue.terminate_at(slot);
         true
     }
 
@@ -260,7 +257,7 @@ impl Simulation {
     /// route resumes head selection in the same call (0x4B3282..0x4B3298).
     fn track_no_queue_arm(&mut self, call: &FreshCall<'_>) -> Result<bool, String> {
         let id = call.id;
-        let frame = self.session.binary_frame as i32;
+        let frame = self.session.binary_frame() as i32;
         let actor = self
             .substrate
             .entities
@@ -269,7 +266,7 @@ impl Simulation {
         //4B281C..4B2845: the Foot+640 exact-zero wait.
         if !actor
             .navigation
-            .path_runtime
+            .path_runtime()
             .movement_timer()
             .expired(frame)
         {
@@ -331,7 +328,7 @@ impl Simulation {
         if direction == TUBE_STEP_DIRECTION {
             return Ok(false);
         }
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         let terrain = self
             .resolved_terrain
             .as_ref()
@@ -455,7 +452,7 @@ impl Simulation {
                 );
                 //4B3C67..4B3C81: code != 7 retires the selector.
                 if let Some(actor) = self.substrate.entities.get_mut(id) {
-                    actor.navigation.path_runtime.clear_scold_latch();
+                    actor.navigation.path_runtime_mut().clear_scold_latch();
                 }
                 self.track_retire_selector(id);
                 Ok(false)
@@ -519,7 +516,7 @@ impl Simulation {
     fn track_first_rejected_tail(&mut self, id: u64) {
         self.clear_track_head_of(id);
         if let Some(actor) = self.substrate.entities.get_mut(id) {
-            actor.navigation.path_runtime.clear_scold_latch();
+            actor.navigation.path_runtime_mut().clear_scold_latch();
         }
         self.track_retire_selector(id);
     }
@@ -528,19 +525,16 @@ impl Simulation {
     fn track_blocked_delay(&mut self, call: &FreshCall<'_>) -> Result<bool, String> {
         let id = call.id;
         let rules = call.rules;
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         self.clear_track_head_of(id);
         let actor = self
             .substrate
             .entities
             .get_mut(id)
             .ok_or("retired Drive/Ship code-2 owner")?;
-        let runtime = &mut actor.navigation.path_runtime;
+        let runtime = actor.navigation.path_runtime_mut();
         //4B3656..4B368D: the latch arms the blockage timer once.
-        if !runtime.path_blocked() {
-            runtime.set_path_blocked(true);
-            runtime.start_blocked(frame, rules.general.blockage_path_delay_ticks);
-        }
+        runtime.latch_blockage(frame, rules.general.blockage_path_delay_ticks);
         //4B3690..4B36B6: while the movement timer runs, the rejected tail.
         if !runtime.movement_timer().expired(frame as i32) {
             self.track_first_rejected_tail(id);
@@ -577,7 +571,7 @@ impl Simulation {
             if let Some(actor) = self.substrate.entities.get_mut(id) {
                 actor
                     .navigation
-                    .path_runtime
+                    .path_runtime_mut()
                     .start_movement(frame, rules.general.path_delay_ticks());
             }
             return Ok(false);
@@ -889,20 +883,16 @@ impl Simulation {
         //4B460C..4B4659: +63C = -1 (the shift's terminator), +558 = the
         //candidate's cell, Foot+68A = 0, class +5C = 0, then the head clears.
         let reference = candidate.map_or((0, 0), coord_cell);
-        actor.navigation.path_runtime.clear_scold_latch();
+        actor.navigation.path_runtime_mut().clear_scold_latch();
         clear_track_head(actor);
         let Some(candidate) = candidate else {
-            actor
-                .navigation
-                .path_replay
-                .set_reference_cell(Some(reference));
+            actor.navigation.path_replay_mut().rebase(reference);
             return self.track_finalize_stop(id);
         };
-        super::path_markers::accept_path_replay(
-            &mut actor.navigation.path_replay,
-            reference,
-            consumed,
-        );
+        actor
+            .navigation
+            .path_replay_mut()
+            .accept(reference, consumed);
         //4B46C3..4B46D7: install the selector and head (+63 = 1).
         if let Some(loco) = actor.locomotor.as_mut() {
             super::track_head::accept_fresh_progress(loco, turn_index);
@@ -1082,9 +1072,9 @@ impl Simulation {
 
     /// Foot+640 = (Frame, 0) before a retry recursion (0x4B4541..0x4B4548).
     fn expire_movement_timer(&mut self, id: u64) {
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         if let Some(actor) = self.substrate.entities.get_mut(id) {
-            actor.navigation.path_runtime.start_movement(frame, 0);
+            actor.navigation.path_runtime_mut().start_movement(frame, 0);
         }
     }
 
@@ -1105,7 +1095,7 @@ impl Simulation {
 
     /// Do_Turn 0x4B0EF0: FacingClass::Set 0x4C9220 on the body facing.
     fn track_do_turn(&mut self, id: u64, desired: u16) {
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         let Some(actor) = self.substrate.entities.get_mut(id) else {
             return;
         };
@@ -1377,8 +1367,8 @@ impl Simulation {
         if let Some(object) = nearest {
             return Some(BlockingObject::Entity(object));
         }
-        self.production
-            .terrain_object_cells
+        self.terrain_objects
+            .cell_index()
             .get(&cell)
             .copied()
             .map(BlockingObject::Terrain)
@@ -1443,7 +1433,7 @@ mod tests {
             ),
             1
         );
-        let tree = sim.production.terrain_object_cells[&(11, 10)];
+        let tree = sim.terrain_objects.cell_index()[&(11, 10)];
         assert!(!sim.substrate.entities.contains(tree));
         let cell = sim
             .resolved_terrain
@@ -1526,13 +1516,13 @@ mod tests {
                 fired_at_tree |= sim.fire_events.iter().any(|event| {
                     event.attacker_id == tank && event.target == TargetKind::Entity(tree)
                 });
-                if !sim.production.terrain_object_cells.contains_key(&(11, 10)) {
+                if !sim.terrain_objects.cell_index().contains_key(&(11, 10)) {
                     break;
                 }
             }
             assert!(fired_at_tree, "the retained Object target reaches FireAt");
             assert!(
-                !sim.production.terrain_object_cells.contains_key(&(11, 10)),
+                !sim.terrain_objects.cell_index().contains_key(&(11, 10)),
                 "the existing Terrain receiver takes the cannon's Wood damage"
             );
             let actor = sim.substrate.entities.get(tank).unwrap();

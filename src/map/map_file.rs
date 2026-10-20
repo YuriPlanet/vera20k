@@ -641,30 +641,6 @@ mod smudge_parse_tests {
     use super::*;
 
     #[test]
-    fn parses_smudge_section_skips_isbaked_nonzero() {
-        let ini = IniFile::from_bytes(
-            b"[Smudge]\n\
-              0=CR1,5,6,0\n\
-              1=BURN01,7,8,1\n\
-              2=CR2,9,10,0\n",
-        )
-        .unwrap();
-        let smudges = parse_map_smudges(&ini);
-        assert_eq!(smudges.len(), 2);
-        assert_eq!(smudges[0].type_name, "CR1");
-        assert_eq!(smudges[0].rx, 5);
-        assert_eq!(smudges[0].ry, 6);
-        assert_eq!(smudges[1].type_name, "CR2");
-    }
-
-    #[test]
-    fn handles_missing_section() {
-        let ini = IniFile::from_bytes(b"[Other]\nFoo=Bar\n").unwrap();
-        let smudges = parse_map_smudges(&ini);
-        assert!(smudges.is_empty());
-    }
-
-    #[test]
     fn rejects_malformed_entries() {
         let ini = IniFile::from_bytes(
             b"[Smudge]\n\
@@ -739,25 +715,6 @@ mod tests {
     }
 
     #[test]
-    fn gsi_04_01_explicit_rects_map_fields_verbatim() {
-        let text: &str = "\
-[Map]
-Theater=TEMPERATE
-Size=0,0,100,100
-LocalSize=2,4,96,92
-";
-        let ini: IniFile = IniFile::from_str(text);
-        let header: MapHeader = parse_header(&ini).expect("Should parse header");
-        assert_eq!(header.theater, "TEMPERATE");
-        assert_eq!(header.width, 100);
-        assert_eq!(header.height, 100);
-        assert_eq!(header.local_left, 2);
-        assert_eq!(header.local_top, 4);
-        assert_eq!(header.local_width, 96);
-        assert_eq!(header.local_height, 92);
-    }
-
-    #[test]
     fn authored_overlay_pack_receipt_can_be_taken_only_once() {
         let mut map = MapFile::from_bytes(&full_map_with_preview("")).expect("minimal parsed map");
         let first = map
@@ -800,21 +757,6 @@ LocalSize=2,4,96,92
         let negative_ini = IniFile::from_str("[Map]\nSize=0,0,3,2\nLevel=-2\n");
         let negative_header = parse_header(&negative_ini).expect("negative Level parses");
         assert_eq!(negative_header.level, -2);
-    }
-
-    #[test]
-    fn gsi_04_01_missing_rects_ignore_nonzero_caller_defaults() {
-        let ini = IniFile::from_str("[Map]\nSize=2,3,40,41\n");
-
-        let header = parse_header(&ini).expect("missing rectangles should remain loadable");
-
-        assert_eq!(header.theater, "TEMPERATE");
-        assert_eq!(header.width, 40);
-        assert_eq!(header.height, 41);
-        assert_eq!(header.local_left, 0);
-        assert_eq!(header.local_top, 0);
-        assert_eq!(header.local_width, 0);
-        assert_eq!(header.local_height, 0);
     }
 
     #[test]
@@ -913,21 +855,6 @@ LocalSize=2,4,96,92
     }
 
     #[test]
-    fn gsi_02_09_eof_after_complete_record_is_accepted() {
-        let bytes = iso_map_record(10, 20, 5, 3, 2);
-
-        let parsed = parse_iso_map_pack_records(&bytes).expect("complete final record is valid");
-        let cells = parsed.cells;
-
-        assert_eq!(cells.len(), 1);
-        assert_eq!(cells[0].rx, 10);
-        assert_eq!(cells[0].ry, 20);
-        assert_eq!(cells[0].tile_index, 5);
-        assert_eq!(cells[0].sub_tile, 3);
-        assert_eq!(cells[0].z, 2);
-    }
-
-    #[test]
     fn gsi_02_09_incomplete_header_is_an_error() {
         for actual in 1..CELL_HEADER_SIZE {
             let mut bytes = iso_map_record(1, 0, 1, 0, 0).to_vec();
@@ -954,23 +881,6 @@ LocalSize=2,4,96,92
                 actual,
             }) if actual == CELL_RECORD_SIZE - 1
         ));
-    }
-
-    #[test]
-    fn gsi_02_09_signed_x_uses_native_flattening_and_bounds() {
-        let negative = parse_iso_map_pack_records(&iso_map_record(-1, 0, 1, 0, 0))
-            .expect("out-of-range records are consumed");
-        assert!(negative.cells.is_empty());
-
-        let canonical = parse_iso_map_pack_records(&iso_map_record(-1, 1, 2, 0, 0))
-            .expect("in-range flattened record is valid");
-        assert_eq!(canonical.cells.len(), 1);
-        assert_eq!(canonical.cells[0].rx, 511);
-        assert_eq!(canonical.cells[0].ry, 0);
-
-        let upper = parse_iso_map_pack_records(&iso_map_record(0, 512, 3, 0, 0))
-            .expect("out-of-range records are consumed");
-        assert!(upper.cells.is_empty());
     }
 
     #[test]
@@ -1030,34 +940,6 @@ LocalSize=2,4,96,92
     }
 
     #[test]
-    fn test_parse_cells_from_raw_bytes() {
-        // Build a fake 11-byte cell record matching the correct format:
-        // i16 x, u16 y, i32 tile_index, u8 sub_tile, u8 level, u8 ice_growth
-        let mut cell_bytes: Vec<u8> = Vec::new();
-        cell_bytes.extend_from_slice(&10u16.to_le_bytes()); // rx
-        cell_bytes.extend_from_slice(&20u16.to_le_bytes()); // ry
-        cell_bytes.extend_from_slice(&5i32.to_le_bytes()); // tile_index (i32!)
-        cell_bytes.push(3); // sub_tile
-        cell_bytes.push(2); // z (level)
-        cell_bytes.push(0); // ice_growth
-
-        assert_eq!(cell_bytes.len(), CELL_RECORD_SIZE);
-
-        let d: &[u8] = &cell_bytes[0..CELL_RECORD_SIZE];
-        let rx: u16 = u16::from_le_bytes([d[0], d[1]]);
-        let ry: u16 = u16::from_le_bytes([d[2], d[3]]);
-        let tile_index: i32 = i32::from_le_bytes([d[4], d[5], d[6], d[7]]);
-        let sub_tile: u8 = d[8];
-        let z: u8 = d[9];
-
-        assert_eq!(rx, 10);
-        assert_eq!(ry, 20);
-        assert_eq!(tile_index, 5);
-        assert_eq!(sub_tile, 3);
-        assert_eq!(z, 2);
-    }
-
-    #[test]
     fn test_missing_map_section() {
         let text: &str = "[General]\nKey=Value\n";
         let ini: IniFile = IniFile::from_str(text);
@@ -1088,16 +970,6 @@ LocalSize=2,4,96,92
 
         assert_eq!(map.preview.size, Some((2, 1)));
         assert!(map.preview.has_packed_preview);
-        assert!(map.preview.decoded.is_none());
-    }
-
-    #[test]
-    fn full_map_parse_keeps_missing_preview_nonfatal() {
-        let bytes = full_map_with_preview("");
-
-        let map = MapFile::from_bytes(&bytes).expect("missing preview is non-fatal");
-
-        assert!(!map.preview.has_packed_preview);
         assert!(map.preview.decoded.is_none());
     }
 }

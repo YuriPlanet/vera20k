@@ -135,7 +135,7 @@ pub(super) fn world_with(
         .speed_costs;
     for y in 0..33 {
         for x in 0..33 {
-            let c = terrain.cell_mut(x, y).unwrap();
+            let c = terrain.cell_mut_for_test(x, y).unwrap();
             c.speed_costs = costs;
             c.base_speed_costs = costs;
         }
@@ -161,8 +161,8 @@ pub(super) fn world_with(
     sim.resolve_type_handles(rules);
     sim.playfield_bounds = Some(bounds);
     sim.playfield_size_height = Some(32);
-    sim.session.map_width = 33;
-    sim.session.map_height = 33;
+    sim.session.set_map_width_for_test(33);
+    sim.session.set_map_height_for_test(33);
     sim.overlay_grid = Some(OverlayGrid::new(33, 33));
     sim.bridge_state = Some(bridges);
     sim.zone_grid = Some(zones);
@@ -221,22 +221,27 @@ pub(super) fn scene_with(input: &Value, rules: RuleSet, ini: &IniFile) -> Scene 
     let mut sim = world(&rules, ini);
     let owner = sim.interner.intern("Americans");
     let mut house = crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10);
-    house.is_human = input["human"].as_bool().unwrap_or(true);
-    house.player_control = house.is_human;
-    house.difficulty = match input["difficulty"].as_u64().unwrap_or(0) {
+    house.set_is_human_for_test(input["human"].as_bool().unwrap_or(true));
+    house.set_player_control_for_test(house.is_human());
+    house.set_difficulty_for_test(match input["difficulty"].as_u64().unwrap_or(0) {
         0 => crate::sim::house_state::HouseDifficulty::Hard,
         1 => crate::sim::house_state::HouseDifficulty::Normal,
         _ => crate::sim::house_state::HouseDifficulty::Easy,
-    };
+    });
     house
-        .economy
+        .economy_mut()
         .set_credits_for_test(input["balance"].as_i64().unwrap_or(0) as i32);
     if input["income_mult"].is_number() {
-        house.country = Some(owner);
+        house.set_country_for_test(Some(owner));
     }
-    sim.houses.insert(owner, house);
-    sim.session.game_mode_nonzero = input["game_mode"].as_u64().unwrap_or(1) != 0;
-    sim.session.binary_frame = input["frame"].as_u64().unwrap_or(200) as u32;
+    sim.houses.register(house);
+    sim.session.set_game_mode(
+        crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+            input["game_mode"].as_u64().unwrap_or(1) != 0,
+        ),
+    );
+    sim.session
+        .set_binary_frame_for_test(input["frame"].as_u64().unwrap_or(200) as u32);
     let dock_type = if input["dock_unload"] == false {
         "GAREFX"
     } else {
@@ -269,7 +274,7 @@ pub(super) fn scene_with(input: &Value, rules: RuleSet, ini: &IniFile) -> Scene 
             .resolved_terrain
             .as_mut()
             .unwrap()
-            .cell_mut(spawn_x, spawn_y)
+            .cell_mut_for_test(spawn_x, spawn_y)
             .unwrap();
         let prior = cell.speed_costs;
         cell.speed_costs.wheel = Some(100);
@@ -281,7 +286,7 @@ pub(super) fn scene_with(input: &Value, rules: RuleSet, ini: &IniFile) -> Scene 
     sim.resolved_terrain
         .as_mut()
         .unwrap()
-        .cell_mut(spawn_x, spawn_y)
+        .cell_mut_for_test(spawn_x, spawn_y)
         .unwrap()
         .speed_costs = spawn_speed_costs;
     if relocate {
@@ -316,7 +321,7 @@ pub(super) fn scene_with(input: &Value, rules: RuleSet, ini: &IniFile) -> Scene 
 
 /// Apply the row's prestate to the spawned objects.
 fn dress(mut s: Scene, input: &Value) -> Scene {
-    let frame = s.sim.session.binary_frame;
+    let frame = s.sim.session.binary_frame();
     let (miner, refinery, other) = (s.miner, s.refinery, s.other);
     // Missions, as the oracle writes +AC/+B4.
     let current = mission(input["mission"].as_str().unwrap_or("enter"));
@@ -628,8 +633,8 @@ fn compare_unload(s: &Scene, row: &Value, context: &str) {
         .get(&s.sim.interner.get("Americans").unwrap())
         .unwrap();
     let (balance, score) = (
-        i64::from(house.economy.credits()),
-        i64::from(house.economy.score()),
+        i64::from(house.economy().credits()),
+        i64::from(house.economy().score()),
     );
     if row["input"]["name"] == "unload_gate_income_mult" {
         // RESIDUAL (documented on `refinery_dock`): native 0.9f pays
@@ -705,69 +710,51 @@ pub(super) fn compare_delay(
     }
 }
 
+/// The docking handshake (`can_dock`: the miner's CanDock to its refinery)
+/// and the radio core's other transmits.
 #[test]
-fn docking_handshake_matches_the_original_receivers() {
+fn docking_handshake_and_radio_core_match_the_original_transmits() {
     let corpus = corpus();
-    for row in corpus["can_dock"].as_array().unwrap() {
-        let input = &row["input"];
-        let context = input["name"].as_str().unwrap().to_string();
-        let mut s = scene(input);
-        radio::take_transmit_log();
-        let reply = radio::transmit(
-            &mut s.sim,
-            s.miner,
-            s.refinery,
-            RadioMessage::CanDock,
-            RadioPayload::default(),
-            Some(&s.rules),
-            crate::sim::world::FrameEffects::default(),
-        );
-        assert_eq!(
-            u64::from(reply.code()),
-            row["reply"].as_u64().unwrap(),
-            "{context}: reply"
-        );
-        assert_eq!(sends(&s), oracle_sends(row), "{context}: transmit sequence");
-        compare_state(&s, row, &context);
-    }
-}
-
-#[test]
-fn radio_core_matches_the_original_transmits() {
-    let corpus = corpus();
-    for row in corpus["radio"].as_array().unwrap() {
-        let input = &row["input"];
-        let context = input["name"].as_str().unwrap().to_string();
-        let mut s = scene(input);
-        let (sender, target) = match input["from"].as_str().unwrap() {
-            "miner" => (s.miner, s.refinery),
-            _ => (s.refinery, s.miner),
-        };
-        let msg = match input["msg"].as_u64().unwrap() {
-            2 => RadioMessage::Hello,
-            3 => RadioMessage::Break,
-            0x15 => RadioMessage::DockNow,
-            0x18 => RadioMessage::Tether,
-            0x19 => RadioMessage::Untether,
-            other => panic!("unmapped message {other}"),
-        };
-        radio::take_transmit_log();
-        let reply = radio::transmit(
-            &mut s.sim,
-            sender,
-            target,
-            msg,
-            RadioPayload::default(),
-            Some(&s.rules),
-            crate::sim::world::FrameEffects::default(),
-        );
-        assert_eq!(
-            u64::from(reply.code()),
-            row["reply"].as_u64().unwrap(),
-            "{context}: reply"
-        );
-        assert_eq!(sends(&s), oracle_sends(row), "{context}: transmit sequence");
-        compare_state(&s, row, &context);
+    for group in ["can_dock", "radio"] {
+        for row in corpus[group].as_array().unwrap() {
+            let input = &row["input"];
+            let context = input["name"].as_str().unwrap().to_string();
+            let mut s = scene(input);
+            let (sender, target, msg) = if group == "can_dock" {
+                (s.miner, s.refinery, RadioMessage::CanDock)
+            } else {
+                let (sender, target) = match input["from"].as_str().unwrap() {
+                    "miner" => (s.miner, s.refinery),
+                    _ => (s.refinery, s.miner),
+                };
+                let msg = match input["msg"].as_u64().unwrap() {
+                    2 => RadioMessage::Hello,
+                    3 => RadioMessage::Break,
+                    0x15 => RadioMessage::DockNow,
+                    0x18 => RadioMessage::Tether,
+                    0x19 => RadioMessage::Untether,
+                    other => panic!("unmapped message {other}"),
+                };
+                (sender, target, msg)
+            };
+            radio::take_transmit_log();
+            let reply = radio::transmit(
+                &mut s.sim,
+                sender,
+                target,
+                msg,
+                RadioPayload::default(),
+                Some(&s.rules),
+                crate::sim::world::FrameEffects::default(),
+            );
+            assert_eq!(
+                u64::from(reply.code()),
+                row["reply"].as_u64().unwrap(),
+                "{context}: reply"
+            );
+            assert_eq!(sends(&s), oracle_sends(row), "{context}: transmit sequence");
+            compare_state(&s, row, &context);
+        }
     }
 }
 
@@ -851,7 +838,7 @@ fn mission_harvest_states_two_and_three_match_the_original_dispatch() {
         radio::take_transmit_log();
         let mut stream = s.sim.scenario_rng.clone();
         let config = crate::sim::miner::MinerConfig::from_rules(&s.rules);
-        let frame = s.sim.session.binary_frame;
+        let frame = s.sim.session.binary_frame();
         crate::sim::world::dispatch_foot_mission(
             &mut s.sim,
             s.miner,
@@ -962,7 +949,7 @@ fn per_cell_release_matches_the_original_track_end_arm() {
             .is_some_and(|miner| miner.unload_active())
         {
             s.sim
-                .mission_host_promote(s.miner, s.sim.session.binary_frame, &s.rules);
+                .mission_host_promote(s.miner, s.sim.session.binary_frame(), &s.rules);
         }
         crate::sim::miner::per_cell_release_dock_contact(
             &mut s.sim,
@@ -989,13 +976,15 @@ fn stage_tick_matches_the_original_stageclass_step() {
         let context = input["name"].as_str().unwrap().to_string();
         let mut s = scene(input);
         for sample in row["values"].as_array().unwrap() {
-            s.sim.session.binary_frame = sample[0].as_u64().unwrap() as u32;
+            s.sim
+                .session
+                .set_binary_frame_for_test(sample[0].as_u64().unwrap() as u32);
             s.sim
                 .substrate
                 .entities
                 .get_mut(s.miner)
                 .unwrap()
-                .tick_native_stage(s.sim.session.binary_frame as i32);
+                .tick_native_stage(s.sim.session.binary_frame() as i32);
             let value = s
                 .sim
                 .substrate

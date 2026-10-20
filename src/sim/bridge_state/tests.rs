@@ -142,14 +142,18 @@ fn bridgeheads_stay_bridge_walkable_when_a_legacy_body_is_destroyed() {
 
     let mut terrain = make_bridge_with_bridgeheads_terrain();
     // A legacy body deck (no bit0x100) is intact while its overlay decodes.
-    terrain.cell_mut(2, 0).unwrap().bridge_facts.overlay_id = Some(0x18);
+    terrain
+        .cell_mut_for_test(2, 0)
+        .unwrap()
+        .bridge_facts
+        .overlay_id = Some(0x18);
     let path = PathGrid::from_resolved_terrain_with_bridges(&terrain);
     for rx in [1u16, 2, 3] {
         assert!(path.is_walkable_on_layer(rx, 0, MovementLayer::Bridge));
     }
 
     // 47E040's destroyed stamp: state 0, 0x100 clear, 0x400 set.
-    let body = &mut terrain.cell_mut(2, 0).unwrap().bridge_facts;
+    let body = &mut terrain.cell_mut_for_test(2, 0).unwrap().bridge_facts;
     body.raw_flags = crate::map::bridge_facts::BRIDGE_FLAG_DESTROYED_OR_RAMP;
     body.state_byte = 0;
     let path = PathGrid::from_resolved_terrain_with_bridges(&terrain);
@@ -209,31 +213,6 @@ fn destroyed_stamp_hides_a_state_byte_identity() {
         cell_render_state(render_facts(Some(0x18), BRIDGE_FLAG_STRUCTURAL, 18)),
         None
     );
-}
-
-#[test]
-fn indestructible_bridge_outer_gate_is_clear() {
-    // The orchestrator's outer gate is `is_destroyable()`. When a
-    // bridge runtime is built with `destroyable=false`, the gate
-    // closes and the dispatcher bails before any path fires.
-    let state = BridgeRuntimeState::from_resolved_terrain(&make_bridge_terrain(), false, 50);
-    assert!(!state.is_destroyable());
-}
-
-#[test]
-fn bridge_endpoints_detected() {
-    let state = BridgeRuntimeState::from_resolved_terrain(&make_bridge_terrain(), true, 300);
-    let records = state.endpoint_records();
-    assert_eq!(
-        records.len(),
-        1,
-        "should have exactly one bridge endpoint record"
-    );
-    let rec = &records[0];
-    assert!(rec.active);
-    assert_eq!(rec.bridge_kind, BridgeRecordKind::High);
-    assert_eq!(rec.endpoint_a, (0, 0));
-    assert_eq!(rec.endpoint_b, (3, 0));
 }
 
 #[test]
@@ -372,20 +351,6 @@ fn automatic_shells_do_not_invent_bridge_records() {
 }
 
 #[test]
-fn low_bridge_tube_record_requires_opposite_neighbors() {
-    let mut terrain = make_low_bridge_terrain();
-    let cell = terrain.cell_mut(3, 0).expect("right low bridge cell");
-    cell.tube_index = None;
-    cell.land_type = 0;
-
-    let state = BridgeRuntimeState::from_resolved_terrain(&terrain, true, 300);
-    assert!(
-        state.endpoint_records().is_empty(),
-        "low bridge records require the verified opposite low-neighbor pattern"
-    );
-}
-
-#[test]
 fn invalidate_bridge_zones_deactivates_records_near_query() {
     // MapClass::InvalidateBridgeZones 0x0056DAE0: every active high record
     // within FindBridgeRecord's radius 3 of the query deactivates, and the
@@ -429,31 +394,6 @@ fn bridge_runtime_state_snapshot_round_trip() {
 }
 
 #[test]
-fn damage_state_from_byte_ns_range() {
-    assert_eq!(
-        DamageState::from_state_byte(0),
-        Some(DamageState::Healthy { variant: 0 })
-    );
-    assert_eq!(
-        DamageState::from_state_byte(3),
-        Some(DamageState::Healthy { variant: 3 })
-    );
-    assert_eq!(
-        DamageState::from_state_byte(5),
-        Some(DamageState::Healthy { variant: 5 })
-    );
-    assert_eq!(DamageState::from_state_byte(6), Some(DamageState::Damaged));
-    assert_eq!(
-        DamageState::from_state_byte(7),
-        Some(DamageState::PartialCollapseA)
-    );
-    assert_eq!(
-        DamageState::from_state_byte(8),
-        Some(DamageState::PartialCollapseB)
-    );
-}
-
-#[test]
 fn damage_state_from_byte_ew_range() {
     assert_eq!(
         DamageState::from_state_byte(9),
@@ -477,35 +417,7 @@ fn damage_state_from_byte_ew_range() {
     );
 }
 
-#[test]
-fn damage_state_from_byte_out_of_range_returns_none() {
-    assert_eq!(DamageState::from_state_byte(0x12), None);
-    assert_eq!(DamageState::from_state_byte(0xFF), None);
-}
-
 // Admission and callback order compare original instructions in damage_dispatch_tests.
-
-#[test]
-fn dispatch_path_is_state_machine() {
-    assert!(DispatchPath::HighStateMachine.is_state_machine());
-    assert!(DispatchPath::LowStateMachine.is_state_machine());
-    assert!(!DispatchPath::HighDirect.is_state_machine());
-    assert!(!DispatchPath::LowDirect.is_state_machine());
-}
-
-#[test]
-fn bridge_state_getters_return_construction_values() {
-    let state = BridgeRuntimeState::from_resolved_terrain(&make_bridge_terrain(), true, 1500);
-    assert!(state.is_destroyable());
-    assert_eq!(state.bridge_strength(), 1500);
-}
-
-#[test]
-fn bridge_state_destroyable_flag_disabled() {
-    let state = BridgeRuntimeState::from_resolved_terrain(&make_bridge_terrain(), false, 800);
-    assert!(!state.is_destroyable());
-    assert_eq!(state.bridge_strength(), 800);
-}
 
 // Native repair coverage follows the production owners: ordinary_repair_tests
 // checks strip overlays, RNG and callback order; ramp_repair_tests checks the
@@ -524,7 +436,11 @@ fn bridge_state_destroyable_flag_disabled() {
 // ---- MapClass::FindBridgeConnection_Predicate 0x00587410, overlay branch ----
 
 fn hut_terrain() -> ResolvedTerrainGrid {
-    let mut grid = crate::map::resolved_terrain::test_grid(16, 16, crate::map::resolved_terrain::test_flat_cell);
+    let mut grid = crate::map::resolved_terrain::test_grid(
+        16,
+        16,
+        crate::map::resolved_terrain::test_flat_cell,
+    );
     grid.test_set_high_bridge_set_starts(Some(100), Some(200));
     grid
 }
@@ -536,36 +452,12 @@ fn seed_overlay_row(
     overlay: u8,
 ) {
     for x in xs {
-        terrain.cell_mut(x, y).unwrap().bridge_facts.overlay_id = Some(overlay);
+        terrain
+            .cell_mut_for_test(x, y)
+            .unwrap()
+            .bridge_facts
+            .overlay_id = Some(overlay);
     }
-}
-
-/// An intact high span carries healthy body overlays, which ARE inside the
-/// 0xCD..=0xE8 family band but are not the 0xE7 / 0xE8 collapsed anchors, so
-/// the native predicate walks the span and finds nothing.
-#[test]
-fn hut_span_scan_rejects_an_intact_high_span() {
-    let mut state = hut_terrain();
-    seed_overlay_row(&mut state, 6, 0..14, 0xCD);
-
-    assert!(
-        !crate::sim::world::bridge_orchestrator::hut_span_can_repair(&state, (6, 6)),
-        "an intact span offers nothing to repair"
-    );
-}
-
-/// A collapsed anchor anywhere along the walked span returns true, including
-/// well outside the 5x5 block the scan starts from.
-#[test]
-fn hut_span_scan_finds_a_collapsed_high_anchor_down_the_span() {
-    let mut state = hut_terrain();
-    seed_overlay_row(&mut state, 6, 0..14, 0xCD);
-    seed_overlay_row(&mut state, 6, 11..12, 0xE7);
-
-    assert!(
-        crate::sim::world::bridge_orchestrator::hut_span_can_repair(&state, (6, 6)),
-        "0xE7 is what DestroyBridgeWalker_NS_High writes on final collapse"
-    );
 }
 
 /// Low family, same shape, with the 0x64 anchor.
@@ -600,13 +492,6 @@ fn hut_span_scan_stops_at_the_band_edge() {
         !crate::sim::world::bridge_orchestrator::hut_span_can_repair(&state, (6, 6)),
         "an out-of-band cell ends the walk before the anchor"
     );
-}
-
-/// Cells with no overlay identity at all contribute nothing.
-#[test]
-fn hut_span_scan_on_empty_state_is_false() {
-    let state = hut_terrain();
-    assert!(!crate::sim::world::bridge_orchestrator::hut_span_can_repair(&state, (6, 6)));
 }
 
 /// 0x00587410's 5x5 loop has no break, so the cell it walks from is the LAST

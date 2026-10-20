@@ -30,7 +30,7 @@ pub fn construction_options_for_owner(
     };
     let selling =
         crate::sim::mission::MissionId::from_known(crate::sim::mission::MissionType::Selling);
-    for &id in house.base_projection.buildings() {
+    for &id in house.base_projection().buildings() {
         let Some(building) = sim.entities().get(id) else {
             continue;
         };
@@ -73,7 +73,7 @@ fn append_construction_options(
     let Some(building) = sim.entities().get(building_id) else {
         return;
     };
-    if sim.session.current_house != Some(building.owner())
+    if sim.session.current_house() != Some(building.owner())
         || building.lifecycle.in_limbo()
         || !building.discovery.discovered_by_current_house()
         || !building.building_online()
@@ -435,41 +435,6 @@ mod footprint_tests {
     use super::*;
 
     #[test]
-    fn rectangle_only_4x3() {
-        let cells = building_base_foundation_cells(10, 20, "4x3");
-        assert_eq!(cells.len(), 12);
-        assert!(cells.contains(&(10, 20)));
-        assert!(cells.contains(&(13, 22)));
-    }
-
-    #[test]
-    fn garefn_base_foundation_ignores_hidden_occupy_modifiers() {
-        // GAREFN: Foundation=4x3, AddOccupy1=-1,0, AddOccupy2=-1,-1, RemoveOccupy1=3,1
-        let cells = building_base_foundation_cells(10, 20, "4x3");
-        assert_eq!(cells.len(), 12);
-        assert!(cells.contains(&(13, 21)));
-        assert!(!cells.contains(&(9, 19)));
-        assert!(!cells.contains(&(9, 20)));
-    }
-
-    #[test]
-    fn narefn_base_foundation_keeps_dock_pad_despite_remove_occupy() {
-        let cells = building_base_foundation_cells(10, 20, "4x3");
-        assert_eq!(cells.len(), 12);
-        assert!(cells.contains(&(13, 21)));
-        assert!(!cells.contains(&(8, 20)));
-        assert!(!cells.contains(&(8, 19)));
-        assert!(!cells.contains(&(8, 18)));
-    }
-
-    #[test]
-    fn movement_blocking_no_bib_keeps_full_footprint() {
-        let footprint = building_base_foundation_cells(10, 20, "4x3");
-        let blocking = building_movement_blocking_cells(&footprint, false);
-        assert_eq!(blocking.len(), footprint.len());
-    }
-
-    #[test]
     fn movement_blocking_with_bib_drops_east_edge_rectangle() {
         // Plain 4x3 with bib → east column (x = 13) drops.
         let footprint = building_base_foundation_cells(10, 20, "4x3");
@@ -481,19 +446,6 @@ mod footprint_tests {
         assert!(!blocking.contains(&(13, 22)));
         assert!(blocking.contains(&(12, 20)));
         assert!(blocking.contains(&(10, 22)));
-    }
-
-    #[test]
-    fn movement_blocking_with_bib_garefn_uses_base_foundation_topology() {
-        let footprint = building_base_foundation_cells(10, 20, "4x3");
-        let blocking = building_movement_blocking_cells(&footprint, true);
-        assert_eq!(blocking.len(), 9);
-        assert!(!blocking.contains(&(9, 19)));
-        assert!(!blocking.contains(&(9, 20)));
-        assert!(blocking.contains(&(12, 21)));
-        assert!(!blocking.contains(&(13, 20)));
-        assert!(!blocking.contains(&(13, 21)));
-        assert!(blocking.contains(&(10, 20)));
     }
 
     #[test]

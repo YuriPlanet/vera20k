@@ -15,6 +15,18 @@ use crate::util::ini_writer::set_ini_values;
 
 pub(crate) const RA2MD_INI_FILENAME: &str = "RA2MD.INI";
 
+/// How many builds one Shift-click queues when `[VERA] ShiftQueueCount=` is
+/// absent, and the inclusive bounds a configured value is clamped to.
+///
+/// Both bounds exist because `read_int` answers 0 for a present-but-nonnumeric
+/// value: zero would make the click silently queue nothing, and an unbounded
+/// upper end would let one press flood the strip. The maximum is the stock
+/// `[General] MaximumQueuedObjects=` (29) plus the active build, so one press
+/// can at most fill an otherwise empty strip; the factory's own check still
+/// refuses anything beyond its real cap.
+pub(crate) const DEFAULT_SHIFT_QUEUE_COUNT: u32 = 5;
+pub(crate) const SHIFT_QUEUE_COUNT_RANGE: std::ops::RangeInclusive<u32> = 1..=30;
+
 const OPTIONS_SECTION: &str = "Options";
 const VIDEO_SECTION: &str = "Video";
 const AUDIO_SECTION: &str = "Audio";
@@ -81,6 +93,14 @@ pub(crate) struct RetailOptionsProfile {
     // `0x005FAF9E`; Play_Movie raises it through `0x005FBF80`.
     pub(crate) movie_progress: crate::ui::movies_credits_shell::MovieProgress,
 
+    // OptionsClass +0x4A/+0x54/+0x58; ReadFromINI 5FAC88..5FACDE.
+    pub(crate) network_socket: u16,
+    pub(crate) network_card: i32,
+    pub(crate) network_destination: String,
+    // SessionClass__ReadMultiPlayerSettings 6981E6..698228 and D7 560480.
+    pub(crate) network_send_delay: bool,
+    pub(crate) network_port: i32,
+
     // [WOnline] LobMusic: read by `WOL_Main`'s settings reader `0x0077DED0`
     // (`ReadInt`, default 1) from the same RA2MD.INI object into
     // `[0x00B7690C]`, outside OptionsClass. Read-only here; this route never
@@ -102,6 +122,20 @@ pub(crate) struct RetailOptionsProfile {
     /// Whether the startup splash and the menu movie use Red Alert 2's art
     /// instead of Yuri's Revenge's: the Options page's RA2 Loading & Menu Movie.
     pub(crate) ra2_look: bool,
+    /// `[VERA] ShiftQueue=`: whether a Shift-click on a mobile strip queues
+    /// [`Self::shift_queue_count`] builds: the Options page's Shift-Click
+    /// Batch Queue. Off by default, so Shift + left click queues one copy as
+    /// in gamemd, whose left-click ignores Shift (`0x006AAD66` reads the
+    /// modifier for the right button only).
+    pub(crate) shift_queue: bool,
+    /// `[VERA] ShiftQueueCount=`: how many builds one Shift-click queues on a
+    /// mobile strip while [`Self::shift_queue`] is on. VERA's own convenience;
+    /// gamemd never reads this section. Clamped by [`SHIFT_QUEUE_COUNT_RANGE`].
+    pub(crate) shift_queue_count: u32,
+    /// `[VERA] WolTestService=`: Internet answers from VERA's stand-in WOL
+    /// service instead of showing `TXT_APIMISSING`: the Options page's
+    /// developer box. Off by default; no real service exists yet.
+    pub(crate) wol_test_service: bool,
 }
 
 /// The two process-start products obtained from one physical `RA2MD.INI`
@@ -148,12 +182,20 @@ impl Default for RetailOptionsProfile {
             sound_latency: 9,
             in_game_music: true,
             movie_progress: crate::ui::movies_credits_shell::MovieProgress::default(),
+            network_socket: u16::MAX,
+            network_card: 0,
+            network_destination: String::new(),
+            network_send_delay: false,
+            network_port: 0,
             wol_lobby_music: 1,
             full_screen: false,
             zoom: crate::ui::main_menu_dialogs::options::Zoom::Auto,
             original_shape: false,
             sidebar: crate::ui::main_menu_dialogs::options::SidebarSize::Normal,
             ra2_look: false,
+            shift_queue: false,
+            shift_queue_count: DEFAULT_SHIFT_QUEUE_COUNT,
+            wol_test_service: false,
         }
     }
 }
@@ -168,11 +210,9 @@ pub(crate) struct FormattedProfileSections {
     pub(crate) options: [(&'static str, String); 11],
     pub(crate) video: [(&'static str, String); 3],
     pub(crate) audio: [(&'static str, String); 7],
-    /// `[Network] NetID` only. Native also writes Socket/NetCard/DestNet from
-    /// network fields this profile does not model; their bytes are preserved.
-    pub(crate) network: [(&'static str, String); 1],
+    pub(crate) network: [(&'static str, String); 4],
     /// VERA's own section, written after the native ones.
-    pub(crate) vera: [(&'static str, String); 5],
+    pub(crate) vera: [(&'static str, String); 8],
 }
 
 impl RetailOptionsLoad {
@@ -350,6 +390,13 @@ impl RetailOptionsProfile {
         }
 
         self.movie_progress = decode_net_id(ini.section_or_empty(NETWORK_SECTION));
+        let network = ini.section_or_empty(NETWORK_SECTION);
+        self.network_socket = network.read_int("Socket", i32::from(self.network_socket)) as u16;
+        self.network_card = network.read_int("NetCard", self.network_card);
+        self.network_destination = network.read_string("DestNet", "", 0x40);
+        let multiplayer = ini.section_or_empty("MultiPlayer");
+        self.network_send_delay = multiplayer.read_bool("SendDelay", false);
+        self.network_port = multiplayer.read_int("PortNumberOverride", 0);
         if let Some(wonline) = ini.section(WONLINE_SECTION) {
             self.wol_lobby_music = wonline.read_int("LobMusic", self.wol_lobby_music);
         }
@@ -364,6 +411,13 @@ impl RetailOptionsProfile {
                 vera.read_int("Sidebar", self.sidebar.ini_value()),
             );
             self.ra2_look = vera.read_bool("RA2Look", self.ra2_look);
+            self.shift_queue = vera.read_bool("ShiftQueue", self.shift_queue);
+            // Absent keeps the current value; present-but-nonnumeric answers 0,
+            // which the range lifts to 1 rather than a click that queues nothing.
+            self.shift_queue_count = clamp_shift_queue_count(
+                vera.read_int("ShiftQueueCount", self.shift_queue_count as i32),
+            );
+            self.wol_test_service = vera.read_bool("WolTestService", self.wol_test_service);
         }
     }
 
@@ -431,7 +485,12 @@ impl RetailOptionsProfile {
                 ("SoundLatency", self.sound_latency.to_string()),
                 ("InGameMusic", format_bool(self.in_game_music).to_string()),
             ],
-            network: [("NetID", encode_net_id(self.movie_progress))],
+            network: [
+                ("Socket", self.network_socket.to_string()),
+                ("NetCard", self.network_card.to_string()),
+                ("DestNet", self.network_destination.clone()),
+                ("NetID", encode_net_id(self.movie_progress)),
+            ],
             vera: [
                 ("FullScreen", format_bool(self.full_screen).to_string()),
                 ("Zoom", self.zoom.ini_value().to_string()),
@@ -441,6 +500,12 @@ impl RetailOptionsProfile {
                 ),
                 ("Sidebar", self.sidebar.ini_value().to_string()),
                 ("RA2Look", format_bool(self.ra2_look).to_string()),
+                ("ShiftQueue", format_bool(self.shift_queue).to_string()),
+                ("ShiftQueueCount", self.shift_queue_count.to_string()),
+                (
+                    "WolTestService",
+                    format_bool(self.wol_test_service).to_string(),
+                ),
             ],
         }
     }
@@ -451,7 +516,27 @@ impl RetailOptionsProfile {
         let output = apply_formatted_section(input, OPTIONS_SECTION, &formatted.options);
         let output = apply_formatted_section(&output, VIDEO_SECTION, &formatted.video);
         let output = apply_formatted_section(&output, AUDIO_SECTION, &formatted.audio);
-        let output = apply_formatted_section(&output, NETWORK_SECTION, &formatted.network);
+        // DestNet is the native byte string returned by NewEdit/ReadString.
+        // Re-encoding it as UTF-8 would alter high-byte suffixes accepted by %x.
+        let network: Vec<_> = formatted
+            .network
+            .iter()
+            .map(|(key, value)| {
+                (
+                    *key,
+                    value
+                        .encode_utf16()
+                        .map(|unit| unit as u8)
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .collect();
+        let network: Vec<_> = network
+            .iter()
+            .map(|(key, bytes)| (*key, bytes.as_slice()))
+            .collect();
+        let output =
+            crate::util::ini_writer::set_ini_byte_values(&output, NETWORK_SECTION, &network);
         apply_formatted_section(&output, VERA_SECTION, &formatted.vera)
     }
 
@@ -468,6 +553,29 @@ impl RetailOptionsProfile {
         )
     }
 
+    /// D7's accepted firewall settings write only these two MultiPlayer keys
+    /// (NetworkOptionsDialog__DlgProc_D7 at 560480). LAN fields are written
+    /// by the parent Options writer.
+    pub(crate) fn commit_network_options(&self, ra2_dir: &Path) -> io::Result<()> {
+        commit_transformed_profile(
+            ra2_dir,
+            |path| std::fs::read(path),
+            |path, bytes| std::fs::write(path, bytes),
+            |input| self.transform_network_options(input),
+        )
+    }
+
+    fn transform_network_options(&self, input: &[u8]) -> Vec<u8> {
+        apply_formatted_section(
+            input,
+            "MultiPlayer",
+            &[
+                ("SendDelay", format_bool(self.network_send_delay).to_owned()),
+                ("PortNumberOverride", self.network_port.to_string()),
+            ],
+        )
+    }
+
     /// Injectable form of [`Self::commit_ra2md`] used to verify the physical
     /// one-read/one-write transaction without touching a user's profile.
     pub(crate) fn commit_ra2md_with<Read, Write>(
@@ -480,15 +588,23 @@ impl RetailOptionsProfile {
         Read: FnOnce(&Path) -> io::Result<Vec<u8>>,
         Write: FnOnce(&Path, &[u8]) -> io::Result<()>,
     {
-        let path = ra2_dir.join(RA2MD_INI_FILENAME);
-        let input = match read(&path) {
-            Ok(bytes) => bytes,
-            Err(error) if error.kind() == io::ErrorKind::NotFound => Vec::new(),
-            Err(error) => return Err(error),
-        };
-        let output = self.transform_ra2md(&input);
-        write(&path, &output)
+        commit_transformed_profile(ra2_dir, read, write, |input| self.transform_ra2md(input))
     }
+}
+
+fn commit_transformed_profile(
+    ra2_dir: &Path,
+    read: impl FnOnce(&Path) -> io::Result<Vec<u8>>,
+    write: impl FnOnce(&Path, &[u8]) -> io::Result<()>,
+    transform: impl FnOnce(&[u8]) -> Vec<u8>,
+) -> io::Result<()> {
+    let path = ra2_dir.join(RA2MD_INI_FILENAME);
+    let input = match read(&path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == io::ErrorKind::NotFound => Vec::new(),
+        Err(error) => return Err(error),
+    };
+    write(&path, &transform(&input))
 }
 
 fn upper_only_volume(value: f64) -> f32 {
@@ -499,6 +615,19 @@ fn upper_only_volume(value: f64) -> f32 {
 
 fn format_bool(value: bool) -> &'static str {
     if value { "yes" } else { "no" }
+}
+
+/// Lift a configured `[VERA] ShiftQueueCount=` into the range a click can use.
+///
+/// `read_int` answers 0 for a present-but-nonnumeric value and a hand-edited
+/// file can hold any `i32`, so both ends are clamped: below the minimum a
+/// click would queue nothing, above the maximum one press could flood the
+/// strip past what the factory would ever accept from one click.
+fn clamp_shift_queue_count(value: i32) -> u32 {
+    value.clamp(
+        *SHIFT_QUEUE_COUNT_RANGE.start() as i32,
+        *SHIFT_QUEUE_COUNT_RANGE.end() as i32,
+    ) as u32
 }
 
 fn apply_formatted_section<const N: usize>(
@@ -594,6 +723,96 @@ mod tests {
     use std::cell::{Cell, RefCell};
 
     use super::*;
+
+    #[test]
+    fn network_settings_read_native_defaults_and_narrow_socket_only() {
+        let defaults = load_snapshot(&RetailStartupOptions::default(), b"").retained_profile;
+        assert_eq!(
+            (
+                defaults.network_socket,
+                defaults.network_card,
+                defaults.network_port
+            ),
+            (65535, 0, 0)
+        );
+        assert!(!defaults.network_send_delay);
+        assert!(defaults.network_destination.is_empty());
+        let loaded = load_snapshot(&RetailStartupOptions::default(), b"[Network]\nSocket=65536\nNetCard=-2\nDestNet=  aa.bb.cc.dd  \n[MultiPlayer]\nSendDelay=yes\nPortNumberOverride=-1\n").retained_profile;
+        assert_eq!(
+            (
+                loaded.network_socket,
+                loaded.network_card,
+                loaded.network_port
+            ),
+            (0, -2, -1)
+        );
+        assert!(loaded.network_send_delay);
+        assert_eq!(loaded.network_destination, "aa.bb.cc.dd");
+    }
+
+    #[test]
+    fn d7_commit_keeps_lan_pending_until_parent_options_write() {
+        let input = b"; keep\r\n[Network]\r\nSocket=5\r\nNetCard=1\r\nDestNet=1.2.3.4\r\n[MultiPlayer]\r\nHandle=unchanged\r\nSendDelay=no\r\nPortNumberOverride=0\r\n";
+        let profile = RetailOptionsProfile {
+            network_socket: 123,
+            network_card: 2,
+            network_destination: "aa.bb.cc.dd".into(),
+            network_send_delay: true,
+            network_port: -1,
+            ..Default::default()
+        };
+        let d7 = profile.transform_network_options(input);
+        let parsed = IniFile::from_bytes(&d7).unwrap();
+        assert_eq!(parsed.section_or_empty("Network").read_int("Socket", 0), 5);
+        assert_eq!(
+            parsed
+                .section_or_empty("MultiPlayer")
+                .read_string("Handle", "", 64),
+            "unchanged"
+        );
+        assert!(
+            parsed
+                .section_or_empty("MultiPlayer")
+                .read_bool("SendDelay", false)
+        );
+        assert_eq!(
+            parsed
+                .section_or_empty("MultiPlayer")
+                .read_int("PortNumberOverride", 0),
+            -1
+        );
+        let parent = profile.transform_ra2md(&d7);
+        let parsed = IniFile::from_bytes(&parent).unwrap();
+        assert_eq!(
+            parsed.section_or_empty("Network").read_int("Socket", 0),
+            123
+        );
+        assert_eq!(
+            parsed
+                .section_or_empty("Network")
+                .read_string("DestNet", "", 64),
+            "aa.bb.cc.dd"
+        );
+        assert_eq!(
+            parsed
+                .section_or_empty("MultiPlayer")
+                .read_int("PortNumberOverride", 0),
+            -1
+        );
+    }
+
+    #[test]
+    fn destination_round_trips_native_bytes_without_utf8_encoding() {
+        let loaded = load_snapshot(
+            &RetailStartupOptions::default(),
+            b"[Network]\nDestNet=1\xe9.2.3.4\n",
+        )
+        .retained_profile;
+        let output = loaded.transform_ra2md(b"[Network]\nDestNet=old\n");
+        let reloaded = load_snapshot(&RetailStartupOptions::default(), &output).retained_profile;
+        assert_eq!(loaded.network_destination, "1é.2.3.4");
+        assert_eq!(reloaded.network_destination, loaded.network_destination);
+    }
 
     /// `CRCEngine::operator()` @ `0x004A1DE0` over `"Network"`, executed
     /// natively under Unicorn: the scratch `INIClass__ReadCommaHexUTF16`
@@ -789,29 +1008,6 @@ mod tests {
     }
 
     #[test]
-    fn height_only_snapshot_uses_fallback_window_then_rereads_retained_height() {
-        let load = load_snapshot(
-            &RetailStartupOptions::default(),
-            b"[Video]\nScreenHeight=480\n",
-        );
-
-        assert_eq!(
-            load.startup_shell_screen,
-            ScreenSize {
-                width: 800,
-                height: 600,
-            }
-        );
-        assert_eq!(
-            (
-                load.retained_profile.screen_width,
-                load.retained_profile.screen_height,
-            ),
-            (800, 480)
-        );
-    }
-
-    #[test]
     fn ordinary_frontend_size_is_independent_of_game_profile_and_launcher_edits() {
         for (width, height) in [(640, 480), (800, 600), (1024, 768)] {
             let ini = format!("[Video]\nScreenWidth={width}\nScreenHeight={height}\n");
@@ -846,29 +1042,6 @@ mod tests {
                 load.retained_profile.screen_height
             ),
             (1024, 768)
-        );
-    }
-
-    #[test]
-    fn configured_game_pair_does_not_select_the_shell_size() {
-        let load = load_snapshot(
-            &RetailStartupOptions::default(),
-            b"[Video]\nScreenWidth=640\nScreenHeight=480\n",
-        );
-
-        assert_eq!(
-            load.startup_shell_screen,
-            ScreenSize {
-                width: 800,
-                height: 600,
-            }
-        );
-        assert_eq!(
-            (
-                load.retained_profile.screen_width,
-                load.retained_profile.screen_height,
-            ),
-            (640, 480)
         );
     }
 
@@ -984,17 +1157,6 @@ mod tests {
     }
 
     #[test]
-    fn explicit_invalid_screen_values_are_retained() {
-        let mut profile = RetailOptionsProfile {
-            screen_width: 0,
-            screen_height: -20,
-            ..RetailOptionsProfile::default()
-        };
-        profile.resolve_screen_size();
-        assert_eq!((profile.screen_width, profile.screen_height), (0, -20));
-    }
-
-    #[test]
     fn vera_display_preferences_round_trip_in_their_own_section() {
         use crate::ui::main_menu_dialogs::options::{SidebarSize, Zoom};
         let defaults = load_snapshot(
@@ -1006,10 +1168,18 @@ mod tests {
         assert!(!defaults.retained_profile.original_shape);
         assert_eq!(defaults.retained_profile.sidebar, SidebarSize::Normal);
         assert!(!defaults.retained_profile.ra2_look);
+        // Shift + left click queues one copy, as in gamemd, until it is ticked.
+        assert!(!defaults.retained_profile.shift_queue);
+        // Internet shows TXT_APIMISSING, as on retail, until it is ticked.
+        assert!(!defaults.retained_profile.wol_test_service);
+        assert_eq!(
+            defaults.retained_profile.shift_queue_count,
+            DEFAULT_SHIFT_QUEUE_COUNT
+        );
 
         let load = load_snapshot(
             &RetailStartupOptions::default(),
-            b"[VERA]\nFullScreen=yes\nZoom=2\nOriginalShape=yes\nSidebar=150\nRA2Look=yes\n",
+            b"[VERA]\nFullScreen=yes\nZoom=2\nOriginalShape=yes\nSidebar=150\nRA2Look=yes\nShiftQueue=yes\nShiftQueueCount=8\nWolTestService=yes\n",
         );
         assert!(load.retained_profile.full_screen);
         // The first release saved the whole factor.
@@ -1017,6 +1187,9 @@ mod tests {
         assert!(load.retained_profile.original_shape);
         assert_eq!(load.retained_profile.sidebar, SidebarSize::Large);
         assert!(load.retained_profile.ra2_look);
+        assert!(load.retained_profile.shift_queue);
+        assert!(load.retained_profile.wol_test_service);
+        assert_eq!(load.retained_profile.shift_queue_count, 8);
         // A value this build doesn't know reads as Auto.
         let unknown = load_snapshot(&RetailStartupOptions::default(), b"[VERA]\nZoom=9\n");
         assert_eq!(unknown.retained_profile.zoom, Zoom::Auto);
@@ -1027,13 +1200,16 @@ mod tests {
             original_shape: true,
             sidebar: SidebarSize::ExtraLarge,
             ra2_look: true,
+            shift_queue: true,
+            shift_queue_count: 7,
+            wol_test_service: true,
             ..RetailOptionsProfile::default()
         };
         let output =
             String::from_utf8(profile.transform_ra2md(b"[Video]\r\nScreenWidth=800\r\n")).unwrap();
         assert!(
             output.contains(
-                "[VERA]\r\nFullScreen=yes\r\nZoom=150\r\nOriginalShape=yes\r\nSidebar=200\r\nRA2Look=yes\r\n"
+                "[VERA]\r\nFullScreen=yes\r\nZoom=150\r\nOriginalShape=yes\r\nSidebar=200\r\nRA2Look=yes\r\nShiftQueue=yes\r\nShiftQueueCount=7\r\nWolTestService=yes\r\n"
             ),
             "{output}"
         );
@@ -1043,6 +1219,37 @@ mod tests {
         assert!(reread.retained_profile.original_shape);
         assert_eq!(reread.retained_profile.sidebar, SidebarSize::ExtraLarge);
         assert!(reread.retained_profile.ra2_look);
+        assert!(reread.retained_profile.shift_queue);
+        assert!(reread.retained_profile.wol_test_service);
+        assert_eq!(reread.retained_profile.shift_queue_count, 7);
+    }
+
+    /// `read_int` answers 0 for a present-but-nonnumeric value and a hand-edited
+    /// file can hold any `i32`; both ends are clamped so a click always sends a
+    /// PRODUCE and never floods past what one press should reach.
+    #[test]
+    fn shift_queue_count_is_clamped_at_both_ends() {
+        for (ini, expected) in [
+            ("[VERA]\nShiftQueueCount=0\n", 1),
+            ("[VERA]\nShiftQueueCount=-4\n", 1),
+            ("[VERA]\nShiftQueueCount=nonsense\n", 1),
+            ("[VERA]\nShiftQueueCount=1\n", 1),
+            ("[VERA]\nShiftQueueCount=30\n", 30),
+            ("[VERA]\nShiftQueueCount=31\n", 30),
+            ("[VERA]\nShiftQueueCount=99999\n", 30),
+        ] {
+            let load = load_snapshot(&RetailStartupOptions::default(), ini.as_bytes());
+            assert_eq!(load.retained_profile.shift_queue_count, expected, "{ini:?}");
+        }
+        // An absent key keeps the current value, not the clamp floor.
+        let absent = load_snapshot(
+            &RetailStartupOptions::default(),
+            b"[VERA]\nFullScreen=yes\n",
+        );
+        assert_eq!(
+            absent.retained_profile.shift_queue_count,
+            DEFAULT_SHIFT_QUEUE_COUNT
+        );
     }
 
     #[test]
@@ -1172,7 +1379,7 @@ IsScoreRepeat=no\r\nIsScoreShuffle=no\r\nSoundLatency=9\r\nInGameMusic=yes\r\n\
             for (key, expected) in values {
                 assert_eq!(
                     section.get_for_test(key),
-                    Some(expected.as_str()),
+                    (!expected.is_empty()).then_some(expected.as_str()),
                     "{section_name}/{key}"
                 );
             }

@@ -138,8 +138,8 @@ pub(crate) fn repair_zone_cell(
     bridge_records: &[crate::sim::bridge_state::BridgeEndpointRecord],
 ) -> ZoneRepairOutcome {
     let coord = packed_coord.unpack();
-    let width = zone_grid.width;
-    let height = zone_grid.height;
+    let width = zone_grid.width();
+    let height = zone_grid.height();
     //56D460/56D5A0 read retained attributes only. Publication belongs to the
     //preceding Recalc, not to repair; raw Cell changes may intentionally differ.
     let base = zone_grid.base_topology_mut();
@@ -196,7 +196,7 @@ pub(crate) fn repair_zone_hierarchy_around_cell(
     resolved_terrain: &ResolvedTerrainGrid,
     bridge_records: &[crate::sim::bridge_state::BridgeEndpointRecord],
 ) {
-    let (width, height) = (zone_grid.width, zone_grid.height);
+    let (width, height) = (zone_grid.width(), zone_grid.height());
     let (base, hierarchy) = zone_grid.base_and_hierarchy_mut();
     // Every native caller invokes584550 independently of base eligibility.
     let patch_result = patch_zone_hierarchy_with_query(

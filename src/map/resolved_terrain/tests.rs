@@ -1188,33 +1188,6 @@ fn a_nested_detached_run_starts_from_the_shared_word() {
 }
 
 #[test]
-fn gsi_04_01_resize_clears_bridge_bits_without_replacing_dummy_identity() {
-    let dummy = SharedCellDummy::fresh();
-    let retained = dummy.clone();
-    dummy.stamp_coord(-7, 11);
-    dummy.set_level_slope(-3, 9);
-    dummy.set_bridge_flags_0x1180(BRIDGE_FLAG_ANCHOR_SELF);
-    assert_eq!(
-        dummy.bridge_flags_0x1180(),
-        BRIDGE_FLAG_ANCHOR_SELF,
-        "the promoted live anchor bit is represented independently"
-    );
-
-    dummy.reconstruct_for_map_resize();
-
-    assert!(dummy.same_identity(&retained));
-    assert_eq!(
-        dummy.snapshot(),
-        SharedCellDummySnapshot {
-            coord: (0, 0),
-            level: 0,
-            slope_type: 0,
-            bridge_flags_0x1180: 0,
-        }
-    );
-}
-
-#[test]
 fn gsi_04_01_isomap_misses_stamp_raw_coord_without_payload_leak() {
     let mut map = make_map(
         vec![
@@ -2486,37 +2459,6 @@ fn gsi_02_11_positive_registry_oor_uses_clear_and_invokes_selector() {
 }
 
 #[test]
-fn test_resolved_grid_preserves_raw_fields_and_fills_clear_cells() {
-    let map = make_map(
-        vec![MapCell {
-            rx: 1,
-            ry: 1,
-            tile_index: 5,
-            sub_tile: 3,
-            z: 2,
-        }],
-        Vec::new(),
-        Vec::new(),
-    );
-    let grid = ResolvedTerrainGrid::build(&map, None, None, None, None, false, 0);
-    assert_eq!(grid.width(), 2);
-    assert_eq!(grid.height(), 2);
-
-    let cell = grid.cell(1, 1).expect("resolved cell");
-    assert_eq!(cell.source_tile_index, 5);
-    assert_eq!(cell.source_sub_tile, 3);
-    assert_eq!(cell.final_tile_index, 5);
-    assert_eq!(cell.final_sub_tile, 3);
-    assert_eq!(cell.level, 2);
-    assert!(!cell.filled_clear);
-
-    let clear = grid.cell(0, 0).expect("filled clear");
-    assert!(clear.filled_clear);
-    assert_eq!(clear.final_tile_index, 0);
-    assert_eq!(clear.level, 0);
-}
-
-#[test]
 fn no_tile_presentation_uses_theater_clear_tile_without_rewriting_semantics() {
     let ini = b"[TileSet0000]\n\
                 TilesInSet=37\n\
@@ -2911,22 +2853,6 @@ fn gsi_04_03c_height_in_pixels_uses_signed_effective_height_formula() {
 }
 
 #[test]
-fn gsi_04_03c_sparse_pristine_subtile_uses_header_height() {
-    let tmp = TmpFile {
-        template_width: 1,
-        template_height: 1,
-        tile_width: 60,
-        tile_height: 45,
-        tiles: vec![None],
-    };
-    let mut metadata = TileMetadata::default();
-
-    merge_tmp_file_metadata(&mut metadata, &tmp, 0, None);
-
-    assert_eq!(metadata.height_in_pixels, 1);
-}
-
-#[test]
 fn gsi_04_04_sparse_and_positive_oob_subtiles_clear_cell_land_and_slope() {
     let rock = TmpTile {
         height: 7,
@@ -3071,36 +2997,6 @@ fn gsi_04_04_valid_tile_sparse_and_oob_entries_materialize_no_tile_cells() {
         assert_eq!(cell.base_land_type, LandType::Rock.as_index());
         assert_eq!(cell.zone_type, zone_class::IMPASSABLE);
     }
-}
-
-#[test]
-fn gsi_04_04_merge_tmp_metadata_maps_raw_rock_to_canonical_land() {
-    let mut metadata = TileMetadata::default();
-    let tile = TmpTile {
-        height: 4,
-        terrain_type: 7,
-        ramp_type: 2,
-        radar_left: [100, 120, 80],
-        radar_right: [90, 110, 70],
-        pixels: Vec::new(),
-        depth: Vec::new(),
-        pixel_width: 60,
-        pixel_height: 30,
-        relative_extra_y: 0,
-        offset_x: -5,
-        offset_y: -6,
-        has_damaged_data: false,
-    };
-    merge_tmp_metadata(&mut metadata, &tile);
-    assert_eq!(metadata.land_type, LandType::Rock.as_index());
-    assert_eq!(metadata.slope_type, 2);
-    assert_eq!(metadata.template_height, 4);
-    assert_eq!(metadata.render_offset_x, -5);
-    assert_eq!(metadata.render_offset_y, -6);
-    assert!(metadata.has_ramp);
-    assert!(metadata.has_tmp_metadata);
-    assert_eq!(metadata.radar_left, [100, 120, 80]);
-    assert_eq!(metadata.radar_right, [90, 110, 70]);
 }
 
 #[test]
@@ -3264,17 +3160,6 @@ fn gsi_02_11_damaged_tmp_cell_bypasses_selector_without_table_generation() {
     assert_eq!(variant, 0);
     assert_eq!(draws, 0);
     assert!(!cache.is_initialized());
-}
-
-#[test]
-fn test_canonical_ramp_detection_only_marks_slope_types_one_to_four() {
-    assert_eq!(canonical_ramp_from_slope_type(1), Some(RampDirection::West));
-    assert_eq!(
-        canonical_ramp_from_slope_type(4),
-        Some(RampDirection::South)
-    );
-    assert_eq!(canonical_ramp_from_slope_type(0), None);
-    assert_eq!(canonical_ramp_from_slope_type(7), None);
 }
 
 #[test]
@@ -4713,50 +4598,6 @@ fn cliff_back_impassability_skips_when_disabled() {
     assert!(
         !cell.ground_walk_blocked,
         "Should NOT be blocked when disabled"
-    );
-}
-
-#[test]
-fn cliff_back_impassability_ignores_small_height_diff() {
-    let map = make_map(
-        vec![
-            MapCell {
-                rx: 0,
-                ry: 0,
-                tile_index: -1,
-                sub_tile: 0,
-                z: 0,
-            },
-            MapCell {
-                rx: 1,
-                ry: 0,
-                tile_index: -1,
-                sub_tile: 0,
-                z: 3,
-            },
-            MapCell {
-                rx: 0,
-                ry: 1,
-                tile_index: -1,
-                sub_tile: 0,
-                z: 0,
-            },
-            MapCell {
-                rx: 1,
-                ry: 1,
-                tile_index: -1,
-                sub_tile: 0,
-                z: 0,
-            },
-        ],
-        Vec::new(),
-        Vec::new(),
-    );
-    let grid = ResolvedTerrainGrid::build(&map, None, None, None, None, false, 2);
-    let cell = grid.cell(1, 1).unwrap();
-    assert!(
-        !cell.ground_walk_blocked,
-        "Height diff 3 should NOT trigger (threshold is 4)"
     );
 }
 

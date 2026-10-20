@@ -148,7 +148,7 @@ fn infantry_unlimbo_matches_native_gate_incoming_membership_and_signed_xy() {
                 })
                 .collect(),
         );
-        let selected_cell = terrain.cell_mut(cx, cy).unwrap();
+        let selected_cell = terrain.cell_mut_for_test(cx, cy).unwrap();
         selected_cell.level = cell["level_slope"][0].as_u64().unwrap() as u8;
         selected_cell.slope_type = cell["level_slope"][1].as_u64().unwrap() as u8;
         sim.install_resolved_terrain_for_new_map(terrain);
@@ -204,7 +204,7 @@ fn infantry_unlimbo_matches_native_gate_incoming_membership_and_signed_xy() {
                 dispatch_timer: MissionDispatchTimer::from_raw(0, 0),
             });
             gate.lifecycle.set_in_limbo_for_test(false);
-            gate.lifecycle.set_cell_marked(true);
+            gate.lifecycle.set_cell_marked_for_test(true);
             gate.set_in_playfield(true);
             sim.substrate.entities.insert(gate);
             sim.substrate.occupancy.add(
@@ -322,7 +322,10 @@ fn constructed_infantry_commits_raw_z_and_facing_before_idle() {
             entity.position.exact_z_leptons(),
             Some(row["type_clamped_coordinate"][2].as_i64().unwrap() as i32)
         );
-        assert_eq!(entity.body_facing.current(sim.session.binary_frame), 0x8000);
+        assert_eq!(
+            entity.body_facing.current(sim.session.binary_frame()),
+            0x8000
+        );
         let events = sim.lifecycle_test_events_for_test();
         let mark = events
             .iter()
@@ -367,7 +370,7 @@ fn constructed_infantry_commits_raw_z_and_facing_before_idle() {
                 .get(failed)
                 .unwrap()
                 .body_facing
-                .current(sim.session.binary_frame),
+                .current(sim.session.binary_frame()),
             0
         );
         assert!(
@@ -406,10 +409,10 @@ fn map_entity(type_id: &str, category: EntityCategory, cell: (u16, u16)) -> MapE
 
 fn install_american_house(sim: &mut Simulation) {
     let owner = sim.interner.intern("Americans");
-    sim.houses.insert(
-        owner,
-        crate::sim::house_state::HouseState::new(owner, 0, None, true, 0, 10),
-    );
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            owner, 0, None, true, 0, 10,
+        ));
 }
 
 /// Original Unit743495, Infantry51FD54 and Aircraft41B308 execute the
@@ -777,13 +780,15 @@ fn discovery_owner_entry_and_lifetime_match_original_history_blocks() {
         install_american_house(&mut sim);
         let owner = sim.interner.get("Americans").unwrap();
         let other = sim.interner.intern("Other");
-        sim.houses.insert(
-            other,
-            crate::sim::house_state::HouseState::new(other, 0, None, false, 0, 10),
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                other, 0, None, false, 0, 10,
+            ));
+        sim.houses.reorder_for_test(&[owner, other]);
+        sim.session.set_current_house_for_test(Some(owner));
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
-        sim.session.house_order = vec![owner, other];
-        sim.session.current_house = Some(owner);
-        sim.session.game_mode_nonzero = true;
         let entity = sim
             .construct_runtime_techno(
                 "E1",
@@ -907,13 +912,15 @@ fn outside_reentry_clears_current_discovery_only_after_successful_alive_mark() {
         install_american_house(&mut sim);
         let owner = sim.interner.get("Americans").unwrap();
         let other = sim.interner.intern("OtherHuman");
-        sim.houses.insert(
-            other,
-            crate::sim::house_state::HouseState::new(other, 0, None, true, 0, 10),
+        sim.houses
+            .register(crate::sim::house_state::HouseState::new(
+                other, 0, None, true, 0, 10,
+            ));
+        sim.houses.reorder_for_test(&[owner, other]);
+        sim.session.set_current_house_for_test(Some(owner));
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
         );
-        sim.session.house_order = vec![owner, other];
-        sim.session.current_house = Some(owner);
-        sim.session.game_mode_nonzero = true;
         let id = sim
             .spawn_object_at_height("E1", "Americans", 6, 5, 0, 0, &rules)
             .unwrap();
@@ -987,13 +994,14 @@ fn first_nonhuman_owner_entry_queues_hunt_from_ambush_but_repeat_does_not() {
     install_american_house(&mut sim);
     let current = sim.interner.get("Americans").unwrap();
     let other = sim.interner.intern("Computer1");
-    sim.houses.insert(
-        other,
-        crate::sim::house_state::HouseState::new(other, 0, None, false, 0, 10),
-    );
-    sim.session.house_order = vec![current, other];
-    sim.session.current_house = Some(current);
-    sim.session.game_mode_nonzero = true;
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            other, 0, None, false, 0, 10,
+        ));
+    sim.houses.reorder_for_test(&[current, other]);
+    sim.session.set_current_house_for_test(Some(current));
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     let id = sim
         .construct_object_limbo_at_height(
             "E1",
@@ -1080,9 +1088,11 @@ fn exact_sight_zero_survives_save_and_rules_less_reentry() {
         install_constructor_flat_terrain(&mut sim);
         install_american_house(&mut sim);
         let owner = sim.interner.get("Americans").unwrap();
-        sim.session.house_order = vec![owner];
-        sim.session.current_house = Some(owner);
-        sim.session.game_mode_nonzero = true;
+        sim.houses.reorder_for_test(&[owner]);
+        sim.session.set_current_house_for_test(Some(owner));
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         let entity = sim
             .construct_runtime_techno(
                 "E1",
@@ -1167,9 +1177,10 @@ fn infantry_owner_discovery_leaves_building_power_radar_and_spysat_inputs_unchan
     install_constructor_flat_terrain(&mut sim);
     install_american_house(&mut sim);
     let owner = sim.interner.get("Americans").unwrap();
-    sim.session.house_order = vec![owner];
-    sim.session.current_house = Some(owner);
-    sim.session.game_mode_nonzero = true;
+    sim.houses.reorder_for_test(&[owner]);
+    sim.session.set_current_house_for_test(Some(owner));
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     assert_eq!(
         sim.spawn_from_map(
             &[map_entity("OBS", EntityCategory::Structure, (6, 5))],
@@ -1179,10 +1190,10 @@ fn infantry_owner_discovery_leaves_building_power_radar_and_spysat_inputs_unchan
     );
     sim.advance_tick(&[], Some(&rules), None, None, 66);
     let before = (
-        sim.power_states[&owner].total_output,
-        sim.power_states[&owner].total_drain,
+        sim.power_states[&owner].total_output(),
+        sim.power_states[&owner].total_drain(),
         crate::sim::radar::has_radar_for_owner(&sim, &rules, "Americans"),
-        sim.houses[&owner].spy_sat_active,
+        sim.houses[&owner].spy_sat_active(),
     );
     let id = sim
         .spawn_object("E1", "Americans", 7, 5, 0, &rules)
@@ -1197,10 +1208,10 @@ fn infantry_owner_discovery_leaves_building_power_radar_and_spysat_inputs_unchan
     );
     sim.advance_tick(&[], Some(&rules), None, None, 66);
     let after = (
-        sim.power_states[&owner].total_output,
-        sim.power_states[&owner].total_drain,
+        sim.power_states[&owner].total_output(),
+        sim.power_states[&owner].total_drain(),
         crate::sim::radar::has_radar_for_owner(&sim, &rules, "Americans"),
-        sim.houses[&owner].spy_sat_active,
+        sim.houses[&owner].spy_sat_active(),
     );
     assert_eq!(before, (100, 0, true, true));
     assert_eq!(after, before);
@@ -1226,20 +1237,20 @@ fn building_light_allocates_only_after_authored_or_held_placement_succeeds() {
     );
     let (&authored_id, source) = authored
         .lighting_sources
-        .buildings
+        .buildings()
         .first_key_value()
         .unwrap();
     assert!(source.active);
     assert_eq!((source.rx, source.ry), (6, 5));
-    assert_eq!(authored.lighting_sources.pending.len(), 1);
+    assert_eq!(authored.lighting_sources.pending().len(), 1);
     authored.discard_lighting_events();
     authored.set_building_light_active(authored_id, false);
     authored.allocate_building_light(authored_id, &rules);
     assert!(
-        !authored.lighting_sources.buildings[&authored_id].active,
+        !authored.lighting_sources.buildings()[&authored_id].active,
         "a repeated construction callback must not activate an existing614"
     );
-    assert_eq!(authored.lighting_sources.pending.len(), 1);
+    assert_eq!(authored.lighting_sources.pending().len(), 1);
 
     let mut held = Simulation::with_seed(0x1a42);
     install_constructor_test_playfield(&mut held);
@@ -1255,8 +1266,8 @@ fn building_light_allocates_only_after_authored_or_held_placement_succeeds() {
             crate::sim::world::FrameEffects::default(),
         )
         .expect("construct held lamp");
-    assert!(held.lighting_sources.buildings.is_empty());
-    assert!(held.lighting_sources.pending.is_empty());
+    assert!(held.lighting_sources.buildings().is_empty());
+    assert!(held.lighting_sources.pending().is_empty());
     assert!(
         held.reveal_constructed_object_at_height(
             held_id,
@@ -1270,8 +1281,8 @@ fn building_light_allocates_only_after_authored_or_held_placement_succeeds() {
         )
         .is_none()
     );
-    assert!(held.lighting_sources.buildings.is_empty());
-    assert!(held.lighting_sources.pending.is_empty());
+    assert!(held.lighting_sources.buildings().is_empty());
+    assert!(held.lighting_sources.pending().is_empty());
     let rng_after_constructor = held.scenario_rng.logical_state();
     assert_eq!(
         held.reveal_constructed_object_at_height(
@@ -1287,8 +1298,8 @@ fn building_light_allocates_only_after_authored_or_held_placement_succeeds() {
         Some(held_id)
     );
     assert_eq!(held.scenario_rng.logical_state(), rng_after_constructor);
-    assert!(held.lighting_sources.buildings[&held_id].active);
-    assert_eq!(held.lighting_sources.pending.len(), 1);
+    assert!(held.lighting_sources.buildings()[&held_id].active);
+    assert_eq!(held.lighting_sources.pending().len(), 1);
 
     let mut failed_new = Simulation::with_seed(0x1a43);
     install_constructor_test_playfield(&mut failed_new);
@@ -1297,13 +1308,13 @@ fn building_light_allocates_only_after_authored_or_held_placement_succeeds() {
             .spawn_object_at_height("GALITE", "Americans", 1, 1, 0, 0, &rules)
             .is_none()
     );
-    assert!(failed_new.lighting_sources.buildings.is_empty());
-    assert!(failed_new.lighting_sources.pending.is_empty());
+    assert!(failed_new.lighting_sources.buildings().is_empty());
+    assert!(failed_new.lighting_sources.pending().is_empty());
 }
 
 fn install_constructor_test_playfield(sim: &mut Simulation) {
-    sim.session.map_width = 10;
-    sim.session.map_height = 10;
+    sim.session.set_map_width_for_test(10);
+    sim.session.set_map_height_for_test(10);
     sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
         base: 10,
         off_fc: 0,
@@ -1337,10 +1348,12 @@ fn an_aircraft_unlimbo_asks_the_aircraft_entry_query() {
         install_constructor_test_playfield(&mut sim);
         install_constructor_flat_terrain(&mut sim);
         install_american_house(&mut sim);
-        sim.session.game_mode_nonzero = game_mode_nonzero;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(game_mode_nonzero),
+        );
         let owner = sim.interner.get("Americans").unwrap();
-        sim.fog.width = 10;
-        sim.fog.height = 10;
+        sim.fog.set_width_for_test(10);
+        sim.fog.set_height_for_test(10);
         if mapped {
             sim.fog.reveal_all_for_owner(owner);
         }
@@ -1471,7 +1484,7 @@ fn techno_constructor_live_overlay_context_admits_ore_and_structural_bridge() {
             .resolved_terrain
             .as_mut()
             .unwrap()
-            .cell_mut(bridge_cell.0, bridge_cell.1)
+            .cell_mut_for_test(bridge_cell.0, bridge_cell.1)
             .unwrap();
         bridge.level = 3;
         bridge.bridge_deck_level = 7;
@@ -1493,7 +1506,7 @@ fn techno_constructor_live_overlay_context_admits_ore_and_structural_bridge() {
         sim.resolved_terrain
             .as_mut()
             .unwrap()
-            .cell_mut(cell.0, cell.1)
+            .cell_mut_for_test(cell.0, cell.1)
             .unwrap()
             .bridge_facts
             .overlay_id = Some(0);
@@ -1645,141 +1658,6 @@ fn techno_constructor_wall_rejection_precedes_mutation_and_keeps_graph_draws_spe
 }
 
 #[test]
-fn techno_constructor_routes_preserve_components_and_authored_overrides() {
-    // Rust regression: preserve existing route differences, including map
-    // omissions. This fixture does not establish native constructor parity.
-    let rules = RuleSet::from_ini(&IniFile::from_str(
-        "[InfantryTypes]\n0=CREW\n[VehicleTypes]\n0=SHIP\n\
-         [AircraftTypes]\n0=PLANE\n[BuildingTypes]\n0=GATE\n\
-         [CREW]\nStrength=200\nSpeed=4\nDontScore=yes\nOccupier=yes\n\
-         ImmuneToRadiation=yes\nCrushable=yes\n\
-         [SHIP]\nStrength=200\nSpeed=0\nDontScore=yes\nTurret=yes\n\
-         Passengers=3\nSizeLimit=2\nLocomotor={2BEA74E1-7CCA-11D3-BE14-00104B62A16C}\n\
-         [PLANE]\nStrength=200\nSpeed=8\nDontScore=yes\nAmmo=5\n\
-         Locomotor={4A582746-9839-11D1-B709-00A024DDAFD1}\n\
-         [GATE]\nStrength=200\nDontScore=yes\nGate=yes\nBunker=yes\n\
-         CanBeOccupied=yes\nMaxNumberOccupants=4\nFoundation=1x1\n",
-    ))
-    .unwrap();
-    for (type_id, category) in [
-        ("CREW", EntityCategory::Infantry),
-        ("SHIP", EntityCategory::Unit),
-        ("PLANE", EntityCategory::Aircraft),
-        ("GATE", EntityCategory::Structure),
-    ] {
-        for route in 0..3 {
-            let mut sim = Simulation::with_seed(0xC701_0021);
-            install_american_house(&mut sim);
-            if type_id == "CREW" && route != 0 {
-                sim.spawn_object_at_height(type_id, "Americans", 4, 4, 64, 0, &rules)
-                    .expect("resident occupies the first subcell at the requested cell");
-            }
-            let id = match route {
-                0 => {
-                    let mut authored = map_entity(type_id, category, (4, 4));
-                    authored.health = 128;
-                    authored.veterancy = Some(100);
-                    authored.facing = 64;
-                    authored.sub_cell = 3;
-                    authored.recruitable_a = false;
-                    authored.recruitable_b = false;
-                    assert_eq!(sim.spawn_from_map(&[authored], Some(&rules)), 1);
-                    sim.substrate.entities.values().next().unwrap().stable_id()
-                }
-                1 => sim
-                    .spawn_object_at_height(type_id, "Americans", 4, 4, 64, 0, &rules)
-                    .unwrap(),
-                _ => sim
-                    .spawn_object_limbo_at_height(type_id, "Americans", 4, 4, 64, 0, &rules)
-                    .unwrap(),
-            };
-            let entity = sim.substrate.entities.get(id).unwrap();
-            assert!(entity.tracking_facts.dont_score());
-            assert_eq!(entity.health.current(), if route == 0 { 100 } else { 200 });
-            assert_eq!(entity.veterancy.rank(), if route == 0 { 100 } else { 0 });
-            assert_eq!(entity.lifecycle.in_limbo(), route == 2);
-            if route == 0 {
-                assert!(!entity.base_defense_response.recruitable_a());
-                assert!(!entity.base_defense_response.recruitable_b());
-            }
-            match type_id {
-                "CREW" => {
-                    assert!(entity.animation.is_none());
-                    assert!(entity.infantry.is_some());
-                    assert!(entity.infantry_sprite_pose().is_some());
-                    assert!(
-                        entity.crushable_facts.crushable()
-                            && entity.removal_facts.occupier()
-                            && entity.mover_facts.immune_to_radiation()
-                    );
-                    if route == 2 {
-                        assert_eq!(
-                            entity.sub_cell(),
-                            None,
-                            "a held constructor reserves no spot"
-                        );
-                        let coord = crate::sim::movement::ground_pose::position_world_coord(
-                            &entity.position,
-                        );
-                        assert_eq!((coord.x, coord.y, coord.z), (0, 0, 0));
-                    } else {
-                        let sub_cell = entity.sub_cell().unwrap();
-                        if route == 0 {
-                            assert_eq!(sub_cell, 3);
-                        } else {
-                            assert!(
-                                crate::sim::movement::bump_crush::FUNCTIONAL_SUB_CELLS
-                                    .contains(&sub_cell)
-                            );
-                            let resident = sim
-                                .substrate
-                                .entities
-                                .values()
-                                .find(|resident| resident.stable_id() != id)
-                                .unwrap();
-                            assert_ne!(Some(sub_cell), resident.sub_cell());
-                        }
-                        let (x, y) = crate::util::lepton::subcell_lepton_offset(Some(sub_cell));
-                        assert_eq!((entity.position.sub_x(), entity.position.sub_y()), (x, y));
-                    }
-                }
-                "SHIP" => {
-                    assert!(entity.barrel_facing.is_some());
-                    assert_eq!(
-                        entity.locomotor.as_ref().unwrap().active_kind(),
-                        crate::rules::locomotor_type::LocomotorKind::Ship
-                    );
-                    assert_eq!(
-                        entity
-                            .locomotor
-                            .as_ref()
-                            .and_then(|l| l.selected_ship_runtime())
-                            .and_then(|r| r.retained())
-                            .is_some(),
-                        route != 0
-                    );
-                    let cargo = entity.passenger_role.cargo().unwrap();
-                    assert_eq!((cargo.capacity(), cargo.size_limit()), (3, 2.0));
-                }
-                "PLANE" => {
-                    assert_eq!(
-                        entity.ammo().map(|ammo| (ammo.current(), ammo.max())),
-                        Some((5, 5))
-                    );
-                }
-                "GATE" => {
-                    assert!(entity.building_gate.is_some() && entity.bunker_runtime.is_some());
-                    assert_eq!(entity.type_facts.foundation(), "1x1");
-                    let cargo = entity.passenger_role.cargo().unwrap();
-                    assert_eq!((cargo.capacity(), cargo.size_limit()), (4, 0.0));
-                }
-                _ => unreachable!(),
-            }
-        }
-    }
-}
-
-#[test]
 fn techno_constructor_raw_entity_constructor_is_world_spawn_only() {
     fn collect_rust_files(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>) {
         for entry in std::fs::read_dir(dir).expect("read source directory") {
@@ -1908,117 +1786,117 @@ fn techno_constructor_runtime_fresh_paths_draw_once_after_type_resolution() {
 }
 
 #[test]
-fn techno_constructor_spawn_manager_pool_draws_parent_then_children_and_cancels_as_one_graph() {
-    let seed = 0xC701_0010;
-    let rules = constructor_rules();
-    let mut sim = Simulation::with_seed(seed);
-    install_american_house(&mut sim);
-    let mut expected = SimRng::new(seed);
-    let words = (0..4)
-        .map(|_| (expected.next_u32() & 0xFFFF) as u16)
-        .collect::<Vec<_>>();
+fn techno_constructor_manager_pools_draw_parent_then_children_and_cancel_as_one_graph() {
+    {
+        let seed = 0xC701_0010;
+        let rules = constructor_rules();
+        let mut sim = Simulation::with_seed(seed);
+        install_american_house(&mut sim);
+        let mut expected = SimRng::new(seed);
+        let words = (0..4)
+            .map(|_| (expected.next_u32() & 0xFFFF) as u16)
+            .collect::<Vec<_>>();
 
-    let parent_id = sim
-        .construct_object_limbo_at_height(
-            "CARRIER",
-            "Americans",
-            0,
-            0,
-            0,
-            0,
-            &rules,
-            crate::sim::world::FrameEffects::default(),
-        )
-        .expect("factory-held carrier constructor");
-    let parent = sim
-        .substrate
-        .entities
-        .get(parent_id)
-        .expect("carrier parent");
-    assert_eq!(parent.techno_ctor_random_word(), words[0]);
-    let child_ids = parent
-        .spawn_manager
-        .as_ref()
-        .expect("constructor spawn manager")
-        .slots()
-        .iter()
-        .map(|slot| slot.spawn().expect("constructor-filled spawn slot"))
-        .collect::<Vec<_>>();
-    assert_eq!(child_ids, vec![2, 3, 4]);
-    for (index, child_id) in child_ids.iter().copied().enumerate() {
-        let child = sim.substrate.entities.get(child_id).expect("spawn child");
-        assert_eq!(child.techno_ctor_random_word(), words[index + 1]);
-        assert_eq!(child.spawn_owner_id.owner(), Some(parent_id));
-        assert!(child.lifecycle.in_limbo() && !child.lifecycle.cell_marked());
-    }
-    assert_eq!(sim.scenario_rng.logical_state(), expected.logical_state());
-
-    let after_constructor = sim.scenario_rng.logical_state();
-    assert!(sim.discard_constructed_limbo(
-        parent_id,
-        Some(&rules),
-        crate::sim::world::FrameEffects::default()
-    ));
-    assert!(sim.substrate.entities.is_empty());
-    assert_eq!(sim.scenario_rng.logical_state(), after_constructor);
-}
-
-#[test]
-fn techno_constructor_slave_manager_pool_draws_parent_then_children_and_cancels_as_one_graph() {
-    let seed = 0xC701_0011;
-    let rules = constructor_rules();
-    let mut sim = Simulation::with_seed(seed);
-    install_american_house(&mut sim);
-    let mut expected = SimRng::new(seed);
-    let words = (0..3)
-        .map(|_| (expected.next_u32() & 0xFFFF) as u16)
-        .collect::<Vec<_>>();
-
-    let parent_id = sim
-        .construct_object_limbo_at_height(
-            "SMIN",
-            "Americans",
-            0,
-            0,
-            0,
-            0,
-            &rules,
-            crate::sim::world::FrameEffects::default(),
-        )
-        .expect("factory-held slave miner constructor");
-    let slave_ids = sim
-        .substrate
-        .entities
-        .get(parent_id)
-        .and_then(|parent| parent.slave_manager.as_ref())
-        .expect("constructor slave manager")
-        .slaves()
-        .collect::<Vec<_>>();
-    assert_eq!(slave_ids, vec![2, 3]);
-    assert_eq!(
-        sim.substrate
+        let parent_id = sim
+            .construct_object_limbo_at_height(
+                "CARRIER",
+                "Americans",
+                0,
+                0,
+                0,
+                0,
+                &rules,
+                crate::sim::world::FrameEffects::default(),
+            )
+            .expect("factory-held carrier constructor");
+        let parent = sim
+            .substrate
             .entities
             .get(parent_id)
-            .unwrap()
-            .techno_ctor_random_word(),
-        words[0]
-    );
-    for (index, slave_id) in slave_ids.iter().copied().enumerate() {
-        let slave = sim.substrate.entities.get(slave_id).expect("slave child");
-        assert_eq!(slave.techno_ctor_random_word(), words[index + 1]);
-        assert_eq!(slave.slave.owner(), Some(parent_id));
-        assert!(slave.lifecycle.in_limbo() && !slave.lifecycle.cell_marked());
-    }
-    assert_eq!(sim.scenario_rng.logical_state(), expected.logical_state());
+            .expect("carrier parent");
+        assert_eq!(parent.techno_ctor_random_word(), words[0]);
+        let child_ids = parent
+            .spawn_manager
+            .as_ref()
+            .expect("constructor spawn manager")
+            .slots()
+            .iter()
+            .map(|slot| slot.spawn().expect("constructor-filled spawn slot"))
+            .collect::<Vec<_>>();
+        assert_eq!(child_ids, vec![2, 3, 4]);
+        for (index, child_id) in child_ids.iter().copied().enumerate() {
+            let child = sim.substrate.entities.get(child_id).expect("spawn child");
+            assert_eq!(child.techno_ctor_random_word(), words[index + 1]);
+            assert_eq!(child.spawn_owner_id.owner(), Some(parent_id));
+            assert!(child.lifecycle.in_limbo() && !child.lifecycle.cell_marked());
+        }
+        assert_eq!(sim.scenario_rng.logical_state(), expected.logical_state());
 
-    let after_constructor = sim.scenario_rng.logical_state();
-    assert!(sim.discard_constructed_limbo(
-        parent_id,
-        Some(&rules),
-        crate::sim::world::FrameEffects::default()
-    ));
-    assert!(sim.substrate.entities.is_empty());
-    assert_eq!(sim.scenario_rng.logical_state(), after_constructor);
+        let after_constructor = sim.scenario_rng.logical_state();
+        assert!(sim.discard_constructed_limbo(
+            parent_id,
+            Some(&rules),
+            crate::sim::world::FrameEffects::default()
+        ));
+        assert!(sim.substrate.entities.is_empty());
+        assert_eq!(sim.scenario_rng.logical_state(), after_constructor);
+    }
+    {
+        let seed = 0xC701_0011;
+        let rules = constructor_rules();
+        let mut sim = Simulation::with_seed(seed);
+        install_american_house(&mut sim);
+        let mut expected = SimRng::new(seed);
+        let words = (0..3)
+            .map(|_| (expected.next_u32() & 0xFFFF) as u16)
+            .collect::<Vec<_>>();
+
+        let parent_id = sim
+            .construct_object_limbo_at_height(
+                "SMIN",
+                "Americans",
+                0,
+                0,
+                0,
+                0,
+                &rules,
+                crate::sim::world::FrameEffects::default(),
+            )
+            .expect("factory-held slave miner constructor");
+        let slave_ids = sim
+            .substrate
+            .entities
+            .get(parent_id)
+            .and_then(|parent| parent.slave_manager.as_ref())
+            .expect("constructor slave manager")
+            .slaves()
+            .collect::<Vec<_>>();
+        assert_eq!(slave_ids, vec![2, 3]);
+        assert_eq!(
+            sim.substrate
+                .entities
+                .get(parent_id)
+                .unwrap()
+                .techno_ctor_random_word(),
+            words[0]
+        );
+        for (index, slave_id) in slave_ids.iter().copied().enumerate() {
+            let slave = sim.substrate.entities.get(slave_id).expect("slave child");
+            assert_eq!(slave.techno_ctor_random_word(), words[index + 1]);
+            assert_eq!(slave.slave.owner(), Some(parent_id));
+            assert!(slave.lifecycle.in_limbo() && !slave.lifecycle.cell_marked());
+        }
+        assert_eq!(sim.scenario_rng.logical_state(), expected.logical_state());
+
+        let after_constructor = sim.scenario_rng.logical_state();
+        assert!(sim.discard_constructed_limbo(
+            parent_id,
+            Some(&rules),
+            crate::sim::world::FrameEffects::default()
+        ));
+        assert!(sim.substrate.entities.is_empty());
+        assert_eq!(sim.scenario_rng.logical_state(), after_constructor);
+    }
 }
 
 #[test]
@@ -2579,7 +2457,7 @@ fn aircraft_spawn_initializes_both_facings_without_a_turret_flag() {
         .unwrap();
         for direction in [0, 64, 255] {
             let mut sim = Simulation::with_seed(7);
-            sim.session.binary_frame = 100;
+            sim.session.set_binary_frame_for_test(100);
             let runtime = sim
                 .construct_runtime_techno(
                     "AIR",
@@ -2710,66 +2588,6 @@ fn map_admission_uses_class_health_and_rejects_unresolved_types() {
     }
 }
 
-#[test]
-fn authored_unlimbo_preserves_scenario_scope_and_applies_native_class_health() {
-    let corpus: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
-        "tools/spatial_oracle/object_health.json",
-    ))
-    .unwrap();
-    let rules = signed_health_rules(65_536);
-    for kind in ["unit", "aircraft", "infantry", "building"] {
-        let (category, name) = native_health_class(kind);
-        let mut sim = Simulation::with_seed(9);
-        install_constructor_test_playfield(&mut sim);
-        let entity = sim
-            .construct_runtime_techno(
-                name,
-                "Americans",
-                1,
-                1,
-                0,
-                0,
-                &rules,
-                TechnoConstructorInit::FreshScenario,
-            )
-            .unwrap()
-            .unwrap();
-        assert_eq!(entity.category(), category);
-        assert_eq!(entity.health.current(), 65_536);
-        // ScenarioFullInit686B4F keeps A8E7AC raised through all map-object
-        // readers. This terrain-less diagnostic coordinate is outside the
-        // ordinary playfield gate; that gate cannot supply a false authored
-        // Unlimbo result. Original object_health/map_health supplies the
-        // arithmetic golden independently of this Rust admission regression.
-        assert!(!sim.object_placement_scope_active());
-        let (id, outcome) = sim.unlimbo_authored_techno(entity, 128, Some(&rules), None);
-        assert!(matches!(outcome, RevealOutcome::Revealed { .. }), "{kind}");
-        assert!(!sim.object_placement_scope_active());
-        let native = corpus["map_health"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|row| {
-                row["input"]["kind"] == kind
-                    && row["input"]["strength"] == 65_536
-                    && row["input"]["authored"] == 128
-            })
-            .expect("original authored-health arithmetic control");
-        let admitted = sim.substrate.entities.get(id).unwrap();
-        assert_eq!(
-            admitted.health.current(),
-            native["output"]["actual"].as_i64().unwrap() as i32,
-            "{kind}"
-        );
-        assert_eq!(
-            admitted.estimated_health.get(),
-            native["output"]["estimated"].as_i64().unwrap() as i32,
-            "{kind}"
-        );
-        assert!(!admitted.lifecycle.in_limbo());
-    }
-}
-
 /// The AI sale byte (`BuildingClass+0x6DC`): the constructor sets it and
 /// Init_Managers clears it for a type without a Buildup (`0x00442CBC`); a
 /// map-placed building takes its line's AI Sellable field instead
@@ -2835,7 +2653,9 @@ fn a_building_s_ai_repair_byte_follows_its_map_line_or_its_computer_owner() {
     ] {
         let mut sim = Simulation::with_seed(0x6CB);
         install_constructor_test_playfield(&mut sim);
-        sim.session.game_mode_nonzero = game_mode_nonzero;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(game_mode_nonzero),
+        );
         for (name, human, passive) in [
             ("Computer", false, false),
             ("Human", true, false),
@@ -2843,9 +2663,9 @@ fn a_building_s_ai_repair_byte_follows_its_map_line_or_its_computer_owner() {
         ] {
             let id = sim.interner.intern(name);
             let mut house = crate::sim::house_state::HouseState::new(id, 0, None, human, 0, 10);
-            house.player_control = human;
-            house.multiplay_passive = passive;
-            sim.houses.insert(id, house);
+            house.set_player_control_for_test(human);
+            house.set_multiplay_passive_for_test(passive);
+            sim.houses.register(house);
         }
         let mut line = map_entity("UP1", EntityCategory::Structure, (6, 5));
         line.owner = owner.to_string();

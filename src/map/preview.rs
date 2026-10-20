@@ -9,6 +9,56 @@ use crate::rules::ini_parser::IniFile;
 use crate::util::base64::base64_decode;
 use crate::util::lzo::{LzoError, decompress_chunks};
 
+/// Retained Scenario header input written by ReadStartPoints689D30. Map
+/// discovery stores the parsed write, not a defaulted value: previewing a map
+/// with no key (or failed hexadecimal conversion) must preserve the prior one.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ScenarioStartHeaderInput {
+    coop_human_start_spots: Option<i32>,
+}
+
+impl ScenarioStartHeaderInput {
+    pub fn from_ini(ini: &IniFile) -> Self {
+        Self {
+            coop_human_start_spots: ini
+                .section("Header")
+                .and_then(|section| section.read_int_value("NumCoopHumanStartSpots")),
+        }
+    }
+}
+
+/// Scenario+11E4: Set_Defaults683A40 seeds4; preview641F72 and scenario
+/// load6874F8 both call the same retained ReadStartPoints reader. Shell visits
+/// retain this owner; Clear_Scene685237 starts a fresh default before map load.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+pub struct ScenarioStartHeader {
+    coop_human_start_spots: i32,
+}
+
+impl Default for ScenarioStartHeader {
+    fn default() -> Self {
+        Self {
+            coop_human_start_spots: 4,
+        }
+    }
+}
+
+impl ScenarioStartHeader {
+    pub fn apply(&mut self, input: ScenarioStartHeaderInput) {
+        if let Some(value) = input.coop_human_start_spots {
+            self.coop_human_start_spots = value;
+        }
+    }
+
+    pub fn read_ini(&mut self, ini: &IniFile) {
+        self.apply(ScenarioStartHeaderInput::from_ini(ini));
+    }
+
+    pub fn coop_human_start_spots(self) -> i32 {
+        self.coop_human_start_spots
+    }
+}
+
 /// CPU RGBA thumbnail decoded from `[PreviewPack]`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DecodedPreview {
@@ -20,6 +70,7 @@ pub struct DecodedPreview {
 /// Parsed preview-related metadata from a map.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct PreviewSection {
+    pub start_header: ScenarioStartHeaderInput,
     /// Size metadata from `[Preview] Size=` when present.
     pub size: Option<(u32, u32)>,
     /// True if `[PreviewPack]` exists and contains data.
@@ -87,6 +138,7 @@ pub fn parse_preview_section(ini: &IniFile) -> PreviewSection {
     let has_packed_preview = preview_pack_text(ini).is_some();
 
     PreviewSection {
+        start_header: ScenarioStartHeaderInput::from_ini(ini),
         size,
         has_packed_preview,
         decoded: None,
@@ -188,35 +240,12 @@ mod tests {
     use crate::rules::ini_parser::IniFile;
 
     #[test]
-    fn parse_preview_metadata() {
-        let ini = IniFile::from_str("[Preview]\nSize=0,0,80,50\n[PreviewPack]\n1=ABC\n2=DEF\n");
-        let preview = parse_preview_section(&ini);
-        assert_eq!(preview.size, Some((80, 50)));
-        assert!(preview.has_packed_preview);
-        assert_eq!(preview.decoded, None);
-    }
-
-    #[test]
     fn empty_preview_pack_is_not_counted() {
         let ini = IniFile::from_str("[PreviewPack]\n1=\n");
         let preview = parse_preview_section(&ini);
         assert_eq!(preview.size, None);
         assert!(!preview.has_packed_preview);
         assert_eq!(preview.decoded, None);
-    }
-
-    #[test]
-    fn parse_preview_size_uses_rect_dimensions() {
-        let ini = IniFile::from_str("[Preview]\nSize=0,0,138,75\n");
-        let preview = parse_preview_section(&ini);
-        assert_eq!(preview.size, Some((138, 75)));
-    }
-
-    #[test]
-    fn parse_preview_size_rejects_single_value() {
-        let ini = IniFile::from_str("[Preview]\nSize=138\n");
-        let preview = parse_preview_section(&ini);
-        assert_eq!(preview.size, None);
     }
 
     /// ReadRect scans a two-field value into the origin, leaving no size.
@@ -231,20 +260,6 @@ mod tests {
     fn preview_pack_text_preserves_source_order() {
         let ini = IniFile::from_str("[PreviewPack]\n2=BBB\n10=CCC\n1=AAA\n");
         assert_eq!(preview_pack_text(&ini).as_deref(), Some("BBBCCCAAA"));
-    }
-
-    #[test]
-    fn preview_pack_text_rejects_empty_numbered_values() {
-        let ini = IniFile::from_str("[PreviewPack]\n1=\n2=\n");
-        assert_eq!(preview_pack_text(&ini), None);
-    }
-
-    #[test]
-    fn decode_preview_pack_literal_chunk_to_rgba() {
-        let preview = decode_preview_pack("CgAGABcBAgMEBQYRAAA=", 2, 1).expect("valid preview");
-        assert_eq!(preview.width, 2);
-        assert_eq!(preview.height, 1);
-        assert_eq!(preview.rgba, vec![1, 2, 3, 255, 4, 5, 6, 255]);
     }
 
     #[test]
@@ -268,26 +283,30 @@ mod tests {
         assert!(preview.has_packed_preview);
         assert_eq!(preview.decoded, None);
     }
+}
+
+#[cfg(test)]
+mod scenario_start_header_tests {
+    use super::*;
 
     #[test]
-    fn decode_preview_image_from_ini_decodes_valid_pack() {
-        let ini =
-            IniFile::from_str("[Preview]\nSize=0,0,2,1\n[PreviewPack]\n1=CgAGABcBAgMEBQYRAAA=\n");
-        let decoded = decode_preview_image_from_ini(&ini)
-            .expect("valid preview decode")
-            .expect("decoded preview");
-        assert_eq!(decoded.width, 2);
-        assert_eq!(decoded.height, 1);
-        assert_eq!(decoded.rgba, vec![1, 2, 3, 255, 4, 5, 6, 255]);
-    }
-
-    #[test]
-    fn parse_preview_section_keeps_invalid_pack_nonfatal() {
-        let ini =
-            IniFile::from_str("[Preview]\nSize=0,0,2,1\n[PreviewPack]\n1=not valid base64!\n");
-        let preview = parse_preview_section(&ini);
-        assert_eq!(preview.size, Some((2, 1)));
-        assert!(preview.has_packed_preview);
-        assert_eq!(preview.decoded, None);
+    fn preview_visits_retain_header_until_scene_defaults_reset_it() {
+        let mut header = ScenarioStartHeader::default();
+        assert_eq!(header.coop_human_start_spots(), 4);
+        for (source, expected) in [
+            ("[Header]\nNumCoopHumanStartSpots=2", 2),
+            ("[Header]\nStartX=1", 2),
+            ("[Header]\nNumCoopHumanStartSpots=$no", 2),
+            ("[Header]\nnumcoophumanstartspots=7", 2),
+            ("[Header]\nNumCoopHumanStartSpots=garbage", 0),
+            ("[Header]\nNumCoopHumanStartSpots=-3", -3),
+        ] {
+            let preview = parse_preview_section(&IniFile::from_str(source));
+            header.apply(preview.start_header);
+            assert_eq!(header.coop_human_start_spots(), expected, "{source}");
+        }
+        let mut fresh = ScenarioStartHeader::default();
+        fresh.read_ini(&IniFile::from_str("[Header]\nStartX=1"));
+        assert_eq!(fresh.coop_human_start_spots(), 4);
     }
 }

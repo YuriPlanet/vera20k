@@ -46,7 +46,7 @@ impl TargetKind {
     ) -> crate::sim::projectile::ProjectileTarget {
         use crate::sim::projectile::ProjectileTarget;
         match self {
-            Self::Entity(id) if world.production.terrain_objects.contains_key(&id) => {
+            Self::Entity(id) if world.terrain_objects.objects().contains_key(&id) => {
                 ProjectileTarget::Terrain(id)
             }
             Self::Entity(id) => ProjectileTarget::Entity(id),
@@ -163,10 +163,10 @@ pub(crate) fn target_present(
                 !target.death.is_dying() && target.health.current() > 0
             } else {
                 world
-                    .production
                     .terrain_objects
+                    .objects()
                     .get(&id)
-                    .is_some_and(|target| target.object_alive() && target.health != 0)
+                    .is_some_and(|target| target.object_alive() && target.health() != 0)
             }
         }
     }
@@ -193,7 +193,7 @@ pub(crate) fn resolve_target_coords(
                 .or_else(|| {
                     // Terrain7F522C+48 inherits Object5F65A0. Keep its retained
                     // coordinate readable during expiry, before Limbo/unlink.
-                    let target = world.production.terrain_objects.get(&id)?.world_coord();
+                    let target = world.terrain_objects.objects().get(&id)?.world_coord();
                     Some(target_xy_coords([target.x, target.y]))
                 })
         }
@@ -321,8 +321,8 @@ pub(super) fn attack_world_z_leptons(
             .map(|entity| object_world_z_leptons(entity, terrain))
             .or_else(|| {
                 world
-                    .production
                     .terrain_objects
+                    .objects()
                     .get(&entity_id)
                     .map(|target| target.world_coord().z)
             })

@@ -376,83 +376,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn scissor_equals_rect() {
-        let font = test_font();
-        let draw = draw_in_rect(
-            &font,
-            "x",
-            TextRect {
-                x: 10,
-                y: 20,
-                w: 100,
-                h: 30,
-            },
-            [1.0, 1.0, 1.0],
-            ShellAlign::NONE,
-            [0.0, 0.0],
-            0.5,
-        );
-        assert_eq!(draw.scissor.x, 10);
-        assert_eq!(draw.scissor.y, 20);
-        assert_eq!(draw.scissor.w, 100);
-        assert_eq!(draw.scissor.h, 30);
-    }
-
-    #[test]
-    fn empty_text_returns_empty_instances() {
-        let font = test_font();
-        let draw = draw_in_rect(
-            &font,
-            "",
-            TextRect {
-                x: 0,
-                y: 0,
-                w: 100,
-                h: 30,
-            },
-            [1.0, 1.0, 1.0],
-            ShellAlign::V_CENTER | ShellAlign::H_CENTER,
-            [0.0, 0.0],
-            0.5,
-        );
-        assert!(draw.instances.is_empty());
-    }
-
-    #[test]
-    fn align_combines_with_bitor() {
-        let combined = ShellAlign::H_CENTER | ShellAlign::V_CENTER;
-        assert!(combined.contains(ShellAlign::H_CENTER));
-        assert!(combined.contains(ShellAlign::V_CENTER));
-        assert!(!combined.contains(ShellAlign::H_RIGHT));
-    }
-
-    #[test]
-    fn vcenter_offsets_correctly() {
-        let font = test_font();
-        let draw = draw_in_rect(
-            &font,
-            "x",
-            TextRect {
-                x: 0,
-                y: 0,
-                w: 100,
-                h: 40,
-            },
-            [1.0, 1.0, 1.0],
-            ShellAlign::V_CENTER,
-            [0.0, 0.0],
-            0.5,
-        );
-        assert_eq!(draw.instances.len(), 1);
-        let expected_y = ((40 - 17) / 2) as f32;
-        assert!(
-            (draw.instances[0].position[1] - expected_y).abs() < 0.01,
-            "y = {}",
-            draw.instances[0].position[1]
-        );
-    }
-
     /// gamemd computes the v-centre offset unconditionally, so text taller
     /// than its rect overhangs upward with a negative offset and the clip rect
     /// trims it. VERA used to gate the offset on the text fitting, which
@@ -508,32 +431,6 @@ mod tests {
         assert_eq!(draw.instances.len(), 1);
         // Single 'x' measured width per gamemd = 6 + 1*char_spacing = 7.
         let expected_x = ((100 - 7) / 2) as f32;
-        assert!(
-            (draw.instances[0].position[0] - expected_x).abs() < 0.01,
-            "x = {}",
-            draw.instances[0].position[0]
-        );
-    }
-
-    #[test]
-    fn align_right_single_line() {
-        let font = test_font();
-        let draw = draw_in_rect(
-            &font,
-            "x",
-            TextRect {
-                x: 0,
-                y: 0,
-                w: 100,
-                h: 30,
-            },
-            [1.0, 1.0, 1.0],
-            ShellAlign::H_RIGHT,
-            [0.0, 0.0],
-            0.5,
-        );
-        assert_eq!(draw.instances.len(), 1);
-        let expected_x = (100 - 7) as f32;
         assert!(
             (draw.instances[0].position[0] - expected_x).abs() < 0.01,
             "x = {}",

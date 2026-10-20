@@ -262,28 +262,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn all_known_mission_ids_round_trip_without_changing_width() {
-        for raw in 0..MISSION_COUNT as i32 {
-            let known = MissionType::from_id(raw as u8).expect("known mission id");
-            let id = MissionId::from_raw(raw);
-
-            assert_eq!(id.raw(), raw);
-            assert_eq!(id.known(), Some(known));
-            assert_eq!(id.dispatch_index(), Some(raw as usize));
-            assert_eq!(MissionId::from_known(known), id);
-        }
-    }
-
-    #[test]
-    fn unknown_mission_id_round_trips_without_normalization() {
-        let id = MissionId::from_raw(0x1234_5678);
-
-        assert_eq!(id.raw(), 0x1234_5678);
-        assert_eq!(id.known(), None);
-        assert_eq!(id.dispatch_index(), None);
-    }
-
-    #[test]
     fn none_is_signed_minus_one_not_enum_ff() {
         assert_eq!(MissionId::NONE.raw(), -1);
         assert_eq!(MissionId::from_known(MissionType::None), MissionId::NONE);

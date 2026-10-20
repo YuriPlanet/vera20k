@@ -1,0 +1,966 @@
+{
+  "cases": [
+    {
+      "dialog_result": 2,
+      "events": [
+        {
+          "kind": "reset_firewall"
+        },
+        {
+          "key": "SendDelay",
+          "kind": "write_ini",
+          "section": "MultiPlayer",
+          "value": false
+        },
+        {
+          "key": "PortNumberOverride",
+          "kind": "write_ini",
+          "section": "MultiPlayer",
+          "value": 0
+        },
+        {
+          "kind": "save_file"
+        }
+      ],
+      "initial": {
+        "card": 1,
+        "destination": "AA.BB.CC.DD",
+        "port": 0,
+        "send_delay": false,
+        "socket": 17
+      },
+      "inputs": {
+        "card": 2,
+        "destination": "",
+        "port": "",
+        "send_delay": false,
+        "socket": ""
+      },
+      "name": "blank_defaults",
+      "native_visits": {
+        "atoi": 1,
+        "sscanf": 0,
+        "strtok": 0
+      },
+      "state": {
+        "card": 2,
+        "destination": "",
+        "port": 0,
+        "send_delay": false,
+        "socket": 65535
+      }
+    },
+    {
+      "dialog_result": 2,
+      "events": [
+        {
+          "kind": "reset_firewall"
+        },
+        {
+          "key": "SendDelay",
+          "kind": "write_ini",
+          "section": "MultiPlayer",
+          "value": false
+        },
+        {
+          "key": "PortNumberOverride",
+          "kind": "write_ini",
+          "section": "MultiPlayer",
+          "value": 65535
+        },
+        {
+          "kind": "save_file"
+        }
+      ],
+      "initial": {
+        "card": 1,
+        "destination": "AA.BB.CC.DD",
+        "port": 1234,
+        "send_delay": false,
+        "socket": 17
+      },
+      "inputs": {
+        "card": 2,
+        "destination": "FF.00.a1.7f",
+        "port": "65535",
+        "send_delay": false,
+        "socket": "16383"
+      },
+      "name": "valid_boundaries",
+      "native_visits": {
+        "atoi": 2,
+        "sscanf": 4,
+        "strtok": 5
+      },
+      "state": {
+        "card": 2,
+        "destination": "FF.00.a1.7f",
+        "port": 65535,
+        "send_delay": false,
+        "socket": 16383
+      }
+    },
+    {
+      "dialog_result": 0,
+      "events": [
+        {
+          "key": "TXT_INVALID_SOCKET",
+          "kind": "message",
+          "state": {
+            "card": 1,
+            "destination": "AA.BB.CC.DD",
+            "port": 0,
+            "send_delay": false,
+            "socket": 17
+          }
+        }
+      ],
+      "initial": {
+        "card": 1,
+        "destination": "AA.BB.CC.DD",
+        "port": 0,
+        "send_delay": false,
+        "socket": 17
+      },
+      "inputs": {
+        "card": 2,
+        "destination": "",
+        "port": "",
+        "send_delay": false,
+        "socket": "16384"
+      },
+      "name": "socket_above_limit",
+      "native_visits": {
+        "atoi": 1,
+        "sscanf": 0,
+        "strtok": 0
+      },
+      "state": {
+        "card": 1,
+        "destination": "AA.BB.CC.DD",
+        "port": 0,
+        "send_delay": false,
+        "socket": 17
+      }
+    },
+    {
+      "dialog_result": 2,
+      "events": [
+        {
+          "kind": "reset_firewall"
+        },
+        {
+          "key": "SendDelay",
+          "kind": "write_ini",
+          "section": "MultiPlayer",
+          "value": false
+        },
+        {
+          "key": "PortNumberOverride",
+          "kind": "write_ini",
+          "section": "MultiPlayer",
+          "value": 0
+        },
+        {
+          "kind": "save_file"
+        }
+      ],
+      "initial": {
+        "card": 1,
+        "destination": "AA.BB.CC.DD",
+        "port": 0,
+        "send_delay": false,
+        "socket": 17
+      },
+      "inputs": {
+        "card": 2,
+        "destination": "",
+        "port": "",
+        "send_delay": false,
+        "socket": "65536"
+      },
+      "name": "socket_wraps_u16",
+      "native_visits": {
+        "atoi": 2,
+        "sscanf": 0,
+        "strtok": 0
+      },
+      "state": {
+        "card": 2,
+        "destination": "",
+        "port": 0,
+        "send_delay": false,
+        "socket": 0
+      }
+    },
+    {
+      "dialog_result": 0,
+      "events": [
+        {
+          "key": "TXT_INVALID_SOCKET",
+          "kind": "message",
+          "state": {
+            "card": 1,
+            "destination": "AA.BB.CC.DD",
+            "port": 0,
+            "send_delay": false,
+            "socket": 17
+          }
+        }
+      ],
+      "initial": {
+        "card": 1,
+        "destination": "AA.BB.CC.DD",
+        "port": 0,
+        "send_delay": false,
+        "socket": 17
+      },
+      "inputs": {
+        "card": 2,
+        "destination": "",
+        "port": "",
+        "send_delay": false,
+        "socket": "000001"
+      },
+      "name": "socket_too_many_characters",
+      "native_visits": {
+        "atoi": 1,
+        "sscanf": 0,
+        "strtok": 0
+      },
+      "state": {
+        "card": 1,
+        "destination": "AA.BB.CC.DD",
+        "port": 0,
+        "send_delay": false,
+        "socket": 17
+      }
+    },
+    {
+      "dialog_result": 0,
+      "events": [
+        {
+          "key": "TXT_DESTNET_ADDR_ERROR",
+          "kind": "message",
+          "state": {
+            "card": 1,
+            "destination": "AA.BB.CC.DD",
+            "port": 0,
+            "send_delay": false,
+            "socket": 17
+          }
+        }
+      ],
+      "initial": {
+        "card": 1,
+        "destination": "AA.BB.CC.DD",
+        "port": 0,
+        "send_delay": false,
+        "socket": 17
+      },
+      "inputs": {
+        "card": 2,
+        "destination": "01.02.03",
+        "port": "",
+        "send_delay": false,
+        "socket": ""
+      },
+      "name": "destination_missing_component",
+      "native_visits": {
+        "atoi": 0,
+        "sscanf": 3,
+        "strtok": 4
+      },
+      "state": {
+        "card": 1,
+        "destination": "AA.BB.CC.DD",
+        "port": 0,
+        "send_delay": false,
+        "socket": 17
+      }
+    },
+    {
+      "dialog_result": 0,
+      "events": [
+        {
+          "key": "TXT_DESTNET_ADDR_ERROR",
+          "kind": "message",
+          "state": {
+            "card": 1,
+            "destination": "AA.BB.CC.DD",
+            "port": 0,
+            "send_delay": false,
+            "socket": 17
+          }
+        }
+      ],
+      "initial": {
+        "card": 1,
+        "destination": "AA.BB.CC.DD",
+        "port": 0,
+        "send_delay": false,
+        "socket": 17
+      },
+      "inputs": {
+        "card": 2,
+        "destination": "01.GG.03.04",
+        "port": "",
+        "send_delay": false,
+        "socket": ""
+      },
+      "name": "destination_invalid_hex",
+      "native_visits": {
+        "atoi": 0,
+        "sscanf": 4,
+        "strtok": 5
+      },
+      "state": {
+        "card": 1,
+        "destination": "AA.BB.CC.DD",
+        "port": 0,
+        "send_delay": false,
+        "socket": 17
+      }
+    },
+    {
+      "dialog_result": 0,
+      "events": [
+        {
+          "key": "TXT_DESTNET_ADDR_ERROR",
+          "kind": "message",
+          "state": {
+            "card": 1,
+            "destination": "AA.BB.CC.DD",
+            "port": 0,
+            "send_delay": false,
+            "socket": 17
+          }
+        }
+      ],
+      "initial": {
+        "card": 1,
+        "destination": "AA.BB.CC.DD",
+        "port": 0,
+        "send_delay": false,
+        "socket": 17
+      },
+      "inputs": {
+        "card": 2,
+        "destination": "01.100.03.04",
+        "port": "",
+        "send_delay": false,
+        "socket": ""
+      },
+      "name": "destination_component_overflow",
+      "native_visits": {
+        "atoi": 0,
+        "sscanf": 4,
+        "strtok": 5
+      },
+      "state": {
+        "card": 1,
+        "destination": "AA.BB.CC.DD",
+        "port": 0,
+        "send_delay": false,
+        "socket": 17
+      }
+    },
+    {
+      "dialog_result": 2,
+      "events": [
+        {
+          "kind": "reset_firewall"
+        },
+        {
+          "key": "SendDelay",
+          "kind": "write_ini",
+          "section": "MultiPlayer",
+          "value": false
+        },
+        {
+          "key": "PortNumberOverride",
+          "kind": "write_ini",
+          "section": "MultiPlayer",
+          "value": 0
+        },
+        {
+          "kind": "save_file"
+        }
+      ],
+      "initial": {
+        "card": 1,
+        "destination": "AA.BB.CC.DD",
+        "port": 0,
+        "send_delay": false,
+        "socket": 17
+      },
+      "inputs": {
+        "card": 2,
+        "destination": "0x1.2z.3.4",
+        "port": "",
+        "send_delay": false,
+        "socket": ""
+      },
+      "name": "destination_hex_prefix_and_suffix",
+      "native_visits": {
+        "atoi": 1,
+        "sscanf": 4,
+        "strtok": 5
+      },
+      "state": {
+        "card": 2,
+        "destination": "0x1.2z.3.4",
+        "port": 0,
+        "send_delay": false,
+        "socket": 65535
+      }
+    },
+    {
+      "dialog_result": 0,
+      "events": [
+        {
+          "key": "TXT_PORT_NUMBER_ERROR",
+          "kind": "message",
+          "state": {
+            "card": 2,
+            "destination": "01.02.03.04",
+            "port": 0,
+            "send_delay": false,
+            "socket": 123
+          }
+        }
+      ],
+      "initial": {
+        "card": 1,
+        "destination": "AA.BB.CC.DD",
+        "port": 0,
+        "send_delay": false,
+        "socket": 17
+      },
+      "inputs": {
+        "card": 2,
+        "destination": "01.02.03.04",
+        "port": "65536",
+        "send_delay": true,
+        "socket": "123"
+      },
+      "name": "port_invalid_after_lan_commit",
+      "native_visits": {
+        "atoi": 2,
+        "sscanf": 4,
+        "strtok": 5
+      },
+      "state": {
+        "card": 2,
+        "destination": "01.02.03.04",
+        "port": 0,
+        "send_delay": false,
+        "socket": 123
+      }
+    },
+    {
+      "dialog_result": 2,
+      "events": [
+        {
+          "kind": "reset_firewall"
+        },
+        {
+          "key": "SendDelay",
+          "kind": "write_ini",
+          "section": "MultiPlayer",
+          "value": false
+        },
+        {
+          "key": "PortNumberOverride",
+          "kind": "write_ini",
+          "section": "MultiPlayer",
+          "value": -1
+        },
+        {
+          "kind": "save_file"
+        }
+      ],
+      "initial": {
+        "card": 1,
+        "destination": "AA.BB.CC.DD",
+        "port": 0,
+        "send_delay": false,
+        "socket": 17
+      },
+      "inputs": {
+        "card": 2,
+        "destination": "",
+        "port": "-1",
+        "send_delay": false,
+        "socket": ""
+      },
+      "name": "negative_port",
+      "native_visits": {
+        "atoi": 1,
+        "sscanf": 0,
+        "strtok": 0
+      },
+      "state": {
+        "card": 2,
+        "destination": "",
+        "port": -1,
+        "send_delay": false,
+        "socket": 65535
+      }
+    },
+    {
+      "dialog_result": 2,
+      "events": [
+        {
+          "key": "TXT_FIREWALL_SETTINGS_WARNING1",
+          "kind": "message",
+          "state": {
+            "card": 2,
+            "destination": "",
+            "port": 0,
+            "send_delay": false,
+            "socket": 65535
+          }
+        },
+        {
+          "key": "TXT_FIREWALL_SETTINGS_WARNING2",
+          "kind": "message",
+          "state": {
+            "card": 2,
+            "destination": "",
+            "port": 0,
+            "send_delay": true,
+            "socket": 65535
+          }
+        },
+        {
+          "kind": "reset_firewall"
+        },
+        {
+          "key": "SendDelay",
+          "kind": "write_ini",
+          "section": "MultiPlayer",
+          "value": true
+        },
+        {
+          "key": "PortNumberOverride",
+          "kind": "write_ini",
+          "section": "MultiPlayer",
+          "value": 1234
+        },
+        {
+          "kind": "save_file"
+        }
+      ],
+      "initial": {
+        "card": 1,
+        "destination": "AA.BB.CC.DD",
+        "port": 0,
+        "send_delay": false,
+        "socket": 17
+      },
+      "inputs": {
+        "card": 2,
+        "destination": "",
+        "port": "1234",
+        "send_delay": true,
+        "socket": ""
+      },
+      "name": "warnings_in_order",
+      "native_visits": {
+        "atoi": 1,
+        "sscanf": 0,
+        "strtok": 0
+      },
+      "state": {
+        "card": 2,
+        "destination": "",
+        "port": 1234,
+        "send_delay": true,
+        "socket": 65535
+      }
+    },
+    {
+      "dialog_result": 2,
+      "events": [
+        {
+          "kind": "reset_firewall"
+        },
+        {
+          "key": "SendDelay",
+          "kind": "write_ini",
+          "section": "MultiPlayer",
+          "value": true
+        },
+        {
+          "key": "PortNumberOverride",
+          "kind": "write_ini",
+          "section": "MultiPlayer",
+          "value": 4321
+        },
+        {
+          "kind": "save_file"
+        }
+      ],
+      "initial": {
+        "card": 1,
+        "destination": "AA.BB.CC.DD",
+        "port": 1234,
+        "send_delay": true,
+        "socket": 17
+      },
+      "inputs": {
+        "card": 2,
+        "destination": "",
+        "port": "4321",
+        "send_delay": true,
+        "socket": ""
+      },
+      "name": "warnings_already_enabled",
+      "native_visits": {
+        "atoi": 1,
+        "sscanf": 0,
+        "strtok": 0
+      },
+      "state": {
+        "card": 2,
+        "destination": "",
+        "port": 4321,
+        "send_delay": true,
+        "socket": 65535
+      }
+    },
+    {
+      "dialog_result": 2,
+      "events": [
+        {
+          "kind": "reset_firewall"
+        },
+        {
+          "key": "SendDelay",
+          "kind": "write_ini",
+          "section": "MultiPlayer",
+          "value": false
+        },
+        {
+          "key": "PortNumberOverride",
+          "kind": "write_ini",
+          "section": "MultiPlayer",
+          "value": 0
+        },
+        {
+          "kind": "save_file"
+        }
+      ],
+      "initial": {
+        "card": 1,
+        "destination": "AA.BB.CC.DD",
+        "port": 1234,
+        "send_delay": true,
+        "socket": 17
+      },
+      "inputs": {
+        "card": 2,
+        "destination": "",
+        "port": "",
+        "send_delay": false,
+        "socket": ""
+      },
+      "name": "disable_send_delay",
+      "native_visits": {
+        "atoi": 1,
+        "sscanf": 0,
+        "strtok": 0
+      },
+      "state": {
+        "card": 2,
+        "destination": "",
+        "port": 0,
+        "send_delay": false,
+        "socket": 65535
+      }
+    }
+  ],
+  "initialization_cases": [
+    {
+      "calls": [
+        {
+          "firewall_delta": 1,
+          "firewall_settings": 0,
+          "force_port_base": 0,
+          "guard_after": 1,
+          "guard_before": 0,
+          "port": 0,
+          "port_base": 1250,
+          "port_pool": 31987,
+          "ranged_calls": 1,
+          "ranged_result": 27891,
+          "raw_draws": [
+            1229352179
+          ],
+          "reads": [
+            {
+              "default": 1250,
+              "key": "PortBase",
+              "raw": null
+            },
+            {
+              "default": 0,
+              "key": "ForcePortBase",
+              "raw": null
+            },
+            {
+              "default": 31987,
+              "key": "PortPool",
+              "raw": null
+            },
+            {
+              "default": 0,
+              "key": "FirewallSettings",
+              "raw": null
+            },
+            {
+              "default": 1,
+              "key": "FirewallDelta",
+              "raw": null
+            },
+            {
+              "default": 0,
+              "key": "SendDelay",
+              "raw": null
+            },
+            {
+              "default": 0,
+              "key": "PortNumberOverride",
+              "raw": null
+            }
+          ],
+          "rng_before_hex": "00000000000000006700000018aa2eadbb5170665d38b8bed6a693121d341c9a9cb96848d0173d80af659b56ddac62b7761017f50cd43f8717be1e2fc73003059ffbbae00ec3c6027c95928bee9918ea66a9031e08b9cdf954e91228bcdb0cc6a3f1a7569ae4a453ef0782b8846d805c0618b5bc0ef1bda5c12d86d99556abb1398a8d874c172f6e1dac237ab9ba3d44b417bb865dc0b55f9956ab7cb5b1b8f1c8bd6576c90e88576226cb389343557c9752e836814fa2e82567268dbdbf79af40ce27f0f2a962d56b209839f0326dce1a9bf0151ca0a81215f6bea1e8ed3929b4bd53fff50d43b84e2e6d6a1abdaf2cdd0aca2180dfcf927a5d8ee0397daf3d9d928cdede9d030ebdf4e88fd2b86a4e0d4253e74ac35e26beb89ab385a869c20939b3cefecb269cec033783b3990c6337762686079ef5cdab0cd52527ca9ba87aee59111281fd2b04509337184ea33604537b1cd7c5f7fb65d2b1883dfee909065caf755574a73d6443c3c7881a7a7708f779cd56ecb2310012a1933902a84bf7704ec68ffbc9222bf3af8144e111cae46248ba7767df715de5df0df2567d072bb0d39f5d65cca6ebc668e4ed045b0c78d8312eed7d7c8e6acfdb9cf1f82217de0d93743b40fc6bccc6327df01a7145798dff3287cc3f8f8dc0bb98ecd5ae3d1d53e2bf744ee1146aa095f3958b4c9e4739a1b28e965bfd5360837dd1511498de9992b43d4a8bbcba27cef58e868c0fed0c5fffe5edb60e1993607bbc55e31d57f526f7b73b1d3d742b242ac01336bd12f315bdb6e930bc7aff33f7af295ebb14d5ac81c1878ecd4afcdd1946f0597e63d92126fa8f97966e720b3b49238c7c1c646c4957a568200743afdd18056e620ffbf90ce1fada082402a412461cf2409f852fddb89b74bf7375b9c86ef7c886f17e433f95b341d2834a60d4991bfb51c4d84c6babd0b81b5e3aec2d944ee63bf5b3e19131f68b3e502700975e6e0bf08feeb2481ec5256bdd6908a7c1616ded9c40f6ad85704a6871adc59e3e44fefaf006465a1f28bbc9cd120c33a156e8944f1910e80444dc5071068bbf0e8950a38eb9e6ff82948f44d1904857613f9459bc643ea60d3ed8adcd4744397a3407a670ea17e020e229063e9071d9caaa8da66c029d640018ab35483698b0f1cbd229fcba084e463739a817410e7268de8f8e9fa83a55dca0bb8a00c86de060b98a83a840d9461975ae4d727ceaeb7fad83ba93a1555a4810da3ce1e6b5b39bceffd13f122e73631c8a169f8adca42e5c183a456182cc88ef8fdd4066ac2271b927f1a401bee1b7c24d51d5669b8ed88fad5b4496914b6c8794dc417c92ac7f73187e3b7dd1a11f9510ec8208948afff6e3fd5454c382fce234cf6d93a644fef7d126dff2ab6d0fbefd62b306342053a05ead36152ed7",
+          "rng_hex": "000000000100000068000000f36c4649bb5170665d38b8bed6a693121d341c9a9cb96848d0173d80af659b56ddac62b7761017f50cd43f8717be1e2fc73003059ffbbae00ec3c6027c95928bee9918ea66a9031e08b9cdf954e91228bcdb0cc6a3f1a7569ae4a453ef0782b8846d805c0618b5bc0ef1bda5c12d86d99556abb1398a8d874c172f6e1dac237ab9ba3d44b417bb865dc0b55f9956ab7cb5b1b8f1c8bd6576c90e88576226cb389343557c9752e836814fa2e82567268dbdbf79af40ce27f0f2a962d56b209839f0326dce1a9bf0151ca0a81215f6bea1e8ed3929b4bd53fff50d43b84e2e6d6a1abdaf2cdd0aca2180dfcf927a5d8ee0397daf3d9d928cdede9d030ebdf4e88fd2b86a4e0d4253e74ac35e26beb89ab385a869c20939b3cefecb269cec033783b3990c6337762686079ef5cdab0cd52527ca9ba87aee59111281fd2b04509337184ea33604537b1cd7c5f7fb65d2b1883dfee909065caf755574a73d6443c3c7881a7a7708f779cd56ecb2310012a1933902a84bf7704ec68ffbc9222bf3af8144e111cae46248ba7767df715de5df0df2567d072bb0d39f5d65cca6ebc668e4ed045b0c78d8312eed7d7c8e6acfdb9cf1f82217de0d93743b40fc6bccc6327df01a7145798dff3287cc3f8f8dc0bb98ecd5ae3d1d53e2bf744ee1146aa095f3958b4c9e4739a1b28e965bfd5360837dd1511498de9992b43d4a8bbcba27cef58e868c0fed0c5fffe5edb60e1993607bbc55e31d57f526f7b73b1d3d742b242ac01336bd12f315bdb6e930bc7aff33f7af295ebb14d5ac81c1878ecd4afcdd1946f0597e63d92126fa8f97966e720b3b49238c7c1c646c4957a568200743afdd18056e620ffbf90ce1fada082402a412461cf2409f852fddb89b74bf7375b9c86ef7c886f17e433f95b341d2834a60d4991bfb51c4d84c6babd0b81b5e3aec2d944ee63bf5b3e19131f68b3e502700975e6e0bf08feeb2481ec5256bdd6908a7c1616ded9c40f6ad85704a6871adc59e3e44fefaf006465a1f28bbc9cd120c33a156e8944f1910e80444dc5071068bbf0e8950a38eb9e6ff82948f44d1904857613f9459bc643ea60d3ed8adcd4744397a3407a670ea17e020e229063e9071d9caaa8da66c029d640018ab35483698b0f1cbd229fcba084e463739a817410e7268de8f8e9fa83a55dca0bb8a00c86de060b98a83a840d9461975ae4d727ceaeb7fad83ba93a1555a4810da3ce1e6b5b39bceffd13f122e73631c8a169f8adca42e5c183a456182cc88ef8fdd4066ac2271b927f1a401bee1b7c24d51d5669b8ed88fad5b4496914b6c8794dc417c92ac7f73187e3b7dd1a11f9510ec8208948afff6e3fd5454c382fce234cf6d93a644fef7d126dff2ab6d0fbefd62b306342053a05ead36152ed7",
+          "send_delay": false
+        },
+        {
+          "firewall_delta": 1,
+          "firewall_settings": 0,
+          "force_port_base": 0,
+          "guard_after": 1,
+          "guard_before": 1,
+          "port": 0,
+          "port_base": 1250,
+          "port_pool": 31987,
+          "ranged_calls": 0,
+          "ranged_result": null,
+          "raw_draws": [],
+          "reads": [
+            {
+              "default": 0,
+              "key": "SendDelay",
+              "raw": null
+            },
+            {
+              "default": 0,
+              "key": "PortNumberOverride",
+              "raw": null
+            }
+          ],
+          "rng_before_hex": "000000000100000068000000f36c4649bb5170665d38b8bed6a693121d341c9a9cb96848d0173d80af659b56ddac62b7761017f50cd43f8717be1e2fc73003059ffbbae00ec3c6027c95928bee9918ea66a9031e08b9cdf954e91228bcdb0cc6a3f1a7569ae4a453ef0782b8846d805c0618b5bc0ef1bda5c12d86d99556abb1398a8d874c172f6e1dac237ab9ba3d44b417bb865dc0b55f9956ab7cb5b1b8f1c8bd6576c90e88576226cb389343557c9752e836814fa2e82567268dbdbf79af40ce27f0f2a962d56b209839f0326dce1a9bf0151ca0a81215f6bea1e8ed3929b4bd53fff50d43b84e2e6d6a1abdaf2cdd0aca2180dfcf927a5d8ee0397daf3d9d928cdede9d030ebdf4e88fd2b86a4e0d4253e74ac35e26beb89ab385a869c20939b3cefecb269cec033783b3990c6337762686079ef5cdab0cd52527ca9ba87aee59111281fd2b04509337184ea33604537b1cd7c5f7fb65d2b1883dfee909065caf755574a73d6443c3c7881a7a7708f779cd56ecb2310012a1933902a84bf7704ec68ffbc9222bf3af8144e111cae46248ba7767df715de5df0df2567d072bb0d39f5d65cca6ebc668e4ed045b0c78d8312eed7d7c8e6acfdb9cf1f82217de0d93743b40fc6bccc6327df01a7145798dff3287cc3f8f8dc0bb98ecd5ae3d1d53e2bf744ee1146aa095f3958b4c9e4739a1b28e965bfd5360837dd1511498de9992b43d4a8bbcba27cef58e868c0fed0c5fffe5edb60e1993607bbc55e31d57f526f7b73b1d3d742b242ac01336bd12f315bdb6e930bc7aff33f7af295ebb14d5ac81c1878ecd4afcdd1946f0597e63d92126fa8f97966e720b3b49238c7c1c646c4957a568200743afdd18056e620ffbf90ce1fada082402a412461cf2409f852fddb89b74bf7375b9c86ef7c886f17e433f95b341d2834a60d4991bfb51c4d84c6babd0b81b5e3aec2d944ee63bf5b3e19131f68b3e502700975e6e0bf08feeb2481ec5256bdd6908a7c1616ded9c40f6ad85704a6871adc59e3e44fefaf006465a1f28bbc9cd120c33a156e8944f1910e80444dc5071068bbf0e8950a38eb9e6ff82948f44d1904857613f9459bc643ea60d3ed8adcd4744397a3407a670ea17e020e229063e9071d9caaa8da66c029d640018ab35483698b0f1cbd229fcba084e463739a817410e7268de8f8e9fa83a55dca0bb8a00c86de060b98a83a840d9461975ae4d727ceaeb7fad83ba93a1555a4810da3ce1e6b5b39bceffd13f122e73631c8a169f8adca42e5c183a456182cc88ef8fdd4066ac2271b927f1a401bee1b7c24d51d5669b8ed88fad5b4496914b6c8794dc417c92ac7f73187e3b7dd1a11f9510ec8208948afff6e3fd5454c382fce234cf6d93a644fef7d126dff2ab6d0fbefd62b306342053a05ead36152ed7",
+          "rng_hex": "000000000100000068000000f36c4649bb5170665d38b8bed6a693121d341c9a9cb96848d0173d80af659b56ddac62b7761017f50cd43f8717be1e2fc73003059ffbbae00ec3c6027c95928bee9918ea66a9031e08b9cdf954e91228bcdb0cc6a3f1a7569ae4a453ef0782b8846d805c0618b5bc0ef1bda5c12d86d99556abb1398a8d874c172f6e1dac237ab9ba3d44b417bb865dc0b55f9956ab7cb5b1b8f1c8bd6576c90e88576226cb389343557c9752e836814fa2e82567268dbdbf79af40ce27f0f2a962d56b209839f0326dce1a9bf0151ca0a81215f6bea1e8ed3929b4bd53fff50d43b84e2e6d6a1abdaf2cdd0aca2180dfcf927a5d8ee0397daf3d9d928cdede9d030ebdf4e88fd2b86a4e0d4253e74ac35e26beb89ab385a869c20939b3cefecb269cec033783b3990c6337762686079ef5cdab0cd52527ca9ba87aee59111281fd2b04509337184ea33604537b1cd7c5f7fb65d2b1883dfee909065caf755574a73d6443c3c7881a7a7708f779cd56ecb2310012a1933902a84bf7704ec68ffbc9222bf3af8144e111cae46248ba7767df715de5df0df2567d072bb0d39f5d65cca6ebc668e4ed045b0c78d8312eed7d7c8e6acfdb9cf1f82217de0d93743b40fc6bccc6327df01a7145798dff3287cc3f8f8dc0bb98ecd5ae3d1d53e2bf744ee1146aa095f3958b4c9e4739a1b28e965bfd5360837dd1511498de9992b43d4a8bbcba27cef58e868c0fed0c5fffe5edb60e1993607bbc55e31d57f526f7b73b1d3d742b242ac01336bd12f315bdb6e930bc7aff33f7af295ebb14d5ac81c1878ecd4afcdd1946f0597e63d92126fa8f97966e720b3b49238c7c1c646c4957a568200743afdd18056e620ffbf90ce1fada082402a412461cf2409f852fddb89b74bf7375b9c86ef7c886f17e433f95b341d2834a60d4991bfb51c4d84c6babd0b81b5e3aec2d944ee63bf5b3e19131f68b3e502700975e6e0bf08feeb2481ec5256bdd6908a7c1616ded9c40f6ad85704a6871adc59e3e44fefaf006465a1f28bbc9cd120c33a156e8944f1910e80444dc5071068bbf0e8950a38eb9e6ff82948f44d1904857613f9459bc643ea60d3ed8adcd4744397a3407a670ea17e020e229063e9071d9caaa8da66c029d640018ab35483698b0f1cbd229fcba084e463739a817410e7268de8f8e9fa83a55dca0bb8a00c86de060b98a83a840d9461975ae4d727ceaeb7fad83ba93a1555a4810da3ce1e6b5b39bceffd13f122e73631c8a169f8adca42e5c183a456182cc88ef8fdd4066ac2271b927f1a401bee1b7c24d51d5669b8ed88fad5b4496914b6c8794dc417c92ac7f73187e3b7dd1a11f9510ec8208948afff6e3fd5454c382fce234cf6d93a644fef7d126dff2ab6d0fbefd62b306342053a05ead36152ed7",
+          "send_delay": false
+        }
+      ],
+      "initial_rng_hex": "00000000000000006700000018aa2eadbb5170665d38b8bed6a693121d341c9a9cb96848d0173d80af659b56ddac62b7761017f50cd43f8717be1e2fc73003059ffbbae00ec3c6027c95928bee9918ea66a9031e08b9cdf954e91228bcdb0cc6a3f1a7569ae4a453ef0782b8846d805c0618b5bc0ef1bda5c12d86d99556abb1398a8d874c172f6e1dac237ab9ba3d44b417bb865dc0b55f9956ab7cb5b1b8f1c8bd6576c90e88576226cb389343557c9752e836814fa2e82567268dbdbf79af40ce27f0f2a962d56b209839f0326dce1a9bf0151ca0a81215f6bea1e8ed3929b4bd53fff50d43b84e2e6d6a1abdaf2cdd0aca2180dfcf927a5d8ee0397daf3d9d928cdede9d030ebdf4e88fd2b86a4e0d4253e74ac35e26beb89ab385a869c20939b3cefecb269cec033783b3990c6337762686079ef5cdab0cd52527ca9ba87aee59111281fd2b04509337184ea33604537b1cd7c5f7fb65d2b1883dfee909065caf755574a73d6443c3c7881a7a7708f779cd56ecb2310012a1933902a84bf7704ec68ffbc9222bf3af8144e111cae46248ba7767df715de5df0df2567d072bb0d39f5d65cca6ebc668e4ed045b0c78d8312eed7d7c8e6acfdb9cf1f82217de0d93743b40fc6bccc6327df01a7145798dff3287cc3f8f8dc0bb98ecd5ae3d1d53e2bf744ee1146aa095f3958b4c9e4739a1b28e965bfd5360837dd1511498de9992b43d4a8bbcba27cef58e868c0fed0c5fffe5edb60e1993607bbc55e31d57f526f7b73b1d3d742b242ac01336bd12f315bdb6e930bc7aff33f7af295ebb14d5ac81c1878ecd4afcdd1946f0597e63d92126fa8f97966e720b3b49238c7c1c646c4957a568200743afdd18056e620ffbf90ce1fada082402a412461cf2409f852fddb89b74bf7375b9c86ef7c886f17e433f95b341d2834a60d4991bfb51c4d84c6babd0b81b5e3aec2d944ee63bf5b3e19131f68b3e502700975e6e0bf08feeb2481ec5256bdd6908a7c1616ded9c40f6ad85704a6871adc59e3e44fefaf006465a1f28bbc9cd120c33a156e8944f1910e80444dc5071068bbf0e8950a38eb9e6ff82948f44d1904857613f9459bc643ea60d3ed8adcd4744397a3407a670ea17e020e229063e9071d9caaa8da66c029d640018ab35483698b0f1cbd229fcba084e463739a817410e7268de8f8e9fa83a55dca0bb8a00c86de060b98a83a840d9461975ae4d727ceaeb7fad83ba93a1555a4810da3ce1e6b5b39bceffd13f122e73631c8a169f8adca42e5c183a456182cc88ef8fdd4066ac2271b927f1a401bee1b7c24d51d5669b8ed88fad5b4496914b6c8794dc417c92ac7f73187e3b7dd1a11f9510ec8208948afff6e3fd5454c382fce234cf6d93a644fef7d126dff2ab6d0fbefd62b306342053a05ead36152ed7",
+      "name": "default_port_pool",
+      "seed": 0,
+      "settings": {}
+    },
+    {
+      "calls": [
+        {
+          "firewall_delta": 1,
+          "firewall_settings": 0,
+          "force_port_base": 0,
+          "guard_after": 1,
+          "guard_before": 0,
+          "port": -1,
+          "port_base": 1250,
+          "port_pool": 4660,
+          "ranged_calls": 1,
+          "ranged_result": 27891,
+          "raw_draws": [
+            1229352179
+          ],
+          "reads": [
+            {
+              "default": 1250,
+              "key": "PortBase",
+              "raw": null
+            },
+            {
+              "default": 0,
+              "key": "ForcePortBase",
+              "raw": null
+            },
+            {
+              "default": 31987,
+              "key": "PortPool",
+              "raw": "$1234"
+            },
+            {
+              "default": 0,
+              "key": "FirewallSettings",
+              "raw": null
+            },
+            {
+              "default": 1,
+              "key": "FirewallDelta",
+              "raw": null
+            },
+            {
+              "default": 0,
+              "key": "SendDelay",
+              "raw": "yes"
+            },
+            {
+              "default": 0,
+              "key": "PortNumberOverride",
+              "raw": "-1"
+            }
+          ],
+          "rng_before_hex": "00000000000000006700000018aa2eadbb5170665d38b8bed6a693121d341c9a9cb96848d0173d80af659b56ddac62b7761017f50cd43f8717be1e2fc73003059ffbbae00ec3c6027c95928bee9918ea66a9031e08b9cdf954e91228bcdb0cc6a3f1a7569ae4a453ef0782b8846d805c0618b5bc0ef1bda5c12d86d99556abb1398a8d874c172f6e1dac237ab9ba3d44b417bb865dc0b55f9956ab7cb5b1b8f1c8bd6576c90e88576226cb389343557c9752e836814fa2e82567268dbdbf79af40ce27f0f2a962d56b209839f0326dce1a9bf0151ca0a81215f6bea1e8ed3929b4bd53fff50d43b84e2e6d6a1abdaf2cdd0aca2180dfcf927a5d8ee0397daf3d9d928cdede9d030ebdf4e88fd2b86a4e0d4253e74ac35e26beb89ab385a869c20939b3cefecb269cec033783b3990c6337762686079ef5cdab0cd52527ca9ba87aee59111281fd2b04509337184ea33604537b1cd7c5f7fb65d2b1883dfee909065caf755574a73d6443c3c7881a7a7708f779cd56ecb2310012a1933902a84bf7704ec68ffbc9222bf3af8144e111cae46248ba7767df715de5df0df2567d072bb0d39f5d65cca6ebc668e4ed045b0c78d8312eed7d7c8e6acfdb9cf1f82217de0d93743b40fc6bccc6327df01a7145798dff3287cc3f8f8dc0bb98ecd5ae3d1d53e2bf744ee1146aa095f3958b4c9e4739a1b28e965bfd5360837dd1511498de9992b43d4a8bbcba27cef58e868c0fed0c5fffe5edb60e1993607bbc55e31d57f526f7b73b1d3d742b242ac01336bd12f315bdb6e930bc7aff33f7af295ebb14d5ac81c1878ecd4afcdd1946f0597e63d92126fa8f97966e720b3b49238c7c1c646c4957a568200743afdd18056e620ffbf90ce1fada082402a412461cf2409f852fddb89b74bf7375b9c86ef7c886f17e433f95b341d2834a60d4991bfb51c4d84c6babd0b81b5e3aec2d944ee63bf5b3e19131f68b3e502700975e6e0bf08feeb2481ec5256bdd6908a7c1616ded9c40f6ad85704a6871adc59e3e44fefaf006465a1f28bbc9cd120c33a156e8944f1910e80444dc5071068bbf0e8950a38eb9e6ff82948f44d1904857613f9459bc643ea60d3ed8adcd4744397a3407a670ea17e020e229063e9071d9caaa8da66c029d640018ab35483698b0f1cbd229fcba084e463739a817410e7268de8f8e9fa83a55dca0bb8a00c86de060b98a83a840d9461975ae4d727ceaeb7fad83ba93a1555a4810da3ce1e6b5b39bceffd13f122e73631c8a169f8adca42e5c183a456182cc88ef8fdd4066ac2271b927f1a401bee1b7c24d51d5669b8ed88fad5b4496914b6c8794dc417c92ac7f73187e3b7dd1a11f9510ec8208948afff6e3fd5454c382fce234cf6d93a644fef7d126dff2ab6d0fbefd62b306342053a05ead36152ed7",
+          "rng_hex": "000000000100000068000000f36c4649bb5170665d38b8bed6a693121d341c9a9cb96848d0173d80af659b56ddac62b7761017f50cd43f8717be1e2fc73003059ffbbae00ec3c6027c95928bee9918ea66a9031e08b9cdf954e91228bcdb0cc6a3f1a7569ae4a453ef0782b8846d805c0618b5bc0ef1bda5c12d86d99556abb1398a8d874c172f6e1dac237ab9ba3d44b417bb865dc0b55f9956ab7cb5b1b8f1c8bd6576c90e88576226cb389343557c9752e836814fa2e82567268dbdbf79af40ce27f0f2a962d56b209839f0326dce1a9bf0151ca0a81215f6bea1e8ed3929b4bd53fff50d43b84e2e6d6a1abdaf2cdd0aca2180dfcf927a5d8ee0397daf3d9d928cdede9d030ebdf4e88fd2b86a4e0d4253e74ac35e26beb89ab385a869c20939b3cefecb269cec033783b3990c6337762686079ef5cdab0cd52527ca9ba87aee59111281fd2b04509337184ea33604537b1cd7c5f7fb65d2b1883dfee909065caf755574a73d6443c3c7881a7a7708f779cd56ecb2310012a1933902a84bf7704ec68ffbc9222bf3af8144e111cae46248ba7767df715de5df0df2567d072bb0d39f5d65cca6ebc668e4ed045b0c78d8312eed7d7c8e6acfdb9cf1f82217de0d93743b40fc6bccc6327df01a7145798dff3287cc3f8f8dc0bb98ecd5ae3d1d53e2bf744ee1146aa095f3958b4c9e4739a1b28e965bfd5360837dd1511498de9992b43d4a8bbcba27cef58e868c0fed0c5fffe5edb60e1993607bbc55e31d57f526f7b73b1d3d742b242ac01336bd12f315bdb6e930bc7aff33f7af295ebb14d5ac81c1878ecd4afcdd1946f0597e63d92126fa8f97966e720b3b49238c7c1c646c4957a568200743afdd18056e620ffbf90ce1fada082402a412461cf2409f852fddb89b74bf7375b9c86ef7c886f17e433f95b341d2834a60d4991bfb51c4d84c6babd0b81b5e3aec2d944ee63bf5b3e19131f68b3e502700975e6e0bf08feeb2481ec5256bdd6908a7c1616ded9c40f6ad85704a6871adc59e3e44fefaf006465a1f28bbc9cd120c33a156e8944f1910e80444dc5071068bbf0e8950a38eb9e6ff82948f44d1904857613f9459bc643ea60d3ed8adcd4744397a3407a670ea17e020e229063e9071d9caaa8da66c029d640018ab35483698b0f1cbd229fcba084e463739a817410e7268de8f8e9fa83a55dca0bb8a00c86de060b98a83a840d9461975ae4d727ceaeb7fad83ba93a1555a4810da3ce1e6b5b39bceffd13f122e73631c8a169f8adca42e5c183a456182cc88ef8fdd4066ac2271b927f1a401bee1b7c24d51d5669b8ed88fad5b4496914b6c8794dc417c92ac7f73187e3b7dd1a11f9510ec8208948afff6e3fd5454c382fce234cf6d93a644fef7d126dff2ab6d0fbefd62b306342053a05ead36152ed7",
+          "send_delay": true
+        },
+        {
+          "firewall_delta": 1,
+          "firewall_settings": 0,
+          "force_port_base": 0,
+          "guard_after": 1,
+          "guard_before": 1,
+          "port": -1,
+          "port_base": 1250,
+          "port_pool": 4660,
+          "ranged_calls": 0,
+          "ranged_result": null,
+          "raw_draws": [],
+          "reads": [
+            {
+              "default": 0,
+              "key": "SendDelay",
+              "raw": "yes"
+            },
+            {
+              "default": 0,
+              "key": "PortNumberOverride",
+              "raw": "-1"
+            }
+          ],
+          "rng_before_hex": "000000000100000068000000f36c4649bb5170665d38b8bed6a693121d341c9a9cb96848d0173d80af659b56ddac62b7761017f50cd43f8717be1e2fc73003059ffbbae00ec3c6027c95928bee9918ea66a9031e08b9cdf954e91228bcdb0cc6a3f1a7569ae4a453ef0782b8846d805c0618b5bc0ef1bda5c12d86d99556abb1398a8d874c172f6e1dac237ab9ba3d44b417bb865dc0b55f9956ab7cb5b1b8f1c8bd6576c90e88576226cb389343557c9752e836814fa2e82567268dbdbf79af40ce27f0f2a962d56b209839f0326dce1a9bf0151ca0a81215f6bea1e8ed3929b4bd53fff50d43b84e2e6d6a1abdaf2cdd0aca2180dfcf927a5d8ee0397daf3d9d928cdede9d030ebdf4e88fd2b86a4e0d4253e74ac35e26beb89ab385a869c20939b3cefecb269cec033783b3990c6337762686079ef5cdab0cd52527ca9ba87aee59111281fd2b04509337184ea33604537b1cd7c5f7fb65d2b1883dfee909065caf755574a73d6443c3c7881a7a7708f779cd56ecb2310012a1933902a84bf7704ec68ffbc9222bf3af8144e111cae46248ba7767df715de5df0df2567d072bb0d39f5d65cca6ebc668e4ed045b0c78d8312eed7d7c8e6acfdb9cf1f82217de0d93743b40fc6bccc6327df01a7145798dff3287cc3f8f8dc0bb98ecd5ae3d1d53e2bf744ee1146aa095f3958b4c9e4739a1b28e965bfd5360837dd1511498de9992b43d4a8bbcba27cef58e868c0fed0c5fffe5edb60e1993607bbc55e31d57f526f7b73b1d3d742b242ac01336bd12f315bdb6e930bc7aff33f7af295ebb14d5ac81c1878ecd4afcdd1946f0597e63d92126fa8f97966e720b3b49238c7c1c646c4957a568200743afdd18056e620ffbf90ce1fada082402a412461cf2409f852fddb89b74bf7375b9c86ef7c886f17e433f95b341d2834a60d4991bfb51c4d84c6babd0b81b5e3aec2d944ee63bf5b3e19131f68b3e502700975e6e0bf08feeb2481ec5256bdd6908a7c1616ded9c40f6ad85704a6871adc59e3e44fefaf006465a1f28bbc9cd120c33a156e8944f1910e80444dc5071068bbf0e8950a38eb9e6ff82948f44d1904857613f9459bc643ea60d3ed8adcd4744397a3407a670ea17e020e229063e9071d9caaa8da66c029d640018ab35483698b0f1cbd229fcba084e463739a817410e7268de8f8e9fa83a55dca0bb8a00c86de060b98a83a840d9461975ae4d727ceaeb7fad83ba93a1555a4810da3ce1e6b5b39bceffd13f122e73631c8a169f8adca42e5c183a456182cc88ef8fdd4066ac2271b927f1a401bee1b7c24d51d5669b8ed88fad5b4496914b6c8794dc417c92ac7f73187e3b7dd1a11f9510ec8208948afff6e3fd5454c382fce234cf6d93a644fef7d126dff2ab6d0fbefd62b306342053a05ead36152ed7",
+          "rng_hex": "000000000100000068000000f36c4649bb5170665d38b8bed6a693121d341c9a9cb96848d0173d80af659b56ddac62b7761017f50cd43f8717be1e2fc73003059ffbbae00ec3c6027c95928bee9918ea66a9031e08b9cdf954e91228bcdb0cc6a3f1a7569ae4a453ef0782b8846d805c0618b5bc0ef1bda5c12d86d99556abb1398a8d874c172f6e1dac237ab9ba3d44b417bb865dc0b55f9956ab7cb5b1b8f1c8bd6576c90e88576226cb389343557c9752e836814fa2e82567268dbdbf79af40ce27f0f2a962d56b209839f0326dce1a9bf0151ca0a81215f6bea1e8ed3929b4bd53fff50d43b84e2e6d6a1abdaf2cdd0aca2180dfcf927a5d8ee0397daf3d9d928cdede9d030ebdf4e88fd2b86a4e0d4253e74ac35e26beb89ab385a869c20939b3cefecb269cec033783b3990c6337762686079ef5cdab0cd52527ca9ba87aee59111281fd2b04509337184ea33604537b1cd7c5f7fb65d2b1883dfee909065caf755574a73d6443c3c7881a7a7708f779cd56ecb2310012a1933902a84bf7704ec68ffbc9222bf3af8144e111cae46248ba7767df715de5df0df2567d072bb0d39f5d65cca6ebc668e4ed045b0c78d8312eed7d7c8e6acfdb9cf1f82217de0d93743b40fc6bccc6327df01a7145798dff3287cc3f8f8dc0bb98ecd5ae3d1d53e2bf744ee1146aa095f3958b4c9e4739a1b28e965bfd5360837dd1511498de9992b43d4a8bbcba27cef58e868c0fed0c5fffe5edb60e1993607bbc55e31d57f526f7b73b1d3d742b242ac01336bd12f315bdb6e930bc7aff33f7af295ebb14d5ac81c1878ecd4afcdd1946f0597e63d92126fa8f97966e720b3b49238c7c1c646c4957a568200743afdd18056e620ffbf90ce1fada082402a412461cf2409f852fddb89b74bf7375b9c86ef7c886f17e433f95b341d2834a60d4991bfb51c4d84c6babd0b81b5e3aec2d944ee63bf5b3e19131f68b3e502700975e6e0bf08feeb2481ec5256bdd6908a7c1616ded9c40f6ad85704a6871adc59e3e44fefaf006465a1f28bbc9cd120c33a156e8944f1910e80444dc5071068bbf0e8950a38eb9e6ff82948f44d1904857613f9459bc643ea60d3ed8adcd4744397a3407a670ea17e020e229063e9071d9caaa8da66c029d640018ab35483698b0f1cbd229fcba084e463739a817410e7268de8f8e9fa83a55dca0bb8a00c86de060b98a83a840d9461975ae4d727ceaeb7fad83ba93a1555a4810da3ce1e6b5b39bceffd13f122e73631c8a169f8adca42e5c183a456182cc88ef8fdd4066ac2271b927f1a401bee1b7c24d51d5669b8ed88fad5b4496914b6c8794dc417c92ac7f73187e3b7dd1a11f9510ec8208948afff6e3fd5454c382fce234cf6d93a644fef7d126dff2ab6d0fbefd62b306342053a05ead36152ed7",
+          "send_delay": true
+        }
+      ],
+      "initial_rng_hex": "00000000000000006700000018aa2eadbb5170665d38b8bed6a693121d341c9a9cb96848d0173d80af659b56ddac62b7761017f50cd43f8717be1e2fc73003059ffbbae00ec3c6027c95928bee9918ea66a9031e08b9cdf954e91228bcdb0cc6a3f1a7569ae4a453ef0782b8846d805c0618b5bc0ef1bda5c12d86d99556abb1398a8d874c172f6e1dac237ab9ba3d44b417bb865dc0b55f9956ab7cb5b1b8f1c8bd6576c90e88576226cb389343557c9752e836814fa2e82567268dbdbf79af40ce27f0f2a962d56b209839f0326dce1a9bf0151ca0a81215f6bea1e8ed3929b4bd53fff50d43b84e2e6d6a1abdaf2cdd0aca2180dfcf927a5d8ee0397daf3d9d928cdede9d030ebdf4e88fd2b86a4e0d4253e74ac35e26beb89ab385a869c20939b3cefecb269cec033783b3990c6337762686079ef5cdab0cd52527ca9ba87aee59111281fd2b04509337184ea33604537b1cd7c5f7fb65d2b1883dfee909065caf755574a73d6443c3c7881a7a7708f779cd56ecb2310012a1933902a84bf7704ec68ffbc9222bf3af8144e111cae46248ba7767df715de5df0df2567d072bb0d39f5d65cca6ebc668e4ed045b0c78d8312eed7d7c8e6acfdb9cf1f82217de0d93743b40fc6bccc6327df01a7145798dff3287cc3f8f8dc0bb98ecd5ae3d1d53e2bf744ee1146aa095f3958b4c9e4739a1b28e965bfd5360837dd1511498de9992b43d4a8bbcba27cef58e868c0fed0c5fffe5edb60e1993607bbc55e31d57f526f7b73b1d3d742b242ac01336bd12f315bdb6e930bc7aff33f7af295ebb14d5ac81c1878ecd4afcdd1946f0597e63d92126fa8f97966e720b3b49238c7c1c646c4957a568200743afdd18056e620ffbf90ce1fada082402a412461cf2409f852fddb89b74bf7375b9c86ef7c886f17e433f95b341d2834a60d4991bfb51c4d84c6babd0b81b5e3aec2d944ee63bf5b3e19131f68b3e502700975e6e0bf08feeb2481ec5256bdd6908a7c1616ded9c40f6ad85704a6871adc59e3e44fefaf006465a1f28bbc9cd120c33a156e8944f1910e80444dc5071068bbf0e8950a38eb9e6ff82948f44d1904857613f9459bc643ea60d3ed8adcd4744397a3407a670ea17e020e229063e9071d9caaa8da66c029d640018ab35483698b0f1cbd229fcba084e463739a817410e7268de8f8e9fa83a55dca0bb8a00c86de060b98a83a840d9461975ae4d727ceaeb7fad83ba93a1555a4810da3ce1e6b5b39bceffd13f122e73631c8a169f8adca42e5c183a456182cc88ef8fdd4066ac2271b927f1a401bee1b7c24d51d5669b8ed88fad5b4496914b6c8794dc417c92ac7f73187e3b7dd1a11f9510ec8208948afff6e3fd5454c382fce234cf6d93a644fef7d126dff2ab6d0fbefd62b306342053a05ead36152ed7",
+      "name": "explicit_port_pool_still_draws",
+      "seed": 0,
+      "settings": {
+        "PortNumberOverride": "-1",
+        "PortPool": "$1234",
+        "SendDelay": "yes"
+      }
+    },
+    {
+      "calls": [
+        {
+          "firewall_delta": 1,
+          "firewall_settings": 0,
+          "force_port_base": 0,
+          "guard_after": 1,
+          "guard_before": 0,
+          "port": 0,
+          "port_base": 1250,
+          "port_pool": 16883,
+          "ranged_calls": 1,
+          "ranged_result": 12787,
+          "raw_draws": [
+            1957614067,
+            3705063420,
+            2554278387
+          ],
+          "reads": [
+            {
+              "default": 1250,
+              "key": "PortBase",
+              "raw": null
+            },
+            {
+              "default": 0,
+              "key": "ForcePortBase",
+              "raw": null
+            },
+            {
+              "default": 16883,
+              "key": "PortPool",
+              "raw": null
+            },
+            {
+              "default": 0,
+              "key": "FirewallSettings",
+              "raw": null
+            },
+            {
+              "default": 1,
+              "key": "FirewallDelta",
+              "raw": null
+            },
+            {
+              "default": 0,
+              "key": "SendDelay",
+              "raw": null
+            },
+            {
+              "default": 0,
+              "key": "PortNumberOverride",
+              "raw": null
+            }
+          ],
+          "rng_before_hex": "000000000000000067000000ec3eb129d3c8f8d367a31a45b14d566217eeb9773ca93b4854357f4d304bcd9c2652f3bba25d6630c8f09c1908269554b60b830a6c20ddd88d293cb84adda2bef785ce559622583d8595bf1c579cf6d68fbbee5c9101d3423eab7e74e5a473a6d4fa9db935bb73dac3dbba3098ecab7d258d7293baba21b449e959c6ccdc7abdd494a20aca7468689b6032ff6646925e44d77c528ff11027031954d31b851fa4c3c5b0b5ce64a2cae01c37598b5d8b52dd541ed1aea299915f44af17efbd78ae4b0a68f459aa50a521eeb5c024461fe9537a7de4e47bd60fecee8e03a9653cd0afdc3242bd1ea27258e8d5fc698639d6e1d2967d1840167752c4de2f618705b6025e7bad136efedd51c1e5a65ffbb23b6af95d420257315cb0282fbef28623e2cbd672af23abe393fafc1a0ba93f094d4c7a527d7d32aa523d0d12f022e2d2f69fc4e449fb3bd8f7ce8f73e888503c2540a3021aa62d37bc39cbf4a4d15ba1bff47062965bab7ca89d2a517ed03644b73cac0a6bc4873d696c6cb87258e3ca395019a4140fa8abc2c37f832f54a5f5930514de5ff80da402a13366c51fef1f5d2f0f2e0f949225ddc7bdccf4e0996bf03f67dfb97e3d68a9f5ad7b473c9514e51eab3efdc1b6c4f0df5a4582694702e4c43fc755ca1dc699bcaf0555a5d5b3be6e054565c55a334dacecad5259fba11da0374139271b1fa4d03c9c8fb72b29472e0a7e497e42a4ffef41d0f5c19840a249b05e8018cdda040b87c6d5ae4607da693829fd4d5845fcfbe4c8046d83170a2be74451a400c72ca357ad3d25bbb8600b7ba42947d64fb130560f74854f1699a26036b0c93e06831c22dbba8c2b96e77754865d703e96fceb4b3988d36dcf7bdd7d1641a5857f7901c8112a2cd4d25f929531b783f49e2bbf6af78abb7b5ab73a2b6d200a44ebad51c4b634bc7ca7883eed00f9f92c1e35248ffb763be7c2e3ed3838bb4d682716a6fd203dd6f1d4dace43a5f45f68851892f57a7cbfd34c050b58681104ac469a8f22904a8e2317cafa0798d33fe101b85165f424332ba9a5c1202e98a48741f60a6e42179c2f8a599343ce12da34ea7403578291844feeffc9614d9de5c98a349d9b065757b9bf619770f02125b743a55fdf423c5b241ce8194664888b4c83ba8278b3a7d4cc5957062566929747f4ebeb38cef2bdc29ac0251debcc06ac9bdc97abc4e084abe0a6fb8255ec3a0bae8e5b2e20374ea58f9887b0fad03faf1e59b3a904e1cab0c6bc5f497aa304a83439b836cd7667669ed4fb9451ae4dd68247551aff8947305414c75cfdc007cf441bc161c268b99be634f76248a101dedcc177e6cff519e5d8269a43e94e20e860433eeef351c2c9be125226334ba1f88ee6241455fc51735ab9b08ff98d2ee5c761",
+          "rng_hex": "00000000030000006a000000f3d1ae74fcc7d6dcf3313f98b14d566217eeb9773ca93b4854357f4d304bcd9c2652f3bba25d6630c8f09c1908269554b60b830a6c20ddd88d293cb84adda2bef785ce559622583d8595bf1c579cf6d68fbbee5c9101d3423eab7e74e5a473a6d4fa9db935bb73dac3dbba3098ecab7d258d7293baba21b449e959c6ccdc7abdd494a20aca7468689b6032ff6646925e44d77c528ff11027031954d31b851fa4c3c5b0b5ce64a2cae01c37598b5d8b52dd541ed1aea299915f44af17efbd78ae4b0a68f459aa50a521eeb5c024461fe9537a7de4e47bd60fecee8e03a9653cd0afdc3242bd1ea27258e8d5fc698639d6e1d2967d1840167752c4de2f618705b6025e7bad136efedd51c1e5a65ffbb23b6af95d420257315cb0282fbef28623e2cbd672af23abe393fafc1a0ba93f094d4c7a527d7d32aa523d0d12f022e2d2f69fc4e449fb3bd8f7ce8f73e888503c2540a3021aa62d37bc39cbf4a4d15ba1bff47062965bab7ca89d2a517ed03644b73cac0a6bc4873d696c6cb87258e3ca395019a4140fa8abc2c37f832f54a5f5930514de5ff80da402a13366c51fef1f5d2f0f2e0f949225ddc7bdccf4e0996bf03f67dfb97e3d68a9f5ad7b473c9514e51eab3efdc1b6c4f0df5a4582694702e4c43fc755ca1dc699bcaf0555a5d5b3be6e054565c55a334dacecad5259fba11da0374139271b1fa4d03c9c8fb72b29472e0a7e497e42a4ffef41d0f5c19840a249b05e8018cdda040b87c6d5ae4607da693829fd4d5845fcfbe4c8046d83170a2be74451a400c72ca357ad3d25bbb8600b7ba42947d64fb130560f74854f1699a26036b0c93e06831c22dbba8c2b96e77754865d703e96fceb4b3988d36dcf7bdd7d1641a5857f7901c8112a2cd4d25f929531b783f49e2bbf6af78abb7b5ab73a2b6d200a44ebad51c4b634bc7ca7883eed00f9f92c1e35248ffb763be7c2e3ed3838bb4d682716a6fd203dd6f1d4dace43a5f45f68851892f57a7cbfd34c050b58681104ac469a8f22904a8e2317cafa0798d33fe101b85165f424332ba9a5c1202e98a48741f60a6e42179c2f8a599343ce12da34ea7403578291844feeffc9614d9de5c98a349d9b065757b9bf619770f02125b743a55fdf423c5b241ce8194664888b4c83ba8278b3a7d4cc5957062566929747f4ebeb38cef2bdc29ac0251debcc06ac9bdc97abc4e084abe0a6fb8255ec3a0bae8e5b2e20374ea58f9887b0fad03faf1e59b3a904e1cab0c6bc5f497aa304a83439b836cd7667669ed4fb9451ae4dd68247551aff8947305414c75cfdc007cf441bc161c268b99be634f76248a101dedcc177e6cff519e5d8269a43e94e20e860433eeef351c2c9be125226334ba1f88ee6241455fc51735ab9b08ff98d2ee5c761",
+          "send_delay": false
+        },
+        {
+          "firewall_delta": 1,
+          "firewall_settings": 0,
+          "force_port_base": 0,
+          "guard_after": 1,
+          "guard_before": 1,
+          "port": 0,
+          "port_base": 1250,
+          "port_pool": 16883,
+          "ranged_calls": 0,
+          "ranged_result": null,
+          "raw_draws": [],
+          "reads": [
+            {
+              "default": 0,
+              "key": "SendDelay",
+              "raw": null
+            },
+            {
+              "default": 0,
+              "key": "PortNumberOverride",
+              "raw": null
+            }
+          ],
+          "rng_before_hex": "00000000030000006a000000f3d1ae74fcc7d6dcf3313f98b14d566217eeb9773ca93b4854357f4d304bcd9c2652f3bba25d6630c8f09c1908269554b60b830a6c20ddd88d293cb84adda2bef785ce559622583d8595bf1c579cf6d68fbbee5c9101d3423eab7e74e5a473a6d4fa9db935bb73dac3dbba3098ecab7d258d7293baba21b449e959c6ccdc7abdd494a20aca7468689b6032ff6646925e44d77c528ff11027031954d31b851fa4c3c5b0b5ce64a2cae01c37598b5d8b52dd541ed1aea299915f44af17efbd78ae4b0a68f459aa50a521eeb5c024461fe9537a7de4e47bd60fecee8e03a9653cd0afdc3242bd1ea27258e8d5fc698639d6e1d2967d1840167752c4de2f618705b6025e7bad136efedd51c1e5a65ffbb23b6af95d420257315cb0282fbef28623e2cbd672af23abe393fafc1a0ba93f094d4c7a527d7d32aa523d0d12f022e2d2f69fc4e449fb3bd8f7ce8f73e888503c2540a3021aa62d37bc39cbf4a4d15ba1bff47062965bab7ca89d2a517ed03644b73cac0a6bc4873d696c6cb87258e3ca395019a4140fa8abc2c37f832f54a5f5930514de5ff80da402a13366c51fef1f5d2f0f2e0f949225ddc7bdccf4e0996bf03f67dfb97e3d68a9f5ad7b473c9514e51eab3efdc1b6c4f0df5a4582694702e4c43fc755ca1dc699bcaf0555a5d5b3be6e054565c55a334dacecad5259fba11da0374139271b1fa4d03c9c8fb72b29472e0a7e497e42a4ffef41d0f5c19840a249b05e8018cdda040b87c6d5ae4607da693829fd4d5845fcfbe4c8046d83170a2be74451a400c72ca357ad3d25bbb8600b7ba42947d64fb130560f74854f1699a26036b0c93e06831c22dbba8c2b96e77754865d703e96fceb4b3988d36dcf7bdd7d1641a5857f7901c8112a2cd4d25f929531b783f49e2bbf6af78abb7b5ab73a2b6d200a44ebad51c4b634bc7ca7883eed00f9f92c1e35248ffb763be7c2e3ed3838bb4d682716a6fd203dd6f1d4dace43a5f45f68851892f57a7cbfd34c050b58681104ac469a8f22904a8e2317cafa0798d33fe101b85165f424332ba9a5c1202e98a48741f60a6e42179c2f8a599343ce12da34ea7403578291844feeffc9614d9de5c98a349d9b065757b9bf619770f02125b743a55fdf423c5b241ce8194664888b4c83ba8278b3a7d4cc5957062566929747f4ebeb38cef2bdc29ac0251debcc06ac9bdc97abc4e084abe0a6fb8255ec3a0bae8e5b2e20374ea58f9887b0fad03faf1e59b3a904e1cab0c6bc5f497aa304a83439b836cd7667669ed4fb9451ae4dd68247551aff8947305414c75cfdc007cf441bc161c268b99be634f76248a101dedcc177e6cff519e5d8269a43e94e20e860433eeef351c2c9be125226334ba1f88ee6241455fc51735ab9b08ff98d2ee5c761",
+          "rng_hex": "00000000030000006a000000f3d1ae74fcc7d6dcf3313f98b14d566217eeb9773ca93b4854357f4d304bcd9c2652f3bba25d6630c8f09c1908269554b60b830a6c20ddd88d293cb84adda2bef785ce559622583d8595bf1c579cf6d68fbbee5c9101d3423eab7e74e5a473a6d4fa9db935bb73dac3dbba3098ecab7d258d7293baba21b449e959c6ccdc7abdd494a20aca7468689b6032ff6646925e44d77c528ff11027031954d31b851fa4c3c5b0b5ce64a2cae01c37598b5d8b52dd541ed1aea299915f44af17efbd78ae4b0a68f459aa50a521eeb5c024461fe9537a7de4e47bd60fecee8e03a9653cd0afdc3242bd1ea27258e8d5fc698639d6e1d2967d1840167752c4de2f618705b6025e7bad136efedd51c1e5a65ffbb23b6af95d420257315cb0282fbef28623e2cbd672af23abe393fafc1a0ba93f094d4c7a527d7d32aa523d0d12f022e2d2f69fc4e449fb3bd8f7ce8f73e888503c2540a3021aa62d37bc39cbf4a4d15ba1bff47062965bab7ca89d2a517ed03644b73cac0a6bc4873d696c6cb87258e3ca395019a4140fa8abc2c37f832f54a5f5930514de5ff80da402a13366c51fef1f5d2f0f2e0f949225ddc7bdccf4e0996bf03f67dfb97e3d68a9f5ad7b473c9514e51eab3efdc1b6c4f0df5a4582694702e4c43fc755ca1dc699bcaf0555a5d5b3be6e054565c55a334dacecad5259fba11da0374139271b1fa4d03c9c8fb72b29472e0a7e497e42a4ffef41d0f5c19840a249b05e8018cdda040b87c6d5ae4607da693829fd4d5845fcfbe4c8046d83170a2be74451a400c72ca357ad3d25bbb8600b7ba42947d64fb130560f74854f1699a26036b0c93e06831c22dbba8c2b96e77754865d703e96fceb4b3988d36dcf7bdd7d1641a5857f7901c8112a2cd4d25f929531b783f49e2bbf6af78abb7b5ab73a2b6d200a44ebad51c4b634bc7ca7883eed00f9f92c1e35248ffb763be7c2e3ed3838bb4d682716a6fd203dd6f1d4dace43a5f45f68851892f57a7cbfd34c050b58681104ac469a8f22904a8e2317cafa0798d33fe101b85165f424332ba9a5c1202e98a48741f60a6e42179c2f8a599343ce12da34ea7403578291844feeffc9614d9de5c98a349d9b065757b9bf619770f02125b743a55fdf423c5b241ce8194664888b4c83ba8278b3a7d4cc5957062566929747f4ebeb38cef2bdc29ac0251debcc06ac9bdc97abc4e084abe0a6fb8255ec3a0bae8e5b2e20374ea58f9887b0fad03faf1e59b3a904e1cab0c6bc5f497aa304a83439b836cd7667669ed4fb9451ae4dd68247551aff8947305414c75cfdc007cf441bc161c268b99be634f76248a101dedcc177e6cff519e5d8269a43e94e20e860433eeef351c2c9be125226334ba1f88ee6241455fc51735ab9b08ff98d2ee5c761",
+          "send_delay": false
+        }
+      ],
+      "initial_rng_hex": "000000000000000067000000ec3eb129d3c8f8d367a31a45b14d566217eeb9773ca93b4854357f4d304bcd9c2652f3bba25d6630c8f09c1908269554b60b830a6c20ddd88d293cb84adda2bef785ce559622583d8595bf1c579cf6d68fbbee5c9101d3423eab7e74e5a473a6d4fa9db935bb73dac3dbba3098ecab7d258d7293baba21b449e959c6ccdc7abdd494a20aca7468689b6032ff6646925e44d77c528ff11027031954d31b851fa4c3c5b0b5ce64a2cae01c37598b5d8b52dd541ed1aea299915f44af17efbd78ae4b0a68f459aa50a521eeb5c024461fe9537a7de4e47bd60fecee8e03a9653cd0afdc3242bd1ea27258e8d5fc698639d6e1d2967d1840167752c4de2f618705b6025e7bad136efedd51c1e5a65ffbb23b6af95d420257315cb0282fbef28623e2cbd672af23abe393fafc1a0ba93f094d4c7a527d7d32aa523d0d12f022e2d2f69fc4e449fb3bd8f7ce8f73e888503c2540a3021aa62d37bc39cbf4a4d15ba1bff47062965bab7ca89d2a517ed03644b73cac0a6bc4873d696c6cb87258e3ca395019a4140fa8abc2c37f832f54a5f5930514de5ff80da402a13366c51fef1f5d2f0f2e0f949225ddc7bdccf4e0996bf03f67dfb97e3d68a9f5ad7b473c9514e51eab3efdc1b6c4f0df5a4582694702e4c43fc755ca1dc699bcaf0555a5d5b3be6e054565c55a334dacecad5259fba11da0374139271b1fa4d03c9c8fb72b29472e0a7e497e42a4ffef41d0f5c19840a249b05e8018cdda040b87c6d5ae4607da693829fd4d5845fcfbe4c8046d83170a2be74451a400c72ca357ad3d25bbb8600b7ba42947d64fb130560f74854f1699a26036b0c93e06831c22dbba8c2b96e77754865d703e96fceb4b3988d36dcf7bdd7d1641a5857f7901c8112a2cd4d25f929531b783f49e2bbf6af78abb7b5ab73a2b6d200a44ebad51c4b634bc7ca7883eed00f9f92c1e35248ffb763be7c2e3ed3838bb4d682716a6fd203dd6f1d4dace43a5f45f68851892f57a7cbfd34c050b58681104ac469a8f22904a8e2317cafa0798d33fe101b85165f424332ba9a5c1202e98a48741f60a6e42179c2f8a599343ce12da34ea7403578291844feeffc9614d9de5c98a349d9b065757b9bf619770f02125b743a55fdf423c5b241ce8194664888b4c83ba8278b3a7d4cc5957062566929747f4ebeb38cef2bdc29ac0251debcc06ac9bdc97abc4e084abe0a6fb8255ec3a0bae8e5b2e20374ea58f9887b0fad03faf1e59b3a904e1cab0c6bc5f497aa304a83439b836cd7667669ed4fb9451ae4dd68247551aff8947305414c75cfdc007cf441bc161c268b99be634f76248a101dedcc177e6cff519e5d8269a43e94e20e860433eeef351c2c9be125226334ba1f88ee6241455fc51735ab9b08ff98d2ee5c761",
+      "name": "range_rejects_two_draws",
+      "seed": 1234,
+      "settings": {}
+    }
+  ],
+  "source": "unicorn/gamemd.exe"
+}

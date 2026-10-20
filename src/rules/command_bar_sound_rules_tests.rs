@@ -93,6 +93,205 @@ fn campaign_score_animation_sound_uses_the_same_audiovisual_binding() {
 }
 
 #[test]
+fn lan_system_error_uses_fixed_catalog_and_retains_previous_layer_on_failed_lookup() {
+    // Original Rules+6B0:665FB6=-1,66A828..66A86D ReadString128/Voc.
+    assert_eq!(GeneralRules::default().system_error_sound(), None);
+    let sounds = SoundRegistry::from_ini(&IniFile::from_str(SOUND_CATALOG));
+    let mut layers =
+        RulesLayerStack::new(IniFile::from_str("[AudioVisual]\nSystemError=RootOpen\n"));
+    for (kind, text, expected) in [
+        (
+            RulesLayerKind::LangRule,
+            "[AudioVisual]\nSystemError=LanguageOpen\n",
+            "LanguageOpen",
+        ),
+        (
+            RulesLayerKind::GameMode,
+            "[AudioVisual]\nSystemError=Unknown\n",
+            "LanguageOpen",
+        ),
+        (
+            RulesLayerKind::Scenario,
+            "[AudioVisual]\nSystemError=\n",
+            "LanguageOpen",
+        ),
+        (
+            RulesLayerKind::Scenario,
+            "[AudioVisual]\nsystemerror=MapOpen\n",
+            "LanguageOpen",
+        ),
+        (
+            RulesLayerKind::Scenario,
+            "[AudioVisual]\nSystemError=mApOpEn\n",
+            "MapOpen",
+        ),
+        (
+            RulesLayerKind::Scenario,
+            "[AudioVisual]\nSystemError=Unregistered\n",
+            "MapOpen",
+        ),
+    ] {
+        layers.push(kind, IniFile::from_str(text));
+        let processed = layers.process().unwrap();
+        let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
+        assert_eq!(
+            rules.general.system_error_sound(),
+            None,
+            "unbound name is not an ID"
+        );
+        rules.bind_type_sound_references(processed.ini(), &sounds);
+        assert_eq!(
+            rules.general.system_error_sound(),
+            Some(expected),
+            "{text:?}"
+        );
+    }
+}
+
+#[test]
+fn lan_player_left_uses_fixed_catalog_and_retains_failed_later_reads() {
+    // Rules665FC8 initializes6BC=-1;66A910 reads exact PlayerLeft with128
+    // bytes before7514D0 resolves the process-fixed SOUNDMD registration.
+    assert_eq!(GeneralRules::default().player_left_sound(), None);
+    let sounds = SoundRegistry::from_ini(&IniFile::from_str(SOUND_CATALOG));
+    let mut layers = RulesLayerStack::new(IniFile::from_str(
+        "[AudioVisual]\nPlayerLeft=Unregistered\n",
+    ));
+    let initial = layers.process().unwrap();
+    let mut rules = RuleSet::from_processed_rules(&initial).unwrap();
+    rules.bind_type_sound_references(initial.ini(), &sounds);
+    assert_eq!(
+        rules.general.player_left_sound(),
+        None,
+        "unregistered section is not a Voc ID"
+    );
+    for (kind, text, expected) in [
+        (
+            RulesLayerKind::LangRule,
+            "[AudioVisual]\nPlayerLeft=RootOpen\n",
+            Some("RootOpen"),
+        ),
+        (
+            RulesLayerKind::GameMode,
+            "[AudioVisual]\nPlayerLeft=LanguageOpen\n",
+            Some("LanguageOpen"),
+        ),
+        (
+            RulesLayerKind::Scenario,
+            "[AudioVisual]\nPlayerLeft=Unknown\n",
+            Some("LanguageOpen"),
+        ),
+        (
+            RulesLayerKind::Scenario,
+            "[AudioVisual]\nPlayerLeft=\n",
+            Some("LanguageOpen"),
+        ),
+        (
+            RulesLayerKind::Scenario,
+            "[AudioVisual]\nplayerleft=MapOpen\n",
+            Some("LanguageOpen"),
+        ),
+        (
+            RulesLayerKind::Scenario,
+            "[audiovisual]\nPlayerLeft=MapOpen\n",
+            Some("LanguageOpen"),
+        ),
+        (
+            RulesLayerKind::Scenario,
+            "[AudioVisual]\nPlayerLeft=mApOpEn\n",
+            Some("MapOpen"),
+        ),
+        (
+            RulesLayerKind::Scenario,
+            "[AudioVisual]\nPlayerLeft=Unregistered\n",
+            Some("MapOpen"),
+        ),
+        (
+            RulesLayerKind::Scenario,
+            "[General]\nName=Next\n",
+            Some("MapOpen"),
+        ),
+    ] {
+        layers.push(kind, IniFile::from_str(text));
+        let processed = layers.process().unwrap();
+        let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
+        assert_eq!(
+            rules.general.player_left_sound(),
+            None,
+            "not bound to a catalog yet"
+        );
+        rules.bind_type_sound_references(processed.ini(), &sounds);
+        assert_eq!(rules.general.player_left_sound(), expected, "{text:?}");
+    }
+}
+
+#[test]
+fn lan_discovery_and_join_sounds_bind_independently_across_rules_layers() {
+    let defaults = GeneralRules::default();
+    assert_eq!(
+        [
+            defaults.game_closed_sound(),
+            defaults.game_forming_sound(),
+            defaults.player_joined_sound()
+        ],
+        [None; 3]
+    );
+    let sounds = SoundRegistry::from_ini(&IniFile::from_str(SOUND_CATALOG));
+    let mut layers = RulesLayerStack::new(IniFile::from_str(
+        "[AudioVisual]\nGameClosed=RootOpen\nGameForming=RootClose\nPlayerJoined=LanguageOpen\n",
+    ));
+    for (kind, text, expected) in [
+        (
+            RulesLayerKind::LangRule,
+            "[AudioVisual]\nGameClosed=MapClose\nGameForming=Unknown\nPlayerJoined=\n",
+            ["MapClose", "RootClose", "LanguageOpen"],
+        ),
+        (
+            RulesLayerKind::GameMode,
+            "[AudioVisual]\nGameClosed=Unregistered\ngameforming=MapOpen\nPlayerJoined=ModeClose\n",
+            ["MapClose", "RootClose", "ModeClose"],
+        ),
+        (
+            RulesLayerKind::Scenario,
+            "[AudioVisual]\nGameClosed=\nGameForming=mApOpEn\nPlayerJoined=Unknown\n",
+            ["MapClose", "MapOpen", "ModeClose"],
+        ),
+        (
+            RulesLayerKind::Scenario,
+            "[audiovisual]\nGameClosed=RootOpen\nGameForming=RootOpen\nPlayerJoined=RootOpen\n",
+            ["MapClose", "MapOpen", "ModeClose"],
+        ),
+        (
+            RulesLayerKind::Scenario,
+            "[General]\nName=Next\n",
+            ["MapClose", "MapOpen", "ModeClose"],
+        ),
+    ] {
+        layers.push(kind, IniFile::from_str(text));
+        let processed = layers.process().unwrap();
+        let mut rules = RuleSet::from_processed_rules(&processed).unwrap();
+        assert_eq!(
+            [
+                rules.general.game_closed_sound(),
+                rules.general.game_forming_sound(),
+                rules.general.player_joined_sound()
+            ],
+            [None; 3]
+        );
+        rules.bind_type_sound_references(processed.ini(), &sounds);
+        assert_eq!(
+            [
+                rules.general.game_closed_sound(),
+                rules.general.game_forming_sound(),
+                rules.general.player_joined_sound()
+            ],
+            expected.map(Some),
+            "{text:?}"
+        );
+    }
+}
+
+#[test]
 fn command_bar_sounds_follow_language_mode_map_order_with_prior_id_retention() {
     let sounds = SoundRegistry::from_ini(&IniFile::from_str(SOUND_CATALOG));
     let mut layers = RulesLayerStack::new(IniFile::from_str(
@@ -263,6 +462,39 @@ fn physical_command_bar_sounds_use_current_battle_rules_and_fixed_sound_catalog(
     // against the process-selected fixed SOUNDMD rather than an old asset CLI.
     assert_eq!(retail.rules.general.gui_open_sound(), Some("MenuACBOpen"));
     assert_eq!(retail.rules.general.gui_close_sound(), Some("MenuACBClose"));
+    // Retail RULESMD and the physical language/mode/map passes leave
+    // PlayerLeft unset. The native constructor's invalid ID therefore stays
+    // silent; do not invent a sound from the service event's name.
+    assert_eq!(retail.rules.general.player_left_sound(), None);
+    assert_eq!(retail.rules.general.game_closed_sound(), Some("GameClosed"));
+    assert_eq!(retail.rules.general.game_forming_sound(), Some("NewGame"));
+    assert_eq!(
+        retail.rules.general.player_joined_sound(),
+        Some("PlayerJoined")
+    );
+    for cue in [
+        retail.rules.general.game_closed_sound(),
+        retail.rules.general.game_forming_sound(),
+        retail.rules.general.player_joined_sound(),
+    ] {
+        assert!(
+            audio.sounds().get(cue.unwrap()).is_some(),
+            "fixed SOUNDMD registration"
+        );
+    }
+    // LAN5DF410 uses Rules+6B0, not a hard-coded GenericBeep or the
+    // independent [AudioVisual] GenericBeep field. Original physical
+    // RULESMD read yields SystemError=GenericBeep; later Battle/Hills are absent.
+    assert_eq!(
+        retail.rules.general.system_error_sound(),
+        Some("GenericBeep")
+    );
+    assert!(
+        audio
+            .sounds()
+            .get(retail.rules.general.system_error_sound().unwrap())
+            .is_some()
+    );
     assert_ne!(
         retail.rules.general.gui_open_sound(),
         retail.rules.general.gui_close_sound()

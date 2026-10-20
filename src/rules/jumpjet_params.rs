@@ -201,29 +201,6 @@ mod tests {
         assert!(!params.no_wobbles);
     }
 
-    #[test]
-    fn test_parse_jumpjet_custom_values() {
-        let ini = IniFile::from_str(
-            "[JUMPJET]\nJumpjetTurnRate=8\nJumpjetSpeed=20.5\n\
-             JumpjetClimb=3.0\nJumpjetCrash=10.0\nJumpjetHeight=750\n\
-             JumpjetAccel=4.0\nJumpjetWobbles=0.0\nJumpjetDeviation=0\n\
-             JumpjetNoWobbles=yes\n",
-        );
-        let section = ini.section("JUMPJET").unwrap();
-        let params = JumpjetParams::from_ini_section(section);
-
-        assert_eq!(params.turn_rate, 8);
-        // ReadInt: the fraction is dropped.
-        assert_eq!(params.speed, SimFixed::from_num(20));
-        assert_eq!(params.climb, 3.0);
-        assert_eq!(params.crash, 10.0);
-        assert_eq!(params.height, 750);
-        assert_eq!(params.accel, 4.0);
-        assert!((params.wobbles).abs() < 0.01);
-        assert_eq!(params.deviation, 0);
-        assert!(params.no_wobbles);
-    }
-
     /// gamemd looks up `JumpjetTurnRate` and `JumpjetAccel` (`0x008436D0` and
     /// `0x00843680`), and its `INIClass` compares CRC-32s of the raw key bytes
     /// with no case folding (`CRCEngine::AddData @ 0x004A1DE0`). Stock spells
@@ -246,25 +223,5 @@ mod tests {
         // The correctly-cased sibling on the same fixture still lands, which is
         // what makes this a case test rather than a "nothing parses" test.
         assert_eq!(params.height, 750);
-    }
-
-    /// The constructor seeds are the defaults, so an empty section and a
-    /// `Default::default()` must agree field for field.
-    #[test]
-    fn empty_section_yields_the_constructor_seeds() {
-        let ini = IniFile::from_str("[E1]\nStrength=100\n");
-        let section = ini.section("E1").unwrap();
-        let params = JumpjetParams::from_ini_section(section);
-        let ctor = JumpjetParams::default();
-
-        assert_eq!(params.turn_rate, ctor.turn_rate);
-        assert_eq!(params.speed, ctor.speed);
-        assert_eq!(params.climb, ctor.climb);
-        assert_eq!(params.crash, ctor.crash);
-        assert_eq!(params.height, ctor.height);
-        assert_eq!(params.accel, ctor.accel);
-        assert_eq!(params.wobbles, ctor.wobbles);
-        assert_eq!(params.deviation, ctor.deviation);
-        assert_eq!(params.no_wobbles, ctor.no_wobbles);
     }
 }

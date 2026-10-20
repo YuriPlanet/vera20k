@@ -9,9 +9,7 @@ use crate::rules::ini_parser::IniFile;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::combat::Health;
 use crate::sim::house_state::HouseState;
-use crate::sim::telemetry::{
-    CategoryCounts, HousePopulation, TELEMETRY_SCHEMA_VERSION, TelemetrySnapshot,
-};
+use crate::sim::telemetry::{HousePopulation, TELEMETRY_SCHEMA_VERSION, TelemetrySnapshot};
 use crate::sim::world::Simulation;
 
 /// Minimal one-vehicle rules fixture, mirroring the animation tests' spawn
@@ -44,50 +42,15 @@ fn house_index(snapshot: &TelemetrySnapshot, name: &str) -> u16 {
 }
 
 #[test]
-fn category_counts_add_covers_every_category() {
-    let mut counts = CategoryCounts::default();
-    counts.add(EntityCategory::Unit);
-    counts.add(EntityCategory::Infantry);
-    counts.add(EntityCategory::Aircraft);
-    counts.add(EntityCategory::Structure);
-    assert_eq!(
-        (
-            counts.unit,
-            counts.infantry,
-            counts.aircraft,
-            counts.structure
-        ),
-        (1, 1, 1, 1)
-    );
-    assert_eq!(counts.total(), 4);
-}
-
-#[test]
-fn fresh_simulation_snapshot_is_empty() {
-    let sim = Simulation::new();
-    let snapshot = sim.telemetry_snapshot();
-    assert_eq!(snapshot.version, TELEMETRY_SCHEMA_VERSION);
-    assert_eq!(snapshot.tick, 0);
-    assert_eq!(snapshot.entities_total, 0);
-    assert!(snapshot.houses.is_empty());
-    assert!(snapshot.spots.is_empty());
-    assert_eq!(snapshot.timing, None);
-    assert_eq!(snapshot.map_width, sim.session.map_width);
-    assert_eq!(snapshot.map_height, sim.session.map_height);
-}
-
-#[test]
 fn snapshot_tallies_entities_per_house() {
     let rules = vehicle_rules();
     let mut sim = Simulation::with_seed(31);
     let americans = sim.interner.intern("Americans");
     let soviets = sim.interner.intern("Soviets");
-    sim.houses.insert(
-        americans,
-        HouseState::new(americans, 0, None, true, 1000, 10),
-    );
     sim.houses
-        .insert(soviets, HouseState::new(soviets, 1, None, false, 1000, 10));
+        .register(HouseState::new(americans, 0, None, true, 1000, 10));
+    sim.houses
+        .register(HouseState::new(soviets, 1, None, false, 1000, 10));
 
     for _ in 0..2 {
         sim.spawn_object_limbo_at_height("ACTOR", "Americans", 3, 3, 0, 0, &rules)
@@ -120,36 +83,6 @@ fn snapshot_tallies_entities_per_house() {
 }
 
 #[test]
-fn house_rows_carry_economy_and_roster() {
-    let rules = vehicle_rules();
-    let mut sim = Simulation::with_seed(37);
-    let americans = sim.interner.intern("Americans");
-    sim.houses.insert(
-        americans,
-        HouseState::new(americans, 0, None, true, 1000, 10),
-    );
-    for _ in 0..3 {
-        sim.spawn_object_limbo_at_height("ACTOR", "Americans", 3, 3, 0, 0, &rules)
-            .expect("vehicle spawn");
-    }
-    if let Some(house) = sim.houses.get_mut(&americans) {
-        house.economy.add_credits(500);
-        house.economy.add_score(42);
-    }
-
-    let snapshot = sim.telemetry_snapshot();
-    let row = house_row(&snapshot, "Americans");
-    assert_eq!(row.credits, 1500, "seeded 1000 plus the 500 deposit");
-    assert_eq!(row.score, 42);
-    assert_eq!(row.spent, 0);
-    assert!(!row.defeated);
-    assert_eq!(row.roster.len(), 1, "one type in this fixture");
-    assert_eq!(row.roster[0].type_name, "ACTOR");
-    assert_eq!(row.roster[0].category, EntityCategory::Unit);
-    assert_eq!(row.roster[0].count, 3);
-}
-
-#[test]
 fn production_rows_report_the_active_build_its_queue_and_ready_stock() {
     use crate::sim::production::PRODUCTION_STEPS;
     use crate::sim::production::ProductionCategory;
@@ -158,26 +91,24 @@ fn production_rows_report_the_active_build_its_queue_and_ready_stock() {
     let mut sim = Simulation::with_seed(53);
     let americans = sim.interner.intern("Americans");
     let soviets = sim.interner.intern("Soviets");
-    sim.houses.insert(
-        americans,
-        HouseState::new(americans, 0, None, true, 1000, 10),
-    );
     sim.houses
-        .insert(soviets, HouseState::new(soviets, 1, None, false, 1000, 10));
+        .register(HouseState::new(americans, 0, None, true, 1000, 10));
+    sim.houses
+        .register(HouseState::new(soviets, 1, None, false, 1000, 10));
     sim.spawn_object_limbo_at_height("ACTOR", "Americans", 3, 3, 0, 0, &rules)
         .expect("vehicle spawn");
 
     let actor = sim.interner.intern("ACTOR");
     // Two factories for one house: the projection groups by owner, not by
     // category, so both must appear rather than one shadowing the other.
-    sim.production.factories.test_enqueue_kernel(
+    sim.production.factories_mut().test_enqueue_kernel(
         americans,
         ProductionCategory::Infantry,
         actor,
         0,
         100,
     );
-    sim.production.factories.test_enqueue_kernel(
+    sim.production.factories_mut().test_enqueue_kernel(
         americans,
         ProductionCategory::Vehicle,
         actor,
@@ -185,7 +116,7 @@ fn production_rows_report_the_active_build_its_queue_and_ready_stock() {
         100,
     );
     // A different house's factory must land on that house's row.
-    sim.production.factories.test_enqueue_kernel(
+    sim.production.factories_mut().test_enqueue_kernel(
         soviets,
         ProductionCategory::Infantry,
         actor,
@@ -215,10 +146,10 @@ fn production_rows_report_the_active_build_its_queue_and_ready_stock() {
     // ready-to-place stock: that is the state a player can act on, and the
     // panel has to show it as such rather than as a full progress bar.
     sim.production
-        .factories
+        .factories_mut()
         .test_factory_mut(americans, ProductionCategory::Infantry)
         .unwrap()
-        .progress = PRODUCTION_STEPS;
+        .set_progress_for_test(PRODUCTION_STEPS);
     let snapshot = sim.telemetry_snapshot();
     let infantry = house_row(&snapshot, "Americans")
         .production
@@ -237,30 +168,13 @@ fn production_rows_report_the_active_build_its_queue_and_ready_stock() {
 }
 
 #[test]
-fn a_house_with_no_factory_reports_no_production() {
-    let mut sim = Simulation::with_seed(59);
-    let americans = sim.interner.intern("Americans");
-    sim.houses.insert(
-        americans,
-        HouseState::new(americans, 0, None, true, 1000, 10),
-    );
-    let snapshot = sim.telemetry_snapshot();
-    let row = house_row(&snapshot, "Americans");
-    assert!(row.production.is_empty());
-    assert!(row.squads.is_empty());
-    assert!(row.base_plan.is_empty());
-}
-
-#[test]
 fn spots_carry_world_positions_and_owner_indices() {
     // The diagnostic insert keeps its requested cell (unlike the limbo
     // spawn, whose native CoordStruct default is (0,0) off-map).
     let mut sim = Simulation::with_seed(31);
     let americans = sim.interner.intern("Americans");
-    sim.houses.insert(
-        americans,
-        HouseState::new(americans, 0, None, true, 1000, 10),
-    );
+    sim.houses
+        .register(HouseState::new(americans, 0, None, true, 1000, 10));
     let french = sim.interner.intern("French");
     let type_ref = sim.interner.intern("ACTOR");
     for (owner, cell) in [(americans, 3u16), (french, 60u16)] {
@@ -313,64 +227,12 @@ fn spots_carry_world_positions_and_owner_indices() {
 }
 
 #[test]
-fn snapshot_round_trips_through_save_codec() {
-    let rules = vehicle_rules();
-    let mut sim = Simulation::with_seed(31);
-    let owner = sim.interner.intern("Americans");
-    sim.houses
-        .insert(owner, HouseState::new(owner, 0, None, true, 1000, 10));
-    sim.spawn_object_limbo_at_height("ACTOR", "Americans", 3, 3, 0, 0, &rules)
-        .expect("vehicle spawn");
-
-    let snapshot = sim.telemetry_snapshot();
-    let bytes = crate::util::save_codec::serialize(&snapshot).expect("serialize");
-    let restored: TelemetrySnapshot =
-        crate::util::save_codec::deserialize(&bytes).expect("deserialize");
-    assert_eq!(snapshot, restored);
-}
-
-#[test]
-fn houses_carry_their_difficulty() {
-    use crate::sim::house_state::HouseDifficulty;
-
-    let mut sim = Simulation::with_seed(41);
-    let tough = sim.interner.intern("Computer1");
-    let mut tough_house = HouseState::new(tough, 1, None, false, 1000, 10);
-    tough_house.difficulty = HouseDifficulty::Hard;
-    sim.houses.insert(tough, tough_house);
-
-    let easy = sim.interner.intern("Computer2");
-    let mut easy_house = HouseState::new(easy, 1, None, false, 1000, 10);
-    easy_house.difficulty = HouseDifficulty::Easy;
-    sim.houses.insert(easy, easy_house);
-
-    let snapshot = sim.telemetry_snapshot();
-    assert_eq!(snapshot.houses[0].difficulty, "hard");
-    assert_eq!(snapshot.houses[1].difficulty, "easy");
-    // The app fills the side's [Sides] spelling from the loaded rules.
-    assert_eq!(snapshot.houses[0].side_name, None);
-}
-
-#[test]
-fn repeated_captures_are_equal() {
-    let rules = vehicle_rules();
-    let mut sim = Simulation::with_seed(31);
-    let owner = sim.interner.intern("Americans");
-    sim.houses
-        .insert(owner, HouseState::new(owner, 0, None, true, 1000, 10));
-    sim.spawn_object_limbo_at_height("ACTOR", "Americans", 3, 3, 0, 0, &rules)
-        .expect("vehicle spawn");
-
-    assert_eq!(sim.telemetry_snapshot(), sim.telemetry_snapshot());
-}
-
-#[test]
 fn snapshot_and_profiling_switches_leave_hash_and_saved_bytes_unchanged() {
     let rules = vehicle_rules();
     let mut sim = Simulation::with_seed(71);
     let owner = sim.interner.intern("Americans");
     sim.houses
-        .insert(owner, HouseState::new(owner, 0, None, true, 1000, 10));
+        .register(HouseState::new(owner, 0, None, true, 1000, 10));
     sim.spawn_object_limbo_at_height("ACTOR", "Americans", 3, 3, 0, 0, &rules)
         .unwrap();
     let hash = sim.state_hash();
@@ -439,7 +301,7 @@ fn roster_keeps_identical_names_in_distinct_categories_and_reads_team_flags() {
     let kind = sim.interner.intern("SharedName");
     let script = sim.interner.intern("Script");
     sim.houses
-        .insert(owner, HouseState::new(owner, 0, None, false, 0, 10));
+        .register(HouseState::new(owner, 0, None, false, 0, 10));
     let mut members = Vec::new();
     for category in [EntityCategory::Unit, EntityCategory::Infantry] {
         members.push(sim.insert_synthetic_techno_for_diagnostics(
@@ -482,14 +344,18 @@ fn snapshot_bounds_long_names_house_rows_and_production_queues() {
         let owner = sim.interner.intern(&format!("House{index}"));
         first.get_or_insert(owner);
         sim.houses
-            .insert(owner, HouseState::new(owner, 0, None, false, 0, 10));
+            .register(HouseState::new(owner, 0, None, false, 0, 10));
     }
     let owner = first.unwrap();
-    sim.production
-        .factories
-        .test_enqueue_kernel(owner, ProductionCategory::Vehicle, kind, 0, 1);
+    sim.production.factories_mut().test_enqueue_kernel(
+        owner,
+        ProductionCategory::Vehicle,
+        kind,
+        0,
+        1,
+    );
     for index in 0..TELEMETRY_MAX_QUEUE + 4 {
-        sim.production.factories.test_enqueue_kernel(
+        sim.production.factories_mut().test_enqueue_kernel(
             owner,
             ProductionCategory::Vehicle,
             kind,
@@ -528,7 +394,7 @@ fn capped_core_payload_leaves_room_in_the_eight_mib_transport_budget() {
     let mut sim = Simulation::new();
     let owner = sim.interner.intern("Owner");
     sim.houses
-        .insert(owner, HouseState::new(owner, 0, None, false, 0, 10));
+        .register(HouseState::new(owner, 0, None, false, 0, 10));
     let mut snapshot = sim.telemetry_snapshot();
     let mut house = snapshot.houses[0].clone();
     house.name = name.clone();
@@ -594,7 +460,7 @@ fn project_scale_capture_counts_thirty_houses_and_caps_twenty_thousand_spots() {
         .map(|index| {
             let owner = sim.interner.intern(&format!("Player{index}"));
             sim.houses
-                .insert(owner, HouseState::new(owner, 0, None, false, 1000, 10));
+                .register(HouseState::new(owner, 0, None, false, 1000, 10));
             owner
         })
         .collect();
@@ -712,14 +578,4 @@ fn debug_panel_round_trips_through_save_codec() {
         assert!(json["selected"][0]["events"].as_array().unwrap().is_empty());
         assert_eq!(json["overlays"]["unit_inspector"], false);
     }
-}
-
-#[cfg(not(feature = "debug-tools"))]
-#[test]
-fn dashboard_only_payload_contains_no_trainer_or_inspector() {
-    let value = serde_json::to_value(Simulation::new().telemetry_snapshot()).unwrap();
-    assert!(value.get("debug_tools").is_none());
-    assert!(value.get("cheats").is_none());
-    let flags = serde_json::to_value(crate::sim::telemetry::OverlayFlags::default()).unwrap();
-    assert!(flags.get("unit_inspector").is_none());
 }

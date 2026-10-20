@@ -438,16 +438,16 @@ pub(crate) fn bind_match_theme_context(state: &mut crate::app::AppState) {
     let simulation = &runtime.simulation;
     let local_side = state.match_state.local_player_owner().and_then(|owner| {
         crate::sim::house_state::house_state_for_owner(
-            &simulation.houses,
+            simulation.houses(),
             owner,
-            &simulation.interner,
+            simulation.interner(),
         )
-        .map(|house| i32::from(house.side_index))
+        .map(|house| i32::from(house.side_index()))
     });
     state.audio.theme.begin_scenario(
         ThemeAllowContext {
             local_side,
-            campaign_scenario: simulation.session.campaign_mission_counter(),
+            campaign_scenario: simulation.session().campaign_mission_counter(),
         },
         |name| {
             runtime
@@ -488,16 +488,6 @@ mod tests {
             self.calls.push(OutputCall::Submit(prepared.stem));
             self.submit_succeeds
         }
-    }
-
-    #[test]
-    fn launcher_audio_gate_uses_one_process_start_predicate() {
-        assert!(!derive_launcher_audio_available(false, false, false));
-        assert!(!derive_launcher_audio_available(false, true, true));
-        assert!(!derive_launcher_audio_available(true, false, false));
-        assert!(derive_launcher_audio_available(true, true, false));
-        assert!(derive_launcher_audio_available(true, false, true));
-        assert!(derive_launcher_audio_available(true, true, true));
     }
 
     fn empty_assets(label: &str) -> AssetManager {

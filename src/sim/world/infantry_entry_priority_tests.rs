@@ -59,10 +59,13 @@ fn escape_counter_matches_native_cell_list_and_raw_owner_gates() {
         let enemy = sim.intern("Russians");
         for house in [ours, enemy] {
             sim.houses
-                .insert(house, HouseState::new(house, 0, None, false, 0, 10));
-            sim.session.house_order.push(house);
+                .register(HouseState::new(house, 0, None, false, 0, 10));
         }
-        sim.session.game_mode_nonzero = input["mode"].as_u64().unwrap() != 0;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+                input["mode"].as_u64().unwrap() != 0,
+            ),
+        );
         sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
             base: 16,
             off_fc: if input["rim"].as_bool().unwrap() {
@@ -118,7 +121,7 @@ fn escape_counter_matches_native_cell_list_and_raw_owner_gates() {
                 let LocomotorRuntimePayload::Walk(walk) = locomotor.runtime_payload_mut() else {
                     unreachable!()
                 };
-                walk.set_moving(moving);
+                walk.set_moving_for_test(moving);
                 blocker.locomotor = Some(locomotor);
             } else if category == EntityCategory::Unit {
                 blocker.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Drive));

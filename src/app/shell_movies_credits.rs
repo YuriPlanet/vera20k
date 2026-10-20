@@ -271,6 +271,9 @@ impl App {
             bytes,
             source,
             false,
+            // Fitted windows scale the frame (fullscreen_movie::movie_rect);
+            // at the native 1:1 size linear sampling returns exact texels.
+            wgpu::FilterMode::Linear,
         ) {
             Ok(surface) => surface,
             Err(err) => {
@@ -372,6 +375,9 @@ impl App {
             }
             MovieReturn::CampaignVictory(victory) => {
                 Self::advance_campaign_victory(state, *victory);
+            }
+            MovieReturn::CampaignDefeat(defeat) => {
+                Self::open_campaign_replay_prompt(state, *defeat);
             }
         }
     }
@@ -479,6 +485,7 @@ impl App {
             CreditsReturn::MainMenu => {
                 Self::destroy_current_shell_dialog(state);
                 state.frontend.shell_route = ShellRoute::MainMenu;
+                Self::resume_shell_after_match(state);
             }
         }
     }

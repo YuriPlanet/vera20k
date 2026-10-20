@@ -162,12 +162,12 @@ fn the_launch_matches_native() {
             && let Some(terrain) = sim.resolved_terrain.as_mut()
         {
             let index = terrain.index(cell.0, cell.1).unwrap();
-            terrain.cells[index].bridge_facts.raw_flags =
+            terrain.cells_mut_for_test()[index].bridge_facts.raw_flags =
                 crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
         }
         let russians = sim.interner.intern("Russians");
         let sw_type = charge_super(&mut sim, russians, FORCE_SHIELD);
-        let frame = sim.session.binary_frame;
+        let frame = sim.session.binary_frame();
         assert!(launch(&mut sim, &rules, russians, cell.0, cell.1, sw_type));
 
         let native_anim = events(row, "anim").next().unwrap();
@@ -177,15 +177,15 @@ fn the_launch_matches_native() {
             .anims
             .iter()
             .map(|(_, anim)| anim)
-            .filter(|anim| anim.type_id == invoke)
+            .filter(|anim| anim.type_id() == invoke)
             .collect();
         assert_eq!(anims.len(), 1, "{row}");
-        let world = anims[0].world_coord;
+        let world = anims[0].world_coord();
         assert_eq!([world.x, world.y, world.z], coord(&native_anim[2]), "{row}");
         // (delay, loopCount, drawFlags, zAdjust, reverse) = (0, 1, 0x600, 0, 0).
         assert_eq!(native_anim[3], serde_json::json!([0, 1, 0x600, 0, 0]));
         assert_eq!(
-            (anims[0].draw_flags, anims[0].z_adjust),
+            (anims[0].draw_flags(), anims[0].z_adjust()),
             (0x600, 0),
             "{row}"
         );
@@ -247,7 +247,7 @@ fn retail_force_shield_shields_allied_buildings_and_fades() {
         let american = spawn(&mut sim, "GAPOWR", "Americans", (40, 43));
         let far = spawn(&mut sim, "GAPOWR", "Russians", (44, 40));
         charge_super(&mut sim, russians, FORCE_SHIELD);
-        let launch_frame = sim.session.binary_frame;
+        let launch_frame = sim.session.binary_frame();
         click(&mut sim, &rules, russians, FORCE_SHIELD, (40, 40));
 
         let shield = |sim: &Simulation, id: u64| {
@@ -276,9 +276,9 @@ fn retail_force_shield_shields_allied_buildings_and_fades() {
                 .count()
         };
         let mut heard = Vec::new();
-        while sim.session.binary_frame < launch_frame + 430 {
+        while sim.session.binary_frame() < launch_frame + 430 {
             sim.sound_events.clear();
-            let frame = sim.session.binary_frame;
+            let frame = sim.session.binary_frame();
             step(&mut sim, &rules);
             if fading(&sim) > 0 {
                 heard.push((frame - launch_frame, fading(&sim)));
@@ -301,7 +301,8 @@ fn a_bridge_cell_walks_from_the_ground_centre() {
     let (rules, mut sim, _) = world_with(rules, 64, &[]);
     let terrain = sim.resolved_terrain.as_mut().expect("the world has a map");
     let index = terrain.index(40, 40).unwrap();
-    terrain.cells[index].bridge_facts.raw_flags = crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
+    terrain.cells_mut_for_test()[index].bridge_facts.raw_flags =
+        crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
     let russians = sim.interner.intern("Russians");
     sim.spawn_object_at_height("NATECH", "Russians", 10, 10, 0, 0, &rules)
         .unwrap();
@@ -360,7 +361,7 @@ fn a_grant_keeps_the_countdown_and_releases_the_anim() {
             .anims
             .get(anim)
             .unwrap()
-            .runtime
+            .runtime()
             .loop_remaining,
         0
     );

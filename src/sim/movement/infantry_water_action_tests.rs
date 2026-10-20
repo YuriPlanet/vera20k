@@ -163,13 +163,14 @@ fn fixture(row: &Value, rules: &RuleSet, type_name: &str) -> (Simulation, u64) {
     let input = &row["input"];
     let physical = row["kind"] == "retail_action";
     let mut sim = Simulation::with_seed(0);
-    sim.session.binary_frame = 100;
-    sim.session.game_options.game_speed = row["game_speed_index"].as_i64().unwrap_or(0) as i32;
+    sim.session.set_binary_frame_for_test(100);
+    sim.session.game_options_mut_for_test().game_speed =
+        row["game_speed_index"].as_i64().unwrap_or(0) as i32;
     let house = sim.interner.intern("Americans");
-    sim.houses.insert(
-        house,
-        crate::sim::house_state::HouseState::new(house, 0, None, true, 0, 10),
-    );
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            house, 0, None, true, 0, 10,
+        ));
     let xyz = if physical {
         row["physical_xyz"]
             .as_array()
@@ -206,7 +207,7 @@ fn fixture(row: &Value, rules: &RuleSet, type_name: &str) -> (Simulation, u64) {
     assert_eq!(actor.mission_leaf.as_infantry().unwrap().water_state(), 2);
     // Synthetic rows supply +74=false; physical rows retain the constructor
     // in limbo. Neither premise claims wet/deck Unlimbo or occupation.
-    actor.lifecycle.set_cell_marked(false);
+    actor.lifecycle.set_cell_marked_for_test(false);
     // These action controls supply Location after construction. Constructor
     // arguments do not place the fresh Object at this native cell/pose.
     actor.position.put_location(DriveCoord {

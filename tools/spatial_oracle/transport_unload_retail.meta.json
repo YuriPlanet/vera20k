@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Unit transport latch gate; four bounded original retail unload histories.",
+  "assumptions": [
+    "Retail controls reuse FootMissions physical type readers, constructors and Anytown crop.",
+    "Already-boarded one-E1 prior; supplied frame100, hull/turret arcs and House."
+  ],
+  "substitutions": [
+    "Inherited FootMissions input, cropped-map and OS/presentation boundaries.",
+    "Only the carrier Unit AI is visited; no passenger movement or other global phases."
+  ],
+  "entry_points": {
+    "unit_ai": "0x007360C0",
+    "facing_update": "0x00736990",
+    "unload": "0x0073D630",
+    "remove_passenger": "0x004DE710",
+    "infantry_unlimbo": "0x0051DFF0"
+  },
+  "replay_command": "python -m tools.spatial_oracle.transport_unload --retail",
+  "payload_sha256": "3fbe0980a24f55ed583be596e5e4762f41c2c178aeed06d4f58bf9a21a5c5ee4"
+}

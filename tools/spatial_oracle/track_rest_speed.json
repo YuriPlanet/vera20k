@@ -1,0 +1,1447 @@
+{
+  "histories": [
+    {
+      "boundary": "004D3920",
+      "calls": [
+        "004AFE00",
+        "00741970",
+        "004B0500",
+        "004D3920"
+      ],
+      "input": {
+        "rest": false,
+        "stop": "locomotor"
+      },
+      "rng_unchanged": true,
+      "states": [
+        {
+          "coords": [
+            2688,
+            2688,
+            0
+          ],
+          "destination": [
+            2944,
+            2688,
+            0
+          ],
+          "head": [
+            0,
+            0,
+            0
+          ],
+          "queue": -1,
+          "speed_bits": "3fe8000000000000",
+          "stage": "initial",
+          "target_bits": "3feccccccccccccd"
+        },
+        {
+          "coords": [
+            2688,
+            2688,
+            0
+          ],
+          "destination": [
+            0,
+            0,
+            0
+          ],
+          "head": [
+            0,
+            0,
+            0
+          ],
+          "queue": -1,
+          "speed_bits": "3fe8000000000000",
+          "stage": "stop",
+          "target_bits": "3fd3333340000000"
+        },
+        {
+          "coords": [
+            2688,
+            2688,
+            0
+          ],
+          "destination": [
+            2944,
+            2688,
+            0
+          ],
+          "head": [
+            0,
+            0,
+            0
+          ],
+          "queue": -1,
+          "speed_bits": "3fe8000000000000",
+          "stage": "new_order",
+          "target_bits": "3fd3333340000000"
+        },
+        {
+          "coords": [
+            2688,
+            2688,
+            0
+          ],
+          "destination": [
+            2944,
+            2688,
+            0
+          ],
+          "head": [
+            0,
+            0,
+            0
+          ],
+          "queue": -1,
+          "speed_bits": "3fe8000000000000",
+          "stage": "first_path_request",
+          "target_bits": "3fd3333340000000"
+        }
+      ]
+    },
+    {
+      "boundary": "004D3920",
+      "calls": [
+        "004AFE00",
+        "004B0500",
+        "004B078C",
+        "004B0828",
+        "004D3710",
+        "00741970",
+        "004B0500",
+        "004D3920"
+      ],
+      "input": {
+        "rest": true,
+        "stop": "locomotor"
+      },
+      "rng_unchanged": true,
+      "states": [
+        {
+          "coords": [
+            2688,
+            2688,
+            0
+          ],
+          "destination": [
+            2944,
+            2688,
+            0
+          ],
+          "head": [
+            0,
+            0,
+            0
+          ],
+          "queue": -1,
+          "speed_bits": "3fe8000000000000",
+          "stage": "initial",
+          "target_bits": "3feccccccccccccd"
+        },
+        {
+          "coords": [
+            2688,
+            2688,
+            0
+          ],
+          "destination": [
+            0,
+            0,
+            0
+          ],
+          "head": [
+            0,
+            0,
+            0
+          ],
+          "queue": -1,
+          "speed_bits": "3fe8000000000000",
+          "stage": "stop",
+          "target_bits": "3fd3333340000000"
+        },
+        {
+          "coords": [
+            2688,
+            2688,
+            0
+          ],
+          "destination": [
+            0,
+            0,
+            0
+          ],
+          "head": [
+            0,
+            0,
+            0
+          ],
+          "queue": -1,
+          "speed_bits": "0000000000000000",
+          "stage": "rest",
+          "target_bits": "3fd3333340000000"
+        },
+        {
+          "coords": [
+            2688,
+            2688,
+            0
+          ],
+          "destination": [
+            2944,
+            2688,
+            0
+          ],
+          "head": [
+            0,
+            0,
+            0
+          ],
+          "queue": -1,
+          "speed_bits": "0000000000000000",
+          "stage": "new_order",
+          "target_bits": "3fd3333340000000"
+        },
+        {
+          "coords": [
+            2688,
+            2688,
+            0
+          ],
+          "destination": [
+            2944,
+            2688,
+            0
+          ],
+          "head": [
+            0,
+            0,
+            0
+          ],
+          "queue": -1,
+          "speed_bits": "0000000000000000",
+          "stage": "first_path_request",
+          "target_bits": "3fd3333340000000"
+        }
+      ]
+    },
+    {
+      "boundary": "004D3920",
+      "calls": [
+        "00741970",
+        "004AFE00",
+        "00741970",
+        "004B0500",
+        "004D3920"
+      ],
+      "input": {
+        "rest": false,
+        "stop": "unit_null"
+      },
+      "rng_unchanged": true,
+      "states": [
+        {
+          "coords": [
+            2688,
+            2688,
+            0
+          ],
+          "destination": [
+            2944,
+            2688,
+            0
+          ],
+          "head": [
+            0,
+            0,
+            0
+          ],
+          "queue": -1,
+          "speed_bits": "3fe8000000000000",
+          "stage": "initial",
+          "target_bits": "3feccccccccccccd"
+        },
+        {
+          "coords": [
+            2688,
+            2688,
+            0
+          ],
+          "destination": [
+            0,
+            0,
+            0
+          ],
+          "head": [
+            0,
+            0,
+            0
+          ],
+          "queue": -1,
+          "speed_bits": "3fe8000000000000",
+          "stage": "stop",
+          "target_bits": "3fd3333340000000"
+        },
+        {
+          "coords": [
+            2688,
+            2688,
+            0
+          ],
+          "destination": [
+            2944,
+            2688,
+            0
+          ],
+          "head": [
+            0,
+            0,
+            0
+          ],
+          "queue": -1,
+          "speed_bits": "3fe8000000000000",
+          "stage": "new_order",
+          "target_bits": "3fd3333340000000"
+        },
+        {
+          "coords": [
+            2688,
+            2688,
+            0
+          ],
+          "destination": [
+            2944,
+            2688,
+            0
+          ],
+          "head": [
+            0,
+            0,
+            0
+          ],
+          "queue": -1,
+          "speed_bits": "3fe8000000000000",
+          "stage": "first_path_request",
+          "target_bits": "3fd3333340000000"
+        }
+      ]
+    },
+    {
+      "boundary": "004D3920",
+      "calls": [
+        "00741970",
+        "004AFE00",
+        "004B0500",
+        "004B078C",
+        "004B0828",
+        "004D3710",
+        "00741970",
+        "004B0500",
+        "004D3920"
+      ],
+      "input": {
+        "rest": true,
+        "stop": "unit_null"
+      },
+      "rng_unchanged": true,
+      "states": [
+        {
+          "coords": [
+            2688,
+            2688,
+            0
+          ],
+          "destination": [
+            2944,
+            2688,
+            0
+          ],
+          "head": [
+            0,
+            0,
+            0
+          ],
+          "queue": -1,
+          "speed_bits": "3fe8000000000000",
+          "stage": "initial",
+          "target_bits": "3feccccccccccccd"
+        },
+        {
+          "coords": [
+            2688,
+            2688,
+            0
+          ],
+          "destination": [
+            0,
+            0,
+            0
+          ],
+          "head": [
+            0,
+            0,
+            0
+          ],
+          "queue": -1,
+          "speed_bits": "3fe8000000000000",
+          "stage": "stop",
+          "target_bits": "3fd3333340000000"
+        },
+        {
+          "coords": [
+            2688,
+            2688,
+            0
+          ],
+          "destination": [
+            0,
+            0,
+            0
+          ],
+          "head": [
+            0,
+            0,
+            0
+          ],
+          "queue": -1,
+          "speed_bits": "0000000000000000",
+          "stage": "rest",
+          "target_bits": "3fd3333340000000"
+        },
+        {
+          "coords": [
+            2688,
+            2688,
+            0
+          ],
+          "destination": [
+            2944,
+            2688,
+            0
+          ],
+          "head": [
+            0,
+            0,
+            0
+          ],
+          "queue": -1,
+          "speed_bits": "0000000000000000",
+          "stage": "new_order",
+          "target_bits": "3fd3333340000000"
+        },
+        {
+          "coords": [
+            2688,
+            2688,
+            0
+          ],
+          "destination": [
+            2944,
+            2688,
+            0
+          ],
+          "head": [
+            0,
+            0,
+            0
+          ],
+          "queue": -1,
+          "speed_bits": "0000000000000000",
+          "stage": "first_path_request",
+          "target_bits": "3fd3333340000000"
+        }
+      ]
+    }
+  ],
+  "paid": [
+    {
+      "astar": [
+        "one-cell-east"
+      ],
+      "calls": [
+        "004AFE00",
+        "00741970",
+        "004B0500",
+        "004D3920",
+        "004D3710",
+        "004B078C",
+        "004B0828",
+        "004B0500",
+        "004D3710",
+        "004B078C",
+        "004B0828",
+        "004B0500",
+        "004D3710",
+        "004B078C",
+        "004B0828",
+        "004B0500",
+        "004D3710",
+        "004B078C",
+        "004B0828",
+        "004B0500",
+        "004D3710",
+        "004B078C",
+        "004B0828",
+        "004B0500",
+        "004D3710",
+        "004B078C",
+        "004B0828"
+      ],
+      "rest": false,
+      "rng_unchanged": true,
+      "states": [
+        {
+          "coords": [
+            2703,
+            2688,
+            0
+          ],
+          "destination": [
+            2944,
+            2688,
+            0
+          ],
+          "frame": 101,
+          "head": [
+            2944,
+            2688,
+            0
+          ],
+          "queue": -1,
+          "speed_bits": "3fe70a3d70a3d70a",
+          "target_bits": "3ff0000000000000"
+        },
+        {
+          "coords": [
+            2719,
+            2688,
+            0
+          ],
+          "destination": [
+            2944,
+            2688,
+            0
+          ],
+          "frame": 102,
+          "head": [
+            2944,
+            2688,
+            0
+          ],
+          "queue": -1,
+          "speed_bits": "3fe6147ae147ae14",
+          "target_bits": "3ff0000000000000"
+        },
+        {
+          "coords": [
+            2733,
+            2688,
+            0
+          ],
+          "destination": [
+            2944,
+            2688,
+            0
+          ],
+          "frame": 103,
+          "head": [
+            2944,
+            2688,
+            0
+          ],
+          "queue": -1,
+          "speed_bits": "3fe51eb851eb851e",
+          "target_bits": "3ff0000000000000"
+        },
+        {
+          "coords": [
+            2747,
+            2688,
+            0
+          ],
+          "destination": [
+            2944,
+            2688,
+            0
+          ],
+          "frame": 104,
+          "head": [
+            2944,
+            2688,
+            0
+          ],
+          "queue": -1,
+          "speed_bits": "3fe428f5c28f5c28",
+          "target_bits": "3ff0000000000000"
+        },
+        {
+          "coords": [
+            2760,
+            2688,
+            0
+          ],
+          "destination": [
+            2944,
+            2688,
+            0
+          ],
+          "frame": 105,
+          "head": [
+            2944,
+            2688,
+            0
+          ],
+          "queue": -1,
+          "speed_bits": "3fe3333333333332",
+          "target_bits": "3ff0000000000000"
+        },
+        {
+          "coords": [
+            2772,
+            2688,
+            0
+          ],
+          "destination": [
+            2944,
+            2688,
+            0
+          ],
+          "frame": 106,
+          "head": [
+            2944,
+            2688,
+            0
+          ],
+          "queue": -1,
+          "speed_bits": "3fe23d70a3d70a3c",
+          "target_bits": "3ff0000000000000"
+        }
+      ]
+    },
+    {
+      "astar": [
+        "one-cell-east"
+      ],
+      "calls": [
+        "004AFE00",
+        "004B0500",
+        "004B078C",
+        "004B0828",
+        "004D3710",
+        "00741970",
+        "004B0500",
+        "004D3920",
+        "004D3710",
+        "004B078C",
+        "004B0828",
+        "004B0500",
+        "004D3710",
+        "004B078C",
+        "004B0828",
+        "004B0500",
+        "004D3710",
+        "004B078C",
+        "004B0828",
+        "004B0500",
+        "004D3710",
+        "004B078C",
+        "004B0828",
+        "004B0500",
+        "004D3710",
+        "004B078C",
+        "004B0828",
+        "004B0500",
+        "004D3710",
+        "004B078C",
+        "004B0828"
+      ],
+      "rest": true,
+      "rng_unchanged": true,
+      "states": [
+        {
+          "coords": [
+            2694,
+            2688,
+            0
+          ],
+          "destination": [
+            2944,
+            2688,
+            0
+          ],
+          "frame": 101,
+          "head": [
+            2944,
+            2688,
+            0
+          ],
+          "queue": -1,
+          "speed_bits": "3fd3333340000000",
+          "target_bits": "3ff0000000000000"
+        },
+        {
+          "coords": [
+            2700,
+            2688,
+            0
+          ],
+          "destination": [
+            2944,
+            2688,
+            0
+          ],
+          "frame": 102,
+          "head": [
+            2944,
+            2688,
+            0
+          ],
+          "queue": -1,
+          "speed_bits": "3fd3333340000000",
+          "target_bits": "3ff0000000000000"
+        },
+        {
+          "coords": [
+            2707,
+            2688,
+            0
+          ],
+          "destination": [
+            2944,
+            2688,
+            0
+          ],
+          "frame": 103,
+          "head": [
+            2944,
+            2688,
+            0
+          ],
+          "queue": -1,
+          "speed_bits": "3fd3333340000000",
+          "target_bits": "3ff0000000000000"
+        },
+        {
+          "coords": [
+            2713,
+            2688,
+            0
+          ],
+          "destination": [
+            2944,
+            2688,
+            0
+          ],
+          "frame": 104,
+          "head": [
+            2944,
+            2688,
+            0
+          ],
+          "queue": -1,
+          "speed_bits": "3fd3333340000000",
+          "target_bits": "3ff0000000000000"
+        },
+        {
+          "coords": [
+            2719,
+            2688,
+            0
+          ],
+          "destination": [
+            2944,
+            2688,
+            0
+          ],
+          "frame": 105,
+          "head": [
+            2944,
+            2688,
+            0
+          ],
+          "queue": -1,
+          "speed_bits": "3fd3333340000000",
+          "target_bits": "3ff0000000000000"
+        },
+        {
+          "coords": [
+            2725,
+            2688,
+            0
+          ],
+          "destination": [
+            2944,
+            2688,
+            0
+          ],
+          "frame": 106,
+          "head": [
+            2944,
+            2688,
+            0
+          ],
+          "queue": -1,
+          "speed_bits": "3fd3333340000000",
+          "target_bits": "3ff0000000000000"
+        }
+      ]
+    }
+  ],
+  "process": [
+    {
+      "after": {
+        "coords": [
+          2688,
+          2688,
+          0
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "head": [
+          0,
+          0,
+          0
+        ],
+        "queue": -1,
+        "speed_bits": "0000000000000000",
+        "target_bits": "3feccccccccccccd"
+      },
+      "before": {
+        "coords": [
+          2688,
+          2688,
+          0
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "head": [
+          0,
+          0,
+          0
+        ],
+        "queue": -1,
+        "speed_bits": "3fe8000000000000",
+        "target_bits": "3feccccccccccccd"
+      },
+      "calls": [
+        "004B0500",
+        "004B078C",
+        "004B0828",
+        "004D3710"
+      ],
+      "input": {
+        "name": "turn",
+        "turn": true
+      },
+      "rng_unchanged": true
+    },
+    {
+      "after": {
+        "coords": [
+          2688,
+          2688,
+          0
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "head": [
+          0,
+          0,
+          0
+        ],
+        "queue": -1,
+        "speed_bits": "0000000000000000",
+        "target_bits": "3feccccccccccccd"
+      },
+      "before": {
+        "coords": [
+          2688,
+          2688,
+          0
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "head": [
+          0,
+          0,
+          0
+        ],
+        "queue": -1,
+        "speed_bits": "3fe8000000000000",
+        "target_bits": "3feccccccccccccd"
+      },
+      "calls": [
+        "004B0500",
+        "004B078C",
+        "004B0828",
+        "004D3710"
+      ],
+      "input": {
+        "mission": 5,
+        "name": "guard"
+      },
+      "rng_unchanged": true
+    },
+    {
+      "after": {
+        "coords": [
+          2688,
+          2688,
+          0
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "head": [
+          0,
+          0,
+          0
+        ],
+        "queue": -1,
+        "speed_bits": "0000000000000000",
+        "target_bits": "3feccccccccccccd"
+      },
+      "before": {
+        "coords": [
+          2688,
+          2688,
+          0
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "head": [
+          0,
+          0,
+          0
+        ],
+        "queue": -1,
+        "speed_bits": "3fe8000000000000",
+        "target_bits": "3feccccccccccccd"
+      },
+      "calls": [
+        "004B0500",
+        "004B078C",
+        "004B0828",
+        "004D3710"
+      ],
+      "input": {
+        "mission": 2,
+        "name": "ordinary"
+      },
+      "rng_unchanged": true
+    },
+    {
+      "after": {
+        "coords": [
+          2688,
+          2688,
+          0
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "head": [
+          256,
+          0,
+          0
+        ],
+        "queue": -1,
+        "speed_bits": "3fe8000000000000",
+        "target_bits": "3feccccccccccccd"
+      },
+      "before": {
+        "coords": [
+          2688,
+          2688,
+          0
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "head": [
+          256,
+          0,
+          0
+        ],
+        "queue": -1,
+        "speed_bits": "3fe8000000000000",
+        "target_bits": "3feccccccccccccd"
+      },
+      "calls": [
+        "004B0500",
+        "004B078C",
+        "004B0828"
+      ],
+      "input": {
+        "head": [
+          256,
+          0,
+          0
+        ],
+        "name": "head-x",
+        "turn": true
+      },
+      "rng_unchanged": true
+    },
+    {
+      "after": {
+        "coords": [
+          2688,
+          2688,
+          0
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "head": [
+          0,
+          256,
+          0
+        ],
+        "queue": -1,
+        "speed_bits": "3fe8000000000000",
+        "target_bits": "3feccccccccccccd"
+      },
+      "before": {
+        "coords": [
+          2688,
+          2688,
+          0
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "head": [
+          0,
+          256,
+          0
+        ],
+        "queue": -1,
+        "speed_bits": "3fe8000000000000",
+        "target_bits": "3feccccccccccccd"
+      },
+      "calls": [
+        "004B0500",
+        "004B078C",
+        "004B0828"
+      ],
+      "input": {
+        "head": [
+          0,
+          256,
+          0
+        ],
+        "name": "head-y",
+        "turn": true
+      },
+      "rng_unchanged": true
+    },
+    {
+      "after": {
+        "coords": [
+          2688,
+          2688,
+          0
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "head": [
+          0,
+          0,
+          1
+        ],
+        "queue": -1,
+        "speed_bits": "3fe8000000000000",
+        "target_bits": "3feccccccccccccd"
+      },
+      "before": {
+        "coords": [
+          2688,
+          2688,
+          0
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "head": [
+          0,
+          0,
+          1
+        ],
+        "queue": -1,
+        "speed_bits": "3fe8000000000000",
+        "target_bits": "3feccccccccccccd"
+      },
+      "calls": [
+        "004B0500",
+        "004B078C",
+        "004B0828"
+      ],
+      "input": {
+        "head": [
+          0,
+          0,
+          1
+        ],
+        "name": "head-z",
+        "turn": true
+      },
+      "rng_unchanged": true
+    },
+    {
+      "after": {
+        "coords": [
+          2688,
+          2688,
+          0
+        ],
+        "destination": [
+          2944,
+          2688,
+          0
+        ],
+        "head": [
+          0,
+          0,
+          0
+        ],
+        "queue": -1,
+        "speed_bits": "3fe8000000000000",
+        "target_bits": "3feccccccccccccd"
+      },
+      "before": {
+        "coords": [
+          2688,
+          2688,
+          0
+        ],
+        "destination": [
+          2944,
+          2688,
+          0
+        ],
+        "head": [
+          0,
+          0,
+          0
+        ],
+        "queue": -1,
+        "speed_bits": "3fe8000000000000",
+        "target_bits": "3feccccccccccccd"
+      },
+      "calls": [
+        "004B0500",
+        "004B078C",
+        "004B0828"
+      ],
+      "input": {
+        "destination": [
+          2944,
+          2688,
+          0
+        ],
+        "name": "destination",
+        "turn": true
+      },
+      "rng_unchanged": true
+    },
+    {
+      "after": {
+        "coords": [
+          2688,
+          2688,
+          0
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "head": [
+          0,
+          0,
+          0
+        ],
+        "queue": 2,
+        "speed_bits": "3fe8000000000000",
+        "target_bits": "3feccccccccccccd"
+      },
+      "before": {
+        "coords": [
+          2688,
+          2688,
+          0
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "head": [
+          0,
+          0,
+          0
+        ],
+        "queue": 2,
+        "speed_bits": "3fe8000000000000",
+        "target_bits": "3feccccccccccccd"
+      },
+      "calls": [
+        "004B0500",
+        "004B078C",
+        "004B0828"
+      ],
+      "input": {
+        "name": "queue",
+        "queue": 2,
+        "turn": true
+      },
+      "rng_unchanged": true
+    },
+    {
+      "after": {
+        "coords": [
+          2688,
+          2688,
+          0
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "head": [
+          0,
+          0,
+          0
+        ],
+        "queue": -1,
+        "speed_bits": "0000000000000000",
+        "target_bits": "3feccccccccccccd"
+      },
+      "before": {
+        "coords": [
+          2688,
+          2688,
+          0
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "head": [
+          0,
+          0,
+          0
+        ],
+        "queue": -1,
+        "speed_bits": "0000000000000000",
+        "target_bits": "3feccccccccccccd"
+      },
+      "calls": [
+        "004B0500",
+        "004B078C",
+        "004B0828"
+      ],
+      "input": {
+        "name": "zero",
+        "speed": 0.0,
+        "turn": true
+      },
+      "rng_unchanged": true
+    },
+    {
+      "after": {
+        "coords": [
+          2688,
+          2688,
+          0
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "head": [
+          0,
+          0,
+          0
+        ],
+        "queue": -1,
+        "speed_bits": "bfd0000000000000",
+        "target_bits": "3feccccccccccccd"
+      },
+      "before": {
+        "coords": [
+          2688,
+          2688,
+          0
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "head": [
+          0,
+          0,
+          0
+        ],
+        "queue": -1,
+        "speed_bits": "bfd0000000000000",
+        "target_bits": "3feccccccccccccd"
+      },
+      "calls": [
+        "004B0500",
+        "004B078C",
+        "004B0828"
+      ],
+      "input": {
+        "name": "negative",
+        "speed": -0.25,
+        "turn": true
+      },
+      "rng_unchanged": true
+    },
+    {
+      "after": {
+        "coords": [
+          2688,
+          2688,
+          0
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "head": [
+          0,
+          0,
+          0
+        ],
+        "queue": -1,
+        "speed_bits": "3fe8000000000000",
+        "target_bits": "3fd3333340000000"
+      },
+      "before": {
+        "coords": [
+          2688,
+          2688,
+          0
+        ],
+        "destination": [
+          0,
+          0,
+          0
+        ],
+        "head": [
+          0,
+          0,
+          0
+        ],
+        "queue": -1,
+        "speed_bits": "3fe8000000000000",
+        "target_bits": "3feccccccccccccd"
+      },
+      "calls": [
+        "004B0500",
+        "00741970",
+        "004AFE00"
+      ],
+      "input": {
+        "mission": 2,
+        "name": "same-cell",
+        "nav": true
+      },
+      "rng_unchanged": true
+    },
+    {
+      "after": {
+        "coords": [
+          2688,
+          2688,
+          0
+        ],
+        "destination": [
+          2688,
+          2688,
+          0
+        ],
+        "head": [
+          0,
+          0,
+          0
+        ],
+        "queue": -1,
+        "speed_bits": "3fe8000000000000",
+        "target_bits": "3feccccccccccccd"
+      },
+      "before": {
+        "coords": [
+          2688,
+          2688,
+          0
+        ],
+        "destination": [
+          2688,
+          2688,
+          0
+        ],
+        "head": [
+          0,
+          0,
+          0
+        ],
+        "queue": -1,
+        "speed_bits": "3fe8000000000000",
+        "target_bits": "3feccccccccccccd"
+      },
+      "calls": [
+        "004B0500",
+        "00741970"
+      ],
+      "input": {
+        "destination": [
+          2688,
+          2688,
+          0
+        ],
+        "mission": 5,
+        "name": "guard-destination"
+      },
+      "rng_unchanged": true
+    }
+  ]
+}

@@ -247,8 +247,10 @@ struct Arsenal {
 }
 
 impl Arsenal {
-    fn new(rules: &RuleSet, side_index: u8, country: &str, super_weapons: bool) -> Self {
-        let side = [&ALLIED, &SOVIET, &YURI][usize::from(side_index).min(2)];
+    fn new(rules: &RuleSet, side_index: i32, country: &str, super_weapons: bool) -> Self {
+        let side = *[&ALLIED, &SOVIET, &YURI]
+            .get(usize::try_from(side_index).expect("benchmark requires a nonnegative stock side"))
+            .expect("benchmark requires a stock side");
         let bit = house_country_bit(rules, country);
         let ownable = |type_id: &str| {
             rules.object(type_id).is_some_and(|object| {
@@ -505,19 +507,23 @@ impl MatchScenario {
             .collect();
         let sim = &mut scenario.runtime.simulation;
         let mut taken = Vec::new();
-        if let Some(local) = sim.session.current_house
-            && let Some(house) = sim.houses.get_mut(&local)
+        if let Some(local) = sim.session().current_house()
+            && sim.make_house_multiplay_passive(local)
         {
-            house.multiplay_passive = true;
-            taken.extend(house.base_center);
+            taken.extend(
+                sim.houses()
+                    .get(&local)
+                    .and_then(|house| house.base_center()),
+            );
         }
         let computers: Vec<(InternedId, (u16, u16))> = sim
-            .session
-            .house_order
+            .houses()
+            .order()
             .iter()
             .filter_map(|&id| {
-                let house = sim.houses.get(&id)?;
-                (!house.is_human && !house.multiplay_passive).then_some((id, house.base_center?))
+                let house = sim.houses().get(&id)?;
+                (!house.is_human() && !house.multiplay_passive())
+                    .then_some((id, house.base_center()?))
             })
             .collect();
         taken.extend(computers.iter().map(|&(_, home)| home));
@@ -555,13 +561,12 @@ impl MatchScenario {
             reserved: CellSet::new(),
         };
         let sim = &runtime.simulation;
-        for terrain in sim.resolved_terrain.iter() {
+        for terrain in sim.resolved_terrain().iter() {
             for cell in terrain.iter() {
                 let (x, y) = (i32::from(cell.rx), i32::from(cell.ry));
                 ground.cells.insert(x, y);
                 let ore = sim
-                    .overlay_grid
-                    .as_ref()
+                    .overlay_grid()
                     .and_then(|grid| grid.cell(cell.rx, cell.ry).overlay_id)
                     .and_then(|id| runtime.resources.overlay_registry.flags(id))
                     .is_some_and(|flags| flags.tiberium);
@@ -575,15 +580,15 @@ impl MatchScenario {
         let ore_offsets = spiral(ORE_REACH);
 
         let homes: Vec<(u16, u16)> = players.iter().map(|&(_, home, _)| home).collect();
-        let super_weapons = runtime.simulation.session.game_options.super_weapons;
+        let super_weapons = runtime.simulation.session().game_options().super_weapons;
         let mut houses = Vec::with_capacity(players.len());
         for (index, &(id, home, computer)) in players.iter().enumerate() {
             let sim = &mut runtime.simulation;
-            let state = &sim.houses[&id];
-            let side_index = state.side_index;
+            let state = &sim.houses()[&id];
+            let side_index = state.side_index();
             let country = state
-                .country
-                .map(|country| sim.interner.resolve(country).to_string())
+                .country()
+                .map(|country| sim.interner().resolve(country).to_string())
                 .unwrap_or_default();
             let arsenal = Arsenal::new(
                 &runtime.resources.rules,
@@ -604,14 +609,14 @@ impl MatchScenario {
                 .find(|&(x, y)| ground.open(x, y))
                 .map_or(home, |(x, y)| (x as u16, y as u16));
             let mut intern = |types: &[&'static str]| -> Vec<InternedId> {
-                types.iter().map(|name| sim.interner.intern(name)).collect()
+                types.iter().map(|name| sim.intern(name)).collect()
             };
             let infantry = intern(&arsenal.infantry);
             let vehicles = intern(&arsenal.vehicles);
             let plane = intern(arsenal.plane.as_slice()).first().copied();
             houses.push(House {
                 id,
-                name: sim.interner.resolve(id).to_string(),
+                name: sim.interner().resolve(id).to_string(),
                 computer,
                 arsenal,
                 home,
@@ -793,9 +798,9 @@ impl MatchScenario {
     fn defeated(runtime: &SimRuntime, id: InternedId) -> bool {
         runtime
             .simulation
-            .houses
+            .houses()
             .get(&id)
-            .is_none_or(|house| house.is_defeated)
+            .is_none_or(|house| house.is_defeated())
     }
 
     /// Alive and on the map, so that it can take an order.
@@ -878,7 +883,7 @@ impl MatchScenario {
 
     /// The commands every human house gives before frame `tick` (0-based) runs.
     pub(crate) fn orders(&mut self, runtime: &SimRuntime, tick: u64) -> Vec<CommandEnvelope> {
-        let at = runtime.simulation.session.tick + 1;
+        let at = runtime.simulation.session().tick() + 1;
         let mut orders = Vec::new();
         for index in 0..self.houses.len() {
             let (id, stagger) = (self.houses[index].id, index as u64);
@@ -980,8 +985,8 @@ impl MatchScenario {
             let room = |category| {
                 runtime
                     .simulation
-                    .production
-                    .factories
+                    .production()
+                    .factories()
                     .view(id, category)
                     .is_none_or(|factory| factory.queue.len() < QUEUE_DEPTH)
             };
@@ -1028,10 +1033,10 @@ impl MatchScenario {
             // aircraft.
             if tick > 0 && (tick + stagger * 11).is_multiple_of(REINFORCE_EVERY) {
                 let sim = &runtime.simulation;
-                let slave = sim.interner.get(SLAVE);
+                let slave = sim.interner().get(SLAVE);
                 let house = &self.houses[index];
                 let selectable = |type_ref: InternedId| {
-                    sim.interner
+                    sim.interner()
                         .object_type(type_ref, &runtime.resources.rules)
                         .is_some_and(|object| object.selectable)
                 };
@@ -1119,10 +1124,10 @@ impl MatchScenario {
         // or empty; and the objects waiting in their queues.
         let (mut factories, mut queued, mut held, mut low_power) = ([0usize; 3], 0usize, 0, 0);
         for house in &self.houses {
-            if let Some(state) = sim.houses.get(&house.id) {
-                credits += i64::from(state.economy.credits());
-                spent += i64::from(state.economy.spent_credits());
-                defeated += usize::from(state.is_defeated);
+            if let Some(state) = sim.houses().get(&house.id) {
+                credits += i64::from(state.economy().credits());
+                spent += i64::from(state.economy().spent_credits());
+                defeated += usize::from(state.is_defeated());
             }
             let (output, drain) = vera20k_core::sim::production::power_balance_for_owner(
                 sim,
@@ -1135,7 +1140,7 @@ impl MatchScenario {
                 ProductionCategory::Vehicle,
                 ProductionCategory::Aircraft,
             ] {
-                if let Some(factory) = sim.production.factories.view(house.id, category) {
+                if let Some(factory) = sim.production().factories().view(house.id, category) {
                     queued += factory.queue.len();
                     held += usize::from(factory.on_hold || factory.suspended);
                     factories[if factory.complete_object().is_some() {

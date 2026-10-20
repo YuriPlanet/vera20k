@@ -244,7 +244,8 @@ fn original_spark_birth_and_first_live_visit_preserve_ids_rng_and_particle_state
 
         // Persistence retains identities and the one allocation cursor; load
         // deliberately reseeds Scenario RNG through the established owner.
-        sim.session.map_name = "spark-native-identities".into();
+        sim.session
+            .set_map_name_for_test("spark-native-identities".into());
         let cursor = sim.native_unique_ids.as_ref().unwrap().current_raw();
         let bytes = GameSnapshot::save_validated(&sim, 17, 23, "Spark native identities", 0);
         let mut restored = GameSnapshot::load_validated(&bytes, 17, 23, "spark-native-identities")

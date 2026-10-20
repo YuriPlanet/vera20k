@@ -73,7 +73,7 @@ impl Simulation {
             }
             let normal_lighting = self
                 .session
-                .lighting
+                .lighting()
                 .profile(crate::sim::scenario_session::ScenarioLightingProfile::Normal)
                 .into();
             let placement = crate::sim::crates::place_scenario_start_crates_with_lighting(
@@ -122,7 +122,7 @@ impl Simulation {
         // and the particle/OreTwinkle tail. Every nonnull House participates;
         // restore never enters this fresh-only owner or repeats its credits.
         if input.fill_silos {
-            for &owner in &self.session.house_order {
+            for owner in self.houses.order().to_vec() {
                 let income = crate::sim::house_state::income_ppm_for_owner(
                     &self.houses,
                     &self.interner,
@@ -142,11 +142,10 @@ impl Simulation {
                     .first()
                     .expect("native FillSilos requires Tiberium registry slot0")
                     .value;
-                house.economy.fill_silos_fresh_empty_store(
-                    value,
-                    house.tracking.storage_capacity(),
-                    income,
-                );
+                let capacity = house.tracking().storage_capacity();
+                house
+                    .economy_mut()
+                    .fill_silos_fresh_empty_store(value, capacity, income);
             }
         }
 
@@ -184,7 +183,7 @@ impl Simulation {
         // indexes reset to699 in SetDefaults683610 before the Basic read.
         let opening_view_cell = input.campaign_new_game_map.and_then(|map| {
             assert!(
-                input.skirmish_session.is_none() && !self.session.game_mode_nonzero,
+                input.skirmish_session.is_none() && !self.session.game_mode_nonzero(),
                 "campaign opening view requires the campaign family"
             );
             u32::try_from(map.basic.home_cell.unwrap_or(699))
@@ -383,7 +382,7 @@ mod tests {
             // not alter the selected HomeCell in this shared post-load owner.
             map.basic.alt_home_cell = Some(-1);
             let mut sim = Simulation::from_descriptor(&Default::default());
-            sim.session.initialize_campaign_startup(1, 1).unwrap();
+            sim.session.initialize_campaign_startup(1, 1, None).unwrap();
             let before = sim.rng_state();
             let mut input = generic_post_map_input(&rules, &overlays, &roster);
             input.campaign_new_game_map = Some(&map);
@@ -431,7 +430,7 @@ mod tests {
         let (rules, overlays) = post_map_rules_and_overlays();
         let roster = crate::map::houses::parse_house_roster(&ini, &[], Some(&rules));
         let mut sim = Simulation::new();
-        sim.session.initialize_campaign_startup(1, 1).unwrap();
+        sim.session.initialize_campaign_startup(1, 1, None).unwrap();
         crate::sim::scenario_bootstrap::initialize_map_roster_houses(
             &mut sim,
             &roster,
@@ -449,7 +448,7 @@ mod tests {
             "A"
         ));
         let alliances = sim.house_alliances.clone();
-        let order = sim.session.house_order.clone();
+        let order = sim.houses.order().to_vec();
         let house_ids: Vec<_> = order
             .iter()
             .map(|owner| sim.houses[owner].native_unique_id())
@@ -463,7 +462,7 @@ mod tests {
             &absent_late_roster,
         ));
         assert_eq!(sim.house_alliances, alliances);
-        assert_eq!(sim.session.house_order, order);
+        assert_eq!(sim.houses.order(), order);
         assert_eq!(
             order
                 .iter()
@@ -500,8 +499,8 @@ mod tests {
         let (rules, overlays) = twinkle_rules_and_overlays();
         let seed = 0x0037_7EA5;
         let mut sim = Simulation::with_seed(seed);
-        sim.session.map_width = MAP_SIZE;
-        sim.session.map_height = MAP_SIZE;
+        sim.session.set_map_width_for_test(MAP_SIZE);
+        sim.session.set_map_height_for_test(MAP_SIZE);
         sim.resolved_terrain = Some(flat_terrain());
         let mut overlay_grid = OverlayGrid::new(MAP_SIZE, MAP_SIZE);
         // The (8,8) fixed-grid diamond admits only x+y > 8 here; the cells are
@@ -568,9 +567,13 @@ mod tests {
             .iter()
             .map(|(_, anim)| {
                 (
-                    (anim.world_coord.x, anim.world_coord.y, anim.world_coord.z),
-                    anim.native_unique_id,
-                    anim.draw_flags,
+                    (
+                        anim.world_coord().x,
+                        anim.world_coord().y,
+                        anim.world_coord().z,
+                    ),
+                    anim.native_unique_id(),
+                    anim.draw_flags(),
                 )
             })
             .collect();

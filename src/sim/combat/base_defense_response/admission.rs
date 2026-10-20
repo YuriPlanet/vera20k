@@ -104,7 +104,7 @@ pub(super) fn candidate_admitted(
         || !candidate.base_defense_response.recruitable_a
         || !candidate.base_defense_response.recruitable_b
         || !is_armed(candidate, candidate_object)
-        || (!sim.session.game_mode_nonzero
+        || (!sim.session.game_mode_nonzero()
             && !crate::sim::mission::control::current_control(rules, &candidate.mission)
                 .is_some_and(|entry| entry.recruitable))
     {

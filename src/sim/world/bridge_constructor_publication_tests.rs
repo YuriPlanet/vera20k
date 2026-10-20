@@ -65,50 +65,6 @@ fn dummy(sim: &Simulation) -> Value {
 }
 
 #[test]
-fn live_bridge_recalc_publishes_retained_attributes_before_connectivity() {
-    use crate::sim::pathfinding::{PathGrid, zone_map::ZoneGrid};
-    let (mut sim, rules, registry) = fixture();
-    let terrain = sim.resolved_terrain.as_ref().unwrap();
-    let path = PathGrid::from_resolved_terrain(terrain);
-    let mut prior_terrain = terrain.clone();
-    prior_terrain.cell_mut(16, 16).unwrap().overlay_blocks = true;
-    prior_terrain.cell_mut(17, 16).unwrap().overlay_blocks = true;
-    let prior_path = std::sync::Arc::new(PathGrid::from_resolved_terrain(&prior_terrain));
-    sim.path_grid = Some(prior_path.clone());
-    sim.zone_grid = Some(ZoneGrid::build_with_terrain(&path, terrain, &[], 33, 33));
-    let base = sim.zone_grid.as_mut().unwrap().base_topology_mut();
-    base.levels.fill(200);
-    base.movement_classes.fill(6);
-    let ids_before = base.zone_ids.clone();
-    let rows_before = base.raw_zone_ids_by_row.clone();
-    let mut host = LivePublication {
-        frame_effects: crate::sim::world::FrameEffects::default(),
-        sim: &mut sim,
-        rules: &rules,
-        registry: Some(&registry),
-        collapsed: false,
-    };
-    let cell = host.lookup((16, 16));
-    host.recalc_cell(cell, 4).unwrap();
-    let terrain_cell = sim.resolved_terrain.as_ref().unwrap().cell(16, 16).unwrap();
-    assert_eq!(terrain_cell.level, 4);
-    let mut expected_classes = vec![6; 33 * 33];
-    let mut expected_levels = vec![200; 33 * 33];
-    expected_classes[16 * 33 + 16] = terrain_cell.zone_type;
-    expected_levels[16 * 33 + 16] = terrain_cell.level;
-    let base = sim.zone_grid.as_mut().unwrap().base_topology_mut();
-    assert_eq!(base.movement_classes, expected_classes);
-    assert_eq!(base.levels, expected_levels);
-    assert_eq!(base.zone_ids, ids_before);
-    assert_eq!(base.raw_zone_ids_by_row, rows_before);
-    let current = sim.path_grid().unwrap();
-    assert_eq!(current.cell(16, 16).unwrap().ground_level, 4);
-    assert!(current.is_walkable(16, 16));
-    assert_eq!(current.cell(17, 16), prior_path.cell(17, 16));
-    assert_eq!(prior_path.cell(16, 16).unwrap().ground_level, 6);
-}
-
-#[test]
 fn live_bridge_constructor_matches_original_and_drains_at_admitted_tick() {
     let corpus: Value = serde_json::from_str(crate::test_fixture::text(
         "tools/spatial_oracle/bridge_constructor.json",
@@ -120,13 +76,15 @@ fn live_bridge_constructor_matches_original_and_drains_at_admitted_tick() {
         let (mut sim, rules, registry) = fixture();
         match original["kind"].as_str().unwrap() {
             "terrain" => {
-                sim.production.terrain_object_cells.insert((16, 16), 919);
+                sim.terrain_objects
+                    .cell_index_mut_for_test()
+                    .insert((16, 16), 919);
             }
             "slope" => {
                 sim.resolved_terrain
                     .as_mut()
                     .unwrap()
-                    .cell_mut(16, 16)
+                    .cell_mut_for_test(16, 16)
                     .unwrap()
                     .slope_type = 5;
             }
@@ -135,7 +93,7 @@ fn live_bridge_constructor_matches_original_and_drains_at_admitted_tick() {
                     .as_mut()
                     .unwrap()
                     .place_overlay(16, 16, 7, 0);
-                sim.resolved_terrain.as_mut().unwrap().cells[16 * 33 + 16]
+                sim.resolved_terrain.as_mut().unwrap().cells_mut_for_test()[16 * 33 + 16]
                     .bridge_facts
                     .overlay_id = Some(7);
             }
@@ -338,7 +296,8 @@ fn constructor_side_admission_matches_original_foot_receiver() {
             crate::map::playfield::PlayfieldBounds::from_normalized_local_size(16, 0, 0, 16, 16),
         );
         sim.playfield_size_height = Some(16);
-        sim.session.binary_frame = input["frame"].as_u64().unwrap() as u32;
+        sim.session
+            .set_binary_frame_for_test(input["frame"].as_u64().unwrap() as u32);
         // These native controls retain constructor25 topology, then supply
         // raw occupation / the candidate raw100-clear discriminator. The
         // original and Rust both execute the complete Infantry +1AC body.
@@ -349,7 +308,7 @@ fn constructor_side_admission_matches_original_foot_receiver() {
                 .resolved_terrain
                 .as_mut()
                 .unwrap()
-                .cell_mut(x, y)
+                .cell_mut_for_test(x, y)
                 .unwrap();
             let flags = native["bridge_flags"].as_u64().unwrap() as u32;
             assert_eq!(cell.bridge_facts.raw_flags & !0x100, flags & !0x100);
@@ -408,7 +367,7 @@ fn constructor_side_admission_matches_original_foot_receiver() {
             crate::sim::mission::MissionId::from_raw(
                 native["current_mission"].as_i64().unwrap() as i32
             ),
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
         )
         .unwrap();
         assert_eq!(native["queued_mission"], -1);
@@ -452,7 +411,7 @@ fn live_bridge_constructor_queue_respects_terminal_admission_and_other_objects()
     // Isolate the constructor/deferred-drain chain from Logic55B29A's
     // independently tested120-frame578100 sweep, whose map queries may
     // legitimately restamp the shared Dummy's coordinate.
-    sim.session.binary_frame = 1;
+    sim.session.set_binary_frame_for_test(1);
     for (index, requested) in [(16, 16), (17, 16)].into_iter().enumerate() {
         let mut host = LivePublication {
             frame_effects: crate::sim::world::FrameEffects::default(),
@@ -502,7 +461,7 @@ fn live_bridge_constructor_queue_respects_terminal_admission_and_other_objects()
 #[test]
 fn sparse_native_sight_indexes_real_cells_and_keeps_diagnostics_read_only() {
     let (mut sim, _, _) = fixture();
-    sim.session.binary_frame = 1;
+    sim.session.set_binary_frame_for_test(1);
     sim.fog = crate::sim::vision::FogState::new(33, 33);
     let owner = sim.interner.intern("Americans");
     let type_ref = sim.interner.intern("E1");

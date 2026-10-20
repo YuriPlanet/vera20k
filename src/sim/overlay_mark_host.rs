@@ -85,12 +85,10 @@ impl<'a> SimulationMarkHost<'a> {
         let mut detach_trace = Vec::new();
         let mut host = SimulationWallRuntimeHost {
             entities: &mut sim.substrate.entities,
-            target_terrain_objects: &sim.production.terrain_objects,
+            target_terrain_objects: sim.terrain_objects.objects(),
             #[cfg(any(test, feature = "test-support"))]
             detach_trace: &mut detach_trace,
-            radar_dirty_cells: &mut sim.radar_terrain_dirty_cells,
-            radar_dirty_generation: &mut sim.radar_terrain_dirty_generation,
-            tactical_dirty_cells: &mut sim.tactical_dirty_cells,
+            dirty_cells: &mut sim.dirty_cells,
             zone_grid: &mut sim.zone_grid,
             path_grid: &mut sim.path_grid,
             bridge_state: sim.bridge_state.as_ref(),
@@ -505,7 +503,7 @@ impl Simulation {
         };
         let lighting = self
             .session
-            .lighting
+            .lighting()
             .profile(crate::sim::scenario_session::ScenarioLightingProfile::Normal)
             .into();
         match mark_overlay(

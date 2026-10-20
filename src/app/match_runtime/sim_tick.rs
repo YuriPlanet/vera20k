@@ -85,7 +85,7 @@ fn replay_flush_facts(state: &AppState) -> (u64, u64) {
         .match_state
         .sim_runtime
         .as_ref()
-        .map_or(0, |rt| rt.simulation.session.tick);
+        .map_or(0, |rt| rt.simulation.session().tick());
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
@@ -112,7 +112,7 @@ pub(crate) fn drive_local_player_outcome_voice_wait(state: &mut AppState, wall_m
             .as_ref()
             .map(|rt| &rt.simulation)
             .and_then(|sim| {
-                sim.interner
+                sim.interner()
                     .get(owner)
                     .and_then(|owner| sim.ready_outcome_for_owner(owner))
             });
@@ -196,7 +196,7 @@ fn build_campaign_score_screen_model(
         .and_then(|runtime| {
             runtime
                 .simulation
-                .session
+                .session()
                 .campaign_house_difficulties()
                 // Retain the raw campaign selector index: GameExit copies
                 // OptionsClass::Difficulty into Scenario+0x60C (0=Easy,
@@ -207,9 +207,9 @@ fn build_campaign_score_screen_model(
     let houses = state.match_state.sim_runtime.as_ref().map(|runtime| {
         runtime
             .simulation
-            .houses
+            .houses()
             .values()
-            .map(|house| (house.player_control, house.stats.kills()))
+            .map(|house| (house.player_control(), house.stats().kills()))
             .collect::<Vec<_>>()
     });
     let side = state
@@ -219,10 +219,10 @@ fn build_campaign_score_screen_model(
         .and_then(|runtime| {
             runtime
                 .simulation
-                .session
-                .current_house
-                .and_then(|owner| runtime.simulation.houses.get(&owner))
-                .map(|house| house.side_index)
+                .session()
+                .current_house()
+                .and_then(|owner| runtime.simulation.houses().get(&owner))
+                .map(|house| house.side_index())
         })
         .unwrap_or(0);
     build_campaign_score_screen_model_from_sources(
@@ -240,7 +240,7 @@ fn build_campaign_score_screen_model_from_sources(
     difficulty: i32,
     ranking: &crate::map::ranking::RankingSection,
     houses: impl IntoIterator<Item = (bool, u32)>,
-    side: u8,
+    side: i32,
     mut resolve_label: impl FnMut(&str) -> String,
 ) -> crate::ui::campaign_score_shell::CampaignScoreScreenModel {
     let mut model = crate::ui::campaign_score_shell::CampaignScoreScreenModel {
@@ -340,66 +340,23 @@ mod campaign_score_model_tests {
     }
 }
 
-/// A score row's name: the house's UI name (`house+0x1602A`, copied at
-/// `0x005C98FE`). Skirmish setup gives a human house its player's handle
-/// (`0x00688094`) and every computer house `TXT_COMPUTER`
-/// (`0x00688252..0x00688270`). A human without a recorded handle (a launch
-/// with no skirmish session) shows `fallback`.
-fn score_row_display_name(
-    is_human: bool,
-    handle: Option<&str>,
-    computer: &str,
-    fallback: &str,
-) -> String {
-    if !is_human {
-        return computer.to_string();
-    }
-    handle.unwrap_or(fallback).to_string()
-}
-
-/// What names and colours the score rows.
-struct ScoreRowSources<'a> {
-    handle: Option<&'a str>,
-    computer: &'a str,
-    schemes: &'a [crate::rules::color_scheme::ColorSchemeEntry],
-    colors: &'a crate::map::houses::HouseColorMap,
-}
-
 /// The dialog's rows from the sim's snapshot, in its order (`0x005C9D7A`).
 fn resolve_score_rows(
     sim: &crate::sim::world::Simulation,
     snapshot: &crate::sim::score::TerminalScoreSnapshot,
-    sources: &ScoreRowSources<'_>,
+    sources: &crate::app::presentation::house_ui::HouseUiSources<'_>,
     country_name: impl Fn(crate::sim::intern::InternedId) -> Option<String>,
 ) -> Vec<crate::ui::score_shell::ScoreRow> {
     let mut rows: Vec<_> = snapshot
         .rows
         .iter()
-        .map(|raw| {
-            let owner_name = sim.interner.resolve(raw.owner).to_string();
-            let is_human = sim
-                .houses
-                .get(&raw.owner)
-                .is_some_and(|house| house.is_human);
-            let fallback = raw.country.and_then(&country_name);
-            let color = sources
-                .colors
-                .get(&owner_name)
-                .copied()
-                .unwrap_or(crate::rules::house_colors::NO_REMAP);
-            crate::ui::score_shell::ScoreRow {
-                name: score_row_display_name(
-                    is_human,
-                    sources.handle,
-                    sources.computer,
-                    fallback.as_deref().unwrap_or(&owner_name),
-                ),
-                rgb: crate::rules::house_colors::house_text_rgb(sources.schemes, color),
-                kills: raw.kills,
-                losses: raw.losses,
-                built: raw.built,
-                score: raw.score,
-            }
+        .map(|raw| crate::ui::score_shell::ScoreRow {
+            name: sources.ui_name(sim, raw.owner, raw.country, &country_name),
+            rgb: sources.text_rgb(sim, raw.owner),
+            kills: raw.kills,
+            losses: raw.losses,
+            built: raw.built,
+            score: raw.score,
         })
         .collect();
     crate::ui::score_shell::sort_rows(&mut rows);
@@ -431,38 +388,19 @@ fn build_score_screen_model(
         return ScoreScreenModel::default();
     };
     let computer = crate::app::frontend::shell_pass::resolve_csf(state, "TXT_COMPUTER");
-    let presentation = &state.match_state.match_presentation;
     let rows = resolve_score_rows(
         sim,
         raw_snapshot,
-        &ScoreRowSources {
-            handle: state.match_state.session.local_player_name(),
-            computer: &computer,
-            schemes: state
-                .rules()
-                .map_or(&[][..], |rules| rules.color_schemes.as_slice()),
-            colors: &presentation.house_color_map,
-        },
-        |country| {
-            let country = sim.interner.resolve(country);
-            let (ui_key, plain) = state
-                .rules()
-                .map(|rules| rules.country_display_name_sources(country))
-                .unwrap_or((None, None));
-            let localized = ui_key
-                .zip(state.process_assets.csf.as_ref())
-                .map(|(key, csf)| csf.text(key).into_owned())
-                .filter(|text| Some(text.as_str()) != ui_key);
-            localized.or_else(|| plain.map(str::to_string))
-        },
+        &crate::app::presentation::house_ui::HouseUiSources::from_state(state, &computer),
+        |country| crate::app::presentation::house_ui::country_display_name(state, sim, country),
     );
     // Scenario +0x34B8: the side of session player 0's country, the local
     // player in a skirmish (0x0068779A..0x0068782D).
     let side = crate::app::input::commands::preferred_local_owner_name(state)
         .as_deref()
-        .and_then(|owner| sim.interner.get(owner))
-        .and_then(|owner| sim.houses.get(&owner))
-        .map_or(0, |house| house.side_index);
+        .and_then(|owner| sim.interner().get(owner))
+        .and_then(|owner| sim.houses().get(&owner))
+        .map_or(0, |house| house.side_index());
 
     ScoreScreenModel {
         // A stock offline skirmish takes the skirmish heading; the networked
@@ -762,7 +700,7 @@ pub(crate) fn advance_in_game_runtime_exact_step(
         .sim_runtime
         .as_ref()
         .map(|rt| &rt.simulation)
-        .map(|sim| (sim.session.tick, sim.session.binary_frame))
+        .map(|sim| (sim.session().tick(), sim.session().binary_frame()))
         .ok_or(ExactStepError::SimulationMissing)?;
 
     advance_in_game_runtime_mode(state, RuntimeAdvanceMode::ExactOneStep, admitted);
@@ -774,7 +712,7 @@ pub(crate) fn advance_in_game_runtime_exact_step(
         .sim_runtime
         .as_ref()
         .map(|rt| &rt.simulation)
-        .map(|sim| (sim.session.tick, sim.session.binary_frame))
+        .map(|sim| (sim.session().tick(), sim.session().binary_frame()))
         .ok_or(ExactStepError::SimulationMissing)?;
     let receipt = ExactStepReceipt {
         tick_before,
@@ -825,7 +763,7 @@ fn advance_in_game_runtime_mode(
                             .game_speed
                             .min(6) as u8
                     },
-                    |sim| sim.session.game_options.game_speed.clamp(0, 6) as u8,
+                    |sim| sim.session().game_options().game_speed.clamp(0, 6) as u8,
                 );
             // Pure timing consult; pause/menu blocking belongs to the decision.
             state
@@ -850,7 +788,7 @@ fn advance_in_game_runtime_mode(
         .match_state
         .sim_runtime
         .as_ref()
-        .is_some_and(|rt| rt.simulation.session.scenario_paused());
+        .is_some_and(|rt| rt.simulation.session().scenario_paused());
     if service_live
         && scenario_paused
         && matches!(
@@ -920,7 +858,7 @@ fn advance_in_game_runtime_mode(
                         .match_state
                         .match_presentation
                         .sidebar_projection
-                        .cameo_redraw_requested(runtime.simulation.session.binary_frame as i32)
+                        .cameo_redraw_requested(runtime.simulation.session().binary_frame() as i32)
                 });
             // StripDraw6A9540 asks each entry's availability and reads its
             // Factory while drawing, so the drawn state follows the simulation
@@ -1001,8 +939,6 @@ fn advance_one_simulation_frame(
     mouse_scroll: Option<(f32, f32)>,
 ) -> bool {
     let mut refresh_atlases_after_tick = false;
-    #[cfg(feature = "telemetry-dashboard")]
-    let telemetry_active = state.diag.telemetry_observer.active();
     // Trigger definitions are runtime-bound (F07), so a live runtime is the
     // only activity source; the old trigger-only fixture mode is unrepresentable.
     let runtime_active = state.match_state.sim_runtime.is_some();
@@ -1042,15 +978,17 @@ fn advance_one_simulation_frame(
         let mut hud_messages = Vec::new();
         // Carried out of the sim borrow so the census can read `state` freely below.
         let mut census_tick: Option<u64> = None;
-        let command_queue_route = state.match_state.session.mode().command_queue_route();
         if let Some(rt) = state.match_state.sim_runtime.as_mut() {
             let sim = &mut rt.simulation;
-            let native_frame = sim.session.binary_frame;
+            let native_frame = sim.session().binary_frame();
             sim.prepare_unit_voice_visits(unit_voice_owners);
-            sim.set_command_queue_route(command_queue_route);
             // Normal play hashes its state once every PLAY_HASH_INTERVAL
             // frames and on the frame that ends the match, for the replay log.
             sim.hash_state_every(crate::sim::replay::PLAY_HASH_INTERVAL);
+            // Report points need the ledger whether or not a dashboard is
+            // attached; `publish_if_due` only runs with a client.
+            #[cfg(feature = "telemetry-dashboard")]
+            sim.set_frame_profiling(true);
             // Delay-zero AnimClass construction can emit StartSound during the
             // final map-load sweep. Keep it until this first tactical drain;
             // `drain(..)` below still consumes every event exactly once.
@@ -1059,8 +997,10 @@ fn advance_one_simulation_frame(
             } else {
                 Vec::new()
             };
+            // Recorded whether or not a client is attached: the history ring
+            // backfills a dashboard that connects mid-match.
             #[cfg(feature = "telemetry-dashboard")]
-            let telemetry_advance_started = telemetry_active.then(Instant::now);
+            let telemetry_advance_started = Instant::now();
             // F07: the runtime is the one production frame API — bound
             // resources, no caller-substitutable inputs.
             let mut output = {
@@ -1105,11 +1045,46 @@ fn advance_one_simulation_frame(
                 .expect("simulation frame failed; prior world mutations remain")
             };
             #[cfg(feature = "telemetry-dashboard")]
-            if let Some(started) = telemetry_advance_started {
+            {
+                let tick_ms = telemetry_advance_started.elapsed().as_secs_f32() * 1000.0;
+                let tick = rt.simulation.session().tick();
+                let entities = rt.simulation.entities().len();
+                let houses = rt.simulation.houses().len();
+                let batch = rt.simulation.path_batch_stats();
+                state.match_state.telemetry_timing.push(tick_ms);
                 state
                     .match_state
-                    .telemetry_timing
-                    .push(started.elapsed().as_secs_f32() * 1000.0);
+                    .telemetry_history
+                    .record_tick(tick, tick_ms, entities, houses, batch);
+                // A report point closes the profiling window, so it covers the
+                // five seconds since the previous point rather than the whole
+                // match.
+                if crate::app::match_runtime::telemetry::ReportHistory::due(tick) {
+                    let speed = rt
+                        .simulation
+                        .session()
+                        .game_options()
+                        .game_speed
+                        .clamp(0, 6) as u8;
+                    let mut timing = state
+                        .match_state
+                        .telemetry_timing
+                        .summarize(state.platform.frame_pacer.budget_ms(speed));
+                    timing.fps = state.diag.frame_timer.fps();
+                    timing.tick_hz = state
+                        .match_state
+                        .telemetry_tick_rate
+                        .rate(std::time::Instant::now());
+                    let mut point = rt.simulation.report_point();
+                    point.timing = Some(timing);
+                    point.render = state.diag.render_timing.report();
+                    if let Some(report) = point.render {
+                        state.diag.render_report_cache = Some(report);
+                    }
+                    state.match_state.report_history.push(point);
+                    rt.simulation.reset_frame_profile();
+                    state.diag.render_timing = Default::default();
+                }
             }
             let admitted_commands = output.take_admitted_commands();
             let SimFrameOutput {
@@ -1159,7 +1134,7 @@ fn advance_one_simulation_frame(
                     crate::app::presentation::combat_lights::materialize_combat_lights(
                         combat_lights,
                         Some(&resources.rules),
-                        &sim.interner,
+                        sim.interner(),
                         state
                             .match_state
                             .match_presentation
@@ -1187,7 +1162,7 @@ fn advance_one_simulation_frame(
             // generation.
             // F10: sim owns the write; the app only names the owner.
             if let Some(owner) = &local_owner_for_fog {
-                if sim.session.tick == 1 {
+                if sim.session().tick() == 1 {
                     log::info!("Fog view prepared for local owner: '{}'", owner);
                 }
                 sim.prepare_fog_view_for(owner);
@@ -1197,7 +1172,7 @@ fn advance_one_simulation_frame(
             // The radar event array is the local client's (RadarClass). A
             // match without a minimap renderer has no such client, so nothing
             // is admitted and the radar-gated EVA lines stay silent.
-            let radar_frame = sim.session.tick;
+            let radar_frame = sim.session().tick();
             super::super_selection::follow_selection_writes(
                 &mut state.match_state.input.targeting_mode,
                 &frame_sound_events,
@@ -1207,7 +1182,7 @@ fn advance_one_simulation_frame(
             );
             hud_messages = super::sound_dispatch::hud_messages(
                 &frame_sound_events,
-                &sim.interner,
+                sim.interner(),
                 local_owner_name.as_deref(),
             );
             assert!(
@@ -1296,7 +1271,7 @@ fn advance_one_simulation_frame(
                 .sim_runtime
                 .as_ref()?
                 .simulation
-                .interner
+                .interner()
                 .get(&owner)
         });
         for output in drained_lifecycle_outputs {
@@ -1368,10 +1343,10 @@ fn advance_one_simulation_frame(
                         let Some(runtime) = runtime else {
                             return [0; 3];
                         };
-                        let name = runtime.simulation.interner.resolve(owner);
+                        let name = runtime.simulation.interner().resolve(owner);
                         // CreateHouses initializes the two literal special
                         // houses without ComputeRemap; their +56FC stays0.
-                        if runtime.simulation.session.game_mode_nonzero
+                        if runtime.simulation.session().game_mode_nonzero()
                             && (name.eq_ignore_ascii_case("Neutral")
                                 || name.eq_ignore_ascii_case("Special"))
                         {
@@ -1612,7 +1587,7 @@ pub(crate) fn apply_trigger_effects(state: &mut AppState, effects: &[TriggerEffe
                             *type_id,
                             *duration,
                             *frame,
-                            &runtime.simulation.interner,
+                            runtime.simulation.interner(),
                             &runtime.resources.rules,
                         );
                 }
@@ -1722,7 +1697,7 @@ pub(crate) fn refresh_entity_atlases(state: &mut AppState) {
         state.match_state.match_presentation.unit_atlas.as_ref(),
         sim.entities(),
         bound_rules,
-        Some(&sim.interner),
+        Some(sim.interner()),
     );
 
     // Check if the sprite atlas lacks an object (type, house colour), an
@@ -1739,7 +1714,7 @@ pub(crate) fn refresh_entity_atlases(state: &mut AppState) {
         &state.match_state.match_presentation.house_color_map,
         &extra_buildings,
         &anim_remap_keys,
-        Some(&sim.interner),
+        Some(sim.interner()),
     );
 
     if !unit_rebuild && !sprite_rebuild {
@@ -1766,7 +1741,7 @@ pub(crate) fn refresh_entity_atlases(state: &mut AppState) {
             asset_manager,
             bound_rules,
             existing,
-            Some(&sim.interner),
+            Some(sim.interner()),
         ) {
             state.match_state.match_presentation.unit_atlas = Some(new_unit_atlas);
         }
@@ -1776,8 +1751,7 @@ pub(crate) fn refresh_entity_atlases(state: &mut AppState) {
         log::info!("Refreshing the sprite atlas: new SHP object types or colour remaps");
         let existing = state.match_state.match_presentation.sprite_atlas.take();
         let cell_drawer_type_ids: HashSet<String> = sim
-            .resolved_terrain
-            .as_ref()
+            .resolved_terrain()
             .into_iter()
             .flat_map(|terrain| terrain.tile_animations())
             .map(|anim| anim.anim_name.to_ascii_uppercase())
@@ -1799,7 +1773,7 @@ pub(crate) fn refresh_entity_atlases(state: &mut AppState) {
             &cell_drawer_type_ids,
             Some(&cell_palette),
             existing,
-            Some(&sim.interner),
+            Some(sim.interner()),
         ) {
             state.match_state.match_presentation.sprite_atlas = Some(new_sprite_atlas);
         }
@@ -1883,8 +1857,7 @@ pub(crate) fn screen_point_to_world_with_camera(
 pub(crate) fn tactical_bridge_cells(
     sim: &crate::sim::world::Simulation,
 ) -> Option<&dyn terrain::TacticalBridgeLookup> {
-    sim.resolved_terrain
-        .as_ref()
+    sim.resolved_terrain()
         .map(|terrain| terrain as &dyn terrain::TacticalBridgeLookup)
 }
 
@@ -2011,21 +1984,21 @@ mod tests {
             }],
         );
         let mut sim = crate::sim::world::Simulation::new();
-        sim.resolved_terrain = Some(terrain);
+        *sim.resolved_terrain_mut_for_test() = Some(terrain);
         let mut interner = StringInterner::default();
         let tree = {
             let mut terrain = TerrainObjectState::for_test(1, interner.intern("TREE01"), 0, 0);
-            terrain.health = 10;
-            terrain.max_health = 10;
-            terrain.occupation_bits = 7;
+            terrain.set_health_for_test(10);
+            terrain.set_max_health_for_test(10);
+            terrain.set_occupation_bits_for_test(7);
             terrain
         };
-        mark_terrain_occupation(&tree, sim.resolved_terrain.as_mut());
+        mark_terrain_occupation(&tree, sim.resolved_terrain_mut_for_test().as_mut());
 
         assert!(sim.rebuild_dynamic_navigation(&rules));
         assert!(!sim.path_grid().expect("terrain").is_walkable(0, 0));
 
-        unmark_terrain_occupation(&tree, sim.resolved_terrain.as_mut());
+        unmark_terrain_occupation(&tree, sim.resolved_terrain_mut_for_test().as_mut());
         assert!(sim.rebuild_dynamic_navigation(&rules));
 
         assert!(sim.path_grid().expect("terrain").is_walkable(0, 0));
@@ -2189,8 +2162,8 @@ mod camera_cadence_tests;
 #[cfg(test)]
 mod modal_pump_tests {
     use super::{
-        ScoreRowSources, SessionMode, modal_pump_should_advance_sim, resolve_score_rows,
-        should_record_replay_tick, wall_clock_service_admission,
+        SessionMode, modal_pump_should_advance_sim, resolve_score_rows, should_record_replay_tick,
+        wall_clock_service_admission,
     };
 
     #[test]
@@ -2382,7 +2355,7 @@ mod modal_pump_tests {
         const FRAMES: u64 = 7;
         let pumped_world_delta = |mode: SessionMode| -> u64 {
             let mut sim = Simulation::new();
-            let start = sim.session.tick;
+            let start = sim.session().tick();
             for _ in 0..FRAMES {
                 if modal_pump_should_advance_sim(mode, false, false) {
                     // `tick_ms` does not affect the asserted tick delta; a literal
@@ -2390,7 +2363,7 @@ mod modal_pump_tests {
                     sim.advance_tick(&[], None, None, None, 33);
                 }
             }
-            sim.session.tick - start
+            sim.session().tick() - start
         };
 
         // Offline modes freeze the world behind the modal: zero tick advance.
@@ -2432,12 +2405,12 @@ mod modal_pump_tests {
             ),
         );
         let mut sim = crate::sim::world::Simulation::with_seed(1);
-        let player = sim.interner.intern("Player");
-        let computer = sim.interner.intern("Computer1");
-        sim.houses
-            .insert(player, HouseState::new(player, 0, None, true, 0, 10));
-        sim.houses
-            .insert(computer, HouseState::new(computer, 1, None, false, 0, 10));
+        let player = sim.intern("Player");
+        let computer = sim.intern("Computer1");
+        sim.houses_mut_for_test()
+            .register(HouseState::new(player, 0, None, true, 0, 10));
+        sim.houses_mut_for_test()
+            .register(HouseState::new(computer, 1, None, false, 0, 10));
         let row = |owner, losses| crate::sim::score::TerminalScoreRowSnapshot {
             owner,
             country: None,
@@ -2464,7 +2437,7 @@ mod modal_pump_tests {
         let rows = resolve_score_rows(
             &sim,
             &snapshot,
-            &ScoreRowSources {
+            &crate::app::presentation::house_ui::HouseUiSources {
                 handle: Some("[New Player]"),
                 computer: "Computer",
                 schemes: &schemes,
@@ -2487,7 +2460,7 @@ mod modal_pump_tests {
         let rows = resolve_score_rows(
             &sim,
             &snapshot,
-            &ScoreRowSources {
+            &crate::app::presentation::house_ui::HouseUiSources {
                 handle: None,
                 computer: "Computer",
                 schemes: &schemes,

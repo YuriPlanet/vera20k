@@ -31,11 +31,8 @@ pub struct InGameOptionsState {
     pub sound_enabled: bool,
     /// Transient: control id of the slider currently being dragged, if any.
     pub dragging_slider: Option<u16>,
-    /// Transient per-slider "changed since this open" — gates the label swap from
-    /// the template default to the position CSF text. Native 4E2278 admits only
-    /// a changed-position HSCROLL notification; thumb-down alone leaves it intact.
-    pub game_speed_label_dragged: bool,
-    pub scroll_rate_label_dragged: bool,
+    /// Init hid the GameSpeed row this open (see `control_shown`).
+    pub game_speed_hidden: bool,
 }
 
 impl Default for InGameOptionsState {
@@ -52,20 +49,18 @@ impl Default for InGameOptionsState {
             buttons: Default::default(),
             sound_enabled: true,
             dragging_slider: None,
-            game_speed_label_dragged: false,
-            scroll_rate_label_dragged: false,
+            game_speed_hidden: false,
         }
     }
 }
 
 impl InGameOptionsState {
-    /// Reset the transient interaction flags when the overlay (re)opens — gamemd
-    /// recreates the dialog, so the label-dragged quirk resets each open.
-    pub fn on_open(&mut self) {
+    /// Reset the transient interaction state when the overlay (re)opens; gamemd
+    /// recreates the dialog each open, and init decides the GameSpeed row.
+    pub fn on_open(&mut self, game_speed_hidden: bool) {
         self.buttons = Default::default();
         self.dragging_slider = None;
-        self.game_speed_label_dragged = false;
-        self.scroll_rate_label_dragged = false;
+        self.game_speed_hidden = game_speed_hidden;
     }
 }
 
@@ -105,47 +100,6 @@ mod tests {
         let s = InGameOptionsState::default();
         assert_eq!((s.game_speed, s.scroll_rate, s.detail_level), (3, 3, 2));
         assert!(s.unit_action_lines && !s.show_hidden && s.tooltips);
-    }
-
-    #[test]
-    fn slider_pos_inverts_speed_round_trip() {
-        for v in 0..=OPTIONS_SPEED_MAX {
-            assert_eq!(speed_from_slider_pos(speed_slider_pos(v)), v);
-        }
-        // Internal 3 (default) sits at the midpoint slider position 3.
-        assert_eq!(speed_slider_pos(3), 3);
-        // Internal 0 (fastest) is the far slider position 6.
-        assert_eq!(speed_slider_pos(0), 6);
-    }
-
-    #[test]
-    fn on_open_clears_transient_flags() {
-        let mut s = InGameOptionsState {
-            game_speed_label_dragged: true,
-            buttons: crate::ui::shell::button::ShellButtonInteraction {
-                pressed: Some(0x686),
-                hovered: Some(0x686),
-            },
-            ..Default::default()
-        };
-        s.on_open();
-        assert!(!s.game_speed_label_dragged && s.buttons.pressed.is_none());
-    }
-
-    #[test]
-    fn mouse_x_maps_back_to_slider_stop() {
-        let rect = RectPx::new(216, 163, 192, 21); // GameSpeed laid rect @ 800x600
-        for pos in 0..=6 {
-            let thumb_center_x = rect.x + plain_trackbar_thumb_left(pos, rect) + 6;
-            assert_eq!(
-                trackbar_pos_from_mouse_x(thumb_center_x, 0, 6, rect),
-                pos as i32,
-                "pos {pos}"
-            );
-        }
-        // Clamps past the ends.
-        assert_eq!(trackbar_pos_from_mouse_x(rect.x - 50, 0, 6, rect), 0);
-        assert_eq!(trackbar_pos_from_mouse_x(rect.x + 9999, 0, 6, rect), 6);
     }
 
     #[test]

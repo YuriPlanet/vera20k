@@ -40,16 +40,14 @@ struct Rocketeer {
     sound_releases: u32,
 }
 
+/// Without a rally the two paid Rocketeers release their Barracks in
+/// flight; with one they fly to the rally after release.
 #[test]
 #[ignore = "slow; run when changing what it covers"]
-fn no_rally_two_paid_rocketeers_release_their_barracks_in_flight() {
-    two_paid_rocketeers(None);
-}
-
-#[test]
-#[ignore = "slow; run when changing what it covers"]
-fn rally_two_paid_rocketeers_fly_to_the_rally_after_release() {
-    two_paid_rocketeers(Some((10, 18)));
+fn two_paid_rocketeers_release_their_barracks_then_fly_to_any_rally() {
+    for rally in [None, Some((10, 18))] {
+        two_paid_rocketeers(rally);
+    }
 }
 
 fn two_paid_rocketeers(rally: Option<(u16, u16)>) {
@@ -66,13 +64,13 @@ fn two_paid_rocketeers(rally: Option<(u16, u16)>) {
     install_ground(&mut sim, &rules, &terrain_rules, None);
     let owner = sim.interner.intern("Americans");
     let mut house = HouseState::new(owner, 0, Some(owner), true, 10_000, 10);
-    house.difficulty = HouseDifficulty::Hard;
+    house.set_difficulty_for_test(HouseDifficulty::Hard);
     house.project_country_mults(&rules, &sim.interner);
-    sim.houses.insert(owner, house);
-    sim.session.house_order.push(owner);
-    sim.session.current_house = Some(owner);
-    sim.session.game_mode_nonzero = true;
-    sim.session.game_options.game_speed = 3;
+    sim.houses.register(house);
+    sim.session.set_current_house_for_test(Some(owner));
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
+    sim.session.game_options_mut_for_test().game_speed = 3;
     let spawn = |sim: &mut Simulation, name: &str, rx: u16, ry: u16| {
         sim.spawn_object_at_height_with_overlay_registry(
             name,
@@ -94,7 +92,7 @@ fn two_paid_rocketeers(rally: Option<(u16, u16)>) {
     if let Some((rx, ry)) = rally {
         let command = CommandEnvelope::new(
             owner,
-            sim.session.tick + 1,
+            sim.session.tick() + 1,
             Command::SetRally {
                 rx,
                 ry,
@@ -107,12 +105,12 @@ fn two_paid_rocketeers(rally: Option<(u16, u16)>) {
     let commands = [
         CommandEnvelope::new(
             owner,
-            sim.session.tick + 1,
+            sim.session.tick() + 1,
             Command::QueueProduction { type_id: jumpjet },
         ),
         CommandEnvelope::new(
             owner,
-            sim.session.tick + 1,
+            sim.session.tick() + 1,
             Command::QueueProduction { type_id: jumpjet },
         ),
     ];
@@ -120,7 +118,7 @@ fn two_paid_rocketeers(rally: Option<(u16, u16)>) {
     sim.advance_tick(&commands, Some(&rules), None, Some(&registry), TICK_MS);
     let first = sim
         .production
-        .factories
+        .factories()
         .view(owner, ProductionCategory::Infantry)
         .and_then(|view| view.object)
         .and_then(|object| object.entity_id)
@@ -140,13 +138,14 @@ fn two_paid_rocketeers(rally: Option<(u16, u16)>) {
                 Some(&registry),
                 TICK_MS,
                 super::TickLane::Ordinary,
-             crate::sim::world::FrameEffects::default(),)
+                crate::sim::world::FrameEffects::default(),
+            )
             .expect("the ordinary app frame completes");
-        let frame = sim.session.binary_frame;
+        let frame = sim.session.binary_frame();
         let log = radio::take_transmit_log();
         if let Some(held) = sim
             .production
-            .factories
+            .factories()
             .view(owner, ProductionCategory::Infantry)
             .and_then(|view| view.object)
             .and_then(|object| object.entity_id)
@@ -321,7 +320,7 @@ fn two_paid_rocketeers(rally: Option<(u16, u16)>) {
     );
     let factory = sim
         .production
-        .factories
+        .factories()
         .view(owner, ProductionCategory::Infantry);
     assert!(factory.is_none_or(|view| view.object.is_none() && view.queue.is_empty()));
 }

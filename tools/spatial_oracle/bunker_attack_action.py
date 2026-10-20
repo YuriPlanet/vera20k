@@ -560,6 +560,7 @@ def generate_allied_objects():
     from tools.rules_oracle.weapon_laser import physical_layers
     from tools.projectile_oracle.bridge_render_inputs import lexical
     keys={'MTNK':('Primary','AttackFriendlies','AttackCursorOnFriendlies','LegalTarget','VoiceMove'),
+          'CMIN':('Primary','Secondary','Harvester'),
           '105mm':('Warhead','Damage','TerrainFire'),'AP':('IvanBomb','Sonic')}
     retail_inputs=[]
     for filename,archive,raw in physical_layers():
@@ -608,6 +609,11 @@ def generate_allied_objects():
     return dict(schema=1,native_sha256=image_sha256(),
         retail_inputs=retail_inputs,
         action_controls=[run(case,allied_continuation) for case in controls],
+        unarmed_object_controls=[run(allied_case(
+            f'unarmed_{"ctrl" if ctrl else "normal"}_{"selected" if selected else "unselected"}',
+            cursor_contract=True,unarmed=True,actor_alliance_mask=0,target_alliance_mask=0,
+            ctrl=ctrl,target_selected=selected),allied_continuation)
+            for selected in (False,True) for ctrl in (False,True)],
         grant_controls=[run(allied_case(name,techno_only=True,**changes)) for name,changes in (
             ('ivan_transport_blocks_cursor_grant',dict(attack_cursor_on_friendlies=True,ivan_bomb=True,target_passengers=1)),
             ('attack_friendlies_overrides_ivan',dict(attack_friendlies=True,ivan_bomb=True,target_passengers=1)),
@@ -638,6 +644,7 @@ def allied_metadata():
             'infantry_bomb_consumer':0x51EB24,'infantry_bomb_tail_boundary':0x51EB81},
         assumptions=[
             'Original Unit/UnitType vtables and supplied live actor/type/House/weapon state reuse run(). This is not native constructor/scenario/INI execution. Ordinary actor/target represent stock MTNK: Selectable/LegalTarget=true, AttackFriendlies/AttackCursorOnFriendlies=false, positive weapon sign corresponding to105mm/AP; no disguise/transport/deploy/EMP/bunker/berserk. Other-grant and same-index/unowned controls are explicit input boundaries, not stock MTNK configuration/lifecycle claims.',
+            'Four unarmed_object_controls reuse the same VM with native Primary+898=NULL, no infiltration ability, an enemy target and its selected byte false/true, with Ctrl false/true. Original IsArmed701120 executes; no action, cursor or release outcome is supplied. Existing damage query seam remains nonnegative, taking the same non-repair Unit arm as an empty weapon slot. Actual CMIN Primary=none is listed in physical layered strings and Rust tests read the production retail layers; these native rows supply valid type/actor state rather than claiming constructor/reader or full Chrono Miner lifecycle execution.',
             'Original ctor710AF0 stores AttackFriendlies+6C0=false at71117B and AttackCursorOnFriendlies+6C1=false at711181. Reader712170 admits through ObjectType5F92D0; selected current-default ReadBool5295F0 calls71523D and71525E store715242/715263 from exact keys843620/843604. LegalTarget current-default reader5F94AE/store5F94C2 retains constructor5F7168=true. No clamp. Physical RULESMD/LANGRULE-if-present/MPBattleMD/XMP03T4 have no MTNK overrides of these fields. Fixed ART is not layered and does not decide these action gates.',
             'MTNK physical selected keys Primary=105mm,105mm.Warhead=AP,VoiceMove=GenAllVehicleMove. Warhead IvanBomb+157 and Sonic+14B false for ordinary AP; explicit controls supply each branch and target Type.Passengers+5E0 / target Foot+694 pointer. They do not execute IvanBomb or parasite creation/cleanup. grant_controls execute complete Techno6FFEC0 only: the rejected passenger-capacity case would subsequently enter a separate Unit transport mechanism absent from this ordinary fixture. No transport verdict is substituted. Other special target/disguise/terrain/LegalTarget and arbitrary RTTI routes remain partial.',
             'House pointers, signed indices and directional+5788 alliance masks are declared inputs. Original4F9A90 executes target+3C=6F9DC0 real owner; same pointer/index or asking-House bit decides. Target+38=6F9DB0 returns real owner index for70058D..59B; no disguised-owner result is substituted.',

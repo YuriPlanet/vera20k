@@ -10,6 +10,7 @@ import hashlib
 import os
 from pathlib import Path
 import struct
+import sys
 from itertools import product
 
 from unicorn import UC_HOOK_CODE, UC_HOOK_MEM_WRITE
@@ -301,6 +302,18 @@ class AttackReturn:
             u.mem_write(ACTOR + 0x90, bytes([case['alive']]))
         if 'health' in case:
             u.mem_write(ACTOR + 0x6C, dwords(case['health']))
+        self.observed = OBSERVED
+        if case.get('area_guard_comparison'):
+            # This mode retains complete independent streams. Original seeding
+            # gives Main/MapGen valid runtime states; no draw answer is supplied.
+            self.call(0x65C6D0, 0x886B88, [31])
+            self.call(0x65C6D0, 0xABE890, [42])
+            self.observed = OBSERVED | {
+                0x744100: ('unit_area_guard', 0),
+                0x4D6AA0: ('foot_area_guard', 0),
+                0x50B730: ('controlled_by_human', 0),
+            }
+            assert r(UNIT_VTABLE + 0x220) == 0x744100
         self.events, self.writes, self.pending, self.steps = [], [], {}, []
         self.inline_draw = None
         self.instruction = 0
@@ -332,6 +345,9 @@ class AttackReturn:
                       scenario_rng=rng_state(u, SCENARIO + 0x218))
         if self.idle_control_receipt is not None:
             result['burst_index'] = i32(u, ACTOR + 0x3B8)
+        if self.case.get('area_guard_comparison'):
+            result['other_rng'] = {name: rng_state(u, address) for name, address in
+                                   (('main', 0x886B88), ('mapgen', 0xABE890))}
         return result
 
     def resolve_returns(self, address):
@@ -360,9 +376,9 @@ class AttackReturn:
                                     mask=u.reg_read(UC_X86_REG_EBP), span=u.reg_read(UC_X86_REG_EDI),
                                     indices_after=[self.read32(pointer + 4), self.read32(pointer + 8)])
             self.events.append(self.inline_draw)
-        if address not in OBSERVED:
+        if address not in self.observed:
             return
-        kind, count = OBSERVED[address]
+        kind, count = self.observed[address]
         sp, r = u.reg_read(UC_X86_REG_ESP), self.read32
         event = dict(instruction=self.instruction, phase=self.phase, pc=hex(address), kind=kind,
                      frame=i32(u, FRAME), caller=hex(r(sp)), this=hex(u.reg_read(UC_X86_REG_ECX)),
@@ -416,12 +432,19 @@ class AttackReturn:
         op = instruction['op']
         answer = None
         if op == 'command':
-            mission = MISSIONS[instruction['mission']]
-            target_id = 303 if instruction.get('target') == 'second' else 202 if instruction.get('target') else 0
-            destination = instruction.get('destination')
-            dest_id = (destination[1] * 1000 + destination[0]) if destination else 0
-            args = [0, 101, 0x34, mission, target_id, 0x34 if target_id else 0,
-                    dest_id, 0xB if destination else 0, 0, 0]
+            if instruction['mission'] == 'area_guard':
+                # G730D60 emits mission11 with the current Cell as Target.
+                # Execute the same original event constructor/receiver as every
+                # other command; Event4C73EF owns the archive/destination writes.
+                post = instruction['post']
+                args = [0, 101, 0x34, 11, post[1] * 1000 + post[0], 0xB, 0, 0, 0, 0]
+            else:
+                mission = MISSIONS[instruction['mission']]
+                target_id = 303 if instruction.get('target') == 'second' else 202 if instruction.get('target') else 0
+                destination = instruction.get('destination')
+                dest_id = (destination[1] * 1000 + destination[0]) if destination else 0
+                args = [0, 101, 0x34, mission, target_id, 0x34 if target_id else 0,
+                        dest_id, 0xB if destination else 0, 0, 0]
             self.invoke(EVENT_CTOR, EVENT, args)
             answer = self.invoke(EVENT_EXECUTE, EVENT)
         elif op == 'stop':
@@ -448,6 +471,8 @@ class AttackReturn:
             u.reg_write(UC_X86_REG_ESP, SP)
             run_checked(u, POST_FOOT_AI, 0x7365DF, required_addresses=(POST_FOOT_AI,))
             answer = {'original_prefix_end': hex(0x7365DF)}
+        elif op == 'ready':
+            answer = {'ready_al': self.invoke(READY) & 255}
         elif op == 'promote':
             ready = self.invoke(READY)
             answer = {'ready_al': ready & 255}
@@ -623,6 +648,87 @@ def source_paths():
                       }
 
 
+def generate_area_guard():
+    """Small additive corpus of the original stock-Harvester AreaGuard exit."""
+    inputs = reader_receipts()
+    cases = []
+    for human, on_ore, seed, cargo in ((True, True, 1, 0), (True, False, 4, 12),
+                                      (False, True, 5, 40), (False, False, 8, 0)):
+        cases.append(dict(name=f"guard_{'human' if human else 'computer'}_{'ore' if on_ore else 'clear'}",
+                          human=human, seed=seed, storage=[cargo, 0, 0, 0],
+                          ore=[[15, 15, 0, 0, 5]] if on_ore else [],
+                          steps=[dict(op='command', mission='area_guard', post=[15, 15]),
+                                 dict(op='promote'), dict(op='dispatch')]))
+    cases.append(dict(name='guard_commence_bypasses_refused_readiness', current=11,
+                      dispatch_timer=[200, 0, 0], status=2, seed=4, unloading=True,
+                      ore=[], storage=[0, 0, 0, 0],
+                      target=True, nav=[17, 15], archive=[20, 12],
+                      steps=[dict(op='ready'), dict(op='dispatch')]))
+    cases.append(dict(name='guard_waits_for_dispatch_deadline', current=11,
+                      dispatch_timer=[200, 0, 9], frame=208, seed=8,
+                      ore=[], storage=[0, 0, 0, 0],
+                      steps=[dict(op='dispatch'), dict(op='deadline'), dict(op='dispatch')]))
+    rows = [AttackReturn(dict(case, area_guard_comparison=True), inputs).run() for case in cases]
+    return dict(schema_version=1, native_sha256=NATIVE_SHA256, reader_receipts=inputs,
+                row_count=len(rows), rows=rows)
+
+
+def area_guard_metadata():
+    return provenance(
+        scope='Stock War Miner AreaGuard event and due mission handoff to Harvest, through original '
+              'Event, Unit/Foot handlers, Queue/Commence and dispatch epilogue. Not whole-world or movement parity.',
+        entry_points={name: address for address, (name, _) in OBSERVED.items()} | {
+            'unit_area_guard': 0x744100, 'foot_area_guard': 0x4D6AA0,
+            'harvester_gate': 0x4D6D1A, 'harvest_queue': 0x4D6D3B,
+            'harvest_commence': 0x4D6D45, 'harvest_cadence': 0x4D6D5B,
+            'controlled_by_human': 0x50B730, 'random_seed': 0x65C6D0,
+            'unit_type_constructor': 0x7470D0, 'harvester_read': 0x74769F,
+        },
+        assumptions=[
+            'The existing AttackReturn/harvest_field/refinery_dock VM is reused unchanged. It supplies a '
+            '32x32 map, live War Miner receiver, original Unit/Drive/Cell/Building vtables and original '
+            'Drive/Facing/vector constructors. Full Unit/House/Scenario/map construction is excluded.',
+            'Existing reader_receipts executes original HARV UnitType/Rules/MissionControl constructors '
+            'and selected original key readers over physical RULESMD, optional LANGRULE, MPBattleMD '
+            'and XMP03T4 lexical strings, in that order. Harvester default0 becomes1. Physical file '
+            'loading and index construction are supplied; no Rust-derived type values are used.',
+            'Four histories execute Event4C6860/4C6CB0 with mission11 and the current Cell Target, '
+            'the body-established G730D60 payload. Original UnitReady/Commence promotes AreaGuard; '
+            'Mission5B3060 dispatches through unchanged Unit744100 to Foot4D6AA0. Keyboard selection, '
+            'G input voice/OutList delivery and whole Logic scheduling are outside this corpus.',
+            'Both skirmish human and computer houses and ore/clear land are supplied. No SlaveManager, '
+            'bunker, building-entry flag, active navigation list or archived allied-building collision '
+            'is supplied, so those earlier independent arms are not certified. Original heads execute.',
+            'One already-current AreaGuard control supplies Unit unloading+6D1, target, destination '
+            'and archive; original Ready744270 refuses, but original Foot calls Commence directly. '
+            'The unloading producer and that cross-state history are excluded. Another control visits '
+            'before and exactly at the original retained dispatch deadline.',
+            'Scenario seed is the row seed; Main31 and MapGen42 are seeded by original65C6D0 before '
+            'observation. All three full logical states are retained. Native RandomRanged1..10 '
+            'rejection and raw draw order execute; no cadence/queue/commence result is supplied. '
+            'Original text and Unit vtable bytes are checked unchanged after each history.',
+            'The branch leaves target, navigation, archive, cargo and harvesting/unloading latches '
+            'intact, resets the mission cursor through Commence and writes its returned delay through '
+            'the shared dispatcher. No subsequent Harvest dispatch, movement, ore collection, '
+            'refinery return or rendered output is claimed by these six controls.',
+        ],
+        substitutions=[
+            'Inherited OS Interlocked services and declared native-reader allocator/delete/TLS '
+            'services remain. Physical INI bytes are placed in existing CRC lookup caches.',
+            'Inherited map reachability, recalculation, radar, sound, dock and animation service '
+            'boundaries remain as recorded by the existing fixture. The selected AreaGuard handoff '
+            'does not take live-target Approach or its legacy external return seam. Reached callbacks '
+            'are retained, including any detach; none is inferred from an unreached body.',
+        ],
+    )
+
+
 if __name__ == '__main__':
-    finish_vectors(generate, Path('tools/spatial_oracle/harvest_attack_return.json'),
-                   provenance=metadata, source_paths=source_paths())
+    args = sys.argv[1:]
+    if '--area-guard' in args:
+        args.remove('--area-guard')
+        finish_vectors(generate_area_guard, Path(__file__).with_name('harvest_area_guard.json'),
+                       provenance=area_guard_metadata, source_paths=source_paths(), argv=args)
+    else:
+        finish_vectors(generate, Path('tools/spatial_oracle/harvest_attack_return.json'),
+                       provenance=metadata, source_paths=source_paths(), argv=args)

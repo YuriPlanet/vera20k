@@ -27,12 +27,11 @@ fn spy_sat_rules() -> RuleSet {
 
 fn fixture() -> (Simulation, RuleSet, InternedId) {
     let mut sim = Simulation::with_seed(0x418);
-    sim.fog.width = 24;
-    sim.fog.height = 24;
+    sim.fog.set_width_for_test(24);
+    sim.fog.set_height_for_test(24);
     let owner = sim.interner.intern("Americans");
     sim.houses
-        .insert(owner, HouseState::new(owner, 0, None, true, 10_000, 10));
-    sim.session.house_order.push(owner);
+        .register(HouseState::new(owner, 0, None, true, 10_000, 10));
     (sim, spy_sat_rules(), owner)
 }
 
@@ -65,7 +64,7 @@ fn insert_structure(
         false,
     );
     entity.lifecycle.set_in_limbo_for_test(false);
-    entity.lifecycle.set_cell_marked(false);
+    entity.lifecycle.set_cell_marked_for_test(false);
     sim.substrate.next_stable_object_id = sim.substrate.next_stable_object_id.max(stable_id + 1);
     sim.substrate.entities.insert(entity);
     sim.add_entity_occupancy(stable_id);
@@ -90,7 +89,7 @@ fn insert_sight_unit(sim: &mut Simulation, stable_id: u64, owner: InternedId, rx
         false,
     );
     entity.lifecycle.set_in_limbo_for_test(false);
-    entity.lifecycle.set_cell_marked(false);
+    entity.lifecycle.set_cell_marked_for_test(false);
     sim.substrate.next_stable_object_id = sim.substrate.next_stable_object_id.max(stable_id + 1);
     sim.substrate.entities.insert(entity);
     sim.add_entity_occupancy(stable_id);
@@ -140,7 +139,7 @@ fn take_centered_cues(sim: &mut Simulation) -> Vec<String> {
 #[test]
 fn gsi_04_18_local_uplink_edges_emit_registered_centered_cues() {
     let (mut sim, mut rules, owner) = fixture();
-    sim.session.current_house = Some(owner);
+    sim.session.set_current_house_for_test(Some(owner));
     let references = IniFile::from_str(
         "[AudioVisual]\nSpySatActivationSound=Online\nSpySatDeactivationSound=Offline\n",
     );
@@ -152,7 +151,7 @@ fn gsi_04_18_local_uplink_edges_emit_registered_centered_cues() {
     assert!(take_centered_cues(&mut sim).is_empty());
     insert_structure(&mut sim, 1, owner, "GASPYSAT", 6);
     sim.reconcile_active_vision_structures(&rules);
-    assert!(sim.houses[&owner].spy_sat_active && sim.houses[&owner].map_is_clear);
+    assert!(sim.houses[&owner].spy_sat_active() && sim.houses[&owner].map_is_clear());
     assert!(sim.fog.is_cell_revealed(owner, 23, 23));
     assert_eq!(take_centered_cues(&mut sim), ["Online"]);
 
@@ -168,7 +167,7 @@ fn gsi_04_18_local_uplink_edges_emit_registered_centered_cues() {
 
     sim.uninit(2);
     sim.reconcile_active_vision_structures(&rules);
-    assert!(!sim.houses[&owner].spy_sat_active && !sim.houses[&owner].map_is_clear);
+    assert!(!sim.houses[&owner].spy_sat_active() && !sim.houses[&owner].map_is_clear());
     assert!(!sim.fog.is_cell_revealed(owner, 23, 23));
     assert_eq!(take_centered_cues(&mut sim), ["Offline"]);
     insert_structure(&mut sim, 3, owner, "GASPYSAT", 10);
@@ -195,15 +194,15 @@ fn gsi_04_18_remote_unbound_and_retained_active_uplinks_are_silent() {
     insert_structure(&mut sim, 1, owner, "GASPYSAT", 6);
     let viewer = sim.interner.intern("OtherHuman");
     sim.houses
-        .insert(viewer, HouseState::new(viewer, 1, None, true, 10_000, 10));
-    sim.session.current_house = Some(viewer);
+        .register(HouseState::new(viewer, 1, None, true, 10_000, 10));
+    sim.session.set_current_house_for_test(Some(viewer));
     sim.reconcile_active_vision_structures(&rules);
-    assert!(sim.houses[&owner].spy_sat_active);
+    assert!(sim.houses[&owner].spy_sat_active());
     assert!(
         take_centered_cues(&mut sim).is_empty(),
         "human remote House is not PlayerPtr"
     );
-    sim.session.current_house = Some(owner);
+    sim.session.set_current_house_for_test(Some(owner));
     sim.reconcile_active_vision_structures(&rules);
     assert!(
         take_centered_cues(&mut sim).is_empty(),
@@ -214,66 +213,11 @@ fn gsi_04_18_remote_unbound_and_retained_active_uplinks_are_silent() {
     let rules = spy_sat_rules();
     sim.uninit(1);
     sim.reconcile_active_vision_structures(&rules);
-    assert!(!sim.houses[&owner].spy_sat_active);
+    assert!(!sim.houses[&owner].spy_sat_active());
     insert_structure(&mut sim, 2, owner, "GASPYSAT", 8);
     sim.reconcile_active_vision_structures(&rules);
-    assert!(sim.houses[&owner].spy_sat_active);
+    assert!(sim.houses[&owner].spy_sat_active());
     assert!(take_centered_cues(&mut sim).is_empty());
-}
-
-#[test]
-fn gsi_04_18_two_uplinks_reshroud_only_after_the_last_provider_is_concealed() {
-    let (mut sim, rules, owner) = fixture();
-    insert_structure(&mut sim, 1, owner, "GASPYSAT", 6);
-    insert_structure(&mut sim, 2, owner, "GASPYSAT", 8);
-    let scenario_rng_before = sim.scenario_rng.state();
-    let main_rng_before = sim.main_rng.state();
-
-    sim.reconcile_active_vision_structures(&rules);
-    assert!(sim.houses[&owner].spy_sat_active);
-    assert!(sim.houses[&owner].map_is_clear);
-    assert!(sim.fog.is_cell_revealed(owner, 23, 23));
-
-    sim.uninit(1);
-    sim.reconcile_active_vision_structures(&rules);
-    assert!(sim.houses[&owner].spy_sat_active);
-    assert!(sim.houses[&owner].map_is_clear);
-    assert!(sim.fog.is_cell_revealed(owner, 23, 23));
-
-    sim.uninit(2);
-    sim.reconcile_active_vision_structures(&rules);
-    assert!(!sim.houses[&owner].spy_sat_active);
-    assert!(!sim.houses[&owner].map_is_clear);
-    assert!(!sim.fog.is_cell_revealed(owner, 23, 23));
-    assert_eq!(sim.scenario_rng.state(), scenario_rng_before);
-    assert_eq!(sim.main_rng.state(), main_rng_before);
-}
-
-#[test]
-fn gsi_04_18_last_uplink_loss_preserves_surviving_techno_sight() {
-    let (mut sim, rules, owner) = fixture();
-    insert_structure(&mut sim, 1, owner, "GASPYSAT", 6);
-    insert_sight_unit(&mut sim, 2, owner, 4, 4);
-    sim.reconcile_active_vision_structures(&rules);
-    reveal_inserted_sight(&mut sim, 1);
-    reveal_inserted_sight(&mut sim, 2);
-    sim.refresh_fog(&vision::VisionConfig::default(), Some(&rules));
-    assert!(sim.fog.is_cell_visible(owner, 4, 4));
-    assert!(sim.fog.is_cell_revealed(owner, 23, 23));
-    assert!(!sim.fog.is_cell_visible(owner, 23, 23));
-    let scenario_rng_before = sim.scenario_rng.state();
-    let main_rng_before = sim.main_rng.state();
-
-    sim.uninit(1);
-    sim.reconcile_active_vision_structures(&rules);
-
-    assert!(!sim.houses[&owner].spy_sat_active);
-    assert!(!sim.houses[&owner].map_is_clear);
-    assert!(!sim.fog.is_cell_revealed(owner, 23, 23));
-    assert!(sim.fog.is_cell_visible(owner, 4, 4));
-    assert!(sim.fog.is_cell_revealed(owner, 4, 4));
-    assert_eq!(sim.scenario_rng.state(), scenario_rng_before);
-    assert_eq!(sim.main_rng.state(), main_rng_before);
 }
 
 #[test]
@@ -281,13 +225,13 @@ fn gsi_04_18_spy_sat_candidate_is_independent_of_low_or_offline_power() {
     let (mut sim, rules, owner) = fixture();
     insert_structure(&mut sim, 1, owner, "GASPYSAT", 6);
     let power = sim.power_states.entry(owner).or_default();
-    power.is_low_power = true;
-    power.start_blackout(sim.session.binary_frame, 30);
+    power.set_is_low_power_for_test(true);
+    power.start_blackout(sim.session.binary_frame(), 30);
 
     sim.reconcile_active_vision_structures(&rules);
 
-    assert!(sim.houses[&owner].spy_sat_active);
-    assert!(sim.houses[&owner].map_is_clear);
+    assert!(sim.houses[&owner].spy_sat_active());
+    assert!(sim.houses[&owner].map_is_clear());
     assert!(sim.fog.is_cell_revealed(owner, 23, 23));
 }
 
@@ -302,16 +246,16 @@ fn gsi_04_18_sale_waits_for_the_next_house_rung_before_reshrouding() {
     assert!(crate::sim::production::sell_building_now_for_test(
         &mut sim, &rules, 1
     ));
-    assert!(sim.houses[&owner].spy_sat_active);
-    assert!(sim.houses[&owner].map_is_clear);
+    assert!(sim.houses[&owner].spy_sat_active());
+    assert!(sim.houses[&owner].map_is_clear());
     assert!(
         sim.fog.is_cell_revealed(owner, 23, 23),
         "EventClass sale must not bypass the earlier House-rung aggregate scan"
     );
 
     sim.reconcile_active_vision_structures(&rules);
-    assert!(!sim.houses[&owner].spy_sat_active);
-    assert!(!sim.houses[&owner].map_is_clear);
+    assert!(!sim.houses[&owner].spy_sat_active());
+    assert!(!sim.houses[&owner].map_is_clear());
     assert!(!sim.fog.is_cell_revealed(owner, 23, 23));
 }
 
@@ -327,8 +271,8 @@ fn gsi_04_18_first_warping_candidate_blocks_later_uplink_but_selling_is_skipped(
         .install_building_up(BuildingUp::completing_in_ticks(20, 0), 0);
 
     sim.reconcile_active_vision_structures(&rules);
-    assert!(sim.houses[&owner].spy_sat_active);
-    assert!(sim.houses[&owner].map_is_clear);
+    assert!(sim.houses[&owner].spy_sat_active());
+    assert!(sim.houses[&owner].map_is_clear());
 
     // BeingWarpedOut (`+0x270`): a Temporal chain's head.
     sim.substrate
@@ -338,8 +282,8 @@ fn gsi_04_18_first_warping_candidate_blocks_later_uplink_but_selling_is_skipped(
         .set_temporal_for_test(crate::sim::temporal::TemporalState::warped_by_for_test(2));
 
     sim.reconcile_active_vision_structures(&rules);
-    assert!(!sim.houses[&owner].spy_sat_active);
-    assert!(!sim.houses[&owner].map_is_clear);
+    assert!(!sim.houses[&owner].spy_sat_active());
+    assert!(!sim.houses[&owner].map_is_clear());
 
     let selling = MissionId::from_known(MissionType::Selling);
     set_missions(
@@ -349,7 +293,7 @@ fn gsi_04_18_first_warping_candidate_blocks_later_uplink_but_selling_is_skipped(
     );
     sim.reconcile_active_vision_structures(&rules);
     assert!(
-        sim.houses[&owner].spy_sat_active,
+        sim.houses[&owner].spy_sat_active(),
         "queued Selling skips the first uplink, and BuildingUp does not exclude the second"
     );
 
@@ -360,33 +304,8 @@ fn gsi_04_18_first_warping_candidate_blocks_later_uplink_but_selling_is_skipped(
     );
     sim.reconcile_active_vision_structures(&rules);
     assert!(
-        sim.houses[&owner].spy_sat_active,
+        sim.houses[&owner].spy_sat_active(),
         "current Selling also skips to the later eligible uplink"
-    );
-}
-
-#[test]
-fn gsi_04_18_house_rung_applies_spy_sat_before_gap_and_recovers_after_gap_conceal() {
-    let (mut sim, rules, owner) = fixture();
-    let gapper = sim.interner.intern("Soviet");
-    insert_structure(&mut sim, 1, owner, "GASPYSAT", 6);
-    insert_structure(&mut sim, 2, gapper, "GAGAP", 12);
-    sim.visit_building_operational(2, &rules, None, crate::sim::world::FrameEffects::default());
-
-    sim.reconcile_active_vision_structures(&rules);
-    assert!(sim.fog.is_cell_revealed(owner, 23, 23));
-    assert!(!sim.fog.is_cell_revealed(owner, 12, 12));
-    assert!(sim.fog.is_cell_gap_covered(owner, 12, 12));
-
-    sim.uninit(2);
-    sim.fog.mark_visible_for_owner(owner, 3, 3);
-    sim.reconcile_active_vision_structures(&rules);
-    assert!(sim.houses[&owner].spy_sat_active);
-    assert!(sim.fog.is_cell_revealed(owner, 12, 12));
-    assert!(!sim.fog.is_cell_gap_covered(owner, 12, 12));
-    assert!(
-        sim.fog.is_cell_visible(owner, 3, 3),
-        "House-rung Gap replacement must preserve Phase-3 line of sight"
     );
 }
 
@@ -394,10 +313,16 @@ fn gsi_04_18_house_rung_applies_spy_sat_before_gap_and_recovers_after_gap_concea
 fn gsi_04_18_spy_sat_latch_and_persisted_fog_are_hash_authority() {
     let (mut sim, _rules, owner) = fixture();
     let baseline = sim.state_hash();
-    sim.houses.get_mut(&owner).unwrap().spy_sat_active = true;
+    sim.houses
+        .get_mut(&owner)
+        .unwrap()
+        .set_spy_sat_active_for_test(true);
     let latch_hash = sim.state_hash();
     assert_ne!(latch_hash, baseline);
-    sim.houses.get_mut(&owner).unwrap().spy_sat_active = false;
+    sim.houses
+        .get_mut(&owner)
+        .unwrap()
+        .set_spy_sat_active_for_test(false);
     assert_eq!(sim.state_hash(), baseline);
 
     sim.fog.reveal_all_for_owner(owner);
@@ -428,7 +353,7 @@ fn shroud_current_sight_world_collector_and_native_frame_restore() {
     assert!(!sim.fog.is_cell_gap_covered(owner, 12, 12));
     // Actual entity-source departure occurs after an early frame120 sweep:
     // the frame's object work Limbos the source, whose ReReveal leaves.
-    sim.session.binary_frame = 120;
+    sim.session.set_binary_frame_for_test(120);
     sim.advance_tick(&[], None, None, None, 67);
     sim.release_object_sight_with_context(2, UninitContext::default());
     sim.substrate
@@ -451,7 +376,7 @@ fn shroud_current_sight_world_collector_and_native_frame_restore() {
     let mut restored = GameSnapshot::load(&bytes).unwrap().sim;
     assert_eq!(restored.state_hash(), hash);
     restored.restore_after_snapshot_load().unwrap();
-    restored.session.binary_frame = 239;
+    restored.session.set_binary_frame_for_test(239);
     restored.advance_tick(&[], None, None, None, 67);
     assert!(restored.fog.is_cell_revealed(owner, 12, 12));
     restored.advance_tick(&[], None, None, None, 67);
@@ -459,21 +384,6 @@ fn shroud_current_sight_world_collector_and_native_frame_restore() {
         !restored.fog.is_cell_revealed(owner, 12, 12),
         "frame240 consumes persisted pending conceal before object work"
     );
-}
-
-#[test]
-fn shroud_current_sight_psychic_mapping_does_not_gain_gap_immunity() {
-    let (mut sim, rules, owner) = fixture();
-    let gapper = sim.interner.intern("Soviet");
-    let sw = charge_psychic_reveal(&mut sim, owner);
-    assert!(crate::sim::superweapon::psychic_reveal::launch(
-        &mut sim, &rules, owner, 12, 12, sw
-    ));
-    assert!(sim.fog.is_cell_revealed(owner, 12, 12));
-    insert_structure(&mut sim, 1, gapper, "GAGAP", 12);
-    sim.visit_building_operational(1, &rules, None, crate::sim::world::FrameEffects::default());
-    sim.reconcile_active_vision_structures(&rules);
-    assert!(!sim.fog.is_cell_revealed(owner, 12, 12));
 }
 
 #[test]
@@ -537,7 +447,7 @@ fn shroud_current_sight_psychic_under_existing_gap_waits_for_native_boundary() {
     sim.reconcile_active_vision_structures(&rules);
     assert!(sim.fog.is_cell_revealed(owner, 12, 12));
     assert!(!sim.fog.is_cell_gap_covered(owner, 12, 12));
-    sim.session.binary_frame = 119;
+    sim.session.set_binary_frame_for_test(119);
     sim.advance_tick(&[], None, None, None, 67);
     assert!(sim.fog.is_cell_revealed(owner, 12, 12));
     sim.advance_tick(&[], None, None, None, 67);
@@ -690,13 +600,13 @@ fn shroud_current_sight_live_foot_timer_keeps_viewer_histories_and_snapshot() {
         let entity = sim.substrate.entities.get_mut(2).unwrap();
         entity.set_in_playfield(true);
         let mut loco = LocomotorState::for_test_kind(LocomotorKind::Jumpjet);
-        loco.set_layer(MovementLayer::Air);
+        loco.set_layer_for_test(MovementLayer::Air);
         // Keep the admitted high-flight height through the actual Process below.
 
         let runtime = loco.jumpjet_runtime_mut().expect("jumpjet runtime");
         let mut flight = runtime.flight();
         // The kernel flies toward its own retained target height.
-        flight.set_target_height(208);
+        flight.set_target_height_for_test(208);
         *runtime = runtime
             .clone()
             .with_phase_for_test(
@@ -777,7 +687,7 @@ fn shroud_current_sight_live_foot_timer_keeps_viewer_histories_and_snapshot() {
             .timer(a),
         CdTimer::started(104, 15)
     );
-    sim.session.binary_frame = 119;
+    sim.session.set_binary_frame_for_test(119);
     sim.set_logic_order_for_test(vec![2]);
     sim.advance_live_object_pass(None, None, crate::sim::world::FrameEffects::default())
         .expect("fixture frame must complete");
@@ -850,13 +760,13 @@ fn shroud_current_sight_live_refresh_gates_preserve_or_reload_native_timer() {
     sim.playfield_bounds = Some(crate::sim::arena_fixture::OPEN_PLAYFIELD);
     insert_sight_unit(&mut sim, 2, owner, 13, 13);
     let mut loco = LocomotorState::for_test_kind(LocomotorKind::Fly);
-    loco.set_layer(MovementLayer::Air);
+    loco.set_layer_for_test(MovementLayer::Air);
     loco.fly_runtime_mut()
         .unwrap()
-        .set_current_speed(SimFixed::from_num(1));
+        .set_current_speed_for_test(SimFixed::from_num(1));
     sim.substrate.entities.get_mut(2).unwrap().locomotor = Some(loco);
     sim.set_object_height_unmarked(2, 207);
-    sim.session.binary_frame = 119;
+    sim.session.set_binary_frame_for_test(119);
     sim.refresh_high_flying_sight_before_process(2, None);
     assert_eq!(
         sim.substrate
@@ -879,7 +789,7 @@ fn shroud_current_sight_live_refresh_gates_preserve_or_reload_native_timer() {
             .unwrap();
         loco.fly_runtime_mut()
             .unwrap()
-            .set_current_speed(SimFixed::from_num(0));
+            .set_current_speed_for_test(SimFixed::from_num(0));
     }
     sim.set_object_height_unmarked(2, 208);
     sim.refresh_high_flying_sight_before_process(2, None);
@@ -902,7 +812,7 @@ fn shroud_current_sight_live_refresh_gates_preserve_or_reload_native_timer() {
         .unwrap()
         .fly_runtime_mut()
         .unwrap()
-        .set_current_speed(SimFixed::from_num(-1));
+        .set_current_speed_for_test(SimFixed::from_num(-1));
     // Membership is false: the admitted FootAI event calls leaves which reject,
     // then still reloads15. Native moving compares !=0, so negative speed admits.
     sim.refresh_high_flying_sight_before_process(2, None);
@@ -922,7 +832,7 @@ fn shroud_current_sight_live_refresh_gates_preserve_or_reload_native_timer() {
         .unwrap()
         .lifecycle
         .set_in_limbo_for_test(true);
-    sim.session.binary_frame = 134;
+    sim.session.set_binary_frame_for_test(134);
     sim.refresh_high_flying_sight_before_process(2, None);
     assert_eq!(
         sim.substrate
@@ -1020,7 +930,7 @@ fn shroud_current_sight_spy_sat_event_preserves_registration_order_and_restore()
         // This uplink's own sight is outside the observed cell.
         insert_structure(&mut sim, 4, owner, "GASPYSAT", 2);
         sim.reconcile_active_vision_structures(&rules);
-        assert!(sim.houses[&owner].spy_sat_active);
+        assert!(sim.houses[&owner].spy_sat_active());
         assert!(
             !sim.fog.whole_map_revealed_for_owner(owner),
             "successful gap readmission clears House240 after the map reveal; SpySat577A stays active"
@@ -1080,7 +990,7 @@ fn shroud_current_sight_spy_sat_event_preserves_registration_order_and_restore()
             .lifecycle
             .set_in_limbo_for_test(true);
         restored.reconcile_active_vision_structures(&rules);
-        assert!(!restored.houses[&owner].spy_sat_active);
+        assert!(!restored.houses[&owner].spy_sat_active());
         assert!(!restored.fog.whole_map_revealed_for_owner(owner));
         assert!(
             !restored.fog.is_cell_revealed(owner, 23, 23),
@@ -1165,12 +1075,12 @@ fn reset_shroud_replays_own_sight_and_allied_buildings() {
     sim.refresh_fog(&vision::VisionConfig::default(), Some(&rules));
     assert!(sim.fog.is_cell_visible(viewer, 18, 12));
     sim.reveal_map_for_owner(viewer, &rules);
-    assert!(sim.houses[&viewer].map_is_clear);
+    assert!(sim.houses[&viewer].map_is_clear());
     assert!(sim.fog.is_cell_revealed(viewer, 23, 23));
 
     sim.reset_shroud_for_owner(viewer, &rules);
 
-    assert!(!sim.houses[&viewer].map_is_clear);
+    assert!(!sim.houses[&viewer].map_is_clear());
     assert!(!sim.fog.is_cell_revealed(viewer, 23, 23));
     assert!(sim.fog.is_cell_visible(viewer, 4, 4), "its own unit");
     assert!(

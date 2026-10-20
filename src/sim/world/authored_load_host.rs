@@ -156,9 +156,9 @@ impl AuthoredOverlayLoadHost for SimulationAuthoredLoadHost<'_> {
         };
         match kind {
             MapLoadDirtyKind::BaseMarkTactical | MapLoadDirtyKind::WallTactical => {
-                self.sim.tactical_dirty_cells.push(coord);
+                self.sim.dirty_cells.mark_tactical(coord);
             }
-            MapLoadDirtyKind::WallRadar => self.sim.mark_radar_terrain_dirty_cells([coord]),
+            MapLoadDirtyKind::WallRadar => self.sim.dirty_cells.mark_radar([coord]),
         }
         Ok(())
     }
@@ -248,7 +248,7 @@ impl AuthoredOverlayLoadHost for SimulationAuthoredLoadHost<'_> {
         let lighting = self
             .sim
             .session
-            .lighting
+            .lighting()
             .profile(crate::sim::scenario_session::ScenarioLightingProfile::Normal)
             .into();
         self.sim.construct_overlay_cell_anim(
@@ -341,7 +341,8 @@ mod tests {
         // consumes no Scenario draws, so use that seed to compare the full
         // world across the ordinary in-scenario restore handoff.
         let mut sim = Simulation::with_seed(0);
-        sim.session.map_name = "authored ART owner".into();
+        sim.session
+            .set_map_name_for_test("authored ART owner".into());
         sim.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(700));
         let before_rng = sim.rng_state();
         SimulationAuthoredLoadHost::new(&mut sim, &mut rules, &assets, "TEM", "TEMPERATE")
@@ -350,10 +351,10 @@ mod tests {
 
         let (&id, anim) = sim.anims().next().expect("one constructed terrain Anim");
         assert_eq!(sim.anims().count(), 1);
-        assert_eq!(anim.native_unique_id, 701);
-        assert_eq!(anim.effective_end, 2);
-        assert_eq!(anim.z_adjust, -7);
-        assert!(anim.terrain_attached && anim.use_cell_drawer && anim.start_sound_active);
+        assert_eq!(anim.native_unique_id(), 701);
+        assert_eq!(anim.effective_end(), 2);
+        assert_eq!(anim.z_adjust(), -7);
+        assert!(anim.terrain_attached() && anim.use_cell_drawer() && anim.start_sound_active());
         assert_eq!(
             sim.anim_display_layer(id, Some(&rules)),
             Some(DisplayLayer::GROUND)
@@ -421,7 +422,9 @@ mod tests {
         // A fresh staged load does not inherit the previous match's bound set.
         let mut reload_rules = load_rules();
         let mut reload = Simulation::with_seed(0);
-        reload.session.map_name = "authored ART owner".into();
+        reload
+            .session
+            .set_map_name_for_test("authored ART owner".into());
         reload.native_unique_ids = Some(NativeUniqueIdCursor::test_at_current_value(700));
         SimulationAuthoredLoadHost::new(
             &mut reload,

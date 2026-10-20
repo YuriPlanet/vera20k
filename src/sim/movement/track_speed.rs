@@ -8,8 +8,6 @@ use crate::rules::locomotor_type::LocomotorKind;
 use crate::rules::object_type::ObjectType;
 use crate::rules::ruleset::RuleSet;
 use crate::sim::game_entity::GameEntity;
-use crate::sim::house_state::HouseState;
-use crate::sim::intern::InternedId;
 use crate::sim::pathfinding::PathGrid;
 use crate::sim::pathfinding::terrain_speed::TerrainSpeedConfig;
 use crate::util::fixed_math::{SIM_ONE, SIM_ZERO, SimFixed};
@@ -135,7 +133,7 @@ pub(super) fn advance(
     entity: &mut GameEntity,
     object: Option<&ObjectType>,
     rules: Option<&RuleSet>,
-    houses: &std::collections::BTreeMap<InternedId, HouseState>,
+    houses: &crate::sim::houses::Houses,
     terrain: Option<&ResolvedTerrainGrid>,
     grid: Option<&PathGrid>,
 ) -> i32 {
@@ -168,9 +166,7 @@ pub(super) fn advance(
         decel: object.map_or(SIM_ZERO, |o| o.decel_factor),
         slowdown_distance: object.map_or(0, |o| o.slowdown_distance),
         sinking: entity.sinking.is_active(),
-        // RESIDUAL: Foot+0x6B5's producers are not ported, so the crush
-        // slowdown never caps the target.
-        crush_slowdown: false,
+        crush_slowdown: entity.foot_speed.crush_slowdown(),
     };
     if let Some(target) = retained_target {
         let step = super::drive_locomotion::track_speed_prefix(

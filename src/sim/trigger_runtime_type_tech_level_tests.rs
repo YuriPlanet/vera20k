@@ -120,8 +120,7 @@ fn type_tech_level_dispatch_matches_original_identity_signed_values_house_dirty_
             if !dirty.as_bool().unwrap() {
                 assert!(house.take_tech_recheck());
             }
-            sim.houses.insert(owner, house);
-            sim.session.house_order.push(owner);
+            sim.houses.register(house);
             owners.push(owner);
         }
         let frozen_houses: Vec<_> = owners

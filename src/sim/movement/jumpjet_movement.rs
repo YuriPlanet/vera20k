@@ -347,7 +347,7 @@ impl JumpjetRuntime {
         let lifted = self.phase == STATE_DESCEND;
         if lifted {
             self.phase = STATE_ASCEND;
-            self.flight.set_target_height(self.params.height());
+            self.flight.lift_to(self.params.height());
         }
         MoveToOutcome { lifted }
     }
@@ -678,7 +678,7 @@ impl Simulation {
         if !unloading {
             return;
         }
-        let now = self.session.binary_frame;
+        let now = self.session.binary_frame();
         let _ = match rules {
             Some(rules) => self.mission_jumpjet_move_to_completion_exact(
                 id,
@@ -806,7 +806,7 @@ impl Simulation {
         if let Some(entity) = self.substrate.entities.get_mut(id) {
             // Infantry51B1D2 returns through Foot4D96C2 after the locomotor's
             // Move_To; the Move_To inside Stop cannot own this.
-            super::DestinationTiming::from_rules(self.session.binary_frame, Some(rules))
+            super::DestinationTiming::from_rules(self.session.binary_frame(), Some(rules))
                 .accept(entity);
         }
         true
@@ -950,7 +950,7 @@ mod tests {
                     })
                     .collect(),
             );
-            let c = terrain.cell_mut(10, 10).unwrap();
+            let c = terrain.cell_mut_for_test(10, 10).unwrap();
             c.level = input["level"].as_u64().unwrap_or(2) as u8;
             c.slope_type = input["slope"].as_u64().unwrap_or(0) as u8;
             c.bridge_facts.raw_flags = if input["structural"].as_bool().unwrap_or(false) {

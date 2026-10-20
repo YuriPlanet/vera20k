@@ -108,18 +108,18 @@ fn retail_world(rules: &RuleSet, terrain_rules: &TerrainRules) -> Simulation {
         off_104: 256,
         off_108: 256,
     });
-    sim.session.map_width = 128;
-    sim.session.map_height = 128;
+    sim.session.set_map_width_for_test(128);
+    sim.session.set_map_height_for_test(128);
     sim.install_resolved_terrain_for_new_map(terrain);
     let owner = sim.interner.intern("Americans");
     sim.houses
-        .insert(owner, HouseState::new(owner, 0, None, true, 50_000, 10));
+        .register(HouseState::new(owner, 0, None, true, 50_000, 10));
     sim
 }
 
 fn apply_cell_inputs(sim: &mut Simulation, cell: (u16, u16), input: &Value) {
     let terrain = sim.resolved_terrain.as_mut().unwrap();
-    let target = terrain.cell_mut(cell.0, cell.1).unwrap();
+    let target = terrain.cell_mut_for_test(cell.0, cell.1).unwrap();
     let has_bridge = input["bridge"].as_bool().unwrap_or(false);
     target.bridge_facts.raw_flags = if has_bridge { 0x100 } else { 0 };
     target.has_bridge_deck = has_bridge;
@@ -139,7 +139,11 @@ fn apply_cell_inputs(sim: &mut Simulation, cell: (u16, u16), input: &Value) {
         cell.1,
         input["deck_bits"].as_u64().unwrap() as u8,
     );
-    sim.session.game_mode_nonzero = int(&input["actual_game_mode"]) != 0;
+    sim.session.set_game_mode(
+        crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+            int(&input["actual_game_mode"]) != 0,
+        ),
+    );
 }
 
 fn assert_actor(sim: &Simulation, id: u64, native: &Value, name: &str) {
@@ -763,7 +767,7 @@ fn exact_unit_placement_input_z_matches_existing_original_ramp_controls() {
                 .resolved_terrain
                 .as_mut()
                 .unwrap()
-                .cell_mut(cell.0, cell.1)
+                .cell_mut_for_test(cell.0, cell.1)
                 .unwrap();
             target.level = int(&case["level"]) as u8;
             target.slope_type = case["ramp"].as_u64().unwrap() as u8;
@@ -961,7 +965,8 @@ fn retail_reused_unit_unlimbo_matches_original_stage_and_rng_tail() {
                 int(&poisoned["rate"]),
                 int(&poisoned["increment"]),
             ));
-        sim.session.binary_frame = input["frame"].as_u64().unwrap() as u32;
+        sim.session
+            .set_binary_frame_for_test(input["frame"].as_u64().unwrap() as u32);
         sim.main_rng = serde_json::from_value::<SimRng>(row["rng_before"]["main"].clone())
             .unwrap()
             .into();
@@ -1080,7 +1085,7 @@ fn retail_land_factory_delivery_matches_original_unit_unlimbo_suffix() {
         let mut sim = retail_world(&rules, &terrain_rules);
         let owner = sim.interner.intern("Americans");
         let unit_type = sim.interner.intern("MTNK");
-        assert!(sim.production.factories.test_enqueue_kernel(
+        assert!(sim.production.factories_mut().test_enqueue_kernel(
             owner,
             ProductionCategory::Vehicle,
             unit_type,
@@ -1119,7 +1124,7 @@ fn retail_land_factory_delivery_matches_original_unit_unlimbo_suffix() {
         sim.mission_assign_exact(producer_id, MissionId::from_known(MissionType::Guard), 0)
             .unwrap();
         assert!(
-            sim.houses[&owner].base_projection.buildings().is_empty(),
+            sim.houses[&owner].base_projection().buildings().is_empty(),
             "{name}: direct native ExitObject has no House producer membership"
         );
         let producer_type = rules.object("GAWEAP").unwrap();
@@ -1180,7 +1185,7 @@ fn retail_land_factory_delivery_matches_original_unit_unlimbo_suffix() {
                 .resolved_terrain
                 .as_mut()
                 .unwrap()
-                .cell_mut(cell.0, cell.1)
+                .cell_mut_for_test(cell.0, cell.1)
                 .unwrap();
             target.level = native["level"].as_u64().unwrap() as u8;
             target.slope_type = native["slope"].as_u64().unwrap() as u8;
@@ -1194,12 +1199,12 @@ fn retail_land_factory_delivery_matches_original_unit_unlimbo_suffix() {
         }
         assert!(
             sim.production
-                .factories
+                .factories_mut()
                 .test_arm_ready(owner, ProductionCategory::Vehicle)
         );
         let prior_rng = sim.rng_state();
-        let prior_tick = sim.session.tick;
-        let prior_frame = sim.session.binary_frame;
+        let prior_tick = sim.session.tick();
+        let prior_frame = sim.session.binary_frame();
         assert_eq!(
             json!(prior_frame),
             row["before"]["frame"],
@@ -1229,7 +1234,7 @@ fn retail_land_factory_delivery_matches_original_unit_unlimbo_suffix() {
         );
         assert_eq!(row["eax"], 2, "{name}: native ExitObject success");
         assert_eq!(
-            json!(sim.session.binary_frame),
+            json!(sim.session.binary_frame()),
             row["after"]["frame"],
             "{name}: direct ExitObject preserves its native frame"
         );
@@ -1324,13 +1329,13 @@ fn retail_land_factory_delivery_matches_original_unit_unlimbo_suffix() {
         );
         assert!(
             sim.production
-                .factories
+                .factories()
                 .view(owner, ProductionCategory::Vehicle)
                 .is_none_or(|factory| factory.object.is_none()),
             "{name}: successful caller releases its held identity"
         );
         assert_eq!(
-            (sim.session.tick, sim.session.binary_frame),
+            (sim.session.tick(), sim.session.binary_frame()),
             (prior_tick, prior_frame),
             "{name}: ExitObject and caller release do not advance a frame"
         );
@@ -1512,7 +1517,7 @@ fn unit_entry_scope_and_actual_game_mode_match_independent_original_controls() {
         sim.mapgen_rng = crate::sim::rng::SimRng::new(31);
         let owner = sim.interner.intern("Americans");
         sim.houses
-            .insert(owner, HouseState::new(owner, 0, None, false, 0, 10));
+            .register(HouseState::new(owner, 0, None, false, 0, 10));
         let mut actor = GameEntity::test_default(90, "MOVER", "Americans", 10, 10);
         actor.set_type_ref_for_test(sim.interner.intern("MOVER"));
         actor.set_owner_for_test(owner);
@@ -1536,7 +1541,11 @@ fn unit_entry_scope_and_actual_game_mode_match_independent_original_controls() {
                 .unwrap()
                 .place_overlay(11, 10, 0, 0);
         }
-        sim.session.game_mode_nonzero = int(&input["actual_game_mode"]) != 0;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+                int(&input["actual_game_mode"]) != 0,
+            ),
+        );
         assert_rng(&sim, &row["rng"], "before_hex", &name);
         let before = sim.rng_state();
         let result = in_scopes(

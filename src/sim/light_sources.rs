@@ -64,8 +64,30 @@ pub enum LightingEvent {
 /// claim to native Cell34 lazy reinitialization.
 #[derive(Debug, Clone, Default)]
 pub struct LightingSources {
-    pub buildings: BTreeMap<u64, PointLight>,
-    pub pending: Vec<LightingEvent>,
+    buildings: BTreeMap<u64, PointLight>,
+    pending: Vec<LightingEvent>,
+}
+
+impl LightingSources {
+    /// The live building lights, by building id.
+    pub fn buildings(&self) -> &BTreeMap<u64, PointLight> {
+        &self.buildings
+    }
+
+    /// Outgoing lighting events not yet taken by presentation.
+    pub fn pending(&self) -> &[LightingEvent] {
+        &self.pending
+    }
+
+    /// Queue an outgoing lighting event, in production order.
+    pub(crate) fn publish(&mut self, event: LightingEvent) {
+        self.pending.push(event);
+    }
+
+    /// Take the outgoing events, oldest first.
+    pub fn take_pending(&mut self) -> Vec<LightingEvent> {
+        std::mem::take(&mut self.pending)
+    }
 }
 
 impl Simulation {
@@ -125,13 +147,9 @@ impl Simulation {
         let Some(source) = point_light_from_object(
             entity.position.rx(),
             entity.position.ry(),
-            object.light_visibility,
-            object.light_intensity,
-            [
-                object.light_red_tint,
-                object.light_green_tint,
-                object.light_blue_tint,
-            ],
+            object.building_light().visibility_leptons(),
+            object.building_light().intensity_units(),
+            object.building_light().tint_units(),
         ) else {
             return;
         };
@@ -175,7 +193,7 @@ impl Simulation {
         let cell_profile = self.lighting_cell_profile();
         let constructor_rgb = self.palette_constructor_rgb();
         self.lighting_sources.pending.push(LightingEvent::Global {
-            state: self.session.lighting,
+            state: *self.session.lighting(),
             cell_profile,
             palette,
             constructor_rgb,
@@ -201,7 +219,7 @@ impl Simulation {
     pub fn palette_constructor_rgb(&self) -> Option<[i32; 3]> {
         let profile = if crate::sim::superweapon::lightning_storm::raging(self) {
             ScenarioLightingProfile::Ion
-        } else if self.session.lighting.nuke_flash_fading_in()
+        } else if self.session.lighting().nuke_flash_fading_in()
             || self.session.chrono_screen().active()
         {
             ScenarioLightingProfile::Nuke
@@ -210,7 +228,7 @@ impl Simulation {
         } else {
             return None;
         };
-        Some(self.session.lighting.profile(profile).alternate_rgb())
+        Some(self.session.lighting().profile(profile).alternate_rgb())
     }
 
     /// The profile whose Ground/Level a cell's refresh reads
@@ -227,7 +245,7 @@ impl Simulation {
             ScenarioLightingProfile::Ion
         } else if crate::sim::superweapon::psychic_dominator::active(self) {
             ScenarioLightingProfile::Dominator
-        } else if self.session.lighting.nuke_flash_fading_in() {
+        } else if self.session.lighting().nuke_flash_fading_in() {
             ScenarioLightingProfile::Nuke
         } else {
             ScenarioLightingProfile::Normal
@@ -243,7 +261,7 @@ impl Simulation {
     /// (`53BAD0`, set by127/53B460) shares the first nuke arm. Original
     /// controls: superweapon_oracle.json/update_lighting, chrono=1.
     pub(crate) fn update_lighting(&mut self) {
-        let profile = if self.session.lighting.nuke_flash_fading_in()
+        let profile = if self.session.lighting().nuke_flash_fading_in()
             || self.session.chrono_screen().active()
         {
             ScenarioLightingProfile::Nuke
@@ -254,7 +272,7 @@ impl Simulation {
         } else {
             ScenarioLightingProfile::Normal
         };
-        self.session.lighting.select(profile);
-        self.publish_global_lighting(PaletteUpdate::from_scenario(&self.session.lighting));
+        self.session.lighting_mut().select(profile);
+        self.publish_global_lighting(PaletteUpdate::from_scenario(&self.session.lighting()));
     }
 }

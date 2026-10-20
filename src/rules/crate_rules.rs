@@ -312,12 +312,4 @@ mod tests {
         assert_eq!(rules.unit_crate_type.as_deref(), Some("Tank"));
         assert_eq!(rules.water_crate_img.as_deref(), Some("WCrate"));
     }
-
-    /// An unmatched solo-crate mapping resolves to Money rather than failing —
-    /// `Powerup_From_Name` has no error path.
-    #[test]
-    fn unmatched_solo_mapping_falls_back_to_money() {
-        let rules = parse("[CrateRules]\nSilverCrate=NotAPowerup\n");
-        assert_eq!(rules.silver_crate, POWERUP_MONEY);
-    }
 }

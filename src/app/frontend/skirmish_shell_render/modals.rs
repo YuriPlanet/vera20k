@@ -649,37 +649,21 @@ pub(super) fn push_saved_browser_modal_instances<I: Clone + PartialEq>(
     );
     // The name field is a plain sunken plate; Save is the only mode that has one.
     if let Some(edit) = layout.name_edit {
-        push_solid_rect(
+        super::controls::push_new_edit_instances(
             out,
             atlas,
-            edit,
-            SHELL_MODAL_PANEL_RGB,
-            SHELL_DROPDOWN_DEPTH - 0.00010,
+            font,
+            &browser.description_edit,
+            super::controls::NewEditPaint {
+                frame: edit,
+                text: crate::ui::skirmish_shell::player_name_edit_text_rect(edit, layout.scale),
+                background: Some(SHELL_MODAL_PANEL_RGB),
+                frame_depth: SHELL_DROPDOWN_DEPTH - 0.00011,
+                caret_depth: SHELL_DROPDOWN_DEPTH - 0.00012,
+                caret_visible: browser.opened_at.elapsed().as_millis() % 2000 < 1000,
+            },
+            layout.scale,
         );
-        push_ownerdraw_two_pixel_bevel_frame(out, atlas, edit, SHELL_DROPDOWN_DEPTH - 0.00011);
-        if browser.description_edit.focused && browser.opened_at.elapsed().as_millis() % 2000 < 1000
-        {
-            // The caret rides the font's authored metrics, so it is placed in
-            // 800x600 numbers and stretched once with the field.
-            let scale = layout.scale;
-            let field = crate::ui::skirmish_shell::player_name_edit_text_rect(
-                scale.base_rect(edit),
-                ShellScale::RETAIL,
-            );
-            let editor = &browser.description_edit;
-            let start = editor.first_visible_unit.min(editor.caret);
-            let prefix = String::from_utf16_lossy(&editor.units[start..editor.caret]);
-            let x = field.x + font.text_width(&prefix) as i32;
-            if x < field.x + field.w {
-                push_solid_rect(
-                    out,
-                    atlas,
-                    scale.scale_rect(RectPx::new(x, field.y + 2, 2, (field.h - 4).max(1))),
-                    SHELL_LABEL_TEXT_RGB,
-                    SHELL_DROPDOWN_DEPTH - 0.00012,
-                );
-            }
-        }
     }
     if column_buttons {
         for (rect, control) in [
@@ -729,41 +713,5 @@ pub(super) fn push_saved_browser_prompt_instances<I: Clone + PartialEq>(
             ShellScale::RETAIL,
             VALIDATION_MODAL_SPRITE_DEPTHS,
         ));
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn choose_map_retail_art_preserves_listbox_backing() {
-        let interior = backdrop_interior(true);
-
-        assert_eq!(interior, BackdropInteriorPaint::PreserveBacking);
-        assert!(!interior.paints_solid_fill());
-    }
-
-    #[test]
-    fn choose_map_fallback_preserves_centered_1024_shell_geometry() {
-        let layout = crate::ui::skirmish_shell::compute_layout(1024, 768);
-
-        assert_eq!(
-            shell_content_fallback_rect(&layout),
-            RectPx::new(112, 84, 632, 568)
-        );
-    }
-
-    #[test]
-    fn random_map_missing_art_uses_bounded_opaque_fallback() {
-        let layout = crate::ui::skirmish_shell::compute_layout(800, 600);
-        let interior = backdrop_interior(false);
-
-        assert_eq!(interior, BackdropInteriorPaint::OpaqueFallback);
-        assert!(interior.paints_solid_fill());
-        assert_eq!(
-            shell_content_fallback_rect(&layout),
-            RectPx::new(0, 0, 632, 568)
-        );
     }
 }

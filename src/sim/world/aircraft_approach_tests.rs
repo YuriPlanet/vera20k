@@ -49,7 +49,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
     // The oracle's target mark is Object+0x74, which IsHighFlying reads.
     let marked = input["target_marked"].as_bool().unwrap_or(true);
     let target = sim.substrate.entities.get_mut(2).unwrap();
-    target.lifecycle.set_cell_marked(marked);
+    target.lifecycle.set_cell_marked_for_test(marked);
     let entity = sim.substrate.entities.get_mut(1).unwrap();
     let state = input["state"].as_u64().unwrap_or(3) as u8;
     entity.mission.set_handler_state(u32::from(state));
@@ -66,7 +66,7 @@ fn fixture(input: &Value) -> (Simulation, RuleSet) {
     let loco = entity.locomotor.as_mut().unwrap();
     loco.fly_runtime_mut()
         .unwrap()
-        .set_current_speed(SimFixed::from_num(input["speed"].as_f64().unwrap_or(1.0)));
+        .set_current_speed_for_test(SimFixed::from_num(input["speed"].as_f64().unwrap_or(1.0)));
     let mut fly = serde_json::to_value(loco.fly_runtime().unwrap()).unwrap();
     fly["moving"] = json!(input["moving"].as_bool().unwrap_or(true));
     *loco.fly_runtime_mut().unwrap() = serde_json::from_value(fly).unwrap();
@@ -188,7 +188,7 @@ fn aircraft_initial_attack_reaches_live_search_on_the_next_due_visit() {
         let before = world.state_hash();
         crate::sim::aircraft::tick_aircraft_missions(world, &rules);
         assert_eq!(world.state_hash(), before);
-        world.session.binary_frame = 101;
+        world.session.set_binary_frame_for_test(101);
         crate::sim::aircraft::tick_aircraft_missions(world, &rules);
         let entity = world.substrate.entities.get(1).unwrap();
         assert_eq!(crate::sim::aircraft::attack_state(entity), Some(3));

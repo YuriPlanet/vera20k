@@ -9,8 +9,7 @@
 
 use crate::map::entities::EntityCategory;
 use crate::sim::components::DriveCoord;
-use crate::sim::movement::locomotor::LocomotorState;
-use crate::util::fixed_math::{SIM_ONE, SIM_ZERO, SimFixed};
+use crate::util::fixed_math::SimFixed;
 
 /// Fly interface+84 /4CFE20 reads TYPE Speed, not Foot's adjusted speed.
 /// The retained fraction follows the existing SimFixed policy. Its dyadic
@@ -21,15 +20,6 @@ pub(crate) fn current_fly_speed(type_speed: i32, fraction: SimFixed) -> i32 {
     (i64::from(type_speed) * i64::from(fraction.to_bits()) / 65536) as i32
 }
 
-/// Per-tick speed ramp step for Fly aircraft (0.1 per tick).
-/// Original: _DAT_007e3860 = 0.1 (verified from binary).
-/// Full acceleration 0->1 takes 10 ticks.
-const FLY_SPEED_RAMP_STEP: SimFixed = SimFixed::lit("0.1");
-
-/// The target speed of a Fly crawling in under the 0.1 slowdown floor
-/// (`0x004CE27C`).
-const FLY_CRAWL_SPEED: SimFixed = SimFixed::lit("0.1");
-
 /// The 0.05 current speed of Process's creep (`0x004CE2D1`) and of
 /// Horizontal_Step's landing test (`0x007E8AE8`).
 pub(crate) const MIN_CREEP_SPEED: SimFixed = SimFixed::lit("0.05");
@@ -37,18 +27,6 @@ pub(crate) const MIN_CREEP_SPEED: SimFixed = SimFixed::lit("0.05");
 /// `TechnoTypeClass` constructor `SlowdownDistance` (`0x00710BB2`), for a
 /// mover without a resolved type.
 const DEFAULT_SLOWDOWN_DISTANCE: i32 = 500;
-
-/// Process `0x004CE441..0x004CE495`: the current speed (`+0x48`) chases the
-/// target speed (`+0x40`) by 0.1 a frame.
-pub(crate) fn ramp_fly_speed(state: &mut super::fly_height::FlyRuntime) {
-    let target = state.target_speed();
-    let current = state.current_speed();
-    if current < target {
-        state.set_current_speed((current + FLY_SPEED_RAMP_STEP).min(target));
-    } else if current > target {
-        state.set_current_speed((current - FLY_SPEED_RAMP_STEP).max(target));
-    }
-}
 
 /// What `0x004D0180` reads to decide whether a Fly slows for its destination.
 #[derive(Debug, Clone, Copy)]
@@ -108,82 +86,7 @@ pub(crate) struct FlySpeedFacts {
     pub slowdown_distance: i32,
 }
 
-/// Fly Process `0x004CE145..0x004CE2DB`: the target speed (`+0x40`) that the
-/// ramp chases, rewritten on every frame the Fly is moving and its owner
-/// lives, is not landing, has climbed to half its takeoff height and holds a
-/// destination:
-/// - `0x004D0180` refusing: full speed. A locked aircraft, a cruising FlyBy
-///   and a cruising strafer or fighter with ammo never slow for their
-///   destination.
-/// - HunterSeeker: full speed while it has a Target and is not taking off,
-///   else a stop.
-/// - Otherwise `distance / SlowdownDistance`, capped at 1. Under 0.1 it is a
-///   0.1 crawl beyond 85 leptons and, within, a stop that halves the current
-///   speed. A current speed above the integer distance drops to it (only at
-///   distance 0). A Fly already at a standstill short of its destination gets
-///   a 0.05 current speed, which only the IsDropship attitude reads before the
-///   ramp (`0x004CE46F`) takes it back to the zero target: it moves nothing.
-///
-/// Native keeps binary64 and VERA SimFixed, each result within one quantum of
-/// native: the ratio truncates to Q16, and the halving rounds a dropped half
-/// away from zero, so it is zero exactly when native's is (a speed of one
-/// quantum truncated to zero would take the creep's branch). The floor test
-/// is the exact `10 * distance <= SlowdownDistance`, assuming gamemd's chop
-/// control word `0x0E7F`, under which the oracle runs: the chop quotient of
-/// an exact tenth falls below the stored 0.1. Rounded to nearest it would
-/// equal 0.1 and take the ratio arm (a 0.1 target for that frame, no
-/// halving). The rows of `tools/spatial_oracle/fly_target_speed` hold the
-/// native outputs.
-pub(crate) fn write_fly_target_speed(loco: &mut LocomotorState, facts: &FlySpeedFacts) {
-    let Some(state) = loco.fly_runtime_mut() else {
-        return;
-    };
-    let taking_off = state.taking_off();
-    if facts.health <= 0
-        || state.landing()
-        || (taking_off && facts.height < state.target_height() / 2)
-        || state.destination() == (DriveCoord { x: 0, y: 0, z: 0 })
-    {
-        return;
-    }
-    if !fly_may_slow(state.landing(), state.cruise_mode(), &facts.slow) {
-        state.set_target_speed(SIM_ONE);
-        return;
-    }
-    if facts.hunter_seeker {
-        state.set_target_speed(if !taking_off && facts.target {
-            SIM_ONE
-        } else {
-            SIM_ZERO
-        });
-        return;
-    }
-    let distance = i64::from(facts.distance);
-    let slowdown = i64::from(facts.slowdown_distance);
-    // A zero SlowdownDistance divides to +inf (NaN at distance 0), which the
-    // cap turns into full speed; a negative one is always under the floor.
-    if slowdown == 0 || (slowdown > 0 && distance * 10 > slowdown) {
-        state.set_target_speed(if slowdown == 0 || distance >= slowdown {
-            SIM_ONE
-        } else {
-            SimFixed::from_bits(((distance << 16) / slowdown) as i32)
-        });
-    } else if distance > 0x55 {
-        state.set_target_speed(FLY_CRAWL_SPEED);
-    } else {
-        let bits = state.current_speed().to_bits();
-        state.set_current_speed(SimFixed::from_bits(bits / 2 + bits % 2));
-        state.set_target_speed(SIM_ZERO);
-    }
-    if distance << 16 < i64::from(state.current_speed().to_bits()) {
-        state.set_current_speed(SimFixed::from_bits((distance << 16) as i32));
-    }
-    if state.target_speed() == SIM_ZERO && state.current_speed() == SIM_ZERO && distance > 0 {
-        state.set_current_speed(MIN_CREEP_SPEED);
-    }
-}
-
-/// The facts [`write_fly_target_speed`] reads from a live mover. Ammo is
+/// The facts [`FlyRuntime::write_target_speed`] reads from a live mover. Ammo is
 /// represented on Aircraft only; no stock non-aircraft owner flies. Native reads
 /// them in `FlyLocomotionClass::UpdateFlightMotion` (`0x004CD600`), `0x004CE145..0x004CE2DB`.
 pub(crate) fn fly_speed_facts(
@@ -297,7 +200,9 @@ pub fn current_fly_height(
     queried_flight_height(entity, cells.as_ref())
 }
 
-fn queried_flight_height(
+/// [`current_fly_height`] through the caller's cell query. A draw passes its
+/// isolated query, so a miss stamps its own dummy, not the simulation's.
+pub fn queried_flight_height(
     entity: &crate::sim::game_entity::GameEntity,
     cells: Option<&crate::map::resolved_terrain::NativeCellQuery<'_>>,
 ) -> i32 {
@@ -512,8 +417,8 @@ pub(crate) mod tests {
     use super::*;
     use crate::rules::locomotor_type::LocomotorKind;
     use crate::sim::game_entity::GameEntity;
-    use crate::sim::movement::locomotor::AirMovePhase;
-    use crate::util::fixed_math::SIM_HALF;
+    use crate::sim::movement::locomotor::{AirMovePhase, LocomotorState};
+    use crate::util::fixed_math::{SIM_HALF, SIM_ONE, SIM_ZERO};
 
     /// Fly `+0x34`: the Fly holds a move request. MoveTo sets it; only a
     /// landing at its destination (`0x004CEF5F`) and Stop clear it.
@@ -550,7 +455,7 @@ pub(crate) mod tests {
             (destination.x, destination.y),
             (20 * 256 + 128, 15 * 256 + 128)
         );
-        assert!(e.navigation.path_replay.remaining_directions().is_empty());
+        assert!(e.navigation.path_replay().remaining_directions().is_empty());
 
         // Should trigger ascending.
         let loco = e.locomotor.as_ref().expect("has loco");
@@ -645,17 +550,19 @@ pub(crate) mod tests {
 
     fn make_fly_loco() -> LocomotorState {
         let mut loco = LocomotorState::for_test_kind(LocomotorKind::Fly);
-        loco.fly_runtime_mut().unwrap().set_target_speed(SIM_ONE);
+        loco.fly_runtime_mut()
+            .unwrap()
+            .set_target_speed_for_test(SIM_ONE);
         loco
     }
 
     #[test]
     fn test_fly_speed_ramp() {
         let mut fly = crate::sim::movement::fly_height::FlyRuntime::default();
-        fly.set_target_speed(SIM_ONE);
+        fly.set_target_speed_for_test(SIM_ONE);
         // After 5 ramps: should be ~0.5 (fixed-point 0.1 is approximate).
         for _ in 0..5 {
-            ramp_fly_speed(&mut fly);
+            fly.ramp_speed();
         }
         let half_diff = (fly.current_speed() - SIM_HALF).abs();
         assert!(
@@ -665,7 +572,7 @@ pub(crate) mod tests {
         );
         // After 5 more: should reach exactly 1.0 (clamped by min(target)).
         for _ in 0..5 {
-            ramp_fly_speed(&mut fly);
+            fly.ramp_speed();
         }
         assert_eq!(fly.current_speed(), SIM_ONE);
     }
@@ -673,15 +580,15 @@ pub(crate) mod tests {
     #[test]
     fn test_fly_speed_ramp_decel() {
         let mut fly = crate::sim::movement::fly_height::FlyRuntime::default();
-        fly.set_current_speed(SIM_ONE);
+        fly.set_current_speed_for_test(SIM_ONE);
         for _ in 0..10 {
-            ramp_fly_speed(&mut fly);
+            fly.ramp_speed();
         }
         assert_eq!(fly.current_speed(), SIM_ZERO);
     }
 
     /// Every row of `tools/spatial_oracle/fly_target_speed`, the original
-    /// Process target-speed writer, through [`write_fly_target_speed`]: the
+    /// Process target-speed writer, through [`FlyRuntime::write_target_speed`]: the
     /// gate, `0x004D0180`, HunterSeeker and the slowdown law. Target and
     /// current speed land within one Q16 quantum of the native binary64.
     #[test]
@@ -713,8 +620,8 @@ pub(crate) mod tests {
             }))
             .unwrap();
             let fly = loco.fly_runtime_mut().unwrap();
-            fly.set_target_speed(SimFixed::from_bits(int("target_speed", 65536)));
-            fly.set_current_speed(SimFixed::from_bits(int("current", 32768)));
+            fly.set_target_speed_for_test(SimFixed::from_bits(int("target_speed", 65536)));
+            fly.set_current_speed_for_test(SimFixed::from_bits(int("current", 32768)));
             let facts = FlySpeedFacts {
                 health: int("health", 100),
                 // The takeoff rows stand over one level-0 cell.
@@ -731,7 +638,7 @@ pub(crate) mod tests {
                 target: flag("target"),
                 slowdown_distance: int("slowdown", 500),
             };
-            write_fly_target_speed(&mut loco, &facts);
+            loco.fly_runtime_mut().unwrap().write_target_speed(&facts);
             let fly = loco.fly_runtime().unwrap();
             for (actual, native) in [
                 (fly.target_speed(), &row["target_speed"]),

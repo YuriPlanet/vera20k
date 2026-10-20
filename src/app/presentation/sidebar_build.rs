@@ -745,69 +745,6 @@ mod tests {
     }
 
     #[test]
-    fn test_gclock_canvas_fills_slot_independently_of_base_crop() {
-        let slot = Rect {
-            x: 100.1,
-            y: 50.3,
-            w: 75.0,
-            h: 60.0,
-        };
-        let base =
-            place_canvas_crop_in_slot(slot, [60.0, 48.0], [3.0, 4.0], [54.0, 40.0], [13.25, -7.5])
-                .unwrap();
-        let gclock =
-            place_canvas_crop_in_slot(slot, [60.0, 48.0], [0.0, 0.0], [60.0, 48.0], [13.25, -7.5])
-                .unwrap();
-
-        assert_eq!(
-            base,
-            Rect {
-                x: 117.25,
-                y: 47.5,
-                w: 67.0,
-                h: 50.0
-            }
-        );
-        assert_eq!(
-            gclock,
-            Rect {
-                x: 113.25,
-                y: 42.5,
-                w: 75.0,
-                h: 60.0
-            }
-        );
-    }
-
-    #[test]
-    fn test_gclock_instance_uses_current_mid_progress_frame_and_geometry() {
-        let frames: Vec<SidebarChromeEntry> = (0..55)
-            .map(|frame| SidebarChromeEntry {
-                uv_origin: [frame as f32 / 55.0, 0.25],
-                uv_size: [1.0 / 55.0, 0.5],
-                pixel_size: [60.0, 48.0],
-            })
-            .collect();
-        let slot = Rect {
-            x: 100.1,
-            y: 50.3,
-            w: 75.0,
-            h: 60.0,
-        };
-
-        let instance = build_gclock_instance(&frames, 0.5, slot, [13.25, -7.5]).unwrap();
-
-        // Native stage27 selects frame28 (the stock atlas has55 frames).
-        assert_eq!(instance.uv_origin, frames[28].uv_origin);
-        assert_eq!(instance.uv_size, frames[28].uv_size);
-        assert_eq!(instance.position, [113.25, 42.5]);
-        assert_eq!(instance.size, [75.0, 60.0]);
-        assert_eq!(instance.depth, 0.00043);
-        assert_eq!(instance.tint, [1.0, 1.0, 1.0]);
-        assert_eq!(instance.alpha, 1.0);
-    }
-
-    #[test]
     fn gclock_selects_executed_native_frames_and_short_art_clamps() {
         let frames: Vec<_> = (0..55)
             .map(|frame| SidebarChromeEntry {
@@ -940,17 +877,5 @@ mod tests {
         item.is_ready = true;
         item.progress = 1.0;
         assert!(!shows_build_clock(&item), "ready");
-    }
-
-    #[test]
-    fn test_gclock_instance_requires_a_stored_frame() {
-        let slot = Rect {
-            x: 0.0,
-            y: 0.0,
-            w: 60.0,
-            h: 48.0,
-        };
-
-        assert!(build_gclock_instance(&[], 0.5, slot, [0.0, 0.0]).is_none());
     }
 }

@@ -242,7 +242,7 @@ impl Simulation {
             id,
             MissionId::from_known(MissionType::Eaten),
             0,
-            self.session.binary_frame,
+            self.session.binary_frame(),
             &LiveReadyInputProvider { rules },
         );
         true
@@ -432,7 +432,10 @@ impl Simulation {
         else {
             return;
         };
-        if self.houses.get(&owner).is_some_and(|house| house.is_human)
+        if self
+            .houses
+            .get(&owner)
+            .is_some_and(|house| house.is_human())
             && let Some(passenger) = self.substrate.entities.get_mut(stable_id)
         {
             passenger.building_entry.clear_absorber_seek();
@@ -500,7 +503,7 @@ impl Simulation {
         if !reissue {
             return true;
         }
-        let now = self.session.binary_frame;
+        let now = self.session.binary_frame();
         let _ = self.mission_queue_exact(
             id,
             MissionId::from_known(MissionType::Enter),
@@ -559,7 +562,7 @@ impl Simulation {
             registry,
             effects,
         );
-        let now = self.session.binary_frame;
+        let now = self.session.binary_frame();
         let _ = self.mission_queue_exact(
             id,
             MissionId::from_known(MissionType::Capture),
@@ -621,7 +624,7 @@ impl Simulation {
             registry,
             effects,
         );
-        let now = self.session.binary_frame;
+        let now = self.session.binary_frame();
         let _ = self.mission_queue_exact(
             id,
             MissionId::from_known(MissionType::Capture),
@@ -671,7 +674,7 @@ impl Simulation {
         let Some(best) = best else {
             return false;
         };
-        let now = self.session.binary_frame;
+        let now = self.session.binary_frame();
         let _ = bunker_link::begin_entry(self, id, best, rules, registry, effects, |sim| {
             let _ = sim.mission_queue_exact(
                 id,

@@ -165,8 +165,12 @@ fn sim_for(row: &Value, rules: &RuleSet) -> (Simulation, InternedId) {
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
-    sim.session.game_mode_nonzero = house["game_mode"].as_i64().unwrap_or(1) != 0;
-    sim.session.game_options.super_weapons = flag("super_weapons", true);
+    sim.session.set_game_mode(
+        crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+            house["game_mode"].as_i64().unwrap_or(1) != 0,
+        ),
+    );
+    sim.session.game_options_mut_for_test().super_weapons = flag("super_weapons", true);
     let owner = sim.interner.intern("H0");
     let other = sim.interner.intern("H1");
     let country = sim
@@ -175,7 +179,7 @@ fn sim_for(row: &Value, rules: &RuleSet) -> (Simulation, InternedId) {
     let human = flag("human", true);
     let tech = house["tech"].as_i64().map_or(10, |tech| tech as i32);
     let mut state = HouseState::new(owner, 0, Some(country), human, 0, tech);
-    state.player_control = flag("control", human);
+    state.set_player_control_for_test(flag("control", human));
     // The stolen-tech bytes +0x2BC, +0x2BD and +0x2BE are what a spy's
     // BuildTech infiltration of an AIBasePlanningSide 2, 1 or 0 type sets.
     for (slot, side) in [2, 1, 0].into_iter().enumerate() {
@@ -186,9 +190,9 @@ fn sim_for(row: &Value, rules: &RuleSet) -> (Simulation, InternedId) {
             state.steal_tech(side);
         }
     }
-    sim.houses.insert(owner, state);
+    sim.houses.register(state);
     sim.houses
-        .insert(other, HouseState::new(other, 0, Some(country), true, 0, 10));
+        .register(HouseState::new(other, 0, Some(country), true, 0, 10));
     for factory in row["factories"].as_array().into_iter().flatten() {
         let holder = if factory["house"].as_str() == Some("other") {
             other
@@ -209,7 +213,7 @@ fn sim_for(row: &Value, rules: &RuleSet) -> (Simulation, InternedId) {
             .unwrap();
         assert!(
             sim.production
-                .factories
+                .factories_mut()
                 .test_enqueue_kernel(holder, kind, object, 0, 0)
         );
         construct_active_factory_fixture(&mut sim, rules, holder, kind, object)
@@ -217,7 +221,7 @@ fn sim_for(row: &Value, rules: &RuleSet) -> (Simulation, InternedId) {
         for queued in names(&factory["queued"]) {
             let queued = sim.interner.get(queued).unwrap();
             sim.production
-                .factories
+                .factories_mut()
                 .test_enqueue_kernel(holder, kind, queued, 0, 0);
         }
     }
@@ -262,7 +266,10 @@ fn sim_for(row: &Value, rules: &RuleSet) -> (Simulation, InternedId) {
             }
         }
     }
-    sim.houses.get_mut(&owner).unwrap().tracking = tracking;
+    sim.houses
+        .get_mut(&owner)
+        .unwrap()
+        .set_tracking_for_test(tracking);
     (sim, owner)
 }
 
@@ -335,8 +342,7 @@ fn captured_secret_lab_grants_before_normal_tech_admission_and_retracts_on_loss(
     let other = sim.interner.intern("Other");
     for (id, human) in [(owner, true), (other, false)] {
         sim.houses
-            .insert(id, HouseState::new(id, 0, Some(country), human, 1000, 10));
-        sim.session.house_order.push(id);
+            .register(HouseState::new(id, 0, Some(country), human, 1000, 10));
     }
     let lab = sim.spawn_object("LAB", "Other", 12, 5, 0, &rules).unwrap();
     let product = rules.object("Q").unwrap();
@@ -403,19 +409,20 @@ fn retail_slave_miner_meets_proc_and_docks_limit_harriers() {
     let mut sim = Simulation::new();
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     let on_map = |sim: &mut Simulation, house, category, name: &str, count| {
         let type_id = sim.interner.get(name).unwrap();
         sim.houses
             .get_mut(&house)
             .unwrap()
-            .tracking
+            .tracking_mut()
             .set_active_for_test(category, type_id, count);
     };
 
     let yuri = sim.interner.intern("YuriCountry");
     sim.houses
-        .insert(yuri, HouseState::new(yuri, 2, None, true, 0, 10));
+        .register(HouseState::new(yuri, 2, None, true, 0, 10));
     on_map(&mut sim, yuri, EntityCategory::Structure, "YABRCK", 1);
     on_map(&mut sim, yuri, EntityCategory::Structure, "YACNST", 1);
     let yaweap = rules.object("YAWEAP").unwrap();
@@ -431,8 +438,8 @@ fn retail_slave_miner_meets_proc_and_docks_limit_harriers() {
 
     let americans = sim.interner.intern("Americans");
     let mut house = HouseState::new(americans, 0, None, true, 0, 10);
-    house.tracking.add_airport_docks(4);
-    sim.houses.insert(americans, house);
+    house.tracking_mut().add_airport_docks(4);
+    sim.houses.register(house);
     let orca = rules.object("ORCA").unwrap();
     assert!(orca.airport_bound);
     on_map(&mut sim, americans, EntityCategory::Aircraft, "ORCA", 3);

@@ -550,11 +550,16 @@ impl Simulation {
             movement::slope_transition::sample_process_entry(
                 entity,
                 slope,
-                sim.session.binary_frame,
+                sim.session.binary_frame(),
             );
         }
-        if !sim.process_track_turn(stable_id, rules, overlay_registry, effects) {
-            return Ok(outcome);
+        match sim.process_track_turn(stable_id, rules, overlay_registry, effects) {
+            movement::track_turn::TrackProcessEntry::Movement => {}
+            movement::track_turn::TrackProcessEntry::Tail => {
+                sim.drive_process_rest_tail(stable_id, rules, overlay_registry, effects);
+                return Ok(outcome);
+            }
+            movement::track_turn::TrackProcessEntry::Return => return Ok(outcome),
         }
         let mut pending_movement = {
             let current_grid = sim.path_grid_snapshot();
@@ -562,7 +567,7 @@ impl Simulation {
                 &mut sim.substrate.entities,
                 stable_id,
                 current_grid.as_deref(),
-                sim.session.binary_frame,
+                sim.session.binary_frame(),
                 sim.resolved_terrain.as_ref(),
                 sim.playfield_bounds,
                 &mut sim.interner,
@@ -576,12 +581,13 @@ impl Simulation {
         // (Drive 0x4B0583..0x4B0667 / Ship 0x69FC93..0x69FD0E;
         // `movement::track_continuation`).
         let frame_error = |sim: &Simulation, cause| super::FrameAdvanceError {
-            tick: sim.session.tick,
-            binary_frame: sim.session.binary_frame,
+            tick: sim.session.tick(),
+            binary_frame: sim.session.binary_frame(),
             entity_id: stable_id,
             cause,
         };
         let mut retry = false;
+        let mut process_tail = true;
         loop {
             if let Some(request) = pending_movement.take_foot_path_request() {
                 let outcome = sim
@@ -624,6 +630,11 @@ impl Simulation {
                         effects,
                     )
                     .map_err(|cause| frame_error(sim, cause))?;
+                // Drive4B0A7E/4B064C: the out byte returns the Process
+                // immediately; it must not run the common rest-speed tail.
+                if out {
+                    process_tail = false;
+                }
                 if !out
                     && sim
                         .substrate
@@ -659,7 +670,14 @@ impl Simulation {
                 .map_err(|cause| frame_error(sim, cause))?;
             pending_movement.record_track_movement(pass.moved);
             outcome.track_owned = true;
-            if retry || !invocation.active_gate || pass.aborted {
+            // Only the FIRST, active-track call tests Process_Track's AL
+            // (4B057B). The post-fresh call ignores AL and goes through the
+            // live-owner check to the common tail (4B0AAF..4B0ABC).
+            if invocation.active_gate && pass.aborted {
+                process_tail = false;
+                break;
+            }
+            if retry || !invocation.active_gate {
                 break;
             }
             if !sim
@@ -694,6 +712,9 @@ impl Simulation {
             .merge(movement::movement_tick::finish_movement_pass(
                 pending_movement,
             ));
+        if process_tail {
+            sim.drive_process_rest_tail(stable_id, rules, overlay_registry, effects);
+        }
         Ok(outcome)
     }
     pub(super) fn advance_live_object_pass(
@@ -706,8 +727,8 @@ impl Simulation {
         self.answer_batched_scans(rules, overlay_registry);
         let miner_config = rules.map(crate::sim::miner::MinerConfig::from_rules);
         let terrain_spawner_cells = self
-            .production
-            .terrain_animations
+            .terrain_objects
+            .animations()
             .keys()
             .copied()
             .collect::<BTreeSet<_>>();
@@ -723,7 +744,7 @@ impl Simulation {
         // and apply map by map in parallel (`vision::Planes`). Without a
         // current house the app's sound boundary reads the map of whichever
         // house it falls back to, so none waits.
-        if let Some(current) = self.session.current_house {
+        if let Some(current) = self.session.current_house() {
             let kept = self
                 .houses
                 .keys()
@@ -731,7 +752,7 @@ impl Simulation {
                 .filter(|&house| self.owner_is_human(house))
                 .chain([current])
                 .collect();
-            self.fog.by_owner.defer(kept);
+            self.fog.defer_plane_writes(kept);
         }
         // The pass's sight walks ask each owner's viewers once until the ally
         // graph changes (`vision::RevealViewers`).
@@ -748,14 +769,14 @@ impl Simulation {
             if let Some(before) = debug_before
                 && let Some(entity) = sim.substrate.entities.get_mut(stable_id)
             {
-                before.record(entity, sim.session.binary_frame);
+                before.record(entity, sim.session.binary_frame());
             }
             outcome.destroyed_structure |= turn.destroyed_structure;
             outcome.bridge_state_changed |= turn.bridge_state_changed;
             outcome.ownership_changed |= turn.ownership_changed;
             Ok(())
         });
-        self.fog.by_owner.settle();
+        self.fog.settle_plane_writes();
         self.reveal_viewers.end();
         self.finish_batched_path_searches();
         self.finish_batched_scans();
@@ -874,6 +895,11 @@ impl Simulation {
         }
 
         if !tube_active_at_entry {
+            // Foot4DA63B..670 precedes the high-flight sight block and
+            // Process. Cruise crossing itself has no PerCell promotion.
+            if let Some(rules) = rules {
+                sim.promote_balloon_playfield_membership_before_process(stable_id, rules);
+            }
             sim.refresh_high_flying_sight_before_process(stable_id, rules);
         }
 
@@ -959,7 +985,7 @@ impl Simulation {
                     hover_attack,
                     deploy_to_land,
                     sim.resolved_terrain.as_ref(),
-                    sim.session.binary_frame,
+                    sim.session.binary_frame(),
                 );
             }
         }
@@ -991,7 +1017,7 @@ impl Simulation {
         // Foot4DAECA clears the transient draw lift after piggyback callbacks,
         // before the warp-in/pending-entry predicate and ParasiteAI.
         if let Some(entity) = sim.substrate.entities.get_mut(stable_id) {
-            entity.set_ion_blast_lift(0);
+            entity.clear_ion_blast_lift();
         }
         // FootClass::AI 0x004DAED0..0x004DAEDC: with vt+0x1D8 (the warp-in)
         // clear, the pending entry (`Unit+0x500`) asks for its slot.
@@ -1020,8 +1046,8 @@ impl Simulation {
         if let Some(rules) = rules {
             sim.update_unit_disguise(stable_id, rules)
                 .map_err(|cause| super::FrameAdvanceError {
-                    tick: sim.session.tick,
-                    binary_frame: sim.session.binary_frame,
+                    tick: sim.session.tick(),
+                    binary_frame: sim.session.binary_frame(),
                     entity_id: stable_id,
                     cause,
                 })?;
@@ -1032,18 +1058,18 @@ impl Simulation {
             .entities
             .get(stable_id)
             .map(|entity| (entity.position.rx(), entity.position.ry()));
-        // A mover whose Process has no ported `Per_Cell_Process` call (Fly,
-        // a cruising Jumpjet, Rocket) takes
-        // VERA's cell-change stand-in for the Foot body's sensor, uncloak,
-        // Temporal and promote steps (`movement/per_cell.rs`).
+        // A mover that changes cell in a frame without a `Per_Cell_Process`
+        // call takes VERA's cell-change stand-in for the Foot body's sensor,
+        // uncloak and Temporal steps (`movement/per_cell.rs`): Fly, Jumpjet
+        // cruise and Rocket (`0x006622C0`), whose native Process has no
+        // PerCell call at all, and a Hover crossing a cell outside its
+        // `0x00515A1C`/`0x005146CA` calls.
         //
-        // RESIDUAL: native Fly and Jumpjet cruise reach none of these from a
-        // cell change. Trigger: such a mover changing cell. Effect: its
-        // sensor deposit, cloak scan, Temporal release and (but for a Fly,
-        // whose Process latches `+0x3D5` itself, `0x004CD510`) playfield
-        // promote run there. Risk: an aircraft with `Sensors=` or a held
-        // Temporal target; the promote is what admits a Jumpjet arriving
-        // from off the map.
+        // RESIDUAL: native reaches none of these from a bare cell change.
+        // Trigger: such a mover changing cell. Effect: its sensor deposit,
+        // cloak scan and Temporal release run there (for a Hover, again at
+        // its next PerCell). Risk: a mover with `Sensors=` or a held
+        // Temporal target.
         if !track_owned
             && !walk_process_owned
             && !per_cell_ran
@@ -1056,15 +1082,6 @@ impl Simulation {
                 );
             }
             sim.temporal_release_if_warping(stable_id);
-            let fly = sim.substrate.entities.get(stable_id).is_some_and(|entity| {
-                entity
-                    .locomotor
-                    .as_ref()
-                    .is_some_and(|locomotor| locomotor.fly_runtime().is_some())
-            });
-            if !fly {
-                sim.promote_entity_playfield_membership_after_move(stable_id);
-            }
         }
 
         let mut lifecycle_requests = std::mem::take(&mut sim.pending_lifecycle_requests);
@@ -1112,16 +1129,16 @@ impl Simulation {
                     object_ctx.effects,
                 )
                 .map_err(|cause| super::FrameAdvanceError {
-                    tick: sim.session.tick,
-                    binary_frame: sim.session.binary_frame,
+                    tick: sim.session.tick(),
+                    binary_frame: sim.session.binary_frame(),
                     entity_id: stable_id,
                     cause,
                 })?;
             let receipt = sim
                 .infantry_action_turn(stable_id, rules, overlay_registry, object_ctx.effects)
                 .map_err(|cause| super::FrameAdvanceError {
-                    tick: sim.session.tick,
-                    binary_frame: sim.session.binary_frame,
+                    tick: sim.session.tick(),
+                    binary_frame: sim.session.binary_frame(),
                     entity_id: stable_id,
                     cause,
                 })?;

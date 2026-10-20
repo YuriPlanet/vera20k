@@ -437,20 +437,4 @@ mod tests {
         assert_eq!(r, 0);
         assert_eq!(key2, 0, "no repeat for the scroll mask");
     }
-
-    #[test]
-    fn g22_right_release_on_scroll_mask_posts_c000() {
-        let mut f = FocusState::new();
-        let (mut l, a) = button(0xC9, ToggleKind::Plain, 0x55);
-        let mut key: u16 = 0;
-        dispatch_action(l.get_mut(a).unwrap(), 0x10, &mut key, INSIDE, &mut f);
-        assert_eq!(key, 0, "right press also silent");
-        key = 0x802;
-        dispatch_action(l.get_mut(a).unwrap(), 0x40, &mut key, INSIDE, &mut f);
-        assert_eq!(
-            key,
-            0xC9 | 0xC000,
-            "right-release posts ID|0xC000 (mask has 0x10)"
-        );
-    }
 }

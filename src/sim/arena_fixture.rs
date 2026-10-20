@@ -41,14 +41,13 @@ pub(crate) fn rival_arena_with_size(rules: &RuleSet, seed: u64, size: u16) -> Si
     for (name, human) in [("Russians", false), ("Americans", true)] {
         let id = sim.interner.intern(name);
         let mut house = crate::sim::house_state::HouseState::new(id, 0, None, human, 0, 10);
-        house.difficulty = crate::sim::house_state::HouseDifficulty::Normal;
-        house.current_iq = if human {
+        house.set_difficulty_for_test(crate::sim::house_state::HouseDifficulty::Normal);
+        house.set_current_iq_for_test(if human {
             0
         } else {
             rules.general.max_iq_levels
-        };
-        sim.houses.insert(id, house);
-        sim.session.house_order.push(id);
+        });
+        sim.houses.register(house);
     }
     sim
 }
@@ -83,7 +82,7 @@ pub fn flood(
         .expect("Water land semantics");
     let mut terrain = clear_ground(size);
     for (x, y) in cells {
-        let cell = terrain.cell_mut(x, y).unwrap();
+        let cell = terrain.cell_mut_for_test(x, y).unwrap();
         cell.land_type = LandType::Water.as_index();
         cell.speed_costs = water.speed_costs;
         cell.ground_walk_blocked = water.ground_blocked;
@@ -117,8 +116,8 @@ pub fn flat_ground(sim: &mut Simulation, rules: &RuleSet) -> PathGrid {
 }
 
 fn flat_ground_with_size(sim: &mut Simulation, rules: &RuleSet, size: u16) -> PathGrid {
-    sim.session.map_width = size;
-    sim.session.map_height = size;
+    sim.session.set_map_width_for_test(size);
+    sim.session.set_map_height_for_test(size);
     sim.install_resolved_terrain_for_new_map(clear_ground(size));
     sim.playfield_bounds = Some(OPEN_PLAYFIELD);
     sim.playfield_size_height = Some(20);
@@ -371,10 +370,9 @@ pub fn retail_harrier_dock_scene(
     let mut owners = Vec::new();
     for (index, name) in ["Player", "Enemy"].into_iter().enumerate() {
         let id = sim.interner.intern(name);
-        let mut house = HouseState::new(id, index as u8, None, true, 0, 10);
-        house.multiplay_passive = true;
-        sim.houses.insert(id, house);
-        sim.session.house_order.push(id);
+        let mut house = HouseState::new(id, index as i32, None, true, 0, 10);
+        house.set_multiplay_passive_for_test(true);
+        sim.houses.register(house);
         owners.push(id);
     }
     let mut cells: Vec<(u16, u16)> = sim

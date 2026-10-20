@@ -64,12 +64,13 @@ pub struct CellActionQuery {
 }
 
 impl Simulation {
-    /// What_Action on a Cell (vt+0x70) for a Foot, in the rungs a Move click
-    /// reaches: the class wrapper (Unit `0x007404B0`, Infantry `0x0051F800`,
+    /// What_Action on a Cell (vt+0x70), in the rungs a Move click reaches: for
+    /// a Foot, the class wrapper (Unit `0x007404B0`, Infantry `0x0051F800`,
     /// Aircraft `0x00417F80`) around Foot `0x004DDDE0` around Techno
-    /// `0x00700600`. The cursor and the click both ask it.
+    /// `0x00700600`; for a Building, [`Self::building_cell_move_action`]. The
+    /// cursor and the click both ask it.
     ///
-    /// In order:
+    /// For a Foot, in order:
     /// - each class wrapper answers 0 for a House that is not the player's
     ///   (`0x007404BF`, `0x0051F80E`, `0x00417F89`);
     /// - Techno answers 0 for a berserk object (`0x00700609`), a warped one
@@ -79,11 +80,8 @@ impl Simulation {
     /// - outside the playfield it answers NoMove (`0x00700AF6`), then Move for
     ///   Shift (`0x00700B03`) and for the cursor's query (`0x00700B51`);
     /// - otherwise the mover's own Can_Enter_Cell with no facing, level or
-    ///   source Cell (`0x00700B5F..0x00700B7E`) answers Move up to 1, else
-    ///   NoMove. The Subterranean (Type+D2C) second probe without the
-    ///   locomotor (`0x00700BD1..0x00700C06`) repeats that answer, since no
-    ///   class reads the argument ([`EntryQueryMode`]); the building arm
-    ///   before it (`0x00700B84`) is not a Foot's;
+    ///   source Cell ([`Self::techno_cell_move_rungs`]) answers Move up to 1,
+    ///   else NoMove;
     /// - Foot turns any answer but 0 over a shrouded Cell centre into Move for
     ///   a MoveToShroud type inside the playfield, else NoMove
     ///   (`0x004DDE64..0x004DDEBE`);
@@ -120,7 +118,7 @@ impl Simulation {
             .get(id)
             .ok_or("What_Action receiver disappeared")?;
         if entity.category() == EntityCategory::Structure {
-            return Err("a building answers What_Action through its own class".into());
+            return self.building_cell_move_action(viewer, id, cell, query, rules, registry);
         }
         if !self.house_is_human_player(entity.owner()) {
             return Ok(MoveAction::None);
@@ -148,22 +146,17 @@ impl Simulation {
             || !controllable
         {
             MoveAction::None
-        } else if !in_playfield {
-            MoveAction::NoMove
-        } else if query.shift
-            || query.mouse_over
-            || self.mover_can_enter(
-                id,
-                clicked,
-                InfantryEntryArgs::REPAIR,
-                EntryQueryMode::CheckLocomotor,
-                rules,
-                registry,
-            )? <= 1
-        {
-            MoveAction::Move
         } else {
-            MoveAction::NoMove
+            Self::techno_cell_move_rungs(object, in_playfield, query, rules, || {
+                self.mover_can_enter(
+                    id,
+                    clicked,
+                    InfantryEntryArgs::REPAIR,
+                    EntryQueryMode::CheckLocomotor,
+                    rules,
+                    registry,
+                )
+            })?
         };
         if action != MoveAction::None && clicked_cell_shrouded(&self.fog, &cells, viewer, clicked)?
         {
@@ -188,6 +181,128 @@ impl Simulation {
             _ => {}
         }
         Ok(action)
+    }
+
+    /// Techno What_Action on a Cell's Move rungs (`0x00700AE1..0x00700C06`)
+    /// for a receiver the player may order: NoMove outside the playfield
+    /// (`0x00700AF6`), then Move for Shift (`0x00700B03`) and for the cursor's
+    /// query (`0x00700B51`), otherwise the receiver's own Can_Enter_Cell with
+    /// no facing, level or source Cell (`0x00700B5F..0x00700B7E`): Move up to
+    /// 1. Above it a Building whose UndeploysInto unit is a
+    /// `ResourceGatherer=` (TechnoType+0x5EC, `0x00700B84..0x00700BB4`)
+    /// answers Move; any other receiver NoMove. The Subterranean (Type+D2C)
+    /// second probe without the locomotor (`0x00700BD1..0x00700C06`) repeats
+    /// that answer, since no class reads the argument it changes
+    /// ([`EntryQueryMode`]).
+    fn techno_cell_move_rungs(
+        object: &crate::rules::object_type::ObjectType,
+        in_playfield: bool,
+        query: CellActionQuery,
+        rules: &RuleSet,
+        can_enter: impl FnOnce() -> Result<u8, String>,
+    ) -> Result<MoveAction, String> {
+        if !in_playfield {
+            return Ok(MoveAction::NoMove);
+        }
+        if query.shift || query.mouse_over || can_enter()? <= 1 {
+            return Ok(MoveAction::Move);
+        }
+        let gatherer = object.category == crate::rules::object_type::ObjectCategory::Building
+            && object
+                .undeploys_into
+                .as_deref()
+                .and_then(|unit| rules.object(unit))
+                .is_some_and(|unit| unit.resource_gatherer);
+        Ok(if gatherer {
+            MoveAction::Move
+        } else {
+            MoveAction::NoMove
+        })
+    }
+
+    /// What_Action on a Cell for a Building:
+    /// `BuildingClass::What_Action_OnCell @ 0x00447540` around Techno
+    /// `0x00700600`, in the rungs a Move click reaches. In order:
+    /// - a building [`Self::takes_rally_point`] refuses for `viewer` answers
+    ///   0: another House's, or one the player cannot order (Techno
+    ///   `0x00700ACE`, Building `0x00447617..0x0044762A`);
+    /// - a rally-line type (vt+0x284, `0x00455DA0`) answers Move, whatever
+    ///   rung Techno reached (`0x0044774B..0x00447768`);
+    /// - an UndeploysInto type asks Techno without the mouse-over argument
+    ///   (`0x004475A0`), so its own Can_Enter_Cell ([`Self::building_can_enter`])
+    ///   decides the cursor as it does the click
+    ///   ([`Self::techno_cell_move_rungs`]): a Construction Yard over water
+    ///   answers NoMove, and the Slave Miner's yard always moves.
+    ///
+    /// Callers ask the attack rungs first ([`Self::cell_attack_rung_admits`]),
+    /// and the Ctrl+Alt guard rung (`0x00700815..0x007008A3`), which only a
+    /// building without a rally line keeps. The cursor answers the Harvest 6
+    /// over mapped Tiberium (`0x00447563..0x004475EE`), which the click treats
+    /// as Move (`0x004436F0`). InvisibleInGame's 0 (`0x0044754B`) is not
+    /// modelled: no retail type with a rally line or UndeploysInto sets it.
+    fn building_cell_move_action(
+        &self,
+        viewer: InternedId,
+        id: u64,
+        cell: (u16, u16),
+        query: CellActionQuery,
+        rules: &RuleSet,
+        registry: Option<&OverlayTypeRegistry>,
+    ) -> Result<MoveAction, String> {
+        if !self.takes_rally_point(id, self.interner.resolve(viewer), rules) {
+            return Ok(MoveAction::None);
+        }
+        let entity = self
+            .substrate
+            .entities
+            .get(id)
+            .ok_or("What_Action receiver disappeared")?;
+        let object = self
+            .interner
+            .object_type(entity.type_ref(), rules)
+            .ok_or("What_Action receiver lacks its type")?;
+        if object.has_rally_line() {
+            return Ok(MoveAction::Move);
+        }
+        let terrain = self
+            .resolved_terrain
+            .as_ref()
+            .ok_or("What_Action needs map cells")?;
+        let cells = NativeCellQuery::isolated(terrain);
+        let clicked = (cell.0 as i16, cell.1 as i16);
+        let in_playfield = cell_is_in_playfield_height_aware_in_query(
+            (i32::from(clicked.0), i32::from(clicked.1)),
+            self.playfield_bounds,
+            Some(terrain),
+            Some(&cells),
+        );
+        let query = CellActionQuery {
+            mouse_over: false,
+            ..query
+        };
+        Self::techno_cell_move_rungs(object, in_playfield, query, rules, || {
+            self.building_can_enter(id, clicked, rules, registry)
+        })
+    }
+
+    /// The Cell a left click's receivers are asked about: the selection's
+    /// click loop clamps the clicked Cell to the playfield
+    /// (`Clamp_To_Playfield @ 0x00586E50`, `0x004AE77E`) before any receiver's
+    /// What_Action on it. Without bounds or map cells it keeps the Cell:
+    /// VERA-internal, as a live gamemd session always has both.
+    pub fn clamped_click_cell(&self, cell: (u16, u16)) -> (u16, u16) {
+        let (Some(bounds), Some(terrain)) = (self.playfield_bounds, self.resolved_terrain.as_ref())
+        else {
+            return cell;
+        };
+        let cells = NativeCellQuery::isolated(terrain);
+        let (x, y) = crate::sim::cell_rect::clamp_cell_to_playfield(
+            (i32::from(cell.0 as i16), i32::from(cell.1 as i16)),
+            bounds,
+            Some(terrain),
+            Some(&cells),
+        );
+        (x as u16, y as u16)
     }
 
     /// Whether Techno What_Action on a Cell (`0x00700600`) reaches its
@@ -562,7 +677,7 @@ impl Simulation {
             overlays: self.overlay_grid.as_ref(),
             bounds,
             size,
-            frame: self.session.binary_frame,
+            frame: self.session.binary_frame(),
         })
     }
 

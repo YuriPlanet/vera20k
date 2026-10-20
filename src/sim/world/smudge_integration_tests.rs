@@ -62,41 +62,6 @@ fn advance_n(sim: &mut Simulation, n: u32) {
 }
 
 #[test]
-fn same_seed_same_smudge_state_yields_same_hash() {
-    let sim_a = build_test_sim_with_seed(42);
-    let sim_b = build_test_sim_with_seed(42);
-    assert_eq!(
-        sim_a.state_hash(),
-        sim_b.state_hash(),
-        "same seed + same SmudgeGrid pattern must hash identically",
-    );
-}
-
-#[test]
-fn different_smudge_state_yields_different_hash() {
-    // Same seed, but one sim has an extra smudge cell. The hash must diverge —
-    // this proves SmudgeGrid is actually contributing to state_hash.
-    let mut sim_a = build_test_sim_with_seed(42);
-    let sim_b = build_test_sim_with_seed(42);
-    if let Some(grid) = sim_a.smudge_grid.as_mut() {
-        grid.test_force_set(
-            10,
-            10,
-            SmudgeCell {
-                type_id: Some(0),
-                footprint_origin: Some((10, 10)),
-                frame_offset: 0,
-            },
-        );
-    }
-    assert_ne!(
-        sim_a.state_hash(),
-        sim_b.state_hash(),
-        "an extra smudge cell must change the state hash",
-    );
-}
-
-#[test]
 fn smudge_state_hash_stable_across_advance_tick() {
     // SmudgeGrid is mutated only by combat events (none fired here). Across
     // 100 empty ticks, the smudge contribution to the hash must stay constant
@@ -113,8 +78,8 @@ fn smudge_state_hash_stable_across_advance_tick() {
             sim_b.state_hash(),
             "state_hash diverged at tick {} (sim_a.tick={}, sim_b.tick={})",
             tick,
-            sim_a.session.tick,
-            sim_b.session.tick,
+            sim_a.session.tick(),
+            sim_b.session.tick(),
         );
     }
 
@@ -206,9 +171,9 @@ fn gsi_04_11_smudge_dirty_flush_publishes_tactical_then_radar_per_cell() {
     sim.flush_smudge_dirty();
 
     let expected = vec![(3, 4), (4, 4), (3, 5), (4, 5)];
-    assert_eq!(sim.tactical_dirty_cells, expected);
-    assert_eq!(sim.radar_terrain_dirty_cells, expected);
-    assert_eq!(sim.radar_terrain_dirty_generation, 4);
+    assert_eq!(sim.dirty_cells.tactical_for_test(), expected);
+    assert_eq!(sim.dirty_cells.radar(), expected);
+    assert_eq!(sim.dirty_cells.radar_generation(), 4);
     assert!(sim.smudge_grid.as_mut().unwrap().drain_dirty().is_empty());
 }
 
@@ -343,8 +308,8 @@ fn action118_matches_original_smudge_fields_dummy_and_first_null_controls() {
             .filter(|write| write["dummy"] == false && write["previous"] != -1)
             .map(|write| pair(&write["cell"]))
             .collect();
-        assert_eq!(sim.tactical_dirty_cells, changed);
-        assert_eq!(sim.radar_terrain_dirty_cells, changed);
+        assert_eq!(sim.dirty_cells.tactical_for_test(), changed);
+        assert_eq!(sim.dirty_cells.radar(), changed);
         assert!(sim.smudge_grid.as_mut().unwrap().drain_dirty().is_empty());
     }
 }

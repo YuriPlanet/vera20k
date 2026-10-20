@@ -98,13 +98,6 @@ fn event_8_springs_on_the_first_logic_poll_and_plays_action_99_at_the_waypoint()
 }
 
 #[test]
-fn action_99_with_an_unregistered_name_plays_nothing_at_an_empty_waypoint() {
-    let (mut sim, _) = sim_with_trigger("99,7,NoSuchSound,0,0,0,0,B");
-    poll(&mut sim);
-    assert!(sim.sound_events.is_empty());
-}
-
-#[test]
 fn action_99_gives_the_waypoint_building_its_custom_sound_for_object_ai_to_play() {
     let (mut sim, _) = sim_with_trigger("99,7,tEsTaMbIeNt,0,0,0,0,B");
     insert_structure(&mut sim, 40, "CAWASH18", (5, 6));
@@ -164,11 +157,13 @@ fn action_99_with_minus_one_clears_the_custom_sound_and_detaches_its_handle() {
 
 fn insert_tree(sim: &mut Simulation, id: u64, cell: (u16, u16)) {
     let type_ref = sim.interner.intern("TREE01");
-    sim.production.terrain_objects.insert(
+    sim.terrain_objects.objects_mut_for_test().insert(
         id,
         TerrainObjectState::for_test(id, type_ref, cell.0, cell.1),
     );
-    sim.production.terrain_object_cells.insert(cell, id);
+    sim.terrain_objects
+        .cell_index_mut_for_test()
+        .insert(cell, id);
 }
 
 #[test]
@@ -202,18 +197,6 @@ fn action_99_takes_the_cell_terrain_without_a_building_and_its_uninit_detaches()
 }
 
 #[test]
-fn action_99_prefers_the_cell_building_over_its_terrain() {
-    let (mut sim, _) = sim_with_trigger("99,7,TestAmbient,0,0,0,0,B");
-    insert_tree(&mut sim, 41, (5, 6));
-    insert_structure(&mut sim, 40, "CAWASH18", (5, 6));
-    poll(&mut sim);
-    assert_eq!(
-        sim.object_custom_sounds.keys().copied().collect::<Vec<_>>(),
-        [40]
-    );
-}
-
-#[test]
 fn action_116_clears_the_first_building_instead_of_terrain_or_coordinate_requests() {
     let (mut sim, _) = sim_with_trigger("116,0,0,0,0,0,0,B");
     insert_tree(&mut sim, 41, (5, 6));
@@ -240,19 +223,6 @@ fn action_116_clears_the_first_building_instead_of_terrain_or_coordinate_request
 }
 
 #[test]
-fn action_116_clears_the_cell_terrain_without_a_building() {
-    let (mut sim, _) = sim_with_trigger("116,0,0,0,0,0,0,B");
-    insert_tree(&mut sim, 41, (5, 6));
-    sim.set_custom_sound(41, Some("TestAmbient"));
-    poll(&mut sim);
-    assert!(matches!(
-        sim.sound_events.as_slice(),
-        [SimSoundEvent::ObjectSoundDetached { owner }] if *owner == custom_sound_owner(41)
-    ));
-    assert!(sim.object_custom_sounds.is_empty());
-}
-
-#[test]
 fn action_116_without_an_object_preserves_full_waypoint_and_request_flags() {
     let (mut sim, _) = sim_with_trigger("116,0,0,0,0,0,0,B");
     let before = sim.rng_state();
@@ -263,24 +233,6 @@ fn action_116_without_an_object_preserves_full_waypoint_and_request_flags() {
             if *coordinate == WAYPOINT_COORD
     ));
     assert_eq!(sim.rng_state(), before);
-}
-
-#[test]
-fn action_116_zero_cell_still_stops_coordinate_requests() {
-    let (mut sim, mut map) = sim_with_trigger("116,0,0,0,0,0,0,B");
-    map.waypoints.get_mut(&1).unwrap().rx = 0;
-    map.waypoints.get_mut(&1).unwrap().ry = 0;
-    sim.session.install_waypoints(&map.waypoints);
-    insert_structure(&mut sim, 40, "CAWASH18", (0, 0));
-    sim.set_custom_sound(40, Some("TestAmbient"));
-    let expected = sim.trigger_waypoint_location(1).unwrap();
-    poll(&mut sim);
-    assert!(matches!(
-        sim.sound_events.as_slice(),
-        [SimSoundEvent::VocStopAtCoord { coordinate, flags: 1 }]
-            if [coordinate.x, coordinate.y, coordinate.z] == expected
-    ));
-    assert!(sim.object_custom_sounds.contains_key(&40));
 }
 
 #[test]

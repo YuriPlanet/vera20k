@@ -118,7 +118,7 @@ fn last_departure_starts_recharge_without_erasing_target() {
     let Some(mut f) = Fixture::new() else { return };
     f.hit(f.boris, f.target);
     let aircraft = f.sim.airstrike_manager(f.boris).unwrap().aircraft.clone();
-    f.sim.session.binary_frame = 40;
+    f.sim.session.set_binary_frame_for_test(40);
     f.sim.airstrike_remove_aircraft(f.boris, aircraft[0]);
     assert!(f.sim.airstrike_manager(f.boris).unwrap().busy);
     f.sim.airstrike_remove_aircraft(f.boris, aircraft[1]);
@@ -126,10 +126,10 @@ fn last_departure_starts_recharge_without_erasing_target() {
     assert!(!m.busy && !m.active);
     assert_eq!(m.target, Some(f.target));
     assert_eq!(m.returned_at, Some(40));
-    f.sim.session.binary_frame = 139;
+    f.sim.session.set_binary_frame_for_test(139);
     f.hit(f.boris, f.target);
     assert!(!f.sim.airstrike_manager(f.boris).unwrap().busy);
-    f.sim.session.binary_frame = 140;
+    f.sim.session.set_binary_frame_for_test(140);
     f.hit(f.boris, f.target);
     assert!(f.sim.airstrike_manager(f.boris).unwrap().busy);
 }
@@ -422,14 +422,14 @@ fn elite_boris_selects_four_rookie_planes_and_the_shorter_recharge() {
             VeterancyRank::Rookie
         );
     }
-    f.sim.session.binary_frame = 10;
+    f.sim.session.set_binary_frame_for_test(10);
     for id in aircraft {
         f.sim.airstrike_remove_aircraft(f.boris, id);
     }
-    f.sim.session.binary_frame = 59;
+    f.sim.session.set_binary_frame_for_test(59);
     f.hit(f.boris, f.target);
     assert!(!f.sim.airstrike_manager(f.boris).unwrap().busy);
-    f.sim.session.binary_frame = 60;
+    f.sim.session.set_binary_frame_for_test(60);
     f.hit(f.boris, f.target);
     assert_eq!(f.sim.airstrike_manager(f.boris).unwrap().aircraft.len(), 4);
 }
@@ -440,7 +440,7 @@ fn a_different_target_is_admitted_before_same_target_recharge() {
     let Some(mut f) = Fixture::new() else { return };
     f.hit(f.boris, f.target);
     let planes = f.sim.airstrike_manager(f.boris).unwrap().aircraft.clone();
-    f.sim.session.binary_frame = 20;
+    f.sim.session.set_binary_frame_for_test(20);
     for id in planes {
         f.sim.airstrike_remove_aircraft(f.boris, id);
     }

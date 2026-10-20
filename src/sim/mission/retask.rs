@@ -93,7 +93,7 @@ impl Simulation {
         rules: &crate::rules::ruleset::RuleSet,
         frame_effects: FrameEffects<'_>,
     ) {
-        let now = self.session.binary_frame;
+        let now = self.session.binary_frame();
         self.assign_null_destination(id, Some(rules), None, frame_effects);
         let _ = self.assign_target_represented(id, None, Some(rules), None, frame_effects);
         if let Some(entity) = self.substrate.entities.get_mut(id) {
@@ -110,7 +110,7 @@ impl Simulation {
     /// through [`Self::queue_megamission`]) and the transport unload's
     /// passenger moves. Stop has its own no-queue Event6 route above.
     pub fn queue_order_mission(&mut self, id: u64, mission: MissionType) {
-        let now = self.session.binary_frame;
+        let now = self.session.binary_frame();
         // A missing receiver performs no write (same as the native event path
         // skipping a dead target); Queue's own guards decide the rest.
         let _ = self.mission_queue_exact(
@@ -244,7 +244,7 @@ impl Simulation {
         if !is_stoppable_miner {
             return;
         }
-        let now = self.session.binary_frame;
+        let now = self.session.binary_frame();
         let _ = self.mission_queue_exact(
             id,
             MissionId::from_known(MissionType::Guard),

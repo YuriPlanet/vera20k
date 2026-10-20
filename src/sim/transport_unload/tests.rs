@@ -174,7 +174,7 @@ impl Fixture {
                 .unwrap()
                 .cell(cell.0, cell.1)
                 .unwrap()
-                .land_type()
+                .land_type
                 == LandType::Water.as_index();
             let pax = if water {
                 // Supply already-limbo cargo for the landing-craft prestate.
@@ -222,7 +222,7 @@ impl Fixture {
     }
 
     fn frame(&self) -> u32 {
-        self.sim.session.binary_frame
+        self.sim.session.binary_frame()
     }
 
     fn revealed(&self, id: u64) -> bool {
@@ -271,7 +271,7 @@ impl Fixture {
             .entities
             .get(id)
             .expect("entity")
-            .body_facing_byte(self.sim.session.binary_frame)
+            .body_facing_byte(self.sim.session.binary_frame())
     }
 
     fn cell(&self, id: u64) -> (u16, u16) {
@@ -468,13 +468,15 @@ fn vehicle_unload_republishes_threat_and_foot_coefficient_before_movement() {
             let owner = fx.sim.interner.intern(name);
             fx.sim
                 .houses
-                .insert(owner, HouseState::new(owner, 0, None, true, 0, 10));
+                .register(HouseState::new(owner, 0, None, true, 0, 10));
             owner
         })
         .collect();
     let opposing_house = owners[1];
-    fx.sim.session.house_order = owners;
-    fx.sim.session.game_mode_nonzero = true;
+    fx.sim.houses.reorder_for_test(&owners);
+    fx.sim
+        .session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
 
     // Already facing the exit scorer's selected hull direction: the actual
     // state0 -> state1 -> state3 producer can run without advancing any AI.
@@ -601,10 +603,10 @@ fn vehicle_unload_republishes_threat_and_foot_coefficient_before_movement() {
     );
 }
 
-/// Five conscripts in a BFRT: the hull turns first, then one passenger leaves
+/// Five conscripts in a BFRT: the hull starts turning, then one passenger leaves
 /// per `[Unload] Rate` dispatch (14..16 frames apart), last boarded first.
 #[test]
-fn bfrt_unloads_one_per_dispatch_in_reverse_boarding_order_after_turning() {
+fn bfrt_unloads_one_per_dispatch_in_reverse_boarding_order_while_turning() {
     let mut fx = Fixture::new(|_, _| false);
     let bfrt = fx.spawn("BFRT", 20, 20, 0);
     let pax = fx.board(bfrt, 5);
@@ -623,7 +625,7 @@ fn bfrt_unloads_one_per_dispatch_in_reverse_boarding_order_after_turning() {
         "cargo head (last boarded) leaves first"
     );
     // Facing 0 (N): the scorer picks octant 5 (SW), so the transport faces
-    // octant 1 (NE, 0x20) with its rear to the exit cell before ejecting.
+    // octant 1 (NE, 0x20). By the last passenger it has completed the arc.
     assert_eq!(
         fx.facing(bfrt),
         0x20,
@@ -636,9 +638,9 @@ fn bfrt_unloads_one_per_dispatch_in_reverse_boarding_order_after_turning() {
             "one passenger per [Unload] Rate dispatch: gap {gap} frames"
         );
     }
-    // Turn (0x20 at ROT=5 → 6 frames) plus at least one turning dispatch
-    // precede the first ejection.
-    assert!(order[0].1 >= 8, "first ejection at frame {}", order[0].1);
+    // Unit73D892 advances without waiting for the turretless hull's six-frame
+    // arc. Ejection must precede its completion, without a wait epilogue.
+    assert!(order[0].1 < 8, "first ejection at frame {}", order[0].1);
     // Each ejected passenger surfaced holding `Queue_Mission(Move)`.
     for (id, _, mission) in &order {
         assert_eq!(
@@ -836,7 +838,7 @@ fn hover_transport_on_water_is_sent_to_a_raised_bank() {
     let terrain = fx.sim.resolved_terrain.as_mut().unwrap();
     for y in 0..MAP {
         for x in 25..MAP {
-            terrain.cell_mut(x, y).unwrap().level = 2;
+            terrain.cell_mut_for_test(x, y).unwrap().level = 2;
         }
     }
     let lcrf = fx.spawn("LCRF", 20, 20, 0x40);
@@ -912,7 +914,9 @@ fn nighthawk_unloads_only_when_landed() {
     for _ in 0..30 {
         fx.sim.set_object_height_unmarked(shad, 600);
         crate::sim::aircraft::dispatch_mission(&mut fx.sim, shad, &fx.rules, Default::default());
-        fx.sim.session.binary_frame += 1;
+        fx.sim
+            .session
+            .set_binary_frame_for_test(fx.sim.session.binary_frame() + 1);
     }
     assert_eq!(fx.cargo_ids(shad).len(), 2, "airborne: nothing leaves");
 
@@ -929,7 +933,9 @@ fn nighthawk_unloads_only_when_landed() {
     pitch(&mut fx, SimFixed::from_num(1));
     for _ in 0..30 {
         crate::sim::aircraft::dispatch_mission(&mut fx.sim, shad, &fx.rules, Default::default());
-        fx.sim.session.binary_frame += 1;
+        fx.sim
+            .session
+            .set_binary_frame_for_test(fx.sim.session.binary_frame() + 1);
     }
     assert_eq!(fx.cargo_ids(shad).len(), 2, "pitched: nothing leaves");
 
@@ -937,7 +943,9 @@ fn nighthawk_unloads_only_when_landed() {
     let mut frames = Vec::new();
     for _ in 0..80 {
         crate::sim::aircraft::dispatch_mission(&mut fx.sim, shad, &fx.rules, Default::default());
-        fx.sim.session.binary_frame += 1;
+        fx.sim
+            .session
+            .set_binary_frame_for_test(fx.sim.session.binary_frame() + 1);
         for &id in &pax {
             if fx.revealed(id) && !frames.iter().any(|(seen, _)| *seen == id) {
                 frames.push((id, fx.frame()));
@@ -1049,7 +1057,7 @@ fn ifv_keeps_gunner_weapon_when_every_exit_is_refused() {
         let terrain = fx.sim.resolved_terrain.as_mut().expect("terrain");
         for (dx, dy) in super::DIRECTION_DELTAS {
             let cell = terrain
-                .cell_mut((20 + dx) as u16, (20 + dy) as u16)
+                .cell_mut_for_test((20 + dx) as u16, (20 + dy) as u16)
                 .expect("neighbour cell");
             cell.bridge_facts.raw_flags |= BRIDGE_FLAG_STRUCTURAL;
         }
@@ -1095,7 +1103,7 @@ fn ifv_keeps_gunner_weapon_when_every_exit_is_refused() {
 fn relaxed_pass_drives_vehicle_passenger_to_the_fnpc_cell() {
     let ring_two = |x: u16, y: u16| (i32::from(x) - 20).abs().max((i32::from(y) - 20).abs()) == 2;
     let mut fx = Fixture::new(ring_two);
-    let bfrt = fx.spawn("BFRT", 20, 20, 0);
+    let bfrt = fx.spawn("BFRT", 20, 20, 0x20);
     let bggy = fx.spawn("BGGY", 24, 24, 0);
     assert_eq!(
         fx.sim.techno_limbo_with_rules(bggy, &fx.rules, None),
@@ -1116,8 +1124,8 @@ fn relaxed_pass_drives_vehicle_passenger_to_the_fnpc_cell() {
         .get_mut(bggy)
         .expect("passenger")
         .passenger_role = PassengerRole::inside_for_test(bfrt, true);
-    // Facing 0: state 0 picks octant 5 (SW) and turns the hull to NE (0x20),
-    // so the state-3 scan starts at octant 5; the strict pass fails
+    // Already facing NE (0x20): state 0 keeps that heading, so the
+    // state-3 scan starts at octant 5; the strict pass fails
     // everywhere (ring two is water) and the relaxed restart accepts octant
     // 6 (W), exit cell (19, 20). The FNPC expectation is taken now, with the
     // passenger still in limbo, exactly as the handler sees it: the free exit
@@ -1185,7 +1193,17 @@ fn exit_scorer_keeps_a_cell_with_three_allied_infantry_open() {
 
     let order = fx.run_until_revealed(&pax, 200);
     assert_eq!(order.len(), 1, "the conscript left: {order:?}");
-    assert_eq!(fx.facing(bfrt), 0x20, "backs onto octant 5");
+    assert_eq!(
+        fx.sim
+            .substrate
+            .entities
+            .get(bfrt)
+            .unwrap()
+            .body_facing
+            .destination(),
+        0x2000,
+        "state 0 selects octant 5 even with three allied infantry there"
+    );
 }
 
 /// Mission_Unload's scan asks the passenger's own `Can_Enter_Cell` at the
@@ -1196,8 +1214,8 @@ fn exit_scorer_keeps_a_cell_with_three_allied_infantry_open() {
 fn vehicle_unload_scan_refuses_an_exit_two_levels_up() {
     let mut fx = Fixture::new(|_, _| false);
     let terrain = fx.sim.resolved_terrain.as_mut().unwrap();
-    terrain.cell_mut(19, 21).unwrap().level = 2;
-    let bfrt = fx.spawn("BFRT", 20, 20, 0);
+    terrain.cell_mut_for_test(19, 21).unwrap().level = 2;
+    let bfrt = fx.spawn("BFRT", 20, 20, 0x20);
     let pax = fx.board(bfrt, 1);
     assert!(fx.apply(Command::UnloadPassengers { transport_id: bfrt }));
 
@@ -1217,7 +1235,7 @@ fn vehicle_passenger_leaves_with_its_turret_on_the_exit_direction() {
     let ring_two = |x: u16, y: u16| (i32::from(x) - 20).abs().max((i32::from(y) - 20).abs()) == 2;
     let mut fx = Fixture::new(ring_two);
     fx.rules = rules_with_patch("[BGGY]\nTurret=yes\n");
-    let bfrt = fx.spawn("BFRT", 20, 20, 0);
+    let bfrt = fx.spawn("BFRT", 20, 20, 0x20);
     let bggy = fx.spawn("BGGY", 24, 24, 0);
     assert_eq!(
         fx.sim.techno_limbo_with_rules(bggy, &fx.rules, None),
@@ -1244,7 +1262,7 @@ fn vehicle_passenger_leaves_with_its_turret_on_the_exit_direction() {
     assert_eq!(order.len(), 1, "the vehicle left: {order:?}");
     assert_eq!(fx.cell(bggy), (19, 20));
     assert_eq!(fx.facing(bggy), 0xC0, "octant 6 * 32");
-    let frame = fx.sim.session.binary_frame;
+    let frame = fx.sim.session.binary_frame();
     let turret = fx
         .sim
         .substrate
@@ -1265,11 +1283,11 @@ fn vehicle_passenger_leaves_with_its_turret_on_the_exit_direction() {
 fn vehicle_unload_scan_judges_the_far_cell_from_the_transport_height() {
     let mut fx = Fixture::new(|_, _| false);
     let terrain = fx.sim.resolved_terrain.as_mut().unwrap();
-    terrain.cell_mut(20, 20).unwrap().slope_type = 1;
+    terrain.cell_mut_for_test(20, 20).unwrap().slope_type = 1;
     for (x, y) in [(19, 21), (18, 22)] {
-        terrain.cell_mut(x, y).unwrap().level = 1;
+        terrain.cell_mut_for_test(x, y).unwrap().level = 1;
     }
-    let bfrt = fx.spawn("BFRT", 20, 20, 0);
+    let bfrt = fx.spawn("BFRT", 20, 20, 0x20);
     let pax = fx.board(bfrt, 1);
     assert!(fx.apply(Command::UnloadPassengers { transport_id: bfrt }));
 
@@ -1286,7 +1304,7 @@ fn vehicle_unload_scan_judges_the_far_cell_from_the_transport_height() {
 fn relaxed_pass_takes_an_exit_whose_far_cell_is_off_the_map() {
     let ring_two = |x: u16, y: u16| (i32::from(x) - 1).abs().max((i32::from(y) - 20).abs()) == 2;
     let mut fx = Fixture::new(ring_two);
-    let bfrt = fx.spawn("BFRT", 1, 20, 0);
+    let bfrt = fx.spawn("BFRT", 1, 20, 0x20);
     let pax = fx.board(bfrt, 1);
     assert!(fx.apply(Command::UnloadPassengers { transport_id: bfrt }));
 
@@ -1345,7 +1363,7 @@ fn vehicle_passenger_off_the_playfield_exit_lands_on_raised_in_playfield_ground(
     });
     let terrain = fx.sim.resolved_terrain.as_mut().unwrap();
     for (x, y) in [(19, 20), (20, 21)] {
-        terrain.cell_mut(x, y).unwrap().level = 2;
+        terrain.cell_mut_for_test(x, y).unwrap().level = 2;
     }
     let bfrt = fx.spawn("BFRT", 20, 20, 0);
     let bggy = fx.spawn("BGGY", 24, 24, 0);
@@ -1415,7 +1433,9 @@ fn descending_nighthawk_draws_no_scenario_rng_until_it_ejects() {
     // First dispatch: state 0 → 2 with exactly one epilogue draw.
     let before = fx.sim.scenario_rng.state();
     crate::sim::aircraft::dispatch_mission(&mut fx.sim, shad, &fx.rules, Default::default());
-    fx.sim.session.binary_frame += 1;
+    fx.sim
+        .session
+        .set_binary_frame_for_test(fx.sim.session.binary_frame() + 1);
     assert_eq!(handler_state(&fx, shad), super::AIR_STATE_WAIT_STOP);
     assert_ne!(
         fx.sim.scenario_rng.state(),
@@ -1431,7 +1451,9 @@ fn descending_nighthawk_draws_no_scenario_rng_until_it_ejects() {
         set_altitude(&mut fx, shad, altitude);
         let before = fx.sim.scenario_rng.state();
         crate::sim::aircraft::dispatch_mission(&mut fx.sim, shad, &fx.rules, Default::default());
-        fx.sim.session.binary_frame += 1;
+        fx.sim
+            .session
+            .set_binary_frame_for_test(fx.sim.session.binary_frame() + 1);
         if fx.sim.scenario_rng.state() != before {
             airborne_draws += 1;
         }
@@ -1627,7 +1649,9 @@ fn landed_aircraft_transport_unload_asks_the_locomotor() {
         set_altitude(&mut fx, shad, 600);
         assert!(fx.apply(Command::UnloadPassengers { transport_id: shad }));
         crate::sim::aircraft::dispatch_mission(&mut fx.sim, shad, &fx.rules, Default::default());
-        fx.sim.session.binary_frame += 1;
+        fx.sim
+            .session
+            .set_binary_frame_for_test(fx.sim.session.binary_frame() + 1);
         assert_eq!(handler_state(&fx, shad), super::AIR_STATE_WAIT_STOP);
         set_altitude(&mut fx, shad, 0);
         setup(fx.sim.substrate.entities.get_mut(shad).expect("aircraft"));
@@ -1639,7 +1663,9 @@ fn landed_aircraft_transport_unload_asks_the_locomotor() {
                 &fx.rules,
                 Default::default(),
             );
-            fx.sim.session.binary_frame += 1;
+            fx.sim
+                .session
+                .set_binary_frame_for_test(fx.sim.session.binary_frame() + 1);
             if handler_state(&fx, shad) != super::AIR_STATE_WAIT_STOP {
                 break;
             }
@@ -1704,7 +1730,9 @@ fn nighthawk_failed_ejection_keeps_cargo_and_leaves_for_guard() {
     // Advance to the state-3 dispatch: the ejection is refused, and the idle
     // mode's tail queues Guard and commences it when ready (`0x00417B44`).
     for _ in 0..20 {
-        fx.sim.session.binary_frame += 1;
+        fx.sim
+            .session
+            .set_binary_frame_for_test(fx.sim.session.binary_frame() + 1);
         crate::sim::aircraft::dispatch_mission(&mut fx.sim, shad, &fx.rules, Default::default());
         if fx.mission(shad) == MissionId::from_known(MissionType::Guard) {
             break;
@@ -1729,7 +1757,9 @@ fn nighthawk_failed_ejection_keeps_cargo_and_leaves_for_guard() {
     // The handler stays silent.
     let before = fx.sim.scenario_rng.state();
     for _ in 0..60 {
-        fx.sim.session.binary_frame += 1;
+        fx.sim
+            .session
+            .set_binary_frame_for_test(fx.sim.session.binary_frame() + 1);
         crate::sim::aircraft::dispatch_mission(&mut fx.sim, shad, &fx.rules, Default::default());
     }
     assert_eq!(
@@ -1756,12 +1786,14 @@ fn nighthawk_passenger_is_refused_by_an_enemy_in_the_aircraft_cell() {
             let owner = fx.sim.interner.intern(name);
             fx.sim
                 .houses
-                .insert(owner, HouseState::new(owner, 0, None, true, 0, 10));
+                .register(HouseState::new(owner, 0, None, true, 0, 10));
             owner
         })
         .collect();
-    fx.sim.session.house_order = owners;
-    fx.sim.session.game_mode_nonzero = true;
+    fx.sim.houses.reorder_for_test(&owners);
+    fx.sim
+        .session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     let enemy = fx
         .sim
         .spawn_object("E1", "Russians", 20, 20, 0, &fx.rules)
@@ -1773,7 +1805,9 @@ fn nighthawk_passenger_is_refused_by_an_enemy_in_the_aircraft_cell() {
     assert!(fx.apply(Command::UnloadPassengers { transport_id: shad }));
 
     for _ in 0..40 {
-        fx.sim.session.binary_frame += 1;
+        fx.sim
+            .session
+            .set_binary_frame_for_test(fx.sim.session.binary_frame() + 1);
         crate::sim::aircraft::dispatch_mission(&mut fx.sim, shad, &fx.rules, Default::default());
         if fx.mission(shad) == MissionId::from_known(MissionType::Guard) {
             break;
@@ -1811,7 +1845,7 @@ fn cargo_departure_ground_reveal_rejection_preserves_route_retry_state() {
                     .get_mut(passenger)
                     .unwrap()
                     .lifecycle
-                    .set_cell_marked(true);
+                    .set_cell_marked_for_test(true);
             }
             fx.sim
                 .substrate
@@ -1904,5 +1938,297 @@ fn cargo_departure_ground_reveal_rejection_preserves_route_retry_state() {
                 pax.position
             );
         }
+    }
+}
+
+/// Original 73D630/736990 controls: state 1 reads Unit+6AF, independently
+/// of whether the body FacingClass is still rotating. The latch here is the
+/// supplied result of that separate Facing_Update owner.
+#[test]
+fn turning_unload_uses_the_turret_latch_and_native_cadence() {
+    use crate::sim::movement::FacingClass;
+    let native = crate::test_fixture::json("tools/spatial_oracle/transport_unload_gate.json");
+    for row in native.as_array().unwrap() {
+        let turret_latch = row["latch"].as_bool().unwrap();
+        let hull_turning = row["hull_rotating"].as_bool().unwrap();
+        let kind = if row["turret"].as_bool().unwrap() {
+            "FV"
+        } else {
+            "BFRT"
+        };
+        let state = row["state"].as_u64().unwrap() as u32;
+        let mut fx = Fixture::new(|_, _| false);
+        let carrier = fx.spawn(kind, 20, 20, 0);
+        fx.board(carrier, 2);
+        fx.sim.session.set_binary_frame_for_test(100);
+        fx.sim
+            .mission_assign_exact(carrier, MissionId::from_known(MissionType::Unload), 100)
+            .unwrap();
+        let entity = fx.sim.substrate.entities.get_mut(carrier).unwrap();
+        entity.body_facing = FacingClass::new(0, 5);
+        if hull_turning {
+            entity.body_facing.set(0x2000, 100);
+        }
+        entity.turret_rotation_latch.set_for_test(turret_latch);
+        entity.mission.set_handler_state(super::STATE_TURNING);
+        fx.sim.session.set_binary_frame_for_test(101);
+        assert_eq!(
+            fx.sim
+                .substrate
+                .entities
+                .get(carrier)
+                .unwrap()
+                .body_facing
+                .is_rotating(101),
+            hull_turning
+        );
+        fx.sim.scenario_rng = crate::sim::rng::SimRng::from_native_state_hex_for_test(
+            row["rng_before"].as_str().unwrap(),
+        );
+        let delay = super::unit_mission_unload(
+            &mut fx.sim,
+            &fx.rules,
+            carrier,
+            None,
+            crate::sim::world::FrameEffects::default(),
+        );
+        assert_eq!(
+            fx.sim
+                .substrate
+                .entities
+                .get(carrier)
+                .unwrap()
+                .mission
+                .handler_state(),
+            state,
+            "{kind}: hull_turning={hull_turning}, turret_latch={turret_latch}"
+        );
+        assert_eq!(delay, row["delay"].as_i64().unwrap() as i32);
+        assert_eq!(
+            fx.sim.scenario_rng.native_state_hex(),
+            row["rng_after"].as_str().unwrap(),
+            "one epilogue draw only while waiting on the turret"
+        );
+    }
+}
+
+/// Stock BFRT/E1 rules and ART, through the player command and ordinary
+/// object turns. A turretless carrier must eject before its hull settles.
+#[test]
+fn retail_bfrt_ejects_while_turning_and_resumes_after_save() {
+    let native = crate::test_fixture::json("tools/spatial_oracle/transport_unload_retail.json");
+    let native = &native["bfrt_turn"];
+    let ejection = native["calls"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|row| row.get("ejection_heading").is_some())
+        .unwrap();
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+    else {
+        return;
+    };
+    let mut fx = Fixture::new(|_, _| false);
+    fx.rules = retail.rules;
+    fx.sim.session.set_binary_frame_for_test(100);
+    fx.sim.scenario_rng = crate::sim::rng::SimRng::new(1);
+    let carrier = fx.spawn("BFRT", 20, 20, 0);
+    let passengers = fx.board(carrier, 5);
+    assert!(
+        fx.sim
+            .substrate
+            .entities
+            .get(carrier)
+            .unwrap()
+            .barrel_facing
+            .is_none()
+    );
+    assert!(fx.apply(Command::UnloadPassengers {
+        transport_id: carrier
+    }));
+
+    for _ in 0..10 {
+        fx.tick();
+        if fx
+            .sim
+            .substrate
+            .entities
+            .get(carrier)
+            .unwrap()
+            .mission
+            .handler_state()
+            == super::STATE_TURNING
+        {
+            break;
+        }
+    }
+    let entity = fx.sim.substrate.entities.get(carrier).unwrap();
+    assert_eq!(entity.mission.handler_state(), super::STATE_TURNING);
+    assert!(entity.body_facing.is_rotating(fx.frame()));
+    let bytes = crate::sim::snapshot::GameSnapshot::save_validated(&fx.sim, 17, 23, "unload", 0);
+    let mut restored = crate::sim::snapshot::GameSnapshot::load_validated(&bytes, 17, 23, "")
+        .unwrap()
+        .sim;
+    restored.retain_process_state_for_load(crate::sim::world::SnapshotProcessState::Live(&fx.sim));
+    restored.resolved_terrain = fx.sim.resolved_terrain.clone();
+    restored.restore_after_snapshot_load().unwrap();
+    restored.rebuild_caches_after_load(
+        fx.sim.resolved_terrain.as_ref().unwrap().clone(),
+        fx.sim.terrain_speed_config.clone(),
+        &fx.rules,
+    );
+    assert!(restored.rebuild_dynamic_navigation(&fx.rules));
+    // Native ScenarioLoad resets the Scenario RNG to Seed(0). Apply that
+    // same load prior to the uninterrupted control before comparing futures.
+    fx.sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+    // Foot Load also clears the move-sound countdown, including idle Feet.
+    for id in fx.sim.substrate.entities.keys_sorted() {
+        fx.sim.restore_move_sound_state_after_load(id);
+    }
+    assert_eq!(
+        restored.state_hash(),
+        fx.sim.state_hash(),
+        "restored {:?}; uninterrupted {:?}",
+        restored.hash_owner_diagnostics_for_test(),
+        fx.sim.hash_owner_diagnostics_for_test()
+    );
+
+    let mut order = Vec::new();
+    for _ in 0..160 {
+        fx.tick();
+        restored.advance_tick(&[], Some(&fx.rules), Some(&fx.grid), None, 66);
+        assert_eq!(
+            restored.state_hash(),
+            fx.sim.state_hash(),
+            "frame {}",
+            fx.frame()
+        );
+        for &passenger in &passengers {
+            if fx.revealed(passenger) && !order.iter().any(|&(id, _)| id == passenger) {
+                if order.is_empty() {
+                    let entity = fx.sim.substrate.entities.get(carrier).unwrap();
+                    assert!(
+                        entity.body_facing.is_rotating(fx.frame()),
+                        "turretless BFRT must eject at its mid-turn heading (frame {})",
+                        fx.frame()
+                    );
+                    assert!(!entity.turret_rotation_latch.is_set());
+                    // advance_tick has advanced the public clock. Compare
+                    // the heading actually consumed during the object turn.
+                    assert_eq!(
+                        u64::from(entity.body_facing_current(fx.frame() - 1)),
+                        ejection["ejection_heading"].as_u64().unwrap()
+                    );
+                    let position = ejection["passenger_position"].as_array().unwrap();
+                    let source = native["source_position"].as_array().unwrap();
+                    let offset = |axis: usize| {
+                        position[axis].as_i64().unwrap() / 256
+                            - source[axis].as_i64().unwrap() / 256
+                    };
+                    assert_eq!(
+                        fx.cell(passenger),
+                        ((20 + offset(0)) as u16, (20 + offset(1)) as u16),
+                        "native mid-turn exit cell relative to the carrier"
+                    );
+                    assert_eq!(
+                        fx.sim
+                            .substrate
+                            .entities
+                            .get(passenger)
+                            .unwrap()
+                            .passenger_role
+                            .inside_transport_id()
+                            .is_none(),
+                        ejection["transporter_cleared"].as_bool().unwrap(),
+                        "departure clears the native Transporter link"
+                    );
+                }
+                assert_eq!(
+                    fx.mission(passenger),
+                    MissionId::from_known(MissionType::Move)
+                );
+                order.push((passenger, fx.frame()));
+            }
+        }
+        if order.len() == passengers.len()
+            && fx.mission(carrier) == MissionId::from_known(MissionType::Guard)
+        {
+            break;
+        }
+    }
+    assert_eq!(
+        order.iter().map(|&(id, _)| id).collect::<Vec<_>>(),
+        passengers.iter().rev().copied().collect::<Vec<_>>()
+    );
+    for pair in order.windows(2) {
+        assert!((14..=16).contains(&(pair[1].1 - pair[0].1)));
+    }
+    assert!(fx.cargo_ids(carrier).is_empty());
+    assert_eq!(
+        fx.mission(carrier),
+        MissionId::from_known(MissionType::Guard)
+    );
+}
+
+/// Aligned hull controls: real Facing_Update must hold the IFV and Flak
+/// Track for their turret arcs, while the turretless BFRT can proceed.
+#[test]
+fn retail_aligned_transports_wait_only_for_their_turrets() {
+    let native = crate::test_fixture::json("tools/spatial_oracle/transport_unload_retail.json");
+    let Some(retail) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("XMP03T4.MAP")
+    else {
+        return;
+    };
+    for case in ["bfrt_aligned", "fv_turret", "htk_turret"] {
+        let control = &native[case];
+        let kind = control["kind"].as_str().unwrap();
+        let native_waited = control["calls"].as_array().unwrap().iter().any(|row| {
+            row["state_before"] == 1 && row["state"] == 1 && row["latch_before"].as_bool().unwrap()
+        });
+        let mut fx = Fixture::new(|_, _| false);
+        fx.rules = retail.rules.clone();
+        fx.sim.session.set_binary_frame_for_test(100);
+        let carrier = fx.spawn(
+            kind,
+            20,
+            20,
+            (control["initial_facing"].as_u64().unwrap() >> 8) as u8,
+        );
+        let passenger = fx.board(carrier, 1)[0];
+        let entity = fx.sim.substrate.entities.get_mut(carrier).unwrap();
+        if let Some(barrel) = entity.barrel_facing.as_mut() {
+            barrel.set(0x6000, 100);
+        }
+        assert!(fx.apply(Command::UnloadPassengers {
+            transport_id: carrier
+        }));
+        let mut waited_on_turret = false;
+        for _ in 0..80 {
+            fx.tick();
+            let entity = fx.sim.substrate.entities.get(carrier).unwrap();
+            assert!(
+                !entity.body_facing.is_rotating(fx.frame()),
+                "{kind}: aligned hull"
+            );
+            if entity.mission.handler_state() == super::STATE_TURNING
+                && entity.turret_rotation_latch.is_set()
+            {
+                waited_on_turret = true;
+                assert!(
+                    !fx.revealed(passenger),
+                    "{kind}: rotating turret holds passenger"
+                );
+            }
+            if fx.revealed(passenger) {
+                break;
+            }
+        }
+        assert_eq!(waited_on_turret, native_waited, "{kind}");
+        assert!(fx.revealed(passenger), "{kind}: eventually ejects");
+        assert!(fx.cargo_ids(carrier).is_empty(), "{kind}: clears cargo");
+        assert_eq!(
+            fx.mission(passenger),
+            MissionId::from_known(MissionType::Move)
+        );
     }
 }

@@ -12,7 +12,7 @@ fn flag(input: &Value, key: &str, default: bool) -> bool {
 fn grid(input: &Value) -> ResolvedTerrainGrid {
     let mut grid = crate::map::resolved_terrain::test_flat_ground_grid(32);
     grid.test_set_native_allocated_cells(&[(10, 20)]);
-    let cell = grid.cell_mut(10, 20).unwrap();
+    let cell = grid.cell_mut_for_test(10, 20).unwrap();
     cell.level = input["level"].as_i64().unwrap_or(0) as u8;
     cell.slope_type = input["slope"].as_u64().unwrap_or(0) as u8;
     cell.bridge_facts.raw_flags = input["flags"].as_u64().unwrap_or(0) as u32;
@@ -105,7 +105,7 @@ fn retained_bullet_geometry_and_read_only_live_bridge_probe_match_native() {
     for row in corpus["rows"].as_array().unwrap() {
         let mut sim = crate::sim::world::Simulation::with_seed(31);
         sim.install_resolved_terrain_for_new_map(grid(&row["input"]));
-        let terrain = sim.resolved_terrain.as_ref().unwrap();
+        let terrain = sim.resolved_terrain().unwrap();
         terrain.shared_cell_dummy().stamp_coord(123, -44);
         let before = sim.state_hash();
         let dummy_before = terrain.shared_cell_dummy().snapshot();
@@ -116,8 +116,11 @@ fn retained_bullet_geometry_and_read_only_live_bridge_probe_match_native() {
     for sequence in corpus["live_structural_sequences"].as_array().unwrap() {
         let mut terrain = grid(&sequence["input"]);
         for row in sequence["rows"].as_array().unwrap() {
-            terrain.cell_mut(10, 20).unwrap().bridge_facts.raw_flags =
-                row["flags"].as_u64().unwrap() as u32;
+            terrain
+                .cell_mut_for_test(10, 20)
+                .unwrap()
+                .bridge_facts
+                .raw_flags = row["flags"].as_u64().unwrap() as u32;
             check_row(&sequence["input"], row, &terrain);
         }
     }

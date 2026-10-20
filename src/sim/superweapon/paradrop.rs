@@ -118,7 +118,7 @@ pub(crate) fn launch(
     let general = &rules.general;
     let (lists, pairs_checked) = match kind {
         ParaDropKind::American => (&general.amer_paradrop, true),
-        ParaDropKind::Generic => match sim.houses.get(&owner).map(|house| house.side_index) {
+        ParaDropKind::Generic => match sim.houses.get(&owner).map(|house| house.side_index()) {
             Some(0) => (&general.ally_paradrop, true),
             Some(2) => (&general.yuri_paradrop, true),
             _ => (&general.sov_paradrop, false),
@@ -257,7 +257,7 @@ pub(super) fn send_planes(
         .expect("constructed plane");
     entity.mission_only.mark();
     let (authored, waypoint) = sim.houses.get(&owner).map_or((-1, 0), |house| {
-        (house.authored_edge(), house.waypoint_edge)
+        (house.authored_edge(), house.waypoint_edge())
     });
     let edge = Edge::authored_or_waypoint(authored, waypoint);
     let Some(cell) = find_paradrop_edge_cell(
@@ -310,7 +310,7 @@ pub(super) fn send_planes(
             frame_effects,
         );
     }
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     if let Some(entity) = sim.substrate.entities.get_mut(plane) {
         crate::sim::mission::authority::commence_entity_mission(entity, now);
     }

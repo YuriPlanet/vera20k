@@ -105,12 +105,13 @@ fn assert_curtain_arm_matches(section: &str) {
     let mut compared = 0;
     for row in rows {
         let intensity = int(&row["intensity"]);
-        sim.session.binary_frame = int(&row["frame"]) as u32;
+        sim.session_mut_for_test()
+            .set_binary_frame_for_test(int(&row["frame"]) as u32);
         let (tint, light) = techno_effect_light_at(
             &curtained(row),
             TINT,
             PaletteLight::color_scheme([1000; 3], intensity),
-            sim.session.binary_frame,
+            sim.session().binary_frame(),
             row["airstrike"] == "self",
         );
         let out = int(&row["out_intensity"]);
@@ -141,7 +142,8 @@ fn the_building_anim_light_matches_native() {
     for row in rows {
         assert_eq!(row["drawer_set"], serde_json::json!([true, false]), "{row}");
         assert_eq!(int(&row["anim_light"][1]), -12345, "{row}");
-        sim.session.binary_frame = int(&row["frame"]) as u32 + 1;
+        sim.session_mut_for_test()
+            .set_binary_frame_for_test(int(&row["frame"]) as u32 + 1);
         let mut building = curtained(row);
         building.building_art.capture_tint_sample(
             int(&row["frame"]) as u32,
@@ -179,7 +181,8 @@ fn the_building_colour_word_matches_native() {
         if int(&row["pixel_format"]) != 2 {
             continue;
         }
-        sim.session.binary_frame = int(&row["frame"]) as u32;
+        sim.session_mut_for_test()
+            .set_binary_frame_for_test(int(&row["frame"]) as u32);
         let word = shp_colour_word(
             &shielded(row),
             &sim,
@@ -282,15 +285,14 @@ fn ordinary_stock_gas_refresh_and_expiry_reach_the_infantry_shp_material() {
         let mut sim = Simulation::with_seed(31);
         crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
         for (name, human) in [("YuriCountry", true), ("Russians", false)] {
-            let id = sim.interner.intern(name);
+            let id = sim.intern(name);
             let mut house = HouseState::new(id, 0, None, human, 0, 10);
-            house.current_iq = if human {
+            house.set_current_iq_for_test(if human {
                 0
             } else {
                 rules.general.max_iq_levels
-            };
-            sim.houses.insert(id, house);
-            sim.session.house_order.push(id);
+            });
+            sim.houses_mut_for_test().register(house);
         }
         sim.intern_rule_type_ids(&rules);
         sim.resolve_type_handles(&rules);
@@ -303,9 +305,10 @@ fn ordinary_stock_gas_refresh_and_expiry_reach_the_infantry_shp_material() {
             .unwrap();
         let owner = sim.entities().get(drone).unwrap().owner();
         let enemy = sim.entities().get(gi).unwrap().owner();
-        sim.fog.mark_visible_for_owner(owner, 12, 10);
-        sim.fog.mark_visible_for_owner(enemy, 10, 10);
-        sim.session.current_house = Some(owner);
+        sim.fog_mut_for_test().mark_visible_for_owner(owner, 12, 10);
+        sim.fog_mut_for_test().mark_visible_for_owner(enemy, 10, 10);
+        sim.session_mut_for_test()
+            .set_current_house_for_test(Some(owner));
         sim.queue_command(CommandEnvelope::new(
             owner,
             1,
@@ -350,7 +353,7 @@ fn ordinary_stock_gas_refresh_and_expiry_reach_the_infantry_shp_material() {
                 .iter()
                 .filter(|shot| shot.attacker_id == drone)
             {
-                assert_eq!(sim.interner.resolve(shot.weapon_id), "ChaosAttack");
+                assert_eq!(sim.interner().resolve(shot.weapon_id), "ChaosAttack");
                 gas_shots.push(step);
             }
             let entity = sim.entities().get(gi).expect("gas does not kill the GI");
@@ -405,7 +408,8 @@ fn the_anim_colour_word_matches_native() {
         if !row["slot_anim"].as_bool().unwrap() || row["occupant"] == "none" {
             assert_eq!(native, 0, "{row}");
         } else {
-            sim.session.binary_frame = int(&row["frame"]) as u32;
+            sim.session_mut_for_test()
+                .set_binary_frame_for_test(int(&row["frame"]) as u32);
             let word = shp_colour_word(
                 &shielded(row),
                 &sim,
@@ -548,7 +552,7 @@ fn building_animation_retains_the_pre_techno_airstrike_sample() {
         .capture_tint_sample(1010, false, None, &building.airstrike_tint, true);
     building.airstrike_tint.update_tint(1010, true, &mut rng);
     let mut sim = Simulation::new();
-    sim.session.binary_frame = 1011;
+    sim.session_mut_for_test().set_binary_frame_for_test(1011);
     let input = PaletteLight::color_scheme([1000; 3], 500);
     let (_, retained) = building_anim_light(&building, TINT, input, &sim);
     let (_, body) = techno_effect_light_at(&building, TINT, input, 1010, true);

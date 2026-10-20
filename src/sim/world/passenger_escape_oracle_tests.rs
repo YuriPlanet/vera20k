@@ -103,7 +103,7 @@ fn edit_cells(input: &Value, terrain: &mut ResolvedTerrainGrid) {
         Vec::new()
     };
     for &(bx, by) in &bridge {
-        let c = terrain.cell_mut(bx, by).unwrap();
+        let c = terrain.cell_mut_for_test(bx, by).unwrap();
         c.bridge_facts.raw_flags = crate::map::bridge_facts::BRIDGE_FLAG_STRUCTURAL;
         c.has_bridge_deck = true;
         c.bridge_walkable = true;
@@ -125,7 +125,7 @@ fn edit_cells(input: &Value, terrain: &mut ResolvedTerrainGrid) {
             hover: Some(0),
         };
         for (wx, wy) in water {
-            let c = terrain.cell_mut(wx, wy).unwrap();
+            let c = terrain.cell_mut_for_test(wx, wy).unwrap();
             c.land_type = 2;
             c.base_land_type = 2;
             c.speed_costs = none;
@@ -133,7 +133,7 @@ fn edit_cells(input: &Value, terrain: &mut ResolvedTerrainGrid) {
         }
     }
     if let Some(slope) = input["slope"].as_u64() {
-        let c = terrain.cell_mut(x, y).unwrap();
+        let c = terrain.cell_mut_for_test(x, y).unwrap();
         c.slope_type = slope as u8;
         c.has_ramp = true;
     }
@@ -146,13 +146,13 @@ fn scene(input: &Value) -> Scene {
     let human = input["human"] == true;
     let americans = sim.interner.intern("Americans");
     let mut house = crate::sim::house_state::HouseState::new(americans, 0, None, human, 0, 10);
-    house.player_control = human;
-    sim.houses.insert(americans, house);
+    house.set_player_control_for_test(human);
+    sim.houses.register(house);
     let foreign = sim.interner.intern("Foreign");
-    sim.houses.insert(
-        foreign,
-        crate::sim::house_state::HouseState::new(foreign, 1, None, false, 0, 10),
-    );
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            foreign, 1, None, false, 0, 10,
+        ));
     if input["foreign_allied"] == true {
         for (a, b) in [("AMERICANS", "FOREIGN"), ("FOREIGN", "AMERICANS")] {
             sim.house_alliances
@@ -161,15 +161,17 @@ fn scene(input: &Value) -> Scene {
                 .insert(b.to_string());
         }
     }
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     // A selected human transport is the local player's (IsHumanPlayer
     // `0x0050B6F0` in a nonzero mode); its escapees pass Select's
     // ownership gate (`0x006FBFA0`).
     if human {
-        sim.session.current_house = Some(americans);
+        sim.session.set_current_house_for_test(Some(americans));
     }
-    sim.session.binary_frame = input["frame"].as_u64().unwrap_or(200) as u32;
-    let frame = sim.session.binary_frame;
+    sim.session
+        .set_binary_frame_for_test(input["frame"].as_u64().unwrap_or(200) as u32);
+    let frame = sim.session.binary_frame();
 
     // The transport: in limbo at its coordinate, as its Mark(UP) leaves it.
     let (x, y) = input.get("cell").map_or((15, 15), cell);
@@ -268,7 +270,7 @@ fn scene(input: &Value) -> Scene {
             // A target to drop: Assign_Target(NULL) is the only writer here.
             let stored = crate::sim::mission::concrete_effects::assign_target_stored(
                 &sim.substrate.entities,
-                &sim.production.terrain_objects,
+                sim.terrain_objects.objects(),
                 id,
                 Some(TargetKind::Entity(attacker)),
                 None,

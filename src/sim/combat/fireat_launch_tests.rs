@@ -81,8 +81,8 @@ fn attack_aim_duel(corpus: &serde_json::Value) -> Option<(Duel, u64, u64)> {
     let initial = attack_aim_row(corpus, "aim_cases", "stationary_target_aim");
     let source = attack_aim_coord(&initial["input"]["source_xyz"]);
     let target = attack_aim_coord(&initial["input"]["target_xyz"]);
-    duel.sim.session.map_width = 128;
-    duel.sim.session.map_height = 128;
+    duel.sim.session.set_map_width_for_test(128);
+    duel.sim.session.set_map_height_for_test(128);
     duel.sim
         .install_resolved_terrain_for_new_map(crate::map::resolved_terrain::test_grid(
             128,
@@ -205,7 +205,7 @@ fn original_aim_query_reads_live_motion_rank_and_facing_without_mutation() {
             .get_mut(target)
             .unwrap()
             .body_facing
-            .snap(facing, duel.sim.session.binary_frame);
+            .snap(facing, duel.sim.session.binary_frame());
         assert_read_only_native_aim(&duel, source, attack_aim_row(&corpus, "aim_cases", name));
     }
     duel.sim
@@ -249,7 +249,7 @@ fn original_direct_fireat_keeps_argument_speed_separate_from_live_tarcom_aim() {
     let actor = duel.sim.substrate.entities.get_mut(target).unwrap();
     actor
         .body_facing
-        .snap(0xc000, duel.sim.session.binary_frame);
+        .snap(0xc000, duel.sim.session.binary_frame());
     actor.veterancy.set_veteran();
     let row = attack_aim_row(
         &corpus,
@@ -279,15 +279,16 @@ fn original_direct_fireat_keeps_argument_speed_separate_from_live_tarcom_aim() {
     assert_eq!(bullets.len(), 1);
     let bullet = bullets[0];
     assert_eq!(
-        bullet.launch_origin,
+        bullet.launch_origin(),
         attack_aim_coord(&row["bullet"]["position"])
     );
     assert_eq!(
-        bullet.launch_target, argument,
+        bullet.launch_target(),
+        argument,
         "Bullet::Fire retains the unled argument"
     );
     assert_eq!(
-        i64::from(bullet.speed_leptons_per_frame),
+        i64::from(bullet.speed_leptons_per_frame()),
         row["launch_speed"].as_i64().unwrap()
     );
     let expected_velocity = row["bullet"]["velocity"]["bits"]
@@ -299,7 +300,7 @@ fn original_direct_fireat_keeps_argument_speed_separate_from_live_tarcom_aim() {
     // The level Cannon arc takes its pitch from the Acos table (48A9D0).
     assert_eq!(
         bullet
-            .velocity
+            .velocity()
             .native()
             .map(|component| component.bits())
             .as_slice(),
@@ -391,7 +392,9 @@ fn target_uninit_clears_tarcom_before_aim_query_and_physical_removal() {
         assert_eq!(u64::from(timer.start_frame()), native[0].as_u64().unwrap());
         assert_eq!(u64::from(timer.duration()), native[2].as_u64().unwrap());
     };
-    duel.sim.session.binary_frame = expiry["before"]["source"]["frame"].as_u64().unwrap() as u32;
+    duel.sim
+        .session
+        .set_binary_frame_for_test(expiry["before"]["source"]["frame"].as_u64().unwrap() as u32);
     let before_timer = &expiry["before"]["targeting_timer"];
     duel.sim
         .substrate
@@ -495,11 +498,10 @@ impl Duel {
         let mut sim = Simulation::new();
         for (name, side, human) in [("Americans", 0, true), ("Russians", 1, true)] {
             let id = sim.interner.intern(name);
-            sim.houses.insert(
-                id,
-                crate::sim::house_state::HouseState::new(id, side, None, human, 0, 10),
-            );
-            sim.session.house_order.push(id);
+            sim.houses
+                .register(crate::sim::house_state::HouseState::new(
+                    id, side, None, human, 0, 10,
+                ));
         }
         let grid = crate::sim::arena_fixture::flat_arena(&mut sim, &rules);
         // Production binds every rule identity before building the derived
@@ -533,7 +535,7 @@ impl Duel {
         let owner = self.sim.interner.intern(owner);
         self.sim.queue_command(CommandEnvelope::new(
             owner,
-            self.sim.session.tick + 1,
+            self.sim.session.tick() + 1,
             command,
         ));
     }
@@ -584,7 +586,7 @@ impl Duel {
             .iter()
             .map(|(_, projectile)| projectile)
             .find(|projectile| {
-                projectile.source_id == firer && !self.before.contains(&projectile.id)
+                projectile.source_id() == firer && !self.before.contains(&projectile.id())
             })
     }
 }
@@ -635,13 +637,13 @@ fn a_moving_rhino_is_led() {
         }
         let target = duel.location(rhino);
         let [vx, vy, _] = shell
-            .velocity
+            .velocity()
             .native()
             .map(|bits| f64::from_bits(bits.bits()));
         // Where the launch heading crosses the Rhino's column, relative to
         // the Rhino: the lead, `ftol(d / (GetSpeed * 0.9) * Rhino speed)`.
-        let crossing = shell.launch_origin.y as f64
-            + vy / vx * (target.x - shell.launch_origin.x) as f64
+        let crossing = shell.launch_origin().y as f64
+            + vy / vx * (target.x - shell.launch_origin().x) as f64
             - target.y as f64;
         // About 230 here; the unled heading crosses within ~15 of the Rhino.
         assert!(
@@ -654,5 +656,78 @@ fn a_moving_rhino_is_led() {
         "no shell was launched at the moving Rhino ({moving_frames} moving frames); {}; {}",
         duel.actor_state(grizzly),
         duel.actor_state(rhino),
+    );
+}
+
+/// An `AreaFire=` weapon fires at the cell under its Unit firer, not at the
+/// ordered target (`TechnoClass::FireAt 0x006FE140..0x006FE1D8`): a Chaos
+/// Drone told to attack a GI two cells east releases its gas (PsychGasCreate,
+/// CellSpread 3) around itself. A GI two cells west of the drone goes
+/// berserk; one two cells beyond the target does not. The drone keeps the
+/// target as its TarCom.
+#[test]
+fn a_chaos_drone_gasses_its_own_cell() {
+    let Some(mut duel) = Duel::new() else {
+        return;
+    };
+    let drone = duel.spawn("CAOS", "Russians", 16, 16, 64);
+    let target = duel.spawn("E1", "Americans", 18, 16, 192);
+    let near_drone = duel.spawn("E1", "Americans", 14, 16, 64);
+    let past_target = duel.spawn("E1", "Americans", 20, 16, 192);
+    duel.order(
+        "Russians",
+        Command::Attack {
+            attacker_id: drone,
+            target_id: target,
+        },
+    );
+    let berserk = |duel: &Duel, id: u64| {
+        duel.sim
+            .substrate
+            .entities
+            .get(id)
+            .is_some_and(|entity| entity.berserk.is_active())
+    };
+    for _ in 0..120 {
+        duel.tick();
+        let Some(shot) = duel
+            .sim
+            .fire_events
+            .iter()
+            .find(|event| event.attacker_id == drone)
+        else {
+            continue;
+        };
+        assert_eq!(
+            shot.target,
+            super::TargetKind::Cell(16, 16),
+            "the gas is fired at the drone's own cell"
+        );
+        let actor = duel.sim.substrate.entities.get(drone).unwrap();
+        assert_eq!(
+            actor.attack_target.target(),
+            Some(super::TargetKind::Entity(target)),
+            "TarCom keeps the GI"
+        );
+        for _ in 0..4 {
+            if berserk(&duel, near_drone) {
+                break;
+            }
+            duel.tick();
+        }
+        assert!(
+            berserk(&duel, near_drone),
+            "the GI beside the drone is gassed"
+        );
+        assert!(
+            !berserk(&duel, past_target),
+            "the GI beyond the target, out of the drone's spread, is not"
+        );
+        return;
+    }
+    panic!(
+        "the drone never fired; {}; {}",
+        duel.actor_state(drone),
+        duel.actor_state(target)
     );
 }

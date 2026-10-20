@@ -69,7 +69,7 @@ fn mark_all_occupation_bits_matches_original_head_and_raw_plane_controls() {
         entity.locomotor = Some(loco);
         entity
             .navigation
-            .path_replay
+            .path_replay_mut()
             .set_directions_for_test(vec![2]);
         if input["stop_first"].as_bool().unwrap() {
             assert!(super::process::hover_stop_moving(&mut entity));
@@ -123,7 +123,7 @@ fn mark_all_occupation_bits_matches_original_head_and_raw_plane_controls() {
             "head": unslot(hover.head), "destination": unslot(hover.destination),
             "location": [location.x, location.y, location.z],
             "occupation_enabled": entity.foot_occupation_enabled(),
-            "path_head": entity.navigation.path_replay.remaining_directions().first().map_or(-1, |&word| i32::from(word)),
+            "path_head": entity.navigation.path_replay().remaining_directions().first().map_or(-1, |&word| i32::from(word)),
             "raw_cells": raw_cells,
         });
         let mut expected = row["output"].clone();
@@ -350,7 +350,7 @@ fn power_off_matches_original_execution() {
         );
         entity
             .navigation
-            .path_replay
+            .path_replay_mut()
             .set_directions_for_test(vec![int(&row["path_head"]) as u8]);
         let mut sim = Simulation::new();
         sim.substrate.entities.insert(entity);
@@ -375,7 +375,7 @@ fn power_off_matches_original_execution() {
             "head": unslot(hover.head),
             "path_head": entity
                 .navigation
-                .path_replay
+                .path_replay()
                 .remaining_directions()
                 .first()
                 .map_or(-1, |&word| i32::from(word)),

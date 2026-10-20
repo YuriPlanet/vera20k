@@ -1,0 +1,1154 @@
+{
+  "bfrt_aligned": {
+    "calls": [
+      {
+        "body": [
+          8192,
+          8192,
+          100,
+          6790307,
+          0,
+          1280
+        ],
+        "cargo": 1,
+        "delay": 1,
+        "draws": [],
+        "frame": 100,
+        "hull_rotating_before": false,
+        "latch_before": false,
+        "passenger_limbo": true,
+        "passenger_position": [
+          22272,
+          12544,
+          416
+        ],
+        "passenger_queued": -1,
+        "state": 1,
+        "state_before": 0,
+        "transporter_cleared": false,
+        "turret": [
+          8192,
+          8192,
+          100,
+          6790307,
+          0,
+          1280
+        ],
+        "turret_latch": false
+      },
+      {
+        "body": [
+          8192,
+          8192,
+          100,
+          6790307,
+          0,
+          1280
+        ],
+        "cargo": 1,
+        "delay": 1,
+        "draws": [],
+        "frame": 101,
+        "hull_rotating_before": false,
+        "latch_before": false,
+        "passenger_limbo": true,
+        "passenger_position": [
+          22272,
+          12544,
+          416
+        ],
+        "passenger_queued": -1,
+        "state": 3,
+        "state_before": 1,
+        "transporter_cleared": false,
+        "turret": [
+          8192,
+          8192,
+          100,
+          6790307,
+          0,
+          1280
+        ],
+        "turret_latch": false
+      },
+      {
+        "body": [
+          8192,
+          8192,
+          100,
+          6790307,
+          0,
+          1280
+        ],
+        "cargo": 0,
+        "delay": 16,
+        "draws": [
+          {
+            "args": [
+              0,
+              3
+            ],
+            "value": 1
+          },
+          {
+            "args": [
+              0,
+              2
+            ],
+            "value": 2
+          }
+        ],
+        "ejection_heading": 8192,
+        "frame": 102,
+        "hull_rotating_before": false,
+        "latch_before": false,
+        "passenger_limbo": false,
+        "passenger_position": [
+          22016,
+          13056,
+          416
+        ],
+        "passenger_queued": 2,
+        "state": 3,
+        "state_before": 3,
+        "transporter_cleared": true,
+        "turret": [
+          8192,
+          8192,
+          100,
+          6790307,
+          0,
+          1280
+        ],
+        "turret_latch": false
+      },
+      {
+        "body": [
+          8192,
+          8192,
+          100,
+          6790307,
+          0,
+          1280
+        ],
+        "cargo": 0,
+        "delay": 14,
+        "draws": [
+          {
+            "args": [
+              0,
+              2
+            ],
+            "value": 0
+          }
+        ],
+        "frame": 118,
+        "hull_rotating_before": false,
+        "latch_before": false,
+        "passenger_limbo": false,
+        "passenger_position": [
+          22016,
+          13056,
+          416
+        ],
+        "passenger_queued": 2,
+        "state": 4,
+        "state_before": 3,
+        "transporter_cleared": true,
+        "turret": [
+          8192,
+          8192,
+          100,
+          6790307,
+          0,
+          1280
+        ],
+        "turret_latch": false
+      },
+      {
+        "body": [
+          8192,
+          8192,
+          100,
+          6790307,
+          0,
+          1280
+        ],
+        "cargo": 0,
+        "delay": 15,
+        "draws": [
+          {
+            "args": [
+              0,
+              2
+            ],
+            "value": 1
+          }
+        ],
+        "frame": 132,
+        "hull_rotating_before": false,
+        "latch_before": false,
+        "passenger_limbo": false,
+        "passenger_position": [
+          22016,
+          13056,
+          416
+        ],
+        "passenger_queued": 2,
+        "state": 4,
+        "state_before": 4,
+        "transporter_cleared": true,
+        "turret": [
+          8192,
+          8192,
+          100,
+          6790307,
+          0,
+          1280
+        ],
+        "turret_latch": false
+      }
+    ],
+    "cleanup_mission": 5,
+    "initial_facing": 8192,
+    "kind": "BFRT",
+    "source_position": [
+      22400,
+      12928,
+      416
+    ],
+    "turn_turret": false,
+    "turret": false,
+    "unload_inputs": [
+      {
+        "file": "RULESMD.INI",
+        "rate_bits": "000000e04d62903f",
+        "section": {
+          "Unload": {
+            "Rate": ".016",
+            "Recruitable": "no",
+            "Retaliate": "no",
+            "Scatter": "no"
+          }
+        }
+      },
+      {
+        "file": "MPBattleMD.ini",
+        "rate_bits": "000000e04d62903f",
+        "section": {}
+      },
+      {
+        "file": "XMP03T4.MAP",
+        "rate_bits": "000000e04d62903f",
+        "section": {}
+      }
+    ]
+  },
+  "bfrt_turn": {
+    "calls": [
+      {
+        "body": [
+          0,
+          0,
+          100,
+          6790307,
+          0,
+          1280
+        ],
+        "cargo": 1,
+        "delay": 1,
+        "draws": [],
+        "frame": 100,
+        "hull_rotating_before": false,
+        "latch_before": false,
+        "passenger_limbo": true,
+        "passenger_position": [
+          22272,
+          12544,
+          416
+        ],
+        "passenger_queued": -1,
+        "state": 1,
+        "state_before": 0,
+        "transporter_cleared": false,
+        "turret": [
+          0,
+          0,
+          100,
+          6790307,
+          0,
+          1280
+        ],
+        "turret_latch": false
+      },
+      {
+        "body": [
+          8192,
+          0,
+          100,
+          604776448,
+          6,
+          1280
+        ],
+        "cargo": 1,
+        "delay": 1,
+        "draws": [],
+        "frame": 101,
+        "hull_rotating_before": true,
+        "latch_before": false,
+        "passenger_limbo": true,
+        "passenger_position": [
+          22272,
+          12544,
+          416
+        ],
+        "passenger_queued": -1,
+        "state": 3,
+        "state_before": 1,
+        "transporter_cleared": false,
+        "turret": [
+          0,
+          0,
+          100,
+          6790307,
+          0,
+          1280
+        ],
+        "turret_latch": false
+      },
+      {
+        "body": [
+          8192,
+          0,
+          100,
+          604776448,
+          6,
+          1280
+        ],
+        "cargo": 0,
+        "delay": 16,
+        "draws": [
+          {
+            "args": [
+              0,
+              3
+            ],
+            "value": 1
+          },
+          {
+            "args": [
+              0,
+              2
+            ],
+            "value": 2
+          }
+        ],
+        "ejection_heading": 2732,
+        "frame": 102,
+        "hull_rotating_before": true,
+        "latch_before": false,
+        "passenger_limbo": false,
+        "passenger_position": [
+          22272,
+          13056,
+          416
+        ],
+        "passenger_queued": 2,
+        "state": 3,
+        "state_before": 3,
+        "transporter_cleared": true,
+        "turret": [
+          0,
+          0,
+          100,
+          6790307,
+          0,
+          1280
+        ],
+        "turret_latch": false
+      },
+      {
+        "body": [
+          8192,
+          0,
+          100,
+          604776448,
+          6,
+          1280
+        ],
+        "cargo": 0,
+        "delay": 14,
+        "draws": [
+          {
+            "args": [
+              0,
+              2
+            ],
+            "value": 0
+          }
+        ],
+        "frame": 118,
+        "hull_rotating_before": false,
+        "latch_before": false,
+        "passenger_limbo": false,
+        "passenger_position": [
+          22272,
+          13056,
+          416
+        ],
+        "passenger_queued": 2,
+        "state": 4,
+        "state_before": 3,
+        "transporter_cleared": true,
+        "turret": [
+          0,
+          0,
+          100,
+          6790307,
+          0,
+          1280
+        ],
+        "turret_latch": false
+      },
+      {
+        "body": [
+          8192,
+          0,
+          100,
+          604776448,
+          6,
+          1280
+        ],
+        "cargo": 0,
+        "delay": 15,
+        "draws": [
+          {
+            "args": [
+              0,
+              2
+            ],
+            "value": 1
+          }
+        ],
+        "frame": 132,
+        "hull_rotating_before": false,
+        "latch_before": false,
+        "passenger_limbo": false,
+        "passenger_position": [
+          22272,
+          13056,
+          416
+        ],
+        "passenger_queued": 2,
+        "state": 4,
+        "state_before": 4,
+        "transporter_cleared": true,
+        "turret": [
+          0,
+          0,
+          100,
+          6790307,
+          0,
+          1280
+        ],
+        "turret_latch": false
+      }
+    ],
+    "cleanup_mission": 5,
+    "initial_facing": 0,
+    "kind": "BFRT",
+    "source_position": [
+      22400,
+      12928,
+      416
+    ],
+    "turn_turret": false,
+    "turret": false,
+    "unload_inputs": [
+      {
+        "file": "RULESMD.INI",
+        "rate_bits": "000000e04d62903f",
+        "section": {
+          "Unload": {
+            "Rate": ".016",
+            "Recruitable": "no",
+            "Retaliate": "no",
+            "Scatter": "no"
+          }
+        }
+      },
+      {
+        "file": "MPBattleMD.ini",
+        "rate_bits": "000000e04d62903f",
+        "section": {}
+      },
+      {
+        "file": "XMP03T4.MAP",
+        "rate_bits": "000000e04d62903f",
+        "section": {}
+      }
+    ]
+  },
+  "fv_turret": {
+    "calls": [
+      {
+        "body": [
+          8192,
+          8192,
+          100,
+          6790307,
+          0,
+          1280
+        ],
+        "cargo": 1,
+        "delay": 1,
+        "draws": [],
+        "frame": 100,
+        "hull_rotating_before": false,
+        "latch_before": false,
+        "passenger_limbo": true,
+        "passenger_position": [
+          22272,
+          12544,
+          416
+        ],
+        "passenger_queued": -1,
+        "state": 1,
+        "state_before": 0,
+        "transporter_cleared": false,
+        "turret": [
+          24576,
+          8192,
+          100,
+          6790307,
+          12,
+          1280
+        ],
+        "turret_latch": false
+      },
+      {
+        "body": [
+          8192,
+          8192,
+          100,
+          6790307,
+          0,
+          1280
+        ],
+        "cargo": 1,
+        "delay": 15,
+        "draws": [
+          {
+            "args": [
+              0,
+              2
+            ],
+            "value": 1
+          }
+        ],
+        "frame": 101,
+        "hull_rotating_before": false,
+        "latch_before": true,
+        "passenger_limbo": true,
+        "passenger_position": [
+          22272,
+          12544,
+          416
+        ],
+        "passenger_queued": -1,
+        "state": 1,
+        "state_before": 1,
+        "transporter_cleared": false,
+        "turret": [
+          24576,
+          8192,
+          100,
+          6790307,
+          12,
+          1280
+        ],
+        "turret_latch": true
+      },
+      {
+        "body": [
+          8192,
+          8192,
+          100,
+          6790307,
+          0,
+          1280
+        ],
+        "cargo": 1,
+        "delay": 16,
+        "draws": [
+          {
+            "args": [
+              0,
+              2
+            ],
+            "value": 2
+          }
+        ],
+        "frame": 116,
+        "hull_rotating_before": false,
+        "latch_before": true,
+        "passenger_limbo": true,
+        "passenger_position": [
+          22272,
+          12544,
+          416
+        ],
+        "passenger_queued": -1,
+        "state": 1,
+        "state_before": 1,
+        "transporter_cleared": false,
+        "turret": [
+          8192,
+          24576,
+          112,
+          604805760,
+          12,
+          1280
+        ],
+        "turret_latch": true
+      },
+      {
+        "body": [
+          8192,
+          8192,
+          100,
+          6790307,
+          0,
+          1280
+        ],
+        "cargo": 1,
+        "delay": 1,
+        "draws": [],
+        "frame": 132,
+        "hull_rotating_before": false,
+        "latch_before": false,
+        "passenger_limbo": true,
+        "passenger_position": [
+          22272,
+          12544,
+          416
+        ],
+        "passenger_queued": -1,
+        "state": 3,
+        "state_before": 1,
+        "transporter_cleared": false,
+        "turret": [
+          8192,
+          24576,
+          112,
+          604805760,
+          12,
+          1280
+        ],
+        "turret_latch": false
+      },
+      {
+        "body": [
+          8192,
+          8192,
+          100,
+          6790307,
+          0,
+          1280
+        ],
+        "cargo": 0,
+        "delay": 15,
+        "draws": [
+          {
+            "args": [
+              0,
+              3
+            ],
+            "value": 0
+          },
+          {
+            "args": [
+              0,
+              2
+            ],
+            "value": 1
+          }
+        ],
+        "ejection_heading": 8192,
+        "frame": 133,
+        "hull_rotating_before": false,
+        "latch_before": false,
+        "passenger_limbo": false,
+        "passenger_position": [
+          22016,
+          13056,
+          416
+        ],
+        "passenger_queued": 2,
+        "state": 3,
+        "state_before": 3,
+        "transporter_cleared": true,
+        "turret": [
+          8192,
+          24576,
+          112,
+          604805760,
+          12,
+          1280
+        ],
+        "turret_latch": false
+      },
+      {
+        "body": [
+          8192,
+          8192,
+          100,
+          6790307,
+          0,
+          1280
+        ],
+        "cargo": 0,
+        "delay": 16,
+        "draws": [
+          {
+            "args": [
+              0,
+              2
+            ],
+            "value": 2
+          }
+        ],
+        "frame": 148,
+        "hull_rotating_before": false,
+        "latch_before": false,
+        "passenger_limbo": false,
+        "passenger_position": [
+          22016,
+          13056,
+          416
+        ],
+        "passenger_queued": 2,
+        "state": 4,
+        "state_before": 3,
+        "transporter_cleared": true,
+        "turret": [
+          8192,
+          24576,
+          112,
+          604805760,
+          12,
+          1280
+        ],
+        "turret_latch": false
+      },
+      {
+        "body": [
+          8192,
+          8192,
+          100,
+          6790307,
+          0,
+          1280
+        ],
+        "cargo": 0,
+        "delay": 15,
+        "draws": [
+          {
+            "args": [
+              0,
+              2
+            ],
+            "value": 1
+          }
+        ],
+        "frame": 164,
+        "hull_rotating_before": false,
+        "latch_before": false,
+        "passenger_limbo": false,
+        "passenger_position": [
+          22016,
+          13056,
+          416
+        ],
+        "passenger_queued": 2,
+        "state": 4,
+        "state_before": 4,
+        "transporter_cleared": true,
+        "turret": [
+          8192,
+          24576,
+          112,
+          604805760,
+          12,
+          1280
+        ],
+        "turret_latch": false
+      }
+    ],
+    "cleanup_mission": 5,
+    "initial_facing": 8192,
+    "kind": "FV",
+    "source_position": [
+      22400,
+      12928,
+      416
+    ],
+    "turn_turret": true,
+    "turret": true,
+    "unload_inputs": [
+      {
+        "file": "RULESMD.INI",
+        "rate_bits": "000000e04d62903f",
+        "section": {
+          "Unload": {
+            "Rate": ".016",
+            "Recruitable": "no",
+            "Retaliate": "no",
+            "Scatter": "no"
+          }
+        }
+      },
+      {
+        "file": "MPBattleMD.ini",
+        "rate_bits": "000000e04d62903f",
+        "section": {}
+      },
+      {
+        "file": "XMP03T4.MAP",
+        "rate_bits": "000000e04d62903f",
+        "section": {}
+      }
+    ]
+  },
+  "htk_turret": {
+    "calls": [
+      {
+        "body": [
+          8192,
+          8192,
+          100,
+          6790307,
+          0,
+          1280
+        ],
+        "cargo": 1,
+        "delay": 1,
+        "draws": [],
+        "frame": 100,
+        "hull_rotating_before": false,
+        "latch_before": false,
+        "passenger_limbo": true,
+        "passenger_position": [
+          22272,
+          12544,
+          416
+        ],
+        "passenger_queued": -1,
+        "state": 1,
+        "state_before": 0,
+        "transporter_cleared": false,
+        "turret": [
+          24576,
+          8192,
+          100,
+          6790307,
+          12,
+          1280
+        ],
+        "turret_latch": false
+      },
+      {
+        "body": [
+          8192,
+          8192,
+          100,
+          6790307,
+          0,
+          1280
+        ],
+        "cargo": 1,
+        "delay": 15,
+        "draws": [
+          {
+            "args": [
+              0,
+              2
+            ],
+            "value": 1
+          }
+        ],
+        "frame": 101,
+        "hull_rotating_before": false,
+        "latch_before": true,
+        "passenger_limbo": true,
+        "passenger_position": [
+          22272,
+          12544,
+          416
+        ],
+        "passenger_queued": -1,
+        "state": 1,
+        "state_before": 1,
+        "transporter_cleared": false,
+        "turret": [
+          24576,
+          8192,
+          100,
+          6790307,
+          12,
+          1280
+        ],
+        "turret_latch": true
+      },
+      {
+        "body": [
+          8192,
+          8192,
+          100,
+          6790307,
+          0,
+          1280
+        ],
+        "cargo": 1,
+        "delay": 16,
+        "draws": [
+          {
+            "args": [
+              0,
+              2
+            ],
+            "value": 2
+          }
+        ],
+        "frame": 116,
+        "hull_rotating_before": false,
+        "latch_before": true,
+        "passenger_limbo": true,
+        "passenger_position": [
+          22272,
+          12544,
+          416
+        ],
+        "passenger_queued": -1,
+        "state": 1,
+        "state_before": 1,
+        "transporter_cleared": false,
+        "turret": [
+          8192,
+          24576,
+          112,
+          604779776,
+          12,
+          1280
+        ],
+        "turret_latch": true
+      },
+      {
+        "body": [
+          8192,
+          8192,
+          100,
+          6790307,
+          0,
+          1280
+        ],
+        "cargo": 1,
+        "delay": 1,
+        "draws": [],
+        "frame": 132,
+        "hull_rotating_before": false,
+        "latch_before": false,
+        "passenger_limbo": true,
+        "passenger_position": [
+          22272,
+          12544,
+          416
+        ],
+        "passenger_queued": -1,
+        "state": 3,
+        "state_before": 1,
+        "transporter_cleared": false,
+        "turret": [
+          8192,
+          24576,
+          112,
+          604779776,
+          12,
+          1280
+        ],
+        "turret_latch": false
+      },
+      {
+        "body": [
+          8192,
+          8192,
+          100,
+          6790307,
+          0,
+          1280
+        ],
+        "cargo": 0,
+        "delay": 15,
+        "draws": [
+          {
+            "args": [
+              0,
+              3
+            ],
+            "value": 0
+          },
+          {
+            "args": [
+              0,
+              2
+            ],
+            "value": 1
+          }
+        ],
+        "ejection_heading": 8192,
+        "frame": 133,
+        "hull_rotating_before": false,
+        "latch_before": false,
+        "passenger_limbo": false,
+        "passenger_position": [
+          22016,
+          13056,
+          416
+        ],
+        "passenger_queued": 2,
+        "state": 3,
+        "state_before": 3,
+        "transporter_cleared": true,
+        "turret": [
+          8192,
+          24576,
+          112,
+          604779776,
+          12,
+          1280
+        ],
+        "turret_latch": false
+      },
+      {
+        "body": [
+          8192,
+          8192,
+          100,
+          6790307,
+          0,
+          1280
+        ],
+        "cargo": 0,
+        "delay": 16,
+        "draws": [
+          {
+            "args": [
+              0,
+              2
+            ],
+            "value": 2
+          }
+        ],
+        "frame": 148,
+        "hull_rotating_before": false,
+        "latch_before": false,
+        "passenger_limbo": false,
+        "passenger_position": [
+          22016,
+          13056,
+          416
+        ],
+        "passenger_queued": 2,
+        "state": 4,
+        "state_before": 3,
+        "transporter_cleared": true,
+        "turret": [
+          8192,
+          24576,
+          112,
+          604779776,
+          12,
+          1280
+        ],
+        "turret_latch": false
+      },
+      {
+        "body": [
+          8192,
+          8192,
+          100,
+          6790307,
+          0,
+          1280
+        ],
+        "cargo": 0,
+        "delay": 15,
+        "draws": [
+          {
+            "args": [
+              0,
+              2
+            ],
+            "value": 1
+          }
+        ],
+        "frame": 164,
+        "hull_rotating_before": false,
+        "latch_before": false,
+        "passenger_limbo": false,
+        "passenger_position": [
+          22016,
+          13056,
+          416
+        ],
+        "passenger_queued": 2,
+        "state": 4,
+        "state_before": 4,
+        "transporter_cleared": true,
+        "turret": [
+          8192,
+          24576,
+          112,
+          604779776,
+          12,
+          1280
+        ],
+        "turret_latch": false
+      }
+    ],
+    "cleanup_mission": 5,
+    "initial_facing": 8192,
+    "kind": "HTK",
+    "source_position": [
+      22400,
+      12928,
+      416
+    ],
+    "turn_turret": true,
+    "turret": true,
+    "unload_inputs": [
+      {
+        "file": "RULESMD.INI",
+        "rate_bits": "000000e04d62903f",
+        "section": {
+          "Unload": {
+            "Rate": ".016",
+            "Recruitable": "no",
+            "Retaliate": "no",
+            "Scatter": "no"
+          }
+        }
+      },
+      {
+        "file": "MPBattleMD.ini",
+        "rate_bits": "000000e04d62903f",
+        "section": {}
+      },
+      {
+        "file": "XMP03T4.MAP",
+        "rate_bits": "000000e04d62903f",
+        "section": {}
+      }
+    ]
+  }
+}

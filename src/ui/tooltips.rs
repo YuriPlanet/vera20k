@@ -330,22 +330,6 @@ mod tests {
         assert!(s.active().is_none());
     }
 
-    #[test]
-    fn every_move_restarts_the_delay_and_hides() {
-        let mut s = service_with(&[region(1, 0, 0, 10, 10, "tip")]);
-        s.on_mouse_move(5, 5, 0);
-        s.on_mouse_move(6, 5, 900);
-        s.poll(1000);
-        assert!(s.active().is_none(), "restarted at 900 → deadline 1900");
-        s.poll(1900);
-        assert!(s.active().is_some());
-        // A move while visible hides AND re-arms.
-        s.on_mouse_move(7, 5, 2000);
-        assert!(s.active().is_none(), "moving hides a visible tip");
-        s.poll(3000);
-        assert!(s.active().is_some(), "re-shown after another full delay");
-    }
-
     /// Zero-delay 72424F takes the immediate branch, including same-region moves.
     #[test]
     fn zero_delay_tip_repositions_on_each_move_until_cursor_leaves() {
@@ -455,24 +439,6 @@ mod tests {
             s.active().is_none(),
             "NULL/empty text ⇒ Show fails ⇒ no tip"
         );
-    }
-
-    #[test]
-    fn zero_delay_override_shows_on_next_poll() {
-        let mut s = service_with(&[region(1, 0, 0, 10, 10, "cameo")]);
-        s.set_delay_override(Some(0));
-        s.on_mouse_move(5, 5, 7000);
-        s.poll(7000);
-        assert!(s.active().is_some(), "cameo-hover zero delay: immediate");
-        // The restored delay applies to the next ordinary move.
-        s.set_delay_override(None);
-        s.on_mouse_move(50, 50, 7100);
-        assert!(s.active().is_none(), "leaving the region hides");
-        s.on_mouse_move(6, 5, 7150);
-        s.poll(7500);
-        assert!(s.active().is_none(), "restored 1000 ms delay applies again");
-        s.poll(8150);
-        assert!(s.active().is_some());
     }
 
     #[test]

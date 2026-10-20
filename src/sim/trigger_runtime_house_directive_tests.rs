@@ -17,15 +17,19 @@ fn scene() -> (Simulation, RuleSet, OverlayTypeRegistry, [InternedId; 3]) {
          [Warheads]\n2=CONTROL\n[CONTROL]\nMindControl=yes\nVerses=100%,100%,100%,100%,100%,100%,100%,100%,100%,100%,100%\n\
          [SuperWeaponTypes]\n0=REVEAL\n[REVEAL]\nType=PsychicReveal\nRechargeTime=.1\nIsPowered=no\nRevealRadius=1\n",
     );
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     let houses = std::array::from_fn(|i| {
         let name = sim.interner.intern(&format!("H{i}"));
         let country = sim.interner.intern(&format!("Country{i}"));
-        sim.houses.insert(
+        sim.houses.register(HouseState::new(
             name,
-            HouseState::new(name, i as u8, Some(country), false, 10000, 10),
-        );
-        sim.session.house_order.push(name);
+            i as u8,
+            Some(country),
+            false,
+            10000,
+            10,
+        ));
         name
     });
     super::tests::install_event_ingress_map(
@@ -200,8 +204,14 @@ fn house_directive_make_ally_runs_both_directions_and_preserves_native_receipt()
     assert_eq!(sim.state_hash(), hash);
     // CanAlly checks the calling House, so defeat both callers to refuse both directions.
     // A valid selection still reports success.
-    sim.houses.get_mut(&houses[0]).unwrap().is_defeated = true;
-    sim.houses.get_mut(&houses[2]).unwrap().is_defeated = true;
+    sim.houses
+        .get_mut(&houses[0])
+        .unwrap()
+        .set_is_defeated_for_test(true);
+    sim.houses
+        .get_mut(&houses[2])
+        .unwrap()
+        .set_is_defeated_for_test(true);
     assert!(run(
         &mut sim,
         &rules,
@@ -237,12 +247,12 @@ fn house_directive_base_control_and_saved_return_use_reverse_live_lists_and_shar
         true
     ));
     assert_eq!(
-        sim.houses[&houses[0]].base_projection.buildings(),
+        sim.houses[&houses[0]].base_projection().buildings(),
         &[ids[0], ids[2], ids[1]]
     );
     assert!(
         sim.houses[&houses[1]]
-            .base_projection
+            .base_projection()
             .buildings()
             .is_empty()
     );
@@ -285,7 +295,7 @@ fn house_directive_base_control_and_saved_return_use_reverse_live_lists_and_shar
         .unwrap();
     loaded.resolve_type_handles(&rules);
     assert_eq!(
-        loaded.houses[&houses[0]].base_projection.buildings(),
+        loaded.houses[&houses[0]].base_projection().buildings(),
         &[ids[0], ids[2], ids[1]]
     );
     assert_eq!(loaded.techno_original_owner(ids[1]), Some(houses[1]));
@@ -300,11 +310,11 @@ fn house_directive_base_control_and_saved_return_use_reverse_live_lists_and_shar
         true
     ));
     assert_eq!(
-        loaded.houses[&houses[1]].base_projection.buildings(),
+        loaded.houses[&houses[1]].base_projection().buildings(),
         &[ids[1], ids[2]]
     );
     assert_eq!(
-        loaded.houses[&houses[0]].base_projection.buildings(),
+        loaded.houses[&houses[0]].base_projection().buildings(),
         &[ids[0]]
     );
     for id in [ids[1], ids[2]] {
@@ -497,7 +507,10 @@ fn house_directive_target_kind_reaches_first_own_team_threat_scan_and_real_super
     let team = sim
         .team_script_vm
         .create_team(houses[0], script, vec![leader], 0);
-    sim.houses.get_mut(&houses[0]).unwrap().enemy_house = Some(houses[1]);
+    sim.houses
+        .get_mut(&houses[0])
+        .unwrap()
+        .set_enemy_house_for_test(Some(houses[1]));
     assert!(run(
         &mut sim,
         &rules,

@@ -108,7 +108,7 @@ fn record_activation_matches_original_and_keeps_raw_connectivity_rows() {
             16, 16, &[0; 256], &[0; 256],
         );
         terrain.test_set_high_bridge_set_starts(Some(100), Some(200));
-        terrain.cell_mut(5, 5).unwrap().final_tile_index = 106;
+        terrain.cell_mut_for_test(5, 5).unwrap().final_tile_index = 106;
         let redirect_case = input["name"] == "source_fringe";
         if redirect_case {
             // Extra compatibility consumer regression. Native Validate's
@@ -116,9 +116,13 @@ fn record_activation_matches_original_and_keeps_raw_connectivity_rows() {
             // its captured result. A's fringe shortcut avoids a connectivity
             // rebuild despite distinct raw endpoint labels.
             for x in [7, 8] {
-                terrain.cell_mut(x, 5).unwrap().bridge_facts.raw_flags = 0x100;
+                terrain
+                    .cell_mut_for_test(x, 5)
+                    .unwrap()
+                    .bridge_facts
+                    .raw_flags = 0x100;
             }
-            terrain.cell_mut(9, 5).unwrap().final_tile_index = 106;
+            terrain.cell_mut_for_test(9, 5).unwrap().final_tile_index = 106;
         }
         let path = PathGrid::from_resolved_terrain(&terrain);
         let mut owner =
@@ -300,7 +304,7 @@ fn recalc_publication_updates_only_touched_class_and_unsigned_height() {
     let before_hierarchy = format!("{:?}", zones.hierarchy);
     let before_base = zones.base_topology.clone();
     for (x, level, class) in [(1, 255, 3), (2, 4, 2)] {
-        let cell = terrain.cell_mut(x, 1).unwrap();
+        let cell = terrain.cell_mut_for_test(x, 1).unwrap();
         cell.level = level;
         cell.zone_type = class;
     }

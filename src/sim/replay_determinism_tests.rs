@@ -58,7 +58,7 @@ fn run_with_frame_profile(total_ms: u32, frame_ms: u32) -> (u64, Vec<Option<u64>
     let mut acc_ms: u64 = 0;
     let mut hashes: Vec<Option<u64>> = Vec::new();
     let mut replay = ReplayLog::new(ReplayHeader {
-        pixel_conversion_bounds: sim.session.pixel_conversion_bounds,
+        pixel_conversion_bounds: sim.session.pixel_conversion_bounds(),
         version: 1,
         tick_hz: 30,
         seed: 123_456,
@@ -74,7 +74,7 @@ fn run_with_frame_profile(total_ms: u32, frame_ms: u32) -> (u64, Vec<Option<u64>
 
         while acc_ms >= TICK_MS as u64 {
             acc_ms -= TICK_MS as u64;
-            let execute_tick = sim.session.tick + 1;
+            let execute_tick = sim.session.tick() + 1;
             let mut due: Vec<CommandEnvelope> = Vec::new();
             pending.retain(|cmd| {
                 if cmd.execute_tick <= execute_tick {
@@ -156,7 +156,7 @@ fn replay_reapplies_header_seed() {
     let mut sim = sim_with_unit(&desc);
     let grid = PathGrid::new(32, 32);
     let mut replay = ReplayLog::new(ReplayHeader {
-        pixel_conversion_bounds: sim.session.pixel_conversion_bounds,
+        pixel_conversion_bounds: sim.session.pixel_conversion_bounds(),
         version: 1,
         tick_hz: 30,
         // The descriptor seed/map name are what the sim was constructed from;
@@ -168,7 +168,7 @@ fn replay_reapplies_header_seed() {
     let mut live: Vec<Option<u64>> = Vec::new();
     let mut pending = vec![make_move_command()];
     for _ in 0..40 {
-        let execute_tick = sim.session.tick + 1;
+        let execute_tick = sim.session.tick() + 1;
         let mut due: Vec<CommandEnvelope> = Vec::new();
         pending.retain(|cmd| {
             if cmd.execute_tick <= execute_tick {

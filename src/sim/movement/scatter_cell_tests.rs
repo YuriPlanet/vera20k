@@ -26,7 +26,7 @@ fn source_selection_matches_original_execution() {
         if let Some(cells) = input["cells"].as_array() {
             for cell in cells {
                 let out = terrain
-                    .cell_mut(
+                    .cell_mut_for_test(
                         cell[0].as_u64().unwrap() as u16,
                         cell[1].as_u64().unwrap() as u16,
                     )

@@ -60,7 +60,7 @@ fn target(label: &str, shape: u8) -> Option<NavTargetRef> {
 
 fn fixture(input: &Value, shape: u8) -> Simulation {
     let mut sim = Simulation::new();
-    sim.session.binary_frame = 100;
+    sim.session.set_binary_frame_for_test(100);
     let owner = sim.interner.intern("Americans");
     let type_ref = sim
         .interner
@@ -103,7 +103,7 @@ fn fixture(input: &Value, shape: u8) -> Simulation {
     actor
         .navigation
         .set_pending_destination_setter_for_test(true);
-    actor.navigation.path_runtime.start_movement(40, 30);
+    actor.navigation.path_runtime_mut().start_movement(40, 30);
     sim.substrate.entities.insert(actor);
     sim.mission_assign_exact(
         1,

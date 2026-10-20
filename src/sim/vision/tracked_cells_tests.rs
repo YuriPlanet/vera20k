@@ -49,7 +49,7 @@ fn reveal_between_frames(
                 &config,
                 UninitContext::default(),
                 crate::sim::vision::MapRevealProjection::Transient,
-                sim.session.current_house,
+                sim.session.current_house(),
             );
         }
     }
@@ -76,7 +76,7 @@ fn tracked_fog_passes_match_visiting_every_cell() {
             .path_grid_snapshot()
             .map(|grid| (*grid).clone())
             .expect("arena grid");
-        let tick = sim.session.tick + 1;
+        let tick = sim.session.tick() + 1;
         let mut orders = Vec::new();
         for (row, type_name) in ["MTNK", "E1", "HTNK", "E1", "MTNK", "E2"]
             .into_iter()

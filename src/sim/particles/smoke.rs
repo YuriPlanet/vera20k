@@ -92,7 +92,7 @@ pub(super) fn tick_system(sys: &mut ParticleSystem, sim: &mut Simulation, rules:
     //the HoldsWhat lookup, even when the type index is absent.
     if !sys.done_spawning && sys.alive() {
         let divisor = X87::ftol_i32_low_masked(X87::load_f32(sys.spawn_timer));
-        if (sim.session.binary_frame as i32)
+        if (sim.session.binary_frame() as i32)
             .checked_rem(divisor)
             .expect("native Smoke spawning requires valid IDIV")
             == 0

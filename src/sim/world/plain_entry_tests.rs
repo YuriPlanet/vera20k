@@ -74,7 +74,7 @@ fn terrain_cell(
     sim.resolved_terrain
         .as_mut()
         .unwrap()
-        .cell_mut(x as u16, y as u16)
+        .cell_mut_for_test(x as u16, y as u16)
         .unwrap()
 }
 

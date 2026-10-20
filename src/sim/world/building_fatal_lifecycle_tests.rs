@@ -157,7 +157,7 @@ impl Fixture {
         // The original joined fixture explicitly writes GameOptions+A8EB60
         // to 3 before any Anim ctor (building_construction::JoinedFixture).
         // Use the same supplied prior through the existing cadence owner.
-        sim.session.game_options.game_speed = prior.get("game_speed").map_or(3, int);
+        sim.session.game_options_mut_for_test().game_speed = prior.get("game_speed").map_or(3, int);
         // Original DestructionEffects441819 rolls the center mark even
         // with no loaded SmudgeType candidates. Keep the admitted map
         // owner's empty cells; None is the mapless dispatch boundary.
@@ -192,7 +192,7 @@ impl Fixture {
             let terrain = sim.resolved_terrain.as_mut().unwrap();
             for y in 0..terrain.height() {
                 for x in 0..terrain.width() {
-                    let cell = terrain.cell_mut(x, y).unwrap();
+                    let cell = terrain.cell_mut_for_test(x, y).unwrap();
                     cell.final_tile_index = 0;
                     cell.accepts_smudge =
                         crate::map::resolved_terrain::current_tile_permissions(&lookup, 0).0;
@@ -251,10 +251,9 @@ impl Fixture {
         let houses = [sim.intern("Americans"), sim.intern("Second")];
         for house in houses {
             sim.houses
-                .insert(house, HouseState::new(house, 0, None, true, 5000, 10));
-            sim.session.house_order.push(house);
+                .register(HouseState::new(house, 0, None, true, 5000, 10));
         }
-        sim.session.current_house = Some(houses[0]);
+        sim.session.set_current_house_for_test(Some(houses[0]));
         sim.playfield_bounds = Some(crate::map::playfield::PlayfieldBounds {
             base: 16,
             off_fc: 0,
@@ -410,11 +409,12 @@ impl Fixture {
             &prior["unique_id_cursor"],
         )
             as u32));
-        sim.session.binary_frame = int(&prior["frame"]) as u32;
+        sim.session
+            .set_binary_frame_for_test(int(&prior["frame"]) as u32);
         for (house, native) in houses.iter().zip(prior["houses"].as_array().unwrap()) {
             let state = sim.houses.get_mut(house).unwrap();
-            state.stats = MatchStatistics::from_totals_for_test(0, 0, 0, 0, 0);
-            state.economy.set_score_for_test(0);
+            state.set_stats_for_test(MatchStatistics::from_totals_for_test(0, 0, 0, 0, 0));
+            state.economy_mut().set_score_for_test(0);
             let mut power = serde_json::to_value(PowerState::default()).unwrap();
             power["total_output"] = native["power"].clone();
             power["total_drain"] = native["drain"].clone();
@@ -471,7 +471,7 @@ impl Fixture {
                 &self.rules,
                 house,
                 &self.sim.interner,
-                self.sim.session.binary_frame,
+                self.sim.session.binary_frame(),
             );
         }
     }
@@ -630,7 +630,7 @@ impl Fixture {
                 .anims
                 .iter()
                 .map(|(_, a)| a)
-                .find(|a| a.native_unique_id == int(&anim["native_id"]))
+                .find(|a| a.native_unique_id() == int(&anim["native_id"]))
                 .unwrap();
             let mut runtime = anim["runtime"].clone();
             for key in [
@@ -644,24 +644,24 @@ impl Fixture {
             runtime["frame_timer"] = json!({"start_frame": int(&runtime["frame_timer"][0]),
                 "duration": int(&runtime["frame_timer"][1])});
             assert_eq!(
-                serde_json::to_value(&actual.runtime).unwrap(),
+                serde_json::to_value(&actual.runtime()).unwrap(),
                 runtime,
                 "{boundary}: Anim{} runtime",
-                actual.native_unique_id
+                actual.native_unique_id()
             );
             let owner = anim["owner_object"].as_u64().unwrap();
             let expected_owner = (owner != 0).then(|| pointers[&owner]);
             assert_eq!(
-                actual.owner_entity.map(native_id),
+                actual.owner_entity().map(native_id),
                 expected_owner,
                 "{boundary}: Anim{} owner",
-                actual.native_unique_id
+                actual.native_unique_id()
             );
             assert_eq!(
-                actual.z_adjust,
+                actual.z_adjust(),
                 int(&anim["z_adjust"]),
                 "{boundary}: Anim{} depth",
-                actual.native_unique_id
+                actual.native_unique_id()
             );
         }
     }
@@ -820,7 +820,7 @@ impl Fixture {
             .anims
             .iter()
             .map(|(_, a)| a)
-            .filter(|a| a.native_unique_id >= floor)
+            .filter(|a| a.native_unique_id() >= floor)
             .collect();
         let expected: Vec<_> = expected
             .iter()
@@ -834,8 +834,8 @@ impl Fixture {
             actual
                 .iter()
                 .map(|anim| (
-                    anim.native_unique_id,
-                    self.sim.interner.resolve(anim.type_id)
+                    anim.native_unique_id(),
+                    self.sim.interner.resolve(anim.type_id())
                 ))
                 .collect::<Vec<_>>(),
             expected
@@ -845,20 +845,20 @@ impl Fixture {
         );
         for (actual, native) in actual.iter().zip(expected) {
             assert_eq!(
-                actual.native_unique_id,
+                actual.native_unique_id(),
                 int(&native["native_id"]),
                 "{boundary}: Anim ID"
             );
             assert_eq!(
-                self.sim.interner.resolve(actual.type_id),
+                self.sim.interner.resolve(actual.type_id()),
                 native["type_name"].as_str().unwrap(),
                 "{boundary}: Anim type"
             );
             assert_eq!(
                 [
-                    actual.world_coord.x,
-                    actual.world_coord.y,
-                    actual.world_coord.z
+                    actual.world_coord().x,
+                    actual.world_coord().y,
+                    actual.world_coord().z
                 ],
                 [
                     int(&native["location"][0]),
@@ -868,25 +868,25 @@ impl Fixture {
                 "{boundary}: Anim coordinate"
             );
             assert_eq!(
-                i32::from(actual.runtime.delay_remaining),
+                i32::from(actual.runtime().delay_remaining),
                 int(&native["runtime"]["delay_remaining"]),
                 "{boundary}: Anim delay"
             );
             assert_eq!(
-                actual.draw_flags,
+                actual.draw_flags(),
                 int(&native["draw_flags"]) as u32,
                 "{boundary}: Anim flags"
             );
-            if let Some(bounce) = &actual.bounce {
+            if let Some(bounce) = &actual.bounce() {
                 assert_eq!(
-                    bounce.position.map(|v| v.bits()),
+                    bounce.position().map(|v| v.bits()),
                     std::array::from_fn(
                         |i| native["bounce"]["position_bits"][i].as_u64().unwrap() as u32
                     ),
                     "{boundary}: Bounce position"
                 );
                 assert_eq!(
-                    bounce.velocity.map(|v| v.bits()),
+                    bounce.velocity().map(|v| v.bits()),
                     std::array::from_fn(
                         |i| native["bounce"]["velocity_bits"][i].as_u64().unwrap() as u32
                     ),
@@ -960,7 +960,7 @@ impl Fixture {
                 .take_while(|word| *word != u8::MAX)
                 .collect();
             assert_eq!(
-                actual.navigation.path_replay.remaining_directions(),
+                actual.navigation.path_replay().remaining_directions(),
                 native_path,
                 "{boundary}: retained native path head"
             );
@@ -974,9 +974,9 @@ impl Fixture {
                     .substrate
                     .anims
                     .iter()
-                    .filter(|(_, a)| a.native_unique_id >= floor
-                        && a.native_unique_id < actual.native_unique_id()
-                        && a.in_logic_vector)
+                    .filter(|(_, a)| a.native_unique_id() >= floor
+                        && a.native_unique_id() < actual.native_unique_id()
+                        && a.in_logic_vector())
                     .all(|(id, _)| logic.iter().position(|live| live == id).unwrap() < crew_slot),
                 "{boundary}: death Anims admitted before crew"
             );
@@ -990,36 +990,36 @@ impl Fixture {
             let house = &self.sim.houses[owner];
             assert_eq!(
                 house
-                    .tracking
+                    .tracking()
                     .active_count(EntityCategory::Structure, type_ref),
                 int(&native["live_buildings"]),
                 "{boundary}: live presence"
             );
             assert_eq!(
                 house
-                    .tracking
+                    .tracking()
                     .owned_count(EntityCategory::Structure, type_ref),
                 int(&native["owned_buildings"]),
                 "{boundary}: retained ownership"
             );
             assert_eq!(
-                house.tracking.buildings(),
+                house.tracking().buildings(),
                 int(&native["tracked_buildings"]),
                 "{boundary}: tracking"
             );
             assert_eq!(
-                house.stats.buildings_lost(),
+                house.stats().buildings_lost(),
                 int(&native["losses"]) as u32,
                 "{boundary}: losses"
             );
             assert_eq!(
-                house.economy.score(),
+                house.economy().score(),
                 int(&native["score"]),
                 "{boundary}: credit"
             );
             let power = &self.sim.power_states[owner];
             assert_eq!(
-                power.total_output,
+                power.total_output(),
                 int(&native["power"]),
                 "{boundary}: cached power"
             );
@@ -1043,8 +1043,14 @@ impl Fixture {
             .entities
             .get(id)
             .map(|e| e.native_unique_id())
-            .or_else(|| self.sim.substrate.anims.get(id).map(|a| a.native_unique_id))
-            .or_else(|| self.sim.projectiles.get(id).map(|p| p.native_unique_id))
+            .or_else(|| {
+                self.sim
+                    .substrate
+                    .anims
+                    .get(id)
+                    .map(|a| a.native_unique_id())
+            })
+            .or_else(|| self.sim.projectiles.get(id).map(|p| p.native_unique_id()))
             .or_else(|| {
                 self.sim
                     .smudge_grid
@@ -1119,14 +1125,18 @@ impl Fixture {
         let client = &native["client_priors"];
         assert_eq!(client["player_ptr"], native["input"]["owner"]["pointer"]);
         assert_eq!(
-            self.sim.session.current_house,
+            self.sim.session.current_house(),
             Some(self.houses[owner_index])
         );
         // The inherited ready-shot fixture has no session bootstrap. Transport
         // this retained suffix's native Mode before its actual constructor:
         // Mode1 CellPUT47E9E2 discovers PlayerPtr before Techno idle/Commence.
         // No Fog reset/mapping or manual GrandOpening substitutes for it.
-        self.sim.session.game_mode_nonzero = int(&client["game_mode"]) != 0;
+        self.sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+                int(&client["game_mode"]) != 0,
+            ),
+        );
         let owner = self
             .sim
             .interner
@@ -1233,7 +1243,7 @@ impl Fixture {
                     .anims
                     .iter()
                     .map(|(_, anim)| anim)
-                    .find(|actual| actual.native_unique_id == int(&anim["native_id"]))
+                    .find(|actual| actual.native_unique_id() == int(&anim["native_id"]))
                     .unwrap();
                 // Building slot membership is distinct from Anim+CC. Native
                 // GAPOWR_A23 occupies slot3 with owner_object==0 in this suffix.
@@ -1243,7 +1253,8 @@ impl Fixture {
                     _ => panic!("unretained normal-PUT slot Anim owner"),
                 };
                 assert_eq!(
-                    actual.owner_entity, owner,
+                    actual.owner_entity(),
+                    owner,
                     "{boundary}: slot Anim Object owner"
                 );
                 Some(int(&anim["native_id"]))
@@ -1266,10 +1277,10 @@ impl Fixture {
                 .anims
                 .iter()
                 .map(|(_, anim)| anim)
-                .find(|anim| anim.native_unique_id == int(&expected["native_id"]))
+                .find(|anim| anim.native_unique_id() == int(&expected["native_id"]))
                 .unwrap();
             assert_eq!(
-                self.sim.interner.resolve(actual.type_id),
+                self.sim.interner.resolve(actual.type_id()),
                 expected["type_name"],
                 "{boundary}: Anim type"
             );
@@ -1331,7 +1342,7 @@ impl Fixture {
         // using a surviving actor so deferred cleanup must retain its Door.
         let actor = self.sim.substrate.entities.get_mut(self.unit).unwrap();
         let original_actor = actor.clone();
-        actor.open_door(7, self.sim.session.binary_frame);
+        actor.open_door(7, self.sim.session.binary_frame());
         let door_phase = actor.door_phase();
         assert_eq!(door_phase, crate::sim::door::DoorPhase::Opening);
         let door_timer = actor.door_timer_fields();
@@ -1537,22 +1548,17 @@ impl Fixture {
     }
 }
 
+/// The ready MTNK shot runs building fires, crew and deferred cleanup, with
+/// and without the stock smudges joined.
 #[test]
 fn original_ready_mtnk_shot_runs_building_fires_crew_and_deferred_cleanup() {
-    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
+    for path in [
         "tools/spatial_oracle/building_death_anims_joined.json",
-    ))
-    .unwrap();
-    assert_ready_fatal_routes(&corpus);
-}
-
-#[test]
-fn original_stock_smudges_join_ready_shot_crew_and_deferred_cleanup() {
-    let corpus: Value = serde_json::from_str(crate::test_fixture::text(
         "tools/spatial_oracle/building_death_anims_joined_stock_smudges.json",
-    ))
-    .unwrap();
-    assert_ready_fatal_routes(&corpus);
+    ] {
+        let corpus: Value = serde_json::from_str(crate::test_fixture::text(path)).unwrap();
+        assert_ready_fatal_routes(&corpus);
+    }
 }
 
 fn assert_ready_fatal_routes(corpus: &Value) {
@@ -1594,12 +1600,12 @@ fn assert_ready_fatal_routes(corpus: &Value) {
             .map(|(_, p)| p)
             .next()
             .unwrap();
-        assert_eq!(bullet.native_unique_id, int(&route["shot"]["bullet_id"]));
+        assert_eq!(bullet.native_unique_id(), int(&route["shot"]["bullet_id"]));
         assert_eq!(
             [
-                bullet.launch_origin.x,
-                bullet.launch_origin.y,
-                bullet.launch_origin.z
+                bullet.launch_origin().x,
+                bullet.launch_origin().y,
+                bullet.launch_origin().z
             ],
             [
                 int(&route["shot"]["launch_position"][0]),
@@ -1630,7 +1636,10 @@ fn assert_ready_fatal_routes(corpus: &Value) {
             if frame["after_objects"]["alive"] == 0 {
                 break;
             }
-            fixture.sim.session.binary_frame = fixture.sim.session.binary_frame.wrapping_add(1);
+            fixture
+                .sim
+                .session
+                .set_binary_frame_for_test(fixture.sim.session.binary_frame().wrapping_add(1));
             fixture.sim.process_pending_delete_with(
                 Some(&fixture.rules),
                 Some(&fixture.registry),
@@ -1650,7 +1659,10 @@ fn assert_ready_fatal_routes(corpus: &Value) {
             .unwrap();
         fixture.assert_stock_pending_snapshot(route);
         let identities = fixture.identities();
-        fixture.sim.session.binary_frame = int(&route["after_frame_increment"]["frame"]) as u32;
+        fixture
+            .sim
+            .session
+            .set_binary_frame_for_test(int(&route["after_frame_increment"]["frame"]) as u32);
         fixture.sim.process_pending_delete_with(
             Some(&fixture.rules),
             Some(&fixture.registry),
@@ -1750,7 +1762,10 @@ fn original_direct_ap_receivers_join_debris_crew_uninit_power_and_deferred_destr
         .building_art
         .anim_slots();
     assert!(slots[3].is_some(), "UnInit retains ordinary attached ART");
-    fixture.sim.session.binary_frame = int(&route["after_frame_increment"]["frame"]) as u32;
+    fixture
+        .sim
+        .session
+        .set_binary_frame_for_test(int(&route["after_frame_increment"]["frame"]) as u32);
     fixture.sim.process_pending_delete_with(
         Some(&fixture.rules),
         Some(&fixture.registry),

@@ -30,15 +30,15 @@ fn suggest_new_object_matches_original_raw_factory_dispatch_table() {
     let mut sim = Simulation::with_seed(31);
     let owner = sim.interner.intern("AI");
     let mut house = HouseState::new(owner, 0, None, false, 1000, 10);
-    house.ai_production.set_for_test(0, 0, true);
+    house.ai_production_mut().set_for_test(0, 0, true);
     for kind in [
         UnitChoiceKind::Unit,
         UnitChoiceKind::Infantry,
         UnitChoiceKind::Aircraft,
     ] {
-        house.ai_unit_choices.set(kind, 0);
+        house.ai_unit_choices_mut().set(kind, 0);
     }
-    sim.houses.insert(owner, house);
+    sim.houses.register(house);
     // Original jump targets load the existing four House choices. The saved
     // byte table establishes aliases; this is control-flow/data evidence,
     // not an execution of a complete native production queue.
@@ -95,13 +95,13 @@ fn rules(advanced_prerequisite: &str) -> RuleSet {
 
 fn computer_house(game_mode_nonzero: bool) -> (Simulation, InternedId) {
     let mut sim = Simulation::new();
-    sim.session.game_mode_nonzero = game_mode_nonzero;
+    sim.session.set_game_mode(
+        crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(game_mode_nonzero),
+    );
     let owner = sim.interner.intern("AIHouse");
     let country = sim.interner.intern("Americans");
-    sim.houses.insert(
-        owner,
-        HouseState::new(owner, 0, Some(country), false, 10_000, 10),
-    );
+    sim.houses
+        .register(HouseState::new(owner, 0, Some(country), false, 10_000, 10));
     (sim, owner)
 }
 
@@ -138,18 +138,18 @@ fn the_production_mode_steps_as_native() {
             .map(|(name, _)| (sim.interner.intern(name), 1))
             .collect();
         let house = sim.houses.get_mut(&owner).unwrap();
-        house.is_human = flag(&row["human"]);
-        house.player_control = flag(&row["control"]);
+        house.set_is_human_for_test(flag(&row["human"]));
+        house.set_player_control_for_test(flag(&row["control"]));
         house
-            .economy
+            .economy_mut()
             .set_credits_for_test(int(&row["money"]) as i32);
         house
-            .ai_production
+            .ai_production_mut()
             .set_for_test(int(&row["mode"]) as i32, -1, true);
-        house.tracking.set_for_test(0, &[], (0, 0, 0), &owned);
+        house.tracking_mut().set_for_test(0, &[], (0, 0, 0), &owned);
         let mut power_state = PowerState::default();
-        power_state.total_output = int(&row["output"]) as i32;
-        power_state.total_drain = int(&row["drain"]) as i32;
+        power_state.set_total_output_for_test(int(&row["output"]) as i32);
+        power_state.set_total_drain_for_test(int(&row["drain"]) as i32);
         sim.power_states.insert(owner, power_state);
         let draws: Vec<&Value> = row["draws"].as_array().unwrap().iter().collect();
         let expected = expect_draws(&mut sim, &draws, 0, 1);
@@ -157,7 +157,7 @@ fn the_production_mode_steps_as_native() {
         economy_state_machine(&mut sim, &rules, owner, int(&row["kind"]) == 6);
 
         assert_eq!(
-            i64::from(sim.houses[&owner].ai_production.mode()),
+            i64::from(sim.houses[&owner].ai_production().mode()),
             int(&row["mode_after"]),
             "{row}"
         );
@@ -206,32 +206,37 @@ fn the_building_choice_handles_nodes_as_native() {
                 .unwrap();
         }
         let house = sim.houses.get_mut(&owner).unwrap();
-        house.ai_production.set_for_test(
+        house.ai_production_mut().set_for_test(
             0,
             int(&row["choice"]) as i32,
             flag(&row["naval_allowed"]),
         );
-        house.build_const_order = (0..int(&row["yards"]) as u64).map(|id| 1000 + id).collect();
-        house.side_index = int(&row["side"]) as u8;
-        house.difficulty =
+        house.set_build_const_order_for_test(
+            (0..int(&row["yards"]) as u64).map(|id| 1000 + id).collect(),
+        );
+        house.set_side_index_for_test(int(&row["side"]) as i32);
+        house.set_difficulty_for_test(
             crate::sim::house_state::HouseDifficulty::from_native(int(&row["difficulty"]) as i32)
-                .unwrap();
-        house.base_plan.nodes = row["nodes"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|node| BasePlanNode {
-                type_or_control: int(&node[0]) as i32,
-                packed_cell: pack_base_plan_cell(int(&node[1]) as i32, int(&node[2]) as i32),
-                filled: node.get(3).is_some_and(|filled| int(filled) != 0),
-                retry_count: 0,
-            })
-            .collect();
+                .unwrap(),
+        );
+        house.base_plan_mut().set_nodes_for_test(
+            row["nodes"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|node| BasePlanNode {
+                    type_or_control: int(&node[0]) as i32,
+                    packed_cell: pack_base_plan_cell(int(&node[1]) as i32, int(&node[2]) as i32),
+                    filled: node.get(3).is_some_and(|filled| int(filled) != 0),
+                    retry_count: 0,
+                })
+                .collect(),
+        );
         let mut power_state = PowerState::default();
-        power_state.total_output = int(&row["output"]) as i32;
-        power_state.total_drain = int(&row["drain"]) as i32;
+        power_state.set_total_output_for_test(int(&row["output"]) as i32);
+        power_state.set_total_drain_for_test(int(&row["drain"]) as i32);
         power_state.start_blackout(0, int(&row["blackout"]) as i32);
-        power_state.has_drained_power_source = flag(&row["drained_source"]);
+        power_state.set_has_drained_power_source_for_test(flag(&row["drained_source"]));
         sim.power_states.insert(owner, power_state);
         let draws: Vec<&Value> = row["events"]
             .as_array()
@@ -246,13 +251,13 @@ fn the_building_choice_handles_nodes_as_native() {
         let label = row["label"].as_str().unwrap();
         let house = &sim.houses[&owner];
         assert_eq!(
-            i64::from(house.ai_production.building_choice()),
+            i64::from(house.ai_production().building_choice()),
             int(&row["choice_after"]),
             "{label}"
         );
         let nodes: Vec<[i64; 5]> = house
-            .base_plan
-            .nodes
+            .base_plan()
+            .nodes()
             .iter()
             .map(|node| {
                 let (x, y) = unpack_base_plan_cell(node.packed_cell);
@@ -341,7 +346,7 @@ fn the_walls_match_native() {
             .collect();
         let rules = rules_with(&walls);
         // A HouseType side of -1 matches only a -1 type, as no u8 side does.
-        let wall = wall_type(&rules, int(&row["side"]) as u8);
+        let wall = wall_type(&rules, int(&row["side"]) as i32);
 
         let node = |value: &Value| BasePlanNode {
             type_or_control: int(&value[0]) as i32,
@@ -349,11 +354,9 @@ fn the_walls_match_native() {
             filled: false,
             retry_count: 0,
         };
-        let mut plan = crate::sim::base_plan::BasePlanState {
-            percent_built: 0,
-            nodes: row["nodes"].as_array().unwrap().iter().map(node).collect(),
-        };
-        let nodes = &plan.nodes;
+        let mut plan = crate::sim::base_plan::BasePlanState::default();
+        plan.set_nodes_for_test(row["nodes"].as_array().unwrap().iter().map(node).collect());
+        let nodes = plan.nodes();
         let buildings = row["node_buildings"].as_array().unwrap();
         // `0x0042E820`'s answers, the row's buildings: the node's cell always
         // equals the building's (`0x0041BEA0`, Location / 256), so these
@@ -383,7 +386,7 @@ fn the_walls_match_native() {
             .iter()
             .map(node)
             .collect();
-        assert_eq!(plan.nodes, after, "{label}");
+        assert_eq!(plan.nodes(), after, "{label}");
     }
     assert!(placed >= 40, "{placed} rows walled");
 }
@@ -465,25 +468,23 @@ fn exit_fixture() -> (Simulation, RuleSet, InternedId, u64, u64) {
     .unwrap();
     let mut sim = Simulation::new();
     crate::sim::arena_fixture::flat_ground(&mut sim, &rules);
-    sim.session.game_mode_nonzero = true;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true));
     let owner = sim.interner.intern("AIHouse");
     let country = sim.interner.intern("Americans");
-    sim.houses.insert(
-        owner,
-        HouseState::new(owner, 0, Some(country), false, 10_000, 10),
-    );
-    sim.session.house_order.push(owner);
+    sim.houses
+        .register(HouseState::new(owner, 0, Some(country), false, 10_000, 10));
     let yard = sim
         .spawn_object("YARD", "AIHouse", 12, 12, 0, &rules)
         .unwrap();
     let plain = rules.building_type_index("PLAIN").unwrap();
     let house = sim.houses.get_mut(&owner).unwrap();
-    house.base_plan.nodes = vec![BasePlanNode {
+    house.base_plan_mut().set_nodes_for_test(vec![BasePlanNode {
         type_or_control: plain,
         packed_cell: pack_base_plan_cell(16, 16),
         filled: false,
         retry_count: 0,
-    }];
+    }]);
     for (x, y) in [(16, 16), (17, 16), (16, 17), (17, 17)] {
         sim.substrate
             .base_reservations
@@ -506,8 +507,8 @@ fn exit_fixture() -> (Simulation, RuleSet, InternedId, u64, u64) {
 
 fn node_state(sim: &Simulation, owner: InternedId) -> Vec<((i16, i16), i32)> {
     sim.houses[&owner]
-        .base_plan
-        .nodes
+        .base_plan()
+        .nodes()
         .iter()
         .map(|node| (unpack_base_plan_cell(node.packed_cell), node.retry_count))
         .collect()
@@ -518,8 +519,8 @@ fn a_computer_yard_places_its_building_on_the_node_cell() {
     let (mut sim, rules, owner, yard, product) = exit_fixture();
     let plain = rules.building_type_index("PLAIN").unwrap();
     let house = sim.houses.get_mut(&owner).unwrap();
-    house.economy.set_credits_for_test(100);
-    house.ai_production.set_for_test(0, plain, true);
+    house.economy_mut().set_credits_for_test(100);
+    house.ai_production_mut().set_for_test(0, plain, true);
 
     let exit = exit_building(
         &mut sim,
@@ -538,8 +539,8 @@ fn a_computer_yard_places_its_building_on_the_node_cell() {
     let house = &sim.houses[&owner];
     // Below the cutoff a building exit moves mode 0 to 2, and the choice is
     // forgotten.
-    assert_eq!(house.ai_production.mode(), 2);
-    assert_eq!(house.ai_production.building_choice(), -1);
+    assert_eq!(house.ai_production().mode(), 2);
+    assert_eq!(house.ai_production().building_choice(), -1);
     assert_eq!(node_state(&sim, owner), [((16, 16), 0)]);
 }
 
@@ -560,11 +561,11 @@ fn a_computer_yards_building_follows_the_native_computer_route() {
         let name = row["input"]["name"].as_str().unwrap();
         let (mut sim, rules, owner, yard, product) = exit_fixture();
         // The native rows run at GameSpeed 0.
-        sim.session.game_options.game_speed = 0;
+        sim.session.game_options_mut_for_test().game_speed = 0;
         let plain = rules.building_type_index("PLAIN").unwrap();
         let house = sim.houses.get_mut(&owner).unwrap();
-        house.economy.set_credits_for_test(100);
-        house.ai_production.set_for_test(0, plain, true);
+        house.economy_mut().set_credits_for_test(100);
+        house.ai_production_mut().set_for_test(0, plain, true);
         sim.substrate
             .entities
             .get_mut(product)
@@ -592,10 +593,10 @@ fn a_computer_yards_building_follows_the_native_computer_route() {
             "{name}"
         );
         assert_eq!(building.mission.queued(), MissionId::NONE, "{name}");
-        let placed_at = sim.session.binary_frame;
+        let placed_at = sim.session.binary_frame();
         for frame in row["frames"].as_array().unwrap() {
             let now = placed_at + frame["frame"].as_u64().unwrap() as u32;
-            sim.session.binary_frame = now;
+            sim.session.set_binary_frame_for_test(now);
             sim.object_ai_visit_one(
                 product,
                 Some(&rules),
@@ -656,8 +657,7 @@ fn an_enemy_on_the_site_fails_the_exit_and_the_node_forgets_its_cell() {
     let (mut sim, rules, owner, yard, product) = exit_fixture();
     let enemy = sim.interner.intern("Enemy");
     sim.houses
-        .insert(enemy, HouseState::new(enemy, 1, None, false, 10_000, 10));
-    sim.session.house_order.push(enemy);
+        .register(HouseState::new(enemy, 1, None, false, 10_000, 10));
     sim.spawn_object("TANK", "Enemy", 16, 16, 0, &rules)
         .unwrap();
 
@@ -685,7 +685,10 @@ fn an_enemy_on_the_site_fails_the_exit_and_the_node_forgets_its_cell() {
 #[test]
 fn a_human_yard_places_nothing() {
     let (mut sim, rules, owner, yard, product) = exit_fixture();
-    sim.houses.get_mut(&owner).unwrap().is_human = true;
+    sim.houses
+        .get_mut(&owner)
+        .unwrap()
+        .set_is_human_for_test(true);
 
     let exit = exit_building(
         &mut sim,

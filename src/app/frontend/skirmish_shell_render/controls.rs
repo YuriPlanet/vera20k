@@ -36,6 +36,146 @@ use super::{
     SHELL_SWATCH_DEPTH,
 };
 
+/// Original61E700 group and6208F0 plain frames both use two bevel rings and
+/// averaged mixed corners. A group's top edge leaves the native caption gap.
+pub(super) fn frame_segments(
+    rect: RectPx,
+    caption_width: Option<i32>,
+    outer_light: bool,
+) -> Vec<(RectPx, [u8; 3])> {
+    let light = [0xc5, 0xbe, 0xa7];
+    let dark = [0x80, 0x7a, 0x68];
+    let mixed = [0xa2, 0x9c, 0x87];
+    let mut out = Vec::new();
+    for ring in 0..2 {
+        let l = rect.x + ring;
+        let t = rect.y + ring;
+        let r = rect.x + rect.w - ring - 1;
+        let b = rect.y + rect.h - ring - 1;
+        let (tl, br) = if outer_light == (ring == 0) {
+            (light, dark)
+        } else {
+            (dark, light)
+        };
+        if let Some(width) = caption_width.filter(|width| *width > 0) {
+            out.push((RectPx::new(l, t, rect.x + 8 - l + 1, 1), tl));
+            let start = rect.x + width + 12;
+            out.push((RectPx::new(start, t, (r - start + 1).max(0), 1), tl));
+        } else {
+            out.push((RectPx::new(l, t, r - l, 1), tl));
+        }
+        out.push((RectPx::new(l, t + 1, 1, b - t), tl));
+        out.push((RectPx::new(l, b, r - l + 1, 1), br));
+        out.push((RectPx::new(r, t + 1, 1, (b - t - 1).max(0)), br));
+        out.push((RectPx::new(r, t, 1, 1), mixed));
+        out.push((RectPx::new(l, b, 1, 1), mixed));
+    }
+    out
+}
+
+/// Original61E700's group window split: the frame starts half the drawn
+/// font cell below the window top, and the caption sits 10px in on that top
+/// line, one authored cell tall. Returns (frame, caption) for
+/// [`push_group_or_plain_frame`] and the caption text.
+pub(super) fn group_box_geometry(
+    group: RectPx,
+    drawn_cell_height: i32,
+    cell_height: i32,
+) -> (RectPx, RectPx) {
+    let top = drawn_cell_height / 2;
+    (
+        RectPx::new(group.x, group.y + top, group.w, group.h - top),
+        RectPx::new(group.x + 10, group.y, group.w - 10, cell_height),
+    )
+}
+
+pub(super) fn push_group_or_plain_frame(
+    out: &mut Vec<SpriteInstance>,
+    atlas: &SkirmishShellChromeAtlas,
+    rect: RectPx,
+    caption_width: Option<i32>,
+    outer_light: bool,
+) {
+    for (index, (rect, rgb)) in frame_segments(rect, caption_width, outer_light)
+        .into_iter()
+        .enumerate()
+    {
+        push_solid_rect(
+            out,
+            atlas,
+            rect,
+            rgb.map(|c| f32::from(c) / 255.0),
+            SHELL_CONTROL_DEPTH - index as f32 * 0.0000001,
+        );
+    }
+}
+
+/// NewEdit 00614B30 shares its UTF-16 caret-only paint across saved files
+/// and D7. The layout owner supplies the native frame and text rectangles.
+pub(super) struct NewEditPaint {
+    pub frame: RectPx,
+    pub text: RectPx,
+    pub background: Option<[f32; 3]>,
+    pub frame_depth: f32,
+    pub caret_depth: f32,
+    pub caret_visible: bool,
+}
+
+pub(super) fn push_new_edit_instances(
+    out: &mut Vec<SpriteInstance>,
+    atlas: &SkirmishShellChromeAtlas,
+    font: &BitFont,
+    editor: &crate::ui::skirmish_shell::SavedSeedDescriptionEdit,
+    paint: NewEditPaint,
+    scale: ShellScale,
+) {
+    if let Some(rgb) = paint.background {
+        push_solid_rect(out, atlas, paint.frame, rgb, paint.frame_depth + 0.00001);
+    }
+    push_ownerdraw_two_pixel_bevel_frame(out, atlas, paint.frame, paint.frame_depth);
+    if paint.caret_visible {
+        push_new_edit_caret(
+            out,
+            atlas,
+            font,
+            editor,
+            paint.text,
+            paint.caret_depth,
+            scale,
+        );
+    }
+}
+
+/// The NewEdit caret alone, for an editor painted inside another control's
+/// face (the WOL login's editable combo).
+pub(super) fn push_new_edit_caret(
+    out: &mut Vec<SpriteInstance>,
+    atlas: &SkirmishShellChromeAtlas,
+    font: &BitFont,
+    editor: &crate::ui::skirmish_shell::SavedSeedDescriptionEdit,
+    text: RectPx,
+    depth: f32,
+    scale: ShellScale,
+) {
+    if !editor.focused {
+        return;
+    }
+    let field = scale.base_rect(text);
+    let caret = editor.caret.min(editor.units.len());
+    let start = editor.first_visible_unit.min(caret);
+    let prefix = editor.painted_range(start, caret);
+    let x = field.x + font.text_width(&prefix) as i32;
+    if x < field.x + field.w {
+        push_solid_rect(
+            out,
+            atlas,
+            scale.scale_rect(RectPx::new(x, field.y + 2, 2, (field.h - 4).max(1))),
+            SHELL_LABEL_TEXT_RGB,
+            depth,
+        );
+    }
+}
+
 pub(super) fn checkbox_checked(shell: &SkirmishShellState, id: SkirmishCheckboxId) -> bool {
     match id {
         SkirmishCheckboxId::ShortGame0x54e => shell.short_game,
@@ -52,9 +192,15 @@ pub(super) fn combo_face_entry(
     scale: ShellScale,
 ) -> Option<SkirmishShellChromeEntry> {
     match scale.base_rect(rect).w {
+        249 => chrome.combo_face_249,
         207 => chrome.combo_face_207,
         180 => chrome.combo_face_180,
         150 => chrome.combo_face_150,
+        151 => chrome.combo_face_151,
+        118 => chrome.combo_face_118,
+        42 => chrome.combo_face_42,
+        39 => chrome.combo_face_39,
+        213 => chrome.combo_face_213,
         117 => chrome.combo_face_117,
         44 => chrome.combo_face_44,
         38 => chrome.combo_face_38,
@@ -303,6 +449,13 @@ pub(super) enum ControlPaint {
         checked: bool,
         rect: RectPx,
     },
+    /// A checkbox in dual-state mode (message 0x4E5) or disabled: Diplomacy
+    /// 0x73's Allies and Chat boxes.
+    StatefulCheckbox {
+        face: crate::ui::shell::button::CheckboxFace,
+        disabled: bool,
+        rect: RectPx,
+    },
     /// A trackbar window with its thumb's window-relative left edge
     /// ([`crate::ui::shell::trackbar::thumb_left`]). `plaque` is off where
     /// the owner sends `0x4AC` with 0 (Options Detail/Difficulty/Scroll, BBB).
@@ -337,20 +490,18 @@ pub(super) fn paint_control(
 ) {
     match paint {
         ControlPaint::Checkbox { checked, rect } => {
-            let icon = if checked {
-                chrome.checkbox_checked_cce_i
+            let face = if checked {
+                crate::ui::shell::button::CheckboxFace::Checked
             } else {
-                chrome.checkbox_unchecked_cue_i
+                crate::ui::shell::button::CheckboxFace::Unchecked
             };
-            if let Some(entry) = icon {
-                push_entry(
-                    out,
-                    entry,
-                    checkbox_icon_rect(rect, scale),
-                    SHELL_CONTROL_DEPTH,
-                );
-            }
+            paint_checkbox_face(out, chrome, face, false, rect, scale);
         }
+        ControlPaint::StatefulCheckbox {
+            face,
+            disabled,
+            rect,
+        } => paint_checkbox_face(out, chrome, face, disabled, rect, scale),
         ControlPaint::Trackbar {
             rect,
             thumb_left,
@@ -712,70 +863,48 @@ pub(super) fn push_dropdown_instances(
     };
     let content = combo_dropdown_content_rect(shell, layout, maps, open.id).unwrap_or(dropdown);
     let needs_scrollbar = combo_dropdown_needs_scrollbar(shell, maps, open.id);
-    push_solid_rect(
-        out,
-        atlas,
-        dropdown,
-        SHELL_DROPDOWN_BG_RGB_PENDING_COMBODROPWIN_SOURCE_CAPTURE,
-        SHELL_DROPDOWN_DEPTH,
-    );
     let visible_rows = combo_dropdown_visible_row_count(shell, maps, open.id);
-    if let Some(selected_rect) =
-        dropdown_selected_row_rect(shell, maps, open.id, open.top_index, content, layout.scale)
-    {
-        push_solid_rect(
-            out,
-            atlas,
-            selected_rect,
-            OWNERDRAW_SELECTED_RGB_FROM_DAT_00AC4604_PACKED_000000FF,
-            SHELL_DROPDOWN_DEPTH - 0.00001,
-        );
-    }
-    for (idx, item) in combo_items(shell, maps, open.id)
+    let selected =
+        dropdown_selected_row_rect(shell, maps, open.id, open.top_index, content, layout.scale);
+    let swatches = combo_items(shell, maps, open.id)
         .into_iter()
         .skip(open.top_index)
         .take(visible_rows)
         .enumerate()
-    {
-        if let SkirmishComboItem::Color(color_index) = item {
-            // The row sits on the grid the item text and the pointer hit tests
-            // use; its swatch keeps the authored 2-pixel inset, grown with it.
-            let row = combo_dropdown_row_rect(content, layout.scale, idx);
-            let swatch = layout
-                .scale
-                .derive_rect(row, |row| RectPx::new(row.x + 2, row.y + 2, row.w - 4, 19));
-            push_solid_rect(
-                out,
-                atlas,
-                swatch,
-                house_color_tint(color_schemes, color_index),
-                SHELL_DROPDOWN_DEPTH - 0.00002,
-            );
-        }
-    }
-    if needs_scrollbar
-        && let (Some(scrollbar), Some(thumb)) = (
-            combo_dropdown_scrollbar_rect(shell, layout, maps, open.id),
-            combo_dropdown_scroll_thumb_rect(shell, layout, maps, open.id),
-        )
-    {
-        let pressed_part = shell
-            .dropdown_scroll_press
-            .filter(|pressed| pressed.id == open.id)
-            .map(|pressed| pressed.part);
-        let chrome = atlas.control_chrome();
-        paint_control(
-            out,
-            &chrome,
-            ControlPaint::ScrollBar {
-                scrollbar,
-                thumb,
-                pressed_part,
-            },
-            layout.scale,
-        );
-    }
-    push_ownerdraw_two_pixel_bevel_frame(out, atlas, dropdown, SHELL_DROPDOWN_DEPTH - 0.00003);
+        .filter_map(|(index, item)| {
+            let SkirmishComboItem::Color(color) = item else {
+                return None;
+            };
+            let row = combo_dropdown_row_rect(content, layout.scale, index);
+            Some((
+                layout
+                    .scale
+                    .derive_rect(row, |row| RectPx::new(row.x + 2, row.y + 2, row.w - 4, 19)),
+                house_color_tint(color_schemes, color),
+            ))
+        });
+    let scrollbar = needs_scrollbar
+        .then(|| {
+            combo_dropdown_scrollbar_rect(shell, layout, maps, open.id).zip(
+                combo_dropdown_scroll_thumb_rect(shell, layout, maps, open.id),
+            )
+        })
+        .flatten();
+    let pressed = shell
+        .dropdown_scroll_press
+        .filter(|pressed| pressed.id == open.id)
+        .map(|pressed| pressed.part);
+    push_popup_instances(
+        out,
+        atlas,
+        dropdown,
+        selected,
+        swatches,
+        scrollbar,
+        pressed,
+        layout.scale,
+        SHELL_DROPDOWN_DEPTH - 0.00003,
+    );
 }
 
 pub(super) fn dropdown_selected_row_rect(
@@ -1033,6 +1162,65 @@ mod tests {
                     trackbar_frame_slot(plaque, rect.w, rect.h).is_some(),
                     "{rect:?} at {width}x{height}"
                 );
+            }
+        }
+    }
+
+    #[test]
+    fn lan_setup_layouts_resolve_and_paint_every_combo_face() {
+        use crate::ui::multiplayer_setup::MultiplayerSetupLayout;
+
+        let face = |width| SkirmishShellChromeEntry {
+            uv_origin: [width as f32 / 1000.0, 0.2],
+            uv_size: [0.1, 0.1],
+            pixel_size: [width as f32, 24.0],
+        };
+        let chrome = ControlChrome {
+            combo_face_151: Some(face(151)),
+            combo_face_118: Some(face(118)),
+            combo_face_42: Some(face(42)),
+            combo_face_39: Some(face(39)),
+            ..Default::default()
+        };
+        use crate::ui::multiplayer_setup::{SetupDialog, SetupFlavor};
+        for dialog in [SetupFlavor::Lan, SetupFlavor::Wol]
+            .into_iter()
+            .flat_map(|flavor| [false, true].map(|host| SetupDialog { host, flavor }))
+        {
+            for (width, height, responsive) in [
+                (640, 480, false),
+                (800, 600, false),
+                (1024, 768, false),
+                (1280, 960, true),
+            ] {
+                let layout = MultiplayerSetupLayout::new(dialog, width, height, responsive);
+                for rect in layout.combos.into_iter().flatten() {
+                    let entry = combo_face_entry(&chrome, rect, layout.page.scale)
+                        .expect("every BC/BD combo window must resolve an atlas face");
+                    assert_eq!(
+                        entry.pixel_size[0] as i32,
+                        layout.page.scale.base_rect(rect).w
+                    );
+                    for disabled in [false, true] {
+                        let mut out = Vec::new();
+                        paint_control(
+                            &mut out,
+                            &chrome,
+                            ControlPaint::Combo {
+                                rect,
+                                swatch: None,
+                                open: false,
+                                disabled,
+                            },
+                            layout.page.scale,
+                        );
+                        assert_eq!(out.len(), 1, "missing BC/BD face at {rect:?}");
+                        assert_eq!(out[0].uv_origin, entry.uv_origin);
+                        let target = combo_face_rect(rect, layout.page.scale);
+                        assert_eq!(out[0].position, [target.x as f32, target.y as f32]);
+                        assert_eq!(out[0].size, [target.w as f32, target.h as f32]);
+                    }
+                }
             }
         }
     }
@@ -1430,5 +1618,151 @@ mod tests {
             !icon.contains(icon.x + icon.w, icon.y),
             "right edge (x+18) misses"
         );
+    }
+}
+
+/// Owner-draw checkbox 0x006163A0's WM_PAINT: the face PCX for its check
+/// and dual-state flags at the control's origin, then for a disabled window
+/// `AlphaBlendRect` colour 0 at the overlay alpha 0x60 (`0x0060FAB9`), which
+/// keeps `(255 - 0x60) / 256` of each channel. The tint applies that factor
+/// to the face without the RGB565 truncation (at most one unit per channel).
+fn paint_checkbox_face(
+    out: &mut Vec<SpriteInstance>,
+    chrome: &ControlChrome,
+    face: crate::ui::shell::button::CheckboxFace,
+    disabled: bool,
+    rect: RectPx,
+    scale: ShellScale,
+) {
+    use crate::ui::shell::button::CheckboxFace;
+    let entry = match face {
+        CheckboxFace::Unchecked => chrome.checkbox_unchecked_cue_i,
+        CheckboxFace::Checked => chrome.checkbox_checked_cce_i,
+        CheckboxFace::CheckedAlone => chrome.checkbox_dual_left_cce_il,
+        CheckboxFace::AnsweredAlone => chrome.checkbox_dual_right_cce_ir,
+    };
+    let Some(entry) = entry else {
+        return;
+    };
+    let icon = checkbox_icon_rect(rect, scale);
+    if disabled {
+        const DISABLED_KEEP: f32 = (255 - 0x60) as f32 / 256.0;
+        push_tinted_entry(out, entry, icon, [DISABLED_KEEP; 3], SHELL_CONTROL_DEPTH);
+    } else {
+        push_entry(out, entry, icon, SHELL_CONTROL_DEPTH);
+    }
+}
+
+pub(super) fn list_controls(
+    out: &mut Vec<SpriteInstance>,
+    atlas: &SkirmishShellChromeAtlas,
+    geometry: crate::ui::shell::list::ShellListGeometry,
+    list: &crate::ui::lan_shell::LanListState,
+    selectable: bool,
+    scale: ShellScale,
+) {
+    // Frame lines and scrollbar geometry are shared with all native lists.
+    // Their backing remains the composed parent. Its one-RGB565-unit darkening
+    // is a small presentation residual until the common atlas carries it.
+    for (line, tone) in crate::ui::shell::list::list_frame_lines(scale.base_rect(geometry.outer)) {
+        push_solid_rect(
+            out,
+            atlas,
+            scale.scale_rect(line),
+            tone.rgb().map(|c| f32::from(c) / 255.0),
+            SHELL_CONTROL_DEPTH,
+        );
+    }
+    if selectable
+        && let Some(index) = list.selected
+        && let Some(visible) = index.checked_sub(list.top_index)
+        && visible < geometry.visible_rows
+    {
+        push_solid_rect(
+            out,
+            atlas,
+            geometry.row(visible),
+            OWNERDRAW_SELECTED_RGB_FROM_DAT_00AC4604_PACKED_000000FF,
+            SHELL_CONTROL_DEPTH - 0.00001,
+        );
+    }
+    if let (Some(scrollbar), Some(thumb)) = (geometry.scrollbar, geometry.thumb) {
+        paint_control(
+            out,
+            &atlas.control_chrome(),
+            ControlPaint::ScrollBar {
+                scrollbar,
+                thumb,
+                pressed_part: list.scroll.pressed_part().map(|part| {
+                    use crate::ui::shell::list::ListScrollPart;
+                    use crate::ui::skirmish_shell::DropdownScrollbarPart;
+                    match part {
+                        ListScrollPart::Up => DropdownScrollbarPart::UpArrow,
+                        ListScrollPart::Down => DropdownScrollbarPart::DownArrow,
+                        ListScrollPart::Thumb => DropdownScrollbarPart::Thumb,
+                        ListScrollPart::Track => DropdownScrollbarPart::Track,
+                    }
+                }),
+            },
+            scale,
+        );
+    }
+}
+
+/// Shared ComboDropWin paint60E0C0: background, hot row, optional swatches,
+/// scrollbar and two bevel rings. Callers supply their control's row model.
+pub(super) fn push_popup_instances(
+    out: &mut Vec<SpriteInstance>,
+    atlas: &SkirmishShellChromeAtlas,
+    rect: RectPx,
+    selected: Option<RectPx>,
+    swatches: impl IntoIterator<Item = (RectPx, [f32; 3])>,
+    scrollbar: Option<(RectPx, RectPx)>,
+    pressed: Option<DropdownScrollbarPart>,
+    scale: ShellScale,
+    frame_depth: f32,
+) {
+    push_solid_rect(
+        out,
+        atlas,
+        rect,
+        SHELL_DROPDOWN_BG_RGB_PENDING_COMBODROPWIN_SOURCE_CAPTURE,
+        SHELL_DROPDOWN_DEPTH,
+    );
+    if let Some(row) = selected {
+        push_solid_rect(
+            out,
+            atlas,
+            row,
+            OWNERDRAW_SELECTED_RGB_FROM_DAT_00AC4604_PACKED_000000FF,
+            SHELL_DROPDOWN_DEPTH - 0.00001,
+        );
+    }
+    for (rect, rgb) in swatches {
+        push_solid_rect(out, atlas, rect, rgb, SHELL_DROPDOWN_DEPTH - 0.00002);
+    }
+    if let Some((scrollbar, thumb)) = scrollbar {
+        paint_control(
+            out,
+            &atlas.control_chrome(),
+            ControlPaint::ScrollBar {
+                scrollbar,
+                thumb,
+                pressed_part: pressed,
+            },
+            scale,
+        );
+    }
+    push_ownerdraw_two_pixel_bevel_frame(out, atlas, rect, frame_depth);
+}
+pub(super) fn dropdown_scroll_part(
+    part: crate::ui::shell::list::ListScrollPart,
+) -> DropdownScrollbarPart {
+    use crate::ui::shell::list::ListScrollPart;
+    match part {
+        ListScrollPart::Up => DropdownScrollbarPart::UpArrow,
+        ListScrollPart::Down => DropdownScrollbarPart::DownArrow,
+        ListScrollPart::Thumb => DropdownScrollbarPart::Thumb,
+        ListScrollPart::Track => DropdownScrollbarPart::Track,
     }
 }

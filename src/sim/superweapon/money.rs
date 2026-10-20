@@ -32,7 +32,7 @@ pub(super) fn can_afford(sim: &Simulation, owner: InternedId, sw: &SuperWeaponTy
     }
     sim.houses.get(&owner).is_some_and(|house| {
         sw.money_amount > 0
-            || i64::from(house.economy.available_money()) >= -i64::from(sw.money_amount)
+            || i64::from(house.economy().available_money()) >= -i64::from(sw.money_amount)
     })
 }
 

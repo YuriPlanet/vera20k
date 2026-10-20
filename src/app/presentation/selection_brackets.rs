@@ -148,13 +148,13 @@ pub(crate) fn build_selection_bracket_lines(
     let Some(rules) = state.rules() else {
         return BTreeMap::new();
     };
-    let terrain = sim.resolved_terrain.as_ref();
+    let terrain = sim.resolved_terrain();
     parents
         .into_iter()
         .filter_map(|id| sim.entities().get(id))
         .filter(|e| e.category() == EntityCategory::Structure && e.selection.is_selected())
         .filter_map(|e| {
-            let object = rules.object(sim.interner.resolve(e.type_ref()))?;
+            let object = rules.object(sim.interner().resolve(e.type_ref()))?;
             let center = object_get_coords(e, terrain);
             let color = palette[usize::from(current_fly_height(e, terrain) < -4)];
             let mut lines = building_bracket_lines(

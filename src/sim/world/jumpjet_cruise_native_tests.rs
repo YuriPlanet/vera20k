@@ -164,7 +164,8 @@ fn supplied_world(
     let mut sim = Simulation::with_seed(input["seed"].as_u64().unwrap());
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
-    sim.session.binary_frame = initial["frame"].as_u64().unwrap() as u32;
+    sim.session
+        .set_binary_frame_for_test(initial["frame"].as_u64().unwrap() as u32);
     let allocation = cell(&world["cell_allocation"]);
     super::super::lifecycle_tests::install_common_raw_terrain(
         &mut sim,
@@ -190,7 +191,7 @@ fn supplied_world(
                 .resolved_terrain
                 .as_mut()
                 .unwrap()
-                .cell_mut(x, y)
+                .cell_mut_for_test(x, y)
                 .unwrap();
             terrain.slope_type = signed(&world["default_slope"]) as u8;
             terrain.land_type = land;
@@ -209,7 +210,7 @@ fn supplied_world(
             .resolved_terrain
             .as_mut()
             .unwrap()
-            .cell_mut(at.0, at.1)
+            .cell_mut_for_test(at.0, at.1)
             .unwrap();
         terrain.land_type = land;
         terrain.speed_costs = semantics.speed_costs;
@@ -229,13 +230,12 @@ fn supplied_world(
     // The oracle's tracker allocation is an independent supplied extent;
     // Map+F4/+F8 above remains the In_Bounds authority.
     let tracker_extent = cell(&world["tracker_extent"]);
-    sim.session.map_width = tracker_extent.0;
-    sim.session.map_height = tracker_extent.1;
+    sim.session.set_map_width_for_test(tracker_extent.0);
+    sim.session.set_map_height_for_test(tracker_extent.1);
     let owner = sim.interner.intern("Americans");
     let mut house = HouseState::new(owner, 0, None, true, 0, 10);
-    house.player_control = true;
-    sim.houses.insert(owner, house);
-    sim.session.house_order = vec![owner];
+    house.set_player_control_for_test(true);
+    sim.houses.register(house);
     let id = sim
         .construct_object_limbo_at_height(
             "SHAD",
@@ -275,7 +275,7 @@ fn supplied_world(
                 let at = cell(&state["aux_cell"]);
                 NavTargetRef::cell(at.0, at.1)
             }));
-        actor.navigation.path_replay.set_directions_for_test(
+        actor.navigation.path_replay_mut().set_directions_for_test(
             state["path"]
                 .as_array()
                 .unwrap()
@@ -290,27 +290,27 @@ fn supplied_world(
         let reference = cell(&state["reference_cell"]);
         actor
             .navigation
-            .path_replay
-            .set_reference_cell(Some((reference.0 as i16, reference.1 as i16)));
+            .path_replay_mut()
+            .set_reference_cell_for_test(Some((reference.0 as i16, reference.1 as i16)));
         actor
             .navigation
-            .path_runtime
+            .path_runtime_mut()
             .set_movement_timer_for_test(native_timer(&state["movement_timer"]));
         actor
             .navigation
-            .path_runtime
+            .path_runtime_mut()
             .set_blocked_timer_for_test(native_timer(&state["blocked_timer"]));
         actor
             .navigation
-            .path_runtime
-            .set_path_blocked(state["blocked"].as_bool().unwrap());
+            .path_runtime_mut()
+            .set_path_blocked_for_test(state["blocked"].as_bool().unwrap());
         actor
             .navigation
-            .path_runtime
-            .set_retries_left(state["retries"].as_u64().unwrap() as u32);
+            .path_runtime_mut()
+            .set_retries_left_for_test(state["retries"].as_u64().unwrap() as u32);
         actor.body_facing.snap(
             signed(&state["body_facing"]["destination_word"]) as u16,
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
         );
         let runtime = actor
             .locomotor
@@ -321,7 +321,7 @@ fn supplied_world(
         let mut flight = runtime.flight();
         flight.facing_mut().snap(
             signed(&state["loco_facing"]["destination_word"]) as u16,
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
         );
         *runtime = runtime.clone().with_flight_for_test(flight);
     }
@@ -405,12 +405,12 @@ fn assert_motion_boundary(sim: &Simulation, id: u64, control: &Value, boundary: 
     };
     assert_eq!(nav_cell, state["nav_cell"], "{label}: live NavCom");
     assert_eq!(
-        timer_fields(actor.navigation.path_runtime.movement_timer()),
+        timer_fields(actor.navigation.path_runtime().movement_timer()),
         state["movement_timer"],
         "{label}: accepted movement timer",
     );
     assert_eq!(
-        timer_fields(actor.navigation.path_runtime.blocked_timer()),
+        timer_fields(actor.navigation.path_runtime().blocked_timer()),
         state["blocked_timer"],
         "{label}: accepted blocked timer",
     );
@@ -466,7 +466,7 @@ fn assert_motion_boundary(sim: &Simulation, id: u64, control: &Value, boundary: 
         signed(&state["mission_status"]) as u32,
         "{label}: Mission status"
     );
-    let path = &actor.navigation.path_replay;
+    let path = actor.navigation.path_replay();
     let backing_words: Vec<i32> = path
         .directions()
         .iter()
@@ -486,12 +486,12 @@ fn assert_motion_boundary(sim: &Simulation, id: u64, control: &Value, boundary: 
         "{label}: reference Cell"
     );
     assert_eq!(
-        actor.navigation.path_runtime.path_blocked(),
+        actor.navigation.path_runtime().path_blocked(),
         state["blocked"].as_bool().unwrap(),
         "{label}: blocked"
     );
     assert_eq!(
-        actor.navigation.path_runtime.retries_left(),
+        actor.navigation.path_runtime().retries_left(),
         state["retries"].as_u64().unwrap() as u32,
         "{label}: retries"
     );
@@ -787,7 +787,7 @@ fn execute_step(
                 .jumpjet_runtime_mut()
                 .unwrap();
             let mut flight = runtime.flight();
-            flight.set_target_height(signed(&inputs["target_height"]));
+            flight.set_target_height_for_test(signed(&inputs["target_height"]));
             *runtime = runtime
                 .clone()
                 .with_phase_for_test(signed(&inputs["phase"]))
@@ -795,7 +795,7 @@ fn execute_step(
         }
         "register_air" => sim.aircraft_tracker_add(actor),
         "state1_decision" | "state3_decision" | "state4_decision" => {
-            let frame = sim.session.binary_frame;
+            let frame = sim.session.binary_frame();
             let trig = TrigTable::embedded();
             sim.with_jumpjet_process(actor, |runtime, sim| {
                 let mut host = super::CruiseHost {
@@ -849,7 +849,8 @@ fn replay_steps(
     for step in steps {
         let before = &boundaries[step["before"].as_u64().unwrap() as usize];
         let after = &boundaries[step["after"].as_u64().unwrap() as usize];
-        sim.session.binary_frame = before["frame"].as_u64().unwrap() as u32;
+        sim.session
+            .set_binary_frame_for_test(before["frame"].as_u64().unwrap() as u32);
         assert_motion_boundary(sim, actor, control, before);
         assert_world_boundary(sim, actor, foreign, control, before);
         execute_step(sim, actor, foreign, control, step, rules, registry);
@@ -880,7 +881,8 @@ fn stock_shad_state1_scatter_publishes_before_following_translate() {
     for (index, step) in steps.iter().take(53).enumerate() {
         let before = &boundaries[step["before"].as_u64().unwrap() as usize];
         let after = &boundaries[step["after"].as_u64().unwrap() as usize];
-        sim.session.binary_frame = before["frame"].as_u64().unwrap() as u32;
+        sim.session
+            .set_binary_frame_for_test(before["frame"].as_u64().unwrap() as u32);
         assert_motion_boundary(&sim, id, control, before);
         if index == 0 {
             assert_eq!(step["label"], "cell_order");

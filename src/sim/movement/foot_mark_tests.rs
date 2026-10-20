@@ -10,7 +10,7 @@ fn actor(id: u64, category: EntityCategory, kind: LocomotorKind) -> GameEntity {
     let mut entity = GameEntity::test_default(id, "ACTOR", "Americans", 4, 4);
     entity.set_category_for_test(category);
     entity.lifecycle.set_in_limbo_for_test(false);
-    entity.lifecycle.set_cell_marked(false);
+    entity.lifecycle.set_cell_marked_for_test(false);
     entity.set_foot_occupation_enabled(true);
     entity.locomotor = Some(LocomotorState::for_test_kind(kind));
     entity.position.set_exact_z_leptons_for_test(Some(0));
@@ -37,7 +37,7 @@ fn tethered_infantry() -> Simulation {
     );
     building.set_type_ref_for_test(sim.intern("GAPILE"));
     building.lifecycle.set_in_limbo_for_test(false);
-    building.lifecycle.set_cell_marked(true);
+    building.lifecycle.set_cell_marked_for_test(true);
     sim.substrate.entities.insert(building);
     sim.substrate.occupancy.add(
         4,
@@ -128,7 +128,7 @@ fn foot_mark_refresh_is_immediate_and_does_not_reenter_techno_mark() {
         let mut sim = tethered_infantry();
         let actor = sim.substrate.entities.get_mut(1).unwrap();
         actor.lifecycle.set_in_limbo_for_test(limbo);
-        actor.lifecycle.set_cell_marked(marked);
+        actor.lifecycle.set_cell_marked_for_test(marked);
         let before = serde_json::to_value(sim.substrate.entities.get(1).unwrap()).unwrap();
         let rng_before = sim.rng_state();
         assert!(sim.mark_entity_refresh(1));
@@ -304,7 +304,7 @@ fn a_cruising_jumpjet_clears_the_deck_bit_on_remove_and_joins_nothing_on_put() {
         .get_mut(1)
         .unwrap()
         .lifecycle
-        .set_cell_marked(true);
+        .set_cell_marked_for_test(true);
     sim.substrate.raw_cell_occupation.mark_ground(4, 4, 0x20);
     sim.substrate.raw_cell_occupation.mark_deck(4, 4, 0x20);
     assert!(sim.foot_mark_remove(1, None, None, crate::sim::world::FrameEffects::default()));

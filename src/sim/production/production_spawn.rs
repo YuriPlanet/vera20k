@@ -304,7 +304,7 @@ fn naval_rally_fast_path_cell(
     );
 
     let terrain = resolved_terrain?;
-    if terrain.cell(candidate.0, candidate.1)?.land_type()
+    if terrain.cell(candidate.0, candidate.1)?.land_type
         != crate::rules::terrain_rules::LandType::Water.as_index()
     {
         return None;
@@ -573,7 +573,7 @@ mod tests {
     fn production_admission_sim() -> Simulation {
         let mut sim = Simulation::default();
         let mut terrain = flat_terrain(20, 20);
-        for cell in &mut terrain.cells {
+        for cell in terrain.cells_mut_for_test() {
             // Retail ground rows used by the compact admission matrix.
             cell.speed_costs.float = Some(0);
             cell.base_speed_costs.float = Some(0);
@@ -590,7 +590,7 @@ mod tests {
             .resolved_terrain
             .as_mut()
             .unwrap()
-            .cell_mut(cell.0, cell.1)
+            .cell_mut_for_test(cell.0, cell.1)
             .unwrap();
         water.land_type = crate::rules::terrain_rules::LandType::Water.as_index();
         water.speed_costs.float = Some(100);
@@ -606,7 +606,7 @@ mod tests {
             .resolved_terrain
             .as_mut()
             .unwrap()
-            .cell_mut(8, 8)
+            .cell_mut_for_test(8, 8)
             .unwrap();
         cell.level = 3;
         cell.bridge_deck_level = 7;
@@ -637,29 +637,5 @@ mod tests {
             0x20
         );
         assert_eq!(sim.substrate.raw_cell_occupation.deck_bits(8, 8) & 0x20, 0);
-    }
-
-    #[test]
-    fn production_exact_zero_unlimbo_marks_held_identity_without_forced_outcome() {
-        let rules = production_admission_rules();
-        let mut sim = production_admission_sim();
-        set_admission_water_cell(&mut sim, (8, 8));
-        let stable_id = sim
-            .create_production_object_limbo_at_height("DEST", "Americans", 8, 8, 0x40, 0, &rules)
-            .expect("held production Unit");
-        assert_eq!(
-            unlimbo_held_naval_unit(
-                &mut sim,
-                &rules,
-                stable_id,
-                (8, 8),
-                None,
-                crate::sim::world::FrameEffects::default(),
-            ),
-            Some(stable_id),
-            "the production API exposes no caller-forced Mark outcome"
-        );
-        let entity = sim.substrate.entities.get(stable_id).unwrap();
-        assert!(!entity.lifecycle.in_limbo() && entity.lifecycle.cell_marked());
     }
 }

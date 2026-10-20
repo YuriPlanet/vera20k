@@ -88,22 +88,22 @@ pub(super) fn record_replay_diagnostic(
         // House/Factory receipts observe shared consumers through their existing
         // owners, including private power state; they never mutate the replay.
         "engineer_house_attribution":{
-            "house_order":sim.session.house_order.iter().map(|owner|sim.resolve(*owner)).collect::<Vec<_>>(),
-            "current_house":sim.session.current_house.map(|owner|sim.resolve(owner)),
+            "house_order":sim.houses.order().iter().map(|owner|sim.resolve(*owner)).collect::<Vec<_>>(),
+            "current_house":sim.session.current_house().map(|owner|sim.resolve(owner)),
             "houses":sim.houses.iter().map(|(owner,house)|serde_json::json!({
-                "owner":sim.resolve(*owner),"stats":house.stats,"economy":house.economy,
+                "owner":sim.resolve(*owner),"stats":house.stats(),"economy":house.economy(),
                 "capture_notified":house.building_capture_notified(),
                 "discovered_by_current_house":house.discovered_by_current_house(),
-                "building_order":house.base_projection.buildings(),
-                "eva_funds_timer":house.eva_funds_timer,"eva_low_power_guard":house.eva_low_power_guard,
+                "building_order":house.base_projection().buildings(),
+                "eva_funds_timer":house.eva_funds_timer(),"eva_low_power_guard":house.eva_low_power_guard(),
                 "repair_delay_bits":house.repair_delay().to_bits(),
-                "repair_start_latch":house.repair_start_latch,"repair_latch_timer":house.repair_latch_timer,
+                "repair_start_latch":house.repair_start_latch(),"repair_latch_timer":house.repair_latch_timer(),
             })).collect::<Vec<_>>(),
             "power_states":sim.power_states.iter().map(|(owner,state)|serde_json::json!({
                 "owner":sim.resolve(*owner),"state":state,
             })).collect::<Vec<_>>(),
-            "factory_count":sim.production.factories.len(),
-            "factories":sim.production.factories.holders_insertion_ordered().into_iter()
+            "factory_count":sim.production.factories().len(),
+            "factories":sim.production.factories().holders_insertion_ordered().into_iter()
                 .map(|(holder,factory)|serde_json::json!({"holder":holder,"factory":factory})).collect::<Vec<_>>(),
         },
         // Only the global fixture kills a Unit. Preserve the shared cleanup
@@ -120,7 +120,7 @@ pub(super) fn record_replay_diagnostic(
     serde_json::to_writer(
         &mut *writer,
         &serde_json::json!({
-            "next_frame":sim.session.binary_frame,
+            "next_frame":sim.session.binary_frame(),
             "tick_result":result.map(|r| serde_json::json!({"tick":r.tick,
                 "committed":r.frame_committed,"executed_commands":r.executed_commands,
                 "state_hash":r.state_hash,"terminal_score_finalized":r.terminal_score_finalized})),
@@ -136,14 +136,14 @@ pub(super) fn record_replay_diagnostic(
             "alternate_sight_admissions":sim.fog.alternate_sight_admissions_for_test().iter().map(|(&(id,viewer),source)|
                 serde_json::json!({"id":id,"viewer":sim.resolve(viewer),"source":source})
             ).collect::<Vec<_>>(),
-            "fog_owners":sim.fog.by_owner.iter().map(|(owner,view)| {
+            "fog_owners":sim.fog.by_owner().iter().map(|(owner,view)| {
                 let mut hash = crate::sim::state_hasher::StateHasher::new();
                 view.hash_cells(&mut hash);
                 serde_json::json!({"owner":sim.resolve(*owner),"digest":std::hash::Hasher::finish(&hash)})
             }).collect::<Vec<_>>(),
             "default_fog_owner_digest":({
                 let mut hash = crate::sim::state_hasher::StateHasher::new();
-                crate::sim::vision::OwnerVisibility::new(sim.fog.width,sim.fog.height).hash_cells(&mut hash);
+                crate::sim::vision::OwnerVisibility::new(sim.fog.width(),sim.fog.height()).hash_cells(&mut hash);
                 std::hash::Hasher::finish(&hash)
             }),
         }),
@@ -174,7 +174,7 @@ pub(super) fn print_replay_summary(name: &str, sim: &Simulation) {
     println!(
         "[replay observation {name}] {}",
         serde_json::json!({
-            "next_frame":sim.session.binary_frame,"hash":sim.state_hash(),
+            "next_frame":sim.session.binary_frame(),"hash":sim.state_hash(),
             "streams":[sim.scenario_rng.state(),sim.main_rng.state(),sim.mapgen_rng.state()],
             "actors":actors,"fire_count":sim.fire_events.len(),
             "hash_owners":sim.hash_owner_diagnostics_for_test(),
@@ -531,13 +531,15 @@ const FINAL_STREAM_STATES: (u64, u64, u64) = (
 // destination is now Unit 0x00741970, which returns before any write without a
 // NavCom (0x00741A80). Tank 4 is at rest and attacking with no NavCom at the
 // tick-300 Stop, still holding a Foot speed fraction of about 0.73. The old
-// body's Drive Stop zeroed it (navcom.rs `drive_stop_moving`, itself a
-// stand-in for the unported Drive rest tail 0x4B0828), so the old tick-320
-// retreat order (to 8,8) now departs faster, leaves tank 6's fire, and the
-// duel never resolved. RESIDUAL: the native departure speed after an at-rest
-// stop is not established until 0x4B0828 is ported. The order now moves tank 4
-// one cell toward tank 6, and tank 4 still dies inside the run. Main/MapGen
-// are unchanged. Previous: 0x8976_4F17_0FCF_A3FB.
+// body's Drive Stop zeroed it. Retaining the speed made the former tick-320
+// retreat route (to 8,8) faster, taking tank 4 out of tank 6's fire. The order
+// now moves tank 4 one cell
+// toward tank 6, and tank 4 still dies inside the run. Drive Stop4AFE00 now
+// retains speed; only the admitted Process4B0828 tail clears it after both
+// class coordinates and the path queue empty. Consumed original Stop/rest/
+// departure controls live in tools/spatial_oracle/track_rest_speed.json.
+// This global pin is a Rust regression, not native whole-scenario parity.
+// Main/MapGen are unchanged. Previous: 0x8976_4F17_0FCF_A3FB.
 // 2026-10-02 Building body has one retained owner (hash composition):
 // same-binary control restores only the former two absent Up/Down
 // folds and reproduces the preceding pin. All819 control/current
@@ -814,7 +816,7 @@ fn seed_scenario(sim: &mut Simulation, rules: &RuleSet, overlays: &OverlayTypeRe
     // join no house order, so no house AI runs.
     for (owner, side) in [("Americans", 0), ("Soviet", 1)] {
         let id = sim.interner.intern(owner);
-        sim.houses.entry(id).or_insert_with(|| {
+        sim.houses.get_or_register_for_test(id, || {
             crate::sim::house_state::HouseState::new(id, side, None, false, 0, 10)
         });
     }
@@ -941,7 +943,7 @@ fn cross_house_move_executes_and_replays_without_changing_actor_owner() {
     );
     let mut replay = ReplayLog::new(ReplayHeader {
         version: 1,
-        pixel_conversion_bounds: recorded.session.pixel_conversion_bounds,
+        pixel_conversion_bounds: recorded.session.pixel_conversion_bounds(),
         tick_hz: 15,
         seed: HARNESS_SEED,
         map_name: "cross_house_move".into(),
@@ -1013,7 +1015,7 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
     record_replay_diagnostic(&mut diagnostic, &rec, None, &[], &seed_draws);
     let mut log = ReplayLog::new(ReplayHeader {
         version: 1,
-        pixel_conversion_bounds: rec.session.pixel_conversion_bounds,
+        pixel_conversion_bounds: rec.session.pixel_conversion_bounds(),
         tick_hz: 15,
         seed: HARNESS_SEED,
         map_name: "global_parity_harness".to_string(),
@@ -1286,7 +1288,7 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
     assert!(
         rep.power_states
             .values()
-            .all(|s| !s.has_drained_power_source)
+            .all(|s| !s.has_drained_power_source())
     );
     assert!(
         rep.substrate
@@ -1324,7 +1326,7 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
     );
     let building_owner = rep.interner.get("Americans").expect("building owner");
     assert!(
-        rep.session.house_order.is_empty(),
+        rep.houses.order().is_empty(),
         "this fixture runs no House AI"
     );
     assert!(
@@ -1346,166 +1348,6 @@ fn global_skirmish_replay_is_deterministic_and_baseline_stable() {
 }
 
 const DENSE_SEED: u64 = 0x00BA771E5EED;
-const DENSE_TICKS: u64 = 300;
-const DENSE_ROWS: u16 = 10;
-
-/// S2 churn — DENSE arrival case: two facing tank columns (10 Allied vs 10 Soviet) both
-/// ordered to converge on the same centre column, so a whole column reaches its
-/// destination on the same tick and flips Move→Sleep together. Each Move is issued under
-/// ITS OWN owner — the thin generic harness silently rejected one side's move as
-/// non-owned, leaving only one real mover. This measures the *simultaneous* per-tick
-/// churn the S2 authority flip must survive (a single-mover scenario understates it).
-///
-/// Scope note: this fixture was built to exercise movement/arrival churn only, and
-/// for most of its life the tanks converged without engaging. That is no longer
-/// true. Each tank is ordered under its own owner, arrives, and is then
-/// ordered-then-idle. The fixture now includes target acquisition and combat;
-/// its original finished-mission workaround has since been removed. The
-/// position fingerprint below therefore covers engagement churn as well as
-/// arrival churn.
-/// Shared construction for the dense converging-battle fixture (20 tanks, two
-/// facing columns converging on x=25; per-owner Move script due on tick 2).
-/// Used by the churn measurement and the S2 position fingerprint below.
-#[allow(clippy::type_complexity)]
-fn dense_converging_setup() -> (
-    Simulation,
-    RuleSet,
-    PathGrid,
-    Vec<(u64, crate::sim::intern::InternedId, Command)>,
-) {
-    let rules = harness_rules();
-    let mut sim = Simulation::with_seed(DENSE_SEED);
-    crate::sim::arena_fixture::supply_native_map(&mut sim);
-    let grid = (*sim.path_grid_snapshot().unwrap()).clone();
-    let mut roster: Vec<MapEntity> = Vec::new();
-    for i in 0..DENSE_ROWS {
-        roster.push(unit("Americans", "MTNK", 10, 5 + i, EntityCategory::Unit));
-        // ids 1..=10
-    }
-    for i in 0..DENSE_ROWS {
-        roster.push(unit("Soviet", "MTNK", 40, 5 + i, EntityCategory::Unit)); // ids 11..=20
-    }
-    sim.spawn_from_map(&roster, Some(&rules));
-
-    // Both columns converge on x=25, same row — they close together and arrive/stall
-    // in formation. Each Move is under its OWN owner (the thin generic harness rejected
-    // one side's move as non-owned, leaving a single real mover). Measures the
-    // synchronized-arrival churn (a whole column flipping Move→Sleep on one tick).
-    let allied = sim.interner.get("Americans").expect("Americans interned");
-    let soviet = sim.interner.get("Soviet").expect("Soviet interned");
-    let mut script: Vec<(u64, crate::sim::intern::InternedId, Command)> = Vec::new();
-    for i in 0..DENSE_ROWS as u64 {
-        let y = 5 + i as u16;
-        script.push((
-            2,
-            allied,
-            Command::Move {
-                entity_id: 1 + i,
-                target_rx: 25,
-                target_ry: y,
-            },
-        ));
-        script.push((
-            2,
-            soviet,
-            Command::Move {
-                entity_id: 11 + i,
-                target_rx: 25,
-                target_ry: y,
-            },
-        ));
-    }
-    (sim, rules, grid, script)
-}
-
-/// S2 movement-neutrality tripwire: per-tick position fingerprint of the dense
-/// converging scenario, captured PRE-flip (T2). The S2 dispatch flip changes
-/// only `mission.current`/`tick_counter` write points — if this fingerprint
-/// shifts, the flip moved someone: that is a bug, never a re-baseline.
-/// Re-baselined ONCE after the flip validation closed, for the tube-gate fix:
-/// off-tube non-adjacent path steps (sharp-turn fallback bumps) are no longer
-/// killed on their issue tick, so movers that previously froze now drive —
-/// an intended movement-behavior change, not dispatch-order drift.
-/// Re-baselined for the Phase-0 native Main_Tick order: EventClass commands
-/// now dispatch at the tail, after the live object/movement walk, so a move
-/// accepted on frame N first advances its object on frame N+1.
-/// Re-baselined 2026-08-02 for the GSI-04.12 bridge-marker slice (c0b688a6),
-/// which moves positions on purpose: `FootPathQueue::reference_cell` advances
-/// the path-reference cell when Drive accepts a direction, before the curve
-/// physically crosses into the destination cell, and ship locomotion split out
-/// of Drive. Hash composition is not involved — this fingerprint folds entity
-/// positions directly, and its value was byte-identical with the pre-branch
-/// hash schema swapped in.
-/// Re-baselined 2026-08-02 for passive/opportunity target acquisition, and this
-/// is the fixture where it finally bites. All twenty tanks get a plain Move
-/// under their OWN owner, so each one commits the Move selector, arrives, and
-/// then has nothing left running — no destination, no navigation goal, no
-/// standing order. Those are exactly the objects the finished-mission bridge
-/// releases back to Guard, so they now acquire each other on arrival and open
-/// fire instead of sitting nose to nose. Positions move because units die.
-///
-/// It is worth recording why the sibling global-harness constants did NOT move
-/// with it, since that looked wrong until it was instrumented: nothing in that
-/// fixture is ordered-then-idle. Its Allied MTNK sits on the AttackMove
-/// selector, which the gate does not admit, for the whole run; its other three
-/// combatants sit on the `NONE` selector and were already scanning before this
-/// change. The per-tick observations, and the one cause left UNCHECKED, are
-/// recorded in this file's Git history.
-/// Re-baselined 2026-08-04 with FINAL_STREAM_STATES for the same
-/// constructed-`Rate` change; see the provenance note there.
-/// Re-baselined 2026-08-05 for the Drive cell-admission gate. A curve is now
-/// refused when the cell it would step into is refused by *either* arm of
-/// gamemd's cell-entry predicate — a body in the cell's object list, or another
-/// vehicle's occupation mark — where before the runtime consulted neither at
-/// selection time. This fixture is twenty tanks converging on one column, so
-/// movers that previously drove through each other now wait, scatter and
-/// repath; positions move on purpose.
-///
-/// WITHDRAWN: an earlier revision of this note cited `FINAL_STREAM_STATES` to
-/// certify that "no RNG draw moved and no stream was misrouted" for THIS
-/// fixture. That claim is wrong on two axes and is retracted. First, the pin
-/// lives in a different test — `s2_dense_scenario_position_fingerprint_stable`
-/// pins no stream at all, so this twenty-tank convergence has ZERO RNG
-/// observation of its own. Second, `SimRng::next_u32` advances as a pure
-/// function of its own state, so even where the pin does apply an unchanged
-/// final state proves only that the DRAW COUNT on that stream is unchanged; it
-/// says nothing about which tick or which consumer took them.
-///
-/// ATTRIBUTION, MEASURED. This fixture folds only entity ids and positions, so
-/// it carries no hash-schema component at all — and that is confirmed rather
-/// than assumed. With `occupation_handoff` still on the struct but every
-/// behaviour writer neutralised (the experiment written out at
-/// `GLOBAL_HARNESS_PRE_LIFECYCLE_V28_HASH` in this file at 148327c3), this
-/// fixture returns to exactly its previous committed value
-/// `0x0FC6_3769_AADD_1F8A`. So its shift is 100% behaviour and 0% schema —
-/// the mirror image of the global harness above.
-///
-/// What is still NOT separated: the individual contribution of the object-list
-/// arm, the mask arm and the handoff mark, which landed together and were
-/// neutralised together. UNVERIFIED.
-/// Re-baselined 2026-09-08 for residual cell normalization. A parent (588f4079)
-/// comparison of all 6000 tick/entity rows found five isolated world-XY pulses
-/// (80 rows, maximum 23 leptons), all equal again on the next tick. The old delayed
-/// paid-crossing return skipped that frame's remaining budget/interpolation;
-/// the already-normalized cell now takes the native same-cell loop/tail
-/// (4B1F56 / 4B22D9). Paths, missions, speeds and membership stayed equal;
-/// final entity states differ only in exact Z. This is an intentional movement
-/// correction, not a hash-fold change or full locomotor parity claim. The
-/// existing early return on an actual paid crossing remains a separate limit.
-/// See RAMP_UNIT_HEIGHT_GHIDRA_REPORT.md, Rust replay provenance.
-// 2026-09-13: unpaid fresh budget0 retains current XY instead of eagerly
-// publishing point0. First native-adjudicated divergence is tick2 (128 vs139);
-// see docs/research/TRACK_PROCESS_REPLAY_REGRESSION_NOTES.md.
-// 2026-09-20: destination commands no longer turn/admit ahead of fresh Process.
-// All6000 rows were compared with passing bd5928e6: east column unchanged;
-// west column exactly one tick later. Native4B3408 calls Do_Turn then returns
-// before admission evenROT0. Independent review accepted this Rust regression
-// re-pin; it is not a native whole-scenario golden. Same-frame facing repair
-// changed no XY. See TRACK_PROCESS_REPLAY_REGRESSION_NOTES.md for scope/evidence.
-// 2026-09-23: same-call track-end continuation. First divergence from main is
-// tick 30, where the column's first track ends continue into their next
-// tracks in that Process; both RNG streams match main over the 300 ticks.
-const POSITION_FINGERPRINT: u64 = 0x828D_9C15_C129_26CE;
 
 #[test]
 fn fresh_drive_turn_publishes_on_request_frame_and_restores_before_admission() {
@@ -1556,7 +1398,7 @@ fn fresh_drive_turn_publishes_on_request_frame_and_restores_before_admission() {
         let entity = sim.substrate.entities.get(1).unwrap();
         let call = &native["calls"][0];
         assert_eq!(
-            u64::from(entity.body_facing_byte(sim.session.binary_frame - 1)),
+            u64::from(entity.body_facing_byte(sim.session.binary_frame() - 1)),
             call["sampled_after"].as_u64().unwrap() >> 8,
             "ROT={rot}: same-frame native sample"
         );
@@ -1574,7 +1416,7 @@ fn fresh_drive_turn_publishes_on_request_frame_and_restores_before_admission() {
         assert!(drive.head_to().is_none());
         if rot > 0 {
             assert_eq!(
-                u64::from(entity.body_facing.current(sim.session.binary_frame - 1)),
+                u64::from(entity.body_facing.current(sim.session.binary_frame() - 1)),
                 call["sampled_after"].as_u64().unwrap(),
                 "full16-bit native sample, before the next binary frame"
             );
@@ -1640,34 +1482,4 @@ fn fresh_drive_turn_publishes_on_request_frame_and_restores_before_admission() {
             }
         }
     }
-}
-
-#[test]
-fn s2_dense_scenario_position_fingerprint_stable() {
-    use std::hash::{Hash, Hasher};
-    let (mut sim, rules, grid, script) = dense_converging_setup();
-    let mut h = std::collections::hash_map::DefaultHasher::new();
-    for tick in 0..DENSE_TICKS {
-        let due: Vec<CommandEnvelope> = script
-            .iter()
-            .filter(|(t, _, _)| *t == tick + 1)
-            .map(|(t, owner, c)| CommandEnvelope::new(*owner, *t, c.clone()))
-            .collect();
-        let _ = sim.advance_tick(&due, Some(&rules), Some(&grid), None, HARNESS_TICK_MS);
-        for (id, e) in sim.substrate.entities.iter_sorted() {
-            (
-                id,
-                e.position.rx(),
-                e.position.ry(),
-                e.position.sub_x(),
-                e.position.sub_y(),
-            )
-                .hash(&mut h);
-        }
-    }
-    assert_eq!(
-        h.finish(),
-        POSITION_FINGERPRINT,
-        "committed per-tick position sequence changed; attribute the first divergence before updating"
-    );
 }

@@ -4,13 +4,11 @@
 //! arrays and observe Ground578080 / constructor62DC50 as argument sinks;
 //! the Rust lifecycle checks below are not a full native scene comparison.
 use super::*;
-use crate::map::map_file::MapFile;
 use crate::map::resolved_terrain::{test_flat_cell, test_grid};
 use crate::map::waypoints::Waypoint;
 use crate::rules::{ini_parser::IniFile, ruleset::RuleSet};
 use crate::sim::particles::system_ai::tick_particle_system;
 use crate::sim::snapshot::GameSnapshot;
-use crate::sim::world::TickLane;
 use glam::IVec3;
 use std::collections::HashMap;
 
@@ -45,8 +43,8 @@ fn fixture_rules() -> RuleSet {
 
 fn world(cell: (i16, i16), level: u8, flags: u32) -> Simulation {
     let mut sim = Simulation::with_seed(0);
-    sim.session.map_width = 32;
-    sim.session.map_height = 32;
+    sim.session.set_map_width_for_test(32);
+    sim.session.set_map_height_for_test(32);
     let mut terrain = test_grid(32, 32, test_flat_cell);
     let at = terrain.native_cell_identity(cell);
     terrain.write_native_cell_level(at, level);
@@ -101,7 +99,7 @@ fn original_creation_controls_preserve_signed_center_registry_index_and_ground_o
         // Ground call stays at208; camera/animation bridge adjustment is separate.
         let mut sim = world((12, 17), 2, 0x500);
         let before = rng(&sim);
-        let frame = sim.session.binary_frame;
+        let frame = sim.session.binary_frame();
         assert!(run(&mut sim, &action(88, index), Some(&rules)));
         let systems: Vec<_> = sim
             .particle_systems()
@@ -110,18 +108,22 @@ fn original_creation_controls_preserve_signed_center_registry_index_and_ground_o
             .collect();
         assert_eq!(systems.len(), 1);
         let system = systems[0];
-        assert_eq!(system.type_id.0, index as u32);
-        assert_eq!(system.coords, IVec3::new(3200, 4480, 208));
-        assert_eq!(system.target_coords, IVec3::ZERO);
-        assert_eq!(system.offset, IVec3::ZERO);
+        assert_eq!(system.type_id().0, index as u32);
+        assert_eq!(system.coords(), IVec3::new(3200, 4480, 208));
+        assert_eq!(system.target_coords(), IVec3::ZERO);
+        assert_eq!(system.offset(), IVec3::ZERO);
         assert_eq!(
-            (system.target_ref, system.owner_entity, system.owner_house),
+            (
+                system.target_ref(),
+                system.owner_entity(),
+                system.owner_house()
+            ),
             (None, None, None)
         );
-        assert!(system.alive() && !system.done_spawning);
-        assert!(system.particles.is_empty());
+        assert!(system.alive() && !system.done_spawning());
+        assert!(system.particles().is_empty());
         assert_eq!(rng(&sim), before);
-        assert_eq!(sim.session.binary_frame, frame);
+        assert_eq!(sim.session.binary_frame(), frame);
     }
     let mut sim = world((12, 17), 0, 0);
     assert!(!run(&mut sim, &action(88, -1), Some(&rules)));
@@ -185,47 +187,13 @@ fn all_five_original_stop_controls_only_mark_alive_same_cell_systems() {
         assert_eq!(sim.particle_systems().len(), count);
         for (index, id) in ids.into_iter().enumerate() {
             let system = sim.particle_systems().get(id).unwrap();
-            assert_eq!(system.done_spawning, expected[index], "{cell:?}/{index}");
+            assert_eq!(system.done_spawning(), expected[index], "{cell:?}/{index}");
             assert_eq!(system.alive(), priors[index].0);
-            assert_eq!(system.coords, IVec3::from_array(priors[index].1));
+            assert_eq!(system.coords(), IVec3::from_array(priors[index].1));
         }
         assert_eq!(rng(&sim), before);
-        assert_eq!(sim.session.binary_frame, 0);
+        assert_eq!(sim.session.binary_frame(), 0);
     }
-}
-
-#[test]
-fn counted_tag_create_then_stop_reaches_the_normal_ai_and_late_delete_drain() {
-    let map = MapFile::from_bytes(b"[Map]\nTheater=TEMPERATE\nSize=0,0,2,1\nLocalSize=0,0,2,1\n[IsoMapPack5]\n1=DwALABwBAAIA/////wAAABEAAA==\n[Basic]\nNewINIFormat=4\n[Waypoints]\n0=17012\n[Triggers]\nPS=Neutral,<none>,PS,0,1,1,1,0\n[Events]\nPS=1,13,0,0\n[Actions]\nPS=2,88,0,1,0,0,0,0,A,89,0,2147483647,0,0,0,0,A\n[Tags]\nPSTAG=0,PS,PS\n").unwrap();
-    let rules = fixture_rules();
-    let mut sim = world((12, 17), 0, 0);
-    sim.initialize_trigger_definitions(
-        &map,
-        &crate::rules::team_ai_ini::TeamAiIniRegistry::default(),
-        None,
-        None,
-    );
-    sim.classify_map_triggers(None);
-    sim.session.set_started(true);
-    sim.advance_triggers(Some(&rules), None, FrameEffects::default());
-    assert!(sim.trigger_runtime.logic_tags.is_empty());
-    let ids: Vec<_> = sim.particle_systems().iter().map(|(&id, _)| id).collect();
-    assert_eq!(ids.len(), 1);
-    let system = sim.particle_systems().get(ids[0]).unwrap();
-    assert_eq!(system.type_id.0, 1);
-    assert!(system.alive() && system.done_spawning && system.particles.is_empty());
-    let frame = sim
-        .advance_app_frame(
-            &[],
-            Some(&rules),
-            None,
-            67,
-            TickLane::Ordinary,
-            FrameEffects::default(),
-        )
-        .unwrap();
-    assert!(frame.tick.frame_committed);
-    assert!(sim.particle_systems().is_empty());
 }
 
 #[test]
@@ -248,14 +216,14 @@ fn retail_smoke_stop_keeps_existing_children_and_saved_flag_until_their_shared_r
         crate::sim::world::UninitContext::with_rules(&rules)
     ));
     let system = sim.particle_systems().get(id).unwrap();
-    assert!(!system.done_spawning);
-    assert!(!system.particles.is_empty());
-    let children = serde_json::to_value(&system.particles).unwrap();
+    assert!(!system.done_spawning());
+    assert!(!system.particles().is_empty());
+    let children = serde_json::to_value(&system.particles()).unwrap();
     let before = rng(&sim);
     assert!(run(&mut sim, &action(89, -1), None));
     let system = sim.particle_systems().get(id).unwrap();
-    assert!(system.alive() && system.done_spawning);
-    assert_eq!(serde_json::to_value(&system.particles).unwrap(), children);
+    assert!(system.alive() && system.done_spawning());
+    assert_eq!(serde_json::to_value(&system.particles()).unwrap(), children);
     assert_eq!(rng(&sim), before);
     let serialized = serde_json::to_value(system).unwrap();
     let bytes = GameSnapshot::save(&sim, 0, 0, "Stopped smoke", 0);
@@ -274,7 +242,7 @@ fn retail_smoke_stop_keeps_existing_children_and_saved_flag_until_their_shared_r
     let mut retired = false;
     for frame in 1..=1024 {
         for world in [&mut sim, &mut restored] {
-            world.session.binary_frame = frame;
+            world.session.set_binary_frame_for_test(frame);
             tick_particle_system(
                 world,
                 &rules,

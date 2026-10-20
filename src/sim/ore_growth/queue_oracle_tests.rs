@@ -316,9 +316,9 @@ pub(crate) fn supplied_fixture(row: &Value) -> SuppliedFixture {
         prepare_native_dummy(&terrain);
         for y in 0..33 {
             for x in 0..33 {
-                terrain.cell_mut(x, y).unwrap().outside_playfield =
+                terrain.cell_mut_for_test(x, y).unwrap().outside_playfield =
                     !shape.admits(x as i16, y as i16);
-                terrain.cell_mut(x, y).unwrap().allows_tiberium =
+                terrain.cell_mut_for_test(x, y).unwrap().allows_tiberium =
                     input["tile_allows_tiberium"].as_bool().unwrap_or(true);
             }
         }
@@ -343,15 +343,18 @@ pub(crate) fn supplied_fixture(row: &Value) -> SuppliedFixture {
             c["density"].as_u64().unwrap() as u8,
         );
         if let Some(raw) = c["overlay"].as_i64() {
-            grid.cell_mut(cell.0, cell.1).overlay_id = u8::try_from(raw).ok();
+            grid.cell_mut_for_test(cell.0, cell.1).overlay_id = u8::try_from(raw).ok();
         }
         if natural {
             grid.recalculate_runtime_cell(&mut terrain, &registry, cell);
         }
         if let Some(land) = c["land"].as_u64() {
-            terrain.cell_mut(cell.0, cell.1).unwrap().land_type = land as u8;
+            terrain.cell_mut_for_test(cell.0, cell.1).unwrap().land_type = land as u8;
         }
-        terrain.cell_mut(cell.0, cell.1).unwrap().slope_type = c["slope"].as_u64().unwrap() as u8;
+        terrain
+            .cell_mut_for_test(cell.0, cell.1)
+            .unwrap()
+            .slope_type = c["slope"].as_u64().unwrap() as u8;
         if c["occupied"] == true {
             occupancy.add(
                 cell.0,
@@ -401,14 +404,19 @@ pub(crate) fn supplied_fixture(row: &Value) -> SuppliedFixture {
         match blocked[2].as_str().unwrap() {
             "overlay" => grid.place_overlay(cell.0, cell.1, 7, 0),
             "land" => {
-                let c = terrain.cell_mut(cell.0, cell.1).unwrap();
+                let c = terrain.cell_mut_for_test(cell.0, cell.1).unwrap();
                 c.land_type = 1;
                 c.base_build_blocked = true;
             }
-            "slope" => terrain.cell_mut(cell.0, cell.1).unwrap().slope_type = 1,
+            "slope" => {
+                terrain
+                    .cell_mut_for_test(cell.0, cell.1)
+                    .unwrap()
+                    .slope_type = 1
+            }
             "bridge" => {
                 terrain
-                    .cell_mut(cell.0, cell.1)
+                    .cell_mut_for_test(cell.0, cell.1)
                     .unwrap()
                     .bridge_facts
                     .raw_flags = 0x100
@@ -585,9 +593,7 @@ fn compare_case(row: &Value) {
                         rng: Some(&mut rng),
                         binary_frame: frame,
                         spread_enabled: input["spreads"] == true,
-                        radar_dirty_cells: None,
-                        radar_dirty_generation: None,
-                        tactical_dirty_cells: None,
+                        dirty_cells: None,
                     },
                     cell,
                     input["amount"].as_i64().unwrap_or(1) as i32,
@@ -612,8 +618,6 @@ fn compare_case(row: &Value) {
                     input["grows"] == true,
                     input["spreads"] == true,
                     None,
-                    None,
-                    None,
                 );
             }
             "spread_processor" => {
@@ -628,8 +632,6 @@ fn compare_case(row: &Value) {
                     &mut rng,
                     frame,
                     input["spreads"] == true,
-                    None,
-                    None,
                     None,
                 );
                 constructed.extend(result.into_overlay_constructions());
@@ -649,8 +651,6 @@ fn compare_case(row: &Value) {
                         input["spreads"] == true,
                         input["fast_growth"] == true,
                         None,
-                        None,
-                        None,
                     );
                 }
                 let result = state.tick_native_spread_driver(
@@ -664,8 +664,6 @@ fn compare_case(row: &Value) {
                     frame,
                     input["grows"] == true,
                     input["spreads"] == true,
-                    None,
-                    None,
                     None,
                 );
                 constructed.extend(result.into_overlay_constructions());
@@ -935,7 +933,7 @@ fn compare_authored_natural_phases(
     let hash = sim.state_hash();
     let rules = &scene.runtime.resources.rules;
     let registry = &scene.runtime.resources.overlay_registry;
-    let mut state = sim.production.ore_growth_state.clone();
+    let mut state = sim.ore_growth_state.clone();
     let mut grid = sim.overlay_grid.as_ref().unwrap().clone();
     let mut terrain = sim.resolved_terrain.as_ref().unwrap().clone();
     terrain.bind_shared_cell_dummy(terrain.shared_cell_dummy().fork_query_identity());
@@ -945,13 +943,13 @@ fn compare_authored_natural_phases(
         &sim.substrate.raw_cell_occupation,
         rules,
         &sim.interner,
-        &sim.production.terrain_object_cells,
+        sim.terrain_objects.cell_index(),
     );
     let seed = native["inputs"]["seed"].as_u64().unwrap();
     let mut rng = SimRng::new(seed);
     let main = MainRng::new(seed);
     let mapgen = SimRng::new(seed);
-    let config = &sim.production.ore_growth_config;
+    let config = &sim.ore_growth_config;
     assert_eq!(
         config.grows,
         native["inputs"]["session"]["basic_growth_enabled"]
@@ -1007,7 +1005,7 @@ fn compare_authored_natural_phases(
                 registry,
                 &rules.tiberium_types,
                 Some(&terrain),
-                &sim.production.tiberium_spawning_terrain_cells,
+                sim.terrain_objects.spawning_cells(),
                 Some(objects),
                 &mut rng,
                 frame,
@@ -1015,22 +1013,18 @@ fn compare_authored_natural_phases(
                 config.spreads,
                 config.tiberium_grows_flag,
                 None,
-                None,
-                None,
             );
             let spread = state.tick_native_spread_driver(
                 &mut grid,
                 registry,
                 &rules.tiberium_types,
                 Some(&terrain),
-                &sim.production.tiberium_spawning_terrain_cells,
+                sim.terrain_objects.spawning_cells(),
                 Some(objects),
                 &mut rng,
                 frame,
                 config.grows,
                 config.spreads,
-                None,
-                None,
                 None,
             );
             (growth, spread)
@@ -1174,7 +1168,7 @@ fn retail_authored_first_ore_frame_publishes_cells_and_retires_transient_overlay
     )
     .unwrap();
     let witnesses = [(71, 24), (72, 24), (73, 24), (71, 25), (71, 26)];
-    let initial_frame = scene.sim().session.binary_frame;
+    let initial_frame = scene.sim().session.binary_frame();
     assert_eq!(initial_frame, 0);
     let rules = &scene.runtime.resources.rules;
     assert_eq!(
@@ -1225,11 +1219,11 @@ fn retail_authored_first_ore_frame_publishes_cells_and_retires_transient_overlay
         );
     }
     let riparius = rules.tiberium_types.id_by_name("Riparius").unwrap();
-    assert!(scene.sim().production.ore_growth_config.grows);
-    assert!(scene.sim().production.ore_growth_config.spreads);
-    assert!(scene.sim().production.ore_growth_config.tiberium_grows_flag);
+    assert!(scene.sim().ore_growth_config.grows);
+    assert!(scene.sim().ore_growth_config.spreads);
+    assert!(scene.sim().ore_growth_config.tiberium_grows_flag);
 
-    let state = &scene.sim().production.ore_growth_state;
+    let state = &scene.sim().ore_growth_state;
     assert_eq!(
         json!([state.native_rect().0, state.native_rect().1]),
         native["native_rect"]
@@ -1246,7 +1240,7 @@ fn retail_authored_first_ore_frame_publishes_cells_and_retires_transient_overlay
         &scene.sim().substrate.raw_cell_occupation,
         rules,
         &scene.sim().interner,
-        &scene.sim().production.terrain_object_cells,
+        scene.sim().terrain_objects.cell_index(),
     );
     let occupied = objects.object_view().occupied_ground_cells().collect();
     let admission =
@@ -1367,7 +1361,7 @@ fn retail_authored_first_ore_frame_publishes_cells_and_retires_transient_overlay
             .unwrap()
     });
     assert!(output.tick.frame_committed);
-    assert_eq!(scene.sim().session.binary_frame, initial_frame + 1);
+    assert_eq!(scene.sim().session.binary_frame(), initial_frame + 1);
     assert_ne!(scene.sim().scenario_rng.native_state_hex(), rng_before);
     assert!(!draws.is_empty());
 
@@ -1416,7 +1410,13 @@ fn retail_authored_first_ore_frame_publishes_cells_and_retires_transient_overlay
                 .unwrap()
                 .resolved_cell_is_current(cell, false)
         );
-        assert!(scene.sim().tactical_dirty_cells.contains(&(rx, ry)));
+        assert!(
+            scene
+                .sim()
+                .dirty_cells
+                .tactical_for_test()
+                .contains(&(rx, ry))
+        );
         assert!(radar_cells.contains(&(rx, ry)));
         assert!(
             output.overlay_updates.iter().any(|entry| {
@@ -1431,12 +1431,7 @@ fn retail_authored_first_ore_frame_publishes_cells_and_retires_transient_overlay
         grid.pending_dirty_cells().is_empty(),
         "frame finalizer transferred the render facts"
     );
-    let class = &scene
-        .sim()
-        .production
-        .ore_growth_state
-        .native_tiberium_state()
-        .classes[riparius.0 as usize];
+    let class = &scene.sim().ore_growth_state.native_tiberium_state().classes[riparius.0 as usize];
     assert!(
         initial_growth != queue_state(&class.growth, &class.growth_bitmap)
             || initial_spread != queue_state(&class.spread, &class.spread_bitmap)

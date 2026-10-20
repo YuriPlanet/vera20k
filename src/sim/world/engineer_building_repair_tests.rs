@@ -207,14 +207,17 @@ impl Fixture {
                 sim.interner.intern("Second")
             };
             sim.houses
-                .insert(id, HouseState::new(id, 0, None, index == 0, 5000, 10));
-            sim.session.house_order.push(id);
+                .insert_for_test(HouseState::new(id, 0, None, index == 0, 5000, 10));
             houses.push((int(&house["pointer"]), id));
         }
-        sim.session.current_house = Some(owner);
+        sim.session.set_current_house_for_test(Some(owner));
         // The reused native fixture supplies its game mode explicitly;
         // this is a caller prior, not a retail startup-default assertion.
-        sim.session.game_mode_nonzero = int(&route["arrivals"][0]["before"]["game_mode"]) != 0;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+                int(&route["arrivals"][0]["before"]["game_mode"]) != 0,
+            ),
+        );
         if name == "allied_damaged" {
             sim.house_alliances
                 .insert("AMERICANS".into(), ["SECOND".into()].into_iter().collect());
@@ -298,7 +301,7 @@ impl Fixture {
             entity.has_been_captured.set_for_test(false);
             // The preceding fixture transfer is supplied setup, not this
             // arrival. Consume its identical idle request through the owner.
-            entity.apply_queued_building_body(0, &sim.session.game_options);
+            entity.apply_queued_building_body(0, sim.session.game_options());
         }
         if name == "enemy_selling_refusal" {
             let entity = sim.substrate.entities.get_mut(building).unwrap();
@@ -369,8 +372,8 @@ impl Fixture {
             .zip(&houses)
         {
             let house = sim.houses.get_mut(id).unwrap();
-            house.stats = MatchStatistics::from_totals_for_test(0, 0, 0, 0, 0);
-            house.economy.set_score_for_test(0);
+            house.set_stats_for_test(MatchStatistics::from_totals_for_test(0, 0, 0, 0, 0));
+            house.economy_mut().set_score_for_test(0);
             // Restore only the supplied pre-arrival House1F4 through the
             // existing persistence representation; arrival writes stay with
             // the shared discovery owner and are compared below.
@@ -378,7 +381,7 @@ impl Fixture {
             house["discovered_by_current_house"] =
                 json!(prior["first_current_viewer_discovery_1f4"] == 1);
             sim.houses
-                .insert(*id, serde_json::from_value(house).unwrap());
+                .replace_for_test(serde_json::from_value(house).unwrap());
             let mut state = serde_json::to_value(PowerState::default()).unwrap();
             state["total_output"] = prior["power"].clone();
             state["total_drain"] = prior["drain"].clone();
@@ -481,7 +484,7 @@ impl Fixture {
                 .anim(entity.building_art.anim_slots()[3].unwrap())
                 .unwrap();
             assert_eq!(
-                self.sim.resolve(anim.type_id),
+                self.sim.resolve(anim.type_id()),
                 slot["type_name"].as_str().unwrap(),
                 "{boundary}: active/damaged ART consumer"
             );
@@ -506,17 +509,17 @@ impl Fixture {
                 .map(|n| int(n) as u32)
                 .sum();
             assert_eq!(
-                house.stats.buildings_killed(),
+                house.stats().buildings_killed(),
                 kills,
                 "{boundary}: capture kills"
             );
             assert_eq!(
-                house.stats.buildings_lost(),
+                house.stats().buildings_lost(),
                 int(&expected["building_losses"]) as u32,
                 "{boundary}: capture loss"
             );
             assert_eq!(
-                house.economy.score(),
+                house.economy().score(),
                 int(&expected["score"]),
                 "{boundary}: shared score"
             );
@@ -532,20 +535,20 @@ impl Fixture {
             );
             assert_eq!(
                 house
-                    .tracking
+                    .tracking()
                     .owned_count(EntityCategory::Structure, type_ref),
                 int(&expected["owned_building_count"]),
                 "{boundary}: owned count"
             );
             assert_eq!(
                 house
-                    .tracking
+                    .tracking()
                     .active_count(EntityCategory::Structure, type_ref),
                 int(&expected["live_building_count"]),
                 "{boundary}: live count"
             );
             assert_eq!(
-                house.tracking.buildings(),
+                house.tracking().buildings(),
                 int(&expected["tracked_ordinary_buildings"]),
                 "{boundary}: tracked buildings"
             );
@@ -556,18 +559,18 @@ impl Fixture {
                 .map(|_| self.building)
                 .collect();
             assert_eq!(
-                house.base_projection.buildings(),
+                house.base_projection().buildings(),
                 list,
                 "{boundary}: ordered House building list"
             );
             let power = &self.sim.power_states[&owner];
             assert_eq!(
-                power.total_output,
+                power.total_output(),
                 int(&expected["power"]),
                 "{boundary}: cached power"
             );
             assert_eq!(
-                power.total_drain,
+                power.total_drain(),
                 int(&expected["drain"]),
                 "{boundary}: cached drain"
             );
@@ -734,7 +737,7 @@ fn original_half_threshold_and_friendly_repair_object_actions() {
     fixture
         .sim
         .houses
-        .insert(enemy, HouseState::new(enemy, 0, None, false, 5000, 10));
+        .register(HouseState::new(enemy, 0, None, false, 5000, 10));
     fixture.sim.change_owner_with_rules(
         fixture.building,
         enemy,

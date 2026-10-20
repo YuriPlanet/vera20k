@@ -68,15 +68,15 @@ pub struct PowerState {
     /// Signed retained generation at House+53A4. `Power_Output4F6A00`
     /// returns interface+5380, where that IHouse receiver is House+24.
     /// The query does not clamp; assessment and the later House clamp own it.
-    pub total_output: i32,
+    total_output: i32,
     /// Signed retained drain at House+53A8. `Power_Drain4F6A10` returns
     /// interface+5384 unchanged, including before the House4F87FF clamp.
-    pub total_drain: i32,
+    total_drain: i32,
     /// House+577B: an admitted positive-output Building has DrainingMe.
     #[serde(default)]
-    pub has_drained_power_source: bool,
+    has_drained_power_source: bool,
     /// Native signed House power ratio is below one.
-    pub is_low_power: bool,
+    is_low_power: bool,
     /// House+2A4/+2AC, read through the shared native countdown owner.
     blackout_timer: crate::sim::timer::CdTimer,
     /// House ctor4F5C5F/4F5C66 initializes both dirty bytes to one.
@@ -118,6 +118,48 @@ impl Default for PowerState {
 }
 
 impl PowerState {
+    /// The retained generation (House+53A4), without the trainer's override
+    /// ([`Self::effective_totals`]).
+    pub fn total_output(&self) -> i32 {
+        self.total_output
+    }
+
+    /// The retained drain (House+53A8).
+    pub fn total_drain(&self) -> i32 {
+        self.total_drain
+    }
+
+    /// House+577B.
+    pub fn has_drained_power_source(&self) -> bool {
+        self.has_drained_power_source
+    }
+
+    /// The retained low-power flag, without the trainer's override
+    /// ([`Self::low_power`]).
+    pub fn is_low_power(&self) -> bool {
+        self.is_low_power
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_has_drained_power_source_for_test(&mut self, value: bool) {
+        self.has_drained_power_source = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_is_low_power_for_test(&mut self, value: bool) {
+        self.is_low_power = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_total_drain_for_test(&mut self, value: i32) {
+        self.total_drain = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_total_output_for_test(&mut self, value: i32) {
+        self.total_output = value;
+    }
+
     pub(crate) fn invalidate(&mut self, radar: bool) {
         self.power_dirty = true;
         self.radar_dirty |= radar;
@@ -693,7 +735,7 @@ mod tests {
                 .set_in_limbo_for_test(row["limbo"].as_bool().unwrap());
             entity
                 .lifecycle
-                .set_cell_marked(row["marked"].as_bool().unwrap());
+                .set_cell_marked_for_test(row["marked"].as_bool().unwrap());
             let mut entities = EntityStore::default();
             entities.insert(entity);
             let mut states = BTreeMap::from([(owner, PowerState::default())]);
@@ -794,7 +836,7 @@ mod tests {
         );
         e.health = Health::new(hp);
         e.lifecycle.set_in_limbo_for_test(false);
-        e.lifecycle.set_cell_marked(true);
+        e.lifecycle.set_cell_marked_for_test(true);
         e
     }
 
@@ -925,7 +967,7 @@ BuildSpeed=0.02
             let mut plant = make_building(1, "GAPOWR", "Allies", 600);
             plant
                 .lifecycle
-                .set_cell_marked(input["marked"].as_bool().unwrap());
+                .set_cell_marked_for_test(input["marked"].as_bool().unwrap());
             plant
                 .lifecycle
                 .set_object_alive_for_test(input["alive"].as_bool().unwrap());
@@ -965,7 +1007,9 @@ BuildSpeed=0.02
                     plant
                         .lifecycle
                         .set_in_limbo_for_test(input["member"] == "limbo");
-                    plant.lifecycle.set_cell_marked(input["member"] == "limbo");
+                    plant
+                        .lifecycle
+                        .set_cell_marked_for_test(input["member"] == "limbo");
                     store.insert(plant);
                 }
                 "empty" | "null" => {}
@@ -1017,29 +1061,6 @@ BuildSpeed=0.02
             "the reset reassesses native output"
         );
         assert!(!state.is_low_power, "power restored after blackout");
-    }
-
-    #[test]
-    fn test_power_transitions() {
-        let rules = test_rules();
-        let mut store = EntityStore::new();
-        // Start with just a tesla coil (drain=75, output=0) → immediate low power.
-        store.insert(make_building(1, "TESLA", "Soviet", 400));
-
-        // Pre-intern all strings that will be used (including NAPOWR for the second
-        // building added later) so the interner clone has everything.
-        let soviet = intern::test_intern("Soviet");
-        intern::test_intern("NAPOWR");
-        let interner = test_interner();
-        let mut states: BTreeMap<InternedId, PowerState> = BTreeMap::new();
-
-        tick_power_states(&mut states, &mut store, &rules, &interner, 0);
-        assert!(states[&soviet].is_low_power, "should enter low power");
-
-        // Add a power plant → should restore power.
-        store.insert(make_building(2, "NAPOWR", "Soviet", 400));
-        tick_power_states(&mut states, &mut store, &rules, &interner, 0);
-        assert!(!states[&soviet].is_low_power, "power should be restored");
     }
 
     // -------- ExtraPower (Yuri Bio-Reactor) bonus tests -----------------

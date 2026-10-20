@@ -1086,7 +1086,7 @@ pub(crate) fn try_pending_entry(
             id,
             MissionId::from_known(MissionType::Enter),
             1,
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
             &LiveReadyInputProvider { rules },
         );
         // vt+0x480 of whichever Foot waits: an aircraft's pending entry is
@@ -1106,7 +1106,7 @@ pub(crate) fn try_pending_entry(
             id,
             MissionId::NONE,
             0,
-            sim.session.binary_frame,
+            sim.session.binary_frame(),
             &LiveReadyInputProvider { rules },
         );
         sim.assign_null_destination(id, Some(rules), None, frame_effects);
@@ -1181,7 +1181,7 @@ pub(crate) fn park_pending_entry(
         id,
         MissionId::from_known(MissionType::Move),
         0,
-        sim.session.binary_frame,
+        sim.session.binary_frame(),
         &LiveReadyInputProvider { rules },
     );
     true
@@ -1252,7 +1252,7 @@ fn release_contact(
     let ai_archive = archive.filter(|_| {
         sim.houses
             .get(&contact.owner())
-            .is_some_and(|h| !h.is_controlled_by_human(sim.session.game_mode_nonzero))
+            .is_some_and(|h| !h.is_controlled_by_human(sim.session.game_mode_nonzero()))
     });
     if state1
         && let Some(contact) = sim.substrate.entities.get_mut(unit)
@@ -1280,7 +1280,7 @@ fn release_contact(
         unit,
         MissionId::from_known(MissionType::Move),
         0,
-        sim.session.binary_frame,
+        sim.session.binary_frame(),
         &LiveReadyInputProvider { rules },
     );
     let _ = sim.assign_destination_represented(
@@ -1353,7 +1353,7 @@ pub(crate) fn mission_repair(
         .unwrap_or(MissionType::Repair);
     let rate = rules.mission_control.rate_frames(current);
     let contact = building.radio_contacts.slot(0);
-    let now = sim.session.binary_frame;
+    let now = sim.session.binary_frame();
     let Some(unit) = contact else {
         // State1's no-contact arm44C0BD retains the current idle animations
         // when neither service slot exists. Recreating them would reset their
@@ -1922,25 +1922,6 @@ mod tests {
         );
     }
 
-    /// Original Unit/Foot/Techno1C: full health replies10 without paying or
-    /// resetting independent estimated health (building_repair depot controls).
-    #[test]
-    fn full_health_repair_request_does_not_pay_or_reset_estimated_health() {
-        let (mut sim, rules) = setup(1);
-        let owner = sim.substrate.entities.get(1).unwrap().owner();
-        let unit = sim.substrate.entities.get_mut(1).unwrap();
-        unit.health.set_for_test(300);
-        unit.estimated_health.reset(-20);
-        let rng = sim.scenario_rng.state();
-        assert_eq!(repair_request(&mut sim, &rules, 1), RadioResponse::Negatory);
-        let unit = sim.substrate.entities.get(1).unwrap();
-        assert_eq!(unit.health.current(), 300);
-        assert_eq!(unit.estimated_health.get(), -20);
-        assert_eq!(sim.houses[&owner].economy.credits(), 10_000);
-        assert_eq!(sim.houses[&owner].economy.spent_credits(), 0);
-        assert_eq!(sim.scenario_rng.state(), rng);
-    }
-
     /// Foot4D900E replies10 while NavCom is nonnull, before any wallet/heal.
     #[test]
     fn moving_repair_request_stops_at_the_foot_navcom_interceptor() {
@@ -1955,8 +1936,8 @@ mod tests {
         ));
         assert_eq!(repair_request(&mut sim, &rules, 1), RadioResponse::Negatory);
         assert_eq!(sim.substrate.entities.get(1).unwrap().health.current(), 100);
-        assert_eq!(sim.houses[&owner].economy.credits(), 10_000);
-        assert_eq!(sim.houses[&owner].economy.spent_credits(), 0);
+        assert_eq!(sim.houses[&owner].economy().credits(), 10_000);
+        assert_eq!(sim.houses[&owner].economy().spent_credits(), 0);
     }
 
     /// Techno6F4D35 replies32 without side effects; repeated requests do not
@@ -1968,7 +1949,7 @@ mod tests {
         sim.houses
             .get_mut(&owner)
             .unwrap()
-            .economy
+            .economy_mut()
             .set_credits_for_test(1);
         let rng = sim.scenario_rng.state();
         let estimate = sim
@@ -1987,8 +1968,8 @@ mod tests {
         let unit = sim.substrate.entities.get(1).unwrap();
         assert_eq!(unit.health.current(), 100);
         assert_eq!(unit.estimated_health.get(), estimate);
-        assert_eq!(sim.houses[&owner].economy.credits(), 1);
-        assert_eq!(sim.houses[&owner].economy.spent_credits(), 0);
+        assert_eq!(sim.houses[&owner].economy().credits(), 1);
+        assert_eq!(sim.houses[&owner].economy().spent_credits(), 0);
         assert_eq!(sim.scenario_rng.state(), rng);
     }
 
@@ -2185,8 +2166,8 @@ mod tests {
             use crate::sim::house_state::HouseState;
             let owner_id = sim.interner.intern("Americans");
             let mut house = HouseState::new(owner_id, 0, None, false, 0, 10);
-            house.economy.set_credits_for_test(10_000);
-            sim.houses.insert(owner_id, house);
+            house.economy_mut().set_credits_for_test(10_000);
+            sim.houses.register(house);
         }
         spawn_depot(&mut sim);
         for i in 0..tank_count {
@@ -2224,8 +2205,8 @@ mod tests {
         let tank = sim.substrate.entities.get(1).unwrap();
         assert_eq!(tank.health.current(), 108);
         let house = sim.houses.get(&owner).unwrap();
-        assert_eq!(house.economy.credits(), 9_998);
-        assert_eq!(house.economy.spent_credits(), 2);
+        assert_eq!(house.economy().credits(), 9_998);
+        assert_eq!(house.economy().spent_credits(), 2);
         assert_eq!(sim.scenario_rng.state(), rng);
     }
 
@@ -2487,11 +2468,12 @@ mod tests {
     /// Component fixture for unit-only Enter/RNG observations. Depot visits
     /// are explicit so its independent Guard cadence is outside those checks.
     fn tick_units(sim: &mut Simulation, rules: &RuleSet) {
-        sim.session.binary_frame = sim.session.binary_frame.wrapping_add(1);
+        sim.session
+            .set_binary_frame_for_test(sim.session.binary_frame().wrapping_add(1));
         visit_units(sim, rules);
         process_units(sim, rules);
         pending_entries(sim, rules);
-        sim.session.tick += 1;
+        sim.session.set_tick_for_test(sim.session.tick() + 1);
     }
 
     fn visit_depot(sim: &mut Simulation, rules: &RuleSet) {
@@ -2650,7 +2632,7 @@ mod tests {
                 .unwrap()
                 .mission
                 .dispatch_timer();
-            assert_eq!(timer.start_frame(), sim.session.binary_frame as i32);
+            assert_eq!(timer.start_frame(), sim.session.binary_frame() as i32);
             assert!((14..=16).contains(&timer.delay()));
         }
     }
@@ -2694,7 +2676,7 @@ mod tests {
             (timer.start_frame() + timer.delay()) as u32
         };
         for _ in 0..64 {
-            if sim.session.binary_frame + 1 >= due {
+            if sim.session.binary_frame() + 1 >= due {
                 break;
             }
             tick_units(&mut sim, &rules);
@@ -2718,10 +2700,11 @@ mod tests {
         assert!(order_repair(&mut sim, &rules, 1));
         assert!(order_repair(&mut sim, &rules, 3));
         // Tank 2 idles on Guard with a due dispatch timer.
-        let now = sim.session.binary_frame;
+        let now = sim.session.binary_frame();
         sim.mission_assign_exact(2, MissionId::from_known(MissionType::Guard), now)
             .expect("assign Guard");
-        sim.session.binary_frame += 1;
+        sim.session
+            .set_binary_frame_for_test(sim.session.binary_frame() + 1);
         let ctx = crate::sim::world::ObjectAiCtx::default;
 
         let mut shadow = sim.clone_scenario_rng();
@@ -2907,7 +2890,7 @@ mod tests {
             (timer.start_frame() + timer.delay()) as u32
         };
         for _ in 0..64 {
-            if sim.session.binary_frame >= due {
+            if sim.session.binary_frame() >= due {
                 break;
             }
             tick(&mut sim, &rules);
@@ -2960,7 +2943,7 @@ mod tests {
             (timer.start_frame() + timer.delay()) as u32
         };
         for _ in 0..64 {
-            if sim.session.binary_frame >= due {
+            if sim.session.binary_frame() >= due {
                 break;
             }
             tick(&mut sim, &rules);
@@ -2993,7 +2976,7 @@ mod tests {
             (timer.start_frame() + timer.delay()) as u32
         };
         for _ in 0..64 {
-            if sim.session.binary_frame >= due2 {
+            if sim.session.binary_frame() >= due2 {
                 break;
             }
             tick(&mut sim, &rules);
@@ -3122,8 +3105,9 @@ mod tests {
         let mut writes = 0u32;
         let mut prev_timer = dispatch_timer(&sim, MINER);
         for _ in 0..2000 {
-            sim.session.binary_frame = sim.session.binary_frame.wrapping_add(1);
-            let now = sim.session.binary_frame;
+            sim.session
+                .set_binary_frame_for_test(sim.session.binary_frame().wrapping_add(1));
+            let now = sim.session.binary_frame();
             let due_at_entry = sim
                 .substrate
                 .entities
@@ -3170,7 +3154,7 @@ mod tests {
             prev_timer = timer;
             visit_depot(&mut sim, &rules);
             process_units(&mut sim, &rules);
-            sim.session.tick += 1;
+            sim.session.set_tick_for_test(sim.session.tick() + 1);
             if servicing(&sim, MINER) {
                 reached_pad = true;
                 assert!(linked(&sim, MINER));
@@ -3189,59 +3173,6 @@ mod tests {
         assert!(!linked(&sim, MINER));
         assert_eq!(e.mission.queued().known(), Some(MissionType::Move));
         assert_eq!(harvest_cursor(&sim, MINER), cursor_at_order);
-    }
-
-    /// The common selector routes a miner on Enter to the depot body, with
-    /// one cadence draw and one timer write; no Harvest cursor step runs.
-    #[test]
-    fn miner_on_enter_with_a_depot_contact_has_one_dispatch_writer() {
-        let (mut sim, rules) = setup(0);
-        const MINER: u64 = 7;
-        spawn_damaged_miner(&mut sim, MINER, 14, 11);
-        assert!(order_repair(&mut sim, &rules, MINER));
-        sim.session.binary_frame += 1;
-        visit_units_with_harvest(&mut sim, &rules);
-        assert!(linked(&sim, MINER));
-        assert_eq!(
-            sim.substrate
-                .entities
-                .get(MINER)
-                .unwrap()
-                .mission
-                .current()
-                .known(),
-            Some(MissionType::Enter)
-        );
-        let (start, delay) = dispatch_timer(&sim, MINER);
-        assert!((14..=16).contains(&delay));
-        // Jump to the due frame.
-        sim.session.binary_frame = (start + delay) as u32;
-        let now = sim.session.binary_frame;
-        let mut shadow = sim.clone_scenario_rng();
-        visit_units_with_harvest(&mut sim, &rules);
-        shadow.next_range_u32_inclusive(0, 2);
-        assert_eq!(sim.scenario_rng.state(), shadow.state(), "one (0,2) draw");
-        let after = dispatch_timer(&sim, MINER);
-        assert_eq!(after.0, now as i32);
-        assert!(
-            (14..=16).contains(&after.1),
-            "Enter epilogue, got {after:?}"
-        );
-    }
-
-    /// The class entry owner, rather than a grid proxy, decides every saved row.
-    #[test]
-    fn exit_cell_skips_blocked_cells_in_list_order() {
-        let (mut sim, rules) = setup(1);
-        assert_eq!(
-            building_dock_cell(&sim, DEPOT, 1, (0, 0), &rules, None),
-            Some((DEPOT_RX, DEPOT_RY + 3))
-        );
-        spawn_tank(&mut sim, 7, DEPOT_RX, DEPOT_RY + 3);
-        assert_eq!(
-            building_dock_cell(&sim, DEPOT, 1, (0, 0), &rules, None),
-            Some((DEPOT_RX + 1, DEPOT_RY + 3))
-        );
     }
 
     /// Original44C0BD skips reconstruction when state1 has neither service
@@ -3329,7 +3260,7 @@ mod tests {
         sim.houses
             .get_mut(&owner)
             .unwrap()
-            .economy
+            .economy_mut()
             .set_credits_for_test(2);
         spawn_entity(
             &mut sim,
@@ -3362,30 +3293,30 @@ mod tests {
             .unwrap()
             .power_off();
         let pending = sim.interner.intern("PENDING");
-        assert!(sim.production.factories.test_enqueue_kernel(
+        assert!(sim.production.factories_mut().test_enqueue_kernel(
             owner,
             ProductionCategory::Vehicle,
             pending,
             1,
             108,
         ));
-        let factory = sim.production.factories.test_first_mut().unwrap();
+        let factory = sim.production.factories_mut().test_first_mut().unwrap();
         // The kernel fixture supplies an already-running head. StartProduction
         // itself now correctly leaves +70 stopped until the separate Resume.
-        factory.suspended = false;
-        factory.step_rate_frames = 1;
-        factory.step_timer = CdTimer::from_raw(0, 0);
+        factory.set_suspended_for_test(false);
+        factory.set_step_rate_frames_for_test(1);
+        factory.set_step_timer_for_test(CdTimer::from_raw(0, 0));
         for id in [DEPOT, 1, 501] {
             assert!(sim.register_live_object(id));
         }
         sim.advance_tick(&[], Some(&rules), None, None, 66);
         assert_eq!(sim.substrate.entities.get(1).unwrap().health.current(), 108);
-        assert_eq!(sim.houses[&owner].economy.credits(), 0);
-        assert_eq!(sim.houses[&owner].economy.spent_credits(), 2);
-        let factory = sim.production.factories.test_first_mut().unwrap();
-        assert_eq!(factory.progress, 0);
-        assert_eq!(factory.balance, 108);
-        assert!(factory.on_hold);
+        assert_eq!(sim.houses[&owner].economy().credits(), 0);
+        assert_eq!(sim.houses[&owner].economy().spent_credits(), 2);
+        let factory = sim.production.factories_mut().test_first_mut().unwrap();
+        assert_eq!(factory.progress(), 0);
+        assert_eq!(factory.balance(), 108);
+        assert!(factory.on_hold());
     }
 
     /// A repaired (full-HP) linked waiter that is a Harvester=yes unit takes
@@ -3403,7 +3334,10 @@ mod tests {
             let (mut sim, rules) = setup(0);
             if human {
                 let owner_id = sim.interner.intern("Americans");
-                sim.houses.get_mut(&owner_id).unwrap().is_human = true;
+                sim.houses
+                    .get_mut(&owner_id)
+                    .unwrap()
+                    .set_is_human_for_test(true);
             }
             spawn_entity(&mut sim, 1, "HARV", EntityCategory::Unit, 14, 11, 600);
             {

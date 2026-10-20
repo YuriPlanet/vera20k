@@ -46,6 +46,9 @@ impl App {
         // current outcome Vox before it raises the victory/defeat exit global.
         // Drive that gate before deciding whether another sim frame is legal.
         let scenario_now_ms = crate::app::match_runtime::frame_pacer::wall_clock_ms();
+        // Main_Tick55DE4F skips the frame while the restart byte is set and
+        // Main_Game's router55CFD0 takes it before EXIT.
+        Self::consume_scenario_restart_request(state);
         Self::consume_executed_abort_exit(state, scenario_now_ms);
         crate::app::match_runtime::sim_tick::drive_local_player_outcome_voice_wait(
             state,
@@ -353,6 +356,18 @@ impl App {
                     crate::app::frontend::skirmish_shell_render::render_keyboard_shell(state, &mut encoder, &output.texture)?;
                 }
             }
+            _ if state.frontend.network_options.is_some() => {
+                presented_shell = PresentedShell::NetworkOptions;
+                let slid = matches!(
+                    crate::app::frontend::shell_transition::render_shell_first_paint_slide(
+                        state, &mut encoder, &output.texture,
+                    )?,
+                    crate::app::frontend::shell_transition::ShellFirstPaintRenderResult::Rendered { .. }
+                );
+                if !slid {
+                    crate::app::frontend::skirmish_shell_render::render_network_options(state, &mut encoder, &output.texture)?;
+                }
+            }
             GameScreen::MainMenu if state.frontend.fullscreen_movie.is_some() => {
                 Self::advance_fullscreen_movie(state)?;
                 if state.frontend.fullscreen_movie.is_some() {
@@ -418,13 +433,23 @@ impl App {
                     } else {
                         Self::render_shell_error(state, &mut encoder, &view)?;
                     }
-                } else if Self::wol_welcome_active(state) {
-                    if crate::app::frontend::wol_welcome_render::render_wol_welcome_page(
+                } else if state.frontend.shell_route.lan_lobby() {
+                    crate::app::frontend::skirmish_shell_render::render_lan_lobby(state, &mut encoder, &output.texture)?;
+                    presented_shell = PresentedShell::LanLobby;
+                } else if state.frontend.shell_route.network_setup() {
+                    if state.frontend.skirmish_shell_state.choose_map_modal.is_some() {
+                        crate::app::frontend::skirmish_shell_render::render_skirmish_shell(state, &mut encoder, &output.texture)?;
+                    } else {
+                        crate::app::frontend::skirmish_shell_render::render_multiplayer_setup(state, &mut encoder, &output.texture)?;
+                    }
+                    presented_shell = PresentedShell::NetworkSetup;
+                } else if Self::wol_active(state) {
+                    if crate::app::frontend::wol_welcome_render::render_wol_page(
                         state,
                         &mut encoder,
                         &output.texture,
                     )? {
-                        presented_shell = PresentedShell::WolWelcome;
+                        presented_shell = crate::app::frontend::wol_welcome_render::presented_wol_page(state);
                     } else {
                         Self::render_shell_error(state, &mut encoder, &view)?;
                     }
@@ -526,6 +551,8 @@ impl App {
                     crate::app::frontend::skirmish_shell_render::render_abort_shell(state, &mut encoder, &output.texture)?;
                 } else if state.match_state.match_presentation.in_game_menu == crate::ui::pause_menu::InGameMenuState::Sound {
                     crate::app::frontend::skirmish_shell_render::render_sound_shell(state, &mut encoder, &output.texture)?;
+                } else if state.match_state.match_presentation.in_game_menu == crate::ui::pause_menu::InGameMenuState::Diplomacy {
+                    crate::app::frontend::skirmish_shell_render::render_diplomacy_shell(state, &mut encoder, &output.texture)?;
                 } else if matches!(state.match_state.match_presentation.in_game_menu, crate::ui::pause_menu::InGameMenuState::SavedGame(_)) {
                     crate::app::frontend::skirmish_shell_render::render_saved_game_shell(state, &mut encoder, &output.texture)?;
                 } else {

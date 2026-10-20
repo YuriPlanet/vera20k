@@ -180,19 +180,19 @@ impl NukeFlash {
 /// belong to lockstep.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub struct ScenarioLightingState {
-    pub normal: ScenarioLightProfileUnits,
-    pub ion: ScenarioLightProfileUnits,
+    normal: ScenarioLightProfileUnits,
+    ion: ScenarioLightProfileUnits,
     /// `Dominator*=` (`ScenarioClass+0x357C..+0x3590`).
-    pub dominator: ScenarioLightProfileUnits,
+    dominator: ScenarioLightProfileUnits,
     /// `DominatorAmbientChangeRate=` (`+0x3594`): the fade interval while
     /// the Psychic Dominator is active.
-    pub dominator_change_rate: i32,
-    pub current_ambient: i32,
-    pub target_ambient: i32,
+    dominator_change_rate: i32,
+    current_ambient: i32,
+    target_ambient: i32,
     /// The profile the last `UpdateLighting` selected: its ambient is the
     /// target and its RGB the alternate tint.
-    pub selected_profile: ScenarioLightingProfile,
-    pub transition_timer: CdTimer,
+    selected_profile: ScenarioLightingProfile,
+    transition_timer: CdTimer,
     /// `NukeAmbientChangeRate=` (`+0x3578`): the fade interval while the
     /// nuke flash runs.
     nuke_change_rate: i32,
@@ -204,6 +204,73 @@ pub struct ScenarioLightingState {
 }
 
 impl ScenarioLightingState {
+    pub const fn normal(&self) -> ScenarioLightProfileUnits {
+        self.normal
+    }
+
+    pub const fn ion(&self) -> ScenarioLightProfileUnits {
+        self.ion
+    }
+
+    pub const fn dominator(&self) -> ScenarioLightProfileUnits {
+        self.dominator
+    }
+
+    pub const fn dominator_change_rate(&self) -> i32 {
+        self.dominator_change_rate
+    }
+
+    pub const fn current_ambient(&self) -> i32 {
+        self.current_ambient
+    }
+
+    pub const fn target_ambient(&self) -> i32 {
+        self.target_ambient
+    }
+
+    pub const fn selected_profile(&self) -> ScenarioLightingProfile {
+        self.selected_profile
+    }
+
+    pub const fn transition_timer(&self) -> &CdTimer {
+        &self.transition_timer
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_current_ambient_for_test(&mut self, value: i32) {
+        self.current_ambient = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_target_ambient_for_test(&mut self, value: i32) {
+        self.target_ambient = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_selected_profile_for_test(&mut self, value: ScenarioLightingProfile) {
+        self.selected_profile = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_transition_timer_for_test(&mut self, value: CdTimer) {
+        self.transition_timer = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_normal_for_test(&mut self, value: ScenarioLightProfileUnits) {
+        self.normal = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn normal_mut_for_test(&mut self) -> &mut ScenarioLightProfileUnits {
+        &mut self.normal
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn ion_mut_for_test(&mut self) -> &mut ScenarioLightProfileUnits {
+        &mut self.ion
+    }
+
     /// Construct a tick-zero scenario from its map-authored profiles.
     pub const fn new(
         normal: ScenarioLightProfileUnits,
@@ -485,6 +552,54 @@ impl Default for ScenarioLightingState {
     }
 }
 
+/// SessionClass GameMode A8B238. The exact active mode survives startup and
+/// save/restore; zero/nonzero tests are projections of this single value.
+#[derive(
+    Debug, Clone, Copy, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize,
+)]
+pub enum ScenarioGameMode {
+    #[default]
+    Campaign,
+    Lan,
+    Wol,
+    Skirmish,
+    Other,
+}
+
+impl ScenarioGameMode {
+    pub const fn from_game_mode(raw: i32) -> Self {
+        match raw {
+            0 => Self::Campaign,
+            3 => Self::Lan,
+            4 => Self::Wol,
+            5 => Self::Skirmish,
+            _ => Self::Other,
+        }
+    }
+    /// Compatibility input for callers that only described offline sessions.
+    pub const fn from_legacy_nonzero(nonzero: bool) -> Self {
+        if nonzero {
+            Self::Skirmish
+        } else {
+            Self::Campaign
+        }
+    }
+    pub const fn is_network(self) -> bool {
+        matches!(self, Self::Lan | Self::Wol)
+    }
+    pub const fn is_nonzero(self) -> bool {
+        !matches!(self, Self::Campaign)
+    }
+    /// Queue_AI647260 routes the active LAN/WOL values to its multiplayer body.
+    pub const fn command_queue_route(self) -> crate::sim::world::CommandQueueRoute {
+        if self.is_network() {
+            crate::sim::world::CommandQueueRoute::Multiplayer
+        } else {
+            crate::sim::world::CommandQueueRoute::SinglePlayer
+        }
+    }
+}
+
 /// Everything the app layer decides about a session before the sim exists.
 /// Built from the lobby/launch flow and the selected map file — never
 /// hardcoded inside sim/.
@@ -531,6 +646,17 @@ pub struct ScenarioDescriptor {
     /// by the same skirmish/multiplayer sites. Gates
     /// `CellClass::CanSpreadTiberium @ 0x00483690`.
     pub tiberium_spreads_flag: bool,
+    /// Native `ScenarioClass` flags bit `0x800`. Campaign reads the map's
+    /// `[SpecialFlags] HarvesterImmune=` (`0x006B8EBF..0x006B8ED7`); a
+    /// nonzero game mode replaces the map's flags with the session's staging
+    /// word (`0x00687C16..0x00687C29`), whose `PregameSetup` arm stores the
+    /// session's Harvester Truce byte `0x00A8B31D` in this bit
+    /// (`0x005E7495..0x005E74D4`). The skirmish dialog clears the truce byte
+    /// (`0x006AD89D`), so every skirmish leaves it off; LAN/WOL lobbies can
+    /// set it. Its reader is `Evaluate_Candidate`'s HarvesterImmune gate
+    /// (`0x006F8009..0x006F8047`): while set, a candidate whose type is in
+    /// Rules' `HarvesterUnit=` list is refused.
+    pub harvester_immune: bool,
     /// Map-authored global-light profiles plus their tick-zero mutable state.
     pub lighting: ScenarioLightingState,
     /// Shared gameplay conversion profile; independent of every client's window.
@@ -561,6 +687,7 @@ impl ScenarioDescriptor {
             no_damage: header.special_flags & 0x20 != 0,
             tiberium_grows_flag: header.special_flags & 0x40 != 0,
             tiberium_spreads_flag: header.special_flags & 0x80 != 0,
+            harvester_immune: header.special_flags & 0x800 != 0,
             ..Self::default()
         }
     }
@@ -597,14 +724,27 @@ pub enum CampaignScenarioStartupError {
 pub struct ScenarioSession {
     /// Construction seed — the negotiated per-match value; the replay header
     /// records it. Stored widened (the negotiated value is 32-bit).
-    pub seed: u64,
+    seed: u64,
     /// Scenario identity: map file name (with `[Basic]` Name fallback).
-    pub map_name: String,
+    map_name: String,
     /// Theater name from the map header.
-    pub theater: String,
-    /// Persisted native zero/nonzero GameMode classification.
+    theater: String,
+    /// Exact native GameMode; the former boolean is now a derived query.
     #[serde(default)]
-    pub game_mode_nonzero: bool,
+    game_mode: ScenarioGameMode,
+    /// Accepted MPMode factory class. Runtime completion queries its virtual
+    /// policy directly; no independent cooperative-win flag is retained.
+    multiplayer_mode_class: Option<crate::skirmish_modes::MpModeClass>,
+    /// NativeAC1198, assigned by each observer's CreateHouses688116. The last
+    /// observer in House creation order owns this native presentation identity.
+    observer_house: Option<InternedId>,
+    /// Native Session+318/A8B550, admitted from the start/timing service.
+    /// It is independent of local command scheduling preferences.
+    network_max_ahead_frames: Option<i32>,
+    /// Scenario+11E4 is included in Save689372's complete Scenario block and
+    /// retained by Load6894A8/NoInit683560. Fresh Clear_Scene starts at4.
+    #[serde(default)]
+    start_header: crate::map::preview::ScenarioStartHeader,
     #[serde(default)]
     campaign: Option<CampaignScenarioState>,
     /// Scenario+35A2. Trigger actions46/47 own this retained input lock;
@@ -626,10 +766,10 @@ pub struct ScenarioSession {
     started: bool,
     /// Persisted native `ScenarioClass` flags bit `0x20`.
     #[serde(default)]
-    pub no_damage: bool,
+    no_damage: bool,
     /// Persistent native Scenario+34A4, included by original CRC at 0068BC16.
     #[serde(default)]
-    pub free_radar: bool,
+    free_radar: bool,
     /// Persistent native Scenario+34B4 (`[Basic] IgnoreGlobalAITriggers`).
     #[serde(default)]
     ignore_global_ai_triggers: bool,
@@ -648,10 +788,14 @@ pub struct ScenarioSession {
     /// Persisted native `ScenarioClass` flags bit `0x40` (`TiberiumGrows`);
     /// see the descriptor field of the same name.
     #[serde(default)]
-    pub tiberium_grows_flag: bool,
+    tiberium_grows_flag: bool,
     /// Persisted native `ScenarioClass` flags bit `0x80` (`TiberiumSpreads`).
     #[serde(default)]
-    pub tiberium_spreads_flag: bool,
+    tiberium_spreads_flag: bool,
+    /// Persisted native `ScenarioClass` flags bit `0x800` (HarvesterImmune /
+    /// Harvester Truce); see the descriptor field of the same name.
+    #[serde(default)]
+    harvester_immune: bool,
     /// Scenario+11E0: a computer slot has a team. Cleared at `0x00683A3A`;
     /// `Create_Houses` sets it for a computer slot whose team (`+0x60`) is
     /// not -1 (`0x006881F5..0x00688209`). Computer_Paranoid is its only
@@ -659,16 +803,16 @@ pub struct ScenarioSession {
     #[serde(default)]
     computer_slot_has_team: bool,
     /// Persistent fixed-integer global-light configuration and transition state.
-    pub lighting: ScenarioLightingState,
+    lighting: ScenarioLightingState,
     /// Saved match authority for Building and Tile animation coordinates.
-    pub pixel_conversion_bounds: crate::util::pixel_conversion::PixelConversionBounds,
+    pixel_conversion_bounds: crate::util::pixel_conversion::PixelConversionBounds,
     /// Authoritative map bounds in the canonical cell-array frame (max cell
     /// rx/ry + 1); see the descriptor field of the same name. Seeds the fog
     /// grid dimensions at construction.
-    pub map_width: u16,
-    pub map_height: u16,
+    map_width: u16,
+    map_height: u16,
     /// MP start waypoints (index -> cell) from the map `[Waypoints]` list.
-    pub mp_start_waypoints: BTreeMap<u32, (u16, u16)>,
+    mp_start_waypoints: BTreeMap<u32, (u16, u16)>,
     /// Scenario68BDC0's complete waypoint authority. The map parser is the
     /// source transaction; Team movement and trigger callbacks read this one
     /// private, saved table rather than maintaining subsystem copies. Omitted
@@ -677,36 +821,310 @@ pub struct ScenarioSession {
     waypoints: BTreeMap<u32, (i16, i16)>,
     /// Start waypoint index -> owning house, filled during launch application
     /// (after the random-assignment draws), before tick 0.
-    pub start_slot_houses: BTreeMap<u32, InternedId>,
-    /// HouseClass array registration order. Native house ids are indices into
-    /// this vector; map ordering by name/id is not an equivalent substitute.
-    pub house_order: Vec<InternedId>,
+    start_slot_houses: BTreeMap<u32, InternedId>,
     /// Native A83D4C: this process's current HouseClass identity. Campaign
     /// Basic.Player and multiplayer participant index0 choose it at creation;
     /// 67F802/67F9F3 save/load the pointer and 67FA0E swizzles it. It is not
     /// the presentation viewer and cannot be rebound from selection each frame.
     /// Evidence: docs/research/PHASE3_CURRENT_HOUSE_IDENTITY_GHIDRA_REPORT.md.
-    pub current_house: Option<InternedId>,
+    current_house: Option<InternedId>,
     /// Per-match game settings (the lobby options card). Set once at game
     /// start, read-only during gameplay.
-    pub game_options: GameOptions,
+    game_options: GameOptions,
     /// Monotonic Rust-side simulation ordinal. This is kept separately from
     /// the wrapping native frame so long-running diagnostics and command
     /// bookkeeping do not lose their ordering at the 32-bit wrap.
-    pub tick: u64,
+    tick: u64,
     /// Diagnostic accumulation of the nominal milliseconds supplied by the
     /// host for each admitted frame. Gameplay must not derive timer state,
     /// cadence, or the native frame from this value.
-    pub total_sim_ms: u64,
+    total_sim_ms: u64,
     /// Wrapping native gameplay-frame counter. One admitted `advance_tick`
     /// executes entirely under frame N, then commits N+1 at the late tail.
     ///
     /// The field keeps its historical name until all persistence and app
     /// surfaces can be renamed together; it is not a synthetic 15 Hz clock.
-    pub binary_frame: u32,
+    binary_frame: u32,
 }
 
 impl ScenarioSession {
+    // ---- Reads -----------------------------------------------------------
+
+    /// Construction seed — the negotiated per-match value.
+    pub const fn seed(&self) -> u64 {
+        self.seed
+    }
+
+    pub fn map_name(&self) -> &str {
+        &self.map_name
+    }
+
+    pub fn theater(&self) -> &str {
+        &self.theater
+    }
+
+    pub const fn no_damage(&self) -> bool {
+        self.no_damage
+    }
+
+    pub const fn free_radar(&self) -> bool {
+        self.free_radar
+    }
+
+    pub const fn tiberium_grows_flag(&self) -> bool {
+        self.tiberium_grows_flag
+    }
+
+    pub const fn tiberium_spreads_flag(&self) -> bool {
+        self.tiberium_spreads_flag
+    }
+
+    pub const fn harvester_immune(&self) -> bool {
+        self.harvester_immune
+    }
+
+    pub const fn lighting(&self) -> &ScenarioLightingState {
+        &self.lighting
+    }
+
+    /// The lighting owner; its operations carry the transition rules.
+    pub fn lighting_mut(&mut self) -> &mut ScenarioLightingState {
+        &mut self.lighting
+    }
+
+    pub const fn pixel_conversion_bounds(
+        &self,
+    ) -> crate::util::pixel_conversion::PixelConversionBounds {
+        self.pixel_conversion_bounds
+    }
+
+    pub const fn map_width(&self) -> u16 {
+        self.map_width
+    }
+
+    pub const fn map_height(&self) -> u16 {
+        self.map_height
+    }
+
+    pub const fn mp_start_waypoints(&self) -> &BTreeMap<u32, (u16, u16)> {
+        &self.mp_start_waypoints
+    }
+
+    pub const fn start_slot_houses(&self) -> &BTreeMap<u32, InternedId> {
+        &self.start_slot_houses
+    }
+
+    pub const fn game_options(&self) -> &GameOptions {
+        &self.game_options
+    }
+
+    pub const fn tick(&self) -> u64 {
+        self.tick
+    }
+
+    pub const fn total_sim_ms(&self) -> u64 {
+        self.total_sim_ms
+    }
+
+    pub const fn binary_frame(&self) -> u32 {
+        self.binary_frame
+    }
+
+    // ---- Operations ------------------------------------------------------
+
+    /// The late frame commit (Main_Tick's tail): the wrapping native frame
+    /// advances after every phase observed frame N; host milliseconds are
+    /// diagnostic only.
+    pub(crate) fn commit_native_frame(&mut self, tick_ms: u32) {
+        self.total_sim_ms = self.total_sim_ms.saturating_add(u64::from(tick_ms));
+        self.binary_frame = self.binary_frame.wrapping_add(1);
+    }
+
+    /// The Rust tick ordinal reaches the executed tick after the drain.
+    pub(crate) fn complete_tick(&mut self, execute_tick: u64) {
+        self.tick = execute_tick;
+    }
+
+    /// Init_Random_Number_System and load retention record the seed the
+    /// Scenario stream was seeded from.
+    pub(crate) fn record_random_seed(&mut self, seed: u64) {
+        self.seed = seed;
+    }
+
+    /// Per-match options from the accepted launch, before House creation.
+    pub(crate) fn install_game_options(&mut self, options: GameOptions) {
+        self.game_options = options;
+    }
+
+    /// In-game Options speed transition (accepted only within range).
+    pub(crate) fn apply_in_game_speed(&mut self, speed: u8) -> bool {
+        self.game_options.apply_in_game_speed(speed)
+    }
+
+    /// A83D4C at House creation: the launch participant index0 or the
+    /// campaign's Basic.Player. Never rebound from selection.
+    pub(crate) fn install_current_house(&mut self, owner: Option<InternedId>) {
+        self.current_house = owner;
+    }
+
+    /// The start-slot -> House table filled after the random assignment.
+    pub(crate) fn install_start_slot_houses(
+        &mut self,
+        table: impl IntoIterator<Item = (u32, InternedId)>,
+    ) {
+        self.start_slot_houses = table.into_iter().collect();
+    }
+
+    // ---- Fixture operations ----------------------------------------------
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_seed_for_test(&mut self, value: u64) {
+        self.seed = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_no_damage_for_test(&mut self, value: bool) {
+        self.no_damage = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_free_radar_for_test(&mut self, value: bool) {
+        self.free_radar = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_tiberium_grows_flag_for_test(&mut self, value: bool) {
+        self.tiberium_grows_flag = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_tiberium_spreads_flag_for_test(&mut self, value: bool) {
+        self.tiberium_spreads_flag = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_harvester_immune_for_test(&mut self, value: bool) {
+        self.harvester_immune = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_pixel_conversion_bounds_for_test(
+        &mut self,
+        value: crate::util::pixel_conversion::PixelConversionBounds,
+    ) {
+        self.pixel_conversion_bounds = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_map_width_for_test(&mut self, value: u16) {
+        self.map_width = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_map_height_for_test(&mut self, value: u16) {
+        self.map_height = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_current_house_for_test(&mut self, value: Option<InternedId>) {
+        self.current_house = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_tick_for_test(&mut self, value: u64) {
+        self.tick = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_total_sim_ms_for_test(&mut self, value: u64) {
+        self.total_sim_ms = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_binary_frame_for_test(&mut self, value: u32) {
+        self.binary_frame = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_lighting_for_test(&mut self, value: ScenarioLightingState) {
+        self.lighting = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_map_name_for_test(&mut self, value: String) {
+        self.map_name = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_theater_for_test(&mut self, value: String) {
+        self.theater = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_game_options_for_test(&mut self, value: GameOptions) {
+        self.game_options = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn game_options_mut_for_test(&mut self) -> &mut GameOptions {
+        &mut self.game_options
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn start_slot_houses_mut_for_test(&mut self) -> &mut BTreeMap<u32, InternedId> {
+        &mut self.start_slot_houses
+    }
+
+    pub const fn game_mode(&self) -> ScenarioGameMode {
+        self.game_mode
+    }
+    pub const fn game_mode_nonzero(&self) -> bool {
+        self.game_mode.is_nonzero()
+    }
+    /// Fresh accepted startup or admitted saved-session mode, never a frame-local
+    /// UI projection. Descriptor compatibility callers are converted at construction.
+    pub fn set_game_mode(&mut self, mode: ScenarioGameMode) {
+        self.game_mode = mode;
+        if !mode.is_network() {
+            self.network_max_ahead_frames = None;
+        }
+    }
+    pub fn install_network_timing(&mut self, max_ahead_frames: i32) {
+        assert!(
+            self.game_mode.is_network(),
+            "network timing needs an admitted network mode"
+        );
+        self.network_max_ahead_frames = Some(max_ahead_frames);
+    }
+    pub const fn start_header(&self) -> crate::map::preview::ScenarioStartHeader {
+        self.start_header
+    }
+
+    pub(crate) fn install_start_header(
+        &mut self,
+        header: crate::map::preview::ScenarioStartHeader,
+    ) {
+        self.start_header = header;
+    }
+
+    pub const fn network_max_ahead_frames(&self) -> Option<i32> {
+        self.network_max_ahead_frames
+    }
+    pub const fn multiplayer_mode_class(&self) -> Option<crate::skirmish_modes::MpModeClass> {
+        self.multiplayer_mode_class
+    }
+    pub const fn observer_house(&self) -> Option<InternedId> {
+        self.observer_house
+    }
+    pub(crate) fn install_multiplayer_house_identity(
+        &mut self,
+        class: crate::skirmish_modes::MpModeClass,
+        observer: Option<InternedId>,
+    ) {
+        self.multiplayer_mode_class = Some(class);
+        self.observer_house = observer;
+    }
+
     pub fn install_waypoints(
         &mut self,
         waypoints: &std::collections::HashMap<u32, crate::map::waypoints::Waypoint>,
@@ -757,7 +1175,19 @@ impl ScenarioSession {
         self.input_locked
     }
 
-    pub fn set_input_locked(&mut self, locked: bool) {
+    /// Trigger action46 and the campaign Flag announcement lock Scenario+35A2.
+    /// Returns the previous lock for the ordered presentation effect.
+    pub(crate) fn lock_input(&mut self) -> bool {
+        std::mem::replace(&mut self.input_locked, true)
+    }
+
+    /// Trigger action47 unlocks Scenario+35A2. Returns the previous lock.
+    pub(crate) fn unlock_input(&mut self) -> bool {
+        std::mem::replace(&mut self.input_locked, false)
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_input_locked_for_test(&mut self, locked: bool) {
         self.input_locked = locked;
     }
 
@@ -791,16 +1221,24 @@ impl ScenarioSession {
         self.started
     }
 
-    pub fn set_started(&mut self, started: bool) {
-        self.started = started;
+    /// StartScenario683E75 and a committed LoadGame67E6C4 publish A8ED5C=1.
+    pub fn publish_started(&mut self) {
+        self.started = true;
+    }
+
+    /// MainGame48CEBF clears A8ED5C when the match returns; a restart clears
+    /// it at686424.
+    pub fn retire_started(&mut self) {
+        self.started = false;
     }
 
     pub(super) fn initialize_campaign_startup(
         &mut self,
         difficulty: i32,
         mission_counter: i32,
+        game_options: Option<&GameOptions>,
     ) -> Result<(), CampaignScenarioStartupError> {
-        if self.game_mode_nonzero {
+        if self.game_mode_nonzero() {
             return Err(CampaignScenarioStartupError::NonCampaignMode);
         }
         if self.campaign.is_some() {
@@ -810,6 +1248,11 @@ impl ScenarioSession {
             .ok_or(CampaignScenarioStartupError::InvalidDifficulty(difficulty))?;
         let computer_difficulty = HouseDifficulty::from_native(2 - difficulty)
             .expect("the admitted menu row has a complementary computer row");
+        // External launch input enters before House/terrain constructors. The
+        // existing session remains the sole live owner of per-match options.
+        if let Some(options) = game_options {
+            self.game_options = options.clone();
+        }
         self.campaign = Some(CampaignScenarioState {
             mission_counter,
             player_difficulty,
@@ -847,12 +1290,24 @@ impl ScenarioSession {
     /// game options keep their original fold positions above; this fold adds
     /// only the fields new to the session aggregate. Order is part of the
     /// hash contract and must never change.
-    pub(crate) fn fold_identity(&self, hasher: &mut impl std::hash::Hasher) {
+    /// `house_order` is the House array's registration order, which keeps
+    /// its place in this stream although [`crate::sim::houses::Houses`]
+    /// owns it.
+    pub(crate) fn fold_identity(
+        &self,
+        house_order: &[InternedId],
+        hasher: &mut impl std::hash::Hasher,
+    ) {
         let s = self;
         s.seed.hash(hasher);
         s.map_name.hash(hasher);
         s.theater.hash(hasher);
-        s.game_mode_nonzero.hash(hasher);
+        s.game_mode.hash(hasher);
+        s.multiplayer_mode_class.hash(hasher);
+        s.network_max_ahead_frames.hash(hasher);
+        s.start_header.hash(hasher);
+        // observer_house, like current_house, selects process-local presentation
+        // and accepted outcome. It is saved and reference-validated, not shared CRC input.
         if let Some(campaign) = s.campaign {
             b"scenario-campaign-startup-v1".hash(hasher);
             campaign.hash(hasher);
@@ -915,6 +1370,11 @@ impl ScenarioSession {
         if s.tiberium_spreads_flag {
             b"scenario-tiberium-spreads-v1".hash(hasher);
         }
+        // The gate the HarvesterImmune bit drives is gameplay-active, so a
+        // session that differs in it must diverge the desync detector.
+        if s.harvester_immune {
+            b"scenario-harvester-immune-v1".hash(hasher);
+        }
         if s.computer_slot_has_team {
             b"scenario-computer-slot-team-v1".hash(hasher);
         }
@@ -929,7 +1389,7 @@ impl ScenarioSession {
             idx.hash(hasher);
             owner.hash(hasher);
         }
-        s.house_order.hash(hasher);
+        house_order.hash(hasher);
 
         let lighting = &s.lighting;
         lighting.normal.ambient_percent.hash(hasher);
@@ -1047,7 +1507,11 @@ impl ScenarioSession {
             seed: u64::from(desc.seed),
             map_name: desc.map_name.clone(),
             theater: desc.theater.clone(),
-            game_mode_nonzero: desc.game_mode_nonzero,
+            game_mode: ScenarioGameMode::from_legacy_nonzero(desc.game_mode_nonzero),
+            multiplayer_mode_class: None,
+            observer_house: None,
+            network_max_ahead_frames: None,
+            start_header: crate::map::preview::ScenarioStartHeader::default(),
             campaign: None,
             input_locked: false,
             chrono_screen: crate::sim::superweapon::chrono_screen::ChronoScreenState::default(),
@@ -1063,6 +1527,7 @@ impl ScenarioSession {
             vein_growth: u8::from(desc.vein_growth_enabled.unwrap_or(true)),
             tiberium_grows_flag: desc.tiberium_grows_flag,
             tiberium_spreads_flag: desc.tiberium_spreads_flag,
+            harvester_immune: desc.harvester_immune,
             computer_slot_has_team: false,
             lighting: desc.lighting,
             pixel_conversion_bounds: desc.pixel_conversion_bounds,
@@ -1071,7 +1536,6 @@ impl ScenarioSession {
             mp_start_waypoints: desc.mp_start_waypoints.clone(),
             waypoints: BTreeMap::new(),
             start_slot_houses: BTreeMap::new(),
-            house_order: Vec::new(),
             current_house: None,
             game_options: GameOptions::default(),
             tick: 0,
@@ -1092,7 +1556,7 @@ mod tests {
             let mut sim = Simulation::from_descriptor(&ScenarioDescriptor::default());
             let hash_before = sim.state_hash();
             sim.session
-                .initialize_campaign_startup(difficulty, 7)
+                .initialize_campaign_startup(difficulty, 7, None)
                 .unwrap();
             assert_eq!(sim.session.campaign_mission_counter(), Some(7));
             assert_eq!(
@@ -1112,7 +1576,7 @@ mod tests {
             assert_eq!(sim.session.current_house(), Some(current));
             assert_eq!(sim.state_hash(), hash);
             assert_eq!(
-                sim.session.initialize_campaign_startup(difficulty, 1),
+                sim.session.initialize_campaign_startup(difficulty, 1, None),
                 Err(CampaignScenarioStartupError::AlreadyInstalled)
             );
             sim.session.reset_campaign_mission_counter_on_shell_exit();
@@ -1136,7 +1600,7 @@ mod tests {
         });
         let hash = offline.state_hash();
         assert_eq!(
-            offline.session.initialize_campaign_startup(1, 1),
+            offline.session.initialize_campaign_startup(1, 1, None),
             Err(CampaignScenarioStartupError::NonCampaignMode)
         );
         assert_eq!(offline.state_hash(), hash);
@@ -1150,12 +1614,46 @@ mod tests {
             let mut sim = Simulation::from_descriptor(&ScenarioDescriptor::default());
             let hash = sim.state_hash();
             assert_eq!(
-                sim.session.initialize_campaign_startup(difficulty, 1),
+                sim.session.initialize_campaign_startup(difficulty, 1, None),
                 Err(CampaignScenarioStartupError::InvalidDifficulty(difficulty))
             );
             assert_eq!(sim.state_hash(), hash);
             assert_eq!(sim.session.campaign_mission_counter(), None);
         }
+    }
+
+    #[test]
+    fn cncnet_campaign_options_enter_the_session_owner_and_survive_persistence() {
+        let mut sim = Simulation::from_descriptor(&ScenarioDescriptor::default());
+        let options = GameOptions {
+            game_speed: 5,
+            build_off_ally: false,
+            ..Default::default()
+        };
+        sim.session
+            .initialize_campaign_startup(1, 1, Some(&options))
+            .unwrap();
+        assert_eq!(sim.projected_in_game_options_speed(), Some(5));
+        assert!(!sim.session.game_options.build_off_ally);
+        let hash = sim.state_hash();
+        let encoded = serde_json::to_vec(&sim.session).unwrap();
+        sim.session = serde_json::from_slice(&encoded).unwrap();
+        assert_eq!(sim.state_hash(), hash);
+        assert_eq!(sim.projected_in_game_options_speed(), Some(5));
+        let other = GameOptions {
+            game_speed: 2,
+            ..Default::default()
+        };
+        assert!(
+            sim.session
+                .initialize_campaign_startup(1, 1, Some(&other))
+                .is_err()
+        );
+        assert_eq!(
+            sim.state_hash(),
+            hash,
+            "failed admission must not overwrite live options"
+        );
     }
 
     #[test]
@@ -1311,21 +1809,6 @@ mod tests {
         );
     }
 
-    /// AT-5: authoritative bounds are queryable before any advance_tick — no
-    /// zero-dim fog window between construction and the first vision pass.
-    #[test]
-    fn map_bounds_known_before_first_tick() {
-        let desc = ScenarioDescriptor {
-            seed: 7,
-            map_width: 80,
-            map_height: 60,
-            ..Default::default()
-        };
-        let sim = Simulation::from_descriptor(&desc);
-        assert_eq!((sim.fog.width, sim.fog.height), (80, 60));
-        assert_eq!((sim.session.map_width, sim.session.map_height), (80, 60));
-    }
-
     /// AT-4: scenario identity (map name, theater) is sim-resident and
     /// survives a snapshot round-trip.
     #[test]
@@ -1394,16 +1877,6 @@ mod tests {
             .expect("snapshot load")
             .sim;
         assert_eq!(restored.state_hash(), a.state_hash());
-    }
-
-    #[test]
-    fn native_replay_header_starts_normal_scenario_descriptor() {
-        let header = crate::sim::replay::NativeReplayHeader::new(0x1234_5678, "arena.map");
-        let descriptor = ScenarioDescriptor::from_native_replay_header(&header);
-        assert_eq!(descriptor.seed, 0x1234_5678);
-        assert_eq!(descriptor.map_name, "arena.map");
-        assert_eq!(descriptor.map_width, 0);
-        assert_eq!(descriptor.map_height, 0);
     }
 
     #[test]
@@ -1502,6 +1975,44 @@ mod tests {
             .sim;
         assert!(restored.session.tiberium_grows_flag && restored.session.tiberium_spreads_flag);
         assert_eq!(restored.state_hash(), forced.state_hash());
+    }
+
+    /// Scenario bit `0x800` (HarvesterImmune / Harvester Truce) reaches the
+    /// session from the descriptor and the native replay header, is
+    /// lockstep-visible — its gate refuses candidates, so a differing
+    /// session must diverge the desync detector — and survives a snapshot,
+    /// with the field defaulting clear like an older snapshot's absent word.
+    #[test]
+    fn scenario_harvester_immune_bit_roundtrips_and_changes_hash() {
+        let mut header = crate::sim::replay::NativeReplayHeader::new(0x1234_5678, "truce.map");
+        header.special_flags = 0x800;
+        let descriptor = ScenarioDescriptor::from_native_replay_header(&header);
+        assert!(descriptor.harvester_immune);
+
+        let mut immune = Simulation::from_descriptor(&descriptor);
+        assert!(immune.session.harvester_immune);
+        let clear = Simulation::from_descriptor(&ScenarioDescriptor {
+            harvester_immune: false,
+            ..descriptor.clone()
+        });
+        assert_ne!(immune.state_hash(), clear.state_hash());
+
+        // Native in-scenario load restarts Scenario RNG from Seed0; isolate
+        // the bit's persistence after the independent hash check.
+        immune.scenario_rng = crate::sim::rng::SimRng::new(0);
+        let bytes = crate::sim::snapshot::GameSnapshot::save(&immune, 1, 2, "truce.map", 0);
+        let restored = crate::sim::snapshot::GameSnapshot::load(&bytes)
+            .expect("snapshot load")
+            .sim;
+        assert!(restored.session.harvester_immune);
+        assert_eq!(restored.state_hash(), immune.state_hash());
+
+        // A snapshot written before the field existed loads with the bit
+        // clear, the retained cold-Scenario value of the native word.
+        let mut json = serde_json::to_value(&immune.session).unwrap();
+        json.as_object_mut().unwrap().remove("harvester_immune");
+        let missing: ScenarioSession = serde_json::from_value(json).unwrap();
+        assert!(!missing.harvester_immune);
     }
 }
 

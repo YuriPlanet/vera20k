@@ -109,8 +109,8 @@ impl Simulation {
         let bucket = air_spatial_bucket_index(
             entity.position.rx(),
             entity.position.ry(),
-            self.session.map_width,
-            self.session.map_height,
+            self.session.map_width(),
+            self.session.map_height(),
         );
         let order = self.substrate.next_air_tracker_order.next();
         let entities = &mut self.substrate.entities;
@@ -139,8 +139,8 @@ impl Simulation {
         let bucket = air_spatial_bucket_index(
             new_cell.0 as u16,
             new_cell.1 as u16,
-            self.session.map_width,
-            self.session.map_height,
+            self.session.map_width(),
+            self.session.map_height(),
         );
         if entity.foot_air.air_spatial_bucket == Some(bucket) {
             return;
@@ -239,8 +239,8 @@ mod tests {
     fn native_control_world() -> Simulation {
         let mut sim = Simulation::new();
         // Composed native controls initialize the tracker with extent40x40.
-        sim.session.map_width = 40;
-        sim.session.map_height = 40;
+        sim.session.set_map_width_for_test(40);
+        sim.session.set_map_height_for_test(40);
         for (id, rx) in [(1, 10), (2, 12)] {
             sim.substrate.entities.insert(GameEntity::test_default(
                 id,

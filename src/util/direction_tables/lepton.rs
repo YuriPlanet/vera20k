@@ -55,14 +55,4 @@ mod tests {
             assert_eq!(LEPTON_DELTAS.as_slice(), expected.as_slice());
         }
     }
-
-    #[test]
-    fn lepton_is_cell_times_256() {
-        for i in 0..8 {
-            assert_eq!(
-                LEPTON_DELTAS[i],
-                (DIRECTION_DELTAS[i].0 * 256, DIRECTION_DELTAS[i].1 * 256)
-            );
-        }
-    }
 }

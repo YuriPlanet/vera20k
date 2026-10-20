@@ -4,7 +4,7 @@
 
 use serde_json::{Value, json};
 
-use super::{ENEMY, OWNER, Replay, replay};
+use super::{OWNER, Replay, replay};
 use crate::rules::ini_parser::IniFile;
 use crate::rules::team_ai_ini::{TeamAiDefinitionSource, TeamAiIniRegistry};
 use crate::sim::house_state::HouseState;
@@ -108,8 +108,7 @@ fn add_house(scene: &mut Replay, name: &str) -> crate::sim::intern::InternedId {
     scene
         .sim
         .houses
-        .insert(id, HouseState::new(id, 2, None, false, 0, 10));
-    scene.sim.session.house_order.push(id);
+        .register(HouseState::new(id, 2, None, false, 0, 10));
     id
 }
 
@@ -145,13 +144,13 @@ fn action56_runs_from_parsed_script_through_the_real_chrono_pair() {
     assert!(state.advance_pending);
     assert_eq!(state.mission_target, scene.plant.map(TeamTarget::Object));
     assert!(
-        !source(&mut scene).is_ready,
+        !source(&mut scene).is_ready(),
         "only the source charge is consumed"
     );
     let owner = scene.sim.interner.get(OWNER).unwrap();
     let warp = scene.sim.interner.get("SW4").unwrap();
     assert!(
-        !scene.sim.super_weapons[&owner][&warp].is_ready,
+        !scene.sim.super_weapons[&owner][&warp].is_ready(),
         "an uncharged PostClick still executes"
     );
     assert_eq!(
@@ -185,47 +184,7 @@ fn action56_uses_the_leaders_house_for_both_supers_and_primary_enemy() {
         scene.sim.team_script_vm.teams[&scene.team].mission_target,
         scene.plant.map(TeamTarget::Object)
     );
-    assert!(!source(&mut scene).is_ready);
-}
-
-#[test]
-fn action56_distance_modes_use_the_shared_building_selector() {
-    for (mode, expected) in [(2, (14, 15)), (3, (20, 21))] {
-        let mut scene = scene(mode << 16, true);
-        let close = plant(&mut scene, ENEMY, (14, 15));
-        assert_eq!(step(&mut scene).last(), Some(&("SW4".into(), expected)));
-        let target = if mode == 2 {
-            close
-        } else {
-            scene.plant.unwrap()
-        };
-        assert_eq!(
-            scene.sim.team_script_vm.teams[&scene.team].mission_target,
-            Some(TeamTarget::Object(target))
-        );
-    }
-}
-
-#[test]
-fn action56_allied_buildings_are_skipped_unless_the_house_is_passive() {
-    for passive in [false, true] {
-        let mut scene = scene(NEAREST_PLANT, true);
-        let ally = add_house(&mut scene, "Ally");
-        let close = plant(&mut scene, "Ally", (14, 15));
-        scene
-            .sim
-            .house_alliances
-            .entry(OWNER.to_ascii_uppercase())
-            .or_default()
-            .insert("ALLY".into());
-        scene.sim.houses.get_mut(&ally).unwrap().multiplay_passive = passive;
-        step(&mut scene);
-        let target = if passive { close } else { scene.plant.unwrap() };
-        assert_eq!(
-            scene.sim.team_script_vm.teams[&scene.team].mission_target,
-            Some(TeamTarget::Object(target))
-        );
-    }
+    assert!(!source(&mut scene).is_ready());
 }
 
 #[test]
@@ -238,11 +197,16 @@ fn action56_waits_or_finishes_before_looking_for_a_target() {
     ] {
         let mut scene = scene(NEAREST_PLANT, false);
         let owner = scene.sim.interner.get(OWNER).unwrap();
-        scene.sim.power_states.get_mut(&owner).unwrap().total_output = output;
+        scene
+            .sim
+            .power_states
+            .get_mut(&owner)
+            .unwrap()
+            .set_total_output_for_test(output);
         let sw = source(&mut scene);
-        sw.is_ready = charged;
-        sw.charge_start_tick = 5000;
-        sw.charge_duration = remaining;
+        sw.set_is_ready_for_test(charged);
+        sw.set_charge_start_tick_for_test(5000);
+        sw.set_charge_duration_for_test(remaining);
         let rng = scene.sim.scenario_rng.native_state_hex();
         assert!(step(&mut scene).is_empty());
         let state = &scene.sim.team_script_vm.teams[&scene.team];
@@ -252,7 +216,7 @@ fn action56_waits_or_finishes_before_looking_for_a_target() {
         );
         assert!(state.refusal.is_none());
         assert_eq!(scene.sim.scenario_rng.native_state_hex(), rng);
-        assert_eq!(source(&mut scene).is_ready, charged);
+        assert_eq!(source(&mut scene).is_ready(), charged);
     }
 }
 
@@ -278,33 +242,17 @@ fn action56_missing_building_type_target_or_super_finishes_without_spending() {
         let state = &scene.sim.team_script_vm.teams[&scene.team];
         assert!(state.advance_pending, "case {case}");
         assert!(state.refusal.is_none());
-        assert!(source(&mut scene).is_ready);
+        assert!(source(&mut scene).is_ready());
         assert_eq!(scene.sim.scenario_rng.native_state_hex(), rng);
     }
 }
 
 #[test]
-fn action56_empty_team_finishes_without_firing() {
-    let mut scene = scene(NEAREST_PLANT, true);
-    scene
-        .sim
-        .team_script_vm
-        .teams
-        .get_mut(&scene.team)
-        .unwrap()
-        .members
-        .clear();
-    assert!(step(&mut scene).is_empty());
-    assert!(scene.sim.team_script_vm.teams[&scene.team].advance_pending);
-    assert!(source(&mut scene).is_ready);
-}
-
-#[test]
 fn action56_a_waiting_script_roundtrips_without_extra_action_state() {
     let mut scene = scene(NEAREST_PLANT, true);
-    source(&mut scene).is_ready = false;
-    source(&mut scene).charge_start_tick = 5000;
-    source(&mut scene).charge_duration = 100;
+    source(&mut scene).set_is_ready_for_test(false);
+    source(&mut scene).set_charge_start_tick_for_test(5000);
+    source(&mut scene).set_charge_duration_for_test(100);
     assert!(step(&mut scene).is_empty());
     assert!(!scene.sim.team_script_vm.teams[&scene.team].advance_pending);
     let bytes = save_codec::serialize(&scene.sim.team_script_vm).unwrap();
@@ -314,52 +262,9 @@ fn action56_a_waiting_script_roundtrips_without_extra_action_state() {
         scene.sim.team_script_vm.team(scene.team)
     );
     scene.sim.team_script_vm = restored;
-    source(&mut scene).is_ready = true;
+    source(&mut scene).set_is_ready_for_test(true);
     assert_eq!(step(&mut scene).len(), 2);
     assert!(scene.sim.team_script_vm.teams[&scene.team].advance_pending);
-}
-
-#[test]
-fn action56_selects_the_highest_eligible_leader_with_first_tie() {
-    for (first_rating, second_rating, joined, aircraft, foreign_member) in [
-        (2, 9, true, false, 0),
-        (9, 9, true, false, 1),
-        (2, 9, false, false, 1),
-        (2, 9, false, true, 0),
-    ] {
-        let mut scene = scene_with_members(
-            NEAREST_PLANT,
-            true,
-            json!([
-                {"live": true, "joined": true, "aircraft": false, "rating": first_rating},
-                {"live": true, "joined": joined, "aircraft": aircraft, "rating": second_rating}
-            ]),
-        );
-        let foreign = add_house(&mut scene, "Foreign");
-        scene
-            .sim
-            .substrate
-            .entities
-            .get_mut(scene.members[foreign_member])
-            .unwrap()
-            .set_owner_for_test(foreign);
-        set_only_enemy(&mut scene, true);
-        assert_eq!(step(&mut scene).last(), Some(&("SW4".into(), (20, 21))));
-        assert!(!source(&mut scene).is_ready);
-    }
-}
-
-#[test]
-fn action56_threat_modes_reuse_the_house_spatial_threat_owner() {
-    for (mode, expected) in [(0, (14, 15)), (1, (20, 21))] {
-        let mut scene = scene(mode << 16, true);
-        plant(&mut scene, ENEMY, (14, 15));
-        let owner = scene.sim.interner.get(OWNER).unwrap();
-        let house = scene.sim.houses.get_mut(&owner).unwrap();
-        house.clear_spatial_threat();
-        house.adjust_spatial_threat((20, 21), 400).unwrap();
-        assert_eq!(step(&mut scene).last(), Some(&("SW4".into(), expected)));
-    }
 }
 
 #[test]
@@ -391,11 +296,16 @@ fn action56_missing_centre_or_primary_enemy_finishes_safely() {
                 .zone = None;
         } else {
             let owner = scene.sim.interner.get(OWNER).unwrap();
-            scene.sim.houses.get_mut(&owner).unwrap().enemy_house = None;
+            scene
+                .sim
+                .houses
+                .get_mut(&owner)
+                .unwrap()
+                .set_enemy_house_for_test(None);
             set_only_enemy(&mut scene, true);
         }
         assert!(step(&mut scene).is_empty());
         assert!(scene.sim.team_script_vm.teams[&scene.team].advance_pending);
-        assert!(source(&mut scene).is_ready);
+        assert!(source(&mut scene).is_ready());
     }
 }

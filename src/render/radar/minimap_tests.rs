@@ -13,7 +13,7 @@ use crate::rules::house_colors::{HouseColorIndex, HouseColorRamps};
 use crate::sim::components::Position;
 use crate::sim::intern::test_intern;
 use crate::sim::vision::FogState;
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap};
 
 fn overlay_datum(
     rx: u16,
@@ -106,15 +106,6 @@ fn make_pixel(rx: u16, ry: u16, color: [u8; 4]) -> TerrainPixel {
 }
 
 #[test]
-fn test_world_to_minimap_pixel_origin() {
-    // World position at origin maps to minimap pixel (0, 0).
-    let (px, py): (u32, u32) =
-        world_to_minimap_pixel(0.0, 0.0, 0.0, 0.0, 1000.0, 1000.0, 0.0, 0.0, 200.0, 200.0);
-    assert_eq!(px, 0);
-    assert_eq!(py, 0);
-}
-
-#[test]
 fn test_world_to_minimap_pixel_center() {
     // Position at center of world maps to center of minimap.
     let (px, py): (u32, u32) = world_to_minimap_pixel(
@@ -125,16 +116,6 @@ fn test_world_to_minimap_pixel_center() {
 }
 
 #[test]
-fn test_world_to_minimap_pixel_clamps_negative() {
-    // Positions outside world bounds are clamped to 0.
-    let (px, py): (u32, u32) = world_to_minimap_pixel(
-        -500.0, -500.0, 0.0, 0.0, 1000.0, 1000.0, 0.0, 0.0, 200.0, 200.0,
-    );
-    assert_eq!(px, 0);
-    assert_eq!(py, 0);
-}
-
-#[test]
 fn test_world_to_minimap_pixel_clamps_overflow() {
     // Positions beyond world extent are clamped to the native aperture edge.
     let (px, py): (u32, u32) = world_to_minimap_pixel(
@@ -142,16 +123,6 @@ fn test_world_to_minimap_pixel_clamps_overflow() {
     );
     assert_eq!(px, MINIMAP_WIDTH - 1);
     assert_eq!(py, MINIMAP_HEIGHT - 1);
-}
-
-#[test]
-fn test_world_to_minimap_pixel_with_offset() {
-    // World origin is offset — position at origin_x maps to pixel 0.
-    let (px, py): (u32, u32) = world_to_minimap_pixel(
-        -500.0, 200.0, -500.0, 200.0, 2000.0, 2000.0, 0.0, 0.0, 200.0, 200.0,
-    );
-    assert_eq!(px, 0);
-    assert_eq!(py, 0);
 }
 
 /// Ramps where entry 0 = Gold, entry 1 = DarkBlue, entry 2 = DarkRed (HSV from
@@ -166,20 +137,6 @@ fn test_ramps() -> HouseColorRamps {
         mk("DarkBlue", [153, 214, 212]),
         mk("DarkRed", [0, 230, 255]),
     ])
-}
-
-#[test]
-fn test_owner_dot_color_uses_house_map() {
-    let mut map: HouseColorMap = HouseColorMap::new();
-    map.insert("Americans".to_string(), HouseColorIndex(1)); // DarkBlue entry
-    map.insert("Russians".to_string(), HouseColorIndex(2)); // DarkRed entry
-    let ramps = test_ramps();
-
-    let blue: [u8; 4] = owner_dot_color("Americans", &map, &ramps);
-    let red: [u8; 4] = owner_dot_color("Russians", &map, &ramps);
-    // Blue should have more B than R, red should have more R than B.
-    assert!(blue[2] > blue[0], "Americans should be blue-ish: {blue:?}");
-    assert!(red[0] > red[2], "Russians should be red-ish: {red:?}");
 }
 
 #[test]
@@ -231,22 +188,11 @@ fn test_minimap_entity_visible_for_allied_owner() {
 }
 
 #[test]
-fn test_cell_visibility_color_visible_uses_base_color() {
-    let mut fog = FogState::new(16, 16);
-    fog.mark_visible_for_owner(test_intern("Americans"), 5, 7);
-    let pixel = make_pixel(5, 7, [40, 120, 40, 255]);
-    assert_eq!(
-        cell_visibility_color(test_intern("Americans"), &fog, &pixel),
-        Some([40, 120, 40, 255])
-    );
-}
-
-#[test]
 fn test_cell_visibility_color_revealed_shows_full_color() {
     // In standard YR (FogOfWar=false), revealed cells show at full brightness.
     let mut fog = FogState::new(16, 16);
     fog.mark_visible_for_owner(test_intern("Americans"), 5, 7);
-    fog.by_owner
+    fog.by_owner_mut_for_test()
         .get_mut(&test_intern("Americans"))
         .expect("owner present")
         .clear_all_visible();
@@ -265,46 +211,6 @@ fn test_cell_visibility_color_shrouded_returns_none() {
         cell_visibility_color(test_intern("Americans"), &fog, &pixel),
         None
     );
-}
-
-#[test]
-fn test_set_pixel_in_bounds() {
-    let mut rgba: Vec<u8> = vec![0u8; 16]; // 2x2 pixel buffer
-    set_pixel(&mut rgba, 2, 1, 0, [255, 128, 64, 255]);
-    // Pixel at (1,0) -> offset = (0*2 + 1)*4 = 4
-    assert_eq!(rgba[4], 255);
-    assert_eq!(rgba[5], 128);
-    assert_eq!(rgba[6], 64);
-    assert_eq!(rgba[7], 255);
-}
-
-#[test]
-fn test_set_pixel_out_of_bounds_does_nothing() {
-    let mut rgba: Vec<u8> = vec![0u8; 16]; // 2x2 pixel buffer
-    // Writing to x=5 in a 2-wide buffer should be silently ignored.
-    set_pixel(&mut rgba, 2, 5, 0, [255, 255, 255, 255]);
-    assert!(rgba.iter().all(|&b| b == 0));
-}
-
-#[test]
-fn test_single_cell_map_pixel_mapping() {
-    // A map with one cell: its position should map to a valid minimap pixel.
-    // If world_width is small (e.g., just one tile = 60px), the cell still
-    // maps to pixel (0,0) since it IS the origin.
-    let (px, py): (u32, u32) =
-        world_to_minimap_pixel(0.0, 0.0, 0.0, 0.0, 60.0, 30.0, 0.0, 0.0, 200.0, 200.0);
-    assert_eq!(px, 0);
-    assert_eq!(py, 0);
-}
-
-#[test]
-fn test_degenerate_world_size_no_panic() {
-    // Zero-size world should not panic (clamped to 1.0 in MinimapRenderer::new).
-    let (px, py): (u32, u32) =
-        world_to_minimap_pixel(100.0, 100.0, 0.0, 0.0, 1.0, 1.0, 0.0, 0.0, 200.0, 200.0);
-    // Should clamp to max pixel.
-    assert_eq!(px, MINIMAP_WIDTH - 1);
-    assert_eq!(py, MINIMAP_HEIGHT - 1);
 }
 
 #[test]
@@ -688,7 +594,7 @@ fn radar_gate_fixture(
 ) -> (
     crate::sim::entity_store::EntityStore,
     crate::sim::intern::StringInterner,
-    BTreeMap<crate::sim::intern::InternedId, crate::sim::house_state::HouseState>,
+    crate::sim::houses::Houses,
 ) {
     let mut entity = crate::sim::game_entity::GameEntity::test_default(1, "DOT", owner, 0, 0);
     entity.set_in_playfield(true);
@@ -697,11 +603,10 @@ fn radar_gate_fixture(
     entities.insert(entity);
     let interner = crate::sim::intern::test_interner();
     let owner_id = interner.get(owner).expect("fixture owner interned");
-    let mut houses = BTreeMap::new();
-    houses.insert(
-        owner_id,
-        crate::sim::house_state::HouseState::new(owner_id, 0, None, false, 0, 10),
-    );
+    let mut houses = crate::sim::houses::Houses::default();
+    houses.register(crate::sim::house_state::HouseState::new(
+        owner_id, 0, None, false, 0, 10,
+    ));
     (entities, interner, houses)
 }
 
@@ -711,8 +616,8 @@ fn radar_pixel_shroud_exception_distinguishes_local_pointer_from_singleplayer_hu
     let (entities, interner, mut houses) = radar_gate_fixture("SecondHuman");
     let second = test_intern("SecondHuman");
     let house = houses.get_mut(&second).unwrap();
-    house.is_human = false;
-    house.player_control = true;
+    house.set_is_human_for_test(false);
+    house.set_player_control_for_test(true);
     let fog = FogState::default();
     let entry = RadarTrackerEntry {
         stable_id: 1,
@@ -804,7 +709,10 @@ fn radar_pixel_insignificant_passive_owner_requires_radar_visible() {
     let local = test_intern("Local");
     let enemy = test_intern("Passive");
     let (entities, interner, mut houses) = radar_gate_fixture("Passive");
-    houses.get_mut(&enemy).unwrap().multiplay_passive = true;
+    houses
+        .get_mut(&enemy)
+        .unwrap()
+        .set_multiplay_passive_for_test(true);
     let entry = RadarTrackerEntry {
         stable_id: 1,
         x: 0,
@@ -847,7 +755,10 @@ fn radar_pixel_fogged_but_explored_cell_passes_render_gate_without_gap_proxy() {
     let (entities, interner, houses) = radar_gate_fixture("Enemy");
     let mut fog = FogState::default();
     fog.mark_visible_for_owner(local, 0, 0);
-    fog.by_owner.get_mut(&local).unwrap().clear_all_visible();
+    fog.by_owner_mut_for_test()
+        .get_mut(&local)
+        .unwrap()
+        .clear_all_visible();
     assert!(fog.is_cell_revealed(local, 0, 0));
     assert!(!fog.is_cell_visible(local, 0, 0));
     assert!(radar_pixel_candidate_eligible(

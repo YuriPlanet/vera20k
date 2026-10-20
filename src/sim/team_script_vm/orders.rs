@@ -35,7 +35,7 @@ impl Simulation {
         mission: MissionId,
         rules: &RuleSet,
     ) {
-        let now = self.session.binary_frame;
+        let now = self.session.binary_frame();
         let readiness = LiveReadyInputProvider { rules };
         let _ = self.mission_queue_exact(id, mission, 0, now, &readiness);
     }
@@ -44,7 +44,7 @@ impl Simulation {
     /// the member is ready for it.
     pub(super) fn team_member_commence(&mut self, id: u64, rules: &RuleSet) {
         if self.mission_ready_to_commence(id, rules) {
-            let now = self.session.binary_frame;
+            let now = self.session.binary_frame();
             let _ = self.mission_commence_exact(id, now);
         }
     }

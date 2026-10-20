@@ -116,7 +116,7 @@ impl Simulation {
         let computer = self
             .houses
             .get(&entity.owner())
-            .is_some_and(|house| !house.is_controlled_by_human(self.session.game_mode_nonzero));
+            .is_some_and(|house| !house.is_controlled_by_human(self.session.game_mode_nonzero()));
         if !computer || entity.navigation.nav_com().is_some() {
             return;
         }

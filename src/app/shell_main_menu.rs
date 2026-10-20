@@ -1,5 +1,11 @@
 use super::*;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum MultiplayerSettingsContext {
+    Options,
+    Shell,
+}
+
 /// Private operation seam for the retail shell's confirmed quit transaction.
 /// Keeping the ordering here lets unit tests observe persistence dispatch
 /// without constructing the window, renderer, or audio-backed `AppState`.
@@ -19,7 +25,7 @@ impl ConfirmedQuitOperations for AppStateConfirmedQuitOperations<'_> {
     }
 
     fn dismiss_confirmation(&mut self) {
-        App::close_exit_confirm_modal_from_controller(self.state);
+        App::close_shell_message_box_from_controller(self.state);
     }
 
     fn start_cascade(&mut self) {
@@ -56,6 +62,14 @@ impl crate::app::persistence::options::launcher::LauncherPreviewOperations for A
         // The menu movie's session identity carries the choice, so its next
         // paint loads the other game's copy; the splash follows next launch.
         self.persistence.options_profile.ra2_look = ra2_look;
+    }
+    fn store_shift_queue(&mut self, shift_queue: bool) {
+        // The next cameo press reads it; Options' accept writes it out.
+        self.persistence.options_profile.shift_queue = shift_queue;
+    }
+    fn store_wol_test_service(&mut self, wol_test_service: bool) {
+        // The next Internet visit picks its provider from it.
+        self.persistence.options_profile.wol_test_service = wol_test_service;
     }
 }
 
@@ -196,16 +210,11 @@ impl crate::app::persistence::options::launcher::LauncherParentOperations
     }
 
     fn prepare_network_settings(&mut self) {
-        self.state
-            .frontend
-            .offline_skirmish_runtime
-            .refresh_local_multiplayer_preferences();
+        App::prepare_multiplayer_settings(self.state, MultiplayerSettingsContext::Options);
     }
 
     fn route_network(&mut self) {
-        log::info!(
-            "Launcher Options Network child boundary reached; RT_DIALOG 0xD7 is not implemented"
-        );
+        crate::app::input::network_options::open(self.state, &[]);
     }
 
     fn route_keyboard(&mut self) {
@@ -216,15 +225,69 @@ impl crate::app::persistence::options::launcher::LauncherParentOperations
     }
 
     fn reopen_parent(&mut self) {
-        // Native caller blocks in A3. Our asynchronous child resumes this
+        // Native caller blocks in A3/D7. Our asynchronous child resumes this
         // continuation when it closes (after its teardown slide).
-        if self.state.frontend.keyboard_dialog.is_none() {
+        if self.state.frontend.keyboard_dialog.is_none()
+            && self.state.frontend.network_options.is_none()
+        {
             App::open_launcher_options_dialog(self.state);
         }
     }
 }
 
 impl App {
+    /// Shared pre-dialog Session read: D7 at55FD31, Skirmish at52E11E,
+    /// and LAN (including failed IPX admission) at52E37D. Preferences stay
+    /// in their process caches; the original reads INI8870C0, not disk.
+    pub(crate) fn prepare_multiplayer_settings(
+        state: &mut AppState,
+        context: MultiplayerSettingsContext,
+    ) {
+        //6980D6→6722F0 and475540 read the same process INI each visit and
+        // may allocate a Country before the optional52E123 body pass.
+        state
+            .frontend
+            .multiplayer_shell_runtime
+            .read_multiplayer_settings(&mut state.process_assets);
+        let main = crate::app::state::process_main_draws(
+            state.match_state.sim_runtime.as_mut(),
+            &mut state.frontend.frontend_main_rng,
+        );
+        state
+            .match_state
+            .session
+            .prepare_multiplayer_settings(&main);
+        if context == MultiplayerSettingsContext::Shell {
+            state.process_assets.refresh_multiplayer_country_bodies();
+        }
+        // These are compatibility projections of the one process registry.
+        // A finished world can remain resident behind the shell, and rules()
+        // reads its resource projection, so refresh both consumers together.
+        if let Some(rules) = state.frontend.frontend_rules.as_mut() {
+            state.process_assets.project_multiplayer_countries(rules);
+        }
+        if let Some(runtime) = state.match_state.sim_runtime.as_mut() {
+            state
+                .process_assets
+                .project_multiplayer_countries(&mut runtime.resources.rules);
+        }
+        if let Some(rules) = state.frontend.frontend_rules.as_ref() {
+            state
+                .frontend
+                .skirmish_shell_state
+                .refresh_country_catalog(rules);
+        } else if let Some(runtime) = state.match_state.sim_runtime.as_ref() {
+            state
+                .frontend
+                .skirmish_shell_state
+                .refresh_country_catalog(&runtime.resources.rules);
+        }
+        state
+            .frontend
+            .multiplayer_shell_runtime
+            .refresh_multiplayer_country_catalog(&state.process_assets);
+    }
+
     /// A right-panel menu page (Single Player `0x100` or Movies & Credits
     /// `0x101`) owns the `MainMenu` screen.
     pub(super) fn menu_page_active(state: &AppState) -> bool {
@@ -340,22 +403,6 @@ impl App {
             crate::ui::campaign_score_shell::CAMPAIGN_SCORE_DIALOG,
             false,
         );
-    }
-
-    /// Campaign defeat also bypasses the generic multiplayer score dialog.
-    /// Until the native message-box choices are ported, retain the common
-    /// asset-independent result card instead of presenting `0x108`.
-    pub(crate) fn open_campaign_defeat_fallback(
-        state: &mut AppState,
-        title: String,
-        detail: String,
-    ) {
-        state.frontend.score_page = None;
-        state.frontend.score_art = None;
-        state.frontend.campaign_score_art = None;
-        state.frontend.campaign_score_page = None;
-        state.frontend.shell_first_paint_slide = None;
-        state.frontend.screen = GameScreen::MissionResult { title, detail };
     }
 
     fn score_layout(state: &AppState) -> crate::ui::score_shell::ScoreLayout {
@@ -512,13 +559,25 @@ impl App {
         // A won campaign mission continues in GameExit::Victory instead of
         // returning to the shell; read it before the teardown below.
         let campaign_victory = Self::take_campaign_victory(state);
+        Self::close_finished_scenario(state);
+        match campaign_victory {
+            Some(victory) => Self::advance_campaign_victory(state, victory),
+            None => Self::resume_shell_after_match(state),
+        }
+    }
+
+    /// Retire a scenario whose outcome teardown has run: flush the
+    /// deterministic log while its simulation is still alive and hand the
+    /// scenario stream back to the offline shell, retaining the runtime and
+    /// presentation resources.
+    pub(super) fn close_finished_scenario(state: &mut AppState) {
         // Main_Game48CEBF also retires ScenarioStarted after score Continue;
         // source: original gamemd.exe Main_Game48CCC0 (EBX=0 at48CCD4).
         if let Some(runtime) = state.match_state.sim_runtime.as_mut() {
-            runtime.simulation.session.set_started(false);
+            runtime.simulation.retire_scenario_started();
         }
         crate::app::match_runtime::sim_tick::flush_replay_log(state);
-        Self::capture_returned_skirmish_rng(state);
+        Self::capture_returned_multiplayer_scenario(state);
         state.match_state.startup.clear();
         state.match_state.scenario_elapsed_clock.reset();
         state.frontend.score_page = None;
@@ -529,15 +588,20 @@ impl App {
         state.frontend.screen = GameScreen::MainMenu;
         state.match_state.input.zoom_level = 1.0;
         state.match_state.input.zoom_target = 1.0;
-        match campaign_victory {
-            Some(victory) => Self::advance_campaign_victory(state, victory),
-            None => Self::resume_shell_after_match(state),
-        }
     }
 
-    /// Where the shell resumes after a match: a Skirmish game re-enters a new
-    /// `0x102` (PrepareSession with GameMode 5), anything else the main menu.
+    /// PrepareSession re-enters the active mode's shell: LAN starts a new BB,
+    /// WOL its lobby 0x113, Skirmish a new0x102. The session keeps the
+    /// admitted network return owner.
     pub(super) fn resume_shell_after_match(state: &mut AppState) {
+        if state.frontend.external_launch {
+            Self::start_quit_cascade(state);
+            return;
+        }
+        if state.match_state.session.network_return_context().is_some() {
+            crate::app::shell_network_setup::return_after_match(state);
+            return;
+        }
         if state.frontend.shell_route.skirmish() {
             Self::enter_native_skirmish_from_single_player(state);
         }
@@ -584,6 +648,7 @@ impl App {
     /// `0x0052E119`, `0x0052E168` -> `0x006AE2C0`). Its Back returns to
     /// Single Player either way (GameMode 0, state 1, `0x0052E175`).
     pub(super) fn enter_native_skirmish_from_single_player(state: &mut AppState) {
+        Self::prepare_multiplayer_settings(state, MultiplayerSettingsContext::Shell);
         // Prepare dialog 0x102 from the process-lifetime MIX list before
         // destroying its 0x100 source. Active YR's FUN_00534E50 registers the
         // neutral pair on that shared list before the shell SHPs are loaded.
@@ -706,7 +771,7 @@ impl App {
         state.frontend.options_dialog = Some(dialog);
     }
 
-    fn play_launcher_options_cue(
+    pub(crate) fn play_launcher_options_cue(
         state: &mut AppState,
         cue: crate::ui::main_menu_dialogs::options::LauncherCue,
     ) {
@@ -744,12 +809,12 @@ impl App {
             }
         }
         match output.result {
-            // Main Menu and Keyboard: 0xD5 slides out (0x0055FD06) before
-            // the result is committed and the next page runs. (Network's page
-            // 0xD7 is not ported; its result keeps the old immediate path.)
+            // 0x0055FD06 tears D5 down before every continuation, including
+            // Network (55FD28), Keyboard, and the final Main Menu return.
             Some(
                 result @ (crate::ui::main_menu_dialogs::options::LauncherParentResult::Back
-                | crate::ui::main_menu_dialogs::options::LauncherParentResult::Keyboard),
+                | crate::ui::main_menu_dialogs::options::LauncherParentResult::Keyboard
+                | crate::ui::main_menu_dialogs::options::LauncherParentResult::Network),
             ) => {
                 state.frontend.options_dialog = Some(dialog);
                 Self::leave_shell_dialog(
@@ -946,7 +1011,7 @@ impl App {
 
     /// The quit-confirm (0x120) modal's OK/Cancel button feed: resource-id'd pixel
     /// rects from the centered modal layout at the live screen size.
-    fn exit_confirm_modal_feed(state: &AppState) -> Vec<crate::ui::shell::layout::LaidOutControl> {
+    fn shell_message_box_feed(state: &AppState) -> Vec<crate::ui::shell::layout::LaidOutControl> {
         use crate::ui::shell::layout::LaidOutControl;
         use crate::ui::shell::modal;
         let layout = modal::quit_confirm_layout(
@@ -965,8 +1030,8 @@ impl App {
         ]
     }
 
-    pub(super) fn handle_exit_confirm_modal_mouse_down(state: &mut AppState) {
-        let feed = Self::exit_confirm_modal_feed(state);
+    pub(super) fn handle_shell_message_box_mouse_down(state: &mut AppState) {
+        let feed = Self::shell_message_box_feed(state);
         let (x, y) = state.match_state.input.cursor_px();
         if state.frontend.shell_controller.top_id()
             != Some(crate::ui::shell::descriptor::DialogId(0x0120))
@@ -982,8 +1047,8 @@ impl App {
         }
     }
 
-    pub(super) fn handle_exit_confirm_modal_mouse_up(state: &mut AppState) {
-        let feed = Self::exit_confirm_modal_feed(state);
+    pub(super) fn handle_shell_message_box_mouse_up(state: &mut AppState) {
+        let feed = Self::shell_message_box_feed(state);
         let (x, y) = state.match_state.input.cursor_px();
         if state.frontend.shell_controller.top_id()
             != Some(crate::ui::shell::descriptor::DialogId(0x0120))
@@ -991,22 +1056,48 @@ impl App {
             return;
         }
         let activated = state.frontend.shell_controller.on_pointer_up(x, y, &feed);
-        match activated {
+        if let Some(result) =
+            activated.and_then(crate::ui::shell::modal::ModalResult::from_message_box_control)
+        {
+            Self::resolve_shell_message_box(state, result);
+        }
+    }
+
+    /// The box's result returns to its caller. Callback `0x005D36A0` writes 0
+    /// for `0x5AE` and 1 for control 2 or IDOK.
+    pub(super) fn resolve_shell_message_box(
+        state: &mut AppState,
+        result: crate::ui::shell::modal::ModalResult,
+    ) {
+        use crate::app::frontend::state::ShellMessageBoxPurpose;
+        let Some(message_box) = state.frontend.shell_message_box.take() else {
+            return;
+        };
+        match message_box.purpose {
             // OK -> quit (result 0). Dismiss the confirmation first, persist
             // settings to RA2MD.INI, then run the graceful cascade (music fade
             // → trailing-voice wait → hard stop → exit) via render_frame instead
             // of exiting immediately. The screen fade-to-black is sub-step 4b-ii-b.
-            Some(id) if id == crate::ui::shell::modal::control::OK => {
+            ShellMessageBoxPurpose::ExitGame
+                if result == crate::ui::shell::modal::ModalResult::MessageBox(0) =>
+            {
                 let mut operations = AppStateConfirmedQuitOperations { state };
                 dispatch_shell_controller_confirmed_quit(&mut operations);
             }
-            // Cancel (control 2) -> stay; close the modal via the controller
-            // pop (D-B3) so mouse and Esc converge on the same teardown.
-            Some(id) if id == crate::ui::shell::modal::control::CANCEL => {
-                Self::close_exit_confirm_modal_from_controller(state);
+            // Cancel -> stay; close the modal via the controller pop (D-B3)
+            // so mouse and Esc converge on the same teardown.
+            ShellMessageBoxPurpose::ExitGame => {
+                Self::close_shell_message_box_from_controller(state);
                 state.platform.window.request_redraw();
             }
-            _ => {}
+            ShellMessageBoxPurpose::CampaignReplay(retry) => {
+                Self::close_shell_message_box_from_controller(state);
+                Self::answer_campaign_replay(
+                    state,
+                    retry,
+                    crate::app::campaign_defeat::replay_route(result),
+                );
+            }
         }
     }
 
@@ -1184,7 +1275,28 @@ impl App {
             ShellExitThen::KeyboardClose(exit) => {
                 crate::app::input::keyboard::commit_close(state, exit)
             }
-            ShellExitThen::SkirmishChooseMap => Self::open_choose_map_modal(state),
+            ShellExitThen::NetworkOptionsClose => {
+                crate::app::input::network_options::commit_close(state)
+            }
+            ShellExitThen::LanBack => Self::commit_lan_back(state),
+            ShellExitThen::LanCreate { observe } => Self::commit_lan_create(state, observe),
+            ShellExitThen::LanJoinAccepted(accepted) => {
+                Self::open_lan_joined_setup(state, accepted)
+            }
+            ShellExitThen::NetworkSetupBack(_) => {
+                crate::app::shell_network_setup::commit_back(state)
+            }
+            ShellExitThen::NetworkSetupChooseMap(_) => {
+                crate::app::shell_network_setup::open_choose_map(state)
+            }
+            ShellExitThen::NetworkStart { agreed_seed, .. } => {
+                crate::app::shell_network_setup::commit_start(state, agreed_seed)
+            }
+            ShellExitThen::SkirmishChooseMap => {
+                let mode_id = state.frontend.skirmish_shell_state.selected_mode_id;
+                let record_index = Self::current_choose_map_record_index(state);
+                Self::open_choose_map_modal(state, mode_id, record_index);
+            }
             ShellExitThen::ChooseMapUse(selection) => Self::commit_choose_map_use(state, selection),
             ShellExitThen::ChooseMapCancel => Self::close_choose_map_modal(state),
             ShellExitThen::ChooseMapRandomMap => Self::commit_choose_map_random_map(state),
@@ -1193,7 +1305,13 @@ impl App {
             ShellExitThen::WolBack => Self::return_from_wol(state),
             ShellExitThen::ScoreContinue => Self::leave_mission_result_screen(state),
             ShellExitThen::CampaignScoreContinue => Self::leave_mission_result_screen(state),
-            ShellExitThen::WolApiMissing => Self::commit_wol_api_missing(state),
+            ShellExitThen::WolAction(mode) => Self::commit_wol_action(state, mode),
+            ShellExitThen::WolLoginClose(result) => Self::commit_wol_login_close(state, result),
+            ShellExitThen::WolLobbyBack => crate::app::shell_wol::lobby::commit_back(state),
+            ShellExitThen::WolLobbyHide => crate::app::shell_wol::lobby::commit_hide(state),
+            ShellExitThen::WolCreateAccepted { observe } => {
+                crate::app::shell_wol::lobby::commit_create(state, observe)
+            }
         }
     }
 
@@ -1216,7 +1334,7 @@ impl App {
         if state.frontend.credits_roll.is_some() {
             return;
         }
-        if state.frontend.shell_route.wol_welcome() {
+        if state.frontend.shell_route.wol_visit() {
             return;
         }
         if let Some(assets) = state.process_assets.manager() {
@@ -1309,7 +1427,7 @@ impl App {
             MainMenuShellAction::None => {}
             // The original pops a confirm message box here; it does NOT quit on
             // the first Exit click. Quitting happens only on confirm.
-            MainMenuShellAction::ExitGame => Self::open_exit_confirm_modal(state),
+            MainMenuShellAction::ExitGame => Self::open_exit_confirm(state),
             MainMenuShellAction::SinglePlayer => {
                 Self::open_single_player_shell(state);
             }
@@ -1319,32 +1437,36 @@ impl App {
             MainMenuShellAction::MoviesAndCredits => {
                 Self::open_movies_credits_page(state);
             }
-            MainMenuShellAction::Network => Self::bounce_network_to_main_menu(state),
+            MainMenuShellAction::Network => Self::open_lan_lobby(state),
             MainMenuShellAction::WwOnline => Self::open_wol_welcome_page(state),
         }
     }
 
-    /// Network (result 3, state 3 `0x0052DD75`): state 0x10 creates the IPX
-    /// interface and opens its socket (`0x007B10C0`, `AF_IPX`). Without IPX
-    /// the socket fails and the game returns to state 0x12 without a message
-    /// (`0x0052E425`), which builds a new `0xE2` with its entry slide. VERA20k
-    /// has no IPX transport, so it always takes that branch.
-    fn bounce_network_to_main_menu(state: &mut AppState) {
-        crate::app::frontend::main_menu_shell_render::clear_ra2ts_movie_session(state);
-        crate::app::frontend::shell_transition::invalidate_main_menu_dialog_instance(state);
-    }
-
     /// Open the Exit-Game confirm message box, resolving its labels from CSF.
-    fn open_exit_confirm_modal(state: &mut AppState) {
+    fn open_exit_confirm(state: &mut AppState) {
         // State 6 runs after 0xE2 is destroyed: it paints the empty shell
         // backdrop (`0x0052FEC0`) and asks; Cancel builds a new 0xE2 (state
         // 0x12, `0x0052DE39..0x0052DE42`).
         crate::app::frontend::main_menu_shell_render::clear_ra2ts_movie_session(state);
         crate::app::frontend::shell_transition::invalidate_main_menu_dialog_instance(state);
         let csf = |key: &str, fallback: &str| Self::csf_label(state, key, fallback);
-        let modal = crate::ui::main_menu_dialogs::ExitConfirmModalState::open(&csf);
+        let labels = crate::ui::main_menu_dialogs::ShellMessageBoxLabels::exit_confirm(&csf);
+        Self::open_shell_message_box(
+            state,
+            crate::app::frontend::state::ShellMessageBox {
+                labels,
+                purpose: crate::app::frontend::state::ShellMessageBoxPurpose::ExitGame,
+            },
+        );
+    }
+
+    /// ShellMessageBox__Run `0x005D3490` over the empty shell backdrop.
+    pub(super) fn open_shell_message_box(
+        state: &mut AppState,
+        message_box: crate::app::frontend::state::ShellMessageBox,
+    ) {
         // The SHP modal sources PUDLGBGN/MNBTTN from the skirmish chrome atlas; load
-        // it on demand so the quit-confirm renders straight from the main menu.
+        // it on demand so the box renders straight from the main menu.
         let _ = Self::ensure_skirmish_shell_chrome(state);
         // Host the modal as a TRUE LIFO push over the active shell (D-B3):
         // teardown pops back to it with focus restored. (ensure_active would
@@ -1358,7 +1480,8 @@ impl App {
                 .shell_controller
                 .push(crate::ui::shell::descriptor::DialogId(0x0120), true);
         }
-        state.frontend.exit_confirm_modal = Some(modal);
+        state.frontend.shell_message_box = Some(message_box);
+        state.platform.window.request_redraw();
     }
 
     /// Whether any main-menu modal dialog is currently open. Used to route
@@ -1369,9 +1492,9 @@ impl App {
 
     /// Close retained main-menu child dialogs (options — never on the
     /// controller stack). The exit-confirm modal closes through
-    /// close_exit_confirm_modal_from_controller (D-B3).
+    /// close_shell_message_box_from_controller (D-B3).
     pub(crate) fn close_main_menu_dialogs(state: &mut AppState) {
-        state.frontend.exit_confirm_modal = None;
+        state.frontend.shell_message_box = None;
         state.frontend.options_dialog = None;
     }
 
@@ -1379,8 +1502,8 @@ impl App {
     /// state, then LIFO-pop its 0x120 instance so focus returns to the shell
     /// beneath. Mirrors `close_validation_modal_from_controller` — every Esc
     /// and mouse close path converges here.
-    pub(super) fn close_exit_confirm_modal_from_controller(state: &mut AppState) {
-        state.frontend.exit_confirm_modal = None;
+    pub(super) fn close_shell_message_box_from_controller(state: &mut AppState) {
+        state.frontend.shell_message_box = None;
         if state.frontend.shell_controller.top_id()
             == Some(crate::ui::shell::descriptor::DialogId(0x0120))
         {
@@ -1388,14 +1511,15 @@ impl App {
         }
     }
 
-    pub(super) fn route_exit_confirm_modal_key(state: &mut AppState, key: ShellKey) -> bool {
-        if state.frontend.exit_confirm_modal.is_none() {
+    pub(super) fn route_shell_message_box_key(state: &mut AppState, key: ShellKey) -> bool {
+        if state.frontend.shell_message_box.is_none() {
             return false;
         }
         if !state.frontend.shell_controller.on_key(key) {
             return false;
         }
-        Self::close_exit_confirm_modal_from_controller(state);
+        // Escape is IDCANCEL (control 2): result 1, the same as Cancel.
+        Self::resolve_shell_message_box(state, crate::ui::shell::modal::ModalResult::MessageBox(1));
         state.platform.window.request_redraw();
         true
     }

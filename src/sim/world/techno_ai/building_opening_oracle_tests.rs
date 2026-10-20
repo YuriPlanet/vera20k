@@ -57,13 +57,13 @@ fn joined_fixture(rules: &RuleSet, row: &Value) -> (Simulation, u64) {
     let route = input["route"].as_str().unwrap();
     let mut sim = Simulation::new();
     // The joined original fixture stores3 at GameOptionsClass0xA8EB60.
-    sim.session.game_options.game_speed = 3;
+    sim.session.game_options_mut_for_test().game_speed = 3;
     sim.install_resolved_terrain_for_new_map(test_flat_ground_grid(24));
     crate::sim::arena_fixture::supply_native_map(&mut sim);
     let owner = sim.interner.intern("Americans");
     let mut house = HouseState::new(owner, 0, Some(owner), route == "player", 5000, 10);
-    house.current_iq = 0;
-    sim.houses.insert(owner, house);
+    house.set_current_iq_for_test(0);
+    sim.houses.register(house);
     let id = prior_building(&mut sim, rules, name, 6, 9);
     let yard = prior_building(&mut sim, rules, "GACNST", 12, 12);
     {
@@ -215,42 +215,42 @@ fn assert_joined_frame(sim: &Simulation, id: u64, frame: &Value, context: &str) 
         "{context}: live animations"
     );
     for (anim, expected) in rust_anims.iter().zip(native_anims) {
-        let runtime = &anim.runtime;
+        let runtime = &anim.runtime();
         assert_eq!(
-            sim.interner.resolve(anim.type_id),
+            sim.interner.resolve(anim.type_id()),
             expected["type_name"].as_str().unwrap(),
             "{context}: retained type identity"
         );
         assert_eq!(
-            i64::from(anim.native_unique_id),
+            i64::from(anim.native_unique_id()),
             expected["native_id"].as_i64().unwrap(),
             "{context}: native ID"
         );
         assert_eq!(
-            u64::from(anim.draw_flags),
+            u64::from(anim.draw_flags()),
             expected["draw_flags"].as_u64().unwrap(),
             "{context}: draw flags"
         );
         assert_eq!(
-            i64::from(anim.z_adjust),
+            i64::from(anim.z_adjust()),
             expected["z_adjust"].as_i64().unwrap(),
             "{context}: Z adjustment"
         );
-        let coord = sim.anim_absolute_coord(anim.stable_id).unwrap();
+        let coord = sim.anim_absolute_coord(anim.stable_id()).unwrap();
         assert_eq!(
             json!([coord.x, coord.y, coord.z]),
             expected["location"],
             "{context}: world location"
         );
         assert!(
-            anim.owner_entity.is_none(),
+            anim.owner_entity().is_none(),
             "{context}: slot reference is distinct from Object owner"
         );
         assert_eq!(expected["owner_object"], 0);
         assert_eq!(expected["alive"], 1);
         assert_eq!(expected["limbo"], 0);
         assert_eq!(expected["is_bouncing"], 0);
-        assert!(anim.bounce.is_none());
+        assert!(anim.bounce().is_none());
         assert_eq!(
             json!({
                 "constructor_reverse": u8::from(runtime.constructor_reverse),
@@ -276,7 +276,7 @@ fn assert_joined_frame(sim: &Simulation, id: u64, frame: &Value, context: &str) 
         let anim = sim.anim(rust_id).unwrap();
         native_anims
             .iter()
-            .find(|row| row["native_id"].as_i64() == Some(i64::from(anim.native_unique_id)))
+            .find(|row| row["native_id"].as_i64() == Some(i64::from(anim.native_unique_id())))
             .unwrap()["pointer"]
             .as_u64()
             .unwrap()
@@ -449,7 +449,7 @@ fn stock_opening_matches_original_building_and_same_pass_anim_visits() {
         assert_joined_frame(&sim, id, &row["creation"], &format!("{context} creation"));
         for frame in row["frames"].as_array().unwrap() {
             let now = frame["frame"].as_u64().unwrap() as u32;
-            sim.session.binary_frame = now;
+            sim.session.set_binary_frame_for_test(now);
             sim.sound_events.clear();
             let (_, draws) = trace_draws(|| {
                 sim.for_each_live_object(|sim, stable_id| {
@@ -555,10 +555,8 @@ fn place_selects_the_original_house_order_and_primary_factory() {
         sim.install_resolved_terrain_for_new_map(test_flat_ground_grid(24));
         crate::sim::arena_fixture::supply_native_map(&mut sim);
         let owner = sim.interner.intern("Americans");
-        sim.houses.insert(
-            owner,
-            HouseState::new(owner, 0, Some(owner), true, 5000, 10),
-        );
+        sim.houses
+            .register(HouseState::new(owner, 0, Some(owner), true, 5000, 10));
         let ids = [
             prior_building(&mut sim, &rules, "GACNST", 6, 6),
             prior_building(&mut sim, &rules, "GACNST", 12, 12),

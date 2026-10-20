@@ -31,7 +31,7 @@ pub(crate) fn house_grants(
     house: &HouseState,
     requested: &ObjectType,
 ) -> bool {
-    house.base_projection.secret_labs().iter().any(|&id| {
+    house.base_projection().secret_labs().iter().any(|&id| {
         sim.substrate
             .entities
             .get(id)
@@ -106,8 +106,7 @@ mod tests {
         sim.resolve_type_handles(rules);
         let owner = sim.interner.intern("H");
         sim.houses
-            .insert(owner, HouseState::new(owner, 0, None, true, 1000, 10));
-        sim.session.house_order.push(owner);
+            .register(HouseState::new(owner, 0, None, true, 1000, 10));
         sim
     }
 

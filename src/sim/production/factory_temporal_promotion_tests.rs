@@ -12,7 +12,7 @@ use crate::sim::world::{FrameEffects, Simulation, TickLane};
 
 fn frame(runtime: &mut SimRuntime, owner: InternedId, commands: &[Command]) {
     let sim = &mut runtime.simulation;
-    let next = sim.session.tick + 1;
+    let next = sim.session.tick() + 1;
     sim.queue_commands(
         commands
             .iter()
@@ -29,17 +29,17 @@ fn fixture(rules: &RuleSet, producer: &str, backup: bool) -> (SimRuntime, Intern
     let mut sim = Simulation::with_seed(0x4FA4_3800);
     sim.intern_rule_type_ids(rules);
     sim.resolve_type_handles(rules);
-    sim.session.game_mode_nonzero = false;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false));
     sim.input_delay_ticks = 0;
     let owner = sim.interner.intern("Americans");
     let enemy = sim.interner.intern("Russians");
     for (id, human, cash) in [(owner, true, 10_000), (enemy, true, 0)] {
         let mut house = HouseState::new(id, 0, Some(id), human, cash, 10);
         house.project_country_mults(rules, &sim.interner);
-        sim.houses.insert(id, house);
-        sim.session.house_order.push(id);
+        sim.houses.register(house);
     }
-    sim.session.current_house = Some(owner);
+    sim.session.set_current_house_for_test(Some(owner));
     crate::sim::arena_fixture::flat_ground(&mut sim, rules);
     if rules.object(producer).unwrap().naval {
         crate::sim::arena_fixture::flood(
@@ -161,7 +161,7 @@ fn retail_mobile_promotion_uses_offline_held_start_and_online_backup() {
                 if runtime
                     .simulation
                     .production
-                    .factories
+                    .factories()
                     .view(owner, category)
                     .unwrap()
                     .progress
@@ -174,7 +174,7 @@ fn retail_mobile_promotion_uses_offline_held_start_and_online_backup() {
             let before = runtime
                 .simulation
                 .production
-                .factories
+                .factories()
                 .view(owner, category)
                 .unwrap();
             assert_eq!(before.object.unwrap().type_id, first_id, "{label}");
@@ -211,7 +211,7 @@ fn retail_mobile_promotion_uses_offline_held_start_and_online_backup() {
                 !runtime
                     .simulation
                     .production
-                    .factories
+                    .factories()
                     .view(owner, category)
                     .unwrap()
                     .suspended,
@@ -243,7 +243,7 @@ fn retail_mobile_promotion_uses_offline_held_start_and_online_backup() {
             let promoted = runtime
                 .simulation
                 .production
-                .factories
+                .factories()
                 .view(owner, category)
                 .unwrap_or_else(|| {
                     panic!(
@@ -274,7 +274,7 @@ fn retail_mobile_promotion_uses_offline_held_start_and_online_backup() {
                     let view = runtime
                         .simulation
                         .production
-                        .factories
+                        .factories()
                         .view(owner, category)
                         .unwrap();
                     if view.progress > 0 {
@@ -286,7 +286,7 @@ fn retail_mobile_promotion_uses_offline_held_start_and_online_backup() {
                     runtime
                         .simulation
                         .production
-                        .factories
+                        .factories()
                         .view(owner, category)
                         .unwrap()
                         .progress
@@ -301,7 +301,7 @@ fn retail_mobile_promotion_uses_offline_held_start_and_online_backup() {
                 let queued = runtime
                     .simulation
                     .production
-                    .factories
+                    .factories()
                     .view(owner, category)
                     .unwrap();
                 assert_eq!(
@@ -319,7 +319,7 @@ fn retail_mobile_promotion_uses_offline_held_start_and_online_backup() {
                 );
                 continue;
             }
-            let held = &runtime.simulation.production.factories.factories[&holder];
+            let held = &runtime.simulation.production.factories().factories[&holder];
             assert_eq!(held.progress, 0, "{label}");
             assert_eq!(held.step_timer.duration(), 0, "{label}");
             assert!(held.auto_resume_blocked, "Resume1's native latch: {label}");
@@ -341,23 +341,24 @@ fn retail_mobile_promotion_uses_offline_held_start_and_online_backup() {
                     expected_promoted["latch"].as_bool().unwrap()
                 );
                 assert_eq!(
-                    runtime.simulation.houses[&owner].economy.credits() as i64,
+                    runtime.simulation.houses[&owner].economy().credits() as i64,
                     expected_promoted["credits"].as_i64().unwrap()
                 );
             }
             let balance = held.balance;
-            let wallet = runtime.simulation.houses[&owner].economy.clone();
+            let wallet = runtime.simulation.houses[&owner].economy().clone();
             for _ in 0..8 {
                 frame(&mut runtime, owner, &[]);
             }
-            let held = &runtime.simulation.production.factories.factories[&holder];
+            let held = &runtime.simulation.production.factories().factories[&holder];
             assert_eq!(
                 (held.progress, held.balance),
                 (0, balance),
                 "{label}: frozen progress/debt"
             );
             assert_eq!(
-                runtime.simulation.houses[&owner].economy, wallet,
+                *runtime.simulation.houses[&owner].economy(),
+                wallet,
                 "{label}: frozen spend"
             );
             runtime.simulation.temporal_let_go(attacker);
@@ -377,7 +378,7 @@ fn retail_mobile_promotion_uses_offline_held_start_and_online_backup() {
                 runtime
                     .simulation
                     .production
-                    .factories
+                    .factories()
                     .view(owner, category)
                     .unwrap()
                     .suspended,
@@ -394,7 +395,7 @@ fn retail_mobile_promotion_uses_offline_held_start_and_online_backup() {
                 runtime
                     .simulation
                     .production
-                    .factories
+                    .factories()
                     .view(owner, category)
                     .unwrap()
                     .suspended,
@@ -408,7 +409,7 @@ fn retail_mobile_promotion_uses_offline_held_start_and_online_backup() {
             let resumed = runtime
                 .simulation
                 .production
-                .factories
+                .factories()
                 .view(owner, category)
                 .unwrap();
             assert_eq!(
@@ -431,7 +432,7 @@ fn retail_mobile_promotion_uses_offline_held_start_and_online_backup() {
                 if runtime
                     .simulation
                     .production
-                    .factories
+                    .factories()
                     .view(owner, category)
                     .unwrap()
                     .progress
@@ -445,7 +446,7 @@ fn retail_mobile_promotion_uses_offline_held_start_and_online_backup() {
                 runtime
                     .simulation
                     .production
-                    .factories
+                    .factories()
                     .view(owner, category)
                     .unwrap()
                     .progress

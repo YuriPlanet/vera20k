@@ -110,6 +110,7 @@ use crate::sim::movement::ground_pose::{object_get_coords, position_world_coord}
 use crate::sim::movement::locomotor::MovementLayer;
 use crate::sim::occupancy::{CellObjectMember, OccupancyGrid};
 use crate::sim::pathfinding::zone_map::ZoneGrid;
+use crate::sim::rng::SimRng;
 use crate::sim::vision::FogState;
 use crate::util::lepton::{lepton_to_cell, lepton_to_cell_packed};
 use crate::util::native_x87::{
@@ -688,9 +689,46 @@ struct ScanContext<'a> {
     probe_firer: std::cell::OnceCell<super::fire_error_world::FirerPart>,
     /// The scanner's selection-ladder facts (`attacker_facts`), read once.
     scanner_facts: AttackerFacts,
+    /// Scenario+0 bit `0x800` while the scan runs: campaign's retained map
+    /// `[SpecialFlags] HarvesterImmune=`, or a nonzero game mode's Harvester
+    /// Truce session bit (`0x00687C16..0x00687C29`). World-less fixtures
+    /// (walk and score unit tests) leave it off.
+    harvester_immune: bool,
+    /// VERA-only: the [`crate::rules::ruleset::RuleSet::harvester_unit_types`]
+    /// names resolved through the interner once per scan, so the
+    /// HarvesterImmune gate (`0x006F8009..0x006F8047`) compares ids instead
+    /// of re-uppercasing each name per candidate. Empty while the bit is
+    /// clear, the ordinary skirmish path.
+    harvester_unit_ids: Vec<InternedId>,
+    /// VERA-only: the Scenario stream (Scenario+0x218) the scan draws from,
+    /// copied from `fire_world` at its first draw and handed back through
+    /// [`ThreatScanOutcome`] for the caller to commit. Only the computer's
+    /// disguise detection draws.
+    scenario_rng: std::cell::RefCell<Option<SimRng>>,
+    /// VERA-only: the draws so far, so side-by-side scoring can tell which
+    /// candidate drew ([`flat_scores`]).
+    scenario_draws: std::cell::Cell<u32>,
+    /// VERA-only: [`ThreatScanOutcome`]'s `met_idle_disguise`.
+    met_idle_disguise: std::cell::Cell<bool>,
 }
 
 impl ScanContext<'_> {
+    /// [`disguise_detection_roll`] on the Scenario stream (Scenario+0x218)
+    /// for the scanner's house.
+    fn computer_detects_disguise(&self) -> bool {
+        let Some(world) = self.fire_world else {
+            return false;
+        };
+        self.scenario_draws.set(self.scenario_draws.get() + 1);
+        disguise_detection_roll(
+            self.scenario_rng
+                .borrow_mut()
+                .get_or_insert_with(|| world.scenario_rng.clone()),
+            self.standing.house,
+            self.rules,
+        )
+    }
+
     /// `Scan_Cell_For_Target @ 0x006F89BF..0x006F89CB`: the bridge-deck list
     /// (`+0xE8`) wins whenever it is not empty; only one list is ever walked.
     fn cell_list(&self, rx: u16, ry: u16) -> Option<MovementLayer> {
@@ -899,7 +937,7 @@ impl ScanContext<'_> {
     fn owner_is_passive(&self, candidate: &GameEntity) -> bool {
         self.fire_world
             .and_then(|world| world.houses.get(&candidate.owner()))
-            .is_some_and(|house| house.multiplay_passive)
+            .is_some_and(|house| house.multiplay_passive())
     }
 
     /// The exception both passive-house gates share (`0x006F8292..0x006F835E`,
@@ -1017,9 +1055,10 @@ impl<'a> ScannerStanding<'a> {
         let house = world.houses.get(&attacker.owner);
         Self {
             house,
-            human: house
-                .is_none_or(|house| house.is_controlled_by_human(world.session.game_mode_nonzero)),
-            game_mode_nonzero: world.session.game_mode_nonzero,
+            human: house.is_none_or(|house| {
+                house.is_controlled_by_human(world.session.game_mode_nonzero())
+            }),
+            game_mode_nonzero: world.session.game_mode_nonzero(),
             team: (attacker.category != EntityCategory::Structure)
                 .then(|| world.team_script_vm.team_for_member(attacker.stable_id))
                 .flatten()
@@ -1029,8 +1068,23 @@ impl<'a> ScannerStanding<'a> {
 
     /// The owner's current enemy (`House+0x5600`).
     fn enemy(&self) -> Option<InternedId> {
-        self.house.and_then(|house| house.enemy_house)
+        self.house.and_then(|house| house.enemy_house())
     }
+}
+
+/// `0x006F851C..0x006F854B`: a computer attacker sees through a blinking
+/// disguise when `RandomRanged(0, 99)` is at most its house's
+/// `[General] DisabledDisguiseDetectionPercent=` entry (Rules+0xE10) for its
+/// difficulty (`+0x184`).
+fn disguise_detection_roll(
+    rng: &mut SimRng,
+    house: Option<&crate::sim::house_state::HouseState>,
+    rules: &RuleSet,
+) -> bool {
+    let roll = rng.next_range_i32_inclusive(0, 99);
+    roll <= house.map_or(0, |house| {
+        house.difficulty_value(&rules.general.disabled_disguise_detection_percent)
+    })
 }
 
 /// Result of the concrete Greatest_Threat dispatch. World callers use the
@@ -1041,11 +1095,32 @@ pub(crate) struct ThreatScanOutcome {
     target: Option<u64>,
     foot_wrapper_entered: bool,
     collected: Option<Vec<DistributedFireCandidate>>,
+    /// The Scenario stream after the scan's draws, `None` when it drew
+    /// nothing ([`ScanContext::computer_detects_disguise`]).
+    scenario_rng: Option<SimRng>,
+    /// The scan refused a disguised candidate only because it was not
+    /// blinking: a blink starting later would have it roll.
+    met_idle_disguise: bool,
 }
 
 impl ThreatScanOutcome {
     pub(crate) fn take_collected(&mut self) -> Option<Vec<DistributedFireCandidate>> {
         self.collected.take()
+    }
+
+    /// The Scenario stream the scan left, for the caller to commit.
+    pub(crate) fn take_scenario_rng(&mut self) -> Option<SimRng> {
+        self.scenario_rng.take()
+    }
+
+    /// The scan drew from the Scenario stream.
+    pub(crate) const fn drew_scenario_rng(&self) -> bool {
+        self.scenario_rng.is_some()
+    }
+
+    /// See [`Self::met_idle_disguise`]'s field.
+    pub(crate) const fn met_idle_disguise(&self) -> bool {
+        self.met_idle_disguise
     }
 
     pub(crate) const fn target(&self) -> Option<u64> {
@@ -1174,13 +1249,17 @@ pub(crate) fn greatest_threat(
                 target,
                 foot_wrapper_entered: false,
                 collected: None,
+                scenario_rng: None,
+                met_idle_disguise: false,
             };
         }
     };
-    let result = |target, collected| ThreatScanOutcome {
+    let result = |target, collected, ctx: &ScanContext<'_>| ThreatScanOutcome {
         target,
         foot_wrapper_entered,
         collected,
+        scenario_rng: ctx.scenario_rng.take(),
+        met_idle_disguise: ctx.met_idle_disguise.get(),
     };
     // Base GreatestThreat6F8F80..6F8FA5 clears these two lists, retaining
     // history. Class returns before the base must preserve the prior lists.
@@ -1243,6 +1322,9 @@ pub(crate) fn greatest_threat(
         None
     };
 
+    // Scenario+0 bit `0x800`, read once per scan; the HarvesterImmune gate's
+    // Rules list resolves with it so the ordinary bit-off scan builds nothing.
+    let harvester_immune = fire_world.is_some_and(|world| world.session.harvester_immune());
     let ctx = ScanContext {
         entities,
         scanner,
@@ -1279,16 +1361,29 @@ pub(crate) fn greatest_threat(
         allies_of_scanner: Default::default(),
         probe_firer: Default::default(),
         scanner_facts: facts,
+        harvester_immune,
+        harvester_unit_ids: if harvester_immune {
+            rules
+                .harvester_unit_types
+                .iter()
+                .filter_map(|type_id| interner.get(type_id))
+                .collect()
+        } else {
+            Vec::new()
+        },
+        scenario_rng: Default::default(),
+        scenario_draws: Default::default(),
+        met_idle_disguise: Default::default(),
     };
 
     if flat {
-        return result(global_list_scan(&ctx, flags, scanner_zone), collected);
+        return result(global_list_scan(&ctx, flags, scanner_zone), collected, &ctx);
     }
 
     let radius = scan_radius_cells(scanner, attacker_obj, rules, range, weapon_ranges);
     if radius <= 0 {
         // `for (r = 0; r < radius; r++)` never executes.
-        return result(None, collected);
+        return result(None, collected, &ctx);
     }
 
     //6F9148..6F9179: arg2 is converted with signed /256 then packed to
@@ -1334,7 +1429,9 @@ pub(crate) fn greatest_threat(
     };
     let air_extent = terrain
         .map(|terrain| (terrain.width(), terrain.height()))
-        .or_else(|| fire_world.map(|world| (world.session.map_width, world.session.map_height)));
+        .or_else(|| {
+            fire_world.map(|world| (world.session.map_width(), world.session.map_height()))
+        });
     let airborne = if scan_air {
         air_extent
             .map(|extent| {
@@ -1385,7 +1482,7 @@ pub(crate) fn greatest_threat(
         walk.flags |= 4;
     }
     if mask == 5 {
-        return result(best, collected);
+        return result(best, collected, &ctx);
     }
 
     for ring in 0..radius {
@@ -1425,10 +1522,10 @@ pub(crate) fn greatest_threat(
             }
         }
         if best.is_some() && is_early_return_ring(ring, radius) {
-            return result(best, collected);
+            return result(best, collected, &ctx);
         }
     }
-    result(best, collected)
+    result(best, collected, &ctx)
 }
 
 /// `Greatest_Threat`'s mask: the caller's literal through the scanner's
@@ -1632,10 +1729,12 @@ thread_local! {
 /// long list is scored side by side on the worker pool, results in list
 /// order: the walk keeps exactly what the one-by-one walk keeps. A score
 /// reads nothing the walk changes except the shared Dummy, which a
-/// candidate's cell lookups can stamp and a later candidate's read. Each
-/// candidate is therefore scored on a private copy of the Dummy, and when
-/// any of them stamped it the list is scored again one by one on the shared
-/// Dummy, as natively.
+/// candidate's cell lookups can stamp and a later candidate's read, and the
+/// Scenario stream a computer's disguise detection draws from. Each
+/// candidate is therefore scored on a private copy of both. When any of them
+/// stamped the Dummy the list is scored again one by one on the shared
+/// Dummy, as natively; otherwise only the candidates that drew are, in list
+/// order on the shared stream.
 fn flat_scores(
     ctx: &ScanContext<'_>,
     walk: WalkArgs,
@@ -1651,12 +1750,31 @@ fn flat_scores(
     {
         let dummy = terrain.shared_cell_dummy();
         let scored = crate::sim::parallel::map_with(candidates, ctx.clone(), |ctx, candidate| {
-            dummy.detached_stamps(|| flat_score(ctx, walk, candidate))
+            let draws = ctx.scenario_draws.get();
+            let (score, stamped) = dummy.detached_stamps(|| flat_score(ctx, walk, candidate));
+            let drew = ctx.scenario_draws.get() != draws;
+            (score, stamped, drew, ctx.met_idle_disguise.replace(false))
         });
-        if scored.iter().all(|&(_, stamped)| !stamped) {
+        if scored.iter().all(|&(_, stamped, _, _)| !stamped) {
             #[cfg(any(test, feature = "test-support"))]
             FLAT_WALKS_SIDE_BY_SIDE.set(FLAT_WALKS_SIDE_BY_SIDE.get() + 1);
-            return scored.into_iter().map(|(score, _)| score).collect();
+            // Whether a candidate draws does not depend on the stream: the
+            // ones that drew are scored again, in list order, on the shared
+            // stream.
+            return scored
+                .into_iter()
+                .zip(candidates)
+                .map(|((score, _, drew, met_idle_disguise), candidate)| {
+                    if met_idle_disguise {
+                        ctx.met_idle_disguise.set(true);
+                    }
+                    if drew {
+                        flat_score(ctx, walk, candidate)
+                    } else {
+                        score
+                    }
+                })
+                .collect();
         }
     }
     candidates
@@ -1778,13 +1896,9 @@ fn scan_cell_for_target(
 /// (`rx`, `ry`), reading each member's record: what it holds when it stops or
 /// runs out, if [`ScanContext::offers`] passes it.
 fn walk_cell_list(ctx: &ScanContext<'_>, rx: u16, ry: u16, layer: MovementLayer) -> Option<u64> {
-    let terrain = ctx.fire_world.and_then(|world| {
-        world
-            .production
-            .terrain_object_cells
-            .get(&(rx, ry))
-            .copied()
-    });
+    let terrain = ctx
+        .fire_world
+        .and_then(|world| world.terrain_objects.cell_index().get(&(rx, ry)).copied());
     let mut held = None;
     for member in ctx.cells.cell_objects(rx, ry, layer, terrain) {
         let CellObjectMember::Entity(id) = member else {
@@ -1936,16 +2050,22 @@ fn evaluate_candidate(
     // The current mission's `NoThreat=` (`0x006F7DFF..0x006F7E0B`). Retail
     // sets it on `[Selling]` and `[Harmless]`, so a building being sold is
     // no candidate.
-    //
-    // RESIDUAL — the next gate (`0x006F7E11..0x006F7E1E`) is not ported: it
-    // refuses a candidate more than 20 leptons below the ground under it
-    // (GetHeight, vt+0x1C8). Trigger: an object underground, such as one on
-    // the Tunnel locomotor, which VERA does not port and no retail type uses.
-    // Effect: none while VERA puts nothing underground; porting that
-    // locomotor needs this gate.
     if crate::sim::mission::control::current_control(ctx.rules, &candidate.mission)
         .is_some_and(|entry| entry.no_threat)
     {
+        return None;
+    }
+
+    // The underground gate (`0x006F7E11..0x006F7E1E`), in its native slot
+    // between NoThreat and the in-transport reject: GetHeight (vt+0x1C8,
+    // `ObjectClass::GetHeight @ 0x005F5F40` — the Location's Z less the
+    // ground under it and any bridge deck; VERA's
+    // `air_movement::current_fly_height`, the one port of that virtual every
+    // class shares) below -20 leptons refuses the candidate. That is an
+    // object more than 20 leptons under the ground under it — one riding the
+    // Tunnel locomotor, which VERA does not port and no retail type uses, so
+    // the gate is dormant until that locomotor exists.
+    if crate::sim::movement::air_movement::current_fly_height(candidate, ctx.terrain) < -20 {
         return None;
     }
 
@@ -2007,6 +2127,21 @@ fn evaluate_candidate(
     if ctx.ally_arm_refuses(candidate, candidate_obj)
         || candidate.stable_id() == ctx.attacker.stable_id
     {
+        return None;
+    }
+
+    // The HarvesterImmune gate (`0x006F8009..0x006F8047`), in its native
+    // slot between the self test (`0x006F8001`) and the distance cutoff
+    // (`0x006F8049`). While Scenario+0 bit `0x800` is set, a candidate whose
+    // TechnoType is in Rules' `HarvesterUnit=` list (`+0xB3C`, filled at
+    // `0x0066F973`) is refused — native compares the type pointers, which
+    // the interner-id comparison mirrors, so only the listed Vehicle types
+    // ever match. Campaign sets the bit from the map's `[SpecialFlags]
+    // HarvesterImmune=` (`0x006B8EBF..0x006B8ED7`); a nonzero game mode
+    // replaces it with the session's Harvester Truce (`0x005E7495..0x005E74D4`
+    // staging, `0x00687C16..0x00687C29` copy), which skirmish always leaves
+    // off (`0x006AD89D` clears the byte).
+    if ctx.harvester_immune && ctx.harvester_unit_ids.contains(&candidate.type_ref()) {
         return None;
     }
 
@@ -2118,35 +2253,40 @@ fn evaluate_candidate(
     //
     // A `DetectDisguise=` attacker TYPE skips the whole arm — the dogs',
     // Yuri's and the Psi Corps Trooper's role against Spies and Mirage Tanks.
-    //
-    // RESIDUAL — the blink window and the AI detection roll. Native, having
-    // rejected a `DetectDisguise`-less attacker, gives it a second chance while
-    // the candidate's `+0x1EC`/`+0x1F4` timer is running AND the attacking
-    // house is computer-controlled, at the cost of one `RandomRanged(0, 99)`
-    // compared against `[General] DisabledDisguiseDetectionPercent=15,5,2`. The
-    // mapping pass found the only writers of both timer fields to be
-    // `TechnoClass::Constructor @ 0x006F2CDB` (start = creation frame,
-    // duration = 0), which makes `elapsed >= duration` true forever and the
-    // draw unreachable for every attacker in YR, human or AI. VERA stores no
-    // blink timer and passes 0, which is the same reject.
-    // - Trigger: any attacker without `DetectDisguise=` evaluating a disguised
-    //   Spy or Mirage Tank. - Player effect: none. - Frequency: n/a.
-    // - Downstream risk: if a computed-pointer writer of `+0x1F4` does exist,
-    //   wiring it costs one scenario draw per evaluated disguised candidate and
-    //   shifts RNG order for every later consumer in the tick.
-    const BLINK_TIMER_NOT_MODELLED: i32 = 0;
+    // Otherwise a disguised candidate is refused unless its firing blink
+    // (`+0x1EC`/`+0x1F4`, armed by `UnitClass::Fire_At @ 0x0074143E`) is
+    // running and a computer attacker's detection roll succeeds.
     let candidate_disguised_to_attacker =
         candidate.is_disguised_to(ctx.attacker.owner, ctx.fog, ctx.alliances(), ctx.interner);
-    if !matches!(
-        crate::sim::cloak_disguise::disguise_rejects_candidate(
-            candidate_disguised_to_attacker,
-            ctx.attacker_obj.detect_disguise,
-            BLINK_TIMER_NOT_MODELLED,
-            true,
-        ),
-        crate::sim::cloak_disguise::DisguiseGateOutcome::Accept
+    let frame = ctx
+        .fire_world
+        .map_or(0, |world| world.session.binary_frame());
+    let blink = candidate
+        .disguise
+        .as_ref()
+        .map_or(0, |disguise| disguise.blink_remaining(frame));
+    match crate::sim::cloak_disguise::disguise_rejects_candidate(
+        candidate_disguised_to_attacker,
+        ctx.attacker_obj.detect_disguise,
+        blink,
+        ctx.standing.human,
     ) {
-        return None;
+        crate::sim::cloak_disguise::DisguiseGateOutcome::Accept => {}
+        crate::sim::cloak_disguise::DisguiseGateOutcome::Reject => {
+            if candidate_disguised_to_attacker
+                && !ctx.attacker_obj.detect_disguise
+                && blink == 0
+                && !ctx.standing.human
+            {
+                ctx.met_idle_disguise.set(true);
+            }
+            return None;
+        }
+        crate::sim::cloak_disguise::DisguiseGateOutcome::AiDetectionRoll => {
+            if !ctx.computer_detects_disguise() {
+                return None;
+            }
+        }
     }
 
     // `0x006F8551..0x006F8589`: mask `0x100` refuses every candidate, and
@@ -2627,3 +2767,11 @@ mod bridge_tests;
 #[cfg(test)]
 #[path = "greatest_threat_mask_oracle_tests.rs"]
 mod mask_oracle_tests;
+
+#[cfg(test)]
+#[path = "greatest_threat_scenario_gate_tests.rs"]
+mod scenario_gate_tests;
+
+#[cfg(test)]
+#[path = "greatest_threat_disguise_tests.rs"]
+mod disguise_tests;

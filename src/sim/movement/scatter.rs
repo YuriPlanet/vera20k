@@ -29,11 +29,9 @@ use crate::sim::components::{DriveCoord, NavTargetRef};
 use crate::sim::entity_store::EntityStore;
 use crate::sim::find_nearby_cell::{NearbyArgs, NearbyFootprint, PassabilityArgs};
 use crate::sim::game_entity::GameEntity;
-use crate::sim::house_state::HouseState;
-use crate::sim::intern::{InternedId, StringInterner};
+use crate::sim::intern::StringInterner;
 use crate::sim::world::FrameEffects;
 use crate::sim::world::Simulation;
-use std::collections::BTreeMap;
 
 use super::locomotor::MovementLayer;
 use super::scatter_cell::OctantJitter;
@@ -113,7 +111,7 @@ impl ScatterTechno {
     pub(super) fn from_entity(
         entity: &GameEntity,
         rules: Option<&RuleSet>,
-        houses: &BTreeMap<InternedId, HouseState>,
+        houses: &crate::sim::houses::Houses,
         interner: &StringInterner,
     ) -> Self {
         use crate::sim::combat::veterancy::has_weapon_ability;
@@ -132,7 +130,7 @@ impl ScatterTechno {
             // inference. The value is already saved/restored by HouseState.
             house_iq: houses
                 .get(&entity.owner())
-                .map_or(0, |house| house.current_iq),
+                .map_or(0, |house| house.current_iq()),
         }
     }
 }
@@ -194,7 +192,7 @@ pub(super) fn scatter_objects_admitted(
     no_kidding: bool,
     rules: Option<&RuleSet>,
     entities: &EntityStore,
-    houses: &BTreeMap<InternedId, HouseState>,
+    houses: &crate::sim::houses::Houses,
     interner: &StringInterner,
 ) -> Vec<u64> {
     let listed = || occupants.iter().copied();
@@ -349,7 +347,7 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> Result<bool, String> {
-        if self.session.binary_frame & 0x3F != 0x3F {
+        if self.session.binary_frame() & 0x3F != 0x3F {
             return Ok(false);
         }
         let (Some(entity), Some(terrain)) = (
@@ -458,7 +456,7 @@ impl Simulation {
         let Some(unit) = self.substrate.entities.get(id) else {
             return;
         };
-        if !unit_scatter_admitted(unit, flags, rules, self.session.binary_frame) {
+        if !unit_scatter_admitted(unit, flags, rules, self.session.binary_frame()) {
             return;
         }
         if let Some(cell) = self.scatter_nearby_cell(id, rules) {
@@ -503,7 +501,7 @@ impl Simulation {
         let Some(unit) = self.substrate.entities.get(id) else {
             return Ok(());
         };
-        if !unit_scatter_admitted(unit, flags, rules, self.session.binary_frame)
+        if !unit_scatter_admitted(unit, flags, rules, self.session.binary_frame())
             || crate::sim::mission::control::current_control(rules, &unit.mission)
                 .is_some_and(|entry| entry.paralyzed)
             || unit

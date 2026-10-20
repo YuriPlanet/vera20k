@@ -18,8 +18,8 @@ fn output_arrival_fixture() -> (Simulation, RuleSet) {
     ))
     .unwrap();
     let mut sim = Simulation::with_seed(31);
-    sim.fog.width = 32;
-    sim.fog.height = 32;
+    sim.fog.set_width_for_test(32);
+    sim.fog.set_height_for_test(32);
     sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
         base: 0,
         off_fc: -100,
@@ -36,7 +36,7 @@ fn output_arrival_fixture() -> (Simulation, RuleSet) {
         entity.set_owner_for_test(sim.intern("Americans"));
         entity.set_type_ref_for_test(sim.intern(name));
         entity.lifecycle.set_in_limbo_for_test(false);
-        entity.lifecycle.set_cell_marked(true);
+        entity.lifecycle.set_cell_marked_for_test(true);
         if category == EntityCategory::Infantry {
             entity.locomotor = Some(LocomotorState::for_test_kind(LocomotorKind::Walk));
             entity
@@ -189,8 +189,8 @@ fn a_parachute_landing_in_its_own_cell_runs_the_foot_body() {
     ))
     .unwrap();
     let mut sim = Simulation::with_seed(0);
-    sim.fog.width = 32;
-    sim.fog.height = 32;
+    sim.fog.set_width_for_test(32);
+    sim.fog.set_height_for_test(32);
     sim.playfield_bounds = Some(crate::sim::cell_rect::PlayfieldBounds {
         base: 0,
         off_fc: -100,
@@ -245,7 +245,7 @@ fn a_jumpjet_touchdown_without_a_target_runs_the_class_null_setter() {
     .unwrap();
     let mut sim = Simulation::with_seed(0);
     super::super::lifecycle_tests::install_common_raw_terrain(&mut sim, 32, 32, 0, None);
-    sim.session.binary_frame = 1000;
+    sim.session.set_binary_frame_for_test(1000);
     let id = sim
         .construct_object_limbo_at_height(
             "NIGHTHAWK",
@@ -277,16 +277,19 @@ fn a_jumpjet_touchdown_without_a_target_runs_the_class_null_setter() {
         .set_nav_queue_for_test(vec![NavTargetRef::cell(12, 10)]);
     entity
         .navigation
-        .path_replay
+        .path_replay_mut()
         .set_directions_for_test(vec![2, 2]);
-    entity.navigation.path_runtime.set_path_blocked(true);
     entity
         .navigation
-        .path_runtime
+        .path_runtime_mut()
+        .set_path_blocked_for_test(true);
+    entity
+        .navigation
+        .path_runtime_mut()
         .set_movement_timer_for_test(CdTimer::started(50, 5));
     entity
         .navigation
-        .path_runtime
+        .path_runtime_mut()
         .set_blocked_timer_for_test(CdTimer::started(40, 6));
     let runtime = entity
         .locomotor
@@ -331,11 +334,11 @@ fn a_jumpjet_touchdown_without_a_target_runs_the_class_null_setter() {
     assert!(
         entity
             .navigation
-            .path_replay
+            .path_replay()
             .remaining_directions()
             .is_empty()
     );
-    let timing = &entity.navigation.path_runtime;
+    let timing = entity.navigation.path_runtime();
     assert!(!timing.path_blocked());
     assert_eq!(timing.movement_timer(), CdTimer::started(1000, 0));
     assert_eq!(

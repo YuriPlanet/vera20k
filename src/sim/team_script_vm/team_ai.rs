@@ -16,16 +16,6 @@
 //!   TeamClass code reads either. The private forced-active `+0x77` is
 //!   written by shared reinforcement creation (`0x0065DD64`) and read by
 //!   formation and recruitment in this owner.
-//! - The under-strength retreat moves the team to its centre: the search
-//!   for the house's nearest safe unarmed building (`0x006EA173..
-//!   0x006EA39B`), which weights distance by the House threat map
-//!   (`0x0056BCD0`, whose producers `AI_BuildThreatMap @ 0x0050940A` and
-//!   `Adjust_Threat @ 0x004FA31B` are not ported) and asks `0x004CBC40` for a
-//!   cell beside it, is not ported. Natively that search starts from the
-//!   same centre cell and keeps it when no building yields a cell. Trigger: a
-//!   formed team falls to a third of its TaskForce (`Reinforce=yes`, more
-//!   than two) or loses its first member. Effect: the team regroups where it
-//!   stands instead of falling back to a base building.
 
 use crate::map::entities::EntityCategory;
 use crate::rules::overlay_types::OverlayTypeRegistry;
@@ -41,6 +31,10 @@ use super::{TeamRules, TeamScriptState, TeamTarget, script_action_at};
 /// Script actions 53 and 54 relax the stray distance (`Rules+0x1720`
 /// instead of `+0x171C`) for Regroup and Coordinate_Move.
 const RELAXED_STRAY_ACTIONS: [i32; 2] = [0x35, 0x36];
+
+#[cfg(test)]
+#[path = "retreat_tests.rs"]
+mod retreat_tests;
 
 /// The team code's live-member test (`0x006EF9E0`, inlined throughout):
 /// active (`+0x90`), with Health (`+0x6C`), out of limbo (`+0x81`;
@@ -166,7 +160,7 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
-        let current_frame = self.session.binary_frame as i32;
+        let current_frame = self.session.binary_frame() as i32;
         let Some(team) = self.team_script_vm.teams.get_mut(&team_id) else {
             return;
         };
@@ -217,7 +211,7 @@ impl Simulation {
         // `0x006E929B..0x006E9339`: an empty team that has been full, or
         // that could not fill before `DissolveUnfilledTeamDelay=` in a
         // multiplayer game, is destroyed.
-        let team_rules = TeamRules::new(&rules.general, self.session.game_mode_nonzero);
+        let team_rules = TeamRules::new(&rules.general, self.session.game_mode_nonzero());
         if team.dissolves(&team_rules, current_frame) {
             self.destroy_team(team_id, rules, frame_effects);
             return;
@@ -535,8 +529,9 @@ impl Simulation {
 
     /// `0x006EA0D0`, when a formed team is under strength: it stops (not
     /// formed, before its first action); an empty one loses its centre;
-    /// otherwise, with a centre (or its closest member as the centre), it
-    /// moves to the centre's cell (module residual).
+    /// otherwise it searches the House's unarmed buildings and falls back to
+    /// its centre when no candidate yields a cell. Original controls:
+    /// `tools.team_recruit_oracle --retreat`.
     fn team_under_strength_retreat(
         &mut self,
         team_id: u64,
@@ -564,7 +559,83 @@ impl Simulation {
             team.zone = Some(TeamTarget::Object(closest));
         }
         let zone = team.zone.expect("set above");
-        let focus = self.team_target_cell_of_coord(zone);
+        let owner = team.owner;
+        let mut focus = self.team_target_cell_of_coord(zone);
+        let mut best_score = i32::MAX;
+        if let Some(house) = self.houses.get(&owner) {
+            // 6EA173 iterates the retained House Building array, in order.
+            for &building_id in house.base_projection().buildings() {
+                let Some(building) = self.substrate.entities.get(building_id) else {
+                    continue;
+                };
+                if building.lifecycle.in_limbo() {
+                    continue;
+                }
+                let Some(object) = self.object_type(building.type_ref(), rules) else {
+                    continue;
+                };
+                if crate::sim::combat::combat_weapon::get_weapon(
+                    building,
+                    object,
+                    0,
+                    &self.substrate.entities,
+                    rules,
+                    &self.interner,
+                )
+                .is_some()
+                {
+                    continue;
+                }
+                let Some(destination) = self.team_target_coord(TeamTarget::Object(building_id))
+                else {
+                    continue;
+                };
+                let Some(source) = self.team_target_coord(zone) else {
+                    continue;
+                };
+                // 6EA1FF..6EA256 squares dx,dz,dy through the shared original
+                // Sqrt_Approx/ftol kernel; this is centre distance, no foundation subtraction.
+                let distance = crate::util::native_x87::sqrt_approx_length([
+                    destination.x.wrapping_sub(source.x),
+                    destination.z.wrapping_sub(source.z),
+                    destination.y.wrapping_sub(source.y),
+                ]);
+                let target = ((destination.x / 256) as i16, (destination.y / 256) as i16);
+                let Ok(threat) = self.house_threat_at_cell(owner, target) else {
+                    continue;
+                };
+                let mut score = distance.wrapping_mul(threat.wrapping_add(1));
+                // UnitRepair+16A9 gets signed division by two, 6EA274..288.
+                if object.unit_repair {
+                    score /= 2;
+                }
+                if score >= best_score {
+                    continue;
+                }
+                // Inline GetLeader6EA2E5..341 has the same owner as Script16,
+                // Script54 and House50D170: highest live joined LeadershipRating.
+                let Some(leader) = self.team_leader(team_id, rules) else {
+                    continue;
+                };
+                let from = ((source.x / 256) as i16, (source.y / 256) as i16);
+                let Some((x, y)) =
+                    self.foot_nearby_location(leader, from, target, 2..4, rules, registry)
+                else {
+                    continue;
+                };
+                best_score = score;
+                focus = Some(TeamTarget::Cell { x, y });
+            }
+        }
+        // 6EA39B resolves the selected packed cell through Map5657A0 before
+        // retaining it. This also preserves fixed-stride aliases/Dummy stamps.
+        let focus = match (focus, self.resolved_terrain.as_ref()) {
+            (Some(TeamTarget::Cell { x, y }), Some(terrain)) => {
+                let (x, y) = terrain.native_cell_coord(terrain.native_cell_identity((x, y)));
+                Some(TeamTarget::Cell { x, y })
+            }
+            _ => focus,
+        };
         if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
             team.focus = focus;
         }

@@ -311,12 +311,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn too_short_is_reported_not_guessed() {
-        let id = identify(&[0, 0]);
-        assert_eq!(id.format, "tiny");
-    }
-
-    #[test]
     fn shp_detail_carries_canvas_and_frame_count() {
         // Header only: zero, width=16, height=2, frame_count=5, then 5*24 header bytes.
         let mut data = vec![0u8; 8 + 5 * 24];

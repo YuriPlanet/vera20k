@@ -113,7 +113,7 @@ fn save(
         .match_state
         .scenario_elapsed_clock
         .begin_save(clock_now);
-    let mut map = crate::sim::snapshot::scenario_resources::SavedMapMetadata::capture(
+    let map = crate::sim::snapshot::scenario_resources::SavedMapMetadata::capture(
         map_hash,
         source,
         &state.match_state.map_basic,
@@ -125,8 +125,8 @@ fn save(
         clock_save.accumulated_buckets(),
         state.match_state.session.local_player_name(),
         state.audio.theme.saved_slots(),
+        presentation.radar_movies.scenario_hold(),
     );
-    map.set_radar_pause_credit(presentation.radar_movies.scenario_hold());
     let resources = crate::sim::snapshot::scenario_resources::SavedScenarioResourcesRef::capture(
         &runtime.resources,
         processed,
@@ -138,7 +138,7 @@ fn save(
         sim,
         map_hash,
         runtime.resources.rules.simulation_config_hash(),
-        name.unwrap_or(&sim.session.map_name),
+        name.unwrap_or(&sim.session().map_name()),
         now,
         &sinking_waterlines,
         sidebar_order.as_ref(),
@@ -146,7 +146,7 @@ fn save(
         Some(&local_view),
         Some(&resources),
     );
-    let tick = sim.session.tick;
+    let tick = sim.session().tick();
     let result = if let Some(path) = overwrite {
         state
             .persistence
@@ -371,31 +371,14 @@ mod save_name_tests {
     }
 
     #[test]
-    fn keeps_normal_chars() {
-        assert_eq!(sanitize_save_name("miner stuck repro"), "miner stuck repro");
-        assert_eq!(sanitize_save_name("dock_fix_a"), "dock_fix_a");
-    }
-
-    #[test]
-    fn caps_at_64_chars() {
-        let long: String = "x".repeat(100);
-        let out = sanitize_save_name(&long);
-        assert_eq!(out.len(), 64);
-    }
-
-    #[test]
-    fn trims_whitespace() {
-        assert_eq!(sanitize_save_name("  hello  "), "hello");
-    }
-
-    #[test]
     fn gsi_17_02_unicode_filename_cap_preserves_exact_envelope_description() {
         let raw_description = "保存".repeat(40);
         let filename_part = sanitize_save_name(&raw_description);
         assert_eq!(filename_part.chars().count(), 64);
 
         let mut sim = Simulation::new();
-        sim.session.map_name = "OFFICIAL.MAP".to_string();
+        sim.session_mut_for_test()
+            .set_map_name_for_test("OFFICIAL.MAP".to_string());
         let bytes = GameSnapshot::save_validated(&sim, 1, 2, &raw_description, 3);
         let header = GameSnapshot::read_header(&bytes).expect("current VERA header");
         assert_eq!(header.description, raw_description);

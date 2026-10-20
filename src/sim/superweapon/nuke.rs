@@ -84,16 +84,15 @@ pub(crate) fn impact(sim: &mut Simulation, rules: &RuleSet, impact: ProjectileNu
     let Some(location) = sim
         .projectiles
         .get(impact.projectile_id())
-        .map(|bullet| bullet.position)
+        .map(|bullet| bullet.position())
     else {
         return;
     };
-    sim.session
-        .lighting
-        .start_nuke_flash(sim.session.binary_frame as i32);
+    let frame = sim.session.binary_frame() as i32;
+    sim.session.lighting_mut().start_nuke_flash(frame);
     // ScreenNukeFlash53AC39 calls RecalcLighting with alternate flag1.
     sim.publish_global_lighting(crate::sim::light_sources::PaletteUpdate::from_scenario(
-        &sim.session.lighting,
+        sim.session.lighting(),
     ));
     let cell = |leptons: i32| (leptons / 256) as i16 as u16;
     sim.sound_events.push(SimSoundEvent::RadarEvent {
@@ -229,14 +228,14 @@ pub(super) fn launch(
 fn find_building_of_type(sim: &Simulation, owner: InternedId, type_id: InternedId) -> Option<u64> {
     let house = sim.houses.get(&owner)?;
     if house
-        .tracking
+        .tracking()
         .owned_count(EntityCategory::Structure, type_id)
         <= 0
     {
         return None;
     }
     house
-        .base_projection
+        .base_projection()
         .buildings()
         .iter()
         .copied()

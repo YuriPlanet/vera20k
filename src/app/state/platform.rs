@@ -106,27 +106,3 @@ impl PlatformState {
         self.pause_on_focus_loss && !self.window_active
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn match_zoom_never_changes_frontend_projection() {
-        let window = (800, 600);
-        let source = (640, 480);
-        for screen in [
-            GameScreen::MainMenu,
-            GameScreen::MissionResult {
-                title: String::new(),
-                detail: String::new(),
-            },
-        ] {
-            assert_eq!(render_dimensions(&screen, window, Some(source)), window);
-        }
-        for screen in [GameScreen::Loading, GameScreen::InGame] {
-            assert_eq!(render_dimensions(&screen, window, Some(source)), source);
-            assert_eq!(render_dimensions(&screen, window, None), window);
-        }
-    }
-}

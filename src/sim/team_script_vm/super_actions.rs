@@ -197,7 +197,7 @@ impl Simulation {
             .interner
             .get(type_name)
             .and_then(|type_id| self.super_weapons.get(&owner)?.get(&type_id))
-            .is_some_and(|instance| instance.is_ready);
+            .is_some_and(|instance| instance.is_ready());
         // A house without a power state has produced 0 of 0 drained: ratio 1.
         let full_power = self
             .power_states

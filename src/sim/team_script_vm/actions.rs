@@ -17,7 +17,7 @@
 //! `deploy` rows (actions 14, 43, 8 and 9) in `transport_tests`.
 //!
 //! RESIDUALS:
-//! - Actions other than 0, 1, 2, 3, 5, 6, 8, 9, 10, 11, 14, 16, 17, 19, 20, 21, 24, 30, 37, 39, 40, 42, 43,
+//! - Actions other than 0, 1, 2, 3, 5, 6, 8, 9, 10, 11, 14, 16, 17, 19, 20, 21, 24, 30, 37, 39, 40, 41, 42, 43,
 //!   46, 47, 49, 50, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63 and 64 are not ported. A team
 //!   that reaches one stays on it, as a native handler that has not
 //!   finished does, and records the first as its refusal; the rest of its
@@ -122,6 +122,7 @@ pub(super) const fn action_is_ported(action_id: i32) -> bool {
             | 37
             | 39
             | 40
+            | 41
             | 42
             | 43
             | 46
@@ -277,7 +278,7 @@ impl Simulation {
         registry: Option<&OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) {
-        let current_frame = self.session.binary_frame as i32;
+        let current_frame = self.session.binary_frame() as i32;
         match action.action_id {
             0 => self.team_action_attack_quarry(
                 team_id,
@@ -446,8 +447,11 @@ impl Simulation {
                 }
             }
             42 => self.team_action_force_facing(team_id, action.argument),
-            // `0x006E984B`: each member panics (`vt+0x518`, in list order).
-            19 => {
+            // gamemd.exe Team19@6E984B/41@6E9BDB: each member's
+            // Panic+518/UnPanic+51C in list order, then advance+80=1.
+            // The callbacks do not unlink; the next action waits for the
+            // next Team visit. Fear/stance remain with the Infantry owner.
+            19 | 41 => {
                 let members: Vec<u64> = self
                     .team_script_vm
                     .teams
@@ -464,7 +468,11 @@ impl Simulation {
                         continue;
                     };
                     if let Some(entity) = self.substrate.entities.get_mut(member) {
-                        crate::sim::infantry::apply_panic_force(object, entity);
+                        if action.action_id == 19 {
+                            crate::sim::infantry::apply_panic_force(object, entity);
+                        } else {
+                            crate::sim::infantry::apply_unpanic_force(object, entity);
+                        }
                     }
                 }
                 if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
@@ -549,7 +557,7 @@ impl Simulation {
                     .get(&team_id)
                     .map(TeamScriptState::owner);
                 if let Some(house) = owner.and_then(|owner| self.houses.get_mut(&owner)) {
-                    house.strategy_emergency.set_state_four();
+                    house.strategy_emergency_mut().set_state_four();
                 }
                 if let Some(team) = self.team_script_vm.teams.get_mut(&team_id) {
                     team.advance_pending = true;
@@ -781,7 +789,7 @@ impl Simulation {
         };
         let members: Vec<_> = team.members().collect();
         let desired = argument.wrapping_shl(13) as u16;
-        let frame = self.session.binary_frame;
+        let frame = self.session.binary_frame();
         let mut finished = true;
         for member in members {
             let Some(entity) = self.substrate.entities.get_mut(member) else {
@@ -858,7 +866,7 @@ impl Simulation {
                 effects,
             );
         }
-        let frame = self.session.binary_frame as i32;
+        let frame = self.session.binary_frame() as i32;
         match frame.checked_rem(rules.general.patrol_scan_frames()) {
             Some(0) => {
                 if let Some(leader) = self.team_leader(team_id, rules) {
@@ -1399,7 +1407,7 @@ impl Simulation {
                 .object_type(entity.type_ref(), rules)
                 .map(|object| object.speed_type);
             let enemy = crate::sim::house_state::house_state_for_owner_id(&self.houses, owner)
-                .and_then(|house| house.enemy_house);
+                .and_then(|house| house.enemy_house());
             let cells = self
                 .resolved_terrain
                 .as_ref()
@@ -1443,7 +1451,7 @@ impl Simulation {
             let entity = self.substrate.entities.get(leader)?;
             let owner = entity.owner();
             let enemy = crate::sim::house_state::house_state_for_owner_id(&self.houses, owner)?
-                .enemy_house?;
+                .enemy_house()?;
             let cells = self
                 .resolved_terrain
                 .as_ref()
@@ -1566,7 +1574,7 @@ impl Simulation {
             crate::sim::house_state::house_state_for_owner_id(&self.houses, leader.owner())?;
         let terrain = self.resolved_terrain.as_ref();
         let buildings: Vec<(u64, [i32; 3])> = house
-            .base_projection
+            .base_projection()
             .buildings()
             .iter()
             .filter_map(|&id| {
@@ -2280,7 +2288,10 @@ impl Simulation {
         let mode = (argument as u32) >> 16;
         let unit_entity = self.substrate.entities.get(unit)?;
         let owner = unit_entity.owner();
-        let enemy = self.houses.get(&owner).and_then(|house| house.enemy_house);
+        let enemy = self
+            .houses
+            .get(&owner)
+            .and_then(|house| house.enemy_house());
         let asker = self.interner.resolve(owner);
         let terrain = self.resolved_terrain.as_ref();
         let buildings: Vec<TargetBuilding> = self
@@ -2303,7 +2314,7 @@ impl Simulation {
                 passive: self
                     .houses
                     .get(&building.owner())
-                    .is_some_and(|house| house.multiplay_passive),
+                    .is_some_and(|house| house.multiplay_passive()),
             })
             .collect();
         let vm = &self.team_script_vm;
@@ -2391,7 +2402,7 @@ impl Simulation {
         }
         // `0x006EB59A..0x006EB5D2`. Without a target the action finishes
         // below, and a restart after the step's advance changes nothing.
-        if attack_check_frame(self.session.binary_frame as i32)
+        if attack_check_frame(self.session.binary_frame() as i32)
             && let (Some(leader), Some(target)) = (leader, focus)
             && self.selected_weapon_fire_error(rules, leader, target.target_kind(), true, registry)
                 == FireError::Illegal
@@ -2681,3 +2692,7 @@ mod tests;
 #[cfg(test)]
 #[path = "transport_actions_tests.rs"]
 mod transport_tests;
+
+#[cfg(test)]
+#[path = "unpanic_tests.rs"]
+mod unpanic_tests;

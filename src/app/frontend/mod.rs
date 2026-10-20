@@ -3,6 +3,7 @@
 //! options/splash, and shell slide transitions.
 
 pub(crate) mod campaign_shell_render;
+pub(crate) mod cncnet_spawn;
 pub(crate) mod campaign_score_shell_render;
 pub(crate) mod credits_roll;
 pub(crate) mod fullscreen_movie;

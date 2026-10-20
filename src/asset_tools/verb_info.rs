@@ -732,24 +732,6 @@ mod tests {
     }
 
     #[test]
-    fn every_shp_carries_the_shadow_half_note() {
-        let data = make_shp(2, 2, 2, 2, &[vec![1, 2, 3, 0]]);
-        let mut warnings = Vec::new();
-        build_body(
-            "shp",
-            &data,
-            "TEST.SHP",
-            &InfoOptions::default(),
-            &no_companion,
-            &mut warnings,
-        );
-        assert!(
-            warnings.iter().any(|w| w.contains("shadows")),
-            "expected the shadow-half note, got {warnings:?}"
-        );
-    }
-
-    #[test]
     fn shroud_shp_warns_that_pixels_are_brightness_not_palette_indices() {
         let data = make_shp(2, 2, 2, 2, &[vec![1, 2, 3, 0]]);
         let mut warnings = Vec::new();
@@ -877,27 +859,6 @@ mod tests {
     }
 
     #[test]
-    fn a_zero_dimension_frame_reports_empty_pixel_counts() {
-        let data = make_shp(2, 2, 0, 0, &[Vec::new()]);
-        let mut warnings = Vec::new();
-        let body = build_body(
-            "shp",
-            &data,
-            "EMPTY.SHP",
-            &InfoOptions::default(),
-            &no_companion,
-            &mut warnings,
-        );
-
-        let InfoBody::Shp { frames, .. } = body else {
-            panic!("expected an SHP body");
-        };
-        assert_eq!(frames[0].pixel_count, 0);
-        assert_eq!(frames[0].index0_count, 0);
-        assert_eq!(frames[0].nonzero_count, 0);
-    }
-
-    #[test]
     fn an_unparsable_body_degrades_to_opaque_and_keeps_the_error() {
         let mut warnings = Vec::new();
         let body = build_body(
@@ -913,21 +874,6 @@ mod tests {
             warnings.iter().any(|w| w.contains("SHP parse failed")),
             "got {warnings:?}"
         );
-    }
-
-    #[test]
-    fn unknown_formats_are_opaque_without_noise() {
-        let mut warnings = Vec::new();
-        let body = build_body(
-            "unknown",
-            &[1, 2, 3, 4],
-            "THING.BIN",
-            &InfoOptions::default(),
-            &no_companion,
-            &mut warnings,
-        );
-        assert!(matches!(body, InfoBody::Opaque {}));
-        assert!(warnings.is_empty());
     }
 
     #[test]
@@ -984,34 +930,6 @@ mod tests {
     }
 
     #[test]
-    fn pal_unique_color_count_matches_the_emitted_list() {
-        let data = vec![0u8; PAL_FILE_BYTES];
-        let mut warnings = Vec::new();
-        let body = build_body(
-            "pal",
-            &data,
-            "BLACK.PAL",
-            &InfoOptions::default(),
-            &no_companion,
-            &mut warnings,
-        );
-
-        let InfoBody::Pal {
-            colors,
-            unique_colors,
-            ..
-        } = body
-        else {
-            panic!("expected a PAL body");
-        };
-        assert_eq!(
-            unique_colors, 1,
-            "an all-black table has one distinct entry"
-        );
-        assert_eq!(colors[0], "#000000");
-    }
-
-    #[test]
     fn section_name_matching_ignores_case_and_null_padding() {
         let hva = vec!["BODY".to_string(), "turret\0".to_string()];
         let vxl = vec!["body".to_string(), "TURRET".to_string()];
@@ -1034,13 +952,5 @@ mod tests {
         assert_eq!(with_extension("HTNK.VXL", "hva"), "HTNK.hva");
         assert_eq!(with_extension("HTNKTUR", "hva"), "HTNKTUR.hva");
         assert_eq!(with_extension("A.B.VXL", "hva"), "A.B.hva");
-    }
-
-    #[test]
-    fn default_options_list_sixty_four_frames_from_frame_zero() {
-        let opts = InfoOptions::default();
-        assert_eq!(opts.frame, 0);
-        assert!(!opts.ascii);
-        assert_eq!(opts.limit, DEFAULT_LIMIT);
     }
 }

@@ -89,9 +89,9 @@ fn authored_team_fire_sale_waits_for_strategy_then_sells_and_hunts() {
         std::fs::write(&path, &map).unwrap();
         let name = path.to_str().unwrap();
         let mut launch = battle_session(name, &[(LaunchCountry::Russia, AiDifficulty::Easy)]);
-        launch.local.country = LaunchCountry::America;
-        launch.local.start_position = LaunchStartPosition::Position(2);
-        launch.local.team = LaunchTeam::None;
+        launch.local_slot_mut().country = LaunchCountry::America;
+        launch.local_slot_mut().start_position = LaunchStartPosition::Position(2);
+        launch.local_slot_mut().team = LaunchTeam::None;
         launch.opponents[0].start_position = LaunchStartPosition::Position(1);
         launch.opponents[0].team = LaunchTeam::None;
         launch.options.starting_credits = 5000;
@@ -107,7 +107,7 @@ fn authored_team_fire_sale_waits_for_strategy_then_sells_and_hunts() {
         assert!(rules.has_buildup("NAHAND") && rules.has_buildup("NAPOWR"));
         let sim = scene.sim();
         let computer = sim.scenario_house_named("Computer").unwrap();
-        let local = sim.session.current_house.unwrap();
+        let local = sim.session.current_house().unwrap();
         let team_type = sim.interner.get("F0520001").unwrap();
         let script = sim.interner.get("F0520002").unwrap();
         assert_eq!(
@@ -142,10 +142,10 @@ fn authored_team_fire_sale_waits_for_strategy_then_sells_and_hunts() {
         let mut sold_events = 0;
         for _ in 0..400 {
             let sim = scene.sim();
-            let native_frame = sim.session.binary_frame as i32;
-            let before = sim.houses[&computer].strategy_emergency;
-            let before_timer = sim.houses[&computer].strategy_timer;
-            let before_economy_mode = sim.houses[&computer].ai_production.mode();
+            let native_frame = sim.session.binary_frame() as i32;
+            let before = *sim.houses[&computer].strategy_emergency();
+            let before_timer = *sim.houses[&computer].strategy_timer();
+            let before_economy_mode = sim.houses[&computer].ai_production().mode();
             let commands = scene.runtime.simulation.take_due_commands();
             let frame = scene
                 .runtime
@@ -178,9 +178,9 @@ fn authored_team_fire_sale_waits_for_strategy_then_sells_and_hunts() {
                         before_timer.remaining(native_frame) > 0,
                         "admit a naturally non-due Strategy"
                     );
-                    assert_eq!(house.strategy_timer, before_timer);
-                    assert_eq!(house.ai_production.mode(), before_economy_mode);
-                    assert!(!house.strategy_emergency.all_to_hunt_bias());
+                    assert_eq!(*house.strategy_timer(), before_timer);
+                    assert_eq!(house.ai_production().mode(), before_economy_mode);
+                    assert!(!house.strategy_emergency().all_to_hunt_bias());
                     assert!(
                         buildings.iter().all(|&id| !sim
                             .entities()
@@ -191,7 +191,7 @@ fn authored_team_fire_sale_waits_for_strategy_then_sells_and_hunts() {
                     let mut expected = before;
                     if action == 30 {
                         assert_eq!(
-                            house.strategy_emergency.mode(),
+                            house.strategy_emergency().mode(),
                             4,
                             "original6E99E5; admitted Team refusal={:?}",
                             team.refusal()
@@ -199,27 +199,27 @@ fn authored_team_fire_sale_waits_for_strategy_then_sells_and_hunts() {
                         expected.set_state_four();
                     }
                     assert_eq!(
-                        house.strategy_emergency,
+                        *house.strategy_emergency(),
                         expected,
                         "real formed Team reached action{action}; refusal={:?}",
                         team.refusal()
                     );
                     assert_eq!(team.advance_pending(), action == 30);
                     assert!(team.refusal().is_none());
-                    dispatch = Some((sim.session.binary_frame, team.id()));
+                    dispatch = Some((sim.session.binary_frame(), team.id()));
                 }
                 next_line |= team.cursor() == 1;
             }
             if let Some((_, id)) = dispatch {
                 team_retired |= sim.team_script_vm.team(id).is_none();
             }
-            if response.is_none() && house.strategy_emergency.all_to_hunt_bias() {
+            if response.is_none() && house.strategy_emergency().all_to_hunt_bias() {
                 assert_eq!(action, 30);
-                assert!(sim.session.binary_frame > dispatch.unwrap().0);
+                assert!(sim.session.binary_frame() > dispatch.unwrap().0);
                 assert!(before_timer.expired(native_frame));
-                assert_eq!(house.strategy_timer.start_frame(), native_frame);
-                assert!(house.strategy_timer.duration() > 0);
-                assert_eq!(house.strategy_emergency.mode(), 4);
+                assert_eq!(house.strategy_timer().start_frame(), native_frame);
+                assert!(house.strategy_timer().duration() > 0);
+                assert_eq!(house.strategy_emergency().mode(), 4);
                 assert!(
                     buildings
                         .iter()
@@ -230,7 +230,7 @@ fn authored_team_fire_sale_waits_for_strategy_then_sells_and_hunts() {
                     Some(MissionType::Hunt)
                 );
                 assert_eq!(sim.team_script_vm.team_for_member(rifle), None);
-                response = Some(sim.session.binary_frame);
+                response = Some(sim.session.binary_frame());
             }
         }
         assert!(
@@ -255,7 +255,7 @@ fn authored_team_fire_sale_waits_for_strategy_then_sells_and_hunts() {
         );
         let sim = scene.sim();
         assert!(sim.entities().get(rifle).unwrap().lifecycle.object_alive());
-        assert_eq!(sim.houses[&local].economy.credits(), 5000);
+        assert_eq!(sim.houses[&local].economy().credits(), 5000);
         for id in buildings {
             assert_eq!(
                 sim.entities().get(id).is_none(),
@@ -265,7 +265,7 @@ fn authored_team_fire_sale_waits_for_strategy_then_sells_and_hunts() {
         }
         if action == 30 {
             assert!(sold_events >= 2);
-            let economy = &sim.houses[&computer].economy;
+            let economy = sim.houses[&computer].economy();
             assert!(
                 i64::from(economy.credits()) + i64::from(economy.spent_credits()) > 5000,
                 "ordinary completed sales return money through the existing Economy owner"

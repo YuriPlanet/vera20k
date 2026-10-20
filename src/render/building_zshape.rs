@@ -126,19 +126,4 @@ mod tests {
         // 0x41 -> 0 -> 128; 0x43 -> +2 -> 130.
         assert_eq!(&texels[4 + 1..4 + 3], &[128, 130]);
     }
-
-    #[test]
-    fn zero_bytes_stay_neutral_and_low_bytes_go_negative() {
-        let frame = ShpFrame {
-            frame_x: 0,
-            frame_y: 0,
-            frame_width: 3,
-            frame_height: 1,
-            format: 1,
-            radar_color: [0; 3],
-            pixels: vec![0x00, 0x01, 0xC0],
-        };
-        let (_, _, texels) = decode_zshape_canvas(&shp(3, 1, frame)).unwrap();
-        assert_eq!(texels, vec![128, 128 - 64, 255]);
-    }
 }

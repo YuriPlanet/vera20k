@@ -58,21 +58,25 @@ impl ScrollModel {
         item_count.saturating_sub(visible_rows)
     }
 
-    /// Thumb height in pixels. `scrollbar_h` is the full track (scrollbar rect)
-    /// height. An empty list takes the whole track (never reached: an empty
-    /// combo shows no scrollbar).
-    pub fn thumb_height(&self, visible_rows: usize, item_count: usize, scrollbar_h: i32) -> i32 {
-        let track_h = (scrollbar_h - self.button_h * 2).max(1);
-        if item_count == 0 || visible_rows == 0 {
-            return track_h.max(self.min_thumb_h);
+    /// ComboDropWin 0060E72F creates Scrollbar and 0060E745 subclasses it
+    /// to the shared 0061C690 owner. SBM_SETSCROLLINFO at 0060E7BA sets
+    /// nMax=count-visible and no page size; use the same native numeric port.
+    fn metrics(&self) -> crate::ui::shell::list::ListMetrics {
+        crate::ui::shell::list::ListMetrics {
+            arrow_h: self.button_h,
+            min_thumb_h: self.min_thumb_h,
+            ..crate::ui::shell::list::ListMetrics::RETAIL
         }
-        ((track_h * visible_rows as i32) / item_count as i32)
-            .max(self.min_thumb_h)
-            .min(track_h)
     }
 
-    /// Thumb top-Y inside `scrollbar` for `top_index`. `thumb_h` from `thumb_height`;
-    /// `max_top` from `max_top_index`.
+    pub fn thumb_height(&self, visible_rows: usize, item_count: usize, scrollbar_h: i32) -> i32 {
+        crate::ui::shell::list::thumb_height(
+            scrollbar_h,
+            item_count.saturating_sub(visible_rows),
+            self.metrics(),
+        )
+    }
+
     pub fn thumb_y(
         &self,
         scrollbar: RectPx,
@@ -80,35 +84,56 @@ impl ScrollModel {
         top_index: usize,
         max_top: usize,
     ) -> i32 {
-        let track_span = (scrollbar.h - self.button_h * 2 - thumb_h).max(1);
-        scrollbar.y
-            + self.button_h
-            + if max_top == 0 {
-                0
-            } else {
-                (track_span * top_index.min(max_top) as i32) / max_top as i32
-            }
+        crate::ui::shell::list::scrollbar_thumb_y(
+            scrollbar,
+            thumb_h,
+            top_index,
+            max_top,
+            self.metrics(),
+        )
     }
 
-    /// Pointer→top_index — the shared core for BOTH a track click and a thumb drag.
-    /// `thumb_top_candidate` is `mouse_y − thumb_h/2` for a track click, or
-    /// `mouse_y − grab_offset_y` for a drag.
-    pub fn top_index_from_thumb_top(
+    /// Track press and active thumb drag both center on the pointer. Native
+    /// does not retain a grab offset and does not round to the nearest row.
+    pub fn top_index_at_pointer(
         &self,
         scrollbar: RectPx,
         thumb_h: i32,
         max_top: usize,
-        thumb_top_candidate: i32,
+        pointer_y: i32,
     ) -> usize {
-        if max_top == 0 {
-            return 0;
+        crate::ui::shell::list::scrollbar_top_at_pointer(
+            scrollbar,
+            thumb_h,
+            max_top,
+            pointer_y,
+            self.metrics(),
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn combo_thumb_uses_the_original_scrollbar_kernel() {
+        let vectors: serde_json::Value = serde_json::from_str(crate::test_fixture::text(
+            "tools/storage_oracle/saved_scrollbar.json",
+        ))
+        .unwrap();
+        for case in vectors["cases"].as_array().unwrap() {
+            let range = case["range"].as_u64().unwrap() as usize;
+            for visible in [5, 7, 9] {
+                assert_eq!(
+                    ScrollModel::combo(visible as i32).thumb_height(
+                        visible,
+                        visible + range,
+                        case["height"].as_i64().unwrap() as i32,
+                    ),
+                    case["thumb"].as_i64().unwrap() as i32,
+                );
+            }
         }
-        let track_span = (scrollbar.h - self.button_h * 2 - thumb_h).max(1);
-        let thumb_top = thumb_top_candidate.clamp(
-            scrollbar.y + self.button_h,
-            scrollbar.y + scrollbar.h - self.button_h - thumb_h,
-        );
-        let local = thumb_top - scrollbar.y - self.button_h;
-        ((local * max_top as i32 + track_span / 2) / track_span) as usize
     }
 }

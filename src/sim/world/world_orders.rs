@@ -100,6 +100,10 @@ mod bridge_engineer_admission_tests;
 #[path = "building_control_tests.rs"]
 mod building_control_tests;
 
+#[cfg(test)]
+#[path = "multi_engineer_tests.rs"]
+mod multi_engineer_tests;
+
 /// The infiltration arms' type test (`0x0051EE4E..0x0051EEE7`,
 /// `0x0051B2BD..0x0051B330`): an `Infiltrate=` infantryman (`+0xEBE`) may
 /// enter a `Spyable=` building (`+0x1576`) if it is an `Agent=` one
@@ -114,6 +118,36 @@ fn infiltrator_admits(
         } else {
             building.capturable
         }
+}
+
+/// The damage an Engineer deals entering a hostile building with the
+/// MultiEngineer option (`0x00519DB6..0x00519E7D`), or `None` when the
+/// building is at or below `ConditionRed=` and is captured instead.
+///
+/// With Strength `S`, Health `H` and ConditionRed `R`, all in PC53/chop x87:
+/// `a = ftol(S * R * 0.5)`, `c = S * ((1 - R * 0.5) * 0.5)` and the damage is
+/// `ftol(c)` when `c` compares below `H - a` (or unordered), else `H - a`.
+/// It never takes the building below `S * R * 0.5`.
+fn multi_engineer_damage(health: combat::Health, strength: i32, condition_red: f64) -> Option<i32> {
+    use crate::util::native_x87::{MaskedX87Chop53 as X87, MaskedX87Ordering, NativeF64Bits};
+    //519DB8..519DCE: HealthRatio5F5C60 above Rules+1708; TEST AH,41.
+    if health.compare_ratio(strength, condition_red) != MaskedX87Ordering::Greater {
+        return None;
+    }
+    let constant = |value: f64| X87::load_f64(NativeF64Bits::from_bits(value.to_bits()));
+    // 0x007E1738 and 0x007E1718.
+    let (half, one) = (constant(0.5), constant(1.0));
+    let red = constant(condition_red);
+    let strength = X87::load_i32(strength);
+    //519DDE..519E0C: Health less the red line's half, stored as a double.
+    let floor = X87::ftol_i32_low_masked(X87::mul(X87::mul(strength, red), half));
+    let remaining = health.current().wrapping_sub(floor);
+    //519E1C..519E3A and again 519E57..519E75.
+    let share = X87::mul(strength, X87::mul(X87::sub(one, X87::mul(red, half)), half));
+    Some(match X87::compare(share, X87::load_i32(remaining)) {
+        MaskedX87Ordering::Less | MaskedX87Ordering::Unordered => X87::ftol_i32_low_masked(share),
+        MaskedX87Ordering::Equal | MaskedX87Ordering::Greater => remaining,
+    })
 }
 
 impl Simulation {
@@ -275,13 +309,56 @@ impl Simulation {
         })
     }
 
+    /// What a human player's object makes of a Select over a `Grinding=`
+    /// building (`+0x16AD`): Grind (0xB) or NoEnter (0x1F), shown as the
+    /// Enter and NoEnter rows (`SetCursorFromAction 0x004AB555`,
+    /// `0x004AB382`). Both class rows run only for base action Select (7),
+    /// which the caller establishes (the input layer's base-action owner).
+    /// - A Unit asks CAN_LOAD ([`Self::unit_building_click_action`]).
+    /// - An Infantryman takes `InfantryClass::What_Action_OnObject`'s grinder
+    ///   row (`0x0051F0AF..0x0051F111`) without asking: a building that is
+    ///   not 1x1-with-undeploy (IsStrange vt+0x80, `0x00457620`) answers
+    ///   Grind when the player owns it (GetOwningHouse `+0x21C` against
+    ///   PlayerPtr `0x00A83D4C`), else NoEnter. An Engineer's own arm
+    ///   answers before it ([`Self::engineer_building_action`]).
+    ///
+    /// Foot ClickedAction (`0x004D774F`) turns Grind into mission Eaten with
+    /// the building as Destination; NoEnter orders nothing.
+    pub fn grinder_click_action(
+        &self,
+        actor_id: u64,
+        target_id: u64,
+        rules: &RuleSet,
+    ) -> Option<BuildingClickAction> {
+        let actor = self.substrate.entities.get(actor_id)?;
+        let target = self.substrate.entities.get(target_id)?;
+        let target_obj = self.object_type(target.type_ref(), rules)?;
+        if target.category() != EntityCategory::Structure || !target_obj.grinding {
+            return None;
+        }
+        match actor.category() {
+            EntityCategory::Unit => self.unit_building_click_action(actor_id, target_id, rules),
+            EntityCategory::Infantry
+                if self.house_is_human_player(actor.owner())
+                    && !target_obj.is_1x1_with_undeploy() =>
+            {
+                Some(if self.session.current_house() == Some(target.owner()) {
+                    BuildingClickAction::Grind
+                } else {
+                    BuildingClickAction::NoEnter
+                })
+            }
+            _ => None,
+        }
+    }
+
     pub fn house_is_human_player(&self, owner: InternedId) -> bool {
         // House50B6F0: nonzero session mode compares exactly to LocalPlayer;
         // mode zero uses the two native human/control flags.
-        if self.session.game_mode_nonzero {
+        if self.session.game_mode_nonzero() {
             //50B716 loads A83D4C, the persisted native current-house input.
             //Presentation viewer binding cannot change this receiver's result.
-            self.session.current_house == Some(owner)
+            self.session.current_house() == Some(owner)
         } else {
             self.houses
                 .get(&owner)
@@ -295,12 +372,12 @@ impl Simulation {
     /// Keep this distinct from `house_is_human_player`: its mode-zero branch
     /// also admits the separate `IsHuman` flag.
     pub fn house_is_control_group_eligible(&self, owner: InternedId) -> bool {
-        if self.session.game_mode_nonzero {
+        if self.session.game_mode_nonzero() {
             self.house_is_human_player(owner)
         } else {
             self.houses
                 .get(&owner)
-                .is_some_and(|house| house.player_control)
+                .is_some_and(|house| house.player_control())
         }
     }
 
@@ -333,8 +410,8 @@ impl Simulation {
             }
             if object.construction_yard
                 && !(self.owner_is_human(actor.owner())
-                    && self.session.game_mode_nonzero
-                    && self.session.game_options.mcv_redeploy
+                    && self.session.game_mode_nonzero()
+                    && self.session.game_options().mcv_redeploy
                     && actor.mind_control.controller().is_none())
             {
                 return false;
@@ -347,7 +424,7 @@ impl Simulation {
             return false;
         }
         if object.spawned
-            || actor.parasite.is_paralyzed(self.session.binary_frame)
+            || actor.parasite.is_paralyzed(self.session.binary_frame())
             || actor.is_warped_out()
             || actor.is_warping_in()
             || actor.slave.owner().is_some()
@@ -417,7 +494,7 @@ impl Simulation {
             let passive_occupation = self
                 .houses
                 .get(&target.owner())
-                .is_some_and(|house| house.multiplay_passive)
+                .is_some_and(|house| house.multiplay_passive())
                 && object.can_be_occupied
                 && !target.is_warped_out();
             if !allied && !passive_occupation {
@@ -611,7 +688,7 @@ impl Simulation {
         if self
             .houses
             .get(&new_owner)
-            .is_some_and(|h| h.multiplay_passive)
+            .is_some_and(|h| h.multiplay_passive())
         {
             return;
         }
@@ -753,7 +830,7 @@ impl Simulation {
                     && self
                         .houses
                         .get(&building.owner())
-                        .is_some_and(|house| house.multiplay_passive));
+                        .is_some_and(|house| house.multiplay_passive()));
             let full = building.health.current() == object.strength;
             let refused_capture = building.mission.current().known() == Some(MissionType::Selling)
                 || building.is_warped_out();
@@ -764,6 +841,47 @@ impl Simulation {
                     self.interner.resolve(engineer.type_ref()),
                 )
                 .unwrap_or(-1);
+            //519D82..519EA5: with MultiEngineer on, a hostile building above
+            //ConditionRed takes damage and consumes the Engineer before the
+            //Capturable, Selling and warp tests.
+            if !repair
+                && self.session.game_mode_nonzero()
+                && self.session.game_options().multi_engineer
+                && let Some(damage) = multi_engineer_damage(
+                    building.health,
+                    object.strength,
+                    rules.general.condition_red,
+                )
+            {
+                let warhead = self.interner.intern(&rules.bridge_warheads.c4_name);
+                let receipt = self.commit_direct_damage_receiver(
+                    rules,
+                    registry,
+                    combat::EntityDamageEvent::direct_receiver(
+                        building_id,
+                        damage,
+                        0,
+                        engineer_id,
+                        None,
+                        warhead,
+                        combat::ReceiverCallFlags {
+                            ignore_defenses: true,
+                            arg6: false,
+                        },
+                    ),
+                    frame_effects,
+                );
+                //519EA5 joins the consumption at51A010.
+                self.dispatch_object_tag_event(engineer_id, 48, Some(engineer_id), None, context);
+                self.uninit_with_context(
+                    engineer_id,
+                    super::UninitContext::new(Some(rules), registry).with_effects(frame_effects),
+                );
+                return Ok(BuildingEntryResult {
+                    bridge_state_changed: receipt.bridge_state_changed,
+                    return_before_foot: true,
+                });
+            }
             if (repair && full) || (!repair && capturable && refused_capture) {
                 //519FB9/519EBB/519EFC, then an immediate return before
                 //FootPerCell.
@@ -783,9 +901,6 @@ impl Simulation {
             if repair {
                 crate::sim::production::engineer_repair(self, rules, building_id);
             } else if capturable {
-                //519DA1's MultiEngineer damage/C4Warhead branch remains a
-                //separate required numeric/damage chain; stock ordinary single
-                //Engineer admission (session option false) reaches this arm.
                 //519F44 re-reads the Building Tag and raises Entered again;
                 //do not deduplicate the earlier519B53 call.519F4F then reads
                 //the current owner, followed by optional519F6C Tag transfer.
@@ -836,8 +951,8 @@ impl Simulation {
         )
         .map_err(|cause| {
             super::FrameAdvanceError::new(
-                self.session.tick,
-                self.session.binary_frame,
+                self.session.tick(),
+                self.session.binary_frame(),
                 engineer_id,
                 cause,
             )
@@ -956,8 +1071,8 @@ impl Simulation {
         )
         .map_err(|cause| {
             super::FrameAdvanceError::new(
-                self.session.tick,
-                self.session.binary_frame,
+                self.session.tick(),
+                self.session.binary_frame(),
                 infantry_id,
                 cause,
             )
@@ -1002,7 +1117,7 @@ impl Simulation {
         else {
             return false;
         };
-        if !pending.timer().expired(self.session.binary_frame as i32) || health <= 0 {
+        if !pending.timer().expired(self.session.binary_frame() as i32) || health <= 0 {
             return false;
         }
 
@@ -1049,14 +1164,15 @@ mod repair_notification_tests {
         let owner = sim.interner.intern("Americans");
         let other = sim.interner.intern("Russians");
         for id in [owner, other] {
-            sim.houses.insert(
-                id,
-                crate::sim::house_state::HouseState::new(id, 0, None, true, 0, 1),
-            );
-            sim.session.house_order.push(id);
+            sim.houses
+                .register(crate::sim::house_state::HouseState::new(
+                    id, 0, None, true, 0, 1,
+                ));
         }
-        sim.session.current_house = Some(owner);
-        sim.session.game_mode_nonzero = true;
+        sim.session.set_current_house_for_test(Some(owner));
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(true),
+        );
         sim.scenario_rng = crate::sim::rng::SimRng::new(0);
         let bytes = crate::sim::snapshot::GameSnapshot::save(&sim, 0, 0, "notification", 0);
         let restore = || {
@@ -1065,7 +1181,7 @@ mod repair_notification_tests {
                 .sim
         };
         let mut restored = restore();
-        assert_eq!(restored.session.current_house, Some(owner));
+        assert_eq!(restored.session.current_house(), Some(owner));
         restored.announce_bridge_repair(owner, (7, 8), (8, 8));
         assert!(
             matches!(
@@ -1083,7 +1199,9 @@ mod repair_notification_tests {
         );
 
         let mut other_current = restore();
-        other_current.session.current_house = Some(other);
+        other_current
+            .session
+            .set_current_house_for_test(Some(other));
         other_current.announce_bridge_repair(owner, (7, 8), (8, 8));
         assert!(
             matches!(
@@ -1102,12 +1220,15 @@ mod repair_notification_tests {
         let ai = sim.interner.intern("Russians");
         let player = sim.interner.intern("Americans");
         for owner in [ai, player] {
-            sim.houses.insert(
-                owner,
-                crate::sim::house_state::HouseState::new(owner, 0, None, false, 0, 0),
-            );
+            sim.houses
+                .register(crate::sim::house_state::HouseState::new(
+                    owner, 0, None, false, 0, 0,
+                ));
         }
-        sim.houses.get_mut(&player).unwrap().player_control = true;
+        sim.houses
+            .get_mut(&player)
+            .unwrap()
+            .set_player_control_for_test(true);
         sim.announce_bridge_repair(ai, (7, 8), (8, 8));
         assert!(
             matches!(

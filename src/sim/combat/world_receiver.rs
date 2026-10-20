@@ -28,7 +28,7 @@ pub(crate) fn apply_foot_radiation(
     if !radiation_enabled(world)
         || !world
             .session
-            .binary_frame
+            .binary_frame()
             .is_multiple_of(rules.radiation.application_delay as u32)
     {
         return None;
@@ -110,7 +110,7 @@ fn respond_to_base_attack(
             .get(victim_id)
             .expect("response victim represented");
         let last_attacker_house_index = world.houses.get(&victim.owner()).map_or(-1, |house| {
-            house.strategy_emergency.last_attacker_house_index()
+            house.strategy_emergency().last_attacker_house_index()
         });
         fixture
             .trace
@@ -149,15 +149,13 @@ pub(crate) fn collect_area(
         warhead,
         damage,
         true,
-        world.session.no_damage,
-        &mut world.production.ore_growth_state,
-        &world.production.tiberium_spawning_terrain_cells,
-        &world.production.terrain_object_cells,
-        world.session.binary_frame,
-        world.production.ore_growth_config.spreads,
-        &mut world.radar_terrain_dirty_cells,
-        &mut world.radar_terrain_dirty_generation,
-        &mut world.tactical_dirty_cells,
+        world.session.no_damage(),
+        &mut world.ore_growth_state,
+        world.terrain_objects.spawning_cells(),
+        world.terrain_objects.cell_index(),
+        world.session.binary_frame(),
+        world.ore_growth_config.spreads(),
+        &mut world.dirty_cells,
         &mut world.zone_grid,
         &mut world.path_grid,
         world.bridge_state.as_ref(),
@@ -166,7 +164,7 @@ pub(crate) fn collect_area(
     #[cfg(test)]
     let mut deferred_prelude = world.receiver_fixture.as_mut().map(|fixture| {
         super::receiver_fixture::DeferredCellPrelude {
-            amount: (!world.session.no_damage)
+            amount: (!world.session.no_damage())
                 .then(|| tiberium_reduction_amount(damage, true, warhead))
                 .flatten(),
             deferred: &mut fixture.deferred_tiberium,
@@ -181,7 +179,7 @@ pub(crate) fn collect_area(
     let prelude: &mut dyn combat_aoe::AoECellPrelude = &mut prelude;
     combat_aoe::apply_aoe_damage_with_terrain_and_scenario(
         &mut world.substrate.entities,
-        &world.production.terrain_objects,
+        world.terrain_objects.objects(),
         cell.0,
         cell.1,
         damage,
@@ -200,10 +198,10 @@ pub(crate) fn collect_area(
             impact_z,
         },
         include_terrain_objects.then_some(combat_aoe::TerrainCollectionView {
-            objects: &world.production.terrain_objects,
-            cells: &world.production.terrain_object_cells,
+            objects: world.terrain_objects.objects(),
+            cells: world.terrain_objects.cell_index(),
         }),
-        world.session.no_damage,
+        world.session.no_damage(),
         Some(prelude),
     )
 }
@@ -328,7 +326,7 @@ fn collect_area_at<'r>(
     origin: (u64, Option<InternedId>, InternedId),
 ) -> AreaAtImpact<'r> {
     let (rx, ry, sub_x, sub_y, z_leptons) = projectile_impact_cell(impact);
-    let entered = damage != 0 && !world.session.no_damage;
+    let entered = damage != 0 && !world.session.no_damage();
     let routed_wall = entered && area_routes_to_wall(world, overlay_registry, (rx, ry), warhead);
     let aoe = collect_area(
         world,
@@ -473,10 +471,10 @@ pub(crate) fn commit_area_with_dispatch(
                     continue;
                 }
                 if !world
-                    .production
                     .terrain_objects
+                    .objects()
                     .get(&event.stable_id)
-                    .is_some_and(|terrain| terrain.is_live() && terrain.health > 0)
+                    .is_some_and(|terrain| terrain.is_live() && terrain.health() > 0)
                 {
                     continue;
                 }
@@ -567,9 +565,7 @@ pub(crate) fn commit_terrain(
     else {
         return (effects, under_attack_events);
     };
-    let receive = crate::sim::terrain_object::receive_terrain_damage_with_scenario(
-        &mut world.production.terrain_objects,
-        &world.production.terrain_object_cells,
+    let receive = world.terrain_objects.receive_damage(
         &mut run.finalizing_terrain,
         event.stable_id,
         (event.rx, event.ry),
@@ -578,7 +574,7 @@ pub(crate) fn commit_terrain(
         &warhead,
         rules,
         &world.interner,
-        world.session.no_damage,
+        world.session.no_damage(),
         ignore_defenses,
     );
     let TerrainAreaReceiveResult::Lethal(lethal) = receive else {
@@ -599,7 +595,7 @@ pub(crate) fn commit_terrain(
         let c4_id = world.interner.intern(&c4_warhead.id);
         // Terrain71BABF passes its retained Object Location, not a fresh
         // sample of the ground/deck after nested callbacks.
-        let impact = world.production.terrain_objects[&lethal.stable_id].world_coord();
+        let impact = world.terrain_objects.objects()[&lethal.stable_id].world_coord();
         let (nested, mut pings) = apply_area_damage_in_run(
             world,
             run,
@@ -634,7 +630,7 @@ pub(crate) fn commit_entities(
     let sound_enabled = sound_enabled(world);
 
     let current_tick = receiver_tick(world);
-    let scenario_no_damage = world.session.no_damage;
+    let scenario_no_damage = world.session.no_damage();
 
     let mut death = DeathEffects::default();
     let mut under_attack_events = Vec::new();
@@ -667,7 +663,7 @@ pub(crate) fn commit_entities(
             .is_some_and(|target| {
                 target.category() == EntityCategory::Unit
                     && target.selection.is_selected()
-                    && world.session.current_house == Some(target.owner())
+                    && world.session.current_house() == Some(target.owner())
             })
         {
             run.selected_units.push(target_id);
@@ -694,15 +690,15 @@ pub(crate) fn commit_entities(
                         .get(event.attacker_id)
                         .and_then(|attacker| {
                             world
-                                .session
-                                .house_order
+                                .houses
+                                .order()
                                 .iter()
                                 .position(|owner| *owner == attacker.owner())
                         })
                         .map_or(-1, |index| index as i32);
                     if let Some(owner) = world.houses.get_mut(&victim_owner) {
                         owner
-                            .strategy_emergency
+                            .strategy_emergency_mut()
                             .note_building_attacker(attacker_house_index);
                     }
                 }
@@ -858,7 +854,7 @@ pub(crate) fn commit_entities(
                 target_id,
                 MissionId::from_known(MissionType::Hunt),
                 0,
-                world.session.binary_frame,
+                world.session.binary_frame(),
                 &crate::sim::mission::authority::EntityReadyInputProvider,
             );
         }
@@ -1471,7 +1467,10 @@ pub(crate) fn handle_death(
                     obj,
                     category,
                     rules.general.building_die_sound.as_deref(),
-                    world.houses.get(&owner).is_some_and(|house| house.is_human),
+                    world
+                        .houses
+                        .get(&owner)
+                        .is_some_and(|house| house.is_human()),
                     &world.main_rng,
                     rx,
                     ry,
@@ -2068,8 +2067,8 @@ fn nuke_maker(world: &mut Simulation, rules: &RuleSet, detonation: &ProjectileDe
     let target_coords = match detonation.target {
         ProjectileTarget::Entity(id) => object_get_coords(world, id),
         ProjectileTarget::Terrain(id) => world
-            .production
             .terrain_objects
+            .objects()
             .get(&id)
             .map(|tree| tree.world_coord()),
         ProjectileTarget::Cell { rx, ry } => {
@@ -2370,7 +2369,7 @@ fn bullet_location(
     detonation: &ProjectileDetonation,
 ) -> (ProjectileCoord, bool) {
     match world.projectiles.get(detonation.projectile_id) {
-        Some(bullet) => (bullet.position, bullet.on_bridge),
+        Some(bullet) => (bullet.position(), bullet.on_bridge()),
         None if detonation.reason
             == crate::sim::projectile::ProjectileDetonationReason::DeathWeapon =>
         {
@@ -2783,7 +2782,7 @@ fn receiver_tick(world: &Simulation) -> u64 {
     if let Some(fixture) = world.receiver_fixture.as_ref() {
         return fixture.current_tick;
     }
-    u64::from(world.session.binary_frame)
+    u64::from(world.session.binary_frame())
 }
 
 #[inline]

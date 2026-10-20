@@ -24,11 +24,12 @@ fn fixture(topology: &Value) -> (Simulation, InternedId, InternedId) {
     sim.mapgen_rng = crate::sim::rng::SimRng::new(31);
     let player = sim.interner.intern("Player");
     let other = sim.interner.intern("Other");
-    sim.session.current_house = Some(player);
-    sim.session.game_mode_nonzero = false;
+    sim.session.set_current_house_for_test(Some(player));
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false));
     for (owner, human) in [(player, true), (other, false)] {
         sim.houses
-            .insert(owner, HouseState::new(owner, 0, None, human, 0, 10));
+            .register(HouseState::new(owner, 0, None, human, 0, 10));
         sim.power_states.insert(
             owner,
             crate::sim::power_system::PowerState::settled_for_test(),
@@ -79,7 +80,7 @@ fn actor(
     // This is its declared constructor prestate, not an alternative producer.
     entity
         .discovery
-        .set_owned_by_current_house_for_test(Some(owner) == sim.session.current_house);
+        .set_owned_by_current_house_for_test(Some(owner) == sim.session.current_house());
     sim.substrate.entities.insert(entity)
 }
 
@@ -206,7 +207,7 @@ fn native_trigger_conceal_circle_and_immediate_two_pass_sweep_match_original() {
         let input = &row["input"];
         let topology = conceal_topology(&corpus, input);
         let (mut sim, player, _) = fixture(&topology);
-        sim.session.binary_frame = 119; // Action101 must not wait for the120 rung.
+        sim.session.set_binary_frame_for_test(119); // Action101 must not wait for the120 rung.
         sim.install_playfield_from_map_header(&crate::map::map_file::MapHeader {
             theater: "TEMPERATE".into(),
             fill: "Clear".into(),
@@ -332,19 +333,19 @@ fn periodic_conceal_shares_the_full_sweep_and_preserves_viewer_planes() {
     let clear = conceal_topology(&corpus, &json!({}));
     let (other_fog, _) = native_map_cell_fixture(&clear, other);
     sim.fog
-        .by_owner
-        .insert(other, other_fog.by_owner[&other].clone());
-    sim.session.binary_frame = 119;
+        .by_owner_mut_for_test()
+        .insert(other, other_fog.by_owner()[&other].clone());
+    sim.session.set_binary_frame_for_test(119);
     sim.tick_pending_shroud_conceal(UninitContext::default());
     assert!(sim.fog.is_ground_unshrouded(player, 1, 4));
-    sim.session.binary_frame = 120;
+    sim.session.set_binary_frame_for_test(120);
     let (_, calls) =
         trace_reveal_calls(|| sim.tick_pending_shroud_conceal(UninitContext::default()));
     assert!(!sim.fog.is_ground_unshrouded(player, 1, 4));
     assert!(sim.fog.is_ground_unshrouded(other, 1, 4));
     assert_eq!(calls.notifications, vec![((1, 4), true)]);
     assert_eq!(
-        sim.fog.by_owner[&player]
+        sim.fog.by_owner()[&player]
             .map_cell_edge_cache_for_test((1, 4))
             .1,
         0
@@ -356,12 +357,12 @@ fn periodic_conceal_shares_the_full_sweep_and_preserves_viewer_planes() {
     let (other_fog, _) = native_map_cell_fixture(&conceal_topology(&corpus, &alternate), other);
     let (player_fog, _) = native_map_cell_fixture(&topology, player);
     sim.fog
-        .by_owner
-        .insert(other, other_fog.by_owner[&other].clone());
+        .by_owner_mut_for_test()
+        .insert(other, other_fog.by_owner()[&other].clone());
     sim.fog
-        .by_owner
-        .insert(player, player_fog.by_owner[&player].clone());
-    sim.session.house_order = vec![other, player];
+        .by_owner_mut_for_test()
+        .insert(player, player_fog.by_owner()[&player].clone());
+    sim.houses.reorder_for_test(&[other, player]);
     let (_, ordered) =
         trace_reveal_calls(|| sim.tick_pending_shroud_conceal(UninitContext::default()));
     assert_eq!(ordered.notifications, vec![((7, 5), true), ((1, 4), true)]);
@@ -373,7 +374,9 @@ fn native_trigger_reveal_cell_put_then_discovery_matches_original_owner_historie
     for row in corpus["cell_put_controls"].as_array().unwrap() {
         let input = &row["input"];
         let (mut sim, player, other) = fixture(&input["topology"]);
-        sim.session.game_mode_nonzero = input["mode"] != 0;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(input["mode"] != 0),
+        );
         let owner = if input["foreign"] == true {
             other
         } else {
@@ -503,7 +506,7 @@ fn native_trigger_reveal_nearest_resident_and_diagonal_height_consumers_match_or
         }
         assert_eq!(rng_hashes(&sim), row["rng_after"]);
         if input["fresh"] == 0 {
-            assert!(sim.radar_terrain_dirty_cells.is_empty());
+            assert!(sim.dirty_cells.radar().is_empty());
         }
     }
 }
@@ -566,9 +569,8 @@ fn native_trigger_reveal_canonical_dummy_and_passed_viewer_match_original() {
         // The direct native MapCell contrast uses one physical map plane.
         // Seed that supplied plane under its passed viewer for this API.
         if viewer != player {
-            sim.fog
-                .by_owner
-                .insert(viewer, sim.fog.by_owner[&player].clone());
+            let plane = sim.fog.by_owner()[&player].clone();
+            sim.fog.by_owner_mut_for_test().insert(viewer, plane);
         }
         reveal_cell(&mut sim, viewer, (9, 10), false);
         assert_eq!(discovery(&sim, id), row["discovery"]);
@@ -618,7 +620,7 @@ fn native_trigger_reveal_whole_area_histories_match_original_cache_and_residents
                 &config,
                 UninitContext::default(),
                 crate::sim::vision::MapRevealProjection::Transient,
-                sim.session.current_house,
+                sim.session.current_house(),
             );
             for state in history["states"].as_array().unwrap() {
                 assert_native_cell_history(
@@ -638,7 +640,7 @@ fn native_trigger_reveal_whole_area_histories_match_original_cache_and_residents
         }
         assert_eq!(rng_hashes(&sim), row["rng_after"]);
         sim.fog
-            .by_owner
+            .by_owner_mut_for_test()
             .get_mut(&player)
             .unwrap()
             .clear_all_visible();
@@ -716,12 +718,16 @@ fn native_trigger_reveal_building_owner_entry_and_virtual_override_match_origina
         let input = &row["input"];
         let (mut sim, _, owner) = fixture(&input["topology"]);
         if input["player_null"] == true {
-            sim.session.current_house = None;
+            sim.session.set_current_house_for_test(None);
         }
-        sim.session.game_mode_nonzero = input["mode"].as_i64().unwrap_or(0) != 0;
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(
+                input["mode"].as_i64().unwrap_or(0) != 0,
+            ),
+        );
         let house = sim.houses.get_mut(&owner).unwrap();
-        house.is_human = input["human"].as_i64().unwrap_or(0) != 0;
-        house.player_control = input["player_control"].as_i64().unwrap_or(0) != 0;
+        house.set_is_human_for_test(input["human"].as_i64().unwrap_or(0) != 0);
+        house.set_player_control_for_test(input["player_control"].as_i64().unwrap_or(0) != 0);
         let id = discovery_building(&mut sim, owner, input);
         assert_eq!(rng_hashes(&sim), row["rng_before"]);
         let ((_, calls), draws) = crate::sim::rng::trace_draws(|| {
@@ -874,7 +880,7 @@ fn native_trigger_reveal_all_fifty_five_startup_actions_match_original_empty_res
     // This establishes their geometry/callback reach, not whole native Fill
     // or the later live Tag poll order/resident membership.
     assert!(
-        sim.fog.by_owner[&player]
+        sim.fog.by_owner()[&player]
             .ground_flags_raw()
             .iter()
             .any(|flags| flags & 8 != 0)
@@ -890,13 +896,14 @@ fn reveal_entire_map_walks_the_size_diamond_and_notifies_each_cell() {
     let mut sim = Simulation::with_seed(31);
     let player = sim.interner.intern("Player");
     let other = sim.interner.intern("Other");
-    sim.session.current_house = Some(player);
+    sim.session.set_current_house_for_test(Some(player));
     // A campaign CellPUT discovers only on unshrouded ground, so the resident
     // stays undiscovered until the walk reaches its cell.
-    sim.session.game_mode_nonzero = false;
+    sim.session
+        .set_game_mode(crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false));
     for (owner, human) in [(player, true), (other, false)] {
         sim.houses
-            .insert(owner, HouseState::new(owner, 0, None, human, 0, 10));
+            .register(HouseState::new(owner, 0, None, human, 0, 10));
     }
     // A Size 6x4 diamond spans rx and ry 1..=9; 10x10 storage ends the walk
     // at the first cell past it, as an allocated map does.
@@ -936,7 +943,7 @@ fn reveal_entire_map_walks_the_size_diamond_and_notifies_each_cell() {
     );
     put(&mut sim, resident, walk[20], false);
     assert_eq!(discovery(&sim, resident), json!([0, 0, 0]));
-    assert!(sim.radar_terrain_dirty_cells.is_empty());
+    assert!(sim.dirty_cells.radar().is_empty());
 
     let ((), calls) =
         trace_reveal_calls(|| sim.reveal_entire_map(Some(player), UninitContext::default()));
@@ -955,7 +962,7 @@ fn reveal_entire_map_walks_the_size_diamond_and_notifies_each_cell() {
             .copied()
             .collect::<std::collections::BTreeSet<_>>()
     );
-    assert_eq!(sim.radar_terrain_dirty_cells, walk);
+    assert_eq!(sim.dirty_cells.radar(), walk);
     assert_eq!(discovery(&sim, resident), json!([0, 1, 0]));
 }
 
@@ -966,7 +973,7 @@ fn edge_update_record(sim: &Simulation, calls: &RevealCalls, residents: &[u64]) 
     use std::hash::Hasher;
     let planes: BTreeMap<_, _> = sim
         .fog
-        .by_owner
+        .by_owner()
         .iter()
         .map(|(viewer, plane)| {
             let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -980,7 +987,7 @@ fn edge_update_record(sim: &Simulation, calls: &RevealCalls, residents: &[u64]) 
         "cursor": format!("{:?}", sim.native_allocated_cell_cursor),
         "notifications": calls.notifications,
         "queries": calls.discovery_queries,
-        "radar": sim.radar_terrain_dirty_cells,
+        "radar": sim.dirty_cells.radar(),
         "discovery": residents.iter().map(|&id| discovery(sim, id)).collect::<Vec<_>>(),
     })
 }
@@ -1013,11 +1020,13 @@ impl EdgeScript {
             .into_iter()
             .map(|name| sim.interner.intern(name))
             .collect();
-        sim.session.current_house = Some(viewers[0]);
-        sim.session.game_mode_nonzero = false;
+        sim.session.set_current_house_for_test(Some(viewers[0]));
+        sim.session.set_game_mode(
+            crate::sim::scenario_session::ScenarioGameMode::from_legacy_nonzero(false),
+        );
         for (index, &owner) in viewers.iter().enumerate() {
             sim.houses
-                .insert(owner, HouseState::new(owner, 0, None, index == 0, 0, 10));
+                .register(HouseState::new(owner, 0, None, index == 0, 0, 10));
         }
         let (width, height) = Self::SIZE;
         let side = (width + height) as u16;
@@ -1165,7 +1174,10 @@ fn scripted_edge_updates() -> Vec<Value> {
                 save_codec::deserialize(&save_codec::serialize(&script.sim.fog).unwrap()).unwrap();
         }
         script.write(round);
-        script.sim.session.binary_frame = 120 * (round + 1);
+        script
+            .sim
+            .session
+            .set_binary_frame_for_test(120 * (round + 1));
         let ((), calls) = trace_reveal_calls(|| {
             script
                 .sim

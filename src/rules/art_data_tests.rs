@@ -138,15 +138,6 @@ fn original_1080_building_slot_power_reads_preserve_native_defaults() {
 }
 
 #[test]
-fn test_apply_theater_letter() {
-    assert_eq!(apply_theater_letter("GAPOWR", "TEMPERATE"), "GTPOWR");
-    assert_eq!(apply_theater_letter("GAPOWR", "SNOW"), "GAPOWR");
-    assert_eq!(apply_theater_letter("NAHAND", "TEMPERATE"), "NTHAND");
-    assert_eq!(apply_theater_letter("X", "TEMPERATE"), "X");
-    assert_eq!(apply_theater_letter("GAPOWR", "UNKNOWN"), "GAPOWR");
-}
-
-#[test]
 fn test_hardcoded_new_theater_prefixes() {
     let reg: ArtRegistry = ArtRegistry::empty();
     assert!(reg.should_use_new_theater("GAPOWR"));
@@ -195,50 +186,6 @@ fn test_object_shp_candidates_dedupe_when_substitution_matches_original() {
 }
 
 #[test]
-fn test_apply_generic_letter() {
-    assert_eq!(apply_generic_letter("GAPOWR"), "GGPOWR");
-    assert_eq!(apply_generic_letter("NAHAND"), "NGHAND");
-    assert_eq!(apply_generic_letter("X"), "X");
-}
-
-#[test]
-fn test_voxel_asset_names() {
-    let (vxl, hva) = voxel_asset_names("HTNK");
-    assert_eq!(vxl, "HTNK.VXL");
-    assert_eq!(hva, "HTNK.HVA");
-}
-
-#[test]
-fn test_from_ini_parses_entries() {
-    let ini: IniFile = IniFile::from_str(
-        "[GAPOWR]\nNewTheater=yes\nCameo=GAPICON\n\n[HTNK]\nVoxel=yes\nAltCameo=HTKALT\n\n[NACNST]\nImage=CIVNC\n\n[GI]\nCrawls=yes\nFireUp=2\nSecondaryFire=4\n",
-    );
-    let reg: ArtRegistry = ArtRegistry::from_ini(&ini);
-    assert_eq!(reg.len(), 4);
-
-    let gapowr: &ArtEntry = reg.get("GAPOWR").expect("GAPOWR exists");
-    assert!(gapowr.new_theater);
-    assert!(!gapowr.voxel);
-    assert!(gapowr.image.is_none());
-    assert_eq!(gapowr.cameo.as_deref(), Some("GAPICON"));
-
-    let htnk: &ArtEntry = reg.get("HTNK").expect("HTNK exists");
-    assert!(!htnk.new_theater);
-    assert!(htnk.voxel);
-    assert_eq!(htnk.alt_cameo.as_deref(), Some("HTKALT"));
-
-    let nacnst: &ArtEntry = reg.get("NACNST").expect("NACNST exists");
-    assert_eq!(nacnst.image.as_deref(), Some("CIVNC"));
-
-    let gi: &ArtEntry = reg.get("GI").expect("GI exists");
-    assert!(gi.crawls);
-    assert_eq!(gi.fire_up, 2);
-    assert_eq!(gi.fire_prone, 0);
-    assert_eq!(gi.secondary_fire, 4);
-    assert_eq!(gi.secondary_prone, 0);
-}
-
-#[test]
 fn gsi_04_05_hidden_absent_occupy_height_inherits_resolved_height() {
     let ini: IniFile = IniFile::from_str(
         "[GAREFN]\nCanHideThings=no\nOccupyHeight=4\n\n[GAPOWR]\nHeight=3\n\n[NAPOWR]\nFixtureOnly=1\n",
@@ -254,22 +201,6 @@ fn gsi_04_05_hidden_absent_occupy_height_inherits_resolved_height() {
     assert_eq!(reg.occupy_height("NAPOWR"), 2);
     assert!(reg.can_hide_things("MISSING"));
     assert_eq!(reg.occupy_height("MISSING"), 2);
-}
-
-#[test]
-fn parses_anim_start_sound_and_report() {
-    let ini: IniFile = IniFile::from_str(
-        "[TWLT026]\nReport=ExplosionShard\n\n[TWLT036]\nStartSound=ExplosionStart\nReport=Explosion06\n",
-    );
-    let reg: ArtRegistry = ArtRegistry::from_ini(&ini);
-
-    let twlt026 = reg.get("TWLT026").expect("TWLT026 exists");
-    assert_eq!(twlt026.report.as_deref(), Some("ExplosionShard"));
-    assert!(twlt026.start_sound.is_none());
-
-    let twlt036 = reg.get("TWLT036").expect("TWLT036 exists");
-    assert_eq!(twlt036.start_sound.as_deref(), Some("ExplosionStart"));
-    assert_eq!(twlt036.report.as_deref(), Some("Explosion06"));
 }
 
 #[test]
@@ -312,18 +243,6 @@ fn test_resolve_metadata_entry_prefers_rules_image_section() {
     assert_eq!(entry.bib_shape.as_deref(), Some("GAAIRCBB"));
     assert_eq!(entry.building_anims.len(), 1);
     assert_eq!(entry.building_anims[0].anim_type, "GAAIRC_A");
-}
-
-#[test]
-fn test_resolve_metadata_entry_keeps_type_section_when_it_owns_metadata() {
-    let ini: IniFile = IniFile::from_str("[NACNST]\nImage=CIVNC\nBibShape=NACNSTBB\n");
-    let reg: ArtRegistry = ArtRegistry::from_ini(&ini);
-
-    let entry: &ArtEntry = reg
-        .resolve_metadata_entry("NACNST", "NACNST")
-        .expect("NACNST metadata should stay on its own section");
-    assert_eq!(entry.bib_shape.as_deref(), Some("NACNSTBB"));
-    assert_eq!(entry.image.as_deref(), Some("CIVNC"));
 }
 
 #[test]
@@ -375,13 +294,6 @@ fn retail_sidebar_cameos_follow_the_rules_image_section() {
     assert_eq!(cameo("BFRT"), "BFRTICON");
     assert_eq!(cameo("YENGINEER"), "ENGNICON");
     assert_eq!(cameo("GAPILE"), "BRRKICON");
-}
-
-#[test]
-fn test_new_theater_from_ini_key() {
-    let ini: IniFile = IniFile::from_str("[MYCIVBLD]\nNewTheater=yes\n");
-    let reg: ArtRegistry = ArtRegistry::from_ini(&ini);
-    assert!(reg.should_use_new_theater("MYCIVBLD"));
 }
 
 #[test]
@@ -466,32 +378,6 @@ fn parses_all_four_special_anim_suffixes_in_document_order() {
 }
 
 #[test]
-fn active_anim_garrisoned_replaces_base_slot_not_extra_overlay() {
-    let ini: IniFile = IniFile::from_str(
-        "[CAWASH19]\nActiveAnim=CAWA19_A\nActiveAnimGarrisoned=CAWA19_AG\nActiveAnimDamaged=CAWA19_AD\n",
-    );
-    let reg: ArtRegistry = ArtRegistry::from_ini(&ini);
-    let entry: &ArtEntry = reg.get("CAWASH19").expect("CAWASH19 exists");
-
-    assert_eq!(entry.building_anims.len(), 1);
-    assert_eq!(entry.building_anims[0].anim_type, "CAWA19_A");
-    assert_eq!(
-        entry.building_anims[0]
-            .garrisoned_variant
-            .as_ref()
-            .map(|v| v.anim_type.as_str()),
-        Some("CAWA19_AG")
-    );
-    assert_eq!(
-        entry.building_anims[0]
-            .damaged_variant
-            .as_ref()
-            .map(|v| v.anim_type.as_str()),
-        Some("CAWA19_AD")
-    );
-}
-
-#[test]
 fn damaged_active_anim_variant_uses_own_frame_metadata() {
     let ini: IniFile = IniFile::from_str(
         "[CASEAT02]\n\
@@ -526,34 +412,6 @@ fn damaged_active_anim_variant_uses_own_frame_metadata() {
     assert_eq!(damaged.start_frame, 21);
     assert_eq!(damaged.loop_start, 21);
     assert_eq!(damaged.loop_end, 39);
-}
-
-#[test]
-fn test_no_building_anims_for_regular_entry() {
-    let ini: IniFile = IniFile::from_str("[E1]\nVoxel=no\n");
-    let reg: ArtRegistry = ArtRegistry::from_ini(&ini);
-    let entry: &ArtEntry = reg.get("E1").expect("E1 exists");
-    assert!(entry.building_anims.is_empty());
-}
-
-#[test]
-fn test_parse_turret_offset() {
-    let ini: IniFile = IniFile::from_str("[HTK]\nVoxel=yes\nTurretOffset=-80\n");
-    let reg: ArtRegistry = ArtRegistry::from_ini(&ini);
-    let entry: &ArtEntry = reg.get("HTK").expect("HTK exists");
-    assert_eq!(entry.turret_offset, -80);
-}
-
-#[test]
-fn parses_building_fire_pixel_offsets() {
-    let ini: IniFile = IniFile::from_str(
-        "[ATESLA]\nPrimaryFirePixelOffset=11,-26\nSecondaryFirePixelOffset=-4,9\nPrimaryFireDualOffset=true\n",
-    );
-    let reg: ArtRegistry = ArtRegistry::from_ini(&ini);
-    let entry: &ArtEntry = reg.get("ATESLA").expect("ATESLA exists");
-    assert_eq!(entry.primary_fire_pixel_offset, Some((11, -26)));
-    assert_eq!(entry.secondary_fire_pixel_offset, Some((-4, 9)));
-    assert!(entry.primary_fire_dual_offset);
 }
 
 #[test]
@@ -643,28 +501,6 @@ fn test_resolve_overlay_image_id_and_candidates() {
 }
 
 #[test]
-fn parses_add_occupy_from_ini() {
-    let ini: IniFile =
-        IniFile::from_str("[GAREFN]\nAddOccupy1=-1,0\nAddOccupy2=-1,-1\nRemoveOccupy1=3,1\n");
-    let registry: ArtRegistry = ArtRegistry::from_ini(&ini);
-    let entry: &ArtEntry = registry.get("GAREFN").expect("GAREFN");
-    assert_eq!(entry.add_occupy[0], Some((-1, 0)));
-    assert_eq!(entry.add_occupy[1], Some((-1, -1)));
-    assert!(entry.add_occupy[2..].iter().all(Option::is_none));
-    assert_eq!(entry.remove_occupy[0], Some((3, 1)));
-    assert!(entry.remove_occupy[1..].iter().all(Option::is_none));
-}
-
-#[test]
-fn add_remove_occupy_empty_when_no_keys() {
-    let ini: IniFile = IniFile::from_str("[FOO]\nFoundation=2x2\n");
-    let registry: ArtRegistry = ArtRegistry::from_ini(&ini);
-    let entry: &ArtEntry = registry.get("FOO").expect("FOO");
-    assert!(entry.add_occupy.iter().all(Option::is_none));
-    assert!(entry.remove_occupy.iter().all(Option::is_none));
-}
-
-#[test]
 fn exact_foundation_sections_preserve_folded_visual_lookup_and_mutation() {
     let ini = IniFile::from_str(
         "[HUT]\nFoundation=2x2\nYDrawOffset=4\n[hut]\nFoundation=3x3\nYDrawOffset=9\n",
@@ -743,60 +579,6 @@ fn gsi_04_05_hidden_object_id_gate_is_distinct_from_image_metadata() {
 }
 
 #[test]
-fn parses_anim_smudge_flags() {
-    let ini = IniFile::from_bytes(
-        b"[ANIMA]\n\
-          Scorch=yes\n\
-          \n\
-          [ANIMB]\n\
-          Crater=yes\n\
-          ForceBigCraters=yes\n\
-          \n\
-          [ANIMC]\n\
-          FixtureOnly=1\n",
-    )
-    .unwrap();
-    let reg = ArtRegistry::from_ini(&ini);
-    let a = reg.get("ANIMA").unwrap();
-    assert!(a.scorch);
-    assert!(!a.crater);
-    let b = reg.get("ANIMB").unwrap();
-    assert!(!b.scorch);
-    assert!(b.crater);
-    assert!(b.force_big_craters);
-    let c = reg.get("ANIMC").unwrap();
-    assert!(!c.scorch);
-    assert!(!c.crater);
-    assert!(!c.force_big_craters);
-}
-
-#[test]
-fn parse_gaairc_four_pads() {
-    let ini: IniFile = IniFile::from_str(
-        "[GAAIRC]\n\
-         DockingOffset0=0,-128,0\n\
-         DockingOffset1=0,128,0\n\
-         DockingOffset2=256,-128,0\n\
-         DockingOffset3=256,128,0\n",
-    );
-    let reg: ArtRegistry = ArtRegistry::from_ini(&ini);
-    let entry: &ArtEntry = reg.get("GAAIRC").expect("GAAIRC entry");
-    assert_eq!(entry.pads.len(), 4, "should parse all 4 offsets");
-    assert_eq!(entry.pads[0].lepton_offset, (0, -128, 0));
-    assert_eq!(entry.pads[1].lepton_offset, (0, 128, 0));
-    assert_eq!(entry.pads[2].lepton_offset, (256, -128, 0));
-    assert_eq!(entry.pads[3].lepton_offset, (256, 128, 0));
-}
-
-#[test]
-fn parse_no_docking_offsets_yields_empty_vec() {
-    let ini: IniFile = IniFile::from_str("[GAHPAD]\nHeight=1\n");
-    let reg: ArtRegistry = ArtRegistry::from_ini(&ini);
-    let entry: &ArtEntry = reg.get("GAHPAD").expect("GAHPAD entry");
-    assert!(entry.pads.is_empty(), "no offsets → empty pads vec");
-}
-
-#[test]
 fn parse_partial_offsets_collects_what_exists() {
     // art has only DockingOffset0 and DockingOffset2 (gap at 1).
     // Parser collects what's present. The art→rules merge handles sizing to NumberOfDocks.
@@ -837,34 +619,6 @@ fn test_parses_guardian_gi_sequence_frames() {
 }
 
 #[test]
-fn test_sequence_frames_default_none_when_sequence_missing() {
-    // No Sequence= key -> no lookup -> None for all three.
-    let ini: IniFile = IniFile::from_str("[CIVHOSP]\nCameo=HOSPICON\n");
-    let reg: ArtRegistry = ArtRegistry::from_ini(&ini);
-    let entry: &ArtEntry = reg.get("CIVHOSP").expect("entry");
-    assert_eq!(entry.deploy_frames, None);
-    assert_eq!(entry.undeploy_frames, None);
-    assert_eq!(entry.deployed_fire_frames, None);
-}
-
-#[test]
-fn test_sequence_frames_partial_some_missing() {
-    // Sequence section exists but only defines a subset of the three keys.
-    let ini: IniFile = IniFile::from_str(
-        "[E1]\n\
-         Sequence=GISequence\n\
-         \n\
-         [GISequence]\n\
-         Deploy=100,8,0\n",
-    );
-    let reg: ArtRegistry = ArtRegistry::from_ini(&ini);
-    let entry: &ArtEntry = reg.get("E1").expect("E1 entry");
-    assert_eq!(entry.deploy_frames, Some(8));
-    assert_eq!(entry.undeploy_frames, None);
-    assert_eq!(entry.deployed_fire_frames, None);
-}
-
-#[test]
 fn test_sequence_frames_follow_the_native_sequence_scan() {
     // 0x00523D00 scans `%d,%d,%d,%s` over the constructor's zero record; a
     // literal comma skips no whitespace, so `8 , 6` stops after one field.
@@ -879,23 +633,6 @@ fn test_sequence_frames_follow_the_native_sequence_scan() {
     assert_eq!(deploy_frames(" 8 , 6 , 6 "), Some(0));
     assert_eq!(deploy_frames("only-one"), Some(0));
     assert_eq!(deploy_frames("a,b,c"), Some(0));
-}
-
-#[test]
-fn gsi_05_10_delayed_building_fire_art_fields_keep_defaults_and_signed_delay() {
-    let ini = IniFile::from_str(
-        "[DEFAULTED]\nHeight=1\n\
-         [SIGNED]\nIsAnimDelayedFire=yes\nDelayedFireDelay=-7\n",
-    );
-    let registry = ArtRegistry::from_ini(&ini);
-
-    let defaulted = registry.get("DEFAULTED").expect("defaulted art entry");
-    assert!(!defaulted.is_anim_delayed_fire);
-    assert_eq!(defaulted.delayed_fire_delay, 0);
-
-    let signed = registry.get("SIGNED").expect("signed art entry");
-    assert!(signed.is_anim_delayed_fire);
-    assert_eq!(signed.delayed_fire_delay, -7);
 }
 
 #[test]

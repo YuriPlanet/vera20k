@@ -99,7 +99,7 @@ const FLAG_EFFECTIVE_GAP_SIGHT: u8 = 0x80;
 const GROUND_VISIBLE: u8 = 0x08;
 const GROUND_OPEN: u8 = 0x10;
 
-/// The cell flags [`published_flags`] derives from a cell's knowledge; the
+/// The cell flags [`ShroudKnowledge::published_flags`] derives from a cell's knowledge; the
 /// friendly gap fog is the only flag outside them.
 const PUBLISHED_FLAGS: u8 = FLAG_REVEALED
     | FLAG_VISIBLE
@@ -108,37 +108,6 @@ const PUBLISHED_FLAGS: u8 = FLAG_REVEALED
     | FLAG_EFFECTIVE_GAP_SIGHT
     | FLAG_PENDING_GAP_CONCEAL
     | FLAG_HOSTILE_GAP_PRESENT;
-
-/// The published flags of a cell with `knowledge`.
-fn published_flags(knowledge: ShroudKnowledge) -> u8 {
-    let mut flags = 0;
-    if knowledge.open {
-        flags |= FLAG_REVEALED;
-    }
-    if knowledge.local_sources > 0 {
-        flags |= FLAG_SUSTAINED_SIGHT;
-    }
-    if knowledge.allied_sources > 0 {
-        flags |= FLAG_EFFECTIVE_GAP_SIGHT;
-    }
-    if knowledge.open
-        && (knowledge.local_sources > 0
-            || knowledge.allied_sources > 0
-            || knowledge.transient_visible)
-    {
-        flags |= FLAG_VISIBLE;
-    }
-    if knowledge.pending {
-        flags |= FLAG_PENDING_GAP_CONCEAL;
-    }
-    if knowledge.gap_counter > 0 {
-        flags |= FLAG_HOSTILE_GAP_PRESENT;
-        if !knowledge.open {
-            flags |= FLAG_GAP_COVERED;
-        }
-    }
-    flags
-}
 
 /// Map5678E0 clamps its visited disc to10. Native source cached260 retains
 /// the raw effective radius; the independent border traversal clamps to11.
@@ -333,8 +302,7 @@ impl OwnerVisibility {
     pub fn mark_visible(&mut self, rx: u16, ry: u16) {
         self.mark_sight(rx, ry);
         if let Some(index) = self.index(rx, ry) {
-            self.shroud_knowledge[index].counter = 0;
-            self.shroud_knowledge[index].open = true;
+            self.shroud_knowledge[index].mark_visible_for_test();
             self.set_transient_visible(index);
             self.publish_knowledge(index);
         }
@@ -342,7 +310,7 @@ impl OwnerVisibility {
 
     /// Give `index` this frame's transient sight, which the next clear ends.
     fn set_transient_visible(&mut self, index: usize) {
-        self.shroud_knowledge[index].transient_visible = true;
+        self.shroud_knowledge[index].see_this_frame();
         self.tracked.transient.push(index as u32);
     }
 
@@ -389,19 +357,7 @@ impl OwnerVisibility {
             let Some(index) = self.index(x, y) else {
                 continue;
             };
-            let state = &mut self.shroud_knowledge[index];
-            let count = if local {
-                &mut state.local_sources
-            } else {
-                &mut state.allied_sources
-            };
-            *count = if add {
-                count.wrapping_add(1)
-            } else {
-                count
-                    .checked_sub(1)
-                    .expect("retained sight admission is balanced")
-            };
+            self.shroud_knowledge[index].count_source(local, add);
         }
     }
 
@@ -437,7 +393,7 @@ impl OwnerVisibility {
         self.clear_gap_fog();
         let mut transient = std::mem::take(&mut self.tracked.transient);
         for &index in &transient {
-            self.shroud_knowledge[index as usize].transient_visible = false;
+            self.shroud_knowledge[index as usize].end_frame_sight();
         }
         // Every other cell's knowledge is unchanged, so publishing it would
         // put back the bits a full clear takes off.
@@ -454,7 +410,7 @@ impl OwnerVisibility {
     /// visible cell has its ground bits, and publishing lists the rest.
     fn clear_every_cell(&mut self) {
         for knowledge in &mut self.shroud_knowledge {
-            knowledge.transient_visible = false;
+            knowledge.end_frame_sight();
         }
         for index in 0..self.cells.len() {
             if self.cells[index] & FLAG_VISIBLE != 0 {
@@ -485,7 +441,7 @@ impl OwnerVisibility {
     fn publish_knowledge(&mut self, index: usize) {
         let cell = &mut self.cells[index];
         let was_pending = *cell & FLAG_PENDING_GAP_CONCEAL != 0;
-        *cell = *cell & !PUBLISHED_FLAGS | published_flags(self.shroud_knowledge[index]);
+        *cell = *cell & !PUBLISHED_FLAGS | self.shroud_knowledge[index].published_flags();
         // Every pending writer publishes, so the bit's rise lists the cell.
         if *cell & FLAG_PENDING_GAP_CONCEAL != 0 && !was_pending {
             self.edge_cells.pending.push(index as u32);
@@ -518,11 +474,11 @@ impl OwnerVisibility {
         {
             assert_eq!(
                 cell & PUBLISHED_FLAGS,
-                published_flags(*knowledge),
+                knowledge.published_flags(),
                 "cell {index}: published bits"
             );
             assert!(
-                !knowledge.transient_visible || transient[index],
+                !knowledge.transient_visible() || transient[index],
                 "cell {index}: unlisted transient sight"
             );
             assert!(
@@ -708,9 +664,9 @@ fn sensor_counted(
 /// query reads the viewer's own plane.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct FogState {
-    pub width: u16,
-    pub height: u16,
-    pub by_owner: Planes,
+    width: u16,
+    height: u16,
+    by_owner: Planes,
     /// One native source cache per logical viewer. Inactive entries retain
     /// cached254/260 after250 is cleared, until actual object teardown.
     /// Private to the sight owner: its reveal and release events
@@ -735,25 +691,25 @@ pub struct FogState {
     whole_map_revealed_owners: std::collections::BTreeSet<InternedId>,
     /// Per-viewer hostile admission receipts; preserved across save/load so a
     /// continuing generator does not become a fresh write after restoration.
-    pub(crate) gap_sources: BTreeMap<InternedId, std::collections::BTreeSet<GapGeneratorSource>>,
+    gap_sources: BTreeMap<InternedId, std::collections::BTreeSet<GapGeneratorSource>>,
     /// Bumps each time presentation prepares a view (F10); the fog mask
     /// renderer and minimap dirty-gate on it. Runtime only: never saved or
     /// hashed, so it restarts at 0 after a load.
     #[serde(skip)]
-    pub(crate) view_generation: u64,
+    view_generation: u64,
     /// Native CellClass::FoggedObjects vectors, keyed by viewer and cell. IDs
     /// may be shared across every cell in one building footprint.
     #[serde(default)]
-    pub fogged_object_cells: BTreeMap<(InternedId, u16, u16), Vec<FoggedObjectId>>,
+    fogged_object_cells: BTreeMap<(InternedId, u16, u16), Vec<FoggedObjectId>>,
     /// Owning allocation table for shared fogged-object IDs.
     #[serde(default)]
-    pub fogged_objects: BTreeMap<FoggedObjectId, FoggedObjectFootprintRecord>,
+    fogged_objects: BTreeMap<FoggedObjectId, FoggedObjectFootprintRecord>,
     /// Allocation cursor for the Rust-stable counterpart of native pointers.
     #[serde(default)]
-    pub next_fogged_object_id: FoggedObjectId,
+    next_fogged_object_id: FoggedObjectId,
     /// Native signed-word SensorsOfHouses counters, row-major per house.
     #[serde(default)]
-    pub sensors_by_house: BTreeMap<InternedId, Vec<i16>>,
+    sensors_by_house: BTreeMap<InternedId, Vec<i16>>,
     /// Native `CellClass+0xAC[house]` signed-word disguise-detect counters,
     /// row-major per house. Only `BuildingClass::AddDetectDisguiseAt @
     /// 0x00455A80` / `RemoveDetectDisguiseAt @ 0x00455980` write them, and
@@ -761,23 +717,143 @@ pub struct FogState {
     /// `UnitClass::IsDisguisedTo @ 0x00746750` and
     /// `InfantryClass::IsDisguisedTo @ 0x005227F0`.
     #[serde(default)]
-    pub disguise_detect_by_house: BTreeMap<InternedId, Vec<i16>>,
+    disguise_detect_by_house: BTreeMap<InternedId, Vec<i16>>,
     /// Native CellClass::CloakedByHouses words, row-major by cell. House
     /// selection uses the original x86-masked bit index (`h & 31`).
     #[serde(default)]
-    pub cloaked_by_houses: Vec<u32>,
+    cloaked_by_houses: Vec<u32>,
 }
 
 impl FogState {
     /// An empty viewer domain with the allocated map dimensions. Reveal and
     /// gap admission always initialize their own private House+240 state.
-    #[cfg(any(test, feature = "test-support"))]
     pub fn new(width: u16, height: u16) -> Self {
         Self {
             width,
             height,
             ..Self::default()
         }
+    }
+
+    /// The viewer domain's width in cells; zero until the map is allocated.
+    pub fn width(&self) -> u16 {
+        self.width
+    }
+
+    pub fn height(&self) -> u16 {
+        self.height
+    }
+
+    /// Each viewer's visibility plane.
+    pub fn by_owner(&self) -> &Planes {
+        &self.by_owner
+    }
+
+    /// During the object pass, leave the source writes to every plane but
+    /// `kept`'s waiting until [`Self::settle_plane_writes`]; the presentation
+    /// boundary reads the kept planes mid-pass.
+    pub(crate) fn defer_plane_writes(&mut self, kept: Vec<InternedId>) {
+        self.by_owner.defer(kept);
+    }
+
+    /// Apply every plane's waiting writes once the object pass ends.
+    pub(crate) fn settle_plane_writes(&mut self) {
+        self.by_owner.settle();
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn by_owner_mut_for_test(&mut self) -> &mut Planes {
+        &mut self.by_owner
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_width_for_test(&mut self, value: u16) {
+        self.width = value;
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn set_height_for_test(&mut self, value: u16) {
+        self.height = value;
+    }
+
+    /// `viewer`'s plane, made empty on first use: a normal scenario
+    /// constructs its viewer Houses before any Techno writes their fog.
+    pub(crate) fn ensure_viewer(&mut self, viewer: InternedId) {
+        let (width, height) = (self.width, self.height);
+        self.by_owner
+            .get_or_insert_with(viewer, || OwnerVisibility::new(width, height));
+    }
+
+    /// Native CellClass::FoggedObjects vectors, keyed by viewer and cell.
+    pub fn fogged_object_cells(&self) -> &BTreeMap<(InternedId, u16, u16), Vec<FoggedObjectId>> {
+        &self.fogged_object_cells
+    }
+
+    /// The shared fogged-object allocations.
+    pub fn fogged_objects(&self) -> &BTreeMap<FoggedObjectId, FoggedObjectFootprintRecord> {
+        &self.fogged_objects
+    }
+
+    /// Native signed-word SensorsOfHouses counters, row-major per house.
+    pub fn sensors_by_house(&self) -> &BTreeMap<InternedId, Vec<i16>> {
+        &self.sensors_by_house
+    }
+
+    /// Native `CellClass+0xAC[house]` disguise-detect counters.
+    pub fn disguise_detect_by_house(&self) -> &BTreeMap<InternedId, Vec<i16>> {
+        &self.disguise_detect_by_house
+    }
+
+    /// Native CellClass::CloakedByHouses words, row-major by cell.
+    pub fn cloaked_by_houses(&self) -> &[u32] {
+        &self.cloaked_by_houses
+    }
+
+    /// Per-viewer hostile gap admission receipts.
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn gap_sources(
+        &self,
+    ) -> &BTreeMap<InternedId, std::collections::BTreeSet<GapGeneratorSource>> {
+        &self.gap_sources
+    }
+
+    /// One digest per viewer's grids, in viewer order, spread over threads
+    /// once the grids are large (30 Houses on a 500x500 map hold millions of
+    /// cells).
+    pub(crate) fn plane_digests(&self) -> Vec<u64> {
+        let grids: Vec<_> = self.by_owner.values().collect();
+        let cells = usize::from(self.width) * usize::from(self.height) * grids.len();
+        crate::sim::state_hasher::digests(&grids, cells >= 1 << 20, |grid, hasher| {
+            grid.hash_cells(hasher)
+        })
+    }
+
+    /// The fog's part of the world hash, each viewer's grids folded as its
+    /// digest from [`Self::plane_digests`].
+    pub(crate) fn hash_state(&self, plane_digests: &[u64], hasher: &mut impl std::hash::Hasher) {
+        use std::hash::Hash;
+        self.width.hash(hasher);
+        self.height.hash(hasher);
+        debug_assert_eq!(plane_digests.len(), self.by_owner.len());
+        for (owner, digest) in self.by_owner.keys().zip(plane_digests) {
+            owner.hash(hasher);
+            digest.hash(hasher);
+        }
+        self.gap_sources.hash(hasher);
+        self.hash_sight_admissions(hasher);
+        self.hash_whole_map_reveal_state(hasher);
+        b"fogged-object-footprints-v1".hash(hasher);
+        self.next_fogged_object_id.hash(hasher);
+        self.fogged_object_cells.hash(hasher);
+        self.fogged_objects.hash(hasher);
+        self.sensors_by_house.hash(hasher);
+        // `CellClass+0xAC[house]` disguise-detect counters.
+        // Behaviour-affecting like their `SensorsOfHouses` sibling above:
+        // `FUN_004870F0` reads them inside `IsDisguisedTo`, which decides
+        // target acquisition and so changes issued commands, not just
+        // presentation.
+        self.disguise_detect_by_house.hash(hasher);
+        self.cloaked_by_houses.hash(hasher);
     }
 
     /// Source metadata is published before Map5678E0 can call a receiver.
@@ -985,7 +1061,7 @@ impl FogState {
                 let index = index as usize;
                 let knowledge = vis.shroud_knowledge[index];
                 let sources =
-                    u64::from(knowledge.local_sources) + u64::from(knowledge.allied_sources);
+                    u64::from(knowledge.local_sources()) + u64::from(knowledge.allied_sources());
                 let alternates = alternate.partition_point(|&cell| cell <= index)
                     - alternate.partition_point(|&cell| cell < index);
                 if sources > alternates as u64 {
@@ -1452,7 +1528,7 @@ impl FogState {
             .get_or_insert_with(owner, || OwnerVisibility::new(width, height));
         let index = vis.index(rx, ry).expect("ground byte cell in bounds");
         vis.set_ground_bits(index, bits & (GROUND_VISIBLE | GROUND_OPEN));
-        vis.shroud_knowledge[index].open = bits & GROUND_VISIBLE != 0;
+        vis.shroud_knowledge[index].set_open_for_test(bits & GROUND_VISIBLE != 0);
         // Cleared ground bits are restored by the sight that covers them.
         vis.tracked.complete = false;
         vis.publish_knowledge(index);

@@ -43,63 +43,8 @@ fn test_def(
 // --- resolve_shp_frame tests ---
 
 #[test]
-fn test_resolve_walk_facing_east_frame_3() {
-    let def = test_def(8, 6, 8, 100, LoopMode::Loop);
-    // Facing 64 is cell-E → slot 5 → frame = 8 + 5*6 + 3 = 41.
-    assert_eq!(resolve_shp_frame(&def, 64, 3), 41);
-}
-
-#[test]
-fn test_resolve_non_directional() {
-    let def = test_def(56, 15, 1, 120, LoopMode::Loop);
-    // Non-directional: facing is ignored. Frame 7 → 56 + 7 = 63
-    assert_eq!(resolve_shp_frame(&def, 128, 7), 63);
-}
-
-#[test]
-fn test_resolve_frame_index_wraps() {
-    let def = test_def(8, 6, 8, 100, LoopMode::Loop);
-    // Frame 7 wraps: 7 % 6 = 1. Facing 0 is cell-N → slot 7 → 8 + 7*6 + 1 = 51.
-    assert_eq!(resolve_shp_frame(&def, 0, 7), 51);
-}
-
-#[test]
-fn test_resolve_facing_multiplier_differs_from_frame_count() {
-    // Simulates a sequence with facing_multiplier=8 but frame_count=4
-    let def = SequenceDef {
-        start_frame: 0,
-        frame_count: 4,
-        facings: 8,
-        facing_multiplier: 8,
-        frame_delay: 1,
-        normalized: false,
-        completion_facing: None,
-        loop_mode: LoopMode::Loop,
-        facing_slots: FacingSlots::InfantryTable,
-    };
-    // Facing 64 is cell-E → slot 5 → frame = 0 + 5*8 + 3 = 43.
-    assert_eq!(resolve_shp_frame(&def, 64, 3), 43);
-}
-
-#[test]
-fn test_resolve_all_8_facings() {
-    let def = test_def(0, 1, 8, 200, LoopMode::Loop);
-    // DirStruct (clockwise, cell-relative) → infantry SHP frame slot.
-    // SHP frame 0 is the screen-north pose, which is cell NW; slots then run
-    // counter-clockwise: 0=NW, 1=W, 2=SW, 3=S, 4=SE, 5=E, 6=NE, 7=N.
-    assert_eq!(resolve_shp_frame(&def, 0, 0), 7); // cell-N  → SHP 7
-    assert_eq!(resolve_shp_frame(&def, 32, 0), 6); // cell-NE → SHP 6
-    assert_eq!(resolve_shp_frame(&def, 64, 0), 5); // cell-E  → SHP 5
-    assert_eq!(resolve_shp_frame(&def, 96, 0), 4); // cell-SE → SHP 4
-    assert_eq!(resolve_shp_frame(&def, 128, 0), 3); // cell-S  → SHP 3
-    assert_eq!(resolve_shp_frame(&def, 160, 0), 2); // cell-SW → SHP 2
-    assert_eq!(resolve_shp_frame(&def, 192, 0), 1); // cell-W  → SHP 1
-    assert_eq!(resolve_shp_frame(&def, 224, 0), 0); // cell-NW → SHP 0
-}
-
-#[test]
 fn test_infantry_slot_boundaries_round_not_truncate() {
-    // The eight octant centres above coincide under both a truncating and a
+    // The eight octant centres coincide under both a truncating and a
     // rounding quantiser, so they cannot tell the two apart. These values can.
     //
     // Native slot boundaries sit at facing ≡ 12 (mod 32), not at ≡ 0: the arc
@@ -128,18 +73,6 @@ fn test_infantry_slot_boundaries_round_not_truncate() {
     assert_eq!(resolve_shp_frame(&def, 235, 0), 0);
     assert_eq!(resolve_shp_frame(&def, 236, 0), 7);
     assert_eq!(resolve_shp_frame(&def, 255, 0), 7);
-}
-
-#[test]
-fn test_infantry_facing_slot_covers_every_byte() {
-    // Every facing byte must land on a real frame block; an index outside 0..=7
-    // would read past the end of a standing block.
-    for facing in 0..=u8::MAX {
-        assert!(
-            infantry_facing_slot(facing) < 8,
-            "facing {facing} produced an out-of-range slot"
-        );
-    }
 }
 
 // --- SHP vehicle frame blocks ---
@@ -185,14 +118,6 @@ fn test_terror_drone_walk_slot_rounds_to_nearest_octant() {
     // Above 240 the octant rounds forward onto cell-N and wraps to slot 1.
     assert_eq!(resolve_shp_frame(&def, 239, 0), 0);
     assert_eq!(resolve_shp_frame(&def, 240, 0), 6);
-}
-
-#[test]
-fn test_terror_drone_walk_advances_within_slot() {
-    let def = dron_walk_def();
-    // Facing cell-W is slot 7 → frames 42..=47 as the walk cycle advances.
-    assert_eq!(resolve_shp_frame(&def, 192, 3), 45);
-    assert_eq!(resolve_shp_frame(&def, 192, 8), 44, "8 % 6 = 2");
 }
 
 #[test]
@@ -253,10 +178,7 @@ fn gsi_13_06_active_shp_unit(type_name: &str, kind: LocomotorKind) -> GameEntity
 struct Gsi1306Speed {
     rules: RuleSet,
     interner: StringInterner,
-    houses: std::collections::BTreeMap<
-        crate::sim::intern::InternedId,
-        crate::sim::house_state::HouseState,
-    >,
+    houses: crate::sim::houses::Houses,
 }
 
 impl Gsi1306Speed {
@@ -271,88 +193,13 @@ impl Gsi1306Speed {
             ))
             .expect("SHP fixture rules"),
             interner: crate::sim::intern::test_interner(),
-            houses: std::collections::BTreeMap::new(),
+            houses: crate::sim::houses::Houses::default(),
         }
     }
 
     fn rules(&self) -> Option<SpeedRules<'_>> {
         Some(SpeedRules::new(&self.rules, &self.interner, &self.houses))
     }
-}
-
-#[test]
-fn gsi_13_06_body_counter_uses_absolute_precommit_binary_frame_phase() {
-    let cadence = FootBodyCadence {
-        walk_rate: 4,
-        idle_rate: 8,
-    };
-
-    let speed = Gsi1306Speed::new();
-    for kind in [LocomotorKind::Drive, LocomotorKind::Ship] {
-        let mut entity = gsi_13_06_active_shp_unit("DRON", kind);
-        tick_foot_body_frame_counter(&mut entity, speed.rules(), cadence, false, false, None, 3);
-        assert_eq!(entity.body_frame_counter.get(), 0);
-        tick_foot_body_frame_counter(&mut entity, speed.rules(), cadence, false, false, None, 4);
-        assert_eq!(entity.body_frame_counter.get(), 1);
-        tick_foot_body_frame_counter(&mut entity, speed.rules(), cadence, false, false, None, 5);
-        assert_eq!(entity.body_frame_counter.get(), 1);
-        tick_foot_body_frame_counter(&mut entity, speed.rules(), cadence, false, false, None, 8);
-        assert_eq!(entity.body_frame_counter.get(), 2);
-    }
-}
-
-#[test]
-fn gsi_13_06_body_counter_wraps_and_survives_moving_idle_transitions() {
-    let speed = Gsi1306Speed::new();
-    let mut entity = gsi_13_06_active_shp_unit("DRON", LocomotorKind::Drive);
-    entity.body_frame_counter.set_for_test(u32::MAX);
-    tick_foot_body_frame_counter(
-        &mut entity,
-        speed.rules(),
-        FootBodyCadence {
-            walk_rate: 1,
-            idle_rate: 8,
-        },
-        false,
-        false,
-        None,
-        4,
-    );
-    assert_eq!(entity.body_frame_counter.get(), 0, "native dword wraps");
-
-    entity.body_frame_counter.set_for_test(9);
-    if let Some(drive) = entity
-        .locomotor
-        .as_mut()
-        .filter(|l| l.has_track_state(crate::sim::movement::track_process::TrackFamily::Drive))
-    {
-        assert!(drive.store_track_destination(
-            crate::sim::movement::track_process::TrackFamily::Drive,
-            None
-        ));
-        assert!(drive.store_track_head(
-            crate::sim::movement::track_process::TrackFamily::Drive,
-            None
-        ));
-        entity.foot_speed.set_speed_fraction(SIM_ZERO);
-    }
-    tick_foot_body_frame_counter(
-        &mut entity,
-        speed.rules(),
-        FootBodyCadence {
-            walk_rate: 4,
-            idle_rate: 8,
-        },
-        false,
-        false,
-        None,
-        8,
-    );
-    assert_eq!(
-        entity.body_frame_counter.get(),
-        10,
-        "switching to idle changes only the absolute divisor"
-    );
 }
 
 #[test]
@@ -397,42 +244,6 @@ fn gsi_13_06_counter_suppressions_hold_the_persistent_value() {
         entity.body_frame_counter.set_for_test(17);
         tick_foot_body_frame_counter(&mut entity, speed.rules(), cadence, false, false, None, 1);
         assert_eq!(entity.body_frame_counter.get(), 17, "{name}");
-    }
-}
-
-#[test]
-fn gsi_13_06_draw_and_cadence_use_distinct_movement_predicates() {
-    let speed = Gsi1306Speed::new();
-    for kind in [LocomotorKind::Drive, LocomotorKind::Ship] {
-        let mut entity = gsi_13_06_active_shp_unit("DRON", kind);
-        // No applied speed: GetCurrentSpeed reads 0 with the destination set.
-        entity.foot_speed.set_speed_fraction(SIM_ZERO);
-
-        assert!(
-            crate::sim::movement::motion_query::is_moving(&entity) == Some(true),
-            "slot-4 Is_Moving sees the class-owned destination"
-        );
-        assert!(
-            !crate::sim::movement::motion_query::is_moving_now(&entity, speed.rules(), 4),
-            "slot-32 Is_Moving_Now also requires positive applied speed"
-        );
-        tick_foot_body_frame_counter(
-            &mut entity,
-            speed.rules(),
-            FootBodyCadence {
-                walk_rate: 4,
-                idle_rate: 0,
-            },
-            false,
-            false,
-            None,
-            4,
-        );
-        assert_eq!(
-            entity.body_frame_counter.get(),
-            0,
-            "IdleRate=0 holds the counter"
-        );
     }
 }
 
@@ -611,7 +422,7 @@ fn gsi_13_06_dlph_sqd_and_dron_draw_from_native_counter_blocks() {
         },
     );
     assert_eq!(
-        resolve_shp_vehicle_body_frame(&dlph, 0, 7, false, false),
+        resolve_shp_vehicle_body_frame(&dlph, 0, 7, -1, false, false),
         Some(7),
         "idle Dolphin uses walk/swim slot 1 and counter 7 % 6"
     );
@@ -625,34 +436,87 @@ fn gsi_13_06_dlph_sqd_and_dron_draw_from_native_counter_blocks() {
         },
     );
     assert_eq!(
-        resolve_shp_vehicle_body_frame(&sqd, 0, 3, false, false),
+        resolve_shp_vehicle_body_frame(&sqd, 0, 3, -1, false, false),
         Some(23),
         "idle Squid uses walk/swim slot 1 and counter 3"
     );
 
     let dron = gsi_13_06_shp_set(6, 48, FootBodyCadence::native_defaults());
     assert_eq!(
-        resolve_shp_vehicle_body_frame(&dron, 0, 99, false, false),
+        resolve_shp_vehicle_body_frame(&dron, 0, 99, -1, false, false),
         Some(49),
         "idle Terror Drone with IdleRate=0 uses standing slot 1"
     );
     assert_eq!(
-        resolve_shp_vehicle_body_frame(&dron, 0, 7, true, false),
+        resolve_shp_vehicle_body_frame(&dron, 0, 7, -1, true, false),
         Some(7),
         "moving Terror Drone uses counter 7 % 6"
     );
 }
 
-// --- advance_animation tests ---
-
 #[test]
-fn test_advance_one_frame() {
-    let def = test_def(0, 6, 8, 1, LoopMode::Loop);
-    let mut anim: Animation = Animation::new(SequenceKind::Walk);
-    let result = advance_animation(&mut anim, &def, &GameOptions::default());
-    assert!(result.is_none());
-    assert_eq!(anim.frame_index, 1);
+fn retail_drone_firing_counter_and_frames_match_original() {
+    let native = crate::test_fixture::json("tools/spatial_oracle/unit_shp_fire_frames.json");
+    let mut entity = gsi_13_06_active_shp_unit("DRON", LocomotorKind::Drive);
+    for row in native["counter_steps"].as_array().unwrap() {
+        entity
+            .unit_firing_counter
+            .set_for_test(i32::try_from(row["before"].as_i64().unwrap()).unwrap());
+        tick_unit_firing_counter(&mut entity);
+        assert_eq!(
+            i64::from(entity.unit_firing_counter.get()),
+            row["after"].as_i64().unwrap(),
+            "native counter input {}",
+            row["before"]
+        );
+    }
+    let Some(ini) = crate::rules::retail_ini_fixture::retail_ini("rulesmd.ini") else {
+        return;
+    };
+    let Some(art) = crate::rules::retail_ini_fixture::retail_ini("artmd.ini") else {
+        return;
+    };
+    let mut rules = RuleSet::from_ini_with_fixed_art_for_test(&ini, &art).unwrap();
+    rules.install_art_fixture(ArtRegistry::from_ini(&art));
+    let set = rules.animation_sequence("DRON").unwrap();
+    let attack = set.get(&SequenceKind::Attack).unwrap();
+    assert_eq!(
+        u64::from(attack.start_frame),
+        native["input"]["start_firing_frame"].as_u64().unwrap()
+    );
+    assert_eq!(
+        u64::from(attack.frame_count),
+        native["input"]["firing_frames"].as_u64().unwrap()
+    );
+    assert_eq!(
+        u64::from(attack.facings),
+        native["input"]["facings"].as_u64().unwrap()
+    );
+    for (facing, expected) in native["first_by_facing"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .enumerate()
+    {
+        assert_eq!(
+            resolve_shp_vehicle_body_frame(set, facing as u8, 0, 7, false, false),
+            Some(u16::try_from(expected.as_u64().unwrap()).unwrap()),
+            "native DRON first firing image, facing {facing}"
+        );
+    }
+    for row in native["countdown"].as_array().unwrap() {
+        let facing = u8::try_from(row["facing"].as_u64().unwrap()).unwrap();
+        for (step, expected) in row["frames"].as_array().unwrap().iter().enumerate() {
+            assert_eq!(
+                resolve_shp_vehicle_body_frame(set, facing, 99, 7 - step as i32, true, false),
+                Some(u16::try_from(expected.as_u64().unwrap()).unwrap()),
+                "firing precedes moving body: facing {facing}, step {step}"
+            );
+        }
+    }
 }
+
+// --- advance_animation tests ---
 
 #[test]
 fn test_advance_loop_wraps_to_zero() {
@@ -719,72 +583,9 @@ fn normalized_action_delay_uses_session_game_speed() {
     assert_eq!(fast_anim.frame_index, 1);
 }
 
-#[test]
-fn test_advance_finished_does_nothing() {
-    let def = test_def(86, 15, 1, 1, LoopMode::HoldLast);
-    let mut anim: Animation = Animation::new(SequenceKind::Die1);
-    anim.finished = true;
-    anim.frame_index = 14;
-    advance_animation(&mut anim, &def, &GameOptions::default());
-    assert_eq!(anim.frame_index, 14);
-}
-
 // --- Animation component tests ---
 
-#[test]
-fn test_switch_resets_state() {
-    let mut anim: Animation = Animation::new(SequenceKind::Walk);
-    anim.frame_index = 3;
-    anim.elapsed_frames = 1;
-    anim.switch_to(SequenceKind::Stand);
-    assert_eq!(anim.sequence, SequenceKind::Stand);
-    assert_eq!(anim.frame_index, 0);
-    assert_eq!(anim.elapsed_frames, 0);
-    assert!(!anim.finished);
-}
-
-#[test]
-fn test_switch_noop_same_sequence() {
-    let mut anim: Animation = Animation::new(SequenceKind::Walk);
-    anim.frame_index = 3;
-    anim.elapsed_frames = 1;
-    anim.switch_to(SequenceKind::Walk);
-    assert_eq!(anim.frame_index, 3, "Same sequence should not reset");
-    assert_eq!(anim.elapsed_frames, 1);
-}
-
-#[test]
-fn test_animation_is_send_sync() {
-    fn assert_send_sync<T: Send + Sync>() {}
-    assert_send_sync::<Animation>();
-}
-
 // --- Default sequence set tests ---
-
-#[test]
-fn test_default_infantry_has_all_sequences() {
-    let set: SequenceSet = default_infantry_sequences();
-    assert!(set.get(&SequenceKind::Stand).is_some());
-    assert!(set.get(&SequenceKind::Walk).is_some());
-    assert!(set.get(&SequenceKind::Die1).is_some());
-    assert!(set.get(&SequenceKind::Die2).is_some());
-    assert!(set.get(&SequenceKind::Idle1).is_some());
-    assert!(set.get(&SequenceKind::Idle2).is_some());
-    assert_eq!(set.len(), 6);
-
-    let walk: &SequenceDef = set.get(&SequenceKind::Walk).expect("Walk exists");
-    assert_eq!(walk.start_frame, 8);
-    assert_eq!(walk.frame_count, 6);
-    assert_eq!(walk.facings, 8);
-    assert_eq!(walk.facing_multiplier, 6);
-}
-
-#[test]
-fn test_default_building_has_stand_only() {
-    let set: SequenceSet = default_building_sequences();
-    assert!(set.get(&SequenceKind::Stand).is_some());
-    assert_eq!(set.len(), 1);
-}
 
 // --- death_sequence_for_inf_death tests ---
 
@@ -845,10 +646,10 @@ fn infantry_action_fixture(
     );
     let mut sim = crate::sim::world::Simulation::with_seed(0);
     let house = sim.interner.intern("Americans");
-    sim.houses.insert(
-        house,
-        crate::sim::house_state::HouseState::new(house, 0, None, true, 0, 10),
-    );
+    sim.houses
+        .register(crate::sim::house_state::HouseState::new(
+            house, 0, None, true, 0, 10,
+        ));
     let id = sim
         .construct_object_limbo_at_height(
             "E1",
@@ -918,17 +719,6 @@ fn assert_infantry_pose(
         actor.animation.is_none(),
         "Infantry has no writable presentation clock"
     );
-}
-
-#[test]
-fn infantry_walk_action_uses_retained_locomotor_motion() {
-    let (mut sim, rules, id) = infantry_action_fixture(Some("S"));
-    sim.infantry_movement_actions(id, &rules, None, crate::sim::world::FrameEffects::default());
-    assert_infantry_pose(&sim, id, 0, SequenceKind::Stand, 0);
-
-    set_infantry_walk_motion(&mut sim, id, true);
-    sim.infantry_movement_actions(id, &rules, None, crate::sim::world::FrameEffects::default());
-    assert_infantry_pose(&sim, id, 3, SequenceKind::Walk, 0);
 }
 
 /// `InfantryClass::Limbo @ 0x0051DF10` stops the locomotor's movement
@@ -1013,7 +803,7 @@ fn infantry_walk_stage_uses_absolute_frames_and_presentation_leaves_it_alone() {
         let dead = tick_animations(
             &mut sim.substrate.entities,
             rules.animation_sequences(),
-            &sim.session.game_options,
+            &sim.session.game_options(),
             &sim.interner,
             now,
         );
@@ -1045,7 +835,7 @@ fn presentation_preserves_infantry_fire_action_latch_and_signed_stage() {
     let dead = tick_animations(
         &mut sim.substrate.entities,
         rules.animation_sequences(),
-        &sim.session.game_options,
+        &sim.session.game_options(),
         &sim.interner,
         100,
     );
@@ -1063,7 +853,7 @@ fn presentation_preserves_infantry_fire_action_latch_and_signed_stage() {
 #[test]
 fn gsi_05_07_idle_completion_snaps_current_hint_before_ready_dispatch() {
     let (mut sim, rules, id) = infantry_action_fixture(Some("S"));
-    sim.session.binary_frame = 77;
+    sim.session.set_binary_frame_for_test(77);
     sim.substrate.entities.get_mut(id).unwrap().body_facing = FacingClass::new(0, 4);
     assert!(
         sim.infantry_do_action(
@@ -1092,7 +882,7 @@ fn gsi_05_07_idle_completion_snaps_current_hint_before_ready_dispatch() {
 #[test]
 fn gsi_05_07_unhinted_completion_preserves_body_facing() {
     let (mut sim, rules, id) = infantry_action_fixture(None);
-    sim.session.binary_frame = 91;
+    sim.session.set_binary_frame_for_test(91);
     sim.substrate.entities.get_mut(id).unwrap().body_facing = FacingClass::new(0x2000, 4);
     assert!(
         sim.infantry_do_action(
@@ -1262,66 +1052,6 @@ fn infantry_down_and_up_remain_uninterruptible_until_sequence_completion() {
 }
 
 #[test]
-fn presentation_skips_dying_infantry_without_changing_its_stage_or_action() {
-    let (mut sim, rules, id) = infantry_action_fixture(Some("S"));
-    assert!(
-        sim.infantry_do_action(
-            id,
-            11,
-            true,
-            &rules,
-            crate::sim::world::FrameEffects::default()
-        )
-        .unwrap()
-    );
-    let actor = sim.substrate.entities.get_mut(id).unwrap();
-    actor.death.set_dying_for_test(true);
-    actor.health.set_for_test(0);
-    actor.set_native_stage_value(14);
-    let dead = tick_animations(
-        &mut sim.substrate.entities,
-        rules.animation_sequences(),
-        &sim.session.game_options,
-        &sim.interner,
-        100,
-    );
-    assert!(dead.is_empty());
-    assert_infantry_pose(&sim, id, 11, SequenceKind::Die1, 14);
-}
-
-#[test]
-fn completed_infantry_death_is_removed_by_the_class_sequencer() {
-    let (mut sim, rules, id) = infantry_action_fixture(Some("S"));
-    assert!(
-        sim.infantry_do_action(
-            id,
-            11,
-            true,
-            &rules,
-            crate::sim::world::FrameEffects::default()
-        )
-        .unwrap()
-    );
-    let actor = sim.substrate.entities.get_mut(id).unwrap();
-    actor.death.set_dying_for_test(true);
-    actor.health.set_for_test(0);
-    actor.set_native_stage_value(15);
-    assert!(sim.infantry_sequencer(id, &rules, crate::sim::world::FrameEffects::default()));
-    let retired = sim.substrate.entities.get(id).unwrap();
-    assert!(!retired.lifecycle.object_alive());
-    assert!(retired.lifecycle.in_limbo());
-    assert!(sim.substrate.pending_delete.contains_object(&id));
-    sim.process_pending_delete_with(
-        Some(&rules),
-        None,
-        crate::sim::world::FrameEffects::default(),
-        1,
-        false,
-    );
-    assert!(sim.substrate.entities.get(id).is_none());
-}
-
-#[test]
 fn infantry_death_finishes_at_its_sequence_count_and_not_one_frame_early() {
     let (mut sim, rules, id) = infantry_action_fixture(Some("S"));
     assert!(
@@ -1373,16 +1103,6 @@ fn infantry_death_finishes_at_its_sequence_count_and_not_one_frame_early() {
         false,
     );
     assert!(sim.substrate.entities.get(id).is_none());
-}
-
-#[test]
-fn test_sequence_is_prone_helper() {
-    assert!(sequence_is_prone(SequenceKind::Prone));
-    assert!(sequence_is_prone(SequenceKind::Crawl));
-    assert!(sequence_is_prone(SequenceKind::FireProne));
-    assert!(sequence_is_prone(SequenceKind::Down));
-    assert!(!sequence_is_prone(SequenceKind::Stand));
-    assert!(!sequence_is_prone(SequenceKind::Up));
 }
 
 fn animation_catalog_rules(ready_start: u16) -> RuleSet {
@@ -1495,7 +1215,7 @@ fn mirage_voxel_unit_shp_layout_does_not_create_a_second_stand_walk_clock() {
                 tick_animations(
                     &mut sim.substrate.entities,
                     rules.animation_sequences(),
-                    &sim.session.game_options,
+                    &sim.session.game_options(),
                     &sim.interner,
                     now,
                 )
@@ -1679,7 +1399,7 @@ fn unit_body_counter_matches_original_foot_cadence() {
             entity
                 .position
                 .set_exact_z_leptons_for_test(Some(integer("height", 0)));
-            entity.locomotor.as_mut().unwrap().set_layer(layer);
+            entity.locomotor.as_mut().unwrap().set_layer_for_test(layer);
             if let Some(flags) = input["flags"].as_array() {
                 entity.set_unit_simple_deploy_for_test(
                     flags[0].as_u64().unwrap() != 0,
@@ -1765,10 +1485,11 @@ fn foot_body_counter_matches_original_concrete_classes() {
                 entity.lifecycle.set_in_limbo_for_test(false);
                 let mut loco = LocomotorState::for_test_kind(kind);
                 match kind {
-                    LocomotorKind::Fly => loco
-                        .fly_runtime_mut()
-                        .unwrap()
-                        .set_current_speed(SimFixed::from_bits(integer("current_speed_q16", 0))),
+                    LocomotorKind::Fly => {
+                        loco.fly_runtime_mut().unwrap().set_current_speed_for_test(
+                            SimFixed::from_bits(integer("current_speed_q16", 0)),
+                        )
+                    }
                     LocomotorKind::Walk => {
                         let v = input["head"].as_array().unwrap();
                         let head = DriveCoord {

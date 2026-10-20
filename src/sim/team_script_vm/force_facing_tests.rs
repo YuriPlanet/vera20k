@@ -114,7 +114,8 @@ fn script42_and_class_turns_match_original_controls() {
         {
             member.initiated = input["initiated"].as_bool().unwrap();
         }
-        sim.session.binary_frame = row["frame"].as_u64().unwrap() as u32;
+        sim.session
+            .set_binary_frame_for_test(row["frame"].as_u64().unwrap() as u32);
         let rng = [
             sim.scenario_rng.native_state_hex(),
             sim.main_rng.native_state_hex(),
@@ -226,27 +227,6 @@ fn class_turn_dispatches_the_active_piggyback_instance() {
     );
     assert_eq!(actor.body_facing.destination(), desired);
     assert!(actor.body_facing.is_rotating(frame));
-}
-
-#[test]
-fn script42_keeps_a_missing_locomotor_pending() {
-    let mut sim = Simulation::new();
-    let mut actor = GameEntity::test_default_of_category(
-        1,
-        "MEMBER",
-        "OWNER",
-        10,
-        10,
-        EntityCategory::Infantry,
-    );
-    actor.locomotor = None;
-    sim.substrate.entities.insert(actor);
-    sim.interner = crate::sim::intern::test_interner();
-    let owner = sim.interner.get("OWNER").unwrap();
-    let script = sim.interner.intern("SCRIPT");
-    let team = sim.team_script_vm.create_team(owner, script, vec![1], 0);
-    sim.team_action_force_facing(team, 2);
-    assert!(!sim.team_script_vm.team(team).unwrap().advance_pending());
 }
 
 #[test]

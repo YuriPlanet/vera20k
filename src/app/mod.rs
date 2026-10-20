@@ -33,8 +33,10 @@ use crate::ui::skirmish_shell::{SavedSeedBrowserState, SavedSeedMode};
 use crate::util::config::GameConfig;
 
 pub(crate) mod audio_runtime;
+pub(crate) mod campaign_defeat;
 pub(crate) mod campaign_victory;
 pub(crate) mod chrono_screen;
+mod cncnet;
 #[cfg(feature = "debug-tools")]
 pub(crate) mod debug_tools;
 pub(crate) mod diagnostics;
@@ -61,9 +63,11 @@ mod random_map_lifecycle_tests;
 pub(crate) mod renderer_state;
 pub(crate) mod scenario_catalog;
 mod shell_campaign;
+pub(crate) mod shell_lan;
 mod shell_load_saved_game;
 mod shell_main_menu;
 mod shell_movies_credits;
+pub(crate) mod shell_network_setup;
 mod shell_random_map;
 pub(crate) mod shell_route;
 mod shell_saved_games;
@@ -95,6 +99,8 @@ pub struct App {
     /// Retained until `resumed()` so the profile's pre-window Video read can
     /// use the command-line screen fields as its current-value defaults.
     startup_options: crate::app::frontend::startup_options::RetailStartupOptions,
+    spawn_request: Option<crate::app::frontend::cncnet_spawn::SpawnRequest>,
+    startup_failure: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -139,6 +145,8 @@ impl App {
             shell_capture: None,
             tactical_capture: None,
             startup_options,
+            spawn_request: None,
+            startup_failure: None,
         }
     }
 
@@ -152,6 +160,8 @@ impl App {
             ),
             tactical_capture: None,
             startup_options: crate::app::frontend::startup_options::RetailStartupOptions::default(),
+            spawn_request: None,
+            startup_failure: None,
         }
     }
 
@@ -167,10 +177,17 @@ impl App {
                 ),
             ),
             startup_options: crate::app::frontend::startup_options::RetailStartupOptions::default(),
+            spawn_request: None,
+            startup_failure: None,
         }
     }
 
     pub fn finish_capture(&mut self) -> Result<()> {
+        if let Some(error) = self.startup_failure.as_ref().or_else(|| {
+            self.state.as_ref().and_then(|state| state.frontend.external_launch_error.as_ref())
+        }) {
+            anyhow::bail!("{error}");
+        }
         match (self.shell_capture.as_mut(), self.tactical_capture.as_mut()) {
             (Some(session), None) => session.take_outcome(),
             (None, Some(session)) => session.take_outcome(),

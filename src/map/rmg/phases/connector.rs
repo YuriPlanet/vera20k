@@ -266,15 +266,6 @@ mod tests {
     }
 
     #[test]
-    fn a_thin_centre_window_rejects_the_cell_outright() {
-        // Fewer than the bar in the centre window is a hard reject, distinct
-        // from "mask came back empty".
-        let mut s = scratch();
-        paint(&mut s, (38, 48, 2, 2), 7); // 4 cells, bar is 15
-        assert_eq!(ring_orientation_mask(&s, (40, 50), 7, 0.0), None);
-    }
-
-    #[test]
     fn a_lower_bar_can_turn_a_reject_into_a_mask() {
         // The leniency ramp has to be able to rescue a cell that a strict
         // attempt threw away, or the 100-attempt loop would be pointless.

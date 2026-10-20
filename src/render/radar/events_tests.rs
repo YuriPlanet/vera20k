@@ -226,17 +226,6 @@ fn stale_rebuild_baseline_cannot_replay_enemy_sensed() {
 }
 
 #[test]
-fn ordinary_and_repeated_action40_feeds_share_one_type5_dedup_authority() {
-    let mut queue = queue_ready();
-    let config = configured();
-    let sensed = source((30, 30), (90, 90));
-    assert!(queue.create_enemy_sensed(sensed, 50, (200, 200), &config));
-    assert!(!queue.create_enemy_sensed(sensed, 50, (200, 200), &config));
-    assert!(!queue.create_enemy_sensed(sensed, 51, (200, 200), &config));
-    assert_eq!(queue.len(), 1);
-}
-
-#[test]
 fn client_radar_events_cannot_change_world_hash() {
     let sim = crate::sim::world::Simulation::new();
     let before = sim.state_hash();

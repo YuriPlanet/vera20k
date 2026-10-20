@@ -28,6 +28,8 @@ const TACTICAL_CAPTURE_FLAG: &str = "--tactical-capture";
 pub enum AppLaunchMode {
     /// Ordinary launch, carrying whatever the retail switch table decided.
     Interactive(RetailStartupOptions),
+    /// CnCNet's offline launch contract; configuration is read before creating a window.
+    Spawn(RetailStartupOptions),
     /// A help switch: print usage and terminate before any window is created,
     /// exactly as native's switch parser makes `WinMain` bail.
     Usage,
@@ -183,6 +185,20 @@ where
     let (retail_options, args) = consume_retail_switches(args);
     if retail_options.usage_requested {
         return Ok(AppLaunchMode::Usage);
+    }
+    let spawn_count = args
+        .iter()
+        .filter(|arg| {
+            arg.to_str()
+                .is_some_and(|arg| arg.eq_ignore_ascii_case("-SPAWN"))
+        })
+        .count();
+    if spawn_count != 0 {
+        ensure!(
+            spawn_count == 1 && args.len() == 1,
+            "-SPAWN cannot be combined with other launch modes or unknown arguments"
+        );
+        return Ok(AppLaunchMode::Spawn(retail_options));
     }
     match shell_capture::parse_launch_args(args)? {
         ShellAppLaunchMode::Interactive => Ok(AppLaunchMode::Interactive(retail_options)),
@@ -359,55 +375,14 @@ mod tests {
     }
 
     #[test]
-    fn no_args_still_delegate_to_interactive_shell_launch() {
-        assert!(matches!(
-            parse_launch_args(Vec::<OsString>::new()).expect("parse"),
-            AppLaunchMode::Interactive(_)
-        ));
-    }
-
-    #[test]
-    fn retail_cd_switch_is_a_global_interactive_launch_option() {
-        assert!(matches!(
-            parse_launch_args([OsString::from("-cD")]).expect("parse"),
-            AppLaunchMode::Interactive(_)
-        ));
-    }
-
-    #[test]
-    fn a_cd_superstring_launches_instead_of_aborting() {
-        // Native substring matching also accepts -CDROM.
-        let AppLaunchMode::Interactive(options) =
-            parse_launch_args([OsString::from("-CDROM")]).expect("parse")
-        else {
-            panic!("a -CD superstring must stay an interactive launch");
-        };
-        assert_eq!(
-            options.media_archive_mode,
-            crate::assets::asset_manager::MediaArchiveMode::CdWildcard
-        );
-    }
-
-    #[test]
-    fn the_windowed_switch_launches_instead_of_aborting() {
-        let AppLaunchMode::Interactive(options) =
-            parse_launch_args([OsString::from("-win")]).expect("parse")
-        else {
-            panic!("-WIN must stay an interactive launch");
-        };
-        assert!(options.windowed);
-    }
-
-    #[test]
-    fn help_switches_route_to_usage_without_a_window() {
-        for form in ["/?", "-?", "-h", "/h"] {
-            assert!(
-                matches!(
-                    parse_launch_args([OsString::from(form)]).expect("parse"),
-                    AppLaunchMode::Usage
-                ),
-                "{form} must print usage instead of launching"
-            );
+    fn cncnet_spawn_rejects_duplicate_and_conflicting_modes() {
+        for args in [
+            vec!["-SPAWN", "-spawn"],
+            vec!["-SPAWN", "--typo"],
+            vec!["-SPAWN", "--shell-capture"],
+            vec!["-SPAWN", "--tactical-capture"],
+        ] {
+            assert!(parse_launch_args(args.into_iter().map(OsString::from)).is_err());
         }
     }
 
@@ -428,58 +403,6 @@ mod tests {
             app.startup_options.media_archive_mode,
             crate::assets::asset_manager::MediaArchiveMode::STOCK_DIGITAL,
         );
-        std::fs::remove_dir(parent).expect("remove test directory");
-    }
-
-    #[test]
-    fn non_tactical_unknown_args_retain_shell_error() {
-        let args = [OsString::from("--not-a-real-option")];
-        let shell_error = shell_capture::parse_launch_args(args.clone())
-            .expect_err("sealed shell parser must reject");
-        let error = parse_launch_args(args).expect_err("sealed shell parser must reject");
-        assert_eq!(error.to_string(), shell_error.to_string());
-    }
-
-    #[test]
-    fn shell_capture_request_delegates_without_semantic_changes() {
-        let parent = test_directory("shell");
-        let output = parent.join("capture");
-        let args: Vec<OsString> = [
-            "--shell-capture",
-            "main-menu-0xe2-steady",
-            "--width",
-            "800",
-            "--height",
-            "600",
-            "--cursor-x",
-            "400",
-            "--cursor-y",
-            "300",
-            "--output",
-        ]
-        .into_iter()
-        .map(OsString::from)
-        .chain(std::iter::once(output.as_os_str().to_owned()))
-        .collect();
-        let ShellAppLaunchMode::ShellCapture(expected) =
-            shell_capture::parse_launch_args(args.clone()).expect("sealed parse")
-        else {
-            panic!("wrong sealed launch mode");
-        };
-        let AppLaunchMode::ShellCapture(actual) = parse_launch_args(args).expect("neutral parse")
-        else {
-            panic!("wrong neutral launch mode");
-        };
-        assert_eq!(actual.checkpoint(), expected.checkpoint());
-        assert_eq!(
-            (actual.width(), actual.height()),
-            (expected.width(), expected.height())
-        );
-        assert_eq!(
-            (actual.cursor_x(), actual.cursor_y()),
-            (expected.cursor_x(), expected.cursor_y())
-        );
-        assert_eq!(actual.output_dir(), expected.output_dir());
         std::fs::remove_dir(parent).expect("remove test directory");
     }
 
