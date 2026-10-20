@@ -76,12 +76,17 @@ def package(args):
         resources.mkdir()
         shutil.copy2(executable, binaries / "vera20k")
         (binaries / "vera20k").chmod(0o755)
-        (binaries / "config.toml").write_text(
+        (resources / "config.toml").write_text(
             "[paths]\nra2_dir = " + json.dumps(str(asset_root), ensure_ascii=False)
             + "\n\n[graphics]\nextra_animations = true\n"
             + "\n[gameplay]\ninput_delay_ticks = 2\n\n[profile]\nname = "
             + json.dumps(args.profile_name, ensure_ascii=False) + "\n"
         )
+        # Keep data in Resources. A regular text file in MacOS is treated as
+        # nested code by codesign --deep and gets an xattr-only signature that
+        # ordinary filesystem copies can lose. The existing config reader can
+        # follow this relative link without adding another discovery owner.
+        (binaries / "config.toml").symlink_to("../Resources/config.toml")
         iconset = staging / "AppIcon.iconset"
         iconset.mkdir()
         for points in (16, 32, 128, 256, 512):
