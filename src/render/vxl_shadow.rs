@@ -237,8 +237,10 @@ fn projected_quad(
     Some((corners, lo, hi))
 }
 
-/// 756860's sample origin is trunc(center)+caller origin. For the native
-/// 754510 crop, crop_origin + trunc(center) == 128 + output_offset.
+/// 756860 truncates the fractional center plus the native caller displacement.
+/// `body_offset` here is the effective difference from `body_sample_offset`,
+/// not that raw displacement. For the native 754510 crop,
+/// crop_origin + trunc(center) == 128 + output_offset.
 /// Thus the exact sample for each cropped stencil byte uses this shared
 /// Unit-surface coordinate, including the second horizontal pixel.
 pub(crate) fn mask_body(
