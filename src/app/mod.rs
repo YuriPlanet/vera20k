@@ -11,7 +11,6 @@ use winit::dpi::PhysicalSize;
 use winit::event::{MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, ControlFlow};
 use winit::keyboard::{KeyCode, ModifiersState, PhysicalKey};
-use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
 use winit::window::{Fullscreen, Window, WindowAttributes, WindowId};
 
 use crate::app::match_runtime::sim_tick;
@@ -46,6 +45,10 @@ mod handler;
 mod in_game;
 mod initialize;
 pub(crate) mod input;
+#[cfg(any(target_os = "ios", test))]
+pub mod ios_runtime;
+#[cfg(any(target_os = "ios", test))]
+mod ios_touch;
 pub(crate) mod loading;
 pub(crate) mod match_audio;
 pub mod match_bootstrap;
@@ -101,6 +104,10 @@ pub struct App {
     startup_options: crate::app::frontend::startup_options::RetailStartupOptions,
     spawn_request: Option<crate::app::frontend::cncnet_spawn::SpawnRequest>,
     startup_failure: Option<String>,
+    #[cfg(target_os = "ios")]
+    ios_touch: ios_touch::IosTouchPointer,
+    #[cfg(target_os = "ios")]
+    ios_suspended: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -147,6 +154,10 @@ impl App {
             startup_options,
             spawn_request: None,
             startup_failure: None,
+            #[cfg(target_os = "ios")]
+            ios_touch: Default::default(),
+            #[cfg(target_os = "ios")]
+            ios_suspended: false,
         }
     }
 
@@ -162,6 +173,10 @@ impl App {
             startup_options: crate::app::frontend::startup_options::RetailStartupOptions::default(),
             spawn_request: None,
             startup_failure: None,
+            #[cfg(target_os = "ios")]
+            ios_touch: Default::default(),
+            #[cfg(target_os = "ios")]
+            ios_suspended: false,
         }
     }
 
@@ -179,6 +194,10 @@ impl App {
             startup_options: crate::app::frontend::startup_options::RetailStartupOptions::default(),
             spawn_request: None,
             startup_failure: None,
+            #[cfg(target_os = "ios")]
+            ios_touch: Default::default(),
+            #[cfg(target_os = "ios")]
+            ios_suspended: false,
         }
     }
 

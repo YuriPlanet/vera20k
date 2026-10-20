@@ -9,6 +9,8 @@ use anyhow::Result;
 use winit::event_loop::EventLoop;
 
 fn main() -> Result<()> {
+    #[cfg(target_os = "ios")]
+    vera20k::app::ios_runtime::prepare()?;
     let log_path = match vera20k::util::logging::init_file_logger("ra2") {
         Ok(path) => {
             eprintln!("Logging to {}", path.display());

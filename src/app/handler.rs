@@ -6,8 +6,7 @@
 use super::input::dispatch;
 use super::{
     ActiveEventLoop, App, AppState, ApplicationHandler, ControlFlow, GameScreen, Instant, KeyCode,
-    KeyEventExtModifierSupplement, MouseButton, MouseScrollDelta, PhysicalKey, PhysicalSize,
-    ShellKey, WindowEvent, WindowId,
+    MouseButton, MouseScrollDelta, PhysicalKey, PhysicalSize, ShellKey, WindowEvent, WindowId,
 };
 
 /// Active YR's launcher parent ignores IDCANCEL. Taking only an immutable
@@ -189,6 +188,15 @@ fn show_menu_bar_and_dock_after_full_screen() {
 
 impl ApplicationHandler for App {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        #[cfg(target_os = "ios")]
+        {
+            self.ios_suspended = false;
+            if let Some(state) = self.state.as_mut() {
+                Self::set_window_hidden(state, false);
+                Self::set_window_active(state, true);
+                state.platform.window.request_redraw();
+            }
+        }
         if self.state.is_some() {
             return;
         }
@@ -254,6 +262,35 @@ impl ApplicationHandler for App {
     }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
+        #[cfg(target_os = "ios")]
+        {
+            if self.ios_suspended && matches!(&event, WindowEvent::RedrawRequested) {
+                return;
+            }
+            if matches!(&event, WindowEvent::Focused(false)) {
+                self.ios_touch.reset();
+            }
+            if self.shell_capture.is_none()
+                && self.tactical_capture.is_none()
+                && let WindowEvent::Touch(touch) = &event
+            {
+                if self.state.is_none() {
+                    self.ios_touch.reset();
+                    return;
+                }
+                let translated = self.ios_touch.translate(*touch);
+                if touch.phase == winit::event::TouchPhase::Cancelled
+                    && translated[1].is_some()
+                    && let Some(state) = self.state.as_mut()
+                {
+                    Self::release_in_game_pointer_state(state);
+                }
+                for event in translated.into_iter().flatten() {
+                    self.window_event(event_loop, _id, event);
+                }
+                return;
+            }
+        }
         let shell_capture_active = self.shell_capture.is_some();
         let tactical_capture_active = self.tactical_capture.is_some();
         let Some(state) = &mut self.state else { return };
@@ -855,7 +892,7 @@ impl ApplicationHandler for App {
                     }
 
                     if in_game {
-                        let unmodified = event.key_without_modifiers();
+                        let unmodified = crate::app::input::keyboard::key_without_modifiers(&event);
                         crate::app::input::keyboard::in_game_key_edge(
                             state,
                             crate::app::input::keyboard::InGameKeyEdge {
@@ -1171,6 +1208,11 @@ impl ApplicationHandler for App {
     }
 
     fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        #[cfg(target_os = "ios")]
+        if self.ios_suspended {
+            event_loop.set_control_flow(ControlFlow::Wait);
+            return;
+        }
         let shell_scroll_wake = if let Some(state) = self.state.as_mut() {
             Self::follow_window_full_screen(state);
             // cursor lock: the OS drops the clip on focus loss /
@@ -1275,6 +1317,23 @@ impl ApplicationHandler for App {
                 state.platform.window.request_redraw();
             }
         }
+    }
+
+    #[cfg(target_os = "ios")]
+    fn suspended(&mut self, event_loop: &ActiveEventLoop) {
+        self.ios_suspended = true;
+        if let Some(id) = self.state.as_ref().map(|state| state.platform.window.id()) {
+            // Reuse the normal focus-loss cleanup for every shell and tactical
+            // pointer owner before parking the UIKit application's redraw loop.
+            self.window_event(event_loop, id, WindowEvent::Focused(false));
+        }
+        self.ios_touch.reset();
+        if let Some(state) = self.state.as_mut() {
+            Self::set_window_hidden(state, true);
+        }
+        log::info!("iOS application suspended; rendering parked");
+        log::logger().flush();
+        event_loop.set_control_flow(ControlFlow::Wait);
     }
 
     fn exiting(&mut self, _event_loop: &ActiveEventLoop) {

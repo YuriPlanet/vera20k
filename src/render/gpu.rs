@@ -27,7 +27,12 @@ use winit::window::Window;
 /// many pre-rendered sprites fit. 16384 is what current desktop GPUs offer; asking for
 /// more would fail on hardware that could otherwise run the game, and the request is
 /// clamped to the adapter's own maximum anyway.
+#[cfg(not(target_os = "ios"))]
 pub(crate) const MAX_USEFUL_TEXTURE_DIM: u32 = 16_384;
+// Sidebar and localized font sheets need more than 4096 rows. Keep them valid
+// while avoiding 16384-square atlas allocations on the phone's shared memory.
+#[cfg(target_os = "ios")]
+pub(crate) const MAX_USEFUL_TEXTURE_DIM: u32 = 8_192;
 
 /// Borrowed, serialization-ready identity of the adapter selected for this GPU
 /// context. This is observation only: it mirrors the immutable `AdapterInfo`

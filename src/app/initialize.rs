@@ -168,6 +168,20 @@ impl App {
             use winit::platform::macos::WindowAttributesExtMacOS;
             window_attrs = window_attrs.with_borderless_game(true);
         }
+        #[cfg(target_os = "ios")]
+        {
+            use winit::platform::ios::{ValidOrientations, WindowAttributesExtIOS};
+            // UIKit must use the phone's screen bounds, not a desktop RA2MD
+            // screen size: winit otherwise creates an oversized UIWindow.
+            window_attrs.inner_size = None;
+            // Bound full-frame GPU scratch on 3x Retina phones. Touch positions
+            // use this same content scale through winit's physical coordinates.
+            window_attrs = window_attrs
+                .with_scale_factor(2.0)
+                .with_valid_orientations(ValidOrientations::Landscape)
+                .with_prefers_status_bar_hidden(true)
+                .with_prefers_home_indicator_hidden(true);
+        }
         // Capture windows stay hidden, so only a visible session shows the icon.
         let retail_icon = game_config
             .as_ref()

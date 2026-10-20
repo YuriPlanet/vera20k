@@ -7,7 +7,22 @@ use crate::ui::shell::list::ShellListGeometry;
 use std::time::Instant;
 use winit::event::{ElementState, KeyEvent, MouseButton};
 use winit::keyboard::{Key, KeyCode, KeyLocation, NamedKey};
+#[cfg(not(target_os = "ios"))]
 use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
+
+/// UIKit does not expose winit's desktop modifier-supplement extension. Its
+/// logical key is the available fallback for an attached hardware keyboard;
+/// touchscreen input goes through the ordinary pointer owners instead.
+pub(crate) fn key_without_modifiers(event: &KeyEvent) -> Key {
+    #[cfg(target_os = "ios")]
+    {
+        event.logical_key.clone()
+    }
+    #[cfg(not(target_os = "ios"))]
+    {
+        event.key_without_modifiers()
+    }
+}
 
 /// A keyboard edge after the front-end/dialog admission gates. Both a window
 /// event and a literal-key production capture enter this same binding owner.
@@ -455,7 +470,7 @@ pub(crate) fn key(state: &mut AppState, event: &KeyEvent) {
     if !dialog.capture_focused {
         return;
     }
-    let unmodified = event.key_without_modifiers();
+    let unmodified = key_without_modifiers(event);
     let logical = hotkeys::binding_logical_key(&event.logical_key, &unmodified, event.location);
     let Some(vk) = hotkeys::logical_virtual_key(logical, event.location) else {
         return;
