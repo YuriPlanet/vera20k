@@ -270,24 +270,68 @@ fn tactical_world_tip_text_sampled(
         // Source: `tools.native_inspect disasm 0x41C1D0 --bytes 0xA`.
         EntityCategory::Aircraft => {}
         // Unit746B20 first asks746750's canonical observer-disguise +C8.
-        // When false, actual Type+60 follows if70DC60 ->717880's signed
-        // TurretCount>0 gate is false, as for ordinary own/enemy HTNK.
+        // Native then names the disguise, or nothing when its house is null;
+        // the one retail disguised Unit, a Mirage worn as terrain, has none.
+        // A disguise with a house (no retail Unit) keeps this empty residual.
         // Source: `tools.native_inspect disasm 0x746B20 --bytes 0x165`.
         EntityCategory::Unit
-            if object.turret_count <= 0
-                && !entity.is_disguised_to(
-                    viewer,
-                    Some(view.fog()),
-                    Some(sim.house_alliances()),
-                    view.interner(),
-                ) => {}
-        // Positive TurretCount can reach HasTurretTooltips and the passenger/
-        // current-turret formatter (stock FV). Its retained readers and that
-        // name path remain unported; never replace it with the actual name.
-        // Disguised/fake names, other nonlocal classes and resources stay open.
-        _ => return String::new(),
+            if entity.is_disguised_to(
+                viewer,
+                Some(view.fog()),
+                Some(sim.house_alliances()),
+                view.interner(),
+            ) =>
+        {
+            return String::new();
+        }
+        // `0x00746B6C..0x00746B82`: TurretCount > 0 (70DC60 -> 717880) with
+        // HasTurretTooltips (70DC50, Type+0x806) takes the turret formatter;
+        // otherwise actual Type+60, as for HTNK, SREF and YTNK.
+        EntityCategory::Unit if object.turret_count > 0 && object.has_turret_tooltips => {
+            return unit_turret_tip_text(&view, rules, entity, object, csf);
+        }
+        EntityCategory::Unit => {}
     }
     crate::assets::csf_file::type_ui_name(object.ui_name.as_deref(), csf)
+}
+
+/// `UnitClass::GetUIName @ 0x00746B20`'s turret formatter
+/// (`0x00746B88..0x00746C6E`): swprintf("%s %s") of a turret word and the
+/// actual Type+60. With an infantry first passenger the word follows the
+/// current turret (`+0x124`): 0 Rocket, 1 Machine Gun, 2 Repair, 3 the
+/// passenger's own UIName; a `UseOwnName=` passenger (`+0xECA`) names itself
+/// on every turret but 0 and 2. Any other case says Rocket (`0x00746C3F`).
+fn unit_turret_tip_text(
+    view: &crate::sim::runtime::SimView<'_>,
+    rules: &crate::rules::ruleset::RuleSet,
+    entity: &crate::sim::game_entity::GameEntity,
+    object: &crate::rules::object_type::ObjectType,
+    csf: Option<&crate::assets::csf_file::CsfFile>,
+) -> String {
+    let tip = |key: &str| csf.map_or_else(|| key.to_owned(), |csf| csf.text(key).into_owned());
+    let passenger = entity
+        .passenger_role
+        .cargo()
+        .and_then(|cargo| cargo.passengers().first())
+        .and_then(|&id| view.entities().get(id))
+        .filter(|passenger| passenger.category() == EntityCategory::Infantry)
+        .and_then(|passenger| rules.object(view.interner().resolve(passenger.type_ref())));
+    let word = match passenger {
+        Some(passenger) => match (entity.current_turret_index(), passenger.use_own_name) {
+            (0, _) => tip("Tip:Rocket"),
+            (1, false) => tip("Tip:MachineGun"),
+            (2, _) => tip("Tip:Repair"),
+            (3, _) | (_, true) => {
+                crate::assets::csf_file::type_ui_name(passenger.ui_name.as_deref(), csf)
+            }
+            _ => tip("Tip:Rocket"),
+        },
+        None => tip("Tip:Rocket"),
+    };
+    format!(
+        "{word} {}",
+        crate::assets::csf_file::type_ui_name(object.ui_name.as_deref(), csf)
+    )
 }
 
 fn tactical_tip_text(state: &AppState) -> String {
@@ -817,6 +861,92 @@ mod tests {
             "British",
             "Unit746B20 nonlocal undisguised TurretCount<=0 arm",
         );
+    }
+
+    #[test]
+    fn mapped_enemy_prism_tank_tip_uses_retail_ui_name_and_clears_after_limbo() {
+        assert_mapped_tip_uses_retail_ui_name_and_clears_after_limbo(
+            "SREF",
+            "British",
+            "Russians",
+            "Unit746B20 TurretCount>0 without HasTurretTooltips",
+        );
+    }
+
+    #[test]
+    fn mapped_own_gattling_tank_tip_uses_retail_ui_name_and_clears_after_limbo() {
+        assert_mapped_tip_uses_retail_ui_name_and_clears_after_limbo(
+            "YTNK",
+            "Russians",
+            "Russians",
+            "Unit746B20 TurretCount>0 without HasTurretTooltips",
+        );
+    }
+
+    /// Retail FV (`TurretCount=4`, `HasTurretTooltips=yes`) through Unit746B20's
+    /// turret formatter, each passenger boarded through the production Enter
+    /// order: E1 and ENGINEER select turrets 1 and 2, GHOST (`UseOwnName=true`)
+    /// turret 1 and SHK turret 3.
+    #[test]
+    fn retail_ifv_tip_names_its_turret_or_passenger() {
+        for (passenger, expected) in [
+            (None, "Rocket IFV"),
+            (Some("E1"), "Machine Gun IFV"),
+            (Some("ENGINEER"), "Repair IFV"),
+            (Some("GHOST"), "SEAL IFV"),
+            (Some("SHK"), "Tesla Trooper IFV"),
+        ] {
+            let Some(MappedTipFixture {
+                mut runtime,
+                csf,
+                entity_id: ifv,
+                world,
+            }) = mapped_tip_fixture("FV", "British", "British", None)
+            else {
+                return;
+            };
+            if let Some(passenger) = passenger {
+                let rules = &runtime.resources.rules;
+                let sim = &mut runtime.simulation;
+                let id = sim
+                    .spawn_object(passenger, "British", 14, 13, 0, rules)
+                    .unwrap();
+                assert!(sim.apply_command(
+                    "British",
+                    &crate::sim::command::Command::clicked_mission(
+                        id,
+                        crate::sim::mission::MissionType::Enter,
+                        crate::sim::combat::TargetKind::Entity(ifv),
+                    ),
+                    Some(rules),
+                ));
+                let grid = sim.path_grid_snapshot();
+                for _ in 0..240 {
+                    sim.advance_tick(&[], Some(rules), grid.as_deref(), None, 33);
+                    if sim
+                        .entities()
+                        .get(id)
+                        .is_some_and(|entity| entity.passenger_role.is_inside_transport())
+                    {
+                        break;
+                    }
+                }
+                assert!(
+                    sim.entities()
+                        .get(id)
+                        .is_some_and(|entity| entity.passenger_role.is_inside_transport()),
+                    "{passenger} boards the IFV"
+                );
+            }
+            let text = tactical_world_tip_text(
+                runtime.view(),
+                &runtime.resources.rules,
+                Some(&csf),
+                world,
+                false,
+            );
+            assert_eq!(text, expected, "passenger {passenger:?}");
+        }
     }
 
     struct MappedTipFixture {

@@ -206,6 +206,19 @@ pub(crate) enum WolServiceEvent {
     UserLeft(String),
     /// OnPart for this user: `[0xB77DD0]` cleared.
     ChannelLeft,
+    /// The private game-options sink `+0x54` (`0x007A8260`): a guest's
+    /// `R` choices, decoded (the observer flag is country -3).
+    PlayerChoices {
+        from: String,
+        slot: crate::skirmish_launch::SkirmishLocalSlot,
+        observer: bool,
+    },
+    /// The public game-options sink `+0x58` (`0x007A7EA0`): a user's
+    /// `A<n>` readiness.
+    PlayerReady {
+        from: String,
+        value: i32,
+    },
     /// The create result and the channel's users.
     Created(Result<Vec<WolMember>, u32>),
     /// The page sinks: `ansi` for `0x007A9200`, otherwise the UTF-16
@@ -827,6 +840,8 @@ pub(crate) fn service_event(state: &mut AppState, event: WolServiceEvent) {
         | WolServiceEvent::UserJoined(_)
         | WolServiceEvent::UserLeft(_)
         | WolServiceEvent::ChannelLeft
+        | WolServiceEvent::PlayerChoices { .. }
+        | WolServiceEvent::PlayerReady { .. }
         | WolServiceEvent::Created(_)) => {
             super::lobby::service_event(state, event);
             answer_unavailable(state);

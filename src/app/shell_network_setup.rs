@@ -11,7 +11,10 @@ mod view;
 mod wol;
 pub(crate) use actions::{apply_action, commit_map_selection, commit_start, open_choose_map};
 pub(crate) use view::view;
-pub(crate) use wol::WolStartUser;
+pub(crate) use wol::{
+    WolStartUser, guest_users_listed, kicked_key, local_left, play_player_left, player_choices,
+    player_ready, send_first_choices, user_joined, user_kicked, user_left,
+};
 
 use super::{App, AppState};
 use crate::app::frontend::shell_transition;
@@ -101,6 +104,9 @@ pub(crate) struct NetworkSetupProtocol {
     ping_deadline: Option<Instant>,
     /// WOL `00B76440`: last ping per participant name (`007A0EA0`).
     pings: Vec<(String, i32)>,
+    /// WOL guest `[0xA8D610]`: the first other user the user-list sink
+    /// added (`0x7A7627..0x7A763D`); its row shows `wolhost.pcx`.
+    wol_host: Option<String>,
     start_requested: bool,
     accept_eligible: bool,
     go_deadline: Option<Instant>,
@@ -144,6 +150,7 @@ impl NetworkSetupProtocol {
             wol_start_pending: false,
             ping_deadline: wol_host.then(|| Instant::now() + wol::PING_PERIOD),
             pings: Vec::new(),
+            wol_host: None,
             start_requested: false,
             accept_eligible: false,
             go_deadline: None,
@@ -522,7 +529,7 @@ pub(crate) fn map_display_name(state: &AppState) -> Option<&str> {
         })
 }
 
-fn local_map_metadata(
+pub(crate) fn local_map_metadata(
     state: &AppState,
     file: &str,
 ) -> anyhow::Result<crate::app::match_runtime::session::NetworkMapMetadata> {
@@ -546,6 +553,9 @@ fn local_map_metadata(
 /// and clearing the admitted setup through its owner.
 pub(crate) fn commit_back(state: &mut AppState) {
     let dialog = leave_setup(state);
+    if dialog.wol() && dialog.host {
+        crate::app::shell_wol::lobby::host_setup_left(state);
+    }
     open_service_lobby(state, dialog);
 }
 
@@ -569,12 +579,16 @@ pub(crate) fn abandon_for_wol_runner(state: &mut AppState) {
 
 fn leave_setup(state: &mut AppState) -> SetupDialog {
     let dialog = dialog(state);
-    if state
+    let unlocked = state
         .frontend
         .network_setup_protocol
         .as_ref()
-        .is_some_and(|p| !p.locked)
-    {
+        .is_some_and(|p| !p.locked);
+    if unlocked && dialog.wol() && !dialog.host {
+        // C9 (0x791B10) and the local-leave tail 0x785740 write no
+        // settings: no 0x6990A0 or 0x5ED400 on Back, a kick or the host
+        // leaving.
+    } else if unlocked {
         remember_setup(state);
     } else {
         // A completed/failed handoff already snapshotted raw choices before

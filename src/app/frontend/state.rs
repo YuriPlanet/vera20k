@@ -145,6 +145,8 @@ pub(crate) struct FrontendState {
     /// The offline WOL test service's buddy list, standing in for the
     /// server-side one for the process.
     pub(crate) wol_test_buddies: Vec<String>,
+    /// The offline WOL test service's stand-in guest of a created game.
+    pub(crate) wol_test_guest: crate::app::shell_wol::WolTestGuest,
     /// My Information `0x114`'s art (`0x0072C9C0`).
     pub(crate) wol_my_info_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,
     pub(crate) wol_sound_options_art: Option<crate::render::main_menu_shell_chrome::WolPageArt>,

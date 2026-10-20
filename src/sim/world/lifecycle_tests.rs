@@ -2716,12 +2716,7 @@ fn particle_logic_membership_uses_the_object_local_guard_and_rebuilds_it() {
         .get_mut(7)
         .unwrap()
         .set_in_logic_vector_for_test(false);
-    Simulation::rebuild_logic_membership(
-        &mut sim.terrain_objects,
-        &mut sim.substrate,
-        &mut sim.projectiles,
-        &mut sim.waves,
-    );
+    sim.rebuild_logic_membership();
     assert!(
         sim.substrate
             .particle_systems

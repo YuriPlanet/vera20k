@@ -889,9 +889,10 @@ fn gsi_13_08_effect_frame_count_halves_only_shadowed_non_scheduler_assets() {
 
 #[test]
 fn cell_anim_remap_registration_covers_every_bound_frame_for_its_color() {
+    let selected = ShpPaletteContext::SelectedScheme;
     let remaps = HashSet::from([
-        ("CRATE_SPARK".to_string(), HouseColorIndex(1)),
-        ("OTHER".to_string(), HouseColorIndex(2)),
+        ("CRATE_SPARK".to_string(), selected, HouseColorIndex(1)),
+        ("OTHER".to_string(), selected, HouseColorIndex(2)),
     ]);
     let mut effects = EffectRegistry::default();
     effects
@@ -1182,7 +1183,7 @@ fn palette_context_preserves_simultaneous_global_cell_and_attached_sprite_keys()
         key.palette_context = context;
         keys.insert(key.clone());
         assert_eq!(
-            sprite_palette_for_key(&key, Some(&art), &effects, &cells),
+            sprite_palette_for_key(&key, Some(&art), &effects, &cells, None),
             palette
         );
     }
@@ -1190,6 +1191,120 @@ fn palette_context_preserves_simultaneous_global_cell_and_attached_sprite_keys()
     let probe = native_palette_probe_page();
     assert_eq!(&probe.indices[505..520], (240..=254u8).collect::<Vec<_>>());
     assert_eq!(probe.palette_row[240 * 4], 240);
+}
+
+/// TechnoClass::DrawSHP: TerrainPalette first (`0x00705EC7`), then
+/// GetRemapColour (`0x00705F81`), whose `+0xDF0` arm takes the extra building
+/// palette. An ExtraScheme anim remap needs only the loaded palette.
+#[test]
+fn a_custom_palette_type_bakes_against_the_extra_building_palette() {
+    let art = ArtRegistry::from_ini(&crate::rules::ini_parser::IniFile::from_str(""));
+    let none = HashSet::new();
+    let custom = HashSet::from(["STATUE".to_string()]);
+    let choose = |type_id: &str, context, cells: &HashSet<String>, extra| {
+        let mut key = make_shp_key(type_id, 0);
+        key.palette_context = context;
+        sprite_palette_for_key(&key, Some(&art), &none, cells, extra)
+    };
+    let legacy = ShpPaletteContext::Legacy;
+    assert_eq!(
+        choose("STATUE", legacy, &none, Some(&custom)),
+        SpritePaletteChoice::ExtraBuilding
+    );
+    assert_eq!(
+        choose("GAPOWR", legacy, &none, Some(&custom)),
+        SpritePaletteChoice::Unit
+    );
+    assert_eq!(
+        choose("STATUE", legacy, &none, None),
+        SpritePaletteChoice::Unit,
+        "no palette file: +0xDF0 stays null"
+    );
+    assert_eq!(
+        choose("STATUE", legacy, &custom, Some(&custom)),
+        SpritePaletteChoice::CellIso,
+        "TerrainPalette is tested first"
+    );
+    let extra = ShpPaletteContext::ExtraScheme;
+    assert_eq!(
+        choose("DESTA", extra, &none, Some(&none)),
+        SpritePaletteChoice::ExtraBuilding
+    );
+    assert_eq!(
+        choose("DESTA", extra, &none, None),
+        SpritePaletteChoice::Unit
+    );
+}
+
+/// Retail Manhattan: the Statue of Liberty (`[CANEWY04] Palette=lib`) is the
+/// one custom-palette type; every theater has its `LIB<suffix>.PAL`
+/// (`0x00627590`), and the statue's body bakes against `LIBUBN.PAL` with the
+/// house ramp over 16..31 (`0x0068C3B0`), not against the unit palette.
+#[test]
+fn retail_statue_bakes_against_the_theater_lib_palette() {
+    let Some(battle) =
+        crate::rules::retail_ini_fixture::retail_battle_rules_for_map("MANHATTA.MAP")
+    else {
+        return;
+    };
+    let rules = &battle.rules;
+    let (_, assets) = crate::rules::retail_ini_fixture::retail_assets()
+        .expect("Battle rules came from the explicit retail install");
+    assert_eq!(rules.extra_building_palette(), Some("lib"));
+    let custom: Vec<&str> = rules
+        .all_objects()
+        .filter(|o| o.custom_palette)
+        .map(|o| o.id.as_str())
+        .collect();
+    assert_eq!(custom, ["CANEWY04"]);
+    for suffix in ["tem", "sno", "urb", "des", "ubn", "lun"] {
+        assert!(
+            load_extra_building_palette(&assets, Some(rules), suffix).is_some(),
+            "LIB{suffix}.PAL"
+        );
+    }
+
+    let lib = load_extra_building_palette(&assets, Some(rules), "ubn").unwrap();
+    assert_eq!(
+        lib.to_rgba_bytes(),
+        Palette::from_bytes(assets.get_ref("LIBUBN.PAL").unwrap())
+            .unwrap()
+            .to_rgba_bytes(),
+        "<name><theater suffix>.PAL"
+    );
+    let unit = Palette::from_bytes(assets.get_ref("unitubn.pal").unwrap()).unwrap();
+    let key = ShpSpriteKey {
+        palette_context: ShpPaletteContext::Legacy,
+        type_id: "CANEWY04".to_string(),
+        facing: 0,
+        frame: 0,
+        house_color: HouseColorIndex(3),
+    };
+    let choice = sprite_palette_for_key(
+        &key,
+        Some(rules.art()),
+        &HashSet::new(),
+        &HashSet::new(),
+        Some(&HashSet::from(["CANEWY04".to_string()])),
+    );
+    assert_eq!(choice, SpritePaletteChoice::ExtraBuilding);
+    let source = load_shp_source(
+        &assets,
+        "CANEWY04",
+        None,
+        "ubn",
+        "NEWURBAN",
+        Some(rules),
+        Some(rules.art()),
+    )
+    .expect("CGNEWY04.SHP");
+    let mut palettes = ShpPalettes::default();
+    let sprite = render_shp_frame(&source, &lib, true, &key, Some(rules), &mut palettes)
+        .expect("statue frame 0");
+    let row = &palettes.colors[sprite.palette as usize];
+    let ramp = rules.house_color_ramps.ramp(HouseColorIndex(3));
+    assert_eq!(row, &lib.with_house_colors(ramp).to_rgba_bytes());
+    assert_ne!(row, &unit.with_house_colors(ramp).to_rgba_bytes());
 }
 
 #[test]
@@ -1231,6 +1346,7 @@ fn deployed_anim_palette_and_atlas_coverage_share_the_frozen_house() {
     };
     let deployed = spawn(&mut sim);
     let cell = spawn(&mut sim);
+    let wreck = spawn(&mut sim);
     assert!(atlas_covers_anim_remaps(Some(&atlas), &sim, &colors));
     assert!(
         sim.anims_mut_for_test()
@@ -1241,6 +1357,10 @@ fn deployed_anim_palette_and_atlas_coverage_share_the_frozen_house() {
         Some(HouseColorIndex(5)),
         0
     ));
+    assert!(
+        sim.anims_mut_for_test()
+            .set_anim_extra_building_remap(wreck, house)
+    );
     assert!(
         !atlas_covers_anim_remaps(Some(&atlas), &sim, &colors),
         "producer palette assignment must request a refresh without an entity change"
@@ -1255,11 +1375,17 @@ fn deployed_anim_palette_and_atlas_coverage_share_the_frozen_house() {
         Some(HouseColorIndex(3))
     );
     let remaps = collect_anim_remap_base_keys(&sim, &colors);
+    let selected = ShpPaletteContext::SelectedScheme;
     assert_eq!(
         remaps,
         HashSet::from([
-            ("DEPLOY".to_string(), HouseColorIndex(3)),
-            ("DEPLOY".to_string(), HouseColorIndex(5)),
+            ("DEPLOY".to_string(), selected, HouseColorIndex(3)),
+            ("DEPLOY".to_string(), selected, HouseColorIndex(5)),
+            (
+                "DEPLOY".to_string(),
+                ShpPaletteContext::ExtraScheme,
+                HouseColorIndex(3)
+            ),
         ])
     );
     let mut keys = HashSet::new();
@@ -1268,11 +1394,16 @@ fn deployed_anim_palette_and_atlas_coverage_share_the_frozen_house() {
         type_ids: HashSet::from(["DEPLOY".to_string()]),
     };
     insert_anim_remap_frame_keys(&mut keys, &effects, &remaps);
-    assert_eq!(keys.len(), 6);
+    assert_eq!(keys.len(), 9);
     assert!(keys.iter().all(|key| {
-        key.palette_context == ShpPaletteContext::SelectedScheme
-            && key.frame < 3
-            && matches!(key.house_color, HouseColorIndex(3 | 5))
+        key.frame < 3
+            && match key.palette_context {
+                ShpPaletteContext::SelectedScheme => {
+                    matches!(key.house_color, HouseColorIndex(3 | 5))
+                }
+                ShpPaletteContext::ExtraScheme => key.house_color == HouseColorIndex(3),
+                _ => false,
+            }
     }));
     atlas.covered_anim_remaps.extend(remaps.iter().cloned());
     assert!(
@@ -1287,13 +1418,21 @@ fn deployed_anim_palette_and_atlas_coverage_share_the_frozen_house() {
         restored.anim(deployed).unwrap().remap(),
         Some(AnimRemap::House(house))
     );
+    assert_eq!(
+        restored.anim(wreck).unwrap().remap(),
+        Some(AnimRemap::ExtraBuildingScheme(house))
+    );
 }
 
 #[test]
 fn object_and_remap_coverage_are_separate_and_follow_the_world() {
     let (world, interner) = one_object_world("CRATE_SPARK", EntityCategory::Structure);
     let colors = HouseColorMap::from([("Americans".to_string(), HouseColorIndex(3))]);
-    let remap = HashSet::from([("CRATE_SPARK".to_string(), HouseColorIndex(3))]);
+    let remap = HashSet::from([(
+        "CRATE_SPARK".to_string(),
+        ShpPaletteContext::SelectedScheme,
+        HouseColorIndex(3),
+    )]);
     let none = HashSet::new();
     let covers = |atlas: Option<&SpriteAtlas>, remaps| {
         atlas_covers_world(atlas, &world, &colors, &[], remaps, Some(&interner))

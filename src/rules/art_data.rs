@@ -208,6 +208,11 @@ pub struct ArtEntry {
     /// not its `Image=`, the current byte as default. Read through
     /// [`ArtRegistry::use_buffer`]; it selects the depth-tested voxel raster.
     pub use_buffer: bool,
+    /// `CanBeHidden=` (TechnoType `+0x724`): constructor `0x00711229` writes
+    /// true; ReadINI (`0x007121EB..0x00712202`) reads it the same way as
+    /// `UseBuffer=`, with ReadBool from the ART INI under the type's own ID.
+    /// Projected onto `ObjectType::can_be_hidden`.
+    pub can_be_hidden: bool,
     /// `QueueingCell=` (BuildingType+0x1618/+0x161C): `ReadMinMax @ 0x00529880`
     /// on the ARTMD section at `0x00461506`, default `(0, 0)`. Mission_Harvest
     /// adds the low words to the dock's NW cell for the waiting miner's staging
@@ -1317,6 +1322,7 @@ impl ArtRegistry {
                     extra_light,
                     terrain_palette: section.read_bool("TerrainPalette", false),
                     use_buffer: section.read_bool("UseBuffer", false),
+                    can_be_hidden: section.read_bool("CanBeHidden", true),
                     queueing_cell,
                     pads,
                     damage_fire_offsets,
@@ -1631,6 +1637,26 @@ impl ArtRegistry {
         self.entries
             .get(type_id)
             .is_some_and(|entry| entry.use_buffer)
+    }
+
+    /// A TechnoType's `CanBeHidden=`, from the ART section named by its exact
+    /// type ID ([`ArtEntry::can_be_hidden`]); the constructor's true without
+    /// that section.
+    pub fn can_be_hidden(&self, type_id: &str) -> bool {
+        self.entries
+            .get(type_id)
+            .is_none_or(|entry| entry.can_be_hidden)
+    }
+
+    /// A TechnoType's custom palette name (`Palette=`, `+0xDD0`) from the ART
+    /// section its ImageFile names (`+0x1F8`: the rules `Image=`, else the type
+    /// ID). `TechnoTypeClass::ReadINI` reads it with ReadString, capacity
+    /// 0x20, on `0x00887180` under `ESI = this+0x1F8` (`0x007157B5`,
+    /// `0x0071582B..0x0071584B`); the constructor clears it (`0x007116A7`).
+    pub fn techno_palette(&self, image: &str) -> Option<&str> {
+        self.entries
+            .get(image)
+            .and_then(|entry| entry.palette.as_deref())
     }
 
     /// Hidden-occupancy height from art.ini `OccupyHeight=`.

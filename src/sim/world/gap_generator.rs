@@ -373,8 +373,10 @@ impl Simulation {
             deposit.active = operational;
             admitted |= operational;
             let radius = deposit.radius;
+            // The generator's house asks about the viewer, as the add does
+            // (`0x006FB2CF`).
             if operational
-                && !crate::map::houses::are_houses_friendly(
+                && !crate::map::houses::is_allied_with(
                     self.house_alliances.as_map(),
                     self.interner.resolve(entity.owner()),
                     self.interner.resolve(viewer),

@@ -97,8 +97,8 @@ impl BuildingTintSample {
 }
 
 impl BuildingArt {
-    /// Sample once at Building43FE22, before Techno43FE56 can update either
-    /// tint stage, draw Scenario RNG, or decrement the flash countdown.
+    /// The light a relight gives the slot anims
+    /// ([`crate::sim::world::ObjectSubstrate::relight_building_anims`]).
     pub fn capture_tint_sample(
         &mut self,
         frame: u32,
@@ -187,6 +187,39 @@ impl BuildingArt {
 
     pub(crate) fn storage_mut_for_test(&mut self) -> &mut BuildingStorage {
         &mut self.storage
+    }
+}
+
+impl crate::sim::world::ObjectSubstrate {
+    /// `BuildingClass` `0x00452000`, and its copy at the end of Flash
+    /// (`0x00456E00`): relight the slot anims from the building's light at
+    /// `frame`, which [`BuildingArt::tint_sample`] keeps for the draw.
+    /// UpdateAnimation (`0x00450A47..0x00450A77`) relights them the same way
+    /// on each Update (Building `0x0043FE22`), before the Techno AI
+    /// (`0x0043FE56`) steps either tint stage or the flash.
+    pub(crate) fn relight_building_anims(&mut self, id: u64, frame: u32) {
+        let airstrike_active = self.airstrike_tint_active(id);
+        if let Some(entity) = self.entities.get_mut(id)
+            && entity.category() == crate::map::entities::EntityCategory::Structure
+        {
+            entity.building_art.capture_tint_sample(
+                frame,
+                entity.flashing.flashed(),
+                entity.invulnerability.as_ref(),
+                &entity.airstrike_tint,
+                airstrike_active,
+            );
+        }
+    }
+
+    /// Building vt+0x148 `Flash` (`0x00456E00`): the Techno body
+    /// ([`GameEntity::flash_base`]), then the slot-anim relight. Its redraw
+    /// flag (`+0x80`) is presentation.
+    pub(crate) fn flash_building(&mut self, id: u64, frames: i32, frame: u32) {
+        if let Some(entity) = self.entities.get_mut(id) {
+            entity.flash_base(frames);
+        }
+        self.relight_building_anims(id, frame);
     }
 }
 

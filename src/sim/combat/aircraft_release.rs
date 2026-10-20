@@ -55,7 +55,9 @@ fn live_shot<'r>(
                     terrain.type_ref(),
                 ))
             }),
-        Some(TargetKind::Cell(rx, ry)) => Some((cell_center_coords(rx, ry), entity.type_ref())),
+        Some(target @ TargetKind::Cell(..)) => {
+            resolve_target_coords(&target, world).map(|coords| (coords, entity.type_ref()))
+        }
         None => None,
     };
     let shot = coordinates.map(|(target_coords, target_type_ref)| AdmittedFire {

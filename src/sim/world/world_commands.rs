@@ -1868,8 +1868,13 @@ impl Simulation {
                 let Some(target_owner) = target_info else {
                     return false;
                 };
-                // Enemy-only.
-                if crate::map::houses::are_houses_friendly(
+                // RESIDUAL: enemy-only, as the actor's house asks it. Native
+                // has no such gate: a Ctrl+click passes What_Action's ally
+                // test (`0x007003C4`), and neither the Sabotage click arm
+                // (`0x004D7788`) nor the arrival (`0x0051A4BF..0x0051A664`)
+                // tests an alliance, so a forced charge goes on an allied or
+                // own CanC4 building.
+                if crate::map::houses::is_allied_with(
                     self.house_alliances.as_map(),
                     command_owner,
                     self.interner.resolve(target_owner),
@@ -2330,8 +2335,14 @@ impl Simulation {
     /// Structures never take this branch (it is gated on the Foot bit), and the
     /// link tested is contact slot 0, the same slot the original reads.
     /// `EventClass::Execute @ 0x004C6CB0`, MEGAMISSION `0x004C729F..0x004C72E2`: an Enter event,
-    /// `+0xAC` Enter, the Foot bit, a Building, and contact slot 0 (`+0xE4`, `0x0065AD30`).
-    pub(crate) fn duplicate_enter_is_noop(&self, receiver_id: u64, destination_id: u64) -> bool {
+    /// `+0xAC` Enter, the Foot bit, then the destination token converted
+    /// (`0x004C72BF`, which stamps the fallback CellClass for a Cell off the
+    /// map), a Building, and contact slot 0 (`+0xE4`, `0x0065AD30`).
+    pub(crate) fn duplicate_enter_is_noop(
+        &self,
+        receiver_id: u64,
+        destination: Option<combat::TargetKind>,
+    ) -> bool {
         let Some(receiver) = self.substrate.entities.get(receiver_id) else {
             return false;
         };
@@ -2343,6 +2354,11 @@ impl Simulation {
         {
             return false;
         }
+        let Some(combat::TargetKind::Entity(destination_id)) =
+            self.resolve_event_token(destination)
+        else {
+            return false;
+        };
         let destination_is_building = self
             .substrate
             .entities
@@ -2354,19 +2370,38 @@ impl Simulation {
         receiver.radio_contacts.slot(0) == Some(destination_id)
     }
 
+    /// TargetClass `0x006E6FF0`: the object an event token names, while it
+    /// is still present. A Cell names none and is not looked up.
+    pub(crate) fn event_token_object(&self, token: Option<combat::TargetKind>) -> Option<u64> {
+        let combat::TargetKind::Entity(id) = token? else {
+            return None;
+        };
+        (self.substrate.entities.contains(id) || self.terrain_objects.objects().contains_key(&id))
+            .then_some(id)
+    }
+
     /// TargetClass `0x006E6E20`: what an event token resolves to. An object
-    /// no longer present resolves to NULL; a Cell always resolves.
+    /// no longer present resolves to NULL. A Cell always resolves, through
+    /// `MapClass::Get_CellClass` (`0x006E6F05`), which stamps the shared
+    /// fallback CellClass with a cell off the map: a Cell TarCom then reads
+    /// that CellClass as it stands ([`combat::TargetKind::cell_identity`]).
     pub(crate) fn resolve_event_token(
         &self,
         token: Option<combat::TargetKind>,
     ) -> Option<combat::TargetKind> {
-        token.filter(|token| match *token {
-            combat::TargetKind::Entity(id) => {
-                self.substrate.entities.contains(id)
-                    || self.terrain_objects.objects().contains_key(&id)
+        match token? {
+            combat::TargetKind::Entity(_) => self
+                .event_token_object(token)
+                .map(combat::TargetKind::Entity),
+            combat::TargetKind::Cell(x, y) => {
+                crate::sim::cell_rect::get_cellclass_fallback(
+                    self.resolved_terrain.as_ref(),
+                    i32::from(x),
+                    i32::from(y),
+                );
+                token
             }
-            combat::TargetKind::Cell(..) => true,
-        })
+        }
     }
 
     /// The MEGAMISSION event's flash (`0x004C7385..0x004C739F`): vt+0x148
@@ -2483,16 +2518,13 @@ impl Simulation {
             return MegaMissionExecution::Refused;
         }
         for token in [target, destination] {
-            if let Some(combat::TargetKind::Entity(id)) = self.resolve_event_token(token)
+            if let Some(id) = self.event_token_object(token)
                 && !self.order_object_token_admits(id)
             {
                 return MegaMissionExecution::Refused;
             }
         }
-        if mission == MissionType::Enter
-            && let Some(combat::TargetKind::Entity(id)) = self.resolve_event_token(destination)
-            && self.duplicate_enter_is_noop(entity_id, id)
-        {
+        if mission == MissionType::Enter && self.duplicate_enter_is_noop(entity_id, destination) {
             return MegaMissionExecution::RepeatedEnter;
         }
         // Assign_Target_Command reads the event tokens only for mission 29.
@@ -2515,11 +2547,8 @@ impl Simulation {
             target,
             destination,
         );
-        // The setters take what the tokens resolve to.
-        let (target, destination) = (
-            self.resolve_event_token(target),
-            self.resolve_event_token(destination),
-        );
+        // Each setter takes what its token resolves to, converted just before
+        // it: a Cell's lookup can restamp the fallback CellClass.
         let foot = self
             .substrate
             .entities
@@ -2528,9 +2557,12 @@ impl Simulation {
         if mission == MissionType::AreaGuard && foot {
             self.assign_target_represented(entity_id, None, rules, overlay_registry, frame_effects)
                 .unwrap_or_else(|cause| panic!("Area Guard order target: {cause}"));
+            // The target token, converted at `0x004C7418` for the
+            // destination and again at `0x004C7428` for the archive.
+            let post = self.resolve_event_token(target);
             self.assign_destination_represented(
                 entity_id,
-                target.map(Into::into),
+                post.map(Into::into),
                 rules,
                 overlay_registry,
                 frame_effects,
@@ -2538,13 +2570,16 @@ impl Simulation {
             .unwrap_or_else(|cause| panic!("Area Guard order destination: {cause}"));
             // The archive write follows the virtual destination call even
             // when that class setter refuses its request.
+            let archive = self.resolve_event_token(target);
             self.substrate
                 .entities
                 .get_mut(entity_id)
                 .unwrap()
-                .set_archive_target(target);
+                .set_archive_target(archive);
             return MegaMissionExecution::Executed;
         }
+        // `0x004C745B`, then the target setter.
+        let target = self.resolve_event_token(target);
         // Its changed-null path6FCF5B also resets retained burst state;
         // dropping Target alone cannot.
         let _ = self.assign_target_represented(
@@ -2554,12 +2589,13 @@ impl Simulation {
             overlay_registry,
             frame_effects,
         );
-        // Unit741970, Infantry51AA40, Aircraft41AA80 or Building455D50,
-        // whatever the locomotor. Each owns its same-NavCom return,
-        // preprocessing and queue clearing. Native: track_destination.json
-        // Unit rows, replayed by
-        // command_move_destinations_match_native_unit_setter; original
+        // `0x004C7474`, then the destination setter: Unit741970,
+        // Infantry51AA40, Aircraft41AA80 or Building455D50, whatever the
+        // locomotor. Each owns its same-NavCom return, preprocessing and
+        // queue clearing. Native: track_destination.json Unit rows, replayed
+        // by command_move_destinations_match_native_unit_setter; original
         // delayed 6E0 MTNK: walk_first_path.json.
+        let destination = self.resolve_event_token(destination);
         if let Err(cause) = self.assign_destination_represented(
             entity_id,
             destination.map(Into::into),

@@ -28,7 +28,7 @@ pub(crate) use service::{
     NET_STATUS_LOST, WolApiStatus, WolLadderRecord, WolLoginAccepted, WolProvider, WolServer,
     WolServerList, WolServiceEvent, WolServiceRequest, service_event,
 };
-pub(crate) use test_service::default_buddies as test_service_buddies;
+pub(crate) use test_service::{WolTestGuest, default_buddies as test_service_buddies};
 
 /// The wait box's reveal timer and the login drop list's scroll repeats;
 /// the caller schedules the earliest deadline with the other shell timers.
@@ -339,6 +339,11 @@ pub(crate) fn chat_sent(state: &mut AppState, line: &crate::ui::wol_chat::WolCha
     {
         visit.locate_name = Some(String::from_utf16_lossy(name));
     }
+}
+
+/// `[0xB77DC1]`: a WOL match runs.
+pub(crate) fn in_match(state: &AppState) -> bool {
+    state.frontend.wol.as_ref().is_some_and(|visit| visit.in_game)
 }
 
 /// The runner handed over to a WOL match (`[0xB77DC1]` set).

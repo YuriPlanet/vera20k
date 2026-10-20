@@ -16,7 +16,7 @@ use crate::render::bridge_atlas::is_high_bridge_body_identity;
 use crate::render::native_z::{self, ZGradient, pack_z_gradient};
 use crate::render::overlay_atlas::{CRATE_BODY_FRAME, OverlaySpriteKey};
 use crate::render::sprite_atlas::ShpSpriteKey;
-use crate::render::tactical_draw_plan::{BlitPolicy, RenderZPolicy, SpriteEncoding};
+use crate::render::tactical_draw_plan::{RenderZPolicy, SpriteEncoding};
 use crate::rules::art_data::{AnimTypeRuntimeConfig, anim_translucency_source_alpha};
 use crate::rules::house_colors::HouseColorIndex;
 use crate::rules::overlay_types::OverlayTypeFlags;
@@ -404,7 +404,7 @@ pub(crate) fn build_display_effect_instances(
             palette_context: if anim.use_cell_drawer() {
                 crate::render::sprite_atlas::ShpPaletteContext::Cell
             } else if remap_color.is_some() {
-                crate::render::sprite_atlas::ShpPaletteContext::SelectedScheme
+                crate::render::sprite_atlas::anim_remap_context(anim)
             } else {
                 crate::render::sprite_atlas::ShpPaletteContext::GlobalAnim
             },
@@ -647,20 +647,16 @@ struct CellOverlayInputs<'a> {
     world_height: f32,
 }
 
-/// Cell_ContentRendering @ 0x006D6D10 -> DrawOverlay_Body @ 0x0047F6A0. Both the app and
+/// Cell_ContentRendering @ 0x006D6D10 -> DrawOverlay_Body @ 0x0047F6A0 for
+/// every cell whose overlay is not a high bridge; the cell body sweep
+/// ([`super::submit_cell_body_sweep`]) orders them. Both the app and
 /// offscreen retail witness use this one identity/frame/geometry owner.
 /// Native 6D6D10 checks map bounds and art/clip rectangles, not exploration;
 /// the 47FB90/47FDE0 rectangles and 47F6A0/47F510 draws never read Cell+12C/+130.
 /// The shared ABuffer supplies per-pixel shroud independently of cell admission.
-fn build_cell_overlay_instances(
-    input: &CellOverlayInputs<'_>,
-    instances: &mut Vec<SpriteInstance>,
-    render_z: &mut Vec<RenderZPolicy>,
-) {
+fn build_cell_overlay_bodies(input: &CellOverlayInputs<'_>, bodies: &mut Vec<super::CellBody>) {
     // Overlay entries from [OverlayPack]. `YR TacticalClass::Draw` keeps walls
     // in the fixed cell overlay family, not the `LayerClass` object sort.
-    let mut planned_cells = Vec::new();
-    let mut next_draw_id = 0u64;
     for entry in input.entries {
         let Some(static_name) = input.names.get(&entry.overlay_id) else {
             continue;
@@ -714,7 +710,6 @@ fn build_cell_overlay_instances(
 
         // The live identity owns resource type, wall/crate flags, and bridge
         // state even when a flat resource cell selects another display image.
-        let is_wall: bool = overlay_flags.map(|f| f.wall).unwrap_or(false);
         let is_crate: bool = overlay_flags.map(|f| f.crate_type).unwrap_or(false);
         let render_frame: u8 = overlay_body_frame(is_crate, live_overlay_data);
         let rubble_key = if overlay_flags.is_some_and(|f| f.is_rubble) {
@@ -793,59 +788,46 @@ fn build_cell_overlay_instances(
         let tint: [f32; 3] = input.lighting.overlay_tint_at((entry.rx, entry.ry));
         let palette_light =
             ordinary_overlay_palette_light(overlay_flags, input.lighting, (entry.rx, entry.ry));
-        planned_cells.push(
-            crate::app::presentation::render::draw_plan_lowering::PlannedCellInstance {
-                draw: crate::render::tactical_draw_plan::CellDraw {
-                    id: next_draw_id,
-                    kind: crate::app::presentation::render::draw_plan_lowering::cell_draw_kind(
-                        is_wall,
-                    ),
-                    policy: BlitPolicy::translucent(SpriteEncoding::Terrain, policy),
-                },
-                instance: SpriteInstance {
-                    position: [
-                        screen_x + TILE_WIDTH / 2.0 + spr.offset_x,
-                        screen_y + TILE_HEIGHT / 2.0 + spr.offset_y,
-                    ],
-                    size: spr.pixel_size,
-                    uv_origin: spr.uv_origin,
-                    uv_size: spr.uv_size,
-                    depth,
-                    tint,
-                    palette_light,
-                    alpha: 1.0,
-                    z_adjust,
-                    z_gradient,
-                    ..Default::default()
-                },
+        bodies.push(super::CellBody {
+            cell: (entry.rx, entry.ry),
+            draw: super::CellBodyDraw {
+                atlas: super::CellBodyAtlas::Overlay,
+                render_z: policy,
             },
-        );
-        next_draw_id += 1;
+            instance: SpriteInstance {
+                position: [
+                    screen_x + TILE_WIDTH / 2.0 + spr.offset_x,
+                    screen_y + TILE_HEIGHT / 2.0 + spr.offset_y,
+                ],
+                size: spr.pixel_size,
+                uv_origin: spr.uv_origin,
+                uv_size: spr.uv_size,
+                depth,
+                tint,
+                palette_light,
+                alpha: 1.0,
+                z_adjust,
+                z_gradient,
+                ..Default::default()
+            },
+        });
     }
 
-    let (ordered, policies) =
-        crate::app::presentation::render::draw_plan_lowering::lower_cell_instances_with_policy(
-            planned_cells,
-        );
-    instances.extend(ordered);
-    render_z.extend(policies);
-
     if std::env::var("RA2_DEBUG_BRIDGE_RENDER_BUCKETS").is_ok() {
-        log::debug!("Cell overlay instances: {}", instances.len());
+        log::debug!("Cell overlay bodies: {}", bodies.len());
     }
 }
 
-/// Build SpriteInstances for visible overlay objects and terrain objects.
+/// Build the ordinary overlay bodies for the cell body sweep, and the
+/// terrain objects.
 ///
-/// Bridge body, body shadow, and railing instances are emitted separately by
-/// `instances::bridges` (Phase D). Low bridges (LOBRDG*) ride in the
-/// generic `instances` bucket and use the regular overlay atlas.
+/// High-bridge bodies and every overlay shadow come from `instances::bridges`.
+/// Low bridges (LOBRDG*) are ordinary bodies on the regular overlay atlas.
 pub(crate) fn build_overlay_instances(
     state: &AppState,
     sw: f32,
     sh: f32,
-    instances: &mut Vec<SpriteInstance>,
-    render_z: &mut Vec<RenderZPolicy>,
+    bodies: &mut Vec<super::CellBody>,
     ground_objects: &mut Vec<
         crate::app::presentation::render::draw_plan_lowering::PlannedObjectInstance,
     >,
@@ -867,7 +849,7 @@ pub(crate) fn build_overlay_instances(
         .map(|g| (g.origin_y, g.world_height))
         .unwrap_or((0.0, 1.0));
 
-    build_cell_overlay_instances(
+    build_cell_overlay_bodies(
         &CellOverlayInputs {
             entries: state.match_state.match_presentation.overlays.as_slice(),
             atlas,
@@ -896,8 +878,7 @@ pub(crate) fn build_overlay_instances(
             origin_y,
             world_height,
         },
-        instances,
-        render_z,
+        bodies,
     );
 
     // Terrain objects from [Terrain] section.
@@ -1266,7 +1247,7 @@ pub(crate) fn build_parachute_instances(
             crate::render::sprite_atlas::anim_remap_color(anim, sim.interner(), input.house_colors);
         let key = ShpSpriteKey {
             palette_context: if remap_color.is_some() {
-                crate::render::sprite_atlas::ShpPaletteContext::SelectedScheme
+                crate::render::sprite_atlas::anim_remap_context(anim)
             } else {
                 crate::render::sprite_atlas::ShpPaletteContext::GlobalAnim
             },

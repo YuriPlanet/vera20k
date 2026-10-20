@@ -212,7 +212,14 @@ pub enum ShpPaletteContext {
     BulletAnim,
     /// Caller supplies BulletClass's retained ColorScheme identity (+114).
     BulletFirer,
+    /// AnimClass `+0xD4` holding a house's scheme from the extra building
+    /// palette (`AnimRemap::ExtraBuildingScheme`).
+    ExtraScheme,
 }
+
+/// One remapped AnimClass palette variant: the anim type, its remap's atlas
+/// context ([`anim_remap_context`]) and the remap colour.
+pub type AnimRemapKey = (String, ShpPaletteContext, HouseColorIndex);
 
 impl ShpPaletteContext {
     fn is_projectile(self) -> bool {
@@ -439,8 +446,8 @@ pub struct SpriteAtlas {
     unrenderable: HashSet<ShpSpriteKey>,
     /// House colours whose sprites have been collected, by object type.
     covered_objects: HashMap<String, HashSet<HouseColorIndex>>,
-    /// AnimClass (type, ColorScheme) remaps whose sprites have been collected.
-    covered_anim_remaps: HashSet<(String, HouseColorIndex)>,
+    /// AnimClass remaps whose sprites have been collected.
+    covered_anim_remaps: HashSet<AnimRemapKey>,
     /// Whether the harvest overlay frames were rendered (or found missing).
     harvest_overlay_loaded: bool,
     /// The file each counted animation, make and parachute type's frames came
@@ -606,7 +613,7 @@ impl SpriteAtlas {
         entities: &crate::sim::entity_store::EntityStore,
         house_colors: &HouseColorMap,
         extra_building_types: &[&str],
-        anim_remaps: &HashSet<(String, HouseColorIndex)>,
+        anim_remaps: &HashSet<AnimRemapKey>,
         interner: Option<&crate::sim::intern::StringInterner>,
     ) -> bool {
         object_pairs(entities, house_colors, extra_building_types, interner)
@@ -772,7 +779,7 @@ pub fn atlas_covers_world(
     entities: &crate::sim::entity_store::EntityStore,
     house_colors: &HouseColorMap,
     extra_building_types: &[&str],
-    anim_remaps: &HashSet<(String, HouseColorIndex)>,
+    anim_remaps: &HashSet<AnimRemapKey>,
     interner: Option<&crate::sim::intern::StringInterner>,
 ) -> bool {
     match atlas {
@@ -826,7 +833,7 @@ fn object_pairs<'a>(
 pub fn collect_anim_remap_base_keys(
     sim: &crate::sim::world::Simulation,
     house_colors: &HouseColorMap,
-) -> HashSet<(String, HouseColorIndex)> {
+) -> HashSet<AnimRemapKey> {
     anim_remap_base_keys(sim, house_colors).collect()
 }
 
@@ -846,11 +853,12 @@ pub(crate) fn atlas_covers_anim_remaps(
 fn anim_remap_base_keys<'a>(
     sim: &'a crate::sim::world::Simulation,
     house_colors: &'a HouseColorMap,
-) -> impl Iterator<Item = (String, HouseColorIndex)> + 'a {
+) -> impl Iterator<Item = AnimRemapKey> + 'a {
     sim.anims().filter_map(move |(_, anim)| {
         let color = anim_remap_color(anim, sim.interner(), house_colors)?;
         Some((
             sim.interner().resolve(anim.type_id()).to_ascii_uppercase(),
+            anim_remap_context(anim),
             color,
         ))
     })
@@ -867,11 +875,22 @@ pub(crate) fn anim_remap_color(
     use crate::sim::anim_class::AnimRemap;
     Some(match anim.remap()? {
         AnimRemap::ColorScheme(color) => color,
-        AnimRemap::House(house) => house_colors
+        AnimRemap::House(house) | AnimRemap::ExtraBuildingScheme(house) => house_colors
             .get(interner.resolve(house))
             .copied()
             .unwrap_or(crate::rules::house_colors::NO_REMAP),
     })
+}
+
+/// The palette a remapped anim's scheme is built on: the unit palette, or
+/// the extra building palette for a custom-palette producer's scheme.
+pub(crate) fn anim_remap_context(anim: &crate::sim::anim_class::AnimObject) -> ShpPaletteContext {
+    match anim.remap() {
+        Some(crate::sim::anim_class::AnimRemap::ExtraBuildingScheme(_)) => {
+            ShpPaletteContext::ExtraScheme
+        }
+        _ => ShpPaletteContext::SelectedScheme,
+    }
 }
 
 /// Every frame of each remapped AnimClass type the effect registry holds, in
@@ -879,16 +898,16 @@ pub(crate) fn anim_remap_color(
 fn insert_anim_remap_frame_keys(
     needed: &mut HashSet<ShpSpriteKey>,
     effects: &EffectRegistry,
-    anim_remaps: &HashSet<(String, HouseColorIndex)>,
+    anim_remaps: &HashSet<AnimRemapKey>,
 ) {
-    for (anim_type, color) in anim_remaps {
+    for (anim_type, context, color) in anim_remaps {
         let Some((type_id, frame_count)) = effects.frames.get(&anim_type.to_ascii_uppercase())
         else {
             continue;
         };
         for frame in 0..*frame_count {
             needed.insert(ShpSpriteKey {
-                palette_context: ShpPaletteContext::SelectedScheme,
+                palette_context: *context,
                 type_id: type_id.clone(),
                 facing: 0,
                 frame,
@@ -910,6 +929,9 @@ pub(crate) enum SpritePaletteChoice {
     CellIso,
     /// BulletClass's ordinary global Convert, independent of the theater.
     Bullet,
+    /// The extra building palette (`RuleSet::extra_building_palette`) for the
+    /// active theater.
+    ExtraBuilding,
 }
 
 /// Pick the palette a sprite key's frames are baked against.
@@ -948,11 +970,33 @@ pub(crate) fn sprite_palette_choice(
     }
 }
 
+/// The extra building palette for the active theater, or `None` without one.
+/// ColorScheme__GeneratePalette (`0x006263D0`, `0x00627590`) loads it as
+/// `<name><theater suffix>.PAL` (the suffix at `+0x4E` of the theater rows
+/// from `0x007E1B78`), uppercased, each byte shifted left by 2, and builds
+/// every `[Colors]` scheme on it. Without the file `+0xDF0` stays null and the
+/// ordinary scheme draws.
+fn load_extra_building_palette(
+    asset_manager: &AssetManager,
+    rules: Option<&RuleSet>,
+    theater_ext: &str,
+) -> Option<Palette> {
+    let name = rules?.extra_building_palette()?;
+    let data = asset_manager.get_ref(&format!("{name}{theater_ext}.pal"))?;
+    Palette::from_bytes(data).ok()
+}
+
+/// `extra_palette_type_ids` holds the custom-palette TechnoTypes, `None` when
+/// the extra building palette did not load. TechnoClass::DrawSHP tests
+/// TerrainPalette first (`0x00705EC7`), then draws from GetRemapColour
+/// (`0x00705F81`), whose `+0xDF0` arm (`0x00705D82..0x00705D9A`) picks the
+/// house's scheme from the type's generated palette.
 fn sprite_palette_for_key(
     key: &ShpSpriteKey,
     art: Option<&ArtRegistry>,
     effect_type_ids: &HashSet<String>,
     cell_palette_type_ids: &HashSet<String>,
+    extra_palette_type_ids: Option<&HashSet<String>>,
 ) -> SpritePaletteChoice {
     match key.palette_context {
         ShpPaletteContext::BulletDefault => SpritePaletteChoice::Bullet,
@@ -970,8 +1014,22 @@ fn sprite_palette_for_key(
                 SpritePaletteChoice::Anim
             }
         }
+        ShpPaletteContext::ExtraScheme if extra_palette_type_ids.is_some() => {
+            SpritePaletteChoice::ExtraBuilding
+        }
+        // RESIDUAL: without the file gamemd leaves +0xD4 unset (0x00441D2F),
+        // so the anim draws AltPalette's scheme 0 in cell light; this draws
+        // the owner's ramp. Retail ships every LIB*.PAL.
+        ShpPaletteContext::ExtraScheme => SpritePaletteChoice::Unit,
         ShpPaletteContext::Legacy => {
-            sprite_palette_choice(&key.type_id, art, effect_type_ids, cell_palette_type_ids)
+            let upper = key.type_id.to_ascii_uppercase();
+            if !cell_palette_type_ids.contains(&upper)
+                && extra_palette_type_ids.is_some_and(|ids| ids.contains(&upper))
+            {
+                SpritePaletteChoice::ExtraBuilding
+            } else {
+                sprite_palette_choice(&key.type_id, art, effect_type_ids, cell_palette_type_ids)
+            }
         }
     }
 }
@@ -1399,7 +1457,7 @@ pub fn build_sprite_atlas(
     art: Option<&ArtRegistry>,
     house_colors: &HouseColorMap,
     extra_building_types: &[&str],
-    anim_remap_keys: &HashSet<(String, HouseColorIndex)>,
+    anim_remap_keys: &HashSet<AnimRemapKey>,
     cell_drawer_type_ids: &HashSet<String>,
     cell_palette: Option<&Palette>,
     existing: Option<SpriteAtlas>,
@@ -1421,7 +1479,7 @@ pub fn build_sprite_atlas(
             .filter(|&(type_id, color)| !collected(type_id, color))
             .map(|(type_id, color)| (type_id.to_string(), color))
             .collect();
-    let new_remaps: HashSet<(String, HouseColorIndex)> = anim_remap_keys
+    let new_remaps: HashSet<AnimRemapKey> = anim_remap_keys
         .iter()
         .filter(|remap| {
             !previous_atlas
@@ -1844,23 +1902,35 @@ pub fn build_sprite_atlas(
 
     // BuildingType TerrainPalette (004612B4, DrawSHP 00705EC7) has the same
     // palette owner as cell-drawer animations. Resolve the rules Image alias.
+    let extra_palette = load_extra_building_palette(asset_manager, rules, theater_ext);
     let mut cell_palette_type_ids = cell_drawer_type_ids.clone();
+    let mut extra_palette_type_ids = HashSet::new();
     let new_types: HashSet<&str> = new_keys.iter().map(|key| key.type_id.as_str()).collect();
     for type_id in new_types {
         let base = type_id.strip_suffix("_MAKE").unwrap_or(type_id);
-        let image = rules
-            .and_then(|r| r.object(base))
-            .map_or(base, |o| o.image.as_str());
+        let object = rules.and_then(|r| r.object(base));
+        let image = object.map_or(base, |o| o.image.as_str());
         if art
             .and_then(|a| a.resolve_metadata_entry(base, image))
             .is_some_and(|a| a.terrain_palette)
         {
             cell_palette_type_ids.insert(type_id.to_ascii_uppercase());
         }
+        if object.is_some_and(|o| o.custom_palette) {
+            extra_palette_type_ids.insert(type_id.to_ascii_uppercase());
+        }
     }
     let palette_choices: Vec<SpritePaletteChoice> = new_keys
         .iter()
-        .map(|key| sprite_palette_for_key(key, art, &effects.type_ids, &cell_palette_type_ids))
+        .map(|key| {
+            sprite_palette_for_key(
+                key,
+                art,
+                &effects.type_ids,
+                &cell_palette_type_ids,
+                extra_palette.as_ref().map(|_| &extra_palette_type_ids),
+            )
+        })
         .collect();
     if cell_palette.is_none() && palette_choices.contains(&SpritePaletteChoice::CellIso) {
         return abort_sprite_atlas_refresh(
@@ -1940,10 +2010,18 @@ pub fn build_sprite_atlas(
             SpritePaletteChoice::Bullet => {
                 bullet_palette.as_ref().expect("bullet palette validated")
             }
+            SpritePaletteChoice::ExtraBuilding => {
+                extra_palette.as_ref().expect("chosen only when loaded")
+            }
         };
+        // 0x00627590 builds each scheme with ColorScheme's constructor
+        // (0x0068C710), which writes the colour's ramp over indices 16..31.
         let house_remap = match key.palette_context {
             ShpPaletteContext::Legacy => palette_choice != SpritePaletteChoice::CellIso,
-            _ => palette_choice == SpritePaletteChoice::Unit,
+            _ => matches!(
+                palette_choice,
+                SpritePaletteChoice::Unit | SpritePaletteChoice::ExtraBuilding
+            ),
         };
         let sprite = source
             .as_ref()

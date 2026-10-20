@@ -73,6 +73,15 @@ pub(crate) enum NetworkRowKind {
     Ai(crate::skirmish_launch::AiDifficulty),
 }
 
+/// What a peer's `R` changed on the host (`0x007A8260`): the rows, which
+/// republishes the slot names (`0x0077DB90`) and the advertisement
+/// (`0x0078F000`), and the options (`0x005E32D0`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub(crate) struct PeerChoicesChange {
+    pub roster: bool,
+    pub options: bool,
+}
+
 /// Decoded full-options fields5E4F97..5E513F. Filename remains solely in
 /// the launch; player_capacity is rawA8BB0C, not effective831700 row capacity.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -474,16 +483,19 @@ impl MatchSession {
                 < crate::skirmish_launch::SKIRMISH_PLAYER_SLOT_COUNT,
             "network setup has no free slot"
         );
+        // A WOL guest's node has no row until the host's 'L' binds one.
         anyhow::ensure!(
-            human.raw_slot_index.is_some_and(|row| row < 8)
-                && !launch
-                    .humans
-                    .iter()
-                    .any(|entry| entry.raw_slot_index == human.raw_slot_index)
-                && !launch
-                    .opponents
-                    .iter()
-                    .any(|entry| Some(entry.raw_slot_index) == human.raw_slot_index),
+            human.raw_slot_index.is_none_or(|row| {
+                row < 8
+                    && !launch
+                        .humans
+                        .iter()
+                        .any(|entry| entry.raw_slot_index == Some(row))
+                    && !launch
+                        .opponents
+                        .iter()
+                        .any(|entry| entry.raw_slot_index == row)
+            }),
             "participant row is occupied or out of range"
         );
         let index = launch.humans.len();
@@ -519,29 +531,145 @@ impl MatchSession {
         Ok(())
     }
 
-    /// A decoded peer update is admitted separately from local edit permission.
-    pub(crate) fn accept_network_player_choices(
+    /// The WOL host's private-options `R` arm (`0x007A8260`, `0x7A83CC..
+    /// 0x7A8BD2`) for the participant at `index`. A node without a row is
+    /// ignored. An observer asking to play moves to the first Open row
+    /// (`0x005E9240`), a player asking to observe moves to the observer row;
+    /// with no such row (`0x005E9510` / `0x005E9560`) its own row is vacated
+    /// instead (`0x005EC9F0` mode 0) and nothing else is checked. Otherwise
+    /// each field is checked against the session: the country by the mode
+    /// (`+0x1C`, here `countries` for Cooperative, else any; the current one,
+    /// else the mode's `+0x28` Random), a colour or start already held
+    /// becomes Random (`0x0069B600`, `0x005E9720`), a team outside 0..3
+    /// takes the mode default (`+0x34`/`+0x2C`). No sound, text or reply.
+    pub(crate) fn accept_network_peer_choices(
         &mut self,
         index: usize,
-        slot: SkirmishLocalSlot,
-        role: crate::skirmish_launch::LaunchHumanRole,
-    ) -> anyhow::Result<()> {
-        anyhow::ensure!(
-            !matches!(
-                role,
-                crate::skirmish_launch::LaunchHumanRole::Player { group: -1 }
-            ),
-            "native role -1 must use Observer"
-        );
-        let launch = self.editable_network_setup()?;
-        let human = launch
-            .humans
-            .get_mut(index)
+        choices: SkirmishLocalSlot,
+        observer: bool,
+        countries: Option<&[crate::skirmish_launch::LaunchCountry]>,
+    ) -> anyhow::Result<PeerChoicesChange> {
+        anyhow::ensure!(self.host, "only the host checks a peer's choices");
+        let human = self
+            .network_setup()
+            .and_then(|launch| launch.humans.get(index))
             .ok_or_else(|| anyhow::anyhow!("unknown participant"))?;
-        human.slot = slot;
-        human.role = role;
+        anyhow::ensure!(
+            index != self.network_setup().expect("checked").local_player_index,
+            "the host's own row is not a peer's"
+        );
+        let Some(row) = human.raw_slot_index else {
+            return Ok(PeerChoicesChange::default());
+        };
+        let was_observer = human.is_observer();
+        let observer_row = self.network_observer_row();
+        let mut change = PeerChoicesChange::default();
+        if was_observer && !observer {
+            change.roster = true;
+            change.options = true;
+            if self.network_no_open_player_row() {
+                self.set_network_row_kind(row, NetworkRowKind::OpenObserver)?;
+                return Ok(change);
+            }
+            // 0x7A8838..0x7A88A4: country Random and a player role, the
+            // observer row opened for observers, then 0x5E9240's row. The
+            // country check still compares against the -3 read at 0x7A865F,
+            // so the options always go out (0x7A8905..0x7A8915).
+            self.set_network_row_kind(observer_row.unwrap_or(row), NetworkRowKind::OpenObserver)?;
+            let free = self
+                .network_free_row(false)
+                .ok_or_else(|| anyhow::anyhow!("no Open row after 0x5E9510"))?;
+            let human = &mut self.editable_network_setup()?.humans[index];
+            human.set_observer(false);
+            human.slot.country_random = true;
+            human.raw_slot_index = Some(free);
+        } else if !was_observer && observer {
+            change.roster = true;
+            change.options = true;
+            let target = self.network_free_row(true);
+            self.set_network_row_kind(row, NetworkRowKind::Open)?;
+            if let Some(target) = target {
+                // 0x7A89F4..0x7A8A6F: the node goes to [0x8316A4].
+                let human = &mut self.editable_network_setup()?.humans[index];
+                human.set_observer(true);
+                human.raw_slot_index = Some(observer_row.unwrap_or(target));
+            }
+            self.editable_network_setup()?.rebuild_house_roster();
+            return Ok(change);
+        }
+        let launch = self.editable_network_setup()?;
+        let current = launch.humans[index].slot.clone();
+        let native_country =
+            |slot: &SkirmishLocalSlot| (!slot.country_random).then_some(slot.country);
+        let allowed = |country: Option<crate::skirmish_launch::LaunchCountry>| {
+            countries.is_none_or(|list| country.is_none_or(|country| list.contains(&country)))
+        };
+        let mut slot = current.clone();
+        // An observer's country is -3 on both sides.
+        if observer {
+        } else if allowed(native_country(&choices)) {
+            if native_country(&choices) != native_country(&current) {
+                slot.country = choices.country;
+                slot.country_random = choices.country_random;
+                change.options = true;
+            }
+        } else {
+            if !allowed(native_country(&current)) {
+                slot.country_random = true;
+            }
+            change.options = true;
+        }
+        let native_color =
+            |slot: &SkirmishLocalSlot| (!slot.color_random).then_some(slot.color_index);
+        if native_color(&choices) != native_color(&current) {
+            // 0x69B600: every node of the session and every AI row.
+            let taken = native_color(&choices).is_some_and(|color| {
+                launch
+                    .humans
+                    .iter()
+                    .any(|human| native_color(&human.slot) == Some(color))
+                    || launch
+                        .opponents
+                        .iter()
+                        .any(|ai| !ai.color_random && ai.color_index == color)
+            });
+            slot.color_random = choices.color_random || taken;
+            if !slot.color_random {
+                slot.color_index = choices.color_index;
+            }
+            change.options = true;
+        }
+        if choices.start_position != current.start_position {
+            // 0x5E9720: the nodes on a row and every AI row.
+            let taken = choices.start_position != crate::skirmish_launch::LaunchStartPosition::Auto
+                && (launch.humans.iter().any(|human| {
+                    human.raw_slot_index.is_some()
+                        && human.slot.start_position == choices.start_position
+                }) || launch
+                    .opponents
+                    .iter()
+                    .any(|ai| ai.start_position == choices.start_position));
+            slot.start_position = if taken {
+                crate::skirmish_launch::LaunchStartPosition::Auto
+            } else {
+                choices.start_position
+            };
+            change.options = true;
+        }
+        if choices.team != current.team {
+            // Mode +0x34 (0x5D5DE0) admits only 0..3; +0x2C (0x5D5DC0) is
+            // Team 0 under MustAlly, else none.
+            use crate::skirmish_launch::LaunchTeam;
+            slot.team = match choices.team {
+                LaunchTeam::Team(team) if team <= 3 => choices.team,
+                _ if launch.mode.must_ally => LaunchTeam::Team(0),
+                _ => LaunchTeam::None,
+            };
+            change.options = true;
+        }
+        launch.humans[index].slot = slot;
         launch.rebuild_house_roster();
-        Ok(())
+        Ok(change)
     }
 
     pub(crate) fn network_vacancy(&self, row: u8) -> Option<NetworkVacancy> {
@@ -1243,6 +1371,68 @@ impl MatchSession {
         }
     }
 
+    /// min(`[0xA8B548]`, `[0xA8BB0C]`), the row count the WOL slot tests
+    /// scan. `[0xA8B548]` is written once, by `Init_Game` (`0x0052CA7C`),
+    /// from Rules+0x14D0 while it still holds the constructor's 8
+    /// (`0x00667331`): `[Maximums] Players` is read only by the later
+    /// scenario reset (`0x00668A11`). `[0xA8BB0C]` is the options' raw
+    /// capacity, 8 before any (`0x7A5890`); the WOL row limit 6 is not in it.
+    /// RESIDUAL: a host's own map selection does not set the metadata yet,
+    /// so a host reads 8.
+    fn network_slot_test_rows(&self) -> i32 {
+        const MAXIMUM_PLAYERS: i32 = 8;
+        let raw = self
+            .network_map_metadata()
+            .map_or(8, |metadata| metadata.player_capacity);
+        MAXIMUM_PLAYERS.min(raw)
+    }
+
+    /// `0x005E9510`: no Open player row among the first
+    /// [`Self::network_slot_test_rows`] rows, unless the observer row is 0
+    /// and the row past them is Open.
+    pub(crate) fn network_no_open_player_row(&self) -> bool {
+        if self.network_setup().is_none() {
+            return false;
+        }
+        let limit = self.network_slot_test_rows();
+        let open = |row: i32| {
+            u8::try_from(row)
+                .ok()
+                .and_then(|row| self.network_vacancy(row))
+                == Some(NetworkVacancy::Open)
+        };
+        if (0..limit).any(open) {
+            return false;
+        }
+        !(self.network_observer_row() == Some(0) && limit < 8 && open(limit))
+    }
+
+    /// `0x005E9240`'s row for a new node: the first Open row for a player,
+    /// the first open observer row for an observer, over all eight rows.
+    pub(crate) fn network_free_row(&self, observer: bool) -> Option<u8> {
+        let wanted = if observer {
+            NetworkVacancy::OpenObserver
+        } else {
+            NetworkVacancy::Open
+        };
+        (0..8u8).find(|row| self.network_vacancy(*row) == Some(wanted))
+    }
+
+    /// `0x005E95E0`: the nodes, less an observer on the observer row, are
+    /// more than [`Self::network_slot_test_rows`].
+    pub(crate) fn network_over_capacity(&self) -> bool {
+        let Some(launch) = self.network_setup() else {
+            return false;
+        };
+        let limit = self.network_slot_test_rows();
+        let observer_row = self.network_observer_row();
+        let observer_present = launch
+            .humans
+            .iter()
+            .any(|human| human.is_observer() && human.raw_slot_index == observer_row);
+        launch.humans.len() as i32 - i32::from(observer_present) > limit
+    }
+
     pub(crate) fn network_player_ready(&self, index: usize) -> bool {
         match self.network.as_ref().map(|network| &network.phase) {
             Some(NetworkPhase::Setup { admission, .. }) => {
@@ -1872,6 +2062,153 @@ mod tests {
         assert_eq!(setup.local_player_index, 0);
         assert_eq!(setup.required_start_count(), 2);
         assert!(setup.house_roster_is_consistent());
+    }
+
+    #[test]
+    fn open_rows_and_over_capacity_follow_the_wol_slot_tests() {
+        // 0x5E9510 and 0x5E95E0 scan min(8, the options' raw capacity).
+        let mut session = MatchSession::default();
+        session.enter_network(super::NetworkReturnContext::Wol);
+        let launch = network_fixture();
+        session
+            .accept_network_setup(launch.clone(), false, Some(7))
+            .unwrap();
+        // Before any options the raw capacity is 8: rows 2..7 are Open.
+        assert!(!session.network_no_open_player_row());
+        let options =
+            |session: &mut MatchSession, vacancies: [super::NetworkVacancy; 8], capacity: i32| {
+                session
+                    .accept_network_host_setup(launch.clone(), vacancies, capacity, None)
+                    .unwrap();
+                let metadata = super::NetworkMapMetadata {
+                    display_name: "Map".into(),
+                    player_capacity: capacity,
+                    official: true,
+                    byte_length: 1,
+                    digest: "D".into(),
+                };
+                session
+                    .accept_network_map_metadata(metadata, None, true)
+                    .unwrap();
+            };
+        let open = [super::NetworkVacancy::Open; 8];
+        options(&mut session, open, 4);
+        assert!(!session.network_no_open_player_row());
+        assert!(!session.network_over_capacity());
+        // Two humans fill a two-row map: no Open row, not over-full.
+        options(&mut session, open, 2);
+        assert!(session.network_no_open_player_row());
+        assert!(!session.network_over_capacity());
+        // Closed rows are not Open.
+        let mut closed = open;
+        closed[2] = super::NetworkVacancy::Closed;
+        closed[3] = super::NetworkVacancy::Closed;
+        options(&mut session, closed, 4);
+        assert!(session.network_no_open_player_row());
+        // A third node on a two-row map is over-full.
+        options(&mut session, open, 2);
+        let mut third = session.network_setup().unwrap().humans[0].clone();
+        third.name = "Third".into();
+        third.raw_slot_index = Some(2);
+        session.add_network_participant(third).unwrap();
+        assert!(session.network_over_capacity());
+    }
+
+    #[test]
+    fn a_peer_r_follows_the_wol_host_checks() {
+        // 0x7A8260 'R': taken colour/start -> Random, team outside 0..3 ->
+        // the mode default, observer moves and the vacate on a full session.
+        use super::{NetworkRowKind, NetworkVacancy, PeerChoicesChange};
+        use crate::skirmish_launch::{LaunchStartPosition, LaunchTeam};
+        let mut session = MatchSession::default();
+        session.enter_network(super::NetworkReturnContext::Wol);
+        let mut launch = network_fixture();
+        launch.local_player_index = 0;
+        launch.humans[0].slot.color_index = 5;
+        launch.humans[0].slot.color_random = false;
+        launch.humans[0].slot.start_position = LaunchStartPosition::Auto;
+        let must_ally = launch.mode.must_ally;
+        session.accept_network_setup(launch, true, Some(7)).unwrap();
+        session
+            .set_network_row_kind(7, NetworkRowKind::OpenObserver)
+            .unwrap();
+        let guest = |session: &MatchSession| session.network_setup().unwrap().humans[1].clone();
+        let mut asked = guest(&session).slot;
+        asked.color_index = 5;
+        asked.color_random = false;
+        asked.start_position = LaunchStartPosition::Position(0);
+        asked.team = LaunchTeam::Team(7);
+        let change = session
+            .accept_network_peer_choices(1, asked, false, None)
+            .unwrap();
+        let after = guest(&session);
+        assert_eq!(
+            change,
+            PeerChoicesChange {
+                roster: false,
+                options: true
+            }
+        );
+        assert!(after.slot.color_random, "the host holds colour 5");
+        assert_eq!(after.slot.start_position, LaunchStartPosition::Position(0));
+        assert_eq!(
+            after.slot.team,
+            if must_ally {
+                LaunchTeam::Team(0)
+            } else {
+                LaunchTeam::None
+            }
+        );
+        // The same choices as held change nothing and publish nothing.
+        let held = session
+            .accept_network_peer_choices(1, after.slot.clone(), false, None)
+            .unwrap();
+        assert_eq!(held, PeerChoicesChange::default());
+        // To the observer row and back to the first Open row.
+        let change = session
+            .accept_network_peer_choices(1, after.slot.clone(), true, None)
+            .unwrap();
+        assert!(change.roster && change.options);
+        let observer = guest(&session);
+        assert!(observer.is_observer());
+        assert_eq!(observer.raw_slot_index, Some(7));
+        assert_eq!(session.network_vacancy(1), Some(NetworkVacancy::Open));
+        // Random asked again: the options still go out after the move.
+        let change = session
+            .accept_network_peer_choices(1, after.slot.clone(), false, None)
+            .unwrap();
+        assert!(change.roster && change.options);
+        let player = guest(&session);
+        assert!(!player.is_observer());
+        assert_eq!(player.raw_slot_index, Some(1));
+        assert_eq!(
+            session.network_vacancy(7),
+            Some(NetworkVacancy::OpenObserver)
+        );
+        // An observer asking to play with no Open row loses its row.
+        session
+            .accept_network_peer_choices(1, after.slot.clone(), true, None)
+            .unwrap();
+        for row in 1..7 {
+            session
+                .set_network_row_kind(row, NetworkRowKind::Closed)
+                .unwrap();
+        }
+        assert!(session.network_no_open_player_row());
+        let change = session
+            .accept_network_peer_choices(1, after.slot.clone(), false, None)
+            .unwrap();
+        assert!(change.roster && change.options);
+        assert_eq!(guest(&session).raw_slot_index, None);
+        assert_eq!(
+            session.network_vacancy(7),
+            Some(NetworkVacancy::OpenObserver)
+        );
+        // A node without a row is ignored.
+        let ignored = session
+            .accept_network_peer_choices(1, after.slot, true, None)
+            .unwrap();
+        assert_eq!(ignored, PeerChoicesChange::default());
     }
 
     #[test]
