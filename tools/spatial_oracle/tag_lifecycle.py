@@ -35,6 +35,33 @@ REGISTRIES = {
 }
 
 
+def initialize_registries(u, storage, *, capacity=128, include_object_vtables=False):
+    """Supply empty registry storage and install original initializer vtables.
+
+    Callers select the registries they own. In a joined world, omit existing
+    Object/Techno registries so live constructor registrations are preserved.
+    No Tag construction, attachment, event decision or lifecycle is supplied.
+    """
+    for name, items in storage.items():
+        u.mem_write(REGISTRIES[name] + 4,
+                    dwords(items, capacity, 0, 0, capacity))
+    for name, vt in (('cell_tags', 0x7E3890), ('map_tags', 0x7EA5A4),
+                     ('logic_tags', 0x7EA5A4)):
+        if name in storage:
+            u.mem_write(REGISTRIES[name], dwords(vt))
+    writers = [('abstract', 0x72536D), ('tag_trigger_base', 0x72546D),
+               ('tag', 0x6E4D7D), ('trigger', 0x4E65FD),
+               ('object_base', 0x7253ED), ('pending', 0x72586D)]
+    if include_object_vtables:
+        writers += [('object', 0x4E7AFD), ('object_base_b', 0x7252ED)]
+    for name, writer in writers:
+        if name in storage:
+            base = REGISTRIES[name]
+            instruction = bytes(u.mem_read(writer, 10))
+            assert instruction[:6] == b'\xC7\x05' + dwords(base)
+            u.mem_write(base, instruction[6:])
+
+
 class StockPrefix:
     """Compose the existing campaign cached-reader VM, never another loader.
 
@@ -447,24 +474,9 @@ def execute(case):
         u.mem_write(base,bytes([value]))
     u.mem_write(SCENARIO+0x60C, dwords(case.get('difficulty',1)))
     u.mem_write(SCENARIO+0x11E8, dwords(-1))
-    for index, base in enumerate(REGISTRIES.values()):
-        u.mem_write(base+4, dwords(SCRATCH+0x50000+index*0x400,128,0,0,128))
-    # Original constructor/static-initializer vtables:565157,4E7F4D,4E7FCD.
-    # Detach invokes their real Find bodies even when the vectors are empty.
-    u.mem_write(REGISTRIES['cell_tags'],dwords(0x7E3890))
-    u.mem_write(REGISTRIES['map_tags'],dwords(0x7EA5A4))
-    u.mem_write(REGISTRIES['logic_tags'],dwords(0x7EA5A4))
-    for base, writer in ((0xB0F670,0x72536D),(0xB0F708,0x72546D),
-                         (0xB0E720,0x6E4D7D),(0xA8EAE8,0x4E65FD),
-                         (0xB0F618,0x7253ED),(0xB0F698,0x72586D)):
-        instruction=bytes(u.mem_read(writer,10))
-        assert instruction[:6]==b'\xC7\x05'+dwords(base)
-        u.mem_write(base,instruction[6:])
-    if case.get('mixed_deferred_queue',False):
-        for base,writer in ((0xA8E360,0x4E7AFD),(0xB0F720,0x7252ED)):
-            instruction=bytes(u.mem_read(writer,10))
-            assert instruction[:6]==b'\xC7\x05'+dwords(base)
-            u.mem_write(base,instruction[6:])
+    initialize_registries(u,
+        {name: SCRATCH+0x50000+index*0x400 for index, name in enumerate(REGISTRIES)},
+        include_object_vtables=case.get('mixed_deferred_queue', False))
     u.mem_write(0xA8022C, dwords(SCRATCH+0x4F000))
     u.mem_write(0xA80238, dwords(1))
     u.mem_write(SCRATCH+0x4F000, dwords(HOUSE))

@@ -1237,7 +1237,9 @@ use crate::util::save_codec;
 // Warhead extension records; the capability metadata header still starts at 459.
 // 463 -> 464: the retained type registry keeps each InfantryType's
 // ReadSequenceData sound pairs from every reached pass.
-const SNAPSHOT_VERSION: u32 = 464;
+// 464 -> 466: retain Building+53C across save/load and live sale callbacks.
+// Version 465 is reserved by the concurrent constructor-owner change (#2371).
+const SNAPSHOT_VERSION: u32 = 466;
 
 const SNAPSHOT_PRODUCT_MAGIC: [u8; 8] = *b"VERA20K\0";
 const SNAPSHOT_ENVELOPE_VERSION: u32 = 1;
@@ -4935,6 +4937,62 @@ mod tests {
             "only the next eligible Process restarts against live terrain"
         );
         assert_eq!(restored.scenario_rng.logical_state(), before_rng);
+    }
+
+    #[test]
+    fn building_loss_index_survives_transfer_and_snapshot_with_its_full_hash_value() {
+        use crate::map::entities::EntityCategory;
+        use crate::sim::game_entity::GameEntity;
+        use crate::sim::intern::test_intern;
+
+        let mut hashes = std::collections::BTreeSet::new();
+        for retained in [0, 3, 11, -1] {
+            let mut sim = Simulation::new();
+            sim.scenario_rng = crate::sim::rng::SimRng::new(0);
+            let mut building = GameEntity::test_default_of_category(
+                1,
+                "GAPOWR",
+                "Americans",
+                4,
+                5,
+                EntityCategory::Structure,
+            );
+            match retained {
+                0 => {}
+                3 => building.initialize_building_loss_index(3),
+                11 => building.record_building_damage_house_index(11),
+                -1 => building.suppress_building_sale_loss(),
+                _ => unreachable!(),
+            }
+            sim.substrate.entities.insert(building);
+            sim.substrate
+                .entities
+                .change_owner(1, test_intern("Russians"));
+            assert_eq!(
+                sim.substrate.entities.get(1).unwrap().building_loss_index(),
+                retained,
+                "owner transfer must not recompute the retained index"
+            );
+            let expected_hash = sim.state_hash();
+            assert!(
+                hashes.insert(expected_hash),
+                "hash the full index, not only whether it suppresses loss"
+            );
+            let rng = sim.scenario_rng.logical_state();
+            let bytes = GameSnapshot::save(&sim, 1, 2, "building_loss_index", 0);
+            let restored = GameSnapshot::load(&bytes).expect("current snapshot").sim;
+            assert_eq!(
+                restored
+                    .substrate
+                    .entities
+                    .get(1)
+                    .unwrap()
+                    .building_loss_index(),
+                retained
+            );
+            assert_eq!(restored.state_hash(), expected_hash);
+            assert_eq!(restored.scenario_rng.logical_state(), rng);
+        }
     }
 
     #[test]
@@ -10213,6 +10271,7 @@ mod tests {
         // 461 -> 462: the typed Enter and Harvest commands are gone.
         // 462 -> 463: retained armor IDs and Ares warhead extension records.
         // 463 -> 464: retained InfantryType sequence sound pairs.
-        assert_eq!(super::SNAPSHOT_VERSION, 464);
+        // 464 -> 466: retained Building+53C (465 belongs to #2371).
+        assert_eq!(super::SNAPSHOT_VERSION, 466);
     }
 }
