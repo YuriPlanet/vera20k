@@ -149,6 +149,15 @@ pub(crate) struct DiagnosticsState {
     /// client still needs the whole-match history.
     #[cfg(feature = "telemetry-dashboard")]
     pub(crate) telemetry_history_generation: u64,
+    /// The encoded elevation grid for the loaded map, cached because the grid
+    /// is static per map (a 500x500 map is 250k cells) but must go out to each
+    /// client that attaches. Dropped on world replacement.
+    #[cfg(feature = "telemetry-dashboard")]
+    pub(crate) telemetry_terrain: Option<crate::sim::telemetry::TerrainGrid>,
+    /// Set when a world replacement invalidates the cached terrain, so the next
+    /// publish resends it even while the same client stays attached.
+    #[cfg(feature = "telemetry-dashboard")]
+    pub(crate) telemetry_terrain_dirty: bool,
     #[cfg(feature = "telemetry-dashboard")]
     pub(crate) telemetry_observer: crate::app::match_runtime::telemetry::ObserverSession,
     #[cfg(feature = "debug-tools")]
@@ -192,6 +201,10 @@ impl DiagnosticsState {
             telemetry_last_publish: None,
             #[cfg(feature = "telemetry-dashboard")]
             telemetry_history_generation: 0,
+            #[cfg(feature = "telemetry-dashboard")]
+            telemetry_terrain: None,
+            #[cfg(feature = "telemetry-dashboard")]
+            telemetry_terrain_dirty: true,
             #[cfg(feature = "telemetry-dashboard")]
             telemetry_observer: Default::default(),
             #[cfg(feature = "debug-tools")]

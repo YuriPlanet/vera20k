@@ -221,11 +221,12 @@ impl TeamAiIniRegistry {
         scenario: &IniFile,
         game_mode_nonzero: bool,
     ) -> Result<Self, String> {
-        let fixed = crate::rules::retail_sources::select_ini(assets, "aimd.ini")?.ini;
+        let name = assets.ini_roots().ai();
+        let fixed = crate::rules::retail_sources::select_ini(assets, name)?.ini;
         let registry = Self::from_sources(&fixed, scenario, game_mode_nonzero);
         if !registry.fixed_source_is_complete() {
             return Err(format!(
-                "active YR aimd.ini failed structural validation: fixed_counts={:?}, diagnostics={:?}",
+                "selected AI root {name} failed structural validation: fixed_counts={:?}, diagnostics={:?}",
                 registry.fixed_counts, registry.diagnostics
             ));
         }

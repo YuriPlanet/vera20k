@@ -1,5 +1,6 @@
-//! Always-on, final-window FPS readout. Independent of tactical cameras,
-//! optional dev overlays, retail fonts, and shell/offscreen composition.
+//! Final-window FPS readout, hidden until Ctrl+Alt+F shows it on any screen.
+//! Independent of tactical cameras, optional dev overlays, retail fonts, and
+//! shell/offscreen composition.
 
 use std::sync::Mutex;
 use std::time::Instant;
@@ -11,6 +12,7 @@ use crate::render::gpu::GpuContext;
 use super::state::FrameTimer;
 
 pub(crate) struct FpsOverlay {
+    visible: bool,
     font: BitFont,
     camera_buffer: wgpu::Buffer,
     camera_group: wgpu::BindGroup,
@@ -30,6 +32,7 @@ impl FpsOverlay {
     pub(crate) fn new(gpu: &GpuContext, batch: &BatchRenderer) -> Self {
         let (camera_buffer, camera_group) = batch.create_ui_camera(&gpu.device);
         Self {
+            visible: false,
             font: BitFont::fallback_5x7(&gpu.device, &gpu.queue, batch),
             camera_buffer,
             camera_group,
@@ -54,6 +57,12 @@ impl FpsOverlay {
             .simulation = simulation;
     }
 
+    /// Show or hide the readout; returns whether it is now shown.
+    pub(crate) fn toggle(&mut self) -> bool {
+        self.visible = !self.visible;
+        self.visible
+    }
+
     /// Call exactly once after all content has reached the acquired window
     /// surface, including synchronous loading repaints, before submission.
     /// The dedicated camera avoids rewriting uniforms used by earlier passes.
@@ -65,7 +74,11 @@ impl FpsOverlay {
         destination: &wgpu::Texture,
     ) {
         let mut frame = self.frame.lock().expect("FPS overlay frame lock");
+        // Keep measuring while hidden, so the first shown frame has a rate.
         frame.timer.sample(Instant::now());
+        if !self.visible {
+            return;
+        }
         let text = simulation_readout_text(frame.timer.frame_ms_mean(), frame.simulation);
         let size = [destination.width(), destination.height()];
         if frame.size != size {
@@ -105,7 +118,7 @@ impl FpsOverlay {
         frame.pool.upload(gpu, "window_fps", &instances);
         if !frame.logged_first_frame {
             log::info!(
-                "Always-on FPS overlay: final window surface {}x{}, {} glyph quads",
+                "FPS overlay: final window surface {}x{}, {} glyph quads",
                 size[0],
                 size[1],
                 instances.len()
@@ -114,7 +127,7 @@ impl FpsOverlay {
         }
         let view = destination.create_view(&wgpu::TextureViewDescriptor::default());
         let mut pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Always-on Window FPS"),
+            label: Some("Window FPS"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: &view,
                 resolve_target: None,

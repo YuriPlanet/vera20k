@@ -22,6 +22,9 @@ use crate::assets::asset_manager::{AssetManager, MediaArchiveMode};
 pub(crate) struct ProcessAssets {
     /// Selected at launch, retained even if initial archive loading fails.
     media_archive_mode: MediaArchiveMode,
+    /// Launch request and its first resolved names survive a lost asset lease.
+    ini_config: crate::util::ini_roots::IniRootConfig,
+    selected_ini_roots: Option<crate::util::ini_roots::IniRoots>,
     manager: Option<AssetManager>,
     leased: bool,
     /// Frozen launch policy, including deferred recovery after assetless startup.
@@ -73,6 +76,8 @@ impl ProcessAssets {
     pub(crate) fn new(media_archive_mode: MediaArchiveMode, load_audio_index: bool) -> Self {
         Self {
             media_archive_mode,
+            ini_config: Default::default(),
+            selected_ini_roots: None,
             manager: None,
             leased: false,
             load_audio_index,
@@ -83,6 +88,30 @@ impl ProcessAssets {
             csf: None,
             tile_variant_selector_cache: Default::default(),
         }
+    }
+
+    pub(crate) fn new_with_ini_config(
+        media: MediaArchiveMode,
+        audio: bool,
+        config: crate::util::ini_roots::IniRootConfig,
+    ) -> Self {
+        let mut process = Self::new(media, audio);
+        process.ini_config = config;
+        process
+    }
+
+    /// Recovery uses the process's already resolved choice, never a new Auto
+    /// decision against an archive set that may have changed since startup.
+    pub(crate) fn reconstruct_manager(
+        &self,
+        root: &std::path::Path,
+    ) -> anyhow::Result<AssetManager> {
+        let assets = AssetManager::new(root, self.media_archive_mode)?;
+        Ok(if let Some(roots) = &self.selected_ini_roots {
+            assets.with_selected_ini_roots(roots.clone())
+        } else {
+            assets.with_ini_roots(&self.ini_config)?
+        })
     }
 
     /// Init_Game52C763/52C796 and52C843/52C8A0 select fixed SOUNDMD/EVAMD
@@ -101,6 +130,15 @@ impl ProcessAssets {
         ),
         String,
     > {
+        if self
+            .selected_ini_roots
+            .as_ref()
+            .is_some_and(|roots| roots != assets.ini_roots())
+        {
+            return Err("process INI roots changed after source selection".into());
+        }
+        self.selected_ini_roots
+            .get_or_insert_with(|| assets.ini_roots().clone());
         if self.campaigns.is_none() {
             self.reload_campaigns(assets);
         }
@@ -201,6 +239,7 @@ impl ProcessAssets {
         self.campaigns.as_ref()
     }
 
+    #[cfg(test)]
     pub(crate) fn media_archive_mode(&self) -> MediaArchiveMode {
         self.media_archive_mode
     }
@@ -334,6 +373,58 @@ impl ProcessAssets {
 mod tests {
     use super::{MediaArchiveMode, ProcessAssets};
     use crate::assets::asset_manager::AssetManager;
+
+    #[test]
+    fn ini_roots_process_recovery_keeps_auto_choice_and_refuses_a_foreign_triplet() {
+        use crate::util::ini_roots::{IniProfile, IniRootConfig};
+        let dir =
+            crate::assets::asset_manager::test_support::audio_test_install("ini-roots-process");
+        std::fs::write(
+            dir.path().join("rulesmo.ini"),
+            b"[General]\nBuildSpeed=.7\n",
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("artmo.ini"), b"[TEST]\nVoxel=yes\n").unwrap();
+        std::fs::write(dir.path().join("aimo.ini"), b"[Marker]\nValue=MO\n").unwrap();
+        let config = IniRootConfig {
+            profile: IniProfile::Auto,
+            ..Default::default()
+        };
+        let manager = AssetManager::new(dir.path(), MediaArchiveMode::STOCK_DIGITAL)
+            .unwrap()
+            .with_ini_roots(&config)
+            .unwrap();
+        let mut process = ProcessAssets::new_with_ini_config(
+            MediaArchiveMode::STOCK_DIGITAL,
+            false,
+            config.clone(),
+        );
+        process.initialize_sources_if_needed(&manager).unwrap();
+        process.return_from_loading(manager);
+        drop(process.lease_for_loading().unwrap());
+        process.note_lease_ended_without_return();
+        for name in ["rulesmd.ini", "artmd.ini", "aimd.ini"] {
+            std::fs::write(dir.path().join(name), b"[Late]\nValue=YR\n").unwrap();
+        }
+        let fresh = AssetManager::new(dir.path(), MediaArchiveMode::STOCK_DIGITAL).unwrap();
+        assert!(process.initialize_sources_if_needed(&fresh).is_err());
+        assert!(
+            fresh.with_ini_roots(&config).is_err(),
+            "new Auto choice would now be ambiguous"
+        );
+        let recovered = process.reconstruct_manager(dir.path()).unwrap();
+        assert_eq!(recovered.ini_roots().profile(), IniProfile::Mo);
+        process.initialize_sources_if_needed(&recovered).unwrap();
+        assert_eq!(
+            process
+                .native_rules()
+                .unwrap()
+                .fixed_art()
+                .section_or_empty("TEST")
+                .read_bool("Voxel", false),
+            true
+        );
+    }
 
     fn test_manager(label: &str) -> AssetManager {
         let dir = std::env::temp_dir().join(format!(

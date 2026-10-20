@@ -26,6 +26,7 @@ use vera20k_core::sim::combat::Health;
 use vera20k_core::sim::components::DriveCoord;
 use vera20k_core::sim::house_state::HouseState;
 use vera20k_core::sim::runtime::{SimResources, SimRuntime};
+use vera20k_core::sim::telemetry::TerrainGrid;
 use vera20k_core::sim::world::Simulation;
 
 /// Entities per house per category.
@@ -272,6 +273,94 @@ fn stroll(sim: &mut Simulation, tick: u64, targets: &mut HashMap<u64, (f32, f32)
     }
 }
 
+/// Synthetic terrain for the demo world: the app's grid is the loaded map's,
+/// but the synthetic world has none, so the 3D view would be flat without
+/// this. The layout is designed, not real map data, so one look shows the
+/// dashboard's terracing and all three land features the wire carries:
+///
+///  - a level-2 plateau carrying a rectangular level-0 **lake** (water land
+///    type, so it paints solid blue with no grid);
+///  - the lake's north shore is one **ramp** row, a non-zero slope type whose
+///    top tilts down into the water instead of dropping a step face;
+///  - a raised **bridge** deck crosses the lake at its middle row, lifted to
+///    the plateau level and flush with both shores, with side faces down to
+///    the water — the same `deck_rises` the app encodes from a structural deck.
+///
+/// Encoded row-major, two lowercase hex digits per cell, in the same order and
+/// format the app's capture uses.
+fn synthetic_terrain(width: u16, height: u16) -> TerrainGrid {
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    /// Plateau ground level; the lake sits `Lake` levels below it.
+    const PLATEAU: u8 = 2;
+    const LAKE: u8 = 0;
+    /// `rules::terrain_rules::LandType::Clear`.
+    const CLEAR: u8 = 0;
+    /// `rules::terrain_rules::LandType::Water`.
+    const WATER: u8 = 2;
+    /// One ramp tile: any non-zero slope type tilts the cell's top.
+    const RAMP: u8 = 1;
+
+    let w = u32::from(width);
+    let h = u32::from(height);
+    // Lake rectangle, inset from the map edges; the ramp row lies just north
+    // of it and the bridge row down its middle.
+    let lake_x0 = w * 3 / 8;
+    let lake_x1 = w * 5 / 8;
+    let lake_y0 = h * 3 / 8;
+    let lake_y1 = h * 5 / 8;
+    let ramp_row = lake_y0.saturating_sub(1);
+    let bridge_row = (lake_y0 + lake_y1) / 2;
+    // The span reaches a few cells onto each shore so its abutments meet the
+    // plateau; only the cells over water carry a raised deck.
+    let span_x0 = lake_x0.saturating_sub(3);
+    let span_x1 = lake_x1 + 3;
+
+    let stride = usize::from(width) * usize::from(height) * 2;
+    let mut levels = String::with_capacity(stride);
+    let mut land_types = String::with_capacity(stride);
+    let mut slope_types = String::with_capacity(stride);
+    let mut deck_rises = String::with_capacity(stride);
+    let hex = |out: &mut String, value: u8| {
+        out.push(HEX[usize::from(value >> 4)] as char);
+        out.push(HEX[usize::from(value & 0x0f)] as char);
+    };
+
+    for ry in 0..h {
+        for rx in 0..w {
+            let over_lake = rx >= lake_x0 && rx < lake_x1 && ry >= lake_y0 && ry < lake_y1;
+            let level = if over_lake { LAKE } else { PLATEAU };
+            let land = if over_lake { WATER } else { CLEAR };
+            // The north shore tilts down into the water; its own level stays the
+            // plateau's, and the corner interpolation reaches the lake.
+            let slope = if ry == ramp_row && rx >= lake_x0 && rx < lake_x1 {
+                RAMP
+            } else {
+                0
+            };
+            // A bridge cell over the water lifts a deck up to the plateau, so
+            // the span lands flush with both shores; shore cells are ordinary
+            // ground and add no rise.
+            let deck = if ry == bridge_row && over_lake && rx >= span_x0 && rx < span_x1 {
+                PLATEAU - LAKE
+            } else {
+                0
+            };
+            hex(&mut levels, level);
+            hex(&mut land_types, land);
+            hex(&mut slope_types, slope);
+            hex(&mut deck_rises, deck);
+        }
+    }
+    TerrainGrid {
+        width,
+        height,
+        levels,
+        land_types,
+        slope_types,
+        deck_rises,
+    }
+}
+
 fn main() -> Result<(), String> {
     let args = match parse_args() {
         Ok(args) => args,
@@ -299,6 +388,11 @@ fn main() -> Result<(), String> {
         .map_err(|error| format!("telemetry server on {}: {error}", args.addr))?;
     println!("dashboard: {}", server.bootstrap_url());
     println!("Ctrl+C to stop");
+
+    // The map never changes in this demo, so build the elevation grid once and
+    // hand it to each client that attaches, mirroring the app's one-shot send.
+    let terrain = synthetic_terrain(spawned.map_width, spawned.map_height);
+    let mut last_attached: u64 = 0;
 
     let mut ring = TickTimingRing::default();
     let mut last_publish = Instant::now();
@@ -344,6 +438,13 @@ fn main() -> Result<(), String> {
             last_publish = now;
             snapshot.timing = Some(timing);
             snapshot.profile = runtime.simulation.frame_profile().report();
+            // A client that attached since the last publish needs the elevation
+            // grid once; every other publish leaves `terrain` as `None`.
+            let attached = server.attach_generation();
+            if attached != last_attached {
+                last_attached = attached;
+                snapshot.terrain = Some(terrain.clone());
+            }
             match serde_json::to_string(&snapshot) {
                 Ok(json) => server.publish(json),
                 Err(error) => log::warn!("snapshot serialization failed: {error}"),

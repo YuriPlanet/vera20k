@@ -141,7 +141,7 @@ impl Traversal<'_> {
 }
 
 /// Logical identities are independent of the host OS/cwd. Lookup still belongs
-/// to the callback; all include names use the same resource root, as in mono.
+/// to the callback; all include names use the same resource root.
 pub(crate) fn include_identity(name: &str) -> String {
     let name = name.replace('\\', "/");
     let mut parts = Vec::new();
@@ -158,7 +158,9 @@ pub(crate) fn include_identity(name: &str) -> String {
 }
 
 /// The caller supplies physical snapshots through its existing resource owner.
-/// Later includes override earlier ones; this document wins over all includes.
+/// Later includes override earlier ones. Ares `#include` loads this document
+/// first, so included values win; `$Include` retains the mono current-file-wins
+/// policy, without claiming that policy is executable Phobos equivalence.
 /// Expand all includes before resolving missing-key inheritance. Strict failure
 /// discards the owned candidate rather than exposing partially expanded state.
 pub fn process_directives(
@@ -215,6 +217,7 @@ fn expand_includes(
     let Some(section) = ini.section(PHOBOS).or_else(|| ini.section(ARES)) else {
         return Ok(ini);
     };
+    let current_file_wins = section.name == PHOBOS;
     let mut includes: Vec<_> = section
         .keys()
         .filter_map(|key| {
@@ -229,6 +232,12 @@ fn expand_includes(
         .collect();
     includes.sort_by(|a, b| (a.0, &a.1).cmp(&(b.0, &b.1)));
     let mut merged = IniFile::empty();
+    if !current_file_wins {
+        // Ares documents root Strength=200 + included Strength=300 as 300.
+        // Read this document before its depth-first descendants, not after.
+        // https://ares-developers.github.io/Ares-docs/new/misc/include.html
+        merged.merge(&ini);
+    }
     for (_, _, name) in includes {
         if !traversal.enter(&name, true)? {
             continue;
@@ -252,7 +261,9 @@ fn expand_includes(
         }
         traversal.exit();
     }
-    merged.merge(&ini);
+    if current_file_wins {
+        merged.merge(&ini);
+    }
     Ok(merged)
 }
 
