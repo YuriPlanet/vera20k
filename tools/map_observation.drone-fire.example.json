@@ -160,6 +160,18 @@
           }
         }
       }
+    },
+    {
+      "issue_after_step": 49,
+      "owner": "Americans",
+      "payload": {
+        "Stop": {
+          "entity_id": {
+            "type_id": "DRON",
+            "owner": "Americans"
+          }
+        }
+      }
     }
   ],
   "camera_cell": [
