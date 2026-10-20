@@ -83,6 +83,19 @@ const TRADEMARK_BOTTOM_KEY: &str = "GUI:TradeMarkBottom";
 const TRADEMARK_BOTTOM_FALLBACK: &str =
     "trademarks of Electronic Arts Inc. in the U.S. and/or other countries.";
 
+// ra2web-werhd/public/res/locale/zh-CN.json, displayed by SplashScreen.ts.
+#[cfg(any(target_os = "ios", target_os = "macos", test))]
+const WERHD_COPYRIGHT: [&str; 2] = [
+    "© 2026 王二火大制作组保留游戏引擎和联机服务的权利",
+    "版权所有，翻版必究",
+];
+#[cfg(any(target_os = "ios", target_os = "macos", test))]
+const WERHD_DISCLAIMER: [&str; 3] = [
+    "免责声明：",
+    "\"王二火大\" 是一个非盈利的粉丝项目，与 Electronic Arts Inc.(EA) 没有任何关联。",
+    "没有侵犯版权的意图。所有权利均归其各自所有者所有。",
+];
+
 /// The minimum on-screen hold, anchored at the first successful present.
 ///
 /// Native anchors its timestamp *after* the blit and lets the rules/type
@@ -133,7 +146,7 @@ impl StartupSplashPresentation {
         );
 
         let ([width, height], placement) = splash_placement(client_width, client_height);
-        #[cfg(not(target_os = "ios"))]
+        #[cfg(not(any(target_os = "ios", target_os = "macos")))]
         let rgba = compose_startup_splash(
             assets,
             csf,
@@ -142,33 +155,12 @@ impl StartupSplashPresentation {
             height as usize,
             splash_art(ra2_look),
         )?;
-        #[cfg(target_os = "ios")]
+        #[cfg(any(target_os = "ios", target_os = "macos"))]
         let rgba = {
             // The caller only constructs this splash for non-capture startup.
             // Country-specific scenario loading remains in app::loading.
             let _ = (assets, ra2_look);
-            let image = image::load_from_memory_with_format(
-                include_bytes!("../../../art/branding/werhd-loading.png"),
-                image::ImageFormat::Png,
-            )
-            .context("decode built-in WERHD startup loading image")?
-            // The approved 1448x1086 source has a 2-3px cyan edge. Remove
-            // it before resampling, keeping the inner picture exactly 4:3.
-            .crop_imm(4, 3, 1440, 1080)
-            .resize_exact(width, height, image::imageops::FilterType::Lanczos3)
-            .into_rgba8();
-            let mut rgba = image.into_raw();
-            // Keep the approved crest clear; the lower-left area sits above
-            // the two existing legal lines and away from the corner wordmark.
-            paint_startup_text(
-                &mut rgba,
-                width as usize,
-                height as usize,
-                csf,
-                font,
-                [10, height as i32 - 62],
-            );
-            rgba
+            compose_branded_startup_splash(csf, font, width, height)?
         };
         let texture = batch.create_texture(gpu, &rgba, width, height);
         let instance = SpriteInstance {
@@ -326,6 +318,7 @@ fn compose_startup_splash(
                         frame.frame_height as usize,
                         origin_x,
                         origin_y,
+                        RgbaBlend::Copy,
                     );
                 }
             }
@@ -419,6 +412,149 @@ fn paint_startup_text(
     );
 }
 
+#[cfg(any(target_os = "ios", target_os = "macos", test))]
+fn compose_branded_startup_splash(
+    csf: Option<&CsfFile>,
+    font: &FntFile,
+    width: u32,
+    height: u32,
+) -> Result<Vec<u8>> {
+    const ROWS: u32 = 13;
+    const LINE_HEIGHT: u32 = 15;
+    #[cfg(any(target_os = "ios", target_os = "macos"))]
+    let mut rasterizer = crate::render::bit_font::UiGlyphRasterizer::new(font.bitmap_rows)
+        .context("create WERHD startup text rasterizer")?;
+    #[cfg(any(target_os = "ios", target_os = "macos"))]
+    let mut rasterize = |codepoint, width| rasterizer.glyph(codepoint, width);
+    #[cfg(not(any(target_os = "ios", target_os = "macos")))]
+    let mut rasterize = |_, _| None;
+    let column_width = (width.saturating_sub(40)) / 2;
+    let disclaimer = wrap_footer_lines(font, &WERHD_DISCLAIMER, column_width, ROWS);
+    let copyright = wrap_footer_lines(font, &WERHD_COPYRIGHT, column_width, ROWS);
+    let footer_height =
+        (disclaimer.len().max(copyright.len()) as u32 * LINE_HEIGHT + 20).min(height / 3);
+    let art_height = height - footer_height;
+    let art_width = (art_height * 4 / 3).min(width);
+    let art_height = art_width * 3 / 4;
+    let art_x = (width - art_width) / 2;
+    let art_y = (height - footer_height - art_height) / 2;
+    let image = image::load_from_memory_with_format(
+        include_bytes!("../../../art/branding/werhd-loading.png"),
+        image::ImageFormat::Png,
+    )
+    .context("decode built-in WERHD startup loading image")?
+    // Remove the generated cyan edge before resampling; retain the 4:3 art.
+    .crop_imm(4, 3, 1440, 1080)
+    .resize_exact(art_width, art_height, image::imageops::FilterType::Lanczos3)
+    .into_rgba8();
+    let mut canvas = vec![0; width as usize * height as usize * 4];
+    for pixel in canvas.chunks_exact_mut(4) {
+        pixel[3] = 255;
+    }
+    blit_rgba_clipped(
+        &mut canvas,
+        width as usize,
+        height as usize,
+        image.as_raw(),
+        art_width as usize,
+        art_height as usize,
+        art_x as i32,
+        art_y as i32,
+        RgbaBlend::SourceOver,
+    );
+    let loading = csf_text(csf, LOADING_KEY, LOADING_FALLBACK);
+    draw_text_with_rasterizer(
+        &mut canvas,
+        width as usize,
+        height as usize,
+        font,
+        &loading,
+        art_x as i32 + 10,
+        (art_y + art_height) as i32 - font.cell_height as i32 - 6,
+        &mut rasterize,
+    );
+    // Like the web splash: independent left/right blocks, bottom-aligned,
+    // with 10px outer margins. Reserve their space rather than covering art.
+    for (lines, right_aligned) in [(&disclaimer, false), (&copyright, true)] {
+        let first_y = height as i32 - 10 - lines.len() as i32 * LINE_HEIGHT as i32;
+        for (index, line) in lines.iter().enumerate() {
+            let line_width = scaled_footer_width(font, line, ROWS);
+            let x = if right_aligned {
+                width as i32 - 10 - line_width as i32
+            } else {
+                10
+            };
+            let source_width = font.text_width(line).max(1);
+            let source_rows = u32::from(font.bitmap_rows).max(1);
+            // Keep straight-alpha mask RGB white even where coverage is zero;
+            // Lanczos must interpolate coverage without darkening it twice.
+            let mut bitmap = vec![255; source_width as usize * source_rows as usize * 4];
+            for pixel in bitmap.chunks_exact_mut(4) {
+                pixel[3] = 0;
+            }
+            draw_text_with_rasterizer(
+                &mut bitmap,
+                source_width as usize,
+                source_rows as usize,
+                font,
+                line,
+                0,
+                0,
+                &mut rasterize,
+            );
+            let image = image::RgbaImage::from_raw(source_width, source_rows, bitmap)
+                .expect("footer text buffer dimensions");
+            let image = image::imageops::resize(
+                &image,
+                line_width.max(1),
+                ROWS,
+                image::imageops::FilterType::Lanczos3,
+            );
+            blit_rgba_clipped(
+                &mut canvas,
+                width as usize,
+                height as usize,
+                image.as_raw(),
+                image.width() as usize,
+                image.height() as usize,
+                x,
+                first_y + index as i32 * LINE_HEIGHT as i32,
+                RgbaBlend::SourceOver,
+            );
+        }
+    }
+    Ok(canvas)
+}
+
+#[cfg(any(target_os = "ios", target_os = "macos", test))]
+fn scaled_footer_width(font: &FntFile, text: &str, rows: u32) -> u32 {
+    (font.text_width(text) * rows).div_ceil(u32::from(font.bitmap_rows).max(1))
+}
+
+#[cfg(any(target_os = "ios", target_os = "macos", test))]
+fn wrap_footer_lines(font: &FntFile, paragraphs: &[&str], width: u32, rows: u32) -> Vec<String> {
+    let mut lines = Vec::new();
+    for paragraph in paragraphs {
+        let mut line = String::new();
+        for ch in paragraph.chars() {
+            let previous_len = line.len();
+            line.push(ch);
+            if previous_len > 0 && scaled_footer_width(font, &line, rows) > width {
+                let split = line[..previous_len]
+                    .rfind(' ')
+                    .filter(|index| *index > 0)
+                    .unwrap_or(previous_len);
+                lines.push(line[..split].trim_end().to_owned());
+                line = line[split..].trim_start().to_owned();
+            }
+        }
+        if !line.is_empty() {
+            lines.push(line);
+        }
+    }
+    lines
+}
+
 fn centered_offset(client_extent: i32, art_extent: i32) -> i32 {
     (client_extent - art_extent) / 2
 }
@@ -430,6 +566,33 @@ fn csf_text<'a>(csf: Option<&'a CsfFile>, key: &str, fallback: &'a str) -> Strin
     }
 }
 
+#[derive(Clone, Copy)]
+enum RgbaBlend {
+    Copy,
+    SourceOver,
+}
+
+// Both buffers use straight alpha. The startup canvas is opaque, while a
+// footer mask starts transparent and is composited onto it after resampling.
+fn source_over_rgba(destination: &mut [u8], source: &[u8]) {
+    let source_alpha = u32::from(source[3]);
+    if source_alpha == 0 {
+        return;
+    }
+    if source_alpha == 255 {
+        destination.copy_from_slice(source);
+        return;
+    }
+    let retained_alpha = u32::from(destination[3]) * (255 - source_alpha);
+    let alpha_numerator = source_alpha * 255 + retained_alpha;
+    for channel in 0..3 {
+        let color_numerator = u32::from(source[channel]) * source_alpha * 255
+            + u32::from(destination[channel]) * retained_alpha;
+        destination[channel] = ((color_numerator + alpha_numerator / 2) / alpha_numerator) as u8;
+    }
+    destination[3] = ((alpha_numerator + 127) / 255) as u8;
+}
+
 fn blit_rgba_clipped(
     destination: &mut [u8],
     destination_width: usize,
@@ -439,6 +602,7 @@ fn blit_rgba_clipped(
     source_height: usize,
     destination_x: i32,
     destination_y: i32,
+    blend: RgbaBlend,
 ) {
     for source_y in 0..source_height {
         let target_y = destination_y + source_y as i32;
@@ -457,8 +621,12 @@ fn blit_rgba_clipped(
             }
             let destination_offset =
                 (target_y as usize * destination_width + target_x as usize) * 4;
-            destination[destination_offset..destination_offset + 4]
-                .copy_from_slice(&source[source_offset..source_offset + 4]);
+            let destination = &mut destination[destination_offset..destination_offset + 4];
+            let source = &source[source_offset..source_offset + 4];
+            match blend {
+                RgbaBlend::Copy => destination.copy_from_slice(source),
+                RgbaBlend::SourceOver => source_over_rgba(destination, source),
+            }
         }
     }
 }
@@ -472,6 +640,28 @@ fn draw_text(
     x: i32,
     y: i32,
 ) {
+    draw_text_with_rasterizer(
+        canvas,
+        canvas_width,
+        canvas_height,
+        font,
+        text,
+        x,
+        y,
+        &mut |_, _| None,
+    );
+}
+
+fn draw_text_with_rasterizer(
+    canvas: &mut [u8],
+    canvas_width: usize,
+    canvas_height: usize,
+    font: &FntFile,
+    text: &str,
+    x: i32,
+    y: i32,
+    rasterize: &mut impl FnMut(u16, u32) -> Option<Vec<u8>>,
+) {
     let mut cursor_x = x;
     for ch in text.chars() {
         let codepoint = ch as u32;
@@ -481,6 +671,8 @@ fn draw_text(
         let Some(glyph) = font.glyph(codepoint as u16) else {
             continue;
         };
+        let modern = rasterize(codepoint as u16, glyph.width);
+        let pixels = modern.as_deref().unwrap_or(&glyph.rgba);
         for glyph_y in 0..font.bitmap_rows as usize {
             let target_y = y + glyph_y as i32;
             if !(0..canvas_height as i32).contains(&target_y) {
@@ -492,11 +684,21 @@ fn draw_text(
                     continue;
                 }
                 let glyph_offset = (glyph_y * glyph.width as usize + glyph_x) * 4;
-                if glyph.rgba.get(glyph_offset + 3).copied().unwrap_or(0) == 0 {
+                let alpha = pixels.get(glyph_offset + 3).copied().unwrap_or(0);
+                if alpha == 0 {
                     continue;
                 }
                 let canvas_offset = (target_y as usize * canvas_width + target_x as usize) * 4;
-                canvas[canvas_offset..canvas_offset + 4].copy_from_slice(&TEXT_COLOR);
+                let destination = &mut canvas[canvas_offset..canvas_offset + 4];
+                if modern.is_some() {
+                    source_over_rgba(
+                        destination,
+                        &[TEXT_COLOR[0], TEXT_COLOR[1], TEXT_COLOR[2], alpha],
+                    );
+                } else {
+                    // Preserve the retail FNT's original binary-mask drawing.
+                    destination.copy_from_slice(&TEXT_COLOR);
+                }
             }
         }
         cursor_x += glyph.width as i32 + 1;
@@ -507,6 +709,18 @@ fn draw_text(
 mod tests {
     use super::*;
     use crate::assets::asset_manager::MediaArchiveMode;
+
+    fn two_pixel_test_font() -> FntFile {
+        const HEADER_BYTES: usize = 28;
+        const LOOKUP_BYTES: usize = 65_536 * 2;
+        let mut data = vec![0; HEADER_BYTES + LOOKUP_BYTES + 2];
+        for (index, word) in [0x546e_6f66_u32, 20, 1, 1, 2, 1, 2].into_iter().enumerate() {
+            data[index * 4..index * 4 + 4].copy_from_slice(&word.to_le_bytes());
+        }
+        data[HEADER_BYTES + usize::from(b'A') * 2] = 1;
+        data[HEADER_BYTES + LOOKUP_BYTES..].copy_from_slice(&[2, 0x80]);
+        FntFile::from_bytes(&data).expect("two-pixel FNT fixture")
+    }
 
     fn compare_composed_splash_to_retail_shape(
         assets: &AssetManager,
@@ -624,9 +838,68 @@ mod tests {
         let source = vec![
             10, 20, 30, 255, 40, 50, 60, 0, 70, 80, 90, 255, 100, 110, 120, 255,
         ];
-        blit_rgba_clipped(&mut destination, 2, 2, &source, 2, 2, -1, 0);
+        blit_rgba_clipped(
+            &mut destination,
+            2,
+            2,
+            &source,
+            2,
+            2,
+            -1,
+            0,
+            RgbaBlend::Copy,
+        );
         assert_eq!(&destination[0..4], &[0, 0, 0, 255]);
         assert_eq!(&destination[8..12], &[100, 110, 120, 255]);
+    }
+
+    #[test]
+    fn modern_splash_text_blends_over_art_while_retail_keeps_its_binary_mask() {
+        let font = two_pixel_test_font();
+        let original = [20, 40, 80, 255, 30, 60, 90, 255];
+        let mut modern = original;
+        draw_text_with_rasterizer(&mut modern, 2, 1, &font, "A", 0, 0, &mut |_, _| {
+            Some(vec![255, 255, 255, 128, 255, 255, 255, 0])
+        });
+        assert_eq!(&modern[..4], &[138, 148, 168, 255]);
+        assert_eq!(&modern[4..], &original[4..]);
+
+        let mut retail = original;
+        draw_text(&mut retail, 2, 1, &font, "A", 0, 0);
+        assert_eq!(&retail[..4], &TEXT_COLOR);
+        assert_eq!(&retail[4..], &original[4..]);
+    }
+
+    #[test]
+    fn resized_footer_mask_applies_coverage_once_and_keeps_canvas_opaque() {
+        let font = two_pixel_test_font();
+        let mut mask = [255, 255, 255, 0, 255, 255, 255, 0];
+        draw_text_with_rasterizer(&mut mask, 2, 1, &font, "A", 0, 0, &mut |_, _| {
+            Some(vec![255, 255, 255, 128, 255, 255, 255, 0])
+        });
+        let image = image::RgbaImage::from_raw(2, 1, mask.to_vec()).expect("footer mask");
+        let image = image::imageops::resize(&image, 13, 1, image::imageops::FilterType::Lanczos3);
+        assert!(image.pixels().any(|pixel| (1..255).contains(&pixel[3])));
+        assert!(image.pixels().all(|pixel| pixel.0[..3] == [255; 3]));
+
+        let mut canvas = [0; 13 * 4];
+        for pixel in canvas.chunks_exact_mut(4) {
+            pixel[3] = 255;
+        }
+        blit_rgba_clipped(
+            &mut canvas,
+            13,
+            1,
+            image.as_raw(),
+            13,
+            1,
+            0,
+            0,
+            RgbaBlend::SourceOver,
+        );
+        for (source, actual) in image.pixels().zip(canvas.chunks_exact(4)) {
+            assert_eq!(actual, &[source[3], source[3], source[3], 255]);
+        }
     }
 
     #[test]
@@ -659,6 +932,31 @@ mod tests {
             assert!(white_loading_pixels > 0, "missing small art retains text");
         } else {
             compare_composed_splash_to_retail_shape(&assets, &font, YR_SPLASH, 640, 480);
+        }
+
+        // The web copy includes Chinese and long mixed-language lines. Verify
+        // it fits both shell sizes with the real localized font, without
+        // clipping either footer column or growing into the reserved artwork.
+        for (width, height) in [(640, 480), (800, 600)] {
+            let column_width = (width - 40) / 2;
+            let mut max_lines = 0;
+            for paragraphs in [&WERHD_DISCLAIMER[..], &WERHD_COPYRIGHT[..]] {
+                for ch in paragraphs.iter().flat_map(|line| line.chars()) {
+                    assert!(font.glyph(ch as u16).is_some(), "missing footer glyph {ch}");
+                }
+                let lines = wrap_footer_lines(&font, paragraphs, column_width, 13);
+                max_lines = max_lines.max(lines.len());
+                assert!(
+                    lines
+                        .iter()
+                        .all(|line| { scaled_footer_width(&font, line, 13) <= column_width })
+                );
+            }
+            assert!(max_lines as u32 * 15 + 20 <= height / 3);
+            let branded = compose_branded_startup_splash(None, &font, width, height)
+                .expect("compose approved Apple splash with web footer");
+            assert_eq!(branded.len(), width as usize * height as usize * 4);
+            assert!(branded.chunks_exact(4).all(|pixel| pixel[3] == 255));
         }
     }
 

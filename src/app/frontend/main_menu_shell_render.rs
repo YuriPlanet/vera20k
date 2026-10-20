@@ -163,6 +163,14 @@ fn main_menu_status_csf_key(hovered_button: Option<MainMenuControlId>) -> Option
     hovered_button.map(tooltip_csf_key_for_control)
 }
 
+fn main_menu_button_text(state: &AppState, id: MainMenuControlId) -> std::borrow::Cow<'_, str> {
+    if shell_layout::uses_branded_main_menu(state) && id == MainMenuControlId::MoviesAndCredits0x686
+    {
+        return "访问官网".into();
+    }
+    resolve_csf(state, csf_key_for_control(id))
+}
+
 /// Path-A tint for a right-panel kind-1 static (heading `0x694`, status line
 /// `0x695`): yellow text with a white highlight trail.
 pub(crate) fn shell_reveal_path_a(window: Kind1RevealWindow) -> PathAReveal {
@@ -193,7 +201,7 @@ fn main_menu_paint_labels<'a>(
     for button in layout.buttons.iter().filter(|_| captions) {
         let pressed = pressed_button == Some(button.id);
         out.push(PaintLabel {
-            text: resolve_csf(state, csf_key_for_control(button.id)),
+            text: main_menu_button_text(state, button.id),
             rect: owner_draw_button_label_rect(button.rect, pressed),
             align: button_align,
             rgb: SHELL_TEXT_RGB_ENABLED,
@@ -304,8 +312,8 @@ pub(crate) fn ensure_movie_for_current_layout(
     }
     clear_ra2ts_movie_session(state);
 
-    #[cfg(target_os = "ios")]
-    if state.platform.capture_client_size.is_none() {
+    #[cfg(any(target_os = "ios", target_os = "macos"))]
+    if shell_layout::uses_branded_main_menu(state) {
         let movie = crate::render::werhd_menu_movie::MenuMovieSurface::branded(
             &state.renderer.gpu,
             &state.renderer.batch_renderer,
@@ -544,9 +552,15 @@ fn render_main_menu_shell_to_target_inner(
             .frontend
             .main_menu_shell_state
             .hovered_owner_draw_button;
-        let status_text = main_menu_status_csf_key(hovered)
-            .map(|key| resolve_csf(state, key).into_owned())
-            .unwrap_or_default();
+        let status_text = if shell_layout::uses_branded_main_menu(state)
+            && hovered == Some(MainMenuControlId::MoviesAndCredits0x686)
+        {
+            "访问官网".to_string()
+        } else {
+            main_menu_status_csf_key(hovered)
+                .map(|key| resolve_csf(state, key).into_owned())
+                .unwrap_or_default()
+        };
         crate::app::frontend::menu_page_render::paint_shell_status_line(
             state,
             status_text,
@@ -614,11 +628,15 @@ fn render_main_menu_shell_to_target_inner(
         Instant::now(),
         None,
     );
-    let version_text = format!(
-        "{} {}",
-        resolve_csf(state, "GUI:Version"),
-        state.frontend.version_txt
-    );
+    let version_text = if shell_layout::uses_branded_main_menu(state) {
+        "V1.0".to_string()
+    } else {
+        format!(
+            "{} {}",
+            resolve_csf(state, "GUI:Version"),
+            state.frontend.version_txt
+        )
+    };
     let pressed = state
         .frontend
         .main_menu_shell_state

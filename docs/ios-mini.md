@@ -202,7 +202,7 @@ world-gesture and editor anchors stay independent of that bottom-button offset.
 
 ### Typography and WERHD branding
 
-Interactive iOS text uses Fira Sans Condensed Medium with CoreText's Chinese
+Interactive iOS and macOS text uses Fira Sans Condensed Medium with CoreText's Chinese
 Medium sans-serif fallback, matching WERHD's main 500-weight web font stack.
 The shared antialiased atlas retains the existing GAME.FNT widths, line height,
 spacing and wrapping. The font and its license are in `art/fonts`.
@@ -210,13 +210,28 @@ spacing and wrapping. The font and its license are in `art/fonts`.
 The startup image uses the approved yellow milk-frog artwork with the original
 Yuri low-angle composition and silver 王二火大 crest. The menu preserves the
 original Yuri movie with that crest overlaid. Their sources, hashes and lossless
-frame conversion are documented in `art/branding`. The startup loading label sits
-at the lower left above the legal notices, clear of both logos.
+frame conversion are documented in `art/branding`. The startup uses the web
+project's Chinese copyright and fan-project disclaimer in separate bottom
+columns. Their footer space is reserved below the complete 4:3 artwork, and the
+loading label stays in its lower-left corner, clear of both logos.
 Country-specific loading screens and other full-screen movies
-keep their original sources. Desktop and retail captures retain the bitmap font
-and original artwork paths.
+keep their original sources. Retail captures retain the bitmap font and
+original artwork paths.
+
+The interactive iOS/macOS main menu hides Internet, keeps Network, and compacts the
+remaining top buttons. The Movies and Credits slot becomes 访问官网 and opens
+`https://youlidefuchou.com` in the system browser without leaving the menu's
+state. Its displayed version is exactly `V1.0`. The same visible control list
+drives painting, pointer activation and the entry/exit animation.
 
 Validate launch, visible menu, menu touch navigation, map load, and a rendered
 skirmish separately on the connected physical phone. Touch controls, playability,
 memory under a sustained battle, and suspend/resume are separate from this initial
 menu-and-map milestone.
+
+### macOS local preview
+
+The ordinary macOS client shares the approved startup picture, branded menu
+loop, Medium font, V1.0 label and website menu with iOS. Retail capture mode
+retains its original artwork, font and controls. Touch-only battle controls
+remain on iOS; macOS uses its existing mouse and keyboard controls.

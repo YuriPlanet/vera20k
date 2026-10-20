@@ -17,9 +17,12 @@ use crate::assets::fnt_file::{FntFile, FntGlyph};
 use crate::render::batch::{BatchRenderer, BatchTexture, SpriteInstance};
 use crate::render::shell_text_reveal::{PathAReveal, encoded_unit_rgb};
 
-#[cfg(any(target_os = "ios", all(test, target_os = "macos")))]
+#[cfg(any(target_os = "ios", target_os = "macos"))]
 #[path = "bit_font_ios.rs"]
 mod ios;
+
+#[cfg(any(target_os = "ios", target_os = "macos"))]
+pub(crate) use ios::Rasterizer as UiGlyphRasterizer;
 
 /// Hardcoded inter-glyph spacing.
 pub const CHAR_SPACING: u32 = 1;
@@ -619,7 +622,7 @@ impl BitFont {
         Self::from_fnt_with_rasterizer(device, queue, batch, fnt, None)
     }
 
-    /// The ordinary iOS UI uses the web client's Medium sans-serif faces while
+    /// The ordinary iOS/macOS UI uses the web client's Medium sans-serif faces while
     /// retaining GAME.FNT's advances, line height, spacing and wrapping. A sealed
     /// retail capture must pass `false`, so its atlas still identifies the exact
     /// retail bytes. Other platforms keep the established bitmap font.
@@ -630,16 +633,16 @@ impl BitFont {
         fnt: &FntFile,
         modern: bool,
     ) -> Self {
-        #[cfg(target_os = "ios")]
+        #[cfg(any(target_os = "ios", target_os = "macos"))]
         if modern {
             if let Some(mut rasterizer) = ios::Rasterizer::new(fnt.bitmap_rows) {
-                log::info!("iOS UI font faces: {:?}", rasterizer.face_names());
+                log::info!("WERHD UI font faces: {:?}", rasterizer.face_names());
                 let mut draw = |cp, width| rasterizer.glyph(cp, width);
                 return Self::from_fnt_with_rasterizer(device, queue, batch, fnt, Some(&mut draw));
             }
-            log::warn!("iOS UI font unavailable; retaining GAME.FNT glyphs");
+            log::warn!("WERHD UI font unavailable; retaining GAME.FNT glyphs");
         }
-        #[cfg(not(target_os = "ios"))]
+        #[cfg(not(any(target_os = "ios", target_os = "macos")))]
         let _ = modern;
         Self::from_fnt(device, queue, batch, fnt)
     }

@@ -1,4 +1,4 @@
-# Approved WERHD artwork for the iOS client
+# Approved WERHD artwork for the iOS and macOS clients
 
 These custom assets were reviewed as images and a complete video preview before
 the user approved game integration on 2026-10-20. They replace the earlier direct
@@ -10,7 +10,7 @@ reuse of the web project's startup image and menu video.
   helmet rings. The title is 王二火大, above it 全平台即时战略 / 合家欢游戏;
   the lower-right wordmark is 尤里的复仇 / YOULIDEFUCHOU.COM. SHA-256:
   `57fac5c77a9ccc8b8962d390141fe164fe9393d9f7c48a38e92d8e52b7901358`.
-  iOS takes the inner `(4,3,1440,1080)` rectangle before scaling: this removes
+  iOS/macOS takes the inner `(4,3,1440,1080)` rectangle before scaling: this removes
   the generated 2-3px cyan outer edge while preserving the 4:3 composition.
 - `werhd-menu-logo.png`: the approved silver winged crest extracted with
   image_gen as a transparent PNG for the menu overlay. It retains both gold
@@ -43,11 +43,15 @@ Concatenated decoded RGBA SHA-256:
 `81c3279506f84de3dad9ae2e4d8cc979eb894187cb4acfdcb3d8c8c00e81e054`.
 
 The player borrows the compressed archive and keeps one restored frame, with a
-temporary second frame during decoding. This replaces interactive iOS startup
+temporary second frame during decoding. This replaces interactive iOS/macOS startup
 and menu artwork only. Country loading images, other fullscreen/campaign movies,
-desktop and retail capture sources retain their existing paths. Startup legal
-notices remain; the loading label moves to the lower left above those notices to
-leave the approved crest clear.
+retail capture and other-platform sources retain their existing paths. The startup
+footer matches `ra2web-werhd/public/res/locale/zh-CN.json`'s copyright, brand and
+fan-project disclaimer text. Left/right blocks are bottom-aligned with 10px
+margins, at 13px text height using the same CoreText Medium glyph rasterizer as
+the in-game UI; long lines wrap within their own columns. Their
+space is reserved below the complete 4:3 picture so both logos remain clear. The
+loading label stays in the picture's lower-left corner.
 
 Format: `VWMV0001`, six little-endian u32 values (width, height, FPS numerator,
 FPS denominator, frame count, key interval), then frame-count-plus-one u64

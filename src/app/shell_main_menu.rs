@@ -1,5 +1,87 @@
 use super::*;
 
+#[cfg(target_os = "ios")]
+#[path = "ios_main_menu_url.rs"]
+mod ios_main_menu_url;
+
+#[cfg(target_os = "macos")]
+#[path = "macos_main_menu_url.rs"]
+mod macos_main_menu_url;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum InlineMainMenuAction {
+    Ignore,
+    Website,
+}
+
+/// App-specific branded menu results stay on this dialog; all retail results keep the
+/// existing teardown/transition route. The hidden Internet result is inert even
+/// if a future keyboard shortcut invokes it directly.
+fn inline_main_menu_action(
+    branded_menu: bool,
+    action: crate::ui::main_menu_shell::MainMenuShellAction,
+) -> Option<InlineMainMenuAction> {
+    use crate::ui::main_menu_shell::MainMenuShellAction;
+    if !branded_menu {
+        return None;
+    }
+    match action {
+        MainMenuShellAction::WwOnline => Some(InlineMainMenuAction::Ignore),
+        MainMenuShellAction::MoviesAndCredits => Some(InlineMainMenuAction::Website),
+        _ => None,
+    }
+}
+
+#[cfg(test)]
+mod branded_menu_tests {
+    use super::{App, InlineMainMenuAction, inline_main_menu_action};
+    use crate::ui::main_menu_shell::{
+        MainMenuControlId, action_for_control, compute_responsive_layout,
+    };
+    use crate::ui::shell::controller::DialogController;
+    use crate::ui::shell::descriptor::DialogId;
+
+    #[test]
+    fn compacted_website_button_activates_inline_only_for_branded_menu() {
+        for branded in [false, true] {
+            let layout = compute_responsive_layout(2532, 1170);
+            let layout = if branded {
+                layout.without_internet()
+            } else {
+                layout
+            };
+            let feed = App::main_menu_shell_button_feed(&layout);
+            let mut controller = DialogController::default();
+            controller.ensure_active(DialogId(0x00E2), false);
+            for id in [
+                MainMenuControlId::MoviesAndCredits0x686,
+                MainMenuControlId::Network0x578,
+            ] {
+                let rect = layout
+                    .buttons
+                    .iter()
+                    .find(|button| button.id == id)
+                    .unwrap()
+                    .rect;
+                let (x, y) = (rect.x + rect.w / 2, rect.y + rect.h / 2);
+                controller.on_pointer_down(x, y, &feed);
+                let activated = controller.on_pointer_up(x, y, &feed).unwrap();
+                let action =
+                    action_for_control(MainMenuControlId::from_resource_id(activated).unwrap());
+                let inline = inline_main_menu_action(branded, action);
+                if branded && id == MainMenuControlId::MoviesAndCredits0x686 {
+                    assert_eq!(inline, Some(InlineMainMenuAction::Website));
+                } else {
+                    assert_eq!(
+                        inline, None,
+                        "retail page and Network keep the normal route"
+                    );
+                }
+            }
+        }
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum MultiplayerSettingsContext {
     Options,
@@ -993,6 +1075,15 @@ impl App {
         {
             use crate::app::frontend::shell_transition::ShellExitThen;
             use crate::ui::main_menu_shell::MainMenuShellAction;
+            if inline_main_menu_action(
+                crate::app::frontend::shell_layout::uses_branded_main_menu(state),
+                action,
+            )
+            .is_some()
+            {
+                Self::handle_main_menu_shell_action(state, action);
+                return;
+            }
             match action {
                 // These results destroy 0xE2 (Exit's confirmation is state 6,
                 // shown over the empty shell backdrop).
@@ -1422,6 +1513,24 @@ impl App {
         action: crate::ui::main_menu_shell::MainMenuShellAction,
     ) {
         use crate::ui::main_menu_shell::MainMenuShellAction;
+
+        if let Some(inline) = inline_main_menu_action(
+            crate::app::frontend::shell_layout::uses_branded_main_menu(state),
+            action,
+        ) {
+            match inline {
+                InlineMainMenuAction::Ignore => {}
+                InlineMainMenuAction::Website => {
+                    #[cfg(target_os = "ios")]
+                    if !ios_main_menu_url::open_website() {
+                        log::warn!("Could not dispatch official-site URL to the system browser");
+                    }
+                    #[cfg(target_os = "macos")]
+                    macos_main_menu_url::open_website();
+                }
+            }
+            return;
+        }
 
         match action {
             MainMenuShellAction::None => {}

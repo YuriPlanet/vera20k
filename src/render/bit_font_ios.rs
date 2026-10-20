@@ -1,4 +1,4 @@
-//! iOS UI glyphs matching WERHD's `Fira Sans Condensed`, weight 500, and its
+//! Apple-platform UI glyphs matching WERHD's `Fira Sans Condensed`, weight 500, and its
 //! system sans-serif Chinese fallback. CoreText resolves the bundled Medium
 //! face's cascade; Apple fonts are used on-device and are never redistributed.
 //!
@@ -141,7 +141,7 @@ impl Drop for Owned {
     }
 }
 
-pub(super) struct Rasterizer {
+pub(crate) struct Rasterizer {
     latin: Owned,
     chinese: Owned,
     language: Owned,
@@ -161,7 +161,7 @@ impl Rasterizer {
         (face_name(self.latin.0), face_name(self.chinese.0))
     }
 
-    pub(super) fn new(rows: u32) -> Option<Self> {
+    pub(crate) fn new(rows: u32) -> Option<Self> {
         if rows == 0 {
             return None;
         }
@@ -217,7 +217,7 @@ impl Rasterizer {
         })
     }
 
-    pub(super) fn glyph(&mut self, codepoint: u16, width: u32) -> Option<Vec<u8>> {
+    pub(crate) fn glyph(&mut self, codepoint: u16, width: u32) -> Option<Vec<u8>> {
         if width == 0 || (0xd800..=0xdfff).contains(&codepoint) {
             return None;
         }
@@ -412,6 +412,9 @@ mod tests {
             ('Á', 8),
             ('遭', 14),
             ('设', 16),
+            ('声', 16),
+            ('权', 16),
+            ('项', 16),
             ('，', 16),
         ] {
             let rgba = font.glyph(ch as u16, width).unwrap();

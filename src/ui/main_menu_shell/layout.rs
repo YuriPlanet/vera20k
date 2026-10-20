@@ -56,9 +56,34 @@ pub struct MainMenuShellLayout {
     pub tooltip_line: RectPx,
     /// Static `0x71C` window rect (the animated SDWRNANM monitor).
     pub warning_monitor: RectPx,
-    pub buttons: [MainMenuButtonRect; 6],
+    pub buttons: Vec<MainMenuButtonRect>,
     pub right_panel: RightPanelRects,
     pub lower_strip: RectPx,
+}
+
+impl MainMenuShellLayout {
+    /// The branded menu omits Internet while retaining Network. Reuse the existing
+    /// row slots so painting and controller input compact the same controls;
+    /// Exit keeps its separate bottom anchor.
+    pub fn without_internet(mut self) -> Self {
+        let slots: Vec<_> = self
+            .buttons
+            .iter()
+            .filter(|button| button.id != MainMenuControlId::ExitGame0x3ee)
+            .map(|button| button.rect)
+            .collect();
+        self.buttons
+            .retain(|button| button.id != MainMenuControlId::WwOnline0x684);
+        for (button, slot) in self
+            .buttons
+            .iter_mut()
+            .filter(|button| button.id != MainMenuControlId::ExitGame0x3ee)
+            .zip(slots)
+        {
+            button.rect = slot;
+        }
+        self
+    }
 }
 
 fn movie_origin(screen_w: i32, screen_h: i32) -> (i32, i32) {
@@ -244,7 +269,7 @@ pub fn compute_layout(screen_w: u32, screen_h: u32) -> MainMenuShellLayout {
         version_line,
         tooltip_line,
         warning_monitor: rect_for(&laid, WARNING_MONITOR_CONTROL),
-        buttons: [
+        buttons: vec![
             MainMenuButtonRect {
                 id: MainMenuControlId::SinglePlayer0x683,
                 rect: rect_for(&laid, 0x0683),
@@ -319,6 +344,67 @@ pub fn compute_responsive_layout(screen_w: u32, screen_h: u32) -> MainMenuShellL
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn compact_branded_menu_keeps_painted_buttons_and_controller_hits_together() {
+        use crate::ui::shell::controller::{DialogController, ShellKey};
+        for (width, height) in [(800, 600), (1136, 640), (2532, 1170)] {
+            let original = if (width, height) == (800, 600) {
+                compute_layout(width, height)
+            } else {
+                compute_responsive_layout(width, height)
+            };
+            let compact = original.clone().without_internet();
+            assert_eq!(compact.buttons.len(), 5);
+            assert!(
+                !compact
+                    .buttons
+                    .iter()
+                    .any(|b| b.id == MainMenuControlId::WwOnline0x684)
+            );
+            assert_eq!(
+                compact.buttons.last(),
+                original.buttons.last(),
+                "Exit keeps its bottom anchor"
+            );
+            let feed: Vec<_> = compact
+                .buttons
+                .iter()
+                .map(|button| LaidOutControl {
+                    id: button.id.resource_id(),
+                    rect: button.rect,
+                })
+                .collect();
+            let mut controller = DialogController::default();
+            controller.ensure_active(DialogId(0x00E2), false);
+            for button in &compact.buttons {
+                let x = button.rect.x + button.rect.w / 2;
+                let y = button.rect.y + button.rect.h / 2;
+                controller.on_pointer_down(x, y, &feed);
+                assert_eq!(
+                    controller.on_pointer_up(x, y, &feed),
+                    Some(button.id.resource_id())
+                );
+            }
+            // The former Internet cell now activates Network; the vacated last
+            // top-row cell activates nothing, including through keyboard input.
+            let former_internet = original.buttons[1].rect;
+            let x = former_internet.x + former_internet.w / 2;
+            let y = former_internet.y + former_internet.h / 2;
+            controller.on_pointer_down(x, y, &feed);
+            assert_eq!(
+                controller.on_pointer_up(x, y, &feed),
+                Some(MainMenuControlId::Network0x578.resource_id())
+            );
+            let vacant = original.buttons[4].rect;
+            let x = vacant.x + vacant.w / 2;
+            let y = vacant.y + vacant.h / 2;
+            controller.on_pointer_down(x, y, &feed);
+            assert_eq!(controller.on_pointer_up(x, y, &feed), None);
+            assert!(!controller.on_key(ShellKey::Tab));
+            assert!(!controller.on_key(ShellKey::Enter));
+        }
+    }
 
     #[test]
     fn buttons_grid_snap_and_exit_special_case_800x600() {

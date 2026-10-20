@@ -123,6 +123,22 @@ impl ShellSlideKind {
     }
 }
 
+fn visible_main_menu_top_buttons(state: &AppState) -> u32 {
+    crate::app::frontend::shell_layout::main_menu_layout(state)
+        .buttons
+        .iter()
+        .filter(|button| button.id != crate::ui::main_menu_shell::MainMenuControlId::ExitGame0x3ee)
+        .count() as u32
+}
+
+fn column_with_visible_menu_buttons(kind: ShellSlideKind, rows: u32, count: u32) -> SlideColumn {
+    let mut column = kind.column(rows);
+    if kind == ShellSlideKind::MainMenu {
+        column.top_buttons = count;
+    }
+    column
+}
+
 /// Right-panel tile rows at the current surface size (`[0x00B0FA20]`).
 fn panel_rows(state: &AppState) -> u32 {
     // A fitted shell paints the scaled 800x600 column, so its slide must use
@@ -325,7 +341,11 @@ pub(crate) fn begin_shell_exit(state: &mut AppState, then: ShellExitThen) -> She
         kind,
     ) {
         ExitStartRule::Slide => {
-            let column = kind.column(panel_rows(state));
+            let column = column_with_visible_menu_buttons(
+                kind,
+                panel_rows(state),
+                visible_main_menu_top_buttons(state),
+            );
             state.frontend.shell_exit = Some(ShellExit {
                 wave: ShellFrameWave::new_slide_out(column, Instant::now()),
                 then,
@@ -435,6 +455,8 @@ enum ShellWaveCompletion {
 struct ShellLifecycleReducer<'a> {
     /// Right-panel tile rows for a new wave's column.
     panel_rows: u32,
+    /// Derived from the same visible layout used by painting and hit-testing.
+    main_menu_top_buttons: u32,
     active_shell: &'a mut Option<ShellSlideKind>,
     first_paint_slide: &'a mut Option<ShellFrameWave>,
     slide_generation: &'a mut u64,
@@ -448,6 +470,7 @@ impl<'a> ShellLifecycleReducer<'a> {
     fn from_state(state: &'a mut AppState) -> Self {
         Self {
             panel_rows: panel_rows(state),
+            main_menu_top_buttons: visible_main_menu_top_buttons(state),
             active_shell: &mut state.frontend.shell_slide_active_shell,
             first_paint_slide: &mut state.frontend.shell_first_paint_slide,
             slide_generation: &mut state.frontend.shell_slide_generation,
@@ -481,17 +504,19 @@ impl<'a> ShellLifecycleReducer<'a> {
                 *self.monitor = Default::default();
                 self.page_title.reset();
                 self.status_line.reset();
+                let column = column_with_visible_menu_buttons(
+                    kind,
+                    self.panel_rows,
+                    self.main_menu_top_buttons,
+                );
                 *self.first_paint_slide = Some(if kind == ShellSlideKind::MainMenu {
                     *self.slide_generation = self.slide_generation.wrapping_add(1);
                     if *self.slide_generation == 0 {
                         *self.slide_generation = 1;
                     }
-                    ShellFrameWave::new_presented_main_menu(
-                        *self.slide_generation,
-                        kind.column(self.panel_rows),
-                    )
+                    ShellFrameWave::new_presented_main_menu(*self.slide_generation, column)
                 } else {
-                    ShellFrameWave::new_first_paint_slide(kind.column(self.panel_rows), now)
+                    ShellFrameWave::new_first_paint_slide(column, now)
                 });
                 ShellEntryEffect::Started(kind)
             }
@@ -1359,6 +1384,7 @@ mod tests {
         // Open 0x100: 0xE2 is destroyed, but no 0x100 frame is allowed to run.
         ShellLifecycleReducer {
             panel_rows: 9,
+            main_menu_top_buttons: 5,
             active_shell: &mut active_shell,
             first_paint_slide: &mut first_paint_slide,
             slide_generation: &mut slide_generation,
@@ -1376,6 +1402,7 @@ mod tests {
         // Queued Back destroys 0x100 and recreates 0xE2 before the frame driver.
         ShellLifecycleReducer {
             panel_rows: 9,
+            main_menu_top_buttons: 5,
             active_shell: &mut active_shell,
             first_paint_slide: &mut first_paint_slide,
             slide_generation: &mut slide_generation,
@@ -1392,6 +1419,7 @@ mod tests {
         // wave or sound ever existed; exactly one fresh 0xE2 entry edge does.
         let effect = ShellLifecycleReducer {
             panel_rows: 9,
+            main_menu_top_buttons: 5,
             active_shell: &mut active_shell,
             first_paint_slide: &mut first_paint_slide,
             slide_generation: &mut slide_generation,
@@ -1453,6 +1481,7 @@ mod tests {
         assert!(
             ShellLifecycleReducer {
                 panel_rows: 9,
+                main_menu_top_buttons: 5,
                 active_shell: &mut active_shell,
                 first_paint_slide: &mut first_paint_slide,
                 slide_generation: &mut slide_generation,
@@ -1509,6 +1538,7 @@ mod tests {
         let later = t0 + Duration::from_secs(1);
         let effect = ShellLifecycleReducer {
             panel_rows: 9,
+            main_menu_top_buttons: 5,
             active_shell: &mut active_shell,
             first_paint_slide: &mut first_paint_slide,
             slide_generation: &mut slide_generation,
@@ -1565,6 +1595,7 @@ mod tests {
         assert!(
             !ShellLifecycleReducer {
                 panel_rows: 9,
+                main_menu_top_buttons: 5,
                 active_shell: &mut active_shell,
                 first_paint_slide: &mut first_paint_slide,
                 slide_generation: &mut slide_generation,
