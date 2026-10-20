@@ -4543,6 +4543,15 @@ impl RuleSet {
                 building.project_building_light(light);
             }
         }
+        for (name, upgrade) in processed.building_upgrade_states() {
+            if let Some(building) = rules
+                .object_list
+                .iter_mut()
+                .find(|o| o.category == ObjectCategory::Building && o.id == name)
+            {
+                building.project_building_upgrade(upgrade.clone());
+            }
+        }
         for (name, offset) in processed.building_target_coord_offsets() {
             if let Some(building) = rules
                 .object_list
@@ -5733,10 +5742,15 @@ impl RuleSet {
     /// slices and are not claimed by this hash yet.
     pub fn simulation_config_hash(&self) -> u64 {
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        // v28: include the Warhead Verses table retained across reached reads,
-        // which can differ for identical current source text.
-        b"rules-simulation-config-v28".hash(&mut hasher);
+        // v29: BuildingType upgrade inputs retain prior Rules-pass values.
+        b"rules-simulation-config-v29".hash(&mut hasher);
         self.source_ini_hash.hash(&mut hasher);
+        self.object_list
+            .iter()
+            .filter(|object| object.category == ObjectCategory::Building)
+            .map(|object| (object.id.to_ascii_uppercase(), object.building_upgrade()))
+            .collect::<BTreeMap<_, _>>()
+            .hash(&mut hasher);
         // UnitType747734 retains CarriesCrate across later absent/invalid
         // keys; equal current source text can still mean different cargo.
         self.object_list
@@ -6405,7 +6419,16 @@ impl RuleSet {
             let mut slots = self
                 .art_registry
                 .resolve_metadata_entry(&object.id, &object.image)
-                .map(|entry| entry.building_anims.iter().collect::<Vec<_>>())
+                .map(|entry| {
+                    entry
+                        .building_anims
+                        .iter()
+                        //0..2 are immutable asset declarations here. The
+                        // consumed PowerUp records live on BuildingUpgradeRules
+                        // and are hashed once with that retained Type state.
+                        .filter(|config| config.native_slot >= 3)
+                        .collect::<Vec<_>>()
+                })
                 .unwrap_or_default();
             slots.sort_by_key(|config| config.native_slot);
             slots.hash(hasher);
@@ -11297,6 +11320,14 @@ Projectile=Invisible
             make("[UNUSED]\nGateStages=99\n").simulation_config_hash(),
             original.simulation_config_hash(),
             "missing metadata and explicit constructor defaults are equivalent"
+        );
+        assert_eq!(
+            make(&format!(
+                "[BODY]\n{defaults}PowerUp1Anim=UNCONSUMED\nPowerUp1LocXX=123\n"
+            ))
+            .simulation_config_hash(),
+            original.simulation_config_hash(),
+            "flat PowerUp declarations cannot replace the retained Type inputs"
         );
         for changed in [
             "GateStages=-1\n",

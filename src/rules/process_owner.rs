@@ -354,7 +354,7 @@ impl NativeRulesProcessOwner {
     /// scenario has retired. While a match is live Simulation owns changes;
     /// this process owner receives them only for the next pre-reset Process.
     /// Each update identifies one exact-category, exact-case native stored ID.
-    /// All identities are validated before any TechLevel or scalar is changed.
+    /// All identities/slots are validated before any current field is changed.
     /// Ambient inputs survive Type reset; reached AudioVisual reads replace them.
     ///
     /// Native714570 reads the current field before Full_Init6876AC enters
@@ -365,13 +365,14 @@ impl NativeRulesProcessOwner {
         &mut self,
         updates: impl IntoIterator<Item = (ObjectCategory, String, i32)>,
         ambient_change: [Option<crate::util::native_x87::NativeF64Bits>; 2],
+        upgrade_art_names: impl IntoIterator<Item = (String, u8, String)>,
     ) -> Result<(), RulesError> {
         let mut registry = self
             .registry
             .take()
             .expect("native Rules registry transition may not be re-entered")
             .into_registry_state();
-        let result = registry.consume_outgoing_type_tech_levels(updates);
+        let result = registry.consume_outgoing_type_runtime_fields(updates, upgrade_art_names);
         if result.is_ok() {
             registry.consume_outgoing_ambient_change_inputs(ambient_change);
         }

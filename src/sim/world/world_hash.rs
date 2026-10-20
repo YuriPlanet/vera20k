@@ -618,6 +618,10 @@ impl Simulation {
         // map-read continuation. This is independent of Rust stable handles.
         self.native_unique_ids.hash(hasher);
         self.hash_type_tech_levels(hasher);
+        if !self.building_upgrade_art_names().is_empty() {
+            b"building-upgrade-type-art-v458".hash(hasher);
+            self.building_upgrade_art_names().hash(hasher);
+        }
         self.substrate.next_stable_object_id.hash(hasher);
         self.substrate.next_air_tracker_order.hash(hasher);
         // YR LogicClass trigger latches are save/lockstep state, even though
@@ -1552,10 +1556,21 @@ fn hash_entity(entity: &GameEntity, frame: u32, hasher: &mut StateHasher) {
         b"building-secret-production-v382".hash(hasher);
         production.hash(hasher);
     }
-    if entity.techno_ctor_random_word() != 0 || entity.structure_upgrade_link().is_some() {
+    if entity.techno_ctor_random_word() != 0 {
         b"techno-constructor-v1".hash(hasher);
         entity.techno_ctor_random_word().hash(hasher);
-        entity.structure_upgrade_link().hash(hasher);
+        // Preserve the previous no-upgrade hash stream.
+        Option::<u8>::None.hash(hasher);
+    }
+    if entity.building_upgrades().count() != 0
+        || entity
+            .building_upgrades()
+            .types()
+            .iter()
+            .any(Option::is_some)
+    {
+        b"building-installed-upgrades-v458".hash(hasher);
+        entity.building_upgrades().hash(hasher);
     }
     // One retained native+F8/+FC/+100/+108/+10C/+110 clock, shared
     // by Infantry, harvest/unload and Building animation receivers.

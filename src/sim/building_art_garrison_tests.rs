@@ -25,11 +25,12 @@ fn fixture(input: &Value) -> (Simulation, RuleSet, u64) {
         }
     }
     let mut rules_text = format!(
-        "[BuildingTypes]\n0=B\n[B]\nStrength={}\nCanBeOccupied=yes\nTechLevel=-1\n\
+        "[BuildingTypes]\n0=B\n[B]\nStrength={}\nCanBeOccupied=yes\nTechLevel=-1\nUpgrades=3\n\
          [InfantryTypes]\n0=E1\n[E1]\nStrength=100\nOccupier=yes\n[Animations]\n",
         integer(&input["strength"]),
     );
-    let mut art_text = String::from("[B]\nActiveAnim=OLD\n");
+    let mut art_text =
+        String::from("[B]\nActiveAnim=OLD\nPowerUp1Anim=OLD\nPowerUp2Anim=OLD\nPowerUp3Anim=OLD\n");
     for (index, name) in names.iter().enumerate() {
         rules_text.push_str(&format!("{index}={name}\n"));
         art_text.push_str(&format!("[{name}]\nLoopCount=-1\nRate=150\n"));
@@ -51,7 +52,12 @@ fn fixture(input: &Value) -> (Simulation, RuleSet, u64) {
         art.bind_anim_frame_count_for_test(name, 40);
     }
     let entry = art.get_mut("B").unwrap();
-    let template = entry.building_anims[0].clone();
+    let template = entry
+        .building_anims
+        .iter()
+        .find(|config| config.native_slot == 3)
+        .unwrap()
+        .clone();
     // Install the supplied native slot-presence controls with an identifiable
     // old animation. Requested names are installed after creation, so even an
     // empty normal name can test preservation of an already live slot.

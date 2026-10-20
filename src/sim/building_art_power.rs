@@ -189,7 +189,7 @@ mod tests {
         let ini = IniFile::from_str(&text);
         let mut rules = RuleSet::from_ini_with_fixed_art_for_test(
             &IniFile::from_str(&format!(
-                "[BuildingTypes]\n0=B\n[B]\nStrength={strength}\n{extra}\n[Animations]\n0=N\n1=D\n"
+                "[BuildingTypes]\n0=B\n[B]\nStrength={strength}\nUpgrades=3\n{extra}\n[Animations]\n0=N\n1=D\n"
             )),
             &ini,
         )

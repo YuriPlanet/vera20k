@@ -85,32 +85,6 @@ pub(crate) enum TechnoConstructorInit {
     PreconsumedGenerated(GeneratedTechnoInit),
 }
 
-/// Authored Building upgrades construct as distinct Technos, then Unlimbo at
-/// their host location. The host/slot association is persistent identity; the
-/// upgrade does not own a competing building footprint.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
-pub struct StructureUpgradeLink {
-    parent_stable_id: u64,
-    slot: u8,
-}
-
-impl StructureUpgradeLink {
-    /// The host building.
-    #[cfg(test)]
-    pub fn parent_stable_id(&self) -> u64 {
-        self.parent_stable_id
-    }
-
-    /// A fixture's link.
-    #[cfg(any(test, feature = "test-support"))]
-    pub(crate) fn for_test(parent_stable_id: u64, slot: u8) -> Self {
-        Self {
-            parent_stable_id,
-            slot,
-        }
-    }
-}
-
 /// Every game object (unit, infantry, building, aircraft) is one `GameEntity`.
 /// Core fields are always present; optional subsystems use `Option<T>`. A
 /// mechanism's own state is a record its module defines and alone writes
@@ -155,10 +129,10 @@ pub struct GameEntity {
     ///
     /// [`TechnoDiscoveryHistory`]: crate::sim::world::TechnoDiscoveryHistory
     pub discovery: crate::sim::world::TechnoDiscoveryHistory,
-    /// Authored structure-upgrade identity. `None` for ordinary Technos; the
-    /// authored upgrade's construction links it
-    /// ([`Self::link_structure_upgrade`]).
-    structure_upgrade_link: Option<StructureUpgradeLink>,
+    /// Building-owned upgrade count and installed type identities. Original
+    /// 4409E2 consumes the temporary Building and retains only its type here.
+    #[serde(default)]
+    building_upgrades: crate::sim::building_upgrades::BuildingUpgrades,
     /// World position in isometric cell coordinates + cached screen position.
     pub position: Position,
     /// The body heading, `TechnoClass+0x388` (PrimaryFacing), and its only
@@ -1058,17 +1032,30 @@ impl GameEntity {
         self.stage = stage;
     }
 
-    /// The authored upgrade's host and slot.
-    pub(crate) fn structure_upgrade_link(&self) -> Option<StructureUpgradeLink> {
-        self.structure_upgrade_link
+    pub fn building_upgrades(&self) -> &crate::sim::building_upgrades::BuildingUpgrades {
+        &self.building_upgrades
     }
 
-    /// An authored upgrade's construction links it to its host's slot.
-    pub(crate) fn link_structure_upgrade(&mut self, parent_stable_id: u64, slot: u8) {
-        self.structure_upgrade_link = Some(StructureUpgradeLink {
-            parent_stable_id,
-            slot,
-        });
+    pub(crate) fn advance_building_upgrade_level(&mut self, capacity: i32) -> bool {
+        self.building_upgrades.power_up(capacity)
+    }
+
+    pub(crate) fn commit_building_upgrade_type(&mut self, type_id: InternedId) {
+        self.building_upgrades.commit_type(type_id);
+    }
+
+    pub(crate) fn remove_building_upgrade_level(&mut self) -> Option<usize> {
+        self.building_upgrades.power_down()
+    }
+
+    #[cfg(any(test, feature = "test-support"))]
+    pub(crate) fn set_building_upgrades_for_test(
+        &mut self,
+        count: i8,
+        types: [Option<InternedId>; 3],
+    ) {
+        self.building_upgrades =
+            crate::sim::building_upgrades::BuildingUpgrades::fixture(count, types);
     }
 
     /// Invalidate the one live Foot path head. Native callers write
@@ -1465,7 +1452,7 @@ impl GameEntity {
             secret_lab_fallback: None,
             stage: crate::sim::stage::StageClass::constructed(construction_frame as i32),
             discovery: Default::default(),
-            structure_upgrade_link: None,
+            building_upgrades: crate::sim::building_upgrades::BuildingUpgrades::default(),
             position: Position::new(rx, ry, z, None, init_sub_x, init_sub_y),
             // The Unlimbo direction; the class constructor supplies the rate.
             body_facing: crate::sim::movement::FacingClass::new(u16::from(facing) << 8, 0),

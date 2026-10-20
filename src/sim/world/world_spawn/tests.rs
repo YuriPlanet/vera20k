@@ -2254,9 +2254,15 @@ fn generated_projection_validates_the_whole_table_before_any_mutation() {
 }
 
 #[test]
-fn techno_constructor_authored_upgrades_are_distinct_attached_live_entities_with_native_ids() {
+fn techno_constructor_authored_upgrades_consume_temporaries_with_native_ids() {
     let seed = 0xC701_0005;
-    let rules = constructor_rules();
+    let rules = RuleSet::from_ini(&IniFile::from_str(
+        "[BuildingTypes]\n0=BASE\n1=UP1\n2=UP2\n\
+         [BASE]\nStrength=500\nFoundation=2x2\nUpgrades=2\n\
+         [UP1]\nStrength=100\nPowersUpBuilding=BASE\n\
+         [UP2]\nStrength=100\nPowersUpBuilding=BASE\n",
+    ))
+    .unwrap();
     let mut sim = Simulation::with_seed(seed);
     sim.native_unique_ids = Some(
         crate::sim::native_identity::build_noncampaign_fresh_id_prefix(0, 0, 0, 0, 0, 0, 1, 1)
@@ -2284,6 +2290,11 @@ fn techno_constructor_authored_upgrades_are_distinct_attached_live_entities_with
         native_before.wrapping_add(1) as i32
     );
     assert!(parent.lifecycle.cell_marked());
+    assert_eq!(parent.building_upgrades().count(), 2);
+    assert_eq!(
+        *parent.building_upgrades().types(),
+        [sim.interner.get("UP1"), sim.interner.get("UP2"), None]
+    );
     for (stable_id, slot) in [(2, 0), (3, 1)] {
         let upgrade = sim.substrate.entities.get(stable_id).unwrap();
         assert_eq!(upgrade.techno_ctor_random_word(), words[slot + 1]);
@@ -2291,16 +2302,10 @@ fn techno_constructor_authored_upgrades_are_distinct_attached_live_entities_with
             upgrade.native_unique_id(),
             native_before.wrapping_add(slot as u32 + 2) as i32
         );
-        assert_eq!(
-            upgrade.structure_upgrade_link(),
-            Some(crate::sim::game_entity::StructureUpgradeLink::for_test(
-                1, slot as u8
-            ))
-        );
-        assert!(!upgrade.lifecycle.in_limbo());
+        assert!(!upgrade.lifecycle.object_alive());
+        assert!(upgrade.lifecycle.in_limbo());
         assert!(!upgrade.lifecycle.cell_marked());
-        assert!(upgrade.in_logic_vector.is_member());
-        assert_eq!((upgrade.position.rx(), upgrade.position.ry()), (10, 12));
+        assert!(!upgrade.in_logic_vector.is_member());
     }
     assert_eq!(sim.scenario_rng.logical_state(), expected.logical_state());
     assert_eq!(

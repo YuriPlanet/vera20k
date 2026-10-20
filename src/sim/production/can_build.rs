@@ -23,11 +23,6 @@
 //! - An infantry type with `VehicleThief=` also counts the house's units
 //!   that hold one of it (`UnitClass+0x338`); VERA has no hijacking, so the
 //!   count adds none.
-//! - Dormant in retail data: a prerequisite BuildingType with
-//!   `PowersUpBuilding=` (`+0xE88`) is met only when the house's last
-//!   building that is out of limbo, powered and not selling holds it as an
-//!   upgrade (`0x004F7DF8..0x004F7E4E`). VERA reads no upgrades and treats it
-//!   as any other BuildingType; no retail type sets the key.
 
 use crate::map::entities::EntityCategory;
 use crate::rules::object_type::{FactoryType, ObjectCategory, ObjectType};
@@ -163,8 +158,10 @@ pub(crate) fn can_build(
 /// `[General] Prerequisite*` list on the map (`HouseClass+0x5550` above
 /// zero), never by an empty list; `PROC` also by an on-map
 /// `PrerequisiteProcAlternate=` unit (`+0x5564`, `0x004F7DB0..0x004F7DCE`), a
-/// Slave Miner in retail. A BuildingType is met while its on-map count is not
-/// zero (`0x004F7E50..0x004F7E5E`).
+/// Slave Miner in retail. An ordinary BuildingType is met while its on-map
+/// count is not zero (`0x004F7E50..0x004F7E5E`). A BuildingType with nonempty
+/// `PowersUpBuilding=` instead asks only the last eligible House building's
+/// three installed types (`0x004F7DF8..0x004F7E4E`).
 fn prerequisite_on_map(
     sim: &Simulation,
     rules: &RuleSet,
@@ -172,7 +169,41 @@ fn prerequisite_on_map(
     entry: Prerequisite,
 ) -> bool {
     let group = match entry {
-        Prerequisite::Building(index) => return buildings_on_map(sim, rules, house, index) != 0,
+        Prerequisite::Building(index) => {
+            let Some(building_type) = rules.building_type_at(index) else {
+                return false;
+            };
+            if building_type.building_upgrade().host().is_none() {
+                return buildings_on_map(sim, rules, house, index) != 0;
+            }
+            let Some(type_id) = sim.interner.get(&building_type.id) else {
+                return false;
+            };
+            // Steam gamemd SHA256
+            // 3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600:
+            //4F7DF8..4F7E4E walks House+6C backwards, skips only limbo,
+            // offline and either Selling selector, then checks all three
+            // Building+5EC types. A miss stops; count/host type/HP are unread.
+            let selling = MissionId::from_known(MissionType::Selling);
+            return house
+                .base_projection()
+                .buildings()
+                .iter()
+                .rev()
+                .filter_map(|&id| sim.substrate.entities.get(id))
+                .find(|building| {
+                    !building.lifecycle.in_limbo()
+                        && building.building_online()
+                        && building.mission.current() != selling
+                        && building.mission.queued() != selling
+                })
+                .is_some_and(|building| {
+                    building
+                        .building_upgrades()
+                        .types()
+                        .contains(&Some(type_id))
+                });
+        }
         Prerequisite::Group(group) => group,
     };
     rules

@@ -465,11 +465,6 @@ pub enum PlacementEvidence {
     RejectedEarly,
     MarkFailed,
     MarkSucceeded,
-    /// BuildingClass map-reader upgrade construction reaches virtual Unlimbo
-    /// at the host coordinate, but the distinct upgrade object attaches to its
-    /// parent rather than competing for the parent's footprint. Native:
-    /// `BuildingClass::ReadFromINI @ 0x0044F820`, call at `0x0044FDB9`.
-    AttachedUpgrade,
     /// Run the modeled `ObjectClass::Reveal @ 0x005F4EC0` playfield admission
     /// and Mark(PUT) transaction. Production Unit Unlimbo uses this after its
     /// class-specific exact-zero CanEnter admission; fixed/runtime constructors
@@ -1169,11 +1164,6 @@ impl Simulation {
         if entity.lifecycle.cell_marked || request.placement == PlacementEvidence::RejectedEarly {
             return RevealOutcome::Failed(RevealFailure::RejectedEarly);
         }
-        if request.placement == PlacementEvidence::AttachedUpgrade
-            && entity.structure_upgrade_link().is_none()
-        {
-            return RevealOutcome::Failed(RevealFailure::RejectedEarly);
-        }
         if request.placement == PlacementEvidence::EvaluateMark
             && !self.object_placement_scope_active()
             && !self.reveal_position_is_in_playfield(request.position, context)
@@ -1226,14 +1216,11 @@ impl Simulation {
             return RevealOutcome::Failed(RevealFailure::MarkFailed);
         }
 
-        let attached_upgrade = request.placement == PlacementEvidence::AttachedUpgrade;
-        if !attached_upgrade {
-            if !self.mark_entity_put(stable_id, context) {
-                if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
-                    entity.lifecycle.in_limbo = true;
-                }
-                return RevealOutcome::Failed(RevealFailure::MarkFailed);
+        if !self.mark_entity_put(stable_id, context) {
+            if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
+                entity.lifecycle.in_limbo = true;
             }
+            return RevealOutcome::Failed(RevealFailure::MarkFailed);
         }
         // Techno6F6CB1 calls Object Unlimbo, and its failed return6F6CB8
         // precedes the +3D5 establishment at6F6CFE. Failed Mark retains the
@@ -1283,8 +1270,7 @@ impl Simulation {
         // idle mission, or a placed building's queued Construction. An
         // upgrade's Unlimbo attaches its type to the host and returns
         // (0x00440A1C..0x00440A2F) before TechnoClass::Unlimbo.
-        if !attached_upgrade
-            && let Some(rules) = context.rules
+        if let Some(rules) = context.rules
             && techno_alive_on_entry
         {
             #[cfg(any(test, feature = "test-support"))]
@@ -1507,62 +1493,60 @@ impl Simulation {
                 logic_registered: false,
             };
         }
-        if !attached_upgrade {
-            Self::mark_ai_repairable_at_unlimbo(
-                &self.session,
-                &mut self.substrate,
-                &self.houses,
-                stable_id,
-            );
-            // Building440D07: recompute from the PRE-append House+68. Failed
-            // Mark and the earlier dead/attached-upgrade arms never reach it.
-            if let Some(rules) = context.rules
-                && let Some(owner) = self
-                    .substrate
-                    .entities
-                    .get(stable_id)
-                    .filter(|entity| entity.category() == EntityCategory::Structure)
-                    .map(|entity| entity.owner())
-            {
-                self.recalculate_house_base_geometry(owner, rules);
-            }
-            // Building440D13: IncrementFactoryCount right after it.
-            Self::update_house_tracking(
-                &mut self.substrate,
-                &mut self.houses,
-                stable_id,
-                |tracking, entity| tracking.increment_factory_count(entity),
-            );
-            // Building440D1E, after IncrementFactoryCount and before +544.
-            if let Some(owner) = self
+        Self::mark_ai_repairable_at_unlimbo(
+            &self.session,
+            &mut self.substrate,
+            &self.houses,
+            stable_id,
+        );
+        // Building440D07: recompute from the PRE-append House+68. Failed
+        // Mark and the earlier dead arms never reach it.
+        if let Some(rules) = context.rules
+            && let Some(owner) = self
                 .substrate
                 .entities
                 .get(stable_id)
                 .filter(|entity| entity.category() == EntityCategory::Structure)
                 .map(|entity| entity.owner())
-            {
-                self.houses.request_house_tech_tree_recheck(owner);
-            }
-            self.append_live_build_const(stable_id);
-            Self::append_house_base_building(&self.substrate, &mut self.houses, stable_id);
-            if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
-                // Building440D2D, after native House building registration.
-                entity.reset_building_health_sample_at_unlimbo();
-            }
-            self.refresh_waypoint_edge_from_committed_structure(stable_id);
-            self.mark_building_base_reservation_with_arg(stable_id, false, context);
-            self.discover_building_owner_after_unlimbo(stable_id, context);
-            self.construct_spotlight(stable_id, context.rules());
-            if let Some(rules) = context.rules() {
-                // Unlimbo44119C clears this object's retained primary before
-                //448070 asks the owning house for another live primary.
-                self.production.clear_primary_factory(stable_id);
-                crate::sim::production::initialize_factory_primary(self, stable_id, rules);
-            }
-            //440E76's virtual discovery precedes the successful BasePlan
-            // tail at44159D..4415B3, including a reached first opening.
-            self.fill_base_plan_from_successful_building_unlimbo(stable_id);
+        {
+            self.recalculate_house_base_geometry(owner, rules);
         }
+        // Building440D13: IncrementFactoryCount right after it.
+        Self::update_house_tracking(
+            &mut self.substrate,
+            &mut self.houses,
+            stable_id,
+            |tracking, entity| tracking.increment_factory_count(entity),
+        );
+        // Building440D1E, after IncrementFactoryCount and before +544.
+        if let Some(owner) = self
+            .substrate
+            .entities
+            .get(stable_id)
+            .filter(|entity| entity.category() == EntityCategory::Structure)
+            .map(|entity| entity.owner())
+        {
+            self.houses.request_house_tech_tree_recheck(owner);
+        }
+        self.append_live_build_const(stable_id);
+        Self::append_house_base_building(&self.substrate, &mut self.houses, stable_id);
+        if let Some(entity) = self.substrate.entities.get_mut(stable_id) {
+            // Building440D2D, after native House building registration.
+            entity.reset_building_health_sample_at_unlimbo();
+        }
+        self.refresh_waypoint_edge_from_committed_structure(stable_id);
+        self.mark_building_base_reservation_with_arg(stable_id, false, context);
+        self.discover_building_owner_after_unlimbo(stable_id, context);
+        self.construct_spotlight(stable_id, context.rules());
+        if let Some(rules) = context.rules() {
+            // Unlimbo44119C clears this object's retained primary before
+            //448070 asks the owning house for another live primary.
+            self.production.clear_primary_factory(stable_id);
+            crate::sim::production::initialize_factory_primary(self, stable_id, rules);
+        }
+        //440E76's virtual discovery precedes the successful BasePlan
+        // tail at44159D..4415B3, including a reached first opening.
+        self.fill_base_plan_from_successful_building_unlimbo(stable_id);
         self.submit_entity_display(stable_id, context.rules, context.terrain());
         self.lifecycle_outputs
             .emit(LifecycleOutput::RevealDisplay { stable_id });
@@ -1575,9 +1559,8 @@ impl Simulation {
             false
         };
         // Building4415D8: successful normal Unlimbo after opening/base-plan.
-        // The early dead/failed/attached-upgrade paths do not reach this call.
-        if !attached_upgrade
-            && let Some(rules) = context.rules()
+        // The early dead/failed paths do not reach this call.
+        if let Some(rules) = context.rules()
             && let Some((owner, category)) = self
                 .substrate
                 .entities

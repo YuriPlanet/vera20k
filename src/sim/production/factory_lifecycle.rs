@@ -730,18 +730,23 @@ impl ReadyFactoryObject {
         self.entity_id
     }
 
-    /// Building Unlimbo/build-up/superweapon effects precede factory release.
-    pub(super) fn release_after_placement(
-        self,
-        sim: &mut Simulation,
-        rules: &RuleSet,
-        effects: FrameEffects<'_>,
-    ) {
+    /// Factory::CompletedProduction4CA1A0 precedes the placed object's radio C.
+    pub(super) fn complete_placement(&self, sim: &mut Simulation) {
         sim.production.factories_mut().complete_production(
             self.owner,
             self.category,
             sim.session.binary_frame(),
         );
+    }
+
+    /// HousePlace4FB2C7 abandons only AFTER radio C4FB2AD. A consumed upgrade
+    /// or wall still follows this tail; its pending object stays resolvable.
+    pub(super) fn abandon_after_placement(
+        self,
+        sim: &mut Simulation,
+        rules: &RuleSet,
+        effects: FrameEffects<'_>,
+    ) {
         // HousePlace4FB2C7 retains its original nonnegative index. Let
         // HouseAbandon's shared BuildCat0/NULL-held admission decide retention,
         // including a consumed wall whose entity has already expired.
@@ -761,21 +766,6 @@ impl ReadyFactoryObject {
             false,
             effects,
         );
-    }
-
-    /// Primary and autofill Unlimbos have queued their constructors. Release
-    /// Factory's retained completion token; the shared drain owns deletion.
-    /// Return the original facts so HousePlace can record after BuildingSlam and BREAK
-    /// (`0x004FB314`, `0x004FB4A6`, `0x004FB4B7`).
-    pub(super) fn release_consumed_wall(
-        self,
-        sim: &mut Simulation,
-        rules: &RuleSet,
-        effects: FrameEffects<'_>,
-    ) -> BuiltObject {
-        let object = BuiltObject::capture(sim, self.entity_id);
-        self.release_after_placement(sim, rules, effects);
-        object
     }
 }
 

@@ -1168,6 +1168,7 @@ fn pump_loading_after_present(state: &mut AppState) -> LoadingPump {
             native_rules_owner.consume_outgoing_scenario_rules(
                 runtime.simulation.retire_object_type_tech_levels(),
                 runtime.simulation.retire_ambient_change_inputs(),
+                runtime.simulation.retire_building_upgrade_art_names(),
             )?;
         }
         let load_result = {

@@ -1551,7 +1551,7 @@ mod tests {
     }
 
     #[test]
-    fn failed_mark_dead_and_attached_upgrade_unlimbo_do_not_publish_geometry() {
+    fn failed_mark_and_dead_unlimbo_do_not_publish_geometry() {
         use crate::sim::world::lifecycle::{
             PlacementEvidence, RevealOutcome, RevealPosition, RevealRequest, UninitContext,
         };
@@ -1565,7 +1565,6 @@ mod tests {
         for (index, placement) in [
             PlacementEvidence::MarkFailed,
             PlacementEvidence::MarkSucceeded,
-            PlacementEvidence::AttachedUpgrade,
         ]
         .into_iter()
         .enumerate()
@@ -1577,8 +1576,6 @@ mod tests {
             let entity = sim.substrate.entities.get_mut(id).unwrap();
             if index == 1 {
                 entity.lifecycle.set_object_alive_for_test(false);
-            } else if index == 2 {
-                entity.link_structure_upgrade(id - 1, 0);
             }
             let result = sim.try_reveal_entity_with_context(
                 id,

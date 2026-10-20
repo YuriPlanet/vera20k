@@ -625,7 +625,7 @@ impl Simulation {
                     // upgrade constructors even if a shared callback changed
                     // the parent owner. The raw authored name is not a key.
                     let original_owner = sim.interner.resolve(owner_id).to_owned();
-                    for (slot, upgrade_type) in map_ent.structure_upgrades.iter().enumerate() {
+                    for upgrade_type in &map_ent.structure_upgrades {
                         let Some(upgrade_type) = upgrade_type.as_deref() else {
                             continue;
                         };
@@ -634,17 +634,14 @@ impl Simulation {
                             .is_some_and(|object| object.category == ObjectCategory::Building);
                         if !valid_upgrade {
                             log::warn!(
-                                "Skipping unresolved authored upgrade {} in slot {} on {}",
+                                "Skipping unresolved authored upgrade {} on {}",
                                 upgrade_type,
-                                slot,
                                 map_ent.type_id
                             );
                             continue;
                         }
                         if sim
-                            .spawn_attached_map_upgrade(
-                                stable_id,
-                                slot as u8,
+                            .spawn_authored_building_upgrade(
                                 upgrade_type,
                                 &original_owner,
                                 map_ent.cell_x,
@@ -705,10 +702,94 @@ impl Simulation {
         Some(owner)
     }
 
-    fn spawn_attached_map_upgrade(
+    /// Building4408C8..4408DF asks Map4AA290/Cell47C5A0 with point(0,0),
+    /// then requires RTTI Building. GameActive admits the first Aircraft
+    /// before FindNearest; authored map loading precedes that startup flag.
+    /// Terrain fallback cannot supply the required Building result.
+    pub(crate) fn building_upgrade_host_at(
+        &self,
+        cell: (u16, u16),
+        game_active: bool,
+    ) -> Option<u64> {
+        use crate::sim::movement::locomotor::MovementLayer;
+        if game_active
+            && self
+                .cell_objects(cell, MovementLayer::Ground)
+                .any(|member| {
+                    matches!(member, crate::sim::occupancy::CellObjectMember::Entity(id)
+                    if self.substrate.entities.get(id)
+                        .is_some_and(|entity| entity.category() == EntityCategory::Aircraft))
+                })
+        {
+            return None;
+        }
+        self.nearest_cell_object(cell, MovementLayer::Ground, None)
+            .filter(|&id| {
+                self.substrate
+                    .entities
+                    .get(id)
+                    .is_some_and(|entity| entity.category() == EntityCategory::Structure)
+            })
+    }
+
+    /// Building440871..440A2F returns before Techno/Object Unlimbo. Neither
+    /// normal Cell clear-to-build nor Mark may run for an admitted upgrade.
+    /// Production and authored constructors share the same installation owner.
+    fn unlimbo_constructed_upgrade(
         &mut self,
-        parent_stable_id: u64,
-        slot: u8,
+        temporary: u64,
+        position: RevealPosition,
+        rules: Option<&RuleSet>,
+        registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
+        effects: FrameEffects<'_>,
+        game_active: bool,
+    ) -> Option<RevealOutcome> {
+        let rules = rules?;
+        let entity = self.substrate.entities.get(temporary)?;
+        if entity.category() != EntityCategory::Structure
+            || self
+                .object_type(entity.type_ref(), rules)?
+                .building_upgrade()
+                .host()
+                .is_none()
+        {
+            return None;
+        }
+        let [x, y] = crate::sim::movement::ground_pose::position_world_xy(&position);
+        // Building4405A5 always asks its class receiver. The ordinary upgrade
+        // arm does not use that answer to reject, but the lookup must retain
+        // its native shared-cell query order before4408C8 selects the host.
+        if let Some(terrain) = self.resolved_terrain.as_ref() {
+            let cells = crate::map::resolved_terrain::NativeCellQuery::canonical(terrain);
+            let _ = super::object_entry::classify_object(
+                self,
+                rules,
+                registry,
+                crate::sim::occupancy::CellObjectMember::Entity(temporary),
+                cells.lookup_world(x, y),
+                crate::sim::movement::infantry_entry::InfantryEntryArgs::REPAIR,
+            );
+        }
+        let host = self
+            .map_coord_cell(x, y)
+            .and_then(|cell| self.building_upgrade_host_at(cell, game_active));
+        let installed = host.is_some_and(|host| {
+            self.try_install_building_upgrade(
+                temporary,
+                host,
+                rules,
+                super::lifecycle::UninitContext::new(Some(rules), registry).with_effects(effects),
+            )
+        });
+        Some(if installed {
+            RevealOutcome::Consumed
+        } else {
+            RevealOutcome::Failed(super::lifecycle::RevealFailure::RejectedEarly)
+        })
+    }
+
+    fn spawn_authored_building_upgrade(
+        &mut self,
         type_id: &str,
         owner: &str,
         rx: u16,
@@ -727,23 +808,29 @@ impl Simulation {
             rules,
             crate::sim::world::FrameEffects::default(),
         )?;
-        {
-            let upgrade = self.substrate.entities.get_mut(stable_id)?;
-            upgrade.link_structure_upgrade(parent_stable_id, slot);
-        }
-        if self
-            .reveal_constructed_object_at_height(
-                stable_id,
-                rx,
-                ry,
-                facing,
-                z,
-                PlacementEvidence::AttachedUpgrade,
-                rules,
-                FrameEffects::default(),
-            )
-            .is_none()
-        {
+        // ReadBuildings44FD93..44FDB9 passes the host pose to the usual
+        // Building Unlimbo, without assigning a forced slot/level. Successful
+        // upgrades are consumed before the common Techno/Object Reveal.
+        let position = RevealPosition::new(
+            rx,
+            ry,
+            z,
+            None,
+            SimFixed::from_num(128),
+            SimFixed::from_num(128),
+        );
+        let (_, outcome) = self.unlimbo_constructed_parent(
+            stable_id,
+            position,
+            Some(rules),
+            None,
+            true,
+            FrameEffects::default(),
+        );
+        if !matches!(
+            outcome,
+            RevealOutcome::Revealed { .. } | RevealOutcome::Consumed
+        ) {
             self.discard_constructed_limbo(stable_id, Some(rules), FrameEffects::default());
             return None;
         }
@@ -1301,6 +1388,16 @@ impl Simulation {
         overlay_registry: Option<&crate::rules::overlay_types::OverlayTypeRegistry>,
         frame_effects: FrameEffects<'_>,
     ) -> Option<u64> {
+        if let Some(outcome) = self.unlimbo_constructed_upgrade(
+            stable_id,
+            requested_position,
+            Some(rules),
+            overlay_registry,
+            frame_effects,
+            true,
+        ) {
+            return (outcome == RevealOutcome::Consumed).then_some(stable_id);
+        }
         if let Some(outcome) = self.unlimbo_constructed_wall(
             stable_id,
             requested_position,
@@ -1911,6 +2008,16 @@ impl Simulation {
                     frame_effects,
                 )
             });
+        }
+        if let Some(outcome) = self.unlimbo_constructed_upgrade(
+            stable_id,
+            position,
+            rules,
+            overlay_registry,
+            frame_effects,
+            !scenario_initialization,
+        ) {
+            return (stable_id, outcome);
         }
         if let Some(outcome) = self.unlimbo_constructed_wall(
             stable_id,

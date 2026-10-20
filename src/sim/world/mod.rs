@@ -23,6 +23,7 @@ mod building_after_destruction;
 mod building_after_destruction_tests;
 pub(crate) mod building_anim;
 mod building_scatter;
+mod building_upgrade_art;
 mod camera_home;
 mod cell_content;
 mod crash;
@@ -689,8 +690,8 @@ pub enum SimSoundEvent {
     /// (`0x00449CC1..0x00449CE5`, once the pack-up animation has set
     /// `+0x6DD`): `TechnoClass+0x41A` (owner is the local player) and no
     /// `UndeploysInto=` (`Type+0x408`) — an undeploying building stays
-    /// silent. The upgrade-sale arm (`0x0044AB22..0x0044AB36`) is dormant in
-    /// retail data. App plays `EVA_StructureSold`.
+    /// silent. Each removed upgrade uses the same event at
+    /// `0x0044AB22..0x0044AB36`. App plays `EVA_StructureSold`.
     StructureSold { owner: InternedId },
     /// A sale order's click (`BuildingClass::Sell_Back @ 0x00447110`:
     /// `VocClass::PlayAtPos` of `[AudioVisual] GenericClick=`) for the
@@ -1078,6 +1079,10 @@ pub struct Simulation {
     /// Runtime TechnoType+634 writes; RuleSet remains the frozen read projection.
     #[serde(default)]
     type_tech_levels: TypeTechLevels,
+    /// Runtime BuildingType normal PowerUp animation names (44099B..4409C4).
+    /// Shared by all instances of the type; the upgrade/art owner mutates it.
+    #[serde(default)]
+    building_upgrade_art_names: crate::sim::building_upgrades::BuildingUpgradeArtNames,
     /// Pre-resolved `[CombatDamage]` warhead handles (F04). Built by
     /// `resolve_type_handles` beside the type table; rebuilt from rules on
     /// load. NOT serialized, NOT hashed. `None` until resolved.
@@ -3997,6 +4002,7 @@ impl Simulation {
             metallic_debris: Vec::new(),
             dirty_cells: Default::default(),
             power_states: Default::default(),
+            building_upgrade_art_names: Default::default(),
             super_weapons: Default::default(),
             lightning_storm: Default::default(),
             psychic_dominator: Default::default(),

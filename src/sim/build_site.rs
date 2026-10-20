@@ -252,8 +252,8 @@ pub(crate) enum Flush {
 /// and the placing `house`: over the foundation cells on the map
 /// (`MapClass::In_Bounds`), an overlay blocks (a `WallTower=` type may stand
 /// on GAWALL, `0x0045EF11..0x0045EF26`), and so does the cell's first object
-/// (`+0xE4`) when it is a Terrain object, a building (whose
-/// `PowersUpBuilding=` arm `0x00452670` is dormant) or a unit whose house is
+/// (`+0xE4`) when it is a Terrain object, a building that refuses the upgrade
+/// (`0x00452670` skips an admitted host), or a unit whose house is
 /// not allied to `house`. Any other unit counts as told to leave; unless it
 /// is heading elsewhere already (a NavCom other than its own cell,
 /// `0x0045EF9D..0x0045EFDF`), its cell is scattered
@@ -308,7 +308,15 @@ pub(crate) fn flush_for_placement(
             sim.interner.resolve(object.owner()),
             sim.interner.resolve(house),
         );
-        if object.category() == EntityCategory::Structure || !allied {
+        if object.category() == EntityCategory::Structure {
+            // Flush45EF68..45EF7B skips this host, then scans the remaining
+            // foundation cells. Overlay admission above still applies.
+            if sim.can_install_building_upgrade(id, ty, house, rules) {
+                continue;
+            }
+            return Flush::Blocked;
+        }
+        if !allied {
             return Flush::Blocked;
         }
         scattered = true;

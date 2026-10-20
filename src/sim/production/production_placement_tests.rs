@@ -718,6 +718,111 @@ fn a_completed_building_waits_in_its_factory_for_placement() {
     assert_eq!(sim.scenario_rng.logical_state(), rng);
 }
 
+/// HousePlace4FB22E continues completion/C/abandon/score even when ordinary
+/// Building Unlimbo4408DF installs and UnInit's its temporary product.
+#[test]
+fn installed_upgrade_consumes_factory_product_but_keeps_host_and_placement_tail() {
+    let rules = RuleSet::from_ini_with_fixed_art_for_test(
+        &IniFile::from_str(
+            "[Countries]\n0=Americans\n1=Soviet\n\
+             [BuildingTypes]\n0=GACNST\n1=POWER\n2=UPGRADE\n\
+             [GACNST]\nOwner=Americans,Soviet\nFactory=BuildingType\nStrength=1000\n\
+             [POWER]\nOwner=Americans,Soviet\nStrength=1000\nUpgrades=1\nPower=100\nBaseNormal=no\n\
+             [UPGRADE]\nOwner=Americans,Soviet\nStrength=100\nCost=600\nPower=50\nPowersUpBuilding=POWER\n\
+             [Clear]\nBuildable=yes\n",
+        ),
+        &IniFile::from_str(
+            "[GACNST]\nFoundation=1x1\n[POWER]\nFoundation=1x1\n[UPGRADE]\nFoundation=1x1\n",
+        ),
+    )
+    .unwrap();
+    let mut sim = placement_sim();
+    spawn_structure(&mut sim, &rules, 1, "Americans", "GACNST", 10, 10);
+    // A remote non-BaseNormal host tests the special Display+1180 gate,
+    // independently of the ordinary Cell clear-to-build result.
+    spawn_structure(&mut sim, &rules, 2, "Americans", "POWER", 40, 40);
+    spawn_structure(&mut sim, &rules, 3, "Soviet", "POWER", 42, 40);
+    sim.substrate.entities.get_mut(2).unwrap().health.set(200);
+    let owner = sim.interner.get("Americans").unwrap();
+    let upgrade_type = sim.interner.intern("UPGRADE");
+    ready_building(&mut sim, &rules, "Americans", "UPGRADE");
+    let held = super::lifecycle_tests::held_id(&sim, owner, ProductionCategory::Building);
+    let rng = sim.scenario_rng.logical_state();
+    let built = sim.houses[&owner].stats().built();
+    assert!(!place_building(
+        &mut sim,
+        &rules,
+        "Americans",
+        "UPGRADE",
+        (42, 40),
+        None,
+    ));
+    assert_eq!(
+        super::lifecycle_tests::held_id(&sim, owner, ProductionCategory::Building),
+        held,
+        "a refused host keeps the same paid factory object for retry"
+    );
+    let preview = preview_at(&sim, &rules, "Americans", "UPGRADE", (40, 40), None);
+    assert!(preview.valid && preview.in_build_area);
+    assert!(
+        preview.cells[0].valid,
+        "the per-cell upgrade preview admits its host"
+    );
+    let cells = crate::map::resolved_terrain::NativeCellQuery::isolated(
+        sim.resolved_terrain.as_ref().unwrap(),
+    );
+    let object = rules.object("UPGRADE").unwrap();
+    assert!(
+        !crate::sim::build_site::is_clear_to_build(
+            &sim,
+            &rules,
+            None,
+            cells.lookup((40, 40)),
+            crate::sim::build_site::building_speed_type(object),
+            Some(object),
+            Some(owner),
+            Some(&cells),
+            None,
+        ),
+        "the independent ordinary cell query still rejects occupied ground"
+    );
+    let no_host = preview_at(&sim, &rules, "Americans", "UPGRADE", (12, 10), None);
+    assert!(
+        no_host.in_build_area && no_host.valid,
+        "Display keeps its ordinary proximity gate"
+    );
+    assert!(
+        !no_host.cells[0].valid,
+        "an upgrade cannot paint clear ground as an admitted host"
+    );
+    assert!(place_building(
+        &mut sim,
+        &rules,
+        "Americans",
+        "UPGRADE",
+        (40, 40),
+        None,
+    ));
+    let host = sim.substrate.entities.get(2).unwrap();
+    assert!(host.is_object_alive() && !host.lifecycle.in_limbo());
+    assert_eq!(host.health.current(), 1000);
+    assert_eq!(host.building_upgrades().count(), 1);
+    assert_eq!(
+        host.building_upgrades().types(),
+        &[Some(upgrade_type), None, None]
+    );
+    let consumed = sim.substrate.entities.get(held).unwrap();
+    assert!(!consumed.is_object_alive() && consumed.lifecycle.in_limbo());
+    assert!(ready_buildings_for_owner(&sim, &rules, "Americans").is_empty());
+    assert_eq!(sim.houses[&owner].stats().built(), built + 1);
+    assert_eq!(building_placed_owners(&sim), vec![owner]);
+    assert_eq!(
+        sim.scenario_rng.logical_state(),
+        rng,
+        "installation has no additional constructor draw"
+    );
+}
+
 /// Place_Production admits only what `FactoryClass::IsComplete @ 0x004CA130`
 /// answers for (`0x004FB17D`): a building still in production is refused, at
 /// the PLACE and in its preview, and stays held. Once complete it places,

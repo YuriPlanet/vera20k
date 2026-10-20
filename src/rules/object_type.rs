@@ -1898,6 +1898,8 @@ pub struct ObjectType {
     /// Immutable projection of the native BuildingType light-field reader.
     /// The process registry owns retained integer defaults across Rules passes.
     building_light: crate::rules::building_light::BuildingLightRules,
+    /// Retained Rules-reader inputs for attached building upgrades.
+    building_upgrade: crate::rules::building_upgrade::BuildingUpgradeRules,
     /// `HasSpotlight=` — owns a map-presence-bound BuildingLight child.
     pub has_spotlight: bool,
 
@@ -2090,6 +2092,17 @@ impl ObjectType {
         light: crate::rules::building_light::BuildingLightRules,
     ) {
         self.building_light = light;
+    }
+
+    pub fn building_upgrade(&self) -> &crate::rules::building_upgrade::BuildingUpgradeRules {
+        &self.building_upgrade
+    }
+
+    pub(crate) fn project_building_upgrade(
+        &mut self,
+        upgrade: crate::rules::building_upgrade::BuildingUpgradeRules,
+    ) {
+        self.building_upgrade = upgrade;
     }
 
     pub(crate) const fn carries_crate(&self) -> bool {
@@ -3256,6 +3269,7 @@ impl ObjectType {
             // Rules' ordered processor publishes the retained reader result.
             // Merged text cannot reproduce missing-key /1000 truncation.
             building_light: Default::default(),
+            building_upgrade: Default::default(),
             has_spotlight: section.read_bool("HasSpotlight", false),
 
             // TechnoType particle effects. The Type references start null
