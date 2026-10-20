@@ -242,6 +242,7 @@ pub(crate) fn build_unit_instances(
         .sim_runtime
         .as_ref()
         .and_then(|rt| rt.view().resolved_terrain());
+    let light_cells = terrain.map(crate::map::resolved_terrain::NativeCellQuery::isolated);
     state
         .match_state
         .match_presentation
@@ -339,7 +340,12 @@ pub(crate) fn build_unit_instances(
         let interp_z = pos.z();
         let draw_state = draw_decision.state;
         let extra_light = state.rules().map_or(0, |rules| {
-            crate::app::presentation::lighting::body_extra_light(entity, rules, sim, terrain)
+            crate::app::presentation::lighting::body_extra_light(
+                entity,
+                rules,
+                sim,
+                light_cells.as_ref(),
+            )
         });
         let tint = vxl_body_tint(
             state.match_state.match_presentation.lighting.grid(),
@@ -2303,10 +2309,7 @@ mod tests {
             display_binary_frame_for_committed_session(restored.session().binary_frame());
         assert_eq!(display_binary_frame, 50);
         assert_eq!(
-            locomotor_render_slope_state(
-                restored.entities().get(1).unwrap(),
-                display_binary_frame,
-            ),
+            locomotor_render_slope_state(restored.entities().get(1).unwrap(), display_binary_frame,),
             Some(UnitRenderSlopeState::Transition {
                 from_slope: 4,
                 to_slope: 9,
@@ -2367,5 +2370,4 @@ mod tests {
         assert_eq!(no_spawn_alt_type_id("V3", false, Some(&in_flight)), None);
         assert_eq!(no_spawn_alt_type_id("V3", true, None), None);
     }
-
 }
