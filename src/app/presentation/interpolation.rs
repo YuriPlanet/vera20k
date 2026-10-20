@@ -46,11 +46,29 @@ pub(crate) struct RenderPose {
     on_bridge: bool,
 }
 
+/// Fly DrawMatrix4CF632/4CF659 reads SecondaryFacing for both its cache key
+/// and rotation, like its separate ShadowMatrix. PrimaryFacing may already
+/// point elsewhere while the plane turns. Other locomotors keep their owner.
+pub(crate) fn body_draw_facing(entity: &GameEntity, binary_frame: u32) -> u16 {
+    if entity
+        .locomotor
+        .as_ref()
+        .is_some_and(|loco| loco.active_kind() == crate::rules::locomotor_type::LocomotorKind::Fly)
+    {
+        entity.barrel_facing.as_ref().map_or_else(
+            || entity.body_facing_current(binary_frame),
+            |facing| facing.current(binary_frame),
+        )
+    } else {
+        entity.body_facing_current(binary_frame)
+    }
+}
+
 impl RenderPose {
     fn read(entity: &GameEntity, frame: u32) -> Self {
         let location = object_location(entity, None);
         let ((x, y), lift) = crate::render::locomotor_visual::screen_position_and_lift(entity);
-        let body = entity.body_facing_current(frame);
+        let body = body_draw_facing(entity, frame);
         Self {
             screen: [x, y],
             body,

@@ -927,25 +927,6 @@ fn body_pose_with_angles(
     }
 }
 
-/// Fly DrawMatrix4CF632/4CF659 reads SecondaryFacing for both its cache key
-/// and rotation, like its separate ShadowMatrix. PrimaryFacing may already
-/// point elsewhere while the plane turns. Other locomotors keep their owner.
-fn body_draw_facing(entity: &crate::sim::game_entity::GameEntity, binary_frame: u32) -> u8 {
-    if entity
-        .locomotor
-        .as_ref()
-        .is_some_and(|loco| loco.active_kind() == crate::rules::locomotor_type::LocomotorKind::Fly)
-    {
-        let facing = entity.barrel_facing.as_ref().map_or_else(
-            || entity.body_facing_current(binary_frame),
-            |facing| facing.current(binary_frame),
-        );
-        crate::render::vxl_raster::voxel_facing_step_u16(facing) * 8
-    } else {
-        entity.body_facing_byte(binary_frame)
-    }
-}
-
 /// Drive4AFFB0..4AFFE8 / Ship69F6C0..69F6F8 key dynamic draws for an unsettled slope or either
 /// qualifying angle. Model loading stays with UnitModel; no ART boolean is
 /// used as evidence that a VXL loaded. Read-only: no RNG/timer/detach writes.
@@ -2378,7 +2359,13 @@ mod tests {
                 .as_mut()
                 .unwrap()
                 .snap(input["secondary"].as_u64().unwrap() as u16, 0);
-            assert_eq!(body_draw_facing(&entity, 0), native_key as u8, "{input}");
+            assert_eq!(
+                crate::render::vxl_raster::voxel_facing_step_u16(
+                    crate::app::presentation::interpolation::body_draw_facing(&entity, 0)
+                ) * 8,
+                native_key as u8,
+                "{input}"
+            );
             compared += 1;
         }
         assert_eq!(compared, 4);

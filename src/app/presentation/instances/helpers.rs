@@ -417,6 +417,7 @@ pub(crate) fn apply_shape_z_adjust(depth: f32, z_adjust_px: i32, world_height: f
 /// Despite its legacy name, this is not the experimental render interpolation:
 /// native comparisons retain this current-state anchor. Live rendering and
 /// picking use `presentation::interpolation` with explicit client state.
+#[cfg(test)]
 pub(crate) fn interpolated_screen_position_entity(
     entity: &crate::sim::game_entity::GameEntity,
 ) -> (f32, f32) {
