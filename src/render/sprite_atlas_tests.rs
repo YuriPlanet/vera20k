@@ -249,6 +249,96 @@ fn one_object_world(
 }
 
 #[test]
+fn retail_shp_vehicle_keys_include_the_native_embedded_shadow_half() {
+    let Some(battle) = crate::rules::retail_ini_fixture::retail_battle_rules_for_map("C3Y03MD.MAP")
+    else {
+        return;
+    };
+    let rules = &battle.rules;
+    let (_, assets) = crate::rules::retail_ini_fixture::retail_assets()
+        .expect("Battle rules came from the explicit retail install");
+    for (type_id, count, no_shadow) in [
+        ("DRON", 176, false),
+        ("SQD", 296, true),
+        ("DLPH", 232, false),
+    ] {
+        let (world, interner) = one_object_world(type_id, EntityCategory::Unit);
+        let colors = [HouseColorIndex(2), HouseColorIndex(5)];
+        let pairs = colors
+            .map(|color| (type_id.to_owned(), color))
+            .into_iter()
+            .collect();
+        let mut needed = HashSet::new();
+        let sources = insert_new_object_keys(
+            &mut needed,
+            &pairs,
+            &world,
+            Some(&interner),
+            &assets,
+            "tem",
+            "TEMPERATE",
+            Some(&rules),
+            Some(rules.art()),
+        );
+        let source = sources
+            .get(type_id)
+            .and_then(Option::as_ref)
+            .expect("Unit keys retain the actual physical SHP for shadow frame selection");
+        assert_eq!(source.shp.frames.len(), count);
+        assert_eq!(
+            rules.object(type_id).unwrap().no_shadow,
+            no_shadow,
+            "{type_id}"
+        );
+        // Techno7064C2..7064CD adds the signed SHP header count / 2
+        // to the caller's body frame. Frame zero is an admitted stand frame
+        // for each of these retail Unit images, independently of its colour.
+        for color in colors {
+            for frame in [0, (count / 2) as u16] {
+                assert!(
+                    needed.contains(&ShpSpriteKey {
+                        palette_context: ShpPaletteContext::Legacy,
+                        type_id: type_id.to_owned(),
+                        facing: 0,
+                        frame,
+                        house_color: color,
+                    }),
+                    "{type_id} colour {color:?} is missing native frame {frame}"
+                );
+            }
+        }
+        if type_id == "DRON" {
+            let native =
+                crate::test_fixture::json("tools/spatial_oracle/unit_shp_fire_frames.json");
+            let firing_frames = native["first_by_facing"].as_array().unwrap().iter().chain(
+                native["countdown"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .flat_map(|row| row["frames"].as_array().unwrap()),
+            );
+            for frame in firing_frames {
+                let frame = frame.as_u64().unwrap() as u16;
+                for house_color in colors {
+                    for selected in [frame, frame + 88] {
+                        assert!(
+                            needed.contains(&ShpSpriteKey {
+                                palette_context: ShpPaletteContext::Legacy,
+                                type_id: type_id.to_owned(),
+                                facing: 0,
+                                frame: selected,
+                                house_color,
+                            }),
+                            "native DRON firing pose {frame} lacks body/shadow frame {selected}"
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+#[test]
 fn deploy_targets_get_the_same_keys_as_placed_structures() {
     let directory = StoredFrameTestDirectory::new();
     directory.write_raw_and_rle_frames("BOUNDGI.SHP", [8, 8], [0, 0, 6, 4]);
@@ -338,7 +428,7 @@ fn ordinary_building_atlas_retains_native_completed_health_frames() {
     .unwrap();
     let mut needed = HashSet::new();
     let color = HouseColorIndex(2);
-    insert_object_keys(
+    let _ = insert_object_keys(
         &mut needed,
         "GAPOWR",
         EntityCategory::Structure,
