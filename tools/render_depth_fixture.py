@@ -15,6 +15,7 @@ Usage:
     python tools/render_depth_fixture.py target/ordinary-ifv-welding.map --ifv-welding
     python tools/render_depth_fixture.py target/ordinary-ifv-full-health.map --ifv-welding full-health
     python tools/render_depth_fixture.py target/ordinary-disk-laser.map --disk-laser
+    python tools/render_depth_fixture.py target/ordinary-dolphin-sonic.map --sonic-wave /absolute/XMP03T4.MAP
 
 This writes only the requested map. It neither edits game configuration nor
 launches either engine. The cliff fixture deliberately focuses on one cliff
@@ -140,6 +141,46 @@ GAWALL = 2
 C = 48
 
 
+def retain_terrain_template(mission: str, template: str) -> str:
+    """Copy physical map terrain blocks without interpreting or rebuilding them.
+
+    Actors, scripting and House definitions stay with the selected fixture.
+    Callers must choose a template admitting its fixed scene coordinates.
+    """
+    retained = {'Map', 'Lighting', 'IsoMapPack5', 'OverlayPack', 'OverlayDataPack',
+                'Terrain', 'Smudge', 'Preview', 'PreviewPack', 'Waypoints'}
+
+    def blocks(text):
+        result = []; name = None; lines = []
+        for line in text.splitlines(keepends=True):
+            stripped = line.strip()
+            if stripped.startswith('[') and ']' in stripped:
+                if lines:
+                    result.append((name, ''.join(lines)))
+                name = stripped[1:stripped.index(']')]
+                lines = []
+            lines.append(line)
+        if lines:
+            result.append((name, ''.join(lines)))
+        return result
+
+    physical = {}
+    for name, block in blocks(template):
+        if name in retained:
+            if name in physical:
+                raise ValueError(f'Duplicate physical terrain section {name}')
+            physical[name] = block
+    for name in ('Map', 'IsoMapPack5'):
+        if name not in physical:
+            raise ValueError(f'Missing physical terrain section {name}')
+    emitted = set(); output = []
+    for name, block in blocks(mission):
+        output.append(physical.get(name, block))
+        emitted.add(name)
+    output.extend(block for name, block in physical.items() if name not in emitted)
+    return '\n'.join(output)
+
+
 def build_fixture(*, walls_only: bool = False, cliff_back: bool = False,
                   building_brackets: bool = False, building_repair: bool = False,
                   attack_order_voice: str | None = None,
@@ -149,7 +190,8 @@ def build_fixture(*, walls_only: bool = False, cliff_back: bool = False,
                   bomb_clock: bool = False,
                   ifv_welding: str | None = None,
                   disk_laser: bool = False,
-                  temporal_gunner: bool = False) -> str:
+                  temporal_gunner: bool = False,
+                  sonic_wave: Path | None = None) -> str:
     """Keep comparison geometry stable within each selectable scene."""
     if house_self_heal not in (None, 'recovery', 'removal'):
         raise ValueError('Unknown House self-heal scene')
@@ -171,10 +213,10 @@ def build_fixture(*, walls_only: bool = False, cliff_back: bool = False,
     if sum((walls_only, cliff_back, building_brackets, building_repair,
             attack_order_voice is not None, house_self_heal is not None,
             damage_feedback is not None, move_order_voice is not None, bomb_clock,
-            ifv_welding is not None, disk_laser, temporal_gunner)) > 1:
+            ifv_welding is not None, disk_laser, temporal_gunner, sonic_wave is not None)) > 1:
         raise ValueError('Choose one comparison mode')
     building_brackets = building_brackets or building_repair
-    command_scene = bomb_clock or disk_laser or temporal_gunner or any(mode is not None for mode in
+    command_scene = sonic_wave is not None or bomb_clock or disk_laser or temporal_gunner or any(mode is not None for mode in
                         (attack_order_voice, house_self_heal, damage_feedback,
                          move_order_voice, ifv_welding))
     walls_only = walls_only or building_brackets or command_scene
@@ -369,6 +411,16 @@ def build_fixture(*, walls_only: bool = False, cliff_back: bool = False,
                 for i, (x, y) in enumerate(positions)
             ]
             infantry = [f'0=<human player>,E1,256,{near[0]},{near[1]},0,Guard,192,None,0,-1,0,1,1']
+        if sonic_wave is not None:
+            # The physical XMP03T4 scene admits these stock naval actors in a
+            # contiguous Water-set pool. Loading must confirm actual terrain;
+            # no water flags, unit, weapon or wave state is overridden here.
+            units = [
+                '0=<human player>,DLPH,256,106,118,64,Sleep,None,0,-1,0,-1,1,1',
+                '1=Computer,CARRIER,256,110,118,192,Sleep,None,0,-1,0,-1,1,1',
+            ]
+            structures = ['0=Computer,GAPOWR,256,76,76,0,None,0,0,1,0,0,None,None,None,0,0']
+            infantry = []
         overlay[:] = b'\xff' * len(overlay)
         overlay_data[:] = bytes(len(overlay_data))
     # Stock cliff-back blocking rejects Track/Foot placement in the exact
@@ -392,6 +444,7 @@ Color=DarkRed
 ''' if building_brackets or command_scene else ''
 
     name = 'C24 Ordinary Engineer IFV Welding' if ifv_welding else 'Depth Continuation - ' + (
+        'Dolphin Sonic' if sonic_wave is not None else
         'Temporal Gunner' if temporal_gunner else
         'Disk Laser' if disk_laser else
         'Ivan Bomb Clock' if bomb_clock else
@@ -403,7 +456,7 @@ Color=DarkRed
         'Building Brackets' if building_brackets else
         'Cliff Back Edge' if cliff_back else 'Walls and Cliff'
     )
-    return f'''[Basic]
+    mission = f'''[Basic]
 Name={name}
 NewINIFormat=4
 Player=Americans
@@ -483,6 +536,8 @@ Color=Grey{bracket_house}
 [IsoMapPack5]
 {pack_lzo(bytes(cells))}
 '''
+    return (retain_terrain_template(mission, Path(sonic_wave).read_text(encoding='latin-1'))
+            if sonic_wave is not None else mission)
 
 
 def main() -> None:
@@ -539,6 +594,10 @@ def main() -> None:
         '--temporal-gunner', action='store_true',
         help='Use full-health stock CLEG/FV, an enemy HTNK and distant power plant for ordinary boarding and unloading',
     )
+    modes.add_argument(
+        '--sonic-wave', type=Path, metavar='RETAIL_MAP',
+        help='Use stock DLPH/CARRIER and preserve supplied XMP03T4 terrain; fixed naval cells must be admitted',
+    )
     args = parser.parse_args()
     mission = build_fixture(walls_only=args.walls_only, cliff_back=args.cliff_back,
                             building_brackets=args.building_brackets,
@@ -550,9 +609,9 @@ def main() -> None:
                             bomb_clock=args.bomb_clock,
                             ifv_welding=args.ifv_welding,
                             disk_laser=args.disk_laser,
-                            temporal_gunner=args.temporal_gunner)
+                            temporal_gunner=args.temporal_gunner, sonic_wave=args.sonic_wave)
     args.output.parent.mkdir(parents=True, exist_ok=True)
-    args.output.write_text(mission, encoding='ascii')
+    args.output.write_text(mission, encoding='latin-1' if args.sonic_wave is not None else 'ascii')
     print(f'Wrote {args.output} ({len(mission)} characters)')
 
 

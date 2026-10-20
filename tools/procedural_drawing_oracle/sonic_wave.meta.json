@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
+  "unicorn_binding": "2.1.4",
+  "unicorn_core": [
+    2,
+    1,
+    33621247
+  ],
+  "scope": "Original type0 Sonic DrawIt/DrawSonic/pixel, native tables, integer spans, displaced packed pixels and depth/clipping/order controls",
+  "assumptions": [
+    "The existing magnetic_wave UnitInputs/WaveMachine owns the original retail readers, native Unit/Drive shells, sparse constructed cells, tables, projection and memory surfaces. The donor TELE/MTNK shells admit an explicitly requested type0 Wave constructor, not a legal Dolphin FireAt or a physical water-map startup.",
+    "Whole original75F9F0->75FA90->63F080/63F2E0->75EDF0 executes unchanged. Native geometry, phase100 constructor, spans, traversal, displaced reads, colors and stores are observed. Additional phases80/40/1/0, crop rectangles, RGB565/RGB555, A/Z patterns and Z ring offsets are explicit component inputs, not inferred gameplay timing.",
+    "Whole75F020 and the existing startup sequence generate all lookup values. No host trigonometry, distance, color or raster algorithm supplies expected pixels. All eight directions come from observed native constructor results. Mixed-Z inputs use independently observed native candidate words.",
+    "The small full-surface direction5 control observes a displaced read beyond the supplied RGB plane; it is an explicit unsupported-domain refusal control, not a GPU pixel promise or a real-game out-of-allocation value. A same-direction cropped control retains valid samples for GPU comparison.",
+    "Sonic draws are checked for unchanged original code/vtables, guarded RGB allocation, unchanged A/Z and unchanged complete RNG continuation. Wave state/draw preparation and selected platform seams retain the existing owner boundaries. Full Sonic AI/damage, simulation scheduling, shroud admission, retail firing and GPU composition require separate connected validation."
+  ],
+  "substitutions": [
+    "Only the existing declared cached INI, allocator/CRT/TLS, Unit shell and BSurface/Z memory transports. No Sonic instruction, vtable, constructor, geometry, table, depth decision, pixel sample or packed output is replaced."
+  ],
+  "entry_points": {
+    "constructor": "0x0075E950",
+    "geometry": "0x00761640",
+    "draw": "0x0075F9F0",
+    "sonic_draw": "0x0075FA90",
+    "pixel": "0x0075EDF0",
+    "spans": "0x0063F080",
+    "span_edge": "0x0063F2E0",
+    "tables": "0x0075F020",
+    "offsets": "0x0075F140",
+    "z_get_buffer": "0x007BD130"
+  },
+  "payload_sha256": "bf9f2094f2c12c6272e2339b919dddf8dab462673cc7bd48f69b5abec78bad22",
+  "replay_command": "python -m tools.procedural_drawing_oracle.magnetic_wave --sonic"
+}

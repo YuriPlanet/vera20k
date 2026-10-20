@@ -694,7 +694,6 @@ fn upload_to_gpu(
     pool.upload(&state.renderer.gpu, "cell_sparkles", &world.cell_sparkles);
     pool.upload(&state.renderer.gpu, "super_timer_fill", &super_timer_fill);
     pool.upload(&state.renderer.gpu, "super_timer_text", &super_timer_text);
-    pool.upload(&state.renderer.gpu, "weapon_waves", &world.weapon_waves);
 
     // UI overlays
     pool.upload(&state.renderer.gpu, "drag", &ui.drag);
