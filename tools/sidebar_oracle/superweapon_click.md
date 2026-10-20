@@ -51,3 +51,21 @@ audio or rendered cursor comparison. Retail rules loading and power loss/recover
 are covered separately through Rust's production frame, sidebar and gadget path.
 The existing charge-drain launch/lifecycle residual in `superweapon/fire.rs` is
 outside this sidebar selection comparison; stock retail rules do not enable it.
+
+The eleven `pointer_targets` controls execute original Type `6CEF80`, actual
+Building/Unit `WhatAmI` leaves and House `4F9A50`. Force Shield checks the
+**target owner's** alliance toward the current player, so the reverse-only
+mask is rejected. Ground and Unit targets return NoForceShield70; own/allied
+buildings return configured ForceShield69. Other-type controls retain their
+configured action on ground. `app::input::commands::force_shield_target_tests`
+consumes the results through the shared pointer gate used by cursor/release.
+
+The same rows then execute `BandBox_LeftUp`'s `4AC20C..4AC29B` suffix with its
+calling frame supplied: original FindFirstOfAction `6CEEB0`, SPECIAL_PLACE
+`4C6B60` construction and OutList enqueue run. No supplied type has action70,
+so refused pointers enqueue no event. Capture clears and the selected Super
+remains in both branches; event delivery owns later launch cleanup. The only
+substitution is the OS clock boundary. The earlier release map/placement work,
+keyboard update, hovered-object selection and native window are excluded.
+No native preference among overlapping objects is established by these rows;
+the Rust input path continues to use its existing hover picker.

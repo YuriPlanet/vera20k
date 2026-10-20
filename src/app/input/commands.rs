@@ -131,6 +131,64 @@ fn visible_object_under_point(state: &AppState, world_x: f32, world_y: f32) -> O
     .map(|hover| hover.stable_id)
 }
 
+/// SuperWeaponType6CEF80's pointer gate, shared by the cursor and release.
+/// Type10 accepts only the picked Building whose owner considers the current
+/// player allied (original4F9A50, called with the target House as ECX).
+/// The native launch body and non-pointer producers do not have this gate.
+fn super_weapon_pointer_target_is_valid(
+    sim: &crate::sim::world::Simulation,
+    viewer: InternedId,
+    kind: crate::rules::superweapon_type::SuperWeaponKind,
+    picked: Option<u64>,
+) -> bool {
+    if kind != crate::rules::superweapon_type::SuperWeaponKind::ForceShield {
+        return true;
+    }
+    picked
+        .and_then(|id| sim.entities().get(id))
+        .is_some_and(|target| {
+            target.category() == crate::map::entities::EntityCategory::Structure
+                && crate::map::houses::is_allied_with(
+                    sim.house_alliances(),
+                    sim.interner().resolve(target.owner()),
+                    sim.interner().resolve(viewer),
+                )
+        })
+}
+
+/// Reuse the ordinary visible-object picker; do not prefer a building behind
+/// the object the pointer actually selects. No target or alliance is retained.
+pub(crate) fn super_weapon_pointer_target_at_cursor_is_valid(
+    state: &AppState,
+    section: &str,
+) -> bool {
+    let Some(runtime) = state.match_state.sim_runtime.as_ref() else {
+        return true;
+    };
+    let Some(sw) = runtime.resources.rules.super_weapon(section) else {
+        return true;
+    };
+    if sw.kind != crate::rules::superweapon_type::SuperWeaponKind::ForceShield {
+        return true;
+    }
+    let Some(viewer) =
+        preferred_local_owner(state).and_then(|owner| runtime.simulation.interner().get(&owner))
+    else {
+        return false;
+    };
+    let world = crate::app::match_runtime::sim_tick::screen_point_to_world(
+        state,
+        state.match_state.input.cursor_x,
+        state.match_state.input.cursor_y,
+    );
+    super_weapon_pointer_target_is_valid(
+        &runtime.simulation,
+        viewer,
+        sw.kind,
+        visible_object_under_point(state, world.0, world.1),
+    )
+}
+
 fn own_building_id(state: &AppState, stable_id: u64) -> Option<u64> {
     let sim = state
         .match_state
@@ -459,9 +517,9 @@ pub(crate) fn place_ready_building_at_cursor(state: &mut AppState, type_id: &str
 /// cameo. On a real tactical-map click it schedules the command, as
 /// `DisplayClass::BandBox_LeftUp @ 0x004AB9B0` queues the SPECIAL_PLACE event
 /// (`0x12`), and keeps the selection: Launch's tail clears or moves it
-/// (`match_runtime::super_selection`). The sim's ClickFire admits the Super;
-/// UI does not duplicate it. The event names the first type whose `Action=`
-/// is the click's action (`SuperWeaponTypeClass::FindFirstOfAction`); retail
+/// (`match_runtime::super_selection`). Pointer action admission runs first;
+/// the sim's ClickFire still owns instance admission. The event names the first
+/// type whose `Action=` is the click's action (`SuperWeaponTypeClass::FindFirstOfAction`); retail
 /// types' actions are unique, so that is the selected one.
 pub(crate) fn launch_super_weapon_at_cursor(state: &mut AppState, section: &str) {
     // Guard: arming click's RELEASE lands on the cameo. Don't fire the SW
@@ -470,6 +528,14 @@ pub(crate) fn launch_super_weapon_at_cursor(state: &mut AppState, section: &str)
     if crate::app::presentation::sidebar_render::is_cursor_over_minimap(state)
         || crate::app::input::cursor::current_sidebar_view_hit(state)
     {
+        return;
+    }
+
+    // DetermineAction692B1D -> Type6CEF80 returns NoForceShield70 for an
+    // invalid pointer target. FindFirstOfAction6CEEB0 then finds no retail
+    // type, so BandBox_LeftUp4AC20C queues no SPECIAL_PLACE and keeps the
+    // selected Super. Do not move this UI-only gate into the launch receiver.
+    if !super_weapon_pointer_target_at_cursor_is_valid(state, section) {
         return;
     }
 
@@ -1910,3 +1976,7 @@ mod local_owner_tests;
 #[cfg(test)]
 #[path = "paid_superweapon_tests.rs"]
 mod paid_superweapon_tests;
+
+#[cfg(test)]
+#[path = "force_shield_target_tests.rs"]
+mod force_shield_target_tests;

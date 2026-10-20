@@ -581,5 +581,254 @@
         "sell": true
       }
     }
+  ],
+  "pointer_targets": [
+    {
+      "code_unchanged": true,
+      "expected": {
+        "action": 70,
+        "calls": [
+          "0x6ceeb0"
+        ],
+        "capture": 0,
+        "event_count": 0,
+        "event_hex": null,
+        "selected": 0
+      },
+      "input": {
+        "configured_action": 69,
+        "local_allies": 0,
+        "name": "ground",
+        "super_kind": 10,
+        "target_allies": 0,
+        "target_kind": null,
+        "target_owner": 1
+      }
+    },
+    {
+      "code_unchanged": true,
+      "expected": {
+        "action": 69,
+        "calls": [
+          "0x6ceeb0",
+          "0x4c6b60"
+        ],
+        "capture": 0,
+        "event_count": 1,
+        "event_hex": "1200007b00000000000000280028000000",
+        "selected": 0
+      },
+      "input": {
+        "configured_action": 69,
+        "local_allies": 0,
+        "name": "own_building",
+        "super_kind": 10,
+        "target_allies": 0,
+        "target_kind": 6,
+        "target_owner": 0
+      }
+    },
+    {
+      "code_unchanged": true,
+      "expected": {
+        "action": 69,
+        "calls": [
+          "0x6ceeb0",
+          "0x4c6b60"
+        ],
+        "capture": 0,
+        "event_count": 1,
+        "event_hex": "1200007b00000000000000280028000000",
+        "selected": 0
+      },
+      "input": {
+        "configured_action": 69,
+        "local_allies": 0,
+        "name": "allied_building",
+        "super_kind": 10,
+        "target_allies": 1,
+        "target_kind": 6,
+        "target_owner": 1
+      }
+    },
+    {
+      "code_unchanged": true,
+      "expected": {
+        "action": 69,
+        "calls": [
+          "0x6ceeb0",
+          "0x4c6b60"
+        ],
+        "capture": 0,
+        "event_count": 1,
+        "event_hex": "1200007b00000000000000280028000000",
+        "selected": 0
+      },
+      "input": {
+        "configured_action": 69,
+        "local_allies": 2,
+        "name": "mutual_allies",
+        "super_kind": 10,
+        "target_allies": 1,
+        "target_kind": 6,
+        "target_owner": 1
+      }
+    },
+    {
+      "code_unchanged": true,
+      "expected": {
+        "action": 70,
+        "calls": [
+          "0x6ceeb0"
+        ],
+        "capture": 0,
+        "event_count": 0,
+        "event_hex": null,
+        "selected": 0
+      },
+      "input": {
+        "configured_action": 69,
+        "local_allies": 2,
+        "name": "reverse_only",
+        "super_kind": 10,
+        "target_allies": 0,
+        "target_kind": 6,
+        "target_owner": 1
+      }
+    },
+    {
+      "code_unchanged": true,
+      "expected": {
+        "action": 70,
+        "calls": [
+          "0x6ceeb0"
+        ],
+        "capture": 0,
+        "event_count": 0,
+        "event_hex": null,
+        "selected": 0
+      },
+      "input": {
+        "configured_action": 69,
+        "local_allies": 0,
+        "name": "enemy_building",
+        "super_kind": 10,
+        "target_allies": 0,
+        "target_kind": 6,
+        "target_owner": 1
+      }
+    },
+    {
+      "code_unchanged": true,
+      "expected": {
+        "action": 70,
+        "calls": [
+          "0x6ceeb0"
+        ],
+        "capture": 0,
+        "event_count": 0,
+        "event_hex": null,
+        "selected": 0
+      },
+      "input": {
+        "configured_action": 69,
+        "local_allies": 0,
+        "name": "own_unit",
+        "super_kind": 10,
+        "target_allies": 0,
+        "target_kind": 28,
+        "target_owner": 0
+      }
+    },
+    {
+      "code_unchanged": true,
+      "expected": {
+        "action": 70,
+        "calls": [
+          "0x6ceeb0"
+        ],
+        "capture": 0,
+        "event_count": 0,
+        "event_hex": null,
+        "selected": 0
+      },
+      "input": {
+        "configured_action": 69,
+        "local_allies": 0,
+        "name": "allied_unit",
+        "super_kind": 10,
+        "target_allies": 1,
+        "target_kind": 28,
+        "target_owner": 1
+      }
+    },
+    {
+      "code_unchanged": true,
+      "expected": {
+        "action": 70,
+        "calls": [
+          "0x6ceeb0"
+        ],
+        "capture": 0,
+        "event_count": 0,
+        "event_hex": null,
+        "selected": 0
+      },
+      "input": {
+        "configured_action": 69,
+        "local_allies": 0,
+        "name": "enemy_unit",
+        "super_kind": 10,
+        "target_allies": 0,
+        "target_kind": 28,
+        "target_owner": 1
+      }
+    },
+    {
+      "code_unchanged": true,
+      "expected": {
+        "action": 1,
+        "calls": [
+          "0x6ceeb0",
+          "0x4c6b60"
+        ],
+        "capture": 0,
+        "event_count": 1,
+        "event_hex": "1200007b00000000000000280028000000",
+        "selected": 0
+      },
+      "input": {
+        "configured_action": 1,
+        "local_allies": 0,
+        "name": "other_type_0_ground",
+        "super_kind": 0,
+        "target_allies": 0,
+        "target_kind": null,
+        "target_owner": 1
+      }
+    },
+    {
+      "code_unchanged": true,
+      "expected": {
+        "action": 1,
+        "calls": [
+          "0x6ceeb0",
+          "0x4c6b60"
+        ],
+        "capture": 0,
+        "event_count": 1,
+        "event_hex": "1200007b00000000000000280028000000",
+        "selected": 0
+      },
+      "input": {
+        "configured_action": 1,
+        "local_allies": 0,
+        "name": "other_type_1_ground",
+        "super_kind": 1,
+        "target_allies": 0,
+        "target_kind": null,
+        "target_owner": 1
+      }
+    }
   ]
 }

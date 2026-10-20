@@ -1,24 +1,27 @@
 {
   "schema_version": 1,
-  "native_sha256": "1cdd1180e49024fbda8ad568caac2e86e856063ff67ab38f62b7d2c7bb84298c",
+  "native_sha256": "3e81a61775d2745d1dabe397325ef663cd994ffc194da4e998e3bf5d2d308600",
   "unicorn_binding": "2.1.4",
   "unicorn_core": [
     2,
     1,
     33621247
   ],
-  "scope": "Whole original Select6AAD00 Super branch and CanFire6CC360 on prepared sidebar/House/Super/type state.",
+  "scope": "Whole original Select6AAD00 Super branch and CanFire6CC360, plus Type6CEF80 pointer action and the original SPECIAL_PLACE release suffix, on supplied state.",
   "assumptions": [
     "Shared Sidebar VM owns mapped bytes, House/type arrays and allocation. Original Select constructor6AACB0 and device Mouse constructor prefix7B8730..7B8856 run; rendering/device startup is excluded.",
     "The Sidebar/Mouse complete object is supplied with its original primary vtable7E1964 (installed by constructor5BDA40 at5BDA4A). Repair/Sell cursor reset executes5BDA80 and5BDC80 with the native no-cursor-image prior: ABF2DD=1 and ABF294=null, so the original leaf returns before drawing. The complete Mouse constructor and cursor image loading are not executed.",
     "One visible RTTI31 entry of index0 and prepared GUIBuildSound42, ready/hold/charge-drain bytes, selected index, placement references and pointer modes. Repair/Sell are separate bytes880998/880999 (Sidebar87F7E8+11B0/+11B1); the additional three mode bytes88099A..88099C are not proxies for them. These independent prior modes are cleanup controls, not a whole valid UI scenario.",
     "Original CanFire and whole SelectAction execute unchanged, including placement/repair/sell clearing, UnselectAll with an empty selection, immediate SPECIAL_PLACE construction/enqueue, right-click and refusal epilogues.",
     "Native charge-drain state is any signed nonzero value, including -1. The ungranted/ready control isolates CanFire having no granted test; it is not a visible-cameo producer claim.",
-    "No native retail loader, power lifecycle, charge-drain lifecycle, event execution, rendered cursor, audible device output or full game replay is claimed. Rust integration separately checks the retail power transition."
+    "No native retail loader, power lifecycle, charge-drain lifecycle, event execution, rendered cursor, audible device output or full game replay is claimed. Rust integration separately checks the retail power transition.",
+    "Eleven pointer controls supply an already picked object, original Building7E3EBC/Unit7F5C70 vtables, two House indexes/masks and one registered SW type. Whole Type6CEF80 and House4F9A50 execute. Action69 is ForceShield; action70 is NoForceShield in the native name table. Other-type controls deliberately supply action1. No type carries action70.",
+    "Pointer releases execute only4AC20C..4AC29B with the original stack/register inputs supplied. Original FindFirstOfAction6CEEB0, SPECIAL_PLACE4C6B60 construction and OutList copying execute; the suffix clears capture and preserves the selected Super. Earlier map/placement processing, keyboard update731CF0, hover-object picking and event delivery are excluded."
   ],
   "substitutions": [
     "Audio750920 GUI sound and the shared752700 EVA sink record requests with their RET8/RET4 conventions; no audio device executes.",
-    "Opaque OS timeGetTime imports supply zero without replacing their callers. Unexpected shared fixture FindFactory/CanBuild substitutions fail closed."
+    "Opaque OS timeGetTime imports supply zero without replacing their callers. Unexpected shared fixture FindFactory/CanBuild substitutions fail closed.",
+    "The pointer release suffix supplies its already loaded EBX OS timeGetTime function pointer with a zero-return boundary; original release instructions are unchanged."
   ],
   "entry_points": {
     "select_action": "0x006AAD00",
@@ -28,8 +31,13 @@
     "repair_mode": "0x004AC8C0",
     "sell_mode": "0x004AC660",
     "cursor_reset": "0x005BDA80",
-    "cursor_select": "0x005BDC80"
+    "cursor_select": "0x005BDC80",
+    "pointer_action": "0x006CEF80",
+    "allied_with": "0x004F9A50",
+    "release_suffix": "0x004AC20C",
+    "find_first_action": "0x006CEEB0",
+    "special_place": "0x004C6B60"
   },
   "replay_command": "python -m tools.sidebar_oracle.superweapon_click",
-  "payload_sha256": "99193c756d491865d510875739f9f7ad8759f060e6abc188a29fa3c0fa244b34"
+  "payload_sha256": "d6837c937039e40d48f220cb59aca1fb90d4a9110aa11769bf039ae82639b69a"
 }
