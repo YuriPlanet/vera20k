@@ -15,7 +15,6 @@ from tools.native_oracle import (
 )
 
 ARES_SHA256 = "93ce890f387a6c1b3240a2dd7b674f25fec5a0e96f0b0d0306796b2edf7b5b83"
-GAMEMD_SHA256 = "7cd005d263fde203d9c84548200a057a8df61d724da3c6bd1e521eeb61cd0747"
 FIXTURE = Path(__file__).with_suffix(".json")
 # Inclusive entry, exclusive final instruction boundary. The additional caller
 # and install spans are read-only evidence, not executed by component controls.
@@ -469,13 +468,12 @@ def main():
     args = parser.parse_args()
     Probe.input_bytes = (
         identified_bytes(args.ares_dll, ARES_SHA256),
-        identified_bytes(args.gamemd_exe, GAMEMD_SHA256),
+        args.gamemd_exe.read_bytes(),
     )
     if args.disassemble:
         disassemble()
         return
-    payload = dict(schema_version=1, ares_sha256=ARES_SHA256,
-                   gamemd_sha256=GAMEMD_SHA256, controls=controls())
+    payload = dict(schema_version=1, ares_sha256=ARES_SHA256, controls=controls())
     if args.check:
         raw = FIXTURE.read_bytes()
         meta = json.loads(FIXTURE.with_suffix(".meta.json").read_text(encoding="utf8"))

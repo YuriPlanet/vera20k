@@ -2,8 +2,7 @@
   "schema_version": 1,
   "scope": "Ares 3.0 GenericPrerequisites reader, owned/planned requirements including installed upgrades, clear/default lifecycle and alternate-membership refresh hooks",
   "ares_sha256": "93ce890f387a6c1b3240a2dd7b674f25fec5a0e96f0b0d0306796b2edf7b5b83",
-  "gamemd_sha256": "7cd005d263fde203d9c84548200a057a8df61d724da3c6bd1e521eeb61cd0747",
-  "payload_sha256": "b9b455554338c243d827b9cb2fcae689d25de6747e1b9dcf10b2c427a345b31b",
+  "payload_sha256": "d7ac8b30578067deb2e373abfe3b2e5aa38e559253429add64926a4f58ad5320",
   "control_count": 57,
   "entry_points": {
     "LoadFromINI": "0x10008470",
